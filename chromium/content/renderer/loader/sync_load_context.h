@@ -50,7 +50,7 @@ class SyncLoadContext : public RequestPeer {
       SyncLoadResponse* response,
       base::WaitableEvent* completed_event,
       base::WaitableEvent* abort_event,
-      double timeout,
+      base::TimeDelta timeout,
       blink::mojom::BlobRegistryPtrInfo download_to_blob_registry);
 
   ~SyncLoadContext() override;
@@ -65,7 +65,7 @@ class SyncLoadContext : public RequestPeer {
       SyncLoadResponse* response,
       base::WaitableEvent* completed_event,
       base::WaitableEvent* abort_event,
-      double timeout,
+      base::TimeDelta timeout,
       blink::mojom::BlobRegistryPtrInfo download_to_blob_registry,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   // RequestPeer implementation:
@@ -75,7 +75,6 @@ class SyncLoadContext : public RequestPeer {
   void OnReceivedResponse(const network::ResourceResponseInfo& info) override;
   void OnStartLoadingResponseBody(
       mojo::ScopedDataPipeConsumerHandle body) override;
-  void OnDownloadedData(int len, int encoded_data_length) override;
   void OnReceivedData(std::unique_ptr<ReceivedData> data) override;
   void OnTransferSizeUpdated(int transfer_size_diff) override;
   void OnCompletedRequest(
@@ -108,12 +107,8 @@ class SyncLoadContext : public RequestPeer {
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
-  base::Optional<int64_t> downloaded_file_length_;
-
   class SignalHelper;
   std::unique_ptr<SignalHelper> signals_;
-
-  const network::mojom::FetchRequestMode fetch_request_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncLoadContext);
 };

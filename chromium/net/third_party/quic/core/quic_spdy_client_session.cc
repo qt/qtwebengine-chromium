@@ -8,13 +8,14 @@
 #include "net/quic/chromium/crypto/proof_verifier_chromium.h"
 #include "net/third_party/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quic/core/quic_server_id.h"
+#include "net/third_party/quic/core/quic_spdy_client_stream.h"
 #include "net/third_party/quic/core/spdy_utils.h"
 #include "net/third_party/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quic/platform/api/quic_logging.h"
 #include "net/third_party/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 
-namespace net {
+namespace quic {
 
 QuicSpdyClientSession::QuicSpdyClientSession(
     const QuicConfig& config,
@@ -129,7 +130,8 @@ QuicSpdyStream* QuicSpdyClientSession::CreateIncomingDynamicStream(
 std::unique_ptr<QuicCryptoClientStreamBase>
 QuicSpdyClientSession::CreateQuicCryptoStream() {
   return QuicMakeUnique<QuicCryptoClientStream>(
-      server_id_, this, new ProofVerifyContextChromium(0, NetLogWithSource()),
+      server_id_, this,
+      new net::ProofVerifyContextChromium(0, net::NetLogWithSource()),
       crypto_config_, this);
 }
 
@@ -137,4 +139,4 @@ bool QuicSpdyClientSession::IsAuthorized(const QuicString& authority) {
   return true;
 }
 
-}  // namespace net
+}  // namespace quic

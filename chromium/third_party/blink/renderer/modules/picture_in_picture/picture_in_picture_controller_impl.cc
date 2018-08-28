@@ -7,10 +7,12 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/events/picture_in_picture_control_event.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_window.h"
 #include "third_party/blink/renderer/platform/feature_policy/feature_policy.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -50,8 +52,7 @@ PictureInPictureControllerImpl::IsDocumentAllowed() const {
 
   // If document is not allowed to use the policy-controlled feature named
   // "picture-in-picture", return kDisabledByFeaturePolicy status.
-  if (IsSupportedInFeaturePolicy(
-          blink::mojom::FeaturePolicyFeature::kPictureInPicture) &&
+  if (RuntimeEnabledFeatures::PictureInPictureAPIEnabled() &&
       !frame->IsFeatureEnabled(
           blink::mojom::FeaturePolicyFeature::kPictureInPicture)) {
     return Status::kDisabledByFeaturePolicy;
@@ -82,9 +83,16 @@ PictureInPictureControllerImpl::IsElementAllowed(
 void PictureInPictureControllerImpl::EnterPictureInPicture(
     HTMLVideoElement* element,
     ScriptPromiseResolver* resolver) {
-  element->enterPictureInPicture(WTF::Bind(
-      &PictureInPictureControllerImpl::OnEnteredPictureInPicture,
-      WrapPersistent(this), WrapPersistent(element), WrapPersistent(resolver)));
+  if (picture_in_picture_element_ != element) {
+    element->enterPictureInPicture(
+        WTF::Bind(&PictureInPictureControllerImpl::OnEnteredPictureInPicture,
+                  WrapPersistent(this), WrapPersistent(element),
+                  WrapPersistent(resolver)));
+    return;
+  }
+
+  if (resolver)
+    resolver->Resolve(picture_in_picture_window_);
 }
 
 void PictureInPictureControllerImpl::OnEnteredPictureInPicture(
@@ -92,9 +100,10 @@ void PictureInPictureControllerImpl::OnEnteredPictureInPicture(
     ScriptPromiseResolver* resolver,
     const WebSize& picture_in_picture_window_size) {
   if (IsElementAllowed(*element) == Status::kDisabledByAttribute) {
-    if (resolver)
-      resolver->Reject(DOMException::Create(kInvalidStateError, ""));
-    // TODO(crbug.com/806249): Test that WMPI sends the message.
+    if (resolver) {
+      resolver->Reject(
+          DOMException::Create(DOMExceptionCode::kInvalidStateError, ""));
+    }
     element->exitPictureInPicture(base::DoNothing());
     return;
   }
@@ -153,6 +162,22 @@ void PictureInPictureControllerImpl::OnExitedPictureInPicture(
     resolver->Resolve();
 }
 
+void PictureInPictureControllerImpl::OnPictureInPictureControlClicked(
+    const WebString& control_id) {
+  DCHECK(GetSupplementable());
+
+  // Bail out if document is not active.
+  if (!GetSupplementable()->IsActive())
+    return;
+
+  if (RuntimeEnabledFeatures::PictureInPictureControlEnabled() &&
+      picture_in_picture_element_) {
+    picture_in_picture_element_->DispatchEvent(
+        PictureInPictureControlEvent::Create(
+            EventTypeNames::pictureinpicturecontrolclick, control_id));
+  }
+}
+
 Element* PictureInPictureControllerImpl::PictureInPictureElement(
     TreeScope& scope) const {
   if (!picture_in_picture_element_)
@@ -163,8 +188,7 @@ Element* PictureInPictureControllerImpl::PictureInPictureElement(
 
 bool PictureInPictureControllerImpl::IsPictureInPictureElement(
     const Element* element) const {
-  if (!element)
-    return false;
+  DCHECK(element);
   return element == picture_in_picture_element_;
 }
 

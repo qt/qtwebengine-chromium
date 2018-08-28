@@ -18,13 +18,13 @@
 #include <string>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/messagehandler.h"
 #include "rtc_base/messagequeue.h"
 #include "rtc_base/opensslcertificate.h"
 #include "rtc_base/opensslidentity.h"
 #include "rtc_base/opensslsessioncache.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/ssladapter.h"
 
 namespace rtc {
@@ -81,7 +81,11 @@ class OpenSSLAdapter : public SSLAdapter, public MessageHandler {
 
  private:
   enum SSLState {
-    SSL_NONE, SSL_WAIT, SSL_CONNECTING, SSL_CONNECTED, SSL_ERROR
+    SSL_NONE,
+    SSL_WAIT,
+    SSL_CONNECTING,
+    SSL_CONNECTED,
+    SSL_ERROR
   };
 
   enum { MSG_TIMEOUT };

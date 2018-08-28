@@ -21,7 +21,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/test/simple_test_clock.h"
 #include "base/test/test_mock_time_task_runner.h"
@@ -164,8 +164,8 @@ std::unique_ptr<RemoteSuggestion> CreateTestRemoteSuggestion(
 
 void ServeOneByOneImage(
     const std::string& id,
-    image_fetcher::ImageFetcher::ImageDataFetcherCallback* image_data_callback,
-    image_fetcher::ImageFetcher::ImageFetcherCallback* callback) {
+    image_fetcher::ImageDataFetcherCallback* image_data_callback,
+    image_fetcher::ImageFetcherCallback* callback) {
   std::move(*image_data_callback)
       .Run("1-by-1-image-data", image_fetcher::RequestMetadata());
   base::ThreadTaskRunnerHandle::Get()->PostTask(

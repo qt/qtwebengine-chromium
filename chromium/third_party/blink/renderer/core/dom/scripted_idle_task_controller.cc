@@ -33,7 +33,7 @@ class IdleRequestCallbackWrapper
 
   static void IdleTaskFired(
       scoped_refptr<IdleRequestCallbackWrapper> callback_wrapper,
-      double deadline_seconds) {
+      TimeTicks deadline) {
     if (ScriptedIdleTaskController* controller =
             callback_wrapper->Controller()) {
       // If we are going to yield immediately, reschedule the callback for
@@ -46,7 +46,7 @@ class IdleRequestCallbackWrapper
                                      /* timeout_millis */ 0);
         return;
       }
-      controller->CallbackFired(callback_wrapper->Id(), deadline_seconds,
+      controller->CallbackFired(callback_wrapper->Id(), deadline,
                                 IdleDeadline::CallbackType::kCalledWhenIdle);
     }
     callback_wrapper->Cancel();
@@ -56,8 +56,7 @@ class IdleRequestCallbackWrapper
       scoped_refptr<IdleRequestCallbackWrapper> callback_wrapper) {
     if (ScriptedIdleTaskController* controller =
             callback_wrapper->Controller()) {
-      controller->CallbackFired(callback_wrapper->Id(),
-                                CurrentTimeTicksInSeconds(),
+      controller->CallbackFired(callback_wrapper->Id(), CurrentTimeTicks(),
                                 IdleDeadline::CallbackType::kCalledByTimeout);
     }
     callback_wrapper->Cancel();
@@ -88,12 +87,6 @@ void ScriptedIdleTaskController::V8IdleTask::Trace(blink::Visitor* visitor) {
   ScriptedIdleTaskController::IdleTask::Trace(visitor);
 }
 
-void ScriptedIdleTaskController::V8IdleTask::TraceWrappers(
-    ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(callback_);
-  ScriptedIdleTaskController::IdleTask::TraceWrappers(visitor);
-}
-
 void ScriptedIdleTaskController::V8IdleTask::invoke(IdleDeadline* deadline) {
   callback_->InvokeAndReportException(nullptr, deadline);
 }
@@ -112,13 +105,6 @@ ScriptedIdleTaskController::~ScriptedIdleTaskController() = default;
 void ScriptedIdleTaskController::Trace(blink::Visitor* visitor) {
   visitor->Trace(idle_tasks_);
   PausableObject::Trace(visitor);
-}
-
-void ScriptedIdleTaskController::TraceWrappers(
-    ScriptWrappableVisitor* visitor) const {
-  for (const auto& idle_task : idle_tasks_.Values()) {
-    visitor->TraceWrappers(idle_task);
-  }
 }
 
 int ScriptedIdleTaskController::NextCallbackId() {
@@ -186,7 +172,7 @@ void ScriptedIdleTaskController::CancelCallback(CallbackId id) {
 
 void ScriptedIdleTaskController::CallbackFired(
     CallbackId id,
-    double deadline_seconds,
+    TimeTicks deadline,
     IdleDeadline::CallbackType callback_type) {
   if (!idle_tasks_.Contains(id))
     return;
@@ -201,12 +187,12 @@ void ScriptedIdleTaskController::CallbackFired(
     return;
   }
 
-  RunCallback(id, deadline_seconds, callback_type);
+  RunCallback(id, deadline, callback_type);
 }
 
 void ScriptedIdleTaskController::RunCallback(
     CallbackId id,
-    double deadline_seconds,
+    TimeTicks deadline,
     IdleDeadline::CallbackType callback_type) {
   DCHECK(!paused_);
 
@@ -219,8 +205,8 @@ void ScriptedIdleTaskController::RunCallback(
   IdleTask* idle_task = idle_task_iter->value;
   DCHECK(idle_task);
 
-  double allotted_time_millis =
-      std::max((deadline_seconds - CurrentTimeTicksInSeconds()) * 1000, 0.0);
+  TimeDelta allotted_time =
+      std::max(deadline - CurrentTimeTicks(), TimeDelta());
 
   probe::AsyncTask async_task(GetExecutionContext(), idle_task);
   probe::UserCallback probe(GetExecutionContext(), "requestIdleCallback",
@@ -229,9 +215,9 @@ void ScriptedIdleTaskController::RunCallback(
   TRACE_EVENT1(
       "devtools.timeline", "FireIdleCallback", "data",
       InspectorIdleCallbackFireEvent::Data(
-          GetExecutionContext(), id, allotted_time_millis,
+          GetExecutionContext(), id, allotted_time.InMillisecondsF(),
           callback_type == IdleDeadline::CallbackType::kCalledByTimeout));
-  idle_task->invoke(IdleDeadline::Create(deadline_seconds, callback_type));
+  idle_task->invoke(IdleDeadline::Create(deadline, callback_type));
 
   // Finally there is no need to keep the idle task alive.
   //
@@ -255,7 +241,7 @@ void ScriptedIdleTaskController::Unpause() {
   Vector<CallbackId> pending_timeouts;
   pending_timeouts_.swap(pending_timeouts);
   for (auto& id : pending_timeouts)
-    RunCallback(id, CurrentTimeTicksInSeconds(),
+    RunCallback(id, CurrentTimeTicks(),
                 IdleDeadline::CallbackType::kCalledByTimeout);
 
   // Repost idle tasks for any remaining callbacks.

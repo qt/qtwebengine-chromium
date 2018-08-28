@@ -1,6 +1,6 @@
 #Topic Rect
-#Alias Rects
-#Alias Rect_Reference
+#Alias Rects ##
+#Alias Rect_Reference ##
 
 #Struct SkRect
 
@@ -609,7 +609,7 @@ large width: 4294967296
 
 #In Property
 #Line # returns span in y ##
-Returns span on the y-axis. This does not check if IRect is sorted, or if
+Returns span on the y-axis. This does not check if Rect is sorted, or if
 result fits in 32-bit float; result may be negative or infinity.
 
 #Return fBottom minus fTop ##
@@ -669,7 +669,7 @@ left: -41 right: -20 centerX: -30.5
 #In Property
 #Line # returns midpoint in y ##
 Returns average of top edge and bottom edge. Result does not change if Rect
-is sorted. Result may overflow to infinity if Rect is far from the origin.
+is sorted.
 
 #Return midpoint in y ##
 
@@ -678,7 +678,7 @@ is sorted. Result may overflow to infinity if Rect is far from the origin.
    SkDebugf("left: %g right: %g centerX: %g ", rect.left(), rect.right(), rect.centerX());
    SkDebugf("safe mid x: %g\n", rect.left() / 2 + rect.right() / 2);
 #StdOut
-left: 2e+38 right: 3e+38 centerX: inf safe mid x: 2.5e+38
+left: 2e+38 right: 3e+38 centerX: 2.5e+38 safe mid x: 2.5e+38
 ##
 ##
 
@@ -1270,7 +1270,7 @@ If dy is positive, Rect returned is moved downward.
 #Param dx  added to fLeft and fRight ##
 #Param dy  added to fTop and fBottom ##
 
-#Return Rect offset in x or y, with original width and height ##
+#Return Rect offset on axes, with original width and height ##
 
 #Example
     SkRect rect = { 10, 50, 20, 60 };
@@ -1549,7 +1549,7 @@ rect: (30, 50, 40, 60) does not contain (29, 59)
 ##
 ##
 
-#SeeAlso SkIRect::contains
+#SeeAlso SkIRect::contains SkRRect::contains
 
 ##
 
@@ -1669,10 +1669,10 @@ Returns false if Rect does not intersect construction, and leaves Rect unchanged
 
 Returns false if either construction or Rect is empty, leaving Rect unchanged.
 
-#Param left  x minimum of constructed Rect ##
-#Param top  y minimum of constructed Rect ##
-#Param right  x maximum of constructed Rect ##
-#Param bottom  y maximum of constructed Rect ##
+#Param left  x-axis minimum of constructed Rect ##
+#Param top  y-axis minimum of constructed Rect ##
+#Param right  x-axis maximum of constructed Rect ##
+#Param bottom  y-axis maximum of constructed Rect ##
 
 #Return true if construction and Rect have area in common ##
 
@@ -1736,10 +1736,10 @@ construction.
 Returns true if Rect intersects construction.
 Returns false if either construction or Rect is empty, or do not intersect.
 
-#Param left  x minimum of constructed Rect ##
-#Param top  y minimum of constructed Rect ##
-#Param right  x maximum of constructed Rect ##
-#Param bottom  y maximum of constructed Rect ##
+#Param left  x-axis minimum of constructed Rect ##
+#Param top  y-axis minimum of constructed Rect ##
+#Param right  x-axis maximum of constructed Rect ##
+#Param bottom  y-axis maximum of constructed Rect ##
 
 #Return true if construction and Rect have area in common ##
 
@@ -1825,10 +1825,10 @@ Sets Rect to the union of itself and the construction.
 Has no effect if construction is empty. Otherwise, if Rect is empty, sets
 Rect to construction.
 
-#Param left  x minimum of constructed Rect ##
-#Param top  y minimum of constructed Rect ##
-#Param right  x maximum of constructed Rect ##
-#Param bottom  y maximum of constructed Rect ##
+#Param left  x-axis minimum of constructed Rect ##
+#Param top  y-axis minimum of constructed Rect ##
+#Param right  x-axis maximum of constructed Rect ##
+#Param bottom  y-axis maximum of constructed Rect ##
 
 #Example
     SkRect rect = { 10, 20, 15, 25};

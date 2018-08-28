@@ -98,6 +98,8 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
   settings.use_occlusion_for_tile_prioritization = true;
   refresh_rate_ = context_factory_->GetRefreshRate();
   settings.main_frame_before_activation_enabled = false;
+  settings.delegated_sync_points_required =
+      context_factory_->SyncTokensRequiredForDisplayCompositor();
 
   // Disable edge anti-aliasing in order to increase support for HW overlays.
   settings.enable_edge_anti_aliasing = false;
@@ -193,8 +195,6 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
   settings.always_request_presentation_time =
       command_line->HasSwitch(cc::switches::kAlwaysRequestPresentationTime);
 
-  base::TimeTicks before_create = base::TimeTicks::Now();
-
   animation_host_ = cc::AnimationHost::CreateMainInstance();
 
   cc::LayerTreeHost::InitParams params;
@@ -204,8 +204,6 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
   params.main_task_runner = task_runner_;
   params.mutator_host = animation_host_.get();
   host_ = cc::LayerTreeHost::CreateSingleThreaded(this, &params);
-  UMA_HISTOGRAM_TIMES("GPU.CreateBrowserCompositor",
-                      base::TimeTicks::Now() - before_create);
 
   if (base::FeatureList::IsEnabled(features::kUiCompositorScrollWithLayers) &&
       host_->GetInputHandler()) {
@@ -256,10 +254,6 @@ Compositor::~Compositor() {
     }
     host_frame_sink_manager->InvalidateFrameSinkId(frame_sink_id_);
   }
-}
-
-bool Compositor::IsForSubframe() {
-  return false;
 }
 
 void Compositor::AddFrameSink(const viz::FrameSinkId& frame_sink_id) {
@@ -349,7 +343,8 @@ void Compositor::ScheduleRedrawRect(const gfx::Rect& damage_rect) {
 
 void Compositor::DisableSwapUntilResize() {
   DCHECK(context_factory_private_);
-  context_factory_private_->ResizeDisplay(this, gfx::Size());
+  context_factory_private_->DisableSwapUntilResize(this);
+  disabled_swap_until_resize_ = true;
 }
 
 void Compositor::ReenableSwap() {
@@ -376,12 +371,16 @@ void Compositor::SetScaleAndSize(float scale,
   }
 
   if (!size_in_pixel.IsEmpty()) {
+    bool size_changed = size_ != size_in_pixel;
     size_ = size_in_pixel;
     host_->SetViewportSizeAndScale(size_in_pixel, scale, local_surface_id);
     root_web_layer_->SetBounds(size_in_pixel);
     // TODO(fsamuel): Get rid of ContextFactoryPrivate.
-    if (context_factory_private_)
+    if (context_factory_private_ &&
+        (size_changed || disabled_swap_until_resize_)) {
       context_factory_private_->ResizeDisplay(this, size_in_pixel);
+      disabled_swap_until_resize_ = false;
+    }
   }
   if (device_scale_factor_changed) {
     if (is_pixel_canvas())

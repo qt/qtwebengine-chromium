@@ -34,7 +34,6 @@ blink_core_sources("page") {
     "page.h",
     "page_animator.cc",
     "page_animator.h",
-    "page_lifecycle_state.h",
     "page_overlay.cc",
     "page_overlay.h",
     "page_popup.h",
@@ -97,5 +96,7 @@ blink_core_sources("page") {
     "validation_message_client_impl.h",
     "validation_message_overlay_delegate.cc",
     "validation_message_overlay_delegate.h",
+    "viewport_description.cc",
+    "viewport_description.h",
   ]
 }

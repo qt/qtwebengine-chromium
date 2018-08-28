@@ -20,33 +20,27 @@
 
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 
-#include <limits>
-
 #include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/exported/web_plugin_container_impl.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/remote_frame_view.h"
-#include "third_party/blink/renderer/core/geometry/dom_rect_read_only.h"
-#include "third_party/blink/renderer/core/intersection_observer/intersection_observer.h"
-#include "third_party/blink/renderer/core/intersection_observer/intersection_observer_entry.h"
+#include "third_party/blink/renderer/core/html/lazy_load_frame_observer.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/scrolling/root_scroller_controller.h"
+#include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/window_performance.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
-#include "third_party/blink/renderer/platform/length.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
@@ -72,27 +66,6 @@ bool DoesParentAllowLazyLoadingChildren(Document& document) {
     return true;
 
   return containing_frame_owner->ShouldLazyLoadChildren();
-}
-
-// Determine if the |bounding_client_rect| for a frame indicates that the frame
-// is probably hidden according to some experimental heuristics. Since hidden
-// frames are often used for analytics or communication, and lazily loading them
-// could break their functionality, so these heuristics are used to recognize
-// likely hidden frames and immediately load them so that they can function
-// properly.
-bool IsFrameProbablyHidden(const DOMRectReadOnly& bounding_client_rect) {
-  // Tiny frames that are 4x4 or smaller are likely not intended to be seen by
-  // the user. Note that this condition includes frames marked as
-  // "display:none", since those frames would have dimensions of 0x0.
-  if (bounding_client_rect.width() < 4.1 || bounding_client_rect.height() < 4.1)
-    return true;
-
-  // Frames that are positioned completely off the page above or to the left are
-  // likely never intended to be visible to the user.
-  if (bounding_client_rect.right() < 0.0 || bounding_client_rect.bottom() < 0.0)
-    return true;
-
-  return false;
 }
 
 }  // namespace
@@ -144,10 +117,17 @@ void HTMLFrameOwnerElement::SetContentFrame(Frame& frame) {
 
   // There should be no lazy load in progress since before SetContentFrame,
   // |this| frame element should have been disconnected.
-  DCHECK(!lazy_load_intersection_observer_);
+  DCHECK(!lazy_load_frame_observer_ ||
+         !lazy_load_frame_observer_->IsLazyLoadPending());
 
   content_frame_ = &frame;
 
+  // Invalidate compositing inputs, because a remote frame child can cause the
+  // owner to become composited.
+  if (auto* box = GetLayoutBox()) {
+    if (auto* layer = box->Layer())
+      layer->SetNeedsCompositingInputsUpdate();
+  }
   SetNeedsStyleRecalc(kLocalStyleChange, StyleChangeReasonForTracing::Create(
                                              StyleChangeReason::kFrame));
 
@@ -182,14 +162,13 @@ void HTMLFrameOwnerElement::DisconnectContentFrame() {
 
   // Removing a subframe that was still loading can impact the result of
   // AllDescendantsAreComplete that is consulted by Document::ShouldComplete.
-  // Therefore we might need to re-check this after removing the subframe.  The
+  // Therefore we might need to re-check this after removing the subframe. The
   // re-check is not needed for local frames (which will handle re-checking from
   // FrameLoader::DidFinishNavigation that responds to LocalFrame::Detach).
   // OTOH, re-checking is required for OOPIFs - see https://crbug.com/779433.
   Document& parent_doc = GetDocument();
-  bool have_to_check_if_parent_is_completed = !parent_doc.IsLoadCompleted() &&
-                                              ContentFrame()->IsRemoteFrame() &&
-                                              ContentFrame()->IsLoading();
+  bool have_to_check_if_parent_is_completed =
+      ContentFrame()->IsRemoteFrame() && ContentFrame()->IsLoading();
 
   // FIXME: Currently we don't do this in removedFrom because this causes an
   // unload event in the subframe which could execute script that could then
@@ -270,6 +249,9 @@ void HTMLFrameOwnerElement::AddResourceTiming(const ResourceTimingInfo& info) {
 }
 
 void HTMLFrameOwnerElement::DispatchLoad() {
+  if (lazy_load_frame_observer_)
+    lazy_load_frame_observer_->RecordMetricsOnLoadFinished();
+
   DispatchScopedEvent(Event::Create(EventTypeNames::load));
 }
 
@@ -359,8 +341,8 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
 
   if (ContentFrame()) {
     // TODO(sclittle): Support lazily loading frame navigations.
-    ContentFrame()->Navigate(GetDocument(), url, replace_current_item,
-                             UserGestureStatus::kNone);
+    ContentFrame()->ScheduleNavigation(GetDocument(), url, replace_current_item,
+                                       UserGestureStatus::kNone);
     return true;
   }
 
@@ -384,11 +366,11 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
         policy, url, GetDocument().OutgoingReferrer()));
   }
 
-  FrameLoadType child_load_type = kFrameLoadTypeInitialInChildFrame;
+  WebFrameLoadType child_load_type = WebFrameLoadType::kReplaceCurrentItem;
   if (!GetDocument().LoadEventFinished() &&
       GetDocument().Loader()->LoadType() ==
-          kFrameLoadTypeReloadBypassingCache) {
-    child_load_type = kFrameLoadTypeReloadBypassingCache;
+          WebFrameLoadType::kReloadBypassingCache) {
+    child_load_type = WebFrameLoadType::kReloadBypassingCache;
     request.SetCacheMode(mojom::FetchCacheMode::kBypassCache);
   }
 
@@ -399,7 +381,8 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
   if (IsPlugin())
     request.SetSkipServiceWorker(true);
 
-  if (RuntimeEnabledFeatures::LazyFrameLoadingEnabled() &&
+  if ((RuntimeEnabledFeatures::LazyFrameLoadingEnabled() ||
+       RuntimeEnabledFeatures::LazyFrameVisibleLoadTimeMetricsEnabled()) &&
       should_lazy_load_children_ &&
       // Only http:// or https:// URLs are eligible for lazy loading, excluding
       // URLs like invalid or empty URLs, "about:blank", local file URLs, etc.
@@ -418,50 +401,29 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
     // the viewport or visible.
     should_lazy_load_children_ = false;
 
-    lazy_load_intersection_observer_ = IntersectionObserver::Create(
-        {Length(kLazyLoadRootMarginPx, kFixed)},
-        {std::numeric_limits<float>::min()}, &GetDocument(),
-        WTF::BindRepeating(&HTMLFrameOwnerElement::LoadIfHiddenOrNearViewport,
-                           WrapWeakPersistent(this), request, child_load_type));
+    DCHECK(!lazy_load_frame_observer_);
+    lazy_load_frame_observer_ = new LazyLoadFrameObserver(*this);
 
-    lazy_load_intersection_observer_->observe(this);
-  } else {
-    child_frame->Loader().StartNavigation(
-        FrameLoadRequest(&GetDocument(), request), child_load_type);
+    if (RuntimeEnabledFeatures::LazyFrameVisibleLoadTimeMetricsEnabled())
+      lazy_load_frame_observer_->StartTrackingVisibilityMetrics();
+
+    if (RuntimeEnabledFeatures::LazyFrameLoadingEnabled()) {
+      lazy_load_frame_observer_->DeferLoadUntilNearViewport(request,
+                                                            child_load_type);
+      return true;
+    }
   }
+
+  child_frame->Loader().StartNavigation(
+      FrameLoadRequest(&GetDocument(), request), child_load_type);
+
   return true;
 }
 
-void HTMLFrameOwnerElement::LoadIfHiddenOrNearViewport(
-    const ResourceRequest& resource_request,
-    FrameLoadType frame_load_type,
-    const HeapVector<Member<IntersectionObserverEntry>>& entries) {
-  DCHECK(!entries.IsEmpty());
-  DCHECK_EQ(this, entries.back()->target());
-
-  if (!entries.back()->isIntersecting() &&
-      !IsFrameProbablyHidden(*entries.back()->boundingClientRect())) {
-    return;
-  }
-
-  // The content frame of this element should not have changed, since any
-  // pending lazy load should have been already been cancelled in
-  // DisconnectContentFrame() if the content frame changes.
-  DCHECK(ContentFrame());
-
-  // Note that calling FrameLoader::Load() causes this intersection observer to
-  // be disconnected.
-  ToLocalFrame(ContentFrame())
-      ->Loader()
-      .StartNavigation(FrameLoadRequest(&GetDocument(), resource_request),
-                       frame_load_type);
-}
-
 void HTMLFrameOwnerElement::CancelPendingLazyLoad() {
-  if (!lazy_load_intersection_observer_)
+  if (!lazy_load_frame_observer_)
     return;
-  lazy_load_intersection_observer_->disconnect();
-  lazy_load_intersection_observer_.Clear();
+  lazy_load_frame_observer_->CancelPendingLazyLoad();
 }
 
 bool HTMLFrameOwnerElement::ShouldLazyLoadChildren() const {
@@ -471,7 +433,7 @@ bool HTMLFrameOwnerElement::ShouldLazyLoadChildren() const {
 void HTMLFrameOwnerElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(content_frame_);
   visitor->Trace(embedded_content_view_);
-  visitor->Trace(lazy_load_intersection_observer_);
+  visitor->Trace(lazy_load_frame_observer_);
   HTMLElement::Trace(visitor);
   FrameOwner::Trace(visitor);
 }

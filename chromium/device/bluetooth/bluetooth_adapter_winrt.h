@@ -7,6 +7,7 @@
 
 #include <windows.devices.bluetooth.h>
 #include <windows.devices.enumeration.h>
+#include <windows.devices.radios.h>
 #include <wrl/client.h>
 
 #include <memory>
@@ -23,6 +24,8 @@ class ScopedClosureRunner;
 }
 
 namespace device {
+
+class BluetoothDeviceWinrt;
 
 class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterWinrt : public BluetoothAdapter {
  public:
@@ -60,7 +63,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterWinrt : public BluetoothAdapter {
 
  protected:
   friend class BluetoothAdapterWin;
-  friend class BluetoothTestWin;
+  friend class BluetoothTestWinrt;
 
   BluetoothAdapterWinrt();
   ~BluetoothAdapterWinrt() override;
@@ -88,9 +91,20 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterWinrt : public BluetoothAdapter {
   virtual HRESULT GetBluetoothAdapterStaticsActivationFactory(
       ABI::Windows::Devices::Bluetooth::IBluetoothAdapterStatics** statics)
       const;
+
   virtual HRESULT GetDeviceInformationStaticsActivationFactory(
       ABI::Windows::Devices::Enumeration::IDeviceInformationStatics** statics)
       const;
+
+  virtual HRESULT GetRadioStaticsActivationFactory(
+      ABI::Windows::Devices::Radios::IRadioStatics** statics) const;
+
+  virtual HRESULT ActivateBluetoothAdvertisementLEWatcherInstance(
+      ABI::Windows::Devices::Bluetooth::Advertisement::
+          IBluetoothLEAdvertisementWatcher** instance) const;
+  virtual std::unique_ptr<BluetoothDeviceWinrt> CreateDevice(
+      uint64_t raw_address,
+      base::Optional<std::string> local_name);
 
  private:
   void OnGetDefaultAdapter(
@@ -104,10 +118,38 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterWinrt : public BluetoothAdapter {
           ABI::Windows::Devices::Enumeration::IDeviceInformation>
           device_information);
 
+  void OnRequestAccess(
+      base::ScopedClosureRunner on_init,
+      ABI::Windows::Devices::Radios::RadioAccessStatus access_status);
+
+  void OnGetRadio(
+      base::ScopedClosureRunner on_init,
+      Microsoft::WRL::ComPtr<ABI::Windows::Devices::Radios::IRadio> radio);
+
+  void OnSetState(
+      ABI::Windows::Devices::Radios::RadioAccessStatus access_status);
+
+  void OnAdvertisementReceived(
+      ABI::Windows::Devices::Bluetooth::Advertisement::
+          IBluetoothLEAdvertisementWatcher* watcher,
+      ABI::Windows::Devices::Bluetooth::Advertisement::
+          IBluetoothLEAdvertisementReceivedEventArgs* received);
+
+  void RemoveAdvertisementReceivedHandler();
+
   bool is_initialized_ = false;
-  bool is_present_ = false;
   std::string address_;
   std::string name_;
+
+  Microsoft::WRL::ComPtr<ABI::Windows::Devices::Bluetooth::IBluetoothAdapter>
+      adapter_;
+  Microsoft::WRL::ComPtr<ABI::Windows::Devices::Radios::IRadio> radio_;
+
+  size_t num_discovery_sessions_ = 0;
+  EventRegistrationToken advertisement_received_token_;
+  Microsoft::WRL::ComPtr<ABI::Windows::Devices::Bluetooth::Advertisement::
+                             IBluetoothLEAdvertisementWatcher>
+      ble_advertisement_watcher_;
 
   THREAD_CHECKER(thread_checker_);
 

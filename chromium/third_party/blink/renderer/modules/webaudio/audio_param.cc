@@ -25,11 +25,11 @@
 
 #include "third_party/blink/renderer/modules/webaudio/audio_param.h"
 
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_output.h"
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
@@ -436,7 +436,7 @@ void AudioParam::setAutomationRate(const String& rate,
                                    ExceptionState& exception_state) {
   if (Handler().IsAutomationRateFixed()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         Handler().GetParamName() +
             ".automationRate is fixed and cannot be changed to \"" + rate +
             "\"");

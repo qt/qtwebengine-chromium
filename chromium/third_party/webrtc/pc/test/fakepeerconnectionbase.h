@@ -47,12 +47,6 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
     return RTCError(RTCErrorType::UNSUPPORTED_OPERATION, "Not implemented");
   }
 
-  rtc::scoped_refptr<RtpSenderInterface> AddTrack(
-      MediaStreamTrackInterface* track,
-      std::vector<MediaStreamInterface*> streams) override {
-    return nullptr;
-  }
-
   bool RemoveTrack(RtpSenderInterface* sender) override { return false; }
 
   RTCErrorOr<rtc::scoped_refptr<RtpTransceiverInterface>> AddTransceiver(
@@ -75,11 +69,6 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
       cricket::MediaType media_type,
       const RtpTransceiverInit& init) override {
     return RTCError(RTCErrorType::UNSUPPORTED_OPERATION, "Not implemented");
-  }
-
-  rtc::scoped_refptr<DtmfSenderInterface> CreateDtmfSender(
-      AudioTrackInterface* track) override {
-    return nullptr;
   }
 
   rtc::scoped_refptr<RtpSenderInterface> CreateSender(
@@ -266,12 +255,12 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
     return {};
   }
 
-  rtc::Optional<std::string> sctp_content_name() const override {
-    return rtc::nullopt;
+  absl::optional<std::string> sctp_content_name() const override {
+    return absl::nullopt;
   }
 
-  rtc::Optional<std::string> sctp_transport_name() const override {
-    return rtc::nullopt;
+  absl::optional<std::string> sctp_transport_name() const override {
+    return absl::nullopt;
   }
 
   std::map<std::string, std::string> GetTransportNamesByMid() const override {

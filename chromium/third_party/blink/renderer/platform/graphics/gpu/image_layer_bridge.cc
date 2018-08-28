@@ -6,8 +6,8 @@
 
 #include "cc/layers/texture_layer.h"
 #include "cc/resources/cross_thread_shared_bitmap.h"
-#include "components/viz/common/quads/shared_bitmap.h"
 #include "components/viz/common/resources/bitmap_allocation.h"
+#include "components/viz/common/resources/shared_bitmap.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace blink {
@@ -75,7 +76,7 @@ void ImageLayerBridge::SetUV(const FloatPoint& left_top,
 void ImageLayerBridge::Dispose() {
   if (layer_) {
     GraphicsLayer::UnregisterContentsLayer(layer_.get());
-    layer_->ClearTexture();
+    layer_->ClearClient();
     layer_ = nullptr;
   }
   image_ = nullptr;
@@ -108,20 +109,12 @@ bool ImageLayerBridge::PrepareTransferableResource(
   // flipped.
   layer_->SetFlipped(gpu_image);
 
-  scoped_refptr<StaticBitmapImage> image_for_compositor;
-
-  // Upload to a texture if the compositor is expecting one.
-  if (gpu_compositing && !image_->IsTextureBacked()) {
-    image_for_compositor =
-        image_->MakeAccelerated(SharedGpuContext::ContextProviderWrapper());
-  } else if (!gpu_compositing && image_->IsTextureBacked()) {
-    image_for_compositor = image_->MakeUnaccelerated();
-  } else {
-    image_for_compositor = image_;
-  }
-  DCHECK_EQ(image_for_compositor->IsTextureBacked(), gpu_compositing);
-
   if (gpu_compositing) {
+    scoped_refptr<StaticBitmapImage> image_for_compositor =
+        image_->MakeAccelerated(SharedGpuContext::ContextProviderWrapper());
+    if (!image_for_compositor)
+      return false;
+
     uint32_t filter =
         filter_quality_ == kNone_SkFilterQuality ? GL_NEAREST : GL_LINEAR;
     image_for_compositor->EnsureMailbox(kUnverifiedSyncToken, filter);
@@ -133,13 +126,17 @@ bool ImageLayerBridge::PrepareTransferableResource(
                   WrapWeakPersistent(this), std::move(image_for_compositor));
     *out_release_callback = viz::SingleReleaseCallback::Create(std::move(func));
   } else {
-    sk_sp<SkImage> sk_image =
-        image_for_compositor->PaintImageForCurrentFrame().GetSkImage();
+    // Readback if needed and retain the readback in image_ to prevent future
+    // readbacks
+    image_ = image_->MakeUnaccelerated();
+    if (!image_)
+      return false;
+
+    sk_sp<SkImage> sk_image = image_->PaintImageForCurrentFrame().GetSkImage();
     if (!sk_image)
       return false;
 
-    const gfx::Size size(image_for_compositor->width(),
-                         image_for_compositor->height());
+    const gfx::Size size(image_->width(), image_->height());
     viz::ResourceFormat resource_format = viz::RGBA_8888;
     if (sk_image->colorType() == SkColorType::kRGBA_F16_SkColorType)
       resource_format = viz::RGBA_F16;

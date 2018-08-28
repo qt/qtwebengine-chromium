@@ -5,7 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_SHAPING_SHAPE_RESULT_TEST_INFO_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_SHAPING_SHAPE_RESULT_TEST_INFO_H_
 
-#include "third_party/blink/renderer/platform/fonts/shaping/harf_buzz_shaper.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_shaper.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_bloberizer.h"
 
 #include <hb.h>
@@ -15,6 +15,7 @@ namespace blink {
 class PLATFORM_EXPORT ShapeResultTestInfo : public ShapeResult {
  public:
   unsigned NumberOfRunsForTesting() const;
+  ShapeResult::RunInfo& RunInfoForTesting(unsigned run_index) const;
   bool RunInfoForTesting(unsigned run_index,
                          unsigned& start_index,
                          unsigned& num_glyphs,

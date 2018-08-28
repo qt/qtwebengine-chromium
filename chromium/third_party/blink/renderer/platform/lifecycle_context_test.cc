@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/lifecycle_notifier.h"
 #include "third_party/blink/renderer/platform/lifecycle_observer.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -44,6 +45,9 @@ class DummyContext final
   void Trace(blink::Visitor* visitor) override {
     LifecycleNotifier<DummyContext, TestingObserver>::Trace(visitor);
   }
+
+  // Make the protected method public for testing.
+  using LifecycleNotifier<DummyContext, TestingObserver>::ForEachObserver;
 };
 
 class TestingObserver final
@@ -90,7 +94,7 @@ class TestingObserver final
   bool context_destroyed_called_;
 };
 
-TEST(LifecycleContextTest, shouldObserveContextDestroyed) {
+TEST(LifecycleContextTest, ShouldObserveContextDestroyed) {
   DummyContext* context = DummyContext::Create();
   Persistent<TestingObserver> observer = TestingObserver::Create(context);
 
@@ -103,7 +107,7 @@ TEST(LifecycleContextTest, shouldObserveContextDestroyed) {
   EXPECT_TRUE(observer->ContextDestroyedCalled());
 }
 
-TEST(LifecycleContextTest, shouldNotObserveContextDestroyedIfUnobserve) {
+TEST(LifecycleContextTest, ShouldNotObserveContextDestroyedIfUnobserve) {
   DummyContext* context = DummyContext::Create();
   Persistent<TestingObserver> observer = TestingObserver::Create(context);
   observer->Unobserve();
@@ -114,7 +118,7 @@ TEST(LifecycleContextTest, shouldNotObserveContextDestroyedIfUnobserve) {
   EXPECT_FALSE(observer->ContextDestroyedCalled());
 }
 
-TEST(LifecycleContextTest, observerRemovedDuringNotifyDestroyed) {
+TEST(LifecycleContextTest, ObserverRemovedDuringNotifyDestroyed) {
   DummyContext* context = DummyContext::Create();
   Persistent<TestingObserver> observer = TestingObserver::Create(context);
   TestingObserver* inner_observer = TestingObserver::Create(context);
@@ -133,6 +137,51 @@ TEST(LifecycleContextTest, observerRemovedDuringNotifyDestroyed) {
   ThreadState::Current()->CollectAllGarbage();
   EXPECT_EQ(observer->LifecycleContext(), static_cast<DummyContext*>(nullptr));
   EXPECT_TRUE(observer->ContextDestroyedCalled());
+}
+
+// This is a regression test for http://crbug.com/854639.
+TEST(LifecycleContextTest, ShouldNotHitCFICheckOnIncrementalMarking) {
+  bool was_enabled = RuntimeEnabledFeatures::HeapIncrementalMarkingEnabled();
+  RuntimeEnabledFeatures::SetHeapIncrementalMarkingEnabled(true);
+  ThreadState* thread_state = ThreadState::Current();
+  thread_state->IncrementalMarkingStart(BlinkGC::GCReason::kTesting);
+
+  DummyContext* context = DummyContext::Create();
+
+  // This should not cause a CFI check failure.
+  Persistent<TestingObserver> observer = TestingObserver::Create(context);
+
+  EXPECT_FALSE(observer->ContextDestroyedCalled());
+  context->NotifyContextDestroyed();
+  EXPECT_TRUE(observer->ContextDestroyedCalled());
+  context = nullptr;
+
+  while (thread_state->GetGCState() ==
+         ThreadState::kIncrementalMarkingStepScheduled)
+    thread_state->IncrementalMarkingStep();
+  thread_state->IncrementalMarkingFinalize();
+
+  RuntimeEnabledFeatures::SetHeapIncrementalMarkingEnabled(was_enabled);
+}
+
+TEST(LifecycleContextTest, ForEachObserver) {
+  Persistent<DummyContext> context = DummyContext::Create();
+  Persistent<TestingObserver> observer = TestingObserver::Create(context);
+
+  HeapVector<Member<TestingObserver>> seen_observers;
+  context->ForEachObserver(
+      [&](TestingObserver* observer) { seen_observers.push_back(observer); });
+
+  ASSERT_EQ(1u, seen_observers.size());
+  EXPECT_EQ(observer.Get(), seen_observers[0].Get());
+
+  seen_observers.clear();
+  observer.Clear();
+  ThreadState::Current()->CollectAllGarbage();
+
+  context->ForEachObserver(
+      [&](TestingObserver* observer) { seen_observers.push_back(observer); });
+  ASSERT_EQ(0u, seen_observers.size());
 }
 
 }  // namespace blink

@@ -92,15 +92,13 @@ bool SpdyWriteQueue::Dequeue(
   return false;
 }
 
-void SpdyWriteQueue::RemovePendingWritesForStream(
-    const base::WeakPtr<SpdyStream>& stream) {
+void SpdyWriteQueue::RemovePendingWritesForStream(SpdyStream* stream) {
   CHECK(!removing_writes_);
   removing_writes_ = true;
   RequestPriority priority = stream->priority();
   CHECK_GE(priority, MINIMUM_PRIORITY);
   CHECK_LE(priority, MAXIMUM_PRIORITY);
 
-  DCHECK(stream.get());
 #if DCHECK_IS_ON()
   // |stream| should not have pending writes in a queue not matching
   // its priority.
@@ -108,51 +106,82 @@ void SpdyWriteQueue::RemovePendingWritesForStream(
     if (priority == i)
       continue;
     for (auto it = queue_[i].begin(); it != queue_[i].end(); ++it)
-      DCHECK_NE(it->stream.get(), stream.get());
+      DCHECK_NE(it->stream.get(), stream);
   }
 #endif
 
   // Defer deletion until queue iteration is complete, as
   // SpdyBuffer::~SpdyBuffer() can result in callbacks into SpdyWriteQueue.
   std::vector<std::unique_ptr<SpdyBufferProducer>> erased_buffer_producers;
-
-  // Do the actual deletion and removal, preserving FIFO-ness.
   base::circular_deque<PendingWrite>& queue = queue_[priority];
-  auto out_it = queue.begin();
-  for (auto it = queue.begin(); it != queue.end(); ++it) {
-    if (it->stream.get() == stream.get()) {
+  for (auto it = queue.begin(); it != queue.end();) {
+    if (it->stream.get() == stream) {
       erased_buffer_producers.push_back(std::move(it->frame_producer));
+      it = queue.erase(it);
     } else {
-      *out_it = std::move(*it);
-      ++out_it;
+      ++it;
     }
   }
-  queue.erase(out_it, queue.end());
   removing_writes_ = false;
+
+  // Iteration on |queue| is completed.  Now |erased_buffer_producers| goes out
+  // of scope, SpdyBufferProducers are destroyed.
 }
 
 void SpdyWriteQueue::RemovePendingWritesForStreamsAfter(
     spdy::SpdyStreamId last_good_stream_id) {
   CHECK(!removing_writes_);
   removing_writes_ = true;
-  std::vector<std::unique_ptr<SpdyBufferProducer>> erased_buffer_producers;
 
+  // Defer deletion until queue iteration is complete, as
+  // SpdyBuffer::~SpdyBuffer() can result in callbacks into SpdyWriteQueue.
+  std::vector<std::unique_ptr<SpdyBufferProducer>> erased_buffer_producers;
   for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
-    // Do the actual deletion and removal, preserving FIFO-ness.
     base::circular_deque<PendingWrite>& queue = queue_[i];
-    auto out_it = queue.begin();
-    for (auto it = queue.begin(); it != queue.end(); ++it) {
+    for (auto it = queue.begin(); it != queue.end();) {
       if (it->stream.get() && (it->stream->stream_id() > last_good_stream_id ||
                                it->stream->stream_id() == 0)) {
         erased_buffer_producers.push_back(std::move(it->frame_producer));
+        it = queue.erase(it);
       } else {
-        *out_it = std::move(*it);
-        ++out_it;
+        ++it;
       }
     }
-    queue.erase(out_it, queue.end());
   }
   removing_writes_ = false;
+
+  // Iteration on each |queue| is completed.  Now |erased_buffer_producers| goes
+  // out of scope, SpdyBufferProducers are destroyed.
+}
+
+void SpdyWriteQueue::ChangePriorityOfWritesForStream(
+    SpdyStream* stream,
+    RequestPriority old_priority,
+    RequestPriority new_priority) {
+  CHECK(!removing_writes_);
+  DCHECK(stream);
+
+#if DCHECK_IS_ON()
+  // |stream| should not have pending writes in a queue not matching
+  // |old_priority|.
+  for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
+    if (i == old_priority)
+      continue;
+    for (auto it = queue_[i].begin(); it != queue_[i].end(); ++it)
+      DCHECK_NE(it->stream.get(), stream);
+  }
+#endif
+
+  base::circular_deque<PendingWrite>& old_queue = queue_[old_priority];
+  base::circular_deque<PendingWrite>& new_queue = queue_[new_priority];
+  for (auto it = old_queue.begin(); it != old_queue.end();) {
+    if (it->stream.get() == stream) {
+      new_queue.push_back(std::move(*it));
+      it = old_queue.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void SpdyWriteQueue::Clear() {

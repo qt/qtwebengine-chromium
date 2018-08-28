@@ -10,7 +10,7 @@
 #include "base/guid.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "content/browser/background_fetch/background_fetch_embedded_worker_test_helper.h"
 #include "content/browser/background_fetch/background_fetch_registration_id.h"
 #include "content/browser/background_fetch/background_fetch_test_base.h"
@@ -54,7 +54,7 @@ TEST_F(BackgroundFetchEventDispatcherTest, DispatchInvalidRegistration) {
       BackgroundFetchEventDispatcher::DISPATCH_RESULT_CANNOT_FIND_WORKER, 1);
   histogram_tester_.ExpectBucketCount(
       "BackgroundFetch.EventDispatchFailure.FindWorker.AbortEvent",
-      SERVICE_WORKER_ERROR_NOT_FOUND, 1);
+      blink::ServiceWorkerStatusCode::kErrorNotFound, 1);
 }
 
 TEST_F(BackgroundFetchEventDispatcherTest, DispatchAbortEvent) {
@@ -119,7 +119,7 @@ TEST_F(BackgroundFetchEventDispatcherTest, DispatchAbortEvent) {
       BackgroundFetchEventDispatcher::DISPATCH_RESULT_CANNOT_DISPATCH_EVENT, 1);
   histogram_tester_.ExpectUniqueSample(
       "BackgroundFetch.EventDispatchFailure.Dispatch.AbortEvent",
-      SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED, 1);
+      blink::ServiceWorkerStatusCode::kErrorEventWaitUntilRejected, 1);
 }
 
 TEST_F(BackgroundFetchEventDispatcherTest, DispatchClickEvent) {
@@ -183,7 +183,7 @@ TEST_F(BackgroundFetchEventDispatcherTest, DispatchClickEvent) {
       BackgroundFetchEventDispatcher::DISPATCH_RESULT_CANNOT_DISPATCH_EVENT, 1);
   histogram_tester_.ExpectUniqueSample(
       "BackgroundFetch.EventDispatchFailure.Dispatch.ClickEvent",
-      SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED, 1);
+      blink::ServiceWorkerStatusCode::kErrorEventWaitUntilRejected, 1);
 }
 
 TEST_F(BackgroundFetchEventDispatcherTest, DispatchFailEvent) {
@@ -250,7 +250,7 @@ TEST_F(BackgroundFetchEventDispatcherTest, DispatchFailEvent) {
       BackgroundFetchEventDispatcher::DISPATCH_RESULT_CANNOT_DISPATCH_EVENT, 1);
   histogram_tester_.ExpectUniqueSample(
       "BackgroundFetch.EventDispatchFailure.Dispatch.FailEvent",
-      SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED, 1);
+      blink::ServiceWorkerStatusCode::kErrorEventWaitUntilRejected, 1);
 }
 
 TEST_F(BackgroundFetchEventDispatcherTest, DispatchFetchedEvent) {
@@ -325,7 +325,7 @@ TEST_F(BackgroundFetchEventDispatcherTest, DispatchFetchedEvent) {
       BackgroundFetchEventDispatcher::DISPATCH_RESULT_CANNOT_DISPATCH_EVENT, 1);
   histogram_tester_.ExpectUniqueSample(
       "BackgroundFetch.EventDispatchFailure.Dispatch.FetchedEvent",
-      SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED, 1);
+      blink::ServiceWorkerStatusCode::kErrorEventWaitUntilRejected, 1);
 }
 
 }  // namespace

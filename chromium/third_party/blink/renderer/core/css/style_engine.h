@@ -45,7 +45,7 @@
 #include "third_party/blink/renderer/core/css/style_engine_context.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/tree_ordered_list.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/fonts/font_selector_client.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -62,6 +62,7 @@ class MediaQueryEvaluator;
 class Node;
 class RuleFeatureSet;
 class ShadowTreeStyleSheetCollection;
+class DocumentStyleEnvironmentVariables;
 class StyleRuleFontFace;
 class StyleRuleUsageTracker;
 class StyleSheetContents;
@@ -77,7 +78,7 @@ using StyleSheetKey = AtomicString;
 class CORE_EXPORT StyleEngine final
     : public GarbageCollectedFinalized<StyleEngine>,
       public FontSelectorClient,
-      public TraceWrapperBase {
+      public NameClient {
   USING_GARBAGE_COLLECTED_MIXIN(StyleEngine);
 
  public:
@@ -118,9 +119,6 @@ class CORE_EXPORT StyleEngine final
   void AddStyleSheetCandidateNode(Node&);
   void RemoveStyleSheetCandidateNode(Node&, ContainerNode& insertion_point);
   void ModifiedStyleSheetCandidateNode(Node&);
-  void MoreStyleSheetsWillChange(TreeScope&,
-                                 StyleSheetList* old_sheets,
-                                 StyleSheetList* new_sheets);
   void MediaQueriesChangedInScope(TreeScope&);
   void WatchedSelectorsChanged();
   void InitialStyleChanged();
@@ -268,6 +266,9 @@ class CORE_EXPORT StyleEngine final
                            const AtomicString& new_id,
                            Element&);
   void PseudoStateChangedForElement(CSSSelector::PseudoType, Element&);
+  void PartChangedForElement(Element&);
+  void PartmapChangedForElement(Element&);
+
   void ScheduleSiblingInvalidationsForElement(Element&,
                                               ContainerNode& scheduling_parent,
                                               unsigned min_direct_adjacent);
@@ -299,6 +300,8 @@ class CORE_EXPORT StyleEngine final
 
   void CustomPropertyRegistered();
 
+  void EnvironmentVariableChanged();
+
   bool NeedsWhitespaceReattachment() const {
     return !whitespace_reattach_set_.IsEmpty();
   }
@@ -311,8 +314,9 @@ class CORE_EXPORT StyleEngine final
   StyleRuleKeyframes* KeyframeStylesForAnimation(
       const AtomicString& animation_name);
 
+  DocumentStyleEnvironmentVariables& EnsureEnvironmentVariables();
+
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "StyleEngine"; }
 
  private:
@@ -472,6 +476,8 @@ class CORE_EXPORT StyleEngine final
   using KeyframesRuleMap =
       HeapHashMap<AtomicString, Member<StyleRuleKeyframes>>;
   KeyframesRuleMap keyframes_rule_map_;
+
+  scoped_refptr<DocumentStyleEnvironmentVariables> environment_variables_;
 
   friend class StyleEngineTest;
 };

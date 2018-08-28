@@ -4,6 +4,8 @@
 
 #include "components/viz/service/display/scoped_render_pass_texture.h"
 
+#include <algorithm>
+
 #include "base/bits.h"
 #include "base/logging.h"
 #include "components/viz/common/gpu/context_provider.h"
@@ -50,6 +52,7 @@ ScopedRenderPassTexture::ScopedRenderPassTexture(
     gl->TexStorage2DEXT(GL_TEXTURE_2D, levels, TextureStorageFormat(format),
                         size_.width(), size_.height());
   } else {
+    DCHECK(GLSupportsFormat(format));
     gl->TexImage2D(GL_TEXTURE_2D, 0, GLInternalFormat(format), size_.width(),
                    size_.height(), 0, GLDataFormat(format), GLDataType(format),
                    nullptr);

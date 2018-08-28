@@ -51,7 +51,8 @@ class VRDisplay final : public EventTargetWithInlineData,
  public:
   ~VRDisplay() override;
 
-  unsigned displayId() const { return display_id_; }
+  // We hand out at most one VRDisplay, so hardcode displayId to 1.
+  unsigned displayId() const { return 1; }
   const String& displayName() const { return display_name_; }
 
   VRDisplayCapabilities* capabilities() const { return capabilities_; }
@@ -98,17 +99,15 @@ class VRDisplay final : public EventTargetWithInlineData,
 
   void FocusChanged();
 
-  void OnMagicWindowVSync(double timestamp);
+  void OnMagicWindowVSync(TimeTicks timestamp);
   int PendingMagicWindowVSyncId() { return pending_magic_window_vsync_id_; }
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  protected:
   friend class VRController;
 
   VRDisplay(NavigatorVR*,
-            device::mojom::blink::VRMagicWindowProviderPtr,
             device::mojom::blink::VRDisplayHostPtr,
             device::mojom::blink::VRDisplayClientRequest);
 
@@ -124,9 +123,8 @@ class VRDisplay final : public EventTargetWithInlineData,
   VRController* Controller();
 
  private:
-  void OnPresentComplete(
-      bool success,
-      device::mojom::blink::VRDisplayFrameTransportOptionsPtr);
+  void OnRequestSessionReturned(device::mojom::blink::XRSessionPtr session);
+  void OnMagicWindowRequestReturned(device::mojom::blink::XRSessionPtr session);
 
   void OnConnected();
   void OnDisconnected();
@@ -144,21 +142,16 @@ class VRDisplay final : public EventTargetWithInlineData,
                   OnActivateCallback on_handled) override;
   void OnDeactivate(device::mojom::blink::VRDisplayEventReason) override;
 
-  void OnPresentingVSync(
-      device::mojom::blink::VRPosePtr,
-      WTF::TimeDelta,
-      int16_t frame_id,
-      device::mojom::blink::VRPresentationProvider::VSyncStatus,
-      const base::Optional<gpu::MailboxHolder>& buffer_holder);
+  void OnPresentingVSync(device::mojom::blink::XRFrameDataPtr);
   void OnPresentationProviderConnectionError();
 
-  void OnMagicWindowPose(device::mojom::blink::VRPosePtr);
+  void OnMagicWindowFrameData(device::mojom::blink::XRFrameDataPtr);
 
   bool FocusedOrPresenting();
 
   ScriptedAnimationController& EnsureScriptedAnimationController(Document*);
-  void ProcessScheduledAnimations(double timestamp);
-  void ProcessScheduledWindowAnimations(double timestamp);
+  void ProcessScheduledAnimations(TimeTicks timestamp);
+  void ProcessScheduledWindowAnimations(TimeTicks timestamp);
 
   // Request delivery of a VSync event for either magic window mode or
   // presenting mode as applicable. May be called more than once per frame, it
@@ -182,7 +175,7 @@ class VRDisplay final : public EventTargetWithInlineData,
   device::mojom::blink::VRPosePtr frame_pose_;
   device::mojom::blink::VRPosePtr pending_pose_;
 
-  // Set to true between OnActivate and RequestPresent to indicate that we're in
+  // Set to true between OnActivate and requestPresent to indicate that we're in
   // a display activation state.
   bool in_display_activate_ = false;
 
@@ -225,6 +218,7 @@ class VRDisplay final : public EventTargetWithInlineData,
   bool did_log_requestPresent_ = false;
 
   device::mojom::blink::VRMagicWindowProviderPtr magic_window_provider_;
+
   device::mojom::blink::VRDisplayHostPtr display_;
 
   bool present_image_needs_copy_ = false;

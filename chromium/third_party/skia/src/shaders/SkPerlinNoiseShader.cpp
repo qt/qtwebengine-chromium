@@ -75,6 +75,12 @@ public:
           , fWrapY(0)
         {}
 
+        StitchData(SkScalar w, SkScalar h)
+          : fWidth(SkTMin(SkScalarRoundToInt(w), SK_MaxS32 - kPerlinNoise))
+          , fWrapX(kPerlinNoise + fWidth)
+          , fHeight(SkTMin(SkScalarRoundToInt(h), SK_MaxS32 - kPerlinNoise))
+          , fWrapY(kPerlinNoise + fHeight) {}
+
         bool operator==(const StitchData& other) const {
             return fWidth == other.fWidth &&
                    fWrapX == other.fWrapX &&
@@ -290,12 +296,8 @@ public:
                 }
             }
             // Set up TurbulenceInitial stitch values.
-            fStitchDataInit.fWidth  =
-                SkScalarRoundToInt(tileWidth * fBaseFrequency.fX);
-            fStitchDataInit.fWrapX  = kPerlinNoise + fStitchDataInit.fWidth;
-            fStitchDataInit.fHeight =
-                SkScalarRoundToInt(tileHeight * fBaseFrequency.fY);
-            fStitchDataInit.fWrapY  = kPerlinNoise + fStitchDataInit.fHeight;
+            fStitchDataInit = StitchData(tileWidth * fBaseFrequency.fX,
+                                         tileHeight * fBaseFrequency.fY);
         }
 
     public:
@@ -364,7 +366,6 @@ public:
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
 #endif
 
-    void toString(SkString* str) const override;
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkPerlinNoiseShaderImpl)
 
 protected:
@@ -543,10 +544,8 @@ SkScalar SkPerlinNoiseShaderImpl::PerlinNoiseShaderContext::calculateTurbulenceV
         ratio *= 2;
         if (perlinNoiseShader.fStitchTiles) {
             // Update stitch values
-            stitchData.fWidth  *= 2;
-            stitchData.fWrapX   = stitchData.fWidth + kPerlinNoise;
-            stitchData.fHeight *= 2;
-            stitchData.fWrapY   = stitchData.fHeight + kPerlinNoise;
+            stitchData = StitchData(SkIntToScalar(stitchData.fWidth)  * 2,
+                                    SkIntToScalar(stitchData.fHeight) * 2);
         }
     }
 
@@ -649,7 +648,7 @@ SkPMColor SkPerlinNoiseShaderImpl::PerlinNoiseShaderContext::shade(
 }
 
 SkShaderBase::Context* SkPerlinNoiseShaderImpl::onMakeContext(const ContextRec& rec,
-                                                           SkArenaAlloc* alloc) const {
+                                                              SkArenaAlloc* alloc) const {
     return alloc->make<PerlinNoiseShaderContext>(*this, rec);
 }
 
@@ -1476,37 +1475,6 @@ std::unique_ptr<GrFragmentProcessor> SkPerlinNoiseShaderImpl::asFragmentProcesso
 }
 
 #endif
-
-void SkPerlinNoiseShaderImpl::toString(SkString* str) const {
-    str->append("SkPerlinNoiseShaderImpl: (");
-
-    str->append("type: ");
-    switch (fType) {
-        case kFractalNoise_Type:
-            str->append("\"fractal noise\"");
-            break;
-        case kTurbulence_Type:
-            str->append("\"turbulence\"");
-            break;
-        default:
-            str->append("\"unknown\"");
-            break;
-    }
-    str->append(" base frequency: (");
-    str->appendScalar(fBaseFrequencyX);
-    str->append(", ");
-    str->appendScalar(fBaseFrequencyY);
-    str->append(") number of octaves: ");
-    str->appendS32(fNumOctaves);
-    str->append(" seed: ");
-    str->appendScalar(fSeed);
-    str->append(" stitch tiles: ");
-    str->append(fStitchTiles ? "true " : "false ");
-
-    this->INHERITED::toString(str);
-
-    str->append(")");
-}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

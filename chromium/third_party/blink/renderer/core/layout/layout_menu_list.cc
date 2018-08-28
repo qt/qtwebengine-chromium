@@ -27,7 +27,7 @@
 #include "third_party/blink/renderer/core/layout/layout_menu_list.h"
 
 #include <math.h>
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/html/forms/html_option_element.h"
@@ -57,7 +57,7 @@ LayoutMenuList::~LayoutMenuList() = default;
 // insertion point to prevent children from rendering.
 bool LayoutMenuList::IsChildAllowed(LayoutObject* object,
                                     const ComputedStyle&) const {
-  return object->IsAnonymous() && !object->IsLayoutFullScreen();
+  return object->IsAnonymous();
 }
 
 scoped_refptr<ComputedStyle> LayoutMenuList::CreateInnerStyle() {
@@ -88,8 +88,8 @@ void LayoutMenuList::CreateInnerBlock() {
 
   // Create an anonymous block.
   DCHECK(!FirstChild());
-  inner_block_ = LayoutBlockFlow::CreateAnonymous(&GetDocument());
-  inner_block_->SetStyle(CreateInnerStyle());
+  inner_block_ =
+      LayoutBlockFlow::CreateAnonymous(&GetDocument(), CreateInnerStyle());
 
   button_text_ = LayoutText::CreateEmptyAnonymous(GetDocument());
   // We need to set the text explicitly though it was specified in the

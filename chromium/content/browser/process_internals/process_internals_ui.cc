@@ -28,7 +28,7 @@ ProcessInternalsUI::ProcessInternalsUI(WebUI* web_ui)
     : WebUIController(web_ui), WebContentsObserver(web_ui->GetWebContents()) {
   // Grant only Mojo WebUI bindings, since this WebUI will not use
   // chrome.send().
-  web_ui->SetBindings(content::BINDINGS_POLICY_WEB_UI);
+  web_ui->SetBindings(content::BINDINGS_POLICY_MOJO_WEB_UI);
 
   // Create a WebUIDataSource to serve the HTML/JS files to the WebUI.
   WebUIDataSource* source =

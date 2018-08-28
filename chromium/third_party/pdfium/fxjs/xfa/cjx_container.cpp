@@ -19,7 +19,7 @@ const CJX_MethodSpec CJX_Container::MethodSpecs[] = {
     {"getDeltas", getDeltas_static}};
 
 CJX_Container::CJX_Container(CXFA_Node* node) : CJX_Node(node) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_Container::~CJX_Container() {}
@@ -27,7 +27,7 @@ CJX_Container::~CJX_Container() {}
 CJS_Return CJX_Container::getDelta(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_Container::getDeltas(

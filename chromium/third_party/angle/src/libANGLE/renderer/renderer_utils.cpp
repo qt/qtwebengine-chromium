@@ -19,6 +19,7 @@
 #include "libANGLE/renderer/Format.h"
 
 #include <string.h>
+#include "common/utilities.h"
 
 namespace rx
 {
@@ -225,6 +226,66 @@ void WriteFloatColor(const gl::ColorF &color,
     colorWriteFunction(reinterpret_cast<const uint8_t *>(&color), destPixelData);
 }
 
+template <typename T, int cols, int rows>
+bool TransposeExpandMatrix(T *target, const GLfloat *value)
+{
+    constexpr int targetWidth  = 4;
+    constexpr int targetHeight = rows;
+    constexpr int srcWidth     = rows;
+    constexpr int srcHeight    = cols;
+
+    constexpr int copyWidth  = std::min(targetHeight, srcWidth);
+    constexpr int copyHeight = std::min(targetWidth, srcHeight);
+
+    T staging[targetWidth * targetHeight] = {0};
+
+    for (int x = 0; x < copyWidth; x++)
+    {
+        for (int y = 0; y < copyHeight; y++)
+        {
+            staging[x * targetWidth + y] = static_cast<T>(value[y * srcWidth + x]);
+        }
+    }
+
+    if (memcmp(target, staging, targetWidth * targetHeight * sizeof(T)) == 0)
+    {
+        return false;
+    }
+
+    memcpy(target, staging, targetWidth * targetHeight * sizeof(T));
+    return true;
+}
+
+template <typename T, int cols, int rows>
+bool ExpandMatrix(T *target, const GLfloat *value)
+{
+    constexpr int kTargetWidth  = 4;
+    constexpr int kTargetHeight = rows;
+    constexpr int kSrcWidth     = cols;
+    constexpr int kSrcHeight    = rows;
+
+    constexpr int kCopyWidth  = std::min(kTargetWidth, kSrcWidth);
+    constexpr int kCopyHeight = std::min(kTargetHeight, kSrcHeight);
+
+    T staging[kTargetWidth * kTargetHeight] = {0};
+
+    for (int y = 0; y < kCopyHeight; y++)
+    {
+        for (int x = 0; x < kCopyWidth; x++)
+        {
+            staging[y * kTargetWidth + x] = static_cast<T>(value[y * kSrcWidth + x]);
+        }
+    }
+
+    if (memcmp(target, staging, kTargetWidth * kTargetHeight * sizeof(T)) == 0)
+    {
+        return false;
+    }
+
+    memcpy(target, staging, kTargetWidth * kTargetHeight * sizeof(T));
+    return true;
+}
+
 }  // anonymous namespace
 
 PackPixelsParams::PackPixelsParams()
@@ -268,20 +329,19 @@ void PackPixels(const PackPixelsParams &params,
         inputPitch = -inputPitch;
     }
 
-    const auto &sourceGLInfo = gl::GetSizedInternalFormatInfo(sourceFormat.glInternalFormat);
+    const gl::InternalFormat &internalFormat =
+        gl::GetInternalFormatInfo(params.format, params.type);
 
-    if (sourceGLInfo.format == params.format && sourceGLInfo.type == params.type)
+    if (sourceFormat.glInternalFormat == internalFormat.sizedInternalFormat)
     {
         // Direct copy possible
         for (int y = 0; y < params.area.height; ++y)
         {
             memcpy(destWithOffset + y * params.outputPitch, source + y * inputPitch,
-                   params.area.width * sourceGLInfo.pixelBytes);
+                   params.area.width * sourceFormat.pixelBytes);
         }
         return;
     }
-
-    ASSERT(sourceGLInfo.sized);
 
     gl::FormatType formatType(params.format, params.type);
     ColorCopyFunction fastCopyFunc =
@@ -297,7 +357,7 @@ void PackPixels(const PackPixelsParams &params,
             {
                 uint8_t *dest =
                     destWithOffset + y * params.outputPitch + x * destFormatInfo.pixelBytes;
-                const uint8_t *src = source + y * inputPitch + x * sourceGLInfo.pixelBytes;
+                const uint8_t *src = source + y * inputPitch + x * sourceFormat.pixelBytes;
 
                 fastCopyFunc(src, dest);
             }
@@ -306,6 +366,7 @@ void PackPixels(const PackPixelsParams &params,
     }
 
     ColorWriteFunction colorWriteFunction = GetColorWriteFunction(formatType);
+    ASSERT(colorWriteFunction != nullptr);
 
     // Maximum size of any Color<T> type used.
     uint8_t temp[16];
@@ -320,7 +381,7 @@ void PackPixels(const PackPixelsParams &params,
         for (int x = 0; x < params.area.width; ++x)
         {
             uint8_t *dest      = destWithOffset + y * params.outputPitch + x * destFormatInfo.pixelBytes;
-            const uint8_t *src = source + y * inputPitch + x * sourceGLInfo.pixelBytes;
+            const uint8_t *src = source + y * inputPitch + x * sourceFormat.pixelBytes;
 
             // readFunc and writeFunc will be using the same type of color, CopyTexImage
             // will not allow the copy otherwise.
@@ -380,6 +441,20 @@ bool ShouldUseDebugLayers(const egl::AttributeMap &attribs)
 #else
     return (debugSetting == EGL_TRUE);
 #endif  // defined(ANGLE_ENABLE_ASSERTS)
+}
+
+bool ShouldUseVirtualizedContexts(const egl::AttributeMap &attribs, bool defaultValue)
+{
+    EGLAttrib virtualizedContextRequest =
+        attribs.get(EGL_PLATFORM_ANGLE_CONTEXT_VIRTUALIZATION_ANGLE, EGL_DONT_CARE);
+    if (defaultValue)
+    {
+        return (virtualizedContextRequest != EGL_FALSE);
+    }
+    else
+    {
+        return (virtualizedContextRequest == EGL_TRUE);
+    }
 }
 
 void CopyImageCHROMIUM(const uint8_t *sourceData,
@@ -544,6 +619,81 @@ gl::Error IncompleteTextureSet::getIncompleteTexture(
     mIncompleteTextures[type].set(context, t.release());
     *textureOut = mIncompleteTextures[type].get();
     return gl::NoError();
+}
+
+#define ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(cols, rows)                            \
+    template bool SetFloatUniformMatrix<cols, rows>(unsigned int, unsigned int, GLsizei, \
+                                                    GLboolean, const GLfloat *, uint8_t *)
+
+ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(2, 2);
+ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(3, 3);
+ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(4, 4);
+ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(2, 3);
+ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(3, 2);
+ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(2, 4);
+ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(4, 2);
+ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(3, 4);
+ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(4, 3);
+
+#undef ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC
+
+template <int cols, int rows>
+bool SetFloatUniformMatrix(unsigned int arrayElementOffset,
+                           unsigned int elementCount,
+                           GLsizei countIn,
+                           GLboolean transpose,
+                           const GLfloat *value,
+                           uint8_t *targetData)
+{
+    unsigned int count =
+        std::min(elementCount - arrayElementOffset, static_cast<unsigned int>(countIn));
+
+    const unsigned int targetMatrixStride = (4 * rows);
+    GLfloat *target                       = reinterpret_cast<GLfloat *>(
+        targetData + arrayElementOffset * sizeof(GLfloat) * targetMatrixStride);
+
+    bool dirty = false;
+
+    for (unsigned int i = 0; i < count; i++)
+    {
+        if (transpose == GL_FALSE)
+        {
+            dirty = ExpandMatrix<GLfloat, cols, rows>(target, value) || dirty;
+        }
+        else
+        {
+            dirty = TransposeExpandMatrix<GLfloat, cols, rows>(target, value) || dirty;
+        }
+        target += targetMatrixStride;
+        value += cols * rows;
+    }
+
+    return dirty;
+}
+
+template void GetMatrixUniform<GLint>(GLenum, GLint *, const GLint *, bool);
+template void GetMatrixUniform<GLuint>(GLenum, GLuint *, const GLuint *, bool);
+
+void GetMatrixUniform(GLenum type, GLfloat *dataOut, const GLfloat *source, bool transpose)
+{
+    int columns = gl::VariableColumnCount(type);
+    int rows    = gl::VariableRowCount(type);
+    for (GLint col = 0; col < columns; ++col)
+    {
+        for (GLint row = 0; row < rows; ++row)
+        {
+            GLfloat *outptr = dataOut + ((col * rows) + row);
+            const GLfloat *inptr =
+                transpose ? source + ((row * 4) + col) : source + ((col * 4) + row);
+            *outptr = *inptr;
+        }
+    }
+}
+
+template <typename NonFloatT>
+void GetMatrixUniform(GLenum type, NonFloatT *dataOut, const NonFloatT *source, bool transpose)
+{
+    UNREACHABLE();
 }
 
 }  // namespace rx

@@ -16,6 +16,9 @@ void EnumerateGPUDevice(const gpu::GPUInfo::GPUDevice& device,
   enumerator->AddBool("active", device.active);
   enumerator->AddString("vendorString", device.vendor_string);
   enumerator->AddString("deviceString", device.device_string);
+  enumerator->AddString("driverVendor", device.driver_vendor);
+  enumerator->AddString("driverVersion", device.driver_version);
+  enumerator->AddString("driverDate", device.driver_date);
   enumerator->EndGPUDevice();
 }
 
@@ -45,9 +48,39 @@ void EnumerateVideoEncodeAcceleratorSupportedProfile(
   enumerator->EndVideoEncodeAcceleratorSupportedProfile();
 }
 
+#if defined(OS_WIN)
+void EnumerateOverlayCapability(const gpu::OverlayCapability& cap,
+                                gpu::GPUInfo::Enumerator* enumerator) {
+  enumerator->BeginOverlayCapability();
+  enumerator->AddInt("format", static_cast<int>(cap.format));
+  enumerator->AddInt("isScalingSupported", cap.is_scaling_supported);
+  enumerator->EndOverlayCapability();
+}
+#endif
+
 }  // namespace
 
 namespace gpu {
+
+const char* OverlayFormatToString(OverlayFormat format) {
+  switch (format) {
+    case OverlayFormat::UNKNOWN:
+      return "UNKNOWN";
+    case OverlayFormat::BGRA:
+      return "BGRA";
+    case OverlayFormat::YUY2:
+      return "YUY2";
+    case OverlayFormat::NV12:
+      return "NV12";
+  }
+  NOTREACHED() << "Unknown overlay format: " << static_cast<int>(format);
+  return "UNKNOWN";
+}
+
+bool OverlayCapability::operator==(const OverlayCapability& other) const {
+  return format == other.format &&
+         is_scaling_supported == other.is_scaling_supported;
+}
 
 VideoDecodeAcceleratorCapabilities::VideoDecodeAcceleratorCapabilities()
     : flags(0) {}
@@ -64,7 +97,17 @@ GPUInfo::GPUDevice::GPUDevice()
       active(false) {
 }
 
-GPUInfo::GPUDevice::~GPUDevice() = default;
+GPUInfo::GPUDevice::GPUDevice(const GPUInfo::GPUDevice& other) = default;
+
+GPUInfo::GPUDevice::GPUDevice(GPUInfo::GPUDevice&& other) noexcept = default;
+
+GPUInfo::GPUDevice::~GPUDevice() noexcept = default;
+
+GPUInfo::GPUDevice& GPUInfo::GPUDevice::operator=(
+    const GPUInfo::GPUDevice& other) = default;
+
+GPUInfo::GPUDevice& GPUInfo::GPUDevice::operator=(
+    GPUInfo::GPUDevice&& other) noexcept = default;
 
 GPUInfo::GPUInfo()
     : optimus(false),
@@ -75,27 +118,31 @@ GPUInfo::GPUInfo()
       sandboxed(false),
       in_process_gpu(true),
       passthrough_cmd_decoder(false),
-      jpeg_decode_accelerator_supported(false)
+      jpeg_decode_accelerator_supported(false),
 #if defined(USE_X11)
-      ,
       system_visual(0),
-      rgba_visual(0)
+      rgba_visual(0),
 #endif
-{
+      oop_rasterization_supported(false) {
 }
 
 GPUInfo::GPUInfo(const GPUInfo& other) = default;
 
 GPUInfo::~GPUInfo() = default;
 
+GPUInfo::GPUDevice& GPUInfo::active_gpu() {
+  return const_cast<GPUInfo::GPUDevice&>(
+      const_cast<const GPUInfo&>(*this).active_gpu());
+}
+
 const GPUInfo::GPUDevice& GPUInfo::active_gpu() const {
   if (gpu.active || secondary_gpus.empty())
     return gpu;
-  for (const GPUDevice& secondary_gpu : secondary_gpus) {
+  for (const auto& secondary_gpu : secondary_gpus) {
     if (secondary_gpu.active)
       return secondary_gpu;
   }
-  DLOG(WARNING) << "No active GPU found, returning primary GPU.";
+  DVLOG(2) << "No active GPU found, returning primary GPU.";
   return gpu;
 }
 
@@ -110,9 +157,6 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     bool amd_switchable;
     GPUDevice gpu;
     std::vector<GPUDevice> secondary_gpus;
-    std::string driver_vendor;
-    std::string driver_version;
-    std::string driver_date;
     std::string pixel_shader_version;
     std::string vertex_shader_version;
     std::string max_msaa_samples;
@@ -131,10 +175,11 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     bool sandboxed;
     bool in_process_gpu;
     bool passthrough_cmd_decoder;
-    bool direct_composition;
-    bool supports_overlays;
     bool can_support_threaded_texture_mailbox;
 #if defined(OS_WIN)
+    bool direct_composition;
+    bool supports_overlays;
+    OverlayCapabilities overlay_capabilities;
     DxDiagNode dx_diagnostics;
     bool supports_dx12;
     bool supports_vulkan;
@@ -150,6 +195,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     VisualID system_visual;
     VisualID rgba_visual;
 #endif
+    bool oop_rasterization_supported;
   };
 
   // If this assert fails then most likely something below needs to be updated.
@@ -163,7 +209,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddString("machineModelName", machine_model_name);
   enumerator->AddString("machineModelVersion", machine_model_version);
   EnumerateGPUDevice(gpu, enumerator);
-  for (const auto& secondary_gpu: secondary_gpus)
+  for (const auto& secondary_gpu : secondary_gpus)
     EnumerateGPUDevice(secondary_gpu, enumerator);
 
   enumerator->BeginAuxAttributes();
@@ -171,9 +217,6 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
                                      initialization_time);
   enumerator->AddBool("optimus", optimus);
   enumerator->AddBool("amdSwitchable", amd_switchable);
-  enumerator->AddString("driverVendor", driver_vendor);
-  enumerator->AddString("driverVersion", driver_version);
-  enumerator->AddString("driverDate", driver_date);
   enumerator->AddString("pixelShaderVersion", pixel_shader_version);
   enumerator->AddString("vertexShaderVersion", vertex_shader_version);
   enumerator->AddString("maxMsaaSamples", max_msaa_samples);
@@ -193,12 +236,14 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddBool("sandboxed", sandboxed);
   enumerator->AddBool("inProcessGpu", in_process_gpu);
   enumerator->AddBool("passthroughCmdDecoder", passthrough_cmd_decoder);
-  enumerator->AddBool("directComposition", direct_composition);
-  enumerator->AddBool("supportsOverlays", supports_overlays);
   enumerator->AddBool("canSupportThreadedTextureMailbox",
                       can_support_threaded_texture_mailbox);
   // TODO(kbr): add dx_diagnostics on Windows.
 #if defined(OS_WIN)
+  enumerator->AddBool("directComposition", direct_composition);
+  enumerator->AddBool("supportsOverlays", supports_overlays);
+  for (const auto& cap : overlay_capabilities)
+    EnumerateOverlayCapability(cap, enumerator);
   enumerator->AddBool("supportsDX12", supports_dx12);
   enumerator->AddBool("supportsVulkan", supports_vulkan);
   enumerator->AddInt("d3dFeatureLevel", d3d12_feature_level);
@@ -217,6 +262,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddInt64("systemVisual", system_visual);
   enumerator->AddInt64("rgbaVisual", rgba_visual);
 #endif
+  enumerator->AddBool("oopRasterizationSupported", oop_rasterization_supported);
   enumerator->EndAuxAttributes();
 }
 

@@ -7,11 +7,12 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/macros.h"
 #include "base/strings/pattern.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "content/browser/loader/cross_site_document_resource_handler.h"
@@ -31,15 +32,19 @@
 #include "content/public/test/url_loader_interceptor.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/test_content_browser_client.h"
+#include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/test/test_url_loader_client.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 
 namespace content {
 
 using testing::Not;
 using testing::HasSubstr;
+using Action = network::CrossOriginReadBlocking::Action;
 
 namespace {
 
@@ -83,6 +88,14 @@ void InspectHistograms(const base::HistogramTester& histograms,
                        const HistogramExpectations& expectations,
                        const std::string& resource_name,
                        ResourceType resource_type) {
+  // //services/network doesn't have access to content::ResourceType and
+  // therefore cannot log some XSDB UMAs.
+  bool is_restricted_uma_expected = false;
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    is_restricted_uma_expected = true;
+    FetchHistogramsFromChildProcesses();
+  }
+
   std::string bucket;
   if (base::MatchPattern(resource_name, "*.html")) {
     bucket = "HTML";
@@ -103,16 +116,23 @@ void InspectHistograms(const base::HistogramTester& histograms,
   std::string base = "SiteIsolation.XSD.Browser";
   expected_counts[base + ".Action"] = 2;
   if ((base::MatchPattern(resource_name, "*prefixed*") || bucket == "Others") &&
-      (0 != (expectations & kShouldBeBlocked))) {
+      (0 != (expectations & kShouldBeBlocked)) && !is_restricted_uma_expected) {
     expected_counts[base + ".BlockedForParserBreaker"] = 1;
   }
   if (0 != (expectations & kShouldBeSniffed))
     expected_counts[base + ".BytesReadForSniffing"] = 1;
-  if (0 != (expectations & kShouldBeBlocked)) {
+  if (0 != (expectations & kShouldBeBlocked && !is_restricted_uma_expected)) {
     expected_counts[base + ".Blocked"] = 1;
     expected_counts[base + ".Blocked." + bucket] = 1;
+  }
+  if (0 != (expectations & kShouldBeBlocked)) {
     expected_counts[base + ".Blocked.ContentLength.WasAvailable"] = 1;
-    if (0 != (expectations & kShouldHaveContentLength))
+    bool should_have_content_length =
+        0 != (expectations & kShouldHaveContentLength);
+    histograms.ExpectBucketCount(base + ".Blocked.ContentLength.WasAvailable",
+                                 should_have_content_length, 1);
+
+    if (should_have_content_length)
       expected_counts[base + ".Blocked.ContentLength.ValueIfAvailable"] = 1;
   }
 
@@ -124,7 +144,7 @@ void InspectHistograms(const base::HistogramTester& histograms,
       << ", expectations=" << expectations;
 
   // Determine if the bucket for the resource type (XHR) was incremented.
-  if (0 != (expectations & kShouldBeBlocked)) {
+  if (0 != (expectations & kShouldBeBlocked) && !is_restricted_uma_expected) {
     EXPECT_THAT(histograms.GetAllSamples(base + ".Blocked"),
                 testing::ElementsAre(base::Bucket(resource_type, 1)))
         << "The wrong Blocked bucket was incremented.";
@@ -132,6 +152,26 @@ void InspectHistograms(const base::HistogramTester& histograms,
                 testing::ElementsAre(base::Bucket(resource_type, 1)))
         << "The wrong Blocked bucket was incremented.";
   }
+
+  // SiteIsolation.XSD.Browser.Action should always include kResponseStarted.
+  histograms.ExpectBucketCount(base + ".Action",
+                               static_cast<int>(Action::kResponseStarted), 1);
+
+  // Second value in SiteIsolation.XSD.Browser.Action depends on |expectations|.
+  Action expected_action = static_cast<Action>(-1);
+  if (expectations & kShouldBeBlocked) {
+    if (expectations & kShouldBeSniffed)
+      expected_action = Action::kBlockedAfterSniffing;
+    else
+      expected_action = Action::kBlockedWithoutSniffing;
+  } else {
+    if (expectations & kShouldBeSniffed)
+      expected_action = Action::kAllowedAfterSniffing;
+    else
+      expected_action = Action::kAllowedWithoutSniffing;
+  }
+  histograms.ExpectBucketCount(base + ".Action",
+                               static_cast<int>(expected_action), 1);
 }
 
 // Helper for intercepting a resource request to the given URL and capturing the
@@ -290,16 +330,18 @@ class DisableWebSecurityContentBrowserClient : public TestContentBrowserClient {
 // Note that this BaseTest class does not specify an isolation mode via
 // command-line flags.  Most of the tests are in the --site-per-process subclass
 // below.
-class CrossSiteDocumentBlockingBaseTest : public ContentBrowserTest {
+class CrossSiteDocumentBlockingTest : public ContentBrowserTest {
  public:
-  CrossSiteDocumentBlockingBaseTest() {}
-  ~CrossSiteDocumentBlockingBaseTest() override {}
+  CrossSiteDocumentBlockingTest() {}
+  ~CrossSiteDocumentBlockingTest() override {}
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
     // EmbeddedTestServer::InitializeAndListen() initializes its |base_url_|
     // which is required below. This cannot invoke Start() however as that kicks
     // off the "EmbeddedTestServer IO Thread" which then races with
     // initialization in ContentBrowserTest::SetUp(), http://crbug.com/674545.
+    // Additionally the server should not be started prior to setting up
+    // ControllableHttpResponse(s) in some individual tests below.
     ASSERT_TRUE(embedded_test_server()->InitializeAndListen());
 
     // Add a host resolver rule to map all outgoing requests to the test server.
@@ -313,10 +355,6 @@ class CrossSiteDocumentBlockingBaseTest : public ContentBrowserTest {
   }
 
   void SetUpOnMainThread() override {
-    // Complete the manual Start() after ContentBrowserTest's own
-    // initialization, ref. comment on InitializeAndListen() above.
-    embedded_test_server()->StartAcceptingConnections();
-
     // Disable web security via the ContentBrowserClient and notify the current
     // renderer process.
     old_client = SetBrowserClientForTesting(&new_client);
@@ -329,22 +367,6 @@ class CrossSiteDocumentBlockingBaseTest : public ContentBrowserTest {
   DisableWebSecurityContentBrowserClient new_client;
   ContentBrowserClient* old_client = nullptr;
 
-  DISALLOW_COPY_AND_ASSIGN(CrossSiteDocumentBlockingBaseTest);
-};
-
-// Most tests here use --site-per-process, which enables document blocking
-// everywhere.
-class CrossSiteDocumentBlockingTest : public CrossSiteDocumentBlockingBaseTest {
- public:
-  CrossSiteDocumentBlockingTest() {}
-  ~CrossSiteDocumentBlockingTest() override {}
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    IsolateAllSitesForTesting(command_line);
-    CrossSiteDocumentBlockingBaseTest::SetUpCommandLine(command_line);
-  }
-
- private:
   DISALLOW_COPY_AND_ASSIGN(CrossSiteDocumentBlockingTest);
 };
 
@@ -355,6 +377,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockDocuments) {
   // possible since we run the browser without the same origin policy, allowing
   // it to see the response body if it makes it to the renderer (even if the
   // renderer would normally block access to it).
+  embedded_test_server()->StartAcceptingConnections();
   GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
   EXPECT_TRUE(NavigateToURL(shell(), foo_url));
 
@@ -417,7 +440,8 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockDocuments) {
   //   jsonp.* - JSONP (i.e., script) mislabeled as a document.
   //   img.*   - Contents that won't match the document label.
   //   valid.* - Correctly labeled responses of non-document types.
-  const char* sniff_allowed_resources[] = {"js.html",
+  const char* sniff_allowed_resources[] = {"html-prefix.txt",
+                                           "js.html",
                                            "comment_js.html",
                                            "js.xml",
                                            "js.json",
@@ -469,6 +493,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockDocuments) {
 // be a problem for script files mislabeled as HTML/XML/JSON/text (i.e., the
 // reason for sniffing), since script tags won't send Range headers.
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, RangeRequest) {
+  embedded_test_server()->StartAcceptingConnections();
   GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
   EXPECT_TRUE(NavigateToURL(shell(), foo_url));
 
@@ -519,6 +544,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockForVariousTargets) {
 
   // TODO(nick): Split up these cases, and add positive assertions here about
   // what actually happens in these various resource-block cases.
+  embedded_test_server()->StartAcceptingConnections();
   GURL foo("http://foo.com/cross_site_document_blocking/request_target.html");
   EXPECT_TRUE(NavigateToURL(shell(), foo));
 
@@ -530,6 +556,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockForVariousTargets) {
 // Regression test for https://crbug.com/814913.
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest,
                        BlockRequestFromErrorPage) {
+  embedded_test_server()->StartAcceptingConnections();
   GURL error_url = embedded_test_server()->GetURL("bar.com", "/close-socket");
   GURL subresource_url =
       embedded_test_server()->GetURL("foo.com", "/site_isolation/json.js");
@@ -560,10 +587,10 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest,
 }
 
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockHeaders) {
-  GURL foo_url("http://foo.com/title1.html");
-  EXPECT_TRUE(NavigateToURL(shell(), foo_url));
+  embedded_test_server()->StartAcceptingConnections();
 
   // Prepare to intercept the network request at the IPC layer.
+  // This has to be done before the RenderFrameHostImpl is created.
   //
   // Note: we want to verify that the blocking prevents the data from being sent
   // over IPC.  Testing later (e.g. via Response/Headers Web APIs) might give a
@@ -571,6 +598,10 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockHeaders) {
   // renderer (e.g. via FetchResponseData::CreateCORSFilteredResponse).
   GURL bar_url("http://bar.com/cross_site_document_blocking/headers-test.json");
   RequestInterceptor interceptor(bar_url);
+
+  // Navigate to the test page.
+  GURL foo_url("http://foo.com/title1.html");
+  EXPECT_TRUE(NavigateToURL(shell(), foo_url));
 
   // Issue the request that will be intercepted
   EXPECT_TRUE(ExecuteScript(shell(),
@@ -580,7 +611,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockHeaders) {
 
   // Verify that the response completed successfully and was blocked.
   ASSERT_EQ(net::OK, interceptor.completion_status().error_code);
-  ASSERT_TRUE(interceptor.completion_status().blocked_cross_site_document);
+  ASSERT_TRUE(interceptor.completion_status().should_report_corb_blocking);
 
   // Verify that safelisted headers have not been removed by XSDB.
   // See https://fetch.spec.whatwg.org/#cors-safelisted-response-header-name.
@@ -621,6 +652,113 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, BlockHeaders) {
 
   // Verify that other response parts have been sanitized.
   EXPECT_EQ(0u, interceptor.response_head().content_length);
+}
+
+IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingTest, PrefetchIsNotImpacted) {
+  // Prepare for intercepting the resource request for testing prefetching.
+  const char* kPrefetchResourcePath = "/prefetch-test";
+  net::test_server::ControllableHttpResponse response(embedded_test_server(),
+                                                      kPrefetchResourcePath);
+
+  // Navigate to a webpage containing a cross-origin frame.
+  embedded_test_server()->StartAcceptingConnections();
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  // Inject a cross-origin <link rel="prefetch" ...> into the main frame.
+  // TODO(lukasza): https://crbug.com/827633#c5: We might need to switch to
+  // listening to the onload event below (after/if CORB starts to consistently
+  // avoid injecting net errors).
+  const char* prefetch_injection_script_template = R"(
+      var link = document.createElement("link");
+      link.rel = "prefetch";
+      link.href = "/cross-site/b.com%s";
+      link.as = "fetch";
+
+      window.is_prefetch_done = false;
+      function mark_prefetch_as_done() { window.is_prefetch_done = true }
+      link.onerror = mark_prefetch_as_done;
+
+      document.getElementsByTagName('head')[0].appendChild(link);
+  )";
+  std::string prefetch_injection_script = base::StringPrintf(
+      prefetch_injection_script_template, kPrefetchResourcePath);
+  EXPECT_TRUE(
+      ExecuteScript(shell()->web_contents(), prefetch_injection_script));
+
+  // Respond to the prefetch request in a way that:
+  // 1) will enable caching
+  // 2) won't finish until after CORB has blocked the response.
+  FetchHistogramsFromChildProcesses();
+  base::HistogramTester histograms;
+  std::string response_bytes =
+      "HTTP/1.1 200 OK\r\n"
+      "Cache-Control: public, max-age=10\r\n"
+      "Content-Type: text/html\r\n"
+      "X-Content-Type-Options: nosniff\r\n"
+      "\r\n"
+      "<p>contents of the response</p>";
+  response.WaitForRequest();
+  response.Send(response_bytes);
+
+  // Verify that CORB blocked the response.
+  // TODO(lukasza): https://crbug.com/827633#c5: We might need to switch to
+  // listening to the onload event below (after/if CORB starts to consistently
+  // avoid injecting net errors).
+  std::string wait_script = R"(
+      function notify_prefetch_is_done() { domAutomationController.send(123); }
+
+      if (window.is_prefetch_done) {
+        // Can notify immediately if |window.is_prefetch_done| has already been
+        // set by |prefetch_injection_script|.
+        notify_prefetch_is_done();
+      } else {
+        // Otherwise wait for CORB's empty response to reach the renderer.
+        link = document.getElementsByTagName('link')[0];
+        link.onerror = notify_prefetch_is_done;
+      }
+  )";
+  int answer;
+  EXPECT_TRUE(ExecuteScriptAndExtractInt(shell()->web_contents(), wait_script,
+                                         &answer));
+  EXPECT_EQ(123, answer);
+  InspectHistograms(histograms, kShouldBeBlockedWithoutSniffing, "x.html",
+                    RESOURCE_TYPE_PREFETCH);
+
+  // Finish the HTTP response - this should store the response in the cache.
+  response.Done();
+
+  // Stop the HTTP server - this means the only way to get the response in
+  // the |fetch_script| below is to get it from the cache (e.g. if the request
+  // goes to the network there will be no HTTP server to handle it).
+  // Note that stopping the HTTP server is not strictly required for the test to
+  // be robust - ControllableHttpResponse handles only a single request, so
+  // wouldn't handle the |fetch_script| request even if the HTTP server was
+  // still running.
+  EXPECT_TRUE(embedded_test_server()->ShutdownAndWaitUntilComplete());
+
+  // Verify that the cached response is available to the same-origin subframe
+  // (e.g. that the network cache in the browser process got populated despite
+  // CORB blocking).
+  const char* fetch_script_template = R"(
+      fetch('%s')
+          .then(response => response.text())
+          .then(responseBody => {
+              domAutomationController.send(responseBody);
+          })
+          .catch(error => {
+              var errorMessage = 'error: ' + error;
+              console.log(errorMessage);
+              domAutomationController.send(errorMessage);
+          }); )";
+  std::string fetch_script =
+      base::StringPrintf(fetch_script_template, kPrefetchResourcePath);
+  std::string response_body;
+  EXPECT_TRUE(
+      ExecuteScriptAndExtractString(shell()->web_contents()->GetAllFrames()[1],
+                                    fetch_script, &response_body));
+  EXPECT_EQ("<p>contents of the response</p>", response_body);
 }
 
 // This test class sets up a service worker that can be used to try to respond
@@ -735,6 +873,12 @@ class CrossSiteDocumentBlockingServiceWorkerTest : public ContentBrowserTest {
 // TODO(lukasza): https://crbug.com/715640: This test might become invalid
 // after servicification of service workers.
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingServiceWorkerTest, NoNetwork) {
+  // Skip this test when servicification of service workers (S13nServiceWorker)
+  // is enabled because the browser process doesn't see the request or response
+  // when the request is handled entirely within the service worker.
+  if (blink::ServiceWorkerUtils::IsServicificationEnabled())
+    return;
+
   SetUpServiceWorker();
 
   base::HistogramTester histograms;
@@ -765,6 +909,11 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingServiceWorkerTest, NoNetwork) {
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingServiceWorkerTest,
                        NetworkToServiceWorkerResponse) {
   SetUpServiceWorker();
+
+  // Make sure that the histograms generated by a service worker registration
+  // have been recorded.
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService))
+    FetchHistogramsFromChildProcesses();
 
   // Build a script for XHR-ing a cross-origin, nosniff HTML document.
   GURL cross_origin_url =
@@ -826,6 +975,7 @@ class CrossSiteDocumentBlockingKillSwitchTest
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingKillSwitchTest,
                        NoBlockingWithKillSwitch) {
   // Load a page that issues illegal cross-site document requests to bar.com.
+  embedded_test_server()->StartAcceptingConnections();
   GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
   EXPECT_TRUE(NavigateToURL(shell(), foo_url));
 
@@ -855,6 +1005,7 @@ class CrossSiteDocumentBlockingDisableWebSecurityTest
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingDisableWebSecurityTest,
                        DisableBlocking) {
   // Load a page that issues illegal cross-site document requests.
+  embedded_test_server()->StartAcceptingConnections();
   GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
   EXPECT_TRUE(NavigateToURL(shell(), foo_url));
 
@@ -885,6 +1036,7 @@ class CrossSiteDocumentBlockingDisableVsFeatureTest
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingDisableVsFeatureTest,
                        DisableBlocking) {
   // Load a page that issues illegal cross-site document requests.
+  embedded_test_server()->StartAcceptingConnections();
   GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
   EXPECT_TRUE(NavigateToURL(shell(), foo_url));
 
@@ -894,23 +1046,9 @@ IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingDisableVsFeatureTest,
   EXPECT_FALSE(was_blocked);
 }
 
-// Even without any Site Isolation, document blocking should be turned on by
-// default.
-IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingBaseTest,
-                       BlockDocumentsByDefault) {
-  // Load a page that issues illegal cross-site document requests to bar.com.
-  GURL foo_url("http://foo.com/cross_site_document_blocking/request.html");
-  EXPECT_TRUE(NavigateToURL(shell(), foo_url));
-
-  bool was_blocked;
-  ASSERT_TRUE(ExecuteScriptAndExtractBool(
-      shell(), "sendRequest(\"valid.html\");", &was_blocked));
-  EXPECT_TRUE(was_blocked);
-}
-
 // Test class to verify that documents are blocked for isolated origins as well.
 class CrossSiteDocumentBlockingIsolatedOriginTest
-    : public CrossSiteDocumentBlockingBaseTest {
+    : public CrossSiteDocumentBlockingTest {
  public:
   CrossSiteDocumentBlockingIsolatedOriginTest() {}
   ~CrossSiteDocumentBlockingIsolatedOriginTest() override {}
@@ -918,7 +1056,7 @@ class CrossSiteDocumentBlockingIsolatedOriginTest
   void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitchASCII(switches::kIsolateOrigins,
                                     "http://bar.com");
-    CrossSiteDocumentBlockingBaseTest::SetUpCommandLine(command_line);
+    CrossSiteDocumentBlockingTest::SetUpCommandLine(command_line);
   }
 
  private:
@@ -927,6 +1065,7 @@ class CrossSiteDocumentBlockingIsolatedOriginTest
 
 IN_PROC_BROWSER_TEST_F(CrossSiteDocumentBlockingIsolatedOriginTest,
                        BlockDocumentsFromIsolatedOrigin) {
+  embedded_test_server()->StartAcceptingConnections();
   if (AreAllSitesIsolatedForTesting())
     return;
 

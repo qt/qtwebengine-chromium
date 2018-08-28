@@ -5,7 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_V8_BINDING_FOR_TESTING_H_
 #define THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_V8_BINDING_FOR_TESTING_H_
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
@@ -14,21 +14,10 @@
 namespace blink {
 
 class Document;
-class DOMWrapperWorld;
 class DummyPageHolder;
 class ExecutionContext;
 class LocalFrame;
 class Page;
-
-class ScriptStateForTesting : public ScriptState {
- public:
-  static scoped_refptr<ScriptStateForTesting> Create(
-      v8::Local<v8::Context>,
-      scoped_refptr<DOMWrapperWorld>);
-
- private:
-  ScriptStateForTesting(v8::Local<v8::Context>, scoped_refptr<DOMWrapperWorld>);
-};
 
 class V8TestingScope {
   STACK_ALLOCATED();

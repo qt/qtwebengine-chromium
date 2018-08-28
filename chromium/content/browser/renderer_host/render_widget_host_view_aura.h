@@ -136,7 +136,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void Destroy() override;
   void SetTooltipText(const base::string16& tooltip_text) override;
   void DisplayTooltipText(const base::string16& tooltip_text) override;
-  gfx::Size GetRequestedRendererSize() const override;
   uint32_t GetCaptureSequenceNumber() const override;
   bool IsSurfaceAvailableForCopy() const override;
   void CopyFromSurface(
@@ -182,8 +181,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   bool RequestRepaintForTesting() override;
   void DidStopFlinging() override;
   void OnDidNavigateMainFrameToNewPage() override;
-  viz::FrameSinkId GetFrameSinkId() override;
-  viz::LocalSurfaceId GetLocalSurfaceId() const override;
+  const viz::FrameSinkId& GetFrameSinkId() const override;
+  const viz::LocalSurfaceId& GetLocalSurfaceId() const override;
   bool TransformPointToLocalCoordSpaceLegacy(
       const gfx::PointF& point,
       const viz::SurfaceId& original_surface,
@@ -240,7 +239,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void EnsureCaretNotInRect(const gfx::Rect& rect) override;
   bool IsTextEditCommandEnabled(ui::TextEditCommand command) const override;
   void SetTextEditCommandForNextKeyEvent(ui::TextEditCommand command) override;
-  const std::string& GetClientSourceInfo() const override;
+  ukm::SourceId GetClientSourceForMetrics() const override;
   bool ShouldDoLearning() override;
 
   // Overridden from display::DisplayObserver:
@@ -269,6 +268,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void OnWindowTargetVisibilityChanged(bool visible) override;
   bool HasHitTestMask() const override;
   void GetHitTestMask(gfx::Path* mask) const override;
+  bool RequiresDoubleTapGestureEvents() const override;
 
   // Overridden from ui::EventHandler:
   void OnKeyEvent(ui::KeyEvent* event) override;
@@ -292,7 +292,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            const gfx::Point& new_origin_in_pixels) override;
 
   // RenderFrameMetadataProvider::Observer
-  void OnRenderFrameMetadataChanged() override;
+  void OnRenderFrameMetadataChangedAfterActivation() override;
 
 #if defined(OS_WIN)
   // Gets the HWND of the host window.
@@ -404,6 +404,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            VirtualKeyboardFocusEnsureCaretInRect);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            HitTestRegionListSubmitted);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           DiscardDelegatedFramesWithMemoryPressure);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraKeyboardTest,
                            KeyboardObserverDestroyed);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
@@ -429,6 +431,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            WebContentsViewReparent);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
                            TakeFallbackContent);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
+                           DiscardDelegatedFrames);
 
   class WindowObserver;
   friend class WindowObserver;
@@ -463,9 +467,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // has already adjusted the origin of |rect| to conform to whatever coordinate
   // space is required by the aura::Window.
   void InternalSetBounds(const gfx::Rect& rect);
-
-  // Handles propagation of surface properties when they are changed.
-  bool SyncSurfaceProperties(const cc::DeadlinePolicy& deadline_policy);
 
 #if defined(OS_WIN)
   // Creates and/or updates the legacy dummy window which corresponds to
@@ -660,7 +661,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   const viz::FrameSinkId frame_sink_id_;
 
   std::unique_ptr<CursorManager> cursor_manager_;
-  int tab_show_sequence_ = 0;
 
   // Latest capture sequence number which is incremented when the caller
   // requests surfaces be synchronized via

@@ -53,7 +53,9 @@ std::string Entry1And2Whitelist() {
 // A small shim exposing UkmRecorder methods to tests.
 class TestRecordingHelper {
  public:
-  explicit TestRecordingHelper(UkmRecorder* recorder) : recorder_(recorder) {}
+  explicit TestRecordingHelper(UkmRecorder* recorder) : recorder_(recorder) {
+    recorder_->DisableSamplingForTesting();
+  }
 
   void UpdateSourceURL(SourceId source_id, const GURL& url) {
     recorder_->UpdateSourceURL(source_id, url);
@@ -218,6 +220,27 @@ TEST_F(UkmServiceTest, PersistAndPurge) {
   EXPECT_EQ(GetPersistedLogCount(), 2);
   service.Purge();
   EXPECT_EQ(GetPersistedLogCount(), 0);
+}
+
+TEST_F(UkmServiceTest, Purge) {
+  UkmService service(&prefs_, &client_,
+                     true /* restrict_to_whitelisted_entries */);
+  TestRecordingHelper recorder(&service);
+  EXPECT_EQ(GetPersistedLogCount(), 0);
+  service.Initialize();
+  task_runner_->RunUntilIdle();
+  service.EnableRecording(/*extensions=*/false);
+  service.EnableReporting();
+
+  // Record some data
+  auto id = GetWhitelistedSourceId(0);
+  recorder.UpdateSourceURL(id, GURL("https://google.com/foobar1"));
+  TestEvent1(id).Record(&service);
+
+  // Purge should delete data, so there shouldn't be anything left to upload.
+  service.Purge();
+  service.Flush();
+  EXPECT_EQ(0, GetPersistedLogCount());
 }
 
 TEST_F(UkmServiceTest, SourceSerialization) {
@@ -555,6 +578,7 @@ TEST_F(UkmServiceTest, PurgeMidUpload) {
   task_runner_->RunUntilIdle();
   service.EnableRecording(/*extensions=*/false);
   service.EnableReporting();
+
   auto id = GetWhitelistedSourceId(0);
   recorder.UpdateSourceURL(id, GURL("https://google.com/foobar1"));
   // Should init, generate a log, and start an upload.
@@ -937,6 +961,7 @@ TEST_F(UkmServiceTest, SupportedSchemes) {
       {"ftp://google.ca/", true},
       {"about:blank", true},
       {"chrome://version/", true},
+      {"app://play/abcdefghijklmnopqrstuvwxyzabcdef/", true},
       // chrome-extension are controlled by TestIsWebstoreExtension, above.
       {"chrome-extension://bhcnanendmgjjeghamaccjnochlnhcgj/", true},
       {"chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef/", false},
@@ -996,6 +1021,7 @@ TEST_F(UkmServiceTest, SupportedSchemesNoExtensions) {
       {"ftp://google.ca/", true},
       {"about:blank", true},
       {"chrome://version/", true},
+      {"app://play/abcdefghijklmnopqrstuvwxyzabcdef/", true},
       {"chrome-extension://bhcnanendmgjjeghamaccjnochlnhcgj/", false},
       {"chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef/", false},
       {"file:///tmp/", false},

@@ -56,7 +56,7 @@ enum UnencodableHandling {
 
 typedef char UnencodableReplacementArray[32];
 
-enum FlushBehavior {
+enum class FlushBehavior {
   // More bytes are coming, don't flush the codec.
   kDoNotFlush = 0,
 
@@ -68,10 +68,6 @@ enum FlushBehavior {
   kDataEOF
 };
 
-static_assert(!kDoNotFlush, "DoNotFlush should be falsy");
-static_assert(kFetchEOF, "FetchEOF should be truthy");
-static_assert(kDataEOF, "DataEOF should be truthy");
-
 class WTF_EXPORT TextCodec {
   USING_FAST_MALLOC(TextCodec);
 
@@ -81,7 +77,7 @@ class WTF_EXPORT TextCodec {
 
   String Decode(const char* str,
                 size_t length,
-                FlushBehavior flush = kDoNotFlush) {
+                FlushBehavior flush = FlushBehavior::kDoNotFlush) {
     bool ignored;
     return Decode(str, length, flush, false, ignored);
   }
@@ -97,9 +93,9 @@ class WTF_EXPORT TextCodec {
   // Fills a null-terminated string representation of the given
   // unencodable character into the given replacement buffer.
   // The length of the string (not including the null) will be returned.
-  static int GetUnencodableReplacement(unsigned code_point,
-                                       UnencodableHandling,
-                                       UnencodableReplacementArray);
+  static uint32_t GetUnencodableReplacement(unsigned code_point,
+                                            UnencodableHandling,
+                                            UnencodableReplacementArray);
 
   DISALLOW_COPY_AND_ASSIGN(TextCodec);
 };

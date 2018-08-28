@@ -93,6 +93,7 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
                             UScriptCode = USCRIPT_COMMON) override;
   void SetFixedFontFamily(const WebString&,
                           UScriptCode = USCRIPT_COMMON) override;
+  void SetFMPNetworkQuietTimeout(double timeout) override;
   void SetForceMainWorldInitialization(bool) override;
   void SetForcePreloadNoneForMediaElements(bool) override;
   void SetForceZeroLayoutHeight(bool) override;
@@ -206,6 +207,12 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetDoNotUpdateSelectionOnMutatingSelectionRange(bool) override;
   void SetMediaDownloadInProductHelpEnabled(bool) override;
   void SetLowPriorityIframesThreshold(WebEffectiveConnectionType) override;
+  void SetLazyFrameLoadingDistanceThresholdPxUnknown(int) override;
+  void SetLazyFrameLoadingDistanceThresholdPxOffline(int) override;
+  void SetLazyFrameLoadingDistanceThresholdPxSlow2G(int) override;
+  void SetLazyFrameLoadingDistanceThresholdPx2G(int) override;
+  void SetLazyFrameLoadingDistanceThresholdPx3G(int) override;
+  void SetLazyFrameLoadingDistanceThresholdPx4G(int) override;
 
   bool ShowFPSCounter() const { return show_fps_counter_; }
   bool ShowPaintRects() const { return show_paint_rects_; }

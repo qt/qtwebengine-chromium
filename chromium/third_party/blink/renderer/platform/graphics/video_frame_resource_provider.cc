@@ -7,14 +7,14 @@
 #include <memory>
 #include "base/bind.h"
 #include "base/trace_event/trace_event.h"
-#include "cc/resources/layer_tree_resource_provider.h"
-#include "cc/resources/video_resource_updater.h"
+#include "components/viz/client/client_resource_provider.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/quads/render_pass.h"
 #include "components/viz/common/quads/solid_color_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/quads/yuv_video_draw_quad.h"
 #include "media/base/video_frame.h"
+#include "media/renderers/video_resource_updater.h"
 
 namespace blink {
 
@@ -22,14 +22,19 @@ VideoFrameResourceProvider::VideoFrameResourceProvider(
     const cc::LayerTreeSettings& settings)
     : settings_(settings) {}
 
-VideoFrameResourceProvider::~VideoFrameResourceProvider() = default;
+VideoFrameResourceProvider::~VideoFrameResourceProvider() {
+  // Drop all resources before closing the ClientResourceProvider.
+  resource_updater_ = nullptr;
+  if (resource_provider_)
+    resource_provider_->ShutdownAndReleaseAllResources();
+}
 
 void VideoFrameResourceProvider::Initialize(
     viz::ContextProvider* media_context_provider,
     viz::SharedBitmapReporter* shared_bitmap_reporter) {
   context_provider_ = media_context_provider;
-  resource_provider_ = std::make_unique<cc::LayerTreeResourceProvider>(
-      media_context_provider, true);
+  resource_provider_ = std::make_unique<viz::ClientResourceProvider>(
+      /*delegated_sync_points_required=*/true);
 
   int max_texture_size;
   if (context_provider_) {
@@ -40,7 +45,7 @@ void VideoFrameResourceProvider::Initialize(
     max_texture_size = 16 * 1024;
   }
 
-  resource_updater_ = std::make_unique<cc::VideoResourceUpdater>(
+  resource_updater_ = std::make_unique<media::VideoResourceUpdater>(
       media_context_provider, shared_bitmap_reporter, resource_provider_.get(),
       settings_.use_stream_video_draw_quad,
       settings_.resource_settings.use_gpu_memory_buffer_resources,
@@ -48,7 +53,10 @@ void VideoFrameResourceProvider::Initialize(
 }
 
 void VideoFrameResourceProvider::OnContextLost() {
+  // Drop all resources before closing the ClientResourceProvider.
   resource_updater_ = nullptr;
+  if (resource_provider_)
+    resource_provider_->ShutdownAndReleaseAllResources();
   resource_provider_ = nullptr;
   context_provider_ = nullptr;
 }
@@ -56,7 +64,8 @@ void VideoFrameResourceProvider::OnContextLost() {
 void VideoFrameResourceProvider::AppendQuads(
     viz::RenderPass* render_pass,
     scoped_refptr<media::VideoFrame> frame,
-    media::VideoRotation rotation) {
+    media::VideoRotation rotation,
+    bool is_opaque) {
   TRACE_EVENT0("media", "VideoFrameResourceProvider::AppendQuads");
   DCHECK(resource_updater_);
   DCHECK(resource_provider_);
@@ -85,7 +94,6 @@ void VideoFrameResourceProvider::AppendQuads(
 
   resource_updater_->ObtainFrameResources(frame);
   // TODO(lethalantidote) : update with true value;
-  bool contents_opaque = true;
   gfx::Rect visible_layer_rect = gfx::Rect(rotated_size);
   gfx::Rect clip_rect = gfx::Rect(frame->coded_size());
   bool is_clipped = false;
@@ -98,7 +106,7 @@ void VideoFrameResourceProvider::AppendQuads(
 
   resource_updater_->AppendQuads(render_pass, std::move(frame), transform,
                                  rotated_size, visible_layer_rect, clip_rect,
-                                 is_clipped, contents_opaque, draw_opacity,
+                                 is_clipped, is_opaque, draw_opacity,
                                  sorting_context_id, visible_quad_rect);
 }
 

@@ -34,8 +34,10 @@
 #include <memory>
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
+#include "services/network/public/cpp/cors/cors_error_status.h"
 #include "services/network/public/mojom/cors.mojom-blink.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
+#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_cors.h"
@@ -56,6 +58,7 @@
 #include "third_party/blink/renderer/core/loader/threadable_loading_context.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_request.h"
+#include "third_party/blink/renderer/platform/heap/self_keep_alive.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors_error_string.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
@@ -271,7 +274,6 @@ DocumentThreadableLoader::DocumentThreadableLoader(
           GetExecutionContext()->GetTaskRunner(TaskType::kNetworking),
           this,
           &DocumentThreadableLoader::DidTimeout),
-      request_started_seconds_(0.0),
       cors_redirect_limit_(0),
       redirect_mode_(network::mojom::FetchRedirectMode::kFollow),
       override_referrer_(false) {
@@ -309,8 +311,6 @@ void DocumentThreadableLoader::Start(const ResourceRequest& request) {
   // corresponds to this line, but divert |cors_flag_| here for convenience.
   if (cors_flag_ && request.GetFetchRequestMode() ==
                         network::mojom::FetchRequestMode::kSameOrigin) {
-    probe::documentThreadableLoaderFailedToStartLoadingForClient(
-        GetExecutionContext(), client_);
     ThreadableLoaderClient* client = client_;
     Clear();
     ResourceError error = ResourceError::CancelledDueToAccessCheckError(
@@ -323,7 +323,7 @@ void DocumentThreadableLoader::Start(const ResourceRequest& request) {
     return;
   }
 
-  request_started_seconds_ = CurrentTimeTicksInSeconds();
+  request_started_ = CurrentTimeTicks();
 
   // Save any headers on the request here. If this request redirects
   // cross-origin, we cancel the old request create a new one, and copy these
@@ -339,6 +339,33 @@ void DocumentThreadableLoader::Start(const ResourceRequest& request) {
                                    &should_bypass_service_worker);
   if (should_bypass_service_worker)
     new_request.SetSkipServiceWorker(true);
+
+  // In S13nServiceWorker, if the controller service worker has no fetch event
+  // handler, it's skipped entirely, so we should treat that case the same as
+  // having no controller. In non-S13nServiceWorker, we can't do that since we
+  // don't know which service worker will handle the request since it's
+  // determined on the browser process and skipWaiting() can happen in the
+  // meantime.
+  //
+  // TODO(crbug.com/715640): When non-S13nServiceWorker is removed,
+  // is_controlled_by_service_worker is the same as
+  // ControllerServiceWorkerMode::kControlled, so this code can be simplified.
+  bool is_controlled_by_service_worker = false;
+  switch (
+      loading_context_->GetResourceFetcher()->IsControlledByServiceWorker()) {
+    case blink::mojom::ControllerServiceWorkerMode::kControlled:
+      is_controlled_by_service_worker = true;
+      break;
+    case blink::mojom::ControllerServiceWorkerMode::kNoFetchEventHandler:
+      if (ServiceWorkerUtils::IsServicificationEnabled())
+        is_controlled_by_service_worker = false;
+      else
+        is_controlled_by_service_worker = true;
+      break;
+    case blink::mojom::ControllerServiceWorkerMode::kNoController:
+      is_controlled_by_service_worker = false;
+      break;
+  }
 
   // Process the CORS protocol inside the DocumentThreadableLoader for the
   // following cases:
@@ -363,7 +390,7 @@ void DocumentThreadableLoader::Start(const ResourceRequest& request) {
   if (!async_ || new_request.GetSkipServiceWorker() ||
       !SchemeRegistry::ShouldTreatURLSchemeAsAllowingServiceWorkers(
           new_request.Url().Protocol()) ||
-      !loading_context_->GetResourceFetcher()->IsControlledByServiceWorker()) {
+      !is_controlled_by_service_worker) {
     DispatchInitialRequest(new_request);
     return;
   }
@@ -434,8 +461,6 @@ void DocumentThreadableLoader::MakeCrossOriginAccessRequest(
   // send a request, preflighted or not, that's guaranteed to be denied.
   if (!SchemeRegistry::ShouldTreatURLSchemeAsCORSEnabled(
           request.Url().Protocol())) {
-    probe::documentThreadableLoaderFailedToStartLoadingForClient(
-        GetExecutionContext(), client_);
     DispatchDidFailAccessControlCheck(
         ResourceError::CancelledDueToAccessCheckError(
             request.Url(), ResourceRequestBlockedReason::kOther,
@@ -543,7 +568,7 @@ void DocumentThreadableLoader::OverrideTimeout(
   // |m_requestStartedSeconds| == 0.0 indicates loading is already finished and
   // |m_timeoutTimer| is already stopped, and thus we do nothing for such cases.
   // See https://crbug.com/551663 for details.
-  if (request_started_seconds_ <= 0.0)
+  if (request_started_ <= TimeTicks())
     return;
 
   timeout_timer_.Stop();
@@ -555,10 +580,9 @@ void DocumentThreadableLoader::OverrideTimeout(
   // was initially sent, however other uses of this method may need to
   // behave differently, in which case this should be re-arranged somehow.
   if (timeout_milliseconds) {
-    double elapsed_time =
-        CurrentTimeTicksInSeconds() - request_started_seconds_;
-    double next_fire = timeout_milliseconds / 1000.0;
-    double resolved_time = std::max(next_fire - elapsed_time, 0.0);
+    TimeDelta elapsed_time = CurrentTimeTicks() - request_started_;
+    TimeDelta next_fire = TimeDelta::FromMilliseconds(timeout_milliseconds);
+    TimeDelta resolved_time = std::max(next_fire - elapsed_time, TimeDelta());
     timeout_timer_.StartOneShot(resolved_time, FROM_HERE);
   }
 }
@@ -590,7 +614,7 @@ void DocumentThreadableLoader::SetDefersLoading(bool value) {
 void DocumentThreadableLoader::Clear() {
   client_ = nullptr;
   timeout_timer_.Stop();
-  request_started_seconds_ = 0.0;
+  request_started_ = TimeTicks();
   if (GetResource())
     checker_.WillRemoveClient();
   ClearResource();
@@ -609,7 +633,6 @@ bool DocumentThreadableLoader::RedirectReceived(
     const ResourceResponse& redirect_response) {
   DCHECK(client_);
   DCHECK_EQ(resource, GetResource());
-  DCHECK(async_);
 
   checker_.RedirectReceived();
 
@@ -617,6 +640,7 @@ bool DocumentThreadableLoader::RedirectReceived(
   const KURL& original_url = redirect_response.Url();
 
   if (!actual_request_.IsNull()) {
+    DCHECK(!out_of_blink_cors_);
     ReportResponseReceived(resource->Identifier(), redirect_response);
 
     HandlePreflightFailure(
@@ -654,6 +678,15 @@ bool DocumentThreadableLoader::RedirectReceived(
     client->DidFailRedirectCheck();
 
     return false;
+  }
+
+  if (out_of_blink_cors_) {
+    client_->DidReceiveRedirectTo(new_url);
+    if (client_->IsDocumentThreadableLoaderClient()) {
+      return static_cast<DocumentThreadableLoaderClient*>(client_)
+          ->WillFollowRedirect(new_url, redirect_response);
+    }
+    return true;
   }
 
   // Allow same origin requests to continue after allowing clients to audit the
@@ -697,7 +730,7 @@ bool DocumentThreadableLoader::RedirectReceived(
   if (cors_flag_) {
     // The redirect response must pass the access control check if the CORS
     // flag is set.
-    base::Optional<network::mojom::CORSError> access_error = CORS::CheckAccess(
+    base::Optional<network::CORSErrorStatus> access_error = CORS::CheckAccess(
         original_url, redirect_response.HttpStatusCode(),
         redirect_response.HttpHeaderFields(),
         new_request.GetFetchCredentialsMode(), *GetSecurityOrigin());
@@ -707,8 +740,7 @@ bool DocumentThreadableLoader::RedirectReceived(
               original_url, ResourceRequestBlockedReason::kOther,
               CORS::GetErrorString(CORS::ErrorParameter::CreateForAccessCheck(
                   *access_error, original_url,
-                  redirect_response.HttpStatusCode(),
-                  redirect_response.HttpHeaderFields(), *GetSecurityOrigin(),
+                  redirect_response.HttpStatusCode(), *GetSecurityOrigin(),
                   request_context_, new_url))));
       return false;
     }
@@ -735,7 +767,7 @@ bool DocumentThreadableLoader::RedirectReceived(
     scoped_refptr<const SecurityOrigin> new_origin =
         SecurityOrigin::Create(new_url);
     if (!original_origin->IsSameSchemeHostPort(new_origin.get()))
-      security_origin_ = SecurityOrigin::CreateUnique();
+      security_origin_ = SecurityOrigin::CreateUniqueOpaque();
   }
 
   // Set |cors_flag_| so that further logic (corresponds to the main fetch in
@@ -791,7 +823,6 @@ void DocumentThreadableLoader::DataDownloaded(Resource* resource,
   DCHECK(client_);
   DCHECK_EQ(resource, GetResource());
   DCHECK(actual_request_.IsNull());
-  DCHECK(async_);
 
   checker_.DataDownloaded();
   client_->DidDownloadData(data_length);
@@ -802,7 +833,6 @@ void DocumentThreadableLoader::DidReceiveResourceTiming(
     const ResourceTimingInfo& info) {
   DCHECK(client_);
   DCHECK_EQ(resource, GetResource());
-  DCHECK(async_);
 
   client_->DidReceiveResourceTiming(info);
 }
@@ -812,42 +842,25 @@ void DocumentThreadableLoader::DidDownloadToBlob(
     scoped_refptr<BlobDataHandle> blob) {
   DCHECK(client_);
   DCHECK_EQ(resource, GetResource());
-  DCHECK(async_);
 
   checker_.DidDownloadToBlob();
   client_->DidDownloadToBlob(std::move(blob));
 }
 
-void DocumentThreadableLoader::ResponseReceived(
-    Resource* resource,
-    const ResourceResponse& response,
-    std::unique_ptr<WebDataConsumerHandle> handle) {
-  DCHECK_EQ(resource, GetResource());
-  DCHECK(async_);
-
-  checker_.ResponseReceived();
-
-  if (handle)
-    is_using_data_consumer_handle_ = true;
-
-  HandleResponse(resource->Identifier(), fetch_request_mode_,
-                 fetch_credentials_mode_, response, std::move(handle));
-}
 
 void DocumentThreadableLoader::HandlePreflightResponse(
     const ResourceResponse& response) {
-  base::Optional<network::mojom::CORSError> cors_error =
+  base::Optional<network::CORSErrorStatus> cors_error_status =
       CORS::CheckPreflightAccess(response.Url(), response.HttpStatusCode(),
                                  response.HttpHeaderFields(),
                                  actual_request_.GetFetchCredentialsMode(),
                                  *GetSecurityOrigin());
-  if (cors_error) {
+  if (cors_error_status) {
     HandlePreflightFailure(
         response.Url(),
         CORS::GetErrorString(CORS::ErrorParameter::CreateForAccessCheck(
-            *cors_error, response.Url(), 0 /* do not provide the status_code */,
-            response.HttpHeaderFields(), *GetSecurityOrigin(),
-            request_context_)));
+            *cors_error_status, response.Url(), 0 /* status_code */,
+            *GetSecurityOrigin(), request_context_)));
     return;
   }
 
@@ -862,14 +875,14 @@ void DocumentThreadableLoader::HandlePreflightResponse(
   }
 
   if (actual_request_.IsExternalRequest()) {
-    base::Optional<network::mojom::CORSError> external_preflight_status =
+    base::Optional<network::CORSErrorStatus> external_preflight_status =
         CORS::CheckExternalPreflight(response.HttpHeaderFields());
     if (external_preflight_status) {
       HandlePreflightFailure(
           response.Url(),
           CORS::GetErrorString(
               CORS::ErrorParameter::CreateForExternalPreflightCheck(
-                  *external_preflight_status, response.HttpHeaderFields())));
+                  *external_preflight_status)));
       return;
     }
   }
@@ -897,27 +910,33 @@ void DocumentThreadableLoader::ReportResponseReceived(
   frame->Console().ReportResourceResponseReceived(loader, identifier, response);
 }
 
-void DocumentThreadableLoader::HandleResponse(
-    unsigned long identifier,
-    network::mojom::FetchRequestMode request_mode,
-    network::mojom::FetchCredentialsMode credentials_mode,
+void DocumentThreadableLoader::ResponseReceived(
+    Resource* resource,
     const ResourceResponse& response,
     std::unique_ptr<WebDataConsumerHandle> handle) {
+  DCHECK_EQ(resource, GetResource());
   DCHECK(client_);
+
+  checker_.ResponseReceived();
+
+  if (handle)
+    is_using_data_consumer_handle_ = true;
 
   // TODO(toyoshim): Support OOR-CORS preflight and Service Worker case.
   // Note that CORS-preflight is usually handled in the Network Service side,
   // but still done in Blink side when it is needed on redirects.
   // https://crbug.com/736308.
-  if (out_of_blink_cors_ && actual_request_.IsNull() &&
-      !response.WasFetchedViaServiceWorker()) {
-    client_->DidReceiveResponse(identifier, response, std::move(handle));
+  if (out_of_blink_cors_ && !response.WasFetchedViaServiceWorker()) {
+    DCHECK(actual_request_.IsNull());
+    fallback_request_for_service_worker_ = ResourceRequest();
+    client_->DidReceiveResponse(resource->Identifier(), response,
+                                std::move(handle));
     return;
   }
 
   // Code path for legacy Blink CORS.
   if (!actual_request_.IsNull()) {
-    ReportResponseReceived(identifier, response);
+    ReportResponseReceived(resource->Identifier(), response);
     HandlePreflightResponse(response);
     return;
   }
@@ -929,7 +948,7 @@ void DocumentThreadableLoader::HandleResponse(
       // therefore fallback-to-network is handled in the browser process when
       // the ServiceWorker does not call respondWith().)
       DCHECK(!fallback_request_for_service_worker_.IsNull());
-      ReportResponseReceived(identifier, response);
+      ReportResponseReceived(resource->Identifier(), response);
       LoadFallbackRequestForServiceWorker();
       return;
     }
@@ -939,7 +958,7 @@ void DocumentThreadableLoader::HandleResponse(
     // We dispatch a CORS failure for the case.
     // TODO(yhirano): This is probably not spec conformant. Fix it after
     // https://github.com/w3c/preload/issues/100 is addressed.
-    if (request_mode != network::mojom::FetchRequestMode::kNoCORS &&
+    if (fetch_request_mode_ != network::mojom::FetchRequestMode::kNoCORS &&
         response.ResponseTypeViaServiceWorker() ==
             network::mojom::FetchResponseType::kOpaque) {
       DispatchDidFailAccessControlCheck(
@@ -952,7 +971,8 @@ void DocumentThreadableLoader::HandleResponse(
     }
 
     fallback_request_for_service_worker_ = ResourceRequest();
-    client_->DidReceiveResponse(identifier, response, std::move(handle));
+    client_->DidReceiveResponse(resource->Identifier(), response,
+                                std::move(handle));
     return;
   }
 
@@ -968,24 +988,24 @@ void DocumentThreadableLoader::HandleResponse(
              fallback_request_for_service_worker_.Url()));
   fallback_request_for_service_worker_ = ResourceRequest();
 
-  if (CORS::IsCORSEnabledRequestMode(request_mode) && cors_flag_) {
-    base::Optional<network::mojom::CORSError> access_error = CORS::CheckAccess(
+  if (CORS::IsCORSEnabledRequestMode(fetch_request_mode_) && cors_flag_) {
+    base::Optional<network::CORSErrorStatus> access_error = CORS::CheckAccess(
         response.Url(), response.HttpStatusCode(), response.HttpHeaderFields(),
-        credentials_mode, *GetSecurityOrigin());
+        fetch_credentials_mode_, *GetSecurityOrigin());
     if (access_error) {
-      ReportResponseReceived(identifier, response);
+      ReportResponseReceived(resource->Identifier(), response);
       DispatchDidFailAccessControlCheck(
           ResourceError::CancelledDueToAccessCheckError(
               response.Url(), ResourceRequestBlockedReason::kOther,
               CORS::GetErrorString(CORS::ErrorParameter::CreateForAccessCheck(
                   *access_error, response.Url(), response.HttpStatusCode(),
-                  response.HttpHeaderFields(), *GetSecurityOrigin(),
-                  request_context_))));
+                  *GetSecurityOrigin(), request_context_))));
       return;
     }
   }
 
-  client_->DidReceiveResponse(identifier, response, std::move(handle));
+  client_->DidReceiveResponse(resource->Identifier(), response,
+                              std::move(handle));
 }
 
 void DocumentThreadableLoader::SetSerializedCachedMetadata(Resource*,
@@ -1002,21 +1022,12 @@ void DocumentThreadableLoader::DataReceived(Resource* resource,
                                             const char* data,
                                             size_t data_length) {
   DCHECK_EQ(resource, GetResource());
-  DCHECK(async_);
+  DCHECK(client_);
 
   checker_.DataReceived();
 
   if (is_using_data_consumer_handle_)
     return;
-
-  // TODO(junov): Fix the ThreadableLoader ecosystem to use size_t. Until then,
-  // we use safeCast to trap potential overflows.
-  HandleReceivedData(data, SafeCast<unsigned>(data_length));
-}
-
-void DocumentThreadableLoader::HandleReceivedData(const char* data,
-                                                  size_t data_length) {
-  DCHECK(client_);
 
   // Preflight data should be invisible to clients.
   if (!actual_request_.IsNull())
@@ -1024,25 +1035,28 @@ void DocumentThreadableLoader::HandleReceivedData(const char* data,
 
   DCHECK(fallback_request_for_service_worker_.IsNull());
 
-  client_->DidReceiveData(data, data_length);
+  // TODO(junov): Fix the ThreadableLoader ecosystem to use size_t. Until then,
+  // we use safeCast to trap potential overflows.
+  client_->DidReceiveData(data, SafeCast<unsigned>(data_length));
 }
 
 void DocumentThreadableLoader::NotifyFinished(Resource* resource) {
   DCHECK(client_);
   DCHECK_EQ(resource, GetResource());
-  DCHECK(async_);
 
   checker_.NotifyFinished(resource);
 
-  if (resource->ErrorOccurred()) {
-    DispatchDidFail(resource->GetResourceError());
-  } else {
-    HandleSuccessfulFinish(resource->Identifier());
-  }
-}
+  // Don't throw an exception for failed sync local file loads.
+  // TODO(japhet): This logic has been moved around but unchanged since 2007.
+  // Tested by fast/xmlhttprequest/xmlhttprequest-missing-file-exception.html
+  // Do we still need this?
+  bool is_sync_to_local_file = resource->Url().IsLocalFile() && !async_;
 
-void DocumentThreadableLoader::HandleSuccessfulFinish(
-    unsigned long identifier) {
+  if (resource->ErrorOccurred() && !is_sync_to_local_file) {
+    DispatchDidFail(resource->GetResourceError());
+    return;
+  }
+
   DCHECK(fallback_request_for_service_worker_.IsNull());
 
   if (!actual_request_.IsNull()) {
@@ -1056,7 +1070,7 @@ void DocumentThreadableLoader::HandleSuccessfulFinish(
   // downloaded file.
   Persistent<Resource> protect = GetResource();
   Clear();
-  client->DidFinishLoading(identifier);
+  client->DidFinishLoading(resource->Identifier());
 }
 
 void DocumentThreadableLoader::DidTimeout(TimerBase* timer) {
@@ -1100,7 +1114,7 @@ void DocumentThreadableLoader::LoadActualRequest() {
 void DocumentThreadableLoader::HandlePreflightFailure(
     const KURL& url,
     const String& error_description) {
-  // Prevent handleSuccessfulFinish() from bypassing access check.
+  // Prevent NotifyFinished() from bypassing access check.
   actual_request_ = ResourceRequest();
 
   DispatchDidFailAccessControlCheck(
@@ -1124,15 +1138,15 @@ void DocumentThreadableLoader::DispatchDidFail(const ResourceError& error) {
   if (error.CORSErrorStatus()) {
     DCHECK(out_of_blink_cors_);
     // TODO(toyoshim): Should consider to pass correct arguments instead of
-    // KURL(), 0, and HTTPHeaderMap() to GetErrorString().
+    // KURL(), and 0 to GetErrorString().
     // We still need plumbing some more information.
     GetExecutionContext()->AddConsoleMessage(ConsoleMessage::Create(
         kJSMessageSource, kErrorMessageLevel,
         "Failed to load " + error.FailingURL() + ": " +
-            CORS::GetErrorString(
-                CORS::ErrorParameter::Create(
-                    *error.CORSErrorStatus(), KURL(error.FailingURL()), KURL(),
-                    0, HTTPHeaderMap(), *GetSecurityOrigin(), request_context_))
+            CORS::GetErrorString(CORS::ErrorParameter::Create(
+                                     *error.CORSErrorStatus(),
+                                     KURL(error.FailingURL()), KURL(), 0,
+                                     *GetSecurityOrigin(), request_context_))
                 .Utf8()
                 .data()));
   }
@@ -1141,127 +1155,6 @@ void DocumentThreadableLoader::DispatchDidFail(const ResourceError& error) {
   client->DidFail(error);
 }
 
-void DocumentThreadableLoader::LoadRequestAsync(
-    const ResourceRequest& request,
-    ResourceLoaderOptions resource_loader_options) {
-  if (!actual_request_.IsNull())
-    resource_loader_options.data_buffering_policy = kBufferData;
-
-  // The timer can be active if this is the actual request of a
-  // CORS-with-preflight request.
-  if (options_.timeout_milliseconds > 0 && !timeout_timer_.IsActive()) {
-    timeout_timer_.StartOneShot(options_.timeout_milliseconds / 1000.0,
-                                FROM_HERE);
-  }
-
-  FetchParameters new_params(request, resource_loader_options);
-  if (request.GetFetchRequestMode() ==
-      network::mojom::FetchRequestMode::kNoCORS) {
-    new_params.SetOriginRestriction(FetchParameters::kNoOriginRestriction);
-  }
-  DCHECK(!GetResource());
-
-  ResourceFetcher* fetcher = loading_context_->GetResourceFetcher();
-  if (request.GetRequestContext() == WebURLRequest::kRequestContextVideo ||
-      request.GetRequestContext() == WebURLRequest::kRequestContextAudio) {
-    RawResource::FetchMedia(new_params, fetcher, this);
-  } else if (request.GetRequestContext() ==
-             WebURLRequest::kRequestContextManifest) {
-    RawResource::FetchManifest(new_params, fetcher, this);
-  } else {
-    RawResource::Fetch(new_params, fetcher, this);
-  }
-  checker_.WillAddClient();
-
-  if (GetResource()->IsLoading()) {
-    unsigned long identifier = GetResource()->Identifier();
-    probe::documentThreadableLoaderStartedLoadingForClient(
-        GetExecutionContext(), identifier, client_);
-  } else {
-    probe::documentThreadableLoaderFailedToStartLoadingForClient(
-        GetExecutionContext(), client_);
-  }
-}
-
-void DocumentThreadableLoader::LoadRequestSync(
-    const ResourceRequest& request,
-    ResourceLoaderOptions resource_loader_options) {
-  FetchParameters fetch_params(request, resource_loader_options);
-  if (request.GetFetchRequestMode() ==
-      network::mojom::FetchRequestMode::kNoCORS) {
-    fetch_params.SetOriginRestriction(FetchParameters::kNoOriginRestriction);
-  }
-  if (options_.timeout_milliseconds > 0) {
-    fetch_params.MutableResourceRequest().SetTimeoutInterval(
-        options_.timeout_milliseconds / 1000.0);
-  }
-  RawResource* resource = RawResource::FetchSynchronously(
-      fetch_params, loading_context_->GetResourceFetcher());
-  ResourceResponse response = resource->GetResponse();
-  unsigned long identifier = resource->Identifier();
-  probe::documentThreadableLoaderStartedLoadingForClient(GetExecutionContext(),
-                                                         identifier, client_);
-  ThreadableLoaderClient* client = client_;
-  const KURL& request_url = request.Url();
-
-  // No exception for file:/// resources, see <rdar://problem/4962298>. Also, if
-  // we have an HTTP response, then it wasn't a network error in fact.
-  if (resource->LoadFailedOrCanceled() && !request_url.IsLocalFile() &&
-      response.HttpStatusCode() <= 0) {
-    DispatchDidFail(resource->GetResourceError());
-    return;
-  }
-
-  // FIXME: A synchronous request does not tell us whether a redirect happened
-  // or not, so we guess by comparing the request and response URLs. This isn't
-  // a perfect test though, since a server can serve a redirect to the same URL
-  // that was requested. Also comparing the request and response URLs as strings
-  // will fail if the requestURL still has its credentials.
-  if (request_url != response.Url() &&
-      !IsAllowedRedirect(request.GetFetchRequestMode(), response.Url())) {
-    client_ = nullptr;
-    client->DidFailRedirectCheck();
-    return;
-  }
-
-  HandleResponse(identifier, request.GetFetchRequestMode(),
-                 request.GetFetchCredentialsMode(), response, nullptr);
-
-  // HandleResponse() may detect an error. In such a case (check |m_client| as
-  // it gets reset by clear() call), skip the rest.
-  //
-  // |this| is alive here since loadResourceSynchronously() keeps it alive until
-  // the end of the function.
-  if (!client_)
-    return;
-
-  if (scoped_refptr<const SharedBuffer> data = resource->ResourceBuffer()) {
-    data->ForEachSegment([this](const char* segment, size_t segment_size,
-                                size_t segment_offset) -> bool {
-      HandleReceivedData(segment, segment_size);
-      // The client may cancel this loader in handleReceivedData().
-      return client_;
-    });
-  }
-
-  // The client may cancel this loader in handleReceivedData(). In such a case,
-  // skip the rest.
-  if (!client_)
-    return;
-
-  base::Optional<int64_t> downloaded_file_length =
-      resource->DownloadedFileLength();
-  if (downloaded_file_length) {
-    client_->DidDownloadData(*downloaded_file_length);
-  }
-  if (request.DownloadToBlob()) {
-    if (resource->DownloadedBlob())
-      client_->DidDownloadData(resource->DownloadedBlob()->size());
-    client_->DidDownloadToBlob(resource->DownloadedBlob());
-  }
-
-  HandleSuccessfulFinish(identifier);
-}
 
 void DocumentThreadableLoader::LoadRequest(
     ResourceRequest& request,
@@ -1290,10 +1183,44 @@ void DocumentThreadableLoader::LoadRequest(
   request.SetAllowStoredCredentials(allow_stored_credentials);
 
   resource_loader_options.security_origin = security_origin_;
-  if (async_)
-    LoadRequestAsync(request, resource_loader_options);
-  else
-    LoadRequestSync(request, resource_loader_options);
+
+  if (!actual_request_.IsNull())
+    resource_loader_options.data_buffering_policy = kBufferData;
+
+  TimeDelta timeout =
+      TimeDelta::FromMilliseconds(options_.timeout_milliseconds);
+  if (options_.timeout_milliseconds > 0) {
+    if (!async_) {
+      request.SetTimeoutInterval(timeout);
+    } else if (!timeout_timer_.IsActive()) {
+      // The timer can be active if this is the actual request of a
+      // CORS-with-preflight request.
+      timeout_timer_.StartOneShot(timeout, FROM_HERE);
+    }
+  }
+
+  FetchParameters new_params(request, resource_loader_options);
+  if (request.GetFetchRequestMode() ==
+      network::mojom::FetchRequestMode::kNoCORS) {
+    new_params.SetOriginRestriction(FetchParameters::kNoOriginRestriction);
+  }
+  DCHECK(!GetResource());
+
+  checker_.WillAddClient();
+  ResourceFetcher* fetcher = loading_context_->GetResourceFetcher();
+  if (request.GetRequestContext() == WebURLRequest::kRequestContextVideo ||
+      request.GetRequestContext() == WebURLRequest::kRequestContextAudio) {
+    DCHECK(async_);
+    RawResource::FetchMedia(new_params, fetcher, this);
+  } else if (request.GetRequestContext() ==
+             WebURLRequest::kRequestContextManifest) {
+    DCHECK(async_);
+    RawResource::FetchManifest(new_params, fetcher, this);
+  } else if (async_) {
+    RawResource::Fetch(new_params, fetcher, this);
+  } else {
+    RawResource::FetchSynchronously(new_params, fetcher, this);
+  }
 }
 
 bool DocumentThreadableLoader::IsAllowedRedirect(

@@ -30,10 +30,9 @@
 
 #include "third_party/blink/renderer/core/workers/abstract_worker.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
 namespace blink {
@@ -50,7 +49,7 @@ KURL AbstractWorker::ResolveURL(ExecutionContext* execution_context,
                                 WebURLRequest::RequestContext request_context) {
   KURL script_url = execution_context->CompleteURL(url);
   if (!script_url.IsValid()) {
-    exception_state.ThrowDOMException(kSyntaxError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
                                       "'" + url + "' is not a valid URL.");
     return KURL();
   }

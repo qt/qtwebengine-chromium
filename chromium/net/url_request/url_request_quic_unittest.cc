@@ -103,8 +103,8 @@ class URLRequestQuicTest : public TestWithScopedTaskEnvironment {
   }
 
   unsigned int GetRstErrorCountReceivedByServer(
-      QuicRstStreamErrorCode error_code) const {
-    return (static_cast<QuicSimpleDispatcher*>(server_->dispatcher()))
+      quic::QuicRstStreamErrorCode error_code) const {
+    return (static_cast<quic::QuicSimpleDispatcher*>(server_->dispatcher()))
         ->GetRstErrorCount(error_code);
   }
 
@@ -141,7 +141,7 @@ class URLRequestQuicTest : public TestWithScopedTaskEnvironment {
     memory_cache_backend_.AddSimpleResponse(kTestServerHost, kHelloPath,
                                             kHelloStatus, kHelloBodyValue);
     memory_cache_backend_.InitializeBackend(ServerPushCacheDirectory());
-    net::QuicConfig config;
+    quic::QuicConfig config;
     // Set up server certs.
     std::unique_ptr<net::ProofSourceChromium> proof_source(
         new net::ProofSourceChromium());
@@ -151,9 +151,9 @@ class URLRequestQuicTest : public TestWithScopedTaskEnvironment {
         directory.Append(FILE_PATH_LITERAL("quic-leaf-cert.key")),
         base::FilePath()));
     server_.reset(new QuicSimpleServer(
-        test::crypto_test_utils::ProofSourceForTesting(), config,
-        net::QuicCryptoServerConfig::ConfigOptions(), AllSupportedVersions(),
-        &memory_cache_backend_));
+        quic::test::crypto_test_utils::ProofSourceForTesting(), config,
+        quic::QuicCryptoServerConfig::ConfigOptions(),
+        quic::AllSupportedVersions(), &memory_cache_backend_));
     int rv =
         server_->Listen(net::IPEndPoint(net::IPAddress::IPv4AllZeros(), 0));
     EXPECT_GE(rv, 0) << "Quic server fails to start";
@@ -181,7 +181,7 @@ class URLRequestQuicTest : public TestWithScopedTaskEnvironment {
   std::unique_ptr<QuicSimpleServer> server_;
   std::unique_ptr<TestURLRequestContext> context_;
   TestNetLog net_log_;
-  QuicMemoryCacheBackend memory_cache_backend_;
+  quic::QuicMemoryCacheBackend memory_cache_backend_;
   MockCertVerifier cert_verifier_;
 };
 
@@ -263,14 +263,13 @@ TEST_F(URLRequestQuicTest, TestGetRequest) {
 
   request->Start();
   ASSERT_TRUE(request->is_pending());
-  base::RunLoop().Run();
+  delegate.RunUntilComplete();
 
   EXPECT_TRUE(request->status().is_success());
   EXPECT_EQ(kHelloBodyValue, delegate.data_received());
 }
 
 TEST_F(URLRequestQuicTest, CancelPushIfCached_SomeCached) {
-  base::RunLoop run_loop;
   Init();
 
   // Send a request to the pushed url: /kitten-1.jpg to pull the resource into
@@ -342,11 +341,10 @@ TEST_F(URLRequestQuicTest, CancelPushIfCached_SomeCached) {
   EXPECT_EQ(net_error, -400);
 
   // Verify the reset error count received on the server side.
-  EXPECT_LE(1u, GetRstErrorCountReceivedByServer(QUIC_STREAM_CANCELLED));
+  EXPECT_LE(1u, GetRstErrorCountReceivedByServer(quic::QUIC_STREAM_CANCELLED));
 }
 
 TEST_F(URLRequestQuicTest, CancelPushIfCached_AllCached) {
-  base::RunLoop run_loop;
   Init();
 
   // Send a request to the pushed url: /kitten-1.jpg to pull the resource into
@@ -434,11 +432,10 @@ TEST_F(URLRequestQuicTest, CancelPushIfCached_AllCached) {
   EXPECT_FALSE(end_entry_2->GetIntegerValue("net_error", &net_error));
 
   // Verify the reset error count received on the server side.
-  EXPECT_LE(2u, GetRstErrorCountReceivedByServer(QUIC_STREAM_CANCELLED));
+  EXPECT_LE(2u, GetRstErrorCountReceivedByServer(quic::QUIC_STREAM_CANCELLED));
 }
 
 TEST_F(URLRequestQuicTest, DoNotCancelPushIfNotFoundInCache) {
-  base::RunLoop run_loop;
   Init();
 
   // Send a request to /index2.hmtl which pushes /kitten-1.jpg and /favicon.ico
@@ -487,7 +484,7 @@ TEST_F(URLRequestQuicTest, DoNotCancelPushIfNotFoundInCache) {
   EXPECT_EQ(net_error, -400);
 
   // Verify the reset error count received on the server side.
-  EXPECT_EQ(0u, GetRstErrorCountReceivedByServer(QUIC_STREAM_CANCELLED));
+  EXPECT_EQ(0u, GetRstErrorCountReceivedByServer(quic::QUIC_STREAM_CANCELLED));
 }
 
 // Tests that if two requests use the same QUIC session, the second request
@@ -499,14 +496,14 @@ TEST_F(URLRequestQuicTest, TestTwoRequests) {
   SetNetworkDelegate(&network_delegate);
   Init();
   CheckLoadTimingDelegate delegate(false);
-  delegate.set_quit_on_complete(false);
+  delegate.set_on_complete(base::DoNothing());
   std::string url =
       base::StringPrintf("https://%s%s", kTestServerHost, kHelloPath);
   std::unique_ptr<URLRequest> request =
       CreateRequest(GURL(url), DEFAULT_PRIORITY, &delegate);
 
   CheckLoadTimingDelegate delegate2(true);
-  delegate2.set_quit_on_complete(false);
+  delegate2.set_on_complete(base::DoNothing());
   std::unique_ptr<URLRequest> request2 =
       CreateRequest(GURL(url), DEFAULT_PRIORITY, &delegate2);
   request->Start();

@@ -51,12 +51,10 @@ class CORE_EXPORT InspectorHighlight {
   ~InspectorHighlight();
 
   static bool GetBoxModel(Node*, std::unique_ptr<protocol::DOM::BoxModel>*);
+  static bool GetContentQuads(
+      Node*,
+      std::unique_ptr<protocol::Array<protocol::Array<double>>>*);
   static InspectorHighlightConfig DefaultConfig();
-  static bool BuildNodeQuads(Node*,
-                             FloatQuad* content,
-                             FloatQuad* padding,
-                             FloatQuad* border,
-                             FloatQuad* margin);
 
   void AppendPath(std::unique_ptr<protocol::ListValue> path,
                   const Color& fill_color,
@@ -71,6 +69,12 @@ class CORE_EXPORT InspectorHighlight {
   std::unique_ptr<protocol::DictionaryValue> AsProtocolValue() const;
 
  private:
+  static bool BuildSVGQuads(Node*, Vector<FloatQuad>& quads);
+  static bool BuildNodeQuads(Node*,
+                             FloatQuad* content,
+                             FloatQuad* padding,
+                             FloatQuad* border,
+                             FloatQuad* margin);
   void AppendNodeHighlight(Node*, const InspectorHighlightConfig&);
   void AppendPathsForShapeOutside(Node*, const InspectorHighlightConfig&);
 

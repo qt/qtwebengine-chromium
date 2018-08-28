@@ -16,7 +16,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/win/windows_version.h"
 #include "build/build_config.h"
-#include "mojo/edk/embedder/embedder.h"
+#include "mojo/core/embedder/embedder.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -281,7 +281,7 @@ class WidgetTestInteractive : public WidgetTest {
       // Mojo is initialized here similar to how each browser test case
       // initializes Mojo when starting. This only works because each
       // interactive_ui_test runs in a new process.
-      mojo::edk::Init();
+      mojo::core::Init();
 
       gl::GLSurfaceTestSupport::InitializeOneOff();
       ui::RegisterPathProvider();
@@ -621,6 +621,10 @@ TEST_F(WidgetTestInteractive, DISABLED_GrabUngrab) {
 // Tests mouse move outside of the window into the "resize controller" and back
 // will still generate an OnMouseEntered and OnMouseExited event..
 TEST_F(WidgetTestInteractive, CheckResizeControllerEvents) {
+  // TODO(http://crbug.com/864787): Crashes flakily in mus with ws2.
+  if (IsMus())
+    return;
+
   Widget* toplevel = CreateTopLevelPlatformWidget();
 
   toplevel->SetBounds(gfx::Rect(0, 0, 100, 100));
@@ -1337,6 +1341,10 @@ TEST_F(WidgetTestInteractive, InactiveWidgetDoesNotGrabActivation) {
 
 // Test that window state is not changed after getting out of full screen.
 TEST_F(WidgetTestInteractive, MAYBE_ExitFullscreenRestoreState) {
+  // TODO(http://crbug.com/864618): Fails flakily in mus with ws2.
+  if (IsMus())
+    return;
+
   Widget* toplevel = CreateTopLevelPlatformWidget();
 
   toplevel->Show();
@@ -1898,7 +1906,13 @@ class WidgetInputMethodInteractiveTest : public WidgetTestInteractive {
 };
 
 // Test input method focus changes affected by top window activaction.
-TEST_F(WidgetInputMethodInteractiveTest, Activation) {
+TEST_F(WidgetInputMethodInteractiveTest,
+#if defined(OS_MACOSX)
+       DISABLED_Activation
+#else
+       Activation
+#endif
+       ) {
   if (IsMus())
     return;
 

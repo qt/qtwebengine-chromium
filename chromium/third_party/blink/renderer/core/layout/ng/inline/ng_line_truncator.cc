@@ -7,7 +7,7 @@
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_item_result.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_text_fragment_builder.h"
 #include "third_party/blink/renderer/platform/fonts/font_baseline.h"
-#include "third_party/blink/renderer/platform/fonts/shaping/harf_buzz_shaper.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_shaper.h"
 
 namespace blink {
 
@@ -54,7 +54,7 @@ LayoutUnit NGLineTruncator::TruncateLine(
       font_data && font_data->GlyphForCharacter(kHorizontalEllipsisCharacter)
           ? String(&kHorizontalEllipsisCharacter, 1)
           : String(u"...");
-  HarfBuzzShaper shaper(ellipsis_text.Characters16(), ellipsis_text.length());
+  HarfBuzzShaper shaper(ellipsis_text);
   scoped_refptr<ShapeResult> ellipsis_shape_result =
       shaper.Shape(&font, line_direction_);
   LayoutUnit ellipsis_width = ellipsis_shape_result->SnappedWidth();

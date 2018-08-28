@@ -14,29 +14,21 @@
 #include <memory>
 #include <utility>
 
-#if defined(WEBRTC_ANDROID)
-#include "modules/video_coding/codecs/test/android_codec_factory_helper.h"
-#endif
-
+#include "absl/memory/memory.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "call/video_config.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "media/base/h264_profile_level_id.h"
+#include "media/base/mediaconstants.h"
 #include "media/engine/internaldecoderfactory.h"
 #include "media/engine/internalencoderfactory.h"
 #include "media/engine/simulcast.h"
-#include "media/engine/simulcast_encoder_adapter.h"
-#include "media/engine/videodecodersoftwarefallbackwrapper.h"
-#include "media/engine/videoencodersoftwarefallbackwrapper.h"
-#include "modules/video_coding/codecs/vp8/include/vp8_common_types.h"
 #include "modules/video_coding/codecs/vp9/svc_config.h"
 #include "modules/video_coding/include/video_codec_interface.h"
-#include "modules/video_coding/include/video_coding.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/cpu_time.h"
 #include "rtc_base/event.h"
 #include "rtc_base/file.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/strings/string_builder.h"
 #include "system_wrappers/include/cpu_info.h"
 #include "system_wrappers/include/sleep.h"
@@ -52,13 +44,15 @@ using VideoStatistics = VideoCodecTestStats::VideoStatistics;
 namespace {
 const int kBaseKeyFrameInterval = 3000;
 const int kMaxBitrateBps = 5000 * 1000;  // From kSimulcastFormats.
+const double kBitratePriority = 1.0;
 const int kMaxFramerateFps = 30;
 const int kMaxQp = 56;
 
 void ConfigureSimulcast(VideoCodec* codec_settings) {
   const std::vector<webrtc::VideoStream> streams = cricket::GetSimulcastConfig(
       codec_settings->numberOfSimulcastStreams, codec_settings->width,
-      codec_settings->height, kMaxBitrateBps, kMaxQp, kMaxFramerateFps, false);
+      codec_settings->height, kMaxBitrateBps, kBitratePriority, kMaxQp,
+      kMaxFramerateFps, /* is_screenshare = */ false, true);
 
   for (size_t i = 0; i < streams.size(); ++i) {
     SimulcastStream* ss = &codec_settings->simulcastStream[i];
@@ -80,7 +74,10 @@ void ConfigureSvc(VideoCodec* codec_settings) {
   const std::vector<SpatialLayer> layers =
       GetSvcConfig(codec_settings->width, codec_settings->height,
                    codec_settings->VP9()->numberOfSpatialLayers,
-                   codec_settings->VP9()->numberOfTemporalLayers, false);
+                   codec_settings->VP9()->numberOfTemporalLayers,
+                   /* is_screen_sharing = */ false);
+  ASSERT_EQ(codec_settings->VP9()->numberOfSpatialLayers, layers.size())
+      << "GetSvcConfig returned fewer spatial layers than configured.";
 
   for (size_t i = 0; i < layers.size(); ++i) {
     codec_settings->spatialLayers[i] = layers[i];
@@ -92,7 +89,7 @@ std::string CodecSpecificToString(const VideoCodec& codec) {
   rtc::SimpleStringBuilder ss(buf);
   switch (codec.codecType) {
     case kVideoCodecVP8:
-      ss << "complexity: " << codec.VP8().complexity;
+      ss << "complexity: " << static_cast<int>(codec.VP8().complexity);
       ss << "\nnum_temporal_layers: "
          << static_cast<int>(codec.VP8().numberOfTemporalLayers);
       ss << "\ndenoising: " << codec.VP8().denoisingOn;
@@ -101,7 +98,7 @@ std::string CodecSpecificToString(const VideoCodec& codec) {
       ss << "\nkey_frame_interval: " << codec.VP8().keyFrameInterval;
       break;
     case kVideoCodecVP9:
-      ss << "complexity: " << codec.VP9().complexity;
+      ss << "complexity: " << static_cast<int>(codec.VP9().complexity);
       ss << "\nnum_temporal_layers: "
          << static_cast<int>(codec.VP9().numberOfTemporalLayers);
       ss << "\nnum_spatial_layers: "
@@ -121,7 +118,6 @@ std::string CodecSpecificToString(const VideoCodec& codec) {
     default:
       break;
   }
-  ss << "\n";
   return ss.str();
 }
 
@@ -259,7 +255,7 @@ std::string VideoCodecTestFixtureImpl::Config::ToString() const {
   ss << "\nnum_cores: " << NumberOfCores();
   ss << "\nkeyframe_interval: " << keyframe_interval;
   ss << "\ncodec_type: " << codec_type;
-  ss << "\n--> codec_settings";
+  ss << "\n\n--> codec_settings";
   ss << "\nwidth: " << codec_settings.width;
   ss << "\nheight: " << codec_settings.height;
   ss << "\nmax_framerate_fps: " << codec_settings.maxFramerate;
@@ -267,11 +263,27 @@ std::string VideoCodecTestFixtureImpl::Config::ToString() const {
   ss << "\nmax_bitrate_kbps: " << codec_settings.maxBitrate;
   ss << "\nmin_bitrate_kbps: " << codec_settings.minBitrate;
   ss << "\nmax_qp: " << codec_settings.qpMax;
-  ss << "\nnum_simulcast_streams : "
+  ss << "\nnum_simulcast_streams: "
      << static_cast<int>(codec_settings.numberOfSimulcastStreams);
-  ss << "\n"
-     << "--> codec_settings." << codec_type << "\n";
-  ss << CodecSpecificToString(codec_settings);
+  ss << "\n\n--> codec_settings." << codec_type;
+  ss << "\n" << CodecSpecificToString(codec_settings);
+  if (codec_settings.numberOfSimulcastStreams > 1) {
+    for (int i = 0; i < codec_settings.numberOfSimulcastStreams; ++i) {
+      ss << "\n\n--> codec_settings.simulcastStream[" << i << "]";
+      const SimulcastStream& simulcast_stream =
+          codec_settings.simulcastStream[i];
+      ss << "\nwidth: " << simulcast_stream.width;
+      ss << "\nheight: " << simulcast_stream.height;
+      ss << "\nnum_temporal_layers: "
+         << static_cast<int>(simulcast_stream.numberOfTemporalLayers);
+      ss << "\nmin_bitrate_kbps: " << simulcast_stream.minBitrate;
+      ss << "\ntarget_bitrate_kbps: " << simulcast_stream.targetBitrate;
+      ss << "\nmax_bitrate_kbps: " << simulcast_stream.maxBitrate;
+      ss << "\nmax_qp: " << simulcast_stream.qpMax;
+      ss << "\nactive: " << simulcast_stream.active;
+    }
+  }
+  ss << "\n";
   return ss.str();
 }
 
@@ -298,9 +310,9 @@ bool VideoCodecTestFixtureImpl::Config::IsAsyncCodec() const {
 
 // TODO(kthelgason): Move this out of the test fixture impl and
 // make available as a shared utility class.
-void VideoCodecTestFixtureImpl::H264KeyframeChecker::
-    CheckEncodedFrame(webrtc::VideoCodecType codec,
-                      const EncodedImage& encoded_frame) const {
+void VideoCodecTestFixtureImpl::H264KeyframeChecker::CheckEncodedFrame(
+    webrtc::VideoCodecType codec,
+    const EncodedImage& encoded_frame) const {
   EXPECT_EQ(kVideoCodecH264, codec);
   bool contains_sps = false;
   bool contains_pps = false;
@@ -367,46 +379,36 @@ class VideoCodecTestFixtureImpl::CpuProcessTime final {
   int64_t wallclock_time_ = 0;
 };
 
-VideoCodecTestFixtureImpl::
-    VideoCodecTestFixtureImpl(Config config)
-    : config_(config) {
-#if defined(WEBRTC_ANDROID)
-  InitializeAndroidObjects();
-#endif
-}
+VideoCodecTestFixtureImpl::VideoCodecTestFixtureImpl(Config config)
+    : encoder_factory_(absl::make_unique<InternalEncoderFactory>()),
+      decoder_factory_(absl::make_unique<InternalDecoderFactory>()),
+      config_(config) {}
 
-VideoCodecTestFixtureImpl::
-    VideoCodecTestFixtureImpl(
-        Config config,
-        std::unique_ptr<VideoDecoderFactory> decoder_factory,
-        std::unique_ptr<VideoEncoderFactory> encoder_factory)
-    : decoder_factory_(std::move(decoder_factory)),
-      encoder_factory_(std::move(encoder_factory)),
-      config_(config) {
-#if defined(WEBRTC_ANDROID)
-  InitializeAndroidObjects();
-#endif
-}
+VideoCodecTestFixtureImpl::VideoCodecTestFixtureImpl(
+    Config config,
+    std::unique_ptr<VideoDecoderFactory> decoder_factory,
+    std::unique_ptr<VideoEncoderFactory> encoder_factory)
+    : encoder_factory_(std::move(encoder_factory)),
+      decoder_factory_(std::move(decoder_factory)),
+      config_(config) {}
 
-VideoCodecTestFixtureImpl::
-    ~VideoCodecTestFixtureImpl() = default;
+VideoCodecTestFixtureImpl::~VideoCodecTestFixtureImpl() = default;
 
 // Processes all frames in the clip and verifies the result.
 void VideoCodecTestFixtureImpl::RunTest(
     const std::vector<RateProfile>& rate_profiles,
     const std::vector<RateControlThresholds>* rc_thresholds,
     const std::vector<QualityThresholds>* quality_thresholds,
-    const BitstreamThresholds* bs_thresholds,
-    const VisualizationParams* visualization_params) {
+    const BitstreamThresholds* bs_thresholds) {
   RTC_DCHECK(!rate_profiles.empty());
 
   // To emulate operation on a production VideoStreamEncoder, we call the
   // codecs on a task queue.
   rtc::test::TaskQueueForTest task_queue("VidProc TQ");
 
-  SetUpAndInitObjects(
-      &task_queue, static_cast<const int>(rate_profiles[0].target_kbps),
-      static_cast<const int>(rate_profiles[0].input_fps), visualization_params);
+  SetUpAndInitObjects(&task_queue,
+                      static_cast<const int>(rate_profiles[0].target_kbps),
+                      static_cast<const int>(rate_profiles[0].input_fps));
   PrintSettings(&task_queue);
   ProcessAllFrames(&task_queue, rate_profiles);
   ReleaseAndCloseObjects(&task_queue);
@@ -556,34 +558,6 @@ void VideoCodecTestFixtureImpl::VerifyVideoStatistic(
   }
 }
 
-std::unique_ptr<VideoDecoderFactory>
-VideoCodecTestFixtureImpl::CreateDecoderFactory() {
-  if (config_.hw_decoder) {
-#if defined(WEBRTC_ANDROID)
-    return CreateAndroidDecoderFactory();
-#else
-    RTC_NOTREACHED() << "Only support HW decoder on Android.";
-    return nullptr;
-#endif
-  } else {
-    return rtc::MakeUnique<InternalDecoderFactory>();
-  }
-}
-
-std::unique_ptr<VideoEncoderFactory>
-VideoCodecTestFixtureImpl::CreateEncoderFactory() {
-  if (config_.hw_encoder) {
-#if defined(WEBRTC_ANDROID)
-    return CreateAndroidEncoderFactory();
-#else
-    RTC_NOTREACHED() << "Only support HW encoder on Android.";
-    return nullptr;
-#endif
-  } else {
-    return rtc::MakeUnique<InternalEncoderFactory>();
-  }
-}
-
 void VideoCodecTestFixtureImpl::CreateEncoderAndDecoder() {
   SdpVideoFormat::Parameters params;
   if (config_.codec_settings.codecType == kVideoCodecH264) {
@@ -600,42 +574,16 @@ void VideoCodecTestFixtureImpl::CreateEncoderAndDecoder() {
     params = {};
   }
   SdpVideoFormat format(config_.codec_name);
-  if (!decoder_factory_)
-    decoder_factory_ = CreateDecoderFactory();
-  if (!encoder_factory_)
-    encoder_factory_ = CreateEncoderFactory();
-  if (config_.simulcast_adapted_encoder) {
-    EXPECT_EQ("VP8", format.name);
-    encoder_.reset(new SimulcastEncoderAdapter(encoder_factory_.get()));
-  } else {
-    encoder_ = encoder_factory_->CreateVideoEncoder(format);
-  }
+
+  encoder_ = encoder_factory_->CreateVideoEncoder(format);
+  EXPECT_TRUE(encoder_) << "Encoder not successfully created.";
 
   const size_t num_simulcast_or_spatial_layers = std::max(
       config_.NumberOfSimulcastStreams(), config_.NumberOfSpatialLayers());
-
   for (size_t i = 0; i < num_simulcast_or_spatial_layers; ++i) {
     decoders_.push_back(std::unique_ptr<VideoDecoder>(
         decoder_factory_->CreateVideoDecoder(format)));
   }
-
-  if (config_.sw_fallback_encoder) {
-    EXPECT_FALSE(config_.simulcast_adapted_encoder)
-        << "SimulcastEncoderAdapter and VideoEncoderSoftwareFallbackWrapper "
-           "are not jointly supported.";
-    encoder_ = rtc::MakeUnique<VideoEncoderSoftwareFallbackWrapper>(
-        InternalEncoderFactory().CreateVideoEncoder(format),
-        std::move(encoder_));
-  }
-  if (config_.sw_fallback_decoder) {
-    for (auto& decoder : decoders_) {
-      decoder = rtc::MakeUnique<VideoDecoderSoftwareFallbackWrapper>(
-          InternalDecoderFactory().CreateVideoDecoder(format),
-          std::move(decoder));
-    }
-  }
-
-  EXPECT_TRUE(encoder_) << "Encoder not successfully created.";
 
   for (const auto& decoder : decoders_) {
     EXPECT_TRUE(decoder) << "Decoder not successfully created.";
@@ -654,8 +602,7 @@ VideoCodecTestStats& VideoCodecTestFixtureImpl::GetStats() {
 void VideoCodecTestFixtureImpl::SetUpAndInitObjects(
     rtc::test::TaskQueueForTest* task_queue,
     int initial_bitrate_kbps,
-    int initial_framerate_fps,
-    const VisualizationParams* visualization_params) {
+    int initial_framerate_fps) {
   config_.codec_settings.minBitrate = 0;
   config_.codec_settings.startBitrate = initial_bitrate_kbps;
   config_.codec_settings.maxFramerate = initial_framerate_fps;
@@ -666,34 +613,31 @@ void VideoCodecTestFixtureImpl::SetUpAndInitObjects(
                              config_.codec_settings.height));
   EXPECT_TRUE(source_frame_reader_->Init());
 
+  RTC_DCHECK(encoded_frame_writers_.empty());
+  RTC_DCHECK(decoded_frame_writers_.empty());
   const size_t num_simulcast_or_spatial_layers = std::max(
       config_.NumberOfSimulcastStreams(), config_.NumberOfSpatialLayers());
+  for (size_t simulcast_svc_idx = 0;
+       simulcast_svc_idx < num_simulcast_or_spatial_layers;
+       ++simulcast_svc_idx) {
+    const std::string output_filename_base = OutputPath() +
+                                             FilenameWithParams(config_) + "_" +
+                                             std::to_string(simulcast_svc_idx);
 
-  if (visualization_params) {
-    RTC_DCHECK(encoded_frame_writers_.empty());
-    RTC_DCHECK(decoded_frame_writers_.empty());
-    for (size_t simulcast_svc_idx = 0;
-         simulcast_svc_idx < num_simulcast_or_spatial_layers;
-         ++simulcast_svc_idx) {
-      const std::string output_filename_base =
-          OutputPath() + FilenameWithParams(config_) + "_" +
-          std::to_string(simulcast_svc_idx);
+    if (config_.visualization_params.save_encoded_ivf) {
+      rtc::File post_encode_file =
+          rtc::File::Create(output_filename_base + ".ivf");
+      encoded_frame_writers_.push_back(
+          IvfFileWriter::Wrap(std::move(post_encode_file), 0));
+    }
 
-      if (visualization_params->save_encoded_ivf) {
-        rtc::File post_encode_file =
-            rtc::File::Create(output_filename_base + ".ivf");
-        encoded_frame_writers_.push_back(
-            IvfFileWriter::Wrap(std::move(post_encode_file), 0));
-      }
-
-      if (visualization_params->save_decoded_y4m) {
-        FrameWriter* decoded_frame_writer = new Y4mFrameWriterImpl(
-            output_filename_base + ".y4m", config_.codec_settings.width,
-            config_.codec_settings.height, initial_framerate_fps);
-        EXPECT_TRUE(decoded_frame_writer->Init());
-        decoded_frame_writers_.push_back(
-            std::unique_ptr<FrameWriter>(decoded_frame_writer));
-      }
+    if (config_.visualization_params.save_decoded_y4m) {
+      FrameWriter* decoded_frame_writer = new Y4mFrameWriterImpl(
+          output_filename_base + ".y4m", config_.codec_settings.width,
+          config_.codec_settings.height, initial_framerate_fps);
+      EXPECT_TRUE(decoded_frame_writer->Init());
+      decoded_frame_writers_.push_back(
+          std::unique_ptr<FrameWriter>(decoded_frame_writer));
     }
   }
 
@@ -703,7 +647,7 @@ void VideoCodecTestFixtureImpl::SetUpAndInitObjects(
 
   task_queue->SendTask([this]() {
     CreateEncoderAndDecoder();
-    processor_ = rtc::MakeUnique<VideoProcessor>(
+    processor_ = absl::make_unique<VideoProcessor>(
         encoder_.get(), &decoders_, source_frame_reader_.get(), config_,
         &stats_,
         encoded_frame_writers_.empty() ? nullptr : &encoded_frame_writers_,

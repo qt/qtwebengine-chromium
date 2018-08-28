@@ -4,9 +4,9 @@
 
 #import "ui/base/cocoa/menu_controller.h"
 
+#include "base/bind.h"
 #include "base/cancelable_callback.h"
 #include "base/logging.h"
-#include "base/mac/bind_objc_block.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -193,14 +193,12 @@ NSString* const kMenuControllerMenuDidCloseNotification =
     [item setRepresentedObject:modelObject];  // Retains |modelObject|.
     ui::Accelerator accelerator;
     if (model->GetAcceleratorAt(index, &accelerator)) {
-      const ui::PlatformAcceleratorCocoa* platformAccelerator =
-          static_cast<const ui::PlatformAcceleratorCocoa*>(
-              accelerator.platform_accelerator());
-      if (platformAccelerator) {
-        [item setKeyEquivalent:platformAccelerator->characters()];
-        [item setKeyEquivalentModifierMask:
-            platformAccelerator->modifier_mask()];
-      }
+      NSString* key_equivalent;
+      NSUInteger modifier_mask;
+      GetKeyEquivalentAndModifierMaskFromAccelerator(
+          accelerator, &key_equivalent, &modifier_mask);
+      [item setKeyEquivalent:key_equivalent];
+      [item setKeyEquivalentModifierMask:modifier_mask];
     }
   }
   [menu insertItem:item atIndex:index];
@@ -262,8 +260,8 @@ NSString* const kMenuControllerMenuDidCloseNotification =
     // likely if the -cancel happens in the delegate method.
     NSMenu* menu = menu_;
 
-    postedItemSelectedTask_ =
-        std::make_unique<base::CancelableClosure>(base::BindBlock(^{
+    postedItemSelectedTask_ = std::make_unique<base::CancelableClosure>(
+        base::BindRepeating(base::RetainBlock(^{
           id target = [sender target];
           if ([target respondsToSelector:@selector(itemSelected:uiEventFlags:)])
             [target itemSelected:sender uiEventFlags:uiEventFlags];
@@ -276,7 +274,7 @@ NSString* const kMenuControllerMenuDidCloseNotification =
           // the target can not be set to nil here since that prevents re-use of
           // the menu for well-behaved consumers.
           CHECK([menu delegate]);  // Note: set to nil in -dealloc.
-        }));
+        })));
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, postedItemSelectedTask_->callback());
   }

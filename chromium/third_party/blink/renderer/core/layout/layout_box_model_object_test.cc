@@ -7,12 +7,12 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/dom/document_lifecycle.h"
 #include "third_party/blink/renderer/core/dom/dom_token_list.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/page/scrolling/sticky_position_scrolling_constraints.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
-#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 
@@ -165,7 +165,8 @@ TEST_F(LayoutBoxModelObjectTest, StickyPositionInlineConstraints) {
   EXPECT_EQ(
       IntRect(0, 100, 10, 10),
       EnclosingIntRect(GetScrollContainerRelativeStickyBoxRect(constraints)));
-  EXPECT_EQ(IntRect(0, 50, 100, 100), sticky->ComputeStickyConstrainingRect());
+  EXPECT_EQ(IntRect(0, 50, 100, 100),
+            EnclosingIntRect(sticky->ComputeStickyConstrainingRect()));
 }
 
 // Verifies that the sticky constraints are correctly computed for sticky with
@@ -224,7 +225,7 @@ TEST_F(LayoutBoxModelObjectTest, StickyPositionVerticalRLInlineConstraints) {
       IntRect(2190, 100, 10, 10),
       EnclosingIntRect(GetScrollContainerRelativeStickyBoxRect(constraints)));
   EXPECT_EQ(IntRect(2100, 50, 100, 100),
-            sticky->ComputeStickyConstrainingRect());
+            EnclosingIntRect(sticky->ComputeStickyConstrainingRect()));
 }
 
 // Verifies that the sticky constraints are not affected by transforms
@@ -1170,8 +1171,6 @@ TEST_F(LayoutBoxModelObjectTest, StickyRemovedFromRootScrollableArea) {
 }
 
 TEST_F(LayoutBoxModelObjectTest, BackfaceVisibilityChange) {
-  ScopedSlimmingPaintV175ForTest spv175(true);
-
   AtomicString base_style =
       "width: 100px; height: 100px; background: blue; position: absolute";
   SetBodyInnerHTML("<div id='target' style='" + base_style + "'></div>");

@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/animationworklet/worklet_animation.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 #include "third_party/blink/renderer/bindings/modules/v8/animation_effect_or_animation_effect_sequence.h"
 #include "third_party/blink/renderer/core/animation/element_animations.h"
 #include "third_party/blink/renderer/core/animation/keyframe_effect.h"
@@ -39,15 +40,19 @@ KeyframeEffect* CreateKeyframeEffect(Element* element) {
   return KeyframeEffect::Create(element, CreateEffectModel(), timing);
 }
 
-WorkletAnimation* CreateWorkletAnimation(Element* element) {
+WorkletAnimation* CreateWorkletAnimation(ScriptState* script_state,
+                                         Element* element) {
   AnimationEffectOrAnimationEffectSequence effects;
   AnimationEffect* effect = CreateKeyframeEffect(element);
   effects.SetAnimationEffect(effect);
   DocumentTimelineOrScrollTimeline timeline;
   scoped_refptr<SerializedScriptValue> options;
+
+  ScriptState::Scope scope(script_state);
   DummyExceptionStateForTesting exception_state;
-  return WorkletAnimation::Create("WorkletAnimation", effects, timeline,
-                                  std::move(options), exception_state);
+  return WorkletAnimation::Create(script_state, "WorkletAnimation", effects,
+                                  timeline, std::move(options),
+                                  exception_state);
 }
 
 }  // namespace
@@ -60,7 +65,11 @@ class WorkletAnimationTest : public RenderingTest {
   void SetUp() override {
     RenderingTest::SetUp();
     element_ = GetDocument().CreateElementForBinding("test");
-    worklet_animation_ = CreateWorkletAnimation(element_);
+    worklet_animation_ = CreateWorkletAnimation(GetScriptState(), element_);
+  }
+
+  ScriptState* GetScriptState() {
+    return ToScriptStateForMainWorld(&GetFrame());
   }
 
   Persistent<Element> element_;

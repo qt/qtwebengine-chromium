@@ -14,9 +14,12 @@
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_image.h"
-#include "core/fpdfapi/parser/cpdf_indirect_object_holder.h"
+#include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
+#include "core/fpdfapi/parser/cpdf_parser.h"
 #include "core/fpdfdoc/cpdf_linklist.h"
+#include "core/fxcrt/observable.h"
+#include "core/fxcrt/retain_ptr.h"
 
 class CFX_Font;
 class CFX_Matrix;
@@ -27,9 +30,10 @@ class CPDF_Font;
 class CPDF_FontEncoding;
 class CPDF_IccProfile;
 class CPDF_LinearizedHeader;
-class CPDF_Parser;
 class CPDF_Pattern;
+class CPDF_ReadValidator;
 class CPDF_StreamAcc;
+class IFX_SeekableReadStream;
 class JBig2_DocumentContext;
 
 #define FPDFPERM_MODIFY 0x0008
@@ -37,9 +41,8 @@ class JBig2_DocumentContext;
 #define FPDFPERM_FILL_FORM 0x0100
 #define FPDFPERM_EXTRACT_ACCESS 0x0200
 
-#define FPDF_PAGE_MAX_NUM 0xFFFFF
-
-class CPDF_Document : public CPDF_IndirectObjectHolder {
+class CPDF_Document : public Observable<CPDF_Document>,
+                      public CPDF_Parser::ParsedObjectsHolder {
  public:
   // Type from which the XFA extension can subclass itself.
   class Extension {
@@ -48,19 +51,22 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
     virtual CPDF_Document* GetPDFDoc() const = 0;
     virtual int GetPageCount() const = 0;
     virtual void DeletePage(int page_index) = 0;
+    virtual uint32_t GetUserPermissions() const = 0;
   };
 
-  explicit CPDF_Document(std::unique_ptr<CPDF_Parser> pParser);
+  static const int kPageMaxNum = 0xFFFFF;
+
+  CPDF_Document();
   ~CPDF_Document() override;
 
-  Extension* GetExtension() const { return m_pExtension.Get(); }
-  void SetExtension(Extension* pExt) { m_pExtension = pExt; }
+  Extension* GetExtension() const { return m_pExtension.get(); }
+  void SetExtension(std::unique_ptr<Extension> pExt) {
+    m_pExtension = std::move(pExt);
+  }
 
   CPDF_Parser* GetParser() const { return m_pParser.get(); }
-  const CPDF_Dictionary* GetRoot() const { return m_pRootDict; }
-  CPDF_Dictionary* GetRoot() { return m_pRootDict; }
-  const CPDF_Dictionary* GetInfo() const { return m_pInfoDict.Get(); }
-  CPDF_Dictionary* GetInfo() { return m_pInfoDict.Get(); }
+  CPDF_Dictionary* GetRoot() const { return m_pRootDict.Get(); }
+  CPDF_Dictionary* GetInfo();
 
   void DeletePage(int iPage);
   int GetPageCount() const;
@@ -91,16 +97,26 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
                             const CFX_Matrix& matrix);
 
   RetainPtr<CPDF_Image> LoadImageFromPageData(uint32_t dwStreamObjNum);
-  RetainPtr<CPDF_StreamAcc> LoadFontFile(CPDF_Stream* pStream);
+  RetainPtr<CPDF_StreamAcc> LoadFontFile(const CPDF_Stream* pStream);
   RetainPtr<CPDF_IccProfile> LoadIccProfile(const CPDF_Stream* pStream);
 
-  void LoadDoc();
-  void LoadLinearizedDoc(const CPDF_LinearizedHeader* pLinearizationParams);
+  //  CPDF_Parser::ParsedObjectsHolder overrides:
+  bool TryInit() override;
+
+  CPDF_Parser::Error LoadDoc(
+      const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
+      const char* password);
+  CPDF_Parser::Error LoadLinearizedDoc(
+      const RetainPtr<CPDF_ReadValidator>& validator,
+      const char* password);
+
   void LoadPages();
-  void LoadDocumentInfo();
 
   void CreateNewDoc();
   CPDF_Dictionary* CreateNewPage(int iPage);
+
+  void IncrementParsedPageCount() { ++m_ParsedPageCount; }
+  uint32_t GetParsedPageCountForTesting() { return m_ParsedPageCount; }
 
   CPDF_Font* AddStandardFont(const char* font, CPDF_FontEncoding* pEncoding);
   CPDF_Font* AddFont(CFX_Font* pFont, int charset, bool bVert);
@@ -115,10 +131,10 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
 
  protected:
   // Retrieve page count information by getting count value from the tree nodes
-  int RetrievePageCount() const;
+  int RetrievePageCount();
   // When this method is called, m_pTreeTraversal[level] exists.
   CPDF_Dictionary* TraversePDFPages(int iPage, int* nPagesToGo, size_t level);
-  int FindPageIndex(CPDF_Dictionary* pNode,
+  int FindPageIndex(const CPDF_Dictionary* pNode,
                     uint32_t* skip_count,
                     uint32_t objnum,
                     int* index,
@@ -126,7 +142,8 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   std::unique_ptr<CPDF_Object> ParseIndirectObject(uint32_t objnum) override;
   void LoadDocInternal();
   size_t CalculateEncodingDict(int charset, CPDF_Dictionary* pBaseDict);
-  CPDF_Dictionary* GetPagesDict() const;
+  const CPDF_Dictionary* GetPagesDict() const;
+  CPDF_Dictionary* GetPagesDict();
   CPDF_Dictionary* ProcessbCJK(
       CPDF_Dictionary* pBaseDict,
       int charset,
@@ -140,12 +157,10 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
                            std::set<CPDF_Dictionary*>* pVisited);
   bool InsertNewPage(int iPage, CPDF_Dictionary* pPageDict);
   void ResetTraversal();
+  void SetParser(std::unique_ptr<CPDF_Parser> pParser);
 
   std::unique_ptr<CPDF_Parser> m_pParser;
-
-  // TODO(tsepez): figure out why tests break if this is an UnownedPtr.
-  CPDF_Dictionary* m_pRootDict;  // Not owned.
-
+  UnownedPtr<CPDF_Dictionary> m_pRootDict;
   UnownedPtr<CPDF_Dictionary> m_pInfoDict;
 
   // Vector of pairs to know current position in the page tree. The index in the
@@ -155,17 +170,15 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   std::vector<std::pair<CPDF_Dictionary*, size_t>> m_pTreeTraversal;
 
   // Index of the next page that will be traversed from the page tree.
-  int m_iNextPageToTraverse;
-  bool m_bReachedMaxPageLevel;
-  bool m_bLinearized;
-  int m_iFirstPageNo;
-  uint32_t m_dwFirstPageObjNum;
+  int m_iNextPageToTraverse = 0;
+  bool m_bReachedMaxPageLevel = false;
+  uint32_t m_ParsedPageCount = 0;
   std::unique_ptr<CPDF_DocPageData> m_pDocPage;
   std::unique_ptr<CPDF_DocRenderData> m_pDocRender;
   std::unique_ptr<JBig2_DocumentContext> m_pCodecContext;
   std::unique_ptr<CPDF_LinkList> m_pLinksContext;
-  std::vector<uint32_t> m_PageList;
-  UnownedPtr<Extension> m_pExtension;
+  std::vector<uint32_t> m_PageList;  // Page number to page's dict objnum.
+  std::unique_ptr<Extension> m_pExtension;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_DOCUMENT_H_

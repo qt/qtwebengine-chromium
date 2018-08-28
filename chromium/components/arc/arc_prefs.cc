@@ -54,6 +54,11 @@ const char kArcLocationServiceEnabled[] = "arc.location_service.enabled";
 const char kArcPackages[] = "arc.packages";
 // A preference that indicates that Play Auto Install flow was already started.
 const char kArcPaiStarted[] = "arc.pai.started";
+// A preference that indicates that Play Fast App Reinstall flow was already
+// started.
+const char kArcFastAppReinstallStarted[] = "arc.fast.app.reinstall.started";
+// A preference to keep list of Play Fast App Reinstall packages.
+const char kArcFastAppReinstallPackages[] = "arc.fast.app.reinstall.packages";
 // A preference that holds the list of apps that the admin requested to be
 // push-installed.
 const char kArcPushInstallAppsRequested[] = "arc.push_install.requested";
@@ -80,6 +85,11 @@ const char kArcVoiceInteractionValuePropAccepted[] =
 const char kEcryptfsMigrationStrategy[] = "ecryptfs_migration_strategy";
 // A preference that indicates whether the SMS Connect feature is enabled.
 const char kSmsConnectEnabled[] = "multidevice.sms_connect_enabled";
+
+// A preference that indicates the user has accepted voice interaction activity
+// control settings.
+const char kVoiceInteractionActivityControlAccepted[] =
+    "settings.voice_interaction.activity_control.accepted";
 // A preference that indicates the user has enabled voice interaction services.
 const char kVoiceInteractionEnabled[] = "settings.voice_interaction.enabled";
 // A preference that indicates the user has allowed voice interaction services
@@ -87,6 +97,10 @@ const char kVoiceInteractionEnabled[] = "settings.voice_interaction.enabled";
 // screen).
 const char kVoiceInteractionContextEnabled[] =
     "settings.voice_interaction.context.enabled";
+// A preference that indicates the user has allowed voice interaction services
+// to use hotword listening.
+const char kVoiceInteractionHotwordEnabled[] =
+    "settings.voice_interaction.hotword.enabled";
 
 void RegisterProfilePrefs(PrefRegistrySimple* registry) {
   // TODO(dspaid): Implement a mechanism to allow this to sync on first boot
@@ -111,10 +125,14 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
       static_cast<int>(ArcSupervisionTransition::NO_TRANSITION));
 
   // Sorted in lexicographical order.
+  registry->RegisterBooleanPref(kVoiceInteractionActivityControlAccepted,
+                                false);
   registry->RegisterBooleanPref(kArcDataRemoveRequested, false);
   registry->RegisterBooleanPref(kArcEnabled, false);
   registry->RegisterBooleanPref(kArcInitialSettingsPending, false);
   registry->RegisterBooleanPref(kArcPaiStarted, false);
+  registry->RegisterBooleanPref(kArcFastAppReinstallStarted, false);
+  registry->RegisterListPref(kArcFastAppReinstallPackages);
   registry->RegisterBooleanPref(kArcPolicyComplianceReported, false);
   registry->RegisterBooleanPref(kArcSignedIn, false);
   registry->RegisterBooleanPref(kArcSkippedReportingNotice, false);
@@ -124,6 +142,7 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(kSmsConnectEnabled, true);
   registry->RegisterBooleanPref(kVoiceInteractionContextEnabled, false);
   registry->RegisterBooleanPref(kVoiceInteractionEnabled, false);
+  registry->RegisterBooleanPref(kVoiceInteractionHotwordEnabled, false);
 }
 
 }  // namespace prefs

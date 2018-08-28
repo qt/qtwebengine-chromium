@@ -28,11 +28,6 @@ class CodecEndToEndTest : public test::CallTest,
  public:
   CodecEndToEndTest() : field_trial_(GetParam()) {}
 
-  virtual ~CodecEndToEndTest() {
-    EXPECT_EQ(nullptr, video_send_stream_);
-    EXPECT_TRUE(video_receive_streams_.empty());
-  }
-
  private:
   test::ScopedFieldTrials field_trial_;
 };
@@ -142,12 +137,12 @@ TEST_P(CodecEndToEndTest, SendsAndReceivesMultiplex) {
   InternalDecoderFactory decoder_factory;
   test::FunctionVideoEncoderFactory encoder_factory(
       [&internal_encoder_factory]() {
-        return rtc::MakeUnique<MultiplexEncoderAdapter>(
+        return absl::make_unique<MultiplexEncoderAdapter>(
             &internal_encoder_factory, SdpVideoFormat(cricket::kVp9CodecName));
       });
   CodecObserver test(
       5, kVideoRotation_0, "multiplex", &encoder_factory,
-      rtc::MakeUnique<MultiplexDecoderAdapter>(
+      absl::make_unique<MultiplexDecoderAdapter>(
           &decoder_factory, SdpVideoFormat(cricket::kVp9CodecName)));
   RunBaseTest(&test);
 }
@@ -157,12 +152,12 @@ TEST_P(CodecEndToEndTest, SendsAndReceivesMultiplexVideoRotation90) {
   InternalDecoderFactory decoder_factory;
   test::FunctionVideoEncoderFactory encoder_factory(
       [&internal_encoder_factory]() {
-        return rtc::MakeUnique<MultiplexEncoderAdapter>(
+        return absl::make_unique<MultiplexEncoderAdapter>(
             &internal_encoder_factory, SdpVideoFormat(cricket::kVp9CodecName));
       });
   CodecObserver test(
       5, kVideoRotation_90, "multiplex", &encoder_factory,
-      rtc::MakeUnique<MultiplexDecoderAdapter>(
+      absl::make_unique<MultiplexDecoderAdapter>(
           &decoder_factory, SdpVideoFormat(cricket::kVp9CodecName)));
   RunBaseTest(&test);
 }

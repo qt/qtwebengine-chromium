@@ -23,6 +23,10 @@ XRFrameTransport::~XRFrameTransport() {
 
 void XRFrameTransport::PresentChange() {
   frame_copier_ = nullptr;
+
+  // Ensure we don't wait for a frame separator fence when rapidly exiting and
+  // re-entering presentation, cf. https://crbug.com/855722.
+  waiting_for_previous_frame_fence_ = false;
 }
 
 void XRFrameTransport::SetTransportOptions(
@@ -30,12 +34,10 @@ void XRFrameTransport::SetTransportOptions(
   transport_options_ = std::move(transport_options);
 }
 
-device::mojom::blink::VRSubmitFrameClientPtr
-XRFrameTransport::GetSubmitFrameClient() {
-  device::mojom::blink::VRSubmitFrameClientPtr submit_frame_client;
+void XRFrameTransport::BindSubmitFrameClient(
+    device::mojom::blink::VRSubmitFrameClientRequest request) {
   submit_frame_client_binding_.Close();
-  submit_frame_client_binding_.Bind(mojo::MakeRequest(&submit_frame_client));
-  return submit_frame_client;
+  submit_frame_client_binding_.Bind(std::move(request));
 }
 
 bool XRFrameTransport::DrawingIntoSharedBuffer() {

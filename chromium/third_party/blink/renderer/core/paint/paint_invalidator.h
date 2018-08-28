@@ -14,6 +14,7 @@ namespace blink {
 
 class NGPaintFragment;
 class PrePaintTreeWalk;
+
 struct CORE_EXPORT PaintInvalidatorContext {
   DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 
@@ -42,8 +43,7 @@ struct CORE_EXPORT PaintInvalidatorContext {
             ParentContext()->paint_invalidation_container_for_stacked_contents),
         painting_layer(ParentContext()->painting_layer) {}
 
-  void MapLocalRectToVisualRectInBacking(const LayoutObject&,
-                                         LayoutRect&) const;
+  void MapLocalRectToVisualRect(const LayoutObject&, LayoutRect&) const;
 
   bool NeedsVisualRectUpdate(const LayoutObject& object) const {
 #if DCHECK_IS_ON()
@@ -52,6 +52,14 @@ struct CORE_EXPORT PaintInvalidatorContext {
 #endif
     return object.NeedsPaintOffsetAndVisualRectUpdate() ||
            (subtree_flags & PaintInvalidatorContext::kSubtreeVisualRectUpdate);
+  }
+
+  bool NeedsSubtreeWalk() const {
+    return subtree_flags &
+           (kSubtreeInvalidationChecking | kSubtreeVisualRectUpdate |
+            kSubtreeFullInvalidation |
+            kSubtreeFullInvalidationForStackedContents |
+            kSubtreeSVGResourceChange);
   }
 
   const PaintInvalidatorContext* ParentContext() const {
@@ -64,6 +72,7 @@ struct CORE_EXPORT PaintInvalidatorContext {
   ParentContextAccessor parent_context_accessor_;
 
  public:
+  // When adding new subtree flags, ensure |NeedsSubtreeWalk| is updated.
   enum SubtreeFlag {
     kSubtreeInvalidationChecking = 1 << 0,
     kSubtreeVisualRectUpdate = 1 << 1,
@@ -107,21 +116,9 @@ struct CORE_EXPORT PaintInvalidatorContext {
 
   PaintLayer* painting_layer = nullptr;
 
-  // Store the old visual rect in the paint invalidation backing's coordinates.
-  // It does *not* account for composited scrolling.
-  // See LayoutObject::AdjustVisualRectForCompositedScrolling().
+  // The previous VisualRect and PaintOffset of FragmentData.
   LayoutRect old_visual_rect;
-  // Use LayoutObject::VisualRect() to get the new visual rect.
-
-  // This field and LayoutObject::LocationInBacking() store the old and new
-  // origins of the object's local coordinates in the paint invalidation
-  // backing's coordinates. They are used to detect layoutObject shifts that
-  // force a full invalidation and invalidation check in subtree.
-  // The points do *not* account for composited scrolling. See
-  // LayoutObject::adjustVisualRectForCompositedScrolling().
-  // This field will be removed for SPv175.
-  LayoutPoint old_location;
-  // Use LayoutObject::LocationInBacking() to get the new location.
+  LayoutPoint old_paint_offset;
 
   const FragmentData* fragment_data;
 
@@ -133,7 +130,6 @@ struct CORE_EXPORT PaintInvalidatorContext {
 
 #if DCHECK_IS_ON()
   bool tree_builder_context_actually_needed_ = false;
-  friend class FindVisualRectNeedingUpdateScope;
   friend class FindVisualRectNeedingUpdateScopeBase;
   mutable bool force_visual_rect_update_for_checking_ = false;
 #endif
@@ -162,21 +158,18 @@ class PaintInvalidator {
       const PaintInvalidatorContext&,
       Rect&);
   template <typename Rect, typename Point>
-  static LayoutRect MapLocalRectToVisualRectInBacking(
-      const LayoutObject&,
-      const Rect&,
-      const PaintInvalidatorContext&,
-      bool disable_flip = false);
+  static LayoutRect MapLocalRectToVisualRect(const LayoutObject&,
+                                             const Rect&,
+                                             const PaintInvalidatorContext&,
+                                             bool disable_flip = false);
 
+  ALWAYS_INLINE LayoutRect ComputeVisualRect(const LayoutObject&,
+                                             const PaintInvalidatorContext&);
   ALWAYS_INLINE LayoutRect
-  ComputeVisualRectInBacking(const LayoutObject&,
-                             const PaintInvalidatorContext&);
-  ALWAYS_INLINE LayoutRect
-  ComputeVisualRectInBacking(const NGPaintFragment&,
-                             const LayoutObject&,
-                             const PaintInvalidatorContext&);
-  ALWAYS_INLINE LayoutPoint
-  ComputeLocationInBacking(const LayoutObject&, const PaintInvalidatorContext&);
+  MapFragmentLocalRectToVisualRect(const LayoutRect&,
+                                   const LayoutObject&,
+                                   const NGPaintFragment&,
+                                   const PaintInvalidatorContext&);
   ALWAYS_INLINE void UpdatePaintingLayer(const LayoutObject&,
                                          PaintInvalidatorContext&);
   ALWAYS_INLINE void UpdatePaintInvalidationContainer(const LayoutObject&,

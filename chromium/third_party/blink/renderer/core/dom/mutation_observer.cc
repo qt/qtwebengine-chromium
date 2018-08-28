@@ -32,9 +32,9 @@
 
 #include <algorithm>
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_mutation_callback.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer_init.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer_registration.h"
 #include "third_party/blink/renderer/core/dom/mutation_record.h"
@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/html/html_slot_element.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/microtask.h"
 
 namespace blink {
@@ -72,11 +73,6 @@ class MutationObserver::V8DelegateImpl final
     visitor->Trace(callback_);
     MutationObserver::Delegate::Trace(visitor);
     ContextClient::Trace(visitor);
-  }
-
-  void TraceWrappers(ScriptWrappableVisitor* visitor) const override {
-    visitor->TraceWrappers(callback_);
-    MutationObserver::Delegate::TraceWrappers(visitor);
   }
 
  private:
@@ -140,7 +136,7 @@ void MutationObserver::observe(Node* node,
   if (attributes || (!observer_init.hasAttributes() &&
                      (observer_init.hasAttributeOldValue() ||
                       observer_init.hasAttributeFilter())))
-    options |= kAttributes;
+    options |= kMutationTypeAttributes;
 
   if (observer_init.hasCharacterDataOldValue() &&
       observer_init.characterDataOldValue())
@@ -150,15 +146,15 @@ void MutationObserver::observe(Node* node,
       observer_init.hasCharacterData() && observer_init.characterData();
   if (character_data || (!observer_init.hasCharacterData() &&
                          observer_init.hasCharacterDataOldValue()))
-    options |= kCharacterData;
+    options |= kMutationTypeCharacterData;
 
   if (observer_init.childList())
-    options |= kChildList;
+    options |= kMutationTypeChildList;
 
   if (observer_init.subtree())
     options |= kSubtree;
 
-  if (!(options & kAttributes)) {
+  if (!(options & kMutationTypeAttributes)) {
     if (options & kAttributeOldValue) {
       exception_state.ThrowTypeError(
           "The options object may only set 'attributeOldValue' to true when "
@@ -172,14 +168,15 @@ void MutationObserver::observe(Node* node,
       return;
     }
   }
-  if (!((options & kCharacterData) || !(options & kCharacterDataOldValue))) {
+  if (!((options & kMutationTypeCharacterData) ||
+        !(options & kCharacterDataOldValue))) {
     exception_state.ThrowTypeError(
         "The options object may only set 'characterDataOldValue' to true when "
         "'characterData' is true or not present.");
     return;
   }
 
-  if (!(options & (kAttributes | kCharacterData | kChildList))) {
+  if (!(options & kMutationTypeAll)) {
     exception_state.ThrowTypeError(
         "The options object must set at least one of 'attributes', "
         "'characterData', or 'childList' to true.");
@@ -377,13 +374,6 @@ void MutationObserver::Trace(blink::Visitor* visitor) {
   visitor->Trace(registrations_);
   ScriptWrappable::Trace(visitor);
   ContextClient::Trace(visitor);
-}
-
-void MutationObserver::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(delegate_);
-  for (auto record : records_)
-    visitor->TraceWrappers(record);
-  ScriptWrappable::TraceWrappers(visitor);
 }
 
 }  // namespace blink

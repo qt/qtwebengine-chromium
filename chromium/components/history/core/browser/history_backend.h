@@ -23,6 +23,7 @@
 #include "base/macros.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/observer_list.h"
+#include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "base/supports_user_data.h"
 #include "base/task/cancelable_task_tracker.h"
@@ -60,6 +61,10 @@ class URLDatabase;
 // The maximum number of bitmaps for a single icon URL which can be stored in
 // the thumbnail database.
 static const size_t kMaxFaviconBitmapsPerIconURL = 8;
+
+// Returns a formatted version of |url| with the HTTP/HTTPS scheme, port,
+// username/password, and any trivial subdomains (e.g., "www.", "m.") removed.
+base::string16 FormatUrlForRedirectComparison(const GURL& url);
 
 // Keeps track of a queued HistoryDBTask. This class lives solely on the
 // DB thread.
@@ -625,12 +630,15 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   //
   // This does not schedule database commits, it is intended to be used as a
   // subroutine for AddPage only. It also assumes the database is valid.
-  std::pair<URLID, VisitID> AddPageVisit(const GURL& url,
-                                         base::Time time,
-                                         VisitID referring_visit,
-                                         ui::PageTransition transition,
-                                         bool hidden,
-                                         VisitSource visit_source);
+  std::pair<URLID, VisitID> AddPageVisit(
+      const GURL& url,
+      base::Time time,
+      VisitID referring_visit,
+      ui::PageTransition transition,
+      bool hidden,
+      VisitSource visit_source,
+      bool should_increment_typed_count,
+      base::Optional<base::string16> title = base::nullopt);
 
   // Returns a redirect chain in |redirects| for the VisitID
   // |cur_visit|. |cur_visit| is assumed to be valid. Assumes that

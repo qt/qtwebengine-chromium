@@ -8,6 +8,7 @@
 #ifndef SkCodec_DEFINED
 #define SkCodec_DEFINED
 
+#include "../private/SkNoncopyable.h"
 #include "../private/SkTemplates.h"
 #include "../private/SkEncodedInfo.h"
 #include "SkCodecAnimation.h"
@@ -252,7 +253,6 @@ public:
             , fSubset(nullptr)
             , fFrameIndex(0)
             , fPriorFrame(kNone)
-            , fPremulBehavior(SkTransferFunctionBehavior::kRespect)
         {}
 
         ZeroInitialized            fZeroInitialized;
@@ -296,14 +296,6 @@ public:
          *  If set to kNone, the codec will decode any necessary required frame(s) first.
          */
         int                        fPriorFrame;
-
-        /**
-         *  Indicates whether we should do a linear premultiply or a legacy premultiply.
-         *
-         *  In the case where the dst SkColorSpace is nullptr, this flag is ignored and
-         *  we will always do a legacy premultiply.
-         */
-        SkTransferFunctionBehavior fPremulBehavior;
     };
 
     /**
@@ -803,8 +795,7 @@ protected:
 
     virtual int onOutputScanline(int inputScanline) const;
 
-    bool initializeColorXform(const SkImageInfo& dstInfo, SkEncodedInfo::Alpha,
-                              SkTransferFunctionBehavior premulBehavior);
+    bool initializeColorXform(const SkImageInfo& dstInfo, SkEncodedInfo::Alpha);
     // Some classes never need a colorXform e.g.
     // - ICO uses its embedded codec's colorXform
     // - WBMP is just Black/White

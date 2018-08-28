@@ -55,7 +55,7 @@ class TestURLLoaderFactory : public network::mojom::URLLoaderFactory,
   }
 
   void NotifyClientOnReceiveResponse() {
-    client_ptr_->OnReceiveResponse(network::ResourceResponseHead(), nullptr);
+    client_ptr_->OnReceiveResponse(network::ResourceResponseHead());
   }
 
   void NotifyClientOnReceiveRedirect() {
@@ -95,7 +95,9 @@ class TestURLLoaderFactory : public network::mojom::URLLoaderFactory,
   }
 
   // network::mojom::URLLoader implementation.
-  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+  void FollowRedirect(const base::Optional<std::vector<std::string>>&
+                          to_be_removed_request_headers,
+                      const base::Optional<net::HttpRequestHeaders>&
                           modified_request_headers) override {}
   void ProceedWithResponse() override {}
 
@@ -154,8 +156,7 @@ class TestURLLoaderClient : public network::mojom::URLLoaderClient {
  private:
   // network::mojom::URLLoaderClient implementation:
   void OnReceiveResponse(
-      const network::ResourceResponseHead& response_head,
-      network::mojom::DownloadedTempFilePtr downloaded_file) override {
+      const network::ResourceResponseHead& response_head) override {
     on_received_response_called_++;
     if (on_received_response_callback_)
       on_received_response_callback_.Run();
@@ -167,7 +168,6 @@ class TestURLLoaderClient : public network::mojom::URLLoaderClient {
     if (on_received_redirect_callback_)
       on_received_redirect_callback_.Run();
   }
-  void OnDataDownloaded(int64_t data_len, int64_t encoded_data_len) override {}
   void OnUploadProgress(int64_t current_position,
                         int64_t total_size,
                         OnUploadProgressCallback ack_callback) override {}
@@ -241,9 +241,11 @@ class TestURLLoaderThrottle : public URLLoaderThrottle {
       will_start_request_callback_.Run(delegate_, defer);
   }
 
-  void WillRedirectRequest(const net::RedirectInfo& redirect_info,
-                           const network::ResourceResponseHead& response_head,
-                           bool* defer) override {
+  void WillRedirectRequest(
+      const net::RedirectInfo& redirect_info,
+      const network::ResourceResponseHead& response_head,
+      bool* defer,
+      std::vector<std::string>* to_be_removed_request_headers) override {
     will_redirect_request_called_++;
     if (will_redirect_request_callback_)
       will_redirect_request_callback_.Run(delegate_, defer);

@@ -17,8 +17,6 @@
 
 namespace cryptauth {
 
-class CryptAuthService;
-
 // An authenticated bi-directional channel for exchanging messages with remote
 // devices. |SecureChannel| manages a |Connection| by initializing it and
 // authenticating it via a security handshake once the connection has occurred.
@@ -51,42 +49,30 @@ class SecureChannel : public ConnectionObserver {
 
   class Observer {
    public:
-    virtual void OnSecureChannelStatusChanged(
-        SecureChannel* secure_channel,
-        const Status& old_status,
-        const Status& new_status) = 0;
+    virtual void OnSecureChannelStatusChanged(SecureChannel* secure_channel,
+                                              const Status& old_status,
+                                              const Status& new_status) {}
 
-    virtual void OnMessageReceived(
-        SecureChannel* secure_channel,
-        const std::string& feature,
-        const std::string& payload) = 0;
+    virtual void OnMessageReceived(SecureChannel* secure_channel,
+                                   const std::string& feature,
+                                   const std::string& payload) {}
 
     // Called when a message has been sent successfully; |sequence_number|
     // corresponds to the value returned by an earlier call to SendMessage().
     virtual void OnMessageSent(SecureChannel* secure_channel,
                                int sequence_number) {}
-
-    // Called when GATT characteristics are not available. This observer
-    // function is a temporary work-around (see crbug.com/784968).
-    // TODO(khorimoto): This observer function is specific to only one
-    //     SecureChannel implementation, so it is hacky to include it as part of
-    //     the observer for SecureChannel. Remove this work-around when it is no
-    //     longer necessary.
-    virtual void OnGattCharacteristicsNotAvailable() {}
   };
 
   class Factory {
    public:
     static std::unique_ptr<SecureChannel> NewInstance(
-        std::unique_ptr<Connection> connection,
-        CryptAuthService* cryptauth_service);
+        std::unique_ptr<Connection> connection);
 
     static void SetInstanceForTesting(Factory* factory);
 
    protected:
     virtual std::unique_ptr<SecureChannel> BuildInstance(
-        std::unique_ptr<Connection> connection,
-        CryptAuthService* cryptauth_service);
+        std::unique_ptr<Connection> connection);
 
    private:
     static Factory* factory_instance_;
@@ -107,6 +93,15 @@ class SecureChannel : public ConnectionObserver {
   virtual void AddObserver(Observer* observer);
   virtual void RemoveObserver(Observer* observer);
 
+  // Returns the RSSI of the connection; if no derived class overrides this
+  // function, base::nullopt is returned.
+  virtual void GetConnectionRssi(
+      base::OnceCallback<void(base::Optional<int32_t>)> callback);
+
+  // The |responder_auth| message. Returns null if |secure_context_| is null or
+  // status() != AUTHENTICATED.
+  virtual base::Optional<std::string> GetChannelBindingData();
+
   Status status() const {
     return status_;
   }
@@ -120,13 +115,9 @@ class SecureChannel : public ConnectionObserver {
   void OnSendCompleted(const cryptauth::Connection& connection,
                        const cryptauth::WireMessage& wire_message,
                        bool success) override;
-  void OnGattCharacteristicsNotAvailable() override;
 
  protected:
-  SecureChannel(std::unique_ptr<Connection> connection,
-                CryptAuthService* cryptauth_service);
-
-  void NotifyGattCharacteristicsNotAvailable();
+  SecureChannel(std::unique_ptr<Connection> connection);
 
   Status status_;
 
@@ -160,7 +151,6 @@ class SecureChannel : public ConnectionObserver {
       std::unique_ptr<SecureContext> secure_context);
 
   std::unique_ptr<Connection> connection_;
-  CryptAuthService* cryptauth_service_;  // Outlives this instance.
   std::unique_ptr<Authenticator> authenticator_;
   std::unique_ptr<SecureContext> secure_context_;
   base::queue<std::unique_ptr<PendingMessage>> queued_messages_;

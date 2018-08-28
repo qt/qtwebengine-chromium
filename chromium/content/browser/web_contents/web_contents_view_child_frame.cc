@@ -99,7 +99,11 @@ void WebContentsViewChildFrame::SetPageTitle(const base::string16& title) {
 
 void WebContentsViewChildFrame::RenderViewCreated(RenderViewHost* host) {}
 
-void WebContentsViewChildFrame::RenderViewSwappedIn(RenderViewHost* host) {}
+void WebContentsViewChildFrame::RenderViewReady() {}
+
+void WebContentsViewChildFrame::RenderViewHostChanged(
+    RenderViewHost* old_host,
+    RenderViewHost* new_host) {}
 
 void WebContentsViewChildFrame::SetOverscrollControllerEnabled(bool enabled) {
   // This is managed by the outer view.

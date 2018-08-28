@@ -88,30 +88,8 @@ Polymer({
       value: false,
     },
 
-    /** @private {!Array<ImportantSite>} */
-    importantSites_: {
-      type: Array,
-      value: function() {
-        return [];
-      }
-    },
-
     /** @private */
-    importantSitesFlagEnabled_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('importantSitesInCbd');
-      },
-    },
-
-    /** @private */
-    showImportantSitesDialog_: {
-      type: Boolean,
-      value: false,
-    },
-
-    /** @private */
-    showImportantSitesCacheSubtitle_: {
+    shouldShowCookieException_: {
       type: Boolean,
       value: false,
     },
@@ -147,12 +125,6 @@ Polymer({
     this.browserProxy_.initialize().then(() => {
       this.$.clearBrowsingDataDialog.showModal();
     });
-
-    if (this.importantSitesFlagEnabled_) {
-      this.browserProxy_.getImportantSites().then(sites => {
-        this.importantSites_ = sites;
-      });
-    }
   },
 
   /**
@@ -199,34 +171,54 @@ Polymer({
    *
    * @param {boolean} signedIn Whether the user is signed in.
    * @param {boolean} syncing Whether the user is syncing history.
+   * @param {boolean} shouldShowCookieException Whether the exception about not
+   *    being signed out of your Google account should be shown.
    * @private
    */
-  updateSyncState_: function(signedIn, syncing) {
+  updateSyncState_: function(signedIn, syncing, shouldShowCookieException) {
     this.isSignedIn_ = signedIn;
     this.isSyncingHistory_ = syncing;
+    this.shouldShowCookieException_ = shouldShowCookieException;
     this.$.clearBrowsingDataDialog.classList.add('fully-rendered');
   },
 
   /**
-   * Choose a summary checkbox label.
+   * Choose a label for the history checkbox.
    * @param {boolean} isSignedIn
    * @param {boolean} isSyncingHistory
    * @param {string} historySummary
-   * @param {string} historySummarySigned
+   * @param {string} historySummarySignedIn
    * @param {string} historySummarySynced
    * @return {string}
    * @private
    */
   browsingCheckboxLabel_: function(
-      isSignedIn, isSyncingHistory, historySummary, historySummarySigned,
+      isSignedIn, isSyncingHistory, historySummary, historySummarySignedIn,
       historySummarySynced) {
     if (isSyncingHistory) {
       return historySummarySynced;
     } else if (isSignedIn) {
-      return historySummarySigned;
+      return historySummarySignedIn;
     }
     return historySummary;
   },
+
+  /**
+   * Choose a label for the cookie checkbox.
+   * @param {boolean} shouldShowCookieException
+   * @param {string} cookiesSummary
+   * @param {string} cookiesSummarySignedIn
+   * @return {string}
+   * @private
+   */
+  cookiesCheckboxLabel_: function(
+      shouldShowCookieException, cookiesSummary, cookiesSummarySignedIn) {
+    if (shouldShowCookieException) {
+      return cookiesSummarySignedIn;
+    }
+    return cookiesSummary;
+  },
+
 
   /**
    * Choose a content/site settings label.
@@ -252,54 +244,6 @@ Polymer({
     // Strip the common prefix, i.e. use only "<datatype>".
     const matches = prefName.match(/^browser\.clear_data\.(\w+)$/);
     this.set('counters_.' + assert(matches[1]), text);
-  },
-
-  /**
-   * @return {boolean} Whether the ImportantSites dialog should be shown.
-   * @private
-   */
-  shouldShowImportantSites_: function() {
-    if (!this.importantSitesFlagEnabled_)
-      return false;
-    const tab = this.$.tabs.selectedItem;
-    if (!tab.querySelector('.cookies-checkbox').checked) {
-      return false;
-    }
-
-    const haveImportantSites = this.importantSites_.length > 0;
-    chrome.send(
-        'metricsHandler:recordBooleanHistogram',
-        ['History.ClearBrowsingData.ImportantDialogShown', haveImportantSites]);
-    return haveImportantSites;
-  },
-
-  /**
-   * Handles the tap on the Clear Data button.
-   * @private
-   */
-  onClearBrowsingDataTap_: function() {
-    if (this.shouldShowImportantSites_()) {
-      const tab = this.$.tabs.selectedItem;
-      this.showImportantSitesDialog_ = true;
-      this.showImportantSitesCacheSubtitle_ =
-          tab.querySelector('.cache-checkbox').checked;
-      this.$.clearBrowsingDataDialog.close();
-      // Show important sites dialog after dom-if is applied.
-      this.async(() => this.$$('#importantSitesDialog').showModal());
-    } else {
-      this.clearBrowsingData_();
-    }
-  },
-
-  /**
-   * Handles closing of the clear browsing data dialog. Stops the close
-   * event from propagating if another dialog is shown to prevent the
-   * privacy-page from closing this dialog.
-   * @private
-   */
-  onClearBrowsingDataDialogClose_: function(event) {
-    if (this.showImportantSitesDialog_)
-      event.stopPropagation();
   },
 
   /**
@@ -334,8 +278,7 @@ Polymer({
       chrome.metricsPrivate.recordUserAction('ClearBrowsingData_AdvancedTab');
     }
 
-    this.browserProxy_
-        .clearBrowsingData(dataTypes, timePeriod, this.importantSites_)
+    this.browserProxy_.clearBrowsingData(dataTypes, timePeriod)
         .then(shouldShowNotice => {
           this.clearingInProgress_ = false;
           this.showHistoryDeletionDialog_ = shouldShowNotice;
@@ -343,19 +286,8 @@ Polymer({
               'History.ClearBrowsingData.TimeSpentInDialog',
               Date.now() - this.dialogOpenedTime_);
           if (!shouldShowNotice)
-            this.closeDialogs_();
+            this.$.clearBrowsingDataDialog.close();
         });
-  },
-
-  /**
-   * Closes the clear browsing data or important site dialog if they are open.
-   * @private
-   */
-  closeDialogs_: function() {
-    if (this.$.clearBrowsingDataDialog.open)
-      this.$.clearBrowsingDataDialog.close();
-    if (this.showImportantSitesDialog_)
-      this.$$('#importantSitesDialog').close();
   },
 
   /** @private */
@@ -364,25 +296,12 @@ Polymer({
   },
 
   /**
-   * Handles the tap confirm button in important sites.
-   * @private
-   */
-  onImportantSitesConfirmTap_: function() {
-    this.clearBrowsingData_();
-  },
-
-  /** @private */
-  onImportantSitesCancelTap_: function() {
-    /** @type {!CrDialogElement} */ (this.$$('#importantSitesDialog')).cancel();
-  },
-
-  /**
    * Handles the closing of the notice about other forms of browsing history.
    * @private
    */
   onHistoryDeletionDialogClose_: function() {
     this.showHistoryDeletionDialog_ = false;
-    this.closeDialogs_();
+    this.$.clearBrowsingDataDialog.close();
   },
 
   /**

@@ -92,7 +92,7 @@ int VideoNumSpatialLayers() {
 }
 
 DEFINE_int(vinter_layer_pred,
-           1,
+           2,
            "Video inter-layer prediction mode. "
            "0 - enabled, 1 - disabled, 2 - enabled only for key pictures.");
 InterLayerPredMode VideoInterLayerPred() {
@@ -215,7 +215,7 @@ int ScreenshareNumSpatialLayers() {
 }
 
 DEFINE_int(sinter_layer_pred,
-           1,
+           0,
            "Screenshare inter-layer prediction mode. "
            "0 - enabled, 1 - disabled, 2 - enabled only for key pictures.");
 InterLayerPredMode ScreenshareInterLayerPred() {
@@ -508,6 +508,7 @@ void Loopback() {
       flags::ScreenshareMinTransmitBitrateKbps() * 1000,
       false,  // ULPFEC disabled.
       false,  // FlexFEC disabled.
+      false,  // Automatic scaling disabled
       ""};
   params.video[camera_idx] = {flags::FLAG_video,
                               flags::VideoWidth(),
@@ -523,6 +524,7 @@ void Loopback() {
                               0,  // No min transmit bitrate.
                               flags::FLAG_use_ulpfec,
                               flags::FLAG_use_flexfec,
+                              false,
                               flags::VideoClip(),
                               flags::GetCaptureDevice()};
   params.audio = {flags::FLAG_audio, flags::FLAG_audio_video_sync,
@@ -576,11 +578,11 @@ void Loopback() {
       flags::VideoSelectedStream(), flags::VideoNumSpatialLayers(),
       flags::VideoSelectedSL(), flags::VideoInterLayerPred(), SL_descriptors);
 
-  VideoQualityTest test;
+  auto fixture = absl::make_unique<VideoQualityTest>(nullptr);
   if (flags::DurationSecs()) {
-    test.RunWithAnalyzer(params);
+    fixture->RunWithAnalyzer(params);
   } else {
-    test.RunWithRenderers(params);
+    fixture->RunWithRenderers(params);
   }
 }
 }  // namespace webrtc

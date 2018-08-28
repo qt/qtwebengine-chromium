@@ -573,7 +573,6 @@ if (enable_remoting_host) {
     ]
 
     deps = [
-      "//build/config:exe_and_shlib_deps",
       "//third_party/libjingle_xmpp",
       "//third_party/webrtc_overrides:init_webrtc",
     ]
@@ -732,7 +731,7 @@ if (enable_me2me_host) {
     }
 
     if (remoting_multi_process != 0) {
-      deps += [ "//mojo/edk" ]
+      deps += [ "//mojo/core/embedder" ]
     }
   }
 
@@ -774,7 +773,6 @@ if (enable_me2me_host) {
 
         deps = [
           ":remoting_me2me_host_static",
-          "//build/config:exe_and_shlib_deps",
           "//remoting/base:breakpad",
           "//remoting/host/installer:credits",
           "//remoting/resources",

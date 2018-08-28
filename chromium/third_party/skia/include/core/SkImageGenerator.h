@@ -24,7 +24,7 @@ class SkMatrix;
 class SkPaint;
 class SkPicture;
 
-class SK_API SkImageGenerator : public SkNoncopyable {
+class SK_API SkImageGenerator {
 public:
     /**
      *  The PixelRef which takes ownership of this SkImageGenerator
@@ -82,13 +82,7 @@ public:
      *
      *  @return true on success.
      */
-    struct Options {
-        Options()
-            : fBehavior(SkTransferFunctionBehavior::kIgnore)
-        {}
-
-        SkTransferFunctionBehavior fBehavior;
-    };
+    struct Options {};
     bool getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes, const Options* options);
 
     /**
@@ -148,7 +142,6 @@ public:
      */
     sk_sp<GrTextureProxy> generateTexture(GrContext*, const SkImageInfo& info,
                                           const SkIPoint& origin,
-                                          SkTransferFunctionBehavior behavior,
                                           bool willNeedMipMaps);
 #endif
 
@@ -189,7 +182,6 @@ protected:
 
     virtual TexGenType onCanGenerateTexture() const { return TexGenType::kNone; }
     virtual sk_sp<GrTextureProxy> onGenerateTexture(GrContext*, const SkImageInfo&, const SkIPoint&,
-                                                    SkTransferFunctionBehavior,
                                                     bool willNeedMipMaps);  // returns nullptr
 #endif
 
@@ -203,6 +195,11 @@ private:
     // It is called from NewFromEncoded() after it has checked for any runtime factory.
     // The SkData will never be NULL, as that will have been checked by NewFromEncoded.
     static std::unique_ptr<SkImageGenerator> MakeFromEncodedImpl(sk_sp<SkData>);
+
+    SkImageGenerator(SkImageGenerator&&) = delete;
+    SkImageGenerator(const SkImageGenerator&) = delete;
+    SkImageGenerator& operator=(SkImageGenerator&&) = delete;
+    SkImageGenerator& operator=(const SkImageGenerator&) = delete;
 };
 
 #endif  // SkImageGenerator_DEFINED

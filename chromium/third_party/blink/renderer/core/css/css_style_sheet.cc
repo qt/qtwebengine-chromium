@@ -20,7 +20,6 @@
 
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/media_list_or_string.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/css/css_import_rule.h"
@@ -33,7 +32,6 @@
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/html/html_link_element.h"
@@ -41,6 +39,7 @@
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/svg/svg_style_element.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -58,11 +57,6 @@ class StyleSheetCSSRuleList final : public CSSRuleList {
   void Trace(blink::Visitor* visitor) override {
     visitor->Trace(style_sheet_);
     CSSRuleList::Trace(visitor);
-  }
-
-  void TraceWrappers(ScriptWrappableVisitor* visitor) const override {
-    visitor->TraceWrappers(style_sheet_);
-    CSSRuleList::TraceWrappers(visitor);
   }
 
  private:
@@ -98,14 +92,11 @@ const Document* CSSStyleSheet::SingleOwnerDocument(
 }
 
 CSSStyleSheet* CSSStyleSheet::Create(Document& document,
-                                     const String& text,
                                      ExceptionState& exception_state) {
-  return CSSStyleSheet::Create(document, text, CSSStyleSheetInit(),
-                               exception_state);
+  return CSSStyleSheet::Create(document, CSSStyleSheetInit(), exception_state);
 }
 
 CSSStyleSheet* CSSStyleSheet::Create(Document& document,
-                                     const String& text,
                                      const CSSStyleSheetInit& options,
                                      ExceptionState& exception_state) {
   if (!RuntimeEnabledFeatures::ConstructableStylesheetsEnabled()) {
@@ -120,19 +111,18 @@ CSSStyleSheet* CSSStyleSheet::Create(Document& document,
   sheet->SetTitle(options.title());
   sheet->ClearOwnerNode();
   sheet->ClearOwnerRule();
-  if (options.media().IsString()) {
-    MediaList* media_list = MediaList::Create(
-        MediaQuerySet::Create(), const_cast<CSSStyleSheet*>(sheet));
-    media_list->setMediaText(options.media().GetAsString());
-    sheet->SetMedia(media_list);
-  } else {
-    sheet->SetMedia(options.media().GetAsMediaList());
-  }
+  scoped_refptr<MediaQuerySet> media_query_set;
+  if (options.media().IsString())
+    media_query_set = MediaQuerySet::Create(options.media().GetAsString());
+  else
+    media_query_set = options.media().GetAsMediaList()->Queries()->Copy();
+  MediaList* media_list =
+      MediaList::Create(media_query_set, const_cast<CSSStyleSheet*>(sheet));
+  sheet->SetMedia(media_list);
   if (options.alternate())
     sheet->SetAlternateFromConstructor(true);
   if (options.disabled())
     sheet->setDisabled(true);
-  sheet->SetText(text);
   return sheet;
 }
 
@@ -308,7 +298,7 @@ CSSRule* CSSStyleSheet::item(unsigned index) {
     child_rule_cssom_wrappers_.Grow(rule_count);
   DCHECK_EQ(child_rule_cssom_wrappers_.size(), rule_count);
 
-  Member<CSSRule>& css_rule = child_rule_cssom_wrappers_[index];
+  TraceWrapperMember<CSSRule>& css_rule = child_rule_cssom_wrappers_[index];
   if (!css_rule)
     css_rule = contents_->RuleAt(index)->CreateCSSOMWrapper(this);
   return css_rule.Get();
@@ -366,9 +356,10 @@ unsigned CSSStyleSheet::insertRule(const String& rule_string,
 
   if (index > length()) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "The index provided (" + String::Number(index) +
-                             ") is larger than the maximum index (" +
-                             String::Number(length()) + ").");
+        DOMExceptionCode::kIndexSizeError,
+        "The index provided (" + String::Number(index) +
+            ") is larger than the maximum index (" + String::Number(length()) +
+            ").");
     return 0;
   }
   const CSSParserContext* context =
@@ -378,18 +369,20 @@ unsigned CSSStyleSheet::insertRule(const String& rule_string,
 
   if (!rule) {
     exception_state.ThrowDOMException(
-        kSyntaxError, "Failed to parse the rule '" + rule_string + "'.");
+        DOMExceptionCode::kSyntaxError,
+        "Failed to parse the rule '" + rule_string + "'.");
     return 0;
   }
   RuleMutationScope mutation_scope(this);
   bool success = contents_->WrapperInsertRule(rule, index);
   if (!success) {
     if (rule->IsNamespaceRule())
-      exception_state.ThrowDOMException(kInvalidStateError,
+      exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                         "Failed to insert the rule");
     else
-      exception_state.ThrowDOMException(kHierarchyRequestError,
-                                        "Failed to insert the rule.");
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kHierarchyRequestError,
+          "Failed to insert the rule.");
     return 0;
   }
   if (!child_rule_cssom_wrappers_.IsEmpty())
@@ -411,16 +404,17 @@ void CSSStyleSheet::deleteRule(unsigned index,
 
   if (index >= length()) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "The index provided (" + String::Number(index) +
-                             ") is larger than the maximum index (" +
-                             String::Number(length() - 1) + ").");
+        DOMExceptionCode::kIndexSizeError,
+        "The index provided (" + String::Number(index) +
+            ") is larger than the maximum index (" +
+            String::Number(length() - 1) + ").");
     return;
   }
   RuleMutationScope mutation_scope(this);
 
   bool success = contents_->WrapperDeleteRule(index);
   if (!success) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "Failed to delete rule");
     return;
   }
@@ -587,15 +581,6 @@ void CSSStyleSheet::Trace(blink::Visitor* visitor) {
   visitor->Trace(child_rule_cssom_wrappers_);
   visitor->Trace(rule_list_cssom_wrapper_);
   StyleSheet::Trace(visitor);
-}
-
-void CSSStyleSheet::TraceWrappers(
-    blink::ScriptWrappableVisitor* visitor) const {
-  for (auto& rule : child_rule_cssom_wrappers_) {
-    visitor->TraceWrappers(rule);
-  }
-  visitor->TraceWrappers(rule_list_cssom_wrapper_);
-  StyleSheet::TraceWrappers(visitor);
 }
 
 }  // namespace blink

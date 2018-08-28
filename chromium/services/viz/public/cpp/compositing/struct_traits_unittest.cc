@@ -17,6 +17,7 @@
 #include "components/viz/common/resources/returned_resource.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "components/viz/common/surfaces/surface_info.h"
+#include "components/viz/common/surfaces/surface_range.h"
 #include "components/viz/test/begin_frame_args_test.h"
 #include "gpu/ipc/common/mailbox_holder_struct_traits.h"
 #include "gpu/ipc/common/mailbox_struct_traits.h"
@@ -47,6 +48,7 @@
 #include "services/viz/public/interfaces/compositing/filter_operations.mojom.h"
 #include "services/viz/public/interfaces/compositing/returned_resource.mojom.h"
 #include "services/viz/public/interfaces/compositing/surface_info.mojom.h"
+#include "services/viz/public/interfaces/compositing/surface_range.mojom.h"
 #include "services/viz/public/interfaces/compositing/transferable_resource.mojom.h"
 #include "skia/public/interfaces/bitmap_skbitmap_struct_traits.h"
 #include "skia/public/interfaces/blur_image_filter_tile_mode_struct_traits.h"
@@ -165,8 +167,10 @@ void ExpectEqual(const cc::FilterOperation& input,
       EXPECT_EQ(input.zoom_inset(), output.zoom_inset());
       break;
     case cc::FilterOperation::REFERENCE: {
-      EXPECT_EQ(input.image_filter()->ToString(),
-                output.image_filter()->ToString());
+      ASSERT_EQ(!!input.image_filter(), !!output.image_filter());
+      if (input.image_filter()) {
+        EXPECT_EQ(*input.image_filter(), *output.image_filter());
+      }
       break;
     }
     case cc::FilterOperation::ALPHA_THRESHOLD:
@@ -484,13 +488,11 @@ TEST_F(StructTraitsTest, CompositorFrame) {
   // TransferableResource constants.
   const uint32_t tr_id = 1337;
   const ResourceFormat tr_format = ALPHA_8;
-  const gfx::BufferFormat tr_buffer_format = gfx::BufferFormat::R_8;
   const uint32_t tr_filter = 1234;
   const gfx::Size tr_size(1234, 5678);
   TransferableResource resource;
   resource.id = tr_id;
   resource.format = tr_format;
-  resource.buffer_format = tr_buffer_format;
   resource.filter = tr_filter;
   resource.size = tr_size;
 
@@ -526,7 +528,6 @@ TEST_F(StructTraitsTest, CompositorFrame) {
   TransferableResource out_resource = output.resource_list[0];
   EXPECT_EQ(tr_id, out_resource.id);
   EXPECT_EQ(tr_format, out_resource.format);
-  EXPECT_EQ(tr_buffer_format, out_resource.buffer_format);
   EXPECT_EQ(tr_filter, out_resource.filter);
   EXPECT_EQ(tr_size, out_resource.size);
 
@@ -636,12 +637,12 @@ TEST_F(StructTraitsTest, CompositorFrameMetadata) {
   ui::LatencyInfo latency_info;
   latency_info.set_trace_id(5);
   latency_info.AddLatencyNumber(
-      ui::LATENCY_BEGIN_SCROLL_LISTENER_UPDATE_MAIN_COMPONENT, 1337);
+      ui::LATENCY_BEGIN_SCROLL_LISTENER_UPDATE_MAIN_COMPONENT);
   std::vector<ui::LatencyInfo> latency_infos = {latency_info};
-  std::vector<SurfaceId> referenced_surfaces;
+  std::vector<SurfaceRange> referenced_surfaces;
   SurfaceId id(FrameSinkId(1234, 4321),
                LocalSurfaceId(5678, base::UnguessableToken::Create()));
-  referenced_surfaces.push_back(id);
+  referenced_surfaces.emplace_back(id);
   std::vector<SurfaceId> activation_dependencies;
   SurfaceId id2(FrameSinkId(4321, 1234),
                 LocalSurfaceId(8765, base::UnguessableToken::Create()));
@@ -695,10 +696,8 @@ TEST_F(StructTraitsTest, CompositorFrameMetadata) {
   EXPECT_EQ(root_background_color, output.root_background_color);
   EXPECT_EQ(selection, output.selection);
   EXPECT_EQ(latency_infos.size(), output.latency_info.size());
-  ui::LatencyInfo::LatencyComponent component;
   EXPECT_TRUE(output.latency_info[0].FindLatency(
-      ui::LATENCY_BEGIN_SCROLL_LISTENER_UPDATE_MAIN_COMPONENT, 1337,
-      &component));
+      ui::LATENCY_BEGIN_SCROLL_LISTENER_UPDATE_MAIN_COMPONENT, nullptr));
   EXPECT_EQ(referenced_surfaces.size(), output.referenced_surfaces.size());
   for (uint32_t i = 0; i < referenced_surfaces.size(); ++i)
     EXPECT_EQ(referenced_surfaces[i], output.referenced_surfaces[i]);
@@ -1184,7 +1183,7 @@ TEST_F(StructTraitsTest, CopyOutputResult_Bitmap) {
   SkBitmap bitmap;
   const sk_sp<SkColorSpace> adobe_rgb = SkColorSpace::MakeRGB(
       SkColorSpace::kSRGB_RenderTargetGamma, SkColorSpace::kAdobeRGB_Gamut);
-  bitmap.allocN32Pixels(7, 8, adobe_rgb);
+  bitmap.allocN32Pixels(7, 8, adobe_rgb != nullptr);
   bitmap.eraseARGB(123, 213, 77, 33);
   std::unique_ptr<CopyOutputResult> input =
       std::make_unique<CopyOutputSkBitmapResult>(result_rect, bitmap);
@@ -1205,7 +1204,7 @@ TEST_F(StructTraitsTest, CopyOutputResult_Bitmap) {
   // Check that the pixels are the same as the input and the color spaces are
   // equivalent.
   SkBitmap expected_bitmap;
-  expected_bitmap.allocN32Pixels(7, 8, adobe_rgb);
+  expected_bitmap.allocN32Pixels(7, 8, adobe_rgb != nullptr);
   expected_bitmap.eraseARGB(123, 213, 77, 33);
   EXPECT_EQ(expected_bitmap.computeByteSize(), out_bitmap.computeByteSize());
   EXPECT_EQ(0, std::memcmp(expected_bitmap.getPixels(), out_bitmap.getPixels(),

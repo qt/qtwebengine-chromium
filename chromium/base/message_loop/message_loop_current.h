@@ -225,12 +225,6 @@ class BASE_EXPORT MessageLoopCurrentForUI : public MessageLoopCurrent {
 #endif
 
 #if defined(OS_ANDROID)
-  // Forwards to MessageLoopForUI::Start().
-  // TODO(https://crbug.com/825327): Plumb the actual MessageLoopForUI* to
-  // callers and remove ability to access this method from
-  // MessageLoopCurrentForUI.
-  void Start();
-
   // Forwards to MessageLoopForUI::Abort().
   // TODO(https://crbug.com/825327): Plumb the actual MessageLoopForUI* to
   // callers and remove ability to access this method from
@@ -265,7 +259,7 @@ class BASE_EXPORT MessageLoopCurrentForIO : public MessageLoopCurrent {
 
 #if defined(OS_WIN)
   // Please see MessagePumpWin for definitions of these methods.
-  void RegisterIOHandler(HANDLE file, MessagePumpForIO::IOHandler* handler);
+  HRESULT RegisterIOHandler(HANDLE file, MessagePumpForIO::IOHandler* handler);
   bool RegisterJobObject(HANDLE job, MessagePumpForIO::IOHandler* handler);
   bool WaitForIOCompletion(DWORD timeout, MessagePumpForIO::IOHandler* filter);
 #elif defined(OS_POSIX) || defined(OS_FUCHSIA)

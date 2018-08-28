@@ -28,7 +28,7 @@ static const uint32_t kDefaultTargetBitrateBps = 2000000;
 static const uint32_t kDefaultMaxBitrateBps = 2000000;
 static const uint32_t kDefaultMinTransmitBitrateBps = 400000;
 static const int kDefaultMaxQp = 48;
-static const uint32_t kScreenshareTl0BitrateBps = 100000;
+static const uint32_t kScreenshareTl0BitrateBps = 200000;
 static const uint32_t kScreenshareCodecTargetBitrateBps = 200000;
 static const uint32_t kScreenshareDefaultFramerate = 5;
 // Bitrates for the temporal layers of the higher screenshare simulcast stream.
@@ -76,8 +76,7 @@ class VideoCodecInitializerTest : public ::testing::Test {
     codec_out_ = VideoCodec();
     bitrate_allocator_out_.reset();
     temporal_layers_.clear();
-    if (!VideoCodecInitializer::SetupCodec(config_, streams_,
-                                           &codec_out_,
+    if (!VideoCodecInitializer::SetupCodec(config_, streams_, &codec_out_,
                                            &bitrate_allocator_out_)) {
       return false;
     }

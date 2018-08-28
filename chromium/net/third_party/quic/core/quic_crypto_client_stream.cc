@@ -6,8 +6,6 @@
 
 #include <memory>
 
-#include "base/metrics/histogram_macros.h"
-#include "base/metrics/sparse_histogram.h"
 #include "net/third_party/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quic/core/crypto/crypto_utils.h"
 #include "net/third_party/quic/core/crypto/null_encrypter.h"
@@ -22,7 +20,7 @@
 #include "net/third_party/quic/platform/api/quic_str_cat.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 
-namespace net {
+namespace quic {
 
 const int QuicCryptoClientStream::kMaxClientHellos;
 
@@ -46,7 +44,8 @@ QuicCryptoClientStream::QuicCryptoClientStream(
     case PROTOCOL_TLS1_3:
       handshaker_ = QuicMakeUnique<TlsClientHandshaker>(
           this, session, server_id, crypto_config->proof_verifier(),
-          crypto_config->ssl_ctx(), verify_context);
+          crypto_config->ssl_ctx(), verify_context,
+          crypto_config->user_agent_id());
       break;
     case PROTOCOL_UNSUPPORTED:
       QUIC_BUG << "Attempting to create QuicCryptoClientStream for unknown "
@@ -102,4 +101,4 @@ QuicString QuicCryptoClientStream::chlo_hash() const {
   return handshaker_->chlo_hash();
 }
 
-}  // namespace net
+}  // namespace quic

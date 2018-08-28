@@ -64,7 +64,7 @@ SkPath1DPathEffect::SkPath1DPathEffect(const SkPath& path, SkScalar advance, SkS
     fInitialOffset = phase;
 
     if ((unsigned)style > kMorph_Style) {
-        SkDEBUGF(("SkPath1DPathEffect style enum out of range %d\n", style));
+        SkDEBUGF("SkPath1DPathEffect style enum out of range %d\n", style);
     }
     fStyle = style;
 }
@@ -171,6 +171,11 @@ void SkPath1DPathEffect::flatten(SkWriteBuffer& buffer) const {
 
 SkScalar SkPath1DPathEffect::next(SkPath* dst, SkScalar distance,
                                   SkPathMeasure& meas) const {
+#if defined(IS_FUZZING_WITH_LIBFUZZER)
+    if (dst->countPoints() > 100000) {
+        return fAdvance;
+    }
+#endif
     switch (fStyle) {
         case kTranslate_Style: {
             SkPoint pos;
@@ -192,14 +197,6 @@ SkScalar SkPath1DPathEffect::next(SkPath* dst, SkScalar distance,
             break;
     }
     return fAdvance;
-}
-
-
-void SkPath1DPathEffect::toString(SkString* str) const {
-    str->appendf("SkPath1DPathEffect: (");
-    // TODO: add path and style
-    str->appendf("advance: %.2f phase %.2f", fAdvance, fInitialOffset);
-    str->appendf(")");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

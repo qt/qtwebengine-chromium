@@ -18,10 +18,13 @@
 #include "base/location.h"
 #include "base/metrics/field_trial.h"
 #include "base/run_loop.h"
+#include "base/stl_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/test/bind_test_util.h"
 #include "base/test/gtest_util.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_entropy_provider.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
@@ -34,6 +37,7 @@
 #include "components/network_session_configurator/browser/network_session_configurator.h"
 #include "components/network_session_configurator/common/network_switches.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
+#include "mojo/public/cpp/system/data_pipe_utils.h"
 #include "net/base/cache_type.h"
 #include "net/base/hash_value.h"
 #include "net/base/ip_endpoint.h"
@@ -45,8 +49,7 @@
 #include "net/cookies/cookie_options.h"
 #include "net/cookies/cookie_store.h"
 #include "net/disk_cache/disk_cache.h"
-#include "net/http/http_auth_handler_factory.h"
-#include "net/http/http_auth_preferences.h"
+#include "net/http/http_auth.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_manager.h"
@@ -56,11 +59,13 @@
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_info.h"
 #include "net/proxy_resolution/proxy_resolution_service.h"
+#include "net/socket/transport_client_socket_pool.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/channel_id_store.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/embedded_test_server_connection_listener.h"
 #include "net/test/test_data_directory.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/http_user_agent_settings.h"
@@ -93,6 +98,9 @@ namespace network {
 
 namespace {
 
+const GURL kURL("http://foo.com");
+const GURL kOtherURL("http://other.com");
+
 // Sends an HttpResponse for requests for "/" that result in sending an HPKP
 // report.  Ignores other paths to avoid catching the subsequent favicon
 // request.
@@ -121,6 +129,26 @@ mojom::NetworkContextParamsPtr CreateContextParams() {
   // configuration.
   params->initial_proxy_config = net::ProxyConfigWithAnnotation::CreateDirect();
   return params;
+}
+
+void SetContentSetting(const GURL& primary_pattern,
+                       const GURL& secondary_pattern,
+                       ContentSetting setting,
+                       NetworkContext* network_context) {
+  network_context->cookie_manager()->SetContentSettings(
+      {ContentSettingPatternSource(
+          ContentSettingsPattern::FromURL(primary_pattern),
+          ContentSettingsPattern::FromURL(secondary_pattern),
+          base::Value(setting), std::string(), false)});
+}
+
+void SetDefaultContentSetting(ContentSetting setting,
+                              NetworkContext* network_context) {
+  network_context->cookie_manager()->SetContentSettings(
+      {ContentSettingPatternSource(ContentSettingsPattern::Wildcard(),
+                                   ContentSettingsPattern::Wildcard(),
+                                   base::Value(setting), std::string(),
+                                   false)});
 }
 
 class NetworkContextTest : public testing::Test,
@@ -188,8 +216,8 @@ TEST_F(NetworkContextTest, DestroyContextWithLiveRequest) {
   request.url = test_server.GetURL("/hung-after-headers");
 
   mojom::URLLoaderFactoryPtr loader_factory;
-  network::mojom::URLLoaderFactoryParamsPtr params =
-      network::mojom::URLLoaderFactoryParams::New();
+  mojom::URLLoaderFactoryParamsPtr params =
+      mojom::URLLoaderFactoryParams::New();
   params->process_id = mojom::kBrowserProcessId;
   params->is_corb_enabled = false;
   network_context->CreateURLLoaderFactory(mojo::MakeRequest(&loader_factory),
@@ -217,7 +245,6 @@ TEST_F(NetworkContextTest, DestroyContextWithLiveRequest) {
 
   client.RunUntilConnectionError();
   EXPECT_FALSE(client.has_received_completion());
-  EXPECT_EQ(0u, client.download_data_length());
 }
 
 TEST_F(NetworkContextTest, DisableQuic) {
@@ -776,8 +803,8 @@ TEST_F(NetworkContextTest, CertReporting) {
     request.url = hpkp_test_server.base_url();
 
     mojom::URLLoaderFactoryPtr loader_factory;
-    network::mojom::URLLoaderFactoryParamsPtr params =
-        network::mojom::URLLoaderFactoryParams::New();
+    mojom::URLLoaderFactoryParamsPtr params =
+        mojom::URLLoaderFactoryParams::New();
     params->process_id = mojom::kBrowserProcessId;
     params->is_corb_enabled = false;
     network_context->CreateURLLoaderFactory(mojo::MakeRequest(&loader_factory),
@@ -813,6 +840,161 @@ TEST_F(NetworkContextTest, CertReporting) {
     // Remove global reference to the MockCertVerifier before it falls out of
     // scope.
     NetworkContext::SetCertVerifierForTesting(nullptr);
+  }
+}
+
+// Test that valid referrers are allowed, while invalid ones result in errors.
+TEST_F(NetworkContextTest, Referrers) {
+  const GURL kReferrer = GURL("http://referrer/");
+  net::test_server::EmbeddedTestServer test_server;
+  test_server.AddDefaultHandlers(
+      base::FilePath(FILE_PATH_LITERAL("services/test/data")));
+  ASSERT_TRUE(test_server.Start());
+
+  for (bool validate_referrer_policy_on_initial_request : {false, true}) {
+    for (net::URLRequest::ReferrerPolicy referrer_policy :
+         {net::URLRequest::NEVER_CLEAR_REFERRER,
+          net::URLRequest::NO_REFERRER}) {
+      mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+      context_params->validate_referrer_policy_on_initial_request =
+          validate_referrer_policy_on_initial_request;
+      std::unique_ptr<NetworkContext> network_context =
+          CreateContextWithParams(std::move(context_params));
+
+      mojom::URLLoaderFactoryPtr loader_factory;
+      mojom::URLLoaderFactoryParamsPtr params =
+          mojom::URLLoaderFactoryParams::New();
+      params->process_id = 0;
+      network_context->CreateURLLoaderFactory(
+          mojo::MakeRequest(&loader_factory), std::move(params));
+
+      ResourceRequest request;
+      request.url = test_server.GetURL("/echoheader?Referer");
+      request.referrer = kReferrer;
+      request.referrer_policy = referrer_policy;
+
+      mojom::URLLoaderPtr loader;
+      TestURLLoaderClient client;
+      loader_factory->CreateLoaderAndStart(
+          mojo::MakeRequest(&loader), 0 /* routing_id */, 0 /* request_id */,
+          0 /* options */, request, client.CreateInterfacePtr(),
+          net::MutableNetworkTrafficAnnotationTag(
+              TRAFFIC_ANNOTATION_FOR_TESTS));
+
+      client.RunUntilComplete();
+      EXPECT_TRUE(client.has_received_completion());
+
+      // If validating referrers, and the referrer policy is not to send
+      // referrers, the request should fail.
+      if (validate_referrer_policy_on_initial_request &&
+          referrer_policy == net::URLRequest::NO_REFERRER) {
+        EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT,
+                  client.completion_status().error_code);
+        EXPECT_FALSE(client.response_body().is_valid());
+        continue;
+      }
+
+      // Otherwise, the request should succeed.
+      EXPECT_EQ(net::OK, client.completion_status().error_code);
+      std::string response_body;
+      ASSERT_TRUE(client.response_body().is_valid());
+      EXPECT_TRUE(mojo::BlockingCopyToString(client.response_body_release(),
+                                             &response_body));
+      if (referrer_policy == net::URLRequest::NO_REFERRER) {
+        // If not validating referrers, and the referrer policy is not to send
+        // referrers, the referrer should be cleared.
+        EXPECT_EQ("None", response_body);
+      } else {
+        // Otherwise, the referrer should be send.
+        EXPECT_EQ(kReferrer.spec(), response_body);
+      }
+    }
+  }
+}
+
+TEST_F(NetworkContextTest, HttpRequestCompletionErrorCodes) {
+  net::EmbeddedTestServer test_server;
+  test_server.AddDefaultHandlers(
+      base::FilePath(FILE_PATH_LITERAL("services/test/data")));
+  ASSERT_TRUE(test_server.Start());
+
+  net::EmbeddedTestServer https_test_server(
+      net::test_server::EmbeddedTestServer::TYPE_HTTPS);
+  https_test_server.AddDefaultHandlers(
+      base::FilePath(FILE_PATH_LITERAL("services/test/data")));
+  ASSERT_TRUE(https_test_server.Start());
+
+  const struct {
+    const char* path;
+    bool use_https;
+    bool is_main_frame;
+    int expected_net_error;
+    int expected_request_completion_count;
+    int expected_request_completion_main_frame_count;
+  } kTests[] = {
+      {"/", false /* use_https */, true /* is_main_frame */, net::OK,
+       1 /* expected_request_completion_count */,
+       1 /* expected_request_completion_main_frame_count */},
+      {"/close-socket", false /* use_https */, true /* is_main_frame */,
+       net::ERR_EMPTY_RESPONSE, 1 /* expected_request_completion_count */,
+       1 /* expected_request_completion_main_frame_count */},
+      {"/", false /* use_https */, false /* is_main_frame */, net::OK,
+       1 /* expected_request_completion_count */,
+       0 /* expected_request_completion_main_frame_count */},
+      {"/", true /* use_https */, true /* is_main_frame */, net::OK,
+       0 /* expected_request_completion_count */,
+       0 /* expected_request_completion_main_frame_count */},
+  };
+
+  const char kHttpRequestCompletionErrorCode[] =
+      "Net.HttpRequestCompletionErrorCodes";
+  const char kHttpRequestCompletionErrorCodeMainFrame[] =
+      "Net.HttpRequestCompletionErrorCodes.MainFrame";
+
+  for (const auto& test : kTests) {
+    base::HistogramTester histograms;
+
+    std::unique_ptr<NetworkContext> network_context =
+        CreateContextWithParams(CreateContextParams());
+
+    mojom::URLLoaderFactoryPtr loader_factory;
+    mojom::URLLoaderFactoryParamsPtr params =
+        mojom::URLLoaderFactoryParams::New();
+    params->process_id = mojom::kBrowserProcessId;
+    network_context->CreateURLLoaderFactory(mojo::MakeRequest(&loader_factory),
+                                            std::move(params));
+
+    ResourceRequest request;
+    if (!test.use_https) {
+      request.url = test_server.GetURL(test.path);
+    } else {
+      request.url = https_test_server.GetURL(test.path);
+    }
+    if (test.is_main_frame)
+      request.load_flags = net::LOAD_MAIN_FRAME_DEPRECATED;
+
+    mojom::URLLoaderPtr loader;
+    TestURLLoaderClient client;
+    loader_factory->CreateLoaderAndStart(
+        mojo::MakeRequest(&loader), 0 /* routing_id */, 0 /* request_id */,
+        0 /* options */, request, client.CreateInterfacePtr(),
+        net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
+
+    client.RunUntilComplete();
+    EXPECT_TRUE(client.has_received_completion());
+    EXPECT_EQ(test.expected_net_error, client.completion_status().error_code);
+
+    histograms.ExpectTotalCount(kHttpRequestCompletionErrorCode,
+                                test.expected_request_completion_count);
+    histograms.ExpectUniqueSample(kHttpRequestCompletionErrorCode,
+                                  -test.expected_net_error,
+                                  test.expected_request_completion_count);
+    histograms.ExpectTotalCount(
+        kHttpRequestCompletionErrorCodeMainFrame,
+        test.expected_request_completion_main_frame_count);
+    histograms.ExpectUniqueSample(
+        kHttpRequestCompletionErrorCodeMainFrame, -test.expected_net_error,
+        test.expected_request_completion_main_frame_count);
   }
 }
 
@@ -863,7 +1045,7 @@ TEST_F(NetworkContextTest, ClearHttpCache) {
     disk_cache::Entry* entry = nullptr;
     base::RunLoop run_loop;
     if (backend->CreateEntry(
-            url, &entry,
+            url, net::HIGHEST, &entry,
             base::Bind([](base::OnceClosure quit_loop,
                           int rv) { std::move(quit_loop).Run(); },
                        run_loop.QuitClosure())) == net::ERR_IO_PENDING) {
@@ -905,6 +1087,37 @@ TEST_F(NetworkContextTest, MultipleClearHttpCacheCalls) {
   }
   run_loop.Run();
   // If all the callbacks were invoked, we should terminate.
+}
+
+TEST_F(NetworkContextTest, CountHttpCache) {
+  // Just ensure that a couple of concurrent calls go through, and produce
+  // the expected "it's empty!" result. More detailed testing is left to
+  // HttpCacheDataCounter unit tests.
+
+  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
+  context_params->http_cache_enabled = true;
+
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(std::move(context_params));
+
+  int responses = 0;
+  base::RunLoop run_loop;
+
+  auto callback =
+      base::BindLambdaForTesting([&](bool upper_bound, int64_t size_or_error) {
+        // Don't expect approximation for full range.
+        EXPECT_EQ(false, upper_bound);
+        EXPECT_EQ(0, size_or_error);
+        ++responses;
+        if (responses == 2)
+          run_loop.Quit();
+      });
+
+  network_context->ComputeHttpCacheSize(base::Time(), base::Time::Max(),
+                                        callback);
+  network_context->ComputeHttpCacheSize(base::Time(), base::Time::Max(),
+                                        callback);
+  run_loop.Run();
 }
 
 TEST_F(NetworkContextTest, ClearChannelIds) {
@@ -1103,6 +1316,108 @@ TEST_F(NetworkContextTest, ClearChannelIdWithNoService) {
   run_loop.Run();
 }
 
+TEST_F(NetworkContextTest, ClearHostCache) {
+  // List of domains added to the host cache before running each test case.
+  const char* kDomains[] = {
+      "domain0", "domain1", "domain2", "domain3",
+  };
+
+  // Each bit correponds to one of the 4 domains above.
+  enum Domains {
+    NO_DOMAINS = 0x0,
+    DOMAIN0 = 0x1,
+    DOMAIN1 = 0x2,
+    DOMAIN2 = 0x4,
+    DOMAIN3 = 0x8,
+  };
+
+  const struct {
+    // True if the ClearDataFilter should be a nullptr.
+    bool null_filter;
+    mojom::ClearDataFilter::Type type;
+    // Bit field of Domains that appear in the filter. The origin vector is
+    // never populated.
+    int filter_domains;
+    // Only domains that are expected to remain in the host cache.
+    int expected_cached_domains;
+  } kTestCases[] = {
+      // A null filter should delete everything. The filter type and filter
+      // domain lists are ignored.
+      {
+          true /* null_filter */, mojom::ClearDataFilter::Type::KEEP_MATCHES,
+          NO_DOMAINS /* filter_domains */,
+          NO_DOMAINS /* expected_cached_domains */
+      },
+      // An empty DELETE_MATCHES filter should delete nothing.
+      {
+          false /* null_filter */, mojom::ClearDataFilter::Type::DELETE_MATCHES,
+          NO_DOMAINS /* filter_domains */,
+          DOMAIN0 | DOMAIN1 | DOMAIN2 | DOMAIN3 /* expected_cached_domains */
+      },
+      // An empty KEEP_MATCHES filter should delete everything.
+      {
+          false /* null_filter */, mojom::ClearDataFilter::Type::KEEP_MATCHES,
+          NO_DOMAINS /* filter_domains */,
+          NO_DOMAINS /* expected_cached_domains */
+      },
+      // Test a non-empty DELETE_MATCHES filter.
+      {
+          false /* null_filter */, mojom::ClearDataFilter::Type::DELETE_MATCHES,
+          DOMAIN0 | DOMAIN2 /* filter_domains */,
+          DOMAIN1 | DOMAIN3 /* expected_cached_domains */
+      },
+      // Test a non-empty KEEP_MATCHES filter.
+      {
+          false /* null_filter */, mojom::ClearDataFilter::Type::KEEP_MATCHES,
+          DOMAIN0 | DOMAIN2 /* filter_domains */,
+          DOMAIN0 | DOMAIN2 /* expected_cached_domains */
+      },
+  };
+
+  for (const auto& test_case : kTestCases) {
+    std::unique_ptr<NetworkContext> network_context =
+        CreateContextWithParams(CreateContextParams());
+    net::HostCache* host_cache =
+        network_context->url_request_context()->host_resolver()->GetHostCache();
+    ASSERT_TRUE(host_cache);
+
+    // Add the 4 test domains to the host cache.
+    for (const auto* domain : kDomains) {
+      host_cache->Set(
+          net::HostCache::Key(domain, net::ADDRESS_FAMILY_UNSPECIFIED, 0),
+          net::HostCache::Entry(net::OK, net::AddressList(),
+                                net::HostCache::Entry::SOURCE_UNKNOWN),
+          base::TimeTicks::Now(), base::TimeDelta::FromDays(1));
+    }
+    // Sanity check.
+    EXPECT_EQ(base::size(kDomains), host_cache->entries().size());
+
+    // Set up and run the filter, according to |test_case|.
+    mojom::ClearDataFilterPtr clear_data_filter;
+    if (!test_case.null_filter) {
+      clear_data_filter = mojom::ClearDataFilter::New();
+      clear_data_filter->type = test_case.type;
+      for (size_t i = 0; i < base::size(kDomains); ++i) {
+        if (test_case.filter_domains & (1 << i))
+          clear_data_filter->domains.push_back(kDomains[i]);
+      }
+    }
+    base::RunLoop run_loop;
+    network_context->ClearHostCache(std::move(clear_data_filter),
+                                    run_loop.QuitClosure());
+    run_loop.Run();
+
+    // Check that only the expected domains remain in the cache.
+    for (size_t i = 0; i < base::size(kDomains); ++i) {
+      bool expect_domain_cached =
+          ((test_case.expected_cached_domains & (1 << i)) != 0);
+      EXPECT_EQ(expect_domain_cached,
+                host_cache->HasEntry(kDomains[i], nullptr /* source_out */,
+                                     nullptr /* stale_out */));
+    }
+  }
+}
+
 TEST_F(NetworkContextTest, ClearHttpAuthCache) {
   GURL origin("http://google.com");
   std::unique_ptr<NetworkContext> network_context =
@@ -1220,7 +1535,8 @@ TEST_F(NetworkContextTest, ClearReportingCacheReports) {
       reporting_service.get());
 
   GURL domain("http://google.com");
-  reporting_service->QueueReport(domain, "group", "type", nullptr, 0);
+  reporting_service->QueueReport(domain, "Mozilla/1.0", "group", "type",
+                                 nullptr, 0);
 
   std::vector<const net::ReportingReport*> reports;
   reporting_cache->GetReports(&reports);
@@ -1249,9 +1565,11 @@ TEST_F(NetworkContextTest, ClearReportingCacheReportsWithFilter) {
       reporting_service.get());
 
   GURL domain1("http://google.com");
-  reporting_service->QueueReport(domain1, "group", "type", nullptr, 0);
+  reporting_service->QueueReport(domain1, "Mozilla/1.0", "group", "type",
+                                 nullptr, 0);
   GURL domain2("http://chromium.org");
-  reporting_service->QueueReport(domain2, "group", "type", nullptr, 0);
+  reporting_service->QueueReport(domain2, "Mozilla/1.0", "group", "type",
+                                 nullptr, 0);
 
   std::vector<const net::ReportingReport*> reports;
   reporting_cache->GetReports(&reports);
@@ -1286,9 +1604,11 @@ TEST_F(NetworkContextTest,
       reporting_service.get());
 
   GURL domain1("http://192.168.0.1");
-  reporting_service->QueueReport(domain1, "group", "type", nullptr, 0);
+  reporting_service->QueueReport(domain1, "Mozilla/1.0", "group", "type",
+                                 nullptr, 0);
   GURL domain2("http://192.168.0.2");
-  reporting_service->QueueReport(domain2, "group", "type", nullptr, 0);
+  reporting_service->QueueReport(domain2, "Mozilla/1.0", "group", "type",
+                                 nullptr, 0);
 
   std::vector<const net::ReportingReport*> reports;
   reporting_cache->GetReports(&reports);
@@ -1469,7 +1789,8 @@ TEST_F(NetworkContextTest, ClearNetworkErrorLogging) {
 
   GURL domain("https://google.com");
   logging_service->OnHeader(url::Origin::Create(domain),
-                            "{\"report-to\":\"group\",\"max-age\":86400}");
+                            net::IPAddress(192, 168, 0, 1),
+                            "{\"report_to\":\"group\",\"max_age\":86400}");
 
   ASSERT_EQ(1u, logging_service->GetPolicyOriginsForTesting().size());
 
@@ -1493,10 +1814,12 @@ TEST_F(NetworkContextTest, ClearNetworkErrorLoggingWithFilter) {
 
   GURL domain1("https://google.com");
   logging_service->OnHeader(url::Origin::Create(domain1),
-                            "{\"report-to\":\"group\",\"max-age\":86400}");
+                            net::IPAddress(192, 168, 0, 1),
+                            "{\"report_to\":\"group\",\"max_age\":86400}");
   GURL domain2("https://chromium.org");
   logging_service->OnHeader(url::Origin::Create(domain2),
-                            "{\"report-to\":\"group\",\"max-age\":86400}");
+                            net::IPAddress(192, 168, 0, 1),
+                            "{\"report_to\":\"group\",\"max_age\":86400}");
 
   ASSERT_EQ(2u, logging_service->GetPolicyOriginsForTesting().size());
 
@@ -1811,7 +2134,7 @@ TEST_F(NetworkContextTest, CreateUDPSocket) {
   mojom::UDPSocketPtr server_socket;
   network_context->CreateUDPSocket(mojo::MakeRequest(&server_socket),
                                    std::move(receiver_interface_ptr));
-  network::test::UDPSocketTestHelper helper(&server_socket);
+  test::UDPSocketTestHelper helper(&server_socket);
   ASSERT_EQ(net::OK, helper.BindSync(server_addr, nullptr, &server_addr));
 
   // Create a client socket to send datagrams.
@@ -1821,7 +2144,7 @@ TEST_F(NetworkContextTest, CreateUDPSocket) {
   network_context->CreateUDPSocket(std::move(client_socket_request), nullptr);
 
   net::IPEndPoint client_addr(GetLocalHostWithAnyPort());
-  network::test::UDPSocketTestHelper client_helper(&client_socket);
+  test::UDPSocketTestHelper client_helper(&client_socket);
   ASSERT_EQ(net::OK,
             client_helper.ConnectSync(server_addr, nullptr, &client_addr));
 
@@ -1850,51 +2173,6 @@ TEST_F(NetworkContextTest, CreateUDPSocket) {
     i++;
   }
 }
-
-#if defined(OS_CHROMEOS)
-TEST_F(NetworkContextTest, GssapiLibraryLoadDisallowedByDefault) {
-  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
-  std::unique_ptr<NetworkContext> network_context =
-      CreateContextWithParams(std::move(context_params));
-  EXPECT_FALSE(network_context->url_request_context()
-                   ->http_auth_handler_factory()
-                   ->http_auth_preferences()
-                   ->AllowGssapiLibraryLoad());
-}
-
-TEST_F(NetworkContextTest, DisallowGssapiLibraryLoad) {
-  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
-  context_params->allow_gssapi_library_load = false;
-  std::unique_ptr<NetworkContext> network_context =
-      CreateContextWithParams(std::move(context_params));
-  EXPECT_FALSE(network_context->url_request_context()
-                   ->http_auth_handler_factory()
-                   ->http_auth_preferences()
-                   ->AllowGssapiLibraryLoad());
-}
-
-TEST_F(NetworkContextTest, AllowGssapiLibraryLoad) {
-  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
-  context_params->allow_gssapi_library_load = true;
-  std::unique_ptr<NetworkContext> network_context =
-      CreateContextWithParams(std::move(context_params));
-  EXPECT_TRUE(network_context->url_request_context()
-                  ->http_auth_handler_factory()
-                  ->http_auth_preferences()
-                  ->AllowGssapiLibraryLoad());
-}
-#elif defined(OS_POSIX) && !defined(OS_ANDROID)
-TEST_F(NetworkContextTest, GssapiLibraryName) {
-  mojom::NetworkContextParamsPtr context_params = CreateContextParams();
-  context_params->gssapi_library_name = "gssapi_library";
-  std::unique_ptr<NetworkContext> network_context =
-      CreateContextWithParams(std::move(context_params));
-  EXPECT_EQ("gssapi_library", network_context->url_request_context()
-                                  ->http_auth_handler_factory()
-                                  ->http_auth_preferences()
-                                  ->GssapiLibraryName());
-}
-#endif
 
 TEST_F(NetworkContextTest, CreateNetLogExporter) {
   // Basic flow around start/stop.
@@ -1962,8 +2240,8 @@ TEST_F(NetworkContextTest, CreateNetLogExporterUnbounded) {
   net::TestCompletionCallback cb;
   net_log_exporter->Start(
       std::move(out_file), base::Value(base::Value::Type::DICTIONARY),
-      network::mojom::NetLogExporter::CaptureMode::DEFAULT,
-      network::mojom::NetLogExporter::kUnlimitedFileSize, cb.callback());
+      mojom::NetLogExporter::CaptureMode::DEFAULT,
+      mojom::NetLogExporter::kUnlimitedFileSize, cb.callback());
   EXPECT_EQ(net::OK, cb.WaitForResult());
 
   net_log_exporter->Stop(base::Value(base::Value::Type::DICTIONARY),
@@ -2067,6 +2345,372 @@ TEST_F(NetworkContextTest, DestroyNetLogExporterWhileCreatingScratchDir) {
 
   EXPECT_FALSE(base::PathExists(path));
   base::DeleteFile(temp_path, false);
+}
+
+TEST_F(NetworkContextTest, PrivacyModeDisabledByDefault) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  EXPECT_FALSE(network_context->url_request_context()
+                   ->network_delegate()
+                   ->CanEnablePrivacyMode(kURL, kOtherURL));
+}
+
+TEST_F(NetworkContextTest, PrivacyModeEnabledIfCookiesBlocked) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  SetContentSetting(kURL, kOtherURL, CONTENT_SETTING_BLOCK,
+                    network_context.get());
+  EXPECT_TRUE(network_context->url_request_context()
+                  ->network_delegate()
+                  ->CanEnablePrivacyMode(kURL, kOtherURL));
+  EXPECT_FALSE(network_context->url_request_context()
+                   ->network_delegate()
+                   ->CanEnablePrivacyMode(kOtherURL, kURL));
+}
+
+TEST_F(NetworkContextTest, PrivacyModeDisabledIfCookiesAllowed) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  SetContentSetting(kURL, kOtherURL, CONTENT_SETTING_ALLOW,
+                    network_context.get());
+  EXPECT_FALSE(network_context->url_request_context()
+                   ->network_delegate()
+                   ->CanEnablePrivacyMode(kURL, kOtherURL));
+}
+
+TEST_F(NetworkContextTest, PrivacyModeDisabledIfCookiesSettingForOtherURL) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  // URLs are switched so setting should not apply.
+  SetContentSetting(kOtherURL, kURL, CONTENT_SETTING_BLOCK,
+                    network_context.get());
+  EXPECT_FALSE(network_context->url_request_context()
+                   ->network_delegate()
+                   ->CanEnablePrivacyMode(kURL, kOtherURL));
+}
+
+TEST_F(NetworkContextTest, PrivacyModeEnabledIfThirdPartyCookiesBlocked) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+  net::NetworkDelegate* delegate =
+      network_context->url_request_context()->network_delegate();
+
+  network_context->cookie_manager()->BlockThirdPartyCookies(true);
+  EXPECT_TRUE(delegate->CanEnablePrivacyMode(kURL, kOtherURL));
+  EXPECT_FALSE(delegate->CanEnablePrivacyMode(kURL, kURL));
+
+  network_context->cookie_manager()->BlockThirdPartyCookies(false);
+  EXPECT_FALSE(delegate->CanEnablePrivacyMode(kURL, kOtherURL));
+  EXPECT_FALSE(delegate->CanEnablePrivacyMode(kURL, kURL));
+}
+
+TEST_F(NetworkContextTest, CanSetCookieFalseIfCookiesBlocked) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+  net::URLRequestContext context;
+  std::unique_ptr<net::URLRequest> request = context.CreateRequest(
+      kURL, net::DEFAULT_PRIORITY, nullptr, TRAFFIC_ANNOTATION_FOR_TESTS);
+  net::CanonicalCookie cookie("TestCookie", "1", "www.test.com", "/",
+                              base::Time(), base::Time(), base::Time(), false,
+                              false, net::CookieSameSite::NO_RESTRICTION,
+                              net::COOKIE_PRIORITY_LOW);
+
+  EXPECT_TRUE(
+      network_context->url_request_context()->network_delegate()->CanSetCookie(
+          *request, cookie, nullptr, true));
+  SetDefaultContentSetting(CONTENT_SETTING_BLOCK, network_context.get());
+  EXPECT_FALSE(
+      network_context->url_request_context()->network_delegate()->CanSetCookie(
+          *request, cookie, nullptr, true));
+}
+
+TEST_F(NetworkContextTest, CanSetCookieTrueIfCookiesAllowed) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+  net::URLRequestContext context;
+  std::unique_ptr<net::URLRequest> request = context.CreateRequest(
+      kURL, net::DEFAULT_PRIORITY, nullptr, TRAFFIC_ANNOTATION_FOR_TESTS);
+  net::CanonicalCookie cookie("TestCookie", "1", "www.test.com", "/",
+                              base::Time(), base::Time(), base::Time(), false,
+                              false, net::CookieSameSite::NO_RESTRICTION,
+                              net::COOKIE_PRIORITY_LOW);
+
+  SetDefaultContentSetting(CONTENT_SETTING_ALLOW, network_context.get());
+  EXPECT_TRUE(
+      network_context->url_request_context()->network_delegate()->CanSetCookie(
+          *request, cookie, nullptr, true));
+}
+
+TEST_F(NetworkContextTest, CanGetCookiesFalseIfCookiesBlocked) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+  net::URLRequestContext context;
+  std::unique_ptr<net::URLRequest> request = context.CreateRequest(
+      kURL, net::DEFAULT_PRIORITY, nullptr, TRAFFIC_ANNOTATION_FOR_TESTS);
+
+  EXPECT_TRUE(
+      network_context->url_request_context()->network_delegate()->CanGetCookies(
+          *request, {}, true));
+  SetDefaultContentSetting(CONTENT_SETTING_BLOCK, network_context.get());
+  EXPECT_FALSE(
+      network_context->url_request_context()->network_delegate()->CanGetCookies(
+          *request, {}, true));
+}
+
+TEST_F(NetworkContextTest, CanGetCookiesTrueIfCookiesAllowed) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+  net::URLRequestContext context;
+  std::unique_ptr<net::URLRequest> request = context.CreateRequest(
+      kURL, net::DEFAULT_PRIORITY, nullptr, TRAFFIC_ANNOTATION_FOR_TESTS);
+
+  SetDefaultContentSetting(CONTENT_SETTING_ALLOW, network_context.get());
+  EXPECT_TRUE(
+      network_context->url_request_context()->network_delegate()->CanGetCookies(
+          *request, {}, true));
+}
+
+// Gets notified by the EmbeddedTestServer on incoming connections being
+// accepted or read from, keeps track of them and exposes that info to
+// the tests.
+// A port being reused is currently considered an error.  If a test
+// needs to verify multiple connections are opened in sequence, that will need
+// to be changed.
+class ConnectionListener
+    : public net::test_server::EmbeddedTestServerConnectionListener {
+ public:
+  ConnectionListener()
+      : task_runner_(base::ThreadTaskRunnerHandle::Get()),
+        num_accepted_connections_needed_(0),
+        num_accepted_connections_loop_(nullptr) {}
+
+  ~ConnectionListener() override {}
+
+  // Get called from the EmbeddedTestServer thread to be notified that
+  // a connection was accepted.
+  void AcceptedSocket(const net::StreamSocket& connection) override {
+    base::AutoLock lock(lock_);
+    uint16_t socket = GetPort(connection);
+    EXPECT_TRUE(sockets_.find(socket) == sockets_.end());
+
+    sockets_[socket] = SOCKET_ACCEPTED;
+    CheckAccepted();
+  }
+
+  // Get called from the EmbeddedTestServer thread to be notified that
+  // a connection was read from.
+  void ReadFromSocket(const net::StreamSocket& connection, int rv) override {
+    NOTREACHED();
+  }
+
+  // Wait for exactly |n| items in |sockets_|. |n| must be greater than 0.
+  void WaitForAcceptedConnections(size_t num_connections) {
+    DCHECK(!num_accepted_connections_loop_);
+    DCHECK_GT(num_connections, 0u);
+    base::RunLoop run_loop;
+    {
+      base::AutoLock lock(lock_);
+      EXPECT_GE(num_connections, sockets_.size());
+      num_accepted_connections_loop_ = &run_loop;
+      num_accepted_connections_needed_ = num_connections;
+      CheckAccepted();
+    }
+    // Note that the previous call to CheckAccepted can quit this run loop
+    // before this call, which will make this call a no-op.
+    run_loop.Run();
+
+    // Grab the mutex again and make sure that the number of accepted sockets is
+    // indeed |num_connections|.
+    base::AutoLock lock(lock_);
+    EXPECT_EQ(num_connections, sockets_.size());
+  }
+
+  // Helper function to stop the waiting for sockets to be accepted for
+  // WaitForAcceptedConnections. |num_accepted_connections_loop_| spins
+  // until |num_accepted_connections_needed_| sockets are accepted by the test
+  // server. The values will be null/0 if the loop is not running.
+  void CheckAccepted() {
+    lock_.AssertAcquired();
+    // |num_accepted_connections_loop_| null implies
+    // |num_accepted_connections_needed_| == 0.
+    DCHECK(num_accepted_connections_loop_ ||
+           num_accepted_connections_needed_ == 0);
+    if (!num_accepted_connections_loop_ ||
+        num_accepted_connections_needed_ != sockets_.size()) {
+      return;
+    }
+
+    task_runner_->PostTask(FROM_HERE,
+                           num_accepted_connections_loop_->QuitClosure());
+    num_accepted_connections_needed_ = 0;
+    num_accepted_connections_loop_ = nullptr;
+  }
+
+ private:
+  static uint16_t GetPort(const net::StreamSocket& connection) {
+    // Get the remote port of the peer, since the local port will always be the
+    // port the test server is listening on. This isn't strictly correct - it's
+    // possible for multiple peers to connect with the same remote port but
+    // different remote IPs - but the tests here assume that connections to the
+    // test server (running on localhost) will always come from localhost, and
+    // thus the peer port is all thats needed to distinguish two connections.
+    // This also would be problematic if the OS reused ports, but that's not
+    // something to worry about for these tests.
+    net::IPEndPoint address;
+    EXPECT_EQ(net::OK, connection.GetPeerAddress(&address));
+    return address.port();
+  }
+
+  enum SocketStatus { SOCKET_ACCEPTED, SOCKET_READ_FROM };
+
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+
+  // This lock protects all the members below, which each are used on both the
+  // IO and UI thread. Members declared after the lock are protected by it.
+  mutable base::Lock lock_;
+  typedef std::map<uint16_t, SocketStatus> SocketContainer;
+  SocketContainer sockets_;
+
+  // If |num_accepted_connections_needed_| is non zero, then the object is
+  // waiting for |num_accepted_connections_needed_| sockets to be accepted
+  // before quitting the |num_accepted_connections_loop_|.
+  size_t num_accepted_connections_needed_;
+  base::RunLoop* num_accepted_connections_loop_;
+
+  DISALLOW_COPY_AND_ASSIGN(ConnectionListener);
+};
+
+TEST_F(NetworkContextTest, PreconnectOne) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  ConnectionListener connection_listener;
+  net::EmbeddedTestServer test_server;
+  test_server.SetConnectionListener(&connection_listener);
+  ASSERT_TRUE(test_server.Start());
+
+  network_context->PreconnectSockets(1, test_server.base_url(),
+                                     net::LOAD_NORMAL, true);
+  connection_listener.WaitForAcceptedConnections(1u);
+}
+
+TEST_F(NetworkContextTest, PreconnectZero) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  ConnectionListener connection_listener;
+  net::EmbeddedTestServer test_server;
+  test_server.SetConnectionListener(&connection_listener);
+  ASSERT_TRUE(test_server.Start());
+
+  network_context->PreconnectSockets(0, test_server.base_url(),
+                                     net::LOAD_NORMAL, true);
+  base::RunLoop().RunUntilIdle();
+
+  int num_sockets;
+  network_context->url_request_context()
+      ->http_transaction_factory()
+      ->GetSession()
+      ->GetTransportSocketPool(
+          net::HttpNetworkSession::SocketPoolType::NORMAL_SOCKET_POOL)
+      ->GetInfoAsValue("", "", false)
+      ->GetInteger("idle_socket_count", &num_sockets);
+  ASSERT_EQ(num_sockets, 0);
+  int num_connecting_sockets;
+  network_context->url_request_context()
+      ->http_transaction_factory()
+      ->GetSession()
+      ->GetTransportSocketPool(
+          net::HttpNetworkSession::SocketPoolType::NORMAL_SOCKET_POOL)
+      ->GetInfoAsValue("", "", false)
+      ->GetInteger("connecting_socket_count", &num_connecting_sockets);
+  ASSERT_EQ(num_connecting_sockets, 0);
+}
+
+TEST_F(NetworkContextTest, PreconnectTwo) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  ConnectionListener connection_listener;
+  net::EmbeddedTestServer test_server;
+  test_server.SetConnectionListener(&connection_listener);
+  ASSERT_TRUE(test_server.Start());
+
+  network_context->PreconnectSockets(2, test_server.base_url(),
+                                     net::LOAD_NORMAL, true);
+  connection_listener.WaitForAcceptedConnections(2u);
+
+  int num_sockets;
+  network_context->url_request_context()
+      ->http_transaction_factory()
+      ->GetSession()
+      ->GetTransportSocketPool(
+          net::HttpNetworkSession::SocketPoolType::NORMAL_SOCKET_POOL)
+      ->GetInfoAsValue("", "", false)
+      ->GetInteger("idle_socket_count", &num_sockets);
+  ASSERT_EQ(num_sockets, 2);
+}
+
+TEST_F(NetworkContextTest, PreconnectFour) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  ConnectionListener connection_listener;
+  net::EmbeddedTestServer test_server;
+  test_server.SetConnectionListener(&connection_listener);
+  ASSERT_TRUE(test_server.Start());
+
+  network_context->PreconnectSockets(4, test_server.base_url(),
+                                     net::LOAD_NORMAL, true);
+
+  connection_listener.WaitForAcceptedConnections(4u);
+
+  int num_sockets;
+  network_context->url_request_context()
+      ->http_transaction_factory()
+      ->GetSession()
+      ->GetTransportSocketPool(
+          net::HttpNetworkSession::SocketPoolType::NORMAL_SOCKET_POOL)
+      ->GetInfoAsValue("", "", false)
+      ->GetInteger("idle_socket_count", &num_sockets);
+  ASSERT_EQ(num_sockets, 4);
+}
+
+TEST_F(NetworkContextTest, PreconnectMax) {
+  std::unique_ptr<NetworkContext> network_context =
+      CreateContextWithParams(CreateContextParams());
+
+  ConnectionListener connection_listener;
+  net::EmbeddedTestServer test_server;
+  test_server.SetConnectionListener(&connection_listener);
+  ASSERT_TRUE(test_server.Start());
+
+  int num_sockets, max_num_sockets;
+  network_context->url_request_context()
+      ->http_transaction_factory()
+      ->GetSession()
+      ->GetTransportSocketPool(
+          net::HttpNetworkSession::SocketPoolType::NORMAL_SOCKET_POOL)
+      ->GetInfoAsValue("", "", false)
+      ->GetInteger("max_sockets_per_group", &max_num_sockets);
+  EXPECT_GT(76, max_num_sockets);
+
+  network_context->PreconnectSockets(76, test_server.base_url(),
+                                     net::LOAD_NORMAL, true);
+  base::RunLoop().RunUntilIdle();
+
+  network_context->url_request_context()
+      ->http_transaction_factory()
+      ->GetSession()
+      ->GetTransportSocketPool(
+          net::HttpNetworkSession::SocketPoolType::NORMAL_SOCKET_POOL)
+      ->GetInfoAsValue("", "", false)
+      ->GetInteger("idle_socket_count", &num_sockets);
+  ASSERT_EQ(num_sockets, max_num_sockets);
 }
 
 }  // namespace

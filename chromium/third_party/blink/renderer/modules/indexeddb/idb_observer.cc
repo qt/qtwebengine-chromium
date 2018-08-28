@@ -6,16 +6,15 @@
 
 #include <bitset>
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/modules/v8/to_v8_for_modules.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_binding_for_modules.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_idb_observer_callback.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/modules/indexed_db_names.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_database.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_observer_changes.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_observer_init.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_transaction.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -31,18 +30,19 @@ void IDBObserver::observe(IDBDatabase* database,
                           const IDBObserverInit& options,
                           ExceptionState& exception_state) {
   if (!transaction->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction->InactiveErrorMessage());
     return;
   }
   if (transaction->IsVersionChange()) {
     exception_state.ThrowDOMException(
-        kTransactionInactiveError,
+        DOMExceptionCode::kTransactionInactiveError,
         IDBDatabase::kCannotObserveVersionChangeTransaction);
     return;
   }
   if (!database->Backend()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return;
   }
@@ -82,7 +82,7 @@ void IDBObserver::observe(IDBDatabase* database,
 void IDBObserver::unobserve(IDBDatabase* database,
                             ExceptionState& exception_state) {
   if (!database->Backend()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return;
   }
@@ -102,11 +102,6 @@ void IDBObserver::Trace(blink::Visitor* visitor) {
   visitor->Trace(callback_);
   visitor->Trace(observer_ids_);
   ScriptWrappable::Trace(visitor);
-}
-
-void IDBObserver::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(callback_);
-  ScriptWrappable::TraceWrappers(visitor);
 }
 
 }  // namespace blink

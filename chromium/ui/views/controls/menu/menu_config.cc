@@ -9,11 +9,12 @@
 #include "ui/views/controls/menu/menu_image_util.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/round_rect_painter.h"
+
 namespace views {
 
 MenuConfig::MenuConfig()
     : arrow_color(SK_ColorBLACK),
-      menu_vertical_border_size(3),
+      menu_vertical_border_size(4),
       menu_horizontal_border_size(views::RoundRectPainter::kBorderWidth),
       submenu_horizontal_inset(3),
       item_top_margin(4),
@@ -23,12 +24,12 @@ MenuConfig::MenuConfig()
       minimum_text_item_height(0),
       minimum_container_item_height(0),
       minimum_menu_width(0),
-      item_left_margin(10),
-      touchable_item_left_margin(16),
-      label_to_arrow_padding(10),
+      // TODO(ftirelo): Paddings should come from the layout provider, once
+      //                Harmony is the default behavior.
+      item_horizontal_padding(8),
+      touchable_item_horizontal_padding(16),
+      label_to_arrow_padding(8),
       arrow_to_edge_padding(5),
-      icon_to_label_padding(10),
-      touchable_icon_to_label_padding(16),
       touchable_icon_size(20),
       touchable_icon_color(SkColorSetRGB(0x5F, 0x63, 0x60)),
       check_width(kMenuCheckSize),
@@ -44,7 +45,6 @@ MenuConfig::MenuConfig()
       show_mnemonics(false),
       use_mnemonics(true),
       scroll_arrow_height(3),
-      label_to_minor_text_padding(10),
       item_min_height(0),
       actionable_submenu_arrow_to_edge_padding(14),
       actionable_submenu_width(37),

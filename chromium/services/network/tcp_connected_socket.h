@@ -11,7 +11,6 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "mojo/public/cpp/system/data_pipe.h"
-#include "mojo/public/cpp/system/simple_watcher.h"
 #include "net/base/address_family.h"
 #include "net/base/completion_callback.h"
 #include "net/base/ip_endpoint.h"
@@ -20,15 +19,15 @@
 #include "net/socket/tcp_client_socket.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/net_adapters.h"
-#include "services/network/public/mojom/network_service.mojom.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/tcp_socket.mojom.h"
 #include "services/network/socket_data_pump.h"
 
 namespace net {
 class NetLog;
-class StreamSocket;
 class ClientSocketFactory;
 class ClientSocketHandle;
+class TransportClientSocket;
 }  // namespace net
 
 namespace network {
@@ -43,6 +42,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) TCPConnectedSocket
     // Handles a mojom::TLSClientSocketRequest.
     virtual void CreateTLSClientSocket(
         const net::HostPortPair& host_port_pair,
+        mojom::TLSClientSocketOptionsPtr socket_options,
         mojom::TLSClientSocketRequest request,
         std::unique_ptr<net::ClientSocketHandle> tcp_socket,
         mojom::SocketObserverPtr observer,
@@ -57,7 +57,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) TCPConnectedSocket
       const net::NetworkTrafficAnnotationTag& traffic_annotation);
   TCPConnectedSocket(
       mojom::SocketObserverPtr observer,
-      std::unique_ptr<net::StreamSocket> socket,
+      std::unique_ptr<net::TransportClientSocket> socket,
       mojo::ScopedDataPipeProducerHandle receive_pipe_handle,
       mojo::ScopedDataPipeConsumerHandle send_pipe_handle,
       const net::NetworkTrafficAnnotationTag& traffic_annotation);
@@ -68,14 +68,17 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) TCPConnectedSocket
       mojom::NetworkContext::CreateTCPConnectedSocketCallback callback);
 
   // mojom::TCPConnectedSocket implementation.
-  void GetLocalAddress(GetLocalAddressCallback callback) override;
-
   void UpgradeToTLS(
       const net::HostPortPair& host_port_pair,
+      mojom::TLSClientSocketOptionsPtr socket_options,
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
       mojom::TLSClientSocketRequest request,
       mojom::SocketObserverPtr observer,
       UpgradeToTLSCallback callback) override;
+  void SetNoDelay(bool no_delay, SetNoDelayCallback callback) override;
+  void SetKeepAlive(bool enable,
+                    int32_t delay_secs,
+                    SetKeepAliveCallback callback) override;
 
  private:
   // Invoked when net::TCPClientSocket::Connect() completes.
@@ -92,7 +95,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) TCPConnectedSocket
   Delegate* const delegate_;
   net::ClientSocketFactory* const client_socket_factory_;
 
-  std::unique_ptr<net::StreamSocket> socket_;
+  std::unique_ptr<net::TransportClientSocket> socket_;
 
   mojom::NetworkContext::CreateTCPConnectedSocketCallback connect_callback_;
 

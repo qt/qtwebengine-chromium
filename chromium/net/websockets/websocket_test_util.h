@@ -74,9 +74,15 @@ std::string WebSocketStandardRequestWithCookies(
     const std::string& send_additional_request_headers,
     const std::string& extra_headers);
 
-// A response with the appropriate accept header to match the above challenge
-// key. Each header in |extra_headers| must be terminated with "\r\n".
+// A response with the appropriate accept header to match the above
+// challenge key. Each header in |extra_headers| must be terminated with
+// "\r\n".
 std::string WebSocketStandardResponse(const std::string& extra_headers);
+
+// WebSocketCommonTestHeaders() generates a common set of request headers
+// corresponding to WebSocketStandardRequest("/", "www.example.org",
+// url::Origin::Create(GURL("http://origin.example.org")), "", "")
+HttpRequestHeaders WebSocketCommonTestHeaders();
 
 // Generates a handshake request header block when using WebSockets over HTTP/2.
 spdy::SpdyHeaderBlock WebSocketHttp2Request(
@@ -188,25 +194,33 @@ class DummyConnectDelegate : public WebSocketStream::ConnectDelegate {
           ssl_error_callbacks,
       const SSLInfo& ssl_info,
       bool fatal) override {}
+  int OnAuthRequired(scoped_refptr<AuthChallengeInfo> auth_info,
+                     scoped_refptr<HttpResponseHeaders> response_headers,
+                     const HostPortPair& host_port_pair,
+                     base::OnceCallback<void(const AuthCredentials*)> callback,
+                     base::Optional<AuthCredentials>* credentials) override;
 };
 
-// WebSocketStreamRequest implementation that does nothing.
-class DummyWebSocketStreamRequest : public WebSocketStreamRequest {
+// WebSocketStreamRequestAPI implementation that sets the value of
+// Sec-WebSocket-Key to the deterministic key that is used by tests.
+class TestWebSocketStreamRequestAPI : public WebSocketStreamRequestAPI {
  public:
-  DummyWebSocketStreamRequest() = default;
-  ~DummyWebSocketStreamRequest() override = default;
-  void OnHandshakeStreamCreated(
-      WebSocketHandshakeStreamBase* handshake_stream) override {}
+  TestWebSocketStreamRequestAPI() = default;
+  ~TestWebSocketStreamRequestAPI() override = default;
+  void OnBasicHandshakeStreamCreated(
+      WebSocketBasicHandshakeStream* handshake_stream) override;
+  void OnHttp2HandshakeStreamCreated(
+      WebSocketHttp2HandshakeStream* handshake_stream) override;
   void OnFailure(const std::string& message) override {}
 };
 
 // A sub-class of WebSocketHandshakeStreamCreateHelper which sets a
-// deterministic key to use in the WebSocket handshake, and optionally uses a
-// dummy ConnectDelegate and a dummy WebSocketStreamRequest.
+// deterministic key to use in the WebSocket handshake, and uses a dummy
+// ConnectDelegate and WebSocketStreamRequestAPI.
 class TestWebSocketHandshakeStreamCreateHelper
     : public WebSocketHandshakeStreamCreateHelper {
  public:
-  // Constructor for using dummy ConnectDelegate and WebSocketStreamRequest.
+  // Constructor for using dummy ConnectDelegate and WebSocketStreamRequestAPI.
   TestWebSocketHandshakeStreamCreateHelper()
       : WebSocketHandshakeStreamCreateHelper(
             &connect_delegate_,
@@ -214,22 +228,11 @@ class TestWebSocketHandshakeStreamCreateHelper
     WebSocketHandshakeStreamCreateHelper::set_stream_request(&request_);
   }
 
-  // Constructor for using custom ConnectDelegate and subprotocols.
-  // Caller must call set_stream_request() with a WebSocketStreamRequest before
-  // calling CreateBasicStream().
-  TestWebSocketHandshakeStreamCreateHelper(
-      WebSocketStream::ConnectDelegate* connect_delegate,
-      const std::vector<std::string>& requested_subprotocols)
-      : WebSocketHandshakeStreamCreateHelper(connect_delegate,
-                                             requested_subprotocols) {}
-
   ~TestWebSocketHandshakeStreamCreateHelper() override = default;
-
-  void OnBasicStreamCreated(WebSocketBasicHandshakeStream* stream) override;
 
  private:
   DummyConnectDelegate connect_delegate_;
-  DummyWebSocketStreamRequest request_;
+  TestWebSocketStreamRequestAPI request_;
 
   DISALLOW_COPY_AND_ASSIGN(TestWebSocketHandshakeStreamCreateHelper);
 };

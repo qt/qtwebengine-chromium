@@ -126,9 +126,9 @@ bool InputMethodBase::GetClientShouldDoLearning() {
   return client && client->ShouldDoLearning();
 }
 
-void InputMethodBase::ShowImeIfNeeded() {
+void InputMethodBase::ShowVirtualKeyboardIfEnabled() {
   for (InputMethodObserver& observer : observer_list_)
-    observer.OnShowImeIfNeeded();
+    observer.OnShowVirtualKeyboardIfEnabled();
   GetInputMethodKeyboardController()->DisplayVirtualKeyboard();
 }
 
@@ -266,6 +266,18 @@ void InputMethodBase::UpdateCompositionText(const CompositionText& composition_,
 }
 
 void InputMethodBase::DeleteSurroundingText(int32_t offset, uint32_t length) {}
+
+SurroundingTextInfo InputMethodBase::GetSurroundingTextInfo() {
+  gfx::Range text_range;
+  SurroundingTextInfo info;
+  TextInputClient* client = GetTextInputClient();
+  if (!client->GetTextRange(&text_range) ||
+      !client->GetTextFromRange(text_range, &info.surrounding_text) ||
+      !client->GetSelectionRange(&info.selection_range)) {
+    return SurroundingTextInfo();
+  }
+  return info;
+}
 
 void InputMethodBase::SendKeyEvent(KeyEvent* event) {
   sending_key_event_ = true;

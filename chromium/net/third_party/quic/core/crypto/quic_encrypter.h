@@ -12,7 +12,7 @@
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
-namespace net {
+namespace quic {
 
 class QUIC_EXPORT_PRIVATE QuicEncrypter {
  public:
@@ -22,7 +22,7 @@ class QUIC_EXPORT_PRIVATE QuicEncrypter {
 
   // Creates an IETF QuicEncrypter based on |cipher_suite| which must be an id
   // returned by SSL_CIPHER_get_id. The caller is responsible for taking
-  // ownership of the nwe QuicEncrypter.
+  // ownership of the new QuicEncrypter.
   static std::unique_ptr<QuicEncrypter> CreateFromCipherSuite(
       uint32_t cipher_suite);
 
@@ -118,6 +118,6 @@ class QUIC_EXPORT_PRIVATE QuicEncrypter {
   virtual QuicStringPiece GetNoncePrefix() const = 0;
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_CRYPTO_QUIC_ENCRYPTER_H_

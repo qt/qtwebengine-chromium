@@ -54,8 +54,8 @@ class CPDF_ShadingPattern : public CPDF_Pattern {
 
   ShadingType GetShadingType() const { return m_ShadingType; }
   bool IsShadingObject() const { return m_bShadingObj; }
-  CPDF_Object* GetShadingObject() const { return m_pShadingObj.Get(); }
-  CPDF_ColorSpace* GetCS() const { return m_pCS.Get(); }
+  const CPDF_Object* GetShadingObject() const { return m_pShadingObj.Get(); }
+  const CPDF_ColorSpace* GetCS() const { return m_pCS.Get(); }
   const std::vector<std::unique_ptr<CPDF_Function>>& GetFuncs() const {
     return m_pFunctions;
   }
@@ -69,13 +69,13 @@ class CPDF_ShadingPattern : public CPDF_Pattern {
 
   ShadingType m_ShadingType = kInvalidShading;
   const bool m_bShadingObj;
-  UnownedPtr<CPDF_Object> m_pShadingObj;
+  UnownedPtr<const CPDF_Object> m_pShadingObj;
 
   // Still keep |m_pCS| as some CPDF_ColorSpace (name object) are not managed
   // as counted objects. Refer to CPDF_DocPageData::GetColorSpace.
-  UnownedPtr<CPDF_ColorSpace> m_pCS;
+  UnownedPtr<const CPDF_ColorSpace> m_pCS;
 
-  UnownedPtr<CPDF_CountedColorSpace> m_pCountedCS;
+  UnownedPtr<const CPDF_CountedColorSpace> m_pCountedCS;
   std::vector<std::unique_ptr<CPDF_Function>> m_pFunctions;
 };
 

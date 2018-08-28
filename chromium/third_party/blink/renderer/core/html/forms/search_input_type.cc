@@ -31,7 +31,6 @@
 #include "third_party/blink/renderer/core/html/forms/search_input_type.h"
 
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/events/keyboard_event.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
@@ -41,6 +40,7 @@
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/input_type_names.h"
 #include "third_party/blink/renderer/core/layout/layout_search_field.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -115,9 +115,11 @@ void SearchInputType::StartSearchEventTimer() {
     return;
   }
 
-  // After typing the first key, we wait 0.5 seconds.
-  // After the second key, 0.4 seconds, then 0.3, then 0.2 from then on.
-  search_event_timer_.StartOneShot(max(0.2, 0.6 - 0.1 * length), FROM_HERE);
+  // After typing the first key, we wait 500ms.
+  // After the second key, 400ms, then 300, then 200 from then on.
+  unsigned step = std::min(length, 4u) - 1;
+  TimeDelta timeout = TimeDelta::FromMilliseconds(500 - 100 * step);
+  search_event_timer_.StartOneShot(timeout, FROM_HERE);
 }
 
 void SearchInputType::DispatchSearchEvent() {

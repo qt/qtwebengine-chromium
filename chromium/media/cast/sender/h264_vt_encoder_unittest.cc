@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/containers/queue.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -51,8 +50,6 @@ class MediaTestSuite : public base::TestSuite {
 
 void MediaTestSuite::Initialize() {
   base::TestSuite::Initialize();
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  command_line->AppendSwitch(switches::kEnableInbandTextTracks);
   media::InitializeMediaLibrary();
 }
 
@@ -194,6 +191,8 @@ void CreateFrameAndMemsetPlane(VideoFrameFactory* const video_frame_factory) {
 
 class TestPowerSource : public base::PowerMonitorSource {
  public:
+  void Shutdown() override {}
+
   void GenerateSuspendEvent() {
     ProcessPowerEvent(SUSPEND_EVENT);
     base::RunLoop().RunUntilIdle();

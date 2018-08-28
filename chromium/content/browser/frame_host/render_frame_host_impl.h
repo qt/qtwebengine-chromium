@@ -63,6 +63,7 @@
 #include "services/service_manager/public/mojom/interface_provider.mojom.h"
 #include "services/viz/public/interfaces/hit_test/input_target_client.mojom.h"
 #include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/common/frame/user_activation_update_type.h"
 #include "third_party/blink/public/mojom/frame/find_in_page.mojom.h"
 #include "third_party/blink/public/platform/dedicated_worker_factory.mojom.h"
 #include "third_party/blink/public/platform/modules/bluetooth/web_bluetooth.mojom.h"
@@ -86,7 +87,7 @@
 #endif
 
 class GURL;
-struct AccessibilityHostMsg_EventParams;
+struct AccessibilityHostMsg_EventBundleParams;
 struct AccessibilityHostMsg_FindInPageResultParams;
 struct AccessibilityHostMsg_LocationChangeParams;
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
@@ -144,6 +145,7 @@ struct CommonNavigationParams;
 struct ContextMenuParams;
 struct FileChooserParams;
 struct FrameOwnerProperties;
+struct PendingNavigation;
 struct RequestNavigationParams;
 struct ResourceTimingInfo;
 struct SubresourceLoaderParams;
@@ -216,7 +218,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void ExecuteJavaScriptWithUserGestureForTests(
       const base::string16& javascript) override;
   void ActivateFindInPageResultForAccessibility(int request_id) override;
-  void InsertVisualStateCallback(const VisualStateCallback& callback) override;
+  void InsertVisualStateCallback(VisualStateCallback callback) override;
   void CopyImageAt(int x, int y) override;
   void SaveImageAt(int x, int y) override;
   RenderViewHost* GetRenderViewHost() override;
@@ -240,6 +242,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
       blink::WebSuddenTerminationDisablerType disabler_type) override;
   bool IsFeatureEnabled(blink::mojom::FeaturePolicyFeature feature) override;
   void ViewSource() override;
+  blink::mojom::PauseSubresourceLoadingHandlePtr PauseSubresourceLoading()
+      override;
+  void ExecuteMediaPlayerActionAtLocation(
+      const gfx::Point&,
+      const blink::WebMediaPlayerAction& action) override;
+  void CreateNetworkServiceDefaultFactory(
+      network::mojom::URLLoaderFactoryRequest default_factory_request) override;
 
   // IPC::Sender
   bool Send(IPC::Message* msg) override;
@@ -573,7 +582,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // |subresource_loader_params| is used in network service land to pass
   // the parameters to create a custom subresource loader in the renderer
   // process, e.g. by AppCache etc.
+  // TODO(clamy): Pass the NavigationRequest directly to this function when
+  // interstitials have been refactored to no longer call CommitNavigation
+  // without a NavigationRequest.
   void CommitNavigation(
+      int64_t navigation_id,
       network::ResourceResponse* response,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
       const CommonNavigationParams& common_params,
@@ -586,7 +599,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Indicates that a navigation failed and that this RenderFrame should display
   // an error page.
-  void FailedNavigation(const CommonNavigationParams& common_params,
+  void FailedNavigation(int64_t navigation_id,
+                        const CommonNavigationParams& common_params,
                         const RequestNavigationParams& request_params,
                         bool has_stale_copy_in_cache,
                         int error_code,
@@ -745,6 +759,23 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // for unload handler processing.
   void SetSubframeUnloadTimeoutForTesting(const base::TimeDelta& timeout);
 
+  bool received_post_message_from_non_descendant() const {
+    return received_post_message_from_non_descendant_;
+  }
+
+  void did_receive_post_message_from_non_descendant() {
+    received_post_message_from_non_descendant_ = true;
+  }
+
+  // Returns the list of NavigationEntry ids corresponding to NavigationRequests
+  // waiting to commit in this RenderFrameHost.
+  std::set<int> GetNavigationEntryIdsPendingCommit();
+
+  void DidCommitProvisionalLoadForTesting(
+      std::unique_ptr<FrameHostMsg_DidCommitProvisionalLoad_Params> params,
+      service_manager::mojom::InterfaceProviderRequest
+          interface_provider_request);
+
  protected:
   friend class RenderFrameHostFactory;
 
@@ -768,6 +799,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   friend class TestRenderFrameHost;
   friend class TestRenderViewHost;
 
+  FRIEND_TEST_ALL_PREFIXES(NavigatorTestWithBrowserSideNavigation,
+                           TwoNavigationsRacingCommit);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostImplBeforeUnloadBrowserTest,
                            SubframeShowsDialogWhenMainFrameNavigates);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostImplBeforeUnloadBrowserTest,
@@ -800,6 +833,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
                            ActiveSandboxFlagsRetainedAfterSwapOut);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            LastCommittedURLRetainedAfterSwapOut);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+                           RenderFrameProxyNotRecreatedDuringProcessShutdown);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+                           SwapOutACKArrivesPriorToProcessShutdownRequest);
   FRIEND_TEST_ALL_PREFIXES(SecurityExploitBrowserTest,
                            AttemptDuplicateRenderViewHost);
 
@@ -813,9 +850,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDetach();
   void OnFrameFocused();
   void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
-  void OnDocumentOnLoadCompleted(
-      FrameMsg_UILoadMetricsReportType::Value report_type,
-      base::TimeTicks ui_timestamp);
+  void OnDocumentOnLoadCompleted();
   void OnDidStartProvisionalLoad(
       const GURL& url,
       const std::vector<GURL>& redirect_chain,
@@ -858,12 +893,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnUpdateTitle(const base::string16& title,
                      blink::WebTextDirection title_direction);
   void OnDidBlockFramebust(const GURL& url);
+  // Only used with PerNavigationMojoInterface disabled.
   void OnAbortNavigation();
   void OnForwardResourceTimingToParent(
       const ResourceTimingInfo& resource_timing);
   void OnDispatchLoad();
   void OnAccessibilityEvents(
-      const std::vector<AccessibilityHostMsg_EventParams>& params,
+      const AccessibilityHostMsg_EventBundleParams& params,
       int reset_token,
       int ack_token);
   void OnAccessibilityLocationChanges(
@@ -897,7 +933,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
                           const gfx::Range& range);
   void OnFocusedNodeChanged(bool is_editable_element,
                             const gfx::Rect& bounds_in_frame_widget);
-  void OnSetHasReceivedUserGesture();
+  void OnUpdateUserActivationState(blink::UserActivationUpdateType update_type);
   void OnSetHasReceivedUserGestureBeforeNavigation(bool value);
   void OnScrollRectToVisibleInParentFrame(
       const gfx::Rect& rect_to_scroll,
@@ -937,9 +973,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void DidCommitSameDocumentNavigation(
       std::unique_ptr<FrameHostMsg_DidCommitProvisionalLoad_Params>
           validated_params) override;
-  void BeginNavigation(const CommonNavigationParams& common_params,
-                       mojom::BeginNavigationParamsPtr begin_params,
-                       blink::mojom::BlobURLTokenPtr blob_url_token) override;
+  void BeginNavigation(
+      const CommonNavigationParams& common_params,
+      mojom::BeginNavigationParamsPtr begin_params,
+      blink::mojom::BlobURLTokenPtr blob_url_token,
+      mojom::NavigationClientAssociatedPtrInfo navigation_client) override;
   void SubresourceResponseStarted(const GURL& url,
                                   net::CertStatus cert_status) override;
   void ResourceLoadComplete(
@@ -955,6 +993,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void CancelInitialHistoryLoad() override;
   void UpdateEncoding(const std::string& encoding) override;
   void FrameSizeChanged(const gfx::Size& frame_size) override;
+  void FullscreenStateChanged(bool is_fullscreen) override;
 
   // Registers Mojo interfaces that this frame host makes available.
   void RegisterMojoInterfaces();
@@ -1078,7 +1117,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       blink::mojom::PresentationServiceRequest request);
 
 #if !defined(OS_ANDROID)
-  void BindAuthenticatorRequest(webauth::mojom::AuthenticatorRequest request);
+  void BindAuthenticatorRequest(blink::mojom::AuthenticatorRequest request);
 #endif
 
   // service_manager::mojom::InterfaceProvider:
@@ -1171,11 +1210,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // local roots which are under this frame and their first ancestor which is a
   // local root is either this frame or this frame's local root. For instance,
   // in a frame tree such as:
-  //                    A0
-  //                 /  |   \
-  //                B   A1   E
-  //               /   /  \   \
-  //              D  A2    C   F
+  //                    A0                   //
+  //                 /  |   \                //
+  //                B   A1   E               //
+  //               /   /  \   \              //
+  //              D  A2    C   F             //
   // RFHs at nodes B, E, D, C, and F are all local roots in the given frame tree
   // under the root at A0, but only B, C, and E are considered immediate local
   // roots of A0. Note that this will exclude any speculative or pending RFHs.
@@ -1192,11 +1231,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // A return value of true means that the commit should proceed.
   bool ValidateDidCommitParams(
       FrameHostMsg_DidCommitProvisionalLoad_Params* validated_params);
-
-  // Utility function that does UMA reporting for link click or intent to
-  // commit timings depending on |report_type|.
-  void UMACommitReport(FrameMsg_UILoadMetricsReportType::Value report_type,
-                       const base::TimeTicks& ui_timestamp);
 
   // Updates the site url if the navigation was successful and the page is not
   // an interstitial.
@@ -1216,6 +1250,17 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnSameDocumentCommitProcessed(int64_t navigation_id,
                                      bool should_replace_current_entry,
                                      blink::mojom::CommitResult result);
+
+  // Called by the renderer process when it is done processing a cross-document
+  // commit request.
+  void OnCrossDocumentCommitProcessed(int64_t navigation_id,
+                                      blink::mojom::CommitResult result);
+
+  // Saves and clones URLLoaderFactoryBundleInfo for subresource loading.
+  // Must be called every time subresource_factories_bundle is updated.
+  void SaveSubresourceFactories(
+      std::unique_ptr<URLLoaderFactoryBundleInfo> bundle_info);
+  std::unique_ptr<URLLoaderFactoryBundleInfo> CloneSubresourceFactories();
 
   // For now, RenderFrameHosts indirectly keep RenderViewHosts alive via a
   // refcount that calls Shutdown when it reaches zero.  This allows each
@@ -1350,6 +1395,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // relevant NavigationEntry.
   int nav_entry_id_;
 
+  // Tracks if a frame has been influenced by post message from
+  // non-descendant frames. Useful for determining if silently reloading a
+  // crashed frame is safe. Post messages from descendants to not matter for
+  // this decision since they will be reloaded as well.
+  bool received_post_message_from_non_descendant_ = false;
+
   // Used to swap out or shut down this RFH when the unload event is taking too
   // long to execute, depending on the number of active frames in the
   // SiteInstance.  May be null in tests.
@@ -1423,9 +1474,17 @@ class CONTENT_EXPORT RenderFrameHostImpl
   std::unique_ptr<resource_coordinator::FrameResourceCoordinator>
       frame_resource_coordinator_;
 
-  // Holds a NavigationRequest while waiting for the navigation it is tracking
-  // to commit. This NavigationRequest is for a cross-document navigation.
+  // Holds a NavigationRequest when it's about to commit, ie. after
+  // OnCrossDocumentCommitProcessed has returned a positive answer for this
+  // NavigationRequest but before receiving DidCommitProvisionalLoad. This
+  // NavigationRequest is for a cross-document navigation.
   std::unique_ptr<NavigationRequest> navigation_request_;
+
+  // Holds the cross-document NavigationRequests that are waiting to commit,
+  // indexed by IDs. These are navigations that have passed ReadyToCommit stage
+  // and are waiting for the renderer to send back a matching
+  // OnCrossDocumentCommitProcessed.
+  std::map<int64_t, std::unique_ptr<NavigationRequest>> navigation_requests_;
 
   // Holds a same-document NavigationRequest while waiting for the navigation it
   // is tracking to commit.
@@ -1477,16 +1536,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // If true then this frame's document has a focused element which is editable.
   bool has_focused_editable_element_;
 
-  struct PendingNavigation {
-    PendingNavigation(
-        const CommonNavigationParams& common_params,
-        mojom::BeginNavigationParamsPtr begin_params,
-        scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory);
-    ~PendingNavigation();
-    CommonNavigationParams common_params;
-    mojom::BeginNavigationParamsPtr begin_params;
-    scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory;
-  };
   std::unique_ptr<PendingNavigation> pending_navigate_;
 
   // A collection of non-network URLLoaderFactory implementations which are used
@@ -1494,6 +1543,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // committed navigation.
   ContentBrowserClient::NonNetworkURLLoaderFactoryMap
       non_network_url_loader_factories_;
+
+  // A bundle of subresource loader factories used by this frame.
+  // A clone of this bundle is sent to the renderer process.
+  scoped_refptr<URLLoaderFactoryBundle> subresource_loader_factories_bundle_;
 
   // Bitfield for renderer-side state that blocks fast shutdown of the frame.
   blink::WebSuddenTerminationDisablerType

@@ -11,6 +11,7 @@
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/password_generation_util.h"
 #include "components/autofill/core/common/signatures_util.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
@@ -35,6 +36,7 @@ void CreateTestFieldDataPredictions(const std::string& signature,
 }
 
 void CreateTestPasswordFormFillData(PasswordFormFillData* fill_data) {
+  fill_data->form_renderer_id = 1234;
   fill_data->name = base::ASCIIToUTF16("TestName");
   fill_data->origin = GURL("https://foo.com/");
   fill_data->action = GURL("https://foo.com/login");
@@ -143,8 +145,18 @@ void CreateTestFormsPredictionsMap(FormsPredictionsMap* predictions) {
       PasswordFormFieldPredictionType::PREDICTION_CURRENT_PASSWORD;
 }
 
+void CreatePasswordGenerationUIData(
+    password_generation::PasswordGenerationUIData* data) {
+  data->bounds = gfx::RectF(1, 1, 200, 100);
+  data->max_length = 20;
+  data->generation_element = base::ASCIIToUTF16("generation_element");
+  data->text_direction = base::i18n::RIGHT_TO_LEFT;
+  CreateTestPasswordForm(&data->password_form);
+}
+
 void CheckEqualPasswordFormFillData(const PasswordFormFillData& expected,
                                     const PasswordFormFillData& actual) {
+  EXPECT_EQ(expected.form_renderer_id, actual.form_renderer_id);
   EXPECT_EQ(expected.name, actual.name);
   EXPECT_EQ(expected.origin, actual.origin);
   EXPECT_EQ(expected.action, actual.action);
@@ -182,6 +194,16 @@ void CheckEqualPasswordFormGenerationData(
             actual.confirmation_field_signature.has_value());
   EXPECT_EQ(expected.confirmation_field_signature.value(),
             actual.confirmation_field_signature.value());
+}
+
+void CheckEqualPassPasswordGenerationUIData(
+    const password_generation::PasswordGenerationUIData& expected,
+    const password_generation::PasswordGenerationUIData& actual) {
+  EXPECT_EQ(expected.bounds, actual.bounds);
+  EXPECT_EQ(expected.max_length, actual.max_length);
+  EXPECT_EQ(expected.generation_element, actual.generation_element);
+  EXPECT_EQ(expected.text_direction, actual.text_direction);
+  EXPECT_EQ(expected.password_form, actual.password_form);
 }
 
 }  // namespace
@@ -228,6 +250,12 @@ class AutofillTypeTraitsTestImpl : public testing::Test,
   void PassPasswordFormGenerationData(
       const PasswordFormGenerationData& s,
       PassPasswordFormGenerationDataCallback callback) override {
+    std::move(callback).Run(s);
+  }
+
+  void PassPasswordGenerationUIData(
+      const password_generation::PasswordGenerationUIData& s,
+      PassPasswordGenerationUIDataCallback callback) override {
     std::move(callback).Run(s);
   }
 
@@ -291,6 +319,14 @@ void ExpectPasswordFormGenerationData(
   closure.Run();
 }
 
+void ExpectPasswordGenerationUIData(
+    const password_generation::PasswordGenerationUIData& expected,
+    base::OnceClosure closure,
+    const password_generation::PasswordGenerationUIData& passed) {
+  CheckEqualPassPasswordGenerationUIData(expected, passed);
+  std::move(closure).Run();
+}
+
 void ExpectPasswordForm(const PasswordForm& expected,
                         const base::Closure& closure,
                         const PasswordForm& passed) {
@@ -332,6 +368,7 @@ TEST_F(AutofillTypeTraitsTestImpl, PassFormFieldData) {
 TEST_F(AutofillTypeTraitsTestImpl, PassFormData) {
   FormData input;
   test::CreateTestAddressFormData(&input);
+  input.username_predictions = {1, 13, 2};
 
   base::RunLoop loop;
   mojom::TypeTraitsTestPtr proxy = GetTypeTraitsTestProxy();
@@ -399,6 +436,18 @@ TEST_F(AutofillTypeTraitsTestImpl, PassPasswordFormGenerationData) {
   proxy->PassPasswordFormGenerationData(
       input,
       base::Bind(&ExpectPasswordFormGenerationData, input, loop.QuitClosure()));
+  loop.Run();
+}
+
+TEST_F(AutofillTypeTraitsTestImpl, PassPasswordGenerationUIData) {
+  password_generation::PasswordGenerationUIData input;
+  CreatePasswordGenerationUIData(&input);
+
+  base::RunLoop loop;
+  mojom::TypeTraitsTestPtr proxy = GetTypeTraitsTestProxy();
+  proxy->PassPasswordGenerationUIData(
+      input, base::BindOnce(&ExpectPasswordGenerationUIData, input,
+                            loop.QuitClosure()));
   loop.Run();
 }
 

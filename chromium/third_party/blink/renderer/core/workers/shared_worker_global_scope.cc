@@ -52,7 +52,7 @@ SharedWorkerGlobalScope::SharedWorkerGlobalScope(
     const String& name,
     std::unique_ptr<GlobalScopeCreationParams> creation_params,
     SharedWorkerThread* thread,
-    double time_origin)
+    base::TimeTicks time_origin)
     : WorkerGlobalScope(std::move(creation_params), thread, time_origin),
       name_(name) {}
 
@@ -65,6 +65,7 @@ const AtomicString& SharedWorkerGlobalScope::InterfaceName() const {
 // https://html.spec.whatwg.org/multipage/workers.html#worker-processing-model
 void SharedWorkerGlobalScope::ImportModuleScript(
     const KURL& module_url_record,
+    FetchClientSettingsObjectSnapshot* outside_settings_object,
     network::mojom::FetchCredentialsMode credentials_mode) {
   // Step 12: "Let destination be "sharedworker" if is shared is true, and
   // "worker" otherwise."

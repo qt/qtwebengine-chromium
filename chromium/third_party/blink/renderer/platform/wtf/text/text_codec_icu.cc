@@ -408,7 +408,7 @@ String TextCodecICU::Decode(const char* bytes,
   do {
     int uchars_decoded =
         DecodeToBuffer(buffer, buffer_limit, source, source_limit, offsets,
-                       flush != kDoNotFlush, err);
+                       flush != FlushBehavior::kDoNotFlush, err);
     result.Append(buffer, uchars_decoded);
   } while (err == U_BUFFER_OVERFLOW_ERROR);
 
@@ -458,7 +458,7 @@ static UChar FallbackForGBK(UChar32 character) {
 }
 #endif
 
-// Generic helper for writing escaped entities using the specfied
+// Generic helper for writing escaped entities using the specified
 // UnencodableHandling.
 static void FormatEscapedEntityCallback(const void* context,
                                         UConverterFromUnicodeArgs* from_u_args,
@@ -472,7 +472,7 @@ static void FormatEscapedEntityCallback(const void* context,
     *err = U_ZERO_ERROR;
 
     UnencodableReplacementArray entity;
-    int entity_len =
+    uint32_t entity_len =
         TextCodec::GetUnencodableReplacement(code_point, handling, entity);
     String entity_u(entity, entity_len);
     entity_u.Ensure16Bit();

@@ -17,6 +17,7 @@
 
 #include "api/fec_controller.h"
 #include "call/bitrate_allocator.h"
+#include "call/payload_router.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
@@ -24,7 +25,6 @@
 #include "rtc_base/event.h"
 #include "rtc_base/task_queue.h"
 #include "video/send_delay_stats.h"
-#include "video/payload_router.h"
 #include "video/send_statistics_proxy.h"
 #include "video/video_stream_encoder.h"
 
@@ -51,6 +51,9 @@ class VideoSendStreamImpl;
 // |worker_queue|.
 class VideoSendStream : public webrtc::VideoSendStream {
  public:
+  using RtpStateMap = std::map<uint32_t, RtpState>;
+  using RtpPayloadStateMap = std::map<uint32_t, RtpPayloadState>;
+
   VideoSendStream(
       int num_cpu_cores,
       ProcessThread* module_process_thread,
@@ -64,12 +67,10 @@ class VideoSendStream : public webrtc::VideoSendStream {
       VideoEncoderConfig encoder_config,
       const std::map<uint32_t, RtpState>& suspended_ssrcs,
       const std::map<uint32_t, RtpPayloadState>& suspended_payload_states,
-      std::unique_ptr<FecController> fec_controller,
-      RateLimiter* retransmission_limiter);
+      std::unique_ptr<FecController> fec_controller);
 
   ~VideoSendStream() override;
 
-  void SignalNetworkState(NetworkState state);
   bool DeliverRtcp(const uint8_t* packet, size_t length);
 
   // webrtc::VideoSendStream implementation.
@@ -83,9 +84,6 @@ class VideoSendStream : public webrtc::VideoSendStream {
 
   void ReconfigureVideoEncoder(VideoEncoderConfig) override;
   Stats GetStats() override;
-
-  typedef std::map<uint32_t, RtpState> RtpStateMap;
-  typedef std::map<uint32_t, RtpPayloadState> RtpPayloadStateMap;
 
   // Takes ownership of each file, is responsible for closing them later.
   // Calling this method will close and finalize any current logs.
@@ -106,7 +104,7 @@ class VideoSendStream : public webrtc::VideoSendStream {
 
   class ConstructionTask;
 
-  rtc::Optional<float> GetPacingFactorOverride() const;
+  absl::optional<float> GetPacingFactorOverride() const;
 
   rtc::ThreadChecker thread_checker_;
   rtc::TaskQueue* const worker_queue_;

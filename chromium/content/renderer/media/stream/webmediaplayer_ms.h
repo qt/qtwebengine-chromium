@@ -86,9 +86,10 @@ class CONTENT_EXPORT WebMediaPlayerMS
 
   ~WebMediaPlayerMS() override;
 
-  void Load(LoadType load_type,
-            const blink::WebMediaPlayerSource& source,
-            CORSMode cors_mode) override;
+  blink::WebMediaPlayer::LoadTiming Load(
+      LoadType load_type,
+      const blink::WebMediaPlayerSource& source,
+      CORSMode cors_mode) override;
 
   // Playback controls.
   void Play() override;
@@ -109,7 +110,7 @@ class CONTENT_EXPORT WebMediaPlayerMS
   blink::WebTimeRanges Seekable() const override;
 
   // Methods for painting.
-  void Paint(blink::WebCanvas* canvas,
+  void Paint(cc::PaintCanvas* canvas,
              const blink::WebRect& rect,
              cc::PaintFlags& flags,
              int already_uploaded_id,
@@ -165,6 +166,7 @@ class CONTENT_EXPORT WebMediaPlayerMS
   void OnVolumeMultiplierUpdate(double multiplier) override;
   void OnBecamePersistentVideo(bool value) override;
   void OnPictureInPictureModeEnded() override;
+  void OnPictureInPictureControlClicked(const std::string& control_id) override;
 
   bool CopyVideoTextureToPlatformTexture(
       gpu::gles2::GLES2Interface* gl,

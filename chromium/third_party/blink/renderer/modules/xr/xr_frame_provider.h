@@ -14,7 +14,6 @@
 
 namespace blink {
 
-class ScriptPromiseResolver;
 class XRDevice;
 class XRSession;
 class XRFrameTransport;
@@ -27,14 +26,17 @@ class XRFrameProvider final
  public:
   explicit XRFrameProvider(XRDevice*);
 
-  XRSession* exclusive_session() const { return exclusive_session_; }
+  XRSession* immersive_session() const { return immersive_session_; }
+  device::mojom::blink::VRSubmitFrameClientPtr GetSubmitFrameClient();
 
-  void BeginExclusiveSession(XRSession*, ScriptPromiseResolver*);
-  void OnExclusiveSessionEnded();
+  void BeginImmersiveSession(
+      XRSession* session,
+      device::mojom::blink::XRPresentationConnectionPtr connection);
+  void OnImmersiveSessionEnded();
 
   void RequestFrame(XRSession*);
 
-  void OnNonExclusiveVSync(double timestamp);
+  void OnNonImmersiveVSync(double high_res_now_ms);
 
   void SubmitWebGLLayer(XRWebGLLayer*, bool was_changed);
   void UpdateWebGLLayerViewports(XRWebGLLayer*);
@@ -45,60 +47,35 @@ class XRFrameProvider final
   virtual void Trace(blink::Visitor*);
 
  private:
-  void OnExclusiveVSync(
-      device::mojom::blink::VRPosePtr,
-      WTF::TimeDelta,
-      int16_t frame_id,
-      device::mojom::blink::VRPresentationProvider::VSyncStatus,
-      const base::Optional<gpu::MailboxHolder>& buffer_holder);
-  void OnNonExclusiveFrameData(device::mojom::blink::VRMagicWindowFrameDataPtr);
-  void OnNonExclusivePose(device::mojom::blink::VRPosePtr);
+  void OnImmersiveFrameData(device::mojom::blink::XRFrameDataPtr data);
+  void OnNonImmersiveFrameData(device::mojom::blink::XRFrameDataPtr data);
 
-  void ScheduleExclusiveFrame();
-  void ScheduleNonExclusiveFrame();
+  void ScheduleImmersiveFrame();
+  void ScheduleNonImmersiveFrame();
 
-  void OnPresentComplete(
-      bool success,
-      device::mojom::blink::VRDisplayFrameTransportOptionsPtr);
   void OnPresentationProviderConnectionError();
-  void ProcessScheduledFrame(
-      device::mojom::blink::VRMagicWindowFrameDataPtr frame_data,
-      double timestamp);
+  void ProcessScheduledFrame(device::mojom::blink::XRFrameDataPtr frame_data,
+                             double high_res_now_ms);
 
-  void RenderBackgroundImage(
-      const device::mojom::blink::VRMagicWindowFrameDataPtr& frame_data,
-      XRSession* session);
+  bool HasARSession();
 
   const Member<XRDevice> device_;
-  Member<XRSession> exclusive_session_;
-  Member<ScriptPromiseResolver> pending_exclusive_session_resolver_;
+  Member<XRSession> immersive_session_;
   Member<XRFrameTransport> frame_transport_;
 
-  // Careful, exclusive_session_ being true does not mean it's OK to send
-  // frames. The initialization handshake may not be complete yet. This boolean
-  // starts out false at the start of a session, becomes true after a
-  // successful OnPresentComplete(), and remains true for the lifetime of the
-  // exclusive session.
-  bool exclusive_session_can_send_frames_ = false;
-
-  // Non-exclusive Sessions which have requested a frame update.
+  // Non-immersive Sessions which have requested a frame update.
   HeapVector<Member<XRSession>> requesting_sessions_;
 
   device::mojom::blink::VRPresentationProviderPtr presentation_provider_;
   device::mojom::blink::VRMagicWindowProviderPtr magic_window_provider_;
   device::mojom::blink::VRPosePtr frame_pose_;
 
-  // Track the size/orientation of the requested canvas.
-  // TODO(https://crbug.com/836496): move these to XRSession.
-  IntSize ar_requested_transfer_size_;
-  int ar_requested_transfer_angle_ = 0;
-
   // This frame ID is XR-specific and is used to track when frames arrive at the
   // XR compositor so that it knows which poses to use, when to apply bounds
   // updates, etc.
   int16_t frame_id_ = -1;
-  bool pending_exclusive_vsync_ = false;
-  bool pending_non_exclusive_vsync_ = false;
+  bool pending_immersive_vsync_ = false;
+  bool pending_non_immersive_vsync_ = false;
   bool vsync_connection_failed_ = false;
 
   base::Optional<gpu::MailboxHolder> buffer_mailbox_holder_;

@@ -10,10 +10,8 @@
 #include "SkMultiPictureDraw.h"
 #include "SkSurface.h"
 
-#if SK_SUPPORT_GPU
 #include "GrContext.h"
 #include "GrContextPriv.h"
-#endif
 
 // These CPU tile sizes are not good per se, but they are similar to what Chrome uses.
 DEFINE_int32(CPUbenchTileW, 256, "Tile width  used for CPU SKP playback.");
@@ -64,7 +62,7 @@ void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
     int xTiles = SkScalarCeilToInt(bounds.width()  / SkIntToScalar(tileW));
     int yTiles = SkScalarCeilToInt(bounds.height() / SkIntToScalar(tileH));
 
-    fSurfaces.setReserve(xTiles * yTiles);
+    fSurfaces.reserve(xTiles * yTiles);
     fTileRects.setReserve(xTiles * yTiles);
 
     SkImageInfo ii = canvas->imageInfo().makeWH(tileW, tileH);
@@ -73,16 +71,16 @@ void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
         for (int x = bounds.fLeft; x < bounds.fRight; x += tileW) {
             const SkIRect tileRect = SkIRect::MakeXYWH(x, y, tileW, tileH);
             *fTileRects.append() = tileRect;
-            *fSurfaces.push() = canvas->makeSurface(ii).release();
+            fSurfaces.emplace_back(canvas->makeSurface(ii));
 
             // Never want the contents of a tile to include stuff the parent
             // canvas clips out
             SkRect clip = SkRect::Make(bounds);
             clip.offset(-SkIntToScalar(tileRect.fLeft), -SkIntToScalar(tileRect.fTop));
-            fSurfaces.top()->getCanvas()->clipRect(clip);
+            fSurfaces.back()->getCanvas()->clipRect(clip);
 
-            fSurfaces.top()->getCanvas()->setMatrix(canvas->getTotalMatrix());
-            fSurfaces.top()->getCanvas()->scale(fScale, fScale);
+            fSurfaces.back()->getCanvas()->setMatrix(canvas->getTotalMatrix());
+            fSurfaces.back()->getCanvas()->scale(fScale, fScale);
         }
     }
 }
@@ -94,10 +92,9 @@ void SKPBench::onPerCanvasPostDraw(SkCanvas* canvas) {
         sk_sp<SkImage> image(fSurfaces[i]->makeImageSnapshot());
         canvas->drawImage(image,
                           SkIntToScalar(fTileRects[i].fLeft), SkIntToScalar(fTileRects[i].fTop));
-        SkSafeSetNull(fSurfaces[i]);
     }
 
-    fSurfaces.rewind();
+    fSurfaces.reset();
     fTileRects.rewind();
 }
 
@@ -120,12 +117,10 @@ void SKPBench::onDraw(int loops, SkCanvas* canvas) {
         if (0 == --loops) {
             break;
         }
-#if SK_SUPPORT_GPU
         // Ensure the GrContext doesn't combine ops across draw loops.
         if (GrContext* context = canvas->getGrContext()) {
             context->flush();
         }
-#endif
     }
 }
 
@@ -158,7 +153,6 @@ void SKPBench::drawPicture() {
     }
 }
 
-#if SK_SUPPORT_GPU
 #include "GrGpu.h"
 static void draw_pic_for_stats(SkCanvas* canvas, GrContext* context, const SkPicture* picture,
                                SkTArray<SkString>* keys, SkTArray<double>* values,
@@ -176,10 +170,8 @@ static void draw_pic_for_stats(SkCanvas* canvas, GrContext* context, const SkPic
         (*keys)[i].appendf("_%s", tag);
     }
 }
-#endif
 
 void SKPBench::getGpuStats(SkCanvas* canvas, SkTArray<SkString>* keys, SkTArray<double>* values) {
-#if SK_SUPPORT_GPU
     // we do a special single draw and then dump the key / value pairs
     GrContext* context = canvas->getGrContext();
     if (!context) {
@@ -195,6 +187,4 @@ void SKPBench::getGpuStats(SkCanvas* canvas, SkTArray<SkString>* keys, SkTArray<
 
     // draw second frame
     draw_pic_for_stats(canvas, context, fPic.get(), keys, values, "second_frame");
-
-#endif
 }

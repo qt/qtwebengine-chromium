@@ -63,7 +63,7 @@ class FakeWorkerGlobalScope : public WorkerGlobalScope {
       WorkerThread* thread)
       : WorkerGlobalScope(std::move(creation_params),
                           thread,
-                          CurrentTimeTicksInSeconds()) {}
+                          CurrentTimeTicks()) {}
 
   ~FakeWorkerGlobalScope() override = default;
 
@@ -73,8 +73,10 @@ class FakeWorkerGlobalScope : public WorkerGlobalScope {
   }
 
   // WorkerGlobalScope
-  void ImportModuleScript(const KURL& module_url_record,
-                          network::mojom::FetchCredentialsMode) override {
+  void ImportModuleScript(
+      const KURL& module_url_record,
+      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      network::mojom::FetchCredentialsMode) override {
     NOTREACHED();
   }
 
@@ -86,7 +88,7 @@ class WorkerThreadForTest : public WorkerThread {
   WorkerThreadForTest(ThreadableLoadingContext* loading_context,
                       WorkerReportingProxy& mock_worker_reporting_proxy)
       : WorkerThread(loading_context, mock_worker_reporting_proxy),
-        worker_backing_thread_(WorkerBackingThread::CreateForTest(
+        worker_backing_thread_(WorkerBackingThread::Create(
             WebThreadCreationParams(WebThreadType::kTestThread))) {}
 
   ~WorkerThreadForTest() override = default;
@@ -102,13 +104,10 @@ class WorkerThreadForTest : public WorkerThread {
       ParentExecutionContextTaskRunners* parent_execution_context_task_runners,
       const KURL& script_url = KURL("http://fake.url/"),
       WorkerClients* worker_clients = nullptr) {
-    auto headers = std::make_unique<Vector<CSPHeaderAndType>>();
-    CSPHeaderAndType header_and_type("contentSecurityPolicy",
-                                     kContentSecurityPolicyHeaderTypeReport);
-    headers->push_back(header_and_type);
-
+    Vector<CSPHeaderAndType> headers{
+        {"contentSecurityPolicy", kContentSecurityPolicyHeaderTypeReport}};
     auto creation_params = std::make_unique<GlobalScopeCreationParams>(
-        script_url, ScriptType::kClassic, "fake user agent", headers.get(),
+        script_url, ScriptType::kClassic, "fake user agent", headers,
         kReferrerPolicyDefault, security_origin,
         false /* starter_secure_context */, worker_clients,
         mojom::IPAddressSpace::kLocal, nullptr,

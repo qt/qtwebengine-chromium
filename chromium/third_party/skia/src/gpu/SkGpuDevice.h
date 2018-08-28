@@ -87,13 +87,12 @@ public:
                         const SkPaint& paint, SkCanvas::SrcRectConstraint) override;
     void drawSprite(const SkBitmap& bitmap, int x, int y,
                     const SkPaint& paint) override;
-    void drawText(const void* text, size_t len, SkScalar x, SkScalar y,
-                  const SkPaint&) override;
     void drawPosText(const void* text, size_t len, const SkScalar pos[],
                      int scalarsPerPos, const SkPoint& offset, const SkPaint&) override;
-    void drawTextBlob(const SkTextBlob*, SkScalar x, SkScalar y,
-                      const SkPaint& paint, SkDrawFilter* drawFilter) override;
-    void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) override;
+    void drawTextBlob(const SkTextBlob*, SkScalar x, SkScalar y, const SkPaint& paint) override;
+    void drawGlyphRunList(SkGlyphRunList* glyphRunList) override;
+    void drawVertices(const SkVertices*, const SkMatrix bones[], int boneCount, SkBlendMode,
+                      const SkPaint&) override;
     void drawShadow(const SkPath&, const SkDrawShadowRec&) override;
     void drawAtlas(const SkImage* atlas, const SkRSXform[], const SkRect[],
                    const SkColor[], int count, SkBlendMode, const SkPaint&) override;
@@ -249,7 +248,8 @@ private:
     void drawStrokedLine(const SkPoint pts[2], const SkPaint&);
 
     void wireframeVertices(SkVertices::VertexMode, int vertexCount, const SkPoint verts[],
-                           SkBlendMode, const uint16_t indices[], int indexCount, const SkPaint&);
+                           const SkMatrix bones[], int boneCount, SkBlendMode,
+                           const uint16_t indices[], int indexCount, const SkPaint&);
 
     static sk_sp<GrRenderTargetContext> MakeRenderTargetContext(GrContext*,
                                                                 SkBudgeted,

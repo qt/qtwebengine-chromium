@@ -50,7 +50,7 @@ class CORE_EXPORT DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
  public:
   DedicatedWorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
                              DedicatedWorkerThread*,
-                             double time_origin);
+                             base::TimeTicks time_origin);
   ~DedicatedWorkerGlobalScope() override;
 
   bool IsDedicatedWorkerGlobalScope() const override { return true; }
@@ -59,8 +59,10 @@ class CORE_EXPORT DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
   const AtomicString& InterfaceName() const override;
 
   // WorkerGlobalScope
-  void ImportModuleScript(const KURL& module_url_record,
-                          network::mojom::FetchCredentialsMode) override;
+  void ImportModuleScript(
+      const KURL& module_url_record,
+      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      network::mojom::FetchCredentialsMode) override;
 
   void postMessage(ScriptState*,
                    scoped_refptr<SerializedScriptValue>,

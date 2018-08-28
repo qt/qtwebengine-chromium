@@ -90,7 +90,7 @@ class WindowsRealTimeClock : public RealTimeClock {
         num_timer_wraps_(0),
         ref_point_(GetSystemReferencePoint()) {}
 
-  virtual ~WindowsRealTimeClock() {}
+  ~WindowsRealTimeClock() override {}
 
  protected:
   struct ReferencePoint {
@@ -223,7 +223,7 @@ Clock* Clock::GetRealTimeClock() {
 #elif defined(WEBRTC_POSIX)
   static UnixRealTimeClock clock;
   return &clock;
-#else  // defined(WEBRTC_POSIX)
+#else   // defined(WEBRTC_POSIX)
   return nullptr;
 #endif  // !defined(WEBRTC_WIN) || defined(WEBRTC_POSIX)
 }

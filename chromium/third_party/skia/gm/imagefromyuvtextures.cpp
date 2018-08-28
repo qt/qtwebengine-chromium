@@ -9,8 +9,6 @@
 
 #include "gm.h"
 
-#if SK_SUPPORT_GPU
-
 #include "GrContext.h"
 #include "GrContextPriv.h"
 #include "GrGpu.h"
@@ -18,6 +16,7 @@
 #include "SkBitmap.h"
 #include "SkGradientShader.h"
 #include "SkImage.h"
+#include "SkTo.h"
 
 namespace skiagm {
 class ImageFromYUVTextures : public GM {
@@ -95,6 +94,10 @@ protected:
     }
 
     void createYUVTextures(GrContext* context, GrBackendTexture yuvTextures[3]) {
+        if (context->abandoned()) {
+            return;
+        }
+
         GrGpu* gpu = context->contextPriv().getGpu();
         if (!gpu) {
             return;
@@ -112,6 +115,9 @@ protected:
     }
 
     void deleteYUVTextures(GrContext* context, GrBackendTexture yuvTextures[3]) {
+        if (context->abandoned()) {
+            return;
+        }
 
         GrGpu* gpu = context->contextPriv().getGpu();
         if (!gpu) {
@@ -169,5 +175,3 @@ private:
 
 DEF_GM(return new ImageFromYUVTextures;)
 }
-
-#endif

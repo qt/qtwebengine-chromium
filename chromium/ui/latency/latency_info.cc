@@ -39,17 +39,11 @@ const char* GetComponentName(ui::LatencyComponentType type) {
     CASE_TYPE(INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_IMPL_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_FORWARD_SCROLL_UPDATE_TO_MAIN_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT);
-    CASE_TYPE(TAB_SHOW_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT);
     CASE_TYPE(INPUT_EVENT_LATENCY_RENDERER_SWAP_COMPONENT);
     CASE_TYPE(DISPLAY_COMPOSITOR_RECEIVED_FRAME_COMPONENT);
     CASE_TYPE(INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT);
-    CASE_TYPE(INPUT_EVENT_LATENCY_GENERATE_SCROLL_UPDATE_FROM_MOUSE_WHEEL);
-    CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_NO_SWAP_COMPONENT);
-    CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT);
-    CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_COMMIT_FAILED_COMPONENT);
-    CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_COMMIT_NO_UPDATE_COMPONENT);
-    CASE_TYPE(INPUT_EVENT_LATENCY_TERMINATED_SWAP_FAILED_COMPONENT);
+    CASE_TYPE(INPUT_EVENT_LATENCY_FRAME_SWAP_COMPONENT);
     default:
       DLOG(WARNING) << "Unhandled LatencyComponentType.\n";
       break;
@@ -65,19 +59,6 @@ bool IsInputLatencyBeginComponent(ui::LatencyComponentType type) {
 bool IsTraceBeginComponent(ui::LatencyComponentType type) {
   return (IsInputLatencyBeginComponent(type) ||
           type == ui::LATENCY_BEGIN_SCROLL_LISTENER_UPDATE_MAIN_COMPONENT);
-}
-
-bool IsTraceEndComponent(ui::LatencyComponentType type) {
-  switch (type) {
-    case ui::INPUT_EVENT_LATENCY_TERMINATED_NO_SWAP_COMPONENT:
-    case ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT:
-    case ui::INPUT_EVENT_LATENCY_TERMINATED_COMMIT_FAILED_COMPONENT:
-    case ui::INPUT_EVENT_LATENCY_TERMINATED_COMMIT_NO_UPDATE_COMPONENT:
-    case ui::INPUT_EVENT_LATENCY_TERMINATED_SWAP_FAILED_COMPONENT:
-      return true;
-    default:
-      return false;
-  }
 }
 
 // This class is for converting latency info to trace buffer friendly format.
@@ -196,11 +177,8 @@ void LatencyInfo::CopyLatencyFrom(const LatencyInfo& other,
   }
 
   for (const auto& lc : other.latency_components()) {
-    if (lc.first.first == type) {
-      AddLatencyNumberWithTimestamp(lc.first.first,
-                                    lc.first.second,
-                                    lc.second.event_time,
-                                    lc.second.event_count);
+    if (lc.first == type) {
+      AddLatencyNumberWithTimestamp(lc.first, lc.second, 1);
     }
   }
 
@@ -209,8 +187,6 @@ void LatencyInfo::CopyLatencyFrom(const LatencyInfo& other,
   // isn't very intuitive, and we can actually begin multiple times across
   // copied events.
   terminated_ = other.terminated();
-
-  snapshots_ = other.Snapshots();
 }
 
 void LatencyInfo::AddNewLatencyFrom(const LatencyInfo& other) {
@@ -224,11 +200,8 @@ void LatencyInfo::AddNewLatencyFrom(const LatencyInfo& other) {
   }
 
   for (const auto& lc : other.latency_components()) {
-    if (!FindLatency(lc.first.first, lc.first.second, NULL)) {
-      AddLatencyNumberWithTimestamp(lc.first.first,
-                                    lc.first.second,
-                                    lc.second.event_time,
-                                    lc.second.event_count);
+    if (!FindLatency(lc.first, nullptr)) {
+      AddLatencyNumberWithTimestamp(lc.first, lc.second, 1);
     }
   }
 
@@ -237,34 +210,29 @@ void LatencyInfo::AddNewLatencyFrom(const LatencyInfo& other) {
   // very intuitive, and we can actually begin multiple times across copied
   // events.
   terminated_ = other.terminated();
-
-  snapshots_ = other.Snapshots();
 }
 
-void LatencyInfo::AddLatencyNumber(LatencyComponentType component, int64_t id) {
-  AddLatencyNumberWithTimestampImpl(component, id, base::TimeTicks::Now(), 1,
+void LatencyInfo::AddLatencyNumber(LatencyComponentType component) {
+  AddLatencyNumberWithTimestampImpl(component, base::TimeTicks::Now(), 1,
                                     nullptr);
 }
 
 void LatencyInfo::AddLatencyNumberWithTraceName(
     LatencyComponentType component,
-    int64_t id,
     const char* trace_name_str) {
-  AddLatencyNumberWithTimestampImpl(component, id, base::TimeTicks::Now(), 1,
+  AddLatencyNumberWithTimestampImpl(component, base::TimeTicks::Now(), 1,
                                     trace_name_str);
 }
 
 void LatencyInfo::AddLatencyNumberWithTimestamp(
     LatencyComponentType component,
-    int64_t id,
     base::TimeTicks time,
     uint32_t event_count) {
-  AddLatencyNumberWithTimestampImpl(component, id, time, event_count, nullptr);
+  AddLatencyNumberWithTimestampImpl(component, time, event_count, nullptr);
 }
 
 void LatencyInfo::AddLatencyNumberWithTimestampImpl(
     LatencyComponentType component,
-    int64_t id,
     base::TimeTicks time,
     uint32_t event_count,
     const char* trace_name_str) {
@@ -284,12 +252,12 @@ void LatencyInfo::AddLatencyNumberWithTimestampImpl(
       // for an input event, we want to draw the beginning as when the event is
       // originally created, e.g. the timestamp of its ORIGINAL/UI_COMPONENT,
       // not when we actually issue the ASYNC_BEGIN trace event.
-      LatencyComponent begin_component;
+      base::TimeTicks begin_timestamp;
       base::TimeTicks ts;
-      if (FindLatency(INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0,
-                      &begin_component) ||
-          FindLatency(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, &begin_component)) {
-        ts = begin_component.event_time;
+      if (FindLatency(INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
+                      &begin_timestamp) ||
+          FindLatency(INPUT_EVENT_LATENCY_UI_COMPONENT, &begin_timestamp)) {
+        ts = begin_timestamp;
       } else {
         ts = base::TimeTicks::Now();
       }
@@ -315,40 +283,31 @@ void LatencyInfo::AddLatencyNumberWithTimestampImpl(
                            "trace_id", trace_id_);
   }
 
-  LatencyMap::key_type key = std::make_pair(component, id);
-  LatencyMap::iterator it = latency_components_.find(key);
-  if (it == latency_components_.end()) {
-    LatencyComponent info = {time, event_count, time, time};
-    latency_components_[key] = info;
-  } else {
-    uint32_t new_count = event_count + it->second.event_count;
-    if (event_count > 0 && new_count != 0) {
-      // Do a weighted average, so that the new event_time is the average of
-      // the times of events currently in this structure with the time passed
-      // into this method.
-      it->second.event_time += (time - it->second.event_time) * event_count /
-          new_count;
-      it->second.event_count = new_count;
-      it->second.last_event_time = std::max(it->second.last_event_time, time);
-    }
+  LatencyMap::iterator it = latency_components_.find(component);
+  DCHECK(it == latency_components_.end());
+  latency_components_[component] = time;
+
+  if (component == INPUT_EVENT_LATENCY_FRAME_SWAP_COMPONENT)
+    Terminate();
+}
+
+void LatencyInfo::Terminate() {
+  if (!began_)
+    return;
+
+  // Should only ever be terminated once.
+  CHECK(!terminated_);
+  terminated_ = true;
+
+  if (*g_latency_info_enabled.Get().latency_info_enabled) {
+    TRACE_EVENT_COPY_ASYNC_END1(
+        kTraceCategoriesForAsyncEvents, trace_name_.c_str(),
+        TRACE_ID_DONT_MANGLE(trace_id_), "data", AsTraceableData());
   }
 
-  if (IsTraceEndComponent(component) && began_) {
-    // Should only ever add terminal component once.
-    CHECK(!terminated_);
-    terminated_ = true;
-
-    if (*latency_info_enabled) {
-      TRACE_EVENT_COPY_ASYNC_END1(
-          kTraceCategoriesForAsyncEvents, trace_name_.c_str(),
-          TRACE_ID_DONT_MANGLE(trace_id_), "data", AsTraceableData());
-    }
-
-    TRACE_EVENT_WITH_FLOW0("input,benchmark",
-                           "LatencyInfo.Flow",
-                           TRACE_ID_DONT_MANGLE(trace_id_),
-                           TRACE_EVENT_FLAG_FLOW_IN);
-  }
+  TRACE_EVENT_WITH_FLOW0("input,benchmark", "LatencyInfo.Flow",
+                         TRACE_ID_DONT_MANGLE(trace_id_),
+                         TRACE_EVENT_FLAG_FLOW_IN);
 }
 
 std::unique_ptr<base::trace_event::ConvertableToTraceFormat>
@@ -358,59 +317,22 @@ LatencyInfo::AsTraceableData() {
   for (const auto& lc : latency_components_) {
     std::unique_ptr<base::DictionaryValue> component_info(
         new base::DictionaryValue());
-    component_info->SetDouble("comp_id", static_cast<double>(lc.first.second));
     component_info->SetDouble(
-        "time", static_cast<double>(
-                    lc.second.event_time.since_origin().InMicroseconds()));
-    component_info->SetDouble("count", lc.second.event_count);
-    record_data->Set(GetComponentName(lc.first.first),
-                     std::move(component_info));
+        "time", static_cast<double>(lc.second.since_origin().InMicroseconds()));
+    record_data->Set(GetComponentName(lc.first), std::move(component_info));
   }
   record_data->SetDouble("trace_id", static_cast<double>(trace_id_));
-  for (const auto& snapshot : snapshots_) {
-    std::unique_ptr<base::DictionaryValue> snapshot_info(
-        new base::DictionaryValue());
-    snapshot_info->SetInteger("frame_id", snapshot.first);
-    snapshot_info->SetInteger("snapshot_id", snapshot.second);
-    record_data->Set("snapshot_info", std::move(snapshot_info));
-  }
   return LatencyInfoTracedValue::FromValue(std::move(record_data));
 }
 
 bool LatencyInfo::FindLatency(LatencyComponentType type,
-                              int64_t id,
-                              LatencyComponent* output) const {
-  LatencyMap::const_iterator it = latency_components_.find(
-      std::make_pair(type, id));
+                              base::TimeTicks* output) const {
+  LatencyMap::const_iterator it = latency_components_.find(type);
   if (it == latency_components_.end())
     return false;
   if (output)
     *output = it->second;
   return true;
-}
-
-bool LatencyInfo::FindLatency(LatencyComponentType type,
-                              LatencyComponent* output) const {
-  LatencyMap::const_iterator it = latency_components_.begin();
-  while (it != latency_components_.end()) {
-    if (it->first.first == type) {
-      if (output)
-        *output = it->second;
-      return true;
-    }
-    ++it;
-  }
-  return false;
-}
-
-void LatencyInfo::RemoveLatency(LatencyComponentType type) {
-  LatencyMap::iterator it = latency_components_.begin();
-  while (it != latency_components_.end()) {
-    if (it->first.first == type)
-      it = latency_components_.erase(it);
-    else
-      it++;
-  }
 }
 
 }  // namespace ui

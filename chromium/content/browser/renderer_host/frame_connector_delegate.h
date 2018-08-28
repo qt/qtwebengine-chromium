@@ -71,7 +71,7 @@ class CONTENT_EXPORT FrameConnectorDelegate {
   // Provide the SurfaceInfo to the embedder, which becomes a reference to the
   // current view's Surface that is included in higher-level compositor
   // frames.
-  virtual void SetChildFrameSurface(const viz::SurfaceInfo& surface_info) {}
+  virtual void FirstSurfaceActivation(const viz::SurfaceInfo& surface_info) {}
 
   // Sends the given intrinsic sizing information from a sub-frame to
   // its corresponding remote frame in the parent frame's renderer.
@@ -147,6 +147,11 @@ class CONTENT_EXPORT FrameConnectorDelegate {
   // Pass acked touch events to the root view for gesture processing.
   virtual void ForwardProcessAckedTouchEvent(
       const TouchEventWithLatencyInfo& touch,
+      InputEventAckState ack_result) {}
+
+  // Pass acked touchpad pinch gesture events to the root view for processing.
+  virtual void ForwardAckedTouchpadPinchGestureEvent(
+      const blink::WebGestureEvent& event,
       InputEventAckState ack_result) {}
 
   // Gesture events with unused scroll deltas must be bubbled to ancestors

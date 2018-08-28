@@ -118,7 +118,7 @@ void CrossProcessFrameConnector::SetView(RenderWidgetHostViewChildFrame* view) {
     if (is_hidden_)
       OnVisibilityChanged(false);
     FrameMsg_ViewChanged_Params params;
-    if (!base::FeatureList::IsEnabled(::features::kMash))
+    if (features::IsAshInBrowserProcess())
       params.frame_sink_id = view_->GetFrameSinkId();
     frame_proxy_in_parent_renderer_->Send(new FrameMsg_ViewChanged(
         frame_proxy_in_parent_renderer_->GetRoutingID(), params));
@@ -145,9 +145,9 @@ void CrossProcessFrameConnector::RenderProcessGone() {
       frame_proxy_in_parent_renderer_->GetRoutingID()));
 }
 
-void CrossProcessFrameConnector::SetChildFrameSurface(
+void CrossProcessFrameConnector::FirstSurfaceActivation(
     const viz::SurfaceInfo& surface_info) {
-  frame_proxy_in_parent_renderer_->Send(new FrameMsg_SetChildFrameSurface(
+  frame_proxy_in_parent_renderer_->Send(new FrameMsg_FirstSurfaceActivation(
       frame_proxy_in_parent_renderer_->GetRoutingID(), surface_info));
 }
 
@@ -229,14 +229,30 @@ void CrossProcessFrameConnector::ForwardProcessAckedTouchEvent(
     const TouchEventWithLatencyInfo& touch,
     InputEventAckState ack_result) {
   auto* main_view = GetRootRenderWidgetHostView();
+  // Note that the event's coordinates are in |view_|'s coordinate space, but
+  // since |ProcessAckedTouchEvent| doesn't use the coordinates, we don't
+  // bother to transform them back to the root coordinate space.
   if (main_view)
     main_view->ProcessAckedTouchEvent(touch, ack_result);
 }
 
+void CrossProcessFrameConnector::ForwardAckedTouchpadPinchGestureEvent(
+    const blink::WebGestureEvent& event,
+    InputEventAckState ack_result) {
+  auto* root_view = GetRootRenderWidgetHostView();
+  if (!root_view)
+    return;
+
+  blink::WebGestureEvent pinch_event(event);
+  const gfx::PointF root_point =
+      view_->TransformPointToRootCoordSpaceF(event.PositionInWidget());
+  pinch_event.SetPositionInWidget(root_point);
+  root_view->GestureEventAck(pinch_event, ack_result);
+}
+
 void CrossProcessFrameConnector::BubbleScrollEvent(
     const blink::WebGestureEvent& event) {
-  DCHECK((view_->wheel_scroll_latching_enabled() &&
-          event.GetType() == blink::WebInputEvent::kGestureScrollBegin) ||
+  DCHECK(event.GetType() == blink::WebInputEvent::kGestureScrollBegin ||
          event.GetType() == blink::WebInputEvent::kGestureScrollUpdate ||
          event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
          event.GetType() == blink::WebInputEvent::kGestureFlingStart);
@@ -255,28 +271,19 @@ void CrossProcessFrameConnector::BubbleScrollEvent(
   const gfx::PointF root_point =
       view_->TransformPointToRootCoordSpaceF(event.PositionInWidget());
   resent_gesture_event.SetPositionInWidget(root_point);
+  // When a gesture event is bubbled to the parent frame, set the allowed touch
+  // action of the parent frame to Auto so that this gesture event is allowed.
+  parent_view->host()->input_router()->ForceSetTouchActionAuto();
 
-  if (view_->wheel_scroll_latching_enabled()) {
-    if (event.GetType() == blink::WebInputEvent::kGestureScrollBegin) {
-      event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
-      is_scroll_bubbling_ = true;
-    } else if (is_scroll_bubbling_) {
-      event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
-    }
-    if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
-        event.GetType() == blink::WebInputEvent::kGestureFlingStart) {
-      is_scroll_bubbling_ = false;
-    }
-  } else {  // !view_->wheel_scroll_latching_enabled()
-    if (event.GetType() == blink::WebInputEvent::kGestureScrollUpdate) {
-      event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
-      is_scroll_bubbling_ = true;
-    } else if ((event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
-                event.GetType() == blink::WebInputEvent::kGestureFlingStart) &&
-               is_scroll_bubbling_) {
-      event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
-      is_scroll_bubbling_ = false;
-    }
+  if (event.GetType() == blink::WebInputEvent::kGestureScrollBegin) {
+    event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
+    is_scroll_bubbling_ = true;
+  } else if (is_scroll_bubbling_) {
+    event_router->BubbleScrollEvent(parent_view, resent_gesture_event, view_);
+  }
+  if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
+      event.GetType() == blink::WebInputEvent::kGestureFlingStart) {
+    is_scroll_bubbling_ = false;
   }
 }
 
@@ -313,8 +320,8 @@ void CrossProcessFrameConnector::OnSynchronizeVisualProperties(
   // the viz::LocalSurfaceId must also change.
   if ((last_received_local_frame_size_ != visual_properties.local_frame_size ||
        screen_info_ != visual_properties.screen_info ||
-       capture_sequence_number() !=
-           visual_properties.capture_sequence_number) &&
+       capture_sequence_number() != visual_properties.capture_sequence_number ||
+       last_received_zoom_level_ != visual_properties.zoom_level) &&
       local_surface_id_ == surface_id.local_surface_id()) {
     bad_message::ReceivedBadMessage(
         frame_proxy_in_parent_renderer_->GetProcess(),
@@ -322,6 +329,7 @@ void CrossProcessFrameConnector::OnSynchronizeVisualProperties(
     return;
   }
 
+  last_received_zoom_level_ = visual_properties.zoom_level;
   last_received_local_frame_size_ = visual_properties.local_frame_size;
   SynchronizeVisualProperties(surface_id, visual_properties);
 }
@@ -544,6 +552,16 @@ void CrossProcessFrameConnector::MaybeLogCrash(CrashVisibility visibility) {
 
   // Actually log the UMA.
   UMA_HISTOGRAM_ENUMERATION("Stability.ChildFrameCrash.Visibility", visibility);
+
+  if (visibility == CrashVisibility::kShownAfterCrashing) {
+    auto* rfh = frame_proxy_in_parent_renderer_->frame_tree_node()
+                    ->current_frame_host();
+    if (rfh->GetParent() && rfh->is_local_root()) {
+      UMA_HISTOGRAM_BOOLEAN(
+          "RenderFrameHostImpl.ReceivedPostMessageFromNonDescendant",
+          rfh->received_post_message_from_non_descendant());
+    }
+  }
 }
 
 bool CrossProcessFrameConnector::IsVisible() {

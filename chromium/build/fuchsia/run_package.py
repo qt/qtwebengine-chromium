@@ -83,8 +83,8 @@ def DrainStreamToStdout(stream, quit_event):
     poll.unregister(stream.fileno())
 
 
-def RunPackage(output_dir, target, package_path, package_name, run_args,
-               system_logging, symbolizer_config=None):
+def RunPackage(output_dir, target, package_path, package_name, package_deps,
+               run_args, system_logging, install_only, symbolizer_config=None):
   """Copies the Fuchsia package at |package_path| to the target,
   executes it with |run_args|, and symbolizes its output.
 
@@ -93,7 +93,8 @@ def RunPackage(output_dir, target, package_path, package_name, run_args,
   package_path: The path to the .far package file.
   package_name: The name of app specified by package metadata.
   run_args: The arguments which will be passed to the Fuchsia process.
-  system_logging: If true, connects a system log reader to the target.
+  system_logging: If set, connects a system log reader to the target.
+  install_only: If set, skips the package execution step.
   symbolizer_config: A newline delimited list of source files contained
                      in the package. Omitting this parameter will disable
                      symbolization.
@@ -102,7 +103,6 @@ def RunPackage(output_dir, target, package_path, package_name, run_args,
 
 
   system_logger = _AttachKernelLogReader(target) if system_logging else None
-  package_copied = False
   try:
     if system_logger:
       # Spin up a thread to asynchronously dump the system log to stdout
@@ -114,25 +114,33 @@ def RunPackage(output_dir, target, package_path, package_name, run_args,
       log_output_thread.daemon = True
       log_output_thread.start()
 
-    logging.info('Copying package to target.')
-    install_path = os.path.join('/data', os.path.basename(package_path))
-    target.PutFile(package_path, install_path)
-    package_copied = True
+    for next_package_path in ([package_path] + package_deps):
+      logging.info('Installing ' + os.path.basename(next_package_path) + '.')
 
-    logging.info('Installing package.')
-    p = target.RunCommandPiped(['pm', 'install', install_path],
-                               stderr=subprocess.PIPE)
-    output = p.stderr.readlines()
-    p.wait()
+      # Copy the package archive.
+      install_path = os.path.join('/data', os.path.basename(next_package_path))
+      target.PutFile(next_package_path, install_path)
 
-    if p.returncode != 0:
-      # Don't error out if the package already exists on the device.
-      if len(output) != 1 or 'ErrAlreadyExists' not in output[0]:
-        raise Exception('Error while installing: %s' % '\n'.join(output))
+      # Install the package.
+      p = target.RunCommandPiped(['pm', 'install', install_path],
+                                 stderr=subprocess.PIPE)
+      output = p.stderr.readlines()
+      p.wait()
+      if p.returncode != 0:
+        # Don't error out if the package already exists on the device.
+        if len(output) != 1 or 'ErrAlreadyExists' not in output[0]:
+          raise Exception('Error while installing: %s' % '\n'.join(output))
+
+      # Clean up the package archive.
+      target.RunCommand(['rm', install_path])
 
     if system_logger:
       log_output_quit_event.set()
       log_output_thread.join(timeout=_JOIN_TIMEOUT_SECS)
+
+    if install_only:
+      logging.info('Installation complete.')
+      return
 
     logging.info('Running application.')
     command = ['run', package_name] + run_args
@@ -172,10 +180,6 @@ def RunPackage(output_dir, target, package_path, package_name, run_args,
       log_output_quit_event.set()
       log_output_thread.join()
       system_logger.kill()
-
-    if package_copied:
-      logging.info('Removing package source from device.')
-      target.RunCommand(['rm', install_path])
 
 
   return process.returncode

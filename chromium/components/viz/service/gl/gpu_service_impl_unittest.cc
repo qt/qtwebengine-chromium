@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
@@ -51,7 +52,8 @@ class GpuServiceTest : public testing::Test {
     gpu_service_ = std::make_unique<GpuServiceImpl>(
         gpu::GPUInfo(), nullptr /* watchdog_thread */, io_thread_.task_runner(),
         gpu::GpuFeatureInfo(), gpu::GpuPreferences(), gpu::GPUInfo(),
-        gpu::GpuFeatureInfo());
+        gpu::GpuFeatureInfo(), nullptr /* vulkan_implementation */,
+        base::DoNothing() /* exit_callback */);
   }
 
   void TearDown() override {

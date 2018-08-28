@@ -36,7 +36,7 @@ source_set("minimal") {
     "//components/nacl/common:mojo_bindings",
     "//crypto",
     "//ipc",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//native_client/src/trusted/service_runtime:sel_main_chrome",
     "//ppapi/c",
     "//ppapi/proxy:ipc",
@@ -124,13 +124,12 @@ if (is_linux) {
     deps = [
       ":loader",
       "//base",
-      "//build/config:exe_and_shlib_deps",
       "//components/nacl/common:switches",
       "//components/nacl/loader/sandbox_linux",
       "//content/public/common",
       "//crypto",
       "//ipc",
-      "//mojo/edk",
+      "//mojo/core/embedder",
       "//sandbox/linux:sandbox_services",
       "//services/service_manager/sandbox",
       "//services/service_manager/zygote",
@@ -157,6 +156,13 @@ if (is_linux) {
           ldflags += [ "-Wl,-plugin-opt,-compute-dead=false" ]
         }
       }
+    }
+
+    # The only symbols that nacl_helper needs to export are those specified by
+    # its direct dependencies, so -rdynamic would only serve to unnecessarily
+    # increase the binary size.
+    if (is_desktop_linux) {
+      configs -= [ "//build/config/linux:export_dynamic" ]
     }
 
     data_deps = [
@@ -210,7 +216,7 @@ if (is_win && target_cpu == "x86" && current_cpu == "x64") {
       "//components/nacl/broker",
       "//components/nacl/common:switches",
       "//content/public/common:static_switches",
-      "//mojo/edk",
+      "//mojo/core/embedder",
       "//sandbox",
       "//services/service_manager/sandbox:sandbox",
     ]
@@ -240,7 +246,7 @@ if (is_nacl_nonsfi) {
       "//components/tracing",
       "//content",
       "//ipc",
-      "//mojo/edk",
+      "//mojo/core/embedder",
       "//native_client/src/nonsfi/irt:nacl_sys_private",
       "//native_client/src/nonsfi/loader:elf_loader",
 

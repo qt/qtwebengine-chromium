@@ -32,9 +32,9 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "cc/paint/paint_canvas.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_canvas.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
 #include "third_party/blink/public/platform/web_menu_source_type.h"
 #include "third_party/blink/public/platform/web_screen_info.h"
@@ -116,7 +116,7 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void StartDragging(LocalFrame*,
                      const WebDragData&,
                      WebDragOperationsMask,
-                     const WebImage& drag_image,
+                     const SkBitmap& drag_image,
                      const WebPoint& drag_image_offset) override {}
   bool AcceptsLoadDrops() const override { return true; }
 
@@ -195,15 +195,15 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
 
   void AttachRootGraphicsLayer(GraphicsLayer*, LocalFrame* local_root) override;
   void AttachRootLayer(scoped_refptr<cc::Layer>,
-                       LocalFrame* local_root) override {}
+                       LocalFrame* local_root) override;
 
   void SetEventListenerProperties(LocalFrame*,
-                                  WebEventListenerClass,
-                                  WebEventListenerProperties) override {}
-  WebEventListenerProperties EventListenerProperties(
+                                  cc::EventListenerClass,
+                                  cc::EventListenerProperties) override {}
+  cc::EventListenerProperties EventListenerProperties(
       LocalFrame*,
-      WebEventListenerClass event_class) const override {
-    return WebEventListenerProperties::kNothing;
+      cc::EventListenerClass event_class) const override {
+    return cc::EventListenerProperties::kNone;
   }
   void SetHasScrollEventHandlers(LocalFrame*, bool) override {}
   void SetNeedsLowLatencyInput(LocalFrame*, bool) override {}
@@ -250,18 +250,18 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
       const ResourceResponse&) override {}
 
   void DispatchDidHandleOnloadEvents() override {}
-  void DispatchDidReceiveServerRedirectForProvisionalLoad() override {}
   void DispatchWillCommitProvisionalLoad() override {}
   void DispatchDidStartProvisionalLoad(DocumentLoader*,
                                        ResourceRequest&) override {}
   void DispatchDidReceiveTitle(const String&) override {}
   void DispatchDidChangeIcons(IconType) override {}
   void DispatchDidCommitLoad(HistoryItem*,
-                             HistoryCommitType,
+                             WebHistoryCommitType,
                              WebGlobalObjectReusePolicy) override {}
   void DispatchDidFailProvisionalLoad(const ResourceError&,
-                                      HistoryCommitType) override {}
-  void DispatchDidFailLoad(const ResourceError&, HistoryCommitType) override {}
+                                      WebHistoryCommitType) override {}
+  void DispatchDidFailLoad(const ResourceError&,
+                           WebHistoryCommitType) override {}
   void DispatchDidFinishDocumentLoad() override {}
   void DispatchDidFinishLoad() override {}
   void DispatchDidChangeThemeColor() override {}
@@ -270,7 +270,7 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
       const ResourceRequest&,
       Document* origin_document,
       DocumentLoader*,
-      NavigationType,
+      WebNavigationType,
       NavigationPolicy,
       bool,
       bool,
@@ -288,7 +288,8 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
 
   void ForwardResourceTimingToParent(const WebResourceTimingInfo&) override {}
 
-  void DownloadURL(const ResourceRequest&) override {}
+  void DownloadURL(const ResourceRequest&,
+                   DownloadCrossOriginRedirects) override {}
   void LoadErrorPage(int reason) override {}
 
   DocumentLoader* CreateDocumentLoader(
@@ -296,7 +297,9 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
       const ResourceRequest&,
       const SubstituteData&,
       ClientRedirectPolicy,
-      const base::UnguessableToken& devtools_navigation_token) override;
+      const base::UnguessableToken& devtools_navigation_token,
+      std::unique_ptr<WebDocumentLoader::ExtraData> extra_data,
+      const WebNavigationTimings& navigation_timings) override;
 
   String UserAgent() override { return ""; }
 
@@ -411,7 +414,7 @@ class CORE_EXPORT EmptyRemoteFrameClient : public RemoteFrameClient {
   void Navigate(const ResourceRequest&,
                 bool should_replace_current_entry,
                 mojom::blink::BlobURLTokenPtr) override {}
-  void Reload(FrameLoadType, ClientRedirectPolicy) override {}
+  void Reload(WebFrameLoadType, ClientRedirectPolicy) override {}
   unsigned BackForwardLength() override { return 0; }
   void CheckCompleted() override {}
   void ForwardPostMessage(MessageEvent*,
@@ -428,7 +431,7 @@ class CORE_EXPORT EmptyRemoteFrameClient : public RemoteFrameClient {
   void SetInheritedEffectiveTouchAction(TouchAction) override {}
   void UpdateRenderThrottlingStatus(bool is_throttled,
                                     bool subtree_throttled) override {}
-  uint32_t Print(const IntRect& rect, WebCanvas* canvas) const override {
+  uint32_t Print(const IntRect& rect, cc::PaintCanvas* canvas) const override {
     return 0;
   }
 

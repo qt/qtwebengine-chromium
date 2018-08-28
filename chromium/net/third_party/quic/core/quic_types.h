@@ -14,7 +14,7 @@
 #include "net/third_party/quic/core/quic_time.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 
-namespace net {
+namespace quic {
 
 typedef uint16_t QuicPacketLength;
 typedef uint32_t QuicControlFrameId;
@@ -81,6 +81,7 @@ enum WriteStatus {
   // - Errors MUST be added after WRITE_STATUS_ERROR.
   WRITE_STATUS_ERROR,
   WRITE_STATUS_MSG_TOO_BIG,
+  WRITE_STATUS_NUM_VALUES,
 };
 
 inline bool IsWriteError(WriteStatus status) {
@@ -92,6 +93,23 @@ inline bool IsWriteError(WriteStatus status) {
 struct QUIC_EXPORT_PRIVATE WriteResult {
   WriteResult(WriteStatus status, int bytes_written_or_error_code);
   WriteResult();
+
+  bool operator==(const WriteResult& other) const {
+    if (status != other.status) {
+      return false;
+    }
+    switch (status) {
+      case WRITE_STATUS_OK:
+        return bytes_written == other.bytes_written;
+      case WRITE_STATUS_BLOCKED:
+        return true;
+      default:
+        return error_code == other.error_code;
+    }
+  }
+
+  QUIC_EXPORT_PRIVATE friend std::ostream& operator<<(std::ostream& os,
+                                                      const WriteResult& s);
 
   WriteStatus status;
   union {
@@ -173,7 +191,7 @@ enum QuicFrameType : int8_t {
 // the symbol will map to the correct stream type.
 // All types are defined here, even if we have not yet implmented the
 // quic/core/stream/.... stuff needed.
-enum QuicIetfFrameType : int8_t {
+enum QuicIetfFrameType : uint8_t {
   IETF_PADDING = 0x00,
   IETF_RST_STREAM = 0x01,
   IETF_CONNECTION_CLOSE = 0x02,
@@ -196,7 +214,7 @@ enum QuicIetfFrameType : int8_t {
   // along the lines of "if ((frame_type & 0xf8) == 0x10)" to determine
   // whether the frame is a stream frame or not, and then examine each
   // bit specifically when/as needed.
-  IETF_STREAM = 0x10
+  IETF_STREAM = 0x10,
 };
 // Masks for the bits that indicate the frame is a Stream frame vs the
 // bits used as flags.
@@ -363,6 +381,12 @@ enum SentPacketState : uint8_t {
   LAST_PACKET_STATE = PROBE_RETRANSMITTED,
 };
 
+enum PacketHeaderFormat : uint8_t {
+  IETF_QUIC_LONG_HEADER_PACKET,
+  IETF_QUIC_SHORT_HEADER_PACKET,
+  GOOGLE_QUIC_PACKET,
+};
+
 // Information about a newly acknowledged packet.
 struct AckedPacket {
   AckedPacket(QuicPacketNumber packet_number,
@@ -443,19 +467,22 @@ enum QuicShortHeaderType : uint8_t {
 };
 
 enum QuicPacketHeaderTypeFlags : uint8_t {
+  // Bit 2: Reserved for experimentation for short header.
+  FLAGS_EXPERIMENTATION_BIT = 1 << 2,
   // Bit 3: Google QUIC Demultiplexing bit, the short header always sets this
   // bit to 0, allowing to distinguish Google QUIC packets from short header
   // packets.
   FLAGS_DEMULTIPLEXING_BIT = 1 << 3,
-  // Bit 5: Indicates the key phase, which allows the receipt of the packet to
+  // Bits 4 and 5: Reserved bits for short header.
+  FLAGS_SHORT_HEADER_RESERVED_1 = 1 << 4,
+  FLAGS_SHORT_HEADER_RESERVED_2 = 1 << 5,
+  // Bit 6: Indicates the key phase, which allows the receipt of the packet to
   // identify the packet protection keys that are used to protect the packet.
-  FLAGS_KEY_PHASE_BIT = 1 << 5,
-  // Bit 6: Indicates the connection ID is omitted in short header.
-  FLAGS_OMIT_CONNECTION_ID = 1 << 6,
+  FLAGS_KEY_PHASE_BIT = 1 << 6,
   // Bit 7: Indicates the header is long or short header.
   FLAGS_LONG_HEADER = 1 << 7,
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_TYPES_H_

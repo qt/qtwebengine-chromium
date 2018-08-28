@@ -34,10 +34,11 @@
 #include <memory>
 #include <utility>
 
+#include "base/numerics/checked_math.h"
 #include "build/build_config.h"
 #include "cc/layers/texture_layer.h"
-#include "components/viz/common/quads/shared_bitmap.h"
 #include "components/viz/common/resources/bitmap_allocation.h"
+#include "components/viz/common/resources/shared_bitmap.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -54,7 +55,7 @@
 #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_provider_wrapper.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/typed_arrays/array_buffer_contents.h"
 #include "third_party/skia/include/core/SkColorSpaceXform.h"
 #include "third_party/skia/include/core/SkSurface.h"
@@ -91,7 +92,7 @@ scoped_refptr<DrawingBuffer> DrawingBuffer::Create(
     return nullptr;
   }
 
-  CheckedNumeric<int> data_size = color_params.BytesPerPixel();
+  base::CheckedNumeric<int> data_size = color_params.BytesPerPixel();
   data_size *= size.Width();
   data_size *= size.Height();
   if (!data_size.IsValid() ||
@@ -236,6 +237,10 @@ WebGraphicsContext3DProvider* DrawingBuffer::ContextProvider() {
 base::WeakPtr<WebGraphicsContext3DProviderWrapper>
 DrawingBuffer::ContextProviderWeakPtr() {
   return context_provider_->GetWeakPtr();
+}
+
+const DrawingBuffer::WebGLContextLimits& DrawingBuffer::webgl_context_limits() {
+  return webgl_context_limits_;
 }
 
 void DrawingBuffer::SetIsHidden(bool hidden) {
@@ -435,8 +440,6 @@ void DrawingBuffer::FinishPrepareTransferableResourceGpu(
   // Put colorBufferForMailbox into its mailbox, and populate its
   // produceSyncToken with that point.
   {
-    gl_->ProduceTextureDirectCHROMIUM(color_buffer_for_mailbox->texture_id,
-                                      color_buffer_for_mailbox->mailbox.name);
     // It's critical to order the execution of this context's work relative
     // to other contexts, in particular the compositor. Previously this
     // used to be a Flush, and there was a bug that we didn't flush before
@@ -629,7 +632,8 @@ DrawingBuffer::ColorBuffer::ColorBuffer(
       texture_id(texture_id),
       image_id(image_id),
       gpu_memory_buffer(std::move(gpu_memory_buffer)) {
-  drawing_buffer->ContextGL()->GenMailboxCHROMIUM(mailbox.name);
+  gpu::gles2::GLES2Interface* gl = drawing_buffer->ContextGL();
+  gl->ProduceTextureDirectCHROMIUM(texture_id, mailbox.name);
 }
 
 DrawingBuffer::ColorBuffer::~ColorBuffer() {
@@ -698,19 +702,47 @@ bool DrawingBuffer::Initialize(const IntSize& size, bool use_multisampling) {
 
   gl_->GetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size_);
 
+  auto webgl_preferences =
+      ContextProvider()->GetGpuFeatureInfo().webgl_preferences;
+  webgl_context_limits_.max_active_webgl_contexts =
+      webgl_preferences.max_active_webgl_contexts;
+  webgl_context_limits_.max_active_webgl_contexts_on_worker =
+      webgl_preferences.max_active_webgl_contexts_on_worker;
+
   int max_sample_count = 0;
-  anti_aliasing_mode_ = kNone;
-  if (use_multisampling) {
-    gl_->GetIntegerv(GL_MAX_SAMPLES_ANGLE, &max_sample_count);
-    anti_aliasing_mode_ = kMSAAExplicitResolve;
-    if (extensions_util_->SupportsExtension(
-            "GL_EXT_multisampled_render_to_texture")) {
-      anti_aliasing_mode_ = kMSAAImplicitResolve;
-    } else if (extensions_util_->SupportsExtension(
-                   "GL_CHROMIUM_screen_space_antialiasing")) {
-      anti_aliasing_mode_ = kScreenSpaceAntialiasing;
+  gl_->GetIntegerv(GL_MAX_SAMPLES_ANGLE, &max_sample_count);
+  if (webgl_preferences.anti_aliasing_mode ==
+      gpu::kAntialiasingModeUnspecified) {
+    if (use_multisampling) {
+      anti_aliasing_mode_ = gpu::kAntialiasingModeMSAAExplicitResolve;
+      if (extensions_util_->SupportsExtension(
+              "GL_EXT_multisampled_render_to_texture")) {
+        anti_aliasing_mode_ = gpu::kAntialiasingModeMSAAImplicitResolve;
+      } else if (extensions_util_->SupportsExtension(
+                     "GL_CHROMIUM_screen_space_antialiasing") &&
+                 !ContextProvider()->GetGpuFeatureInfo().IsWorkaroundEnabled(
+                     gpu::DISABLE_FRAMEBUFFER_CMAA)) {
+        anti_aliasing_mode_ = gpu::kAntialiasingModeScreenSpaceAntialiasing;
+      }
+    } else {
+      anti_aliasing_mode_ = gpu::kAntialiasingModeNone;
+      max_sample_count = 0;
     }
+  } else {
+    if ((webgl_preferences.anti_aliasing_mode ==
+             gpu::kAntialiasingModeMSAAImplicitResolve &&
+         !extensions_util_->SupportsExtension(
+             "GL_EXT_multisampled_render_to_texture")) ||
+        (webgl_preferences.anti_aliasing_mode ==
+             gpu::kAntialiasingModeScreenSpaceAntialiasing &&
+         !extensions_util_->SupportsExtension(
+             "GL_CHROMIUM_screen_space_antialiasing"))) {
+      DLOG(ERROR) << "Invalid anti-aliasing mode specified.";
+      return false;
+    }
+    anti_aliasing_mode_ = webgl_preferences.anti_aliasing_mode;
   }
+
   // TODO(dshwang): Enable storage textures on all platforms. crbug.com/557848
   // The Linux ATI bot fails
   // WebglConformance.conformance_textures_misc_tex_image_webgl, so use storage
@@ -719,14 +751,10 @@ bool DrawingBuffer::Initialize(const IntSize& size, bool use_multisampling) {
   storage_texture_supported_ =
       (webgl_version_ > kWebGL1 ||
        extensions_util_->SupportsExtension("GL_EXT_texture_storage")) &&
-      anti_aliasing_mode_ == kScreenSpaceAntialiasing;
-  // Performance regreses by 30% in WebGL apps for AMD Stoney
-  // if sample count is 8x
-  if (ContextProvider()->GetGpuFeatureInfo().IsWorkaroundEnabled(
-          gpu::MAX_MSAA_SAMPLE_COUNT_4))
-    sample_count_ = std::min(4, max_sample_count);
-  else
-    sample_count_ = std::min(8, max_sample_count);
+      anti_aliasing_mode_ == gpu::kAntialiasingModeScreenSpaceAntialiasing;
+
+  sample_count_ = std::min(
+      static_cast<int>(webgl_preferences.msaa_sample_count), max_sample_count);
 
   texture_target_ = GL_TEXTURE_2D;
 #if defined(OS_MACOSX)
@@ -829,17 +857,19 @@ bool DrawingBuffer::CopyToPlatformTexture(gpu::gles2::GLES2Interface* dst_gl,
     mailbox = front_color_buffer_->mailbox;
     produce_sync_token = front_color_buffer_->produce_sync_token;
   } else {
-    src_gl->GenMailboxCHROMIUM(mailbox.name);
     if (premultiplied_alpha_false_texture_) {
       // If this texture exists, then it holds the rendering results at this
       // point, rather than back_color_buffer_. back_color_buffer_ receives the
       // contents of this texture later, premultiplying alpha into the color
-      // channels.
-      src_gl->ProduceTextureDirectCHROMIUM(premultiplied_alpha_false_texture_,
-                                           mailbox.name);
+      // channels. We lazily produce a mailbox for it.
+      if (premultiplied_alpha_false_mailbox_.IsZero()) {
+        src_gl->ProduceTextureDirectCHROMIUM(
+            premultiplied_alpha_false_texture_,
+            premultiplied_alpha_false_mailbox_.name);
+      }
+      mailbox = premultiplied_alpha_false_mailbox_;
     } else {
-      src_gl->ProduceTextureDirectCHROMIUM(back_color_buffer_->texture_id,
-                                           mailbox.name);
+      mailbox = back_color_buffer_->mailbox;
     }
     src_gl->GenUnverifiedSyncTokenCHROMIUM(produce_sync_token.GetData());
   }
@@ -930,8 +960,10 @@ void DrawingBuffer::BeginDestruction() {
   if (depth_stencil_buffer_)
     gl_->DeleteRenderbuffers(1, &depth_stencil_buffer_);
 
-  if (premultiplied_alpha_false_texture_)
+  if (premultiplied_alpha_false_texture_) {
     gl_->DeleteTextures(1, &premultiplied_alpha_false_texture_);
+    premultiplied_alpha_false_mailbox_.SetZero();
+  }
 
   size_ = IntSize();
 
@@ -965,6 +997,7 @@ bool DrawingBuffer::ResizeDefaultFramebuffer(const IntSize& size) {
     // TODO(kbr): unify with code in CreateColorBuffer.
     if (premultiplied_alpha_false_texture_) {
       gl_->DeleteTextures(1, &premultiplied_alpha_false_texture_);
+      premultiplied_alpha_false_mailbox_.SetZero();
       premultiplied_alpha_false_texture_ = 0;
     }
     gl_->GenTextures(1, &premultiplied_alpha_false_texture_);
@@ -1032,11 +1065,12 @@ bool DrawingBuffer::ResizeDefaultFramebuffer(const IntSize& size) {
     if (!depth_stencil_buffer_)
       gl_->GenRenderbuffers(1, &depth_stencil_buffer_);
     gl_->BindRenderbuffer(GL_RENDERBUFFER, depth_stencil_buffer_);
-    if (anti_aliasing_mode_ == kMSAAImplicitResolve) {
+    if (anti_aliasing_mode_ == gpu::kAntialiasingModeMSAAImplicitResolve) {
       gl_->RenderbufferStorageMultisampleEXT(GL_RENDERBUFFER, sample_count_,
                                              GL_DEPTH24_STENCIL8_OES,
                                              size.Width(), size.Height());
-    } else if (anti_aliasing_mode_ == kMSAAExplicitResolve) {
+    } else if (anti_aliasing_mode_ ==
+               gpu::kAntialiasingModeMSAAExplicitResolve) {
       gl_->RenderbufferStorageMultisampleCHROMIUM(
           GL_RENDERBUFFER, sample_count_, GL_DEPTH24_STENCIL8_OES, size.Width(),
           size.Height());
@@ -1191,12 +1225,13 @@ void DrawingBuffer::ResolveMultisampleFramebufferInternal() {
   }
 
   gl_->BindFramebuffer(GL_FRAMEBUFFER, fbo_);
-  if (anti_aliasing_mode_ == kScreenSpaceAntialiasing)
+  if (anti_aliasing_mode_ == gpu::kAntialiasingModeScreenSpaceAntialiasing)
     gl_->ApplyScreenSpaceAntialiasingCHROMIUM();
 }
 
 void DrawingBuffer::ResolveIfNeeded() {
-  if (anti_aliasing_mode_ != kNone && !contents_change_resolved_)
+  if (anti_aliasing_mode_ != gpu::kAntialiasingModeNone &&
+      !contents_change_resolved_)
     ResolveMultisampleFramebufferInternal();
   contents_change_resolved_ = true;
 }
@@ -1217,7 +1252,7 @@ void DrawingBuffer::RestoreAllState() {
 }
 
 bool DrawingBuffer::Multisample() const {
-  return anti_aliasing_mode_ != kNone;
+  return anti_aliasing_mode_ != gpu::kAntialiasingModeNone;
 }
 
 void DrawingBuffer::Bind(GLenum target) {
@@ -1231,7 +1266,7 @@ scoped_refptr<Uint8Array> DrawingBuffer::PaintRenderingResultsToDataArray(
   int width = Size().Width();
   int height = Size().Height();
 
-  CheckedNumeric<int> data_size = 4;
+  base::CheckedNumeric<int> data_size = 4;
   data_size *= width;
   data_size *= height;
   if (RuntimeEnabledFeatures::CanvasColorManagementEnabled() &&
@@ -1483,7 +1518,7 @@ void DrawingBuffer::AttachColorBufferToReadFramebuffer() {
 
   gl_->BindTexture(texture_target, id);
 
-  if (anti_aliasing_mode_ == kMSAAImplicitResolve) {
+  if (anti_aliasing_mode_ == gpu::kAntialiasingModeMSAAImplicitResolve) {
     gl_->FramebufferTexture2DMultisampleEXT(
         GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texture_target, id, 0,
         sample_count_);
@@ -1494,7 +1529,7 @@ void DrawingBuffer::AttachColorBufferToReadFramebuffer() {
 }
 
 bool DrawingBuffer::WantExplicitResolve() {
-  return anti_aliasing_mode_ == kMSAAExplicitResolve;
+  return anti_aliasing_mode_ == gpu::kAntialiasingModeMSAAExplicitResolve;
 }
 
 bool DrawingBuffer::WantDepthOrStencil() {
@@ -1513,7 +1548,7 @@ bool DrawingBuffer::SetupRGBEmulationForBlitFramebuffer(
     return false;
   }
 
-  if (anti_aliasing_mode_ != kNone)
+  if (anti_aliasing_mode_ != gpu::kAntialiasingModeNone)
     return false;
 
   bool has_emulated_rgb = !allocate_alpha_channel_ && have_alpha_channel_;

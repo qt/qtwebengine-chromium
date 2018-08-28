@@ -5,6 +5,7 @@
 #ifndef SERVICES_AUDIO_PUBLIC_CPP_INPUT_IPC_H_
 #define SERVICES_AUDIO_PUBLIC_CPP_INPUT_IPC_H_
 
+#include <memory>
 #include <string>
 
 #include "base/callback_helpers.h"
@@ -26,9 +27,9 @@ namespace audio {
 class InputIPC : public media::AudioInputIPC,
                  public media::mojom::AudioInputStreamClient {
  public:
-  explicit InputIPC(std::unique_ptr<service_manager::Connector> connector,
-                    const std::string& device_id,
-                    media::mojom::AudioLogPtr log);
+  InputIPC(std::unique_ptr<service_manager::Connector> connector,
+           const std::string& device_id,
+           media::mojom::AudioLogPtr log);
   ~InputIPC() override;
 
   // AudioInputIPC implementation
@@ -46,7 +47,7 @@ class InputIPC : public media::AudioInputIPC,
   void OnError() override;
   void OnMutedStateChanged(bool is_muted) override;
 
-  void StreamCreated(media::mojom::AudioDataPipePtr data_pipe,
+  void StreamCreated(media::mojom::ReadOnlyAudioDataPipePtr data_pipe,
                      bool is_muted,
                      const base::Optional<base::UnguessableToken>& stream_id);
 

@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
+#include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/layout_ng_text.h"
@@ -19,13 +20,16 @@
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_line_breaker.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_offset_mapping.h"
 #include "third_party/blink/renderer/core/layout/ng/legacy_layout_tree_walking.h"
+#include "third_party/blink/renderer/core/layout/ng/list/layout_ng_list_item.h"
+#include "third_party/blink/renderer/core/layout/ng/list/layout_ng_list_marker.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_length_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_positioned_float.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_unpositioned_float.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
-#include "third_party/blink/renderer/platform/fonts/shaping/harf_buzz_shaper.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_shaper.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/run_segmenter.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_spacing.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
 
@@ -65,6 +69,9 @@ void CollectInlinesInternal(
     String* previous_text) {
   builder->EnterBlock(block->Style());
   LayoutObject* node = GetLayoutObjectForFirstChildNode(block);
+
+  const LayoutObject* symbol =
+      LayoutNGListItem::FindSymbolMarkerLayoutText(block);
   while (node) {
     if (node->IsText()) {
       LayoutText* layout_text = ToLayoutText(node);
@@ -87,6 +94,10 @@ void CollectInlinesInternal(
         else
           builder->Append(layout_text->GetText(), node->Style(), layout_text);
       }
+
+      if (symbol == layout_text)
+        builder->SetIsSymbolMarker(true);
+
       ClearNeedsLayoutIfUpdatingLayout<OffsetMappingBuilder>(layout_text);
 
     } else if (node->IsFloating()) {
@@ -195,19 +206,8 @@ bool NGInlineNode::InLineHeightQuirksMode() const {
 }
 
 bool NGInlineNode::CanContainFirstFormattedLine() const {
-  // TODO(kojii): In LayoutNG, leading OOF creates an anonymous block box,
-  // and that |LayoutBlockFlow::CanContainFirstFormattedLine()| does not work.
-  // crbug.com/734554
-  LayoutObject* layout_object = GetLayoutBlockFlow();
-  if (!layout_object->IsAnonymousBlock())
-    return true;
-  for (;;) {
-    layout_object = layout_object->PreviousSibling();
-    if (!layout_object)
-      return true;
-    if (!layout_object->IsFloatingOrOutOfFlowPositioned())
-      return false;
-  }
+  DCHECK(GetLayoutBlockFlow());
+  return GetLayoutBlockFlow()->CanContainFirstFormattedLine();
 }
 
 NGInlineNodeData* NGInlineNode::MutableData() {
@@ -326,6 +326,71 @@ void NGInlineNode::CollectInlines(NGInlineNodeData* data,
 }
 
 void NGInlineNode::SegmentText(NGInlineNodeData* data) {
+  SegmentBidiRuns(data);
+  SegmentScriptRuns(data);
+  SegmentFontOrientation(data);
+}
+
+// Segment NGInlineItem by script, Emoji, and orientation using RunSegmenter.
+void NGInlineNode::SegmentScriptRuns(NGInlineNodeData* data) {
+  if (data->text_content.Is8Bit() && !data->is_bidi_enabled_) {
+    if (data->items.size()) {
+      RunSegmenter::RunSegmenterRange range = {
+          0u, data->text_content.length(), USCRIPT_LATIN,
+          OrientationIterator::kOrientationKeep, FontFallbackPriority::kText};
+      NGInlineItem::PopulateItemsFromRun(data->items, 0, range);
+    }
+    return;
+  }
+
+  // Segment by script and Emoji.
+  // Orientation is segmented separately, because it may vary by items.
+  Vector<NGInlineItem>& items = data->items;
+  String& text_content = data->text_content;
+  text_content.Ensure16Bit();
+  RunSegmenter segmenter(text_content.Characters16(), text_content.length(),
+                         FontOrientation::kHorizontal);
+  RunSegmenter::RunSegmenterRange range = RunSegmenter::NullRange();
+  for (unsigned item_index = 0; segmenter.Consume(&range);) {
+    DCHECK_EQ(items[item_index].start_offset_, range.start);
+    item_index = NGInlineItem::PopulateItemsFromRun(items, item_index, range);
+  }
+}
+
+void NGInlineNode::SegmentFontOrientation(NGInlineNodeData* data) {
+  // Segment by orientation, only if vertical writing mode and items with
+  // 'text-orientation: mixed'.
+  if (GetLayoutBlockFlow()->IsHorizontalWritingMode())
+    return;
+
+  Vector<NGInlineItem>& items = data->items;
+  String& text_content = data->text_content;
+  text_content.Ensure16Bit();
+
+  for (unsigned item_index = 0; item_index < items.size();) {
+    NGInlineItem& item = items[item_index];
+    if (item.Type() != NGInlineItem::kText ||
+        item.Style()->GetFont().GetFontDescription().Orientation() !=
+            FontOrientation::kVerticalMixed) {
+      item_index++;
+      continue;
+    }
+    unsigned start_offset = item.StartOffset();
+    OrientationIterator iterator(text_content.Characters16() + start_offset,
+                                 item.Length(),
+                                 FontOrientation::kVerticalMixed);
+    unsigned end_offset;
+    OrientationIterator::RenderOrientation orientation;
+    while (iterator.Consume(&end_offset, &orientation)) {
+      item_index = NGInlineItem::PopulateItemsFromFontOrientation(
+          items, item_index, end_offset + start_offset, orientation);
+    }
+  }
+}
+
+// Segment bidi runs by resolving bidi embedding levels.
+// http://unicode.org/reports/tr9/#Resolving_Embedding_Levels
+void NGInlineNode::SegmentBidiRuns(NGInlineNodeData* data) {
   if (!data->is_bidi_enabled_) {
     data->SetBaseDirection(TextDirection::kLtr);
     return;
@@ -370,8 +435,6 @@ void NGInlineNode::SegmentText(NGInlineNodeData* data) {
 
 void NGInlineNode::ShapeText(NGInlineItemsData* data,
                              NGInlineItemsData* previous_data) {
-  // TODO(eae): Add support for shaping latin-1 text?
-  data->text_content.Ensure16Bit();
   ShapeText(data->text_content, &data->items,
             previous_data ? &previous_data->text_content : nullptr);
 }
@@ -380,7 +443,7 @@ void NGInlineNode::ShapeText(const String& text_content,
                              Vector<NGInlineItem>* items,
                              const String* previous_text) {
   // Provide full context of the entire node to the shaper.
-  HarfBuzzShaper shaper(text_content.Characters16(), text_content.length());
+  HarfBuzzShaper shaper(text_content);
   ShapeResultSpacing<String> spacing(text_content);
 
   for (unsigned index = 0; index < items->size();) {
@@ -405,9 +468,12 @@ void NGInlineNode::ShapeText(const String& text_content,
       if (item.Type() == NGInlineItem::kText) {
         // Shape adjacent items together if the font and direction matches to
         // allow ligatures and kerning to apply.
+        // Also run segment properties must match because NGInlineItem gives
+        // pre-segmented range to HarfBuzzShaper.
         // TODO(kojii): Figure out the exact conditions under which this
         // behavior is desirable.
-        if (font != item.Style()->GetFont() || direction != item.Direction())
+        if (font != item.Style()->GetFont() || direction != item.Direction() ||
+            !item.EqualsRunSegment(start_item))
           break;
         end_offset = item.EndOffset();
       } else if (item.Type() == NGInlineItem::kOpenTag ||
@@ -459,8 +525,11 @@ void NGInlineNode::ShapeText(const String& text_content,
     }
 
     // Shape each item with the full context of the entire node.
-    scoped_refptr<ShapeResult> shape_result =
-        shaper.Shape(&font, direction, start_item.StartOffset(), end_offset);
+    RunSegmenter::RunSegmenterRange range =
+        start_item.CreateRunSegmenterRange();
+    range.end = end_offset;
+    scoped_refptr<ShapeResult> shape_result = shaper.Shape(
+        &font, direction, start_item.StartOffset(), end_offset, &range);
     if (UNLIKELY(spacing.SetSpacing(font.GetFontDescription())))
       shape_result->ApplySpacing(spacing);
 
@@ -494,7 +563,7 @@ void NGInlineNode::ShapeText(const String& text_content,
 void NGInlineNode::ShapeTextForFirstLineIfNeeded(NGInlineNodeData* data) {
   // First check if the document has any :first-line rules.
   DCHECK(!data->first_line_items_);
-  LayoutObject* layout_object = GetLayoutObject();
+  LayoutObject* layout_object = GetLayoutBox();
   if (!layout_object->GetDocument().GetStyleEngine().UsesFirstLineRules())
     return;
 
@@ -531,6 +600,22 @@ void NGInlineNode::ShapeTextForFirstLineIfNeeded(NGInlineNodeData* data) {
       item.style_ = item.layout_object_->FirstLineStyle();
       item.SetStyleVariant(NGStyleVariant::kFirstLine);
     }
+  }
+
+  // Check if we have a first-line anonymous inline box. It is the first
+  // open-tag if we have.
+  for (auto& item : first_line_items->items) {
+    if (item.Type() == NGInlineItem::kOpenTag) {
+      if (item.layout_object_->IsAnonymous() &&
+          item.layout_object_->IsLayoutInline() &&
+          item.layout_object_->Parent() == GetLayoutBox() &&
+          ToLayoutInline(item.layout_object_)->IsFirstLineAnonymous()) {
+        item.should_create_box_fragment_ = true;
+      }
+      break;
+    }
+    if (item.Type() != NGInlineItem::kBidiControl)
+      break;
   }
 
   // Re-shape if the font is different.
@@ -583,26 +668,28 @@ static LayoutUnit ComputeContentSize(NGInlineNode node,
   Vector<scoped_refptr<NGUnpositionedFloat>> unpositioned_floats;
 
   scoped_refptr<NGInlineBreakToken> break_token;
-  NGLineInfo line_info;
   NGExclusionSpace empty_exclusion_space;
   NGLineLayoutOpportunity line_opportunity(available_inline_size);
   LayoutUnit result;
   LayoutUnit previous_floats_inline_size =
       input.float_left_inline_size + input.float_right_inline_size;
+  DCHECK_GE(previous_floats_inline_size, 0);
   while (!break_token || !break_token->IsFinished()) {
     unpositioned_floats.clear();
 
-    NGLineBreaker line_breaker(node, mode, *space, &positioned_floats,
-                               &unpositioned_floats,
-                               nullptr /* container_builder */,
-                               &empty_exclusion_space, 0u, break_token.get());
-    if (!line_breaker.NextLine(line_opportunity, &line_info))
+    NGLineInfo line_info;
+    NGLineBreaker line_breaker(
+        node, mode, *space, &positioned_floats, &unpositioned_floats,
+        nullptr /* container_builder */, &empty_exclusion_space, 0u,
+        line_opportunity, break_token.get());
+    line_breaker.NextLine(&line_info);
+
+    if (line_info.Results().IsEmpty())
       break;
 
     break_token = line_breaker.CreateBreakToken(line_info, nullptr);
-    LayoutUnit inline_size = line_info.TextIndent();
-    for (const NGInlineItemResult item_result : line_info.Results())
-      inline_size += item_result.inline_size;
+    LayoutUnit inline_size = line_info.Width();
+    DCHECK_EQ(inline_size, line_info.ComputeWidth().ClampNegativeToZero());
 
     // There should be no positioned floats while determining the min/max sizes.
     DCHECK_EQ(positioned_floats.size(), 0u);
@@ -643,7 +730,10 @@ static LayoutUnit ComputeContentSize(NGInlineNode node,
           floats_inline_size = LayoutUnit();
         }
 
-        floats_inline_size += child_sizes.max_size + child_inline_margins;
+        // When negative margins move the float outside the content area,
+        // such float should not affect the content size.
+        floats_inline_size +=
+            (child_sizes.max_size + child_inline_margins).ClampNegativeToZero();
         previous_float_type = float_style.Floating();
       }
     }

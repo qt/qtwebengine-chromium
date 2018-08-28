@@ -95,7 +95,9 @@ class NavigationURLLoaderTest : public testing::Test {
     std::unique_ptr<NavigationRequestInfo> request_info(
         new NavigationRequestInfo(common_params, std::move(begin_params), url,
                                   true, false, false, -1, false, false, false,
-                                  nullptr, base::UnguessableToken::Create()));
+                                  false, nullptr,
+                                  base::UnguessableToken::Create(),
+                                  base::UnguessableToken::Create()));
     return NavigationURLLoader::Create(
         browser_context_->GetResourceContext(),
         BrowserContext::GetDefaultStoragePartition(browser_context_.get()),
@@ -226,7 +228,7 @@ TEST_F(NavigationURLLoaderTest, CancelResponseRace) {
 
   // In the same event loop iteration, follow the redirect (allowing the
   // response to go through) and destroy the loader.
-  loader->FollowRedirect();
+  loader->FollowRedirect(base::nullopt, base::nullopt);
   loader.reset();
 
   // Verify the URLRequestTestJob no longer has anything paused and that no

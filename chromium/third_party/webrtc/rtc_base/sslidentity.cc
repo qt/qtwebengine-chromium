@@ -15,11 +15,11 @@
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "rtc_base/base64.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/opensslidentity.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/sslfingerprint.h"
 
 namespace rtc {
@@ -108,9 +108,8 @@ bool SSLIdentity::PemToDer(const std::string& pem_type,
 
   std::string inner = pem_string.substr(body + 1, trailer - (body + 1));
 
-  *der = Base64::Decode(inner, Base64::DO_PARSE_WHITE |
-                        Base64::DO_PAD_ANY |
-                        Base64::DO_TERM_BUFFER);
+  *der = Base64::Decode(inner, Base64::DO_PARSE_WHITE | Base64::DO_PAD_ANY |
+                                   Base64::DO_TERM_BUFFER);
   return true;
 }
 

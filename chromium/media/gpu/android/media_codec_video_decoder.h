@@ -9,7 +9,7 @@
 #include "base/optional.h"
 #include "base/threading/thread_checker.h"
 #include "base/timer/elapsed_timer.h"
-#include "gpu/command_buffer/service/gpu_preferences.h"
+#include "gpu/config/gpu_preferences.h"
 #include "media/base/android_overlay_mojo_factory.h"
 #include "media/base/overlay_info.h"
 #include "media/base/video_decoder.h"
@@ -280,6 +280,12 @@ class MEDIA_GPU_EXPORT MediaCodecVideoDecoder
 
   // Do we need a hw-secure codec?
   bool requires_secure_codec_ = false;
+
+  // Should we flush the codec on the next decode, and pretend that it is
+  // drained currently?  Note that we'll automatically flush if the codec is
+  // drained; this flag indicates that we also elided the drain, so the codec is
+  // in some random state, possibly with output buffers pending.
+  bool deferred_flush_pending_ = false;
 
   // Optional crypto object from the Cdm.
   base::android::ScopedJavaGlobalRef<jobject> media_crypto_;

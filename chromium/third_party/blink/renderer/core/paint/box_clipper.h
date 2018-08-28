@@ -13,22 +13,15 @@ namespace blink {
 
 class LayoutBox;
 
-enum ContentsClipBehavior { kForceContentsClip, kSkipContentsClipIfPossible };
-
 class BoxClipper : public BoxClipperBase {
   DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 
  public:
-  BoxClipper(const LayoutBox&,
-             const PaintInfo&,
-             const LayoutPoint& accumulated_offset,
-             ContentsClipBehavior);
-  ~BoxClipper();
+  BoxClipper(const LayoutBox&, const PaintInfo&);
 
  private:
   const LayoutBox& box_;
   const PaintInfo& paint_info_;
-  DisplayItem::Type clip_type_;
 };
 
 }  // namespace blink

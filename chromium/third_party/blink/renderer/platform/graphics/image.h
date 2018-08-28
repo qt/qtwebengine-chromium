@@ -27,6 +27,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_IMAGE_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_IMAGE_H_
 
+#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
@@ -39,7 +40,6 @@
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
-#include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/blink/renderer/platform/wtf/thread_safe_ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -47,9 +47,9 @@
 class SkMatrix;
 
 namespace cc {
-class ImageDecodeCache;
 class PaintCanvas;
 class PaintFlags;
+class ImageDecodeCache;
 }  // namespace cc
 
 namespace blink {
@@ -63,15 +63,11 @@ class KURL;
 class WebGraphicsContext3DProvider;
 class WebGraphicsContext3DProviderWrapper;
 
-using cc::PaintCanvas;
-using cc::PaintFlags;
-
 class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
   friend class GeneratedImage;
   friend class CrossfadeGeneratedImage;
   friend class GradientGeneratedImage;
   friend class GraphicsContext;
-  WTF_MAKE_NONCOPYABLE(Image);
 
  public:
   virtual ~Image();
@@ -203,15 +199,15 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
     kDoNotClampImageToSourceRect
   };
 
-  virtual void Draw(PaintCanvas*,
-                    const PaintFlags&,
+  virtual void Draw(cc::PaintCanvas*,
+                    const cc::PaintFlags&,
                     const FloatRect& dst_rect,
                     const FloatRect& src_rect,
                     RespectImageOrientationEnum,
                     ImageClampingMode,
                     ImageDecodingMode) = 0;
 
-  virtual bool ApplyShader(PaintFlags&, const SkMatrix& local_matrix);
+  virtual bool ApplyShader(cc::PaintFlags&, const SkMatrix& local_matrix);
 
   // Use ContextProvider() for immediate use only, use
   // ContextProviderWrapper() to obtain a retainable reference. Note:
@@ -224,20 +220,32 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
     return nullptr;
   }
 
-  // Compute the tile which contains a given point (assuming a repeating tile
-  // grid). The point and returned value are in destination grid space.
-  static FloatRect ComputeTileContaining(const FloatPoint&,
-                                         const FloatSize& tile_size,
-                                         const FloatPoint& tile_phase,
-                                         const FloatSize& tile_spacing);
+  // Given the |size| that the whole image should draw at, and the
+  // input phase requested by the content, and the space between repeated tiles,
+  // return a rectangle with |size| and a location that respects
+  // the phase but is no more than one size + space in magnitude. In practice,
+  // this means that if there is no repeating the returned rect would contain
+  // the destination_offset location. The destination_offset passed here must
+  // exactly match the location of the subset in a following call to
+  // ComputeSubsetForBackground.
+  static FloatRect ComputePhaseForBackground(
+      const FloatPoint& destination_offset,
+      const FloatSize& size,
+      const FloatPoint& phase,
+      const FloatSize& spacing);
 
-  // Compute the image subset which gets mapped onto |dest|, when the whole
-  // image is drawn into |tile|.  Assumes |tile| contains |dest|.  The tile rect
-  // is in destination grid space while the return value is in image coordinate
-  // space.
-  static FloatRect ComputeSubsetForTile(const FloatRect& tile,
-                                        const FloatRect& dest,
-                                        const FloatSize& image_size);
+  // Compute the image subset, in intrinsic image coordinates, that gets mapped
+  // onto the |subset|, when the whole image would be drawn with phase
+  // and size given by |phase_and_size|. Assumes
+  // |phase_and_size| contains |subset|. The location
+  // of the requested subset should be the painting snapped location, or
+  // whatever was used as a destination_offset in ComputePhaseForBackground.
+  // It is used to undo the offset added in ComputePhaseForBackground. The size
+  // of requested subset should be the unsnapped size so that the computed
+  // scale and location in the source image can be correctly determined.
+  static FloatRect ComputeSubsetForBackground(const FloatRect& phase_and_size,
+                                              const FloatRect& subset,
+                                              const FloatSize& intrinsic_size);
 
   virtual sk_sp<PaintRecord> PaintRecordForContainer(
       const KURL& url,
@@ -261,15 +269,28 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
 
   PaintImage::Id paint_image_id() const { return stable_image_id_; }
 
+  // Returns an SkBitmap that is a copy of the image's current frame.
+  SkBitmap AsSkBitmapForCurrentFrame(RespectImageOrientationEnum);
+
  protected:
   Image(ImageObserver* = nullptr, bool is_multipart = false);
 
+  // The unsnapped_subset_size should be the target painting area implied by the
+  //   content, without any snapping applied. It is necessary to correctly
+  //   compute the subset of the source image to paint into the destination.
+  // The snapped_paint_rect should be the target destination for painting into.
+  // The phase is never snapped.
+  // The tile_size is the total image size. The mapping from this size
+  //   to the unsnapped_dest_rect size defines the scaling of the image for
+  //   sprite computation.
   void DrawTiledBackground(GraphicsContext&,
-                           const FloatRect& dst_rect,
-                           const FloatPoint& src_point,
+                           const FloatSize& unsnapped_subset_size,
+                           const FloatRect& snapped_paint_rect,
+                           const FloatPoint& phase,
                            const FloatSize& tile_size,
                            SkBlendMode,
                            const FloatSize& repeat_spacing);
+
   void DrawTiledBorder(GraphicsContext&,
                        const FloatRect& dst_rect,
                        const FloatRect& src_rect,
@@ -307,6 +328,8 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
   PaintImage::Id stable_image_id_;
   const bool is_multipart_;
   HighContrastClassification high_contrast_classification_;
+
+  DISALLOW_COPY_AND_ASSIGN(Image);
 };
 
 #define DEFINE_IMAGE_TYPE_CASTS(typeName)                          \

@@ -13,12 +13,12 @@
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "services/service_manager/public/mojom/connector.mojom.h"
 #include "services/ui/common/image_cursors_set.h"
+#include "services/ui/gpu_host/test_gpu_host.h"
 #include "services/ui/public/interfaces/cursor/cursor.mojom.h"
 #include "services/ui/ws/cursor_location_manager.h"
 #include "services/ui/ws/display_binding.h"
 #include "services/ui/ws/display_creation_config.h"
 #include "services/ui/ws/display_manager.h"
-#include "services/ui/ws/test_gpu_host.h"
 #include "services/ui/ws/threaded_image_cursors.h"
 #include "services/ui/ws/threaded_image_cursors_factory.h"
 #include "services/ui/ws/window_manager_access_policy.h"
@@ -249,7 +249,7 @@ void TestWindowManager::WmClientJankinessChanged(ClientSpecificId client_id,
                                                  bool janky) {}
 
 void TestWindowManager::WmBuildDragImage(const gfx::Point& screen_location,
-                                         const SkBitmap& drag_image,
+                                         const gfx::ImageSkia& drag_image,
                                          const gfx::Vector2d& drag_image_offset,
                                          ui::mojom::PointerKind source) {}
 
@@ -487,6 +487,9 @@ void TestWindowTreeClient::RequestClose(Id window_id) {}
 void TestWindowTreeClient::GetWindowManager(
     mojo::AssociatedInterfaceRequest<mojom::WindowManager> internal) {}
 
+void TestWindowTreeClient::GetScreenProviderObserver(
+    mojom::ScreenProviderObserverAssociatedRequest observer) {}
+
 // TestWindowTreeBinding ------------------------------------------------------
 
 TestWindowTreeBinding::TestWindowTreeBinding(
@@ -583,7 +586,8 @@ WindowServerTestHelper::WindowServerTestHelper()
   PlatformDisplay::set_factory_for_testing(&platform_display_factory_);
   window_server_ = std::make_unique<WindowServer>(&window_server_delegate_,
                                                   true /* should_host_viz */);
-  std::unique_ptr<GpuHost> gpu_host = std::make_unique<TestGpuHost>();
+  std::unique_ptr<gpu_host::GpuHost> gpu_host =
+      std::make_unique<gpu_host::TestGpuHost>();
   window_server_->SetGpuHost(std::move(gpu_host));
   window_server_delegate_.set_window_server(window_server_.get());
 }

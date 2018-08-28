@@ -14,6 +14,14 @@ struct AuthCredentials;
 struct CertVerifyResult;
 
 [Native]
+struct HttpResponseHeaders;
+
+struct HttpVersion {
+  uint16 major_value;
+  uint16 minor_value;
+};
+
+[Native]
 struct HostPortPair;
 
 [Native]

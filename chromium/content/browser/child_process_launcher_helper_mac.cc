@@ -6,6 +6,7 @@
 #include "base/feature_list.h"
 #include "base/path_service.h"
 #include "base/posix/global_descriptors.h"
+#include "base/strings/stringprintf.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/child_process_launcher_helper.h"
 #include "content/browser/child_process_launcher_helper_posix.h"
@@ -19,7 +20,6 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
-#include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "sandbox/mac/seatbelt_exec.h"
 #include "services/service_manager/embedder/result_codes.h"
 #include "services/service_manager/sandbox/mac/cdm.sb.h"
@@ -37,10 +37,10 @@
 namespace content {
 namespace internal {
 
-mojo::edk::ScopedInternalPlatformHandle
-ChildProcessLauncherHelper::PrepareMojoPipeHandlesOnClientThread() {
+base::Optional<mojo::NamedPlatformChannel>
+ChildProcessLauncherHelper::CreateNamedPlatformChannelOnClientThread() {
   DCHECK_CURRENTLY_ON(client_thread_id_);
-  return mojo::edk::ScopedInternalPlatformHandle();
+  return base::nullopt;
 }
 
 void ChildProcessLauncherHelper::BeforeLaunchOnClientThread() {
@@ -51,7 +51,7 @@ std::unique_ptr<PosixFileDescriptorInfo>
 ChildProcessLauncherHelper::GetFilesToMap() {
   DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   return CreateDefaultPosixFilesToMap(
-      child_process_id(), mojo_client_handle(),
+      child_process_id(), mojo_channel_->remote_endpoint(),
       false /* include_service_required_files */, GetProcessType(),
       command_line());
 }
@@ -171,8 +171,8 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
 
     // Update the command line to enable the V2 sandbox and pass the
     // communication FD to the helper executable.
-    command_line_->AppendSwitch(switches::kEnableV2Sandbox);
-    command_line_->AppendArg("--fd_mapping=" + std::to_string(pipe));
+    command_line_->AppendArg(
+        base::StringPrintf("%s%d", sandbox::switches::kSeatbeltClient, pipe));
   }
 
   // Hold the MachBroker lock for the duration of LaunchProcess. The child will
@@ -259,7 +259,7 @@ void ChildProcessLauncherHelper::SetProcessPriorityOnLauncherThread(
     const ChildProcessLauncherPriority& priority) {
   if (process.CanBackgroundProcesses()) {
     process.SetProcessBackgrounded(MachBroker::GetInstance(),
-                                   priority.background);
+                                   priority.is_background());
   }
 }
 

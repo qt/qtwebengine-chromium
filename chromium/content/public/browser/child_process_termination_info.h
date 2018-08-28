@@ -10,6 +10,10 @@
 #include "build/build_config.h"
 #include "content/public/common/result_codes.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/child_process_binding_types.h"
+#endif
+
 namespace content {
 
 struct ChildProcessTerminationInfo {
@@ -27,10 +31,16 @@ struct ChildProcessTerminationInfo {
 
 #if defined(OS_ANDROID)
   // True if child service has strong or moderate binding at time of death.
-  bool has_oom_protection_bindings = false;
+  base::android::ChildBindingState binding_state =
+      base::android::ChildBindingState::UNBOUND;
 
   // True if child service was explicitly killed by browser.
   bool was_killed_intentionally_by_browser = false;
+
+  // Counts of remaining child processes with corresponding binding.
+  int remaining_process_with_strong_binding = 0;
+  int remaining_process_with_moderate_binding = 0;
+  int remaining_process_with_waived_binding = 0;
 #endif
 };
 

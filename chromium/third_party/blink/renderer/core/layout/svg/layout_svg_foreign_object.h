@@ -48,7 +48,7 @@ class LayoutSVGForeignObject final : public LayoutSVGBlock {
 
   bool IsChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
-  void Paint(const PaintInfo&, const LayoutPoint&) const override;
+  void Paint(const PaintInfo&) const override;
 
   void UpdateLayout() override;
 
@@ -78,7 +78,6 @@ class LayoutSVGForeignObject final : public LayoutSVGBlock {
   PaintLayerType LayerTypeRequired() const override;
 
  private:
-  bool AllowsOverflowClip() const override;
   LayoutUnit ElementX() const;
   LayoutUnit ElementY() const;
   LayoutUnit ElementWidth() const;

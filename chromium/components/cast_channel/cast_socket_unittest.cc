@@ -146,7 +146,7 @@ class TestCastSocketBase : public CastSocketImpl {
         extract_cert_result_(true),
         verify_challenge_result_(true),
         verify_challenge_disallow_(false),
-        mock_timer_(new base::MockTimer(false, false)) {}
+        mock_timer_(new base::MockOneShotTimer()) {}
 
   void SetExtractCertResult(bool value) { extract_cert_result_ = value; }
 
@@ -178,7 +178,7 @@ class TestCastSocketBase : public CastSocketImpl {
     return verify_challenge_result_;
   }
 
-  base::Timer* GetTimer() override { return mock_timer_.get(); }
+  base::OneShotTimer* GetTimer() override { return mock_timer_.get(); }
 
   net::IPEndPoint ip_;
   // Simulated result of peer cert extraction.
@@ -186,7 +186,7 @@ class TestCastSocketBase : public CastSocketImpl {
   // Simulated result of verifying challenge reply.
   bool verify_challenge_result_;
   bool verify_challenge_disallow_;
-  std::unique_ptr<base::MockTimer> mock_timer_;
+  std::unique_ptr<base::MockOneShotTimer> mock_timer_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestCastSocketBase);

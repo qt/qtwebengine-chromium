@@ -8,12 +8,12 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/modules/bluetooth/bluetooth.h"
 #include "third_party/blink/renderer/modules/bluetooth/bluetooth_error.h"
 #include "third_party/blink/renderer/modules/bluetooth/bluetooth_remote_gatt_characteristic.h"
 #include "third_party/blink/renderer/modules/bluetooth/bluetooth_uuid.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -93,7 +93,7 @@ ScriptPromise BluetoothRemoteGATTService::getCharacteristic(
   String characteristic_uuid =
       BluetoothUUID::getCharacteristic(characteristic, exception_state);
   if (exception_state.HadException())
-    return exception_state.Reject(script_state);
+    return ScriptPromise();
 
   return GetCharacteristicsImpl(
       script_state, mojom::blink::WebBluetoothGATTQueryQuantity::SINGLE,
@@ -107,7 +107,7 @@ ScriptPromise BluetoothRemoteGATTService::getCharacteristics(
   String characteristic_uuid =
       BluetoothUUID::getCharacteristic(characteristic, exception_state);
   if (exception_state.HadException())
-    return exception_state.Reject(script_state);
+    return ScriptPromise();
 
   return GetCharacteristicsImpl(
       script_state, mojom::blink::WebBluetoothGATTQueryQuantity::MULTIPLE,

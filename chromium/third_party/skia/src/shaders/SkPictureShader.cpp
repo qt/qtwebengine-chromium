@@ -15,7 +15,7 @@
 #include "SkImage.h"
 #include "SkImageShader.h"
 #include "SkMatrixUtils.h"
-#include "SkPicture.h"
+#include "SkPicturePriv.h"
 #include "SkPictureImageGenerator.h"
 #include "SkReadBuffer.h"
 #include "SkResourceCache.h"
@@ -39,19 +39,19 @@ public:
                     SkShader::TileMode tmx,
                     SkShader::TileMode tmy,
                     const SkSize& scale,
-                    SkTransferFunctionBehavior blendBehavior)
+                    bool hasDstColorSpace)
         : fColorSpace(std::move(colorSpace))
         , fTile(tile)
         , fTmx(tmx)
         , fTmy(tmy)
         , fScale(scale)
-        , fBlendBehavior(blendBehavior) {
+        , fHasDstColorSpace(hasDstColorSpace ? 1 : 0) {
 
         static const size_t keySize = sizeof(fColorSpace) +
                                       sizeof(fTile) +
                                       sizeof(fTmx) + sizeof(fTmy) +
                                       sizeof(fScale) +
-                                      sizeof(fBlendBehavior);
+                                      sizeof(fHasDstColorSpace);
         // This better be packed.
         SkASSERT(sizeof(uint32_t) * (&fEndOfStruct - (uint32_t*)&fColorSpace) == keySize);
         this->init(&gBitmapSkaderKeyNamespaceLabel, MakeSharedID(shaderID), keySize);
@@ -74,7 +74,7 @@ private:
     SkRect                     fTile;
     SkShader::TileMode         fTmx, fTmy;
     SkSize                     fScale;
-    SkTransferFunctionBehavior fBlendBehavior;
+    uint32_t                   fHasDstColorSpace;
 
     SkDEBUGCODE(uint32_t fEndOfStruct;)
 };
@@ -157,7 +157,7 @@ sk_sp<SkFlattenable> SkPictureShader::CreateProc(SkReadBuffer& buffer) {
 
     bool didSerialize = buffer.readBool();
     if (didSerialize) {
-        picture = SkPicture::MakeFromBuffer(buffer);
+        picture = SkPicturePriv::MakeFromBuffer(buffer);
     }
     return SkPictureShader::Make(picture, mx, my, &lm, &tile);
 }
@@ -169,7 +169,7 @@ void SkPictureShader::flatten(SkWriteBuffer& buffer) const {
     buffer.writeRect(fTile);
 
     buffer.writeBool(true);
-    fPicture->flatten(buffer);
+    SkPicturePriv::Flatten(fPicture, buffer);
 }
 
 // Returns a cached image shader, which wraps a single picture tile at the given
@@ -228,8 +228,7 @@ sk_sp<SkShader> SkPictureShader::refBitmapShader(const SkMatrix& viewMatrix,
     // should perform color correct rendering and xform at draw time.
     SkASSERT(!fColorSpace || !dstColorSpace);
     sk_sp<SkColorSpace> keyCS = dstColorSpace ? sk_ref_sp(dstColorSpace) : fColorSpace;
-    SkTransferFunctionBehavior blendBehavior = dstColorSpace ? SkTransferFunctionBehavior::kRespect
-                                                             : SkTransferFunctionBehavior::kIgnore;
+    bool hasDstColorSpace = SkToBool(dstColorSpace);
 
     sk_sp<SkShader> tileShader;
     BitmapShaderKey key(std::move(keyCS),
@@ -238,7 +237,7 @@ sk_sp<SkShader> SkPictureShader::refBitmapShader(const SkMatrix& viewMatrix,
                         fTmx,
                         fTmy,
                         tileScale,
-                        blendBehavior);
+                        hasDstColorSpace);
 
     if (!SkResourceCache::Find(key, BitmapShaderRec::Visitor, &tileShader)) {
         SkMatrix tileMatrix;
@@ -253,7 +252,7 @@ sk_sp<SkShader> SkPictureShader::refBitmapShader(const SkMatrix& viewMatrix,
         }
 
         if (fColorSpace) {
-            tileImage = tileImage->makeColorSpace(fColorSpace, SkTransferFunctionBehavior::kIgnore);
+            tileImage = tileImage->makeColorSpace(fColorSpace);
         }
 
         tileShader = tileImage->makeShader(fTmx, fTmy);
@@ -336,22 +335,6 @@ uint32_t SkPictureShader::PictureShaderContext::getFlags() const {
 void SkPictureShader::PictureShaderContext::shadeSpan(int x, int y, SkPMColor dstC[], int count) {
     SkASSERT(fBitmapShaderContext);
     fBitmapShaderContext->shadeSpan(x, y, dstC, count);
-}
-
-void SkPictureShader::toString(SkString* str) const {
-    static const char* gTileModeName[SkShader::kTileModeCount] = {
-        "clamp", "repeat", "mirror"
-    };
-
-    str->appendf("PictureShader: [%f:%f:%f:%f] ",
-                 fPicture->cullRect().fLeft,
-                 fPicture->cullRect().fTop,
-                 fPicture->cullRect().fRight,
-                 fPicture->cullRect().fBottom);
-
-    str->appendf("(%s, %s)", gTileModeName[fTmx], gTileModeName[fTmy]);
-
-    this->INHERITED::toString(str);
 }
 
 #if SK_SUPPORT_GPU

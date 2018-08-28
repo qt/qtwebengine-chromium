@@ -6,6 +6,7 @@ module ash.mojom;
 
 import "ash/public/interfaces/user_info.mojom";
 import "ash/public/interfaces/login_user_info.mojom";
+import "ash/public/interfaces/kiosk_app_info.mojom";
 import "chromeos/components/proximity_auth/public/interfaces/auth_type.mojom";
 import "components/account_id/interfaces/account_id.mojom";
 import "mojo/public/mojom/base/string16.mojom";
@@ -125,6 +126,17 @@ interface LoginScreen {
   // Set the fingerprint unlock state for user with |account_id|.
   SetFingerprintUnlockState(signin.mojom.AccountId account_id,
                             FingerprintUnlockState state);
+
+  // Update the kiosk app data for the login screen.
+  SetKioskApps(array<KioskAppInfo> kiosk_apps);
+
+  // Called when the dialog hosting oobe has changed visibility. The oobe dialog
+  // provides support for any part of login that is implemented in JS/HTML, such
+  // as add user or powerwash.
+  NotifyOobeDialogVisibility(bool is_visible);
+
+  // Sets whether users can be added from the login screen.
+  SetAddUserButtonEnabled(bool enable);
 };
 
 // Allows ash lock screen to control a client (e.g. Chrome browser). Requests
@@ -185,9 +197,10 @@ interface LoginScreenClient {
   // |reverse|:   Whether the tab order is reversed.
   FocusLockScreenApps(bool reverse);
 
-  // Show the gaia sign-in dialog. If available, |account_id| is used for
-  // prefilling information.
-  ShowGaiaSignin(signin.mojom.AccountId? account_id);
+  // Show the gaia sign-in dialog. If |can_close| is true, the dialog can be
+  // closed. The value in |prefilled_account| will be used to prefill the
+  // sign-in dialog so the user does not need to type the account email.
+  ShowGaiaSignin(bool can_close, signin.mojom.AccountId? prefilled_account);
 
   // Notification that the remove user warning was shown.
   OnRemoveUserWarningShown();
@@ -212,4 +225,16 @@ interface LoginScreenClient {
   //           locale.
   RequestPublicSessionKeyboardLayouts(signin.mojom.AccountId account_id,
                                       string locale);
+
+  // Request to show a feedback report dialog in chrome.
+  ShowFeedback();
+
+  // Launch the specific kiosk app.
+  LaunchKioskApp(string app_id);
+
+  // Launch the specific ARC++ kiosk app.
+  LaunchArcKioskApp(signin.mojom.AccountId account_id);
+
+  // Show the powerwash (device reset) dialog.
+  ShowResetScreen();
 };

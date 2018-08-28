@@ -32,7 +32,6 @@ OffscreenCanvasRenderingContext2D::OffscreenCanvasRenderingContext2D(
     OffscreenCanvas* canvas,
     const CanvasContextCreationAttributesCore& attrs)
     : CanvasRenderingContext(canvas, attrs) {
-  Host()->RegisterContextToDispatch(this);
   ExecutionContext* execution_context = canvas->GetTopExecutionContext();
   if (execution_context->IsDocument()) {
     Settings* settings = ToDocument(execution_context)->GetSettings();
@@ -53,9 +52,10 @@ void OffscreenCanvasRenderingContext2D::Trace(blink::Visitor* visitor) {
 }
 
 void OffscreenCanvasRenderingContext2D::commit() {
+  // TODO(fserb): consolidate this with PushFrame
   SkIRect damage_rect(dirty_rect_for_commit_);
   dirty_rect_for_commit_.setEmpty();
-  Host()->Commit(TransferToStaticBitmapImage(), damage_rect);
+  Host()->Commit(ProduceFrame(), damage_rect);
 }
 
 // BaseRenderingContext2D implementation
@@ -96,24 +96,24 @@ bool OffscreenCanvasRenderingContext2D::CanCreateCanvas2dResourceProvider()
 
 CanvasResourceProvider*
 OffscreenCanvasRenderingContext2D::GetCanvasResourceProvider() const {
-  return offscreenCanvasForBinding()->GetResourceProvider();
+  return Host()->ResourceProvider();
 }
 void OffscreenCanvasRenderingContext2D::Reset() {
   Host()->DiscardResourceProvider();
   BaseRenderingContext2D::Reset();
 }
 
-scoped_refptr<StaticBitmapImage>
-OffscreenCanvasRenderingContext2D::TransferToStaticBitmapImage() {
+scoped_refptr<CanvasResource>
+OffscreenCanvasRenderingContext2D::ProduceFrame() {
   if (!CanCreateCanvas2dResourceProvider())
     return nullptr;
-  scoped_refptr<StaticBitmapImage> image =
-      GetCanvasResourceProvider()->Snapshot();
-  if (!image)
+  scoped_refptr<CanvasResource> frame =
+      GetCanvasResourceProvider()->ProduceFrame();
+  if (!frame)
     return nullptr;
 
-  image->SetOriginClean(this->OriginClean());
-  return image;
+  frame->SetOriginClean(this->OriginClean());
+  return frame;
 }
 
 void OffscreenCanvasRenderingContext2D::PushFrame() {
@@ -121,7 +121,7 @@ void OffscreenCanvasRenderingContext2D::PushFrame() {
     return;
 
   SkIRect damage_rect(dirty_rect_for_commit_);
-  Host()->PushFrame(TransferToStaticBitmapImage(), damage_rect);
+  Host()->PushFrame(ProduceFrame(), damage_rect);
   dirty_rect_for_commit_.setEmpty();
 }
 
@@ -129,9 +129,14 @@ ImageBitmap* OffscreenCanvasRenderingContext2D::TransferToImageBitmap(
     ScriptState* script_state) {
   WebFeature feature = WebFeature::kOffscreenCanvasTransferToImageBitmap2D;
   UseCounter::Count(ExecutionContext::From(script_state), feature);
-  scoped_refptr<StaticBitmapImage> image = TransferToStaticBitmapImage();
+
+  if (!CanCreateCanvas2dResourceProvider())
+    return nullptr;
+  scoped_refptr<StaticBitmapImage> image =
+      GetCanvasResourceProvider()->Snapshot();
   if (!image)
     return nullptr;
+  image->SetOriginClean(this->OriginClean());
   if (image->IsTextureBacked()) {
     // Before discarding the image resource, we need to flush pending render ops
     // to fully resolve the snapshot.
@@ -163,13 +168,14 @@ bool OffscreenCanvasRenderingContext2D::ParseColorOrCurrentColor(
   return ::blink::ParseColorOrCurrentColor(color, color_string, nullptr);
 }
 
-PaintCanvas* OffscreenCanvasRenderingContext2D::DrawingCanvas() const {
+cc::PaintCanvas* OffscreenCanvasRenderingContext2D::DrawingCanvas() const {
   if (!CanCreateCanvas2dResourceProvider())
     return nullptr;
   return GetCanvasResourceProvider()->Canvas();
 }
 
-PaintCanvas* OffscreenCanvasRenderingContext2D::ExistingDrawingCanvas() const {
+cc::PaintCanvas* OffscreenCanvasRenderingContext2D::ExistingDrawingCanvas()
+    const {
   if (!IsPaintable())
     return nullptr;
   return GetCanvasResourceProvider()->Canvas();
@@ -196,9 +202,13 @@ sk_sp<PaintFilter> OffscreenCanvasRenderingContext2D::StateGetFilter() {
   return GetState().GetFilterForOffscreenCanvas(Host()->Size(), this);
 }
 
+void OffscreenCanvasRenderingContext2D::SnapshotStateForFilter() {
+  ModifiableState().SetFontForFilter(AccessFont());
+}
+
 void OffscreenCanvasRenderingContext2D::ValidateStateStack() const {
 #if DCHECK_IS_ON()
-  if (PaintCanvas* sk_canvas = ExistingDrawingCanvas()) {
+  if (cc::PaintCanvas* sk_canvas = ExistingDrawingCanvas()) {
     DCHECK_EQ(static_cast<size_t>(sk_canvas->getSaveCount()),
               state_stack_.size() + 1);
   }
@@ -210,7 +220,7 @@ bool OffscreenCanvasRenderingContext2D::isContextLost() const {
 }
 
 bool OffscreenCanvasRenderingContext2D::IsPaintable() const {
-  return offscreenCanvasForBinding()->GetResourceProvider();
+  return offscreenCanvasForBinding()->ResourceProvider();
 }
 
 String OffscreenCanvasRenderingContext2D::ColorSpaceAsString() const {
@@ -232,7 +242,7 @@ bool OffscreenCanvasRenderingContext2D::WritePixels(
     int x,
     int y) {
   DCHECK(IsPaintable());
-  return offscreenCanvasForBinding()->GetResourceProvider()->WritePixels(
+  return offscreenCanvasForBinding()->ResourceProvider()->WritePixels(
       orig_info, pixels, row_bytes, x, y);
 }
 
@@ -374,7 +384,7 @@ void OffscreenCanvasRenderingContext2D::DrawTextInternal(
     double y,
     CanvasRenderingContext2DState::PaintType paint_type,
     double* max_width) {
-  PaintCanvas* c = DrawingCanvas();
+  cc::PaintCanvas* c = DrawingCanvas();
   if (!c)
     return;
 
@@ -453,7 +463,7 @@ void OffscreenCanvasRenderingContext2D::DrawTextInternal(
 
   Draw(
       [&font, &text_run_paint_info, &location](
-          PaintCanvas* c, const PaintFlags* flags)  // draw lambda
+          cc::PaintCanvas* c, const PaintFlags* flags)  // draw lambda
       {
         font.DrawBidiText(c, text_run_paint_info, location,
                           Font::kUseFallbackIfFontNotReady, kCDeviceScaleFactor,

@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
@@ -19,6 +20,7 @@
 #include "third_party/blink/public/platform/web_drag_operation.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/range/range.h"
 
 namespace blink {
 class WebMouseWheelEvent;
@@ -32,10 +34,6 @@ class Size;
 
 namespace rappor {
 class Sample;
-}
-
-namespace ukm {
-class UkmRecorder;
 }
 
 namespace content {
@@ -65,6 +63,12 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
 
   // The RenderWidgetHost got the focus.
   virtual void RenderWidgetGotFocus(RenderWidgetHostImpl* render_widget_host) {}
+
+  // If a main frame navigation is in progress, this will return the zoom level
+  // for the pending page. Otherwise, this returns the zoom level for the
+  // current page. Note that subframe navigations do not affect the zoom level,
+  // which is tracked at the level of the page.
+  virtual double GetPendingPageZoomLevel() const;
 
   // The RenderWidgetHost lost the focus.
   virtual void RenderWidgetLostFocus(
@@ -132,6 +136,11 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // currently focused frame.
   virtual void SelectRange(const gfx::Point& base, const gfx::Point& extent) {}
 
+#if defined(OS_MACOSX)
+  virtual void DidChangeTextSelection(const base::string16& text,
+                                      const gfx::Range& range) {}
+#endif
+
   // Request the renderer to Move the caret to the new position.
   virtual void MoveCaret(const gfx::Point& extent) {}
 
@@ -155,7 +164,10 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
 
   // Notification that the renderer has become unresponsive. The
   // delegate can use this notification to show a warning to the user.
-  virtual void RendererUnresponsive(RenderWidgetHostImpl* render_widget_host) {}
+  // See also WebContentsDelegate::RendererUnresponsive.
+  virtual void RendererUnresponsive(
+      RenderWidgetHostImpl* render_widget_host,
+      base::RepeatingClosure hang_monitor_restarter) {}
 
   // Notification that a previously unresponsive renderer has become
   // responsive again. The delegate can use this notification to end the
@@ -258,10 +270,9 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // if the eTLD+1 is not known for |render_widget_host|.
   virtual bool AddDomainInfoToRapporSample(rappor::Sample* sample);
 
-  // Update UkmRecorder for the given source with the URL. This is used for
-  // URL-keyed metrics to set the url for a report.
-  virtual void UpdateUrlForUkmSource(ukm::UkmRecorder* service,
-                                     ukm::SourceId ukm_source_id);
+  // Get the UKM source ID for current content. This is used for providing
+  // data about the content to the URL-keyed metrics service.
+  virtual ukm::SourceId GetUkmSourceIdForLastCommittedSource() const;
 
   // Notifies the delegate that a focused editable element has been touched
   // inside this RenderWidgetHost. If |editable| is true then the focused

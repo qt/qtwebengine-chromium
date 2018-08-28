@@ -18,17 +18,11 @@ namespace blink {
 class NGConstraintSpace;
 class NGFragment;
 class NGLayoutResult;
+class NGPhysicalLineBoxFragment;
 
 // This struct is used for communicating to a child the position of the previous
 // inflow child. This will be used to calculate the position of the next child.
 struct NGPreviousInflowPosition {
-  // Return the BFC offset of the next block-start border edge we'd get if we
-  // commit pending margins.
-  LayoutUnit NextBorderEdge() const {
-    return bfc_block_offset + margin_strut.Sum();
-  }
-
-  LayoutUnit bfc_block_offset;
   LayoutUnit logical_block_offset;
   NGMarginStrut margin_strut;
   bool empty_block_affected_by_clearance;
@@ -66,6 +60,23 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   scoped_refptr<NGLayoutResult> Layout() override;
 
  private:
+  // Return the BFC offset of this block.
+  LayoutUnit BfcBlockOffset() const {
+    // If we have resolved our BFC offset, use that.
+    if (container_builder_.BfcOffset())
+      return container_builder_.BfcOffset()->block_offset;
+    // Otherwise fall back to the BFC offset assigned by the parent algorithm.
+    return ConstraintSpace().BfcOffset().block_offset;
+  }
+
+  // Return the BFC offset of the next block-start border edge (for some child)
+  // we'd get if we commit pending margins.
+  LayoutUnit NextBorderEdge(
+      const NGPreviousInflowPosition& previous_inflow_position) const {
+    return BfcBlockOffset() + previous_inflow_position.logical_block_offset +
+           previous_inflow_position.margin_strut.Sum();
+  }
+
   NGBoxStrut CalculateMargins(NGLayoutInputNode child,
                               const NGBreakToken* child_break_token);
 
@@ -156,12 +167,16 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
 
   // Return true if the node being laid out by this fragmentainer has used all
   // the available space in the current fragmentainer.
-  bool IsFragmentainerOutOfSpace() const;
+  // |block_offset| is the border-edge relative block offset we want to check
+  // whether fits within the fragmentainer or not.
+  bool IsFragmentainerOutOfSpace(LayoutUnit block_offset) const;
 
   // Insert a fragmentainer break before the child if necessary.
-  // Return true if a break was inserted, false otherwise.
+  // Update previous in-flow position and return true if a break was inserted.
+  // Otherwise return false.
   bool BreakBeforeChild(NGLayoutInputNode child,
                         const NGLayoutResult&,
+                        NGPreviousInflowPosition*,
                         LayoutUnit block_offset,
                         bool is_pushed_by_floats);
 
@@ -184,6 +199,14 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
                    const NGPhysicalFragment*,
                    LayoutUnit child_offset);
 
+  // Compute the baseline offset of a line box from the content box.
+  // Line boxes are in line-relative coordinates. This function returns the
+  // offset in flow-relative coordinates.
+  LayoutUnit ComputeLineBoxBaselineOffset(
+      const NGBaselineRequest&,
+      const NGPhysicalLineBoxFragment&,
+      LayoutUnit line_box_block_offset) const;
+
   // If still unresolved, resolve the fragment's BFC offset.
   //
   // This includes applying clearance, so the bfc_block_offset passed won't be
@@ -201,7 +224,7 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   // margin, so here's a convenience overload for that.
   bool ResolveBfcOffset(NGPreviousInflowPosition* previous_inflow_position) {
     return ResolveBfcOffset(previous_inflow_position,
-                            previous_inflow_position->NextBorderEdge());
+                            NextBorderEdge(*previous_inflow_position));
   }
 
   // Return true if the BFC offset has changed and this means that we need to

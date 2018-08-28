@@ -76,18 +76,13 @@ enum class UnwrappedSharedMemoryHandleProtection {
   kReadOnly,
 };
 
-// Converts a PlatformHandle to the MojoPlatformHandle C struct for use with
-// Mojo APIs. Note that although MojoPlatformHandle has weak ownership, this
-// relinquishes ownership from |handle|.
-void MOJO_CPP_SYSTEM_EXPORT
-PlatformHandleToMojoPlatformHandle(PlatformHandle handle,
-                                   MojoPlatformHandle* out_handle);
+// Wraps a PlatformHandle from the C++ platform support library as a Mojo
+// handle.
+MOJO_CPP_SYSTEM_EXPORT ScopedHandle WrapPlatformHandle(PlatformHandle handle);
 
-// Converts a MojoPlatformHandle C struct to a PlatformHandle for use with
-// various C++ APIs. Note that although MojoPlatformHandle has weak ownership,
-// the new handle assumes ownership of the represented platform handle.
-PlatformHandle MOJO_CPP_SYSTEM_EXPORT
-MojoPlatformHandleToPlatformHandle(const MojoPlatformHandle* handle);
+// Unwraps a Mojo handle to a PlatformHandle object from the C++ platform
+// support library.
+MOJO_CPP_SYSTEM_EXPORT PlatformHandle UnwrapPlatformHandle(ScopedHandle handle);
 
 // Wraps a PlatformFile as a Mojo handle. Takes ownership of the file object.
 // If |platform_file| is valid, this will return a valid handle.

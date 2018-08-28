@@ -27,11 +27,10 @@
 #include "third_party/blink/public/platform/linux/web_sandbox_support.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
-#include "third_party/blink/renderer/platform/fonts/shaping/harf_buzz_face.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_face.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/layout_test_support.h"
 #include "third_party/blink/renderer/platform/text/character.h"
-#include "third_party/blink/renderer/platform/wtf/byte_swap.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
@@ -101,7 +100,7 @@ FontPlatformData::FontPlatformData(const FontPlatformData& source)
 #if !defined(OS_WIN) && !defined(OS_MACOSX)
       style_(source.style_),
 #endif
-      harf_buzz_face_(nullptr),
+      harfbuzz_face_(nullptr),
       is_hash_table_deleted_value_(false)
 #if defined(OS_WIN)
       ,
@@ -194,7 +193,7 @@ const FontPlatformData& FontPlatformData::operator=(
   synthetic_bold_ = other.synthetic_bold_;
   synthetic_italic_ = other.synthetic_italic_;
   avoid_embedded_bitmaps_ = other.avoid_embedded_bitmaps_;
-  harf_buzz_face_ = nullptr;
+  harfbuzz_face_ = nullptr;
   orientation_ = other.orientation_;
 #if !defined(OS_WIN) && !defined(OS_MACOSX)
   style_ = other.style_;
@@ -248,11 +247,11 @@ SkTypeface* FontPlatformData::Typeface() const {
 }
 
 HarfBuzzFace* FontPlatformData::GetHarfBuzzFace() const {
-  if (!harf_buzz_face_)
-    harf_buzz_face_ =
+  if (!harfbuzz_face_)
+    harfbuzz_face_ =
         HarfBuzzFace::Create(const_cast<FontPlatformData*>(this), UniqueID());
 
-  return harf_buzz_face_.get();
+  return harfbuzz_face_.get();
 }
 
 bool FontPlatformData::HasSpaceInLigaturesOrKerning(
@@ -301,16 +300,15 @@ WebFontRenderStyle FontPlatformData::QuerySystemRenderStyle(
     SkFontStyle font_style) {
   WebFontRenderStyle result;
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
   // If the font name is missing (i.e. probably a web font) or the sandbox is
   // disabled, use the system defaults.
   if (family.length() && Platform::Current()->GetSandboxSupport()) {
     bool is_bold = font_style.weight() >= SkFontStyle::kSemiBold_Weight;
     bool is_italic = font_style.slant() != SkFontStyle::kUpright_Slant;
-    const int size_and_style = (((int)text_size) << 2) | (((int)is_bold) << 1) |
-                               (((int)is_italic) << 0);
     Platform::Current()->GetSandboxSupport()->GetWebFontRenderStyleForStrike(
-        family.data(), size_and_style, &result);
+        family.data(), text_size, is_bold, is_italic,
+        FontCache::DeviceScaleFactor(), &result);
   }
 #endif
 

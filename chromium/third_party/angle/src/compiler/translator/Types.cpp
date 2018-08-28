@@ -194,7 +194,7 @@ TType::TType(const TPublicType &p)
     }
 }
 
-TType::TType(const TStructure *userDef)
+TType::TType(const TStructure *userDef, bool isStructSpecifier)
     : type(EbtStruct),
       precision(EbpUndefined),
       qualifier(EvqTemporary),
@@ -206,7 +206,7 @@ TType::TType(const TStructure *userDef)
       mArraySizes(nullptr),
       mInterfaceBlock(nullptr),
       mStructure(userDef),
-      mIsStructSpecifier(false),
+      mIsStructSpecifier(isStructSpecifier),
       mMangledName(nullptr)
 {
 }
@@ -394,33 +394,6 @@ const char *TType::getBuiltInTypeNameString() const
     ASSERT(getBasicType() != EbtStruct);
     ASSERT(getBasicType() != EbtInterfaceBlock);
     return getBasicString();
-}
-
-TString TType::getCompleteString() const
-{
-    TStringStream stream;
-
-    if (invariant)
-        stream << "invariant ";
-    if (qualifier != EvqTemporary && qualifier != EvqGlobal)
-        stream << getQualifierString() << " ";
-    if (precision != EbpUndefined)
-        stream << getPrecisionString() << " ";
-    if (mArraySizes)
-    {
-        for (auto arraySizeIter = mArraySizes->rbegin(); arraySizeIter != mArraySizes->rend();
-             ++arraySizeIter)
-        {
-            stream << "array[" << (*arraySizeIter) << "] of ";
-        }
-    }
-    if (isMatrix())
-        stream << getCols() << "X" << getRows() << " matrix of ";
-    else if (isVector())
-        stream << getNominalSize() << "-component vector of ";
-
-    stream << getBasicString();
-    return stream.str();
 }
 
 int TType::getDeepestStructNesting() const

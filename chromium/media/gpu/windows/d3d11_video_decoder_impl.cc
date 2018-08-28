@@ -73,19 +73,19 @@ void D3D11VideoDecoderImpl::Initialize(
   // could use our own device, and run on the mojo thread, but texture sharing
   // seems to be difficult.
   device_ = gl::QueryD3D11DeviceObjectFromANGLE();
-  device_->GetImmediateContext(device_context_.GetAddressOf());
+  device_->GetImmediateContext(device_context_.ReleaseAndGetAddressOf());
 
   HRESULT hr;
 
   // TODO(liberato): Handle cleanup better.  Also consider being less chatty in
   // the logs, since this will fall back.
-  hr = device_context_.CopyTo(video_context_.GetAddressOf());
+  hr = device_context_.CopyTo(video_context_.ReleaseAndGetAddressOf());
   if (!SUCCEEDED(hr)) {
     NotifyError("Failed to get device context");
     return;
   }
 
-  hr = device_.CopyTo(video_device_.GetAddressOf());
+  hr = device_.CopyTo(video_device_.ReleaseAndGetAddressOf());
   if (!SUCCEEDED(hr)) {
     NotifyError("Failed to get video device");
     return;
@@ -127,9 +127,8 @@ void D3D11VideoDecoderImpl::Initialize(
 
   D3D11_VIDEO_DECODER_DESC desc = {};
   desc.Guid = decoder_guid;
-  // TODO(liberato): where do these numbers come from?
-  desc.SampleWidth = 1920;
-  desc.SampleHeight = 1088;
+  desc.SampleWidth = config.coded_size().width();
+  desc.SampleHeight = config.coded_size().height();
   desc.OutputFormat = DXGI_FORMAT_NV12;
   UINT config_count = 0;
   hr = video_device_->GetVideoDecoderConfigCount(&desc, &config_count);
@@ -162,16 +161,23 @@ void D3D11VideoDecoderImpl::Initialize(
   memcpy(&decoder_guid_, &decoder_guid, sizeof decoder_guid_);
 
   Microsoft::WRL::ComPtr<ID3D11VideoDecoder> video_decoder;
-  hr = video_device_->CreateVideoDecoder(&desc, &dec_config,
-                                         video_decoder.GetAddressOf());
+  hr = video_device_->CreateVideoDecoder(
+      &desc, &dec_config, video_decoder.ReleaseAndGetAddressOf());
   if (!video_decoder.Get()) {
     NotifyError("Failed to create a video decoder");
     return;
   }
 
-  accelerated_video_decoder_ =
-      std::make_unique<H264Decoder>(std::make_unique<D3D11H264Accelerator>(
-          this, video_decoder, video_device_, video_context_));
+  CdmProxyContext* proxy_context = nullptr;
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+  if (cdm_context)
+    proxy_context = cdm_context->GetCdmProxyContext();
+#endif
+
+  accelerated_video_decoder_ = std::make_unique<H264Decoder>(
+      std::make_unique<D3D11H264Accelerator>(this, proxy_context, video_decoder,
+                                             video_device_, video_context_),
+      config.color_space_info());
 
   // |cdm_context| could be null for clear playback.
   if (cdm_context) {
@@ -254,7 +260,7 @@ void D3D11VideoDecoderImpl::DoDecode() {
       CreatePictureBuffers();
     } else if (result == media::AcceleratedVideoDecoder::kAllocateNewSurfaces) {
       CreatePictureBuffers();
-    } else if (result == media::AcceleratedVideoDecoder::kNoKey) {
+    } else if (result == media::AcceleratedVideoDecoder::kTryAgain) {
       state_ = State::kWaitingForNewKey;
       // Note that another DoDecode() task would be posted in NotifyNewKey().
       return;
@@ -322,7 +328,7 @@ void D3D11VideoDecoderImpl::CreatePictureBuffers() {
 
   Microsoft::WRL::ComPtr<ID3D11Texture2D> out_texture;
   HRESULT hr = device_->CreateTexture2D(&texture_desc, nullptr,
-                                        out_texture.GetAddressOf());
+                                        out_texture.ReleaseAndGetAddressOf());
   if (!SUCCEEDED(hr)) {
     NotifyError("Failed to create a Texture2D for PictureBuffers");
     return;
@@ -357,7 +363,9 @@ D3D11PictureBuffer* D3D11VideoDecoderImpl::GetPicture() {
   return nullptr;
 }
 
-void D3D11VideoDecoderImpl::OutputResult(D3D11PictureBuffer* buffer) {
+void D3D11VideoDecoderImpl::OutputResult(
+    D3D11PictureBuffer* buffer,
+    const VideoColorSpace& buffer_colorspace) {
   buffer->set_in_client_use(true);
 
   // Note: The pixel format doesn't matter.
@@ -367,7 +375,7 @@ void D3D11VideoDecoderImpl::OutputResult(D3D11PictureBuffer* buffer) {
   // https://crbug.com/837337
   double pixel_aspect_ratio = 1.0;
   base::TimeDelta timestamp = buffer->timestamp_;
-  auto frame = VideoFrame::WrapNativeTextures(
+  scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTextures(
       PIXEL_FORMAT_NV12, buffer->mailbox_holders(),
       VideoFrame::ReleaseMailboxCB(), visible_rect.size(), visible_rect,
       GetNaturalSize(visible_rect, pixel_aspect_ratio), timestamp);
@@ -381,8 +389,12 @@ void D3D11VideoDecoderImpl::OutputResult(D3D11PictureBuffer* buffer) {
   // that ALLOW_OVERLAY is required for encrypted video path.
   frame->metadata()->SetBoolean(VideoFrameMetadata::ALLOW_OVERLAY, true);
 
-  if (is_encrypted_)
+  if (is_encrypted_) {
     frame->metadata()->SetBoolean(VideoFrameMetadata::PROTECTED_VIDEO, true);
+    frame->metadata()->SetBoolean(VideoFrameMetadata::REQUIRE_OVERLAY, true);
+  }
+
+  frame->set_color_space(buffer_colorspace.ToGfxColorSpace());
   output_cb_.Run(frame);
 }
 

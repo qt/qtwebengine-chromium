@@ -67,12 +67,15 @@ void FrameGenerator::OnWindowSizeChanged(const gfx::Size& pixel_size) {
 
   pixel_size_ = pixel_size;
   SetNeedsBeginFrame(true);
+  display_private_->Resize(pixel_size);
 }
 
 void FrameGenerator::Bind(
-    std::unique_ptr<viz::mojom::CompositorFrameSink> compositor_frame_sink) {
+    std::unique_ptr<viz::mojom::CompositorFrameSink> compositor_frame_sink,
+    viz::mojom::DisplayPrivateAssociatedPtr display_private) {
   DCHECK(!compositor_frame_sink_);
   compositor_frame_sink_ = std::move(compositor_frame_sink);
+  display_private_ = std::move(display_private);
 }
 
 void FrameGenerator::ReclaimResources(
@@ -85,21 +88,15 @@ void FrameGenerator::ReclaimResources(
 void FrameGenerator::DidReceiveCompositorFrameAck(
     const std::vector<viz::ReturnedResource>& resources) {}
 
-void FrameGenerator::DidPresentCompositorFrame(uint32_t presentation_token,
-                                               base::TimeTicks time,
-                                               base::TimeDelta refresh,
-                                               uint32_t flags) {
-  NOTIMPLEMENTED();
-}
-
-void FrameGenerator::DidDiscardCompositorFrame(uint32_t presentation_token) {
+void FrameGenerator::DidPresentCompositorFrame(
+    uint32_t presentation_token,
+    const gfx::PresentationFeedback& feedback) {
   NOTIMPLEMENTED();
 }
 
 void FrameGenerator::OnBeginFrame(const viz::BeginFrameArgs& begin_frame_args) {
   DCHECK(compositor_frame_sink_);
-  current_begin_frame_ack_ = viz::BeginFrameAck(
-      begin_frame_args.source_id, begin_frame_args.sequence_number, false);
+  current_begin_frame_ack_ = viz::BeginFrameAck(begin_frame_args, false);
   if (begin_frame_args.type == viz::BeginFrameArgs::MISSED) {
     compositor_frame_sink_->DidNotProduceFrame(current_begin_frame_ack_);
     return;
@@ -165,7 +162,7 @@ viz::CompositorFrame FrameGenerator::GenerateCompositorFrame() {
 
   if (window_manager_surface_info_.is_valid()) {
     frame.metadata.referenced_surfaces.push_back(
-        window_manager_surface_info_.id());
+        viz::SurfaceRange(window_manager_surface_info_.id()));
   }
 
   return frame;

@@ -60,7 +60,7 @@ BidirectionalStreamQuicImpl::BidirectionalStreamQuicImpl(
 BidirectionalStreamQuicImpl::~BidirectionalStreamQuicImpl() {
   if (stream_) {
     delegate_ = nullptr;
-    stream_->Reset(QUIC_STREAM_CANCELLED);
+    stream_->Reset(quic::QUIC_STREAM_CANCELLED);
   }
 }
 
@@ -69,7 +69,7 @@ void BidirectionalStreamQuicImpl::Start(
     const NetLogWithSource& net_log,
     bool send_request_headers_automatically,
     BidirectionalStreamImpl::Delegate* delegate,
-    std::unique_ptr<base::Timer> timer,
+    std::unique_ptr<base::OneShotTimer> timer,
     const NetworkTrafficAnnotationTag& traffic_annotation) {
   ScopedBoolSaver saver(&may_invoke_callbacks_, false);
   DCHECK(!stream_);
@@ -179,8 +179,8 @@ void BidirectionalStreamQuicImpl::SendvData(
     return;
   }
 
-  std::unique_ptr<QuicConnection::ScopedPacketFlusher> bundler(
-      session_->CreatePacketBundler(QuicConnection::SEND_ACK_IF_PENDING));
+  std::unique_ptr<quic::QuicConnection::ScopedPacketFlusher> bundler(
+      session_->CreatePacketBundler(quic::QuicConnection::SEND_ACK_IF_PENDING));
   if (!has_sent_headers_) {
     DCHECK(!send_request_headers_automatically_);
     int rv = WriteHeaders();

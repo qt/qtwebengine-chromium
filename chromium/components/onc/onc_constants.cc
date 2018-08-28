@@ -158,8 +158,9 @@ const char kAccessPointName[] = "AccessPointName";
 const char kName[] = "Name";
 const char kUsername[] = "Username";
 const char kPassword[] = "Password";
+const char kAuthentication[] = "Authentication";
 const char kLocalizedName[] = "LocalizedName";
-const char kLanguage[] = "LocalizedName";
+const char kLanguage[] = "Language";
 }  // namespace cellular_apn
 
 namespace cellular_found_network {
@@ -461,6 +462,7 @@ const char kAllowOnlyPolicyNetworksToAutoconnect[] =
     "AllowOnlyPolicyNetworksToAutoconnect";
 const char kAllowOnlyPolicyNetworksToConnect[] =
     "AllowOnlyPolicyNetworksToConnect";
+const char kBlacklistedHexSSIDs[] = "BlacklistedHexSSIDs";
 const char kDisableNetworkTypes[] = "DisableNetworkTypes";
 }  // global_network_config
 

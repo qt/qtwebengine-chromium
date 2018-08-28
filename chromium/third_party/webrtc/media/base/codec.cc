@@ -13,6 +13,7 @@
 #include <algorithm>
 
 #include "media/base/h264_profile_level_id.h"
+#include "media/base/vp9_profile.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/stringencode.h"
@@ -26,7 +27,7 @@ FeedbackParams::~FeedbackParams() = default;
 
 bool FeedbackParam::operator==(const FeedbackParam& other) const {
   return _stricmp(other.id().c_str(), id().c_str()) == 0 &&
-      _stricmp(other.param().c_str(), param().c_str()) == 0;
+         _stricmp(other.param().c_str(), param().c_str()) == 0;
 }
 
 bool FeedbackParams::operator==(const FeedbackParams& other) const {
@@ -118,7 +119,7 @@ void Codec::SetParam(const std::string& name, const std::string& value) {
   params[name] = value;
 }
 
-void Codec::SetParam(const std::string& name, int value)  {
+void Codec::SetParam(const std::string& name, int value) {
   params[name] = rtc::ToString(value);
 }
 
@@ -154,8 +155,7 @@ AudioCodec::AudioCodec(int id,
                        size_t channels)
     : Codec(id, name, clockrate), bitrate(bitrate), channels(channels) {}
 
-AudioCodec::AudioCodec() : Codec(), bitrate(0), channels(0) {
-}
+AudioCodec::AudioCodec() : Codec(), bitrate(0), channels(0) {}
 
 AudioCodec::AudioCodec(const AudioCodec& c) = default;
 AudioCodec::AudioCodec(AudioCodec&& c) = default;
@@ -177,10 +177,10 @@ bool AudioCodec::Matches(const AudioCodec& codec) const {
   // Preference is ignored.
   // TODO(juberti): Treat a zero clockrate as 8000Hz, the RTP default clockrate.
   return Codec::Matches(codec) &&
-      ((codec.clockrate == 0 /*&& clockrate == 8000*/) ||
+         ((codec.clockrate == 0 /*&& clockrate == 8000*/) ||
           clockrate == codec.clockrate) &&
-      (codec.bitrate == 0 || bitrate <= 0 || bitrate == codec.bitrate) &&
-      ((codec.channels < 2 && channels < 2) || channels == codec.channels);
+         (codec.bitrate == 0 || bitrate <= 0 || bitrate == codec.bitrate) &&
+         ((codec.channels < 2 && channels < 2) || channels == codec.channels);
 }
 
 std::string AudioCodec::ToString() const {
@@ -271,6 +271,8 @@ bool VideoCodec::Matches(const VideoCodec& other) const {
   if (CodecNamesEq(name.c_str(), kH264CodecName))
     return webrtc::H264::IsSameH264Profile(params, other.params) &&
            IsSameH264PacketizationMode(params, other.params);
+  if (CodecNamesEq(name.c_str(), kVp9CodecName))
+    return webrtc::IsSameVP9Profile(params, other.params);
   return true;
 }
 
@@ -387,9 +389,12 @@ bool IsSameCodec(const std::string& name1,
   // If different names (case insensitive), then not same formats.
   if (!CodecNamesEq(name1, name2))
     return false;
-  // For every format besides H264, comparing names is enough.
-  return !CodecNamesEq(name1.c_str(), kH264CodecName) ||
-         webrtc::H264::IsSameH264Profile(params1, params2);
+  // For every format besides H264 and VP9, comparing names is enough.
+  if (CodecNamesEq(name1.c_str(), kH264CodecName))
+    return webrtc::H264::IsSameH264Profile(params1, params2);
+  if (CodecNamesEq(name1.c_str(), kVp9CodecName))
+    return webrtc::IsSameVP9Profile(params1, params2);
+  return true;
 }
 
 }  // namespace cricket

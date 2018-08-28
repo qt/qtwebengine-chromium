@@ -8,13 +8,16 @@
 #include "media/cdm/cdm_proxy.h"
 
 #include <d3d11_1.h>
+#include <dxgi1_4.h>
 #include <wrl/client.h>
 
 #include <map>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "media/gpu/media_gpu_export.h"
+#include "media/gpu/windows/d3d11_create_device_cb.h"
 
 namespace media {
 
@@ -24,20 +27,6 @@ class D3D11CdmContext;
 class MEDIA_GPU_EXPORT D3D11CdmProxy : public CdmProxy {
  public:
   using FunctionIdMap = std::map<Function, uint32_t>;
-  // The signature matches D3D11CreateDevice(). decltype(D3D11CreateDevice) does
-  // not work because __attribute__((stdcall)) gets appended, and the template
-  // instantiation fails.
-  using CreateDeviceCB =
-      base::RepeatingCallback<HRESULT(IDXGIAdapter*,
-                                      D3D_DRIVER_TYPE,
-                                      HMODULE,
-                                      UINT,
-                                      const D3D_FEATURE_LEVEL*,
-                                      UINT,
-                                      UINT,
-                                      ID3D11Device**,
-                                      D3D_FEATURE_LEVEL*,
-                                      ID3D11DeviceContext**)>;
 
   // |crypto_type| is the ID that is used to do crypto session operations. This
   // includes creating a crypto session with
@@ -73,11 +62,15 @@ class MEDIA_GPU_EXPORT D3D11CdmProxy : public CdmProxy {
   void RemoveKey(uint32_t crypto_session_id,
                  const std::vector<uint8_t>& key_id) override;
 
-  void SetCreateDeviceCallbackForTesting(CreateDeviceCB callback);
+  void SetCreateDeviceCallbackForTesting(D3D11CreateDeviceCB callback);
 
  private:
   template <typename T>
   using ComPtr = Microsoft::WRL::ComPtr<T>;
+
+  class HardwareEventWatcher;
+
+  void NotifyHardwareContentProtectionTeardown();
 
   const GUID crypto_type_;
   const CdmProxy::Protocol protocol_;
@@ -89,7 +82,7 @@ class MEDIA_GPU_EXPORT D3D11CdmProxy : public CdmProxy {
   // order to inject D3D11CreateDevice() function for testing, this member is
   // required. The test will replace this with a function that returns a mock
   // devices.
-  CreateDeviceCB create_device_func_;
+  D3D11CreateDeviceCB create_device_func_;
 
   // Counter for assigning IDs to crypto sessions.
   uint32_t next_crypto_session_id_ = 1;
@@ -108,6 +101,8 @@ class MEDIA_GPU_EXPORT D3D11CdmProxy : public CdmProxy {
   ComPtr<ID3D11VideoContext> video_context_;
   ComPtr<ID3D11VideoContext1> video_context1_;
 
+  std::unique_ptr<HardwareEventWatcher> hardware_event_watcher_;
+
   // Crypto session ID -> actual crypto session.
   std::map<uint32_t, ComPtr<ID3D11CryptoSession>> crypto_session_map_;
 
@@ -115,6 +110,8 @@ class MEDIA_GPU_EXPORT D3D11CdmProxy : public CdmProxy {
   // Used when calling NegotiateCryptoSessionKeyExchange.
   UINT private_input_size_ = 0;
   UINT private_output_size_ = 0;
+
+  base::WeakPtrFactory<D3D11CdmProxy> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(D3D11CdmProxy);
 };

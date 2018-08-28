@@ -75,6 +75,8 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
 
     [NewObject] Range createRange();
 
+    [CallWith=ScriptState, NewObject, RaisesException, RuntimeEnabled=ConstructableStylesheets] Promise<CSSStyleSheet> createCSSStyleSheet(DOMString text, optional CSSStyleSheetInit options);
+
     // NodeFilter.SHOW_ALL = 0xFFFFFFFF
     [NewObject] NodeIterator createNodeIterator(Node root, optional unsigned long whatToShow = 0xFFFFFFFF, optional NodeFilter? filter = null);
     [NewObject] TreeWalker createTreeWalker(Node root, optional unsigned long whatToShow = 0xFFFFFFFF, optional NodeFilter? filter = null);
@@ -118,7 +120,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
 
     // dynamic markup insertion
     [CallWith=EnteredWindow, CEReactions, CustomElementCallbacks, RaisesException, MeasureAs=DocumentOpenTwoArgs] Document open(optional DOMString type = "text/html", optional DOMString replace = "");
-    [CallWith=(CurrentWindow,EnteredWindow), RaisesException, MeasureAs=DocumentOpenThreeArgs] Window open(USVString url, DOMString name, DOMString features);
+    [CallWith=(CurrentWindow,EnteredWindow), RaisesException, MeasureAs=DocumentOpenThreeArgs] Window open(URLString url, DOMString name, DOMString features);
     [CEReactions, RaisesException] void close();
     [CallWith=EnteredWindow, CEReactions, CustomElementCallbacks, RaisesException] void write(DOMString... text);
     [CallWith=EnteredWindow, CEReactions, CustomElementCallbacks, RaisesException] void writeln(DOMString... text);
@@ -167,8 +169,6 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
     attribute EventHandler onpointerlockerror;
     [MeasureAs=DocumentExitPointerLock] void exitPointerLock();
 
-    [OriginTrialEnabled=TouchEventFeatureDetection, DeprecateAs=V8Document_CreateTouchList_Method] TouchList createTouchList(Touch... touches);
-
     // Custom Elements
     // https://w3c.github.io/webcomponents/spec/custom/#extensions-to-document-interface-to-register
     // FIXME: The registerElement return type should be Function.
@@ -196,7 +196,7 @@ typedef (HTMLScriptElement or SVGScriptElement) HTMLOrSVGScriptElement;
     // TODO(iclelland): add spec for JS exposure in the spec for Feature Policy.
     // Please refer to this doc for more details for now:
     // https://docs.google.com/a/chromium.org/document/d/1wvk3cXkblNnbkMcsKayseK-k0SMGiP9b9fQFgfpqQpc/edit?usp=sharing
-    [RuntimeEnabled=FeaturePolicyJavaScriptInterface] readonly attribute Policy policy;
+    [OriginTrialEnabled=FeaturePolicyJavaScriptInterface] readonly attribute Policy policy;
 
     // Deprecated prefixed page visibility API.
     // TODO(davidben): This is a property so attaching a deprecation warning results in false positives when outputting

@@ -524,24 +524,24 @@ endif ()
 
 ## Define harfbuzz library
 add_library(harfbuzz ${project_sources} ${project_extra_sources} ${project_headers})
-set_target_properties(harfbuzz PROPERTIES
-  VISIBILITY_INLINES_HIDDEN TRUE)
 target_link_libraries(harfbuzz ${THIRD_PARTY_LIBS})
 
 ## Define harfbuzz-subset library
 add_library(harfbuzz-subset ${subset_project_sources} ${subset_project_headers})
 add_dependencies(harfbuzz-subset harfbuzz)
-set_target_properties(harfbuzz-subset PROPERTIES
-  VISIBILITY_INLINES_HIDDEN TRUE)
 target_link_libraries(harfbuzz-subset harfbuzz ${THIRD_PARTY_LIBS})
+
+if (BUILD_SHARED_LIBS)
+  set_target_properties(harfbuzz harfbuzz-subset PROPERTIES VISIBILITY_INLINES_HIDDEN TRUE)
+endif ()
 
 if (UNIX OR MINGW)
   # Make symbols link locally
-  include(CheckCXXCompilerFlag)
+  include (CheckCXXCompilerFlag)
   check_cxx_compiler_flag(-Bsymbolic-functions CXX_SUPPORTS_FLAG_BSYMB_FUNCS)
-  if(CXX_SUPPORTS_FLAG_BSYMB_FUNCS)
+  if (CXX_SUPPORTS_FLAG_BSYMB_FUNCS)
     link_libraries(-Bsymbolic-functions)
-  endif()  
+  endif ()
 
   if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Make sure we don't link to libstdc++
@@ -564,11 +564,13 @@ if (HB_HAVE_GOBJECT)
     ${hb_gobject_headers}
     ${hb_gobject_gen_headers}
   )
-  set_target_properties(harfbuzz-gobject PROPERTIES
-    VISIBILITY_INLINES_HIDDEN TRUE)
   include_directories(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/src)
   add_dependencies(harfbuzz-gobject harfbuzz)
   target_link_libraries(harfbuzz-gobject harfbuzz ${GOBJECT_LIBRARIES} ${THIRD_PARTY_LIBS})
+
+  if (BUILD_SHARED_LIBS)
+    set_target_properties(harfbuzz-gobject PROPERTIES VISIBILITY_INLINES_HIDDEN TRUE)
+  endif ()
 endif ()
 
 if (BUILD_SHARED_LIBS AND WIN32 AND NOT MINGW)
@@ -832,9 +834,8 @@ set_target_properties(hb-ot-tag PROPERTIES COMPILE_FLAGS "-DMAIN")
 if (UNIX OR MINGW)
   if (BUILD_SHARED_LIBS)
     # generate harfbuzz.def after build completion
-    string(REPLACE ";" " " space_separated_headers "${project_headers}")
     add_custom_command(TARGET harfbuzz POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E env "headers=${space_separated_headers}" python ${PROJECT_SOURCE_DIR}/src/gen-def.py ${PROJECT_BINARY_DIR}/harfbuzz.def
+      COMMAND "${PYTHON_EXECUTABLE}" ${PROJECT_SOURCE_DIR}/src/gen-def.py ${PROJECT_BINARY_DIR}/harfbuzz.def ${project_headers}
       WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/src)
 
     add_test(NAME check-static-inits.sh

@@ -67,7 +67,7 @@ class HTMLCanvasPainterTestForSPv2 : public PaintControllerPaintTest {
   std::unique_ptr<Canvas2DLayerBridge> MakeCanvas2DLayerBridge(
       const IntSize& size) {
     return std::make_unique<Canvas2DLayerBridge>(
-        size, 0, Canvas2DLayerBridge::kForceAccelerationForTesting,
+        size, Canvas2DLayerBridge::kForceAccelerationForTesting,
         CanvasColorParams());
   }
 
@@ -91,7 +91,7 @@ TEST_P(HTMLCanvasPainterTestForSPv2, Canvas2DLayerAppearsInLayerTree) {
       element->GetCanvasRenderingContext("2d", attributes);
   IntSize size(300, 200);
   std::unique_ptr<Canvas2DLayerBridge> bridge = MakeCanvas2DLayerBridge(size);
-  element->CreateCanvas2DLayerBridgeForTesting(std::move(bridge), size);
+  element->SetCanvas2DLayerBridgeForTesting(std::move(bridge), size);
   ASSERT_EQ(context, element->RenderingContext());
   ASSERT_TRUE(context->IsComposited());
   ASSERT_TRUE(element->IsAccelerated());

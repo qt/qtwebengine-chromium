@@ -476,12 +476,14 @@ extern AVInputFormat  ff_image_sunrast_pipe_demuxer;
 extern AVInputFormat  ff_image_tiff_pipe_demuxer;
 extern AVInputFormat  ff_image_webp_pipe_demuxer;
 extern AVInputFormat  ff_image_xpm_pipe_demuxer;
+extern AVInputFormat  ff_image_xwd_pipe_demuxer;
 
 /* external libraries */
 extern AVOutputFormat ff_chromaprint_muxer;
 extern AVInputFormat  ff_libgme_demuxer;
 extern AVInputFormat  ff_libmodplug_demuxer;
 extern AVInputFormat  ff_libopenmpt_demuxer;
+extern AVInputFormat  ff_vapoursynth_demuxer;
 
 #include "libavformat/muxer_list.c"
 #include "libavformat/demuxer_list.c"

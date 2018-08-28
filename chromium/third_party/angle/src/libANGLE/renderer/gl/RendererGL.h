@@ -44,42 +44,45 @@ class StateManagerGL;
 class RendererGL : angle::NonCopyable
 {
   public:
-    RendererGL(const FunctionsGL *functions, const egl::AttributeMap &attribMap);
-    ~RendererGL();
-
-    ContextImpl *createContext(const gl::ContextState &state);
+    RendererGL(std::unique_ptr<FunctionsGL> functions, const egl::AttributeMap &attribMap);
+    virtual ~RendererGL();
 
     gl::Error flush();
     gl::Error finish();
 
-    gl::Error drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count);
+    gl::Error drawArrays(const gl::Context *context,
+                         gl::PrimitiveMode mode,
+                         GLint first,
+                         GLsizei count);
     gl::Error drawArraysInstanced(const gl::Context *context,
-                                  GLenum mode,
+                                  gl::PrimitiveMode mode,
                                   GLint first,
                                   GLsizei count,
                                   GLsizei instanceCount);
 
     gl::Error drawElements(const gl::Context *context,
-                           GLenum mode,
+                           gl::PrimitiveMode mode,
                            GLsizei count,
                            GLenum type,
                            const void *indices);
     gl::Error drawElementsInstanced(const gl::Context *context,
-                                    GLenum mode,
+                                    gl::PrimitiveMode mode,
                                     GLsizei count,
                                     GLenum type,
                                     const void *indices,
                                     GLsizei instances);
     gl::Error drawRangeElements(const gl::Context *context,
-                                GLenum mode,
+                                gl::PrimitiveMode mode,
                                 GLuint start,
                                 GLuint end,
                                 GLsizei count,
                                 GLenum type,
                                 const void *indices);
-    gl::Error drawArraysIndirect(const gl::Context *context, GLenum mode, const void *indirect);
+    gl::Error drawArraysIndirect(const gl::Context *context,
+                                 gl::PrimitiveMode mode,
+                                 const void *indirect);
     gl::Error drawElementsIndirect(const gl::Context *context,
-                                   GLenum mode,
+                                   gl::PrimitiveMode mode,
                                    GLenum type,
                                    const void *indirect);
 
@@ -160,7 +163,7 @@ class RendererGL : angle::NonCopyable
     GLint64 getTimestamp();
 
     const gl::Version &getMaxSupportedESVersion() const;
-    const FunctionsGL *getFunctions() const { return mFunctions; }
+    const FunctionsGL *getFunctions() const { return mFunctions.get(); }
     StateManagerGL *getStateManager() const { return mStateManager; }
     const WorkaroundsGL &getWorkarounds() const { return mWorkarounds; }
     BlitGL *getBlitter() const { return mBlitter; }
@@ -191,7 +194,7 @@ class RendererGL : angle::NonCopyable
 
     mutable gl::Version mMaxSupportedESVersion;
 
-    const FunctionsGL *mFunctions;
+    std::unique_ptr<FunctionsGL> mFunctions;
     StateManagerGL *mStateManager;
 
     BlitGL *mBlitter;

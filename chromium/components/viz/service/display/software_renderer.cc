@@ -6,6 +6,7 @@
 
 #include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
+#include "cc/paint/image_provider.h"
 #include "cc/paint/render_surface_filters.h"
 #include "components/viz/common/display/renderer_settings.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
@@ -37,6 +38,32 @@
 #include "ui/gfx/transform.h"
 
 namespace viz {
+namespace {
+class AnimatedImagesProvider : public cc::ImageProvider {
+ public:
+  AnimatedImagesProvider(
+      const PictureDrawQuad::ImageAnimationMap* image_animation_map)
+      : image_animation_map_(image_animation_map) {}
+  ~AnimatedImagesProvider() override = default;
+
+  ScopedDecodedDrawImage GetDecodedDrawImage(
+      const cc::DrawImage& draw_image) override {
+    const auto& paint_image = draw_image.paint_image();
+    auto it = image_animation_map_->find(paint_image.stable_id());
+    size_t frame_index = it == image_animation_map_->end()
+                             ? paint_image.frame_index()
+                             : it->second;
+    return ScopedDecodedDrawImage(cc::DecodedDrawImage(
+        paint_image.GetSkImageForFrame(frame_index), SkSize::Make(0, 0),
+        SkSize::Make(1.f, 1.f), draw_image.filter_quality(),
+        true /* is_budgeted */));
+  }
+
+ private:
+  const PictureDrawQuad::ImageAnimationMap* image_animation_map_;
+};
+
+}  // namespace
 
 SoftwareRenderer::SoftwareRenderer(const RendererSettings* settings,
                                    OutputSurface* output_surface,
@@ -169,8 +196,7 @@ void SoftwareRenderer::PrepareSurfaceForPass(
 }
 
 bool SoftwareRenderer::IsSoftwareResource(ResourceId resource_id) const {
-  return resource_provider_->GetResourceType(resource_id) ==
-         ResourceType::kBitmap;
+  return resource_provider_->IsResourceSoftwareBacked(resource_id);
 }
 
 void SoftwareRenderer::DoDrawQuad(const DrawQuad* quad,
@@ -327,11 +353,14 @@ void SoftwareRenderer::DrawPictureQuad(const PictureDrawQuad* quad) {
   // Treat all subnormal values as zero for performance.
   cc::ScopedSubnormalFloatDisabler disabler;
 
+  // Use an image provider to select the correct frame for animated images.
+  AnimatedImagesProvider image_provider(&quad->image_animation_map);
+
   raster_canvas->save();
   raster_canvas->translate(-quad->content_rect.x(), -quad->content_rect.y());
   raster_canvas->clipRect(gfx::RectToSkRect(quad->content_rect));
   raster_canvas->scale(quad->contents_scale, quad->contents_scale);
-  quad->display_item_list->Raster(raster_canvas);
+  quad->display_item_list->Raster(raster_canvas, &image_provider);
   raster_canvas->restore();
 }
 
@@ -469,16 +498,11 @@ void SoftwareRenderer::DrawRenderPassQuad(const RenderPassDrawQuad* quad) {
                                       SkShader::kClamp_TileMode, &content_mat);
   }
 
-  std::unique_ptr<DisplayResourceProvider::ScopedReadLockSoftware> mask_lock;
   if (quad->mask_resource_id()) {
-    mask_lock =
-        std::make_unique<DisplayResourceProvider::ScopedReadLockSoftware>(
-            resource_provider_, quad->mask_resource_id());
-
-    if (!mask_lock->valid())
+    DisplayResourceProvider::ScopedReadLockSkImage mask_lock(
+        resource_provider_, quad->mask_resource_id());
+    if (!mask_lock.valid())
       return;
-
-    const SkBitmap* mask = mask_lock->sk_bitmap();
 
     // Scale normalized uv rect into absolute texel coordinates.
     SkRect mask_rect = gfx::RectFToSkRect(
@@ -488,9 +512,9 @@ void SoftwareRenderer::DrawRenderPassQuad(const RenderPassDrawQuad* quad) {
     SkMatrix mask_mat;
     mask_mat.setRectToRect(mask_rect, dest_rect, SkMatrix::kFill_ScaleToFit);
 
-    current_paint_.setMaskFilter(SkShaderMaskFilter::Make(
-        SkShader::MakeBitmapShader(*mask, SkShader::kClamp_TileMode,
-                                   SkShader::kClamp_TileMode, &mask_mat)));
+    current_paint_.setMaskFilter(
+        SkShaderMaskFilter::Make(mask_lock.sk_image()->makeShader(
+            SkShader::kClamp_TileMode, SkShader::kClamp_TileMode, &mask_mat)));
   }
 
   // If we have a background filter shader, render its results first.

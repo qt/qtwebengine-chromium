@@ -6,21 +6,12 @@ import("//mojo/public/tools/bindings/mojom.gni")
 import("//testing/test.gni")
 
 mojom("interfaces") {
-  # The window service runs in the browser process for mus and in the
-  # ash_and_ui process for mash. Allow IPC serialization to be skipped for
-  # the common case of in-process mojo calls. This causes a ~130KB size
-  # increase on 64-bit Intel builds.
-  if (is_chromeos) {
-    support_lazy_serialization = true
-  }
-
   sources = [
     "accessibility_manager.mojom",
-    "clipboard.mojom",
     "event_injector.mojom",
     "event_matcher.mojom",
     "gpu.mojom",
-    "mus_constants.mojom",
+    "remoting_event_injector.mojom",
     "screen_provider.mojom",
     "user_activity_monitor.mojom",
     "video_detector.mojom",
@@ -49,10 +40,11 @@ mojom("interfaces") {
     "//services/ui/public/interfaces/ime",
     "//services/viz/public/interfaces",
     "//skia/public/interfaces",
-    "//ui/base/mojo:mojo_bindings",
+    "//ui/base/mojo",
     "//ui/display/mojo:interfaces",
     "//ui/events/mojo:interfaces",
     "//ui/gfx/geometry/mojo",
+    "//ui/gfx/image/mojo:interfaces",
     "//ui/gfx/mojo",
     "//ui/platform_window/mojo:interfaces",
   ]

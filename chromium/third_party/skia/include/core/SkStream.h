@@ -8,6 +8,7 @@
 #ifndef SkStream_DEFINED
 #define SkStream_DEFINED
 
+#include "../private/SkTo.h"
 #include "SkData.h"
 #include "SkRefCnt.h"
 #include "SkScalar.h"
@@ -37,9 +38,10 @@ class SkStreamMemory;
  *  no more data (at EOF or hit an error). The caller should *not* call again
  *  in hopes of fulfilling more of the request.
  */
-class SK_API SkStream : public SkNoncopyable {
+class SK_API SkStream {
 public:
     virtual ~SkStream() {}
+    SkStream() {}
 
     /**
      *  Attempts to open the specified file as a stream, returns nullptr on failure.
@@ -151,6 +153,11 @@ public:
 private:
     virtual SkStream* onDuplicate() const { return nullptr; }
     virtual SkStream* onFork() const { return nullptr; }
+
+    SkStream(SkStream&&) = delete;
+    SkStream(const SkStream&) = delete;
+    SkStream& operator=(SkStream&&) = delete;
+    SkStream& operator=(const SkStream&) = delete;
 };
 
 /** SkStreamRewindable is a SkStream for which rewind and duplicate are required. */
@@ -217,9 +224,10 @@ private:
     SkStreamMemory* onFork() const override = 0;
 };
 
-class SK_API SkWStream : SkNoncopyable {
+class SK_API SkWStream {
 public:
     virtual ~SkWStream();
+    SkWStream() {}
 
     /** Called to write bytes to a SkWStream. Returns true on success
         @param buffer the address of at least size bytes to be written to the stream
@@ -268,6 +276,12 @@ public:
      * 'value'.
      */
     static int SizeOfPackedUInt(size_t value);
+
+private:
+    SkWStream(SkWStream&&) = delete;
+    SkWStream(const SkWStream&) = delete;
+    SkWStream& operator=(SkWStream&&) = delete;
+    SkWStream& operator=(const SkWStream&) = delete;
 };
 
 class SK_API SkNullWStream : public SkWStream {

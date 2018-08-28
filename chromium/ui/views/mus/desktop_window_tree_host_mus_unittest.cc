@@ -4,9 +4,7 @@
 
 #include "ui/views/mus/desktop_window_tree_host_mus.h"
 
-#include "base/debug/stack_trace.h"
-#include "base/run_loop.h"
-
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
@@ -22,6 +20,7 @@
 #include "ui/aura/window.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/mus/mus_client.h"
 #include "ui/views/mus/screen_mus.h"
 #include "ui/views/test/views_test_base.h"
@@ -80,9 +79,7 @@ class ExpectsNullCursorClientDuringTearDown : public aura::WindowObserver {
     window_->AddObserver(this);
   }
 
-  ~ExpectsNullCursorClientDuringTearDown() override {
-    EXPECT_FALSE(window_);
-  }
+  ~ExpectsNullCursorClientDuringTearDown() override { EXPECT_FALSE(window_); }
 
  private:
   // aura::WindowObserver:
@@ -160,7 +157,8 @@ TEST_F(DesktopWindowTreeHostMusTest, Capture) {
                          ->capture_window());
 }
 
-TEST_F(DesktopWindowTreeHostMusTest, Deactivate) {
+// TODO(http://crbug.com/864614): Fails flakily in mus with ws2.
+TEST_F(DesktopWindowTreeHostMusTest, DISABLED_Deactivate) {
   std::unique_ptr<Widget> widget1(CreateWidget());
   widget1->Show();
 
@@ -260,8 +258,7 @@ TEST_F(DesktopWindowTreeHostMusTest, StackAtTop) {
   std::unique_ptr<Widget> widget2(CreateWidget());
   widget2->Show();
 
-  aura::test::ChangeCompletionWaiter waiter(
-      aura::ChangeType::REORDER, true);
+  aura::test::ChangeCompletionWaiter waiter(aura::ChangeType::REORDER, true);
   widget1->StackAtTop();
   waiter.Wait();
 
@@ -277,21 +274,20 @@ TEST_F(DesktopWindowTreeHostMusTest, StackAtTopAlreadyOnTop) {
   std::unique_ptr<Widget> widget2(CreateWidget());
   widget2->Show();
 
-  aura::test::ChangeCompletionWaiter waiter(
-      aura::ChangeType::REORDER, true);
+  aura::test::ChangeCompletionWaiter waiter(aura::ChangeType::REORDER, true);
   widget2->StackAtTop();
   waiter.Wait();
 }
 
-TEST_F(DesktopWindowTreeHostMusTest, StackAbove) {
+// TODO(http://crbug.com/864615): Fails consistently in mus with ws2.
+TEST_F(DesktopWindowTreeHostMusTest, DISABLED_StackAbove) {
   std::unique_ptr<Widget> widget1(CreateWidget(nullptr));
   widget1->Show();
 
   std::unique_ptr<Widget> widget2(CreateWidget(nullptr));
   widget2->Show();
 
-  aura::test::ChangeCompletionWaiter waiter(
-      aura::ChangeType::REORDER, true);
+  aura::test::ChangeCompletionWaiter waiter(aura::ChangeType::REORDER, true);
   widget1->StackAboveWidget(widget2.get());
   waiter.Wait();
 }
@@ -394,6 +390,134 @@ TEST_F(DesktopWindowTreeHostMusTest, GetWindowBoundsInScreen) {
   aura::WindowTreeHostMus::ForWindow(widget2.GetNativeWindow())
       ->set_display_id(kSecondDisplayId);
   EXPECT_EQ(gfx::Rect(800, 0, 100, 100), widget2.GetWindowBoundsInScreen());
+}
+
+// WidgetDelegate implementation that allows setting window-title and whether
+// the title should be shown.
+class WindowTitleWidgetDelegate : public WidgetDelegateView {
+ public:
+  WindowTitleWidgetDelegate() = default;
+  ~WindowTitleWidgetDelegate() override = default;
+
+  void set_window_title(const base::string16& title) { window_title_ = title; }
+  void set_should_show_window_title(bool value) {
+    should_show_window_title_ = value;
+  }
+
+  // WidgetDelegateView:
+  base::string16 GetWindowTitle() const override { return window_title_; }
+  bool ShouldShowWindowTitle() const override {
+    return should_show_window_title_;
+  }
+
+ private:
+  base::string16 window_title_;
+  bool should_show_window_title_ = true;
+
+  DISALLOW_COPY_AND_ASSIGN(WindowTitleWidgetDelegate);
+};
+
+TEST_F(DesktopWindowTreeHostMusTest, WindowTitle) {
+  // Owned by |widget|.
+  WindowTitleWidgetDelegate* delegate = new WindowTitleWidgetDelegate();
+  std::unique_ptr<Widget> widget(CreateWidget(delegate));
+  aura::Window* window = widget->GetNativeWindow()->GetRootWindow();
+
+  // Set the title in the delegate and verify it propagates.
+  const base::string16 title1 = base::ASCIIToUTF16("X");
+  delegate->set_window_title(title1);
+  widget->UpdateWindowTitle();
+  EXPECT_TRUE(window->GetProperty(aura::client::kTitleShownKey));
+  EXPECT_EQ(title1, window->GetTitle());
+
+  // Hiding the title should not change the title.
+  delegate->set_should_show_window_title(false);
+  widget->UpdateWindowTitle();
+  EXPECT_FALSE(window->GetProperty(aura::client::kTitleShownKey));
+  EXPECT_EQ(title1, window->GetTitle());
+
+  // Show the title again with a different value.
+  delegate->set_should_show_window_title(true);
+  const base::string16 title2 = base::ASCIIToUTF16("Z");
+  delegate->set_window_title(title2);
+  widget->UpdateWindowTitle();
+  EXPECT_TRUE(window->GetProperty(aura::client::kTitleShownKey));
+  EXPECT_EQ(title2, window->GetTitle());
+}
+
+TEST_F(DesktopWindowTreeHostMusTest, Accessibility) {
+  std::unique_ptr<Widget> widget = CreateWidget();
+  // Widget frame views do not participate in accessibility node hierarchy
+  // because the frame is provided by the window manager.
+  views::NonClientView* non_client_view = widget->non_client_view();
+  EXPECT_TRUE(non_client_view->GetViewAccessibility().is_ignored());
+  EXPECT_TRUE(
+      non_client_view->frame_view()->GetViewAccessibility().is_ignored());
+  EXPECT_TRUE(widget->client_view()->GetViewAccessibility().is_ignored());
+}
+
+// Used to ensure the visibility of the root window is changed before that of
+// the content window. This is necessary else close/hide animations end up
+// animating a hidden (black) window.
+class WidgetWindowVisibilityObserver : public aura::WindowObserver {
+ public:
+  explicit WidgetWindowVisibilityObserver(Widget* widget)
+      : content_window_(widget->GetNativeWindow()),
+        root_window_(content_window_->GetRootWindow()) {
+    EXPECT_NE(content_window_, root_window_);
+    content_window_->AddObserver(this);
+    root_window_->AddObserver(this);
+    EXPECT_TRUE(content_window_->IsVisible());
+    EXPECT_TRUE(root_window_->IsVisible());
+  }
+
+  ~WidgetWindowVisibilityObserver() override {
+    content_window_->RemoveObserver(this);
+    root_window_->RemoveObserver(this);
+  }
+
+  bool got_content_window_hidden() const { return got_content_window_hidden_; }
+
+  bool got_root_window_hidden() const { return got_root_window_hidden_; }
+
+ private:
+  // aura::WindowObserver:
+  void OnWindowVisibilityChanging(aura::Window* window, bool visible) override {
+    if (visible)
+      return;
+
+    if (!got_root_window_hidden_) {
+      EXPECT_EQ(window, root_window_);
+      got_root_window_hidden_ = true;
+    } else if (!got_content_window_hidden_) {
+      EXPECT_EQ(window, content_window_);
+      got_content_window_hidden_ = true;
+    }
+  }
+
+  aura::Window* content_window_;
+  aura::Window* root_window_;
+
+  // Set to true when |content_window_| is hidden. This is only checked after
+  // the |root_window_| is hidden.
+  bool got_content_window_hidden_ = false;
+
+  // Set to true when |root_window_| is hidden.
+  bool got_root_window_hidden_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(WidgetWindowVisibilityObserver);
+};
+
+// See comments above WidgetWindowVisibilityObserver for details on what this
+// verifies.
+TEST_F(DesktopWindowTreeHostMusTest,
+       HideChangesRootWindowVisibilityBeforeContentWindowVisibility) {
+  std::unique_ptr<Widget> widget(CreateWidget());
+  widget->Show();
+  WidgetWindowVisibilityObserver observer(widget.get());
+  widget->Close();
+  EXPECT_TRUE(observer.got_content_window_hidden());
+  EXPECT_TRUE(observer.got_root_window_hidden());
 }
 
 }  // namespace views

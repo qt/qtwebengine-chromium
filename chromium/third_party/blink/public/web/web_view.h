@@ -52,9 +52,9 @@ class WebRemoteFrame;
 class WebSettings;
 class WebString;
 class WebViewClient;
+class WebWidgetClient;
 struct WebDeviceEmulationParams;
 struct WebFloatPoint;
-struct WebMediaPlayerAction;
 struct WebPluginAction;
 struct WebPoint;
 struct WebWindowFeatures;
@@ -79,8 +79,8 @@ class WebView : protected WebWidget {
   using WebWidget::DidExitFullscreen;
   using WebWidget::BeginFrame;
   using WebWidget::UpdateAllLifecyclePhases;
-  using WebWidget::Paint;
-  using WebWidget::PaintIgnoringCompositing;
+  using WebWidget::PaintContent;
+  using WebWidget::PaintContentIgnoringCompositing;
   using WebWidget::LayoutAndPaintAsync;
   using WebWidget::CompositeAndReadbackAsync;
   using WebWidget::ThemeChanged;
@@ -112,6 +112,7 @@ class WebView : protected WebWidget {
   // client may be null, while PageVisibilityState defines the initial
   // visibility of the page.
   BLINK_EXPORT static WebView* Create(WebViewClient*,
+                                      WebWidgetClient*,
                                       mojom::PageVisibilityState,
                                       WebView* opener);
 
@@ -310,11 +311,6 @@ class WebView : protected WebWidget {
 
   // Media ---------------------------------------------------------------
 
-  // Performs the specified media player action on the node at the given
-  // location.
-  virtual void PerformMediaPlayerAction(const WebMediaPlayerAction&,
-                                        const WebPoint& location) = 0;
-
   // Performs the specified plugin action on the node at the given location.
   virtual void PerformPluginAction(const WebPluginAction&,
                                    const WebPoint& location) = 0;
@@ -427,8 +423,8 @@ class WebView : protected WebWidget {
 
   // Lifecycle state ------------------------------------------------------
 
-  // Freeze the page and all the local frames.
-  virtual void FreezePage() = 0;
+  // Freezes or unfreezes the page and all the local frames.
+  virtual void SetPageFrozen(bool frozen) = 0;
 
   // Testing functionality for TestRunner ---------------------------------
 

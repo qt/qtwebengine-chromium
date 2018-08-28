@@ -169,17 +169,17 @@ class CORE_EXPORT NGPhysicalFragment
   // with LegacyLayout.
   LayoutObject* GetLayoutObject() const { return layout_object_; }
 
-  // VisualRect of itself, not including contents, in the local coordinate.
-  NGPhysicalOffsetRect SelfVisualRect() const;
+  // InkOverflow of itself, not including contents, in the local coordinate.
+  NGPhysicalOffsetRect SelfInkOverflow() const;
 
-  // VisualRect of itself including contents, in the local coordinate.
-  NGPhysicalOffsetRect VisualRectWithContents() const;
+  // InkOverflow of itself including contents, in the local coordinate.
+  NGPhysicalOffsetRect InkOverflow(bool apply_clip = true) const;
 
   // Scrollable overflow. including contents, in the local coordinate.
   NGPhysicalOffsetRect ScrollableOverflow() const;
 
   // Unite visual rect to propagate to parent's ContentsVisualRect.
-  void PropagateContentsVisualRect(NGPhysicalOffsetRect*) const;
+  void PropagateContentsInkOverflow(NGPhysicalOffsetRect*) const;
 
   // Should only be used by the parent fragment's layout.
   void SetOffset(NGPhysicalOffset offset) {
@@ -211,6 +211,7 @@ class CORE_EXPORT NGPhysicalFragment
     DumpTextOffsets = 0x40,
     DumpSelfPainting = 0x80,
     DumpOverflow = 0x100,
+    DumpNodeName = 0x200,
     DumpAll = -1
   };
   typedef int DumpFlags;

@@ -58,7 +58,7 @@ CanvasRenderingContext::CanvasRenderingContext(
     color_params_.SetOpacityMode(kOpaque);
   }
 
-  if (!OriginTrials::lowLatencyCanvasEnabled(host->GetTopExecutionContext()))
+  if (!OriginTrials::LowLatencyCanvasEnabled(host->GetTopExecutionContext()))
     creation_attributes_.low_latency = false;
 
   // Make m_creationAttributes reflect the effective colorSpace and pixelFormat
@@ -98,16 +98,6 @@ WTF::String CanvasRenderingContext::PixelFormatAsString() const {
 void CanvasRenderingContext::Dispose() {
   if (finalize_frame_scheduled_) {
     Platform::Current()->CurrentThread()->RemoveTaskObserver(this);
-  }
-
-  if (Host() && Host()->GetTopExecutionContext() &&
-      Host()->GetTopExecutionContext()->IsWorkerGlobalScope()) {
-    WorkerAnimationFrameProvider* provider =
-        ToWorkerGlobalScope(Host()->GetTopExecutionContext())
-            ->GetAnimationFrameProvider();
-    if (provider) {
-      provider->RemoveContextToDispatch(this);
-    }
   }
 
   // HTMLCanvasElement and CanvasRenderingContext have a circular reference.
@@ -160,6 +150,9 @@ CanvasRenderingContext::ContextType CanvasRenderingContext::ContextTypeFromId(
     return kContextWebgl;
   if (id == "webgl2")
     return kContextWebgl2;
+  if (id == "webgl2-compute" &&
+      RuntimeEnabledFeatures::WebGL2ComputeContextEnabled())
+    return kContextWebgl2Compute;
   if (id == "bitmaprenderer")
     return kContextImageBitmap;
   if (id == "xrpresent")

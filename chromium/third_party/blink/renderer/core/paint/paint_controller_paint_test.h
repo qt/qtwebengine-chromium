@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
@@ -66,23 +67,24 @@ class PaintControllerPaintTestBase : public RenderingTest {
 
   const DisplayItemClient& ViewBackgroundClient() {
     if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
-      // With SPv1*, the document background uses the scrolling contents
+      // With SPv1, the document background uses the scrolling contents
       // layer as its DisplayItemClient.
       return *GetLayoutView().Layer()->GraphicsLayerBacking();
     }
     return GetLayoutView();
   }
 
-  void Commit() {
+  void CommitAndFinishCycle() {
     // Only root graphics layer is supported.
     RootPaintController().CommitNewDisplayItems();
+    RootPaintController().FinishCycle();
     GetDocument().View()->Lifecycle().AdvanceTo(DocumentLifecycle::kPaintClean);
   }
 
   void Paint(const IntRect* interest_rect = nullptr) {
     // Only root graphics layer is supported.
     if (PaintWithoutCommit(interest_rect))
-      Commit();
+      CommitAndFinishCycle();
   }
 
   bool DisplayItemListContains(const DisplayItemList& display_item_list,

@@ -34,10 +34,6 @@ bool WebContentsDelegate::ShouldTransferNavigation(
   return true;
 }
 
-bool WebContentsDelegate::IsPopupOrPanel(const WebContents* source) const {
-  return false;
-}
-
 bool WebContentsDelegate::CanOverscrollContent() const { return false; }
 
 bool WebContentsDelegate::ShouldSuppressDialogs(WebContents* source) {
@@ -165,11 +161,11 @@ content::ColorChooser* WebContentsDelegate::OpenColorChooser(
 void WebContentsDelegate::RequestMediaAccessPermission(
     WebContents* web_contents,
     const MediaStreamRequest& request,
-    const MediaResponseCallback& callback) {
+    MediaResponseCallback callback) {
   LOG(ERROR) << "WebContentsDelegate::RequestMediaAccessPermission: "
              << "Not supported.";
-  callback.Run(MediaStreamDevices(), MEDIA_DEVICE_NOT_SUPPORTED,
-               std::unique_ptr<MediaStreamUI>());
+  std::move(callback).Run(MediaStreamDevices(), MEDIA_DEVICE_NOT_SUPPORTED,
+                          std::unique_ptr<MediaStreamUI>());
 }
 
 bool WebContentsDelegate::CheckMediaAccessPermission(
@@ -188,11 +184,6 @@ std::string WebContentsDelegate::GetDefaultMediaDeviceID(
 }
 
 #if defined(OS_ANDROID)
-base::android::ScopedJavaLocalRef<jobject>
-WebContentsDelegate::GetContentVideoViewEmbedder() {
-  return base::android::ScopedJavaLocalRef<jobject>();
-}
-
 bool WebContentsDelegate::ShouldBlockMediaRequest(const GURL& url) {
   return false;
 }

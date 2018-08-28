@@ -33,12 +33,14 @@
 #include "base/optional.h"
 #include "base/unguessable_token.h"
 #include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/common/frame/user_activation_state.h"
+#include "third_party/blink/public/common/frame/user_activation_update_source.h"
+#include "third_party/blink/public/web/web_frame_load_type.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
 #include "third_party/blink/renderer/core/frame/frame_lifecycle.h"
 #include "third_party/blink/renderer/core/frame/frame_types.h"
 #include "third_party/blink/renderer/core/frame/frame_view.h"
-#include "third_party/blink/renderer/core/frame/user_activation_state.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_types.h"
 #include "third_party/blink/renderer/core/page/frame_tree.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action.h"
@@ -82,14 +84,25 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   virtual bool IsLocalFrame() const = 0;
   virtual bool IsRemoteFrame() const = 0;
 
-  virtual void Navigate(Document& origin_document,
-                        const KURL&,
-                        bool replace_current_item,
-                        UserGestureStatus) = 0;
-  // This version of Frame::navigate assumes the resulting navigation is not
-  // to be started on a timer. Use the method above in such cases.
+  // Asynchronously schedules a task to begin a navigation: this roughly
+  // corresponds to "queue a task to navigate the target browsing context to
+  // resource" in https://whatwg.org/C/links.html#following-hyperlinks.
+  //
+  // Note that there's currently an exception for same-origin same-document
+  // navigations: these are never scheduled and are always synchronously
+  // processed.
+  //
+  // TODO(dcheng): Note that despite the comment, most navigations in the spec
+  // are *not* currently queued. See https://github.com/whatwg/html/issues/3730.
+  // How this discussion is resolved will affect how https://crbug.com/848171 is
+  // eventually fixed.
+  virtual void ScheduleNavigation(Document& origin_document,
+                                  const KURL&,
+                                  bool replace_current_item,
+                                  UserGestureStatus) = 0;
+  // Synchronously begins a navigation.
   virtual void Navigate(const FrameLoadRequest&) = 0;
-  virtual void Reload(FrameLoadType, ClientRedirectPolicy) = 0;
+  virtual void Reload(WebFrameLoadType, ClientRedirectPolicy) = 0;
 
   // The base Detach() method must be the last line of overrides of Detach().
   virtual void Detach(FrameDetachType);
@@ -156,6 +169,9 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   // This should never be called from outside Frame or WebFrame.
   void NotifyUserActivationInLocalTree();
 
+  // This should never be called from outside Frame or WebFrame.
+  bool ConsumeTransientUserActivationInLocalTree();
+
   bool HasBeenActivated() const {
     return user_activation_state_.HasBeenActive();
   }
@@ -199,8 +215,11 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   //
   // The |checkIfMainThread| parameter determines if the token based gestures
   // (legacy code) must be used in a thread-safe manner.
-  static bool ConsumeTransientUserActivation(LocalFrame*,
-                                             bool checkIfMainThread = false);
+  static bool ConsumeTransientUserActivation(
+      LocalFrame*,
+      bool checkIfMainThread = false,
+      UserActivationUpdateSource update_source =
+          UserActivationUpdateSource::kRenderer);
 
   bool IsAttached() const {
     return lifecycle_.GetState() == FrameLifecycle::kAttached;
@@ -250,9 +269,8 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
   Member<FrameOwner> owner_;
   Member<DOMWindow> dom_window_;
 
-  // A LocalFrame is the primary "owner" of the activation state.  The state in
-  // a RemoteFrame serves as a cache for the corresponding LocalFrame state (to
-  // avoid double hops through the browser during reading).
+  // The user activation state of the current frame.  See
+  // FrameTreeNode::user_activation_state_ for details.
   UserActivationState user_activation_state_;
 
   bool has_received_user_gesture_before_nav_ = false;
@@ -279,7 +297,7 @@ class CORE_EXPORT Frame : public GarbageCollectedFinalized<Frame> {
 
   // Consumes and returns the transient user activation of current Frame, after
   // updating all ancestor/descendant frames.
-  bool ConsumeTransientUserActivation();
+  bool ConsumeTransientUserActivation(UserActivationUpdateSource update_source);
 
   Member<FrameClient> client_;
   const Member<WindowProxyManager> window_proxy_manager_;

@@ -119,6 +119,9 @@ class CPDF_RenderStatus {
                            const CFX_Matrix* pObj2Device,
                            const CPDF_Color* pColor,
                            bool bStroke);
+  bool ClipPattern(const CPDF_PageObject* pPageObj,
+                   const CFX_Matrix* pObj2Device,
+                   bool bStroke);
   bool SelectClipPath(const CPDF_PathObject* pPathObj,
                       const CFX_Matrix* pObj2Device,
                       bool bStroke);
@@ -149,7 +152,7 @@ class CPDF_RenderStatus {
                                       bool bBackAlphaRequired,
                                       int* left,
                                       int* top);
-  RetainPtr<CFX_DIBitmap> LoadSMask(const CPDF_Dictionary* pSMaskDict,
+  RetainPtr<CFX_DIBitmap> LoadSMask(CPDF_Dictionary* pSMaskDict,
                                     FX_RECT* pClipRect,
                                     const CFX_Matrix* pMatrix);
   // Optionally write the colorspace family value into |pCSFamily|.

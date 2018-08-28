@@ -7,6 +7,7 @@
 
 #include "third_party/blink/renderer/core/paint/paint_phase.h"
 #include "third_party/blink/renderer/core/style/shadow_data.h"
+#include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace blink {
@@ -24,30 +25,24 @@ class TableSectionPainter {
   TableSectionPainter(const LayoutTableSection& layout_table_section)
       : layout_table_section_(layout_table_section) {}
 
-  void Paint(const PaintInfo&, const LayoutPoint&);
-  void PaintCollapsedBorders(const PaintInfo&, const LayoutPoint&);
+  void Paint(const PaintInfo&);
+  void PaintCollapsedBorders(const PaintInfo&);
 
  private:
-  void PaintObject(const PaintInfo&, const LayoutPoint&);
+  void PaintObject(const PaintInfo&, const LayoutPoint& paint_offset);
 
   void PaintBoxDecorationBackground(const PaintInfo&,
                                     const LayoutPoint&,
                                     const CellSpan& dirtied_rows,
                                     const CellSpan& dirtied_columns);
-  void PaintBackgroundsBehindCell(const LayoutTableCell&,
-                                  const PaintInfo&,
-                                  const LayoutPoint&);
-  void PaintCell(const LayoutTableCell&, const PaintInfo&, const LayoutPoint&);
+  void PaintBackgroundsBehindCell(const LayoutTableCell&, const PaintInfo&);
+  void PaintCell(const LayoutTableCell&, const PaintInfo&);
 
-  enum ItemToPaint { kPaintCollapsedBorders, kPaintSection };
-  void PaintRepeatingHeaderGroup(const PaintInfo&,
-                                 const LayoutPoint&,
-                                 ItemToPaint);
-  void PaintRepeatingFooterGroup(const PaintInfo&,
-                                 const LayoutPoint&,
-                                 ItemToPaint);
-  void PaintSection(const PaintInfo&, const LayoutPoint&);
-  void PaintCollapsedSectionBorders(const PaintInfo&, const LayoutPoint&);
+  void PaintSection(const PaintInfo&);
+  void PaintCollapsedSectionBorders(const PaintInfo&);
+
+  LayoutRect TableAlignedRect(const PaintInfo& paint_info,
+                              const LayoutPoint& paint_offset);
 
   const LayoutTableSection& layout_table_section_;
 };

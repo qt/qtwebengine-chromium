@@ -57,14 +57,10 @@ static inline bool IsSimpleLengthPropertyID(CSSPropertyID property_id,
     case CSSPropertyScrollPaddingLeft:
     case CSSPropertyScrollPaddingRight:
     case CSSPropertyScrollPaddingTop:
-    case CSSPropertyWebkitLogicalWidth:
-    case CSSPropertyWebkitLogicalHeight:
-    case CSSPropertyWebkitMinLogicalWidth:
-    case CSSPropertyWebkitMinLogicalHeight:
-    case CSSPropertyWebkitPaddingAfter:
-    case CSSPropertyWebkitPaddingBefore:
-    case CSSPropertyWebkitPaddingEnd:
-    case CSSPropertyWebkitPaddingStart:
+    case CSSPropertyPaddingBlockEnd:
+    case CSSPropertyPaddingBlockStart:
+    case CSSPropertyPaddingInlineEnd:
+    case CSSPropertyPaddingInlineStart:
     case CSSPropertyShapeMargin:
     case CSSPropertyR:
     case CSSPropertyRx:
@@ -82,10 +78,10 @@ static inline bool IsSimpleLengthPropertyID(CSSPropertyID property_id,
     case CSSPropertyOffsetDistance:
     case CSSPropertyRight:
     case CSSPropertyTop:
-    case CSSPropertyWebkitMarginAfter:
-    case CSSPropertyWebkitMarginBefore:
-    case CSSPropertyWebkitMarginEnd:
-    case CSSPropertyWebkitMarginStart:
+    case CSSPropertyMarginBlockEnd:
+    case CSSPropertyMarginBlockStart:
+    case CSSPropertyMarginInlineEnd:
+    case CSSPropertyMarginInlineStart:
     case CSSPropertyX:
     case CSSPropertyY:
       accepts_negative_numbers = true;
@@ -174,10 +170,10 @@ static inline bool IsColorPropertyID(CSSPropertyID property_id) {
     case CSSPropertyOutlineColor:
     case CSSPropertyStopColor:
     case CSSPropertyStroke:
-    case CSSPropertyWebkitBorderAfterColor:
-    case CSSPropertyWebkitBorderBeforeColor:
-    case CSSPropertyWebkitBorderEndColor:
-    case CSSPropertyWebkitBorderStartColor:
+    case CSSPropertyBorderBlockEndColor:
+    case CSSPropertyBorderBlockStartColor:
+    case CSSPropertyBorderInlineEndColor:
+    case CSSPropertyBorderInlineStartColor:
     case CSSPropertyColumnRuleColor:
     case CSSPropertyWebkitTextEmphasisColor:
     case CSSPropertyWebkitTextFillColor:
@@ -572,10 +568,10 @@ bool CSSParserFastPaths::IsValidKeywordPropertyAndValue(
     case CSSPropertyBorderRightStyle:
     case CSSPropertyBorderBottomStyle:
     case CSSPropertyBorderLeftStyle:
-    case CSSPropertyWebkitBorderAfterStyle:
-    case CSSPropertyWebkitBorderBeforeStyle:
-    case CSSPropertyWebkitBorderEndStyle:
-    case CSSPropertyWebkitBorderStartStyle:
+    case CSSPropertyBorderBlockEndStyle:
+    case CSSPropertyBorderBlockStartStyle:
+    case CSSPropertyBorderInlineEndStyle:
+    case CSSPropertyBorderInlineStartStyle:
     case CSSPropertyColumnRuleStyle:
       return value_id >= CSSValueNone && value_id <= CSSValueDouble;
     case CSSPropertyBoxSizing:
@@ -641,7 +637,6 @@ bool CSSParserFastPaths::IsValidKeywordPropertyAndValue(
       return value_id == CSSValueVisible || value_id == CSSValueNone ||
              value_id == CSSValueAuto;
     case CSSPropertyOverflowWrap:
-    case CSSPropertyWordWrap:
       return value_id == CSSValueNormal || value_id == CSSValueBreakWord;
     case CSSPropertyOverflowX:
       return value_id == CSSValueVisible || value_id == CSSValueHidden ||
@@ -965,10 +960,10 @@ bool CSSParserFastPaths::IsKeywordPropertyID(CSSPropertyID property_id) {
     case CSSPropertyWebkitAppRegion:
     case CSSPropertyWebkitAppearance:
     case CSSPropertyBackfaceVisibility:
-    case CSSPropertyWebkitBorderAfterStyle:
-    case CSSPropertyWebkitBorderBeforeStyle:
-    case CSSPropertyWebkitBorderEndStyle:
-    case CSSPropertyWebkitBorderStartStyle:
+    case CSSPropertyBorderBlockEndStyle:
+    case CSSPropertyBorderBlockStartStyle:
+    case CSSPropertyBorderInlineEndStyle:
+    case CSSPropertyBorderInlineStartStyle:
     case CSSPropertyWebkitBoxAlign:
     case CSSPropertyWebkitBoxDecorationBreak:
     case CSSPropertyWebkitBoxDirection:
@@ -999,7 +994,6 @@ bool CSSParserFastPaths::IsKeywordPropertyID(CSSPropertyID property_id) {
     case CSSPropertyWebkitWritingMode:
     case CSSPropertyWhiteSpace:
     case CSSPropertyWordBreak:
-    case CSSPropertyWordWrap:
     case CSSPropertyWritingMode:
     case CSSPropertyScrollSnapStop:
       return true;

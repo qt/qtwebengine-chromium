@@ -31,9 +31,13 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_RTC_PEER_CONNECTION_HANDLER_H_
 #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_RTC_PEER_CONNECTION_HANDLER_H_
 
+#include "third_party/blink/public/platform/web_rtc_configuration.h"
 #include "third_party/blink/public/platform/web_rtc_ice_candidate.h"
+#include "third_party/blink/public/platform/web_rtc_rtp_transceiver.h"
 #include "third_party/blink/public/platform/web_rtc_stats.h"
 #include "third_party/blink/public/platform/web_vector.h"
+#include "third_party/webrtc/api/rtcerror.h"
+#include "third_party/webrtc/api/rtptransceiverinterface.h"
 
 namespace webrtc {
 enum class RTCErrorType;
@@ -61,7 +65,8 @@ class WebRTCPeerConnectionHandler {
   virtual ~WebRTCPeerConnectionHandler() = default;
 
   virtual bool Initialize(const WebRTCConfiguration&,
-                          const WebMediaConstraints&) = 0;
+                          const WebMediaConstraints&,
+                          WebRTCSdpSemantics original_sdp_semantics_value) = 0;
 
   virtual void CreateOffer(const WebRTCSessionDescriptionRequest&,
                            const WebMediaConstraints&) = 0;
@@ -96,14 +101,25 @@ class WebRTCPeerConnectionHandler {
   virtual WebRTCDataChannelHandler* CreateDataChannel(
       const WebString& label,
       const WebRTCDataChannelInit&) = 0;
-  // Adds the track to the peer connection, returning the resulting sender on
-  // success and null on failure.
-  virtual std::unique_ptr<WebRTCRtpSender> AddTrack(
+  virtual webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>>
+  AddTransceiverWithTrack(const WebMediaStreamTrack&,
+                          const webrtc::RtpTransceiverInit&) = 0;
+  virtual webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>>
+  AddTransceiverWithKind(
+      // webrtc::MediaStreamTrackInterface::kAudioKind or kVideoKind
+      std::string kind,
+      const webrtc::RtpTransceiverInit&) = 0;
+  // Adds the track to the peer connection, returning the resulting transceiver
+  // or error.
+  virtual webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>> AddTrack(
       const WebMediaStreamTrack&,
       const WebVector<WebMediaStream>&) = 0;
-  // Removes the sender, returning whether successful. On success, the sender's
-  // track must have been set to null.
-  virtual bool RemoveTrack(WebRTCRtpSender*) = 0;
+  // Removes the sender.
+  // In Plan B: Returns OK() with value nullptr on success. The sender's track
+  // must be nulled by the caller.
+  // In Unified Plan: Returns OK() with the updated transceiver state.
+  virtual webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>> RemoveTrack(
+      WebRTCRtpSender*) = 0;
   virtual void Stop() = 0;
 
   // Origin Trial - RtcPeerConnectionId

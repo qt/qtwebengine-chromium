@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/fxcrt/autorestorer.h"
 #include "core/fxcrt/cfx_memorystream.h"
 #include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_codepage.h"
@@ -138,7 +139,7 @@ bool GetAttributeLocalName(const WideStringView& wsAttributeName,
   WideString wsAttrName(wsAttributeName);
   auto pos = wsAttrName.Find(L':', 0);
   if (!pos.has_value()) {
-    wsLocalAttrName = wsAttrName;
+    wsLocalAttrName = std::move(wsAttrName);
     return false;
   }
   wsLocalAttrName = wsAttrName.Right(wsAttrName.GetLength() - pos.value() - 1);
@@ -254,7 +255,7 @@ void ConvertXMLToPlainText(CFX_XMLElement* pRootXMLNode, WideString& wsOutput) {
         if (IsStringAllWhitespace(wsText))
           continue;
 
-        wsOutput = wsText;
+        wsOutput = std::move(wsText);
         break;
       }
       default:
@@ -768,6 +769,12 @@ CXFA_Node* CXFA_DocumentParser::NormalLoader(CXFA_Node* pXFANode,
                                              CFX_XMLNode* pXMLDoc,
                                              XFA_PacketType ePacketID,
                                              bool bUseAttribute) {
+  constexpr const unsigned long kMaxExecuteRecursion = 1000;
+  if (m_ExecuteRecursionDepth > kMaxExecuteRecursion)
+    return nullptr;
+  AutoRestorer<unsigned long> restorer(&m_ExecuteRecursionDepth);
+  ++m_ExecuteRecursionDepth;
+
   bool bOneOfPropertyFound = false;
   for (CFX_XMLNode* pXMLChild = pXMLDoc->GetFirstChild(); pXMLChild;
        pXMLChild = pXMLChild->GetNextSibling()) {
@@ -1000,10 +1007,9 @@ void CXFA_DocumentParser::ParseDataGroup(CXFA_Node* pXFANode,
           pXFAMetaData->SetFlag(XFA_NodeFlag_Initialized);
         }
 
-        if (!bNeedValue) {
-          WideString wsNilName(L"xsi:nil");
-          pXMLElement->RemoveAttribute(wsNilName.c_str());
-        }
+        if (!bNeedValue)
+          pXMLElement->RemoveAttribute(L"xsi:nil");
+
         pXFANode->InsertChild(pXFAChild, nullptr);
         if (eNodeType == XFA_Element::DataGroup)
           ParseDataGroup(pXFAChild, pXMLElement, ePacketID);

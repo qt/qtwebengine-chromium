@@ -16,6 +16,7 @@
 #include "GrSurfaceContext.h"
 #include "GrTypesPriv.h"
 #include "GrXferProcessor.h"
+#include "SkCanvas.h"
 #include "SkRefCnt.h"
 #include "SkSurfaceProps.h"
 #include "text/GrTextUtils.h"
@@ -35,7 +36,6 @@ class GrShape;
 class GrStyle;
 class GrTextureProxy;
 struct GrUserStencilSettings;
-class SkDrawFilter;
 struct SkDrawShadowRec;
 struct SkIPoint;
 struct SkIRect;
@@ -63,17 +63,13 @@ public:
     //      we could use GrPaint except that
     //    * SkPaint->GrPaint conversion depends upon whether the glyphs are color or grayscale and
     //      this can vary within a text run.
-    virtual void drawText(const GrClip&, const SkPaint&, const SkMatrix& viewMatrix,
-                          const char text[], size_t byteLength, SkScalar x, SkScalar y,
-                          const SkIRect& clipBounds);
     virtual void drawPosText(const GrClip&, const SkPaint&, const SkMatrix& viewMatrix,
                              const char text[], size_t byteLength, const SkScalar pos[],
                              int scalarsPerPosition, const SkPoint& offset,
                              const SkIRect& clipBounds);
     virtual void drawTextBlob(const GrClip&, const SkPaint&,
                               const SkMatrix& viewMatrix, const SkTextBlob*,
-                              SkScalar x, SkScalar y,
-                              SkDrawFilter*, const SkIRect& clipBounds);
+                              SkScalar x, SkScalar y, const SkIRect& clipBounds);
 
     /**
      * Provides a perfomance hint that the render target's contents are allowed
@@ -150,7 +146,8 @@ public:
      */
     void drawTexture(const GrClip& clip, sk_sp<GrTextureProxy>, GrSamplerState::Filter, GrColor,
                      const SkRect& srcRect, const SkRect& dstRect, GrAA aa,
-                     const SkMatrix& viewMatrix, sk_sp<GrColorSpaceXform>);
+                     SkCanvas::SrcRectConstraint, const SkMatrix& viewMatrix,
+                     sk_sp<GrColorSpaceXform>);
 
     /**
      * Draw a roundrect using a paint.
@@ -220,12 +217,16 @@ public:
      * @param   paint            describes how to color pixels.
      * @param   viewMatrix       transformation matrix
      * @param   vertices         specifies the mesh to draw.
+     * @param   bones            bone deformation matrices.
+     * @param   boneCount        number of bone matrices.
      * @param   overridePrimType primitive type to draw. If NULL, derive prim type from vertices.
      */
     void drawVertices(const GrClip&,
                       GrPaint&& paint,
                       const SkMatrix& viewMatrix,
                       sk_sp<SkVertices> vertices,
+                      const SkMatrix bones[],
+                      int boneCount,
                       GrPrimitiveType* overridePrimType = nullptr);
 
     /**
@@ -406,10 +407,12 @@ private:
     friend class GrDefaultPathRenderer;              // for access to add[Mesh]DrawOp
     friend class GrStencilAndCoverPathRenderer;      // for access to add[Mesh]DrawOp
     friend class GrTessellatingPathRenderer;         // for access to add[Mesh]DrawOp
-    friend class GrCCAtlas;                          // for access to addDrawOp
+    friend class GrCCPerFlushResources;              // for access to addDrawOp
     friend class GrCoverageCountingPathRenderer;     // for access to addDrawOp
     // for a unit test
-    friend void test_draw_op(GrRenderTargetContext*, std::unique_ptr<GrFragmentProcessor>,
+    friend void test_draw_op(GrContext*,
+                             GrRenderTargetContext*,
+                             std::unique_ptr<GrFragmentProcessor>,
                              sk_sp<GrTextureProxy>);
 
     void internalClear(const GrFixedClip&, const GrColor, CanClearFullscreen);

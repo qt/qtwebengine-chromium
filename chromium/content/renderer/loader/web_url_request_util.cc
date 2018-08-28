@@ -30,6 +30,7 @@
 #include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_data.h"
+#include "third_party/blink/public/platform/web_http_body.h"
 #include "third_party/blink/public/platform/web_http_header_visitor.h"
 #include "third_party/blink/public/platform/web_mixed_content.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -291,6 +292,8 @@ int GetLoadFlagsForWebURLRequest(const WebURLRequest& request) {
     if (extra_data->is_for_no_state_prefetch())
       load_flags |= net::LOAD_PREFETCH;
   }
+  if (request.SupportsAsyncRevalidation())
+    load_flags |= net::LOAD_SUPPORT_ASYNC_REVALIDATION;
 
   return load_flags;
 }
@@ -389,12 +392,7 @@ scoped_refptr<network::ResourceRequestBody> GetRequestBodyForWebHTTPBody(
   while (httpBody.ElementAt(i++, element)) {
     switch (element.type) {
       case WebHTTPBody::Element::kTypeData:
-        element.data.ForEachSegment([&request_body](const char* segment,
-                                                    size_t segment_size,
-                                                    size_t segment_offset) {
-          request_body->AppendBytes(segment, static_cast<int>(segment_size));
-          return true;
-        });
+        request_body->AppendBytes(element.data.Copy().ReleaseVector());
         break;
       case WebHTTPBody::Element::kTypeFile:
         if (element.file_length == -1) {

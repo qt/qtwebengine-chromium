@@ -472,6 +472,14 @@ openssl req -x509 -newkey rsa:2048 \
   -extensions req_extensions_with_tls_feature \
   -nodes -config ee.cnf
 
+# Includes the canSignHttpExchangesDraft extension
+openssl req -x509 -newkey rsa:2048 \
+  -keyout out/can_sign_http_exchanges_draft_extension.key \
+  -out ../certificates/can_sign_http_exchanges_draft_extension.pem \
+  -days 365 \
+  -extensions req_extensions_with_can_sign_http_exchanges_draft \
+  -nodes -config ee.cnf
+
 # SHA-1 certificate issued by locally trusted CA
 openssl req \
   -config ../scripts/ee.cnf \

@@ -7,7 +7,7 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_frame_request_callback.h"
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
-#include "third_party/blink/renderer/modules/xr/xr_presentation_frame.h"
+#include "third_party/blink/renderer/modules/xr/xr_frame.h"
 #include "third_party/blink/renderer/modules/xr/xr_session.h"
 
 namespace blink {
@@ -33,9 +33,9 @@ void XRFrameRequestCallbackCollection::CancelCallback(CallbackId id) {
   }
 }
 
-void XRFrameRequestCallbackCollection::ExecuteCallbacks(
-    XRSession* session,
-    XRPresentationFrame* frame) {
+void XRFrameRequestCallbackCollection::ExecuteCallbacks(XRSession* session,
+                                                        double timestamp,
+                                                        XRFrame* frame) {
   // First, generate a list of callbacks to consider.  Callbacks registered from
   // this point on are considered only for the "next" frame, not this one.
   DCHECK(callbacks_to_invoke_.IsEmpty());
@@ -50,7 +50,7 @@ void XRFrameRequestCallbackCollection::ExecuteCallbacks(
 
     probe::AsyncTask async_task(context_, callback);
     probe::UserCallback probe(context_, "XRRequestFrame", AtomicString(), true);
-    callback->InvokeAndReportException(session, 0, frame);
+    callback->InvokeAndReportException(session, timestamp, frame);
   }
 
   callbacks_to_invoke_.clear();
@@ -59,13 +59,6 @@ void XRFrameRequestCallbackCollection::ExecuteCallbacks(
 void XRFrameRequestCallbackCollection::Trace(blink::Visitor* visitor) {
   visitor->Trace(callbacks_);
   visitor->Trace(context_);
-}
-
-void XRFrameRequestCallbackCollection::TraceWrappers(
-    blink::ScriptWrappableVisitor* visitor) const {
-  for (const auto& callback : callbacks_.Values()) {
-    visitor->TraceWrappers(callback);
-  }
 }
 
 }  // namespace blink

@@ -17,7 +17,11 @@
 #include "ui/gfx/native_pixmap.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/vsync_provider.h"
+#include "ui/gl/gl_surface_egl.h"
+#include "ui/ozone/common/egl_util.h"
+#include "ui/ozone/common/gl_ozone_egl.h"
 #include "ui/ozone/common/gl_ozone_osmesa.h"
+#include "ui/ozone/common/gl_surface_egl_readback.h"
 #include "ui/ozone/platform/headless/gl_surface_osmesa_png.h"
 #include "ui/ozone/platform/headless/headless_window.h"
 #include "ui/ozone/platform/headless/headless_window_manager.h"
@@ -77,7 +81,6 @@ class TestPixmap : public gfx::NativePixmap {
  public:
   explicit TestPixmap(gfx::BufferFormat format) : format_(format) {}
 
-  void* GetEGLClientBuffer() const override { return nullptr; }
   bool AreDmaBufFdsValid() const override { return false; }
   size_t GetDmaBufFdCount() const override { return 0; }
   int GetDmaBufFd(size_t plane) const override { return -1; }
@@ -93,7 +96,7 @@ class TestPixmap : public gfx::NativePixmap {
                             const gfx::Rect& display_bounds,
                             const gfx::RectF& crop_rect,
                             bool enable_blend,
-                            gfx::GpuFence* gpu_fence) override {
+                            std::unique_ptr<gfx::GpuFence> gpu_fence) override {
     return true;
   }
   gfx::NativePixmapHandle ExportHandle() override {
@@ -128,12 +131,44 @@ class GLOzoneOSMesaHeadless : public GLOzoneOSMesa {
   DISALLOW_COPY_AND_ASSIGN(GLOzoneOSMesaHeadless);
 };
 
+class GLOzoneEGLHeadless : public GLOzoneEGL {
+ public:
+  GLOzoneEGLHeadless() = default;
+  ~GLOzoneEGLHeadless() override = default;
+
+  // GLOzone:
+  scoped_refptr<gl::GLSurface> CreateViewGLSurface(
+      gfx::AcceleratedWidget window) override {
+    // TODO(kylechar): Extend GLSurface implementation to write to PNG file.
+    return gl::InitializeGLSurface(
+        base::MakeRefCounted<GLSurfaceEglReadback>());
+  }
+
+  scoped_refptr<gl::GLSurface> CreateOffscreenGLSurface(
+      const gfx::Size& size) override {
+    return gl::InitializeGLSurface(
+        base::MakeRefCounted<gl::PbufferGLSurfaceEGL>(size));
+  }
+
+ protected:
+  // GLOzoneEGL:
+  intptr_t GetNativeDisplay() override { return EGL_DEFAULT_DISPLAY; }
+
+  bool LoadGLES2Bindings(gl::GLImplementation implementation) override {
+    return LoadDefaultEGLGLES2Bindings(implementation);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(GLOzoneEGLHeadless);
+};
+
 }  // namespace
 
 HeadlessSurfaceFactory::HeadlessSurfaceFactory(base::FilePath base_path)
-    : base_path_(base_path) {
+    : base_path_(base_path),
+      osmesa_implementation_(std::make_unique<GLOzoneOSMesaHeadless>(this)),
+      swiftshader_implementation_(std::make_unique<GLOzoneEGLHeadless>()) {
   CheckBasePath();
-  osmesa_implementation_ = std::make_unique<GLOzoneOSMesaHeadless>(this);
 }
 
 HeadlessSurfaceFactory::~HeadlessSurfaceFactory() = default;
@@ -155,7 +190,8 @@ base::FilePath HeadlessSurfaceFactory::GetPathForWidget(
 
 std::vector<gl::GLImplementation>
 HeadlessSurfaceFactory::GetAllowedGLImplementations() {
-  return std::vector<gl::GLImplementation>{gl::kGLImplementationOSMesaGL};
+  return std::vector<gl::GLImplementation>{gl::kGLImplementationOSMesaGL,
+                                           gl::kGLImplementationSwiftShaderGL};
 }
 
 GLOzone* HeadlessSurfaceFactory::GetGLOzone(
@@ -163,6 +199,10 @@ GLOzone* HeadlessSurfaceFactory::GetGLOzone(
   switch (implementation) {
     case gl::kGLImplementationOSMesaGL:
       return osmesa_implementation_.get();
+    case gl::kGLImplementationEGLGLES2:
+    case gl::kGLImplementationSwiftShaderGL:
+      return swiftshader_implementation_.get();
+
     default:
       return nullptr;
   }

@@ -19,11 +19,9 @@ namespace tracing {
 
 class AgentRegistryTest : public testing::Test {
  public:
-  AgentRegistryTest() : service_ref_factory_(base::DoNothing()) {}
-
   void SetUp() override {
     message_loop_.reset(new base::MessageLoop());
-    registry_.reset(new AgentRegistry(&service_ref_factory_));
+    registry_ = std::make_unique<AgentRegistry>();
   }
 
   void TearDown() override {
@@ -36,16 +34,17 @@ class AgentRegistryTest : public testing::Test {
                      mojom::TraceDataType type,
                      bool supports_explicit_clock_sync) {
     registry_->RegisterAgent(std::move(agent), label, type,
-                             supports_explicit_clock_sync);
+                             supports_explicit_clock_sync,
+                             base::kNullProcessId);
   }
 
   void RegisterAgent(mojom::AgentPtr agent) {
     registry_->RegisterAgent(std::move(agent), "label",
-                             mojom::TraceDataType::ARRAY, false);
+                             mojom::TraceDataType::ARRAY, false,
+                             base::kNullProcessId);
   }
 
   std::unique_ptr<AgentRegistry> registry_;
-  service_manager::ServiceContextRefFactory service_ref_factory_;
 
  private:
   std::unique_ptr<base::MessageLoop> message_loop_;

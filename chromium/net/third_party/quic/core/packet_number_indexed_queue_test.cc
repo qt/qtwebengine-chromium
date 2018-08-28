@@ -6,12 +6,11 @@
 
 #include <limits>
 #include <map>
-#include <string>
 
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "net/third_party/quic/platform/api/quic_test.h"
 
-namespace net {
+namespace quic {
 namespace {
 
 class PacketNumberIndexedQueueTest : public QuicTest {
@@ -177,4 +176,4 @@ TEST_F(PacketNumberIndexedQueueTest, ConstGetter) {
 }
 
 }  // namespace
-}  // namespace net
+}  // namespace quic

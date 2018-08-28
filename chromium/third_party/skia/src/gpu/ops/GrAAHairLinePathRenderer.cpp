@@ -16,7 +16,9 @@
 #include "GrPathUtils.h"
 #include "GrProcessor.h"
 #include "GrResourceProvider.h"
+#include "GrShape.h"
 #include "GrSimpleMeshDrawOpHelper.h"
+#include "GrStyle.h"
 #include "SkGeometry.h"
 #include "SkMatrixPriv.h"
 #include "SkPoint3.h"
@@ -765,7 +767,8 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrPaint&& paint,
+    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+                                          GrPaint&& paint,
                                           const SkMatrix& viewMatrix,
                                           const SkPath& path,
                                           const GrStyle& style,
@@ -780,7 +783,8 @@ public:
         const SkStrokeRec& stroke = style.strokeRec();
         SkScalar capLength = SkPaint::kButt_Cap != stroke.getCap() ? hairlineCoverage * 0.5f : 0.0f;
 
-        return Helper::FactoryHelper<AAHairlineOp>(std::move(paint), newCoverage, viewMatrix, path,
+        return Helper::FactoryHelper<AAHairlineOp>(context, std::move(paint), newCoverage,
+                                                   viewMatrix, path,
                                                    devClipBounds, capLength, stencilSettings);
     }
 
@@ -819,10 +823,9 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
-                                GrPixelConfigIsClamped dstIsClamped) override {
-        return fHelper.xpRequiresDstTexture(caps, clip, dstIsClamped,
-                                            GrProcessorAnalysisCoverage::kSingleChannel, &fColor);
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+        return fHelper.xpRequiresDstTexture(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
+                                            &fColor);
     }
 
 private:
@@ -937,7 +940,7 @@ void AAHairlineOp::onPrepareDraws(Target* target) {
         return;
     }
 
-    const GrPipeline* pipeline = fHelper.makePipeline(target);
+    auto pipe = fHelper.makePipeline(target);
     // do lines first
     if (lineCount) {
         sk_sp<GrGeometryProcessor> lineGP;
@@ -948,7 +951,8 @@ void AAHairlineOp::onPrepareDraws(Target* target) {
             LocalCoords localCoords(fHelper.usesLocalCoords() ? LocalCoords::kUsePosition_Type
                                                               : LocalCoords::kUnused_Type);
             localCoords.fMatrix = geometryProcessorLocalM;
-            lineGP = GrDefaultGeoProcFactory::Make(color, Coverage::kAttribute_Type, localCoords,
+            lineGP = GrDefaultGeoProcFactory::Make(target->caps().shaderCaps(),
+                                                   color, Coverage::kAttribute_Type, localCoords,
                                                    *geometryProcessorViewM);
         }
 
@@ -957,17 +961,15 @@ void AAHairlineOp::onPrepareDraws(Target* target) {
         const GrBuffer* vertexBuffer;
         int firstVertex;
 
-        size_t vertexStride = lineGP->getVertexStride();
+        SkASSERT(sizeof(LineVertex) == lineGP->debugOnly_vertexStride());
         int vertexCount = kLineSegNumVertices * lineCount;
-        LineVertex* verts = reinterpret_cast<LineVertex*>(
-            target->makeVertexSpace(vertexStride, vertexCount, &vertexBuffer, &firstVertex));
+        LineVertex* verts = reinterpret_cast<LineVertex*>(target->makeVertexSpace(
+                sizeof(LineVertex), vertexCount, &vertexBuffer, &firstVertex));
 
         if (!verts|| !linesIndexBuffer) {
             SkDebugf("Could not allocate vertices\n");
             return;
         }
-
-        SkASSERT(lineGP->getVertexStride() == sizeof(LineVertex));
 
         for (int i = 0; i < lineCount; ++i) {
             add_line(&lines[2*i], toSrc, this->coverage(), &verts);
@@ -977,7 +979,7 @@ void AAHairlineOp::onPrepareDraws(Target* target) {
         mesh.setIndexedPatterned(linesIndexBuffer.get(), kIdxsPerLineSeg, kLineSegNumVertices,
                                  lineCount, kLineSegsNumInIdxBuffer);
         mesh.setVertexData(vertexBuffer, firstVertex);
-        target->draw(lineGP.get(), pipeline, mesh);
+        target->draw(lineGP.get(), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
     }
 
     if (quadCount || conicCount) {
@@ -1002,10 +1004,11 @@ void AAHairlineOp::onPrepareDraws(Target* target) {
 
         sk_sp<const GrBuffer> quadsIndexBuffer = get_quads_index_buffer(target->resourceProvider());
 
-        size_t vertexStride = sizeof(BezierVertex);
+        SkASSERT(sizeof(BezierVertex) == quadGP->debugOnly_vertexStride());
+        SkASSERT(sizeof(BezierVertex) == conicGP->debugOnly_vertexStride());
         int vertexCount = kQuadNumVertices * quadAndConicCount;
-        void *vertices = target->makeVertexSpace(vertexStride, vertexCount,
-                                                 &vertexBuffer, &firstVertex);
+        void* vertices = target->makeVertexSpace(sizeof(BezierVertex), vertexCount, &vertexBuffer,
+                                                 &firstVertex);
 
         if (!vertices || !quadsIndexBuffer) {
             SkDebugf("Could not allocate vertices\n");
@@ -1031,7 +1034,7 @@ void AAHairlineOp::onPrepareDraws(Target* target) {
             mesh.setIndexedPatterned(quadsIndexBuffer.get(), kIdxsPerQuad, kQuadNumVertices,
                                      quadCount, kQuadsNumInIdxBuffer);
             mesh.setVertexData(vertexBuffer, firstVertex);
-            target->draw(quadGP.get(), pipeline, mesh);
+            target->draw(quadGP.get(), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
             firstVertex += quadCount * kQuadNumVertices;
         }
 
@@ -1040,7 +1043,7 @@ void AAHairlineOp::onPrepareDraws(Target* target) {
             mesh.setIndexedPatterned(quadsIndexBuffer.get(), kIdxsPerQuad, kQuadNumVertices,
                                      conicCount, kQuadsNumInIdxBuffer);
             mesh.setVertexData(vertexBuffer, firstVertex);
-            target->draw(conicGP.get(), pipeline, mesh);
+            target->draw(conicGP.get(), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
         }
     }
 }
@@ -1057,7 +1060,7 @@ bool GrAAHairLinePathRenderer::onDrawPath(const DrawPathArgs& args) {
     SkPath path;
     args.fShape->asPath(&path);
     std::unique_ptr<GrDrawOp> op =
-            AAHairlineOp::Make(std::move(args.fPaint), *args.fViewMatrix, path,
+            AAHairlineOp::Make(args.fContext, std::move(args.fPaint), *args.fViewMatrix, path,
                                args.fShape->style(), devClipBounds, args.fUserStencilSettings);
     args.fRenderTargetContext->addDrawOp(*args.fClip, std::move(op));
     return true;
@@ -1072,8 +1075,9 @@ GR_DRAW_OP_TEST_DEFINE(AAHairlineOp) {
     SkPath path = GrTest::TestPath(random);
     SkIRect devClipBounds;
     devClipBounds.setEmpty();
-    return AAHairlineOp::Make(std::move(paint), viewMatrix, path, GrStyle::SimpleHairline(),
-                              devClipBounds, GrGetRandomStencil(random, context));
+    return AAHairlineOp::Make(context, std::move(paint), viewMatrix, path,
+                              GrStyle::SimpleHairline(), devClipBounds,
+                              GrGetRandomStencil(random, context));
 }
 
 #endif

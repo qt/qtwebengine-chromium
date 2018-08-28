@@ -6,16 +6,18 @@
  */
 
 #include "SkAtlasTextTarget.h"
+
 #include "GrClip.h"
 #include "GrContextPriv.h"
 #include "GrDrawingManager.h"
+#include "GrMemoryPool.h"
 #include "SkAtlasTextContext.h"
 #include "SkAtlasTextFont.h"
 #include "SkAtlasTextRenderer.h"
 #include "SkGr.h"
 #include "SkInternalAtlasTextContext.h"
 #include "ops/GrAtlasTextOp.h"
-#include "text/GrAtlasTextContext.h"
+#include "text/GrTextContext.h"
 
 static constexpr int kMaxBatchLookBack = 10;
 
@@ -76,10 +78,17 @@ static const GrColorSpaceInfo kColorSpaceInfo(nullptr, kRGBA_8888_GrPixelConfig)
 
 class SkInternalAtlasTextTarget : public GrTextUtils::Target, public SkAtlasTextTarget {
 public:
-    SkInternalAtlasTextTarget(sk_sp<SkAtlasTextContext> context, int width, int height,
+    SkInternalAtlasTextTarget(sk_sp<SkAtlasTextContext> context,
+                              int width, int height,
                               void* handle)
             : GrTextUtils::Target(width, height, kColorSpaceInfo)
-            , SkAtlasTextTarget(std::move(context), width, height, handle) {}
+            , SkAtlasTextTarget(std::move(context), width, height, handle) {
+        fOpMemoryPool = fContext->internal().grContext()->contextPriv().refOpMemoryPool();
+    }
+
+    ~SkInternalAtlasTextTarget() override {
+        this->deleteOps();
+    }
 
     /** GrTextUtils::Target overrides */
 
@@ -95,6 +104,10 @@ public:
         grPaint->setColor4f(SkColorToPremulGrColor4fLegacy(skPaint.getColor()));
     }
 
+    GrContext* getContext() override {
+        return this->context()->internal().grContext();
+    }
+
     /** SkAtlasTextTarget overrides */
 
     void drawText(const SkGlyphID[], const SkPoint[], int glyphCnt, uint32_t color,
@@ -102,10 +115,13 @@ public:
     void flush() override;
 
 private:
+    void deleteOps();
+
     uint32_t fColor;
     using SkAtlasTextTarget::fWidth;
     using SkAtlasTextTarget::fHeight;
     SkTArray<std::unique_ptr<GrAtlasTextOp>, true> fOps;
+    sk_sp<GrOpMemoryPool> fOpMemoryPool;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -135,7 +151,7 @@ void SkInternalAtlasTextTarget::drawText(const SkGlyphID glyphs[], const SkPoint
     SkSurfaceProps props(SkSurfaceProps::kUseDistanceFieldFonts_Flag, kUnknown_SkPixelGeometry);
     auto* grContext = this->context()->internal().grContext();
     auto bounds = SkIRect::MakeWH(fWidth, fHeight);
-    auto atlasTextContext = grContext->contextPriv().drawingManager()->getAtlasTextContext();
+    auto atlasTextContext = grContext->contextPriv().drawingManager()->getTextContext();
     size_t byteLength = sizeof(SkGlyphID) * glyphCnt;
     const SkScalar* pos = &positions->fX;
     atlasTextContext->drawPosText(grContext, this, GrNoClip(), paint, this->ctm(), props,
@@ -154,6 +170,7 @@ void SkInternalAtlasTextTarget::addDrawOp(const GrClip& clip, std::unique_ptr<Gr
     for (int i = 0; i < n; ++i) {
         GrAtlasTextOp* other = fOps.fromBack(i).get();
         if (other->combineIfPossible(op.get(), caps)) {
+            fOpMemoryPool->release(std::move(op));
             return;
         }
         if (GrRectsOverlap(op->bounds(), other->bounds())) {
@@ -164,19 +181,28 @@ void SkInternalAtlasTextTarget::addDrawOp(const GrClip& clip, std::unique_ptr<Gr
     fOps.emplace_back(std::move(op));
 }
 
+void SkInternalAtlasTextTarget::deleteOps() {
+    for (int i = 0; i < fOps.count(); ++i) {
+        if (fOps[i]) {
+            fOpMemoryPool->release(std::move(fOps[i]));
+        }
+    }
+    fOps.reset();
+}
+
 void SkInternalAtlasTextTarget::flush() {
     for (int i = 0; i < fOps.count(); ++i) {
         fOps[i]->executeForTextTarget(this);
     }
     this->context()->internal().flush();
-    fOps.reset();
+    this->deleteOps();
 }
 
 void GrAtlasTextOp::finalizeForTextTarget(uint32_t color, const GrCaps& caps) {
     for (int i = 0; i < fGeoCount; ++i) {
         fGeoData[i].fColor = color;
     }
-    this->finalize(caps, nullptr /* applied clip */, GrPixelConfigIsClamped::kNo);
+    this->finalize(caps, nullptr /* applied clip */);
 }
 
 void GrAtlasTextOp::executeForTextTarget(SkAtlasTextTarget* target) {
@@ -193,13 +219,13 @@ void GrAtlasTextOp::executeForTextTarget(SkAtlasTextTarget* target) {
     }
 
     for (int i = 0; i < fGeoCount; ++i) {
-        GrAtlasTextBlob::VertexRegenerator regenerator(
+        GrTextBlob::VertexRegenerator regenerator(
                 resourceProvider, fGeoData[i].fBlob, fGeoData[i].fRun, fGeoData[i].fSubRun,
                 fGeoData[i].fViewMatrix, fGeoData[i].fX, fGeoData[i].fY, fGeoData[i].fColor,
                 &context, glyphCache, atlasManager, &autoGlyphCache);
         bool done = false;
         while (!done) {
-            GrAtlasTextBlob::VertexRegenerator::Result result;
+            GrTextBlob::VertexRegenerator::Result result;
             if (!regenerator.regenerate(&result)) {
                 break;
             }

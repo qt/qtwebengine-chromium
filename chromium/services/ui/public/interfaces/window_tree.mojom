@@ -7,7 +7,7 @@ module ui.mojom;
 import "mojo/public/mojom/base/unguessable_token.mojom";
 import "services/ui/public/interfaces/cursor/cursor.mojom";
 import "services/ui/public/interfaces/event_matcher.mojom";
-import "services/ui/public/interfaces/mus_constants.mojom";
+import "services/ui/public/interfaces/screen_provider.mojom";
 import "services/ui/public/interfaces/window_manager.mojom";
 import "services/ui/public/interfaces/window_manager_constants.mojom";
 import "services/ui/public/interfaces/window_tree_constants.mojom";
@@ -15,11 +15,11 @@ import "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom";
 import "services/viz/public/interfaces/compositing/frame_sink_id.mojom";
 import "services/viz/public/interfaces/compositing/local_surface_id.mojom";
 import "services/viz/public/interfaces/compositing/surface_info.mojom";
-import "skia/public/interfaces/bitmap.mojom";
 import "ui/base/mojo/ui_base_types.mojom";
 import "ui/events/mojo/event.mojom";
 import "ui/events/mojo/event_constants.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
+import "ui/gfx/image/mojo/image.mojom";
 import "ui/gfx/mojo/transform.mojom";
 import "ui/platform_window/mojo/text_input_state.mojom";
 
@@ -276,6 +276,8 @@ interface WindowTree {
   // 4. Client A receives OnEmbedFromToken() with the token from step 1.
   //
   // |window_id| is the id used for the window once EmbedUsingToken() is called.
+  // More specifically, when OnEmbedFromToken() is called |window_id| is the id
+  // of the window identified in the WindowData.
   ScheduleEmbedForExistingClient(uint32 window_id) => (
       mojo_base.mojom.UnguessableToken token);
 
@@ -320,7 +322,9 @@ interface WindowTree {
   DeactivateWindow(uint64 window_id);
 
   // Stacks the window |above_id| above |below_id|. These two windows must
-  // share the same parent.
+  // share the same parent. This function is intended for use with top-levels
+  // only. For non-top-levels, use ReorderWindow().
+  // TODO(sky): unify this and ReorderWindow(). https://crbug.com/850133.
   StackAbove(uint32 change_id, uint64 above_id, uint64 below_id);
 
   // Stacks the window above all sibling windows.
@@ -355,14 +359,11 @@ interface WindowTree {
   // an image to hold behind the cursor which represents the data on the
   // clipboard. We send this during the start of the drag because most views
   // clients will try to read all this data on first entry.
-  //
-  // TODO(erg): SkBitmap is the wrong data type for the drag image; we should
-  // be passing ImageSkias once http://crbug.com/655874 is implemented.
   PerformDragDrop(uint32 change_id,
                   uint64 source_window_id,
                   gfx.mojom.Point screen_location,
                   map<string, array<uint8>> drag_data,
-                  skia.mojom.Bitmap? drag_image,
+                  gfx.mojom.ImageSkia? drag_image,
                   gfx.mojom.Vector2d drag_image_offset,
                   uint32 drag_operation,
                   PointerKind source);
@@ -412,8 +413,9 @@ interface WindowTreeClient {
   // change.
   OnCaptureChanged(uint64 new_capture, uint64 old_capture);
 
-  // This is called after the client calls Embed() with |window|.
-  // |frame_sink_id| gives the new FrameSinkId of |window|.
+  // This is called on the client that initiated a call to Embed(), and informs
+  // the owner (embedder) of the new FrameSinkId of the window (embedding
+  // results in changing the FrameSinkId).
   OnFrameSinkIdAllocated(uint64 window, viz.mojom.FrameSinkId frame_sink_id);
 
   // Called in response to NewTopLevelWindow() successfully completing.
@@ -595,6 +597,10 @@ interface WindowTreeClient {
 
   // See description of WindowManager for details.
   GetWindowManager(associated WindowManager& internal);
+
+  // Requests the ScreenProviderObserver from the client. See
+  // ScreenProviderObserver for details.
+  GetScreenProviderObserver(associated ScreenProviderObserver& observer);
 };
 
 // Mus provides this interface as a way for clients to connect and obtain a

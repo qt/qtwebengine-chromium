@@ -4,15 +4,14 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/script_custom_element_definition_builder.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_custom_element_definition.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding_macros.h"
 
@@ -47,13 +46,13 @@ bool ScriptCustomElementDefinitionBuilder::CheckConstructorIntrinsics() {
 }
 
 bool ScriptCustomElementDefinitionBuilder::CheckConstructorNotRegistered() {
-  if (!ScriptCustomElementDefinition::ForConstructor(script_state_.get(),
-                                                     registry_, constructor_))
+  if (!ScriptCustomElementDefinition::ForConstructor(script_state_, registry_,
+                                                     constructor_))
     return true;
 
   // Constructor is already registered.
   exception_state_.ThrowDOMException(
-      kNotSupportedError,
+      DOMExceptionCode::kNotSupportedError,
       "this constructor has already been used with this registry");
   return false;
 }
@@ -157,7 +156,7 @@ CustomElementDefinition* ScriptCustomElementDefinitionBuilder::Build(
     const CustomElementDescriptor& descriptor,
     CustomElementDefinition::Id id) {
   return ScriptCustomElementDefinition::Create(
-      script_state_.get(), registry_, descriptor, id, constructor_,
+      script_state_, registry_, descriptor, id, constructor_,
       connected_callback_, disconnected_callback_, adopted_callback_,
       attribute_changed_callback_, std::move(observed_attributes_),
       default_style_sheet_);

@@ -10,10 +10,10 @@
 
 namespace {
 
-const char kJsScreenPath[] = "AssistantValuePropScreen";
+constexpr char kJsScreenPath[] = "AssistantValuePropScreen";
 
-constexpr const char kUserActionSkipPressed[] = "skip-pressed";
-constexpr const char kUserActionNextPressed[] = "next-pressed";
+constexpr char kUserActionSkipPressed[] = "skip-pressed";
+constexpr char kUserActionNextPressed[] = "next-pressed";
 
 }  // namespace
 
@@ -32,14 +32,15 @@ void ValuePropScreenHandler::DeclareLocalizedValues(
   builder->Add("locale", g_browser_process->GetApplicationLocale());
   // TODO(updowndota) Replace this with new string constants.
   // Use string constant for old flow for now before we have final UX.
-  builder->Add("valuePropLoading", IDS_VOICE_INTERACTION_VALUE_PROP_LOADING);
-  builder->Add("valuePropLoadErrorTitle",
+  builder->Add("assistantOptinLoading",
+               IDS_VOICE_INTERACTION_VALUE_PROP_LOADING);
+  builder->Add("assistantOptinLoadErrorTitle",
                IDS_VOICE_INTERACTION_VALUE_PROP_LOAD_ERROR_TITLE);
-  builder->Add("valuePropLoadErrorMessage",
+  builder->Add("assistantOptinLoadErrorMessage",
                IDS_VOICE_INTERACTION_VALUE_PROP_LOAD_ERROR_MESSAGE);
-  builder->Add("valuePropRetryButton",
+  builder->Add("assistantOptinRetryButton",
                IDS_VOICE_INTERACTION_VALUE_PROP_RETRY_BUTTON);
-  builder->Add("valuePropMoreButton",
+  builder->Add("assistantOptinMoreButton",
                IDS_VOICE_INTERACTION_VALUE_PROP_MORE_BUTTION);
   builder->Add("back", IDS_EULA_BACK_BUTTON);
   builder->Add("next", IDS_EULA_NEXT_BUTTON);

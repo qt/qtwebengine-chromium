@@ -451,7 +451,7 @@ GLuint GLHelper::CopyTextureToImpl::EncodeTextureAsGrayscale(
 
   helper_->InitScalerImpl();
   const std::unique_ptr<ScalerInterface> planerizer =
-      helper_->scaler_impl_.get()->CreateGrayscalePlanerizer(
+      helper_->scaler_impl_->CreateGrayscalePlanerizer(
           false, vertically_flip_texture, swizzle);
   planerizer->Scale(src_texture, src_size, gfx::Vector2dF(), dst_texture,
                     gfx::Rect(*encoded_texture_size));
@@ -878,7 +878,6 @@ void GLHelper::WaitSyncToken(const gpu::SyncToken& sync_token) {
 gpu::MailboxHolder GLHelper::ProduceMailboxHolderFromTexture(
     GLuint texture_id) {
   gpu::Mailbox mailbox;
-  gl_->GenMailboxCHROMIUM(mailbox.name);
   gl_->ProduceTextureDirectCHROMIUM(texture_id, mailbox.name);
 
   gpu::SyncToken sync_token;

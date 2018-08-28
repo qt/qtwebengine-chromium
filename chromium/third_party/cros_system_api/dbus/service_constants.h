@@ -26,6 +26,7 @@
 #include "smbprovider/dbus-constants.h"
 #include "update_engine/dbus-constants.h"
 #include "vm_applications/dbus-constants.h"
+#include "vm_cicerone/dbus-constants.h"
 #include "vm_concierge/dbus-constants.h"
 
 namespace dbus {
@@ -204,6 +205,7 @@ const char kMediaPerceptionInterface[] = "org.chromium.MediaPerception";
 const char kStateFunction[] = "State";
 const char kGetDiagnosticsFunction[] = "GetDiagnostics";
 const char kDetectionSignal[] = "MediaPerceptionDetection";
+const char kBootstrapMojoConnection[] = "BootstrapMojoConnection";
 
 }  // namespace media_perception
 
@@ -390,6 +392,7 @@ const char kDisconnectProfile[] = "DisconnectProfile";
 const char kPair[] = "Pair";
 const char kCancelPairing[] = "CancelPairing";
 const char kGetServiceRecords[] = "GetServiceRecords";
+const char kExecuteWrite[] = "ExecuteWrite";
 
 // Bluetooth Device properties.
 const char kAddressProperty[] = "Address";
@@ -450,13 +453,16 @@ const char kReadValue[] = "ReadValue";
 const char kWriteValue[] = "WriteValue";
 const char kStartNotify[] = "StartNotify";
 const char kStopNotify[] = "StopNotify";
+const char kPrepareWriteValue[] = "PrepareWriteValue";
 
 // Bluetooth GATT Characteristic signals.
 const char kValueUpdatedSignal[] = "ValueUpdated";
 
-// Possible keys for option dict used in ReadValue and WriteValue.
+// Possible keys for option dict used in ReadValue, WriteValue and
+// PrepareWriteValue.
 const char kOptionOffset[] = "offset";
 const char kOptionDevice[] = "device";
+const char kOptionHasSubsequentWrite[] = "has-subsequent-write";
 
 // Bluetooth GATT Characteristic properties.
 const char kUUIDProperty[] = "UUID";
@@ -481,6 +487,15 @@ const char kFlagEncryptRead[] = "encrypt-read";
 const char kFlagEncryptWrite[] = "encrypt-write";
 const char kFlagEncryptAuthenticatedRead[] = "encrypt-authenticated-read";
 const char kFlagEncryptAuthenticatedWrite[] = "encrypt-authenticated-write";
+const char kFlagPermissionRead[] = "permission-read";
+const char kFlagPermissionWrite[] = "permission-write";
+const char kFlagPermissionEncryptRead[] = "permission-encrypt-read";
+const char kFlagPermissionEncryptWrite[] = "permission-encrypt-write";
+const char kFlagPermissionAuthenticatedRead[] = "permission-authenticated-read";
+const char kFlagPermissionAuthenticatedWrite[] =
+    "permission-authenticated-write";
+const char kFlagPermissionSecureRead[] = "permission-secure-read";
+const char kFlagPermissionSecureWrite[] = "permission-secure-write";
 }  // namespace bluetooth_gatt_characteristic
 
 namespace bluetooth_gatt_descriptor {
@@ -1002,6 +1017,7 @@ const char kGetNumberOfActiveInputStreams[] = "GetNumberOfActiveInputStreams";
 const char kGetNumberOfActiveOutputStreams[] = "GetNumberOfActiveOutputStreams";
 const char kIsAudioOutputActive[] = "IsAudioOutputActive";
 const char kSetGlobalOutputChannelRemix[] = "SetGlobalOutputChannelRemix";
+const char kGetSystemAecSupported[] = "GetSystemAecSupported";
 
 // Names of properties returned by GetNodes()
 const char kIsInputProperty[] = "IsInput";
@@ -1087,6 +1103,8 @@ constexpr char kMlServicePath[] = "/org/chromium/Ml";
 constexpr char kMlInterfaceName[] = "org.chromium.Ml";
 // Methods
 constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
+// Token identifying the primordial Mojo pipe passed to BootstrapMojoConnection.
+constexpr char kBootstrapMojoConnectionChannelToken[] = "ml-service-bootstrap";
 }  // namespace ml
 
 namespace virtual_file_provider {

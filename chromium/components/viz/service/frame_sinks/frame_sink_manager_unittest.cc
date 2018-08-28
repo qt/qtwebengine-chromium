@@ -12,6 +12,7 @@
 #include "components/viz/common/constants.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
+#include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 #include "components/viz/test/begin_frame_source_test.h"
 #include "components/viz/test/compositor_frame_helpers.h"
@@ -55,7 +56,9 @@ struct RootCompositorFrameSinkData {
 class FrameSinkManagerTest : public testing::Test {
  public:
   FrameSinkManagerTest()
-      : manager_(kDefaultActivationDeadlineInFrames, &display_provider_) {}
+      : manager_(&shared_bitmap_manager_,
+                 kDefaultActivationDeadlineInFrames,
+                 &display_provider_) {}
   ~FrameSinkManagerTest() override = default;
 
   std::unique_ptr<CompositorFrameSinkSupport> CreateCompositorFrameSinkSupport(
@@ -81,9 +84,13 @@ class FrameSinkManagerTest : public testing::Test {
 
     // Make sure test cleans up all [Root]CompositorFrameSinkImpls.
     EXPECT_TRUE(manager_.support_map_.empty());
+
+    // Make sure test has invalidated all registered FrameSinkIds.
+    EXPECT_TRUE(manager_.frame_sink_data_.empty());
   }
 
  protected:
+  ServerSharedBitmapManager shared_bitmap_manager_;
   TestDisplayProvider display_provider_;
   FrameSinkManagerImpl manager_;
 };
@@ -429,6 +436,19 @@ TEST_F(FrameSinkManagerTest, EvictSurfaces) {
   manager_.surface_manager()->GarbageCollectSurfaces();
   EXPECT_FALSE(manager_.surface_manager()->GetSurfaceForId(surface_id1));
   EXPECT_FALSE(manager_.surface_manager()->GetSurfaceForId(surface_id2));
+}
+
+// Verify that setting debug label works and that debug labels are cleared when
+// FrameSinkId is invalidated.
+TEST_F(FrameSinkManagerTest, DebugLabel) {
+  const std::string label = "Test Label";
+
+  manager_.RegisterFrameSinkId(kFrameSinkIdA);
+  manager_.SetFrameSinkDebugLabel(kFrameSinkIdA, label);
+  EXPECT_EQ(label, manager_.GetFrameSinkDebugLabel(kFrameSinkIdA));
+
+  manager_.InvalidateFrameSinkId(kFrameSinkIdA);
+  EXPECT_EQ("", manager_.GetFrameSinkDebugLabel(kFrameSinkIdA));
 }
 
 namespace {

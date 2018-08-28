@@ -17,7 +17,6 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "build/build_config.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/cert/cert_verifier.h"
@@ -37,7 +36,6 @@
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 
 namespace base {
-class FilePath;
 namespace trace_event {
 class ProcessMemoryDump;
 }
@@ -53,6 +51,7 @@ class CertVerifier;
 class CTVerifier;
 class SSLCertRequestInfo;
 class SSLInfo;
+class SSLKeyLogger;
 
 using TokenBindingSignatureMap =
     base::MRUCache<std::pair<TokenBindingType, std::string>,
@@ -76,11 +75,9 @@ class SSLClientSocketImpl : public SSLClientSocket,
     return ssl_session_cache_shard_;
   }
 
-#if !defined(OS_NACL)
-  // Log SSL key material to |path|. Must be called before any SSLClientSockets
-  // are created.
-  static void SetSSLKeyLogFile(const base::FilePath& path);
-#endif
+  // Log SSL key material to |logger|. Must be called before any
+  // SSLClientSockets are created.
+  static void SetSSLKeyLogger(std::unique_ptr<SSLKeyLogger> logger);
 
   // SSLSocket implementation.
   int ExportKeyingMaterial(const base::StringPiece& label,
@@ -92,6 +89,7 @@ class SSLClientSocketImpl : public SSLClientSocket,
   // StreamSocket implementation.
   int Connect(CompletionOnceCallback callback) override;
   void Disconnect() override;
+  int ConfirmHandshake(CompletionOnceCallback callback) override;
   bool IsConnected() const override;
   bool IsConnectedAndIdle() const override;
   int GetPeerAddress(IPEndPoint* address) const override;
@@ -211,6 +209,9 @@ class SSLClientSocketImpl : public SSLClientSocket,
 
   void OnPrivateKeyComplete(Error error, const std::vector<uint8_t>& signature);
 
+  // Called from the BoringSSL info callback. (See |SSL_CTX_set_info_callback|.)
+  void InfoCallback(int type, int value);
+
   // Called whenever BoringSSL processes a protocol message.
   void MessageCallback(int is_write,
                        int content_type,
@@ -309,6 +310,9 @@ class SSLClientSocketImpl : public SSLClientSocket,
     STATE_VERIFY_CERT_COMPLETE,
   };
   State next_handshake_state_;
+
+  // True if we are currently confirming the handshake.
+  bool in_confirm_handshake_;
 
   // True if the socket has been disconnected.
   bool disconnected_;

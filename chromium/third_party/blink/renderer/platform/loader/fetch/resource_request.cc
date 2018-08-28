@@ -28,7 +28,9 @@
 
 #include <memory>
 
+#include "base/unguessable_token.h"
 #include "third_party/blink/public/platform/web_url_request.h"
+#include "third_party/blink/renderer/platform/network/encoded_form_data.h"
 #include "third_party/blink/renderer/platform/network/http_names.h"
 #include "third_party/blink/renderer/platform/network/network_utils.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -36,7 +38,8 @@
 
 namespace blink {
 
-double ResourceRequest::default_timeout_interval_ = INT_MAX;
+base::TimeDelta ResourceRequest::default_timeout_interval_ =
+    base::TimeDelta::Max();
 
 ResourceRequest::ResourceRequest() : ResourceRequest(NullURL()) {}
 
@@ -52,11 +55,11 @@ ResourceRequest::ResourceRequest(const KURL& url)
       report_upload_progress_(false),
       report_raw_headers_(false),
       has_user_gesture_(false),
-      download_to_file_(false),
       download_to_blob_(false),
       use_stream_on_response_(false),
       keepalive_(false),
       should_reset_app_cache_(false),
+      allow_stale_response_(false),
       cache_mode_(mojom::FetchCacheMode::kDefault),
       skip_service_worker_(false),
       priority_(ResourceLoadPriority::kLowest),
@@ -75,13 +78,9 @@ ResourceRequest::ResourceRequest(const KURL& url)
       did_set_http_referrer_(false),
       check_for_browser_side_navigation_(true),
       was_discarded_(false),
-      ui_start_time_(0),
       is_external_request_(false),
       cors_preflight_policy_(
           network::mojom::CORSPreflightPolicy::kConsiderPreflight),
-      is_same_document_navigation_(false),
-      input_perf_metric_report_policy_(
-          InputToLoadPerfMetricReportPolicy::kNoReport),
       redirect_status_(RedirectStatus::kNoRedirect) {}
 
 ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
@@ -98,7 +97,6 @@ ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
   SetAllowStoredCredentials(data->allow_stored_credentials_);
   SetReportUploadProgress(data->report_upload_progress_);
   SetHasUserGesture(data->has_user_gesture_);
-  SetDownloadToFile(data->download_to_file_);
   SetDownloadToBlob(data->download_to_blob_);
   SetUseStreamOnResponse(data->use_stream_on_response_);
   SetKeepalive(data->keepalive_);
@@ -119,17 +117,19 @@ ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
   referrer_policy_ = data->referrer_policy_;
   did_set_http_referrer_ = data->did_set_http_referrer_;
   check_for_browser_side_navigation_ = data->check_for_browser_side_navigation_;
-  ui_start_time_ = data->ui_start_time_;
   is_external_request_ = data->is_external_request_;
   cors_preflight_policy_ = data->cors_preflight_policy_;
-  input_perf_metric_report_policy_ = data->input_perf_metric_report_policy_;
   redirect_status_ = data->redirect_status_;
   suggested_filename_ = data->suggested_filename_;
   is_ad_resource_ = data->is_ad_resource_;
   SetInitiatorCSP(data->navigation_csp_);
+  upgrade_if_insecure_ = data->upgrade_if_insecure_;
+  devtools_token_ = data->devtools_token_;
 }
 
 ResourceRequest::ResourceRequest(const ResourceRequest&) = default;
+
+ResourceRequest::~ResourceRequest() = default;
 
 ResourceRequest& ResourceRequest::operator=(const ResourceRequest&) = default;
 
@@ -152,7 +152,6 @@ std::unique_ptr<ResourceRequest> ResourceRequest::CreateRedirectRequest(
   request->SetRedirectStatus(RedirectStatus::kFollowedRedirect);
 
   // Copy from parameters for |this|.
-  request->SetDownloadToFile(DownloadToFile());
   request->SetDownloadToBlob(DownloadToBlob());
   request->SetUseStreamOnResponse(UseStreamOnResponse());
   request->SetRequestContext(GetRequestContext());
@@ -171,6 +170,7 @@ std::unique_ptr<ResourceRequest> ResourceRequest::CreateRedirectRequest(
   if (IsAdResource())
     request->SetIsAdResource();
   request->SetInitiatorCSP(GetInitiatorCSP());
+  request->SetUpgradeIfInsecure(UpgradeIfInsecure());
 
   return request;
 }
@@ -194,7 +194,6 @@ std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
   data->allow_stored_credentials_ = allow_stored_credentials_;
   data->report_upload_progress_ = report_upload_progress_;
   data->has_user_gesture_ = has_user_gesture_;
-  data->download_to_file_ = download_to_file_;
   data->download_to_blob_ = download_to_blob_;
   data->use_stream_on_response_ = use_stream_on_response_;
   data->keepalive_ = keepalive_;
@@ -215,15 +214,15 @@ std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
   data->referrer_policy_ = referrer_policy_;
   data->did_set_http_referrer_ = did_set_http_referrer_;
   data->check_for_browser_side_navigation_ = check_for_browser_side_navigation_;
-  data->ui_start_time_ = ui_start_time_;
   data->is_external_request_ = is_external_request_;
   data->cors_preflight_policy_ = cors_preflight_policy_;
-  data->input_perf_metric_report_policy_ = input_perf_metric_report_policy_;
   data->redirect_status_ = redirect_status_;
   data->suggested_filename_ = suggested_filename_;
   data->is_ad_resource_ = is_ad_resource_;
   data->navigation_csp_ = initiator_csp_;
 
+  data->upgrade_if_insecure_ = upgrade_if_insecure_;
+  data->devtools_token_ = devtools_token_;
   return data;
 }
 
@@ -255,11 +254,12 @@ void ResourceRequest::SetCacheMode(mojom::FetchCacheMode cache_mode) {
   cache_mode_ = cache_mode;
 }
 
-double ResourceRequest::TimeoutInterval() const {
+base::TimeDelta ResourceRequest::TimeoutInterval() const {
   return timeout_interval_;
 }
 
-void ResourceRequest::SetTimeoutInterval(double timout_interval_seconds) {
+void ResourceRequest::SetTimeoutInterval(
+    base::TimeDelta timout_interval_seconds) {
   timeout_interval_ = timout_interval_seconds;
 }
 
@@ -472,5 +472,9 @@ bool ResourceRequest::NeedsHTTPOrigin() const {
   // server knows we support this feature.
   return true;
 }
+
+CrossThreadResourceRequestData::CrossThreadResourceRequestData() = default;
+
+CrossThreadResourceRequestData::~CrossThreadResourceRequestData() = default;
 
 }  // namespace blink

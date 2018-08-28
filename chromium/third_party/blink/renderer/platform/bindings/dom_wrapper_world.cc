@@ -35,6 +35,7 @@
 
 #include "third_party/blink/renderer/platform/bindings/dom_data_store.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
+#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/hash_traits.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 
@@ -123,17 +124,6 @@ void DOMWrapperWorld::Trace(const ScriptWrappable* script_wrappable,
     DOMDataStore& data_store = world->DomDataStore();
     if (data_store.ContainsWrapper(script_wrappable))
       data_store.Trace(script_wrappable, visitor);
-  }
-}
-
-void DOMWrapperWorld::TraceWrappers(const ScriptWrappable* script_wrappable,
-                                    ScriptWrappableVisitor* visitor) {
-  // Marking for worlds other than the main world.
-  DCHECK(ThreadState::Current()->GetIsolate());
-  for (DOMWrapperWorld* world : GetWorldMap().Values()) {
-    DOMDataStore& data_store = world->DomDataStore();
-    if (data_store.ContainsWrapper(script_wrappable))
-      data_store.TraceWrappers(script_wrappable, visitor);
   }
 }
 

@@ -24,10 +24,7 @@
 #include "third_party/blink/renderer/core/html/forms/image_input_type.h"
 
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
-#include "third_party/blink/renderer/core/dom/sync_reattach_context.h"
 #include "third_party/blink/renderer/core/events/mouse_event.h"
-#include "third_party/blink/renderer/core/frame/deprecation.h"
-#include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/forms/form_data.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
@@ -39,6 +36,7 @@
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
+#include "third_party/blink/renderer/core/layout/layout_object_factory.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -65,22 +63,15 @@ void ImageInputType::AppendToFormData(FormData& form_data) const {
     return;
   const AtomicString& name = GetElement().GetName();
   if (name.IsEmpty()) {
-    form_data.append("x", click_location_.X());
-    form_data.append("y", click_location_.Y());
+    form_data.AppendFromElement("x", click_location_.X());
+    form_data.AppendFromElement("y", click_location_.Y());
     return;
   }
 
   DEFINE_STATIC_LOCAL(String, dot_x_string, (".x"));
   DEFINE_STATIC_LOCAL(String, dot_y_string, (".y"));
-  form_data.append(name + dot_x_string, click_location_.X());
-  form_data.append(name + dot_y_string, click_location_.Y());
-
-  if (!GetElement().value().IsEmpty()) {
-    Deprecation::CountDeprecation(
-        GetElement().GetDocument(),
-        WebFeature::kImageInputTypeFormDataWithNonEmptyValue);
-    form_data.append(name, GetElement().value());
-  }
+  form_data.AppendFromElement(name + dot_x_string, click_location_.X());
+  form_data.AppendFromElement(name + dot_y_string, click_location_.Y());
 }
 
 String ImageInputType::ResultForDialogSubmit() const {
@@ -116,7 +107,7 @@ void ImageInputType::HandleDOMActivateEvent(Event* event) {
 LayoutObject* ImageInputType::CreateLayoutObject(
     const ComputedStyle& style) const {
   if (use_fallback_content_)
-    return new LayoutBlockFlow(&GetElement());
+    return LayoutObjectFactory::CreateBlockFlow(GetElement(), style);
   LayoutImage* image = new LayoutImage(&GetElement());
   image->SetImageResource(LayoutImageResource::Create());
   return image;
@@ -150,11 +141,15 @@ void ImageInputType::StartResourceLoading() {
 
   HTMLImageLoader& image_loader = GetElement().EnsureImageLoader();
   image_loader.UpdateFromElement();
+}
 
+void ImageInputType::OnAttachWithLayoutObject() {
   LayoutObject* layout_object = GetElement().GetLayoutObject();
-  if (!layout_object || !layout_object->IsLayoutImage())
+  DCHECK(layout_object);
+  if (!layout_object->IsLayoutImage())
     return;
 
+  HTMLImageLoader& image_loader = GetElement().EnsureImageLoader();
   LayoutImageResource* image_resource =
       ToLayoutImage(layout_object)->ImageResource();
   image_resource->SetImageResource(image_loader.GetContent());
@@ -263,14 +258,8 @@ void ImageInputType::EnsurePrimaryContent() {
 }
 
 void ImageInputType::ReattachFallbackContent() {
-  if (GetElement().GetDocument().InStyleRecalc()) {
-    // This can happen inside of AttachLayoutTree() in the middle of a
-    // RebuildLayoutTree, so we need to reattach synchronously here.
-    GetElement().ReattachLayoutTree(
-        SyncReattachContext::CurrentAttachContext());
-  } else {
+  if (!GetElement().GetDocument().InStyleRecalc())
     GetElement().LazyReattachIfAttached();
-  }
 }
 
 void ImageInputType::CreateShadowSubtree() {

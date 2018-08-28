@@ -36,6 +36,8 @@ enum ErrorType {
   // SmbProvider. The jump in int value is to account for possible future
   // additions to ProviderError.
   ERROR_DBUS_PARSE_FAILED = 50;
+  ERROR_COPY_PENDING = 51;
+  ERROR_COPY_FAILED = 52;
 }
 
 message DirectoryEntryProto {
@@ -218,4 +220,13 @@ message RemountOptionsProto {
   optional string path = 1;
   // ID to assign to the mount.
   optional int32 mount_id = 2;
+
+  // Authentication parameters.
+  optional string workgroup = 3;
+  optional string username = 4;
+}
+
+// Used for returning a list of hostnames from a parsed NetBios response packet.
+message HostnamesProto {
+  repeated string hostnames = 1;
 }

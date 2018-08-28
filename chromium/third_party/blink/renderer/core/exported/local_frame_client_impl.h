@@ -93,9 +93,8 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   void DispatchDidLoadResourceFromMemoryCache(const ResourceRequest&,
                                               const ResourceResponse&) override;
   void DispatchDidHandleOnloadEvents() override;
-  void DispatchDidReceiveServerRedirectForProvisionalLoad() override;
   void DidFinishSameDocumentNavigation(HistoryItem*,
-                                       HistoryCommitType,
+                                       WebHistoryCommitType,
                                        bool content_initiated) override;
   void DispatchWillCommitProvisionalLoad() override;
   void DispatchDidStartProvisionalLoad(DocumentLoader*,
@@ -103,11 +102,11 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   void DispatchDidReceiveTitle(const String&) override;
   void DispatchDidChangeIcons(IconType) override;
   void DispatchDidCommitLoad(HistoryItem*,
-                             HistoryCommitType,
+                             WebHistoryCommitType,
                              WebGlobalObjectReusePolicy) override;
   void DispatchDidFailProvisionalLoad(const ResourceError&,
-                                      HistoryCommitType) override;
-  void DispatchDidFailLoad(const ResourceError&, HistoryCommitType) override;
+                                      WebHistoryCommitType) override;
+  void DispatchDidFailLoad(const ResourceError&, WebHistoryCommitType) override;
   void DispatchDidFinishDocumentLoad() override;
   void DispatchDidFinishLoad() override;
 
@@ -116,7 +115,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
       const ResourceRequest&,
       Document* origin_document,
       DocumentLoader*,
-      NavigationType,
+      WebNavigationType,
       NavigationPolicy,
       bool should_replace_current_entry,
       bool is_client_redirect,
@@ -130,7 +129,8 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   void DidStopLoading() override;
   void ProgressEstimateChanged(double progress_estimate) override;
   void ForwardResourceTimingToParent(const WebResourceTimingInfo&) override;
-  void DownloadURL(const ResourceRequest&) override;
+  void DownloadURL(const ResourceRequest&,
+                   DownloadCrossOriginRedirects) override;
   void LoadErrorPage(int reason) override;
   bool NavigateBackForward(int offset) const override;
   void DidAccessInitialDocument() override;
@@ -160,7 +160,9 @@ class LocalFrameClientImpl final : public LocalFrameClient {
       const ResourceRequest&,
       const SubstituteData&,
       ClientRedirectPolicy,
-      const base::UnguessableToken& devtools_navigation_token) override;
+      const base::UnguessableToken& devtools_navigation_token,
+      std::unique_ptr<WebDocumentLoader::ExtraData> extra_data,
+      const WebNavigationTimings& navigation_timings) override;
   WTF::String UserAgent() override;
   WTF::String DoNotTrackValue() override;
   void TransitionToCommittedForNewPage() override;
@@ -204,8 +206,6 @@ class LocalFrameClientImpl final : public LocalFrameClient {
 
   bool ShouldBlockWebGL() override;
 
-  void DispatchWillInsertBody() override;
-
   std::unique_ptr<WebServiceWorkerProvider> CreateServiceWorkerProvider()
       override;
   ContentSettingsClient& GetContentSettingsClient() override;
@@ -233,7 +233,8 @@ class LocalFrameClientImpl final : public LocalFrameClient {
 
   KURL OverrideFlashEmbedWithHTML(const KURL&) override;
 
-  void SetHasReceivedUserGesture() override;
+  void NotifyUserActivation() override;
+  void ConsumeUserActivation() override;
 
   void SetHasReceivedUserGestureBeforeNavigation(bool value) override;
 
@@ -275,6 +276,10 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   Frame* FindFrame(const AtomicString& name) const override;
 
   void FrameRectsChanged(const IntRect&) override;
+
+  std::unique_ptr<WebWorkerFetchContext> CreateWorkerFetchContext() override;
+  std::unique_ptr<WebContentSettingsClient> CreateWorkerContentSettingsClient()
+      override;
 
   void SetMouseCapture(bool capture) override;
 

@@ -7,6 +7,7 @@
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_layer_tree_view.h"
 #include "third_party/blink/renderer/core/css/font_face_set_document.h"
+#include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/paint/paint_timing.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
@@ -24,6 +25,9 @@ const int kBlankCharactersThreshold = 200;
 
 }  // namespace
 
+constexpr TimeDelta FirstMeaningfulPaintDetector::kNetwork2QuietWindowTimeout;
+constexpr TimeDelta FirstMeaningfulPaintDetector::kNetwork0QuietWindowTimeout;
+
 FirstMeaningfulPaintDetector& FirstMeaningfulPaintDetector::From(
     Document& document) {
   return PaintTiming::From(document).GetFirstMeaningfulPaintDetector();
@@ -40,7 +44,13 @@ FirstMeaningfulPaintDetector::FirstMeaningfulPaintDetector(
       network2_quiet_timer_(
           document.GetTaskRunner(TaskType::kInternalDefault),
           this,
-          &FirstMeaningfulPaintDetector::Network2QuietTimerFired) {}
+          &FirstMeaningfulPaintDetector::Network2QuietTimerFired) {
+  if (GetDocument() && GetDocument()->GetSettings()) {
+    network2_quiet_window_timeout_ = TimeDelta::FromSecondsD(
+        GetDocument()->GetSettings()->GetFMPNetworkQuietTimeout());
+    network0_quiet_window_timeout_ = network2_quiet_window_timeout_;
+  }
+}
 
 Document* FirstMeaningfulPaintDetector::GetDocument() {
   return paint_timing_->GetSupplementable();
@@ -135,13 +145,14 @@ void FirstMeaningfulPaintDetector::SetNetworkQuietTimers(
     // If activeConnections < 2 and the timer is already running, current
     // 2-quiet window continues; the timer shouldn't be restarted.
     if (active_connections == 2 || !network2_quiet_timer_.IsActive()) {
-      network2_quiet_timer_.StartOneShot(kNetwork2QuietWindowSeconds,
+      network2_quiet_timer_.StartOneShot(network2_quiet_window_timeout_,
                                          FROM_HERE);
     }
   }
   if (!network0_quiet_reached_ && active_connections == 0) {
     // This restarts 0-quiet timer if it's already running.
-    network0_quiet_timer_.StartOneShot(kNetwork0QuietWindowSeconds, FROM_HERE);
+    network0_quiet_timer_.StartOneShot(network0_quiet_window_timeout_,
+                                       FROM_HERE);
   }
 }
 
@@ -306,7 +317,6 @@ void FirstMeaningfulPaintDetector::SetFirstMeaningfulPaint(
     TimeTicks stamp,
     TimeTicks swap_stamp) {
   DCHECK(paint_timing_->FirstMeaningfulPaint().is_null());
-  DCHECK_GE(swap_stamp, stamp);
   DCHECK(!swap_stamp.is_null());
   DCHECK(network2_quiet_reached_);
 

@@ -20,7 +20,6 @@
 
 namespace blink {
 class WebFormElement;
-class WebFormControlElement;
 class WebInputElement;
 class WebLocalFrame;
 }
@@ -65,10 +64,11 @@ bool IsGaiaReauthenticationForm(const blink::WebFormElement& form);
 // Tests whether the given form is a GAIA form with a skip password argument.
 bool IsGaiaWithSkipSavePasswordForm(const blink::WebFormElement& form);
 
-typedef std::map<
-    const blink::WebFormControlElement,
-    std::pair<std::unique_ptr<base::string16>, FieldPropertiesMask>>
-    FieldValueAndPropertiesMaskMap;
+// TODO(https://crbug.com/849291): Create separate class for keeping information
+// from FieldValueAndPropertiesMaskMap.
+using FieldValueAndPropertiesMaskMap =
+    std::map<uint32_t,
+             std::pair<std::unique_ptr<base::string16>, FieldPropertiesMask>>;
 
 // Create a PasswordForm from DOM form. Webkit doesn't allow storing
 // custom metadata to DOM nodes, so we have to do this every time an event
@@ -94,10 +94,6 @@ std::unique_ptr<PasswordForm> CreatePasswordFormFromUnownedInputElements(
     const FieldValueAndPropertiesMaskMap* nonscript_modified_values,
     const FormsPredictionsMap* form_predictions,
     UsernameDetectorCache* username_detector_cache);
-
-// Returns whether the form |field| has a "password" type, but looks like a
-// credit card verification field.
-bool IsCreditCardVerificationPasswordField(const blink::WebInputElement& field);
 
 // The "Realm" for the sign-on. This is scheme, host, port.
 std::string GetSignOnRealm(const GURL& origin);

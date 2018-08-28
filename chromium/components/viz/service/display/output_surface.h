@@ -56,6 +56,8 @@ class VIZ_SERVICE_EXPORT OutputSurface {
     bool supports_stencil = false;
   };
 
+  // Constructor for skia-based compositing.
+  OutputSurface();
   // Constructor for GL-based compositing.
   explicit OutputSurface(scoped_refptr<ContextProvider> context_provider);
   // Constructor for software compositing.
@@ -146,10 +148,12 @@ class VIZ_SERVICE_EXPORT OutputSurface {
   // can be passed directly to any related extension functions.
   virtual unsigned UpdateGpuFence() = 0;
 
-  // Returns true if any of the LatencyInfos provided contains a snapshot
-  // request.
-  static bool LatencyInfoHasSnapshotRequest(
-      const std::vector<ui::LatencyInfo>& latency_info);
+  // If set to true, the OutputSurface must deliver
+  // OutputSurfaceclient::DidSwapWithSize notifications to its client.
+  // OutputSurfaces which support delivering swap size notifications should
+  // override this.
+  virtual void SetNeedsSwapSizeNotifications(
+      bool needs_swap_size_notifications);
 
   // Updates timing info on the provided LatencyInfo when swap completes.
   static void UpdateLatencyInfoOnSwap(

@@ -866,11 +866,25 @@ DeveloperPrivateUpdateExtensionConfigurationFunction::Run() {
     ErrorConsole::Get(browser_context())->SetReportingAllForExtension(
         extension->id(), *update.error_collection);
   }
-  if (update.run_on_all_urls) {
+  if (update.host_access != developer::HOST_ACCESS_NONE) {
     ScriptingPermissionsModifier modifier(browser_context(), extension);
     if (!modifier.CanAffectExtension())
       return RespondNow(Error(kCannotChangeHostPermissions));
-    modifier.SetAllowedOnAllUrls(*update.run_on_all_urls);
+
+    switch (update.host_access) {
+      case developer::HOST_ACCESS_ON_CLICK:
+        modifier.SetWithholdHostPermissions(true);
+        modifier.RemoveAllGrantedHostPermissions();
+        break;
+      case developer::HOST_ACCESS_ON_SPECIFIC_SITES:
+        modifier.SetWithholdHostPermissions(true);
+        break;
+      case developer::HOST_ACCESS_ON_ALL_SITES:
+        modifier.SetWithholdHostPermissions(false);
+        break;
+      case developer::HOST_ACCESS_NONE:
+        NOTREACHED();
+    }
   }
 
   return RespondNow(NoArguments());

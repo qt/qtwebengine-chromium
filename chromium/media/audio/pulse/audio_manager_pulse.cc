@@ -4,6 +4,9 @@
 
 #include "media/audio/pulse/audio_manager_pulse.h"
 
+#include <algorithm>
+#include <utility>
+
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/logging.h"
@@ -40,7 +43,8 @@ AudioManagerPulse::AudioManagerPulse(std::unique_ptr<AudioThread> audio_thread,
       input_context_(pa_context),
       devices_(NULL),
       native_input_sample_rate_(0),
-      native_channel_count_(0) {
+      native_channel_count_(0),
+      default_source_is_monitor_(false) {
   DCHECK(input_mainloop_);
   DCHECK(input_context_);
   SetMaxOutputStreamsAllowed(kMaxOutputStreams);
@@ -107,6 +111,12 @@ AudioParameters AudioManagerPulse::GetInputStreamParameters(
 
   // TODO(xians): add support for querying native channel layout for pulse.
   UpdateNativeAudioHardwareInfo();
+  // We don't want to accidentally open a monitor device, so return invalid
+  // parameters for those.
+  if (device_id == AudioDeviceDescription::kDefaultDeviceId &&
+      default_source_is_monitor_) {
+    return AudioParameters();
+  }
   return AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
                          CHANNEL_LAYOUT_STEREO, native_input_sample_rate_,
                          buffer_size);
@@ -147,6 +157,46 @@ AudioInputStream* AudioManagerPulse::MakeLowLatencyInputStream(
     const LogCallback& log_callback) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
   return MakeInputStream(params, device_id);
+}
+
+std::string AudioManagerPulse::GetDefaultInputDeviceID() {
+#if defined(OS_CHROMEOS)
+  return AudioManagerBase::GetDefaultInputDeviceID();
+#else
+  return pulse::GetRealDefaultDeviceId(input_mainloop_, input_context_,
+                                       pulse::RequestType::INPUT);
+#endif
+}
+
+std::string AudioManagerPulse::GetDefaultOutputDeviceID() {
+#if defined(OS_CHROMEOS)
+  return AudioManagerBase::GetDefaultOutputDeviceID();
+#else
+  return pulse::GetRealDefaultDeviceId(input_mainloop_, input_context_,
+                                       pulse::RequestType::OUTPUT);
+#endif
+}
+
+std::string AudioManagerPulse::GetAssociatedOutputDeviceID(
+    const std::string& input_device_id) {
+#if defined(OS_CHROMEOS)
+  return AudioManagerBase::GetAssociatedOutputDeviceID(input_device_id);
+#else
+  DCHECK(AudioManager::Get()->GetTaskRunner()->BelongsToCurrentThread());
+  DCHECK(input_mainloop_);
+  DCHECK(input_context_);
+  std::string input =
+      (input_device_id == AudioDeviceDescription::kDefaultDeviceId)
+          ? pulse::GetRealDefaultDeviceId(input_mainloop_, input_context_,
+                                          pulse::RequestType::INPUT)
+          : input_device_id;
+
+  std::string input_bus =
+      pulse::GetBusOfInput(input_mainloop_, input_context_, input);
+  return input_bus.empty() ? ""
+                           : pulse::GetOutputCorrespondingTo(
+                                 input_mainloop_, input_context_, input_bus);
+#endif
 }
 
 AudioParameters AudioManagerPulse::GetPreferredOutputStreamParameters(
@@ -203,6 +253,10 @@ void AudioManagerPulse::UpdateNativeAudioHardwareInfo() {
   pa_operation* operation = pa_context_get_server_info(
       input_context_, AudioHardwareInfoCallback, this);
   WaitForOperationCompletion(input_mainloop_, operation);
+  operation = pa_context_get_source_info_by_name(
+      input_context_, default_source_name_.c_str(), DefaultSourceInfoCallback,
+      this);
+  WaitForOperationCompletion(input_mainloop_, operation);
 }
 
 void AudioManagerPulse::InputDevicesInfoCallback(pa_context* context,
@@ -216,11 +270,22 @@ void AudioManagerPulse::InputDevicesInfoCallback(pa_context* context,
     return;
   }
 
-  // Exclude the output devices.
-  if (info->monitor_of_sink == PA_INVALID_INDEX) {
-    manager->devices_->push_back(AudioDeviceName(info->description,
-                                                 info->name));
+  // Exclude output monitor (i.e. loopback) devices.
+  if (info->monitor_of_sink != PA_INVALID_INDEX)
+    return;
+
+  // If the device has ports, but none of them are available, skip it.
+  if (info->n_ports > 0) {
+    uint32_t port = 0;
+    for (; port != info->n_ports; ++port) {
+      if (info->ports[port]->available != PA_PORT_AVAILABLE_NO)
+        break;
+    }
+    if (port == info->n_ports)
+      return;
   }
+
+  manager->devices_->push_back(AudioDeviceName(info->description, info->name));
 }
 
 void AudioManagerPulse::OutputDevicesInfoCallback(pa_context* context,
@@ -245,7 +310,24 @@ void AudioManagerPulse::AudioHardwareInfoCallback(pa_context* context,
 
   manager->native_input_sample_rate_ = info->sample_spec.rate;
   manager->native_channel_count_ = info->sample_spec.channels;
+  manager->default_source_name_ = info->default_source_name;
   pa_threaded_mainloop_signal(manager->input_mainloop_, 0);
+}
+
+void AudioManagerPulse::DefaultSourceInfoCallback(pa_context* context,
+                                                  const pa_source_info* info,
+                                                  int eol,
+                                                  void* user_data) {
+  AudioManagerPulse* manager = reinterpret_cast<AudioManagerPulse*>(user_data);
+  if (eol) {
+    // Signal the pulse object that it is done.
+    pa_threaded_mainloop_signal(manager->input_mainloop_, 0);
+    return;
+  }
+
+  DCHECK(info);
+  manager->default_source_is_monitor_ =
+      info->monitor_of_sink != PA_INVALID_INDEX;
 }
 
 }  // namespace media

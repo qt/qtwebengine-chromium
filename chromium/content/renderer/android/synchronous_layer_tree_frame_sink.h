@@ -50,7 +50,7 @@ class SynchronousCompositorRegistry;
 class SynchronousLayerTreeFrameSinkClient {
  public:
   virtual void DidActivatePendingTree() = 0;
-  virtual void Invalidate() = 0;
+  virtual void Invalidate(bool needs_draw) = 0;
   virtual void SubmitCompositorFrame(uint32_t layer_tree_frame_sink_id,
                                      viz::CompositorFrame frame) = 0;
   virtual void SetNeedsBeginFrames(bool needs_begin_frames) = 0;
@@ -96,22 +96,21 @@ class SynchronousLayerTreeFrameSink
   void DidAllocateSharedBitmap(mojo::ScopedSharedBufferHandle buffer,
                                const viz::SharedBitmapId& id) override;
   void DidDeleteSharedBitmap(const viz::SharedBitmapId& id) override;
-  void Invalidate() override;
+  void Invalidate(bool needs_draw) override;
 
   // Partial SynchronousCompositor API implementation.
   void DemandDrawHw(const gfx::Size& viewport_size,
                     const gfx::Rect& viewport_rect_for_tile_priority,
                     const gfx::Transform& transform_for_tile_priority);
   void DemandDrawSw(SkCanvas* canvas);
+  void WillSkipDraw();
 
   // viz::mojom::CompositorFrameSinkClient implementation.
   void DidReceiveCompositorFrameAck(
       const std::vector<viz::ReturnedResource>& resources) override;
-  void DidPresentCompositorFrame(uint32_t presentation_token,
-                                 base::TimeTicks time,
-                                 base::TimeDelta refresh,
-                                 uint32_t flags) override;
-  void DidDiscardCompositorFrame(uint32_t presentation_token) override;
+  void DidPresentCompositorFrame(
+      uint32_t presentation_token,
+      const gfx::PresentationFeedback& feedback) override;
   void OnBeginFrame(const viz::BeginFrameArgs& args) override;
   void ReclaimResources(
       const std::vector<viz::ReturnedResource>& resources) override;
@@ -172,6 +171,7 @@ class SynchronousLayerTreeFrameSink
     void DisplayDidDrawAndSwap() override {}
     void DisplayDidReceiveCALayerParams(
         const gfx::CALayerParams& ca_layer_params) override {}
+    void DisplayDidCompleteSwapWithSize(const gfx::Size& pixel_size) override {}
     void DidSwapAfterSnapshotRequestReceived(
         const std::vector<ui::LatencyInfo>& latency_info) override {}
   };

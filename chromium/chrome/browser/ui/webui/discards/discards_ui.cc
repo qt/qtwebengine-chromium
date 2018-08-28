@@ -11,9 +11,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/engagement/site_engagement_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/resource_coordinator/discard_reason.h"
 #include "chrome/browser/resource_coordinator/lifecycle_unit.h"
+#include "chrome/browser/resource_coordinator/lifecycle_unit_state.mojom.h"
 #include "chrome/browser/resource_coordinator/tab_activity_watcher.h"
 #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
 #include "chrome/browser/resource_coordinator/tab_manager.h"
@@ -21,6 +23,8 @@
 #include "chrome/browser/ui/webui/discards/discards.mojom.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/browser_resources.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -60,6 +64,26 @@ resource_coordinator::LifecycleUnit* GetLifecycleUnitById(int32_t id) {
   return nullptr;
 }
 
+double GetSiteEngagementScore(content::WebContents* contents) {
+  // Get the active navigation entry. Restored tabs should always have one.
+  auto& controller = contents->GetController();
+  const int current_entry_index = controller.GetCurrentEntryIndex();
+
+  // A WebContents which hasn't navigated yet does not have a NavigationEntry.
+  if (current_entry_index == -1)
+    return 0;
+
+  auto* nav_entry = controller.GetEntryAtIndex(current_entry_index);
+  DCHECK(nav_entry);
+
+  auto* engagement_svc = SiteEngagementService::Get(
+      Profile::FromBrowserContext(contents->GetBrowserContext()));
+  double engagement =
+      engagement_svc->GetDetails(nav_entry->GetURL()).total_score;
+
+  return engagement;
+}
+
 class DiscardsDetailsProviderImpl : public mojom::DiscardsDetailsProvider {
  public:
   // This instance is deleted when the supplied pipe is destroyed.
@@ -96,9 +120,15 @@ class DiscardsDetailsProviderImpl : public mojom::DiscardsDetailsProvider {
       info->title = base::UTF16ToUTF8(lifecycle_unit->GetTitle());
       info->visibility =
           GetLifecycleUnitVisibility(lifecycle_unit->GetVisibility());
-      info->is_media = tab_lifecycle_unit_external->IsMediaTab();
-      info->is_frozen = tab_lifecycle_unit_external->IsFrozen();
-      info->is_discarded = tab_lifecycle_unit_external->IsDiscarded();
+      info->loading_state = lifecycle_unit->GetLoadingState();
+      info->state = lifecycle_unit->GetState();
+      resource_coordinator::DecisionDetails freeze_details;
+      info->can_freeze = lifecycle_unit->CanFreeze(&freeze_details);
+      info->cannot_freeze_reasons = freeze_details.GetFailureReasonStrings();
+      resource_coordinator::DecisionDetails discard_details;
+      info->can_discard = lifecycle_unit->CanDiscard(
+          resource_coordinator::DiscardReason::kProactive, &discard_details);
+      info->cannot_discard_reasons = discard_details.GetFailureReasonStrings();
       info->discard_count = tab_lifecycle_unit_external->GetDiscardCount();
       info->utility_rank = rank++;
       const base::TimeTicks last_focused_time =
@@ -117,6 +147,7 @@ class DiscardsDetailsProviderImpl : public mojom::DiscardsDetailsProvider {
       info->has_reactivation_score = reactivation_score.has_value();
       if (info->has_reactivation_score)
         info->reactivation_score = reactivation_score.value();
+      info->site_engagement_score = GetSiteEngagementScore(contents);
 
       infos.push_back(std::move(info));
     }
@@ -152,6 +183,12 @@ class DiscardsDetailsProviderImpl : public mojom::DiscardsDetailsProvider {
       lifecycle_unit->Freeze();
   }
 
+  void LoadById(int32_t id) override {
+    auto* lifecycle_unit = GetLifecycleUnitById(id);
+    if (lifecycle_unit)
+      lifecycle_unit->Load();
+  }
+
   void Discard(bool urgent, DiscardCallback callback) override {
     resource_coordinator::TabManager* tab_manager =
         g_browser_process->GetTabManager();
@@ -177,6 +214,9 @@ DiscardsUI::DiscardsUI(content::WebUI* web_ui)
   // Full paths (relative to src) are important for Mojom generated files.
   source->AddResourcePath("chrome/browser/ui/webui/discards/discards.mojom.js",
                           IDR_ABOUT_DISCARDS_MOJO_JS);
+  source->AddResourcePath(
+      "chrome/browser/resource_coordinator/lifecycle_unit_state.mojom.js",
+      IDR_ABOUT_DISCARDS_LIFECYCLE_UNIT_STATE_MOJO_JS);
   source->SetDefaultResource(IDR_ABOUT_DISCARDS_HTML);
 
   Profile* profile = Profile::FromWebUI(web_ui);

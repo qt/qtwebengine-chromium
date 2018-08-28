@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/core/testing/worker_internals.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/origin_trial_features.h"
+#include "third_party/blink/renderer/platform/bindings/v8_per_context_data.h"
 
 namespace WebCoreTestSupport {
 
@@ -94,12 +95,12 @@ void InstallOriginTrialFeaturesForTesting(
       blink::ExecutionContext::From(script_state);
 
   if (type == &blink::V8OriginTrialsTest::wrapperTypeInfo) {
-    if (blink::OriginTrials::originTrialsSampleAPIEnabled(execution_context)) {
+    if (blink::OriginTrials::OriginTrialsSampleAPIEnabled(execution_context)) {
       blink::V8OriginTrialsTest::installOriginTrialsSampleAPI(
           script_state->GetIsolate(), script_state->World(),
           v8::Local<v8::Object>(), prototype_object, interface_object);
     }
-    if (blink::OriginTrials::originTrialsSampleAPIImpliedEnabled(
+    if (blink::OriginTrials::OriginTrialsSampleAPIImpliedEnabled(
             execution_context)) {
       blink::V8OriginTrialsTest::installOriginTrialsSampleAPIImplied(
           script_state->GetIsolate(), script_state->World(),

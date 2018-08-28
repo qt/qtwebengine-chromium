@@ -120,8 +120,8 @@ base::Optional<std::vector<uint8_t>> VirtualU2fDevice::DoRegister(
     mutable_state()->simulate_press_callback.Run();
   }
 
-  auto challenge_param = data.first(32);
-  auto application_parameter = data.last(32);
+  auto challenge_param = data.first<32>();
+  auto application_parameter = data.last<32>();
 
   // Create key to register.
   // Note: Non-deterministic, you need to mock this out if you rely on
@@ -134,7 +134,8 @@ base::Optional<std::vector<uint8_t>> VirtualU2fDevice::DoRegister(
   DCHECK_EQ(public_key.size(), 65ul);
 
   // Our key handles are simple hashes of the public key.
-  auto key_handle = fido_parsing_utils::CreateSHA256Hash(public_key);
+  auto hash = fido_parsing_utils::CreateSHA256Hash(public_key);
+  std::vector<uint8_t> key_handle(hash.begin(), hash.end());
 
   // Data to be signed.
   std::vector<uint8_t> sign_buffer;
@@ -175,16 +176,7 @@ base::Optional<std::vector<uint8_t>> VirtualU2fDevice::DoRegister(
   Append(&response, *attestation_cert);
   Append(&response, sig);
 
-  // Store the registration. Because the key handle is the hashed public key we
-  // just generated, no way this should already be registered.
-  bool did_insert = false;
-  std::tie(std::ignore, did_insert) = mutable_state()->registrations.emplace(
-      std::move(key_handle),
-      RegistrationData(std::move(private_key),
-                       fido_parsing_utils::Materialize(application_parameter),
-                       1));
-  DCHECK(did_insert);
-
+  StoreNewKey(application_parameter, key_handle, std::move(private_key));
   return apdu::ApduResponse(std::move(response),
                             apdu::ApduResponse::Status::SW_NO_ERROR)
       .GetEncodedResponse();
@@ -205,38 +197,29 @@ base::Optional<std::vector<uint8_t>> VirtualU2fDevice::DoSign(
     mutable_state()->simulate_press_callback.Run();
   }
 
-  auto challenge_param = data.first(32);
-  auto application_parameter = data.subspan(32, 32);
-  size_t key_handle_length = data[64];
-  if (data.size() != 32 + 32 + 1 + key_handle_length) {
+  if (data.size() < 32 + 32 + 1)
     return ErrorStatus(apdu::ApduResponse::Status::SW_WRONG_LENGTH);
-  }
+
+  auto challenge_param = data.first<32>();
+  auto application_parameter = data.subspan<32, 32>();
+  size_t key_handle_length = data[64];
+  if (data.size() != 32 + 32 + 1 + key_handle_length)
+    return ErrorStatus(apdu::ApduResponse::Status::SW_WRONG_LENGTH);
+
   auto key_handle = data.last(key_handle_length);
-
-  // Check if this is our key_handle and it's for this appId.
-  auto it = mutable_state()->registrations.find(key_handle);
-  if (it == mutable_state()->registrations.end()) {
+  auto* registration = FindRegistrationData(key_handle, application_parameter);
+  if (!registration)
     return ErrorStatus(apdu::ApduResponse::Status::SW_WRONG_DATA);
-  }
 
-  base::span<const uint8_t> registered_app_id_hash =
-      base::make_span(it->second.application_parameter);
-  if (application_parameter != registered_app_id_hash) {
-    // It's important this error looks identical to the previous one, as
-    // tokens should not reveal the existence of keyHandles to unrelated appIds.
-    return ErrorStatus(apdu::ApduResponse::Status::SW_WRONG_DATA);
-  }
-
-  auto& registration = it->second;
-  ++registration.counter;
+  ++registration->counter;
 
   // First create the part of the response that gets signed over.
   std::vector<uint8_t> response;
   response.push_back(0x01);  // Always pretend we got a touch.
-  response.push_back(registration.counter >> 24);
-  response.push_back(registration.counter >> 16);
-  response.push_back(registration.counter >> 8);
-  response.push_back(registration.counter);
+  response.push_back(registration->counter >> 24);
+  response.push_back(registration->counter >> 16);
+  response.push_back(registration->counter >> 8);
+  response.push_back(registration->counter);
 
   std::vector<uint8_t> sign_buffer;
   sign_buffer.reserve(application_parameter.size() + response.size() +
@@ -247,7 +230,7 @@ base::Optional<std::vector<uint8_t>> VirtualU2fDevice::DoSign(
 
   // Sign with credential key.
   std::vector<uint8_t> sig;
-  bool status = Sign(registration.private_key.get(), sign_buffer, &sig);
+  bool status = Sign(registration->private_key.get(), sign_buffer, &sig);
   DCHECK(status);
 
   // Add signature for full response.

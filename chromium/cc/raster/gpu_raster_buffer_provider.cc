@@ -17,7 +17,7 @@
 #include "cc/paint/paint_recorder.h"
 #include "cc/raster/raster_source.h"
 #include "cc/raster/scoped_gpu_raster.h"
-#include "cc/resources/layer_tree_resource_provider.h"
+#include "components/viz/client/client_resource_provider.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
 #include "components/viz/common/gpu/texture_allocation.h"
@@ -71,7 +71,7 @@ class ScopedSkSurfaceForUnpremultiplyAndDither {
     SkImageInfo n32Info = SkImageInfo::MakeN32Premul(
         intermediate_size.width(), intermediate_size.height());
     SkSurfaceProps surface_props =
-        LayerTreeResourceProvider::ScopedSkSurface::ComputeSurfaceProps(
+        viz::ClientResourceProvider::ScopedSkSurface::ComputeSurfaceProps(
             can_use_lcd_text);
     surface_ = SkSurface::MakeRenderTarget(
         context_provider->GrContext(), SkBudgeted::kNo, n32Info,
@@ -138,11 +138,11 @@ static void RasterizeSourceOOP(
 
   // TODO(enne): Use the |texture_target|? GpuMemoryBuffer backed textures don't
   // use GL_TEXTURE_2D.
-  ri->BeginRasterCHROMIUM(texture_id, raster_source->background_color(),
-                          msaa_sample_count, playback_settings.use_lcd_text,
+  ri->BeginRasterCHROMIUM(raster_source->background_color(), msaa_sample_count,
+                          playback_settings.use_lcd_text,
                           viz::ResourceFormatToClosestSkColorType(
                               /*gpu_compositing=*/true, resource_format),
-                          playback_settings.raster_color_space);
+                          playback_settings.raster_color_space, mailbox.name);
   float recording_to_raster_scale =
       transform.scale() / raster_source->recording_scale_factor();
   gfx::Size content_size = raster_source->GetContentSize(transform.scale());
@@ -212,7 +212,7 @@ static void RasterizeSource(
 
   {
     ScopedGrContextAccess gr_context_access(context_provider);
-    base::Optional<LayerTreeResourceProvider::ScopedSkSurface> scoped_surface;
+    base::Optional<viz::ClientResourceProvider::ScopedSkSurface> scoped_surface;
     base::Optional<ScopedSkSurfaceForUnpremultiplyAndDither>
         scoped_dither_surface;
     SkSurface* surface;
@@ -379,13 +379,12 @@ std::unique_ptr<RasterBuffer> GpuRasterBufferProvider::AcquireBufferForRaster(
     backing->texture_id = alloc.texture_id;
     backing->texture_target = alloc.texture_target;
     backing->overlay_candidate = alloc.overlay_candidate;
-    backing->mailbox = gpu::Mailbox::Generate();
     gl->ProduceTextureDirectCHROMIUM(backing->texture_id,
                                      backing->mailbox.name);
     // Save a sync token in the backing so that we always wait on it even if
     // this task is cancelled between being scheduled and running.
     backing->returned_sync_token =
-        LayerTreeResourceProvider::GenerateSyncTokenHelper(gl);
+        viz::ClientResourceProvider::GenerateSyncTokenHelper(gl);
 
     resource.set_gpu_backing(std::move(backing));
   }
@@ -528,7 +527,7 @@ gpu::SyncToken GpuRasterBufferProvider::PlaybackOnWorkerThread(
   }
 
   // Generate sync token for cross context synchronization.
-  return LayerTreeResourceProvider::GenerateSyncTokenHelper(ri);
+  return viz::ClientResourceProvider::GenerateSyncTokenHelper(ri);
 }
 
 bool GpuRasterBufferProvider::ShouldUnpremultiplyAndDitherResource(

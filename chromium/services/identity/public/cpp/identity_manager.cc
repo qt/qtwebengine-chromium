@@ -3,23 +3,76 @@
 // found in the LICENSE file.
 
 #include "services/identity/public/cpp/identity_manager.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+
 #include "google_apis/gaia/gaia_auth_util.h"
 
 namespace identity {
 
-IdentityManager::IdentityManager(SigninManagerBase* signin_manager,
-                                 ProfileOAuth2TokenService* token_service)
+namespace {
+
+// Local copy of the account ID used for supervised users (defined in //chrome
+// as supervised_users::kSupervisedUserPseudoEmail). Simply copied to avoid
+// plumbing it from //chrome all the way down through the Identity Service just
+// to handle the corner cases below.
+// TODO(860492): Remove this once supervised user support is removed.
+const char kSupervisedUserPseudoEmail[] = "managed_user@localhost";
+
+// A made-up Gaia ID to populate the supervised user's AccountInfo with in order
+// to maintain the invariant that the AccountInfos passed out by IdentityManager
+// always have an account ID, Gaia ID, and email set.
+// TODO(860492): Remove this once supervised user support is removed.
+const char kSupervisedUserPseudoGaiaID[] = "managed_user_gaia_id";
+
+}  // namespace
+
+IdentityManager::IdentityManager(
+    SigninManagerBase* signin_manager,
+    ProfileOAuth2TokenService* token_service,
+    AccountTrackerService* account_tracker_service,
+    GaiaCookieManagerService* gaia_cookie_manager_service)
     : signin_manager_(signin_manager),
       token_service_(token_service),
-      weak_ptr_factory_(this) {
+      account_tracker_service_(account_tracker_service),
+      gaia_cookie_manager_service_(gaia_cookie_manager_service) {
+  // Initialize the state of the primary account.
   primary_account_info_ = signin_manager_->GetAuthenticatedAccountInfo();
+
+  // Initialize the state of accounts with refresh tokens.
+  // |account_id| is moved into |accounts_with_refresh_tokens_|.
+  // Do not change this to "const std::string&".
+  for (std::string account_id : token_service->GetAccounts()) {
+    AccountInfo account_info =
+        account_tracker_service_->GetAccountInfo(account_id);
+
+    // In the context of supervised users, the ProfileOAuth2TokenService is used
+    // without the AccountTrackerService being used. This is the only case in
+    // which the AccountTrackerService will potentially not know about the
+    // account. In this context, |account_id| is always set to
+    // kSupervisedUserPseudoEmail.
+    // TODO(860492): Remove this special case once supervised user support is
+    // removed.
+    DCHECK(!account_info.IsEmpty() || account_id == kSupervisedUserPseudoEmail);
+
+    if (account_id == kSupervisedUserPseudoEmail && account_info.IsEmpty()) {
+      // Populate the information manually to maintain the invariant that the
+      // account ID, gaia ID, and email are always set.
+      account_info.account_id = account_id;
+      account_info.email = kSupervisedUserPseudoEmail;
+      account_info.gaia = kSupervisedUserPseudoGaiaID;
+    }
+
+    accounts_with_refresh_tokens_.emplace(std::move(account_id),
+                                          std::move(account_info));
+  }
+
   signin_manager_->AddObserver(this);
 #if !defined(OS_CHROMEOS)
   SigninManager::FromSigninManagerBase(signin_manager_)
       ->set_diagnostics_client(this);
 #endif
   token_service_->AddDiagnosticsObserver(this);
+  token_service_->AddObserver(this);
+  token_service_->set_diagnostics_client(this);
 }
 
 IdentityManager::~IdentityManager() {
@@ -28,10 +81,12 @@ IdentityManager::~IdentityManager() {
   SigninManager::FromSigninManagerBase(signin_manager_)
       ->set_diagnostics_client(nullptr);
 #endif
+  token_service_->RemoveObserver(this);
   token_service_->RemoveDiagnosticsObserver(this);
+  token_service_->set_diagnostics_client(nullptr);
 }
 
-AccountInfo IdentityManager::GetPrimaryAccountInfo() {
+AccountInfo IdentityManager::GetPrimaryAccountInfo() const {
 #if defined(OS_CHROMEOS)
   // On ChromeOS in production, the authenticated account is set very early in
   // startup and never changed. Hence, the information held by the
@@ -76,32 +131,55 @@ AccountInfo IdentityManager::GetPrimaryAccountInfo() {
   return primary_account_info_;
 }
 
-bool IdentityManager::HasPrimaryAccount() {
+bool IdentityManager::HasPrimaryAccount() const {
   return !primary_account_info_.account_id.empty();
 }
 
-std::unique_ptr<PrimaryAccountAccessTokenFetcher>
-IdentityManager::CreateAccessTokenFetcherForPrimaryAccount(
+std::vector<AccountInfo> IdentityManager::GetAccountsWithRefreshTokens() const {
+  // TODO(blundell): It seems wasteful to construct this vector every time this
+  // method is called, but it also seems bad to maintain the vector as an ivar
+  // along the map.
+  std::vector<AccountInfo> accounts;
+  accounts.reserve(accounts_with_refresh_tokens_.size());
+
+  for (const auto& pair : accounts_with_refresh_tokens_) {
+    accounts.push_back(pair.second);
+  }
+
+  return accounts;
+}
+
+bool IdentityManager::HasAccountWithRefreshToken(
+    const std::string& account_id) const {
+  return base::ContainsKey(accounts_with_refresh_tokens_, account_id);
+}
+
+bool IdentityManager::HasPrimaryAccountWithRefreshToken() const {
+  return HasAccountWithRefreshToken(GetPrimaryAccountInfo().account_id);
+}
+
+std::unique_ptr<AccessTokenFetcher>
+IdentityManager::CreateAccessTokenFetcherForAccount(
+    const std::string& account_id,
     const std::string& oauth_consumer_name,
     const OAuth2TokenService::ScopeSet& scopes,
-    PrimaryAccountAccessTokenFetcher::TokenCallback callback,
-    PrimaryAccountAccessTokenFetcher::Mode mode) {
-  return std::make_unique<PrimaryAccountAccessTokenFetcher>(
-      oauth_consumer_name, signin_manager_, token_service_, scopes,
-      std::move(callback), mode);
+    AccessTokenFetcher::TokenCallback callback) {
+  return std::make_unique<AccessTokenFetcher>(account_id, oauth_consumer_name,
+                                              token_service_, scopes,
+                                              std::move(callback));
 }
 
 void IdentityManager::RemoveAccessTokenFromCache(
-    const AccountInfo& account_info,
+    const std::string& account_id,
     const OAuth2TokenService::ScopeSet& scopes,
     const std::string& access_token) {
-  // Call PO2TS asynchronously to mimic the eventual interaction with the
-  // Identity Service.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE,
-      base::BindOnce(&IdentityManager::HandleRemoveAccessTokenFromCache,
-                     weak_ptr_factory_.GetWeakPtr(), account_info.account_id,
-                     scopes, access_token));
+  // TODO(843510): Consider making the request to ProfileOAuth2TokenService
+  // asynchronously once there are no direct clients of PO2TS. This change would
+  // need to be made together with changing all callsites to
+  // ProfileOAuth2TokenService::RequestAccessToken() to be made asynchronously
+  // as well (to maintain ordering in the case where a client removes an access
+  // token from the cache and then immediately requests an access token).
+  token_service_->InvalidateAccessToken(account_id, scopes, access_token);
 }
 
 void IdentityManager::AddObserver(Observer* observer) {
@@ -177,30 +255,140 @@ void IdentityManager::GoogleSignedOut(const AccountInfo& account_info) {
   }
 }
 
+void IdentityManager::WillFireOnRefreshTokenAvailable(
+    const std::string& account_id,
+    bool is_valid) {
+  DCHECK(!pending_token_available_state_);
+
+  AccountInfo account_info =
+      account_tracker_service_->GetAccountInfo(account_id);
+
+  // In the context of supervised users, the ProfileOAuth2TokenService is used
+  // without the AccountTrackerService being used. This is the only case in
+  // which the AccountTrackerService will potentially not know about the
+  // account. In this context, |account_id| is always set to
+  // kSupervisedUserPseudoEmail.
+  // TODO(860492): Remove this special case once supervised user support is
+  // removed.
+  DCHECK(!account_info.IsEmpty() || account_id == kSupervisedUserPseudoEmail);
+  if (account_id == kSupervisedUserPseudoEmail && account_info.IsEmpty()) {
+    // Populate the information manually to maintain the invariant that the
+    // account ID, gaia ID, and email are always set.
+    account_info.account_id = account_id;
+    account_info.email = kSupervisedUserPseudoEmail;
+    account_info.gaia = kSupervisedUserPseudoGaiaID;
+  }
+
+  // The account might have already been  present (e.g., this method can fire on
+  // updating an invalid token to a valid one or vice versa); in this case we
+  // sanity-check that the cached account info has the expected values.
+  auto iterator = accounts_with_refresh_tokens_.find(account_id);
+  if (iterator != accounts_with_refresh_tokens_.end()) {
+    DCHECK_EQ(account_info.gaia, iterator->second.gaia);
+    DCHECK(gaia::AreEmailsSame(account_info.email, iterator->second.email));
+  } else {
+    auto insertion_result = accounts_with_refresh_tokens_.emplace(
+        account_id, std::move(account_info));
+    DCHECK(insertion_result.second);
+    iterator = insertion_result.first;
+  }
+
+  PendingTokenAvailableState pending_token_available_state;
+  pending_token_available_state.account_info = iterator->second;
+  pending_token_available_state.refresh_token_is_valid = is_valid;
+  pending_token_available_state_ = std::move(pending_token_available_state);
+}
+
+void IdentityManager::WillFireOnRefreshTokenRevoked(
+    const std::string& account_id) {
+  DCHECK(!pending_token_revoked_info_);
+
+  auto iterator = accounts_with_refresh_tokens_.find(account_id);
+  if (iterator == accounts_with_refresh_tokens_.end()) {
+    // A corner case exists wherein the token service revokes tokens while
+    // loading tokens during initial startup. This is the only case in which it
+    // is expected that we could receive this notification without having
+    // previously received a notification that this account was available. In
+    // this case, we simply do not forward on the notification, for the
+    // following reasons: (1) We may not have a fully-populated |account_info|
+    // to send as the argument. (2) Sending the notification breaks clients'
+    // expectations that IdentityManager will only fire RefreshTokenRemoved
+    // notifications for accounts that it previously knew about.
+    DCHECK(!token_service_->AreAllCredentialsLoaded());
+    return;
+  }
+
+  accounts_with_refresh_tokens_.erase(iterator);
+
+  pending_token_revoked_info_ =
+      account_tracker_service_->GetAccountInfo(account_id);
+
+  // In the context of supervised users, the ProfileOAuth2TokenService is used
+  // without the AccountTrackerService being used. This is the only case in
+  // which the AccountTrackerService will potentially not know about the
+  // account. In this context, |account_id| is always set to
+  // kSupervisedUserPseudoEmail.
+
+  // TODO(860492): Remove this special case once supervised user support is
+  // removed.
+  DCHECK(!pending_token_revoked_info_->IsEmpty() ||
+         account_id == kSupervisedUserPseudoEmail);
+  if (account_id == kSupervisedUserPseudoEmail &&
+      pending_token_revoked_info_->IsEmpty()) {
+    // Populate the information manually to maintain the invariant that the
+    // account ID, gaia ID, and email are always set.
+    pending_token_revoked_info_->account_id = account_id;
+    pending_token_revoked_info_->email = account_id;
+    pending_token_revoked_info_->gaia = kSupervisedUserPseudoGaiaID;
+  }
+}
+
+void IdentityManager::OnRefreshTokenAvailable(const std::string& account_id) {
+  DCHECK(pending_token_available_state_);
+  DCHECK_EQ(pending_token_available_state_->account_info.account_id,
+            account_id);
+
+  // Move the state out of |pending_token_available_state_| in case any observer
+  // callbacks fired below result in mutations of refresh tokens.
+  AccountInfo account_info =
+      std::move(pending_token_available_state_->account_info);
+  bool refresh_token_is_valid =
+      pending_token_available_state_->refresh_token_is_valid;
+
+  pending_token_available_state_.reset();
+
+  for (auto& observer : observer_list_) {
+    observer.OnRefreshTokenUpdatedForAccount(account_info,
+                                             refresh_token_is_valid);
+  }
+}
+
+void IdentityManager::OnRefreshTokenRevoked(const std::string& account_id) {
+  // NOTE: It is possible for |pending_token_revoked_info_| to be null in the
+  // corner case of tokens being revoked during initial startup (see
+  // WillFireOnRefreshTokenRevoked() above).
+  if (!pending_token_revoked_info_) {
+    return;
+  }
+
+  DCHECK_EQ(pending_token_revoked_info_->account_id, account_id);
+
+  // Move the state out of |pending_token_revoked_info_| in case any observer
+  // callbacks fired below result in mutations of refresh tokens.
+  AccountInfo account_info = pending_token_revoked_info_.value();
+  pending_token_revoked_info_.reset();
+
+  for (auto& observer : observer_list_) {
+    observer.OnRefreshTokenRemovedForAccount(account_info);
+  }
+}
+
 void IdentityManager::OnAccessTokenRequested(
     const std::string& account_id,
     const std::string& consumer_id,
     const OAuth2TokenService::ScopeSet& scopes) {
-  // Fire observer callbacks asynchronously to mimic this callback itself coming
-  // in asynchronously from the Identity Service rather than synchronously from
-  // ProfileOAuth2TokenService.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindOnce(&IdentityManager::HandleOnAccessTokenRequested,
-                                weak_ptr_factory_.GetWeakPtr(), account_id,
-                                consumer_id, scopes));
-}
-
-void IdentityManager::HandleRemoveAccessTokenFromCache(
-    const std::string& account_id,
-    const OAuth2TokenService::ScopeSet& scopes,
-    const std::string& access_token) {
-  token_service_->InvalidateAccessToken(account_id, scopes, access_token);
-}
-
-void IdentityManager::HandleOnAccessTokenRequested(
-    const std::string& account_id,
-    const std::string& consumer_id,
-    const OAuth2TokenService::ScopeSet& scopes) {
+  // TODO(843510): Consider notifying observers asynchronously once there
+  // are no direct clients of ProfileOAuth2TokenService.
   for (auto& observer : diagnostics_observer_list_) {
     observer.OnAccessTokenRequested(account_id, consumer_id, scopes);
   }

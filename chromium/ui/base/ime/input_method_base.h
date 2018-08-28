@@ -63,7 +63,7 @@ class UI_BASE_IME_EXPORT InputMethodBase
   int GetTextInputFlags() const override;
   bool CanComposeInline() const override;
   bool GetClientShouldDoLearning() override;
-  void ShowImeIfNeeded() override;
+  void ShowVirtualKeyboardIfEnabled() override;
 
   void AddObserver(InputMethodObserver* observer) override;
   void RemoveObserver(InputMethodObserver* observer) override;
@@ -85,6 +85,7 @@ class UI_BASE_IME_EXPORT InputMethodBase
                              uint32_t cursor_pos,
                              bool visible) override;
   void DeleteSurroundingText(int32_t offset, uint32_t length) override;
+  SurroundingTextInfo GetSurroundingTextInfo() override;
   void SendKeyEvent(KeyEvent* event) override;
   InputMethod* GetInputMethod() override;
 

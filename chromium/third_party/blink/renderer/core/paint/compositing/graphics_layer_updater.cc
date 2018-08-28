@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/paint/compositing/composited_layer_mapping.h"
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 
 namespace blink {
@@ -49,14 +50,15 @@ class GraphicsLayerUpdater::UpdateContext {
     if (compositing_state != kNotComposited &&
         compositing_state != kPaintsIntoGroupedBacking) {
       compositing_ancestor_ = &layer;
-      if (layer.StackingNode()->IsStackingContext())
+      if (layer.GetLayoutObject().StyleRef().IsStackingContext())
         compositing_stacking_context_ = &layer;
     }
   }
 
   const PaintLayer* CompositingContainer(const PaintLayer& layer) const {
     const PaintLayer* compositing_container;
-    if (layer.StackingNode()->IsStacked()) {
+    if (layer.GetLayoutObject().StyleRef().IsStacked() &&
+        !layer.IsReplacedNormalFlowStacking()) {
       compositing_container = compositing_stacking_context_;
     } else if ((layer.Parent() &&
                 !layer.Parent()->GetLayoutObject().IsLayoutBlock()) ||

@@ -9,7 +9,6 @@
 #include "base/bind.h"
 #include "base/memory/ptr_util.h"
 #include "chromeos/components/proximity_auth/logging/logging.h"
-#include "components/cryptauth/cryptauth_service.h"
 #include "components/cryptauth/secure_message_delegate_impl.h"
 #include "components/cryptauth/wire_message.h"
 
@@ -20,13 +19,11 @@ SecureChannel::Factory* SecureChannel::Factory::factory_instance_ = nullptr;
 
 // static
 std::unique_ptr<SecureChannel> SecureChannel::Factory::NewInstance(
-    std::unique_ptr<Connection> connection,
-    CryptAuthService* cryptauth_service) {
+    std::unique_ptr<Connection> connection) {
   if (!factory_instance_) {
     factory_instance_ = new Factory();
   }
-  return factory_instance_->BuildInstance(std::move(connection),
-                                          cryptauth_service);
+  return factory_instance_->BuildInstance(std::move(connection));
 }
 
 // static
@@ -35,10 +32,8 @@ void SecureChannel::Factory::SetInstanceForTesting(Factory* factory) {
 }
 
 std::unique_ptr<SecureChannel> SecureChannel::Factory::BuildInstance(
-    std::unique_ptr<Connection> connection,
-    CryptAuthService* cryptauth_service) {
-  return base::WrapUnique(
-      new SecureChannel(std::move(connection), cryptauth_service));
+    std::unique_ptr<Connection> connection) {
+  return base::WrapUnique(new SecureChannel(std::move(connection)));
 }
 
 // static
@@ -68,11 +63,9 @@ SecureChannel::PendingMessage::PendingMessage(const std::string& feature,
 
 SecureChannel::PendingMessage::~PendingMessage() {}
 
-SecureChannel::SecureChannel(std::unique_ptr<Connection> connection,
-                             CryptAuthService* cryptauth_service)
+SecureChannel::SecureChannel(std::unique_ptr<Connection> connection)
     : status_(Status::DISCONNECTED),
       connection_(std::move(connection)),
-      cryptauth_service_(cryptauth_service),
       weak_ptr_factory_(this) {
   connection_->AddObserver(this);
 }
@@ -121,6 +114,23 @@ void SecureChannel::AddObserver(Observer* observer) {
 
 void SecureChannel::RemoveObserver(Observer* observer) {
   observer_list_.RemoveObserver(observer);
+}
+
+void SecureChannel::GetConnectionRssi(
+    base::OnceCallback<void(base::Optional<int32_t>)> callback) {
+  if (!connection_) {
+    std::move(callback).Run(base::nullopt);
+    return;
+  }
+
+  connection_->GetConnectionRssi(std::move(callback));
+}
+
+base::Optional<std::string> SecureChannel::GetChannelBindingData() {
+  if (secure_context_)
+    return secure_context_->GetChannelBindingData();
+
+  return base::nullopt;
 }
 
 void SecureChannel::OnConnectionStatusChanged(
@@ -217,15 +227,6 @@ void SecureChannel::OnSendCompleted(const cryptauth::Connection& connection,
   // |false| here, a fatal error has occurred. Thus, there is no need to retry
   // the message; instead, disconnect.
   Disconnect();
-}
-
-void SecureChannel::OnGattCharacteristicsNotAvailable() {
-  NotifyGattCharacteristicsNotAvailable();
-}
-
-void SecureChannel::NotifyGattCharacteristicsNotAvailable() {
-  for (auto& observer : observer_list_)
-    observer.OnGattCharacteristicsNotAvailable();
 }
 
 void SecureChannel::TransitionToStatus(const Status& new_status) {

@@ -7,7 +7,7 @@
 
 #include "base/macros.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 
 namespace blink {
@@ -19,12 +19,11 @@ class Element;
 // https://html.spec.whatwg.org/multipage/scripting.html#custom-element-reactions
 class CORE_EXPORT CustomElementReactionStack final
     : public GarbageCollected<CustomElementReactionStack>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   CustomElementReactionStack();
 
   void Trace(blink::Visitor*);
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "CustomElementReactionStack";
   }

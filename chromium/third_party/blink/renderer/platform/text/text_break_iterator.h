@@ -279,12 +279,13 @@ class PLATFORM_EXPORT LazyLineBreakIterator final {
   }
 
   template <typename CharacterType, LineBreakType, BreakSpaceType>
-  int NextBreakablePosition(int pos, const CharacterType* str) const;
+  int NextBreakablePosition(int pos, const CharacterType* str, int len) const;
   template <typename CharacterType, LineBreakType>
-  int NextBreakablePosition(int pos, const CharacterType* str) const;
+  int NextBreakablePosition(int pos, const CharacterType* str, int len) const;
   template <LineBreakType>
-  int NextBreakablePosition(int pos) const;
+  int NextBreakablePosition(int pos, int len) const;
   int NextBreakablePositionBreakCharacter(int pos) const;
+  int NextBreakablePosition(int pos, LineBreakType, int len) const;
   int NextBreakablePosition(int pos, LineBreakType) const;
 
   static const unsigned kPriorContextCapacity = 2;
@@ -361,6 +362,13 @@ PLATFORM_EXPORT unsigned NumGraphemeClusters(const String&);
 
 // Returns the number of code units that the next grapheme cluster is made of.
 PLATFORM_EXPORT unsigned LengthOfGraphemeCluster(const String&, unsigned = 0);
+
+// Returns a list of graphemes cluster at each character using character break
+// rules.
+PLATFORM_EXPORT void GraphemesClusterList(String text,
+                                          unsigned start,
+                                          unsigned length,
+                                          Vector<unsigned>* graphemes);
 
 }  // namespace blink
 

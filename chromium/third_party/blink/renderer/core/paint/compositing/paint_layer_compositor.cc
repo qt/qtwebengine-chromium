@@ -53,6 +53,7 @@
 #include "third_party/blink/renderer/core/paint/compositing/graphics_layer_tree_builder.h"
 #include "third_party/blink/renderer/core/paint/compositing/graphics_layer_updater.h"
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
@@ -102,10 +103,6 @@ void PaintLayerCompositor::SetCompositingModeEnabled(bool enable) {
     EnsureRootLayer();
   else
     DestroyRootLayer();
-
-  LocalFrameView* view = layout_view_.GetFrameView();
-  view->SetUsesCompositedScrolling(
-      view->GetFrame().GetSettings()->GetPreferCompositingToLCDTextEnabled());
 
   // Schedule an update in the parent frame so the <iframe>'s layer in the owner
   // document matches the compositing state here.
@@ -272,8 +269,10 @@ void PaintLayerCompositor::UpdateIfNeededRecursiveInternal(
         ->UpdateCompositorScrollAnimations();
     if (const LocalFrameView::ScrollableAreaSet* animating_scrollable_areas =
             layout_view_.GetFrameView()->AnimatingScrollableAreas()) {
-      for (ScrollableArea* scrollable_area : *animating_scrollable_areas)
+      for (PaintLayerScrollableArea* scrollable_area :
+           *animating_scrollable_areas) {
         scrollable_area->UpdateCompositorScrollAnimations();
+      }
     }
   }
 
@@ -347,7 +346,7 @@ void PaintLayerCompositor::ApplyOverlayFullscreenVideoAdjustmentIfNeeded() {
   // scroll position because fullscreen container is fixed-positioned.
   // We should reset layer position here since we are going to reattach the
   // layer at the very top level.
-  video_layer->SetPosition(IntPoint());
+  video_layer->SetPosition(FloatPoint());
 
   // Only steal fullscreen video layer and clear all other layers if we are the
   // main frame.
@@ -365,7 +364,7 @@ void PaintLayerCompositor::UpdateWithoutAcceleratedCompositing(
   DCHECK(!HasAcceleratedCompositing());
 
   if (update_type >= kCompositingUpdateAfterCompositingInputChange)
-    CompositingInputsUpdater(RootLayer()).Update();
+    CompositingInputsUpdater(RootLayer(), compositing_reason_finder_).Update();
 
 #if DCHECK_IS_ON()
   CompositingInputsUpdater::AssertNeedsCompositingInputsUpdateBitsCleared(
@@ -441,7 +440,7 @@ void PaintLayerCompositor::UpdateIfNeeded(
   Vector<PaintLayer*> layers_needing_paint_invalidation;
 
   if (update_type >= kCompositingUpdateAfterCompositingInputChange) {
-    CompositingInputsUpdater(update_root).Update();
+    CompositingInputsUpdater(update_root, compositing_reason_finder_).Update();
 
 #if DCHECK_IS_ON()
     // FIXME: Move this check to the end of the compositing update.
@@ -465,21 +464,17 @@ void PaintLayerCompositor::UpdateIfNeeded(
     CompositingLayerAssigner layer_assigner(this);
     layer_assigner.Assign(update_root, layers_needing_paint_invalidation);
 
-    bool layers_changed = layer_assigner.LayersChanged();
-
     {
       TRACE_EVENT0("blink",
                    "PaintLayerCompositor::updateAfterCompositingChange");
       if (const LocalFrameView::ScrollableAreaSet* scrollable_areas =
               layout_view_.GetFrameView()->ScrollableAreas()) {
-        for (ScrollableArea* scrollable_area : *scrollable_areas)
-          layers_changed |= scrollable_area->UpdateAfterCompositingChange();
+        for (PaintLayerScrollableArea* scrollable_area : *scrollable_areas)
+          scrollable_area->UpdateAfterCompositingChange();
       }
-      layers_changed |=
-          layout_view_.GetFrameView()->UpdateAfterCompositingChange();
     }
 
-    if (layers_changed) {
+    if (layer_assigner.LayersChanged()) {
       update_type = std::max(update_type, kCompositingUpdateRebuildTree);
       if (ScrollingCoordinator* scrolling_coordinator =
               GetScrollingCoordinator()) {
@@ -663,9 +658,6 @@ void PaintLayerCompositor::PaintInvalidationOnCompositingChange(
   // to the previous frame's compositing state when changing the compositing
   // backing of the layer.
   DisableCompositingQueryAsserts disabler;
-  // We have to do immediate paint invalidation because compositing will change.
-  DisablePaintInvalidationStateAsserts paint_invalidation_assertisabler;
-
   ObjectPaintInvalidator(layer->GetLayoutObject())
       .InvalidatePaintIncludingNonCompositingDescendants();
 }
@@ -734,6 +726,9 @@ GraphicsLayer* PaintLayerCompositor::RootGraphicsLayer() const {
 
 GraphicsLayer* PaintLayerCompositor::PaintRootGraphicsLayer() const {
   if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+    if (layout_view_.GetDocument().GetPage()->GetChromeClient().IsPopup())
+      return RootGraphicsLayer();
+
     // Start painting at the inner viewport container layer which is an ancestor
     // of both the main contents layers and the scrollbar layers.
     if (IsMainFrame() && GetVisualViewport().ContainerLayer())
@@ -824,7 +819,8 @@ bool PaintLayerCompositor::NeedsContentsCompositingLayer(
     const PaintLayer* layer) const {
   if (!layer->HasCompositingDescendant())
     return false;
-  return layer->StackingNode()->HasNegativeZOrderList();
+  return layer->StackingNode() &&
+         layer->StackingNode()->HasNegativeZOrderList();
 }
 
 static void UpdateTrackingRasterInvalidationsRecursive(
@@ -886,6 +882,11 @@ void PaintLayerCompositor::AttachRootLayer() {
     // CompositedLayerMapping::updateGraphicsLayerConfiguration() for the
     // frame's layoutObject in the parent document.
     owner_element->SetNeedsCompositingUpdate();
+    if (owner_element->GetLayoutObject()) {
+      ToLayoutBoxModelObject(owner_element->GetLayoutObject())
+          ->Layer()
+          ->SetNeedsCompositingInputsUpdate();
+    }
     root_layer_attachment_ = kRootLayerAttachedViaEnclosingFrame;
   }
 }

@@ -19,6 +19,7 @@
 #include "services/service_manager/public/cpp/bind_source_info.h"
 #include "services/ui/display/screen_manager.h"
 #include "services/ui/display/viewport_metrics.h"
+#include "services/ui/gpu_host/gpu_host.h"
 #include "services/ui/public/interfaces/screen_provider.mojom.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
 #include "services/ui/ws/display.h"
@@ -27,7 +28,6 @@
 #include "services/ui/ws/event_dispatcher_impl_test_api.h"
 #include "services/ui/ws/event_processor.h"
 #include "services/ui/ws/event_targeter.h"
-#include "services/ui/ws/gpu_host.h"
 #include "services/ui/ws/platform_display.h"
 #include "services/ui/ws/platform_display_factory.h"
 #include "services/ui/ws/test_change_tracker.h"
@@ -408,7 +408,7 @@ class TestWindowManager : public mojom::WindowManager {
   void WmClientJankinessChanged(ClientSpecificId client_id,
                                 bool janky) override;
   void WmBuildDragImage(const gfx::Point& screen_location,
-                        const SkBitmap& drag_image,
+                        const gfx::ImageSkia& drag_image,
                         const gfx::Vector2d& drag_image_offset,
                         ui::mojom::PointerKind source) override;
   void WmMoveDragImage(const gfx::Point& screen_location,
@@ -564,6 +564,8 @@ class TestWindowTreeClient : public ui::mojom::WindowTreeClient {
   void RequestClose(Id window_id) override;
   void GetWindowManager(
       mojo::AssociatedInterfaceRequest<mojom::WindowManager> internal) override;
+  void GetScreenProviderObserver(
+      mojom::ScreenProviderObserverAssociatedRequest observer) override;
 
   TestChangeTracker tracker_;
   mojo::Binding<mojom::WindowTreeClient> binding_;

@@ -9,48 +9,55 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "device/vr/public/mojom/isolated_xr_service.mojom.h"
 #include "device/vr/public/mojom/vr_service.mojom.h"
+#include "device/vr/vr_device.h"
 #include "device/vr/vr_export.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "ui/display/display.h"
 
 namespace device {
 
-class VRDevice;
 class VRDeviceBase;
 
-// Browser process representation of a VRDevice within a WebVR site session
-// (see VRServiceImpl). VRDisplayImpl receives/sends VR device events
-// from/to mojom::VRDisplayClient (the render process representation of a VR
-// device).
-// VRDisplayImpl objects are owned by their respective VRServiceImpl instances.
-// TODO(mthiesse, crbug.com/769373): Remove DEVICE_VR_EXPORT.
-class DEVICE_VR_EXPORT VRDisplayImpl : public mojom::VRMagicWindowProvider {
+// VR device process implementation of a VRMagicWindowProvider within a WebVR
+// or WebXR site session.
+// VRDisplayImpl objects are owned by their respective XRRuntime instances.
+// TODO(offenwanger): Rename this.
+class DEVICE_VR_EXPORT VRDisplayImpl : public mojom::VRMagicWindowProvider,
+                                       public mojom::XRSessionController {
  public:
-  VRDisplayImpl(VRDevice* device,
-                mojom::VRServiceClient* service_client,
-                mojom::VRDisplayInfoPtr display_info,
-                mojom::VRDisplayHostPtr display_host,
-                mojom::VRDisplayClientRequest client_request,
-                bool in_frame_focused);
+  VRDisplayImpl(VRDeviceBase* device,
+                mojom::VRMagicWindowProviderRequest,
+                mojom::XRSessionControllerRequest);
   ~VRDisplayImpl() override;
 
-  void SetListeningForActivate(bool listening);
-  void SetInFocusedFrame(bool in_focused_frame);
-  virtual bool ListeningForActivate();
-  virtual bool InFocusedFrame();
+  gfx::Size sessionFrameSize() { return session_frame_size_; };
+  display::Display::Rotation sessionRotation() { return session_rotation_; };
 
- private:
+  device::VRDeviceBase* device() { return device_; };
+
+  // Accessible to tests.
+ protected:
   // mojom::VRMagicWindowProvider
-  void GetPose(GetPoseCallback callback) override;
-  void GetFrameData(const gfx::Size& frame_size,
-                    display::Display::Rotation rotation,
-                    GetFrameDataCallback callback) override;
+  void GetFrameData(GetFrameDataCallback callback) override;
+  void UpdateSessionGeometry(const gfx::Size& frame_size,
+                             display::Display::Rotation rotation) override;
+  void RequestHitTest(mojom::XRRayPtr ray,
+                      RequestHitTestCallback callback) override;
 
-  mojo::Binding<mojom::VRMagicWindowProvider> binding_;
+  // mojom::XRSessionController
+  void SetFrameDataRestricted(bool paused) override;
+
+  void OnMojoConnectionError();
+
+  mojo::Binding<mojom::VRMagicWindowProvider> magic_window_binding_;
+  mojo::Binding<mojom::XRSessionController> session_controller_binding_;
   device::VRDeviceBase* device_;
-  bool listening_for_activate_ = false;
-  bool in_focused_frame_ = false;
+  bool restrict_frame_data_ = true;
+
+  gfx::Size session_frame_size_ = gfx::Size(0, 0);
+  display::Display::Rotation session_rotation_ = display::Display::ROTATE_0;
 };
 
 }  // namespace device

@@ -6,11 +6,11 @@
 #define THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_SERIALIZATION_V8_SCRIPT_VALUE_SERIALIZER_H_
 
 #include "base/memory/scoped_refptr.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialization_tag.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_color_params.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/noncopyable.h"
@@ -37,8 +37,7 @@ class CORE_EXPORT V8ScriptValueSerializer
 
  public:
   using Options = SerializedScriptValue::SerializeOptions;
-  explicit V8ScriptValueSerializer(scoped_refptr<ScriptState>,
-                                   const Options& = Options());
+  explicit V8ScriptValueSerializer(ScriptState*, const Options& = Options());
 
   scoped_refptr<SerializedScriptValue> Serialize(v8::Local<v8::Value>,
                                                  ExceptionState&);
@@ -99,7 +98,7 @@ class CORE_EXPORT V8ScriptValueSerializer
                                size_t* actual_size) override;
   void FreeBufferMemory(void* buffer) override;
 
-  scoped_refptr<ScriptState> script_state_;
+  Member<ScriptState> script_state_;
   scoped_refptr<SerializedScriptValue> serialized_script_value_;
   v8::ValueSerializer serializer_;
   const Transferables* transferables_ = nullptr;

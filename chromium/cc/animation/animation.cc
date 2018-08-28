@@ -13,6 +13,7 @@
 #include "cc/animation/animation_events.h"
 #include "cc/animation/animation_host.h"
 #include "cc/animation/animation_timeline.h"
+#include "cc/animation/keyframe_effect.h"
 #include "cc/animation/scroll_offset_animation_curve.h"
 #include "cc/animation/transform_operations.h"
 #include "cc/trees/property_animation_state.h"
@@ -229,13 +230,19 @@ void Animation::AbortKeyframeModelForKeyframeEffect(
       ->AbortKeyframeModel(keyframe_model_id);
 }
 
-void Animation::AbortKeyframeModels(TargetProperty::Type target_property,
-                                    bool needs_completion) {
+void Animation::AbortKeyframeModelsWithProperty(
+    TargetProperty::Type target_property,
+    bool needs_completion) {
   for (auto& keyframe_effect : keyframe_effects_)
-    keyframe_effect->AbortKeyframeModels(target_property, needs_completion);
+    keyframe_effect->AbortKeyframeModelsWithProperty(target_property,
+                                                     needs_completion);
 }
 
 void Animation::PushPropertiesTo(Animation* animation_impl) {
+  // In general when pushing proerties to impl thread we first push attached
+  // properties to impl followed by removing the detached ones. However, we
+  // never remove individual keyframe effect from an animation so there is no
+  // need to remove the detached ones.
   PushAttachedKeyframeEffectsToImplThread(animation_impl);
   PushPropertiesToImplThread(animation_impl);
 }

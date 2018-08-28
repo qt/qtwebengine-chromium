@@ -43,9 +43,9 @@ void GrOpFlushState::executeDrawsAndUploadsForMeshDrawOp(uint32_t opID, const Sk
             ++fCurrUpload;
         }
         SkASSERT(fCurrDraw->fPipeline->proxy() == this->drawOpArgs().fProxy);
-        this->rtCommandBuffer()->draw(*fCurrDraw->fPipeline, *fCurrDraw->fGeometryProcessor,
-                                      fMeshes.begin() + fCurrMesh, nullptr, fCurrDraw->fMeshCnt,
-                                      opBounds);
+        this->rtCommandBuffer()->draw(*fCurrDraw->fGeometryProcessor, *fCurrDraw->fPipeline,
+                                      fCurrDraw->fFixedDynamicState, fCurrDraw->fDynamicStateArrays,
+                                      fMeshes.begin() + fCurrMesh, fCurrDraw->fMeshCnt, opBounds);
         fCurrMesh += fCurrDraw->fMeshCnt;
         fTokenTracker->flushToken();
         ++fCurrDraw;
@@ -83,36 +83,13 @@ void GrOpFlushState::doUpload(GrDeferredTextureUploadFn& upload) {
                                                      int width, int height,
                                                      GrColorType srcColorType, const void* buffer,
                                                      size_t rowBytes) {
-        // We don't allow srgb conversions via op flush state uploads.
-        static constexpr auto kSRGBConversion = GrSRGBConversion::kNone;
         GrSurface* dstSurface = dstProxy->priv().peekSurface();
-        GrGpu::DrawPreference drawPreference = GrGpu::kNoDraw_DrawPreference;
-        GrGpu::WritePixelTempDrawInfo tempInfo;
-        if (!fGpu->getWritePixelsInfo(dstSurface, dstProxy->origin(), width, height, srcColorType,
-                                      kSRGBConversion, &drawPreference, &tempInfo)) {
+        if (!fGpu->caps()->surfaceSupportsWritePixels(dstSurface) &&
+            fGpu->caps()->supportedWritePixelsColorType(dstSurface->config(), srcColorType) != srcColorType) {
             return false;
         }
-        if (GrGpu::kNoDraw_DrawPreference == drawPreference) {
-            return this->fGpu->writePixels(dstSurface, dstProxy->origin(), left, top, width, height,
-                                           srcColorType, buffer, rowBytes);
-        }
-        // TODO: Shouldn't we be bailing here if a draw is really required instead of a copy?
-        // e.g. if (tempInfo.fSwizzle != "RGBA") fail.
-        GrSurfaceDesc desc;
-        desc.fWidth = width;
-        desc.fHeight = height;
-        desc.fConfig = dstProxy->config();
-        sk_sp<GrTexture> temp(this->fResourceProvider->createApproxTexture(
-                desc, GrResourceProvider::kNoPendingIO_Flag));
-        if (!temp) {
-            return false;
-        }
-        if (!fGpu->writePixels(temp.get(), dstProxy->origin(), 0, 0, width, height,
-                               tempInfo.fWriteColorType, buffer, rowBytes)) {
-            return false;
-        }
-        return fGpu->copySurface(dstSurface, dstProxy->origin(), temp.get(), dstProxy->origin(),
-                                 SkIRect::MakeWH(width, height), {left, top});
+        return this->fGpu->writePixels(dstSurface, left, top, width, height, srcColorType, buffer,
+                                       rowBytes);
     };
     upload(wp);
 }
@@ -128,6 +105,7 @@ GrDeferredUploadToken GrOpFlushState::addASAPUpload(GrDeferredTextureUploadFn&& 
 }
 
 void GrOpFlushState::draw(const GrGeometryProcessor* gp, const GrPipeline* pipeline,
+                          const GrPipeline::FixedDynamicState* fixedDynamicState,
                           const GrMesh& mesh) {
     SkASSERT(fOpArgs);
     SkASSERT(fOpArgs->fOp);
@@ -137,7 +115,10 @@ void GrOpFlushState::draw(const GrGeometryProcessor* gp, const GrPipeline* pipel
         Draw& lastDraw = *fDraws.begin();
         // If the last draw shares a geometry processor and pipeline and there are no intervening
         // uploads, add this mesh to it.
-        if (lastDraw.fGeometryProcessor == gp && lastDraw.fPipeline == pipeline) {
+        // Note, we could attempt to convert fixed dynamic states into dynamic state arrays here
+        // if everything else is equal. Maybe it's better to rely on Ops to do that?
+        if (lastDraw.fGeometryProcessor == gp && lastDraw.fPipeline == pipeline &&
+            lastDraw.fFixedDynamicState == fixedDynamicState) {
             if (fInlineUploads.begin() == fInlineUploads.end() ||
                 fInlineUploads.tail()->fUploadBeforeToken != fTokenTracker->nextDrawToken()) {
                 ++lastDraw.fMeshCnt;
@@ -150,6 +131,8 @@ void GrOpFlushState::draw(const GrGeometryProcessor* gp, const GrPipeline* pipel
 
     draw.fGeometryProcessor.reset(gp);
     draw.fPipeline = pipeline;
+    draw.fFixedDynamicState = fixedDynamicState;
+    draw.fDynamicStateArrays = nullptr;
     draw.fMeshCnt = 1;
     draw.fOpID = fOpArgs->fOp->uniqueID();
     if (firstDraw) {

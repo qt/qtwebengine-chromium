@@ -279,6 +279,7 @@ PseudoId CSSSelector::GetPseudoId(PseudoType type) {
     case kPseudoFullScreenAncestor:
     case kPseudoFullscreen:
     case kPseudoSpatialNavigationFocus:
+    case kPseudoIsHtml:
     case kPseudoListBox:
     case kPseudoHostHasAppearance:
     case kPseudoSlotted:
@@ -301,6 +302,7 @@ struct NameToPseudoStruct {
 
 // These tables should be kept sorted.
 const static NameToPseudoStruct kPseudoTypeWithoutArgumentsMap[] = {
+    {"-internal-is-html", CSSSelector::kPseudoIsHtml},
     {"-internal-list-box", CSSSelector::kPseudoListBox},
     {"-internal-media-controls-overlay-cast-button",
      CSSSelector::kPseudoWebKitCustomElement},
@@ -567,6 +569,7 @@ void CSSSelector::UpdatePseudoType(const AtomicString& value,
         pseudo_type_ = kPseudoUnknown;
       break;
     case kPseudoHostHasAppearance:
+    case kPseudoIsHtml:
     case kPseudoListBox:
     case kPseudoSpatialNavigationFocus:
     case kPseudoVideoPersistent:
@@ -859,9 +862,6 @@ String CSSSelector::SelectorText() const {
       case kShadowDeepAsDescendant:
         result = " /deep/ " + builder.ToString() + result;
         break;
-      case kShadowPiercingDescendant:
-        result = " >>> " + builder.ToString() + result;
-        break;
       case kDirectAdjacent:
         result = " + " + builder.ToString() + result;
         break;
@@ -943,6 +943,7 @@ static bool ValidateSubSelector(const CSSSelector* selector) {
     case CSSSelector::kPseudoHostContext:
     case CSSSelector::kPseudoNot:
     case CSSSelector::kPseudoSpatialNavigationFocus:
+    case CSSSelector::kPseudoIsHtml:
     case CSSSelector::kPseudoListBox:
     case CSSSelector::kPseudoHostHasAppearance:
       return true;
@@ -1081,7 +1082,6 @@ bool CSSSelector::HasDeepCombinatorOrShadowPseudo() const {
   return ForAnyInTagHistory(
       [](const CSSSelector& selector) -> bool {
         return selector.Relation() == CSSSelector::kShadowDeep ||
-               selector.Relation() == CSSSelector::kShadowPiercingDescendant ||
                selector.GetPseudoType() == CSSSelector::kPseudoShadow;
       },
       *this);

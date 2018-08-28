@@ -18,6 +18,8 @@ class AccessibilityHelperHost;
 class AccessibilityHelperInstance;
 class AppHost;
 class AppInstance;
+class AppfuseHost;
+class AppfuseInstance;
 class AudioHost;
 class AudioInstance;
 class AuthHost;
@@ -34,6 +36,8 @@ class ClipboardHost;
 class ClipboardInstance;
 class CrashCollectorHost;
 class CrashCollectorInstance;
+class DiskQuotaHost;
+class DiskQuotaInstance;
 class EnterpriseReportingHost;
 class EnterpriseReportingInstance;
 class FileSystemHost;
@@ -68,8 +72,8 @@ class RotationLockInstance;
 class ScreenCaptureHost;
 class ScreenCaptureInstance;
 class StorageManagerInstance;
-class TimerInstance;
 class TimerHost;
+class TimerInstance;
 class TracingInstance;
 class TtsHost;
 class TtsInstance;
@@ -103,6 +107,9 @@ class ArcBridgeService {
     return &accessibility_helper_;
   }
   ConnectionHolder<mojom::AppInstance, mojom::AppHost>* app() { return &app_; }
+  ConnectionHolder<mojom::AppfuseInstance, mojom::AppfuseHost>* appfuse() {
+    return &appfuse_;
+  }
   ConnectionHolder<mojom::AudioInstance, mojom::AudioHost>* audio() {
     return &audio_;
   }
@@ -135,6 +142,10 @@ class ArcBridgeService {
   ConnectionHolder<mojom::CrashCollectorInstance, mojom::CrashCollectorHost>*
   crash_collector() {
     return &crash_collector_;
+  }
+  ConnectionHolder<mojom::DiskQuotaInstance, mojom::DiskQuotaHost>*
+  disk_quota() {
+    return &disk_quota_;
   }
   ConnectionHolder<mojom::EnterpriseReportingInstance,
                    mojom::EnterpriseReportingHost>*
@@ -234,6 +245,7 @@ class ArcBridgeService {
                    mojom::AccessibilityHelperHost>
       accessibility_helper_;
   ConnectionHolder<mojom::AppInstance, mojom::AppHost> app_;
+  ConnectionHolder<mojom::AppfuseInstance, mojom::AppfuseHost> appfuse_;
   ConnectionHolder<mojom::AudioInstance, mojom::AudioHost> audio_;
   ConnectionHolder<mojom::AuthInstance, mojom::AuthHost> auth_;
   ConnectionHolder<mojom::BackupSettingsInstance> backup_settings_;
@@ -245,6 +257,7 @@ class ArcBridgeService {
   ConnectionHolder<mojom::ClipboardInstance, mojom::ClipboardHost> clipboard_;
   ConnectionHolder<mojom::CrashCollectorInstance, mojom::CrashCollectorHost>
       crash_collector_;
+  ConnectionHolder<mojom::DiskQuotaInstance, mojom::DiskQuotaHost> disk_quota_;
   ConnectionHolder<mojom::EnterpriseReportingInstance,
                    mojom::EnterpriseReportingHost>
       enterprise_reporting_;

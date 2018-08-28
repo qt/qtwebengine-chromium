@@ -188,7 +188,7 @@ This will print the name of each GPU command before it is executed.
 ### Debugging in the GPU Process
 
 Given the multi-processness of chromium it can be hard to debug both sides.
-Turing on all the logging and having a small test case is useful. One minor
+Turning on all the logging and having a small test case is useful. One minor
 suggestion, if you have some idea where the bug is happening a call to some
 obscure gl function like `glHint()` can give you a place to catch a command
 being processed in the GPU process (put a break point on

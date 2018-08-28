@@ -176,6 +176,14 @@ SkStreamAsset* SkRandomTypeface::onOpenStream(int* ttcIndex) const {
     return fProxy->openStream(ttcIndex);
 }
 
+sk_sp<SkTypeface> SkRandomTypeface::onMakeClone(const SkFontArguments& args) const {
+    sk_sp<SkTypeface> proxy = fProxy->makeClone(args);
+    if (!proxy) {
+        return nullptr;
+    }
+    return sk_make_sp<SkRandomTypeface>(proxy, fPaint, fFakeIt);
+}
+
 void SkRandomTypeface::onGetFontDescriptor(SkFontDescriptor* desc, bool* isLocal) const {
     // TODO: anything that uses this typeface isn't correctly serializable, since this typeface
     // cannot be deserialized.
@@ -207,6 +215,12 @@ int SkRandomTypeface::onGetVariationDesignPosition(
         SkFontArguments::VariationPosition::Coordinate coordinates[], int coordinateCount) const
 {
     return fProxy->onGetVariationDesignPosition(coordinates, coordinateCount);
+}
+
+int SkRandomTypeface::onGetVariationDesignParameters(
+        SkFontParameters::Variation::Axis parameters[], int parameterCount) const
+{
+    return fProxy->onGetVariationDesignParameters(parameters, parameterCount);
 }
 
 int SkRandomTypeface::onGetTableTags(SkFontTableTag tags[]) const {

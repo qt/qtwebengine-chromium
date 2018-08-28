@@ -7,14 +7,14 @@
 #ifndef FXJS_CJS_FONT_H_
 #define FXJS_CJS_FONT_H_
 
-#include "fxjs/JS_Define.h"
+#include "fxjs/js_define.h"
 
 class CJS_Font : public CJS_Object {
  public:
   static void DefineJSObjects(CFXJS_Engine* pEngine);
 
-  explicit CJS_Font(v8::Local<v8::Object> pObject) : CJS_Object(pObject) {}
-  ~CJS_Font() override {}
+  CJS_Font(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
+  ~CJS_Font() override;
 
  private:
   static int ObjDefnID;

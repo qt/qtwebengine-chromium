@@ -57,4 +57,7 @@ libsupersize/match_util.py
 libsupersize/models.py
 libsupersize/ninja_parser.py
 libsupersize/nm.py
+libsupersize/obj_analyzer.py
 libsupersize/path_util.py
+libsupersize/start_server.py
+libsupersize/string_extract.py

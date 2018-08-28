@@ -4,71 +4,39 @@
 
 #include "third_party/blink/renderer/core/paint/adjust_paint_offset_scope.h"
 
-#include "third_party/blink/renderer/core/layout/layout_block_flow.h"
-#include "third_party/blink/renderer/core/layout/layout_table_section.h"
-
 namespace blink {
 
-bool AdjustPaintOffsetScope::AdjustPaintOffset(const LayoutBox& box) {
-  DCHECK(RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
-
-  if (box.HasSelfPaintingLayer())
-    return false;
-
-  // TODO(wangxianzhu): Expose fragment so that the client doesn't need to
-  // call FragmentToPaint() again when needed.
-  const auto* fragment = old_paint_info_.FragmentToPaint(box);
-  if (!fragment) {
-    // TODO(wangxianzhu): The client should know the case and bail out of
-    // painting of itself.
-    return false;
+void AdjustPaintOffsetScope::AdjustForPaintOffsetTranslation(
+    const LayoutObject& object,
+    const TransformPaintPropertyNode* paint_offset_translation) {
+  if (input_paint_info_.context.InDrawingRecorder()) {
+    // If we are recording drawings, we should issue the translation as a raw
+    // paint operation instead of paint chunk properties. One case is that we
+    // are painting table row background behind a cell having paint offset
+    // translation.
+    input_paint_info_.context.Save();
+    FloatSize translation =
+        paint_offset_translation->Matrix().To2DTranslation();
+    input_paint_info_.context.Translate(translation.Width(),
+                                        translation.Height());
+    paint_offset_translation_as_drawing_ = true;
+  } else {
+    chunk_properties_.emplace(
+        input_paint_info_.context.GetPaintController(),
+        paint_offset_translation, object,
+        DisplayItem::PaintPhaseToDrawingType(input_paint_info_.phase));
   }
 
-  const auto* paint_properties = fragment->PaintProperties();
-  if (paint_properties && paint_properties->PaintOffsetTranslation()) {
-    contents_properties_.emplace(
-        old_paint_info_.context.GetPaintController(),
-        fragment->LocalBorderBoxProperties(), box,
-        DisplayItem::PaintPhaseToDrawingType(old_paint_info_.phase));
-
-    new_paint_info_.emplace(old_paint_info_);
-    new_paint_info_->UpdateCullRect(paint_properties->PaintOffsetTranslation()
-                                        ->Matrix()
-                                        .ToAffineTransform());
-
-    adjusted_paint_offset_ = fragment->PaintOffset();
-    return true;
-  }
-
-  if (box.IsFixedPositionObjectInPagedMedia()) {
-    adjusted_paint_offset_ = fragment->PaintOffset();
-    return true;
-  }
-
-  if (box.IsTableSection()) {
-    const auto& section = ToLayoutTableSection(box);
-    if (section.IsRepeatingHeaderGroup() || section.IsRepeatingFooterGroup()) {
-      adjusted_paint_offset_ = fragment->PaintOffset();
-      return true;
-    }
-  }
-
-  // TODO(wangxianzhu): Use fragment->PaintOffset() for all cases and eliminate
-  // the paint_offset parameter of paint methods.
-  return false;
+  adjusted_paint_info_.emplace(input_paint_info_);
+  adjusted_paint_info_->UpdateCullRect(
+      paint_offset_translation->Matrix().ToAffineTransform());
 }
 
-bool AdjustPaintOffsetScope::WillUseLegacyLocation(const LayoutBox* child) {
-  if (child->HasSelfPaintingLayer())
-    return true;
-  if (child->IsLayoutNGMixin()) {
-    NGPaintFragment* paint_fragment = ToLayoutBlockFlow(child)->PaintFragment();
-    if (!paint_fragment)
-      return true;
-    if (!paint_fragment->PhysicalFragment().IsPlacedByLayoutNG())
-      return true;
-    return false;
-  }
-  return true;
+void AdjustPaintOffsetScope::FinishPaintOffsetTranslationAsDrawing() {
+  // This scope should not interlace with scopes of DrawingRecorders.
+  DCHECK(paint_offset_translation_as_drawing_);
+  DCHECK(input_paint_info_.context.InDrawingRecorder());
+  input_paint_info_.context.Restore();
 }
+
 }  // namespace blink

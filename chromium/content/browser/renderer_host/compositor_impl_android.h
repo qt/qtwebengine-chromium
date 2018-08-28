@@ -16,6 +16,7 @@
 #include "base/observer_list.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
+#include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/host/host_frame_sink_client.h"
@@ -25,11 +26,13 @@
 #include "gpu/ipc/common/surface_handle.h"
 #include "gpu/vulkan/buildflags.h"
 #include "services/ui/public/cpp/gpu/context_provider_command_buffer.h"
+#include "services/viz/privileged/interfaces/compositing/display_private.mojom.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/android/resources/resource_manager_impl.h"
 #include "ui/android/resources/ui_resource_provider.h"
 #include "ui/android/window_android_compositor.h"
 #include "ui/compositor/compositor_lock.h"
+#include "ui/compositor/external_begin_frame_client.h"
 #include "ui/display/display_observer.h"
 
 struct ANativeWindow;
@@ -40,10 +43,15 @@ class Layer;
 class LayerTreeHost;
 }
 
+namespace ui {
+class ExternalBeginFrameControllerClientImpl;
+}
+
 namespace viz {
 class Display;
 class FrameSinkId;
 class FrameSinkManagerImpl;
+class HostDisplayClient;
 class HostFrameSinkManager;
 class OutputSurface;
 }
@@ -81,6 +89,10 @@ class CONTENT_EXPORT CompositorImpl
   // Test functions:
   bool IsLockedForTesting() const { return lock_manager_.IsLocked(); }
   void SetVisibleForTesting(bool visible) { SetVisible(visible); }
+  void SetSwapCompletedWithSizeCallbackForTesting(
+      base::RepeatingCallback<void(const gfx::Size&)> cb) {
+    swap_completed_with_size_for_testing_ = std::move(cb);
+  }
 
  private:
   // Compositor implementation.
@@ -116,7 +128,9 @@ class CONTENT_EXPORT CompositorImpl
   void DidCommitAndDrawFrame() override {}
   void DidReceiveCompositorFrameAck() override;
   void DidCompletePageScaleAnimation() override {}
-  bool IsForSubframe() override;
+  void DidPresentCompositorFrame(
+      uint32_t frame_token,
+      const gfx::PresentationFeedback& feedback) override {}
 
   // LayerTreeHostSingleThreadClient implementation.
   void DidSubmitCompositorFrame() override;
@@ -136,7 +150,8 @@ class CONTENT_EXPORT CompositorImpl
   bool IsDrawingFirstVisibleFrame() const override;
 
   // viz::HostFrameSinkClient implementation.
-  void OnFirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
+  void OnFirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override {
+  }
   void OnFrameTokenChanged(uint32_t frame_token) override {}
 
   // display::DisplayObserver implementation.
@@ -152,14 +167,14 @@ class CONTENT_EXPORT CompositorImpl
   void HandlePendingLayerTreeFrameSinkRequest();
 
 #if BUILDFLAG(ENABLE_VULKAN)
-  void CreateVulkanOutputSurface();
+  bool CreateVulkanOutputSurface();
 #endif
   void OnGpuChannelEstablished(
       scoped_refptr<gpu::GpuChannelHost> gpu_channel_host);
   void InitializeDisplay(
       std::unique_ptr<viz::OutputSurface> display_output_surface,
       scoped_refptr<viz::ContextProvider> context_provider);
-  void DidSwapBuffers(gfx::Size swap_size);
+  void DidSwapBuffers(const gfx::Size& swap_size);
 
   bool HavePendingReadbacks();
 
@@ -234,6 +249,14 @@ class CONTENT_EXPORT CompositorImpl
 
   // If true, we are using a Viz process.
   const bool enable_viz_;
+
+  // Viz-specific members for communicating with the display.
+  viz::mojom::DisplayPrivateAssociatedPtr display_private_;
+  std::unique_ptr<viz::HostDisplayClient> display_client_;
+
+  // Test-only. Called when we are notified of a swap.
+  base::RepeatingCallback<void(const gfx::Size&)>
+      swap_completed_with_size_for_testing_;
 
   base::WeakPtrFactory<CompositorImpl> weak_factory_;
 

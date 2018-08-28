@@ -20,7 +20,7 @@ buildflag_header("vr_build_features") {
   flags = [ "USE_VR_ASSETS_COMPONENT=$use_vr_assets_component" ]
 }
 
-static_library("vr_common") {
+component("vr_common") {
   sources = [
     "animation.cc",
     "animation.h",
@@ -32,8 +32,6 @@ static_library("vr_common") {
     "browser_ui_interface.h",
     "content_input_delegate.cc",
     "content_input_delegate.h",
-    "cpu_surface_provider.cc",
-    "cpu_surface_provider.h",
     "databinding/binding.h",
     "databinding/binding_base.h",
     "databinding/vector_binding.h",
@@ -134,6 +132,12 @@ static_library("vr_common") {
     "frame_lifecycle.h",
     "ganesh_surface_provider.cc",
     "ganesh_surface_provider.h",
+    "gesture_detector.cc",
+    "gesture_detector.h",
+    "graphics_delegate.cc",
+    "graphics_delegate.h",
+    "input_event.cc",
+    "input_event.h",
     "keyboard_delegate.h",
     "keyboard_ui_interface.h",
     "macros.h",
@@ -222,17 +226,23 @@ static_library("vr_common") {
     "ui_browser_interface.h",
     "ui_element_renderer.cc",
     "ui_element_renderer.h",
+    "ui_initial_state.cc",
+    "ui_initial_state.h",
     "ui_input_manager.cc",
     "ui_input_manager.h",
+    "ui_interface.h",
     "ui_renderer.cc",
     "ui_renderer.h",
     "ui_scene.cc",
     "ui_scene.h",
     "ui_scene_creator.cc",
     "ui_scene_creator.h",
+    "ui_support.cc",
+    "ui_support.h",
     "ui_test_input.cc",
     "ui_test_input.h",
     "ui_unsupported_mode.h",
+    "vr_export.h",
     "vr_features.h",
     "vr_gl_util.cc",
     "vr_gl_util.h",
@@ -269,6 +279,11 @@ static_library("vr_common") {
     "//ui/display",
     "//ui/gl/init",
   ]
+
+  defines = [
+    "VR_IMPLEMENTATION",
+    "VR_UI_IMPLEMENTATION",
+  ]
 }
 
 test("vr_common_unittests") {
@@ -301,8 +316,9 @@ test("vr_common_unittests") {
     "elements/vector_icon_unittest.cc",
     "elements/viewport_aware_root_unittest.cc",
     "fps_meter_unittest.cc",
+    "gesture_detector_unittest.cc",
     "model/text_input_info_unittest.cc",
-    "pose_util_unittest.cc",
+    "platform_ui_input_delegate_unittest.cc",
     "service/vr_device_manager_unittest.cc",
     "sliding_average_unittest.cc",
     "speech_recognizer_unittest.cc",
@@ -324,7 +340,9 @@ test("vr_common_unittests") {
 
   deps = [
     ":vr_test_support",
+    "//components/url_formatter",
     "//mojo/public/cpp/bindings",
+    "//services/network:test_support",
     "//testing/gmock",
     "//ui/gfx/geometry",
   ]
@@ -367,11 +385,8 @@ test("vr_common_perftests") {
   }
 
   # Needed for isolate script to execute
-  data = [
-    "//testing/scripts/common.py",
-    "//testing/xvfb.py",
-    "//testing/scripts/run_gtest_perf_test.py",
-    "//tools/perf/generate_legacy_perf_dashboard_json.py",
+  data_deps = [
+    "//testing:run_perf_test",
   ]
 }
 
@@ -406,7 +421,7 @@ source_set("vr_test_support") {
     "//components/security_state/core",
     "//components/toolbar:vector_icons",
     "//content/test:test_support",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//skia",
     "//testing/gtest",
     "//ui/accessibility:ax_enums_mojo",

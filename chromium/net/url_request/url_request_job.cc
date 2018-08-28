@@ -63,9 +63,10 @@ class URLRequestJob::URLRequestJobSourceStream : public SourceStream {
   // SourceStream implementation:
   int Read(IOBuffer* dest_buffer,
            int buffer_size,
-           const CompletionCallback& callback) override {
+           CompletionOnceCallback callback) override {
     DCHECK(job_);
-    return job_->ReadRawDataHelper(dest_buffer, buffer_size, callback);
+    return job_->ReadRawDataHelper(dest_buffer, buffer_size,
+                                   std::move(callback));
   }
 
   std::string Description() const override { return std::string(); }
@@ -183,7 +184,8 @@ void URLRequestJob::PopulateNetErrorDetails(NetErrorDetails* details) const {
 }
 
 bool URLRequestJob::IsRedirectResponse(GURL* location,
-                                       int* http_status_code) {
+                                       int* http_status_code,
+                                       bool* insecure_scheme_was_upgraded) {
   // For non-HTTP jobs, headers will be null.
   HttpResponseHeaders* headers = request_->response_headers();
   if (!headers)
@@ -192,8 +194,18 @@ bool URLRequestJob::IsRedirectResponse(GURL* location,
   std::string value;
   if (!headers->IsRedirect(&value))
     return false;
-
+  *insecure_scheme_was_upgraded = false;
   *location = request_->url().Resolve(value);
+  // If this a redirect to HTTP of a request that had the
+  // 'upgrade-insecure-requests' policy set, upgrade it to HTTPS.
+  if (request_->upgrade_if_insecure()) {
+    if (location->SchemeIs("http")) {
+      *insecure_scheme_was_upgraded = true;
+      GURL::Replacements replacements;
+      replacements.SetSchemeStr("https");
+      *location = location->ReplaceComponents(replacements);
+    }
+  }
   *http_status_code = headers->response_code();
   return true;
 }
@@ -243,7 +255,8 @@ void URLRequestJob::ContinueDespiteLastError() {
   NOTREACHED();
 }
 
-void URLRequestJob::FollowDeferredRedirect() {
+void URLRequestJob::FollowDeferredRedirect(
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
   // OnReceivedRedirect must have been called.
   DCHECK(deferred_redirect_info_);
 
@@ -251,7 +264,7 @@ void URLRequestJob::FollowDeferredRedirect() {
   // pass along a reference to |deferred_redirect_info_|.
   base::Optional<RedirectInfo> redirect_info =
       std::move(deferred_redirect_info_);
-  FollowRedirect(*redirect_info);
+  FollowRedirect(*redirect_info, modified_request_headers);
 }
 
 int64_t URLRequestJob::prefilter_bytes_read() const {
@@ -388,8 +401,10 @@ void URLRequestJob::NotifyHeadersComplete() {
 
   GURL new_location;
   int http_status_code;
+  bool insecure_scheme_was_upgraded;
 
-  if (IsRedirectResponse(&new_location, &http_status_code)) {
+  if (IsRedirectResponse(&new_location, &http_status_code,
+                         &insecure_scheme_was_upgraded)) {
     // Redirect response bodies are not read. Notify the transaction
     // so it does not treat being stopped as an error.
     DoneReadingRedirectResponse();
@@ -414,7 +429,8 @@ void URLRequestJob::NotifyHeadersComplete() {
         request_->method(), request_->url(), request_->site_for_cookies(),
         request_->first_party_url_policy(), request_->referrer_policy(),
         request_->referrer(), request_->response_headers(), http_status_code,
-        new_location, request_->ssl_info().token_binding_negotiated,
+        new_location, insecure_scheme_was_upgraded,
+        request_->ssl_info().token_binding_negotiated,
         CopyFragmentOnRedirect(new_location));
     bool defer_redirect = false;
     request_->NotifyReceivedRedirect(redirect_info, &defer_redirect);
@@ -427,7 +443,8 @@ void URLRequestJob::NotifyHeadersComplete() {
     if (defer_redirect) {
       deferred_redirect_info_ = std::move(redirect_info);
     } else {
-      FollowRedirect(redirect_info);
+      FollowRedirect(redirect_info,
+                     base::nullopt /* modified_request_headers */);
     }
     return;
   }
@@ -496,7 +513,7 @@ void URLRequestJob::ReadRawDataComplete(int result) {
   // Notify SourceStream.
   DCHECK(!read_raw_callback_.is_null());
 
-  base::ResetAndReturn(&read_raw_callback_).Run(result);
+  std::move(read_raw_callback_).Run(result);
   // |this| may be destroyed at this point.
 }
 
@@ -578,8 +595,8 @@ void URLRequestJob::NotifyRestartRequired() {
     request_->Restart();
 }
 
-void URLRequestJob::OnCallToDelegate() {
-  request_->OnCallToDelegate();
+void URLRequestJob::OnCallToDelegate(NetLogEventType type) {
+  request_->OnCallToDelegate(type);
 }
 
 void URLRequestJob::OnCallToDelegateComplete() {
@@ -641,7 +658,7 @@ void URLRequestJob::SourceStreamReadComplete(bool synchronous, int result) {
 
 int URLRequestJob::ReadRawDataHelper(IOBuffer* buf,
                                      int buf_size,
-                                     const CompletionCallback& callback) {
+                                     CompletionOnceCallback callback) {
   DCHECK(!raw_read_buffer_);
 
   // Keep a pointer to the read buffer, so URLRequestJob::GatherRawReadStats()
@@ -657,7 +674,7 @@ int URLRequestJob::ReadRawDataHelper(IOBuffer* buf,
     // GatherRawReadStats so we can account for the completed read.
     GatherRawReadStats(result);
   } else {
-    read_raw_callback_ = callback;
+    read_raw_callback_ = std::move(callback);
   }
   return result;
 }
@@ -679,8 +696,10 @@ int URLRequestJob::CanFollowRedirect(const GURL& new_url) {
   return OK;
 }
 
-void URLRequestJob::FollowRedirect(const RedirectInfo& redirect_info) {
-  request_->Redirect(redirect_info);
+void URLRequestJob::FollowRedirect(
+    const RedirectInfo& redirect_info,
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+  request_->Redirect(redirect_info, modified_request_headers);
 }
 
 void URLRequestJob::GatherRawReadStats(int bytes_read) {

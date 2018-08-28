@@ -19,7 +19,6 @@
 #include <sys/syslimits.h>
 
 #include <algorithm>
-#include <map>
 #include <memory>
 
 #include "base/logging.h"
@@ -34,19 +33,32 @@ void _sigtramp(int, int, struct sigset*);
 
 namespace base {
 
+using Frame = StackSamplingProfiler::Frame;
+using InternalFrame = StackSamplingProfiler::InternalFrame;
+using Module = StackSamplingProfiler::Module;
+using InternalModule = StackSamplingProfiler::InternalModule;
+using ProfileBuilder = StackSamplingProfiler::ProfileBuilder;
+
 namespace {
 
-// Maps a module's address range (half-open) in memory to an index in a separate
-// data structure.
-struct ModuleIndex {
-  ModuleIndex(uintptr_t start, uintptr_t end, size_t idx)
-      : base_address(start), end_address(end), index(idx){};
+// ModuleCacheEntry records a module's address range (half-open) in memory and
+// the module itself.
+struct ModuleCacheEntry {
+  ModuleCacheEntry(uintptr_t start,
+                   uintptr_t end,
+                   InternalModule internal_module)
+      : base_address(start),
+        end_address(end),
+        internal_module(std::move(internal_module)){};
+
   // Base address of the represented module.
   uintptr_t base_address;
+
   // First address off the end of the represented module.
   uintptr_t end_address;
-  // An index to the represented module in a separate container.
-  size_t index;
+
+  // Module information.
+  InternalModule internal_module;
 };
 
 // Module identifiers ---------------------------------------------------------
@@ -66,9 +78,11 @@ std::string GetUniqueId(const void* module_addr) {
 
   size_t offset = sizeof(mach_header_64);
   size_t offset_limit = sizeof(mach_header_64) + mach_header->sizeofcmds;
-  for (uint32_t i = 0; (i < mach_header->ncmds) &&
-                       (offset + sizeof(load_command) < offset_limit);
-       ++i) {
+
+  for (uint32_t i = 0; i < mach_header->ncmds; ++i) {
+    if (offset + sizeof(load_command) >= offset_limit)
+      return std::string();
+
     const load_command* current_cmd = reinterpret_cast<const load_command*>(
         reinterpret_cast<const uint8_t*>(mach_header) + offset);
 
@@ -108,41 +122,6 @@ size_t GetModuleTextSize(const void* module_addr) {
   return module_size;
 }
 
-// Gets the index for the Module containing |instruction_pointer| in
-// |modules|, adding it if it's not already present. Returns
-// StackSamplingProfiler::Frame::kUnknownModuleIndex if no Module can be
-// determined for |module|.
-size_t GetModuleIndex(const uintptr_t instruction_pointer,
-                      std::vector<StackSamplingProfiler::Module>* modules,
-                      std::vector<ModuleIndex>* profile_module_index) {
-  // Check if |instruction_pointer| is in the address range of a module we've
-  // already seen.
-  auto module_index =
-      std::find_if(profile_module_index->begin(), profile_module_index->end(),
-                   [instruction_pointer](const ModuleIndex& index) {
-                     return instruction_pointer >= index.base_address &&
-                            instruction_pointer < index.end_address;
-                   });
-  if (module_index != profile_module_index->end()) {
-    return module_index->index;
-  }
-  Dl_info inf;
-  if (!dladdr(reinterpret_cast<const void*>(instruction_pointer), &inf))
-    return StackSamplingProfiler::Frame::kUnknownModuleIndex;
-
-  StackSamplingProfiler::Module module(
-      reinterpret_cast<uintptr_t>(inf.dli_fbase), GetUniqueId(inf.dli_fbase),
-      base::FilePath(inf.dli_fname));
-  modules->push_back(module);
-
-  uintptr_t base_module_address = reinterpret_cast<uintptr_t>(inf.dli_fbase);
-  size_t index = modules->size() - 1;
-  profile_module_index->emplace_back(
-      base_module_address,
-      base_module_address + GetModuleTextSize(inf.dli_fbase), index);
-  return index;
-}
-
 // Stack walking --------------------------------------------------------------
 
 // Fills |state| with |target_thread|'s context.
@@ -151,8 +130,7 @@ size_t GetModuleIndex(const uintptr_t instruction_pointer,
 // that no shared resources (e.g. memory allocators) are used for the duration
 // of this function.
 bool GetThreadState(thread_act_t target_thread, x86_thread_state64_t* state) {
-  mach_msg_type_number_t count =
-      static_cast<mach_msg_type_number_t>(x86_THREAD_STATE64_COUNT);
+  auto count = static_cast<mach_msg_type_number_t>(x86_THREAD_STATE64_COUNT);
   return thread_get_state(target_thread, x86_THREAD_STATE64,
                           reinterpret_cast<thread_state_t>(state),
                           &count) == KERN_SUCCESS;
@@ -169,17 +147,13 @@ uintptr_t RewritePointerIfInOriginalStack(
     const uintptr_t* original_stack_top,
     uintptr_t* stack_copy_bottom,
     uintptr_t pointer) {
-  uintptr_t original_stack_bottom_int =
+  auto original_stack_bottom_int =
       reinterpret_cast<uintptr_t>(original_stack_bottom);
-  uintptr_t original_stack_top_int =
-      reinterpret_cast<uintptr_t>(original_stack_top);
-  uintptr_t stack_copy_bottom_int =
-      reinterpret_cast<uintptr_t>(stack_copy_bottom);
+  auto original_stack_top_int = reinterpret_cast<uintptr_t>(original_stack_top);
+  auto stack_copy_bottom_int = reinterpret_cast<uintptr_t>(stack_copy_bottom);
 
-  if ((pointer < original_stack_bottom_int) ||
-      (pointer >= original_stack_top_int)) {
+  if (pointer < original_stack_bottom_int || pointer >= original_stack_top_int)
     return pointer;
-  }
 
   return stack_copy_bottom_int + (pointer - original_stack_bottom_int);
 }
@@ -291,62 +265,9 @@ bool HasValidRbp(unw_cursor_t* unwind_cursor, uintptr_t stack_top) {
     unw_get_reg(unwind_cursor, UNW_X86_64_RSP, &rsp);
     unw_get_reg(unwind_cursor, UNW_X86_64_RBP, &rbp);
     uint32_t offset = GetFrameOffset(proc_info.format) * sizeof(unw_word_t);
-    if (rbp < offset || (rbp - offset) < rsp || rbp > stack_top) {
+    if (rbp < offset || (rbp - offset) < rsp || rbp > stack_top)
       return false;
-    }
   }
-  return true;
-}
-
-// Walks the stack represented by |unwind_context|, calling back to the provided
-// lambda for each frame. Returns false if an error occurred, otherwise returns
-// true.
-template <typename StackFrameCallback, typename ContinueUnwindPredicate>
-bool WalkStackFromContext(
-    unw_context_t* unwind_context,
-    size_t* frame_count,
-    std::vector<StackSamplingProfiler::Module>* current_modules,
-    std::vector<ModuleIndex>* profile_module_index,
-    const StackFrameCallback& callback,
-    const ContinueUnwindPredicate& continue_unwind) {
-  unw_cursor_t unwind_cursor;
-  unw_init_local(&unwind_cursor, unwind_context);
-
-  int step_result;
-  unw_word_t rip;
-  do {
-    ++(*frame_count);
-    unw_get_reg(&unwind_cursor, UNW_REG_IP, &rip);
-
-    // Ensure IP is in a module.
-    //
-    // Frameless unwinding (non-DWARF) works by fetching the function's
-    // stack size from the unwind encoding or stack, and adding it to the
-    // stack pointer to determine the function's return address.
-    //
-    // If we're in a function prologue or epilogue, the actual stack size
-    // may be smaller than it will be during the normal course of execution.
-    // When libunwind adds the expected stack size, it will look for the
-    // return address in the wrong place. This check should ensure that we
-    // bail before trying to deref a bad IP obtained this way in the previous
-    // frame.
-    size_t module_index =
-        GetModuleIndex(rip, current_modules, profile_module_index);
-    if (module_index == StackSamplingProfiler::Frame::kUnknownModuleIndex) {
-      return false;
-    }
-
-    callback(static_cast<uintptr_t>(rip), module_index);
-
-    if (!continue_unwind(&unwind_cursor))
-      return false;
-
-    step_result = unw_step(&unwind_cursor);
-  } while (step_result > 0);
-
-  if (step_result != 0)
-    return false;
-
   return true;
 }
 
@@ -369,7 +290,7 @@ const char* LibSystemKernelName() {
 }
 
 void GetSigtrampRange(uintptr_t* start, uintptr_t* end) {
-  uintptr_t address = reinterpret_cast<uintptr_t>(&_sigtramp);
+  auto address = reinterpret_cast<uintptr_t>(&_sigtramp);
   DCHECK(address != 0);
 
   *start = address;
@@ -387,57 +308,6 @@ void GetSigtrampRange(uintptr_t* start, uintptr_t* end) {
 
   DCHECK_EQ(info.start_ip, address);
   *end = info.end_ip;
-}
-
-// Walks the stack represented by |thread_state|, calling back to the provided
-// lambda for each frame.
-template <typename StackFrameCallback, typename ContinueUnwindPredicate>
-void WalkStack(const x86_thread_state64_t& thread_state,
-               std::vector<StackSamplingProfiler::Module>* current_modules,
-               std::vector<ModuleIndex>* profile_module_index,
-               const StackFrameCallback& callback,
-               const ContinueUnwindPredicate& continue_unwind) {
-  size_t frame_count = 0;
-  // This uses libunwind to walk the stack. libunwind is designed to be used for
-  // a thread to walk its own stack. This creates two problems.
-
-  // Problem 1: There is no official way to create a unw_context other than to
-  // create it from the current state of the current thread's stack. To get
-  // around this, forge a context. A unw_context is just a copy of the 16 main
-  // registers followed by the instruction pointer, nothing more.
-  // Coincidentally, the first 17 items of the x86_thread_state64_t type are
-  // exactly those registers in exactly the same order, so just bulk copy them
-  // over.
-  unw_context_t unwind_context;
-  memcpy(&unwind_context, &thread_state, sizeof(uintptr_t) * 17);
-  bool result =
-      WalkStackFromContext(&unwind_context, &frame_count, current_modules,
-                           profile_module_index, callback, continue_unwind);
-
-  if (!result)
-    return;
-
-  if (frame_count == 1) {
-    // Problem 2: Because libunwind is designed to be triggered by user code on
-    // their own thread, if it hits a library that has no unwind info for the
-    // function that is being executed, it just stops. This isn't a problem in
-    // the normal case, but in this case, it's quite possible that the stack
-    // being walked is stopped in a function that bridges to the kernel and thus
-    // is missing the unwind info.
-
-    // For now, just unwind the single case where the thread is stopped in a
-    // function in libsystem_kernel.
-    uint64_t& rsp = unwind_context.data[7];
-    uint64_t& rip = unwind_context.data[16];
-    Dl_info info;
-    if (dladdr(reinterpret_cast<void*>(rip), &info) != 0 &&
-      strcmp(info.dli_fname, LibSystemKernelName()) == 0) {
-      rip = *reinterpret_cast<uint64_t*>(rsp);
-      rsp += 8;
-      WalkStackFromContext(&unwind_context, &frame_count, current_modules,
-                           profile_module_index, callback, continue_unwind);
-    }
-  }
 }
 
 // ScopedSuspendThread --------------------------------------------------------
@@ -471,40 +341,46 @@ class ScopedSuspendThread {
 class NativeStackSamplerMac : public NativeStackSampler {
  public:
   NativeStackSamplerMac(mach_port_t thread_port,
-                        AnnotateCallback annotator,
                         NativeStackSamplerTestDelegate* test_delegate);
   ~NativeStackSamplerMac() override;
 
   // StackSamplingProfiler::NativeStackSampler:
-  void ProfileRecordingStarting(
-      std::vector<StackSamplingProfiler::Module>* modules) override;
-  void RecordStackSample(StackBuffer* stack_buffer,
-                         StackSamplingProfiler::Sample* sample) override;
-  void ProfileRecordingStopped(StackBuffer* stack_buffer) override;
+  void ProfileRecordingStarting() override;
+  std::vector<InternalFrame> RecordStackFrames(
+      StackBuffer* stack_buffer,
+      ProfileBuilder* profile_builder) override;
 
  private:
-  // Suspends the thread with |thread_port_|, copies its stack and resumes the
-  // thread, then records the stack frames and associated modules into |sample|.
-  void SuspendThreadAndRecordStack(StackBuffer* stack_buffer,
-                                   StackSamplingProfiler::Sample* sample);
+  // Returns the InternalModule containing |instruction_pointer|, adding it to
+  // module_cache_entry_ if it's not already present.
+  InternalModule GetInternalModule(uintptr_t instruction_pointer);
+
+  // Walks the stack represented by |unwind_context|, calling back to the
+  // provided lambda for each frame. Returns false if an error occurred,
+  // otherwise returns true.
+  template <typename StackFrameCallback, typename ContinueUnwindPredicate>
+  bool WalkStackFromContext(unw_context_t* unwind_context,
+                            size_t* frame_count,
+                            const StackFrameCallback& callback,
+                            const ContinueUnwindPredicate& continue_unwind);
+
+  // Walks the stack represented by |thread_state|, calling back to the
+  // provided lambda for each frame.
+  template <typename StackFrameCallback, typename ContinueUnwindPredicate>
+  void WalkStack(const x86_thread_state64_t& thread_state,
+                 const StackFrameCallback& callback,
+                 const ContinueUnwindPredicate& continue_unwind);
 
   // Weak reference: Mach port for thread being profiled.
   mach_port_t thread_port_;
-
-  const AnnotateCallback annotator_;
 
   NativeStackSamplerTestDelegate* const test_delegate_;
 
   // The stack base address corresponding to |thread_handle_|.
   const void* const thread_stack_base_address_;
 
-  // Weak. Points to the modules associated with the profile being recorded
-  // between ProfileRecordingStarting() and ProfileRecordingStopped().
-  std::vector<StackSamplingProfiler::Module>* current_modules_ = nullptr;
-
-  // Maps a module's address range to the corresponding Module's index within
-  // current_modules_.
-  std::vector<ModuleIndex> profile_module_index_;
+  // Maps a module's address range to the module.
+  std::vector<ModuleCacheEntry> module_cache_entry_;
 
   // The address range of |_sigtramp|, the signal trampoline function.
   uintptr_t sigtramp_start_;
@@ -515,15 +391,11 @@ class NativeStackSamplerMac : public NativeStackSampler {
 
 NativeStackSamplerMac::NativeStackSamplerMac(
     mach_port_t thread_port,
-    AnnotateCallback annotator,
     NativeStackSamplerTestDelegate* test_delegate)
     : thread_port_(thread_port),
-      annotator_(annotator),
       test_delegate_(test_delegate),
       thread_stack_base_address_(
           pthread_get_stackaddr_np(pthread_from_mach_thread_np(thread_port))) {
-  DCHECK(annotator_);
-
   GetSigtrampRange(&sigtramp_start_, &sigtramp_end_);
   // This class suspends threads, and those threads might be suspended in dyld.
   // Therefore, for all the system functions that might be linked in dynamically
@@ -535,28 +407,16 @@ NativeStackSamplerMac::NativeStackSamplerMac(
 
 NativeStackSamplerMac::~NativeStackSamplerMac() {}
 
-void NativeStackSamplerMac::ProfileRecordingStarting(
-    std::vector<StackSamplingProfiler::Module>* modules) {
-  current_modules_ = modules;
-  profile_module_index_.clear();
+void NativeStackSamplerMac::ProfileRecordingStarting() {
+  module_cache_entry_.clear();
 }
 
-void NativeStackSamplerMac::RecordStackSample(
+std::vector<InternalFrame> NativeStackSamplerMac::RecordStackFrames(
     StackBuffer* stack_buffer,
-    StackSamplingProfiler::Sample* sample) {
-  DCHECK(current_modules_);
-
-  SuspendThreadAndRecordStack(stack_buffer, sample);
-}
-
-void NativeStackSamplerMac::ProfileRecordingStopped(StackBuffer* stack_buffer) {
-  current_modules_ = nullptr;
-}
-
-void NativeStackSamplerMac::SuspendThreadAndRecordStack(
-    StackBuffer* stack_buffer,
-    StackSamplingProfiler::Sample* sample) {
+    ProfileBuilder* profile_builder) {
   x86_thread_state64_t thread_state;
+
+  const std::vector<InternalFrame> empty_internal_frames;
 
   // Copy the stack.
 
@@ -568,21 +428,21 @@ void NativeStackSamplerMac::SuspendThreadAndRecordStack(
     // default heap acquired by the target thread before it was suspended.
     ScopedSuspendThread suspend_thread(thread_port_);
     if (!suspend_thread.was_successful())
-      return;
+      return empty_internal_frames;
 
     if (!GetThreadState(thread_port_, &thread_state))
-      return;
-    uintptr_t stack_top =
-        reinterpret_cast<uintptr_t>(thread_stack_base_address_);
+      return empty_internal_frames;
+
+    auto stack_top = reinterpret_cast<uintptr_t>(thread_stack_base_address_);
     uintptr_t stack_bottom = thread_state.__rsp;
     if (stack_bottom >= stack_top)
-      return;
+      return empty_internal_frames;
+
     uintptr_t stack_size = stack_top - stack_bottom;
-
     if (stack_size > stack_buffer->size())
-      return;
+      return empty_internal_frames;
 
-    (*annotator_)(sample);
+    profile_builder->RecordAnnotations();
 
     CopyStackAndRewritePointers(
         reinterpret_cast<uintptr_t*>(stack_buffer->buffer()),
@@ -600,19 +460,16 @@ void NativeStackSamplerMac::SuspendThreadAndRecordStack(
 
   // Reserve enough memory for most stacks, to avoid repeated allocations.
   // Approximately 99.9% of recorded stacks are 128 frames or fewer.
-  sample->frames.reserve(128);
-
-  auto* current_modules = current_modules_;
-  auto* profile_module_index = &profile_module_index_;
+  std::vector<InternalFrame> internal_frames;
+  internal_frames.reserve(128);
 
   // Avoid an out-of-bounds read bug in libunwind that can crash us in some
   // circumstances. If we're subject to that case, just record the first frame
   // and bail. See MayTriggerUnwInitLocalCrash for details.
   uintptr_t rip = thread_state.__rip;
   if (MayTriggerUnwInitLocalCrash(rip)) {
-    sample->frames.emplace_back(
-        rip, GetModuleIndex(rip, current_modules, profile_module_index));
-    return;
+    internal_frames.emplace_back(rip, GetInternalModule(rip));
+    return internal_frames;
   }
 
   const auto continue_predicate = [this,
@@ -631,22 +488,142 @@ void NativeStackSamplerMac::SuspendThreadAndRecordStack(
     return HasValidRbp(unwind_cursor, new_stack_top);
   };
 
-  WalkStack(thread_state, current_modules, profile_module_index,
-            [sample, current_modules, profile_module_index](
-                uintptr_t frame_ip, size_t module_index) {
-              sample->frames.emplace_back(frame_ip, module_index);
-            },
-            continue_predicate);
+  WalkStack(
+      thread_state,
+      [&internal_frames](uintptr_t frame_ip, InternalModule internal_module) {
+        internal_frames.emplace_back(frame_ip, std::move(internal_module));
+      },
+      continue_predicate);
+
+  return internal_frames;
+}
+
+InternalModule NativeStackSamplerMac::GetInternalModule(
+    uintptr_t instruction_pointer) {
+  // Check if |instruction_pointer| is in the address range of a module we've
+  // already seen.
+  auto loc =
+      std::find_if(module_cache_entry_.begin(), module_cache_entry_.end(),
+                   [instruction_pointer](const ModuleCacheEntry& entry) {
+                     return instruction_pointer >= entry.base_address &&
+                            instruction_pointer < entry.end_address;
+                   });
+  if (loc != module_cache_entry_.end())
+    return loc->internal_module;
+
+  Dl_info inf;
+  if (!dladdr(reinterpret_cast<const void*>(instruction_pointer), &inf))
+    return InternalModule();
+
+  auto base_module_address = reinterpret_cast<uintptr_t>(inf.dli_fbase);
+
+  InternalModule internal_module(
+      base_module_address, GetUniqueId(inf.dli_fbase), FilePath(inf.dli_fname));
+
+  module_cache_entry_.emplace_back(
+      base_module_address,
+      base_module_address + GetModuleTextSize(inf.dli_fbase), internal_module);
+
+  return internal_module;
+}
+
+template <typename StackFrameCallback, typename ContinueUnwindPredicate>
+bool NativeStackSamplerMac::WalkStackFromContext(
+    unw_context_t* unwind_context,
+    size_t* frame_count,
+    const StackFrameCallback& callback,
+    const ContinueUnwindPredicate& continue_unwind) {
+  unw_cursor_t unwind_cursor;
+  unw_init_local(&unwind_cursor, unwind_context);
+
+  int step_result;
+  unw_word_t rip;
+  do {
+    ++(*frame_count);
+    unw_get_reg(&unwind_cursor, UNW_REG_IP, &rip);
+
+    // Ensure IP is in a module.
+    //
+    // Frameless unwinding (non-DWARF) works by fetching the function's stack
+    // size from the unwind encoding or stack, and adding it to the stack
+    // pointer to determine the function's return address.
+    //
+    // If we're in a function prologue or epilogue, the actual stack size may be
+    // smaller than it will be during the normal course of execution. When
+    // libunwind adds the expected stack size, it will look for the return
+    // address in the wrong place. This check should ensure that we bail before
+    // trying to deref a bad IP obtained this way in the previous frame.
+    InternalModule internal_module = GetInternalModule(rip);
+    if (!internal_module.is_valid)
+      return false;
+
+    callback(static_cast<uintptr_t>(rip), internal_module);
+
+    if (!continue_unwind(&unwind_cursor))
+      return false;
+
+    step_result = unw_step(&unwind_cursor);
+  } while (step_result > 0);
+
+  if (step_result != 0)
+    return false;
+
+  return true;
+}
+
+template <typename StackFrameCallback, typename ContinueUnwindPredicate>
+void NativeStackSamplerMac::WalkStack(
+    const x86_thread_state64_t& thread_state,
+    const StackFrameCallback& callback,
+    const ContinueUnwindPredicate& continue_unwind) {
+  size_t frame_count = 0;
+  // This uses libunwind to walk the stack. libunwind is designed to be used for
+  // a thread to walk its own stack. This creates two problems.
+
+  // Problem 1: There is no official way to create a unw_context other than to
+  // create it from the current state of the current thread's stack. To get
+  // around this, forge a context. A unw_context is just a copy of the 16 main
+  // registers followed by the instruction pointer, nothing more.
+  // Coincidentally, the first 17 items of the x86_thread_state64_t type are
+  // exactly those registers in exactly the same order, so just bulk copy them
+  // over.
+  unw_context_t unwind_context;
+  memcpy(&unwind_context, &thread_state, sizeof(uintptr_t) * 17);
+  bool result = WalkStackFromContext(&unwind_context, &frame_count, callback,
+                                     continue_unwind);
+
+  if (!result)
+    return;
+
+  if (frame_count == 1) {
+    // Problem 2: Because libunwind is designed to be triggered by user code on
+    // their own thread, if it hits a library that has no unwind info for the
+    // function that is being executed, it just stops. This isn't a problem in
+    // the normal case, but in this case, it's quite possible that the stack
+    // being walked is stopped in a function that bridges to the kernel and thus
+    // is missing the unwind info.
+
+    // For now, just unwind the single case where the thread is stopped in a
+    // function in libsystem_kernel.
+    uint64_t& rsp = unwind_context.data[7];
+    uint64_t& rip = unwind_context.data[16];
+    Dl_info info;
+    if (dladdr(reinterpret_cast<void*>(rip), &info) != 0 &&
+        strcmp(info.dli_fname, LibSystemKernelName()) == 0) {
+      rip = *reinterpret_cast<uint64_t*>(rsp);
+      rsp += 8;
+      WalkStackFromContext(&unwind_context, &frame_count, callback,
+                           continue_unwind);
+    }
+  }
 }
 
 }  // namespace
 
 std::unique_ptr<NativeStackSampler> NativeStackSampler::Create(
     PlatformThreadId thread_id,
-    AnnotateCallback annotator,
     NativeStackSamplerTestDelegate* test_delegate) {
-  return std::make_unique<NativeStackSamplerMac>(thread_id, annotator,
-                                                 test_delegate);
+  return std::make_unique<NativeStackSamplerMac>(thread_id, test_delegate);
 }
 
 size_t NativeStackSampler::GetStackBufferSize() {

@@ -33,7 +33,7 @@ source_set("grid_ui") {
     "//ios/chrome/browser",
     "//ios/chrome/browser/ui:ui_util",
     "//ios/chrome/browser/ui/tab_grid/transitions",
-    "//ios/chrome/browser/ui/util:constraints_ui",
+    "//ios/chrome/common/ui_util",
     "//ui/base",
   ]
 }
@@ -49,8 +49,9 @@ source_set("unit_tests") {
 
   deps = [
     ":grid_ui",
+    "//base",
     "//base/test:test_support",
+    "//ios/chrome/test:test_support",
     "//testing/gtest",
-    "//third_party/ocmock",
   ]
 }

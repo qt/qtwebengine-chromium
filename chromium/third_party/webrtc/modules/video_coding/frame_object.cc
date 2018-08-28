@@ -84,7 +84,7 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
   _rotation_set = true;
   content_type_ = last_packet->video_header.content_type;
   if (last_packet->video_header.video_timing.flags !=
-      TimingFrameFlags::kInvalid) {
+      VideoSendTiming::kInvalid) {
     // ntp_time_ms_ may be -1 if not estimated yet. This is not a problem,
     // as this will be dealt with at the time of reporting.
     timing_.encode_start_ms =
@@ -156,12 +156,12 @@ bool RtpFrameObject::delayed_by_retransmission() const {
   return times_nacked() > 0;
 }
 
-rtc::Optional<RTPVideoTypeHeader> RtpFrameObject::GetCodecHeader() const {
+absl::optional<RTPVideoTypeHeader> RtpFrameObject::GetCodecHeader() const {
   rtc::CritScope lock(&packet_buffer_->crit_);
   VCMPacket* packet = packet_buffer_->GetPacket(first_seq_num_);
   if (!packet)
-    return rtc::nullopt;
-  return packet->video_header.codecHeader;
+    return absl::nullopt;
+  return packet->video_header.video_type_header;
 }
 
 }  // namespace video_coding

@@ -375,9 +375,10 @@ void PepperVideoEncoderHost::RequireBitstreamBuffers(
   }
 
   host()->SendUnsolicitedReplyWithHandles(
-      pp_resource(), PpapiPluginMsg_VideoEncoder_BitstreamBuffers(
-                         static_cast<uint32_t>(output_buffer_size)),
-      handles);
+      pp_resource(),
+      PpapiPluginMsg_VideoEncoder_BitstreamBuffers(
+          static_cast<uint32_t>(output_buffer_size)),
+      &handles);
 
   if (!initialized_) {
     // Tell the plugin that initialization has been successful if we
@@ -400,10 +401,9 @@ void PepperVideoEncoderHost::RequireBitstreamBuffers(
     AllocateVideoFrames();
 }
 
-void PepperVideoEncoderHost::BitstreamBufferReady(int32_t buffer_id,
-    size_t payload_size,
-    bool key_frame,
-    base::TimeDelta /* timestamp */) {
+void PepperVideoEncoderHost::BitstreamBufferReady(
+    int32_t buffer_id,
+    const media::BitstreamBufferMetadata& metadata) {
   DCHECK(RenderThreadImpl::current());
   DCHECK(shm_buffers_[buffer_id]->in_use);
 
@@ -412,7 +412,8 @@ void PepperVideoEncoderHost::BitstreamBufferReady(int32_t buffer_id,
   host()->SendUnsolicitedReply(
       pp_resource(),
       PpapiPluginMsg_VideoEncoder_BitstreamBufferReady(
-          buffer_id, static_cast<uint32_t>(payload_size), key_frame));
+          buffer_id, base::checked_cast<uint32_t>(metadata.payload_size_bytes),
+          metadata.key_frame));
 }
 
 void PepperVideoEncoderHost::NotifyError(

@@ -291,11 +291,10 @@ void AutocompleteSyncBridge::CreateForWebDataServiceAndBackend(
 }
 
 // static
-base::WeakPtr<ModelTypeSyncBridge> AutocompleteSyncBridge::FromWebDataService(
+ModelTypeSyncBridge* AutocompleteSyncBridge::FromWebDataService(
     AutofillWebDataService* web_data_service) {
   return static_cast<AutocompleteSyncBridge*>(
-             web_data_service->GetDBUserData()->GetUserData(UserDataKey()))
-      ->AsWeakPtr();
+      web_data_service->GetDBUserData()->GetUserData(UserDataKey()));
 }
 
 AutocompleteSyncBridge::AutocompleteSyncBridge(
@@ -388,7 +387,7 @@ void AutocompleteSyncBridge::AutocompleteSyncBridge::GetData(
   std::move(callback).Run(std::move(batch));
 }
 
-void AutocompleteSyncBridge::GetAllData(DataCallback callback) {
+void AutocompleteSyncBridge::GetAllDataForDebugging(DataCallback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   std::vector<AutofillEntry> entries;

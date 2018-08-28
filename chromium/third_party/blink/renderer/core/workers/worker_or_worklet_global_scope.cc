@@ -7,12 +7,12 @@
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_abstract_event_listener.h"
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
+#include "third_party/blink/renderer/core/dom/events/event_queue.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_fetch_request.h"
 #include "third_party/blink/renderer/core/loader/worker_fetch_context.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
-#include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/workers/main_thread_worklet_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_reporting_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_thread.h"
@@ -29,7 +29,6 @@ WorkerOrWorkletGlobalScope::WorkerOrWorkletGlobalScope(
     : worker_clients_(worker_clients),
       script_controller_(
           WorkerOrWorkletScriptController::Create(this, isolate)),
-      event_queue_(WorkerEventQueue::Create(this)),
       reporting_proxy_(reporting_proxy),
       used_features_(static_cast<int>(WebFeature::kNumberOfFeatures)) {
   if (worker_clients_)
@@ -97,7 +96,7 @@ void WorkerOrWorkletGlobalScope::CountDeprecation(WebFeature feature) {
 }
 
 ResourceFetcher* WorkerOrWorkletGlobalScope::EnsureFetcher() {
-  DCHECK(!IsMainThreadWorkletGlobalScope());
+  DCHECK(IsContextThread());
   if (resource_fetcher_)
     return resource_fetcher_;
   WorkerFetchContext* fetch_context = WorkerFetchContext::Create(*this);
@@ -106,7 +105,7 @@ ResourceFetcher* WorkerOrWorkletGlobalScope::EnsureFetcher() {
   return resource_fetcher_;
 }
 ResourceFetcher* WorkerOrWorkletGlobalScope::Fetcher() const {
-  DCHECK(!IsMainThreadWorkletGlobalScope());
+  DCHECK(IsContextThread());
   DCHECK(resource_fetcher_);
   return resource_fetcher_;
 }
@@ -122,10 +121,6 @@ void WorkerOrWorkletGlobalScope::DisableEval(const String& error_message) {
 bool WorkerOrWorkletGlobalScope::CanExecuteScripts(
     ReasonForCallingCanExecuteScripts) {
   return !IsJSExecutionForbidden();
-}
-
-EventQueue* WorkerOrWorkletGlobalScope::GetEventQueue() const {
-  return event_queue_.Get();
 }
 
 void WorkerOrWorkletGlobalScope::Dispose() {
@@ -144,8 +139,6 @@ void WorkerOrWorkletGlobalScope::Dispose() {
     listeners.swap(event_listeners_);
   }
   RemoveAllEventListeners();
-
-  event_queue_->Close();
 
   script_controller_->Dispose();
   script_controller_.Clear();
@@ -187,7 +180,7 @@ WorkerOrWorkletGlobalScope::GetTaskRunner(TaskType type) {
   return GetThread()->GetTaskRunner(type);
 }
 
-void WorkerOrWorkletGlobalScope::ApplyContentSecurityPolicyFromVector(
+void WorkerOrWorkletGlobalScope::InitContentSecurityPolicyFromVector(
     const Vector<CSPHeaderAndType>& headers) {
   if (!GetContentSecurityPolicy()) {
     ContentSecurityPolicy* csp = ContentSecurityPolicy::Create();
@@ -198,46 +191,50 @@ void WorkerOrWorkletGlobalScope::ApplyContentSecurityPolicyFromVector(
         policy_and_type.first, policy_and_type.second,
         kContentSecurityPolicyHeaderSourceHTTP);
   }
+}
+
+void WorkerOrWorkletGlobalScope::BindContentSecurityPolicyToExecutionContext() {
+  DCHECK(IsContextThread());
   GetContentSecurityPolicy()->BindToExecutionContext(GetExecutionContext());
 }
 
+// Implementation of the "fetch a module worker script graph" algorithm in the
+// HTML spec:
+// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-worker-script-tree
 void WorkerOrWorkletGlobalScope::FetchModuleScript(
     const KURL& module_url_record,
+    FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
     WebURLRequest::RequestContext destination,
     network::mojom::FetchCredentialsMode credentials_mode,
+    ModuleScriptCustomFetchType custom_fetch_type,
     ModuleTreeClient* client) {
   // Step 2: "Let options be a script fetch options whose cryptographic nonce is
   // the empty string,
   String nonce;
   // integrity metadata is the empty string,
   String integrity_attribute;
-  // parser metadata is "not-parser-inserted",
+  // parser metadata is "not-parser-inserted,
   ParserDisposition parser_state = kNotParserInserted;
-  // and credentials mode is credentials mode."
+  // credentials mode is credentials mode, and referrer policy is the empty
+  // string."
   ScriptFetchOptions options(nonce, IntegrityMetadataSet(), integrity_attribute,
-                             parser_state, credentials_mode);
+                             parser_state, credentials_mode,
+                             kReferrerPolicyDefault);
 
   Modulator* modulator = Modulator::From(ScriptController()->GetScriptState());
   // Step 3. "Perform the internal module script graph fetching procedure ..."
-  modulator->FetchTree(module_url_record, destination, options, client);
+  modulator->FetchTree(module_url_record, fetch_client_settings_object,
+                       destination, options, custom_fetch_type, client);
 }
 
 void WorkerOrWorkletGlobalScope::Trace(blink::Visitor* visitor) {
   visitor->Trace(resource_fetcher_);
   visitor->Trace(script_controller_);
-  visitor->Trace(event_queue_);
   visitor->Trace(event_listeners_);
   visitor->Trace(modulator_);
   EventTargetWithInlineData::Trace(visitor);
   ExecutionContext::Trace(visitor);
   SecurityContext::Trace(visitor);
-}
-
-void WorkerOrWorkletGlobalScope::TraceWrappers(
-    ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(modulator_);
-  EventTargetWithInlineData::TraceWrappers(visitor);
-  ExecutionContext::TraceWrappers(visitor);
 }
 
 }  // namespace blink

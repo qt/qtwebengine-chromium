@@ -6,19 +6,22 @@
 
 #include <memory>
 #include "base/macros.h"
-#include "base/test/histogram_tester.h"
-#include "base/test/simple_test_tick_clock.h"
-#include "components/viz/test/ordered_simple_task_runner.h"
+#include "base/task/sequence_manager/test/fake_task.h"
+#include "base/task/sequence_manager/test/sequence_manager_for_test.h"
+#include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/page/launching_process_state.h"
-#include "third_party/blink/renderer/platform/scheduler/base/test/task_queue_manager_for_test.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/test/fake_frame_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/test/fake_page_scheduler.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 using base::sequence_manager::TaskQueue;
+using base::sequence_manager::FakeTask;
+using base::sequence_manager::FakeTaskTiming;
 
 namespace blink {
 namespace scheduler {
@@ -27,10 +30,9 @@ namespace {
 class MainThreadSchedulerImplForTest : public MainThreadSchedulerImpl {
  public:
   MainThreadSchedulerImplForTest(
-      std::unique_ptr<base::sequence_manager::TaskQueueManager>
-          task_queue_manager,
+      std::unique_ptr<base::sequence_manager::SequenceManager> sequence_manager,
       base::Optional<base::Time> initial_virtual_time)
-      : MainThreadSchedulerImpl(std::move(task_queue_manager),
+      : MainThreadSchedulerImpl(std::move(sequence_manager),
                                 initial_virtual_time){};
 
   using MainThreadSchedulerImpl::SetCurrentUseCaseForTest;
@@ -44,17 +46,22 @@ using testing::UnorderedElementsAre;
 
 class MainThreadMetricsHelperTest : public testing::Test {
  public:
-  MainThreadMetricsHelperTest() = default;
+  MainThreadMetricsHelperTest()
+      : task_environment_(
+            base::test::ScopedTaskEnvironment::MainThreadType::MOCK_TIME,
+            base::test::ScopedTaskEnvironment::ExecutionMode::QUEUED) {
+    // Null clock might trigger some assertions.
+    task_environment_.FastForwardBy(base::TimeDelta::FromMilliseconds(1));
+  }
+
   ~MainThreadMetricsHelperTest() override = default;
 
   void SetUp() override {
     histogram_tester_.reset(new base::HistogramTester());
-    clock_.Advance(base::TimeDelta::FromMilliseconds(1));
-    mock_task_runner_ =
-        base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(&clock_, true);
     scheduler_ = std::make_unique<MainThreadSchedulerImplForTest>(
-        base::sequence_manager::TaskQueueManagerForTest::Create(
-            nullptr, mock_task_runner_, &clock_),
+        base::sequence_manager::SequenceManagerForTest::Create(
+            nullptr, task_environment_.GetMainThreadTaskRunner(),
+            task_environment_.GetMockTickClock()),
         base::nullopt);
     metrics_helper_ = &scheduler_->main_thread_only().metrics_helper;
   }
@@ -64,56 +71,60 @@ class MainThreadMetricsHelperTest : public testing::Test {
     scheduler_.reset();
   }
 
+  base::TimeTicks Now() {
+    return task_environment_.GetMockTickClock()->NowTicks();
+  }
+
+  void FastForwardTo(base::TimeTicks time) {
+    CHECK_LE(Now(), time);
+    task_environment_.FastForwardBy(time - Now());
+  }
+
   void RunTask(MainThreadTaskQueue::QueueType queue_type,
                base::TimeTicks start,
                base::TimeDelta duration) {
-    DCHECK_LE(clock_.NowTicks(), start);
-    clock_.SetNowTicks(start + duration);
+    DCHECK_LE(Now(), start);
+    FastForwardTo(start + duration);
     scoped_refptr<MainThreadTaskQueueForTest> queue;
     if (queue_type != MainThreadTaskQueue::QueueType::kDetached) {
       queue = scoped_refptr<MainThreadTaskQueueForTest>(
           new MainThreadTaskQueueForTest(queue_type));
     }
 
-    // Pass an empty task for recording.
-    TaskQueue::PostedTask posted_task(base::OnceClosure(), FROM_HERE);
-    TaskQueue::Task task(std::move(posted_task), base::TimeTicks());
-    metrics_helper_->RecordTaskMetrics(queue.get(), task, start,
-                                       start + duration, base::nullopt);
+    metrics_helper_->RecordTaskMetrics(queue.get(), FakeTask(),
+                                       FakeTaskTiming(start, start + duration));
   }
 
-  void RunTask(FrameScheduler* scheduler,
+  void RunTask(FrameSchedulerImpl* scheduler,
                base::TimeTicks start,
                base::TimeDelta duration) {
-    DCHECK_LE(clock_.NowTicks(), start);
-    clock_.SetNowTicks(start + duration);
+    DCHECK_LE(Now(), start);
+    FastForwardTo(start + duration);
     scoped_refptr<MainThreadTaskQueueForTest> queue(
         new MainThreadTaskQueueForTest(QueueType::kDefault));
     queue->SetFrameSchedulerForTest(scheduler);
-    // Pass an empty task for recording.
-    TaskQueue::PostedTask posted_task(base::OnceClosure(), FROM_HERE);
-    TaskQueue::Task task(std::move(posted_task), base::TimeTicks());
-    metrics_helper_->RecordTaskMetrics(queue.get(), task, start,
-                                       start + duration, base::nullopt);
+    metrics_helper_->RecordTaskMetrics(queue.get(), FakeTask(),
+                                       FakeTaskTiming(start, start + duration));
   }
 
   void RunTask(UseCase use_case,
                base::TimeTicks start,
                base::TimeDelta duration) {
-    DCHECK_LE(clock_.NowTicks(), start);
-    clock_.SetNowTicks(start + duration);
+    DCHECK_LE(Now(), start);
+    FastForwardTo(start + duration);
     scoped_refptr<MainThreadTaskQueueForTest> queue(
         new MainThreadTaskQueueForTest(QueueType::kDefault));
     scheduler_->SetCurrentUseCaseForTest(use_case);
-    // Pass an empty task for recording.
-    TaskQueue::PostedTask posted_task(base::OnceClosure(), FROM_HERE);
-    TaskQueue::Task task(std::move(posted_task), base::TimeTicks());
-    metrics_helper_->RecordTaskMetrics(queue.get(), task, start,
-                                       start + duration, base::nullopt);
+    metrics_helper_->RecordTaskMetrics(queue.get(), FakeTask(),
+                                       FakeTaskTiming(start, start + duration));
   }
 
   base::TimeTicks Milliseconds(int milliseconds) {
     return base::TimeTicks() + base::TimeDelta::FromMilliseconds(milliseconds);
+  }
+
+  base::TimeTicks Seconds(int seconds) {
+    return base::TimeTicks() + base::TimeDelta::FromSeconds(seconds);
   }
 
   void ForceUpdatePolicy() { scheduler_->ForceUpdatePolicy(); }
@@ -226,8 +237,7 @@ class MainThreadMetricsHelperTest : public testing::Test {
     return builder.Build();
   }
 
-  base::SimpleTestTickClock clock_;
-  scoped_refptr<cc::OrderedSimpleTaskRunner> mock_task_runner_;
+  base::test::ScopedTaskEnvironment task_environment_;
   std::unique_ptr<MainThreadSchedulerImplForTest> scheduler_;
   MainThreadMetricsHelper* metrics_helper_;  // NOT OWNED
   std::unique_ptr<base::HistogramTester> histogram_tester_;
@@ -248,133 +258,128 @@ TEST_F(MainThreadMetricsHelperTest, Metrics_PerQueueType) {
   if (kLaunchingProcessIsBackgrounded)
     scheduler_->SetRendererBackgrounded(false);
 
-  RunTask(QueueType::kDefault, Milliseconds(1),
-          base::TimeDelta::FromMicroseconds(700));
-  RunTask(QueueType::kDefault, Milliseconds(2),
-          base::TimeDelta::FromMicroseconds(700));
-  RunTask(QueueType::kDefault, Milliseconds(3),
-          base::TimeDelta::FromMicroseconds(700));
+  RunTask(QueueType::kDefault, Seconds(1),
+          base::TimeDelta::FromMilliseconds(700));
+  RunTask(QueueType::kDefault, Seconds(2),
+          base::TimeDelta::FromMilliseconds(700));
+  RunTask(QueueType::kDefault, Seconds(3),
+          base::TimeDelta::FromMilliseconds(700));
 
-  RunTask(QueueType::kControl, Milliseconds(400),
-          base::TimeDelta::FromMilliseconds(30));
-  RunTask(QueueType::kFrameLoading, Milliseconds(800),
-          base::TimeDelta::FromMilliseconds(70));
-  RunTask(QueueType::kFramePausable, Milliseconds(1000),
-          base::TimeDelta::FromMilliseconds(20));
-  RunTask(QueueType::kCompositor, Milliseconds(1200),
-          base::TimeDelta::FromMilliseconds(25));
-  RunTask(QueueType::kTest, Milliseconds(1600),
-          base::TimeDelta::FromMilliseconds(85));
+  RunTask(QueueType::kControl, Seconds(4), base::TimeDelta::FromSeconds(3));
+  RunTask(QueueType::kFrameLoading, Seconds(8),
+          base::TimeDelta::FromSeconds(6));
+  RunTask(QueueType::kFramePausable, Seconds(16),
+          base::TimeDelta::FromSeconds(2));
+  RunTask(QueueType::kCompositor, Seconds(19), base::TimeDelta::FromSeconds(2));
+  RunTask(QueueType::kTest, Seconds(22), base::TimeDelta::FromSeconds(4));
 
   scheduler_->SetRendererBackgrounded(true);
+  // Wait for internally triggered tasks to run.
+  constexpr int kCoolingOfTimeSeconds = 10;
 
-  RunTask(QueueType::kControl, Milliseconds(2000),
-          base::TimeDelta::FromMilliseconds(25));
-  RunTask(QueueType::kFrameThrottleable, Milliseconds(2600),
-          base::TimeDelta::FromMilliseconds(175));
-  RunTask(QueueType::kUnthrottled, Milliseconds(2800),
-          base::TimeDelta::FromMilliseconds(25));
-  RunTask(QueueType::kFrameLoading, Milliseconds(3000),
-          base::TimeDelta::FromMilliseconds(35));
-  RunTask(QueueType::kFrameThrottleable, Milliseconds(3200),
-          base::TimeDelta::FromMilliseconds(5));
-  RunTask(QueueType::kCompositor, Milliseconds(3400),
-          base::TimeDelta::FromMilliseconds(20));
-  RunTask(QueueType::kIdle, Milliseconds(3600),
-          base::TimeDelta::FromMilliseconds(50));
-  RunTask(QueueType::kFrameLoadingControl, Milliseconds(4000),
-          base::TimeDelta::FromMilliseconds(5));
-  RunTask(QueueType::kControl, Milliseconds(4200),
-          base::TimeDelta::FromMilliseconds(20));
-  RunTask(QueueType::kFrameThrottleable, Milliseconds(4400),
-          base::TimeDelta::FromMilliseconds(115));
-  RunTask(QueueType::kFramePausable, Milliseconds(4600),
-          base::TimeDelta::FromMilliseconds(175));
-  RunTask(QueueType::kIdle, Milliseconds(5000),
-          base::TimeDelta::FromMilliseconds(1600));
+  RunTask(QueueType::kControl, Seconds(26 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(2));
+  RunTask(QueueType::kFrameThrottleable, Seconds(28 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(8));
+  RunTask(QueueType::kUnthrottled, Seconds(38 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(5));
+  RunTask(QueueType::kFrameLoading, Seconds(45 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(10));
+  RunTask(QueueType::kFrameThrottleable, Seconds(60 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(5));
+  RunTask(QueueType::kCompositor, Seconds(70 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(20));
+  RunTask(QueueType::kIdle, Seconds(90 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(5));
+  RunTask(QueueType::kFrameLoadingControl, Seconds(100 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(5));
+  RunTask(QueueType::kControl, Seconds(106 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(6));
+  RunTask(QueueType::kFrameThrottleable, Seconds(114 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(6));
+  RunTask(QueueType::kFramePausable, Seconds(120 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(17));
+  RunTask(QueueType::kIdle, Seconds(140 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(15));
 
-  RunTask(QueueType::kDetached, Milliseconds(8000),
-          base::TimeDelta::FromMilliseconds(150));
+  RunTask(QueueType::kDetached, Seconds(156 + kCoolingOfTimeSeconds),
+          base::TimeDelta::FromSeconds(2));
 
   std::vector<base::Bucket> expected_samples = {
-      {static_cast<int>(QueueType::kControl), 75},
+      {static_cast<int>(QueueType::kControl), 11},
       {static_cast<int>(QueueType::kDefault), 2},
-      {static_cast<int>(QueueType::kUnthrottled), 25},
-      {static_cast<int>(QueueType::kFrameLoading), 105},
-      {static_cast<int>(QueueType::kCompositor), 45},
-      {static_cast<int>(QueueType::kIdle), 1650},
-      {static_cast<int>(QueueType::kTest), 85},
+      {static_cast<int>(QueueType::kUnthrottled), 5},
+      {static_cast<int>(QueueType::kFrameLoading), 16},
+      {static_cast<int>(QueueType::kCompositor), 22},
+      {static_cast<int>(QueueType::kIdle), 20},
+      {static_cast<int>(QueueType::kTest), 4},
       {static_cast<int>(QueueType::kFrameLoadingControl), 5},
-      {static_cast<int>(QueueType::kFrameThrottleable), 295},
-      {static_cast<int>(QueueType::kFramePausable), 195},
-      {static_cast<int>(QueueType::kDetached), 150},
+      {static_cast<int>(QueueType::kFrameThrottleable), 19},
+      {static_cast<int>(QueueType::kFramePausable), 19},
+      {static_cast<int>(QueueType::kDetached), 2},
   };
   EXPECT_THAT(histogram_tester_->GetAllSamples(
-                  "RendererScheduler.TaskDurationPerQueueType2"),
+                  "RendererScheduler.TaskDurationPerQueueType3"),
               testing::ContainerEq(expected_samples));
 
   EXPECT_THAT(histogram_tester_->GetAllSamples(
-                  "RendererScheduler.TaskDurationPerQueueType2.Foreground"),
+                  "RendererScheduler.TaskDurationPerQueueType3.Foreground"),
               UnorderedElementsAre(
-                  Bucket(static_cast<int>(QueueType::kControl), 30),
+                  Bucket(static_cast<int>(QueueType::kControl), 3),
                   Bucket(static_cast<int>(QueueType::kDefault), 2),
-                  Bucket(static_cast<int>(QueueType::kFrameLoading), 70),
-                  Bucket(static_cast<int>(QueueType::kCompositor), 25),
-                  Bucket(static_cast<int>(QueueType::kTest), 85),
-                  Bucket(static_cast<int>(QueueType::kFramePausable), 20)));
+                  Bucket(static_cast<int>(QueueType::kFrameLoading), 6),
+                  Bucket(static_cast<int>(QueueType::kCompositor), 2),
+                  Bucket(static_cast<int>(QueueType::kTest), 4),
+                  Bucket(static_cast<int>(QueueType::kFramePausable), 2)));
 
   EXPECT_THAT(histogram_tester_->GetAllSamples(
-                  "RendererScheduler.TaskDurationPerQueueType2.Background"),
+                  "RendererScheduler.TaskDurationPerQueueType3.Background"),
               UnorderedElementsAre(
-                  Bucket(static_cast<int>(QueueType::kControl), 45),
-                  Bucket(static_cast<int>(QueueType::kUnthrottled), 25),
-                  Bucket(static_cast<int>(QueueType::kFrameLoading), 35),
-                  Bucket(static_cast<int>(QueueType::kFrameThrottleable), 295),
-                  Bucket(static_cast<int>(QueueType::kFramePausable), 175),
+                  Bucket(static_cast<int>(QueueType::kControl), 8),
+                  Bucket(static_cast<int>(QueueType::kUnthrottled), 5),
+                  Bucket(static_cast<int>(QueueType::kFrameLoading), 10),
+                  Bucket(static_cast<int>(QueueType::kFrameThrottleable), 19),
+                  Bucket(static_cast<int>(QueueType::kFramePausable), 17),
                   Bucket(static_cast<int>(QueueType::kCompositor), 20),
-                  Bucket(static_cast<int>(QueueType::kIdle), 1650),
+                  Bucket(static_cast<int>(QueueType::kIdle), 20),
                   Bucket(static_cast<int>(QueueType::kFrameLoadingControl), 5),
-                  Bucket(static_cast<int>(QueueType::kDetached), 150)));
+                  Bucket(static_cast<int>(QueueType::kDetached), 2)));
 }
 
 TEST_F(MainThreadMetricsHelperTest, Metrics_PerUseCase) {
   RunTask(UseCase::kNone, Milliseconds(500),
-          base::TimeDelta::FromMilliseconds(4000));
+          base::TimeDelta::FromMilliseconds(400));
 
-  RunTask(UseCase::kTouchstart, Milliseconds(7000),
-          base::TimeDelta::FromMilliseconds(25));
-  RunTask(UseCase::kTouchstart, Milliseconds(7050),
-          base::TimeDelta::FromMilliseconds(25));
-  RunTask(UseCase::kTouchstart, Milliseconds(7100),
-          base::TimeDelta::FromMilliseconds(25));
+  RunTask(UseCase::kTouchstart, Seconds(1), base::TimeDelta::FromSeconds(2));
+  RunTask(UseCase::kTouchstart, Seconds(3),
+          base::TimeDelta::FromMilliseconds(300));
+  RunTask(UseCase::kTouchstart, Seconds(4),
+          base::TimeDelta::FromMilliseconds(300));
 
-  RunTask(UseCase::kCompositorGesture, Milliseconds(7150),
-          base::TimeDelta::FromMilliseconds(5));
-  RunTask(UseCase::kCompositorGesture, Milliseconds(7200),
-          base::TimeDelta::FromMilliseconds(30));
+  RunTask(UseCase::kCompositorGesture, Seconds(5),
+          base::TimeDelta::FromSeconds(5));
+  RunTask(UseCase::kCompositorGesture, Seconds(10),
+          base::TimeDelta::FromSeconds(3));
 
-  RunTask(UseCase::kMainThreadCustomInputHandling, Milliseconds(7300),
-          base::TimeDelta::FromMilliseconds(2));
-  RunTask(UseCase::kSynchronizedGesture, Milliseconds(7400),
-          base::TimeDelta::FromMilliseconds(250));
-  RunTask(UseCase::kMainThreadCustomInputHandling, Milliseconds(7700),
-          base::TimeDelta::FromMilliseconds(150));
-  RunTask(UseCase::kLoading, Milliseconds(7900),
-          base::TimeDelta::FromMilliseconds(50));
-  RunTask(UseCase::kMainThreadGesture, Milliseconds(8000),
-          base::TimeDelta::FromMilliseconds(60));
+  RunTask(UseCase::kMainThreadCustomInputHandling, Seconds(14),
+          base::TimeDelta::FromSeconds(2));
+  RunTask(UseCase::kSynchronizedGesture, Seconds(17),
+          base::TimeDelta::FromSeconds(2));
+  RunTask(UseCase::kMainThreadCustomInputHandling, Seconds(19),
+          base::TimeDelta::FromSeconds(5));
+  RunTask(UseCase::kLoading, Seconds(25), base::TimeDelta::FromSeconds(6));
+  RunTask(UseCase::kMainThreadGesture, Seconds(31),
+          base::TimeDelta::FromSeconds(6));
   EXPECT_THAT(
       histogram_tester_->GetAllSamples(
-          "RendererScheduler.TaskDurationPerUseCase"),
+          "RendererScheduler.TaskDurationPerUseCase2"),
       UnorderedElementsAre(
-          Bucket(static_cast<int>(UseCase::kNone), 4000),
-          Bucket(static_cast<int>(UseCase::kCompositorGesture), 35),
-          Bucket(static_cast<int>(UseCase::kMainThreadCustomInputHandling),
-                 152),
-          Bucket(static_cast<int>(UseCase::kSynchronizedGesture), 250),
-          Bucket(static_cast<int>(UseCase::kTouchstart), 75),
-          Bucket(static_cast<int>(UseCase::kLoading), 50),
-          Bucket(static_cast<int>(UseCase::kMainThreadGesture), 60)));
+          Bucket(static_cast<int>(UseCase::kTouchstart), 3),
+          Bucket(static_cast<int>(UseCase::kCompositorGesture), 8),
+          Bucket(static_cast<int>(UseCase::kMainThreadCustomInputHandling), 7),
+          Bucket(static_cast<int>(UseCase::kSynchronizedGesture), 2),
+          Bucket(static_cast<int>(UseCase::kLoading), 6),
+          Bucket(static_cast<int>(UseCase::kMainThreadGesture), 6)));
 }
 
 TEST_F(MainThreadMetricsHelperTest, GetFrameStatusTest) {
@@ -394,81 +399,6 @@ TEST_F(MainThreadMetricsHelperTest, GetFrameStatusTest) {
         CreateFakeFrameSchedulerWithType(frame_status);
     EXPECT_EQ(GetFrameStatus(frame.get()), frame_status);
   }
-}
-
-TEST_F(MainThreadMetricsHelperTest, BackgroundedRendererTransition) {
-  scheduler_->SetFreezingWhenBackgroundedEnabled(true);
-  typedef BackgroundedRendererTransition Transition;
-
-  int backgrounding_transitions = 0;
-  int foregrounding_transitions = 0;
-  if (!kLaunchingProcessIsBackgrounded) {
-    scheduler_->SetRendererBackgrounded(true);
-    backgrounding_transitions++;
-    EXPECT_THAT(
-        histogram_tester_->GetAllSamples(
-            "RendererScheduler.BackgroundedRendererTransition"),
-        UnorderedElementsAre(Bucket(static_cast<int>(Transition::kBackgrounded),
-                                    backgrounding_transitions)));
-    scheduler_->SetRendererBackgrounded(false);
-    foregrounding_transitions++;
-    EXPECT_THAT(
-        histogram_tester_->GetAllSamples(
-            "RendererScheduler.BackgroundedRendererTransition"),
-        UnorderedElementsAre(Bucket(static_cast<int>(Transition::kBackgrounded),
-                                    backgrounding_transitions),
-                             Bucket(static_cast<int>(Transition::kForegrounded),
-                                    foregrounding_transitions)));
-  } else {
-    scheduler_->SetRendererBackgrounded(false);
-    foregrounding_transitions++;
-    EXPECT_THAT(
-        histogram_tester_->GetAllSamples(
-            "RendererScheduler.BackgroundedRendererTransition"),
-        UnorderedElementsAre(Bucket(static_cast<int>(Transition::kForegrounded),
-                                    foregrounding_transitions)));
-  }
-
-  scheduler_->SetRendererBackgrounded(true);
-  backgrounding_transitions++;
-  EXPECT_THAT(
-      histogram_tester_->GetAllSamples(
-          "RendererScheduler.BackgroundedRendererTransition"),
-      UnorderedElementsAre(Bucket(static_cast<int>(Transition::kBackgrounded),
-                                  backgrounding_transitions),
-                           Bucket(static_cast<int>(Transition::kForegrounded),
-                                  foregrounding_transitions)));
-
-  // Waste 5+ minutes so that the delayed stop is triggered
-  RunTask(QueueType::kDefault, Milliseconds(1),
-          base::TimeDelta::FromSeconds(5 * 61));
-  // Firing ForceUpdatePolicy multiple times to make sure that the
-  // metric is only recorded upon an actual change.
-  ForceUpdatePolicy();
-  ForceUpdatePolicy();
-  ForceUpdatePolicy();
-  EXPECT_THAT(histogram_tester_->GetAllSamples(
-                  "RendererScheduler.BackgroundedRendererTransition"),
-              UnorderedElementsAre(
-                  Bucket(static_cast<int>(Transition::kBackgrounded),
-                         backgrounding_transitions),
-                  Bucket(static_cast<int>(Transition::kForegrounded),
-                         foregrounding_transitions),
-                  Bucket(static_cast<int>(Transition::kFrozenAfterDelay), 1)));
-
-  scheduler_->SetRendererBackgrounded(false);
-  foregrounding_transitions++;
-  ForceUpdatePolicy();
-  ForceUpdatePolicy();
-  EXPECT_THAT(histogram_tester_->GetAllSamples(
-                  "RendererScheduler.BackgroundedRendererTransition"),
-              UnorderedElementsAre(
-                  Bucket(static_cast<int>(Transition::kBackgrounded),
-                         backgrounding_transitions),
-                  Bucket(static_cast<int>(Transition::kForegrounded),
-                         foregrounding_transitions),
-                  Bucket(static_cast<int>(Transition::kFrozenAfterDelay), 1),
-                  Bucket(static_cast<int>(Transition::kResumed), 1)));
 }
 
 TEST_F(MainThreadMetricsHelperTest, TaskCountPerFrameStatus) {

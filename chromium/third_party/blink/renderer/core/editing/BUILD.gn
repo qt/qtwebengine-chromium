@@ -176,6 +176,7 @@ blink_core_sources("editing") {
     "iterators/text_iterator_text_state.h",
     "iterators/text_searcher_icu.cc",
     "iterators/text_searcher_icu.h",
+    "kill_ring.h",
     "layout_selection.cc",
     "layout_selection.h",
     "local_caret_rect.cc",
@@ -307,6 +308,8 @@ blink_core_sources("editing") {
     "text_granularity.h",
     "text_offset_mapping.cc",
     "text_offset_mapping.h",
+    "text_segments.cc",
+    "text_segments.h",
     "visible_position.cc",
     "visible_position.h",
     "visible_selection.cc",
@@ -322,7 +325,12 @@ blink_core_sources("editing") {
   ]
 
   if (is_mac) {
-    sources += [ "commands/smart_replace_cf.cc" ]
+    sources += [
+      "commands/smart_replace_cf.cc",
+      "kill_ring_mac.mm",
+    ]
+  } else {
+    sources += [ "kill_ring_none.cc" ]
   }
 }
 
@@ -391,6 +399,7 @@ jumbo_source_set("unit_tests") {
     "selection_controller_test.cc",
     "selection_modifier_character_test.cc",
     "selection_modifier_test.cc",
+    "selection_modifier_word_test.cc",
     "selection_template_test.cc",
     "serializers/styled_markup_serializer_test.cc",
     "set_selection_options_test.cc",

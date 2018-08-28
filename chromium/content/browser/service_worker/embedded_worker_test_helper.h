@@ -20,15 +20,14 @@
 #include "content/browser/service_worker/service_worker_test_utils.h"
 #include "content/browser/url_loader_factory_getter.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
-#include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
-#include "content/common/service_worker/service_worker_status_code.h"
-#include "ipc/ipc_listener.h"
-#include "ipc/ipc_test_sink.h"
+#include "content/common/service_worker/service_worker.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "net/cookies/cookie_change_dispatcher.h"
 #include "net/http/http_response_info.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
+#include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
 #include "url/gurl.h"
 
@@ -42,7 +41,6 @@ class EmbeddedWorkerTestHelper;
 class MockRenderProcessHost;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextWrapper;
-class ServiceWorkerDispatcherHost;
 class TestBrowserContext;
 struct PlatformNotificationData;
 struct PushEventPayload;
@@ -61,8 +59,7 @@ struct PushEventPayload;
 // methods to add their own logic/verification code.
 //
 // See embedded_worker_instance_unittest.cc for example usages.
-class EmbeddedWorkerTestHelper : public IPC::Sender,
-                                 public IPC::Listener {
+class EmbeddedWorkerTestHelper {
  public:
   enum class Event { Install, Activate };
 
@@ -102,39 +99,15 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   EmbeddedWorkerTestHelper(
       const base::FilePath& user_data_directory,
       scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter);
-  ~EmbeddedWorkerTestHelper() override;
-
-  // IPC::Sender implementation.
-  bool Send(IPC::Message* message) override;
-
-  // IPC::Listener implementation.
-  bool OnMessageReceived(const IPC::Message& msg) override;
+  virtual ~EmbeddedWorkerTestHelper();
 
   // Registers a Mojo endpoint object derived from
   // MockEmbeddedWorkerInstanceClient.
   void RegisterMockInstanceClient(
       std::unique_ptr<MockEmbeddedWorkerInstanceClient> client);
 
-  // Registers the dispatcher host for the process to a map managed by this test
-  // helper. If there is a existing dispatcher host, it'll replace the existing
-  // dispatcher host with the given one. When replacing, this should be called
-  // before ServiceWorkerDispatcherHost::Init to allow the old dispatcher host
-  // to destruct and remove itself from ServiceWorkerContextCore, since Init
-  // adds to context core. If |dispatcher_host| is nullptr, this method just
-  // removes the existing dispatcher host from the map.
-  void RegisterDispatcherHost(
-      int process_id,
-      scoped_refptr<ServiceWorkerDispatcherHost> dispatcher_host);
-
-  // Creates and registers a basic dispatcher host for the process if one
-  // registered isn't already.
-  void EnsureDispatcherHostForProcess(int process_id);
-
   template <typename MockType, typename... Args>
   MockType* CreateAndRegisterMockInstanceClient(Args&&... args);
-
-  // IPC sink for EmbeddedWorker messages.
-  IPC::TestSink* ipc_sink() { return &sink_; }
 
   std::vector<Event>* dispatched_events() { return &events_; }
 
@@ -159,8 +132,6 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
 
   TestBrowserContext* browser_context() { return browser_context_.get(); }
 
-  ServiceWorkerDispatcherHost* GetDispatcherHostForProcess(int process_id);
-
   base::WeakPtr<EmbeddedWorkerTestHelper> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
   }
@@ -171,17 +142,21 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
     return url_loader_factory_getter_.get();
   }
 
+  // Overrides the network URLLoaderFactory for subsequent requests. Passing a
+  // null pointer will restore the default behavior.
+  void SetNetworkFactory(network::mojom::URLLoaderFactory* factory);
+
  protected:
   // StartWorker IPC handler routed through MockEmbeddedWorkerInstanceClient.
   // This simulates behaviors in the renderer process. Binds
-  // |dispatcher_request| to MockServiceWorkerEventDispatcher by default.
+  // |service_worker_request| to MockServiceWorker by default.
   virtual void OnStartWorker(
       int embedded_worker_id,
       int64_t service_worker_version_id,
       const GURL& scope,
       const GURL& script_url,
       bool pause_after_download,
-      mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
+      mojom::ServiceWorkerRequest service_worker_request,
       mojom::ControllerServiceWorkerRequest controller_request,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
@@ -195,88 +170,75 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   // On*Event handlers. By default they just return success via
   // SimulateSendReplyToBrowser.
   virtual void OnActivateEvent(
-      mojom::ServiceWorkerEventDispatcher::DispatchActivateEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchActivateEventCallback callback);
   virtual void OnBackgroundFetchAbortEvent(
       const std::string& developer_id,
       const std::string& unique_id,
       const std::vector<BackgroundFetchSettledFetch>& fetches,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchBackgroundFetchAbortEventCallback callback);
+      mojom::ServiceWorker::DispatchBackgroundFetchAbortEventCallback callback);
   virtual void OnBackgroundFetchClickEvent(
       const std::string& developer_id,
       mojom::BackgroundFetchState state,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchBackgroundFetchClickEventCallback callback);
+      mojom::ServiceWorker::DispatchBackgroundFetchClickEventCallback callback);
   virtual void OnBackgroundFetchFailEvent(
       const std::string& developer_id,
       const std::string& unique_id,
       const std::vector<BackgroundFetchSettledFetch>& fetches,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchBackgroundFetchFailEventCallback callback);
+      mojom::ServiceWorker::DispatchBackgroundFetchFailEventCallback callback);
   virtual void OnBackgroundFetchedEvent(
       const std::string& developer_id,
       const std::string& unique_id,
       const std::vector<BackgroundFetchSettledFetch>& fetches,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchBackgroundFetchedEventCallback callback);
+      mojom::ServiceWorker::DispatchBackgroundFetchedEventCallback callback);
   virtual void OnCookieChangeEvent(
       const net::CanonicalCookie& cookie,
       ::network::mojom::CookieChangeCause cause,
-      mojom::ServiceWorkerEventDispatcher::DispatchCookieChangeEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchCookieChangeEventCallback callback);
   virtual void OnExtendableMessageEvent(
       mojom::ExtendableMessageEventPtr event,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchExtendableMessageEventCallback callback);
+      mojom::ServiceWorker::DispatchExtendableMessageEventCallback callback);
   virtual void OnInstallEvent(
-      mojom::ServiceWorkerEventDispatcher::DispatchInstallEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchInstallEventCallback callback);
   virtual void OnFetchEvent(
       int embedded_worker_id,
       const network::ResourceRequest& request,
-      mojom::FetchEventPreloadHandlePtr preload_handle,
+      blink::mojom::FetchEventPreloadHandlePtr preload_handle,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
-          finish_callback);
+      mojom::ServiceWorker::DispatchFetchEventCallback finish_callback);
   virtual void OnNotificationClickEvent(
       const std::string& notification_id,
       const PlatformNotificationData& notification_data,
       int action_index,
       const base::Optional<base::string16>& reply,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchNotificationClickEventCallback callback);
+      mojom::ServiceWorker::DispatchNotificationClickEventCallback callback);
   virtual void OnNotificationCloseEvent(
       const std::string& notification_id,
       const PlatformNotificationData& notification_data,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchNotificationCloseEventCallback callback);
+      mojom::ServiceWorker::DispatchNotificationCloseEventCallback callback);
   virtual void OnPushEvent(
       const PushEventPayload& payload,
-      mojom::ServiceWorkerEventDispatcher::DispatchPushEventCallback callback);
+      mojom::ServiceWorker::DispatchPushEventCallback callback);
   virtual void OnAbortPaymentEvent(
       payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchAbortPaymentEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchAbortPaymentEventCallback callback);
   virtual void OnCanMakePaymentEvent(
       payments::mojom::CanMakePaymentEventDataPtr data,
       payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchCanMakePaymentEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchCanMakePaymentEventCallback callback);
   virtual void OnPaymentRequestEvent(
       payments::mojom::PaymentRequestEventDataPtr data,
       payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchPaymentRequestEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchPaymentRequestEventCallback callback);
 
   // These functions simulate making Mojo calls to the browser.
   void SimulateWorkerReadyForInspection(int embedded_worker_id);
   void SimulateWorkerScriptCached(int embedded_worker_id,
                                   base::OnceClosure callback);
   void SimulateWorkerScriptLoaded(int embedded_worker_id);
-  void SimulateWorkerThreadStarted(int thread_id, int embedded_worker_id);
-  void SimulateWorkerScriptEvaluated(int embedded_worker_id, bool success);
-  void SimulateWorkerStarted(int embedded_worker_id);
+  void SimulateScriptEvaluationStart(int embedded_worker_id);
+  void SimulateWorkerStarted(int embedded_worker_id,
+                             blink::mojom::ServiceWorkerStartStatus status,
+                             int thread_id);
   void SimulateWorkerStopped(int embedded_worker_id);
 
   EmbeddedWorkerRegistry* registry();
@@ -287,7 +249,8 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   }
 
  private:
-  class MockServiceWorkerEventDispatcher;
+  class MockNetworkURLLoaderFactory;
+  class MockServiceWorker;
   class MockRendererInterface;
 
   void DidSimulateWorkerScriptCached(int embedded_worker_id,
@@ -301,87 +264,71 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   void OnResumeAfterDownloadStub(int embedded_worker_id);
   void OnStopWorkerStub(int embedded_worker_id);
   void OnActivateEventStub(
-      mojom::ServiceWorkerEventDispatcher::DispatchActivateEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchActivateEventCallback callback);
   void OnBackgroundFetchAbortEventStub(
       const std::string& developer_id,
       const std::string& unique_id,
       const std::vector<BackgroundFetchSettledFetch>& fetches,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchBackgroundFetchAbortEventCallback callback);
+      mojom::ServiceWorker::DispatchBackgroundFetchAbortEventCallback callback);
   void OnBackgroundFetchClickEventStub(
       const std::string& developer_id,
       mojom::BackgroundFetchState state,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchBackgroundFetchClickEventCallback callback);
+      mojom::ServiceWorker::DispatchBackgroundFetchClickEventCallback callback);
   void OnBackgroundFetchFailEventStub(
       const std::string& developer_id,
       const std::string& unique_id,
       const std::vector<BackgroundFetchSettledFetch>& fetches,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchBackgroundFetchFailEventCallback callback);
+      mojom::ServiceWorker::DispatchBackgroundFetchFailEventCallback callback);
   void OnBackgroundFetchedEventStub(
       const std::string& developer_id,
       const std::string& unique_id,
       const std::vector<BackgroundFetchSettledFetch>& fetches,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchBackgroundFetchedEventCallback callback);
+      mojom::ServiceWorker::DispatchBackgroundFetchedEventCallback callback);
   void OnCookieChangeEventStub(
       const net::CanonicalCookie& cookie,
       ::network::mojom::CookieChangeCause cause,
-      mojom::ServiceWorkerEventDispatcher::DispatchCookieChangeEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchCookieChangeEventCallback callback);
   void OnExtendableMessageEventStub(
       mojom::ExtendableMessageEventPtr event,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchExtendableMessageEventCallback callback);
+      mojom::ServiceWorker::DispatchExtendableMessageEventCallback callback);
   void OnInstallEventStub(
-      mojom::ServiceWorkerEventDispatcher::DispatchInstallEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchInstallEventCallback callback);
   void OnFetchEventStub(
       int embedded_worker_id,
       const network::ResourceRequest& request,
-      mojom::FetchEventPreloadHandlePtr preload_handle,
+      blink::mojom::FetchEventPreloadHandlePtr preload_handle,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
-          finish_callback);
+      mojom::ServiceWorker::DispatchFetchEventCallback finish_callback);
   void OnNotificationClickEventStub(
       const std::string& notification_id,
       const PlatformNotificationData& notification_data,
       int action_index,
       const base::Optional<base::string16>& reply,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchNotificationClickEventCallback callback);
+      mojom::ServiceWorker::DispatchNotificationClickEventCallback callback);
   void OnNotificationCloseEventStub(
       const std::string& notification_id,
       const PlatformNotificationData& notification_data,
-      mojom::ServiceWorkerEventDispatcher::
-          DispatchNotificationCloseEventCallback callback);
+      mojom::ServiceWorker::DispatchNotificationCloseEventCallback callback);
   void OnPushEventStub(
       const PushEventPayload& payload,
-      mojom::ServiceWorkerEventDispatcher::DispatchPushEventCallback callback);
+      mojom::ServiceWorker::DispatchPushEventCallback callback);
   void OnAbortPaymentEventStub(
       payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchAbortPaymentEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchAbortPaymentEventCallback callback);
   void OnCanMakePaymentEventStub(
       payments::mojom::CanMakePaymentEventDataPtr data,
       payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchCanMakePaymentEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchCanMakePaymentEventCallback callback);
   void OnPaymentRequestEventStub(
       payments::mojom::PaymentRequestEventDataPtr data,
       payments::mojom::PaymentHandlerResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchPaymentRequestEventCallback
-          callback);
+      mojom::ServiceWorker::DispatchPaymentRequestEventCallback callback);
 
   std::unique_ptr<TestBrowserContext> browser_context_;
   std::unique_ptr<MockRenderProcessHost> render_process_host_;
   std::unique_ptr<MockRenderProcessHost> new_render_process_host_;
 
   scoped_refptr<ServiceWorkerContextWrapper> wrapper_;
-
-  IPC::TestSink sink_;
 
   std::unique_ptr<MockRendererInterface> mock_renderer_interface_;
   std::vector<std::unique_ptr<MockEmbeddedWorkerInstanceClient>>
@@ -391,9 +338,6 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   int next_thread_id_;
   int mock_render_process_id_;
   int new_mock_render_process_id_;
-
-  std::map<int /* process_id */, scoped_refptr<ServiceWorkerDispatcherHost>>
-      dispatcher_hosts_;
 
   std::map<int, int64_t> embedded_worker_id_service_worker_version_id_map_;
 
@@ -417,6 +361,7 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
 
   std::vector<Event> events_;
   scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter_;
+  std::unique_ptr<MockNetworkURLLoaderFactory> default_network_loader_factory_;
 
   base::WeakPtrFactory<EmbeddedWorkerTestHelper> weak_factory_;
 

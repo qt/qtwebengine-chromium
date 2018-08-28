@@ -39,7 +39,7 @@ def _CheckForWrongMojomIncludes(input_api, output_api):
 
     # The list of files that we specifically want to allow including
     # -blink variant files (e.g. because it has #if INSIDE_BLINK).
-    allow_blink_files = [r'third_party/blink/public/platform/modules/serviceworker/web_service_worker_request.h']
+    allow_blink_files = [r'third_party/blink/public/platform/modules/service_worker/web_service_worker_request.h']
 
     pattern = input_api.re.compile(r'#include\s+.+\.mojom(.*)\.h[>"]')
     public_folder = input_api.os_path.normpath('third_party/blink/public/')
@@ -196,9 +196,9 @@ def _ArePaintOrCompositingDirectoriesModified(change):  # pylint: disable=C0103
         os.path.join('third_party', 'blink', 'web_tests', 'flag-specific',
                      'enable-slimming-paint-v2'),
         os.path.join('third_party', 'blink', 'web_tests', 'FlagExpectations',
-                     'enable-slimming-paint-v175'),
+                     'enable-blink-gen-property-trees'),
         os.path.join('third_party', 'blink', 'web_tests', 'flag-specific',
-                     'enable-slimming-paint-v175'),
+                     'enable-blink-gen-property-trees'),
     ]
     for affected_file in change.AffectedFiles():
         file_path = affected_file.LocalPath()
@@ -210,10 +210,13 @@ def _ArePaintOrCompositingDirectoriesModified(change):  # pylint: disable=C0103
 def _AreLayoutNGDirectoriesModified(change):  # pylint: disable=C0103
     """Checks whether CL has changes to a layout ng directory."""
     layout_ng_paths = [
+        os.path.join('third_party', 'blink', 'renderer', 'core', 'editing'),
         os.path.join('third_party', 'blink', 'renderer', 'core', 'layout',
                      'ng'),
         os.path.join('third_party', 'blink', 'renderer', 'core', 'paint',
                      'ng'),
+        os.path.join('third_party', 'blink', 'renderer', 'platform', 'fonts',
+                     'shaping'),
         os.path.join('third_party', 'blink', 'web_tests', 'FlagExpectations',
                      'enable-blink-features=LayoutNG'),
         os.path.join('third_party', 'blink', 'web_tests', 'flag-specific',
@@ -241,8 +244,9 @@ def PostUploadHook(cl, change, output_api):  # pylint: disable=C0103
     if _ArePaintOrCompositingDirectoriesModified(change):
         results.extend(output_api.EnsureCQIncludeTrybotsAreAdded(
             cl,
-            ['master.tryserver.chromium.linux:'
+            ['luci.chromium.try:'
              'linux_layout_tests_slimming_paint_v2',
+             # TODO(kojii): Update linux_trusty_blink_rel to luci when migrated.
              'master.tryserver.blink:linux_trusty_blink_rel'],
             'Automatically added linux_layout_tests_slimming_paint_v2 and '
             'linux_trusty_blink_rel to run on CQ due to changes in paint or '
@@ -250,7 +254,7 @@ def PostUploadHook(cl, change, output_api):  # pylint: disable=C0103
     if _AreLayoutNGDirectoriesModified(change):
         results.extend(output_api.EnsureCQIncludeTrybotsAreAdded(
             cl,
-            ['master.tryserver.chromium.linux:'
+            ['luci.chromium.try:'
              'linux_layout_tests_layout_ng'],
             'Automatically added linux_layout_tests_layout_ng to run on CQ due '
             'to changes in LayoutNG directories.'))

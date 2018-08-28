@@ -11,6 +11,7 @@
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_interform.h"
@@ -143,11 +144,11 @@ bool FPDF_FileHandlerContext::Flush() {
 
 }  // namespace
 
-UnderlyingPageType* UnderlyingFromFPDFPage(FPDF_PAGE page) {
-  return reinterpret_cast<UnderlyingPageType*>(page);
+IPDF_Page* IPDFPageFromFPDFPage(FPDF_PAGE page) {
+  return reinterpret_cast<IPDF_Page*>(page);
 }
 
-FPDF_PAGE FPDFPageFromUnderlying(UnderlyingPageType* page) {
+FPDF_PAGE FPDFPageFromIPDFPage(IPDF_Page* page) {
   return reinterpret_cast<FPDF_PAGE>(page);
 }
 
@@ -156,19 +157,11 @@ CPDF_Document* CPDFDocumentFromFPDFDocument(FPDF_DOCUMENT doc) {
 }
 
 FPDF_DOCUMENT FPDFDocumentFromCPDFDocument(CPDF_Document* doc) {
-#ifdef PDF_ENABLE_XFA
-  if (doc && !doc->GetExtension())
-    doc->SetExtension(new CPDFXFA_Context(pdfium::WrapUnique(doc)));
-#endif  // PDF_ENABLE_XFA
   return reinterpret_cast<FPDF_DOCUMENT>(doc);
 }
 
 CPDF_Page* CPDFPageFromFPDFPage(FPDF_PAGE page) {
-#ifdef PDF_ENABLE_XFA
-  return page ? UnderlyingFromFPDFPage(page)->GetPDFPage() : nullptr;
-#else   // PDF_ENABLE_XFA
-  return UnderlyingFromFPDFPage(page);
-#endif  // PDF_ENABLE_XFA
+  return page ? IPDFPageFromFPDFPage(page)->AsPDFPage() : nullptr;
 }
 
 ByteString CFXByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string) {
@@ -206,32 +199,24 @@ void CheckUnSupportAnnot(CPDF_Document* pDoc, const CPDF_Annot* pPDFAnnot) {
   }
 }
 
-void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
-  // Security
-  if (err_code == FPDF_ERR_SECURITY) {
-    RaiseUnSupportError(FPDF_UNSP_DOC_SECURITY);
-    return;
-  }
-  if (!pDoc)
-    return;
-
-  // Portfolios and Packages
+void ReportUnsupportedFeatures(CPDF_Document* pDoc) {
   const CPDF_Dictionary* pRootDict = pDoc->GetRoot();
   if (pRootDict) {
-    ByteString cbString;
+    // Portfolios and Packages
     if (pRootDict->KeyExist("Collection")) {
       RaiseUnSupportError(FPDF_UNSP_DOC_PORTABLECOLLECTION);
       return;
     }
     if (pRootDict->KeyExist("Names")) {
-      CPDF_Dictionary* pNameDict = pRootDict->GetDictFor("Names");
+      const CPDF_Dictionary* pNameDict = pRootDict->GetDictFor("Names");
       if (pNameDict && pNameDict->KeyExist("EmbeddedFiles")) {
         RaiseUnSupportError(FPDF_UNSP_DOC_ATTACHMENT);
         return;
       }
       if (pNameDict && pNameDict->KeyExist("JavaScript")) {
-        CPDF_Dictionary* pJSDict = pNameDict->GetDictFor("JavaScript");
-        CPDF_Array* pArray = pJSDict ? pJSDict->GetArrayFor("Names") : nullptr;
+        const CPDF_Dictionary* pJSDict = pNameDict->GetDictFor("JavaScript");
+        const CPDF_Array* pArray =
+            pJSDict ? pJSDict->GetArrayFor("Names") : nullptr;
         if (pArray) {
           for (size_t i = 0; i < pArray->GetCount(); i++) {
             ByteString cbStr = pArray->GetStringAt(i);
@@ -243,12 +228,9 @@ void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
         }
       }
     }
-  }
 
-  // SharedForm
-  const CPDF_Dictionary* pRoot = pDoc->GetRoot();
-  if (pRoot) {
-    CPDF_Stream* pStream = pRoot->GetStreamFor("Metadata");
+    // SharedForm
+    const CPDF_Stream* pStream = pRootDict->GetStreamFor("Metadata");
     if (pStream) {
       CPDF_Metadata metaData(pStream);
       for (const auto& err : metaData.CheckForSharedForm())
@@ -256,12 +238,9 @@ void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
     }
   }
 
-#ifndef PDF_ENABLE_XFA
   // XFA Forms
-  CPDF_InterForm interform(pDoc);
-  if (interform.HasXFAForm())
+  if (!pDoc->GetExtension() && CPDF_InterForm(pDoc).HasXFAForm())
     RaiseUnSupportError(FPDF_UNSP_DOC_XFAFORM);
-#endif  // PDF_ENABLE_XFA
 }
 
 #ifndef _WIN32
@@ -327,40 +306,14 @@ unsigned long DecodeStreamMaybeCopyAndReturnLength(const CPDF_Stream* stream,
                                                    void* buffer,
                                                    unsigned long buflen) {
   ASSERT(stream);
-  uint8_t* data = stream->GetRawData();
-  uint32_t len = stream->GetRawSize();
-  const CPDF_Dictionary* dict = stream->GetDict();
-  const CPDF_Object* decoder =
-      dict ? dict->GetDirectObjectFor("Filter") : nullptr;
-  if (decoder && (decoder->IsArray() || decoder->IsName())) {
-    // Decode the stream if one or more stream filters are specified.
-    uint8_t* decoded_data = nullptr;
-    uint32_t decoded_len = 0;
-    ByteString dummy_last_decoder;
-    CPDF_Dictionary* dummy_last_param;
-    if (PDF_DataDecode(data, len, dict,
-                       dict->GetIntegerFor(pdfium::stream::kDL), false,
-                       &decoded_data, &decoded_len, &dummy_last_decoder,
-                       &dummy_last_param)) {
-      if (buffer && buflen >= decoded_len)
-        memcpy(buffer, decoded_data, decoded_len);
+  auto stream_acc = pdfium::MakeRetain<CPDF_StreamAcc>(stream);
+  stream_acc->LoadAllDataFiltered();
+  const auto stream_data_size = stream_acc->GetSize();
+  if (!buffer || buflen < stream_data_size)
+    return stream_data_size;
 
-      // Free the buffer for the decoded data if it was allocated by
-      // PDF_DataDecode(). Note that for images with a single image-specific
-      // filter, |decoded_data| is directly assigned to be |data|, so
-      // |decoded_data| does not need to be freed.
-      if (decoded_data != data)
-        FX_Free(decoded_data);
-
-      return decoded_len;
-    }
-  }
-  // Copy the raw data and return its length if there is no valid filter
-  // specified or if decoding failed.
-  if (buffer && buflen >= len)
-    memcpy(buffer, data, len);
-
-  return len;
+  memcpy(buffer, stream_acc->GetData(), stream_data_size);
+  return stream_data_size;
 }
 
 unsigned long Utf16EncodeMaybeCopyAndReturnLength(const WideString& text,
@@ -384,7 +337,12 @@ CFX_FloatRect CFXFloatRectFromFSRECTF(const FS_RECTF& rect) {
   return CFX_FloatRect(rect.left, rect.bottom, rect.right, rect.top);
 }
 
-CPDF_Array* GetQuadPointsArrayFromDictionary(const CPDF_Dictionary* dict) {
+const CPDF_Array* GetQuadPointsArrayFromDictionary(
+    const CPDF_Dictionary* dict) {
+  return dict ? dict->GetArrayFor("QuadPoints") : nullptr;
+}
+
+CPDF_Array* GetQuadPointsArrayFromDictionary(CPDF_Dictionary* dict) {
   return dict ? dict->GetArrayFor("QuadPoints") : nullptr;
 }
 

@@ -15,6 +15,8 @@
 namespace service_manager {
 namespace features {
 
+SERVICE_MANAGER_SANDBOX_EXPORT extern const base::Feature kAudioServiceSandbox;
+
 #if defined(OS_WIN)
 SERVICE_MANAGER_SANDBOX_EXPORT extern const base::Feature
     kNetworkServiceWindowsSandbox;

@@ -8,6 +8,7 @@
 #ifndef GrSurfaceProxy_DEFINED
 #define GrSurfaceProxy_DEFINED
 
+#include "../private/SkNoncopyable.h"
 #include "GrGpuResource.h"
 #include "GrSurface.h"
 
@@ -94,7 +95,6 @@ public:
 #endif
     }
 
-    int32_t getProxyRefCnt_TestOnly() const;
     int32_t getBackingRefCnt_TestOnly() const;
     int32_t getPendingReadCnt_TestOnly() const;
     int32_t getPendingWriteCnt_TestOnly() const;
@@ -161,6 +161,10 @@ protected:
         fTarget->fRefCnt += (fRefCnt-1); // don't xfer the proxy's creation ref
         fTarget->fPendingReads += fPendingReads;
         fTarget->fPendingWrites += fPendingWrites;
+    }
+
+    int32_t internalGetProxyRefCnt() const {
+        return fRefCnt;
     }
 
     bool internalHasPendingIO() const {
@@ -239,6 +243,21 @@ public:
     }
     int worstCaseWidth() const;
     int worstCaseHeight() const;
+    /**
+     * Helper that gets the width and height of the surface as a bounding rectangle.
+     */
+    SkRect getBoundsRect() const {
+        SkASSERT(LazyState::kFully != this->lazyInstantiationState());
+        return SkRect::MakeIWH(this->width(), this->height());
+    }
+    /**
+     * Helper that gets the worst case width and height of the surface as a bounding rectangle.
+     */
+    SkRect getWorstCaseBoundsRect() const {
+        SkASSERT(LazyState::kFully != this->lazyInstantiationState());
+        return SkRect::MakeIWH(this->worstCaseWidth(), this->worstCaseHeight());
+    }
+
     GrSurfaceOrigin origin() const {
         SkASSERT(kTopLeft_GrSurfaceOrigin == fOrigin || kBottomLeft_GrSurfaceOrigin == fOrigin);
         return fOrigin;
@@ -301,14 +320,6 @@ public:
     virtual bool instantiate(GrResourceProvider* resourceProvider) = 0;
 
     void deInstantiate();
-
-    /**
-     * Helper that gets the width and height of the surface as a bounding rectangle.
-     */
-    SkRect getBoundsRect() const {
-        SkASSERT(LazyState::kFully != this->lazyInstantiationState());
-        return SkRect::MakeIWH(this->width(), this->height());
-    }
 
     /**
      * @return the texture proxy associated with the surface proxy, may be NULL.
@@ -401,6 +412,10 @@ protected:
     friend class GrSurfaceProxyPriv;
 
     // Methods made available via GrSurfaceProxyPriv
+    int32_t getProxyRefCnt() const {
+        return this->internalGetProxyRefCnt();
+    }
+
     bool hasPendingIO() const {
         return this->internalHasPendingIO();
     }

@@ -175,7 +175,7 @@ class ProgramD3D : public ProgramImpl
 
     bool usesPointSize() const { return mUsesPointSize; }
     bool usesPointSpriteEmulation() const;
-    bool usesGeometryShader(GLenum drawMode) const;
+    bool usesGeometryShader(gl::PrimitiveMode drawMode) const;
     bool usesGeometryShaderForPointSpriteEmulation() const;
     bool usesInstancedPointSpriteEmulation() const;
 
@@ -189,7 +189,7 @@ class ProgramD3D : public ProgramImpl
     gl::Error getVertexExecutableForCachedInputLayout(ShaderExecutableD3D **outExectuable,
                                                       gl::InfoLog *infoLog);
     gl::Error getGeometryExecutableForPrimitiveType(const gl::Context *context,
-                                                    GLenum drawMode,
+                                                    gl::PrimitiveMode drawMode,
                                                     ShaderExecutableD3D **outExecutable,
                                                     gl::InfoLog *infoLog);
     gl::Error getPixelExecutableForCachedOutputLayout(ShaderExecutableD3D **outExectuable,
@@ -285,16 +285,24 @@ class ProgramD3D : public ProgramImpl
 
     // Checks if we need to recompile certain shaders.
     bool hasVertexExecutableForCachedInputLayout();
-    bool hasGeometryExecutableForPrimitiveType(GLenum drawMode);
+    bool hasGeometryExecutableForPrimitiveType(gl::PrimitiveMode drawMode);
     bool hasPixelExecutableForCachedOutputLayout();
 
-    bool anyShaderUniformsDirty() const;
+    bool anyShaderUniformsDirty() const { return mShaderUniformsDirty.any(); }
+
     bool areShaderUniformsDirty(gl::ShaderType shaderType) const
     {
         return mShaderUniformsDirty[shaderType];
     }
     const std::vector<D3DUniform *> &getD3DUniforms() const { return mD3DUniforms; }
     void markUniformsClean();
+
+    const gl::ProgramState &getState() const { return mState; }
+
+    bool hasShaderStage(gl::ShaderType shaderType) const
+    {
+        return mState.getLinkedShaderStages()[shaderType];
+    }
 
   private:
     // These forward-declared tasks are used for multi-thread shader compiles.
@@ -437,19 +445,10 @@ class ProgramD3D : public ProgramImpl
     void setUniformInternal(GLint location, GLsizei count, const T *v, GLenum uniformType);
 
     template <int cols, int rows>
-    bool setUniformMatrixfvImpl(GLint location,
-                                GLsizei count,
-                                GLboolean transpose,
-                                const GLfloat *value,
-                                uint8_t *targetData,
-                                GLenum targetUniformType);
-
-    template <int cols, int rows>
     void setUniformMatrixfvInternal(GLint location,
                                     GLsizei count,
                                     GLboolean transpose,
-                                    const GLfloat *value,
-                                    GLenum targetUniformType);
+                                    const GLfloat *value);
 
     gl::LinkResult compileProgramExecutables(const gl::Context *context, gl::InfoLog &infoLog);
     gl::LinkResult compileComputeExecutable(const gl::Context *context, gl::InfoLog &infoLog);
@@ -477,7 +476,8 @@ class ProgramD3D : public ProgramImpl
 
     std::vector<std::unique_ptr<VertexExecutable>> mVertexExecutables;
     std::vector<std::unique_ptr<PixelExecutable>> mPixelExecutables;
-    std::vector<std::unique_ptr<ShaderExecutableD3D>> mGeometryExecutables;
+    angle::PackedEnumMap<gl::PrimitiveMode, std::unique_ptr<ShaderExecutableD3D>>
+        mGeometryExecutables;
     std::unique_ptr<ShaderExecutableD3D> mComputeExecutable;
 
     gl::ShaderMap<std::string> mShaderHLSL;

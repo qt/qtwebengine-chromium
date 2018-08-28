@@ -342,17 +342,8 @@ void LayoutSVGShape::UpdateNonScalingStrokeData() {
   rare_data.non_scaling_stroke_path_.Transform(t);
 }
 
-void LayoutSVGShape::Paint(const PaintInfo& paint_info,
-                           const LayoutPoint&) const {
+void LayoutSVGShape::Paint(const PaintInfo& paint_info) const {
   SVGShapePainter(*this).Paint(paint_info);
-}
-
-// This method is called from inside paintOutline() since we call paintOutline()
-// while transformed to our coord system, return local coords
-void LayoutSVGShape::AddOutlineRects(Vector<LayoutRect>& rects,
-                                     const LayoutPoint&,
-                                     IncludeBlockVisualOverflowOrNot) const {
-  rects.push_back(LayoutRect(VisualRectInLocalSVGCoordinates()));
 }
 
 bool LayoutSVGShape::NodeAtFloatPoint(HitTestResult& result,
@@ -374,7 +365,8 @@ bool LayoutSVGShape::NodeAtFloatPoint(HitTestResult& result,
                                hit_rules)) {
     const LayoutPoint& local_layout_point = LayoutPoint(local_point);
     UpdateHitTestResult(result, local_layout_point);
-    if (result.AddNodeToListBasedTestResult(GetElement(), local_layout_point) ==
+    HitTestLocation location(local_layout_point);
+    if (result.AddNodeToListBasedTestResult(GetElement(), location) ==
         kStopHitTesting)
       return true;
   }

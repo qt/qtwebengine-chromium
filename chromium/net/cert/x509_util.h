@@ -95,11 +95,6 @@ NET_EXPORT bssl::UniquePtr<CRYPTO_BUFFER> CreateCryptoBuffer(
 NET_EXPORT bssl::UniquePtr<CRYPTO_BUFFER> CreateCryptoBuffer(
     const char* invalid_data);
 
-// Increments the reference count of |buffer| and returns a UniquePtr owning
-// that reference.
-NET_EXPORT bssl::UniquePtr<CRYPTO_BUFFER> DupCryptoBuffer(
-    CRYPTO_BUFFER* buffer);
-
 // Compares two CRYPTO_BUFFERs and returns true if they have the same contents.
 NET_EXPORT bool CryptoBufferEqual(const CRYPTO_BUFFER* a,
                                   const CRYPTO_BUFFER* b);
@@ -114,7 +109,7 @@ scoped_refptr<X509Certificate> CreateX509CertificateFromBuffers(
     const STACK_OF(CRYPTO_BUFFER) * buffers);
 
 // Returns the default ParseCertificateOptions for the net stack.
-ParseCertificateOptions DefaultParseCertificateOptions();
+NET_EXPORT ParseCertificateOptions DefaultParseCertificateOptions();
 
 // On success, returns true and updates |hash| to be the SHA-256 hash of the
 // subjectPublicKeyInfo of the certificate in |buffer|. If |buffer| is not a

@@ -13,9 +13,9 @@
 #include "net/third_party/quic/platform/api/quic_logging.h"
 #include "net/third_party/spdy/core/spdy_protocol.h"
 
-using std::string;
+using spdy::SpdyHeaderBlock;
 
-namespace net {
+namespace quic {
 
 QuicSpdyClientStream::QuicSpdyClientStream(QuicStreamId id,
                                            QuicSpdyClientSession* session)
@@ -80,7 +80,7 @@ void QuicSpdyClientStream::OnPromiseHeaderList(
     const QuicHeaderList& header_list) {
   header_bytes_read_ += frame_len;
   int64_t content_length = -1;
-  spdy::SpdyHeaderBlock promise_headers;
+  SpdyHeaderBlock promise_headers;
   if (!SpdyUtils::CopyAndValidateHeaders(header_list, &content_length,
                                          &promise_headers)) {
     QUIC_DLOG(ERROR) << "Failed to parse promise headers: "
@@ -127,7 +127,7 @@ void QuicSpdyClientStream::OnDataAvailable() {
   }
 }
 
-size_t QuicSpdyClientStream::SendRequest(spdy::SpdyHeaderBlock headers,
+size_t QuicSpdyClientStream::SendRequest(SpdyHeaderBlock headers,
                                          QuicStringPiece body,
                                          bool fin) {
   QuicConnection::ScopedPacketFlusher flusher(
@@ -145,4 +145,4 @@ size_t QuicSpdyClientStream::SendRequest(spdy::SpdyHeaderBlock headers,
   return bytes_sent;
 }
 
-}  // namespace net
+}  // namespace quic

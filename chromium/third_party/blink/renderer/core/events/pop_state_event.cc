@@ -47,7 +47,7 @@ PopStateEvent::PopStateEvent(ScriptState* script_state,
 PopStateEvent::PopStateEvent(
     scoped_refptr<SerializedScriptValue> serialized_state,
     History* history)
-    : Event(EventTypeNames::popstate, Bubbles::kNo, Cancelable::kYes),
+    : Event(EventTypeNames::popstate, Bubbles::kNo, Cancelable::kNo),
       serialized_state_(std::move(serialized_state)),
       history_(history) {}
 
@@ -83,18 +83,20 @@ PopStateEvent* PopStateEvent::Create(ScriptState* script_state,
   return new PopStateEvent(script_state, type, initializer);
 }
 
+void PopStateEvent::SetSerializedState(
+    scoped_refptr<SerializedScriptValue> state) {
+  DCHECK(!serialized_state_);
+  serialized_state_ = std::move(state);
+}
+
 const AtomicString& PopStateEvent::InterfaceName() const {
   return EventNames::PopStateEvent;
 }
 
 void PopStateEvent::Trace(blink::Visitor* visitor) {
+  visitor->Trace(state_);
   visitor->Trace(history_);
   Event::Trace(visitor);
-}
-
-void PopStateEvent::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(state_);
-  Event::TraceWrappers(visitor);
 }
 
 }  // namespace blink

@@ -23,17 +23,17 @@
  * DAMAGE.
  */
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/modules/webaudio/panner_node.h"
+
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer_source_node.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_input.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_output.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
-#include "third_party/blink/renderer/modules/webaudio/panner_node.h"
 #include "third_party/blink/renderer/modules/webaudio/panner_options.h"
 #include "third_party/blink/renderer/platform/audio/hrtf_panner.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
@@ -591,10 +591,11 @@ void PannerHandler::SetChannelCount(unsigned long channel_count,
     }
   } else {
     exception_state.ThrowDOMException(
-        kNotSupportedError, ExceptionMessages::IndexOutsideRange<unsigned long>(
-                                "channelCount", channel_count, 1,
-                                ExceptionMessages::kInclusiveBound, 2,
-                                ExceptionMessages::kInclusiveBound));
+        DOMExceptionCode::kNotSupportedError,
+        ExceptionMessages::IndexOutsideRange<unsigned long>(
+            "channelCount", channel_count, 1,
+            ExceptionMessages::kInclusiveBound, 2,
+            ExceptionMessages::kInclusiveBound));
   }
 }
 
@@ -612,7 +613,7 @@ void PannerHandler::SetChannelCountMode(const String& mode,
   } else if (mode == "max") {
     // This is not supported for a PannerNode, which can only handle 1 or 2
     // channels.
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "Panner: 'max' is not allowed");
     new_channel_count_mode_ = old_mode;
   } else {
@@ -788,9 +789,9 @@ double PannerNode::refDistance() const {
 void PannerNode::setRefDistance(double distance,
                                 ExceptionState& exception_state) {
   if (distance < 0) {
-    exception_state.ThrowDOMException(
-        kV8RangeError, ExceptionMessages::IndexExceedsMinimumBound<double>(
-                           "refDistance", distance, 0));
+    exception_state.ThrowRangeError(
+        ExceptionMessages::IndexExceedsMinimumBound<double>("refDistance",
+                                                            distance, 0));
     return;
   }
 
@@ -804,9 +805,9 @@ double PannerNode::maxDistance() const {
 void PannerNode::setMaxDistance(double distance,
                                 ExceptionState& exception_state) {
   if (distance <= 0) {
-    exception_state.ThrowDOMException(
-        kV8RangeError, ExceptionMessages::IndexExceedsMinimumBound<double>(
-                           "maxDistance", distance, 0));
+    exception_state.ThrowRangeError(
+        ExceptionMessages::IndexExceedsMinimumBound<double>("maxDistance",
+                                                            distance, 0));
     return;
   }
 

@@ -75,14 +75,14 @@ TEST_F(SsrcEndToEndTest, UnknownRtpPacketGivesUnknownSsrcReturnCode) {
 
   task_queue_.SendTask([this, &send_transport, &receive_transport,
                         &input_observer]() {
-    CreateCalls(Call::Config(event_log_.get()), Call::Config(event_log_.get()));
+    CreateCalls();
 
-    send_transport = rtc::MakeUnique<test::DirectTransport>(
+    send_transport = absl::make_unique<test::DirectTransport>(
         &task_queue_, sender_call_.get(), payload_type_map_);
-    receive_transport = rtc::MakeUnique<test::DirectTransport>(
+    receive_transport = absl::make_unique<test::DirectTransport>(
         &task_queue_, receiver_call_.get(), payload_type_map_);
     input_observer =
-        rtc::MakeUnique<PacketInputObserver>(receiver_call_->Receiver());
+        absl::make_unique<PacketInputObserver>(receiver_call_->Receiver());
     send_transport->SetReceiver(input_observer.get());
     receive_transport->SetReceiver(sender_call_->Receiver());
 

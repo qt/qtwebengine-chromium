@@ -1,4 +1,4 @@
-// Copyright (c) 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,21 +24,15 @@ class DemoSetupScreenHandler : public BaseScreenHandler,
   void Show() override;
   void Hide() override;
   void Bind(DemoSetupScreen* screen) override;
+  void OnSetupFinished(bool is_success, const std::string& message) override;
 
   // BaseScreenHandler:
   void Initialize() override;
   void DeclareLocalizedValues(
       ::login::LocalizedValuesBuilder* builder) override;
+  void GetAdditionalParameters(base::DictionaryValue* dict) override;
 
  private:
-  // Enumeration for UI states. These values have to be kept in sync with JS
-  // code in oobe_screen_demo_setup.js.
-  enum class UiState : int {
-    kError = -1,      // Displaying error.
-    kDefault = 0,     // Displaying initial UI.
-    kProcessing = 1,  // Displaying setup in progress.
-  };
-
   DemoSetupScreen* screen_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(DemoSetupScreenHandler);

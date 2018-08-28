@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/inspector/inspector_animation_agent.h"
 
 #include <memory>
+
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/animation/animation.h"
 #include "third_party/blink/renderer/core/animation/animation_effect.h"
@@ -30,7 +31,6 @@
 #include "third_party/blink/renderer/core/inspector/inspector_style_sheet.h"
 #include "third_party/blink/renderer/core/inspector/v8_inspector_string.h"
 #include "third_party/blink/renderer/platform/animation/timing_function.h"
-#include "third_party/blink/renderer/platform/decimal.h"
 #include "third_party/blink/renderer/platform/wtf/text/base64.h"
 
 namespace AnimationAgentState {
@@ -547,15 +547,18 @@ DocumentTimeline& InspectorAnimationAgent::ReferenceTimeline() {
 
 double InspectorAnimationAgent::NormalizedStartTime(
     blink::Animation& animation) {
+  double time_ms = animation.startTime().value_or(NullValue());
   if (ReferenceTimeline().PlaybackRate() == 0) {
-    return animation.startTime().value_or(NullValue()) +
-           ReferenceTimeline().currentTime() -
-           animation.TimelineInternal()->currentTime();
+    time_ms += ReferenceTimeline().currentTime() -
+               animation.TimelineInternal()->currentTime();
+  } else {
+    time_ms += (animation.TimelineInternal()->ZeroTime() -
+                ReferenceTimeline().ZeroTime())
+                   .InMillisecondsF() *
+               ReferenceTimeline().PlaybackRate();
   }
-  return animation.startTime().value_or(NullValue()) +
-         (animation.TimelineInternal()->ZeroTime() -
-          ReferenceTimeline().ZeroTime()) *
-             1000 * ReferenceTimeline().PlaybackRate();
+  // Round to the closest microsecond.
+  return std::round(time_ms * 1000) / 1000;
 }
 
 void InspectorAnimationAgent::Trace(blink::Visitor* visitor) {

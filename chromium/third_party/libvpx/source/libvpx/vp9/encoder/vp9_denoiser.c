@@ -189,7 +189,7 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
     int increase_denoising, int mi_row, int mi_col, PICK_MODE_CONTEXT *ctx,
     int motion_magnitude, int is_skin, int *zeromv_filter, int consec_zeromv,
     int num_spatial_layers, int width, int lst_fb_idx, int gld_fb_idx,
-    int use_svc, int spatial_layer) {
+    int use_svc, int spatial_layer, int use_gf_temporal_ref) {
   const int sse_diff = (ctx->newmv_sse == UINT_MAX)
                            ? 0
                            : ((int)ctx->zeromv_sse - (int)ctx->newmv_sse);
@@ -220,7 +220,8 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
   // If the best reference frame uses inter-prediction and there is enough of a
   // difference in sum-squared-error, use it.
   if (frame != INTRA_FRAME && frame != ALTREF_FRAME &&
-      (frame != GOLDEN_FRAME || num_spatial_layers == 1) &&
+      (frame != GOLDEN_FRAME || num_spatial_layers == 1 ||
+       use_gf_temporal_ref) &&
       sse_diff > sse_diff_thresh(bs, increase_denoising, motion_magnitude)) {
     mi->ref_frame[0] = ctx->best_reference_frame;
     mi->mode = ctx->best_sse_inter_mode;
@@ -230,7 +231,8 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
     frame = ctx->best_zeromv_reference_frame;
     ctx->newmv_sse = ctx->zeromv_sse;
     // Bias to last reference.
-    if (num_spatial_layers > 1 || frame == ALTREF_FRAME ||
+    if ((num_spatial_layers > 1 && !use_gf_temporal_ref) ||
+        frame == ALTREF_FRAME ||
         (frame != LAST_FRAME &&
          ((ctx->zeromv_lastref_sse<(5 * ctx->zeromv_sse)>> 2) ||
           denoiser->denoising_level >= kDenHigh))) {
@@ -326,7 +328,8 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
 
 void vp9_denoiser_denoise(VP9_COMP *cpi, MACROBLOCK *mb, int mi_row, int mi_col,
                           BLOCK_SIZE bs, PICK_MODE_CONTEXT *ctx,
-                          VP9_DENOISER_DECISION *denoiser_decision) {
+                          VP9_DENOISER_DECISION *denoiser_decision,
+                          int use_gf_temporal_ref) {
   int mv_col, mv_row;
   int motion_magnitude = 0;
   int zeromv_filter = 0;
@@ -397,7 +400,8 @@ void vp9_denoiser_denoise(VP9_COMP *cpi, MACROBLOCK *mb, int mi_row, int mi_col,
         &cpi->common, denoiser, mb, bs, increase_denoising, mi_row, mi_col, ctx,
         motion_magnitude, is_skin, &zeromv_filter, consec_zeromv,
         cpi->svc.number_spatial_layers, cpi->Source->y_width, cpi->lst_fb_idx,
-        cpi->gld_fb_idx, cpi->use_svc, cpi->svc.spatial_layer_id);
+        cpi->gld_fb_idx, cpi->use_svc, cpi->svc.spatial_layer_id,
+        use_gf_temporal_ref);
 
   if (decision == FILTER_BLOCK) {
     decision = vp9_denoiser_filter(src.buf, src.stride, mc_avg_start,
@@ -448,13 +452,13 @@ void vp9_denoiser_update_frame_info(
     VP9_DENOISER *denoiser, YV12_BUFFER_CONFIG src, FRAME_TYPE frame_type,
     int refresh_alt_ref_frame, int refresh_golden_frame, int refresh_last_frame,
     int alt_fb_idx, int gld_fb_idx, int lst_fb_idx, int resized,
-    int svc_base_is_key, int second_spatial_layer) {
+    int svc_refresh_denoiser_buffers, int second_spatial_layer) {
   const int shift = second_spatial_layer ? denoiser->num_ref_frames : 0;
   // Copy source into denoised reference buffers on KEY_FRAME or
   // if the just encoded frame was resized. For SVC, copy source if the base
   // spatial layer was key frame.
   if (frame_type == KEY_FRAME || resized != 0 || denoiser->reset ||
-      svc_base_is_key) {
+      svc_refresh_denoiser_buffers) {
     int i;
     // Start at 1 so as not to overwrite the INTRA_FRAME
     for (i = 1; i < denoiser->num_ref_frames; ++i) {

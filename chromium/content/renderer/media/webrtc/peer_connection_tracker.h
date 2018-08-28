@@ -16,6 +16,7 @@
 #include "ipc/ipc_platform_file.h"
 #include "third_party/blink/public/platform/web_media_stream.h"
 #include "third_party/blink/public/platform/web_rtc_peer_connection_handler_client.h"
+#include "third_party/blink/public/platform/web_rtc_rtp_transceiver.h"
 #include "third_party/blink/public/platform/web_rtc_session_description.h"
 #include "third_party/webrtc/api/peerconnectioninterface.h"
 
@@ -58,6 +59,16 @@ class CONTENT_EXPORT PeerConnectionTracker
     ACTION_SET_REMOTE_DESCRIPTION,
     ACTION_CREATE_OFFER,
     ACTION_CREATE_ANSWER
+  };
+
+  // In Plan B: "Transceiver" refers to RTCRtpSender or RTCRtpReceiver.
+  // In Unified Plan: "Transceiver" refers to RTCRtpTransceiver.
+  enum class TransceiverUpdatedReason {
+    kAddTransceiver,
+    kAddTrack,
+    kRemoveTrack,
+    kSetLocalDescription,
+    kSetRemoteDescription,
   };
 
   // RenderThreadObserver implementation.
@@ -116,15 +127,31 @@ class CONTENT_EXPORT PeerConnectionTracker
       Source source,
       bool succeeded);
 
-  // Sends an update when a media stream is added.
-  virtual void TrackAddStream(
+  // Sends an update when a transceiver is added, modified or removed. This can
+  // happen as a result of any of the methods indicated by |reason|.
+  // In Plan B: |transceiver| refers to its Sender() or Receiver() depending on
+  // ImplementationType(). Example events: "senderAdded", "receiverRemoved".
+  // In Plan B: |transceiver| has a fully implemented ImplementationType().
+  // Example events: "transceiverAdded", "transceiverModified".
+  // See peer_connection_tracker_unittest.cc for expected resulting event
+  // strings.
+  virtual void TrackAddTransceiver(
       RTCPeerConnectionHandler* pc_handler,
-      const blink::WebMediaStream& stream, Source source);
-
-  // Sends an update when a media stream is removed.
-  virtual void TrackRemoveStream(
+      TransceiverUpdatedReason reason,
+      const blink::WebRTCRtpTransceiver& transceiver,
+      size_t transceiver_index);
+  virtual void TrackModifyTransceiver(
       RTCPeerConnectionHandler* pc_handler,
-      const blink::WebMediaStream& stream, Source source);
+      TransceiverUpdatedReason reason,
+      const blink::WebRTCRtpTransceiver& transceiver,
+      size_t transceiver_index);
+  // TODO(hbos): When Plan B is removed this is no longer applicable.
+  // https://crbug.com/857004
+  virtual void TrackRemoveTransceiver(
+      RTCPeerConnectionHandler* pc_handler,
+      TransceiverUpdatedReason reason,
+      const blink::WebRTCRtpTransceiver& transceiver,
+      size_t transceiver_index);
 
   // Sends an update when a DataChannel is created.
   virtual void TrackCreateDataChannel(
@@ -137,7 +164,7 @@ class CONTENT_EXPORT PeerConnectionTracker
   // Sends an update when the signaling state of a PeerConnection has changed.
   virtual void TrackSignalingStateChange(
       RTCPeerConnectionHandler* pc_handler,
-      blink::WebRTCPeerConnectionHandlerClient::SignalingState state);
+      webrtc::PeerConnectionInterface::SignalingState state);
 
   // Sends an update when the Ice connection state
   // of a PeerConnection has changed.
@@ -180,6 +207,12 @@ class CONTENT_EXPORT PeerConnectionTracker
   // is not registered, the return value will be -1.
   int GetLocalIDForHandler(RTCPeerConnectionHandler* handler) const;
 
+  void TrackTransceiver(const char* callback_type_ending,
+                        RTCPeerConnectionHandler* pc_handler,
+                        PeerConnectionTracker::TransceiverUpdatedReason reason,
+                        const blink::WebRTCRtpTransceiver& transceiver,
+                        size_t transceiver_index);
+
   // IPC Message handler for getting all stats.
   void OnGetAllStats();
 
@@ -211,7 +244,7 @@ class CONTENT_EXPORT PeerConnectionTracker
   // |value| - A json serialized string containing all the information for the
   //           update event.
   void SendPeerConnectionUpdate(int local_id,
-                                const char* callback_type,
+                                const std::string& callback_type,
                                 const std::string& value);
 
   RenderThread* SendTarget();

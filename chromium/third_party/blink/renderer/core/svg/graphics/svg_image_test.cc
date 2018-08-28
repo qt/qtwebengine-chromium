@@ -10,9 +10,13 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/frame/visual_viewport.h"
+#include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image_chrome_client.h"
+#include "third_party/blink/renderer/core/testing/sim/sim_request.h"
+#include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_flags.h"
@@ -111,7 +115,7 @@ TEST_F(SVGImageTest, TimelineSuspendAndResume) {
   // true for shouldPauseAnimation, this will result in the timeline being
   // suspended.
   test::RunDelayedTasks(TimeDelta::FromMilliseconds(1) +
-                        TimeDelta::FromSecondsD(timer->NextFireInterval()));
+                        timer->NextFireInterval());
   EXPECT_TRUE(chrome_client.IsSuspended());
   EXPECT_FALSE(timer->IsActive());
 
@@ -145,7 +149,7 @@ TEST_F(SVGImageTest, ResetAnimation) {
   // Fire the timer/trigger a frame update. The timeline will remain
   // suspended and no frame will be scheduled.
   test::RunDelayedTasks(TimeDelta::FromMillisecondsD(1) +
-                        TimeDelta::FromSecondsD(timer->NextFireInterval()));
+                        timer->NextFireInterval());
   EXPECT_TRUE(chrome_client.IsSuspended());
   EXPECT_FALSE(timer->IsActive());
 
@@ -176,6 +180,74 @@ TEST_F(SVGImageTest, JankTrackerDisabled) {
   EXPECT_TRUE(local_frame->GetDocument()->IsSVGDocument());
   auto& jank_tracker = local_frame->View()->GetJankTracker();
   EXPECT_FALSE(jank_tracker.IsActive());
+}
+
+TEST_F(SVGImageTest, SetSizeOnVisualViewport) {
+  const bool kDontPause = false;
+  Load(
+      "<svg xmlns='http://www.w3.org/2000/svg'>"
+      "   <rect id='green' width='100%' height='100%' fill='green' />"
+      "</svg>",
+      kDontPause);
+  PumpFrame();
+  LocalFrame* local_frame =
+      ToLocalFrame(GetImage().GetPageForTesting()->MainFrame());
+  ASSERT_FALSE(local_frame->View()->Size().IsEmpty());
+  EXPECT_EQ(local_frame->View()->Size(),
+            GetImage().GetPageForTesting()->GetVisualViewport().Size());
+}
+
+class SVGImagePageVisibilityTest : public SimTest {};
+
+TEST_F(SVGImagePageVisibilityTest, PageVisibilityHiddenToVisible) {
+  SimRequest main_resource("https://example.com/", "text/html");
+  SimRequest image_resource("https://example.com/image.svg", "image/svg+xml");
+  LoadURL("https://example.com/");
+  main_resource.Complete("<img src='image.svg' width='100' id='image'>");
+  image_resource.Complete(kAnimatedDocument);
+
+  Compositor().BeginFrame();
+  test::RunPendingTasks();
+
+  Element* element = GetDocument().getElementById("image");
+  ASSERT_TRUE(IsHTMLImageElement(element));
+
+  ImageResourceContent* image_content =
+      ToHTMLImageElement(*element).CachedImage();
+  ASSERT_TRUE(image_content);
+  ASSERT_TRUE(image_content->IsLoaded());
+  ASSERT_TRUE(image_content->HasImage());
+  Image* image = image_content->GetImage();
+  ASSERT_TRUE(image->IsSVGImage());
+  SVGImageChromeClient& svg_image_chrome_client =
+      ToSVGImage(*image).ChromeClientForTesting();
+  TimerBase* timer = svg_image_chrome_client.GetTimerForTesting();
+
+  // Wait for the next animation frame to be triggered, and then trigger a new
+  // frame. The image animation timeline should be running.
+  test::RunDelayedTasks(TimeDelta::FromMilliseconds(1) +
+                        timer->NextFireInterval());
+  Compositor().BeginFrame();
+
+  EXPECT_FALSE(svg_image_chrome_client.IsSuspended());
+
+  // Set page visibility to 'hidden', and then wait for the animation timer to
+  // fire. This should suspend the image animation. (Suspend the image's
+  // animation timeline.)
+  WebView().SetVisibilityState(mojom::PageVisibilityState::kHidden, false);
+  test::RunDelayedTasks(TimeDelta::FromMilliseconds(1) +
+                        timer->NextFireInterval());
+
+  EXPECT_TRUE(svg_image_chrome_client.IsSuspended());
+
+  // Set page visibility to 'visible' - this should schedule a new animation
+  // frame and resume the image animation.
+  WebView().SetVisibilityState(mojom::PageVisibilityState::kVisible, false);
+  test::RunDelayedTasks(TimeDelta::FromMilliseconds(1) +
+                        timer->NextFireInterval());
+  Compositor().BeginFrame();
+
+  EXPECT_FALSE(svg_image_chrome_client.IsSuspended());
 }
 
 }  // namespace blink

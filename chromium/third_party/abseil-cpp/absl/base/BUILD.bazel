@@ -387,6 +387,7 @@ cc_test(
         "//absl:windows": [],
         "//conditions:default": ["-pthread"],
     }),
+    tags = ["no_test_ios_x86_64"],
     deps = [":malloc_internal"],
 )
 
@@ -416,6 +417,6 @@ cc_test(
     deps = [
         ":base",
         "//absl/synchronization",
-        "@com_github_google_benchmark//:benchmark",
+        "@com_github_google_benchmark//:benchmark_main",
     ],
 )

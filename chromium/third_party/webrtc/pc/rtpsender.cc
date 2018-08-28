@@ -58,8 +58,7 @@ bool UnimplementedRtpEncodingParameterHasValue(
 // layer.
 bool PerSenderRtpEncodingParameterHasValue(
     const RtpEncodingParameters& encoding_params) {
-  if (encoding_params.max_bitrate_bps.has_value() ||
-      encoding_params.bitrate_priority != kDefaultBitratePriority) {
+  if (encoding_params.bitrate_priority != kDefaultBitratePriority) {
     return true;
   }
   return false;
@@ -68,7 +67,7 @@ bool PerSenderRtpEncodingParameterHasValue(
 // Returns true if any RtpParameters member that isn't implemented contains a
 // value.
 bool UnimplementedRtpParameterHasValue(const RtpParameters& parameters) {
-  if (!parameters.mid.empty() || !parameters.header_extensions.empty() ||
+  if (!parameters.mid.empty() ||
       parameters.degradation_preference != DegradationPreference::BALANCED) {
     return true;
   }
@@ -115,30 +114,16 @@ void LocalAudioSinkAdapter::SetSink(cricket::AudioSource::Sink* sink) {
 }
 
 AudioRtpSender::AudioRtpSender(rtc::Thread* worker_thread,
-                               StatsCollector* stats)
-    : AudioRtpSender(worker_thread, nullptr, {rtc::CreateRandomUuid()}, stats) {
-}
-
-AudioRtpSender::AudioRtpSender(rtc::Thread* worker_thread,
-                               rtc::scoped_refptr<AudioTrackInterface> track,
-                               const std::vector<std::string>& stream_ids,
+                               const std::string& id,
                                StatsCollector* stats)
     : worker_thread_(worker_thread),
-      id_(track ? track->id() : rtc::CreateRandomUuid()),
-      stream_ids_(stream_ids),
+      id_(id),
       stats_(stats),
-      track_(track),
       dtmf_sender_proxy_(DtmfSenderProxy::Create(
           rtc::Thread::Current(),
-          DtmfSender::Create(track_, rtc::Thread::Current(), this))),
-      cached_track_enabled_(track ? track->enabled() : false),
-      sink_adapter_(new LocalAudioSinkAdapter()),
-      attachment_id_(track ? GenerateUniqueId() : 0) {
+          DtmfSender::Create(rtc::Thread::Current(), this))),
+      sink_adapter_(new LocalAudioSinkAdapter()) {
   RTC_DCHECK(worker_thread);
-  if (track_) {
-    track_->RegisterObserver(this);
-    track_->AddSink(sink_adapter_.get());
-  }
 }
 
 AudioRtpSender::~AudioRtpSender() {
@@ -239,7 +224,7 @@ bool AudioRtpSender::SetTrack(MediaStreamTrackInterface* track) {
   } else if (prev_can_send_track) {
     ClearAudioSend();
   }
-  attachment_id_ = GenerateUniqueId();
+  attachment_id_ = (track_ ? GenerateUniqueId() : 0);
   return true;
 }
 
@@ -378,24 +363,10 @@ void AudioRtpSender::ClearAudioSend() {
   }
 }
 
-VideoRtpSender::VideoRtpSender(rtc::Thread* worker_thread)
-    : VideoRtpSender(worker_thread, nullptr, {rtc::CreateRandomUuid()}) {}
-
 VideoRtpSender::VideoRtpSender(rtc::Thread* worker_thread,
-                               rtc::scoped_refptr<VideoTrackInterface> track,
-                               const std::vector<std::string>& stream_ids)
-    : worker_thread_(worker_thread),
-      id_(track ? track->id() : rtc::CreateRandomUuid()),
-      stream_ids_(stream_ids),
-      track_(track),
-      cached_track_content_hint_(track
-                                     ? track->content_hint()
-                                     : VideoTrackInterface::ContentHint::kNone),
-      attachment_id_(track ? GenerateUniqueId() : 0) {
+                               const std::string& id)
+    : worker_thread_(worker_thread), id_(id) {
   RTC_DCHECK(worker_thread);
-  if (track_) {
-    track_->RegisterObserver(this);
-  }
 }
 
 VideoRtpSender::~VideoRtpSender() {
@@ -448,7 +419,7 @@ bool VideoRtpSender::SetTrack(MediaStreamTrackInterface* track) {
   } else if (prev_can_send_track) {
     ClearVideoSend();
   }
-  attachment_id_ = GenerateUniqueId();
+  attachment_id_ = (track_ ? GenerateUniqueId() : 0);
   return true;
 }
 
@@ -550,11 +521,12 @@ void VideoRtpSender::SetVideoSend() {
       options.is_screencast = false;
       break;
     case VideoTrackInterface::ContentHint::kDetailed:
+    case VideoTrackInterface::ContentHint::kText:
       options.is_screencast = true;
       break;
   }
   bool success = worker_thread_->Invoke<bool>(RTC_FROM_HERE, [&] {
-      return media_channel_->SetVideoSend(ssrc_, &options, track_);
+    return media_channel_->SetVideoSend(ssrc_, &options, track_);
   });
   RTC_DCHECK(success);
 }

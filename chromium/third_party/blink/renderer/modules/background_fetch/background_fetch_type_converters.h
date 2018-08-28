@@ -7,7 +7,6 @@
 
 #include "third_party/blink/public/platform/modules/background_fetch/background_fetch.mojom-blink.h"
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_options.h"
-#include "third_party/blink/renderer/modules/background_fetch/icon_definition.h"
 
 namespace blink {
 class BackgroundFetchRegistration;
@@ -19,28 +18,15 @@ template <>
 struct TypeConverter<blink::BackgroundFetchRegistration*,
                      blink::mojom::blink::BackgroundFetchRegistrationPtr> {
   static blink::BackgroundFetchRegistration* Convert(
-      const blink::mojom::blink::BackgroundFetchRegistrationPtr&);
+      const blink::mojom::blink::BackgroundFetchRegistrationPtr&
+          mojo_registration);
 };
 
 template <>
 struct TypeConverter<blink::mojom::blink::BackgroundFetchOptionsPtr,
                      blink::BackgroundFetchOptions> {
   static blink::mojom::blink::BackgroundFetchOptionsPtr Convert(
-      const blink::BackgroundFetchOptions&);
-};
-
-template <>
-struct TypeConverter<blink::IconDefinition,
-                     blink::mojom::blink::IconDefinitionPtr> {
-  static blink::IconDefinition Convert(
-      const blink::mojom::blink::IconDefinitionPtr&);
-};
-
-template <>
-struct TypeConverter<blink::mojom::blink::IconDefinitionPtr,
-                     blink::IconDefinition> {
-  static blink::mojom::blink::IconDefinitionPtr Convert(
-      const blink::IconDefinition&);
+      const blink::BackgroundFetchOptions& options);
 };
 
 }  // namespace mojo

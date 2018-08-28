@@ -204,7 +204,8 @@ bool MenuItemView::IsBubble(MenuAnchorPosition anchor) {
          anchor == MENU_ANCHOR_BUBBLE_ABOVE ||
          anchor == MENU_ANCHOR_BUBBLE_BELOW ||
          anchor == MENU_ANCHOR_BUBBLE_TOUCHABLE_ABOVE ||
-         anchor == MENU_ANCHOR_BUBBLE_TOUCHABLE_LEFT;
+         anchor == MENU_ANCHOR_BUBBLE_TOUCHABLE_LEFT ||
+         anchor == MENU_ANCHOR_BUBBLE_TOUCHABLE_RIGHT;
 }
 
 // static
@@ -329,6 +330,14 @@ void MenuItemView::AppendSeparator() {
   AppendMenuItemImpl(0, base::string16(), base::string16(), base::string16(),
                      nullptr, gfx::ImageSkia(), SEPARATOR,
                      ui::NORMAL_SEPARATOR);
+}
+
+void MenuItemView::AddSeparatorAt(int index) {
+  AddMenuItemAt(index, /*item_id=*/0, /*label=*/base::string16(),
+                /*sub_label=*/base::string16(),
+                /*minor_text=*/base::string16(), /*minor_icon=*/nullptr,
+                /*icon=*/gfx::ImageSkia(), /*type=*/SEPARATOR,
+                /*separator_style=*/ui::NORMAL_SEPARATOR);
 }
 
 MenuItemView* MenuItemView::AppendMenuItemWithIcon(int item_id,
@@ -616,12 +625,12 @@ void MenuItemView::Layout() {
     if (icon_view_) {
       icon_view_->SizeToPreferredSize();
       gfx::Size size = icon_view_->GetPreferredSize();
-      int x = config.item_left_margin + left_icon_margin_ +
+      int x = config.item_horizontal_padding + left_icon_margin_ +
               (icon_area_width_ - size.width()) / 2;
       if (config.icons_in_label || type_ == CHECKBOX || type_ == RADIO)
         x = label_start_;
       if (GetMenuController() && GetMenuController()->use_touchable_layout())
-        x = config.touchable_item_left_margin;
+        x = config.touchable_item_horizontal_padding;
 
       int y =
           (height() + GetTopMargin() - GetBottomMargin() - size.height()) / 2;
@@ -629,9 +638,9 @@ void MenuItemView::Layout() {
     }
 
     if (radio_check_image_view_) {
-      int x = config.item_left_margin + left_icon_margin_;
+      int x = config.item_horizontal_padding + left_icon_margin_;
       if (GetMenuController() && GetMenuController()->use_touchable_layout())
-        x = config.touchable_item_left_margin;
+        x = config.touchable_item_horizontal_padding;
       int y =
           (height() + GetTopMargin() - GetBottomMargin() - kMenuCheckSize) / 2;
       radio_check_image_view_->SetBounds(x, y, kMenuCheckSize, kMenuCheckSize);
@@ -723,18 +732,20 @@ void MenuItemView::UpdateMenuPartSizes() {
 
   const bool use_touchable_layout =
       GetMenuController() && GetMenuController()->use_touchable_layout();
-  label_start_ = (use_touchable_layout ? config.touchable_item_left_margin
-                                       : config.item_left_margin) +
-                 icon_area_width_;
+  label_start_ =
+      (use_touchable_layout ? config.touchable_item_horizontal_padding
+                            : config.item_horizontal_padding) +
+      icon_area_width_;
   int padding = 0;
   if (config.always_use_icon_to_label_padding) {
-    padding = config.icon_to_label_padding;
+    padding = config.item_horizontal_padding;
   } else if (!config.icons_in_label) {
-    padding = (has_icons_ || HasChecksOrRadioButtons()) ?
-        config.icon_to_label_padding : 0;
+    padding = (has_icons_ || HasChecksOrRadioButtons())
+                  ? config.item_horizontal_padding
+                  : 0;
   }
   if (use_touchable_layout)
-    padding = config.touchable_icon_to_label_padding;
+    padding = config.touchable_item_horizontal_padding;
 
   label_start_ += padding;
 
@@ -845,6 +856,9 @@ const gfx::FontList& MenuItemView::GetFontList() const {
     if (font_list)
       return *font_list;
   }
+
+  if (GetMenuController() && GetMenuController()->use_touchable_layout())
+    return style::GetFont(style::CONTEXT_TOUCH_MENU, style::STYLE_PRIMARY);
   return MenuConfig::instance().font_list;
 }
 
@@ -1006,7 +1020,7 @@ void MenuItemView::PaintMinorIconAndText(gfx::Canvas* canvas, SkColor color) {
 
     int image_x = GetMirroredRect(minor_text_bounds).right() -
                   render_text->GetContentWidth() -
-                  (minor_text.empty() ? 0 : config.icon_to_label_padding) -
+                  (minor_text.empty() ? 0 : config.item_horizontal_padding) -
                   image.width();
     int minor_text_center_y =
         minor_text_bounds.y() + minor_text_bounds.height() / 2;
@@ -1102,18 +1116,25 @@ MenuItemView::MenuItemDimensions MenuItemView::CalculateDimensions() const {
   gfx::Size child_size = GetChildPreferredSize();
 
   MenuItemDimensions dimensions;
-  // Get the container height.
   dimensions.children_width = child_size.width();
   const MenuConfig& menu_config = MenuConfig::instance();
 
   if (GetMenuController() && GetMenuController()->use_touchable_layout()) {
-    // Touchable layout uses a fixed size, but adjusts the height for icons.
     dimensions.height = menu_config.touchable_menu_height;
+
+    // For container MenuItemViews, the width components should only include the
+    // |children_width|. Setting a |standard_width| would result in additional
+    // width being added to the container because the total width used in layout
+    // is |children_width| + |standard_width|.
+    if (IsContainer())
+      return dimensions;
+
+    dimensions.standard_width = menu_config.touchable_menu_width;
+
     if (icon_view_) {
       dimensions.height = icon_view_->height() +
                           2 * menu_config.vertical_touchable_menu_item_padding;
     }
-    dimensions.standard_width = menu_config.touchable_menu_width;
     return dimensions;
   }
 
@@ -1195,14 +1216,14 @@ int MenuItemView::GetLabelStartForThisItem() const {
   // Touchable items with icons do not respect |label_start_|.
   if (GetMenuController() && GetMenuController()->use_touchable_layout() &&
       icon_view_) {
-    return config.touchable_item_left_margin + icon_view_->width() +
-           config.touchable_icon_to_label_padding;
+    return 2 * config.touchable_item_horizontal_padding + icon_view_->width();
   }
 
   int label_start = label_start_ + left_icon_margin_ + right_icon_margin_;
   if ((config.icons_in_label || type_ == CHECKBOX || type_ == RADIO) &&
-      icon_view_)
-    label_start += icon_view_->size().width() + config.icon_to_label_padding;
+      icon_view_) {
+    label_start += icon_view_->size().width() + config.item_horizontal_padding;
+  }
 
   return label_start;
 }

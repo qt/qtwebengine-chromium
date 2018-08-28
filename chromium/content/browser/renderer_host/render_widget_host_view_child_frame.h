@@ -143,8 +143,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void DidStopFlinging() override;
   bool LockMouse() override;
   void UnlockMouse() override;
-  viz::FrameSinkId GetFrameSinkId() override;
-  viz::LocalSurfaceId GetLocalSurfaceId() const override;
+  const viz::FrameSinkId& GetFrameSinkId() const override;
+  const viz::LocalSurfaceId& GetLocalSurfaceId() const override;
   void PreProcessTouchEvent(const blink::WebTouchEvent& event) override;
   viz::FrameSinkId GetRootFrameSinkId() override;
   viz::SurfaceId GetCurrentSurfaceId() const override;
@@ -165,7 +165,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       const gfx::PointF& point) override;
   TouchSelectionControllerClientManager*
   GetTouchSelectionControllerClientManager() override;
-  void OnRenderFrameMetadataChanged() override;
+  void OnRenderFrameMetadataChangedAfterActivation() override;
 
   bool IsRenderWidgetHostViewChildFrame() override;
 
@@ -195,11 +195,9 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   // viz::mojom::CompositorFrameSinkClient implementation.
   void DidReceiveCompositorFrameAck(
       const std::vector<viz::ReturnedResource>& resources) override;
-  void DidPresentCompositorFrame(uint32_t presentation_token,
-                                 base::TimeTicks time,
-                                 base::TimeDelta refresh,
-                                 uint32_t flags) override;
-  void DidDiscardCompositorFrame(uint32_t presentation_token) override;
+  void DidPresentCompositorFrame(
+      uint32_t presentation_token,
+      const gfx::PresentationFeedback& feedback) override;
   void OnBeginFrame(const viz::BeginFrameArgs& args) override;
   void ReclaimResources(
       const std::vector<viz::ReturnedResource>& resources) override;
@@ -214,7 +212,9 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   }
 
   // Returns the current surface scale factor.
-  float current_surface_scale_factor() { return current_surface_scale_factor_; }
+  float current_surface_scale_factor() {
+    return last_activated_surface_info_.device_scale_factor();
+  }
 
   // Returns the view into which this view is directly embedded. This can
   // return nullptr when this view's associated child frame is not connected
@@ -269,9 +269,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   // Surface-related state.
   std::unique_ptr<viz::CompositorFrameSinkSupport> support_;
-  viz::LocalSurfaceId last_received_local_surface_id_;
-  gfx::Size current_surface_size_;
-  float current_surface_scale_factor_;
+  viz::SurfaceInfo last_activated_surface_info_;
   gfx::Rect last_screen_rect_;
 
   // frame_connector_ provides a platform abstraction. Messages
@@ -288,15 +286,14 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   FRIEND_TEST_ALL_PREFIXES(
       SitePerProcessBrowserTest,
       HiddenOOPIFWillNotGenerateCompositorFramesAfterNavigation);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+                           SubframeVisibleAfterRenderViewBecomesSwappedOut);
 
-  virtual void SendSurfaceInfoToEmbedderImpl(
-      const viz::SurfaceInfo& surface_info);
+  virtual void FirstSurfaceActivation(const viz::SurfaceInfo& surface_info);
 
   void CreateCompositorFrameSinkSupport();
   void ResetCompositorFrameSinkSupport();
   void DetachFromTouchSelectionClientManagerIfNecessary();
-
-  virtual bool HasEmbedderChanged();
 
   // Returns false if the view cannot be shown. This is the case where the frame
   // associated with this view or a cross process ancestor frame has been hidden
@@ -305,6 +302,11 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   void OnDidUpdateVisualPropertiesComplete(
       const cc::RenderFrameMetadata& metadata);
+
+  void ProcessTouchpadPinchAckInRoot(const blink::WebGestureEvent& event,
+                                     InputEventAckState ack_result);
+  void ForwardTouchpadPinchIfNecessary(const blink::WebGestureEvent& event,
+                                       InputEventAckState ack_result) override;
 
   std::vector<base::OnceClosure> frame_swapped_callbacks_;
 
@@ -323,17 +325,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   // True if there is currently a scroll sequence being bubbled to our parent.
   bool is_scroll_sequence_bubbling_ = false;
-
-  // Used to prevent bubbling of subsequent GestureScrollUpdates in a scroll
-  // gesture if the child consumed the first GSU.
-  // TODO(mcnee): This is only needed for |!wheel_scroll_latching_enabled()|
-  // and can be removed once scroll-latching lands. crbug.com/526463
-  enum ScrollBubblingState {
-    NO_ACTIVE_GESTURE_SCROLL,
-    AWAITING_FIRST_UPDATE,
-    BUBBLE,
-    SCROLL_CHILD,
-  } scroll_bubbling_state_;
 
   base::WeakPtrFactory<RenderWidgetHostViewChildFrame> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewChildFrame);

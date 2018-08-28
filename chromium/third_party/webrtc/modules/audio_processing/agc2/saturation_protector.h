@@ -14,7 +14,7 @@
 #include <array>
 
 #include "modules/audio_processing/agc2/agc2_common.h"
-#include "modules/audio_processing/vad/vad_with_level.h"
+#include "modules/audio_processing/agc2/vad_with_level.h"
 
 namespace webrtc {
 
@@ -34,6 +34,9 @@ class SaturationProtector {
   // Returns latest computed margin. Used in cases when speech is not
   // detected.
   float LastMargin() const;
+
+  // Resets the internal memory.
+  void Reset();
 
   void DebugDumpEstimate() const;
 

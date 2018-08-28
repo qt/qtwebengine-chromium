@@ -29,6 +29,7 @@
 #include "cc/trees/effect_node.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/transform_node.h"
+#include "components/viz/common/quads/compositor_frame.h"
 
 namespace cc {
 namespace {
@@ -820,10 +821,10 @@ class LayerTreeHostAnimationTestScrollOffsetChangesArePropagated
         break;
       }
       default:
-        EXPECT_GE(scroll_layer_->scroll_offset().x(), 10);
-        EXPECT_GE(scroll_layer_->scroll_offset().y(), 20);
-        if (scroll_layer_->scroll_offset().x() > 10 &&
-            scroll_layer_->scroll_offset().y() > 20)
+        EXPECT_GE(scroll_layer_->CurrentScrollOffset().x(), 10);
+        EXPECT_GE(scroll_layer_->CurrentScrollOffset().y(), 20);
+        if (scroll_layer_->CurrentScrollOffset().x() > 10 &&
+            scroll_layer_->CurrentScrollOffset().y() > 20)
           EndTest();
     }
   }
@@ -1007,6 +1008,81 @@ class LayerTreeHostAnimationTestScrollOffsetAnimationAdjusted
 
 MULTI_THREAD_TEST_F(LayerTreeHostAnimationTestScrollOffsetAnimationAdjusted);
 
+// Tests that presentation-time requested from the main-thread is attached to
+// the correct frame (i.e. activation needs to happen before the
+// presentation-request is attached to the frame).
+class LayerTreeHostPresentationDuringAnimation
+    : public LayerTreeHostAnimationTest {
+ public:
+  void SetupTree() override {
+    LayerTreeHostAnimationTest::SetupTree();
+
+    scroll_layer_ = FakePictureLayer::Create(&client_);
+    scroll_layer_->SetScrollable(gfx::Size(100, 100));
+    scroll_layer_->SetBounds(gfx::Size(10000, 10000));
+    client_.set_bounds(scroll_layer_->bounds());
+    scroll_layer_->SetScrollOffset(gfx::ScrollOffset(100.0, 200.0));
+    layer_tree_host()->root_layer()->AddChild(scroll_layer_);
+
+    std::unique_ptr<ScrollOffsetAnimationCurve> curve(
+        ScrollOffsetAnimationCurve::Create(
+            gfx::ScrollOffset(6500.f, 7500.f),
+            CubicBezierTimingFunction::CreatePreset(
+                CubicBezierTimingFunction::EaseType::EASE_IN_OUT)));
+    std::unique_ptr<KeyframeModel> keyframe_model(KeyframeModel::Create(
+        std::move(curve), 1, 0, TargetProperty::SCROLL_OFFSET));
+    keyframe_model->set_needs_synchronized_start_time(true);
+
+    AttachAnimationsToTimeline();
+    animation_child_->AttachElement(scroll_layer_->element_id());
+    animation_child_->AddKeyframeModel(std::move(keyframe_model));
+  }
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void BeginMainFrame(const viz::BeginFrameArgs& args) override {
+    PostSetNeedsCommitToMainThread();
+  }
+
+  void BeginCommitOnThread(LayerTreeHostImpl* host_impl) override {
+    if (host_impl->active_tree()->source_frame_number() == 1) {
+      request_token_ = host_impl->next_frame_token();
+      layer_tree_host()->RequestPresentationTimeForNextFrame(base::BindOnce(
+          &LayerTreeHostPresentationDuringAnimation::OnPresentation,
+          base::Unretained(this)));
+      host_impl->BlockNotifyReadyToActivateForTesting(true);
+    }
+  }
+
+  void WillBeginImplFrameOnThread(LayerTreeHostImpl* host_impl,
+                                  const viz::BeginFrameArgs& args) override {
+    if (host_impl->next_frame_token() >= 5)
+      host_impl->BlockNotifyReadyToActivateForTesting(false);
+  }
+
+  void DisplayReceivedCompositorFrameOnThread(
+      const viz::CompositorFrame& frame) override {
+    if (frame.metadata.request_presentation_feedback)
+      received_token_ = frame.metadata.frame_token;
+  }
+
+  void AfterTest() override {
+    EXPECT_GT(request_token_, 0u);
+    EXPECT_GT(received_token_, request_token_);
+    EXPECT_GE(received_token_, 5u);
+  }
+
+ private:
+  void OnPresentation(const gfx::PresentationFeedback& feedback) { EndTest(); }
+
+  FakeContentLayerClient client_;
+  scoped_refptr<FakePictureLayer> scroll_layer_;
+  uint32_t request_token_ = 0;
+  uint32_t received_token_ = 0;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostPresentationDuringAnimation);
+
 // Verifies that when the main thread removes a scroll animation and sets a new
 // scroll position, the active tree takes on exactly this new scroll position
 // after activation, and the main thread doesn't receive a spurious scroll
@@ -1046,12 +1122,12 @@ class LayerTreeHostAnimationTestScrollOffsetAnimationRemoval
   void BeginMainFrame(const viz::BeginFrameArgs& args) override {
     switch (layer_tree_host()->SourceFrameNumber()) {
       case 0:
-        EXPECT_EQ(scroll_layer_->scroll_offset().x(), 100);
-        EXPECT_EQ(scroll_layer_->scroll_offset().y(), 200);
+        EXPECT_EQ(scroll_layer_->CurrentScrollOffset().x(), 100);
+        EXPECT_EQ(scroll_layer_->CurrentScrollOffset().y(), 200);
         break;
       case 1: {
-        EXPECT_GE(scroll_layer_->scroll_offset().x(), 100);
-        EXPECT_GE(scroll_layer_->scroll_offset().y(), 200);
+        EXPECT_GE(scroll_layer_->CurrentScrollOffset().x(), 100);
+        EXPECT_GE(scroll_layer_->CurrentScrollOffset().y(), 200);
         KeyframeModel* keyframe_model =
             animation_child_->GetKeyframeModel(TargetProperty::SCROLL_OFFSET);
         animation_child_->RemoveKeyframeModel(keyframe_model->id());
@@ -1059,7 +1135,7 @@ class LayerTreeHostAnimationTestScrollOffsetAnimationRemoval
         break;
       }
       default:
-        EXPECT_EQ(final_postion_, scroll_layer_->scroll_offset());
+        EXPECT_EQ(final_postion_, scroll_layer_->CurrentScrollOffset());
     }
   }
 
@@ -1092,7 +1168,7 @@ class LayerTreeHostAnimationTestScrollOffsetAnimationRemoval
   }
 
   void AfterTest() override {
-    EXPECT_EQ(final_postion_, scroll_layer_->scroll_offset());
+    EXPECT_EQ(final_postion_, scroll_layer_->CurrentScrollOffset());
   }
 
  private:
@@ -1220,9 +1296,12 @@ class LayerTreeHostAnimationTestAnimationsAddedToNewAndExistingLayers
     EXPECT_EQ(KeyframeModel::RUNNING, child_keyframe_model->run_state());
     EXPECT_EQ(root_keyframe_model->start_time(),
               child_keyframe_model->start_time());
-    animation_impl->AbortKeyframeModels(TargetProperty::OPACITY, false);
-    animation_impl->AbortKeyframeModels(TargetProperty::TRANSFORM, false);
-    animation_child_impl->AbortKeyframeModels(TargetProperty::OPACITY, false);
+    animation_impl->AbortKeyframeModelsWithProperty(TargetProperty::OPACITY,
+                                                    false);
+    animation_impl->AbortKeyframeModelsWithProperty(TargetProperty::TRANSFORM,
+                                                    false);
+    animation_child_impl->AbortKeyframeModelsWithProperty(
+        TargetProperty::OPACITY, false);
     EndTest();
   }
 
@@ -1300,7 +1379,8 @@ class LayerTreeHostAnimationTestPendingTreeAnimatesFirstCommit
     // And the sync tree layer should know it is animating.
     EXPECT_TRUE(child->screen_space_transform_is_animating());
 
-    animation_impl->AbortKeyframeModels(TargetProperty::TRANSFORM, false);
+    animation_impl->AbortKeyframeModelsWithProperty(TargetProperty::TRANSFORM,
+                                                    false);
     EndTest();
   }
 

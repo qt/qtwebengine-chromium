@@ -52,13 +52,7 @@
 #include <glib.h>
 #include <glib/gprintf.h>
 
-#if !GLIB_CHECK_VERSION (2, 22, 0)
-# define g_mapped_file_unref g_mapped_file_free
-#endif
-
 void fail (hb_bool_t suggest_help, const char *format, ...) G_GNUC_NORETURN G_GNUC_PRINTF (2, 3);
-
-extern hb_bool_t debug;
 
 struct option_group_t
 {
@@ -461,6 +455,7 @@ struct font_options_t : option_group_t
     font_size_x = font_size_y = default_font_size;
     font_funcs = nullptr;
 
+    blob = nullptr;
     font = nullptr;
 
     add_options (parser);
@@ -477,6 +472,7 @@ struct font_options_t : option_group_t
   hb_font_t *get_font (void) const;
 
   char *font_file;
+  mutable hb_blob_t *blob;
   int face_index;
   hb_variation_t *variations;
   unsigned int num_variations;

@@ -13,7 +13,7 @@ template("generate_vm_runner_script") {
   _cache_path_prefix =
       "//build/cros_cache/chrome-sdk/tarballs/${cros_board}+${cros_sdk_version}"
   _vm_image_path = "${_cache_path_prefix}+chromiumos_qemu_image.tar.xz/"
-  _qemu_dir = "${_cache_path_prefix}+app-emulation/"
+  _qemu_dir = "${_cache_path_prefix}+qemu/"
 
   action(target_name) {
     forward_variables_from(invoker,
@@ -28,6 +28,10 @@ template("generate_vm_runner_script") {
       invoker.generated_script,
     ]
 
+    deps = [
+      "//testing/buildbot/filters:chromeos_filters",
+    ]
+
     data = [
       # We use android test-runner's results libs to construct gtest output
       # json.
@@ -37,6 +41,9 @@ template("generate_vm_runner_script") {
       invoker.generated_script,
       "//build/chromeos/",
       "//build/cros_cache/chrome-sdk/misc/",
+
+      # We use luci-py's subprocess42 to launch test processes.
+      "//tools/swarming_client/utils/",
 
       # The LKGM file controls what version of the VM image to download. Add it
       # as data here so that changes to it will trigger analyze.

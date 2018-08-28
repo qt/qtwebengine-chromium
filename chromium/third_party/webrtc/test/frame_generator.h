@@ -58,7 +58,7 @@ class FrameGenerator {
     RTC_NOTREACHED();
   }
 
-  enum class OutputType { I420, I420A };
+  enum class OutputType { I420, I420A, I010 };
 
   // Creates a frame generator that produces frames with small squares that
   // move randomly towards the lower right corner.
@@ -67,8 +67,8 @@ class FrameGenerator {
   static std::unique_ptr<FrameGenerator> CreateSquareGenerator(
       int width,
       int height,
-      rtc::Optional<OutputType> type,
-      rtc::Optional<int> num_squares);
+      absl::optional<OutputType> type,
+      absl::optional<int> num_squares);
 
   // Creates a frame generator that repeatedly plays a set of yuv files.
   // The frame_repeat_count determines how many times each frame is shown,
@@ -99,8 +99,8 @@ class FrameGenerator {
 
   // Creates a frame generator that produces randomly generated slides.
   // frame_repeat_count determines how many times each slide is shown.
-  static std::unique_ptr<FrameGenerator> CreateSlideGenerator(
-      int width, int height, int frame_repeat_count);
+  static std::unique_ptr<FrameGenerator>
+  CreateSlideGenerator(int width, int height, int frame_repeat_count);
 };
 }  // namespace test
 }  // namespace webrtc

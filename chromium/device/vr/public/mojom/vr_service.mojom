@@ -22,14 +22,40 @@ enum XRHandedness {
   RIGHT = 2
 };
 
-enum XRPointerOrigin {
-  HEAD = 1,
-  HAND = 2,
-  SCREEN = 3
+enum XRTargetRayMode {
+  GAZING = 1,
+  POINTING = 2,
+  TAPPING = 3
+};
+
+struct XRSessionOptions {
+  bool immersive;
+  bool provide_passthrough_camera;
+
+  // A flag to indicate if there has been a user activation when the request
+  // session is made.
+  bool has_user_activation;
+
+  // This flag ensures that render paths that are only supported in WebXR are
+  // not used for WebVR 1.1.
+  bool use_legacy_webvr_render_path;
+};
+
+// TODO(offenwanger) Rearrange these two interfaces to merge duplicate
+// functionality.
+struct XRSession {
+  VRMagicWindowProvider? magic_window_provider;
+  XRPresentationConnection? connection;
+};
+
+struct XRPresentationConnection {
+  VRSubmitFrameClient& client_request;
+  VRPresentationProvider provider;
+  VRDisplayFrameTransportOptions transport_options;
 };
 
 struct XRInputSourceDescription {
-  XRPointerOrigin pointer_origin;
+  XRTargetRayMode target_ray_mode;
   XRHandedness handedness;
   bool emulated_position;
 
@@ -85,8 +111,22 @@ struct VRPose {
 
   // Indicates that a reset pose event was triggered, either by device specific
   // UI or by some other method, and handled on the browser side, and the
-  // renderer should now bubble up an event to the WebXRDevice API.
+  // renderer should now bubble up an event to the WebXR Device API.
   bool pose_reset;
+};
+
+struct XRRay {
+  // TODO(https://crbug.com/845293): use Point3F and Vector3F from
+  // ui/gfx/geometry and inline directly in requestHitTest().
+  array<float, 3> origin;
+  array<float, 3> direction;
+};
+
+struct XRHitResult {
+  // A 4x4 transformation matrix representing the position of the object hit
+  // and the orientation of the normal of the object at the hit location.
+  // TODO(https://crbug.com/845293): use gfx.mojom.Transform.
+  array<float, 16> hit_matrix;
 };
 
 struct VRDisplayCapabilities {
@@ -130,22 +170,6 @@ struct VRDisplayInfo {
   float webxr_default_framebuffer_scale = 1.0;
 };
 
-// Options supplied by the Renderer when requesting presentation.
-struct VRRequestPresentOptions {
-  // If true, must use a render path that can preserve drawing buffer
-  // contents across frames. If false, each frame is drawn independently.
-  bool preserve_drawing_buffer;
-
-  // If true, indicates that WebXR input poses should be reported on VSync.
-  bool webxr_input;
-
-  // If true, Renderer has support for using shared buffer draw. Currently true
-  // for WebXR. Device-side prerequisite support is checked separately, this
-  // flag is an opt-in to ensure it's not used for WebVR 1.1 which lacks
-  // the required drawing buffer rebinding support.
-  bool shared_buffer_draw_supported;
-};
-
 // Frame transport method from the Renderer's point of view.
 enum VRDisplayFrameTransportMethod {
   NONE = 0,
@@ -172,20 +196,33 @@ struct VRDisplayFrameTransportOptions {
   bool wait_for_gpu_fence;
 };
 
-// The data needed for each frame for a magic window experience
-// that uses a background image / projection matrix instead of
-// just a VRPose - ex: non-exclusive AR needs a camera image and
-// to get a projection matrix directly from the backend rather than
-// FOV values to support features like focus.
-struct VRMagicWindowFrameData {
-  VRPose pose;
-  gpu.mojom.MailboxHolder buffer_holder;
-  gfx.mojom.Size buffer_size;
+// The data needed for each animation frame of an XRSession.
+struct XRFrameData {
+  // General XRSession value
+
+  // The pose may be null if the device lost tracking. The XRFrameData can still
+  // have other data, such as pass through camera image.
+  VRPose? pose;
   // TODO(https://crbug.com/838515): Is this delta since the last
   // frame? OR an unspecified origin? Something else?
   mojo_base.mojom.TimeDelta time_delta;
-  array<float, 16> projection_matrix;
+  // The buffer_holder is used for sending data imagery back and forth across
+  // the process boundary. For application with pass through camera, it holds
+  // the camera image to be passed to the renderer. For immersive sessions, it
+  // is the place for the renderer to draw into to pass imagery to the device
+  // for rendering.
+  gpu.mojom.MailboxHolder? buffer_holder;
 
+  // Exclusive session values
+
+  // The frame_id maps frame data to a frame arriving from the compositor. IDs
+  // will be reused after the frame arrives from the compositor. Negative IDs
+  // imply no mapping.
+  int16 frame_id;
+
+  // Pass through camera values
+  gfx.mojom.Size? buffer_size;
+  array<float, 16>? projection_matrix;
 };
 
 enum VRDisplayEventReason {
@@ -208,8 +245,7 @@ interface VRService {
 };
 
 interface VRServiceClient {
-  OnDisplayConnected(VRMagicWindowProvider magic_window_provider,
-                     VRDisplayHost display, VRDisplayClient& request,
+  OnDisplayConnected(VRDisplayHost display, VRDisplayClient& request,
                      VRDisplayInfo display_info);
 };
 
@@ -250,14 +286,15 @@ interface VRSubmitFrameClient {
 // Provides a communication channel from the renderer to the browser-side host
 // of a (device/) VrDisplayImpl.
 interface VRDisplayHost {
-  // The returned transport_options is marked optional: it's null for
-  // a failure result but must be non-null for a success result.
-  RequestPresent(VRSubmitFrameClient client,
-                 VRPresentationProvider& request,
-                 VRRequestPresentOptions options,
-                 bool triggered_by_displayactive) => (
-                     bool success,
-                     VRDisplayFrameTransportOptions? transport_options);
+  // Request to initialize a session in the browser process. The return value
+  // indicates if the session was successfully initialized or not.
+  // TODO(https://crbug.com/842025): Refactor VR device interfaces to better
+  // reflect WebXR.
+  RequestSession(
+    XRSessionOptions options,
+    bool triggered_by_displayactive) => (XRSession? session);
+  SupportsSession(XRSessionOptions options) => (bool supports_session);
+
   ExitPresent();
 };
 
@@ -267,18 +304,30 @@ interface VRDisplayHost {
 // utility process on Windows.  The render process communicates with it.
 // For AR displays (VRDisplayCapabilities.can_provide_pass_through_images
 // is true), clients can use GetFrameData to get images.
-// TODO(836478): rename VRMagicWindowProvider to NonExclusiveWindowProvider or
+// TODO(836478): rename VRMagicWindowProvider to NonImmersiveWindowProvider or
 // similar.
 interface VRMagicWindowProvider {
-  GetPose() => (VRPose? pose);
+  // frame_data is optional and will not be set if and only if the call fails
+  // for some reason, such as device disconnection.
+  GetFrameData() => (XRFrameData? frame_data);
 
   // Different devices can have different native orientations - 0
   // is the native orientation, and then increments of 90 degrees
   // from there.
-  // TODO(https://crbug.com/837944): frame_data should not be optional.
-  GetFrameData(gfx.mojom.Size frame_size,
-      display.mojom.Rotation display_rotation) =>
-      (VRMagicWindowFrameData? frame_data);
+  UpdateSessionGeometry(
+      gfx.mojom.Size frame_size,
+      display.mojom.Rotation display_rotation);
+
+  // Performs a raycast into the magic window scene and returns a list of
+  // XRHitResults sorted from closest to furthest hit from the ray. Each
+  // hit result contains a hit_matrix containing the transform of the hit
+  // where the rotation represents the normal of the surface hit.
+  // An empty result list means there were no hits. If a nullopt is returned,
+  // there was an error.
+  // TODO(https://crbug.com/842025): have one "session" type, merging
+  // VRMagicWindowProvider and VRPresentationProvider because RequestHitTest
+  // makes sense for both types of sessions.
+  RequestHitTest(XRRay ray) => (array<XRHitResult>? results);
 };
 
 // Provides the necessary functionality for a presenting WebVR page to draw
@@ -286,19 +335,15 @@ interface VRMagicWindowProvider {
 // This interface is hosted in the Browser process, but will move to a sandboxed
 // utility process on Windows.  The render process communicates with it.
 interface VRPresentationProvider {
-  enum VSyncStatus { SUCCESS, CLOSING };
-
-  // The frameId maps a VSync to a frame arriving from the compositor. IDs will
-  // be reused after the frame arrives from the compositor. Negative IDs imply
-  // no mapping.
-  GetVSync() => (VRPose? pose, mojo_base.mojom.TimeDelta time, int16 frame_id,
-                 VSyncStatus status, gpu.mojom.MailboxHolder? buffer_holder);
+  // frame_data is optional and will not be set if and only if the call fails
+  // for some reason, such as device disconnection.
+  GetFrameData() => (XRFrameData? frame_data);
 
   UpdateLayerBounds(int16 frame_id, gfx.mojom.RectF left_bounds,
                     gfx.mojom.RectF right_bounds, gfx.mojom.Size source_size);
 
   // Call this if the animation loop exited without submitting a frame to
-  // ensure that every GetVSync has a matching Submit call. This happens for
+  // ensure that every GetFrameData has a matching Submit call. This happens for
   // WebXR if there were no drawing operations to the opaque framebuffer, and
   // for WebVR 1.1 if the application didn't call SubmitFrame. Usable with any
   // VRDisplayFrameTransportMethod. This path does *not* call the

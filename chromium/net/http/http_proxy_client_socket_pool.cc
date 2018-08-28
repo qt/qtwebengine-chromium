@@ -16,6 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_network_session.h"
@@ -42,30 +43,19 @@ namespace {
 
 // HttpProxyConnectJobs will time out after this many seconds.  Note this is on
 // top of the timeout for the transport socket.
-// TODO(kundaji): Proxy connect timeout should be independent of platform and be
-// based on proxy. Bug http://crbug.com/407446.
 #if defined(OS_ANDROID) || defined(OS_IOS)
 static const int kHttpProxyConnectJobTimeoutInSeconds = 10;
 #else
 static const int kHttpProxyConnectJobTimeoutInSeconds = 30;
 #endif
 
-static const char kNetAdaptiveProxyConnectionTimeout[] =
-    "NetAdaptiveProxyConnectionTimeout";
-
-bool IsInNetAdaptiveProxyConnectionTimeoutFieldTrial() {
-  // Field trial is enabled if the group name starts with "Enabled".
-  return base::FieldTrialList::FindFullName(kNetAdaptiveProxyConnectionTimeout)
-             .find("Enabled") == 0;
-}
-
 // Return the value of the parameter |param_name| for the field trial
-// |kNetAdaptiveProxyConnectionTimeout|. If the value of the parameter is
+// "NetAdaptiveProxyConnectionTimeout". If the value of the parameter is
 // unavailable, then |default_value| is available.
 int32_t GetInt32Param(const std::string& param_name, int32_t default_value) {
   int32_t param;
   if (!base::StringToInt(base::GetFieldTrialParamValue(
-                             kNetAdaptiveProxyConnectionTimeout, param_name),
+                             "NetAdaptiveProxyConnectionTimeout", param_name),
                          &param)) {
     return default_value;
   }
@@ -77,7 +67,7 @@ int32_t GetInt32Param(const std::string& param_name, int32_t default_value) {
 HttpProxySocketParams::HttpProxySocketParams(
     const scoped_refptr<TransportSocketParams>& transport_params,
     const scoped_refptr<SSLSocketParams>& ssl_params,
-    QuicTransportVersion quic_version,
+    quic::QuicTransportVersion quic_version,
     const std::string& user_agent,
     const HostPortPair& endpoint,
     HttpAuthCache* http_auth_cache,
@@ -99,11 +89,12 @@ HttpProxySocketParams::HttpProxySocketParams(
       is_trusted_proxy_(is_trusted_proxy),
       tunnel_(tunnel),
       traffic_annotation_(traffic_annotation) {
-  // If doing a QUIC proxy, |quic_version| must not be QUIC_VERSION_UNSUPPORTED,
-  // and |ssl_params| must be valid while |transport_params| is null.
-  // Otherwise, |quic_version| must be QUIC_VERSION_UNSUPPORTED, and exactly
-  // one of |transport_params| or |ssl_params| must be set.
-  DCHECK(quic_version_ == QUIC_VERSION_UNSUPPORTED
+  // If doing a QUIC proxy, |quic_version| must not be
+  // quic::QUIC_VERSION_UNSUPPORTED, and |ssl_params| must be valid while
+  // |transport_params| is null. Otherwise, |quic_version| must be
+  // quic::QUIC_VERSION_UNSUPPORTED, and exactly one of |transport_params| or
+  // |ssl_params| must be set.
+  DCHECK(quic_version_ == quic::QUIC_VERSION_UNSUPPORTED
              ? (bool)transport_params != (bool)ssl_params
              : !transport_params && ssl_params);
   // Exactly one of |transport_params_| and |ssl_params_| must be non-null.
@@ -209,13 +200,20 @@ HttpProxyClientSocketPool::HttpProxyConnectJobFactory::
     : transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
       network_quality_provider_(network_quality_provider),
-      ssl_http_rtt_multiplier_(GetInt32Param("ssl_http_rtt_multiplier", 5)),
+      ssl_http_rtt_multiplier_(GetInt32Param("ssl_http_rtt_multiplier", 10)),
       non_ssl_http_rtt_multiplier_(
           GetInt32Param("non_ssl_http_rtt_multiplier", 5)),
+#if defined(OS_ANDROID) || defined(OS_IOS)
       min_proxy_connection_timeout_(base::TimeDelta::FromSeconds(
           GetInt32Param("min_proxy_connection_timeout_seconds", 8))),
       max_proxy_connection_timeout_(base::TimeDelta::FromSeconds(
+          GetInt32Param("max_proxy_connection_timeout_seconds", 30))),
+#else
+      min_proxy_connection_timeout_(base::TimeDelta::FromSeconds(
+          GetInt32Param("min_proxy_connection_timeout_seconds", 30))),
+      max_proxy_connection_timeout_(base::TimeDelta::FromSeconds(
           GetInt32Param("max_proxy_connection_timeout_seconds", 60))),
+#endif
       net_log_(net_log) {
   DCHECK_LT(0, ssl_http_rtt_multiplier_);
   DCHECK_LT(0, non_ssl_http_rtt_multiplier_);
@@ -249,8 +247,7 @@ HttpProxyClientSocketPool::HttpProxyConnectJobFactory::ConnectionTimeout()
 
 base::TimeDelta HttpProxyClientSocketPool::HttpProxyConnectJobFactory::
     ConnectionTimeoutWithConnectionProperty(bool is_secure_connection) const {
-  if (IsInNetAdaptiveProxyConnectionTimeoutFieldTrial() &&
-      network_quality_provider_) {
+  if (network_quality_provider_) {
     base::Optional<base::TimeDelta> http_rtt_estimate =
         network_quality_provider_->GetHttpRTT();
     if (http_rtt_estimate) {
@@ -316,14 +313,14 @@ int HttpProxyClientSocketPool::RequestSocket(const std::string& group_name,
                                              const SocketTag& socket_tag,
                                              RespectLimits respect_limits,
                                              ClientSocketHandle* handle,
-                                             const CompletionCallback& callback,
+                                             CompletionOnceCallback callback,
                                              const NetLogWithSource& net_log) {
   const scoped_refptr<HttpProxySocketParams>* casted_socket_params =
       static_cast<const scoped_refptr<HttpProxySocketParams>*>(socket_params);
 
   return base_.RequestSocket(group_name, *casted_socket_params, priority,
-                             socket_tag, respect_limits, handle, callback,
-                             net_log);
+                             socket_tag, respect_limits, handle,
+                             std::move(callback), net_log);
 }
 
 void HttpProxyClientSocketPool::RequestSockets(

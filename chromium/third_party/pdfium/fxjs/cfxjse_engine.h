@@ -11,6 +11,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/fxcrt/unowned_ptr.h"
 #include "fxjs/cfx_v8.h"
 #include "fxjs/cfxjse_formcalc_context.h"
 #include "v8/include/v8.h"
@@ -22,7 +23,7 @@
 #define XFA_RESOLVENODE_TagName 0x0002
 
 class CFXJSE_ResolveProcessor;
-class CFXJS_Engine;
+class CJS_Runtime;
 class CXFA_List;
 
 class CFXJSE_Engine : public CFX_V8 {
@@ -51,11 +52,11 @@ class CFXJSE_Engine : public CFX_V8 {
                                       const ByteStringView& szPropName,
                                       bool bQueryIn);
 
-  CFXJSE_Engine(CXFA_Document* pDocument, CFXJS_Engine* fxjs_engine);
+  CFXJSE_Engine(CXFA_Document* pDocument, CJS_Runtime* fxjs_runtime);
   ~CFXJSE_Engine() override;
 
-  void SetEventParam(CXFA_EventParam param) { m_eventParam = param; }
-  CXFA_EventParam* GetEventParam() { return &m_eventParam; }
+  void SetEventParam(CXFA_EventParam* param) { m_eventParam = param; }
+  CXFA_EventParam* GetEventParam() const { return m_eventParam.Get(); }
   bool RunScript(CXFA_Script::Type eScriptType,
                  const WideStringView& wsScript,
                  CFXJSE_Value* pRetValue,
@@ -106,6 +107,7 @@ class CFXJSE_Engine : public CFX_V8 {
                           bool bGetter);
   bool RunVariablesScript(CXFA_Node* pScriptNode);
 
+  UnownedPtr<CJS_Runtime> const m_pSubordinateRuntime;
   UnownedPtr<CXFA_Document> const m_pDocument;
   std::unique_ptr<CFXJSE_Context> m_JsContext;
   CFXJSE_Class* m_pJsClass;
@@ -113,7 +115,7 @@ class CFXJSE_Engine : public CFX_V8 {
   std::map<CXFA_Object*, std::unique_ptr<CFXJSE_Value>> m_mapObjectToValue;
   std::map<CXFA_Object*, std::unique_ptr<CFXJSE_Context>>
       m_mapVariableToContext;
-  CXFA_EventParam m_eventParam;
+  UnownedPtr<CXFA_EventParam> m_eventParam;
   std::vector<CXFA_Node*> m_upObjectArray;
   // CacheList holds the List items so we can clean them up when we're done.
   std::vector<std::unique_ptr<CXFA_List>> m_CacheList;

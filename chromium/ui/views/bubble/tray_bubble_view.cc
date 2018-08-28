@@ -274,7 +274,6 @@ void TrayBubbleView::InitializeAndShowBubble() {
 void TrayBubbleView::UpdateBubble() {
   if (GetWidget()) {
     SizeToContents();
-    bubble_content_mask_->layer()->SetBounds(GetBubbleBounds());
     GetWidget()->GetRootView()->SchedulePaint();
 
     // When extra keyboard accessibility is enabled, focus the default item if
@@ -313,6 +312,10 @@ void TrayBubbleView::ResetDelegate() {
   delegate_ = nullptr;
 }
 
+void TrayBubbleView::ChangeAnchorView(views::View* anchor_view) {
+  BubbleDialogDelegateView::SetAnchorView(anchor_view);
+}
+
 int TrayBubbleView::GetDialogButtons() const {
   return ui::DIALOG_BUTTON_NONE;
 }
@@ -326,7 +329,7 @@ ax::mojom::Role TrayBubbleView::GetAccessibleWindowRole() const {
 
 void TrayBubbleView::SizeToContents() {
   BubbleDialogDelegateView::SizeToContents();
-  bubble_content_mask_->layer()->SetBounds(GetBubbleBounds());
+  bubble_content_mask_->layer()->SetBounds(layer()->parent()->bounds());
 }
 
 void TrayBubbleView::OnBeforeBubbleWidgetInit(Widget::InitParams* params,

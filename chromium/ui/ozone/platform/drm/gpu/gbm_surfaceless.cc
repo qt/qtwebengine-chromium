@@ -44,9 +44,9 @@ GbmSurfaceless::GbmSurfaceless(GbmSurfaceFactory* surface_factory,
   unsubmitted_frames_.push_back(std::make_unique<PendingFrame>());
 }
 
-void GbmSurfaceless::QueueOverlayPlane(const OverlayPlane& plane) {
+void GbmSurfaceless::QueueOverlayPlane(DrmOverlayPlane plane) {
   is_on_external_drm_device_ = plane.buffer->RequiresGlFinish();
-  planes_.push_back(plane);
+  planes_.push_back(std::move(plane));
 }
 
 bool GbmSurfaceless::Initialize(gl::GLSurfaceFormat format) {
@@ -117,7 +117,7 @@ void GbmSurfaceless::SwapBuffersAsync(
   if (!last_swap_buffers_result_) {
     completion_callback.Run(gfx::SwapResult::SWAP_FAILED);
     // Notify the caller, the buffer is never presented on a screen.
-    presentation_callback.Run(gfx::PresentationFeedback());
+    presentation_callback.Run(gfx::PresentationFeedback::Failure());
     return;
   }
 
@@ -152,7 +152,7 @@ void GbmSurfaceless::SwapBuffersAsync(
   if (!fence) {
     completion_callback.Run(gfx::SwapResult::SWAP_FAILED);
     // Notify the caller, the buffer is never presented on a screen.
-    presentation_callback.Run(gfx::PresentationFeedback());
+    presentation_callback.Run(gfx::PresentationFeedback::Failure());
     return;
   }
 
@@ -220,7 +220,7 @@ GbmSurfaceless::PendingFrame::~PendingFrame() {}
 
 bool GbmSurfaceless::PendingFrame::ScheduleOverlayPlanes(
     gfx::AcceleratedWidget widget) {
-  for (const auto& overlay : overlays)
+  for (auto& overlay : overlays)
     if (!overlay.ScheduleOverlayPlane(widget))
       return false;
   return true;
@@ -234,25 +234,24 @@ void GbmSurfaceless::PendingFrame::Flush() {
 void GbmSurfaceless::SubmitFrame() {
   DCHECK(!unsubmitted_frames_.empty());
 
-  if (unsubmitted_frames_.front()->ready && !swap_buffers_pending_) {
-    std::unique_ptr<PendingFrame> frame(std::move(unsubmitted_frames_.front()));
+  if (unsubmitted_frames_.front()->ready && !submitted_frame_) {
+    submitted_frame_ = std::move(unsubmitted_frames_.front());
     unsubmitted_frames_.erase(unsubmitted_frames_.begin());
-    swap_buffers_pending_ = true;
 
-    bool schedule_planes_succeeded = frame->ScheduleOverlayPlanes(widget_);
-    auto callback = base::BindOnce(&GbmSurfaceless::SwapCompleted,
-                                   weak_factory_.GetWeakPtr(),
-                                   base::Passed(std::move(frame)));
+    bool schedule_planes_succeeded =
+        submitted_frame_->ScheduleOverlayPlanes(widget_);
 
     if (!schedule_planes_succeeded) {
-      // |callback| is a wrapper for SwapCompleted(). Call it to properly
-      // propagate the failed state.
-      std::move(callback).Run(gfx::SwapResult::SWAP_FAILED,
-                              gfx::PresentationFeedback());
+      OnSubmission(gfx::SwapResult::SWAP_FAILED, nullptr);
+      OnPresentation(gfx::PresentationFeedback::Failure());
       return;
     }
 
-    window_->SchedulePageFlip(planes_, std::move(callback));
+    window_->SchedulePageFlip(std::move(planes_),
+                              base::BindOnce(&GbmSurfaceless::OnSubmission,
+                                             weak_factory_.GetWeakPtr()),
+                              base::BindOnce(&GbmSurfaceless::OnPresentation,
+                                             weak_factory_.GetWeakPtr()));
     planes_.clear();
   }
 }
@@ -270,14 +269,20 @@ void GbmSurfaceless::FenceRetired(PendingFrame* frame) {
   SubmitFrame();
 }
 
-void GbmSurfaceless::SwapCompleted(std::unique_ptr<PendingFrame> frame,
-                                   gfx::SwapResult result,
-                                   const gfx::PresentationFeedback& feedback) {
+void GbmSurfaceless::OnSubmission(gfx::SwapResult result,
+                                  std::unique_ptr<gfx::GpuFence> out_fence) {
+  submitted_frame_->swap_result = result;
+}
+
+void GbmSurfaceless::OnPresentation(const gfx::PresentationFeedback& feedback) {
   // Explicitly destroy overlays to free resources (e.g., fences) early.
-  frame->overlays.clear();
-  frame->completion_callback.Run(result);
-  frame->presentation_callback.Run(feedback);
-  swap_buffers_pending_ = false;
+  submitted_frame_->overlays.clear();
+
+  gfx::SwapResult result = submitted_frame_->swap_result;
+  std::move(submitted_frame_->completion_callback).Run(result);
+  std::move(submitted_frame_->presentation_callback).Run(feedback);
+  submitted_frame_.reset();
+
   if (result == gfx::SwapResult::SWAP_FAILED) {
     last_swap_buffers_result_ = false;
     return;

@@ -19,10 +19,6 @@
         border-top: none;
       }
 
-      :host(.three-line) {
-        min-height: var(--settings-row-three-line-min-height);
-      }
-
       :host([elide-label]),
       :host([elide-label]) #outerRow,
       :host([elide-label]) #outerRow > div.flex {
@@ -42,6 +38,10 @@
 
       #outerRow[noSubLabel] {
         min-height: var(--settings-row-min-height);
+      }
+
+      #labelWrapper {
+        padding: 12px 0;
       }
 
       #labelWrapper,

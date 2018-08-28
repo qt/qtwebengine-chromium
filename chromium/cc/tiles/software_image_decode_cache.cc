@@ -24,23 +24,6 @@ using base::trace_event::MemoryDumpLevelOfDetail;
 namespace cc {
 namespace {
 
-bool UseCacheForDrawImage(const DrawImage& draw_image) {
-  // Lazy generated images are have their decode cached.
-  sk_sp<SkImage> sk_image = draw_image.paint_image().GetSkImage();
-  if (sk_image->isLazyGenerated())
-    return true;
-
-  // Cache images that need to be converted to a non-sRGB color space.
-  // TODO(ccameron): Consider caching when any color conversion is required.
-  // https://crbug.com/791828
-  const gfx::ColorSpace& dst_color_space = draw_image.target_color_space();
-  if (dst_color_space.IsValid() &&
-      dst_color_space != gfx::ColorSpace::CreateSRGB()) {
-    return true;
-  }
-
-  return false;
-}
 
 // The number of entries to keep around in the cache. This limit can be breached
 // if more items are locked. That is, locked items ignore this limit.
@@ -172,6 +155,9 @@ SoftwareImageDecodeCache::SoftwareImageDecodeCache(
   }
   // Register this component with base::MemoryCoordinatorClientRegistry.
   base::MemoryCoordinatorClientRegistry::GetInstance()->Register(this);
+  memory_pressure_listener_.reset(new base::MemoryPressureListener(
+      base::BindRepeating(&SoftwareImageDecodeCache::OnMemoryPressure,
+                          base::Unretained(this))));
 }
 
 SoftwareImageDecodeCache::~SoftwareImageDecodeCache() {
@@ -383,43 +369,37 @@ void SoftwareImageDecodeCache::DecodeImageIfNecessary(
     base::AutoUnlock release(lock_);
     local_cache_entry = Utils::DoDecodeImage(key, paint_image, color_type_);
   } else {
-    // Use the full image decode to generate a scaled/subrected decode.
-    // TODO(vmpstr): This part needs to handle decode to scale.
-    base::Optional<CacheKey> candidate_key;
-    auto image_keys_it = frame_key_to_image_keys_.find(key.frame_key());
-    // We know that we must have at least our own |entry| in this list, so it
-    // won't be empty.
-    DCHECK(image_keys_it != frame_key_to_image_keys_.end());
+    // Attempt to find a cached decode to generate a scaled/subrected decode
+    // from.
+    base::Optional<CacheKey> candidate_key = FindCachedCandidate(key);
 
-    auto& available_keys = image_keys_it->second;
-    std::sort(available_keys.begin(), available_keys.end(),
-              [](const CacheKey& one, const CacheKey& two) {
-                // Return true if |one| scale is less than |two| scale.
-                return one.target_size().width() < two.target_size().width() &&
-                       one.target_size().height() < two.target_size().height();
-              });
+    SkISize desired_size = gfx::SizeToSkISize(key.target_size());
+    const bool should_decode_to_scale =
+        // Prefer scaling from a cached decode instead of performing another
+        // decode to the desired size.
+        !candidate_key &&
+        // We need the original decode to subrect before scaling, if a subrect
+        // is requested.
+        key.src_rect() ==
+            gfx::Rect(paint_image.width(), paint_image.height()) &&
+        // Note that in the case where we can't decode to the exact desired
+        // size, but a size lower than the original, it would be better to
+        // decode to that size and then scale to the desired size. But this
+        // should be rare in practice, since we only decode to mip levels.
+        paint_image.GetSupportedDecodeSize(desired_size) == desired_size;
 
-    for (auto& available_key : available_keys) {
-      // Only consider keys coming from the same src rect, since otherwise the
-      // resulting image was extracted using a different src.
-      if (available_key.src_rect() != key.src_rect())
-        continue;
-
-      // that are at least as big as the required |key|.
-      if (available_key.target_size().width() < key.target_size().width() ||
-          available_key.target_size().height() < key.target_size().height()) {
-        continue;
-      }
-      auto image_it = decoded_images_.Peek(available_key);
-      DCHECK(image_it != decoded_images_.end());
-      auto* available_entry = image_it->second.get();
-      if (available_entry->is_locked || available_entry->Lock()) {
-        candidate_key.emplace(available_key);
-        break;
-      }
+    // We don't scale and cache the result if nearest neighbor is requested,
+    // i.e., the processing type should be kOriginal or kSubrectOriginal. And
+    // requesting a subrect already vetoes decode to scale.
+    DCHECK(!should_decode_to_scale || !key.is_nearest_neighbor());
+    if (should_decode_to_scale) {
+      base::AutoUnlock release(lock_);
+      local_cache_entry = Utils::DoDecodeImage(key, paint_image, color_type_);
     }
 
-    if (!candidate_key) {
+    // Couldn't decode to scale or find a cached candidate. Create the
+    // intermediate candidate key required for this decode.
+    if (!should_decode_to_scale && !candidate_key) {
       // IMPORTANT: There is a bit of a subtlety here. We would normally want to
       // generate a new candidate with the key.src_rect() as the src_rect. This
       // would ensure that when scaling we won't need to peek pixels, since it's
@@ -445,25 +425,27 @@ void SoftwareImageDecodeCache::DecodeImageIfNecessary(
       candidate_key.emplace(
           CacheKey::FromDrawImage(candidate_draw_image, color_type_));
     }
-    CHECK(*candidate_key != key) << key.ToString();
 
-    auto decoded_draw_image =
-        GetDecodedImageForDrawInternal(*candidate_key, paint_image);
-    if (!decoded_draw_image.image()) {
-      local_cache_entry = nullptr;
-    } else {
-      base::AutoUnlock release(lock_);
-      // IMPORTANT: More subtleties:
-      // If the candidate could have used the original decode, that means we
-      // need to extractSubset from it. In all other cases, this would have
-      // already been done to generate the candidate.
-      local_cache_entry = Utils::GenerateCacheEntryFromCandidate(
-          key, decoded_draw_image, candidate_key->type() == CacheKey::kOriginal,
-          color_type_);
+    if (candidate_key) {
+      CHECK(*candidate_key != key) << key.ToString();
+      auto decoded_draw_image =
+          GetDecodedImageForDrawInternal(*candidate_key, paint_image);
+      if (!decoded_draw_image.image()) {
+        local_cache_entry = nullptr;
+      } else {
+        base::AutoUnlock release(lock_);
+        // IMPORTANT: More subtleties:
+        // If the candidate could have used the original decode, that means we
+        // need to extractSubset from it. In all other cases, this would have
+        // already been done to generate the candidate.
+        local_cache_entry = Utils::GenerateCacheEntryFromCandidate(
+            key, decoded_draw_image,
+            candidate_key->type() == CacheKey::kOriginal, color_type_);
+      }
+
+      // Unref to balance the GetDecodedImageForDrawInternal() call.
+      UnrefImage(*candidate_key);
     }
-
-    // Unref to balance the GetDecodedImageForDrawInternal() call.
-    UnrefImage(*candidate_key);
   }
 
   if (!local_cache_entry) {
@@ -488,15 +470,70 @@ void SoftwareImageDecodeCache::DecodeImageIfNecessary(
   }
 }
 
+base::Optional<SoftwareImageDecodeCache::CacheKey>
+SoftwareImageDecodeCache::FindCachedCandidate(const CacheKey& key) {
+  auto image_keys_it = frame_key_to_image_keys_.find(key.frame_key());
+  // We know that we must have at least our own |entry| in this list, so it
+  // won't be empty.
+  DCHECK(image_keys_it != frame_key_to_image_keys_.end());
+
+  auto& available_keys = image_keys_it->second;
+  std::sort(available_keys.begin(), available_keys.end(),
+            [](const CacheKey& one, const CacheKey& two) {
+              // Return true if |one| scale is less than |two| scale.
+              return one.target_size().width() < two.target_size().width() &&
+                     one.target_size().height() < two.target_size().height();
+            });
+
+  for (auto& available_key : available_keys) {
+    // Only consider keys coming from the same src rect, since otherwise the
+    // resulting image was extracted using a different src.
+    if (available_key.src_rect() != key.src_rect())
+      continue;
+
+    // That are at least as big as the required |key|.
+    if (available_key.target_size().width() < key.target_size().width() ||
+        available_key.target_size().height() < key.target_size().height()) {
+      continue;
+    }
+    auto image_it = decoded_images_.Peek(available_key);
+    DCHECK(image_it != decoded_images_.end());
+    auto* available_entry = image_it->second.get();
+    if (available_entry->is_locked || available_entry->Lock()) {
+      return available_key;
+    }
+  }
+
+  return base::nullopt;
+}
+
+bool SoftwareImageDecodeCache::UseCacheForDrawImage(
+    const DrawImage& draw_image) const {
+  sk_sp<SkImage> sk_image = draw_image.paint_image().GetSkImage();
+
+  // Software cache doesn't support using texture backed images.
+  if (sk_image->isTextureBacked())
+    return false;
+
+  // Lazy generated images need to have their decode cached.
+  if (sk_image->isLazyGenerated())
+    return true;
+
+  // Cache images that need to be converted to a non-sRGB color space.
+  // TODO(ccameron): Consider caching when any color conversion is required.
+  // https://crbug.com/791828
+  const gfx::ColorSpace& dst_color_space = draw_image.target_color_space();
+  if (dst_color_space.IsValid() &&
+      dst_color_space != gfx::ColorSpace::CreateSRGB()) {
+    return true;
+  }
+
+  return false;
+}
+
 DecodedDrawImage SoftwareImageDecodeCache::GetDecodedImageForDraw(
     const DrawImage& draw_image) {
-  // Non-cached images are be used for raster directly.
-  if (!UseCacheForDrawImage(draw_image)) {
-    return DecodedDrawImage(draw_image.paint_image().GetSkImage(),
-                            SkSize::Make(0, 0), SkSize::Make(1.f, 1.f),
-                            draw_image.filter_quality(),
-                            true /* is_budgeted */);
-  }
+  DCHECK(UseCacheForDrawImage(draw_image));
 
   base::AutoLock hold(lock_);
   return GetDecodedImageForDrawInternal(
@@ -538,9 +575,7 @@ DecodedDrawImage SoftwareImageDecodeCache::GetDecodedImageForDrawInternal(
 void SoftwareImageDecodeCache::DrawWithImageFinished(
     const DrawImage& image,
     const DecodedDrawImage& decoded_image) {
-  if (!UseCacheForDrawImage(image))
-    return;
-
+  DCHECK(UseCacheForDrawImage(image));
   TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
                "SoftwareImageDecodeCache::DrawWithImageFinished", "key",
                CacheKey::FromDrawImage(image, color_type_).ToString());
@@ -668,6 +703,19 @@ void SoftwareImageDecodeCache::OnMemoryStateChange(base::MemoryState state) {
 void SoftwareImageDecodeCache::OnPurgeMemory() {
   base::AutoLock lock(lock_);
   ReduceCacheUsageUntilWithinLimit(0);
+}
+
+void SoftwareImageDecodeCache::OnMemoryPressure(
+    base::MemoryPressureListener::MemoryPressureLevel level) {
+  base::AutoLock lock(lock_);
+  switch (level) {
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
+      break;
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
+      ReduceCacheUsageUntilWithinLimit(0);
+      break;
+  }
 }
 
 SoftwareImageDecodeCache::CacheEntry* SoftwareImageDecodeCache::AddCacheEntry(

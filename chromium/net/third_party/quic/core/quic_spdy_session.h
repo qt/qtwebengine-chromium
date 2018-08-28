@@ -13,13 +13,12 @@
 #include "net/third_party/quic/core/quic_headers_stream.h"
 #include "net/third_party/quic/core/quic_session.h"
 #include "net/third_party/quic/core/quic_spdy_stream.h"
-#include "net/third_party/quic/http/decoder/quic_http_frame_decoder_adapter.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/spdy/core/http2_frame_decoder_adapter.h"
 
-namespace net {
+namespace quic {
 
 namespace test {
 class QuicSpdySessionPeer;
@@ -112,17 +111,15 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession : public QuicSession {
                                   QuicStreamId promised_stream_id,
                                   spdy::SpdyHeaderBlock headers);
 
-  // Sends spdy::SETTINGS_MAX_HEADER_LIST_SIZE SETTINGS frame.
+  // Sends SETTINGS_MAX_HEADER_LIST_SIZE SETTINGS frame.
   size_t SendMaxHeaderListSize(size_t value);
 
   QuicHeadersStream* headers_stream() { return headers_stream_.get(); }
 
-  void OnConfigNegotiated() override;
-
   bool server_push_enabled() const { return server_push_enabled_; }
 
   // Called by |QuicHeadersStream::UpdateEnableServerPush()| with
-  // value from spdy::SETTINGS_ENABLE_PUSH.
+  // value from SETTINGS_ENABLE_PUSH.
   void set_server_push_enabled(bool enable) { server_push_enabled_ = enable; }
 
   // Return true if this session wants to release headers stream's buffer
@@ -142,6 +139,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession : public QuicSession {
   // QuicSpdyStreams.
   QuicSpdyStream* CreateIncomingDynamicStream(QuicStreamId id) override = 0;
   QuicSpdyStream* CreateOutgoingDynamicStream() override = 0;
+
   QuicSpdyStream* GetSpdyDataStream(const QuicStreamId stream_id);
 
   // If an incoming stream can be created, return true.
@@ -166,11 +164,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession : public QuicSession {
 
   bool supports_push_promise() { return supports_push_promise_; }
 
-  // Experimental: force HPACK to use static table and huffman coding
-  // only.  Part of exploring improvements related to headers stream
-  // induced HOL blocking in QUIC.
-  void DisableHpackDynamicTable();
-
   // Optional, enables instrumentation related to go/quic-hpack.
   void SetHpackEncoderDebugVisitor(
       std::unique_ptr<QuicHpackDebugVisitor> visitor);
@@ -181,7 +174,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession : public QuicSession {
   // willing to use to encode header blocks.
   void UpdateHeaderEncoderTableSize(uint32_t value);
 
-  // Called when spdy::SETTINGS_ENABLE_PUSH is received, only supported on
+  // Called when SETTINGS_ENABLE_PUSH is received, only supported on
   // server side.
   void UpdateEnableServerPush(bool value);
 
@@ -190,13 +183,8 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession : public QuicSession {
   // Sets how much encoded data the hpack decoder of h2_deframer_ is willing to
   // buffer.
   void set_max_decode_buffer_size_bytes(size_t max_decode_buffer_size_bytes) {
-    if (use_h2_deframer_) {
-      h2_deframer_.GetHpackDecoder()->set_max_decode_buffer_size_bytes(
-          max_decode_buffer_size_bytes);
-    } else {
-      hq_deframer_.GetHpackDecoder()->set_max_decode_buffer_size_bytes(
-          max_decode_buffer_size_bytes);
-    }
+    h2_deframer_.GetHpackDecoder()->set_max_decode_buffer_size_bytes(
+        max_decode_buffer_size_bytes);
   }
 
   void set_max_uncompressed_header_bytes(
@@ -248,17 +236,13 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession : public QuicSession {
 
   bool supports_push_promise_;
 
-  // TODO(rch): remove |use_h2_deframer_| and |hq_deframer_| when
-  // FLAGS_quic_reloadable_flag_quic_enable_h2_deframer is deprecated.
-  const bool use_h2_deframer_;
   spdy::SpdyFramer spdy_framer_;
   http2::Http2DecoderAdapter h2_deframer_;
-  QuicHttpDecoderAdapter hq_deframer_;
   std::unique_ptr<SpdyFramerVisitor> spdy_framer_visitor_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSpdySession);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_SPDY_SESSION_H_

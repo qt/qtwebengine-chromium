@@ -34,13 +34,19 @@
 #include <memory>
 #include "base/optional.h"
 #include "base/time/time.h"
-#include "services/network/public/mojom/cors.mojom-shared.h"
-#include "services/network/public/mojom/fetch_api.mojom-shared.h"
-#include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
+#include "base/unguessable_token.h"
 #include "third_party/blink/public/platform/web_common.h"
-#include "third_party/blink/public/platform/web_http_body.h"
 #include "third_party/blink/public/platform/web_referrer_policy.h"
-#include "third_party/blink/public/platform/web_security_origin.h"
+
+namespace network {
+namespace mojom {
+enum class CORSPreflightPolicy : int32_t;
+enum class FetchCredentialsMode : int32_t;
+enum class FetchRedirectMode : int32_t;
+enum class FetchRequestMode : int32_t;
+enum class RequestContextFrameType : int32_t;
+}  // namespace mojom
+}  // namespace network
 
 namespace blink {
 
@@ -110,15 +116,6 @@ class WebURLRequest {
     kRequestContextXSLT
   };
 
-  // Used to report performance metrics timed from the UI action that
-  // triggered them (as opposed to navigation start time used in the
-  // Navigation Timing API).
-  enum InputToLoadPerfMetricReportPolicy : uint8_t {
-    kNoReport,      // Don't report metrics for this WebURLRequest.
-    kReportLink,    // Report metrics with UI action link clicked.
-    kReportIntent,  // Report metrics with UI action displayed intent.
-  };
-
   typedef int PreviewsState;
 
   // The Previews types which determines whether to request a Preview version of
@@ -141,7 +138,10 @@ class WebURLRequest {
                             // the resource. Server transformations may
                             // still happen if the page is heavy.
     kNoScriptOn = 1 << 6,   // Request that script be disabled for page load.
-    kPreviewsStateLast = kPreviewsOff
+    kResourceLoadingHintsOn = 1 << 7,  // Request that resource loading hints be
+                                       // used during pageload.
+    kOfflinePageOn = 1 << 8,
+    kPreviewsStateLast = kOfflinePageOn
   };
 
   class ExtraData {
@@ -177,7 +177,7 @@ class WebURLRequest {
   BLINK_PLATFORM_EXPORT mojom::FetchCacheMode GetCacheMode() const;
   BLINK_PLATFORM_EXPORT void SetCacheMode(mojom::FetchCacheMode);
 
-  BLINK_PLATFORM_EXPORT double TimeoutInterval() const;
+  BLINK_PLATFORM_EXPORT base::TimeDelta TimeoutInterval() const;
 
   BLINK_PLATFORM_EXPORT WebString HttpMethod() const;
   BLINK_PLATFORM_EXPORT void SetHTTPMethod(const WebString&);
@@ -243,11 +243,6 @@ class WebURLRequest {
   // Allows the request to be matched up with its app cache host.
   BLINK_PLATFORM_EXPORT int AppCacheHostID() const;
   BLINK_PLATFORM_EXPORT void SetAppCacheHostID(int);
-
-  // If true, the response body will be downloaded to a file managed by the
-  // WebURLLoader. See WebURLResponse::DownloadFilePath.
-  BLINK_PLATFORM_EXPORT bool DownloadToFile() const;
-  BLINK_PLATFORM_EXPORT void SetDownloadToFile(bool);
 
   // If true, the client expects to receive the raw response pipe. Similar to
   // UseStreamOnResponse but the stream will be a mojo DataPipe rather than a
@@ -322,16 +317,6 @@ class WebURLRequest {
   BLINK_PLATFORM_EXPORT bool WasDiscarded() const;
   BLINK_PLATFORM_EXPORT void SetWasDiscarded(bool);
 
-  // This is used to report navigation metrics starting from the UI action
-  // that triggered the navigation (which can be different from the navigation
-  // start time used in the Navigation Timing API).
-  BLINK_PLATFORM_EXPORT double UiStartTime() const;
-  BLINK_PLATFORM_EXPORT void SetUiStartTime(double);
-  BLINK_PLATFORM_EXPORT WebURLRequest::InputToLoadPerfMetricReportPolicy
-  InputPerfMetricReportPolicy() const;
-  BLINK_PLATFORM_EXPORT void SetInputPerfMetricReportPolicy(
-      WebURLRequest::InputToLoadPerfMetricReportPolicy);
-
   // https://wicg.github.io/cors-rfc1918/#external-request
   BLINK_PLATFORM_EXPORT bool IsExternalRequest() const;
 
@@ -339,12 +324,6 @@ class WebURLRequest {
   GetCORSPreflightPolicy() const;
 
   BLINK_PLATFORM_EXPORT void SetNavigationStartTime(base::TimeTicks);
-
-  // PlzNavigate: specify that the request was intended to be loaded as a same
-  // document navigation. No network requests should be made and the request
-  // should be dropped if a different document was loaded in the frame
-  // in-between.
-  BLINK_PLATFORM_EXPORT void SetIsSameDocumentNavigation(bool);
 
   // If this request was created from an anchor with a download attribute, this
   // is the value provided there.
@@ -358,6 +337,24 @@ class WebURLRequest {
   // checks.
   BLINK_PLATFORM_EXPORT const WebContentSecurityPolicyList& GetNavigationCSP()
       const;
+
+  // Should be set to true if this request (including redirects) should be
+  // upgraded to HTTPS due to an Upgrade-Insecure-Requests requirement.
+  BLINK_PLATFORM_EXPORT void SetUpgradeIfInsecure(bool);
+
+  // Returns true if request (including redirects) should be upgraded to HTTPS
+  // due to an Upgrade-Insecure-Requests requirement.
+  BLINK_PLATFORM_EXPORT bool UpgradeIfInsecure() const;
+
+  BLINK_PLATFORM_EXPORT bool SupportsAsyncRevalidation() const;
+
+  // Returns the DevTools ID to throttle the network request.
+  BLINK_PLATFORM_EXPORT const base::Optional<base::UnguessableToken>&
+  GetDevToolsToken() const;
+
+  // Set the applicable Origin Policy.
+  BLINK_PLATFORM_EXPORT const WebString GetOriginPolicy() const;
+  BLINK_PLATFORM_EXPORT void SetOriginPolicy(const WebString& policy);
 
 #if INSIDE_BLINK
   BLINK_PLATFORM_EXPORT ResourceRequest& ToMutableResourceRequest();

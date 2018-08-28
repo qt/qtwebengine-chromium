@@ -11,9 +11,10 @@
 #include "net/third_party/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
+#include "net/third_party/quic/platform/api/quic_interval.h"
 #include "net/third_party/quic/platform/api/quic_logging.h"
 
-namespace net {
+namespace quic {
 
 namespace {
 
@@ -154,13 +155,9 @@ bool QuicStreamSendBuffer::OnStreamDataAcked(
   if (data_length == 0) {
     return true;
   }
-  bool is_disjoint = false;
-  if (GetQuicReloadableFlag(quic_fast_is_disjoint)) {
-    is_disjoint =
-        bytes_acked_.Empty() || offset >= bytes_acked_.rbegin()->max();
-  }
-  if (is_disjoint || bytes_acked_.IsDisjoint(Interval<QuicStreamOffset>(
-                         offset, offset + data_length))) {
+  if (bytes_acked_.Empty() || offset >= bytes_acked_.rbegin()->max() ||
+      bytes_acked_.IsDisjoint(
+          QuicInterval<QuicStreamOffset>(offset, offset + data_length))) {
     // Optimization for the typical case, when all data is newly acked.
     if (stream_bytes_outstanding_ < data_length) {
       return false;
@@ -245,22 +242,15 @@ bool QuicStreamSendBuffer::FreeMemSlices(QuicStreamOffset start,
   auto it = buffered_slices_.begin();
   // Find it, such that buffered_slices_[it - 1].end < start <=
   // buffered_slices_[it].end.
-  bool found = false;
-  if (GetQuicReloadableFlag(quic_fast_free_mem_slice)) {
-    if (it == buffered_slices_.end() || it->slice.empty()) {
-      QUIC_BUG << "Trying to ack stream data [" << start << ", " << end << "), "
-               << (it == buffered_slices_.end()
-                       ? "and there is no outstanding data."
-                       : "and the first slice is empty.");
-      return false;
-    }
-    // Fast path that the earliest outstanding data gets acked.
-    found = start >= it->offset && start < it->offset + it->slice.length();
-    if (found) {
-      QUIC_FLAG_COUNT(quic_reloadable_flag_quic_fast_free_mem_slice);
-    }
+  if (it == buffered_slices_.end() || it->slice.empty()) {
+    QUIC_BUG << "Trying to ack stream data [" << start << ", " << end << "), "
+             << (it == buffered_slices_.end()
+                     ? "and there is no outstanding data."
+                     : "and the first slice is empty.");
+    return false;
   }
-  if (!found) {
+  if (start >= it->offset + it->slice.length() || start < it->offset) {
+    // Slow path that not the earliest outstanding data gets acked.
     it = std::lower_bound(buffered_slices_.begin(), buffered_slices_.end(),
                           start, CompareOffset());
   }
@@ -311,4 +301,4 @@ size_t QuicStreamSendBuffer::size() const {
   return buffered_slices_.size();
 }
 
-}  // namespace net
+}  // namespace quic

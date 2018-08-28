@@ -26,11 +26,11 @@
 #include "third_party/blink/renderer/modules/webaudio/media_stream_audio_source_node.h"
 
 #include <memory>
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_output.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
 #include "third_party/blink/renderer/modules/webaudio/media_stream_audio_source_options.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/locker.h"
 
 namespace blink {
@@ -144,7 +144,7 @@ MediaStreamAudioSourceNode* MediaStreamAudioSourceNode::Create(
 
   MediaStreamTrackVector audio_tracks = media_stream.getAudioTracks();
   if (audio_tracks.IsEmpty()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "MediaStream has no audio track");
     return nullptr;
   }
@@ -165,6 +165,12 @@ MediaStreamAudioSourceNode* MediaStreamAudioSourceNode::Create(
   node->SetFormat(2, context.sampleRate());
   // context keeps reference until node is disconnected
   context.NotifySourceNodeStartedProcessing(node);
+
+  if (!context.HasRealtimeConstraint()) {
+    Deprecation::CountDeprecation(
+        node->GetExecutionContext(),
+        WebFeature::kMediaStreamSourceOnOfflineContext);
+  }
 
   return node;
 }

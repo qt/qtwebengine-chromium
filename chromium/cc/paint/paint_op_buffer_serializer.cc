@@ -25,7 +25,7 @@ class ScopedFlagsOverride {
   PaintOp::SerializeOptions* options_;
 };
 
-// Copied from LayerTreeResourceProvider.
+// Copied from viz::ClientResourceProvider.
 SkSurfaceProps ComputeSurfaceProps(bool can_use_lcd_text) {
   uint32_t flags = 0;
   // Use unknown pixel geometry to disable LCD text.
@@ -44,6 +44,18 @@ PlaybackParams MakeParams(const SkCanvas* canvas) {
   return PlaybackParams(nullptr, canvas->getTotalMatrix());
 }
 
+SkTextBlobCacheDiffCanvas::Settings MakeCanvasSettings(
+    bool context_supports_distance_field_text,
+    int max_texture_size,
+    size_t max_texture_bytes) {
+  SkTextBlobCacheDiffCanvas::Settings settings;
+  settings.fContextSupportsDistanceFieldText =
+      context_supports_distance_field_text;
+  settings.fMaxTextureSize = max_texture_size;
+  settings.fMaxTextureBytes = max_texture_bytes;
+  return settings;
+}
+
 // Use half of the max int as the extent for the SkNoDrawCanvas. The correct
 // clip is applied to the canvas during serialization.
 const int kMaxExtent = std::numeric_limits<int>::max() >> 1;
@@ -56,18 +68,26 @@ PaintOpBufferSerializer::PaintOpBufferSerializer(
     TransferCacheSerializeHelper* transfer_cache,
     SkStrikeServer* strike_server,
     SkColorSpace* color_space,
-    bool can_use_lcd_text)
+    bool can_use_lcd_text,
+    bool context_supports_distance_field_text,
+    int max_texture_size,
+    size_t max_texture_bytes)
     : serialize_cb_(std::move(serialize_cb)),
       image_provider_(image_provider),
       transfer_cache_(transfer_cache),
       strike_server_(strike_server),
       color_space_(color_space),
       can_use_lcd_text_(can_use_lcd_text),
+      context_supports_distance_field_text_(
+          context_supports_distance_field_text),
       text_blob_canvas_(kMaxExtent,
                         kMaxExtent,
                         SkMatrix::I(),
                         ComputeSurfaceProps(can_use_lcd_text),
-                        strike_server) {
+                        strike_server,
+                        MakeCanvasSettings(context_supports_distance_field_text,
+                                           max_texture_size,
+                                           max_texture_bytes)) {
   DCHECK(serialize_cb_);
   canvas_ = SkCreateColorSpaceXformCanvas(&text_blob_canvas_,
                                           sk_ref_sp<SkColorSpace>(color_space));
@@ -86,9 +106,7 @@ void PaintOpBufferSerializer::Serialize(const PaintOpBuffer* buffer,
   // matrix, as they are only used for serializing the preamble and the initial
   // save / final restore. SerializeBuffer will create its own SerializeOptions
   // and PlaybackParams based on the post-preamble canvas.
-  PaintOp::SerializeOptions options(
-      image_provider_, transfer_cache_, canvas_.get(), strike_server_,
-      color_space_, can_use_lcd_text_, canvas_->getTotalMatrix());
+  PaintOp::SerializeOptions options = MakeSerializeOptions();
   PlaybackParams params = MakeParams(canvas_.get());
 
   Save(options, params);
@@ -110,9 +128,7 @@ void PaintOpBufferSerializer::Serialize(
     const SkMatrix& post_matrix_for_analysis) {
   DCHECK(canvas_->getTotalMatrix().isIdentity());
 
-  PaintOp::SerializeOptions options(
-      image_provider_, transfer_cache_, canvas_.get(), strike_server_,
-      color_space_, can_use_lcd_text_, canvas_->getTotalMatrix());
+  PaintOp::SerializeOptions options = MakeSerializeOptions();
   PlaybackParams params = MakeParams(canvas_.get());
 
   // TODO(khushalsagar): remove this clip rect if it's not needed.
@@ -131,6 +147,72 @@ void PaintOpBufferSerializer::Serialize(
   SerializeBuffer(buffer, nullptr);
 }
 
+// This function needs to have the exact same behavior as
+// RasterSource::ClearForOpaqueRaster.
+void PaintOpBufferSerializer::ClearForOpaqueRaster(
+    const Preamble& preamble,
+    const PaintOp::SerializeOptions& options,
+    const PlaybackParams& params) {
+  // Clear opaque raster sources.  Opaque rasters sources guarantee that all
+  // pixels inside the opaque region are painted.  However, due to scaling
+  // it's possible that the last row and column might include pixels that
+  // are not painted.  Because this raster source is required to be opaque,
+  // we may need to do extra clearing outside of the clip.  This needs to
+  // be done for both full and partial raster.
+
+  // The last texel of this content is not guaranteed to be fully opaque, so
+  // inset by one to generate the fully opaque coverage rect.  This rect is
+  // in device space.
+  SkIRect coverage_device_rect = SkIRect::MakeWH(
+      preamble.content_size.width() - preamble.full_raster_rect.x() - 1,
+      preamble.content_size.height() - preamble.full_raster_rect.y() - 1);
+
+  // If not fully covered, we need to clear one texel inside the coverage
+  // rect (because of blending during raster) and one texel outside the canvas
+  // bitmap rect (because of bilinear filtering during draw).  See comments
+  // in RasterSource.
+  SkIRect device_column = SkIRect::MakeXYWH(coverage_device_rect.right(), 0, 2,
+                                            coverage_device_rect.bottom());
+  // row includes the corner, column excludes it.
+  SkIRect device_row = SkIRect::MakeXYWH(0, coverage_device_rect.bottom(),
+                                         coverage_device_rect.right() + 2, 2);
+
+  bool right_edge =
+      preamble.content_size.width() == preamble.playback_rect.right();
+  bool bottom_edge =
+      preamble.content_size.height() == preamble.playback_rect.bottom();
+
+  // If the playback rect is touching either edge of the content rect
+  // extend it by one pixel to include the extra texel outside the canvas
+  // bitmap rect that was added to device column and row above.
+  SkIRect playback_device_rect = SkIRect::MakeXYWH(
+      preamble.playback_rect.x() - preamble.full_raster_rect.x(),
+      preamble.playback_rect.y() - preamble.full_raster_rect.y(),
+      preamble.playback_rect.width() + (right_edge ? 1 : 0),
+      preamble.playback_rect.height() + (bottom_edge ? 1 : 0));
+
+  // Intersect the device column and row with the playback rect and only
+  // clear inside of that rect if needed.
+  if (device_column.intersect(playback_device_rect)) {
+    Save(options, params);
+    ClipRectOp clip_op(SkRect::MakeFromIRect(device_column),
+                       SkClipOp::kIntersect, false);
+    SerializeOp(&clip_op, options, params);
+    DrawColorOp clear_op(preamble.background_color, SkBlendMode::kSrc);
+    SerializeOp(&clear_op, options, params);
+    RestoreToCount(1, options, params);
+  }
+  if (device_row.intersect(playback_device_rect)) {
+    Save(options, params);
+    ClipRectOp clip_op(SkRect::MakeFromIRect(device_row), SkClipOp::kIntersect,
+                       false);
+    SerializeOp(&clip_op, options, params);
+    DrawColorOp clear_op(preamble.background_color, SkBlendMode::kSrc);
+    SerializeOp(&clear_op, options, params);
+    RestoreToCount(1, options, params);
+  }
+}
+
 void PaintOpBufferSerializer::SerializePreamble(
     const Preamble& preamble,
     const PaintOp::SerializeOptions& options,
@@ -139,58 +221,17 @@ void PaintOpBufferSerializer::SerializePreamble(
       << "full: " << preamble.full_raster_rect.ToString()
       << ", playback: " << preamble.playback_rect.ToString();
 
-  // Should full clears be clipped?
   bool is_partial_raster = preamble.full_raster_rect != preamble.playback_rect;
-
-  // If rastering the entire tile, clear pre-clip.  This is so that any
-  // external texels outside of the playback rect also get cleared.  There's
-  // not enough information at this point to know if this texture is being
-  // reused from another tile, so the external texels could have been
-  // cleared to some wrong value.
-  if (preamble.requires_clear && !is_partial_raster) {
-    // If the tile is transparent, then just clear the whole thing.
+  if (!preamble.requires_clear) {
+    ClearForOpaqueRaster(preamble, options, params);
+  } else if (!is_partial_raster) {
+    // If rastering the entire tile, clear to transparent pre-clip.  This is so
+    // that any external texels outside of the playback rect also get cleared.
+    // There's not enough information at this point to know if this texture is
+    // being reused from another tile, so the external texels could have been
+    // cleared to some wrong value.
     DrawColorOp clear(SK_ColorTRANSPARENT, SkBlendMode::kSrc);
     SerializeOp(&clear, options, params);
-  } else if (!is_partial_raster) {
-    // The last texel of this content is not guaranteed to be fully opaque, so
-    // inset by one to generate the fully opaque coverage rect .  This rect is
-    // in device space.
-    SkIRect coverage_device_rect = SkIRect::MakeWH(
-        preamble.content_size.width() - preamble.full_raster_rect.x() - 1,
-        preamble.content_size.height() - preamble.full_raster_rect.y() - 1);
-
-    SkIRect playback_device_rect = gfx::RectToSkIRect(preamble.playback_rect);
-    playback_device_rect.fLeft -= preamble.full_raster_rect.x();
-    playback_device_rect.fTop -= preamble.full_raster_rect.y();
-
-    // If not fully covered, we need to clear one texel inside the coverage rect
-    // (because of blending during raster) and one texel outside the full raster
-    // rect (because of bilinear filtering during draw).  See comments in
-    // RasterSource.
-    SkIRect device_column = SkIRect::MakeXYWH(coverage_device_rect.right(), 0,
-                                              2, coverage_device_rect.bottom());
-    // row includes the corner, column excludes it.
-    SkIRect device_row = SkIRect::MakeXYWH(0, coverage_device_rect.bottom(),
-                                           coverage_device_rect.right() + 2, 2);
-    // Only bother clearing if we need to.
-    if (SkIRect::Intersects(device_column, playback_device_rect)) {
-      Save(options, params);
-      ClipRectOp clip_op(SkRect::MakeFromIRect(device_column),
-                         SkClipOp::kIntersect, false);
-      SerializeOp(&clip_op, options, params);
-      DrawColorOp clear_op(preamble.background_color, SkBlendMode::kSrc);
-      SerializeOp(&clear_op, options, params);
-      RestoreToCount(1, options, params);
-    }
-    if (SkIRect::Intersects(device_row, playback_device_rect)) {
-      Save(options, params);
-      ClipRectOp clip_op(SkRect::MakeFromIRect(device_row),
-                         SkClipOp::kIntersect, false);
-      SerializeOp(&clip_op, options, params);
-      DrawColorOp clear_op(preamble.background_color, SkBlendMode::kSrc);
-      SerializeOp(&clear_op, options, params);
-      RestoreToCount(1, options, params);
-    }
   }
 
   if (!preamble.full_raster_rect.OffsetFromOrigin().IsZero()) {
@@ -230,9 +271,7 @@ void PaintOpBufferSerializer::SerializeBuffer(
     const PaintOpBuffer* buffer,
     const std::vector<size_t>* offsets) {
   DCHECK(buffer);
-  PaintOp::SerializeOptions options(
-      image_provider_, transfer_cache_, canvas_.get(), strike_server_,
-      color_space_, can_use_lcd_text_, canvas_->getTotalMatrix());
+  PaintOp::SerializeOptions options = MakeSerializeOptions();
   PlaybackParams params = MakeParams(canvas_.get());
 
   for (PaintOpBuffer::PlaybackFoldingIterator iter(buffer, offsets); iter;
@@ -301,6 +340,16 @@ bool PaintOpBufferSerializer::SerializeOp(
   DCHECK_GE(bytes, 4u);
   DCHECK_EQ(bytes % PaintOpBuffer::PaintOpAlign, 0u);
 
+  // Only 2 types of ops need to played on the analysis canvas.
+  // 1) Non-draw ops which affect the transform/clip state on the canvas, since
+  //    we need the correct ctm at which text and images will be rasterized, and
+  //    the clip rect so we can skip sending data for ops which will not be
+  //    rasterized.
+  // 2) DrawTextBlob ops since they need to be analyzed by the cache diff canvas
+  //    to serialize/lock the requisite glyphs for this op.
+  if (op->IsDrawOp() && op->GetType() != PaintOpType::DrawTextBlob)
+    return true;
+
   if (op->IsPaintOpWithFlags() && options.flags_to_serialize) {
     static_cast<const PaintOpWithFlags*>(op)->RasterWithFlags(
         canvas_.get(), options.flags_to_serialize, params);
@@ -327,6 +376,13 @@ void PaintOpBufferSerializer::RestoreToCount(
   }
 }
 
+PaintOp::SerializeOptions PaintOpBufferSerializer::MakeSerializeOptions() {
+  return PaintOp::SerializeOptions(
+      image_provider_, transfer_cache_, canvas_.get(), strike_server_,
+      color_space_, can_use_lcd_text_, context_supports_distance_field_text_,
+      max_texture_size_, max_texture_bytes_, canvas_->getTotalMatrix());
+}
+
 SimpleBufferSerializer::SimpleBufferSerializer(
     void* memory,
     size_t size,
@@ -334,7 +390,10 @@ SimpleBufferSerializer::SimpleBufferSerializer(
     TransferCacheSerializeHelper* transfer_cache,
     SkStrikeServer* strike_server,
     SkColorSpace* color_space,
-    bool can_use_lcd_text)
+    bool can_use_lcd_text,
+    bool context_supports_distance_field_text,
+    int max_texture_size,
+    size_t max_texture_bytes)
     : PaintOpBufferSerializer(
           base::Bind(&SimpleBufferSerializer::SerializeToMemory,
                      base::Unretained(this)),
@@ -342,7 +401,10 @@ SimpleBufferSerializer::SimpleBufferSerializer(
           transfer_cache,
           strike_server,
           color_space,
-          can_use_lcd_text),
+          can_use_lcd_text,
+          context_supports_distance_field_text,
+          max_texture_size,
+          max_texture_bytes),
       memory_(memory),
       total_(size) {}
 

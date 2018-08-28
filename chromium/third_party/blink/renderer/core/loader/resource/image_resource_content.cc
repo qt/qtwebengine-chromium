@@ -240,19 +240,6 @@ blink::Image* ImageResourceContent::GetImage() const {
   return image_.get();
 }
 
-std::pair<blink::Image*, float> ImageResourceContent::BrokenCanvas(
-    float device_scale_factor) {
-  if (device_scale_factor >= 2) {
-    DEFINE_STATIC_REF(blink::Image, broken_canvas_hi_res,
-                      (blink::Image::LoadPlatformResource("brokenCanvas@2x")));
-    return std::make_pair(broken_canvas_hi_res, 2);
-  }
-
-  DEFINE_STATIC_REF(blink::Image, broken_canvas_lo_res,
-                    (blink::Image::LoadPlatformResource("brokenCanvas")));
-  return std::make_pair(broken_canvas_lo_res, 1);
-}
-
 IntSize ImageResourceContent::IntrinsicSize(
     RespectImageOrientationEnum should_respect_image_orientation) {
   if (!image_)
@@ -358,25 +345,6 @@ void ImageResourceContent::UpdateToLoadedContentStatus(
       break;
   }
 
-  // Checks ImageResourceContent's previous status.
-  switch (GetContentStatus()) {
-    case ResourceStatus::kPending:
-      // A non-multipart image or the first part of a multipart image.
-      break;
-
-    case ResourceStatus::kCached:
-    case ResourceStatus::kLoadError:
-    case ResourceStatus::kDecodeError:
-      // Second (or later) part of a multipart image.
-      // TODO(hiroshige): Assert that this is actually a multipart image.
-      break;
-
-    case ResourceStatus::kNotStarted:
-      // Should have updated to kPending via NotifyStartLoad().
-      CHECK(false);
-      break;
-  }
-
   // Updates the status.
   content_status_ = new_status;
 }
@@ -423,8 +391,6 @@ ImageResourceContent::UpdateImageResult ImageResourceContent::UpdateImage(
   DCHECK(!is_update_image_being_called_);
   base::AutoReset<bool> scope(&is_update_image_being_called_, true);
 #endif
-
-  CHECK_NE(GetContentStatus(), ResourceStatus::kNotStarted);
 
   // Clears the existing image, if instructed by |updateImageOption|.
   switch (update_image_option) {

@@ -18,14 +18,15 @@
 #include "libANGLE/renderer/d3d/RendererD3D.h"
 #include "libANGLE/renderer/d3d/d3d11/InputLayoutCache.h"
 #include "libANGLE/renderer/d3d/d3d11/Query11.h"
-#include "libANGLE/renderer/d3d/d3d11/RenderStateCache.h"
 #include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 
 namespace rx
 {
 class Buffer11;
+class Framebuffer11;
 struct RenderTargetDesc;
 struct Renderer11DeviceCaps;
+class VertexArray11;
 
 class ShaderConstants11 : angle::NonCopyable
 {
@@ -123,6 +124,8 @@ class ShaderConstants11 : angle::NonCopyable
     static_assert(sizeof(SamplerMetadata) == 16u,
                   "Sampler metadata struct must be one 4-vec / 16 bytes.");
 
+    static size_t GetShaderConstantsStructSize(gl::ShaderType shaderType);
+
     // Return true if dirty.
     bool updateSamplerMetadata(SamplerMetadata *data, const gl::Texture &texture);
 
@@ -131,12 +134,8 @@ class ShaderConstants11 : angle::NonCopyable
     Compute mCompute;
     gl::ShaderBitSet mShaderConstantsDirty;
 
-    std::vector<SamplerMetadata> mSamplerMetadataVS;
-    int mNumActiveVSSamplers;
-    std::vector<SamplerMetadata> mSamplerMetadataPS;
-    int mNumActivePSSamplers;
-    std::vector<SamplerMetadata> mSamplerMetadataCS;
-    int mNumActiveCSSamplers;
+    gl::ShaderMap<std::vector<SamplerMetadata>> mShaderSamplerMetadata;
+    gl::ShaderMap<int> mNumActiveShaderSamplers;
 };
 
 class StateManager11 final : angle::NonCopyable
@@ -244,8 +243,10 @@ class StateManager11 final : angle::NonCopyable
     // Only used in testing.
     InputLayoutCache *getInputLayoutCache() { return &mInputLayoutCache; }
 
-    GLsizei getCurrentMinimumDrawCount() const { return mCurrentMinimumDrawCount; }
+    bool getCullEverything() const { return mCullEverything; }
     VertexDataManager *getVertexDataManager() { return &mVertexDataManager; }
+
+    ProgramD3D *getProgramD3D() const { return mProgramD3D; }
 
   private:
     template <typename SRVType>
@@ -261,11 +262,10 @@ class StateManager11 final : angle::NonCopyable
     bool unsetConflictingSRVs(gl::ShaderType shaderType,
                               uintptr_t resource,
                               const gl::ImageIndex *index);
-    void unsetConflictingAttachmentResources(const gl::FramebufferAttachment *attachment,
+    void unsetConflictingAttachmentResources(const gl::FramebufferAttachment &attachment,
                                              ID3D11Resource *resource);
 
     gl::Error syncBlendState(const gl::Context *context,
-                             const gl::Framebuffer *framebuffer,
                              const gl::BlendState &blendState,
                              const gl::ColorF &blendColor,
                              unsigned int sampleMask);
@@ -281,8 +281,8 @@ class StateManager11 final : angle::NonCopyable
 
     void checkPresentPath(const gl::Context *context);
 
-    gl::Error syncFramebuffer(const gl::Context *context, gl::Framebuffer *framebuffer);
-    gl::Error syncProgram(const gl::Context *context, GLenum drawMode);
+    gl::Error syncFramebuffer(const gl::Context *context);
+    gl::Error syncProgram(const gl::Context *context, gl::PrimitiveMode drawMode);
 
     gl::Error syncTextures(const gl::Context *context);
     gl::Error applyTextures(const gl::Context *context, gl::ShaderType shaderType);
@@ -308,16 +308,20 @@ class StateManager11 final : angle::NonCopyable
     gl::Error clearUAVs(gl::ShaderType shaderType, size_t rangeStart, size_t rangeEnd);
     void handleMultiviewDrawFramebufferChange(const gl::Context *context);
 
-    gl::Error syncCurrentValueAttribs(const gl::State &glState);
+    gl::Error syncCurrentValueAttribs(
+        const std::vector<gl::VertexAttribCurrentValueData> &currentValues);
 
     gl::Error generateSwizzle(const gl::Context *context, gl::Texture *texture);
     gl::Error generateSwizzlesForShader(const gl::Context *context, gl::ShaderType type);
     gl::Error generateSwizzles(const gl::Context *context);
 
-    gl::Error applyDriverUniforms(const ProgramD3D &programD3D);
-    gl::Error applyUniforms(ProgramD3D *programD3D);
+    gl::Error applyDriverUniforms();
+    gl::Error applyDriverUniformsForShader(gl::ShaderType shaderType);
+    gl::Error applyUniforms();
+    gl::Error applyUniformsForShader(gl::ShaderType shaderType);
 
-    gl::Error syncUniformBuffers(const gl::Context *context, ProgramD3D *programD3D);
+    gl::Error syncUniformBuffers(const gl::Context *context);
+    gl::Error syncUniformBuffersForShader(const gl::Context *context, gl::ShaderType shaderType);
     gl::Error syncTransformFeedbackBuffers(const gl::Context *context);
 
     // These are currently only called internally.
@@ -344,9 +348,7 @@ class StateManager11 final : angle::NonCopyable
                                  UINT offset);
     void applyVertexBufferChanges();
     bool setPrimitiveTopologyInternal(D3D11_PRIMITIVE_TOPOLOGY primitiveTopology);
-    void syncPrimitiveTopology(const gl::State &glState,
-                               ProgramD3D *programD3D,
-                               GLenum currentDrawMode);
+    void syncPrimitiveTopology(const gl::State &glState, gl::PrimitiveMode currentDrawMode);
 
     // Not handled by an internal dirty bit because it isn't synced on drawArrays calls.
     gl::Error applyIndexBuffer(const gl::Context *context,
@@ -460,9 +462,7 @@ class StateManager11 final : angle::NonCopyable
 
     using SRVCache = ViewCache<ID3D11ShaderResourceView, D3D11_SHADER_RESOURCE_VIEW_DESC>;
     using UAVCache = ViewCache<ID3D11UnorderedAccessView, D3D11_UNORDERED_ACCESS_VIEW_DESC>;
-    SRVCache mCurVertexSRVs;
-    SRVCache mCurPixelSRVs;
-    SRVCache mCurComputeSRVs;
+    gl::ShaderMap<SRVCache> mCurShaderSRVs;
     UAVCache mCurComputeUAVs;
     SRVCache *getSRVCache(gl::ShaderType shaderType);
 
@@ -486,24 +486,15 @@ class StateManager11 final : angle::NonCopyable
 
     // Currently applied primitive topology
     D3D11_PRIMITIVE_TOPOLOGY mCurrentPrimitiveTopology;
-    GLenum mLastAppliedDrawMode;
-    GLsizei mCurrentMinimumDrawCount;
+    gl::PrimitiveMode mLastAppliedDrawMode;
+    bool mCullEverything;
 
     // Currently applied shaders
-    ResourceSerial mAppliedVertexShader;
-    ResourceSerial mAppliedGeometryShader;
-    ResourceSerial mAppliedPixelShader;
-    ResourceSerial mAppliedComputeShader;
+    gl::ShaderMap<ResourceSerial> mAppliedShaders;
 
     // Currently applied sampler states
-    std::vector<bool> mForceSetVertexSamplerStates;
-    std::vector<gl::SamplerState> mCurVertexSamplerStates;
-
-    std::vector<bool> mForceSetPixelSamplerStates;
-    std::vector<gl::SamplerState> mCurPixelSamplerStates;
-
-    std::vector<bool> mForceSetComputeSamplerStates;
-    std::vector<gl::SamplerState> mCurComputeSamplerStates;
+    gl::ShaderMap<std::vector<bool>> mForceSetShaderSamplerStates;
+    gl::ShaderMap<std::vector<gl::SamplerState>> mCurShaderSamplerStates;
 
     // Special dirty bit for swizzles. Since they use internal shaders, must be done in a pre-pass.
     bool mDirtySwizzles;
@@ -525,9 +516,7 @@ class StateManager11 final : angle::NonCopyable
     bool mIsMultiviewEnabled;
 
     // Driver Constants.
-    d3d11::Buffer mDriverConstantBufferVS;
-    d3d11::Buffer mDriverConstantBufferPS;
-    d3d11::Buffer mDriverConstantBufferCS;
+    gl::ShaderMap<d3d11::Buffer> mShaderDriverConstantBuffers;
 
     ResourceSerial mCurrentComputeConstantBuffer;
     ResourceSerial mCurrentGeometryConstantBuffer;
@@ -562,12 +551,10 @@ class StateManager11 final : angle::NonCopyable
                                   angle::SubjectMessage message) override;
 
         void reset();
-        void bindVS(size_t index, Buffer11 *buffer);
-        void bindPS(size_t index, Buffer11 *buffer);
+        void bindToShader(gl::ShaderType shaderType, size_t index, Buffer11 *buffer);
 
       private:
-        std::vector<angle::ObserverBinding> mBindingsVS;
-        std::vector<angle::ObserverBinding> mBindingsPS;
+        gl::ShaderMap<std::vector<angle::ObserverBinding>> mShaderBindings;
     };
     ConstantBufferObserver mConstantBufferObserver;
 
@@ -575,6 +562,11 @@ class StateManager11 final : angle::NonCopyable
     Serial mAppliedTFSerial;
 
     Serial mEmptySerial;
+
+    // These objects are cached to avoid having to query the impls.
+    ProgramD3D *mProgramD3D;
+    VertexArray11 *mVertexArray11;
+    Framebuffer11 *mFramebuffer11;
 };
 
 }  // namespace rx

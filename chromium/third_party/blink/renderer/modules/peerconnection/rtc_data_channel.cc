@@ -30,28 +30,28 @@
 #include "base/memory/ptr_util.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/events/message_event.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/fileapi/blob.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer_view.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
 static void ThrowNotOpenException(ExceptionState& exception_state) {
-  exception_state.ThrowDOMException(kInvalidStateError,
+  exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                     "RTCDataChannel.readyState is not 'open'");
 }
 
 static void ThrowCouldNotSendDataException(ExceptionState& exception_state) {
-  exception_state.ThrowDOMException(kNetworkError, "Could not send data");
+  exception_state.ThrowDOMException(DOMExceptionCode::kNetworkError,
+                                    "Could not send data");
 }
 
 static void ThrowNoBlobSupportException(ExceptionState& exception_state) {
-  exception_state.ThrowDOMException(kNotSupportedError,
+  exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                     "Blob support not implemented yet");
 }
 
@@ -74,7 +74,7 @@ RTCDataChannel* RTCDataChannel::Create(
   std::unique_ptr<WebRTCDataChannelHandler> handler =
       base::WrapUnique(peer_connection_handler->CreateDataChannel(label, init));
   if (!handler) {
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "RTCDataChannel is not supported");
     return nullptr;
   }
@@ -193,7 +193,7 @@ void RTCDataChannel::setBinaryType(const String& binary_type,
   else if (binary_type == "arraybuffer")
     binary_type_ = kBinaryTypeArrayBuffer;
   else
-    exception_state.ThrowDOMException(kTypeMismatchError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kTypeMismatchError,
                                       "Unknown binary type : " + binary_type);
 }
 

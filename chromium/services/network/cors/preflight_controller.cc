@@ -5,10 +5,12 @@
 #include "services/network/cors/preflight_controller.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
 #include "services/network/public/cpp/cors/cors.h"
 #include "services/network/public/cpp/cors/cors_error_status.h"
@@ -61,7 +63,8 @@ std::string CreateAccessControlRequestHeadersHeader(
 }
 
 std::unique_ptr<ResourceRequest> CreatePreflightRequest(
-    const ResourceRequest& request) {
+    const ResourceRequest& request,
+    bool tainted) {
   DCHECK(!request.url.has_username());
   DCHECK(!request.url.has_password());
 
@@ -80,6 +83,9 @@ std::unique_ptr<ResourceRequest> CreatePreflightRequest(
 
   preflight_request->fetch_credentials_mode =
       mojom::FetchCredentialsMode::kOmit;
+  preflight_request->load_flags |= net::LOAD_DO_NOT_SAVE_COOKIES;
+  preflight_request->load_flags |= net::LOAD_DO_NOT_SEND_COOKIES;
+  preflight_request->load_flags |= net::LOAD_DO_NOT_SEND_AUTH_DATA;
 
   preflight_request->headers.SetHeader(
       cors::header_names::kAccessControlRequestMethod, request.method);
@@ -98,8 +104,9 @@ std::unique_ptr<ResourceRequest> CreatePreflightRequest(
 
   DCHECK(request.request_initiator);
   preflight_request->request_initiator = request.request_initiator;
-  preflight_request->headers.SetHeader(net::HttpRequestHeaders::kOrigin,
-                                       request.request_initiator->Serialize());
+  preflight_request->headers.SetHeader(
+      net::HttpRequestHeaders::kOrigin,
+      (tainted ? url::Origin() : *request.request_initiator).Serialize());
 
   // TODO(toyoshim): Remove the following line once the network service is
   // enabled by default.
@@ -116,38 +123,47 @@ std::unique_ptr<PreflightResult> CreatePreflightResult(
     const GURL& final_url,
     const ResourceResponseHead& head,
     const ResourceRequest& original_request,
-    base::Optional<mojom::CORSError>* detected_error) {
-  DCHECK(detected_error);
+    bool tainted,
+    base::Optional<CORSErrorStatus>* detected_error_status) {
+  DCHECK(detected_error_status);
 
   // TODO(toyoshim): Reflect --allow-file-access-from-files flag.
-  *detected_error = CheckPreflightAccess(
+  *detected_error_status = CheckPreflightAccess(
       final_url, head.headers->response_code(),
       GetHeaderString(head.headers,
                       cors::header_names::kAccessControlAllowOrigin),
       GetHeaderString(head.headers,
                       cors::header_names::kAccessControlAllowCredentials),
       original_request.fetch_credentials_mode,
-      *original_request.request_initiator, false /* allow_file_origin */);
-  if (*detected_error)
+      tainted ? url::Origin() : *original_request.request_initiator,
+      false /* allow_file_origin */);
+  if (*detected_error_status)
     return nullptr;
 
-  *detected_error = CheckPreflight(head.headers->response_code());
-  if (*detected_error)
+  base::Optional<mojom::CORSError> error;
+  error = CheckPreflight(head.headers->response_code());
+  if (error) {
+    *detected_error_status = CORSErrorStatus(*error);
     return nullptr;
+  }
 
   if (original_request.is_external_request) {
-    *detected_error = CheckExternalPreflight(GetHeaderString(
+    *detected_error_status = CheckExternalPreflight(GetHeaderString(
         head.headers, header_names::kAccessControlAllowExternal));
-    if (*detected_error)
+    if (*detected_error_status)
       return nullptr;
   }
 
-  return PreflightResult::Create(
+  auto result = PreflightResult::Create(
       original_request.fetch_credentials_mode,
       GetHeaderString(head.headers, header_names::kAccessControlAllowMethods),
       GetHeaderString(head.headers, header_names::kAccessControlAllowHeaders),
       GetHeaderString(head.headers, header_names::kAccessControlMaxAge),
-      detected_error);
+      &error);
+
+  if (error)
+    *detected_error_status = CORSErrorStatus(*error);
+  return result;
 }
 
 base::Optional<CORSErrorStatus> CheckPreflightResult(
@@ -225,13 +241,15 @@ class PreflightController::PreflightLoader final {
   PreflightLoader(PreflightController* controller,
                   CompletionCallback completion_callback,
                   const ResourceRequest& request,
+                  bool tainted,
                   const net::NetworkTrafficAnnotationTag& annotation_tag,
                   base::OnceCallback<void()> preflight_finalizer)
       : controller_(controller),
         completion_callback_(std::move(completion_callback)),
         original_request_(request),
+        tainted_(tainted),
         preflight_finalizer_(std::move(preflight_finalizer)) {
-    loader_ = SimpleURLLoader::Create(CreatePreflightRequest(request),
+    loader_ = SimpleURLLoader::Create(CreatePreflightRequest(request, tainted),
                                       annotation_tag);
   }
 
@@ -258,12 +276,14 @@ class PreflightController::PreflightLoader final {
 
  private:
   void HandleRedirect(const net::RedirectInfo& redirect_info,
-                      const network::ResourceResponseHead& response_head) {
+                      const network::ResourceResponseHead& response_head,
+                      std::vector<std::string>* to_be_removed_headers) {
     // Preflight should not allow any redirect.
     FinalizeLoader();
 
     std::move(completion_callback_)
-        .Run(CORSErrorStatus(mojom::CORSError::kPreflightDisallowedRedirect));
+        .Run(net::ERR_FAILED,
+             CORSErrorStatus(mojom::CORSError::kPreflightDisallowedRedirect));
 
     RemoveFromController();
     // |this| is deleted here.
@@ -273,19 +293,15 @@ class PreflightController::PreflightLoader final {
                             const ResourceResponseHead& head) {
     FinalizeLoader();
 
-    base::Optional<mojom::CORSError> detected_error;
-    std::unique_ptr<PreflightResult> result = CreatePreflightResult(
-        final_url, head, original_request_, &detected_error);
-
     base::Optional<CORSErrorStatus> detected_error_status;
+    std::unique_ptr<PreflightResult> result = CreatePreflightResult(
+        final_url, head, original_request_, tainted_, &detected_error_status);
+
     if (result) {
       // Preflight succeeded. Check |original_request_| with |result|.
-      DCHECK(!detected_error);
+      DCHECK(!detected_error_status);
       detected_error_status =
           CheckPreflightResult(result.get(), original_request_);
-    } else {
-      DCHECK(detected_error);
-      detected_error_status = CORSErrorStatus(*detected_error);
     }
 
     // TODO(toyoshim): Check the spec if we cache |result| regardless of
@@ -295,7 +311,9 @@ class PreflightController::PreflightLoader final {
                                  original_request_.url, std::move(result));
     }
 
-    std::move(completion_callback_).Run(detected_error_status);
+    std::move(completion_callback_)
+        .Run(detected_error_status ? net::ERR_FAILED : net::OK,
+             detected_error_status);
 
     RemoveFromController();
     // |this| is deleted here.
@@ -306,8 +324,12 @@ class PreflightController::PreflightLoader final {
     // unknown hosts, unreachable remote, reset by peer, and so on.
     // See https://crbug.com/826868 for related discussion.
     DCHECK(!response_body);
+    const int error = loader_->NetError();
+    DCHECK_NE(error, net::OK);
     FinalizeLoader();
+    std::move(completion_callback_).Run(error, base::nullopt);
     RemoveFromController();
+    // |this| is deleted here.
   }
 
   void FinalizeLoader() {
@@ -331,6 +353,8 @@ class PreflightController::PreflightLoader final {
   PreflightController::CompletionCallback completion_callback_;
   const ResourceRequest original_request_;
 
+  const bool tainted_;
+
   // This is needed because we sometimes need to cancel the preflight loader
   // synchronously.
   // TODO(yhirano): Remove this when the network service is fully enabled.
@@ -342,8 +366,9 @@ class PreflightController::PreflightLoader final {
 // static
 std::unique_ptr<ResourceRequest>
 PreflightController::CreatePreflightRequestForTesting(
-    const ResourceRequest& request) {
-  return CreatePreflightRequest(request);
+    const ResourceRequest& request,
+    bool tainted) {
+  return CreatePreflightRequest(request, tainted);
 }
 
 // static
@@ -360,6 +385,7 @@ void PreflightController::PerformPreflightCheck(
     CompletionCallback callback,
     int32_t request_id,
     const ResourceRequest& request,
+    bool tainted,
     const net::NetworkTrafficAnnotationTag& annotation_tag,
     mojom::URLLoaderFactory* loader_factory,
     base::OnceCallback<void()> preflight_finalizer) {
@@ -369,12 +395,12 @@ void PreflightController::PerformPreflightCheck(
       cache_.CheckIfRequestCanSkipPreflight(
           request.request_initiator->Serialize(), request.url,
           request.fetch_credentials_mode, request.method, request.headers)) {
-    std::move(callback).Run(base::nullopt);
+    std::move(callback).Run(net::OK, base::nullopt);
     return;
   }
 
   auto emplaced_pair = loaders_.emplace(std::make_unique<PreflightLoader>(
-      this, std::move(callback), request, annotation_tag,
+      this, std::move(callback), request, tainted, annotation_tag,
       std::move(preflight_finalizer)));
   (*emplaced_pair.first)->Request(loader_factory, request_id);
 }

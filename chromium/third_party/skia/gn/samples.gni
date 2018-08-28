@@ -50,6 +50,7 @@ samples_sources = [
   "$_samplecode/SampleFlutterAnimate.cpp",
   "$_samplecode/SampleFontScalerTest.cpp",
   "$_samplecode/SampleFuzz.cpp",
+  "$_samplecode/SampleGlyphTransform.cpp",
   "$_samplecode/SampleGradients.cpp",
   "$_samplecode/SampleHairCurves.cpp",
   "$_samplecode/SampleHairline.cpp",
@@ -59,10 +60,15 @@ samples_sources = [
   "$_samplecode/SampleLayerMask.cpp",
   "$_samplecode/SampleLayers.cpp",
   "$_samplecode/SampleLCD.cpp",
+  "$_samplecode/SampleLighting.cpp",
   "$_samplecode/SampleLines.cpp",
+  "$_samplecode/SampleLitAtlas.cpp",
   "$_samplecode/SampleManyRects.cpp",
   "$_samplecode/SampleMeasure.cpp",
   "$_samplecode/SampleMegaStroke.cpp",
+  "$_samplecode/SampleNima.cpp",
+  "$_samplecode/SampleNimaActor.cpp",
+  "$_samplecode/SampleNimaActor.h",
   "$_samplecode/SamplePatch.cpp",
   "$_samplecode/SamplePath.cpp",
   "$_samplecode/SamplePathText.cpp",
@@ -88,9 +94,7 @@ samples_sources = [
   "$_samplecode/SampleStrokePath.cpp",
   "$_samplecode/SampleStrokeRect.cpp",
   "$_samplecode/SampleSubpixelTranslate.cpp",
-  "$_samplecode/SampleSGInval.cpp",
   "$_samplecode/SampleSVGFile.cpp",
-  "$_samplecode/SampleSVGPong.cpp",
   "$_samplecode/SampleText.cpp",
   "$_samplecode/SampleTextAlpha.cpp",
   "$_samplecode/SampleTextBox.cpp",
@@ -104,3 +108,11 @@ samples_sources = [
   "$_samplecode/SampleXfermodesBlur.cpp",
   "$_samplecode/vertexdump.cpp",
 ]
+
+if (is_win && is_clang) {
+  samples_sources -= [
+    "$_samplecode/SampleNimaActor.cpp",
+    "$_samplecode/SampleNimaActor.h",
+    "$_samplecode/SampleNima.cpp",
+  ]
+}

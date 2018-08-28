@@ -19,8 +19,6 @@
 #include "modules/video_coding/utility/vp8_header_parser.h"
 #include "modules/video_coding/utility/vp9_uncompressed_header_parser.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/random.h"
-#include "rtc_base/timeutils.h"
 #include "sdk/android/generated_video_jni/jni/VideoEncoderWrapper_jni.h"
 #include "sdk/android/generated_video_jni/jni/VideoEncoder_jni.h"
 #include "sdk/android/native_api/jni/class_loader.h"
@@ -38,10 +36,6 @@ VideoEncoderWrapper::VideoEncoderWrapper(JNIEnv* jni,
 
   initialized_ = false;
   num_resets_ = 0;
-
-  Random random(rtc::TimeMicros());
-  picture_id_ = random.Rand<uint16_t>() & 0x7FFF;
-  tl0_pic_idx_ = random.Rand<uint8_t>();
 }
 VideoEncoderWrapper::~VideoEncoderWrapper() = default;
 
@@ -171,10 +165,10 @@ VideoEncoderWrapper::ScalingSettings VideoEncoderWrapper::GetScalingSettings()
   if (!isOn)
     return ScalingSettings::kOff;
 
-  rtc::Optional<int> low = JavaToNativeOptionalInt(
+  absl::optional<int> low = JavaToNativeOptionalInt(
       jni,
       Java_VideoEncoderWrapper_getScalingSettingsLow(jni, j_scaling_settings));
-  rtc::Optional<int> high = JavaToNativeOptionalInt(
+  absl::optional<int> high = JavaToNativeOptionalInt(
       jni,
       Java_VideoEncoderWrapper_getScalingSettingsHigh(jni, j_scaling_settings));
 
@@ -297,9 +291,10 @@ void VideoEncoderWrapper::OnEncodedFrame(JNIEnv* jni,
     }
   };
 
-  encoder_queue_->PostTask(Lambda{this, std::move(buffer_copy),
-          qp, encoded_width, encoded_height, capture_time_ns, frame_type,
-          rotation, complete_frame, &frame_extra_infos_, callback_});
+  encoder_queue_->PostTask(
+      Lambda{this, std::move(buffer_copy), qp, encoded_width, encoded_height,
+             capture_time_ns, frame_type, rotation, complete_frame,
+             &frame_extra_infos_, callback_});
 }
 
 int32_t VideoEncoderWrapper::HandleReturnCode(JNIEnv* jni,
@@ -392,23 +387,19 @@ CodecSpecificInfo VideoEncoderWrapper::ParseCodecSpecificInfo(
 
   switch (codec_settings_.codecType) {
     case kVideoCodecVP8:
-      info.codecSpecific.VP8.pictureId = picture_id_;
       info.codecSpecific.VP8.nonReference = false;
       info.codecSpecific.VP8.simulcastIdx = 0;
       info.codecSpecific.VP8.temporalIdx = kNoTemporalIdx;
       info.codecSpecific.VP8.layerSync = false;
-      info.codecSpecific.VP8.tl0PicIdx = kNoTl0PicIdx;
       info.codecSpecific.VP8.keyIdx = kNoKeyIdx;
       break;
     case kVideoCodecVP9:
       if (key_frame) {
         gof_idx_ = 0;
       }
-      info.codecSpecific.VP9.picture_id = picture_id_;
       info.codecSpecific.VP9.inter_pic_predicted = key_frame ? false : true;
       info.codecSpecific.VP9.flexible_mode = false;
       info.codecSpecific.VP9.ss_data_available = key_frame ? true : false;
-      info.codecSpecific.VP9.tl0_pic_idx = tl0_pic_idx_++;
       info.codecSpecific.VP9.temporal_idx = kNoTemporalIdx;
       info.codecSpecific.VP9.spatial_idx = kNoSpatialIdx;
       info.codecSpecific.VP9.temporal_up_switch = true;
@@ -429,8 +420,6 @@ CodecSpecificInfo VideoEncoderWrapper::ParseCodecSpecificInfo(
     default:
       break;
   }
-
-  picture_id_ = (picture_id_ + 1) & 0x7FFF;
 
   return info;
 }
@@ -462,6 +451,24 @@ ScopedJavaLocalRef<jobject> VideoEncoderWrapper::ToJavaBitrateAllocation(
 std::string VideoEncoderWrapper::GetImplementationName(JNIEnv* jni) const {
   return JavaToStdString(
       jni, Java_VideoEncoder_getImplementationName(jni, encoder_));
+}
+
+std::unique_ptr<VideoEncoder> JavaToNativeVideoEncoder(
+    JNIEnv* jni,
+    const JavaRef<jobject>& j_encoder) {
+  const jlong native_encoder =
+      Java_VideoEncoder_createNativeVideoEncoder(jni, j_encoder);
+  VideoEncoder* encoder;
+  if (native_encoder == 0) {
+    encoder = new VideoEncoderWrapper(jni, j_encoder);
+  } else {
+    encoder = reinterpret_cast<VideoEncoder*>(native_encoder);
+  }
+  return std::unique_ptr<VideoEncoder>(encoder);
+}
+
+bool IsHardwareVideoEncoder(JNIEnv* jni, const JavaRef<jobject>& j_encoder) {
+  return Java_VideoEncoder_isHardwareEncoder(jni, j_encoder);
 }
 
 }  // namespace jni

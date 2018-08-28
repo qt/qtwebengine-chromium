@@ -60,7 +60,7 @@ using testing::SaveArg;
 using testing::SetArgPointee;
 using testing::StrictMock;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -73,8 +73,6 @@ const char data2[] = "bar";
 const bool kHasStopWaiting = true;
 
 const int kDefaultRetransmissionTimeMs = 500;
-
-const QuicUint128 kTestStatelessResetToken = 1010101;  // 0x0F69B5
 
 const QuicSocketAddress kPeerAddress =
     QuicSocketAddress(QuicIpAddress::Loopback6(),
@@ -330,11 +328,11 @@ class TestPacketWriter : public QuicPacketWriter {
     }
     if (next_packet_too_large_) {
       next_packet_too_large_ = false;
-      return WriteResult(WRITE_STATUS_ERROR, ERR_MSG_TOO_BIG);
+      return WriteResult(WRITE_STATUS_ERROR, net::ERR_MSG_TOO_BIG);
     }
     if (always_get_packet_too_large_) {
       LOG(ERROR) << "RETURNING TOO BIG";
-      return WriteResult(WRITE_STATUS_ERROR, ERR_MSG_TOO_BIG);
+      return WriteResult(WRITE_STATUS_ERROR, net::ERR_MSG_TOO_BIG);
     }
     if (IsWriteBlocked()) {
       return WriteResult(WRITE_STATUS_BLOCKED, -1);
@@ -361,6 +359,8 @@ class TestPacketWriter : public QuicPacketWriter {
 
   bool IsWriteBlocked() const override { return write_blocked_; }
 
+  void SetWriteBlocked() { write_blocked_ = true; }
+
   void SetWritable() override { write_blocked_ = false; }
 
   void SetShouldWriteFail() { write_should_fail_ = true; }
@@ -369,6 +369,14 @@ class TestPacketWriter : public QuicPacketWriter {
       const QuicSocketAddress& /*peer_address*/) const override {
     return max_packet_size_;
   }
+
+  bool SupportsReleaseTime() const { return false; }
+
+  bool IsBatchMode() const override { return false; }
+
+  char* GetNextWriteLocation() const override { return nullptr; }
+
+  WriteResult Flush() override { return WriteResult(WRITE_STATUS_OK, 0); }
 
   void BlockOnNextWrite() { block_on_next_write_ = true; }
 
@@ -523,7 +531,7 @@ class TestConnection : public QuicConnection {
 
   void SendPacket(EncryptionLevel level,
                   QuicPacketNumber packet_number,
-                  QuicPacket* packet,
+                  std::unique_ptr<QuicPacket> packet,
                   HasRetransmittableData retransmittable,
                   bool has_ack,
                   bool has_pending_frames) {
@@ -531,7 +539,6 @@ class TestConnection : public QuicConnection {
     size_t encrypted_length =
         QuicConnectionPeer::GetFramer(this)->EncryptPayload(
             ENCRYPTION_NONE, packet_number, *packet, buffer, kMaxPacketSize);
-    delete packet;
     SerializedPacket serialized_packet(
         packet_number, PACKET_4BYTE_PACKET_NUMBER, buffer, encrypted_length,
         has_ack, has_pending_frames);
@@ -633,11 +640,6 @@ class TestConnection : public QuicConnection {
   TestAlarmFactory::TestAlarm* GetPingAlarm() {
     return reinterpret_cast<TestAlarmFactory::TestAlarm*>(
         QuicConnectionPeer::GetPingAlarm(this));
-  }
-
-  TestAlarmFactory::TestAlarm* GetResumeWritesAlarm() {
-    return reinterpret_cast<TestAlarmFactory::TestAlarm*>(
-        QuicConnectionPeer::GetResumeWritesAlarm(this));
   }
 
   TestAlarmFactory::TestAlarm* GetRetransmissionAlarm() {
@@ -792,13 +794,12 @@ class QuicConnectionTest : public QuicTestWithParam<TestParams> {
         frame2_(1, false, 3, QuicStringPiece(data2)),
         packet_number_length_(PACKET_4BYTE_PACKET_NUMBER),
         connection_id_length_(PACKET_8BYTE_CONNECTION_ID),
-        notifier_(&connection_),
-        use_path_degrading_alarm_(
-            GetQuicReloadableFlag(quic_path_degrading_alarm2)) {
+        notifier_(&connection_) {
     SetQuicFlag(&FLAGS_quic_supports_tls_handshake, true);
-    SetQuicReloadableFlag(quic_respect_ietf_header, true);
     connection_.set_defer_send_in_response_to_packets(GetParam().ack_response ==
                                                       AckResponse::kDefer);
+    QuicFramerPeer::SetLastSerializedConnectionId(
+        QuicConnectionPeer::GetFramer(&connection_), connection_id_);
     if (version().transport_version > QUIC_VERSION_43) {
       EXPECT_TRUE(QuicConnectionPeer::GetNoStopWaitingFrames(&connection_));
     } else {
@@ -950,9 +951,13 @@ class QuicConnectionTest : public QuicTestWithParam<TestParams> {
                                    QuicFrame frame,
                                    EncryptionLevel level) {
     QuicPacketHeader header;
-    header.connection_id = connection_id_;
+    header.destination_connection_id = connection_id_;
     header.packet_number_length = packet_number_length_;
-    header.connection_id_length = connection_id_length_;
+    header.destination_connection_id_length = connection_id_length_;
+    if (peer_framer_.transport_version() > QUIC_VERSION_43 &&
+        peer_framer_.perspective() == Perspective::IS_SERVER) {
+      header.destination_connection_id_length = PACKET_0BYTE_CONNECTION_ID;
+    }
     header.packet_number = number;
     QuicFrames frames;
     frames.push_back(frame);
@@ -1070,20 +1075,25 @@ class QuicConnectionTest : public QuicTestWithParam<TestParams> {
     return IsAwaitingPacket(*outgoing_ack(), number, 0);
   }
 
-  QuicPacket* ConstructPacket(QuicPacketHeader header, QuicFrames frames) {
-    QuicPacket* packet = BuildUnsizedDataPacket(&peer_framer_, header, frames);
-    EXPECT_NE(nullptr, packet);
+  std::unique_ptr<QuicPacket> ConstructPacket(const QuicPacketHeader& header,
+                                              const QuicFrames& frames) {
+    auto packet = BuildUnsizedDataPacket(&peer_framer_, header, frames);
+    EXPECT_NE(nullptr, packet.get());
     return packet;
   }
 
-  QuicPacket* ConstructDataPacket(QuicPacketNumber number,
-                                  bool has_stop_waiting) {
+  std::unique_ptr<QuicPacket> ConstructDataPacket(QuicPacketNumber number,
+                                                  bool has_stop_waiting) {
     QuicPacketHeader header;
     // Set connection_id to peer's in memory representation as this data packet
     // is created by peer_framer.
-    header.connection_id = connection_id_;
+    header.destination_connection_id = connection_id_;
     header.packet_number_length = packet_number_length_;
-    header.connection_id_length = connection_id_length_;
+    header.destination_connection_id_length = connection_id_length_;
+    if (peer_framer_.transport_version() > QUIC_VERSION_43 &&
+        peer_framer_.perspective() == Perspective::IS_SERVER) {
+      header.destination_connection_id_length = PACKET_0BYTE_CONNECTION_ID;
+    }
     header.packet_number = number;
 
     QuicFrames frames;
@@ -1094,12 +1104,16 @@ class QuicConnectionTest : public QuicTestWithParam<TestParams> {
     return ConstructPacket(header, frames);
   }
 
-  QuicPacket* ConstructClosePacket(QuicPacketNumber number) {
+  std::unique_ptr<QuicPacket> ConstructClosePacket(QuicPacketNumber number) {
     QuicPacketHeader header;
     // Set connection_id to peer's in memory representation as this connection
     // close packet is created by peer_framer.
-    header.connection_id = connection_id_;
+    header.destination_connection_id = connection_id_;
     header.packet_number = number;
+    if (peer_framer_.transport_version() > QUIC_VERSION_43 &&
+        peer_framer_.perspective() == Perspective::IS_SERVER) {
+      header.destination_connection_id_length = PACKET_0BYTE_CONNECTION_ID;
+    }
 
     QuicConnectionCloseFrame qccf;
     qccf.error_code = QUIC_PEER_GOING_AWAY;
@@ -1189,6 +1203,20 @@ class QuicConnectionTest : public QuicTestWithParam<TestParams> {
                                    InvertPerspective(perspective));
   }
 
+  void set_packets_between_probes_base(
+      const QuicPacketCount packets_between_probes_base) {
+    QuicConnectionPeer::SetPacketsBetweenMtuProbes(&connection_,
+                                                   packets_between_probes_base);
+    QuicConnectionPeer::SetNextMtuProbeAt(&connection_,
+                                          packets_between_probes_base);
+  }
+
+  bool IsDefaultTestConfiguration() {
+    TestParams p = GetParam();
+    return p.ack_response == AckResponse::kImmediate &&
+           p.version == AllSupportedVersions()[0] && p.no_stop_waiting;
+  }
+
   QuicConnectionId connection_id_;
   QuicFramer framer_;
 
@@ -1216,10 +1244,6 @@ class QuicConnectionTest : public QuicTestWithParam<TestParams> {
   QuicConnectionIdLength connection_id_length_;
 
   SimpleSessionNotifier notifier_;
-
-  // Latched value of
-  // quic_reloadable_flag_quic_path_degrading_alarm2.
-  bool use_path_degrading_alarm_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicConnectionTest);
@@ -1308,17 +1332,13 @@ TEST_P(QuicConnectionTest, ClientAddressChangeAndPacketReordered) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
   set_perspective(Perspective::IS_SERVER);
   QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    // Clear direct_peer_address.
-    QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
-    // Clear effective_peer_address, it is the same as direct_peer_address for
-    // this test.
-    QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
-                                                QuicSocketAddress());
-  } else {
-    // Clear peer_address.
-    QuicConnectionPeer::SetPeerAddress(&connection_, QuicSocketAddress());
-  }
+
+  // Clear direct_peer_address.
+  QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
+  // Clear effective_peer_address, it is the same as direct_peer_address for
+  // this test.
+  QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
+                                              QuicSocketAddress());
 
   QuicPacketCreatorPeer::SetPacketNumber(&peer_creator_, 5);
   QuicStreamFrame stream_frame(1u, false, 0u, QuicStringPiece());
@@ -1329,9 +1349,7 @@ TEST_P(QuicConnectionTest, ClientAddressChangeAndPacketReordered) {
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kNewPeerAddress);
   EXPECT_EQ(kNewPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
 
   // Decrease packet number to simulate out-of-order packets.
   QuicPacketCreatorPeer::SetPacketNumber(&peer_creator_, 4);
@@ -1340,9 +1358,7 @@ TEST_P(QuicConnectionTest, ClientAddressChangeAndPacketReordered) {
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kNewPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
 }
 
 TEST_P(QuicConnectionTest, PeerAddressChangeAtServer) {
@@ -1351,28 +1367,20 @@ TEST_P(QuicConnectionTest, PeerAddressChangeAtServer) {
   QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
   EXPECT_EQ(Perspective::IS_SERVER, connection_.perspective());
 
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    // Clear direct_peer_address.
-    QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
-    // Clear effective_peer_address, it is the same as direct_peer_address for
-    // this test.
-    QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
-                                                QuicSocketAddress());
-    EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
-  } else {
-    // Clear peer_address.
-    QuicConnectionPeer::SetPeerAddress(&connection_, QuicSocketAddress());
-    EXPECT_FALSE(connection_.peer_address().IsInitialized());
-  }
+  // Clear direct_peer_address.
+  QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
+  // Clear effective_peer_address, it is the same as direct_peer_address for
+  // this test.
+  QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
+                                              QuicSocketAddress());
+  EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
 
   QuicStreamFrame stream_frame(1u, false, 0u, QuicStringPiece());
   EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(AnyNumber());
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   // Process another packet with a different peer address on server side will
   // start connection migration.
@@ -1382,16 +1390,10 @@ TEST_P(QuicConnectionTest, PeerAddressChangeAtServer) {
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kNewPeerAddress);
   EXPECT_EQ(kNewPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
 }
 
 TEST_P(QuicConnectionTest, EffectivePeerAddressChangeAtServer) {
-  if (!GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    return;
-  }
-
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
   set_perspective(Perspective::IS_SERVER);
   QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
@@ -1479,28 +1481,20 @@ TEST_P(QuicConnectionTest, ReceivePaddedPingAtServer) {
   QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
   EXPECT_EQ(Perspective::IS_SERVER, connection_.perspective());
 
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    // Clear direct_peer_address.
-    QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
-    // Clear effective_peer_address, it is the same as direct_peer_address for
-    // this test.
-    QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
-                                                QuicSocketAddress());
-    EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
-  } else {
-    // Clear peer_address.
-    QuicConnectionPeer::SetPeerAddress(&connection_, QuicSocketAddress());
-    EXPECT_FALSE(connection_.peer_address().IsInitialized());
-  }
+  // Clear direct_peer_address.
+  QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
+  // Clear effective_peer_address, it is the same as direct_peer_address for
+  // this test.
+  QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
+                                              QuicSocketAddress());
+  EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
 
   QuicStreamFrame stream_frame(1u, false, 0u, QuicStringPiece());
   EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(AnyNumber());
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   EXPECT_CALL(visitor_, OnConnectionMigration(PORT_CHANGE)).Times(0);
   EXPECT_CALL(visitor_, OnConnectivityProbeReceived(_, _)).Times(0);
@@ -1519,12 +1513,15 @@ TEST_P(QuicConnectionTest, ReceivePaddedPingAtServer) {
 
   EXPECT_FALSE(connection_.IsCurrentPacketConnectivityProbing());
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 }
 
 TEST_P(QuicConnectionTest, WriteOutOfOrderQueuedPackets) {
+  // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
+  if (!IsDefaultTestConfiguration()) {
+    return;
+  }
+
   set_perspective(Perspective::IS_CLIENT);
 
   BlockOnNextWrite();
@@ -1538,19 +1535,12 @@ TEST_P(QuicConnectionTest, WriteOutOfOrderQueuedPackets) {
   connection_.SendConnectivityProbingPacket(writer_.get(),
                                             connection_.peer_address());
 
-  if (GetQuicReloadableFlag(
-          quic_clear_queued_packets_before_sending_connectivity_probing)) {
-    EXPECT_EQ(0u, connection_.NumQueuedPackets());
-    connection_.OnCanWrite();
-    EXPECT_TRUE(connection_.connected());
-  } else {
-    EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INTERNAL_ERROR,
-                                             "Packet written out of order.",
-                                             ConnectionCloseSource::FROM_SELF));
-    EXPECT_QUIC_BUG(connection_.OnCanWrite(),
-                    "Attempt to write packet:1 after:2");
-    EXPECT_FALSE(connection_.connected());
-  }
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INTERNAL_ERROR,
+                                           "Packet written out of order.",
+                                           ConnectionCloseSource::FROM_SELF));
+  EXPECT_QUIC_BUG(connection_.OnCanWrite(),
+                  "Attempt to write packet:1 after:2");
+  EXPECT_FALSE(connection_.connected());
 }
 
 TEST_P(QuicConnectionTest, DiscardQueuedPacketsAfterConnectionClose) {
@@ -1584,28 +1574,20 @@ TEST_P(QuicConnectionTest, ReceiveConnectivityProbingAtServer) {
   QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
   EXPECT_EQ(Perspective::IS_SERVER, connection_.perspective());
 
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    // Clear direct_peer_address.
-    QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
-    // Clear effective_peer_address, it is the same as direct_peer_address for
-    // this test.
-    QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
-                                                QuicSocketAddress());
-    EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
-  } else {
-    // Clear peer_address.
-    QuicConnectionPeer::SetPeerAddress(&connection_, QuicSocketAddress());
-    EXPECT_FALSE(connection_.peer_address().IsInitialized());
-  }
+  // Clear direct_peer_address.
+  QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
+  // Clear effective_peer_address, it is the same as direct_peer_address for
+  // this test.
+  QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
+                                              QuicSocketAddress());
+  EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
 
   QuicStreamFrame stream_frame(1u, false, 0u, QuicStringPiece());
   EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(AnyNumber());
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   EXPECT_CALL(visitor_, OnConnectionMigration(PORT_CHANGE)).Times(0);
   EXPECT_CALL(visitor_, OnConnectivityProbeReceived(_, _)).Times(1);
@@ -1627,9 +1609,7 @@ TEST_P(QuicConnectionTest, ReceiveConnectivityProbingAtServer) {
 
   EXPECT_TRUE(connection_.IsCurrentPacketConnectivityProbing());
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   // Process another packet with the old peer address on server side will not
   // start peer migration.
@@ -1637,9 +1617,7 @@ TEST_P(QuicConnectionTest, ReceiveConnectivityProbingAtServer) {
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 }
 
 TEST_P(QuicConnectionTest, ReceiveReorderedConnectivityProbingAtServer) {
@@ -1648,19 +1626,13 @@ TEST_P(QuicConnectionTest, ReceiveReorderedConnectivityProbingAtServer) {
   QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
   EXPECT_EQ(Perspective::IS_SERVER, connection_.perspective());
 
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    // Clear direct_peer_address.
-    QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
-    // Clear effective_peer_address, it is the same as direct_peer_address for
-    // this test.
-    QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
-                                                QuicSocketAddress());
-    EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
-  } else {
-    // Clear peer_address.
-    QuicConnectionPeer::SetPeerAddress(&connection_, QuicSocketAddress());
-    EXPECT_FALSE(connection_.peer_address().IsInitialized());
-  }
+  // Clear direct_peer_address.
+  QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
+  // Clear effective_peer_address, it is the same as direct_peer_address for
+  // this test.
+  QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
+                                              QuicSocketAddress());
+  EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
 
   QuicPacketCreatorPeer::SetPacketNumber(&peer_creator_, 5);
   QuicStreamFrame stream_frame(1u, false, 0u, QuicStringPiece());
@@ -1668,9 +1640,7 @@ TEST_P(QuicConnectionTest, ReceiveReorderedConnectivityProbingAtServer) {
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   // Decrease packet number to simulate out-of-order packets.
   QuicPacketCreatorPeer::SetPacketNumber(&peer_creator_, 4);
@@ -1696,9 +1666,7 @@ TEST_P(QuicConnectionTest, ReceiveReorderedConnectivityProbingAtServer) {
 
   EXPECT_TRUE(connection_.IsCurrentPacketConnectivityProbing());
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 }
 
 TEST_P(QuicConnectionTest, MigrateAfterProbingAtServer) {
@@ -1707,28 +1675,20 @@ TEST_P(QuicConnectionTest, MigrateAfterProbingAtServer) {
   QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
   EXPECT_EQ(Perspective::IS_SERVER, connection_.perspective());
 
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    // Clear direct_peer_address.
-    QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
-    // Clear effective_peer_address, it is the same as direct_peer_address for
-    // this test.
-    QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
-                                                QuicSocketAddress());
-    EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
-  } else {
-    // Clear peer_address.
-    QuicConnectionPeer::SetPeerAddress(&connection_, QuicSocketAddress());
-    EXPECT_FALSE(connection_.peer_address().IsInitialized());
-  }
+  // Clear direct_peer_address.
+  QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
+  // Clear effective_peer_address, it is the same as direct_peer_address for
+  // this test.
+  QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
+                                              QuicSocketAddress());
+  EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
 
   QuicStreamFrame stream_frame(1u, false, 0u, QuicStringPiece());
   EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(AnyNumber());
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   EXPECT_CALL(visitor_, OnConnectionMigration(PORT_CHANGE)).Times(0);
   EXPECT_CALL(visitor_, OnConnectivityProbeReceived(_, _)).Times(1);
@@ -1747,9 +1707,7 @@ TEST_P(QuicConnectionTest, MigrateAfterProbingAtServer) {
       clock_.Now()));
   ProcessReceivedPacket(kSelfAddress, kNewPeerAddress, *received);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   // Process another non-probing packet with the new peer address on server
   // side will start peer migration.
@@ -1758,9 +1716,7 @@ TEST_P(QuicConnectionTest, MigrateAfterProbingAtServer) {
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kNewPeerAddress);
   EXPECT_EQ(kNewPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
 }
 
 TEST_P(QuicConnectionTest, ReceivePaddedPingAtClient) {
@@ -1768,28 +1724,20 @@ TEST_P(QuicConnectionTest, ReceivePaddedPingAtClient) {
   set_perspective(Perspective::IS_CLIENT);
   EXPECT_EQ(Perspective::IS_CLIENT, connection_.perspective());
 
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    // Clear direct_peer_address.
-    QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
-    // Clear effective_peer_address, it is the same as direct_peer_address for
-    // this test.
-    QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
-                                                QuicSocketAddress());
-    EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
-  } else {
-    // Clear peer_address.
-    QuicConnectionPeer::SetPeerAddress(&connection_, QuicSocketAddress());
-    EXPECT_FALSE(connection_.peer_address().IsInitialized());
-  }
+  // Clear direct_peer_address.
+  QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
+  // Clear effective_peer_address, it is the same as direct_peer_address for
+  // this test.
+  QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
+                                              QuicSocketAddress());
+  EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
 
   QuicStreamFrame stream_frame(1u, false, 0u, QuicStringPiece());
   EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(AnyNumber());
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   // Client takes all padded PING packet as speculative connectivity
   // probing packet, and reports to visitor.
@@ -1807,9 +1755,7 @@ TEST_P(QuicConnectionTest, ReceivePaddedPingAtClient) {
 
   EXPECT_FALSE(connection_.IsCurrentPacketConnectivityProbing());
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 }
 
 TEST_P(QuicConnectionTest, ReceiveConnectivityProbingAtClient) {
@@ -1817,28 +1763,20 @@ TEST_P(QuicConnectionTest, ReceiveConnectivityProbingAtClient) {
   set_perspective(Perspective::IS_CLIENT);
   EXPECT_EQ(Perspective::IS_CLIENT, connection_.perspective());
 
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    // Clear direct_peer_address.
-    QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
-    // Clear effective_peer_address, it is the same as direct_peer_address for
-    // this test.
-    QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
-                                                QuicSocketAddress());
-    EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
-  } else {
-    // Clear peer_address.
-    QuicConnectionPeer::SetPeerAddress(&connection_, QuicSocketAddress());
-    EXPECT_FALSE(connection_.peer_address().IsInitialized());
-  }
+  // Clear direct_peer_address.
+  QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
+  // Clear effective_peer_address, it is the same as direct_peer_address for
+  // this test.
+  QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
+                                              QuicSocketAddress());
+  EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
 
   QuicStreamFrame stream_frame(1u, false, 0u, QuicStringPiece());
   EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(AnyNumber());
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   // Process a padded PING packet with a different self address on client side
   // is effectively receiving a connectivity probing.
@@ -1859,9 +1797,7 @@ TEST_P(QuicConnectionTest, ReceiveConnectivityProbingAtClient) {
 
   EXPECT_TRUE(connection_.IsCurrentPacketConnectivityProbing());
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 }
 
 TEST_P(QuicConnectionTest, PeerAddressChangeAtClient) {
@@ -1869,28 +1805,20 @@ TEST_P(QuicConnectionTest, PeerAddressChangeAtClient) {
   set_perspective(Perspective::IS_CLIENT);
   EXPECT_EQ(Perspective::IS_CLIENT, connection_.perspective());
 
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    // Clear direct_peer_address.
-    QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
-    // Clear effective_peer_address, it is the same as direct_peer_address for
-    // this test.
-    QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
-                                                QuicSocketAddress());
-    EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
-  } else {
-    // Clear peer_address.
-    QuicConnectionPeer::SetPeerAddress(&connection_, QuicSocketAddress());
-    EXPECT_FALSE(connection_.peer_address().IsInitialized());
-  }
+  // Clear direct_peer_address.
+  QuicConnectionPeer::SetDirectPeerAddress(&connection_, QuicSocketAddress());
+  // Clear effective_peer_address, it is the same as direct_peer_address for
+  // this test.
+  QuicConnectionPeer::SetEffectivePeerAddress(&connection_,
+                                              QuicSocketAddress());
+  EXPECT_FALSE(connection_.effective_peer_address().IsInitialized());
 
   QuicStreamFrame stream_frame(1u, false, 0u, QuicStringPiece());
   EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(AnyNumber());
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kPeerAddress);
   EXPECT_EQ(kPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kPeerAddress, connection_.effective_peer_address());
 
   // Process another packet with a different peer address on client side will
   // only update peer address.
@@ -1900,9 +1828,7 @@ TEST_P(QuicConnectionTest, PeerAddressChangeAtClient) {
   ProcessFramePacketWithAddresses(QuicFrame(&stream_frame), kSelfAddress,
                                   kNewPeerAddress);
   EXPECT_EQ(kNewPeerAddress, connection_.peer_address());
-  if (GetQuicReloadableFlag(quic_enable_server_proxy2)) {
-    EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
-  }
+  EXPECT_EQ(kNewPeerAddress, connection_.effective_peer_address());
 }
 
 TEST_P(QuicConnectionTest, MaxPacketSize) {
@@ -1926,7 +1852,7 @@ TEST_P(QuicConnectionTest, IncreaseServerMaxPacketSize) {
   connection_.SetMaxPacketLength(1000);
 
   QuicPacketHeader header;
-  header.connection_id = connection_id_;
+  header.destination_connection_id = connection_id_;
   header.version_flag = true;
   header.packet_number = 1;
 
@@ -1959,7 +1885,7 @@ TEST_P(QuicConnectionTest, IncreaseServerMaxPacketSizeWhileWriterLimited) {
   EXPECT_EQ(1000u, connection_.max_packet_length());
 
   QuicPacketHeader header;
-  header.connection_id = connection_id_;
+  header.destination_connection_id = connection_id_;
   header.version_flag = true;
   header.packet_number = 1;
 
@@ -2103,6 +2029,11 @@ TEST_P(QuicConnectionTest, RejectPacketTooFarOut) {
 }
 
 TEST_P(QuicConnectionTest, RejectUnencryptedStreamData) {
+  // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
+  if (!IsDefaultTestConfiguration()) {
+    return;
+  }
+
   // Process an unencrypted packet from the non-crypto stream.
   frame1_.stream_id = 3;
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
@@ -2178,7 +2109,7 @@ TEST_P(QuicConnectionTest, AckReceiptCausesAckSend) {
   EXPECT_CALL(
       *send_algorithm_,
       OnPacketSent(_, _, _,
-                   GetParam().version.transport_version == QUIC_VERSION_99
+                   GetParam().version.transport_version > QUIC_VERSION_43
                        ? packet_size
                        : packet_size - kQuicVersionSize,
                    _))
@@ -2223,7 +2154,7 @@ TEST_P(QuicConnectionTest, AckReceiptCausesAckSend) {
 }
 
 TEST_P(QuicConnectionTest, 20AcksCausesAckSend) {
-  if (connection_.version().transport_version > QUIC_VERSION_38) {
+  if (connection_.version().transport_version != QUIC_VERSION_35) {
     return;
   }
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
@@ -2245,7 +2176,7 @@ TEST_P(QuicConnectionTest, 20AcksCausesAckSend) {
 }
 
 TEST_P(QuicConnectionTest, AckNeedsRetransmittableFrames) {
-  if (connection_.version().transport_version <= QUIC_VERSION_38) {
+  if (connection_.version().transport_version == QUIC_VERSION_35) {
     return;
   }
 
@@ -2911,6 +2842,12 @@ TEST_P(QuicConnectionTest, CancelRetransmissionAlarmAfterResetStream) {
   // Ensure that the data is still in flight, but the retransmission alarm is no
   // longer set.
   EXPECT_GT(QuicSentPacketManagerPeer::GetBytesInFlight(manager_), 0u);
+  if (GetQuicReloadableFlag(quic_optimize_inflight_check)) {
+    EXPECT_TRUE(connection_.GetRetransmissionAlarm()->IsSet());
+    // Firing the alarm should remove all bytes_in_flight.
+    connection_.GetRetransmissionAlarm()->Fire();
+    EXPECT_EQ(0u, QuicSentPacketManagerPeer::GetBytesInFlight(manager_));
+  }
   EXPECT_FALSE(connection_.GetRetransmissionAlarm()->IsSet());
 }
 
@@ -3025,9 +2962,7 @@ TEST_P(QuicConnectionTest, RetransmitAckedPacket) {
 
   // Now, ack the previous transmission.
   EXPECT_CALL(*loss_algorithm_, DetectLosses(_, _, _, _, _));
-  if (GetQuicReloadableFlag(quic_use_incremental_ack_processing4)) {
-    EXPECT_CALL(*send_algorithm_, OnCongestionEvent(false, _, _, _, _));
-  }
+  EXPECT_CALL(*send_algorithm_, OnCongestionEvent(false, _, _, _, _));
   QuicAckFrame ack_all = InitAckFrame(3);
   ProcessAckPacket(&ack_all);
 
@@ -3063,7 +2998,7 @@ TEST_P(QuicConnectionTest, RetransmitNackedLargestObserved) {
   EXPECT_CALL(
       *send_algorithm_,
       OnPacketSent(_, _, _,
-                   GetParam().version.transport_version == QUIC_VERSION_99
+                   GetParam().version.transport_version > QUIC_VERSION_43
                        ? packet_size
                        : packet_size - kQuicVersionSize,
                    _));
@@ -3152,6 +3087,12 @@ TEST_P(QuicConnectionTest, RetransmitWriteBlockedAckedOriginalThenSent) {
   writer_->SetWritable();
   connection_.OnCanWrite();
   // There is now a pending packet, but with no retransmittable frames.
+  if (GetQuicReloadableFlag(quic_optimize_inflight_check)) {
+    EXPECT_TRUE(connection_.GetRetransmissionAlarm()->IsSet());
+    // Firing the alarm should remove all bytes_in_flight.
+    connection_.GetRetransmissionAlarm()->Fire();
+    EXPECT_EQ(0u, QuicSentPacketManagerPeer::GetBytesInFlight(manager_));
+  }
   EXPECT_FALSE(connection_.GetRetransmissionAlarm()->IsSet());
   EXPECT_FALSE(QuicConnectionPeer::HasRetransmittableFrames(&connection_, 2));
 }
@@ -3163,14 +3104,64 @@ TEST_P(QuicConnectionTest, AlarmsWhenWriteBlocked) {
   EXPECT_EQ(1u, writer_->packets_write_attempts());
   EXPECT_TRUE(writer_->IsWriteBlocked());
 
-  // Set the send and resumption alarms. Fire the alarms and ensure they don't
-  // attempt to write.
-  connection_.GetResumeWritesAlarm()->Set(clock_.ApproximateNow());
+  // Set the send alarm. Fire the alarm and ensure it doesn't attempt to write.
   connection_.GetSendAlarm()->Set(clock_.ApproximateNow());
-  connection_.GetResumeWritesAlarm()->Fire();
   connection_.GetSendAlarm()->Fire();
   EXPECT_TRUE(writer_->IsWriteBlocked());
   EXPECT_EQ(1u, writer_->packets_write_attempts());
+}
+
+TEST_P(QuicConnectionTest, NoSendAlarmAfterProcessPacketWhenWriteBlocked) {
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+
+  // Block the connection.
+  BlockOnNextWrite();
+  connection_.SendStreamDataWithString(3, "foo", 0, NO_FIN);
+  EXPECT_TRUE(writer_->IsWriteBlocked());
+  EXPECT_EQ(1u, connection_.NumQueuedPackets());
+  EXPECT_FALSE(connection_.GetSendAlarm()->IsSet());
+
+  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+  // Process packet number 1. Can not call ProcessPacket or ProcessDataPacket
+  // here, because they will fire the alarm after QuicConnection::ProcessPacket
+  // is returned.
+  const QuicPacketNumber received_packet_num = 1;
+  const bool has_stop_waiting = false;
+  const EncryptionLevel level = ENCRYPTION_NONE;
+  std::unique_ptr<QuicPacket> packet(
+      ConstructDataPacket(received_packet_num, has_stop_waiting));
+  char buffer[kMaxPacketSize];
+  size_t encrypted_length = peer_framer_.EncryptPayload(
+      level, received_packet_num, *packet, buffer, kMaxPacketSize);
+  connection_.ProcessUdpPacket(
+      kSelfAddress, kPeerAddress,
+      QuicReceivedPacket(buffer, encrypted_length, clock_.Now(), false));
+
+  EXPECT_TRUE(writer_->IsWriteBlocked());
+  if (GetQuicReloadableFlag(quic_add_to_blocked_list_if_writer_blocked)) {
+    EXPECT_FALSE(connection_.GetSendAlarm()->IsSet());
+  } else {
+    EXPECT_EQ(GetParam().ack_response == AckResponse::kDefer,
+              connection_.GetSendAlarm()->IsSet());
+  }
+}
+
+TEST_P(QuicConnectionTest, AddToWriteBlockedListIfWriterBlockedWhenProcessing) {
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  SendStreamDataToPeer(1, "foo", 0, NO_FIN, nullptr);
+
+  // Simulate the case where a shared writer gets blocked by another connection.
+  writer_->SetWriteBlocked();
+
+  // Process an ACK, make sure the connection calls visitor_->OnWriteBlocked().
+  QuicAckFrame ack1 = InitAckFrame(1);
+  EXPECT_CALL(*send_algorithm_, OnCongestionEvent(_, _, _, _, _));
+  if (GetQuicReloadableFlag(quic_add_to_blocked_list_if_writer_blocked)) {
+    EXPECT_CALL(visitor_, OnWriteBlocked()).Times(1);
+  } else {
+    EXPECT_CALL(visitor_, OnWriteBlocked()).Times(0);
+  }
+  ProcessAckPacket(1, &ack1);
 }
 
 TEST_P(QuicConnectionTest, NoLimitPacketsPerNack) {
@@ -3529,9 +3520,6 @@ TEST_P(QuicConnectionTest, TestRetransmitOrder) {
   clock_.AdvanceTime(QuicTime::Delta::FromSeconds(20));
   {
     InSequence s;
-    if (!use_path_degrading_alarm_) {
-      EXPECT_CALL(visitor_, OnPathDegrading());
-    }
     EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, first_packet_size, _));
     EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, second_packet_size, _));
   }
@@ -3633,7 +3621,6 @@ TEST_P(QuicConnectionTest, InitialTimeout) {
 
   EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
   EXPECT_FALSE(connection_.GetPingAlarm()->IsSet());
-  EXPECT_FALSE(connection_.GetResumeWritesAlarm()->IsSet());
   EXPECT_FALSE(connection_.GetRetransmissionAlarm()->IsSet());
   EXPECT_FALSE(connection_.GetSendAlarm()->IsSet());
   EXPECT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
@@ -3677,7 +3664,6 @@ TEST_P(QuicConnectionTest, HandshakeTimeout) {
 
   EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
   EXPECT_FALSE(connection_.GetPingAlarm()->IsSet());
-  EXPECT_FALSE(connection_.GetResumeWritesAlarm()->IsSet());
   EXPECT_FALSE(connection_.GetRetransmissionAlarm()->IsSet());
   EXPECT_FALSE(connection_.GetSendAlarm()->IsSet());
 }
@@ -3795,7 +3781,8 @@ TEST_P(QuicConnectionTest, SendMtuDiscoveryPacket) {
   QuicByteCount size_before_mtu_change;
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
       .Times(2)
-      .WillOnce(SaveArg<3>(&size_before_mtu_change));
+      .WillOnce(SaveArg<3>(&size_before_mtu_change))
+      .WillOnce(Return());
   connection_.SendStreamDataWithString(3, data, 0, FIN);
   EXPECT_EQ(3u, creator_->packet_number());
   EXPECT_EQ(kDefaultMaxPacketSize, size_before_mtu_change);
@@ -3818,7 +3805,10 @@ TEST_P(QuicConnectionTest, SendMtuDiscoveryPacket) {
 TEST_P(QuicConnectionTest, MtuDiscoveryDisabled) {
   EXPECT_TRUE(connection_.connected());
 
-  const QuicPacketCount number_of_packets = kPacketsBetweenMtuProbesBase * 2;
+  const QuicPacketCount packets_between_probes_base = 10;
+  set_packets_between_probes_base(packets_between_probes_base);
+
+  const QuicPacketCount number_of_packets = packets_between_probes_base * 2;
   for (QuicPacketCount i = 0; i < number_of_packets; i++) {
     SendStreamDataToPeer(3, ".", i, NO_FIN, nullptr);
     EXPECT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
@@ -3833,14 +3823,17 @@ TEST_P(QuicConnectionTest, MtuDiscoveryEnabled) {
 
   connection_.EnablePathMtuDiscovery(send_algorithm_);
 
+  const QuicPacketCount packets_between_probes_base = 5;
+  set_packets_between_probes_base(packets_between_probes_base);
+
   // Send enough packets so that the next one triggers path MTU discovery.
-  for (QuicPacketCount i = 0; i < kPacketsBetweenMtuProbesBase - 1; i++) {
+  for (QuicPacketCount i = 0; i < packets_between_probes_base - 1; i++) {
     SendStreamDataToPeer(3, ".", i, NO_FIN, nullptr);
     ASSERT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   }
 
   // Trigger the probe.
-  SendStreamDataToPeer(3, "!", kPacketsBetweenMtuProbesBase - 1, NO_FIN,
+  SendStreamDataToPeer(3, "!", packets_between_probes_base - 1, NO_FIN,
                        nullptr);
   ASSERT_TRUE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   QuicByteCount probe_size;
@@ -3849,7 +3842,7 @@ TEST_P(QuicConnectionTest, MtuDiscoveryEnabled) {
   connection_.GetMtuDiscoveryAlarm()->Fire();
   EXPECT_EQ(kMtuDiscoveryTargetPacketSizeHigh, probe_size);
 
-  const QuicPacketCount probe_packet_number = kPacketsBetweenMtuProbesBase + 1;
+  const QuicPacketCount probe_packet_number = packets_between_probes_base + 1;
   ASSERT_EQ(probe_packet_number, creator_->packet_number());
 
   // Acknowledge all packets sent so far.
@@ -3861,8 +3854,8 @@ TEST_P(QuicConnectionTest, MtuDiscoveryEnabled) {
   EXPECT_EQ(0u, connection_.GetBytesInFlight());
 
   // Send more packets, and ensure that none of them sets the alarm.
-  for (QuicPacketCount i = 0; i < 4 * kPacketsBetweenMtuProbesBase; i++) {
-    SendStreamDataToPeer(3, ".", kPacketsBetweenMtuProbesBase + i, NO_FIN,
+  for (QuicPacketCount i = 0; i < 4 * packets_between_probes_base; i++) {
+    SendStreamDataToPeer(3, ".", packets_between_probes_base + i, NO_FIN,
                          nullptr);
     ASSERT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   }
@@ -3883,11 +3876,8 @@ TEST_P(QuicConnectionTest, MtuDiscoveryFailed) {
             QuicConnectionPeer::GetPacketsBetweenMtuProbes(&connection_));
   // Lower the number of probes between packets in order to make the test go
   // much faster.
-  const QuicPacketCount packets_between_probes_base = 10;
-  QuicConnectionPeer::SetPacketsBetweenMtuProbes(&connection_,
-                                                 packets_between_probes_base);
-  QuicConnectionPeer::SetNextMtuProbeAt(&connection_,
-                                        packets_between_probes_base);
+  const QuicPacketCount packets_between_probes_base = 5;
+  set_packets_between_probes_base(packets_between_probes_base);
 
   // This tests sends more packets than strictly necessary to make sure that if
   // the connection was to send more discovery packets than needed, those would
@@ -3962,14 +3952,17 @@ TEST_P(QuicConnectionTest, MtuDiscoveryWriterLimited) {
   writer_->set_max_packet_size(mtu_limit);
   connection_.EnablePathMtuDiscovery(send_algorithm_);
 
+  const QuicPacketCount packets_between_probes_base = 5;
+  set_packets_between_probes_base(packets_between_probes_base);
+
   // Send enough packets so that the next one triggers path MTU discovery.
-  for (QuicPacketCount i = 0; i < kPacketsBetweenMtuProbesBase - 1; i++) {
+  for (QuicPacketCount i = 0; i < packets_between_probes_base - 1; i++) {
     SendStreamDataToPeer(3, ".", i, NO_FIN, nullptr);
     ASSERT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   }
 
   // Trigger the probe.
-  SendStreamDataToPeer(3, "!", kPacketsBetweenMtuProbesBase - 1, NO_FIN,
+  SendStreamDataToPeer(3, "!", packets_between_probes_base - 1, NO_FIN,
                        nullptr);
   ASSERT_TRUE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   QuicByteCount probe_size;
@@ -3978,8 +3971,7 @@ TEST_P(QuicConnectionTest, MtuDiscoveryWriterLimited) {
   connection_.GetMtuDiscoveryAlarm()->Fire();
   EXPECT_EQ(mtu_limit, probe_size);
 
-  const QuicPacketCount probe_sequence_number =
-      kPacketsBetweenMtuProbesBase + 1;
+  const QuicPacketCount probe_sequence_number = packets_between_probes_base + 1;
   ASSERT_EQ(probe_sequence_number, creator_->packet_number());
 
   // Acknowledge all packets sent so far.
@@ -3991,8 +3983,8 @@ TEST_P(QuicConnectionTest, MtuDiscoveryWriterLimited) {
   EXPECT_EQ(0u, connection_.GetBytesInFlight());
 
   // Send more packets, and ensure that none of them sets the alarm.
-  for (QuicPacketCount i = 0; i < 4 * kPacketsBetweenMtuProbesBase; i++) {
-    SendStreamDataToPeer(3, ".", kPacketsBetweenMtuProbesBase + i, NO_FIN,
+  for (QuicPacketCount i = 0; i < 4 * packets_between_probes_base; i++) {
+    SendStreamDataToPeer(3, ".", packets_between_probes_base + i, NO_FIN,
                          nullptr);
     ASSERT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   }
@@ -4011,14 +4003,17 @@ TEST_P(QuicConnectionTest, MtuDiscoveryWriterFailed) {
   writer_->set_max_packet_size(mtu_limit);
   connection_.EnablePathMtuDiscovery(send_algorithm_);
 
+  const QuicPacketCount packets_between_probes_base = 5;
+  set_packets_between_probes_base(packets_between_probes_base);
+
   // Send enough packets so that the next one triggers path MTU discovery.
-  for (QuicPacketCount i = 0; i < kPacketsBetweenMtuProbesBase - 1; i++) {
+  for (QuicPacketCount i = 0; i < packets_between_probes_base - 1; i++) {
     SendStreamDataToPeer(3, ".", i, NO_FIN, nullptr);
     ASSERT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   }
 
   // Trigger the probe.
-  SendStreamDataToPeer(3, "!", kPacketsBetweenMtuProbesBase - 1, NO_FIN,
+  SendStreamDataToPeer(3, "!", packets_between_probes_base - 1, NO_FIN,
                        nullptr);
   ASSERT_TRUE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   writer_->SimulateNextPacketTooLarge();
@@ -4027,7 +4022,7 @@ TEST_P(QuicConnectionTest, MtuDiscoveryWriterFailed) {
 
   // Send more data.
   QuicPacketNumber probe_number = creator_->packet_number();
-  QuicPacketCount extra_packets = kPacketsBetweenMtuProbesBase * 3;
+  QuicPacketCount extra_packets = packets_between_probes_base * 3;
   for (QuicPacketCount i = 0; i < extra_packets; i++) {
     connection_.EnsureWritableAndSendStreamData5();
     ASSERT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
@@ -4042,7 +4037,7 @@ TEST_P(QuicConnectionTest, MtuDiscoveryWriterFailed) {
   EXPECT_EQ(initial_mtu, connection_.max_packet_length());
 
   // Send more packets, and ensure that none of them sets the alarm.
-  for (QuicPacketCount i = 0; i < 4 * kPacketsBetweenMtuProbesBase; i++) {
+  for (QuicPacketCount i = 0; i < 4 * packets_between_probes_base; i++) {
     connection_.EnsureWritableAndSendStreamData5();
     ASSERT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   }
@@ -4056,13 +4051,16 @@ TEST_P(QuicConnectionTest, NoMtuDiscoveryAfterConnectionClosed) {
 
   connection_.EnablePathMtuDiscovery(send_algorithm_);
 
+  const QuicPacketCount packets_between_probes_base = 10;
+  set_packets_between_probes_base(packets_between_probes_base);
+
   // Send enough packets so that the next one triggers path MTU discovery.
-  for (QuicPacketCount i = 0; i < kPacketsBetweenMtuProbesBase - 1; i++) {
+  for (QuicPacketCount i = 0; i < packets_between_probes_base - 1; i++) {
     SendStreamDataToPeer(3, ".", i, NO_FIN, nullptr);
     ASSERT_FALSE(connection_.GetMtuDiscoveryAlarm()->IsSet());
   }
 
-  SendStreamDataToPeer(3, "!", kPacketsBetweenMtuProbesBase - 1, NO_FIN,
+  SendStreamDataToPeer(3, "!", packets_between_probes_base - 1, NO_FIN,
                        nullptr);
   EXPECT_TRUE(connection_.GetMtuDiscoveryAlarm()->IsSet());
 
@@ -4474,9 +4472,6 @@ TEST_P(QuicConnectionTest, TimeoutAfter5ClientRTOs) {
   // Send stream data.
   SendStreamDataToPeer(kClientDataStreamId1, "foo", 0, FIN, nullptr);
 
-  if (!use_path_degrading_alarm_) {
-    EXPECT_CALL(visitor_, OnPathDegrading());
-  }
   // Fire the retransmission alarm 6 times, twice for TLP and 4 times for RTO.
   for (int i = 0; i < 6; ++i) {
     EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
@@ -4496,67 +4491,34 @@ TEST_P(QuicConnectionTest, TimeoutAfter5ClientRTOs) {
   EXPECT_FALSE(connection_.connected());
 }
 
-TEST_P(QuicConnectionTest, TimeoutAfter3ClientRTOs) {
-  SetQuicReloadableFlag(quic_enable_3rtos, true);
-  connection_.SetMaxTailLossProbes(2);
-  EXPECT_TRUE(connection_.connected());
-  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
-  QuicConfig config;
-  QuicTagVector connection_options;
-  connection_options.push_back(k3RTO);
-  config.SetConnectionOptionsToSend(connection_options);
-  connection_.SetFromConfig(config);
-
-  // Send stream data.
-  SendStreamDataToPeer(kClientDataStreamId1, "foo", 0, FIN, nullptr);
-
-  if (!use_path_degrading_alarm_) {
-    EXPECT_CALL(visitor_, OnPathDegrading());
-  }
-  // Fire the retransmission alarm 4 times, twice for TLP and 2 times for RTO.
-  for (int i = 0; i < 4; ++i) {
-    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
-    connection_.GetRetransmissionAlarm()->Fire();
-    EXPECT_TRUE(connection_.GetTimeoutAlarm()->IsSet());
-    EXPECT_TRUE(connection_.connected());
-  }
-
-  EXPECT_EQ(2u, connection_.sent_packet_manager().GetConsecutiveTlpCount());
-  EXPECT_EQ(2u, connection_.sent_packet_manager().GetConsecutiveRtoCount());
-  // This time, we should time out.
-  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_TOO_MANY_RTOS, _,
-                                           ConnectionCloseSource::FROM_SELF));
-  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
-  connection_.GetRetransmissionAlarm()->Fire();
-  EXPECT_FALSE(connection_.GetTimeoutAlarm()->IsSet());
-  EXPECT_FALSE(connection_.connected());
-}
-
 TEST_P(QuicConnectionTest, SendScheduler) {
   // Test that if we send a packet without delay, it is not queued.
-  QuicPacket* packet = ConstructDataPacket(1, !kHasStopWaiting);
+  QuicFramerPeer::SetPerspective(&peer_framer_, Perspective::IS_CLIENT);
+  std::unique_ptr<QuicPacket> packet = ConstructDataPacket(1, !kHasStopWaiting);
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
-  connection_.SendPacket(ENCRYPTION_NONE, 1, packet, HAS_RETRANSMITTABLE_DATA,
-                         false, false);
+  connection_.SendPacket(ENCRYPTION_NONE, 1, std::move(packet),
+                         HAS_RETRANSMITTABLE_DATA, false, false);
   EXPECT_EQ(0u, connection_.NumQueuedPackets());
 }
 
 TEST_P(QuicConnectionTest, FailToSendFirstPacket) {
   // Test that the connection does not crash when it fails to send the first
   // packet at which point self_address_ might be uninitialized.
+  QuicFramerPeer::SetPerspective(&peer_framer_, Perspective::IS_CLIENT);
   EXPECT_CALL(visitor_, OnConnectionClosed(_, _, _)).Times(1);
-  QuicPacket* packet = ConstructDataPacket(1, !kHasStopWaiting);
+  std::unique_ptr<QuicPacket> packet = ConstructDataPacket(1, !kHasStopWaiting);
   writer_->SetShouldWriteFail();
-  connection_.SendPacket(ENCRYPTION_NONE, 1, packet, HAS_RETRANSMITTABLE_DATA,
-                         false, false);
+  connection_.SendPacket(ENCRYPTION_NONE, 1, std::move(packet),
+                         HAS_RETRANSMITTABLE_DATA, false, false);
 }
 
 TEST_P(QuicConnectionTest, SendSchedulerEAGAIN) {
-  QuicPacket* packet = ConstructDataPacket(1, !kHasStopWaiting);
+  QuicFramerPeer::SetPerspective(&peer_framer_, Perspective::IS_CLIENT);
+  std::unique_ptr<QuicPacket> packet = ConstructDataPacket(1, !kHasStopWaiting);
   BlockOnNextWrite();
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, 1, _, _)).Times(0);
-  connection_.SendPacket(ENCRYPTION_NONE, 1, packet, HAS_RETRANSMITTABLE_DATA,
-                         false, false);
+  connection_.SendPacket(ENCRYPTION_NONE, 1, std::move(packet),
+                         HAS_RETRANSMITTABLE_DATA, false, false);
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 }
 
@@ -4566,6 +4528,7 @@ TEST_P(QuicConnectionTest, TestQueueLimitsOnSendStreamData) {
   size_t length = GetPacketLengthForOneStream(
       connection_.version().transport_version, kIncludeVersion,
       !kIncludeDiversificationNonce, PACKET_8BYTE_CONNECTION_ID,
+      PACKET_0BYTE_CONNECTION_ID,
       QuicPacketCreatorPeer::GetPacketNumberLength(creator_), &payload_length);
   connection_.SetMaxPacketLength(length);
 
@@ -4580,24 +4543,56 @@ TEST_P(QuicConnectionTest, TestQueueLimitsOnSendStreamData) {
 TEST_P(QuicConnectionTest, LoopThroughSendingPackets) {
   // All packets carry version info till version is negotiated.
   size_t payload_length;
+
+  // Number of packets this test generates. The goal is to have
+  // kPacketCount packets, each the same size (overhead and payload).
+  // The payload will vary depending on the overhead (which in turn
+  // varies per the QUIC packet encoding rules).
+  const int kPacketCount = 7;
+
+  // Get the basic packet size. This assumes, among other things, a
+  // stream offset of 0.
+  size_t length = GetPacketLengthForOneStream(
+      connection_.version().transport_version, kIncludeVersion,
+      !kIncludeDiversificationNonce, PACKET_8BYTE_CONNECTION_ID,
+      PACKET_0BYTE_CONNECTION_ID,
+      QuicPacketCreatorPeer::GetPacketNumberLength(creator_), &payload_length);
   // GetPacketLengthForOneStream() assumes a stream offset of 0 in determining
-  // packet length. The size of the offset field in a stream frame is 0 for
-  // offset 0, and 2 for non-zero offsets up through 16K. Increase
-  // max_packet_length by 2 so that subsequent packets containing subsequent
-  // stream frames with non-zero offets will fit within the packet length.
-  size_t length =
-      2 + GetPacketLengthForOneStream(
-              connection_.version().transport_version, kIncludeVersion,
-              !kIncludeDiversificationNonce, PACKET_8BYTE_CONNECTION_ID,
-              QuicPacketCreatorPeer::GetPacketNumberLength(creator_),
-              &payload_length);
+  // packet length. The size of the offset field in a stream frame is
+  // 0 for offset 0, and 2 for non-zero offsets up through 16K (for
+  // versions other than 99) and 1 for non-zero offsets through 16K
+  // for version 99. Increase the length by 1 or 2, as apporpriate, so
+  // that subsequent packets containing subsequent stream frames with
+  // non-zero offsets will fit within the packet length.
+  if (connection_.version().transport_version == QUIC_VERSION_99) {
+    length = length + 1;
+  } else {
+    length = length + 2;
+  }
 
   connection_.SetMaxPacketLength(length);
 
   // Queue the first packet.
-  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(7);
-  // The first stream frame will have 2 fewer overhead bytes than the other six.
-  const QuicString payload(payload_length * 7 + 2, 'a');
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
+      .Times(kPacketCount);
+
+  size_t total_payload_length = payload_length * kPacketCount;
+  // The first frame of the stream is at offset 0. When the offset is
+  // 0, it is not included in the stream frame. Increase the total
+  // payload so that the "missing" offset byte in the first packet is
+  // occupied by a payload byte. The net result is that each of the N
+  // packets of the test will contain a single stream frame, each of
+  // which will be the same size (overhead + data).
+  if (connection_.version().transport_version == QUIC_VERSION_99) {
+    // Version 99 encodes the offset in 1 byte for the scope of this test.
+    total_payload_length = total_payload_length + 1;
+  } else {
+    // Versions other than 99 encode the offset in 2 bytes for the
+    // scope of this test.
+    total_payload_length = total_payload_length + 2;
+  }
+  const QuicString payload(total_payload_length, 'a');
+
   EXPECT_EQ(payload.size(),
             connection_.SendStreamDataWithString(1, payload, 0, NO_FIN)
                 .bytes_consumed);
@@ -4605,7 +4600,7 @@ TEST_P(QuicConnectionTest, LoopThroughSendingPackets) {
 
 TEST_P(QuicConnectionTest, LoopThroughSendingPacketsWithTruncation) {
   set_perspective(Perspective::IS_SERVER);
-  if (GetParam().version.transport_version != QUIC_VERSION_99) {
+  if (GetParam().version.transport_version <= QUIC_VERSION_43) {
     // For IETF QUIC, encryption level will be switched to FORWARD_SECURE in
     // SendStreamDataWithString.
     QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
@@ -4631,9 +4626,16 @@ TEST_P(QuicConnectionTest, LoopThroughSendingPacketsWithTruncation) {
   EXPECT_EQ(payload.size(),
             connection_.SendStreamDataWithString(3, payload, 1350, NO_FIN)
                 .bytes_consumed);
-  // Just like above, we save 8 bytes on payload, and 8 on truncation. -2
-  // because stream offset size is 2 instead of 0.
-  EXPECT_EQ(non_truncated_packet_size, writer_->last_packet_size() + 8 * 2 - 2);
+  if (connection_.transport_version() > QUIC_VERSION_43) {
+    // Short header packets sent from server omit connection ID already, and
+    // stream offset size increases from 0 to 2.
+    EXPECT_EQ(non_truncated_packet_size, writer_->last_packet_size() - 2);
+  } else {
+    // Just like above, we save 8 bytes on payload, and 8 on truncation. -2
+    // because stream offset size is 2 instead of 0.
+    EXPECT_EQ(non_truncated_packet_size,
+              writer_->last_packet_size() + 8 * 2 - 2);
+  }
 }
 
 TEST_P(QuicConnectionTest, SendDelayedAck) {
@@ -4668,6 +4670,76 @@ TEST_P(QuicConnectionTest, SendDelayedAck) {
   }
   EXPECT_FALSE(writer_->ack_frames().empty());
   EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+}
+
+TEST_P(QuicConnectionTest, SendDelayedAfterQuiescence) {
+  QuicConnectionPeer::SetFastAckAfterQuiescence(&connection_, true);
+
+  // The beginning of the connection counts as quiescence.
+  QuicTime ack_time =
+      clock_.ApproximateNow() + QuicTime::Delta::FromMilliseconds(1);
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+  const uint8_t tag = 0x07;
+  connection_.SetDecrypter(ENCRYPTION_INITIAL,
+                           QuicMakeUnique<StrictTaggingDecrypter>(tag));
+  peer_framer_.SetEncrypter(ENCRYPTION_INITIAL,
+                            QuicMakeUnique<TaggingEncrypter>(tag));
+  // Process a packet from the non-crypto stream.
+  frame1_.stream_id = 3;
+
+  // The same as ProcessPacket(1) except that ENCRYPTION_INITIAL is used
+  // instead of ENCRYPTION_NONE.
+  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+  ProcessDataPacketAtLevel(1, !kHasStopWaiting, ENCRYPTION_INITIAL);
+
+  // Check if delayed ack timer is running for the expected interval.
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
+  // Simulate delayed ack alarm firing.
+  connection_.GetAckAlarm()->Fire();
+  // Check that ack is sent and that delayed ack alarm is reset.
+  if (GetParam().no_stop_waiting) {
+    EXPECT_EQ(1u, writer_->frame_count());
+    EXPECT_TRUE(writer_->stop_waiting_frames().empty());
+  } else {
+    EXPECT_EQ(2u, writer_->frame_count());
+    EXPECT_FALSE(writer_->stop_waiting_frames().empty());
+  }
+  EXPECT_FALSE(writer_->ack_frames().empty());
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+
+  // Process another packet immedately after sending the ack and expect the
+  // ack alarm to be set delayed ack time in the future.
+  ack_time = clock_.ApproximateNow() + DefaultDelayedAckTime();
+  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+  ProcessDataPacketAtLevel(2, !kHasStopWaiting, ENCRYPTION_INITIAL);
+
+  // Check if delayed ack timer is running for the expected interval.
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
+  // Simulate delayed ack alarm firing.
+  connection_.GetAckAlarm()->Fire();
+  // Check that ack is sent and that delayed ack alarm is reset.
+  if (GetParam().no_stop_waiting) {
+    EXPECT_EQ(1u, writer_->frame_count());
+    EXPECT_TRUE(writer_->stop_waiting_frames().empty());
+  } else {
+    EXPECT_EQ(2u, writer_->frame_count());
+    EXPECT_FALSE(writer_->stop_waiting_frames().empty());
+  }
+  EXPECT_FALSE(writer_->ack_frames().empty());
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+
+  // Wait 1 second and enesure the ack alarm is set to 1ms in the future.
+  clock_.AdvanceTime(QuicTime::Delta::FromSeconds(1));
+  ack_time = clock_.ApproximateNow() + QuicTime::Delta::FromMilliseconds(1);
+  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+  ProcessDataPacketAtLevel(3, !kHasStopWaiting, ENCRYPTION_INITIAL);
+
+  // Check if delayed ack timer is running for the expected interval.
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
 }
 
 TEST_P(QuicConnectionTest, SendDelayedAckDecimation) {
@@ -4726,6 +4798,133 @@ TEST_P(QuicConnectionTest, SendDelayedAckDecimation) {
   }
   EXPECT_FALSE(writer_->ack_frames().empty());
   EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+}
+
+TEST_P(QuicConnectionTest, SendDelayedAckAckDecimationAfterQuiescence) {
+  EXPECT_CALL(visitor_, OnAckNeedsRetransmittableFrame()).Times(AnyNumber());
+  QuicConnectionPeer::SetAckMode(&connection_, QuicConnection::ACK_DECIMATION);
+  QuicConnectionPeer::SetFastAckAfterQuiescence(&connection_, true);
+
+  const size_t kMinRttMs = 40;
+  RttStats* rtt_stats = const_cast<RttStats*>(manager_->GetRttStats());
+  rtt_stats->UpdateRtt(QuicTime::Delta::FromMilliseconds(kMinRttMs),
+                       QuicTime::Delta::Zero(), QuicTime::Zero());
+
+  // The beginning of the connection counts as quiescence.
+  QuicTime ack_time =
+      clock_.ApproximateNow() + QuicTime::Delta::FromMilliseconds(1);
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+  const uint8_t tag = 0x07;
+  connection_.SetDecrypter(ENCRYPTION_INITIAL,
+                           QuicMakeUnique<StrictTaggingDecrypter>(tag));
+  peer_framer_.SetEncrypter(ENCRYPTION_INITIAL,
+                            QuicMakeUnique<TaggingEncrypter>(tag));
+  // Process a packet from the non-crypto stream.
+  frame1_.stream_id = 3;
+
+  // The same as ProcessPacket(1) except that ENCRYPTION_INITIAL is used
+  // instead of ENCRYPTION_NONE.
+  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+  ProcessDataPacketAtLevel(1, !kHasStopWaiting, ENCRYPTION_INITIAL);
+
+  // Check if delayed ack timer is running for the expected interval.
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
+  // Simulate delayed ack alarm firing.
+  connection_.GetAckAlarm()->Fire();
+  // Check that ack is sent and that delayed ack alarm is reset.
+  if (GetParam().no_stop_waiting) {
+    EXPECT_EQ(1u, writer_->frame_count());
+    EXPECT_TRUE(writer_->stop_waiting_frames().empty());
+  } else {
+    EXPECT_EQ(2u, writer_->frame_count());
+    EXPECT_FALSE(writer_->stop_waiting_frames().empty());
+  }
+  EXPECT_FALSE(writer_->ack_frames().empty());
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+
+  // Process another packet immedately after sending the ack and expect the
+  // ack alarm to be set delayed ack time in the future.
+  ack_time = clock_.ApproximateNow() + DefaultDelayedAckTime();
+  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+  ProcessDataPacketAtLevel(2, !kHasStopWaiting, ENCRYPTION_INITIAL);
+
+  // Check if delayed ack timer is running for the expected interval.
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
+  // Simulate delayed ack alarm firing.
+  connection_.GetAckAlarm()->Fire();
+  // Check that ack is sent and that delayed ack alarm is reset.
+  if (GetParam().no_stop_waiting) {
+    EXPECT_EQ(1u, writer_->frame_count());
+    EXPECT_TRUE(writer_->stop_waiting_frames().empty());
+  } else {
+    EXPECT_EQ(2u, writer_->frame_count());
+    EXPECT_FALSE(writer_->stop_waiting_frames().empty());
+  }
+  EXPECT_FALSE(writer_->ack_frames().empty());
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+
+  // Wait 1 second and enesure the ack alarm is set to 1ms in the future.
+  clock_.AdvanceTime(QuicTime::Delta::FromSeconds(1));
+  ack_time = clock_.ApproximateNow() + QuicTime::Delta::FromMilliseconds(1);
+  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+  ProcessDataPacketAtLevel(3, !kHasStopWaiting, ENCRYPTION_INITIAL);
+
+  // Check if delayed ack timer is running for the expected interval.
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
+
+  // Process enough packets to get into ack decimation behavior.
+  // The ack time should be based on min_rtt/4, since it's less than the
+  // default delayed ack time.
+  ack_time = clock_.ApproximateNow() +
+             QuicTime::Delta::FromMilliseconds(kMinRttMs / 4);
+  QuicPacketNumber kFirstDecimatedPacket = 101;
+  for (unsigned int i = 0; i < kFirstDecimatedPacket - 4; ++i) {
+    EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+    ProcessDataPacketAtLevel(4 + i, !kHasStopWaiting, ENCRYPTION_INITIAL);
+  }
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+  // The same as ProcessPacket(1) except that ENCRYPTION_INITIAL is used
+  // instead of ENCRYPTION_NONE.
+  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+  ProcessDataPacketAtLevel(kFirstDecimatedPacket, !kHasStopWaiting,
+                           ENCRYPTION_INITIAL);
+
+  // Check if delayed ack timer is running for the expected interval.
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
+
+  // The 10th received packet causes an ack to be sent.
+  for (int i = 0; i < 9; ++i) {
+    EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+    EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+    ProcessDataPacketAtLevel(kFirstDecimatedPacket + 1 + i, !kHasStopWaiting,
+                             ENCRYPTION_INITIAL);
+  }
+  // Check that ack is sent and that delayed ack alarm is reset.
+  if (GetParam().no_stop_waiting) {
+    EXPECT_EQ(1u, writer_->frame_count());
+    EXPECT_TRUE(writer_->stop_waiting_frames().empty());
+  } else {
+    EXPECT_EQ(2u, writer_->frame_count());
+    EXPECT_FALSE(writer_->stop_waiting_frames().empty());
+  }
+  EXPECT_FALSE(writer_->ack_frames().empty());
+  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+
+  // Wait 1 second and enesure the ack alarm is set to 1ms in the future.
+  clock_.AdvanceTime(QuicTime::Delta::FromSeconds(1));
+  ack_time = clock_.ApproximateNow() + QuicTime::Delta::FromMilliseconds(1);
+  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+  ProcessDataPacketAtLevel(kFirstDecimatedPacket + 10, !kHasStopWaiting,
+                           ENCRYPTION_INITIAL);
+
+  // Check if delayed ack timer is running for the expected interval.
+  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
 }
 
 TEST_P(QuicConnectionTest, SendDelayedAckDecimationUnlimitedAggregation) {
@@ -4879,41 +5078,42 @@ TEST_P(QuicConnectionTest, SendDelayedAckDecimationWithReordering) {
     ProcessDataPacketAtLevel(1 + i, !kHasStopWaiting, ENCRYPTION_INITIAL);
   }
   EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
-  // The same as ProcessPacket(1) except that ENCRYPTION_INITIAL is used
-  // instead of ENCRYPTION_NONE.
-  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
-  ProcessDataPacketAtLevel(kFirstDecimatedPacket, !kHasStopWaiting,
-                           ENCRYPTION_INITIAL);
 
-  // Check if delayed ack timer is running for the expected interval.
-  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
-  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
-
-  // Process packet 10 first and ensure the alarm is one eighth min_rtt.
-  EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
-  ProcessDataPacketAtLevel(kFirstDecimatedPacket + 9, !kHasStopWaiting,
-                           ENCRYPTION_INITIAL);
-  ack_time = clock_.ApproximateNow() + QuicTime::Delta::FromMilliseconds(5);
-  EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
-  EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
-
-  // The 10th received packet causes an ack to be sent.
-  for (int i = 0; i < 8; ++i) {
-    EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+  // Receive one packet out of order and then the rest in order.
+  // The loop leaves a one packet gap between acks sent to simulate some loss.
+  for (int j = 0; j < 3; ++j) {
+    // Process packet 10 first and ensure the alarm is one eighth min_rtt.
     EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
-    ProcessDataPacketAtLevel(kFirstDecimatedPacket + 1 + i, !kHasStopWaiting,
-                             ENCRYPTION_INITIAL);
+    ProcessDataPacketAtLevel(kFirstDecimatedPacket + 9 + (j * 11),
+                             !kHasStopWaiting, ENCRYPTION_INITIAL);
+    ack_time = clock_.ApproximateNow() + QuicTime::Delta::FromMilliseconds(5);
+    EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+    EXPECT_EQ(ack_time, connection_.GetAckAlarm()->deadline());
+
+    // The 10th received packet causes an ack to be sent.
+    writer_->Reset();
+    for (int i = 0; i < 9; ++i) {
+      EXPECT_TRUE(connection_.GetAckAlarm()->IsSet());
+      EXPECT_CALL(visitor_, OnStreamFrame(_)).Times(1);
+      // The ACK shouldn't be sent until the 10th packet is processed.
+      EXPECT_TRUE(writer_->ack_frames().empty());
+      ProcessDataPacketAtLevel(kFirstDecimatedPacket + i + (j * 11),
+                               !kHasStopWaiting, ENCRYPTION_INITIAL);
+    }
+    // Check that ack is sent and that delayed ack alarm is reset.
+    if (GetParam().no_stop_waiting) {
+      EXPECT_EQ(1u, writer_->frame_count());
+      EXPECT_TRUE(writer_->stop_waiting_frames().empty());
+    } else {
+      EXPECT_EQ(2u, writer_->frame_count());
+      EXPECT_FALSE(writer_->stop_waiting_frames().empty());
+    }
+    EXPECT_FALSE(writer_->ack_frames().empty());
+    EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
+    if (!GetQuicReloadableFlag(quic_ack_reordered_packets)) {
+      break;
+    }
   }
-  // Check that ack is sent and that delayed ack alarm is reset.
-  if (GetParam().no_stop_waiting) {
-    EXPECT_EQ(1u, writer_->frame_count());
-    EXPECT_TRUE(writer_->stop_waiting_frames().empty());
-  } else {
-    EXPECT_EQ(2u, writer_->frame_count());
-    EXPECT_FALSE(writer_->stop_waiting_frames().empty());
-  }
-  EXPECT_FALSE(writer_->ack_frames().empty());
-  EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
 }
 
 TEST_P(QuicConnectionTest, SendDelayedAckDecimationWithLargeReordering) {
@@ -5291,7 +5491,7 @@ TEST_P(QuicConnectionTest, BundleAckForSecondCHLO) {
   }
   EXPECT_EQ(1u, writer_->stream_frames().size());
   EXPECT_EQ(1u, writer_->padding_frames().size());
-  EXPECT_FALSE(writer_->ack_frames().empty());
+  ASSERT_FALSE(writer_->ack_frames().empty());
   EXPECT_EQ(2u, LargestAcked(writer_->ack_frames().front()));
   EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
 }
@@ -5320,7 +5520,7 @@ TEST_P(QuicConnectionTest, BundleAckForSecondCHLOTwoPacketReject) {
   }
   EXPECT_EQ(1u, writer_->stream_frames().size());
   EXPECT_EQ(1u, writer_->padding_frames().size());
-  EXPECT_FALSE(writer_->ack_frames().empty());
+  ASSERT_FALSE(writer_->ack_frames().empty());
   EXPECT_EQ(2u, LargestAcked(writer_->ack_frames().front()));
   EXPECT_FALSE(connection_.GetAckAlarm()->IsSet());
 }
@@ -5393,13 +5593,18 @@ TEST_P(QuicConnectionTest, SendWhenDisconnected) {
                               ConnectionCloseBehavior::SILENT_CLOSE);
   EXPECT_FALSE(connection_.connected());
   EXPECT_FALSE(connection_.CanWriteStreamData());
-  QuicPacket* packet = ConstructDataPacket(1, !kHasStopWaiting);
+  std::unique_ptr<QuicPacket> packet = ConstructDataPacket(1, !kHasStopWaiting);
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, 1, _, _)).Times(0);
-  connection_.SendPacket(ENCRYPTION_NONE, 1, packet, HAS_RETRANSMITTABLE_DATA,
-                         false, false);
+  connection_.SendPacket(ENCRYPTION_NONE, 1, std::move(packet),
+                         HAS_RETRANSMITTABLE_DATA, false, false);
 }
 
 TEST_P(QuicConnectionTest, SendConnectivityProbingWhenDisconnected) {
+  // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
+  if (!IsDefaultTestConfiguration()) {
+    return;
+  }
+
   EXPECT_TRUE(connection_.connected());
   EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_PEER_GOING_AWAY, _,
                                            ConnectionCloseSource::FROM_SELF));
@@ -5422,13 +5627,9 @@ TEST_P(QuicConnectionTest, WriteBlockedAfterClientSendsConnectivityProbe) {
   // Block next write so that sending connectivity probe will encounter a
   // blocked write when send a connectivity probe to the peer.
   probing_writer.BlockOnNextWrite();
-  if (GetQuicReloadableFlag(quic_handle_write_results_for_connectivity_probe)) {
-    // Connection will not be marked as write blocked as connectivity probe only
-    // affects the probing_writer which is not the default.
-    EXPECT_CALL(visitor_, OnWriteBlocked()).Times(0);
-  } else {
-    EXPECT_CALL(visitor_, OnWriteBlocked()).Times(1);
-  }
+  // Connection will not be marked as write blocked as connectivity probe only
+  // affects the probing_writer which is not the default.
+  EXPECT_CALL(visitor_, OnWriteBlocked()).Times(0);
 
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, 1, _, _)).Times(1);
   connection_.SendConnectivityProbingPacket(&probing_writer,
@@ -5456,13 +5657,9 @@ TEST_P(QuicConnectionTest, WriterErrorWhenClientSendsConnectivityProbe) {
   TestPacketWriter probing_writer(version(), &clock_);
   probing_writer.SetShouldWriteFail();
 
-  if (GetQuicReloadableFlag(quic_handle_write_results_for_connectivity_probe)) {
-    // Connection should not be closed if a connectivity probe is failed to be
-    // sent.
-    EXPECT_CALL(visitor_, OnConnectionClosed(_, _, _)).Times(0);
-  } else {
-    EXPECT_CALL(visitor_, OnConnectionClosed(_, _, _)).Times(1);
-  }
+  // Connection should not be closed if a connectivity probe is failed to be
+  // sent.
+  EXPECT_CALL(visitor_, OnConnectionClosed(_, _, _)).Times(0);
 
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, 1, _, _)).Times(0);
   connection_.SendConnectivityProbingPacket(&probing_writer,
@@ -5474,13 +5671,9 @@ TEST_P(QuicConnectionTest, WriterErrorWhenServerSendsConnectivityProbe) {
   QuicPacketCreatorPeer::SetSendVersionInPacket(creator_, false);
 
   writer_->SetShouldWriteFail();
-  if (GetQuicReloadableFlag(quic_handle_write_results_for_connectivity_probe)) {
-    // Connection should not be closed if a connectivity probe is failed to be
-    // sent.
-    EXPECT_CALL(visitor_, OnConnectionClosed(_, _, _)).Times(0);
-  } else {
-    EXPECT_CALL(visitor_, OnConnectionClosed(_, _, _)).Times(1);
-  }
+  // Connection should not be closed if a connectivity probe is failed to be
+  // sent.
+  EXPECT_CALL(visitor_, OnConnectionClosed(_, _, _)).Times(0);
 
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, 1, _, _)).Times(0);
   connection_.SendConnectivityProbingPacket(writer_.get(),
@@ -5488,7 +5681,7 @@ TEST_P(QuicConnectionTest, WriterErrorWhenServerSendsConnectivityProbe) {
 }
 
 TEST_P(QuicConnectionTest, PublicReset) {
-  if (GetParam().version.transport_version == QUIC_VERSION_99) {
+  if (GetParam().version.transport_version > QUIC_VERSION_43) {
     return;
   }
   QuicPublicResetPacket header;
@@ -5504,17 +5697,18 @@ TEST_P(QuicConnectionTest, PublicReset) {
 }
 
 TEST_P(QuicConnectionTest, IetfStatelessReset) {
-  if (GetParam().version.transport_version != QUIC_VERSION_99) {
+  if (GetParam().version.transport_version <= QUIC_VERSION_43) {
     return;
   }
+  const QuicUint128 kTestStatelessResetToken = 1010101;
   QuicConfig config;
   QuicConfigPeer::SetReceivedStatelessResetToken(&config,
                                                  kTestStatelessResetToken);
   EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
   connection_.SetFromConfig(config);
   std::unique_ptr<QuicEncryptedPacket> packet(
-      framer_.BuildIetfStatelessResetPacket(connection_id_,
-                                            kTestStatelessResetToken));
+      QuicFramer::BuildIetfStatelessResetPacket(connection_id_,
+                                                kTestStatelessResetToken));
   std::unique_ptr<QuicReceivedPacket> received(
       ConstructReceivedPacket(*packet, QuicTime::Zero()));
   EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_PUBLIC_RESET, _,
@@ -5523,6 +5717,11 @@ TEST_P(QuicConnectionTest, IetfStatelessReset) {
 }
 
 TEST_P(QuicConnectionTest, GoAway) {
+  if (GetParam().version.transport_version == QUIC_VERSION_99) {
+    // GoAway is not available in version 99.
+    return;
+  }
+
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
 
   QuicGoAwayFrame goaway;
@@ -5578,7 +5777,7 @@ TEST_P(QuicConnectionTest, ServerSendsVersionNegotiationPacket) {
   SetQuicFlag(&FLAGS_quic_enable_version_99, false);
   connection_.SetSupportedVersions(CurrentSupportedVersions());
   set_perspective(Perspective::IS_SERVER);
-  if (GetParam().version.transport_version == QUIC_VERSION_99) {
+  if (GetParam().version.transport_version > QUIC_VERSION_43) {
     peer_framer_.set_version_for_tests(
         ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_99));
   } else {
@@ -5587,7 +5786,7 @@ TEST_P(QuicConnectionTest, ServerSendsVersionNegotiationPacket) {
   }
 
   QuicPacketHeader header;
-  header.connection_id = connection_id_;
+  header.destination_connection_id = connection_id_;
   header.version_flag = true;
   header.packet_number = 12;
 
@@ -5599,11 +5798,9 @@ TEST_P(QuicConnectionTest, ServerSendsVersionNegotiationPacket) {
                                                    buffer, kMaxPacketSize);
 
   framer_.set_version(version());
-  if (GetParam().version.transport_version == QUIC_VERSION_99) {
-    // Change writer_'s framer's version, so that it can process the IETF
-    // version negotiation packet.
-    writer_->SetSupportedVersions(AllSupportedVersions());
-  }
+  // Writer's framer's perspective is client, so that it needs to have the right
+  // version to process either IETF or GQUIC version negotiation packet.
+  writer_->SetSupportedVersions({version()});
   connection_.ProcessUdpPacket(
       kSelfAddress, kPeerAddress,
       QuicReceivedPacket(buffer, encrypted_length, QuicTime::Zero(), false));
@@ -5626,7 +5823,7 @@ TEST_P(QuicConnectionTest, ServerSendsVersionNegotiationPacketSocketBlocked) {
   SetQuicFlag(&FLAGS_quic_enable_version_99, false);
   connection_.SetSupportedVersions(CurrentSupportedVersions());
   set_perspective(Perspective::IS_SERVER);
-  if (GetParam().version.transport_version == QUIC_VERSION_99) {
+  if (GetParam().version.transport_version > QUIC_VERSION_43) {
     peer_framer_.set_version_for_tests(
         ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_99));
   } else {
@@ -5635,7 +5832,7 @@ TEST_P(QuicConnectionTest, ServerSendsVersionNegotiationPacketSocketBlocked) {
   }
 
   QuicPacketHeader header;
-  header.connection_id = connection_id_;
+  header.destination_connection_id = connection_id_;
   header.version_flag = true;
   header.packet_number = 12;
 
@@ -5648,11 +5845,9 @@ TEST_P(QuicConnectionTest, ServerSendsVersionNegotiationPacketSocketBlocked) {
 
   framer_.set_version(version());
   BlockOnNextWrite();
-  if (GetParam().version.transport_version == QUIC_VERSION_99) {
-    // Change writer_'s framer's version, so that it can process the IETF
-    // version negotiation packet.
-    writer_->SetSupportedVersions(AllSupportedVersions());
-  }
+  // Writer's framer's perspective is client, so that it needs to have the right
+  // version to process either IETF or GQUIC version negotiation packet.
+  writer_->SetSupportedVersions({version()});
   connection_.ProcessUdpPacket(
       kSelfAddress, kPeerAddress,
       QuicReceivedPacket(buffer, encrypted_length, QuicTime::Zero(), false));
@@ -5681,7 +5876,7 @@ TEST_P(QuicConnectionTest,
   SetQuicFlag(&FLAGS_quic_enable_version_99, false);
   connection_.SetSupportedVersions(CurrentSupportedVersions());
   set_perspective(Perspective::IS_SERVER);
-  if (GetParam().version.transport_version == QUIC_VERSION_99) {
+  if (GetParam().version.transport_version > QUIC_VERSION_43) {
     peer_framer_.set_version_for_tests(
         ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_99));
   } else {
@@ -5690,7 +5885,7 @@ TEST_P(QuicConnectionTest,
   }
 
   QuicPacketHeader header;
-  header.connection_id = connection_id_;
+  header.destination_connection_id = connection_id_;
   header.version_flag = true;
   header.packet_number = 12;
 
@@ -5705,11 +5900,9 @@ TEST_P(QuicConnectionTest,
   set_perspective(Perspective::IS_SERVER);
   BlockOnNextWrite();
   writer_->set_is_write_blocked_data_buffered(true);
-  if (GetParam().version.transport_version == QUIC_VERSION_99) {
-    // Change writer_'s framer's version, so that it can process the IETF
-    // version negotiation packet.
-    writer_->SetSupportedVersions(AllSupportedVersions());
-  }
+  // Writer's framer's perspective is client, so that it needs to have the right
+  // version to process either IETF or GQUIC version negotiation packet.
+  writer_->SetSupportedVersions({version()});
   connection_.ProcessUdpPacket(
       kSelfAddress, kPeerAddress,
       QuicReceivedPacket(buffer, encryped_length, QuicTime::Zero(), false));
@@ -5737,7 +5930,8 @@ TEST_P(QuicConnectionTest, ClientHandlesVersionNegotiation) {
   // Now force another packet.  The connection should transition into
   // NEGOTIATED_VERSION state and tell the packet creator to StopSendingVersion.
   QuicPacketHeader header;
-  header.connection_id = connection_id_;
+  header.destination_connection_id = connection_id_;
+  header.destination_connection_id_length = PACKET_0BYTE_CONNECTION_ID;
   header.packet_number = 12;
   header.version_flag = false;
   QuicFrames frames;
@@ -5752,7 +5946,7 @@ TEST_P(QuicConnectionTest, ClientHandlesVersionNegotiation) {
   connection_.ProcessUdpPacket(
       kSelfAddress, kPeerAddress,
       QuicReceivedPacket(buffer, encrypted_length, QuicTime::Zero(), false));
-  if (GetParam().version.transport_version == QUIC_VERSION_99) {
+  if (GetParam().version.transport_version > QUIC_VERSION_43) {
     // IETF QUIC stops sending version when switch to FORWARD_SECURE.
     EXPECT_NE(ENCRYPTION_FORWARD_SECURE, connection_.encryption_level());
     ASSERT_TRUE(QuicPacketCreatorPeer::SendVersionInPacket(creator_));
@@ -5769,7 +5963,7 @@ TEST_P(QuicConnectionTest, BadVersionNegotiation) {
                                  ConnectionCloseSource::FROM_SELF));
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       framer_.BuildVersionNegotiationPacket(
-          connection_id_, connection_.transport_version() == QUIC_VERSION_99,
+          connection_id_, connection_.transport_version() > QUIC_VERSION_43,
           AllSupportedVersions()));
   std::unique_ptr<QuicReceivedPacket> received(
       ConstructReceivedPacket(*encrypted, QuicTime::Zero()));
@@ -5817,9 +6011,8 @@ TEST_P(QuicConnectionTest, CheckSendStats) {
   // For IETF QUIC, version is not included as the encryption level switches to
   // FORWARD_SECURE in SendStreamDataWithString.
   size_t save_on_version =
-      GetParam().version.transport_version == QUIC_VERSION_99
-          ? 0
-          : kQuicVersionSize;
+      GetParam().version.transport_version > QUIC_VERSION_43 ? 0
+                                                             : kQuicVersionSize;
   EXPECT_EQ(3 * first_packet_size + 2 * second_packet_size - save_on_version,
             stats.bytes_sent);
   EXPECT_EQ(5u, stats.packets_sent);
@@ -5833,7 +6026,10 @@ TEST_P(QuicConnectionTest, CheckSendStats) {
 TEST_P(QuicConnectionTest, ProcessFramesIfPacketClosedConnection) {
   // Construct a packet with stream frame and connection close frame.
   QuicPacketHeader header;
-  header.connection_id = connection_id_;
+  header.destination_connection_id = connection_id_;
+  if (peer_framer_.transport_version() > QUIC_VERSION_43) {
+    header.destination_connection_id_length = PACKET_0BYTE_CONNECTION_ID;
+  }
   header.packet_number = 1;
   header.version_flag = false;
 
@@ -5918,7 +6114,7 @@ TEST_P(QuicConnectionTest, ConnectionCloseWhenWriteBlocked) {
 TEST_P(QuicConnectionTest, OnPacketHeaderDebugVisitor) {
   QuicPacketHeader header;
   header.packet_number = 1;
-  if (GetParam().version.transport_version == QUIC_VERSION_99) {
+  if (GetParam().version.transport_version > QUIC_VERSION_43) {
     QuicFramerPeer::SetLastPacketIsIetfQuic(
         QuicConnectionPeer::GetFramer(&connection_), true);
   }
@@ -6045,6 +6241,11 @@ TEST_P(QuicConnectionTest, SendBlockedImmediately) {
 }
 
 TEST_P(QuicConnectionTest, SendingUnencryptedStreamDataFails) {
+  // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
+  if (!IsDefaultTestConfiguration()) {
+    return;
+  }
+
   EXPECT_CALL(visitor_,
               OnConnectionClosed(QUIC_ATTEMPT_TO_SEND_UNENCRYPTED_STREAM_DATA,
                                  _, ConnectionCloseSource::FROM_SELF));
@@ -6055,44 +6256,8 @@ TEST_P(QuicConnectionTest, SendingUnencryptedStreamDataFails) {
   EXPECT_FALSE(connection_.connected());
 }
 
-TEST_P(QuicConnectionTest, OnPathDegrading) {
-  if (use_path_degrading_alarm_) {
-    return;
-  }
-
-  QuicByteCount packet_size;
-  const size_t kMinTimeoutsBeforePathDegrading = 2;
-
-  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
-      .WillOnce(SaveArg<3>(&packet_size));
-  connection_.SendStreamDataWithString(3, "packet", 0, NO_FIN);
-  size_t num_timeouts =
-      kMinTimeoutsBeforePathDegrading +
-      QuicSentPacketManagerPeer::GetMaxTailLossProbes(
-          QuicConnectionPeer::GetSentPacketManager(&connection_));
-  for (size_t i = 1; i < num_timeouts; ++i) {
-    clock_.AdvanceTime(QuicTime::Delta::FromSeconds(10 * i));
-    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, packet_size, _));
-    connection_.GetRetransmissionAlarm()->Fire();
-  }
-  // Next RTO should cause OnPathDegrading to be called before the
-  // retransmission is sent out.
-  clock_.AdvanceTime(
-      QuicTime::Delta::FromSeconds(kMinTimeoutsBeforePathDegrading * 10));
-  {
-    InSequence s;
-    EXPECT_CALL(visitor_, OnPathDegrading());
-    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, packet_size, _));
-  }
-  connection_.GetRetransmissionAlarm()->Fire();
-}
-
 // Includes regression test for https://b.corp.google.com/issues/69979024.
 TEST_P(QuicConnectionTest, PathDegradingAlarm) {
-  if (!use_path_degrading_alarm_) {
-    return;
-  }
-
   EXPECT_TRUE(connection_.connected());
   EXPECT_FALSE(connection_.GetPathDegradingAlarm()->IsSet());
   EXPECT_FALSE(connection_.IsPathDegrading());
@@ -6162,9 +6327,6 @@ TEST_P(QuicConnectionTest, PathDegradingAlarm) {
 }
 
 TEST_P(QuicConnectionTest, RetransmittableOnWireSetsPathDegradingAlarm) {
-  if (!use_path_degrading_alarm_) {
-    return;
-  }
   const QuicTime::Delta retransmittable_on_wire_timeout =
       QuicTime::Delta::FromMilliseconds(50);
   connection_.set_retransmittable_on_wire_timeout(
@@ -6228,10 +6390,6 @@ TEST_P(QuicConnectionTest, RetransmittableOnWireSetsPathDegradingAlarm) {
 // spin timer to detect path degrading when a new packet is sent on the
 // degraded path.
 TEST_P(QuicConnectionTest, NoPathDegradingAlarmIfPathIsDegrading) {
-  if (!use_path_degrading_alarm_) {
-    return;
-  }
-
   EXPECT_TRUE(connection_.connected());
   EXPECT_FALSE(connection_.GetPathDegradingAlarm()->IsSet());
   EXPECT_FALSE(connection_.IsPathDegrading());
@@ -6297,10 +6455,6 @@ TEST_P(QuicConnectionTest, NoPathDegradingAlarmIfPathIsDegrading) {
 // the timer to detect future path degrading when forward progress is made
 // after path has been marked degrading.
 TEST_P(QuicConnectionTest, UnmarkPathDegradingOnForwardProgress) {
-  if (!use_path_degrading_alarm_) {
-    return;
-  }
-
   EXPECT_TRUE(connection_.connected());
   EXPECT_FALSE(connection_.GetPathDegradingAlarm()->IsSet());
   EXPECT_FALSE(connection_.IsPathDegrading());
@@ -6473,6 +6627,21 @@ TEST_P(QuicConnectionTest, NotBecomeApplicationLimitedDueToWriteBlock) {
   BlockOnNextWrite();
 
   connection_.SendStreamData3();
+
+  if (!GetQuicReloadableFlag(quic_retransmissions_app_limited)) {
+    return;
+  }
+  // Now unblock the writer, become congestion control blocked,
+  // and ensure we become app-limited after writing.
+  writer_->SetWritable();
+  CongestionBlockWrites();
+  EXPECT_CALL(visitor_, WillingAndAbleToWrite()).WillRepeatedly(Return(false));
+  {
+    InSequence seq;
+    EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
+    EXPECT_CALL(*send_algorithm_, OnApplicationLimited(_)).Times(1);
+  }
+  connection_.OnCanWrite();
 }
 
 // Test the mode in which the link is filled up with probing retransmissions if
@@ -6568,7 +6737,7 @@ TEST_P(QuicConnectionTest, ClientAlwaysSendConnectionId) {
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _)).Times(1);
   connection_.SendStreamDataWithString(3, "foo", 0, NO_FIN);
   EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID,
-            writer_->last_packet_header().connection_id_length);
+            writer_->last_packet_header().destination_connection_id_length);
 
   EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
   QuicConfig config;
@@ -6579,7 +6748,7 @@ TEST_P(QuicConnectionTest, ClientAlwaysSendConnectionId) {
   connection_.SendStreamDataWithString(3, "bar", 3, NO_FIN);
   // Verify connection id is still sent in the packet.
   EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID,
-            writer_->last_packet_header().connection_id_length);
+            writer_->last_packet_header().destination_connection_id_length);
 }
 
 TEST_P(QuicConnectionTest, SendProbingRetransmissions) {
@@ -6827,6 +6996,18 @@ TEST_P(QuicConnectionTest, ValidStatelessResetToken) {
   EXPECT_TRUE(connection_.IsValidStatelessResetToken(kTestToken));
 }
 
+TEST_P(QuicConnectionTest, WriteBlockedWithInvalidAck) {
+  SetQuicReloadableFlag(quic_validate_ack_largest_observed, true);
+  EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_INVALID_ACK_DATA, _, _));
+
+  BlockOnNextWrite();
+  connection_.SendStreamDataWithString(5, "foo", 0, FIN);
+  // This causes connection to be closed because packet 1 has not been sent yet.
+  QuicAckFrame frame = InitAckFrame(1);
+  ProcessAckPacket(1, &frame);
+}
+
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

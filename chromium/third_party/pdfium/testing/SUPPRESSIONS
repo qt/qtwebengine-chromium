@@ -316,20 +316,20 @@ bug_679642.in * * noxfa
 bug_679643.in * * noxfa
 bug_735912.in * * noxfa
 
+# xfa_specific
+
+# TODO(pdfium:1106): Remove after associated bug is fixed
+resolve_nodes_1.pdf * * *
+
 #
 # Pixel tests
 #
 bug_492.in * nov8 *
 
-#
 # xfa_specific
 
-# TODO(rharrison): Create expectations for existing files.
-barcode_test.pdf * * *
-dynamic_list_box_allow_multiple_selection.pdf * * *
-dynamic_password_field_background_fill.pdf * * *
-resolve_nodes.pdf * * *
+# TODO(pdfium:1107): Remove after associated bug is fixed
 standard_symbols.pdf * * *
-xfa_example.in * * *
-xfa_node_caption.pdf * * *
-xfa_textfield.in * * *
+# TODO(pdfium:1095): Remove after associated bug is fixed
+xfa_example.in win * *
+xfa_textfield.in win * *

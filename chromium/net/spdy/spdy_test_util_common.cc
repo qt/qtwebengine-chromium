@@ -322,7 +322,7 @@ SpdySessionDependencies::SpdySessionDependencies(
       cert_transparency_verifier(std::make_unique<DoNothingCTVerifier>()),
       ct_policy_enforcer(std::make_unique<DefaultCTPolicyEnforcer>()),
       proxy_resolution_service(std::move(proxy_resolution_service)),
-      ssl_config_service(base::MakeRefCounted<SSLConfigServiceDefaults>()),
+      ssl_config_service(std::make_unique<SSLConfigServiceDefaults>()),
       socket_factory(std::make_unique<MockClientSocketFactory>()),
       http_auth_handler_factory(
           HttpAuthHandlerFactory::CreateDefault(host_resolver.get())),
@@ -339,13 +339,6 @@ SpdySessionDependencies::SpdySessionDependencies(
       net_log(nullptr),
       http_09_on_non_default_ports_enabled(false),
       disable_idle_sockets_close_on_memory_pressure(false) {
-  // Note: The CancelledTransaction test does cleanup by running all
-  // tasks in the message loop (RunAllPending).  Unfortunately, that
-  // doesn't clean up tasks on the host resolver thread; and
-  // TCPConnectJob is currently not cancellable.  Using synchronous
-  // lookups allows the test to shutdown cleanly.  Until we have
-  // cancellable TCPConnectJobs, use synchronous lookups.
-  host_resolver->set_synchronous_mode(true);
   http2_settings[spdy::SETTINGS_INITIAL_WINDOW_SIZE] =
       kDefaultInitialWindowSize;
 }
@@ -432,7 +425,7 @@ SpdyURLRequestContext::SpdyURLRequestContext() : storage_(this) {
   storage_.set_ct_policy_enforcer(std::make_unique<DefaultCTPolicyEnforcer>());
   storage_.set_cert_transparency_verifier(
       std::make_unique<DoNothingCTVerifier>());
-  storage_.set_ssl_config_service(new SSLConfigServiceDefaults);
+  storage_.set_ssl_config_service(std::make_unique<SSLConfigServiceDefaults>());
   storage_.set_http_auth_handler_factory(
       HttpAuthHandlerFactory::CreateDefault(host_resolver()));
   storage_.set_http_server_properties(

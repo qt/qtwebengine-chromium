@@ -36,9 +36,8 @@
 #include "gin/public/context_holder.h"
 #include "gin/public/gin_embedders.h"
 #include "third_party/blink/renderer/platform/bindings/scoped_persistent.h"
-#include "third_party/blink/renderer/platform/bindings/v0_custom_element_binding.h"
 #include "third_party/blink/renderer/platform/bindings/v8_global_value_map.h"
-#include "third_party/blink/renderer/platform/bindings/wrapper_type_info.h"
+#include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
@@ -49,14 +48,10 @@
 
 namespace blink {
 
+class V0CustomElementBinding;
 class V8DOMActivityLogger;
 class V8PerContextData;
-
-enum V8ContextEmbedderDataField {
-  kV8ContextPerContextDataIndex = static_cast<int>(
-      gin::kPerContextDataStartIndex +  // NOLINT(readability/enum_casing)
-      gin::kEmbedderBlink),             // NOLINT(readability/enum_casing)
-};
+struct WrapperTypeInfo;
 
 // Used to hold data that is associated with a single v8::Context object, and
 // has a 1:1 relationship with v8::Context.

@@ -5,7 +5,7 @@
 #include "third_party/blink/renderer/platform/scheduler/renderer/webthread_impl_for_renderer_scheduler.h"
 
 #include "base/location.h"
-#include "third_party/blink/renderer/platform/scheduler/base/task_queue.h"
+#include "base/task/sequence_manager/task_queue.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
 
 namespace blink {
@@ -14,7 +14,6 @@ namespace scheduler {
 WebThreadImplForRendererScheduler::WebThreadImplForRendererScheduler(
     MainThreadSchedulerImpl* scheduler)
     : task_runner_(scheduler->DefaultTaskRunner()),
-      idle_task_runner_(scheduler->IdleTaskRunner()),
       scheduler_(scheduler),
       thread_id_(base::PlatformThread::CurrentId()) {}
 
@@ -27,11 +26,6 @@ blink::PlatformThreadId WebThreadImplForRendererScheduler::ThreadId() const {
 
 blink::ThreadScheduler* WebThreadImplForRendererScheduler::Scheduler() const {
   return scheduler_;
-}
-
-SingleThreadIdleTaskRunner*
-WebThreadImplForRendererScheduler::GetIdleTaskRunner() const {
-  return idle_task_runner_.get();
 }
 
 scoped_refptr<base::SingleThreadTaskRunner>

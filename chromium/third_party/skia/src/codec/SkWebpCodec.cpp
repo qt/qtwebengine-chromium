@@ -5,6 +5,9 @@
  * found in the LICENSE file.
  */
 
+#include "SkWebpCodec.h"
+
+#include "../jumper/SkJumper.h"
 #include "SkBitmap.h"
 #include "SkCanvas.h"
 #include "SkCodecAnimation.h"
@@ -16,8 +19,7 @@
 #include "SkSampler.h"
 #include "SkStreamPriv.h"
 #include "SkTemplates.h"
-#include "SkWebpCodec.h"
-#include "../jumper/SkJumper.h"
+#include "SkTo.h"
 
 // A WebP decoder on top of (subset of) libwebp
 // For more information on WebP image format, and libwebp library, see:
@@ -363,13 +365,16 @@ static void pick_memory_stages(SkColorType ct, SkRasterPipeline::StockStage* loa
             if (load) *load = SkRasterPipeline::load_f16;
             if (store) *store = SkRasterPipeline::store_f16;
             break;
+        case kRGBA_F32_SkColorType:
+            if (load) *load = SkRasterPipeline::load_f32;
+            if (store) *store = SkRasterPipeline::store_f32;
+            break;
     }
 }
 
 // Requires that the src input be unpremultiplied (or opaque).
 static void blend_line(SkColorType dstCT, void* dst,
                        SkColorType srcCT, const void* src,
-                       bool needsSrgbToLinear,
                        SkAlphaType dstAt,
                        bool srcHasAlpha,
                        int width) {
@@ -382,9 +387,6 @@ static void blend_line(SkColorType dstCT, void* dst,
 
     // Load the final dst.
     p.append(load_dst, &dst_ctx);
-    if (needsSrgbToLinear) {
-        p.append(SkRasterPipeline::from_srgb);
-    }
     if (kUnpremul_SkAlphaType == dstAt) {
         p.append(SkRasterPipeline::premul);
     }
@@ -394,9 +396,6 @@ static void blend_line(SkColorType dstCT, void* dst,
     SkRasterPipeline::StockStage load_src;
     pick_memory_stages(srcCT, &load_src, nullptr);
     p.append(load_src, &src_ctx);
-    if (needsSrgbToLinear) {
-        p.append(SkRasterPipeline::from_srgb);
-    }
     if (srcHasAlpha) {
         p.append(SkRasterPipeline::premul);
     }
@@ -406,9 +405,6 @@ static void blend_line(SkColorType dstCT, void* dst,
     // Convert back to dst.
     if (kUnpremul_SkAlphaType == dstAt) {
         p.append(SkRasterPipeline::unpremul);
-    }
-    if (needsSrgbToLinear) {
-        p.append(SkRasterPipeline::to_srgb);
     }
     p.append(store_dst, &dst_ctx);
 
@@ -518,14 +514,6 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
 
     const bool blendWithPrevFrame = !independent && frame.blend_method == WEBP_MUX_BLEND
         && frame.has_alpha;
-    if (blendWithPrevFrame && options.fPremulBehavior == SkTransferFunctionBehavior::kRespect) {
-        // Blending is done with SkRasterPipeline, which requires a color space that is valid for
-        // rendering.
-        const auto* cs = dstInfo.colorSpace();
-        if (!cs || (!cs->gammaCloseToSRGB() && !cs->gammaIsLinear())) {
-            return kInvalidConversion;
-        }
-    }
 
     SkBitmap webpDst;
     auto webpInfo = dstInfo;
@@ -614,9 +602,6 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
             return kInvalidInput;
     }
 
-    const bool needsSrgbToLinear = dstInfo.gammaCloseToSRGB() &&
-            options.fPremulBehavior == SkTransferFunctionBehavior::kRespect;
-
     const size_t dstBpp = dstInfo.bytesPerPixel();
     dst = SkTAddOffset<void>(dst, dstBpp * dstX + rowBytes * dstY);
     const size_t srcRowBytes = config.output.u.RGBA.stride;
@@ -641,7 +626,7 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
         for (int y = 0; y < rowsDecoded; y++) {
             this->applyColorXform(xformDst, xformSrc, scaledWidth, xformAlphaType);
             if (blendWithPrevFrame) {
-                blend_line(dstCT, dst, dstCT, xformDst, needsSrgbToLinear,
+                blend_line(dstCT, dst, dstCT, xformDst,
                         dstInfo.alphaType(), frame.has_alpha, scaledWidth);
                 dst = SkTAddOffset<void>(dst, rowBytes);
             } else {
@@ -653,7 +638,7 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
         const uint8_t* src = config.output.u.RGBA.rgba;
 
         for (int y = 0; y < rowsDecoded; y++) {
-            blend_line(dstCT, dst, webpDst.colorType(), src, needsSrgbToLinear,
+            blend_line(dstCT, dst, webpDst.colorType(), src,
                     dstInfo.alphaType(), frame.has_alpha, scaledWidth);
             src = SkTAddOffset<const uint8_t>(src, srcRowBytes);
             dst = SkTAddOffset<void>(dst, rowBytes);

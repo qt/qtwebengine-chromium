@@ -110,7 +110,7 @@ TEST_F(DisplayChangeObserverTest, GetExternalManagedDisplayModeList) {
 TEST_F(DisplayChangeObserverTest, GetEmptyExternalManagedDisplayModeList) {
   FakeDisplaySnapshot display_snapshot(
       123, gfx::Point(), gfx::Size(), DISPLAY_CONNECTION_TYPE_UNKNOWN, false,
-      false, false, std::string(), {}, nullptr, nullptr, 0, gfx::Size());
+      false, false, false, std::string(), {}, nullptr, nullptr, 0, gfx::Size());
 
   ManagedDisplayInfo::ManagedDisplayModeList display_modes =
       DisplayChangeObserver::GetExternalManagedDisplayModeList(
@@ -364,10 +364,13 @@ TEST_F(DisplayChangeObserverTest, FindDeviceScaleFactor) {
   // 12.3" 2400x1600
   EXPECT_EQ(2.0f, ComputeDeviceScaleFactor(12.3f, gfx::Rect(2400, 1600)));
 
+// 12.3" 3000x2000 (meowth)
+  EXPECT_EQ(2.25f, ComputeDeviceScaleFactor(12.3f, gfx::Rect(3000, 2000)));
+
   // Erroneous values should still work.
   EXPECT_EQ(1.0f, DisplayChangeObserver::FindDeviceScaleFactor(-100.0f));
   EXPECT_EQ(1.0f, DisplayChangeObserver::FindDeviceScaleFactor(0.0f));
-  EXPECT_EQ(2.0f, DisplayChangeObserver::FindDeviceScaleFactor(10000.0f));
+  EXPECT_EQ(2.25f, DisplayChangeObserver::FindDeviceScaleFactor(10000.0f));
 }
 
 TEST_F(DisplayChangeObserverTest,

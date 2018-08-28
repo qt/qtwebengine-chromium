@@ -2,17 +2,18 @@
 
 <link rel="import" href="chrome://resources/cr_elements/cr_container_shadow_behavior.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_icons_css.html">
-<link rel="import" href="chrome://resources/cr_elements/shared_style_css.html">
+<link rel="import" href="chrome://resources/cr_elements/icons.html">
 <link rel="import" href="chrome://resources/cr_elements/paper_button_style_css.html">
+<link rel="import" href="chrome://resources/cr_elements/shared_style_css.html">
+<link rel="import" href="chrome://resources/cr_elements/shared_vars_css.html">
 <link rel="import" href="chrome://resources/html/cr.html">
 <link rel="import" href="chrome://resources/html/cr/ui/focus_outline_manager.html">
 <link rel="import" href="chrome://resources/html/cr/ui/focus_without_ink.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-collapse/iron-collapse.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/iron-icons.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/iron-icon/iron-icon.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-icon-button/paper-icon-button-light.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-styles/color.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/paper-styles/shadow.html">
 <link rel="import" href="code_section.html">
 <link rel="import" href="item_util.html">
 <link rel="import" href="navigation_helper.html">
@@ -31,16 +32,16 @@
       }
 
       iron-icon {
-        --iron-icon-fill-color: var(--paper-grey-500);
+        --iron-icon-fill-color: var(--google-grey-refresh-700);
         @apply --cr-icon-height-width;
         flex-shrink: 0;
       }
 
-      iron-icon[icon=warning] {
+      iron-icon[icon='cr:warning'] {
         --iron-icon-fill-color: var(--paper-orange-500);
       }
 
-      iron-icon[icon=error] {
+      iron-icon[icon='cr:error'] {
         --iron-icon-fill-color: var(--paper-red-700);
       }
 
@@ -48,7 +49,7 @@
        * detail_view.html and error_page.html. Refactor such that no duplication
        * happens.*/
       #main {
-        @apply --shadow-elevation-2dp;
+        @apply --cr-card-elevation;
         background-color: white;
         margin: auto;
         min-height: 100%;
@@ -191,7 +192,7 @@
                       on-keydown="onErrorItemAction_" tabindex="0"
                       role="button" aria-expanded$="[[isAriaExpanded_(
                           index, selectedEntry_)]]">
-                    <iron-icon icon$="[[computeErrorIcon_(item)]]"
+                    <iron-icon icon$="cr:[[computeErrorIcon_(item)]]"
                         title$="[[computeErrorTypeLabel_(item)]]">
                     </iron-icon>
                     <div id$="[[item.id]]" class="error-message">

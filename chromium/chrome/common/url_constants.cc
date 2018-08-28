@@ -16,6 +16,16 @@ const char kBluetoothAdapterOffHelpURL[] =
     "https://support.google.com/chrome?p=bluetooth";
 #endif
 
+// TODO(https://crbug.com/852139): Replace this numbered link with a P-link once
+// we have one.
+const char kCastCloudServicesHelpURL[] =
+    "https://support.google.com/chromecast/answer/6320939";
+
+// TODO(https://crbug.com/852139): Replace this numbered link with a P-link once
+// we have one.
+const char kCastNoDestinationFoundURL[] =
+    "https://support.google.com/chromecast/answer/3249268";
+
 const char kChooserBluetoothOverviewURL[] =
     "https://support.google.com/chrome?p=bluetooth";
 
@@ -66,6 +76,10 @@ const char kChromeSearchLocalNtpUrl[] =
 
 const char kChromeSearchMostVisitedHost[] = "most-visited";
 const char kChromeSearchMostVisitedUrl[] = "chrome-search://most-visited/";
+
+const char kChromeSearchLocalNtpBackgroundUrl[] =
+    "chrome-search://local-ntp/background.jpg";
+const char kChromeSearchLocalNtpBackgroundFilename[] = "background.jpg";
 
 const char kChromeSearchRemoteNtpHost[] = "remote-ntp";
 
@@ -192,6 +206,9 @@ const char kSettingsSearchHelpURL[] =
 const char kSmartLockHelpPage[] =
     "https://support.google.com/accounts/answer/6197437";
 
+const char kSyncAndGoogleServicesLearnMoreURL[] =
+    "https://support.google.com/chrome?p=syncgoogleservices";
+
 const char kSyncEncryptionHelpURL[] =
 #if defined(OS_CHROMEOS)
     "https://support.google.com/chromebook/?p=settings_encryption";
@@ -260,11 +277,17 @@ const char kGoogleNameserversLearnMoreURL[] =
 const char kInstantTetheringLearnMoreURL[] =
     "https://support.google.com/chromebook?p=instant_tethering";
 
+const char kMultiDeviceLearnMoreURL[] =
+    "https://support.google.com/chromebook?p=multidevice-placeholder";
+
 const char kLanguageSettingsLearnMoreUrl[] =
     "https://support.google.com/chromebook/answer/1059490";
 
 const char kLearnMoreEnterpriseURL[] =
     "https://support.google.com/chromebook/?p=managed";
+
+const char kLinuxAppsLearnMoreURL[] =
+    "https://support.google.com/chromebook?p=chromebook_linuxapps";
 
 const char kNaturalScrollHelpURL[] =
     "https://support.google.com/chromebook/?p=simple_scrolling";

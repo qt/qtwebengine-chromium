@@ -14,9 +14,13 @@ source_set("table_view") {
     "table_view_navigation_controller.mm",
     "table_view_navigation_controller_constants.h",
     "table_view_navigation_controller_constants.mm",
+    "table_view_navigation_controller_delegate.h",
+    "table_view_navigation_controller_delegate.mm",
   ]
   deps = [
+    ":presentation",
     ":styler",
+    ":views",
     "//base",
     "//ios/chrome/browser/ui/list_model",
     "//ios/chrome/browser/ui/material_components",
@@ -33,6 +37,9 @@ source_set("styler") {
     "chrome_table_view_styler.h",
     "chrome_table_view_styler.mm",
   ]
+  public_deps = [
+    "//ios/chrome/browser/ui:ui_util",
+  ]
 }
 
 source_set("presentation") {
@@ -40,14 +47,33 @@ source_set("presentation") {
   sources = [
     "table_view_animator.h",
     "table_view_animator.mm",
+    "table_view_modal_presenting.h",
     "table_view_presentation_controller.h",
     "table_view_presentation_controller.mm",
+    "table_view_presentation_controller_delegate.h",
   ]
   deps = [
     "//ios/chrome/browser/ui:ui_util",
     "//ios/chrome/browser/ui/image_util",
     "//ios/chrome/browser/ui/resources:menu_shadow",
-    "//ios/chrome/browser/ui/util:constraints_ui",
+    "//ios/chrome/common/ui_util",
+  ]
+}
+
+source_set("views") {
+  configs += [ "//build/config/compiler:enable_arc" ]
+  sources = [
+    "table_view_empty_view.h",
+    "table_view_empty_view.mm",
+    "table_view_loading_view.h",
+    "table_view_loading_view.mm",
+  ]
+  deps = [
+    "//base",
+    "//ios/chrome/browser/ui",
+    "//ios/chrome/browser/ui/colors",
+    "//ios/chrome/browser/ui/material_components",
+    "//ios/third_party/material_components_ios",
   ]
 }
 
@@ -56,7 +82,6 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "chrome_table_view_controller_unittest.mm",
-    "table_view_model_unittest.mm",
   ]
   deps = [
     ":table_view",

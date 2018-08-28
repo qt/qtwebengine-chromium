@@ -461,6 +461,8 @@ class GLES2ImplementationTest : public testing::Test {
     return limits;
   }
 
+  void ResetErrorMessageCallback() { gl_->error_message_callback_.Reset(); }
+
   TestContext test_contexts_[kNumTestContexts];
 
   scoped_refptr<ShareGroup> share_group_;
@@ -3548,10 +3550,10 @@ TEST_F(GLES2ImplementationTest, ProduceTextureDirectCHROMIUM) {
     GLbyte data[GL_MAILBOX_SIZE_CHROMIUM];
   };
 
-  Mailbox mailbox = Mailbox::Generate();
+  Mailbox mailbox;
+  gl_->ProduceTextureDirectCHROMIUM(kTexturesStartId, mailbox.name);
   Cmds expected;
   expected.cmd.Init(kTexturesStartId, mailbox.name);
-  gl_->ProduceTextureDirectCHROMIUM(kTexturesStartId, mailbox.name);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
@@ -4414,6 +4416,29 @@ TEST_F(GLES2ImplementationTest, DiscardableTextureLockCounting) {
       EXPECT_EQ(0, bound_texture_id);
     }
   }
+}
+
+struct ErrorMessageCounter {
+  explicit ErrorMessageCounter(GLES2Implementation* gl) : gl(gl) {}
+
+  void Callback(const char* message, int32_t id) {
+    if (++num_calls == 1)
+      gl->ShaderBinary(-1, nullptr, 0, nullptr, 0);
+  }
+
+  GLES2Implementation* gl;
+  int32_t num_calls = 0;
+};
+
+TEST_F(GLES2ImplementationTest, ReentrantErrorCallbacksShouldNotCrash) {
+  ErrorMessageCounter counter(gl_);
+  gl_->SetErrorMessageCallback(base::BindRepeating(
+      &ErrorMessageCounter::Callback, base::Unretained(&counter)));
+  // Call any function which can easily provoke an error. See also the
+  // callback above.
+  gl_->ShaderBinary(-1, nullptr, 0, nullptr, 0);
+  EXPECT_EQ(2, counter.num_calls);
+  ResetErrorMessageCallback();
 }
 
 #include "base/macros.h"

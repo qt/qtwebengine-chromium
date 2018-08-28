@@ -91,7 +91,7 @@ static void ReportGeolocationViolation(ExecutionContext* context) {
     PerformanceMonitor::ReportGenericViolation(
         context, PerformanceMonitor::kDiscouragedAPIUse,
         "Only request geolocation information in response to a user gesture.",
-        0, nullptr);
+        base::TimeDelta(), nullptr);
   }
 }
 
@@ -104,7 +104,8 @@ Geolocation* Geolocation::Create(ExecutionContext* context) {
 
 Geolocation::Geolocation(ExecutionContext* context)
     : ContextLifecycleObserver(context),
-      PageVisibilityObserver(GetDocument()->GetPage()) {}
+      PageVisibilityObserver(GetDocument()->GetPage()),
+      watchers_(new GeolocationWatchers()) {}
 
 Geolocation::~Geolocation() = default;
 
@@ -119,17 +120,6 @@ void Geolocation::Trace(blink::Visitor* visitor) {
   PageVisibilityObserver::Trace(visitor);
 }
 
-void Geolocation::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  for (const auto& one_shot : one_shots_)
-    visitor->TraceWrappers(one_shot);
-  visitor->TraceWrappers(watchers_);
-  for (const auto& one_shot : one_shots_being_invoked_)
-    visitor->TraceWrappers(one_shot);
-  for (const auto& watcher : watchers_being_invoked_)
-    visitor->TraceWrappers(watcher);
-  ScriptWrappable::TraceWrappers(visitor);
-}
-
 Document* Geolocation::GetDocument() const {
   return ToDocument(GetExecutionContext());
 }
@@ -141,7 +131,7 @@ LocalFrame* Geolocation::GetFrame() const {
 void Geolocation::ContextDestroyed(ExecutionContext*) {
   StopTimers();
   one_shots_.clear();
-  watchers_.Clear();
+  watchers_->Clear();
 
   StopUpdating();
 
@@ -227,7 +217,7 @@ int Geolocation::watchPosition(V8PositionCallback* success_callback,
   // have.
   do {
     watch_id = GetExecutionContext()->CircularSequentialID();
-  } while (!watchers_.Add(watch_id, notifier));
+  } while (!watchers_->Add(watch_id, notifier));
 
   StartRequest(notifier);
 
@@ -272,7 +262,7 @@ void Geolocation::FatalErrorOccurred(GeoNotifier* notifier) {
 
   // This request has failed fatally. Remove it from our lists.
   one_shots_.erase(notifier);
-  watchers_.Remove(notifier);
+  watchers_->Remove(notifier);
 
   if (!HasListeners())
     StopUpdating();
@@ -287,7 +277,7 @@ void Geolocation::RequestUsesCachedPosition(GeoNotifier* notifier) {
   // exists, start the service to get updates.
   if (one_shots_.Contains(notifier)) {
     one_shots_.erase(notifier);
-  } else if (watchers_.Contains(notifier)) {
+  } else if (watchers_->Contains(notifier)) {
     if (notifier->Options().timeout() > 0)
       StartUpdating(notifier);
     notifier->StartTimer();
@@ -310,7 +300,7 @@ void Geolocation::RequestTimedOut(GeoNotifier* notifier) {
 bool Geolocation::DoesOwnNotifier(GeoNotifier* notifier) const {
   return one_shots_.Contains(notifier) ||
          one_shots_being_invoked_.Contains(notifier) ||
-         watchers_.Contains(notifier) ||
+         watchers_->Contains(notifier) ||
          watchers_being_invoked_.Contains(notifier);
 }
 
@@ -329,12 +319,12 @@ void Geolocation::clearWatch(int watch_id) {
   if (watch_id <= 0)
     return;
 
-  GeoNotifier* notifier = watchers_.Find(watch_id);
+  GeoNotifier* notifier = watchers_->Find(watch_id);
   if (!notifier)
     return;
 
   notifier->StopTimer();
-  watchers_.Remove(watch_id);
+  watchers_->Remove(watch_id);
 
   if (!HasListeners())
     StopUpdating();
@@ -345,7 +335,7 @@ void Geolocation::StopTimers() {
     notifier->StopTimer();
   }
 
-  for (const auto& notifier : watchers_.Notifiers()) {
+  for (const auto& notifier : watchers_->Notifiers()) {
     notifier->StopTimer();
   }
 }
@@ -368,11 +358,11 @@ void Geolocation::HandleError(PositionError* error) {
   // by a callback through getCurrentPosition, watchPosition, and/or
   // clearWatch.
   swap(one_shots_, one_shots_being_invoked_);
-  watchers_.CopyNotifiersToVector(watchers_being_invoked_);
+  watchers_->CopyNotifiersToVector(watchers_being_invoked_);
 
   if (error->IsFatal()) {
     // Clear the watchers before invoking the callbacks.
-    watchers_.Clear();
+    watchers_->Clear();
   }
 
   // Invoke the callbacks. Do not send a non-fatal error to the notifiers
@@ -425,7 +415,7 @@ void Geolocation::MakeSuccessCallbacks() {
   // by a callback through getCurrentPosition, watchPosition, and/or
   // clearWatch.
   swap(one_shots_, one_shots_being_invoked_);
-  watchers_.CopyNotifiersToVector(watchers_being_invoked_);
+  watchers_->CopyNotifiersToVector(watchers_being_invoked_);
 
   // Invoke the callbacks.
   //
@@ -518,7 +508,7 @@ void Geolocation::PageVisibilityChanged() {
 
 bool Geolocation::HasPendingActivity() const {
   return !one_shots_.IsEmpty() || !one_shots_being_invoked_.IsEmpty() ||
-         !watchers_.IsEmpty() || !watchers_being_invoked_.IsEmpty();
+         !watchers_->IsEmpty() || !watchers_being_invoked_.IsEmpty();
 }
 
 void Geolocation::OnGeolocationConnectionError() {

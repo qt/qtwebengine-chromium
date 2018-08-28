@@ -23,7 +23,6 @@
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_context_core_observer.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
-#include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/service_worker/service_worker_info.h"
 #include "content/browser/service_worker/service_worker_job_coordinator.h"
 #include "content/browser/service_worker/service_worker_process_manager.h"
@@ -35,6 +34,7 @@
 #include "content/browser/url_loader_factory_getter.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/child_process_host.h"
 #include "ipc/ipc_message.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
@@ -69,8 +69,8 @@ void CheckFetchHandlerOfInstalledServiceWorker(
 
 void SuccessCollectorCallback(base::OnceClosure done_closure,
                               bool* overall_success,
-                              ServiceWorkerStatusCode status) {
-  if (status != ServiceWorkerStatusCode::SERVICE_WORKER_OK) {
+                              blink::ServiceWorkerStatusCode status) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     *overall_success = false;
   }
   std::move(done_closure).Run();
@@ -78,12 +78,12 @@ void SuccessCollectorCallback(base::OnceClosure done_closure,
 
 void SuccessReportingCallback(
     const bool* success,
-    base::OnceCallback<void(ServiceWorkerStatusCode)> callback) {
+    base::OnceCallback<void(blink::ServiceWorkerStatusCode)> callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   bool result = *success;
-  std::move(callback).Run(
-      result ? ServiceWorkerStatusCode::SERVICE_WORKER_OK
-             : ServiceWorkerStatusCode::SERVICE_WORKER_ERROR_FAILED);
+  std::move(callback).Run(result
+                              ? blink::ServiceWorkerStatusCode::kOk
+                              : blink::ServiceWorkerStatusCode::kErrorFailed);
 }
 
 bool IsSameOriginClientProviderHost(const GURL& origin,
@@ -127,7 +127,7 @@ class ClearAllServiceWorkersHelper
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
   }
 
-  void OnResult(ServiceWorkerStatusCode) {
+  void OnResult(blink::ServiceWorkerStatusCode) {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     // We do nothing in this method. We use this class to wait for all callbacks
     // to be called using the refcount.
@@ -135,9 +135,9 @@ class ClearAllServiceWorkersHelper
 
   void DidGetAllRegistrations(
       const base::WeakPtr<ServiceWorkerContextCore>& context,
-      ServiceWorkerStatusCode status,
+      blink::ServiceWorkerStatusCode status,
       const std::vector<ServiceWorkerRegistrationInfo>& registrations) {
-    if (!context || status != SERVICE_WORKER_OK)
+    if (!context || status != blink::ServiceWorkerStatusCode::kOk)
       return;
     // Make a copy of live versions map because StopWorker() removes the version
     // from it when we were starting up and don't have a process yet.
@@ -299,7 +299,6 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
     ServiceWorkerContextCore* old_context,
     ServiceWorkerContextWrapper* wrapper)
     : wrapper_(wrapper),
-      dispatcher_hosts_(std::move(old_context->dispatcher_hosts_)),
       providers_(old_context->providers_.release()),
       provider_by_uuid_(old_context->provider_by_uuid_.release()),
       loader_factory_getter_(old_context->loader_factory_getter()),
@@ -321,34 +320,8 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
 ServiceWorkerContextCore::~ServiceWorkerContextCore() {
   DCHECK(storage_);
   for (const auto& it : live_versions_)
-    it.second->RemoveListener(this);
+    it.second->RemoveObserver(this);
   weak_factory_.InvalidateWeakPtrs();
-}
-
-void ServiceWorkerContextCore::AddDispatcherHost(
-    int process_id,
-    content::ServiceWorkerDispatcherHost* dispatcher_host) {
-  DCHECK(dispatcher_hosts_.find(process_id) == dispatcher_hosts_.end());
-  dispatcher_hosts_[process_id] = dispatcher_host;
-}
-
-ServiceWorkerDispatcherHost* ServiceWorkerContextCore::GetDispatcherHost(
-    int process_id) {
-  auto it = dispatcher_hosts_.find(process_id);
-  if (it == dispatcher_hosts_.end())
-    return nullptr;
-  return it->second;
-}
-
-void ServiceWorkerContextCore::RemoveDispatcherHost(int process_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  // TODO(falken) Try to remove this call. It should be unnecessary because
-  // provider hosts remove themselves when their Mojo connection to the renderer
-  // is destroyed. But if we don't remove the hosts immediately here, collisions
-  // of <process_id, provider_id> can occur if a new dispatcher host is
-  // created for a reused RenderProcessHost. https://crbug.com/736203
-  RemoveAllProviderHostsForProcess(process_id);
-  dispatcher_hosts_.erase(process_id);
 }
 
 void ServiceWorkerContextCore::AddProviderHost(
@@ -356,6 +329,9 @@ void ServiceWorkerContextCore::AddProviderHost(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   int process_id = host->process_id();
   int provider_id = host->provider_id();
+  // Precreated hosts are stored in the same map regardless of process.
+  if (ServiceWorkerUtils::IsBrowserAssignedProviderId(provider_id))
+    process_id = ChildProcessHost::kInvalidUniqueID;
   ProviderMap* map = GetProviderMapForProcess(process_id);
   if (!map) {
     providers_->AddWithID(std::make_unique<ProviderMap>(), process_id);
@@ -364,22 +340,13 @@ void ServiceWorkerContextCore::AddProviderHost(
   map->AddWithID(std::move(host), provider_id);
 }
 
-std::unique_ptr<ServiceWorkerProviderHost>
-ServiceWorkerContextCore::ReleaseProviderHost(int process_id, int provider_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  ProviderMap* map = GetProviderMapForProcess(process_id);
-  if (!map || !map->Lookup(provider_id))
-    return nullptr;
-  std::unique_ptr<ServiceWorkerProviderHost> host =
-      map->Replace(provider_id, nullptr);
-  map->Remove(provider_id);
-  return host;
-}
-
 ServiceWorkerProviderHost* ServiceWorkerContextCore::GetProviderHost(
     int process_id,
     int provider_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  // Precreated hosts are stored in the same map regardless of process.
+  if (ServiceWorkerUtils::IsBrowserAssignedProviderId(provider_id))
+    process_id = ChildProcessHost::kInvalidUniqueID;
   ProviderMap* map = GetProviderMapForProcess(process_id);
   if (!map)
     return nullptr;
@@ -389,6 +356,9 @@ ServiceWorkerProviderHost* ServiceWorkerContextCore::GetProviderHost(
 void ServiceWorkerContextCore::RemoveProviderHost(
     int process_id, int provider_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  // Precreated hosts are stored in the same map regardless of process.
+  if (ServiceWorkerUtils::IsBrowserAssignedProviderId(provider_id))
+    process_id = ChildProcessHost::kInvalidUniqueID;
   ProviderMap* map = GetProviderMapForProcess(process_id);
   DCHECK(map);
   map->Remove(provider_id);
@@ -399,6 +369,10 @@ void ServiceWorkerContextCore::RemoveAllProviderHostsForProcess(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (providers_->Lookup(process_id))
     providers_->Remove(process_id);
+  // This function is used to prevent <process_id, provider_id> collisions when
+  // a render process host is reused with the same process id. Don't bother
+  // removing the providers in this process with browser-assigned ids, which
+  // live in a different map, since they have unique ids.
 }
 
 std::unique_ptr<ServiceWorkerContextCore::ProviderHostIterator>
@@ -514,11 +488,11 @@ void ServiceWorkerContextCore::DeleteForOrigin(const GURL& origin,
 }
 
 void ServiceWorkerContextCore::DidGetRegistrationsForDeleteForOrigin(
-    base::OnceCallback<void(ServiceWorkerStatusCode)> callback,
-    ServiceWorkerStatusCode status,
+    base::OnceCallback<void(blink::ServiceWorkerStatusCode)> callback,
+    blink::ServiceWorkerStatusCode status,
     const std::vector<scoped_refptr<ServiceWorkerRegistration>>&
         registrations) {
-  if (status != SERVICE_WORKER_OK) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     std::move(callback).Run(status);
     return;
   }
@@ -551,10 +525,10 @@ ServiceWorkerContextCore::GetProviderMapForProcess(int process_id) {
 void ServiceWorkerContextCore::RegistrationComplete(
     const GURL& pattern,
     ServiceWorkerContextCore::RegistrationCallback callback,
-    ServiceWorkerStatusCode status,
+    blink::ServiceWorkerStatusCode status,
     const std::string& status_message,
     ServiceWorkerRegistration* registration) {
-  if (status != SERVICE_WORKER_OK) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     DCHECK(!registration);
     std::move(callback).Run(status, status_message,
                             blink::mojom::kInvalidServiceWorkerRegistrationId);
@@ -572,10 +546,10 @@ void ServiceWorkerContextCore::RegistrationComplete(
 
 void ServiceWorkerContextCore::UpdateComplete(
     ServiceWorkerContextCore::UpdateCallback callback,
-    ServiceWorkerStatusCode status,
+    blink::ServiceWorkerStatusCode status,
     const std::string& status_message,
     ServiceWorkerRegistration* registration) {
-  if (status != SERVICE_WORKER_OK) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     DCHECK(!registration);
     std::move(callback).Run(status, status_message,
                             blink::mojom::kInvalidServiceWorkerRegistrationId);
@@ -590,9 +564,9 @@ void ServiceWorkerContextCore::UnregistrationComplete(
     const GURL& pattern,
     ServiceWorkerContextCore::UnregistrationCallback callback,
     int64_t registration_id,
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   std::move(callback).Run(status);
-  if (status == SERVICE_WORKER_OK) {
+  if (status == blink::ServiceWorkerStatusCode::kOk) {
     observer_list_->Notify(
         FROM_HERE, &ServiceWorkerContextCoreObserver::OnRegistrationDeleted,
         registration_id, pattern);
@@ -628,7 +602,7 @@ void ServiceWorkerContextCore::AddLiveVersion(ServiceWorkerVersion* version) {
   // the version ID conflict. Otherwise change CHECK to DCHECK.
   CHECK(!GetLiveVersion(version->version_id()));
   live_versions_[version->version_id()] = version;
-  version->AddListener(this);
+  version->AddObserver(this);
   ServiceWorkerVersionInfo version_info = version->GetInfo();
   observer_list_->Notify(FROM_HERE,
                          &ServiceWorkerContextCoreObserver::OnNewLiveVersion,
@@ -712,9 +686,9 @@ void ServiceWorkerContextCore::CheckHasServiceWorker(
 
 void ServiceWorkerContextCore::UpdateVersionFailureCount(
     int64_t version_id,
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   // Don't count these, they aren't start worker failures.
-  if (status == SERVICE_WORKER_ERROR_DISALLOWED)
+  if (status == blink::ServiceWorkerStatusCode::kErrorDisallowed)
     return;
 
   auto it = failure_counts_.find(version_id);
@@ -723,7 +697,7 @@ void ServiceWorkerContextCore::UpdateVersionFailureCount(
                                                         status);
   }
 
-  if (status == SERVICE_WORKER_OK) {
+  if (status == blink::ServiceWorkerStatusCode::kOk) {
     if (it != failure_counts_.end())
       failure_counts_.erase(it);
     return;
@@ -810,8 +784,7 @@ void ServiceWorkerContextCore::OnErrorReported(
     const GURL& source_url) {
   observer_list_->Notify(
       FROM_HERE, &ServiceWorkerContextCoreObserver::OnErrorReported,
-      version->version_id(), version->embedded_worker()->process_id(),
-      version->embedded_worker()->thread_id(),
+      version->version_id(),
       ServiceWorkerContextCoreObserver::ErrorInfo(error_message, line_number,
                                                   column_number, source_url));
 }
@@ -825,8 +798,7 @@ void ServiceWorkerContextCore::OnReportConsoleMessage(
     const GURL& source_url) {
   observer_list_->Notify(
       FROM_HERE, &ServiceWorkerContextCoreObserver::OnReportConsoleMessage,
-      version->version_id(), version->embedded_worker()->process_id(),
-      version->embedded_worker()->thread_id(),
+      version->version_id(),
       ServiceWorkerContextCoreObserver::ConsoleMessage(
           source_identifier, message_level, message, line_number, source_url));
 }
@@ -855,9 +827,9 @@ ServiceWorkerProcessManager* ServiceWorkerContextCore::process_manager() {
 void ServiceWorkerContextCore::DidFindRegistrationForCheckHasServiceWorker(
     const GURL& other_url,
     ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
-    ServiceWorkerStatusCode status,
+    blink::ServiceWorkerStatusCode status,
     scoped_refptr<ServiceWorkerRegistration> registration) {
-  if (status != SERVICE_WORKER_OK) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     std::move(callback).Run(ServiceWorkerCapability::NO_SERVICE_WORKER);
     return;
   }

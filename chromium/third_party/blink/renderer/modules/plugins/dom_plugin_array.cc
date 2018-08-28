@@ -98,7 +98,7 @@ void DOMPluginArray::refresh(bool reload) {
   if (!GetFrame())
     return;
 
-  Page::RefreshPlugins();
+  PluginData::RefreshBrowserSidePluginCache();
   if (PluginData* data = GetPluginData())
     data->ResetPluginData();
 
@@ -112,7 +112,7 @@ void DOMPluginArray::refresh(bool reload) {
   }
 
   if (reload) {
-    GetFrame()->Reload(kFrameLoadTypeReload,
+    GetFrame()->Reload(WebFrameLoadType::kReload,
                        ClientRedirectPolicy::kClientRedirect);
   }
 }

@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/core/layout/line/inline_box.h"
 #include "third_party/blink/renderer/core/layout/line/root_inline_box.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_caret_position.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_line_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_text_fragment.h"
 #include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 #include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment_traversal.h"
@@ -128,16 +129,18 @@ class AbstractInlineBox {
     return result.IsNull() ? AbstractInlineBox() : AbstractInlineBox(result);
   }
 
-  // TODO(xiaochengh): Bidi adjustment should check base direction of containing
-  // line instead of containing block, to handle unicode-bidi correctly.
   TextDirection ParagraphDirection() const {
     DCHECK(IsNotNull());
-    if (IsOldLayout())
+    if (IsOldLayout()) {
+      // TODO(editing-dev): Bidi adjustment should check base direction of
+      // containing line instead of containing block, to handle unicode-bidi
+      // correctly.
       return GetInlineBox().Root().Block().Style()->Direction();
-    return NGPaintFragment::GetForInlineContainer(
-               GetNGPaintFragment().GetLayoutObject())
-        ->Style()
-        .Direction();
+    }
+    const NGPhysicalLineBoxFragment& line_box =
+        ToNGPhysicalLineBoxFragmentOrDie(
+            GetNGPaintFragment().ContainerLineBox()->PhysicalFragment());
+    return line_box.BaseDirection();
   }
 
  private:
@@ -441,49 +444,6 @@ AbstractInlineBox FindBoundaryOfEntireBidiRunIgnoringLineBreak(
       start, bidi_level, TraversalStrategy::ForwardIgnoringLineBreak);
 }
 
-// Shorthands for InlineBoxTraversal
-
-template <typename TraversalStrategy>
-const InlineBox* FindBidiRun(const InlineBox& start, unsigned bidi_level) {
-  const AbstractInlineBox& result =
-      FindBidiRun<TraversalStrategy>(AbstractInlineBox(start), bidi_level);
-  if (result.IsNull())
-    return nullptr;
-  DCHECK(result.IsOldLayout());
-  return &result.GetInlineBox();
-}
-
-template <typename TraversalStrategy>
-const InlineBox& FindBoundaryOfBidiRunIgnoringLineBreak(const InlineBox& start,
-                                                        unsigned bidi_level) {
-  const AbstractInlineBox& result =
-      FindBoundaryOfBidiRunIgnoringLineBreak<TraversalStrategy>(
-          AbstractInlineBox(start), bidi_level);
-  DCHECK(result.IsOldLayout());
-  return result.GetInlineBox();
-}
-
-template <typename TraversalStrategy>
-const InlineBox& FindBoundaryOfEntireBidiRun(const InlineBox& start,
-                                             unsigned bidi_level) {
-  const AbstractInlineBox& result =
-      FindBoundaryOfEntireBidiRun<TraversalStrategy>(AbstractInlineBox(start),
-                                                     bidi_level);
-  DCHECK(result.IsOldLayout());
-  return result.GetInlineBox();
-}
-
-template <typename TraversalStrategy>
-const InlineBox& FindBoundaryOfEntireBidiRunIgnoringLineBreak(
-    const InlineBox& start,
-    unsigned bidi_level) {
-  const AbstractInlineBox& result =
-      FindBoundaryOfEntireBidiRunIgnoringLineBreak<TraversalStrategy>(
-          AbstractInlineBox(start), bidi_level);
-  DCHECK(result.IsOldLayout());
-  return result.GetInlineBox();
-}
-
 // Adjustment algorithm at the end of caret position resolution.
 template <typename TraversalStrategy>
 class CaretPositionResolutionAdjuster {
@@ -520,18 +480,33 @@ class CaretPositionResolutionAdjuster {
         result_box);
   }
 
+  static bool ShouldUseLegacyUnicodeBidiHack(const AbstractInlineBox& box,
+                                             UnicodeBidi unicode_bidi) {
+    if (!box.IsOldLayout())
+      return false;
+    if (unicode_bidi != UnicodeBidi::kPlaintext)
+      return false;
+    // Even in 'unicode-bidi: plaintext', we still need bidi adjustment at bidi
+    // boundaries.
+    // TODO(editing-dev): The code below may miss some cases of bidi boundaries.
+    const AbstractInlineBox backward_box =
+        TraversalStrategy::BackwardIgnoringLineBreak(box);
+    return backward_box.IsNull() || backward_box.BidiLevel() == box.BidiLevel();
+  }
+
   static AbstractInlineBoxAndSideAffinity AdjustFor(
       const AbstractInlineBox& box,
       UnicodeBidi unicode_bidi) {
     DCHECK(box.IsNotNull());
 
-    // TODO(xiaochengh): We should check line direction instead, and get rid of
-    // ad hoc handling of 'unicode-bidi'.
     const TextDirection primary_direction = box.ParagraphDirection();
     if (box.Direction() == primary_direction)
       return AdjustForPrimaryDirectionAlgorithm(box);
 
-    if (unicode_bidi == UnicodeBidi::kPlaintext)
+    // In legacy layout we don't have a reliable way to get the line direction,
+    // which is different from block direction with 'unicode-bidi: plaintext'.
+    // We do hacky things in this case.
+    if (ShouldUseLegacyUnicodeBidiHack(box, unicode_bidi))
       return UnadjustedCaretPosition(box);
 
     const unsigned char level = box.BidiLevel();
@@ -845,55 +820,40 @@ RangeSelectionAdjuster::RenderedPosition::Create(
 
 const InlineBox* InlineBoxTraversal::FindLeftBidiRun(const InlineBox& box,
                                                      unsigned bidi_level) {
-  return FindBidiRun<TraverseLeft>(box, bidi_level);
+  const AbstractInlineBox& result =
+      FindBidiRun<TraverseLeft>(AbstractInlineBox(box), bidi_level);
+  if (result.IsNull())
+    return nullptr;
+  DCHECK(result.IsOldLayout());
+  return &result.GetInlineBox();
 }
 
 const InlineBox* InlineBoxTraversal::FindRightBidiRun(const InlineBox& box,
                                                       unsigned bidi_level) {
-  return FindBidiRun<TraverseRight>(box, bidi_level);
-}
-
-const InlineBox& InlineBoxTraversal::FindLeftBoundaryOfBidiRunIgnoringLineBreak(
-    const InlineBox& inline_box,
-    unsigned bidi_level) {
-  return FindBoundaryOfBidiRunIgnoringLineBreak<TraverseLeft>(inline_box,
-                                                              bidi_level);
+  const AbstractInlineBox& result =
+      FindBidiRun<TraverseRight>(AbstractInlineBox(box), bidi_level);
+  if (result.IsNull())
+    return nullptr;
+  DCHECK(result.IsOldLayout());
+  return &result.GetInlineBox();
 }
 
 const InlineBox& InlineBoxTraversal::FindLeftBoundaryOfEntireBidiRun(
-    const InlineBox& inline_box,
+    const InlineBox& box,
     unsigned bidi_level) {
-  return FindBoundaryOfEntireBidiRun<TraverseLeft>(inline_box, bidi_level);
-}
-
-const InlineBox&
-InlineBoxTraversal::FindLeftBoundaryOfEntireBidiRunIgnoringLineBreak(
-    const InlineBox& inline_box,
-    unsigned bidi_level) {
-  return FindBoundaryOfEntireBidiRunIgnoringLineBreak<TraverseLeft>(inline_box,
-                                                                    bidi_level);
-}
-
-const InlineBox&
-InlineBoxTraversal::FindRightBoundaryOfBidiRunIgnoringLineBreak(
-    const InlineBox& inline_box,
-    unsigned bidi_level) {
-  return FindBoundaryOfBidiRunIgnoringLineBreak<TraverseRight>(inline_box,
-                                                               bidi_level);
+  const AbstractInlineBox& result = FindBoundaryOfEntireBidiRun<TraverseLeft>(
+      AbstractInlineBox(box), bidi_level);
+  DCHECK(result.IsOldLayout());
+  return result.GetInlineBox();
 }
 
 const InlineBox& InlineBoxTraversal::FindRightBoundaryOfEntireBidiRun(
-    const InlineBox& inline_box,
+    const InlineBox& box,
     unsigned bidi_level) {
-  return FindBoundaryOfEntireBidiRun<TraverseRight>(inline_box, bidi_level);
-}
-
-const InlineBox&
-InlineBoxTraversal::FindRightBoundaryOfEntireBidiRunIgnoringLineBreak(
-    const InlineBox& inline_box,
-    unsigned bidi_level) {
-  return FindBoundaryOfEntireBidiRunIgnoringLineBreak<TraverseRight>(
-      inline_box, bidi_level);
+  const AbstractInlineBox& result = FindBoundaryOfEntireBidiRun<TraverseRight>(
+      AbstractInlineBox(box), bidi_level);
+  DCHECK(result.IsOldLayout());
+  return result.GetInlineBox();
 }
 
 InlineBoxPosition BidiAdjustment::AdjustForCaretPositionResolution(
@@ -912,14 +872,12 @@ InlineBoxPosition BidiAdjustment::AdjustForCaretPositionResolution(
 NGCaretPosition BidiAdjustment::AdjustForCaretPositionResolution(
     const NGCaretPosition& caret_position) {
   const AbstractInlineBoxAndSideAffinity unadjusted(caret_position);
-  const UnicodeBidi unicode_bidi =
-      caret_position.fragment->Style().GetUnicodeBidi();
   const AbstractInlineBoxAndSideAffinity adjusted =
       unadjusted.AtLeftSide()
           ? CaretPositionResolutionAdjuster<TraverseRight>::AdjustFor(
-                unadjusted.GetBox(), unicode_bidi)
+                unadjusted.GetBox(), UnicodeBidi())
           : CaretPositionResolutionAdjuster<TraverseLeft>::AdjustFor(
-                unadjusted.GetBox(), unicode_bidi);
+                unadjusted.GetBox(), UnicodeBidi());
   return adjusted.ToNGCaretPosition();
 }
 

@@ -129,8 +129,6 @@ Buffer::Buffer(BufferManager* manager, GLuint service_id)
       size_(0),
       deleted_(false),
       is_client_side_array_(false),
-      binding_count_(0),
-      transform_feedback_binding_count_(0),
       service_id_(service_id),
       initial_target_(0),
       usage_(GL_STATIC_DRAW) {
@@ -147,6 +145,28 @@ Buffer::~Buffer() {
     manager_->StopTracking(this);
     manager_ = nullptr;
   }
+}
+
+void Buffer::OnBind(GLenum target, bool indexed) {
+  if (target == GL_TRANSFORM_FEEDBACK_BUFFER && indexed) {
+    ++transform_feedback_indexed_binding_count_;
+  } else if (target != GL_TRANSFORM_FEEDBACK_BUFFER) {
+    ++non_transform_feedback_binding_count_;
+  }
+  // Note that the transform feedback generic (non-indexed) binding point does
+  // not count as a transform feedback indexed binding point *or* a non-
+  // transform- feedback binding point, so no reference counts need to change in
+  // that case. See https://crbug.com/853978
+}
+
+void Buffer::OnUnbind(GLenum target, bool indexed) {
+  if (target == GL_TRANSFORM_FEEDBACK_BUFFER && indexed) {
+    --transform_feedback_indexed_binding_count_;
+  } else if (target != GL_TRANSFORM_FEEDBACK_BUFFER) {
+    --non_transform_feedback_binding_count_;
+  }
+  DCHECK(transform_feedback_indexed_binding_count_ >= 0);
+  DCHECK(non_transform_feedback_binding_count_ >= 0);
 }
 
 const GLvoid* Buffer::StageShadow(bool use_shadow,
@@ -181,6 +201,8 @@ void Buffer::SetInfo(GLsizeiptr size,
   size_ = size;
 
   mapped_range_.reset(nullptr);
+  readback_shm_ = nullptr;
+  readback_shm_offset_ = 0;
 }
 
 bool Buffer::CheckRange(GLintptr offset, GLsizeiptr size) const {
@@ -345,6 +367,20 @@ void Buffer::RemoveMappedRange() {
   mapped_range_.reset(nullptr);
 }
 
+void Buffer::SetReadbackShadowAllocation(scoped_refptr<gpu::Buffer> shm,
+                                         uint32_t shm_offset) {
+  DCHECK(shm);
+  readback_shm_ = std::move(shm);
+  readback_shm_offset_ = shm_offset;
+}
+
+scoped_refptr<gpu::Buffer> Buffer::TakeReadbackShadowAllocation(void** data) {
+  DCHECK(readback_shm_);
+  *data = readback_shm_->GetDataAddress(readback_shm_offset_, size_);
+  readback_shm_offset_ = 0;
+  return std::move(readback_shm_);
+}
+
 bool BufferManager::GetClientId(GLuint service_id, GLuint* client_id) const {
   // This doesn't need to be fast. It's only used during slow queries.
   for (BufferMap::const_iterator it = buffers_.begin();
@@ -420,12 +456,6 @@ void BufferManager::ValidateAndDoBufferData(
   if (!buffer) {
     ERRORSTATE_SET_GL_ERROR(
         error_state, GL_INVALID_VALUE, "glBufferData", "unknown buffer");
-    return;
-  }
-
-  if (!memory_type_tracker_->EnsureGPUMemoryAvailable(size)) {
-    ERRORSTATE_SET_GL_ERROR(
-        error_state, GL_OUT_OF_MEMORY, "glBufferData", "out of memory");
     return;
   }
 
@@ -744,8 +774,7 @@ bool BufferManager::OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
     auto* mapped_range = buffer->GetMappedRange();
     if (!mapped_range)
       continue;
-    auto shared_memory_guid =
-        mapped_range->shm->backing()->shared_memory_handle().GetGUID();
+    auto shared_memory_guid = mapped_range->shm->backing()->GetGUID();
     if (!shared_memory_guid.is_empty()) {
       pmd->CreateSharedMemoryOwnershipEdge(dump->guid(), shared_memory_guid,
                                            0 /* importance */);

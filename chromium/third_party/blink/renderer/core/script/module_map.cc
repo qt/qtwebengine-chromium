@@ -5,16 +5,19 @@
 #include "third_party/blink/renderer/core/script/module_map.h"
 
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_fetch_request.h"
+#include "third_party/blink/renderer/core/loader/modulescript/module_script_loader.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_loader_client.h"
+#include "third_party/blink/renderer/core/loader/modulescript/module_script_loader_registry.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/script/module_script.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 
 namespace blink {
 
 // Entry struct represents a value in "module map" spec object.
 // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
 class ModuleMap::Entry final : public GarbageCollectedFinalized<Entry>,
-                               public TraceWrapperBase,
+                               public NameClient,
                                public ModuleScriptLoaderClient {
   USING_GARBAGE_COLLECTED_MIXIN(ModuleMap::Entry);
 
@@ -23,7 +26,6 @@ class ModuleMap::Entry final : public GarbageCollectedFinalized<Entry>,
   ~Entry() override {}
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "ModuleMap::Entry"; }
 
   // Notify fetched |m_moduleScript| to the client asynchronously.
@@ -57,10 +59,6 @@ void ModuleMap::Entry::Trace(blink::Visitor* visitor) {
   visitor->Trace(module_script_);
   visitor->Trace(map_);
   visitor->Trace(clients_);
-}
-
-void ModuleMap::Entry::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(module_script_);
 }
 
 void ModuleMap::Entry::DispatchFinishedNotificationAsync(
@@ -98,24 +96,25 @@ ModuleScript* ModuleMap::Entry::GetModuleScript() const {
   return module_script_.Get();
 }
 
-ModuleMap::ModuleMap(Modulator* modulator) : modulator_(modulator) {
+ModuleMap::ModuleMap(Modulator* modulator)
+    : modulator_(modulator),
+      loader_registry_(ModuleScriptLoaderRegistry::Create()) {
   DCHECK(modulator);
 }
 
 void ModuleMap::Trace(blink::Visitor* visitor) {
   visitor->Trace(map_);
   visitor->Trace(modulator_);
-}
-
-void ModuleMap::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  for (const auto& it : map_)
-    visitor->TraceWrappers(it.value);
+  visitor->Trace(loader_registry_);
 }
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-void ModuleMap::FetchSingleModuleScript(const ModuleScriptFetchRequest& request,
-                                        ModuleGraphLevel level,
-                                        SingleModuleClient* client) {
+void ModuleMap::FetchSingleModuleScript(
+    const ModuleScriptFetchRequest& request,
+    FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
+    ModuleGraphLevel level,
+    ModuleScriptCustomFetchType custom_fetch_type,
+    SingleModuleClient* client) {
   // <spec step="1">Let moduleMap be module map settings object's module
   // map.</spec>
   //
@@ -131,7 +130,9 @@ void ModuleMap::FetchSingleModuleScript(const ModuleScriptFetchRequest& request,
 
     // Steps 4-9 loads a new single module script.
     // Delegates to ModuleScriptLoader via Modulator.
-    modulator_->FetchNewSingleModule(request, level, entry);
+    ModuleScriptLoader::Fetch(request, fetch_client_settings_object, level,
+                              modulator_, custom_fetch_type, loader_registry_,
+                              entry);
   }
   DCHECK(entry);
 

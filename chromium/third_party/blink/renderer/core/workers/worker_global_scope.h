@@ -42,7 +42,6 @@
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/workers/worker_animation_frame_provider.h"
 #include "third_party/blink/renderer/core/workers/worker_or_worklet_global_scope.h"
-#include "third_party/blink/renderer/core/workers/worker_or_worklet_module_fetch_coordinator_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_settings.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/cached_metadata_handler.h"
@@ -53,9 +52,10 @@ class InterfaceProvider;
 
 namespace blink {
 
-class FontFaceSet;
 class ConsoleMessage;
 class ExceptionState;
+class FetchClientSettingsObjectSnapshot;
+class FontFaceSet;
 class OffscreenFontSelector;
 class WorkerLocation;
 class WorkerNavigator;
@@ -136,14 +136,15 @@ class CORE_EXPORT WorkerGlobalScope
       std::unique_ptr<Vector<char>> cached_meta_data);
 
   // Imports the top-level module script for |module_url_record|.
-  virtual void ImportModuleScript(const KURL& module_url_record,
-                                  network::mojom::FetchCredentialsMode) = 0;
+  virtual void ImportModuleScript(
+      const KURL& module_url_record,
+      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      network::mojom::FetchCredentialsMode) = 0;
 
-  double TimeOrigin() const { return time_origin_; }
+  base::TimeTicks TimeOrigin() const { return time_origin_; }
   WorkerSettings* GetWorkerSettings() const { return worker_settings_.get(); }
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   // TODO(fserb): This can be removed once we WorkerGlobalScope implements
   // FontFaceSource on the IDL.
@@ -159,7 +160,7 @@ class CORE_EXPORT WorkerGlobalScope
  protected:
   WorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
                     WorkerThread*,
-                    double time_origin);
+                    base::TimeTicks time_origin);
   void ApplyContentSecurityPolicyFromHeaders(
       const ContentSecurityPolicyResponseHeaders&);
 
@@ -216,7 +217,7 @@ class CORE_EXPORT WorkerGlobalScope
 
   DOMTimerCoordinator timers_;
 
-  const double time_origin_;
+  const base::TimeTicks time_origin_;
 
   HeapHashMap<int, Member<ErrorEvent>> pending_error_events_;
   int last_pending_error_event_id_ = 0;

@@ -9,6 +9,8 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
+#include "third_party/blink/renderer/core/layout/layout_object.h"
+#include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
 
@@ -16,15 +18,15 @@ namespace blink {
 
 namespace {
 
-WebEventListenerProperties GetWebEventListenerProperties(bool has_blocking,
-                                                         bool has_passive) {
+cc::EventListenerProperties GetEventListenerProperties(bool has_blocking,
+                                                       bool has_passive) {
   if (has_blocking && has_passive)
-    return WebEventListenerProperties::kBlockingAndPassive;
+    return cc::EventListenerProperties::kBlockingAndPassive;
   if (has_blocking)
-    return WebEventListenerProperties::kBlocking;
+    return cc::EventListenerProperties::kBlocking;
   if (has_passive)
-    return WebEventListenerProperties::kPassive;
-  return WebEventListenerProperties::kNothing;
+    return cc::EventListenerProperties::kPassive;
+  return cc::EventListenerProperties::kNone;
 }
 
 LocalFrame* GetLocalFrameForTarget(EventTarget* target) {
@@ -248,9 +250,9 @@ void EventHandlerRegistry::NotifyHasHandlersChanged(
     case kWheelEventBlocking:
     case kWheelEventPassive:
       GetPage()->GetChromeClient().SetEventListenerProperties(
-          frame, WebEventListenerClass::kMouseWheel,
-          GetWebEventListenerProperties(HasEventHandlers(kWheelEventBlocking),
-                                        HasEventHandlers(kWheelEventPassive)));
+          frame, cc::EventListenerClass::kMouseWheel,
+          GetEventListenerProperties(HasEventHandlers(kWheelEventBlocking),
+                                     HasEventHandlers(kWheelEventPassive)));
       break;
     case kTouchStartOrMoveEventBlockingLowLatency:
       GetPage()->GetChromeClient().SetNeedsLowLatencyInput(frame,
@@ -261,8 +263,8 @@ void EventHandlerRegistry::NotifyHasHandlersChanged(
     case kTouchStartOrMoveEventPassive:
     case kPointerEvent:
       GetPage()->GetChromeClient().SetEventListenerProperties(
-          frame, WebEventListenerClass::kTouchStartOrMove,
-          GetWebEventListenerProperties(
+          frame, cc::EventListenerClass::kTouchStartOrMove,
+          GetEventListenerProperties(
               HasEventHandlers(kTouchAction) ||
                   HasEventHandlers(kTouchStartOrMoveEventBlocking) ||
                   HasEventHandlers(kTouchStartOrMoveEventBlockingLowLatency),
@@ -272,8 +274,8 @@ void EventHandlerRegistry::NotifyHasHandlersChanged(
     case kTouchEndOrCancelEventBlocking:
     case kTouchEndOrCancelEventPassive:
       GetPage()->GetChromeClient().SetEventListenerProperties(
-          frame, WebEventListenerClass::kTouchEndOrCancel,
-          GetWebEventListenerProperties(
+          frame, cc::EventListenerClass::kTouchEndOrCancel,
+          GetEventListenerProperties(
               HasEventHandlers(kTouchEndOrCancelEventBlocking),
               HasEventHandlers(kTouchEndOrCancelEventPassive)));
       break;
@@ -284,6 +286,22 @@ void EventHandlerRegistry::NotifyHasHandlersChanged(
     default:
       NOTREACHED();
       break;
+  }
+
+  if (RuntimeEnabledFeatures::PaintTouchActionRectsEnabled()) {
+    if (handler_class == kTouchStartOrMoveEventBlocking ||
+        handler_class == kTouchStartOrMoveEventBlockingLowLatency) {
+      if (auto* node = target->ToNode()) {
+        if (auto* layout_object = node->GetLayoutObject())
+          layout_object->MarkEffectiveWhitelistedTouchActionChanged();
+      } else if (auto* dom_window = target->ToLocalDOMWindow()) {
+        // This event handler is on a window. Ensure the layout view is
+        // invalidated because the layout view tracks the window's blocking
+        // touch event rects.
+        if (auto* layout_view = dom_window->GetFrame()->ContentLayoutObject())
+          layout_view->MarkEffectiveWhitelistedTouchActionChanged();
+      }
+    }
   }
 }
 

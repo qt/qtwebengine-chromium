@@ -750,18 +750,12 @@ loadable_module("osmesa") {
 
     # http://crbug.com/512956
     ldflags = [ "/ignore:4197" ]
-
-    # TODO(brucedawson) : remove when crbug.com/482671 is resolved by
-    # Microsoft.
-    configs -= [ "//build/config/win:default_incremental_linking" ]
-    configs += [ "//build/config/win:no_incremental_linking" ]
   }
 
   deps = [
     ":mesa",
     ":mesa_headers",
     ":mesa_libglslcommon",
-    "//build/config:exe_and_shlib_deps",
   ]
 
   if (is_win) {

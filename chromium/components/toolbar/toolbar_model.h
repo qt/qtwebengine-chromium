@@ -51,11 +51,15 @@ class ToolbarModel {
   // Returns the id of the icon to show to the left of the address, based on the
   // current URL.  When search term replacement is active, this returns a search
   // icon.  This doesn't cover specialized icons while the user is editing; see
-  // OmniboxView::GetVectorIcon().
+  // OmniboxView::GetIcon().
   virtual const gfx::VectorIcon& GetVectorIcon() const = 0;
 
-  // Returns text for the omnibox secure verbose chip.
+  // Returns text for the omnibox secure verbose chip, displayed next to the
+  // security icon on certain platforms.
   virtual base::string16 GetSecureVerboseText() const = 0;
+
+  // Returns text describing the security state for accessibility.
+  virtual base::string16 GetSecureAccessibilityText() const = 0;
 
   // Returns the name of the EV cert holder.  This returns an empty string if
   // the security level is not EV_SECURE.

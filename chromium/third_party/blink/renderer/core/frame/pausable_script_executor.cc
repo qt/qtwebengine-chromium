@@ -57,13 +57,12 @@ Vector<v8::Local<v8::Value>> WebScriptExecutor::Execute(LocalFrame* frame) {
   }
 
   Vector<v8::Local<v8::Value>> results;
-  if (world_id_) {
-    frame->GetScriptController().ExecuteScriptInIsolatedWorld(
-        world_id_, sources_, &results);
-  } else {
+  for (const auto& source : sources_) {
     v8::Local<v8::Value> script_value =
-        frame->GetScriptController().ExecuteScriptInMainWorldAndReturnValue(
-            sources_.front());
+        world_id_ ? frame->GetScriptController().ExecuteScriptInIsolatedWorld(
+                        world_id_, source)
+                  : frame->GetScriptController()
+                        .ExecuteScriptInMainWorldAndReturnValue(source);
     results.push_back(script_value);
   }
 
@@ -169,7 +168,7 @@ void PausableScriptExecutor::ContextDestroyed(
     // with a vector of v8::Local<>s, which implies that creating v8::Locals
     // is permitted. Ensure a valid scope is present for the callback.
     // See https://crbug.com/840719.
-    ScriptState::Scope script_scope(script_state_.get());
+    ScriptState::Scope script_scope(script_state_);
     callback_->Completed(Vector<v8::Local<v8::Value>>());
   }
   Dispose();
@@ -225,7 +224,7 @@ void PausableScriptExecutor::ExecuteAndDestroySelf() {
   if (callback_)
     callback_->WillExecute();
 
-  ScriptState::Scope script_scope(script_state_.get());
+  ScriptState::Scope script_scope(script_state_);
   Vector<v8::Local<v8::Value>> results =
       executor_->Execute(ToDocument(GetExecutionContext())->GetFrame());
 
@@ -251,6 +250,7 @@ void PausableScriptExecutor::Dispose() {
 }
 
 void PausableScriptExecutor::Trace(blink::Visitor* visitor) {
+  visitor->Trace(script_state_);
   visitor->Trace(executor_);
   PausableTimer::Trace(visitor);
 }

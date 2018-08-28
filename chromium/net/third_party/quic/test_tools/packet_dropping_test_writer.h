@@ -22,7 +22,7 @@
 #include "net/third_party/quic/test_tools/quic_test_client.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 
-namespace net {
+namespace quic {
 namespace test {
 
 // Simulates a connection that drops packets a configured percentage of the time
@@ -59,6 +59,12 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
 
   void SetWritable() override;
 
+  char* GetNextWriteLocation() const override {
+    // If the wrapped writer supports zero-copy, disable it, because it is not
+    // compatible with delayed writes in this class.
+    return nullptr;
+  }
+
   // Writes out any packet which should have been sent by now
   // to the contained writer and returns the time
   // for the next delayed packet to be written.
@@ -70,10 +76,7 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
   void OnCanWrite();
 
   // The percent of time a packet is simulated as being lost.
-  void set_fake_packet_loss_percentage(int32_t fake_packet_loss_percentage) {
-    QuicWriterMutexLock lock(&config_mutex_);
-    fake_packet_loss_percentage_ = fake_packet_loss_percentage;
-  }
+  void set_fake_packet_loss_percentage(int32_t fake_packet_loss_percentage);
 
   // Simulate dropping the first n packets unconditionally.
   // Subsequent packets will be lost at fake_packet_loss_percentage_ if set.
@@ -157,7 +160,7 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
   std::unique_ptr<QuicAlarm> write_unblocked_alarm_;
   std::unique_ptr<QuicAlarm> delay_alarm_;
   std::unique_ptr<Delegate> on_can_write_;
-  net::test::SimpleRandom simple_random_;
+  SimpleRandom simple_random_;
   // Stored packets delayed by fake packet delay or bandwidth restrictions.
   DelayedPacketList delayed_packets_;
   QuicByteCount cur_buffer_size_;
@@ -171,11 +174,12 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
   QuicTime::Delta fake_packet_delay_ GUARDED_BY(config_mutex_);
   QuicBandwidth fake_bandwidth_ GUARDED_BY(config_mutex_);
   QuicByteCount buffer_size_ GUARDED_BY(config_mutex_);
+  int32_t num_consecutive_packet_lost_ GUARDED_BY(config_mutex_);
 
   DISALLOW_COPY_AND_ASSIGN(PacketDroppingTestWriter);
 };
 
 }  // namespace test
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_TEST_TOOLS_PACKET_DROPPING_TEST_WRITER_H_

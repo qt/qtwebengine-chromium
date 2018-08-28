@@ -85,39 +85,38 @@ bool IsForcedFallbackPossible(const CodecSpecificInfo* codec_info) {
           codec_info->codecSpecific.VP8.temporalIdx == kNoTemporalIdx);
 }
 
-rtc::Optional<int> GetFallbackMaxPixels(const std::string& group) {
+absl::optional<int> GetFallbackMaxPixels(const std::string& group) {
   if (group.empty())
-    return rtc::nullopt;
+    return absl::nullopt;
 
   int min_pixels;
   int max_pixels;
   int min_bps;
   if (sscanf(group.c_str(), "-%d,%d,%d", &min_pixels, &max_pixels, &min_bps) !=
       3) {
-    return rtc::Optional<int>();
+    return absl::optional<int>();
   }
 
   if (min_pixels <= 0 || max_pixels <= 0 || max_pixels < min_pixels)
-    return rtc::Optional<int>();
+    return absl::optional<int>();
 
-  return rtc::Optional<int>(max_pixels);
+  return absl::optional<int>(max_pixels);
 }
 
-rtc::Optional<int> GetFallbackMaxPixelsIfFieldTrialEnabled() {
+absl::optional<int> GetFallbackMaxPixelsIfFieldTrialEnabled() {
   std::string group =
       webrtc::field_trial::FindFullName(kVp8ForcedFallbackEncoderFieldTrial);
   return (group.find("Enabled") == 0) ? GetFallbackMaxPixels(group.substr(7))
-                                      : rtc::Optional<int>();
+                                      : absl::optional<int>();
 }
 
-rtc::Optional<int> GetFallbackMaxPixelsIfFieldTrialDisabled() {
+absl::optional<int> GetFallbackMaxPixelsIfFieldTrialDisabled() {
   std::string group =
       webrtc::field_trial::FindFullName(kVp8ForcedFallbackEncoderFieldTrial);
   return (group.find("Disabled") == 0) ? GetFallbackMaxPixels(group.substr(8))
-                                       : rtc::Optional<int>();
+                                       : absl::optional<int>();
 }
 }  // namespace
-
 
 const int SendStatisticsProxy::kStatsTimeoutMs = 5000;
 
@@ -263,7 +262,7 @@ bool SendStatisticsProxy::UmaSamplesContainer::InsertEncodedFrame(
 }
 
 void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
-    const VideoSendStream::Config::Rtp& rtp_config,
+    const RtpConfig& rtp_config,
     const VideoSendStream::Stats& current_stats) {
   RTC_DCHECK(uma_prefix_ == kRealtimePrefix || uma_prefix_ == kScreenPrefix);
   const int kIndex = uma_prefix_ == kScreenPrefix ? 1 : 0;
@@ -430,9 +429,22 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
     int qp_h264 = it.second.h264.Avg(kMinRequiredMetricsSamples);
     if (qp_h264 != -1) {
       int spatial_idx = it.first;
-      RTC_DCHECK_EQ(-1, spatial_idx);
-      RTC_HISTOGRAMS_COUNTS_100(kIndex, uma_prefix_ + "Encoded.Qp.H264",
-                                qp_h264);
+      if (spatial_idx == -1) {
+        RTC_HISTOGRAMS_COUNTS_200(kIndex, uma_prefix_ + "Encoded.Qp.H264",
+                                  qp_h264);
+      } else if (spatial_idx == 0) {
+        RTC_HISTOGRAMS_COUNTS_200(kIndex, uma_prefix_ + "Encoded.Qp.H264.S0",
+                                  qp_h264);
+      } else if (spatial_idx == 1) {
+        RTC_HISTOGRAMS_COUNTS_200(kIndex, uma_prefix_ + "Encoded.Qp.H264.S1",
+                                  qp_h264);
+      } else if (spatial_idx == 2) {
+        RTC_HISTOGRAMS_COUNTS_200(kIndex, uma_prefix_ + "Encoded.Qp.H264.S2",
+                                  qp_h264);
+      } else {
+        RTC_LOG(LS_WARNING)
+            << "QP stats not recorded for H264 spatial idx " << spatial_idx;
+      }
     }
   }
 
@@ -626,10 +638,8 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
 
 void SendStatisticsProxy::OnEncoderReconfigured(
     const VideoEncoderConfig& config,
-    const std::vector<VideoStream>& streams,
-    uint32_t preferred_bitrate_bps) {
+    const std::vector<VideoStream>& streams) {
   rtc::CritScope lock(&crit_);
-  stats_.preferred_media_bitrate_bps = preferred_bitrate_bps;
 
   if (content_type_ != config.content_type) {
     uma_container_->UpdateHistograms(rtp_config_, stats_);
@@ -861,6 +871,8 @@ void SendStatisticsProxy::OnSendEncodedImage(
   if (codec_info) {
     if (codec_info->codecType == kVideoCodecVP8) {
       simulcast_idx = codec_info->codecSpecific.VP8.simulcastIdx;
+    } else if (codec_info->codecType == kVideoCodecH264) {
+      simulcast_idx = codec_info->codecSpecific.H264.simulcast_idx;
     } else if (codec_info->codecType == kVideoCodecGeneric) {
       simulcast_idx = codec_info->codecSpecific.generic.simulcast_idx;
     }
@@ -909,7 +921,9 @@ void SendStatisticsProxy::OnSendEncodedImage(
                 : codec_info->codecSpecific.VP9.spatial_idx;
         uma_container_->qp_counters_[spatial_idx].vp9.Add(encoded_image.qp_);
       } else if (codec_info->codecType == kVideoCodecH264) {
-        int spatial_idx = -1;
+        int spatial_idx = (rtp_config_.ssrcs.size() == 1)
+                              ? -1
+                              : static_cast<int>(simulcast_idx);
         uma_container_->qp_counters_[spatial_idx].h264.Add(encoded_image.qp_);
       }
     }
@@ -918,7 +932,7 @@ void SendStatisticsProxy::OnSendEncodedImage(
   // If any of the simulcast streams have a huge frame, it should be counted
   // as a single difficult input frame.
   // https://w3c.github.io/webrtc-stats/#dom-rtcvideosenderstats-hugeframessent
-  if (encoded_image.timing_.flags & TimingFrameFlags::kTriggeredBySize) {
+  if (encoded_image.timing_.flags & VideoSendTiming::kTriggeredBySize) {
     if (!last_outlier_timestamp_ ||
         *last_outlier_timestamp_ < encoded_image.capture_time_ms_) {
       last_outlier_timestamp_.emplace(encoded_image.capture_time_ms_);

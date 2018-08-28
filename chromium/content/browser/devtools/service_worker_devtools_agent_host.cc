@@ -115,7 +115,8 @@ ServiceWorkerDevToolsAgentHost::~ServiceWorkerDevToolsAgentHost() {
   ServiceWorkerDevToolsManager::GetInstance()->AgentHostDestroyed(this);
 }
 
-bool ServiceWorkerDevToolsAgentHost::AttachSession(DevToolsSession* session) {
+bool ServiceWorkerDevToolsAgentHost::AttachSession(DevToolsSession* session,
+                                                   TargetRegistry* registry) {
   if (state_ == WORKER_READY) {
     if (sessions().size() == 1) {
       BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
@@ -126,8 +127,8 @@ bool ServiceWorkerDevToolsAgentHost::AttachSession(DevToolsSession* session) {
     session->AttachToAgent(agent_ptr_);
   }
   session->AddHandler(base::WrapUnique(new protocol::InspectorHandler()));
-  session->AddHandler(
-      base::WrapUnique(new protocol::NetworkHandler(GetId(), GetIOContext())));
+  session->AddHandler(base::WrapUnique(new protocol::NetworkHandler(
+      GetId(), devtools_worker_token_, GetIOContext())));
   session->AddHandler(base::WrapUnique(new protocol::SchemaHandler()));
   return true;
 }
@@ -139,12 +140,6 @@ void ServiceWorkerDevToolsAgentHost::DetachSession(DevToolsSession* session) {
                             base::BindOnce(&SetDevToolsAttachedOnIO,
                                            context_weak_, version_id_, false));
   }
-}
-
-void ServiceWorkerDevToolsAgentHost::DispatchProtocolMessage(
-    DevToolsSession* session,
-    const std::string& message) {
-  session->DispatchProtocolMessage(message);
 }
 
 void ServiceWorkerDevToolsAgentHost::WorkerReadyForInspection(

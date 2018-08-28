@@ -29,16 +29,15 @@
 #include "third_party/blink/renderer/core/frame/location.h"
 
 #include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/usv_string_or_trusted_url.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
-#include "third_party/blink/renderer/core/dom/trustedtypes/trusted_url.h"
 #include "third_party/blink/renderer/core/frame/dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
+#include "third_party/blink/renderer/core/trustedtypes/trusted_url.h"
 #include "third_party/blink/renderer/core/url/dom_url_utils_read_only.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_dom_activity_logger.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
@@ -145,7 +144,8 @@ void Location::setProtocol(LocalDOMWindow* current_window,
   KURL url = GetDocument()->Url();
   if (!url.SetProtocol(protocol)) {
     exception_state.ThrowDOMException(
-        kSyntaxError, "'" + protocol + "' is an invalid protocol.");
+        DOMExceptionCode::kSyntaxError,
+        "'" + protocol + "' is an invalid protocol.");
     return;
   }
   SetLocation(url.GetString(), current_window, entered_window,
@@ -223,7 +223,7 @@ void Location::setHash(LocalDOMWindow* current_window,
 
 void Location::assign(LocalDOMWindow* current_window,
                       LocalDOMWindow* entered_window,
-                      const String& url,
+                      const USVStringOrTrustedURL& stringOrUrl,
                       ExceptionState& exception_state) {
   // TODO(yukishiino): Remove this check once we remove [CrossOrigin] from
   // the |assign| DOM operation's definition in Location.idl.  See the comment
@@ -233,13 +233,43 @@ void Location::assign(LocalDOMWindow* current_window,
     return;
   }
 
+  DCHECK(stringOrUrl.IsUSVString() ||
+         RuntimeEnabledFeatures::TrustedDOMTypesEnabled());
+  DCHECK(!stringOrUrl.IsNull());
+
+  if (stringOrUrl.IsUSVString() &&
+      current_window->document()->RequireTrustedTypes()) {
+    exception_state.ThrowTypeError(
+        "This document requires `TrustedURL` assignment.");
+    return;
+  }
+
+  String url = stringOrUrl.IsUSVString()
+                   ? stringOrUrl.GetAsUSVString()
+                   : stringOrUrl.GetAsTrustedURL()->toString();
+
   SetLocation(url, current_window, entered_window, &exception_state);
 }
 
 void Location::replace(LocalDOMWindow* current_window,
                        LocalDOMWindow* entered_window,
-                       const String& url,
+                       const USVStringOrTrustedURL& stringOrUrl,
                        ExceptionState& exception_state) {
+  DCHECK(stringOrUrl.IsUSVString() ||
+         RuntimeEnabledFeatures::TrustedDOMTypesEnabled());
+  DCHECK(!stringOrUrl.IsNull());
+
+  if (stringOrUrl.IsUSVString() &&
+      current_window->document()->RequireTrustedTypes()) {
+    exception_state.ThrowTypeError(
+        "This document requires `TrustedURL` assignment.");
+    return;
+  }
+
+  String url = stringOrUrl.IsUSVString()
+                   ? stringOrUrl.GetAsUSVString()
+                   : stringOrUrl.GetAsTrustedURL()->toString();
+
   SetLocation(url, current_window, entered_window, &exception_state,
               SetLocationPolicy::kReplaceThisFrame);
 }
@@ -249,7 +279,7 @@ void Location::reload(LocalDOMWindow* current_window) {
     return;
   if (GetDocument()->Url().ProtocolIsJavaScript())
     return;
-  dom_window_->GetFrame()->Reload(kFrameLoadTypeReload,
+  dom_window_->GetFrame()->Reload(WebFrameLoadType::kReload,
                                   ClientRedirectPolicy::kClientRedirect);
 }
 
@@ -283,7 +313,7 @@ void Location::SetLocation(const String& url,
     return;
   }
   if (exception_state && !completed_url.IsValid()) {
-    exception_state->ThrowDOMException(kSyntaxError,
+    exception_state->ThrowDOMException(DOMExceptionCode::kSyntaxError,
                                        "'" + url + "' is not a valid URL.");
     return;
   }
@@ -301,7 +331,7 @@ void Location::SetLocation(const String& url,
     argv.push_back(completed_url);
     activity_logger->LogEvent("blinkSetAttribute", argv.size(), argv.data());
   }
-  dom_window_->GetFrame()->Navigate(
+  dom_window_->GetFrame()->ScheduleNavigation(
       *current_window->document(), completed_url,
       set_location_policy == SetLocationPolicy::kReplaceThisFrame,
       UserGestureStatus::kNone);

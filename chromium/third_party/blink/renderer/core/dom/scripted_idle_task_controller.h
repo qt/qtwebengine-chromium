@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_idle_request_callback.h"
 #include "third_party/blink/renderer/core/dom/idle_deadline.h"
 #include "third_party/blink/renderer/core/dom/pausable_object.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/timer.h"
@@ -20,11 +21,12 @@ class IdleRequestCallbackWrapper;
 
 class ExecutionContext;
 class IdleRequestOptions;
+class ThreadScheduler;
 
 class CORE_EXPORT ScriptedIdleTaskController
     : public GarbageCollectedFinalized<ScriptedIdleTaskController>,
       public PausableObject,
-      public TraceWrapperBase {
+      public NameClient {
   USING_GARBAGE_COLLECTED_MIXIN(ScriptedIdleTaskController);
 
  public:
@@ -34,7 +36,6 @@ class CORE_EXPORT ScriptedIdleTaskController
   ~ScriptedIdleTaskController() override;
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "ScriptedIdleTaskController";
   }
@@ -44,10 +45,9 @@ class CORE_EXPORT ScriptedIdleTaskController
   // |IdleTask| is an interface type which generalizes tasks which are invoked
   // on idle. The tasks need to define what to do on idle in |invoke|.
   class IdleTask : public GarbageCollectedFinalized<IdleTask>,
-                   public TraceWrapperBase {
+                   public NameClient {
    public:
     virtual void Trace(blink::Visitor* visitor) {}
-    void TraceWrappers(ScriptWrappableVisitor* visitor) const override {}
     const char* NameInHeapSnapshot() const override { return "IdleTask"; }
     virtual ~IdleTask() = default;
     virtual void invoke(IdleDeadline*) = 0;
@@ -63,7 +63,6 @@ class CORE_EXPORT ScriptedIdleTaskController
     ~V8IdleTask() override = default;
     void invoke(IdleDeadline*) override;
     void Trace(blink::Visitor*) override;
-    void TraceWrappers(ScriptWrappableVisitor*) const override;
 
    private:
     explicit V8IdleTask(V8IdleRequestCallback*);
@@ -79,7 +78,7 @@ class CORE_EXPORT ScriptedIdleTaskController
   void Unpause() override;
 
   void CallbackFired(CallbackId,
-                     double deadline_seconds,
+                     TimeTicks deadline,
                      IdleDeadline::CallbackType);
 
  private:
@@ -97,9 +96,7 @@ class CORE_EXPORT ScriptedIdleTaskController
            !WTF::IsHashTraitsEmptyValue<Traits, CallbackId>(id);
   }
 
-  void RunCallback(CallbackId,
-                   double deadline_seconds,
-                   IdleDeadline::CallbackType);
+  void RunCallback(CallbackId, TimeTicks deadline, IdleDeadline::CallbackType);
 
   ThreadScheduler* scheduler_;  // Not owned.
   HeapHashMap<CallbackId, TraceWrapperMember<IdleTask>> idle_tasks_;

@@ -24,11 +24,11 @@
 
 #include "third_party/blink/renderer/core/dom/attr.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
 #include "third_party/blink/renderer/core/dom/text.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -115,11 +115,6 @@ void Attr::AttachToElement(Element* element,
 void Attr::Trace(blink::Visitor* visitor) {
   visitor->Trace(element_);
   Node::Trace(visitor);
-}
-
-void Attr::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(element_);
-  Node::TraceWrappers(visitor);
 }
 
 }  // namespace blink

@@ -410,7 +410,7 @@
             "op": ">=",
             "value": "10.1.3"
           },
-          "gl_renderer": ".*Gallium.*llvmpipe.*"
+          "gl_renderer": ".*llvmpipe.*"
         }
       ],
       "features": [
@@ -969,7 +969,7 @@
       },
       "driver_vendor": "Mesa",
       "gl_vendor": "VMware.*",
-      "gl_renderer": ".*Gallium.*llvmpipe.*",
+      "gl_renderer": ".*llvmpipe.*",
       "features": [
         "all",
         {"exceptions": [
@@ -1322,7 +1322,7 @@
           "gl_renderer": ".*SVGA3D.*"
         },
         {
-          "gl_renderer": ".*Gallium.*llvmpipe.*"
+          "gl_renderer": ".*llvmpipe.*"
         },
         {
           "gl_renderer": "Mesa OffScreen"
@@ -1365,7 +1365,7 @@
     },
     {
       "id": 137,
-      "description": "GPU rasterization on CrOS is blacklisted on non-Intel GPUs for now.",
+      "description": "GPU rasterization on CrOS is blacklisted on anything but Intel or Mali GPUs for now.",
       "cr_bugs": [684094],
       "os": {
         "type": "chromeos"
@@ -1374,7 +1374,8 @@
         "gpu_rasterization"
       ],
       "exceptions": [
-        { "vendor_id": "0x8086" }
+        { "vendor_id": "0x8086" },
+        { "gl_renderer": "Mali-T.*" }
       ]
     },
     {
@@ -1481,9 +1482,13 @@
     {
       "id": 146,
       "description": "Disable D3D11/WebGL2 on AMD switchable graphics",
-      "cr_bugs": [451420, 755722],
+      "cr_bugs": [451420, 721121, 755722],
       "os": {
-        "type": "win"
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10"
+        }
       },
       "driver_date": {
         "op": "<",

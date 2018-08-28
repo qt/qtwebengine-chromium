@@ -13,10 +13,9 @@
 
 #include <vector>
 
-#include "api/optional.h"
+#include "absl/types/optional.h"
 
 namespace webrtc {
-namespace webrtc_cc {
 
 // Computes a bayesian estimate of the throughput given acks containing
 // the arrival time and payload size. Samples which are far from the current
@@ -29,20 +28,20 @@ class BitrateEstimator {
   virtual ~BitrateEstimator();
   virtual void Update(int64_t now_ms, int bytes);
 
-  virtual rtc::Optional<uint32_t> bitrate_bps() const;
+  virtual absl::optional<uint32_t> bitrate_bps() const;
 
   virtual void ExpectFastRateChange();
 
  private:
   float UpdateWindow(int64_t now_ms, int bytes, int rate_window_ms);
   int sum_;
-  int64_t current_win_ms_;
+  int64_t initial_window_ms_;
+  int64_t current_window_ms_;
   int64_t prev_time_ms_;
   float bitrate_estimate_;
   float bitrate_estimate_var_;
 };
 
-}  // namespace webrtc_cc
 }  // namespace webrtc
 
 #endif  // MODULES_CONGESTION_CONTROLLER_GOOG_CC_BITRATE_ESTIMATOR_H_

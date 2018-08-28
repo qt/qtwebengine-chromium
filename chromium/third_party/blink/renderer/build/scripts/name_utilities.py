@@ -27,32 +27,12 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import os.path
-import re
 
-from blinkbuild.name_style_converter import tokenize_name
-
-
-def lower_first_letter(name):
-    """Return name with first letter lowercased."""
-    if not name:
-        return ''
-    return name[0].lower() + name[1:]
-
-
-def upper_first_letter(name):
-    """Return name with first letter uppercased."""
-    if not name:
-        return ''
-    return name[0].upper() + name[1:]
-
-
-def to_macro_style(name):
-    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).upper()
+from blinkbuild.name_style_converter import NameStyleConverter
 
 
 def script_name(entry):
-    return os.path.basename(entry['name'])
+    return os.path.basename(entry['name'].original)
 
 
 def cpp_bool(value):
@@ -70,85 +50,14 @@ def cpp_name(entry):
 
 
 def enum_for_css_keyword(keyword):
-    return 'CSSValue' + upper_camel_case(keyword)
+    converter = NameStyleConverter(keyword) if type(keyword) is str else keyword
+    return 'CSSValue' + converter.to_upper_camel_case()
 
 
 def enum_for_css_property(property_name):
-    return 'CSSProperty' + upper_camel_case(property_name)
+    converter = NameStyleConverter(property_name) if type(property_name) is str else property_name
+    return 'CSSProperty' + converter.to_upper_camel_case()
 
 
 def enum_for_css_property_alias(property_name):
-    return 'CSSPropertyAlias' + upper_camel_case(property_name)
-
-# FIXME: Merge these with the above methods.
-# and update all the generators to use these ones.
-# FIXME: Switch external callers of these methods to use the high level
-# API below instead.
-
-
-def join_names(*names):
-    """Given a list of names, join them into a single space-separated name."""
-    result = []
-    for name in names:
-        result.extend(tokenize_name(name))
-    return ' '.join(result)
-
-
-def naming_style(f):
-    """Decorator for name utility functions.
-
-    Wraps a name utility function in a function that takes one or more names,
-    splits them into a list of words, and passes the list to the utility function.
-    """
-    def inner(name_or_names):
-        names = name_or_names if isinstance(name_or_names, list) else [name_or_names]
-        words = []
-        for name in names:
-            if name:
-                words.extend(tokenize_name(name))
-        return f(words)
-    return inner
-
-
-@naming_style
-def upper_camel_case(words):
-    return ''.join(upper_first_letter(word) for word in words)
-
-
-@naming_style
-def lower_camel_case(words):
-    return lower_first_letter(upper_camel_case(words))
-
-
-@naming_style
-def snake_case(words):
-    return '_'.join(word.lower() for word in words)
-
-
-# Use these high level naming functions which describe the semantics of the name,
-# rather than a particular style.
-
-
-@naming_style
-def enum_type_name(words):
-    return upper_camel_case(words)
-
-
-@naming_style
-def enum_value_name(words):
-    return 'k' + upper_camel_case(words)
-
-
-@naming_style
-def class_name(words):
-    return upper_camel_case(words)
-
-
-@naming_style
-def class_member_name(words):
-    return snake_case(words) + "_"
-
-
-@naming_style
-def method_name(words):
-    return upper_camel_case(words)
+    return 'CSSPropertyAlias' + property_name.to_upper_camel_case()

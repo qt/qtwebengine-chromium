@@ -28,66 +28,55 @@
 #include "hb-open-type-private.hh"
 
 /*
- * The SVG (Scalable Vector Graphics) table
+ * SVG -- SVG (Scalable Vector Graphics)
  * https://docs.microsoft.com/en-us/typography/opentype/spec/svg
  */
 
 #define HB_OT_TAG_SVG HB_TAG('S','V','G',' ')
+
 
 namespace OT {
 
 
 struct SVGDocumentIndexEntry
 {
-  // friend struct SVGDocumentIndex;
+  friend struct SVG;
 
   inline bool sanitize (hb_sanitize_context_t *c, const void* base) const
   {
     TRACE_SANITIZE (this);
     return_trace (c->check_struct (this) &&
-      c->check_range (&svgDoc (base), svgDocLength));
+		  (base+svgDoc).sanitize (c, svgDocLength));
   }
 
   protected:
-  HBUINT16 startGlyphID;	/* The first glyph ID in the range described by
-                                 * this index entry. */
-  HBUINT16 endGlyphID;		/* The last glyph ID in the range described by
-                                 * this index entry. Must be >= startGlyphID. */
-  LOffsetTo<const uint8_t *>
-        svgDoc;			/* Offset from the beginning of the SVG Document Index
-                                 * to an SVG document. Must be non-zero. */
+  HBUINT16	startGlyphID;	/* The first glyph ID in the range described by
+				 * this index entry. */
+  HBUINT16	endGlyphID;	/* The last glyph ID in the range described by
+				 * this index entry. Must be >= startGlyphID. */
+  LOffsetTo<UnsizedArrayOf<HBUINT8> >
+		svgDoc;		/* Offset from the beginning of the SVG Document Index
+				 * to an SVG document. Must be non-zero. */
   HBUINT32 svgDocLength;	/* Length of the SVG document.
-                                 * Must be non-zero. */
+				 * Must be non-zero. */
   public:
   DEFINE_SIZE_STATIC (12);
 };
 
 struct SVGDocumentIndex
 {
+  friend struct SVG;
+
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    // dump ();
     return_trace (c->check_struct (this) &&
-      entries.sanitize (c, this));
+		  entries.sanitize (c, this));
   }
-
-  // inline void dump () const
-  // {
-  //   for (unsigned int i = 0; i < entries.len; ++i)
-  //   {
-  //     char outName[255];
-  //     sprintf (outName, "out/%d.svg", i);
-  //     const SVGDocumentIndexEntry &entry = entries[i];
-  //     FILE *f = fopen (outName, "wb");
-  //     fwrite (&entry.svgDoc (this), 1, entry.svgDocLength, f);
-  //     fclose (f);
-  //   }
-  // }
 
   protected:
   ArrayOf<SVGDocumentIndexEntry>
-    entries;			/* Array of SVG Document Index Entries. */
+		entries;	/* Array of SVG Document Index Entries. */
   public:
   DEFINE_SIZE_ARRAY (2, entries);
 };
@@ -99,14 +88,51 @@ struct SVG
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return_trace (c->check_struct (this) &&
-      svgDocIndex(this).sanitize (c));
+    return_trace (likely (c->check_struct (this) &&
+			  (this+svgDocIndex).sanitize (c)));
   }
+
+  struct accelerator_t
+  {
+    inline void init (hb_face_t *face)
+    {
+      OT::Sanitizer<OT::SVG> sanitizer;
+      svg_blob = sanitizer.sanitize (face->reference_table (HB_OT_TAG_SVG));
+      svg_len = hb_blob_get_length (svg_blob);
+      svg = svg_blob->as<OT::SVG> ();
+
+    }
+
+    inline void fini (void)
+    {
+      hb_blob_destroy (svg_blob);
+    }
+
+    inline void
+    dump (void (*callback) (const uint8_t* data, unsigned int length,
+			    unsigned int start_glyph, unsigned int end_glyph)) const
+    {
+      const SVGDocumentIndex &index = svg+svg->svgDocIndex;
+      const ArrayOf<SVGDocumentIndexEntry> &entries = index.entries;
+      for (unsigned int i = 0; i < entries.len; ++i)
+      {
+	const SVGDocumentIndexEntry &entry = entries[i];
+	callback ((const uint8_t*) &entry.svgDoc (&index), entry.svgDocLength,
+						  entry.startGlyphID, entry.endGlyphID);
+      }
+    }
+
+    private:
+    hb_blob_t *svg_blob;
+    const SVG *svg;
+
+    unsigned int svg_len;
+  };
 
   protected:
   HBUINT16	version;	/* Table version (starting at 0). */
   LOffsetTo<SVGDocumentIndex>
-    svgDocIndex;		/* Offset (relative to the start of the SVG table) to the
+		svgDocIndex;	/* Offset (relative to the start of the SVG table) to the
 				 * SVG Documents Index. Must be non-zero. */
   HBUINT32	reserved;	/* Set to 0. */
   public:

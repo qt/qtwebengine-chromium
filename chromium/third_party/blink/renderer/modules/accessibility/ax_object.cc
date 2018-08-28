@@ -30,9 +30,10 @@
 
 #include "SkMatrix44.h"
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
+#include "third_party/blink/renderer/core/aom/accessible_node.h"
+#include "third_party/blink/renderer/core/aom/accessible_node_list.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
-#include "third_party/blink/renderer/core/dom/accessible_node.h"
-#include "third_party/blink/renderer/core/dom/accessible_node_list.h"
+#include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/visible_position.h"
@@ -88,6 +89,7 @@ struct RoleEntry {
   AccessibilityRole webcore_role;
 };
 
+// Mapping of ARIA role name to internal role name.
 const RoleEntry kRoles[] = {{"alert", kAlertRole},
                             {"alertdialog", kAlertDialogRole},
                             {"application", kApplicationRole},
@@ -240,6 +242,8 @@ const InternalRoleEntry kInternalRoles[] = {
     {kComboBoxGroupingRole, "ComboBox"},
     {kComboBoxMenuButtonRole, "ComboBox"},
     {kComplementaryRole, "Complementary"},
+    {kContentDeletionRole, "ContentDeletion"},
+    {kContentInsertionRole, "ContentInsertion"},
     {kContentInfoRole, "ContentInfo"},
     {kDateRole, "Date"},
     {kDateTimeRole, "DateTime"},
@@ -413,7 +417,7 @@ static ARIARoleMap* CreateARIARoleMap() {
     role_map->Set(String(kRoles[i].aria_role), kRoles[i].webcore_role);
 
   // Grids "ignore" their non-row children during computation of children.
-  role_map->Set("rowgroup", kIgnoredRole);
+  role_map->Set(String("rowgroup"), kIgnoredRole);
 
   return role_map;
 }
@@ -471,6 +475,8 @@ AXObject::AXObject(AXObjectCacheImpl& ax_object_cache)
       cached_has_inherited_presentational_role_(false),
       cached_is_editable_root_(false),
       cached_live_region_root_(nullptr),
+      cached_aria_column_index_(0),
+      cached_aria_row_index_(0),
       ax_object_cache_(&ax_object_cache) {
   ++number_of_live_ax_objects_;
 }
@@ -794,6 +800,18 @@ bool AXObject::IsPasswordFieldAndShouldHideValue() const {
   return IsPasswordField();
 }
 
+bool AXObject::IsTextObject() const {
+  // Objects with |kLineBreakRole| are HTML <br> elements and are not backed by
+  // DOM text nodes. We can't mark them as text objects for that reason.
+  switch (RoleValue()) {
+    case kInlineTextBoxRole:
+    case kStaticTextRole:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool AXObject::IsClickable() const {
   if (IsButton() || IsLink() || IsTextControl())
     return true;
@@ -861,16 +879,21 @@ void AXObject::UpdateCachedAttributeValuesIfNeeded() const {
       !!InheritsPresentationalRoleFrom();
   cached_is_ignored_ = ComputeAccessibilityIsIgnored();
   cached_is_editable_root_ = ComputeIsEditableRoot();
+  // TODO(dmazzoni): remove this const_cast.
   cached_live_region_root_ =
       IsLiveRegion()
           ? const_cast<AXObject*>(this)
           : (ParentObjectIfExists() ? ParentObjectIfExists()->LiveRegionRoot()
                                     : nullptr);
-  // TODO(dmazzoni): remove this const_cast.
+  cached_aria_column_index_ = ComputeAriaColumnIndex();
+  cached_aria_row_index_ = ComputeAriaRowIndex();
   if (cached_is_ignored_ != LastKnownIsIgnoredValue()) {
-    const_cast<AXObject*>(this)->ChildrenChanged();
     last_known_is_ignored_value_ =
         cached_is_ignored_ ? kIgnoreObject : kIncludeObject;
+
+    AXObject* parent = ParentObjectIfExists();
+    if (parent)
+      parent->ChildrenChanged();
   }
 }
 
@@ -1099,6 +1122,26 @@ const AXObject* AXObject::DisabledAncestor() const {
   return nullptr;
 }
 
+const AXObject* AXObject::DatetimeAncestor(int max_levels_to_check) const {
+  switch (RoleValue()) {
+    case kDateTimeRole:
+    case kDateRole:
+    case kInputTimeRole:
+    case kTimeRole:
+      return this;
+    default:
+      break;
+  }
+
+  if (max_levels_to_check == 0)
+    return nullptr;
+
+  if (AXObject* parent = ParentObject())
+    return parent->DatetimeAncestor(max_levels_to_check - 1);
+
+  return nullptr;
+}
+
 bool AXObject::LastKnownIsIgnoredValue() const {
   if (last_known_is_ignored_value_ == kDefaultBehavior) {
     last_known_is_ignored_value_ =
@@ -1247,21 +1290,50 @@ bool AXObject::AncestorExposesActiveDescendant() const {
   return parent->AncestorExposesActiveDescendant();
 }
 
-bool AXObject::CanSetSelectedAttribute() const {
-  // Sub-widget elements can be selected if not disabled (native or ARIA)
-  return IsSubWidget(RoleValue()) && Restriction() != kDisabled;
+bool AXObject::HasIndirectChildren() const {
+  return IsTableCol() || RoleValue() == kTableHeaderContainerRole;
 }
 
-// static
-bool AXObject::IsSubWidget(AccessibilityRole role) {
-  switch (role) {
+bool AXObject::CanSetSelectedAttribute() const {
+  // Sub-widget elements can be selected if not disabled (native or ARIA)
+  return IsSubWidget() && Restriction() != kDisabled;
+}
+
+bool AXObject::IsSubWidget() const {
+  switch (RoleValue()) {
     case kCellRole:
     case kColumnHeaderRole:
+    case kRowHeaderRole:
     case kColumnRole:
+    case kRowRole: {
+      // If it has an explicit ARIA role, it's a subwidget.
+      //
+      // Reasoning:
+      // Static table cells are not selectable, but ARIA grid cells
+      // and rows definitely are according to the spec. To support
+      // ARIA 1.0, it's sufficient to just check if there's any
+      // ARIA role at all, because if so then it must be a grid-related
+      // role so it must be selectable.
+      //
+      // TODO: an ARIA 1.1+ role of "cell", or a role of "row" inside
+      // an ARIA 1.1 role of "table", should not be selectable. We may
+      // need to create separate role enums for grid cells vs table cells
+      // to implement this.
+      if (AriaRoleAttribute() != kUnknownRole)
+        return true;
+
+      // Otherwise it's only a subwidget if it's in a grid or treegrid,
+      // not in a table.
+      AXObject* parent = ParentObjectUnignored();
+      while (parent && !parent->IsTableLikeRole())
+        parent = parent->ParentObjectUnignored();
+      if (parent && (parent->RoleValue() == kGridRole ||
+                     parent->RoleValue() == kTreeGridRole))
+        return true;
+      return false;
+    }
     case kListBoxOptionRole:
     case kMenuListOptionRole:
-    case kRowHeaderRole:
-    case kRowRole:
     case kTabRole:
     case kTreeItemRole:
       return true;
@@ -1945,8 +2017,23 @@ AXObject* AXObject::ElementAccessibilityHitTest(const IntPoint& point) const {
   return const_cast<AXObject*>(this);
 }
 
+AXObject::AncestorsIterator AXObject::AncestorsBegin() {
+  AXObject* parent = ParentObjectUnignored();
+  if (parent)
+    return AXObject::AncestorsIterator(*parent);
+  return AncestorsEnd();
+}
+
+AXObject::AncestorsIterator AXObject::AncestorsEnd() {
+  return AXObject::AncestorsIterator();
+}
+
+AXObject::InOrderTraversalIterator AXObject::GetInOrderTraversalIterator() {
+  return InOrderTraversalIterator(*this);
+}
+
 int AXObject::ChildCount() const {
-  return static_cast<int>(Children().size());
+  return HasIndirectChildren() ? 0 : static_cast<int>(Children().size());
 }
 
 const AXObject::AXObjectVector& AXObject::Children() const {
@@ -2268,6 +2355,324 @@ void AXObject::SetScrollOffset(const IntPoint& offset) const {
   // TODO(bokan): This should potentially be a UserScroll.
   area->SetScrollOffset(ScrollOffset(offset.X(), offset.Y()),
                         kProgrammaticScroll);
+}
+
+bool AXObject::IsTableLikeRole() const {
+  switch (RoleValue()) {
+    case kLayoutTableRole:
+    case kTableRole:
+    case kGridRole:
+    case kTreeGridRole:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool AXObject::IsTableRowLikeRole() const {
+  return RoleValue() == kRowRole || RoleValue() == kLayoutTableRowRole;
+}
+
+bool AXObject::IsTableCellLikeRole() const {
+  switch (RoleValue()) {
+    case kLayoutTableCellRole:
+    case kCellRole:
+    case kColumnHeaderRole:
+    case kRowHeaderRole:
+      return true;
+    default:
+      return false;
+  }
+}
+
+unsigned AXObject::ColumnCount() const {
+  if (!IsTableLikeRole())
+    return 0;
+
+  unsigned max_column_count = 0;
+  for (const auto& row : TableRowChildren()) {
+    unsigned column_count = row->TableCellChildren().size();
+    max_column_count = std::max(column_count, max_column_count);
+  }
+
+  return max_column_count;
+}
+
+unsigned AXObject::RowCount() const {
+  if (!IsTableLikeRole())
+    return 0;
+
+  return TableRowChildren().size();
+}
+
+void AXObject::ColumnHeaders(AXObjectVector& headers) const {
+  if (!IsTableLikeRole())
+    return;
+
+  for (const auto& row : TableRowChildren()) {
+    for (const auto& cell : row->TableCellChildren()) {
+      if (cell->RoleValue() == kColumnHeaderRole)
+        headers.push_back(cell);
+    }
+  }
+}
+
+void AXObject::RowHeaders(AXObjectVector& headers) const {
+  if (!IsTableLikeRole())
+    return;
+
+  for (const auto& row : TableRowChildren()) {
+    for (const auto& cell : row->TableCellChildren()) {
+      if (cell->RoleValue() == kRowHeaderRole)
+        headers.push_back(cell);
+    }
+  }
+}
+
+AXObject* AXObject::CellForColumnAndRow(unsigned target_column_index,
+                                        unsigned target_row_index) const {
+  if (!IsTableLikeRole())
+    return nullptr;
+
+  // Note that this code is only triggered if this is not a LayoutTable,
+  // i.e. it's an ARIA grid/table.
+  //
+  // TODO(dmazzoni): delete this code or rename it "for testing only"
+  // since it's only needed for Blink layout tests and not for production.
+  unsigned row_index = 0;
+  for (const auto& row : TableRowChildren()) {
+    unsigned column_index = 0;
+    for (const auto& cell : row->TableCellChildren()) {
+      if (target_column_index == column_index && target_row_index == row_index)
+        return cell;
+      column_index++;
+    }
+    row_index++;
+  }
+
+  return nullptr;
+}
+
+int AXObject::AriaColumnCount() const {
+  if (!IsTableLikeRole())
+    return 0;
+
+  int32_t col_count;
+  if (!HasAOMPropertyOrARIAAttribute(AOMIntProperty::kColCount, col_count))
+    return 0;
+
+  if (col_count > static_cast<int>(ColumnCount()))
+    return col_count;
+
+  // Spec says that if all of the columns are present in the DOM, it
+  // is not necessary to set this attribute as the user agent can
+  // automatically calculate the total number of columns.
+  // It returns 0 in order not to set this attribute.
+  if (col_count == static_cast<int>(ColumnCount()) || col_count != -1)
+    return 0;
+
+  return -1;
+}
+
+int AXObject::AriaRowCount() const {
+  if (!IsTableLikeRole())
+    return 0;
+
+  int32_t row_count;
+  if (!HasAOMPropertyOrARIAAttribute(AOMIntProperty::kRowCount, row_count))
+    return 0;
+
+  if (row_count > static_cast<int>(RowCount()))
+    return row_count;
+
+  // Spec says that if all of the rows are present in the DOM, it is
+  // not necessary to set this attribute as the user agent can
+  // automatically calculate the total number of rows.
+  // It returns 0 in order not to set this attribute.
+  if (row_count == (int)RowCount() || row_count != -1)
+    return 0;
+
+  // In the spec, -1 explicitly means an unknown number of rows.
+  return -1;
+}
+
+unsigned AXObject::ColumnIndex() const {
+  if (!IsTableCellLikeRole())
+    return 0;
+
+  const AXObject* row = TableRowParent();
+  if (!row)
+    return 0;
+
+  unsigned column_index = 0;
+  for (const auto& child : row->TableCellChildren()) {
+    if (child == this)
+      break;
+    column_index++;
+  }
+  return column_index;
+}
+
+unsigned AXObject::RowIndex() const {
+  const AXObject* row = nullptr;
+  if (IsTableRowLikeRole())
+    row = this;
+  else if (IsTableCellLikeRole())
+    row = TableRowParent();
+
+  if (!row)
+    return 0;
+
+  const AXObject* table = row->TableParent();
+  if (!table)
+    return 0;
+
+  unsigned row_index = 0;
+  for (const auto& child : table->TableRowChildren()) {
+    if (child == row)
+      break;
+    if (!child->IsTableRowLikeRole())
+      continue;
+    row_index++;
+  }
+  return row_index;
+}
+
+unsigned AXObject::ColumnSpan() const {
+  return IsTableCellLikeRole() ? 1 : 0;
+}
+
+unsigned AXObject::RowSpan() const {
+  return IsTableCellLikeRole() ? 1 : 0;
+}
+
+unsigned AXObject::AriaColumnIndex() const {
+  UpdateCachedAttributeValuesIfNeeded();
+  return cached_aria_column_index_;
+}
+
+unsigned AXObject::AriaRowIndex() const {
+  UpdateCachedAttributeValuesIfNeeded();
+  return cached_aria_row_index_;
+}
+
+unsigned AXObject::ComputeAriaColumnIndex() const {
+  if (!IsTableCellLikeRole())
+    return 0;
+
+  // First see if it has an ARIA column index explicitly set.
+  uint32_t col_index;
+  if (HasAOMPropertyOrARIAAttribute(AOMUIntProperty::kColIndex, col_index) &&
+      col_index >= 1) {
+    return col_index;
+  }
+
+  // Get the previous sibling.
+  // TODO(dmazzoni): this code depends on the DOM; move this code out of Blink
+  // and make it more general.
+  AXObject* previous = nullptr;
+  if (GetNode()) {
+    Node* previousNode = ElementTraversal::PreviousSibling(*GetNode());
+    previous = AXObjectCache().GetOrCreate(previousNode);
+  }
+
+  // It has a previous sibling, so if that cell has a column index, this one's
+  // index is one greater.
+  if (previous) {
+    col_index = previous->AriaColumnIndex();
+    if (col_index)
+      return col_index + 1;
+    return 0;
+  }
+
+  // No previous cell, so check the row to see if it sets a column index.
+  const AXObject* row = TableRowParent();
+  if (!row)
+    return 0;
+  if (row->HasAOMPropertyOrARIAAttribute(AOMUIntProperty::kColIndex,
+                                         col_index)) {
+    return col_index;
+  }
+
+  // Otherwise there's no ARIA column index.
+  return 0;
+}
+
+unsigned AXObject::ComputeAriaRowIndex() const {
+  if (!IsTableCellLikeRole() && !IsTableRowLikeRole())
+    return 0;
+
+  // First check if there's an ARIA row index explicitly set.
+  uint32_t row_index;
+  if (HasAOMPropertyOrARIAAttribute(AOMUIntProperty::kRowIndex, row_index) &&
+      row_index >= 1) {
+    return row_index;
+  }
+
+  // If this is a cell, return the ARIA row index of the containing row.
+  if (IsTableCellLikeRole()) {
+    const AXObject* row = TableRowParent();
+    if (row)
+      return row->AriaRowIndex();
+    return 0;
+  }
+
+  // Otherwise, this is a row. Find the previous sibling row.
+  // TODO(dmazzoni): this code depends on the DOM; move this code out of Blink
+  // and make it more general.
+  if (!GetNode())
+    return 0;
+  Node* previousNode = ElementTraversal::PreviousSibling(*GetNode());
+  AXObject* previous = AXObjectCache().GetOrCreate(previousNode);
+  if (!previous || !previous->IsTableRowLikeRole())
+    return 0;
+
+  // If the previous row has an ARIA row index, this one is the same index
+  // plus one.
+  row_index = previous->AriaRowIndex();
+  if (row_index)
+    return row_index + 1;
+
+  // Otherwise there's no ARIA row index.
+  return 0;
+}
+
+AXObject::AXObjectVector AXObject::TableRowChildren() const {
+  AXObjectVector result;
+  for (const auto& child : Children()) {
+    if (child->IsTableRowLikeRole())
+      result.push_back(child);
+    else if (child->RoleValue() == kGenericContainerRole)
+      result.AppendVector(child->TableRowChildren());
+  }
+  return result;
+}
+
+AXObject::AXObjectVector AXObject::TableCellChildren() const {
+  AXObjectVector result;
+  for (const auto& child : Children()) {
+    if (child->IsTableCellLikeRole())
+      result.push_back(child);
+    else if (child->RoleValue() == kGenericContainerRole)
+      result.AppendVector(child->TableCellChildren());
+  }
+  return result;
+}
+
+const AXObject* AXObject::TableRowParent() const {
+  const AXObject* row = ParentObjectUnignored();
+  while (row && !row->IsTableRowLikeRole() &&
+         row->RoleValue() == kGenericContainerRole)
+    row = row->ParentObjectUnignored();
+  return row;
+}
+
+const AXObject* AXObject::TableParent() const {
+  const AXObject* table = ParentObjectUnignored();
+  while (table && !table->IsTableLikeRole() &&
+         table->RoleValue() == kGenericContainerRole)
+    table = table->ParentObjectUnignored();
+  return table;
 }
 
 void AXObject::GetRelativeBounds(AXObject** out_container,
@@ -2795,9 +3200,6 @@ bool AXObject::NameFromContents(bool recursive) const {
     case kIframeRole:
     case kImageRole:
     case kInputTimeRole:
-    case kLayoutTableRole:
-    case kLayoutTableColumnRole:
-    case kLayoutTableRowRole:
     case kListBoxRole:
     case kLogRole:
     case kMainRole:
@@ -2844,6 +3246,8 @@ bool AXObject::NameFromContents(bool recursive) const {
     case kAnnotationRole:
     case kCanvasRole:
     case kCaptionRole:
+    case kContentDeletionRole:
+    case kContentInsertionRole:
     case kDescriptionListDetailRole:
     case kDescriptionListRole:
     case kDescriptionListTermRole:
@@ -2855,6 +3259,9 @@ bool AXObject::NameFromContents(bool recursive) const {
     case kImageMapRole:
     case kInlineTextBoxRole:
     case kLabelRole:
+    case kLayoutTableRole:
+    case kLayoutTableColumnRole:
+    case kLayoutTableRowRole:
     case kLegendRole:
     case kListRole:
     case kListItemRole:

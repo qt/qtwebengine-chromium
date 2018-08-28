@@ -11,6 +11,10 @@ namespace background_loader {
 BackgroundLoaderContents::BackgroundLoaderContents(
     content::BrowserContext* browser_context)
     : browser_context_(browser_context) {
+  // It is very important that we create the web contents with
+  // CreateParams::initially_hidden == false, and that we never change the
+  // visibility after that.  If we did change it, then background throttling
+  // could kill the background offliner while it was running.
   web_contents_ = content::WebContents::Create(
       content::WebContents::CreateParams(browser_context_));
   web_contents_->SetAudioMuted(true);
@@ -109,9 +113,9 @@ bool BackgroundLoaderContents::ShouldBlockMediaRequest(const GURL& url) {
 void BackgroundLoaderContents::RequestMediaAccessPermission(
     content::WebContents* contents,
     const content::MediaStreamRequest& request,
-    const content::MediaResponseCallback& callback) {
+    content::MediaResponseCallback callback) {
   // No permissions granted, act as if dismissed.
-  callback.Run(
+  std::move(callback).Run(
       content::MediaStreamDevices(),
       content::MediaStreamRequestResult::MEDIA_DEVICE_PERMISSION_DISMISSED,
       std::unique_ptr<content::MediaStreamUI>());

@@ -37,11 +37,12 @@ class FontSupport : public gpu::ServiceFontManager::Client {
 
  private:
   scoped_refptr<gpu::Buffer> CreateBuffer(uint32_t shm_id) {
-    std::unique_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
     static const size_t kBufferSize = 2048u;
-    shared_memory->CreateAndMapAnonymous(kBufferSize);
-    auto buffer =
-        gpu::MakeBufferFromSharedMemory(std::move(shared_memory), kBufferSize);
+    base::UnsafeSharedMemoryRegion shared_memory =
+        base::UnsafeSharedMemoryRegion::Create(kBufferSize);
+    base::WritableSharedMemoryMapping mapping = shared_memory.Map();
+    auto buffer = gpu::MakeBufferFromSharedMemory(std::move(shared_memory),
+                                                  std::move(mapping));
     buffers_[shm_id] = buffer;
     return buffer;
   }
@@ -49,37 +50,15 @@ class FontSupport : public gpu::ServiceFontManager::Client {
   base::flat_map<uint32_t, scoped_refptr<gpu::Buffer>> buffers_;
 };
 
-// Deserialize an arbitrary number of cc::PaintOps and raster them
-// using gpu raster into an SkCanvas.
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  if (size <= sizeof(size_t))
-    return 0;
-
-  static Environment* env = new Environment();
-  ALLOW_UNUSED_LOCAL(env);
-  base::CommandLine::Init(0, nullptr);
-  const size_t kMaxSerializedSize = 1000000;
+void Raster(scoped_refptr<viz::TestContextProvider> context_provider,
+            SkStrikeClient* strike_client,
+            const uint8_t* data,
+            size_t size) {
   const size_t kRasterDimension = 32;
-
-  // Partition the data to use some bytes for populating the font cache.
-  size_t bytes_for_fonts = data[0];
-  if (bytes_for_fonts > size)
-    bytes_for_fonts = size / 2;
-
-  FontSupport font_support;
-  gpu::ServiceFontManager font_manager(&font_support);
-  std::vector<SkDiscardableHandleId> locked_handles;
-  if (bytes_for_fonts > 0u) {
-    font_manager.Deserialize(reinterpret_cast<const char*>(data),
-                             bytes_for_fonts, &locked_handles);
-    data += bytes_for_fonts;
-    size -= bytes_for_fonts;
-  }
+  const size_t kMaxSerializedSize = 1000000;
 
   SkImageInfo image_info = SkImageInfo::MakeN32(
       kRasterDimension, kRasterDimension, kOpaque_SkAlphaType);
-  scoped_refptr<viz::TestContextProvider> context_provider =
-      viz::TestContextProvider::Create();
   context_provider->BindToCurrentThread();
   sk_sp<SkSurface> surface = SkSurface::MakeRenderTarget(
       context_provider->GrContext(), SkBudgeted::kYes, image_info);
@@ -87,8 +66,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   cc::PlaybackParams params(nullptr, canvas->getTotalMatrix());
   cc::TransferCacheTestHelper transfer_cache_helper;
-  cc::PaintOp::DeserializeOptions deserialize_options(
-      &transfer_cache_helper, font_manager.strike_client());
+  cc::PaintOp::DeserializeOptions deserialize_options(&transfer_cache_helper,
+                                                      strike_client);
 
   // Need 4 bytes to be able to read the type/skip.
   while (size >= 4) {
@@ -117,6 +96,45 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     size -= bytes_read;
     data += bytes_read;
   }
+}
+
+// Deserialize an arbitrary number of cc::PaintOps and raster them
+// using gpu raster into an SkCanvas.
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  if (size <= sizeof(size_t))
+    return 0;
+
+  static Environment* env = new Environment();
+  ALLOW_UNUSED_LOCAL(env);
+  base::CommandLine::Init(0, nullptr);
+
+  // Partition the data to use some bytes for populating the font cache.
+  size_t bytes_for_fonts = data[0];
+  if (bytes_for_fonts > size)
+    bytes_for_fonts = size / 2;
+
+  FontSupport font_support;
+  gpu::ServiceFontManager font_manager(&font_support);
+  std::vector<SkDiscardableHandleId> locked_handles;
+  if (bytes_for_fonts > 0u) {
+    font_manager.Deserialize(reinterpret_cast<const char*>(data),
+                             bytes_for_fonts, &locked_handles);
+    data += bytes_for_fonts;
+    size -= bytes_for_fonts;
+  }
+
+  auto context_provider_no_support = viz::TestContextProvider::Create();
+  context_provider_no_support->BindToCurrentThread();
+  CHECK(!context_provider_no_support->GrContext()->supportsDistanceFieldText());
+  Raster(context_provider_no_support, font_manager.strike_client(), data, size);
+
+  auto context_provider_with_support = viz::TestContextProvider::Create(
+      std::string("GL_OES_standard_derivatives"));
+  context_provider_with_support->BindToCurrentThread();
+  CHECK(
+      context_provider_with_support->GrContext()->supportsDistanceFieldText());
+  Raster(context_provider_with_support, font_manager.strike_client(), data,
+         size);
 
   font_manager.Unlock(locked_handles);
   return 0;

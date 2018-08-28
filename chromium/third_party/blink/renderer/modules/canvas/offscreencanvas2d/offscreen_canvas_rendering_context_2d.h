@@ -64,7 +64,7 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
   }
   scoped_refptr<StaticBitmapImage> GetImage(AccelerationHint) const final;
   void Reset() override;
-  void RestoreCanvasMatrixClipStack(PaintCanvas* c) const override {
+  void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const override {
     RestoreMatrixClipStack(c);
   }
 
@@ -93,8 +93,8 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
 
   bool ParseColorOrCurrentColor(Color&, const String& color_string) const final;
 
-  PaintCanvas* DrawingCanvas() const final;
-  PaintCanvas* ExistingDrawingCanvas() const final;
+  cc::PaintCanvas* DrawingCanvas() const final;
+  cc::PaintCanvas* ExistingDrawingCanvas() const final;
   void DisableDeferral(DisableDeferralReason) final;
 
   void DidDraw() final;
@@ -102,7 +102,7 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
 
   bool StateHasFilter() final;
   sk_sp<PaintFilter> StateGetFilter() final;
-  void SnapshotStateForFilter() final {}
+  void SnapshotStateForFilter() final;
 
   void ValidateStateStack() const final;
 
@@ -142,7 +142,7 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
                         double* max_width = nullptr);
   const Font& AccessFont();
 
-  scoped_refptr<StaticBitmapImage> TransferToStaticBitmapImage();
+  scoped_refptr<CanvasResource> ProduceFrame();
 
   String ColorSpaceAsString() const override;
   CanvasPixelFormat PixelFormat() const override;

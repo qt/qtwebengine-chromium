@@ -31,10 +31,13 @@
 
 #include "base/macros.h"
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/frame/hosts_using_features.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -45,8 +48,6 @@
 #include "third_party/blink/renderer/core/html_element_type_helpers.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
-#include "third_party/blink/renderer/core/layout/layout_block_flow.h"
-#include "third_party/blink/renderer/core/layout/layout_full_screen.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
 #include "third_party/blink/renderer/platform/bindings/microtask.h"
@@ -57,6 +58,139 @@ namespace blink {
 
 namespace {
 
+void FullscreenElementChanged(Document& document,
+                              Element* old_element,
+                              Element* new_element,
+                              Fullscreen::RequestType new_request_type) {
+  DCHECK_NE(old_element, new_element);
+
+  document.GetStyleEngine().EnsureUAStyleForFullscreen();
+
+  if (old_element) {
+    DCHECK_NE(old_element, Fullscreen::FullscreenElementFrom(document));
+
+    old_element->PseudoStateChanged(CSSSelector::kPseudoFullScreen);
+
+    old_element->SetContainsFullScreenElement(false);
+    old_element->SetContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(
+        false);
+  }
+
+  if (new_element) {
+    DCHECK_EQ(new_element, Fullscreen::FullscreenElementFrom(document));
+
+    new_element->PseudoStateChanged(CSSSelector::kPseudoFullScreen);
+
+    // OOPIF: For RequestType::PrefixedForCrossProcessDescendant, |new_element|
+    // is the iframe element for the out-of-process frame that contains the
+    // fullscreen element. Hence, it must match :-webkit-full-screen-ancestor.
+    if (new_request_type ==
+        Fullscreen::RequestType::kPrefixedForCrossProcessDescendant) {
+      DCHECK(IsHTMLIFrameElement(new_element));
+      new_element->SetContainsFullScreenElement(true);
+    }
+    new_element->SetContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(
+        true);
+  }
+
+  if (document.GetFrame()) {
+    // SetIsInert recurses through subframes to propagate the inert bit as
+    // needed.
+    document.GetFrame()->SetIsInert(document.LocalOwner() &&
+                                    document.LocalOwner()->IsInert());
+  }
+
+  // Any element not contained by the fullscreen element is inert (see
+  // |Node::IsInert()|), so changing the fullscreen element will typically
+  // change the inertness of most elements. Clear the entire cache.
+  document.ClearAXObjectCache();
+
+  if (LocalFrame* frame = document.GetFrame()) {
+    // TODO(foolip): Synchronize hover state changes with animation frames.
+    // https://crbug.com/668758
+    frame->GetEventHandler().ScheduleHoverStateUpdate();
+    frame->GetChromeClient().FullscreenElementChanged(old_element, new_element);
+  }
+}
+
+using ElementRequestTypeMap =
+    HeapHashMap<WeakMember<Element>, Fullscreen::RequestType>;
+
+ElementRequestTypeMap& FullscreenFlagMap() {
+  DEFINE_STATIC_LOCAL(ElementRequestTypeMap, map, (new ElementRequestTypeMap));
+  return map;
+}
+
+bool HasFullscreenFlag(Element& element) {
+  return FullscreenFlagMap().Contains(&element);
+}
+
+void SetFullscreenFlag(Element& element, Fullscreen::RequestType request_type) {
+  FullscreenFlagMap().insert(&element, request_type);
+}
+
+void UnsetFullscreenFlag(Element& element) {
+  FullscreenFlagMap().erase(&element);
+}
+
+Fullscreen::RequestType GetRequestType(Element& element) {
+  return FullscreenFlagMap().find(&element)->value;
+}
+
+// https://fullscreen.spec.whatwg.org/#fullscreen-an-element
+void GoFullscreen(Element& element, Fullscreen::RequestType request_type) {
+  Document& document = element.GetDocument();
+  Element* old_element = Fullscreen::FullscreenElementFrom(document);
+
+  // To fullscreen an |element| within a |document|, set the |element|'s
+  // fullscreen flag and add it to |document|'s top layer.
+  DCHECK(!HasFullscreenFlag(element));
+  DCHECK(!element.IsInTopLayer());
+  SetFullscreenFlag(element, request_type);
+  document.AddToTopLayer(&element);
+
+  DCHECK_EQ(&element, Fullscreen::FullscreenElementFrom(document));
+  FullscreenElementChanged(document, old_element, &element, request_type);
+}
+
+// https://fullscreen.spec.whatwg.org/#unfullscreen-an-element
+void Unfullscreen(Element& element) {
+  Document& document = element.GetDocument();
+  Element* old_element = Fullscreen::FullscreenElementFrom(document);
+
+  // To unfullscreen an |element| within a |document|, unset the element's
+  // fullscreen flag and iframe fullscreen flag (if any), and remove it from
+  // |document|'s top layer.
+  DCHECK(element.IsInTopLayer());
+  DCHECK(HasFullscreenFlag(element));
+  UnsetFullscreenFlag(element);
+  document.RemoveFromTopLayer(&element);
+
+  Element* new_element = Fullscreen::FullscreenElementFrom(document);
+  if (old_element != new_element) {
+    Fullscreen::RequestType new_request_type =
+        new_element ? GetRequestType(*new_element)
+                    : Fullscreen::RequestType::kUnprefixed;
+    FullscreenElementChanged(document, old_element, new_element,
+                             new_request_type);
+  }
+}
+
+// https://fullscreen.spec.whatwg.org/#unfullscreen-a-document
+void Unfullscreen(Document& document) {
+  // To unfullscreen a |document|, unfullscreen all elements, within
+  // |document|'s top layer, whose fullscreen flag is set.
+
+  HeapVector<Member<Element>> fullscreen_elements;
+  for (Element* element : document.TopLayerElements()) {
+    if (HasFullscreenFlag(*element))
+      fullscreen_elements.push_back(element);
+  }
+
+  for (Element* element : fullscreen_elements)
+    Unfullscreen(*element);
+}
+
 // https://html.spec.whatwg.org/multipage/embedded-content.html#allowed-to-use
 bool AllowedToUseFullscreen(const Frame* frame) {
   // To determine whether a Document object |document| is allowed to use the
@@ -65,23 +199,6 @@ bool AllowedToUseFullscreen(const Frame* frame) {
   // 1. If |document| has no browsing context, then return false.
   if (!frame)
     return false;
-
-  if (!IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kFullscreen)) {
-    // 2. If |document|'s browsing context is a top-level browsing context, then
-    // return true.
-    if (frame->IsMainFrame())
-      return true;
-
-    // 3. If |document|'s browsing context has a browsing context container that
-    // is an iframe element with an |allowattribute| attribute specified, and
-    // whose node document is allowed to use the feature indicated by
-    // |allowattribute|, then return true.
-    if (frame->Owner() && frame->Owner()->AllowFullscreen())
-      return AllowedToUseFullscreen(frame->Tree().Parent());
-
-    // 4. Return false.
-    return false;
-  }
 
   // 2. If Feature Policy is enabled, return the policy for "fullscreen"
   // feature.
@@ -249,9 +366,18 @@ Document& TopmostLocalAncestor(Document& document) {
   return document;
 }
 
+size_t CountFullscreenInTopLayer(const Document& document) {
+  size_t count = 0;
+  for (Element* element : document.TopLayerElements()) {
+    if (HasFullscreenFlag(*element))
+      ++count;
+  }
+  return count;
+}
+
 // https://fullscreen.spec.whatwg.org/#simple-fullscreen-document
-bool IsSimpleFullscreenDocument(Document& document) {
-  return Fullscreen::FullscreenElementStackSizeFrom(document) == 1;
+bool IsSimpleFullscreenDocument(const Document& document) {
+  return CountFullscreenInTopLayer(document) == 1;
 }
 
 // https://fullscreen.spec.whatwg.org/#collect-documents-to-unfullscreen
@@ -339,6 +465,11 @@ void EnqueueEvent(const AtomicString& type,
                                                WrapPersistent(&document)));
 }
 
+void DidEnterFullscreenTask(Document* document) {
+  DCHECK(document);
+  Fullscreen::DidEnterFullscreen(*document);
+}
+
 }  // anonymous namespace
 
 const char Fullscreen::kSupplementName[] = "Fullscreen";
@@ -349,26 +480,30 @@ Fullscreen& Fullscreen::From(Document& document) {
     fullscreen = new Fullscreen(document);
     ProvideTo(document, fullscreen);
   }
-
   return *fullscreen;
 }
 
-Fullscreen* Fullscreen::FromIfExistsSlow(Document& document) {
+Fullscreen* Fullscreen::FromIfExists(Document& document) {
+  if (!document.HasFullscreenSupplement())
+    return nullptr;
   return Supplement<Document>::From<Fullscreen>(document);
 }
 
 Element* Fullscreen::FullscreenElementFrom(Document& document) {
-  if (Fullscreen* found = FromIfExists(document))
-    return found->FullscreenElement();
+  // The fullscreen element is the topmost element in the document's top layer
+  // whose fullscreen flag is set, if any, and null otherwise.
+
+  const auto& elements = document.TopLayerElements();
+  for (auto it = elements.rbegin(); it != elements.rend(); ++it) {
+    Element* element = (*it).Get();
+    if (HasFullscreenFlag(*element))
+      return element;
+  }
+
   return nullptr;
 }
 
-size_t Fullscreen::FullscreenElementStackSizeFrom(Document& document) {
-  if (Fullscreen* found = FromIfExists(document))
-    return found->fullscreen_element_stack_.size();
-  return 0;
-}
-
+// https://fullscreen.spec.whatwg.org/#fullscreen-element
 Element* Fullscreen::FullscreenElementForBindingFrom(TreeScope& scope) {
   Element* element = FullscreenElementFrom(scope.GetDocument());
   if (!element || !RuntimeEnabledFeatures::FullscreenUnprefixedEnabled())
@@ -391,20 +526,11 @@ Element* Fullscreen::FullscreenElementForBindingFrom(TreeScope& scope) {
 }
 
 bool Fullscreen::IsInFullscreenElementStack(const Element& element) {
-  const Fullscreen* found = FromIfExists(element.GetDocument());
-  if (!found)
-    return false;
-  for (size_t i = 0; i < found->fullscreen_element_stack_.size(); ++i) {
-    if (found->fullscreen_element_stack_[i].first.Get() == &element)
-      return true;
-  }
-  return false;
+  return HasFullscreenFlag(const_cast<Element&>(element));
 }
 
 Fullscreen::Fullscreen(Document& document)
-    : Supplement<Document>(document),
-      ContextLifecycleObserver(&document),
-      full_screen_layout_object_(nullptr) {
+    : Supplement<Document>(document), ContextLifecycleObserver(&document) {
   document.SetHasFullscreenSupplement();
 }
 
@@ -415,11 +541,8 @@ Document* Fullscreen::GetDocument() {
 }
 
 void Fullscreen::ContextDestroyed(ExecutionContext*) {
-  if (full_screen_layout_object_)
-    full_screen_layout_object_->Destroy();
-
   pending_requests_.clear();
-  fullscreen_element_stack_.clear();
+  pending_exits_.clear();
 }
 
 // https://fullscreen.spec.whatwg.org/#dom-element-requestfullscreen
@@ -429,9 +552,10 @@ void Fullscreen::RequestFullscreen(Element& pending) {
   RequestFullscreen(pending, FullscreenOptions(), RequestType::kPrefixed);
 }
 
-void Fullscreen::RequestFullscreen(Element& pending,
-                                   const FullscreenOptions& options,
-                                   RequestType request_type) {
+ScriptPromise Fullscreen::RequestFullscreen(Element& pending,
+                                            const FullscreenOptions& options,
+                                            RequestType request_type,
+                                            ScriptState* script_state) {
   RequestFullscreenScope scope;
 
   // 1. Let |pending| be the context object.
@@ -440,12 +564,24 @@ void Fullscreen::RequestFullscreen(Element& pending,
   Document& document = pending.GetDocument();
 
   // 3. Let |promise| be a new promise.
-  // TODO(foolip): Promises. https://crbug.com/644637
+  // For optimization allocate the ScriptPromiseResolver just after step 4.
+  ScriptPromiseResolver* resolver = nullptr;
 
   // 4. If |pendingDoc| is not fully active, then reject |promise| with a
   // TypeError exception and return |promise|.
-  if (!document.IsActive() || !document.GetFrame())
-    return;
+  if (!document.IsActive() || !document.GetFrame()) {
+    if (!script_state)
+      return ScriptPromise();
+    return ScriptPromise::Reject(
+        script_state, V8ThrowException::CreateTypeError(
+                          script_state->GetIsolate(), "Document not active"));
+  }
+
+  if (script_state) {
+    // We should only be creating promises for unprefixed variants.
+    DCHECK_EQ(Fullscreen::RequestType::kUnprefixed, request_type);
+    resolver = ScriptPromiseResolver::Create(script_state);
+  }
 
   bool for_cross_process_descendant =
       request_type == RequestType::kPrefixedForCrossProcessDescendant;
@@ -474,6 +610,7 @@ void Fullscreen::RequestFullscreen(Element& pending,
     error = true;
 
   // 7. Return |promise|, and run the remaining steps in parallel.
+  ScriptPromise promise = resolver ? resolver->Promise() : ScriptPromise();
 
   // 8. If |error| is false: Resize |pendingDoc|'s top-level browsing context's
   // document's viewport's dimensions to match the dimensions of the screen of
@@ -486,7 +623,7 @@ void Fullscreen::RequestFullscreen(Element& pending,
     }
 
     From(document).pending_requests_.push_back(
-        std::make_pair(&pending, request_type));
+        new PendingRequest(&pending, request_type, resolver));
     LocalFrame& frame = *document.GetFrame();
     frame.GetChromeClient().EnterFullscreen(frame, options);
   } else {
@@ -494,36 +631,36 @@ void Fullscreen::RequestFullscreen(Element& pending,
     // synchronously because when |error| is true, |ContinueRequestFullscreen()|
     // will only queue a task and return. This is indistinguishable from, e.g.,
     // enqueueing a microtask to continue at step 9.
-    ContinueRequestFullscreen(document, pending, request_type,
+    ContinueRequestFullscreen(document, pending, request_type, resolver,
                               true /* error */);
   }
+
+  return promise;
 }
 
-void Fullscreen::DidEnterFullscreen() {
-  if (!GetDocument())
-    return;
-
+void Fullscreen::DidEnterFullscreen(Document& document) {
   // We may be called synchronously from within
   // |FullscreenController::EnterFullscreen()| if we were already fullscreen,
   // but must still not synchronously change the fullscreen element. Instead
   // enqueue a microtask to continue.
   if (RequestFullscreenScope::RunningRequestFullscreen()) {
     Microtask::EnqueueMicrotask(
-        WTF::Bind(&Fullscreen::DidEnterFullscreen, WrapPersistent(this)));
+        WTF::Bind(DidEnterFullscreenTask, WrapPersistent(&document)));
     return;
   }
 
-  ElementStack requests;
-  requests.swap(pending_requests_);
-  for (const ElementStackEntry& request : requests) {
-    ContinueRequestFullscreen(*GetDocument(), *request.first, request.second,
-                              false /* error */);
+  PendingRequests requests;
+  requests.swap(From(document).pending_requests_);
+  for (const Member<PendingRequest>& request : requests) {
+    ContinueRequestFullscreen(document, *request->element(), request->type(),
+                              request->resolver(), false /* error */);
   }
 }
 
 void Fullscreen::ContinueRequestFullscreen(Document& document,
                                            Element& pending,
                                            RequestType request_type,
+                                           ScriptPromiseResolver* resolver,
                                            bool error) {
   DCHECK(document.IsActive());
   DCHECK(document.GetFrame());
@@ -543,6 +680,13 @@ void Fullscreen::ContinueRequestFullscreen(Document& document,
 
     // 10.2. Reject |promise| with a TypeError exception and terminate these
     // steps.
+    if (resolver) {
+      ScriptState::Scope scope(resolver->GetScriptState());
+      // TODO(dtapuska): Change error to be something useful instead of just a
+      // boolean and return this to the user.
+      resolver->Reject(V8ThrowException::CreateTypeError(
+          resolver->GetScriptState()->GetIsolate(), "fullscreen error"));
+    }
     return;
   }
 
@@ -584,9 +728,7 @@ void Fullscreen::ContinueRequestFullscreen(Document& document,
     // https://crbug.com/644695
 
     // 13.4. Fullscreen |element| within |doc|.
-    // TODO(foolip): Merge fullscreen element stack into top layer.
-    // https://crbug.com/627790
-    From(doc).PushFullscreenElementStack(*element, request_type);
+    GoFullscreen(*element, request_type);
 
     // 13.5. Append (fullscreenchange, |element|) to |doc|'s list of pending
     // fullscreen events.
@@ -594,10 +736,14 @@ void Fullscreen::ContinueRequestFullscreen(Document& document,
   }
 
   // 14. Resolve |promise| with undefined.
+  if (resolver) {
+    ScriptState::Scope scope(resolver->GetScriptState());
+    resolver->Resolve();
+  }
 }
 
 // https://fullscreen.spec.whatwg.org/#fully-exit-fullscreen
-void Fullscreen::FullyExitFullscreen(Document& document) {
+void Fullscreen::FullyExitFullscreen(Document& document, bool ua_originated) {
   // TODO(foolip): The spec used to have a first step saying "Let |doc| be the
   // top-level browsing context's document" which was removed in
   // https://github.com/whatwg/fullscreen/commit/3243119d027a8ff5b80998eb1f17f8eba148a346.
@@ -605,28 +751,45 @@ void Fullscreen::FullyExitFullscreen(Document& document) {
   Document& doc = TopmostLocalAncestor(document);
 
   // 1. If |document|'s fullscreen element is null, terminate these steps.
-  if (!FullscreenElementFrom(doc))
+  Element* fullscreen_element = FullscreenElementFrom(doc);
+  if (!fullscreen_element)
     return;
 
   // 2. Unfullscreen elements whose fullscreen flag is set, within
   // |document|'s top layer, except for |document|'s fullscreen element.
-  size_t stack_size = From(doc).fullscreen_element_stack_.size();
-  From(doc).fullscreen_element_stack_.EraseAt(0, stack_size - 1);
-  DCHECK_EQ(From(doc).fullscreen_element_stack_.size(), 1u);
+  HeapVector<Member<Element>> unfullscreen_elements;
+  for (Element* element : doc.TopLayerElements()) {
+    if (HasFullscreenFlag(*element) && element != fullscreen_element)
+      unfullscreen_elements.push_back(element);
+  }
+  for (Element* element : unfullscreen_elements)
+    Unfullscreen(*element);
+  DCHECK(IsSimpleFullscreenDocument(doc));
 
   // 3. Exit fullscreen |document|.
-  ExitFullscreen(doc);
+  ExitFullscreen(doc, nullptr, ua_originated);
 }
 
 // https://fullscreen.spec.whatwg.org/#exit-fullscreen
-void Fullscreen::ExitFullscreen(Document& doc) {
+ScriptPromise Fullscreen::ExitFullscreen(Document& doc,
+                                         ScriptState* script_state,
+                                         bool ua_originated) {
   // 1. Let |promise| be a new promise.
-  // TODO(foolip): Promises. https://crbug.com/644637
+  // ScriptPromiseResolver is allocated after step 2.
+  ScriptPromiseResolver* resolver = nullptr;
 
   // 2. If |doc| is not fully active or |doc|'s fullscreen element is null, then
   // reject |promise| with a TypeError exception and return |promise|.
-  if (!doc.IsActive() || !doc.GetFrame() || !FullscreenElementFrom(doc))
-    return;
+  if (!doc.IsActive() || !doc.GetFrame() || !FullscreenElementFrom(doc)) {
+    if (!script_state)
+      return ScriptPromise();
+    return ScriptPromise::Reject(
+        script_state, V8ThrowException::CreateTypeError(
+                          script_state->GetIsolate(), "Document not active"));
+  }
+
+  if (script_state)
+    resolver = ScriptPromiseResolver::Create(script_state);
 
   // 3. Let |resize| be false.
   bool resize = false;
@@ -655,28 +818,68 @@ void Fullscreen::ExitFullscreen(Document& doc) {
     resize = true;
   }
 
+  // 7. If |doc|'s fullscreen element is not connected.
+  Element* element = FullscreenElementFrom(doc);
+  if (!element->isConnected()) {
+    RequestType request_type = GetRequestType(*element);
+
+    // 7.1. Append (fullscreenchange, |doc|'s fullscreen element) to
+    // |doc|'s list of pending fullscreen events.
+    EnqueueEvent(EventTypeNames::fullscreenchange, *element, doc, request_type);
+
+    // 7.2. Unfullscreen |element|.
+    Unfullscreen(*element);
+  }
+
   // 7. Return |promise|, and run the remaining steps in parallel.
+  ScriptPromise promise = resolver ? resolver->Promise() : ScriptPromise();
 
   // 8. If |resize| is true, resize |doc|'s viewport to its "normal" dimensions.
   if (resize) {
-    LocalFrame& frame = *doc.GetFrame();
-    frame.GetChromeClient().ExitFullscreen(frame);
+    if (ua_originated) {
+      ContinueExitFullscreen(&doc, resolver, true /* resize */);
+    } else {
+      From(top_level_doc).pending_exits_.push_back(resolver);
+      LocalFrame& frame = *doc.GetFrame();
+      frame.GetChromeClient().ExitFullscreen(frame);
+    }
   } else {
+    DCHECK(!ua_originated);
     // Note: We are past the "in parallel" point, and |ContinueExitFullscreen()|
     // will change script-observable state (document.fullscreenElement)
     // synchronously, so we have to continue asynchronously.
-    Microtask::EnqueueMicrotask(WTF::Bind(
-        ContinueExitFullscreen, WrapWeakPersistent(&doc), false /* resize */));
+    Microtask::EnqueueMicrotask(
+        WTF::Bind(ContinueExitFullscreen, WrapPersistent(&doc),
+                  WrapPersistent(resolver), false /* resize */));
+  }
+  return promise;
+}
+
+void Fullscreen::DidExitFullscreen(Document& document) {
+  // If this is a response to an ExitFullscreen call then
+  // continue exiting. Otherwise call FullyExitFullscreen.
+  Fullscreen& fullscreen = From(document);
+  PendingExits exits;
+  exits.swap(fullscreen.pending_exits_);
+  if (exits.IsEmpty()) {
+    FullyExitFullscreen(document, true /* ua_originated */);
+  } else {
+    for (const Member<PendingExit>& exit : exits)
+      ContinueExitFullscreen(&document, exit, true /* resize */);
   }
 }
 
-void Fullscreen::DidExitFullscreen() {
-  ContinueExitFullscreen(GetDocument(), true /* resize */);
-}
-
-void Fullscreen::ContinueExitFullscreen(Document* doc, bool resize) {
-  if (!doc || !doc->IsActive() || !doc->GetFrame())
+void Fullscreen::ContinueExitFullscreen(Document* doc,
+                                        ScriptPromiseResolver* resolver,
+                                        bool resize) {
+  if (!doc || !doc->IsActive() || !doc->GetFrame()) {
+    if (resolver) {
+      ScriptState::Scope scope(resolver->GetScriptState());
+      resolver->Reject(V8ThrowException::CreateTypeError(
+          resolver->GetScriptState()->GetIsolate(), "Document is not active"));
+    }
     return;
+  }
 
   if (resize) {
     // See comment for step 6.
@@ -685,8 +888,13 @@ void Fullscreen::ContinueExitFullscreen(Document* doc, bool resize) {
 
   // 9. If |doc|'s fullscreen element is null, then resolve |promise| with
   // undefined and terminate these steps.
-  if (!FullscreenElementFrom(*doc))
+  if (!FullscreenElementFrom(*doc)) {
+    if (resolver) {
+      ScriptState::Scope scope(resolver->GetScriptState());
+      resolver->Resolve();
+    }
     return;
+  }
 
   // 10. Let |exitDocs| be the result of collecting documents to unfullscreen
   // given |doc|.
@@ -707,42 +915,43 @@ void Fullscreen::ContinueExitFullscreen(Document* doc, bool resize) {
 
   // 12. For each |exitDoc| in |exitDocs|:
   for (Document* exit_doc : exit_docs) {
-    Fullscreen& fullscreen = From(*exit_doc);
-    ElementStack& stack = fullscreen.fullscreen_element_stack_;
-    DCHECK(!stack.IsEmpty());
+    Element* exit_element = FullscreenElementFrom(*exit_doc);
+    DCHECK(exit_element);
+    RequestType request_type = GetRequestType(*exit_element);
 
     // 12.1. Append (fullscreenchange, |exitDoc|'s fullscreen element) to
     // |exitDoc|'s list of pending fullscreen events.
-    EnqueueEvent(EventTypeNames::fullscreenchange, *stack.back().first,
-                 *exit_doc, stack.back().second);
+    EnqueueEvent(EventTypeNames::fullscreenchange, *exit_element, *exit_doc,
+                 request_type);
 
     // 12.2. If |resize| is true, unfullscreen |exitDoc|.
     // 12.3. Otherwise, unfullscreen |exitDoc|'s fullscreen element.
-    if (resize) {
-      while (!stack.IsEmpty())
-        fullscreen.PopFullscreenElementStack();
-    } else {
-      fullscreen.PopFullscreenElementStack();
-    }
+    if (resize)
+      Unfullscreen(*exit_doc);
+    else
+      Unfullscreen(*exit_element);
   }
 
   // 13. For each |descendantDoc| in |descendantDocs|:
   for (Document* descendant_doc : descendant_docs) {
-    Fullscreen& fullscreen = From(*descendant_doc);
-    ElementStack& stack = fullscreen.fullscreen_element_stack_;
-    DCHECK(!stack.IsEmpty());
+    Element* descendant_element = FullscreenElementFrom(*descendant_doc);
+    DCHECK(descendant_element);
+    RequestType request_type = GetRequestType(*descendant_element);
 
     // 13.1. Append (fullscreenchange, |descendantDoc|'s fullscreen element) to
     // |descendantDoc|'s list of pending fullscreen events.
-    EnqueueEvent(EventTypeNames::fullscreenchange, *stack.back().first,
-                 *descendant_doc, stack.back().second);
+    EnqueueEvent(EventTypeNames::fullscreenchange, *descendant_element,
+                 *descendant_doc, request_type);
 
     // 13.2. Unfullscreen |descendantDoc|.
-    while (!stack.IsEmpty())
-      fullscreen.PopFullscreenElementStack();
+    Unfullscreen(*descendant_doc);
   }
 
   // 14. Resolve |promise| with undefined.
+  if (resolver) {
+    ScriptState::Scope scope(resolver->GetScriptState());
+    resolver->Resolve();
+  }
 }
 
 // https://fullscreen.spec.whatwg.org/#dom-document-fullscreenenabled
@@ -754,165 +963,56 @@ bool Fullscreen::FullscreenEnabled(Document& document) {
          FullscreenIsSupported(document);
 }
 
-void Fullscreen::SetFullScreenLayoutObject(LayoutFullScreen* layout_object) {
-  if (layout_object == full_screen_layout_object_)
-    return;
-
-  if (layout_object && saved_placeholder_computed_style_) {
-    layout_object->CreatePlaceholder(
-        std::move(saved_placeholder_computed_style_),
-        saved_placeholder_frame_rect_);
-  } else if (layout_object && full_screen_layout_object_ &&
-             full_screen_layout_object_->Placeholder()) {
-    LayoutBlockFlow* placeholder = full_screen_layout_object_->Placeholder();
-    layout_object->CreatePlaceholder(
-        ComputedStyle::Clone(placeholder->StyleRef()),
-        placeholder->FrameRect());
-  }
-
-  if (full_screen_layout_object_)
-    full_screen_layout_object_->UnwrapLayoutObject();
-  DCHECK(!full_screen_layout_object_);
-
-  full_screen_layout_object_ = layout_object;
-}
-
-void Fullscreen::FullScreenLayoutObjectDestroyed() {
-  full_screen_layout_object_ = nullptr;
+void Fullscreen::DidUpdateSize(Element& element) {
+  // StyleAdjuster will set the size so we need to do a style recalc.
+  // Normally changing size means layout so just doing a style recalc is a
+  // bit surprising.
+  element.SetNeedsStyleRecalc(
+      kLocalStyleChange,
+      StyleChangeReasonForTracing::Create(StyleChangeReason::kFullscreen));
 }
 
 void Fullscreen::ElementRemoved(Element& node) {
-  DCHECK_EQ(GetDocument(), &node.GetDocument());
+  DCHECK(node.IsInTopLayer());
+  if (!HasFullscreenFlag(node))
+    return;
+
+  // 1. Let |document| be removedNode's node document.
+  Document& document = node.GetDocument();
 
   // |Fullscreen::ElementRemoved()| is called for each removed element, so only
   // the body of the spec "removing steps" loop appears here:
 
-  // 2.1. If |node| is its node document's fullscreen element, exit fullscreen
+  // 3.1. If |node| is its node document's fullscreen element, exit fullscreen
   // that document.
-  if (FullscreenElement() == &node) {
-    ExitFullscreen(node.GetDocument());
-    return;
+  if (IsFullscreenElement(node)) {
+    ExitFullscreen(document, nullptr, false);
+  } else {
+    // 3.2. Otherwise, unfullscreen |node| within its node document.
+    Unfullscreen(node);
   }
 
-  // 2.2. Otherwise, unfullscreen |node| within its node document.
-  for (size_t i = 0; i < fullscreen_element_stack_.size(); ++i) {
-    if (fullscreen_element_stack_[i].first.Get() == &node) {
-      fullscreen_element_stack_.EraseAt(i);
-      return;
-    }
-  }
-
-  // Note: |node| was not in the fullscreen element stack.
-}
-
-void Fullscreen::PopFullscreenElementStack() {
-  DCHECK(!fullscreen_element_stack_.IsEmpty());
-
-  Element* old_element = FullscreenElement();
-  fullscreen_element_stack_.pop_back();
-
-  // Note: |requestType| is only used if |FullscreenElement()| is non-null.
-  RequestType request_type = fullscreen_element_stack_.IsEmpty()
-                                 ? RequestType::kUnprefixed
-                                 : fullscreen_element_stack_.back().second;
-  FullscreenElementChanged(old_element, FullscreenElement(), request_type);
-}
-
-void Fullscreen::PushFullscreenElementStack(Element& element,
-                                            RequestType request_type) {
-  Element* old_element = FullscreenElement();
-  fullscreen_element_stack_.push_back(std::make_pair(&element, request_type));
-
-  FullscreenElementChanged(old_element, &element, request_type);
-}
-
-void Fullscreen::FullscreenElementChanged(Element* old_element,
-                                          Element* new_element,
-                                          RequestType new_request_type) {
-  DCHECK_NE(old_element, new_element);
-
-  if (!GetDocument())
-    return;
-
-  GetDocument()->GetStyleEngine().EnsureUAStyleForFullscreen();
-
-  if (full_screen_layout_object_)
-    full_screen_layout_object_->UnwrapLayoutObject();
-  DCHECK(!full_screen_layout_object_);
-
-  if (old_element) {
-    DCHECK_NE(old_element, FullscreenElement());
-
-    old_element->PseudoStateChanged(CSSSelector::kPseudoFullScreen);
-    old_element->PseudoStateChanged(CSSSelector::kPseudoFullscreen);
-
-    old_element->SetContainsFullScreenElement(false);
-    old_element->SetContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(
-        false);
-  }
-
-  if (new_element) {
-    DCHECK_EQ(new_element, FullscreenElement());
-
-    new_element->PseudoStateChanged(CSSSelector::kPseudoFullScreen);
-    new_element->PseudoStateChanged(CSSSelector::kPseudoFullscreen);
-
-    // OOPIF: For RequestType::PrefixedForCrossProcessDescendant, |toElement| is
-    // the iframe element for the out-of-process frame that contains the
-    // fullscreen element. Hence, it must match :-webkit-full-screen-ancestor.
-    if (new_request_type == RequestType::kPrefixedForCrossProcessDescendant) {
-      DCHECK(IsHTMLIFrameElement(new_element));
-      new_element->SetContainsFullScreenElement(true);
-    }
-    new_element->SetContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(
-        true);
-
-    // Create a placeholder block for the fullscreen element, to keep the page
-    // from reflowing when the element is removed from the normal flow. Only do
-    // this for a LayoutBox, as only a box will have a frameRect. The
-    // placeholder will be created in setFullScreenLayoutObject() during layout.
-    LayoutObject* layout_object = new_element->GetLayoutObject();
-    bool should_create_placeholder = layout_object && layout_object->IsBox();
-    if (should_create_placeholder) {
-      saved_placeholder_frame_rect_ = ToLayoutBox(layout_object)->FrameRect();
-      saved_placeholder_computed_style_ =
-          ComputedStyle::Clone(layout_object->StyleRef());
-    }
-
-    if (new_element != GetDocument()->documentElement()) {
-      LayoutFullScreen::WrapLayoutObject(
-          layout_object, layout_object ? layout_object->Parent() : nullptr,
-          GetDocument());
-    }
-  }
-
-  if (LocalFrame* frame = GetDocument()->GetFrame()) {
-    // TODO(foolip): Synchronize hover state changes with animation frames.
-    // https://crbug.com/668758
-    frame->GetEventHandler().ScheduleHoverStateUpdate();
-    frame->GetChromeClient().FullscreenElementChanged(old_element, new_element);
-
-    // Descendant frames may have been inert because their owner iframes were
-    // outside of fullscreen element. SetIsInert recurses through subframes to
-    // propagate the inert bit as needed.
-    frame->SetIsInert(GetDocument()->LocalOwner() &&
-                      GetDocument()->LocalOwner()->IsInert());
-  }
-
-  // TODO(foolip): This should not call |UpdateStyleAndLayoutTree()|.
-  GetDocument()->UpdateStyleAndLayoutTree();
-
-  // Any element not contained by the fullscreen element is inert (see
-  // |Node::IsInert()|), so changing the fullscreen element will typically
-  // change the inertness of most elements. Clear the entire cache.
-  GetDocument()->ClearAXObjectCache();
+  // 3.3 If document's top layer contains node, remove node from document's top
+  // layer. This is done in Element::RemovedFrom.
 }
 
 void Fullscreen::Trace(blink::Visitor* visitor) {
   visitor->Trace(pending_requests_);
-  visitor->Trace(fullscreen_element_stack_);
+  visitor->Trace(pending_exits_);
   Supplement<Document>::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);
+}
+
+Fullscreen::PendingRequest::PendingRequest(Element* element,
+                                           RequestType type,
+                                           ScriptPromiseResolver* resolver)
+    : element_(element), type_(type), resolver_(resolver) {}
+
+Fullscreen::PendingRequest::~PendingRequest() = default;
+
+void Fullscreen::PendingRequest::Trace(blink::Visitor* visitor) {
+  visitor->Trace(element_);
+  visitor->Trace(resolver_);
 }
 
 }  // namespace blink

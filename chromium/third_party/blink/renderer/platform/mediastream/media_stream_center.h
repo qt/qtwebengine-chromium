@@ -35,7 +35,7 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
-#include "third_party/blink/public/platform/web_media_stream_center_client.h"
+#include "third_party/blink/public/platform/web_media_stream_track.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
@@ -47,15 +47,13 @@ class AudioSourceProvider;
 class MediaStreamComponent;
 class MediaStreamDescriptor;
 class MediaStreamSource;
-class WebMediaStream;
 class WebMediaStreamCenter;
 
-class PLATFORM_EXPORT MediaStreamCenter final
-    : public WebMediaStreamCenterClient {
+class PLATFORM_EXPORT MediaStreamCenter {
   USING_FAST_MALLOC(MediaStreamCenter);
 
  public:
-  ~MediaStreamCenter() override;
+  ~MediaStreamCenter();
 
   static MediaStreamCenter& Instance();
 
@@ -71,8 +69,7 @@ class PLATFORM_EXPORT MediaStreamCenter final
 
   void DidStopMediaStreamSource(MediaStreamSource*);
 
-  // blink::WebMediaStreamCenterClient
-  void StopLocalMediaStream(const WebMediaStream&) override;
+  void GetSourceSettings(MediaStreamSource*, WebMediaStreamTrack::Settings&);
 
  private:
   MediaStreamCenter();

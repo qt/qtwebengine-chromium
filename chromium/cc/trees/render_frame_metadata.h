@@ -6,11 +6,13 @@
 #define CC_TREES_RENDER_FRAME_METADATA_H_
 
 #include "base/optional.h"
+#include "build/build_config.h"
 #include "cc/cc_export.h"
 #include "components/viz/common/quads/selection.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gfx/selection_bound.h"
 
@@ -22,12 +24,6 @@ class CC_EXPORT RenderFrameMetadata {
   RenderFrameMetadata(const RenderFrameMetadata& other);
   RenderFrameMetadata(RenderFrameMetadata&& other);
   ~RenderFrameMetadata();
-
-  // Certain fields should always have their changes reported. This will return
-  // true when there is a difference between |rfm1| and |rfm2| for those fields.
-  // These fields have a low frequency rate of change.
-  static bool HasAlwaysUpdateMetadataChanged(const RenderFrameMetadata& rfm1,
-                                             const RenderFrameMetadata& rfm2);
 
   RenderFrameMetadata& operator=(const RenderFrameMetadata&);
   RenderFrameMetadata& operator=(RenderFrameMetadata&& other);
@@ -67,6 +63,9 @@ class CC_EXPORT RenderFrameMetadata {
   // The last viz::LocalSurfaceId used to submit a CompositorFrame.
   base::Optional<viz::LocalSurfaceId> local_surface_id;
 
+  float page_scale_factor = 1.f;
+
+#if defined(OS_ANDROID)
   // Used to position the Android location top bar and page content, whose
   // precise position is computed by the renderer compositor.
   float top_controls_height = 0.f;
@@ -76,6 +75,20 @@ class CC_EXPORT RenderFrameMetadata {
   // renderer compositor.
   float bottom_controls_height = 0.f;
   float bottom_controls_shown_ratio = 0.f;
+
+  // These limits can be used together with the scroll/scale fields above to
+  // determine if scrolling/scaling in a particular direction is possible.
+  float min_page_scale_factor = 0.f;
+  float max_page_scale_factor = 0.f;
+  bool root_overflow_y_hidden = false;
+
+  gfx::SizeF scrollable_viewport_size;
+  gfx::SizeF root_layer_size;
+
+  // Returns whether the root RenderPass of the CompositorFrame has a
+  // transparent background color.
+  bool has_transparent_background = false;
+#endif
 };
 
 }  // namespace cc

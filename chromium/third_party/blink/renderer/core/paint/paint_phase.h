@@ -33,6 +33,8 @@ namespace blink {
 // descent into the layer's layout objects in painting order:
 //  1. Background phase: backgrounds and borders of all blocks are painted.
 //     Inlines are not painted at all.
+//     With |PaintTouchActionRects|, hit testing is "painted" during the
+//     background phase (see: paint/README.md#hit-test-painting).
 //  2. Float phase: floating objects are painted above block backgrounds but
 //     entirely below inline content that can overlap them.
 //  3. Foreground phase: all inlines are fully painted. Atomic inline elements
@@ -85,11 +87,8 @@ enum class PaintPhase {
   kSelection = 8,
   kTextClip = 9,
   kMask = 10,
-  // TODO(wangxianzhu): Remove this phase for SPv175+. Use a dedicated display
-  // item type for the drawings.
-  kClippingMask = 11,
 
-  kMax = kClippingMask,
+  kMax = kMask,
   // These values must be kept in sync with DisplayItem::Type and
   // DisplayItem::typeAsDebugString().
 };

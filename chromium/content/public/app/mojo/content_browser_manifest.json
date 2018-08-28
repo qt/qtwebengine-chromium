@@ -6,6 +6,7 @@
       "provides": {
         // Interfaces needed by a generic client of content browser.
         "app": [
+          "content.mojom.MemoryCoordinatorHandle",
           "discardable_memory.mojom.DiscardableSharedMemoryManager",
           "memory_instrumentation.mojom.Coordinator"
         ],
@@ -25,6 +26,9 @@
           "discardable_memory.mojom.DiscardableSharedMemoryManager",
           "media.mojom.AndroidOverlayProvider"
         ],
+        "gpu_client": [
+          "ui.mojom.Gpu"
+        ],
         "plugin": [
           "discardable_memory.mojom.DiscardableSharedMemoryManager",
           "ui.mojom.Gpu"
@@ -39,24 +43,23 @@
           "blink.mojom.LockManager",
           "blink.mojom.Hyphenation",
           "blink.mojom.MimeRegistry",
+          "blink.mojom.PluginRegistry",
           "blink.mojom.ReportingServiceProxy",
+          "blink.mojom.StoragePartitionService",
           "blink.mojom.WebDatabaseHost",
           "content.mojom.AppCacheBackend",
           "content.mojom.ClipboardHost",
           "content.mojom.FieldTrialRecorder",
           "content.mojom.FrameSinkProvider",
           "content.mojom.MediaStreamTrackMetricsHost",
-          "content.mojom.MemoryCoordinatorHandle",
           "content.mojom.PeerConnectionTrackerHost",
           "content.mojom.PushMessaging",
           "content.mojom.RendererHost",
           "content.mojom.ReportingServiceProxy",
           "content.mojom.ServiceWorkerDispatcherHost",
-          "content.mojom.StoragePartitionService",
           "content.mojom.WorkerURLLoaderFactoryProvider",
           "device.mojom.BatteryMonitor",
           "device.mojom.GamepadHapticsManager",
-          "device.mojom.GamepadMonitor",
           "discardable_memory.mojom.DiscardableSharedMemoryManager",
           "media.mojom.KeySystemSupport",
           "media.mojom.VideoCaptureHost",
@@ -78,9 +81,13 @@
           "info",
           "debug_recording",
           "device_notifier",
-          "stream_factory"
+          "log_factory_manager",
+          "stream_factory",
+          "testing_api"
         ],
         "cdm": [ "media:cdm" ],
+        "chromecast": [ "multizone" ],
+        "content": [ "navigation" ],
         "content_gpu": [ "browser" ],
         "content_plugin": [ "browser" ],
         "content_renderer": [ "browser" ],
@@ -140,10 +147,14 @@
           // impossible this week. Remove once sky/ken fix this.
           "autofill.mojom.AutofillDriver",
           "autofill.mojom.PasswordManagerDriver",
+          "blink.mojom.AnchorElementMetricsHost",
+          "blink.mojom.Authenticator",
           "blink.mojom.BackgroundFetchService",
           "blink.mojom.BudgetService",
           "blink.mojom.CacheStorage",
           "blink.mojom.ColorChooserFactory",
+          "blink.mojom.CredentialManager",
+          "blink.mojom.DisplayCutoutHost",
           "blink.mojom.DedicatedWorkerFactory",
           "blink.mojom.LockManager",
           "blink.mojom.GeolocationService",
@@ -156,9 +167,12 @@
           "blink.mojom.PrefetchURLLoaderService",
           "blink.mojom.PresentationService",
           "blink.mojom.QuotaDispatcherHost",
+          "blink.mojom.SpeechRecognizer",
           "blink.mojom.TextSuggestionHost",
           "blink.mojom.UnhandledTapNotifier",
           "blink.mojom.WebBluetoothService",
+          "blink.test.mojom.VirtualAuthenticatorManager",
+
 
           // TODO(beng): figure out how to overlay test interfaces like this.
           "content.mojom.BrowserTarget",
@@ -170,7 +184,7 @@
           "content.mojom.RendererAudioInputStreamFactory",
           "content.mojom.RendererAudioOutputStreamFactory",
           "content.mojom.SharedWorkerConnector",
-          "content.mojom.SpeechRecognizer",
+          "device.mojom.GamepadMonitor",
           "device.mojom.Geolocation",
           "device.mojom.NFC",
           "device.mojom.SensorProvider",
@@ -190,16 +204,13 @@
           "mojom.ProcessInternalsHandler",
           "network.mojom.RestrictedCookieManager",
           "network.mojom.WebSocket",
-          "password_manager.mojom.CredentialManager",
           "payments.mojom.PaymentManager",
           "payments.mojom.PaymentRequest",
           "resource_coordinator.mojom.FrameCoordinationUnit",
-          "shape_detection.mojom.BarcodeDetection",
+          "shape_detection.mojom.BarcodeDetectionProvider",
           "shape_detection.mojom.FaceDetectionProvider",
           "shape_detection.mojom.TextDetection",
-          "ui.mojom.Gpu",
-          "webauth.mojom.Authenticator",
-          "webauth.test.mojom.VirtualAuthenticatorManager"
+          "ui.mojom.Gpu"
         ]
       },
       "requires": {
@@ -211,6 +222,7 @@
         "renderer": [
           "blink.mojom.BudgetService",
           "blink.mojom.CacheStorage",
+          "blink.mojom.DedicatedWorkerFactory",
           "blink.mojom.LockManager",
           "blink.mojom.NotificationService",
           "blink.mojom.PermissionService",
@@ -218,7 +230,7 @@
           "device.mojom.UsbDeviceManager",
           "network.mojom.WebSocket",
           "payments.mojom.PaymentManager",
-          "shape_detection.mojom.BarcodeDetection",
+          "shape_detection.mojom.BarcodeDetectionProvider",
           "shape_detection.mojom.FaceDetectionProvider",
           "shape_detection.mojom.TextDetection"
         ]
@@ -238,7 +250,7 @@
           "network.mojom.RestrictedCookieManager",
           "network.mojom.WebSocket",
           "payments.mojom.PaymentManager",
-          "shape_detection.mojom.BarcodeDetection",
+          "shape_detection.mojom.BarcodeDetectionProvider",
           "shape_detection.mojom.FaceDetectionProvider",
           "shape_detection.mojom.TextDetection"
         ]
@@ -255,7 +267,7 @@
           "blink.mojom.QuotaDispatcherHost",
           "network.mojom.WebSocket",
           "payments.mojom.PaymentManager",
-          "shape_detection.mojom.BarcodeDetection",
+          "shape_detection.mojom.BarcodeDetectionProvider",
           "shape_detection.mojom.FaceDetectionProvider",
           "shape_detection.mojom.TextDetection"
         ]

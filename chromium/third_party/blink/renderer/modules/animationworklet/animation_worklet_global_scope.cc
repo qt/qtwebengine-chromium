@@ -4,12 +4,13 @@
 
 #include "third_party/blink/renderer/modules/animationworklet/animation_worklet_global_scope.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_object_parser.h"
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
 #include "third_party/blink/renderer/core/dom/animation_worklet_proxy_client.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
+#include "third_party/blink/renderer/modules/animationworklet/worklet_animation_options.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding_macros.h"
 #include "third_party/blink/renderer/platform/bindings/v8_object_constructor.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
@@ -18,37 +19,17 @@ namespace blink {
 
 namespace {
 
-// Once this goes out of scope it clears any animators that have not been
-// animated.
-class ScopedAnimatorsSweeper {
-  STACK_ALLOCATED();
-
- public:
-  using AnimatorMap = HeapHashMap<int, TraceWrapperMember<Animator>>;
-  explicit ScopedAnimatorsSweeper(AnimatorMap& animators)
-      : animators_(animators) {
-    for (const auto& entry : animators_) {
-      Animator* animator = entry.value;
-      animator->clear_did_animate();
-    }
+void UpdateAnimation(Animator* animator,
+                     ScriptState* script_state,
+                     WorkletAnimationId id,
+                     double current_time,
+                     CompositorMutatorOutputState* result) {
+  CompositorMutatorOutputState::AnimationState animation_output;
+  if (animator->Animate(script_state, current_time, &animation_output)) {
+    animation_output.worklet_animation_id = id;
+    result->animations.push_back(std::move(animation_output));
   }
-  ~ScopedAnimatorsSweeper() {
-    // Clear any animator that has not been animated.
-    // TODO(majidvp): Reconsider this once we add specific entry to mutator
-    // input that explicitly inform us that an animator is deleted.
-    Vector<int> to_be_removed;
-    for (const auto& entry : animators_) {
-      int id = entry.key;
-      Animator* animator = entry.value;
-      if (!animator->did_animate())
-        to_be_removed.push_back(id);
-    }
-    animators_.RemoveAll(to_be_removed);
-  }
-
- private:
-  AnimatorMap& animators_;
-};
+}
 
 }  // namespace
 
@@ -75,17 +56,6 @@ void AnimationWorkletGlobalScope::Trace(blink::Visitor* visitor) {
   ThreadedWorkletGlobalScope::Trace(visitor);
 }
 
-void AnimationWorkletGlobalScope::TraceWrappers(
-    ScriptWrappableVisitor* visitor) const {
-  for (auto animator : animators_)
-    visitor->TraceWrappers(animator.value);
-
-  for (auto definition : animator_definitions_)
-    visitor->TraceWrappers(definition.value);
-
-  ThreadedWorkletGlobalScope::TraceWrappers(visitor);
-}
-
 void AnimationWorkletGlobalScope::Dispose() {
   DCHECK(IsContextThread());
   if (AnimationWorkletProxyClient* proxy_client =
@@ -94,53 +64,59 @@ void AnimationWorkletGlobalScope::Dispose() {
   ThreadedWorkletGlobalScope::Dispose();
 }
 
-Animator* AnimationWorkletGlobalScope::GetAnimatorFor(int animation_id,
-                                                      const String& name) {
-  Animator* animator = animators_.at(animation_id);
-  if (!animator) {
-    // This is a new animation so we should create an animator for it.
-    animator = CreateInstance(name);
-    if (!animator)
-      return nullptr;
-
-    animators_.Set(animation_id, animator);
-  }
+Animator* AnimationWorkletGlobalScope::CreateAnimatorFor(
+    int animation_id,
+    const String& name,
+    WorkletAnimationOptions* options) {
+  DCHECK(!animators_.at(animation_id));
+  Animator* animator = CreateInstance(name, options);
+  if (!animator)
+    return nullptr;
+  animators_.Set(animation_id, animator);
 
   return animator;
 }
 
-std::unique_ptr<CompositorMutatorOutputState>
-AnimationWorkletGlobalScope::Mutate(
-    const CompositorMutatorInputState& mutator_input) {
+std::unique_ptr<AnimationWorkletOutput> AnimationWorkletGlobalScope::Mutate(
+    const AnimationWorkletInput& mutator_input) {
   DCHECK(IsContextThread());
-
-  // Clean any animator that is not updated
-  ScopedAnimatorsSweeper sweeper(animators_);
 
   ScriptState* script_state = ScriptController()->GetScriptState();
   ScriptState::Scope scope(script_state);
 
-  std::unique_ptr<CompositorMutatorOutputState> result =
-      std::make_unique<CompositorMutatorOutputState>();
+  std::unique_ptr<AnimationWorkletOutput> result =
+      std::make_unique<AnimationWorkletOutput>();
 
-  for (const CompositorMutatorInputState::AnimationState& animation_input :
-       mutator_input.animations) {
-    int id = animation_input.animation_id;
-    const String name = String::FromUTF8(animation_input.name.data(),
-                                         animation_input.name.size());
+  for (const auto& worklet_animation_id : mutator_input.removed_animations)
+    animators_.erase(worklet_animation_id.animation_id);
 
-    Animator* animator = GetAnimatorFor(id, name);
-    // TODO(majidvp): This means there is an animatorName for which
-    // definition was not registered. We should handle this case gracefully.
-    // http://crbug.com/776017
+  for (const auto& animation : mutator_input.added_and_updated_animations) {
+    int id = animation.worklet_animation_id.animation_id;
+    DCHECK(!animators_.Contains(id));
+    const String name =
+        String::FromUTF8(animation.name.data(), animation.name.size());
+
+    // Down casting to blink type to access the serialized value.
+    WorkletAnimationOptions* options =
+        static_cast<WorkletAnimationOptions*>(animation.options.get());
+
+    Animator* animator = CreateAnimatorFor(id, name, options);
     if (!animator)
       continue;
 
-    CompositorMutatorOutputState::AnimationState animation_output;
-    if (animator->Animate(script_state, animation_input, &animation_output)) {
-      animation_output.animation_id = id;
-      result->animations.push_back(std::move(animation_output));
-    }
+    UpdateAnimation(animator, script_state, animation.worklet_animation_id,
+                    animation.current_time, result.get());
+  }
+
+  for (const auto& animation : mutator_input.updated_animations) {
+    int id = animation.worklet_animation_id.animation_id;
+    Animator* animator = animators_.at(id);
+    // We don't try to create an animator if there isn't any.
+    if (!animator)
+      continue;
+
+    UpdateAnimation(animator, script_state, animation.worklet_animation_id,
+                    animation.current_time, result.get());
   }
 
   return result;
@@ -166,7 +142,7 @@ void AnimationWorkletGlobalScope::registerAnimator(
   DCHECK(IsContextThread());
   if (animator_definitions_.Contains(name)) {
     exception_state.ThrowDOMException(
-        kNotSupportedError,
+        DOMExceptionCode::kNotSupportedError,
         "A class with name:'" + name + "' is already registered.");
     return;
   }
@@ -199,7 +175,9 @@ void AnimationWorkletGlobalScope::registerAnimator(
   animator_definitions_.Set(name, definition);
 }
 
-Animator* AnimationWorkletGlobalScope::CreateInstance(const String& name) {
+Animator* AnimationWorkletGlobalScope::CreateInstance(
+    const String& name,
+    WorkletAnimationOptions* options) {
   DCHECK(IsContextThread());
   AnimatorDefinition* definition = animator_definitions_.at(name);
   if (!definition)
@@ -208,9 +186,13 @@ Animator* AnimationWorkletGlobalScope::CreateInstance(const String& name) {
   v8::Isolate* isolate = ScriptController()->GetScriptState()->GetIsolate();
   v8::Local<v8::Function> constructor = definition->ConstructorLocal(isolate);
   DCHECK(!IsUndefinedOrNull(constructor));
+  v8::Local<v8::Value> value;
+  if (options && options->GetData())
+    value = options->GetData()->Deserialize(isolate);
 
   v8::Local<v8::Object> instance;
-  if (!V8ObjectConstructor::NewInstance(isolate, constructor)
+  if (!V8ObjectConstructor::NewInstance(isolate, constructor,
+                                        !value.IsEmpty() ? 1 : 0, &value)
            .ToLocal(&instance))
     return nullptr;
 

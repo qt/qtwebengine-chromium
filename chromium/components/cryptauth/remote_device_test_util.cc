@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <map>
+#include <string>
+
 #include "components/cryptauth/remote_device_test_util.h"
 
 #include "base/base64.h"
@@ -13,8 +16,6 @@ const char kTestRemoteDeviceUserId[] = "example@gmail.com";
 const char kTestRemoteDeviceName[] = "remote device";
 const char kTestRemoteDevicePublicKey[] = "public key";
 const char kTestRemoteDevicePSK[] = "remote device psk";
-const bool kTestRemoteDeviceUnlockKey = true;
-const bool kTestRemoteDeviceSupportsMobileHotspot = true;
 const int64_t kTestRemoteDeviceLastUpdateTimeMillis = 0L;
 
 RemoteDeviceRefBuilder::RemoteDeviceRefBuilder() {
@@ -43,7 +44,17 @@ RemoteDeviceRefBuilder& RemoteDeviceRefBuilder::SetPublicKey(
 
 RemoteDeviceRefBuilder& RemoteDeviceRefBuilder::SetSupportsMobileHotspot(
     bool supports_mobile_hotspot) {
-  remote_device_->supports_mobile_hotspot = supports_mobile_hotspot;
+  remote_device_
+      ->software_features[cryptauth::SoftwareFeature::MAGIC_TETHER_HOST] =
+      supports_mobile_hotspot ? cryptauth::SoftwareFeatureState::kSupported
+                              : cryptauth::SoftwareFeatureState::kNotSupported;
+  return *this;
+}
+
+RemoteDeviceRefBuilder& RemoteDeviceRefBuilder::SetSoftwareFeatureState(
+    const SoftwareFeature feature,
+    const SoftwareFeatureState new_state) {
+  remote_device_->software_features[feature] = new_state;
   return *this;
 }
 
@@ -53,17 +64,28 @@ RemoteDeviceRefBuilder& RemoteDeviceRefBuilder::SetLastUpdateTimeMillis(
   return *this;
 }
 
+RemoteDeviceRefBuilder& RemoteDeviceRefBuilder::SetBeaconSeeds(
+    const std::vector<BeaconSeed>& beacon_seeds) {
+  remote_device_->beacon_seeds = beacon_seeds;
+  return *this;
+}
+
 RemoteDeviceRef RemoteDeviceRefBuilder::Build() {
   return RemoteDeviceRef(remote_device_);
 }
 
 RemoteDevice CreateRemoteDeviceForTest() {
+  std::map<cryptauth::SoftwareFeature, cryptauth::SoftwareFeatureState>
+      software_features;
+  software_features[cryptauth::SoftwareFeature::EASY_UNLOCK_HOST] =
+      cryptauth::SoftwareFeatureState::kEnabled;
+  software_features[cryptauth::SoftwareFeature::MAGIC_TETHER_HOST] =
+      cryptauth::SoftwareFeatureState::kSupported;
+
   return RemoteDevice(kTestRemoteDeviceUserId, kTestRemoteDeviceName,
                       kTestRemoteDevicePublicKey, kTestRemoteDevicePSK,
-                      kTestRemoteDeviceUnlockKey,
-                      kTestRemoteDeviceSupportsMobileHotspot,
-                      kTestRemoteDeviceLastUpdateTimeMillis,
-                      std::map<SoftwareFeature, SoftwareFeatureState>());
+                      kTestRemoteDeviceLastUpdateTimeMillis, software_features,
+                      {} /* beacon_seeds */);
 }
 
 RemoteDeviceRef CreateRemoteDeviceRefForTest() {
@@ -94,6 +116,19 @@ RemoteDeviceList CreateRemoteDeviceListForTest(size_t num_to_create) {
   }
 
   return generated_devices;
+}
+
+RemoteDevice* GetMutableRemoteDevice(const RemoteDeviceRef& remote_device_ref) {
+  const RemoteDevice* remote_device = remote_device_ref.remote_device_.get();
+  return const_cast<RemoteDevice*>(remote_device);
+}
+
+bool IsSameDevice(const cryptauth::RemoteDevice& remote_device,
+                  cryptauth::RemoteDeviceRef remote_device_ref) {
+  if (!remote_device_ref.remote_device_)
+    return false;
+
+  return remote_device == *remote_device_ref.remote_device_;
 }
 
 }  // namespace cryptauth

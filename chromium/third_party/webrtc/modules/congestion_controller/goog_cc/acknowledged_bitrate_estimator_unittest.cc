@@ -12,9 +12,9 @@
 
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "rtc_base/fakeclock.h"
-#include "rtc_base/ptr_util.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -24,7 +24,6 @@ using testing::InSequence;
 using testing::Return;
 
 namespace webrtc {
-namespace webrtc_cc {
 
 namespace {
 
@@ -36,7 +35,7 @@ constexpr size_t kPayloadSize = 10;
 class MockBitrateEstimator : public BitrateEstimator {
  public:
   MOCK_METHOD2(Update, void(int64_t now_ms, int bytes));
-  MOCK_CONST_METHOD0(bitrate_bps, rtc::Optional<uint32_t>());
+  MOCK_CONST_METHOD0(bitrate_bps, absl::optional<uint32_t>());
   MOCK_METHOD0(ExpectFastRateChange, void());
 };
 
@@ -47,10 +46,10 @@ struct AcknowledgedBitrateEstimatorTestStates {
 
 AcknowledgedBitrateEstimatorTestStates CreateTestStates() {
   AcknowledgedBitrateEstimatorTestStates states;
-  auto mock_bitrate_estimator = rtc::MakeUnique<MockBitrateEstimator>();
+  auto mock_bitrate_estimator = absl::make_unique<MockBitrateEstimator>();
   states.mock_bitrate_estimator = mock_bitrate_estimator.get();
   states.acknowledged_bitrate_estimator =
-      rtc::MakeUnique<AcknowledgedBitrateEstimator>(
+      absl::make_unique<AcknowledgedBitrateEstimator>(
           std::move(mock_bitrate_estimator));
   return states;
 }
@@ -125,12 +124,11 @@ TEST(TestAcknowledgedBitrateEstimator, ExpectFastRateChangeWhenLeftAlr) {
 
 TEST(TestAcknowledgedBitrateEstimator, ReturnBitrate) {
   auto states = CreateTestStates();
-  rtc::Optional<uint32_t> return_value(42);
+  absl::optional<uint32_t> return_value(42);
   EXPECT_CALL(*states.mock_bitrate_estimator, bitrate_bps())
       .Times(1)
       .WillOnce(Return(return_value));
   EXPECT_EQ(return_value, states.acknowledged_bitrate_estimator->bitrate_bps());
 }
 
-}  // namespace webrtc_cc
 }  // namespace webrtc*/

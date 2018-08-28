@@ -100,6 +100,11 @@ static constexpr bool GrPrimTypeRequiresGeometryShaderSupport(GrPrimitiveType ty
     return GrPrimitiveType::kLinesAdjacency == type;
 }
 
+enum class GrPrimitiveRestart : bool {
+    kNo = false,
+    kYes = true
+};
+
 /**
  *  Formats for masks, used by the font cache. Important that these are 0-based.
  */
@@ -278,21 +283,20 @@ enum class GrAllowMixedSamples : bool { kNo = false, kYes = true };
 GrAAType GrChooseAAType(GrAA, GrFSAAType, GrAllowMixedSamples, const GrCaps&);
 
 /**
- * Some pixel configs are inherently clamped to [0,1], while others can hold values outside of that
- * range. This is important for blending - the latter category may require manual clamping.
- */
-enum class GrPixelConfigIsClamped : bool {
-    kNo = false,   // F16 or F32
-    kYes = true,  // Any UNORM type
-};
-
-/**
  * Types of shader-language-specific boxed variables we can create. (Currently only GrGLShaderVars,
  * but should be applicable to other shader languages.)
  */
 enum GrSLType {
     kVoid_GrSLType,
     kBool_GrSLType,
+    kByte_GrSLType,
+    kByte2_GrSLType,
+    kByte3_GrSLType,
+    kByte4_GrSLType,
+    kUByte_GrSLType,
+    kUByte2_GrSLType,
+    kUByte3_GrSLType,
+    kUByte4_GrSLType,
     kShort_GrSLType,
     kShort2_GrSLType,
     kShort3_GrSLType,
@@ -393,6 +397,14 @@ static inline bool GrSLTypeIsFloatType(GrSLType type) {
         case kTexture2DRectSampler_GrSLType:
         case kBufferSampler_GrSLType:
         case kBool_GrSLType:
+        case kByte_GrSLType:
+        case kByte2_GrSLType:
+        case kByte3_GrSLType:
+        case kByte4_GrSLType:
+        case kUByte_GrSLType:
+        case kUByte2_GrSLType:
+        case kUByte3_GrSLType:
+        case kUByte4_GrSLType:
         case kShort_GrSLType:
         case kShort2_GrSLType:
         case kShort3_GrSLType:
@@ -421,6 +433,8 @@ static inline int GrSLTypeVecLength(GrSLType type) {
         case kFloat_GrSLType:
         case kHalf_GrSLType:
         case kBool_GrSLType:
+        case kByte_GrSLType:
+        case kUByte_GrSLType:
         case kShort_GrSLType:
         case kUShort_GrSLType:
         case kInt_GrSLType:
@@ -429,6 +443,8 @@ static inline int GrSLTypeVecLength(GrSLType type) {
 
         case kFloat2_GrSLType:
         case kHalf2_GrSLType:
+        case kByte2_GrSLType:
+        case kUByte2_GrSLType:
         case kShort2_GrSLType:
         case kUShort2_GrSLType:
         case kInt2_GrSLType:
@@ -437,6 +453,8 @@ static inline int GrSLTypeVecLength(GrSLType type) {
 
         case kFloat3_GrSLType:
         case kHalf3_GrSLType:
+        case kByte3_GrSLType:
+        case kUByte3_GrSLType:
         case kShort3_GrSLType:
         case kUShort3_GrSLType:
         case kInt3_GrSLType:
@@ -444,6 +462,8 @@ static inline int GrSLTypeVecLength(GrSLType type) {
 
         case kFloat4_GrSLType:
         case kHalf4_GrSLType:
+        case kByte4_GrSLType:
+        case kUByte4_GrSLType:
         case kShort4_GrSLType:
         case kUShort4_GrSLType:
         case kInt4_GrSLType:
@@ -498,6 +518,14 @@ static inline bool GrSLTypeIs2DCombinedSamplerType(GrSLType type) {
         case kUint2_GrSLType:
         case kBufferSampler_GrSLType:
         case kBool_GrSLType:
+        case kByte_GrSLType:
+        case kByte2_GrSLType:
+        case kByte3_GrSLType:
+        case kByte4_GrSLType:
+        case kUByte_GrSLType:
+        case kUByte2_GrSLType:
+        case kUByte3_GrSLType:
+        case kUByte4_GrSLType:
         case kShort_GrSLType:
         case kShort2_GrSLType:
         case kShort3_GrSLType:
@@ -544,6 +572,14 @@ static inline bool GrSLTypeIsCombinedSamplerType(GrSLType type) {
         case kUint_GrSLType:
         case kUint2_GrSLType:
         case kBool_GrSLType:
+        case kByte_GrSLType:
+        case kByte2_GrSLType:
+        case kByte3_GrSLType:
+        case kByte4_GrSLType:
+        case kUByte_GrSLType:
+        case kUByte2_GrSLType:
+        case kUByte3_GrSLType:
+        case kUByte4_GrSLType:
         case kShort_GrSLType:
         case kShort2_GrSLType:
         case kShort3_GrSLType:
@@ -572,6 +608,14 @@ static inline bool GrSLTypeAcceptsPrecision(GrSLType type) {
 
         case kVoid_GrSLType:
         case kBool_GrSLType:
+        case kByte_GrSLType:
+        case kByte2_GrSLType:
+        case kByte3_GrSLType:
+        case kByte4_GrSLType:
+        case kUByte_GrSLType:
+        case kUByte2_GrSLType:
+        case kUByte3_GrSLType:
+        case kUByte4_GrSLType:
         case kShort_GrSLType:
         case kShort2_GrSLType:
         case kShort3_GrSLType:
@@ -642,6 +686,14 @@ static inline bool GrSLTypeTemporarilyAcceptsPrecision(GrSLType type) {
 
         case kVoid_GrSLType:
         case kBool_GrSLType:
+        case kByte_GrSLType:
+        case kByte2_GrSLType:
+        case kByte3_GrSLType:
+        case kByte4_GrSLType:
+        case kUByte_GrSLType:
+        case kUByte2_GrSLType:
+        case kUByte3_GrSLType:
+        case kUByte4_GrSLType:
         case kShort2_GrSLType:
         case kShort3_GrSLType:
         case kShort4_GrSLType:
@@ -673,6 +725,16 @@ enum GrVertexAttribType {
     kInt3_GrVertexAttribType,   // vector of 3 32-bit ints
     kInt4_GrVertexAttribType,   // vector of 4 32-bit ints
 
+
+    kByte_GrVertexAttribType,  // signed byte
+    kByte2_GrVertexAttribType, // vector of 2 8-bit signed bytes
+    kByte3_GrVertexAttribType, // vector of 3 8-bit signed bytes
+    kByte4_GrVertexAttribType, // vector of 4 8-bit signed bytes
+    kUByte_GrVertexAttribType,  // unsigned byte
+    kUByte2_GrVertexAttribType, // vector of 2 8-bit unsigned bytes
+    kUByte3_GrVertexAttribType, // vector of 3 8-bit unsigned bytes
+    kUByte4_GrVertexAttribType, // vector of 4 8-bit unsigned bytes
+
     kUByte_norm_GrVertexAttribType,  // unsigned byte, e.g. coverage, 0 -> 0.0f, 255 -> 1.0f.
     kUByte4_norm_GrVertexAttribType, // vector of 4 unsigned bytes, e.g. colors, 0 -> 0.0f,
                                      // 255 -> 1.0f.
@@ -687,51 +749,6 @@ enum GrVertexAttribType {
     kLast_GrVertexAttribType = kUint_GrVertexAttribType
 };
 static const int kGrVertexAttribTypeCount = kLast_GrVertexAttribType + 1;
-
-/**
- * Returns the size of the attrib type in bytes.
- */
-static inline size_t GrVertexAttribTypeSize(GrVertexAttribType type) {
-    switch (type) {
-        case kFloat_GrVertexAttribType:
-            return sizeof(float);
-        case kFloat2_GrVertexAttribType:
-            return 2 * sizeof(float);
-        case kFloat3_GrVertexAttribType:
-            return 3 * sizeof(float);
-        case kFloat4_GrVertexAttribType:
-            return 4 * sizeof(float);
-        case kHalf_GrVertexAttribType:
-            return sizeof(float);
-        case kHalf2_GrVertexAttribType:
-            return 2 * sizeof(float);
-        case kHalf3_GrVertexAttribType:
-            return 3 * sizeof(float);
-        case kHalf4_GrVertexAttribType:
-            return 4 * sizeof(float);
-        case kInt2_GrVertexAttribType:
-            return 2 * sizeof(int32_t);
-        case kInt3_GrVertexAttribType:
-            return 3 * sizeof(int32_t);
-        case kInt4_GrVertexAttribType:
-            return 4 * sizeof(int32_t);
-        case kUByte_norm_GrVertexAttribType:
-            return 1 * sizeof(char);
-        case kUByte4_norm_GrVertexAttribType:
-            return 4 * sizeof(char);
-        case kShort2_GrVertexAttribType:
-            return 2 * sizeof(int16_t);
-        case kUShort2_GrVertexAttribType: // fall through
-        case kUShort2_norm_GrVertexAttribType:
-            return 2 * sizeof(uint16_t);
-        case kInt_GrVertexAttribType:
-            return sizeof(int32_t);
-        case kUint_GrVertexAttribType:
-            return sizeof(uint32_t);
-    }
-    SK_ABORT("Unexpected attribute type");
-    return 0;
-}
 
 /**
  * converts a GrVertexAttribType to a GrSLType
@@ -768,6 +785,22 @@ static inline GrSLType GrVertexAttribTypeToSLType(GrVertexAttribType type) {
             return kInt3_GrSLType;
         case kInt4_GrVertexAttribType:
             return kInt4_GrSLType;
+        case kByte_GrVertexAttribType:
+            return kByte_GrSLType;
+        case kByte2_GrVertexAttribType:
+            return kByte_GrSLType;
+        case kByte3_GrVertexAttribType:
+            return kByte_GrSLType;
+        case kByte4_GrVertexAttribType:
+            return kByte4_GrSLType;
+        case kUByte_GrVertexAttribType:
+            return kUByte_GrSLType;
+        case kUByte2_GrVertexAttribType:
+            return kUByte_GrSLType;
+        case kUByte3_GrVertexAttribType:
+            return kUByte_GrSLType;
+        case kUByte4_GrVertexAttribType:
+            return kUByte4_GrSLType;
         case kInt_GrVertexAttribType:
             return kInt_GrSLType;
         case kUint_GrVertexAttribType:
@@ -868,20 +901,14 @@ enum class GrInternalSurfaceFlags {
 
     // Texture-only flags
 
-    // This flag is set when the internal texture target doesn't support mipmaps (e.g.,
-    // external and rectangle textures). Note that Ganesh does not internally
-    // create resources with this limitation - this flag will only appear on resources passed
-    // into Ganesh.
-    kDoesNotSupportMipMaps          = 1 << 1,
-
     // This flag is for GL only. It says that the GL texture we will use has a target which is
     // either GL_TEXTURE_RECTANGLE or GL_GL_TEXTURE_EXTERNAL. We use this information to make
     // decisions about various rendering capabilites (e.g. is clamp the only supported wrap mode).
     // Note: Ganesh does not internally create these types of textures so they will only occur on
     // resources passed into Ganesh.
-    kIsGLTextureRectangleOrExternal = 1 << 2,
+    kIsGLTextureRectangleOrExternal = 1 << 1,
 
-    kTextureMask                    = kDoesNotSupportMipMaps | kIsGLTextureRectangleOrExternal,
+    kTextureMask                    = kIsGLTextureRectangleOrExternal,
 
     // RT-only
 
@@ -891,17 +918,17 @@ enum class GrInternalSurfaceFlags {
     //    this is disabled for FBO0
     //    but, otherwise, is enabled whenever MSAA is enabled and GrCaps reports mixed samples
     //        are supported
-    kMixedSampled                   = 1 << 3,
+    kMixedSampled                   = 1 << 2,
 
     // For internal resources:
     //    this is enabled whenever GrCaps reports window rect support
     // For wrapped resources1
     //    this is disabled for FBO0
     //    but, otherwise, is enabled whenever GrCaps reports window rect support
-    kWindowRectsSupport             = 1 << 4,
+    kWindowRectsSupport             = 1 << 3,
 
     // This flag is for use with GL only. It tells us that the internal render target wraps FBO 0.
-    kGLRTFBOIDIs0                   = 1 << 5,
+    kGLRTFBOIDIs0                   = 1 << 4,
 
     kRenderTargetMask               = kMixedSampled | kWindowRectsSupport | kGLRTFBOIDIs0,
 };
@@ -1028,39 +1055,6 @@ static inline GrSRGBEncoded GrPixelConfigIsSRGBEncoded(GrPixelConfig config) {
 static inline bool GrPixelConfigIsSRGB(GrPixelConfig config) {
     return GrSRGBEncoded::kYes == GrPixelConfigIsSRGBEncoded(config);
 }
-// Takes a config and returns the equivalent config with the R and B order
-// swapped if such a config exists. Otherwise, kUnknown_GrPixelConfig
-static inline GrPixelConfig GrPixelConfigSwapRAndB(GrPixelConfig config) {
-    switch (config) {
-        case kBGRA_8888_GrPixelConfig:
-            return kRGBA_8888_GrPixelConfig;
-        case kRGBA_8888_GrPixelConfig:
-            return kBGRA_8888_GrPixelConfig;
-        case kSBGRA_8888_GrPixelConfig:
-            return kSRGBA_8888_GrPixelConfig;
-        case kSRGBA_8888_GrPixelConfig:
-            return kSBGRA_8888_GrPixelConfig;
-        case kUnknown_GrPixelConfig:
-        case kAlpha_8_GrPixelConfig:
-        case kAlpha_8_as_Alpha_GrPixelConfig:
-        case kAlpha_8_as_Red_GrPixelConfig:
-        case kGray_8_GrPixelConfig:
-        case kGray_8_as_Lum_GrPixelConfig:
-        case kGray_8_as_Red_GrPixelConfig:
-        case kRGB_565_GrPixelConfig:
-        case kRGBA_4444_GrPixelConfig:
-        case kRGB_888_GrPixelConfig:
-        case kRGBA_1010102_GrPixelConfig:
-        case kRGBA_float_GrPixelConfig:
-        case kRG_float_GrPixelConfig:
-        case kAlpha_half_GrPixelConfig:
-        case kAlpha_half_as_Red_GrPixelConfig:
-        case kRGBA_half_GrPixelConfig:
-            return kUnknown_GrPixelConfig;
-    }
-    SK_ABORT("Invalid pixel config");
-    return kUnknown_GrPixelConfig;
-}
 
 static inline size_t GrBytesPerPixel(GrPixelConfig config) {
     switch (config) {
@@ -1154,64 +1148,6 @@ static inline bool GrPixelConfigIsAlphaOnly(GrPixelConfig config) {
     return false;
 }
 
-static inline bool GrPixelConfigIsFloatingPoint(GrPixelConfig config) {
-    switch (config) {
-        case kRGBA_float_GrPixelConfig:
-        case kRG_float_GrPixelConfig:
-        case kAlpha_half_GrPixelConfig:
-        case kAlpha_half_as_Red_GrPixelConfig:
-        case kRGBA_half_GrPixelConfig:
-            return true;
-        case kUnknown_GrPixelConfig:
-        case kAlpha_8_GrPixelConfig:
-        case kAlpha_8_as_Alpha_GrPixelConfig:
-        case kAlpha_8_as_Red_GrPixelConfig:
-        case kGray_8_GrPixelConfig:
-        case kGray_8_as_Lum_GrPixelConfig:
-        case kGray_8_as_Red_GrPixelConfig:
-        case kRGB_565_GrPixelConfig:
-        case kRGBA_4444_GrPixelConfig:
-        case kRGBA_8888_GrPixelConfig:
-        case kRGB_888_GrPixelConfig:
-        case kBGRA_8888_GrPixelConfig:
-        case kSRGBA_8888_GrPixelConfig:
-        case kSBGRA_8888_GrPixelConfig:
-        case kRGBA_1010102_GrPixelConfig:
-            return false;
-    }
-    SK_ABORT("Invalid pixel config");
-    return false;
-}
-
-static inline bool GrPixelConfigIsUnorm(GrPixelConfig config) {
-    switch (config) {
-        case kAlpha_8_GrPixelConfig:
-        case kAlpha_8_as_Alpha_GrPixelConfig:
-        case kAlpha_8_as_Red_GrPixelConfig:
-        case kGray_8_GrPixelConfig:
-        case kGray_8_as_Lum_GrPixelConfig:
-        case kGray_8_as_Red_GrPixelConfig:
-        case kRGB_565_GrPixelConfig:
-        case kRGBA_4444_GrPixelConfig:
-        case kRGBA_8888_GrPixelConfig:
-        case kRGB_888_GrPixelConfig:
-        case kBGRA_8888_GrPixelConfig:
-        case kSRGBA_8888_GrPixelConfig:
-        case kSBGRA_8888_GrPixelConfig:
-        case kRGBA_1010102_GrPixelConfig:
-            return true;
-        case kUnknown_GrPixelConfig:
-        case kAlpha_half_GrPixelConfig:
-        case kAlpha_half_as_Red_GrPixelConfig:
-        case kRGBA_float_GrPixelConfig:
-        case kRG_float_GrPixelConfig:
-        case kRGBA_half_GrPixelConfig:
-            return false;
-    }
-    SK_ABORT("Invalid pixel config.");
-    return false;
-}
-
 /**
  * Precision qualifier that should be used with a sampler.
  */
@@ -1243,11 +1179,6 @@ static inline GrSLPrecision GrSLSamplerPrecision(GrPixelConfig config) {
     }
     SK_ABORT("Unexpected type");
     return kHigh_GrSLPrecision;
-}
-
-static inline GrPixelConfigIsClamped GrGetPixelConfigIsClamped(GrPixelConfig config) {
-    return GrPixelConfigIsFloatingPoint(config) ? GrPixelConfigIsClamped::kNo
-                                                : GrPixelConfigIsClamped::kYes;
 }
 
 /**
@@ -1287,7 +1218,7 @@ static inline SkColorType GrColorTypeToSkColorType(GrColorType ct) {
         case GrColorType::kAlpha_F16:    return kUnknown_SkColorType;
         case GrColorType::kRGBA_F16:     return kRGBA_F16_SkColorType;
         case GrColorType::kRG_F32:       return kUnknown_SkColorType;
-        case GrColorType::kRGBA_F32:     return kUnknown_SkColorType;
+        case GrColorType::kRGBA_F32:     return kRGBA_F32_SkColorType;
     }
     SK_ABORT("Invalid GrColorType");
     return kUnknown_SkColorType;
@@ -1306,6 +1237,7 @@ static inline GrColorType SkColorTypeToGrColorType(SkColorType ct) {
         case kRGBA_F16_SkColorType:     return GrColorType::kRGBA_F16;
         case kRGBA_1010102_SkColorType: return GrColorType::kRGBA_1010102;
         case kRGB_101010x_SkColorType:  return GrColorType::kUnknown;
+        case kRGBA_F32_SkColorType:     return GrColorType::kRGBA_F32;
     }
     SK_ABORT("Invalid SkColorType");
     return GrColorType::kUnknown;

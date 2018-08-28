@@ -18,7 +18,6 @@
 #include "base/process/process_handle.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/background_sync/background_sync_context.h"
-#include "content/browser/blob_storage/blob_url_loader_factory.h"
 #include "content/browser/bluetooth/bluetooth_allowed_devices_map.h"
 #include "content/browser/broadcast_channel/broadcast_channel_provider.h"
 #include "content/browser/cache_storage/cache_storage_context_impl.h"
@@ -32,12 +31,12 @@
 #include "content/browser/shared_worker/shared_worker_service_impl.h"
 #include "content/browser/url_loader_factory_getter.h"
 #include "content/common/content_export.h"
-#include "content/common/storage_partition_service.mojom.h"
 #include "content/public/browser/storage_partition.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "storage/browser/quota/special_storage_policy.h"
+#include "third_party/blink/public/mojom/dom_storage/storage_partition_service.mojom.h"
 
 #if !defined(OS_ANDROID)
 #include "content/browser/host_zoom_level_context.h"
@@ -48,13 +47,12 @@ namespace content {
 class BackgroundFetchContext;
 class CookieStoreContext;
 class BlobRegistryWrapper;
-class BlobURLLoaderFactory;
 class PrefetchURLLoaderService;
 class WebPackageContextImpl;
 
 class CONTENT_EXPORT StoragePartitionImpl
     : public StoragePartition,
-      public mojom::StoragePartitionService {
+      public blink::mojom::StoragePartitionService {
  public:
   // It is guaranteed that storage partitions are destructed before the
   // browser context starts shutting down its corresponding IO thread residents
@@ -134,23 +132,23 @@ class CONTENT_EXPORT StoragePartitionImpl
   void ClearBluetoothAllowedDevicesMapForTesting() override;
   void FlushNetworkInterfaceForTesting() override;
   void WaitForDeletionTasksForTesting() override;
+  void ResetURLLoaderFactoryForBrowserProcessForTesting() override;
 
   BackgroundFetchContext* GetBackgroundFetchContext();
   BackgroundSyncContext* GetBackgroundSyncContext();
   PaymentAppContextImpl* GetPaymentAppContext();
   BroadcastChannelProvider* GetBroadcastChannelProvider();
   BluetoothAllowedDevicesMap* GetBluetoothAllowedDevicesMap();
-  BlobURLLoaderFactory* GetBlobURLLoaderFactory();
   BlobRegistryWrapper* GetBlobRegistry();
   PrefetchURLLoaderService* GetPrefetchURLLoaderService();
   CookieStoreContext* GetCookieStoreContext();
 
-  // mojom::StoragePartitionService interface.
+  // blink::mojom::StoragePartitionService interface.
   void OpenLocalStorage(const url::Origin& origin,
-                        mojom::LevelDBWrapperRequest request) override;
+                        blink::mojom::StorageAreaRequest request) override;
   void OpenSessionStorage(
       const std::string& namespace_id,
-      mojom::SessionStorageNamespaceRequest request) override;
+      blink::mojom::SessionStorageNamespaceRequest request) override;
 
   scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter() {
     return url_loader_factory_getter_;
@@ -163,7 +161,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   // binding.
   mojo::BindingId Bind(
       int process_id,
-      mojo::InterfaceRequest<mojom::StoragePartitionService> request);
+      mojo::InterfaceRequest<blink::mojom::StoragePartitionService> request);
 
   auto& bindings_for_testing() { return bindings_; }
 
@@ -309,7 +307,6 @@ class CONTENT_EXPORT StoragePartitionImpl
   scoped_refptr<PaymentAppContextImpl> payment_app_context_;
   scoped_refptr<BroadcastChannelProvider> broadcast_channel_provider_;
   scoped_refptr<BluetoothAllowedDevicesMap> bluetooth_allowed_devices_map_;
-  scoped_refptr<BlobURLLoaderFactory> blob_url_loader_factory_;
   scoped_refptr<BlobRegistryWrapper> blob_registry_;
   scoped_refptr<PrefetchURLLoaderService> prefetch_url_loader_service_;
   scoped_refptr<CookieStoreContext> cookie_store_context_;
@@ -317,7 +314,7 @@ class CONTENT_EXPORT StoragePartitionImpl
   // BindingSet for StoragePartitionService, using the process id as the
   // binding context type. The process id can subsequently be used during
   // interface method calls to enforce security checks.
-  mojo::BindingSet<mojom::StoragePartitionService, int> bindings_;
+  mojo::BindingSet<blink::mojom::StoragePartitionService, int> bindings_;
 
   // This is the NetworkContext used to
   // make requests for the StoragePartition. When the network service is
@@ -335,7 +332,8 @@ class CONTENT_EXPORT StoragePartitionImpl
   // StoragePartition::GetURLLoaderFactoryForBrowserProcess() for
   // more details
   network::mojom::URLLoaderFactoryPtr url_loader_factory_for_browser_process_;
-  ::network::mojom::CookieManagerPtr cookie_manager_for_browser_process_;
+  bool is_test_url_loader_factory_for_browser_process_ = false;
+  network::mojom::CookieManagerPtr cookie_manager_for_browser_process_;
 
   // When the network service is disabled, a NetworkContext is created on the IO
   // thread that wraps access to the URLRequestContext.

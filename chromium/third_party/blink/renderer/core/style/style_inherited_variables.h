@@ -39,11 +39,10 @@ class StyleInheritedVariables : public RefCounted<StyleInheritedVariables> {
   void SetRegisteredVariable(const AtomicString&, const CSSValue*);
   const CSSValue* RegisteredVariable(const AtomicString&) const;
 
-  // This map will contain null pointers if variables are invalid due to
-  // cycles or referencing invalid variables without using a fallback.
-  // Note that this method is slow as a new map is constructed.
-  std::unique_ptr<HashMap<AtomicString, scoped_refptr<CSSVariableData>>>
-  GetVariables() const;
+  // Note that not all custom property names returned here necessarily have
+  // valid values, due to cycles or references to invalid variables without
+  // using a fallback.
+  HashSet<AtomicString> GetCustomPropertyNames() const;
 
  private:
   StyleInheritedVariables() : root_(nullptr) {}
@@ -52,7 +51,7 @@ class StyleInheritedVariables : public RefCounted<StyleInheritedVariables> {
   friend class CSSVariableResolver;
 
   HashMap<AtomicString, scoped_refptr<CSSVariableData>> data_;
-  HashMap<AtomicString, Persistent<CSSValue>> registered_data_;
+  PersistentHeapHashMap<AtomicString, Member<CSSValue>> registered_data_;
   scoped_refptr<StyleInheritedVariables> root_;
 };
 

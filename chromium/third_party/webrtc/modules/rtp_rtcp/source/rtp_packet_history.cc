@@ -14,10 +14,10 @@
 #include <limits>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -84,7 +84,7 @@ void RtpPacketHistory::SetRtt(int64_t rtt_ms) {
 
 void RtpPacketHistory::PutRtpPacket(std::unique_ptr<RtpPacketToSend> packet,
                                     StorageType type,
-                                    rtc::Optional<int64_t> send_time_ms) {
+                                    absl::optional<int64_t> send_time_ms) {
   RTC_DCHECK(packet);
   rtc::CritScope cs(&lock_);
   int64_t now_ms = clock_->TimeInMilliseconds();
@@ -143,24 +143,24 @@ std::unique_ptr<RtpPacketToSend> RtpPacketHistory::GetPacketAndSetSendTime(
     // Remove from history and return actual packet instance.
     return RemovePacket(rtp_it);
   }
-  return rtc::MakeUnique<RtpPacketToSend>(*packet.packet);
+  return absl::make_unique<RtpPacketToSend>(*packet.packet);
 }
 
-rtc::Optional<RtpPacketHistory::PacketState> RtpPacketHistory::GetPacketState(
+absl::optional<RtpPacketHistory::PacketState> RtpPacketHistory::GetPacketState(
     uint16_t sequence_number,
     bool verify_rtt) const {
   rtc::CritScope cs(&lock_);
   if (mode_ == StorageMode::kDisabled) {
-    return rtc::nullopt;
+    return absl::nullopt;
   }
 
   auto rtp_it = packet_history_.find(sequence_number);
   if (rtp_it == packet_history_.end()) {
-    return rtc::nullopt;
+    return absl::nullopt;
   }
 
   if (verify_rtt && !VerifyRtt(rtp_it->second, clock_->TimeInMilliseconds())) {
-    return rtc::nullopt;
+    return absl::nullopt;
   }
 
   return StoredPacketToPacketState(rtp_it->second);
@@ -203,7 +203,7 @@ std::unique_ptr<RtpPacketToSend> RtpPacketHistory::GetBestFittingPacket(
     }
   }
 
-  return rtc::MakeUnique<RtpPacketToSend>(*best_packet);
+  return absl::make_unique<RtpPacketToSend>(*best_packet);
 }
 
 void RtpPacketHistory::Reset() {

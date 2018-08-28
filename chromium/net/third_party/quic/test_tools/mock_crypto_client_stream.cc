@@ -17,7 +17,7 @@
 
 using std::string;
 
-namespace net {
+namespace quic {
 
 MockCryptoClientStream::MockCryptoClientStream(
     const QuicServerId& server_id,
@@ -26,7 +26,7 @@ MockCryptoClientStream::MockCryptoClientStream(
     const QuicConfig& config,
     QuicCryptoClientConfig* crypto_config,
     HandshakeMode handshake_mode,
-    const ProofVerifyDetailsChromium* proof_verify_details,
+    const net::ProofVerifyDetailsChromium* proof_verify_details,
     bool use_mock_crypter)
     : QuicCryptoClientStream(server_id,
                              session,
@@ -199,8 +199,6 @@ void MockCryptoClientStream::SetConfigNegotiated() {
   config.SetIdleNetworkTimeout(
       QuicTime::Delta::FromSeconds(2 * kMaximumIdleTimeoutSecs),
       QuicTime::Delta::FromSeconds(kMaximumIdleTimeoutSecs));
-  config.SetMaxStreamsPerConnection(kDefaultMaxStreamsPerConnection / 2,
-                                    kDefaultMaxStreamsPerConnection / 2);
   config.SetBytesForConnectionIdToSend(PACKET_8BYTE_CONNECTION_ID);
   config.SetMaxIncomingDynamicStreamsToSend(kDefaultMaxStreamsPerConnection /
                                             2);
@@ -215,4 +213,4 @@ void MockCryptoClientStream::SetConfigNegotiated() {
   session()->OnConfigNegotiated();
 }
 
-}  // namespace net
+}  // namespace quic

@@ -45,7 +45,7 @@ class WebSocketStreamCreateTestBase : public WithScopedTaskEnvironment {
                               const url::Origin& origin,
                               const GURL& site_for_cookies,
                               const HttpRequestHeaders& additional_headers,
-                              std::unique_ptr<base::Timer> timer);
+                              std::unique_ptr<base::OneShotTimer> timer);
 
   static std::vector<HeaderKeyValuePair> RequestHeadersToVector(
       const HttpRequestHeaders& headers);
@@ -58,6 +58,10 @@ class WebSocketStreamCreateTestBase : public WithScopedTaskEnvironment {
   // Runs |connect_run_loop_|. It will stop when the connection establishes or
   // fails.
   void WaitUntilConnectDone();
+
+  // Runs |run_loop_waiting_for_on_auth_required_| until OnAuthRequired() is
+  // called.
+  void WaitUntilOnAuthRequired();
 
   // A simple function to make the tests more readable.
   std::vector<std::string> NoSubProtocols();
@@ -77,8 +81,17 @@ class WebSocketStreamCreateTestBase : public WithScopedTaskEnvironment {
   SSLInfo ssl_info_;
   bool ssl_fatal_;
   URLRequest* url_request_;
+  scoped_refptr<AuthChallengeInfo> auth_challenge_info_;
+  base::OnceCallback<void(const AuthCredentials*)> on_auth_required_callback_;
+
+  // This value will be copied to |*credentials| on OnAuthRequired.
+  base::Optional<AuthCredentials> auth_credentials_;
+  // OnAuthRequired returns this value.
+  int on_auth_required_rv_ = OK;
 
   base::RunLoop connect_run_loop_;
+
+  base::RunLoop run_loop_waiting_for_on_auth_required_;
 
  private:
   class TestConnectDelegate;

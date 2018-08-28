@@ -36,6 +36,10 @@ struct CONTENT_EXPORT FrameVisualProperties {
   gfx::Size local_frame_size;
 
   uint32_t capture_sequence_number = 0u;
+
+  // This represents the page zoom level for a WebContents.
+  // (0 is the default value which results in 1.0 zoom factor.)
+  double zoom_level = 0;
 };
 
 }  // namespace content

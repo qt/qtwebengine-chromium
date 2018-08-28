@@ -10,8 +10,8 @@
 
 #include "common_audio/real_fourier_ooura.h"
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 #include "common_audio/fft4g.h"
 #include "rtc_base/checks.h"
@@ -28,8 +28,8 @@ void Conjugate(complex<float>* array, size_t complex_length) {
 }
 
 size_t ComputeWorkIpSize(size_t fft_length) {
-  return static_cast<size_t>(2 + std::ceil(std::sqrt(
-      static_cast<float>(fft_length))));
+  return static_cast<size_t>(
+      2 + std::ceil(std::sqrt(static_cast<float>(fft_length))));
 }
 
 }  // namespace
@@ -51,7 +51,7 @@ void RealFourierOoura::Forward(const float* src, complex<float>* dest) const {
   {
     // This cast is well-defined since C++11. See "Non-static data members" at:
     // http://en.cppreference.com/w/cpp/numeric/complex
-    auto dest_float = reinterpret_cast<float*>(dest);
+    auto* dest_float = reinterpret_cast<float*>(dest);
     std::copy(src, src + length_, dest_float);
     WebRtc_rdft(length_, 1, dest_float, work_ip_.get(), work_w_.get());
   }
@@ -65,7 +65,7 @@ void RealFourierOoura::Forward(const float* src, complex<float>* dest) const {
 
 void RealFourierOoura::Inverse(const complex<float>* src, float* dest) const {
   {
-    auto dest_complex = reinterpret_cast<complex<float>*>(dest);
+    auto* dest_complex = reinterpret_cast<complex<float>*>(dest);
     // The real output array is shorter than the input complex array by one
     // complex element.
     const size_t dest_complex_length = complex_length_ - 1;
@@ -73,8 +73,8 @@ void RealFourierOoura::Inverse(const complex<float>* src, float* dest) const {
     // Restore Ooura's conjugate definition.
     Conjugate(dest_complex, dest_complex_length);
     // Restore real[n/2] to imag[0].
-    dest_complex[0] = complex<float>(dest_complex[0].real(),
-                                     src[complex_length_ - 1].real());
+    dest_complex[0] =
+        complex<float>(dest_complex[0].real(), src[complex_length_ - 1].real());
   }
 
   WebRtc_rdft(length_, -1, dest, work_ip_.get(), work_w_.get());

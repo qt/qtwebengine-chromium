@@ -66,6 +66,7 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   int GetMainFrameRenderProcessId() const override;
   int GetMainFrameTreeNodeId() const override;
   std::string GetMainFrameDevToolsId() const override;
+  std::unique_ptr<HeadlessDevToolsChannel> CreateDevToolsChannel() override;
 
   // HeadlessDevToolsTarget implementation:
   void AttachClient(HeadlessDevToolsClient* client) override;
@@ -97,8 +98,6 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   bool OpenURL(const GURL& url);
 
   void Close() override;
-
-  void DelegateRequestsClose();
 
   std::string GetDevToolsAgentHostId();
 
@@ -176,8 +175,6 @@ class HEADLESS_EXPORT HeadlessWebContentsImpl
   content::RenderProcessHost* render_process_host_;  // Not owned.
 
   base::ObserverList<HeadlessWebContents::Observer> observers_;
-
-  base::Closure quit_closure_;
 
   base::WeakPtrFactory<HeadlessWebContentsImpl> weak_ptr_factory_;
 

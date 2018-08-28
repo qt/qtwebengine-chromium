@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/device_orientation/device_orientation_controller.h"
 
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
 #include "third_party/blink/renderer/core/frame/hosts_using_features.h"
@@ -156,7 +157,7 @@ void DeviceOrientationController::LogToConsolePolicyFeaturesDisabled(
   const String& message = String::Format(
       "The %s events are blocked by feature policy. "
       "See "
-      "https://github.com/WICG/feature-policy/blob/gh-pages/"
+      "https://github.com/WICG/feature-policy/blob/master/"
       "features.md#sensor-features",
       event_name.Ascii().data());
   ConsoleMessage* console_message = ConsoleMessage::Create(

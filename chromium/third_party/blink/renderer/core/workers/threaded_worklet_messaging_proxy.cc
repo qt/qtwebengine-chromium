@@ -10,12 +10,16 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
+#include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/inspector/thread_debugger.h"
+#include "third_party/blink/renderer/core/loader/worker_fetch_context.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
+#include "third_party/blink/renderer/core/script/fetch_client_settings_object_snapshot.h"
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
 #include "third_party/blink/renderer/core/workers/threaded_worklet_object_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
+#include "third_party/blink/renderer/core/workers/worker_content_settings_client.h"
 #include "third_party/blink/renderer/core/workers/worker_inspector_proxy.h"
 #include "third_party/blink/renderer/core/workers/worklet_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worklet_module_responses_map.h"
@@ -43,10 +47,17 @@ void ThreadedWorkletMessagingProxy::Initialize(
   ContentSecurityPolicy* csp = document->GetContentSecurityPolicy();
   DCHECK(csp);
 
+  ProvideWorkerFetchContextToWorker(
+      worker_clients,
+      document->GetFrame()->Client()->CreateWorkerFetchContext());
+  ProvideContentSettingsClientToWorker(
+      worker_clients,
+      document->GetFrame()->Client()->CreateWorkerContentSettingsClient());
+
   auto global_scope_creation_params =
       std::make_unique<GlobalScopeCreationParams>(
           document->Url(), ScriptType::kModule, document->UserAgent(),
-          csp->Headers().get(), document->GetReferrerPolicy(),
+          csp->Headers(), document->GetReferrerPolicy(),
           document->GetSecurityOrigin(), document->IsSecureContext(),
           worker_clients, document->AddressSpace(),
           OriginTrialContext::GetTokens(document).get(),
@@ -67,6 +78,7 @@ void ThreadedWorkletMessagingProxy::Trace(blink::Visitor* visitor) {
 void ThreadedWorkletMessagingProxy::FetchAndInvokeScript(
     const KURL& module_url_record,
     network::mojom::FetchCredentialsMode credentials_mode,
+    FetchClientSettingsObjectSnapshot* outside_settings_object,
     scoped_refptr<base::SingleThreadTaskRunner> outside_settings_task_runner,
     WorkletPendingTasks* pending_tasks) {
   DCHECK(IsMainThread());
@@ -75,6 +87,7 @@ void ThreadedWorkletMessagingProxy::FetchAndInvokeScript(
       CrossThreadBind(&ThreadedWorkletObjectProxy::FetchAndInvokeScript,
                       CrossThreadUnretained(worklet_object_proxy_.get()),
                       module_url_record, credentials_mode,
+                      WTF::Passed(outside_settings_object->CopyData()),
                       std::move(outside_settings_task_runner),
                       WrapCrossThreadPersistent(pending_tasks),
                       CrossThreadUnretained(GetWorkerThread())));

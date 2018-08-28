@@ -37,11 +37,11 @@
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
-#include "chrome/browser/chromeos/ash_config.h"
 #include "chrome/browser/chromeos/language_preferences.h"
 #include "chrome/browser/chromeos/lock_screen_apps/state_controller.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service.h"
 #include "chrome/browser/chromeos/login/error_screens_histogram_helper.h"
+#include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
 #include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/login/lock/webui_screen_locker.h"
@@ -70,6 +70,7 @@
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_metrics.h"
+#include "chrome/browser/ui/ash/ime_controller_client.h"
 #include "chrome/browser/ui/ash/session_controller_client.h"
 #include "chrome/browser/ui/ash/tablet_mode_client.h"
 #include "chrome/browser/ui/ash/wallpaper_controller_client.h"
@@ -113,6 +114,7 @@
 #include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/ime/chromeos/input_method_util.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "ui/chromeos/devicetype_utils.h"
 #include "ui/gfx/color_analysis.h"
@@ -245,23 +247,7 @@ ash::mojom::UserInfoPtr GetUserInfoForAccount(const AccountId& account_id) {
 
 // LoginScreenContext implementation ------------------------------------------
 
-LoginScreenContext::LoginScreenContext() {
-  Init();
-}
-
-LoginScreenContext::LoginScreenContext(const base::ListValue* args) {
-  Init();
-
-  if (!args || args->GetSize() == 0)
-    return;
-  std::string email;
-  if (args->GetString(0, &email))
-    email_ = email;
-}
-
-void LoginScreenContext::Init() {
-  oobe_ui_ = false;
-}
+LoginScreenContext::LoginScreenContext() = default;
 
 // SigninScreenHandler implementation ------------------------------------------
 
@@ -329,7 +315,7 @@ SigninScreenHandler::SigninScreenHandler(
   WallpaperControllerClient::Get()->AddObserver(std::move(ptr_info));
   // TODO(tbarzic): This is needed for login UI - remove it when login switches
   // to views implementation (or otherwise, make it work under mash).
-  if (GetAshConfig() != ash::Config::MASH)
+  if (features::IsAshInBrowserProcess())
     detachable_base_observer_.Add(ash::Shell::Get()->detachable_base_handler());
 }
 
@@ -344,7 +330,8 @@ SigninScreenHandler::~SigninScreenHandler() {
       chromeos::input_method::InputMethodManager::Get()->GetImeKeyboard();
   if (keyboard)
     keyboard->RemoveObserver(this);
-  lock_screen_utils::StopEnforcingPolicyInputMethods();
+  if (ImeControllerClient::Get())  // Can be null in tests.
+    ImeControllerClient::Get()->SetImesManagedByPolicy(false);
   weak_factory_.InvalidateWeakPtrs();
   if (delegate_)
     delegate_->SetWebUIHandler(nullptr);
@@ -515,6 +502,8 @@ void SigninScreenHandler::DeclareLocalizedValues(
 
 void SigninScreenHandler::RegisterMessages() {
   AddCallback("authenticateUser", &SigninScreenHandler::HandleAuthenticateUser);
+  AddCallback("completeOfflineAuthentication",
+              &SigninScreenHandler::HandleCompleteOfflineAuthentication);
   AddCallback("launchIncognito", &SigninScreenHandler::HandleLaunchIncognito);
   AddCallback("showSupervisedUserCreationScreen",
               &SigninScreenHandler::HandleShowSupervisedUserCreationScreen);
@@ -577,11 +566,12 @@ void SigninScreenHandler::RegisterMessages() {
               &SigninScreenHandler::HandleNewNoteLaunchAnimationDone);
 }
 
-void SigninScreenHandler::Show(const LoginScreenContext& context) {
+void SigninScreenHandler::Show(const LoginScreenContext& context,
+                               bool oobe_ui) {
   CHECK(delegate_);
 
   // Just initialize internal fields from context and call ShowImpl().
-  oobe_ui_ = context.oobe_ui();
+  oobe_ui_ = oobe_ui;
 
   std::string email;
   email = context.email();
@@ -1074,12 +1064,6 @@ void SigninScreenHandler::ShowPasswordChangedDialog(bool show_password_error,
   core_oobe_view_->ShowPasswordChangedScreen(show_password_error, email);
 }
 
-void SigninScreenHandler::ShowSigninScreenForTest(const std::string& username,
-                                                  const std::string& password,
-                                                  const std::string& services) {
-  gaia_screen_handler_->ShowSigninScreenForTest(username, password, services);
-}
-
 void SigninScreenHandler::ShowWhitelistCheckFailedError() {
   gaia_screen_handler_->ShowWhitelistCheckFailedError();
 }
@@ -1208,6 +1192,12 @@ void SigninScreenHandler::UpdateAddButtonStatus() {
 void SigninScreenHandler::HandleAuthenticateUser(const AccountId& account_id,
                                                  const std::string& password,
                                                  bool authenticated_by_pin) {
+  AuthenticateExistingUser(account_id, password, authenticated_by_pin);
+}
+
+void SigninScreenHandler::AuthenticateExistingUser(const AccountId& account_id,
+                                                   const std::string& password,
+                                                   bool authenticated_by_pin) {
   if (!delegate_)
     return;
   DCHECK_EQ(account_id.GetUserEmail(),
@@ -1218,7 +1208,7 @@ void SigninScreenHandler::HandleAuthenticateUser(const AccountId& account_id,
   DCHECK(user);
   UserContext user_context;
   if (!user) {
-    LOG(ERROR) << "HandleAuthenticateUser: User not found! account type="
+    LOG(ERROR) << "AuthenticateExistingUser: User not found! account type="
                << AccountId::AccountTypeToString(account_id.GetAccountType());
     const user_manager::UserType user_type =
         (account_id.GetAccountType() == AccountType::ACTIVE_DIRECTORY)
@@ -1243,6 +1233,28 @@ void SigninScreenHandler::HandleAuthenticateUser(const AccountId& account_id,
   delegate_->Login(user_context, SigninSpecifics());
 
   UpdatePinKeyboardState(account_id);
+}
+
+void SigninScreenHandler::HandleCompleteOfflineAuthentication(
+    const std::string& email,
+    const std::string& password) {
+  const std::string sanitized_email = gaia::SanitizeEmail(email);
+  const AccountId account_id = user_manager::known_user::GetAccountId(
+      sanitized_email, std::string() /* id */, AccountType::UNKNOWN);
+  const user_manager::User* user =
+      user_manager::UserManager::Get()->FindUser(account_id);
+  if (!user) {
+    LOG(ERROR)
+        << "HandleCompleteOfflineAuthentication: User not found! account type="
+        << AccountId::AccountTypeToString(account_id.GetAccountType());
+    LoginDisplayHost::default_host()->GetLoginDisplay()->ShowError(
+        IDS_LOGIN_ERROR_OFFLINE_FAILED_NETWORK_NOT_CONNECTED, 1,
+        HelpAppLauncher::HELP_CANT_ACCESS_ACCOUNT);
+    return;
+  }
+
+  AuthenticateExistingUser(account_id, password,
+                           false /* authenticated_by_pin */);
 }
 
 void SigninScreenHandler::HandleLaunchIncognito() {
@@ -1457,13 +1469,13 @@ void SigninScreenHandler::HandleCancelUserAdding() {
 
 void SigninScreenHandler::HandleMigrateUserData(
     const std::string& old_password) {
-  if (delegate_)
-    delegate_->MigrateUserData(old_password);
+  if (LoginDisplayHost::default_host())
+    LoginDisplayHost::default_host()->MigrateUserData(old_password);
 }
 
 void SigninScreenHandler::HandleResyncUserData() {
-  if (delegate_)
-    delegate_->ResyncUserData();
+  if (LoginDisplayHost::default_host())
+    LoginDisplayHost::default_host()->ResyncUserData();
 }
 
 void SigninScreenHandler::HandleLoginUIStateChanged(const std::string& source,
@@ -1687,10 +1699,11 @@ bool SigninScreenHandler::AllWhitelistedUsersPresent() {
 }
 
 void SigninScreenHandler::CancelPasswordChangedFlowInternal() {
-  if (delegate_) {
+  if (delegate_)
     ShowImpl();
-    delegate_->CancelPasswordChangedFlow();
-  }
+
+  if (LoginDisplayHost::default_host())
+    LoginDisplayHost::default_host()->CancelPasswordChangedFlow();
 }
 
 bool SigninScreenHandler::IsGaiaVisible() const {
@@ -1752,7 +1765,7 @@ void SigninScreenHandler::OnDetachableBaseRequiresUpdateChanged(
     bool requires_update) {}
 
 void SigninScreenHandler::UpdateDetachableBaseChangedError() {
-  if (GetAshConfig() == ash::Config::MASH)
+  if (!features::IsAshInBrowserProcess())
     return;
 
   auto pairing_status =

@@ -41,6 +41,7 @@ android_library("bindings_java") {
     "bindings/src/org/chromium/mojo/bindings/DelegatingConnectionErrorHandler.java",
     "bindings/src/org/chromium/mojo/bindings/DeserializationException.java",
     "bindings/src/org/chromium/mojo/bindings/Encoder.java",
+    "bindings/src/org/chromium/mojo/bindings/ExceptionHandler.java",
     "bindings/src/org/chromium/mojo/bindings/ExecutorFactory.java",
     "bindings/src/org/chromium/mojo/bindings/HandleOwner.java",
     "bindings/src/org/chromium/mojo/bindings/InterfaceControlMessagesHelper.java",
@@ -72,7 +73,7 @@ android_library("base_java") {
 
   deps = [
     ":system_java",
-    "//mojo/android:system_java",
+    "//mojo/public/java/system:system_impl_java",
     "//mojo/public/mojom/base:base_java",
   ]
 }

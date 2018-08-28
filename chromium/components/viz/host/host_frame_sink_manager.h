@@ -19,6 +19,7 @@
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/host/client_frame_sink_video_capturer.h"
 #include "components/viz/host/hit_test/hit_test_query.h"
+#include "components/viz/host/hit_test/hit_test_region_observer.h"
 #include "components/viz/host/host_frame_sink_client.h"
 #include "components/viz/host/viz_host_export.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support_manager.h"
@@ -162,6 +163,11 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
   void RequestCopyOfOutput(const SurfaceId& surface_id,
                            std::unique_ptr<CopyOutputRequest> request);
 
+  // Add/Remove an observer to receive notifications of when the host receives
+  // new hit test data.
+  void AddHitTestRegionObserver(HitTestRegionObserver* observer);
+  void RemoveHitTestRegionObserver(HitTestRegionObserver* observer);
+
   // CompositorFrameSinkSupportManager:
   std::unique_ptr<CompositorFrameSinkSupport> CreateCompositorFrameSinkSupport(
       mojom::CompositorFrameSinkClient* client,
@@ -183,13 +189,9 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
 
     bool IsFrameSinkRegistered() const { return client != nullptr; }
 
-    bool HasCompositorFrameSinkData() const {
-      return has_created_compositor_frame_sink || support;
-    }
-
     // Returns true if there is nothing in FrameSinkData and it can be deleted.
     bool IsEmpty() const {
-      return !IsFrameSinkRegistered() && !HasCompositorFrameSinkData() &&
+      return !IsFrameSinkRegistered() && !has_created_compositor_frame_sink &&
              parents.empty() && children.empty();
     }
 
@@ -210,9 +212,6 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
     // will always be false if not using Mojo.
     bool has_created_compositor_frame_sink = false;
 
-    // This will be null if using Mojo.
-    CompositorFrameSinkSupport* support = nullptr;
-
     // Track frame sink hierarchy in both directions.
     std::vector<FrameSinkId> parents;
     std::vector<FrameSinkId> children;
@@ -221,12 +220,8 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
     DISALLOW_COPY_AND_ASSIGN(FrameSinkData);
   };
 
-  // Provided as a callback to clear state when a CompositorFrameSinkSupport is
-  // destroyed.
-  void CompositorFrameSinkSupportDestroyed(const FrameSinkId& frame_sink_id);
-
   // Assigns the temporary reference to the frame sink that is expected to
-  // embeded |surface_id|, otherwise drops the temporary reference.
+  // embed |surface_id|, otherwise drops the temporary reference.
   void PerformAssignTemporaryReference(const SurfaceId& surface_id);
 
   // Handles connection loss to |frame_sink_manager_ptr_|. This should only
@@ -276,6 +271,10 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
   base::RepeatingClosure bad_message_received_from_gpu_callback_;
 
   DisplayHitTestQueryMap display_hit_test_query_;
+
+  // TODO(jonross): Separate out all hit testing work into its own separate
+  // class.
+  base::ObserverList<HitTestRegionObserver> observers_;
 
   base::WeakPtrFactory<HostFrameSinkManager> weak_ptr_factory_;
 

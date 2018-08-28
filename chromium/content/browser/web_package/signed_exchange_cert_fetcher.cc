@@ -72,14 +72,15 @@ SignedExchangeCertFetcher::CreateAndStart(
     bool force_fetch,
     SignedExchangeVersion version,
     CertificateCallback callback,
-    SignedExchangeDevToolsProxy* devtools_proxy) {
+    SignedExchangeDevToolsProxy* devtools_proxy,
+    const base::Optional<base::UnguessableToken>& throttling_profile_id) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("loading"),
                "SignedExchangeCertFetcher::CreateAndStart");
   std::unique_ptr<SignedExchangeCertFetcher> cert_fetcher(
       new SignedExchangeCertFetcher(
           std::move(shared_url_loader_factory), std::move(throttles), cert_url,
           std::move(request_initiator), force_fetch, version,
-          std::move(callback), devtools_proxy));
+          std::move(callback), devtools_proxy, throttling_profile_id));
   cert_fetcher->Start();
   return cert_fetcher;
 }
@@ -92,7 +93,8 @@ SignedExchangeCertFetcher::SignedExchangeCertFetcher(
     bool force_fetch,
     SignedExchangeVersion version,
     CertificateCallback callback,
-    SignedExchangeDevToolsProxy* devtools_proxy)
+    SignedExchangeDevToolsProxy* devtools_proxy,
+    const base::Optional<base::UnguessableToken>& throttling_profile_id)
     : shared_url_loader_factory_(std::move(shared_url_loader_factory)),
       throttles_(std::move(throttles)),
       resource_request_(std::make_unique<network::ResourceRequest>()),
@@ -117,6 +119,7 @@ SignedExchangeCertFetcher::SignedExchangeCertFetcher(
     cert_request_id_ = base::UnguessableToken::Create();
     resource_request_->enable_load_timing = true;
   }
+  resource_request_->throttling_profile_id = throttling_profile_id;
 }
 
 SignedExchangeCertFetcher::~SignedExchangeCertFetcher() = default;
@@ -148,8 +151,8 @@ void SignedExchangeCertFetcher::Abort() {
 }
 
 void SignedExchangeCertFetcher::OnHandleReady(MojoResult result) {
-  TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"),
-                     "SignedExchangeCertFetcher::OnHandleReady");
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("loading"),
+               "SignedExchangeCertFetcher::OnHandleReady");
   const void* buffer = nullptr;
   uint32_t num_bytes = 0;
   MojoResult rv =
@@ -157,8 +160,8 @@ void SignedExchangeCertFetcher::OnHandleReady(MojoResult result) {
   if (rv == MOJO_RESULT_OK) {
     if (body_string_.size() + num_bytes > g_max_cert_size_for_signed_exchange) {
       body_->EndReadData(num_bytes);
-      signed_exchange_utils::ReportErrorAndEndTraceEvent(
-          devtools_proxy_, "SignedExchangeCertFetcher::OnHandleReady",
+      signed_exchange_utils::ReportErrorAndTraceEvent(
+          devtools_proxy_,
           "The response body size of certificate message exceeds the limit.");
       Abort();
       return;
@@ -170,13 +173,11 @@ void SignedExchangeCertFetcher::OnHandleReady(MojoResult result) {
   } else {
     DCHECK_EQ(MOJO_RESULT_SHOULD_WAIT, rv);
   }
-  TRACE_EVENT_END0(TRACE_DISABLED_BY_DEFAULT("loading"),
-                   "SignedExchangeCertFetcher::OnHandleReady");
 }
 
 void SignedExchangeCertFetcher::OnDataComplete() {
-  TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"),
-                     "SignedExchangeCertFetcher::OnDataComplete");
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("loading"),
+               "SignedExchangeCertFetcher::OnDataComplete");
   DCHECK(callback_);
   url_loader_ = nullptr;
   body_.reset();
@@ -188,41 +189,53 @@ void SignedExchangeCertFetcher::OnDataComplete() {
           devtools_proxy_);
   body_string_.clear();
   if (!cert_chain) {
-    signed_exchange_utils::ReportErrorAndEndTraceEvent(
-        devtools_proxy_, "SignedExchangeCertFetcher::OnDataComplete",
-        "Failed to get certificate chain from message.");
+    signed_exchange_utils::ReportErrorAndTraceEvent(
+        devtools_proxy_, "Failed to get certificate chain from message.");
     std::move(callback_).Run(nullptr);
     return;
   }
   std::move(callback_).Run(std::move(cert_chain));
-  TRACE_EVENT_END0(TRACE_DISABLED_BY_DEFAULT("loading"),
-                   "SignedExchangeCertFetcher::OnDataComplete");
 }
 
 // network::mojom::URLLoaderClient
 void SignedExchangeCertFetcher::OnReceiveResponse(
-    const network::ResourceResponseHead& head,
-    network::mojom::DownloadedTempFilePtr downloaded_file) {
+    const network::ResourceResponseHead& head) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("loading"),
+               "SignedExchangeCertFetcher::OnReceiveResponse");
   if (devtools_proxy_) {
     DCHECK(cert_request_id_);
     devtools_proxy_->CertificateResponseReceived(*cert_request_id_,
                                                  resource_request_->url, head);
   }
-  TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"),
-                     "SignedExchangeCertFetcher::OnReceiveResponse");
-  if (head.headers->response_code() != net::HTTP_OK) {
-    signed_exchange_utils::ReportErrorAndEndTraceEvent(
-        devtools_proxy_, "SignedExchangeCertFetcher::OnReceiveResponse",
-        base::StringPrintf("Invalid reponse code: %d",
-                           head.headers->response_code()));
+
+  // |headers| is null when loading data URL.
+  if (head.headers && head.headers->response_code() != net::HTTP_OK) {
+    signed_exchange_utils::ReportErrorAndTraceEvent(
+        devtools_proxy_, base::StringPrintf("Invalid reponse code: %d",
+                                            head.headers->response_code()));
     Abort();
     return;
   }
+
+  // https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#cert-chain-format
+  // "The resource at a signature's cert-url MUST have the
+  // application/cert-chain+cbor content type" [spec text]
+  if (head.mime_type != "application/cert-chain+cbor") {
+    signed_exchange_utils::ReportErrorAndTraceEvent(
+        devtools_proxy_,
+        base::StringPrintf(
+            "Content type of cert-url must be application/cert-chain+cbor. "
+            "Actual content type: %s",
+            head.mime_type.c_str()));
+    Abort();
+    return;
+  }
+
   if (head.content_length > 0) {
     if (base::checked_cast<size_t>(head.content_length) >
         g_max_cert_size_for_signed_exchange) {
-      signed_exchange_utils::ReportErrorAndEndTraceEvent(
-          devtools_proxy_, "SignedExchangeCertFetcher::OnReceiveResponse",
+      signed_exchange_utils::ReportErrorAndTraceEvent(
+          devtools_proxy_,
           base::StringPrintf("Invalid content length: %" PRIu64,
                              head.content_length));
       Abort();
@@ -230,8 +243,6 @@ void SignedExchangeCertFetcher::OnReceiveResponse(
     }
     body_string_.reserve(head.content_length);
   }
-  TRACE_EVENT_END0(TRACE_DISABLED_BY_DEFAULT("loading"),
-                   "SignedExchangeCertFetcher::OnReceiveResponse");
 }
 
 void SignedExchangeCertFetcher::OnReceiveRedirect(
@@ -241,12 +252,6 @@ void SignedExchangeCertFetcher::OnReceiveRedirect(
                "SignedExchangeCertFetcher::OnReceiveRedirect");
   // Currently the cert fetcher doesn't allow any redirects.
   Abort();
-}
-
-void SignedExchangeCertFetcher::OnDataDownloaded(int64_t data_length,
-                                                 int64_t encoded_length) {
-  // Cert fetching is not a downloading job.
-  NOTREACHED();
 }
 
 void SignedExchangeCertFetcher::OnUploadProgress(

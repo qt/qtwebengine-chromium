@@ -156,7 +156,7 @@ bool FakeVideoSendStream::GetVp8Settings(
     return false;
   }
 
-  *settings = vpx_settings_.vp8;
+  *settings = codec_specific_settings_.vp8;
   return true;
 }
 
@@ -166,7 +166,17 @@ bool FakeVideoSendStream::GetVp9Settings(
     return false;
   }
 
-  *settings = vpx_settings_.vp9;
+  *settings = codec_specific_settings_.vp9;
+  return true;
+}
+
+bool FakeVideoSendStream::GetH264Settings(
+    webrtc::VideoCodecH264* settings) const {
+  if (!codec_settings_set_) {
+    return false;
+  }
+
+  *settings = codec_specific_settings_.h264;
   return true;
 }
 
@@ -224,21 +234,28 @@ void FakeVideoSendStream::ReconfigureVideoEncoder(
   } else {
     width = height = 0;
   }
-  video_streams_ = config.video_stream_factory->CreateEncoderStreams(
-      width, height, config);
+  video_streams_ =
+      config.video_stream_factory->CreateEncoderStreams(width, height, config);
   if (config.encoder_specific_settings != NULL) {
     const unsigned char num_temporal_layers = static_cast<unsigned char>(
         video_streams_.back().num_temporal_layers.value_or(1));
     if (config_.rtp.payload_name == "VP8") {
-      config.encoder_specific_settings->FillVideoCodecVp8(&vpx_settings_.vp8);
+      config.encoder_specific_settings->FillVideoCodecVp8(
+          &codec_specific_settings_.vp8);
       if (!video_streams_.empty()) {
-        vpx_settings_.vp8.numberOfTemporalLayers = num_temporal_layers;
+        codec_specific_settings_.vp8.numberOfTemporalLayers =
+            num_temporal_layers;
       }
     } else if (config_.rtp.payload_name == "VP9") {
-      config.encoder_specific_settings->FillVideoCodecVp9(&vpx_settings_.vp9);
+      config.encoder_specific_settings->FillVideoCodecVp9(
+          &codec_specific_settings_.vp9);
       if (!video_streams_.empty()) {
-        vpx_settings_.vp9.numberOfTemporalLayers = num_temporal_layers;
+        codec_specific_settings_.vp9.numberOfTemporalLayers =
+            num_temporal_layers;
       }
+    } else if (config_.rtp.payload_name == "H264") {
+      config.encoder_specific_settings->FillVideoCodecH264(
+          &codec_specific_settings_.h264);
     } else {
       ADD_FAILURE() << "Unsupported encoder payload: "
                     << config_.rtp.payload_name;

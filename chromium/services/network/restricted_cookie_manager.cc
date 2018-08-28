@@ -24,26 +24,25 @@ namespace network {
 namespace {
 
 // TODO(pwnall): De-duplicate from cookie_manager.cc
-network::mojom::CookieChangeCause ToCookieChangeCause(
-    net::CookieChangeCause net_cause) {
+mojom::CookieChangeCause ToCookieChangeCause(net::CookieChangeCause net_cause) {
   switch (net_cause) {
     case net::CookieChangeCause::INSERTED:
-      return network::mojom::CookieChangeCause::INSERTED;
+      return mojom::CookieChangeCause::INSERTED;
     case net::CookieChangeCause::EXPLICIT:
-      return network::mojom::CookieChangeCause::EXPLICIT;
+      return mojom::CookieChangeCause::EXPLICIT;
     case net::CookieChangeCause::UNKNOWN_DELETION:
-      return network::mojom::CookieChangeCause::UNKNOWN_DELETION;
+      return mojom::CookieChangeCause::UNKNOWN_DELETION;
     case net::CookieChangeCause::OVERWRITE:
-      return network::mojom::CookieChangeCause::OVERWRITE;
+      return mojom::CookieChangeCause::OVERWRITE;
     case net::CookieChangeCause::EXPIRED:
-      return network::mojom::CookieChangeCause::EXPIRED;
+      return mojom::CookieChangeCause::EXPIRED;
     case net::CookieChangeCause::EVICTED:
-      return network::mojom::CookieChangeCause::EVICTED;
+      return mojom::CookieChangeCause::EVICTED;
     case net::CookieChangeCause::EXPIRED_OVERWRITE:
-      return network::mojom::CookieChangeCause::EXPIRED_OVERWRITE;
+      return mojom::CookieChangeCause::EXPIRED_OVERWRITE;
   }
   NOTREACHED();
-  return network::mojom::CookieChangeCause::EXPLICIT;
+  return mojom::CookieChangeCause::EXPLICIT;
 }
 
 }  // anonymous namespace
@@ -53,7 +52,7 @@ class RestrictedCookieManager::Listener : public base::LinkNode<Listener> {
   Listener(net::CookieStore* cookie_store,
            const GURL& url,
            net::CookieOptions options,
-           network::mojom::CookieChangeListenerPtr mojo_listener)
+           mojom::CookieChangeListenerPtr mojo_listener)
       : url_(url), options_(options), mojo_listener_(std::move(mojo_listener)) {
     // TODO(pwnall): add a constructor w/options to net::CookieChangeDispatcher.
     cookie_store_subscription_ =
@@ -68,9 +67,10 @@ class RestrictedCookieManager::Listener : public base::LinkNode<Listener> {
                 base::Unretained(this)));
   }
 
-  ~Listener() = default;
+  ~Listener() { DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_); }
 
-  network::mojom::CookieChangeListenerPtr& mojo_listener() {
+  mojom::CookieChangeListenerPtr& mojo_listener() {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     return mojo_listener_;
   }
 
@@ -78,6 +78,7 @@ class RestrictedCookieManager::Listener : public base::LinkNode<Listener> {
   // net::CookieChangeDispatcher callback.
   void OnCookieChange(const net::CanonicalCookie& cookie,
                       net::CookieChangeCause cause) {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     if (!cookie.IncludeForRequestURL(url_, options_))
       return;
     mojo_listener_->OnCookieChange(cookie, ToCookieChangeCause(cause));
@@ -91,22 +92,22 @@ class RestrictedCookieManager::Listener : public base::LinkNode<Listener> {
   // CanonicalCookie::IncludeForRequestURL options for this listener's interest.
   const net::CookieOptions options_;
 
-  network::mojom::CookieChangeListenerPtr mojo_listener_;
+  mojom::CookieChangeListenerPtr mojo_listener_;
+
+  SEQUENCE_CHECKER(sequence_checker_);
 
   DISALLOW_COPY_AND_ASSIGN(Listener);
 };
 
 RestrictedCookieManager::RestrictedCookieManager(net::CookieStore* cookie_store,
-                                                 int render_process_id,
-                                                 int render_frame_id)
-    : cookie_store_(cookie_store),
-      render_process_id_(render_process_id),
-      render_frame_id_(render_frame_id),
-      weak_ptr_factory_(this) {
+                                                 const url::Origin& origin)
+    : cookie_store_(cookie_store), origin_(origin), weak_ptr_factory_(this) {
   DCHECK(cookie_store);
 }
 
 RestrictedCookieManager::~RestrictedCookieManager() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   base::LinkNode<Listener>* node = listeners_.head();
   while (node != listeners_.end()) {
     Listener* listener_reference = node->value();
@@ -121,9 +122,12 @@ void RestrictedCookieManager::GetAllForUrl(
     const GURL& site_for_cookies,
     mojom::CookieManagerGetOptionsPtr options,
     GetAllForUrlCallback callback) {
-  // TODO(pwnall): Replicate the call to
-  //               ChildProcessSecurityPolicy::CanAccessDataForOrigin() in
-  //               RenderFrameMessageFilter::GetCookies.
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (!ValidateAccessToCookiesAt(url)) {
+    std::move(callback).Run({});
+    return;
+  }
 
   net::CookieOptions net_options;
   if (net::registry_controlled_domains::SameDomainOrHost(
@@ -151,12 +155,10 @@ void RestrictedCookieManager::CookieListToGetAllForUrlCallback(
     mojom::CookieManagerGetOptionsPtr options,
     GetAllForUrlCallback callback,
     const net::CookieList& cookie_list) {
-  // TODO(pwnall): Replicate the security checks in
-  //               RenderFrameMessageFilter::CheckPolicyForCookies
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  // Avoid unused member warnings until these are used for security checks.
-  (void)(render_frame_id_);
-  (void)(render_process_id_);
+  // TODO(pwnall): Call NetworkDelegate::CanGetCookies() on a NetworkDelegate
+  //               associated with the NetworkContext.
 
   std::vector<net::CanonicalCookie> result;
   result.reserve(cookie_list.size());
@@ -187,22 +189,21 @@ void RestrictedCookieManager::SetCanonicalCookie(
     const GURL& url,
     const GURL& site_for_cookies,
     SetCanonicalCookieCallback callback) {
-  // TODO(pwnall): Replicate the call to
-  //               ChildProcessSecurityPolicy::CanAccessDataForOrigin() in
-  //               RenderFrameMessageFilter::SetCookie.
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!ValidateAccessToCookiesAt(url)) {
+    std::move(callback).Run(false);
+    return;
+  }
 
   // TODO(pwnall): Validate the CanonicalCookie fields.
-  // TODO(pwnall): Replicate the AllowSetCookie check in
-  //               RenderFrameMessageFilter::SetCookie.
+
+  // TODO(pwnall): Call NetworkDelegate::CanSetCookie() on a NetworkDelegate
+  //               associated with the NetworkContext.
   base::Time now = base::Time::NowFromSystemTime();
-  // TODO(pwnall): Reason about whether it makes sense to allow a renderer to
-  //               set these fields.
-  net::CookieSameSite cookie_same_site_mode = net::CookieSameSite::STRICT_MODE;
-  net::CookiePriority cookie_priority = net::COOKIE_PRIORITY_DEFAULT;
   auto sanitized_cookie = std::make_unique<net::CanonicalCookie>(
       cookie.Name(), cookie.Value(), cookie.Domain(), cookie.Path(), now,
       cookie.ExpiryDate(), now, cookie.IsSecure(), cookie.IsHttpOnly(),
-      cookie_same_site_mode, cookie_priority);
+      cookie.SameSite(), cookie.Priority());
 
   // TODO(pwnall): secure_source should depend on url, and might depend on the
   //               renderer.
@@ -216,10 +217,13 @@ void RestrictedCookieManager::SetCanonicalCookie(
 void RestrictedCookieManager::AddChangeListener(
     const GURL& url,
     const GURL& site_for_cookies,
-    network::mojom::CookieChangeListenerPtr mojo_listener) {
-  // TODO(pwnall): Replicate the call to
-  //               ChildProcessSecurityPolicy::CanAccessDataForOrigin() in
-  //               RenderFrameMessageFilter::GetCookies.
+    mojom::CookieChangeListenerPtr mojo_listener,
+    AddChangeListenerCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!ValidateAccessToCookiesAt(url)) {
+    std::move(callback).Run();
+    return;
+  }
 
   net::CookieOptions net_options;
   if (net::registry_controlled_domains::SameDomainOrHost(
@@ -247,11 +251,21 @@ void RestrictedCookieManager::AddChangeListener(
 
   // The linked list takes over the Listener ownership.
   listeners_.Append(listener.release());
+  std::move(callback).Run();
 }
 
 void RestrictedCookieManager::RemoveChangeListener(Listener* listener) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   listener->RemoveFromList();
   delete listener;
+}
+
+bool RestrictedCookieManager::ValidateAccessToCookiesAt(const GURL& url) {
+  if (origin_.IsSameOriginWith(url::Origin::Create(url)))
+    return true;
+
+  mojo::ReportBadMessage("Incorrect url origin");
+  return false;
 }
 
 }  // namespace network

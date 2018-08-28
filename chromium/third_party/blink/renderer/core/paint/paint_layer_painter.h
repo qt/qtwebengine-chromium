@@ -18,7 +18,6 @@ class ComputedStyle;
 class DisplayItemClient;
 class PaintLayer;
 class GraphicsContext;
-class LayoutBoxModelObject;
 class LayoutPoint;
 
 // This class is responsible for painting self-painting PaintLayer.
@@ -63,20 +62,8 @@ class CORE_EXPORT PaintLayerPainter {
  private:
   friend class PaintLayerPainterTest;
 
-  enum ClipState { kHasNotClipped, kHasClipped };
-
   bool ShouldAdjustPaintingRoot(const PaintLayerPaintingInfo& painting_info,
                                 PaintLayerFlags paint_flags);
-
-  // "For paged media, boxes with fixed positions are repeated on every page."
-  // https://www.w3.org/TR/2011/REC-CSS2-20110607/visuren.html#fixed-positioning
-  // Repeats singleFragmentIgnoredPagination of the fixed-position object in
-  // each page, with paginationOffset and layerBounds adjusted for each page.
-  // TODO(wangxianzhu): Fold this into PaintLayer::collectFragments().
-  void RepeatFixedPositionObjectInPages(
-      const PaintLayerFragment& single_fragment_ignored_pagination,
-      const PaintLayerPaintingInfo&,
-      PaintLayerFragments&);
 
   PaintResult PaintLayerContentsCompositingAllPhases(
       GraphicsContext&,
@@ -110,8 +97,7 @@ class CORE_EXPORT PaintLayerPainter {
                               GraphicsContext&,
                               const ClipRect&,
                               const PaintLayerPaintingInfo&,
-                              PaintLayerFlags,
-                              ClipState);
+                              PaintLayerFlags);
   void PaintBackgroundForFragments(
       const PaintLayerFragments&,
       GraphicsContext&,
@@ -127,8 +113,7 @@ class CORE_EXPORT PaintLayerPainter {
                                             const PaintLayerFragments&,
                                             GraphicsContext&,
                                             const PaintLayerPaintingInfo&,
-                                            PaintLayerFlags,
-                                            ClipState);
+                                            PaintLayerFlags);
   void PaintSelfOutlineForFragments(const PaintLayerFragments&,
                                     GraphicsContext&,
                                     const PaintLayerPaintingInfo&,
@@ -155,11 +140,6 @@ class CORE_EXPORT PaintLayerPainter {
                            const DisplayItemClient&);
 
   void PaintEmptyContentForFilters(GraphicsContext&);
-
-  static bool NeedsToClip(const PaintLayerPaintingInfo& local_painting_info,
-                          const ClipRect&,
-                          const PaintLayerFlags&,
-                          const LayoutBoxModelObject&);
 
   void AdjustForPaintProperties(PaintLayerPaintingInfo&, PaintLayerFlags&);
 

@@ -505,7 +505,7 @@ SSLClientSocketPool::SSLClientSocketPool(
                                        ssl_session_cache_shard),
                 net_log)),
       ssl_config_service_(ssl_config_service) {
-  if (ssl_config_service_.get())
+  if (ssl_config_service_)
     ssl_config_service_->AddObserver(this);
   if (transport_pool_)
     base_.AddLowerLayeredPool(transport_pool_);
@@ -516,7 +516,7 @@ SSLClientSocketPool::SSLClientSocketPool(
 }
 
 SSLClientSocketPool::~SSLClientSocketPool() {
-  if (ssl_config_service_.get())
+  if (ssl_config_service_)
     ssl_config_service_->RemoveObserver(this);
 }
 
@@ -543,14 +543,14 @@ int SSLClientSocketPool::RequestSocket(const std::string& group_name,
                                        const SocketTag& socket_tag,
                                        RespectLimits respect_limits,
                                        ClientSocketHandle* handle,
-                                       const CompletionCallback& callback,
+                                       CompletionOnceCallback callback,
                                        const NetLogWithSource& net_log) {
   const scoped_refptr<SSLSocketParams>* casted_socket_params =
       static_cast<const scoped_refptr<SSLSocketParams>*>(socket_params);
 
   return base_.RequestSocket(group_name, *casted_socket_params, priority,
-                             socket_tag, respect_limits, handle, callback,
-                             net_log);
+                             socket_tag, respect_limits, handle,
+                             std::move(callback), net_log);
 }
 
 void SSLClientSocketPool::RequestSockets(const std::string& group_name,

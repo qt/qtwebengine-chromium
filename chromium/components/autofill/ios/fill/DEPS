@@ -1,5 +1,0 @@
-specific_include_rules = {
-  "form_unittest\.mm": [
-    "+ios/web/web_state/js/page_script_util.h",
-  ],
-}

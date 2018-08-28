@@ -20,11 +20,15 @@ if word is camel cased, look for :: matches on suffix
 when function crosses lines, whole thing isn't seen as a 'word' e.g., search for largeArc in path
 
 words in external not seen
+
+look for x-bit but allow x bits
  */
+
 struct CheckEntry {
     string fFile;
     int fLine;
     int fCount;
+    bool fOverride;
 };
 
 class SpellCheck : public ParserCommon {
@@ -63,6 +67,7 @@ private:
         fInFormula = false;
         fInDescription = false;
         fInStdOut = false;
+        fOverride = false;
     }
 
     void wordCheck(string str);
@@ -84,6 +89,7 @@ private:
     bool fInDescription;
     bool fInFormula;
     bool fInStdOut;
+    bool fOverride;
     typedef ParserCommon INHERITED;
 };
 
@@ -121,7 +127,10 @@ bool SpellCheck::check(const char* match) {
         if (string::npos == fRoot->fFileName.rfind(match)) {
             continue;
         }
-       this->check(topicDef);
+        fOverride = string::npos != fRoot->fFileName.rfind("undocumented.bmh")
+                || string::npos != fRoot->fFileName.rfind("markup.bmh")
+                || string::npos != fRoot->fFileName.rfind("usingBookmaker.bmh");
+        this->check(topicDef);
     }
     return true;
 }
@@ -166,8 +175,6 @@ bool SpellCheck::check(Definition* def) {
         } break;
         case MarkType::kDefine:
             break;
-        case MarkType::kDefinedBy:
-            break;
         case MarkType::kDeprecated:
             break;
         case MarkType::kDescription:
@@ -186,6 +193,8 @@ bool SpellCheck::check(Definition* def) {
         case MarkType::kExperimental:
             break;
         case MarkType::kExternal:
+            break;
+        case MarkType::kFile:
             break;
         case MarkType::kFormula:
             fInFormula = true;
@@ -383,6 +392,7 @@ void SpellCheck::leafCheck(const char* start, const char* end) {
     int inParens = 0;
     bool inQuotes = false;
     bool allLower = true;
+    char prePriorCh = 0;
     char priorCh = 0;
     char lastCh = 0;
     const char* wordStart = nullptr;
@@ -394,7 +404,10 @@ void SpellCheck::leafCheck(const char* start, const char* end) {
             if (!allLower || (!inQuotes && '\"' != lastCh && !inParens
                     && ')' != lastCh && !inAngles && '>' != lastCh)) {
                 string word(wordStart, (possibleEnd ? possibleEnd : wordEnd) - wordStart);
-                wordCheck(word);
+                if ("e" != word || !isdigit(prePriorCh) || ('+' != lastCh &&
+                        '-' != lastCh && !isdigit(lastCh))) {
+                    this->wordCheck(word);
+                }
             }
             wordStart = nullptr;
         }
@@ -463,6 +476,7 @@ void SpellCheck::leafCheck(const char* start, const char* end) {
                 wordEnd = chPtr;
                 break;
         }
+        prePriorCh = priorCh;
         priorCh = lastCh;
         lastCh = *chPtr;
     } while (++chPtr <= end);
@@ -491,13 +505,7 @@ void SpellCheck::report(SkCommandLineFlags::StringArray report) {
     std::sort(elems.begin(), elems.end(), stringCompare);
     if (report.contains("once")) {
         for (auto iter : elems) {
-            if (string::npos != iter.second.fFile.find("undocumented.bmh")) {
-                continue;
-            }
-            if (string::npos != iter.second.fFile.find("markup.bmh")) {
-                continue;
-            }
-            if (string::npos != iter.second.fFile.find("usingBookmaker.bmh")) {
+            if (iter.second.fOverride) {
                 continue;
             }
             if (iter.second.fCount == 1) {
@@ -514,13 +522,7 @@ void SpellCheck::report(SkCommandLineFlags::StringArray report) {
         char lastInitial = 'a';
         int count = 0;
         for (auto iter : elems) {
-            if (string::npos != iter.second.fFile.find("undocumented.bmh")) {
-                continue;
-            }
-            if (string::npos != iter.second.fFile.find("markup.bmh")) {
-                continue;
-            }
-            if (string::npos != iter.second.fFile.find("usingBookmaker.bmh")) {
+            if (iter.second.fOverride) {
                 continue;
             }
             string check = iter.first.c_str();
@@ -552,13 +554,7 @@ void SpellCheck::report(SkCommandLineFlags::StringArray report) {
     int index = 0;
     const char* mispelled = report[0];
     for (auto iter : elems) {
-        if (string::npos != iter.second.fFile.find("undocumented.bmh")) {
-            continue;
-        }
-        if (string::npos != iter.second.fFile.find("markup.bmh")) {
-            continue;
-        }
-        if (string::npos != iter.second.fFile.find("usingBookmaker.bmh")) {
+        if (iter.second.fOverride) {
             continue;
         }
         string check = iter.first.c_str();
@@ -660,12 +656,21 @@ void SpellCheck::wordCheck(string str) {
                   sawDigit ? fDigits : fWords;
     auto iter = mappy.find(str);
     if (mappy.end() != iter) {
+        if (iter->second.fOverride && !fOverride) {
+            iter->second.fFile = fFileName;
+            iter->second.fLine = fLineCount + fLocalLine;
+            iter->second.fOverride = false;
+        }
         iter->second.fCount += 1;
     } else {
+    if ("e" == str) {
+        SkDebugf("");
+    }
         CheckEntry* entry = &mappy[str];
         entry->fFile = fFileName;
         entry->fLine = fLineCount + fLocalLine;
         entry->fCount = 1;
+        entry->fOverride = fOverride;
     }
 }
 

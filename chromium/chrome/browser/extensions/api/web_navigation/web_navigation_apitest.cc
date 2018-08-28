@@ -227,15 +227,13 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ClientRedirect) {
       << message_;
 }
 
-// http://crbug.com/660288
-IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, DISABLED_ServerRedirect) {
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ServerRedirect) {
   ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("webnavigation/serverRedirect"))
       << message_;
 }
 
-// https://crbug.com/660288
-IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, DISABLED_Download) {
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, Download) {
   ASSERT_TRUE(StartEmbeddedTestServer());
   content::DownloadManager* download_manager =
       content::BrowserContext::GetDownloadManager(browser()->profile());
@@ -509,8 +507,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, DISABLED_CrossProcessFragment) {
       << message_;
 }
 
-// crbug.com/708139.
-IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, DISABLED_CrossProcessHistory) {
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcessHistory) {
   ASSERT_TRUE(StartEmbeddedTestServer());
 
   // See crossProcessHistory/e.html.

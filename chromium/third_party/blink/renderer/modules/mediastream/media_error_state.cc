@@ -30,19 +30,19 @@
 
 #include "third_party/blink/renderer/modules/mediastream/media_error_state.h"
 
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/modules/mediastream/overconstrained_error.h"
 
 namespace blink {
 
-MediaErrorState::MediaErrorState() : error_type_(kNoError), code_(0) {}
+MediaErrorState::MediaErrorState()
+    : error_type_(kNoError), code_(DOMExceptionCode::kNoError) {}
 
 void MediaErrorState::ThrowTypeError(const String& message) {
   error_type_ = kTypeError;
   message_ = message;
 }
 
-void MediaErrorState::ThrowDOMException(ExceptionCode code,
+void MediaErrorState::ThrowDOMException(DOMExceptionCode code,
                                         const String& message) {
   error_type_ = kDOMException;
   code_ = code;
@@ -85,7 +85,7 @@ void MediaErrorState::RaiseException(ExceptionState& target) {
       // So far, we have this in the constructor of RTCPeerConnection,
       // which is due to be deprecated.
       // TODO(hta): Remove this code. https://crbug.com/576581
-      target.ThrowDOMException(kNotSupportedError,
+      target.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                "Unsatisfiable constraint " + constraint_);
       break;
     default:

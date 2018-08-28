@@ -83,7 +83,7 @@ bool IsWebstoreSearchEnabled() {
 }
 
 bool IsPlayStoreAvailable() {
-  if (IsRobotAccountMode())
+  if (IsRobotOrOfflineDemoAccountMode())
     return false;
   const auto* command_line = base::CommandLine::ForCurrentProcess();
   if (!command_line->HasSwitch(chromeos::switches::kArcStartMode))
@@ -101,6 +101,11 @@ bool ShouldArcAlwaysStart() {
   const std::string value =
       command_line->GetSwitchValueASCII(chromeos::switches::kArcStartMode);
   return value == kAlwaysStartWithNoPlayStore || value == kAlwaysStart;
+}
+
+bool ShouldShowOptInForTesting() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      chromeos::switches::kArcForceShowOptInUi);
 }
 
 void SetArcAlwaysStartForTesting(bool play_store_available) {
@@ -138,7 +143,7 @@ bool IsArcKioskMode() {
          user_manager::UserManager::Get()->IsLoggedInAsArcKioskApp();
 }
 
-bool IsRobotAccountMode() {
+bool IsRobotOrOfflineDemoAccountMode() {
   return user_manager::UserManager::IsInitialized() &&
          (user_manager::UserManager::Get()->IsLoggedInAsArcKioskApp() ||
           user_manager::UserManager::Get()->IsLoggedInAsPublicAccount());
@@ -180,7 +185,7 @@ bool IsArcOptInVerificationDisabled() {
       chromeos::switches::kDisableArcOptInVerification);
 }
 
-bool IsArcAppWindow(aura::Window* window) {
+bool IsArcAppWindow(const aura::Window* window) {
   if (!window)
     return false;
   return window->GetProperty(aura::client::kAppType) ==

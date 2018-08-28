@@ -31,6 +31,7 @@
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/guid.h"
+#include "base/json/string_escape.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
@@ -39,7 +40,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_runner_util.h"
-#include "components/download/downloader/in_progress/download_entry.h"
+#include "components/download/database/in_progress/download_entry.h"
 #include "components/download/internal/common/download_job_impl.h"
 #include "components/download/internal/common/parallel_download_utils.h"
 #include "components/download/public/common/download_danger_type.h"
@@ -182,12 +183,15 @@ class DownloadItemActivatedData
     out->append(base::StringPrintf(
         "\"type\":\"%s\",", GetDownloadTypeNames(download_type_).c_str()));
     out->append(base::StringPrintf("\"id\":\"%d\",", download_id_));
-    out->append(
-        base::StringPrintf("\"original_url\":\"%s\",", original_url_.c_str()));
-    out->append(
-        base::StringPrintf("\"final_url\":\"%s\",", final_url_.c_str()));
-    out->append(
-        base::StringPrintf("\"file_name\":\"%s\",", file_name_.c_str()));
+    out->append("\"original_url\":");
+    base::EscapeJSONString(original_url_, true, out);
+    out->append(",");
+    out->append("\"final_url\":");
+    base::EscapeJSONString(final_url_, true, out);
+    out->append(",");
+    out->append("\"file_name\":");
+    base::EscapeJSONString(file_name_, true, out);
+    out->append(",");
     out->append(
         base::StringPrintf("\"danger_type\":\"%s\",",
                            GetDownloadDangerNames(danger_type_).c_str()));
@@ -425,7 +429,6 @@ DownloadItemImpl::~DownloadItemImpl() {
 
   for (auto& observer : observers_)
     observer.OnDownloadDestroyed(this);
-  delegate_->AssertStateConsistent(this);
   delegate_->Detach();
 }
 
@@ -590,10 +593,8 @@ void DownloadItemImpl::Remove() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   RecordDownloadDeletion(GetEndTime(), GetMimeType());
 
-  delegate_->AssertStateConsistent(this);
   InterruptAndDiscardPartialState(DOWNLOAD_INTERRUPT_REASON_USER_CANCELED);
   UpdateObservers();
-  delegate_->AssertStateConsistent(this);
 
   NotifyRemoved();
   delegate_->DownloadRemoved(this);
@@ -1146,6 +1147,7 @@ ResumeMode DownloadItemImpl::GetResumeMode() const {
     case DOWNLOAD_INTERRUPT_REASON_SERVER_UNAUTHORIZED:
     case DOWNLOAD_INTERRUPT_REASON_SERVER_CERT_PROBLEM:
     case DOWNLOAD_INTERRUPT_REASON_SERVER_FORBIDDEN:
+    case DOWNLOAD_INTERRUPT_REASON_SERVER_CROSS_ORIGIN_REDIRECT:
     case DOWNLOAD_INTERRUPT_REASON_FILE_SAME_AS_SOURCE:
       return ResumeMode::INVALID;
   }
@@ -1338,6 +1340,12 @@ void DownloadItemImpl::DestinationCompleted(
 
   OnAllDataSaved(total_bytes, std::move(secure_hash));
   MaybeCompleteDownload();
+}
+
+void DownloadItemImpl::SetDelegate(DownloadItemImplDelegate* delegate) {
+  delegate_->Detach();
+  delegate_ = delegate;
+  delegate_->Attach();
 }
 
 // **** Download progression cascade
@@ -2341,6 +2349,7 @@ void DownloadItemImpl::ResumeInterruptedDownload(
   download_params->set_etag(GetETag());
   download_params->set_hash_of_partial_file(GetHash());
   download_params->set_hash_state(std::move(hash_state_));
+  download_params->set_guid(guid_);
 
   // TODO(xingliu): Read |fetch_error_body| and |request_headers_| from the
   // cache, and don't copy them into DownloadItemImpl.
@@ -2375,7 +2384,7 @@ void DownloadItemImpl::ResumeInterruptedDownload(
                                              GetResumeMode(), time_since_start);
   }
 
-  delegate_->ResumeInterruptedDownload(std::move(download_params), GetId(),
+  delegate_->ResumeInterruptedDownload(std::move(download_params),
                                        request_info_.site_url);
 
   if (job_)

@@ -81,19 +81,13 @@ class UserContext;
 class LoginScreenContext {
  public:
   LoginScreenContext();
-  explicit LoginScreenContext(const base::ListValue* args);
 
   void set_email(const std::string& email) { email_ = email; }
   const std::string& email() const { return email_; }
 
-  void set_oobe_ui(bool oobe_ui) { oobe_ui_ = oobe_ui; }
-  bool oobe_ui() const { return oobe_ui_; }
-
  private:
-  void Init();
-
+  // Optional email to prefill in gaia signin.
   std::string email_;
-  bool oobe_ui_;
 };
 
 // An interface for WebUILoginDisplay to call SigninScreenHandler.
@@ -114,12 +108,6 @@ class LoginDisplayWebUIHandler {
   virtual void ShowSigninUI(const std::string& email) = 0;
   virtual void ShowPasswordChangedDialog(bool show_password_error,
                                          const std::string& email) = 0;
-  // Show sign-in screen for the given credentials.
-  // |services| - list of services returned by userInfo call as JSON array.
-  // Should be empty array for regular user: "[]".
-  virtual void ShowSigninScreenForTest(const std::string& username,
-                                       const std::string& password,
-                                       const std::string& services) = 0;
   virtual void ShowWhitelistCheckFailedError() = 0;
   virtual void ShowUnrecoverableCrypthomeErrorDialog() = 0;
   virtual void LoadUsers(const user_manager::UserList& users,
@@ -132,18 +120,6 @@ class LoginDisplayWebUIHandler {
 // An interface for SigninScreenHandler to call WebUILoginDisplay.
 class SigninScreenHandlerDelegate {
  public:
-  // --------------- Password change flow methods.
-  // Cancels current password changed flow.
-  virtual void CancelPasswordChangedFlow() = 0;
-
-  // Decrypt cryptohome using user provided |old_password|
-  // and migrate to new password.
-  virtual void MigrateUserData(const std::string& old_password) = 0;
-
-  // Ignore password change, remove existing cryptohome and
-  // force full sync of user data.
-  virtual void ResyncUserData() = 0;
-
   // --------------- Sign in/out methods.
   // Sign in using username and password specified as a part of |user_context|.
   // Used for both known and new users.
@@ -250,7 +226,7 @@ class SigninScreenHandler
       input_method::InputMethodManager::State* ime_state);
 
   // Shows the sign in screen.
-  void Show(const LoginScreenContext& context);
+  void Show(const LoginScreenContext& context, bool oobe_ui);
 
   // Sets delegate to be used by the handler. It is guaranteed that valid
   // delegate is set before Show() method will be called.
@@ -305,6 +281,7 @@ class SigninScreenHandler
   friend class GaiaScreenHandler;
   friend class ReportDnsCacheClearedOnUIThread;
   friend class SupervisedUserCreationScreenHandler;
+  friend class LoginDisplayHostMojo;
 
   void ShowImpl();
 
@@ -345,9 +322,6 @@ class SigninScreenHandler
   void ShowPasswordChangedDialog(bool show_password_error,
                                  const std::string& email) override;
   void ShowErrorScreen(LoginDisplay::SigninError error_id) override;
-  void ShowSigninScreenForTest(const std::string& username,
-                               const std::string& password,
-                               const std::string& services) override;
   void ShowWhitelistCheckFailedError() override;
   void ShowUnrecoverableCrypthomeErrorDialog() override;
   void LoadUsers(const user_manager::UserList& users,
@@ -387,6 +361,8 @@ class SigninScreenHandler
   void HandleAuthenticateUser(const AccountId& account_id,
                               const std::string& password,
                               bool authenticated_by_pin);
+  void HandleCompleteOfflineAuthentication(const std::string& email,
+                                           const std::string& password);
   void HandleAttemptUnlock(const std::string& username);
   void HandleLaunchIncognito();
   void HandleLaunchPublicSession(const AccountId& account_id,
@@ -433,6 +409,11 @@ class SigninScreenHandler
   void HandleRequestNewNoteAction(const std::string& request_type);
   void HandleNewNoteLaunchAnimationDone();
   void HandleCloseLockScreenApp();
+
+  // Implements user sign-in.
+  void AuthenticateExistingUser(const AccountId& account_id,
+                                const std::string& password,
+                                bool authenticated_by_pin);
 
   // Sends the list of |keyboard_layouts| available for the |locale| that is
   // currently selected for the public session identified by |user_id|.

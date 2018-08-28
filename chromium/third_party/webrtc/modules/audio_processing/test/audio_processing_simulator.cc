@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/audio/echo_canceller3_factory.h"
 #include "common_audio/include/audio_util.h"
 #include "modules/audio_processing/aec_dump/aec_dump_factory.h"
@@ -26,7 +27,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/json.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/stringutils.h"
 
 namespace webrtc {
@@ -257,6 +257,8 @@ EchoCanceller3Config ParseAec3Parameters(const std::string& filename) {
   if (rtc::GetValueFromJsonObject(root, "echo_removal_control", &section)) {
     Json::Value subsection;
     if (rtc::GetValueFromJsonObject(section, "gain_rampup", &subsection)) {
+      ReadParam(subsection, "initial_gain",
+                &cfg.echo_removal_control.gain_rampup.initial_gain);
       ReadParam(subsection, "first_non_zero_gain",
                 &cfg.echo_removal_control.gain_rampup.first_non_zero_gain);
       ReadParam(subsection, "non_zero_gain_blocks",
@@ -266,6 +268,8 @@ EchoCanceller3Config ParseAec3Parameters(const std::string& filename) {
     }
     ReadParam(section, "has_clock_drift",
               &cfg.echo_removal_control.has_clock_drift);
+    ReadParam(section, "linear_and_stable_echo_path",
+              &cfg.echo_removal_control.linear_and_stable_echo_path);
   }
 
   if (rtc::GetValueFromJsonObject(root, "echo_model", &section)) {
@@ -281,6 +285,10 @@ EchoCanceller3Config ParseAec3Parameters(const std::string& filename) {
               &cfg.echo_model.render_pre_window_size);
     ReadParam(section, "render_post_window_size",
               &cfg.echo_model.render_post_window_size);
+    ReadParam(section, "render_pre_window_size_init",
+              &cfg.echo_model.render_pre_window_size_init);
+    ReadParam(section, "render_post_window_size_init",
+              &cfg.echo_model.render_post_window_size_init);
     ReadParam(section, "nonlinear_hold", &cfg.echo_model.nonlinear_hold);
     ReadParam(section, "nonlinear_release", &cfg.echo_model.nonlinear_release);
   }
@@ -347,7 +355,7 @@ AudioProcessingSimulator::AudioProcessingSimulator(
     std::unique_ptr<AudioProcessingBuilder> ap_builder)
     : settings_(settings),
       ap_builder_(ap_builder ? std::move(ap_builder)
-                             : rtc::MakeUnique<AudioProcessingBuilder>()),
+                             : absl::make_unique<AudioProcessingBuilder>()),
       analog_mic_level_(settings.initial_mic_level),
       fake_recording_device_(
           settings.initial_mic_level,
@@ -571,12 +579,6 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
   Config config;
   AudioProcessing::Config apm_config;
   std::unique_ptr<EchoControlFactory> echo_control_factory;
-  if (settings_.use_bf && *settings_.use_bf) {
-    config.Set<Beamforming>(new Beamforming(
-        true, ParseArrayGeometry(*settings_.microphone_positions),
-        SphericalPointf(DegreesToRadians(settings_.target_angle_degrees), 0.f,
-                        1.f)));
-  }
   if (settings_.use_ts) {
     config.Set<ExperimentalNs>(new ExperimentalNs(*settings_.use_ts));
   }
@@ -613,7 +615,11 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
   config.Set<DelayAgnostic>(new DelayAgnostic(!settings_.use_delay_agnostic ||
                                               *settings_.use_delay_agnostic));
   config.Set<ExperimentalAgc>(new ExperimentalAgc(
-      !settings_.use_experimental_agc || *settings_.use_experimental_agc));
+      !settings_.use_experimental_agc || *settings_.use_experimental_agc,
+      !!settings_.use_experimental_agc_agc2_level_estimator &&
+          *settings_.use_experimental_agc_agc2_level_estimator,
+      !!settings_.use_experimental_agc_agc2_digital_adaptive &&
+          *settings_.use_experimental_agc_agc2_digital_adaptive));
   if (settings_.use_ed) {
     apm_config.residual_echo_detector.enabled = *settings_.use_ed;
   }

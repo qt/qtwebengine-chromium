@@ -16,11 +16,7 @@ namespace rx
 #define EGL_NO_CONFIG ((EGLConfig)0)
 
 DisplayEGL::DisplayEGL(const egl::DisplayState &state)
-    : DisplayGL(state),
-      mEGL(nullptr),
-      mConfig(EGL_NO_CONFIG),
-      mContext(EGL_NO_CONTEXT),
-      mFunctionsGL(nullptr)
+    : DisplayGL(state), mEGL(nullptr), mConfig(EGL_NO_CONFIG)
 {
 }
 
@@ -35,7 +31,9 @@ std::string DisplayEGL::getVendorString() const
     return vendor;
 }
 
-egl::Error DisplayEGL::initializeContext(const egl::AttributeMap &eglAttributes)
+egl::Error DisplayEGL::initializeContext(EGLContext shareContext,
+                                         const egl::AttributeMap &eglAttributes,
+                                         EGLContext *outContext) const
 {
     gl::Version eglVersion(mEGL->majorVersion, mEGL->minorVersion);
 
@@ -86,11 +84,13 @@ egl::Error DisplayEGL::initializeContext(const egl::AttributeMap &eglAttributes)
         contextAttribLists.push_back({EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE});
     }
 
+    EGLContext context = EGL_NO_CONTEXT;
     for (const auto &attribList : contextAttribLists)
     {
-        mContext = mEGL->createContext(mConfig, EGL_NO_CONTEXT, attribList.data());
-        if (mContext != EGL_NO_CONTEXT)
+        context = mEGL->createContext(mConfig, shareContext, attribList.data());
+        if (context != EGL_NO_CONTEXT)
         {
+            *outContext = context;
             return egl::NoError();
         }
     }
@@ -104,12 +104,14 @@ void DisplayEGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
         mEGL->hasExtension("EGL_EXT_create_context_robustness");
 
     outExtensions->postSubBuffer = false;  // Since SurfaceEGL::postSubBuffer is not implemented
+    outExtensions->presentationTime      = mEGL->hasExtension("EGL_ANDROID_presentation_time");
 
     // Contexts are virtualized so textures can be shared globally
     outExtensions->displayTextureShareGroup = true;
 
-    // Surfaceless contexts are emulated even if there is no native support.
-    outExtensions->surfacelessContext = true;
+    // We will fallback to regular swap if swapBuffersWithDamage isn't
+    // supported, so indicate support here to keep validation happy.
+    outExtensions->swapBuffersWithDamage = true;
 
     DisplayGL::generateExtensions(outExtensions);
 }
@@ -119,8 +121,4 @@ void DisplayEGL::generateCaps(egl::Caps *outCaps) const
     outCaps->textureNPOT = true;  // Since we request GLES >= 2
 }
 
-const FunctionsGL *DisplayEGL::getFunctionsGL() const
-{
-    return mFunctionsGL;
-}
 }  // namespace rx

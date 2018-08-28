@@ -15,6 +15,7 @@
 
 #include "angle_gl.h"
 #include "common/MemoryBuffer.h"
+#include "common/PackedEnums.h"
 #include "common/angleutils.h"
 #include "libANGLE/Caps.h"
 #include "libANGLE/Constants.h"
@@ -22,7 +23,6 @@
 #include "libANGLE/Context_gles_1_0_autogen.h"
 #include "libANGLE/Error.h"
 #include "libANGLE/HandleAllocator.h"
-#include "libANGLE/PackedEnums.h"
 #include "libANGLE/RefCountObject.h"
 #include "libANGLE/ResourceMap.h"
 #include "libANGLE/VertexAttribute.h"
@@ -63,7 +63,22 @@ class TransformFeedback;
 class VertexArray;
 struct VertexAttribute;
 
-class Context final : angle::NonCopyable
+class ErrorSet : angle::NonCopyable
+{
+  public:
+    explicit ErrorSet(Context *context);
+    ~ErrorSet();
+
+    void handleError(const Error &error);
+    bool empty() const;
+    GLenum popError();
+
+  private:
+    Context *mContext;
+    std::set<GLenum> mErrors;
+};
+
+class Context final : public egl::LabeledObject, angle::NonCopyable
 {
   public:
     Context(rx::EGLImplFactory *implFactory,
@@ -77,6 +92,9 @@ class Context final : angle::NonCopyable
 
     egl::Error onDestroy(const egl::Display *display);
     ~Context();
+
+    void setLabel(EGLLabelKHR label) override;
+    EGLLabelKHR getLabel() const override;
 
     egl::Error makeCurrent(egl::Display *display, egl::Surface *surface);
     egl::Error releaseSurface(const egl::Display *display);
@@ -534,23 +552,23 @@ class Context final : angle::NonCopyable
     void clearBufferiv(GLenum buffer, GLint drawbuffer, const GLint *values);
     void clearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth, GLint stencil);
 
-    void drawArrays(GLenum mode, GLint first, GLsizei count);
-    void drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount);
+    void drawArrays(PrimitiveMode mode, GLint first, GLsizei count);
+    void drawArraysInstanced(PrimitiveMode mode, GLint first, GLsizei count, GLsizei instanceCount);
 
-    void drawElements(GLenum mode, GLsizei count, GLenum type, const void *indices);
-    void drawElementsInstanced(GLenum mode,
+    void drawElements(PrimitiveMode mode, GLsizei count, GLenum type, const void *indices);
+    void drawElementsInstanced(PrimitiveMode mode,
                                GLsizei count,
                                GLenum type,
                                const void *indices,
                                GLsizei instances);
-    void drawRangeElements(GLenum mode,
+    void drawRangeElements(PrimitiveMode mode,
                            GLuint start,
                            GLuint end,
                            GLsizei count,
                            GLenum type,
                            const void *indices);
-    void drawArraysIndirect(GLenum mode, const void *indirect);
-    void drawElementsIndirect(GLenum mode, GLenum type, const void *indirect);
+    void drawArraysIndirect(PrimitiveMode mode, const void *indirect);
+    void drawElementsIndirect(PrimitiveMode mode, GLenum type, const void *indirect);
 
     void blitFramebuffer(GLint srcX0,
                          GLint srcY0,
@@ -868,7 +886,7 @@ class Context final : angle::NonCopyable
                          GLbitfield access);
     void flushMappedBufferRange(BufferBinding target, GLintptr offset, GLsizeiptr length);
 
-    void beginTransformFeedback(GLenum primitiveMode);
+    void beginTransformFeedback(PrimitiveMode primitiveMode);
 
     bool hasActiveTransformFeedback(GLuint program) const;
 
@@ -1374,11 +1392,13 @@ class Context final : angle::NonCopyable
     void memoryBarrier(GLbitfield barriers);
     void memoryBarrierByRegion(GLbitfield barriers);
 
+    void framebufferTexture(GLenum target, GLenum attachment, GLuint texture, GLint level);
+
     // Consumes the error.
-    void handleError(const Error &error) const;
+    void handleError(const Error &error);
 
     GLenum getError();
-    void markContextLost() const;
+    void markContextLost();
     bool isContextLost() const;
     GLenum getGraphicsResetStatus();
     bool isResetNotificationEnabled();
@@ -1399,8 +1419,10 @@ class Context final : angle::NonCopyable
     rx::ContextImpl *getImplementation() const { return mImplementation.get(); }
     const Workarounds &getWorkarounds() const;
 
-    Error getScratchBuffer(size_t requestedSizeBytes, angle::MemoryBuffer **scratchBufferOut) const;
-    Error getZeroFilledBuffer(size_t requstedSizeBytes, angle::MemoryBuffer **zeroBufferOut) const;
+    ANGLE_NO_DISCARD bool getScratchBuffer(size_t requestedSizeBytes,
+                                           angle::MemoryBuffer **scratchBufferOut) const;
+    ANGLE_NO_DISCARD bool getZeroFilledBuffer(size_t requstedSizeBytes,
+                                              angle::MemoryBuffer **zeroBufferOut) const;
 
     Error prepareForDispatch();
 
@@ -1412,6 +1434,7 @@ class Context final : angle::NonCopyable
     // Notification for a state change in a Texture.
     void onTextureChange(const Texture *texture);
 
+    bool hasBeenCurrent() const { return mHasBeenCurrent; }
     egl::Display *getCurrentDisplay() const { return mCurrentDisplay; }
     egl::Surface *getCurrentDrawSurface() const { return mCurrentSurface; }
     egl::Surface *getCurrentReadSurface() const { return mCurrentSurface; }
@@ -1463,8 +1486,16 @@ class Context final : angle::NonCopyable
     static int TexCoordArrayIndex(unsigned int unit);
     AttributesMask getVertexArraysAttributeMask() const;
 
+    // GL_KHR_parallel_shader_compile
+    void maxShaderCompilerThreads(GLuint count);
+
   private:
-    Error prepareForDraw();
+    void initialize();
+
+    bool noopDraw(PrimitiveMode mode, GLsizei count);
+    bool noopDrawInstanced(PrimitiveMode mode, GLsizei count, GLsizei instanceCount);
+
+    Error prepareForDraw(PrimitiveMode mode);
     Error prepareForClear(GLbitfield mask);
     Error prepareForClearBuffer(GLenum buffer, GLint drawbuffer);
     Error syncState();
@@ -1493,17 +1524,13 @@ class Context final : angle::NonCopyable
     void initVersionStrings();
     void initExtensionStrings();
 
-    Extensions generateSupportedExtensions(const egl::DisplayExtensions &displayExtensions,
-                                           const egl::ClientExtensions &clientExtensions,
-                                           bool robustResourceInit) const;
-    void initCaps(const egl::DisplayExtensions &displayExtensions,
-                  const egl::ClientExtensions &clientExtensions,
-                  bool robustResourceInit);
+    Extensions generateSupportedExtensions() const;
+    void initCaps();
     void updateCaps();
     void initWorkarounds();
 
-    LabeledObject *getLabeledObject(GLenum identifier, GLuint name) const;
-    LabeledObject *getLabeledObjectFromPtr(const void *ptr) const;
+    gl::LabeledObject *getLabeledObject(GLenum identifier, GLuint name) const;
+    gl::LabeledObject *getLabeledObjectFromPtr(const void *ptr) const;
 
     ContextState mState;
     bool mSkipValidation;
@@ -1518,6 +1545,8 @@ class Context final : angle::NonCopyable
     mutable std::array<uint8_t, kParamsBufferSize> mParamsBuffer;
 
     std::unique_ptr<rx::ContextImpl> mImplementation;
+
+    EGLLabelKHR mLabel;
 
     // Caps to use for validation
     Caps mCaps;
@@ -1560,24 +1589,24 @@ class Context final : angle::NonCopyable
     std::vector<const char *> mRequestableExtensionStrings;
 
     // Recorded errors
-    typedef std::set<GLenum> ErrorSet;
-    mutable ErrorSet mErrors;
+    ErrorSet mErrors;
 
     // GLES1 renderer state
     std::unique_ptr<GLES1Renderer> mGLES1Renderer;
 
     // Current/lost context flags
     bool mHasBeenCurrent;
-    mutable bool mContextLost;
-    mutable GLenum mResetStatus;
-    mutable bool mContextLostForced;
+    bool mContextLost;
+    GLenum mResetStatus;
+    bool mContextLostForced;
     GLenum mResetStrategy;
-    bool mRobustAccess;
+    const bool mRobustAccess;
+    const bool mSurfacelessSupported;
+    const bool mExplicitContextAvailable;
     egl::Surface *mCurrentSurface;
     egl::Display *mCurrentDisplay;
-    Framebuffer *mSurfacelessFramebuffer;
-    bool mWebGLContext;
-    bool mExtensionsEnabled;
+    const bool mWebGLContext;
+    const bool mExtensionsEnabled;
     MemoryProgramCache *mMemoryProgramCache;
 
     State::DirtyBits mTexImageDirtyBits;

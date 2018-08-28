@@ -81,6 +81,8 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
 
   void ScreenInfoChanged(const ScreenInfo& screen_info);
 
+  void OnZoomLevelChanged(double zoom_level);
+
   void UpdateCaptureSequenceNumber(uint32_t capture_sequence_number);
 
   // Indicates whether the guest should be focused.
@@ -112,7 +114,7 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
   bool SupportsInputMethod() const override;
   bool CanProcessDrag() const override;
   void UpdateAllLifecyclePhases() override {}
-  void Paint(blink::WebCanvas* canvas, const blink::WebRect& rect) override {}
+  void Paint(cc::PaintCanvas* canvas, const blink::WebRect& rect) override {}
   void UpdateGeometry(const blink::WebRect& window_rect,
                       const blink::WebRect& clip_rect,
                       const blink::WebRect& unobscured_rect,
@@ -176,6 +178,7 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
   }
   gfx::Rect FrameRectInPixels() const;
   float GetDeviceScaleFactor() const;
+  RenderWidget* GetMainWidget() const;
 
   const ScreenInfo& screen_info() const {
     return pending_visual_properties_.screen_info;
@@ -201,8 +204,8 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
                           const gfx::Size& min_size,
                           const gfx::Size& max_size);
   void OnDisableAutoResize(int browser_plugin_instance_id);
-  void OnSetChildFrameSurface(int instance_id,
-                              const viz::SurfaceInfo& surface_info);
+  void OnFirstSurfaceActivation(int instance_id,
+                                const viz::SurfaceInfo& surface_info);
   void OnSetContentsOpaque(int instance_id, bool opaque);
   void OnSetCursor(int instance_id, const WebCursor& cursor);
   void OnSetMouseLock(int instance_id, bool enable);

@@ -11,13 +11,15 @@
 #include <utility>
 #include <vector>
 
+#include "base/format_macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_scheduler/post_task.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
@@ -35,9 +37,12 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
-#include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
+#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+#include "services/network/test/test_shared_url_loader_factory.h"
+#include "services/network/test/test_url_loader_factory.h"
+#include "services/network/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -54,18 +59,6 @@ const int METHOD_GET = 0;
 const int METHOD_POST = 1;
 const int CACHE_MISS = 0;
 const int CACHE_HIT = 1;
-// Call |fetcher->OnURLFetchComplete()| as the URLFetcher would when
-// a response is received.  Params allow caller to set fake status.
-void FakeOnURLFetchComplete(net::TestURLFetcher* fetcher,
-                            int response_code,
-                            const std::string& response_body) {
-  fetcher->set_url(GURL());
-  fetcher->set_status(net::URLRequestStatus());
-  fetcher->set_response_code(response_code);
-  fetcher->SetResponseString(response_body);
-
-  fetcher->delegate()->OnURLFetchComplete(fetcher);
-}
 
 std::vector<FormStructure*> ToRawPointerVector(
     const std::vector<std::unique_ptr<FormStructure>>& list) {
@@ -81,7 +74,7 @@ std::vector<FormStructure*> ToRawPointerVector(
 // AutofillDownloadManager::Observer and creates an instance of
 // AutofillDownloadManager. Then it records responses to different initiated
 // requests, which are verified later. To mock network requests
-// TestURLFetcherFactory is used, which creates URLFetchers that do not
+// TestURLLoaderFactory is used, which creates SimpleURLLoaders that do not
 // go over the wire, but allow calling back HTTP responses directly.
 // The responses in test are out of order and verify: successful query request,
 // successful upload request, failed upload request.
@@ -89,10 +82,11 @@ class AutofillDownloadManagerTest : public AutofillDownloadManager::Observer,
                                     public testing::Test {
  public:
   AutofillDownloadManagerTest()
-      : request_context_(base::MakeRefCounted<net::TestURLRequestContextGetter>(
-            base::ThreadTaskRunnerHandle::Get())),
+      : test_shared_loader_factory_(
+            base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
+                &test_url_loader_factory_)),
         download_manager_(&driver_, this) {
-    driver_.SetURLRequestContext(request_context_.get());
+    driver_.SetSharedURLLoaderFactory(test_shared_loader_factory_);
   }
 
   void LimitCache(size_t cache_size) {
@@ -143,9 +137,19 @@ class AutofillDownloadManagerTest : public AutofillDownloadManager::Observer,
     ResponseData() : type_of_response(REQUEST_QUERY_FAILED), error(0) {}
   };
 
+  network::TestURLLoaderFactory::PendingRequest* GetPendingRequest(
+      size_t index = 0) {
+    if (index >= test_url_loader_factory_.pending_requests()->size())
+      return nullptr;
+    auto* request = &(*test_url_loader_factory_.pending_requests())[index];
+    DCHECK(request);
+    return request;
+  }
+
   base::MessageLoop message_loop_;
   std::list<ResponseData> responses_;
-  scoped_refptr<net::TestURLRequestContextGetter> request_context_;
+  scoped_refptr<network::SharedURLLoaderFactory> test_shared_loader_factory_;
+  network::TestURLLoaderFactory test_url_loader_factory_;
   TestAutofillDriver driver_;
   AutofillDownloadManager download_manager_;
 };
@@ -153,9 +157,6 @@ class AutofillDownloadManagerTest : public AutofillDownloadManager::Observer,
 TEST_F(AutofillDownloadManagerTest, QueryAndUploadTest) {
   base::test::ScopedFeatureList fl;
   fl.InitAndEnableFeature(features::kAutofillCacheQueryResponses);
-
-  // Create and register factory.
-  net::TestURLFetcherFactory factory;
 
   FormData form;
 
@@ -277,23 +278,24 @@ TEST_F(AutofillDownloadManagerTest, QueryAndUploadTest) {
   // Return them out of sequence.
 
   // Request 1: Successful upload.
-  net::TestURLFetcher* fetcher = factory.GetFetcherByID(1);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, net::HTTP_OK, std::string(responses[1]));
+  auto* request = GetPendingRequest(1);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, responses[1]);
   histogram.ExpectBucketCount("Autofill.Upload.HttpResponseCode", net::HTTP_OK,
                               1);
 
   // Request 2: Unsuccessful upload.
-  fetcher = factory.GetFetcherByID(2);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, net::HTTP_NOT_FOUND,
-                         std::string(responses[2]));
+  request = GetPendingRequest(2);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, network::CreateResourceResponseHead(net::HTTP_NOT_FOUND),
+      responses[2], network::URLLoaderCompletionStatus(net::OK));
   histogram.ExpectBucketCount("Autofill.Upload.HttpResponseCode",
                               net::HTTP_NOT_FOUND, 1);
+
   // Request 0: Successful query.
-  fetcher = factory.GetFetcherByID(0);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, net::HTTP_OK, std::string(responses[0]));
+  request = GetPendingRequest(0);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, responses[0]);
   EXPECT_EQ(3U, responses_.size());
   histogram.ExpectBucketCount("Autofill.Query.WasInCache", CACHE_MISS, 1);
   histogram.ExpectBucketCount("Autofill.Query.HttpResponseCode", net::HTTP_OK,
@@ -336,13 +338,14 @@ TEST_F(AutofillDownloadManagerTest, QueryAndUploadTest) {
   // Request with id 4, not successful.
   EXPECT_TRUE(
       download_manager_.StartQueryRequest(ToRawPointerVector(form_structures)));
-  fetcher = factory.GetFetcherByID(4);
-  ASSERT_TRUE(fetcher);
+  request = GetPendingRequest(4);
   histogram.ExpectUniqueSample("Autofill.ServerQueryResponse",
                                AutofillMetrics::QUERY_SENT, 2);
   histogram.ExpectUniqueSample("Autofill.Query.Method", METHOD_GET, 2);
-  FakeOnURLFetchComplete(fetcher, net::HTTP_INTERNAL_SERVER_ERROR,
-                         std::string(responses[0]));
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request,
+      network::CreateResourceResponseHead(net::HTTP_INTERNAL_SERVER_ERROR),
+      responses[0], network::URLLoaderCompletionStatus(net::OK));
   histogram.ExpectBucketCount("Autofill.Query.HttpResponseCode",
                               net::HTTP_INTERNAL_SERVER_ERROR, 1);
 
@@ -360,10 +363,13 @@ TEST_F(AutofillDownloadManagerTest, QueryAndUploadTest) {
   histogram.ExpectBucketCount("Autofill.ServerQueryResponse",
                               AutofillMetrics::QUERY_SENT, 3);
   histogram.ExpectBucketCount("Autofill.Query.Method", METHOD_GET, 3);
-  fetcher = factory.GetFetcherByID(5);
-  ASSERT_TRUE(fetcher);
-  fetcher->set_was_cached(true);
-  FakeOnURLFetchComplete(fetcher, net::HTTP_OK, std::string(responses[0]));
+  request = GetPendingRequest(5);
+
+  network::URLLoaderCompletionStatus status(net::OK);
+  status.exists_in_cache = true;
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, network::CreateResourceResponseHead(net::HTTP_OK), responses[0],
+      status);
 
   // Check Request 5.
   EXPECT_EQ(responses_.front().type_of_response,
@@ -388,16 +394,13 @@ TEST_F(AutofillDownloadManagerTest, QueryAndUploadTest) {
   histogram.ExpectBucketCount("Autofill.ServerQueryResponse",
                               AutofillMetrics::QUERY_SENT, 4);
   histogram.ExpectBucketCount("Autofill.Query.Method", METHOD_POST, 1);
-  fetcher = factory.GetFetcherByID(6);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, net::HTTP_OK, std::string(responses[0]));
+  request = GetPendingRequest(6);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, responses[0]);
   histogram.ExpectBucketCount("Autofill.Query.WasInCache", CACHE_MISS, 2);
 }
 
 TEST_F(AutofillDownloadManagerTest, BackoffLogic_Query) {
-  // Create and register factory.
-  net::TestURLFetcherFactory factory;
-
   FormData form;
   FormFieldData field;
   field.label = ASCIIToUTF16("address");
@@ -430,33 +433,38 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Query) {
   histogram.ExpectUniqueSample("Autofill.ServerQueryResponse",
                                AutofillMetrics::QUERY_SENT, 1);
 
-  net::TestURLFetcher* fetcher = factory.GetFetcherByID(0);
-  ASSERT_TRUE(fetcher);
+  auto* request = GetPendingRequest(0);
 
   // Request error incurs a retry after 1 second.
-  FakeOnURLFetchComplete(fetcher, net::HTTP_INTERNAL_SERVER_ERROR, "");
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request,
+      network::CreateResourceResponseHead(net::HTTP_INTERNAL_SERVER_ERROR), "",
+      network::URLLoaderCompletionStatus(net::OK));
+
   EXPECT_EQ(1U, responses_.size());
-  EXPECT_LT(download_manager_.fetcher_backoff_.GetTimeUntilRelease(),
+  EXPECT_LT(download_manager_.loader_backoff_.GetTimeUntilRelease(),
             base::TimeDelta::FromMilliseconds(1100));
+  base::RunLoop run_loop;
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated(),
+      FROM_HERE, run_loop.QuitClosure(),
       base::TimeDelta::FromMilliseconds(1100));
-  base::RunLoop().Run();
+  run_loop.Run();
 
   // Get the retried request.
-  fetcher = factory.GetFetcherByID(1);
-  ASSERT_TRUE(fetcher);
+  request = GetPendingRequest(1);
 
   // Next error incurs a retry after 2 seconds.
-  FakeOnURLFetchComplete(fetcher, net::HTTP_REQUEST_ENTITY_TOO_LARGE,
-                         "<html></html>");
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request,
+      network::CreateResourceResponseHead(net::HTTP_REQUEST_ENTITY_TOO_LARGE),
+      "<html></html>", network::URLLoaderCompletionStatus(net::OK));
+
   EXPECT_EQ(2U, responses_.size());
-  EXPECT_LT(download_manager_.fetcher_backoff_.GetTimeUntilRelease(),
+  EXPECT_LT(download_manager_.loader_backoff_.GetTimeUntilRelease(),
             base::TimeDelta::FromMilliseconds(2100));
 
   // There should not be an additional retry.
-  fetcher = factory.GetFetcherByID(2);
-  ASSERT_FALSE(fetcher);
+  ASSERT_EQ(test_url_loader_factory_.NumPending(), 0);
   histogram.ExpectBucketCount("Autofill.Query.HttpResponseCode",
                               net::HTTP_REQUEST_ENTITY_TOO_LARGE, 1);
   auto buckets = histogram.GetAllSamples("Autofill.Query.FailingPayloadSize");
@@ -465,9 +473,6 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Query) {
 }
 
 TEST_F(AutofillDownloadManagerTest, BackoffLogic_Upload) {
-  // Create and register factory.
-  net::TestURLFetcherFactory factory;
-
   FormData form;
   FormFieldData field;
   field.label = ASCIIToUTF16("address");
@@ -496,18 +501,21 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Upload) {
   EXPECT_TRUE(download_manager_.StartUploadRequest(
       *form_structure, true, ServerFieldTypeSet(), std::string(), true));
 
-  net::TestURLFetcher* fetcher = factory.GetFetcherByID(0);
-  ASSERT_TRUE(fetcher);
+  auto* request = GetPendingRequest(0);
 
   // Error incurs a retry after 1 second.
-  FakeOnURLFetchComplete(fetcher, net::HTTP_INTERNAL_SERVER_ERROR, "");
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request,
+      network::CreateResourceResponseHead(net::HTTP_INTERNAL_SERVER_ERROR), "",
+      network::URLLoaderCompletionStatus(net::OK));
   EXPECT_EQ(1U, responses_.size());
-  EXPECT_LT(download_manager_.fetcher_backoff_.GetTimeUntilRelease(),
+  EXPECT_LT(download_manager_.loader_backoff_.GetTimeUntilRelease(),
             base::TimeDelta::FromMilliseconds(1100));
+  base::RunLoop run_loop;
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated(),
+      FROM_HERE, run_loop.QuitClosure(),
       base::TimeDelta::FromMilliseconds(1100));
-  base::RunLoop().Run();
+  run_loop.Run();
 
   // Check that it was a failure.
   EXPECT_EQ(AutofillDownloadManagerTest::REQUEST_UPLOAD_FAILED,
@@ -519,9 +527,9 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Upload) {
   responses_.pop_front();
 
   // Get the retried request, and make it successful.
-  fetcher = factory.GetFetcherByID(1);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, net::HTTP_OK, "");
+  request = GetPendingRequest(1);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, "");
 
   // Check success of response.
   EXPECT_EQ(AutofillDownloadManagerTest::UPLOAD_SUCCESSFULL,
@@ -536,11 +544,12 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Upload) {
   base::HistogramTester histogram;
   EXPECT_TRUE(download_manager_.StartUploadRequest(
       *form_structure, true, ServerFieldTypeSet(), std::string(), true));
-  fetcher = factory.GetFetcherByID(2);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, net::HTTP_REQUEST_ENTITY_TOO_LARGE, "");
-  fetcher = factory.GetFetcherByID(3);
-  ASSERT_FALSE(fetcher);
+  request = GetPendingRequest(2);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request,
+      network::CreateResourceResponseHead(net::HTTP_REQUEST_ENTITY_TOO_LARGE),
+      "", network::URLLoaderCompletionStatus(net::OK));
+  ASSERT_EQ(test_url_loader_factory_.NumPending(), 0);
   histogram.ExpectBucketCount("Autofill.Upload.HttpResponseCode",
                               net::HTTP_REQUEST_ENTITY_TOO_LARGE, 1);
   auto buckets = histogram.GetAllSamples("Autofill.Upload.FailingPayloadSize");
@@ -549,9 +558,6 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Upload) {
 }
 
 TEST_F(AutofillDownloadManagerTest, QueryTooManyFieldsTest) {
-  // Create and register factory.
-  net::TestURLFetcherFactory factory;
-
   // Create a query that contains too many fields for the server.
   std::vector<FormData> forms(21);
   std::vector<std::unique_ptr<FormStructure>> form_structures;
@@ -572,9 +578,6 @@ TEST_F(AutofillDownloadManagerTest, QueryTooManyFieldsTest) {
 }
 
 TEST_F(AutofillDownloadManagerTest, QueryNotTooManyFieldsTest) {
-  // Create and register factory.
-  net::TestURLFetcherFactory factory;
-
   // Create a query that contains a lot of fields, but not too many for the
   // server.
   std::vector<FormData> forms(25);
@@ -596,9 +599,6 @@ TEST_F(AutofillDownloadManagerTest, QueryNotTooManyFieldsTest) {
 }
 
 TEST_F(AutofillDownloadManagerTest, CacheQueryTest) {
-  // Create and register factory.
-  net::TestURLFetcherFactory factory;
-
   FormData form;
 
   FormFieldData field;
@@ -668,9 +668,9 @@ TEST_F(AutofillDownloadManagerTest, CacheQueryTest) {
   // No responses yet
   EXPECT_EQ(0U, responses_.size());
 
-  net::TestURLFetcher* fetcher = factory.GetFetcherByID(0);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, 200, std::string(responses[0]));
+  auto* request = GetPendingRequest(0);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, responses[0]);
   ASSERT_EQ(1U, responses_.size());
   EXPECT_EQ(responses[0], responses_.front().response);
 
@@ -694,9 +694,9 @@ TEST_F(AutofillDownloadManagerTest, CacheQueryTest) {
   // No responses yet
   EXPECT_EQ(0U, responses_.size());
 
-  fetcher = factory.GetFetcherByID(1);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, 200, std::string(responses[1]));
+  request = GetPendingRequest(1);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, responses[1]);
   ASSERT_EQ(1U, responses_.size());
   EXPECT_EQ(responses[1], responses_.front().response);
 
@@ -708,9 +708,9 @@ TEST_F(AutofillDownloadManagerTest, CacheQueryTest) {
   histogram.ExpectUniqueSample("Autofill.ServerQueryResponse",
                                AutofillMetrics::QUERY_SENT, 4);
 
-  fetcher = factory.GetFetcherByID(2);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, 200, std::string(responses[2]));
+  request = GetPendingRequest(2);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, responses[2]);
   ASSERT_EQ(1U, responses_.size());
   EXPECT_EQ(responses[2], responses_.front().response);
 
@@ -741,9 +741,9 @@ TEST_F(AutofillDownloadManagerTest, CacheQueryTest) {
   // No responses yet
   EXPECT_EQ(0U, responses_.size());
 
-  fetcher = factory.GetFetcherByID(3);
-  ASSERT_TRUE(fetcher);
-  FakeOnURLFetchComplete(fetcher, 200, std::string(responses[0]));
+  request = GetPendingRequest(3);
+  test_url_loader_factory_.SimulateResponseWithoutRemovingFromPendingList(
+      request, responses[0]);
   ASSERT_EQ(1U, responses_.size());
   EXPECT_EQ(responses[0], responses_.front().response);
 }
@@ -767,10 +767,10 @@ class AutofillQueryTest : public AutofillDownloadManager::Observer,
         server_.base_url().Resolve("/tbproxy/af/").spec().c_str());
 
     // Intialize the autofill driver.
-    request_context_ = base::MakeRefCounted<net::TestURLRequestContextGetter>(
-        scoped_task_environment_.GetMainThreadTaskRunner());
+    shared_url_loader_factory_ =
+        base::MakeRefCounted<network::TestSharedURLLoaderFactory>();
     driver_ = std::make_unique<TestAutofillDriver>();
-    driver_->SetURLRequestContext(request_context_.get());
+    driver_->SetSharedURLLoaderFactory(shared_url_loader_factory_);
   }
 
   void TearDown() override {
@@ -800,7 +800,12 @@ class AutofillQueryTest : public AutofillDownloadManager::Observer,
     response->set_code(net::HTTP_OK);
     response->set_content(proto.SerializeAsString());
     response->set_content_type("text/proto");
-    response->AddCustomHeader("Cache-Control", "max-age=86400");
+    response->AddCustomHeader(
+        "Cache-Control",
+        base::StringPrintf(
+            "max-age=%" PRId64,
+            base::TimeDelta::FromMilliseconds(cache_expiration_in_milliseconds_)
+                .InSeconds()));
     return response;
   }
 
@@ -821,9 +826,10 @@ class AutofillQueryTest : public AutofillDownloadManager::Observer,
   base::test::ScopedCommandLine scoped_command_line_;
   base::test::ScopedFeatureList scoped_feature_list_;
   EmbeddedTestServer server_;
+  int cache_expiration_in_milliseconds_ = 100000;
   std::unique_ptr<base::RunLoop> run_loop_;
   size_t call_count_ = 0;
-  scoped_refptr<net::TestURLRequestContextGetter> request_context_;
+  scoped_refptr<network::TestSharedURLLoaderFactory> shared_url_loader_factory_;
   std::unique_ptr<TestAutofillDriver> driver_;
 };
 
@@ -843,8 +849,9 @@ TEST_F(AutofillQueryTest, CacheableResponse) {
 
   // Query for the form. This should go to the embedded server.
   {
-    SCOPED_TRACE("Firstl Query");
+    SCOPED_TRACE("First Query");
     base::HistogramTester histogram;
+    call_count_ = 0;
     ASSERT_NO_FATAL_FAILURE(SendQueryRequest(form_structures));
     EXPECT_EQ(1u, call_count_);
     histogram.ExpectBucketCount("Autofill.ServerQueryResponse",
@@ -853,14 +860,68 @@ TEST_F(AutofillQueryTest, CacheableResponse) {
     histogram.ExpectBucketCount("Autofill.Query.WasInCache", CACHE_MISS, 1);
   }
 
-  // Query again for the form. This should go to the local cache.
+  // Query again the next day. This should go to the cache, since the max-age
+  // for the cached response is 2 days.
   {
     SCOPED_TRACE("Second Query");
     base::HistogramTester histogram;
+    call_count_ = 0;
     ASSERT_NO_FATAL_FAILURE(SendQueryRequest(form_structures));
-    EXPECT_EQ(1u, call_count_);
+    EXPECT_EQ(0u, call_count_);
+    histogram.ExpectBucketCount("Autofill.ServerQueryResponse",
+                                AutofillMetrics::QUERY_SENT, 1);
     histogram.ExpectBucketCount("Autofill.Query.Method", METHOD_GET, 1);
     histogram.ExpectBucketCount("Autofill.Query.WasInCache", CACHE_HIT, 1);
+  }
+}
+
+TEST_F(AutofillQueryTest, ExpiredCacheInResponse) {
+  FormFieldData field;
+  field.label = ASCIIToUTF16("First Name:");
+  field.name = ASCIIToUTF16("firstname");
+  field.form_control_type = "text";
+
+  FormData form;
+  form.fields.push_back(field);
+
+  std::vector<std::unique_ptr<FormStructure>> form_structures;
+  form_structures.push_back(std::make_unique<FormStructure>(form));
+
+  // Set the cache expiration interval to 0.
+  cache_expiration_in_milliseconds_ = 0;
+
+  // Query for the form. This should go to the embedded server.
+  {
+    SCOPED_TRACE("First Query");
+    base::HistogramTester histogram;
+    call_count_ = 0;
+    ASSERT_NO_FATAL_FAILURE(SendQueryRequest(form_structures));
+    EXPECT_EQ(1u, call_count_);
+    histogram.ExpectBucketCount("Autofill.ServerQueryResponse",
+                                AutofillMetrics::QUERY_SENT, 1);
+    histogram.ExpectBucketCount("Autofill.Query.Method", METHOD_GET, 1);
+    histogram.ExpectBucketCount("Autofill.Query.WasInCache", CACHE_MISS, 1);
+  }
+
+  // The cache entry had a max age of 0 ms, so delaying only a few milliseconds
+  // ensures the cache expires and no request are served by cached content
+  // (ie this should go to the embedded server).
+  base::RunLoop run_loop;
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, run_loop.QuitClosure(),
+      base::TimeDelta::FromMilliseconds(100));
+  run_loop.Run();
+
+  {
+    SCOPED_TRACE("Second Query");
+    base::HistogramTester histogram;
+    call_count_ = 0;
+    ASSERT_NO_FATAL_FAILURE(SendQueryRequest(form_structures));
+    EXPECT_EQ(1u, call_count_);
+    histogram.ExpectBucketCount("Autofill.ServerQueryResponse",
+                                AutofillMetrics::QUERY_SENT, 1);
+    histogram.ExpectBucketCount("Autofill.Query.Method", METHOD_GET, 1);
+    histogram.ExpectBucketCount("Autofill.Query.WasInCache", CACHE_MISS, 1);
   }
 }
 

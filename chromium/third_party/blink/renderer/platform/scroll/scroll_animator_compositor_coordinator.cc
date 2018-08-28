@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "cc/animation/scroll_offset_animation_curve.h"
+#include "cc/layers/picture_layer.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation_host.h"
@@ -230,13 +231,13 @@ ScrollAnimatorCompositorCoordinator::GetCompositorAnimation() const {
 
 FloatPoint ScrollAnimatorCompositorCoordinator::CompositorOffsetFromBlinkOffset(
     ScrollOffset offset) {
-  return GetScrollableArea()->ScrollOrigin() + offset;
+  return GetScrollableArea()->ScrollOffsetToPosition(offset);
 }
 
 ScrollOffset
 ScrollAnimatorCompositorCoordinator::BlinkOffsetFromCompositorOffset(
-    FloatPoint offset) {
-  return offset - GetScrollableArea()->ScrollOrigin();
+    FloatPoint position) {
+  return GetScrollableArea()->ScrollPositionToOffset(position);
 }
 
 bool ScrollAnimatorCompositorCoordinator::HasImplOnlyAnimationUpdate() const {

@@ -29,7 +29,10 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESOURCE_REQUEST_H_
 
 #include <memory>
+#include "base/macros.h"
 #include "base/optional.h"
+#include "base/time/time.h"
+#include "base/unguessable_token.h"
 #include "services/network/public/mojom/cors.mojom-blink.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
@@ -39,23 +42,18 @@
 #include "third_party/blink/public/platform/web_content_security_policy_struct.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_priority.h"
-#include "third_party/blink/renderer/platform/network/encoded_form_data.h"
 #include "third_party/blink/renderer/platform/network/http_header_map.h"
 #include "third_party/blink/renderer/platform/network/http_names.h"
 #include "third_party/blink/renderer/platform/network/http_parsers.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
-#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
+#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
-enum InputToLoadPerfMetricReportPolicy : uint8_t {
-  kNoReport,    // Don't report metrics for this ResourceRequest.
-  kReportLink,  // Report metrics for this request as initiated by a link click.
-  kReportIntent,  // Report metrics for this request as initiated by an intent.
-};
-
+class EncodedFormData;
+class SecurityOrigin;
 struct CrossThreadResourceRequestData;
 
 // A ResourceRequest is a "request" object for ResourceLoader. Conceptually
@@ -84,6 +82,8 @@ class PLATFORM_EXPORT ResourceRequest final {
   ResourceRequest(const ResourceRequest&);
   ResourceRequest& operator=(const ResourceRequest&);
 
+  ~ResourceRequest();
+
   // Constructs a new ResourceRequest for a redirect from this instance.
   std::unique_ptr<ResourceRequest> CreateRedirectRequest(
       const KURL& new_url,
@@ -106,8 +106,8 @@ class PLATFORM_EXPORT ResourceRequest final {
   mojom::FetchCacheMode GetCacheMode() const;
   void SetCacheMode(mojom::FetchCacheMode);
 
-  double TimeoutInterval() const;  // May return 0 when using platform default.
-  void SetTimeoutInterval(double);
+  base::TimeDelta TimeoutInterval() const;
+  void SetTimeoutInterval(base::TimeDelta);
 
   const KURL& SiteForCookies() const;
   void SetSiteForCookies(const KURL&);
@@ -204,12 +204,6 @@ class PLATFORM_EXPORT ResourceRequest final {
   // True if request was user initiated.
   bool HasUserGesture() const { return has_user_gesture_; }
   void SetHasUserGesture(bool);
-
-  // True if request should be downloaded to file.
-  bool DownloadToFile() const { return download_to_file_; }
-  void SetDownloadToFile(bool download_to_file) {
-    download_to_file_ = download_to_file;
-  }
 
   // True if request shuold be downloaded to blob.
   bool DownloadToBlob() const { return download_to_blob_; }
@@ -329,11 +323,6 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool WasDiscarded() const { return was_discarded_; }
   void SetWasDiscarded(bool was_discarded) { was_discarded_ = was_discarded; }
 
-  double UiStartTime() const { return ui_start_time_; }
-  void SetUIStartTime(double ui_start_time_seconds) {
-    ui_start_time_ = ui_start_time_seconds;
-  }
-
   // https://wicg.github.io/cors-rfc1918/#external-request
   bool IsExternalRequest() const { return is_external_request_; }
   void SetExternalRequestStateFromRequestorAddressSpace(mojom::IPAddressSpace);
@@ -343,14 +332,6 @@ class PLATFORM_EXPORT ResourceRequest final {
   }
   void SetCORSPreflightPolicy(network::mojom::CORSPreflightPolicy policy) {
     cors_preflight_policy_ = policy;
-  }
-
-  InputToLoadPerfMetricReportPolicy InputPerfMetricReportPolicy() const {
-    return input_perf_metric_report_policy_;
-  }
-  void SetInputPerfMetricReportPolicy(
-      InputToLoadPerfMetricReportPolicy input_perf_metric_report_policy) {
-    input_perf_metric_report_policy_ = input_perf_metric_report_policy;
   }
 
   void SetRedirectStatus(RedirectStatus status) { redirect_status_ = status; }
@@ -366,11 +347,6 @@ class PLATFORM_EXPORT ResourceRequest final {
   void SetNavigationStartTime(TimeTicks);
   TimeTicks NavigationStartTime() const { return navigation_start_; }
 
-  void SetIsSameDocumentNavigation(bool is_same_document) {
-    is_same_document_navigation_ = is_same_document;
-  }
-  bool IsSameDocumentNavigation() const { return is_same_document_navigation_; }
-
   void SetIsAdResource() { is_ad_resource_ = true; }
   bool IsAdResource() const { return is_ad_resource_; }
 
@@ -381,6 +357,25 @@ class PLATFORM_EXPORT ResourceRequest final {
     return initiator_csp_;
   }
 
+  void SetUpgradeIfInsecure(bool upgrade_if_insecure) {
+    upgrade_if_insecure_ = upgrade_if_insecure;
+  }
+  bool UpgradeIfInsecure() const { return upgrade_if_insecure_; }
+
+  void SetAllowStaleResponse(bool value) { allow_stale_response_ = value; }
+  bool AllowsStaleResponse() const { return allow_stale_response_; }
+
+  const base::Optional<base::UnguessableToken>& GetDevToolsToken() const {
+    return devtools_token_;
+  }
+  void SetDevToolsToken(
+      const base::Optional<base::UnguessableToken>& devtools_token) {
+    devtools_token_ = devtools_token;
+  }
+
+  void SetOriginPolicy(const String& policy) { origin_policy_ = policy; }
+  const String& GetOriginPolicy() const { return origin_policy_; }
+
  private:
   using SharableExtraData =
       base::RefCountedData<std::unique_ptr<WebURLRequest::ExtraData>>;
@@ -390,8 +385,8 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool NeedsHTTPOrigin() const;
 
   KURL url_;
-  double timeout_interval_;  // 0 is a magic value for platform default on
-                             // platforms that have one.
+  // TimeDelta::Max() represents the default timeout on platforms that have one.
+  base::TimeDelta timeout_interval_;
   KURL site_for_cookies_;
 
   // The SecurityOrigin specified by the ResourceLoaderOptions in case e.g.
@@ -408,11 +403,11 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool report_upload_progress_ : 1;
   bool report_raw_headers_ : 1;
   bool has_user_gesture_ : 1;
-  bool download_to_file_ : 1;
   bool download_to_blob_ : 1;
   bool use_stream_on_response_ : 1;
   bool keepalive_ : 1;
   bool should_reset_app_cache_ : 1;
+  bool allow_stale_response_ : 1;
   mojom::FetchCacheMode cache_mode_;
   bool skip_service_worker_ : 1;
   ResourceLoadPriority priority_;
@@ -433,22 +428,24 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool did_set_http_referrer_;
   bool check_for_browser_side_navigation_;
   bool was_discarded_;
-  double ui_start_time_;
   bool is_external_request_;
   network::mojom::CORSPreflightPolicy cors_preflight_policy_;
-  bool is_same_document_navigation_;
-  InputToLoadPerfMetricReportPolicy input_perf_metric_report_policy_;
   RedirectStatus redirect_status_;
   base::Optional<String> suggested_filename_;
 
   mutable CacheControlHeader cache_control_header_cache_;
 
-  static double default_timeout_interval_;
+  static base::TimeDelta default_timeout_interval_;
 
   TimeTicks navigation_start_;
 
   bool is_ad_resource_ = false;
   WebContentSecurityPolicyList initiator_csp_;
+
+  bool upgrade_if_insecure_ = false;
+
+  base::Optional<base::UnguessableToken> devtools_token_;
+  String origin_policy_;
 };
 
 // This class is needed to copy a ResourceRequest across threads, because it
@@ -459,16 +456,18 @@ class PLATFORM_EXPORT ResourceRequest final {
 //    threads (e.g., AtomicString)
 //  - Non-simple members need explicit copying (e.g., String::IsolatedCopy,
 //    KURL::Copy) rather than the copy constructor or the assignment operator.
-struct CrossThreadResourceRequestData {
-  WTF_MAKE_NONCOPYABLE(CrossThreadResourceRequestData);
+struct PLATFORM_EXPORT CrossThreadResourceRequestData {
+  DISALLOW_COPY_AND_ASSIGN(CrossThreadResourceRequestData);
   USING_FAST_MALLOC(CrossThreadResourceRequestData);
 
  public:
-  CrossThreadResourceRequestData() = default;
+  CrossThreadResourceRequestData();
+  ~CrossThreadResourceRequestData();
+
   KURL url_;
 
   mojom::FetchCacheMode cache_mode_;
-  double timeout_interval_;
+  base::TimeDelta timeout_interval_;
   KURL site_for_cookies_;
   scoped_refptr<const SecurityOrigin> requestor_origin_;
 
@@ -478,7 +477,6 @@ struct CrossThreadResourceRequestData {
   bool allow_stored_credentials_;
   bool report_upload_progress_;
   bool has_user_gesture_;
-  bool download_to_file_;
   bool download_to_blob_;
   bool skip_service_worker_;
   bool use_stream_on_response_;
@@ -500,14 +498,14 @@ struct CrossThreadResourceRequestData {
   ReferrerPolicy referrer_policy_;
   bool did_set_http_referrer_;
   bool check_for_browser_side_navigation_;
-  double ui_start_time_;
   bool is_external_request_;
   network::mojom::CORSPreflightPolicy cors_preflight_policy_;
-  InputToLoadPerfMetricReportPolicy input_perf_metric_report_policy_;
   ResourceRequest::RedirectStatus redirect_status_;
   base::Optional<String> suggested_filename_;
   bool is_ad_resource_;
   WebContentSecurityPolicyList navigation_csp_;
+  bool upgrade_if_insecure_;
+  base::Optional<base::UnguessableToken> devtools_token_;
 };
 
 }  // namespace blink

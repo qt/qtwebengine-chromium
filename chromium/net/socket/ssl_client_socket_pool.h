@@ -206,7 +206,7 @@ class NET_EXPORT_PRIVATE SSLClientSocketPool
                     const SocketTag& socket_tag,
                     RespectLimits respect_limits,
                     ClientSocketHandle* handle,
-                    const CompletionCallback& callback,
+                    CompletionOnceCallback callback,
                     const NetLogWithSource& net_log) override;
 
   void RequestSockets(const std::string& group_name,
@@ -305,7 +305,7 @@ class NET_EXPORT_PRIVATE SSLClientSocketPool
   SOCKSClientSocketPool* const socks_pool_;
   HttpProxyClientSocketPool* const http_proxy_pool_;
   PoolBase base_;
-  const scoped_refptr<SSLConfigService> ssl_config_service_;
+  SSLConfigService* const ssl_config_service_;
 
   DISALLOW_COPY_AND_ASSIGN(SSLClientSocketPool);
 };

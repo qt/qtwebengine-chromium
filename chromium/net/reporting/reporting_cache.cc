@@ -71,6 +71,7 @@ class ReportingCacheImpl : public ReportingCache {
   }
 
   void AddReport(const GURL& url,
+                 const std::string& user_agent,
                  const std::string& group,
                  const std::string& type,
                  std::unique_ptr<const base::Value> body,
@@ -78,7 +79,7 @@ class ReportingCacheImpl : public ReportingCache {
                  base::TimeTicks queued,
                  int attempts) override {
     auto report = std::make_unique<ReportingReport>(
-        url, group, type, std::move(body), depth, queued, attempts);
+        url, user_agent, group, type, std::move(body), depth, queued, attempts);
 
     auto inserted =
         reports_.insert(std::make_pair(report.get(), std::move(report)));
@@ -197,27 +198,19 @@ class ReportingCacheImpl : public ReportingCache {
     context_->NotifyCacheUpdated();
   }
 
-  void IncrementEndpointDeliveries(
-      const GURL& endpoint,
-      const std::vector<const ReportingReport*>& reports,
-      bool successful) override {
-    std::unordered_map<const ReportingClient*, int> reports_per_client;
-    for (const ReportingReport* report : reports) {
-      DCHECK(base::ContainsKey(reports_, report));
-      url::Origin origin = url::Origin::Create(report->url);
-      const ReportingClient* client =
-          GetClientByOriginAndEndpoint(origin, endpoint);
-      DCHECK(client);
-      reports_per_client[client]++;
-    }
-
-    for (const auto& client_and_report_count : reports_per_client) {
-      auto& metadata = client_metadata_[client_and_report_count.first];
+  void IncrementEndpointDeliveries(const url::Origin& origin,
+                                   const GURL& endpoint,
+                                   int reports_delivered,
+                                   bool successful) override {
+    const ReportingClient* client =
+        GetClientByOriginAndEndpoint(origin, endpoint);
+    if (client) {
+      auto& metadata = client_metadata_[client];
       metadata.stats.attempted_uploads++;
-      metadata.stats.attempted_reports += client_and_report_count.second;
+      metadata.stats.attempted_reports += reports_delivered;
       if (successful) {
         metadata.stats.successful_uploads++;
-        metadata.stats.successful_reports += client_and_report_count.second;
+        metadata.stats.successful_reports += reports_delivered;
       }
     }
   }
@@ -292,10 +285,7 @@ class ReportingCacheImpl : public ReportingCache {
     context_->NotifyCacheUpdated();
   }
 
-  void MarkClientUsed(const url::Origin& origin,
-                      const GURL& endpoint) override {
-    const ReportingClient* client =
-        GetClientByOriginAndEndpoint(origin, endpoint);
+  void MarkClientUsed(const ReportingClient* client) override {
     DCHECK(client);
     client_metadata_[client].last_used = tick_clock()->NowTicks();
   }
@@ -390,7 +380,7 @@ class ReportingCacheImpl : public ReportingCache {
     }
 
     // If no clients were found, try successive superdomain suffixes until a
-    // client with include-subdomains is found or there are no more domain
+    // client with include_subdomains is found or there are no more domain
     // components left.
     std::string domain = origin.host();
     while (clients_out->empty() && !domain.empty()) {
@@ -629,7 +619,7 @@ class ReportingCacheImpl : public ReportingCache {
   std::map<url::Origin, std::map<GURL, std::unique_ptr<ReportingClient>>>
       clients_;
 
-  // References but does not own all clients with include-subdomains set, keyed
+  // References but does not own all clients with include_subdomains set, keyed
   // by domain name.
   std::unordered_map<std::string, std::unordered_set<const ReportingClient*>>
       wildcard_clients_;

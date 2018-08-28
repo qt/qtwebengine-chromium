@@ -77,10 +77,52 @@ bool SkImage_pinAsTexture(const SkImage*, GrContext*);
 void SkImage_unpinAsTexture(const SkImage*, GrContext*);
 
 /**
+ *  Returns the bounds of the image relative to its encoded buffer. For all non-lazy images,
+ *  this returns (0,0,width,height). For a lazy-image, it may return a subset of that rect.
+ */
+SkIRect SkImage_getSubset(const SkImage*);
+
+/**
  *  Returns a new image containing the same pixel values as the source, but with a different color
  *  space assigned. This performs no color space conversion. Primarily used in tests, to visualize
  *  the results of rendering in wide or narrow gamuts.
  */
 sk_sp<SkImage> SkImageMakeRasterCopyAndAssignColorSpace(const SkImage*, SkColorSpace*);
+
+/** \enum SkImageInfo::SkImageSourceChannel
+    Describes different channels we could read from image source.
+*/
+enum SkImageSourceChannel {
+    /** Describes the red channel; */
+    kR_SkImageSourceChannel,
+
+    /** Describes the green channel; */
+    kG_SkImageSourceChannel,
+
+    /** Describes the blue channel; */
+    kB_SkImageSourceChannel,
+
+    /** Describes the alpha channel; */
+    kA_SkImageSourceChannel,
+
+    /** Describes the alpha channel; */
+    kLastEnum_SkImageSourceChannel = kA_SkImageSourceChannel,
+};
+
+/** \struct SkYUVAIndex
+    Describes from which image source and which channel to read each individual YUVA plane.
+
+    SkYUVAIndex contains a index for which image source to read from and a enum for which channel
+    to read from.
+*/
+struct SK_API SkYUVAIndex {
+    /** The index is a number between -1..3 which definies which image source to read from, where -1
+     * means the image source doesn't exist. The assumption is we will always have image sources for
+     * each of YUV planes, but optionally have image source for A plane. */
+    int fIndex;
+    /** The channel describes from which channel to read the info from. Currently we only deal with
+     * YUV and NV12 and channel info is ignored. */
+    SkImageSourceChannel fChannel;
+};
 
 #endif

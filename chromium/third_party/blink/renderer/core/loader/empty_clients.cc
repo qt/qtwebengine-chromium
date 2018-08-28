@@ -28,8 +28,9 @@
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
 
 #include <memory>
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_provider.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_provider_client.h"
+#include "cc/layers/layer.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_provider.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_provider_client.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_application_cache_host.h"
 #include "third_party/blink/public/platform/web_media_player.h"
@@ -41,7 +42,6 @@
 #include "third_party/blink/renderer/core/html/forms/file_chooser.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
-#include "third_party/blink/renderer/platform/scheduler/child/worker_scheduler_proxy.h"
 
 namespace blink {
 
@@ -88,6 +88,9 @@ void EmptyChromeClient::AttachRootGraphicsLayer(GraphicsLayer* layer,
   page->GetVisualViewport().AttachLayerTree(layer);
 }
 
+void EmptyChromeClient::AttachRootLayer(scoped_refptr<cc::Layer>, LocalFrame*) {
+}
+
 String EmptyChromeClient::AcceptLanguages() {
   return String();
 }
@@ -96,7 +99,7 @@ NavigationPolicy EmptyLocalFrameClient::DecidePolicyForNavigation(
     const ResourceRequest&,
     Document* origin_document,
     DocumentLoader*,
-    NavigationType,
+    WebNavigationType,
     NavigationPolicy,
     bool,
     bool,
@@ -116,7 +119,9 @@ DocumentLoader* EmptyLocalFrameClient::CreateDocumentLoader(
     const ResourceRequest& request,
     const SubstituteData& substitute_data,
     ClientRedirectPolicy client_redirect_policy,
-    const base::UnguessableToken& devtools_navigation_token) {
+    const base::UnguessableToken& devtools_navigation_token,
+    std::unique_ptr<WebDocumentLoader::ExtraData> extra_data,
+    const WebNavigationTimings& navigation_timings) {
   DCHECK(frame);
 
   return DocumentLoader::Create(frame, request, substitute_data,

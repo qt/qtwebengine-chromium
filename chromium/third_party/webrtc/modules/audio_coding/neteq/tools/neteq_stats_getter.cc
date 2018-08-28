@@ -26,8 +26,7 @@ std::string NetEqStatsGetter::ConcealmentEvent::ToString() const {
   rtc::SimpleStringBuilder ss(ss_buf);
   ss << "ConcealmentEvent duration_ms:" << duration_ms
      << " event_number:" << concealment_event_number
-     << " time_from_previous_event_end_ms:"
-     << time_from_previous_event_end_ms;
+     << " time_from_previous_event_end_ms:" << time_from_previous_event_end_ms;
   return ss.str();
 }
 
@@ -47,15 +46,17 @@ void NetEqStatsGetter::AfterGetAudio(int64_t time_now_ms,
                                      NetEq* neteq) {
   // TODO(minyue): Get stats should better not be called as a call back after
   // get audio. It is called independently from get audio in practice.
+  const auto lifetime_stat = neteq->GetLifetimeStatistics();
   if (last_stats_query_time_ms_ == 0 ||
       rtc::TimeDiff(time_now_ms, last_stats_query_time_ms_) >=
           stats_query_interval_ms_) {
     NetEqNetworkStatistics stats;
     RTC_CHECK_EQ(neteq->NetworkStatistics(&stats), 0);
     stats_.push_back(std::make_pair(time_now_ms, stats));
+    lifetime_stats_.push_back(std::make_pair(time_now_ms, lifetime_stat));
     last_stats_query_time_ms_ = time_now_ms;
   }
-  const auto lifetime_stat = neteq->GetLifetimeStatistics();
+
   if (current_concealment_event_ != lifetime_stat.concealment_events &&
       voice_concealed_samples_until_last_event_ <
           lifetime_stat.voice_concealed_samples) {
@@ -115,12 +116,10 @@ NetEqStatsGetter::Stats NetEqStatsGetter::AverageStats() const {
         a.added_zero_samples += b.added_zero_samples;
         a.mean_waiting_time_ms += b.mean_waiting_time_ms;
         a.median_waiting_time_ms += b.median_waiting_time_ms;
-        a.min_waiting_time_ms =
-            std::min(a.min_waiting_time_ms,
-                     static_cast<double>(b.min_waiting_time_ms));
-        a.max_waiting_time_ms =
-            std::max(a.max_waiting_time_ms,
-                     static_cast<double>(b.max_waiting_time_ms));
+        a.min_waiting_time_ms = std::min(
+            a.min_waiting_time_ms, static_cast<double>(b.min_waiting_time_ms));
+        a.max_waiting_time_ms = std::max(
+            a.max_waiting_time_ms, static_cast<double>(b.max_waiting_time_ms));
         return a;
       });
 

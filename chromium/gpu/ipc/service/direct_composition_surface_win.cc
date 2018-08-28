@@ -34,7 +34,6 @@
 #include "ui/gl/gl_image_memory.h"
 #include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/gl_surface_presentation_helper.h"
-#include "ui/gl/scoped_make_current.h"
 
 #ifndef EGL_ANGLE_flexible_surface_compatibility
 #define EGL_ANGLE_flexible_surface_compatibility 1
@@ -104,27 +103,47 @@ class ScopedReleaseKeyedMutex {
   DISALLOW_COPY_AND_ASSIGN(ScopedReleaseKeyedMutex);
 };
 
+struct OverlaySupportInfo {
+  DXGI_FORMAT dxgi_format;
+  OverlayFormat overlay_format;
+  UINT flags;
+};
+
+bool g_overlay_support_initialized = false;
+
+// These are for YUY2 overlays.
+bool g_supports_overlays = false;
+bool g_supports_scaled_overlays = true;
 gfx::Size g_overlay_monitor_size;
 
-bool g_supports_scaled_overlays = true;
+OverlaySupportInfo g_overlay_support_info[] = {
+    {DXGI_FORMAT_B8G8R8A8_UNORM, OverlayFormat::BGRA, 0},
+    {DXGI_FORMAT_YUY2, OverlayFormat::YUY2, 0},
+    {DXGI_FORMAT_NV12, OverlayFormat::NV12, 0},
+};
 
 // This is the raw support info, which shouldn't depend on field trial state, or
 // command line flags.
-bool HardwareSupportsOverlays() {
+void InitializeHardwareOverlaySupport() {
+  if (g_overlay_support_initialized)
+    return;
+
+  g_overlay_support_initialized = true;
+
   if (!gl::GLSurfaceEGL::IsDirectCompositionSupported())
-    return false;
+    return;
 
   // Before Windows 10 Anniversary Update (Redstone 1), overlay planes wouldn't
   // be assigned to non-UWP apps.
   if (base::win::GetVersion() < base::win::VERSION_WIN10_RS1)
-    return false;
+    return;
 
   Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device =
       gl::QueryD3D11DeviceObjectFromANGLE();
   if (!d3d11_device) {
     DLOG(ERROR) << "Not using overlays because failed to retrieve D3D11 device "
                    "from ANGLE";
-    return false;
+    return;
   }
 
   // This can fail if the D3D device is "Microsoft Basic Display Adapter".
@@ -132,7 +151,7 @@ bool HardwareSupportsOverlays() {
   if (FAILED(d3d11_device.CopyTo(video_device.GetAddressOf()))) {
     DLOG(ERROR) << "Not using overlays because failed to retrieve video device "
                    "from D3D11 device";
-    return false;
+    return;
   }
   DCHECK(video_device);
 
@@ -154,31 +173,42 @@ bool HardwareSupportsOverlays() {
       continue;
     DCHECK(output3);
 
-    UINT flags = 0;
-    if (FAILED(output3->CheckOverlaySupport(DXGI_FORMAT_YUY2,
-                                            d3d11_device.Get(), &flags)))
-      continue;
-
-    base::UmaHistogramSparse("GPU.DirectComposition.OverlaySupportFlags",
-                             flags);
-
-    // Some new Intel drivers only claim to support unscaled overlays, but
-    // scaled overlays still work. Even when scaled overlays aren't actually
-    // supported, presentation using the overlay path should be relatively
-    // efficient.
-    if (flags & (DXGI_OVERLAY_SUPPORT_FLAG_SCALING |
-                 DXGI_OVERLAY_SUPPORT_FLAG_DIRECT)) {
-      DXGI_OUTPUT_DESC monitor_desc = {};
-      if (FAILED(output3->GetDesc(&monitor_desc)))
+    for (auto& info : g_overlay_support_info) {
+      if (FAILED(output3->CheckOverlaySupport(
+              info.dxgi_format, d3d11_device.Get(), &info.flags))) {
         continue;
-      g_overlay_monitor_size =
-          gfx::Rect(monitor_desc.DesktopCoordinates).size();
-      g_supports_scaled_overlays =
-          !!(flags & DXGI_OVERLAY_SUPPORT_FLAG_SCALING);
-      return true;
+      }
+      // Some new Intel drivers only claim to support unscaled overlays, but
+      // scaled overlays still work. Even when scaled overlays aren't actually
+      // supported, presentation using the overlay path should be relatively
+      // efficient.
+      if (info.dxgi_format == DXGI_FORMAT_YUY2 &&
+          (info.flags & (DXGI_OVERLAY_SUPPORT_FLAG_DIRECT |
+                         DXGI_OVERLAY_SUPPORT_FLAG_SCALING))) {
+        g_supports_overlays = true;
+        g_supports_scaled_overlays =
+            !!(info.flags & DXGI_OVERLAY_SUPPORT_FLAG_SCALING);
+
+        DXGI_OUTPUT_DESC monitor_desc = {};
+        if (SUCCEEDED(output3->GetDesc(&monitor_desc))) {
+          g_overlay_monitor_size =
+              gfx::Rect(monitor_desc.DesktopCoordinates).size();
+        }
+      }
     }
+    if (g_supports_overlays)
+      break;
   }
-  return false;
+
+  for (const auto& info : g_overlay_support_info) {
+    const std::string kOverlaySupportFlagsUmaPrefix =
+        "GPU.DirectComposition.OverlaySupportFlags.";
+    base::UmaHistogramSparse(kOverlaySupportFlagsUmaPrefix +
+                                 OverlayFormatToString(info.overlay_format),
+                             info.flags);
+  }
+  UMA_HISTOGRAM_BOOLEAN("GPU.DirectComposition.OverlaysSupported",
+                        g_supports_overlays);
 }
 
 bool CreateSurfaceHandleHelper(HANDLE* handle) {
@@ -328,7 +358,7 @@ class DCLayerTree::SwapChainPresenter {
   // Returns true if the video processor changed.
   bool InitializeVideoProcessor(const gfx::Size& in_size,
                                 const gfx::Size& out_size);
-  bool ReallocateSwapChain(bool yuy2);
+  bool ReallocateSwapChain(bool yuy2, bool protected_video);
   bool ShouldBeYUY2();
 
   DCLayerTree* surface_;
@@ -337,6 +367,7 @@ class DCLayerTree::SwapChainPresenter {
   gfx::Size processor_input_size_;
   gfx::Size processor_output_size_;
   bool is_yuy2_swapchain_ = false;
+  bool is_protected_video_ = false;
 
   PresentationHistory presentation_history_;
   bool failed_to_create_yuy2_swapchain_ = false;
@@ -456,6 +487,12 @@ DCLayerTree::SwapChainPresenter::SwapChainPresenter(
 DCLayerTree::SwapChainPresenter::~SwapChainPresenter() {}
 
 bool DCLayerTree::SwapChainPresenter::ShouldBeYUY2() {
+  // Always prefer YUY2 for protected video for now.
+  // TODO(crbug.com/850799): Assess power/perf impact when protected video
+  // swap chain is composited by DWM.
+  if (is_protected_video_)
+    return true;
+
   // Start out as YUY2.
   if (!presentation_history_.valid())
     return true;
@@ -574,11 +611,12 @@ bool DCLayerTree::SwapChainPresenter::PresentToSwapChain(
   bool yuy2_swapchain = ShouldBeYUY2();
   bool first_present = false;
   if (!swap_chain_ || swap_chain_size_ != swap_chain_size ||
+      is_protected_video_ != params.is_protected_video ||
       ((yuy2_swapchain != is_yuy2_swapchain_) &&
        !failed_to_create_yuy2_swapchain_)) {
     first_present = true;
     swap_chain_size_ = swap_chain_size;
-    ReallocateSwapChain(yuy2_swapchain);
+    ReallocateSwapChain(yuy2_swapchain, params.is_protected_video);
   } else if (last_gl_images_ == params.image) {
     // The swap chain is presenting the same images as last swap, which means
     // that the images were never returned to the video decoder and should
@@ -837,7 +875,9 @@ bool DCLayerTree::SwapChainPresenter::InitializeVideoProcessor(
   return true;
 }
 
-bool DCLayerTree::SwapChainPresenter::ReallocateSwapChain(bool yuy2) {
+bool DCLayerTree::SwapChainPresenter::ReallocateSwapChain(
+    bool yuy2,
+    bool protected_video) {
   TRACE_EVENT0("gpu", "DCLayerTree::SwapChainPresenter::ReallocateSwapChain");
   swap_chain_.Reset();
   out_view_.Reset();
@@ -866,6 +906,10 @@ bool DCLayerTree::SwapChainPresenter::ReallocateSwapChain(bool yuy2) {
   desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
   desc.Flags =
       DXGI_SWAP_CHAIN_FLAG_YUV_VIDEO | DXGI_SWAP_CHAIN_FLAG_FULLSCREEN_VIDEO;
+  if (protected_video) {
+    desc.Flags |= DXGI_SWAP_CHAIN_FLAG_HW_PROTECTED;
+    desc.Flags |= DXGI_SWAP_CHAIN_FLAG_DISPLAY_ONLY;
+  }
 
   HANDLE handle;
   if (!CreateSurfaceHandleHelper(&handle))
@@ -899,6 +943,10 @@ bool DCLayerTree::SwapChainPresenter::ReallocateSwapChain(bool yuy2) {
   if (!is_yuy2_swapchain_) {
     desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.Flags = 0;
+    if (protected_video) {
+      desc.Flags |= DXGI_SWAP_CHAIN_FLAG_HW_PROTECTED;
+      desc.Flags |= DXGI_SWAP_CHAIN_FLAG_DISPLAY_ONLY;
+    }
     HRESULT hr = media_factory->CreateSwapChainForCompositionSurfaceHandle(
         d3d11_device_.Get(), swap_chain_handle_.Get(), &desc, nullptr,
         swap_chain_.GetAddressOf());
@@ -908,6 +956,7 @@ bool DCLayerTree::SwapChainPresenter::ReallocateSwapChain(bool yuy2) {
       return false;
     }
   }
+  is_protected_video_ = protected_video;
   return true;
 }
 
@@ -1229,15 +1278,7 @@ DirectCompositionSurfaceWin::~DirectCompositionSurfaceWin() {
 
 // static
 bool DirectCompositionSurfaceWin::AreOverlaysSupported() {
-  static bool initialized = false;
-  static bool overlays_supported = false;
-
-  if (!initialized) {
-    initialized = true;
-    overlays_supported = HardwareSupportsOverlays();
-    UMA_HISTOGRAM_BOOLEAN("GPU.DirectComposition.OverlaysSupported",
-                          overlays_supported);
-  }
+  InitializeHardwareOverlaySupport();
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisableDirectCompositionLayers))
@@ -1246,9 +1287,28 @@ bool DirectCompositionSurfaceWin::AreOverlaysSupported() {
     return true;
 
   return base::FeatureList::IsEnabled(features::kDirectCompositionOverlays) &&
-         overlays_supported;
+         g_supports_overlays;
 }
 
+// static
+OverlayCapabilities DirectCompositionSurfaceWin::GetOverlayCapabilities() {
+  InitializeHardwareOverlaySupport();
+
+  OverlayCapabilities capabilities;
+  for (const auto& info : g_overlay_support_info) {
+    if (info.flags) {
+      OverlayCapability cap;
+      cap.format = info.overlay_format;
+      cap.is_scaling_supported =
+          !!(info.flags & DXGI_OVERLAY_SUPPORT_FLAG_SCALING);
+      capabilities.push_back(cap);
+    }
+  }
+
+  return capabilities;
+}
+
+// static
 void DirectCompositionSurfaceWin::EnableScaledOverlaysForTesting() {
   g_supports_scaled_overlays = true;
 }
@@ -1480,27 +1540,18 @@ gfx::SwapResult DirectCompositionSurfaceWin::SwapBuffers(
     const PresentationCallback& callback) {
   gl::GLSurfacePresentationHelper::ScopedSwapBuffers scoped_swap_buffers(
       presentation_helper_.get(), callback);
-  ui::ScopedReleaseCurrent release_current;
 
   child_window_.ClearInvalidContents();
 
-  bool failed = false;
-
   if (root_surface_->SwapBuffers(PresentationCallback()) ==
       gfx::SwapResult::SWAP_FAILED)
-    failed = true;
+    scoped_swap_buffers.set_result(gfx::SwapResult::SWAP_FAILED);
 
   if (!layer_tree_->CommitAndClearPendingOverlays())
-    failed = true;
-
-  if (!release_current.Restore())
-    failed = true;
-
-  if (failed) {
     scoped_swap_buffers.set_result(gfx::SwapResult::SWAP_FAILED);
-    base::UmaHistogramSparse("GPU.DirectComposition.SwapBuffersLastError",
-                             ::GetLastError());
-  }
+
+  if (scoped_swap_buffers.result() == gfx::SwapResult::SWAP_FAILED)
+    UMA_HISTOGRAM_BOOLEAN("GPU.DirectComposition.SwapBuffersFailed", true);
 
   return scoped_swap_buffers.result();
 }
@@ -1572,43 +1623,13 @@ bool DirectCompositionSurfaceWin::SupportsProtectedVideo() const {
 
   // TODO: Check the gpu driver date (or a function) which we know this new
   // support is enabled.
+
   return true;
 }
 
 bool DirectCompositionSurfaceWin::SetDrawRectangle(const gfx::Rect& rectangle) {
-  if (root_surface_) {
-    // TODO(sunnyps): Remove after https://crbug.com/724999 is fixed.
-    CHECK(gl::GLContext::GetCurrent());
-    CHECK(gl::GLContext::GetCurrent()->IsCurrent(this));
-    bool was_surface_current = gl::GLSurface::GetCurrent() == this;
-    base::debug::Alias(&was_surface_current);
-    EGLSurface default_surface = root_surface_->default_surface_for_debugging();
-    base::debug::Alias(&default_surface);
-    EGLSurface old_real_surface = root_surface_->real_surface_for_debugging();
-    base::debug::Alias(&old_real_surface);
-    EGLSurface old_surface_handle = GetHandle();
-    base::debug::Alias(&old_surface_handle);
-    EGLSurface old_egl_current_surface = eglGetCurrentSurface(EGL_DRAW);
-    base::debug::Alias(&old_egl_current_surface);
-
-    bool succeeded = root_surface_->SetDrawRectangle(rectangle);
-
-    // TODO(sunnyps): Remove after https://crbug.com/724999 is fixed.
-    if (succeeded) {
-      bool is_surface_current = gl::GLSurface::GetCurrent() == this;
-      base::debug::Alias(&is_surface_current);
-      EGLSurface new_real_surface = root_surface_->real_surface_for_debugging();
-      base::debug::Alias(&new_real_surface);
-      EGLSurface new_surface_handle = GetHandle();
-      base::debug::Alias(&new_surface_handle);
-      EGLSurface new_egl_current_surface = eglGetCurrentSurface(EGL_DRAW);
-      base::debug::Alias(&new_egl_current_surface);
-      CHECK(gl::GLContext::GetCurrent());
-      CHECK(gl::GLContext::GetCurrent()->IsCurrent(this));
-    }
-
-    return succeeded;
-  }
+  if (root_surface_)
+    return root_surface_->SetDrawRectangle(rectangle);
   return false;
 }
 
@@ -1616,11 +1637,6 @@ gfx::Vector2d DirectCompositionSurfaceWin::GetDrawOffset() const {
   if (root_surface_)
     return root_surface_->GetDrawOffset();
   return gfx::Vector2d();
-}
-
-void DirectCompositionSurfaceWin::WaitForSnapshotRendering() {
-  DCHECK(gl::GLContext::GetCurrent()->IsCurrent(this));
-  glFinish();
 }
 
 bool DirectCompositionSurfaceWin::RecreateRootSurface() {

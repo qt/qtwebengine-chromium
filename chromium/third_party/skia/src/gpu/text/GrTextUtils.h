@@ -16,7 +16,7 @@
 #include "SkTextToPathIter.h"
 #include "SkTLazy.h"
 
-class GrAtlasTextBlob;
+class GrTextBlob;
 class GrAtlasTextOp;
 class GrTextStrike;
 class GrClip;
@@ -26,7 +26,6 @@ class GrGlyphCache;
 class GrPaint;
 class GrShaderCaps;
 class SkColorSpace;
-class SkDrawFilter;
 class SkGlyph;
 class SkMatrix;
 struct SkIRect;
@@ -56,6 +55,8 @@ public:
                               const SkIRect& clipBounds) = 0;
         virtual void makeGrPaint(GrMaskFormat, const SkPaint&, const SkMatrix& viewMatrix,
                                  GrPaint*) = 0;
+
+        virtual GrContext* getContext() = 0;
 
     protected:
         Target(int width, int height, const GrColorSpaceInfo& colorSpaceInfo)
@@ -108,8 +109,7 @@ public:
      */
     class RunPaint : public Paint {
     public:
-        RunPaint(const Paint* paint, SkDrawFilter* filter)
-                : fOriginalPaint(paint), fFilter(filter) {
+        RunPaint(const Paint* paint) : fOriginalPaint(paint) {
             // Initially we represent the original paint.
             fPaint = &fOriginalPaint->skPaint();
             fDstColorSpaceInfo = fOriginalPaint->dstColorSpaceInfo();
@@ -121,7 +121,6 @@ public:
     private:
         SkTLazy<SkPaint> fModifiedPaint;
         const Paint* fOriginalPaint;
-        SkDrawFilter* fFilter;
     };
 
     class PathTextIter : SkTextBaseIter {

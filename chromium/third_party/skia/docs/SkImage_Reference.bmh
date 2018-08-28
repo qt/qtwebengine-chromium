@@ -1,5 +1,5 @@
 #Topic Image
-#Alias Image_Reference
+#Alias Image_Reference ##
 
 #Class SkImage
 
@@ -19,7 +19,7 @@ include BMP, GIF, HEIF, ICO, JPEG, PNG, WBMP, WebP. Supported encoding details
 vary with platform.
 
 #Subtopic Raster_Image
-#Alias Raster_Image
+#Alias Raster_Image ##
 #Line # pixels decoded in Raster_Bitmap ##
 Raster_Image pixels are decoded in a Raster_Bitmap. These pixels may be read
 directly and in most cases written to, although edited pixels may not be drawn
@@ -399,7 +399,7 @@ canvas->scale(.25f, .25f);
 int x = 0;
 for (auto origin : { kBottomLeft_GrSurfaceOrigin, kTopLeft_GrSurfaceOrigin } ) {
     sk_sp<SkImage> image = SkImage::MakeFromTexture(context, backEndTexture,
-           origin, kN32_SkColorType, kOpaque_SkAlphaType, nullptr);
+           origin, kRGBA_8888_SkColorType, kOpaque_SkAlphaType, nullptr);
     canvas->drawImage(image, x, 0);
 x += 512;
 }
@@ -1132,11 +1132,11 @@ Creates Shader from Image. Shader dimensions are taken from Image. Shader uses
 SkShader::TileMode rules to fill drawn area outside Image. localMatrix permits
 transforming Image before Canvas_Matrix is applied.
 
-#Param tileMode1  tiling in x, one of: SkShader::kClamp_TileMode, SkShader::kRepeat_TileMode,
-                  SkShader::kMirror_TileMode
+#Param tileMode1  tiling on x-axis, one of: SkShader::kClamp_TileMode,
+                  SkShader::kRepeat_TileMode, SkShader::kMirror_TileMode
 ##
-#Param tileMode2  tiling in y, one of: SkShader::kClamp_TileMode, SkShader::kRepeat_TileMode,
-                  SkShader::kMirror_TileMode
+#Param tileMode2  tiling on y-axis, one of: SkShader::kClamp_TileMode,
+                  SkShader::kRepeat_TileMode, SkShader::kMirror_TileMode
 ##
 #Param localMatrix  Image transformation, or nullptr ##
 
@@ -1270,8 +1270,8 @@ auto drawImage = [=](sk_sp<SkImage> image, const char* label) -> void {
 };
 sk_sp<SkImage> bitmapImage(SkImage::MakeFromBitmap(source));
 sk_sp<SkImage> textureImage(SkImage::MakeFromTexture(canvas->getGrContext(), backEndTexture,
-                            kTopLeft_GrSurfaceOrigin, kN32_SkColorType, kOpaque_SkAlphaType,
-                            nullptr));
+                            kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
+                            kOpaque_SkAlphaType, nullptr));
 drawImage(image, "image");
 canvas->translate(image->width(), 0);
 drawImage(bitmapImage, "source");
@@ -1321,8 +1321,8 @@ auto drawImage = [=](sk_sp<SkImage> image, const char* label) -> void {
 };
 sk_sp<SkImage> bitmapImage(SkImage::MakeFromBitmap(source));
 sk_sp<SkImage> textureImage(SkImage::MakeFromTexture(canvas->getGrContext(), backEndTexture,
-                            kTopLeft_GrSurfaceOrigin, kN32_SkColorType, kOpaque_SkAlphaType,
-                            nullptr));
+                            kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
+                            kOpaque_SkAlphaType, nullptr));
 drawImage(image, "image");
 canvas->translate(image->width(), 0);
 drawImage(bitmapImage, "source");
@@ -1717,8 +1717,8 @@ Returns nullptr if Image contents are not encoded.
         sk_sp<SkImage> image;
     } tests[] = { { "image", image }, { "bitmap", SkImage::MakeFromBitmap(source) },
           { "texture", SkImage::MakeFromTexture(canvas->getGrContext(), backEndTexture,
-                            kTopLeft_GrSurfaceOrigin, kN32_SkColorType, kOpaque_SkAlphaType,
-                            nullptr) } };
+                            kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
+                            kOpaque_SkAlphaType, nullptr) } };
     SkString string;
     SkPaint paint;
     for (const auto& test : tests ) {
@@ -1741,41 +1741,6 @@ Returns nullptr if Image contents are not encoded.
 #Populate
 #Line # rarely called management functions ##
 ##
-
-#Method const char* toString(SkString* string) const
-#In Utility
-#Line # converts Image to machine readable form ##
-Appends Image description to string, including unique ID, width, height, and
-whether the image is opaque.
-
-#Param string  storage for description; existing content is preserved ##
-
-#Return string appended with Image description ##
-
-#Example
-#Image 4
-    struct {
-        const char* name;
-        sk_sp<SkImage> image;
-    } tests[] = { { "image", image }, { "bitmap", SkImage::MakeFromBitmap(source) },
-          { "texture", SkImage::MakeFromTexture(canvas->getGrContext(), backEndTexture,
-                            kTopLeft_GrSurfaceOrigin, kN32_SkColorType, kOpaque_SkAlphaType,
-                            nullptr) } };
-    SkString string;
-    SkPaint paint;
-    for (const auto& test : tests ) {
-        string.printf("%s: ", test.name);
-        test.image ? (void) test.image->toString(&string) : string.append("no image");
-        canvas->drawString(string, 10, 20, paint);
-        canvas->translate(0, 20);
-    }
-##
-
-#SeeAlso SkPaint::toString
-
-#Method ##
-
-# ------------------------------------------------------------------------------
 
 #Method sk_sp<SkImage> makeSubset(const SkIRect& subset) const
 #In Constructor
@@ -1809,18 +1774,22 @@ pixels in Image could not be read or copied.
 
 # ------------------------------------------------------------------------------
 
-#Method sk_sp<SkImage> makeTextureImage(GrContext* context, SkColorSpace* dstColorSpace) const
+#Method sk_sp<SkImage> makeTextureImage(GrContext* context, SkColorSpace* dstColorSpace,
+                                        GrMipMapped mipMapped = GrMipMapped::kNo) const
 #In Constructor
 #Line # creates Image matching Color_Space if possible ##
 Returns Image backed by GPU_Texture associated with context. Returned Image is
-compatible with Surface created with dstColorSpace. Returns original
-Image if context and dstColorSpace match.
+compatible with Surface created with dstColorSpace. The returned Image respects
+mipMapped setting; if mipMapped equals GrMipMapped::kYes, the backing texture
+allocates Mip_Map levels. Returns original Image if context
+and dstColorSpace match and mipMapped is compatible with backing GPU_Texture.
 
 Returns nullptr if context is nullptr, or if Image was created with another
 GrContext.
 
 #Param context  GPU_Context ##
 #Param dstColorSpace  range of colors of matching Surface on GPU ##
+#Param mipMapped  whether created Image texture must allocate Mip_Map levels ##
 
 #Return created Image, or nullptr ##
 
@@ -1841,8 +1810,8 @@ GrContext.
     sk_sp<SkImage> bitmapImage(SkImage::MakeFromBitmap(source));
     GrContext* context = canvas->getGrContext();
     sk_sp<SkImage> textureImage(SkImage::MakeFromTexture(context, backEndTexture,
-                                kTopLeft_GrSurfaceOrigin, kN32_SkColorType, kOpaque_SkAlphaType,
-                                nullptr));
+                                kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
+                                kOpaque_SkAlphaType, nullptr));
     drawImage(image, context, "image");
     canvas->translate(image->width(), 0);
     drawImage(bitmapImage, context, "source");
@@ -1883,8 +1852,8 @@ Returns nullptr if backed by GPU_Texture and copy fails.
     };
     sk_sp<SkImage> bitmapImage(SkImage::MakeFromBitmap(source));
     sk_sp<SkImage> textureImage(SkImage::MakeFromTexture(canvas->getGrContext(), backEndTexture,
-                                kTopLeft_GrSurfaceOrigin, kN32_SkColorType, kOpaque_SkAlphaType,
-                                nullptr));
+                                kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
+                                kOpaque_SkAlphaType, nullptr));
     drawImage(image, "image");
     canvas->translate(image->width(), 0);
     drawImage(bitmapImage, "source");
@@ -1926,8 +1895,8 @@ Returns nullptr if copy, decode, or pixel read fails.
     };
     sk_sp<SkImage> bitmapImage(SkImage::MakeFromBitmap(source));
     sk_sp<SkImage> textureImage(SkImage::MakeFromTexture(canvas->getGrContext(), backEndTexture,
-                                kTopLeft_GrSurfaceOrigin, kN32_SkColorType, kOpaque_SkAlphaType,
-                                nullptr));
+                                kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
+                                kOpaque_SkAlphaType, nullptr));
     drawImage(image, "image");
     canvas->translate(image->width(), 0);
     drawImage(bitmapImage, "source");
@@ -2012,8 +1981,8 @@ By translating canvas by returned offset, Image appears stationary.
 typedef std::function<void(GrBackendTexture)> BackendTextureReleaseProc;
 ##
 
-Defines a function take one parameter of type
-GrBackendTexture with no return value.
+Defines a callback function, taking one parameter of type GrBackendTexture with
+no return value. Function is called when back-end texture is to be released.
 ##
 
 # ------------------------------------------------------------------------------
@@ -2129,8 +2098,8 @@ Bitmap write did not succeed.
         return;
     }
     sk_sp<SkImage> textureImage(SkImage::MakeFromTexture(grContext, backEndTexture,
-                                kTopLeft_GrSurfaceOrigin, kN32_SkColorType, kOpaque_SkAlphaType,
-                                nullptr));
+                                kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
+                                kOpaque_SkAlphaType, nullptr));
     canvas->drawImage(textureImage, 45, 45);
     if (textureImage->asLegacyBitmap(&bitImage, SkImage::kRO_LegacyBitmapMode)) {
         canvas->drawBitmap(bitImage, 90, 90);
@@ -2202,8 +2171,8 @@ void draw(SkCanvas* canvas) {
     };
     sk_sp<SkImage> bitmapImage(SkImage::MakeFromBitmap(source));
     sk_sp<SkImage> textureImage(SkImage::MakeFromTexture(canvas->getGrContext(), backEndTexture,
-                                kTopLeft_GrSurfaceOrigin, kN32_SkColorType, kOpaque_SkAlphaType,
-                                nullptr));
+                                kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
+                                kOpaque_SkAlphaType, nullptr));
     drawImage(image, "image");
     canvas->translate(image->width(), 0);
     drawImage(bitmapImage, "source");
@@ -2218,8 +2187,7 @@ void draw(SkCanvas* canvas) {
 
 # ------------------------------------------------------------------------------
 
-#Method sk_sp<SkImage> makeColorSpace(sk_sp<SkColorSpace> target,
-                                  SkTransferFunctionBehavior premulBehavior) const
+#Method sk_sp<SkImage> makeColorSpace(sk_sp<SkColorSpace> target) const
 #In Constructor
 #Line # creates Image matching Color_Space if possible ##
 
@@ -2230,20 +2198,7 @@ Returns original Image if it is in target Color_Space.
 Otherwise, converts pixels from Image Color_Space to target Color_Space.
 If Image colorSpace returns nullptr, Image Color_Space is assumed to be sRGB.
 
-SkTransferFunctionBehavior is to be deprecated.
-
-Set premulBehavior to SkTransferFunctionBehavior::kRespect to convert Image
-pixels to a linear space, before converting to destination Color_Type
-and Color_Space.
-
-Set premulBehavior to SkTransferFunctionBehavior::kIgnore to treat Image
-pixels as linear, when converting to destination Color_Type
-and Color_Space, ignoring pixel encoding.
-
 #Param target  Color_Space describing color range of returned Image ##
-#Param premulBehavior  one of: SkTransferFunctionBehavior::kRespect,
-                               SkTransferFunctionBehavior::kIgnore
-##
 
 #Return created Image in target Color_Space ##
 
@@ -2254,13 +2209,9 @@ and Color_Space, ignoring pixel encoding.
              SkColorSpace::kSRGB_RenderTargetGamma, SkColorSpace::kSRGB_Gamut);
     sk_sp<SkColorSpace> wackyColorSpace = normalColorSpace->makeColorSpin();
     for (auto colorSpace : { normalColorSpace, wackyColorSpace  } ) {
-        for (auto transfer : { SkTransferFunctionBehavior::kRespect,
-                               SkTransferFunctionBehavior::kIgnore } ) {
-            sk_sp<SkImage> colorSpaced = image->makeColorSpace(colorSpace, transfer);
-            canvas->drawImage(colorSpaced, 0, 0);
-            canvas->translate(128, 0);
-        }
-        canvas->translate(-256, 128);
+        sk_sp<SkImage> colorSpaced = image->makeColorSpace(colorSpace);
+        canvas->drawImage(colorSpaced, 0, 0);
+        canvas->translate(128, 0);
     }
 ##
 

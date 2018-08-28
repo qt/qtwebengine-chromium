@@ -13,12 +13,15 @@
 #include "third_party/blink/renderer/core/layout/layout_table_caption.h"
 #include "third_party/blink/renderer/core/layout/layout_table_cell.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node_data.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_line_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_length_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_relative_utils.h"
 #include "third_party/blink/renderer/core/page/scrolling/root_scroller_util.h"
+#include "third_party/blink/renderer/core/paint/adjust_paint_offset_scope.h"
 #include "third_party/blink/renderer/core/paint/ng/ng_block_flow_painter.h"
 #include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 
@@ -72,44 +75,17 @@ void LayoutNGMixin<Base>::AddOverflowFromChildren() {
   // |ComputeOverflow()| calls this, which is called from
   // |CopyFragmentDataToLayoutBox()| and |RecalcOverflowAfterStyleChange()|.
   // Add overflow from the last layout cycle.
-  if (Base::ChildrenInline()) {
-    if (const NGPhysicalBoxFragment* physical_fragment = CurrentFragment()) {
-      // LayoutOverflow is only computed if overflow is not hidden
-      if (physical_fragment->Style().OverflowX() != EOverflow::kHidden ||
-          physical_fragment->Style().OverflowY() != EOverflow::kHidden) {
-        // inline-end LayoutOverflow padding spec is still undecided:
-        // https://github.com/w3c/csswg-drafts/issues/129
-        // For backwards compatibility, if container clips overflow,
-        // padding is added to the inline-end for inline children.
-        base::Optional<NGPhysicalBoxStrut> padding_strut;
-        if (Base::HasOverflowClip()) {
-          padding_strut =
-              NGBoxStrut(LayoutUnit(), Base::PaddingEnd(), LayoutUnit(),
-                         LayoutUnit())
-                  .ConvertToPhysical(Base::StyleRef().GetWritingMode(),
-                                     Base::StyleRef().Direction());
-        }
-        NGPhysicalOffsetRect children_overflow;
-        for (const auto& child : physical_fragment->Children()) {
-          NGPhysicalOffsetRect child_scrollable_overflow =
-              child->ScrollableOverflow();
-          child_scrollable_overflow.offset += child->Offset();
-          if (child->IsLineBox() && padding_strut) {
-            child_scrollable_overflow.Expand(*padding_strut);
-          }
-          children_overflow.Unite(child_scrollable_overflow);
-        }
-        Base::AddLayoutOverflow(children_overflow.ToLayoutFlippedRect(
-            physical_fragment->Style(), physical_fragment->Size()));
-      }
+  if (const NGPhysicalBoxFragment* physical_fragment = CurrentFragment()) {
+    AddScrollingOverflowFromChildren();
+    if (Base::ChildrenInline()) {
       Base::AddSelfVisualOverflow(
-          physical_fragment->SelfVisualRect().ToLayoutFlippedRect(
+          physical_fragment->SelfInkOverflow().ToLayoutFlippedRect(
               physical_fragment->Style(), physical_fragment->Size()));
       // TODO(kojii): If |RecalcOverflowAfterStyleChange()|, we need to
       // re-compute glyph bounding box. How to detect it and how to re-compute
       // is TBD.
       Base::AddContentsVisualOverflow(
-          physical_fragment->ContentsVisualRect().ToLayoutFlippedRect(
+          physical_fragment->ContentsInkOverflow().ToLayoutFlippedRect(
               physical_fragment->Style(), physical_fragment->Size()));
       // TODO(kojii): The above code computes visual overflow only, we fallback
       // to LayoutBlock for AddLayoutOverflow() for now. It doesn't compute
@@ -117,6 +93,74 @@ void LayoutNGMixin<Base>::AddOverflowFromChildren() {
     }
   }
   Base::AddOverflowFromChildren();
+}
+
+template <typename Base>
+void LayoutNGMixin<Base>::AddScrollingOverflowFromChildren() {
+  bool children_inline = Base::ChildrenInline();
+
+  const NGPhysicalBoxFragment* physical_fragment = CurrentFragment();
+  DCHECK(physical_fragment);
+  // inline-end LayoutOverflow padding spec is still undecided:
+  // https://github.com/w3c/csswg-drafts/issues/129
+  // For backwards compatibility, if container clips overflow,
+  // padding is added to the inline-end for inline children.
+  base::Optional<NGPhysicalBoxStrut> padding_strut;
+  if (Base::HasOverflowClip()) {
+    padding_strut =
+        NGBoxStrut(LayoutUnit(), Base::PaddingEnd(), LayoutUnit(), LayoutUnit())
+            .ConvertToPhysical(Base::StyleRef().GetWritingMode(),
+                               Base::StyleRef().Direction());
+  }
+
+  NGPhysicalOffsetRect children_overflow;
+
+  // Only add overflow for fragments NG has not reflected into Legacy.
+  // These fragments are:
+  // - inline fragments,
+  // - out of flow fragments whose css container is inline box.
+  // TODO(layout-dev) Transfroms also need to be applied to compute overflow
+  // correctly. NG is not yet transform-aware. crbug.com/855965
+  if (!physical_fragment->Children().IsEmpty()) {
+    for (const auto& child : physical_fragment->Children()) {
+      NGPhysicalOffsetRect child_scrollable_overflow;
+      if (child->IsOutOfFlowPositioned()) {
+        child_scrollable_overflow = child->ScrollableOverflow();
+      } else if (children_inline && child->IsLineBox()) {
+        DCHECK(child->IsLineBox());
+        child_scrollable_overflow =
+            ToNGPhysicalLineBoxFragment(*child).ScrollableOverflow(
+                Base::Style(), physical_fragment->Size());
+        if (padding_strut)
+          child_scrollable_overflow.Expand(*padding_strut);
+      } else {
+        continue;
+      }
+      child_scrollable_overflow.offset += child->Offset();
+      children_overflow.Unite(child_scrollable_overflow);
+    }
+  }
+
+  // LayoutOverflow takes flipped blocks coordinates, adjust as needed.
+  LayoutRect children_flipped_overflow = children_overflow.ToLayoutFlippedRect(
+      physical_fragment->Style(), physical_fragment->Size());
+  if (physical_fragment->Style().IsFlippedBlocksWritingMode()) {
+    // Legacy overflow coordinate system for flipped blocks is broken.
+    // It coordinates are "flipped blocks pretending scrollbar does
+    // not exist. This is the scrollbar adjustment.
+    // For details, see comments in LayoutBox::NoOverflowRect
+    LayoutObject* layout_object = physical_fragment->GetLayoutObject();
+    if (layout_object && layout_object->IsBox()) {
+      const LayoutBox* box = ToLayoutBox(layout_object);
+      if (!box->ShouldPlaceBlockDirectionScrollbarOnLogicalLeft()) {
+        LayoutUnit right_scrollbar_width =
+            LayoutUnit(box->VerticalScrollbarWidth());
+        children_flipped_overflow.SetX(children_flipped_overflow.X() -
+                                       right_scrollbar_width);
+      }
+    }
+  }
+  Base::AddLayoutOverflow(children_flipped_overflow);
 }
 
 template <typename Base>
@@ -248,12 +292,11 @@ void LayoutNGMixin<Base>::InvalidateDisplayItemClients(
 }
 
 template <typename Base>
-void LayoutNGMixin<Base>::Paint(const PaintInfo& paint_info,
-                                const LayoutPoint& paint_offset) const {
+void LayoutNGMixin<Base>::Paint(const PaintInfo& paint_info) const {
   if (PaintFragment())
-    NGBlockFlowPainter(*this).Paint(paint_info, paint_offset);
+    NGBlockFlowPainter(*this).Paint(paint_info);
   else
-    LayoutBlockFlow::Paint(paint_info, paint_offset);
+    LayoutBlockFlow::Paint(paint_info);
 }
 
 template <typename Base>
@@ -266,28 +309,28 @@ bool LayoutNGMixin<Base>::NodeAtPoint(
     return LayoutBlockFlow::NodeAtPoint(result, location_in_container,
                                         accumulated_offset, action);
   }
-  LayoutPoint offset = PaintFragment()->PhysicalFragment().IsPlacedByLayoutNG()
-                           ? PaintFragment()->Offset().ToLayoutPoint()
-                           : Base::Location();
-  LayoutPoint adjusted_location = accumulated_offset + offset;
+  // In LayoutBox::NodeAtPoint() and subclass overrides, it is guaranteed that
+  // |accumulated_offset + Location()| equals the physical offset of the current
+  // LayoutBox in the paint layer, regardless of writing mode or whether the box
+  // was placed by NG or legacy.
+  const LayoutPoint physical_offset = accumulated_offset + Base::Location();
   if (!RootScrollerUtil::IsEffective(*this)) {
     // Check if we need to do anything at all.
     // If we have clipping, then we can't have any spillout.
     LayoutRect overflow_box = Base::HasOverflowClip()
                                   ? Base::BorderBoxRect()
                                   : Base::VisualOverflowRect();
-    overflow_box.MoveBy(adjusted_location);
+    overflow_box.MoveBy(physical_offset);
     if (!location_in_container.Intersects(overflow_box))
       return false;
   }
   if (Base::IsInSelfHitTestingPhase(action) && Base::HasOverflowClip() &&
       Base::HitTestOverflowControl(result, location_in_container,
-                                   adjusted_location))
+                                   physical_offset))
     return true;
 
   return NGBlockFlowPainter(*this).NodeAtPoint(result, location_in_container,
-                                               accumulated_offset,
-                                               accumulated_offset, action);
+                                               physical_offset, action);
 }
 
 template <typename Base>

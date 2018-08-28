@@ -50,12 +50,12 @@
 #include "gpu/ipc/host/gpu_switches.h"
 #include "ipc/ipc.mojom.h"
 #include "ipc/ipc_channel_mojo.h"
-#include "mojo/edk/embedder/embedder.h"
-#include "mojo/edk/embedder/outgoing_broker_client_invitation.h"
-#include "mojo/edk/embedder/scoped_ipc_support.h"
+#include "mojo/core/embedder/embedder.h"
+#include "mojo/core/embedder/scoped_ipc_support.h"
+#include "mojo/public/cpp/system/invitation.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/buffer_format_util.h"
 
@@ -132,7 +132,7 @@ class RenderThreadImplForTest : public RenderThreadImpl {
  public:
   RenderThreadImplForTest(
       const InProcessChildThreadParams& params,
-      std::unique_ptr<blink::scheduler::WebMainThreadScheduler> scheduler,
+      std::unique_ptr<blink::scheduler::WebThreadScheduler> scheduler,
       scoped_refptr<base::SingleThreadTaskRunner>& test_task_counter,
       base::MessageLoop* unowned_message_loop)
       : RenderThreadImpl(params,
@@ -209,10 +209,10 @@ class RenderThreadImplBrowserTest : public testing::Test {
         blink::scheduler::GetSingleThreadTaskRunnerForTesting();
 
     InitializeMojo();
-    mojo_ipc_support_.reset(new mojo::edk::ScopedIPCSupport(
-        io_task_runner, mojo::edk::ScopedIPCSupport::ShutdownPolicy::FAST));
+    mojo_ipc_support_.reset(new mojo::core::ScopedIPCSupport(
+        io_task_runner, mojo::core::ScopedIPCSupport::ShutdownPolicy::FAST));
     shell_context_.reset(new TestServiceManagerContext);
-    mojo::edk::OutgoingBrokerClientInvitation invitation;
+    mojo::OutgoingInvitation invitation;
     service_manager::Identity child_identity(
         mojom::kRendererServiceName, service_manager::mojom::kInheritUserID,
         "test");
@@ -248,9 +248,9 @@ class RenderThreadImplBrowserTest : public testing::Test {
     // in RenderThreadImpl::Init().
     cmd->AppendSwitch(switches::kIgnoreGpuBlacklist);
 
-    std::unique_ptr<blink::scheduler::WebMainThreadScheduler>
+    std::unique_ptr<blink::scheduler::WebThreadScheduler>
         main_thread_scheduler =
-            blink::scheduler::WebMainThreadScheduler::Create();
+            blink::scheduler::WebThreadScheduler::CreateMainThreadScheduler();
     scoped_refptr<base::SingleThreadTaskRunner> test_task_counter(
         test_task_counter_.get());
 
@@ -293,7 +293,7 @@ class RenderThreadImplBrowserTest : public testing::Test {
   std::unique_ptr<TestServiceManagerContext> shell_context_;
   std::unique_ptr<ChildConnection> child_connection_;
   std::unique_ptr<IPC::ChannelProxy> channel_;
-  std::unique_ptr<mojo::edk::ScopedIPCSupport> mojo_ipc_support_;
+  std::unique_ptr<mojo::core::ScopedIPCSupport> mojo_ipc_support_;
 
   std::unique_ptr<MockRenderProcess> mock_process_;
   scoped_refptr<QuitOnTestMsgFilter> test_msg_filter_;

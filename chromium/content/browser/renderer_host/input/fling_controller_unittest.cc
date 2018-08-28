@@ -5,10 +5,8 @@
 #include "content/browser/renderer_host/input/fling_controller.h"
 
 #include "base/run_loop.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
 #include "content/browser/renderer_host/input/gesture_event_queue.h"
-#include "content/public/common/content_features.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/blink/fling_booster.h"
@@ -51,8 +49,6 @@ class FlingControllerTest : public testing::Test,
                                                  GestureEventQueue::Config());
     fling_controller_ = std::make_unique<FakeFlingController>(
         queue_.get(), this, this, FlingController::Config());
-    feature_list_.InitFromCommandLine(
-        features::kTouchpadAndWheelScrollLatching.name, "");
   }
 
   // GestureEventQueueClient
@@ -129,7 +125,6 @@ class FlingControllerTest : public testing::Test,
  private:
   base::test::ScopedTaskEnvironment scoped_task_environment_;
   std::unique_ptr<GestureEventQueue> queue_;
-  base::test::ScopedFeatureList feature_list_;
 };
 
 TEST_F(FlingControllerTest,
@@ -167,8 +162,15 @@ TEST_F(FlingControllerTest, ControllerHandlesTouchpadGestureFling) {
   EXPECT_EQ(WebMouseWheelEvent::kPhaseChanged, last_sent_wheel_.momentum_phase);
   EXPECT_GT(last_sent_wheel_.delta_x, 0.f);
 
-  // Now cancel the fling. The GFC will end the fling.
+  // Now cancel the fling. The GFC will get suppressed by fling booster.
   SimulateFlingCancel(blink::kWebGestureDeviceTouchpad);
+  EXPECT_TRUE(last_fling_cancel_filtered_);
+  EXPECT_TRUE(FlingInProgress());
+
+  // Wait for the boosting timer to expire. The delayed cancelation must work.
+  progress_time += base::TimeDelta::FromMilliseconds(500);
+  ProgressFling(progress_time);
+  EXPECT_FALSE(FlingInProgress());
   EXPECT_EQ(WebMouseWheelEvent::kPhaseEnded, last_sent_wheel_.momentum_phase);
   EXPECT_EQ(0.f, last_sent_wheel_.delta_x);
   EXPECT_EQ(0.f, last_sent_wheel_.delta_y);
@@ -400,9 +402,7 @@ TEST_F(FlingControllerTest, GestureFlingWithNegativeTimeDelta) {
   EXPECT_GT(last_sent_gesture_.data.scroll_update.delta_x, 0.f);
 }
 
-// TODO(sahel): Enable the test once boosting is enabled for touchpad fling.
-// https://crbug.com/249063
-TEST_F(FlingControllerTest, DISABLED_ControllerBoostsTouchpadFling) {
+TEST_F(FlingControllerTest, ControllerBoostsTouchpadFling) {
   base::TimeTicks progress_time = base::TimeTicks::Now();
   SimulateFlingStart(blink::kWebGestureDeviceTouchpad, gfx::Vector2dF(1000, 0));
   EXPECT_TRUE(FlingInProgress());

@@ -24,6 +24,7 @@
         flex: 1;
         font-size: 123%;
         font-weight: 400;
+        letter-spacing: .25px;
         line-height: normal;
       }
 
@@ -59,6 +60,11 @@
 
       :host([narrow]) #centeredContent {
         justify-content: flex-end;
+      }
+
+      :host([has-overlay]) {
+        transition: visibility var(--cr-toolbar-overlay-animation-duration);
+        visibility: hidden;
       }
 
       :host([narrow][showing-search_]) #leftContent {

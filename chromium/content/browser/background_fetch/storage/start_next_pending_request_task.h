@@ -9,7 +9,7 @@
 #include "content/browser/background_fetch/background_fetch.pb.h"
 #include "content/browser/background_fetch/background_fetch_request_info.h"
 #include "content/browser/background_fetch/storage/database_task.h"
-#include "content/common/service_worker/service_worker_status_code.h"
+#include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 
 namespace content {
 
@@ -23,7 +23,7 @@ class StartNextPendingRequestTask : public DatabaseTask {
       base::OnceCallback<void(scoped_refptr<BackgroundFetchRequestInfo>)>;
 
   StartNextPendingRequestTask(
-      BackgroundFetchDataManager* data_manager,
+      DatabaseTaskHost* host,
       int64_t service_worker_registration_id,
       std::unique_ptr<proto::BackgroundFetchMetadata> metadata,
       NextRequestCallback callback);
@@ -37,18 +37,20 @@ class StartNextPendingRequestTask : public DatabaseTask {
   void GetPendingRequests();
 
   void DidGetPendingRequests(const std::vector<std::string>& data,
-                             ServiceWorkerStatusCode status);
+                             blink::ServiceWorkerStatusCode status);
 
   void DidFindActiveRequest(const std::vector<std::string>& data,
-                            ServiceWorkerStatusCode status);
+                            blink::ServiceWorkerStatusCode status);
 
   void CreateAndStoreActiveRequest();
 
-  void DidStoreActiveRequest(ServiceWorkerStatusCode status);
+  void DidStoreActiveRequest(blink::ServiceWorkerStatusCode status);
 
   void StartDownload();
 
-  void DidDeletePendingRequest(ServiceWorkerStatusCode status);
+  void DidDeletePendingRequest(blink::ServiceWorkerStatusCode status);
+
+  void FinishWithError(blink::mojom::BackgroundFetchError error) override;
 
   int64_t service_worker_registration_id_;
   std::unique_ptr<proto::BackgroundFetchMetadata> metadata_;

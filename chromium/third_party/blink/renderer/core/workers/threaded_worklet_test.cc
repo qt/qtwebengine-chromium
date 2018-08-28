@@ -86,8 +86,8 @@ class ThreadedWorkletThreadForTest : public WorkerThread {
     WorkletGlobalScope* global_scope = ToWorkletGlobalScope(GlobalScope());
     // The SecurityOrigin for a worklet should be a unique opaque origin, while
     // the owner Document's SecurityOrigin shouldn't.
-    EXPECT_TRUE(global_scope->GetSecurityOrigin()->IsUnique());
-    EXPECT_FALSE(global_scope->DocumentSecurityOrigin()->IsUnique());
+    EXPECT_TRUE(global_scope->GetSecurityOrigin()->IsOpaque());
+    EXPECT_FALSE(global_scope->DocumentSecurityOrigin()->IsOpaque());
     PostCrossThreadTask(
         *GetParentExecutionContextTaskRunners()->Get(TaskType::kInternalTest),
         FROM_HERE, CrossThreadBind(&test::ExitRunLoop));
@@ -97,11 +97,10 @@ class ThreadedWorkletThreadForTest : public WorkerThread {
     EXPECT_TRUE(IsCurrentThread());
     ContentSecurityPolicy* csp = GlobalScope()->GetContentSecurityPolicy();
 
-    // The "script-src 'self'" directive is specified but the Worklet has a
-    // unique opaque origin, so this should not be allowed.
-    EXPECT_FALSE(csp->AllowScriptFromSource(GlobalScope()->Url(), String(),
-                                            IntegrityMetadataSet(),
-                                            kParserInserted));
+    // The "script-src 'self'" directive allows this.
+    EXPECT_TRUE(csp->AllowScriptFromSource(GlobalScope()->Url(), String(),
+                                           IntegrityMetadataSet(),
+                                           kParserInserted));
 
     // The "script-src https://allowed.example.com" should allow this.
     EXPECT_TRUE(csp->AllowScriptFromSource(KURL("https://allowed.example.com"),
@@ -111,6 +110,23 @@ class ThreadedWorkletThreadForTest : public WorkerThread {
     EXPECT_FALSE(csp->AllowScriptFromSource(
         KURL("https://disallowed.example.com"), String(),
         IntegrityMetadataSet(), kParserInserted));
+
+    PostCrossThreadTask(
+        *GetParentExecutionContextTaskRunners()->Get(TaskType::kInternalTest),
+        FROM_HERE, CrossThreadBind(&test::ExitRunLoop));
+  }
+
+  // Test that having an invalid CSP does not result in an exception.
+  // See bugs: 844383,844317
+  void TestInvalidContentSecurityPolicy() {
+    EXPECT_TRUE(IsCurrentThread());
+
+    // At this point check that the CSP that was set is indeed invalid.
+    ContentSecurityPolicy* csp = GlobalScope()->GetContentSecurityPolicy();
+    EXPECT_EQ(1ul, csp->Headers().size());
+    EXPECT_EQ("invalid-csp", csp->Headers().at(0).first);
+    EXPECT_EQ(kContentSecurityPolicyHeaderTypeEnforce,
+              csp->Headers().at(0).second);
 
     PostCrossThreadTask(
         *GetParentExecutionContextTaskRunners()->Get(TaskType::kInternalTest),
@@ -185,14 +201,13 @@ class ThreadedWorkletMessagingProxyForTest
     InitializeWorkerThread(
         std::make_unique<GlobalScopeCreationParams>(
             document->Url(), ScriptType::kModule, document->UserAgent(),
-            document->GetContentSecurityPolicy()->Headers().get(),
+            document->GetContentSecurityPolicy()->Headers(),
             document->GetReferrerPolicy(), document->GetSecurityOrigin(),
             document->IsSecureContext(), worker_clients,
             document->AddressSpace(),
             OriginTrialContext::GetTokens(document).get(),
             base::UnguessableToken::Create(), std::move(worker_settings),
-            kV8CacheOptionsDefault,
-            new WorkletModuleResponsesMap(document->Fetcher())),
+            kV8CacheOptionsDefault, new WorkletModuleResponsesMap),
         base::nullopt);
   }
 
@@ -268,7 +283,24 @@ TEST_F(ThreadedWorkletTest, ContentSecurityPolicy) {
   test::EnterRunLoop();
 }
 
+TEST_F(ThreadedWorkletTest, InvalidContentSecurityPolicy) {
+  ContentSecurityPolicy* csp = ContentSecurityPolicy::Create();
+  csp->DidReceiveHeader("invalid-csp", kContentSecurityPolicyHeaderTypeEnforce,
+                        kContentSecurityPolicyHeaderSourceHTTP);
+  GetDocument().InitContentSecurityPolicy(csp);
+
+  MessagingProxy()->Start();
+
+  PostCrossThreadTask(
+      *GetWorkerThread()->GetTaskRunner(TaskType::kInternalTest), FROM_HERE,
+      CrossThreadBind(
+          &ThreadedWorkletThreadForTest::TestInvalidContentSecurityPolicy,
+          CrossThreadUnretained(GetWorkerThread())));
+  test::EnterRunLoop();
+}
+
 TEST_F(ThreadedWorkletTest, UseCounter) {
+  Page::InsertOrdinaryPageForTesting(GetDocument().GetPage());
   MessagingProxy()->Start();
 
   // This feature is randomly selected.

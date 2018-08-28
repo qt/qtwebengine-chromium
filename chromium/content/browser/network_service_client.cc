@@ -5,6 +5,7 @@
 #include "content/browser/network_service_client.h"
 
 #include "base/optional.h"
+#include "base/task_scheduler/post_task.h"
 #include "content/browser/devtools/devtools_url_loader_interceptor.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/ssl/ssl_client_auth_handler.h"
@@ -14,11 +15,14 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/child_process_security_policy.h"
+#include "content/public/browser/global_request_id.h"
 #include "content/public/browser/login_delegate.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/resource_type.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/ssl/client_cert_store.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 
 namespace content {
 namespace {
@@ -166,11 +170,14 @@ class LoginHandlerDelegate {
       uint32_t routing_id,
       uint32_t request_id,
       const GURL& url,
+      scoped_refptr<net::HttpResponseHeaders> response_headers,
       bool first_auth_attempt)
       : auth_challenge_responder_(std::move(auth_challenge_responder)),
         auth_info_(auth_info),
+        request_id_(process_id, request_id),
         is_request_for_main_frame_(is_request_for_main_frame),
         url_(url),
+        response_headers_(std::move(response_headers)),
         first_auth_attempt_(first_auth_attempt),
         web_contents_getter_(web_contents_getter) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -226,8 +233,9 @@ class LoginHandlerDelegate {
   void CreateLoginDelegate() {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     login_delegate_ = GetContentClient()->browser()->CreateLoginDelegate(
-        auth_info_.get(), web_contents_getter_, is_request_for_main_frame_,
-        url_, first_auth_attempt_,
+        auth_info_.get(), web_contents_getter_, request_id_,
+        is_request_for_main_frame_, url_, response_headers_,
+        first_auth_attempt_,
         base::BindOnce(&LoginHandlerDelegate::RunAuthCredentials,
                        base::Unretained(this)));
 
@@ -255,12 +263,46 @@ class LoginHandlerDelegate {
 
   network::mojom::AuthChallengeResponderPtr auth_challenge_responder_;
   scoped_refptr<net::AuthChallengeInfo> auth_info_;
+  const content::GlobalRequestID request_id_;
   bool is_request_for_main_frame_;
   GURL url_;
+  const scoped_refptr<net::HttpResponseHeaders> response_headers_;
   bool first_auth_attempt_;
   ResourceRequestInfo::WebContentsGetter web_contents_getter_;
   scoped_refptr<LoginDelegate> login_delegate_;
 };
+
+void HandleFileUploadRequest(
+    uint32_t process_id,
+    bool async,
+    const std::vector<base::FilePath>& file_paths,
+    NetworkServiceClient::OnFileUploadRequestedCallback callback,
+    scoped_refptr<base::TaskRunner> task_runner) {
+  std::vector<base::File> files;
+  uint32_t file_flags = base::File::FLAG_OPEN | base::File::FLAG_READ |
+                        (async ? base::File::FLAG_ASYNC : 0);
+  ChildProcessSecurityPolicy* cpsp = ChildProcessSecurityPolicy::GetInstance();
+  for (const auto& file_path : file_paths) {
+    if (process_id != network::mojom::kBrowserProcessId &&
+        !cpsp->CanReadFile(process_id, file_path)) {
+      task_runner->PostTask(
+          FROM_HERE, base::BindOnce(std::move(callback), net::ERR_ACCESS_DENIED,
+                                    std::vector<base::File>()));
+      return;
+    }
+    files.emplace_back(file_path, file_flags);
+    if (!files.back().IsValid()) {
+      task_runner->PostTask(
+          FROM_HERE,
+          base::BindOnce(std::move(callback),
+                         net::FileErrorToNetError(files.back().error_details()),
+                         std::vector<base::File>()));
+      return;
+    }
+  }
+  task_runner->PostTask(FROM_HERE, base::BindOnce(std::move(callback), net::OK,
+                                                  std::move(files)));
+}
 
 }  // namespace
 
@@ -279,6 +321,7 @@ void NetworkServiceClient::OnAuthRequired(
     bool first_auth_attempt,
     const scoped_refptr<net::AuthChallengeInfo>& auth_info,
     int32_t resource_type,
+    const base::Optional<network::ResourceResponseHead>& head,
     network::mojom::AuthChallengeResponderPtr auth_challenge_responder) {
   base::Callback<WebContents*(void)> web_contents_getter =
       process_id ? base::Bind(WebContentsImpl::FromRenderFrameHostID,
@@ -302,7 +345,7 @@ void NetworkServiceClient::OnAuthRequired(
   new LoginHandlerDelegate(std::move(auth_challenge_responder),
                            std::move(web_contents_getter), auth_info,
                            is_request_for_main_frame, process_id, routing_id,
-                           request_id, url,
+                           request_id, url, head ? head->headers : nullptr,
                            first_auth_attempt);  // deletes self
 }
 
@@ -347,6 +390,39 @@ void NetworkServiceClient::OnSSLCertificateError(
   SSLManager::OnSSLCertificateError(
       delegate->GetWeakPtr(), static_cast<ResourceType>(resource_type), url,
       std::move(web_contents_getter), ssl_info, fatal);
+}
+
+void NetworkServiceClient::OnFileUploadRequested(
+    uint32_t process_id,
+    bool async,
+    const std::vector<base::FilePath>& file_paths,
+    OnFileUploadRequestedCallback callback) {
+  base::PostTaskWithTraits(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+      base::BindOnce(&HandleFileUploadRequest, process_id, async, file_paths,
+                     std::move(callback),
+                     base::SequencedTaskRunnerHandle::Get()));
+}
+
+void NetworkServiceClient::OnCookiesRead(int process_id,
+                                         int routing_id,
+                                         const GURL& url,
+                                         const GURL& first_party_url,
+                                         const net::CookieList& cookie_list,
+                                         bool blocked_by_policy) {
+  GetContentClient()->browser()->OnCookiesRead(process_id, routing_id, url,
+                                               first_party_url, cookie_list,
+                                               blocked_by_policy);
+}
+
+void NetworkServiceClient::OnCookieChange(int process_id,
+                                          int routing_id,
+                                          const GURL& url,
+                                          const GURL& first_party_url,
+                                          const net::CanonicalCookie& cookie,
+                                          bool blocked_by_policy) {
+  GetContentClient()->browser()->OnCookieChange(
+      process_id, routing_id, url, first_party_url, cookie, blocked_by_policy);
 }
 
 }  // namespace content

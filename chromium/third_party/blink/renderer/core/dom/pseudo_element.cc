@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/dom/element_rare_data.h"
 #include "third_party/blink/renderer/core/dom/first_letter_pseudo_element.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
+#include "third_party/blink/renderer/core/layout/generated_children.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_quote.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -38,6 +39,8 @@
 namespace blink {
 
 PseudoElement* PseudoElement::Create(Element* parent, PseudoId pseudo_id) {
+  if (pseudo_id == kPseudoIdFirstLetter)
+    return FirstLetterPseudoElement::Create(parent);
   return new PseudoElement(parent, pseudo_id);
 }
 
@@ -102,10 +105,16 @@ PseudoElement::PseudoElement(Element* parent, PseudoId pseudo_id)
 
 scoped_refptr<ComputedStyle> PseudoElement::CustomStyleForLayoutObject() {
   scoped_refptr<ComputedStyle> original_style =
-      ParentOrShadowHostElement()->PseudoStyle(PseudoStyleRequest(pseudo_id_));
+      ParentOrShadowHostElement()->StyleForPseudoElement(
+          PseudoStyleRequest(pseudo_id_));
   if (!original_style || original_style->Display() != EDisplay::kContents)
     return original_style;
 
+  return StoreOriginalAndReturnLayoutStyle(std::move(original_style));
+}
+
+scoped_refptr<ComputedStyle> PseudoElement::StoreOriginalAndReturnLayoutStyle(
+    scoped_refptr<ComputedStyle> original_style) {
   // For display:contents we should not generate a box, but we generate a non-
   // observable inline box for pseudo elements to be able to locate the
   // anonymous layout objects for generated content during DetachLayoutTree().
@@ -117,7 +126,7 @@ scoped_refptr<ComputedStyle> PseudoElement::CustomStyleForLayoutObject() {
 
   // Store the actual ComputedStyle to be able to return the correct values from
   // getComputedStyle().
-  StoreNonLayoutObjectComputedStyle(original_style);
+  StoreNonLayoutObjectComputedStyle(std::move(original_style));
   return layout_style;
 }
 
@@ -145,6 +154,13 @@ void PseudoElement::AttachLayoutTree(AttachContext& context) {
   if (!layout_object)
     return;
 
+  // This is to ensure that bypassing the CanHaveGeneratedChildren() check in
+  // LayoutTreeBuilderForElement::ShouldCreateLayoutObject() does not result in
+  // the backdrop pseudo element's layout object becoming the child of a layout
+  // object that doesn't allow children.
+  DCHECK(layout_object->Parent());
+  DCHECK(CanHaveGeneratedChildren(*layout_object->Parent()));
+
   ComputedStyle& style = layout_object->MutableStyleRef();
   if (style.StyleType() != kPseudoIdBefore &&
       style.StyleType() != kPseudoIdAfter)
@@ -168,13 +184,18 @@ bool PseudoElement::LayoutObjectIsNeeded(const ComputedStyle& style) const {
   return PseudoElementLayoutObjectIsNeeded(&style);
 }
 
-void PseudoElement::DidRecalcStyle(StyleRecalcChange) {
+void PseudoElement::DidRecalcStyle(StyleRecalcChange change) {
+  // If the pseudo element is being re-attached, its anonymous LayoutObjects for
+  // generated content will be destroyed and possibly recreated during layout
+  // tree rebuild. Thus, propagating style to generated content now is futile.
+  if (change == kReattach)
+    return;
   if (!GetLayoutObject())
     return;
 
   // The layoutObjects inside pseudo elements are anonymous so they don't get
   // notified of recalcStyle and must have the style propagated downward
-  // manually similar to LayoutObject::propagateStyleToAnonymousChildren.
+  // manually similar to LayoutObject::PropagateStyleToAnonymousChildren.
   LayoutObject* layout_object = GetLayoutObject();
   for (LayoutObject* child = layout_object->NextInPreOrder(layout_object);
        child; child = child->NextInPreOrder(layout_object)) {

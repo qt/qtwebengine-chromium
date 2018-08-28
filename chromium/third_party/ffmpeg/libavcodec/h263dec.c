@@ -316,6 +316,7 @@ static int decode_slice(MpegEncContext *s)
 
     av_assert1(s->mb_x == 0 && s->mb_y == s->mb_height);
 
+    // Detect incorrect padding with wrong stuffing codes used by NEC N-02B
     if (s->codec_id == AV_CODEC_ID_MPEG4         &&
         (s->workaround_bugs & FF_BUG_AUTODETECT) &&
         get_bits_left(&s->gb) >= 48              &&
@@ -543,6 +544,8 @@ retry:
     if (CONFIG_MPEG4_DECODER && avctx->codec_id == AV_CODEC_ID_MPEG4) {
         if (ff_mpeg4_workaround_bugs(avctx) == 1)
             goto retry;
+        if (s->studio_profile != (s->idsp.idct == NULL))
+            ff_mpv_idct_init(s);
     }
 
     /* After H.263 & MPEG-4 header decode we have the height, width,

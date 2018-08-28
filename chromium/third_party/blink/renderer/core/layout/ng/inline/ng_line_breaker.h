@@ -5,11 +5,12 @@
 #ifndef NGLineBreaker_h
 #define NGLineBreaker_h
 
+#include "base/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/ng/exclusions/ng_line_layout_opportunity.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_item_result.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node.h"
-#include "third_party/blink/renderer/platform/fonts/shaping/harf_buzz_shaper.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_shaper.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_spacing.h"
 #include "third_party/blink/renderer/platform/text/text_break_iterator.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
@@ -43,12 +44,13 @@ class CORE_EXPORT NGLineBreaker {
                 NGContainerFragmentBuilder* container_builder,
                 NGExclusionSpace*,
                 unsigned handled_float_index,
+                const NGLineLayoutOpportunity&,
                 const NGInlineBreakToken* = nullptr);
   ~NGLineBreaker();
 
   // Compute the next line break point and produces NGInlineItemResults for
   // the line.
-  bool NextLine(const NGLineLayoutOpportunity& line_opportunity, NGLineInfo*);
+  void NextLine(NGLineInfo*);
 
   // Create an NGInlineBreakToken for the last line returned by NextLine().
   scoped_refptr<NGInlineBreakToken> CreateBreakToken(
@@ -62,63 +64,20 @@ class CORE_EXPORT NGLineBreaker {
                                    NGInlineItemResult*);
 
  private:
-  // This struct holds information for the current line.
-  struct LineData {
-    STACK_ALLOCATED();
-
-    LineData(NGInlineNode node, const NGInlineBreakToken* break_token);
-
-    // The current position from inline_start. Unlike NGInlineLayoutAlgorithm
-    // that computes position in visual order, this position in logical order.
-    LayoutUnit position;
-
-    NGLineLayoutOpportunity line_opportunity;
-
-    // True if this line is the "first formatted line".
-    // https://www.w3.org/TR/CSS22/selector.html#first-formatted-line
-    bool is_first_formatted_line;
-
-    bool use_first_line_style;
-
-    // We don't create "certain zero-height line boxes".
-    // https://drafts.csswg.org/css2/visuren.html#phantom-line-box
-    // Such line boxes do not prevent two margins being "adjoining", and thus
-    // collapsing.
-    // https://drafts.csswg.org/css2/box.html#collapsing-margins
-    bool should_create_line_box = false;
-
-    // Set when the line ended with a forced break. Used to setup the states for
-    // the next line.
-    bool is_after_forced_break = false;
-
-    LayoutUnit AvailableWidth() const {
-      return line_opportunity.AvailableInlineSize();
-    }
-    bool CanFit() const { return position <= AvailableWidth(); }
-    bool CanFit(LayoutUnit extra) const {
-      return position + extra <= AvailableWidth();
-    }
-    bool CanFloatFit(LayoutUnit extra) const {
-      return position + extra <= line_opportunity.AvailableFloatInlineSize();
-    }
-  };
-
   const String& Text() const { return items_data_.text_content; }
   const Vector<NGInlineItem>& Items() const { return items_data_.items; }
 
-  NGInlineItemResult* AddItem(const NGInlineItem&,
-                              unsigned end_offset,
-                              NGInlineItemResults*);
-  NGInlineItemResult* AddItem(const NGInlineItem&, NGInlineItemResults*);
-  void SetLineEndFragment(scoped_refptr<NGPhysicalTextFragment>, NGLineInfo*);
+  NGInlineItemResult* AddItem(const NGInlineItem&, unsigned end_offset);
+  NGInlineItemResult* AddItem(const NGInlineItem&);
+  void SetLineEndFragment(scoped_refptr<NGPhysicalTextFragment>);
   void ComputeCanBreakAfter(NGInlineItemResult*) const;
 
-  void BreakLine(NGLineInfo*);
+  void BreakLine();
 
-  void PrepareNextLine(const NGLineLayoutOpportunity&, NGLineInfo*);
+  void PrepareNextLine();
 
-  void UpdatePosition(const NGInlineItemResults&);
-  void ComputeLineLocation(NGLineInfo*) const;
+  void UpdatePosition();
+  void ComputeLineLocation() const;
 
   enum class LineBreakState {
     // The line breaking is complete.
@@ -129,72 +88,81 @@ class CORE_EXPORT NGLineBreaker {
     // when it is overflowing.
     kTrailing,
 
-    // The initial state. Looking for items to break the line.
+    // The initial state, until the first character is found.
+    kLeading,
+
+    // Looking for more items to fit into the current line.
     kContinue,
   };
 
-  LineBreakState HandleText(const NGInlineItem&, LineBreakState, NGLineInfo*);
+  void HandleText(const NGInlineItem&);
   void BreakText(NGInlineItemResult*,
                  const NGInlineItem&,
-                 LayoutUnit available_width,
-                 NGLineInfo*);
-  LineBreakState HandleTrailingSpaces(const NGInlineItem&, NGLineInfo*);
-  void RemoveTrailingCollapsibleSpace(NGLineInfo*);
-  void AppendHyphen(const NGInlineItem& item, NGLineInfo*);
+                 LayoutUnit available_width);
 
-  LineBreakState HandleControlItem(const NGInlineItem&,
-                                   LineBreakState,
-                                   NGLineInfo*);
-  LineBreakState HandleBidiControlItem(const NGInlineItem&,
-                                       LineBreakState,
-                                       NGLineInfo*);
-  void HandleAtomicInline(const NGInlineItem&, NGLineInfo*);
-  void HandleFloat(const NGInlineItem&, NGLineInfo*, NGInlineItemResult*);
+  scoped_refptr<ShapeResult> TruncateLineEndResult(
+      const NGInlineItemResult& item_result,
+      unsigned end_offset);
+  void UpdateShapeResult(NGInlineItemResult*);
+  scoped_refptr<ShapeResult> ShapeText(const NGInlineItem& item,
+                                       unsigned start,
+                                       unsigned end);
 
-  void HandleOpenTag(const NGInlineItem&, NGInlineItemResult*);
-  void HandleCloseTag(const NGInlineItem&, NGInlineItemResults*);
+  void HandleTrailingSpaces(const NGInlineItem&);
+  void RemoveTrailingCollapsibleSpace();
+  LayoutUnit TrailingCollapsibleSpaceWidth();
+  void ComputeTrailingCollapsibleSpace();
 
-  LineBreakState HandleOverflow(NGLineInfo*);
-  LineBreakState HandleOverflow(NGLineInfo*, LayoutUnit available_width);
-  void Rewind(NGLineInfo*, unsigned new_end);
+  void AppendHyphen(const NGInlineItem& item);
 
-  LayoutObject* CurrentLayoutObject(const NGLineInfo&) const;
+  void HandleControlItem(const NGInlineItem&);
+  void HandleBidiControlItem(const NGInlineItem&);
+  void HandleAtomicInline(const NGInlineItem&);
+  void HandleFloat(const NGInlineItem&);
+
+  void HandleOpenTag(const NGInlineItem&);
+  void HandleCloseTag(const NGInlineItem&);
+
+  void HandleOverflow();
+  void Rewind(unsigned new_end);
 
   void SetCurrentStyle(const ComputedStyle&);
 
   void MoveToNextOf(const NGInlineItem&);
   void MoveToNextOf(const NGInlineItemResult&);
 
-  void ComputeBaseDirection(const NGLineInfo&);
-  bool IsTrailing(const NGInlineItem&, const NGLineInfo&) const;
+  void ComputeBaseDirection();
 
-  LineData line_;
-  NGInlineNode node_;
-  const NGInlineItemsData& items_data_;
+  LayoutUnit AvailableWidth() const {
+    return line_opportunity_.AvailableInlineSize();
+  }
+  LayoutUnit AvailableWidthToFit() const {
+    return AvailableWidth().AddEpsilon();
+  }
 
-  NGLineBreakerMode mode_;
-  const NGConstraintSpace& constraint_space_;
-  Vector<NGPositionedFloat>* positioned_floats_;
-  Vector<scoped_refptr<NGUnpositionedFloat>>* unpositioned_floats_;
-  NGContainerFragmentBuilder* container_builder_; /* May be nullptr */
-  NGExclusionSpace* exclusion_space_;
-  scoped_refptr<const ComputedStyle> current_style_;
+  // These fields are the output of the current line.
+  // NGInlineItemResults is a pointer because the move operation is not cheap
+  // due to its inline buffer.
+  NGLineInfo* line_info_ = nullptr;
+  NGInlineItemResults* item_results_ = nullptr;
 
+  // Represents the current offset of the input.
+  LineBreakState state_;
   unsigned item_index_ = 0;
   unsigned offset_ = 0;
-  LazyLineBreakIterator break_iterator_;
-  HarfBuzzShaper shaper_;
-  ShapeResultSpacing<String> spacing_;
-  bool previous_line_had_forced_break_ = false;
-  const Hyphenation* hyphenation_ = nullptr;
 
-  // Keep track of handled float items. See HandleFloat().
-  unsigned handled_floats_end_item_index_;
+  // The current position from inline_start. Unlike NGInlineLayoutAlgorithm
+  // that computes position in visual order, this position in logical order.
+  LayoutUnit position_;
+  NGLineLayoutOpportunity line_opportunity_;
 
-  // The current base direction for the bidi algorithm.
-  // This is copied from NGInlineNode, then updated after each forced line break
-  // if 'unicode-bidi: plaintext'.
-  TextDirection base_direction_;
+  NGInlineNode node_;
+
+  // True if this line is the "first formatted line".
+  // https://www.w3.org/TR/CSS22/selector.html#first-formatted-line
+  bool is_first_formatted_line_ = false;
+
+  bool use_first_line_style_ = false;
 
   // True when current box allows line wrapping.
   bool auto_wrap_ = false;
@@ -214,7 +182,49 @@ class CORE_EXPORT NGLineBreaker {
   // https://quirks.spec.whatwg.org/#the-line-height-calculation-quirk
   bool in_line_height_quirks_mode_ = false;
 
+  // True when the line we are breaking has a list marker.
+  bool has_list_marker_ = false;
+
+  // True if trailing collapsible spaces have been collapsed.
+  bool trailing_spaces_collapsed_ = false;
+
+  // Set when the line ended with a forced break. Used to setup the states for
+  // the next line.
+  bool is_after_forced_break_ = false;
+
   bool ignore_floats_ = false;
+
+  const NGInlineItemsData& items_data_;
+
+  NGLineBreakerMode mode_;
+  const NGConstraintSpace& constraint_space_;
+  Vector<NGPositionedFloat>* positioned_floats_;
+  Vector<scoped_refptr<NGUnpositionedFloat>>* unpositioned_floats_;
+  NGContainerFragmentBuilder* container_builder_; /* May be nullptr */
+  NGExclusionSpace* exclusion_space_;
+  scoped_refptr<const ComputedStyle> current_style_;
+
+  LazyLineBreakIterator break_iterator_;
+  HarfBuzzShaper shaper_;
+  ShapeResultSpacing<String> spacing_;
+  bool previous_line_had_forced_break_ = false;
+  const Hyphenation* hyphenation_ = nullptr;
+
+  // Cache the result of |ComputeTrailingCollapsibleSpace| to avoid shaping
+  // multiple times.
+  struct TrailingCollapsibleSpace {
+    NGInlineItemResult* item_result;
+    scoped_refptr<const ShapeResult> collapsed_shape_result;
+  };
+  base::Optional<TrailingCollapsibleSpace> trailing_collapsible_space_;
+
+  // Keep track of handled float items. See HandleFloat().
+  unsigned handled_floats_end_item_index_;
+
+  // The current base direction for the bidi algorithm.
+  // This is copied from NGInlineNode, then updated after each forced line break
+  // if 'unicode-bidi: plaintext'.
+  TextDirection base_direction_;
 };
 
 }  // namespace blink

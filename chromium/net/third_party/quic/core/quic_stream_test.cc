@@ -6,13 +6,12 @@
 
 #include <memory>
 
-#include "base/callback.h"
-#include "net/test/gtest_util.h"
 #include "net/third_party/quic/core/quic_connection.h"
 #include "net/third_party/quic/core/quic_utils.h"
 #include "net/third_party/quic/core/quic_write_blocked_list.h"
 #include "net/third_party/quic/core/spdy_utils.h"
 #include "net/third_party/quic/platform/api/quic_arraysize.h"
+#include "net/third_party/quic/platform/api/quic_expect_bug.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_logging.h"
 #include "net/third_party/quic/platform/api/quic_ptr_util.h"
@@ -26,8 +25,8 @@
 #include "net/third_party/quic/test_tools/quic_stream_peer.h"
 #include "net/third_party/quic/test_tools/quic_stream_sequencer_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
-#include "testing/gmock_mutant.h"
 
+using spdy::SpdyHeaderBlock;
 using testing::_;
 using testing::AnyNumber;
 using testing::AtLeast;
@@ -37,7 +36,7 @@ using testing::InvokeWithoutArgs;
 using testing::Return;
 using testing::StrictMock;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -157,7 +156,7 @@ class QuicStreamTest : public QuicTestWithParam<bool> {
   MockQuicConnection* connection_;
   std::unique_ptr<MockQuicSession> session_;
   TestStream* stream_;
-  spdy::SpdyHeaderBlock headers_;
+  SpdyHeaderBlock headers_;
   QuicWriteBlockedList* write_blocked_list_;
   uint32_t initial_flow_control_window_bytes_;
   QuicTime::Delta zero_;
@@ -171,8 +170,8 @@ TEST_F(QuicStreamTest, WriteAllData) {
   size_t length =
       1 + QuicPacketCreator::StreamFramePacketOverhead(
               connection_->transport_version(), PACKET_8BYTE_CONNECTION_ID,
-              !kIncludeVersion, !kIncludeDiversificationNonce,
-              PACKET_4BYTE_PACKET_NUMBER, 0u);
+              PACKET_0BYTE_CONNECTION_ID, !kIncludeVersion,
+              !kIncludeDiversificationNonce, PACKET_4BYTE_PACKET_NUMBER, 0u);
   connection_->SetMaxPacketLength(length);
 
   EXPECT_CALL(*session_, WritevData(stream_, kTestStreamId, _, _, _))
@@ -252,8 +251,8 @@ TEST_F(QuicStreamTest, WriteOrBufferData) {
   size_t length =
       1 + QuicPacketCreator::StreamFramePacketOverhead(
               connection_->transport_version(), PACKET_8BYTE_CONNECTION_ID,
-              !kIncludeVersion, !kIncludeDiversificationNonce,
-              PACKET_4BYTE_PACKET_NUMBER, 0u);
+              PACKET_0BYTE_CONNECTION_ID, !kIncludeVersion,
+              !kIncludeDiversificationNonce, PACKET_4BYTE_PACKET_NUMBER, 0u);
   connection_->SetMaxPacketLength(length);
 
   EXPECT_CALL(*session_, WritevData(_, _, _, _, _))
@@ -296,8 +295,8 @@ TEST_F(QuicStreamTest, WriteOrBufferDataReachStreamLimit) {
       .WillOnce(Invoke(&(MockQuicSession::ConsumeData)));
   stream_->WriteOrBufferData(data, false, nullptr);
   EXPECT_CALL(*connection_, CloseConnection(QUIC_STREAM_LENGTH_OVERFLOW, _, _));
-  EXPECT_DFATAL(stream_->WriteOrBufferData("a", false, nullptr),
-                "Write too many data via stream");
+  EXPECT_QUIC_BUG(stream_->WriteOrBufferData("a", false, nullptr),
+                  "Write too many data via stream");
 }
 
 TEST_F(QuicStreamTest, ConnectionCloseAfterStreamClose) {
@@ -423,6 +422,20 @@ TEST_F(QuicStreamTest, StreamFlowControlMultipleWindowUpdates) {
   EXPECT_EQ(
       window_update_3.byte_offset,
       QuicFlowControllerPeer::SendWindowOffset(stream_->flow_controller()));
+}
+
+TEST_F(QuicStreamTest, FrameStats) {
+  Initialize(kShouldProcessData);
+
+  EXPECT_EQ(0, stream_->num_frames_received());
+  EXPECT_EQ(0, stream_->num_duplicate_frames_received());
+  QuicStreamFrame frame(stream_->id(), false, 0, QuicStringPiece("."));
+  stream_->OnStreamFrame(frame);
+  EXPECT_EQ(1, stream_->num_frames_received());
+  EXPECT_EQ(0, stream_->num_duplicate_frames_received());
+  stream_->OnStreamFrame(frame);
+  EXPECT_EQ(2, stream_->num_frames_received());
+  EXPECT_EQ(1, stream_->num_duplicate_frames_received());
 }
 
 // Verify that when we receive a packet which violates flow control (i.e. sends
@@ -589,8 +602,8 @@ TEST_F(QuicStreamTest, StreamTooLong) {
       .Times(1);
   QuicStreamFrame stream_frame(stream_->id(), false, kMaxStreamLength,
                                QuicStringPiece("."));
-  EXPECT_DFATAL(stream_->OnStreamFrame(stream_frame),
-                "Receive stream frame reaches max stream length");
+  EXPECT_QUIC_PEER_BUG(stream_->OnStreamFrame(stream_frame),
+                       "Receive stream frame reaches max stream length");
 }
 
 TEST_F(QuicStreamTest, SetDrainingIncomingOutgoing) {
@@ -884,7 +897,7 @@ TEST_F(QuicStreamTest, WriteBufferedData) {
   // Buffered data size < threshold, ask upper layer for more data.
   EXPECT_CALL(*stream_, OnCanWriteNewData()).Times(1);
   stream_->OnCanWrite();
-  EXPECT_EQ(GetQuicFlag(FLAGS_quic_buffered_data_threshold) - 1u,
+  EXPECT_EQ(GetQuicFlag(FLAGS_quic_buffered_data_threshold) - 1,
             stream_->BufferedDataBytes());
   EXPECT_TRUE(stream_->CanWriteNewData());
 
@@ -953,8 +966,8 @@ TEST_F(QuicStreamTest, WritevDataReachStreamLimit) {
   EXPECT_EQ(data.length(), consumed.bytes_consumed);
   struct iovec iov2 = {const_cast<char*>(data.data()), 1u};
   EXPECT_CALL(*connection_, CloseConnection(QUIC_STREAM_LENGTH_OVERFLOW, _, _));
-  EXPECT_DFATAL(stream_->WritevData(&iov2, 1u, false),
-                "Write too many data via stream");
+  EXPECT_QUIC_BUG(stream_->WritevData(&iov2, 1u, false),
+                  "Write too many data via stream");
 }
 
 TEST_F(QuicStreamTest, WriteMemSlices) {
@@ -1046,8 +1059,8 @@ TEST_F(QuicStreamTest, WriteMemSlicesReachStreamLimit) {
   QuicTestMemSliceVector vector2(buffers);
   QuicMemSliceSpan span2 = vector2.span();
   EXPECT_CALL(*connection_, CloseConnection(QUIC_STREAM_LENGTH_OVERFLOW, _, _));
-  EXPECT_DFATAL(stream_->WriteMemSlices(span2, false),
-                "Write too many data via stream");
+  EXPECT_QUIC_BUG(stream_->WriteMemSlices(span2, false),
+                  "Write too many data via stream");
 }
 
 TEST_F(QuicStreamTest, StreamDataGetAckedMultipleTimes) {
@@ -1281,4 +1294,4 @@ TEST_F(QuicStreamTest, RetransmitStreamData) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

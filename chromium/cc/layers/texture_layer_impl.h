@@ -32,15 +32,16 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
 
   std::unique_ptr<LayerImpl> CreateLayerImpl(
       LayerTreeImpl* layer_tree_impl) override;
-  bool IsSnapped() override;
+  bool IsSnappedToPixelGridInTarget() override;
   void PushPropertiesTo(LayerImpl* layer) override;
 
   bool WillDraw(DrawMode draw_mode,
-                LayerTreeResourceProvider* resource_provider) override;
+                viz::ClientResourceProvider* resource_provider) override;
   void AppendQuads(viz::RenderPass* render_pass,
                    AppendQuadsData* append_quads_data) override;
   SimpleEnclosedRegion VisibleOpaqueRegion() const override;
   void ReleaseResources() override;
+  void OnPurgeMemory() override;
 
   // These setter methods don't cause any implicit damage, so the texture client
   // must explicitly invalidate if they intend to cause a visible change in the
@@ -92,13 +93,13 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
 
   // True while the |transferable_resource_| is owned by this layer, and
   // becomes false once it is passed to another layer or to the
-  // LayerTreeResourceProvider, at which point we get back a |resource_id_|.
+  // viz::ClientResourceProvider, at which point we get back a |resource_id_|.
   bool own_resource_ = false;
   // A TransferableResource from the layer's client that will be given
   // to the display compositor.
   viz::TransferableResource transferable_resource_;
   // Local ResourceId for the TransferableResource, to be used with the
-  // compositor's LayerTreeResourceProvider in order to refer to the
+  // compositor's viz::ClientResourceProvider in order to refer to the
   // TransferableResource given to it.
   viz::ResourceId resource_id_ = 0;
   std::unique_ptr<viz::SingleReleaseCallback> release_callback_;

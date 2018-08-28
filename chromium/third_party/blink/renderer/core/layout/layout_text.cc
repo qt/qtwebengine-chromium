@@ -28,7 +28,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_thread.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
@@ -50,6 +50,7 @@
 #include "third_party/blink/renderer/core/layout/line/glyph_overflow.h"
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
 #include "third_party/blink/renderer/core/layout/ng/geometry/ng_logical_rect.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_abstract_inline_text_box.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_fragment_traversal.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_offset_mapping.h"
@@ -97,7 +98,9 @@ class SecureTextTimer final : public TimerBase {
   void RestartWithNewText(unsigned last_typed_character_offset) {
     last_typed_character_offset_ = last_typed_character_offset;
     if (Settings* settings = layout_text_->GetDocument().GetSettings()) {
-      StartOneShot(settings->GetPasswordEchoDurationInSeconds(), FROM_HERE);
+      StartOneShot(
+          TimeDelta::FromSecondsD(settings->GetPasswordEchoDurationInSeconds()),
+          FROM_HERE);
     }
   }
   void Invalidate() { last_typed_character_offset_ = -1; }
@@ -680,7 +683,9 @@ PositionWithAffinity LayoutText::PositionForPoint(
         if (LineDirectionPointFitsInBox(point_line_direction.ToInt(), box,
                                         should_affinity_be_downstream)) {
           return CreatePositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(
-              box, box->OffsetForPosition(point_line_direction),
+              box,
+              box->OffsetForPosition(point_line_direction, IncludePartialGlyphs,
+                                     BreakGlyphs),
               should_affinity_be_downstream);
         }
       }
@@ -694,7 +699,9 @@ PositionWithAffinity LayoutText::PositionForPoint(
                                 should_affinity_be_downstream);
     return CreatePositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(
         last_box,
-        last_box->OffsetForPosition(point_line_direction) + last_box->Start(),
+        last_box->OffsetForPosition(point_line_direction, IncludePartialGlyphs,
+                                    BreakGlyphs) +
+            last_box->Start(),
         should_affinity_be_downstream);
   }
   return CreatePositionWithAffinity(0);
@@ -1033,7 +1040,7 @@ static float MaxWordFragmentWidth(LayoutText* layout_text,
     return 0;
 
   float minimum_fragment_width_to_consider =
-      Hyphenation::MinimumPrefixWidth(font);
+      font.GetFontDescription().MinimumPrefixWidthToHyphenate();
   float max_fragment_width = 0;
   TextRun run = ConstructTextRun(font, layout_text, word_offset, word_length,
                                  style, text_direction);
@@ -1451,7 +1458,7 @@ UChar32 LayoutText::LastCharacterAfterWhitespaceCollapsing() const {
 }
 
 FloatPoint LayoutText::FirstRunOrigin() const {
-  return IntPoint(FirstRunX(), FirstRunY());
+  return FloatPoint(FirstRunX(), FirstRunY());
 }
 
 float LayoutText::FirstRunX() const {
@@ -1902,7 +1909,7 @@ LayoutRect LayoutText::LocalSelectionRect() const {
       if (status.start == status.end)
         continue;
       NGPhysicalOffsetRect fragment_rect =
-          fragment->ComputeLocalSelectionRect(status);
+          fragment->ComputeLocalSelectionRectForText(status);
       fragment_rect.offset += fragment->InlineOffsetToContainerBox();
       rect.Unite(fragment_rect.ToLayoutRect());
     }
@@ -2214,8 +2221,18 @@ void LayoutText::MomentarilyRevealLastTypedCharacter(
 }
 
 scoped_refptr<AbstractInlineTextBox> LayoutText::FirstAbstractInlineTextBox() {
-  return AbstractInlineTextBox::GetOrCreate(LineLayoutText(this),
-                                            FirstTextBox());
+  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
+    LayoutObject* const first_letter_part = GetFirstLetterPart();
+    auto fragments = NGPaintFragment::InlineFragmentsFor(
+        first_letter_part ? first_letter_part : this);
+    if (!fragments.IsEmpty() &&
+        fragments.IsInLayoutNGInlineFormattingContext()) {
+      return NGAbstractInlineTextBox::GetOrCreate(LineLayoutText(this),
+                                                  **fragments.begin());
+    }
+  }
+  return LegacyAbstractInlineTextBox::GetOrCreate(LineLayoutText(this),
+                                                  FirstTextBox());
 }
 
 void LayoutText::InvalidateDisplayItemClients(

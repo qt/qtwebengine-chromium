@@ -33,20 +33,22 @@
 
 namespace blink {
 
+class LifecycleObserverBase;
+
 template <typename T, typename Observer>
 class LifecycleNotifier : public GarbageCollectedMixin {
  public:
   virtual ~LifecycleNotifier();
 
-  void AddObserver(Observer*);
-  void RemoveObserver(Observer*);
+  void AddObserver(LifecycleObserverBase*);
+  void RemoveObserver(LifecycleObserverBase*);
 
-  // notifyContextDestroyed() should be explicitly dispatched from an
-  // observed context to detach its observers, and if the observer kind
-  // requires it, notify each observer by invoking contextDestroyed().
+  // NotifyContextDestroyed() should be explicitly dispatched from an
+  // observed context to detach its observers and, if the observer kind
+  // requires it, notify each observer by invoking ContextDestroyed().
   //
-  // When contextDestroyed() is called, it is supplied the context as
-  // an argument, but the observer's lifecycleContext() is still valid
+  // When ContextDestroyed() is called, it is supplied the context as
+  // an argument, but the observer's LifecycleContext() is still valid
   // and safe to use while handling the notification.
   virtual void NotifyContextDestroyed();
 
@@ -61,19 +63,51 @@ class LifecycleNotifier : public GarbageCollectedMixin {
 
   T* Context() { return static_cast<T*>(this); }
 
-  using ObserverSet = HeapHashSet<WeakMember<Observer>>;
+  // Safely iterate over the registered lifecycle observers.
+  //
+  // Adding or removing observers is not allowed during iteration. The callable
+  // will only be called synchronously inside ForEachObserver().
+  //
+  // Sample usage:
+  //     ForEachObserver([](ObserverType* observer) {
+  //       observer->SomeMethod();
+  //     });
+  template <typename ForEachCallable>
+  void ForEachObserver(const ForEachCallable& callable) const {
+    base::AutoReset<IterationState> scope(&iteration_state_, kAllowingNone);
+    for (LifecycleObserverBase* observer_base : observers_) {
+      Observer* observer = static_cast<Observer*>(observer_base);
+      callable(observer);
+    }
+  }
+
+  // ForEachObserver() variant that does not protect against memory corruption.
+  //
+  // Only used by SynchronousMutationNotifier::NotifyUpdateCharacterData. See
+  // implementation comment for why it is necessary.
+  //
+  // TODO(crbug.com/862900): Fix SynchronousMutationNotifier and remove this.
+  template <typename ForEachCallable>
+  void ForEachObserverWithoutChecks(const ForEachCallable& callable) const {
+    for (LifecycleObserverBase* observer_base : observers_) {
+      Observer* observer = static_cast<Observer*>(observer_base);
+      callable(observer);
+    }
+  }
+
+ private:
+  using ObserverSet = HeapHashSet<WeakMember<LifecycleObserverBase>>;
 
   enum IterationState {
     kAllowingNone = 0,
     kAllowingAddition = 1,
     kAllowingRemoval = 2,
     kNotIterating = kAllowingAddition | kAllowingRemoval,
-    kAllowPendingRemoval = 4,
   };
 
   // Iteration state is recorded while iterating the observer set,
   // optionally barring add or remove mutations.
-  IterationState iteration_state_;
+  mutable IterationState iteration_state_;
   ObserverSet observers_;
 };
 
@@ -135,7 +169,8 @@ inline void LifecycleNotifier<T, Observer>::NotifyContextDestroyed() {
   base::AutoReset<IterationState> scope(&iteration_state_, kAllowingRemoval);
   ObserverSet observers;
   observers_.swap(observers);
-  for (Observer* observer : observers) {
+  for (LifecycleObserverBase* observer_base : observers) {
+    Observer* observer = static_cast<Observer*>(observer_base);
     DCHECK(observer->LifecycleContext() == Context());
     ContextDestroyedNotifier<Observer, T>::Call(observer, Context());
     observer->ClearContext();
@@ -143,19 +178,15 @@ inline void LifecycleNotifier<T, Observer>::NotifyContextDestroyed() {
 }
 
 template <typename T, typename Observer>
-inline void LifecycleNotifier<T, Observer>::AddObserver(Observer* observer) {
+inline void LifecycleNotifier<T, Observer>::AddObserver(
+    LifecycleObserverBase* observer) {
   CHECK(iteration_state_ & kAllowingAddition);
   observers_.insert(observer);
 }
 
 template <typename T, typename Observer>
-inline void LifecycleNotifier<T, Observer>::RemoveObserver(Observer* observer) {
-  // If immediate removal isn't currently allowed,
-  // |observer| is recorded for pending removal.
-  if (iteration_state_ & kAllowPendingRemoval) {
-    observers_.insert(observer);
-    return;
-  }
+inline void LifecycleNotifier<T, Observer>::RemoveObserver(
+    LifecycleObserverBase* observer) {
   CHECK(iteration_state_ & kAllowingRemoval);
   observers_.erase(observer);
 }

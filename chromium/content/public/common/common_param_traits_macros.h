@@ -26,6 +26,7 @@
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/web/web_frame_serializer_cache_control_policy.h"
 #include "third_party/blink/public/web/window_features.mojom.h"
+#include "ui/accessibility/ax_event.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/ax_relative_bounds.h"
 #include "ui/accessibility/ax_tree_update.h"
@@ -198,13 +199,13 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(user_gesture_required_for_presentation)
   IPC_STRUCT_TRAITS_MEMBER(text_track_margin_percentage)
   IPC_STRUCT_TRAITS_MEMBER(save_previous_document_resources)
-#if defined(OS_ANDROID)
   IPC_STRUCT_TRAITS_MEMBER(text_autosizing_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(double_tap_to_zoom_enabled)
+#if defined(OS_ANDROID)
   IPC_STRUCT_TRAITS_MEMBER(font_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(device_scale_adjustment)
   IPC_STRUCT_TRAITS_MEMBER(force_enable_zoom)
   IPC_STRUCT_TRAITS_MEMBER(fullscreen_supported)
-  IPC_STRUCT_TRAITS_MEMBER(double_tap_to_zoom_enabled)
   IPC_STRUCT_TRAITS_MEMBER(media_playback_gesture_whitelist_scope)
   IPC_STRUCT_TRAITS_MEMBER(default_video_poster_url)
   IPC_STRUCT_TRAITS_MEMBER(support_deprecated_target_density_dpi)
@@ -240,6 +241,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(autoplay_policy)
   IPC_STRUCT_TRAITS_MEMBER(low_priority_iframes_threshold)
   IPC_STRUCT_TRAITS_MEMBER(picture_in_picture_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(lazy_frame_loading_distance_thresholds_px)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::mojom::WindowFeatures)
@@ -279,6 +281,13 @@ IPC_STRUCT_TRAITS_BEGIN(ui::AXRelativeBounds)
   IPC_STRUCT_TRAITS_MEMBER(offset_container_id)
   IPC_STRUCT_TRAITS_MEMBER(bounds)
   IPC_STRUCT_TRAITS_MEMBER(transform)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(ui::AXEvent)
+  IPC_STRUCT_TRAITS_MEMBER(event_type)
+  IPC_STRUCT_TRAITS_MEMBER(id)
+  IPC_STRUCT_TRAITS_MEMBER(event_from)
+  IPC_STRUCT_TRAITS_MEMBER(action_request_id)
 IPC_STRUCT_TRAITS_END()
 
 #endif  // CONTENT_PUBLIC_COMMON_COMMON_PARAM_TRAITS_MACROS_H_

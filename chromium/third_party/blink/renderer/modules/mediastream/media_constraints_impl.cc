@@ -32,11 +32,11 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/array_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/modules/mediastream/media_track_constraints.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
@@ -340,10 +340,6 @@ static void ParseOldStyleNames(
     } else if (constraint.name_.Equals(kGoogExperimentalNoiseSuppression)) {
       result.goog_experimental_noise_suppression.SetExact(
           ToBoolean(constraint.value_));
-    } else if (constraint.name_.Equals(kGoogBeamforming)) {
-      result.goog_beamforming.SetExact(ToBoolean(constraint.value_));
-    } else if (constraint.name_.Equals(kGoogArrayGeometry)) {
-      result.goog_array_geometry.SetExact(constraint.value_);
     } else if (constraint.name_.Equals(kGoogHighpassFilter)) {
       result.goog_highpass_filter.SetExact(ToBoolean(constraint.value_));
     } else if (constraint.name_.Equals(kGoogTypingNoiseDetection)) {
@@ -435,7 +431,11 @@ static void ParseOldStyleNames(
     } else if (constraint.name_.Equals(kPowerLineFrequency)) {
       result.goog_power_line_frequency.SetExact(
           atoi(constraint.value_.Utf8().c_str()));
-    } else if (constraint.name_.Equals(kGoogLeakyBucket)) {
+    } else if (constraint.name_.Equals(kGoogLeakyBucket) ||
+               constraint.name_.Equals(kGoogBeamforming) ||
+               constraint.name_.Equals(kGoogArrayGeometry)) {
+      // TODO(crbug.com/856176): Remove the kGoogBeamforming and
+      // kGoogArrayGeometry special cases.
       context->AddConsoleMessage(ConsoleMessage::Create(
           kDeprecationMessageSource, kWarningMessageLevel,
           "Obsolete constraint named " + String(constraint.name_) +
@@ -464,6 +464,7 @@ static void ParseOldStyleNames(
             kDeprecationMessageSource, kWarningMessageLevel,
             "Unknown constraint named " + String(constraint.name_) +
                 " rejected"));
+        // TODO(crbug.com/856176): Don't throw an error.
         error_state.ThrowConstraintError("Unknown name of constraint detected",
                                          constraint.name_);
       }

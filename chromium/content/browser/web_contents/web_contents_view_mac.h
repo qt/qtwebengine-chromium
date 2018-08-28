@@ -7,6 +7,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <list>
 #include <memory>
 #include <string>
 #include <vector>
@@ -18,7 +19,8 @@
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
-#include "ui/base/cocoa/base_view.h"
+#import "ui/base/cocoa/accessibility_hostable.h"
+#import "ui/base/cocoa/base_view.h"
 #include "ui/gfx/geometry/size.h"
 
 @class WebDragDest;
@@ -40,7 +42,7 @@ class Layer;
 }
 
 CONTENT_EXPORT
-@interface WebContentsViewCocoa : BaseView {
+@interface WebContentsViewCocoa : BaseView<AccessibilityHostable> {
  @private
   // Instances of this class are owned by both webContentsView_ and AppKit. It
   // is possible for an instance to outlive its webContentsView_. The
@@ -48,6 +50,7 @@ CONTENT_EXPORT
   content::WebContentsViewMac* webContentsView_;
   base::scoped_nsobject<WebDragSource> dragSource_;
   base::scoped_nsobject<WebDragDest> dragDest_;
+  base::scoped_nsobject<id> accessibilityParent_;
   BOOL mouseDownCanMoveWindow_;
 }
 
@@ -57,6 +60,7 @@ CONTENT_EXPORT
 // NSDraggingSource. It is supposedly deprecated, but the non-deprecated API
 // -[NSWindow dragImage:...] still relies on it.
 - (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal;
+
 @end
 
 namespace content {
@@ -98,7 +102,9 @@ class WebContentsViewMac : public WebContentsView,
       RenderWidgetHost* render_widget_host) override;
   void SetPageTitle(const base::string16& title) override;
   void RenderViewCreated(RenderViewHost* host) override;
-  void RenderViewSwappedIn(RenderViewHost* host) override;
+  void RenderViewReady() override;
+  void RenderViewHostChanged(RenderViewHost* old_host,
+                             RenderViewHost* new_host) override;
   void SetOverscrollControllerEnabled(bool enabled) override;
   bool IsEventTracking() const override;
   void CloseTabAfterEventTracking() override;
@@ -161,6 +167,13 @@ class WebContentsViewMac : public WebContentsView,
 
   // Whether to allow other views.
   bool allow_other_views_;
+
+  // This contains all RenderWidgetHostViewMacs that have been added as child
+  // NSViews to this NSView. Note that this list may contain RWHVMacs besides
+  // just |web_contents_->GetRenderWidgetHostView()|. The only time that the
+  // RWHVMac's NSView is removed from the WCVMac's NSView is when it is
+  // destroyed.
+  std::list<base::WeakPtr<RenderWidgetHostViewBase>> child_views_;
 
   ui::Layer* parent_ui_layer_ = nullptr;
 

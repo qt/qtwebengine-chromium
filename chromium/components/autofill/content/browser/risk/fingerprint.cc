@@ -38,10 +38,10 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/screen_info.h"
 #include "content/public/common/webplugininfo.h"
-#include "device/geolocation/public/cpp/geoposition.h"
 #include "gpu/config/gpu_info.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "ppapi/buildflags/buildflags.h"
+#include "services/device/public/cpp/geolocation/geoposition.h"
 #include "services/device/public/mojom/constants.mojom.h"
 #include "services/device/public/mojom/geolocation.mojom.h"
 #include "services/device/public/mojom/geolocation_context.mojom.h"
@@ -168,13 +168,14 @@ void AddGpuInfoToFingerprint(Fingerprint::MachineCharacteristics* machine,
     return;
 
   const gpu::GPUInfo gpu_info = gpu_data_manager.GetGPUInfo();
+  const gpu::GPUInfo::GPUDevice& active_gpu = gpu_info.active_gpu();
 
   Fingerprint::MachineCharacteristics::Graphics* graphics =
       machine->mutable_graphics_card();
-  graphics->set_vendor_id(gpu_info.gpu.vendor_id);
-  graphics->set_device_id(gpu_info.gpu.device_id);
-  graphics->set_driver_version(gpu_info.driver_version);
-  graphics->set_driver_date(gpu_info.driver_date);
+  graphics->set_vendor_id(active_gpu.vendor_id);
+  graphics->set_device_id(active_gpu.device_id);
+  graphics->set_driver_version(active_gpu.driver_version);
+  graphics->set_driver_date(active_gpu.driver_date);
 }
 
 // Waits for all asynchronous data required for the fingerprint to be loaded,

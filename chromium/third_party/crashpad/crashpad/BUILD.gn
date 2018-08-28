@@ -40,11 +40,12 @@ if (crashpad_is_in_chromium || crashpad_is_in_fuchsia) {
 
       deps = [
         ":crashpad_tests",
-        "snapshot:crashpad_snapshot_test_both_dt_hash_styles(//build/toolchain/fuchsia:$current_cpu-shared)",
-        "snapshot:crashpad_snapshot_test_module(//build/toolchain/fuchsia:$current_cpu-shared)",
-        "snapshot:crashpad_snapshot_test_module_large(//build/toolchain/fuchsia:$current_cpu-shared)",
-        "snapshot:crashpad_snapshot_test_module_small(//build/toolchain/fuchsia:$current_cpu-shared)",
+        "snapshot:crashpad_snapshot_test_both_dt_hash_styles",
+        "snapshot:crashpad_snapshot_test_module",
+        "snapshot:crashpad_snapshot_test_module_large",
+        "snapshot:crashpad_snapshot_test_module_small",
         "test:crashpad_test_test_multiprocess_exec_test_child",
+        "util:generate_test_server_key",
         "util:http_transport_test_server",
       ]
 
@@ -60,9 +61,20 @@ if (crashpad_is_in_chromium || crashpad_is_in_fuchsia) {
           name = "http_transport_test_server"
           dest = "crashpad_test_data/http_transport_test_server"
         },
+
+        # These aren't actually tests, but that seems to be the only way to
+        # convince package() to get them from the output directory.
+        {
+          name = "crashpad_util_test_cert.pem"
+          dest = "crashpad_test_data/crashpad_util_test_cert.pem"
+        },
+        {
+          name = "crashpad_util_test_key.pem"
+          dest = "crashpad_test_data/crashpad_util_test_key.pem"
+        },
       ]
 
-      libraries = [
+      loadable_modules = [
         {
           name = "crashpad_snapshot_test_both_dt_hash_styles.so"
         },
@@ -79,15 +91,15 @@ if (crashpad_is_in_chromium || crashpad_is_in_fuchsia) {
 
       resources = [
         {
-          path = rebase_path("util/net/testdata/ascii_http_body.txt")
+          path = "util/net/testdata/ascii_http_body.txt"
           dest = "crashpad_test_data/util/net/testdata/ascii_http_body.txt"
         },
         {
-          path = rebase_path("util/net/testdata/binary_http_body.dat")
+          path = "util/net/testdata/binary_http_body.dat"
           dest = "crashpad_test_data/util/net/testdata/binary_http_body.dat"
         },
         {
-          path = rebase_path("test/test_paths_test_data_root.txt")
+          path = "test/test_paths_test_data_root.txt"
           dest = "crashpad_test_data/test/test_paths_test_data_root.txt"
         },
       ]

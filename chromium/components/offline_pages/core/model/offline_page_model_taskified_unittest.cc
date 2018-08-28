@@ -13,7 +13,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind_test_util.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_mock_time_task_runner.h"
@@ -26,7 +26,7 @@
 #include "components/offline_pages/core/model/persistent_page_consistency_check_task.h"
 #include "components/offline_pages/core/offline_page_feature.h"
 #include "components/offline_pages/core/offline_page_item.h"
-#include "components/offline_pages/core/offline_page_metadata_store_sql.h"
+#include "components/offline_pages/core/offline_page_metadata_store.h"
 #include "components/offline_pages/core/offline_page_metadata_store_test_util.h"
 #include "components/offline_pages/core/offline_page_model.h"
 #include "components/offline_pages/core/offline_page_test_archiver.h"
@@ -111,7 +111,7 @@ class OfflinePageModelTaskifiedTest : public testing::Test,
                             const GURL& original_url,
                             const std::string& request_origin,
                             std::unique_ptr<OfflinePageArchiver> archiver,
-                            const SavePageCallback& callback);
+                            SavePageCallback callback);
   int64_t SavePageWithExpectedResult(
       const GURL& url,
       const ClientId& client_id,
@@ -119,6 +119,13 @@ class OfflinePageModelTaskifiedTest : public testing::Test,
       const std::string& request_origin,
       std::unique_ptr<OfflinePageArchiver> archiver,
       SavePageResult expected_result);
+  // Start a save page simulating a file move failure.
+  int64_t SavePageWithFileMoveFailure(
+      const GURL& url,
+      const ClientId& client_id,
+      const GURL& original_url,
+      const std::string& request_origin,
+      std::unique_ptr<OfflinePageArchiver> archiver);
   // Insert an offline page in to store, it does not rely on the model
   // implementation.
   void InsertPageIntoStore(const OfflinePageItem& offline_page);
@@ -129,7 +136,7 @@ class OfflinePageModelTaskifiedTest : public testing::Test,
   // Getters for private fields.
   base::TestMockTimeTaskRunner* task_runner() { return task_runner_.get(); }
   OfflinePageModelTaskified* model() { return model_.get(); }
-  OfflinePageMetadataStoreSQL* store() { return store_test_util_.store(); }
+  OfflinePageMetadataStore* store() { return store_test_util_.store(); }
   OfflinePageMetadataStoreTestUtil* store_test_util() {
     return &store_test_util_;
   }
@@ -216,7 +223,6 @@ void OfflinePageModelTaskifiedTest::TearDown() {
     if (!public_archive_dir_.Delete())
       DLOG(ERROR) << "public_archive_dir not created";
   }
-  EXPECT_EQ(0UL, model_->pending_archivers_.size());
   model_->RemoveObserver(this);
   model_.reset();
   PumpLoop();
@@ -242,7 +248,6 @@ void OfflinePageModelTaskifiedTest::BuildModel() {
   model_->AddObserver(this);
   histogram_tester_ = std::make_unique<base::HistogramTester>();
   ResetResults();
-  EXPECT_EQ(0UL, model_->pending_archivers_.size());
 }
 
 void OfflinePageModelTaskifiedTest::ResetModel() {
@@ -283,14 +288,15 @@ void OfflinePageModelTaskifiedTest::SavePageWithCallback(
     const GURL& original_url,
     const std::string& request_origin,
     std::unique_ptr<OfflinePageArchiver> archiver,
-    const SavePageCallback& callback) {
+    SavePageCallback callback) {
   OfflinePageModel::SavePageParams save_page_params;
   save_page_params.url = url;
   save_page_params.client_id = client_id;
   save_page_params.original_url = original_url;
   save_page_params.request_origin = request_origin;
   save_page_params.is_background = false;
-  model()->SavePage(save_page_params, std::move(archiver), nullptr, callback);
+  model()->SavePage(save_page_params, std::move(archiver), nullptr,
+                    std::move(callback));
   PumpLoop();
 }
 
@@ -310,6 +316,20 @@ int64_t OfflinePageModelTaskifiedTest::SavePageWithExpectedResult(
   if (expected_result == SavePageResult::SUCCESS) {
     EXPECT_NE(OfflinePageModel::kInvalidOfflineId, offline_id);
   }
+  return offline_id;
+}
+
+int64_t OfflinePageModelTaskifiedTest::SavePageWithFileMoveFailure(
+    const GURL& url,
+    const ClientId& client_id,
+    const GURL& original_url,
+    const std::string& request_origin,
+    std::unique_ptr<OfflinePageArchiver> archiver) {
+  int64_t offline_id = OfflinePageModel::kInvalidOfflineId;
+  base::MockCallback<SavePageCallback> callback;
+
+  SavePageWithCallback(url, client_id, original_url, request_origin,
+                       std::move(archiver), callback.Get());
   return offline_id;
 }
 
@@ -863,10 +883,11 @@ TEST_F(OfflinePageModelTaskifiedTest, DeletePagesByUrlPredicate) {
   EXPECT_CALL(callback, Run(testing::A<DeletePageResult>()));
   CheckTaskQueueIdle();
 
-  UrlPredicate predicate =
-      base::Bind([](const GURL& expected_url,
-                    const GURL& url) -> bool { return url == expected_url; },
-                 kTestUrl);
+  UrlPredicate predicate = base::BindRepeating(
+      [](const GURL& expected_url, const GURL& url) -> bool {
+        return url == expected_url;
+      },
+      kTestUrl);
 
   model()->DeleteCachedPagesByURLPredicate(predicate, callback.Get());
   EXPECT_TRUE(task_queue()->HasRunningTask());
@@ -1256,6 +1277,27 @@ TEST_F(OfflinePageModelTaskifiedTest,
   // that the file ended up in the correct place instead of just not the wrong
   // place.
   EXPECT_NE(temporary_page_path.DirName(), persistent_page_path.DirName());
+}
+
+// This test is affected by https://crbug.com/725685, which only affects windows
+// platform.
+#if defined(OS_WIN)
+#define MAYBE_PublishPageFailure DISABLED_PublishPageFailure
+#else
+#define MAYBE_PublishPageFailure PublishPageFailure
+#endif
+TEST_F(OfflinePageModelTaskifiedTest, MAYBE_PublishPageFailure) {
+  // Save a persistent page that will report failure to be copied to a public
+  // dir.
+  auto archiver = BuildArchiver(kTestUrl, ArchiverResult::SUCCESSFULLY_CREATED);
+  archiver->set_archive_attempt_failure(true);
+  SavePageWithFileMoveFailure(kTestUrl, kTestUserRequestedClientId, GURL(),
+                              kEmptyRequestOrigin, std::move(archiver));
+
+  // Ensure that a histogram is emitted for the failure
+  histogram_tester()->ExpectUniqueSample(
+      "OfflinePages.PublishPageResult",
+      static_cast<int>(SavePageResult::FILE_MOVE_FAILED), 1);
 }
 
 // This test is affected by https://crbug.com/725685, which only affects windows

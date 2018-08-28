@@ -33,6 +33,7 @@ if (is_android) {
   import("//build/linux/extract_symbols.gni")
 } else if (is_mac) {
   import("//build/compiled_action.gni")
+  import("//build/config/mac/base_rules.gni")
   import("//build/config/mac/rules.gni")
   import("//build/config/mac/symbols.gni")
   import("//build/mac/tweak_info_plist.gni")
@@ -153,10 +154,7 @@ if (!is_android && !is_mac) {
       sources += [ "app/chrome_exe_resource.h" ]
       defines = []
       public_deps = []
-      deps += [
-        "//build/config:exe_and_shlib_deps",
-        "//printing/buildflags",
-      ]
+      deps += [ "//printing/buildflags" ]
 
       data += [ "$root_out_dir/resources.pak" ]
       if (is_linux || is_win) {
@@ -299,11 +297,12 @@ if (!is_android && !is_mac) {
         }
       }
 
+      if (is_chromeos || is_win) {
+        data_deps += [ "//mojo/core:shared_library" ]
+      }
+
       if (is_chromeos) {
-        data_deps += [
-          "//mojo/edk:mojo_core",
-          "//mojo/edk:mojo_core_for_arc",
-        ]
+        data_deps += [ "//mojo/core:shared_libraries_for_arc" ]
       }
 
       # These files are used by the installer so we need a public dep.
@@ -396,7 +395,6 @@ if (is_win) {
       ":chrome_dll_manifest",
       ":chrome_dll_version",
       "//base/trace_event/etw_manifest:chrome_events_win",
-      "//build/config:exe_and_shlib_deps",
       "//chrome/app:chrome_dll_resources",
       "//chrome/app:command_ids",
       "//chrome/app/theme:chrome_unscaled_resources",
@@ -503,7 +501,6 @@ if (is_win) {
         ":child_dependencies",
         ":chrome_child_manifest",
         ":chrome_dll_version",
-        "//build/config:exe_and_shlib_deps",
         "//chrome/browser/policy:path_parser",
         "//chrome/common:buildflags",
         "//chrome/install_static:install_static_util",
@@ -634,7 +631,6 @@ if (is_win) {
       ":chrome_app_strings_bundle_data",
       ":chrome_resources",
       ":chrome_versioned_bundle_data",
-      "//build/config:exe_and_shlib_deps",
       "//chrome/common:version_header",
     ]
 
@@ -802,6 +798,16 @@ if (is_win) {
     ]
   }
 
+  compile_entitlements("entitlements") {
+    entitlements_templates = [ "app/entitlements.plist" ]
+    output_name = "$target_gen_dir/entitlements.plist"
+    substitutions = [
+      "CHROMIUM_BUNDLE_ID=$chrome_mac_bundle_id",
+      "CHROMIUM_TEAM_ID=$chrome_mac_team_id",
+    ]
+    visibility = [ "//chrome/installer/mac:copies" ]
+  }
+
   mac_app_bundle("chrome_helper_app") {
     output_name = chrome_helper_name
 
@@ -820,7 +826,6 @@ if (is_win) {
     defines = [ "HELPER_EXECUTABLE" ]
 
     deps = [
-      "//build/config:exe_and_shlib_deps",
       "//chrome/common:version_header",
       "//sandbox/mac:seatbelt",
     ]
@@ -829,7 +834,7 @@ if (is_win) {
 
     if (is_component_build) {
       ldflags += [
-        # The helper is in Chromium.app/Contents/Versions/X/Chromium Helper.app/Conents/MacOS/
+        # The helper is in Chromium.app/Contents/Versions/X/Chromium Helper.app/Contents/MacOS/
         # so set rpath up to the base.
         "-rpath",
         "@loader_path/../../../../../../..",
@@ -1066,11 +1071,7 @@ if (is_win) {
 
   if (enable_widevine_cdm_host_verification) {
     widevine_sign_file("sign_chrome_framework_for_widevine") {
-      file = "$root_out_dir/$chrome_framework_name.framework/"
-      if (defined(chrome_framework_version)) {
-        file += "Versions/$chrome_framework_version/"
-      }
-      file += "$chrome_framework_name"
+      file = "$root_out_dir/$chrome_framework_name.framework/Versions/$chrome_framework_version/$chrome_framework_name"
       flags = 1
       signature_file = "$root_out_dir/$chrome_framework_name.sig"
       deps = [
@@ -1129,11 +1130,7 @@ if (is_win) {
       script = "//chrome/tools/build/mac/copy_keystone_framework.py"
 
       framework_path = "//third_party/googlemac/Releases/Keystone/KeystoneRegistration.framework"
-      output_path = "$root_out_dir/$chrome_framework_name.framework/"
-      if (defined(chrome_framework_version)) {
-        output_path += "/Versions/$chrome_framework_version/"
-      }
-      output_path += "Frameworks/"
+      output_path = "$root_out_dir/$chrome_framework_name.framework/Versions/$chrome_framework_version/Frameworks/"
 
       sources = [
         framework_path,
@@ -1227,24 +1224,22 @@ if (is_win) {
   mac_framework_bundle("chrome_framework") {
     output_name = chrome_framework_name
 
-    if (defined(chrome_framework_version)) {
-      framework_version = chrome_framework_version
-      framework_contents = [
-        "Helpers",
-        "Resources",
-        "XPCServices",
-      ]
+    framework_version = chrome_framework_version
+    framework_contents = [
+      "Helpers",
+      "Libraries",
+      "Resources",
+      "XPCServices",
+    ]
 
-      if (is_chrome_branded) {
-        framework_contents += [
-          "Default Apps",
-          "Frameworks",  # For KeystoneRegistration.framework.
-        ]
-      }
-      if (enable_nacl) {
-        framework_contents += [ "Internet Plug-Ins" ]
-      }
-      framework_contents += [ "Libraries" ]
+    if (is_chrome_branded) {
+      framework_contents += [
+        "Default Apps",
+        "Frameworks",  # For KeystoneRegistration.framework.
+      ]
+    }
+    if (enable_nacl) {
+      framework_contents += [ "Internet Plug-Ins" ]
     }
 
     configs += [ "//build/config/compiler:wexit_time_destructors" ]
@@ -1268,7 +1263,6 @@ if (is_win) {
       ":packed_resources",
       ":swiftshader_library",
       ":widevine_cdm_library",
-      "//build/config:exe_and_shlib_deps",
       "//chrome/app/nibs:chrome_xibs",
       "//chrome/browser/resources/media/mei_preload:component_bundle",
     ]
@@ -1289,7 +1283,7 @@ if (is_win) {
     if (is_component_build) {
       ldflags += [
         "-rpath",
-        "@loader_path/../../../../..",
+        "@loader_path/../../../../../../..",
         "-Wl,-reexport_library,libchrome_dll.dylib",
       ]
 
@@ -1299,13 +1293,7 @@ if (is_win) {
     }
   }
 
-  _framework_binary_path = "$root_out_dir/$chrome_framework_name.framework/"
-  if (defined(chrome_framework_version)) {
-    _framework_binary_path +=
-        "Versions/$chrome_framework_version/$chrome_framework_name"
-  } else {
-    _framework_binary_path += "$chrome_framework_name"
-  }
+  _framework_binary_path = "$root_out_dir/$chrome_framework_name.framework/Versions/$chrome_framework_version/$chrome_framework_name"
   assert(_framework_binary_path != "",
          "Ignore configuration-dependent unused variable warning")
 
@@ -1596,8 +1584,8 @@ group("extra_resources") {
     public_deps += [
       "//chrome/browser/resources/chromeos:multidevice_setup_resources",
       "//chrome/browser/resources/chromeos/chromevox",
-      "//chrome/browser/resources/chromeos/select_to_speak",
-      "//chrome/browser/resources/chromeos/switch_access",
+      "//chrome/browser/resources/chromeos/select_to_speak:build",
+      "//chrome/browser/resources/chromeos/switch_access:build",
     ]
   }
 
@@ -1694,12 +1682,6 @@ group("strings") {
 }
 
 if (is_android) {
-  java_cpp_enum("data_use_ui_message_enum_javagen") {
-    sources = [
-      "browser/android/data_usage/data_use_tab_ui_manager_android.cc",
-    ]
-  }
-
   java_cpp_enum("content_setting_javagen") {
     sources = [
       "../components/content_settings/core/common/content_settings.h",
@@ -1797,8 +1779,6 @@ if (is_android) {
       "app/chrome_main_delegate.h",
     ]
 
-    include_dirs = [ android_ndk_include_dir ]
-
     libs = [
       "android",
       "jnigraphics",
@@ -1823,6 +1803,7 @@ if (is_android) {
     # find the native side functions.
     if (is_android && is_component_build) {
       deps += [
+        "//components/viz/service",
         "//device/gamepad",
         "//ui/events/devices",
       ]

@@ -31,18 +31,19 @@
 #include "third_party/blink/renderer/core/animation/document_animations.h"
 #include "third_party/blink/renderer/core/animation/document_timeline.h"
 #include "third_party/blink/renderer/core/dom/document_parser.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/frame/visual_viewport.h"
+#include "third_party/blink/renderer/core/layout/intrinsic_sizing_info.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_root.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
-#include "third_party/blink/renderer/core/paint/float_clip_recorder.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
-#include "third_party/blink/renderer/core/paint/transform_recorder.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/svg/animation/smil_time_container.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image_chrome_client.h"
@@ -51,14 +52,13 @@
 #include "third_party/blink/renderer/core/svg/svg_image_element.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/image_observer.h"
-#include "third_party/blink/renderer/platform/graphics/paint/clip_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/cull_rect.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
+#include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record_builder.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
@@ -303,7 +303,7 @@ void SVGImage::ForContainer(const FloatSize& container_size, Func&& func) {
                  rounded_container_size.Height() / container_size.Height()));
 }
 
-void SVGImage::DrawForContainer(PaintCanvas* canvas,
+void SVGImage::DrawForContainer(cc::PaintCanvas* canvas,
                                 const PaintFlags& flags,
                                 const FloatSize& container_size,
                                 float zoom,
@@ -392,13 +392,13 @@ sk_sp<PaintRecord> SVGImage::PaintRecordForContainer(
     return nullptr;
 
   PaintRecorder recorder;
-  PaintCanvas* canvas = recorder.beginRecording(draw_src_rect);
+  cc::PaintCanvas* canvas = recorder.beginRecording(draw_src_rect);
   if (flip_y) {
     canvas->translate(0, draw_dst_rect.Height());
     canvas->scale(1, -1);
   }
   DrawForContainer(canvas, PaintFlags(), FloatSize(container_size), 1,
-                   draw_dst_rect, draw_src_rect, url);
+                   FloatRect(draw_dst_rect), FloatRect(draw_src_rect), url);
   return recorder.finishRecordingAsPicture();
 }
 
@@ -412,9 +412,9 @@ void SVGImage::PopulatePaintRecordForCurrentFrameForContainer(
   const IntRect container_rect(IntPoint(), container_size);
 
   PaintRecorder recorder;
-  PaintCanvas* canvas = recorder.beginRecording(container_rect);
+  cc::PaintCanvas* canvas = recorder.beginRecording(container_rect);
   DrawForContainer(canvas, PaintFlags(), FloatSize(container_rect.Size()), 1,
-                   container_rect, container_rect, url);
+                   FloatRect(container_rect), FloatRect(container_rect), url);
   builder.set_paint_record(recorder.finishRecordingAsPicture(), container_rect,
                            PaintImage::GetNextContentId());
 }
@@ -469,7 +469,7 @@ bool SVGImage::ApplyShaderForContainer(const FloatSize& container_size,
 }
 
 void SVGImage::Draw(
-    PaintCanvas* canvas,
+    cc::PaintCanvas* canvas,
     const PaintFlags& flags,
     const FloatRect& dst_rect,
     const FloatRect& src_rect,
@@ -483,12 +483,14 @@ void SVGImage::Draw(
                should_respect_image_orientation, clamp_mode, NullURL());
 }
 
-sk_sp<PaintRecord> SVGImage::PaintRecordForCurrentFrame(const IntRect& bounds,
-                                                        const KURL& url,
-                                                        PaintCanvas* canvas) {
+sk_sp<PaintRecord> SVGImage::PaintRecordForCurrentFrame(
+    const IntRect& bounds,
+    const KURL& url,
+    cc::PaintCanvas* canvas) {
   DCHECK(page_);
   LocalFrameView* view = ToLocalFrame(page_->MainFrame())->View();
   view->Resize(ContainerSize());
+  page_->GetVisualViewport().SetSize(ContainerSize());
 
   // Always call processUrlFragment, even if the url is empty, because
   // there may have been a previous url/fragment that needs to be reset.
@@ -515,7 +517,7 @@ sk_sp<PaintRecord> SVGImage::PaintRecordForCurrentFrame(const IntRect& bounds,
   return builder.EndRecording();
 }
 
-void SVGImage::DrawInternal(PaintCanvas* canvas,
+void SVGImage::DrawInternal(cc::PaintCanvas* canvas,
                             const PaintFlags& flags,
                             const FloatRect& dst_rect,
                             const FloatRect& src_rect,
@@ -591,6 +593,17 @@ void SVGImage::ResetAnimation() {
   ScheduleTimelineRewind();
 }
 
+void SVGImage::RestoreAnimation() {
+  // If the image has no animations then do nothing.
+  if (!MaybeAnimated())
+    return;
+  // If there are no clients, or no client is going to render, then do nothing.
+  ImageObserver* image_observer = GetImageObserver();
+  if (!image_observer || image_observer->ShouldPauseAnimation(this))
+    return;
+  StartAnimation();
+}
+
 bool SVGImage::MaybeAnimated() {
   SVGSVGElement* root_element = SvgRootElement(page_.Get());
   if (!root_element)
@@ -633,11 +646,12 @@ void SVGImage::ServiceAnimations(
   LocalFrameView* frame_view = ToLocalFrame(page_->MainFrame())->View();
   frame_view->UpdateAllLifecyclePhasesExceptPaint();
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
-    // For SPv2 we run UpdateAnimations after the paint phase, but per above
-    // comment we don't want to run lifecycle through to paint for SVG images.
-    // Since we know SVG images never have composited animations we can update
-    // animations directly without worrying about including
+  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled() ||
+      RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+    // For SPv2/BGPT we run UpdateAnimations after the paint phase, but per the
+    // above comment, we don't want to run lifecycle through to paint for SVG
+    // images. Since we know SVG images never have composited animations we can
+    // update animations directly without worrying about including
     // PaintArtifactCompositor analysis of whether animations should be
     // composited.
     base::Optional<CompositorElementIdSet> composited_element_ids;
@@ -787,7 +801,6 @@ Image::SizeAvailability SVGImage::DataChanged(bool all_data_received) {
   FrameLoader& loader = frame->Loader();
   loader.ForceSandboxFlags(kSandboxAll);
 
-  frame->View()->SetScrollbarsSuppressed(true);
   // SVG Images will always synthesize a viewBox, if it's not available, and
   // thus never see scrollbars.
   frame->View()->SetCanHaveScrollbars(false);

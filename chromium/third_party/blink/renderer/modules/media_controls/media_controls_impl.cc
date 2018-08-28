@@ -28,9 +28,9 @@
 
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_size.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_html.h"
 #include "third_party/blink/renderer/core/css/css_style_declaration.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer_init.h"
 #include "third_party/blink/renderer/core/dom/mutation_record.h"
@@ -73,6 +73,7 @@
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_timeline_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_toggle_closed_captions_button_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_volume_slider_element.h"
+#include "third_party/blink/renderer/modules/media_controls/media_controls_display_cutout_delegate.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_media_event_listener.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_orientation_lock_delegate.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_resource_loader.h"
@@ -80,7 +81,7 @@
 #include "third_party/blink/renderer/modules/media_controls/media_download_in_product_help_manager.h"
 #include "third_party/blink/renderer/modules/remoteplayback/html_media_element_remote_playback.h"
 #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 
@@ -128,14 +129,6 @@ const char kActAsAudioControlsCSSClass[] = "audio-only";
 const char kScrubbingMessageCSSClass[] = "scrubbing-message";
 const char kTestModeCSSClass[] = "test-mode";
 const char kImmersiveModeCSSClass[] = "immersive-mode";
-
-const char kSizingSmallCSSClass[] = "sizing-small";
-const char kSizingMediumCSSClass[] = "sizing-medium";
-const char kSizingLargeCSSClass[] = "sizing-large";
-
-// The minimum width in pixels to reach a given size.
-constexpr int kSizingMediumThreshold = 741;
-constexpr int kSizingLargeThreshold = 1441;
 
 // The ratio of video width/height to use for play button size.
 constexpr float kSizingSmallOverlayPlayButtonSizeRatio = 0.25;
@@ -218,10 +211,12 @@ bool PreferHiddenVolumeControls(const Document& document) {
 
 // If you change this value, then also update the corresponding value in
 // LayoutTests/media/media-controls.js.
-double kTimeWithoutMouseMovementBeforeHidingMediaControls = 3;
-double kModernTimeWithoutMouseMovementBeforeHidingMediaControls = 2.5;
+constexpr TimeDelta kTimeWithoutMouseMovementBeforeHidingMediaControls =
+    TimeDelta::FromSeconds(3);
+constexpr TimeDelta kModernTimeWithoutMouseMovementBeforeHidingMediaControls =
+    TimeDelta::FromSecondsD(2.5);
 
-double GetTimeWithoutMouseMovementBeforeHidingMediaControls() {
+TimeDelta GetTimeWithoutMouseMovementBeforeHidingMediaControls() {
   return MediaControlsImpl::IsModern()
              ? kModernTimeWithoutMouseMovementBeforeHidingMediaControls
              : kTimeWithoutMouseMovementBeforeHidingMediaControls;
@@ -378,6 +373,7 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
       media_event_listener_(new MediaControlsMediaEventListener(this)),
       orientation_lock_delegate_(nullptr),
       rotate_to_fullscreen_delegate_(nullptr),
+      display_cutout_delegate_(nullptr),
       hide_media_controls_timer_(
           media_element.GetDocument().GetTaskRunner(TaskType::kInternalMedia),
           this,
@@ -415,6 +411,14 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
         new MediaControlsOrientationLockDelegate(
             ToHTMLVideoElement(media_element));
   }
+
+  if (MediaControlsDisplayCutoutDelegate::IsEnabled() &&
+      media_element.IsHTMLVideoElement()) {
+    // Initialize the pinch gesture to expand into the display cutout feature.
+    controls->display_cutout_delegate_ = new MediaControlsDisplayCutoutDelegate(
+        ToHTMLVideoElement(media_element));
+  }
+
   if (RuntimeEnabledFeatures::VideoRotateToFullscreenEnabled() &&
       media_element.IsHTMLVideoElement()) {
     // Initialize the rotate-to-fullscreen feature.
@@ -559,7 +563,10 @@ void MediaControlsImpl::InitializeControls() {
       volume_slider_->SetIsWanted(false);
   }
 
-  if (RuntimeEnabledFeatures::PictureInPictureEnabled()) {
+  if (RuntimeEnabledFeatures::PictureInPictureEnabled() &&
+      GetDocument().GetSettings() &&
+      GetDocument().GetSettings()->GetPictureInPictureEnabled() &&
+      MediaElement().IsHTMLVideoElement()) {
     picture_in_picture_button_ =
         new MediaControlPictureInPictureButtonElement(*this);
     picture_in_picture_button_->SetIsWanted(
@@ -601,7 +608,7 @@ void MediaControlsImpl::InitializeControls() {
   overflow_list_->ParserAppendChild(
       toggle_closed_captions_button_->CreateOverflowElement(
           new MediaControlToggleClosedCaptionsButtonElement(*this)));
-  if (RuntimeEnabledFeatures::PictureInPictureEnabled()) {
+  if (picture_in_picture_button_) {
     overflow_list_->ParserAppendChild(
         picture_in_picture_button_->CreateOverflowElement(
             new MediaControlPictureInPictureButtonElement(*this)));
@@ -669,6 +676,8 @@ Node::InsertionNotificationRequest MediaControlsImpl::InsertedInto(
     orientation_lock_delegate_->Attach();
   if (rotate_to_fullscreen_delegate_)
     rotate_to_fullscreen_delegate_->Attach();
+  if (display_cutout_delegate_)
+    display_cutout_delegate_->Attach();
 
   if (!resize_observer_) {
     resize_observer_ =
@@ -797,6 +806,8 @@ void MediaControlsImpl::RemovedFrom(ContainerNode*) {
     orientation_lock_delegate_->Detach();
   if (rotate_to_fullscreen_delegate_)
     rotate_to_fullscreen_delegate_->Detach();
+  if (display_cutout_delegate_)
+    display_cutout_delegate_->Detach();
 
   if (resize_observer_) {
     resize_observer_->disconnect();
@@ -927,7 +938,13 @@ void MediaControlsImpl::Hide() {
   timeline_->OnControlsHidden();
 
   UpdateCSSClassFromState();
-  UpdateActingAsAudioControls();
+
+  // Hide is called when the HTMLMediaElement is removed from a document. If we
+  // stop acting as audio controls during this removal, we end up inserting
+  // nodes during the removal, firing a DCHECK. To avoid this, only update here
+  // when the media element is connected.
+  if (MediaElement().isConnected())
+    UpdateActingAsAudioControls();
 }
 
 bool MediaControlsImpl::IsVisible() const {
@@ -1316,14 +1333,18 @@ void MediaControlsImpl::UpdateScrubbingMessageFits() const {
 }
 
 void MediaControlsImpl::UpdateSizingCSSClass() {
-  int width = size_.Width();
-  SetClass(kSizingSmallCSSClass,
-           ShouldShowVideoControls() && width < kSizingMediumThreshold);
-  SetClass(kSizingMediumCSSClass, ShouldShowVideoControls() &&
-                                      width >= kSizingMediumThreshold &&
-                                      width < kSizingLargeThreshold);
-  SetClass(kSizingLargeCSSClass,
-           ShouldShowVideoControls() && width >= kSizingLargeThreshold);
+  MediaControlsSizingClass sizing_class =
+      MediaControls::GetSizingClass(size_.Width());
+
+  SetClass(kMediaControlsSizingSmallCSSClass,
+           ShouldShowVideoControls() &&
+               sizing_class == MediaControlsSizingClass::kSmall);
+  SetClass(kMediaControlsSizingMediumCSSClass,
+           ShouldShowVideoControls() &&
+               sizing_class == MediaControlsSizingClass::kMedium);
+  SetClass(kMediaControlsSizingLargeCSSClass,
+           ShouldShowVideoControls() &&
+               sizing_class == MediaControlsSizingClass::kLarge);
 
   UpdateOverlayPlayButtonWidthCSSVar();
 }
@@ -1338,10 +1359,11 @@ void MediaControlsImpl::UpdateOverlayPlayButtonWidthCSSVar() {
   int height = size_.Height();
   double minDimension = std::min(width, height);
 
+  MediaControlsSizingClass sizing_class = MediaControls::GetSizingClass(width);
   double sizingRatio;
-  if (width >= kSizingLargeThreshold) {
+  if (sizing_class == MediaControlsSizingClass::kLarge) {
     sizingRatio = kSizingLargeOverlayPlayButtonSizeRatio;
-  } else if (width >= kSizingMediumThreshold) {
+  } else if (sizing_class == MediaControlsSizingClass::kMedium) {
     sizingRatio = kSizingMediumOverlayPlayButtonSizeRatio;
   } else {
     sizingRatio = kSizingSmallOverlayPlayButtonSizeRatio;
@@ -1693,6 +1715,14 @@ void MediaControlsImpl::OnExitedFullscreen() {
   StartHideMediaControlsTimer();
 }
 
+void MediaControlsImpl::OnPictureInPictureChanged() {
+  // This will only be called if the media controls are listening to the
+  // Picture-in-Picture events which only happen when they provide a
+  // Picture-in-Picture button.
+  DCHECK(picture_in_picture_button_);
+  picture_in_picture_button_->UpdateDisplayType();
+}
+
 void MediaControlsImpl::OnPanelKeypress() {
   // If the user is interacting with the controls via the keyboard, don't hide
   // the controls. This is called when the user mutes/unmutes, turns CC on/off,
@@ -2031,6 +2061,7 @@ void MediaControlsImpl::Trace(blink::Visitor* visitor) {
   visitor->Trace(media_event_listener_);
   visitor->Trace(orientation_lock_delegate_);
   visitor->Trace(rotate_to_fullscreen_delegate_);
+  visitor->Trace(display_cutout_delegate_);
   visitor->Trace(download_iph_manager_);
   visitor->Trace(media_button_panel_);
   visitor->Trace(loading_panel_);

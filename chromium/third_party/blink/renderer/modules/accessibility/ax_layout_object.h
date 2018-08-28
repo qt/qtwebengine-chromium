@@ -59,6 +59,10 @@ class MODULES_EXPORT AXLayoutObject : public AXNodeObject {
   AccessibilityRole DetermineAccessibilityRole() override;
   AccessibilityRole NativeAccessibilityRoleIgnoringAria() const override;
 
+  // If this is an anonymous block, returns the node of its containing layout
+  // block, otherwise returns the node of this layout object.
+  Node* GetNodeOrContainingBlockNode() const;
+
  protected:
   LayoutObject* layout_object_;
 
@@ -161,19 +165,12 @@ class MODULES_EXPORT AXLayoutObject : public AXNodeObject {
   AXObject* RawNextSibling() const override;
   void AddChildren() override;
   bool CanHaveChildren() const override;
-  void UpdateChildrenIfNecessary() override;
-  bool NeedsToUpdateChildren() const override { return children_dirty_; }
-  void SetNeedsToUpdateChildren() override { children_dirty_ = true; }
-  void ClearChildren() override;
 
   // Properties of the object's owning document or page.
   double EstimatedLoadingProgress() const override;
 
   // DOM and layout tree access.
   Node* GetNode() const override;
-  // If this is an anonymous block, returns the node of its containing layout
-  // block, otherwise returns the node of this layout object.
-  Node* GetNodeOrContainingBlockNode() const;
   Document* GetDocument() const override;
   LocalFrameView* DocumentFrameView() const override;
   Element* AnchorElement() const override;
@@ -188,6 +185,24 @@ class MODULES_EXPORT AXLayoutObject : public AXNodeObject {
   int Index(const VisiblePosition&) const override;
   VisiblePosition VisiblePositionForIndex(int) const override;
   void LineBreaks(Vector<int>&) const final;
+
+  // For a table.
+  bool IsDataTable() const override;
+  unsigned ColumnCount() const override;
+  unsigned RowCount() const override;
+  void ColumnHeaders(AXObjectVector&) const override;
+  void RowHeaders(AXObjectVector&) const override;
+  AXObject* CellForColumnAndRow(unsigned column, unsigned row) const override;
+
+  // For a table cell.
+  unsigned ColumnIndex() const override;
+  unsigned RowIndex() const override;  // Also for a table row.
+  unsigned ColumnSpan() const override;
+  unsigned RowSpan() const override;
+  SortDirection GetSortDirection() const override;
+
+  // For a table row or column.
+  AXObject* HeaderObject() const override;
 
  private:
   bool IsTabItemSelected() const;
@@ -205,7 +220,11 @@ class MODULES_EXPORT AXLayoutObject : public AXNodeObject {
   void AddCanvasChildren();
   void AddPopupChildren();
   void AddRemoteSVGChildren();
+  void AddTableChildren();
   void AddInlineTextBoxChildren(bool force);
+  AccessibilityRole DetermineTableCellRole() const;
+  AccessibilityRole DetermineTableRowRole() const;
+  bool FindAllTableCellsWithRole(AccessibilityRole, AXObjectVector&) const;
 
   LayoutRect ComputeElementRect() const;
   AXSelection TextControlSelection() const;

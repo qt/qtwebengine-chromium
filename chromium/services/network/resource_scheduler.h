@@ -25,6 +25,7 @@
 #include "net/base/priority_queue.h"
 #include "net/base/request_priority.h"
 #include "net/nqe/effective_connection_type.h"
+#include "services/network/resource_scheduler_params_manager.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -36,8 +37,6 @@ class NetworkQualityEstimator;
 }  // namespace net
 
 namespace network {
-
-class ResourceSchedulerParamsManager;
 
 // There is one ResourceScheduler. All renderer-initiated HTTP requests are
 // expected to pass through it.
@@ -118,16 +117,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ResourceScheduler {
   // Do not call this function when the network service is enabled.
   void DeprecatedOnNavigate(int child_id, int route_id);
 
-  // Called when the client has parsed the <body> element. This is a signal that
-  // resource loads won't interfere with first paint.
-  // Do not call this function when the network service is enabled.
-  void DeprecatedOnWillInsertBody(int child_id, int route_id);
-
   // Signals from the IO thread:
-
-  // Called when we received a response to a http request that was served
-  // from a proxy using SPDY.
-  void OnReceivedSpdyProxiedHttpResponse(int child_id, int route_id);
 
   // Client functions:
 
@@ -176,11 +166,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ResourceScheduler {
 
   bool enabled() const { return enabled_; }
 
-  static bool IsRendererSideResourceSchedulerEnabled();
-
   void SetResourceSchedulerParamsManagerForTests(
-      std::unique_ptr<ResourceSchedulerParamsManager>
-          resource_scheduler_params_manager);
+      const ResourceSchedulerParamsManager& resource_scheduler_params_manager);
 
  private:
   class Client;
@@ -227,8 +214,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ResourceScheduler {
   int max_requests_before_yielding_;
   base::TimeDelta yield_time_;
 
-  std::unique_ptr<ResourceSchedulerParamsManager>
-      resource_scheduler_params_manager_;
+  ResourceSchedulerParamsManager resource_scheduler_params_manager_;
 
   // The TaskRunner to post tasks on. Can be overridden for tests.
   scoped_refptr<base::SequencedTaskRunner> task_runner_;

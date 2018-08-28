@@ -8,15 +8,15 @@ namespace blink {
 
 // The root of the transform tree. The root transform node references the root
 // scroll node.
-TransformPaintPropertyNode* TransformPaintPropertyNode::Root() {
+const TransformPaintPropertyNode& TransformPaintPropertyNode::Root() {
   DEFINE_STATIC_REF(
       TransformPaintPropertyNode, root,
       base::AdoptRef(new TransformPaintPropertyNode(
           nullptr,
           State{TransformationMatrix(), FloatPoint3D(), false,
                 BackfaceVisibility::kVisible, 0, CompositingReason::kNone,
-                CompositorElementId(), ScrollPaintPropertyNode::Root()})));
-  return root;
+                CompositorElementId(), &ScrollPaintPropertyNode::Root()})));
+  return *root;
 }
 
 const TransformPaintPropertyNode&
@@ -31,10 +31,26 @@ TransformPaintPropertyNode::NearestScrollTranslationNode() const {
   return *transform;
 }
 
+bool TransformPaintPropertyNode::Changed(
+    const TransformPaintPropertyNode& relative_to_node) const {
+  for (const auto* node = this; node; node = node->Parent()) {
+    if (node == &relative_to_node)
+      return false;
+    if (node->NodeChanged())
+      return true;
+  }
+
+  // |this| is not a descendant of |relative_to_node|. We have seen no changed
+  // flag from |this| to the root. Now check |relative_to_node| to the root.
+  return relative_to_node.Changed(Root());
+}
+
 std::unique_ptr<JSONObject> TransformPaintPropertyNode::ToJSON() const {
   auto json = JSONObject::Create();
   if (Parent())
     json->SetString("parent", String::Format("%p", Parent()));
+  if (NodeChanged())
+    json->SetBoolean("changed", true);
   if (!state_.matrix.IsIdentity())
     json->SetString("matrix", state_.matrix.ToString());
   if (!state_.matrix.IsIdentityOrTranslation())

@@ -6,6 +6,7 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/numerics/safe_math.h"
+#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
@@ -13,7 +14,7 @@
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/resources/resource_format_utils.h"
 #include "components/viz/common/resources/resource_sizes.h"
-#include "components/viz/common/resources/shared_bitmap_manager.h"
+#include "components/viz/service/display/shared_bitmap_manager.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/skia/include/gpu/GrBackendSurface.h"
@@ -30,17 +31,15 @@ base::AtomicSequenceNumber g_next_display_resource_provider_tracing_id;
 
 }  // namespace
 
-static GLint GetActiveTextureUnit(GLES2Interface* gl) {
-  GLint active_unit = 0;
-  gl->GetIntegerv(GL_ACTIVE_TEXTURE, &active_unit);
-  return active_unit;
-}
-
 class ScopedSetActiveTexture {
  public:
   ScopedSetActiveTexture(GLES2Interface* gl, GLenum unit)
       : gl_(gl), unit_(unit) {
-    DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(gl_));
+#if DCHECK_IS_ON()
+    GLint active_unit = 0;
+    gl->GetIntegerv(GL_ACTIVE_TEXTURE, &active_unit);
+    DCHECK_EQ(GL_TEXTURE0, active_unit);
+#endif
 
     if (unit_ != GL_TEXTURE0)
       gl_->ActiveTexture(unit_);
@@ -58,12 +57,17 @@ class ScopedSetActiveTexture {
 };
 
 DisplayResourceProvider::DisplayResourceProvider(
+    Mode mode,
     ContextProvider* compositor_context_provider,
     SharedBitmapManager* shared_bitmap_manager)
-    : compositor_context_provider_(compositor_context_provider),
+    : mode_(mode),
+      compositor_context_provider_(compositor_context_provider),
       shared_bitmap_manager_(shared_bitmap_manager),
       tracing_id_(g_next_display_resource_provider_tracing_id.GetNext()) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  // If no ContextProvider, then we are doing software compositing and a
+  // SharedBitmapManager must be given.
+  DCHECK(mode_ == kGpu || shared_bitmap_manager);
 
   // In certain cases, ThreadTaskRunnerHandle isn't set (Android Webview).
   // Don't register a dump provider in these cases.
@@ -104,14 +108,10 @@ bool DisplayResourceProvider::OnMemoryDump(
     const auto& resource = resource_entry.second;
 
     bool backing_memory_allocated = false;
-    switch (resource.type) {
-      case ResourceType::kTexture:
-        backing_memory_allocated = !!resource.gl_id;
-        break;
-      case ResourceType::kBitmap:
-        backing_memory_allocated = !!resource.shared_bitmap;
-        break;
-    }
+    if (resource.transferable.is_software)
+      backing_memory_allocated = !!resource.shared_bitmap;
+    else
+      backing_memory_allocated = !!resource.gl_id;
 
     if (!backing_memory_allocated) {
       // Don't log unallocated resources - they have no backing memory.
@@ -128,9 +128,9 @@ bool DisplayResourceProvider::OnMemoryDump(
 
     // Texture resources may not come with a size, in which case don't report
     // one.
-    if (!resource.size.IsEmpty()) {
+    if (!resource.transferable.size.IsEmpty()) {
       uint64_t total_bytes = ResourceSizes::UncheckedSizeInBytesAligned<size_t>(
-          resource.size, resource.format);
+          resource.transferable.size, resource.transferable.format);
       dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
                       base::trace_event::MemoryAllocatorDump::kUnitsBytes,
                       static_cast<uint64_t>(total_bytes));
@@ -140,22 +140,13 @@ bool DisplayResourceProvider::OnMemoryDump(
     // prevent double counting the memory.
     base::trace_event::MemoryAllocatorDumpGuid guid;
     base::UnguessableToken shared_memory_guid;
-    switch (resource.type) {
-      case ResourceType::kTexture:
-        DCHECK(resource.gl_id);
-        guid = gl::GetGLTextureClientGUIDForTracing(
-            compositor_context_provider_->ContextSupport()
-                ->ShareGroupTracingGUID(),
-            resource.gl_id);
-        break;
-      case ResourceType::kBitmap:
-        // If the resource comes from out of process, it will have this id,
-        // which we prefer. Otherwise, we fall back to the SharedBitmapGUID
-        // which can be generated for in-process bitmaps.
-        shared_memory_guid = resource.shared_bitmap->GetCrossProcessGUID();
-        if (shared_memory_guid.is_empty())
-          guid = GetSharedBitmapGUIDForTracing(resource.shared_bitmap_id);
-        break;
+    if (resource.transferable.is_software) {
+      shared_memory_guid = resource.shared_bitmap_tracing_guid;
+    } else {
+      guid = gl::GetGLTextureClientGUIDForTracing(
+          compositor_context_provider_->ContextSupport()
+              ->ShareGroupTracingGUID(),
+          resource.gl_id);
     }
 
     DCHECK(!shared_memory_guid.is_empty() || !guid.empty());
@@ -190,14 +181,14 @@ void DisplayResourceProvider::SendPromotionHints(
     if (it->second.marked_for_deletion)
       continue;
 
-    const internal::Resource* resource = LockForRead(id);
+    const ChildResource* resource = LockForRead(id);
     // TODO(ericrk): We should never fail LockForRead, but we appear to be
     // doing so on Android in rare cases. Handle this gracefully until a better
     // solution can be found. https://crbug.com/811858
     if (!resource)
       return;
 
-    DCHECK(resource->wants_promotion_hint);
+    DCHECK(resource->transferable.wants_promotion_hint);
 
     // Insist that this is backed by a GPU texture.
     if (resource->is_gpu_resource_type()) {
@@ -215,8 +206,8 @@ void DisplayResourceProvider::SendPromotionHints(
 }
 
 bool DisplayResourceProvider::IsBackedBySurfaceTexture(ResourceId id) {
-  internal::Resource* resource = GetResource(id);
-  return resource->is_backed_by_surface_texture;
+  ChildResource* resource = GetResource(id);
+  return resource->transferable.is_backed_by_surface_texture;
 }
 
 bool DisplayResourceProvider::WantsPromotionHintForTesting(ResourceId id) {
@@ -229,28 +220,28 @@ size_t DisplayResourceProvider::CountPromotionHintRequestsForTesting() {
 #endif
 
 bool DisplayResourceProvider::IsOverlayCandidate(ResourceId id) {
-  internal::Resource* resource = TryGetResource(id);
+  ChildResource* resource = TryGetResource(id);
   // TODO(ericrk): We should never fail TryGetResource, but we appear to
   // be doing so on Android in rare cases. Handle this gracefully until a
   // better solution can be found. https://crbug.com/811858
-  return resource && resource->is_overlay_candidate;
+  return resource && resource->transferable.is_overlay_candidate;
 }
 
-ResourceType DisplayResourceProvider::GetResourceType(ResourceId id) {
-  return GetResource(id)->type;
+bool DisplayResourceProvider::IsResourceSoftwareBacked(ResourceId id) {
+  return GetResource(id)->transferable.is_software;
 }
 
 GLenum DisplayResourceProvider::GetResourceTextureTarget(ResourceId id) {
-  return GetResource(id)->target;
+  return GetResource(id)->transferable.mailbox_holder.texture_target;
 }
 
 gfx::BufferFormat DisplayResourceProvider::GetBufferFormat(ResourceId id) {
-  internal::Resource* resource = GetResource(id);
-  return resource->buffer_format;
+  ChildResource* resource = GetResource(id);
+  return BufferFormat(resource->transferable.format);
 }
 
 void DisplayResourceProvider::WaitSyncToken(ResourceId id) {
-  internal::Resource* resource = TryGetResource(id);
+  ChildResource* resource = TryGetResource(id);
   // TODO(ericrk): We should never fail TryGetResource, but we appear to
   // be doing so on Android in rare cases. Handle this gracefully until a
   // better solution can be found. https://crbug.com/811858
@@ -261,7 +252,7 @@ void DisplayResourceProvider::WaitSyncToken(ResourceId id) {
   // Now that the resource is synced, we may send it a promotion hint.  We could
   // sync all |wants_promotion_hint| resources elsewhere, and send 'no' to all
   // resources that weren't used.  However, there's no real advantage.
-  if (resource->wants_promotion_hint)
+  if (resource->transferable.wants_promotion_hint)
     wants_promotion_hints_set_.insert(id);
 #endif  // OS_ANDROID
 }
@@ -292,26 +283,33 @@ void DisplayResourceProvider::DestroyChild(int child_id) {
 }
 
 void DisplayResourceProvider::ReceiveFromChild(
-    int child,
+    int child_id,
     const std::vector<TransferableResource>& resources) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  GLES2Interface* gl = ContextGL();
-  Child& child_info = children_.find(child)->second;
+
+  // TODO(crbug.com/855785): Fishing for misuse of DisplayResourceProvider
+  // causing crashes.
+  CHECK(child_id);
+  auto child_it = children_.find(child_id);
+  // TODO(crbug.com/855785): Fishing for misuse of DisplayResourceProvider
+  // causing crashes.
+  CHECK(child_it != children_.end());
+  Child& child_info = child_it->second;
   DCHECK(!child_info.marked_for_deletion);
   for (std::vector<TransferableResource>::const_iterator it = resources.begin();
        it != resources.end(); ++it) {
     auto resource_in_map_it = child_info.child_to_parent_map.find(it->id);
     if (resource_in_map_it != child_info.child_to_parent_map.end()) {
-      internal::Resource* resource = GetResource(resource_in_map_it->second);
+      ChildResource* resource = GetResource(resource_in_map_it->second);
       resource->marked_for_deletion = false;
       resource->imported_count++;
       continue;
     }
 
-    if ((!it->is_software && !gl) ||
-        (it->is_software && !shared_bitmap_manager_)) {
+    if (it->is_software != IsSoftware() ||
+        it->mailbox_holder.mailbox.IsZero()) {
       TRACE_EVENT0(
-          "cc", "DisplayResourceProvider::ReceiveFromChild dropping invalid");
+          "viz", "DisplayResourceProvider::ReceiveFromChild dropping invalid");
       std::vector<ReturnedResource> to_return;
       to_return.push_back(it->ToReturnedResource());
       child_info.return_callback.Run(to_return);
@@ -319,35 +317,12 @@ void DisplayResourceProvider::ReceiveFromChild(
     }
 
     ResourceId local_id = next_id_++;
-    internal::Resource* resource = nullptr;
     if (it->is_software) {
       DCHECK(IsBitmapFormatSupported(it->format));
-      resource = InsertResource(
-          local_id, internal::Resource(it->size, ResourceType::kBitmap,
-                                       it->format, it->color_space));
-      resource->has_shared_bitmap_id = true;
-      resource->shared_bitmap_id = it->mailbox_holder.mailbox;
+      InsertResource(local_id, ChildResource(child_id, *it));
     } else {
-      resource = InsertResource(
-          local_id, internal::Resource(it->size, ResourceType::kTexture,
-                                       it->format, it->color_space));
-      resource->target = it->mailbox_holder.texture_target;
-      resource->filter = it->filter;
-      resource->original_filter = it->filter;
-      resource->min_filter = it->filter;
-      resource->buffer_format = it->buffer_format;
-      resource->mailbox = it->mailbox_holder.mailbox;
-      resource->UpdateSyncToken(it->mailbox_holder.sync_token);
-      resource->read_lock_fences_enabled = it->read_lock_fences_enabled;
-      resource->is_overlay_candidate = it->is_overlay_candidate;
-#if defined(OS_ANDROID)
-      resource->is_backed_by_surface_texture = it->is_backed_by_surface_texture;
-      resource->wants_promotion_hint = it->wants_promotion_hint;
-#endif
+      InsertResource(local_id, ChildResource(child_id, *it));
     }
-    resource->child_id = child;
-    resource->imported_count = 1;
-    resource->id_in_child = it->id;
     child_info.child_to_parent_map[it->id] = local_id;
   }
 }
@@ -357,8 +332,13 @@ void DisplayResourceProvider::DeclareUsedResourcesFromChild(
     const ResourceIdSet& resources_from_child) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
+  // TODO(crbug.com/855785): Fishing for misuse of DisplayResourceProvider
+  // causing crashes.
+  CHECK(child);
   auto child_it = children_.find(child);
-  DCHECK(child_it != children_.end());
+  // TODO(crbug.com/855785): Fishing for misuse of DisplayResourceProvider
+  // causing crashes.
+  CHECK(child_it != children_.end());
   Child& child_info = child_it->second;
   DCHECK(!child_info.marked_for_deletion);
 
@@ -383,20 +363,21 @@ DisplayResourceProvider::GetChildToParentMap(int child) const {
 }
 
 bool DisplayResourceProvider::InUse(ResourceId id) {
-  internal::Resource* resource = GetResource(id);
+  ChildResource* resource = GetResource(id);
   return resource->lock_for_read_count > 0 || resource->locked_for_external_use;
 }
 
-internal::Resource* DisplayResourceProvider::InsertResource(
+DisplayResourceProvider::ChildResource* DisplayResourceProvider::InsertResource(
     ResourceId id,
-    internal::Resource resource) {
+    ChildResource resource) {
   auto result =
       resources_.insert(ResourceMap::value_type(id, std::move(resource)));
   DCHECK(result.second);
   return &result.first->second;
 }
 
-internal::Resource* DisplayResourceProvider::GetResource(ResourceId id) {
+DisplayResourceProvider::ChildResource* DisplayResourceProvider::GetResource(
+    ResourceId id) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(id);
   auto it = resources_.find(id);
@@ -404,7 +385,8 @@ internal::Resource* DisplayResourceProvider::GetResource(ResourceId id) {
   return &it->second;
 }
 
-internal::Resource* DisplayResourceProvider::TryGetResource(ResourceId id) {
+DisplayResourceProvider::ChildResource* DisplayResourceProvider::TryGetResource(
+    ResourceId id) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   if (!id)
     return nullptr;
@@ -416,39 +398,31 @@ internal::Resource* DisplayResourceProvider::TryGetResource(ResourceId id) {
 
 void DisplayResourceProvider::PopulateSkBitmapWithResource(
     SkBitmap* sk_bitmap,
-    const internal::Resource* resource) {
-  DCHECK(IsBitmapFormatSupported(resource->format));
-  SkImageInfo info = SkImageInfo::MakeN32Premul(resource->size.width(),
-                                                resource->size.height());
-  bool pixels_installed =
-      sk_bitmap->installPixels(info, resource->pixels, info.minRowBytes());
+    const ChildResource* resource) {
+  DCHECK(IsBitmapFormatSupported(resource->transferable.format));
+  SkImageInfo info =
+      SkImageInfo::MakeN32Premul(resource->transferable.size.width(),
+                                 resource->transferable.size.height());
+  bool pixels_installed = sk_bitmap->installPixels(
+      info, resource->shared_bitmap->pixels(), info.minRowBytes());
   DCHECK(pixels_installed);
 }
 
 void DisplayResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
                                                      DeleteStyle style) {
-  TRACE_EVENT0("cc", "DosplayResourceProvider::DeleteResourceInternal");
-  internal::Resource* resource = &it->second;
+  TRACE_EVENT0("viz", "DosplayResourceProvider::DeleteResourceInternal");
+  ChildResource* resource = &it->second;
 
   if (resource->gl_id) {
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     gl->DeleteTextures(1, &resource->gl_id);
-    resource->gl_id = 0;
-  }
-
-  if (resource->owned_shared_bitmap) {
-    DCHECK_EQ(ResourceType::kBitmap, resource->type);
-    resource->shared_bitmap = nullptr;
-    resource->pixels = nullptr;
-    resource->owned_shared_bitmap = nullptr;
   }
 
   resources_.erase(it);
 }
 
-void DisplayResourceProvider::WaitSyncTokenInternal(
-    internal::Resource* resource) {
+void DisplayResourceProvider::WaitSyncTokenInternal(ChildResource* resource) {
   DCHECK(resource);
   if (!resource->ShouldWaitSyncToken())
     return;
@@ -467,41 +441,44 @@ GLES2Interface* DisplayResourceProvider::ContextGL() const {
   return context_provider ? context_provider->ContextGL() : nullptr;
 }
 
-const internal::Resource* DisplayResourceProvider::LockForRead(ResourceId id) {
+const DisplayResourceProvider::ChildResource*
+DisplayResourceProvider::LockForRead(ResourceId id) {
   // TODO(ericrk): We should never fail TryGetResource, but we appear to be
   // doing so on Android in rare cases. Handle this gracefully until a better
   // solution can be found. https://crbug.com/811858
-  internal::Resource* resource = TryGetResource(id);
+  ChildResource* resource = TryGetResource(id);
   if (!resource)
     return nullptr;
 
   // Mailbox sync_tokens must be processed by a call to WaitSyncToken() prior to
   // calling LockForRead().
-  DCHECK_NE(internal::Resource::NEEDS_WAIT, resource->synchronization_state());
+  DCHECK_NE(NEEDS_WAIT, resource->synchronization_state());
 
   if (resource->is_gpu_resource_type() && !resource->gl_id) {
-    DCHECK(!resource->mailbox.IsZero());
-
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
-    resource->gl_id =
-        gl->CreateAndConsumeTextureCHROMIUM(resource->mailbox.name);
+    resource->gl_id = gl->CreateAndConsumeTextureCHROMIUM(
+        resource->transferable.mailbox_holder.mailbox.name);
     resource->SetLocallyUsed();
   }
 
-  if (!resource->pixels && resource->has_shared_bitmap_id &&
-      shared_bitmap_manager_) {
+  if (!resource->shared_bitmap && !resource->is_gpu_resource_type()) {
+    const SharedBitmapId& shared_bitmap_id =
+        resource->transferable.mailbox_holder.mailbox;
     std::unique_ptr<SharedBitmap> bitmap =
         shared_bitmap_manager_->GetSharedBitmapFromId(
-            resource->size, resource->format, resource->shared_bitmap_id);
+            resource->transferable.size, resource->transferable.format,
+            shared_bitmap_id);
     if (bitmap) {
-      resource->SetSharedBitmap(bitmap.get());
-      resource->owned_shared_bitmap = std::move(bitmap);
+      resource->shared_bitmap = std::move(bitmap);
+      resource->shared_bitmap_tracing_guid =
+          shared_bitmap_manager_->GetSharedBitmapTracingGUIDFromId(
+              shared_bitmap_id);
     }
   }
 
   resource->lock_for_read_count++;
-  if (resource->read_lock_fences_enabled) {
+  if (resource->transferable.read_lock_fences_enabled) {
     if (current_read_lock_fence_.get())
       current_read_lock_fence_->Set();
     resource->read_lock_fence = current_read_lock_fence_;
@@ -519,7 +496,7 @@ void DisplayResourceProvider::UnlockForRead(ResourceId id) {
   if (it == resources_.end())
     return;
 
-  internal::Resource* resource = &it->second;
+  ChildResource* resource = &it->second;
   DCHECK_GT(resource->lock_for_read_count, 0);
   resource->lock_for_read_count--;
   TryReleaseResource(it);
@@ -530,7 +507,7 @@ ResourceMetadata DisplayResourceProvider::LockForExternalUse(ResourceId id) {
   auto it = resources_.find(id);
   DCHECK(it != resources_.end());
 
-  internal::Resource* resource = &it->second;
+  ChildResource* resource = &it->second;
   ResourceMetadata metadata;
   // Make sure there is no outstanding LockForExternalUse without calling
   // UnlockForExternalUse.
@@ -538,14 +515,15 @@ ResourceMetadata DisplayResourceProvider::LockForExternalUse(ResourceId id) {
   // TODO(penghuang): support software resource.
   DCHECK(resource->is_gpu_resource_type());
 
-  metadata.mailbox = resource->mailbox;
+  metadata.mailbox = resource->transferable.mailbox_holder.mailbox;
   metadata.backend_format = GrBackendFormat::MakeGL(
-      TextureStorageFormat(resource->format), resource->target);
-  metadata.size = resource->size;
+      TextureStorageFormat(resource->transferable.format),
+      resource->transferable.mailbox_holder.texture_target);
+  metadata.size = resource->transferable.size;
   metadata.mip_mapped = GrMipMapped::kNo;
   metadata.origin = kTopLeft_GrSurfaceOrigin;
-  metadata.color_type =
-      ResourceFormatToClosestSkColorType(!IsSoftware(), resource->format);
+  metadata.color_type = ResourceFormatToClosestSkColorType(
+      !IsSoftware(), resource->transferable.format);
   metadata.alpha_type = kPremul_SkAlphaType;
   metadata.color_space = nullptr;
   metadata.sync_token = resource->sync_token();
@@ -562,7 +540,7 @@ void DisplayResourceProvider::UnlockForExternalUse(
   DCHECK(it != resources_.end());
   DCHECK(sync_token.verified_flush());
 
-  internal::Resource* resource = &it->second;
+  ChildResource* resource = &it->second;
   DCHECK(resource->locked_for_external_use);
   // TODO(penghuang): support software resource.
   DCHECK(resource->is_gpu_resource_type());
@@ -581,25 +559,16 @@ void DisplayResourceProvider::UnlockForExternalUse(
 
 void DisplayResourceProvider::TryReleaseResource(ResourceMap::iterator it) {
   ResourceId id = it->first;
-  internal::Resource* resource = &it->second;
+  ChildResource* resource = &it->second;
   if (resource->marked_for_deletion && !resource->lock_for_read_count &&
       !resource->locked_for_external_use) {
-    if (!resource->child_id) {
-// The resource belongs to this instance, so it can be destroyed.
-// TODO(danakj): Is this dead code?
-#if defined(OS_ANDROID)
-      DeletePromotionHint(it, NORMAL);
-#endif
-      DeleteResourceInternal(it, NORMAL);
+    if (batch_return_resources_) {
+      batched_returning_resources_[resource->child_id].push_back(id);
     } else {
-      if (batch_return_resources_) {
-        batched_returning_resources_[resource->child_id].push_back(id);
-      } else {
-        auto child_it = children_.find(resource->child_id);
-        std::vector<ResourceId> unused;
-        unused.push_back(id);
-        DeleteAndReturnUnusedResourcesToChild(child_it, NORMAL, unused);
-      }
+      auto child_it = children_.find(resource->child_id);
+      std::vector<ResourceId> unused;
+      unused.push_back(id);
+      DeleteAndReturnUnusedResourcesToChild(child_it, NORMAL, unused);
     }
   }
 }
@@ -616,18 +585,14 @@ GLenum DisplayResourceProvider::BindForSampling(ResourceId resource_id,
   if (it == resources_.end())
     return GL_TEXTURE_2D;
 
-  internal::Resource* resource = &it->second;
+  ChildResource* resource = &it->second;
   DCHECK(resource->lock_for_read_count);
 
   ScopedSetActiveTexture scoped_active_tex(gl, unit);
-  GLenum target = resource->target;
+  GLenum target = resource->transferable.mailbox_holder.texture_target;
   gl->BindTexture(target, resource->gl_id);
-  GLenum min_filter = filter;
-  if (min_filter != resource->min_filter) {
-    gl->TexParameteri(target, GL_TEXTURE_MIN_FILTER, min_filter);
-    resource->min_filter = min_filter;
-  }
   if (filter != resource->filter) {
+    gl->TexParameteri(target, GL_TEXTURE_MIN_FILTER, filter);
     gl->TexParameteri(target, GL_TEXTURE_MAG_FILTER, filter);
     resource->filter = filter;
   }
@@ -636,17 +601,17 @@ GLenum DisplayResourceProvider::BindForSampling(ResourceId resource_id,
 }
 
 bool DisplayResourceProvider::ReadLockFenceHasPassed(
-    const internal::Resource* resource) {
+    const ChildResource* resource) {
   return !resource->read_lock_fence || resource->read_lock_fence->HasPassed();
 }
 
 #if defined(OS_ANDROID)
 void DisplayResourceProvider::DeletePromotionHint(ResourceMap::iterator it,
                                                   DeleteStyle style) {
-  internal::Resource* resource = &it->second;
+  ChildResource* resource = &it->second;
   // If this resource was interested in promotion hints, then remove it from
   // the set of resources that we'll notify.
-  if (resource->wants_promotion_hint)
+  if (resource->transferable.wants_promotion_hint)
     wants_promotion_hints_set_.erase(it->first);
 }
 #endif
@@ -673,9 +638,9 @@ void DisplayResourceProvider::DeleteAndReturnUnusedResourcesToChild(
   for (ResourceId local_id : unused) {
     auto it = resources_.find(local_id);
     CHECK(it != resources_.end());
-    internal::Resource& resource = it->second;
+    ChildResource& resource = it->second;
 
-    ResourceId child_id = resource.id_in_child;
+    ResourceId child_id = resource.transferable.id;
     DCHECK(child_info->child_to_parent_map.count(child_id));
 
     bool is_lost = (resource.is_gpu_resource_type() && lost_context_provider_);
@@ -700,15 +665,16 @@ void DisplayResourceProvider::DeleteAndReturnUnusedResourcesToChild(
     }
 
     if (resource.is_gpu_resource_type() &&
-        resource.filter != resource.original_filter) {
-      DCHECK(resource.target);
+        resource.filter != resource.transferable.filter) {
+      DCHECK(resource.transferable.mailbox_holder.texture_target);
       DCHECK(resource.gl_id);
       DCHECK(gl);
-      gl->BindTexture(resource.target, resource.gl_id);
-      gl->TexParameteri(resource.target, GL_TEXTURE_MIN_FILTER,
-                        resource.original_filter);
-      gl->TexParameteri(resource.target, GL_TEXTURE_MAG_FILTER,
-                        resource.original_filter);
+      gl->BindTexture(resource.transferable.mailbox_holder.texture_target,
+                      resource.gl_id);
+      gl->TexParameteri(resource.transferable.mailbox_holder.texture_target,
+                        GL_TEXTURE_MIN_FILTER, resource.transferable.filter);
+      gl->TexParameteri(resource.transferable.mailbox_holder.texture_target,
+                        GL_TEXTURE_MAG_FILTER, resource.transferable.filter);
       resource.SetLocallyUsed();
     }
 
@@ -807,8 +773,7 @@ DisplayResourceProvider::ScopedReadLockGL::ScopedReadLockGL(
     DisplayResourceProvider* resource_provider,
     ResourceId resource_id)
     : resource_provider_(resource_provider), resource_id_(resource_id) {
-  const internal::Resource* resource =
-      resource_provider->LockForRead(resource_id);
+  const ChildResource* resource = resource_provider->LockForRead(resource_id);
   // TODO(ericrk): We should never fail LockForRead, but we appear to be
   // doing so on Android in rare cases. Handle this gracefully until a better
   // solution can be found. https://crbug.com/811858
@@ -816,9 +781,9 @@ DisplayResourceProvider::ScopedReadLockGL::ScopedReadLockGL(
     return;
 
   texture_id_ = resource->gl_id;
-  target_ = resource->target;
-  size_ = resource->size;
-  color_space_ = resource->color_space;
+  target_ = resource->transferable.mailbox_holder.texture_target;
+  size_ = resource->transferable.size;
+  color_space_ = resource->transferable.color_space;
 }
 
 DisplayResourceProvider::ScopedReadLockGL::~ScopedReadLockGL() {
@@ -848,59 +813,53 @@ DisplayResourceProvider::ScopedReadLockSkImage::ScopedReadLockSkImage(
     DisplayResourceProvider* resource_provider,
     ResourceId resource_id)
     : resource_provider_(resource_provider), resource_id_(resource_id) {
-  const internal::Resource* resource =
-      resource_provider->LockForRead(resource_id);
+  const ChildResource* resource = resource_provider->LockForRead(resource_id);
   DCHECK(resource);
-  if (resource_provider_->resource_sk_image_.find(resource_id) !=
-      resource_provider_->resource_sk_image_.end()) {
-    // Use cached sk_image.
-    sk_image_ =
-        resource_provider_->resource_sk_image_.find(resource_id)->second;
-  } else if (resource->gl_id) {
+
+  // Use cached SkImage if possible.
+  auto it = resource_provider_->resource_sk_image_.find(resource_id);
+  if (it != resource_provider_->resource_sk_image_.end()) {
+    sk_image_ = it->second;
+    return;
+  }
+
+  if (resource->is_gpu_resource_type()) {
+    DCHECK(resource->gl_id);
     GrGLTextureInfo texture_info;
     texture_info.fID = resource->gl_id;
-    texture_info.fTarget = resource->target;
-    texture_info.fFormat = TextureStorageFormat(resource->format);
-    GrBackendTexture backend_texture(resource->size.width(),
-                                     resource->size.height(), GrMipMapped::kNo,
-                                     texture_info);
+    texture_info.fTarget = resource->transferable.mailbox_holder.texture_target;
+    texture_info.fFormat = TextureStorageFormat(resource->transferable.format);
+    GrBackendTexture backend_texture(resource->transferable.size.width(),
+                                     resource->transferable.size.height(),
+                                     GrMipMapped::kNo, texture_info);
     sk_image_ = SkImage::MakeFromTexture(
         resource_provider->compositor_context_provider_->GrContext(),
         backend_texture, kTopLeft_GrSurfaceOrigin,
         ResourceFormatToClosestSkColorType(!resource_provider->IsSoftware(),
-                                           resource->format),
+                                           resource->transferable.format),
         kPremul_SkAlphaType, nullptr);
-  } else if (resource->pixels) {
-    SkBitmap sk_bitmap;
-    resource_provider->PopulateSkBitmapWithResource(&sk_bitmap, resource);
-    sk_bitmap.setImmutable();
-    sk_image_ = SkImage::MakeFromBitmap(sk_bitmap);
-  } else {
-    // During render process shutdown, ~RenderMessageFilter which calls
-    // ~HostSharedBitmapClient (which deletes shared bitmaps from child)
-    // can race with OnBeginFrameDeadline which draws a frame.
-    // In these cases, shared bitmaps (and this read lock) won't be valid.
-    // Renderers need to silently handle locks failing until this race
-    // is fixed.  DCHECK that this is the only case where there are no pixels.
-    DCHECK(!resource->shared_bitmap_id.IsZero());
+    return;
   }
+
+  if (!resource->shared_bitmap) {
+    // If a CompositorFrameSink is destroyed, it destroys all SharedBitmapIds
+    // that it registered. In this case, a CompositorFrame can be drawn with
+    // SharedBitmapIds that are not known in the viz service. As well, a
+    // misbehaved client can use SharedBitampIds that it did not report to
+    // the service. Then the |shared_bitmap| will be null, and this read lock
+    // will not be valid. Software-compositing users of this read lock must
+    // check for valid() to deal with this scenario.
+    sk_image_ = nullptr;
+    return;
+  }
+
+  SkBitmap sk_bitmap;
+  resource_provider->PopulateSkBitmapWithResource(&sk_bitmap, resource);
+  sk_bitmap.setImmutable();
+  sk_image_ = SkImage::MakeFromBitmap(sk_bitmap);
 }
 
 DisplayResourceProvider::ScopedReadLockSkImage::~ScopedReadLockSkImage() {
-  resource_provider_->UnlockForRead(resource_id_);
-}
-
-DisplayResourceProvider::ScopedReadLockSoftware::ScopedReadLockSoftware(
-    DisplayResourceProvider* resource_provider,
-    ResourceId resource_id)
-    : resource_provider_(resource_provider), resource_id_(resource_id) {
-  const internal::Resource* resource =
-      resource_provider->LockForRead(resource_id);
-  DCHECK(resource);
-  resource_provider->PopulateSkBitmapWithResource(&sk_bitmap_, resource);
-}
-
-DisplayResourceProvider::ScopedReadLockSoftware::~ScopedReadLockSoftware() {
   resource_provider_->UnlockForRead(resource_id_);
 }
 
@@ -914,8 +873,7 @@ DisplayResourceProvider::LockSetForExternalUse::~LockSetForExternalUse() {
 
 ResourceMetadata DisplayResourceProvider::LockSetForExternalUse::LockResource(
     ResourceId id) {
-  DCHECK(std::find(resources_.begin(), resources_.end(), id) ==
-         resources_.end());
+  DCHECK(!base::ContainsValue(resources_, id));
   resources_.push_back(id);
   return resource_provider_->LockForExternalUse(id);
 }
@@ -950,7 +908,7 @@ void DisplayResourceProvider::SynchronousFence::Wait() {
 }
 
 void DisplayResourceProvider::SynchronousFence::Synchronize() {
-  TRACE_EVENT0("cc", "DisplayResourceProvider::SynchronousFence::Synchronize");
+  TRACE_EVENT0("viz", "DisplayResourceProvider::SynchronousFence::Synchronize");
   gl_->Finish();
 }
 
@@ -968,5 +926,39 @@ DisplayResourceProvider::ScopedBatchReturnResources::
 DisplayResourceProvider::Child::Child() = default;
 DisplayResourceProvider::Child::Child(const Child& other) = default;
 DisplayResourceProvider::Child::~Child() = default;
+
+DisplayResourceProvider::ChildResource::ChildResource(
+    int child_id,
+    const TransferableResource& transferable)
+    : child_id(child_id),
+      transferable(transferable),
+      filter(transferable.filter) {
+  if (is_gpu_resource_type())
+    UpdateSyncToken(transferable.mailbox_holder.sync_token);
+  else
+    SetSynchronized();
+}
+
+DisplayResourceProvider::ChildResource::ChildResource(ChildResource&& other) =
+    default;
+DisplayResourceProvider::ChildResource::~ChildResource() = default;
+
+void DisplayResourceProvider::ChildResource::SetLocallyUsed() {
+  synchronization_state_ = LOCALLY_USED;
+  sync_token_.Clear();
+}
+
+void DisplayResourceProvider::ChildResource::SetSynchronized() {
+  synchronization_state_ = SYNCHRONIZED;
+}
+
+void DisplayResourceProvider::ChildResource::UpdateSyncToken(
+    const gpu::SyncToken& sync_token) {
+  DCHECK(is_gpu_resource_type());
+  // An empty sync token may be used if commands are guaranteed to have run on
+  // the gpu process or in case of context loss.
+  sync_token_ = sync_token;
+  synchronization_state_ = sync_token.HasData() ? NEEDS_WAIT : SYNCHRONIZED;
+}
 
 }  // namespace viz

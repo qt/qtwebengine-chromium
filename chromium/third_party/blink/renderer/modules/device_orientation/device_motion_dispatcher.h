@@ -36,13 +36,10 @@
 #include "third_party/blink/renderer/core/frame/platform_event_dispatcher.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 
-namespace device {
-class MotionData;
-}
-
 namespace blink {
 
 class DeviceMotionData;
+class DeviceMotionEventPump;
 
 // This class listens to device motion data and notifies all registered
 // controllers.
@@ -60,7 +57,7 @@ class DeviceMotionDispatcher final
   const DeviceMotionData* LatestDeviceMotionData();
 
   // Inherited from WebDeviceMotionListener.
-  void DidChangeDeviceMotion(const device::MotionData&) override;
+  void DidChangeDeviceMotion(DeviceMotionData*) override;
 
   void Trace(blink::Visitor*) override;
 
@@ -68,10 +65,11 @@ class DeviceMotionDispatcher final
   DeviceMotionDispatcher();
 
   // Inherited from PlatformEventDispatcher.
-  void StartListening() override;
+  void StartListening(LocalFrame*) override;
   void StopListening() override;
 
   Member<DeviceMotionData> last_device_motion_data_;
+  std::unique_ptr<DeviceMotionEventPump> event_pump_;
 };
 
 }  // namespace blink

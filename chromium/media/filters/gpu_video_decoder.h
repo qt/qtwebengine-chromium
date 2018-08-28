@@ -20,7 +20,6 @@
 #include "gpu/command_buffer/common/sync_token.h"
 #include "media/base/overlay_info.h"
 #include "media/base/pipeline_status.h"
-#include "media/base/surface_manager.h"
 #include "media/base/video_decoder.h"
 #include "media/video/video_decode_accelerator.h"
 
@@ -56,6 +55,7 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   // VideoDecoder implementation.
   std::string GetDisplayName() const override;
+  bool IsPlatformDecoder() const override;
   void Initialize(
       const VideoDecoderConfig& config,
       bool low_delay,

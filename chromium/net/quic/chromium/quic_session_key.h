@@ -5,12 +5,15 @@
 #ifndef NET_QUIC_CHROMIUM_QUIC_SESSION_KEY_H_
 #define NET_QUIC_CHROMIUM_QUIC_SESSION_KEY_H_
 
+#include "net/base/host_port_pair.h"
+#include "net/base/privacy_mode.h"
 #include "net/socket/socket_tag.h"
 #include "net/third_party/quic/core/quic_server_id.h"
 
 namespace net {
 
-// The key used to identify sessions. Includes the QuicServerId and socket tag.
+// The key used to identify sessions. Includes the quic::QuicServerId and socket
+// tag.
 class QUIC_EXPORT_PRIVATE QuicSessionKey {
  public:
   QuicSessionKey() = default;
@@ -21,7 +24,8 @@ class QUIC_EXPORT_PRIVATE QuicSessionKey {
                  uint16_t port,
                  PrivacyMode privacy_mode,
                  const SocketTag& socket_tag);
-  QuicSessionKey(const QuicServerId& server_id, const SocketTag& socket_tag);
+  QuicSessionKey(const quic::QuicServerId& server_id,
+                 const SocketTag& socket_tag);
   ~QuicSessionKey() = default;
 
   // Needed to be an element of std::set.
@@ -30,16 +34,19 @@ class QUIC_EXPORT_PRIVATE QuicSessionKey {
 
   const std::string& host() const { return server_id_.host(); }
 
-  PrivacyMode privacy_mode() const { return server_id_.privacy_mode(); }
+  PrivacyMode privacy_mode() const {
+    return server_id_.privacy_mode_enabled() ? PRIVACY_MODE_ENABLED
+                                             : PRIVACY_MODE_DISABLED;
+  }
 
-  const QuicServerId& server_id() const { return server_id_; }
+  const quic::QuicServerId& server_id() const { return server_id_; }
 
   SocketTag socket_tag() const { return socket_tag_; }
 
   size_t EstimateMemoryUsage() const;
 
  private:
-  QuicServerId server_id_;
+  quic::QuicServerId server_id_;
   SocketTag socket_tag_;
 };
 

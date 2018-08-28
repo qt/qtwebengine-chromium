@@ -20,22 +20,6 @@
 #include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
 
-namespace {
-
-int CharSet2CP(int charset) {
-  if (charset == FX_CHARSET_ShiftJIS)
-    return FX_CODEPAGE_ShiftJIS;
-  if (charset == FX_CHARSET_ChineseSimplified)
-    return FX_CODEPAGE_ChineseSimplified;
-  if (charset == FX_CHARSET_Hangul)
-    return FX_CODEPAGE_Hangul;
-  if (charset == FX_CHARSET_ChineseTraditional)
-    return FX_CODEPAGE_ChineseTraditional;
-  return FX_CODEPAGE_DefANSI;
-}
-
-}  // namespace
-
 CFX_SystemHandler::CFX_SystemHandler(CPDFSDK_FormFillEnvironment* pFormFillEnv)
     : m_pFormFillEnv(pFormFillEnv) {}
 
@@ -44,7 +28,7 @@ CFX_SystemHandler::~CFX_SystemHandler() {}
 void CFX_SystemHandler::InvalidateRect(CPDFSDK_Widget* widget,
                                        const CFX_FloatRect& rect) {
   CPDFSDK_PageView* pPageView = widget->GetPageView();
-  UnderlyingPageType* pPage = widget->GetUnderlyingPage();
+  IPDF_Page* pPage = widget->GetPage();
   if (!pPage || !pPageView)
     return;
 
@@ -71,7 +55,7 @@ void CFX_SystemHandler::OutputSelectedRect(CFFL_FormFiller* pFormFiller,
   CFX_PointF ptB = pFormFiller->PWLtoFFL(CFX_PointF(rect.right, rect.top));
 
   CPDFSDK_Annot* pAnnot = pFormFiller->GetSDKAnnot();
-  UnderlyingPageType* pPage = pAnnot->GetUnderlyingPage();
+  IPDF_Page* pPage = pAnnot->GetPage();
   ASSERT(pPage);
 
   m_pFormFillEnv->OutputSelectedRect(pPage,
@@ -99,8 +83,7 @@ bool CFX_SystemHandler::FindNativeTrueTypeFont(ByteString sFontFaceName) {
   if (!pFontMapper)
     return false;
 
-  if (pFontMapper->m_InstalledTTFonts.empty())
-    pFontMapper->LoadInstalledFonts();
+  pFontMapper->LoadInstalledFonts();
 
   for (const auto& font : pFontMapper->m_InstalledTTFonts) {
     if (font.Compare(sFontFaceName.AsStringView()))
@@ -121,7 +104,8 @@ CPDF_Font* CFX_SystemHandler::AddNativeTrueTypeFontToPDF(
     return nullptr;
 
   auto pFXFont = pdfium::MakeUnique<CFX_Font>();
-  pFXFont->LoadSubst(sFontFaceName, true, 0, 0, 0, CharSet2CP(nCharset), false);
+  pFXFont->LoadSubst(sFontFaceName, true, 0, 0, 0,
+                     FX_GetCodePageFromCharset(nCharset), false);
   return pDoc->AddFont(pFXFont.get(), nCharset, false);
 }
 

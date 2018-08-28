@@ -130,7 +130,8 @@ void MockBackgroundFetchDelegate::DownloadUrl(
             &BackgroundFetchDelegate::Client::OnDownloadComplete, client(),
             job_unique_id, guid,
             std::make_unique<BackgroundFetchResult>(
-                base::Time::Now(), response_path, test_response->data.size())));
+                base::Time::Now(), response_path,
+                base::nullopt /* blob_handle */, test_response->data.size())));
   } else {
     PostAbortCheckingTask(
         job_unique_id,
@@ -147,6 +148,9 @@ void MockBackgroundFetchDelegate::DownloadUrl(
 void MockBackgroundFetchDelegate::Abort(const std::string& job_unique_id) {
   aborted_jobs_.insert(job_unique_id);
 }
+
+void MockBackgroundFetchDelegate::UpdateUI(const std::string& job_unique_id,
+                                           const std::string& title) {}
 
 void MockBackgroundFetchDelegate::RegisterResponse(
     const GURL& url,

@@ -31,6 +31,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_V8_DOM_WRAPPER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_V8_DOM_WRAPPER_H_
 
+#include "base/stl_util.h"
 #include "third_party/blink/renderer/platform/bindings/dom_data_store.h"
 #include "third_party/blink/renderer/platform/bindings/runtime_call_stats.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
@@ -90,7 +91,7 @@ inline void V8DOMWrapper::SetNativeInfo(
   int indices[] = {kV8DOMWrapperObjectIndex, kV8DOMWrapperTypeIndex};
   void* values[] = {script_wrappable,
                     const_cast<WrapperTypeInfo*>(wrapper_type_info)};
-  wrapper->SetAlignedPointerInInternalFields(arraysize(indices), indices,
+  wrapper->SetAlignedPointerInInternalFields(base::size(indices), indices,
                                              values);
   auto* per_isolate_data = V8PerIsolateData::From(isolate);
   // We notify ScriptWrappableVisitor about the new wrapper association,
@@ -106,7 +107,7 @@ inline void V8DOMWrapper::ClearNativeInfo(v8::Isolate* isolate,
                                           v8::Local<v8::Object> wrapper) {
   int indices[] = {kV8DOMWrapperObjectIndex, kV8DOMWrapperTypeIndex};
   void* values[] = {nullptr, nullptr};
-  wrapper->SetAlignedPointerInInternalFields(arraysize(indices), indices,
+  wrapper->SetAlignedPointerInInternalFields(base::size(indices), indices,
                                              values);
 }
 

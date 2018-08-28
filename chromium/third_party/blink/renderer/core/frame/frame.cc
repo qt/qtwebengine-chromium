@@ -32,7 +32,7 @@
 
 #include <memory>
 
-#include "third_party/blink/public/web/web_frame_client.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_remote_frame_client.h"
 #include "third_party/blink/renderer/bindings/core/v8/window_proxy_manager.h"
 #include "third_party/blink/renderer/core/dom/document_type.h"
@@ -175,28 +175,33 @@ void Frame::DidChangeVisibilityState() {
 }
 
 void Frame::NotifyUserActivationInLocalTree() {
-  user_activation_state_.Activate();
-  for (Frame* parent = Tree().Parent(); parent;
-       parent = parent->Tree().Parent()) {
-    parent->user_activation_state_.Activate();
-  }
+  for (Frame* node = this; node; node = node->Tree().Parent())
+    node->user_activation_state_.Activate();
 }
 
 void Frame::NotifyUserActivation() {
+  ToLocalFrame(this)->Client()->NotifyUserActivation();
   NotifyUserActivationInLocalTree();
-  ToLocalFrame(this)->Client()->SetHasReceivedUserGesture();
 }
 
-bool Frame::ConsumeTransientUserActivation() {
-  for (Frame* parent = Tree().Parent(); parent;
-       parent = parent->Tree().Parent()) {
-    parent->user_activation_state_.ConsumeIfActive();
-  }
-  for (Frame* child = Tree().FirstChild(); child;
-       child = child->Tree().TraverseNext(this)) {
-    child->user_activation_state_.ConsumeIfActive();
-  }
-  return user_activation_state_.ConsumeIfActive();
+bool Frame::ConsumeTransientUserActivationInLocalTree() {
+  bool was_active = user_activation_state_.IsActive();
+
+  // Note that consumption "touches" the whole frame tree, to guarantee that a
+  // malicious subframe can't embed sub-subframes in a way that could allow
+  // multiple consumptions per user activation.
+  Frame& root = Tree().Top();
+  for (Frame* node = &root; node; node = node->Tree().TraverseNext(&root))
+    node->user_activation_state_.ConsumeIfActive();
+
+  return was_active;
+}
+
+bool Frame::ConsumeTransientUserActivation(
+    UserActivationUpdateSource update_source) {
+  if (update_source == UserActivationUpdateSource::kRenderer)
+    ToLocalFrame(this)->Client()->ConsumeUserActivation();
+  return ConsumeTransientUserActivationInLocalTree();
 }
 
 // static
@@ -230,10 +235,12 @@ bool Frame::HasTransientUserActivation(LocalFrame* frame,
 }
 
 // static
-bool Frame::ConsumeTransientUserActivation(LocalFrame* frame,
-                                           bool checkIfMainThread) {
+bool Frame::ConsumeTransientUserActivation(
+    LocalFrame* frame,
+    bool checkIfMainThread,
+    UserActivationUpdateSource update_source) {
   if (RuntimeEnabledFeatures::UserActivationV2Enabled()) {
-    return frame ? frame->ConsumeTransientUserActivation() : false;
+    return frame ? frame->ConsumeTransientUserActivation(update_source) : false;
   }
 
   return checkIfMainThread
@@ -303,8 +310,9 @@ Frame::Frame(FrameClient* client,
 }
 
 STATIC_ASSERT_ENUM(FrameDetachType::kRemove,
-                   WebFrameClient::DetachType::kRemove);
-STATIC_ASSERT_ENUM(FrameDetachType::kSwap, WebFrameClient::DetachType::kSwap);
+                   WebLocalFrameClient::DetachType::kRemove);
+STATIC_ASSERT_ENUM(FrameDetachType::kSwap,
+                   WebLocalFrameClient::DetachType::kSwap);
 STATIC_ASSERT_ENUM(FrameDetachType::kRemove,
                    WebRemoteFrameClient::DetachType::kRemove);
 STATIC_ASSERT_ENUM(FrameDetachType::kSwap,

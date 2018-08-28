@@ -79,6 +79,9 @@ declare_args() {
   # Set to true to enable a CMA media backend that allows mixed audio to be
   # output with sync'd video.
   enable_video_with_mixed_audio = false
+
+  # unified flag to pick monotonic_clock OR monotonic_clock_raw
+  media_clock_monotonic_raw = !is_android && !is_cast_desktop_build
 }
 
 declare_args() {
@@ -110,8 +113,6 @@ cast_locales = locales
 
 enable_chromecast_extensions = enable_extensions
 
-# These templates are a temporary fix fo link libc++ into shared libraries and
-# executables. These should be removed as soon as crbug.com/746091 is resolved.
 foreach(target_type,
         [
           "executable",
@@ -124,14 +125,6 @@ foreach(target_type,
       forward_variables_from(invoker, "*")
 
       configs += [ "//chromecast:cast_config" ]
-
-      if (!defined(deps)) {
-        deps = []
-      }
-
-      if (target_type != "source_set") {
-        deps += [ "//build/config:exe_and_shlib_deps" ]
-      }
     }
   }
 }

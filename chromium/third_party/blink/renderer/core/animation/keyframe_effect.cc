@@ -30,7 +30,6 @@
 
 #include "third_party/blink/renderer/core/animation/keyframe_effect.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/unrestricted_double_or_keyframe_effect_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_object_builder.h"
 #include "third_party/blink/renderer/core/animation/effect_input.h"
@@ -44,6 +43,7 @@
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/svg/svg_element.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
@@ -170,7 +170,7 @@ void KeyframeEffect::setKeyframes(ScriptState* script_state,
   // Animation into a 'normal' one with multiple properties.
   if (!Model()->IsStringKeyframeEffectModel()) {
     exception_state.ThrowDOMException(
-        kNotSupportedError,
+        DOMExceptionCode::kNotSupportedError,
         "Calling setKeyframes on CSS Transitions is not yet supported");
     return;
   }
@@ -251,12 +251,12 @@ void KeyframeEffect::StartAnimationOnCompositor(
   CompositorAnimations::StartAnimationOnCompositor(
       *target_, group, start_time, current_time, SpecifiedTiming(),
       GetAnimation(), *compositor_animation, *Model(),
-      compositor_animation_ids_, animation_playback_rate);
-  DCHECK(!compositor_animation_ids_.IsEmpty());
+      compositor_keyframe_model_ids_, animation_playback_rate);
+  DCHECK(!compositor_keyframe_model_ids_.IsEmpty());
 }
 
 bool KeyframeEffect::HasActiveAnimationsOnCompositor() const {
-  return !compositor_animation_ids_.IsEmpty();
+  return !compositor_keyframe_model_ids_.IsEmpty();
 }
 
 bool KeyframeEffect::HasActiveAnimationsOnCompositor(
@@ -274,11 +274,12 @@ bool KeyframeEffect::CancelAnimationOnCompositor(
     return false;
   if (!target_ || !target_->GetLayoutObject())
     return false;
-  for (const auto& compositor_animation_id : compositor_animation_ids_) {
+  for (const auto& compositor_keyframe_model_id :
+       compositor_keyframe_model_ids_) {
     CompositorAnimations::CancelAnimationOnCompositor(
-        *target_, compositor_animation, compositor_animation_id);
+        *target_, compositor_animation, compositor_keyframe_model_id);
   }
-  compositor_animation_ids_.clear();
+  compositor_keyframe_model_ids_.clear();
   return true;
 }
 
@@ -294,9 +295,10 @@ void KeyframeEffect::PauseAnimationForTestingOnCompositor(double pause_time) {
   if (!target_ || !target_->GetLayoutObject())
     return;
   DCHECK(GetAnimation());
-  for (const auto& compositor_animation_id : compositor_animation_ids_) {
+  for (const auto& compositor_keyframe_model_id :
+       compositor_keyframe_model_ids_) {
     CompositorAnimations::PauseAnimationForTestingOnCompositor(
-        *target_, *GetAnimation(), compositor_animation_id, pause_time);
+        *target_, *GetAnimation(), compositor_keyframe_model_id, pause_time);
   }
 }
 

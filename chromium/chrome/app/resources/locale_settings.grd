@@ -134,13 +134,6 @@
         55
       </message>
 
-      <if expr="is_win">
-        <!-- The width of the Conflicting Module bubble in characters (See above). -->
-        <message name="IDS_CONFLICTING_MODULE_BUBBLE_WIDTH_CHARS" use_name_for_id="true">
-          46
-        </message>
-      </if>
-
       <if expr="chromeos">
         <!-- The width and height of the Join Wi-Fi network dialog box in -->
         <!-- characters and lines (See above). -->
@@ -232,16 +225,6 @@
         <!-- The height of the help-app dialog in pixels. -->
         <message name="IDS_HELP_APP_DIALOG_HEIGHT_PIXELS" use_name_for_id="true">
             400
-        </message>
-
-        <!-- The EULA credits dialog in pixels. -->
-        <message name="IDS_CREDITS_APP_DIALOG_WIDTH_PIXELS" use_name_for_id="true">
-            710
-        </message>
-
-        <!-- The EULA credits dialog in pixels. -->
-        <message name="IDS_CREDITS_APP_DIALOG_HEIGHT_PIXELS" use_name_for_id="true">
-            500
         </message>
 
         <message name="IDS_FACTORY_RESET_HELP_URL" translateable="false">

@@ -29,7 +29,6 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "services/network/public/cpp/features.h"
-#include "services/network/resource_scheduler_params_manager.h"
 #include "url/scheme_host_port.h"
 
 namespace network {
@@ -45,12 +44,6 @@ namespace {
 // alternatives to.
 const base::Feature kPrioritySupportedRequestsDelayable{
     "PrioritySupportedRequestsDelayable", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// When kSpdyProxiesRequestsDelayable is enabled, HTTP requests fetched from
-// a SPDY/QUIC/H2 proxies can be delayed by the ResourceScheduler just as
-// HTTP/1.1 resources are.
-const base::Feature kSpdyProxiesRequestsDelayable{
-    "SpdyProxiesRequestsDelayable", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // When enabled, low-priority H2 and QUIC requests are throttled, but only
 // when the parser is in head.
@@ -124,11 +117,6 @@ static const size_t kMaxNumDelayableRequestsPerHostPerClient = 6;
 // The maximum number of delayable requests to allow to be in-flight at any
 // point in time while in the layout-blocking phase of loading.
 static const size_t kMaxNumDelayableWhileLayoutBlockingPerClient = 1;
-
-// The priority level above which resources are considered layout-blocking if
-// the html_body has not started.
-static const net::RequestPriority kLayoutBlockingPriorityThreshold =
-    net::MEDIUM;
 
 // The priority level below which resources are considered to be delayable.
 static const net::RequestPriority kDelayablePriorityThreshold = net::MEDIUM;
@@ -391,11 +379,7 @@ class ResourceScheduler::Client {
  public:
   Client(const net::NetworkQualityEstimator* const network_quality_estimator,
          ResourceScheduler* resource_scheduler)
-      : spdy_proxy_requests_delayble_(
-            base::FeatureList::IsEnabled(kSpdyProxiesRequestsDelayable)),
-        deprecated_is_loaded_(false),
-        deprecated_has_html_body_(false),
-        using_spdy_proxy_(false),
+      : deprecated_is_loaded_(false),
         in_flight_delayable_count_(0),
         total_layout_blocking_count_(0),
         num_skipped_scans_due_to_scheduled_start_(0),
@@ -405,11 +389,6 @@ class ResourceScheduler::Client {
         resource_scheduler_(resource_scheduler),
         weak_ptr_factory_(this) {
     UpdateParamsForNetworkQuality();
-    if (IsRendererSideResourceSchedulerEnabled()) {
-      // In this case, "layout blocking" concept is moved to the renderer side,
-      // so the shceduler works always with the normal mode.
-      deprecated_has_html_body_ = true;
-    }
     // Must not run the conflicting experiments together.
     DCHECK(!params_for_network_quality_
                 .delay_requests_on_multiplexed_connections ||
@@ -444,8 +423,7 @@ class ResourceScheduler::Client {
 
       // Removing this request may have freed up another to load.
       LoadAnyStartablePendingRequests(
-          deprecated_has_html_body_ ? RequestStartTrigger::COMPLETION_POST_BODY
-                                    : RequestStartTrigger::COMPLETION_PRE_BODY);
+          RequestStartTrigger::COMPLETION_POST_BODY);
     }
   }
 
@@ -481,36 +459,8 @@ class ResourceScheduler::Client {
   }
 
   void DeprecatedOnNavigate() {
-    deprecated_has_html_body_ = false;
-    if (IsRendererSideResourceSchedulerEnabled()) {
-      // In this case, "layout blocking" concept is moved to the renderer side,
-      // so the shceduler works always with the normal mode.
-      deprecated_has_html_body_ = true;
-    }
-
     deprecated_is_loaded_ = false;
     UpdateParamsForNetworkQuality();
-  }
-
-  void DeprecatedOnWillInsertBody() {
-    // Can be called multiple times per RVH in the case of out-of-process
-    // iframes.
-    if (deprecated_has_html_body_)
-      return;
-    deprecated_has_html_body_ = true;
-    LoadAnyStartablePendingRequests(RequestStartTrigger::BODY_REACHED);
-  }
-
-  void OnReceivedSpdyProxiedHttpResponse() {
-    // If the requests to SPDY/H2/QUIC proxies are delayable, then return
-    // immediately.
-    if (spdy_proxy_requests_delayble_)
-      return;
-
-    if (!using_spdy_proxy_) {
-      using_spdy_proxy_ = true;
-      LoadAnyStartablePendingRequests(RequestStartTrigger::SPDY_PROXY_DETECTED);
-    }
   }
 
   void ReprioritizeRequest(ScheduledResourceRequestImpl* request,
@@ -535,6 +485,16 @@ class ResourceScheduler::Client {
     }
   }
 
+  // Updates the params based on the current network quality estimate.
+  void UpdateParamsForNetworkQuality() {
+    params_for_network_quality_ =
+        resource_scheduler_->resource_scheduler_params_manager_
+            .GetParamsForEffectiveConnectionType(
+                network_quality_estimator_
+                    ? network_quality_estimator_->GetEffectiveConnectionType()
+                    : net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN);
+  }
+
  private:
   enum ShouldStartReqResult {
     DO_NOT_START_REQUEST_AND_STOP_SEARCHING,
@@ -542,16 +502,6 @@ class ResourceScheduler::Client {
     START_REQUEST,
     YIELD_SCHEDULER
   };
-
-  // Updates the params based on the current network quality estimate.
-  void UpdateParamsForNetworkQuality() {
-    params_for_network_quality_ =
-        resource_scheduler_->resource_scheduler_params_manager_
-            ->GetParamsForEffectiveConnectionType(
-                network_quality_estimator_
-                    ? network_quality_estimator_->GetEffectiveConnectionType()
-                    : net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN);
-  }
 
   // Records the metrics related to number of requests in flight.
   void RecordRequestCountMetrics() const {
@@ -677,17 +627,9 @@ class ResourceScheduler::Client {
       // If a request is already marked as layout-blocking make sure to keep the
       // attribute across redirects.
       attributes |= kAttributeLayoutBlocking;
-    } else if (!deprecated_has_html_body_ &&
-               request->url_request()->priority() >
-                   kLayoutBlockingPriorityThreshold) {
-      // Requests that are above the non_delayable threshold before the HTML
-      // body has been parsed are inferred to be layout-blocking.
-      attributes |= kAttributeLayoutBlocking;
     } else if (request->url_request()->priority() <
                kDelayablePriorityThreshold) {
       if (resource_scheduler_->priority_requests_delayable() ||
-          (resource_scheduler_->head_priority_requests_delayable() &&
-           !deprecated_has_html_body_) ||
           params_for_network_quality_
               .delay_requests_on_multiplexed_connections) {
         // Resources below the delayable priority threshold that are considered
@@ -834,8 +776,6 @@ class ResourceScheduler::Client {
 
     bool priority_delayable =
         resource_scheduler_->priority_requests_delayable() ||
-        (resource_scheduler_->head_priority_requests_delayable() &&
-         !deprecated_has_html_body_) ||
         params_for_network_quality_.delay_requests_on_multiplexed_connections;
 
     url::SchemeHostPort scheme_host_port(url_request.url());
@@ -844,9 +784,6 @@ class ResourceScheduler::Client {
                                  ->SupportsRequestPriority(scheme_host_port);
 
     if (!priority_delayable) {
-      if (using_spdy_proxy_ && url_request.url().SchemeIs(url::kHttpScheme))
-        return ShouldStartOrYieldRequest(request);
-
       // TODO(willchan): We should really improve this algorithm as described in
       // https://crbug.com/164101. Also, theoretically we should not count a
       // request-priority capable request against the delayable requests limit.
@@ -879,7 +816,7 @@ class ResourceScheduler::Client {
     // delayable requests is handled above here so this is deciding what to
     // do with a delayable request while we are in the layout-blocking phase
     // of loading.
-    if (!deprecated_has_html_body_ || total_layout_blocking_count_ != 0) {
+    if (total_layout_blocking_count_ != 0) {
       size_t non_delayable_requests_in_flight_count =
           in_flight_requests_.size() - in_flight_delayable_count_;
       if (non_delayable_requests_in_flight_count >
@@ -994,17 +931,11 @@ class ResourceScheduler::Client {
     }
   }
 
-  // True if requests to SPDY/H2/QUIC proxies can be delayed by the
-  // ResourceScheduler just as HTTP/1.1 resources are.
-  const bool spdy_proxy_requests_delayble_;
-
   bool deprecated_is_loaded_;
   // Tracks if the main HTML parser has reached the body which marks the end of
   // layout-blocking resources.
   // This is disabled and the is always true when kRendererSideResourceScheduler
   // is enabled.
-  bool deprecated_has_html_body_;
-  bool using_spdy_proxy_;
   RequestQueue pending_requests_;
   RequestSet in_flight_requests_;
   // The number of delayable in-flight requests.
@@ -1057,8 +988,6 @@ ResourceScheduler::ResourceScheduler(bool enabled)
                                                  kYieldMsParam,
                                                  kYieldMsDefault))),
       task_runner_(base::ThreadTaskRunnerHandle::Get()) {
-  resource_scheduler_params_manager_ =
-      std::make_unique<ResourceSchedulerParamsManager>();
   // Don't run the two experiments together.
   if (priority_requests_delayable_ && head_priority_requests_delayable_)
     priority_requests_delayable_ = false;
@@ -1166,33 +1095,6 @@ void ResourceScheduler::DeprecatedOnNavigate(int child_id, int route_id) {
   client->DeprecatedOnNavigate();
 }
 
-void ResourceScheduler::DeprecatedOnWillInsertBody(int child_id, int route_id) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  ClientId client_id = MakeClientId(child_id, route_id);
-
-  ClientMap::iterator it = client_map_.find(client_id);
-  if (it == client_map_.end()) {
-    // The client was likely deleted shortly before we received this IPC.
-    return;
-  }
-
-  Client* client = it->second.get();
-  client->DeprecatedOnWillInsertBody();
-}
-
-void ResourceScheduler::OnReceivedSpdyProxiedHttpResponse(int child_id,
-                                                          int route_id) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  ClientId client_id = MakeClientId(child_id, route_id);
-
-  ClientMap::iterator client_it = client_map_.find(client_id);
-  if (client_it == client_map_.end())
-    return;
-
-  Client* client = client_it->second.get();
-  client->OnReceivedSpdyProxiedHttpResponse();
-}
-
 bool ResourceScheduler::DeprecatedHasLoadingClients() const {
   for (const auto& client : client_map_) {
     if (!client.second->deprecated_is_loaded())
@@ -1266,22 +1168,13 @@ ResourceScheduler::ClientId ResourceScheduler::MakeClientId(int child_id,
   return (static_cast<ResourceScheduler::ClientId>(child_id) << 32) | route_id;
 }
 
-bool ResourceScheduler::IsRendererSideResourceSchedulerEnabled() {
-  // We are assuming that kRendererSideResourceScheduler will be shipped when
-  // launching Network Service, so let's act as if
-  // kRendererSideResourceScheduler is enabled when kNetworkService is enabled.
-  return base::FeatureList::IsEnabled(
-             features::kRendererSideResourceScheduler) ||
-         base::FeatureList::IsEnabled(features::kNetworkService);
-}
-
 void ResourceScheduler::SetResourceSchedulerParamsManagerForTests(
-    std::unique_ptr<ResourceSchedulerParamsManager>
-        resource_scheduler_params_manager) {
+    const ResourceSchedulerParamsManager& resource_scheduler_params_manager) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  resource_scheduler_params_manager_ =
-      std::move(resource_scheduler_params_manager);
-  DCHECK(resource_scheduler_params_manager_);
+  resource_scheduler_params_manager_.Reset(resource_scheduler_params_manager);
+  for (const auto& pair : client_map_) {
+    pair.second->UpdateParamsForNetworkQuality();
+  }
 }
 
 }  // namespace network

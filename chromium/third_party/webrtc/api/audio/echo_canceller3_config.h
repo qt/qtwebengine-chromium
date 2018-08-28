@@ -22,7 +22,7 @@ struct EchoCanceller3Config {
   struct Delay {
     size_t default_delay = 5;
     size_t down_sampling_factor = 4;
-    size_t num_filters = 5;
+    size_t num_filters = 6;
     size_t api_call_jitter_blocks = 26;
     size_t min_echo_path_delay_blocks = 0;
     size_t delay_headroom_blocks = 2;
@@ -46,10 +46,10 @@ struct EchoCanceller3Config {
       float noise_gate;
     };
 
-    MainConfiguration main = {13, 0.005f, 0.1f, 0.001f, 20075344.f};
+    MainConfiguration main = {13, 0.00005f, 0.01f, 0.1f, 20075344.f};
     ShadowConfiguration shadow = {13, 0.7f, 20075344.f};
 
-    MainConfiguration main_initial = {12, 0.05f, 5.f, 0.001f, 20075344.f};
+    MainConfiguration main_initial = {12, 0.005f, 0.5f, 0.001f, 20075344.f};
     ShadowConfiguration shadow_initial = {12, 0.9f, 20075344.f};
 
     size_t config_change_duration_blocks = 250;
@@ -130,15 +130,18 @@ struct EchoCanceller3Config {
 
   struct EchoRemovalControl {
     struct GainRampup {
+      float initial_gain = 0.0f;
       float first_non_zero_gain = 0.001f;
       int non_zero_gain_blocks = 187;
       int full_gain_blocks = 312;
     } gain_rampup;
-
     bool has_clock_drift = false;
+    bool linear_and_stable_echo_path = false;
   } echo_removal_control;
 
   struct EchoModel {
+    EchoModel();
+    EchoModel(const EchoModel& e);
     size_t noise_floor_hold = 50;
     float min_noise_floor_power = 1638400.f;
     float stationary_gate_slope = 10.f;
@@ -146,12 +149,23 @@ struct EchoCanceller3Config {
     float noise_gate_slope = 0.3f;
     size_t render_pre_window_size = 1;
     size_t render_post_window_size = 1;
+    size_t render_pre_window_size_init = 10;
+    size_t render_post_window_size_init = 10;
     float nonlinear_hold = 1;
     float nonlinear_release = 0.001f;
   } echo_model;
 
   struct Suppressor {
     size_t bands_with_reliable_coherence = 5;
+    size_t nearend_average_blocks = 4;
+
+    struct MaskingThresholds {
+      float enr_transparent;
+      float enr_suppress;
+      float emr_transparent;
+    };
+    MaskingThresholds mask_lf = {.2f, .3f, .3f};
+    MaskingThresholds mask_hf = {.07f, .1f, .3f};
   } suppressor;
 };
 }  // namespace webrtc

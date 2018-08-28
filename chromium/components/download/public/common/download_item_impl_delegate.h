@@ -78,7 +78,6 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImplDelegate {
   // Called when an interrupted download is resumed.
   virtual void ResumeInterruptedDownload(
       std::unique_ptr<DownloadUrlParameters> params,
-      uint32_t id,
       const GURL& site_url);
 
   // Update the persistent store with our information.
@@ -97,9 +96,6 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadItemImplDelegate {
   // Handle any delegate portions of a state change operation on the
   // DownloadItem.
   virtual void DownloadRemoved(DownloadItemImpl* download);
-
-  // Assert consistent state for delgate object at various transitions.
-  virtual void AssertStateConsistent(DownloadItemImpl* download) const;
 
   // Called when the download is interrupted.
   virtual void DownloadInterrupted(DownloadItemImpl* download);

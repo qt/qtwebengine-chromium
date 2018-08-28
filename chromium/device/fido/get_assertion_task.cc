@@ -8,9 +8,13 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "device/base/features.h"
 #include "device/fido/authenticator_get_assertion_response.h"
+#include "device/fido/ctap2_device_operation.h"
 #include "device/fido/ctap_empty_authenticator_request.h"
 #include "device/fido/device_response_converter.h"
+#include "device/fido/u2f_command_constructor.h"
+#include "device/fido/u2f_sign_operation.h"
 
 namespace device {
 
@@ -39,32 +43,34 @@ GetAssertionTask::GetAssertionTask(FidoDevice* device,
 GetAssertionTask::~GetAssertionTask() = default;
 
 void GetAssertionTask::StartTask() {
-  GetAuthenticatorInfo(
-      base::BindOnce(&GetAssertionTask::GetAssertion,
-                     weak_factory_.GetWeakPtr()),
-      base::BindOnce(&GetAssertionTask::U2fSign, weak_factory_.GetWeakPtr()));
+  if (base::FeatureList::IsEnabled(kNewCtap2Device) &&
+      device()->supported_protocol() == ProtocolVersion::kCtap) {
+    GetAssertion();
+  } else {
+    U2fSign();
+  }
 }
 
 void GetAssertionTask::GetAssertion() {
-  if (!CheckUserVerificationCompatible()) {
-    std::move(callback_).Run(CtapDeviceResponseCode::kCtap2ErrOther,
-                             base::nullopt);
-    return;
-  }
-
-  device()->DeviceTransact(
-      request_.EncodeAsCBOR(),
-      base::BindOnce(&GetAssertionTask::OnCtapGetAssertionResponseReceived,
-                     weak_factory_.GetWeakPtr()));
+  sign_operation_ =
+      std::make_unique<Ctap2DeviceOperation<CtapGetAssertionRequest,
+                                            AuthenticatorGetAssertionResponse>>(
+          device(), request_,
+          base::BindOnce(&GetAssertionTask::OnCtapGetAssertionResponseReceived,
+                         weak_factory_.GetWeakPtr()),
+          base::BindOnce(&ReadCTAPGetAssertionResponse));
+  sign_operation_->Start();
 }
 
 void GetAssertionTask::U2fSign() {
-  // TODO(hongjunchoi): Implement U2F sign request logic to support
-  // interoperability with U2F protocol. Currently all requests for U2F devices
-  // are silently dropped.
-  // See: https://www.crbug.com/798573
-  std::move(callback_).Run(CtapDeviceResponseCode::kCtap2ErrOther,
-                           base::nullopt);
+  DCHECK(!device()->device_info());
+  DCHECK_EQ(ProtocolVersion::kU2f, device()->supported_protocol());
+
+  sign_operation_ = std::make_unique<U2fSignOperation>(
+      device(), request_,
+      base::BindOnce(&GetAssertionTask::OnCtapGetAssertionResponseReceived,
+                     weak_factory_.GetWeakPtr()));
+  sign_operation_->Start();
 }
 
 bool GetAssertionTask::CheckRequirementsOnReturnedUserEntities(
@@ -107,58 +113,24 @@ bool GetAssertionTask::CheckRequirementsOnReturnedCredentialId(
 }
 
 void GetAssertionTask::OnCtapGetAssertionResponseReceived(
-    base::Optional<std::vector<uint8_t>> device_response) {
-  if (!device_response) {
-    std::move(callback_).Run(CtapDeviceResponseCode::kCtap2ErrOther,
-                             base::nullopt);
-    return;
-  }
-
-  auto response_code = GetResponseCode(*device_response);
+    CtapDeviceResponseCode response_code,
+    base::Optional<AuthenticatorGetAssertionResponse> device_response) {
   if (response_code != CtapDeviceResponseCode::kSuccess) {
     std::move(callback_).Run(response_code, base::nullopt);
     return;
   }
 
-  auto parsed_response = ReadCTAPGetAssertionResponse(*device_response);
-  if (!parsed_response || !parsed_response->CheckRpIdHash(request_.rp_id()) ||
-      !CheckRequirementsOnReturnedCredentialId(*parsed_response) ||
-      !CheckRequirementsOnReturnedUserEntities(*parsed_response)) {
+  // TODO(martinkr): CheckRpIdHash invocation needs to move into the Request
+  // handler. See https://crbug.com/863988.
+  if (!device_response || !device_response->CheckRpIdHash(request_.rp_id()) ||
+      !CheckRequirementsOnReturnedCredentialId(*device_response) ||
+      !CheckRequirementsOnReturnedUserEntities(*device_response)) {
     std::move(callback_).Run(CtapDeviceResponseCode::kCtap2ErrOther,
                              base::nullopt);
     return;
   }
 
-  std::move(callback_).Run(response_code, std::move(parsed_response));
-}
-
-bool GetAssertionTask::CheckUserVerificationCompatible() {
-  DCHECK(device()->device_info());
-  const auto uv_availability =
-      device()->device_info()->options().user_verification_availability();
-
-  switch (request_.user_verification()) {
-    case UserVerificationRequirement::kRequired:
-      return uv_availability ==
-             AuthenticatorSupportedOptions::UserVerificationAvailability::
-                 kSupportedAndConfigured;
-
-    case UserVerificationRequirement::kDiscouraged:
-      return true;
-
-    case UserVerificationRequirement::kPreferred:
-      if (uv_availability ==
-          AuthenticatorSupportedOptions::UserVerificationAvailability::
-              kSupportedAndConfigured) {
-        request_.SetUserVerification(UserVerificationRequirement::kRequired);
-      } else {
-        request_.SetUserVerification(UserVerificationRequirement::kDiscouraged);
-      }
-      return true;
-  }
-
-  NOTREACHED();
-  return false;
+  std::move(callback_).Run(response_code, std::move(device_response));
 }
 
 }  // namespace device

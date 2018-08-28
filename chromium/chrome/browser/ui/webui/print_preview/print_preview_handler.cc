@@ -16,6 +16,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/containers/flat_map.h"
+#include "base/feature_list.h"
 #include "base/i18n/number_formatting.h"
 #include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
@@ -35,6 +36,7 @@
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/printing/printer_manager_dialog.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/signin/gaia_cookie_manager_service_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -47,6 +49,7 @@
 #include "chrome/browser/ui/webui/print_preview/printer_handler.h"
 #include "chrome/browser/ui/webui/print_preview/sticky_settings.h"
 #include "chrome/common/buildflags.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/crash_keys.h"
@@ -320,10 +323,9 @@ void ReportPrintSettingsStats(const base::DictionaryValue& settings) {
     ReportPrintSettingHistogram(SCALING);
   }
 
-  int num_pages_per_sheet = 1;
-  if (settings.GetInteger(printing::kSettingPagesPerSheet,
-                          &num_pages_per_sheet) &&
-      num_pages_per_sheet != 1) {
+  int pages_per_sheet = 1;
+  if (settings.GetInteger(printing::kSettingPagesPerSheet, &pages_per_sheet) &&
+      pages_per_sheet != 1) {
     ReportPrintSettingHistogram(PAGES_PER_SHEET);
   }
 
@@ -589,6 +591,7 @@ void PrintPreviewHandler::OnJavascriptDisallowed() {
   // Normally the handler and print preview will be destroyed together, but
   // this is necessary for refresh or navigation from the chrome://print page.
   weak_factory_.InvalidateWeakPtrs();
+  preview_callbacks_.clear();
   UnregisterForGaiaCookieChanges();
 }
 
@@ -598,6 +601,37 @@ WebContents* PrintPreviewHandler::preview_web_contents() const {
 
 PrintPreviewUI* PrintPreviewHandler::print_preview_ui() const {
   return static_cast<PrintPreviewUI*>(web_ui()->GetController());
+}
+
+bool PrintPreviewHandler::ShouldReceiveRendererMessage(int request_id) {
+  if (!IsJavascriptAllowed()) {
+    BadMessageReceived();
+    return false;
+  }
+
+  if (!base::ContainsKey(preview_callbacks_, request_id)) {
+    BadMessageReceived();
+    return false;
+  }
+
+  return true;
+}
+
+std::string PrintPreviewHandler::GetCallbackId(int request_id) {
+  std::string result;
+  if (!IsJavascriptAllowed()) {
+    BadMessageReceived();
+    return result;
+  }
+
+  auto it = preview_callbacks_.find(request_id);
+  if (it == preview_callbacks_.end()) {
+    BadMessageReceived();
+    return result;
+  }
+  result = it->second;
+  preview_callbacks_.erase(it);
+  return result;
 }
 
 void PrintPreviewHandler::HandleGetPrinters(const base::ListValue* args) {
@@ -680,7 +714,8 @@ void PrintPreviewHandler::HandleGetPreview(const base::ListValue* args) {
   settings->GetInteger(printing::kPreviewRequestID, &request_id);
   CHECK_GT(request_id, -1);
 
-  preview_callbacks_.push(callback_id);
+  CHECK(!base::ContainsKey(preview_callbacks_, request_id));
+  preview_callbacks_[request_id] = callback_id;
   print_preview_ui()->OnPrintPreviewRequest(request_id);
   // Add an additional key in order to identify |print_preview_ui| later on
   // when calling PrintPreviewUI::GetCurrentPrintPreviewStatus() on the IO
@@ -1078,7 +1113,8 @@ void PrintPreviewHandler::SendCloudPrintEnabled() {
   Profile* profile = Profile::FromBrowserContext(
       preview_web_contents()->GetBrowserContext());
   PrefService* prefs = profile->GetPrefs();
-  if (prefs->GetBoolean(prefs::kCloudPrintSubmitEnabled)) {
+  if (prefs->GetBoolean(prefs::kCloudPrintSubmitEnabled) &&
+      !base::FeatureList::IsEnabled(features::kCloudPrinterHandler)) {
     FireWebUIListener(
         "use-cloud-print",
         base::Value(GURL(cloud_devices::GetCloudPrintURL()).spec()),
@@ -1117,50 +1153,41 @@ void PrintPreviewHandler::OnAddAccountToCookieCompleted(
 }
 
 void PrintPreviewHandler::OnPrintPreviewReady(int preview_uid, int request_id) {
-  if (request_id < 0 || preview_callbacks_.empty() || !IsJavascriptAllowed()) {
-    // invalid ID or extra message
-    BadMessageReceived();
+  std::string callback_id = GetCallbackId(request_id);
+  if (callback_id.empty())
     return;
-  }
 
-  ResolveJavascriptCallback(base::Value(preview_callbacks_.front()),
-                            base::Value(preview_uid));
-  preview_callbacks_.pop();
+  ResolveJavascriptCallback(base::Value(callback_id), base::Value(preview_uid));
 }
 
-void PrintPreviewHandler::OnPrintPreviewFailed() {
-  if (preview_callbacks_.empty() || !IsJavascriptAllowed()) {
-    BadMessageReceived();
+void PrintPreviewHandler::OnPrintPreviewFailed(int request_id) {
+  std::string callback_id = GetCallbackId(request_id);
+  if (callback_id.empty())
     return;
-  }
 
   if (!reported_failed_preview_) {
     reported_failed_preview_ = true;
     ReportUserActionHistogram(PREVIEW_FAILED);
   }
-  RejectJavascriptCallback(base::Value(preview_callbacks_.front()),
+  RejectJavascriptCallback(base::Value(callback_id),
                            base::Value("PREVIEW_FAILED"));
-  preview_callbacks_.pop();
 }
 
-void PrintPreviewHandler::OnInvalidPrinterSettings() {
-  if (preview_callbacks_.empty() || !IsJavascriptAllowed()) {
-    BadMessageReceived();
+void PrintPreviewHandler::OnInvalidPrinterSettings(int request_id) {
+  std::string callback_id = GetCallbackId(request_id);
+  if (callback_id.empty())
     return;
-  }
 
-  RejectJavascriptCallback(base::Value(preview_callbacks_.front()),
+  RejectJavascriptCallback(base::Value(callback_id),
                            base::Value("SETTINGS_INVALID"));
-  preview_callbacks_.pop();
 }
 
 void PrintPreviewHandler::SendPrintPresetOptions(bool disable_scaling,
                                                  int copies,
-                                                 int duplex) {
-  if (preview_callbacks_.empty() || !IsJavascriptAllowed()) {
-    BadMessageReceived();
+                                                 int duplex,
+                                                 int request_id) {
+  if (!ShouldReceiveRendererMessage(request_id))
     return;
-  }
 
   FireWebUIListener("print-preset-options", base::Value(disable_scaling),
                     base::Value(copies), base::Value(duplex));
@@ -1169,10 +1196,8 @@ void PrintPreviewHandler::SendPrintPresetOptions(bool disable_scaling,
 void PrintPreviewHandler::SendPageCountReady(int page_count,
                                              int request_id,
                                              int fit_to_page_scaling) {
-  if (preview_callbacks_.empty() || !IsJavascriptAllowed()) {
-    BadMessageReceived();
+  if (!ShouldReceiveRendererMessage(request_id))
     return;
-  }
 
   FireWebUIListener("page-count-ready", base::Value(page_count),
                     base::Value(request_id), base::Value(fit_to_page_scaling));
@@ -1180,11 +1205,10 @@ void PrintPreviewHandler::SendPageCountReady(int page_count,
 
 void PrintPreviewHandler::SendPageLayoutReady(
     const base::DictionaryValue& layout,
-    bool has_custom_page_size_style) {
-  if (preview_callbacks_.empty() || !IsJavascriptAllowed()) {
-    BadMessageReceived();
+    bool has_custom_page_size_style,
+    int request_id) {
+  if (!ShouldReceiveRendererMessage(request_id))
     return;
-  }
 
   FireWebUIListener("page-layout-ready", layout,
                     base::Value(has_custom_page_size_style));
@@ -1193,29 +1217,19 @@ void PrintPreviewHandler::SendPageLayoutReady(
 void PrintPreviewHandler::SendPagePreviewReady(int page_index,
                                                int preview_uid,
                                                int preview_response_id) {
-  if (!IsJavascriptAllowed()) {
-    BadMessageReceived();
+  if (!ShouldReceiveRendererMessage(preview_response_id))
     return;
-  }
 
   FireWebUIListener("page-preview-ready", base::Value(page_index),
                     base::Value(preview_uid), base::Value(preview_response_id));
 }
 
-void PrintPreviewHandler::OnPrintPreviewCancelled() {
-  if (!IsJavascriptAllowed()) {
-    BadMessageReceived();
+void PrintPreviewHandler::OnPrintPreviewCancelled(int request_id) {
+  std::string callback_id = GetCallbackId(request_id);
+  if (callback_id.empty())
     return;
-  }
 
-  if (preview_callbacks_.empty()) {
-    BadMessageReceived();
-    return;
-  }
-
-  RejectJavascriptCallback(base::Value(preview_callbacks_.front()),
-                           base::Value("CANCELLED"));
-  preview_callbacks_.pop();
+  RejectJavascriptCallback(base::Value(callback_id), base::Value("CANCELLED"));
 }
 
 void PrintPreviewHandler::OnPrintRequestCancelled() {
@@ -1268,6 +1282,14 @@ PrinterHandler* PrintPreviewHandler::GetPrinterHandler(
           preview_web_contents(), Profile::FromWebUI(web_ui()));
     }
     return local_printer_handler_.get();
+  }
+  if (printer_type == PrinterType::kCloudPrinter) {
+    // This printer handler is currently experimental. Ensure it is never
+    // created unless the flag is enabled.
+    CHECK(base::FeatureList::IsEnabled(features::kCloudPrinterHandler));
+    if (!cloud_printer_handler_)
+      cloud_printer_handler_ = PrinterHandler::CreateForCloudPrinters();
+    return cloud_printer_handler_.get();
   }
   NOTREACHED();
   return nullptr;
@@ -1328,8 +1350,7 @@ void PrintPreviewHandler::OnPrintResult(const std::string& callback_id,
 void PrintPreviewHandler::RegisterForGaiaCookieChanges() {
   DCHECK(!gaia_cookie_manager_service_);
   Profile* profile = Profile::FromWebUI(web_ui());
-  if (signin::IsAccountConsistencyMirrorEnabled() &&
-      !profile->IsOffTheRecord()) {
+  if (AccountConsistencyModeManager::IsMirrorEnabledForProfile(profile)) {
     gaia_cookie_manager_service_ =
         GaiaCookieManagerServiceFactory::GetForProfile(profile);
     if (gaia_cookie_manager_service_)

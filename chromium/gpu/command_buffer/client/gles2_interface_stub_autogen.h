@@ -701,9 +701,7 @@ void DrawElementsInstancedANGLE(GLenum mode,
                                 const void* indices,
                                 GLsizei primcount) override;
 void VertexAttribDivisorANGLE(GLuint index, GLuint divisor) override;
-void GenMailboxCHROMIUM(GLbyte* mailbox) override;
-void ProduceTextureDirectCHROMIUM(GLuint texture,
-                                  const GLbyte* mailbox) override;
+void ProduceTextureDirectCHROMIUM(GLuint texture, GLbyte* mailbox) override;
 GLuint CreateAndConsumeTextureCHROMIUM(const GLbyte* mailbox) override;
 void BindUniformLocationCHROMIUM(GLuint program,
                                  GLint location,
@@ -909,4 +907,5 @@ GLuint CreateGpuFenceCHROMIUM() override;
 GLuint CreateClientGpuFenceCHROMIUM(ClientGpuFence source) override;
 void WaitGpuFenceCHROMIUM(GLuint gpu_fence_id) override;
 void DestroyGpuFenceCHROMIUM(GLuint gpu_fence_id) override;
+void InvalidateReadbackBufferShadowDataCHROMIUM(GLuint buffer_id) override;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_STUB_AUTOGEN_H_

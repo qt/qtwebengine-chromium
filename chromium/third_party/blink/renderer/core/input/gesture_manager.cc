@@ -19,6 +19,8 @@
 #include "third_party/blink/renderer/core/input/input_device_capabilities.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+#include "third_party/blink/renderer/platform/scroll/scroll_animator_base.h"
 
 #if BUILDFLAG(ENABLE_UNHANDLED_TAP)
 #include "services/service_manager/public/cpp/interface_provider.h"
@@ -124,9 +126,6 @@ WebInputEventResult GestureManager::HandleGestureEventInFrame(
       return HandleGestureLongTap(targeted_event);
     case WebInputEvent::kGestureTwoFingerTap:
       return HandleGestureTwoFingerTap(targeted_event);
-    case WebInputEvent::kGesturePinchBegin:
-    case WebInputEvent::kGesturePinchEnd:
-    case WebInputEvent::kGesturePinchUpdate:
     case WebInputEvent::kGestureTapCancel:
     case WebInputEvent::kGestureTapUnconfirmed:
       break;
@@ -156,10 +155,12 @@ WebInputEventResult GestureManager::HandleGestureTap(
   uint64_t pre_dispatch_style_version = frame_->GetDocument()->StyleVersion();
 
   HitTestResult current_hit_test = targeted_event.GetHitTestResult();
+  const HitTestLocation& current_hit_test_location =
+      targeted_event.GetHitTestLocation();
 
   // We use the adjusted position so the application isn't surprised to see a
   // event with co-ordinates outside the target's bounds.
-  IntPoint adjusted_point = frame_view->RootFrameToContents(
+  IntPoint adjusted_point = frame_view->ConvertFromRootFrame(
       FlooredIntPoint(gesture_event.PositionInRootFrame()));
 
   const unsigned modifiers = gesture_event.GetModifiers();
@@ -190,12 +191,12 @@ WebInputEventResult GestureManager::HandleGestureTap(
   if (current_hit_test.InnerNode()) {
     LocalFrame& main_frame = frame_->LocalFrameRoot();
     if (!main_frame.View() ||
-        !main_frame.View()->UpdateLifecycleToPrePaintClean())
+        !main_frame.View()->UpdateAllLifecyclePhasesExceptPaint())
       return WebInputEventResult::kNotHandled;
-    adjusted_point = frame_view->RootFrameToContents(
+    adjusted_point = frame_view->ConvertFromRootFrame(
         FlooredIntPoint(gesture_event.PositionInRootFrame()));
     current_hit_test = EventHandlingUtil::HitTestResultInFrame(
-        frame_, adjusted_point, hit_type);
+        frame_, HitTestLocation(adjusted_point), hit_type);
   }
 
   // Capture data for showUnhandledTapUIIfNeeded.
@@ -238,7 +239,8 @@ WebInputEventResult GestureManager::HandleGestureTap(
     }
     if (mouse_down_event_result == WebInputEventResult::kNotHandled) {
       mouse_down_event_result = mouse_event_manager_->HandleMousePressEvent(
-          MouseEventWithHitTestResults(fake_mouse_down, current_hit_test));
+          MouseEventWithHitTestResults(
+              fake_mouse_down, current_hit_test_location, current_hit_test));
     }
   }
 
@@ -255,9 +257,9 @@ WebInputEventResult GestureManager::HandleGestureTap(
     LocalFrame& main_frame = frame_->LocalFrameRoot();
     if (main_frame.View())
       main_frame.View()->UpdateAllLifecyclePhases();
-    adjusted_point = frame_view->RootFrameToContents(tapped_position);
+    adjusted_point = frame_view->ConvertFromRootFrame(tapped_position);
     current_hit_test = EventHandlingUtil::HitTestResultInFrame(
-        frame_, adjusted_point, hit_type);
+        frame_, HitTestLocation(adjusted_point), hit_type);
   }
 
   WebMouseEvent fake_mouse_up(
@@ -293,9 +295,11 @@ WebInputEventResult GestureManager::HandleGestureTap(
     mouse_event_manager_->SetClickElement(nullptr);
   }
 
-  if (mouse_up_event_result == WebInputEventResult::kNotHandled)
+  if (mouse_up_event_result == WebInputEventResult::kNotHandled) {
     mouse_up_event_result = mouse_event_manager_->HandleMouseReleaseEvent(
-        MouseEventWithHitTestResults(fake_mouse_up, current_hit_test));
+        MouseEventWithHitTestResults(fake_mouse_up, current_hit_test_location,
+                                     current_hit_test));
+  }
   mouse_event_manager_->ClearDragHeuristicState();
 
   WebInputEventResult event_result = EventHandlingUtil::MergeEventResult(
@@ -327,10 +331,10 @@ WebInputEventResult GestureManager::HandleGestureLongPress(
   // overhaul of the touch drag-and-drop code and LongPress is such a special
   // scenario that it's unlikely to matter much in practice.
 
-  IntPoint hit_test_point = frame_->View()->RootFrameToContents(
-      FlooredIntPoint(gesture_event.PositionInRootFrame()));
+  HitTestLocation location(frame_->View()->ConvertFromRootFrame(
+      FlooredIntPoint(gesture_event.PositionInRootFrame())));
   HitTestResult hit_test_result =
-      frame_->GetEventHandler().HitTestResultAtPoint(hit_test_point);
+      frame_->GetEventHandler().HitTestResultAtLocation(location);
 
   long_tap_should_invoke_context_menu_ = false;
   bool hit_test_contains_links = hit_test_result.URLElement() ||
@@ -414,7 +418,7 @@ WebInputEventResult GestureManager::SendContextMenuEventForGesture(
 
   if (!suppress_mouse_events_from_gestures_ && frame_->View()) {
     HitTestRequest request(HitTestRequest::kActive);
-    LayoutPoint document_point = frame_->View()->RootFrameToContents(
+    LayoutPoint document_point = frame_->View()->ConvertFromRootFrame(
         FlooredIntPoint(targeted_event.Event().PositionInRootFrame()));
     MouseEventWithHitTestResults mev =
         frame_->GetDocument()->PerformMouseEventHitTest(request, document_point,
@@ -432,12 +436,10 @@ WebInputEventResult GestureManager::HandleGestureShowPress() {
   LocalFrameView* view = frame_->View();
   if (!view)
     return WebInputEventResult::kNotHandled;
-  if (ScrollAnimatorBase* scroll_animator = view->ExistingScrollAnimator())
-    scroll_animator->CancelAnimation();
   const LocalFrameView::ScrollableAreaSet* areas = view->ScrollableAreas();
   if (!areas)
     return WebInputEventResult::kNotHandled;
-  for (const ScrollableArea* scrollable_area : *areas) {
+  for (const PaintLayerScrollableArea* scrollable_area : *areas) {
     ScrollAnimatorBase* animator = scrollable_area->ExistingScrollAnimator();
     if (animator)
       animator->CancelAnimation();

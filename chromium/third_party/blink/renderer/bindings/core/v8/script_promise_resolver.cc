@@ -24,6 +24,12 @@ ScriptPromiseResolver::ScriptPromiseResolver(ScriptState* script_state)
   }
 }
 
+void ScriptPromiseResolver::Reject(ExceptionState& exception_state) {
+  DCHECK(exception_state.HadException());
+  Reject(exception_state.GetException());
+  exception_state.ClearException();
+}
+
 void ScriptPromiseResolver::Pause() {
   timer_.Stop();
 }
@@ -62,7 +68,7 @@ void ScriptPromiseResolver::OnTimerFired(TimerBase*) {
     return;
   }
 
-  ScriptState::Scope scope(script_state_.get());
+  ScriptState::Scope scope(script_state_);
   ResolveOrRejectImmediately();
 }
 
@@ -81,6 +87,7 @@ void ScriptPromiseResolver::ResolveOrRejectImmediately() {
 }
 
 void ScriptPromiseResolver::Trace(blink::Visitor* visitor) {
+  visitor->Trace(script_state_);
   PausableObject::Trace(visitor);
 }
 

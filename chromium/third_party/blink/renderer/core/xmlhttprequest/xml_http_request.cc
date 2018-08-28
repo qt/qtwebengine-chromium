@@ -24,19 +24,19 @@
 #include "third_party/blink/renderer/core/xmlhttprequest/xml_http_request.h"
 
 #include <memory>
+
 #include "base/auto_reset.h"
+#include "third_party/blink/public/common/blob/blob_utils.h"
 #include "third_party/blink/public/mojom/feature_policy/feature_policy.mojom-blink.h"
 #include "third_party/blink/public/platform/web_cors.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/array_buffer_or_array_buffer_view_or_blob_or_document_or_string_or_form_data_or_url_search_params.h"
 #include "third_party/blink/renderer/bindings/core/v8/array_buffer_or_array_buffer_view_or_blob_or_usv_string.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document_init.h"
 #include "third_party/blink/renderer/core/dom/document_parser.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/dom_implementation.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/xml_document.h"
 #include "third_party/blink/renderer/core/editing/serializers/serialization.h"
 #include "third_party/blink/renderer/core/events/progress_event.h"
@@ -66,6 +66,7 @@
 #include "third_party/blink/renderer/core/url/url_search_params.h"
 #include "third_party/blink/renderer/core/xmlhttprequest/xml_http_request_upload.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/blob/blob_data.h"
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_response.h"
@@ -90,6 +91,7 @@
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/cstring.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
@@ -202,7 +204,8 @@ bool ValidateOpenArguments(const AtomicString& method,
                            ExceptionState& exception_state) {
   if (!IsValidHTTPToken(method)) {
     exception_state.ThrowDOMException(
-        kSyntaxError, "'" + method + "' is not a valid HTTP method.");
+        DOMExceptionCode::kSyntaxError,
+        "'" + method + "' is not a valid HTTP method.");
     return false;
   }
 
@@ -213,7 +216,8 @@ bool ValidateOpenArguments(const AtomicString& method,
   }
 
   if (!url.IsValid()) {
-    exception_state.ThrowDOMException(kSyntaxError, "Invalid URL");
+    exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
+                                      "Invalid URL");
     return false;
   }
 
@@ -326,7 +330,7 @@ v8::Local<v8::String> XMLHttpRequest::responseText(
     ExceptionState& exception_state) {
   if (response_type_code_ != kResponseTypeDefault &&
       response_type_code_ != kResponseTypeText) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The value is only accessible if the "
                                       "object's 'responseType' is '' or 'text' "
                                       "(was '" +
@@ -375,7 +379,7 @@ void XMLHttpRequest::InitResponseDocument() {
 Document* XMLHttpRequest::responseXML(ExceptionState& exception_state) {
   if (response_type_code_ != kResponseTypeDefault &&
       response_type_code_ != kResponseTypeDocument) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The value is only accessible if the "
                                       "object's 'responseType' is '' or "
                                       "'document' (was '" +
@@ -413,12 +417,8 @@ Blob* XMLHttpRequest::ResponseBlob() {
     blob_data->SetContentType(FinalResponseMIMETypeWithFallback().LowerASCII());
     size_t size = 0;
     if (binary_response_builder_ && binary_response_builder_->size()) {
-      binary_response_builder_->ForEachSegment(
-          [&blob_data](const char* segment, size_t segment_size,
-                       size_t segment_offset) -> bool {
-            blob_data->AppendBytes(segment, segment_size);
-            return true;
-          });
+      for (const auto& span : *binary_response_builder_)
+        blob_data->AppendBytes(span.data(), span.size());
       size = binary_response_builder_->size();
       binary_response_builder_ = nullptr;
       ReportMemoryUsageToV8();
@@ -471,7 +471,7 @@ void XMLHttpRequest::setTimeout(unsigned timeout,
   // fetching is in progress. If that occurs it will still be measured relative
   // to the start of fetching."
   if (GetExecutionContext() && GetExecutionContext()->IsDocument() && !async_) {
-    exception_state.ThrowDOMException(kInvalidAccessError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidAccessError,
                                       "Timeouts cannot be set for synchronous "
                                       "requests made from a document.");
     return;
@@ -492,7 +492,7 @@ void XMLHttpRequest::setTimeout(unsigned timeout,
 void XMLHttpRequest::setResponseType(const String& response_type,
                                      ExceptionState& exception_state) {
   if (state_ >= kLoading) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The response type cannot be set if the "
                                       "object's state is LOADING or DONE.");
     return;
@@ -502,7 +502,7 @@ void XMLHttpRequest::setResponseType(const String& response_type,
   // contexts, as a spec-mandated attempt to discourage synchronous XHR use.
   // responseType is one such piece of functionality.
   if (GetExecutionContext() && GetExecutionContext()->IsDocument() && !async_) {
-    exception_state.ThrowDOMException(kInvalidAccessError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidAccessError,
                                       "The response type cannot be changed for "
                                       "synchronous requests made from a "
                                       "document.");
@@ -607,7 +607,7 @@ void XMLHttpRequest::setWithCredentials(bool value,
                                         ExceptionState& exception_state) {
   if (state_ > kOpened || send_flag_) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "The value may only be set if the object's state is UNSENT or OPENED.");
     return;
   }
@@ -670,7 +670,7 @@ void XMLHttpRequest::open(const AtomicString& method,
     if (GetDocument()->GetSettings() &&
         !GetDocument()->GetSettings()->GetSyncXHRInDocumentsEnabled()) {
       exception_state.ThrowDOMException(
-          kInvalidAccessError,
+          DOMExceptionCode::kInvalidAccessError,
           "Synchronous requests are disabled for this page.");
       return;
     }
@@ -680,7 +680,7 @@ void XMLHttpRequest::open(const AtomicString& method,
     // responseType is one such piece of functionality.
     if (response_type_code_ != kResponseTypeDefault) {
       exception_state.ThrowDOMException(
-          kInvalidAccessError,
+          DOMExceptionCode::kInvalidAccessError,
           "Synchronous requests from a document must not set a response type.");
       return;
     }
@@ -688,7 +688,8 @@ void XMLHttpRequest::open(const AtomicString& method,
     // Similarly, timeouts are disabled for synchronous requests as well.
     if (timeout_milliseconds_ > 0) {
       exception_state.ThrowDOMException(
-          kInvalidAccessError, "Synchronous requests must not set a timeout.");
+          DOMExceptionCode::kInvalidAccessError,
+          "Synchronous requests must not set a timeout.");
       return;
     }
 
@@ -708,8 +709,7 @@ void XMLHttpRequest::open(const AtomicString& method,
 
   url_ = url;
 
-  if (url_.ProtocolIs("blob") &&
-      RuntimeEnabledFeatures::MojoBlobURLsEnabled()) {
+  if (url_.ProtocolIs("blob") && BlobUtils::MojoBlobURLsEnabled()) {
     GetExecutionContext()->GetPublicURLManager().Resolve(
         url_, MakeRequest(&blob_url_loader_factory_));
   }
@@ -739,14 +739,13 @@ bool XMLHttpRequest::InitSend(ExceptionState& exception_state) {
   }
 
   if (state_ != kOpened || send_flag_) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The object's state must be OPENED.");
     return false;
   }
 
   if (!async_) {
     if (GetExecutionContext()->IsDocument() &&
-        IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kSyncXHR) &&
         !GetDocument()->GetFrame()->IsFeatureEnabled(
             mojom::FeaturePolicyFeature::kSyncXHR)) {
       LogConsoleError(GetExecutionContext(),
@@ -969,16 +968,19 @@ void XMLHttpRequest::SendForInspectorXHRReplay(
     scoped_refptr<EncodedFormData> form_data,
     ExceptionState& exception_state) {
   CreateRequest(form_data ? form_data->DeepCopy() : nullptr, exception_state);
-  exception_code_ = exception_state.Code();
+  if (exception_state.HadException()) {
+    CHECK(IsDOMExceptionCode(exception_state.Code()));
+    exception_code_ = exception_state.CodeAs<DOMExceptionCode>();
+  }
 }
 
 void XMLHttpRequest::ThrowForLoadFailureIfNeeded(
     ExceptionState& exception_state,
     const String& reason) {
-  if (error_ && !exception_code_)
-    exception_code_ = kNetworkError;
+  if (error_ && exception_code_ == DOMExceptionCode::kNoError)
+    exception_code_ = DOMExceptionCode::kNetworkError;
 
-  if (!exception_code_)
+  if (exception_code_ == DOMExceptionCode::kNoError)
     return;
 
   String message = "Failed to load '" + url_.ElidedString() + "'";
@@ -1099,7 +1101,7 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
     resource_loader_options.data_buffering_policy = kDoNotBufferData;
   }
 
-  exception_code_ = 0;
+  exception_code_ = DOMExceptionCode::kNoError;
   error_ = false;
 
   if (async_) {
@@ -1171,8 +1173,8 @@ void XMLHttpRequest::abort() {
     if ((state_ == kOpened && send_flag_) || state_ == kHeadersReceived ||
         state_ == kLoading) {
       DCHECK(!loader_);
-      HandleRequestError(0, EventTypeNames::abort, received_length,
-                         expected_length);
+      HandleRequestError(DOMExceptionCode::kNoError, EventTypeNames::abort,
+                         received_length, expected_length);
     }
   }
   if (state_ == kDone)
@@ -1180,7 +1182,6 @@ void XMLHttpRequest::abort() {
 }
 
 void XMLHttpRequest::Dispose() {
-  probe::detachClientRequest(GetExecutionContext(), this);
   progress_event_throttle_->Stop();
   InternalAbort();
   // TODO(yhirano): Remove this CHECK: see https://crbug.com/570946.
@@ -1307,8 +1308,8 @@ void XMLHttpRequest::HandleNetworkError() {
   if (!InternalAbort())
     return;
 
-  HandleRequestError(kNetworkError, EventTypeNames::error, received_length,
-                     expected_length);
+  HandleRequestError(DOMExceptionCode::kNetworkError, EventTypeNames::error,
+                     received_length, expected_length);
 }
 
 void XMLHttpRequest::HandleDidCancel() {
@@ -1321,21 +1322,21 @@ void XMLHttpRequest::HandleDidCancel() {
   if (!InternalAbort())
     return;
 
-  HandleRequestError(kAbortError, EventTypeNames::abort, received_length,
-                     expected_length);
+  HandleRequestError(DOMExceptionCode::kAbortError, EventTypeNames::abort,
+                     received_length, expected_length);
 }
 
-void XMLHttpRequest::HandleRequestError(ExceptionCode exception_code,
+void XMLHttpRequest::HandleRequestError(DOMExceptionCode exception_code,
                                         const AtomicString& type,
                                         long long received_length,
                                         long long expected_length) {
   NETWORK_DVLOG(1) << this << " handleRequestError()";
 
-  probe::didFailXHRLoading(GetExecutionContext(), this, this, method_, url_);
+  probe::didFinishXHR(GetExecutionContext(), this);
 
   send_flag_ = false;
   if (!async_) {
-    DCHECK(exception_code);
+    DCHECK_NE(exception_code, DOMExceptionCode::kNoError);
     state_ = kDone;
     exception_code_ = exception_code;
     return;
@@ -1370,7 +1371,7 @@ void XMLHttpRequest::overrideMimeType(const AtomicString& mime_type,
                                       ExceptionState& exception_state) {
   if (state_ == kLoading || state_ == kDone) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "MimeType cannot be overridden when the state is LOADING or DONE.");
     return;
   }
@@ -1387,7 +1388,7 @@ void XMLHttpRequest::setRequestHeader(const AtomicString& name,
   // "1. If |state| is not "opened", throw an InvalidStateError exception.
   //  2. If the send() flag is set, throw an InvalidStateError exception."
   if (state_ != kOpened || send_flag_) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The object's state must be OPENED.");
     return;
   }
@@ -1399,12 +1400,13 @@ void XMLHttpRequest::setRequestHeader(const AtomicString& name,
   //     exception."
   if (!IsValidHTTPToken(name)) {
     exception_state.ThrowDOMException(
-        kSyntaxError, "'" + name + "' is not a valid HTTP header field name.");
+        DOMExceptionCode::kSyntaxError,
+        "'" + name + "' is not a valid HTTP header field name.");
     return;
   }
   if (!IsValidHTTPHeaderValue(normalized_value)) {
     exception_state.ThrowDOMException(
-        kSyntaxError,
+        DOMExceptionCode::kSyntaxError,
         "'" + normalized_value + "' is not a valid HTTP header field value.");
     return;
   }
@@ -1706,7 +1708,7 @@ void XMLHttpRequest::NotifyParserStopped() {
 }
 
 void XMLHttpRequest::EndLoading() {
-  probe::didFinishXHRLoading(GetExecutionContext(), this, this, method_, url_);
+  probe::didFinishXHR(GetExecutionContext(), this);
 
   if (loader_) {
     // Set |m_error| in order to suppress the cancel notification (see
@@ -1751,6 +1753,9 @@ void XMLHttpRequest::DidReceiveResponse(
     unsigned long identifier,
     const ResourceResponse& response,
     std::unique_ptr<WebDataConsumerHandle> handle) {
+  // TODO(yhirano): Remove this CHECK: see https://crbug.com/570946.
+  CHECK(&response);
+
   ALLOW_UNUSED_LOCAL(handle);
   DCHECK(!handle);
   NETWORK_DVLOG(1) << this << " didReceiveResponse(" << identifier << ")";
@@ -1939,8 +1944,8 @@ void XMLHttpRequest::HandleDidTimeout() {
   if (!InternalAbort())
     return;
 
-  HandleRequestError(kTimeoutError, EventTypeNames::timeout, received_length,
-                     expected_length);
+  HandleRequestError(DOMExceptionCode::kTimeoutError, EventTypeNames::timeout,
+                     received_length, expected_length);
 }
 
 void XMLHttpRequest::Pause() {
@@ -2005,17 +2010,10 @@ void XMLHttpRequest::Trace(blink::Visitor* visitor) {
   visitor->Trace(progress_event_throttle_);
   visitor->Trace(upload_);
   visitor->Trace(blob_loader_);
+  visitor->Trace(response_text_);
   XMLHttpRequestEventTarget::Trace(visitor);
   DocumentParserClient::Trace(visitor);
   PausableObject::Trace(visitor);
-}
-
-void XMLHttpRequest::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(response_blob_);
-  visitor->TraceWrappers(response_document_);
-  visitor->TraceWrappers(response_array_buffer_);
-  visitor->TraceWrappers(response_text_);
-  XMLHttpRequestEventTarget::TraceWrappers(visitor);
 }
 
 std::ostream& operator<<(std::ostream& ostream, const XMLHttpRequest* xhr) {

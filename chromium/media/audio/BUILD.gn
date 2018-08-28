@@ -107,6 +107,8 @@ source_set("audio") {
     "audio_output_delegate.h",
     "audio_output_device.cc",
     "audio_output_device.h",
+    "audio_output_device_thread_callback.cc",
+    "audio_output_device_thread_callback.h",
     "audio_output_dispatcher.cc",
     "audio_output_dispatcher.h",
     "audio_output_dispatcher_impl.cc",
@@ -315,7 +317,7 @@ source_set("audio") {
       "fuchsia/audio_output_stream_fuchsia.cc",
       "fuchsia/audio_output_stream_fuchsia.h",
     ]
-    libs += [ "media_client" ]
+    deps += [ "//third_party/fuchsia-sdk:media" ]
   }
 
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
@@ -353,8 +355,6 @@ static_library("test_support") {
     "mock_audio_manager.h",
     "mock_audio_source_callback.cc",
     "mock_audio_source_callback.h",
-    "test_audio_input_controller_factory.cc",
-    "test_audio_input_controller_factory.h",
     "test_audio_thread.cc",
     "test_audio_thread.h",
   ]
@@ -406,12 +406,6 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//media:test_support",
-
-    # TODO(https://crbug.com/844508): Mojo is used in the
-    # audio_output_device_unittest.cc for conversion between shared memory
-    # types. Remove this dependency once the AudioOutputDevice shared memory
-    # refactor is done.
-    "//mojo/public/cpp/system:system",
     "//testing/gmock",
     "//testing/gtest",
     "//url",

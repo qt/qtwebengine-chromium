@@ -93,9 +93,9 @@ void RegistrationPendingDidGetSWRegistration(
     const scoped_refptr<BackgroundSyncContext> sync_context,
     const std::string& tag,
     base::OnceCallback<void(bool)> callback,
-    ServiceWorkerStatusCode status,
+    blink::ServiceWorkerStatusCode status,
     scoped_refptr<ServiceWorkerRegistration> registration) {
-  ASSERT_EQ(SERVICE_WORKER_OK, status);
+  ASSERT_EQ(blink::ServiceWorkerStatusCode::kOk, status);
   int64_t service_worker_id = registration->id();
   BackgroundSyncManager* sync_manager = sync_context->background_sync_manager();
   sync_manager->GetRegistrations(
@@ -111,9 +111,8 @@ void RegistrationPendingOnIOThread(
     const GURL& url,
     base::OnceCallback<void(bool)> callback) {
   sw_context->FindReadyRegistrationForDocument(
-      url, base::AdaptCallbackForRepeating(
-               base::BindOnce(&RegistrationPendingDidGetSWRegistration,
-                              sync_context, tag, std::move(callback))));
+      url, base::BindOnce(&RegistrationPendingDidGetSWRegistration,
+                          sync_context, tag, std::move(callback)));
 }
 
 void SetMaxSyncAttemptsOnIOThread(

@@ -6,7 +6,6 @@
 #include <map>
 #include <memory>
 
-#include "build/build_config.h"
 #include "net/third_party/quic/core/congestion_control/rtt_stats.h"
 #include "net/third_party/quic/core/congestion_control/send_algorithm_interface.h"
 #include "net/third_party/quic/core/quic_types.h"
@@ -25,7 +24,7 @@
 #include "net/third_party/quic/test_tools/simulator/simulator.h"
 #include "net/third_party/quic/test_tools/simulator/switch.h"
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -174,13 +173,6 @@ class SendAlgorithmTest : public QuicTestWithParam<TestParams> {
         kInitialCongestionWindowPackets);
 
     QuicConnectionPeer::SetSendAlgorithm(quic_sender_.connection(), sender_);
-    // TODO(jokulik):  Remove once b/38032710 is fixed.
-    // Disable pacing for PCC.
-    if (sender_->GetCongestionControlType() == kPCC) {
-      QuicSentPacketManagerPeer::SetUsingPacing(
-          QuicConnectionPeer::GetSentPacketManager(quic_sender_.connection()),
-          false);
-    }
     clock_ = simulator_.GetClock();
     simulator_.set_random_generator(&random_);
 
@@ -374,4 +366,4 @@ TEST_P(SendAlgorithmTest, LowRTTTransfer) {
 }
 
 }  // namespace test
-}  // namespace net
+}  // namespace quic

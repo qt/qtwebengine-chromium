@@ -43,12 +43,13 @@
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
-#include "third_party/blink/renderer/core/dom/viewport_description.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/page/viewport_description.h"
 
 namespace blink {
 
@@ -56,7 +57,7 @@ namespace {
 
 bool HasViewportFitProperty(const CSSPropertyValueSet* property_set) {
   DCHECK(property_set);
-  return RuntimeEnabledFeatures::DisplayCutoutViewportFitEnabled() &&
+  return RuntimeEnabledFeatures::DisplayCutoutAPIEnabled() &&
          property_set->HasProperty(CSSPropertyViewportFit);
 }
 
@@ -197,7 +198,7 @@ void ViewportStyleResolver::AddViewportRule(StyleRuleViewport& viewport_rule,
 
 void ViewportStyleResolver::Resolve() {
   if (!property_set_) {
-    document_->SetViewportDescription(
+    document_->GetViewportData().SetViewportDescription(
         ViewportDescription(ViewportDescription::kUserAgentStyleSheet));
     return;
   }
@@ -218,7 +219,7 @@ void ViewportStyleResolver::Resolve() {
   if (HasViewportFitProperty(property_set_))
     description.SetViewportFit(ViewportFitValue());
 
-  document_->SetViewportDescription(description);
+  document_->GetViewportData().SetViewportDescription(description);
 
   DCHECK(initial_style_);
   if (initial_style_->HasViewportUnits())
@@ -322,24 +323,23 @@ Length ViewportStyleResolver::ViewportLengthValue(CSSPropertyID id) {
   return result;
 }
 
-ViewportDescription::ViewportFit ViewportStyleResolver::ViewportFitValue()
-    const {
+mojom::ViewportFit ViewportStyleResolver::ViewportFitValue() const {
   const CSSValue* value =
       property_set_->GetPropertyCSSValue(CSSPropertyViewportFit);
   if (value->IsIdentifierValue()) {
     switch (ToCSSIdentifierValue(value)->GetValueID()) {
       case CSSValueCover:
-        return ViewportDescription::ViewportFit::kCover;
+        return mojom::ViewportFit::kCover;
       case CSSValueContain:
-        return ViewportDescription::ViewportFit::kContain;
+        return mojom::ViewportFit::kContain;
       case CSSValueAuto:
       default:
-        return ViewportDescription::ViewportFit::kAuto;
+        return mojom::ViewportFit::kAuto;
     }
   }
 
   NOTREACHED();
-  return ViewportDescription::ViewportFit::kAuto;
+  return mojom::ViewportFit::kAuto;
 }
 
 void ViewportStyleResolver::InitialStyleChanged() {

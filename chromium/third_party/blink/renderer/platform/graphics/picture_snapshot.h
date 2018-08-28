@@ -33,10 +33,12 @@
 
 #include <memory>
 
+#include "base/macros.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/json/json_values.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
+#include "third_party/blink/renderer/platform/wtf/time.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -46,11 +48,8 @@ namespace blink {
 class FloatRect;
 
 class PLATFORM_EXPORT PictureSnapshot : public RefCounted<PictureSnapshot> {
-  WTF_MAKE_NONCOPYABLE(PictureSnapshot);
 
  public:
-  typedef Vector<Vector<double>> Timings;
-
   struct TilePictureStream : RefCounted<TilePictureStream> {
     FloatPoint layer_offset;
     Vector<char> data;
@@ -61,12 +60,12 @@ class PLATFORM_EXPORT PictureSnapshot : public RefCounted<PictureSnapshot> {
 
   PictureSnapshot(sk_sp<const SkPicture>);
 
-  std::unique_ptr<Vector<char>> Replay(unsigned from_step = 0,
-                                       unsigned to_step = 0,
-                                       double scale = 1.0) const;
-  std::unique_ptr<Timings> Profile(unsigned min_iterations,
-                                   double min_duration,
-                                   const FloatRect* clip_rect) const;
+  Vector<char> Replay(unsigned from_step = 0,
+                      unsigned to_step = 0,
+                      double scale = 1.0) const;
+  Vector<Vector<TimeDelta>> Profile(unsigned min_iterations,
+                                    TimeDelta min_duration,
+                                    const FloatRect* clip_rect) const;
   std::unique_ptr<JSONArray> SnapshotCommandLog() const;
   bool IsEmpty() const;
 
@@ -74,6 +73,8 @@ class PLATFORM_EXPORT PictureSnapshot : public RefCounted<PictureSnapshot> {
   std::unique_ptr<SkBitmap> CreateBitmap() const;
 
   sk_sp<const SkPicture> picture_;
+
+  DISALLOW_COPY_AND_ASSIGN(PictureSnapshot);
 };
 
 }  // namespace blink

@@ -31,7 +31,6 @@
 
 #include "base/auto_reset.h"
 #include "third_party/blink/public/platform/web_menu_source_type.h"
-#include "third_party/blink/public/web/web_selection.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/editing/editing_boundary.h"
@@ -323,7 +322,7 @@ bool SelectionController::HandleSingleClick(
   // Don't restart the selection when the mouse is pressed on an
   // existing selection so we can allow for text dragging.
   if (LocalFrameView* view = frame_->View()) {
-    const LayoutPoint v_point = view->RootFrameToContents(
+    const LayoutPoint v_point = view->ConvertFromRootFrame(
         FlooredIntPoint(event.Event().PositionInRootFrame()));
     if (!extend_selection && this->Selection().Contains(v_point)) {
       mouse_down_was_single_click_in_selection_ = true;
@@ -993,8 +992,9 @@ void SelectionController::HandleMouseDraggedEvent(
     return;
   if (selection_state_ != SelectionState::kExtendedSelection) {
     HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
-    HitTestResult result(request, mouse_down_pos);
-    frame_->GetDocument()->GetLayoutView()->HitTest(result);
+    HitTestLocation location(mouse_down_pos);
+    HitTestResult result(request, location);
+    frame_->GetDocument()->GetLayoutView()->HitTest(location, result);
 
     UpdateSelectionForMouseDrag(result, drag_start_pos,
                                 last_known_mouse_position);
@@ -1015,9 +1015,9 @@ void SelectionController::UpdateSelectionForMouseDrag(
 
   HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive |
                          HitTestRequest::kMove);
-  HitTestResult result(request,
-                       view->ViewportToContents(last_known_mouse_position));
-  layout_view->HitTest(result);
+  HitTestLocation location(view->ViewportToFrame(last_known_mouse_position));
+  HitTestResult result(request, location);
+  layout_view->HitTest(location, result);
   UpdateSelectionForMouseDrag(result, drag_start_pos,
                               last_known_mouse_position);
 }
@@ -1207,7 +1207,7 @@ void SelectionController::PassMousePressEventToSubframe(
   // greyed out even though we're clicking on the selection.  This looks
   // really strange (having the whole frame be greyed out), so we deselect the
   // selection.
-  IntPoint p = frame_->View()->RootFrameToContents(
+  IntPoint p = frame_->View()->ConvertFromRootFrame(
       FlooredIntPoint(mev.Event().PositionInRootFrame()));
   if (!Selection().Contains(p))
     return;
@@ -1280,9 +1280,5 @@ bool IsExtendingSelection(const MouseEventWithHitTestResults& event) {
              0 &&
          !is_mouse_down_on_link_or_image;
 }
-
-STATIC_ASSERT_ENUM(WebSelection::kNoSelection, kNoSelection);
-STATIC_ASSERT_ENUM(WebSelection::kCaretSelection, kCaretSelection);
-STATIC_ASSERT_ENUM(WebSelection::kRangeSelection, kRangeSelection);
 
 }  // namespace blink

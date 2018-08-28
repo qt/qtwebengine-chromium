@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "third_party/blink/renderer/core/paint/pre_paint_tree_walk.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/layout/layout_tree_as_text.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/object_paint_properties.h"
 #include "third_party/blink/renderer/core/paint/paint_controller_paint_test.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_property_tree_printer.h"
-#include "third_party/blink/renderer/core/paint/pre_paint_tree_walk.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
 #include "third_party/blink/renderer/platform/graphics/paint/scroll_paint_property_node.h"
@@ -122,9 +123,6 @@ TEST_P(PrePaintTreeWalkTest, PropertyTreesRebuiltWithCSSTransformInvalidation) {
 }
 
 TEST_P(PrePaintTreeWalkTest, PropertyTreesRebuiltWithOpacityInvalidation) {
-  // In SPv1 mode, we don't need or store property tree nodes for effects.
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
   SetBodyInnerHTML(R"HTML(
     <style>
       .opacityA { opacity: 0.9; }
@@ -277,12 +275,7 @@ TEST_P(PrePaintTreeWalkTest, VisualRectClipForceSubtree) {
   GetDocument().getElementById("parent")->removeAttribute("style");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
-  // In SPv175 mode, VisualRects are in the space of the containing transform
-  // node without applying any ancestor property nodes, including clip.
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    EXPECT_EQ(200, grandchild->FirstFragment().VisualRect().Height());
-  else
-    EXPECT_EQ(75, grandchild->FirstFragment().VisualRect().Height());
+  EXPECT_EQ(200, grandchild->FirstFragment().VisualRect().Height());
 }
 
 TEST_P(PrePaintTreeWalkTest, ClipChangeHasRadius) {
@@ -306,6 +299,118 @@ TEST_P(PrePaintTreeWalkTest, ClipChangeHasRadius) {
   EXPECT_TRUE(target_object->Layer()->NeedsRepaint());
   // And should not trigger any assert failure.
   GetDocument().View()->UpdateAllLifecyclePhases();
+}
+
+namespace {
+class PrePaintTreeWalkMockEventListener final : public EventListener {
+ public:
+  PrePaintTreeWalkMockEventListener() : EventListener(kCPPEventListenerType) {}
+
+  bool operator==(const EventListener& other) const final {
+    return this == &other;
+  }
+
+  void handleEvent(ExecutionContext*, Event*) final {}
+};
+}  // namespace
+
+TEST_P(PrePaintTreeWalkTest, InsideBlockingTouchEventHandlerUpdate) {
+  ScopedPaintTouchActionRectsForTest enable_paint_touch_action_rects(true);
+  SetBodyInnerHTML(R"HTML(
+    <div id='ancestor' style='width: 100px; height: 100px;'>
+      <div id='handler' style='width: 100px; height: 100px;'>
+        <div id='descendant' style='width: 100px; height: 100px;'>
+        </div>
+      </div>
+    </div>
+  )HTML");
+
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  auto& ancestor = *GetLayoutObjectByElementId("ancestor");
+  auto& handler = *GetLayoutObjectByElementId("handler");
+  auto& descendant = *GetLayoutObjectByElementId("descendant");
+
+  EXPECT_FALSE(ancestor.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(handler.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.EffectiveWhitelistedTouchActionChanged());
+
+  EXPECT_FALSE(ancestor.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(handler.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.DescendantEffectiveWhitelistedTouchActionChanged());
+
+  EXPECT_FALSE(ancestor.InsideBlockingTouchEventHandler());
+  EXPECT_FALSE(handler.InsideBlockingTouchEventHandler());
+  EXPECT_FALSE(descendant.InsideBlockingTouchEventHandler());
+
+  PrePaintTreeWalkMockEventListener* callback =
+      new PrePaintTreeWalkMockEventListener();
+  auto* handler_element = GetDocument().getElementById("handler");
+  handler_element->addEventListener(EventTypeNames::touchstart, callback);
+
+  EXPECT_FALSE(ancestor.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_TRUE(handler.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.EffectiveWhitelistedTouchActionChanged());
+
+  EXPECT_TRUE(ancestor.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(handler.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.DescendantEffectiveWhitelistedTouchActionChanged());
+
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_FALSE(ancestor.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(handler.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.EffectiveWhitelistedTouchActionChanged());
+
+  EXPECT_FALSE(ancestor.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(handler.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.DescendantEffectiveWhitelistedTouchActionChanged());
+
+  EXPECT_FALSE(ancestor.InsideBlockingTouchEventHandler());
+  EXPECT_TRUE(handler.InsideBlockingTouchEventHandler());
+  EXPECT_TRUE(descendant.InsideBlockingTouchEventHandler());
+}
+
+TEST_P(PrePaintTreeWalkTest, EffectiveTouchActionStyleUpdate) {
+  ScopedPaintTouchActionRectsForTest enable_paint_touch_action_rects(true);
+  SetBodyInnerHTML(R"HTML(
+    <style> .touchaction { touch-action: none; } </style>
+    <div id='ancestor' style='width: 100px; height: 100px;'>
+      <div id='touchaction' style='width: 100px; height: 100px;'>
+        <div id='descendant' style='width: 100px; height: 100px;'>
+        </div>
+      </div>
+    </div>
+  )HTML");
+
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  auto& ancestor = *GetLayoutObjectByElementId("ancestor");
+  auto& touchaction = *GetLayoutObjectByElementId("touchaction");
+  auto& descendant = *GetLayoutObjectByElementId("descendant");
+
+  EXPECT_FALSE(ancestor.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(touchaction.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(ancestor.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(touchaction.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.DescendantEffectiveWhitelistedTouchActionChanged());
+
+  GetDocument()
+      .getElementById("touchaction")
+      ->setAttribute(HTMLNames::classAttr, "touchaction");
+  GetDocument().View()->UpdateLifecycleToLayoutClean();
+  EXPECT_FALSE(ancestor.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_TRUE(touchaction.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_TRUE(ancestor.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(touchaction.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.DescendantEffectiveWhitelistedTouchActionChanged());
+
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_FALSE(ancestor.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(touchaction.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.EffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(ancestor.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(touchaction.DescendantEffectiveWhitelistedTouchActionChanged());
+  EXPECT_FALSE(descendant.DescendantEffectiveWhitelistedTouchActionChanged());
 }
 
 }  // namespace blink

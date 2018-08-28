@@ -32,7 +32,6 @@
 #define THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_SCRIPT_PROMISE_H_
 
 #include "base/memory/scoped_refptr.h"
-#include "third_party/blink/renderer/bindings/core/v8/script_function.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -43,6 +42,7 @@
 namespace blink {
 
 class DOMException;
+class ExceptionState;
 
 // ScriptPromise is the class for representing Promise values in C++ world.
 // ScriptPromise holds a Promise.
@@ -106,6 +106,8 @@ class CORE_EXPORT ScriptPromise final {
 
   static ScriptPromise Reject(ScriptState*, const ScriptValue&);
   static ScriptPromise Reject(ScriptState*, v8::Local<v8::Value>);
+  // Rejects with a given exception. The ExceptionState gets cleared.
+  static ScriptPromise Reject(ScriptState*, ExceptionState&);
 
   static ScriptPromise RejectWithDOMException(ScriptState*, DOMException*);
 
@@ -137,7 +139,9 @@ class CORE_EXPORT ScriptPromise final {
   static void IncreaseInstanceCount();
   static void DecreaseInstanceCount();
 
-  scoped_refptr<ScriptState> script_state_;
+  // TODO(peria): Move ScriptPromise to Oilpan heap.
+  GC_PLUGIN_IGNORE("813731")
+  Persistent<ScriptState> script_state_;
   ScriptValue promise_;
 };
 

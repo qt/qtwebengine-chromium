@@ -36,7 +36,6 @@
 #include "third_party/blink/public/platform/web_image.h"
 #include "third_party/blink/public/platform/web_point.h"
 #include "third_party/blink/public/platform/web_screen_info.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer_access_policy.h"
@@ -79,6 +78,7 @@
 #include "third_party/blink/renderer/core/page/drag_state.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image_for_container.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/drag_image.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
@@ -258,12 +258,13 @@ void DragController::PerformDrag(DragData* drag_data, LocalFrame& local_root) {
       prevented_default = event_handler.PerformDragAndDrop(
                               CreateMouseEvent(drag_data), data_transfer) !=
                           WebInputEventResult::kNotHandled;
-      if (!prevented_default) {
+      if (!prevented_default && document_under_mouse_) {
         // When drop target is plugin element and it can process drag, we
         // should prevent default behavior.
-        const LayoutPoint point = local_root.View()->RootFrameToContents(
-            LayoutPoint(drag_data->ClientPosition()));
-        const HitTestResult result = event_handler.HitTestResultAtPoint(point);
+        const HitTestLocation location(local_root.View()->ConvertFromRootFrame(
+            LayoutPoint(drag_data->ClientPosition())));
+        const HitTestResult result =
+            event_handler.HitTestResultAtLocation(location);
         prevented_default |=
             IsHTMLPlugInElement(*result.InnerNode()) &&
             ToHTMLPlugInElement(result.InnerNode())->CanProcessDrag();
@@ -355,8 +356,9 @@ static HTMLInputElement* AsFileInput(Node* node) {
 static Element* ElementUnderMouse(Document* document_under_mouse,
                                   const LayoutPoint& point) {
   HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
-  HitTestResult result(request, point);
-  document_under_mouse->GetLayoutView()->HitTest(result);
+  HitTestLocation location(point);
+  HitTestResult result(request, location);
+  document_under_mouse->GetLayoutView()->HitTest(location, result);
 
   Node* n = result.InnerNode();
   while (n && !n->IsElementNode())
@@ -405,7 +407,7 @@ bool DragController::TryDocumentDrag(DragData* drag_data,
 
   if ((action_mask & kDragDestinationActionEdit) &&
       CanProcessDrag(drag_data, local_root)) {
-    LayoutPoint point = frame_view->RootFrameToContents(
+    LayoutPoint point = frame_view->ConvertFromRootFrame(
         LayoutPoint(drag_data->ClientPosition()));
     Element* element = ElementUnderMouse(document_under_mouse_.Get(), point);
     if (!element)
@@ -530,7 +532,7 @@ bool DragController::ConcludeEditDrag(DragData* drag_data) {
   if (!document_under_mouse_)
     return false;
 
-  LayoutPoint point = document_under_mouse_->View()->RootFrameToContents(
+  LayoutPoint point = document_under_mouse_->View()->ConvertFromRootFrame(
       LayoutPoint(drag_data->ClientPosition()));
   Element* element = ElementUnderMouse(document_under_mouse_.Get(), point);
   if (!element)
@@ -695,11 +697,12 @@ bool DragController::CanProcessDrag(DragData* drag_data,
   if (!local_root.ContentLayoutObject())
     return false;
 
-  LayoutPoint point = local_root.View()->RootFrameToContents(
+  LayoutPoint point = local_root.View()->ConvertFromRootFrame(
       LayoutPoint(drag_data->ClientPosition()));
 
+  HitTestLocation location(point);
   HitTestResult result =
-      local_root.GetEventHandler().HitTestResultAtPoint(point);
+      local_root.GetEventHandler().HitTestResultAtLocation(location);
 
   if (!result.InnerNode())
     return false;
@@ -716,7 +719,7 @@ bool DragController::CanProcessDrag(DragData* drag_data,
   }
 
   if (did_initiate_drag_ && document_under_mouse_ == drag_initiator_ &&
-      result.IsSelected())
+      result.IsSelected(location))
     return false;
 
   return true;
@@ -921,8 +924,9 @@ bool DragController::PopulateDragDataTransfer(LocalFrame* src,
   if (!src->View() || !src->ContentLayoutObject())
     return false;
 
+  HitTestLocation location(drag_origin);
   HitTestResult hit_test_result =
-      src->GetEventHandler().HitTestResultAtPoint(drag_origin);
+      src->GetEventHandler().HitTestResultAtLocation(location);
   // FIXME: Can this even happen? I guess it's possible, but should verify
   // with a layout test.
   if (!state.drag_src_->IsShadowIncludingInclusiveAncestorOf(
@@ -1138,14 +1142,8 @@ std::unique_ptr<DragImage> DragController::DragImageForSelection(
   frame.View()->PaintContents(builder.Context(), paint_flags,
                               EnclosingIntRect(painting_rect));
 
-  PropertyTreeState property_tree_state = PropertyTreeState::Root();
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    property_tree_state = frame.View()
-                              ->GetLayoutView()
-                              ->FirstFragment()
-                              .LocalBorderBoxProperties();
-  }
-
+  PropertyTreeState property_tree_state =
+      frame.View()->GetLayoutView()->FirstFragment().LocalBorderBoxProperties();
   return DataTransfer::CreateDragImageForFrame(
       frame, opacity, kDoNotRespectImageOrientation, painting_rect.Size(),
       painting_rect.Location(), builder, property_tree_state);
@@ -1162,8 +1160,9 @@ bool DragController::StartDrag(LocalFrame* src,
   if (!src->View() || !src->ContentLayoutObject())
     return false;
 
+  HitTestLocation location(drag_origin);
   HitTestResult hit_test_result =
-      src->GetEventHandler().HitTestResultAtPoint(drag_origin);
+      src->GetEventHandler().HitTestResultAtLocation(location);
   if (!state.drag_src_->IsShadowIncludingInclusiveAncestorOf(
           hit_test_result.InnerNode())) {
     // The original node being dragged isn't under the drag origin anymore...
@@ -1177,7 +1176,7 @@ bool DragController::StartDrag(LocalFrame* src,
 
   // TODO(pdr): This code shouldn't be necessary because drag_origin is already
   // in the coordinate space of the view's contents.
-  IntPoint mouse_dragged_point = src->View()->RootFrameToContents(
+  IntPoint mouse_dragged_point = src->View()->ConvertFromRootFrame(
       FlooredIntPoint(drag_event.PositionInRootFrame()));
 
   IntPoint drag_location;
@@ -1293,14 +1292,14 @@ void DragController::DoSystemDrag(DragImage* image,
   // FloatPoints and we should calculate these adjusted values in floating
   // point to avoid unnecessary rounding.
   IntPoint adjusted_drag_location =
-      frame->View()->ContentsToViewport(drag_location);
-  IntPoint adjusted_event_pos = frame->View()->ContentsToViewport(event_pos);
+      frame->View()->FrameToViewport(drag_location);
+  IntPoint adjusted_event_pos = frame->View()->FrameToViewport(event_pos);
   IntSize offset_size(adjusted_event_pos - adjusted_drag_location);
   WebPoint offset_point(offset_size.Width(), offset_size.Height());
   WebDragData drag_data = data_transfer->GetDataObject()->ToWebDragData();
   WebDragOperationsMask drag_operation_mask =
       static_cast<WebDragOperationsMask>(data_transfer->SourceOperation());
-  WebImage drag_image;
+  SkBitmap drag_image;
 
   if (image) {
     float resolution_scale = image->ResolutionScale();
@@ -1315,7 +1314,7 @@ void DragController::DoSystemDrag(DragImage* image,
   }
 
   page_->GetChromeClient().StartDragging(frame, drag_data, drag_operation_mask,
-                                         drag_image, offset_point);
+                                         std::move(drag_image), offset_point);
 }
 
 DragOperation DragController::GetDragOperation(DragData* drag_data) {

@@ -6,8 +6,10 @@
 #define COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_SURFACE_IMPL_H_
 
 #include "base/macros.h"
+#include "base/optional.h"
 #include "base/threading/thread_checker.h"
 #include "components/viz/service/display/skia_output_surface.h"
+#include "components/viz/service/viz_service_export.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/ipc/common/surface_handle.h"
 #include "gpu/ipc/in_process_command_buffer.h"
@@ -21,7 +23,6 @@ class WaitableEvent;
 namespace viz {
 
 class GpuServiceImpl;
-class VizProcessContextProvider;
 class SkiaOutputSurfaceImplOnGpu;
 class SyntheticBeginFrameSource;
 
@@ -37,12 +38,11 @@ class YUVResourceMetadata;
 // render into. In SwapBuffers, it detaches a SkDeferredDisplayList from the
 // recorder and plays it back on the framebuffer SkSurface on the GPU thread
 // through SkiaOutputSurfaceImpleOnGpu.
-class SkiaOutputSurfaceImpl : public SkiaOutputSurface {
+class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
  public:
   SkiaOutputSurfaceImpl(
       GpuServiceImpl* gpu_service,
       gpu::SurfaceHandle surface_handle,
-      scoped_refptr<VizProcessContextProvider> context_provider,
       SyntheticBeginFrameSource* synthetic_begin_frame_source);
   ~SkiaOutputSurfaceImpl() override;
 
@@ -69,14 +69,17 @@ class SkiaOutputSurfaceImpl : public SkiaOutputSurface {
   gpu::VulkanSurface* GetVulkanSurface() override;
 #endif
   unsigned UpdateGpuFence() override;
+  void SetNeedsSwapSizeNotifications(
+      bool needs_swap_size_notifications) override;
 
   // SkiaOutputSurface implementation:
-  SkCanvas* GetSkCanvasForCurrentFrame() override;
+  SkCanvas* BeginPaintCurrentFrame() override;
+  gpu::SyncToken FinishPaintCurrentFrame() override;
   sk_sp<SkImage> MakePromiseSkImage(ResourceMetadata metadata) override;
   sk_sp<SkImage> MakePromiseSkImageFromYUV(
       std::vector<ResourceMetadata> metadatas,
       SkYUVColorSpace yuv_color_space) override;
-  gpu::SyncToken SkiaSwapBuffers(OutputSurfaceFrame frame) override;
+  void SkiaSwapBuffers(OutputSurfaceFrame frame) override;
   SkCanvas* BeginPaintRenderPass(const RenderPassId& id,
                                  const gfx::Size& surface_size,
                                  ResourceFormat format,
@@ -87,13 +90,17 @@ class SkiaOutputSurfaceImpl : public SkiaOutputSurface {
                                                   ResourceFormat format,
                                                   bool mipmap) override;
   void RemoveRenderPassResource(std::vector<RenderPassId> ids) override;
+  void CopyOutput(RenderPassId id,
+                  const gfx::Rect& copy_rect,
+                  std::unique_ptr<CopyOutputRequest> request) override;
 
  private:
   template <class T>
   class PromiseTextureHelper;
   void InitializeOnGpuThread(base::WaitableEvent* event);
   void RecreateRecorder();
-  void DidSwapBuffersComplete(gpu::SwapBuffersCompleteParams params);
+  void DidSwapBuffersComplete(gpu::SwapBuffersCompleteParams params,
+                              const gfx::Size& pixel_size);
   void BufferPresented(const gfx::PresentationFeedback& feedback);
 
   uint64_t sync_fence_release_ = 0;
@@ -103,7 +110,7 @@ class SkiaOutputSurfaceImpl : public SkiaOutputSurface {
   OutputSurfaceClient* client_ = nullptr;
 
   SkSurfaceCharacterization characterization_;
-  std::unique_ptr<SkDeferredDisplayListRecorder> recorder_;
+  base::Optional<SkDeferredDisplayListRecorder> recorder_;
 
   // The current render pass id set by BeginPaintRenderPass.
   RenderPassId current_render_pass_id_ = 0;
@@ -111,7 +118,7 @@ class SkiaOutputSurfaceImpl : public SkiaOutputSurface {
   // The SkDDL recorder created by BeginPaintRenderPass, and
   // FinishPaintRenderPass will turn it into a SkDDL and play the SkDDL back on
   // the GPU thread.
-  std::unique_ptr<SkDeferredDisplayListRecorder> offscreen_surface_recorder_;
+  base::Optional<SkDeferredDisplayListRecorder> offscreen_surface_recorder_;
 
   // Sync tokens for resources which are used for the current frame.
   std::vector<gpu::SyncToken> resource_sync_tokens_;
@@ -127,6 +134,9 @@ class SkiaOutputSurfaceImpl : public SkiaOutputSurface {
 
   // |impl_on_gpu| is created and destroyed on the GPU thread.
   std::unique_ptr<SkiaOutputSurfaceImplOnGpu> impl_on_gpu_;
+
+  // Whether to send OutputSurfaceClient::DidSwapWithSize notifications.
+  bool needs_swap_size_notifications_ = false;
 
   THREAD_CHECKER(thread_checker_);
 

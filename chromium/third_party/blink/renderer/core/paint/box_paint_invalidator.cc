@@ -15,64 +15,6 @@
 
 namespace blink {
 
-static LayoutRect ComputeRightDelta(const LayoutPoint& location,
-                                    const LayoutSize& old_size,
-                                    const LayoutSize& new_size,
-                                    const LayoutUnit& extra_width) {
-  LayoutUnit delta = new_size.Width() - old_size.Width();
-  if (delta > 0) {
-    return LayoutRect(location.X() + old_size.Width() - extra_width,
-                      location.Y(), delta + extra_width, new_size.Height());
-  }
-  if (delta < 0) {
-    return LayoutRect(location.X() + new_size.Width() - extra_width,
-                      location.Y(), -delta + extra_width, old_size.Height());
-  }
-  return LayoutRect();
-}
-
-static LayoutRect ComputeBottomDelta(const LayoutPoint& location,
-                                     const LayoutSize& old_size,
-                                     const LayoutSize& new_size,
-                                     const LayoutUnit& extra_height) {
-  LayoutUnit delta = new_size.Height() - old_size.Height();
-  if (delta > 0) {
-    return LayoutRect(location.X(),
-                      location.Y() + old_size.Height() - extra_height,
-                      new_size.Width(), delta + extra_height);
-  }
-  if (delta < 0) {
-    return LayoutRect(location.X(),
-                      location.Y() + new_size.Height() - extra_height,
-                      old_size.Width(), -delta + extra_height);
-  }
-  return LayoutRect();
-}
-
-void BoxPaintInvalidator::IncrementallyInvalidatePaint(
-    PaintInvalidationReason reason,
-    const LayoutRect& old_rect,
-    const LayoutRect& new_rect) {
-  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
-  DCHECK(old_rect.Location() == new_rect.Location());
-  DCHECK(old_rect.Size() != new_rect.Size());
-  LayoutRect right_delta = ComputeRightDelta(
-      new_rect.Location(), old_rect.Size(), new_rect.Size(),
-      reason == PaintInvalidationReason::kIncremental ? box_.BorderRight()
-                                                      : LayoutUnit());
-  LayoutRect bottom_delta = ComputeBottomDelta(
-      new_rect.Location(), old_rect.Size(), new_rect.Size(),
-      reason == PaintInvalidationReason::kIncremental ? box_.BorderBottom()
-                                                      : LayoutUnit());
-
-  DCHECK(!right_delta.IsEmpty() || !bottom_delta.IsEmpty());
-  ObjectPaintInvalidatorWithContext object_paint_invalidator(box_, context_);
-  object_paint_invalidator.InvalidatePaintRectangleWithContext(right_delta,
-                                                               reason);
-  object_paint_invalidator.InvalidatePaintRectangleWithContext(bottom_delta,
-                                                               reason);
-}
-
 PaintInvalidationReason BoxPaintInvalidator::ComputePaintInvalidationReason() {
   PaintInvalidationReason reason =
       ObjectPaintInvalidatorWithContext(box_, context_)
@@ -99,26 +41,24 @@ PaintInvalidationReason BoxPaintInvalidator::ComputePaintInvalidationReason() {
   // If either border box changed or bounds changed, and old or new border box
   // doesn't equal old or new bounds, incremental invalidation is not
   // applicable. This captures the following cases:
-  // - pixel snapping of paint invalidation bounds,
+  // - pixel snapping, or not snapping e.g. for some visual overflowing effects,
   // - scale, rotate, skew etc. transforms,
-  // - visual overflows.
+  // - visual (ink) overflows.
   if (context_.old_visual_rect !=
-          LayoutRect(context_.old_location, old_border_box_size) ||
+          LayoutRect(context_.old_paint_offset, old_border_box_size) ||
       context_.fragment_data->VisualRect() !=
-          LayoutRect(context_.fragment_data->LocationInBacking(),
+          LayoutRect(context_.fragment_data->PaintOffset(),
                      new_border_box_size)) {
     return PaintInvalidationReason::kGeometry;
   }
 
   DCHECK(border_box_changed);
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    // Incremental invalidation is not applicable if there is border in the
-    // direction of border box size change because we don't know the border
-    // width when issuing incremental raster invalidations.
-    if (box_.BorderRight() || box_.BorderBottom())
-      return PaintInvalidationReason::kGeometry;
-  }
+  // Incremental invalidation is not applicable if there is border in the
+  // direction of border box size change because we don't know the border
+  // width when issuing incremental raster invalidations.
+  if (box_.BorderRight() || box_.BorderBottom())
+    return PaintInvalidationReason::kGeometry;
 
   if (style.HasVisualOverflowingEffect() || style.HasAppearance() ||
       style.HasFilterInducingProperty() || style.HasMask() || style.ClipPath())
@@ -207,8 +147,7 @@ bool BoxPaintInvalidator::ShouldFullyInvalidateBackgroundOnLayoutOverflowChange(
 bool BoxPaintInvalidator::ViewBackgroundShouldFullyInvalidate() const {
   DCHECK(box_.IsLayoutView());
   // Fixed attachment background is handled in LayoutView::layout().
-  // TODO(wangxianzhu): Combine code for fixed-attachment background when we
-  // enable rootLayerScrolling permanently.
+  // TODO(wangxianzhu): Combine code for fixed-attachment background.
   if (box_.StyleRef().HasEntirelyFixedBackground())
     return false;
 
@@ -263,64 +202,35 @@ BoxPaintInvalidator::ComputeBackgroundInvalidation() {
   return BackgroundInvalidationType::kNone;
 }
 
-void BoxPaintInvalidator::InvalidateScrollingContentsBackground(
-    BackgroundInvalidationType background_invalidation_type) {
-  if (!BackgroundPaintsOntoScrollingContentsLayer())
-    return;
-  if (background_invalidation_type == BackgroundInvalidationType::kNone)
-    return;
-
-  PaintInvalidationReason reason;
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    reason = background_invalidation_type == BackgroundInvalidationType::kFull
-                 ? PaintInvalidationReason::kBackgroundOnScrollingContentsLayer
-                 : PaintInvalidationReason::kIncremental;
-  } else {
-    // For SPv1 we need this reason for both full and incremental invalidation
-    // to let ObjectPaintInvalidator::SetBackingNeedsPaintInvalidationInRect()
-    // know we are invalidating on the scrolling contents backing.
-    reason = PaintInvalidationReason::kBackgroundOnScrollingContentsLayer;
-    const LayoutRect& old_layout_overflow =
-        box_.PreviousPhysicalLayoutOverflowRect();
-    LayoutRect new_layout_overflow = box_.PhysicalLayoutOverflowRect();
-    if (background_invalidation_type == BackgroundInvalidationType::kFull) {
-      ObjectPaintInvalidatorWithContext(box_, context_)
-          .FullyInvalidatePaint(reason, old_layout_overflow,
-                                new_layout_overflow);
-    } else {
-      IncrementallyInvalidatePaint(reason, old_layout_overflow,
-                                   new_layout_overflow);
-    }
-  }
-
-  context_.painting_layer->SetNeedsRepaint();
-  ObjectPaintInvalidator(box_).InvalidateDisplayItemClient(
-      *box_.Layer()->GetCompositedLayerMapping()->ScrollingContentsLayer(),
-      reason);
-}
-
-PaintInvalidationReason BoxPaintInvalidator::InvalidatePaint() {
-  BackgroundInvalidationType backgroundInvalidationType =
+void BoxPaintInvalidator::InvalidateBackground() {
+  BackgroundInvalidationType background_invalidation_type =
       ComputeBackgroundInvalidation();
-  if (backgroundInvalidationType == BackgroundInvalidationType::kFull &&
-      !BackgroundPaintsOntoScrollingContentsLayer()) {
+
+  if (BackgroundPaintsOntoScrollingContentsLayer()) {
+    if (background_invalidation_type != BackgroundInvalidationType::kNone) {
+      auto reason =
+          background_invalidation_type == BackgroundInvalidationType::kFull
+              ? PaintInvalidationReason::kBackgroundOnScrollingContentsLayer
+              : PaintInvalidationReason::kIncremental;
+      context_.painting_layer->SetNeedsRepaint();
+      ObjectPaintInvalidator(box_).InvalidateDisplayItemClient(
+          *box_.Layer()->GetCompositedLayerMapping()->ScrollingContentsLayer(),
+          reason);
+    }
+  } else if (background_invalidation_type ==
+             BackgroundInvalidationType::kFull) {
     box_.GetMutableForPainting()
         .SetShouldDoFullPaintInvalidationWithoutGeometryChange(
             PaintInvalidationReason::kBackground);
   }
-  InvalidateScrollingContentsBackground(backgroundInvalidationType);
+}
+
+PaintInvalidationReason BoxPaintInvalidator::InvalidatePaint() {
+  InvalidateBackground();
 
   PaintInvalidationReason reason = ComputePaintInvalidationReason();
   if (reason == PaintInvalidationReason::kIncremental) {
-    bool should_invalidate;
-    should_invalidate = box_.PreviousSize() != box_.Size();
-    if (should_invalidate &&
-        !RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      IncrementallyInvalidatePaint(
-          reason, LayoutRect(context_.old_location, box_.PreviousSize()),
-          LayoutRect(context_.fragment_data->LocationInBacking(), box_.Size()));
-    }
-    if (should_invalidate) {
+    if (box_.PreviousSize() != box_.Size()) {
       context_.painting_layer->SetNeedsRepaint();
       box_.InvalidateDisplayItemClients(reason);
     } else {

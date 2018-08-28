@@ -5,15 +5,15 @@
 #ifndef NET_THIRD_PARTY_QUIC_CORE_FRAMES_QUIC_ACK_FRAME_H_
 #define NET_THIRD_PARTY_QUIC_CORE_FRAMES_QUIC_ACK_FRAME_H_
 
-#include <deque>
 #include <ostream>
 
 #include "net/third_party/quic/core/quic_types.h"
 #include "net/third_party/quic/platform/api/quic_containers.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
+#include "net/third_party/quic/platform/api/quic_interval.h"
 
-namespace net {
+namespace quic {
 
 // A sequence of packet numbers where each number is unique. Intended to be used
 // in a sliding window fashion, where smaller old packet numbers are removed and
@@ -28,8 +28,9 @@ class QUIC_EXPORT_PRIVATE PacketNumberQueue {
   PacketNumberQueue& operator=(const PacketNumberQueue& other);
   PacketNumberQueue& operator=(PacketNumberQueue&& other);
 
-  typedef QuicDeque<Interval<QuicPacketNumber>>::const_iterator const_iterator;
-  typedef QuicDeque<Interval<QuicPacketNumber>>::const_reverse_iterator
+  typedef QuicDeque<QuicInterval<QuicPacketNumber>>::const_iterator
+      const_iterator;
+  typedef QuicDeque<QuicInterval<QuicPacketNumber>>::const_reverse_iterator
       const_reverse_iterator;
 
   // Adds |packet_number| to the set of packets in the queue.
@@ -65,7 +66,7 @@ class QUIC_EXPORT_PRIVATE PacketNumberQueue {
 
   // Returns the number of unique packets stored in the queue. Inefficient; only
   // exposed for testing.
-  size_t NumPacketsSlow() const;
+  QuicPacketCount NumPacketsSlow() const;
 
   // Returns the number of disjoint packet number intervals contained in the
   // queue.
@@ -85,7 +86,7 @@ class QUIC_EXPORT_PRIVATE PacketNumberQueue {
       const PacketNumberQueue& q);
 
  private:
-  QuicDeque<Interval<QuicPacketNumber>> packet_number_deque_;
+  QuicDeque<QuicInterval<QuicPacketNumber>> packet_number_deque_;
 };
 
 struct QUIC_EXPORT_PRIVATE QuicAckFrame {
@@ -131,6 +132,6 @@ QUIC_EXPORT_PRIVATE bool IsAwaitingPacket(
     QuicPacketNumber packet_number,
     QuicPacketNumber peer_least_packet_awaiting_ack);
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_FRAMES_QUIC_ACK_FRAME_H_

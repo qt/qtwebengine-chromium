@@ -49,10 +49,6 @@ class CastPixmap : public gfx::NativePixmap {
  public:
   explicit CastPixmap(GLOzoneEglCast* parent) : parent_(parent) {}
 
-  void* GetEGLClientBuffer() const override {
-    // TODO(halliwell): try to implement this through CastEglPlatform.
-    return nullptr;
-  }
   bool AreDmaBufFdsValid() const override { return false; }
   size_t GetDmaBufFdCount() const override { return 0; }
   int GetDmaBufFd(size_t plane) const override { return -1; }
@@ -71,7 +67,7 @@ class CastPixmap : public gfx::NativePixmap {
                             const gfx::Rect& display_bounds,
                             const gfx::RectF& crop_rect,
                             bool enable_blend,
-                            gfx::GpuFence* gpu_fence) override {
+                            std::unique_ptr<gfx::GpuFence> gpu_fence) override {
     parent_->OnOverlayScheduled(display_bounds);
     return true;
   }

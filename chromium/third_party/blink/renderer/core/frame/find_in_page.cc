@@ -32,13 +32,30 @@
 
 #include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/public/web/web_find_options.h"
-#include "third_party/blink/public/web/web_frame_client.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/public/web/web_plugin_document.h"
 #include "third_party/blink/renderer/core/editing/finder/text_finder.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+#include "third_party/blink/renderer/core/layout/layout_view.h"
 
 namespace blink {
+
+FindInPage::FindInPage(WebLocalFrameImpl& frame,
+                       InterfaceRegistry* interface_registry)
+    : ContextLifecycleObserver(
+          frame.GetFrame() ? frame.GetFrame()->GetDocument() : nullptr),
+      frame_(&frame),
+      binding_(this) {
+  // TODO(rakina): Use InterfaceRegistry of |frame| directly rather than passing
+  // both of them.
+  if (!interface_registry)
+    return;
+  // TODO(crbug.com/800641): Use InterfaceValidator when it works for associated
+  // interfaces.
+  interface_registry->AddAssociatedInterface(
+      WTF::BindRepeating(&FindInPage::BindToRequest, WrapWeakPersistent(this)));
+}
 
 void WebLocalFrameImpl::RequestFind(int identifier,
                                     const WebString& search_text,
@@ -230,11 +247,11 @@ void WebLocalFrameImpl::SetTickmarks(const WebVector<WebRect>& tickmarks) {
 }
 
 void FindInPage::SetTickmarks(const WebVector<WebRect>& tickmarks) {
-  if (frame_->GetFrameView()) {
+  if (LayoutView* layout_view = frame_->GetFrame()->ContentLayoutObject()) {
     Vector<IntRect> tickmarks_converted(tickmarks.size());
     for (size_t i = 0; i < tickmarks.size(); ++i)
       tickmarks_converted[i] = tickmarks[i];
-    frame_->GetFrameView()->SetTickmarks(tickmarks_converted);
+    layout_view->OverrideTickmarks(tickmarks_converted);
   }
 }
 
@@ -283,6 +300,10 @@ void FindInPage::BindToRequest(
 }
 
 void FindInPage::Dispose() {
+  binding_.Close();
+}
+
+void FindInPage::ContextDestroyed(ExecutionContext* context) {
   binding_.Close();
 }
 

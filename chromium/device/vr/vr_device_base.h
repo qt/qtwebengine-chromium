@@ -10,6 +10,7 @@
 #include "device/vr/public/mojom/vr_service.mojom.h"
 #include "device/vr/vr_device.h"
 #include "device/vr/vr_export.h"
+#include "mojo/public/cpp/bindings/binding.h"
 #include "ui/display/display.h"
 
 namespace device {
@@ -19,69 +20,83 @@ class VRDisplayImpl;
 // Represents one of the platform's VR devices. Owned by the respective
 // VRDeviceProvider.
 // TODO(mthiesse, crbug.com/769373): Remove DEVICE_VR_EXPORT.
-class DEVICE_VR_EXPORT VRDeviceBase : public VRDevice {
+class DEVICE_VR_EXPORT VRDeviceBase : public mojom::XRRuntime {
  public:
-  VRDeviceBase();
+  explicit VRDeviceBase(VRDeviceId id);
   ~VRDeviceBase() override;
 
   // VRDevice Implementation
-  unsigned int GetId() const override;
-  void PauseTracking() override;
-  void ResumeTracking() override;
-  void OnExitPresent() override;
-  mojom::VRDisplayInfoPtr GetVRDisplayInfo() final;
-  void SetMagicWindowEnabled(bool enabled) final;
-  void SetVRDeviceEventListener(VRDeviceEventListener* listener) final;
-
-  void RequestPresent(
-      mojom::VRSubmitFrameClientPtr submit_client,
-      mojom::VRPresentationProviderRequest request,
-      mojom::VRRequestPresentOptionsPtr present_options,
-      mojom::VRDisplayHost::RequestPresentCallback callback) override;
-  void ExitPresent() override;
-  bool IsFallbackDevice() override;
-
-  bool IsAccessAllowed(VRDisplayImpl* display);
+  void ListenToDeviceChanges(
+      mojom::XRRuntimeEventListenerPtr listener,
+      mojom::XRRuntime::ListenToDeviceChangesCallback callback) final;
   void SetListeningForActivate(bool is_listening) override;
-  void OnListeningForActivateChanged(VRDisplayImpl* display);
-  void OnFrameFocusChanged(VRDisplayImpl* display);
-  void GetMagicWindowPose(
-      mojom::VRMagicWindowProvider::GetPoseCallback callback);
-  // TODO(https://crbug.com/836478): Rename this, and probably
-  // GetMagicWindowPose to GetNonExclusiveFrameData.
-  void GetMagicWindowFrameData(
-      const gfx::Size& frame_size,
-      display::Display::Rotation display_rotation,
+
+  void GetFrameData(
       mojom::VRMagicWindowProvider::GetFrameDataCallback callback);
 
+  virtual void RequestHitTest(
+      mojom::XRRayPtr ray,
+      mojom::VRMagicWindowProvider::RequestHitTestCallback callback);
+  unsigned int GetId() const;
+
+  bool HasExclusiveSession();
+  void EndMagicWindowSession(VRDisplayImpl* session);
+
+  // TODO(https://crbug.com/845283): This method is a temporary solution
+  // until a XR related refactor lands. It allows to keep using the
+  // existing PauseTracking/ResumeTracking while not changing the
+  // existing VR functionality.
+  virtual bool ShouldPauseTrackingWhenFrameDataRestricted();
+
+  // Devices may be paused/resumed when focus changes by VRDisplayImpl or
+  // GVR delegate.
+  virtual void PauseTracking();
+  virtual void ResumeTracking();
+  void SetMagicWindowEnabled(bool enabled);
+
+  mojom::VRDisplayInfoPtr GetVRDisplayInfo();
+
+  // Used by providers to bind devices.
+  mojom::XRRuntimePtr BindXRRuntimePtr();
+
+  // TODO(mthiesse): The browser should handle browser-side exiting of
+  // presentation before device/ is even aware presentation is being exited.
+  // Then the browser should call StopSession() on Device, which does device/
+  // exiting of presentation before notifying displays. This is currently messy
+  // because browser-side notions of presentation are mostly Android-specific.
+  virtual void OnExitPresent();
+
  protected:
-  void SetIsPresenting();
+  // Devices tell VRDeviceBase when they start presenting.  It will be paired
+  // with an OnExitPresent when the device stops presenting.
+  void OnStartPresenting();
   bool IsPresenting() { return presenting_; }  // Exposed for test.
   void SetVRDisplayInfo(mojom::VRDisplayInfoPtr display_info);
   void OnActivate(mojom::VRDisplayEventReason reason,
                   base::Callback<void(bool)> on_handled);
 
+  std::vector<std::unique_ptr<VRDisplayImpl>> magic_window_sessions_;
+
  private:
-  virtual void UpdateListeningForActivate(VRDisplayImpl* display);
+  // TODO(https://crbug.com/842227): Rename methods to HandleOnXXX
   virtual void OnListeningForActivate(bool listening);
-  virtual void OnMagicWindowPoseRequest(
-      mojom::VRMagicWindowProvider::GetPoseCallback callback);
   virtual void OnMagicWindowFrameDataRequest(
-      const gfx::Size& frame_size,
-      display::Display::Rotation display_rotation,
       mojom::VRMagicWindowProvider::GetFrameDataCallback callback);
 
-  VRDeviceEventListener* listener_ = nullptr;
+  // XRRuntime
+  void RequestMagicWindowSession(
+      mojom::XRRuntime::RequestMagicWindowSessionCallback callback) override;
 
-  VRDisplayImpl* listening_for_activate_diplay_ = nullptr;
+  mojom::XRRuntimeEventListenerPtr listener_;
 
   mojom::VRDisplayInfoPtr display_info_;
 
   bool presenting_ = false;
 
   unsigned int id_;
-  static unsigned int next_id_;
   bool magic_window_enabled_ = true;
+
+  mojo::Binding<mojom::XRRuntime> runtime_binding_;
 
   DISALLOW_COPY_AND_ASSIGN(VRDeviceBase);
 };

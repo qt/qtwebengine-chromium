@@ -30,7 +30,6 @@
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_url_request.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
@@ -38,7 +37,6 @@
 #include "third_party/blink/renderer/core/css/offscreen_font_selector.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_notifier.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/pausable_object.h"
 #include "third_party/blink/renderer/core/events/error_event.h"
 #include "third_party/blink/renderer/core/frame/dom_timer_coordinator.h"
@@ -56,6 +54,7 @@
 #include "third_party/blink/renderer/core/workers/worker_navigator.h"
 #include "third_party/blink/renderer/core/workers/worker_reporting_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_thread.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/instance_counters.h"
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
@@ -151,13 +150,14 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls,
     const KURL& url = execution_context.CompleteURL(url_string);
     if (!url.IsValid()) {
       exception_state.ThrowDOMException(
-          kSyntaxError, "The URL '" + url_string + "' is invalid.");
+          DOMExceptionCode::kSyntaxError,
+          "The URL '" + url_string + "' is invalid.");
       return;
     }
     if (!GetContentSecurityPolicy()->AllowScriptFromSource(
             url, AtomicString(), IntegrityMetadataSet(), kNotParserInserted)) {
       exception_state.ThrowDOMException(
-          kNetworkError,
+          DOMExceptionCode::kNetworkError,
           "The script at '" + url.ElidedString() + "' failed to load.");
       return;
     }
@@ -181,11 +181,12 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls,
 
     if (result != LoadResult::kSuccess) {
       // TODO(vogelheim): In case of certain types of failure - e.g. 'nosniff'
-      // block - this ought to be a kSecurityError, but that information
-      // presently gets lost on the way.
-      exception_state.ThrowDOMException(
-          kNetworkError, "The script at '" + complete_url.ElidedString() +
-                             "' failed to load.");
+      // block - this ought to be a DOMExceptionCode::kSecurityError, but that
+      // information presently gets lost on the way.
+      exception_state.ThrowDOMException(DOMExceptionCode::kNetworkError,
+                                        "The script at '" +
+                                            complete_url.ElidedString() +
+                                            "' failed to load.");
       return;
     }
 
@@ -328,7 +329,7 @@ void WorkerGlobalScope::EvaluateClassicScript(
 WorkerGlobalScope::WorkerGlobalScope(
     std::unique_ptr<GlobalScopeCreationParams> creation_params,
     WorkerThread* thread,
-    double time_origin)
+    base::TimeTicks time_origin)
     : WorkerOrWorkletGlobalScope(thread->GetIsolate(),
                                  creation_params->worker_clients,
                                  thread->GetWorkerReportingProxy()),
@@ -352,10 +353,16 @@ WorkerGlobalScope::WorkerGlobalScope(
         creation_params->starter_origin->CreatePrivilegeData());
   }
   SetSecurityOrigin(std::move(security_origin));
-  ApplyContentSecurityPolicyFromVector(
-      *creation_params->content_security_policy_parsed_headers);
+  InitContentSecurityPolicyFromVector(
+      creation_params->content_security_policy_parsed_headers);
+  BindContentSecurityPolicyToExecutionContext();
   SetWorkerSettings(std::move(creation_params->worker_settings));
-  SetReferrerPolicy(creation_params->referrer_policy);
+
+  // For module scripts, referrer policy will be set after the top-level module
+  // script is fetched.
+  if (creation_params->script_type == ScriptType::kClassic)
+    SetReferrerPolicy(creation_params->referrer_policy);
+
   SetAddressSpace(creation_params->address_space);
   OriginTrialContext::AddTokens(this,
                                 creation_params->origin_trial_tokens.get());
@@ -367,6 +374,11 @@ WorkerGlobalScope::WorkerGlobalScope(
             creation_params->interface_provider.PassHandle(),
             service_manager::mojom::InterfaceProvider::Version_)));
   }
+
+  // A FeaturePolicy is created by FeaturePolicy::CreateFromParentPolicy, even
+  // if the parent policy is null.
+  DCHECK(creation_params->worker_feature_policy);
+  SetFeaturePolicy(std::move(creation_params->worker_feature_policy));
 }
 
 void WorkerGlobalScope::ApplyContentSecurityPolicyFromHeaders(
@@ -422,12 +434,6 @@ void WorkerGlobalScope::Trace(blink::Visitor* visitor) {
   visitor->Trace(animation_frame_provider_);
   WorkerOrWorkletGlobalScope::Trace(visitor);
   Supplementable<WorkerGlobalScope>::Trace(visitor);
-}
-
-void WorkerGlobalScope::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  Supplementable<WorkerGlobalScope>::TraceWrappers(visitor);
-  WorkerOrWorkletGlobalScope::TraceWrappers(visitor);
-  visitor->TraceWrappers(navigator_);
 }
 
 }  // namespace blink

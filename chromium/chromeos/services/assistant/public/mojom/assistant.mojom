@@ -20,20 +20,40 @@ interface Assistant {
   StopActiveInteraction();
 
   // Send text query to assistant. Result will be returned through registered
-  // |AssistantEventSubscriber|.
+  // |AssistantInteractionSubscriber|.
   SendTextQuery(string query);
 
-  // Registers assistant event subscriber. Subscribers' implementation is
-  // responsible for selecting events of interest.
-  AddAssistantEventSubscriber(AssistantEventSubscriber subscriber);
+  // Registers assistant interaction event subscriber. Subscribers'
+  // implementation is responsible for selecting events of interest.
+  AddAssistantInteractionSubscriber(AssistantInteractionSubscriber subscriber);
+
+  // Registers assistant notification event subscriber. Subscribers'
+  // implementation is responsible for selecting events of interest.
+  AddAssistantNotificationSubscriber(
+      AssistantNotificationSubscriber subscriber);
+
+  // Retrieves a notification. A voiceless interaction will be sent to server to
+  // retrieve the notification payload, which can trigger other assistant's
+  // events such as OnTextResponse to show the result in the UI. The reteived
+  // notification will be removed from the UI.
+  RetrieveNotification(AssistantNotification notification, int32 action_index);
+
+  // Dismisses a notification.
+  DismissNotification(AssistantNotification notification);
+
+  // Asks assistant to grab screen context. |region| controls the part of the
+  // screen to snapshot. If |region| is empty, it takes fullscreen screenshot.
+  // After grabbing completion, the callback will be invoked.
+  RequestScreenContext(gfx.mojom.Rect region) => ();
 };
 
-// Subscribes to assistant's event. Responses from the assistant may contain
-// untrusted third-party content. Subscriber implementations must be sure to
-// handle the response data appropriately.
-interface AssistantEventSubscriber {
-  // Assistant interaction has started.
-  OnInteractionStarted();
+// Subscribes to assistant's interaction event. Responses from the assistant may
+// contain untrusted third-party content. Subscriber implementations must be
+// sure to handle the response data appropriately.
+interface AssistantInteractionSubscriber {
+  // Assistant interaction has started. In the event of a voice interaction,
+  // |is_voice_interaction| will be true. This implies that the mic is open.
+  OnInteractionStarted(bool is_voice_interaction);
 
   // Assistant interaction has ended with the specified |resolution|.
   OnInteractionFinished(AssistantInteractionResolution resolution);
@@ -67,22 +87,29 @@ interface AssistantEventSubscriber {
   OnSpeechLevelUpdated(float speech_level);
 };
 
-// Platform connection to assistant.
+// Subscribes to assistant's notification event.
+interface AssistantNotificationSubscriber {
+  // Assistant got notification from server.
+  OnShowNotification(AssistantNotification notification);
+
+  // Notifies UI to remove the notification with the |grouping_key|.
+  // If |grouping_key| is empty, remove all notifications.
+  OnRemoveNotification(string grouping_key);
+};
+
+// Interface for browser to bind and start assistant.
 interface AssistantPlatform {
   // Initiates assistant and provides interfaces for assistant to call into the
   // browser.
-  Init(Client assistant_client_interface, Context context_interface,
-       AudioInput audio_input_interface);
+  Init(Client assistant_client_interface,
+       DeviceActions device_actions_interface);
 };
 
 // Interface for assistant to call into client.
 interface Client {
   // Notifies assistant client that assistant running status has changed.
   OnAssistantStatusChanged(bool running);
-};
 
-// Interface for assistant to request view hierarchy for current focused window.
-interface Context {
   // Request context of current window from browser.
   RequestAssistantStructure() => (
     ax.mojom.AssistantExtra? extra,
@@ -109,6 +136,12 @@ interface AudioInputObserver {
   OnAudioInputClosed();
 };
 
+// Interface for assistant to call into browser to perform device actions.
+interface DeviceActions {
+  // Enables or disables WiFi.
+  SetWifiEnabled(bool enabled);
+};
+
 // Enumeration of possible completions for an Assistant interaction.
 enum AssistantInteractionResolution {
   // Assistant interaction completed normally.
@@ -130,4 +163,29 @@ struct AssistantSuggestion {
   // Optional URL for action. e.g.
   // "https://www.google.com/search?query=action".
   url.mojom.Url action_url;
+};
+
+// Models an Assistant notification.
+struct AssistantNotification {
+  // Title of the notification.
+  string title;
+
+  // Body text of the notification.
+  string message;
+
+  // URL to open when the tap action is invoked on the notification.
+  url.mojom.Url action_url;
+
+  // An id that uniquely identifies a notification.
+  string notification_id;
+
+  // Used to fetch notification contents.
+  string consistency_token;
+  string opaque_token;
+
+  // Key that can be used to group multiple notifications together.
+  string grouping_key;
+
+  // Obfuscated Gaia id of the intended recipient of the user.
+  string obfuscated_gaia_id;
 };

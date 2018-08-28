@@ -116,6 +116,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   void WasOccluded() override {}
   void SetIsInVR(bool is_in_vr) override;
   base::string16 GetSelectedText() override;
+  base::string16 GetSurroundingText() override;
+  gfx::Range GetSelectedRange() override;
   bool IsMouseLocked() override;
   bool LockKeyboard(base::Optional<base::flat_set<ui::DomCode>> codes) override;
   void SetBackgroundColor(SkColor color) override;
@@ -153,7 +155,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   bool OnMessageReceived(const IPC::Message& msg) override;
 
   // RenderFrameMetadataProvider::Observer
-  void OnRenderFrameMetadataChanged() override;
+  void OnRenderFrameMetadataChangedBeforeActivation(
+      const cc::RenderFrameMetadata& metadata) override;
+  void OnRenderFrameMetadataChangedAfterActivation() override;
   void OnRenderFrameSubmission() override;
   void OnLocalSurfaceIdChanged(
       const cc::RenderFrameMetadata& metadata) override;
@@ -301,6 +305,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // the GestureRecognizer until invocation of ProcessAckedTouchEvent releases
   // it to be consumed (when |ack_result| is NOT_CONSUMED OR NO_CONSUMER_EXISTS)
   // or ignored (when |ack_result| is CONSUMED).
+  // |touch|'s coordinates are in the coordinate space of the view to which it
+  // was targeted.
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) {}
 
@@ -309,12 +315,11 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual void DidStopFlinging() {}
 
   // Returns the ID associated with the CompositorFrameSink of this view.
-  // TODO(fsamuel): Return by const ref.
-  virtual viz::FrameSinkId GetFrameSinkId();
+  virtual const viz::FrameSinkId& GetFrameSinkId() const = 0;
 
   // Returns the LocalSurfaceId allocated by the parent client for this view.
   // TODO(fsamuel): Return by const ref.
-  virtual viz::LocalSurfaceId GetLocalSurfaceId() const;
+  virtual const viz::LocalSurfaceId& GetLocalSurfaceId() const = 0;
 
   // When there are multiple RenderWidgetHostViews for a single page, input
   // events need to be targeted to the correct one for handling. The following
@@ -532,10 +537,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
 
   bool is_fullscreen() { return is_fullscreen_; }
 
-  bool wheel_scroll_latching_enabled() {
-    return wheel_scroll_latching_enabled_;
-  }
-
   void set_web_contents_accessibility(WebContentsAccessibility* wcax) {
     web_contents_accessibility_ = wcax;
   }
@@ -596,6 +597,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   ui::mojom::WindowTreeClientPtr GetWindowTreeClientFromRenderer();
 #endif
 
+  // If |event| is a touchpad pinch event for which we've sent a synthetic
+  // wheel event, forward the |event| to the renderer, subject to |ack_result|
+  // which is the ACK result of the synthetic wheel.
+  virtual void ForwardTouchpadPinchIfNecessary(
+      const blink::WebGestureEvent& event,
+      InputEventAckState ack_result);
+
   // The model object. Members will become private when
   // RenderWidgetHostViewGuest is removed.
   RenderWidgetHostImpl* host_;
@@ -609,13 +617,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
 
   // Indicates whether keyboard lock is active for this view.
   bool keyboard_locked_ = false;
-
-  // While the mouse is locked, the cursor is hidden from the user. Mouse events
-  // are still generated. However, the position they report is the last known
-  // mouse position just as mouse lock was entered; the movement they report
-  // indicates what the change in position of the mouse would be had it not been
-  // locked.
-  bool mouse_locked_ = false;
 
   // Indicates whether the scroll offset of the root layer is at top, i.e.,
   // whether scroll_offset.y() == 0.
@@ -642,8 +643,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // The default background color used before getting the
   // |content_background_color|.
   base::Optional<SkColor> default_background_color_;
-
-  const bool wheel_scroll_latching_enabled_;
 
   WebContentsAccessibility* web_contents_accessibility_;
 
@@ -700,6 +699,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // too EmbedChildFrameRendererWindowTreeClient() did not come in.
   base::flat_map<int, int> pending_embeds_;
 #endif
+
+  base::Optional<blink::WebGestureEvent> pending_touchpad_pinch_begin_;
 
   base::WeakPtrFactory<RenderWidgetHostViewBase> weak_factory_;
 

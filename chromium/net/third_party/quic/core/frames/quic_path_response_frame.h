@@ -11,11 +11,10 @@
 #include "net/third_party/quic/core/frames/quic_control_frame.h"
 #include "net/third_party/quic/core/quic_types.h"
 
-namespace net {
+namespace quic {
 
-// Size of the entire IETF Quic Path Response frame, including
-// type byte.
-const size_t kQuicPathResponseFrameSize = (kQuicPathFrameBufferSize + 1);
+// Size of the entire IETF Quic Path Response frame.
+const size_t kQuicPathResponseFrameSize = kQuicPathFrameBufferSize;
 
 struct QUIC_EXPORT_PRIVATE QuicPathResponseFrame : public QuicControlFrame {
   QuicPathResponseFrame();
@@ -28,10 +27,7 @@ struct QUIC_EXPORT_PRIVATE QuicPathResponseFrame : public QuicControlFrame {
       const QuicPathResponseFrame& frame);
 
   QuicPathFrameBuffer data_buffer;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(QuicPathResponseFrame);
 };
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_FRAMES_QUIC_PATH_RESPONSE_FRAME_H_

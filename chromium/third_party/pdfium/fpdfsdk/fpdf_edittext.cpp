@@ -14,6 +14,7 @@
 #include "core/fpdfapi/font/cpdf_type1font.h"
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/page/cpdf_textobject.h"
+#include "core/fpdfapi/page/cpdf_textstate.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
@@ -27,6 +28,31 @@
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/fpdf_edit.h"
 
+// These checks are here because core/ and public/ cannot depend on each other.
+static_assert(static_cast<int>(TextRenderingMode::MODE_FILL) ==
+                  FPDF_TEXTRENDERMODE_FILL,
+              "TextRenderingMode::MODE_FILL value mismatch");
+static_assert(static_cast<int>(TextRenderingMode::MODE_STROKE) ==
+                  FPDF_TEXTRENDERMODE_STROKE,
+              "TextRenderingMode::MODE_STROKE value mismatch");
+static_assert(static_cast<int>(TextRenderingMode::MODE_FILL_STROKE) ==
+                  FPDF_TEXTRENDERMODE_FILL_STROKE,
+              "TextRenderingMode::MODE_FILL_STROKE value mismatch");
+static_assert(static_cast<int>(TextRenderingMode::MODE_INVISIBLE) ==
+                  FPDF_TEXTRENDERMODE_INVISIBLE,
+              "TextRenderingMode::MODE_INVISIBLE value mismatch");
+static_assert(static_cast<int>(TextRenderingMode::MODE_FILL_CLIP) ==
+                  FPDF_TEXTRENDERMODE_FILL_CLIP,
+              "TextRenderingMode::MODE_FILL_CLIP value mismatch");
+static_assert(static_cast<int>(TextRenderingMode::MODE_STROKE_CLIP) ==
+                  FPDF_TEXTRENDERMODE_STROKE_CLIP,
+              "TextRenderingMode::MODE_STROKE_CLIP value mismatch");
+static_assert(static_cast<int>(TextRenderingMode::MODE_FILL_STROKE_CLIP) ==
+                  FPDF_TEXTRENDERMODE_FILL_STROKE_CLIP,
+              "TextRenderingMode::MODE_FILL_STROKE_CLIP value mismatch");
+static_assert(static_cast<int>(TextRenderingMode::MODE_CLIP) ==
+                  FPDF_TEXTRENDERMODE_CLIP,
+              "TextRenderingMode::MODE_CLIP value mismatch");
 namespace {
 
 CPDF_Dictionary* LoadFontDesc(CPDF_Document* pDoc,
@@ -74,7 +100,7 @@ CPDF_Dictionary* LoadFontDesc(CPDF_Document* pDoc,
                                                static_cast<int>(size));
   }
   ByteString fontFile = font_type == FPDF_FONT_TYPE1 ? "FontFile" : "FontFile2";
-  pFontDesc->SetNewFor<CPDF_Reference>(fontFile, pDoc, pStream->GetObjNum());
+  pFontDesc->SetFor(fontFile, pStream->MakeReference(pDoc));
   return pFontDesc;
 }
 
@@ -270,12 +296,11 @@ CPDF_Font* LoadSimpleFont(CPDF_Document* pDoc,
     currentChar = nextChar;
   }
   fontDict->SetNewFor<CPDF_Number>("LastChar", static_cast<int>(currentChar));
-  fontDict->SetNewFor<CPDF_Reference>("Widths", pDoc, widthsArray->GetObjNum());
+  fontDict->SetFor("Widths", widthsArray->MakeReference(pDoc));
   CPDF_Dictionary* pFontDesc =
       LoadFontDesc(pDoc, name, pFont.get(), data, size, font_type);
 
-  fontDict->SetNewFor<CPDF_Reference>("FontDescriptor", pDoc,
-                                      pFontDesc->GetObjNum());
+  fontDict->SetFor("FontDescriptor", pFontDesc->MakeReference(pDoc));
   return pDoc->LoadFont(fontDict);
 }
 
@@ -311,13 +336,11 @@ CPDF_Font* LoadCompositeFont(CPDF_Document* pDoc,
   pCIDSystemInfo->SetNewFor<CPDF_Name>("Registry", "Adobe");
   pCIDSystemInfo->SetNewFor<CPDF_Name>("Ordering", "Identity");
   pCIDSystemInfo->SetNewFor<CPDF_Number>("Supplement", 0);
-  pCIDFont->SetNewFor<CPDF_Reference>("CIDSystemInfo", pDoc,
-                                      pCIDSystemInfo->GetObjNum());
+  pCIDFont->SetFor("CIDSystemInfo", pCIDSystemInfo->MakeReference(pDoc));
 
   CPDF_Dictionary* pFontDesc =
       LoadFontDesc(pDoc, name, pFont.get(), data, size, font_type);
-  pCIDFont->SetNewFor<CPDF_Reference>("FontDescriptor", pDoc,
-                                      pFontDesc->GetObjNum());
+  pCIDFont->SetFor("FontDescriptor", pFontDesc->MakeReference(pDoc));
 
   uint32_t glyphIndex;
   uint32_t currentChar = FXFT_Get_First_Char(pFont->GetFace(), &glyphIndex);
@@ -386,16 +409,20 @@ CPDF_Font* LoadCompositeFont(CPDF_Document* pDoc,
     }
     widthsArray->Add(std::move(curWidthArray));
   }
-  pCIDFont->SetNewFor<CPDF_Reference>("W", pDoc, widthsArray->GetObjNum());
+  pCIDFont->SetFor("W", widthsArray->MakeReference(pDoc));
   // TODO(npm): Support vertical writing
 
   auto pDescendant = pdfium::MakeUnique<CPDF_Array>();
-  pDescendant->AddNew<CPDF_Reference>(pDoc, pCIDFont->GetObjNum());
+  pDescendant->Add(pCIDFont->MakeReference(pDoc));
   fontDict->SetFor("DescendantFonts", std::move(pDescendant));
   CPDF_Stream* toUnicodeStream = LoadUnicode(pDoc, to_unicode);
-  fontDict->SetNewFor<CPDF_Reference>("ToUnicode", pDoc,
-                                      toUnicodeStream->GetObjNum());
+  fontDict->SetFor("ToUnicode", toUnicodeStream->MakeReference(pDoc));
   return pDoc->LoadFont(fontDict);
+}
+
+CPDF_TextObject* CPDFTextObjectFromFPDFPageObject(FPDF_PAGEOBJECT page_object) {
+  auto* obj = CPDFPageObjectFromFPDFPageObject(page_object);
+  return obj ? obj->AsText() : nullptr;
 }
 
 }  // namespace
@@ -466,6 +493,16 @@ FPDF_EXPORT FPDF_FONT FPDF_CALLCONV FPDFText_LoadFont(FPDF_DOCUMENT document,
           : LoadSimpleFont(pDoc, std::move(pFont), data, size, font_type));
 }
 
+FPDF_EXPORT FPDF_FONT FPDF_CALLCONV
+FPDFText_LoadStandardFont(FPDF_DOCUMENT document, FPDF_BYTESTRING font) {
+  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
+  if (!pDoc)
+    return nullptr;
+
+  return FPDFFontFromCPDFFont(
+      CPDF_Font::GetStockFont(pDoc, ByteStringView(font)));
+}
+
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFText_SetFillColor(FPDF_PAGEOBJECT text_object,
                       unsigned int R,
@@ -473,6 +510,36 @@ FPDFText_SetFillColor(FPDF_PAGEOBJECT text_object,
                       unsigned int B,
                       unsigned int A) {
   return FPDFPageObj_SetFillColor(text_object, R, G, B, A);
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFText_GetMatrix(FPDF_PAGEOBJECT text,
+                                                       double* a,
+                                                       double* b,
+                                                       double* c,
+                                                       double* d,
+                                                       double* e,
+                                                       double* f) {
+  if (!a || !b || !c || !d || !e || !f)
+    return false;
+
+  CPDF_TextObject* pTextObj = CPDFTextObjectFromFPDFPageObject(text);
+  if (!pTextObj)
+    return false;
+
+  CFX_Matrix text_matrix = pTextObj->GetTextMatrix();
+  *a = text_matrix.a;
+  *b = text_matrix.b;
+  *c = text_matrix.c;
+  *d = text_matrix.d;
+  *e = text_matrix.e;
+  *f = text_matrix.f;
+
+  return true;
+}
+
+FPDF_EXPORT double FPDF_CALLCONV FPDFTextObj_GetFontSize(FPDF_PAGEOBJECT text) {
+  CPDF_TextObject* pTextObj = CPDFTextObjectFromFPDFPageObject(text);
+  return pTextObj ? pTextObj->GetFontSize() : 0;
 }
 
 FPDF_EXPORT void FPDF_CALLCONV FPDFFont_Close(FPDF_FONT font) {
@@ -503,4 +570,15 @@ FPDFPageObj_CreateTextObj(FPDF_DOCUMENT document,
   pTextObj->m_TextState.SetFontSize(font_size);
   pTextObj->DefaultStates();
   return FPDFPageObjectFromCPDFPageObject(pTextObj.release());
+}
+
+FPDF_EXPORT int FPDF_CALLCONV FPDFText_GetTextRenderMode(FPDF_PAGEOBJECT text) {
+  if (!text)
+    return -1;
+
+  CPDF_TextObject* pTextObj = CPDFTextObjectFromFPDFPageObject(text);
+  if (!pTextObj)
+    return -1;
+
+  return static_cast<int>(pTextObj->m_TextState.GetTextMode());
 }

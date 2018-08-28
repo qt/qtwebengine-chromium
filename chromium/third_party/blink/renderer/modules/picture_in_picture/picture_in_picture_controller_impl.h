@@ -11,6 +11,8 @@ namespace blink {
 
 class HTMLVideoElement;
 class PictureInPictureWindow;
+class TreeScope;
+struct WebSize;
 
 // The PictureInPictureControllerImpl is keeping the state and implementing the
 // logic around the Picture-in-Picture feature. It is meant to be used as well
@@ -43,23 +45,21 @@ class PictureInPictureControllerImpl : public PictureInPictureController {
   // request Picture-in-Picture.
   Status IsDocumentAllowed() const;
 
-  // Enter Picture-in-Picture for a video element and resolve promise.
-  void EnterPictureInPicture(HTMLVideoElement*, ScriptPromiseResolver*);
-
   // Meant to be called internally when an element has entered successfully
   // Picture-in-Picture.
   void OnEnteredPictureInPicture(HTMLVideoElement*,
                                  ScriptPromiseResolver*,
                                  const WebSize& picture_in_picture_window_size);
 
-  // Exit Picture-in-Picture for a video element and resolve promise if any.
-  void ExitPictureInPicture(HTMLVideoElement*, ScriptPromiseResolver*);
-
   // Returns element currently in Picture-in-Picture if any. Null otherwise.
   Element* PictureInPictureElement(TreeScope&) const;
 
   // Implementation of PictureInPictureController.
+  void EnterPictureInPicture(HTMLVideoElement*,
+                             ScriptPromiseResolver*) override;
+  void ExitPictureInPicture(HTMLVideoElement*, ScriptPromiseResolver*) override;
   void OnExitedPictureInPicture(ScriptPromiseResolver*) override;
+  void OnPictureInPictureControlClicked(const WebString& control_id) override;
   Status IsElementAllowed(const HTMLVideoElement&) const override;
   bool IsPictureInPictureElement(const Element*) const override;
 

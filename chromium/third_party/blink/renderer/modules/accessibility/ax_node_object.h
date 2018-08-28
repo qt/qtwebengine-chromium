@@ -54,6 +54,8 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
 #if DCHECK_IS_ON()
   bool initialized_ = false;
 #endif
+  // The accessibility role, not taking ARIA into account.
+  AccessibilityRole native_role_;
 
   bool ComputeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const override;
   const AXObject* InheritsPresentationalRoleFrom() const override;
@@ -157,6 +159,7 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   AccessibilityRole AriaRoleAttribute() const final;
 
   // AX name calculation.
+  String GetName(AXNameFrom&, AXObjectVector* name_objects) const override;
   String TextAlternative(bool recursive,
                          bool in_aria_labelled_by_traversal,
                          AXObjectSet& visited,
@@ -190,6 +193,10 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   bool CanHaveChildren() const override;
   void AddChild(AXObject*);
   void InsertChild(AXObject*, unsigned index);
+  void ClearChildren() override;
+  bool NeedsToUpdateChildren() const override { return children_dirty_; }
+  void SetNeedsToUpdateChildren() override { children_dirty_ = true; }
+  void UpdateChildrenIfNecessary() override;
 
   // DOM and Render tree access.
   Element* ActionElement() const override;

@@ -31,8 +31,8 @@ class PreviewEnabledPreviewsDecider : public PreviewsDecider {
       const net::URLRequest& request,
       PreviewsType type,
       net::EffectiveConnectionType effective_connection_type_threshold,
-      const std::vector<std::string>& host_blacklist_from_server)
-      const override {
+      const std::vector<std::string>& host_blacklist_from_server,
+      bool ignore_long_term_black_list_rules) const override {
     return IsEnabled(type);
   }
 
@@ -40,11 +40,13 @@ class PreviewEnabledPreviewsDecider : public PreviewsDecider {
                           PreviewsType type) const override {
     return ShouldAllowPreviewAtECT(request, type,
                                    params::GetECTThresholdForPreview(type),
-                                   std::vector<std::string>());
+                                   std::vector<std::string>(), false);
   }
 
   bool IsURLAllowedForPreview(const net::URLRequest& request,
                               PreviewsType type) const override {
+    EXPECT_TRUE(type == PreviewsType::NOSCRIPT ||
+                type == PreviewsType::RESOURCE_LOADING_HINTS);
     return IsEnabled(type);
   }
 
@@ -52,17 +54,19 @@ class PreviewEnabledPreviewsDecider : public PreviewsDecider {
   bool IsEnabled(PreviewsType type) const {
     switch (type) {
       case previews::PreviewsType::OFFLINE:
-        return previews::params::IsOfflinePreviewsEnabled();
+        return params::IsOfflinePreviewsEnabled();
       case previews::PreviewsType::LOFI:
-        return previews::params::IsClientLoFiEnabled();
-      case previews::PreviewsType::AMP_REDIRECTION:
-        return previews::params::IsAMPRedirectionPreviewEnabled();
+        return params::IsClientLoFiEnabled();
+      case previews::PreviewsType::DEPRECATED_AMP_REDIRECTION:
+        return false;
       case previews::PreviewsType::NOSCRIPT:
-        return previews::params::IsNoScriptPreviewsEnabled();
-      case previews::PreviewsType::LITE_PAGE:
-      case previews::PreviewsType::NONE:
-      case previews::PreviewsType::UNSPECIFIED:
-      case previews::PreviewsType::LAST:
+        return params::IsNoScriptPreviewsEnabled();
+      case previews::PreviewsType::RESOURCE_LOADING_HINTS:
+        return params::IsResourceLoadingHintsEnabled();
+      case PreviewsType::LITE_PAGE:
+      case PreviewsType::NONE:
+      case PreviewsType::UNSPECIFIED:
+      case PreviewsType::LAST:
         break;
     }
     NOTREACHED();
@@ -104,8 +108,9 @@ class PreviewsContentUtilTest : public testing::Test {
 TEST_F(PreviewsContentUtilTest,
        DetermineEnabledClientPreviewsStatePreviewsDisabled) {
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitFromCommandLine("ClientLoFi" /* enable_features */,
-                                          "Previews" /* disable_features */);
+  scoped_feature_list.InitFromCommandLine(
+      "ClientLoFi,ResourceLoadingHints,NoScriptPreviews" /* enable_features */,
+      "Previews" /* disable_features */);
   EXPECT_EQ(content::PREVIEWS_UNSPECIFIED,
             previews::DetermineEnabledClientPreviewsState(
                 *CreateHttpsRequest(), enabled_previews_decider()));
@@ -117,12 +122,25 @@ TEST_F(PreviewsContentUtilTest,
 TEST_F(PreviewsContentUtilTest, DetermineEnabledClientPreviewsStateClientLoFi) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitFromCommandLine("Previews,ClientLoFi", std::string());
-  EXPECT_EQ(content::CLIENT_LOFI_ON,
-            previews::DetermineEnabledClientPreviewsState(
-                *CreateHttpsRequest(), enabled_previews_decider()));
-  EXPECT_EQ(content::CLIENT_LOFI_ON,
-            previews::DetermineEnabledClientPreviewsState(
-                *CreateRequest(), enabled_previews_decider()));
+  EXPECT_TRUE(content::CLIENT_LOFI_ON &
+              previews::DetermineEnabledClientPreviewsState(
+                  *CreateHttpsRequest(), enabled_previews_decider()));
+  EXPECT_TRUE(content::CLIENT_LOFI_ON &
+              previews::DetermineEnabledClientPreviewsState(
+                  *CreateRequest(), enabled_previews_decider()));
+}
+
+TEST_F(PreviewsContentUtilTest,
+       DetermineEnabledClientPreviewsStateResourceLoadingHints) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitFromCommandLine("Previews,ResourceLoadingHints",
+                                          std::string());
+  EXPECT_LT(0, content::RESOURCE_LOADING_HINTS_ON &
+                   previews::DetermineEnabledClientPreviewsState(
+                       *CreateHttpsRequest(), enabled_previews_decider()));
+  EXPECT_LT(0, content::RESOURCE_LOADING_HINTS_ON &
+                   previews::DetermineEnabledClientPreviewsState(
+                       *CreateRequest(), enabled_previews_decider()));
 }
 
 TEST_F(PreviewsContentUtilTest,
@@ -132,13 +150,13 @@ TEST_F(PreviewsContentUtilTest,
   scoped_feature_list.InitFromCommandLine(
       "Previews,ClientLoFi,NoScriptPreviews", std::string());
 
-  // Verify NoScript takes precendence over LoFi (for https).
-  EXPECT_EQ(content::NOSCRIPT_ON,
-            previews::DetermineEnabledClientPreviewsState(
-                *CreateHttpsRequest(), enabled_previews_decider()));
-  EXPECT_EQ(content::NOSCRIPT_ON,
-            previews::DetermineEnabledClientPreviewsState(
-                *CreateRequest(), enabled_previews_decider()));
+  // Verify both are enabled.
+  EXPECT_TRUE((content::NOSCRIPT_ON | content::CLIENT_LOFI_ON) &
+              previews::DetermineEnabledClientPreviewsState(
+                  *CreateHttpsRequest(), enabled_previews_decider()));
+  EXPECT_TRUE((content::NOSCRIPT_ON | content::CLIENT_LOFI_ON) &
+              previews::DetermineEnabledClientPreviewsState(
+                  *CreateRequest(), enabled_previews_decider()));
 
   // Verify non-HTTP[S] URL has no previews enabled.
   std::unique_ptr<net::URLRequest> data_url_request(
@@ -151,8 +169,9 @@ TEST_F(PreviewsContentUtilTest,
 TEST_F(PreviewsContentUtilTest, DetermineCommittedClientPreviewsState) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitFromCommandLine(
-      "Previews,ClientLoFi,NoScriptPreviews", std::string());
-  // Server bits take precendence over NoScript:
+      "Previews,ClientLoFi,NoScriptPreviews,ResourceLoadingHints",
+      std::string());
+  // Server bits take precedence over NoScript:
   EXPECT_EQ(content::SERVER_LITE_PAGE_ON | content::SERVER_LOFI_ON |
                 content::CLIENT_LOFI_ON,
             previews::DetermineCommittedClientPreviewsState(
@@ -168,17 +187,32 @@ TEST_F(PreviewsContentUtilTest, DetermineCommittedClientPreviewsState) {
           *CreateHttpsRequest(), content::CLIENT_LOFI_ON | content::NOSCRIPT_ON,
           enabled_previews_decider()));
 
-  // NoScript has precedence over Client LoFi - dropped for committed HTTP:
-  EXPECT_EQ(
-      content::PREVIEWS_OFF,
-      previews::DetermineCommittedClientPreviewsState(
-          *CreateRequest(), content::CLIENT_LOFI_ON | content::NOSCRIPT_ON,
-          enabled_previews_decider()));
+  // RESOURCE_LOADING_HINTS has precedence over Client LoFi and NoScript.
+  EXPECT_EQ(content::RESOURCE_LOADING_HINTS_ON,
+            previews::DetermineCommittedClientPreviewsState(
+                *CreateHttpsRequest(),
+                content::CLIENT_LOFI_ON | content::NOSCRIPT_ON |
+                    content::RESOURCE_LOADING_HINTS_ON,
+                enabled_previews_decider()));
 
-  // Client LoFi:
+  // NoScript has precedence over Client LoFi - dropped for committed HTTP:
+  EXPECT_EQ(content::PREVIEWS_OFF,
+            previews::DetermineCommittedClientPreviewsState(
+                *CreateRequest(),
+                content::CLIENT_LOFI_ON | content::NOSCRIPT_ON |
+                    content::RESOURCE_LOADING_HINTS_ON,
+                enabled_previews_decider()));
+
+  // Only Client LoFi:
   EXPECT_EQ(content::CLIENT_LOFI_ON,
             previews::DetermineCommittedClientPreviewsState(
                 *CreateHttpsRequest(), content::CLIENT_LOFI_ON,
+                enabled_previews_decider()));
+
+  // Only NoScript:
+  EXPECT_EQ(content::NOSCRIPT_ON,
+            previews::DetermineCommittedClientPreviewsState(
+                *CreateHttpsRequest(), content::NOSCRIPT_ON,
                 enabled_previews_decider()));
 }
 
@@ -187,11 +221,12 @@ TEST_F(PreviewsContentUtilTest,
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitFromCommandLine("Previews,ClientLoFi", std::string());
   // NoScript not allowed at commit time so Client LoFi chosen:
-  EXPECT_EQ(
-      content::PREVIEWS_OFF,
-      previews::DetermineCommittedClientPreviewsState(
-          *CreateHttpsRequest(), content::CLIENT_LOFI_ON | content::NOSCRIPT_ON,
-          enabled_previews_decider()));
+  EXPECT_EQ(content::PREVIEWS_OFF,
+            previews::DetermineCommittedClientPreviewsState(
+                *CreateHttpsRequest(),
+                content::CLIENT_LOFI_ON | content::NOSCRIPT_ON |
+                    content::RESOURCE_LOADING_HINTS_ON,
+                enabled_previews_decider()));
 }
 
 TEST_F(PreviewsContentUtilTest, GetMainFramePreviewsType) {
@@ -202,6 +237,9 @@ TEST_F(PreviewsContentUtilTest, GetMainFramePreviewsType) {
             previews::GetMainFramePreviewsType(content::SERVER_LOFI_ON));
   EXPECT_EQ(previews::PreviewsType::NOSCRIPT,
             previews::GetMainFramePreviewsType(content::NOSCRIPT_ON));
+  EXPECT_EQ(
+      previews::PreviewsType::RESOURCE_LOADING_HINTS,
+      previews::GetMainFramePreviewsType(content::RESOURCE_LOADING_HINTS_ON));
   EXPECT_EQ(previews::PreviewsType::LOFI,
             previews::GetMainFramePreviewsType(content::CLIENT_LOFI_ON));
 
@@ -211,18 +249,25 @@ TEST_F(PreviewsContentUtilTest, GetMainFramePreviewsType) {
   EXPECT_EQ(previews::PreviewsType::NONE,
             previews::GetMainFramePreviewsType(content::PREVIEWS_NO_TRANSFORM));
 
-  // Precedence cases:
+  // Precedence cases when server preview is available:
   EXPECT_EQ(previews::PreviewsType::LITE_PAGE,
             previews::GetMainFramePreviewsType(
                 content::SERVER_LITE_PAGE_ON | content::SERVER_LOFI_ON |
-                content::NOSCRIPT_ON | content::CLIENT_LOFI_ON));
+                content::NOSCRIPT_ON | content::CLIENT_LOFI_ON |
+                content::RESOURCE_LOADING_HINTS_ON));
   EXPECT_EQ(previews::PreviewsType::LOFI,
-            previews::GetMainFramePreviewsType(content::SERVER_LOFI_ON |
-                                               content::NOSCRIPT_ON |
-                                               content::CLIENT_LOFI_ON));
+            previews::GetMainFramePreviewsType(
+                content::SERVER_LOFI_ON | content::NOSCRIPT_ON |
+                content::CLIENT_LOFI_ON | content::RESOURCE_LOADING_HINTS_ON));
+
+  // Precedence cases when server preview is not available:
   EXPECT_EQ(previews::PreviewsType::NOSCRIPT,
             previews::GetMainFramePreviewsType(content::NOSCRIPT_ON |
                                                content::CLIENT_LOFI_ON));
+  EXPECT_EQ(previews::PreviewsType::RESOURCE_LOADING_HINTS,
+            previews::GetMainFramePreviewsType(
+                content::NOSCRIPT_ON | content::CLIENT_LOFI_ON |
+                content::RESOURCE_LOADING_HINTS_ON));
 }
 
 }  // namespace

@@ -33,7 +33,7 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "content/renderer/gpu/actions_parser.h"
-#include "content/renderer/gpu/render_widget_compositor.h"
+#include "content/renderer/gpu/layer_tree_view.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/skia_benchmarking_extension.h"
@@ -61,12 +61,16 @@
 #include "v8/include/v8.h"
 
 #if defined(OS_WIN) && !defined(NDEBUG)
+// XpsObjectModel.h indirectly includes <wincrypt.h> which is
+// incompatible with Chromium's OpenSSL. By including wincrypt_shim.h
+// first, problems are avoided.
+#include "crypto/wincrypt_shim.h"
+
 #include <XpsObjectModel.h>
 #include <objbase.h>
 #include <wrl/client.h>
 #endif
 
-using blink::WebCanvas;
 using blink::WebLocalFrame;
 using blink::WebImageCache;
 using blink::WebPrivatePtr;
@@ -183,11 +187,7 @@ class CallbackAndContext : public base::RefCounted<CallbackAndContext> {
 
 class GpuBenchmarkingContext {
  public:
-  GpuBenchmarkingContext()
-      : web_frame_(nullptr),
-        web_view_(nullptr),
-        render_view_impl_(nullptr),
-        compositor_(nullptr) {}
+  GpuBenchmarkingContext() = default;
 
   bool Init(bool init_compositor) {
     web_frame_ = WebLocalFrame::FrameForCurrentContext();
@@ -210,8 +210,8 @@ class GpuBenchmarkingContext {
     if (!init_compositor)
       return true;
 
-    compositor_ = render_view_impl_->GetWidget()->compositor();
-    if (!compositor_) {
+    layer_tree_view_ = render_view_impl_->GetWidget()->layer_tree_view();
+    if (!layer_tree_view_) {
       web_frame_ = nullptr;
       web_view_ = nullptr;
       render_view_impl_ = nullptr;
@@ -233,16 +233,16 @@ class GpuBenchmarkingContext {
     DCHECK(render_view_impl_ != nullptr);
     return render_view_impl_;
   }
-  RenderWidgetCompositor* compositor() const {
-    DCHECK(compositor_ != nullptr);
-    return compositor_;
+  LayerTreeView* layer_tree_view() const {
+    DCHECK(layer_tree_view_ != nullptr);
+    return layer_tree_view_;
   }
 
  private:
-  WebLocalFrame* web_frame_;
-  WebView* web_view_;
-  RenderViewImpl* render_view_impl_;
-  RenderWidgetCompositor* compositor_;
+  WebLocalFrame* web_frame_ = nullptr;
+  WebView* web_view_ = nullptr;
+  RenderViewImpl* render_view_impl_ = nullptr;
+  LayerTreeView* layer_tree_view_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(GpuBenchmarkingContext);
 };
@@ -550,7 +550,8 @@ gin::ObjectTemplateBuilder GpuBenchmarking::GetObjectTemplateBuilder(
       .SetMethod("getGpuDriverBugWorkarounds",
                  &GpuBenchmarking::GetGpuDriverBugWorkarounds)
       .SetMethod("startProfiling", &GpuBenchmarking::StartProfiling)
-      .SetMethod("stopProfiling", &GpuBenchmarking::StopProfiling);
+      .SetMethod("stopProfiling", &GpuBenchmarking::StopProfiling)
+      .SetMethod("freeze", &GpuBenchmarking::Freeze);
 }
 
 void GpuBenchmarking::SetNeedsDisplayOnAllLayers() {
@@ -558,7 +559,7 @@ void GpuBenchmarking::SetNeedsDisplayOnAllLayers() {
   if (!context.Init(true))
     return;
 
-  context.compositor()->SetNeedsDisplayOnAllLayers();
+  context.layer_tree_view()->SetNeedsDisplayOnAllLayers();
 }
 
 void GpuBenchmarking::SetRasterizeOnlyVisibleContent() {
@@ -566,7 +567,7 @@ void GpuBenchmarking::SetRasterizeOnlyVisibleContent() {
   if (!context.Init(true))
     return;
 
-  context.compositor()->SetRasterizeOnlyVisibleContent();
+  context.layer_tree_view()->SetRasterizeOnlyVisibleContent();
 }
 
 namespace {
@@ -596,7 +597,7 @@ void GpuBenchmarking::PrintToSkPicture(v8::Isolate* isolate,
   if (!context.Init(true))
     return;
 
-  const cc::Layer* root_layer = context.compositor()->GetRootLayer();
+  const cc::Layer* root_layer = context.layer_tree_view()->GetRootLayer();
   if (!root_layer)
     return;
 
@@ -874,8 +875,9 @@ void GpuBenchmarking::SetBrowserControlsShown(bool show) {
   if (!context.Init(false))
     return;
   context.web_view()->UpdateBrowserControlsState(
-      blink::kWebBrowserControlsBoth,
-      show ? blink::kWebBrowserControlsShown : blink::kWebBrowserControlsHidden,
+      cc::BrowserControlsState::kBoth,
+      show ? cc::BrowserControlsState::kShown
+           : cc::BrowserControlsState::kHidden,
       false);
 }
 
@@ -885,7 +887,7 @@ float GpuBenchmarking::VisualViewportY() {
     return 0.0;
   float y = context.web_view()->VisualViewportOffset().y;
   blink::WebRect rect(0, y, 0, 0);
-  context.render_view_impl()->ConvertViewportToWindow(&rect);
+  context.render_view_impl()->WidgetClient()->ConvertViewportToWindow(&rect);
   return rect.y;
 }
 
@@ -895,7 +897,7 @@ float GpuBenchmarking::VisualViewportX() {
     return 0.0;
   float x = context.web_view()->VisualViewportOffset().x;
   blink::WebRect rect(x, 0, 0, 0);
-  context.render_view_impl()->ConvertViewportToWindow(&rect);
+  context.render_view_impl()->WidgetClient()->ConvertViewportToWindow(&rect);
   return rect.x;
 }
 
@@ -905,7 +907,7 @@ float GpuBenchmarking::VisualViewportHeight() {
     return 0.0;
   float height = context.web_view()->VisualViewportSize().height;
   blink::WebRect rect(0, 0, 0, height);
-  context.render_view_impl()->ConvertViewportToWindow(&rect);
+  context.render_view_impl()->WidgetClient()->ConvertViewportToWindow(&rect);
   return rect.height;
 }
 
@@ -915,7 +917,7 @@ float GpuBenchmarking::VisualViewportWidth() {
     return 0.0;
   float width = context.web_view()->VisualViewportSize().width;
   blink::WebRect rect(0, 0, width, 0);
-  context.render_view_impl()->ConvertViewportToWindow(&rect);
+  context.render_view_impl()->WidgetClient()->ConvertViewportToWindow(&rect);
   return rect.width;
 }
 
@@ -1040,10 +1042,10 @@ int GpuBenchmarking::RunMicroBenchmark(gin::Arguments* args) {
   std::unique_ptr<base::Value> value =
       V8ValueConverter::Create()->FromV8Value(arguments, v8_context);
 
-  return context.compositor()->ScheduleMicroBenchmark(
+  return context.layer_tree_view()->ScheduleMicroBenchmark(
       name, std::move(value),
-      base::Bind(&OnMicroBenchmarkCompleted,
-                 base::RetainedRef(callback_and_context)));
+      base::BindOnce(&OnMicroBenchmarkCompleted,
+                     base::RetainedRef(callback_and_context)));
 }
 
 bool GpuBenchmarking::SendMessageToMicroBenchmark(
@@ -1058,8 +1060,8 @@ bool GpuBenchmarking::SendMessageToMicroBenchmark(
   std::unique_ptr<base::Value> value =
       V8ValueConverter::Create()->FromV8Value(message, v8_context);
 
-  return context.compositor()->SendMessageToMicroBenchmark(id,
-                                                           std::move(value));
+  return context.layer_tree_view()->SendMessageToMicroBenchmark(
+      id, std::move(value));
 }
 
 bool GpuBenchmarking::HasGpuChannel() {
@@ -1111,6 +1113,17 @@ void GpuBenchmarking::StartProfiling(gin::Arguments* args) {
 void GpuBenchmarking::StopProfiling() {
   if (base::debug::BeingProfiled())
     base::debug::StopProfiling();
+}
+
+void GpuBenchmarking::Freeze() {
+  GpuBenchmarkingContext context;
+  if (!context.Init(true))
+    return;
+  // TODO(fmeawad): Instead of forcing a visibility change, only allow
+  // freezing a page if it was already hidden.
+  context.web_view()->SetVisibilityState(
+      blink::mojom::PageVisibilityState::kHidden, false);
+  context.web_view()->SetPageFrozen(true);
 }
 
 }  // namespace content

@@ -11,8 +11,6 @@ source_set("autofill") {
     "card_unmask_prompt_view_bridge.mm",
     "chrome_autofill_client_ios.h",
     "chrome_autofill_client_ios.mm",
-    "storage_switch_tooltip.h",
-    "storage_switch_tooltip.mm",
   ]
   deps = [
     ":autofill_ui",
@@ -31,6 +29,7 @@ source_set("autofill") {
     "//ios/chrome/browser/autofill",
     "//ios/chrome/browser/browser_state",
     "//ios/chrome/browser/infobars",
+    "//ios/chrome/browser/metrics",
     "//ios/chrome/browser/signin",
     "//ios/chrome/browser/ssl",
     "//ios/chrome/browser/sync",

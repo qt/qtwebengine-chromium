@@ -120,6 +120,10 @@ def attribute_context(interface, attribute, interfaces):
     if is_cached_accessor:
         includes.add('platform/bindings/v8_private_property.h')
 
+    # [LogActivity]
+    if 'LogActivity' in extended_attributes:
+        includes.add('platform/bindings/v8_per_context_data.h')
+
     context = {
         'activity_logging_world_list_for_getter': v8_utilities.activity_logging_world_list(attribute, 'Getter'),  # [ActivityLogging]
         'activity_logging_world_list_for_setter': v8_utilities.activity_logging_world_list(attribute, 'Setter'),  # [ActivityLogging]
@@ -157,6 +161,7 @@ def attribute_context(interface, attribute, interfaces):
             'RaisesException' in extended_attributes and
             extended_attributes['RaisesException'] in (None, 'Getter'),
         'is_keep_alive_for_gc': keep_alive_for_gc,
+        'is_lenient_setter': 'LenientSetter' in extended_attributes,
         'is_lenient_this': 'LenientThis' in extended_attributes,
         'is_nullable': idl_type.is_nullable,
         'is_explicit_nullable': idl_type.is_explicit_nullable,
@@ -549,8 +554,8 @@ def scoped_content_attribute_name(interface, attribute):
 # Property descriptor's {writable: boolean}
 def is_writable(attribute):
     return (not attribute.is_read_only or
-            'PutForwards' in attribute.extended_attributes or
-            'Replaceable' in attribute.extended_attributes)
+            any(keyword in attribute.extended_attributes for keyword in [
+                'PutForwards', 'Replaceable', 'LenientSetter']))
 
 
 def is_data_type_property(interface, attribute):
@@ -560,7 +565,7 @@ def is_data_type_property(interface, attribute):
             'CrossOrigin' in attribute.extended_attributes)
 
 
-# [PutForwards], [Replaceable]
+# [PutForwards], [Replaceable], [LenientSetter]
 def has_setter(interface, attribute):
     if (is_data_type_property(interface, attribute) and
         (is_constructor_attribute(attribute) or

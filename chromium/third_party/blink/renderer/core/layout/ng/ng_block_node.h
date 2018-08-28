@@ -35,7 +35,8 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
       NGBreakToken* break_token = nullptr);
   NGLayoutInputNode NextSibling() const;
 
-  // Computes the value of min-content and max-content for this box.
+  // Computes the value of min-content and max-content for this node's border
+  // box.
   // If the underlying layout algorithm's ComputeMinMaxSize returns
   // no value, this function will synthesize these sizes using Layout with
   // special constraint spaces -- infinite available size for max content, zero
@@ -44,16 +45,30 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
   // An optional constraint space may be supplied, which will be used to resolve
   // percentage padding on this node, to set up the right min/max size
   // contribution. This is typically desirable for the subtree root of the
-  // min/max calculation (e.g. the node that will undergo shrink-to-fit). This
-  // constraint space will not be passed on to children. If no constraint space
-  // is specified, a zero-sized one will be used.
+  // min/max calculation (e.g. the node that will undergo shrink-to-fit). It is
+  // also used to provide provide a sensible available inline size when
+  // calculating min/max for orthogonal flows. This constraint space will not be
+  // passed on to children. If no constraint space is specified, a zero-sized
+  // one will be used.
+  // The constraint space is also used to perform layout when this block's
+  // writing mode is orthogonal to its parent's, in which case the constraint
+  // space is not optional.
   MinMaxSize ComputeMinMaxSize(WritingMode container_writing_mode,
                                const MinMaxSizeInput&,
                                const NGConstraintSpace* = nullptr);
 
+  MinMaxSize ComputeMinMaxSizeFromLegacy() const;
+
   NGBoxStrut GetScrollbarSizes() const;
 
   NGLayoutInputNode FirstChild() const;
+
+  bool IsInlineLevel() const;
+  bool IsAtomicInlineLevel() const;
+
+  // CSS defines certain cases to synthesize inline block baselines from box.
+  // See comments in UseLogicalBottomMarginEdgeForInlineBlockBaseline().
+  bool UseLogicalBottomMarginEdgeForInlineBlockBaseline() const;
 
   // Layout an atomic inline; e.g., inline block.
   scoped_refptr<NGLayoutResult> LayoutAtomicInline(const NGConstraintSpace&,
@@ -71,6 +86,9 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
   // Save static position for legacy AbsPos layout.
   void SaveStaticOffsetForLegacy(const NGLogicalOffset&,
                                  const LayoutObject* offset_container);
+
+  // Write back resolved margins to legacy.
+  void StoreMargins(const NGConstraintSpace&, const NGBoxStrut& margins);
 
   static bool CanUseNewLayout(const LayoutBox&);
   bool CanUseNewLayout() const;

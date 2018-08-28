@@ -35,9 +35,7 @@
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 #include "third_party/boringssl/src/include/openssl/sha.h"
 
-using std::string;
-
-namespace net {
+namespace quic {
 namespace test {
 
 namespace {
@@ -846,11 +844,12 @@ TEST_P(CryptoServerTest, ProofForSuppliedServerConfig) {
       new DummyProofVerifierCallback());
   QuicString chlo_hash;
   CryptoUtils::HashHandshakeMessage(msg, &chlo_hash, Perspective::IS_SERVER);
-  EXPECT_EQ(QUIC_SUCCESS, proof_verifier->VerifyProof(
-                              "test.example.com", 443, (string(scfg_str)),
-                              client_version_.transport_version, chlo_hash,
-                              certs, "", (string(proof)), verify_context.get(),
-                              &error_details, &details, std::move(callback)));
+  EXPECT_EQ(QUIC_SUCCESS,
+            proof_verifier->VerifyProof(
+                "test.example.com", 443, (QuicString(scfg_str)),
+                client_version_.transport_version, chlo_hash, certs, "",
+                (QuicString(proof)), verify_context.get(), &error_details,
+                &details, std::move(callback)));
 }
 
 TEST_P(CryptoServerTest, RejectInvalidXlct) {
@@ -1148,4 +1147,4 @@ TEST_P(CryptoServerTestOldVersion, XlctNotRequired) {
 }
 
 }  // namespace test
-}  // namespace net
+}  // namespace quic

@@ -26,6 +26,7 @@
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/path.h"
+#include "ui/gfx/presentation_feedback.h"
 
 namespace exo {
 
@@ -120,19 +121,17 @@ void SurfaceTreeHost::SetRootSurface(Surface* root_surface) {
     root_surface_->SurfaceHierarchyResourcesLost();
     root_surface_ = nullptr;
 
-    active_frame_callbacks_.splice(active_frame_callbacks_.end(),
-                                   frame_callbacks_);
     // Call all frame callbacks with a null frame time to indicate that they
     // have been cancelled.
-    while (!active_frame_callbacks_.empty()) {
-      active_frame_callbacks_.front().Run(base::TimeTicks());
-      active_frame_callbacks_.pop_front();
+    while (!frame_callbacks_.empty()) {
+      frame_callbacks_.front().Run(base::TimeTicks());
+      frame_callbacks_.pop_front();
     }
 
     DCHECK(presentation_callbacks_.empty());
     for (auto entry : active_presentation_callbacks_) {
       while (!entry.second.empty()) {
-        entry.second.front().Run(base::TimeTicks(), base::TimeDelta(), 0);
+        entry.second.front().Run(gfx::PresentationFeedback());
         entry.second.pop_front();
       }
     }
@@ -158,49 +157,20 @@ void SurfaceTreeHost::GetHitTestMask(gfx::Path* mask) const {
 }
 
 void SurfaceTreeHost::DidReceiveCompositorFrameAck() {
-  active_frame_callbacks_.splice(active_frame_callbacks_.end(),
-                                 frame_callbacks_);
-  UpdateNeedsBeginFrame();
+  while (!frame_callbacks_.empty()) {
+    frame_callbacks_.front().Run(base::TimeTicks::Now());
+    frame_callbacks_.pop_front();
+  }
 }
 
-void SurfaceTreeHost::DidPresentCompositorFrame(uint32_t presentation_token,
-                                                base::TimeTicks time,
-                                                base::TimeDelta refresh,
-                                                uint32_t flags) {
+void SurfaceTreeHost::DidPresentCompositorFrame(
+    uint32_t presentation_token,
+    const gfx::PresentationFeedback& feedback) {
   auto it = active_presentation_callbacks_.find(presentation_token);
   DCHECK(it != active_presentation_callbacks_.end());
   for (auto callback : it->second)
-    callback.Run(time, refresh, flags);
+    callback.Run(feedback);
   active_presentation_callbacks_.erase(it);
-}
-
-void SurfaceTreeHost::DidDiscardCompositorFrame(uint32_t presentation_token) {
-  DidPresentCompositorFrame(presentation_token, base::TimeTicks(),
-                            base::TimeDelta(), 0);
-}
-
-void SurfaceTreeHost::SetBeginFrameSource(
-    viz::BeginFrameSource* begin_frame_source) {
-  if (needs_begin_frame_) {
-    DCHECK(begin_frame_source_);
-    begin_frame_source_->RemoveObserver(this);
-    needs_begin_frame_ = false;
-  }
-  begin_frame_source_ = begin_frame_source;
-  UpdateNeedsBeginFrame();
-}
-
-void SurfaceTreeHost::UpdateNeedsBeginFrame() {
-  if (!begin_frame_source_)
-    return;
-  bool needs_begin_frame = !active_frame_callbacks_.empty();
-  if (needs_begin_frame == needs_begin_frame_)
-    return;
-  needs_begin_frame_ = needs_begin_frame;
-  if (needs_begin_frame_)
-    begin_frame_source_->AddObserver(this);
-  else
-    begin_frame_source_->RemoveObserver(this);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -223,39 +193,16 @@ bool SurfaceTreeHost::IsInputEnabled(Surface*) const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// cc::BeginFrameObserverBase overrides:
-
-bool SurfaceTreeHost::OnBeginFrameDerivedImpl(const viz::BeginFrameArgs& args) {
-  current_begin_frame_ack_ =
-      viz::BeginFrameAck(args.source_id, args.sequence_number, false);
-
-  if (!frame_callbacks_.empty()) {
-    // In this case, the begin frame arrives just before
-    // |DidReceivedCompositorFrameAck()|, we need more begin frames to run
-    // |frame_callbacks_| which will be moved to |active_frame_callbacks_| by
-    // |DidReceivedCompositorFrameAck()| shortly.
-    layer_tree_frame_sink_holder_->DidNotProduceFrame(current_begin_frame_ack_);
-    current_begin_frame_ack_.sequence_number =
-        viz::BeginFrameArgs::kInvalidFrameNumber;
-    begin_frame_source_->DidFinishFrame(this);
-  }
-
-  while (!active_frame_callbacks_.empty()) {
-    active_frame_callbacks_.front().Run(args.frame_time);
-    active_frame_callbacks_.pop_front();
-  }
-  return true;
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // ui::ContextFactoryObserver overrides:
 
-void SurfaceTreeHost::OnLostResources() {
+void SurfaceTreeHost::OnLostSharedContext() {
   if (!host_window_->GetSurfaceId().is_valid() || !root_surface_)
     return;
   root_surface_->SurfaceHierarchyResourcesLost();
   SubmitCompositorFrame();
 }
+
+void SurfaceTreeHost::OnLostVizProcess() {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // SurfaceTreeHost, protected:
@@ -263,22 +210,16 @@ void SurfaceTreeHost::OnLostResources() {
 void SurfaceTreeHost::SubmitCompositorFrame() {
   DCHECK(root_surface_);
   viz::CompositorFrame frame;
-  // If we commit while we don't have an active BeginFrame, we acknowledge a
-  // manual one.
-  if (current_begin_frame_ack_.sequence_number ==
-      viz::BeginFrameArgs::kInvalidFrameNumber) {
-    current_begin_frame_ack_ = viz::BeginFrameAck::CreateManualAckWithDamage();
-  } else {
-    current_begin_frame_ack_.has_damage = true;
-  }
-  frame.metadata.begin_frame_ack = current_begin_frame_ack_;
+  frame.metadata.begin_frame_ack =
+      viz::BeginFrameAck::CreateManualAckWithDamage();
   root_surface_->AppendSurfaceHierarchyCallbacks(&frame_callbacks_,
                                                  &presentation_callbacks_);
   if (!presentation_callbacks_.empty()) {
     // If overflow happens, we increase it again.
     if (!++presentation_token_)
       ++presentation_token_;
-    frame.metadata.presentation_token = presentation_token_;
+    frame.metadata.frame_token = presentation_token_;
+    frame.metadata.request_presentation_feedback = true;
     DCHECK_EQ(active_presentation_callbacks_.count(presentation_token_), 0u);
     active_presentation_callbacks_[presentation_token_] =
         std::move(presentation_callbacks_);
@@ -319,18 +260,6 @@ void SurfaceTreeHost::SubmitCompositorFrame() {
   }
 
   layer_tree_frame_sink_holder_->SubmitCompositorFrame(std::move(frame));
-
-  if (current_begin_frame_ack_.sequence_number !=
-      viz::BeginFrameArgs::kInvalidFrameNumber) {
-    if (!current_begin_frame_ack_.has_damage) {
-      layer_tree_frame_sink_holder_->DidNotProduceFrame(
-          current_begin_frame_ack_);
-    }
-    current_begin_frame_ack_.sequence_number =
-        viz::BeginFrameArgs::kInvalidFrameNumber;
-    if (begin_frame_source_)
-      begin_frame_source_->DidFinishFrame(this);
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

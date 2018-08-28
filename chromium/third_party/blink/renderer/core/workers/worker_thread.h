@@ -45,7 +45,7 @@
 #include "third_party/blink/renderer/core/workers/worker_inspector_proxy.h"
 #include "third_party/blink/renderer/core/workers/worker_thread_lifecycle_context.h"
 #include "third_party/blink/renderer/core/workers/worker_thread_lifecycle_observer.h"
-#include "third_party/blink/renderer/platform/scheduler/child/worker_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/worker_scheduler.h"
 #include "third_party/blink/renderer/platform/waitable_event.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
@@ -55,12 +55,14 @@
 namespace blink {
 
 class ConsoleMessageStorage;
+class FetchClientSettingsObjectSnapshot;
 class InspectorTaskRunner;
 class InstalledScriptsManager;
 class WorkerBackingThread;
 class WorkerInspectorController;
 class WorkerOrWorkletGlobalScope;
 class WorkerReportingProxy;
+struct CrossThreadFetchClientSettingsObjectData;
 struct GlobalScopeCreationParams;
 
 // WorkerThread is a kind of WorkerBackingThread client. Each worker mechanism
@@ -112,8 +114,10 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
 
   // Posts a task to import a top-level module script on the worker thread.
   // Called on the main thread after start().
-  void ImportModuleScript(const KURL& script_url,
-                          network::mojom::FetchCredentialsMode);
+  void ImportModuleScript(
+      const KURL& script_url,
+      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      network::mojom::FetchCredentialsMode);
 
   // Posts a task to the worker thread to close the global scope and terminate
   // the underlying thread. This task may be blocked by JavaScript execution on
@@ -224,7 +228,7 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
 
   // Official moment of creation of worker: when the worker thread is created.
   // (https://w3c.github.io/hr-time/#time-origin)
-  const double time_origin_;
+  const base::TimeTicks time_origin_;
 
  private:
   friend class WorkerThreadTest;
@@ -281,10 +285,11 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
       String source_code,
       std::unique_ptr<Vector<char>> cached_meta_data,
       const v8_inspector::V8StackTraceId& stack_id);
-  void ImportModuleScriptOnWorkerThread(const KURL& script_url,
-                                        network::mojom::FetchCredentialsMode);
-
-  void TerminateChildThreadsOnWorkerThread();
+  void ImportModuleScriptOnWorkerThread(
+      const KURL& script_url,
+      std::unique_ptr<CrossThreadFetchClientSettingsObjectData>
+          outside_settings_object,
+      network::mojom::FetchCredentialsMode);
 
   // These are called in this order during worker thread termination.
   void PrepareForShutdownOnWorkerThread() LOCKS_EXCLUDED(mutex_);

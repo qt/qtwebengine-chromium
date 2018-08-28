@@ -9,7 +9,7 @@
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/quartc/quartc_session_interface.h"
 
-namespace net {
+namespace quic {
 
 // Implements a QuicPacketWriter using a QuartcPacketTransport, which allows a
 // QuicConnection to use (for example), a WebRTC IceTransport.
@@ -44,6 +44,14 @@ class QUIC_EXPORT_PRIVATE QuartcPacketWriter : public QuicPacketWriter {
   // Sets the packet writer to a writable (non-blocked) state.
   void SetWritable() override;
 
+  bool SupportsReleaseTime() const override;
+
+  bool IsBatchMode() const override;
+
+  char* GetNextWriteLocation() const override;
+
+  WriteResult Flush() override;
+
   // Sets the connection which sends packets using this writer.  Connection must
   // be set in order to attach packet info (eg. packet numbers) to writes.
   void set_connection(QuicConnection* connection) { connection_ = connection; }
@@ -61,6 +69,6 @@ class QUIC_EXPORT_PRIVATE QuartcPacketWriter : public QuicPacketWriter {
   bool writable_ = false;
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_QUARTC_QUARTC_PACKET_WRITER_H_

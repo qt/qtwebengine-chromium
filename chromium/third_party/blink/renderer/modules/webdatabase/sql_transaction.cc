@@ -28,8 +28,6 @@
 
 #include "third_party/blink/renderer/modules/webdatabase/sql_transaction.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/modules/webdatabase/database.h"
 #include "third_party/blink/renderer/modules/webdatabase/database_authorizer.h"
@@ -39,6 +37,7 @@
 #include "third_party/blink/renderer/modules/webdatabase/sql_transaction_backend.h"
 #include "third_party/blink/renderer/modules/webdatabase/sql_transaction_client.h"  // FIXME: Should be used in the backend only.
 #include "third_party/blink/renderer/modules/webdatabase/storage_log.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
@@ -313,13 +312,13 @@ void SQLTransaction::ExecuteSQL(const String& sql_statement,
                                 ExceptionState& exception_state) {
   DCHECK(IsMainThread());
   if (!execute_sql_allowed_) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "SQL execution is disallowed.");
     return;
   }
 
   if (!database_->Opened()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The database has not been opened.");
     return;
   }

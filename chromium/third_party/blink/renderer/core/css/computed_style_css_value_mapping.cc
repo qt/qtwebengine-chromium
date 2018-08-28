@@ -57,13 +57,34 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
   return CSSCustomPropertyDeclaration::Create(custom_property_name, data);
 }
 
-std::unique_ptr<HashMap<AtomicString, scoped_refptr<CSSVariableData>>>
-ComputedStyleCSSValueMapping::GetVariables(const ComputedStyle& style) {
-  // TODO(timloh): Also return non-inherited variables
-  StyleInheritedVariables* variables = style.InheritedVariables();
-  if (variables)
-    return variables->GetVariables();
-  return nullptr;
+HeapHashMap<AtomicString, Member<const CSSValue>>
+ComputedStyleCSSValueMapping::GetVariables(const ComputedStyle& style,
+                                           const PropertyRegistry* registry) {
+  HeapHashMap<AtomicString, Member<const CSSValue>> variables;
+
+  StyleInheritedVariables* inherited = style.InheritedVariables();
+
+  if (inherited) {
+    for (const auto& name : inherited->GetCustomPropertyNames()) {
+      const CSSValue* value =
+          ComputedStyleCSSValueMapping::Get(name, style, registry);
+      if (value)
+        variables.Set(name, value);
+    }
+  }
+
+  StyleNonInheritedVariables* non_inherited = style.NonInheritedVariables();
+
+  if (non_inherited) {
+    for (const auto& name : non_inherited->GetCustomPropertyNames()) {
+      const CSSValue* value =
+          ComputedStyleCSSValueMapping::Get(name, style, registry);
+      if (value)
+        variables.Set(name, value);
+    }
+  }
+
+  return variables;
 }
 
 }  // namespace blink

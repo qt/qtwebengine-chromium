@@ -13,6 +13,7 @@
 <translation id="1413622004203049571">Zima arifa kutoka <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{Dakika 1 na }other{Dakika # na }}</translation>
 <translation id="1643823602425662293">Arifa</translation>
+<translation id="169515659049020177">Hama</translation>
 <translation id="1710340000377843106">sasa</translation>
 <translation id="1752946267035950200">{MINUTES,plural, =1{Dakika 1}other{Dakika #}}</translation>
 <translation id="1761785978543082658">B <ph name="QUANTITY" /></translation>
@@ -37,6 +38,7 @@
 <translation id="2295140143284145483">Utafiti</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/s</translation>
 <translation id="24452542372838207">Panua arifa</translation>
+<translation id="2482878487686419369">Arifa</translation>
 <translation id="2497284189126895209">Faili zote</translation>
 <translation id="2522350507219695259">Imemaliza kurekebisha usahihi</translation>
 <translation id="252373100621549798">Onyesho Lisilojulikana</translation>
@@ -49,6 +51,7 @@
 <translation id="3036649622769666520">Fungua Mafaili</translation>
 <translation id="3049748772180311791">MB <ph name="QUANTITY" /></translation>
 <translation id="3087734570205094154">Chini</translation>
+<translation id="3126026824346185272">Ctrl</translation>
 <translation id="3157931365184549694">Rejesha</translation>
 <translation id="3183922693828471536">Sogeza Hadi Hapa</translation>
 <translation id="3234408098842461169">Mshale Chini</translation>
@@ -76,6 +79,7 @@
 <translation id="4730374152663651037">ZINAZOTUMIKA SANA</translation>
 <translation id="4788285488841504513">{MONTHS,plural, =1{Umesalia mwezi 1}other{Imesalia miezi #}}</translation>
 <translation id="4820616160060340806">Amri+ <ph name="KEY_COMBO_NAME" /></translation>
+<translation id="4841881773802181781">Uwekaji</translation>
 <translation id="4968171027979920686">{SECONDS,plural, =1{Sekunde 1}other{Sekunde #}}</translation>
 <translation id="4971687151119236543">Wimbo wa Awali wa Media</translation>
 <translation id="4999762576397546063">Ctrl+<ph name="KEY_COMBO_NAME" /></translation>
@@ -118,6 +122,7 @@
 <translation id="6612467943526193239">Ili kuacha kupima, bonyeza Esc.</translation>
 <translation id="6620110761915583480">Hifadhi Faili</translation>
 <translation id="6699343763173986273">Wimbo Unaofuata kwenye Media</translation>
+<translation id="673773751041746814">Ufutaji</translation>
 <translation id="6786750046913594791">Funga Folda</translation>
 <translation id="6808150112686056157">Simamisha Media</translation>
 <translation id="6845383723252244143">Chagua Folda</translation>

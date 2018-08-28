@@ -5,6 +5,7 @@
 #include "ui/views/accessibility/view_accessibility.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "ui/accessibility/platform/ax_platform_node.h"
 #include "ui/base/ui_features.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
@@ -42,7 +43,7 @@ std::unique_ptr<ViewAccessibility> ViewAccessibility::Create(View* view) {
 ViewAccessibility::ViewAccessibility(View* view)
     : owner_view_(view), is_leaf_(false) {}
 
-ViewAccessibility::~ViewAccessibility() {}
+ViewAccessibility::~ViewAccessibility() = default;
 
 const ui::AXUniqueId& ViewAccessibility::GetUniqueId() const {
   return unique_id_;

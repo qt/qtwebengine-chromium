@@ -17,6 +17,7 @@
 #include "base/process/kill.h"
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/invalidate_type.h"
@@ -30,6 +31,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/stop_find_action.h"
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
+#include "third_party/blink/public/mojom/loader/pause_subresource_loading_handle.mojom.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_modes.h"
 #include "ui/accessibility/ax_tree_update.h"
@@ -215,6 +217,12 @@ class WebContents : public PageNavigator,
 
     // Sandboxing flags set on the new WebContents.
     blink::WebSandboxFlags starting_sandbox_flags;
+
+    // Value used to set the last time the WebContents was made active, this is
+    // the value that'll be returned by GetLastActiveTime(). If this is left
+    // default initialized then the value is not passed on to the WebContents
+    // and GetLastActiveTime() will return the WebContents' creation time.
+    base::TimeTicks last_active_time;
   };
 
   // Creates a new WebContents.
@@ -464,7 +472,7 @@ class WebContents : public PageNavigator,
 
   // Indicates whether this tab should be considered crashed. The setter will
   // also notify the delegate when the flag is changed.
-  virtual bool IsCrashed() const  = 0;
+  virtual bool IsCrashed() const = 0;
   virtual void SetIsCrashed(base::TerminationStatus status, int error_code) = 0;
 
   virtual base::TerminationStatus GetCrashedStatus() const = 0;
@@ -477,13 +485,14 @@ class WebContents : public PageNavigator,
   // change.
   virtual void NotifyNavigationStateChanged(InvalidateTypes changed_flags) = 0;
 
-  // Notifies the WebContents that audio started or stopped being audible.
-  virtual void OnAudioStateChanged(bool is_audio_playing) = 0;
+  // Notifies the WebContents that audio state has changed. The contents is
+  // aware of all of its potential sources of audio and needs to poll them
+  // directly to determine its aggregate audio state.
+  virtual void OnAudioStateChanged() = 0;
 
   // Get/Set the last time that the WebContents was made active (either when it
   // was created or shown with WasShown()).
   virtual base::TimeTicks GetLastActiveTime() const = 0;
-  virtual void SetLastActiveTime(base::TimeTicks last_active_time) = 0;
 
   // Invoked when the WebContents becomes shown/hidden. A hidden WebContents
   // isn't painted on the screen.
@@ -530,8 +539,10 @@ class WebContents : public PageNavigator,
   // Stop any pending navigation.
   virtual void Stop() = 0;
 
-  // Freeze the current page.
-  virtual void FreezePage() = 0;
+  // Freezes or unfreezes the current page. A frozen page runs as few tasks as
+  // possible. This cannot be called when the page is visible. If the page is
+  // made visible after this is called, it is automatically unfrozen.
+  virtual void SetPageFrozen(bool frozen) = 0;
 
   // Creates a new WebContents with the same state as this one. The returned
   // heap-allocated pointer is owned by the caller.
@@ -543,6 +554,13 @@ class WebContents : public PageNavigator,
   // Reloads all the Lo-Fi images in this WebContents. Ignores the cache and
   // reloads from the network.
   virtual void ReloadLoFiImages() = 0;
+
+  // Attains PauseSubresourceLoadingHandles for each frame in the web contents.
+  // As long as these handles are not deleted, subresources will continue to be
+  // deferred until an internal navigation happens in the frame. Holding handles
+  // for deleted or re-navigated frames has no effect.
+  virtual std::vector<blink::mojom::PauseSubresourceLoadingHandlePtr>
+  PauseSubresourceLoading() = 0;
 
   // Editing commands ----------------------------------------------------------
 
@@ -692,9 +710,7 @@ class WebContents : public PageNavigator,
   virtual void SystemDragEnded(RenderWidgetHost* source_rwh) = 0;
 
   // The user initiated navigation to this page (as opposed to a navigation that
-  // could have been triggered without user interaction). Used to avoid
-  // uninitiated user downloads (aka carpet bombing), see DownloadRequestLimiter
-  // for details.
+  // could have been triggered without user interaction).
   virtual void NavigatedByUser() = 0;
 
   // Indicates if this tab was explicitly closed by the user (control-w, close
@@ -784,13 +800,6 @@ class WebContents : public PageNavigator,
                             bool bypass_cache,
                             ImageDownloadCallback callback) = 0;
 
-  // Returns true if the WebContents is responsible for displaying a subframe
-  // in a different process from its parent page.
-  // TODO(lazyboy): https://crbug.com/542893: this doesn't really belong here.
-  // With site isolation, this should be removed since we can then embed iframes
-  // in different processes.
-  virtual bool IsSubframe() const = 0;
-
   // Finds text on a page. |search_text| should not be empty.
   virtual void Find(int request_id,
                     const base::string16& search_text,
@@ -799,9 +808,6 @@ class WebContents : public PageNavigator,
   // Notifies the renderer that the user has closed the FindInPage window
   // (and what action to take regarding the selection).
   virtual void StopFinding(StopFindAction action) = 0;
-
-  // Returns true if audio has recently been audible from the WebContents.
-  virtual bool WasRecentlyAudible() = 0;
 
   // Returns true if audio has been audible from the WebContents since the last
   // navigation.

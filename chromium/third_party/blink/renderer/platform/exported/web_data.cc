@@ -32,6 +32,8 @@
 
 #include "third_party/blink/renderer/platform/shared_buffer.h"
 
+#include <vector>
+
 namespace blink {
 
 void WebData::Reset() {
@@ -53,7 +55,20 @@ size_t WebData::size() const {
 }
 
 size_t WebData::GetSomeData(const char*& data, size_t position) const {
-  return private_.IsNull() ? 0 : private_->GetSomeData(data, position);
+  data = nullptr;
+  if (private_.IsNull())
+    return 0;
+  const auto it = private_->GetIteratorAt(position);
+  if (it == private_->cend())
+    return 0;
+  data = it->data();
+  return it->size();
+}
+
+WebVector<char> WebData::Copy() const {
+  return private_.IsNull()
+             ? WebVector<char>()
+             : WebVector<char>(private_->CopyAs<std::vector<char>>());
 }
 
 WebData::WebData(scoped_refptr<SharedBuffer> buffer)

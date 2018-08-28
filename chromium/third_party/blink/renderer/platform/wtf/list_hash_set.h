@@ -76,10 +76,7 @@ template <typename ValueArg,
           typename HashArg = typename DefaultHash<ValueArg>::Hash,
           typename AllocatorArg =
               ListHashSetAllocator<ValueArg, inlineCapacity>>
-class ListHashSet
-    : public ConditionalDestructor<
-          ListHashSet<ValueArg, inlineCapacity, HashArg, AllocatorArg>,
-          AllocatorArg::kIsGarbageCollected> {
+class ListHashSet {
   typedef AllocatorArg Allocator;
   USE_ALLOCATOR(ListHashSet, Allocator);
 
@@ -149,7 +146,7 @@ class ListHashSet
   ListHashSet(ListHashSet&&);
   ListHashSet& operator=(const ListHashSet&);
   ListHashSet& operator=(ListHashSet&&);
-  void Finalize();
+  ~ListHashSet();
 
   void Swap(ListHashSet&);
 
@@ -246,7 +243,6 @@ class ListHashSet
   void CreateAllocatorIfNeeded() {
     allocator_provider_.CreateAllocatorIfNeeded();
   }
-  void Deallocate(Node* node) const { allocator_provider_.deallocate(node); }
 
   iterator MakeIterator(Node* position) { return iterator(this, position); }
   const_iterator MakeConstIterator(Node* position) const {
@@ -309,11 +305,6 @@ struct ListHashSetAllocator : public PartitionAllocator {
 
     void Swap(AllocatorProvider& other) {
       std::swap(allocator_, other.allocator_);
-    }
-
-    void Deallocate(Node* node) const {
-      DCHECK(allocator_);
-      allocator_->Deallocate(node);
     }
 
     ListHashSetAllocator* Get() const {
@@ -804,10 +795,14 @@ inline void ListHashSet<T, inlineCapacity, U, V>::Swap(ListHashSet& other) {
   allocator_provider_.Swap(other.allocator_provider_);
 }
 
+// For design of the destructor, please refer to
+// [here](https://docs.google.com/document/d/1AoGTvb3tNLx2tD1hNqAfLRLmyM59GM0O-7rCHTT_7_U/)
 template <typename T, size_t inlineCapacity, typename U, typename V>
-inline void ListHashSet<T, inlineCapacity, U, V>::Finalize() {
-  static_assert(!Allocator::kIsGarbageCollected,
-                "heap allocated ListHashSet should never call finalize()");
+inline ListHashSet<T, inlineCapacity, U, V>::~ListHashSet() {
+  // If this is called during GC sweeping, it must not touch other heap objects
+  // such as the ListHashSetNodes that is touching in DeleteAllNodes().
+  if (Allocator::IsSweepForbidden())
+    return;
   DeleteAllNodes();
   allocator_provider_.ReleaseAllocator();
 }

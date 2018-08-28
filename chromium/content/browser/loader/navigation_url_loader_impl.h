@@ -44,7 +44,10 @@ class CONTENT_EXPORT NavigationURLLoaderImpl : public NavigationURLLoader {
   ~NavigationURLLoaderImpl() override;
 
   // NavigationURLLoader implementation:
-  void FollowRedirect() override;
+  void FollowRedirect(const base::Optional<std::vector<std::string>>&
+                          to_be_removed_request_headers,
+                      const base::Optional<net::HttpRequestHeaders>&
+                          modified_request_headers) override;
   void ProceedWithResponse() override;
 
   void OnReceiveResponse(
@@ -53,8 +56,7 @@ class CONTENT_EXPORT NavigationURLLoaderImpl : public NavigationURLLoader {
       std::unique_ptr<NavigationData> navigation_data,
       const GlobalRequestID& global_request_id,
       bool is_download,
-      bool is_stream,
-      network::mojom::DownloadedTempFilePtr downloaded_file);
+      bool is_stream);
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          scoped_refptr<network::ResourceResponse> response);
   void OnComplete(const network::URLLoaderCompletionStatus& status);

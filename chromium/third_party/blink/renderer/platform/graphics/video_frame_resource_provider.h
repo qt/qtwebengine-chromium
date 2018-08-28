@@ -6,13 +6,16 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_VIDEO_FRAME_RESOURCE_PROVIDER_H_
 
 #include "base/memory/weak_ptr.h"
-#include "cc/resources/layer_tree_resource_provider.h"
-#include "cc/resources/video_resource_updater.h"
 #include "cc/trees/layer_tree_settings.h"
-#include "components/viz/common/resources/shared_bitmap_reporter.h"
-#include "media/base/video_frame.h"
+#include "components/viz/client/client_resource_provider.h"
+#include "components/viz/client/shared_bitmap_reporter.h"
 #include "third_party/blink/public/platform/web_video_frame_submitter.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
+
+namespace media {
+class VideoFrame;
+class VideoResourceUpdater;
+}  // namespace media
 
 namespace viz {
 class RenderPass;
@@ -34,7 +37,8 @@ class PLATFORM_EXPORT VideoFrameResourceProvider {
   virtual void Initialize(viz::ContextProvider*, viz::SharedBitmapReporter*);
   virtual void AppendQuads(viz::RenderPass*,
                            scoped_refptr<media::VideoFrame>,
-                           media::VideoRotation);
+                           media::VideoRotation,
+                           bool is_opaque);
   virtual void ReleaseFrameResources();
 
   // Once the context is lost, we must call Initialize again before we can
@@ -54,8 +58,8 @@ class PLATFORM_EXPORT VideoFrameResourceProvider {
 
   WebContextProviderCallback context_provider_callback_;
   viz::ContextProvider* context_provider_;
-  std::unique_ptr<cc::LayerTreeResourceProvider> resource_provider_;
-  std::unique_ptr<cc::VideoResourceUpdater> resource_updater_;
+  std::unique_ptr<viz::ClientResourceProvider> resource_provider_;
+  std::unique_ptr<media::VideoResourceUpdater> resource_updater_;
 };
 
 }  // namespace blink

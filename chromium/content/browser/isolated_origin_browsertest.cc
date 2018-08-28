@@ -30,6 +30,7 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "services/network/public/cpp/features.h"
+#include "third_party/blink/public/common/features.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -997,11 +998,12 @@ IN_PROC_BROWSER_TEST_F(IsolatedOriginTest, IsolatedOriginWithSubdomain) {
 // This class allows intercepting the OpenLocalStorage method and changing
 // the parameters to the real implementation of it.
 class StoragePartitonInterceptor
-    : public mojom::StoragePartitionServiceInterceptorForTesting,
+    : public blink::mojom::StoragePartitionServiceInterceptorForTesting,
       public RenderProcessHostObserver {
  public:
-  StoragePartitonInterceptor(RenderProcessHostImpl* rph,
-                             mojom::StoragePartitionServiceRequest request) {
+  StoragePartitonInterceptor(
+      RenderProcessHostImpl* rph,
+      blink::mojom::StoragePartitionServiceRequest request) {
     StoragePartitionImpl* storage_partition =
         static_cast<StoragePartitionImpl*>(rph->GetStoragePartition());
 
@@ -1030,7 +1032,7 @@ class StoragePartitonInterceptor
 
   // Allow all methods that aren't explicitly overriden to pass through
   // unmodified.
-  mojom::StoragePartitionService* GetForwardingInterface() override {
+  blink::mojom::StoragePartitionService* GetForwardingInterface() override {
     return storage_partition_service_;
   }
 
@@ -1038,7 +1040,7 @@ class StoragePartitonInterceptor
   // renderer process sending incorrect data to the browser process, so
   // security checks can be tested.
   void OpenLocalStorage(const url::Origin& origin,
-                        mojom::LevelDBWrapperRequest request) override {
+                        blink::mojom::StorageAreaRequest request) override {
     url::Origin mismatched_origin =
         url::Origin::Create(GURL("http://abc.foo.com"));
     GetForwardingInterface()->OpenLocalStorage(mismatched_origin,
@@ -1048,14 +1050,14 @@ class StoragePartitonInterceptor
  private:
   // Keep a pointer to the original implementation of the service, so all
   // calls can be forwarded to it.
-  mojom::StoragePartitionService* storage_partition_service_;
+  blink::mojom::StoragePartitionService* storage_partition_service_;
 
   DISALLOW_COPY_AND_ASSIGN(StoragePartitonInterceptor);
 };
 
 void CreateTestStoragePartitionService(
     RenderProcessHostImpl* rph,
-    mojom::StoragePartitionServiceRequest request) {
+    blink::mojom::StoragePartitionServiceRequest request) {
   // This object will register as RenderProcessHostObserver, so it will
   // clean itself automatically on process exit.
   new StoragePartitonInterceptor(rph, std::move(request));
@@ -1235,25 +1237,14 @@ IN_PROC_BROWSER_TEST_F(IsolatedOriginTest, SubframeErrorPages) {
 class IsolatedOriginTestWithMojoBlobURLs : public IsolatedOriginTest {
  public:
   IsolatedOriginTestWithMojoBlobURLs() {
-    // Enabling NetworkService implies enabling MojoBlobURLs.
-    scoped_feature_list_.InitAndEnableFeature(
-        network::features::kNetworkService);
+    scoped_feature_list_.InitAndEnableFeature(blink::features::kMojoBlobURLs);
   }
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-#if defined(OS_ANDROID) || defined(OS_MACOSX)
-// Times out on android, and crashes on mac due to its dependency on network
-// service.
-#define MAYBE_NavigateToBlobURL DISABLED_NavigateToBlobURL
-#else
-#define MAYBE_NavigateToBlobURL NavigateToBlobURL
-#endif
-
-IN_PROC_BROWSER_TEST_F(IsolatedOriginTestWithMojoBlobURLs,
-                       MAYBE_NavigateToBlobURL) {
+IN_PROC_BROWSER_TEST_F(IsolatedOriginTestWithMojoBlobURLs, NavigateToBlobURL) {
   GURL top_url(
       embedded_test_server()->GetURL("www.foo.com", "/page_with_iframe.html"));
   EXPECT_TRUE(NavigateToURL(shell(), top_url));

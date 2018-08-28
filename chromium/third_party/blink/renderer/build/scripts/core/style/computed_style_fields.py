@@ -2,11 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from name_utilities import (
-    enum_value_name, class_member_name, method_name, class_name
-)
-
 from itertools import chain
+
+from blinkbuild.name_style_converter import NameStyleConverter
 
 
 def _flatten_list(x):
@@ -31,7 +29,7 @@ class Group(object):
     """Represents a group of fields stored together in a class.
 
     Attributes:
-        name: The name of the group as a string.
+        name: The name of the group as a string, or None.
         subgroups: List of Group instances that are stored as subgroups under
             this group.
         fields: List of Field instances stored directly under this group.
@@ -43,8 +41,9 @@ class Group(object):
         self.fields = fields
         self.parent = None
 
-        self.type_name = class_name(['style', name, 'data'])
-        self.member_name = class_member_name([name, 'data'])
+        converter = NameStyleConverter(name or '')
+        self.type_name = converter.to_class_name(prefix='style', suffix='data')
+        self.member_name = converter.to_class_data_member(suffix='data')
         self.num_32_bit_words_for_bit_fields = _num_32_bit_words_for_bit_fields(
             field for field in fields if field.is_bit_field
         )
@@ -78,7 +77,8 @@ class Enum(object):
     """Represents a generated enum in ComputedStyleBaseConstants."""
     def __init__(self, type_name, keywords, is_set):
         self.type_name = type_name
-        self.values = [enum_value_name(keyword) for keyword in keywords]
+        self.values = [NameStyleConverter(keyword).to_enum_value()
+                       for keyword in keywords]
         self.is_set = is_set
 
 
@@ -138,7 +138,8 @@ class Field(object):
                  custom_copy, custom_compare, mutable, getter_method_name,
                  setter_method_name, initial_method_name,
                  computed_style_custom_functions, **kwargs):
-        self.name = class_member_name(name_for_methods)
+        name_source = NameStyleConverter(name_for_methods)
+        self.name = name_source.to_class_data_member()
         self.property_name = property_name
         self.type_name = type_name
         self.wrapper_pointer_name = wrapper_pointer_name
@@ -154,13 +155,11 @@ class Field(object):
         # Method names
         self.getter_method_name = getter_method_name
         self.setter_method_name = setter_method_name
-        self.internal_getter_method_name = method_name([self.name, 'internal'])
-        self.internal_mutable_method_name = method_name(
-            ['mutable', name_for_methods, 'internal'])
-        self.internal_setter_method_name = method_name(
-            [setter_method_name, 'internal'])
+        self.internal_getter_method_name = name_source.to_function_name(suffix='internal')
+        self.internal_mutable_method_name = name_source.to_function_name(prefix='mutable', suffix='internal')
+        self.internal_setter_method_name = NameStyleConverter(setter_method_name).to_function_name(suffix='internal')
         self.initial_method_name = initial_method_name
-        self.resetter_method_name = method_name(['reset', name_for_methods])
+        self.resetter_method_name = name_source.to_function_name(prefix='reset')
         self.computed_style_custom_functions = computed_style_custom_functions
         # Only bitfields have sizes.
         self.is_bit_field = self.size is not None
@@ -177,7 +176,6 @@ class Field(object):
             assert self.is_inherited or not self.is_independent, \
                 'Only inherited fields can be independent'
 
-            self.is_inherited_method_name = method_name(
-                [name_for_methods, 'is inherited'])
+            self.is_inherited_method_name = name_source.to_function_name(suffix=['is', 'inherited'])
         assert len(kwargs) == 0, \
             'Unexpected arguments provided to Field: ' + str(kwargs)

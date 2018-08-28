@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/core/page/drag_state.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/svg/svg_document_extensions.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
 #include "third_party/blink/renderer/platform/histogram.h"
@@ -61,11 +62,13 @@ String CanvasRegionId(Node* node, const WebMouseEvent& mouse_event) {
 
 // The amount of time to wait before sending a fake mouse event triggered
 // during a scroll.
-constexpr double kFakeMouseMoveIntervalDuringScroll = 0.1;
+constexpr TimeDelta kFakeMouseMoveIntervalDuringScroll =
+    TimeDelta::FromMilliseconds(100);
 
 // The amount of time to wait before sending a fake mouse event on style and
 // layout changes sets to 50Hz, same as common screen refresh rate.
-constexpr double kFakeMouseMoveIntervalPerFrame = 0.02;
+constexpr TimeDelta kFakeMouseMoveIntervalPerFrame =
+    TimeDelta::FromMilliseconds(20);
 
 // TODO(crbug.com/653490): Read these values from the OS.
 #if defined(OS_MACOSX)
@@ -113,6 +116,7 @@ void MouseEventManager::Clear() {
   drag_start_pos_ = LayoutPoint();
   fake_mouse_move_event_timer_.Stop();
   ResetDragState();
+  ClearDragDataTransfer();
 }
 
 MouseEventManager::~MouseEventManager() = default;
@@ -393,34 +397,18 @@ void MouseEventManager::SetNodeUnderMouse(
       EventHandlingUtil::LayerForNode(node_under_mouse_.Get());
   Page* page = frame_->GetPage();
 
-  if (last_node_under_mouse &&
-      (!node_under_mouse_ ||
-       node_under_mouse_->GetDocument() != frame_->GetDocument())) {
-    // The mouse has moved between frames.
-    if (LocalFrame* frame = last_node_under_mouse->GetDocument().GetFrame()) {
-      if (LocalFrameView* frame_view = frame->View())
-        frame_view->MouseExitedContentArea();
-    }
-  } else if (page && (layer_for_last_node &&
-                      (!layer_for_node_under_mouse ||
-                       layer_for_node_under_mouse != layer_for_last_node))) {
+  if (page && (layer_for_last_node &&
+               (!layer_for_node_under_mouse ||
+                layer_for_node_under_mouse != layer_for_last_node))) {
     // The mouse has moved between layers.
     if (ScrollableArea* scrollable_area_for_last_node =
             EventHandlingUtil::AssociatedScrollableArea(layer_for_last_node))
       scrollable_area_for_last_node->MouseExitedContentArea();
   }
 
-  if (node_under_mouse_ &&
-      (!last_node_under_mouse ||
-       last_node_under_mouse->GetDocument() != frame_->GetDocument())) {
-    // The mouse has moved between frames.
-    if (LocalFrame* frame = node_under_mouse_->GetDocument().GetFrame()) {
-      if (LocalFrameView* frame_view = frame->View())
-        frame_view->MouseEnteredContentArea();
-    }
-  } else if (page && (layer_for_node_under_mouse &&
-                      (!layer_for_last_node ||
-                       layer_for_node_under_mouse != layer_for_last_node))) {
+  if (page && (layer_for_node_under_mouse &&
+               (!layer_for_last_node ||
+                layer_for_node_under_mouse != layer_for_last_node))) {
     // The mouse has moved between layers.
     if (ScrollableArea* scrollable_area_for_node_under_mouse =
             EventHandlingUtil::AssociatedScrollableArea(
@@ -588,7 +576,7 @@ void MouseEventManager::HandleMousePressEventUpdateStates(
   mouse_down_timestamp_ = mouse_event.TimeStamp();
 
   if (LocalFrameView* view = frame_->View()) {
-    mouse_down_pos_ = view->RootFrameToContents(
+    mouse_down_pos_ = view->ConvertFromRootFrame(
         FlooredIntPoint(mouse_event.PositionInRootFrame()));
   } else {
     InvalidateClick();
@@ -638,7 +626,7 @@ void MouseEventManager::DispatchFakeMouseMoveEventSoon(
   // during a scroll. This avoids a potential source of scroll jank.
   // Or dispatch a fake mouse move to update hover states when the layout
   // changes.
-  double interval =
+  TimeDelta interval =
       fake_mouse_move_reason ==
               MouseEventManager::FakeMouseMoveReason::kDuringScroll
           ? kFakeMouseMoveIntervalDuringScroll
@@ -652,7 +640,7 @@ void MouseEventManager::DispatchFakeMouseMoveEventSoonInQuad(
   if (!view)
     return;
 
-  if (!quad.ContainsPoint(view->ViewportToContents(last_known_mouse_position_)))
+  if (!quad.ContainsPoint(view->ViewportToFrame(last_known_mouse_position_)))
     return;
 
   DispatchFakeMouseMoveEventSoon(
@@ -668,12 +656,6 @@ WebInputEventResult MouseEventManager::HandleMousePressEvent(
 
   frame_->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
 
-  if (LocalFrameView* frame_view = frame_->View()) {
-    if (frame_view->IsPointInScrollbarCorner(
-            FlooredIntPoint(event.Event().PositionInRootFrame())))
-      return WebInputEventResult::kNotHandled;
-  }
-
   bool single_click = event.Event().click_count <= 1;
 
   mouse_down_may_start_drag_ =
@@ -687,8 +669,8 @@ WebInputEventResult MouseEventManager::HandleMousePressEvent(
         single_click) {
       svg_pan_ = true;
       frame_->GetDocument()->AccessSVGExtensions().StartPan(
-          frame_->View()->RootFrameToContents(
-              FlooredIntPoint(event.Event().PositionInRootFrame())));
+          frame_->View()->ConvertFromRootFrame(FloatPoint(
+              FlooredIntPoint(event.Event().PositionInRootFrame()))));
       return WebInputEventResult::kHandledSystem;
     }
   }
@@ -770,7 +752,7 @@ bool MouseEventManager::HandleDragDropIfPossible(
                                                     mouse_drag_event);
     mouse_down_may_start_drag_ = true;
     ResetDragState();
-    mouse_down_pos_ = frame_->View()->RootFrameToContents(
+    mouse_down_pos_ = frame_->View()->ConvertFromRootFrame(
         FlooredIntPoint(mouse_drag_event.PositionInRootFrame()));
     return HandleDrag(mev, DragInitiator::kTouch);
   }
@@ -888,8 +870,9 @@ bool MouseEventManager::HandleDrag(const MouseEventWithHitTestResults& event,
 
   if (mouse_down_may_start_drag_) {
     HitTestRequest request(HitTestRequest::kReadOnly);
-    HitTestResult result(request, mouse_down_pos_);
-    frame_->ContentLayoutObject()->HitTest(result);
+    HitTestLocation location(mouse_down_pos_);
+    HitTestResult result(request, location);
+    frame_->ContentLayoutObject()->HitTest(location, result);
     Node* node = result.InnerNode();
     if (node) {
       DragController::SelectionDragPolicy selection_drag_policy =
@@ -1113,7 +1096,7 @@ bool MouseEventManager::DragThresholdExceeded(
   if (!view)
     return false;
   IntPoint drag_location =
-      view->RootFrameToContents(drag_location_in_root_frame);
+      view->ConvertFromRootFrame(drag_location_in_root_frame);
   IntSize delta = drag_location - mouse_down_pos_;
 
   // WebKit's drag thresholds depend on the type of object being dragged. If we
@@ -1138,7 +1121,7 @@ bool MouseEventManager::HandleSvgPanIfNeeded(bool is_release_event) {
     return false;
   svg_pan_ = !is_release_event;
   frame_->GetDocument()->AccessSVGExtensions().UpdatePan(
-      frame_->View()->ViewportToContents(last_known_mouse_position_));
+      frame_->View()->ViewportToFrame(last_known_mouse_position_));
   return true;
 }
 

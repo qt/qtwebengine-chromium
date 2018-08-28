@@ -60,6 +60,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
+using blink::WebAutofillState;
 using blink::WebAutofillClient;
 using blink::WebConsoleMessage;
 using blink::WebDocument;
@@ -125,8 +126,8 @@ AutofillAgent::ShowSuggestionsOptions::ShowSuggestionsOptions()
     : autofill_on_empty_values(false),
       requires_caret_at_end(false),
       show_full_suggestion_list(false),
-      show_password_suggestions_only(false) {
-}
+      show_password_suggestions_only(false),
+      autoselect_first_suggestion(false) {}
 
 AutofillAgent::AutofillAgent(content::RenderFrame* render_frame,
                              PasswordAutofillAgent* password_autofill_agent,
@@ -137,7 +138,7 @@ AutofillAgent::AutofillAgent(content::RenderFrame* render_frame,
       password_autofill_agent_(password_autofill_agent),
       password_generation_agent_(password_generation_agent),
       autofill_query_id_(0),
-      was_query_node_autofilled_(false),
+      query_node_autofill_state_(WebAutofillState::kNotFilled),
       ignore_text_changes_(false),
       is_popup_possibly_visible_(false),
       is_generation_popup_possibly_visible_(false),
@@ -192,6 +193,9 @@ void AutofillAgent::DidFinishDocumentLoad() {
 }
 
 void AutofillAgent::DidChangeScrollOffset() {
+  if (element_.IsNull())
+    return;
+
   if (!focus_requires_scroll_) {
     // Post a task here since scroll offset may change during layout.
     // (https://crbug.com/804886)
@@ -208,7 +212,7 @@ void AutofillAgent::DidChangeScrollOffset() {
 
 void AutofillAgent::DidChangeScrollOffsetImpl(
     const WebFormControlElement& element) {
-  if (element != element_ || focus_requires_scroll_ ||
+  if (element != element_ || element_.IsNull() || focus_requires_scroll_ ||
       !is_popup_possibly_visible_ || !element_.Focused())
     return;
 
@@ -352,6 +356,8 @@ void AutofillAgent::TextFieldDidReceiveKeyDown(const WebInputElement& element,
     ShowSuggestionsOptions options;
     options.autofill_on_empty_values = true;
     options.requires_caret_at_end = true;
+    options.autoselect_first_suggestion =
+        ShouldAutoselectFirstSuggestionOnArrowDown();
     ShowSuggestions(element, options);
   }
 }
@@ -408,6 +414,24 @@ void AutofillAgent::DoAcceptDataListSuggestion(
   DoFillFieldWithValue(new_value, input_element);
 }
 
+void AutofillAgent::TriggerRefillIfNeeded(const FormData& form) {
+  if (!base::FeatureList::IsEnabled(features::kAutofillDynamicForms))
+    return;
+  FormFieldData field;
+  FormData updated_form;
+  if (form_util::FindFormAndFieldForFormControlElement(element_, &updated_form,
+                                                       &field) &&
+      !form.DynamicallySameFormAs(updated_form)) {
+    base::TimeTicks forms_seen_timestamp = base::TimeTicks::Now();
+    WebLocalFrame* frame = render_frame()->GetWebFrame();
+    std::vector<FormData> forms;
+    forms.push_back(updated_form);
+    // Always communicate to browser process for topmost frame.
+    if (!forms.empty() || !frame->Parent())
+      GetAutofillDriver()->FormsSeen(forms, forms_seen_timestamp);
+  }
+}
+
 // mojom::AutofillAgent:
 void AutofillAgent::FillForm(int32_t id, const FormData& form) {
   if (element_.IsNull())
@@ -421,12 +445,14 @@ void AutofillAgent::FillForm(int32_t id, const FormData& form) {
   if (base::FeatureList::IsEnabled(features::kAutofillDynamicForms))
     ReplaceElementIfNowInvalid(form);
 
-  was_query_node_autofilled_ = element_.IsAutofilled();
+  query_node_autofill_state_ = element_.GetAutofillState();
   form_util::FillForm(form, element_);
   if (!element_.Form().IsNull())
     UpdateLastInteractedForm(element_.Form());
 
   GetAutofillDriver()->DidFillAutofillFormData(form, base::TimeTicks::Now());
+
+  TriggerRefillIfNeeded(form);
 }
 
 void AutofillAgent::PreviewForm(int32_t id, const FormData& form) {
@@ -436,7 +462,7 @@ void AutofillAgent::PreviewForm(int32_t id, const FormData& form) {
   if (id != autofill_query_id_)
     return;
 
-  was_query_node_autofilled_ = element_.IsAutofilled();
+  query_node_autofill_state_ = element_.GetAutofillState();
   form_util::PreviewForm(form, element_);
 
   GetAutofillDriver()->DidPreviewAutofillFormData();
@@ -469,7 +495,7 @@ void AutofillAgent::ClearPreviewedForm() {
     return;
 
   form_util::ClearPreviewedFormWithElement(element_,
-                                           was_query_node_autofilled_);
+                                           query_node_autofill_state_);
 }
 
 void AutofillAgent::FillFieldWithValue(const base::string16& value) {
@@ -479,7 +505,7 @@ void AutofillAgent::FillFieldWithValue(const base::string16& value) {
   WebInputElement* input_element = ToWebInputElement(&element_);
   if (input_element) {
     DoFillFieldWithValue(value, input_element);
-    input_element->SetAutofilled(true);
+    input_element->SetAutofillState(WebAutofillState::kAutofilled);
   }
 }
 
@@ -624,7 +650,7 @@ void AutofillAgent::ShowSuggestions(const WebFormControlElement& element,
     return;
   }
 
-  QueryAutofillSuggestions(element);
+  QueryAutofillSuggestions(element, options.autoselect_first_suggestion);
 }
 
 void AutofillAgent::SetQueryPasswordSuggestion(bool query) {
@@ -640,7 +666,8 @@ void AutofillAgent::SetFocusRequiresScroll(bool require) {
 }
 
 void AutofillAgent::QueryAutofillSuggestions(
-    const WebFormControlElement& element) {
+    const WebFormControlElement& element,
+    bool autoselect_first_suggestion) {
   if (!element.GetDocument().GetFrame())
     return;
 
@@ -683,7 +710,8 @@ void AutofillAgent::QueryAutofillSuggestions(
   GetAutofillDriver()->SetDataList(data_list_values, data_list_labels);
   GetAutofillDriver()->QueryFormFieldAutofill(
       autofill_query_id_, form, field,
-      render_frame()->GetRenderView()->ElementBoundsInWindow(element_));
+      render_frame()->GetRenderView()->ElementBoundsInWindow(element_),
+      autoselect_first_suggestion);
 }
 
 void AutofillAgent::DoFillFieldWithValue(const base::string16& value,
@@ -696,9 +724,9 @@ void AutofillAgent::DoFillFieldWithValue(const base::string16& value,
 
 void AutofillAgent::DoPreviewFieldWithValue(const base::string16& value,
                                             WebInputElement* node) {
-  was_query_node_autofilled_ = element_.IsAutofilled();
+  query_node_autofill_state_ = element_.GetAutofillState();
   node->SetSuggestedValue(blink::WebString::FromUTF16(value));
-  node->SetAutofilled(true);
+  node->SetAutofillState(WebAutofillState::kPreviewed);
   form_util::PreviewSuggestion(node->SuggestedValue().Utf16(),
                                node->Value().Utf16(), node);
 }
@@ -1056,7 +1084,7 @@ const mojom::AutofillDriverPtr& AutofillAgent::GetAutofillDriver() {
   return autofill_driver_;
 }
 
-const mojom::PasswordManagerDriverPtr&
+const mojom::PasswordManagerDriverAssociatedPtr&
 AutofillAgent::GetPasswordManagerDriver() {
   DCHECK(password_autofill_agent_);
   return password_autofill_agent_->GetPasswordManagerDriver();

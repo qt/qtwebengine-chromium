@@ -7,7 +7,6 @@
 
 #include "SkCanvas.h"
 #include "SkData.h"
-#include "SkDrawFilter.h"
 #include "SkDrawShadowInfo.h"
 #include "SkImage.h"
 #include "SkImageFilter.h"
@@ -47,8 +46,8 @@ static const D* pod(const T* op, size_t offset = 0) {
 }
 
 namespace {
-#define TYPES(M)                                                               \
-    M(SetDrawFilter) M(Flush) M(Save) M(Restore) M(SaveLayer)                   \
+#define TYPES(M)                                                                \
+    M(Flush) M(Save) M(Restore) M(SaveLayer)                                    \
     M(Concat) M(SetMatrix) M(Translate)                                         \
     M(ClipPath) M(ClipRect) M(ClipRRect) M(ClipRegion)                          \
     M(DrawPaint) M(DrawPath) M(DrawRect) M(DrawRegion) M(DrawOval) M(DrawArc)   \
@@ -67,19 +66,6 @@ namespace {
         uint32_t skip : 24;
     };
     static_assert(sizeof(Op) == 4, "");
-
-    struct SetDrawFilter final : Op {
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-        static const auto kType = Type::SetDrawFilter;
-        SetDrawFilter(SkDrawFilter* df) : drawFilter(sk_ref_sp(df)) {}
-        sk_sp<SkDrawFilter> drawFilter;
-#endif
-        void draw(SkCanvas* c, const SkMatrix&) const {
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-            c->setDrawFilter(drawFilter.get());
-#endif
-        }
-    };
 
     struct Flush final : Op {
         static const auto kType = Type::Flush;
@@ -459,13 +445,17 @@ namespace {
     };
     struct DrawVertices final : Op {
         static const auto kType = Type::DrawVertices;
-        DrawVertices(const SkVertices* v, SkBlendMode m, const SkPaint& p)
-            : vertices(sk_ref_sp(const_cast<SkVertices*>(v))), mode(m), paint(p) {}
+        DrawVertices(const SkVertices* v, int bc, SkBlendMode m, const SkPaint& p)
+            : vertices(sk_ref_sp(const_cast<SkVertices*>(v)))
+            , boneCount(bc)
+            , mode(m)
+            , paint(p) {}
         sk_sp<SkVertices> vertices;
+        int boneCount;
         SkBlendMode mode;
         SkPaint paint;
         void draw(SkCanvas* c, const SkMatrix&) const {
-            c->drawVertices(vertices, mode, paint);
+            c->drawVertices(vertices, pod<SkMatrix>(this), boneCount, mode, paint);
         }
     };
     struct DrawAtlas final : Op {
@@ -537,12 +527,6 @@ inline void SkLiteDL::map(const Fn fns[], Args... args) const {
         ptr += skip;
     }
 }
-
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-void SkLiteDL::setDrawFilter(SkDrawFilter* df) {
-    this->push<SetDrawFilter>(0, df);
-}
-#endif
 
 void SkLiteDL::flush() { this->push<Flush>(0); }
 
@@ -676,8 +660,14 @@ void SkLiteDL::drawPoints(SkCanvas::PointMode mode, size_t count, const SkPoint 
     void* pod = this->push<DrawPoints>(count*sizeof(SkPoint), mode, count, paint);
     copy_v(pod, points,count);
 }
-void SkLiteDL::drawVertices(const SkVertices* vertices, SkBlendMode mode, const SkPaint& paint) {
-    this->push<DrawVertices>(0, vertices, mode, paint);
+void SkLiteDL::drawVertices(const SkVertices* vertices, const SkMatrix* bones, int boneCount,
+                            SkBlendMode mode, const SkPaint& paint) {
+    void* pod = this->push<DrawVertices>(boneCount * sizeof(SkMatrix),
+                                         vertices,
+                                         boneCount,
+                                         mode,
+                                         paint);
+    copy_v(pod, bones, boneCount);
 }
 void SkLiteDL::drawAtlas(const SkImage* atlas, const SkRSXform xforms[], const SkRect texs[],
                          const SkColor colors[], int count, SkBlendMode xfermode,
@@ -706,16 +696,11 @@ typedef void(*void_fn)(const void*);
 static const draw_fn draw_fns[] = { TYPES(M) };
 #undef M
 
-// Older libstdc++ has pre-standard std::has_trivial_destructor.
-#if defined(__GLIBCXX__) && (__GLIBCXX__ < 20130000)
-    template <typename T> using can_skip_destructor = std::has_trivial_destructor<T>;
-#else
-    template <typename T> using can_skip_destructor = std::is_trivially_destructible<T>;
-#endif
-
 // Most state ops (matrix, clip, save, restore) have a trivial destructor.
-#define M(T) !can_skip_destructor<T>::value ? [](const void* op) { ((const T*)op)->~T(); } \
-                                            : (void_fn)nullptr,
+#define M(T) !std::is_trivially_destructible<T>::value \
+    ? [](const void* op) { ((const T*)op)->~T(); }     \
+    : (void_fn)nullptr,
+
 static const void_fn dtor_fns[] = { TYPES(M) };
 #undef M
 

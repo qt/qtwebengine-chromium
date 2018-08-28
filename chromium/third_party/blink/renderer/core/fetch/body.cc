@@ -6,6 +6,7 @@
 
 #include <memory>
 #include "base/memory/scoped_refptr.h"
+#include "base/optional.h"
 #include "third_party/blink/public/platform/web_data_consumer_handle.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_array_buffer.h"
@@ -17,6 +18,7 @@
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_typed_array.h"
 #include "third_party/blink/renderer/core/url/url_search_params.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
 #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
@@ -40,7 +42,7 @@ class BodyConsumerBase : public GarbageCollectedFinalized<BodyConsumerBase>,
   }
 
   void Abort() override {
-    resolver_->Reject(DOMException::Create(kAbortError));
+    resolver_->Reject(DOMException::Create(DOMExceptionCode::kAbortError));
   }
 
   void Trace(blink::Visitor* visitor) override {
@@ -131,10 +133,11 @@ class BodyJsonConsumer final : public BodyConsumerBase {
 
 }  // namespace
 
-ScriptPromise Body::arrayBuffer(ScriptState* script_state) {
-  ScriptPromise promise = RejectInvalidConsumption(script_state);
-  if (!promise.IsEmpty())
-    return promise;
+ScriptPromise Body::arrayBuffer(ScriptState* script_state,
+                                ExceptionState& exception_state) {
+  RejectInvalidConsumption(script_state, exception_state);
+  if (exception_state.HadException())
+    return ScriptPromise();
 
   // When the main thread sends a V8::TerminateExecution() signal to a worker
   // thread, any V8 API on the worker thread starts returning an empty
@@ -146,31 +149,37 @@ ScriptPromise Body::arrayBuffer(ScriptState* script_state) {
     return ScriptPromise();
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
-  promise = resolver->Promise();
+  ScriptPromise promise = resolver->Promise();
   if (BodyBuffer()) {
     BodyBuffer()->StartLoading(FetchDataLoader::CreateLoaderAsArrayBuffer(),
-                               new BodyArrayBufferConsumer(resolver));
+                               new BodyArrayBufferConsumer(resolver),
+                               exception_state);
+    if (exception_state.HadException())
+      return ScriptPromise();
   } else {
     resolver->Resolve(DOMArrayBuffer::Create(0u, 1));
   }
   return promise;
 }
 
-ScriptPromise Body::blob(ScriptState* script_state) {
-  ScriptPromise promise = RejectInvalidConsumption(script_state);
-  if (!promise.IsEmpty())
-    return promise;
+ScriptPromise Body::blob(ScriptState* script_state,
+                         ExceptionState& exception_state) {
+  RejectInvalidConsumption(script_state, exception_state);
+  if (exception_state.HadException())
+    return ScriptPromise();
 
   // See above comment.
   if (!ExecutionContext::From(script_state))
     return ScriptPromise();
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
-  promise = resolver->Promise();
+  ScriptPromise promise = resolver->Promise();
   if (BodyBuffer()) {
     BodyBuffer()->StartLoading(
         FetchDataLoader::CreateLoaderAsBlobHandle(MimeType()),
-        new BodyBlobConsumer(resolver));
+        new BodyBlobConsumer(resolver), exception_state);
+    if (exception_state.HadException())
+      return ScriptPromise();
   } else {
     std::unique_ptr<BlobData> blob_data = BlobData::Create();
     blob_data->SetContentType(MimeType());
@@ -180,10 +189,11 @@ ScriptPromise Body::blob(ScriptState* script_state) {
   return promise;
 }
 
-ScriptPromise Body::formData(ScriptState* script_state) {
-  ScriptPromise promise = RejectInvalidConsumption(script_state);
-  if (!promise.IsEmpty())
-    return promise;
+ScriptPromise Body::formData(ScriptState* script_state,
+                             ExceptionState& exception_state) {
+  RejectInvalidConsumption(script_state, exception_state);
+  if (exception_state.HadException())
+    return ScriptPromise();
 
   // See above comment.
   if (!ExecutionContext::From(script_state))
@@ -192,20 +202,26 @@ ScriptPromise Body::formData(ScriptState* script_state) {
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   const ParsedContentType parsedTypeWithParameters(ContentType());
   const String parsedType = parsedTypeWithParameters.MimeType().LowerASCII();
-  promise = resolver->Promise();
+  ScriptPromise promise = resolver->Promise();
   if (parsedType == "multipart/form-data") {
     const String boundary =
         parsedTypeWithParameters.ParameterValueForName("boundary");
-    if (BodyBuffer() && !boundary.IsEmpty()) {
-      BodyBuffer()->StartLoading(
+    auto* body_buffer = BodyBuffer();
+    if (body_buffer && !boundary.IsEmpty()) {
+      body_buffer->StartLoading(
           FetchDataLoader::CreateLoaderAsFormData(boundary),
-          new BodyFormDataConsumer(resolver));
+          new BodyFormDataConsumer(resolver), exception_state);
+      if (exception_state.HadException())
+        return ScriptPromise();
       return promise;
     }
   } else if (parsedType == "application/x-www-form-urlencoded") {
     if (BodyBuffer()) {
       BodyBuffer()->StartLoading(FetchDataLoader::CreateLoaderAsString(),
-                                 new BodyFormDataConsumer(resolver));
+                                 new BodyFormDataConsumer(resolver),
+                                 exception_state);
+      if (exception_state.HadException())
+        return ScriptPromise();
     } else {
       resolver->Resolve(FormData::Create());
     }
@@ -213,7 +229,10 @@ ScriptPromise Body::formData(ScriptState* script_state) {
   } else {
     if (BodyBuffer()) {
       BodyBuffer()->StartLoading(FetchDataLoader::CreateLoaderAsFailure(),
-                                 new BodyFormDataConsumer(resolver));
+                                 new BodyFormDataConsumer(resolver),
+                                 exception_state);
+      if (exception_state.HadException())
+        return ScriptPromise();
       return promise;
     }
   }
@@ -223,20 +242,23 @@ ScriptPromise Body::formData(ScriptState* script_state) {
   return promise;
 }
 
-ScriptPromise Body::json(ScriptState* script_state) {
-  ScriptPromise promise = RejectInvalidConsumption(script_state);
-  if (!promise.IsEmpty())
-    return promise;
+ScriptPromise Body::json(ScriptState* script_state,
+                         ExceptionState& exception_state) {
+  RejectInvalidConsumption(script_state, exception_state);
+  if (exception_state.HadException())
+    return ScriptPromise();
 
   // See above comment.
   if (!ExecutionContext::From(script_state))
     return ScriptPromise();
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
-  promise = resolver->Promise();
+  ScriptPromise promise = resolver->Promise();
   if (BodyBuffer()) {
     BodyBuffer()->StartLoading(FetchDataLoader::CreateLoaderAsString(),
-                               new BodyJsonConsumer(resolver));
+                               new BodyJsonConsumer(resolver), exception_state);
+    if (exception_state.HadException())
+      return ScriptPromise();
   } else {
     resolver->Reject(V8ThrowException::CreateSyntaxError(
         script_state->GetIsolate(), "Unexpected end of input"));
@@ -244,20 +266,23 @@ ScriptPromise Body::json(ScriptState* script_state) {
   return promise;
 }
 
-ScriptPromise Body::text(ScriptState* script_state) {
-  ScriptPromise promise = RejectInvalidConsumption(script_state);
-  if (!promise.IsEmpty())
-    return promise;
+ScriptPromise Body::text(ScriptState* script_state,
+                         ExceptionState& exception_state) {
+  RejectInvalidConsumption(script_state, exception_state);
+  if (exception_state.HadException())
+    return ScriptPromise();
 
   // See above comment.
   if (!ExecutionContext::From(script_state))
     return ScriptPromise();
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
-  promise = resolver->Promise();
+  ScriptPromise promise = resolver->Promise();
   if (BodyBuffer()) {
     BodyBuffer()->StartLoading(FetchDataLoader::CreateLoaderAsString(),
-                               new BodyTextConsumer(resolver));
+                               new BodyTextConsumer(resolver), exception_state);
+    if (exception_state.HadException())
+      return ScriptPromise();
   } else {
     resolver->Resolve(String());
   }
@@ -272,34 +297,60 @@ ScriptValue Body::body(ScriptState* script_state) {
   return stream;
 }
 
-bool Body::bodyUsed() {
-  return BodyBuffer() && BodyBuffer()->IsStreamDisturbed();
+Body::BodyUsed Body::IsBodyUsed(ExceptionState& exception_state) {
+  auto* body_buffer = BodyBuffer();
+  if (!body_buffer)
+    return BodyUsed::kUnused;
+  base::Optional<bool> stream_disturbed =
+      body_buffer->IsStreamDisturbed(exception_state);
+  if (exception_state.HadException())
+    return BodyUsed::kBroken;
+  return stream_disturbed.value() ? BodyUsed::kUsed : BodyUsed::kUnused;
 }
 
-bool Body::IsBodyLocked() {
-  return BodyBuffer() && BodyBuffer()->IsStreamLocked();
+Body::BodyLocked Body::IsBodyLocked(ExceptionState& exception_state) {
+  auto* body_buffer = BodyBuffer();
+  if (!body_buffer)
+    return BodyLocked::kUnlocked;
+  base::Optional<bool> is_locked = body_buffer->IsStreamLocked(exception_state);
+  if (exception_state.HadException())
+    return BodyLocked::kBroken;
+  return is_locked.value() ? BodyLocked::kLocked : BodyLocked::kUnlocked;
 }
 
 bool Body::HasPendingActivity() const {
   if (!GetExecutionContext() || GetExecutionContext()->IsContextDestroyed())
     return false;
-  if (!BodyBuffer())
+  auto* body_buffer = BodyBuffer();
+  if (!body_buffer)
     return false;
-  return BodyBuffer()->HasPendingActivity();
+  return body_buffer->HasPendingActivity();
+}
+
+bool Body::IsBodyUsedForDCheck() {
+  return BodyBuffer() && BodyBuffer()->IsStreamDisturbedForDCheck();
 }
 
 Body::Body(ExecutionContext* context) : ContextClient(context) {}
 
-ScriptPromise Body::RejectInvalidConsumption(ScriptState* script_state) {
-  const bool used = bodyUsed();
-  if (IsBodyLocked() || used) {
-    return ScriptPromise::Reject(
-        script_state,
-        V8ThrowException::CreateTypeError(
-            script_state->GetIsolate(),
-            used ? "body stream already read" : "body stream is locked"));
+void Body::RejectInvalidConsumption(ScriptState* script_state,
+                                    ExceptionState& exception_state) {
+  const auto used = IsBodyUsed(exception_state);
+  if (exception_state.HadException()) {
+    DCHECK_EQ(used, BodyUsed::kBroken);
+    return;
   }
-  return ScriptPromise();
+  DCHECK_NE(used, BodyUsed::kBroken);
+
+  if (IsBodyLocked(exception_state) == BodyLocked::kLocked) {
+    DCHECK(!exception_state.HadException());
+    exception_state.ThrowTypeError("body stream is locked");
+  }
+  if (exception_state.HadException())
+    return;
+
+  if (used == BodyUsed::kUsed)
+    exception_state.ThrowTypeError("body stream already read");
 }
 
 }  // namespace blink

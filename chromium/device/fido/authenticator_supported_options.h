@@ -38,7 +38,6 @@ class COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorSupportedOptions {
       AuthenticatorSupportedOptions&& other);
   ~AuthenticatorSupportedOptions();
 
-  cbor::CBORValue ConvertToCBOR() const;
   AuthenticatorSupportedOptions& SetIsPlatformDevice(bool is_platform_device);
   AuthenticatorSupportedOptions& SetSupportsResidentKey(
       bool supports_resident_key);
@@ -73,10 +72,14 @@ class COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorSupportedOptions {
   bool user_presence_required_ = true;
   // Represents whether client pin in set and stored in device. Set as null
   // optional if client pin capability is not supported by the authenticator.
-  ClientPinAvailability client_pin_availability_;
+  ClientPinAvailability client_pin_availability_ =
+      ClientPinAvailability::kNotSupported;
 
   DISALLOW_COPY_AND_ASSIGN(AuthenticatorSupportedOptions);
 };
+
+COMPONENT_EXPORT(DEVICE_FIDO)
+cbor::CBORValue ConvertToCBOR(const AuthenticatorSupportedOptions& options);
 
 }  // namespace device
 

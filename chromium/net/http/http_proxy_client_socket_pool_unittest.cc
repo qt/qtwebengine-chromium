@@ -16,7 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "build/build_config.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -106,7 +106,7 @@ class HttpProxyClientSocketPoolTest
       base::TimeDelta min_proxy_connection_timeout,
       base::TimeDelta max_proxy_connection_timeout) {
     std::string trial_name = "NetAdaptiveProxyConnectionTimeout";
-    std::string group_name = "Enabled";
+    std::string group_name = "GroupName";
 
     std::map<std::string, std::string> params;
     if (!use_default_params) {
@@ -172,7 +172,7 @@ class HttpProxyClientSocketPoolTest
   scoped_refptr<HttpProxySocketParams> CreateParams(bool tunnel) {
     return base::MakeRefCounted<HttpProxySocketParams>(
         CreateHttpProxyParams(), CreateHttpsProxyParams(),
-        QUIC_VERSION_UNSUPPORTED, std::string(),
+        quic::QUIC_VERSION_UNSUPPORTED, std::string(),
         HostPortPair("www.google.com", tunnel ? 443 : 80),
         session_->http_auth_cache(), session_->http_auth_handler_factory(),
         session_->spdy_session_pool(), session_->quic_stream_factory(),
@@ -735,15 +735,37 @@ TEST_P(HttpProxyClientSocketPoolTest, TunnelSetupRedirect) {
   }
 }
 
-TEST_P(HttpProxyClientSocketPoolTest, ProxyPoolTimeout) {
+TEST_P(HttpProxyClientSocketPoolTest, ProxyPoolMinTimeout) {
+  // Set RTT estimate to a low value.
+  base::TimeDelta rtt_estimate = base::TimeDelta::FromMilliseconds(1);
+  estimator()->SetStartTimeNullHttpRtt(rtt_estimate);
+
   EXPECT_LE(base::TimeDelta(), pool_->ConnectionTimeout());
 
   // Test against a large value.
   EXPECT_GE(base::TimeDelta::FromMinutes(10), pool_->ConnectionTimeout());
 
 #if (defined(OS_ANDROID) || defined(OS_IOS))
-  // On Android and iOS, the timeout is fixed to 10 seconds.
-  EXPECT_EQ(base::TimeDelta::FromSeconds(10), pool_->ConnectionTimeout());
+  EXPECT_EQ(base::TimeDelta::FromSeconds(8), pool_->ConnectionTimeout());
+#else
+  EXPECT_EQ(base::TimeDelta::FromSeconds(30), pool_->ConnectionTimeout());
+#endif
+}
+
+TEST_P(HttpProxyClientSocketPoolTest, ProxyPoolMaxTimeout) {
+  // Set RTT estimate to a high value.
+  base::TimeDelta rtt_estimate = base::TimeDelta::FromSeconds(100);
+  estimator()->SetStartTimeNullHttpRtt(rtt_estimate);
+
+  EXPECT_LE(base::TimeDelta(), pool_->ConnectionTimeout());
+
+  // Test against a large value.
+  EXPECT_GE(base::TimeDelta::FromMinutes(10), pool_->ConnectionTimeout());
+
+#if (defined(OS_ANDROID) || defined(OS_IOS))
+  EXPECT_EQ(base::TimeDelta::FromSeconds(30), pool_->ConnectionTimeout());
+#else
+  EXPECT_EQ(base::TimeDelta::FromSeconds(60), pool_->ConnectionTimeout());
 #endif
 }
 

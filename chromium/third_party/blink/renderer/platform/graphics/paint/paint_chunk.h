@@ -23,30 +23,22 @@ namespace blink {
 //
 // This is expected to be owned by the paint artifact which also owns the
 // related drawings.
-//
-// This is a Slimming Paint v175+ class.
 struct PLATFORM_EXPORT PaintChunk {
   DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 
   using Id = DisplayItem::Id;
 
-  enum Cacheable {
-    kCacheable,
-    kUncacheable,
-  };
-
   PaintChunk(size_t begin,
              size_t end,
              const Id& id,
-             const PropertyTreeState& props,
-             Cacheable cacheable = kCacheable)
+             const PropertyTreeState& props)
       : begin_index(begin),
         end_index(end),
         id(id),
         properties(props),
         outset_for_raster_effects(0),
         known_to_be_opaque(false),
-        is_cacheable(cacheable == kCacheable),
+        is_cacheable(id.client.IsCacheable()),
         client_is_just_created(id.client.IsJustCreated()),
         hit_test_data(nullptr) {}
 
@@ -80,10 +72,15 @@ struct PLATFORM_EXPORT PaintChunk {
     return *hit_test_data.get();
   }
 
+  HitTestData* GetHitTestData() const { return hit_test_data.get(); }
+
   size_t MemoryUsageInBytes() const {
     size_t total_size = sizeof(*this);
-    if (hit_test_data)
+    if (hit_test_data) {
       total_size += sizeof(*hit_test_data);
+      total_size += hit_test_data->touch_action_rects.capacity() *
+                    sizeof(TouchActionRect);
+    }
     return total_size;
   }
 

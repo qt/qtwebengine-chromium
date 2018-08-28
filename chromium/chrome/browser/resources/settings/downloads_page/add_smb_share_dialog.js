@@ -14,6 +14,9 @@ Polymer({
     mountUrl_: String,
 
     /** @private {string} */
+    mountName_: String,
+
+    /** @private {string} */
     username_: String,
 
     /** @private {string} */
@@ -30,6 +33,7 @@ Polymer({
 
   /** @override */
   attached: function() {
+    this.browserProxy_.startDiscovery();
     this.$.dialog.showModal();
   },
 
@@ -40,7 +44,8 @@ Polymer({
 
   /** @private */
   onAddButtonTap_: function() {
-    this.browserProxy_.smbMount(this.mountUrl_, this.username_, this.password_);
+    this.browserProxy_.smbMount(
+        this.mountUrl_, this.mountName_.trim(), this.username_, this.password_);
     this.$.dialog.close();
   },
 

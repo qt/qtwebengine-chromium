@@ -41,19 +41,21 @@ const char kServiceWorkerScript[] = "https://example.com/a/script.js";
 // Callbacks from SetUp methods
 void RegisterServiceWorkerCallback(bool* called,
                                    int64_t* store_registration_id,
-                                   ServiceWorkerStatusCode status,
+                                   blink::ServiceWorkerStatusCode status,
                                    const std::string& status_message,
                                    int64_t registration_id) {
-  EXPECT_EQ(SERVICE_WORKER_OK, status) << ServiceWorkerStatusToString(status);
+  EXPECT_EQ(blink::ServiceWorkerStatusCode::kOk, status)
+      << blink::ServiceWorkerStatusToString(status);
   *called = true;
   *store_registration_id = registration_id;
 }
 
 void FindServiceWorkerRegistrationCallback(
     scoped_refptr<ServiceWorkerRegistration>* out_registration,
-    ServiceWorkerStatusCode status,
+    blink::ServiceWorkerStatusCode status,
     scoped_refptr<ServiceWorkerRegistration> registration) {
-  EXPECT_EQ(SERVICE_WORKER_OK, status) << ServiceWorkerStatusToString(status);
+  EXPECT_EQ(blink::ServiceWorkerStatusCode::kOk, status)
+      << blink::ServiceWorkerStatusToString(status);
   *out_registration = std::move(registration);
 }
 
@@ -126,7 +128,7 @@ class BackgroundSyncServiceImplTest : public testing::Test {
             GetPermissionStatus(PermissionType::BACKGROUND_SYNC, _, _))
         .WillByDefault(
             testing::Return(blink::mojom::PermissionStatus::GRANTED));
-    embedded_worker_helper_->browser_context()->SetPermissionManager(
+    embedded_worker_helper_->browser_context()->SetPermissionControllerDelegate(
         std::move(mock_permission_manager));
   }
 
@@ -167,15 +169,15 @@ class BackgroundSyncServiceImplTest : public testing::Test {
     options.scope = GURL(kServiceWorkerPattern);
     embedded_worker_helper_->context()->RegisterServiceWorker(
         GURL(kServiceWorkerScript), options,
-        base::AdaptCallbackForRepeating(base::BindOnce(
-            &RegisterServiceWorkerCallback, &called, &sw_registration_id_)));
+        base::BindOnce(&RegisterServiceWorkerCallback, &called,
+                       &sw_registration_id_));
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(called);
 
     embedded_worker_helper_->context_wrapper()->FindReadyRegistrationForId(
         sw_registration_id_, GURL(kServiceWorkerPattern).GetOrigin(),
-        base::AdaptCallbackForRepeating(base::BindOnce(
-            FindServiceWorkerRegistrationCallback, &sw_registration_)));
+        base::BindOnce(FindServiceWorkerRegistrationCallback,
+                       &sw_registration_));
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(sw_registration_);
   }

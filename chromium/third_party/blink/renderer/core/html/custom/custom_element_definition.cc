@@ -4,11 +4,9 @@
 
 #include "third_party/blink/renderer/core/html/custom/custom_element_definition.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
 #include "third_party/blink/renderer/core/dom/attr.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_adopted_callback_reaction.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_attribute_changed_callback_reaction.h"
@@ -19,6 +17,7 @@
 #include "third_party/blink/renderer/core/html/custom/custom_element_upgrade_reaction.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html_element_factory.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -95,8 +94,10 @@ void CustomElementDefinition::CheckConstructorResult(
   // 6.1.4. through 6.1.9.
   const String message =
       ErrorMessageForConstructorResult(element, document, tag_name);
-  if (!message.IsEmpty())
-    exception_state.ThrowDOMException(kNotSupportedError, message);
+  if (!message.IsEmpty()) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                      message);
+  }
 }
 
 HTMLElement* CustomElementDefinition::CreateElementForConstructor(

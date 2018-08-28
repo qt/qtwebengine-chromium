@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <limits>
-#include <sstream>
 
 #include "common_audio/include/audio_util.h"
 #include "common_audio/wav_header.h"
@@ -31,21 +30,13 @@ static const size_t kBytesPerSample = 2;
 class ReadableWavFile : public ReadableWav {
  public:
   explicit ReadableWavFile(FILE* file) : file_(file) {}
-  virtual size_t Read(void* buf, size_t num_bytes) {
+  size_t Read(void* buf, size_t num_bytes) override {
     return fread(buf, 1, num_bytes, file_);
   }
 
  private:
   FILE* file_;
 };
-
-std::string WavFile::FormatAsString() const {
-  std::ostringstream s;
-  s << "Sample rate: " << sample_rate() << " Hz, Channels: " << num_channels()
-    << ", Duration: "
-    << (1.f * num_samples()) / (num_channels() * sample_rate()) << " s";
-  return s.str();
-}
 
 WavReader::WavReader(const std::string& filename)
     : WavReader(rtc::OpenPlatformFileReadOnly(filename)) {}

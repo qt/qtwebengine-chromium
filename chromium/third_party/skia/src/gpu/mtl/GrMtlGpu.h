@@ -17,6 +17,7 @@
 
 #import <Metal/Metal.h>
 
+class GrMtlTexture;
 class GrSemaphore;
 struct GrMtlBackendContext;
 
@@ -31,17 +32,29 @@ public:
 
     id<MTLDevice> device() const { return fDevice; }
 
-    bool onGetReadPixelsInfo(GrSurface* srcSurface, GrSurfaceOrigin origin, int readWidth,
-                             int readHeight, size_t rowBytes, GrColorType readConfig,
-                             DrawPreference*, ReadPixelTempDrawInfo*) override {
-        return false;
-    }
+    id<MTLCommandBuffer> commandBuffer() const { return fCmdBuffer; }
 
-    bool onGetWritePixelsInfo(GrSurface* dstSurface, GrSurfaceOrigin dstOrigin, int width,
-                              int height, GrColorType srcColorType, DrawPreference*,
-                              WritePixelTempDrawInfo*) override {
-        return false;
-    }
+    enum SyncQueue {
+        kForce_SyncQueue,
+        kSkip_SyncQueue
+    };
+
+#ifdef GR_TEST_UTILS
+    GrBackendTexture createTestingOnlyBackendTexture(const void* pixels, int w, int h,
+                                                     GrPixelConfig config, bool isRT,
+                                                     GrMipMapped) override;
+
+    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
+
+    void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override;
+
+    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType,
+                                                               GrSRGBEncoded) override;
+
+    void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
+
+    void testingOnly_flushGpuAndSync() override;
+#endif
 
     bool onCopySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin,
                        GrSurface* src, GrSurfaceOrigin srcOrigin,
@@ -85,37 +98,26 @@ private:
     sk_sp<GrTexture> onCreateTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
                                      const GrMipLevel texels[], int mipLevelCount) override;
 
-    sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership) override {
-        return nullptr;
-    }
+    sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership) override;
 
     sk_sp<GrTexture> onWrapRenderableBackendTexture(const GrBackendTexture&,
                                                     int sampleCnt,
-                                                    GrWrapOwnership) override {
-        return nullptr;
-    }
+                                                    GrWrapOwnership) override;
 
-    sk_sp<GrRenderTarget> onWrapBackendRenderTarget(const GrBackendRenderTarget&) override {
-        return nullptr;
-    }
+    sk_sp<GrRenderTarget> onWrapBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     sk_sp<GrRenderTarget> onWrapBackendTextureAsRenderTarget(const GrBackendTexture&,
-                                                             int sampleCnt) override {
-        return nullptr;
-    }
+                                                             int sampleCnt) override;
 
     GrBuffer* onCreateBuffer(size_t, GrBufferType, GrAccessPattern, const void*) override {
         return nullptr;
     }
 
-    bool onReadPixels(GrSurface* surface, GrSurfaceOrigin, int left, int top, int width, int height,
-                      GrColorType, void* buffer, size_t rowBytes) override {
-        return false;
-    }
+    bool onReadPixels(GrSurface* surface, int left, int top, int width, int height, GrColorType,
+                      void* buffer, size_t rowBytes) override;
 
-    bool onWritePixels(GrSurface*, GrSurfaceOrigin, int left, int top, int width,
-                       int height, GrColorType, const GrMipLevel[],
-                       int) override {
+    bool onWritePixels(GrSurface*, int left, int top, int width, int height, GrColorType,
+                       const GrMipLevel[], int) override {
         return false;
     }
 
@@ -126,9 +128,20 @@ private:
         return false;
     }
 
+    bool onRegenerateMipMapLevels(GrTexture*) override { return false; }
+
     void onResolveRenderTarget(GrRenderTarget* target) override { return; }
 
     void onFinishFlush(bool insertedSemaphores) override {}
+
+    // Commits the current command buffer to the queue and then creates a new command buffer. If
+    // sync is set to kForce_SyncQueue, the function will wait for all work in the committed
+    // command buffer to finish before creating a new buffer and returning.
+    void submitCommandBuffer(SyncQueue sync);
+
+    // Function that uploads data onto textures with private storage mode (GPU access only).
+    bool uploadToTexture(GrMtlTexture* tex, int left, int top, int width, int height,
+                         GrColorType dataColorType, const GrMipLevel texels[], int mipLevels);
 
     GrStencilAttachment* createStencilAttachmentForRenderTarget(const GrRenderTarget*,
                                                                 int width,
@@ -139,21 +152,9 @@ private:
     void clearStencil(GrRenderTarget* target, int clearValue) override  {}
 
 #if GR_TEST_UTILS
-    GrBackendTexture createTestingOnlyBackendTexture(const void* pixels, int w, int h,
-                                                     GrPixelConfig config, bool isRT,
-                                                     GrMipMapped) override {
-        return GrBackendTexture();
-    }
-    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override { return false; }
-    void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override {}
-
-    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType,
-                                                               GrSRGBEncoded) override {
-        return {};
-    }
-    void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override {}
-
-    void testingOnly_flushGpuAndSync() override {}
+    bool createTestingOnlyMtlTextureInfo(GrPixelConfig config, int w, int h, bool texturable,
+                                         bool renderable, GrMipMapped mipMapped,
+                                         const void* srcData, GrMtlTextureInfo* info);
 #endif
 
     sk_sp<GrMtlCaps> fMtlCaps;
@@ -161,6 +162,7 @@ private:
     id<MTLDevice> fDevice;
     id<MTLCommandQueue> fQueue;
 
+    id<MTLCommandBuffer> fCmdBuffer;
 
     typedef GrGpu INHERITED;
 };

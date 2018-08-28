@@ -40,6 +40,7 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_customization.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
+#include "third_party/blink/renderer/platform/weborigin/kurl.h"
 
 namespace blink {
 
@@ -80,6 +81,7 @@ class StringOrTrustedHTML;
 class StringOrTrustedScriptURL;
 class StylePropertyMap;
 class StylePropertyMapReadOnly;
+class USVStringOrTrustedURL;
 class V0CustomElementDefinition;
 class V8ScrollStateCallback;
 
@@ -205,9 +207,19 @@ class CORE_EXPORT Element : public ContainerNode {
                     ExceptionState&);
   void setAttribute(const AtomicString& name, const AtomicString& value);
 
-  // Trusted Type variant of the above.
+  // Trusted Type ScriptURL variant of the above.
   void setAttribute(const QualifiedName&,
                     const StringOrTrustedScriptURL&,
+                    ExceptionState&);
+
+  // Trusted Type HTML variant
+  void setAttribute(const QualifiedName&,
+                    const StringOrTrustedHTML&,
+                    ExceptionState&);
+
+  // Trusted Type URL variant
+  void setAttribute(const QualifiedName&,
+                    const USVStringOrTrustedURL&,
                     ExceptionState&);
 
   static bool ParseAttributeName(QualifiedName&,
@@ -218,6 +230,9 @@ class CORE_EXPORT Element : public ContainerNode {
                       const AtomicString& qualified_name,
                       const AtomicString& value,
                       ExceptionState&);
+
+  bool toggleAttribute(const AtomicString&, ExceptionState&);
+  bool toggleAttribute(const AtomicString&, bool force, ExceptionState&);
 
   const AtomicString& GetIdAttribute() const;
   void SetIdAttribute(const AtomicString&);
@@ -255,6 +270,7 @@ class CORE_EXPORT Element : public ContainerNode {
   void scrollIntoView(ScrollIntoViewOptionsOrBoolean);
   void scrollIntoView(bool align_to_top = true);
   void scrollIntoViewWithOptions(const ScrollIntoViewOptions&);
+  void ScrollIntoViewNoVisualUpdate(const ScrollIntoViewOptions&);
   void scrollIntoViewIfNeeded(bool center_if_needed = true);
 
   int OffsetLeft();
@@ -464,7 +480,6 @@ class CORE_EXPORT Element : public ContainerNode {
   virtual LayoutObject* CreateLayoutObject(const ComputedStyle&);
   virtual bool LayoutObjectIsNeeded(const ComputedStyle&) const;
   void RecalcStyle(StyleRecalcChange);
-  void RecalcStyleForReattach();
   bool NeedsRebuildLayoutTree(
       const WhitespaceAttacher& whitespace_attacher) const {
     // TODO(futhark@chromium.org): !CanParticipateInFlatTree() can be replaced
@@ -487,13 +502,8 @@ class CORE_EXPORT Element : public ContainerNode {
   // creation of multiple shadow roots is prohibited in any combination and
   // throws an exception.  Multiple shadow roots are allowed only when
   // createShadowRoot() is used without any parameters from JavaScript.
-  //
-  // TODO(esprehn): These take a ScriptState only for calling
-  // HostsUsingFeatures::countMainWorldOnly, which should be handled in the
-  // bindings instead so adding a ShadowRoot from C++ doesn't need one.
-  ShadowRoot* createShadowRoot(const ScriptState*, ExceptionState&);
-  ShadowRoot* attachShadow(const ScriptState*,
-                           const ShadowRootInit&,
+  ShadowRoot* createShadowRoot(ExceptionState&);
+  ShadowRoot* attachShadow(const ShadowRootInit&,
                            ExceptionState&);
 
   ShadowRoot& CreateV0ShadowRootForTesting() {
@@ -579,6 +589,9 @@ class CORE_EXPORT Element : public ContainerNode {
 
   KURL GetURLAttribute(const QualifiedName&) const;
   void GetURLAttribute(const QualifiedName&, StringOrTrustedScriptURL&) const;
+  void GetURLAttribute(const QualifiedName&, USVStringOrTrustedURL&) const;
+  void FastGetAttribute(const QualifiedName&, USVStringOrTrustedURL&) const;
+  void FastGetAttribute(const QualifiedName&, StringOrTrustedHTML&) const;
 
   KURL GetNonEmptyURLAttribute(const QualifiedName&) const;
 
@@ -709,9 +722,10 @@ class CORE_EXPORT Element : public ContainerNode {
   PseudoElement* GetPseudoElement(PseudoId) const;
   LayoutObject* PseudoElementLayoutObject(PseudoId) const;
 
-  ComputedStyle* PseudoStyle(const PseudoStyleRequest&,
-                             const ComputedStyle* parent_style = nullptr);
-  scoped_refptr<ComputedStyle> GetUncachedPseudoStyle(
+  ComputedStyle* CachedStyleForPseudoElement(
+      const PseudoStyleRequest&,
+      const ComputedStyle* parent_style = nullptr);
+  scoped_refptr<ComputedStyle> StyleForPseudoElement(
       const PseudoStyleRequest&,
       const ComputedStyle* parent_style = nullptr);
   bool CanGeneratePseudoElement(PseudoId) const;
@@ -721,6 +735,8 @@ class CORE_EXPORT Element : public ContainerNode {
   virtual bool MatchesReadOnlyPseudoClass() const { return false; }
   virtual bool MatchesReadWritePseudoClass() const { return false; }
   virtual bool MatchesValidityPseudoClasses() const { return false; }
+
+  virtual bool MayTriggerVirtualKeyboard() const;
 
   // https://dom.spec.whatwg.org/#dom-element-matches
   bool matches(const AtomicString& selectors, ExceptionState&);
@@ -843,7 +859,6 @@ class CORE_EXPORT Element : public ContainerNode {
       const AttributeModificationParams&);
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   SpellcheckAttributeState GetSpellcheckAttributeState() const;
 
@@ -956,8 +971,10 @@ class CORE_EXPORT Element : public ContainerNode {
   scoped_refptr<ComputedStyle> PropagateInheritedProperties(StyleRecalcChange);
 
   StyleRecalcChange RecalcOwnStyle(StyleRecalcChange);
-  void RecalcShadowIncludingDescendantStylesForReattach();
-  void RecalcShadowRootStylesForReattach();
+
+  // Returns true if we should traverse shadow including children and pseudo
+  // elements for RecalcStyle.
+  bool ShouldCallRecalcStyleForChildren(StyleRecalcChange);
 
   void RebuildPseudoElementLayoutTree(PseudoId, WhitespaceAttacher&);
   void RebuildShadowRootLayoutTree(WhitespaceAttacher&);
@@ -968,7 +985,8 @@ class CORE_EXPORT Element : public ContainerNode {
   bool UpdateFirstLetter(Element*);
 
   inline PseudoElement* CreatePseudoElementIfNeeded(PseudoId);
-  void CreateAndAttachPseudoElementIfNeeded(PseudoId, AttachContext&);
+  void AttachPseudoElement(PseudoId, AttachContext&);
+  void DetachPseudoElement(PseudoId, const AttachContext&);
 
   ShadowRoot& CreateAndAttachShadowRoot(ShadowRootType);
 

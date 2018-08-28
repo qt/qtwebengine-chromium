@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">スライダ</translation>
 <translation id="1211441953136645838">巻末注</translation>
 <translation id="1281252709823657822">ダイアログ</translation>
+<translation id="1289247557029249093">ピクチャー イン ピクチャー モードを終了する</translation>
 <translation id="1335095011850992622">クレジット</translation>
 <translation id="1342835525016946179">記事</translation>
 <translation id="1359897965706325498">バナー</translation>
+<translation id="1548116112524424341">ピクチャー イン ピクチャー モードで動画を再生します</translation>
 <translation id="1589122976691792535">地域</translation>
 <translation id="1591562245178063882">今月</translation>
 <translation id="1637811476055996098">ファイル選択</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">ツリーグリッド</translation>
 <translation id="1822429046913737220">AM/PM</translation>
 <translation id="1832974991323546415">リモート デバイスで再生</translation>
+<translation id="190587075670221089">削除</translation>
 <translation id="1907737156431278478">例</translation>
 <translation id="1921819250265091946">日</translation>
 <translation id="1930711995431081526">ステータス</translation>
 <translation id="1938124657309484470"><ph name="MAXIMUM_DATE_OR_TIME" /> 以前の値を指定する必要があります。</translation>
+<translation id="1946271899482435442">日付選択ツールを表示</translation>
 <translation id="1993104285338243655">ミラーリングに切り替わりました</translation>
 <translation id="2060505056492490888">「<ph name="INVALIDDOMAIN" />」内の「<ph name="DOT" />」の位置が間違っています。</translation>
 <translation id="2148716181193084225">今日</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">送信</translation>
 <translation id="2657045182931379222">図形オブジェクト</translation>
 <translation id="2674318244760992338">フッター</translation>
+<translation id="2706474812903655270">この動画はピクチャー イン ピクチャー モードで再生されています</translation>
 <translation id="2709516037105925701">自動入力</translation>
 <translation id="2723001399770238859">音声</translation>
 <translation id="2746543609216772311"><ph name="MINIMUM_DATE_OR_TIME" /> 以降の値を指定する必要があります。</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">次の月を表示</translation>
 <translation id="512758898067543763">行見出し</translation>
 <translation id="5143125788380636750">エピローグ</translation>
-<translation id="5153163864850940242">この動画はピクチャー イン ピクチャーで再生されています</translation>
 <translation id="5164977714490026579">値は <ph name="MINIMUM" /> 以上にする必要があります。</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> PB</translation>
 <translation id="5307600278924710095">「<ph name="ATSIGN" />」の前の文字列を入力してください。「<ph name="INVALIDADDRESS" />」は完全なメール アドレスではありません。</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">奥付</translation>
 <translation id="6934078000481955284">引用</translation>
 <translation id="6941933287844615239">メディアをダウンロード</translation>
+<translation id="6981594929165378967">挿入</translation>
 <translation id="6989848892321993519">このテキストは <ph name="MIN_CHARACTERS" /> 文字以上で指定してください（現在 1 文字で指定されています）。</translation>
 <translation id="709897737746224366">指定されている形式で入力してください。</translation>
 <translation id="7139483182332611405">序文</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">残り時間</translation>
 <translation id="7740016676195725605">クローズド キャプションの表示を終了</translation>
 <translation id="7740050170769002709">HTML コンテンツ</translation>
+<translation id="7750228210027921155">ピクチャー イン ピクチャー</translation>
 <translation id="7789962463072032349">一時停止</translation>
 <translation id="7802800022689234070">三角形の展開ボタン</translation>
 <translation id="7888071071722539607">メール アドレスに「<ph name="ATSIGN" />」を挿入してください。「<ph name="INVALIDADDRESS" />」内に「<ph name="ATSIGN" />」がありません。</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">目次</translation>
 <translation id="8613126697340063924">リモート再生をコントロール</translation>
 <translation id="862370744433916922">副題</translation>
-<translation id="8741316211671074806">ピクチャー イン ピクチャー</translation>
 <translation id="8750798805984357768">これらのオプションから 1 つ選択してください。</translation>
 <translation id="8785498733064193001">再生を開始</translation>
 <translation id="8808573423886751634">章</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">ナビゲーション</translation>
 <translation id="9050748414552849310">クローズド キャプションを表示</translation>
 <translation id="9062295712474918030">ドキュメント</translation>
+<translation id="9093215626363556771">ピクチャー イン ピクチャーを終了します</translation>
 <translation id="9108370397979208512">数式</translation>
 <translation id="9132465097189459683">その他...</translation>
 <translation id="9138385573473225930">アラート</translation>
 <translation id="9155987714137265666"><ph name="WEEK_START_DATE" /> から始まる <ph name="WEEK" /></translation>
+<translation id="916607977885256133">ピクチャー イン ピクチャー</translation>
 <translation id="9168329111483466115">脚注</translation>
-<translation id="947831847158436616">セル</translation>
+<translation id="954003015749068518">ピクチャー イン ピクチャーを開始します</translation>
 <translation id="966787709310836684">メニュー</translation>
 </translationbundle>

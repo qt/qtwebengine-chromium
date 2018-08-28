@@ -173,18 +173,6 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
 
   void SetSquashingContentsNeedDisplay();
   void SetContentsNeedDisplay();
-  // LayoutRect is in the coordinate space of the layer's layout object.
-  void SetContentsNeedDisplayInRect(const LayoutRect&,
-                                    PaintInvalidationReason,
-                                    const DisplayItemClient&);
-  // Invalidates just the non-scrolling content layers.
-  void SetNonScrollingContentsNeedDisplayInRect(const LayoutRect&,
-                                                PaintInvalidationReason,
-                                                const DisplayItemClient&);
-  // Invalidates just scrolling content layers.
-  void SetScrollingContentsNeedDisplayInRect(const LayoutRect&,
-                                             PaintInvalidationReason,
-                                             const DisplayItemClient&);
 
   // Let all DrawsContent GraphicsLayers check raster invalidations after
   // a no-change paint.
@@ -226,6 +214,7 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
                      const IntRect& interest_rect) const override;
   bool ShouldThrottleRendering() const override;
   bool IsTrackingRasterInvalidations() const override;
+  void SetOverlayScrollbarsHidden(bool) override;
 
 #if DCHECK_IS_ON()
   void VerifyNotPainting() override;
@@ -282,6 +271,9 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
 #endif
 
   String DebugName(const GraphicsLayer*) const override;
+
+  const ScrollableArea* GetScrollableAreaForTesting(
+      const GraphicsLayer*) const override;
 
   LayoutSize ContentOffsetInCompositingLayer() const;
 
@@ -415,20 +407,9 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
   bool UpdateDecorationOutlineLayer(bool needs_decoration_outline_layer);
   bool UpdateMaskLayer(bool needs_mask_layer);
   bool UpdateChildClippingMaskLayer(bool needs_child_clipping_mask_layer);
-  bool RequiresHorizontalScrollbarLayer() const {
-    return owning_layer_.GetScrollableArea() &&
-           owning_layer_.GetScrollableArea()->HorizontalScrollbar();
-  }
-  bool RequiresVerticalScrollbarLayer() const {
-    return owning_layer_.GetScrollableArea() &&
-           owning_layer_.GetScrollableArea()->VerticalScrollbar();
-  }
-  bool RequiresScrollCornerLayer() const {
-    return owning_layer_.GetScrollableArea() &&
-           !owning_layer_.GetScrollableArea()
-                ->ScrollCornerAndResizerRect()
-                .IsEmpty();
-  }
+  bool RequiresHorizontalScrollbarLayer() const;
+  bool RequiresVerticalScrollbarLayer() const;
+  bool RequiresScrollCornerLayer() const;
   bool UpdateScrollingLayers(bool scrolling_layers);
   void UpdateScrollParent(const PaintLayer*);
   void UpdateClipParent(const PaintLayer* scroll_parent);

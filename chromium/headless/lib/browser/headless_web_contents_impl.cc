@@ -34,6 +34,7 @@
 #include "headless/lib/browser/headless_browser_context_impl.h"
 #include "headless/lib/browser/headless_browser_impl.h"
 #include "headless/lib/browser/headless_browser_main_parts.h"
+#include "headless/lib/browser/headless_devtools_agent_host_client.h"
 #include "headless/lib/browser/protocol/headless_handler.h"
 #include "headless/public/internal/headless_devtools_client_impl.h"
 #include "printing/buildflags/buildflags.h"
@@ -94,7 +95,7 @@ class HeadlessWebContentsImpl::Delegate : public content::WebContentsDelegate {
     auto* const headless_contents =
         HeadlessWebContentsImpl::From(browser(), source);
     DCHECK(headless_contents);
-    headless_contents->DelegateRequestsClose();
+    headless_contents->Close();
   }
 
   void AddNewContents(content::WebContents* source,
@@ -112,8 +113,6 @@ class HeadlessWebContentsImpl::Delegate : public content::WebContentsDelegate {
     HeadlessWebContentsImpl* raw_child_contents = child_contents.get();
     headless_web_contents_->browser_context()->RegisterWebContents(
         std::move(child_contents));
-    headless_web_contents_->browser_context()->NotifyChildContentsCreated(
-        headless_web_contents_, raw_child_contents);
 
     const gfx::Rect default_rect(
         headless_web_contents_->browser()->options()->window_size);
@@ -140,8 +139,6 @@ class HeadlessWebContentsImpl::Delegate : public content::WebContentsDelegate {
                 ->CreateWebContentsBuilder()
                 .SetWindowSize(source->GetContainerBounds().size())
                 .Build());
-        headless_web_contents_->browser_context()->NotifyChildContentsCreated(
-            headless_web_contents_, child_contents);
         target = child_contents->web_contents();
         break;
       }
@@ -382,27 +379,7 @@ bool HeadlessWebContentsImpl::OpenURL(const GURL& url) {
 
 void HeadlessWebContentsImpl::Close() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-  if (quit_closure_)
-    return;
-
-  if (!render_process_exited_) {
-    web_contents_->ClosePage();
-    base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
-    quit_closure_ = run_loop.QuitClosure();
-    run_loop.Run();
-  }
-
   browser_context()->DestroyWebContents(this);
-}
-
-void HeadlessWebContentsImpl::DelegateRequestsClose() {
-  if (quit_closure_) {
-    quit_closure_.Run();
-    quit_closure_ = base::Closure();
-  } else {
-    browser_context()->DestroyWebContents(this);
-  }
 }
 
 std::string HeadlessWebContentsImpl::GetDevToolsAgentHostId() {
@@ -448,13 +425,18 @@ HeadlessDevToolsTarget* HeadlessWebContentsImpl::GetDevToolsTarget() {
   return web_contents()->GetMainFrame()->IsRenderFrameLive() ? this : nullptr;
 }
 
+std::unique_ptr<HeadlessDevToolsChannel>
+HeadlessWebContentsImpl::CreateDevToolsChannel() {
+  DCHECK(agent_host_);
+  return std::make_unique<HeadlessDevToolsAgentHostClient>(agent_host_);
+}
+
 void HeadlessWebContentsImpl::AttachClient(HeadlessDevToolsClient* client) {
-  HeadlessDevToolsClientImpl::From(client)->AttachToHost(agent_host_.get());
+  client->AttachToChannel(CreateDevToolsChannel());
 }
 
 void HeadlessWebContentsImpl::DetachClient(HeadlessDevToolsClient* client) {
-  DCHECK(agent_host_);
-  HeadlessDevToolsClientImpl::From(client)->DetachFromHost(agent_host_.get());
+  client->DetachFromChannel();
 }
 
 bool HeadlessWebContentsImpl::IsAttached() {

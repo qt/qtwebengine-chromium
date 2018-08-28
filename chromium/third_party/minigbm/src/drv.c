@@ -16,6 +16,11 @@
 #include <unistd.h>
 #include <xf86drm.h>
 
+#ifdef __ANDROID__
+#include <cutils/log.h>
+#include <libgen.h>
+#endif
+
 #include "drv_priv.h"
 #include "helpers.h"
 #include "util.h"
@@ -362,7 +367,7 @@ struct bo *drv_bo_import(struct driver *drv, struct drv_import_fd_data *data)
 
 		seek_end = lseek(data->fds[plane], 0, SEEK_END);
 		if (seek_end == (off_t)(-1)) {
-			fprintf(stderr, "drv: lseek() failed with %s\n", strerror(errno));
+			drv_log("lseek() failed with %s\n", strerror(errno));
 			goto destroy_bo;
 		}
 
@@ -373,7 +378,7 @@ struct bo *drv_bo_import(struct driver *drv, struct drv_import_fd_data *data)
 			bo->sizes[plane] = data->offsets[plane + 1] - data->offsets[plane];
 
 		if ((int64_t)bo->offsets[plane] + bo->sizes[plane] > seek_end) {
-			fprintf(stderr, "drv: buffer size is too large.\n");
+			drv_log("buffer size is too large.\n");
 			goto destroy_bo;
 		}
 
@@ -435,6 +440,7 @@ void *drv_bo_map(struct bo *bo, const struct rectangle *rect, uint32_t map_flags
 	}
 
 	mapping.vma = calloc(1, sizeof(*mapping.vma));
+	memcpy(mapping.vma->map_strides, bo->strides, sizeof(mapping.vma->map_strides));
 	addr = bo->drv->backend->bo_map(bo, mapping.vma, plane, map_flags);
 	if (addr == MAP_FAILED) {
 		*map_data = NULL;
@@ -461,9 +467,7 @@ exact_match:
 int drv_bo_unmap(struct bo *bo, struct mapping *mapping)
 {
 	uint32_t i;
-	int ret = drv_bo_flush(bo, mapping);
-	if (ret)
-		return ret;
+	int ret = 0;
 
 	pthread_mutex_lock(&bo->drv->driver_lock);
 
@@ -502,7 +506,7 @@ int drv_bo_invalidate(struct bo *bo, struct mapping *mapping)
 	return ret;
 }
 
-int drv_bo_flush(struct bo *bo, struct mapping *mapping)
+int drv_bo_flush_or_unmap(struct bo *bo, struct mapping *mapping)
 {
 	int ret = 0;
 
@@ -514,6 +518,8 @@ int drv_bo_flush(struct bo *bo, struct mapping *mapping)
 
 	if (bo->drv->backend->bo_flush)
 		ret = bo->drv->backend->bo_flush(bo, mapping);
+	else
+		ret = drv_bo_unmap(bo, mapping);
 
 	return ret;
 }
@@ -555,6 +561,10 @@ int drv_bo_get_plane_fd(struct bo *bo, size_t plane)
 
 	ret = drmPrimeHandleToFD(bo->drv->fd, bo->handles[plane].u32, DRM_CLOEXEC | DRM_RDWR, &fd);
 
+	// Older DRM implementations blocked DRM_RDWR, but gave a read/write mapping anyways
+	if (ret)
+		ret = drmPrimeHandleToFD(bo->drv->fd, bo->handles[plane].u32, DRM_CLOEXEC, &fd);
+
 	return (ret) ? ret : fd;
 }
 
@@ -595,69 +605,6 @@ uint32_t drv_resolve_format(struct driver *drv, uint32_t format, uint64_t use_fl
 	return format;
 }
 
-size_t drv_num_planes_from_format(uint32_t format)
-{
-	switch (format) {
-	case DRM_FORMAT_ABGR1555:
-	case DRM_FORMAT_ABGR2101010:
-	case DRM_FORMAT_ABGR4444:
-	case DRM_FORMAT_ABGR8888:
-	case DRM_FORMAT_ARGB1555:
-	case DRM_FORMAT_ARGB2101010:
-	case DRM_FORMAT_ARGB4444:
-	case DRM_FORMAT_ARGB8888:
-	case DRM_FORMAT_AYUV:
-	case DRM_FORMAT_BGR233:
-	case DRM_FORMAT_BGR565:
-	case DRM_FORMAT_BGR888:
-	case DRM_FORMAT_BGRA1010102:
-	case DRM_FORMAT_BGRA4444:
-	case DRM_FORMAT_BGRA5551:
-	case DRM_FORMAT_BGRA8888:
-	case DRM_FORMAT_BGRX1010102:
-	case DRM_FORMAT_BGRX4444:
-	case DRM_FORMAT_BGRX5551:
-	case DRM_FORMAT_BGRX8888:
-	case DRM_FORMAT_C8:
-	case DRM_FORMAT_GR88:
-	case DRM_FORMAT_R8:
-	case DRM_FORMAT_RG88:
-	case DRM_FORMAT_RGB332:
-	case DRM_FORMAT_RGB565:
-	case DRM_FORMAT_RGB888:
-	case DRM_FORMAT_RGBA1010102:
-	case DRM_FORMAT_RGBA4444:
-	case DRM_FORMAT_RGBA5551:
-	case DRM_FORMAT_RGBA8888:
-	case DRM_FORMAT_RGBX1010102:
-	case DRM_FORMAT_RGBX4444:
-	case DRM_FORMAT_RGBX5551:
-	case DRM_FORMAT_RGBX8888:
-	case DRM_FORMAT_UYVY:
-	case DRM_FORMAT_VYUY:
-	case DRM_FORMAT_XBGR1555:
-	case DRM_FORMAT_XBGR2101010:
-	case DRM_FORMAT_XBGR4444:
-	case DRM_FORMAT_XBGR8888:
-	case DRM_FORMAT_XRGB1555:
-	case DRM_FORMAT_XRGB2101010:
-	case DRM_FORMAT_XRGB4444:
-	case DRM_FORMAT_XRGB8888:
-	case DRM_FORMAT_YUYV:
-	case DRM_FORMAT_YVYU:
-		return 1;
-	case DRM_FORMAT_NV12:
-	case DRM_FORMAT_NV21:
-		return 2;
-	case DRM_FORMAT_YVU420:
-	case DRM_FORMAT_YVU420_ANDROID:
-		return 3;
-	}
-
-	fprintf(stderr, "drv: UNKNOWN FORMAT %d\n", format);
-	return 0;
-}
-
 uint32_t drv_num_buffers_per_bo(struct bo *bo)
 {
 	uint32_t count = 0;
@@ -672,4 +619,20 @@ uint32_t drv_num_buffers_per_bo(struct bo *bo)
 	}
 
 	return count;
+}
+
+void drv_log_prefix(const char *prefix, const char *file, int line, const char *format, ...)
+{
+	char buf[50];
+	snprintf(buf, sizeof(buf), "[%s:%s(%d)]", prefix, basename(file), line);
+
+	va_list args;
+	va_start(args, format);
+#ifdef __ANDROID__
+	__android_log_vprint(ANDROID_LOG_ERROR, buf, format, args);
+#else
+	fprintf(stderr, "%s ", buf);
+	vfprintf(stderr, format, args);
+#endif
+	va_end(args);
 }

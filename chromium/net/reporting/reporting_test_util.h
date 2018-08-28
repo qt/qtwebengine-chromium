@@ -22,7 +22,7 @@
 class GURL;
 
 namespace base {
-class MockTimer;
+class MockOneShotTimer;
 class SimpleTestClock;
 class SimpleTestTickClock;
 class Value;
@@ -53,6 +53,7 @@ class TestReportingUploader : public ReportingUploader {
    public:
     virtual ~PendingUpload();
 
+    virtual const url::Origin& report_origin() const = 0;
     virtual const GURL& url() const = 0;
     virtual const std::string& json() const = 0;
     virtual std::unique_ptr<base::Value> GetValue() const = 0;
@@ -72,7 +73,8 @@ class TestReportingUploader : public ReportingUploader {
 
   // ReportingUploader implementation:
 
-  void StartUpload(const GURL& url,
+  void StartUpload(const url::Origin& report_origin,
+                   const GURL& url,
                    const std::string& json,
                    int max_depth,
                    UploadCallback callback) override;
@@ -145,8 +147,8 @@ class TestReportingContext : public ReportingContext {
                        const ReportingPolicy& policy);
   ~TestReportingContext();
 
-  base::MockTimer* test_delivery_timer() { return delivery_timer_; }
-  base::MockTimer* test_garbage_collection_timer() {
+  base::MockOneShotTimer* test_delivery_timer() { return delivery_timer_; }
+  base::MockOneShotTimer* test_garbage_collection_timer() {
     return garbage_collection_timer_;
   }
   TestReportingUploader* test_uploader() {
@@ -164,8 +166,8 @@ class TestReportingContext : public ReportingContext {
   // Owned by the DeliveryAgent and GarbageCollector, respectively, but
   // referenced here to preserve type:
 
-  base::MockTimer* delivery_timer_;
-  base::MockTimer* garbage_collection_timer_;
+  base::MockOneShotTimer* delivery_timer_;
+  base::MockOneShotTimer* garbage_collection_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(TestReportingContext);
 };
@@ -191,8 +193,10 @@ class ReportingTestBase : public TestWithScopedTaskEnvironment {
 
   base::SimpleTestClock* clock() { return &clock_; }
   base::SimpleTestTickClock* tick_clock() { return &tick_clock_; }
-  base::MockTimer* delivery_timer() { return context_->test_delivery_timer(); }
-  base::MockTimer* garbage_collection_timer() {
+  base::MockOneShotTimer* delivery_timer() {
+    return context_->test_delivery_timer();
+  }
+  base::MockOneShotTimer* garbage_collection_timer() {
     return context_->test_garbage_collection_timer();
   }
   TestReportingUploader* uploader() { return context_->test_uploader(); }

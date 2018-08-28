@@ -43,15 +43,13 @@ public:
 
     /**
      * Skia convention is that a device only has sRGB support if it supports sRGB formats for both
-     * textures and framebuffers. In addition:
-     *   Decoding to linear of an sRGB texture can be disabled.
+     * textures and framebuffers.
      */
     bool srgbSupport() const { return fSRGBSupport; }
     /**
      * Is there support for enabling/disabling sRGB writes for sRGB-capable color buffers?
      */
     bool srgbWriteControl() const { return fSRGBWriteControl; }
-    bool srgbDecodeDisableSupport() const { return fSRGBDecodeDisableSupport; }
     bool discardRenderTargetSupport() const { return fDiscardRenderTargetSupport; }
     bool gpuTracingSupport() const { return fGpuTracingSupport; }
     bool oversizedStencilSupport() const { return fOversizedStencilSupport; }
@@ -273,6 +271,14 @@ public:
     virtual bool getConfigFromBackendFormat(const GrBackendFormat& format, SkColorType ct,
                                             GrPixelConfig*) const = 0;
 
+#ifdef GR_TEST_UTILS
+    /**
+     * Creates a GrBackendFormat which matches the backend texture. If the backend texture is
+     * invalid, the function will return the default GrBackendFormat.
+     */
+    GrBackendFormat createFormatFromBackendTexture(const GrBackendTexture&) const;
+#endif
+
     const GrDriverBugWorkarounds& workarounds() const { return fDriverBugWorkarounds; }
 
 protected:
@@ -281,13 +287,20 @@ protected:
         expand them. */
     void applyOptionsOverrides(const GrContextOptions& options);
 
+#ifdef GR_TEST_UTILS
+    /**
+     * Subclasses implement this to actually create a GrBackendFormat to match backend texture. At
+     * this point, the backend texture has already been validated.
+     */
+    virtual GrBackendFormat onCreateFormatFromBackendTexture(const GrBackendTexture&) const = 0;
+#endif
+
     sk_sp<GrShaderCaps> fShaderCaps;
 
     bool fNPOTTextureTileSupport                     : 1;
     bool fMipMapSupport                              : 1;
     bool fSRGBSupport                                : 1;
     bool fSRGBWriteControl                           : 1;
-    bool fSRGBDecodeDisableSupport                   : 1;
     bool fDiscardRenderTargetSupport                 : 1;
     bool fReuseScratchTextures                       : 1;
     bool fReuseScratchBuffers                        : 1;

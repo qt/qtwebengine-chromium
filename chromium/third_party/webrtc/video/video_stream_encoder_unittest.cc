@@ -19,6 +19,7 @@
 #include "modules/video_coding/utility/default_video_bitrate_allocator.h"
 #include "rtc_base/fakeclock.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/refcountedobject.h"
 #include "system_wrappers/include/metrics_default.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/encoder_proxy_factory.h"
@@ -91,16 +92,16 @@ class CpuOveruseDetectorProxy : public OveruseFrameDetector {
 
 class VideoStreamEncoderUnderTest : public VideoStreamEncoder {
  public:
-  VideoStreamEncoderUnderTest(SendStatisticsProxy* stats_proxy,
-                      const VideoSendStream::Config::EncoderSettings& settings)
-      : VideoStreamEncoder(
-            1 /* number_of_cores */,
-            stats_proxy,
-            settings,
-            nullptr /* pre_encode_callback */,
-            std::unique_ptr<OveruseFrameDetector>(
-                overuse_detector_proxy_ = new CpuOveruseDetectorProxy(
-                    stats_proxy))) {}
+  VideoStreamEncoderUnderTest(
+      SendStatisticsProxy* stats_proxy,
+      const VideoSendStream::Config::EncoderSettings& settings)
+      : VideoStreamEncoder(1 /* number_of_cores */,
+                           stats_proxy,
+                           settings,
+                           nullptr /* pre_encode_callback */,
+                           std::unique_ptr<OveruseFrameDetector>(
+                               overuse_detector_proxy_ =
+                                   new CpuOveruseDetectorProxy(stats_proxy))) {}
 
   void PostTaskAndWait(bool down, AdaptReason reason) {
     rtc::Event event(false, false);
@@ -115,9 +116,7 @@ class VideoStreamEncoderUnderTest : public VideoStreamEncoder {
   // encoder queue is not blocked before we start sending it frames.
   void WaitUntilTaskQueueIsIdle() {
     rtc::Event event(false, false);
-    encoder_queue()->PostTask([&event] {
-      event.Set();
-    });
+    encoder_queue()->PostTask([&event] { event.Set(); });
     ASSERT_TRUE(event.Wait(5000));
   }
 
@@ -159,7 +158,6 @@ class VideoStreamFactory
   const int framerate_;
 };
 
-
 class AdaptingFrameForwarder : public test::FrameForwarder {
  public:
   AdaptingFrameForwarder() : adaptation_enabled_(false) {}
@@ -180,8 +178,8 @@ class AdaptingFrameForwarder : public test::FrameForwarder {
     return last_wants_;
   }
 
-  rtc::Optional<int> last_sent_width() const { return last_width_; }
-  rtc::Optional<int> last_sent_height() const { return last_height_; }
+  absl::optional<int> last_sent_width() const { return last_width_; }
+  absl::optional<int> last_sent_height() const { return last_height_; }
 
   void IncomingCapturedFrame(const VideoFrame& video_frame) override {
     int cropped_width = 0;
@@ -201,8 +199,8 @@ class AdaptingFrameForwarder : public test::FrameForwarder {
         last_width_.emplace(adapted_frame.width());
         last_height_.emplace(adapted_frame.height());
       } else {
-        last_width_ = rtc::nullopt;
-        last_height_ = rtc::nullopt;
+        last_width_ = absl::nullopt;
+        last_height_ = absl::nullopt;
       }
     } else {
       test::FrameForwarder::IncomingCapturedFrame(video_frame);
@@ -223,8 +221,8 @@ class AdaptingFrameForwarder : public test::FrameForwarder {
   cricket::VideoAdapter adapter_;
   bool adaptation_enabled_ RTC_GUARDED_BY(crit_);
   rtc::VideoSinkWants last_wants_ RTC_GUARDED_BY(crit_);
-  rtc::Optional<int> last_width_;
-  rtc::Optional<int> last_height_;
+  absl::optional<int> last_width_;
+  absl::optional<int> last_height_;
 };
 
 class MockableSendStatisticsProxy : public SendStatisticsProxy {
@@ -253,7 +251,7 @@ class MockableSendStatisticsProxy : public SendStatisticsProxy {
 
  private:
   rtc::CriticalSection lock_;
-  rtc::Optional<VideoSendStream::Stats> mock_stats_ RTC_GUARDED_BY(lock_);
+  absl::optional<VideoSendStream::Stats> mock_stats_ RTC_GUARDED_BY(lock_);
 };
 
 class MockBitrateObserver : public VideoBitrateAllocationObserver {
@@ -1402,21 +1400,6 @@ TEST_F(VideoStreamEncoderTest,
   EXPECT_FALSE(stats.cpu_limited_framerate);
   EXPECT_EQ(4, stats.number_of_cpu_adapt_changes);
   EXPECT_EQ(0, stats.number_of_quality_adapt_changes);
-
-  video_stream_encoder_->Stop();
-}
-
-TEST_F(VideoStreamEncoderTest, StatsTracksPreferredBitrate) {
-  video_stream_encoder_->OnBitrateUpdated(kTargetBitrateBps, 0, 0);
-
-  const int kWidth = 1280;
-  const int kHeight = 720;
-  video_source_.IncomingCapturedFrame(CreateFrame(1, kWidth, kHeight));
-  WaitForEncodedFrame(1);
-
-  VideoSendStream::Stats stats = stats_proxy_->GetStats();
-  EXPECT_EQ(video_encoder_config_.max_bitrate_bps,
-            stats.preferred_media_bitrate_bps);
 
   video_stream_encoder_->Stop();
 }
@@ -2575,8 +2558,8 @@ TEST_F(VideoStreamEncoderTest, DoesntAdaptDownPastMinFramerate) {
         sink_.WaitForEncodedFrame(timestamp_ms);
       }
       timestamp_ms += kFrameIntervalMs;
-      fake_clock_.AdvanceTimeMicros(
-          kFrameIntervalMs * rtc::kNumMicrosecsPerMillisec);
+      fake_clock_.AdvanceTimeMicros(kFrameIntervalMs *
+                                    rtc::kNumMicrosecsPerMillisec);
     }
     // ...and then try to adapt again.
     video_stream_encoder_->TriggerCpuOveruse();
@@ -2984,9 +2967,8 @@ TEST_F(VideoStreamEncoderTest, AcceptsFullHdAdaptedDownSimulcastFrames) {
         int width,
         int height,
         const VideoEncoderConfig& encoder_config) override {
-      std::vector<VideoStream> streams =
-          test::CreateVideoStreams(width - width % 4, height - height % 4,
-                                   encoder_config);
+      std::vector<VideoStream> streams = test::CreateVideoStreams(
+          width - width % 4, height - height % 4, encoder_config);
       for (VideoStream& stream : streams) {
         stream.num_temporal_layers = num_temporal_layers_;
         stream.max_framerate = framerate_;

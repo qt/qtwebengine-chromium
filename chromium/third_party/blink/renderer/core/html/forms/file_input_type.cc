@@ -22,7 +22,6 @@
 
 #include "third_party/blink/renderer/core/html/forms/file_input_type.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
@@ -38,6 +37,7 @@
 #include "third_party/blink/renderer/core/layout/layout_file_upload_control.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/drag_data.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/file_metadata.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
@@ -124,12 +124,13 @@ void FileInputType::AppendToFormData(FormData& form_data) const {
   FileList* file_list = GetElement().files();
   unsigned num_files = file_list->length();
   if (num_files == 0) {
-    form_data.append(GetElement().GetName(), File::Create(""));
+    form_data.AppendFromElement(GetElement().GetName(), File::Create(""));
     return;
   }
 
-  for (unsigned i = 0; i < num_files; ++i)
-    form_data.append(GetElement().GetName(), file_list->item(i));
+  for (unsigned i = 0; i < num_files; ++i) {
+    form_data.AppendFromElement(GetElement().GetName(), file_list->item(i));
+  }
 }
 
 bool FileInputType::ValueMissing(const String& value) const {
@@ -170,6 +171,7 @@ void FileInputType::HandleDOMActivateEvent(Event* event) {
                       : WebFeature::kInputTypeFileInsecureOriginOpenChooser);
 
     chrome_client->OpenFileChooser(document.GetFrame(), NewFileChooser(params));
+    chrome_client->RegisterPopupOpeningObserver(this);
   }
   event->SetDefaultHandled();
 }
@@ -347,6 +349,11 @@ void FileInputType::SetFiles(FileList* files) {
 void FileInputType::FilesChosen(const Vector<FileChooserFileInfo>& files) {
   SetFiles(CreateFileList(files,
                           GetElement().FastHasAttribute(webkitdirectoryAttr)));
+  if (HasConnectedFileChooser()) {
+    DisconnectFileChooser();
+    if (auto* chrome_client = GetChromeClient())
+      chrome_client->UnregisterPopupOpeningObserver(this);
+  }
 }
 
 void FileInputType::SetFilesFromDirectory(const String& path) {
@@ -451,6 +458,14 @@ void FileInputType::HandleKeyupEvent(KeyboardEvent* event) {
     }
   }
   KeyboardClickableInputTypeView::HandleKeyupEvent(event);
+}
+
+void FileInputType::WillOpenPopup() {
+  // TODO(tkent): Should we disconnect the file chooser? crbug.com/637639
+  if (HasConnectedFileChooser()) {
+    UseCounter::Count(GetElement().GetDocument(),
+                      WebFeature::kPopupOpenWhileFileChooserOpened);
+  }
 }
 
 }  // namespace blink

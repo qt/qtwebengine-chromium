@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_FRAME_REQUEST_CALLBACK_COLLECTION_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_FRAME_REQUEST_CALLBACK_COLLECTION_H_
 
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 
@@ -12,24 +13,23 @@ namespace blink {
 
 class ExecutionContext;
 class V8XRFrameRequestCallback;
-class XRPresentationFrame;
+class XRFrame;
 class XRSession;
 
-class XRFrameRequestCallbackCollection final : public TraceWrapperBase {
-  DISALLOW_NEW();
-
+class XRFrameRequestCallbackCollection final
+    : public GarbageCollectedFinalized<XRFrameRequestCallbackCollection>,
+      public NameClient {
  public:
   explicit XRFrameRequestCallbackCollection(ExecutionContext*);
 
   using CallbackId = int;
   CallbackId RegisterCallback(V8XRFrameRequestCallback*);
   void CancelCallback(CallbackId);
-  void ExecuteCallbacks(XRSession*, XRPresentationFrame*);
+  void ExecuteCallbacks(XRSession*, double timestamp, XRFrame*);
 
   bool IsEmpty() const { return !callbacks_.size(); }
 
   void Trace(blink::Visitor*);
-  void TraceWrappers(blink::ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "XRFrameRequestCallbackCollection";
   }

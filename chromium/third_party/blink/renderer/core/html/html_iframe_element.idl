@@ -19,10 +19,14 @@
  */
 
 // https://html.spec.whatwg.org/#the-iframe-element
+
+// The `HTMLString` and `URLString` references below are from Trusted Types:
+// https://github.com/WICG/trusted-types/, which is still WIP.
+// https://crbug.com/739170.
 [HTMLConstructor]
 interface HTMLIFrameElement : HTMLElement {
-    [CEReactions, Reflect, URL] attribute USVString src;
-    [CEReactions, Reflect] attribute DOMString srcdoc;
+    [CEReactions, Reflect, URL, RaisesException=Setter] attribute URLString src;
+    [CEReactions, Reflect, RaisesException=Setter] attribute HTMLString srcdoc;
     [CEReactions, Reflect] attribute DOMString name;
     [PutForwards=value] readonly attribute DOMTokenList sandbox;
     // Note: The seamless attribute was once supported, but was removed.
@@ -43,7 +47,7 @@ interface HTMLIFrameElement : HTMLElement {
     // TODO(iclelland): add spec for JS exposure in the spec for Feature Policy.
     // Please refer to this doc for more details for now:
     // https://docs.google.com/a/chromium.org/document/d/1wvk3cXkblNnbkMcsKayseK-k0SMGiP9b9fQFgfpqQpc/edit?usp=sharing
-    [RuntimeEnabled=FeaturePolicyJavaScriptInterface] readonly attribute Policy policy;
+    [OriginTrialEnabled=FeaturePolicyJavaScriptInterface] readonly attribute Policy policy;
 
     // obsolete members
     // https://html.spec.whatwg.org/#HTMLIFrameElement-partial

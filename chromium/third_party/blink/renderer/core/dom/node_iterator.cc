@@ -24,11 +24,11 @@
 
 #include "third_party/blink/renderer/core/dom/node_iterator.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_node_filter.h"
 #include "third_party/blink/renderer/core/dom/attr.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -204,11 +204,6 @@ void NodeIterator::Trace(blink::Visitor* visitor) {
   visitor->Trace(candidate_node_);
   ScriptWrappable::Trace(visitor);
   NodeIteratorBase::Trace(visitor);
-}
-
-void NodeIterator::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  ScriptWrappable::TraceWrappers(visitor);
-  NodeIteratorBase::TraceWrappers(visitor);
 }
 
 }  // namespace blink

@@ -55,6 +55,9 @@ class HostDrmDevice : public base::RefCountedThreadSafe<HostDrmDevice>,
   void OnGpuServiceLaunchedCompositor(
       ui::ozone::mojom::DrmDevicePtr drm_device_ptr_compositor);
 
+  // Invoked by DrmDeviceConnector on loss of GPU service.
+  void OnGpuServiceLost();
+
   // GpuThreadAdapter
   void AddGpuThreadObserver(GpuThreadObserver* observer) override;
   void RemoveGpuThreadObserver(GpuThreadObserver* observer) override;
@@ -86,11 +89,12 @@ class HostDrmDevice : public base::RefCountedThreadSafe<HostDrmDevice>,
   bool GpuDisableNativeDisplay(int64_t display_id) override;
   bool GpuGetHDCPState(int64_t display_id) override;
   bool GpuSetHDCPState(int64_t display_id, display::HDCPState state) override;
-  bool GpuSetColorCorrection(
+  bool GpuSetColorMatrix(int64_t display_id,
+                         const std::vector<float>& color_matrix) override;
+  bool GpuSetGammaCorrection(
       int64_t display_id,
       const std::vector<display::GammaRampRGBEntry>& degamma_lut,
-      const std::vector<display::GammaRampRGBEntry>& gamma_lut,
-      const std::vector<float>& correction_matrix) override;
+      const std::vector<display::GammaRampRGBEntry>& gamma_lut) override;
 
   // Services needed by DrmWindowHost
   bool GpuDestroyWindow(gfx::AcceleratedWidget widget) override;
@@ -120,7 +124,7 @@ class HostDrmDevice : public base::RefCountedThreadSafe<HostDrmDevice>,
   void RunObservers();
 
   void GpuCheckOverlayCapabilitiesCallback(
-      const gfx::AcceleratedWidget& widget,
+      gfx::AcceleratedWidget widget,
       const OverlaySurfaceCandidateList& overlays,
       const OverlayStatusList& returns) const;
 
@@ -142,6 +146,7 @@ class HostDrmDevice : public base::RefCountedThreadSafe<HostDrmDevice>,
 
   // When running under mus, this is the UI thread specific DrmDevice ptr for
   // use by the compositor.
+  // TODO(rjkroege): When mash is removed, this code can also be removed.
   ui::ozone::mojom::DrmDevicePtr drm_device_ptr_compositor_;
 
   DrmDisplayHostManager* display_manager_;  // Not owned.

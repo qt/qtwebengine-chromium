@@ -34,7 +34,6 @@
 #include "third_party/blink/public/platform/modules/notifications/web_notification_action.h"
 #include "third_party/blink/public/platform/modules/notifications/web_notification_constants.h"
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value_factory.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_notification_action.h"
@@ -53,6 +52,7 @@
 #include "third_party/blink/renderer/modules/notifications/notification_manager.h"
 #include "third_party/blink/renderer/modules/notifications/notification_options.h"
 #include "third_party/blink/renderer/modules/notifications/notification_resources_loader.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/resource_coordinator/frame_resource_coordinator.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -228,7 +228,7 @@ void Notification::OnShow() {
   DispatchEvent(Event::Create(EventTypeNames::show));
 }
 
-void Notification::OnClick() {
+void Notification::OnClick(OnClickCallback completed_closure) {
   ExecutionContext* context = GetExecutionContext();
   Document* document = context->IsDocument() ? ToDocument(context) : nullptr;
   std::unique_ptr<UserGestureIndicator> gesture_indicator =
@@ -236,6 +236,8 @@ void Notification::OnClick() {
                                   UserGestureToken::kNewGesture);
   ScopedWindowFocusAllowedIndicator window_focus_allowed(GetExecutionContext());
   DispatchEvent(Event::Create(EventTypeNames::click));
+
+  std::move(completed_closure).Run();
 }
 
 void Notification::OnClose(OnCloseCallback completed_closure) {
@@ -408,7 +410,7 @@ ScriptPromise Notification::requestPermission(
     PerformanceMonitor::ReportGenericViolation(
         context, PerformanceMonitor::kDiscouragedAPIUse,
         "Only request notification permission in response to a user gesture.",
-        0, nullptr);
+        base::TimeDelta(), nullptr);
   }
 
   // Sites cannot request notification permission from insecure contexts.

@@ -6,8 +6,10 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_block_node.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space_builder.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_layout_test.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/calculation_value.h"
 #include "third_party/blink/renderer/platform/layout_unit.h"
@@ -16,27 +18,27 @@
 namespace blink {
 namespace {
 
+static scoped_refptr<NGConstraintSpace> ConstructConstraintSpace(
+    int inline_size,
+    int block_size,
+    bool fixed_inline = false,
+    bool fixed_block = false,
+    WritingMode writing_mode = WritingMode::kHorizontalTb) {
+  NGLogicalSize size = {LayoutUnit(inline_size), LayoutUnit(block_size)};
+
+  return NGConstraintSpaceBuilder(
+             writing_mode,
+             /* icb_size */ size.ConvertToPhysical(writing_mode))
+      .SetAvailableSize(size)
+      .SetPercentageResolutionSize(size)
+      .SetIsFixedSizeInline(fixed_inline)
+      .SetIsFixedSizeBlock(fixed_block)
+      .ToConstraintSpace(writing_mode);
+}
+
 class NGLengthUtilsTest : public testing::Test {
  protected:
   void SetUp() override { style_ = ComputedStyle::Create(); }
-
-  static scoped_refptr<NGConstraintSpace> ConstructConstraintSpace(
-      int inline_size,
-      int block_size,
-      bool fixed_inline = false,
-      bool fixed_block = false,
-      WritingMode writing_mode = WritingMode::kHorizontalTb) {
-    NGLogicalSize size = {LayoutUnit(inline_size), LayoutUnit(block_size)};
-
-    return NGConstraintSpaceBuilder(
-               writing_mode,
-               /* icb_size */ size.ConvertToPhysical(writing_mode))
-        .SetAvailableSize(size)
-        .SetPercentageResolutionSize(size)
-        .SetIsFixedSizeInline(fixed_inline)
-        .SetIsFixedSizeBlock(fixed_block)
-        .ToConstraintSpace(writing_mode);
-  }
 
   LayoutUnit ResolveInlineLength(
       const Length& length,
@@ -60,20 +62,34 @@ class NGLengthUtilsTest : public testing::Test {
                                        content_size, type, phase);
   }
 
-  LayoutUnit ComputeInlineSizeForFragment(
-      scoped_refptr<const NGConstraintSpace> constraint_space =
-          ConstructConstraintSpace(200, 300),
-      const MinMaxSize& sizes = MinMaxSize()) {
-    return ::blink::ComputeInlineSizeForFragment(*constraint_space, *style_,
-                                                 sizes);
-  }
-
   LayoutUnit ComputeBlockSizeForFragment(
       scoped_refptr<const NGConstraintSpace> constraint_space =
           ConstructConstraintSpace(200, 300),
       LayoutUnit content_size = LayoutUnit()) {
     return ::blink::ComputeBlockSizeForFragment(*constraint_space, *style_,
                                                 content_size);
+  }
+
+  scoped_refptr<ComputedStyle> style_;
+};
+
+class NGLengthUtilsTestWithNode : public NGLayoutTest {
+ public:
+  void SetUp() override {
+    NGLayoutTest::SetUp();
+    style_ = ComputedStyle::Create();
+  }
+
+  LayoutUnit ComputeInlineSizeForFragment(
+      scoped_refptr<const NGConstraintSpace> constraint_space =
+          ConstructConstraintSpace(200, 300),
+      const MinMaxSize& sizes = MinMaxSize()) {
+    LayoutBox* body = ToLayoutBox(GetDocument().body()->GetLayoutObject());
+    body->SetStyle(style_);
+    body->SetPreferredLogicalWidthsDirty();
+    NGBlockNode node(body);
+    return ::blink::ComputeInlineSizeForFragment(*constraint_space, node,
+                                                 &sizes);
   }
 
   scoped_refptr<ComputedStyle> style_;
@@ -143,7 +159,6 @@ TEST_F(NGLengthUtilsTest, testComputeContentContribution) {
   EXPECT_EQ(expected, ComputeMinAndMaxContentContribution(
                           style_->GetWritingMode(), *style_, sizes));
 
-  expected = MinMaxSize{LayoutUnit(), LayoutUnit()};
   style_->SetLogicalWidth(Length(kFillAvailable));
   EXPECT_EQ(expected, ComputeMinAndMaxContentContribution(
                           style_->GetWritingMode(), *style_, sizes));
@@ -222,7 +237,7 @@ TEST_F(NGLengthUtilsTest, testComputeContentContribution) {
                           style_->GetWritingMode(), *style_, sizes));
 }
 
-TEST_F(NGLengthUtilsTest, testComputeInlineSizeForFragment) {
+TEST_F(NGLengthUtilsTestWithNode, testComputeInlineSizeForFragment) {
   MinMaxSize sizes;
   sizes.min_size = LayoutUnit(30);
   sizes.max_size = LayoutUnit(40);
@@ -432,8 +447,8 @@ TEST_F(NGLengthUtilsTest, testAutoMargins) {
   LayoutUnit kAvailableInlineSize(200);
 
   NGBoxStrut margins;
-  ApplyAutoMargins(*style_, *style_, kAvailableInlineSize, kInlineSize,
-                   &margins);
+  ResolveInlineMargins(*style_, *style_, kAvailableInlineSize, kInlineSize,
+                       &margins);
 
   EXPECT_EQ(LayoutUnit(), margins.block_start);
   EXPECT_EQ(LayoutUnit(), margins.block_end);
@@ -442,16 +457,16 @@ TEST_F(NGLengthUtilsTest, testAutoMargins) {
 
   style_->SetMarginLeft(Length(0, kFixed));
   margins = NGBoxStrut();
-  ApplyAutoMargins(*style_, *style_, kAvailableInlineSize, kInlineSize,
-                   &margins);
+  ResolveInlineMargins(*style_, *style_, kAvailableInlineSize, kInlineSize,
+                       &margins);
   EXPECT_EQ(LayoutUnit(0), margins.inline_start);
   EXPECT_EQ(LayoutUnit(50), margins.inline_end);
 
   style_->SetMarginLeft(Length(kAuto));
   style_->SetMarginRight(Length(0, kFixed));
   margins = NGBoxStrut();
-  ApplyAutoMargins(*style_, *style_, kAvailableInlineSize, kInlineSize,
-                   &margins);
+  ResolveInlineMargins(*style_, *style_, kAvailableInlineSize, kInlineSize,
+                       &margins);
   EXPECT_EQ(LayoutUnit(50), margins.inline_start);
   EXPECT_EQ(LayoutUnit(0), margins.inline_end);
 
@@ -461,8 +476,8 @@ TEST_F(NGLengthUtilsTest, testAutoMargins) {
   style_->SetMarginRight(Length(5000, kFixed));
   margins = NGBoxStrut();
   margins.inline_end = LayoutUnit(5000);
-  ApplyAutoMargins(*style_, *style_, kAvailableInlineSize, kInlineSize,
-                   &margins);
+  ResolveInlineMargins(*style_, *style_, kAvailableInlineSize, kInlineSize,
+                       &margins);
   EXPECT_EQ(LayoutUnit(0), margins.inline_start);
   EXPECT_EQ(LayoutUnit(50), margins.inline_end);
 }

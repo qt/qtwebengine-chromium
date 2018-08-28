@@ -25,6 +25,7 @@
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/ui/public/interfaces/event_injector.mojom.h"
+#include "services/ui/public/interfaces/screen_provider.mojom.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/client/transient_window_client_observer.h"
@@ -98,6 +99,7 @@ using EventResultCallback = base::OnceCallback<void(ui::mojom::EventResult)>;
 class AURA_EXPORT WindowTreeClient
     : public ui::mojom::WindowTreeClient,
       public ui::mojom::WindowManager,
+      public ui::mojom::ScreenProviderObserver,
       public CaptureSynchronizerDelegate,
       public FocusSynchronizerDelegate,
       public DragDropControllerHost,
@@ -107,8 +109,7 @@ class AURA_EXPORT WindowTreeClient
  public:
   // TODO(sky): remove Config. https://crbug.com/842365.
   enum class Config {
-    // kMash is deprecated.
-    kMash,
+    kMashDeprecated,
 
     // kMus2 targets ws2. services/ui/Service and services/ui/ws2/WindowService
     // provide an implementation of the same mojom interfaces, but differ in a
@@ -140,7 +141,7 @@ class AURA_EXPORT WindowTreeClient
       WindowTreeClientDelegate* delegate,
       bool create_discardable_memory = true,
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner = nullptr,
-      Config config = Config::kMash);
+      Config config = Config::kMashDeprecated);
 
   // Creates a WindowTreeClient such that the Window Service creates a single
   // WindowTreeHost. This is useful for testing and examples.
@@ -157,7 +158,6 @@ class AURA_EXPORT WindowTreeClient
 
   Config config() const { return config_; }
 
-
   service_manager::Connector* connector() { return connector_; }
   CaptureSynchronizer* capture_synchronizer() {
     return capture_synchronizer_.get();
@@ -165,6 +165,9 @@ class AURA_EXPORT WindowTreeClient
   FocusSynchronizer* focus_synchronizer() { return focus_synchronizer_.get(); }
 
   bool connected() const { return tree_ != nullptr; }
+
+  // Blocks until the initial screen configuration is received.
+  bool WaitForDisplays();
 
   void SetCanFocus(Window* window, bool can_focus);
   void SetCanAcceptDrops(WindowMus* window, bool can_accept_drops);
@@ -262,7 +265,7 @@ class AURA_EXPORT WindowTreeClient
       ui::mojom::WindowTreeClientRequest request = nullptr,
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner = nullptr,
       bool create_discardable_memory = true,
-      Config config = Config::kMash);
+      Config config = Config::kMashDeprecated);
 
   // Creates a PlatformEventSourceMus if not created yet.
   void CreatePlatformEventSourceIfNecessary();
@@ -518,6 +521,13 @@ class AURA_EXPORT WindowTreeClient
       const std::vector<BlockingContainers>& all_blocking_containers) override;
   void GetWindowManager(
       mojo::AssociatedInterfaceRequest<WindowManager> internal) override;
+  void GetScreenProviderObserver(
+      ui::mojom::ScreenProviderObserverAssociatedRequest observer) override;
+
+  // ui::mojom::ScreenProviderObserver:
+  void OnDisplaysChanged(std::vector<ui::mojom::WsDisplayPtr> ws_displays,
+                         int64_t primary_display_id,
+                         int64_t internal_display_id) override;
 
   // Overridden from WindowManager:
   void OnConnect() override;
@@ -549,7 +559,7 @@ class AURA_EXPORT WindowTreeClient
   void WmClientJankinessChanged(ui::ClientSpecificId client_id,
                                 bool janky) override;
   void WmBuildDragImage(const gfx::Point& screen_location,
-                        const SkBitmap& drag_image,
+                        const gfx::ImageSkia& drag_image,
                         const gfx::Vector2d& drag_image_offset,
                         ui::mojom::PointerKind source) override;
   void WmMoveDragImage(const gfx::Point& screen_location,
@@ -760,6 +770,9 @@ class AURA_EXPORT WindowTreeClient
 #if defined(USE_OZONE)
   std::unique_ptr<PlatformEventSourceMus> platform_event_source_;
 #endif
+
+  mojo::AssociatedBinding<ui::mojom::ScreenProviderObserver>
+      screen_provider_observer_binding_{this};
 
   base::WeakPtrFactory<WindowTreeClient> weak_factory_;
 

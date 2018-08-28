@@ -129,10 +129,9 @@ CJX_Object::~CJX_Object() {
   ClearMapModuleBuffer();
 }
 
-void CJX_Object::DefineMethods(const CJX_MethodSpec method_specs[],
-                               size_t count) {
-  for (size_t i = 0; i < count; ++i)
-    method_specs_[method_specs[i].pName] = method_specs[i].pMethodCall;
+void CJX_Object::DefineMethods(pdfium::span<const CJX_MethodSpec> methods) {
+  for (const auto& item : methods)
+    method_specs_[item.pName] = item.pMethodCall;
 }
 
 CXFA_Document* CJX_Object::GetDocument() const {
@@ -172,7 +171,8 @@ CJS_Return CJX_Object::RunMethod(
     const std::vector<v8::Local<v8::Value>>& params) {
   auto it = method_specs_.find(func.UTF8Encode());
   if (it == method_specs_.end())
-    return CJS_Return(false);
+    return CJS_Return(JSMessage::kUnknownMethod);
+
   return it->second(this, GetXFAObject()->GetDocument()->GetScriptContext(),
                     params);
 }
@@ -1175,9 +1175,9 @@ void CJX_Object::Script_Attribute_String(CFXJSE_Value* pValue,
   WideString wsSOM;
   if (!wsValue.IsEmpty()) {
     if (wsValue[0] == '#')
-      wsID = WideString(wsValue.c_str() + 1, wsValue.GetLength() - 1);
+      wsID = wsValue.Mid(1, wsValue.GetLength() - 1);
     else
-      wsSOM = wsValue;
+      wsSOM = std::move(wsValue);
   }
 
   CXFA_Node* pProtoNode = nullptr;

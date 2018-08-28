@@ -27,12 +27,13 @@ class RemoteDeviceRefTest : public testing::Test {
         [cryptauth::SoftwareFeature::BETTER_TOGETHER_HOST] =
             cryptauth::SoftwareFeatureState::kEnabled;
 
+    std::vector<BeaconSeed> beacon_seeds({BeaconSeed(), BeaconSeed()});
+
     remote_device_ = std::make_shared<RemoteDevice>(
         "user_id", "name", "public_key", "persistent_symmetric_key",
-        true /* unlock_key */, true /* supports_mobile_hotspot */,
         42000 /* last_update_time_millis */,
-        software_feature_to_state_map /* software_features */);
-    remote_device_->LoadBeaconSeeds({BeaconSeed(), BeaconSeed()});
+        software_feature_to_state_map /* software_features */,
+        beacon_seeds /* beacon_seeds */);
   }
 
   std::shared_ptr<RemoteDevice> remote_device_;
@@ -48,9 +49,6 @@ TEST_F(RemoteDeviceRefTest, TestFields) {
   EXPECT_EQ(remote_device_->public_key, remote_device_ref.public_key());
   EXPECT_EQ(remote_device_->persistent_symmetric_key,
             remote_device_ref.persistent_symmetric_key());
-  EXPECT_EQ(remote_device_->unlock_key, remote_device_ref.unlock_key());
-  EXPECT_EQ(remote_device_->supports_mobile_hotspot,
-            remote_device_ref.supports_mobile_hotspot());
   EXPECT_EQ(remote_device_->last_update_time_millis,
             remote_device_ref.last_update_time_millis());
   EXPECT_EQ(&remote_device_->beacon_seeds, &remote_device_ref.beacon_seeds());

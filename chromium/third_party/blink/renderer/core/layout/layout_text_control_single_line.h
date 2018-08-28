@@ -37,6 +37,9 @@ class LayoutTextControlSingleLine : public LayoutTextControl {
   ~LayoutTextControlSingleLine() override;
 
   void CapsLockStateMayHaveChanged();
+  bool ShouldDrawCapsLockIndicator() const {
+    return should_draw_caps_lock_indicator_;
+  }
 
  protected:
   Element* ContainerElement() const;
@@ -50,7 +53,7 @@ class LayoutTextControlSingleLine : public LayoutTextControl {
     return type == kLayoutObjectTextField || LayoutTextControl::IsOfType(type);
   }
 
-  void Paint(const PaintInfo&, const LayoutPoint&) const override;
+  void Paint(const PaintInfo&) const override;
   void UpdateLayout() override;
 
   bool NodeAtPoint(HitTestResult&,

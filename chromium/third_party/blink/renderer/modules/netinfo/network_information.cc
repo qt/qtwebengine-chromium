@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -22,9 +23,12 @@ Settings* GetSettings(ExecutionContext* execution_context) {
   if (!execution_context)
     return nullptr;
 
-  Document* document = ToDocument(execution_context);
-  if (!document)
+  if (!execution_context->IsDocument())
     return nullptr;
+
+  Document* document = ToDocument(execution_context);
+  // |document| is guaranteed to be non-null since |execution_context| is
+  // non-null.
   return document->GetSettings();
 }
 

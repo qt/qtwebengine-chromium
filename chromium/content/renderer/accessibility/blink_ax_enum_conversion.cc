@@ -113,6 +113,10 @@ ax::mojom::Role AXRoleFromBlink(blink::WebAXRole role) {
       return ax::mojom::Role::kComboBoxMenuButton;
     case blink::kWebAXRoleComplementary:
       return ax::mojom::Role::kComplementary;
+    case blink::kWebAXRoleContentDeletion:
+      return ax::mojom::Role::kContentDeletion;
+    case blink::kWebAXRoleContentInsertion:
+      return ax::mojom::Role::kContentInsertion;
     case blink::kWebAXRoleContentInfo:
       return ax::mojom::Role::kContentInfo;
     case blink::kWebAXRoleDate:
@@ -420,6 +424,8 @@ ax::mojom::Event AXEventFromBlink(blink::WebAXEvent event) {
       return ax::mojom::Event::kClicked;
     case blink::kWebAXEventDocumentSelectionChanged:
       return ax::mojom::Event::kDocumentSelectionChanged;
+    case blink::kWebAXEventDocumentTitleChanged:
+      return ax::mojom::Event::kDocumentTitleChanged;
     case blink::kWebAXEventExpandedChanged:
       return ax::mojom::Event::kExpandedChanged;
     case blink::kWebAXEventFocus:

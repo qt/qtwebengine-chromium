@@ -15,6 +15,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
@@ -23,6 +24,7 @@
 #include "device/gamepad/gamepad_data_fetcher.h"
 #include "device/gamepad/gamepad_data_fetcher_manager.h"
 #include "device/gamepad/gamepad_user_gesture.h"
+#include "device/gamepad/public/cpp/gamepad_features.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 
 namespace device {
@@ -83,17 +85,9 @@ GamepadProvider::~GamepadProvider() {
   DCHECK(data_fetchers_.empty());
 }
 
-base::SharedMemoryHandle GamepadProvider::DuplicateSharedMemoryHandle() {
-  return gamepad_shared_buffer_->shared_memory()->handle().Duplicate();
-}
-
-mojo::ScopedSharedBufferHandle GamepadProvider::GetSharedBufferHandle() {
-  // TODO(heke): Use mojo::SharedBuffer rather than base::SharedMemory in
-  // GamepadSharedBuffer. See crbug.com/670655 for details
-  return mojo::WrapSharedMemoryHandle(
-      gamepad_shared_buffer_->shared_memory()->GetReadOnlyHandle(),
-      sizeof(GamepadHardwareBuffer),
-      mojo::UnwrappedSharedMemoryHandleProtection::kReadOnly);
+base::ReadOnlySharedMemoryRegion
+GamepadProvider::DuplicateSharedMemoryRegion() {
+  return gamepad_shared_buffer_->DuplicateSharedMemoryRegion();
 }
 
 void GamepadProvider::GetCurrentGamepadData(Gamepads* data) {
@@ -185,6 +179,9 @@ void GamepadProvider::OnDevicesChanged(base::SystemMonitor::DeviceType type) {
 }
 
 void GamepadProvider::Initialize(std::unique_ptr<GamepadDataFetcher> fetcher) {
+  sampling_interval_delta_ =
+      base::TimeDelta::FromMilliseconds(features::GetGamepadPollingInterval());
+
   base::SystemMonitor* monitor = base::SystemMonitor::Get();
   if (monitor)
     monitor->AddDevicesChangedObserver(this);
@@ -372,7 +369,7 @@ void GamepadProvider::ScheduleDoPoll() {
 
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE, base::BindOnce(&GamepadProvider::DoPoll, Unretained(this)),
-      base::TimeDelta::FromMilliseconds(kDesiredSamplingIntervalMs));
+      sampling_interval_delta_);
   have_scheduled_do_poll_ = true;
 }
 

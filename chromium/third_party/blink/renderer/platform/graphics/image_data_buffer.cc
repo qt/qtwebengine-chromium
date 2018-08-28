@@ -133,14 +133,6 @@ bool ImageDataBuffer::EncodeImageInternal(const String& mime_type,
     SkJpegEncoder::Options options;
     options.fQuality = ImageEncoder::ComputeJpegQuality(quality);
     options.fAlphaOption = SkJpegEncoder::AlphaOption::kBlendOnBlack;
-    // When the gamma is linear (which is always the case with currently
-    // supported color spaces in F16 format), it does not matter whether we use
-    // kRespect or kIgnore, but the JPEG encoder does not support kIgnore with
-    // F16 for some reason, so we switch to kRespect in that case, with no
-    // consequence on the encoded output.
-    options.fBlendBehavior = pixmap.colorType() == kRGBA_F16_SkColorType
-                                 ? SkTransferFunctionBehavior::kRespect
-                                 : SkTransferFunctionBehavior::kIgnore;
     if (options.fQuality == 100) {
       options.fDownsample = SkJpegEncoder::Downsample::k444;
     }
@@ -148,8 +140,7 @@ bool ImageDataBuffer::EncodeImageInternal(const String& mime_type,
   }
 
   if (mime_type == "image/webp") {
-    SkWebpEncoder::Options options = ImageEncoder::ComputeWebpOptions(
-        quality, SkTransferFunctionBehavior::kIgnore);
+    SkWebpEncoder::Options options = ImageEncoder::ComputeWebpOptions(quality);
     return ImageEncoder::Encode(encoded_image, pixmap, options);
   }
 
@@ -157,7 +148,6 @@ bool ImageDataBuffer::EncodeImageInternal(const String& mime_type,
   SkPngEncoder::Options options;
   options.fFilterFlags = SkPngEncoder::FilterFlag::kSub;
   options.fZLibLevel = 3;
-  options.fUnpremulBehavior = SkTransferFunctionBehavior::kIgnore;
   return ImageEncoder::Encode(encoded_image, pixmap, options);
 }
 
@@ -173,8 +163,7 @@ String ImageDataBuffer::ToDataURL(const String& mime_type,
   if (pixmap.colorSpace()) {
     if (!pixmap.colorSpace()->isSRGB()) {
       skia_image = SkImage::MakeFromRaster(pixmap, nullptr, nullptr);
-      skia_image = skia_image->makeColorSpace(
-          SkColorSpace::MakeSRGB(), SkTransferFunctionBehavior::kIgnore);
+      skia_image = skia_image->makeColorSpace(SkColorSpace::MakeSRGB());
       skia_image->peekPixels(&pixmap);
     }
     pixmap.setColorSpace(nullptr);

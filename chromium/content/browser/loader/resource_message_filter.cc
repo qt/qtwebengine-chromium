@@ -4,7 +4,7 @@
 
 #include "content/browser/loader/resource_message_filter.h"
 
-#include "base/feature_list.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
@@ -18,9 +18,8 @@
 #include "content/common/resource_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_context.h"
-#include "content/public/common/content_features.h"
+#include "content/public/common/content_switches.h"
 #include "services/network/cors/cors_url_loader_factory.h"
-#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "storage/browser/fileapi/file_system_context.h"
 
@@ -146,6 +145,10 @@ void ResourceMessageFilter::CreateLoaderAndStart(
 
 void ResourceMessageFilter::Clone(
     network::mojom::URLLoaderFactoryRequest request) {
+  if (!url_loader_factory_) {
+    queued_clone_requests_.emplace_back(std::move(request));
+    return;
+  }
   url_loader_factory_->Clone(std::move(request));
 }
 
@@ -175,15 +178,19 @@ void ResourceMessageFilter::InitializeOnIOThread() {
   // The WeakPtr of the filter must be created on the IO thread. So sets the
   // WeakPtr of |requester_info_| now.
   requester_info_->set_filter(GetWeakPtr());
-  url_loader_factory_ = std::make_unique<URLLoaderFactoryImpl>(requester_info_);
+  url_loader_factory_ = std::make_unique<network::cors::CORSURLLoaderFactory>(
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableWebSecurity),
+      std::make_unique<URLLoaderFactoryImpl>(requester_info_),
+      base::BindRepeating(&ResourceDispatcherHostImpl::CancelRequest,
+                          base::Unretained(ResourceDispatcherHostImpl::Get()),
+                          requester_info_->child_id()));
 
-  if (base::FeatureList::IsEnabled(network::features::kOutOfBlinkCORS)) {
-    url_loader_factory_ = std::make_unique<network::cors::CORSURLLoaderFactory>(
-        std::move(url_loader_factory_),
-        base::BindRepeating(&ResourceDispatcherHostImpl::CancelRequest,
-                            base::Unretained(ResourceDispatcherHostImpl::Get()),
-                            requester_info_->child_id()));
-  }
+  std::vector<network::mojom::URLLoaderFactoryRequest> requests =
+      std::move(queued_clone_requests_);
+  for (auto& request : requests)
+    Clone(std::move(request));
+  queued_clone_requests_.clear();
 }
 
 }  // namespace content

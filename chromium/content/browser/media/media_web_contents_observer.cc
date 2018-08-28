@@ -12,6 +12,7 @@
 #include "content/browser/picture_in_picture/picture_in_picture_window_controller_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/media/media_player_delegate_messages.h"
+#include "content/public/browser/picture_in_picture_window_controller.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "ipc/ipc_message_macros.h"
@@ -46,11 +47,11 @@ void CheckFullscreenDetectionEnabled(WebContents* web_contents) {
 bool MediaPlayerEntryExists(
     const WebContentsObserver::MediaPlayerId& player_id,
     const MediaWebContentsObserver::ActiveMediaPlayerMap& player_map) {
-  const auto& players = player_map.find(player_id.first);
+  const auto& players = player_map.find(player_id.render_frame_host);
   if (players == player_map.end())
     return false;
 
-  return players->second.find(player_id.second) != players->second.end();
+  return players->second.find(player_id.delegate_id) != players->second.end();
 }
 
 }  // anonymous namespace
@@ -70,10 +71,16 @@ void MediaWebContentsObserver::RenderFrameDeleted(
   ClearWakeLocks(render_frame_host);
   session_controllers_manager_.RenderFrameDeleted(render_frame_host);
 
-  if (fullscreen_player_ && fullscreen_player_->first == render_frame_host) {
+  if (fullscreen_player_ &&
+      fullscreen_player_->render_frame_host == render_frame_host) {
     picture_in_picture_allowed_in_fullscreen_.reset();
     fullscreen_player_.reset();
   }
+
+  // Usually the frame will exit PIP before it is deleted but for OOPIF, it
+  // seems that the player never notifies the browser process.
+  if (pip_player_ && pip_player_->render_frame_host == render_frame_host)
+    ExitPictureInPictureInternal();
 }
 
 void MediaWebContentsObserver::MaybeUpdateAudibleState() {
@@ -158,10 +165,10 @@ void MediaWebContentsObserver::RequestPersistentVideo(bool value) {
 
   // The message is sent to the renderer even though the video is already the
   // fullscreen element itself. It will eventually be handled by Blink.
-  RenderFrameHost* target_frame = fullscreen_player_->first;
-  int delegate_id = fullscreen_player_->second;
-  target_frame->Send(new MediaPlayerDelegateMsg_BecamePersistentVideo(
-      target_frame->GetRoutingID(), delegate_id, value));
+  fullscreen_player_->render_frame_host->Send(
+      new MediaPlayerDelegateMsg_BecamePersistentVideo(
+          fullscreen_player_->render_frame_host->GetRoutingID(),
+          fullscreen_player_->delegate_id, value));
 }
 
 bool MediaWebContentsObserver::IsPlayerActive(
@@ -176,10 +183,10 @@ void MediaWebContentsObserver::OnPictureInPictureWindowResize(
     const gfx::Size& window_size) {
   DCHECK(pip_player_.has_value());
 
-  RenderFrameHost* frame = pip_player_->first;
-  int delegate_id = pip_player_->second;
-  frame->Send(new MediaPlayerDelegateMsg_OnPictureInPictureWindowResize(
-      frame->GetRoutingID(), delegate_id, window_size));
+  pip_player_->render_frame_host->Send(
+      new MediaPlayerDelegateMsg_OnPictureInPictureWindowResize(
+          pip_player_->render_frame_host->GetRoutingID(),
+          pip_player_->delegate_id, window_size));
 }
 
 void MediaWebContentsObserver::OnMediaDestroyed(
@@ -198,6 +205,18 @@ void MediaWebContentsObserver::OnMediaPaused(RenderFrameHost* render_frame_host,
       RemoveMediaPlayerEntry(player_id, &active_video_players_);
 
   UpdateVideoLock();
+
+  // TODO(872066): check for |pip_player_| fully matching paused player.
+  if (!web_contents()->IsBeingDestroyed() && pip_player_.has_value() &&
+      pip_player_->render_frame_host == render_frame_host) {
+    PictureInPictureWindowControllerImpl* pip_controller =
+        PictureInPictureWindowControllerImpl::FromWebContents(
+            web_contents_impl());
+    if (pip_controller) {
+      pip_controller->UpdatePlaybackState(false /* is not playing */,
+                                          reached_end_of_stream);
+    }
+  }
 
   if (removed_audio || removed_video) {
     // Notify observers the player has been "paused".
@@ -243,8 +262,19 @@ void MediaWebContentsObserver::OnMediaPlaying(
     return;
   }
 
+  // TODO(872066): check for |pip_player_| fully matching paused player.
+  if (!web_contents()->IsBeingDestroyed() && pip_player_.has_value() &&
+      pip_player_->render_frame_host == render_frame_host) {
+    PictureInPictureWindowControllerImpl* pip_controller =
+        PictureInPictureWindowControllerImpl::FromWebContents(
+            web_contents_impl());
+    if (pip_controller) {
+      pip_controller->UpdatePlaybackState(true /* is not playing */,
+                                          false /* reached_end_of_stream */);
+    }
+  }
+
   // Notify observers of the new player.
-  DCHECK(has_audio || has_video);
   web_contents_impl()->MediaStartedPlaying(
       WebContentsObserver::MediaPlayerInfo(has_video, has_audio), id);
 }
@@ -312,17 +342,7 @@ void MediaWebContentsObserver::OnPictureInPictureModeEnded(
     RenderFrameHost* render_frame_host,
     int delegate_id,
     int request_id) {
-  // TODO(mlamouri): must be a DCHECK but can't at the moment because we do not
-  // correctly notify players when switching PIP video in the same tab.
-  if (pip_player_) {
-    web_contents_impl()->ExitPictureInPicture();
-
-    // Reset must happen after notifying the WebContents because it may interact
-    // with it.
-    pip_player_.reset();
-
-    UpdateVideoLock();
-  }
+  ExitPictureInPictureInternal();
 
   render_frame_host->Send(
       new MediaPlayerDelegateMsg_OnPictureInPictureModeEnded_ACK(
@@ -337,12 +357,16 @@ void MediaWebContentsObserver::OnPictureInPictureSurfaceChanged(
   DCHECK(surface_id.is_valid());
   DCHECK(pip_player_);
 
+  pip_player_ = MediaPlayerId(render_frame_host, delegate_id);
+
   PictureInPictureWindowControllerImpl* pip_controller =
       PictureInPictureWindowControllerImpl::FromWebContents(
           web_contents_impl());
-  DCHECK(pip_controller);
 
-  pip_controller->EmbedSurface(surface_id, natural_size);
+  // The PictureInPictureWindowController instance may not have been created by
+  // the embedder.
+  if (pip_controller)
+    pip_controller->EmbedSurface(surface_id, natural_size);
 }
 
 void MediaWebContentsObserver::ClearWakeLocks(
@@ -448,18 +472,18 @@ void MediaWebContentsObserver::OnMediaMutedStatusChanged(
 void MediaWebContentsObserver::AddMediaPlayerEntry(
     const MediaPlayerId& id,
     ActiveMediaPlayerMap* player_map) {
-  (*player_map)[id.first].insert(id.second);
+  (*player_map)[id.render_frame_host].insert(id.delegate_id);
 }
 
 bool MediaWebContentsObserver::RemoveMediaPlayerEntry(
     const MediaPlayerId& id,
     ActiveMediaPlayerMap* player_map) {
-  auto it = player_map->find(id.first);
+  auto it = player_map->find(id.render_frame_host);
   if (it == player_map->end())
     return false;
 
   // Remove the player.
-  bool did_remove = it->second.erase(id.second) == 1;
+  bool did_remove = it->second.erase(id.delegate_id) == 1;
   if (!did_remove)
     return false;
 
@@ -482,6 +506,18 @@ void MediaWebContentsObserver::RemoveAllMediaPlayerEntries(
     removed_players->insert(MediaPlayerId(render_frame_host, delegate_id));
 
   player_map->erase(it);
+}
+
+void MediaWebContentsObserver::ExitPictureInPictureInternal() {
+  DCHECK(pip_player_);
+
+  web_contents_impl()->ExitPictureInPicture();
+
+  // Reset must happen after notifying the WebContents because it may interact
+  // with it.
+  pip_player_.reset();
+
+  UpdateVideoLock();
 }
 
 WebContentsImpl* MediaWebContentsObserver::web_contents_impl() const {

@@ -57,14 +57,14 @@ struct NGInlineBoxState {
   // is set.
   bool has_start_edge = false;
   bool has_end_edge = false;
-  NGBoxStrut padding;
+  NGLineBoxStrut padding;
   // |CreateBoxFragment()| needs margin, border+padding, and the sum of them.
   LayoutUnit margin_inline_start;
   LayoutUnit margin_inline_end;
   LayoutUnit margin_border_padding_inline_start;
   LayoutUnit margin_border_padding_inline_end;
-  LayoutUnit border_padding_block_start;
-  LayoutUnit border_padding_block_end;
+  LayoutUnit border_padding_line_over;
+  LayoutUnit border_padding_line_under;
 
   Vector<NGPendingPositions> pending_descendants;
   bool include_used_fonts = false;
@@ -90,6 +90,12 @@ struct NGInlineBoxState {
   void SetNeedsBoxFragment();
   void SetLineRightForBoxFragment(const NGInlineItem&,
                                   const NGInlineItemResult&);
+
+  // In certain circumstances, the parent's rects is not a simple union of its
+  // children fragments' rects, e.g., when children have margin. In such cases,
+  // we should create box fragments for the parent to avoid hacky fixup when
+  // computing its rects.
+  bool ParentNeedsBoxFragment(const NGInlineBoxState& parent) const;
 
   // Returns if the text style can be added without open-tag.
   // Text with different font or vertical-align needs to be wrapped with an
@@ -179,7 +185,7 @@ class CORE_EXPORT NGInlineLayoutStateStack {
 
     bool has_line_left_edge = false;
     bool has_line_right_edge = false;
-    NGBoxStrut padding;
+    NGLineBoxStrut padding;
     // |CreateBoxFragment()| needs margin, border+padding, and the sum of them.
     LayoutUnit margin_line_left;
     LayoutUnit margin_line_right;

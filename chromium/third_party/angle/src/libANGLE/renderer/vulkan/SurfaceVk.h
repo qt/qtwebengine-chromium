@@ -20,14 +20,17 @@ namespace rx
 {
 class RendererVk;
 
-class OffscreenSurfaceVk : public SurfaceImpl
+class OffscreenSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
 {
   public:
     OffscreenSurfaceVk(const egl::SurfaceState &surfaceState, EGLint width, EGLint height);
     ~OffscreenSurfaceVk() override;
 
     egl::Error initialize(const egl::Display *display) override;
-    FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
+    void destroy(const egl::Display *display) override;
+
+    FramebufferImpl *createDefaultFramebuffer(const gl::Context *context,
+                                              const gl::FramebufferState &state) override;
     egl::Error swap(const gl::Context *context) override;
     egl::Error postSubBuffer(const gl::Context *context,
                              EGLint x,
@@ -58,8 +61,29 @@ class OffscreenSurfaceVk : public SurfaceImpl
                                  const gl::ImageIndex &imageIndex) override;
 
   private:
+    struct AttachmentImage final : angle::NonCopyable
+    {
+        AttachmentImage(vk::CommandGraphResource *commandGraphResource);
+        ~AttachmentImage();
+
+        angle::Result initialize(DisplayVk *displayVk,
+                                 EGLint width,
+                                 EGLint height,
+                                 const vk::Format &vkFormat);
+        void destroy(const egl::Display *display, Serial storedQueueSerial);
+
+        vk::ImageHelper image;
+        vk::ImageView imageView;
+        RenderTargetVk renderTarget;
+    };
+
+    angle::Result initializeImpl(DisplayVk *displayVk);
+
     EGLint mWidth;
     EGLint mHeight;
+
+    AttachmentImage mColorAttachment;
+    AttachmentImage mDepthStencilAttachment;
 };
 
 class WindowSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
@@ -74,7 +98,8 @@ class WindowSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
     void destroy(const egl::Display *display) override;
 
     egl::Error initialize(const egl::Display *display) override;
-    FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
+    FramebufferImpl *createDefaultFramebuffer(const gl::Context *context,
+                                              const gl::FramebufferState &state) override;
     egl::Error swap(const gl::Context *context) override;
     egl::Error postSubBuffer(const gl::Context *context,
                              EGLint x,
@@ -104,9 +129,9 @@ class WindowSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
     gl::Error initializeContents(const gl::Context *context,
                                  const gl::ImageIndex &imageIndex) override;
 
-    gl::ErrorOrResult<vk::Framebuffer *> getCurrentFramebuffer(
-        VkDevice device,
-        const vk::RenderPass &compatibleRenderPass);
+    angle::Result getCurrentFramebuffer(vk::Context *context,
+                                        const vk::RenderPass &compatibleRenderPass,
+                                        vk::Framebuffer **framebufferOut);
 
   protected:
     EGLNativeWindowType mNativeWindowType;
@@ -114,9 +139,10 @@ class WindowSurfaceVk : public SurfaceImpl, public vk::CommandGraphResource
     VkInstance mInstance;
 
   private:
-    virtual vk::ErrorOrResult<gl::Extents> createSurfaceVk(RendererVk *renderer) = 0;
-    vk::Error initializeImpl(RendererVk *renderer);
-    vk::Error nextSwapchainImage(RendererVk *renderer);
+    virtual angle::Result createSurfaceVk(vk::Context *context, gl::Extents *extentsOut) = 0;
+    angle::Result initializeImpl(DisplayVk *displayVk);
+    angle::Result nextSwapchainImage(DisplayVk *displayVk);
+    angle::Result swapImpl(DisplayVk *displayVk);
 
     VkSwapchainKHR mSwapchain;
 

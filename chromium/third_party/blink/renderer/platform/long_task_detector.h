@@ -5,10 +5,10 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_LONG_TASK_DETECTOR_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LONG_TASK_DETECTOR_H_
 
+#include "base/task/sequence_manager/task_time_observer.h"
 #include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
-#include "third_party/blink/renderer/platform/scheduler/base/task_time_observer.h"
 #include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
@@ -39,16 +39,18 @@ class PLATFORM_EXPORT LongTaskDetector final
 
   void Trace(blink::Visitor*);
 
-  static constexpr double kLongTaskThresholdSeconds = 0.05;
+  static constexpr base::TimeDelta kLongTaskThreshold =
+      base::TimeDelta::FromMilliseconds(50);
 
  private:
   LongTaskDetector();
 
   // scheduler::TaskTimeObserver implementation
-  void WillProcessTask(double start_time) override {}
-  void DidProcessTask(double start_time, double end_time) override;
+  void WillProcessTask(base::TimeTicks start_time) override {}
+  void DidProcessTask(base::TimeTicks start_time,
+                      base::TimeTicks end_time) override;
 
-  HeapHashSet<WeakMember<LongTaskObserver>> observers_;
+  HeapHashSet<Member<LongTaskObserver>> observers_;
 };
 
 }  // namespace blink

@@ -25,8 +25,10 @@ NGLineHeightMetrics::NGLineHeightMetrics(const FontMetrics& font_metrics,
 
 void NGLineHeightMetrics::Initialize(const FontMetrics& font_metrics,
                                      FontBaseline baseline_type) {
-  ascent = font_metrics.FixedAscent(baseline_type);
-  descent = font_metrics.FixedDescent(baseline_type);
+  // TODO(kojii): In future, we'd like to use LayoutUnit metrics to support
+  // sub-CSS-pixel layout.
+  ascent = LayoutUnit(font_metrics.Ascent(baseline_type));
+  descent = LayoutUnit(font_metrics.Descent(baseline_type));
 }
 
 void NGLineHeightMetrics::AddLeading(LayoutUnit line_height) {
@@ -47,6 +49,14 @@ void NGLineHeightMetrics::Move(LayoutUnit delta) {
 void NGLineHeightMetrics::Unite(const NGLineHeightMetrics& other) {
   ascent = std::max(ascent, other.ascent);
   descent = std::max(descent, other.descent);
+}
+
+void NGLineHeightMetrics::operator+=(const NGLineHeightMetrics& other) {
+  DCHECK(ascent != LayoutUnit::Min() && descent != LayoutUnit::Min());
+  DCHECK(other.ascent != LayoutUnit::Min() &&
+         other.descent != LayoutUnit::Min());
+  ascent += other.ascent;
+  descent += other.descent;
 }
 
 }  // namespace blink

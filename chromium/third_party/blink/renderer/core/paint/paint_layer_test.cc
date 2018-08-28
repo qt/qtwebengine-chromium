@@ -7,6 +7,7 @@
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
 #include "third_party/blink/renderer/platform/testing/paint_test_configurations.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
@@ -232,7 +233,6 @@ TEST_P(PaintLayerTest, CompositedScrollingNoNeedsRepaint) {
   if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
     return;
 
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='scroll' style='width: 100px; height: 100px; overflow: scroll;
         will-change: transform'>
@@ -283,10 +283,7 @@ TEST_P(PaintLayerTest, NonCompositedScrollingNeedsRepaint) {
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
   EXPECT_EQ(LayoutPoint(-1000, -1000), content_layer->Location());
   EXPECT_TRUE(scroll_layer->NeedsRepaint());
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    EXPECT_FALSE(content_layer->NeedsRepaint());
-  else
-    EXPECT_TRUE(content_layer->NeedsRepaint());
+  EXPECT_FALSE(content_layer->NeedsRepaint());
   GetDocument().View()->UpdateAllLifecyclePhases();
 }
 
@@ -312,6 +309,225 @@ TEST_P(PaintLayerTest, HasNonIsolatedDescendantWithBlendMode) {
 
   EXPECT_FALSE(parent->HasDescendantWithClipPath());
   EXPECT_TRUE(parent->HasVisibleDescendant());
+}
+
+TEST_P(PaintLayerTest, HasDescendantWithSticky) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='isolation: isolate'>
+      <div id='child' style='position: sticky'>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+  EXPECT_TRUE(parent->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child->HasDescendantWithStickyOrFixed());
+
+  GetDocument().getElementById("child")->setAttribute(HTMLNames::styleAttr,
+                                                      "position: relative");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  EXPECT_FALSE(parent->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child->HasDescendantWithStickyOrFixed());
+}
+
+TEST_P(PaintLayerTest, HasDescendantWithFixed) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='isolation: isolate'>
+      <div id='child' style='position: fixed'>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+  EXPECT_TRUE(parent->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child->HasDescendantWithStickyOrFixed());
+
+  GetDocument().getElementById("child")->setAttribute(HTMLNames::styleAttr,
+                                                      "position: relative");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  EXPECT_FALSE(parent->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child->HasDescendantWithStickyOrFixed());
+}
+
+TEST_P(PaintLayerTest, HasDescendantWithFixedAndSticky) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='isolation: isolate'>
+      <div id='child1' style='position: sticky'>
+      </div>
+      <div id='child2' style='position: fixed'>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child1 = GetPaintLayerByElementId("child1");
+  PaintLayer* child2 = GetPaintLayerByElementId("child2");
+  EXPECT_TRUE(parent->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child1->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child2->HasDescendantWithStickyOrFixed());
+
+  GetDocument().getElementById("child1")->setAttribute(HTMLNames::styleAttr,
+                                                       "position: relative");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  EXPECT_TRUE(parent->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child1->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child2->HasDescendantWithStickyOrFixed());
+
+  GetDocument().getElementById("child2")->setAttribute(HTMLNames::styleAttr,
+                                                       "position: relative");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  EXPECT_FALSE(parent->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child1->HasDescendantWithStickyOrFixed());
+  EXPECT_FALSE(child2->HasDescendantWithStickyOrFixed());
+}
+
+TEST_P(PaintLayerTest, HasNonContainedAbsolutePositionDescendant) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='isolation: isolate'>
+      <div id='child' style='position: relative'>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+  EXPECT_FALSE(parent->HasNonContainedAbsolutePositionDescendant());
+  EXPECT_FALSE(child->HasNonContainedAbsolutePositionDescendant());
+
+  GetDocument().getElementById("child")->setAttribute(HTMLNames::styleAttr,
+                                                      "position: absolute");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  EXPECT_TRUE(parent->HasNonContainedAbsolutePositionDescendant());
+  EXPECT_FALSE(child->HasNonContainedAbsolutePositionDescendant());
+
+  GetDocument().getElementById("parent")->setAttribute(HTMLNames::styleAttr,
+                                                       "position: relative");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_FALSE(parent->HasNonContainedAbsolutePositionDescendant());
+  EXPECT_FALSE(child->HasNonContainedAbsolutePositionDescendant());
+}
+
+TEST_P(PaintLayerTest, HasSelfPaintingDescendant) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='position: relative'>
+      <div id='child' style='position: relative'>
+        <div></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_TRUE(parent->HasSelfPaintingLayerDescendant());
+  EXPECT_FALSE(child->HasSelfPaintingLayerDescendant());
+}
+
+TEST_P(PaintLayerTest, HasSelfPaintingDescendantNotSelfPainting) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='position: relative'>
+      <div id='child' style='overflow: auto'>
+        <div></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_FALSE(parent->HasSelfPaintingLayerDescendant());
+  EXPECT_FALSE(child->HasSelfPaintingLayerDescendant());
+}
+
+TEST_P(PaintLayerTest, HasSelfPaintingParentNotSelfPainting) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='overflow: auto'>
+      <div id='child' style='position: relative'>
+        <div></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_TRUE(parent->HasSelfPaintingLayerDescendant());
+  EXPECT_FALSE(child->HasSelfPaintingLayerDescendant());
+}
+
+TEST_P(PaintLayerTest, NonStackedWithInFlowDescendant) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='overflow: auto'>
+      <div id='child' style='position: relative'>
+        <div></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_TRUE(parent->IsNonStackedWithInFlowStackedDescendant());
+  EXPECT_FALSE(child->IsNonStackedWithInFlowStackedDescendant());
+}
+
+TEST_P(PaintLayerTest, NonStackedWithOutOfFlowDescendant) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='overflow: auto'>
+      <div id='child' style='position: absolute'>
+        <div></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_FALSE(parent->IsNonStackedWithInFlowStackedDescendant());
+  EXPECT_FALSE(child->IsNonStackedWithInFlowStackedDescendant());
+}
+
+TEST_P(PaintLayerTest, NonStackedWithNonStackedDescendant) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='overflow: auto'>
+      <div id='child' style='overflow: auto'>
+        <div></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_FALSE(parent->IsNonStackedWithInFlowStackedDescendant());
+  EXPECT_FALSE(child->IsNonStackedWithInFlowStackedDescendant());
+}
+
+TEST_P(PaintLayerTest, NonStackedWithInFlowStackedGrandchild) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='overflow: auto'>
+      <div id='child' style='overflow: auto'>
+        <div style='position: relative'></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_TRUE(parent->IsNonStackedWithInFlowStackedDescendant());
+  EXPECT_TRUE(child->IsNonStackedWithInFlowStackedDescendant());
+}
+
+TEST_P(PaintLayerTest, NonStackedWithOutOfFlowStackedGrandchild) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='overflow: auto'>
+      <div id='child' style='overflow: auto'>
+        <div style='position: absolute'></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_FALSE(parent->IsNonStackedWithInFlowStackedDescendant());
+  EXPECT_FALSE(child->IsNonStackedWithInFlowStackedDescendant());
 }
 
 TEST_P(PaintLayerTest, SubsequenceCachingStackingContexts) {
@@ -357,7 +573,7 @@ TEST_P(PaintLayerTest, SubsequenceCachingSVGRoot) {
   )HTML");
 
   PaintLayer* svgroot = GetPaintLayerByElementId("svgroot");
-  EXPECT_FALSE(svgroot->SupportsSubsequenceCaching());
+  EXPECT_TRUE(svgroot->SupportsSubsequenceCaching());
 }
 
 TEST_P(PaintLayerTest, SubsequenceCachingMuticol) {
@@ -389,7 +605,6 @@ TEST_P(PaintLayerTest, HasDescendantWithClipPath) {
 }
 
 TEST_P(PaintLayerTest, HasVisibleDescendant) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='invisible' style='position:relative'>
       <div id='visible' style='visibility: visible; position: relative'>
@@ -407,7 +622,6 @@ TEST_P(PaintLayerTest, HasVisibleDescendant) {
 }
 
 TEST_P(PaintLayerTest, Has3DTransformedDescendant) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='parent' style='position:relative; z-index: 0'>
       <div id='child' style='transform: translateZ(1px)'>
@@ -422,7 +636,6 @@ TEST_P(PaintLayerTest, Has3DTransformedDescendant) {
 }
 
 TEST_P(PaintLayerTest, Has3DTransformedDescendantChangeStyle) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='parent' style='position:relative; z-index: 0'>
       <div id='child' style='position:relative '>
@@ -444,7 +657,6 @@ TEST_P(PaintLayerTest, Has3DTransformedDescendantChangeStyle) {
 }
 
 TEST_P(PaintLayerTest, Has3DTransformedDescendantNotStacking) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='parent' style='position:relative;'>
       <div id='child' style='transform: translateZ(1px)'>
@@ -461,7 +673,6 @@ TEST_P(PaintLayerTest, Has3DTransformedDescendantNotStacking) {
 }
 
 TEST_P(PaintLayerTest, Has3DTransformedGrandchildWithPreserve3d) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='parent' style='position:relative; z-index: 0'>
       <div id='child' style='transform-style: preserve-3d'>
@@ -480,7 +691,6 @@ TEST_P(PaintLayerTest, Has3DTransformedGrandchildWithPreserve3d) {
 }
 
 TEST_P(PaintLayerTest, DescendantDependentFlagsStopsAtThrottledFrames) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <style>body { margin: 0; }</style>
     <div id='transform' style='transform: translate3d(4px, 5px, 6px);'>
@@ -566,19 +776,12 @@ TEST_P(PaintLayerTest, PaintInvalidationOnNonCompositedScroll) {
   scroller->GetScrollableArea()->SetScrollOffset(ScrollOffset(0, 20),
                                                  kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    EXPECT_EQ(LayoutRect(0, 30, 50, 10),
-              content_layer->FirstFragment().VisualRect());
-    EXPECT_EQ(LayoutRect(0, 30, 50, 5), content->FirstFragment().VisualRect());
-  } else {
-    EXPECT_EQ(LayoutRect(0, 10, 50, 10),
-              content_layer->FirstFragment().VisualRect());
-    EXPECT_EQ(LayoutRect(0, 10, 50, 5), content->FirstFragment().VisualRect());
-  }
+  EXPECT_EQ(LayoutRect(0, 30, 50, 10),
+            content_layer->FirstFragment().VisualRect());
+  EXPECT_EQ(LayoutRect(0, 30, 50, 5), content->FirstFragment().VisualRect());
 }
 
 TEST_P(PaintLayerTest, PaintInvalidationOnCompositedScroll) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <style>* { margin: 0 } ::-webkit-scrollbar { display: none }</style>
     <div id='scroller' style='overflow: scroll; width: 50px; height: 50px;
@@ -608,7 +811,6 @@ TEST_P(PaintLayerTest, PaintInvalidationOnCompositedScroll) {
 }
 
 TEST_P(PaintLayerTest, CompositingContainerStackedFloatUnderStackingInline) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='compositedContainer' style='position: relative;
         will-change: transform'>
@@ -633,7 +835,6 @@ TEST_P(PaintLayerTest, CompositingContainerStackedFloatUnderStackingInline) {
 
 TEST_P(PaintLayerTest,
        CompositingContainerStackedFloatUnderStackingCompositedInline) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='compositedContainer' style='position: relative;
         will-change: transform'>
@@ -658,7 +859,6 @@ TEST_P(PaintLayerTest,
 }
 
 TEST_P(PaintLayerTest, CompositingContainerNonStackedFloatUnderStackingInline) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='compositedContainer' style='position: relative;
         will-change: transform'>
@@ -684,7 +884,6 @@ TEST_P(PaintLayerTest, CompositingContainerNonStackedFloatUnderStackingInline) {
 
 TEST_P(PaintLayerTest,
        CompositingContainerNonStackedFloatUnderStackingCompositedInline) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='compositedContainer' style='position: relative;
         will-change: transform'>
@@ -710,7 +909,6 @@ TEST_P(PaintLayerTest,
 
 TEST_P(PaintLayerTest,
        CompositingContainerStackedUnderFloatUnderStackingInline) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='compositedContainer' style='position: relative;
         will-change: transform'>
@@ -737,7 +935,6 @@ TEST_P(PaintLayerTest,
 
 TEST_P(PaintLayerTest,
        CompositingContainerStackedUnderFloatUnderStackingCompositedInline) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='compositedContainer' style='position: relative;
         will-change: transform'>
@@ -765,7 +962,6 @@ TEST_P(PaintLayerTest,
 
 TEST_P(PaintLayerTest,
        CompositingContainerNonStackedUnderFloatUnderStackingInline) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='compositedContainer' style='position: relative;
         will-change: transform'>
@@ -793,7 +989,6 @@ TEST_P(PaintLayerTest,
 
 TEST_P(PaintLayerTest,
        CompositingContainerNonStackedUnderFloatUnderStackingCompositedInline) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='compositedContainer' style='position: relative;
         will-change: transform'>
@@ -999,7 +1194,6 @@ TEST_P(PaintLayerTest, LayerUnderFloatUnderInlineLayer) {
 }
 
 TEST_P(PaintLayerTest, CompositingContainerFloatingIframe) {
-  EnableCompositing();
   SetBodyInnerHTML(R"HTML(
     <div id='compositedContainer' style='position: relative;
         will-change: transform'>
@@ -1043,7 +1237,7 @@ TEST_P(PaintLayerTest, CompositingContainerSelfPaintingNonStackedFloat) {
   // The target layer is self-painting, but not stacked.
   PaintLayer* target = GetPaintLayerByElementId("target");
   EXPECT_TRUE(target->IsSelfPaintingLayer());
-  EXPECT_FALSE(target->StackingNode()->IsStacked());
+  EXPECT_FALSE(target->GetLayoutObject().StyleRef().IsStacked());
 
   PaintLayer* container = GetPaintLayerByElementId("container");
   PaintLayer* span = GetPaintLayerByElementId("span");
@@ -1138,7 +1332,6 @@ TEST_P(PaintLayerTest, NeedsRepaintOnSelfPaintingStatusChange) {
 }
 
 TEST_P(PaintLayerTest, NeedsRepaintOnRemovingStackedLayer) {
-  EnableCompositing();
   SetBodyInnerHTML(
       "<style>body {margin-top: 200px; backface-visibility: hidden}</style>"
       "<div id='target' style='position: absolute; top: 0'>Text</div>");
@@ -1151,7 +1344,7 @@ TEST_P(PaintLayerTest, NeedsRepaintOnRemovingStackedLayer) {
 
   // |container| is not the CompositingContainer of |target| because |target|
   // is stacked but |container| is not a stacking context.
-  EXPECT_TRUE(target_layer->StackingNode()->IsStacked());
+  EXPECT_TRUE(target_layer->GetLayoutObject().StyleRef().IsStacked());
   EXPECT_NE(body_layer, target_layer->CompositingContainer());
   auto* old_compositing_container = target_layer->CompositingContainer();
 
@@ -1169,7 +1362,7 @@ TEST_P(PaintLayerTest, NeedsRepaintOnRemovingStackedLayer) {
 TEST_P(PaintLayerTest, FrameViewContentSize) {
   SetBodyInnerHTML(
       "<style> body { width: 1200px; height: 900px; margin: 0 } </style>");
-  EXPECT_EQ(IntSize(800, 600), GetDocument().View()->ContentsSize());
+  EXPECT_EQ(IntSize(800, 600), GetDocument().View()->Size());
 }
 
 TEST_P(PaintLayerTest, ReferenceClipPathWithPageZoom) {
@@ -1260,8 +1453,8 @@ TEST_P(PaintLayerTest, SquashingOffsets) {
   EXPECT_EQ(LayoutPoint(0, 0), squashed->ComputeOffsetFromAncestor(
                                    squashed->TransformAncestorOrRoot()));
 
-  GetDocument().View()->LayoutViewportScrollableArea()->ScrollBy(
-      ScrollOffset(0, 25), kUserScroll);
+  GetDocument().View()->LayoutViewport()->ScrollBy(ScrollOffset(0, 25),
+                                                   kUserScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   PaintLayer::MapPointInPaintInvalidationContainerToBacking(
@@ -1281,8 +1474,9 @@ TEST_P(PaintLayerTest, HitTestWithIgnoreClipping) {
 
   HitTestRequest request(HitTestRequest::kIgnoreClipping);
   // (10, 900) is outside the viewport clip of 800x600.
-  HitTestResult result(request, IntPoint(10, 900));
-  GetDocument().GetLayoutView()->HitTest(result);
+  HitTestLocation location((IntPoint(10, 900)));
+  HitTestResult result(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(GetDocument().getElementById("hit"), result.InnerNode());
 }
 
@@ -1299,38 +1493,40 @@ TEST_P(PaintLayerTest, HitTestWithStopNode) {
 
   // Regular hit test over 'child'
   HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
-  HitTestResult result(request, LayoutPoint(50, 25));
-  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  HitTestLocation location((LayoutPoint(50, 25)));
+  HitTestResult result(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(child, result.InnerNode());
 
   // Same hit test, with stop node.
   request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive,
                            hit->GetLayoutObject());
-  result = HitTestResult(request, LayoutPoint(50, 25));
-  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  result = HitTestResult(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(hit, result.InnerNode());
 
   // Regular hit test over 'overlap'
   request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive);
-  result = HitTestResult(request, LayoutPoint(50, 75));
-  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  location = HitTestLocation((LayoutPoint(50, 75)));
+  result = HitTestResult(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(overlap, result.InnerNode());
 
   // Same hit test, with stop node, should still hit 'overlap' because it's not
   // a descendant of 'hit'.
   request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive,
                            hit->GetLayoutObject());
-  result = HitTestResult(request, LayoutPoint(50, 75));
-  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  result = HitTestResult(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(overlap, result.InnerNode());
 
   // List-based hit test with stop node
   request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive |
                                HitTestRequest::kListBased,
                            hit->GetLayoutObject());
-  result = HitTestResult(request, LayoutPoint(50, 25),
-                         LayoutRectOutsets(10, 10, 10, 10));
-  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  location = HitTestLocation((LayoutRect(40, 15, 20, 20)));
+  result = HitTestResult(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(1u, result.ListBasedTestResult().size());
   EXPECT_EQ(hit, *result.ListBasedTestResult().begin());
 }
@@ -1357,14 +1553,15 @@ TEST_P(PaintLayerTest, HitTestTableWithStopNode) {
   Element* table = GetDocument().getElementById("table");
   Element* cell11 = GetDocument().getElementById("cell11");
   HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
-  HitTestResult result(request, LayoutPoint(50, 50));
-  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  HitTestLocation location((LayoutPoint(50, 50)));
+  HitTestResult result(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(cell11, result.InnerNode());
 
   request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive,
                            table->GetLayoutObject());
-  result = HitTestResult(request, LayoutPoint(50, 50));
-  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  result = HitTestResult(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(table, result.InnerNode());
 }
 
@@ -1377,14 +1574,15 @@ TEST_P(PaintLayerTest, HitTestSVGWithStopNode) {
   Element* svg = GetDocument().getElementById("svg");
   Element* circle = GetDocument().getElementById("circle");
   HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
-  HitTestResult result(request, LayoutPoint(50, 50));
-  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  HitTestLocation location((LayoutPoint(50, 50)));
+  HitTestResult result(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(circle, result.InnerNode());
 
   request = HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive,
                            svg->GetLayoutObject());
-  result = HitTestResult(request, LayoutPoint(50, 50));
-  GetDocument().GetLayoutView()->Layer()->HitTest(result);
+  result = HitTestResult(request, location);
+  GetDocument().GetLayoutView()->HitTest(location, result);
   EXPECT_EQ(svg, result.InnerNode());
 }
 

@@ -14,13 +14,12 @@
 #include <map>
 #include <vector>
 
-#include "common_video/include/frame_callback.h"
+#include "call/payload_router.h"
 #include "modules/video_coding/video_coding_impl.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "system_wrappers/include/metrics.h"
 #include "video/call_stats.h"
-#include "video/payload_router.h"
 #include "video/receive_statistics_proxy.h"
 
 namespace webrtc {
@@ -40,8 +39,7 @@ VideoStreamDecoder::VideoStreamDecoder(
 
   static const int kMaxPacketAgeToNack = 450;
   static const int kMaxNackListSize = 250;
-  video_receiver_->SetNackSettings(kMaxNackListSize,
-                                   kMaxPacketAgeToNack, 0);
+  video_receiver_->SetNackSettings(kMaxNackListSize, kMaxPacketAgeToNack, 0);
   video_receiver_->RegisterReceiveCallback(this);
   video_receiver_->RegisterFrameTypeCallback(vcm_frame_type_callback);
   video_receiver_->RegisterReceiveStatisticsCallback(this);
@@ -75,15 +73,16 @@ VideoStreamDecoder::~VideoStreamDecoder() {
 // thread may have held the lock when calling VideoDecoder::Decode, Reset, or
 // Release. Acquiring the same lock in the path of decode callback can deadlock.
 int32_t VideoStreamDecoder::FrameToRender(VideoFrame& video_frame,
-                                          rtc::Optional<uint8_t> qp,
+                                          absl::optional<uint8_t> qp,
                                           VideoContentType content_type) {
-  receive_stats_callback_->OnDecodedFrame(qp, content_type);
+  receive_stats_callback_->OnDecodedFrame(qp, video_frame.width(),
+                                          video_frame.height(), content_type);
   incoming_video_stream_->OnFrame(video_frame);
   return 0;
 }
 
 int32_t VideoStreamDecoder::ReceivedDecodedReferenceFrame(
-  const uint64_t picture_id) {
+    const uint64_t picture_id) {
   RTC_NOTREACHED();
   return 0;
 }

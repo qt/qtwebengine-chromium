@@ -59,8 +59,6 @@ interface CoreProbes {
   class HTMLDocumentParser;
   class ScheduledNavigation;
   class ThreadableLoaderClient;
-  class WebSocketHandshakeRequest;
-  class WebSocketHandshakeResponse;
   class WorkerInspectorProxy;
   class XMLHttpRequest;
 
@@ -89,6 +87,7 @@ interface CoreProbes {
   void didFireWebGLErrorOrWarning(Element*, const String& message);
   void didResizeMainFrame(LocalFrame*);
   void didPaint(LocalFrame*, const GraphicsLayer*, GraphicsContext&, const LayoutRect&);
+  void applyAcceptLanguageOverride(LocalFrame*, String* acceptLanguage);
   void applyUserAgentOverride(ExecutionContext*, String* userAgent);
   void didBlockRequest([Keep] ExecutionContext*, const ResourceRequest&, DocumentLoader*, const FetchInitiatorInfo&, ResourceRequestBlockedReason, Resource::Type);
   void didChangeResourcePriority(LocalFrame*, DocumentLoader*, unsigned long identifier, ResourceLoadPriority loadPriority);
@@ -98,20 +97,14 @@ interface CoreProbes {
   void didReceiveData(ExecutionContext*, unsigned long identifier, DocumentLoader*, const char* data, int dataLength);
   void didReceiveBlob(ExecutionContext*, unsigned long identifier, DocumentLoader*, BlobDataHandle*);
   void didReceiveEncodedDataLength(ExecutionContext*, DocumentLoader* loader, unsigned long identifier, int encodedDataLength);
-  void didFinishLoading(ExecutionContext*, unsigned long identifier, DocumentLoader*, TimeTicks finishTime, int64_t encoded_data_length, int64_t decodedBodyLength, bool blocked_cross_site_document);
+  void didFinishLoading(ExecutionContext*, unsigned long identifier, DocumentLoader*, TimeTicks finishTime, int64_t encoded_data_length, int64_t decodedBodyLength, bool should_report_corb_blocking);
   void didReceiveCORSRedirectResponse(ExecutionContext*, unsigned long identifier, DocumentLoader*, const ResourceResponse&, Resource*);
   void didFailLoading(ExecutionContext*, unsigned long identifier, DocumentLoader*, const ResourceError&);
-  void documentThreadableLoaderStartedLoadingForClient(ExecutionContext*, unsigned long identifier, ThreadableLoaderClient* client);
-  void documentThreadableLoaderFailedToStartLoadingForClient(ExecutionContext*, ThreadableLoaderClient* client);
   void willSendEventSourceRequest(ExecutionContext*, ThreadableLoaderClient* eventSource);
   void willDispatchEventSourceEvent(ExecutionContext*, unsigned long identifier, const AtomicString& eventName, const AtomicString& eventId, const String& data);
-  void didFinishEventSourceRequest(ExecutionContext*, ThreadableLoaderClient* eventSource);
   void willLoadXHR(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, const HTTPHeaderMap& headers, bool includeCredentials);
-  void didFailXHRLoading([Keep] ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url);
-  void didFinishXHRLoading([Keep] ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url);
+  void didFinishXHR(ExecutionContext*, XMLHttpRequest* xhr);
   void willStartFetch(ExecutionContext*, ThreadableLoaderClient*);
-  // Detach and remove all references to the given client.
-  void detachClientRequest(ExecutionContext*, ThreadableLoaderClient*);
   void scriptImported(ExecutionContext*, unsigned long identifier, const String& sourceString);
   void scriptExecutionBlockedByCSP(ExecutionContext*, const String& directiveText);
   void didReceiveScriptResponse(ExecutionContext*, unsigned long identifier);
@@ -124,7 +117,7 @@ interface CoreProbes {
   void didNavigateWithinDocument([Keep] LocalFrame*);
   void frameDocumentUpdated([Keep] LocalFrame*);
   void frameOwnerContentUpdated([Keep] LocalFrame*, HTMLFrameOwnerElement*);
-  void frameStartedLoading([Keep] LocalFrame*, FrameLoadType);
+  void frameStartedLoading([Keep] LocalFrame*);
   void frameStoppedLoading([Keep] LocalFrame*);
   void frameScheduledNavigation([Keep] LocalFrame*, ScheduledNavigation*);
   void frameClearedScheduledNavigation([Keep] LocalFrame*);
@@ -133,8 +126,8 @@ interface CoreProbes {
   void didStartWorker(ExecutionContext*, WorkerInspectorProxy* proxy, bool waitingForDebugger);
   void workerTerminated(ExecutionContext*, WorkerInspectorProxy* proxy);
   void didCreateWebSocket([Keep] ExecutionContext*, unsigned long identifier, const KURL& requestURL, const String& protocol);
-  void willSendWebSocketHandshakeRequest([Keep] ExecutionContext*, unsigned long identifier, const WebSocketHandshakeRequest* request);
-  void didReceiveWebSocketHandshakeResponse([Keep] ExecutionContext*, unsigned long identifier, const WebSocketHandshakeRequest* request, const WebSocketHandshakeResponse* response);
+  void willSendWebSocketHandshakeRequest([Keep] ExecutionContext*, unsigned long identifier, network::mojom::blink::WebSocketHandshakeRequest* request);
+  void didReceiveWebSocketHandshakeResponse([Keep] ExecutionContext*, unsigned long identifier, network::mojom::blink::WebSocketHandshakeRequest* request, network::mojom::blink::WebSocketHandshakeResponse* response);
   void didCloseWebSocket([Keep] ExecutionContext*, unsigned long identifier);
   void didReceiveWebSocketFrame(ExecutionContext*, unsigned long identifier, int opCode, bool masked, const char* payload, size_t payloadLength);
   void didSendWebSocketFrame(ExecutionContext*, unsigned long identifier, int opCode, bool masked, const char* payload, size_t payloadLength);
@@ -168,4 +161,10 @@ interface CoreProbes {
   void consoleTimeStamp(ExecutionContext*, const String& title);
   void lifecycleEvent([Keep] LocalFrame*, DocumentLoader*, const char* name, double timestamp);
   void paintTiming([Keep] Document*, const char* name, double timestamp);
+  void didCreateAudioContext(Document*);
+  void didCloseAudioContext(Document*);
+  void didResumeAudioContext(Document*);
+  void didSuspendAudioContext(Document*);
+  void produceCompilationCache(LocalFrame*, const ScriptSourceCode& source, v8::Local<v8::Script> script);
+  void consumeCompilationCache(ExecutionContext*, const ScriptSourceCode& source, v8::ScriptCompiler::CachedData** cached_data);
 }

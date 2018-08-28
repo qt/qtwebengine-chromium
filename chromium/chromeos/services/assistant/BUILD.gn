@@ -31,11 +31,13 @@ source_set("lib") {
     "//components/account_id",
     "//services/device/public/mojom",
     "//services/identity/public/mojom",
+    "//ui/accessibility:ax_assistant",
   ]
 
   public_deps = [
     "//ash/public/cpp:cpp",
     "//mojo/public/cpp/bindings:bindings",
+    "//services/audio/public/cpp:cpp",
     "//services/service_manager/public/cpp:cpp",
   ]
 
@@ -51,6 +53,8 @@ source_set("lib") {
       "platform/file_provider_impl.h",
       "platform/network_provider_impl.cc",
       "platform/network_provider_impl.h",
+      "platform/resource_provider_impl.cc",
+      "platform/resource_provider_impl.h",
       "platform/system_provider_impl.cc",
       "platform/system_provider_impl.h",
       "platform_api_impl.cc",
@@ -60,22 +64,18 @@ source_set("lib") {
     ]
 
     deps += [
+      "//chromeos/assistant/internal:build_libassistant",
       "//chromeos/assistant/internal/action",
+      "//chromeos/assistant/internal/proto/google3",
       "//libassistant/contrib/core",
       "//libassistant/contrib/platform/audio",
-      "//libassistant/contrib/platform/net",
-      "//libassistant/contrib/platform/resources",
       "//libassistant/shared/internal_api/c:api_wrappers_for_caller_no_chromium",
-      "//libassistant/shared/proto:assistant_proto",
       "//libassistant/shared/public",
       "//libassistant/shared/public:export",
+      "//ui/base",
     ]
 
-    if (enable_cros_libassistant_so) {
-      deps += [ "//libassistant/internal/assistant/controller:libassistant" ]
-    } else {
-      libs = [ "assistant" ]
-    }
+    libs = [ "$root_out_dir/libassistant.so" ]
 
     include_dirs = [
       "//libassistant/contrib",
@@ -95,6 +95,7 @@ source_set("tests") {
     ":lib",
     "//base",
     "//base/test:test_support",
+    "//chromeos",
     "//mojo/public/cpp/bindings:bindings",
     "//services/identity/public/mojom",
     "//services/service_manager/public/cpp",

@@ -253,17 +253,23 @@ class TestExtensionsAPIClient : public ShellExtensionsAPIClient {
 
 class HidApiTest : public ShellApiTest {
  public:
-  void SetUpOnMainThread() override {
-    ShellApiTest::SetUpOnMainThread();
-
+  HidApiTest() {
+    // Because Device Service also runs in this process (browser process), we
+    // can set our binder to intercept requests for HidManager interface to it.
     fake_hid_manager_ = std::make_unique<FakeHidManager>();
-    // Because Device Service also runs in this process(browser process), here
-    // we can directly set our binder to intercept interface requests against
-    // it.
     service_manager::ServiceContext::SetGlobalBinderForTesting(
         device::mojom::kServiceName, device::mojom::HidManager::Name_,
         base::Bind(&FakeHidManager::Bind,
                    base::Unretained(fake_hid_manager_.get())));
+  }
+
+  ~HidApiTest() override {
+    service_manager::ServiceContext::ClearGlobalBindersForTesting(
+        device::mojom::kServiceName);
+  }
+
+  void SetUpOnMainThread() override {
+    ShellApiTest::SetUpOnMainThread();
 
     AddDevice(kTestDeviceGuids[0], 0x18D1, 0x58F0, false, "A");
     AddDevice(kTestDeviceGuids[1], 0x18D1, 0x58F0, true, "B");

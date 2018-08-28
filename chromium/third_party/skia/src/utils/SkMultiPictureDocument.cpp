@@ -6,6 +6,7 @@
  */
 
 #include "SkMultiPictureDocument.h"
+
 #include "SkMultiPictureDocumentPriv.h"
 #include "SkNWayCanvas.h"
 #include "SkPicture.h"
@@ -13,6 +14,7 @@
 #include "SkSerialProcs.h"
 #include "SkStream.h"
 #include "SkTArray.h"
+#include "SkTo.h"
 
 #include <limits.h>
 
@@ -193,7 +195,7 @@ bool SkMultiPictureDocumentRead(SkStreamSeekable* stream,
     // PagerCanvas::onDrawAnnotation().
     picture->playback(&canvas);
     if (canvas.fIndex != dstArrayCount) {
-        SkDEBUGF(("Malformed SkMultiPictureDocument\n"));
+        SkDEBUGF("Malformed SkMultiPictureDocument\n");
     }
     return true;
 }

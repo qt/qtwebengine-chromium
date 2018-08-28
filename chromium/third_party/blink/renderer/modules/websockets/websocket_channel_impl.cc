@@ -58,7 +58,6 @@
 #include "third_party/blink/renderer/modules/websockets/websocket_handle_impl.h"
 #include "third_party/blink/renderer/platform/loader/fetch/unique_identifier.h"
 #include "third_party/blink/renderer/platform/network/network_log.h"
-#include "third_party/blink/renderer/platform/network/web_socket_handshake_request.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -130,19 +129,18 @@ WebSocketChannelImpl::BlobLoader::BlobLoader(
 
 void WebSocketChannelImpl::BlobLoader::Cancel() {
   loader_->Cancel();
-  // DidFail will be called immediately.
-  // |this| is deleted here.
+  loader_ = nullptr;
 }
 
 void WebSocketChannelImpl::BlobLoader::DidFinishLoading() {
   channel_->DidFinishLoadingBlob(loader_->ArrayBufferResult());
-  // |this| is deleted here.
+  loader_ = nullptr;
 }
 
 void WebSocketChannelImpl::BlobLoader::DidFail(
     FileError::ErrorCode error_code) {
   channel_->DidFailLoadingBlob(error_code);
-  // |this| is deleted here.
+  loader_ = nullptr;
 }
 
 struct WebSocketChannelImpl::ConnectInfo {
@@ -547,7 +545,6 @@ void WebSocketChannelImpl::HandleDidClose(bool was_clean,
       was_clean ? WebSocketChannelClient::kClosingHandshakeComplete
                 : WebSocketChannelClient::kClosingHandshakeIncomplete;
   client->DidClose(status, code, reason);
-  // client->DidClose may delete this object.
 }
 
 ExecutionContext* WebSocketChannelImpl::GetExecutionContext() const {
@@ -580,7 +577,7 @@ void WebSocketChannelImpl::DidConnect(WebSocketHandle* handle,
 
 void WebSocketChannelImpl::DidStartOpeningHandshake(
     WebSocketHandle* handle,
-    scoped_refptr<WebSocketHandshakeRequest> request) {
+    network::mojom::blink::WebSocketHandshakeRequestPtr request) {
   NETWORK_DVLOG(1) << this << " DidStartOpeningHandshake(" << handle << ")";
 
   DCHECK(handle_);
@@ -597,7 +594,7 @@ void WebSocketChannelImpl::DidStartOpeningHandshake(
 
 void WebSocketChannelImpl::DidFinishOpeningHandshake(
     WebSocketHandle* handle,
-    const WebSocketHandshakeResponse* response) {
+    network::mojom::blink::WebSocketHandshakeResponsePtr response) {
   NETWORK_DVLOG(1) << this << " DidFinishOpeningHandshake(" << handle << ")";
 
   DCHECK(handle_);
@@ -608,7 +605,8 @@ void WebSocketChannelImpl::DidFinishOpeningHandshake(
       TRACE_EVENT_SCOPE_THREAD, "data",
       InspectorWebSocketEvent::Data(GetExecutionContext(), identifier_));
   probe::didReceiveWebSocketHandshakeResponse(
-      GetExecutionContext(), identifier_, handshake_request_.get(), response);
+      GetExecutionContext(), identifier_, handshake_request_.get(),
+      response.get());
   handshake_request_ = nullptr;
 }
 
@@ -626,7 +624,6 @@ void WebSocketChannelImpl::DidFail(WebSocketHandle* handle,
   // WebSocketConnection. Hence we fail this channel by calling
   // |this->failAsError| function.
   FailAsError(message);
-  // |this| may be deleted.
 }
 
 void WebSocketChannelImpl::DidReceiveData(WebSocketHandle* handle,
@@ -680,7 +677,6 @@ void WebSocketChannelImpl::DidReceiveData(WebSocketHandle* handle,
     receiving_message_data_.clear();
     if (message.IsNull()) {
       FailAsError("Could not decode a text frame as UTF-8.");
-      // failAsError may delete this object.
     } else {
       client_->DidReceiveTextMessage(message);
     }
@@ -716,7 +712,6 @@ void WebSocketChannelImpl::DidClose(WebSocketHandle* handle,
   }
 
   HandleDidClose(was_clean, code, reason);
-  // HandleDidClose may delete this object.
 }
 
 void WebSocketChannelImpl::DidReceiveFlowControl(WebSocketHandle* handle,
@@ -785,7 +780,6 @@ void WebSocketChannelImpl::DidFailLoadingBlob(FileError::ErrorCode error_code) {
   // FIXME: Generate human-friendly reason message.
   FailAsError("Failed to load Blob: error code = " +
               String::Number(error_code));
-  // |this| can be deleted here.
 }
 
 void WebSocketChannelImpl::TearDownFailedConnection() {
@@ -797,7 +791,6 @@ void WebSocketChannelImpl::TearDownFailedConnection() {
     client_->DidError();
 
   HandleDidClose(false, kCloseEventCodeAbnormalClosure, String());
-  // HandleDidClose may delete this object.
 }
 
 bool WebSocketChannelImpl::ShouldDisallowConnection(const KURL& url) {

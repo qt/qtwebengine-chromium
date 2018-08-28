@@ -28,9 +28,8 @@ private:
     const int fNumSides;
 };
 
-static constexpr int kAttribIdx_X = 0; // Transposed X values of all input points.
-static constexpr int kAttribIdx_Y = 1; // Transposed Y values of all input points.
-static constexpr int kAttribIdx_VertexData = 2;
+static constexpr int kInstanceAttribIdx_X = 0;  // Transposed X values of all input points.
+static constexpr int kInstanceAttribIdx_Y = 1;  // Transposed Y values of all input points.
 
 // Vertex data tells the shader how to offset vertices for conservative raster, as well as how to
 // calculate coverage values for corners and edges.
@@ -259,16 +258,17 @@ void GrCCCoverageProcessor::VSImpl::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs)
 
     int inputWidth = (4 == numInputPoints || proc.hasInputWeight()) ? 4 : 3;
     const char* swizzle = (4 == inputWidth) ? "xyzw" : "xyz";
-    v->codeAppendf("float%ix2 pts = transpose(float2x%i(%s.%s, %s.%s));",
-                   inputWidth, inputWidth, proc.getAttrib(kAttribIdx_X).fName, swizzle,
-                   proc.getAttrib(kAttribIdx_Y).fName, swizzle);
+    v->codeAppendf("float%ix2 pts = transpose(float2x%i(%s.%s, %s.%s));", inputWidth, inputWidth,
+                   proc.fInstanceAttributes[kInstanceAttribIdx_X].name(), swizzle,
+                   proc.fInstanceAttributes[kInstanceAttribIdx_Y].name(), swizzle);
 
     v->codeAppend ("half wind;");
     Shader::CalcWind(proc, v, "pts", "wind");
     if (PrimitiveType::kWeightedTriangles == proc.fPrimitiveType) {
         SkASSERT(3 == numInputPoints);
-        SkASSERT(kFloat4_GrVertexAttribType == proc.getAttrib(kAttribIdx_X).fType);
-        v->codeAppendf("wind *= %s.w;", proc.getAttrib(kAttribIdx_X).fName);
+        SkASSERT(kFloat4_GrVertexAttribType ==
+                 proc.fInstanceAttributes[kInstanceAttribIdx_X].type());
+        v->codeAppendf("wind *= %s.w;", proc.fInstanceAttributes[kInstanceAttribIdx_X].name());
     }
 
     float bloat = kAABloatRadius;
@@ -284,12 +284,12 @@ void GrCCCoverageProcessor::VSImpl::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs)
 
     // Reverse all indices if the wind is counter-clockwise: [0, 1, 2] -> [2, 1, 0].
     v->codeAppendf("int clockwise_indices = wind > 0 ? %s : 0x%x - %s;",
-                   proc.getAttrib(kAttribIdx_VertexData).fName,
+                   proc.fVertexAttribute.name(),
                    ((fNumSides - 1) << kVertexData_LeftNeighborIdShift) |
                    ((fNumSides - 1) << kVertexData_RightNeighborIdShift) |
                    (((1 << kVertexData_RightNeighborIdShift) - 1) ^ 3) |
                    (fNumSides - 1),
-                   proc.getAttrib(kAttribIdx_VertexData).fName);
+                   proc.fVertexAttribute.name());
 
     // Here we generate conservative raster geometry for the input polygon. It is the convex
     // hull of N pixel-size boxes, one centered on each the input points. Each corner has three
@@ -321,8 +321,8 @@ void GrCCCoverageProcessor::VSImpl::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs)
     v->codeAppend ("float2 rightdir = right - corner;");
     v->codeAppend ("rightdir = (float2(0) != rightdir) ? normalize(rightdir) : float2(1, 0);");
 
-    v->codeAppendf("if (0 != (%s & %i)) {", // Are we a corner?
-                   proc.getAttrib(kAttribIdx_VertexData).fName, kVertexData_IsCornerBit);
+    v->codeAppendf("if (0 != (%s & %i)) {",  // Are we a corner?
+                   proc.fVertexAttribute.name(), kVertexData_IsCornerBit);
 
                        // In corner boxes, all 4 coverage values will not map linearly.
                        // Therefore it is important to align the box so its diagonal shared
@@ -341,8 +341,8 @@ void GrCCCoverageProcessor::VSImpl::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs)
     // continue rotating 90 degrees clockwise until we reach the desired raster vertex for this
     // invocation. Corners with less than 3 corresponding raster vertices will result in
     // redundant vertices and degenerate triangles.
-    v->codeAppendf("int bloatidx = (%s >> %i) & 3;",
-                   proc.getAttrib(kAttribIdx_VertexData).fName, kVertexData_BloatIdxShift);
+    v->codeAppendf("int bloatidx = (%s >> %i) & 3;", proc.fVertexAttribute.name(),
+                   kVertexData_BloatIdxShift);
     v->codeAppend ("switch (bloatidx) {");
     v->codeAppend (    "case 3:");
                             // Only corners will have bloatidx=3, and corners always rotate.
@@ -375,13 +375,13 @@ void GrCCCoverageProcessor::VSImpl::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs)
         Shader::CalcEdgeCoverageAtBloatVertex(v, "corner", "right", "bloatdir", "right_coverage");
         v->codeAppend ("}");
 
-        v->codeAppendf("if (0 != (%s & %i)) {", // Are we an edge?
-                       proc.getAttrib(kAttribIdx_VertexData).fName, kVertexData_IsEdgeBit);
+        v->codeAppendf("if (0 != (%s & %i)) {",  // Are we an edge?
+                       proc.fVertexAttribute.name(), kVertexData_IsEdgeBit);
         v->codeAppend (    "coverage = left_coverage;");
         v->codeAppend ("}");
 
-        v->codeAppendf("if (0 != (%s & %i)) {", // Invert coverage?
-                       proc.getAttrib(kAttribIdx_VertexData).fName,
+        v->codeAppendf("if (0 != (%s & %i)) {",  // Invert coverage?
+                       proc.fVertexAttribute.name(),
                        kVertexData_InvertNegativeCoverageBit);
         v->codeAppend (    "coverage = -1 - coverage;");
         v->codeAppend ("}");
@@ -390,8 +390,8 @@ void GrCCCoverageProcessor::VSImpl::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs)
     // Non-corner geometry should have zero effect from corner coverage.
     v->codeAppend ("half2 corner_coverage = half2(0);");
 
-    v->codeAppendf("if (0 != (%s & %i)) {", // Are we a corner?
-                   proc.getAttrib(kAttribIdx_VertexData).fName, kVertexData_IsCornerBit);
+    v->codeAppendf("if (0 != (%s & %i)) {",  // Are we a corner?
+                   proc.fVertexAttribute.name(), kVertexData_IsCornerBit);
                        // We use coverage=-1 to erase what the hull geometry wrote.
                        //
                        // In the context of curves, this effectively means "wind = -wind" and
@@ -495,34 +495,29 @@ void GrCCCoverageProcessor::initVS(GrResourceProvider* rp) {
         }
     }
 
+    GrVertexAttribType xyAttribType;
     if (4 == this->numInputPoints() || this->hasInputWeight()) {
-        SkASSERT(kAttribIdx_X == this->numAttribs());
-        this->addInstanceAttrib("X", kFloat4_GrVertexAttribType);
-
-        SkASSERT(kAttribIdx_Y == this->numAttribs());
-        this->addInstanceAttrib("Y", kFloat4_GrVertexAttribType);
-
-        SkASSERT(offsetof(QuadPointInstance, fX) == this->getAttrib(kAttribIdx_X).fOffsetInRecord);
-        SkASSERT(offsetof(QuadPointInstance, fY) == this->getAttrib(kAttribIdx_Y).fOffsetInRecord);
-        SkASSERT(sizeof(QuadPointInstance) == this->getInstanceStride());
+        GR_STATIC_ASSERT(offsetof(QuadPointInstance, fX) == 0);
+        GR_STATIC_ASSERT(sizeof(QuadPointInstance::fX) ==
+                         GrVertexAttribTypeSize(kFloat4_GrVertexAttribType));
+        GR_STATIC_ASSERT(sizeof(QuadPointInstance::fY) ==
+                         GrVertexAttribTypeSize(kFloat4_GrVertexAttribType));
+        xyAttribType = kFloat4_GrVertexAttribType;
     } else {
-        SkASSERT(kAttribIdx_X == this->numAttribs());
-        this->addInstanceAttrib("X", kFloat3_GrVertexAttribType);
-
-        SkASSERT(kAttribIdx_Y == this->numAttribs());
-        this->addInstanceAttrib("Y", kFloat3_GrVertexAttribType);
-
-        SkASSERT(offsetof(TriPointInstance, fX) == this->getAttrib(kAttribIdx_X).fOffsetInRecord);
-        SkASSERT(offsetof(TriPointInstance, fY) == this->getAttrib(kAttribIdx_Y).fOffsetInRecord);
-        SkASSERT(sizeof(TriPointInstance) == this->getInstanceStride());
+        GR_STATIC_ASSERT(offsetof(TriPointInstance, fX) == 0);
+        GR_STATIC_ASSERT(sizeof(TriPointInstance::fX) ==
+                         GrVertexAttribTypeSize(kFloat3_GrVertexAttribType));
+        GR_STATIC_ASSERT(sizeof(TriPointInstance::fY) ==
+                         GrVertexAttribTypeSize(kFloat3_GrVertexAttribType));
+        xyAttribType = kFloat3_GrVertexAttribType;
     }
-
-    SkASSERT(kAttribIdx_VertexData == this->numAttribs());
-    this->addVertexAttrib("vertexdata", kInt_GrVertexAttribType);
-    SkASSERT(sizeof(int32_t) == this->getVertexStride());
+    fInstanceAttributes[kInstanceAttribIdx_X] = {"X", xyAttribType};
+    fInstanceAttributes[kInstanceAttribIdx_Y] = {"Y", xyAttribType};
+    this->setInstanceAttributeCnt(2);
+    fVertexAttribute = {"vertexdata", kInt_GrVertexAttribType};
+    this->setVertexAttributeCnt(1);
 
     if (caps.usePrimitiveRestart()) {
-        this->setWillUsePrimitiveRestart();
         fVSTriangleType = GrPrimitiveType::kTriangleStrip;
     } else {
         fVSTriangleType = GrPrimitiveType::kTriangles;
@@ -533,8 +528,9 @@ void GrCCCoverageProcessor::appendVSMesh(GrBuffer* instanceBuffer, int instanceC
                                          int baseInstance, SkTArray<GrMesh>* out) const {
     SkASSERT(Impl::kVertexShader == fImpl);
     GrMesh& mesh = out->emplace_back(fVSTriangleType);
+    auto primitiveRestart = GrPrimitiveRestart(GrPrimitiveType::kTriangleStrip == fVSTriangleType);
     mesh.setIndexedInstanced(fVSIndexBuffer.get(), fVSNumIndicesPerInstance, instanceBuffer,
-                             instanceCount, baseInstance);
+                             instanceCount, baseInstance, primitiveRestart);
     mesh.setVertexData(fVSVertexBuffer.get(), 0);
 }
 

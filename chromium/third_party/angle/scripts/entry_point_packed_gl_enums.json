@@ -5,6 +5,9 @@
     "glAlphaFuncx": {
         "func": "AlphaTestFunc"
     },
+    "glBeginTransformFeedback": {
+        "primitiveMode": "PrimitiveMode"
+    },
     "glBeginQuery": {
         "target": "QueryType"
     },
@@ -85,6 +88,33 @@
     "glDisableClientState": {
         "array": "ClientVertexArrayType"
     },
+    "glDrawArrays": {
+        "mode": "PrimitiveMode"
+    },
+    "glDrawArraysIndirect": {
+        "mode": "PrimitiveMode"
+    },
+    "glDrawArraysInstanced": {
+        "mode": "PrimitiveMode"
+    },
+    "glDrawArraysInstancedANGLE": {
+        "mode": "PrimitiveMode"
+    },
+    "glDrawElements": {
+        "mode": "PrimitiveMode"
+    },
+    "glDrawElementsIndirect": {
+        "mode": "PrimitiveMode"
+    },
+    "glDrawElementsInstanced": {
+        "mode": "PrimitiveMode"
+    },
+    "glDrawElementsInstancedANGLE": {
+        "mode": "PrimitiveMode"
+    },
+    "glDrawRangeElements": {
+        "mode": "PrimitiveMode"
+    },
     "glEGLImageTargetTexture2DOES": {
         "target": "TextureType"
     },
@@ -136,6 +166,18 @@
     "glGetBufferPointervRobustANGLE": {
         "target": "BufferBinding"
     },
+    "glGetLightfv": {
+        "pname" : "LightParameter"
+    },
+    "glGetLightxv": {
+        "pname" : "LightParameter"
+    },
+    "glGetMaterialfv": {
+        "pname" : "MaterialParameter"
+    },
+    "glGetMaterialxv": {
+        "pname" : "MaterialParameter"
+    },
     "glGetQueryiv": {
         "target": "QueryType"
     },
@@ -144,6 +186,18 @@
     },
     "glGetQueryivRobustANGLE": {
         "target": "QueryType"
+    },
+    "glGetTexEnvfv": {
+        "target": "TextureEnvTarget",
+        "pname": "TextureEnvParameter"
+    },
+    "glGetTexEnviv": {
+        "target": "TextureEnvTarget",
+        "pname": "TextureEnvParameter"
+    },
+    "glGetTexEnvxv": {
+        "target": "TextureEnvTarget",
+        "pname": "TextureEnvParameter"
     },
     "glGetTexLevelParameterfv": {
         "target": "TextureTarget"
@@ -178,6 +232,18 @@
     "glGetTexParameterxv": {
         "target": "TextureType"
     },
+    "glLightf" : {
+        "pname" : "LightParameter"
+    },
+    "glLightfv" : {
+        "pname" : "LightParameter"
+    },
+    "glLightx" : {
+        "pname" : "LightParameter"
+    },
+    "glLightxv" : {
+        "pname" : "LightParameter"
+    },
     "glMapBuffer": {
         "target": "BufferBinding"
     },
@@ -190,11 +256,62 @@
     "glMapBufferRangeEXT": {
         "target": "BufferBinding"
     },
+    "glMaterialf": {
+        "pname": "MaterialParameter"
+    },
+    "glMaterialfv": {
+        "pname": "MaterialParameter"
+    },
+    "glMaterialx": {
+        "pname": "MaterialParameter"
+    },
+    "glMaterialxv": {
+        "pname": "MaterialParameter"
+    },
     "glMatrixMode": {
         "mode": "MatrixType"
     },
+    "glPointParameterf": {
+        "pname" : "PointParameter"
+    },
+    "glPointParameterfv": {
+        "pname" : "PointParameter"
+    },
+    "glPointParameterx": {
+        "pname" : "PointParameter"
+    },
+    "glPointParameterxv": {
+        "pname" : "PointParameter"
+    },
     "glQueryCounterEXT": {
         "target": "QueryType"
+    },
+    "glShadeModel": {
+        "mode": "ShadingModel"
+    },
+    "glTexEnvf": {
+        "target": "TextureEnvTarget",
+        "pname": "TextureEnvParameter"
+    },
+    "glTexEnvfv": {
+        "target": "TextureEnvTarget",
+        "pname": "TextureEnvParameter"
+    },
+    "glTexEnvi": {
+        "target": "TextureEnvTarget",
+        "pname": "TextureEnvParameter"
+    },
+    "glTexEnviv": {
+        "target": "TextureEnvTarget",
+        "pname": "TextureEnvParameter"
+    },
+    "glTexEnvx": {
+        "target": "TextureEnvTarget",
+        "pname": "TextureEnvParameter"
+    },
+    "glTexEnvxv": {
+        "target": "TextureEnvTarget",
+        "pname": "TextureEnvParameter"
     },
     "glTexImage2D": {
         "target": "TextureTarget"

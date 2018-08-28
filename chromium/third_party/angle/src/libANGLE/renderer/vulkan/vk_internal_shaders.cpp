@@ -30,31 +30,21 @@ void ShaderLibrary::destroy(VkDevice device)
     }
 }
 
-Error ShaderLibrary::getShader(RendererVk *renderer,
-                               InternalShaderID shaderID,
-                               const ShaderAndSerial **shaderOut)
+angle::Result ShaderLibrary::getShader(vk::Context *context,
+                                       InternalShaderID shaderID,
+                                       const ShaderAndSerial **shaderOut)
 {
     ShaderAndSerial &shader = mShaders[shaderID];
     *shaderOut              = &shader;
 
     if (shader.get().valid())
     {
-        return NoError();
+        return angle::Result::Continue();
     }
 
-    const priv::ShaderBlob &shaderCode = priv::GetInternalShaderBlob(shaderID);
-
     // Create shader lazily. Access will need to be locked for multi-threading.
-    VkShaderModuleCreateInfo createInfo;
-    createInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.pNext    = nullptr;
-    createInfo.flags    = 0;
-    createInfo.codeSize = shaderCode.codeSize;
-    createInfo.pCode    = shaderCode.code;
-
-    ANGLE_TRY(shader.get().init(renderer->getDevice(), createInfo));
-    shader.updateSerial(renderer->issueShaderSerial());
-    return NoError();
+    const priv::ShaderBlob &shaderCode = priv::GetInternalShaderBlob(shaderID);
+    return InitShaderAndSerial(context, &shader, shaderCode.code, shaderCode.codeSize);
 }
 }  // namespace vk
 }  // namespace rx

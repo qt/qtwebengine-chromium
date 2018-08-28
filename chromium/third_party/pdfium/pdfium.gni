@@ -15,6 +15,9 @@ declare_args() {
   #    //build/config/freetype.
   pdf_bundle_freetype = pdf_bundle_freetype_override
 
+  # Generate logging messages for click events that reach PDFium
+  pdf_enable_click_logging = false
+
   # Build PDFium either with or without v8 support.
   pdf_enable_v8 = pdf_enable_v8_override
 
@@ -52,9 +55,6 @@ declare_args() {
 
   # Enable callgrind for performance profiling
   enable_callgrind = false
-
-  # Enable coverage information
-  use_coverage = false
 
   # Don't build against bundled zlib.
   use_system_zlib = false

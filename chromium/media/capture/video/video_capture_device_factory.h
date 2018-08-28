@@ -34,12 +34,6 @@ using MojoJpegEncodeAcceleratorFactoryCB =
 // crbug.com/665065
 class CAPTURE_EXPORT VideoCaptureDeviceFactory {
  public:
-  static std::unique_ptr<VideoCaptureDeviceFactory> CreateFactory(
-      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
-      gpu::GpuMemoryBufferManager* gpu_buffer_manager,
-      MojoJpegDecodeAcceleratorFactoryCB jpeg_decoder_factory,
-      MojoJpegEncodeAcceleratorFactoryCB jpeg_encoder_factory);
-
   VideoCaptureDeviceFactory();
   virtual ~VideoCaptureDeviceFactory();
 
@@ -76,12 +70,6 @@ class CAPTURE_EXPORT VideoCaptureDeviceFactory {
   base::ThreadChecker thread_checker_;
 
  private:
-  static VideoCaptureDeviceFactory* CreateVideoCaptureDeviceFactory(
-      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
-      gpu::GpuMemoryBufferManager* gpu_buffer_manager,
-      MojoJpegDecodeAcceleratorFactoryCB jda_factory,
-      MojoJpegEncodeAcceleratorFactoryCB jea_factory);
-
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureDeviceFactory);
 };
 

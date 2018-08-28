@@ -27,25 +27,42 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_DOM_EVENTS_EVENT_QUEUE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_EVENTS_EVENT_QUEUE_H_
 
-#include "base/location.h"
-#include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/wtf/hash_map.h"
-#include "third_party/blink/renderer/platform/wtf/hash_set.h"
+#include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
+#include "third_party/blink/renderer/platform/wtf/linked_hash_set.h"
 
 namespace blink {
 
 class Event;
+class ExecutionContext;
 
-class CORE_EXPORT EventQueue : public GarbageCollectedFinalized<EventQueue> {
+class CORE_EXPORT EventQueue final
+    : public GarbageCollectedFinalized<EventQueue>,
+      public ContextLifecycleObserver {
+  USING_GARBAGE_COLLECTED_MIXIN(EventQueue);
+
  public:
-  virtual ~EventQueue() = default;
-  virtual void Trace(blink::Visitor* visitor) {}
-  virtual bool EnqueueEvent(const base::Location&, Event*) = 0;
-  virtual bool CancelEvent(Event*) = 0;
-  // The accumulated and all the future events will be discarded, no events will
-  // be dispatched anymore.
-  virtual void Close() = 0;
+  static EventQueue* Create(ExecutionContext*, TaskType);
+  ~EventQueue();
+
+  void Trace(blink::Visitor*) override;
+  bool EnqueueEvent(const base::Location&, Event*);
+  void CancelAllEvents();
+  bool HasPendingEvents() const;
+
+ private:
+  EventQueue(ExecutionContext*, TaskType);
+
+  bool RemoveEvent(Event*);
+  void DispatchEvent(Event*);
+
+  void ContextDestroyed(ExecutionContext*) override;
+  void Close(ExecutionContext*);
+  void DoCancelAllEvents(ExecutionContext*);
+
+  const TaskType task_type_;
+  HeapLinkedHashSet<Member<Event>> queued_events_;
+  bool is_closed_;
 };
 
 }  // namespace blink

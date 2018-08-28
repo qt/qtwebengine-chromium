@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
@@ -250,6 +251,8 @@ TEST_P(PaintPropertyTreeUpdateTest,
   )HTML");
   Element* overflow_a = GetDocument().getElementById("overflowA");
   Element* overflow_b = GetDocument().getElementById("overflowB");
+  VisualViewport& visual_viewport =
+      GetDocument().GetPage()->GetVisualViewport();
 
   // This should be false. We are not as strict about main thread scrolling
   // reasons as we could be.
@@ -265,13 +268,25 @@ TEST_P(PaintPropertyTreeUpdateTest,
                    ->ScrollTranslation()
                    ->ScrollNode()
                    ->HasBackgroundAttachmentFixedDescendants());
-  EXPECT_TRUE(overflow_b->GetLayoutObject()
+
+  // TODO(bokan): Viewport property node generation has been disabled
+  // temporarily with the flag off to diagnose https//crbug.com/868927.
+  if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+    EXPECT_EQ(visual_viewport.GetScrollNode(), overflow_b->GetLayoutObject()
+                                                   ->FirstFragment()
+                                                   .PaintProperties()
+                                                   ->ScrollTranslation()
+                                                   ->ScrollNode()
+                                                   ->Parent());
+  } else {
+    EXPECT_TRUE(overflow_b->GetLayoutObject()
                   ->FirstFragment()
                   .PaintProperties()
                   ->ScrollTranslation()
                   ->ScrollNode()
                   ->Parent()
                   ->IsRoot());
+  }
 
   // Removing a main thread scrolling reason should update the entire tree.
   overflow_b->removeAttribute("class");
@@ -848,9 +863,6 @@ TEST_P(PaintPropertyTreeUpdateTest, MenuListControlClipChange) {
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, BoxAddRemoveMask) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <style>#target {width: 100px; height: 100px}</style>
     <div id='target'>
@@ -879,9 +891,6 @@ TEST_P(PaintPropertyTreeUpdateTest, BoxAddRemoveMask) {
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, MaskClipNodeBoxSizeChange) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <style>
     #target {
@@ -910,9 +919,6 @@ TEST_P(PaintPropertyTreeUpdateTest, MaskClipNodeBoxSizeChange) {
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, InlineAddRemoveMask) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(
       "<span id='target'><img id='img' style='width: 50px'></span>");
 
@@ -937,9 +943,6 @@ TEST_P(PaintPropertyTreeUpdateTest, InlineAddRemoveMask) {
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, MaskClipNodeInlineBoundsChange) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <span id='target' style='-webkit-mask: linear-gradient(red, blue)'>
       <img id='img' style='width: 50px'>
@@ -961,9 +964,6 @@ TEST_P(PaintPropertyTreeUpdateTest, MaskClipNodeInlineBoundsChange) {
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, AddRemoveSVGMask) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <svg width='200' height='200'>
       <rect id='rect' x='0' y='100' width='100' height='100' fill='blue'/>
@@ -993,9 +993,6 @@ TEST_P(PaintPropertyTreeUpdateTest, AddRemoveSVGMask) {
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, SVGMaskTargetBoundsChange) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <svg width='500' height='500'>
       <g id='target' mask='url(#mask)'>
@@ -1103,9 +1100,6 @@ TEST_P(PaintPropertyTreeUpdateTest, CompositingReasonForAnimation) {
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, SVGViewportContainerOverflowChange) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <svg>
       <svg id='target' width='30' height='40'></svg>
@@ -1130,9 +1124,6 @@ TEST_P(PaintPropertyTreeUpdateTest, SVGViewportContainerOverflowChange) {
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, SVGForeignObjectOverflowChange) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <svg>
       <foreignObject id='target' x='10' y='20' width='30' height='40'
@@ -1195,6 +1186,82 @@ TEST_P(PaintPropertyTreeBuilderTest, OmitOverflowClipOnCaretChange) {
   target->blur();
   GetDocument().View()->UpdateAllLifecyclePhases();
   EXPECT_FALSE(PaintPropertiesForElement("target")->OverflowClip());
+}
+
+TEST_P(PaintPropertyTreeUpdateTest,
+       FragmentClipUpdateOnMulticolContainerWidthChange) {
+  SetBodyInnerHTML(R"HTML(
+    <style>body {margin: 0}</style>
+    <div id="container" style="width: 100px">
+      <div id="multicol" style="columns: 2; column-gap: 0; line-height: 500px">
+        <div><br></div>
+        <div><br></div>
+      </div>
+    </div>
+  )HTML");
+
+  auto* flow_thread = GetLayoutObjectByElementId("multicol")->SlowFirstChild();
+  ASSERT_EQ(2u, NumFragments(flow_thread));
+  EXPECT_EQ(50, FragmentAt(flow_thread, 0)
+                    .PaintProperties()
+                    ->FragmentClip()
+                    ->ClipRect()
+                    .Rect()
+                    .MaxX());
+  EXPECT_EQ(50, FragmentAt(flow_thread, 1)
+                    .PaintProperties()
+                    ->FragmentClip()
+                    ->ClipRect()
+                    .Rect()
+                    .X());
+
+  GetDocument()
+      .getElementById("container")
+      ->setAttribute(HTMLNames::styleAttr, "width: 500px");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  ASSERT_EQ(2u, NumFragments(flow_thread));
+  EXPECT_EQ(250, FragmentAt(flow_thread, 0)
+                     .PaintProperties()
+                     ->FragmentClip()
+                     ->ClipRect()
+                     .Rect()
+                     .MaxX());
+  EXPECT_EQ(250, FragmentAt(flow_thread, 1)
+                     .PaintProperties()
+                     ->FragmentClip()
+                     ->ClipRect()
+                     .Rect()
+                     .X());
+}
+
+TEST_P(PaintPropertyTreeUpdateTest,
+       PropertyTreesRebuiltAfterSVGBlendModeChange) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #blended {
+        mix-blend-mode: darken;
+        fill: red;
+      }
+    </style>
+    <svg width="100" height="100">
+      <rect id="blended" x="0" y="0" width="100" height="100"></rect>
+    </svg>
+  )HTML");
+
+  auto* blended_element = GetDocument().getElementById("blended");
+  ASSERT_TRUE(blended_element);
+  const auto* props =
+      blended_element->GetLayoutObject()->FirstFragment().PaintProperties();
+  ASSERT_TRUE(props->Effect());
+  EXPECT_EQ(props->Effect()->BlendMode(), SkBlendMode::kDarken);
+
+  blended_element->setAttribute(HTMLNames::styleAttr,
+                                "mix-blend-mode: lighten;");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  props = blended_element->GetLayoutObject()->FirstFragment().PaintProperties();
+  ASSERT_TRUE(props->Effect());
+  EXPECT_EQ(props->Effect()->BlendMode(), SkBlendMode::kLighten);
 }
 
 }  // namespace blink

@@ -35,6 +35,10 @@ const kTranslateLanguageSynonyms = {
   'jv': 'jw',
 };
 
+// The fake language name used for ARC IMEs. The value must be in sync with the
+// one in ui/base/ime/chromeos/extension_ime_util.h.
+const kArcImeLanguage = '_arc_ime_language_';
+
 const preferredLanguagesPrefName = cr.isChromeOS ?
     'settings.language.preferred_languages' :
     'intl.accept_languages';
@@ -283,6 +287,9 @@ Polymer({
    * @private
    */
   preferredLanguagesPrefChanged_: function() {
+    if (this.prefs == undefined || this.languages == undefined)
+      return;
+
     const enabledLanguageStates = this.getEnabledLanguageStates_(
         this.languages.translateTarget, this.languages.prospectiveUILanguage);
 
@@ -306,6 +313,9 @@ Polymer({
    * @private
    */
   spellCheckDictionariesPrefChanged_: function() {
+    if (this.prefs == undefined || this.languages == undefined)
+      return;
+
     const spellCheckSet = this.makeSetFromArray_(/** @type {!Array<string>} */ (
         this.getPref('spellcheck.dictionaries').value));
     const spellCheckForcedSet =
@@ -356,6 +366,9 @@ Polymer({
 
   /** @private */
   translateLanguagesPrefChanged_: function() {
+    if (this.prefs == undefined || this.languages == undefined)
+      return;
+
     const translateBlockedPref = this.getPref('translate_blocked_languages');
     const translateBlockedSet = this.makeSetFromArray_(
         /** @type {!Array<string>} */ (translateBlockedPref.value));
@@ -373,21 +386,6 @@ Polymer({
           'languages.enabled.' + i + '.translateEnabled',
           !translateBlockedSet.has(translateCode));
     }
-  },
-
-  /** @private
-   * @param {string} languageCode language code
-   * @return {boolean} True if the language is in the list of allowed
-   *   locales (AllowedLocales policy) or if the policy is not set (empty list)
-   * @private
-   */
-  isAllowedLocale_: function(languageCode) {
-    if (!cr.isChromeOS)
-      return true;
-
-    const pref = /** @type {!chrome.settingsPrivate.PrefObject} */ (
-        this.get('intl.allowed_locales', this.prefs));
-    return (pref.value.length == 0 || pref.value.indexOf(languageCode) != -1);
   },
 
   /**
@@ -411,7 +409,7 @@ Polymer({
       language.supportsUI = !!language.supportsUI;
       language.supportsTranslate = !!language.supportsTranslate;
       language.supportsSpellcheck = !!language.supportsSpellcheck;
-      language.isAllowedLocale = this.isAllowedLocale_(language.code);
+      language.isProhibitedUILocale = !!language.isProhibitedUILocale;
       this.supportedLanguageMap_.set(language.code, language);
     }
 
@@ -420,6 +418,7 @@ Polymer({
       for (let j = 0; j < supportedInputMethods.length; j++) {
         const inputMethod = supportedInputMethods[j];
         inputMethod.enabled = !!inputMethod.enabled;
+        inputMethod.isProhibitedByPolicy = !!inputMethod.isProhibitedByPolicy;
         // Add the input method to the map of IDs.
         this.supportedInputMethodMap_.set(inputMethod.id, inputMethod);
         // Add the input method to the list of input methods for each language
@@ -609,7 +608,9 @@ Polymer({
    * @private
    */
   updateRemovableLanguages_: function() {
-    assert(this.languages);
+    if (this.prefs == undefined || this.languages == undefined)
+      return;
+
     // TODO(michaelpg): Enabled input methods can affect which languages are
     // removable, so run updateEnabledInputMethods_ first (if it has been
     // scheduled).
@@ -663,6 +664,21 @@ Polymer({
         this.languages.prospectiveUILanguage;
   },
   // </if>
+
+  /**
+   * @return {string} The language code for ARC IMEs.
+   */
+  getArcImeLanguageCode: function() {
+    return kArcImeLanguage;
+  },
+
+  /**
+   * @param {string} languageCode
+   * @return {boolean} True if the language is for ARC IMEs.
+   */
+  isLanguageCodeForArcIme: function(languageCode) {
+    return languageCode == kArcImeLanguage;
+  },
 
   /**
    * @param {string} languageCode

@@ -67,6 +67,9 @@ class CoordinatorImpl : public Coordinator,
       base::ProcessId,
       const std::vector<std::string>& allocator_dump_names,
       RequestGlobalMemoryDumpForPidCallback) override;
+  void RequestPrivateMemoryFootprint(
+      base::ProcessId,
+      RequestPrivateMemoryFootprintCallback) override;
   void RequestGlobalMemoryDumpAndAppendToTrace(
       base::trace_event::MemoryDumpType,
       base::trace_event::MemoryDumpLevelOfDetail,
@@ -198,6 +201,7 @@ class CoordinatorImpl : public Coordinator,
   mojom::HeapProfilerPtr heap_profiler_;
 
   THREAD_CHECKER(thread_checker_);
+  base::WeakPtrFactory<CoordinatorImpl> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(CoordinatorImpl);
 };
 

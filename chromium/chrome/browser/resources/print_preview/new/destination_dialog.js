@@ -5,7 +5,7 @@
 Polymer({
   is: 'print-preview-destination-dialog',
 
-  behaviors: [I18nBehavior],
+  behaviors: [I18nBehavior, ListPropertyUpdateBehavior],
 
   properties: {
     /** @type {?print_preview.DestinationStore} */
@@ -105,6 +105,18 @@ Polymer({
         this.onCloudPrintPromoDismissed_.bind(this));
   },
 
+  /**
+   * @param {!KeyboardEvent} e Event containing the key
+   * @private
+   */
+  onKeydown_: function(e) {
+    e.stopPropagation();
+    if (e.key == 'Escape' && !this.$.searchBox.getSearchInput().value.trim()) {
+      this.$.dialog.cancel();
+      e.preventDefault();
+    }
+  },
+
   /** @private */
   onDestinationStoreSet_: function() {
     assert(this.destinations_.length == 0);
@@ -140,15 +152,24 @@ Polymer({
 
   /** @private */
   updateDestinations_: function() {
+    if (this.destinationStore === undefined)
+      return;
+
     this.notifyPath('userInfo.users');
     this.notifyPath('userInfo.activeUser');
     this.notifyPath('userInfo.loggedIn');
     if (this.userInfo.loggedIn)
       this.showCloudPrintPromo = false;
 
-    this.destinations_ = this.userInfo ?
-        this.destinationStore.destinations(this.userInfo.activeUser) :
-        [];
+    if (this.userInfo) {
+      this.updateList(
+          'destinations_',
+          destination => destination.origin + '/' + destination.id,
+          this.destinationStore.destinations(this.userInfo.activeUser));
+    } else {
+      this.destinations_ = [];
+    }
+
     this.loadingDestinations_ =
         this.destinationStore.isPrintDestinationSearchInProgress;
   },
@@ -158,6 +179,9 @@ Polymer({
    * @private
    */
   computeRecentDestinationList_: function() {
+    if (!observerDepsDefined(Array.from(arguments)))
+      return [];
+
     let recentDestinations = [];
     const filterAccount = this.userInfo.activeUser;
     this.recentDestinations.forEach((recentDestination) => {
@@ -260,9 +284,9 @@ Polymer({
   },
 
   show: function() {
-    this.loadingDestinations_ =
-        this.destinationStore.isPrintDestinationSearchInProgress;
     this.$.dialog.showModal();
+    this.loadingDestinations_ = this.destinationStore === undefined ||
+        this.destinationStore.isPrintDestinationSearchInProgress;
     this.metrics_.record(
         print_preview.Metrics.DestinationSearchBucket.DESTINATION_SHOWN);
   },

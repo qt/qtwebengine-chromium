@@ -17,6 +17,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "net/base/auth.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -99,6 +100,12 @@ class WebSocket::WebSocketEventHandler final
       const GURL& url,
       const net::SSLInfo& ssl_info,
       bool fatal) override;
+  int OnAuthRequired(
+      scoped_refptr<net::AuthChallengeInfo> auth_info,
+      scoped_refptr<net::HttpResponseHeaders> response_headers,
+      const net::HostPortPair& host_port_pair,
+      base::OnceCallback<void(const net::AuthCredentials*)> callback,
+      base::Optional<net::AuthCredentials>* credentials) override;
 
  private:
   WebSocket* const impl_;
@@ -225,26 +232,26 @@ void WebSocket::WebSocketEventHandler::OnStartOpeningHandshake(
 
 void WebSocket::WebSocketEventHandler::OnFinishOpeningHandshake(
     std::unique_ptr<net::WebSocketHandshakeResponseInfo> response) {
-  bool should_send = impl_->delegate_->CanReadRawCookies();
-
   DVLOG(3) << "WebSocketEventHandler::OnFinishOpeningHandshake "
-           << reinterpret_cast<void*>(this) << " should_send=" << should_send;
-
-  if (!should_send)
-    return;
+           << reinterpret_cast<void*>(this)
+           << " CanReadRawCookies=" << impl_->delegate_->CanReadRawCookies();
 
   mojom::WebSocketHandshakeResponsePtr response_to_pass(
       mojom::WebSocketHandshakeResponse::New());
   response_to_pass->url.Swap(&response->url);
   response_to_pass->status_code = response->headers->response_code();
   response_to_pass->status_text = response->headers->GetStatusText();
+  response_to_pass->http_version = response->headers->GetHttpVersion();
+  response_to_pass->socket_address = response->socket_address;
   size_t iter = 0;
   std::string name, value;
   while (response->headers->EnumerateHeaderLines(&iter, &name, &value)) {
-    mojom::HttpHeaderPtr header(mojom::HttpHeader::New());
-    header->name = name;
-    header->value = value;
-    response_to_pass->headers.push_back(std::move(header));
+    if (impl_->delegate_->CanReadRawCookies() ||
+        !net::HttpResponseHeaders::IsCookieResponseHeader(name)) {
+      // We drop cookie-related headers such as "set-cookie" when the
+      // renderer doesn't have access.
+      response_to_pass->headers.push_back(mojom::HttpHeader::New(name, value));
+    }
   }
   response_to_pass->headers_text =
       net::HttpUtil::ConvertHeadersBackToHTTPResponse(
@@ -266,9 +273,31 @@ void WebSocket::WebSocketEventHandler::OnSSLCertificateError(
                                           ssl_info, fatal);
 }
 
+int WebSocket::WebSocketEventHandler::OnAuthRequired(
+    scoped_refptr<net::AuthChallengeInfo> auth_info,
+    scoped_refptr<net::HttpResponseHeaders> response_headers,
+    const net::HostPortPair& host_port_pair,
+    base::OnceCallback<void(const net::AuthCredentials*)> callback,
+    base::Optional<net::AuthCredentials>* credentials) {
+  DVLOG(3) << "WebSocketEventHandler::OnAuthRequired"
+           << reinterpret_cast<void*>(this);
+  if (!impl_->auth_handler_) {
+    *credentials = base::nullopt;
+    return net::OK;
+  }
+
+  impl_->auth_handler_->OnAuthRequired(
+      std::move(auth_info), std::move(response_headers), host_port_pair,
+      base::BindOnce(&WebSocket::OnAuthRequiredComplete,
+                     impl_->weak_ptr_factory_.GetWeakPtr(),
+                     std::move(callback)));
+  return net::ERR_IO_PENDING;
+}
+
 WebSocket::WebSocket(
     std::unique_ptr<Delegate> delegate,
     mojom::WebSocketRequest request,
+    mojom::AuthenticationHandlerPtr auth_handler,
     WebSocketThrottler::PendingConnection pending_connection_tracker,
     int child_id,
     int frame_id,
@@ -276,6 +305,7 @@ WebSocket::WebSocket(
     base::TimeDelta delay)
     : delegate_(std::move(delegate)),
       binding_(this, std::move(request)),
+      auth_handler_(std::move(auth_handler)),
       pending_connection_tracker_(std::move(pending_connection_tracker)),
       delay_(delay),
       pending_flow_control_quota_(0),
@@ -299,7 +329,7 @@ void WebSocket::AddChannelRequest(
     const GURL& socket_url,
     const std::vector<std::string>& requested_protocols,
     const GURL& site_for_cookies,
-    const std::string& user_agent_override,
+    std::vector<mojom::HttpHeaderPtr> additional_headers,
     mojom::WebSocketClientPtr client) {
   DVLOG(3) << "WebSocket::AddChannelRequest @" << reinterpret_cast<void*>(this)
            << " socket_url=\"" << socket_url << "\" requested_protocols=\""
@@ -312,12 +342,6 @@ void WebSocket::AddChannelRequest(
     return;
   }
 
-  net::HttpRequestHeaders additional_headers;
-  if (!user_agent_override.empty() &&
-      net::HttpUtil::IsValidHeaderValue(user_agent_override)) {
-    additional_headers.SetHeader(net::HttpRequestHeaders::kUserAgent,
-                                 user_agent_override);
-  }
   client_ = std::move(client);
 
   DCHECK(!channel_);
@@ -326,11 +350,11 @@ void WebSocket::AddChannelRequest(
         FROM_HERE,
         base::BindOnce(&WebSocket::AddChannel, weak_ptr_factory_.GetWeakPtr(),
                        socket_url, requested_protocols, site_for_cookies,
-                       additional_headers),
+                       std::move(additional_headers)),
         delay_);
   } else {
     AddChannel(socket_url, requested_protocols, site_for_cookies,
-               additional_headers);
+               std::move(additional_headers));
   }
 }
 
@@ -341,17 +365,24 @@ void WebSocket::SendFrame(bool fin,
            << " fin=" << fin << " type=" << type << " data is " << data.size()
            << " bytes";
 
-  if (!channel_) {
+  if (!handshake_succeeded_) {
     // The client should not be sending us frames until after we've informed
     // it that the channel has been opened (OnAddChannelResponse).
-    if (handshake_succeeded_) {
-      DVLOG(1) << "Dropping frame sent to closed websocket";
-    } else {
-      delegate_->ReportBadMessage(
-          Delegate::BadMessageReason::kUnexpectedSendFrame, this);
-    }
+    delegate_->ReportBadMessage(
+        Delegate::BadMessageReason::kUnexpectedSendFrame, this);
     return;
   }
+
+  if (!channel_) {
+    DVLOG(1) << "Dropping frame sent to closed websocket";
+    return;
+  }
+
+  // This is guaranteed by the maximum size enforced on mojo messages.
+  DCHECK_LE(data.size(), static_cast<size_t>(INT_MAX));
+
+  // This is guaranteed by mojo.
+  DCHECK(IsKnownEnumValue(type));
 
   // TODO(darin): Avoid this copy.
   scoped_refptr<net::IOBuffer> data_to_pass(new net::IOBuffer(data.size()));
@@ -399,10 +430,11 @@ void WebSocket::OnConnectionError() {
   delegate_->OnLostConnectionToClient(this);
 }
 
-void WebSocket::AddChannel(const GURL& socket_url,
-                           const std::vector<std::string>& requested_protocols,
-                           const GURL& site_for_cookies,
-                           const net::HttpRequestHeaders& additional_headers) {
+void WebSocket::AddChannel(
+    const GURL& socket_url,
+    const std::vector<std::string>& requested_protocols,
+    const GURL& site_for_cookies,
+    std::vector<mojom::HttpHeaderPtr> additional_headers) {
   DVLOG(3) << "WebSocket::AddChannel @" << reinterpret_cast<void*>(this)
            << " socket_url=\"" << socket_url << "\" requested_protocols=\""
            << base::JoinString(requested_protocols, ", ") << "\" origin=\""
@@ -418,10 +450,34 @@ void WebSocket::AddChannel(const GURL& socket_url,
   int64_t quota = pending_flow_control_quota_;
   pending_flow_control_quota_ = 0;
 
+  net::HttpRequestHeaders headers_to_pass;
+  for (const auto& header : additional_headers) {
+    if (net::HttpUtil::IsValidHeaderName(header->name) &&
+        net::HttpUtil::IsValidHeaderValue(header->value) &&
+        (net::HttpUtil::IsSafeHeader(header->name) ||
+         base::EqualsCaseInsensitiveASCII(
+             header->name, net::HttpRequestHeaders::kUserAgent))) {
+      // TODO(yhirano): Revisit the last condition. See
+      // https://chromium-review.googlesource.com/c/chromium/src/+/1059092.
+      headers_to_pass.SetHeader(header->name, header->value);
+    }
+  }
   channel_->SendAddChannelRequest(socket_url, requested_protocols, origin_,
-                                  site_for_cookies, additional_headers);
+                                  site_for_cookies, headers_to_pass);
   if (quota > 0)
     SendFlowControl(quota);
+}
+
+void WebSocket::OnAuthRequiredComplete(
+    base::OnceCallback<void(const net::AuthCredentials*)> callback,
+    const base::Optional<net::AuthCredentials>& credentials) {
+  DCHECK(!handshake_succeeded_);
+  if (!channel_) {
+    // Something happened before the authentication response arrives.
+    return;
+  }
+
+  std::move(callback).Run(credentials ? &*credentials : nullptr);
 }
 
 }  // namespace network

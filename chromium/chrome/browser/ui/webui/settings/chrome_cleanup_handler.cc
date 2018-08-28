@@ -44,24 +44,27 @@ std::unique_ptr<base::ListValue> GetFilesAsListStorage(
   return value;
 }
 
-// Returns a ListValue containing a copy of the registry keys stored in
-// |registry_keys|.
-std::unique_ptr<base::ListValue> GetRegistryKeysAsListStorage(
-    const std::set<base::string16>& registry_keys) {
+// Returns a ListValue containing a copy of the strings stored in |string_set|.
+std::unique_ptr<base::ListValue> GetStringSetAsListStorage(
+    const std::set<base::string16>& string_set) {
   auto value = std::make_unique<base::ListValue>();
-  for (const base::string16& key : registry_keys)
-    value->AppendString(key);
+  for (const base::string16& string : string_set)
+    value->AppendString(string);
 
   return value;
 }
 
 base::DictionaryValue GetScannerResultsAsDictionary(
-    const safe_browsing::ChromeCleanerScannerResults& scanner_results) {
+    const safe_browsing::ChromeCleanerScannerResults& scanner_results,
+    Profile* profile) {
   base::DictionaryValue value;
   value.SetList("files",
                 GetFilesAsListStorage(scanner_results.files_to_delete()));
   value.SetList("registryKeys",
-                GetRegistryKeysAsListStorage(scanner_results.registry_keys()));
+                GetStringSetAsListStorage(scanner_results.registry_keys()));
+  std::set<base::string16> extensions;
+  scanner_results.FetchExtensionNames(profile, &extensions);
+  value.SetList("extensions", GetStringSetAsListStorage(extensions));
   return value;
 }
 
@@ -178,7 +181,7 @@ void ChromeCleanupHandler::OnInfected(
     const safe_browsing::ChromeCleanerScannerResults& scanner_results) {
   FireWebUIListener("chrome-cleanup-on-infected",
                     base::Value(is_powered_by_partner),
-                    GetScannerResultsAsDictionary(scanner_results));
+                    GetScannerResultsAsDictionary(scanner_results, profile_));
 }
 
 void ChromeCleanupHandler::OnCleaning(
@@ -186,7 +189,7 @@ void ChromeCleanupHandler::OnCleaning(
     const safe_browsing::ChromeCleanerScannerResults& scanner_results) {
   FireWebUIListener("chrome-cleanup-on-cleaning",
                     base::Value(is_powered_by_partner),
-                    GetScannerResultsAsDictionary(scanner_results));
+                    GetScannerResultsAsDictionary(scanner_results, profile_));
 }
 
 void ChromeCleanupHandler::OnRebootRequired() {
@@ -194,14 +197,9 @@ void ChromeCleanupHandler::OnRebootRequired() {
 }
 
 void ChromeCleanupHandler::OnLogsEnabledChanged(bool logs_enabled) {
-  // Logs are considered managed if the logs themselves are managed or if the
-  // entire cleanup feature is disabled by policy.
-  PrefService* local_state = g_browser_process->local_state();
-  bool is_managed = !controller_->IsAllowedByPolicy() ||
-                    (local_state && local_state->IsManagedPreference(
-                                        prefs::kSwReporterReportingEnabled));
   FireWebUIListener("chrome-cleanup-upload-permission-change",
-                    base::Value(is_managed), base::Value(logs_enabled));
+                    base::Value(controller_->IsReportingManagedByPolicy()),
+                    base::Value(logs_enabled));
 }
 
 void ChromeCleanupHandler::OnLogsEnabledPrefChanged() {

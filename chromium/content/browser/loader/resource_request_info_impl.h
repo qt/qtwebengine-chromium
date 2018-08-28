@@ -96,20 +96,26 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   bool IsDownload() const override;
   // Returns a bitmask of potentially several Previews optimizations.
   PreviewsState GetPreviewsState() const override;
-  bool ShouldReportRawHeaders() const;
-  bool ShouldReportSecurityInfo() const;
   NavigationUIData* GetNavigationUIData() const override;
   DevToolsStatus GetDevToolsStatus() const override;
-
+  void SetResourceRequestBlockedReason(
+      blink::ResourceRequestBlockedReason reason) override;
   base::Optional<blink::ResourceRequestBlockedReason>
   GetResourceRequestBlockedReason() const override;
-
   base::StringPiece GetCustomCancelReason() const override;
 
   CONTENT_EXPORT void AssociateWithRequest(net::URLRequest* request);
 
   CONTENT_EXPORT int GetRequestID() const;
   GlobalRoutingID GetGlobalRoutingID() const;
+
+  // Returns true if raw response headers (including sensitive data such as
+  // cookies) should be included with the response.
+  bool ShouldReportRawHeaders() const;
+
+  // Returns true if security details (SSL/TLS connection parameters and
+  // certificate chain) should be included with the response.
+  bool ShouldReportSecurityInfo() const;
 
   // PlzNavigate
   // The id of the FrameTreeNode that initiated this request (for a navigation
@@ -184,18 +190,19 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
     devtools_status_ = devtools_status;
   }
 
-  void set_resource_request_blocked_reason(
-      base::Optional<blink::ResourceRequestBlockedReason> reason) {
-    resource_request_blocked_reason_ = reason;
-  }
-
   void SetBlobHandles(BlobHandles blob_handles);
 
-  bool blocked_cross_site_document() const {
-    return blocked_cross_site_document_;
+  bool blocked_response_from_reaching_renderer() const {
+    return blocked_response_from_reaching_renderer_;
   }
-  void set_blocked_cross_site_document(bool value) {
-    blocked_cross_site_document_ = value;
+  void set_blocked_response_from_reaching_renderer(bool value) {
+    blocked_response_from_reaching_renderer_ = value;
+  }
+  bool should_report_corb_blocking() const {
+    return should_report_corb_blocking_;
+  }
+  void set_should_report_corb_blocking(bool value) {
+    should_report_corb_blocking_ = value;
   }
 
   void set_custom_cancel_reason(base::StringPiece reason) {
@@ -248,7 +255,13 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   scoped_refptr<network::ResourceRequestBody> body_;
   bool initiated_in_secure_context_;
   std::unique_ptr<NavigationUIData> navigation_ui_data_;
-  bool blocked_cross_site_document_;
+
+  // Whether response details (response headers, timing information, metadata)
+  // have been blocked from reaching the renderer process (e.g. by Cross-Origin
+  // Read Blocking).
+  bool blocked_response_from_reaching_renderer_;
+
+  bool should_report_corb_blocking_;
   bool first_auth_attempt_;
 
   // Keeps upload body blobs alive for the duration of the request.

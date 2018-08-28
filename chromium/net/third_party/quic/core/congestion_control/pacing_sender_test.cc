@@ -14,7 +14,6 @@
 #include "net/third_party/quic/platform/api/quic_test.h"
 #include "net/third_party/quic/test_tools/mock_clock.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
-#include "testing/gtest/include/gtest/gtest.h"
 
 using testing::_;
 using testing::AtMost;
@@ -22,7 +21,7 @@ using testing::IsEmpty;
 using testing::Return;
 using testing::StrictMock;
 
-namespace net {
+namespace quic {
 namespace test {
 
 const QuicByteCount kBytesInFlight = 1024;
@@ -84,14 +83,12 @@ class PacingSenderTest : public QuicTest {
     EXPECT_CALL(*mock_sender_,
                 OnPacketSent(clock_.Now(), bytes_in_flight, packet_number_,
                              kMaxPacketSize, retransmittable_data));
-    if (pacing_sender_->is_simplified_pacing()) {
-      EXPECT_CALL(*mock_sender_, GetCongestionWindow())
-          .Times(AtMost(1))
-          .WillRepeatedly(Return(cwnd * kDefaultTCPMSS));
-      EXPECT_CALL(*mock_sender_, CanSend(bytes_in_flight + kMaxPacketSize))
-          .Times(AtMost(1))
-          .WillRepeatedly(Return(!cwnd_limited));
-    }
+    EXPECT_CALL(*mock_sender_, GetCongestionWindow())
+        .Times(AtMost(1))
+        .WillRepeatedly(Return(cwnd * kDefaultTCPMSS));
+    EXPECT_CALL(*mock_sender_, CanSend(bytes_in_flight + kMaxPacketSize))
+        .Times(AtMost(1))
+        .WillRepeatedly(Return(!cwnd_limited));
     pacing_sender_->OnPacketSent(clock_.Now(), bytes_in_flight,
                                  packet_number_++, kMaxPacketSize,
                                  retransmittable_data);
@@ -124,11 +121,7 @@ class PacingSenderTest : public QuicTest {
                                       empty_acked, empty_lost);
   }
 
-  void OnApplicationLimited() {
-    if (pacing_sender_->is_simplified_pacing()) {
-      pacing_sender_->OnApplicationLimited();
-    }
-  }
+  void OnApplicationLimited() { pacing_sender_->OnApplicationLimited(); }
 
   const QuicTime::Delta zero_time_;
   const QuicTime::Delta infinite_time_;
@@ -203,23 +196,10 @@ TEST_F(PacingSenderTest, VariousSending) {
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(100));
   CheckPacketIsSentImmediately();
   CheckPacketIsSentImmediately();
-  if (GetQuicReloadableFlag(quic_simplify_pacing_sender)) {
-    CheckPacketIsDelayed(QuicTime::Delta::FromMilliseconds(2));
-    // Wake up early, but after enough time has passed to permit a send.
-    clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(1));
-    CheckPacketIsSentImmediately();
-    return;
-  }
-  CheckPacketIsSentImmediately();
   CheckPacketIsDelayed(QuicTime::Delta::FromMilliseconds(2));
-
-  // Wake up too early.
-  CheckPacketIsDelayed(QuicTime::Delta::FromMilliseconds(2));
-
   // Wake up early, but after enough time has passed to permit a send.
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(1));
   CheckPacketIsSentImmediately();
-  CheckPacketIsDelayed(QuicTime::Delta::FromMilliseconds(2));
 }
 
 TEST_F(PacingSenderTest, InitialBurst) {
@@ -227,10 +207,6 @@ TEST_F(PacingSenderTest, InitialBurst) {
   InitPacingRate(10, QuicBandwidth::FromBytesAndTimeDelta(
                          kMaxPacketSize, QuicTime::Delta::FromMilliseconds(1)));
 
-  if (!pacing_sender_->is_simplified_pacing()) {
-    EXPECT_CALL(*mock_sender_, GetCongestionWindow())
-        .WillOnce(Return(10 * kDefaultTCPMSS));
-  }
   // Update the RTT and verify that the first 10 packets aren't paced.
   UpdateRtt();
 
@@ -267,10 +243,6 @@ TEST_F(PacingSenderTest, InitialBurstNoRttMeasurement) {
   InitPacingRate(10, QuicBandwidth::FromBytesAndTimeDelta(
                          kMaxPacketSize, QuicTime::Delta::FromMilliseconds(1)));
 
-  if (!pacing_sender_->is_simplified_pacing()) {
-    EXPECT_CALL(*mock_sender_, GetCongestionWindow())
-        .WillOnce(Return(10 * kDefaultTCPMSS));
-  }
   // Send 10 packets, and verify that they are not paced.
   for (int i = 0; i < kInitialBurstPackets; ++i) {
     CheckPacketIsSentImmediately();
@@ -306,10 +278,6 @@ TEST_F(PacingSenderTest, FastSending) {
   InitPacingRate(10,
                  QuicBandwidth::FromBytesAndTimeDelta(
                      2 * kMaxPacketSize, QuicTime::Delta::FromMilliseconds(1)));
-  if (!pacing_sender_->is_simplified_pacing()) {
-    EXPECT_CALL(*mock_sender_, GetCongestionWindow())
-        .WillOnce(Return(10 * kDefaultTCPMSS));
-  }
   // Update the RTT and verify that the first 10 packets aren't paced.
   UpdateRtt();
 
@@ -408,7 +376,6 @@ TEST_F(PacingSenderTest, CwndLimited) {
 }
 
 TEST_F(PacingSenderTest, LumpyPacingWithInitialBurstToken) {
-  SetQuicReloadableFlag(quic_simplify_pacing_sender, true);
   // Set lumpy size to be 3, and cwnd faction to 0.5
   SetQuicFlag(&FLAGS_quic_lumpy_pacing_size, 3);
   SetQuicFlag(&FLAGS_quic_lumpy_pacing_cwnd_fraction, 0.5f);
@@ -462,4 +429,4 @@ TEST_F(PacingSenderTest, LumpyPacingWithInitialBurstToken) {
 }
 
 }  // namespace test
-}  // namespace net
+}  // namespace quic

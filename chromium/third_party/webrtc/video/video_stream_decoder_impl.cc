@@ -10,9 +10,9 @@
 
 #include "video/video_stream_decoder_impl.h"
 
+#include "absl/memory/memory.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/mod_ops.h"
-#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
@@ -63,7 +63,7 @@ void VideoStreamDecoderImpl::OnFrame(
     };
 
     bookkeeping_queue_.PostTask(
-        rtc::MakeUnique<OnFrameTask>(std::move(frame), this));
+        absl::make_unique<OnFrameTask>(std::move(frame), this));
     return;
   }
 
@@ -203,11 +203,10 @@ VideoStreamDecoderImpl::DecodeResult VideoStreamDecoderImpl::DecodeNextFrame(
               Add<kFrameTimestampsMemory>(next_frame_timestamps_index_, 1);
         });
 
-    int32_t decode_result =
-        decoder->Decode(frame->EncodedImage(),
-                        false,    // missing_frame
-                        nullptr,  // codec specific info
-                        frame->RenderTimeMs());
+    int32_t decode_result = decoder->Decode(frame->EncodedImage(),
+                                            false,    // missing_frame
+                                            nullptr,  // codec specific info
+                                            frame->RenderTimeMs());
 
     return decode_result == WEBRTC_VIDEO_CODEC_OK ? kOk : kDecodeFailure;
   }
@@ -232,21 +231,21 @@ VideoStreamDecoderImpl::GetFrameTimestamps(int64_t timestamp) {
 
 // VideoDecoder::DecodedImageCallback
 int32_t VideoStreamDecoderImpl::Decoded(VideoFrame& decoded_image) {
-  Decoded(decoded_image, rtc::nullopt, rtc::nullopt);
+  Decoded(decoded_image, absl::nullopt, absl::nullopt);
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
 // VideoDecoder::DecodedImageCallback
 int32_t VideoStreamDecoderImpl::Decoded(VideoFrame& decoded_image,
                                         int64_t decode_time_ms) {
-  Decoded(decoded_image, decode_time_ms, rtc::nullopt);
+  Decoded(decoded_image, decode_time_ms, absl::nullopt);
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
 // VideoDecoder::DecodedImageCallback
 void VideoStreamDecoderImpl::Decoded(VideoFrame& decoded_image,
-                                     rtc::Optional<int32_t> decode_time_ms,
-                                     rtc::Optional<uint8_t> qp) {
+                                     absl::optional<int32_t> decode_time_ms,
+                                     absl::optional<uint8_t> qp) {
   int64_t decode_stop_time_ms = rtc::TimeMillis();
 
   bookkeeping_queue_.PostTask([this, decode_stop_time_ms, decoded_image,
@@ -261,11 +260,11 @@ void VideoStreamDecoderImpl::Decoded(VideoFrame& decoded_image,
       return;
     }
 
-    rtc::Optional<int> casted_qp;
+    absl::optional<int> casted_qp;
     if (qp)
       casted_qp.emplace(*qp);
 
-    rtc::Optional<int> casted_decode_time_ms(decode_time_ms.value_or(
+    absl::optional<int> casted_decode_time_ms(decode_time_ms.value_or(
         decode_stop_time_ms - frame_timestamps->decode_start_time_ms));
 
     timing_.StopDecodeTimer(0, *casted_decode_time_ms, decode_stop_time_ms,

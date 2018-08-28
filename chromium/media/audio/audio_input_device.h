@@ -50,9 +50,10 @@
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
-#include "base/memory/shared_memory.h"
+#include "base/memory/read_only_shared_memory_region.h"
 #include "base/optional.h"
 #include "base/sequence_checker.h"
+#include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "media/audio/alive_checker.h"
 #include "media/audio/audio_device_thread.h"
@@ -67,7 +68,8 @@ class MEDIA_EXPORT AudioInputDevice : public AudioCapturerSource,
                                       public AudioInputIPCDelegate {
  public:
   // NOTE: Clients must call Initialize() before using.
-  AudioInputDevice(std::unique_ptr<AudioInputIPC> ipc);
+  AudioInputDevice(std::unique_ptr<AudioInputIPC> ipc,
+                   base::ThreadPriority thread_priority);
 
   // AudioCapturerSource implementation.
   void Initialize(const AudioParameters& params,
@@ -92,10 +94,20 @@ class MEDIA_EXPORT AudioInputDevice : public AudioCapturerSource,
     RECORDING,        // Receiving audio data.
   };
 
+  // This enum is used for UMA, so the only allowed operation on this definition
+  // is to add new states to the bottom, update kMaxValue, and update the
+  // histogram "Media.Audio.Capture.StreamCallbackError2".
+  enum Error {
+    kNoError = 0,
+    kErrorDuringCreation = 1,
+    kErrorDuringCapture = 2,
+    kMaxValue = kErrorDuringCapture
+  };
+
   ~AudioInputDevice() override;
 
   // AudioInputIPCDelegate implementation.
-  void OnStreamCreated(base::SharedMemoryHandle handle,
+  void OnStreamCreated(base::ReadOnlySharedMemoryRegion shared_memory_region,
                        base::SyncSocket::Handle socket_handle,
                        bool initially_muted) override;
   void OnError() override;
@@ -108,6 +120,8 @@ class MEDIA_EXPORT AudioInputDevice : public AudioCapturerSource,
 
   AudioParameters audio_parameters_;
 
+  const base::ThreadPriority thread_priority_;
+
   CaptureCallback* callback_;
 
   // A pointer to the IPC layer that takes care of sending requests over to
@@ -117,8 +131,8 @@ class MEDIA_EXPORT AudioInputDevice : public AudioCapturerSource,
   // Current state. See comments for State enum above.
   State state_;
 
-  // For UMA stats.
-  bool had_callback_error_ = false;
+  // For UMA stats. May only be accessed on the IO thread.
+  Error had_error_ = kNoError;
 
   // Stores the Automatic Gain Control state. Default is false.
   bool agc_is_enabled_;

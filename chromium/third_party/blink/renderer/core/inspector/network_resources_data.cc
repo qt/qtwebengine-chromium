@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/dom/dom_implementation.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
+#include "third_party/blink/renderer/platform/network/encoded_form_data.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
 
 namespace blink {
@@ -221,23 +222,6 @@ void NetworkResourcesData::ResponseReceived(const String& request_id,
   resource_data->SetTextEncodingName(response.TextEncodingName());
   resource_data->SetHTTPStatusCode(response.HttpStatusCode());
   resource_data->SetRawHeaderSize(response.EncodedDataLength());
-
-  String file_path = response.DownloadedFilePath();
-  if (!file_path.IsEmpty()) {
-    std::unique_ptr<BlobData> blob_data =
-        BlobData::CreateForFileWithUnknownSize(file_path);
-    AtomicString mime_type;
-    if (response.IsHTTP())
-      mime_type = ExtractMIMETypeFromMediaType(
-          response.HttpHeaderField(HTTPNames::Content_Type));
-    if (mime_type.IsEmpty())
-      mime_type = response.MimeType();
-    if (mime_type.IsEmpty())
-      mime_type = AtomicString("text/plain");
-    blob_data->SetContentType(mime_type);
-    resource_data->SetDownloadedFileBlob(
-        BlobDataHandle::Create(std::move(blob_data), -1));
-  }
 }
 
 void NetworkResourcesData::BlobReceived(const String& request_id,
@@ -323,12 +307,8 @@ void NetworkResourcesData::MaybeAddResourceData(
   DCHECK(data);
   if (ResourceData* resource_data =
           PrepareToAddResourceData(request_id, data->size())) {
-    data->ForEachSegment([&resource_data](const char* segment,
-                                          size_t segment_size,
-                                          size_t segment_offset) {
-      resource_data->AppendData(segment, segment_size);
-      return true;
-    });
+    for (const auto& span : *data)
+      resource_data->AppendData(span.data(), span.size());
   }
 }
 

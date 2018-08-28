@@ -10,7 +10,7 @@
 #include "base/unguessable_token.h"
 #include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/frame_host/frame_tree_node.h"
-#include "content/browser/loader/navigation_loader_util.h"
+#include "content/browser/loader/download_utils_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/system/data_pipe_drainer.h"
@@ -151,7 +151,6 @@ struct ResponseMetadata {
 
   network::ResourceResponseHead head;
   std::unique_ptr<net::RedirectInfo> redirect_info;
-  network::mojom::DownloadedTempFilePtr downloaded_file;
   std::vector<uint8_t> cached_metadata;
   size_t encoded_length = 0;
   size_t transfer_size = 0;
@@ -229,7 +228,9 @@ class InterceptionJob : public network::mojom::URLLoaderClient,
   }
 
   // network::mojom::URLLoader methods
-  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+  void FollowRedirect(const base::Optional<std::vector<std::string>>&
+                          to_be_removed_request_headers,
+                      const base::Optional<net::HttpRequestHeaders>&
                           modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
@@ -238,12 +239,9 @@ class InterceptionJob : public network::mojom::URLLoaderClient,
   void ResumeReadingBodyFromNet() override;
 
   // network::mojom::URLLoaderClient methods
-  void OnReceiveResponse(
-      const network::ResourceResponseHead& head,
-      network::mojom::DownloadedTempFilePtr downloaded_file) override;
+  void OnReceiveResponse(const network::ResourceResponseHead& head) override;
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          const network::ResourceResponseHead& head) override;
-  void OnDataDownloaded(int64_t data_length, int64_t encoded_length) override;
   void OnUploadProgress(int64_t current_position,
                         int64_t total_size,
                         OnUploadProgressCallback callback) override;
@@ -336,7 +334,9 @@ class DevToolsURLLoaderInterceptor::Impl
   InterceptionStage GetInterceptionStage(const GURL& url,
                                          ResourceType resource_type) const {
     InterceptionStage stage = InterceptionStage::DONT_INTERCEPT;
-    std::string url_str = protocol::NetworkHandler::ClearUrlRef(url).spec();
+    std::string unused;
+    std::string url_str =
+        protocol::NetworkHandler::ExtractFragment(url, &unused);
     for (const auto& pattern : patterns_) {
       if (pattern.Matches(url_str, resource_type))
         stage |= pattern.interception_stage;
@@ -818,8 +818,7 @@ Response InterceptionJob::InnerContinueRequest(
     // TODO(caseq): report error if other modifications are present.
     DCHECK_EQ(State::kResponseReceived, state_);
     DCHECK(!body_reader_);
-    client_->OnReceiveResponse(response_metadata_->head,
-                               std::move(response_metadata_->downloaded_file));
+    client_->OnReceiveResponse(response_metadata_->head);
     response_metadata_.reset();
     loader_->ResumeReadingBodyFromNet();
     client_binding_.ResumeIncomingMethodCallProcessing();
@@ -962,7 +961,7 @@ Response InterceptionJob::ProcessRedirectByClient(const std::string& location) {
           first_party_url_policy, request.referrer_policy,
           request.referrer.spec(), &headers, headers.response_code(),
           redirect_url, false /* token_binding_negotiated */,
-          false /* copy_fragment */));
+          false /* insecure_scheme_was_upgraded */, false /* copy_fragment */));
 
   client_->OnReceiveRedirect(*response_metadata_->redirect_info,
                              response_metadata_->head);
@@ -970,8 +969,7 @@ Response InterceptionJob::ProcessRedirectByClient(const std::string& location) {
 }
 
 void InterceptionJob::SendResponse(const base::StringPiece& body) {
-  client_->OnReceiveResponse(response_metadata_->head,
-                             std::move(response_metadata_->downloaded_file));
+  client_->OnReceiveResponse(response_metadata_->head);
 
   // We shouldn't be able to transfer a string that big over the protocol,
   // but just in case...
@@ -1086,6 +1084,8 @@ void InterceptionJob::Shutdown() {
 
 // URLLoader methods
 void InterceptionJob::FollowRedirect(
+    const base::Optional<std::vector<std::string>>&
+        to_be_removed_request_headers,
     const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
   DCHECK(!modified_request_headers.has_value()) << "Redirect with modified "
                                                    "headers was not supported "
@@ -1106,7 +1106,7 @@ void InterceptionJob::FollowRedirect(
   }
   if (state_ == State::kRedirectReceived) {
     state_ = State::kRequestSent;
-    loader_->FollowRedirect(base::nullopt);
+    loader_->FollowRedirect(base::nullopt, base::nullopt);
     return;
   }
 
@@ -1138,25 +1138,23 @@ void InterceptionJob::ResumeReadingBodyFromNet() {
 
 // URLLoaderClient methods
 void InterceptionJob::OnReceiveResponse(
-    const network::ResourceResponseHead& head,
-    network::mojom::DownloadedTempFilePtr downloaded_file) {
+    const network::ResourceResponseHead& head) {
   state_ = State::kResponseReceived;
   DCHECK(!response_metadata_);
   if (!(stage_ & InterceptionStage::RESPONSE)) {
-    client_->OnReceiveResponse(head, std::move(downloaded_file));
+    client_->OnReceiveResponse(head);
     return;
   }
   loader_->PauseReadingBodyFromNet();
   client_binding_.PauseIncomingMethodCallProcessing();
 
   response_metadata_ = std::make_unique<ResponseMetadata>(head);
-  response_metadata_->downloaded_file = std::move(downloaded_file);
 
   auto request_info = BuildRequestInfo(&head);
   const network::ResourceRequest& request = create_loader_params_->request;
   request_info->is_download =
       request_info->is_navigation && request.allow_download &&
-      (is_download_ || navigation_loader_util::IsDownload(
+      (is_download_ || download_utils::IsDownload(
                            request.url, head.headers.get(), head.mime_type));
   NotifyClient(std::move(request_info));
 }
@@ -1180,12 +1178,6 @@ void InterceptionJob::OnReceiveRedirect(
   request_info->http_response_status_code = redirect_info.status_code;
   request_info->redirect_url = redirect_info.new_url.spec();
   NotifyClient(std::move(request_info));
-}
-
-void InterceptionJob::OnDataDownloaded(int64_t data_length,
-                                       int64_t encoded_length) {
-  if (ShouldBypassForResponse())
-    client_->OnDataDownloaded(data_length, encoded_length);
 }
 
 void InterceptionJob::OnUploadProgress(int64_t current_position,

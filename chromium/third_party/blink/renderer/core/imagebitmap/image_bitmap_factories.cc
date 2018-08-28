@@ -35,7 +35,6 @@
 #include "base/location.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_thread.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/fileapi/blob.h"
@@ -51,11 +50,12 @@
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
 #include "third_party/blink/renderer/core/svg/svg_image_element.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
+#include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
-#include "third_party/blink/renderer/platform/threading/background_task_runner.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -196,7 +196,7 @@ ScriptPromise ImageBitmapFactories::createImageBitmap(
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
-            kInvalidStateError,
+            DOMExceptionCode::kInvalidStateError,
             String::Format("The source image %s is 0.",
                            bitmap_source->BitmapSourceSize().Width()
                                ? "height"
@@ -261,22 +261,18 @@ void ImageBitmapFactories::Trace(blink::Visitor* visitor) {
   Supplement<WorkerGlobalScope>::Trace(visitor);
 }
 
-void ImageBitmapFactories::TraceWrappers(
-    ScriptWrappableVisitor* visitor) const {
-  Supplement<LocalDOMWindow>::TraceWrappers(visitor);
-  Supplement<WorkerGlobalScope>::TraceWrappers(visitor);
-}
-
 void ImageBitmapFactories::ImageBitmapLoader::RejectPromise(
     ImageBitmapRejectionReason reason) {
   switch (reason) {
     case kUndecodableImageBitmapRejectionReason:
-      resolver_->Reject(DOMException::Create(
-          kInvalidStateError, "The source image could not be decoded."));
+      resolver_->Reject(
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               "The source image could not be decoded."));
       break;
     case kAllocationFailureImageBitmapRejectionReason:
-      resolver_->Reject(DOMException::Create(
-          kInvalidStateError, "The ImageBitmap could not be allocated."));
+      resolver_->Reject(
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               "The ImageBitmap could not be allocated."));
       break;
     default:
       NOTREACHED();
@@ -301,7 +297,7 @@ void ImageBitmapFactories::ImageBitmapLoader::ScheduleAsyncImageBitmapDecoding(
     DOMArrayBuffer* array_buffer) {
   scoped_refptr<base::SingleThreadTaskRunner> task_runner =
       Platform::Current()->CurrentThread()->GetTaskRunner();
-  BackgroundTaskRunner::PostOnBackgroundThread(
+  BackgroundScheduler::PostOnBackgroundThread(
       FROM_HERE,
       CrossThreadBind(
           &ImageBitmapFactories::ImageBitmapLoader::DecodeImageOnDecoderThread,
@@ -323,10 +319,11 @@ void ImageBitmapFactories::ImageBitmapLoader::DecodeImageOnDecoderThread(
   bool ignore_color_space = false;
   if (color_space_conversion_option == "none")
     ignore_color_space = true;
+  const bool data_complete = true;
   std::unique_ptr<ImageDecoder> decoder(ImageDecoder::Create(
       SegmentReader::CreateFromSkData(SkData::MakeWithoutCopy(
           array_buffer->Data(), array_buffer->ByteLength())),
-      true, alpha_op,
+      data_complete, alpha_op, ImageDecoder::kDefaultBitDepth,
       ignore_color_space ? ColorBehavior::Ignore() : ColorBehavior::Tag()));
   sk_sp<SkImage> frame;
   if (decoder) {

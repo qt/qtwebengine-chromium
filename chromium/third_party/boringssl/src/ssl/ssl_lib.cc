@@ -295,10 +295,10 @@ void ssl_update_cache(SSL_HANDSHAKE *hs, int mode) {
       SSL_CTX_add_session(ctx, ssl->s3->established_session.get());
     }
     if (ctx->new_session_cb != NULL) {
-      SSL_SESSION_up_ref(ssl->s3->established_session.get());
-      if (!ctx->new_session_cb(ssl, ssl->s3->established_session.get())) {
+      UniquePtr<SSL_SESSION> ref = UpRef(ssl->s3->established_session);
+      if (ctx->new_session_cb(ssl, ref.get())) {
         // |new_session_cb|'s return value signals whether it took ownership.
-        SSL_SESSION_free(ssl->s3->established_session.get());
+        ref.release();
       }
     }
   }
@@ -464,10 +464,7 @@ static bool ssl_can_renegotiate(const SSL *ssl) {
     return false;
   }
 
-  // We do not accept at SSL 3.0. SSL 3.0 will be removed entirely in the future
-  // and requires retaining more data for renegotiation_info.
-  uint16_t version = ssl_protocol_version(ssl);
-  if (version == SSL3_VERSION || version >= TLS1_3_VERSION) {
+  if (ssl_protocol_version(ssl) >= TLS1_3_VERSION) {
     return false;
   }
 
@@ -525,34 +522,11 @@ int OPENSSL_init_ssl(uint64_t opts, const OPENSSL_INIT_SETTINGS *settings) {
 }
 
 static uint32_t ssl_session_hash(const SSL_SESSION *sess) {
-  const uint8_t *session_id = sess->session_id;
-
-  uint8_t tmp_storage[sizeof(uint32_t)];
-  if (sess->session_id_length < sizeof(tmp_storage)) {
-    OPENSSL_memset(tmp_storage, 0, sizeof(tmp_storage));
-    OPENSSL_memcpy(tmp_storage, sess->session_id, sess->session_id_length);
-    session_id = tmp_storage;
-  }
-
-  uint32_t hash =
-      ((uint32_t)session_id[0]) |
-      ((uint32_t)session_id[1] << 8) |
-      ((uint32_t)session_id[2] << 16) |
-      ((uint32_t)session_id[3] << 24);
-
-  return hash;
+  return ssl_hash_session_id(
+      MakeConstSpan(sess->session_id, sess->session_id_length));
 }
 
-// NB: If this function (or indeed the hash function which uses a sort of
-// coarser function than this one) is changed, ensure
-// SSL_CTX_has_matching_session_id() is checked accordingly. It relies on being
-// able to construct an SSL_SESSION that will collide with any existing session
-// with a matching session ID.
 static int ssl_session_cmp(const SSL_SESSION *a, const SSL_SESSION *b) {
-  if (a->ssl_version != b->ssl_version) {
-    return 1;
-  }
-
   if (a->session_id_length != b->session_id_length) {
     return 1;
   }
@@ -672,6 +646,8 @@ void SSL_CTX_free(SSL_CTX *ctx) {
   sk_CRYPTO_BUFFER_pop_free(ctx->client_CA, CRYPTO_BUFFER_free);
   ctx->x509_method->ssl_ctx_free(ctx);
   sk_SRTP_PROTECTION_PROFILE_free(ctx->srtp_profiles);
+  sk_CertCompressionAlg_pop_free(ctx->cert_compression_algs,
+                                 Delete<CertCompressionAlg>);
   OPENSSL_free(ctx->psk_identity_hint);
   OPENSSL_free(ctx->supported_group_list);
   OPENSSL_free(ctx->alpn_client_proto_list);
@@ -1182,13 +1158,11 @@ int SSL_shutdown(SSL *ssl) {
       }
       ssl->s3->read_shutdown = ssl_shutdown_close_notify;
     } else {
-      // Keep discarding data until we see a close_notify.
-      for (;;) {
-        ssl->s3->pending_app_data = Span<uint8_t>();
-        int ret = ssl_read_impl(ssl);
-        if (ret <= 0) {
-          break;
-        }
+      // Process records until an error, close_notify, or application data.
+      if (ssl_read_impl(ssl) > 0) {
+        // We received some unexpected application data.
+        OPENSSL_PUT_ERROR(SSL, SSL_R_APPLICATION_DATA_ON_SHUTDOWN);
+        return -1;
       }
       if (ssl->s3->read_shutdown != ssl_shutdown_close_notify) {
         return -1;
@@ -1445,9 +1419,8 @@ int SSL_get_tls_unique(const SSL *ssl, uint8_t *out, size_t *out_len,
   *out_len = 0;
   OPENSSL_memset(out, 0, max_out);
 
-  // tls-unique is not defined for SSL 3.0 or TLS 1.3.
+  // tls-unique is not defined for TLS 1.3.
   if (!ssl->s3->initial_handshake_complete ||
-      ssl_protocol_version(ssl) < TLS1_VERSION ||
       ssl_protocol_version(ssl) >= TLS1_3_VERSION) {
     return 0;
   }
@@ -1599,7 +1572,6 @@ static size_t copy_finished(void *out, size_t out_len, const uint8_t *in,
 
 size_t SSL_get_finished(const SSL *ssl, void *buf, size_t count) {
   if (!ssl->s3->initial_handshake_complete ||
-      ssl_protocol_version(ssl) < TLS1_VERSION ||
       ssl_protocol_version(ssl) >= TLS1_3_VERSION) {
     return 0;
   }
@@ -1615,7 +1587,6 @@ size_t SSL_get_finished(const SSL *ssl, void *buf, size_t count) {
 
 size_t SSL_get_peer_finished(const SSL *ssl, void *buf, size_t count) {
   if (!ssl->s3->initial_handshake_complete ||
-      ssl_protocol_version(ssl) < TLS1_VERSION ||
       ssl_protocol_version(ssl) >= TLS1_3_VERSION) {
     return 0;
   }
@@ -2032,8 +2003,8 @@ void SSL_get0_signed_cert_timestamp_list(const SSL *ssl, const uint8_t **out,
     return;
   }
 
-  *out = CRYPTO_BUFFER_data(session->signed_cert_timestamp_list);
-  *out_len = CRYPTO_BUFFER_len(session->signed_cert_timestamp_list);
+  *out = CRYPTO_BUFFER_data(session->signed_cert_timestamp_list.get());
+  *out_len = CRYPTO_BUFFER_len(session->signed_cert_timestamp_list.get());
 }
 
 void SSL_get0_ocsp_response(const SSL *ssl, const uint8_t **out,
@@ -2045,8 +2016,8 @@ void SSL_get0_ocsp_response(const SSL *ssl, const uint8_t **out,
     return;
   }
 
-  *out = CRYPTO_BUFFER_data(session->ocsp_response);
-  *out_len = CRYPTO_BUFFER_len(session->ocsp_response);
+  *out = CRYPTO_BUFFER_data(session->ocsp_response.get());
+  *out_len = CRYPTO_BUFFER_len(session->ocsp_response.get());
 }
 
 int SSL_set_tlsext_host_name(SSL *ssl, const char *name) {
@@ -2175,8 +2146,8 @@ void SSL_CTX_set_alpn_select_cb(SSL_CTX *ctx,
 void SSL_get0_alpn_selected(const SSL *ssl, const uint8_t **out_data,
                             unsigned *out_len) {
   if (SSL_in_early_data(ssl) && !ssl->server) {
-    *out_data = ssl->s3->hs->early_session->early_alpn;
-    *out_len = ssl->s3->hs->early_session->early_alpn_len;
+    *out_data = ssl->s3->hs->early_session->early_alpn.data();
+    *out_len = ssl->s3->hs->early_session->early_alpn.size();
   } else {
     *out_data = ssl->s3->alpn_selected.data();
     *out_len = ssl->s3->alpn_selected.size();
@@ -2185,6 +2156,51 @@ void SSL_get0_alpn_selected(const SSL *ssl, const uint8_t **out_data,
 
 void SSL_CTX_set_allow_unknown_alpn_protos(SSL_CTX *ctx, int enabled) {
   ctx->allow_unknown_alpn_protos = !!enabled;
+}
+
+int SSL_CTX_add_cert_compression_alg(SSL_CTX *ctx, uint16_t alg_id,
+                                     ssl_cert_compression_func_t compress,
+                                     ssl_cert_decompression_func_t decompress) {
+  assert(compress != nullptr || decompress != nullptr);
+
+  for (CertCompressionAlg *alg : ctx->cert_compression_algs) {
+    if (alg->alg_id == alg_id) {
+      return 0;
+    }
+  }
+
+  CertCompressionAlg *alg = reinterpret_cast<CertCompressionAlg *>(
+      OPENSSL_malloc(sizeof(CertCompressionAlg)));
+  if (alg == nullptr) {
+    goto err;
+  }
+
+  OPENSSL_memset(alg, 0, sizeof(CertCompressionAlg));
+  alg->alg_id = alg_id;
+  alg->compress = compress;
+  alg->decompress = decompress;
+
+  if (ctx->cert_compression_algs == nullptr) {
+    ctx->cert_compression_algs = sk_CertCompressionAlg_new_null();
+    if (ctx->cert_compression_algs == nullptr) {
+      goto err;
+    }
+  }
+
+  if (!sk_CertCompressionAlg_push(ctx->cert_compression_algs, alg)) {
+    goto err;
+  }
+
+  return 1;
+
+err:
+  OPENSSL_free(alg);
+  if (ctx->cert_compression_algs != nullptr &&
+      sk_CertCompressionAlg_num(ctx->cert_compression_algs) == 0) {
+    sk_CertCompressionAlg_free(ctx->cert_compression_algs);
+    ctx->cert_compression_algs = nullptr;
+  }
+  return 0;
 }
 
 void SSL_CTX_set_tls_channel_id_enabled(SSL_CTX *ctx, int enabled) {
@@ -2529,7 +2545,7 @@ const char *SSL_get_psk_identity(const SSL *ssl) {
   if (session == NULL) {
     return NULL;
   }
-  return session->psk_identity;
+  return session->psk_identity.get();
 }
 
 void SSL_set_psk_client_callback(
@@ -2797,8 +2813,7 @@ int SSL_clear(SSL *ssl) {
   // depends on this behavior, so emulate it.
   UniquePtr<SSL_SESSION> session;
   if (!ssl->server && ssl->s3->established_session != NULL) {
-    session.reset(ssl->s3->established_session.get());
-    SSL_SESSION_up_ref(session.get());
+    session = UpRef(ssl->s3->established_session);
   }
 
   // The ssl->d1->mtu is simultaneously configuration (preserved across

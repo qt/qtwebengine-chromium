@@ -90,6 +90,8 @@ if (enable_vr) {
         "//third_party/openvr:openvr",
       ]
       sources += [
+        "openvr/openvr_api_wrapper.cc",
+        "openvr/openvr_api_wrapper.h",
         "openvr/openvr_device.cc",
         "openvr/openvr_device.h",
         "openvr/openvr_device_provider.cc",
@@ -100,6 +102,7 @@ if (enable_vr) {
         "openvr/openvr_render_loop.h",
         "openvr/openvr_type_converters.cc",
         "openvr/openvr_type_converters.h",
+        "openvr/test/test_hook.h",
       ]
     }
 
@@ -190,7 +193,9 @@ if (enable_openvr) {
 
     sources = [
       "openvr/test/fake_openvr_impl_api.cc",
-      "openvr/test/fake_openvr_log.h",
+      "openvr/test/test_helper.cc",
+      "openvr/test/test_helper.h",
+      "openvr/test/test_hook.h",
     ]
 
     libs = [

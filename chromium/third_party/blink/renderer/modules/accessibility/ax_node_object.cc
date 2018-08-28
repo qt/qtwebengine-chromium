@@ -30,7 +30,7 @@
 
 #include <math.h>
 
-#include "third_party/blink/renderer/core/dom/accessible_node.h"
+#include "third_party/blink/renderer/core/aom/accessible_node.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
@@ -86,6 +86,7 @@ const int kDefaultHeadingLevel = 2;
 AXNodeObject::AXNodeObject(Node* node, AXObjectCacheImpl& ax_object_cache)
     : AXObject(ax_object_cache),
       children_dirty_(false),
+      native_role_(kUnknownRole),
       node_(node) {}
 
 AXNodeObject* AXNodeObject::Create(Node* node,
@@ -313,7 +314,7 @@ AccessibilityRole AXNodeObject::NativeAccessibilityRoleIgnoringAria() const {
     return kUnknownRole;
   }
 
-  if (auto* input = ToHTMLInputElementOrNull(*GetNode())) {
+  if (const auto* input = ToHTMLInputElementOrNull(*GetNode())) {
     const AtomicString& type = input->type();
     if (input->DataList())
       return kTextFieldWithComboBoxRole;
@@ -428,6 +429,12 @@ AccessibilityRole AXNodeObject::NativeAccessibilityRoleIgnoringAria() const {
   if (GetNode()->HasTagName(articleTag))
     return kArticleRole;
 
+  if (GetNode()->HasTagName(delTag))
+    return kContentDeletionRole;
+
+  if (GetNode()->HasTagName(insTag))
+    return kContentInsertionRole;
+
   if (GetNode()->HasTagName(mainTag))
     return kMainRole;
 
@@ -511,13 +518,14 @@ AccessibilityRole AXNodeObject::DetermineAccessibilityRole() {
   if (!GetNode())
     return kUnknownRole;
 
+  native_role_ = NativeAccessibilityRoleIgnoringAria();
+
   if ((aria_role_ = DetermineAriaRoleAttribute()) != kUnknownRole)
     return aria_role_;
   if (GetNode()->IsTextNode())
     return kStaticTextRole;
 
-  AccessibilityRole role = NativeAccessibilityRoleIgnoringAria();
-  return role == kUnknownRole ? kGenericContainerRole : role;
+  return native_role_ == kUnknownRole ? kGenericContainerRole : native_role_;
 }
 
 void AXNodeObject::AccessibilityChildrenFromAOMProperty(
@@ -827,7 +835,7 @@ bool AXNodeObject::IsMultiSelectable() const {
 }
 
 bool AXNodeObject::IsNativeCheckboxOrRadio() const {
-  if (auto* input = ToHTMLInputElementOrNull(GetNode())) {
+  if (const auto* input = ToHTMLInputElementOrNull(GetNode())) {
     return input->type() == InputTypeNames::checkbox ||
            input->type() == InputTypeNames::radio;
   }
@@ -845,7 +853,7 @@ bool AXNodeObject::IsNativeImage() const {
   if (IsHTMLPlugInElement(*node))
     return true;
 
-  if (auto* input = ToHTMLInputElementOrNull(*node))
+  if (const auto* input = ToHTMLInputElementOrNull(*node))
     return input->type() == InputTypeNames::image;
 
   return false;
@@ -859,7 +867,7 @@ bool AXNodeObject::IsNativeTextControl() const {
   if (IsHTMLTextAreaElement(*node))
     return true;
 
-  if (auto* input = ToHTMLInputElementOrNull(*node))
+  if (const auto* input = ToHTMLInputElementOrNull(*node))
     return input->IsTextField();
 
   return false;
@@ -907,13 +915,13 @@ bool AXNodeObject::IsSpinButton() const {
 }
 
 bool AXNodeObject::IsNativeSlider() const {
-  if (auto* input = ToHTMLInputElementOrNull(GetNode()))
+  if (const auto* input = ToHTMLInputElementOrNull(GetNode()))
     return input->type() == InputTypeNames::range;
   return false;
 }
 
 bool AXNodeObject::IsNativeSpinButton() const {
-  if (auto* input = ToHTMLInputElementOrNull(GetNode()))
+  if (const auto* input = ToHTMLInputElementOrNull(GetNode()))
     return input->type() == InputTypeNames::number;
   return false;
 }
@@ -978,9 +986,24 @@ AXRestriction AXNodeObject::Restriction() const {
   // Only editable fields can be marked @readonly (unlike @aria-readonly).
   if (IsHTMLTextAreaElement(*elem) && ToHTMLTextAreaElement(*elem).IsReadOnly())
     return kReadOnly;
-  if (auto* input = ToHTMLInputElementOrNull(*elem)) {
+  if (const auto* input = ToHTMLInputElementOrNull(*elem)) {
     if (input->IsTextField() && input->IsReadOnly())
       return kReadOnly;
+  }
+
+  // If a grid cell does not have it's own ARIA input restriction,
+  // fall back on parent grid's readonly state.
+  // See ARIA specification regarding grid/treegrid and readonly.
+  if (IsTableCellLikeRole()) {
+    AXObject* row = ParentObjectUnignored();
+    if (row->IsTableRowLikeRole()) {
+      AXObject* table = row->ParentObjectUnignored();
+      if (table->IsTableLikeRole() && (table->RoleValue() == kGridRole ||
+                                       table->RoleValue() == kTreeGridRole)) {
+        if (table->Restriction() == kReadOnly)
+          return kReadOnly;
+      }
+    }
   }
 
   // This is a node that is not readonly and not disabled.
@@ -1654,12 +1677,19 @@ String AXNodeObject::StringValue() const {
     return GetText();
 
   // Handle other HTML input elements that aren't text controls, like date and
-  // time controls, by returning the string value, with the exception of
-  // checkboxes and radio buttons (which would return "on").
-  if (auto* input = ToHTMLInputElementOrNull(node)) {
-    if (input->type() != InputTypeNames::checkbox &&
-        input->type() != InputTypeNames::radio)
+  // time controls, by returning their value converted to text, with the
+  // exception of checkboxes and radio buttons (which would return "on"), and
+  // buttons which will return their name.
+  // https://html.spec.whatwg.org/multipage/forms.html#dom-input-value
+  if (const auto* input = ToHTMLInputElementOrNull(node)) {
+    if (input->type() != InputTypeNames::button &&
+        input->type() != InputTypeNames::checkbox &&
+        input->type() != InputTypeNames::image &&
+        input->type() != InputTypeNames::radio &&
+        input->type() != InputTypeNames::reset &&
+        input->type() != InputTypeNames::submit) {
       return input->value();
+    }
   }
 
   return String();
@@ -1669,14 +1699,13 @@ AccessibilityRole AXNodeObject::AriaRoleAttribute() const {
   return aria_role_;
 }
 
-// Returns the nearest LayoutBlockFlow ancestor which does not have an
-// inlineBoxWrapper - i.e. is not itself an inline object.
+// Returns the nearest block-level LayoutBlockFlow ancestor
 static LayoutBlockFlow* NonInlineBlockFlow(LayoutObject* object) {
   LayoutObject* current = object;
   while (current) {
     if (current->IsLayoutBlockFlow()) {
       LayoutBlockFlow* block_flow = ToLayoutBlockFlow(current);
-      if (!block_flow->InlineBoxWrapper())
+      if (!block_flow->IsAtomicInlineLevel())
         return block_flow;
     }
     current = current->Parent();
@@ -1701,6 +1730,21 @@ static bool IsInSameNonInlineBlockFlow(LayoutObject* r1, LayoutObject* r2) {
 //
 // New AX name calculation.
 //
+
+String AXNodeObject::GetName(AXNameFrom& name_from,
+                             AXObjectVector* name_objects) const {
+  String name = AXObject::GetName(name_from, name_objects);
+  if (RoleValue() == kSpinButtonRole && DatetimeAncestor()) {
+    // Fields inside a datetime control need to merge the field name with
+    // the name of the <input> element.
+    name_objects->clear();
+    String input_name = DatetimeAncestor()->GetName(name_from, name_objects);
+    if (!input_name.IsEmpty())
+      return name + " " + input_name;
+  }
+
+  return name;
+}
 
 String AXNodeObject::TextAlternative(bool recursive,
                                      bool in_aria_labelled_by_traversal,
@@ -2095,6 +2139,11 @@ void AXNodeObject::InsertChild(AXObject* child, unsigned index) {
   }
 }
 
+void AXNodeObject::ClearChildren() {
+  AXObject::ClearChildren();
+  children_dirty_ = false;
+}
+
 bool AXNodeObject::CanHaveChildren() const {
   // If this is an AXLayoutObject, then it's okay if this object
   // doesn't have a node - there are some layoutObjects that don't have
@@ -2112,7 +2161,7 @@ bool AXNodeObject::CanHaveChildren() const {
     return false;
   }
 
-  switch (NativeAccessibilityRoleIgnoringAria()) {
+  switch (native_role_) {
     case kButtonRole:
     case kCheckBoxRole:
     case kImageRole:
@@ -2325,22 +2374,31 @@ bool AXNodeObject::OnNativeSetSequentialFocusNavigationStartingPointAction() {
 }
 
 void AXNodeObject::ChildrenChanged() {
-  // This method is meant as a quick way of marking a portion of the
-  // accessibility tree dirty.
   if (!GetNode() && !GetLayoutObject())
     return;
 
+  // Call SetNeedsToUpdateChildren on this node, and if this node is
+  // ignored, call it on each existing parent until reaching an unignored node,
+  // because unignored nodes recursively include all children of ignored
+  // nodes. This method is called during layout, so we need to be careful to
+  // only explore existing objects.
+  AXObject* node_to_update = this;
+  while (node_to_update) {
+    node_to_update->SetNeedsToUpdateChildren();
+    if (!node_to_update->LastKnownIsIgnoredValue())
+      break;
+    node_to_update = node_to_update->ParentObjectIfExists();
+  }
+
   // If this node's children are not part of the accessibility tree then
-  // invalidate the children but skip notification and walking up the ancestors.
+  // skip notification and walking up the ancestors.
   // Cases where this happens:
   // - an ancestor has only presentational children, or
   // - this or an ancestor is a leaf node
   // Uses |cached_is_descendant_of_leaf_node_| to avoid updating cached
   // attributes for eachc change via | UpdateCachedAttributeValuesIfNeeded()|.
-  if (!CanHaveChildren() || cached_is_descendant_of_leaf_node_) {
-    SetNeedsToUpdateChildren();
+  if (!CanHaveChildren() || cached_is_descendant_of_leaf_node_)
     return;
-  }
 
   AXObjectCache().PostNotification(this, AXObjectCacheImpl::kAXChildrenChanged);
 
@@ -2351,8 +2409,6 @@ void AXNodeObject::ChildrenChanged() {
   // changes.
   for (AXObject* parent = this; parent;
        parent = parent->ParentObjectIfExists()) {
-    parent->SetNeedsToUpdateChildren();
-
     // These notifications always need to be sent because screenreaders are
     // reliant on them to perform.  In other words, they need to be sent even
     // when the screen reader has not accessed this live region since the last
@@ -2371,6 +2427,13 @@ void AXNodeObject::ChildrenChanged() {
       AXObjectCache().PostNotification(parent,
                                        AXObjectCacheImpl::kAXValueChanged);
   }
+}
+
+void AXNodeObject::UpdateChildrenIfNecessary() {
+  if (NeedsToUpdateChildren())
+    ClearChildren();
+
+  AXObject::UpdateChildrenIfNecessary();
 }
 
 void AXNodeObject::SelectionChanged() {
@@ -2933,7 +2996,24 @@ String AXNodeObject::Description(AXNameFrom name_from,
       description_objects->push_back(related_objects[i]->object);
   }
 
-  return CollapseWhitespace(result);
+  result = CollapseWhitespace(result);
+
+  if (RoleValue() == kSpinButtonRole && DatetimeAncestor()) {
+    // Fields inside a datetime control need to merge the field description
+    // with the description of the <input> element.
+    const AXObject* datetime_ancestor = DatetimeAncestor();
+    AXNameFrom name_from;
+    datetime_ancestor->GetName(name_from, nullptr);
+    description_objects->clear();
+    String ancestor_description = DatetimeAncestor()->Description(
+        name_from, description_from, description_objects);
+    if (!result.IsEmpty() && !ancestor_description.IsEmpty())
+      return result + " " + ancestor_description;
+    if (!ancestor_description.IsEmpty())
+      return ancestor_description;
+  }
+
+  return result;
 }
 
 // Based on
@@ -3161,7 +3241,7 @@ String AXNodeObject::Placeholder(AXNameFrom name_from) const {
     return native_placeholder;
 
   const AtomicString& aria_placeholder =
-      ToHTMLElement(node)->FastGetAttribute(aria_placeholderAttr);
+      GetAOMPropertyOrARIAAttribute(AOMStringProperty::kPlaceholder);
   if (!aria_placeholder.IsEmpty())
     return aria_placeholder;
 

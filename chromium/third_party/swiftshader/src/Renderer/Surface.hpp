@@ -321,7 +321,7 @@ namespace sw
 		inline int getStencilSliceB() const;
 
 		void sync();                      // Wait for lock(s) to be released.
-		virtual bool targetRequiresSync() const { return false; }
+		virtual bool requiresSync() const { return false; }
 		inline bool isUnlocked() const;   // Only reliable after sync().
 
 		inline int getSamples() const;
@@ -486,7 +486,7 @@ namespace sw
 		static void *allocateBuffer(int width, int height, int depth, int border, int samples, Format format);
 		static void memfill4(void *buffer, int pattern, int bytes);
 
-		bool identicalFormats() const;
+		bool identicalBuffers() const;
 		Format selectInternalFormat(Format format) const;
 
 		void resolve();

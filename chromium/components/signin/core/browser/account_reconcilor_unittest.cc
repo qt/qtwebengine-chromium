@@ -14,7 +14,7 @@
 #include "base/run_loop.h"
 #include "base/scoped_observer.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/time/time.h"
 #include "base/timer/mock_timer.h"
 #include "build/build_config.h"
@@ -113,7 +113,7 @@ class SpyReconcilorDelegate : public signin::AccountReconcilorDelegate {
 // Introduce a dummy class creating the delegate internally, to avoid the move.
 class DummyAccountReconcilorWithDelegate : public AccountReconcilor {
  public:
-  explicit DummyAccountReconcilorWithDelegate(
+  DummyAccountReconcilorWithDelegate(
       ProfileOAuth2TokenService* token_service,
       SigninManagerBase* signin_manager,
       SigninClient* client,
@@ -132,7 +132,7 @@ class DummyAccountReconcilorWithDelegate : public AccountReconcilor {
 
   // Takes ownership of |delegate|.
   // gmock can't work with move only parameters.
-  explicit DummyAccountReconcilorWithDelegate(
+  DummyAccountReconcilorWithDelegate(
       ProfileOAuth2TokenService* token_service,
       SigninManagerBase* signin_manager,
       SigninClient* client,
@@ -238,13 +238,6 @@ class AccountReconcilorTest : public ::testing::Test {
   }
   base::HistogramTester* histogram_tester() { return &histogram_tester_; }
 
-  void SetFakeResponse(const std::string& url,
-                       const std::string& data,
-                       net::HttpStatusCode code,
-                       net::URLRequestStatus::Status status) {
-    url_fetcher_factory_.SetFakeResponse(GURL(url), data, code, status);
-  }
-
   MockAccountReconcilor* GetMockReconcilor();
   MockAccountReconcilor* GetMockReconcilor(
       std::unique_ptr<signin::AccountReconcilorDelegate> delegate);
@@ -282,7 +275,6 @@ class AccountReconcilorTest : public ::testing::Test {
   FakeGaiaCookieManagerService cookie_manager_service_;
   FakeSigninManagerForTesting signin_manager_;
   std::unique_ptr<MockAccountReconcilor> mock_reconcilor_;
-  net::FakeURLFetcherFactory url_fetcher_factory_;
   base::HistogramTester histogram_tester_;
   GURL get_check_connection_info_url_;
 
@@ -315,15 +307,13 @@ AccountReconcilorTest::AccountReconcilorTest()
                               GaiaConstants::kChromeSource,
                               &test_signin_client_),
 #if defined(OS_CHROMEOS)
-      signin_manager_(&test_signin_client_, &account_tracker_),
+      signin_manager_(&test_signin_client_, &account_tracker_) {
 #else
       signin_manager_(&test_signin_client_,
                       &token_service_,
                       &account_tracker_,
-                      &cookie_manager_service_),
+                      &cookie_manager_service_) {
 #endif
-      url_fetcher_factory_(nullptr) {
-  signin::RegisterAccountConsistencyProfilePrefs(pref_service_.registry());
   AccountTrackerService::RegisterPrefs(pref_service_.registry());
   SigninManagerBase::RegisterProfilePrefs(pref_service_.registry());
   SigninManagerBase::RegisterPrefs(pref_service_.registry());
@@ -334,7 +324,6 @@ AccountReconcilorTest::AccountReconcilorTest()
           GaiaConstants::kChromeSource);
 
   account_tracker_.Initialize(&test_signin_client_);
-  cookie_manager_service_.Init(&url_fetcher_factory_);
   cookie_manager_service_.SetListAccountsResponseHttpNotFound();
   signin_manager_.Initialize(nullptr);
 
@@ -2032,9 +2021,8 @@ TEST_F(AccountReconcilorTest, DelegateTimeoutIsCalled) {
   SpyReconcilorDelegate* spy_delegate = spy_delegate0.get();
   AccountReconcilor* reconcilor = GetMockReconcilor(std::move(spy_delegate0));
   ASSERT_TRUE(reconcilor);
-  auto timer0 = std::make_unique<base::MockTimer>(true /* retain_user_task */,
-                                                  false /* is_repeating */);
-  base::MockTimer* timer = timer0.get();
+  auto timer0 = std::make_unique<base::MockOneShotTimer>();
+  base::MockOneShotTimer* timer = timer0.get();
   reconcilor->set_timer_for_testing(std::move(timer0));
 
   reconcilor->StartReconcile();
@@ -2057,9 +2045,8 @@ TEST_F(AccountReconcilorTest, DelegateTimeoutIsNotCalled) {
                                                               "12345");
   AccountReconcilor* reconcilor = GetMockReconcilor();
   ASSERT_TRUE(reconcilor);
-  auto timer0 = std::make_unique<base::MockTimer>(true /* retain_user_task */,
-                                                  false /* is_repeating */);
-  base::MockTimer* timer = timer0.get();
+  auto timer0 = std::make_unique<base::MockOneShotTimer>();
+  base::MockOneShotTimer* timer = timer0.get();
   reconcilor->set_timer_for_testing(std::move(timer0));
 
   reconcilor->StartReconcile();
@@ -2075,9 +2062,8 @@ TEST_F(AccountReconcilorTest, DelegateTimeoutIsNotCalledIfTimeoutIsNotReached) {
   SpyReconcilorDelegate* spy_delegate = spy_delegate0.get();
   AccountReconcilor* reconcilor = GetMockReconcilor(std::move(spy_delegate0));
   ASSERT_TRUE(reconcilor);
-  auto timer0 = std::make_unique<base::MockTimer>(true /* retain_user_task */,
-                                                  false /* is_repeating */);
-  base::MockTimer* timer = timer0.get();
+  auto timer0 = std::make_unique<base::MockOneShotTimer>();
+  base::MockOneShotTimer* timer = timer0.get();
   reconcilor->set_timer_for_testing(std::move(timer0));
 
   reconcilor->StartReconcile();

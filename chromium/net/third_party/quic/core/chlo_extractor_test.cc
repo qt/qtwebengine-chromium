@@ -14,9 +14,7 @@
 #include "net/third_party/quic/test_tools/crypto_test_utils.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 
-using std::string;
-
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -47,9 +45,8 @@ class TestDelegate : public ChloExtractor::Delegate {
 class ChloExtractorTest : public QuicTest {
  public:
   ChloExtractorTest() {
-    SetQuicReloadableFlag(quic_respect_ietf_header, true);
-    header_.connection_id = 42;
-    header_.connection_id_length = PACKET_8BYTE_CONNECTION_ID;
+    header_.destination_connection_id = 42;
+    header_.destination_connection_id_length = PACKET_8BYTE_CONNECTION_ID;
     header_.version_flag = true;
     header_.version = AllSupportedVersions().front();
     header_.reset_flag = false;
@@ -86,8 +83,8 @@ TEST_F(ChloExtractorTest, FindsValidChlo) {
   CryptoHandshakeMessage client_hello;
   client_hello.set_tag(kCHLO);
 
-  string client_hello_str((string(
-      client_hello.GetSerialized(Perspective::IS_CLIENT).AsStringPiece())));
+  QuicString client_hello_str(
+      client_hello.GetSerialized(Perspective::IS_CLIENT).AsStringPiece());
   // Construct a CHLO with each supported version
   for (ParsedQuicVersion version : AllSupportedVersions()) {
     ParsedQuicVersionVector versions(SupportedVersions(version));
@@ -97,7 +94,7 @@ TEST_F(ChloExtractorTest, FindsValidChlo) {
     EXPECT_TRUE(ChloExtractor::Extract(*packet_, versions, {}, &delegate_))
         << ParsedQuicVersionToString(version);
     EXPECT_EQ(version.transport_version, delegate_.transport_version());
-    EXPECT_EQ(header_.connection_id, delegate_.connection_id());
+    EXPECT_EQ(header_.destination_connection_id, delegate_.connection_id());
     EXPECT_EQ(client_hello.DebugString(Perspective::IS_SERVER),
               delegate_.chlo())
         << ParsedQuicVersionToString(version);
@@ -108,8 +105,8 @@ TEST_F(ChloExtractorTest, DoesNotFindValidChloOnWrongStream) {
   CryptoHandshakeMessage client_hello;
   client_hello.set_tag(kCHLO);
 
-  string client_hello_str((string(
-      client_hello.GetSerialized(Perspective::IS_CLIENT).AsStringPiece())));
+  QuicString client_hello_str(
+      client_hello.GetSerialized(Perspective::IS_CLIENT).AsStringPiece());
   MakePacket(
       new QuicStreamFrame(kCryptoStreamId + 1, false, 0, client_hello_str));
   EXPECT_FALSE(
@@ -120,8 +117,8 @@ TEST_F(ChloExtractorTest, DoesNotFindValidChloOnWrongOffset) {
   CryptoHandshakeMessage client_hello;
   client_hello.set_tag(kCHLO);
 
-  string client_hello_str((string(
-      client_hello.GetSerialized(Perspective::IS_CLIENT).AsStringPiece())));
+  QuicString client_hello_str(
+      client_hello.GetSerialized(Perspective::IS_CLIENT).AsStringPiece());
   MakePacket(new QuicStreamFrame(kCryptoStreamId, false, 1, client_hello_str));
   EXPECT_FALSE(
       ChloExtractor::Extract(*packet_, AllSupportedVersions(), {}, &delegate_));
@@ -135,4 +132,4 @@ TEST_F(ChloExtractorTest, DoesNotFindInvalidChlo) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

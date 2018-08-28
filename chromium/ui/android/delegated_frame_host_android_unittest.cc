@@ -7,9 +7,13 @@
 #include "base/test/test_mock_time_task_runner.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/solid_color_layer.h"
+#include "cc/layers/surface_layer.h"
 #include "components/viz/common/hit_test/hit_test_region_list.h"
+#include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/host/host_frame_sink_manager.h"
+#include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
+#include "components/viz/test/compositor_frame_helpers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/android/resources/resource_manager.h"
@@ -28,12 +32,12 @@ class MockDelegatedFrameHostAndroidClient
     : public DelegatedFrameHostAndroid::Client {
  public:
   MOCK_METHOD1(SetBeginFrameSource, void(viz::BeginFrameSource*));
-  MOCK_METHOD0(DidReceiveCompositorFrameAck, void());
-  MOCK_METHOD4(DidPresentCompositorFrame,
-               void(uint32_t, base::TimeTicks, base::TimeDelta, uint32_t));
-  MOCK_METHOD1(DidDiscardCompositorFrame, void(uint32_t));
+  MOCK_METHOD1(DidReceiveCompositorFrameAck,
+               void(const std::vector<viz::ReturnedResource>&));
   MOCK_METHOD1(ReclaimResources,
                void(const std::vector<viz::ReturnedResource>&));
+  MOCK_METHOD2(DidPresentCompositorFrame,
+               void(uint32_t, const gfx::PresentationFeedback&));
   MOCK_METHOD1(OnFrameTokenChanged, void(uint32_t));
   MOCK_METHOD0(DidReceiveFirstFrameAfterNavigation, void());
 };
@@ -73,18 +77,24 @@ class MockCompositorLockManagerClient : public ui::CompositorLockManagerClient {
 class DelegatedFrameHostAndroidTest : public testing::Test {
  public:
   DelegatedFrameHostAndroidTest()
-      : frame_sink_id_(1, 1),
+      : frame_sink_manager_impl_(&shared_bitmap_manager_),
+        frame_sink_id_(1, 1),
         task_runner_(new base::TestMockTimeTaskRunner()),
         lock_manager_(task_runner_, &lock_manager_client_) {
     host_frame_sink_manager_.SetLocalManager(&frame_sink_manager_impl_);
-    view_.SetLayer(cc::SolidColorLayer::Create());
-    frame_host_ = std::make_unique<DelegatedFrameHostAndroid>(
-        &view_, &host_frame_sink_manager_, &client_, frame_sink_id_);
+    frame_sink_manager_impl_.SetLocalClient(&host_frame_sink_manager_);
   }
 
-  static viz::LocalSurfaceId GetFakeId() {
-    return viz::LocalSurfaceId(1, 1, base::UnguessableToken::Create());
+  void SetUp() override {
+    view_.SetLayer(cc::SolidColorLayer::Create());
+    frame_host_ = std::make_unique<DelegatedFrameHostAndroid>(
+        &view_, &host_frame_sink_manager_, &client_, frame_sink_id_,
+        ShouldEnableSurfaceSynchronization());
   }
+
+  void TearDown() override { frame_host_.reset(); }
+
+  virtual bool ShouldEnableSurfaceSynchronization() const { return false; }
 
   ui::CompositorLock* GetLock(CompositorLockClient* client,
                               base::TimeDelta time_delta) {
@@ -92,14 +102,12 @@ class DelegatedFrameHostAndroidTest : public testing::Test {
   }
 
   void SubmitCompositorFrame(const gfx::Size& frame_size = gfx::Size(10, 10)) {
-    viz::CompositorFrame frame;
-    auto render_pass = viz::RenderPass::Create();
-    render_pass->output_rect = gfx::Rect(frame_size);
-    frame.render_pass_list.push_back(std::move(render_pass));
-    frame.metadata.begin_frame_ack.sequence_number = 1;
-    frame.metadata.device_scale_factor = 1;
-    frame_host_->SubmitCompositorFrame(GetFakeId(), std::move(frame),
-                                       base::nullopt);
+    viz::CompositorFrame frame =
+        viz::CompositorFrameBuilder()
+            .AddRenderPass(gfx::Rect(frame_size), gfx::Rect(frame_size))
+            .Build();
+    frame_host_->SubmitCompositorFrame(allocator_.GenerateId(),
+                                       std::move(frame), base::nullopt);
   }
 
   void SetUpValidFrame(const gfx::Size& frame_size) {
@@ -119,15 +127,59 @@ class DelegatedFrameHostAndroidTest : public testing::Test {
  protected:
   MockWindowAndroidCompositor compositor_;
   ui::ViewAndroid view_;
+  viz::ServerSharedBitmapManager shared_bitmap_manager_;
   viz::FrameSinkManagerImpl frame_sink_manager_impl_;
   viz::HostFrameSinkManager host_frame_sink_manager_;
   MockDelegatedFrameHostAndroidClient client_;
   viz::FrameSinkId frame_sink_id_;
+  viz::ParentLocalSurfaceIdAllocator allocator_;
   std::unique_ptr<DelegatedFrameHostAndroid> frame_host_;
   MockCompositorLockManagerClient lock_manager_client_;
   scoped_refptr<base::TestMockTimeTaskRunner> task_runner_;
   CompositorLockManager lock_manager_;
 };
+
+class DelegatedFrameHostAndroidSurfaceSynchronizationTest
+    : public DelegatedFrameHostAndroidTest {
+ public:
+  DelegatedFrameHostAndroidSurfaceSynchronizationTest() = default;
+  ~DelegatedFrameHostAndroidSurfaceSynchronizationTest() override = default;
+
+  bool ShouldEnableSurfaceSynchronization() const override { return true; }
+};
+
+// If surface synchronization is enabled then we should not be acquiring a
+// compositor lock on attach.
+TEST_F(DelegatedFrameHostAndroidSurfaceSynchronizationTest,
+       NoCompositorLockOnAttach) {
+  EXPECT_CALL(compositor_, IsDrawingFirstVisibleFrame()).Times(0);
+  EXPECT_CALL(compositor_, DoGetCompositorLock(_, _)).Times(0);
+  frame_host_->AttachToCompositor(&compositor_);
+}
+
+// If surface synchronization is off, and we are doing a cross-process
+// navigation, then both the primary and fallback surface IDs need to be
+// updated together.
+TEST_F(DelegatedFrameHostAndroidTest, TakeFallbackContentFromUpdatesPrimary) {
+  EXPECT_FALSE(frame_host_->SurfaceId().is_valid());
+  // Submit a compositor frame to ensure we have delegated content.
+  SubmitCompositorFrame();
+
+  EXPECT_TRUE(frame_host_->SurfaceId().is_valid());
+  std::unique_ptr<DelegatedFrameHostAndroid> other_frame_host =
+      std::make_unique<DelegatedFrameHostAndroid>(
+          &view_, &host_frame_sink_manager_, &client_, viz::FrameSinkId(2, 2),
+          ShouldEnableSurfaceSynchronization());
+
+  EXPECT_FALSE(other_frame_host->SurfaceId().is_valid());
+
+  other_frame_host->TakeFallbackContentFrom(frame_host_.get());
+
+  EXPECT_TRUE(other_frame_host->SurfaceId().is_valid());
+  EXPECT_EQ(
+      other_frame_host->content_layer_for_testing()->primary_surface_id(),
+      other_frame_host->content_layer_for_testing()->fallback_surface_id());
+}
 
 TEST_F(DelegatedFrameHostAndroidTest, CompositorLockDuringFirstFrame) {
   // Attach during the first frame, lock will be taken.

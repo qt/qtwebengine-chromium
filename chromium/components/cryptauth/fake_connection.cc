@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/callback.h"
 #include "components/cryptauth/wire_message.h"
 
 namespace cryptauth {
@@ -54,6 +55,11 @@ void FakeConnection::RemoveObserver(ConnectionObserver* observer) {
   Connection::RemoveObserver(observer);
 }
 
+void FakeConnection::GetConnectionRssi(
+    base::OnceCallback<void(base::Optional<int32_t>)> callback) {
+  std::move(callback).Run(rssi_to_return_);
+}
+
 void FakeConnection::CompleteInProgressConnection(bool success) {
   DCHECK(!should_auto_connect_);
   DCHECK(status() == Status::IN_PROGRESS);
@@ -80,10 +86,6 @@ void FakeConnection::ReceiveMessage(
   OnBytesReceived(std::string());
   pending_feature_.clear();
   pending_payload_.clear();
-}
-
-void FakeConnection::NotifyGattCharacteristicsNotAvailable() {
-  Connection::NotifyGattCharacteristicsNotAvailable();
 }
 
 void FakeConnection::SendMessageImpl(std::unique_ptr<WireMessage> message) {

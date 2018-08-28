@@ -97,10 +97,11 @@ public:
     // GrMesh object and emit a draw for it. Each draw will use the same GrPipeline and
     // GrPrimitiveProcessor. This may fail if the draw would exceed any resource limits (e.g.
     // number of vertex attributes is too large).
-    bool draw(const GrPipeline&,
-              const GrPrimitiveProcessor&,
+    bool draw(const GrPrimitiveProcessor&,
+              const GrPipeline&,
+              const GrPipeline::FixedDynamicState*,
+              const GrPipeline::DynamicStateArrays*,
               const GrMesh[],
-              const GrPipeline::DynamicState[],
               int meshCount,
               const SkRect& bounds);
 
@@ -132,10 +133,11 @@ private:
     virtual GrGpu* gpu() = 0;
 
     // overridden by backend-specific derived class to perform the draw call.
-    virtual void onDraw(const GrPipeline&,
-                        const GrPrimitiveProcessor&,
+    virtual void onDraw(const GrPrimitiveProcessor&,
+                        const GrPipeline&,
+                        const GrPipeline::FixedDynamicState*,
+                        const GrPipeline::DynamicStateArrays*,
                         const GrMesh[],
-                        const GrPipeline::DynamicState[],
                         int meshCount,
                         const SkRect& bounds) = 0;
 

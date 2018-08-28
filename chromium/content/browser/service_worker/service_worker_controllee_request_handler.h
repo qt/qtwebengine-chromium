@@ -40,7 +40,7 @@ class ServiceWorkerVersion;
 // A request handler derivative used to handle requests from
 // controlled documents.
 // Note that in IsServicificationEnabled cases this is used only for
-// main resource fetch during navigation.
+// main resource fetch during navigation or shared worker creation.
 class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
     : public ServiceWorkerRequestHandler,
       public ServiceWorkerURLJobWrapper::Delegate {
@@ -94,15 +94,15 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
   // For main resource case.
   void PrepareForMainResource(const GURL& url, const GURL& site_for_cookies);
   void DidLookupRegistrationForMainResource(
-      ServiceWorkerStatusCode status,
+      blink::ServiceWorkerStatusCode status,
       scoped_refptr<ServiceWorkerRegistration> registration);
   void OnVersionStatusChanged(
-      ServiceWorkerRegistration* registration,
-      ServiceWorkerVersion* version);
+      scoped_refptr<ServiceWorkerRegistration> registration,
+      scoped_refptr<ServiceWorkerVersion> version);
 
   void DidUpdateRegistration(
       const scoped_refptr<ServiceWorkerRegistration>& original_registration,
-      ServiceWorkerStatusCode status,
+      blink::ServiceWorkerStatusCode status,
       const std::string& status_message,
       int64_t registration_id);
   void OnUpdatedVersionStatusChanged(
@@ -130,6 +130,11 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
 
   bool JobWasCanceled() const;
 
+  // Schedules a service worker update to occur shortly after the page and its
+  // initial subresources load, if this handler was for a navigation.
+  void MaybeScheduleUpdate();
+
+  const ResourceType resource_type_;
   const bool is_main_resource_load_;
   const bool is_main_frame_load_;
   std::unique_ptr<ServiceWorkerURLJobWrapper> url_job_;

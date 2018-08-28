@@ -697,11 +697,13 @@ const int* LayoutThemeMac::ProgressBarHeights() const {
   return kSizes;
 }
 
-double LayoutThemeMac::AnimationRepeatIntervalForProgressBar() const {
+constexpr TimeDelta LayoutThemeMac::kProgressAnimationFrameRate;
+
+TimeDelta LayoutThemeMac::AnimationRepeatIntervalForProgressBar() const {
   return kProgressAnimationFrameRate;
 }
 
-double LayoutThemeMac::AnimationDurationForProgressBar() const {
+TimeDelta LayoutThemeMac::AnimationDurationForProgressBar() const {
   return kProgressAnimationNumFrames * kProgressAnimationFrameRate;
 }
 
@@ -759,7 +761,7 @@ int LayoutThemeMac::PopupInternalPaddingStart(
   return 0;
 }
 
-int LayoutThemeMac::PopupInternalPaddingEnd(const ChromeClient*,
+int LayoutThemeMac::PopupInternalPaddingEnd(const PlatformChromeClient*,
                                             const ComputedStyle& style) const {
   if (style.Appearance() == kMenulistPart)
     return PopupButtonPadding(

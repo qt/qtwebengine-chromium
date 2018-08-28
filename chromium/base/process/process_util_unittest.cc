@@ -45,16 +45,18 @@
 #if defined(OS_POSIX)
 #include <sys/resource.h>
 #endif
-#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+#if defined(OS_POSIX)
 #include <dlfcn.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <sched.h>
 #include <signal.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 #endif
 #if defined(OS_WIN)
 #include <windows.h>
@@ -67,11 +69,14 @@
 #include "third_party/lss/linux_syscall_support.h"
 #endif
 #if defined(OS_FUCHSIA)
-#include <fdio/limits.h>
+#include <lib/fdio/limits.h>
 #include <zircon/process.h>
 #include <zircon/processargs.h>
 #include <zircon/syscalls.h>
 #include "base/base_paths_fuchsia.h"
+#include "base/files/scoped_temp_dir.h"
+#include "base/fuchsia/file_utils.h"
+#include "base/fuchsia/fuchsia_logging.h"
 #endif
 
 namespace base {
@@ -82,12 +87,15 @@ const char kSignalFileSlow[] = "SlowChildProcess.die";
 const char kSignalFileKill[] = "KilledChildProcess.die";
 const char kTestHelper[] = "test_child_process";
 
-#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+#if defined(OS_POSIX)
 const char kSignalFileTerm[] = "TerminatedChildProcess.die";
 #endif
 
 #if defined(OS_FUCHSIA)
 const char kSignalFileClone[] = "ClonedTmpDir.die";
+const char kDataDirHasStaged[] = "DataDirHasStaged.die";
+const char kFooDirHasStaged[] = "FooDirHasStaged.die";
+const char kFooDirDoesNotHaveStaged[] = "FooDirDoesNotHaveStaged.die";
 #endif
 
 #if defined(OS_WIN)
@@ -223,6 +231,100 @@ TEST_F(ProcessUtilTest, DISABLED_GetTerminationStatusExit) {
 
 #if defined(OS_FUCHSIA)
 
+MULTIPROCESS_TEST_MAIN(CheckDataDirHasStaged) {
+  if (!PathExists(base::FilePath("/data/staged"))) {
+    return 1;
+  }
+  WaitToDie(ProcessUtilTest::GetSignalFilePath(kDataDirHasStaged).c_str());
+  return kSuccess;
+}
+
+// Test transferred paths override cloned paths.
+TEST_F(ProcessUtilTest, HandleTransfersOverrideClones) {
+  const std::string signal_file =
+      ProcessUtilTest::GetSignalFilePath(kDataDirHasStaged);
+  remove(signal_file.c_str());
+
+  // Create a tempdir with "staged" as its contents.
+  ScopedTempDir tmpdir_with_staged;
+  ASSERT_TRUE(tmpdir_with_staged.CreateUniqueTempDir());
+  {
+    base::FilePath staged_file_path =
+        tmpdir_with_staged.GetPath().Append("staged");
+    base::File staged_file(staged_file_path,
+                           base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+    ASSERT_TRUE(staged_file.created());
+    staged_file.Close();
+  }
+
+  base::LaunchOptions options;
+  options.spawn_flags = FDIO_SPAWN_CLONE_STDIO;
+
+  // Attach the tempdir to "data", but also try to duplicate the existing "data"
+  // directory.
+  options.paths_to_clone.push_back(base::FilePath("/data"));
+  options.paths_to_clone.push_back(base::FilePath("/tmp"));
+  options.paths_to_transfer.push_back(
+      {FilePath("/data"),
+       fuchsia::GetHandleFromFile(
+           base::File(base::FilePath(tmpdir_with_staged.GetPath()),
+                      base::File::FLAG_OPEN | base::File::FLAG_READ))
+           .release()});
+
+  // Verify from that "/data/staged" exists from the child process' perspective.
+  Process process(SpawnChildWithOptions("CheckDataDirHasStaged", options));
+  ASSERT_TRUE(process.IsValid());
+  SignalChildren(signal_file.c_str());
+
+  int exit_code = 42;
+  EXPECT_TRUE(process.WaitForExit(&exit_code));
+  EXPECT_EQ(kSuccess, exit_code);
+}
+
+MULTIPROCESS_TEST_MAIN(CheckMountedDir) {
+  if (!PathExists(base::FilePath("/foo/staged"))) {
+    return 1;
+  }
+  WaitToDie(ProcessUtilTest::GetSignalFilePath(kFooDirHasStaged).c_str());
+  return kSuccess;
+}
+
+// Test that we can install an opaque handle in the child process' namespace.
+TEST_F(ProcessUtilTest, TransferHandleToPath) {
+  const std::string signal_file =
+      ProcessUtilTest::GetSignalFilePath(kFooDirHasStaged);
+  remove(signal_file.c_str());
+
+  // Create a tempdir with "staged" as its contents.
+  ScopedTempDir new_tmpdir;
+  ASSERT_TRUE(new_tmpdir.CreateUniqueTempDir());
+  base::FilePath staged_file_path = new_tmpdir.GetPath().Append("staged");
+  base::File staged_file(staged_file_path,
+                         base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+  ASSERT_TRUE(staged_file.created());
+  staged_file.Close();
+
+  // Mount the tempdir to "/foo".
+  zx::handle tmp_handle = fuchsia::GetHandleFromFile(
+      base::File(base::FilePath(new_tmpdir.GetPath()),
+                 base::File::FLAG_OPEN | base::File::FLAG_READ));
+  ASSERT_TRUE(tmp_handle.is_valid());
+  LaunchOptions options;
+  options.paths_to_clone.push_back(base::FilePath("/tmp"));
+  options.paths_to_transfer.push_back(
+      {base::FilePath("/foo"), tmp_handle.release()});
+  options.spawn_flags = FDIO_SPAWN_CLONE_STDIO;
+
+  // Verify from that "/foo/staged" exists from the child process' perspective.
+  Process process(SpawnChildWithOptions("CheckMountedDir", options));
+  ASSERT_TRUE(process.IsValid());
+  SignalChildren(signal_file.c_str());
+
+  int exit_code = 42;
+  EXPECT_TRUE(process.WaitForExit(&exit_code));
+  EXPECT_EQ(kSuccess, exit_code);
+}
+
 MULTIPROCESS_TEST_MAIN(CheckTmpFileExists) {
   // Look through the filesystem to ensure that no other directories
   // besides "tmp" are in the namespace.
@@ -241,14 +343,14 @@ MULTIPROCESS_TEST_MAIN(CheckTmpFileExists) {
   return kSuccess;
 }
 
-TEST_F(ProcessUtilTest, SelectivelyClonedDir) {
+TEST_F(ProcessUtilTest, CloneTmp) {
   const std::string signal_file =
       ProcessUtilTest::GetSignalFilePath(kSignalFileClone);
   remove(signal_file.c_str());
 
   LaunchOptions options;
-  options.paths_to_map.push_back(base::FilePath("/tmp"));
-  options.clone_flags = LP_CLONE_FDIO_STDIO;
+  options.paths_to_clone.push_back(base::FilePath("/tmp"));
+  options.spawn_flags = FDIO_SPAWN_CLONE_STDIO;
 
   Process process(SpawnChildWithOptions("CheckTmpFileExists", options));
   ASSERT_TRUE(process.IsValid());
@@ -260,6 +362,45 @@ TEST_F(ProcessUtilTest, SelectivelyClonedDir) {
   EXPECT_EQ(kSuccess, exit_code);
 }
 
+MULTIPROCESS_TEST_MAIN(CheckMountedDirDoesNotExist) {
+  if (PathExists(base::FilePath("/foo"))) {
+    return 1;
+  }
+  WaitToDie(
+      ProcessUtilTest::GetSignalFilePath(kFooDirDoesNotHaveStaged).c_str());
+  return kSuccess;
+}
+
+TEST_F(ProcessUtilTest, TransferInvalidHandleFails) {
+  LaunchOptions options;
+  options.paths_to_clone.push_back(base::FilePath("/tmp"));
+  options.paths_to_transfer.push_back(
+      {base::FilePath("/foo"), ZX_HANDLE_INVALID});
+  options.spawn_flags = FDIO_SPAWN_CLONE_STDIO;
+
+  // Verify that the process is never constructed.
+  const std::string signal_file =
+      ProcessUtilTest::GetSignalFilePath(kFooDirDoesNotHaveStaged);
+  remove(signal_file.c_str());
+  Process process(
+      SpawnChildWithOptions("CheckMountedDirDoesNotExist", options));
+  ASSERT_FALSE(process.IsValid());
+}
+
+TEST_F(ProcessUtilTest, CloneInvalidDirFails) {
+  const std::string signal_file =
+      ProcessUtilTest::GetSignalFilePath(kSignalFileClone);
+  remove(signal_file.c_str());
+
+  LaunchOptions options;
+  options.paths_to_clone.push_back(base::FilePath("/tmp"));
+  options.paths_to_clone.push_back(base::FilePath("/definitely_not_a_dir"));
+  options.spawn_flags = FDIO_SPAWN_CLONE_STDIO;
+
+  Process process(SpawnChildWithOptions("CheckTmpFileExists", options));
+  ASSERT_FALSE(process.IsValid());
+}
+
 // Test that we can clone other directories. CheckTmpFileExists will return an
 // error code if it detects a directory other than "/tmp", so we can use that as
 // a signal that it successfully detected another entry in the root namespace.
@@ -269,9 +410,9 @@ TEST_F(ProcessUtilTest, CloneAlternateDir) {
   remove(signal_file.c_str());
 
   LaunchOptions options;
-  options.paths_to_map.push_back(base::FilePath("/tmp"));
-  options.paths_to_map.push_back(base::FilePath("/data"));
-  options.clone_flags = LP_CLONE_FDIO_STDIO;
+  options.paths_to_clone.push_back(base::FilePath("/tmp"));
+  options.paths_to_clone.push_back(base::FilePath("/data"));
+  options.spawn_flags = FDIO_SPAWN_CLONE_STDIO;
 
   Process process(SpawnChildWithOptions("CheckTmpFileExists", options));
   ASSERT_TRUE(process.IsValid());
@@ -283,6 +424,55 @@ TEST_F(ProcessUtilTest, CloneAlternateDir) {
   EXPECT_EQ(1, exit_code);
 }
 
+TEST_F(ProcessUtilTest, HandlesToTransferClosedOnSpawnFailure) {
+  zx::handle handles[2];
+  zx_status_t result = zx_channel_create(0, handles[0].reset_and_get_address(),
+                                         handles[1].reset_and_get_address());
+  ZX_CHECK(ZX_OK == result, result) << "zx_channel_create";
+
+  LaunchOptions options;
+  options.handles_to_transfer.push_back({0, handles[0].get()});
+
+  // Launch a non-existent binary, causing fdio_spawn() to fail.
+  CommandLine command_line(FilePath(
+      FILE_PATH_LITERAL("💩magical_filename_that_will_never_exist_ever")));
+  Process process(LaunchProcess(command_line, options));
+  ASSERT_FALSE(process.IsValid());
+
+  // If LaunchProcess did its job then handles[0] is no longer valid, and
+  // handles[1] should observe a channel-closed signal.
+  EXPECT_EQ(
+      zx_object_wait_one(handles[1].get(), ZX_CHANNEL_PEER_CLOSED, 0, nullptr),
+      ZX_OK);
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_handle_close(handles[0].get()));
+  ignore_result(handles[0].release());
+}
+
+TEST_F(ProcessUtilTest, HandlesToTransferClosedOnBadPathToMapFailure) {
+  zx::handle handles[2];
+  zx_status_t result = zx_channel_create(0, handles[0].reset_and_get_address(),
+                                         handles[1].reset_and_get_address());
+  ZX_CHECK(ZX_OK == result, result) << "zx_channel_create";
+
+  LaunchOptions options;
+  options.handles_to_transfer.push_back({0, handles[0].get()});
+  options.spawn_flags = options.spawn_flags & ~FDIO_SPAWN_CLONE_NAMESPACE;
+  options.paths_to_clone.emplace_back(
+      "💩magical_path_that_will_never_exist_ever");
+
+  // LaunchProces should fail to open() the path_to_map, and fail before
+  // fdio_spawn().
+  Process process(LaunchProcess(CommandLine(FilePath()), options));
+  ASSERT_FALSE(process.IsValid());
+
+  // If LaunchProcess did its job then handles[0] is no longer valid, and
+  // handles[1] should observe a channel-closed signal.
+  EXPECT_EQ(
+      zx_object_wait_one(handles[1].get(), ZX_CHANNEL_PEER_CLOSED, 0, nullptr),
+      ZX_OK);
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_handle_close(handles[0].get()));
+  ignore_result(handles[0].release());
+}
 #endif  // defined(OS_FUCHSIA)
 
 // On Android SpawnProcess() doesn't use LaunchProcess() and doesn't support
@@ -351,7 +541,7 @@ const char kSignalFileCrash[] = "CrashingChildProcess.die";
 
 MULTIPROCESS_TEST_MAIN(CrashingChildProcess) {
   WaitToDie(ProcessUtilTest::GetSignalFilePath(kSignalFileCrash).c_str());
-#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+#if defined(OS_POSIX)
   // Have to disable to signal handler for segv so we can get a crash
   // instead of an abnormal termination through the crash dump handler.
   ::signal(SIGSEGV, SIG_DFL);
@@ -364,7 +554,9 @@ MULTIPROCESS_TEST_MAIN(CrashingChildProcess) {
 
 // This test intentionally crashes, so we don't need to run it under
 // AddressSanitizer.
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(OS_FUCHSIA)
+// TODO(crbug.com/753490): Access to the process termination reason is not
+// implemented in Fuchsia.
 #define MAYBE_GetTerminationStatusCrash DISABLED_GetTerminationStatusCrash
 #else
 #define MAYBE_GetTerminationStatusCrash GetTerminationStatusCrash
@@ -389,7 +581,7 @@ TEST_F(ProcessUtilTest, MAYBE_GetTerminationStatusCrash) {
 
 #if defined(OS_WIN)
   EXPECT_EQ(static_cast<int>(0xc0000005), exit_code);
-#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#elif defined(OS_POSIX)
   int signaled = WIFSIGNALED(exit_code);
   EXPECT_NE(0, signaled);
   int signal = WTERMSIG(exit_code);
@@ -408,14 +600,16 @@ MULTIPROCESS_TEST_MAIN(KilledChildProcess) {
   // Kill ourselves.
   HANDLE handle = ::OpenProcess(PROCESS_ALL_ACCESS, 0, ::GetCurrentProcessId());
   ::TerminateProcess(handle, kExpectedKilledExitCode);
-#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#elif defined(OS_POSIX)
   // Send a SIGKILL to this process, just like the OOM killer would.
   ::kill(getpid(), SIGKILL);
+#elif defined(OS_FUCHSIA)
+  zx_task_kill(zx_process_self());
 #endif
   return 1;
 }
 
-#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+#if defined(OS_POSIX)
 MULTIPROCESS_TEST_MAIN(TerminatedChildProcess) {
   WaitToDie(ProcessUtilTest::GetSignalFilePath(kSignalFileTerm).c_str());
   // Send a SIGTERM to this process.
@@ -424,7 +618,14 @@ MULTIPROCESS_TEST_MAIN(TerminatedChildProcess) {
 }
 #endif  // defined(OS_POSIX) || defined(OS_FUCHSIA)
 
-TEST_F(ProcessUtilTest, GetTerminationStatusSigKill) {
+#if defined(OS_FUCHSIA)
+// TODO(crbug.com/753490): Access to the process termination reason is not
+// implemented in Fuchsia.
+#define MAYBE_GetTerminationStatusSigKill DISABLED_GetTerminationStatusSigKill
+#else
+#define MAYBE_GetTerminationStatusSigKill GetTerminationStatusSigKill
+#endif
+TEST_F(ProcessUtilTest, MAYBE_GetTerminationStatusSigKill) {
   const std::string signal_file =
     ProcessUtilTest::GetSignalFilePath(kSignalFileKill);
   remove(signal_file.c_str());
@@ -448,7 +649,7 @@ TEST_F(ProcessUtilTest, GetTerminationStatusSigKill) {
 
 #if defined(OS_WIN)
   EXPECT_EQ(kExpectedKilledExitCode, exit_code);
-#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#elif defined(OS_POSIX)
   int signaled = WIFSIGNALED(exit_code);
   EXPECT_NE(0, signaled);
   int signal = WTERMSIG(exit_code);
@@ -457,7 +658,10 @@ TEST_F(ProcessUtilTest, GetTerminationStatusSigKill) {
   remove(signal_file.c_str());
 }
 
-#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+#if defined(OS_POSIX)
+// TODO(crbug.com/753490): Access to the process termination reason is not
+// implemented in Fuchsia. Unix signals are not implemented in Fuchsia so this
+// test might not be relevant anyway.
 TEST_F(ProcessUtilTest, GetTerminationStatusSigTerm) {
   const std::string signal_file =
     ProcessUtilTest::GetSignalFilePath(kSignalFileTerm);
@@ -482,7 +686,7 @@ TEST_F(ProcessUtilTest, GetTerminationStatusSigTerm) {
   EXPECT_EQ(SIGTERM, signal);
   remove(signal_file.c_str());
 }
-#endif  // defined(OS_POSIX) || defined(OS_FUCHSIA)
+#endif  // defined(OS_POSIX)
 
 TEST_F(ProcessUtilTest, EnsureTerminationUndying) {
   test::ScopedTaskEnvironment task_environment;
@@ -492,9 +696,22 @@ TEST_F(ProcessUtilTest, EnsureTerminationUndying) {
 
   EnsureProcessTerminated(child_process.Duplicate());
 
+#if defined(OS_POSIX)
+  errno = 0;
+#endif  // defined(OS_POSIX)
+
   // Allow a generous timeout, to cope with slow/loaded test bots.
-  EXPECT_TRUE(child_process.WaitForExitWithTimeout(
-      TestTimeouts::action_max_timeout(), nullptr));
+  bool did_exit = child_process.WaitForExitWithTimeout(
+      TestTimeouts::action_max_timeout(), nullptr);
+
+#if defined(OS_POSIX)
+  // Both EnsureProcessTerminated() and WaitForExitWithTimeout() will call
+  // waitpid(). One will succeed, and the other will fail with ECHILD. If our
+  // wait failed then check for ECHILD, and assumed |did_exit| in that case.
+  did_exit = did_exit || (errno == ECHILD);
+#endif  // defined(OS_POSIX)
+
+  EXPECT_TRUE(did_exit);
 }
 
 MULTIPROCESS_TEST_MAIN(process_util_test_never_die) {
@@ -880,7 +1097,7 @@ TEST_F(ProcessUtilTest, FDRemappingIncludesStdio) {
 const uint16_t kStartupHandleId = 43;
 MULTIPROCESS_TEST_MAIN(ProcessUtilsVerifyHandle) {
   zx_handle_t handle =
-      zx_get_startup_handle(PA_HND(PA_USER0, kStartupHandleId));
+      zx_take_startup_handle(PA_HND(PA_USER0, kStartupHandleId));
   CHECK_NE(ZX_HANDLE_INVALID, handle);
 
   // Write to the pipe so the parent process can observe output.

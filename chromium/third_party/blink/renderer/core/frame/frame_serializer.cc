@@ -403,10 +403,10 @@ void FrameSerializer::SerializeCSSStyleSheet(CSSStyleSheet& style_sheet,
   TRACE_EVENT2("page-serialization", "FrameSerializer::serializeCSSStyleSheet",
                "type", "CSS", "url", url.ElidedString().Utf8().data());
   // Only report UMA metric if this is not a reentrant CSS serialization call.
-  double css_start_time = 0;
+  TimeTicks css_start_time;
   if (!is_serializing_css_) {
     is_serializing_css_ = true;
-    css_start_time = CurrentTimeTicksInSeconds();
+    css_start_time = CurrentTimeTicks();
   }
 
   // If this CSS is inlined its definition was already serialized with the frame
@@ -443,14 +443,12 @@ void FrameSerializer::SerializeCSSStyleSheet(CSSStyleSheet& style_sheet,
   for (unsigned i = 0; i < style_sheet.length(); ++i)
     SerializeCSSRule(style_sheet.item(i));
 
-  if (css_start_time != 0) {
+  if (css_start_time != TimeTicks()) {
     is_serializing_css_ = false;
     DEFINE_STATIC_LOCAL(CustomCountHistogram, css_histogram,
                         ("PageSerialization.SerializationTime.CSSElement", 0,
                          maxSerializationTimeUmaMicroseconds, 50));
-    css_histogram.Count(
-        static_cast<int64_t>((CurrentTimeTicksInSeconds() - css_start_time) *
-                             secondsToMicroseconds));
+    css_histogram.CountMicroseconds(CurrentTimeTicks() - css_start_time);
   }
 }
 
@@ -534,7 +532,7 @@ void FrameSerializer::AddImageToResources(ImageResourceContent* image,
 
   TRACE_EVENT2("page-serialization", "FrameSerializer::addImageToResources",
                "type", "image", "url", url.ElidedString().Utf8().data());
-  double image_start_time = CurrentTimeTicksInSeconds();
+  base::TimeTicks image_start_time = CurrentTimeTicks();
 
   scoped_refptr<const SharedBuffer> data = image->GetImage()->Data();
   AddToResources(image->GetResponse().MimeType(),
@@ -549,9 +547,7 @@ void FrameSerializer::AddImageToResources(ImageResourceContent* image,
     DEFINE_STATIC_LOCAL(CustomCountHistogram, image_histogram,
                         ("PageSerialization.SerializationTime.ImageElement", 0,
                          maxSerializationTimeUmaMicroseconds, 50));
-    image_histogram.Count(
-        static_cast<int64_t>((CurrentTimeTicksInSeconds() - image_start_time) *
-                             secondsToMicroseconds));
+    image_histogram.CountMicroseconds(CurrentTimeTicks() - image_start_time);
   }
 }
 

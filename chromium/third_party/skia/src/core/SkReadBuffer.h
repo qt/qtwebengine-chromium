@@ -78,6 +78,7 @@ public:
         kRemoveHeaderFlags_Version         = 60,
         kTwoColorDrawShadow_Version        = 61,
         kDontNegateImageSize_Version       = 62,
+        kStoreImageBounds_Version          = 63,
     };
 
     /**
@@ -179,7 +180,7 @@ public:
     sk_sp<SkImage> readImage();
     sk_sp<SkTypeface> readTypeface();
 
-    void setTypefaceArray(SkTypeface* array[], int count) {
+    void setTypefaceArray(sk_sp<SkTypeface> array[], int count) {
         fTFArray = array;
         fTFCount = count;
     }
@@ -281,8 +282,8 @@ private:
 
     void* fMemoryPtr;
 
-    SkTypeface** fTFArray;
-    int        fTFCount;
+    sk_sp<SkTypeface>* fTFArray;
+    int                fTFCount;
 
     SkFlattenable::Factory* fFactoryArray;
     int                     fFactoryCount;
@@ -291,7 +292,7 @@ private:
     SkTHashMap<SkString, SkFlattenable::Factory> fCustomFactory;
 
     SkDeserialProcs fProcs;
-    friend class SkPicture;
+    friend class SkPicturePriv;
 
 #ifdef DEBUG_NON_DETERMINISTIC_ASSERT
     // Debugging counter to keep track of how many bitmaps we

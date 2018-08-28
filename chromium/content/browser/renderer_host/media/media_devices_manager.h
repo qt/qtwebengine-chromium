@@ -37,7 +37,6 @@ class Connector;
 namespace content {
 
 class MediaDevicesPermissionChecker;
-class MediaStreamManager;
 class VideoCaptureManager;
 
 // Use MediaDeviceType values to index on this type.
@@ -60,15 +59,22 @@ class CONTENT_EXPORT MediaDevicesManager
   };
 
   using EnumerationCallback =
-      base::Callback<void(const MediaDeviceEnumeration&)>;
+      base::OnceCallback<void(const MediaDeviceEnumeration&)>;
   using EnumerateDevicesCallback =
       base::OnceCallback<void(const std::vector<MediaDeviceInfoArray>&,
                               std::vector<VideoInputDeviceCapabilitiesPtr>)>;
+  using StopRemovedInputDeviceCallback =
+      base::RepeatingCallback<void(MediaDeviceType type,
+                                   const MediaDeviceInfo& media_device_info)>;
+  using UIInputDeviceChangeCallback =
+      base::RepeatingCallback<void(MediaDeviceType stream_type,
+                                   const MediaDeviceInfoArray& devices)>;
 
   MediaDevicesManager(
       media::AudioSystem* audio_system,
       const scoped_refptr<VideoCaptureManager>& video_capture_manager,
-      MediaStreamManager* media_stream_manager);
+      StopRemovedInputDeviceCallback stop_removed_input_device_cb,
+      UIInputDeviceChangeCallback ui_input_device_change_cb);
   ~MediaDevicesManager() override;
 
   // Performs a possibly cached device enumeration for the requested device
@@ -79,13 +85,16 @@ class CONTENT_EXPORT MediaDevicesManager
   // another call to EnumerateDevices, it must do so by posting a task to the
   // IO thread.
   void EnumerateDevices(const BoolDeviceTypes& requested_types,
-                        const EnumerationCallback& callback);
+                        EnumerationCallback callback);
 
   // Performs a possibly cached device enumeration for the requested device
   // types and reports the results to |callback|. The enumeration results are
   // translated for use by the renderer process and frame identified with
   // |render_process_id| and |render_frame_id|, based on the frame origin's
   // permissions, an internal media-device salts.
+  // If |request_video_input_capabilities| is true, video formats supported
+  // by each device are returned in |callback|. These video formats are in
+  // no particular order and may contain duplicate entries.
   void EnumerateDevices(int render_process_id,
                         int render_frame_id,
                         const BoolDeviceTypes& requested_types,
@@ -114,7 +123,8 @@ class CONTENT_EXPORT MediaDevicesManager
   // changes.
   void OnDevicesChanged(base::SystemMonitor::DeviceType device_type) override;
 
-  // Returns the supported video formats for the given |device_id|.
+  // Returns the supported video formats for the given |device_id|. The returned
+  // formats are in no particular order and may contain duplicate entries.
   // If |try_in_use_first| is true and the device is being used, only the format
   // in use is returned. Otherwise, all formats supported by the device are
   // returned.
@@ -197,7 +207,8 @@ class CONTENT_EXPORT MediaDevicesManager
       const MediaDeviceEnumeration& enumeration);
 
   std::vector<VideoInputDeviceCapabilitiesPtr> ComputeVideoInputCapabilities(
-      const MediaDeviceInfoArray& device_infos);
+      const MediaDeviceInfoArray& raw_device_infos,
+      const MediaDeviceInfoArray& translated_device_infos);
 
   // Helpers to issue low-level device enumerations.
   void DoEnumerateDevices(MediaDeviceType type);
@@ -223,10 +234,8 @@ class CONTENT_EXPORT MediaDevicesManager
 
   // Helpers to handle device-change notification.
   void HandleDevicesChanged(MediaDeviceType type);
-  void StopRemovedDevices(MediaDeviceType type,
-                          const MediaDeviceInfoArray& new_snapshot);
-  void NotifyMediaStreamManager(MediaDeviceType type,
-                                const MediaDeviceInfoArray& new_snapshot);
+  void MaybeStopRemovedInputDevices(MediaDeviceType type,
+                                    const MediaDeviceInfoArray& new_snapshot);
   void NotifyDeviceChangeSubscribers(MediaDeviceType type,
                                      const MediaDeviceInfoArray& snapshot);
   void CheckPermissionForDeviceChange(uint32_t subscription_id,
@@ -248,7 +257,8 @@ class CONTENT_EXPORT MediaDevicesManager
   bool use_fake_devices_;
   media::AudioSystem* const audio_system_;  // not owned
   scoped_refptr<VideoCaptureManager> video_capture_manager_;
-  MediaStreamManager* const media_stream_manager_;  // not owned
+  StopRemovedInputDeviceCallback stop_removed_input_device_cb_;
+  UIInputDeviceChangeCallback ui_input_device_change_cb_;
 
   std::unique_ptr<MediaDevicesPermissionChecker> permission_checker_;
 

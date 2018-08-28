@@ -5,8 +5,12 @@
 #include "content/renderer/input/input_event_prediction.h"
 
 #include "base/feature_list.h"
+#include "base/metrics/field_trial.h"
+#include "base/metrics/field_trial_params.h"
 #include "content/public/common/content_features.h"
 #include "ui/events/blink/prediction/empty_predictor.h"
+#include "ui/events/blink/prediction/kalman_predictor.h"
+#include "ui/events/blink/prediction/least_squares_predictor.h"
 
 using blink::WebInputEvent;
 using blink::WebMouseEvent;
@@ -18,14 +22,23 @@ namespace content {
 
 namespace {
 
-std::unique_ptr<ui::InputPredictor> SetUpPredictor() {
-  return std::make_unique<ui::EmptyPredictor>();
-}
+constexpr char kPredictor[] = "predictor";
+constexpr char kInputEventPredictorTypeLsq[] = "lsq";
+constexpr char kInputEventPredictorTypeKalman[] = "kalman";
 
 }  // namespace
 
 InputEventPrediction::InputEventPrediction() {
-  mouse_predictor_ = SetUpPredictor();
+  std::string predictor_type = GetFieldTrialParamValueByFeature(
+      features::kResamplingInputEvents, kPredictor);
+  if (predictor_type == kInputEventPredictorTypeLsq)
+    selected_predictor_type_ = PredictorType::kLsq;
+  else if (predictor_type == kInputEventPredictorTypeKalman)
+    selected_predictor_type_ = PredictorType::kKalman;
+  else
+    selected_predictor_type_ = PredictorType::kEmpty;
+
+  mouse_predictor_ = CreatePredictor();
 }
 
 InputEventPrediction::~InputEventPrediction() {}
@@ -51,6 +64,18 @@ void InputEventPrediction::HandleEvents(
       break;
     default:
       ResetPredictor(*event);
+  }
+}
+
+std::unique_ptr<ui::InputPredictor> InputEventPrediction::CreatePredictor()
+    const {
+  switch (selected_predictor_type_) {
+    case PredictorType::kEmpty:
+      return std::make_unique<ui::EmptyPredictor>();
+    case PredictorType::kLsq:
+      return std::make_unique<ui::LeastSquaresPredictor>();
+    case PredictorType::kKalman:
+      return std::make_unique<ui::KalmanPredictor>();
   }
 }
 
@@ -110,8 +135,7 @@ void InputEventPrediction::ResetPredictor(const WebInputEvent& event) {
 void InputEventPrediction::UpdateSinglePointer(
     const WebPointerProperties& event,
     base::TimeTicks event_time) {
-  ui::InputPredictor::InputData data = {event.PositionInWidget().x,
-                                        event.PositionInWidget().y, event_time};
+  ui::InputPredictor::InputData data = {event.PositionInWidget(), event_time};
   if (event.pointer_type == WebPointerProperties::PointerType::kMouse)
     mouse_predictor_->Update(data);
   else {
@@ -119,7 +143,10 @@ void InputEventPrediction::UpdateSinglePointer(
     if (predictor != pointer_id_predictor_map_.end()) {
       predictor->second->Update(data);
     } else {
-      pointer_id_predictor_map_.insert({event.id, SetUpPredictor()});
+      // Workaround for GLIBC C++ < 7.3 that fails to insert with braces
+      // See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=82522
+      auto pair = std::make_pair(event.id, CreatePredictor());
+      pointer_id_predictor_map_.insert(std::move(pair));
       pointer_id_predictor_map_[event.id]->Update(data);
     }
   }
@@ -131,7 +158,7 @@ bool InputEventPrediction::ResampleSinglePointer(base::TimeTicks frame_time,
   if (event->pointer_type == WebPointerProperties::PointerType::kMouse) {
     if (mouse_predictor_->HasPrediction() &&
         mouse_predictor_->GeneratePrediction(frame_time, &predict_result)) {
-      event->SetPositionInWidget(predict_result.pos_x, predict_result.pos_y);
+      event->SetPositionInWidget(predict_result.pos);
       return true;
     }
   } else {
@@ -142,7 +169,7 @@ bool InputEventPrediction::ResampleSinglePointer(base::TimeTicks frame_time,
     if (predictor != pointer_id_predictor_map_.end() &&
         predictor->second->HasPrediction() &&
         predictor->second->GeneratePrediction(frame_time, &predict_result)) {
-      event->SetPositionInWidget(predict_result.pos_x, predict_result.pos_y);
+      event->SetPositionInWidget(predict_result.pos);
       return true;
     }
   }

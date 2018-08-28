@@ -42,11 +42,14 @@
 #include "SkStream.h"
 #include "SkString.h"
 #include "SkTemplates.h"
+#include "SkTo.h"
 #include "SkTypefaceCache.h"
 #include "SkTypeface_mac.h"
 #include "SkUtils.h"
 
 #include <dlfcn.h>
+
+#include <utility>
 
 // Experimental code to use a global lock whenever we access CG, to see if this reduces
 // crashes in Chrome
@@ -1169,7 +1172,8 @@ void SkScalerContext_Mac::generateMetrics(SkGlyph* glyph) {
         CTFontGetAdvancesForGlyphs(fCTFont.get(), kCTFontOrientationVertical,
                                    &cgGlyph, &cgAdvance, 1);
         // Vertical advances are returned as widths instead of heights.
-        SkTSwap(cgAdvance.height, cgAdvance.width);
+        using std::swap;
+        swap(cgAdvance.height, cgAdvance.width);
         cgAdvance.height = -cgAdvance.height;
     } else {
         CTFontGetAdvancesForGlyphs(fCTFont.get(), kCTFontOrientationHorizontal,

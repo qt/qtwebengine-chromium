@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">מחוון</translation>
 <translation id="1211441953136645838">הערת סיום</translation>
 <translation id="1281252709823657822">דו-שיח</translation>
+<translation id="1289247557029249093">יציאה ממצב 'תמונה בתוך תמונה'</translation>
 <translation id="1335095011850992622">קרדיטים</translation>
 <translation id="1342835525016946179">article</translation>
 <translation id="1359897965706325498">מודעת באנר</translation>
+<translation id="1548116112524424341">הפעלת הסרטון במצב 'תמונה בתוך תמונה'</translation>
 <translation id="1589122976691792535">אזור</translation>
 <translation id="1591562245178063882">החודש</translation>
 <translation id="1637811476055996098">בחר קבצים</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">רשת של עץ</translation>
 <translation id="1822429046913737220">AM/PM</translation>
 <translation id="1832974991323546415">הפעלה במכשיר מרוחק</translation>
+<translation id="190587075670221089">מחיקה</translation>
 <translation id="1907737156431278478">דוגמה</translation>
 <translation id="1921819250265091946">dd</translation>
 <translation id="1930711995431081526">מצב</translation>
 <translation id="1938124657309484470">על הערך להיות <ph name="MAXIMUM_DATE_OR_TIME" /> או מוקדם יותר.</translation>
+<translation id="1946271899482435442">הצגת בוחר התאריכים</translation>
 <translation id="1993104285338243655">הועבר לשיקוף מסך</translation>
 <translation id="2060505056492490888">נעשה שימוש ב-'<ph name="DOT" />' במיקום שגוי ב-'<ph name="INVALIDDOMAIN" />'.</translation>
 <translation id="2148716181193084225">היום</translation>
@@ -40,7 +44,7 @@
 <translation id="2311842470354187719">מעבר דף</translation>
 <translation id="2335594187091864976">בוחר תאריך ושעה</translation>
 <translation id="248395913932153421">יום</translation>
-<translation id="2507943997699731163">מלא שדה זה.</translation>
+<translation id="2507943997699731163">זהו שדה חובה.</translation>
 <translation id="2508569020611168319">רשימת כרטיסיות</translation>
 <translation id="2561842179657104141">הצג עוד פקדי מדיה</translation>
 <translation id="2572483411312390101">הפעל</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">שלח</translation>
 <translation id="2657045182931379222">אובייקט גרפי</translation>
 <translation id="2674318244760992338">כותרת תחתונה</translation>
+<translation id="2706474812903655270">הסרטון הזה פועל במצב 'תמונה בתוך תמונה'</translation>
 <translation id="2709516037105925701">מילוי אוטומטי</translation>
 <translation id="2723001399770238859">אודיו</translation>
 <translation id="2746543609216772311">על הערך להיות <ph name="MINIMUM_DATE_OR_TIME" /> ומעלה.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">הצג את החודש הבא</translation>
 <translation id="512758898067543763">כותרת שורה</translation>
 <translation id="5143125788380636750">אפילוג</translation>
-<translation id="5153163864850940242">הסרטון הזה פועל במצב תמונה בתוך תמונה</translation>
 <translation id="5164977714490026579">הערך חייב להיות גדול מ-<ph name="MINIMUM" /> או שווה לו.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> PB</translation>
 <translation id="5307600278924710095">הזן חלק ולאחריו '<ph name="ATSIGN" />'‏. השדה '<ph name="INVALIDADDRESS" />' אינו מלא.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">קולופון</translation>
 <translation id="6934078000481955284">‏רכיב blockquote</translation>
 <translation id="6941933287844615239">הורד מדיה</translation>
+<translation id="6981594929165378967">הוספה</translation>
 <translation id="6989848892321993519">עליך להאריך את הטקסט ל-<ph name="MIN_CHARACTERS" /> תווים או יותר (אתה משתמש כרגע בתו אחד).</translation>
 <translation id="709897737746224366">התאם את הפורמט המבוקש.</translation>
 <translation id="7139483182332611405">הקדמה</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">זמן שנותר</translation>
 <translation id="7740016676195725605">הפסק להציג כתוביות סגורות</translation>
 <translation id="7740050170769002709">‏תוכן HTML</translation>
+<translation id="7750228210027921155">תמונה בתוך תמונה</translation>
 <translation id="7789962463072032349">השהה</translation>
 <translation id="7802800022689234070">משולש הצגה/הסתרה</translation>
 <translation id="7888071071722539607">כלול '<ph name="ATSIGN" />' בכתובת האימייל. ב-'<ph name="INVALIDADDRESS" />' חסר '<ph name="ATSIGN" />'.</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">תוכן העניינים</translation>
 <translation id="8613126697340063924">שליטה בהפעלה מרחוק</translation>
 <translation id="862370744433916922">כותרת משנה</translation>
-<translation id="8741316211671074806">תמונה בתוך תמונה</translation>
 <translation id="8750798805984357768">בחר אחת מהאפשרויות הבאות.</translation>
 <translation id="8785498733064193001">התחל בהפעלה</translation>
 <translation id="8808573423886751634">פרק</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">ניווט</translation>
 <translation id="9050748414552849310">הצג כתוביות סגורות</translation>
 <translation id="9062295712474918030">מסמך</translation>
+<translation id="9093215626363556771">יציאה ממצב 'תמונה בתוך תמונה'</translation>
 <translation id="9108370397979208512">math</translation>
 <translation id="9132465097189459683">אחר...</translation>
 <translation id="9138385573473225930">התראה</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, שמתחיל בתאריך <ph name="WEEK_START_DATE" /></translation>
+<translation id="916607977885256133">תמונה בתוך תמונה</translation>
 <translation id="9168329111483466115">הערת שוליים</translation>
-<translation id="947831847158436616">תא</translation>
+<translation id="954003015749068518">מעבר אל מצב 'תמונה בתוך תמונה'</translation>
 <translation id="966787709310836684">תפריט</translation>
 </translationbundle>

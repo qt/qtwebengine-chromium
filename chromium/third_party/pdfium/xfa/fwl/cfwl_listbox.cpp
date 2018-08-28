@@ -458,7 +458,7 @@ void CFWL_ListBox::DrawItem(CXFA_Graphics* pGraphics,
   textParam.m_pGraphics = pGraphics;
   textParam.m_matrix.Concat(*pMatrix);
   textParam.m_rtPart = rtText;
-  textParam.m_wsText = wsText;
+  textParam.m_wsText = std::move(wsText);
   textParam.m_dwTTOStyles = m_dwTTOStyles;
   textParam.m_iTTOAlign = m_iTTOAligns;
   textParam.m_bMaximize = true;
@@ -702,7 +702,7 @@ void CFWL_ListBox::OnProcessEvent(CFWL_Event* pEvent) {
   if (pEvent->GetType() != CFWL_Event::Type::Scroll)
     return;
 
-  CFWL_Widget* pSrcTarget = pEvent->m_pSrcTarget;
+  CFWL_Widget* pSrcTarget = pEvent->GetSrcTarget();
   if ((pSrcTarget == m_pVertScrollBar.get() && m_pVertScrollBar) ||
       (pSrcTarget == m_pHorzScrollBar.get() && m_pHorzScrollBar)) {
     CFWL_EventScroll* pScrollEvent = static_cast<CFWL_EventScroll*>(pEvent);

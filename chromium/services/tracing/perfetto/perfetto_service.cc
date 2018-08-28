@@ -11,7 +11,7 @@
 #include "services/tracing/perfetto/producer_host.h"
 #include "services/tracing/public/cpp/perfetto/shared_memory.h"
 
-#include "third_party/perfetto/include/perfetto/tracing/core/service.h"
+#include "third_party/perfetto/include/perfetto/tracing/core/tracing_service.h"
 
 namespace tracing {
 
@@ -73,21 +73,14 @@ PerfettoService* PerfettoService::GetInstance() {
   return g_perfetto_service;
 }
 
-// static
-void PerfettoService::DestroyOnSequence(
-    std::unique_ptr<PerfettoService> service) {
-  PerfettoService::GetInstance()->task_runner()->DeleteSoon(FROM_HERE,
-                                                            std::move(service));
-}
-
 void PerfettoService::CreateServiceOnSequence() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  service_ = perfetto::Service::CreateInstance(
+  service_ = perfetto::TracingService::CreateInstance(
       std::make_unique<MojoSharedMemory::Factory>(), &perfetto_task_runner_);
   DCHECK(service_);
 }
 
-perfetto::Service* PerfettoService::GetService() const {
+perfetto::TracingService* PerfettoService::GetService() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return service_.get();
 }

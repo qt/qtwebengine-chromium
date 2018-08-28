@@ -15,6 +15,7 @@
 
 #include <memory>
 
+#include "api/video/i010_buffer.h"
 #include "api/video/i420_buffer.h"
 #include "common_video/include/video_frame_buffer.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
@@ -68,7 +69,8 @@ class SquareGenerator : public FrameGenerator {
 
     rtc::scoped_refptr<VideoFrameBuffer> buffer = nullptr;
     switch (type_) {
-      case OutputType::I420: {
+      case OutputType::I420:
+      case OutputType::I010: {
         buffer = CreateI420Buffer(width_, height_);
         break;
       }
@@ -90,7 +92,12 @@ class SquareGenerator : public FrameGenerator {
     for (const auto& square : squares_)
       square->Draw(buffer);
 
-    frame_.reset(new VideoFrame(buffer, 0, 0, webrtc::kVideoRotation_0));
+    if (type_ == OutputType::I010) {
+      buffer = I010Buffer::Copy(*buffer->ToI420());
+    }
+
+    frame_.reset(
+        new VideoFrame(buffer, webrtc::kVideoRotation_0, 0 /* timestamp_us */));
     return frame_.get();
   }
 
@@ -192,8 +199,8 @@ class YuvFileGenerator : public FrameGenerator {
     if (++current_display_count_ >= frame_display_count_)
       current_display_count_ = 0;
 
-    temp_frame_.reset(
-        new VideoFrame(last_read_buffer_, 0, 0, webrtc::kVideoRotation_0));
+    temp_frame_.reset(new VideoFrame(
+        last_read_buffer_, webrtc::kVideoRotation_0, 0 /* timestamp_us */));
     return temp_frame_.get();
   }
 
@@ -249,8 +256,8 @@ class SlideGenerator : public FrameGenerator {
     if (++current_display_count_ >= frame_display_count_)
       current_display_count_ = 0;
 
-    frame_.reset(
-        new VideoFrame(buffer_, 0, 0, webrtc::kVideoRotation_0));
+    frame_.reset(new VideoFrame(buffer_, webrtc::kVideoRotation_0,
+                                0 /* timestamp_us */));
     return frame_.get();
   }
 
@@ -401,7 +408,7 @@ class ScrollingImageFrameGenerator : public FrameGenerator {
 
   size_t current_frame_num_;
   VideoFrame* current_source_frame_;
-  rtc::Optional<VideoFrame> current_frame_;
+  absl::optional<VideoFrame> current_frame_;
   YuvFileGenerator file_generator_;
 };
 
@@ -443,8 +450,8 @@ bool FrameForwarder::has_sinks() const {
 std::unique_ptr<FrameGenerator> FrameGenerator::CreateSquareGenerator(
     int width,
     int height,
-    rtc::Optional<OutputType> type,
-    rtc::Optional<int> num_squares) {
+    absl::optional<OutputType> type,
+    absl::optional<int> num_squares) {
   return std::unique_ptr<FrameGenerator>(
       new SquareGenerator(width, height, type.value_or(OutputType::I420),
                           num_squares.value_or(10)));

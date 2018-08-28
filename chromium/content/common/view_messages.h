@@ -22,7 +22,7 @@
 #include "cc/input/touch_action.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/quads/compositor_frame.h"
-#include "components/viz/common/quads/shared_bitmap.h"
+#include "components/viz/common/resources/shared_bitmap.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/date_time_suggestion.h"
@@ -52,7 +52,6 @@
 #include "third_party/blink/public/platform/web_float_rect.h"
 #include "third_party/blink/public/platform/web_intrinsic_sizing_info.h"
 #include "third_party/blink/public/web/web_device_emulation_params.h"
-#include "third_party/blink/public/web/web_media_player_action.h"
 #include "third_party/blink/public/web/web_plugin_action.h"
 #include "third_party/blink/public/web/web_popup_type.h"
 #include "third_party/blink/public/web/web_text_direction.h"
@@ -81,8 +80,6 @@
 
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebDeviceEmulationParams::ScreenPosition,
                           blink::WebDeviceEmulationParams::kScreenPositionLast)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebMediaPlayerAction::Type,
-                          blink::WebMediaPlayerAction::Type::kTypeLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebPluginAction::Type,
                           blink::WebPluginAction::Type::kTypeLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebPopupType,
@@ -120,11 +117,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(
 
 IPC_ENUM_TRAITS_MAX_VALUE(blink::ScrollerStyle, blink::kScrollerStyleOverlay)
 #endif
-
-IPC_STRUCT_TRAITS_BEGIN(blink::WebMediaPlayerAction)
-  IPC_STRUCT_TRAITS_MEMBER(type)
-  IPC_STRUCT_TRAITS_MEMBER(enable)
-IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebPluginAction)
   IPC_STRUCT_TRAITS_MEMBER(type)
@@ -177,6 +169,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::VisualProperties)
   IPC_STRUCT_TRAITS_MEMBER(is_fullscreen_granted)
   IPC_STRUCT_TRAITS_MEMBER(display_mode)
   IPC_STRUCT_TRAITS_MEMBER(capture_sequence_number)
+  IPC_STRUCT_TRAITS_MEMBER(zoom_level)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::MenuItem)
@@ -338,7 +331,7 @@ IPC_MESSAGE_ROUTED0(ViewMsg_WasHidden)
 // message in response.
 IPC_MESSAGE_ROUTED2(ViewMsg_WasShown,
                     bool /* needs_repainting */,
-                    ui::LatencyInfo /* latency_info */)
+                    base::TimeTicks /* show_request_timestamp */)
 
 // Tells the renderer to focus the first (last if reverse is true) focusable
 // node.
@@ -350,12 +343,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetInitialFocus,
 IPC_MESSAGE_ROUTED2(ViewMsg_ShowContextMenu,
                     ui::MenuSourceType,
                     gfx::Point /* location where menu should be shown */)
-
-// Tells the renderer to perform the given action on the media player
-// located at the given point.
-IPC_MESSAGE_ROUTED2(ViewMsg_MediaPlayerActionAt,
-                    gfx::Point, /* location */
-                    blink::WebMediaPlayerAction)
 
 // Tells the renderer to perform the given action on the plugin located at
 // the given point.
@@ -395,12 +382,13 @@ IPC_MESSAGE_ROUTED2(ViewMsg_UpdateScreenRects,
                     gfx::Rect /* view_screen_rect */,
                     gfx::Rect /* window_screen_rect */)
 
-// Reply to ViewHostMsg_RequestMove, ViewHostMsg_ShowWidget, and
+// Reply to ViewHostMsg_RequestSetBounds, ViewHostMsg_ShowWidget, and
 // FrameHostMsg_ShowCreatedWindow, to inform the renderer that the browser has
-// processed the move.  The browser may have ignored the move, but it finished
-// processing.  This is used because the renderer keeps a temporary cache of the
-// widget position while these asynchronous operations are in progress.
-IPC_MESSAGE_ROUTED0(ViewMsg_Move_ACK)
+// processed the bounds-setting.  The browser may have ignored the new bounds,
+// but it finished processing.  This is used because the renderer keeps a
+// temporary cache of the widget position while these asynchronous operations
+// are in progress.
+IPC_MESSAGE_ROUTED0(ViewMsg_SetBounds_ACK)
 
 // Used to instruct the RenderView to send back updates to the preferred size.
 IPC_MESSAGE_ROUTED0(ViewMsg_EnablePreferredSizeChangedMode)
@@ -480,8 +468,7 @@ IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
 // Sent by the browser to ask the renderer to redraw. Robust to events that can
 // happen in renderer (abortion of the commit or draw, loss of output surface
 // etc.).
-IPC_MESSAGE_ROUTED1(ViewMsg_ForceRedraw,
-                    ui::LatencyInfo /* latency_info */)
+IPC_MESSAGE_ROUTED1(ViewMsg_ForceRedraw, int /* snapshot_id */)
 
 // Sets the viewport intersection and compositor raster area on the widget for
 // an out-of-process iframe.
@@ -521,17 +508,20 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_ShowFullscreenWidget,
 // message to close the view.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_Close)
 
+// Sent by the renderer process in response to an earlier ViewMsg_ForceRedraw
+// message. The reply includes the snapshot-id from the request.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_ForceRedrawComplete, int /* snapshot_id */)
+
 // Send in response to a ViewMsg_UpdateScreenRects so that the renderer can
 // throttle these messages.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_UpdateScreenRects_ACK)
 
-// Sent by the renderer process to request that the browser move the view.
-// This corresponds to the window.resizeTo() and window.moveTo() APIs, and
-// the browser may ignore this message.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_RequestMove,
-                    gfx::Rect /* position */)
+// Sent by the renderer process to request that the browser change the bounds of
+// the view. This corresponds to the window.resizeTo() and window.moveTo() APIs,
+// and the browser may ignore this message.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_RequestSetBounds, gfx::Rect /* bounds */)
 
-// Indicates that the render view has been closed in respose to a
+// Indicates that the render view has been closed in response to a
 // Close message.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_Close_ACK,
                      int /* old_route_id */)

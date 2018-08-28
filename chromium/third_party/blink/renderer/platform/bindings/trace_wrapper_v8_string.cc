@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_v8_string.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
@@ -22,8 +23,7 @@ String TraceWrapperV8String::Flatten(v8::Isolate* isolate) const {
     return String();
   DCHECK(isolate);
   v8::HandleScope handle_scope(isolate);
-  return V8StringToWebCoreString<String>(string_.NewLocal(isolate),
-                                         kExternalize);
+  return ToBlinkString<String>(string_.NewLocal(isolate), kExternalize);
 }
 
 }  // namespace blink

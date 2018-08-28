@@ -4,7 +4,9 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
 #include "GrProgramDesc.h"
+
 #include "GrPipeline.h"
 #include "GrPrimitiveProcessor.h"
 #include "GrProcessor.h"
@@ -12,6 +14,7 @@
 #include "GrShaderCaps.h"
 #include "GrTexturePriv.h"
 #include "SkChecksum.h"
+#include "SkTo.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 
@@ -55,14 +58,12 @@ static uint16_t sampler_key(GrSLType samplerType, GrPixelConfig config, GrShader
 static void add_sampler_and_image_keys(GrProcessorKeyBuilder* b, const GrResourceIOProcessor& proc,
                                        const GrShaderCaps& caps) {
     int numTextureSamplers = proc.numTextureSamplers();
-    int numBuffers = proc.numBuffers();
-    int numUniforms = numTextureSamplers + numBuffers;
     // Need two bytes per key.
-    int word32Count = (numUniforms + 1) / 2;
+    int word32Count = (numTextureSamplers + 1) / 2;
     if (0 == word32Count) {
         return;
     }
-    uint16_t* k16 = SkTCast<uint16_t*>(b->add32n(word32Count));
+    uint16_t* k16 = reinterpret_cast<uint16_t*>(b->add32n(word32Count));
     int j = 0;
     for (int i = 0; i < numTextureSamplers; ++i, ++j) {
         const GrResourceIOProcessor::TextureSampler& sampler = proc.textureSampler(i);
@@ -71,14 +72,9 @@ static void add_sampler_and_image_keys(GrProcessorKeyBuilder* b, const GrResourc
         k16[j] = sampler_key(tex->texturePriv().samplerType(), tex->config(), sampler.visibility(),
                              caps);
     }
-    for (int i = 0; i < numBuffers; ++i, ++j) {
-        const GrResourceIOProcessor::BufferAccess& access = proc.bufferAccess(i);
-        k16[j] = sampler_key(kBufferSampler_GrSLType, access.texelConfig(), access.visibility(),
-                             caps);
-    }
-    // zero the last 16 bits if the number of uniforms for samplers and image storages is odd.
-    if (numUniforms & 0x1) {
-        k16[numUniforms] = 0;
+    // zero the last 16 bits if the number of uniforms for samplers is odd.
+    if (numTextureSamplers & 0x1) {
+        k16[numTextureSamplers] = 0;
     }
 }
 
@@ -99,7 +95,7 @@ static bool gen_meta_key(const GrResourceIOProcessor& proc,
     uint32_t classID = proc.classID();
 
     // Currently we allow 16 bits for the class id and the overall processor key size.
-    static const uint32_t kMetaKeyInvalidMask = ~((uint32_t)SK_MaxU16);
+    static const uint32_t kMetaKeyInvalidMask = ~((uint32_t)UINT16_MAX);
     if ((processorKeySize | classID) & kMetaKeyInvalidMask) {
         return false;
     }
@@ -119,7 +115,7 @@ static bool gen_meta_key(const GrXferProcessor& xp,
     uint32_t classID = xp.classID();
 
     // Currently we allow 16 bits for the class id and the overall processor key size.
-    static const uint32_t kMetaKeyInvalidMask = ~((uint32_t)SK_MaxU16);
+    static const uint32_t kMetaKeyInvalidMask = ~((uint32_t)UINT16_MAX);
     if ((processorKeySize | classID) & kMetaKeyInvalidMask) {
         return false;
     }

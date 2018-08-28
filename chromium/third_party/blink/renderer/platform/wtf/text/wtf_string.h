@@ -27,6 +27,7 @@
 // on systems without case-sensitive file systems.
 
 #include <iosfwd>
+#include "build/build_config.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/compiler.h"
 #include "third_party/blink/renderer/platform/wtf/hash_table_deleted_value_type.h"
@@ -87,6 +88,12 @@ class WTF_EXPORT String {
   // Construct a string with latin1 data.
   String(const LChar* characters, unsigned length);
   String(const char* characters, unsigned length);
+
+#if defined(ARCH_CPU_64_BITS)
+  // Only define a size_t constructor if size_t is 64 bit otherwise
+  // we'd have a duplicate define.
+  String(const char* characters, size_t length);
+#endif  // defined(ARCH_CPU_64_BITS)
 
   // Construct a string with latin1 data, from a null-terminated source.
   String(const LChar* characters)
@@ -342,7 +349,7 @@ class WTF_EXPORT String {
   PRINTF_FORMAT(1, 2) static String Format(const char* format, ...);
 
   // Returns a version suitable for gtest and base/logging.*.  It prepends and
-  // appends double-quotes, and escapes chracters other than ASCII printables.
+  // appends double-quotes, and escapes characters other than ASCII printables.
   String EncodeForDebugging() const;
 
   // Returns an uninitialized string. The characters needs to be written
@@ -644,7 +651,7 @@ WTF_EXPORT extern const String& g_empty_string16_bit;
 WTF_EXPORT extern const String& g_xmlns_with_colon;
 
 // Pretty printer for gtest and base/logging.*.  It prepends and appends
-// double-quotes, and escapes chracters other than ASCII printables.
+// double-quotes, and escapes characters other than ASCII printables.
 WTF_EXPORT std::ostream& operator<<(std::ostream&, const String&);
 
 inline StringView::StringView(const String& string,

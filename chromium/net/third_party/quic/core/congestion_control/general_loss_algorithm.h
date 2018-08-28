@@ -15,7 +15,7 @@
 #include "net/third_party/quic/core/quic_unacked_packet_map.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 
-namespace net {
+namespace quic {
 
 // Class which can be configured to implement's TCP's approach of detecting loss
 // when 3 nacks have been received for a packet or with a time threshold.
@@ -71,17 +71,9 @@ class QUIC_EXPORT_PRIVATE GeneralLossAlgorithm : public LossDetectionInterface {
   // The largest lost packet.
   QuicPacketNumber largest_lost_;
 
-  // Latched value of
-  // quic_reloadable_flag_quic_early_retransmit_detects_in_flight_packet_lost.
-  const bool early_retransmit_declares_in_flight_packet_lost_;
-  // Latched value of
-  // quic_reloadable_flag_quic_early_retransmit_detects_in_flight_packet_lost
-  // and quic_reloadable_flag_quic_incremental_loss_detection.
-  const bool detect_loss_incrementally_;
-
   DISALLOW_COPY_AND_ASSIGN(GeneralLossAlgorithm);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_CONGESTION_CONTROL_GENERAL_LOSS_ALGORITHM_H_

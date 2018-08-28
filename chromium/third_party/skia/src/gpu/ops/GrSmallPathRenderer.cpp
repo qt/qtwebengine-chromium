@@ -12,11 +12,14 @@
 #include "GrDistanceFieldGenFromVector.h"
 #include "GrDrawOpTest.h"
 #include "GrQuad.h"
+#include "GrRenderTargetContext.h"
 #include "GrResourceProvider.h"
 #include "GrSimpleMeshDrawOpHelper.h"
 #include "SkAutoMalloc.h"
 #include "SkAutoPixmapStorage.h"
 #include "SkDistanceFieldGen.h"
+#include "SkDraw.h"
+#include "SkPaint.h"
 #include "SkPointPriv.h"
 #include "SkRasterClip.h"
 #include "effects/GrBitmapTextGeoProc.h"
@@ -225,13 +228,17 @@ public:
     using ShapeCache = SkTDynamicHash<ShapeData, ShapeDataKey>;
     using ShapeDataList = GrSmallPathRenderer::ShapeDataList;
 
-    static std::unique_ptr<GrDrawOp> Make(GrPaint&& paint, const GrShape& shape,
-                                          const SkMatrix& viewMatrix, GrDrawOpAtlas* atlas,
-                                          ShapeCache* shapeCache, ShapeDataList* shapeList,
+    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+                                          GrPaint&& paint,
+                                          const GrShape& shape,
+                                          const SkMatrix& viewMatrix,
+                                          GrDrawOpAtlas* atlas,
+                                          ShapeCache* shapeCache,
+                                          ShapeDataList* shapeList,
                                           bool gammaCorrect,
                                           const GrUserStencilSettings* stencilSettings) {
-        return Helper::FactoryHelper<SmallPathOp>(std::move(paint), shape, viewMatrix, atlas,
-                                                  shapeCache, shapeList, gammaCorrect,
+        return Helper::FactoryHelper<SmallPathOp>(context, std::move(paint), shape, viewMatrix,
+                                                  atlas, shapeCache, shapeList, gammaCorrect,
                                                   stencilSettings);
     }
 
@@ -286,10 +293,8 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
-                                GrPixelConfigIsClamped dstIsClamped) override {
-        return fHelper.xpRequiresDstTexture(caps, clip, dstIsClamped,
-                                            GrProcessorAnalysisCoverage::kSingleChannel,
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+        return fHelper.xpRequiresDstTexture(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
                                             &fShapes.front().fColor);
     }
 
@@ -299,6 +304,7 @@ private:
         sk_sp<const GrBuffer> fIndexBuffer;
         sk_sp<GrGeometryProcessor>   fGeometryProcessor;
         const GrPipeline* fPipeline;
+        const GrPipeline::FixedDynamicState* fFixedDynamicState;
         int fVertexOffset;
         int fInstancesToFlush;
     };
@@ -306,8 +312,12 @@ private:
     void onPrepareDraws(Target* target) override {
         int instanceCount = fShapes.count();
 
+        auto pipe = fHelper.makePipeline(target);
+
         FlushInfo flushInfo;
-        flushInfo.fPipeline = fHelper.makePipeline(target);
+        flushInfo.fPipeline = pipe.fPipeline;
+        flushInfo.fFixedDynamicState = pipe.fFixedDynamicState;
+
         // Setup GrGeometryProcessor
         const SkMatrix& ctm = fShapes[0].fViewMatrix;
         if (fUsesDistanceField) {
@@ -343,15 +353,22 @@ private:
             flushInfo.fGeometryProcessor = GrBitmapTextGeoProc::Make(
                     this->color(), fAtlas->getProxies(), fAtlas->numActivePages(),
                     GrSamplerState::ClampNearest(), kA8_GrMaskFormat, invert,
-                    fHelper.usesLocalCoords());
+                    false);
         }
 
         // allocate vertices
-        size_t vertexStride = flushInfo.fGeometryProcessor->getVertexStride();
-        SkASSERT(vertexStride == sizeof(SkPoint) + sizeof(GrColor) + 2*sizeof(uint16_t));
+        static constexpr size_t kVertexStride =
+                sizeof(SkPoint) + sizeof(GrColor) + 2 * sizeof(uint16_t);
+        SkASSERT(kVertexStride == flushInfo.fGeometryProcessor->debugOnly_vertexStride());
 
         const GrBuffer* vertexBuffer;
-        void* vertices = target->makeVertexSpace(vertexStride,
+
+        // We need to make sure we don't overflow a 32 bit int when we request space in the
+        // makeVertexSpace call below.
+        if (instanceCount > SK_MaxS32 / kVerticesPerQuad) {
+            return;
+        }
+        void* vertices = target->makeVertexSpace(kVertexStride,
                                                  kVerticesPerQuad * instanceCount,
                                                  &vertexBuffer,
                                                  &flushInfo.fVertexOffset);
@@ -466,13 +483,9 @@ private:
             auto uploadTarget = target->deferredUploadTarget();
             fAtlas->setLastUseToken(shapeData->fID, uploadTarget->tokenTracker()->nextDrawToken());
 
-            this->writePathVertices(fAtlas,
-                                    offset,
-                                    args.fColor,
-                                    vertexStride,
-                                    args.fViewMatrix,
-                                    shapeData);
-            offset += kVerticesPerQuad * vertexStride;
+            this->writePathVertices(
+                    fAtlas, offset, args.fColor, kVertexStride, args.fViewMatrix, shapeData);
+            offset += kVerticesPerQuad * kVertexStride;
             flushInfo.fInstancesToFlush++;
         }
 
@@ -814,7 +827,8 @@ private:
                                      kVerticesPerQuad, flushInfo->fInstancesToFlush,
                                      maxInstancesPerDraw);
             mesh.setVertexData(flushInfo->fVertexBuffer.get(), flushInfo->fVertexOffset);
-            target->draw(flushInfo->fGeometryProcessor.get(), flushInfo->fPipeline, mesh);
+            target->draw(flushInfo->fGeometryProcessor.get(), flushInfo->fPipeline,
+                         flushInfo->fFixedDynamicState, mesh);
             flushInfo->fVertexOffset += kVerticesPerQuad * flushInfo->fInstancesToFlush;
             flushInfo->fInstancesToFlush = 0;
         }
@@ -899,8 +913,8 @@ bool GrSmallPathRenderer::onDrawPath(const DrawPathArgs& args) {
     }
 
     std::unique_ptr<GrDrawOp> op = SmallPathOp::Make(
-            std::move(args.fPaint), *args.fShape, *args.fViewMatrix, fAtlas.get(), &fShapeCache,
-            &fShapeList, args.fGammaCorrect, args.fUserStencilSettings);
+            args.fContext, std::move(args.fPaint), *args.fShape, *args.fViewMatrix, fAtlas.get(),
+            &fShapeCache, &fShapeList, args.fGammaCorrect, args.fUserStencilSettings);
     args.fRenderTargetContext->addDrawOp(*args.fClip, std::move(op));
 
     return true;
@@ -950,6 +964,7 @@ struct GrSmallPathRenderer::PathTestStruct {
 };
 
 std::unique_ptr<GrDrawOp> GrSmallPathRenderer::createOp_TestingOnly(
+                                                        GrContext* context,
                                                         GrPaint&& paint,
                                                         const GrShape& shape,
                                                         const SkMatrix& viewMatrix,
@@ -959,8 +974,9 @@ std::unique_ptr<GrDrawOp> GrSmallPathRenderer::createOp_TestingOnly(
                                                         bool gammaCorrect,
                                                         const GrUserStencilSettings* stencil) {
 
-    return GrSmallPathRenderer::SmallPathOp::Make(std::move(paint), shape, viewMatrix, atlas,
-                                                  shapeCache, shapeList, gammaCorrect, stencil);
+    return GrSmallPathRenderer::SmallPathOp::Make(context, std::move(paint), shape, viewMatrix,
+                                                  atlas, shapeCache, shapeList, gammaCorrect,
+                                                  stencil);
 
 }
 
@@ -986,6 +1002,7 @@ GR_DRAW_OP_TEST_DEFINE(SmallPathOp) {
     // This path renderer only allows fill styles.
     GrShape shape(GrTest::TestPath(random), GrStyle::SimpleFill());
     return GrSmallPathRenderer::createOp_TestingOnly(
+                                         context,
                                          std::move(paint), shape, viewMatrix,
                                          gTestStruct.fAtlas.get(),
                                          &gTestStruct.fShapeCache,

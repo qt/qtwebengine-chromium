@@ -13,7 +13,7 @@
 #include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_logging.h"
 
-namespace net {
+namespace quic {
 
 QuicPacketGenerator::QuicPacketGenerator(QuicConnectionId connection_id,
                                          QuicFramer* framer,
@@ -72,7 +72,7 @@ QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
   size_t total_bytes_consumed = 0;
   bool fin_consumed = false;
 
-  if (!packet_creator_.HasRoomForStreamFrame(id, offset)) {
+  if (!packet_creator_.HasRoomForStreamFrame(id, offset, write_length)) {
     packet_creator_.Flush();
   }
 
@@ -387,4 +387,4 @@ void QuicPacketGenerator::SetCanSetTransmissionType(
   packet_creator_.set_can_set_transmission_type(can_set_transmission_type);
 }
 
-}  // namespace net
+}  // namespace quic

@@ -1,3 +1,4 @@
+// -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil -*-
 /* Copyright (c) 2010, Google Inc.
  * All rights reserved.
  *
@@ -56,31 +57,11 @@ namespace base { namespace internal { static int SuggestedDelayNS(int loop); }}
 namespace base {
 namespace internal {
 
-// See spinlock_internal.h for spec.
-int32 SpinLockWait(volatile Atomic32 *w, int n,
-                   const SpinLockWaitTransition trans[]) {
-  int32 v;
-  bool done = false;
-  for (int loop = 0; !done; loop++) {
-    v = base::subtle::Acquire_Load(w);
-    int i;
-    for (i = 0; i != n && v != trans[i].from; i++) {
-    }
-    if (i == n) {
-      SpinLockDelay(w, v, loop);     // no matching transition
-    } else if (trans[i].to == v ||   // null transition
-               base::subtle::Acquire_CompareAndSwap(w, v, trans[i].to) == v) {
-      done = trans[i].done;
-    }
-  }
-  return v;
-}
-
 // Return a suggested delay in nanoseconds for iteration number "loop"
 static int SuggestedDelayNS(int loop) {
-#if defined(BASE_HAS_ATOMIC64)
   // Weak pseudo-random number generator to get some spread between threads
   // when many are spinning.
+#ifdef BASE_HAS_ATOMIC64
   static base::subtle::Atomic64 rand;
   uint64 r = base::subtle::NoBarrier_Load(&rand);
   r = 0x5deece66dLL * r + 0xb;   // numbers from nrand48()
@@ -100,11 +81,11 @@ static int SuggestedDelayNS(int loop) {
 #else
   static Atomic32 rand;
   uint32 r = base::subtle::NoBarrier_Load(&rand);
-  r = 0x343fd * r + 0x269ec3;  // numbers from MSVC++
+  r = 0x343fd * r + 0x269ec3;   // numbers from MSVC++
   base::subtle::NoBarrier_Store(&rand, r);
 
-  r <<= 1;                      // 31-bit random number now in top 31-bits.
-  if (loop < 0 || loop > 32) {  // limit loop to 0..32
+  r <<= 1;   // 31-bit random number now in top 31-bits.
+  if (loop < 0 || loop > 32) {   // limit loop to 0..32
     loop = 32;
   }
   // loop>>3 cannot exceed 4 because loop cannot exceed 32.

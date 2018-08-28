@@ -30,8 +30,7 @@ RtpPacketizerGeneric::RtpPacketizerGeneric(FrameType frame_type,
       num_packets_left_(0),
       num_larger_packets_(0) {}
 
-RtpPacketizerGeneric::~RtpPacketizerGeneric() {
-}
+RtpPacketizerGeneric::~RtpPacketizerGeneric() {}
 
 size_t RtpPacketizerGeneric::SetPayloadData(
     const uint8_t* payload_data,
@@ -130,11 +129,11 @@ bool RtpDepacketizerGeneric::Parse(ParsedPayload* parsed_payload,
       ((generic_header & RtpFormatVideoGeneric::kKeyFrameBit) != 0)
           ? kVideoFrameKey
           : kVideoFrameDelta;
-  parsed_payload->type.Video.is_first_packet_in_frame =
+  parsed_payload->video_header().is_first_packet_in_frame =
       (generic_header & RtpFormatVideoGeneric::kFirstPacketBit) != 0;
-  parsed_payload->type.Video.codec = kRtpVideoGeneric;
-  parsed_payload->type.Video.width = 0;
-  parsed_payload->type.Video.height = 0;
+  parsed_payload->video_header().codec = kVideoCodecGeneric;
+  parsed_payload->video_header().width = 0;
+  parsed_payload->video_header().height = 0;
 
   parsed_payload->payload = payload_data;
   parsed_payload->payload_length = payload_data_length;

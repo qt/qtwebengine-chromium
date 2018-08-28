@@ -10,7 +10,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/single_thread_task_runner.h"
-#include "mojo/edk/embedder/configuration.h"
+#include "mojo/core/embedder/configuration.h"
 #include "services/service_manager/background/background_service_manager.h"
 #include "services/service_manager/embedder/process_type.h"
 #include "services/service_manager/embedder/service_manager_embedder_export.h"
@@ -49,11 +49,6 @@ class SERVICE_MANAGER_EMBEDDER_EXPORT MainDelegate {
   // failure.
   virtual int Initialize(const InitializeParams& params) = 0;
 
-  // Creates an thread and returns the SingleThreadTaskRunner on which
-  // ServiceManager should run.
-  virtual scoped_refptr<base::SingleThreadTaskRunner>
-  GetServiceManagerTaskRunnerForEmbedderProcess();
-
   // Indicates whether this (embedder) process should be treated as a subprocess
   // for the sake of some platform-specific environment initialization details.
   virtual bool IsEmbedderSubprocess();
@@ -75,7 +70,7 @@ class SERVICE_MANAGER_EMBEDDER_EXPORT MainDelegate {
   virtual ProcessType OverrideProcessType();
 
   // Allows the embedder to override the process-wide Mojop configuration.
-  virtual void OverrideMojoConfiguration(mojo::edk::Configuration* config);
+  virtual void OverrideMojoConfiguration(mojo::core::Configuration* config);
 
   // Create the service catalog to be used by the Service Manager. May return
   // null to use the default (empty) catalog, if you're into that.

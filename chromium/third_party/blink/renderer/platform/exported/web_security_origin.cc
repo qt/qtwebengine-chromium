@@ -45,8 +45,8 @@ WebSecurityOrigin WebSecurityOrigin::Create(const WebURL& url) {
   return WebSecurityOrigin(SecurityOrigin::Create(url));
 }
 
-WebSecurityOrigin WebSecurityOrigin::CreateUnique() {
-  return WebSecurityOrigin(SecurityOrigin::CreateUnique());
+WebSecurityOrigin WebSecurityOrigin::CreateUniqueOpaque() {
+  return WebSecurityOrigin(SecurityOrigin::CreateUniqueOpaque());
 }
 
 void WebSecurityOrigin::Reset() {
@@ -77,9 +77,9 @@ unsigned short WebSecurityOrigin::EffectivePort() const {
   return private_->EffectivePort();
 }
 
-bool WebSecurityOrigin::IsUnique() const {
+bool WebSecurityOrigin::IsOpaque() const {
   DCHECK(private_);
-  return private_->IsUnique();
+  return private_->IsOpaque();
 }
 
 bool WebSecurityOrigin::CanAccess(const WebSecurityOrigin& other) const {

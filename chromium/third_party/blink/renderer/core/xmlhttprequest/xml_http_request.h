@@ -24,15 +24,16 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_XMLHTTPREQUEST_XML_HTTP_REQUEST_H_
 
 #include <memory>
+
 #include "base/memory/scoped_refptr.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/core/dom/document_parser_client.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/pausable_object.h"
 #include "third_party/blink/renderer/core/loader/threadable_loader_client.h"
 #include "third_party/blink/renderer/core/xmlhttprequest/xml_http_request_event_target.h"
 #include "third_party/blink/renderer/core/xmlhttprequest/xml_http_request_progress_event_throttle.h"
+#include "third_party/blink/renderer/platform/bindings/exception_code.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_v8_string.h"
@@ -167,7 +168,6 @@ class XMLHttpRequest final : public XMLHttpRequestEventTarget,
   DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "XMLHttpRequest"; }
 
  private:
@@ -281,7 +281,7 @@ class XMLHttpRequest final : public XMLHttpRequestEventTarget,
   // Handles didFail() call for timeout.
   void HandleDidTimeout();
 
-  void HandleRequestError(ExceptionCode,
+  void HandleRequestError(DOMExceptionCode,
                           const AtomicString&,
                           long long,
                           long long);
@@ -323,7 +323,7 @@ class XMLHttpRequest final : public XMLHttpRequestEventTarget,
 
   // Avoid using a flat WTF::String here and rather use a traced v8::String
   // which internally builds a string rope.
-  TraceWrapperV8String response_text_;
+  GC_PLUGIN_IGNORE("crbug.com/841830") TraceWrapperV8String response_text_;
   TraceWrapperMember<Document> response_document_;
   Member<DocumentParser> response_document_parser_;
 
@@ -340,7 +340,7 @@ class XMLHttpRequest final : public XMLHttpRequestEventTarget,
   // An exception to throw in synchronous mode. It's set when failure
   // notification is received from m_loader and thrown at the end of send() if
   // any.
-  ExceptionCode exception_code_ = 0;
+  DOMExceptionCode exception_code_ = DOMExceptionCode::kNoError;
 
   Member<XMLHttpRequestProgressEventThrottle> progress_event_throttle_;
 

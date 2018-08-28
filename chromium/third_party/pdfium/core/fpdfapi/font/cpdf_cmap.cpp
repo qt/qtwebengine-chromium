@@ -23,7 +23,7 @@ struct ByteRange {
 };
 
 struct PredefinedCMap {
-  const char* m_pName;
+  const char* m_pName;  // Raw, POD struct.
   CIDSet m_Charset;
   CIDCoding m_Coding;
   CPDF_CMap::CodingScheme m_CodingScheme;
@@ -317,7 +317,7 @@ uint16_t CPDF_CMap::CIDFromCharCode(uint32_t charcode) const {
     return static_cast<uint16_t>(charcode);
 
   if (m_pEmbedMap)
-    return FPDFAPI_CIDFromCharCode(m_pEmbedMap, charcode);
+    return FPDFAPI_CIDFromCharCode(m_pEmbedMap.Get(), charcode);
 
   if (m_DirectCharcodeToCIDTable.empty())
     return static_cast<uint16_t>(charcode);

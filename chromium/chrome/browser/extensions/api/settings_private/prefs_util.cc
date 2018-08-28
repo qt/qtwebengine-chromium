@@ -20,6 +20,8 @@
 #include "components/component_updater/pref_names.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/drive/drive_pref_names.h"
+#include "components/language/core/browser/pref_names.h"
+#include "components/omnibox/browser/omnibox_pref_names.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/payments/core/payment_prefs.h"
 #include "components/prefs/pref_service.h"
@@ -29,6 +31,7 @@
 #include "components/spellcheck/browser/pref_names.h"
 #include "components/translate/core/browser/translate_pref_names.h"
 #include "components/translate/core/browser/translate_prefs.h"
+#include "components/unified_consent/pref_names.h"
 #include "components/url_formatter/url_fixer.h"
 #include "extensions/browser/extension_pref_value_map.h"
 #include "extensions/browser/extension_pref_value_map_factory.h"
@@ -116,6 +119,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[autofill::prefs::kAutofillEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[autofill::prefs::kAutofillProfileEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[autofill::prefs::kAutofillCreditCardEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[payments::kCanMakePaymentEnabled] =
@@ -183,7 +188,7 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[::prefs::kEnableEncryptedMedia] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
-  (*s_whitelist)[::prefs::kApplicationLocale] =
+  (*s_whitelist)[::language::prefs::kApplicationLocale] =
       settings_api::PrefType::PREF_TYPE_STRING;
   (*s_whitelist)[::prefs::kNetworkPredictionOptions] =
       settings_api::PrefType::PREF_TYPE_NUMBER;
@@ -191,11 +196,20 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[password_manager::prefs::kCredentialsEnableAutosignin] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
+
+  // Sync and personalization page.
   (*s_whitelist)[::prefs::kSafeBrowsingEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
-  (*s_whitelist)[::prefs::kSafeBrowsingExtendedReportingEnabled] =
+  (*s_whitelist)[::prefs::kSafeBrowsingScoutReportingEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[::prefs::kSearchSuggestEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[::unified_consent::prefs::kUnifiedConsentGiven] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)
+      [::unified_consent::prefs::kUrlKeyedAnonymizedDataCollectionEnabled] =
+          settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[::omnibox::kDocumentSuggestEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
 
   // Languages page
@@ -214,8 +228,6 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
 #if defined(OS_CHROMEOS)
   (*s_whitelist)[::prefs::kLanguageImeMenuActivated] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
-  (*s_whitelist)[::prefs::kAllowedLocales] =
-      settings_api::PrefType::PREF_TYPE_LIST;
 #endif
 
   // Search page.
@@ -341,11 +353,15 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
 
   // Google Assistant.
+  (*s_whitelist)[arc::prefs::kVoiceInteractionActivityControlAccepted] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[arc::prefs::kArcVoiceInteractionValuePropAccepted] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[arc::prefs::kVoiceInteractionEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[arc::prefs::kVoiceInteractionContextEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[arc::prefs::kVoiceInteractionHotwordEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
 
   // Misc.
@@ -413,11 +429,13 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   // Input method settings.
   (*s_whitelist)[::prefs::kLanguagePreloadEngines] =
       settings_api::PrefType::PREF_TYPE_STRING;
-  (*s_whitelist)[::prefs::kLanguageEnabledExtensionImes] =
+  (*s_whitelist)[::prefs::kLanguageEnabledImes] =
       settings_api::PrefType::PREF_TYPE_STRING;
+  (*s_whitelist)[::prefs::kLanguageAllowedInputMethods] =
+      settings_api::PrefType::PREF_TYPE_LIST;
 
   // Device settings.
-  (*s_whitelist)[::prefs::kTapToClickEnabled] =
+  (*s_whitelist)[ash::prefs::kTapToClickEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[::prefs::kNaturalScroll] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;

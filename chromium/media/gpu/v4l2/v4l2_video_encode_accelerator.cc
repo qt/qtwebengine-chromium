@@ -23,7 +23,9 @@
 #include "base/trace_event/trace_event.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/bitstream_buffer.h"
-#include "media/gpu/shared_memory_region.h"
+#include "media/base/scopedfd_helper.h"
+#include "media/base/unaligned_shared_memory.h"
+#include "media/gpu/v4l2/v4l2_image_processor.h"
 #include "media/video/h264_parser.h"
 
 #define VLOGF(level) VLOG(level) << __func__ << "(): "
@@ -87,10 +89,10 @@ static void CopyNALUPrependingStartCode(const uint8_t* src,
 namespace media {
 
 struct V4L2VideoEncodeAccelerator::BitstreamBufferRef {
-  BitstreamBufferRef(int32_t id, std::unique_ptr<SharedMemoryRegion> shm)
+  BitstreamBufferRef(int32_t id, std::unique_ptr<UnalignedSharedMemory> shm)
       : id(id), shm(std::move(shm)) {}
   const int32_t id;
-  const std::unique_ptr<SharedMemoryRegion> shm;
+  const std::unique_ptr<UnalignedSharedMemory> shm;
 };
 
 V4L2VideoEncodeAccelerator::InputRecord::InputRecord() : at_device(false) {}
@@ -203,16 +205,16 @@ bool V4L2VideoEncodeAccelerator::Initialize(VideoPixelFormat input_format,
     }
 
     scoped_refptr<V4L2Device> device = V4L2Device::Create();
-    image_processor_.reset(new V4L2ImageProcessor(device));
+    image_processor_.reset(
+        new V4L2ImageProcessor(device, V4L2_MEMORY_USERPTR, V4L2_MEMORY_MMAP));
 
     // Convert from input_format to device_input_format_, keeping the size
     // at visible_size_ and requiring the output buffers to be of at least
     // input_allocated_size_. Unretained is safe because |this| owns image
     // processor and there will be no callbacks after processor destroys.
     if (!image_processor_->Initialize(
-            input_format, device_input_format_, V4L2_MEMORY_USERPTR,
-            V4L2_MEMORY_MMAP, visible_size_, visible_size_, visible_size_,
-            input_allocated_size_, kImageProcBufferCount,
+            input_format, device_input_format_, visible_size_, visible_size_,
+            visible_size_, input_allocated_size_, kImageProcBufferCount,
             base::Bind(&V4L2VideoEncodeAccelerator::ImageProcessorError,
                        base::Unretained(this)))) {
       VLOGF(1) << "Failed initializing image processor";
@@ -234,16 +236,8 @@ bool V4L2VideoEncodeAccelerator::Initialize(VideoPixelFormat input_format,
       return false;
     }
 
-    for (int i = 0; i < kImageProcBufferCount; i++) {
-      std::vector<base::ScopedFD> fds =
-          image_processor_->GetDmabufsForOutputBuffer(i);
-      if (fds.size() == 0) {
-        VLOGF(1) << "failed to get fds of image processor.";
-        return false;
-      }
-      image_processor_output_buffer_map_.push_back(std::move(fds));
+    for (int i = 0; i < kImageProcBufferCount; i++)
       free_image_processor_output_buffers_.push_back(i);
-    }
   }
 
   if (!InitControls())
@@ -289,9 +283,9 @@ void V4L2VideoEncodeAccelerator::Encode(const scoped_refptr<VideoFrame>& frame,
       // be no callbacks after processor destroys.
       if (!image_processor_->Process(
               frame, output_buffer_index, std::vector<base::ScopedFD>(),
-              base::Bind(&V4L2VideoEncodeAccelerator::FrameProcessed,
-                         base::Unretained(this), force_keyframe,
-                         frame->timestamp()))) {
+              base::BindOnce(&V4L2VideoEncodeAccelerator::FrameProcessed,
+                             base::Unretained(this), force_keyframe,
+                             frame->timestamp(), output_buffer_index))) {
         NOTIFY_ERROR(kPlatformFailureError);
       }
     } else {
@@ -314,9 +308,9 @@ void V4L2VideoEncodeAccelerator::UseOutputBitstreamBuffer(
     return;
   }
 
-  std::unique_ptr<SharedMemoryRegion> shm(
-      new SharedMemoryRegion(buffer, false));
-  if (!shm->Map()) {
+  auto shm = std::make_unique<UnalignedSharedMemory>(buffer.handle(),
+                                                     buffer.size(), false);
+  if (!shm->MapAt(buffer.offset(), buffer.size())) {
     NOTIFY_ERROR(kPlatformFailureError);
     return;
   }
@@ -350,8 +344,7 @@ void V4L2VideoEncodeAccelerator::Destroy() {
   client_ptr_factory_.reset();
   weak_this_ptr_factory_.InvalidateWeakPtrs();
 
-  if (image_processor_.get())
-    image_processor_.release()->Destroy();
+  image_processor_ = nullptr;
 
   // If the encoder thread is running, destroy using posted task.
   if (encoder_thread_.IsRunning()) {
@@ -410,37 +403,23 @@ V4L2VideoEncodeAccelerator::GetSupportedProfiles() {
   return device->GetSupportedEncodeProfiles();
 }
 
-void V4L2VideoEncodeAccelerator::FrameProcessed(bool force_keyframe,
-                                                base::TimeDelta timestamp,
-                                                int output_buffer_index) {
+void V4L2VideoEncodeAccelerator::FrameProcessed(
+    bool force_keyframe,
+    base::TimeDelta timestamp,
+    int output_buffer_index,
+    scoped_refptr<VideoFrame> frame) {
   DCHECK(child_task_runner_->BelongsToCurrentThread());
   DVLOGF(4) << "force_keyframe=" << force_keyframe
             << ", output_buffer_index=" << output_buffer_index;
   DCHECK_GE(output_buffer_index, 0);
-  DCHECK_LT(static_cast<size_t>(output_buffer_index),
-            image_processor_output_buffer_map_.size());
 
-  std::vector<base::ScopedFD>& scoped_fds =
-      image_processor_output_buffer_map_[output_buffer_index];
-  std::vector<int> fds;
-  for (auto& fd : scoped_fds) {
-    fds.push_back(fd.get());
-  }
-  scoped_refptr<VideoFrame> output_frame = VideoFrame::WrapExternalDmabufs(
-      device_input_format_, image_processor_->output_allocated_size(),
-      gfx::Rect(visible_size_), visible_size_, fds, timestamp);
-  if (!output_frame) {
-    NOTIFY_ERROR(kPlatformFailureError);
-    return;
-  }
-  output_frame->AddDestructionObserver(BindToCurrentLoop(
+  frame->AddDestructionObserver(BindToCurrentLoop(
       base::Bind(&V4L2VideoEncodeAccelerator::ReuseImageProcessorOutputBuffer,
                  weak_this_, output_buffer_index)));
 
   encoder_thread_.task_runner()->PostTask(
-      FROM_HERE,
-      base::Bind(&V4L2VideoEncodeAccelerator::EncodeTask,
-                 base::Unretained(this), output_frame, force_keyframe));
+      FROM_HERE, base::Bind(&V4L2VideoEncodeAccelerator::EncodeTask,
+                            base::Unretained(this), frame, force_keyframe));
 }
 
 void V4L2VideoEncodeAccelerator::ReuseImageProcessorOutputBuffer(
@@ -758,12 +737,14 @@ void V4L2VideoEncodeAccelerator::Dequeue() {
               << ", size=" << output_data_size << ", key_frame=" << key_frame;
 
     child_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&Client::BitstreamBufferReady, client_,
-                              bitstream_buffer_id, output_data_size, key_frame,
-                              base::TimeDelta::FromMicroseconds(
-                                  dqbuf.timestamp.tv_usec +
-                                  dqbuf.timestamp.tv_sec *
-                                      base::Time::kMicrosecondsPerSecond)));
+        FROM_HERE,
+        base::Bind(&Client::BitstreamBufferReady, client_, bitstream_buffer_id,
+                   BitstreamBufferMetadata(
+                       output_data_size, key_frame,
+                       base::TimeDelta::FromMicroseconds(
+                           dqbuf.timestamp.tv_usec +
+                           dqbuf.timestamp.tv_sec *
+                               base::Time::kMicrosecondsPerSecond))));
     if ((encoder_state_ == kFlushing) && (dqbuf.flags & V4L2_BUF_FLAG_LAST)) {
       // Notify client that flush has finished successfully. The flush callback
       // should be called after notifying the last buffer is ready.
@@ -821,6 +802,16 @@ bool V4L2VideoEncodeAccelerator::EnqueueInputRecord() {
       frame->timestamp().InSeconds() * base::Time::kMicrosecondsPerSecond;
 
   DCHECK_EQ(device_input_format_, frame->format());
+
+  std::vector<int> fds;
+  if (input_memory_type_ == V4L2_MEMORY_DMABUF) {
+    fds = frame->DmabufFds();
+    if (fds.size() != input_planes_count_) {
+      VLOGF(1) << "Invalid number of planes in the frame";
+      return false;
+    }
+  }
+
   for (size_t i = 0; i < input_planes_count_; ++i) {
     qbuf.m.planes[i].bytesused = base::checked_cast<__u32>(
         VideoFrame::PlaneSize(frame->format(), i, input_allocated_size_)
@@ -835,7 +826,7 @@ bool V4L2VideoEncodeAccelerator::EnqueueInputRecord() {
         break;
 
       case V4L2_MEMORY_DMABUF:
-        qbuf.m.planes[i].m.fd = frame->DmabufFd(i);
+        qbuf.m.planes[i].m.fd = fds[i];
         DCHECK_NE(qbuf.m.planes[i].m.fd, -1);
         break;
 

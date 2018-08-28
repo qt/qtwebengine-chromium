@@ -47,6 +47,7 @@ class ContextProviderCommandBuffer;
 namespace viz {
 class CompositingModeReporterImpl;
 class OutputDeviceBacking;
+class ServerSharedBitmapManager;
 class SoftwareOutputDevice;
 class VulkanInProcessContextProvider;
 class RasterContextProvider;
@@ -62,6 +63,7 @@ class GpuProcessTransportFactory : public ui::ContextFactory,
   GpuProcessTransportFactory(
       gpu::GpuChannelEstablishFactory* gpu_channel_factory,
       viz::CompositingModeReporterImpl* compositing_mode_reporter,
+      viz::ServerSharedBitmapManager* server_shared_bitmap_manager,
       scoped_refptr<base::SingleThreadTaskRunner> resize_task_runner);
 
   ~GpuProcessTransportFactory() override;
@@ -76,6 +78,7 @@ class GpuProcessTransportFactory : public ui::ContextFactory,
   cc::TaskGraphRunner* GetTaskGraphRunner() override;
   void AddObserver(ui::ContextFactoryObserver* observer) override;
   void RemoveObserver(ui::ContextFactoryObserver* observer) override;
+  bool SyncTokensRequiredForDisplayCompositor() override;
 
   // ui::ContextFactoryPrivate implementation.
   std::unique_ptr<ui::Reflector> CreateReflector(ui::Compositor* source,
@@ -87,6 +90,7 @@ class GpuProcessTransportFactory : public ui::ContextFactory,
   void SetDisplayVisible(ui::Compositor* compositor, bool visible) override;
   void ResizeDisplay(ui::Compositor* compositor,
                      const gfx::Size& size) override;
+  void DisableSwapUntilResize(ui::Compositor* compositor) override;
   void SetDisplayColorMatrix(ui::Compositor* compositor,
                              const SkMatrix44& matrix) override;
   void SetDisplayColorSpace(ui::Compositor* compositor,
@@ -102,6 +106,7 @@ class GpuProcessTransportFactory : public ui::ContextFactory,
   void SetOutputIsSecure(ui::Compositor* compositor, bool secure) override;
 
   // ImageTransportFactory implementation.
+  void DisableGpuCompositing() override;
   bool IsGpuCompositingDisabled() override;
   ui::ContextFactory* GetContextFactory() override;
   ui::ContextFactoryPrivate* GetContextFactoryPrivate() override;
@@ -180,6 +185,8 @@ class GpuProcessTransportFactory : public ui::ContextFactory,
   // Service-side impl that controls the compositing mode based on what mode the
   // display compositors are using.
   viz::CompositingModeReporterImpl* const compositing_mode_reporter_;
+  // Manages a mapping of SharedBitmapId to shared memory objects.
+  viz::ServerSharedBitmapManager* const server_shared_bitmap_manager_;
 
   base::WeakPtrFactory<GpuProcessTransportFactory> callback_factory_;
 

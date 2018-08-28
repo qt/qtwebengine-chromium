@@ -15,6 +15,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
+#include "base/stl_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "components/signin/core/browser/account_reconcilor_delegate.h"
@@ -231,7 +232,7 @@ void AccountReconcilor::OnContentSettingChanged(
     const ContentSettingsPattern& primary_pattern,
     const ContentSettingsPattern& secondary_pattern,
     ContentSettingsType content_type,
-    std::string resource_identifier) {
+    const std::string& resource_identifier) {
   // If this is not a change to cookie settings, just ignore.
   if (content_type != CONTENT_SETTINGS_TYPE_COOKIES)
     return;
@@ -327,13 +328,11 @@ void AccountReconcilor::StartReconcile() {
   reconcile_is_noop_ = true;
 
   if (!timeout_.is_max()) {
-    // This is NOT a repeating callback but to test it, we need a |MockTimer|,
-    // which mocks |Timer| and not |OneShotTimer|. |Timer| currently does not
-    // support a |OnceClosure|.
-    timer_->Start(
-        FROM_HERE, timeout_,
-        base::BindRepeating(&AccountReconcilor::HandleReconcileTimeout,
-                            base::Unretained(this)));
+    // Keep using base::Bind() until base::OnceCallback get supported by
+    // base::OneShotTimer.
+    timer_->Start(FROM_HERE, timeout_,
+                  base::Bind(&AccountReconcilor::HandleReconcileTimeout,
+                             base::Unretained(this)));
   }
 
   const std::string& account_id = signin_manager_->GetAuthenticatedAccountId();
@@ -472,9 +471,7 @@ void AccountReconcilor::FinishReconcile(
   int removed_from_cookie = 0;
   for (size_t i = 0; i < number_gaia_accounts; ++i) {
     if (gaia_accounts[i].valid &&
-        chrome_accounts.end() == std::find(chrome_accounts.begin(),
-                                           chrome_accounts.end(),
-                                           gaia_accounts[i].id)) {
+        !base::ContainsValue(chrome_accounts, gaia_accounts[i].id)) {
       ++removed_from_cookie;
     }
   }
@@ -706,7 +703,7 @@ void AccountReconcilor::UnblockReconcile() {
 }
 
 void AccountReconcilor::set_timer_for_testing(
-    std::unique_ptr<base::Timer> timer) {
+    std::unique_ptr<base::OneShotTimer> timer) {
   timer_ = std::move(timer);
 }
 

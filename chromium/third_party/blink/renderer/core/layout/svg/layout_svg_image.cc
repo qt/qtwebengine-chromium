@@ -143,8 +143,7 @@ void LayoutSVGImage::UpdateLayout() {
   ClearNeedsLayout();
 }
 
-void LayoutSVGImage::Paint(const PaintInfo& paint_info,
-                           const LayoutPoint&) const {
+void LayoutSVGImage::Paint(const PaintInfo& paint_info) const {
   SVGImagePainter(*this).Paint(paint_info);
 }
 
@@ -170,9 +169,10 @@ bool LayoutSVGImage::NodeAtFloatPoint(HitTestResult& result,
   if (hit_rules.can_hit_fill || hit_rules.can_hit_bounding_box) {
     if (object_bounding_box_.Contains(local_point)) {
       const LayoutPoint& local_layout_point = LayoutPoint(local_point);
+      HitTestLocation location(local_layout_point);
       UpdateHitTestResult(result, local_layout_point);
-      if (result.AddNodeToListBasedTestResult(
-              GetElement(), local_layout_point) == kStopHitTesting)
+      if (result.AddNodeToListBasedTestResult(GetElement(), location) ==
+          kStopHitTesting)
         return true;
     }
   }
@@ -194,14 +194,6 @@ void LayoutSVGImage::ImageChanged(WrappedImagePtr,
   }
 
   SetShouldDoFullPaintInvalidation(PaintInvalidationReason::kImage);
-}
-
-void LayoutSVGImage::AddOutlineRects(Vector<LayoutRect>& rects,
-                                     const LayoutPoint&,
-                                     IncludeBlockVisualOverflowOrNot) const {
-  // this is called from paint() after the localTransform has already been
-  // applied
-  rects.push_back(LayoutRect(VisualRectInLocalSVGCoordinates()));
 }
 
 }  // namespace blink

@@ -9,13 +9,13 @@ js_type_check("closure_compile") {
     ":controlled_button",
     ":controlled_radio_button",
     ":extension_controlled_indicator",
-    ":important_site_checkbox",
     ":pref_control_behavior",
     ":settings_boolean_control_behavior",
     ":settings_checkbox",
     ":settings_dropdown_menu",
     ":settings_radio_group",
     ":settings_slider",
+    ":settings_textarea",
     ":settings_toggle_button",
   ]
 }
@@ -44,13 +44,6 @@ js_library("extension_controlled_indicator") {
     "..:extension_control_browser_proxy",
     "//ui/webui/resources/js:assert",
     "//ui/webui/resources/js:i18n_behavior",
-  ]
-}
-
-js_library("important_site_checkbox") {
-  deps = [
-    ":settings_boolean_control_behavior",
-    "../clear_browsing_data_dialog:clear_browsing_data_browser_proxy",
   ]
 }
 
@@ -100,10 +93,13 @@ js_library("settings_radio_group") {
 
 js_library("settings_slider") {
   deps = [
-    "//third_party/polymer/v1_0/components-chromium/paper-slider:paper-slider-extracted",
+    "//ui/webui/resources/cr_elements/cr_slider:cr_slider",
     "//ui/webui/resources/cr_elements/policy:cr_policy_pref_behavior",
     "//ui/webui/resources/js:assert",
   ]
+}
+
+js_library("settings_textarea") {
 }
 
 js_library("settings_toggle_button") {

@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/files/file_util.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "components/update_client/crx_update_item.h"
 #include "components/update_client/update_client_errors.h"
@@ -30,16 +31,34 @@ namespace extensions {
 
 namespace {
 
-// 98% of update checks have 20 or less extensions
-// (see Extensions.UpdateCheckExtension histogram).
-constexpr size_t kMaxExtensionsPerUpdate = 20;
+// 98% of update checks have 22 or less extensions.
+constexpr size_t kMaxExtensionsPerUpdate = 22;
 
 void SendUninstallPingCompleteCallback(update_client::Error error) {}
 
+void ReportUpdateCheckResult(ExtensionUpdaterUpdateResult update_result,
+                             int error_code) {
+  UMA_HISTOGRAM_ENUMERATION("Extensions.ExtensionUpdaterUpdateResults",
+                            update_result,
+                            ExtensionUpdaterUpdateResult::UPDATE_RESULT_COUNT);
+  // This UMA histogram measures update check results of the unified extension
+  // updater.
+  UMA_HISTOGRAM_ENUMERATION("Extensions.UnifiedExtensionUpdaterUpdateResults",
+                            update_result,
+                            ExtensionUpdaterUpdateResult::UPDATE_RESULT_COUNT);
+  if (update_result == ExtensionUpdaterUpdateResult::UPDATE_CHECK_ERROR)
+    base::UmaHistogramSparse(
+        "Extensions.UnifiedExtensionUpdaterUpdateCheckErrors", error_code);
+  else if (update_result == ExtensionUpdaterUpdateResult::UPDATE_DOWNLOAD_ERROR)
+    base::UmaHistogramSparse("Extensions.UnifiedExtensionUpdaterDownloadErrors",
+                             error_code);
+}
+
 }  // namespace
 
-UpdateService::InProgressUpdate::InProgressUpdate(base::OnceClosure cb)
-    : callback(std::move(cb)) {}
+UpdateService::InProgressUpdate::InProgressUpdate(base::OnceClosure callback,
+                                                  bool install_immediately)
+    : callback(std::move(callback)), install_immediately(install_immediately) {}
 UpdateService::InProgressUpdate::~InProgressUpdate() = default;
 
 UpdateService::InProgressUpdate::InProgressUpdate(
@@ -82,12 +101,23 @@ bool UpdateService::CanUpdate(const std::string& extension_id) const {
   if (extension_urls::GetDefaultWebstoreUpdateUrl() !=
       extension_urls::GetWebstoreUpdateUrl())
     return false;
+
+  // Won't update extensions with empty IDs.
+  if (extension_id.empty())
+    return false;
+
   // We can only update extensions that have been installed on the system.
   // Furthermore, we can only update extensions that were installed from the
-  // webstore.
+  // webstore or extensions with empty update URLs not converted from user
+  // scripts.
   const ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context_);
   const Extension* extension = registry->GetInstalledExtension(extension_id);
-  return extension && ManifestURL::UpdatesFromGallery(extension);
+  if (extension == nullptr)
+    return false;
+  const GURL& update_url = ManifestURL::GetUpdateURL(extension);
+  if (update_url.is_empty())
+    return !extension->converted_from_user_script();
+  return extension_urls::IsWebstoreUpdateUrl(update_url);
 }
 
 void UpdateService::OnEvent(Events event, const std::string& extension_id) {
@@ -96,16 +126,15 @@ void UpdateService::OnEvent(Events event, const std::string& extension_id) {
           << extension_id;
 
   bool complete_event = false;
+  bool finish_delayed_installation = false;
   switch (event) {
     case Events::COMPONENT_UPDATED:
       complete_event = true;
-      UMA_HISTOGRAM_ENUMERATION(
-          "Extensions.ExtensionUpdaterUpdateResults",
-          ExtensionUpdaterUpdateResult::UPDATE_SUCCESS,
-          ExtensionUpdaterUpdateResult::UPDATE_RESULT_COUNT);
+      ReportUpdateCheckResult(ExtensionUpdaterUpdateResult::UPDATE_SUCCESS, 0);
       break;
     case Events::COMPONENT_UPDATE_ERROR:
       complete_event = true;
+      finish_delayed_installation = true;
       {
         update_client::CrxUpdateItem update_item;
         if (!update_client_->GetCrxUpdateState(extension_id, &update_item)) {
@@ -113,46 +142,32 @@ void UpdateService::OnEvent(Events event, const std::string& extension_id) {
         }
         switch (update_item.error_category) {
           case update_client::ErrorCategory::kUpdateCheck:
-            UMA_HISTOGRAM_ENUMERATION(
-                "Extensions.ExtensionUpdaterUpdateResults",
+            ReportUpdateCheckResult(
                 ExtensionUpdaterUpdateResult::UPDATE_CHECK_ERROR,
-                ExtensionUpdaterUpdateResult::UPDATE_RESULT_COUNT);
+                update_item.error_code);
             break;
           case update_client::ErrorCategory::kDownload:
-            UMA_HISTOGRAM_ENUMERATION(
-                "Extensions.ExtensionUpdaterUpdateResults",
+            ReportUpdateCheckResult(
                 ExtensionUpdaterUpdateResult::UPDATE_DOWNLOAD_ERROR,
-                ExtensionUpdaterUpdateResult::UPDATE_RESULT_COUNT);
+                update_item.error_code);
             break;
           case update_client::ErrorCategory::kUnpack:
           case update_client::ErrorCategory::kInstall:
-            UMA_HISTOGRAM_ENUMERATION(
-                "Extensions.ExtensionUpdaterUpdateResults",
-                ExtensionUpdaterUpdateResult::UPDATE_INSTALL_ERROR,
-                ExtensionUpdaterUpdateResult::UPDATE_RESULT_COUNT);
+            ReportUpdateCheckResult(
+                ExtensionUpdaterUpdateResult::UPDATE_INSTALL_ERROR, 0);
             break;
           case update_client::ErrorCategory::kNone:
           case update_client::ErrorCategory::kService:
-            UMA_HISTOGRAM_ENUMERATION(
-                "Extensions.ExtensionUpdaterUpdateResults",
-                ExtensionUpdaterUpdateResult::UPDATE_SERVICE_ERROR,
-                ExtensionUpdaterUpdateResult::UPDATE_RESULT_COUNT);
+            ReportUpdateCheckResult(
+                ExtensionUpdaterUpdateResult::UPDATE_SERVICE_ERROR, 0);
             break;
         }
       }
       break;
     case Events::COMPONENT_NOT_UPDATED:
       complete_event = true;
-      UMA_HISTOGRAM_ENUMERATION(
-          "Extensions.ExtensionUpdaterUpdateResults",
-          ExtensionUpdaterUpdateResult::NO_UPDATE,
-          ExtensionUpdaterUpdateResult::UPDATE_RESULT_COUNT);
-      // When no update is found, a previous update check might have queued an
-      // update for this extension because it was in use at the time. We should
-      // ask for the install of the queued update now if it's ready.
-      ExtensionSystem::Get(browser_context_)
-          ->FinishDelayedInstallationIfReady(extension_id,
-                                             true /*install_immediately*/);
+      finish_delayed_installation = true;
+      ReportUpdateCheckResult(ExtensionUpdaterUpdateResult::NO_UPDATE, 0);
       break;
     case Events::COMPONENT_UPDATE_FOUND: {
       UMA_HISTOGRAM_COUNTS_100("Extensions.ExtensionUpdaterUpdateFoundCount",
@@ -184,8 +199,22 @@ void UpdateService::OnEvent(Events event, const std::string& extension_id) {
     // removed from all in-progress update checks.
     DCHECK(updating_extension_ids_.count(extension_id) > 0);
     updating_extension_ids_.erase(extension_id);
-    for (auto& update : in_progress_updates_)
+
+    bool install_immediately = false;
+    for (auto& update : in_progress_updates_) {
+      install_immediately |= update.install_immediately;
       update.pending_extension_ids.erase(extension_id);
+    }
+
+    // When no update is found or there's an update error, a previous update
+    // check might have queued an update for this extension because it was in
+    // use at the time. We should ask for the install of the queued update now
+    // if it's ready.
+    if (finish_delayed_installation && install_immediately) {
+      ExtensionSystem::Get(browser_context_)
+          ->FinishDelayedInstallationIfReady(extension_id,
+                                             true /*install_immediately*/);
+    }
   }
 }
 
@@ -223,7 +252,8 @@ void UpdateService::StartUpdateCheck(
     return;
   }
 
-  in_progress_updates_.push_back(InProgressUpdate(std::move(callback)));
+  in_progress_updates_.push_back(
+      InProgressUpdate(std::move(callback), update_params.install_immediately));
   InProgressUpdate& update = in_progress_updates_.back();
 
   // |update_data| only store update info of extensions that are not being
@@ -231,6 +261,8 @@ void UpdateService::StartUpdateCheck(
   ExtensionUpdateDataMap update_data;
   for (const auto& update_info : update_params.update_info) {
     const std::string& extension_id = update_info.first;
+
+    DCHECK(!extension_id.empty());
 
     update.pending_extension_ids.insert(extension_id);
     if (updating_extension_ids_.count(extension_id) > 0)
@@ -249,9 +281,6 @@ void UpdateService::StartUpdateCheck(
     update_data.insert(std::make_pair(extension_id, data));
   }
 
-  UMA_HISTOGRAM_COUNTS_100("Extensions.ExtensionUpdaterUpdateCalls",
-                           update_data.size());
-
   // Divide extensions into batches to reduce the size of update check
   // requests generated by the update client.
   for (auto it = update_data.begin(); it != update_data.end();) {
@@ -267,9 +296,17 @@ void UpdateService::StartUpdateCheck(
       batch_data.emplace(it->first, std::move(it->second));
     }
 
+    UMA_HISTOGRAM_COUNTS_100("Extensions.ExtensionUpdaterUpdateCalls",
+                             batch_size);
+    // This UMA histogram measures update check requests of the unified
+    // extension updater.
+    UMA_HISTOGRAM_COUNTS_100("Extensions.UnifiedExtensionUpdaterUpdateCalls",
+                             batch_size);
+
     update_client_->Update(
         batch_ids,
         base::BindOnce(&UpdateDataProvider::GetData, update_data_provider_,
+                       update_params.install_immediately,
                        std::move(batch_data)),
         update_params.priority == ExtensionUpdateCheckParams::FOREGROUND,
         base::BindOnce(&UpdateService::UpdateCheckComplete,

@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PAINT_CLIP_PAINT_PROPERTY_NODE_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PAINT_CLIP_PAINT_PROPERTY_NODE_H_
 
+#include "base/memory/scoped_refptr.h"
 #include "base/optional.h"
 #include "third_party/blink/renderer/platform/geometry/float_rounded_rect.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper_clip_cache.h"
@@ -16,6 +17,7 @@
 namespace blink {
 
 class GeometryMapperClipCache;
+class PropertyTreeState;
 
 // A clip rect created by a css property such as "overflow" or "clip".
 // Along with a reference to the transform space the clip rect is based on,
@@ -53,18 +55,16 @@ class PLATFORM_EXPORT ClipPaintPropertyNode
   };
 
   // This node is really a sentinel, and does not represent a real clip space.
-  static ClipPaintPropertyNode* Root();
+  static const ClipPaintPropertyNode& Root();
 
   static scoped_refptr<ClipPaintPropertyNode> Create(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
+      const ClipPaintPropertyNode& parent,
       State&& state) {
-    return base::AdoptRef(
-        new ClipPaintPropertyNode(std::move(parent), std::move(state)));
+    return base::AdoptRef(new ClipPaintPropertyNode(&parent, std::move(state)));
   }
 
-  bool Update(scoped_refptr<const ClipPaintPropertyNode> parent,
-              State&& state) {
-    bool parent_changed = SetParent(parent);
+  bool Update(const ClipPaintPropertyNode& parent, State&& state) {
+    bool parent_changed = SetParent(&parent);
     if (state == state_)
       return parent_changed;
 
@@ -73,9 +73,17 @@ class PLATFORM_EXPORT ClipPaintPropertyNode
     return true;
   }
 
-  bool EqualIgnoringHitTestRects(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
-      const State& state) const {
+  // Checks if the accumulated clip from |this| to |relative_to_state.Clip()|
+  // has changed in the space of |relative_to_state.Transform()|. We check for
+  // changes of not only clip nodes, but also LocalTransformSpace relative to
+  // |relative_to_state.Transform()| of the clip nodes. |transform_not_to_check|
+  // specifies a transform node that the caller has checked or will check its
+  // change in other ways and this function should treat it as unchanged.
+  bool Changed(const PropertyTreeState& relative_to_state,
+               const TransformPaintPropertyNode* transform_not_to_check) const;
+
+  bool EqualIgnoringHitTestRects(const ClipPaintPropertyNode* parent,
+                                 const State& state) const {
     return parent == Parent() && state_.EqualIgnoringHitTestRects(state);
   }
 
@@ -115,9 +123,8 @@ class PLATFORM_EXPORT ClipPaintPropertyNode
   size_t CacheMemoryUsageInBytes() const;
 
  private:
-  ClipPaintPropertyNode(scoped_refptr<const ClipPaintPropertyNode> parent,
-                        State&& state)
-      : PaintPropertyNode(std::move(parent)), state_(std::move(state)) {}
+  ClipPaintPropertyNode(const ClipPaintPropertyNode* parent, State&& state)
+      : PaintPropertyNode(parent), state_(std::move(state)) {}
 
   // For access to GetClipCache();
   friend class GeometryMapper;

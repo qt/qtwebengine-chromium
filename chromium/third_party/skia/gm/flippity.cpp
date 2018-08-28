@@ -10,8 +10,6 @@
 
 #include "SkSurface.h"
 
-#if SK_SUPPORT_GPU
-
 #include "GrContextPriv.h"
 #include "ProxyUtils.h"
 #include "SkImage_Gpu.h"
@@ -114,7 +112,7 @@ static sk_sp<SkImage> make_reference_image(GrContext* context,
         return nullptr;
     }
 
-    return sk_make_sp<SkImage_Gpu>(context, kNeedNewImageUniqueID, kOpaque_SkAlphaType,
+    return sk_make_sp<SkImage_Gpu>(sk_ref_sp(context), kNeedNewImageUniqueID, kOpaque_SkAlphaType,
                                    std::move(proxy), nullptr, SkBudgeted::kYes);
 }
 
@@ -271,5 +269,3 @@ private:
 };
 
 DEF_GM(return new FlippityGM;)
-
-#endif

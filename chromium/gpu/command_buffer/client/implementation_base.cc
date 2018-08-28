@@ -127,8 +127,7 @@ bool ImplementationBase::OnMemoryDump(
   if (args.level_of_detail != MemoryDumpLevelOfDetail::BACKGROUND) {
     dump->AddScalar("free_size", MemoryAllocatorDump::kUnitsBytes,
                     transfer_buffer_->GetFragmentedFreeSize());
-    auto shared_memory_guid =
-        transfer_buffer_->shared_memory_handle().GetGUID();
+    auto shared_memory_guid = transfer_buffer_->shared_memory_guid();
     const int kImportance = 2;
     if (!shared_memory_guid.is_empty()) {
       pmd->CreateSharedMemoryOwnershipEdge(dump->guid(), shared_memory_guid,
@@ -156,7 +155,7 @@ gpu::ContextResult ImplementationBase::Initialize(
   if (!transfer_buffer_->Initialize(
           limits.start_transfer_buffer_size, kStartingOffset,
           limits.min_transfer_buffer_size, limits.max_transfer_buffer_size,
-          kAlignment, kSizeToFlush)) {
+          kAlignment)) {
     // TransferBuffer::Initialize doesn't fail for transient reasons such as if
     // the context was lost. See http://crrev.com/c/720269
     LOG(ERROR) << "ContextResult::kFatalFailure: "

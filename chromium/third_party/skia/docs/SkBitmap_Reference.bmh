@@ -1,6 +1,6 @@
 #Topic Bitmap
-#Alias Bitmaps
-#Alias Bitmap_Reference
+#Alias Bitmaps ##
+#Alias Bitmap_Reference ##
 
 #Class SkBitmap
 
@@ -11,7 +11,7 @@ Bitmap points to Pixel_Ref, which describes the physical array of pixels.
 Image_Info bounds may be located anywhere fully inside Pixel_Ref bounds.
 
 Bitmap can be drawn using Canvas. Bitmap can be a drawing destination for Canvas
-draw member functionss. Bitmap flexibility as a pixel container limits some
+draw member functions. Bitmap flexibility as a pixel container limits some
 optimizations available to the target platform.
 
 If pixel array is primarily read-only, use Image for better performance.
@@ -471,7 +471,7 @@ rowBytes() / info().bytesPerPixel()
 ##
 .
 
-Maybe be less than pixelRef().width(). Will not exceed pixelRef().width() less
+May be less than pixelRef().width(). Will not exceed pixelRef().width() less
 pixelRefOrigin().fX.
 
 #Return  pixel width in Image_Info ##
@@ -777,7 +777,7 @@ width: 2 height: 2 empty: false
 #Method bool isNull() const
 #In Property
 #Line # returns true if Pixel_Ref is nullptr ##
-Return true if Pixel_Ref is nullptr.
+Returns true if Pixel_Ref is nullptr.
 
 Does not check if width() or height() are zero; call drawsNothing to check
 width(), height(), and Pixel_Ref.
@@ -807,7 +807,7 @@ allocated bitmap does have pixels
 #Method bool drawsNothing() const
 #In Property
 #Line # returns true if no width(), no height(), or no Pixel_Ref ##
-Return true if width() or height() are zero, or if Pixel_Ref is nullptr.
+Returns true if width() or height() are zero, or if Pixel_Ref is nullptr.
 If true, Bitmap has no effect when drawn or drawn into.
 
 #Return  true if drawing has no effect ##
@@ -1108,8 +1108,8 @@ isOpaque: true
 #Method bool isVolatile() const
 #In Property
 #Line # returns true if pixels should not be cached ##
-If true, provides a hint to caller that pixels should not
-be cached. Only true if setIsVolatile has been called to mark as volatile.
+Provides a hint to caller that pixels should not be cached. Only true if
+setIsVolatile has been called to mark as volatile.
 
 Volatile state is not shared by other bitmaps sharing the same Pixel_Ref.
 
@@ -2484,10 +2484,10 @@ precision.
     const int w = 4;
     const int h = 4;
     SkColor colors[][w] = {
-        0x00000000, 0x2a0e002a, 0x55380055, 0x7f7f007f,
-        0x2a000e2a, 0x551c1c55, 0x7f542a7f, 0xaaaa38aa,
-        0x55003855, 0x7f2a547f, 0xaa7171aa, 0xd4d48dd4,
-        0x7f007f7f, 0xaa38aaaa, 0xd48dd4d4, 0xffffffff,
+        { 0x00000000, 0x2a0e002a, 0x55380055, 0x7f7f007f },
+        { 0x2a000e2a, 0x551c1c55, 0x7f542a7f, 0xaaaa38aa },
+        { 0x55003855, 0x7f2a547f, 0xaa7171aa, 0xd4d48dd4 },
+        { 0x7f007f7f, 0xaa38aaaa, 0xd48dd4d4, 0xffffffff }
     };
     SkDebugf("Premultiplied:\n");
     for (int y = 0; y < h; ++y) {
@@ -2694,7 +2694,6 @@ Return false if:
 # subset does not intersect bounds() ##
 ##
 
-
 #Param dst  Bitmap set to subset ##
 #Param subset  rectangle of pixels to reference ##
 
@@ -2744,94 +2743,9 @@ subset: 1000,  100, 1000,  200  success; false
 # ------------------------------------------------------------------------------
 
 #Method bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
-                    int srcX, int srcY, SkTransferFunctionBehavior behavior) const
+                    int srcX, int srcY) const
 #In Pixels
 #Line # copies and converts pixels ##
-
-Copies Rect of pixels from Bitmap pixels to dstPixels. Copy starts at (srcX, srcY),
-and does not exceed Bitmap (width(), height()).
-
-dstInfo specifies width, height, Color_Type, Alpha_Type, and
-Color_Space of destination. dstRowBytes specifics the gap from one destination
-row to the next. Returns true if pixels are copied. Returns false if:
-#List
-# dstInfo.addr() equals nullptr ##
-# dstRowBytes is less than dstInfo.minRowBytes ##
-# Pixel_Ref is nullptr ##
-##
-
-Pixels are copied only if pixel conversion is possible. If Bitmap colorType is
-kGray_8_SkColorType, or kAlpha_8_SkColorType; dstInfo.colorType must match.
-If Bitmap colorType is kGray_8_SkColorType, dstInfo.colorSpace must match.
-If Bitmap alphaType is kOpaque_SkAlphaType, dstInfo.alphaType must
-match. If Bitmap colorSpace is nullptr, dstInfo.colorSpace must match. Returns
-false if pixel conversion is not possible.
-
-srcX and srcY may be negative to copy only top or left of source. Returns
-false if width() or height() is zero or negative.
-Returns false if
-#Formula
-abs(srcX) >= Bitmap width()
-##
-, or if
-#Formula
-abs(srcY) >= Bitmap height()
-##
-.
-
-If behavior is SkTransferFunctionBehavior::kRespect: converts source
-pixels to a linear space before converting to dstInfo.
-If behavior is SkTransferFunctionBehavior::kIgnore: source
-pixels are treated as if they are linear, regardless of how they are encoded.
-
-#Param dstInfo  destination width, height, Color_Type, Alpha_Type, Color_Space ##
-#Param dstPixels  destination pixel storage ##
-#Param dstRowBytes  destination row length ##
-#Param srcX  column index whose absolute value is less than width() ##
-#Param srcY  row index whose absolute value is less than height() ##
-#Param behavior  one of: SkTransferFunctionBehavior::kRespect,
-                         SkTransferFunctionBehavior::kIgnore
-##
-
-#Return  true if pixels are copied to dstPixels ##
-
-#Example
-#Height 64
-void draw(SkCanvas* canvas) {
-    const int width = 256;
-    const int height = 32;
-    std::vector<int32_t> dstPixels;
-    dstPixels.resize(height * width * 4);
-    SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-    SkColor  gradColors[] = { 0xFFAA3300, 0x7F881122 };
-    SkPoint  gradPoints[] = { { 0, 0 }, { width, 0 } };
-    SkPaint gradPaint;
-    gradPaint.setShader(SkGradientShader::MakeLinear(gradPoints, gradColors, nullptr,
-                    SK_ARRAY_COUNT(gradColors), SkShader::kClamp_TileMode));
-    for (auto behavior : { SkTransferFunctionBehavior::kRespect,
-                           SkTransferFunctionBehavior::kIgnore} ) {
-        SkBitmap bitmap;
-        bitmap.allocPixels(info);
-        SkCanvas srcCanvas(bitmap);
-        srcCanvas.drawRect(SkRect::MakeWH(width, height), gradPaint);
-        if (bitmap.readPixels(info, &dstPixels.front(), width * 4, 0, 0, behavior)) {
-            SkPixmap dstPixmap(info, &dstPixels.front(), width * 4);
-            bitmap.installPixels(dstPixmap);
-            canvas->drawBitmap(bitmap, 0, 0);
-        }
-        canvas->translate(0, height);
-    }
-}
-##
-
-#SeeAlso writePixels SkPixmap::readPixels SkCanvas::readPixels SkImage::readPixels SkSurface::readPixels
-
-##
-
-# ------------------------------------------------------------------------------
-
-#Method bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
-                    int srcX, int srcY) const
 
 Copies a Rect of pixels from Bitmap to dstPixels. Copy starts at (srcX, srcY),
 and does not exceed Bitmap (width(), height()).
@@ -3130,80 +3044,11 @@ false if pixel conversion is not possible.
 
 # ------------------------------------------------------------------------------
 
-#Method bool writePixels(const SkPixmap& src, int x, int y, SkTransferFunctionBehavior behavior)
-
-Copies a Rect of pixels from src. Copy starts at (0, 0), and does not exceed
-(src.width(), src.height()).
-
-src specifies width, height, Color_Type, Alpha_Type, Color_Space, pixel storage,
-and row bytes of source. src.rowBytes specifics the gap from one source
-row to the next. Returns true if pixels are copied. Returns false if:
-#List
-# src pixel storage equals nullptr ##
-# src.rowBytes is less than SkImageInfo::minRowBytes ##
-# Pixel_Ref is nullptr ##
-##
-
-Pixels are copied only if pixel conversion is possible. If Bitmap colorType is
-kGray_8_SkColorType, or kAlpha_8_SkColorType; src Color_Type must match.
-If Bitmap colorType is kGray_8_SkColorType, src Color_Space must match.
-If Bitmap alphaType is kOpaque_SkAlphaType, src Alpha_Type must
-match. If Bitmap colorSpace is nullptr, src Color_Space must match. Returns
-false if pixel conversion is not possible. Returns false if width() or height()
-is zero or negative.
-
-If behavior is SkTransferFunctionBehavior::kRespect: converts src
-pixels to a linear space before converting to Image_Info.
-If behavior is SkTransferFunctionBehavior::kIgnore: src
-pixels are treated as if they are linear, regardless of how they are encoded.
-
-#Param src  source Pixmap: Image_Info, pixels, row bytes ##
-#Param x  column index whose absolute value is less than width() ##
-#Param y  row index whose absolute value is less than height() ##
-#Param behavior  one of: SkTransferFunctionBehavior::kRespect,
-                         SkTransferFunctionBehavior::kIgnore
-##
-
-#Return  true if src pixels are copied to Bitmap ##
-
-#Example
-#Height 64
-    const int width = 256;
-    const int height = 32;
-    std::vector<int32_t> dstPixels;
-    dstPixels.resize(height * width * 4);
-    SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-    SkColor  gradColors[] = { 0xFFAA3300, 0x7F881122 };
-    SkPoint  gradPoints[] = { { 0, 0 }, { width, 0 } };
-    SkPaint gradPaint;
-    gradPaint.setShader(SkGradientShader::MakeLinear(gradPoints, gradColors, nullptr,
-                    SK_ARRAY_COUNT(gradColors), SkShader::kClamp_TileMode));
-    for (auto behavior : { SkTransferFunctionBehavior::kRespect,
-                           SkTransferFunctionBehavior::kIgnore} ) {
-        SkPixmap dstPixmap(info, &dstPixels.front(), width * 4);
-        SkBitmap bitmap;
-        bitmap.installPixels(dstPixmap);
-        SkCanvas srcCanvas(bitmap);
-        srcCanvas.drawRect(SkRect::MakeWH(width, height), gradPaint);
-        if (bitmap.writePixels(dstPixmap, 0, 0, behavior)) {
-            canvas->drawBitmap(bitmap, 0, 0);
-        }
-        canvas->translate(0, height);
-    }
-##
-
-#SeeAlso readPixels
-
-##
-
-# ------------------------------------------------------------------------------
-
 #Method bool hasHardwareMipMap() const
 #In Property
 #Line # returns Mip_Map support present; Android only ##
-#Private
-Android framework only.
-##
+
+For use by Android framework only.
 
 #Return  true if setHasHardwareMipMap has been called with true ##
 
@@ -3219,9 +3064,8 @@ Android framework only.
 #Method void setHasHardwareMipMap(bool hasHardwareMipMap)
 #In Set
 #Line # sets Mip_Map support present; Android only ##
-#Private
-Android framework only.
-##
+
+For use by Android framework only.
 
 #Param hasHardwareMipMap  sets state ##
 
@@ -3437,38 +3281,6 @@ SK_DEBUG is defined at compile time.
 ##
 
 # ------------------------------------------------------------------------------
-
-#Method void toString(SkString* str) const;
-#In Utility
-#Line # converts Bitmap to machine readable form ##
-
-Creates string representation of Bitmap. The representation is read by
-internal debugging tools.
-
-#Param str  storage for string representation ##
-
-#Example
-    SkBitmap bitmap;
-    int width = 6;
-    int height = 11;
-    bitmap.allocPixels(SkImageInfo::MakeN32Premul(width, height));
-    SkString string;
-    bitmap.toString(&string);
-    SkString match;
-    match.printf("(%d, %d)", width, height);
-    int start = string.find(match.c_str());
-    if (start >= 0) {
-        SkString whStr(&string.c_str()[start], match.size());
-        SkDebugf("bitmap dimensions %s\n", whStr.c_str());
-    }
-    #StdOut
-    bitmap dimensions (6, 11)
-    ##
-##
-
-#SeeAlso SkPaint::toString
-
-##
 
 #Class SkBitmap ##
 

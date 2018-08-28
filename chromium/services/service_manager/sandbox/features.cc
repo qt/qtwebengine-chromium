@@ -9,6 +9,11 @@
 namespace service_manager {
 namespace features {
 
+// Enables audio service sandbox.
+// (Only causes an effect when feature kAudioServiceOutOfProcess is enabled.)
+const base::Feature kAudioServiceSandbox{"AudioServiceSandbox",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
+
 #if defined(OS_WIN)
 // Enables Windows network service sandbox lockdown.
 // (Only causes an effect when feature kNetworkService is enabled.)

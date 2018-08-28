@@ -158,6 +158,7 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoHost:
     case CSSSelector::kPseudoShadow:
     case CSSSelector::kPseudoSpatialNavigationFocus:
+    case CSSSelector::kPseudoIsHtml:
     case CSSSelector::kPseudoListBox:
     case CSSSelector::kPseudoHostHasAppearance:
     case CSSSelector::kPseudoSlotted:
@@ -480,7 +481,6 @@ InvalidationSet* RuleFeatureSet::InvalidationSetForSimpleSelector(
       case CSSSelector::kPseudoDefined:
       case CSSSelector::kPseudoVideoPersistent:
       case CSSSelector::kPseudoVideoPersistentAncestor:
-      case CSSSelector::kPseudoPart:
         return &EnsurePseudoInvalidationSet(selector.GetPseudoType(), type,
                                             position);
       case CSSSelector::kPseudoFirstOfType:
@@ -491,6 +491,7 @@ InvalidationSet* RuleFeatureSet::InvalidationSetForSimpleSelector(
       case CSSSelector::kPseudoNthLastChild:
       case CSSSelector::kPseudoNthLastOfType:
         return &EnsureNthInvalidationSet();
+      case CSSSelector::kPseudoPart:
       default:
         break;
     }
@@ -602,7 +603,6 @@ RuleFeatureSet::ExtractInvalidationSetFeaturesFromSelectorList(
   const CSSSelectorList* selector_list = simple_selector.SelectorList();
   if (!selector_list)
     return kNormalInvalidation;
-
   DCHECK(SupportsInvalidationWithSelectorList(simple_selector.GetPseudoType()));
 
   const CSSSelector* sub_selector = selector_list->First();
@@ -685,6 +685,9 @@ const CSSSelector* RuleFeatureSet::ExtractInvalidationSetFeaturesFromCompound(
       DCHECK(features.invalidation_flags.WholeSubtreeInvalid());
       return nullptr;
     }
+
+    if (features.invalidation_flags.InvalidatesParts())
+      metadata_.invalidates_parts = true;
 
     if (!simple_selector->TagHistory() ||
         simple_selector->Relation() != CSSSelector::kSubSelector) {
@@ -940,6 +943,7 @@ void RuleFeatureSet::FeatureMetadata::Clear() {
   uses_window_inactive_selector = false;
   needs_full_recalc_for_rule_set_invalidation = false;
   max_direct_adjacent_selectors = 0;
+  invalidates_parts = false;
 }
 
 void RuleFeatureSet::Add(const RuleFeatureSet& other) {
@@ -977,6 +981,8 @@ void RuleFeatureSet::Add(const RuleFeatureSet& other) {
   }
   if (other.nth_invalidation_set_)
     EnsureNthInvalidationSet().Combine(*other.nth_invalidation_set_);
+  if (other.metadata_.invalidates_parts)
+    metadata_.invalidates_parts = true;
 
   metadata_.Add(other.metadata_);
 
@@ -1197,6 +1203,14 @@ DescendantInvalidationSet& RuleFeatureSet::EnsureNthInvalidationSet() {
   if (!nth_invalidation_set_)
     nth_invalidation_set_ = DescendantInvalidationSet::Create();
   return *nth_invalidation_set_;
+}
+
+void RuleFeatureSet::CollectPartInvalidationSet(
+    InvalidationLists& invalidation_lists) const {
+  if (metadata_.invalidates_parts) {
+    invalidation_lists.descendants.push_back(
+        InvalidationSet::PartInvalidationSet());
+  }
 }
 
 void RuleFeatureSet::CollectTypeRuleInvalidationSet(

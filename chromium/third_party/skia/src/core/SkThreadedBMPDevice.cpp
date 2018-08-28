@@ -210,16 +210,6 @@ void SkThreadedBMPDevice::drawSprite(const SkBitmap& bitmap, int x, int y, const
     });
 }
 
-void SkThreadedBMPDevice::drawText(const void* text, size_t len, SkScalar x, SkScalar y,
-        const SkPaint& paint) {
-    char* clonedText = this->cloneArray((const char*)text, len);
-    SkRect drawBounds = SkRectPriv::MakeLargest(); // TODO tighter drawBounds
-    SkSurfaceProps prop(SkBitmapDeviceFilteredSurfaceProps(fBitmap, paint, this->surfaceProps())());
-    fQueue.push(drawBounds, [=](SkArenaAlloc*, const DrawState& ds, const SkIRect& tileBounds){
-        TileDraw(ds, tileBounds).drawText(clonedText, len, x, y, paint, &prop);
-    });
-}
-
 void SkThreadedBMPDevice::drawPosText(const void* text, size_t len, const SkScalar xpos[],
         int scalarsPerPos, const SkPoint& offset, const SkPaint& paint) {
     char* clonedText = this->cloneArray((const char*)text, len);
@@ -232,15 +222,25 @@ void SkThreadedBMPDevice::drawPosText(const void* text, size_t len, const SkScal
     });
 }
 
-void SkThreadedBMPDevice::drawVertices(const SkVertices* vertices, SkBlendMode bmode,
-        const SkPaint& paint) {
+void SkThreadedBMPDevice::drawVertices(const SkVertices* vertices, const SkMatrix* bones,
+                                       int boneCount, SkBlendMode bmode, const SkPaint& paint) {
     const sk_sp<SkVertices> verts = sk_ref_sp(vertices);  // retain vertices until flush
     SkRect drawBounds = SkRectPriv::MakeLargest(); // TODO tighter drawBounds
+
+    // Make a copy of the bone matrices.
+    SkMatrix* clonedBones = bones ? this->cloneArray(bones, boneCount) : nullptr;
+
+    // Make the bone matrices thread-safe.
+    for (int i = 0; i < boneCount; i ++) {
+        clonedBones[i].getType();
+    }
+
     fQueue.push(drawBounds, [=](SkArenaAlloc*, const DrawState& ds, const SkIRect& tileBounds){
         TileDraw(ds, tileBounds).drawVertices(verts->mode(), verts->vertexCount(),
                                               verts->positions(), verts->texCoords(),
-                                              verts->colors(), bmode, verts->indices(),
-                                              verts->indexCount(), paint);
+                                              verts->colors(), verts->boneIndices(),
+                                              verts->boneWeights(), bmode, verts->indices(),
+                                              verts->indexCount(), paint, clonedBones, boneCount);
     });
 }
 

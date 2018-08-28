@@ -41,6 +41,11 @@ gl::Error Context9::initialize()
     return gl::NoError();
 }
 
+void Context9::onDestroy(const gl::Context *context)
+{
+    mIncompleteTextures.onDestroy(context);
+}
+
 CompilerImpl *Context9::createCompiler()
 {
     return new CompilerD3D(SH_HLSL_3_0_OUTPUT);
@@ -141,13 +146,16 @@ gl::Error Context9::finish(const gl::Context *context)
     return mRenderer->finish();
 }
 
-gl::Error Context9::drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count)
+gl::Error Context9::drawArrays(const gl::Context *context,
+                               gl::PrimitiveMode mode,
+                               GLint first,
+                               GLsizei count)
 {
     return mRenderer->genericDrawArrays(context, mode, first, count, 0);
 }
 
 gl::Error Context9::drawArraysInstanced(const gl::Context *context,
-                                        GLenum mode,
+                                        gl::PrimitiveMode mode,
                                         GLint first,
                                         GLsizei count,
                                         GLsizei instanceCount)
@@ -156,7 +164,7 @@ gl::Error Context9::drawArraysInstanced(const gl::Context *context,
 }
 
 gl::Error Context9::drawElements(const gl::Context *context,
-                                 GLenum mode,
+                                 gl::PrimitiveMode mode,
                                  GLsizei count,
                                  GLenum type,
                                  const void *indices)
@@ -165,7 +173,7 @@ gl::Error Context9::drawElements(const gl::Context *context,
 }
 
 gl::Error Context9::drawElementsInstanced(const gl::Context *context,
-                                          GLenum mode,
+                                          gl::PrimitiveMode mode,
                                           GLsizei count,
                                           GLenum type,
                                           const void *indices,
@@ -175,7 +183,7 @@ gl::Error Context9::drawElementsInstanced(const gl::Context *context,
 }
 
 gl::Error Context9::drawRangeElements(const gl::Context *context,
-                                      GLenum mode,
+                                      gl::PrimitiveMode mode,
                                       GLuint start,
                                       GLuint end,
                                       GLsizei count,
@@ -186,7 +194,7 @@ gl::Error Context9::drawRangeElements(const gl::Context *context,
 }
 
 gl::Error Context9::drawArraysIndirect(const gl::Context *context,
-                                       GLenum mode,
+                                       gl::PrimitiveMode mode,
                                        const void *indirect)
 {
     UNREACHABLE();
@@ -194,7 +202,7 @@ gl::Error Context9::drawArraysIndirect(const gl::Context *context,
 }
 
 gl::Error Context9::drawElementsIndirect(const gl::Context *context,
-                                         GLenum mode,
+                                         gl::PrimitiveMode mode,
                                          GLenum type,
                                          const void *indirect)
 {
@@ -252,9 +260,10 @@ void Context9::popDebugGroup()
     popGroupMarker();
 }
 
-void Context9::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
+gl::Error Context9::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
 {
     mRenderer->getStateManager()->syncState(mState.getState(), dirtyBits);
+    return gl::NoError();
 }
 
 GLint Context9::getGPUDisjoint()
@@ -267,11 +276,12 @@ GLint64 Context9::getTimestamp()
     return mRenderer->getTimestamp();
 }
 
-void Context9::onMakeCurrent(const gl::Context *context)
+gl::Error Context9::onMakeCurrent(const gl::Context *context)
 {
+    return gl::NoError();
 }
 
-const gl::Caps &Context9::getNativeCaps() const
+gl::Caps Context9::getNativeCaps() const
 {
     return mRenderer->getNativeCaps();
 }
@@ -318,4 +328,10 @@ gl::Error Context9::memoryBarrierByRegion(const gl::Context *context, GLbitfield
     return gl::InternalError() << "D3D9 doesn't support ES 3.1 memoryBarrierByRegion API";
 }
 
+gl::Error Context9::getIncompleteTexture(const gl::Context *context,
+                                         gl::TextureType type,
+                                         gl::Texture **textureOut)
+{
+    return mIncompleteTextures.getIncompleteTexture(context, type, nullptr, textureOut);
+}
 }  // namespace rx

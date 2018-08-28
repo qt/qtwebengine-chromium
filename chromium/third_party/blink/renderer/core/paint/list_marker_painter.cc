@@ -20,19 +20,27 @@
 
 namespace blink {
 
-static inline void PaintSymbol(GraphicsContext& context,
-                               const Color& color,
-                               const IntRect& marker,
-                               EListStyleType list_style) {
+void ListMarkerPainter::PaintSymbol(const PaintInfo& paint_info,
+                                    const LayoutObject* object,
+                                    const ComputedStyle& style,
+                                    const IntRect& marker) {
+  DCHECK(object);
+  GraphicsContext& context = paint_info.context;
+  Color color(object->ResolveColor(GetCSSPropertyColor()));
+  if (BoxModelObjectPainter::ShouldForceWhiteBackgroundForPrintEconomy(
+          object->GetDocument(), style))
+    color = TextPainter::TextColorForWhiteBackground(color);
+  // Apply the color to the list marker text.
+  context.SetFillColor(color);
   context.SetStrokeColor(color);
   context.SetStrokeStyle(kSolidStroke);
   context.SetStrokeThickness(1.0f);
-  switch (list_style) {
+  switch (style.ListStyleType()) {
     case EListStyleType::kDisc:
-      context.FillEllipse(marker);
+      context.FillEllipse(FloatRect(marker));
       break;
     case EListStyleType::kCircle:
-      context.StrokeEllipse(marker);
+      context.StrokeEllipse(FloatRect(marker));
       break;
     case EListStyleType::kSquare:
       context.FillRect(marker);
@@ -43,8 +51,7 @@ static inline void PaintSymbol(GraphicsContext& context,
   }
 }
 
-void ListMarkerPainter::Paint(const PaintInfo& paint_info,
-                              const LayoutPoint& paint_offset) {
+void ListMarkerPainter::Paint(const PaintInfo& paint_info) {
   if (paint_info.phase != PaintPhase::kForeground)
     return;
 
@@ -55,10 +62,9 @@ void ListMarkerPainter::Paint(const PaintInfo& paint_info,
           paint_info.context, layout_list_marker_, paint_info.phase))
     return;
 
-  AdjustPaintOffsetScope adjustment(layout_list_marker_, paint_info,
-                                    paint_offset);
+  AdjustPaintOffsetScope adjustment(layout_list_marker_, paint_info);
   const auto& local_paint_info = adjustment.GetPaintInfo();
-  auto box_origin = adjustment.AdjustedPaintOffset();
+  auto box_origin = adjustment.PaintOffset();
   LayoutRect overflow_rect(layout_list_marker_.VisualOverflowRect());
   overflow_rect.MoveBy(box_origin);
 
@@ -101,6 +107,15 @@ void ListMarkerPainter::Paint(const PaintInfo& paint_info,
   if (style_category == LayoutListMarker::ListStyleCategory::kNone)
     return;
 
+  if (style_category == LayoutListMarker::ListStyleCategory::kSymbol) {
+    PaintSymbol(paint_info, &layout_list_marker_,
+                layout_list_marker_.StyleRef(), PixelSnappedIntRect(marker));
+    return;
+  }
+
+  if (layout_list_marker_.GetText().IsEmpty())
+    return;
+
   Color color(layout_list_marker_.ResolveColor(GetCSSPropertyColor()));
 
   if (BoxModelObjectPainter::ShouldForceWhiteBackgroundForPrintEconomy(
@@ -110,16 +125,6 @@ void ListMarkerPainter::Paint(const PaintInfo& paint_info,
 
   // Apply the color to the list marker text.
   context.SetFillColor(color);
-
-  const EListStyleType list_style =
-      layout_list_marker_.Style()->ListStyleType();
-  if (style_category == LayoutListMarker::ListStyleCategory::kSymbol) {
-    PaintSymbol(context, color, PixelSnappedIntRect(marker), list_style);
-    return;
-  }
-
-  if (layout_list_marker_.GetText().IsEmpty())
-    return;
 
   const Font& font = layout_list_marker_.Style()->GetFont();
   TextRun text_run = ConstructTextRun(font, layout_list_marker_.GetText(),
@@ -139,13 +144,13 @@ void ListMarkerPainter::Paint(const PaintInfo& paint_info,
   }
 
   TextRunPaintInfo text_run_paint_info(text_run);
-  text_run_paint_info.bounds = EnclosingIntRect(marker);
+  text_run_paint_info.bounds = FloatRect(EnclosingIntRect(marker));
   const SimpleFontData* font_data =
       layout_list_marker_.Style()->GetFont().PrimaryFont();
-  IntPoint text_origin =
-      IntPoint(marker.X().Round(),
-               marker.Y().Round() +
-                   (font_data ? font_data->GetFontMetrics().Ascent() : 0));
+  FloatPoint text_origin =
+      FloatPoint(marker.X().Round(),
+                 marker.Y().Round() +
+                     (font_data ? font_data->GetFontMetrics().Ascent() : 0));
 
   // Text is not arbitrary. We can judge whether it's RTL from the first
   // character, and we only need to handle the direction RightToLeft for now.
@@ -162,23 +167,26 @@ void ListMarkerPainter::Paint(const PaintInfo& paint_info,
     text_run.SetText(reversed_text.ToString());
   }
 
-  const UChar suffix = ListMarkerText::Suffix(
-      list_style, layout_list_marker_.ListItem()->Value());
+  const UChar suffix =
+      ListMarkerText::Suffix(layout_list_marker_.Style()->ListStyleType(),
+                             layout_list_marker_.ListItem()->Value());
   UChar suffix_str[2] = {suffix, static_cast<UChar>(' ')};
   TextRun suffix_run =
       ConstructTextRun(font, suffix_str, 2, layout_list_marker_.StyleRef(),
                        layout_list_marker_.Style()->Direction());
   TextRunPaintInfo suffix_run_info(suffix_run);
-  suffix_run_info.bounds = EnclosingIntRect(marker);
+  suffix_run_info.bounds = FloatRect(EnclosingIntRect(marker));
 
   if (layout_list_marker_.Style()->IsLeftToRightDirection()) {
     context.DrawText(font, text_run_paint_info, text_origin);
     context.DrawText(font, suffix_run_info,
-                     text_origin + IntSize(font.Width(text_run), 0));
+                     text_origin + FloatSize(IntSize(font.Width(text_run), 0)));
   } else {
     context.DrawText(font, suffix_run_info, text_origin);
-    context.DrawText(font, text_run_paint_info,
-                     text_origin + IntSize(font.Width(suffix_run), 0));
+    // Is the truncation to IntSize below meaningful or a bug?
+    context.DrawText(
+        font, text_run_paint_info,
+        text_origin + FloatSize(IntSize(font.Width(suffix_run), 0)));
   }
   // TODO(npm): Check that there are non-whitespace characters. See
   // crbug.com/788444.

@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">ползунок</translation>
 <translation id="1211441953136645838">концевая сноска</translation>
 <translation id="1281252709823657822">диалоговое окно</translation>
+<translation id="1289247557029249093">Выйти из режима "Картинка в картинке"</translation>
 <translation id="1335095011850992622">выходные сведения</translation>
 <translation id="1342835525016946179">article</translation>
 <translation id="1359897965706325498">баннер</translation>
+<translation id="1548116112524424341">воспроизвести видео в режиме "Картинка в картинке"</translation>
 <translation id="1589122976691792535">регион</translation>
 <translation id="1591562245178063882">В этом месяце</translation>
 <translation id="1637811476055996098">Выбрать файлы</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">сетка в виде дерева</translation>
 <translation id="1822429046913737220">AM/PM</translation>
 <translation id="1832974991323546415">воспроизвести на удаленном устройстве</translation>
+<translation id="190587075670221089">удаление</translation>
 <translation id="1907737156431278478">пример</translation>
 <translation id="1921819250265091946">дд</translation>
 <translation id="1930711995431081526">статус</translation>
 <translation id="1938124657309484470">Максимальное значение должно быть <ph name="MAXIMUM_DATE_OR_TIME" />.</translation>
+<translation id="1946271899482435442">Показать окно выбора даты</translation>
 <translation id="1993104285338243655">Включено дублирование экрана</translation>
 <translation id="2060505056492490888">Недопустимое положение символа "<ph name="DOT" />" в адресе "<ph name="INVALIDDOMAIN" />".</translation>
 <translation id="2148716181193084225">Сегодня</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">Отправить</translation>
 <translation id="2657045182931379222">графический объект</translation>
 <translation id="2674318244760992338">нижний колонтитул</translation>
+<translation id="2706474812903655270">Видео воспроизводится в режиме "Картинка в картинке".</translation>
 <translation id="2709516037105925701">Автозаполнение</translation>
 <translation id="2723001399770238859">аудио</translation>
 <translation id="2746543609216772311">Минимальное значение должно быть <ph name="MINIMUM_DATE_OR_TIME" />.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">Показать следующий месяц</translation>
 <translation id="512758898067543763">заголовок строки</translation>
 <translation id="5143125788380636750">эпилог</translation>
-<translation id="5153163864850940242">Видео воспроизводится в режиме "Картинка в картинке"</translation>
 <translation id="5164977714490026579">Значение должно быть больше или равно <ph name="MINIMUM" />.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> ПБ</translation>
 <translation id="5307600278924710095">Введите часть адреса до символа "<ph name="ATSIGN" />". Адрес "<ph name="INVALIDADDRESS" />" неполный.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">выпускные данные</translation>
 <translation id="6934078000481955284">цитата</translation>
 <translation id="6941933287844615239">скачать файл</translation>
+<translation id="6981594929165378967">вставка</translation>
 <translation id="6989848892321993519">Текст должен быть не короче <ph name="MIN_CHARACTERS" /> симв. Длина текста сейчас: 1 символ.</translation>
 <translation id="709897737746224366">Введите данные в указанном формате.</translation>
 <translation id="7139483182332611405">вступление</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">оставшееся время</translation>
 <translation id="7740016676195725605">скрыть субтитры</translation>
 <translation id="7740050170769002709">HTML-содержание</translation>
+<translation id="7750228210027921155">Картинка в картинке</translation>
 <translation id="7789962463072032349">Пауза</translation>
 <translation id="7802800022689234070">треугольник развертывания</translation>
 <translation id="7888071071722539607">Адрес электронной почты должен содержать символ "<ph name="ATSIGN" />". В адресе "<ph name="INVALIDADDRESS" />" отсутствует символ "<ph name="ATSIGN" />".</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">оглавление</translation>
 <translation id="8613126697340063924">управлять воспроизведением на удаленных устройствах</translation>
 <translation id="862370744433916922">подзаголовок</translation>
-<translation id="8741316211671074806">Картинка в картинке</translation>
 <translation id="8750798805984357768">Выберите один из вариантов.</translation>
 <translation id="8785498733064193001">начать воспроизведение</translation>
 <translation id="8808573423886751634">глава</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">навигация</translation>
 <translation id="9050748414552849310">показать субтитры</translation>
 <translation id="9062295712474918030">документ</translation>
+<translation id="9093215626363556771">выйти из режима "Картинка в картинке"</translation>
 <translation id="9108370397979208512">math</translation>
 <translation id="9132465097189459683">Другое…</translation>
 <translation id="9138385573473225930">оповещение</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, начинается <ph name="WEEK_START_DATE" /></translation>
+<translation id="916607977885256133">Картинка в картинке</translation>
 <translation id="9168329111483466115">сноска</translation>
-<translation id="947831847158436616">ячейка</translation>
+<translation id="954003015749068518">включить режим "Картинка в картинке"</translation>
 <translation id="966787709310836684">меню</translation>
 </translationbundle>

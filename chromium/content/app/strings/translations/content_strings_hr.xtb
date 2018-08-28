@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">klizač</translation>
 <translation id="1211441953136645838">završna napomena</translation>
 <translation id="1281252709823657822">dijalog</translation>
+<translation id="1289247557029249093">Izlaz iz načina slike u slici</translation>
 <translation id="1335095011850992622">zasluge</translation>
 <translation id="1342835525016946179">članak</translation>
 <translation id="1359897965706325498">natpis</translation>
+<translation id="1548116112524424341">reprodukcija videozapisa u načnu slike u slici</translation>
 <translation id="1589122976691792535">regija</translation>
 <translation id="1591562245178063882">Ovaj mjesec</translation>
 <translation id="1637811476055996098">Odabir datoteka</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">rešetka u obliku stabla</translation>
 <translation id="1822429046913737220">prijepodne/poslijepodne</translation>
 <translation id="1832974991323546415">reproduciraj na udaljenom uređaju</translation>
+<translation id="190587075670221089">brisanje</translation>
 <translation id="1907737156431278478">primjer</translation>
 <translation id="1921819250265091946">dd</translation>
 <translation id="1930711995431081526">status</translation>
 <translation id="1938124657309484470">Vrijednost mora biti <ph name="MAXIMUM_DATE_OR_TIME" /> ili prije toga.</translation>
+<translation id="1946271899482435442">Prikaz alata za odabir datuma</translation>
 <translation id="1993104285338243655">Prebačeno na zrcaljenje</translation>
 <translation id="2060505056492490888">Znak "<ph name="DOT" />" upotrebljava se na pogrešnom položaju u domeni "<ph name="INVALIDDOMAIN" />".</translation>
 <translation id="2148716181193084225">Danas</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">Pošalji</translation>
 <translation id="2657045182931379222">grafički objekt</translation>
 <translation id="2674318244760992338">podnožje</translation>
+<translation id="2706474812903655270">Ovaj se videozapis prikazuje u načinu slike u slici</translation>
 <translation id="2709516037105925701">Automatsko popunjavanje</translation>
 <translation id="2723001399770238859">zvuk</translation>
 <translation id="2746543609216772311">Vrijednost mora biti <ph name="MINIMUM_DATE_OR_TIME" /> ili nakon toga.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">Prikaži sljedeći mjesec</translation>
 <translation id="512758898067543763">zaglavlje retka</translation>
 <translation id="5143125788380636750">epilog</translation>
-<translation id="5153163864850940242">Ovaj se videozapis prikazuje u značajci slike u slici</translation>
 <translation id="5164977714490026579">Vrijednost mora biti <ph name="MINIMUM" /> ili veća.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> PB</translation>
 <translation id="5307600278924710095">Unesite dio adrese ispred znaka "<ph name="ATSIGN" />". "<ph name="INVALIDADDRESS" />" nije potpuna e-adresa.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">kolofon</translation>
 <translation id="6934078000481955284">uvučeni citat</translation>
 <translation id="6941933287844615239">preuzmi medij</translation>
+<translation id="6981594929165378967">umetanje</translation>
 <translation id="6989848892321993519">Produljite broj znakova u tekstu na minimalno <ph name="MIN_CHARACTERS" /> (trenutačno imate 1 znak).</translation>
 <translation id="709897737746224366">Udovoljite zadanom formatu.</translation>
 <translation id="7139483182332611405">predgovor</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">preostalo vrijeme</translation>
 <translation id="7740016676195725605">zaustavljanje prikazivanja titlova</translation>
 <translation id="7740050170769002709">HTML sadržaj</translation>
+<translation id="7750228210027921155">Slika u slici</translation>
 <translation id="7789962463072032349">pauziraj</translation>
 <translation id="7802800022689234070">trokut za otkrivanje</translation>
 <translation id="7888071071722539607">Uključite znak "<ph name="ATSIGN" />" u e-adresu. U adresi "<ph name="INVALIDADDRESS" />" nedostaje znak "<ph name="ATSIGN" />".</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">sadržaj</translation>
 <translation id="8613126697340063924">upravljaj daljinskom reprodukcijom</translation>
 <translation id="862370744433916922">titl</translation>
-<translation id="8741316211671074806">Slika u slici</translation>
 <translation id="8750798805984357768">Izaberite jednu od tih opcija.</translation>
 <translation id="8785498733064193001">početak reprodukcije</translation>
 <translation id="8808573423886751634">poglavlje</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">navigacija</translation>
 <translation id="9050748414552849310">prikazivanje titlova</translation>
 <translation id="9062295712474918030">dokument</translation>
+<translation id="9093215626363556771">izlaz iz načina slika u slici</translation>
 <translation id="9108370397979208512">mat</translation>
 <translation id="9132465097189459683">Drugo...</translation>
 <translation id="9138385573473225930">upozorenje</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, počevši od <ph name="WEEK_START_DATE" /></translation>
+<translation id="916607977885256133">Slika u slici</translation>
 <translation id="9168329111483466115">fusnota</translation>
-<translation id="947831847158436616">ćelija</translation>
+<translation id="954003015749068518">pokretanje načina slika u slici</translation>
 <translation id="966787709310836684">izbornik</translation>
 </translationbundle>

@@ -173,7 +173,7 @@ Polymer({
         additionalInformation = requirements.minLength.toString();
         break;
       case MessageType.TOO_LONG:
-        additionalInformation = requirements.maxLength.toString();
+        additionalInformation = (requirements.maxLength + 1).toString();
         break;
       case MessageType.TOO_WEAK:
       case MessageType.MISMATCH:
@@ -274,6 +274,8 @@ Polymer({
   /** @private */
   onPinSubmit_: function() {
     if (!this.isConfirmStep_) {
+      if (!this.enableSubmit_)
+        return;
       this.initialPin_ = this.pinKeyboardValue_;
       this.pinKeyboardValue_ = '';
       this.isConfirmStep_ = true;

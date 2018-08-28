@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/scrolling/root_scroller_util.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 
 #include "third_party/blink/public/platform/platform.h"
 
@@ -56,7 +57,6 @@ CompositingReasons CompositingReasonFinder::DirectReasons(
          NonStyleDeterminedDirectReasons(layer, ignore_lcd_text);
 }
 
-// This information doesn't appear to be incorporated into CompositingReasons.
 bool CompositingReasonFinder::RequiresCompositingForScrollableFrame() const {
   // Need this done first to determine overflow.
   DCHECK(!layout_view_.NeedsLayout());
@@ -66,10 +66,10 @@ bool CompositingReasonFinder::RequiresCompositingForScrollableFrame() const {
   if (!(compositing_triggers_ & kScrollableInnerFrameTrigger))
     return false;
 
-  if (layout_view_.GetFrameView()->VisibleContentSize().IsEmpty())
+  if (layout_view_.GetFrameView()->Size().IsEmpty())
     return false;
 
-  return layout_view_.GetFrameView()->IsScrollable();
+  return layout_view_.GetFrameView()->LayoutViewport()->ScrollsOverflow();
 }
 
 CompositingReasons
@@ -132,6 +132,9 @@ CompositingReasonFinder::PotentialCompositingReasonsFromStyle(
   if (layout_object.HasReflection())
     reasons |= CompositingReason::kReflectionWithCompositedDescendants;
 
+  if (layout_object.HasClipRelatedProperty())
+    reasons |= CompositingReason::kClipsCompositingDescendants;
+
   DCHECK(!(reasons & ~CompositingReason::kComboAllStyleDeterminedReasons));
   return reasons;
 }
@@ -161,9 +164,6 @@ CompositingReasons CompositingReasonFinder::NonStyleDeterminedDirectReasons(
   if (layer->ClipParent() && layer->GetLayoutObject().IsOutOfFlowPositioned())
     direct_reasons |= CompositingReason::kOutOfFlowClipping;
 
-  if (layer->NeedsCompositedScrolling())
-    direct_reasons |= CompositingReason::kOverflowScrollingTouch;
-
   if (RequiresCompositingForRootScroller(*layer))
     direct_reasons |= CompositingReason::kRootScroller;
 
@@ -184,6 +184,19 @@ CompositingReasons CompositingReasonFinder::NonStyleDeterminedDirectReasons(
       ScrollTimeline::HasActiveScrollTimeline(
           layer->GetLayoutObject().GetNode())) {
     direct_reasons |= CompositingReason::kScrollTimelineTarget;
+  }
+
+  // Video is special. It's the only PaintLayer type that can both have
+  // PaintLayer children and whose children can't use its backing to render
+  // into. These children (the controls) always need to be promoted into their
+  // own layers to draw on top of the accelerated video.
+  if (layer->CompositingContainer() &&
+      layer->CompositingContainer()->GetLayoutObject().IsVideo())
+    direct_reasons |= CompositingReason::kVideoOverlay;
+
+  if (layer->IsRootLayer() && (RequiresCompositingForScrollableFrame() ||
+                               layout_view_.GetFrame()->IsLocalRoot())) {
+    direct_reasons |= CompositingReason::kRoot;
   }
 
   direct_reasons |= layout_object.AdditionalCompositingReasons();
@@ -268,15 +281,13 @@ bool CompositingReasonFinder::RequiresCompositingForScrollDependentPosition(
   EPosition position = layer->GetLayoutObject().Style()->GetPosition();
   if (position == EPosition::kFixed) {
     return layer->FixedToViewport() &&
-           layout_view_.GetFrameView()->IsScrollable();
+           layout_view_.GetFrameView()->LayoutViewport()->ScrollsOverflow();
   }
   DCHECK_EQ(position, EPosition::kSticky);
 
   // Don't promote sticky position elements that cannot move with scrolls.
   if (!layer->SticksToScroller())
     return false;
-  if (layer->AncestorOverflowLayer()->IsRootLayer())
-    return layout_view_.GetFrameView()->IsScrollable();
   return layer->AncestorOverflowLayer()->ScrollsOverflow();
 }
 

@@ -9,6 +9,8 @@
  */
 
 #include "media/base/codec.h"
+
+#include "media/base/vp9_profile.h"
 #include "rtc_base/gunit.h"
 
 using cricket::AudioCodec;
@@ -186,6 +188,36 @@ TEST(CodecTest, TestVideoCodecMatches) {
   EXPECT_FALSE(c1.Matches(VideoCodec(95, "V")));
 }
 
+// VP9 codecs compare profile information.
+TEST(CodecTest, TestVP9CodecMatches) {
+  const char kProfile0[] = "0";
+  const char kProfile2[] = "2";
+
+  VideoCodec c_no_profile(95, cricket::kVp9CodecName);
+  VideoCodec c_profile0(95, cricket::kVp9CodecName);
+  c_profile0.params[webrtc::kVP9FmtpProfileId] = kProfile0;
+
+  EXPECT_TRUE(c_profile0.Matches(c_no_profile));
+
+  {
+    VideoCodec c_profile0_eq(95, cricket::kVp9CodecName);
+    c_profile0_eq.params[webrtc::kVP9FmtpProfileId] = kProfile0;
+    EXPECT_TRUE(c_profile0.Matches(c_profile0_eq));
+  }
+
+  {
+    VideoCodec c_profile2(95, cricket::kVp9CodecName);
+    c_profile2.params[webrtc::kVP9FmtpProfileId] = kProfile2;
+    EXPECT_FALSE(c_profile0.Matches(c_profile2));
+    EXPECT_FALSE(c_no_profile.Matches(c_profile2));
+  }
+
+  {
+    VideoCodec c_no_profile_eq(95, cricket::kVp9CodecName);
+    EXPECT_TRUE(c_no_profile.Matches(c_no_profile_eq));
+  }
+}
+
 // Matching H264 codecs also need to have matching profile-level-id and
 // packetization-mode.
 TEST(CodecTest, TestH264CodecMatches) {
@@ -354,8 +386,8 @@ TEST(CodecTest, TestToCodecParameters) {
   EXPECT_EQ(cricket::MEDIA_TYPE_VIDEO, codec_params_1.kind);
   EXPECT_EQ("V", codec_params_1.name);
   EXPECT_EQ(cricket::kVideoCodecClockrate, codec_params_1.clock_rate);
-  EXPECT_EQ(rtc::nullopt, codec_params_1.num_channels);
-  ASSERT_EQ(1, codec_params_1.parameters.size());
+  EXPECT_EQ(absl::nullopt, codec_params_1.num_channels);
+  ASSERT_EQ(1u, codec_params_1.parameters.size());
   EXPECT_EQ("p1", codec_params_1.parameters.begin()->first);
   EXPECT_EQ("v1", codec_params_1.parameters.begin()->second);
 
@@ -367,7 +399,7 @@ TEST(CodecTest, TestToCodecParameters) {
   EXPECT_EQ("A", codec_params_2.name);
   EXPECT_EQ(44100, codec_params_2.clock_rate);
   EXPECT_EQ(2, codec_params_2.num_channels);
-  ASSERT_EQ(1, codec_params_2.parameters.size());
+  ASSERT_EQ(1u, codec_params_2.parameters.size());
   EXPECT_EQ("p1", codec_params_2.parameters.begin()->first);
   EXPECT_EQ("a1", codec_params_2.parameters.begin()->second);
 }

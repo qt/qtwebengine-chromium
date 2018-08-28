@@ -43,6 +43,7 @@
 <translation id="1227633850867390598">Waarde verbergen</translation>
 <translation id="1228893227497259893">Onjuiste entiteits-ID</translation>
 <translation id="1232569758102978740">Naamloos</translation>
+<translation id="1250759482327835220">Sla je kaart, naam en factuuradres op in je Google-account zodat je de volgende keer sneller kunt betalen.</translation>
 <translation id="1253921432148366685"><ph name="TYPE_1" />, <ph name="TYPE_2" /> (gesynchroniseerd)</translation>
 <translation id="1256368399071562588">&lt;p&gt;Als je een website wilt bezoeken en deze niet wordt geopend, kun je eerst zelf proberen het probleem op te lossen aan de hand van de volgende stappen:&lt;/p&gt;
     &lt;ol&gt;
@@ -97,7 +98,6 @@
 
           &lt;p&gt;Pas in het gedeelte &lt;strong&gt;Algemeen&lt;/strong&gt; van de app &lt;strong&gt;Instellingen&lt;/strong&gt; de datum en tijd aan.&lt;/p&gt;</translation>
 <translation id="1583429793053364125">Er is iets misgegaan met het weergeven van deze webpagina.</translation>
-<translation id="1590457302292452960">Een sterk wachtwoord genereren…</translation>
 <translation id="1592005682883173041">Lokale gegevenstoegang</translation>
 <translation id="1594030484168838125">Kiezen</translation>
 <translation id="1620510694547887537">Camera</translation>
@@ -123,6 +123,7 @@
 <translation id="1734864079702812349">Amex</translation>
 <translation id="1734878702283171397">Probeer contact op te nemen met de systeembeheerder.</translation>
 <translation id="1740951997222943430">Geef een geldige vervalmaand op</translation>
+<translation id="1743520634839655729">Sla je kaart, naam en factuuradres op in je Google-account en op dit apparaat zodat je de volgende keer sneller kunt betalen.</translation>
 <translation id="17513872634828108">Geopende tabbladen</translation>
 <translation id="1753706481035618306">Paginanummer</translation>
 <translation id="1763864636252898013">De server kan niet bewijzen dat dit <ph name="DOMAIN" /> is. Het beveiligingscertificaat van de server wordt niet vertrouwd door het besturingssysteem van je apparaat. Dit kan worden veroorzaakt door een verkeerde configuratie of een aanvaller die je verbinding onderschept.</translation>
@@ -131,7 +132,6 @@
 <translation id="1787142507584202372">Je geopende tabbladen worden hier weergegeven</translation>
 <translation id="1791429645902722292">Google Smart Lock</translation>
 <translation id="1803264062614276815">Naam kaarthouder</translation>
-<translation id="1806541873155184440">Toegevoegd: <ph name="ADDED_TO_AUTOFILL_MONTH" /></translation>
 <translation id="1821930232296380041">Ongeldige aanvraag of aanvraagparameters</translation>
 <translation id="1826516787628120939">Controleren</translation>
 <translation id="1834321415901700177">Deze site bevat schadelijke programma's</translation>
@@ -164,10 +164,10 @@
 <translation id="2064691555167957331">{COUNT,plural, =1{1 suggestie}other{# suggesties}}</translation>
 <translation id="2079545284768500474">Ongedaan maken</translation>
 <translation id="20817612488360358">De proxyinstellingen van het systeem moeten worden gebruikt, maar er is ook een expliciete proxyconfiguratie opgegeven.</translation>
-<translation id="2084558088529668945">Je hebt je wachtwoord ingevoerd op een site die niet wordt beheerd door <ph name="ORG_NAME" />. Hergebruik je wachtwoord niet voor andere apps en sites om je account te beschermen.</translation>
 <translation id="2091887806945687916">Geluid</translation>
 <translation id="2094505752054353250">Domeinen komen niet overeen</translation>
 <translation id="2096368010154057602">Departement</translation>
+<translation id="2102134110707549001">Sterk wachtwoord voorstellen…</translation>
 <translation id="2108755909498034140">Je computer opnieuw opstarten</translation>
 <translation id="2113977810652731515">Kaart</translation>
 <translation id="2114841414352855701">Genegeerd omdat het werd overschreven door <ph name="POLICY_NAME" />.</translation>
@@ -194,7 +194,6 @@
 <translation id="2262243747453050782">HTTP-fout</translation>
 <translation id="2270484714375784793">Telefoonnummer</translation>
 <translation id="2292556288342944218">Je toegang tot internet wordt geblokkeerd</translation>
-<translation id="230155334948463882">Nieuwe kaart?</translation>
 <translation id="2316887270356262533">Hiermee wordt minder dan 1 MB vrijgemaakt. Sommige sites kunnen langzamer worden geladen wanneer je ze weer bezoekt.</translation>
 <translation id="2317259163369394535">Voor <ph name="DOMAIN" /> zijn een gebruikersnaam en een wachtwoord vereist.</translation>
 <translation id="2317583587496011522">Betaalpassen worden geaccepteerd.</translation>
@@ -248,7 +247,6 @@
 <translation id="2699302886720511147">Geaccepteerde kaarten</translation>
 <translation id="2702801445560668637">Leeslijst</translation>
 <translation id="2704283930420550640">Waarde komt niet overeen met notatie.</translation>
-<translation id="2704951214193499422">Chromium kan je creditcard momenteel niet bevestigen. Probeer het later opnieuw.</translation>
 <translation id="2705137772291741111">De in het cachegeheugen opgeslagen versie van deze site is niet bereikbaar.</translation>
 <translation id="2709516037105925701">Automatisch aanvullen</translation>
 <translation id="2710942282213947212">Software op je computer voorkomt dat Chromium veilig verbinding kan maken met internet</translation>
@@ -263,6 +261,7 @@
 <translation id="277133753123645258">Verzendmethode</translation>
 <translation id="277499241957683684">Apparaatrecord ontbreekt</translation>
 <translation id="2781030394888168909">Exporteren naar Mac OS</translation>
+<translation id="2781692009645368755">Google Pay</translation>
 <translation id="2784949926578158345">De verbinding is opnieuw ingesteld.</translation>
 <translation id="2788784517760473862">Geaccepteerde creditcards</translation>
 <translation id="2794233252405721443">Site geblokkeerd</translation>
@@ -284,7 +283,6 @@
 <translation id="2948083400971632585">Via de instellingenpagina kun je proxyservers uitschakelen die voor een verbinding zijn geconfigureerd.</translation>
 <translation id="2955913368246107853">Zoekbalk sluiten</translation>
 <translation id="2958431318199492670">De netwerkconfiguratie voldoet niet aan de ONC-standaard. Delen van de configuratie worden mogelijk niet geïmporteerd.</translation>
-<translation id="2966678944701946121">Vervaldatum: <ph name="EXPIRATION_DATE_ABBR" />, toegevoegd: <ph name="ADDED_TO_AUTOFILL_MONTH" /></translation>
 <translation id="2969319727213777354">Als je een beveiligde verbinding tot stand wilt brengen, moet je klok correct zijn ingesteld. Dit moet omdat de certificaten die deze websites gebruiken om zichzelf te identificeren, slechts gedurende bepaalde perioden geldig zijn. Aangezien de klok van je apparaat niet goed is ingesteld, kan Chrome deze certificaten niet verifiëren.</translation>
 <translation id="2972581237482394796">&amp;Opnieuw</translation>
 <translation id="2977665033722899841"><ph name="ROW_NAME" />, momenteel geselecteerd. <ph name="ROW_CONTENT" /></translation>
@@ -301,7 +299,6 @@
 <translation id="3024663005179499861">Onjuist beleidstype</translation>
 <translation id="3037605927509011580">Helaas.</translation>
 <translation id="3041612393474885105">Certificaatgegevens</translation>
-<translation id="3063697135517575841">Chrome kan je creditcard momenteel niet bevestigen. Probeer het later opnieuw.</translation>
 <translation id="3064966200440839136">Je verlaat de incognitomodus om te betalen via een externe app. Doorgaan?</translation>
 <translation id="3083099961703215236">{COUNT,plural, =0{Geen}=1{1 wachtwoord}other{# wachtwoorden}}</translation>
 <translation id="3096100844101284527">Ophaaladres toevoegen</translation>
@@ -338,7 +335,6 @@
 <translation id="3305707030755673451">Je gegevens zijn op <ph name="TIME" /> versleuteld met je wachtwoordzin voor synchronisatie. Geef deze op om de synchronisatie te starten.</translation>
 <translation id="3320021301628644560">Factuuradres toevoegen</translation>
 <translation id="3338095232262050444">Beveiligd</translation>
-<translation id="3340978935015468852">instellingen</translation>
 <translation id="3345135638360864351">Je verzoek om toegang tot deze site kan niet worden verzonden naar <ph name="NAME" />. Probeer het opnieuw.</translation>
 <translation id="3355823806454867987">Proxyinstellingen wijzigen...</translation>
 <translation id="3361596688432910856">De volgende gegevens worden <ph name="BEGIN_EMPHASIS" />niet opgeslagen<ph name="END_EMPHASIS" /> in Chrome:
@@ -372,7 +368,6 @@
 <translation id="3528171143076753409">Het servercertificaat is niet betrouwbaar.</translation>
 <translation id="3530944546672790857">{COUNT,plural, =0{Ten minste één item op gesynchroniseerde apparaten}=1{1 item (en meer op gesynchroniseerde apparaten)}other{# items (en meer op gesynchroniseerde apparaten)}}</translation>
 <translation id="3539171420378717834">Een exemplaar van deze kaart op dit apparaat bewaren</translation>
-<translation id="3542684924769048008">Wachtwoord gebruiken voor:</translation>
 <translation id="3549644494707163724">Alle gesynchroniseerde gegevens versleutelen met je eigen wachtwoordzin voor synchronisatie</translation>
 <translation id="3556433843310711081">Je beheerder kan de blokkering van de site opheffen</translation>
 <translation id="3566021033012934673">Je verbinding is niet privé</translation>
@@ -457,7 +452,6 @@
 <translation id="4171400957073367226">Onjuiste verificatiehandtekening</translation>
 <translation id="4173827307318847180">{MORE_ITEMS,plural, =1{Nog <ph name="ITEM_COUNT" /> item}other{Nog <ph name="ITEM_COUNT" /> items}}</translation>
 <translation id="4179515394835346607"><ph name="ROW_NAME" /> <ph name="ROW_CONTENT" /></translation>
-<translation id="4192549185358213268">Chrome raadt je aan het wachtwoord voor je account <ph name="ORG_NAME" /> opnieuw in te stellen als je het voor andere sites hebt hergebruikt.</translation>
 <translation id="4196861286325780578">&amp;Opnieuw verplaatsen</translation>
 <translation id="4203896806696719780"><ph name="BEGIN_LINK" />Controleer firewall- en antivirusconfiguraties<ph name="END_LINK" /></translation>
 <translation id="4220128509585149162">Crashes</translation>
@@ -486,7 +480,6 @@
 <translation id="425582637250725228">Wijzigingen die je hebt aangebracht, worden mogelijk niet opgeslagen.</translation>
 <translation id="4258748452823770588">Onjuiste handtekening</translation>
 <translation id="4265872034478892965">Toegestaan door je beheerder</translation>
-<translation id="4269787794583293679">(Geen gebruikersnaam)</translation>
 <translation id="4275830172053184480">Je apparaat opnieuw opstarten</translation>
 <translation id="4277028893293644418">Wachtwoord opnieuw instellen</translation>
 <translation id="4280429058323657511">, vervalt <ph name="EXPIRATION_DATE_ABBR" /></translation>
@@ -509,6 +502,7 @@
 <translation id="4434045419905280838">Pop-ups en omleidingen</translation>
 <translation id="443673843213245140">Het gebruik van een proxy is uitgeschakeld, maar er is wel een expliciete proxyconfiguratie opgegeven.</translation>
 <translation id="445100540951337728">Geaccepteerde betaalpassen</translation>
+<translation id="4472575034687746823">Aan de slag</translation>
 <translation id="4506176782989081258">Validatiefout: <ph name="VALIDATION_ERROR" /></translation>
 <translation id="4506599922270137252">Neem contact op met de systeembeheerder</translation>
 <translation id="450710068430902550">Delen met beheerder</translation>
@@ -533,8 +527,8 @@
 <translation id="4726672564094551039">Beleid opnieuw laden</translation>
 <translation id="4728558894243024398">Platform</translation>
 <translation id="4736825316280949806">Chromium opnieuw starten</translation>
+<translation id="4742407542027196863">Wachtwoorden beheren…</translation>
 <translation id="4744603770635761495">Uitvoerbaar pad</translation>
-<translation id="4749685221585524849">Laatst gebruikt: <ph name="LAST_USED_MONTH" /></translation>
 <translation id="4750917950439032686">Je gegevens (zoals wachtwoorden of creditcardnummers) zijn privé wanneer ze worden verzonden naar deze site.</translation>
 <translation id="4756388243121344051">Gesc&amp;hiedenis</translation>
 <translation id="4758311279753947758">Contactgegevens toevoegen</translation>
@@ -551,6 +545,7 @@
 <translation id="4850886885716139402">Weergave</translation>
 <translation id="4854362297993841467">Deze bezorgingsmethode is niet beschikbaar. Kies een andere methode.</translation>
 <translation id="4858792381671956233">Je hebt je ouders gevraagd of je deze site mag bezoeken</translation>
+<translation id="4876305945144899064">Geen gebruikersnaam</translation>
 <translation id="4880827082731008257">Geschiedenis doorzoeken</translation>
 <translation id="4881695831933465202">Openen</translation>
 <translation id="4895877746940133817"><ph name="TYPE_1" />, <ph name="TYPE_2" />, <ph name="TYPE_3" /></translation>
@@ -584,6 +579,7 @@
 <translation id="5089810972385038852">Staat</translation>
 <translation id="5094747076828555589">De server kan niet bewijzen dat dit <ph name="DOMAIN" /> is. Het beveiligingscertificaat van de server wordt niet vertrouwd door Chromium. Dit kan worden veroorzaakt door een verkeerde configuratie of een aanvaller die je verbinding onderschept.</translation>
 <translation id="5095208057601539847">Provincie</translation>
+<translation id="5098332213681597508">Dit is de naam die in je Google-account staat.</translation>
 <translation id="5115563688576182185">(64-bits)</translation>
 <translation id="5121084798328133320">Nadat je hebt bevestigd, worden de kaartgegevens van je Google-betalingsaccount gedeeld met deze site.</translation>
 <translation id="5128122789703661928">De naam van deze sessie die je wilt verwijderen, is ongeldig.</translation>
@@ -624,9 +620,10 @@
 <translation id="5332219387342487447">Verzendmethode</translation>
 <translation id="5355557959165512791">Je kunt <ph name="SITE" /> momenteel niet bezoeken, omdat het bijbehorende certificaat is ingetrokken. Netwerkfouten en aanvallen zijn doorgaans tijdelijk, dus deze pagina werkt later waarschijnlijk correct.</translation>
 <translation id="536296301121032821">Opslaan van beleidsinstellingen is mislukt</translation>
+<translation id="5371425731340848620">Kaart updaten</translation>
 <translation id="5377026284221673050">'Je klok loopt achter', 'Je klok loopt voor' of '&lt;span class="error-code"&gt;NET::ERR_CERT_DATE_INVALID&lt;/span&gt;'</translation>
 <translation id="5386426401304769735">De certificaatketen voor deze site bevat een certificaat dat is ondertekend met SHA-1.</translation>
-<translation id="5402410679244714488">Vervaldatum: <ph name="EXPIRATION_DATE_ABBR" />, meer dan een jaar geleden voor het laatst gebruikt</translation>
+<translation id="5387961145478138773">Snel toegang tot je favoriete Google-apps</translation>
 <translation id="540969355065856584">Deze server kan niet bewijzen dat dit <ph name="DOMAIN" /> is. Het beveiligingscertificaat is momenteel niet geldig. Dit kan worden veroorzaakt door een verkeerde configuratie of een aanvaller die je verbinding onderschept.</translation>
 <translation id="5421136146218899937">Browsegegevens wissen...</translation>
 <translation id="5430298929874300616">Bladwijzer verwijderen</translation>
@@ -668,11 +665,13 @@
 <translation id="5633066919399395251">Cybercriminelen op <ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> proberen mogelijk gevaarlijke programma's op je computer te installeren waarmee je gegevens kunnen worden gestolen of verwijderd (bijvoorbeeld foto's, wachtwoorden, berichten en creditcardgegevens). <ph name="BEGIN_LEARN_MORE_LINK" />Meer informatie<ph name="END_LEARN_MORE_LINK" /></translation>
 <translation id="563324245173044180">Misleidende content geblokkeerd.</translation>
 <translation id="5659593005791499971">E-mailadres</translation>
+<translation id="5666899935841546222">Wil je alle kaarten bij elkaar hebben?</translation>
 <translation id="5675650730144413517">Deze pagina werkt niet</translation>
 <translation id="5685654322157854305">Verzendadres toevoegen</translation>
 <translation id="5689199277474810259">Exporteren naar JSON</translation>
 <translation id="5689516760719285838">Locatie</translation>
 <translation id="570530837424789914">Beheren...</translation>
+<translation id="57094364128775171">Sterk wachtwoord voorstellen…</translation>
 <translation id="5710435578057952990">De identiteit van deze website is niet geverifieerd.</translation>
 <translation id="5719499550583120431">Prepaidkaarten worden geaccepteerd.</translation>
 <translation id="5720705177508910913">Huidige gebruiker</translation>
@@ -693,11 +692,9 @@
 <translation id="5869405914158311789">Deze site is niet bereikbaar</translation>
 <translation id="5869522115854928033">Opgeslagen wachtwoorden</translation>
 <translation id="5893752035575986141">Creditcards worden geaccepteerd.</translation>
-<translation id="5898382028489516745">Chromium raadt je aan het wachtwoord voor <ph name="ORG_NAME" /> te resetten als je het voor andere sites hebt hergebruikt.</translation>
 <translation id="5908541034548427511"><ph name="TYPE_1" /> (gesynchroniseerd)</translation>
 <translation id="5920262536204764679">{NUM_COOKIES,plural, =1{1 in gebruik}other{# in gebruik}}</translation>
 <translation id="5939518447894949180">Resetten</translation>
-<translation id="5959728338436674663">Bepaalde <ph name="BEGIN_WHITEPAPER_LINK" />systeeminformatie en paginacontent<ph name="END_WHITEPAPER_LINK" /> automatisch verzenden naar Google om te helpen bij de detectie van gevaarlijke apps en sites. <ph name="PRIVACY_PAGE_LINK" /></translation>
 <translation id="5967592137238574583">Contactgegevens bewerken</translation>
 <translation id="5967867314010545767">Verwijderen uit geschiedenis</translation>
 <translation id="5975083100439434680">Uitzoomen</translation>
@@ -742,13 +739,11 @@
 <translation id="6282194474023008486">Postcode</translation>
 <translation id="6290238015253830360">Je voorgestelde artikelen worden hier weergegeven</translation>
 <translation id="6305205051461490394"><ph name="URL" /> is niet bereikbaar.</translation>
-<translation id="6319915415804115995">Meer dan een jaar geleden voor het laatst gebruikt</translation>
 <translation id="6321917430147971392">Controleer je DNS-instellingen</translation>
 <translation id="6328639280570009161">Probeer netwerkvoorspelling uit te schakelen</translation>
 <translation id="6328786501058569169">Deze site is misleidend</translation>
 <translation id="6337133576188860026">Hiermee wordt minder dan <ph name="SIZE" /> vrijgemaakt. Sommige sites kunnen langzamer worden geladen wanneer je ze weer bezoekt.</translation>
 <translation id="6337534724793800597">Beleid filteren op naam</translation>
-<translation id="6342069812937806050">Zojuist</translation>
 <translation id="6355080345576803305">Overschrijving voor openbare sessie</translation>
 <translation id="6358450015545214790">Wat betekent dit?</translation>
 <translation id="6386120369904791316">{COUNT,plural, =1{1 andere suggestie}other{# andere suggesties}}</translation>
@@ -773,7 +768,6 @@
 <translation id="6529602333819889595">&amp;Opnieuw verwijderen</translation>
 <translation id="6534179046333460208">Fysieke web-suggesties</translation>
 <translation id="6550675742724504774">Opties</translation>
-<translation id="6556915248009097796">Vervaldatum: <ph name="EXPIRATION_DATE_ABBR" />, laatst gebruikt: <ph name="LAST_USED_DATE_NO_DETAIL" /></translation>
 <translation id="6563469144985748109">Je beheerder heeft dit nog niet goedgekeurd</translation>
 <translation id="6569060085658103619">Je bekijkt een extensiepagina</translation>
 <translation id="6596325263575161958">Opties voor encryptie</translation>
@@ -802,15 +796,20 @@
 <translation id="6825578344716086703">Je probeert <ph name="DOMAIN" /> te bereiken. De server heeft echter een certificaat geretourneerd dat een zwak ondertekeningsalgoritme (zoals SHA-1) gebruikt. Dit houdt in dat de betrouwbaarheidsverklaring van de server kan zijn vervalst. Het is mogelijk dat de server zelf een imitatie is (wellicht een server die je schade probeert te berokkenen).</translation>
 <translation id="6831043979455480757">Vertalen</translation>
 <translation id="6839929833149231406">Gebied</translation>
+<translation id="6852204201400771460">App opnieuw laden?</translation>
+<translation id="6865412394715372076">Deze kaart kan momenteel niet worden geverifieerd</translation>
 <translation id="6874604403660855544">&amp;Opnieuw toevoegen</translation>
 <translation id="6886577214605505410"><ph name="LOCATION_TITLE" /> <ph name="SHORT_URL" /></translation>
 <translation id="6891596781022320156">Beleidsniveau wordt niet ondersteund.</translation>
 <translation id="6895330447102777224">Je creditcard is bevestigd</translation>
 <translation id="6897140037006041989">User-agent</translation>
+<translation id="6903319715792422884">Help Safe Browsing te verbeteren door bepaalde <ph name="BEGIN_WHITEPAPER_LINK" />systeeminformatie en paginacontent<ph name="END_WHITEPAPER_LINK" /> naar Google te verzenden. <ph name="PRIVACY_PAGE_LINK" /></translation>
 <translation id="6915804003454593391">Gebruiker:</translation>
+<translation id="6944692733090228304">Je hebt je wachtwoord ingevoerd op een site die niet door <ph name="BEGIN_BOLD" /><ph name="ORG_NAME" /><ph name="END_BOLD" /> wordt beheerd. Ter bescherming van je account kun je je wachtwoord beter niet hergebruiken voor andere apps en sites.</translation>
 <translation id="6945221475159498467">Selecteren</translation>
 <translation id="6948701128805548767">Selecteer een adres om ophaalmethoden en vereisten te bekijken</translation>
 <translation id="6949872517221025916">Wachtwoord opnieuw instellen</translation>
+<translation id="6950684638814147129">Fout bij het parseren van de JSON-waarde: <ph name="ERROR" /></translation>
 <translation id="6957887021205513506">Het certificaat van de server lijkt vals te zijn.</translation>
 <translation id="6965382102122355670">OK</translation>
 <translation id="6965978654500191972">Apparaat</translation>
@@ -872,6 +871,7 @@
       &lt;li&gt;Klik op &lt;strong&gt;Toepassen&lt;/strong&gt; en vervolgens op &lt;strong&gt;OK&lt;/strong&gt;
       &lt;li&gt;Ga naar het &lt;a href="https://support.google.com/chrome/answer/6098869"&gt;Helpcentrum van Chrome&lt;/a&gt; voor meer informatie over hoe je de software definitief van je computer kunt verwijderen
       &lt;/ol&gt;</translation>
+<translation id="7416351320495623771">Wachtwoorden beheren…</translation>
 <translation id="7419106976560586862">Profielpad</translation>
 <translation id="7437289804838430631">Contactgegevens toevoegen</translation>
 <translation id="7441627299479586546">Onjuist beleidsonderwerp</translation>
@@ -880,7 +880,6 @@
 <translation id="7451311239929941790"><ph name="BEGIN_LINK" />Meer informatie<ph name="END_LINK" /> over dit probleem.</translation>
 <translation id="7455133967321480974">Algemene standaardinstelling gebruiken (Blokkeren)</translation>
 <translation id="7460163899615895653">Je recente tabbladen van andere apparaten worden hier weergegeven</translation>
-<translation id="7469372306589899959">Creditcard bevestigen</translation>
 <translation id="7473891865547856676">Nee, bedankt</translation>
 <translation id="7481312909269577407">Vooruit</translation>
 <translation id="7485870689360869515">Geen gegevens gevonden.</translation>
@@ -1010,6 +1009,7 @@
 <translation id="8308427013383895095">De vertaling is mislukt omdat er een probleem is opgetreden met de netwerkverbinding.</translation>
 <translation id="8311129316111205805">Sessie laden</translation>
 <translation id="8332188693563227489">Toegang tot <ph name="HOST_NAME" /> is geweigerd</translation>
+<translation id="8340095855084055290"><ph name="EXPIRATION_MONTH" />/<ph name="EXPIRATION_YEAR" /></translation>
 <translation id="834457929814110454">Als je de beveiligingsrisico's begrijpt, kun je <ph name="BEGIN_LINK" />deze site bezoeken<ph name="END_LINK" /> voordat de schadelijke programma's zijn verwijderd.</translation>
 <translation id="8349305172487531364">Bladwijzerbalk</translation>
 <translation id="8363502534493474904">Schakel de vliegtuigmodus uit</translation>
@@ -1030,20 +1030,24 @@
 <translation id="8498891568109133222">Het duurt te lang voordat <ph name="HOST_NAME" /> reageert.</translation>
 <translation id="8503559462189395349">Chrome-wachtwoorden</translation>
 <translation id="8503813439785031346">Gebruikersnaam</translation>
+<translation id="8508648098325802031">Zoekpictogram</translation>
 <translation id="8543181531796978784">Je kunt <ph name="BEGIN_ERROR_LINK" />een detectieprobleem melden<ph name="END_ERROR_LINK" />. Als je de veiligheidsrisico's begrijpt, kun je ook <ph name="BEGIN_LINK" />deze onveilige site bezoeken<ph name="END_LINK" />.</translation>
 <translation id="8543556556237226809">Vragen? Neem contact op met de persoon die je profiel beheert.</translation>
 <translation id="8553075262323480129">De vertaling is mislukt omdat de taal van de pagina niet kan worden bepaald.</translation>
 <translation id="8557066899867184262">De CVC-code staat op de achterkant van je kaart.</translation>
 <translation id="8559762987265718583">Er kan geen privéverbinding met <ph name="BEGIN_BOLD" /><ph name="DOMAIN" /><ph name="END_BOLD" /> tot stand worden gebracht, omdat de datum en tijd van je apparaat (<ph name="DATE_AND_TIME" />) onjuist zijn.</translation>
+<translation id="8564985650692024650">Chromium raadt je aan het wachtwoord voor <ph name="BEGIN_BOLD" /><ph name="ORG_NAME" /><ph name="END_BOLD" /> opnieuw in te stellen als je het voor andere sites hebt hergebruikt.</translation>
 <translation id="8571890674111243710">Pagina wordt vertaald in het <ph name="LANGUAGE" />...</translation>
 <translation id="858637041960032120">Telnr. toevoegen</translation>
 <translation id="859285277496340001">Er wordt in het certificaat geen methode gespecificeerd waarmee kan worden gecontroleerd of het certificaat is ingetrokken.</translation>
+<translation id="860043288473659153">Naam kaarthouder</translation>
 <translation id="8620436878122366504">Je ouders hebben dit nog niet goedgekeurd</translation>
 <translation id="8625384913736129811">Deze kaart opslaan op dit apparaat</translation>
-<translation id="8639963783467694461">Instellingen voor Automatisch aanvullen</translation>
+<translation id="8663226718884576429">Besteloverzicht, <ph name="TOTAL_LABEL" />, meer informatie</translation>
 <translation id="8680536109547170164"><ph name="QUERY" />, antwoord, <ph name="ANSWER" /></translation>
 <translation id="8703575177326907206">Je verbinding met <ph name="DOMAIN" /> is niet gecodeerd.</translation>
 <translation id="8718314106902482036">Betaling niet voltooid</translation>
+<translation id="8719263113926255150"><ph name="ENTITY" />, <ph name="DESCRIPTION" />, zoeksuggestie</translation>
 <translation id="8725066075913043281">Opnieuw proberen</translation>
 <translation id="8728672262656704056">Je bent incognito</translation>
 <translation id="8730621377337864115">Gereed</translation>
@@ -1059,8 +1063,10 @@
 <translation id="8820817407110198400">Bladwijzers</translation>
 <translation id="883848425547221593">Andere bladwijzers</translation>
 <translation id="884264119367021077">Verzendadres</translation>
+<translation id="8846319957959474018">Apps gemakkelijk openen met bladwijzers</translation>
 <translation id="884923133447025588">Geen intrekkingsmechanisme gevonden.</translation>
 <translation id="885730110891505394">Delen met Google</translation>
+<translation id="8858065207712248076">Chrome raadt je aan het wachtwoord voor <ph name="BEGIN_BOLD" /><ph name="ORG_NAME" /><ph name="END_BOLD" /> opnieuw in te stellen als je het voor andere sites hebt hergebruikt.</translation>
 <translation id="8866481888320382733">Fout bij het parseren van beleidsinstellingen</translation>
 <translation id="8870413625673593573">Recent gesloten</translation>
 <translation id="8874824191258364635">Geef een geldig kaartnummer op</translation>
@@ -1099,6 +1105,7 @@
 <translation id="9103872766612412690"><ph name="SITE" /> gebruikt gewoonlijk versleuteling om je gegevens te beschermen. Toen Chromium deze keer probeerde verbinding te maken met <ph name="SITE" />, retourneerde de website ongewone en onjuiste inloggegevens. Dit gebeurt wanneer een aanvaller probeert zich als <ph name="SITE" /> voor te doen of wanneer een wifi-inlogscherm de verbinding heeft verbroken. Je gegevens zijn nog steeds beveiligd omdat Chromium de verbinding heeft beëindigd voordat er gegevens konden worden uitgewisseld.</translation>
 <translation id="9106062320799175032">Factuuradres toevoegen</translation>
 <translation id="910908805481542201">Help me dit op te lossen</translation>
+<translation id="9114524666733003316">Creditcard bevestigen...</translation>
 <translation id="9128870381267983090">Verbinding maken met netwerk</translation>
 <translation id="9137013805542155359">Origineel weergeven</translation>
 <translation id="9137248913990643158">Start Chrome en log in voordat je deze app gebruikt.</translation>
@@ -1109,6 +1116,7 @@
 <translation id="9168814207360376865">Toestaan dat sites controleren of je betaalmethoden hebt opgeslagen</translation>
 <translation id="9169664750068251925">Altijd blokkeren op deze site</translation>
 <translation id="9170848237812810038">&amp;Ongedaan maken</translation>
+<translation id="9171296965991013597">App verlaten?</translation>
 <translation id="917450738466192189">Het servercertificaat is ongeldig.</translation>
 <translation id="9183425211371246419"><ph name="HOST_NAME" /> gebruikt een niet-ondersteund protocol.</translation>
 <translation id="9205078245616868884">Je gegevens zijn versleuteld met je wachtwoordzin voor synchronisatie. Geef deze op om de synchronisatie te starten.</translation>

@@ -9,7 +9,6 @@
 #include <string>
 
 #include "base/macros.h"
-#include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "base/scoped_observer.h"
 #include "base/supports_user_data.h"
@@ -41,7 +40,7 @@ class AutocompleteSyncBridge
       AutofillWebDataService* web_data_service,
       AutofillWebDataBackend* web_data_backend);
 
-  static base::WeakPtr<syncer::ModelTypeSyncBridge> FromWebDataService(
+  static syncer::ModelTypeSyncBridge* FromWebDataService(
       AutofillWebDataService* web_data_service);
 
   // syncer::ModelTypeSyncBridge implementation.
@@ -54,7 +53,7 @@ class AutocompleteSyncBridge
       std::unique_ptr<syncer::MetadataChangeList> metadata_change_list,
       syncer::EntityChangeList entity_changes) override;
   void GetData(StorageKeyList storage_keys, DataCallback callback) override;
-  void GetAllData(DataCallback callback) override;
+  void GetAllDataForDebugging(DataCallback callback) override;
   std::string GetClientTag(const syncer::EntityData& entity_data) override;
   std::string GetStorageKey(const syncer::EntityData& entity_data) override;
 

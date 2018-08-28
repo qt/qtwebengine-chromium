@@ -15,6 +15,7 @@
 #include "ui/gfx/geometry/rect.h"
 
 namespace gfx {
+struct PresentationFeedback;
 class Transform;
 }
 
@@ -58,12 +59,9 @@ class CC_EXPORT LayerTreeFrameSinkClient {
 
   // See ui/gfx/presentation_feedback.h for details on args. |time| is always
   // non-zero.
-  virtual void DidPresentCompositorFrame(uint32_t presentation_token,
-                                         base::TimeTicks time,
-                                         base::TimeDelta refresh,
-                                         uint32_t flags) = 0;
-
-  virtual void DidDiscardCompositorFrame(uint32_t presentation_token) = 0;
+  virtual void DidPresentCompositorFrame(
+      uint32_t presentation_token,
+      const gfx::PresentationFeedback& feedback) = 0;
 
   // The LayerTreeFrameSink is lost when the viz::ContextProviders held by it
   // encounter an error. In this case the LayerTreeFrameSink (and the
@@ -74,7 +72,8 @@ class CC_EXPORT LayerTreeFrameSinkClient {
   // a new CompositorFrame synchronously.
   virtual void OnDraw(const gfx::Transform& transform,
                       const gfx::Rect& viewport,
-                      bool resourceless_software_draw) = 0;
+                      bool resourceless_software_draw,
+                      bool skip_draw) = 0;
 
   // For SynchronousCompositor (WebView) to set how much memory the compositor
   // can use without changing visibility.

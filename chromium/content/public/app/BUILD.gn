@@ -198,15 +198,18 @@ service_manifest("packaged_services_manifest") {
     "//services/viz:manifest",
   ]
 
-  if (enable_mus) {
-    packaged_services += [ "//services/ui:manifest" ]
+  if (is_linux) {
+    packaged_services += [ "//components/services/font:manifest" ]
   }
 }
 
 service_manifest("browser_manifest") {
   name = "content_browser"
   source = "mojo/content_browser_manifest.json"
-  packaged_services = [ "//services/file:manifest" ]
+  packaged_services = [
+    "//services/content:manifest",
+    "//services/file:manifest",
+  ]
 }
 
 service_manifest("gpu_manifest") {

@@ -7,20 +7,20 @@
 using testing::_;
 using testing::Invoke;
 
-namespace net {
+namespace quic {
 namespace test {
 
 MockTimeWaitListManager::MockTimeWaitListManager(
     QuicPacketWriter* writer,
     Visitor* visitor,
-    QuicConnectionHelperInterface* helper,
+    const QuicClock* clock,
     QuicAlarmFactory* alarm_factory)
-    : QuicTimeWaitListManager(writer, visitor, helper, alarm_factory) {
+    : QuicTimeWaitListManager(writer, visitor, clock, alarm_factory) {
   // Though AddConnectionIdToTimeWait is mocked, we want to retain its
   // functionality.
-  EXPECT_CALL(*this, AddConnectionIdToTimeWait(_, _, _, _, _))
+  EXPECT_CALL(*this, AddConnectionIdToTimeWait(_, _, _, _))
       .Times(testing::AnyNumber());
-  ON_CALL(*this, AddConnectionIdToTimeWait(_, _, _, _, _))
+  ON_CALL(*this, AddConnectionIdToTimeWait(_, _, _, _))
       .WillByDefault(
           Invoke(this, &MockTimeWaitListManager::
                            QuicTimeWaitListManager_AddConnectionIdToTimeWait));
@@ -29,4 +29,4 @@ MockTimeWaitListManager::MockTimeWaitListManager(
 MockTimeWaitListManager::~MockTimeWaitListManager() = default;
 
 }  // namespace test
-}  // namespace net
+}  // namespace quic

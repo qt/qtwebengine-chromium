@@ -41,12 +41,12 @@ class CORE_EXPORT HitTestLocation {
   // Note that all points are in contents (aka "page") coordinate space for the
   // document that is being hit tested.
   HitTestLocation();
-  HitTestLocation(const LayoutPoint&);
-  HitTestLocation(const FloatPoint&);
-  HitTestLocation(const FloatPoint&, const FloatQuad&);
-  // Pass non-zero padding values to perform a rect-based hit test.
-  HitTestLocation(const LayoutPoint& center_point,
-                  const LayoutRectOutsets& padding);
+  explicit HitTestLocation(const LayoutPoint&);
+  explicit HitTestLocation(const IntPoint&);
+  explicit HitTestLocation(const FloatPoint&);
+  explicit HitTestLocation(const DoublePoint&);
+  explicit HitTestLocation(const FloatPoint&, const FloatQuad&);
+  explicit HitTestLocation(const LayoutRect&);
   HitTestLocation(const HitTestLocation&, const LayoutSize& offset);
   HitTestLocation(const HitTestLocation&);
   ~HitTestLocation();
@@ -64,19 +64,9 @@ class CORE_EXPORT HitTestLocation {
   }
 
   // Returns the 1px x 1px hit test rect for a point.
-  // TODO(pdr): Use a 0px x 0px rect for point-based tests and switch to
-  // inclusive intersection checks which work with empty rects. Rect-based hit
-  // testing is used even for point-based tests so a non-empty rect is currently
-  // needed for LayoutRect::Intersects (see |HitTestLocation::IntersectsRect|).
+  // TODO(pdr): Should we be using a one-layout-unit rect instead?
   static LayoutRect RectForPoint(const LayoutPoint& point) {
     return LayoutRect(FlooredIntPoint(point), IntSize(1, 1));
-  }
-  static LayoutRect RectForPoint(const LayoutPoint& point,
-                                 const LayoutRectOutsets& padding) {
-    LayoutRect rect = RectForPoint(point);
-    rect.ExpandEdges(padding.Top(), padding.Right(), padding.Bottom(),
-                     padding.Left());
-    return rect;
   }
 
   bool Intersects(const LayoutRect&) const;

@@ -11,8 +11,8 @@
 #include "base/macros.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
-#include "cc/resources/layer_tree_resource_provider.h"
 #include "cc/resources/resource_pool.h"
+#include "components/viz/client/client_resource_provider.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/resources/platform_color.h"
 #include "components/viz/common/resources/resource_format_utils.h"
@@ -104,7 +104,6 @@ class ZeroCopyRasterBufferImpl : public RasterBuffer {
       gl->GenTextures(1, &backing_->texture_id);
       backing_->texture_target = gpu::GetBufferTextureTarget(
           kBufferUsage, viz::BufferFormat(resource_format_), caps);
-      backing_->mailbox = gpu::Mailbox::Generate();
       gl->ProduceTextureDirectCHROMIUM(backing_->texture_id,
                                        backing_->mailbox.name);
       backing_->overlay_candidate = true;
@@ -144,10 +143,15 @@ class ZeroCopyRasterBufferImpl : public RasterBuffer {
                                     backing_->image_id);
       gl->BindTexImage2DCHROMIUM(backing_->texture_target, backing_->image_id);
     }
+    if (resource_color_space_.IsValid()) {
+      gl->SetColorSpaceMetadataCHROMIUM(
+          backing_->texture_id,
+          reinterpret_cast<GLColorSpace>(&resource_color_space_));
+    }
     gl->BindTexture(backing_->texture_target, 0);
 
     backing_->mailbox_sync_token =
-        LayerTreeResourceProvider::GenerateSyncTokenHelper(gl);
+        viz::ClientResourceProvider::GenerateSyncTokenHelper(gl);
     backing_->gpu_memory_buffer = std::move(gpu_memory_buffer_);
   }
 
@@ -165,10 +169,10 @@ class ZeroCopyRasterBufferImpl : public RasterBuffer {
       gpu_memory_buffer_ = gpu_memory_buffer_manager_->CreateGpuMemoryBuffer(
           resource_size_, viz::BufferFormat(resource_format_), kBufferUsage,
           gpu::kNullSurfaceHandle);
-      // GpuMemoryBuffer allocation can fail (https://crbug.com/554541).
+      // Note that GpuMemoryBuffer allocation can fail.
+      // https://crbug.com/554541
       if (!gpu_memory_buffer_)
         return;
-      gpu_memory_buffer_->SetColorSpace(resource_color_space_);
     }
 
     DCHECK_EQ(1u, gfx::NumberOfPlanesForBufferFormat(

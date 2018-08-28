@@ -33,6 +33,9 @@ class {{exported}}{{v8_class}} final : public CallbackInterfaceBase {
 
   ~{{v8_class}}() override = default;
 
+  // NameClient overrides:
+  const char* NameInHeapSnapshot() const override;
+
 {% for method in methods %}
   // Performs "call a user object's operation".
   // https://heycam.github.io/webidl/#call-a-user-objects-operation
@@ -55,19 +58,17 @@ class {{exported}}{{v8_class}} final : public CallbackInterfaceBase {
 };
 
 template <>
-class {{exported|replace('_EXPORT', '_TEMPLATE_CLASS_EXPORT')}}V8PersistentCallbackInterface<{{v8_class}}> final : public V8PersistentCallbackInterfaceBase {
+class V8PersistentCallbackInterface<{{v8_class}}> final : public V8PersistentCallbackInterfaceBase {
   using V8CallbackInterface = {{v8_class}};
 
  public:
   ~V8PersistentCallbackInterface() override = default;
 
 {% for method in methods %}
-  {{exported|replace('_EXPORT', '_EXTERN_TEMPLATE_EXPORT')|trim}}
-  v8::Maybe<{{method.cpp_type}}> {{method.name}}({{method.argument_declarations | join(', ')}}) WARN_UNUSED_RESULT;
+  {{exported}}v8::Maybe<{{method.cpp_type}}> {{method.name}}({{method.argument_declarations | join(', ')}}) WARN_UNUSED_RESULT;
 {% endfor %}
 {% if methods|length == 1 and methods[0].idl_type == 'void' %}
-  {{exported|replace('_EXPORT', '_EXTERN_TEMPLATE_EXPORT')|trim}}
-  void InvokeAndReportException({{methods[0].argument_declarations | join(', ')}});
+  {{exported}}void InvokeAndReportException({{methods[0].argument_declarations | join(', ')}});
 {% endif %}
 
  private:

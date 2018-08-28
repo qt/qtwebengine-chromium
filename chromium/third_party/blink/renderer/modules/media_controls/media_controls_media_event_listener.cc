@@ -4,7 +4,9 @@
 
 #include "third_party/blink/renderer/modules/media_controls/media_controls_media_event_listener.h"
 
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/track/text_track_list.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_impl.h"
@@ -48,6 +50,19 @@ void MediaControlsMediaEventListener::Attach() {
                                      this, false);
   media_controls_->GetDocument().addEventListener(
       EventTypeNames::fullscreenchange, this, false);
+
+  // Picture-in-Picture events.
+  if (RuntimeEnabledFeatures::PictureInPictureEnabled() &&
+      media_controls_->GetDocument().GetSettings() &&
+      media_controls_->GetDocument()
+          .GetSettings()
+          ->GetPictureInPictureEnabled() &&
+      GetMediaElement().IsHTMLVideoElement()) {
+    GetMediaElement().addEventListener(EventTypeNames::enterpictureinpicture,
+                                       this, false);
+    GetMediaElement().addEventListener(EventTypeNames::leavepictureinpicture,
+                                       this, false);
+  }
 
   // TextTracks events.
   TextTrackList* text_tracks = GetMediaElement().textTracks();
@@ -185,6 +200,13 @@ void MediaControlsMediaEventListener::handleEvent(
       media_controls_->OnEnteredFullscreen();
     else
       media_controls_->OnExitedFullscreen();
+    return;
+  }
+
+  // Picture-in-Picture events.
+  if (event->type() == EventTypeNames::enterpictureinpicture ||
+      event->type() == EventTypeNames::leavepictureinpicture) {
+    media_controls_->OnPictureInPictureChanged();
     return;
   }
 

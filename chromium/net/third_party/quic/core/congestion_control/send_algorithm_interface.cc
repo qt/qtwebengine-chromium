@@ -13,7 +13,7 @@
 #include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_pcc_sender.h"
 
-namespace net {
+namespace quic {
 
 class RttStats;
 
@@ -33,7 +33,7 @@ SendAlgorithmInterface* SendAlgorithmInterface::Create(
                            initial_congestion_window, max_congestion_window,
                            random);
     case kPCC:
-      if (GetQuicReloadableFlag(quic_enable_pcc)) {
+      if (GetQuicReloadableFlag(quic_enable_pcc3)) {
         return CreatePccSender(clock, rtt_stats, unacked_packets, random, stats,
                                initial_congestion_window,
                                max_congestion_window);
@@ -52,4 +52,4 @@ SendAlgorithmInterface* SendAlgorithmInterface::Create(
   return nullptr;
 }
 
-}  // namespace net
+}  // namespace quic

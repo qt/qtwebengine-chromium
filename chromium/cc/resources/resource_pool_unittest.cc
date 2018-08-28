@@ -9,8 +9,9 @@
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "cc/test/fake_resource_provider.h"
+#include "components/viz/client/client_resource_provider.h"
 #include "components/viz/common/resources/resource_sizes.h"
+#include "components/viz/common/resources/returned_resource.h"
 #include "components/viz/test/test_context_provider.h"
 #include "components/viz/test/test_shared_bitmap_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -22,12 +23,15 @@ class ResourcePoolTest : public testing::Test {
   void SetUp() override {
     context_provider_ = viz::TestContextProvider::Create();
     context_provider_->BindToCurrentThread();
-    resource_provider_ = FakeResourceProvider::CreateLayerTreeResourceProvider(
-        context_provider_.get());
+    resource_provider_ = std::make_unique<viz::ClientResourceProvider>(true);
     task_runner_ = base::ThreadTaskRunnerHandle::Get();
     resource_pool_ = std::make_unique<ResourcePool>(
         resource_provider_.get(), context_provider_.get(), task_runner_,
         ResourcePool::kDefaultExpirationDelay, false);
+  }
+
+  void TearDown() override {
+    resource_provider_->ShutdownAndReleaseAllResources();
   }
 
  protected:
@@ -54,7 +58,7 @@ class ResourcePoolTest : public testing::Test {
 
   viz::TestSharedBitmapManager shared_bitmap_manager_;
   scoped_refptr<viz::TestContextProvider> context_provider_;
-  std::unique_ptr<LayerTreeResourceProvider> resource_provider_;
+  std::unique_ptr<viz::ClientResourceProvider> resource_provider_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   std::unique_ptr<ResourcePool> resource_pool_;
 };
@@ -700,7 +704,6 @@ TEST_F(ResourcePoolTest, MetadataSentToDisplayCompositor) {
   EXPECT_EQ(transfer[0].mailbox_holder.sync_token, sync_token);
   EXPECT_EQ(transfer[0].mailbox_holder.texture_target, target);
   EXPECT_EQ(transfer[0].format, format);
-  EXPECT_EQ(transfer[0].buffer_format, viz::BufferFormat(format));
   EXPECT_TRUE(transfer[0].read_lock_fences_enabled);
   EXPECT_TRUE(transfer[0].is_overlay_candidate);
 

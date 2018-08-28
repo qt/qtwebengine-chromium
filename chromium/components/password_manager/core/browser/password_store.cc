@@ -29,6 +29,7 @@
 
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
 #include "components/password_manager/core/browser/password_store_signin_notifier.h"
+#include "components/safe_browsing/common/safe_browsing_prefs.h"
 #endif
 
 using autofill::PasswordForm;
@@ -129,11 +130,12 @@ bool PasswordStore::Init(const syncer::SyncableService::StartSyncFlare& flare,
   DCHECK(main_task_runner_);
   background_task_runner_ = CreateBackgroundTaskRunner();
   DCHECK(background_task_runner_);
-  ScheduleTask(
-      base::Bind(&PasswordStore::InitOnBackgroundSequence, this, flare));
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
+  prefs_ = prefs;
   hash_password_manager_.set_prefs(prefs);
 #endif
+  ScheduleTask(base::BindRepeating(&PasswordStore::InitOnBackgroundSequence,
+                                   this, flare));
   return true;
 }
 
@@ -359,29 +361,43 @@ void PasswordStore::CheckReuse(const base::string16& input,
 #endif
 
 #if defined(SYNC_PASSWORD_REUSE_DETECTION_ENABLED)
-void PasswordStore::PrepareSyncPasswordHashData(
-    const std::string& sync_username) {
+void PasswordStore::PreparePasswordHashData(const std::string& sync_username) {
   // TODO(crbug.com/841438): Delete migration code when most users complete
   // the migration.
-  hash_password_manager_.MaybeMigrateExistingSyncPasswordHash(sync_username);
-  ScheduleTask(base::BindRepeating(
-      &PasswordStore::SaveSyncPasswordHashImpl, this,
-      base::Passed(hash_password_manager_.RetrievePasswordHash(
-          sync_username, /*is_gaia_password=*/true))));
+  if (!sync_username.empty())
+    hash_password_manager_.MaybeMigrateExistingSyncPasswordHash(sync_username);
+  SchedulePasswordHashUpdate(/*should_log_metrics=*/true);
+  ScheduleEnterprisePasswordURLUpdate();
 }
 
-void PasswordStore::SaveSyncPasswordHash(
+void PasswordStore::SaveGaiaPasswordHash(
     const std::string& username,
     const base::string16& password,
     metrics_util::SyncPasswordHashChange event) {
+  SaveProtectedPasswordHash(username, password, /*is_gaia_password=*/true,
+                            event);
+}
+
+void PasswordStore::SaveEnterprisePasswordHash(const std::string& username,
+                                               const base::string16& password) {
+  SaveProtectedPasswordHash(
+      username, password, /*is_gaia_password=*/false,
+      metrics_util::SyncPasswordHashChange::NOT_SYNC_PASSWORD_CHANGE);
+}
+
+void PasswordStore::SaveProtectedPasswordHash(
+    const std::string& username,
+    const base::string16& password,
+    bool is_gaia_password,
+    metrics_util::SyncPasswordHashChange event) {
   if (hash_password_manager_.SavePasswordHash(username, password,
-                                              /*is_gaia_password=*/true)) {
-    base::Optional<PasswordHashData> sync_password_data =
-        hash_password_manager_.RetrievePasswordHash(username,
-                                                    /*is_gaia_password=*/true);
-    metrics_util::LogSyncPasswordHashChange(event);
-    ScheduleTask(base::BindRepeating(&PasswordStore::SaveSyncPasswordHashImpl,
-                                     this, std::move(sync_password_data)));
+                                              is_gaia_password)) {
+    if (is_gaia_password &&
+        event !=
+            metrics_util::SyncPasswordHashChange::NOT_SYNC_PASSWORD_CHANGE) {
+      metrics_util::LogSyncPasswordHashChange(event);
+    }
+    SchedulePasswordHashUpdate(/*should_log_metrics=*/false);
   }
 }
 
@@ -390,15 +406,18 @@ void PasswordStore::SaveSyncPasswordHash(
     metrics_util::SyncPasswordHashChange event) {
   if (hash_password_manager_.SavePasswordHash(sync_password_data)) {
     metrics_util::LogSyncPasswordHashChange(event);
-    ScheduleTask(base::BindRepeating(&PasswordStore::SaveSyncPasswordHashImpl,
-                                     this, sync_password_data));
+    SchedulePasswordHashUpdate(/*should_log_metrics=*/false);
   }
 }
 
 void PasswordStore::ClearPasswordHash(const std::string& username) {
   hash_password_manager_.ClearSavedPasswordHash(username,
                                                 /*is_gaia_password=*/true);
-  ScheduleTask(base::Bind(&PasswordStore::ClearSyncPasswordHashImpl, this));
+  // TODO(crbug.com/844134): Find a way to clear corresponding Gaia password
+  // hash when user logs out individual Gaia account in content area.
+  hash_password_manager_.ClearAllPasswordHash(/*is_gaia_password=*/true);
+  ScheduleTask(base::BindRepeating(
+      &PasswordStore::ClearProtectedPasswordHashImpl, this));
 }
 
 void PasswordStore::SetPasswordStoreSigninNotifier(
@@ -408,6 +427,26 @@ void PasswordStore::SetPasswordStoreSigninNotifier(
   notifier_ = std::move(notifier);
   notifier_->SubscribeToSigninEvents(this);
 }
+
+void PasswordStore::SchedulePasswordHashUpdate(bool should_log_metrics) {
+  ScheduleTask(base::BindRepeating(
+      &PasswordStore::SaveProtectedPasswordHashImpl, this,
+      base::Passed(hash_password_manager_.RetrieveAllPasswordHashes()),
+      should_log_metrics));
+}
+
+void PasswordStore::ScheduleEnterprisePasswordURLUpdate() {
+  std::vector<GURL> enterprise_login_urls;
+  safe_browsing::GetPasswordProtectionLoginURLsPref(*prefs_,
+                                                    &enterprise_login_urls);
+  GURL enterprise_change_password_url =
+      safe_browsing::GetPasswordProtectionChangePasswordURLPref(*prefs_);
+
+  ScheduleTask(base::BindRepeating(&PasswordStore::SaveEnterprisePasswordURLs,
+                                   this, base::Passed(&enterprise_login_urls),
+                                   enterprise_change_password_url));
+}
+
 #endif
 
 PasswordStore::~PasswordStore() {
@@ -502,17 +541,45 @@ void PasswordStore::NotifyLoginsChanged(
 void PasswordStore::CheckReuseImpl(std::unique_ptr<CheckReuseRequest> request,
                                    const base::string16& input,
                                    const std::string& domain) {
-  if (reuse_detector_)
+  if (reuse_detector_) {
     reuse_detector_->CheckReuse(input, domain, request.get());
+  }
 }
 
-void PasswordStore::SaveSyncPasswordHashImpl(
-    base::Optional<PasswordHashData> sync_password_data) {
-  if (reuse_detector_)
-    reuse_detector_->UseSyncPasswordHash(std::move(sync_password_data));
+void PasswordStore::SaveProtectedPasswordHashImpl(
+    PasswordHashDataList protected_password_data_list,
+    bool should_log_metrics) {
+  if (!reuse_detector_ || !protected_password_data_list.has_value())
+    return;
+
+  std::vector<PasswordHashData> gaia_password_hash_list;
+  std::vector<PasswordHashData> enterprise_password_hash_list;
+  for (PasswordHashData& password_hash : *protected_password_data_list) {
+    if (password_hash.is_gaia_password)
+      gaia_password_hash_list.push_back(std::move(password_hash));
+    else
+      enterprise_password_hash_list.push_back(std::move(password_hash));
+  }
+
+  if (should_log_metrics) {
+    metrics_util::LogProtectedPasswordHashCounts(
+        gaia_password_hash_list.size(), enterprise_password_hash_list.size());
+  }
+  reuse_detector_->UseGaiaPasswordHash(std::move(gaia_password_hash_list));
+  reuse_detector_->UseNonGaiaEnterprisePasswordHash(
+      std::move(enterprise_password_hash_list));
 }
 
-void PasswordStore::ClearSyncPasswordHashImpl() {
+void PasswordStore::SaveEnterprisePasswordURLs(
+    const std::vector<GURL>& enterprise_login_urls,
+    const GURL& enterprise_change_password_url) {
+  if (!reuse_detector_)
+    return;
+  reuse_detector_->UseEnterprisePasswordURLs(std::move(enterprise_login_urls),
+                                             enterprise_change_password_url);
+}
+
+void PasswordStore::ClearProtectedPasswordHashImpl() {
   // TODO(crbug.com/844134): Find a way to clear corresponding Gaia password
   // hash when user logs out individual Gaia account in content area.
   if (reuse_detector_)

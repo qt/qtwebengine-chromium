@@ -44,7 +44,7 @@
 #include "third_party/blink/public/platform/web_url_loader_mock_factory.h"
 #include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/public/web/web_element.h"
-#include "third_party/blink/public/web/web_frame_client.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_plugin_params.h"
 #include "third_party/blink/public/web/web_print_params.h"
 #include "third_party/blink/public/web/web_settings.h"
@@ -68,6 +68,7 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_recorder.h"
 #include "third_party/blink/renderer/platform/keyboard_codes.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
+#include "third_party/blink/renderer/platform/testing/scoped_fake_plugin_registry.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
 
@@ -102,6 +103,7 @@ class WebPluginContainerTest : public testing::Test {
   }
 
  protected:
+  ScopedFakePluginRegistry fake_plugins_;
   std::string base_url_;
 };
 
@@ -136,7 +138,7 @@ class TestPlugin : public FakeWebPlugin {
   WebString SelectionAsMarkup() const override { return WebString("y"); }
   bool SupportsPaginatedPrint() override { return true; }
   int PrintBegin(const WebPrintParams& print_params) override { return 1; }
-  void PrintPage(int page_number, WebCanvas*) override;
+  void PrintPage(int page_number, cc::PaintCanvas*) override;
 
  private:
   ~TestPlugin() override = default;
@@ -209,7 +211,7 @@ class TestPluginWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
 
       return new TestPlugin(params, this);
     }
-    return WebFrameClient::CreatePlugin(params);
+    return WebLocalFrameClient::CreatePlugin(params);
   }
 
  public:
@@ -224,7 +226,7 @@ class TestPluginWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
   bool has_editable_text_ = false;
 };
 
-void TestPlugin::PrintPage(int page_number, WebCanvas* canvas) {
+void TestPlugin::PrintPage(int page_number, cc::PaintCanvas* canvas) {
   DCHECK(test_client_);
   test_client_->OnPrintPage();
 }

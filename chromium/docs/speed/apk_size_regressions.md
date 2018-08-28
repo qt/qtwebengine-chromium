@@ -29,8 +29,13 @@
 
      tools/binary_size/diagnose_bloat.py AFTER_GIT_REV --reference-rev BEFORE_GIT_REV --subrepo v8 --all
 
-You can usually find the before and after revs in the roll commit message
+ * You can usually find the before and after revs in the roll commit message
 ([example](https://chromium.googlesource.com/chromium/src/+/10c40fd863f4ae106650bba93b845f25c9b733b1))
+    * Note that you may need to click through the link for the list of changes
+      in order to find the actual first commit hash and use that one instead
+      since some rollers (including v8) use extra commits for tagging not in
+      master. In the linked example `BEFORE_GIT_REV` would actually be
+      `876f37c` and not `c1dec05f`.
 
 ### Monochrome.apk Alerts
 
@@ -153,6 +158,11 @@ to show a diff of ELF symbols.
  * Use [//tools/binary_size/diagnose_bloat.py](https://chromium.googlesource.com/chromium/src/+/master/tools/binary_size/README.md)
    to show a diff of Java symbols.
  * Ensure any new Java deps are as specific as possible.
+ * If the change doesn't look suspect, check to see if the regression still
+   exists when internal proguard is used (see
+   [downstream graphs](https://chromeperf.appspot.com/report?sid=83bf643964a326648325f7eb6767d8adb85d67db8306dd94aa7476ed70d7dace)
+   or use `diagnose_bloat.py -v --enable-chrome-android-internal REV`
+   to build locally)
 
 ### Growth is from "other lib size" or "Unknown files size"
 
@@ -168,13 +178,21 @@ to show a diff of ELF symbols.
 
 ## Step 1: Check work queue daily
 
- * Bugs requiring sheriffs to take a look at are labeled `Performance-Sheriff` and `Performance-Size`.
+ * Bugs requiring sheriffs to take a look at are labeled `Performance-Sheriff` and `Performance-Size` [here](https://bugs.chromium.org/p/chromium/issues/list?q=label:Performance-Sheriff%20label:Performance-Size&sort=-modified).
  * After resolving the bug by finding an owner or debugging or commenting, remove the `Performance-Sheriff` label.
 
 ## Step 2: Check alerts regularly
 
- * **IMPORTANT**: Check the [perf bot page](https://ci.chromium.org/buildbot/chromium.perf/Android%20Builder%20Perf/)
- several times a day to make sure it isn't broken (and ping/file a bug if it is).
+ * **IMPORTANT: Check the [perf bot page](https://ci.chromium.org/buildbot/chromium.perf/Android%20Builder%20Perf/)
+ several times a day to make sure it isn't broken (and ping/file a bug if it is).**
+   * At the very least you need to check this once in the morning and once in
+   the afternoon.
+   * If you don't and the builder is broken either you or the next sheriff will
+   have to manually build and diff the broken range (via. diagnose_bloat.py) to
+   see if we missed any regressions.
+   * This is necessary even if the next passing build doesn't create an alert
+   because the range could contain a large regression with multiple offsetting
+   decreases.
  * Check [alert page](https://chromeperf.appspot.com/alerts?sheriff=Binary%20Size%20Sheriff) regularly for new alerts.
  * Join [binary-size-alerts@chromium.org](https://groups.google.com/a/chromium.org/forum/#!forum/binary-size-alerts). Eventually it will be all set up.
  * Deal with alerts as outlined above.

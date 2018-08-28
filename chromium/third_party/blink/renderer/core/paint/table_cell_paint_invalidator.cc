@@ -26,18 +26,8 @@ void TableCellPaintInvalidator::InvalidateContainerForCellGeometryChange(
   // At this time we have already walked the container for paint invalidation,
   // so we should invalidate the container immediately here instead of setting
   // paint invalidation flags.
-  ObjectPaintInvalidator invalidator(container);
   container_context.painting_layer->SetNeedsRepaint();
   container.InvalidateDisplayItemClients(PaintInvalidationReason::kGeometry);
-
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-      context_.paint_invalidation_container !=
-          container_context.paint_invalidation_container) {
-    ObjectPaintInvalidatorWithContext(container, container_context)
-        .InvalidatePaintRectangleWithContext(
-            container.FirstFragment().VisualRect(),
-            PaintInvalidationReason::kGeometry);
-  }
 }
 
 PaintInvalidationReason TableCellPaintInvalidator::InvalidatePaint() {
@@ -45,7 +35,7 @@ PaintInvalidationReason TableCellPaintInvalidator::InvalidatePaint() {
   // and the row or table paints collapsed borders. If the cell's geometry
   // changed and the containers which will paint backgrounds and/or collapsed
   // borders haven't been full invalidated, invalidate the containers.
-  if (context_.old_location != context_.fragment_data->LocationInBacking() ||
+  if (context_.old_paint_offset != context_.fragment_data->PaintOffset() ||
       cell_.Size() != cell_.PreviousSize()) {
     const auto& row = *cell_.Row();
     const auto& section = *row.Section();

@@ -43,8 +43,6 @@ catalog("catalog") {
     "//mash/catalog_viewer:manifest",
     "//mash/session:manifest",
     "//mash/task_viewer:manifest",
-    "//services/ui:manifest",
-    "//services/ui/demo:manifest",
     "//services/ui/ime/test_ime_driver:manifest",
     "//services/viz:manifest",
   ]
@@ -60,7 +58,7 @@ catalog("catalog") {
     ]
   }
 
-  if (is_linux && !is_android) {
+  if (is_linux) {
     standalone_services += [ "//components/services/font:manifest" ]
   }
 
@@ -101,7 +99,7 @@ if (is_chromeos) {
       "//cc",
       "//cc:test_support",
       "//components/viz/service",
-      "//mojo/edk",
+      "//mojo/core/embedder",
       "//services/catalog:lib",
       "//ui/aura",
       "//ui/base",

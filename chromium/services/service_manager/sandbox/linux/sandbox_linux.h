@@ -56,11 +56,11 @@ class SERVICE_MANAGER_SANDBOX_EXPORT SandboxLinux {
   // This isn't the full list, values < 32 are reserved for methods called from
   // Skia, and values < 64 are reserved for libc_interceptor.cc.
   enum LinuxSandboxIPCMethods {
-    METHOD_GET_FALLBACK_FONT_FOR_CHAR = 64,
+    DEPRECATED_METHOD_GET_FALLBACK_FONT_FOR_CHAR = 64,
     DEPRECATED_METHOD_GET_CHILD_WITH_INODE,
-    METHOD_GET_STYLE_FOR_STRIKE,
+    DEPRECATED_METHOD_GET_STYLE_FOR_STRIKE,
     METHOD_MAKE_SHARED_MEMORY_SEGMENT,
-    METHOD_MATCH_WITH_FALLBACK,
+    DEPRECATED_METHOD_MATCH_WITH_FALLBACK,
   };
 
   // These form a bitmask which describes the conditions of the Linux sandbox.
@@ -174,10 +174,10 @@ class SERVICE_MANAGER_SANDBOX_EXPORT SandboxLinux {
                        PreSandboxHook hook,
                        const Options& options);
 
-  // Limit the address space of the current process (and its children).
-  // to make some vulnerabilities harder to exploit.
-  bool LimitAddressSpace(const std::string& process_type,
-                         const Options& options);
+  // Limit the address space of the current process (and its children) to make
+  // some vulnerabilities harder to exploit. Writes the errno due to setrlimit
+  // (including 0 if no error) into |error|.
+  bool LimitAddressSpace(int* error);
 
   // Returns a file descriptor to proc. The file descriptor is no longer valid
   // after the sandbox has been sealed.

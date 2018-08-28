@@ -119,8 +119,8 @@ struct TextureState final : private angle::NonCopyable
     const ImageDesc &getBaseLevelDesc() const;
 
     // GLES1 emulation: For GL_OES_draw_texture
-    void setCrop(const gl::Rectangle& rect);
-    const gl::Rectangle& getCrop() const;
+    void setCrop(const gl::Rectangle &rect);
+    const gl::Rectangle &getCrop() const;
 
     // GLES1 emulation: Auto-mipmap generation is a texparameter
     void setGenerateMipmapHint(GLenum hint);
@@ -375,12 +375,14 @@ class Texture final : public egl::ImageSibling, public LabeledObject
 
     // FramebufferAttachmentObject implementation
     Extents getAttachmentSize(const ImageIndex &imageIndex) const override;
-    const Format &getAttachmentFormat(GLenum binding, const ImageIndex &imageIndex) const override;
+    Format getAttachmentFormat(GLenum binding, const ImageIndex &imageIndex) const override;
     GLsizei getAttachmentSamples(const ImageIndex &imageIndex) const override;
 
+    bool getAttachmentFixedSampleLocations(const ImageIndex &imageIndex) const;
+
     // GLES1 emulation
-    void setCrop(const gl::Rectangle& rect);
-    const gl::Rectangle& getCrop() const;
+    void setCrop(const gl::Rectangle &rect);
+    const gl::Rectangle &getCrop() const;
     void setGenerateMipmapHint(GLenum generate);
     GLenum getGenerateMipmapHint() const;
 
@@ -452,6 +454,8 @@ class Texture final : public egl::ImageSibling, public LabeledObject
                                     TextureTarget target,
                                     size_t level,
                                     const gl::Box &area);
+
+    Error handleMipmapGenerationHint(const Context *context, int level);
 
     TextureState mState;
     DirtyBits mDirtyBits;

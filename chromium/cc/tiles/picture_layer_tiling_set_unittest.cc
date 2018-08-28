@@ -7,12 +7,11 @@
 #include <map>
 #include <vector>
 
-#include "cc/resources/layer_tree_resource_provider.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_picture_layer_tiling_client.h"
 #include "cc/test/fake_raster_source.h"
-#include "cc/test/fake_resource_provider.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "components/viz/client/client_resource_provider.h"
 #include "components/viz/test/fake_output_surface.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -246,9 +245,8 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
         viz::TestContextProvider::Create();
     ASSERT_EQ(context_provider->BindToCurrentThread(),
               gpu::ContextResult::kSuccess);
-    std::unique_ptr<LayerTreeResourceProvider> resource_provider =
-        FakeResourceProvider::CreateLayerTreeResourceProvider(
-            context_provider.get());
+    std::unique_ptr<viz::ClientResourceProvider> resource_provider =
+        std::make_unique<viz::ClientResourceProvider>(true);
 
     FakePictureLayerTilingClient client(resource_provider.get(),
                                         context_provider.get());

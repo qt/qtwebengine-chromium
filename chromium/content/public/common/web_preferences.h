@@ -81,9 +81,9 @@ CONTENT_EXPORT extern const char kCommonScript[];
 // A struct for managing blink's settings.
 //
 // Adding new values to this class probably involves updating
-// blink::WebSettings, content/common/view_messages.h, browser/tab_contents/
-// render_view_host_delegate_helper.cc, browser/profiles/profile.cc,
-// and content/public/common/common_param_traits_macros.h
+// blink::WebSettings, content/common/view_messages.h,
+// browser/profiles/profile.cc, and
+// content/public/common/common_param_traits_macros.h
 struct CONTENT_EXPORT WebPreferences {
   ScriptFontFamilyMap standard_font_family_map;
   ScriptFontFamilyMap fixed_font_family_map;
@@ -224,13 +224,15 @@ struct CONTENT_EXPORT WebPreferences {
 
   bool immersive_mode_enabled;
 
-#if defined(OS_ANDROID)
   bool text_autosizing_enabled;
+
+  bool double_tap_to_zoom_enabled;
+
+#if defined(OS_ANDROID)
   float font_scale_factor;
   float device_scale_adjustment;
   bool force_enable_zoom;
   bool fullscreen_supported;
-  bool double_tap_to_zoom_enabled;
   std::string media_playback_gesture_whitelist_scope;
   GURL default_video_poster_url;
   bool support_deprecated_target_density_dpi;
@@ -303,6 +305,13 @@ struct CONTENT_EXPORT WebPreferences {
 
   // Whether Picture-in-Picture is enabled.
   bool picture_in_picture_enabled;
+
+  // Specifies how close a lazily loaded iframe should be from the viewport
+  // before it should start being loaded in, depending on the effective
+  // connection type of the current network. Blink will use the default distance
+  // threshold for effective connection types that aren't specified here.
+  std::map<net::EffectiveConnectionType, int>
+      lazy_frame_loading_distance_thresholds_px;
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

@@ -10,6 +10,7 @@
 #include "base/containers/flat_set.h"
 #include "base/test/test_mock_time_task_runner.h"
 #include "components/viz/common/surfaces/surface_id.h"
+#include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
@@ -114,10 +115,6 @@ class SurfaceReferencesTest : public testing::Test {
     return temp_references;
   }
 
-  const base::flat_map<FrameSinkId, std::string>& GetFrameSinkLabels() {
-    return manager_->surface_manager()->valid_frame_sink_labels_;
-  }
-
   bool IsTemporaryReferenceTimerRunning() const {
     return manager_->surface_manager()->expire_timer_->IsRunning();
   }
@@ -126,7 +123,7 @@ class SurfaceReferencesTest : public testing::Test {
   // testing::Test:
   void SetUp() override {
     // Start each test with a fresh SurfaceManager instance.
-    manager_ = std::make_unique<FrameSinkManagerImpl>();
+    manager_ = std::make_unique<FrameSinkManagerImpl>(&shared_bitmap_manager_);
     frame_sink_manager_client_ =
         std::make_unique<TestFrameSinkManagerClient>(manager_.get());
     manager_->SetLocalClient(frame_sink_manager_client_.get());
@@ -140,12 +137,13 @@ class SurfaceReferencesTest : public testing::Test {
   scoped_refptr<base::TestMockTimeTaskRunner> task_runner_;
   base::TestMockTimeTaskRunner::ScopedContext scoped_context_;
 
+  ServerSharedBitmapManager shared_bitmap_manager_;
+  std::unique_ptr<FrameSinkManagerImpl> manager_;
+  std::unique_ptr<TestFrameSinkManagerClient> frame_sink_manager_client_;
   std::unordered_map<FrameSinkId,
                      std::unique_ptr<CompositorFrameSinkSupport>,
                      FrameSinkIdHash>
       supports_;
-  std::unique_ptr<FrameSinkManagerImpl> manager_;
-  std::unique_ptr<TestFrameSinkManagerClient> frame_sink_manager_client_;
 };
 
 TEST_F(SurfaceReferencesTest, AddReference) {
@@ -156,26 +154,6 @@ TEST_F(SurfaceReferencesTest, AddReference) {
               UnorderedElementsAre(GetSurfaceManager().GetRootSurfaceId()));
   EXPECT_THAT(GetReferencesFrom(id1), IsEmpty());
 }
-
-#if DCHECK_IS_ON()
-// The test sets up a surface reference with a label and verifies that the label
-// is correctly associated with the Surface. It then invalidates the FrameSinkId
-// associated with the label and verifies that the label no longer exists in
-// |SurfaceManager::valid_frame_sink_labels_|.
-TEST_F(SurfaceReferencesTest, DebugLabelLookup) {
-  CreateSurface(kFrameSink1, 1);
-  const std::string kLabel = "kFrameSink1";
-  GetSurfaceManager().SetFrameSinkDebugLabel(kFrameSink1, kLabel);
-  EXPECT_EQ(kLabel, GetSurfaceManager().GetFrameSinkDebugLabel(kFrameSink1));
-  GetSurfaceManager().InvalidateFrameSinkId(kFrameSink1);
-
-  // Verify that the label is no longer in |valid_frame_sink_labels_|. The first
-  // EXPECT_EQ calls GetFrameSinkDebugLabel(). The second EXPECT_EQ verifies
-  // that calling GetFrameSinkDebugLabel() doesn't add the entry back.
-  EXPECT_EQ("", GetSurfaceManager().GetFrameSinkDebugLabel(kFrameSink1));
-  EXPECT_EQ(0u, GetFrameSinkLabels().count(kFrameSink1));
-}
-#endif
 
 TEST_F(SurfaceReferencesTest, AddRemoveReference) {
   frame_sink_manager_client_->SetFrameSinkHierarchy(kFrameSink1, kFrameSink2);

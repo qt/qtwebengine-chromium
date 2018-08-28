@@ -32,7 +32,7 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
-#include "cc/layers/layer.h"
+#include "cc/layers/picture_layer.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/frame/web_frame_widget_base.h"
@@ -72,26 +72,25 @@ void PageOverlay::Update() {
     return;
 
   if (!layer_) {
+    GraphicsLayer* parent_layer =
+        frame->IsMainFrame()
+            ? frame->GetPage()->GetVisualViewport().ContainerLayer()
+            : frame_impl_->LocalRootFrameWidget()->RootGraphicsLayer();
+    if (!parent_layer)
+      return;
+
     layer_ = GraphicsLayer::Create(*this);
     layer_->SetDrawsContent(true);
+    parent_layer->AddChild(layer_.get());
 
     // This is required for contents of overlay to stay in sync with the page
     // while scrolling.
     cc::Layer* cc_layer = layer_->CcLayer();
     cc_layer->AddMainThreadScrollingReasons(
         MainThreadScrollingReason::kPageOverlay);
-    if (frame->IsMainFrame()) {
-      frame->GetPage()->GetVisualViewport().ContainerLayer()->AddChild(
-          layer_.get());
-    } else {
-      frame_impl_->LocalRootFrameWidget()->RootGraphicsLayer()->AddChild(
-          layer_.get());
-    }
 
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      layer_->SetLayerState(PropertyTreeState(PropertyTreeState::Root()),
-                            IntPoint());
-    }
+    layer_->SetLayerState(PropertyTreeState(PropertyTreeState::Root()),
+                          IntPoint());
   }
 
   IntSize size = frame->GetPage()->GetVisualViewport().Size();
@@ -104,12 +103,12 @@ void PageOverlay::Update() {
 
 LayoutRect PageOverlay::VisualRect() const {
   DCHECK(layer_.get());
-  return LayoutRect(FloatPoint(), layer_->Size());
+  return LayoutRect(IntPoint(), layer_->Size());
 }
 
 IntRect PageOverlay::ComputeInterestRect(const GraphicsLayer* graphics_layer,
                                          const IntRect&) const {
-  return IntRect(IntPoint(), ExpandedIntSize(layer_->Size()));
+  return IntRect(IntPoint(), layer_->Size());
 }
 
 void PageOverlay::PaintContents(const GraphicsLayer* graphics_layer,

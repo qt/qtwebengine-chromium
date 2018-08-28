@@ -6,25 +6,27 @@
  */
 
 #include "GrClipStackClip.h"
-
 #include "GrAppliedClip.h"
 #include "GrContextPriv.h"
 #include "GrDeferredProxyUploader.h"
 #include "GrDrawingManager.h"
 #include "GrFixedClip.h"
 #include "GrGpuResourcePriv.h"
-#include "GrRenderTargetContextPriv.h"
 #include "GrProxyProvider.h"
-#include "GrStencilAttachment.h"
+#include "GrRenderTargetContextPriv.h"
 #include "GrSWMaskHelper.h"
+#include "GrShape.h"
+#include "GrStencilAttachment.h"
+#include "GrStyle.h"
 #include "GrTextureProxy.h"
-#include "effects/GrConvexPolyEffect.h"
-#include "effects/GrRRectEffect.h"
-#include "effects/GrTextureDomain.h"
 #include "SkClipOpPriv.h"
 #include "SkMakeUnique.h"
 #include "SkTaskGroup.h"
+#include "SkTo.h"
 #include "SkTraceEvent.h"
+#include "effects/GrConvexPolyEffect.h"
+#include "effects/GrRRectEffect.h"
+#include "effects/GrTextureDomain.h"
 
 typedef SkClipStack::Element Element;
 typedef GrReducedClip::InitialState InitialState;
@@ -146,6 +148,10 @@ bool GrClipStackClip::UseSWOnlyPath(GrContext* context,
                                     bool hasUserStencilSettings,
                                     const GrRenderTargetContext* renderTargetContext,
                                     const GrReducedClip& reducedClip) {
+    // TODO: right now it appears that GPU clip masks are strictly slower than software. We may
+    // want to revisit this assumption once we can test with render target sorting.
+    return true;
+
     // TODO: generalize this function so that when
     // a clip gets complex enough it can just be done in SW regardless
     // of whether it would invoke the GrSoftwarePathRenderer.
@@ -191,8 +197,6 @@ bool GrClipStackClip::apply(GrContext* context, GrRenderTargetContext* renderTar
         return true;
     }
 
-    GrProxyProvider* proxyProvider = context->contextPriv().proxyProvider();
-    const auto* caps = context->contextPriv().caps()->shaderCaps();
     int maxWindowRectangles = renderTargetContext->priv().maxWindowRectangles();
     int maxAnalyticFPs = context->contextPriv().caps()->maxClipAnalyticFPs();
     if (GrFSAAType::kNone != renderTargetContext->fsaaType()) {
@@ -207,8 +211,8 @@ bool GrClipStackClip::apply(GrContext* context, GrRenderTargetContext* renderTar
     }
     auto* ccpr = context->contextPriv().drawingManager()->getCoverageCountingPathRenderer();
 
-    GrReducedClip reducedClip(*fStack, devBounds, caps, maxWindowRectangles, maxAnalyticFPs,
-                              ccpr ? maxAnalyticFPs : 0);
+    GrReducedClip reducedClip(*fStack, devBounds, context->contextPriv().caps(),
+                              maxWindowRectangles, maxAnalyticFPs, ccpr ? maxAnalyticFPs : 0);
     if (InitialState::kAllOut == reducedClip.initialState() &&
         reducedClip.maskElements().isEmpty()) {
         return false;
@@ -234,8 +238,7 @@ bool GrClipStackClip::apply(GrContext* context, GrRenderTargetContext* renderTar
     // can cause a flush or otherwise change which opList our draw is going into.
     uint32_t opListID = renderTargetContext->getOpList()->uniqueID();
     int rtWidth = renderTargetContext->width(), rtHeight = renderTargetContext->height();
-    if (auto clipFPs = reducedClip.finishAndDetachAnalyticFPs(ccpr, proxyProvider, opListID,
-                                                              rtWidth, rtHeight)) {
+    if (auto clipFPs = reducedClip.finishAndDetachAnalyticFPs(ccpr, opListID, rtWidth, rtHeight)) {
         out->addCoverageFP(std::move(clipFPs));
     }
 
@@ -314,12 +317,13 @@ static void create_clip_mask_key(uint32_t clipGenID, const SkIRect& bounds, int 
 }
 
 static void add_invalidate_on_pop_message(const SkClipStack& stack, uint32_t clipGenID,
-                                          const GrUniqueKey& clipMaskKey) {
+                                          const GrUniqueKey& clipMaskKey,
+                                          uint32_t contextUniqueID) {
     SkClipStack::Iter iter(stack, SkClipStack::Iter::kTop_IterStart);
     while (const Element* element = iter.prev()) {
         if (element->getGenID() == clipGenID) {
             std::unique_ptr<GrUniqueKeyInvalidatedMessage> msg(
-                    new GrUniqueKeyInvalidatedMessage(clipMaskKey));
+                    new GrUniqueKeyInvalidatedMessage(clipMaskKey, contextUniqueID));
             element->addResourceInvalidationMessage(std::move(msg));
             return;
         }
@@ -335,17 +339,20 @@ sk_sp<GrTextureProxy> GrClipStackClip::createAlphaClipMask(GrContext* context,
                          reducedClip.numAnalyticFPs(), &key);
 
     sk_sp<GrTextureProxy> proxy(proxyProvider->findOrCreateProxyByUniqueKey(
-                                                                key, kBottomLeft_GrSurfaceOrigin));
+                                                                key, kTopLeft_GrSurfaceOrigin));
     if (proxy) {
         return proxy;
     }
 
     sk_sp<GrRenderTargetContext> rtc(
-        context->contextPriv().makeDeferredRenderTargetContextWithFallback(SkBackingFit::kApprox,
-                                                                           reducedClip.width(),
-                                                                           reducedClip.height(),
-                                                                           kAlpha_8_GrPixelConfig,
-                                                                           nullptr));
+        context->contextPriv().makeDeferredRenderTargetContextWithFallback(
+                                                                        SkBackingFit::kApprox,
+                                                                        reducedClip.width(),
+                                                                        reducedClip.height(),
+                                                                        kAlpha_8_GrPixelConfig,
+                                                                        nullptr, 1,
+                                                                        GrMipMapped::kNo,
+                                                                        kTopLeft_GrSurfaceOrigin));
     if (!rtc) {
         return nullptr;
     }
@@ -359,9 +366,9 @@ sk_sp<GrTextureProxy> GrClipStackClip::createAlphaClipMask(GrContext* context,
         return nullptr;
     }
 
-    SkASSERT(result->origin() == kBottomLeft_GrSurfaceOrigin);
+    SkASSERT(result->origin() == kTopLeft_GrSurfaceOrigin);
     proxyProvider->assignUniqueKeyToProxy(key, result.get());
-    add_invalidate_on_pop_message(*fStack, reducedClip.maskGenID(), key);
+    add_invalidate_on_pop_message(*fStack, reducedClip.maskGenID(), key, context->uniqueID());
 
     return result;
 }
@@ -502,6 +509,6 @@ sk_sp<GrTextureProxy> GrClipStackClip::createSoftwareClipMask(
 
     SkASSERT(proxy->origin() == kTopLeft_GrSurfaceOrigin);
     proxyProvider->assignUniqueKeyToProxy(key, proxy.get());
-    add_invalidate_on_pop_message(*fStack, reducedClip.maskGenID(), key);
+    add_invalidate_on_pop_message(*fStack, reducedClip.maskGenID(), key, context->uniqueID());
     return proxy;
 }

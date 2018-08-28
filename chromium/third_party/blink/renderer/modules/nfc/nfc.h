@@ -20,6 +20,7 @@ namespace blink {
 class NFCPushOptions;
 using NFCPushMessage = StringOrArrayBufferOrNFCMessage;
 class NFCWatchOptions;
+class ScriptPromiseResolver;
 
 class NFC final : public ScriptWrappable,
                   public PageVisibilityObserver,
@@ -61,7 +62,6 @@ class NFC final : public ScriptWrappable,
 
   // Interface required by garbage collection.
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   // Returns boolean indicating whether NFC is supported in this context. If

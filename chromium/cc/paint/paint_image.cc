@@ -8,6 +8,7 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/hash.h"
+#include "cc/paint/paint_image_builder.h"
 #include "cc/paint/paint_image_generator.h"
 #include "cc/paint/paint_record.h"
 #include "cc/paint/skia_paint_image_generator.h"
@@ -82,6 +83,18 @@ PaintImage::ContentId PaintImage::GetNextContentId() {
   return g_next_image_content_id.GetNext();
 }
 
+// static
+PaintImage PaintImage::CreateFromBitmap(SkBitmap bitmap) {
+  if (bitmap.drawsNothing())
+    return PaintImage();
+
+  return PaintImageBuilder::WithDefault()
+      .set_id(PaintImage::GetNextId())
+      .set_image(SkImage::MakeFromBitmap(bitmap),
+                 PaintImage::GetNextContentId())
+      .TakePaintImage();
+}
+
 const sk_sp<SkImage>& PaintImage::GetSkImage() const {
   return cached_sk_image_;
 }
@@ -137,10 +150,8 @@ SkISize PaintImage::GetSupportedDecodeSize(
   // TODO(vmpstr): If this image is using subset_rect, then we don't support
   // decoding to any scale other than the original. See the comment in Decode()
   // explaining this in more detail.
-  // TODO(vmpstr): For now, always decode to the original size. This can be
-  // enabled with the following code, and should be done as a follow-up.
-  //  if (paint_image_generator_ && subset_rect_.IsEmpty())
-  //    return paint_image_generator_->GetSupportedDecodeSize(requested_size);
+  if (paint_image_generator_ && subset_rect_.IsEmpty())
+    return paint_image_generator_->GetSupportedDecodeSize(requested_size);
   return SkISize::Make(width(), height());
 }
 
@@ -217,8 +228,7 @@ bool PaintImage::DecodeFromSkImage(void* memory,
   auto image = GetSkImageForFrame(frame_index);
   DCHECK(image);
   if (color_space) {
-    image =
-        image->makeColorSpace(color_space, SkTransferFunctionBehavior::kIgnore);
+    image = image->makeColorSpace(color_space);
     if (!image)
       return false;
   }

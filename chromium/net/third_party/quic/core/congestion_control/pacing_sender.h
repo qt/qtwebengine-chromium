@@ -23,7 +23,7 @@
 #include "net/third_party/quic/core/quic_time.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 
-namespace net {
+namespace quic {
 
 namespace test {
 class QuicSentPacketManagerPeer;
@@ -41,6 +41,10 @@ class QUIC_EXPORT_PRIVATE PacingSender {
 
   void set_max_pacing_rate(QuicBandwidth max_pacing_rate) {
     max_pacing_rate_ = max_pacing_rate;
+  }
+
+  void set_alarm_granularity(QuicTime::Delta alarm_granularity) {
+    alarm_granularity_ = alarm_granularity;
   }
 
   QuicBandwidth max_pacing_rate() const { return max_pacing_rate_; }
@@ -61,11 +65,14 @@ class QUIC_EXPORT_PRIVATE PacingSender {
   // making up for lost time.
   void OnApplicationLimited();
 
-  QuicTime::Delta TimeUntilSend(QuicTime now, QuicByteCount bytes_in_flight);
+  QuicTime::Delta TimeUntilSend(QuicTime now,
+                                QuicByteCount bytes_in_flight) const;
 
   QuicBandwidth PacingRate(QuicByteCount bytes_in_flight) const;
 
-  bool is_simplified_pacing() const { return is_simplified_pacing_; }
+  QuicTime ideal_next_packet_send_time() const {
+    return ideal_next_packet_send_time_;
+  }
 
  private:
   friend class test::QuicSentPacketManagerPeer;
@@ -77,28 +84,25 @@ class QUIC_EXPORT_PRIVATE PacingSender {
 
   // Number of unpaced packets to be sent before packets are delayed.
   uint32_t burst_tokens_;
-  // Send time of the last packet considered delayed.
-  // TODO(fayang): Remove last_delayed_packet_sent_time_ and
-  // was_last_send_delayed_ when deprecating
-  // quic_reloadable_flag_quic_simplify_pacing_sender.
-  QuicTime last_delayed_packet_sent_time_;
   QuicTime ideal_next_packet_send_time_;  // When can the next packet be sent.
-  bool was_last_send_delayed_;  // True when the last send was delayed.
   uint32_t initial_burst_size_;
 
   // Number of unpaced packets to be sent before packets are delayed. This token
   // is consumed after burst_tokens_ ran out.
   uint32_t lumpy_tokens_;
 
+  // If the next send time is within alarm_granularity_, send immediately.
+  // TODO(fayang): Remove alarm_granularity_ when deprecating
+  // FLAGS_quic_restart_flag_quic_offload_pacing_to_usps2.
+  QuicTime::Delta alarm_granularity_;
+
   // Indicates whether pacing throttles the sending. If true, make up for lost
   // time.
   bool pacing_limited_;
-  // Latched value of quic_reloadable_flag_quic_simplify_pacing_sender.
-  const bool is_simplified_pacing_;
 
   DISALLOW_COPY_AND_ASSIGN(PacingSender);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_CONGESTION_CONTROL_PACING_SENDER_H_

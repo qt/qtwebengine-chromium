@@ -9,6 +9,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support_with_mock_scheduler.h"
+#include "third_party/blink/renderer/platform/testing/wtf/scoped_mock_clock.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
@@ -50,7 +51,10 @@ class MockIdleDeadlineScheduler final : public ThreadScheduler {
   void RemoveTaskObserver(
       base::MessageLoop::TaskObserver* task_observer) override {}
 
-  scheduler::NonMainThreadScheduler* AsNonMainThreadScheduler() override {
+  void AddRAILModeObserver(
+      scheduler::WebThreadScheduler::RAILModeObserver*) override {}
+
+  scheduler::NonMainThreadSchedulerImpl* AsNonMainThreadScheduler() override {
     return nullptr;
   }
 
@@ -85,28 +89,24 @@ class MockIdleDeadlinePlatform : public TestingPlatformSupport {
 
 class IdleDeadlineTest : public testing::Test {
  public:
-  void SetUp() override {
-    original_time_function_ = SetTimeFunctionsForTesting([] { return 1.0; });
-  }
-
-  void TearDown() override {
-    SetTimeFunctionsForTesting(original_time_function_);
-  }
+  void SetUp() override { clock_.Advance(TimeDelta::FromSeconds(1)); }
 
  private:
-  TimeFunction original_time_function_;
+  WTF::ScopedMockClock clock_;
 };
 
 TEST_F(IdleDeadlineTest, deadlineInFuture) {
   IdleDeadline* deadline =
-      IdleDeadline::Create(1.25, IdleDeadline::CallbackType::kCalledWhenIdle);
+      IdleDeadline::Create(TimeTicks() + TimeDelta::FromSecondsD(1.25),
+                           IdleDeadline::CallbackType::kCalledWhenIdle);
   // Note: the deadline is computed with reduced resolution.
   EXPECT_FLOAT_EQ(250.0, deadline->timeRemaining());
 }
 
 TEST_F(IdleDeadlineTest, deadlineInPast) {
   IdleDeadline* deadline =
-      IdleDeadline::Create(0.75, IdleDeadline::CallbackType::kCalledWhenIdle);
+      IdleDeadline::Create(TimeTicks() + TimeDelta::FromSecondsD(0.75),
+                           IdleDeadline::CallbackType::kCalledWhenIdle);
   EXPECT_FLOAT_EQ(0, deadline->timeRemaining());
 }
 
@@ -114,7 +114,8 @@ TEST_F(IdleDeadlineTest, yieldForHighPriorityWork) {
   ScopedTestingPlatformSupport<MockIdleDeadlinePlatform> platform;
 
   IdleDeadline* deadline =
-      IdleDeadline::Create(1.25, IdleDeadline::CallbackType::kCalledWhenIdle);
+      IdleDeadline::Create(TimeTicks() + TimeDelta::FromSecondsD(1.25),
+                           IdleDeadline::CallbackType::kCalledWhenIdle);
   EXPECT_FLOAT_EQ(0, deadline->timeRemaining());
 }
 

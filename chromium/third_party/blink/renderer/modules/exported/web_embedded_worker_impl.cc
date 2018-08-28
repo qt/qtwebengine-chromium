@@ -31,12 +31,13 @@
 #include "third_party/blink/renderer/modules/exported/web_embedded_worker_impl.h"
 
 #include <memory>
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_network_provider.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_provider.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_network_provider.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_provider.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/platform/web_worker_fetch_context.h"
-#include "third_party/blink/public/web/modules/serviceworker/web_service_worker_context_client.h"
+#include "third_party/blink/public/web/modules/service_worker/web_service_worker_context_client.h"
 #include "third_party/blink/public/web/web_console_message.h"
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
@@ -55,11 +56,11 @@
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_inspector_proxy.h"
 #include "third_party/blink/renderer/modules/indexeddb/indexed_db_client.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_container_client.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_global_scope_client.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_global_scope_proxy.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_installed_scripts_manager.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_thread.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_container_client.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_global_scope_client.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_global_scope_proxy.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_installed_scripts_manager.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_thread.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/loader/fetch/substitute_data.h"
@@ -146,7 +147,14 @@ void WebEmbeddedWorkerImpl::StartWorkerContext(
     pause_after_download_state_ = kDoPauseAfterDownload;
 
   devtools_worker_token_ = data.devtools_worker_token;
-  shadow_page_ = std::make_unique<WorkerShadowPage>(this);
+  // |loader_factory| is null since all loads for new scripts go through
+  // ServiceWorkerNetworkProvider::script_loader_factory() rather than the
+  // shadow page's loader. This is different to shared workers, which use the
+  // script loader factory for the main script only, and the shadow page loader
+  // for importScripts().
+  shadow_page_ = std::make_unique<WorkerShadowPage>(
+      this, nullptr /* loader_factory */,
+      std::move(worker_start_data_.privacy_preferences));
   WebSettings* settings = shadow_page_->GetSettings();
 
   // Currently we block all mixed-content requests from a ServiceWorker.
@@ -273,6 +281,8 @@ void WebEmbeddedWorkerImpl::OnShadowPageInitialized() {
     return;
   }
 
+  // Note: We only get here if this is a new (i.e., not installed) service
+  // worker.
   DCHECK(!main_script_loader_);
   main_script_loader_ = WorkerClassicScriptLoader::Create();
   main_script_loader_->LoadAsynchronously(
@@ -283,7 +293,7 @@ void WebEmbeddedWorkerImpl::OnShadowPageInitialized() {
       worker_start_data_.address_space, base::OnceClosure(),
       Bind(&WebEmbeddedWorkerImpl::OnScriptLoaderFinished,
            WTF::Unretained(this)));
-  // Do nothing here since onScriptLoaderFinished() might have been already
+  // Do nothing here since OnScriptLoaderFinished() might have been already
   // invoked and |this| might have been deleted at this point.
 }
 
@@ -340,7 +350,8 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
       worker_clients, worker_context_client_->CreateServiceWorkerProvider());
 
   std::unique_ptr<WebWorkerFetchContext> web_worker_fetch_context =
-      worker_context_client_->CreateServiceWorkerFetchContext();
+      worker_context_client_->CreateServiceWorkerFetchContext(
+          shadow_page_->DocumentLoader()->GetServiceWorkerNetworkProvider());
   // |web_worker_fetch_context| is null in some unit tests.
   if (web_worker_fetch_context) {
     ProvideWorkerFetchContextToWorker(worker_clients,
@@ -369,7 +380,7 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
     global_scope_creation_params = std::make_unique<GlobalScopeCreationParams>(
         worker_start_data_.script_url, script_type,
         worker_start_data_.user_agent,
-        document->GetContentSecurityPolicy()->Headers().get(),
+        document->GetContentSecurityPolicy()->Headers(),
         document->GetReferrerPolicy(), starter_origin, starter_secure_context,
         worker_clients, main_script_loader_->ResponseAddressSpace(),
         main_script_loader_->OriginTrialTokens(), devtools_worker_token_,
@@ -386,7 +397,7 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
     // script.
     global_scope_creation_params = std::make_unique<GlobalScopeCreationParams>(
         worker_start_data_.script_url, script_type,
-        worker_start_data_.user_agent, nullptr /* ContentSecurityPolicy */,
+        worker_start_data_.user_agent, Vector<CSPHeaderAndType>(),
         kReferrerPolicyDefault, starter_origin, starter_secure_context,
         worker_clients, worker_start_data_.address_space,
         nullptr /* OriginTrialTokens */, devtools_worker_token_,

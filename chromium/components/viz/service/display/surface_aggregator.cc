@@ -301,6 +301,11 @@ void SurfaceAggregator::EmitSurfaceContent(
 
   ++uma_stats_.valid_surface;
   const CompositorFrame& frame = surface->GetActiveFrame();
+  TRACE_EVENT_WITH_FLOW1(
+      "viz,benchmark", "Graphics.Pipeline",
+      TRACE_ID_GLOBAL(frame.metadata.begin_frame_ack.trace_id),
+      TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "step",
+      "SurfaceAggregation");
 
   if (ignore_undamaged) {
     gfx::Transform quad_to_target_transform(
@@ -539,22 +544,14 @@ void SurfaceAggregator::ReportMissingFallbackSurface(
     const SurfaceId& fallback_surface_id,
     const Surface* fallback_surface) {
   // If the fallback surface is unavailable then that's an error.
-  std::stringstream error_stream;
-  error_stream << fallback_surface_id;
-  std::string frame_sink_debug_label(
-      manager_->GetFrameSinkDebugLabel(fallback_surface_id.frame_sink_id()));
-  // Add the debug label, if available, to the error log to help diagnose a
-  // misbehaving client.
-  if (!frame_sink_debug_label.empty())
-    error_stream << " [" << frame_sink_debug_label << "]";
   if (!fallback_surface) {
-    error_stream << " is missing during aggregation";
+    DLOG(ERROR) << fallback_surface_id << " is missing during aggregation";
     ++uma_stats_.missing_surface;
   } else {
-    error_stream << " has no active frame during aggregation";
+    DLOG(ERROR) << fallback_surface_id
+                << " has no active frame during aggregation";
     ++uma_stats_.no_active_frame;
   }
-  DLOG(ERROR) << error_stream.str();
 }
 
 void SurfaceAggregator::AddColorConversionPass() {
@@ -829,12 +826,6 @@ void SurfaceAggregator::ProcessAddedAndRemovedSurfaces() {
         provider_->DestroyChild(it->second);
         surface_id_to_resource_child_id_.erase(it);
       }
-
-      // Notify client of removed surface.
-      Surface* surface_ptr = manager_->GetSurfaceForId(surface.first);
-      if (surface_ptr) {
-        surface_ptr->RunDrawCallback();
-      }
     }
   }
 }
@@ -851,9 +842,11 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
     return gfx::Rect();
 
   contained_surfaces_[surface->surface_id()] = surface->GetActiveFrameIndex();
-  contained_frame_sinks_[surface->surface_id().frame_sink_id()] =
-      std::max(surface->surface_id().local_surface_id(),
-               contained_frame_sinks_[surface->surface_id().frame_sink_id()]);
+  LocalSurfaceId& local_surface_id =
+      contained_frame_sinks_[surface->surface_id().frame_sink_id()];
+  local_surface_id =
+      std::max(surface->surface_id().local_surface_id(), local_surface_id);
+
   if (!surface->HasActiveFrame())
     return gfx::Rect();
 
@@ -993,6 +986,25 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
   // referenced_surfaces_.
   referenced_surfaces_.insert(surface->surface_id());
   for (const auto& surface_info : child_surfaces) {
+    if (will_draw) {
+      // We only pick a surface between primary and fallback if both SurfaceIds
+      // are provided and they have the same FrameSinkId and embed token,
+      // otherwise the only Surface other than fallback that can be shown is the
+      // primary.
+      if (!surface_info.fallback_id ||
+          surface_info.fallback_id->frame_sink_id() !=
+              surface_info.primary_id.frame_sink_id() ||
+          surface_info.fallback_id->local_surface_id().embed_token() !=
+              surface_info.primary_id.local_surface_id().embed_token()) {
+        damage_ranges_[surface_info.primary_id.frame_sink_id()] =
+            std::make_pair(surface_info.primary_id.local_surface_id(),
+                           surface_info.primary_id.local_surface_id());
+      } else if (surface_info.fallback_id != surface_info.primary_id) {
+        damage_ranges_[surface_info.primary_id.frame_sink_id()] =
+            std::make_pair(surface_info.fallback_id->local_surface_id(),
+                           surface_info.primary_id.local_surface_id());
+      }
+    }
     Surface* child_surface = manager_->GetSurfaceForId(surface_info.primary_id);
     gfx::Rect surface_damage;
     if (!child_surface || !child_surface->HasActiveFrame()) {
@@ -1061,7 +1073,7 @@ gfx::Rect SurfaceAggregator::PrewalkTree(Surface* surface,
   if (will_draw)
     surface->OnWillBeDrawn();
 
-  for (const auto& surface_id : frame.metadata.referenced_surfaces) {
+  for (const SurfaceId& surface_id : surface->active_referenced_surfaces()) {
     if (!contained_surfaces_.count(surface_id)) {
       result->undrawn_surfaces.insert(surface_id);
       Surface* undrawn_surface = manager_->GetSurfaceForId(surface_id);
@@ -1106,12 +1118,11 @@ void SurfaceAggregator::CopyUndrawnSurfaces(PrewalkResult* prewalk_result) {
       continue;
     if (!surface->HasActiveFrame())
       continue;
-    const CompositorFrame& frame = surface->GetActiveFrame();
     if (!surface->HasCopyOutputRequests()) {
       // Children are not necessarily included in undrawn_surfaces (because
       // they weren't referenced directly from a drawn surface), but may have
       // copy requests, so make sure to check them as well.
-      for (const auto& child_id : frame.metadata.referenced_surfaces) {
+      for (const SurfaceId& child_id : surface->active_referenced_surfaces()) {
         // Don't iterate over the child Surface if it was already listed as a
         // child of a different Surface, or in the case where there's infinite
         // recursion.
@@ -1122,7 +1133,7 @@ void SurfaceAggregator::CopyUndrawnSurfaces(PrewalkResult* prewalk_result) {
       }
     } else {
       referenced_surfaces_.insert(surface_id);
-      CopyPasses(frame, surface);
+      CopyPasses(surface->GetActiveFrame(), surface);
       // CopyPasses may have mutated container, need to re-query to erase.
       referenced_surfaces_.erase(referenced_surfaces_.find(surface_id));
     }
@@ -1156,15 +1167,21 @@ CompositorFrame SurfaceAggregator::Aggregate(
   Surface* surface = manager_->GetSurfaceForId(surface_id);
   DCHECK(surface);
   contained_surfaces_[surface_id] = surface->GetActiveFrameIndex();
-  contained_frame_sinks_[surface_id.frame_sink_id()] =
-      std::max(surface_id.local_surface_id(),
-               contained_frame_sinks_[surface_id.frame_sink_id()]);
+
+  LocalSurfaceId& local_surface_id =
+      contained_frame_sinks_[surface_id.frame_sink_id()];
+  local_surface_id =
+      std::max(surface->surface_id().local_surface_id(), local_surface_id);
 
   if (!surface->HasActiveFrame())
     return {};
 
   const CompositorFrame& root_surface_frame = surface->GetActiveFrame();
-  TRACE_EVENT0("viz", "SurfaceAggregator::Aggregate");
+  TRACE_EVENT_WITH_FLOW1(
+      "viz,benchmark", "Graphics.Pipeline",
+      TRACE_ID_GLOBAL(root_surface_frame.metadata.begin_frame_ack.trace_id),
+      TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "step",
+      "SurfaceAggregation");
 
   CompositorFrame frame;
 
@@ -1173,6 +1190,7 @@ CompositorFrame SurfaceAggregator::Aggregate(
 
   valid_surfaces_.clear();
   has_cached_render_passes_ = false;
+  damage_ranges_.clear();
   PrewalkResult prewalk_result;
   root_damage_rect_ =
       PrewalkTree(surface, false, 0, true /* will_draw */, &prewalk_result);
@@ -1268,6 +1286,29 @@ void SurfaceAggregator::SetOutputColorSpace(
   output_color_space_ = output_color_space.IsValid()
                             ? output_color_space
                             : gfx::ColorSpace::CreateSRGB();
+}
+
+bool SurfaceAggregator::NotifySurfaceDamageAndCheckForDisplayDamage(
+    const SurfaceId& surface_id) {
+  if (previous_contained_surfaces_.count(surface_id)) {
+    Surface* surface = manager_->GetSurfaceForId(surface_id);
+    if (surface) {
+      DCHECK(surface->HasActiveFrame());
+      if (surface->GetActiveFrame().resource_list.empty())
+        ReleaseResources(surface_id);
+    }
+    return true;
+  }
+
+  auto it = damage_ranges_.find(surface_id.frame_sink_id());
+  if (it == damage_ranges_.end())
+    return false;
+
+  const LocalSurfaceId& fallback = it->second.first;
+  const LocalSurfaceId& primary = it->second.second;
+  return (primary == surface_id.local_surface_id()) ||
+         (primary.IsNewerThan(surface_id.local_surface_id()) &&
+          surface_id.local_surface_id().IsNewerThan(fallback));
 }
 
 }  // namespace viz

@@ -273,17 +273,20 @@ namespace {
 // Responds with a HungResponse for the specified URL to hang on the request.
 // If the network service is enabled, crashes the process. If it's disabled,
 // cancels all requests from specifield |child_id|.
+//
+// |crash_network_service_callback| crashes the network service when invoked,
+// and must be called on the UI thread.
 std::unique_ptr<net::test_server::HttpResponse> CancelOnRequest(
     const std::string& relative_url,
     int child_id,
+    base::RepeatingClosure crash_network_service_callback,
     const net::test_server::HttpRequest& request) {
   if (request.relative_url != relative_url)
     return nullptr;
 
   if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-    content::BrowserThread::PostTask(
-        content::BrowserThread::UI, FROM_HERE,
-        base::BindOnce(SimulateNetworkServiceCrash));
+    content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
+                                     crash_network_service_callback);
   } else {
     content::BrowserThread::PostTask(
         content::BrowserThread::IO, FROM_HERE,
@@ -303,7 +306,9 @@ std::unique_ptr<net::test_server::HttpResponse> CancelOnRequest(
 IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, SyncXMLHttpRequest_Cancelled) {
   embedded_test_server()->RegisterRequestHandler(base::Bind(
       &CancelOnRequest, "/hung",
-      shell()->web_contents()->GetMainFrame()->GetProcess()->GetID()));
+      shell()->web_contents()->GetMainFrame()->GetProcess()->GetID(),
+      base::BindRepeating(&BrowserTestBase::SimulateNetworkServiceCrash,
+                          base::Unretained(this))));
 
   ASSERT_TRUE(embedded_test_server()->Start());
   WaitForLoadStop(shell()->web_contents());
@@ -813,25 +818,6 @@ IN_PROC_BROWSER_TEST_F(PreviewsStateBrowserTest,
   CheckResourcesRequested(true);
 }
 
-// Test that reloading with Lo-Fi disabled doesn't call ShouldEnableLoFiMode and
-// already has LOFI_OFF.
-IN_PROC_BROWSER_TEST_F(PreviewsStateBrowserTest,
-                       ShouldEnableLoFiModeReloadDisableLoFi) {
-  // Navigate with GetPreviewsState returning SERVER_LOFI_ON.
-  Reset(SERVER_LOFI_ON);
-  NavigateToURLBlockUntilNavigationsComplete(
-      shell(), embedded_test_server()->GetURL("/page_with_iframe.html"), 1);
-  CheckResourcesRequested(true);
-
-  // Reload with Lo-Fi disabled.
-  Reset(PREVIEWS_NO_TRANSFORM);
-  TestNavigationObserver tab_observer(shell()->web_contents(), 1);
-  shell()->web_contents()->GetController().Reload(ReloadType::DISABLE_PREVIEWS,
-                                                  true);
-  tab_observer.Wait();
-  CheckResourcesRequested(false);
-}
-
 namespace {
 
 struct RequestData {
@@ -871,6 +857,19 @@ class RequestDataBrowserTest : public ContentBrowserTest {
     return copy;
   }
 
+  void WaitForRequests(size_t count) {
+    while (true) {
+      base::RunLoop run_loop;
+      {
+        base::AutoLock auto_lock(requests_lock_);
+        if (requests_.size() == count)
+          return;
+        requests_closure_ = run_loop.QuitClosure();
+      }
+      run_loop.Run();
+    }
+  }
+
  private:
   void SetUpOnMainThread() override {
     ContentBrowserTest::SetUpOnMainThread();
@@ -893,10 +892,13 @@ class RequestDataBrowserTest : public ContentBrowserTest {
   void RequestCreated(RequestData data) {
     base::AutoLock auto_lock(requests_lock_);
     requests_.push_back(data);
+    if (requests_closure_)
+      requests_closure_.Run();
   }
 
   base::Lock requests_lock_;
   std::vector<RequestData> requests_;
+  base::Closure requests_closure_;
   std::unique_ptr<URLLoaderInterceptor> interceptor_;
 };
 
@@ -928,6 +930,7 @@ IN_PROC_BROWSER_TEST_F(RequestDataBrowserTest, LinkRelPrefetch) {
   url::Origin top_origin = url::Origin::Create(top_url);
 
   NavigateToURLBlockUntilNavigationsComplete(shell(), top_url, 1);
+  WaitForRequests(2u);
 
   auto requests = data();
   EXPECT_EQ(2u, requests.size());
@@ -944,6 +947,7 @@ IN_PROC_BROWSER_TEST_F(RequestDataBrowserTest, LinkRelPrefetchReferrerPolicy) {
   url::Origin top_origin = url::Origin::Create(top_url);
 
   NavigateToURLBlockUntilNavigationsComplete(shell(), top_url, 1);
+  WaitForRequests(2u);
 
   auto requests = data();
   EXPECT_EQ(2u, requests.size());

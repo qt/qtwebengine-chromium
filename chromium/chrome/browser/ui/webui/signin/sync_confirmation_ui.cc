@@ -10,7 +10,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/unified_consent_helper.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/webui/signin/sync_confirmation_handler.h"
@@ -18,15 +18,16 @@
 #include "chrome/grit/browser_resources.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/signin/core/browser/avatar_icon_util.h"
-#include "components/signin/core/browser/signin_manager.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "services/identity/public/cpp/identity_manager.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 
 SyncConfirmationUI::SyncConfirmationUI(content::WebUI* web_ui)
-    : SigninWebDialogUI(web_ui) {
+    : SigninWebDialogUI(web_ui),
+      consent_feature_(consent_auditor::Feature::CHROME_SYNC) {
   Profile* profile = Profile::FromWebUI(web_ui);
   bool is_sync_allowed = profile->IsSyncAllowed();
   bool is_unified_consent_enabled = IsUnifiedConsentEnabled(profile);
@@ -41,6 +42,8 @@ SyncConfirmationUI::SyncConfirmationUI(content::WebUI* web_ui)
   int undo_button_ids = -1;
   if (is_unified_consent_enabled && is_sync_allowed) {
     source->SetDefaultResource(IDR_DICE_SYNC_CONFIRMATION_HTML);
+    source->AddResourcePath("icons.html",
+                            IDR_DICE_SYNC_CONFIRMATION_ICONS_HTML);
     source->AddResourcePath("sync_confirmation_browser_proxy.html",
                             IDR_DICE_SYNC_CONFIRMATION_BROWSER_PROXY_HTML);
     source->AddResourcePath("sync_confirmation_browser_proxy.js",
@@ -84,8 +87,7 @@ SyncConfirmationUI::SyncConfirmationUI(content::WebUI* web_ui)
                       IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_USE_DEFAULT_TITLE);
     AddStringResource(source, "syncConfirmationOptionsUseDefaultSubtitle",
                       IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_USE_DEFAULT_SUBTITLE);
-    AddStringResource(source, "syncConfirmationOptionsConfirmLabel",
-                      IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_CONFIRM_BUTTON_LABEL);
+    AddStringResource(source, "syncConfirmationOptionsConfirmLabel", IDS_OK);
     AddStringResource(source, "syncConfirmationOptionsBackLabel",
                       IDS_SYNC_CONFIRMATION_UNITY_OPTIONS_BACK_BUTTON_LABEL);
     AddStringResource(source, "syncConsentBumpTitle",
@@ -93,8 +95,8 @@ SyncConfirmationUI::SyncConfirmationUI(content::WebUI* web_ui)
 
     constexpr int kAccountPictureSize = 68;
     std::string custom_picture_url = profiles::GetPlaceholderAvatarIconUrl();
-    GURL account_picture_url(SigninManagerFactory::GetForProfile(profile)
-                                 ->GetAuthenticatedAccountInfo()
+    GURL account_picture_url(IdentityManagerFactory::GetForProfile(profile)
+                                 ->GetPrimaryAccountInfo()
                                  .picture_url);
     if (account_picture_url.is_valid()) {
       custom_picture_url = signin::GetAvatarImageURLWithOptions(
@@ -107,6 +109,7 @@ SyncConfirmationUI::SyncConfirmationUI(content::WebUI* web_ui)
     title_ids = IDS_SYNC_CONFIRMATION_UNITY_TITLE;
     confirm_button_ids = IDS_SYNC_CONFIRMATION_DICE_CONFIRM_BUTTON_LABEL;
     undo_button_ids = IDS_CANCEL;
+    consent_feature_ = consent_auditor::Feature::CHROME_UNIFIED_CONSENT;
   } else {
     source->SetDefaultResource(IDR_SYNC_CONFIRMATION_HTML);
     source->AddResourcePath("sync_confirmation.css", IDR_SYNC_CONFIRMATION_CSS);
@@ -132,6 +135,7 @@ SyncConfirmationUI::SyncConfirmationUI(content::WebUI* web_ui)
                     : IDS_SYNC_CONFIRMATION_TITLE;
     confirm_button_ids = IDS_SYNC_CONFIRMATION_CONFIRM_BUTTON_LABEL;
     undo_button_ids = IDS_SYNC_CONFIRMATION_UNDO_BUTTON_LABEL;
+    consent_feature_ = consent_auditor::Feature::CHROME_SYNC;
     if (!is_sync_allowed) {
       title_ids = IDS_SYNC_DISABLED_CONFIRMATION_CHROME_SYNC_TITLE;
       confirm_button_ids = IDS_SYNC_DISABLED_CONFIRMATION_CONFIRM_BUTTON_LABEL;
@@ -159,7 +163,7 @@ SyncConfirmationUI::~SyncConfirmationUI() {}
 
 void SyncConfirmationUI::InitializeMessageHandlerWithBrowser(Browser* browser) {
   web_ui()->AddMessageHandler(std::make_unique<SyncConfirmationHandler>(
-      browser, js_localized_string_to_ids_map_));
+      browser, js_localized_string_to_ids_map_, consent_feature_));
 }
 
 void SyncConfirmationUI::AddStringResource(content::WebUIDataSource* source,

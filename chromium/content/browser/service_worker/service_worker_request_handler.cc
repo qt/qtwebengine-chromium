@@ -17,7 +17,6 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_url_request_job.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/child_process_host.h"
@@ -31,6 +30,7 @@
 #include "net/url_request/url_request_interceptor.h"
 #include "services/network/public/cpp/resource_request_body.h"
 #include "storage/browser/blob/blob_storage_context.h"
+#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 
 namespace content {
 
@@ -83,21 +83,19 @@ void ServiceWorkerRequestHandler::InitializeForNavigation(
     bool is_parent_frame_secure,
     scoped_refptr<network::ResourceRequestBody> body,
     const base::Callback<WebContents*(void)>& web_contents_getter) {
-  CHECK(IsBrowserSideNavigationEnabled());
-
-  // S13nServiceWorker enabled, NetworkService disabled:
-  // To start the navigation, InitializeForNavigationNetworkService() is called
-  // instead of this, but when that request handler falls back to network,
-  // InitializeForNavigation() is called.
-  // Since we already determined to fall back to network, don't create another
-  // handler.
-  if (ServiceWorkerUtils::IsServicificationEnabled())
-    return;
-
   // Only create a handler when there is a ServiceWorkerNavigationHandlerCore
   // to take ownership of a pre-created SeviceWorkerProviderHost.
   if (!navigation_handle_core)
     return;
+
+  // This is the legacy path used by non-NetworkService and
+  // non-S13nServiceWorker. The NetworkService/S13nServiceWorker path is
+  // InitializeForNavigationNetworkService().
+  //
+  // This function can still be called with a null navigation_handle_core by
+  // ResourceDispatcherHostImpl::BeginNavigationRequest when S13nSW is on and
+  // NetworkService is off, so this DCHECK must be after the null check above.
+  DCHECK(!blink::ServiceWorkerUtils::IsServicificationEnabled());
 
   // Create the handler even for insecure HTTP since it's used in the
   // case of redirect to HTTPS.
@@ -149,7 +147,7 @@ ServiceWorkerRequestHandler::InitializeForNavigationNetworkService(
     bool is_parent_frame_secure,
     scoped_refptr<network::ResourceRequestBody> body,
     const base::Callback<WebContents*(void)>& web_contents_getter) {
-  DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
+  DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
   DCHECK(navigation_handle_core);
 
   // Create the handler even for insecure HTTP since it's used in the
@@ -169,8 +167,7 @@ ServiceWorkerRequestHandler::InitializeForNavigationNetworkService(
   // Initialize the SWProviderHost.
   base::WeakPtr<ServiceWorkerProviderHost> provider_host =
       ServiceWorkerProviderHost::PreCreateNavigationHost(
-          navigation_handle_core->context_wrapper()->context()->AsWeakPtr(),
-          is_parent_frame_secure, web_contents_getter);
+          context->AsWeakPtr(), is_parent_frame_secure, web_contents_getter);
 
   std::unique_ptr<ServiceWorkerRequestHandler> handler(
       provider_host->CreateRequestHandler(
@@ -192,7 +189,7 @@ std::unique_ptr<NavigationLoaderInterceptor>
 ServiceWorkerRequestHandler::InitializeForSharedWorker(
     const network::ResourceRequest& resource_request,
     base::WeakPtr<ServiceWorkerProviderHost> host) {
-  DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
+  DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
 
   // Create the handler even for insecure HTTP since it's used in the
   // case of redirect to HTTPS.
@@ -237,7 +234,7 @@ void ServiceWorkerRequestHandler::InitializeHandler(
   // request handler falls back to network, InitializeHandler() is called.
   // Since we already determined to fall back to network, don't create another
   // handler.
-  if (ServiceWorkerUtils::IsServicificationEnabled())
+  if (blink::ServiceWorkerUtils::IsServicificationEnabled())
     return;
 
   // Create the handler even for insecure HTTP since it's used in the

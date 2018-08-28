@@ -17,7 +17,10 @@ bool StructTraits<gpu::mojom::GpuDeviceDataView, gpu::GPUInfo::GPUDevice>::Read(
   out->device_id = data.device_id();
   out->active = data.active();
   return data.ReadVendorString(&out->vendor_string) &&
-         data.ReadDeviceString(&out->device_string);
+         data.ReadDeviceString(&out->device_string) &&
+         data.ReadDriverVendor(&out->driver_vendor) &&
+         data.ReadDriverVersion(&out->driver_version) &&
+         data.ReadDriverDate(&out->driver_date);
 }
 
 // static
@@ -76,8 +79,12 @@ EnumTraits<gpu::mojom::VideoCodecProfile, gpu::VideoCodecProfile>::ToMojom(
       return gpu::mojom::VideoCodecProfile::DOLBYVISION_PROFILE7;
     case gpu::VideoCodecProfile::THEORAPROFILE_ANY:
       return gpu::mojom::VideoCodecProfile::THEORAPROFILE_ANY;
-    case gpu::VideoCodecProfile::AV1PROFILE_PROFILE0:
-      return gpu::mojom::VideoCodecProfile::AV1PROFILE_PROFILE0;
+    case gpu::VideoCodecProfile::AV1PROFILE_PROFILE_MAIN:
+      return gpu::mojom::VideoCodecProfile::AV1PROFILE_PROFILE_MAIN;
+    case gpu::VideoCodecProfile::AV1PROFILE_PROFILE_HIGH:
+      return gpu::mojom::VideoCodecProfile::AV1PROFILE_PROFILE_HIGH;
+    case gpu::VideoCodecProfile::AV1PROFILE_PROFILE_PRO:
+      return gpu::mojom::VideoCodecProfile::AV1PROFILE_PROFILE_PRO;
   }
   NOTREACHED() << "Invalid VideoCodecProfile:" << video_codec_profile;
   return gpu::mojom::VideoCodecProfile::VIDEO_CODEC_PROFILE_UNKNOWN;
@@ -163,8 +170,14 @@ bool EnumTraits<gpu::mojom::VideoCodecProfile, gpu::VideoCodecProfile>::
     case gpu::mojom::VideoCodecProfile::THEORAPROFILE_ANY:
       *out = gpu::VideoCodecProfile::THEORAPROFILE_ANY;
       return true;
-    case gpu::mojom::VideoCodecProfile::AV1PROFILE_PROFILE0:
-      *out = gpu::VideoCodecProfile::AV1PROFILE_PROFILE0;
+    case gpu::mojom::VideoCodecProfile::AV1PROFILE_PROFILE_MAIN:
+      *out = gpu::VideoCodecProfile::AV1PROFILE_PROFILE_MAIN;
+      return true;
+    case gpu::mojom::VideoCodecProfile::AV1PROFILE_PROFILE_HIGH:
+      *out = gpu::VideoCodecProfile::AV1PROFILE_PROFILE_HIGH;
+      return true;
+    case gpu::mojom::VideoCodecProfile::AV1PROFILE_PROFILE_PRO:
+      *out = gpu::VideoCodecProfile::AV1PROFILE_PROFILE_PRO;
       return true;
   }
   NOTREACHED() << "Invalid VideoCodecProfile: " << input;
@@ -204,6 +217,56 @@ bool StructTraits<gpu::mojom::VideoEncodeAcceleratorSupportedProfileDataView,
          data.ReadMaxResolution(&out->max_resolution);
 }
 
+#if defined(OS_WIN)
+// static
+gpu::mojom::OverlayFormat
+EnumTraits<gpu::mojom::OverlayFormat, gpu::OverlayFormat>::ToMojom(
+    gpu::OverlayFormat format) {
+  switch (format) {
+    case gpu::OverlayFormat::UNKNOWN:
+      return gpu::mojom::OverlayFormat::UNKNOWN;
+    case gpu::OverlayFormat::BGRA:
+      return gpu::mojom::OverlayFormat::BGRA;
+    case gpu::OverlayFormat::YUY2:
+      return gpu::mojom::OverlayFormat::YUY2;
+    case gpu::OverlayFormat::NV12:
+      return gpu::mojom::OverlayFormat::NV12;
+  }
+  NOTREACHED() << "Unknown overlay format: " << static_cast<int>(format);
+  return gpu::mojom::OverlayFormat::UNKNOWN;
+}
+
+bool EnumTraits<gpu::mojom::OverlayFormat, gpu::OverlayFormat>::FromMojom(
+    gpu::mojom::OverlayFormat input,
+    gpu::OverlayFormat* out) {
+  switch (input) {
+    case gpu::mojom::OverlayFormat::UNKNOWN:
+      *out = gpu::OverlayFormat::UNKNOWN;
+      return true;
+    case gpu::mojom::OverlayFormat::BGRA:
+      *out = gpu::OverlayFormat::BGRA;
+      return true;
+    case gpu::mojom::OverlayFormat::YUY2:
+      *out = gpu::OverlayFormat::YUY2;
+      return true;
+    case gpu::mojom::OverlayFormat::NV12:
+      *out = gpu::OverlayFormat::NV12;
+      return true;
+  }
+  NOTREACHED() << "Unknown overlay format: " << input;
+  return false;
+}
+
+// static
+bool StructTraits<
+    gpu::mojom::OverlayCapabilityDataView,
+    gpu::OverlayCapability>::Read(gpu::mojom::OverlayCapabilityDataView data,
+                                  gpu::OverlayCapability* out) {
+  out->is_scaling_supported = data.is_scaling_supported();
+  return data.ReadFormat(&out->format);
+}
+#endif
+
 bool StructTraits<gpu::mojom::GpuInfoDataView, gpu::GPUInfo>::Read(
     gpu::mojom::GpuInfoDataView data,
     gpu::GPUInfo* out) {
@@ -215,8 +278,6 @@ bool StructTraits<gpu::mojom::GpuInfoDataView, gpu::GPUInfo>::Read(
   out->sandboxed = data.sandboxed();
   out->in_process_gpu = data.in_process_gpu();
   out->passthrough_cmd_decoder = data.passthrough_cmd_decoder();
-  out->direct_composition = data.direct_composition();
-  out->supports_overlays = data.supports_overlays();
   out->can_support_threaded_texture_mailbox =
       data.can_support_threaded_texture_mailbox();
   out->jpeg_decode_accelerator_supported =
@@ -226,8 +287,11 @@ bool StructTraits<gpu::mojom::GpuInfoDataView, gpu::GPUInfo>::Read(
   out->system_visual = data.system_visual();
   out->rgba_visual = data.rgba_visual();
 #endif
+  out->oop_rasterization_supported = data.oop_rasterization_supported();
 
 #if defined(OS_WIN)
+  out->direct_composition = data.direct_composition();
+  out->supports_overlays = data.supports_overlays();
   out->supports_dx12 = data.supports_dx12();
   out->supports_vulkan = data.supports_vulkan();
   out->d3d12_feature_level = data.d3d12_feature_level();
@@ -237,9 +301,6 @@ bool StructTraits<gpu::mojom::GpuInfoDataView, gpu::GPUInfo>::Read(
   return data.ReadInitializationTime(&out->initialization_time) &&
          data.ReadGpu(&out->gpu) &&
          data.ReadSecondaryGpus(&out->secondary_gpus) &&
-         data.ReadDriverVendor(&out->driver_vendor) &&
-         data.ReadDriverVersion(&out->driver_version) &&
-         data.ReadDriverDate(&out->driver_date) &&
          data.ReadPixelShaderVersion(&out->pixel_shader_version) &&
          data.ReadVertexShaderVersion(&out->vertex_shader_version) &&
          data.ReadMaxMsaaSamples(&out->max_msaa_samples) &&
@@ -253,6 +314,7 @@ bool StructTraits<gpu::mojom::GpuInfoDataView, gpu::GPUInfo>::Read(
          data.ReadGlWsVersion(&out->gl_ws_version) &&
          data.ReadGlWsExtensions(&out->gl_ws_extensions) &&
 #if defined(OS_WIN)
+         data.ReadOverlayCapabilities(&out->overlay_capabilities) &&
          data.ReadDxDiagnostics(&out->dx_diagnostics) &&
 #endif
          data.ReadVideoDecodeAcceleratorCapabilities(

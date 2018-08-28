@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-module webauth.mojom;
+module blink.mojom;
 
 import "mojo/public/mojom/base/time.mojom";
 import "url/mojom/url.mojom";
@@ -16,15 +16,15 @@ enum AuthenticatorStatus {
   SUCCESS,
   PENDING_REQUEST,
   NOT_ALLOWED_ERROR,
-  AUTHENTICATOR_CRITERIA_UNSUPPORTED,
-  ALGORITHM_UNSUPPORTED,
-  EMPTY_ALLOW_CREDENTIALS,
-  USER_VERIFICATION_UNSUPPORTED,
   INVALID_DOMAIN,
   CREDENTIAL_EXCLUDED,
   CREDENTIAL_NOT_RECOGNIZED,
   NOT_IMPLEMENTED,
   NOT_FOCUSED,
+  USER_VERIFICATION_UNSUPPORTED,
+  ALGORITHM_UNSUPPORTED,
+  EMPTY_ALLOW_CREDENTIALS,
+  ANDROID_NOT_SUPPORTED_ERROR,
   UNKNOWN_ERROR,
 };
 
@@ -119,7 +119,7 @@ enum UserVerificationRequirement {
 // Cloud-assisted BLE extension data for getAssertion.
 struct CableAuthentication {
   // The caBLE version requested.
-  int32 version;
+  uint8 version;
 
   // A 16-byte ephemeral identifier that the browser will advertise.
   array<uint8, 16> client_eid;
@@ -135,8 +135,8 @@ struct CableAuthentication {
 
 // Cloud-assisted BLE extension data for makeCredential.
 struct CableRegistration {
-  // The requested caBLE version.
-  int32 version;
+  // The caBLE versions supported by the relying party.
+  array<uint8> versions;
 
   // The 65-byte ECDSA ephemeral public key belonging to the relying party
   // for use in establishing an encrypted caBLE channel with an authenticator.
@@ -181,6 +181,9 @@ enum AttestationConveyancePreference {
   NONE,
   INDIRECT,
   DIRECT,
+  // A non-standard addition that we hope will become standard. This indicates
+  // that the RP desires individual attestaion from the device.
+  ENTERPRISE,
 };
 
 // https://w3c.github.io/webauthn/#enumdef-authenticatorattachment.
@@ -279,4 +282,9 @@ interface Authenticator {
   // |GetAssertionResponse| will be set if and only if status == SUCCESS.
   GetAssertion(PublicKeyCredentialRequestOptions options)
       => (AuthenticatorStatus status, GetAssertionAuthenticatorResponse? credential);
+
+  // Returns true if the user platform provides an authenticator. Relying
+  // Parties use this method to determine whether they can create a new
+  // credential using a user-verifying platform authenticator.
+  IsUserVerifyingPlatformAuthenticatorAvailable() => (bool available);
 };

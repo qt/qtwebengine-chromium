@@ -136,9 +136,11 @@ class HudSoftwareBacking : public ResourcePool::SoftwareBacking {
 
 bool HeadsUpDisplayLayerImpl::WillDraw(
     DrawMode draw_mode,
-    LayerTreeResourceProvider* resource_provider) {
-  if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
+    viz::ClientResourceProvider* resource_provider) {
+  if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE &&
+      !LayerImpl::WillDraw(draw_mode, resource_provider)) {
     return false;
+  }
 
   int max_texture_size = layer_tree_impl()->max_texture_size();
   internal_contents_scale_ = GetIdealContentsScale();
@@ -147,7 +149,7 @@ bool HeadsUpDisplayLayerImpl::WillDraw(
   internal_content_bounds_.SetToMin(
       gfx::Size(max_texture_size, max_texture_size));
 
-  return LayerImpl::WillDraw(draw_mode, resource_provider);
+  return true;
 }
 
 void HeadsUpDisplayLayerImpl::AppendQuads(viz::RenderPass* render_pass,
@@ -173,7 +175,7 @@ void HeadsUpDisplayLayerImpl::AppendQuads(viz::RenderPass* render_pass,
 void HeadsUpDisplayLayerImpl::UpdateHudTexture(
     DrawMode draw_mode,
     LayerTreeFrameSink* layer_tree_frame_sink,
-    LayerTreeResourceProvider* resource_provider,
+    viz::ClientResourceProvider* resource_provider,
     bool gpu_raster,
     const viz::RenderPassList& list) {
   if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
@@ -231,7 +233,6 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
       backing->texture_id = alloc.texture_id;
       backing->texture_target = alloc.texture_target;
       backing->overlay_candidate = alloc.overlay_candidate;
-      backing->mailbox = gpu::Mailbox::Generate();
       context_provider->ContextGL()->ProduceTextureDirectCHROMIUM(
           backing->texture_id, backing->mailbox.name);
       pool_resource.set_gpu_backing(std::move(backing));
@@ -276,7 +277,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
 
     {
       ScopedGpuRaster gpu_raster(context_provider);
-      LayerTreeResourceProvider::ScopedSkSurface scoped_surface(
+      viz::ClientResourceProvider::ScopedSkSurface scoped_surface(
           context_provider->GrContext(), backing->texture_id,
           backing->texture_target, pool_resource.size(), pool_resource.format(),
           false /* can_use_lcd_text */, 0 /* msaa_sample_count */);
@@ -289,7 +290,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
     }
 
     backing->mailbox_sync_token =
-        LayerTreeResourceProvider::GenerateSyncTokenHelper(gl);
+        viz::ClientResourceProvider::GenerateSyncTokenHelper(gl);
   } else if (draw_mode == DRAW_MODE_HARDWARE) {
     // If not using |gpu_raster| but using gpu compositing, we DrawHudContents()
     // into a software bitmap and upload it to a texture for compositing.
@@ -312,12 +313,13 @@ void HeadsUpDisplayLayerImpl::UpdateHudTexture(
     SkPixmap pixmap;
     staging_surface_->peekPixels(&pixmap);
     gl->BindTexture(backing->texture_target, backing->texture_id);
+    DCHECK(GLSupportsFormat(pool_resource.format()));
     gl->TexSubImage2D(
         backing->texture_target, 0, 0, 0, pool_resource.size().width(),
         pool_resource.size().height(), GLDataFormat(pool_resource.format()),
         GLDataType(pool_resource.format()), pixmap.addr());
     backing->mailbox_sync_token =
-        LayerTreeResourceProvider::GenerateSyncTokenHelper(gl);
+        viz::ClientResourceProvider::GenerateSyncTokenHelper(gl);
   } else {
     // If not using gpu compositing, we DrawHudContents() directly into a shared
     // memory bitmap, wrapped in an SkSurface, that can be shared to the display

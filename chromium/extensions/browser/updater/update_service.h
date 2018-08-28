@@ -66,6 +66,9 @@ class UpdateService : public KeyedService,
   // Overriden from |update_client::UpdateClient::Observer|.
   void OnEvent(Events event, const std::string& id) override;
 
+  // Returns true if the update service is updating one or more extensions.
+  bool IsBusy() const { return !updating_extension_ids_.empty(); }
+
  private:
   friend class ExtensionUpdateClientBaseTest;
   friend class UpdateServiceFactory;
@@ -80,7 +83,7 @@ class UpdateService : public KeyedService,
   void UpdateCheckComplete(update_client::Error error);
 
   struct InProgressUpdate {
-    InProgressUpdate(base::OnceClosure cb);
+    InProgressUpdate(base::OnceClosure callback, bool install_immediately);
     ~InProgressUpdate();
 
     InProgressUpdate(const InProgressUpdate& other) = delete;
@@ -90,6 +93,7 @@ class UpdateService : public KeyedService,
     InProgressUpdate& operator=(InProgressUpdate&& other);
 
     base::OnceClosure callback;
+    bool install_immediately;
     std::set<std::string> pending_extension_ids;
   };
 

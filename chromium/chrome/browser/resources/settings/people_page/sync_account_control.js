@@ -58,7 +58,7 @@ Polymer({
 
     // This property should be set by the parent only and should not change
     // after the element is created.
-    alwaysShowPromo: {
+    embeddedInSubpage: {
       type: Boolean,
       reflectToAttribute: true,
     },
@@ -123,7 +123,7 @@ Polymer({
 
   /** @private */
   onSignedInChanged_: function() {
-    if (this.alwaysShowPromo) {
+    if (this.embeddedInSubpage) {
       this.showingPromo = true;
       return;
     }
@@ -187,7 +187,8 @@ Polymer({
    * @private
    */
   getAccountLabel_: function(label, account) {
-    return this.syncStatus.signedIn && !this.syncStatus.hasError ?
+    return this.syncStatus.signedIn && !this.syncStatus.hasError &&
+            !this.syncStatus.disabled ?
         loadTimeData.substituteString(label, account) :
         account;
   },
@@ -203,19 +204,69 @@ Polymer({
   },
 
   /**
+   * Returns the class of the sync icon.
+   * @return {string}
+   * @private
+   */
+  getSyncIconStyle_: function() {
+    if (this.syncStatus.hasError) {
+      return this.syncStatus.statusAction ==
+              settings.StatusAction.REAUTHENTICATE ?
+          'sync-paused' :
+          'sync-problem';
+    }
+    if (!!this.syncStatus.disabled)
+      return 'sync-disabled';
+    return 'sync';
+  },
+
+  /**
    * Returned value must match one of iron-icon's settings:(*) icon name.
    * @return {string}
    * @private
    */
   getSyncIcon_: function() {
-    if (this.syncStatus.hasError) {
-      return this.syncStatus.statusAction ==
-              settings.StatusAction.REAUTHENTICATE ?
-          'sync-disabled' :
-          'sync-problem';
+    switch (this.getSyncIconStyle_()) {
+      case 'sync-problem':
+        return 'settings:sync-problem';
+      case 'sync-paused':
+        return 'settings:sync-disabled';
+      default:
+        return 'cr:sync';
     }
+  },
 
-    return 'sync';
+  /**
+   * @return {string}
+   * @private
+   */
+  getAvatarRowTitle_: function(
+      accountName, syncErrorLabel, authErrorLabel, disabledLabel) {
+    if (!!this.syncStatus.disabled)
+      return disabledLabel;
+
+    if (this.syncStatus.hasError)
+      return this.getErrorLabel_(syncErrorLabel, authErrorLabel);
+
+    return accountName;
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  shouldShowTurnOffButton_: function() {
+    return !!this.syncStatus.signedIn && !this.embeddedInSubpage;
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  shouldShowSigninAgainButton_: function() {
+    return !!this.syncStatus.signedIn && this.embeddedInSubpage &&
+        !!this.syncStatus.hasError &&
+        this.syncStatus.statusAction == settings.StatusAction.REAUTHENTICATE;
   },
 
   /**
@@ -231,6 +282,9 @@ Polymer({
    * @private
    */
   computeShouldShowAvatarRow_: function() {
+    if (this.storedAccounts_ == undefined)
+      return false;
+
     return this.syncStatus.signedIn || this.storedAccounts_.length > 0;
   },
 
@@ -242,6 +296,12 @@ Polymer({
     if (this.$$('#menu')) {
       /** @type {!CrActionMenuElement} */ (this.$$('#menu')).close();
     }
+  },
+
+  /** @private */
+  onSignoutTap_: function() {
+    this.syncBrowserProxy_.signOut(false /* deleteProfile */);
+    /** @type {!CrActionMenuElement} */ (this.$$('#menu')).close();
   },
 
   /** @private */
@@ -290,6 +350,9 @@ Polymer({
 
   /** @private */
   onShownAccountShouldChange_: function() {
+    if (this.storedAccounts_ == undefined)
+      return;
+
     if (this.syncStatus.signedIn) {
       for (let i = 0; i < this.storedAccounts_.length; i++) {
         if (this.storedAccounts_[i].email == this.syncStatus.signedInUsername) {

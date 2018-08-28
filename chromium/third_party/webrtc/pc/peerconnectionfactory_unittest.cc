@@ -45,14 +45,12 @@ static const char kStunIceServer[] = "stun:stun.l.google.com:19302";
 static const char kTurnIceServer[] = "turn:test%40hello.com@test.com:1234";
 static const char kTurnIceServerWithTransport[] =
     "turn:test@hello.com?transport=tcp";
-static const char kSecureTurnIceServer[] =
-    "turns:test@hello.com?transport=tcp";
+static const char kSecureTurnIceServer[] = "turns:test@hello.com?transport=tcp";
 static const char kSecureTurnIceServerWithoutTransportParam[] =
     "turns:test_no_transport@hello.com:443";
 static const char kSecureTurnIceServerWithoutTransportAndPortParam[] =
     "turns:test_no_transport@hello.com";
-static const char kTurnIceServerWithNoUsernameInUri[] =
-    "turn:test.com:1234";
+static const char kTurnIceServerWithNoUsernameInUri[] = "turn:test.com:1234";
 static const char kTurnPassword[] = "turnpassword";
 static const int kDefaultStunPort = 3478;
 static const int kDefaultStunTlsPort = 5349;
@@ -80,8 +78,8 @@ class NullPeerConnectionObserver : public PeerConnectionObserver {
       PeerConnectionInterface::IceConnectionState new_state) override {}
   void OnIceGatheringChange(
       PeerConnectionInterface::IceGatheringState new_state) override {}
-  void OnIceCandidate(
-      const webrtc::IceCandidateInterface* candidate) override {}
+  void OnIceCandidate(const webrtc::IceCandidateInterface* candidate) override {
+  }
 };
 
 }  // namespace
@@ -132,6 +130,19 @@ class PeerConnectionFactoryTest : public testing::Test {
     }
   }
 
+  void VerifyAudioCodecCapability(const webrtc::RtpCodecCapability& codec) {
+    EXPECT_EQ(codec.kind, cricket::MEDIA_TYPE_AUDIO);
+    EXPECT_FALSE(codec.name.empty());
+    EXPECT_GT(codec.clock_rate, 0);
+    EXPECT_GT(codec.num_channels, 0);
+  }
+
+  void VerifyVideoCodecCapability(const webrtc::RtpCodecCapability& codec) {
+    EXPECT_EQ(codec.kind, cricket::MEDIA_TYPE_VIDEO);
+    EXPECT_FALSE(codec.name.empty());
+    EXPECT_GT(codec.clock_rate, 0);
+  }
+
   rtc::scoped_refptr<PeerConnectionFactoryInterface> factory_;
   NullPeerConnectionObserver observer_;
   std::unique_ptr<cricket::FakePortAllocator> port_allocator_;
@@ -170,6 +181,72 @@ TEST(PeerConnectionFactoryTestInternal, DISABLED_CreatePCUsingInternalModules) {
       config, nullptr, nullptr, std::move(cert_generator), &observer));
 
   EXPECT_TRUE(pc.get() != nullptr);
+}
+
+TEST_F(PeerConnectionFactoryTest, CheckRtpSenderAudioCapabilities) {
+  webrtc::RtpCapabilities audio_capabilities =
+      factory_->GetRtpSenderCapabilities(cricket::MEDIA_TYPE_AUDIO);
+  EXPECT_FALSE(audio_capabilities.codecs.empty());
+  for (const auto& codec : audio_capabilities.codecs) {
+    VerifyAudioCodecCapability(codec);
+  }
+  EXPECT_FALSE(audio_capabilities.header_extensions.empty());
+  for (const auto& header_extension : audio_capabilities.header_extensions) {
+    EXPECT_FALSE(header_extension.uri.empty());
+  }
+}
+
+TEST_F(PeerConnectionFactoryTest, CheckRtpSenderVideoCapabilities) {
+  webrtc::RtpCapabilities video_capabilities =
+      factory_->GetRtpSenderCapabilities(cricket::MEDIA_TYPE_VIDEO);
+  EXPECT_FALSE(video_capabilities.codecs.empty());
+  for (const auto& codec : video_capabilities.codecs) {
+    VerifyVideoCodecCapability(codec);
+  }
+  EXPECT_FALSE(video_capabilities.header_extensions.empty());
+  for (const auto& header_extension : video_capabilities.header_extensions) {
+    EXPECT_FALSE(header_extension.uri.empty());
+  }
+}
+
+TEST_F(PeerConnectionFactoryTest, CheckRtpSenderDataCapabilities) {
+  webrtc::RtpCapabilities data_capabilities =
+      factory_->GetRtpSenderCapabilities(cricket::MEDIA_TYPE_DATA);
+  EXPECT_TRUE(data_capabilities.codecs.empty());
+  EXPECT_TRUE(data_capabilities.header_extensions.empty());
+}
+
+TEST_F(PeerConnectionFactoryTest, CheckRtpReceiverAudioCapabilities) {
+  webrtc::RtpCapabilities audio_capabilities =
+      factory_->GetRtpReceiverCapabilities(cricket::MEDIA_TYPE_AUDIO);
+  EXPECT_FALSE(audio_capabilities.codecs.empty());
+  for (const auto& codec : audio_capabilities.codecs) {
+    VerifyAudioCodecCapability(codec);
+  }
+  EXPECT_FALSE(audio_capabilities.header_extensions.empty());
+  for (const auto& header_extension : audio_capabilities.header_extensions) {
+    EXPECT_FALSE(header_extension.uri.empty());
+  }
+}
+
+TEST_F(PeerConnectionFactoryTest, CheckRtpReceiverVideoCapabilities) {
+  webrtc::RtpCapabilities video_capabilities =
+      factory_->GetRtpReceiverCapabilities(cricket::MEDIA_TYPE_VIDEO);
+  EXPECT_FALSE(video_capabilities.codecs.empty());
+  for (const auto& codec : video_capabilities.codecs) {
+    VerifyVideoCodecCapability(codec);
+  }
+  EXPECT_FALSE(video_capabilities.header_extensions.empty());
+  for (const auto& header_extension : video_capabilities.header_extensions) {
+    EXPECT_FALSE(header_extension.uri.empty());
+  }
+}
+
+TEST_F(PeerConnectionFactoryTest, CheckRtpReceiverDataCapabilities) {
+  webrtc::RtpCapabilities data_capabilities =
+      factory_->GetRtpReceiverCapabilities(cricket::MEDIA_TYPE_DATA);
+  EXPECT_TRUE(data_capabilities.codecs.empty());
+  EXPECT_TRUE(data_capabilities.header_extensions.empty());
 }
 
 // This test verifies creation of PeerConnection with valid STUN and TURN

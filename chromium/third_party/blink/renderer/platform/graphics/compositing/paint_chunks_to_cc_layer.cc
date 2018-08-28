@@ -480,7 +480,7 @@ void ConversionContext::StartEffect(const EffectPaintPropertyNode* effect) {
     auto alpha =
         static_cast<uint8_t>(gfx::ToFlooredInt(255 * effect->Opacity()));
     if (has_other_effects) {
-      cc::PaintFlags flags;
+      PaintFlags flags;
       flags.setBlendMode(effect->BlendMode());
       flags.setAlpha(alpha);
       flags.setColorFilter(GraphicsContext::WebCoreColorFilterToSkiaColorFilter(
@@ -504,7 +504,7 @@ void ConversionContext::StartEffect(const EffectPaintPropertyNode* effect) {
     // The size parameter is only used to computed the origin of zoom
     // operation, which we never generate.
     gfx::SizeF empty;
-    cc::PaintFlags filter_flags;
+    PaintFlags filter_flags;
     filter_flags.setImageFilter(cc::RenderSurfaceFilters::BuildImageFilter(
         effect->Filter().AsCcFilterOperations(), empty));
     save_layer_id = cc_list_.push<cc::SaveLayerOp>(nullptr, &filter_flags);
@@ -654,7 +654,7 @@ void ConversionContext::Convert(const PaintChunkSubset& paint_chunks,
       // "draw" this record in order to ensure that the effect has correct
       // visual rects.
       if ((!record || record->size() == 0) &&
-          chunk_state.Effect() == EffectPaintPropertyNode::Root()) {
+          chunk_state.Effect() == &EffectPaintPropertyNode::Root()) {
         continue;
       }
 
@@ -683,8 +683,6 @@ void PaintChunksToCcLayer::ConvertInto(
     const FloatSize& visual_rect_subpixel_offset,
     const DisplayItemList& display_items,
     cc::DisplayItemList& cc_list) {
-  if (RuntimeEnabledFeatures::DisablePaintChunksToCcLayerEnabled())
-    return;
   ConversionContext(layer_state, layer_offset, visual_rect_subpixel_offset,
                     cc_list)
       .Convert(paint_chunks, display_items);

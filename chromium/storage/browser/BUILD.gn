@@ -215,6 +215,7 @@ component("browser") {
     "//base/third_party/dynamic_annotations",
     "//mojo/public/cpp/bindings",
     "//net",
+    "//services/network:network_service",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
     "//sql",
@@ -232,7 +233,6 @@ executable("dump_file_system") {
   deps = [
     ":browser",
     "//base",
-    "//build/config:exe_and_shlib_deps",
     "//build/win:default_exe_manifest",
     "//storage/common",
   ]
@@ -304,9 +304,10 @@ source_set("unittests") {
     ":test_support",
     "//base/test:test_support",
     "//components/services/filesystem/public/interfaces",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//net:test_support",
     "//services/network/public/cpp",
+    "//services/network/public/mojom",
     "//sql:test_support",
     "//testing/gtest",
     "//third_party/leveldatabase",
@@ -319,6 +320,8 @@ static_library("test_support") {
   sources = [
     "test/async_file_test_helper.cc",
     "test/async_file_test_helper.h",
+    "test/fake_blob.cc",
+    "test/fake_blob.h",
     "test/fake_progress_client.cc",
     "test/fake_progress_client.h",
     "test/fileapi_test_file_set.cc",
@@ -357,6 +360,7 @@ static_library("test_support") {
     ":browser",
     "//base/test:test_support",
     "//net:test_support",
+    "//services/network:network_service",
     "//testing/gtest",
     "//third_party/leveldatabase",
   ]

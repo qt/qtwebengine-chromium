@@ -10,7 +10,7 @@
 #include "base/debug/stack_trace.h"
 #include "base/task_scheduler/task_scheduler.h"
 #include "base/task_scheduler/task_scheduler_impl.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -52,10 +52,20 @@ TEST(TaskSchedulerServiceThreadTest, MAYBE_StackHasIdentifyingFrame) {
   service_thread.FlushForTesting();
 }
 
+#if defined(OS_ANDROID)
+// The heartbeat latency report has been temporarily disabled on Android per
+// https://crbug.com/848255.
+#define MAYBE_HeartbeatLatencyReport DISABLED_HeartbeatLatencyReport
+#else
+#define MAYBE_HeartbeatLatencyReport HeartbeatLatencyReport
+#endif
+
 // Integration test verifying that a service thread running in a fully
 // integrated TaskScheduler environment results in reporting
 // HeartbeatLatencyMicroseconds metrics.
-TEST(TaskSchedulerServiceThreadIntegrationTest, HeartbeatLatencyReport) {
+TEST(TaskSchedulerServiceThreadIntegrationTest, MAYBE_HeartbeatLatencyReport) {
+  ServiceThread::SetHeartbeatIntervalForTesting(TimeDelta::FromMilliseconds(1));
+
   TaskScheduler::SetInstance(
       std::make_unique<internal::TaskSchedulerImpl>("Test"));
   TaskScheduler::GetInstance()->StartWithDefaultParams();
@@ -74,14 +84,17 @@ TEST(TaskSchedulerServiceThreadIntegrationTest, HeartbeatLatencyReport) {
       "TaskScheduler.HeartbeatLatencyMicroseconds.Test."
       "BackgroundTaskPriority_MayBlock"};
 
-  constexpr TimeDelta kReasonableTimeout = TimeDelta::FromSeconds(6);
+  // Each report hits a single histogram above (randomly selected). But 1000
+  // reports should touch all histograms at least once the vast majority of the
+  // time.
+  constexpr TimeDelta kReasonableTimeout = TimeDelta::FromSeconds(1);
   constexpr TimeDelta kBusyWaitTime = TimeDelta::FromMilliseconds(100);
 
   const TimeTicks start_time = TimeTicks::Now();
 
   HistogramTester tester;
   for (const char* expected_metric : kExpectedMetrics) {
-    for (int i = 0; tester.GetAllSamples(expected_metric).empty(); ++i) {
+    while (tester.GetAllSamples(expected_metric).empty()) {
       if (TimeTicks::Now() - start_time > kReasonableTimeout)
         LOG(WARNING) << "Waiting a while for " << expected_metric;
       PlatformThread::Sleep(kBusyWaitTime);
@@ -90,6 +103,8 @@ TEST(TaskSchedulerServiceThreadIntegrationTest, HeartbeatLatencyReport) {
 
   TaskScheduler::GetInstance()->JoinForTesting();
   TaskScheduler::SetInstance(nullptr);
+
+  ServiceThread::SetHeartbeatIntervalForTesting(TimeDelta());
 }
 
 }  // namespace internal

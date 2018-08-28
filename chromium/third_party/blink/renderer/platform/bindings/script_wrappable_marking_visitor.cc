@@ -56,7 +56,7 @@ void ScriptWrappableMarkingVisitor::TraceEpilogue() {
   ScriptWrappableVisitorVerifier verifier;
   for (auto& marking_data : verifier_deque_) {
     // Check that all children of this object are marked.
-    marking_data.TraceWrappers(&verifier);
+    marking_data.Trace(&verifier);
   }
 #endif
 
@@ -114,8 +114,7 @@ void ScriptWrappableMarkingVisitor::ScheduleIdleLazyCleanup() {
   idle_cleanup_task_scheduled_ = true;
 }
 
-void ScriptWrappableMarkingVisitor::PerformLazyCleanup(
-    double deadline_seconds) {
+void ScriptWrappableMarkingVisitor::PerformLazyCleanup(TimeTicks deadline) {
   idle_cleanup_task_scheduled_ = false;
 
   if (!should_cleanup_)
@@ -124,7 +123,7 @@ void ScriptWrappableMarkingVisitor::PerformLazyCleanup(
   TRACE_EVENT1("blink_gc,devtools.timeline",
                "ScriptWrappableMarkingVisitor::performLazyCleanup",
                "idleDeltaInSeconds",
-               deadline_seconds - CurrentTimeTicksInSeconds());
+               (deadline - CurrentTimeTicks()).InSecondsF());
 
   const int kDeadlineCheckInterval = 2500;
   int processed_wrapper_count = 0;
@@ -142,7 +141,7 @@ void ScriptWrappableMarkingVisitor::PerformLazyCleanup(
 
     processed_wrapper_count++;
     if (processed_wrapper_count % kDeadlineCheckInterval == 0) {
-      if (deadline_seconds <= CurrentTimeTicksInSeconds()) {
+      if (deadline <= CurrentTimeTicks()) {
         ScheduleIdleLazyCleanup();
         return;
       }
@@ -173,7 +172,7 @@ void ScriptWrappableMarkingVisitor::RegisterV8Reference(
 
   ScriptWrappable* script_wrappable =
       reinterpret_cast<ScriptWrappable*>(internal_fields.second);
-  TraceWrappersFromGeneratedCode(script_wrappable);
+  TraceWithWrappers(script_wrappable);
 }
 
 void ScriptWrappableMarkingVisitor::RegisterV8References(
@@ -197,13 +196,15 @@ bool ScriptWrappableMarkingVisitor::AdvanceTracing(
   CHECK(!ThreadState::Current()->IsWrapperTracingForbidden());
   CHECK(tracing_in_progress_);
   base::AutoReset<bool>(&advancing_tracing_, true);
+  TimeTicks deadline =
+      TimeTicks() + TimeDelta::FromMillisecondsD(deadline_in_ms);
   while (actions.force_completion ==
              v8::EmbedderHeapTracer::ForceCompletionAction::FORCE_COMPLETION ||
-         WTF::CurrentTimeTicksInMilliseconds() < deadline_in_ms) {
+         WTF::CurrentTimeTicks() < deadline) {
     if (marking_deque_.IsEmpty()) {
       return false;
     }
-    marking_deque_.TakeFirst().TraceWrappers(this);
+    marking_deque_.TakeFirst().Trace(this);
   }
   return true;
 }
@@ -228,7 +229,7 @@ void ScriptWrappableMarkingVisitor::WriteBarrier(
 
   // Conservatively assume that the source object containing |dst_object| is
   // marked.
-  visitor->TraceWrappers(dst_object);
+  visitor->Trace(dst_object);
 }
 
 void ScriptWrappableMarkingVisitor::WriteBarrier(
@@ -239,7 +240,7 @@ void ScriptWrappableMarkingVisitor::WriteBarrier(
   if (!visitor->WrapperTracingInProgress())
     return;
   // Conservatively assume that the source object key is marked.
-  visitor->TraceWrappers(wrapper_map, key);
+  visitor->Trace(wrapper_map, key);
 }
 
 void ScriptWrappableMarkingVisitor::Visit(
@@ -252,22 +253,29 @@ void ScriptWrappableMarkingVisitor::Visit(
   traced_wrapper.Get().RegisterExternalReference(isolate_);
 }
 
-void ScriptWrappableMarkingVisitor::Visit(
+void ScriptWrappableMarkingVisitor::VisitWithWrappers(
     void* object,
-    TraceWrapperDescriptor wrapper_descriptor) {
+    TraceDescriptor descriptor) {
   HeapObjectHeader* header =
-      HeapObjectHeader::FromPayload(wrapper_descriptor.base_object_payload);
+      HeapObjectHeader::FromPayload(descriptor.base_object_payload);
   if (header->IsWrapperHeaderMarked())
     return;
   MarkWrapperHeader(header);
   DCHECK(tracing_in_progress_);
   DCHECK(header->IsWrapperHeaderMarked());
-  marking_deque_.push_back(MarkingDequeItem(wrapper_descriptor));
+  marking_deque_.push_back(MarkingDequeItem(descriptor));
 #if DCHECK_IS_ON()
   if (!advancing_tracing_) {
-    verifier_deque_.push_back(MarkingDequeItem(wrapper_descriptor));
+    verifier_deque_.push_back(MarkingDequeItem(descriptor));
   }
 #endif
+}
+
+void ScriptWrappableMarkingVisitor::VisitBackingStoreStrongly(
+    void* object,
+    void** object_slot,
+    TraceDescriptor desc) {
+  desc.callback(this, desc.base_object_payload);
 }
 
 void ScriptWrappableMarkingVisitor::Visit(

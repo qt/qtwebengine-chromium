@@ -28,35 +28,6 @@
 #include "SkGr.h"
 #endif
 
-void SkImageFilter::CropRect::toString(SkString* str) const {
-    if (!fFlags) {
-        return;
-    }
-
-    str->appendf("cropRect (");
-    if (fFlags & CropRect::kHasLeft_CropEdge) {
-        str->appendf("%.2f, ", fRect.fLeft);
-    } else {
-        str->appendf("X, ");
-    }
-    if (fFlags & CropRect::kHasTop_CropEdge) {
-        str->appendf("%.2f, ", fRect.fTop);
-    } else {
-        str->appendf("X, ");
-    }
-    if (fFlags & CropRect::kHasWidth_CropEdge) {
-        str->appendf("%.2f, ", fRect.width());
-    } else {
-        str->appendf("X, ");
-    }
-    if (fFlags & CropRect::kHasHeight_CropEdge) {
-        str->appendf("%.2f", fRect.height());
-    } else {
-        str->appendf("X");
-    }
-    str->appendf(") ");
-}
-
 void SkImageFilter::CropRect::applyTo(const SkIRect& imageBounds,
                                       const SkMatrix& ctm,
                                       bool embiggen,
@@ -276,7 +247,7 @@ sk_sp<SkSpecialImage> SkImageFilter::DrawWithFP(GrContext* context,
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
 
     sk_sp<SkColorSpace> colorSpace = sk_ref_sp(outputProperties.colorSpace());
-    GrPixelConfig config = GrRenderableConfigForColorSpace(colorSpace.get());
+    GrPixelConfig config = SkColorType2GrPixelConfig(outputProperties.colorType());
     sk_sp<GrRenderTargetContext> renderTargetContext(
         context->contextPriv().makeDeferredRenderTargetContext(
                                 SkBackingFit::kApprox, bounds.width(), bounds.height(),
@@ -284,7 +255,6 @@ sk_sp<SkSpecialImage> SkImageFilter::DrawWithFP(GrContext* context,
     if (!renderTargetContext) {
         return nullptr;
     }
-    paint.setGammaCorrect(renderTargetContext->colorSpaceInfo().isGammaCorrect());
 
     SkIRect dstIRect = SkIRect::MakeWH(bounds.width(), bounds.height());
     SkRect srcRect = SkRect::Make(bounds);
@@ -346,11 +316,7 @@ sk_sp<SkSpecialImage> SkImageFilter::ImageToColorSpace(SkSpecialImage* src,
     // object. If that produces something, then both are tagged, and the source is in a different
     // gamut than the dest. There is some overhead to making the xform, but those are cached, and
     // if we get one back, that means we're about to use it during the conversion anyway.
-    //
-    // TODO: Fix this check, to handle wider support of transfer functions, config mismatch, etc.
-    // For now, continue to just check if gamut is different, which may not be sufficient.
-    auto colorSpaceXform = GrColorSpaceXform::MakeGamutXform(src->getColorSpace(),
-                                                             outProps.colorSpace());
+    auto colorSpaceXform = GrColorSpaceXform::Make(src->getColorSpace(), outProps.colorSpace());
 
     if (!colorSpaceXform) {
         // No xform needed, just return the original image

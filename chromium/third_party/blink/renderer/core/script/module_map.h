@@ -7,7 +7,7 @@
 
 #include "base/macros.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
@@ -16,16 +16,19 @@
 
 namespace blink {
 
+class FetchClientSettingsObjectSnapshot;
 class Modulator;
 class ModuleScript;
 class ModuleScriptFetchRequest;
+class ModuleScriptLoaderRegistry;
 class SingleModuleClient;
 enum class ModuleGraphLevel;
+enum class ModuleScriptCustomFetchType;
 
 // A ModuleMap implements "module map" spec.
 // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
 class CORE_EXPORT ModuleMap final : public GarbageCollected<ModuleMap>,
-                                    public TraceWrapperBase {
+                                    public NameClient {
   class Entry;
 
  public:
@@ -33,13 +36,15 @@ class CORE_EXPORT ModuleMap final : public GarbageCollected<ModuleMap>,
     return new ModuleMap(modulator);
   }
   void Trace(blink::Visitor*);
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "ModuleMap"; }
 
   // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-  void FetchSingleModuleScript(const ModuleScriptFetchRequest&,
-                               ModuleGraphLevel,
-                               SingleModuleClient*);
+  void FetchSingleModuleScript(
+      const ModuleScriptFetchRequest&,
+      FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
+      ModuleGraphLevel,
+      ModuleScriptCustomFetchType,
+      SingleModuleClient*);
 
   // Synchronously get the ModuleScript for a given URL.
   // If the URL wasn't fetched, or is currently being fetched, this returns a
@@ -57,6 +62,7 @@ class CORE_EXPORT ModuleMap final : public GarbageCollected<ModuleMap>,
   MapImpl map_;
 
   Member<Modulator> modulator_;
+  Member<ModuleScriptLoaderRegistry> loader_registry_;
   DISALLOW_COPY_AND_ASSIGN(ModuleMap);
 };
 

@@ -14,13 +14,13 @@
 
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "modules/desktop_capture/desktop_capturer.h"
 #include "modules/desktop_capture/desktop_frame.h"
 #include "modules/desktop_capture/mouse_cursor.h"
 #include "modules/desktop_capture/mouse_cursor_monitor.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/constructormagic.h"
-#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
@@ -28,8 +28,10 @@ namespace {
 
 // Helper function that blends one image into another. Source image must be
 // pre-multiplied with the alpha channel. Destination is assumed to be opaque.
-void AlphaBlend(uint8_t* dest, int dest_stride,
-                const uint8_t* src, int src_stride,
+void AlphaBlend(uint8_t* dest,
+                int dest_stride,
+                const uint8_t* src,
+                int src_stride,
                 const DesktopSize& size) {
   for (int y = 0; y < size.height(); ++y) {
     for (int x = 0; x < size.width(); ++x) {
@@ -111,8 +113,7 @@ DesktopFrameWithCursor::DesktopFrameWithCursor(
              cursor.image()->data() +
                  origin_shift.y() * cursor.image()->stride() +
                  origin_shift.x() * DesktopFrame::kBytesPerPixel,
-             cursor.image()->stride(),
-             target_rect.size());
+             cursor.image()->stride(), target_rect.size());
 }
 
 DesktopFrameWithCursor::~DesktopFrameWithCursor() {
@@ -175,7 +176,7 @@ void DesktopAndCursorComposer::OnCaptureResult(
           cursor_position_.subtract(frame->top_left());
       relative_position.set(relative_position.x() * scale,
                             relative_position.y() * scale);
-      frame = rtc::MakeUnique<DesktopFrameWithCursor>(
+      frame = absl::make_unique<DesktopFrameWithCursor>(
           std::move(frame), *cursor_, relative_position);
     }
   }

@@ -329,9 +329,8 @@ int WebViewGuest::GetOrGenerateRulesRegistryID(
   return rules_registry_id;
 }
 
-void WebViewGuest::CreateWebContents(
-    const base::DictionaryValue& create_params,
-    const WebContentsCreatedCallback& callback) {
+void WebViewGuest::CreateWebContents(const base::DictionaryValue& create_params,
+                                     WebContentsCreatedCallback callback) {
   RenderProcessHost* owner_render_process_host =
       owner_web_contents()->GetMainFrame()->GetProcess();
   std::string storage_partition_id;
@@ -344,7 +343,7 @@ void WebViewGuest::CreateWebContents(
   if (!base::IsStringUTF8(storage_partition_id)) {
     bad_message::ReceivedBadMessage(owner_render_process_host,
                                     bad_message::WVG_PARTITION_ID_NOT_UTF8);
-    callback.Run(nullptr);
+    std::move(callback).Run(nullptr);
     return;
   }
   std::string partition_domain = GetOwnerSiteURL().host();
@@ -375,14 +374,16 @@ void WebViewGuest::CreateWebContents(
   WebContents* new_contents = WebContents::Create(params).release();
 
   // Grant access to the origin of the embedder to the guest process. This
-  // allows blob:/filesystem: URLs with the embedder origin to be created
+  // allows blob: and filesystem: URLs with the embedder origin to be created
   // inside the guest. It is possible to do this by running embedder code
   // through webview accessible_resources.
-  content::ChildProcessSecurityPolicy::GetInstance()->GrantOrigin(
+  //
+  // TODO(dcheng): Is granting commit origin really the right thing to do here?
+  content::ChildProcessSecurityPolicy::GetInstance()->GrantCommitOrigin(
       new_contents->GetMainFrame()->GetProcess()->GetID(),
       url::Origin::Create(GetOwnerSiteURL()));
 
-  callback.Run(new_contents);
+  std::move(callback).Run(new_contents);
 }
 
 void WebViewGuest::DidAttachToEmbedder() {
@@ -672,7 +673,8 @@ void WebViewGuest::RendererResponsive(
 
 void WebViewGuest::RendererUnresponsive(
     WebContents* source,
-    content::RenderWidgetHost* render_widget_host) {
+    content::RenderWidgetHost* render_widget_host,
+    base::RepeatingClosure hang_monitor_restarter) {
   auto args = std::make_unique<base::DictionaryValue>();
   args->SetInteger(webview::kProcessId,
                    render_widget_host->GetProcess()->GetID());
@@ -971,10 +973,9 @@ void WebViewGuest::RemoveWebViewStateFromIOThread(
 void WebViewGuest::RequestMediaAccessPermission(
     WebContents* source,
     const content::MediaStreamRequest& request,
-    const content::MediaResponseCallback& callback) {
-  web_view_permission_helper_->RequestMediaAccessPermission(source,
-                                                            request,
-                                                            callback);
+    content::MediaResponseCallback callback) {
+  web_view_permission_helper_->RequestMediaAccessPermission(
+      source, request, std::move(callback));
 }
 
 bool WebViewGuest::CheckMediaAccessPermission(
@@ -1416,7 +1417,6 @@ void WebViewGuest::LoadURLWithParams(
   load_url_params.referrer = referrer;
   load_url_params.transition_type = transition_type;
   load_url_params.extra_headers = std::string();
-  load_url_params.transferred_global_request_id = GlobalRequestID();
   if (is_overriding_user_agent_) {
     load_url_params.override_user_agent =
         content::NavigationController::UA_OVERRIDE_TRUE;

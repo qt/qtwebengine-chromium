@@ -31,7 +31,6 @@
 #include "core/fpdfdoc/cpdf_action.h"
 #include "core/fxcodec/codec/ccodec_iccmodule.h"
 #include "core/fxcodec/fx_codec.h"
-#include "core/fxcrt/cfx_fixedbufgrow.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "third_party/base/stl_util.h"
@@ -223,7 +222,7 @@ class CPDF_ICCBasedCS : public CPDF_ColorSpace {
 
   MaybeOwned<CPDF_ColorSpace> m_pAlterCS;
   RetainPtr<CPDF_IccProfile> m_pProfile;
-  mutable std::unique_ptr<uint8_t, FxFreeDeleter> m_pCache;
+  mutable std::vector<uint8_t> m_pCache;
   std::vector<float> m_pRanges;
 };
 
@@ -246,7 +245,7 @@ class CPDF_IndexedCS : public CPDF_ColorSpace {
   uint32_t m_nBaseComponents = 0;
   int m_MaxIndex = 0;
   ByteString m_Table;
-  float* m_pCompMinMax = nullptr;
+  std::vector<float> m_pCompMinMax;
 };
 
 class CPDF_SeparationCS : public CPDF_ColorSpace {
@@ -573,8 +572,7 @@ void CPDF_ColorSpace::TranslateImageLine(uint8_t* dest_buf,
                                          int image_width,
                                          int image_height,
                                          bool bTransMask) const {
-  CFX_FixedBufGrow<float, 16> srcbuf(m_nComponents);
-  float* src = srcbuf;
+  std::vector<float> src(m_nComponents);
   float R;
   float G;
   float B;
@@ -582,7 +580,7 @@ void CPDF_ColorSpace::TranslateImageLine(uint8_t* dest_buf,
   for (int i = 0; i < pixels; i++) {
     for (uint32_t j = 0; j < m_nComponents; j++)
       src[j] = static_cast<float>(*src_buf++) / divisor;
-    GetRGB(src, &R, &G, &B);
+    GetRGB(src.data(), &R, &G, &B);
     *dest_buf++ = static_cast<int32_t>(B * 255);
     *dest_buf++ = static_cast<int32_t>(G * 255);
     *dest_buf++ = static_cast<int32_t>(R * 255);
@@ -986,24 +984,22 @@ void CPDF_ICCBasedCS::TranslateImageLine(uint8_t* pDestBuf,
     return;
   }
 
-  if (!m_pCache) {
-    m_pCache.reset(FX_Alloc2D(uint8_t, nMaxColors, 3));
-    std::unique_ptr<uint8_t, FxFreeDeleter> temp_src(
-        FX_Alloc2D(uint8_t, nMaxColors, nComponents));
-    uint8_t* pSrc = temp_src.get();
+  if (m_pCache.empty()) {
+    m_pCache = pdfium::Vector2D<uint8_t>(nMaxColors, 3);
+    auto temp_src = pdfium::Vector2D<uint8_t>(nMaxColors, nComponents);
+    size_t src_index = 0;
     for (int i = 0; i < nMaxColors; i++) {
       uint32_t color = i;
       uint32_t order = nMaxColors / 52;
       for (uint32_t c = 0; c < nComponents; c++) {
-        *pSrc++ = static_cast<uint8_t>(color / order * 5);
+        temp_src[src_index++] = static_cast<uint8_t>(color / order * 5);
         color %= order;
         order /= 52;
       }
     }
     CPDF_ModuleMgr::Get()->GetIccModule()->TranslateScanline(
-        m_pProfile->transform(), m_pCache.get(), temp_src.get(), nMaxColors);
+        m_pProfile->transform(), m_pCache.data(), temp_src.data(), nMaxColors);
   }
-  uint8_t* pCachePtr = m_pCache.get();
   for (int i = 0; i < pixels; i++) {
     int index = 0;
     for (uint32_t c = 0; c < nComponents; c++) {
@@ -1011,9 +1007,9 @@ void CPDF_ICCBasedCS::TranslateImageLine(uint8_t* pDestBuf,
       pSrcBuf++;
     }
     index *= 3;
-    *pDestBuf++ = pCachePtr[index];
-    *pDestBuf++ = pCachePtr[index + 1];
-    *pDestBuf++ = pCachePtr[index + 2];
+    *pDestBuf++ = m_pCache[index];
+    *pDestBuf++ = m_pCache[index + 1];
+    *pDestBuf++ = m_pCache[index + 2];
   }
 }
 
@@ -1021,7 +1017,7 @@ bool CPDF_ICCBasedCS::IsNormal() const {
   if (m_pProfile->IsSRGB())
     return true;
   if (m_pProfile->transform())
-    return m_pProfile->transform()->m_bNormal;
+    return m_pProfile->transform()->IsNormal();
   if (m_pAlterCS)
     return m_pAlterCS->IsNormal();
   return false;
@@ -1093,7 +1089,6 @@ CPDF_IndexedCS::CPDF_IndexedCS(CPDF_Document* pDoc)
     : CPDF_ColorSpace(pDoc, PDFCS_INDEXED) {}
 
 CPDF_IndexedCS::~CPDF_IndexedCS() {
-  FX_Free(m_pCompMinMax);
   const CPDF_ColorSpace* pCS =
       m_pCountedBaseCS ? m_pCountedBaseCS->get() : nullptr;
   if (pCS && m_pDocument) {
@@ -1126,7 +1121,7 @@ uint32_t CPDF_IndexedCS::v_Load(CPDF_Document* pDoc,
 
   m_pCountedBaseCS = pDocPageData->FindColorSpacePtr(m_pBaseCS->GetArray());
   m_nBaseComponents = m_pBaseCS->CountComponents();
-  m_pCompMinMax = FX_Alloc2D(float, m_nBaseComponents, 2);
+  m_pCompMinMax = pdfium::Vector2D<float>(m_nBaseComponents, 2);
   float defvalue;
   for (uint32_t i = 0; i < m_nBaseComponents; i++) {
     m_pBaseCS->GetDefaultValue(i, &defvalue, &m_pCompMinMax[i * 2],
@@ -1168,15 +1163,15 @@ bool CPDF_IndexedCS::GetRGB(const float* pBuf,
       return false;
     }
   }
-  CFX_FixedBufGrow<float, 16> Comps(m_nBaseComponents);
-  float* comps = Comps;
+  std::vector<float> comps(m_nBaseComponents);
   const uint8_t* pTable = m_Table.raw_str();
-  for (uint32_t i = 0; i < m_nBaseComponents; i++) {
+  for (uint32_t i = 0; i < m_nBaseComponents; ++i) {
     comps[i] =
         m_pCompMinMax[i * 2] +
         m_pCompMinMax[i * 2 + 1] * pTable[index * m_nBaseComponents + i] / 255;
   }
-  return m_pBaseCS->GetRGB(comps, R, G, B);
+  ASSERT(m_nBaseComponents == m_pBaseCS->CountComponents());
+  return m_pBaseCS->GetRGB(comps.data(), R, G, B);
 }
 
 void CPDF_IndexedCS::EnableStdConversion(bool bEnabled) {
@@ -1241,19 +1236,20 @@ bool CPDF_SeparationCS::GetRGB(const float* pBuf,
       return false;
 
     int nComps = m_pAltCS->CountComponents();
-    CFX_FixedBufGrow<float, 16> results(nComps);
+    std::vector<float> results(nComps);
     for (int i = 0; i < nComps; i++)
       results[i] = *pBuf;
-    return m_pAltCS->GetRGB(results, R, G, B);
+    return m_pAltCS->GetRGB(results.data(), R, G, B);
   }
 
-  CFX_FixedBufGrow<float, 16> results(m_pFunc->CountOutputs());
+  // Using at least 16 elements due to the call m_pAltCS->GetRGB() below.
+  std::vector<float> results(std::max(m_pFunc->CountOutputs(), 16u));
   int nresults = 0;
-  if (!m_pFunc->Call(pBuf, 1, results, &nresults) || nresults == 0)
+  if (!m_pFunc->Call(pBuf, 1, results.data(), &nresults) || nresults == 0)
     return false;
 
   if (m_pAltCS)
-    return m_pAltCS->GetRGB(results, R, G, B);
+    return m_pAltCS->GetRGB(results.data(), R, G, B);
 
   R = 0;
   G = 0;
@@ -1313,14 +1309,15 @@ bool CPDF_DeviceNCS::GetRGB(const float* pBuf,
   if (!m_pFunc)
     return false;
 
-  CFX_FixedBufGrow<float, 16> results(m_pFunc->CountOutputs());
+  // Using at least 16 elements due to the call m_pAltCS->GetRGB() below.
+  std::vector<float> results(std::max(m_pFunc->CountOutputs(), 16u));
   int nresults = 0;
-  if (!m_pFunc->Call(pBuf, CountComponents(), results, &nresults) ||
+  if (!m_pFunc->Call(pBuf, CountComponents(), results.data(), &nresults) ||
       nresults == 0) {
     return false;
   }
 
-  return m_pAltCS->GetRGB(results, R, G, B);
+  return m_pAltCS->GetRGB(results.data(), R, G, B);
 }
 
 void CPDF_DeviceNCS::EnableStdConversion(bool bEnabled) {

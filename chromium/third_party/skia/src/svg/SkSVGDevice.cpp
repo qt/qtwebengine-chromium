@@ -25,6 +25,7 @@
 #include "SkShader.h"
 #include "SkStream.h"
 #include "SkTHash.h"
+#include "SkTo.h"
 #include "SkTypeface.h"
 #include "SkUtils.h"
 #include "SkXMLWriter.h"
@@ -936,17 +937,6 @@ void SkSVGDevice::drawBitmapRect(const SkBitmap& bm, const SkRect* srcOrNull,
     drawBitmapCommon(MxCp(&adjustedMatrix, cs), bm, paint);
 }
 
-void SkSVGDevice::drawText(const void* text, size_t len,
-                           SkScalar x, SkScalar y, const SkPaint& paint) {
-    AutoElement elem("text", fWriter, fResourceBucket.get(), MxCp(this), paint);
-    elem.addTextAttributes(paint);
-
-    SVGTextBuilder builder(text, len, paint, SkPoint::Make(x, y), 0);
-    elem.addAttribute("x", builder.posX());
-    elem.addAttribute("y", builder.posY());
-    elem.addText(builder.text());
-}
-
 void SkSVGDevice::drawPosText(const void* text, size_t len,
                               const SkScalar pos[], int scalarsPerPos, const SkPoint& offset,
                               const SkPaint& paint) {
@@ -998,7 +988,8 @@ void SkSVGDevice::drawTextOnPath(const void* text, size_t len, const SkPath& pat
     }
 }
 
-void SkSVGDevice::drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) {
+void SkSVGDevice::drawVertices(const SkVertices*, const SkMatrix*, int, SkBlendMode,
+                               const SkPaint&) {
     // todo
 }
 

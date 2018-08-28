@@ -34,7 +34,7 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_network_provider.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_network_provider.h"
 #include "third_party/blink/public/platform/web_document_subresource_filter.h"
 #include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/public/platform/web_url_error.h"
@@ -84,20 +84,6 @@ void WebDocumentLoaderImpl::AppendRedirect(const WebURL& url) {
   DocumentLoader::AppendRedirect(url);
 }
 
-void WebDocumentLoaderImpl::UpdateNavigation(
-    base::TimeTicks redirect_start_time,
-    base::TimeTicks redirect_end_time,
-    base::TimeTicks fetch_start_time,
-    bool has_redirect) {
-  // Updates the redirection timing if there is at least one redirection
-  // (between two URLs).
-  if (has_redirect) {
-    GetTiming().SetRedirectStart(redirect_start_time);
-    GetTiming().SetRedirectEnd(redirect_end_time);
-  }
-  GetTiming().SetFetchStart(fetch_start_time);
-}
-
 void WebDocumentLoaderImpl::RedirectChain(WebVector<WebURL>& result) const {
   result.Assign(redirect_chain_);
 }
@@ -111,41 +97,16 @@ bool WebDocumentLoaderImpl::ReplacesCurrentHistoryItem() const {
 }
 
 WebNavigationType WebDocumentLoaderImpl::GetNavigationType() const {
-  return ToWebNavigationType(DocumentLoader::GetNavigationType());
+  return DocumentLoader::GetNavigationType();
 }
 
 WebDocumentLoader::ExtraData* WebDocumentLoaderImpl::GetExtraData() const {
   return extra_data_.get();
 }
 
-void WebDocumentLoaderImpl::SetExtraData(ExtraData* extra_data) {
-  // extraData can't be a std::unique_ptr because setExtraData is a WebKit API
-  // function.
-  extra_data_ = base::WrapUnique(extra_data);
-}
-
-void WebDocumentLoaderImpl::SetNavigationStartTime(
-    base::TimeTicks navigation_start) {
-  GetTiming().SetNavigationStart(navigation_start);
-}
-
-WebNavigationType WebDocumentLoaderImpl::ToWebNavigationType(
-    NavigationType type) {
-  switch (type) {
-    case kNavigationTypeLinkClicked:
-      return kWebNavigationTypeLinkClicked;
-    case kNavigationTypeFormSubmitted:
-      return kWebNavigationTypeFormSubmitted;
-    case kNavigationTypeBackForward:
-      return kWebNavigationTypeBackForward;
-    case kNavigationTypeReload:
-      return kWebNavigationTypeReload;
-    case kNavigationTypeFormResubmitted:
-      return kWebNavigationTypeFormResubmitted;
-    case kNavigationTypeOther:
-    default:
-      return kWebNavigationTypeOther;
-  }
+void WebDocumentLoaderImpl::SetExtraData(
+    std::unique_ptr<ExtraData> extra_data) {
+  extra_data_ = std::move(extra_data);
 }
 
 WebDocumentLoaderImpl::WebDocumentLoaderImpl(

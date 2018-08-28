@@ -34,6 +34,11 @@ GLOutputSurface::GLOutputSurface(
       context_provider->ContextCapabilities().flips_vertically;
   capabilities_.supports_stencil =
       context_provider->ContextCapabilities().num_stencil_bits > 0;
+  // Since one of the buffers is used by the surface for presentation, there can
+  // be at most |num_surface_buffers - 1| pending buffers that the compositor
+  // can use.
+  capabilities_.max_frames_pending =
+      context_provider->ContextCapabilities().num_surface_buffers - 1;
   context_provider->SetUpdateVSyncParametersCallback(
       base::BindRepeating(&GLOutputSurface::OnVSyncParametersUpdated,
                           weak_ptr_factory_.GetWeakPtr()));
@@ -91,12 +96,9 @@ void GLOutputSurface::SwapBuffers(OutputSurfaceFrame frame) {
   if (synthetic_begin_frame_source_)
     flags |= gpu::SwapBuffersFlags::kVSyncParams;
 
-  if (LatencyInfoHasSnapshotRequest(frame.latency_info))
-    context_provider_->ContextSupport()->SetSnapshotRequested();
-
   auto swap_callback = base::BindOnce(
       &GLOutputSurface::OnGpuSwapBuffersCompleted,
-      weak_ptr_factory_.GetWeakPtr(), std::move(frame.latency_info));
+      weak_ptr_factory_.GetWeakPtr(), std::move(frame.latency_info), size_);
   gpu::ContextSupport::PresentationCallback presentation_callback;
   if (frame.need_presentation_feedback) {
     flags |= gpu::SwapBuffersFlags::kPresentationFeedback;
@@ -106,9 +108,8 @@ void GLOutputSurface::SwapBuffers(OutputSurfaceFrame frame) {
 
   set_draw_rectangle_for_frame_ = false;
   if (frame.sub_buffer_rect) {
-    context_provider_->ContextSupport()->PartialSwapBuffers(
-        *frame.sub_buffer_rect, flags, std::move(swap_callback),
-        std::move(presentation_callback));
+    HandlePartialSwap(*frame.sub_buffer_rect, flags, std::move(swap_callback),
+                      std::move(presentation_callback));
   } else {
     context_provider_->ContextSupport()->Swap(flags, std::move(swap_callback),
                                               std::move(presentation_callback));
@@ -149,8 +150,19 @@ void GLOutputSurface::DidReceiveSwapBuffersAck(gfx::SwapResult result) {
   client_->DidReceiveSwapBuffersAck();
 }
 
+void GLOutputSurface::HandlePartialSwap(
+    const gfx::Rect& sub_buffer_rect,
+    uint32_t flags,
+    gpu::ContextSupport::SwapCompletedCallback swap_callback,
+    gpu::ContextSupport::PresentationCallback presentation_callback) {
+  context_provider_->ContextSupport()->PartialSwapBuffers(
+      sub_buffer_rect, flags, std::move(swap_callback),
+      std::move(presentation_callback));
+}
+
 void GLOutputSurface::OnGpuSwapBuffersCompleted(
     std::vector<ui::LatencyInfo> latency_info,
+    const gfx::Size& pixel_size,
     const gpu::SwapBuffersCompleteParams& params) {
   if (!params.texture_in_use_responses.empty())
     client_->DidReceiveTextureInUseResponses(params.texture_in_use_responses);
@@ -161,6 +173,9 @@ void GLOutputSurface::OnGpuSwapBuffersCompleted(
   UpdateLatencyInfoOnSwap(params.swap_response, &latency_info);
   latency_tracker_.OnGpuSwapBuffersCompleted(latency_info);
   client_->DidFinishLatencyInfo(latency_info);
+
+  if (needs_swap_size_notifications_)
+    client_->DidSwapWithSize(pixel_size);
 }
 
 void GLOutputSurface::OnVSyncParametersUpdated(base::TimeTicks timebase,
@@ -195,6 +210,11 @@ unsigned GLOutputSurface::UpdateGpuFence() {
   gpu_fence_id_ = context_provider()->ContextGL()->CreateGpuFenceCHROMIUM();
 
   return gpu_fence_id_;
+}
+
+void GLOutputSurface::SetNeedsSwapSizeNotifications(
+    bool needs_swap_size_notifications) {
+  needs_swap_size_notifications_ = needs_swap_size_notifications;
 }
 
 }  // namespace viz

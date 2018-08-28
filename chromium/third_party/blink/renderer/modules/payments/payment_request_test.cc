@@ -7,7 +7,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/modules/payments/payment_test_helper.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 
@@ -32,7 +31,8 @@ TEST(PaymentRequestTest, SupportedMethodListRequired) {
       BuildPaymentDetailsInitForTest(), scope.GetExceptionState());
 
   EXPECT_TRUE(scope.GetExceptionState().HadException());
-  EXPECT_EQ(kV8TypeError, scope.GetExceptionState().Code());
+  EXPECT_EQ(ESErrorType::kTypeError,
+            scope.GetExceptionState().CodeAs<ESErrorType>());
 }
 
 TEST(PaymentRequestTest, NullShippingOptionWhenNoOptionsAvailable) {

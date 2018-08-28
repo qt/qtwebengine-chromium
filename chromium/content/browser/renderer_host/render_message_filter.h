@@ -18,7 +18,6 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
-#include "components/viz/common/resources/shared_bitmap_manager.h"
 #include "content/common/render_message_filter.mojom.h"
 #include "content/public/browser/browser_associated_interface.h"
 #include "content/public/browser/browser_message_filter.h"
@@ -55,7 +54,6 @@ namespace content {
 class BrowserContext;
 class CacheStorageContextImpl;
 class CacheStorageCacheHandle;
-class DOMStorageContextWrapper;
 class MediaInternals;
 class RenderWidgetHelper;
 class ResourceContext;
@@ -74,7 +72,6 @@ class CONTENT_EXPORT RenderMessageFilter
                       net::URLRequestContextGetter* request_context,
                       RenderWidgetHelper* render_widget_helper,
                       MediaInternals* media_internals,
-                      DOMStorageContextWrapper* dom_storage_context,
                       CacheStorageContextImpl* cache_storage_context);
 
   // BrowserMessageFilter methods:
@@ -148,8 +145,6 @@ class CONTENT_EXPORT RenderMessageFilter
   ResourceContext* resource_context_;
 
   scoped_refptr<RenderWidgetHelper> render_widget_helper_;
-
-  scoped_refptr<DOMStorageContextWrapper> dom_storage_context_;
 
   int render_process_id_;
 

@@ -12,12 +12,11 @@
 #include "GrTexture.h"
 #include "ccpr/GrCCPerFlushResources.h"
 
-void GrCCClipPath::init(GrProxyProvider* proxyProvider,
-                        const SkPath& deviceSpacePath, const SkIRect& accessRect,
-                        int rtWidth, int rtHeight) {
+void GrCCClipPath::init(const SkPath& deviceSpacePath, const SkIRect& accessRect, int rtWidth,
+                        int rtHeight, const GrCaps& caps) {
     SkASSERT(!this->isInitialized());
 
-    fAtlasLazyProxy = proxyProvider->createFullyLazyProxy(
+    fAtlasLazyProxy = GrProxyProvider::MakeFullyLazyProxy(
             [this](GrResourceProvider* resourceProvider) {
                 if (!resourceProvider) {
                     return sk_sp<GrTexture>();
@@ -35,25 +34,37 @@ void GrCCClipPath::init(GrProxyProvider* proxyProvider,
                 SkASSERT(kTopLeft_GrSurfaceOrigin == textureProxy->origin());
 
                 fAtlasScale = {1.f / textureProxy->width(), 1.f / textureProxy->height()};
-                fAtlasTranslate = {fAtlasOffsetX * fAtlasScale.x(),
-                                   fAtlasOffsetY * fAtlasScale.y()};
+                fAtlasTranslate.set(fDevToAtlasOffset.fX * fAtlasScale.x(),
+                                    fDevToAtlasOffset.fY * fAtlasScale.y());
                 SkDEBUGCODE(fHasAtlasTransform = true);
 
                 return sk_ref_sp(textureProxy->priv().peekTexture());
             },
-            GrProxyProvider::Renderable::kYes, kTopLeft_GrSurfaceOrigin, kAlpha_half_GrPixelConfig);
+            GrProxyProvider::Renderable::kYes, kTopLeft_GrSurfaceOrigin, kAlpha_half_GrPixelConfig,
+            caps);
 
     fDeviceSpacePath = deviceSpacePath;
     fDeviceSpacePath.getBounds().roundOut(&fPathDevIBounds);
     fAccessRect = accessRect;
 }
 
+void GrCCClipPath::accountForOwnPath(GrCCPerFlushResourceSpecs* specs) const {
+    SkASSERT(this->isInitialized());
+
+    ++specs->fNumClipPaths;
+    specs->fRenderedPathStats.statPath(fDeviceSpacePath);
+
+    SkIRect ibounds;
+    if (ibounds.intersect(fAccessRect, fPathDevIBounds)) {
+        specs->fRenderedAtlasSpecs.accountForSpace(ibounds.width(), ibounds.height());
+    }
+}
+
 void GrCCClipPath::renderPathInAtlas(GrCCPerFlushResources* resources,
                                      GrOnFlushResourceProvider* onFlushRP) {
     SkASSERT(this->isInitialized());
     SkASSERT(!fHasAtlas);
-    fAtlas = resources->renderDeviceSpacePathInAtlas(*onFlushRP->caps(), fAccessRect,
-                                                     fDeviceSpacePath, fPathDevIBounds,
-                                                     &fAtlasOffsetX, &fAtlasOffsetY);
+    fAtlas = resources->renderDeviceSpacePathInAtlas(fAccessRect, fDeviceSpacePath, fPathDevIBounds,
+                                                     &fDevToAtlasOffset);
     SkDEBUGCODE(fHasAtlas = true);
 }

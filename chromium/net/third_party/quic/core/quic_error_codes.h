@@ -10,7 +10,7 @@
 
 #include "net/third_party/quic/platform/api/quic_export.h"
 
-namespace net {
+namespace quic {
 
 enum QuicRstStreamErrorCode {
   // Complete response has been sent, sending a RST to ask the other endpoint
@@ -267,6 +267,8 @@ enum QuicErrorCode {
   QUIC_CONNECTION_MIGRATION_DISABLED_BY_CONFIG = 99,
   // Network changed, but error was encountered on the alternative network.
   QUIC_CONNECTION_MIGRATION_INTERNAL_ERROR = 100,
+  // Network changed, but handshake is not confirmed yet.
+  QUIC_CONNECTION_MIGRATION_HANDSHAKE_UNCONFIRMED = 111,
 
   // Stream frames arrived too discontiguously so that stream sequencer buffer
   // maintains too many intervals.
@@ -281,9 +283,28 @@ enum QuicErrorCode {
 
   // Receive a RST_STREAM with offset larger than kMaxStreamLength.
   QUIC_STREAM_LENGTH_OVERFLOW = 98,
+  // APPLICATION_CLOSE frame data is malformed.
+  QUIC_INVALID_APPLICATION_CLOSE_DATA = 101,
+  // Received a MAX DATA frame with errors.
+  QUIC_INVALID_MAX_DATA_FRAME_DATA = 102,
+  // Received a MAX STREAM DATA frame with errors.
+  QUIC_INVALID_MAX_STREAM_DATA_FRAME_DATA = 103,
+  // Received a MAX STREAM ID frame with bad data
+  QUIC_MAX_STREAM_ID_DATA = 104,
+  // Received a STREAM ID BLOCKED frame with bad data
+  QUIC_STREAM_ID_BLOCKED_DATA = 105,
+  // Error deframing a STREAM BLOCKED frame.
+  QUIC_INVALID_STREAM_BLOCKED_DATA = 106,
+  // NEW CONNECTION ID frame data is malformed.
+  QUIC_INVALID_NEW_CONNECTION_ID_DATA = 107,
+  // Received a MAX STREAM DATA frame with errors.
+  QUIC_INVALID_STOP_SENDING_FRAME_DATA = 108,
+  // Error deframing PATH CHALLENGE or PATH RESPONSE frames.
+  QUIC_INVALID_PATH_CHALLENGE_DATA = 109,
+  QUIC_INVALID_PATH_RESPONSE_DATA = 110,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 101,
+  QUIC_LAST_ERROR = 112,
 };
 // QuicErrorCodes is encoded as a single octet on-the-wire.
 static_assert(static_cast<int>(QUIC_LAST_ERROR) <=
@@ -333,6 +354,6 @@ enum QuicInternalErrorLocation {
 QUIC_EXPORT_PRIVATE
 void RecordInternalErrorLocation(QuicInternalErrorLocation location);
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_ERROR_CODES_H_

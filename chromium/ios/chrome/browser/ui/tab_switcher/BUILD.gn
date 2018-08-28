@@ -93,6 +93,7 @@ source_set("tab_switcher") {
     "//ios/chrome/browser/web",
     "//ios/chrome/browser/web_state_list",
     "//ios/chrome/common:ios_app_bundle_id_prefix_buildflags",
+    "//ios/chrome/common/favicon",
     "//ios/public/provider/chrome/browser",
     "//ios/third_party/material_components_ios",
     "//ios/third_party/material_roboto_font_loader_ios",
@@ -140,6 +141,7 @@ source_set("utils") {
     "//ios/chrome/browser/favicon",
     "//ios/chrome/browser/sync",
     "//ios/chrome/browser/ui",
+    "//ios/chrome/common/favicon",
     "//ui/base",
   ]
 }
@@ -155,11 +157,11 @@ source_set("egtest_support") {
 
   deps = [
     "//base",
+    "//base/test:test_support",
     "//ios/chrome/app/strings",
     "//ios/chrome/browser/ui/tools_menu/public",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
-    "//ios/testing:ios_test_support",
     "//ios/third_party/earl_grey:earl_grey+link",
     "//ui/base",
   ]
@@ -211,7 +213,6 @@ source_set("eg_tests") {
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
     "//ios/public/provider/chrome/browser/signin:test_support",
-    "//ios/testing:ios_test_support",
     "//ios/third_party/earl_grey:earl_grey+link",
     "//ios/web/public/test/http_server",
     "//ui/base",

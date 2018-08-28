@@ -6,6 +6,7 @@
  */
 
 #include "SkMipMap.h"
+
 #include "SkBitmap.h"
 #include "SkColorData.h"
 #include "SkHalf.h"
@@ -14,7 +15,9 @@
 #include "SkNx.h"
 #include "SkPM4fPriv.h"
 #include "SkSRGB.h"
+#include "SkTo.h"
 #include "SkTypes.h"
+#include <new>
 
 //
 // ColorTypeFilter is the "Type" we pass to some downsample template functions.
@@ -483,8 +486,7 @@ size_t SkMipMap::AllocLevelsSize(int levelCount, size_t pixelSize) {
     return SkTo<int32_t>(size);
 }
 
-SkMipMap* SkMipMap::Build(const SkPixmap& src, SkDestinationSurfaceColorMode colorMode,
-                          SkDiscardableFactoryProc fact) {
+SkMipMap* SkMipMap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact) {
     typedef void FilterProc(void*, const void* srcPtr, size_t srcRB, int count);
 
     FilterProc* proc_1_2 = nullptr;
@@ -498,8 +500,7 @@ SkMipMap* SkMipMap::Build(const SkPixmap& src, SkDestinationSurfaceColorMode col
 
     const SkColorType ct = src.colorType();
     const SkAlphaType at = src.alphaType();
-    const bool srgbGamma = (SkDestinationSurfaceColorMode::kGammaAndColorSpaceAware == colorMode)
-                            && src.info().gammaCloseToSRGB();
+    const bool srgbGamma = false;   // TODO: sRGB_ColorType
 
     switch (ct) {
         case kRGBA_8888_SkColorType:
@@ -778,13 +779,12 @@ bool SkMipMap::extractLevel(const SkSize& scaleSize, Level* levelPtr) const {
 
 // Helper which extracts a pixmap from the src bitmap
 //
-SkMipMap* SkMipMap::Build(const SkBitmap& src, SkDestinationSurfaceColorMode colorMode,
-                          SkDiscardableFactoryProc fact) {
+SkMipMap* SkMipMap::Build(const SkBitmap& src, SkDiscardableFactoryProc fact) {
     SkPixmap srcPixmap;
     if (!src.peekPixels(&srcPixmap)) {
         return nullptr;
     }
-    return Build(srcPixmap, colorMode, fact);
+    return Build(srcPixmap, fact);
 }
 
 int SkMipMap::countLevels() const {

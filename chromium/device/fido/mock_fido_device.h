@@ -23,7 +23,13 @@ namespace device {
 
 class MockFidoDevice : public FidoDevice {
  public:
+  static std::unique_ptr<MockFidoDevice> MakeU2f();
+  static std::unique_ptr<MockFidoDevice> MakeCtap(
+      base::Optional<AuthenticatorGetInfoResponse> device_info = base::nullopt);
+
   MockFidoDevice();
+  MockFidoDevice(ProtocolVersion protocol_version,
+                 base::Optional<AuthenticatorGetInfoResponse> device_info);
   ~MockFidoDevice() override;
 
   // TODO(crbug.com/729950): Remove these workarounds once support for move-only
@@ -40,23 +46,6 @@ class MockFidoDevice : public FidoDevice {
   MOCK_METHOD2(DeviceTransactPtr,
                void(const std::vector<uint8_t>& command, DeviceCallback& cb));
   void DeviceTransact(std::vector<uint8_t> command, DeviceCallback cb) override;
-
-  // Old interface ------------------------------------------------------------
-
-  static void NotSatisfied(const std::vector<uint8_t>& command,
-                           DeviceCallback& cb);
-  static void WrongData(const std::vector<uint8_t>& command,
-                        DeviceCallback& cb);
-  static void NoErrorSign(const std::vector<uint8_t>& command,
-                          DeviceCallback& cb);
-  static void NoErrorRegister(const std::vector<uint8_t>& command,
-                              DeviceCallback& cb);
-  static void SignWithCorruptedResponse(const std::vector<uint8_t>& command,
-                                        DeviceCallback& cb);
-  static void WinkDoNothing(WinkCallback& cb);
-
-  // New interface ------------------------------------------------------------
-
   void ExpectWinkedAtLeastOnce();
   void ExpectCtap2CommandAndRespondWith(
       CtapRequestCommand command,

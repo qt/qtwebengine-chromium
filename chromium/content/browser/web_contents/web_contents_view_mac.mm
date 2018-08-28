@@ -198,9 +198,6 @@ void WebContentsViewMac::Focus() {
   gfx::NativeView native_view = GetNativeViewForFocus();
   NSWindow* window = [native_view window];
   [window makeFirstResponder:native_view];
-  if (![window isVisible])
-    return;
-  [window makeKeyAndOrderFront:nil];
 }
 
 void WebContentsViewMac::SetInitialFocus() {
@@ -373,8 +370,10 @@ RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
     view->SetDelegate(rw_delegate.get());
   }
   view->SetAllowPauseForResizeOrRepaint(!allow_other_views_);
-  if (parent_ui_layer_)
-    view->SetParentUiLayer(parent_ui_layer_);
+
+  // Add the RenderWidgetHostView to the ui::Layer heirarchy.
+  child_views_.push_back(view->GetWeakPtr());
+  SetParentUiLayer(parent_ui_layer_);
 
   // Fancy layout comes later; for now just make it our size and resize it
   // with us. In case there are other siblings of the content area, we want
@@ -423,8 +422,10 @@ void WebContentsViewMac::RenderViewCreated(RenderViewHost* host) {
   host->EnablePreferredSizeMode();
 }
 
-void WebContentsViewMac::RenderViewSwappedIn(RenderViewHost* host) {
-}
+void WebContentsViewMac::RenderViewReady() {}
+
+void WebContentsViewMac::RenderViewHostChanged(RenderViewHost* old_host,
+                                               RenderViewHost* new_host) {}
 
 void WebContentsViewMac::SetOverscrollControllerEnabled(bool enabled) {
 }
@@ -450,10 +451,13 @@ void WebContentsViewMac::CloseTab() {
 
 void WebContentsViewMac::SetParentUiLayer(ui::Layer* parent_ui_layer) {
   parent_ui_layer_ = parent_ui_layer;
-  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
-      web_contents_->GetRenderWidgetHostView());
-  if (view)
-    view->SetParentUiLayer(parent_ui_layer);
+  // Remove any child NSViews that have been destroyed.
+  for (auto iter = child_views_.begin(); iter != child_views_.end();) {
+    if (*iter)
+      (*iter++)->SetParentUiLayer(parent_ui_layer);
+    else
+      iter = child_views_.erase(iter);
+  }
 }
 
 }  // namespace content
@@ -737,6 +741,20 @@ void WebContentsViewMac::SetParentUiLayer(ui::Layer* parent_ui_layer) {
 
 - (void)viewDidUnhide {
   [self updateWebContentsVisibility];
+}
+
+// AccessibilityHostable protocol implementation.
+- (void)setAccessibilityParentElement:(id)accessibilityParent {
+  accessibilityParent_.reset([accessibilityParent retain]);
+}
+
+// NSAccessibility informal protocol implementation.
+- (id)accessibilityAttributeValue:(NSString*)attribute {
+  if (accessibilityParent_ &&
+      [attribute isEqualToString:NSAccessibilityParentAttribute]) {
+    return accessibilityParent_;
+  }
+  return [super accessibilityAttributeValue:attribute];
 }
 
 @end

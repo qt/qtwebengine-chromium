@@ -47,54 +47,11 @@ struct ArrayTraits<ui::LatencyInfo::LatencyMap> {
 };
 
 template <>
-struct StructTraits<ui::mojom::LatencyComponentDataView,
-                    ui::LatencyInfo::LatencyComponent> {
-  static base::TimeTicks event_time(
-      const ui::LatencyInfo::LatencyComponent& component);
-  static uint32_t event_count(
-      const ui::LatencyInfo::LatencyComponent& component);
-  static base::TimeTicks first_event_time(
-      const ui::LatencyInfo::LatencyComponent& component);
-  static base::TimeTicks last_event_time(
-      const ui::LatencyInfo::LatencyComponent& component);
-  static bool Read(ui::mojom::LatencyComponentDataView data,
-                   ui::LatencyInfo::LatencyComponent* out);
-};
-
-template <>
-struct StructTraits<ui::mojom::LatencyComponentPairDataView,
-                    ui::LatencyInfo::LatencyMap::value_type> {
-  static const std::pair<ui::LatencyComponentType, int64_t>& key(
-      const ui::LatencyInfo::LatencyMap::value_type& input) {
-    return input.first;
-  }
-
-  static const ui::LatencyInfo::LatencyComponent& value(
-      const ui::LatencyInfo::LatencyMap::value_type& input) {
-    return input.second;
-  }
-
-  // TODO(fsamuel): Figure out how to optimize deserialization.
-};
-
-template <>
-struct StructTraits<ui::mojom::LatencyComponentIdDataView,
-                    std::pair<ui::LatencyComponentType, int64_t>> {
-  static ui::mojom::LatencyComponentType type(
-      const std::pair<ui::LatencyComponentType, int64_t>& id);
-  static int64_t id(const std::pair<ui::LatencyComponentType, int64_t>& id);
-  static bool Read(ui::mojom::LatencyComponentIdDataView data,
-                   std::pair<ui::LatencyComponentType, int64_t>* out);
-};
-
-template <>
 struct StructTraits<ui::mojom::LatencyInfoDataView, ui::LatencyInfo> {
   static const std::string& trace_name(const ui::LatencyInfo& info);
   static const ui::LatencyInfo::LatencyMap& latency_components(
       const ui::LatencyInfo& info);
   static int64_t trace_id(const ui::LatencyInfo& info);
-  static const ui::LatencyInfo::SnapshotMap& snapshots(
-      const ui::LatencyInfo& info);
   static ukm::SourceId ukm_source_id(const ui::LatencyInfo& info);
   static bool coalesced(const ui::LatencyInfo& info);
   static bool began(const ui::LatencyInfo& info);
@@ -102,6 +59,13 @@ struct StructTraits<ui::mojom::LatencyInfoDataView, ui::LatencyInfo> {
   static ui::mojom::SourceEventType source_event_type(
       const ui::LatencyInfo& info);
   static bool Read(ui::mojom::LatencyInfoDataView data, ui::LatencyInfo* out);
+};
+
+template <>
+struct EnumTraits<ui::mojom::LatencyComponentType, ui::LatencyComponentType> {
+  static ui::mojom::LatencyComponentType ToMojom(ui::LatencyComponentType type);
+  static bool FromMojom(ui::mojom::LatencyComponentType input,
+                        ui::LatencyComponentType* output);
 };
 
 }  // namespace mojo

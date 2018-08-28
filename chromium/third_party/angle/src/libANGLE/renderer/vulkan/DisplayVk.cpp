@@ -19,25 +19,28 @@
 namespace rx
 {
 
-DisplayVk::DisplayVk(const egl::DisplayState &state) : DisplayImpl(state), mRenderer(nullptr)
+DisplayVk::DisplayVk(const egl::DisplayState &state)
+    : DisplayImpl(state), vk::Context(new RendererVk())
 {
 }
 
 DisplayVk::~DisplayVk()
 {
+    delete mRenderer;
 }
 
 egl::Error DisplayVk::initialize(egl::Display *display)
 {
-    ASSERT(!mRenderer && display != nullptr);
-    mRenderer.reset(new RendererVk());
-    return mRenderer->initialize(display->getAttributeMap(), getWSIName())
-        .toEGL(EGL_NOT_INITIALIZED);
+    ASSERT(mRenderer != nullptr && display != nullptr);
+    angle::Result result = mRenderer->initialize(this, display->getAttributeMap(), getWSIName());
+    ANGLE_TRY(angle::ToEGL(result, this, EGL_NOT_INITIALIZED));
+    return egl::NoError();
 }
 
 void DisplayVk::terminate()
 {
-    mRenderer.reset(nullptr);
+    ASSERT(mRenderer);
+    mRenderer->onDestroy(this);
 }
 
 egl::Error DisplayVk::makeCurrent(egl::Surface * /*drawSurface*/,
@@ -76,13 +79,16 @@ DeviceImpl *DisplayVk::createDevice()
     return nullptr;
 }
 
-egl::Error DisplayVk::waitClient(const gl::Context *context) const
+egl::Error DisplayVk::waitClient(const gl::Context *context)
 {
+    // TODO(jmadill): Call flush instead of finish once it is implemented in RendererVK.
+    // http://anglebug.com/2504
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+
+    return angle::ToEGL(mRenderer->finish(this), this, EGL_BAD_ACCESS);
 }
 
-egl::Error DisplayVk::waitNative(const gl::Context *context, EGLint engine) const
+egl::Error DisplayVk::waitNative(const gl::Context *context, EGLint engine)
 {
     UNIMPLEMENTED();
     return egl::EglBadAccess();
@@ -134,9 +140,12 @@ ImageImpl *DisplayVk::createImage(const egl::ImageState &state,
     return static_cast<ImageImpl *>(0);
 }
 
-ContextImpl *DisplayVk::createContext(const gl::ContextState &state)
+ContextImpl *DisplayVk::createContext(const gl::ContextState &state,
+                                      const egl::Config *configuration,
+                                      const gl::Context *shareContext,
+                                      const egl::AttributeMap &attribs)
 {
-    return new ContextVk(state, mRenderer.get());
+    return new ContextVk(state, mRenderer);
 }
 
 StreamProducerImpl *DisplayVk::createStreamProducerD3DTexture(
@@ -155,6 +164,12 @@ gl::Version DisplayVk::getMaxSupportedESVersion() const
 
 void DisplayVk::generateExtensions(egl::DisplayExtensions *outExtensions) const
 {
+    outExtensions->surfaceOrientation       = true;
+    outExtensions->displayTextureShareGroup = true;
+
+    // TODO(geofflang): Extension is exposed but not implemented so that other aspects of the Vulkan
+    // backend can be tested in Chrome. http://anglebug.com/2722
+    outExtensions->robustResourceInitialization = true;
 }
 
 void DisplayVk::generateCaps(egl::Caps *outCaps) const
@@ -162,4 +177,17 @@ void DisplayVk::generateCaps(egl::Caps *outCaps) const
     outCaps->textureNPOT = true;
 }
 
+void DisplayVk::handleError(VkResult result, const char *file, unsigned int line)
+{
+    std::stringstream errorStream;
+    errorStream << "Internal Vulkan error: " << VulkanResultString(result) << ", in " << file
+                << ", line " << line << ".";
+    mStoredErrorString = errorStream.str();
+}
+
+// TODO(jmadill): Remove this. http://anglebug.com/2491
+egl::Error DisplayVk::getEGLError(EGLint errorCode)
+{
+    return egl::Error(errorCode, 0, std::move(mStoredErrorString));
+}
 }  // namespace rx

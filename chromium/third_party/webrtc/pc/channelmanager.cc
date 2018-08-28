@@ -13,10 +13,10 @@
 #include <algorithm>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "media/base/rtpdataengine.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/stringutils.h"
 #include "rtc_base/trace_event.h"
 
@@ -182,9 +182,9 @@ VoiceChannel* ChannelManager::CreateVoiceChannel(
     return nullptr;
   }
 
-  auto voice_channel = rtc::MakeUnique<VoiceChannel>(
+  auto voice_channel = absl::make_unique<VoiceChannel>(
       worker_thread_, network_thread_, signaling_thread, media_engine_.get(),
-      rtc::WrapUnique(media_channel), content_name, srtp_required,
+      absl::WrapUnique(media_channel), content_name, srtp_required,
       crypto_options);
 
   voice_channel->Init_w(rtp_transport);
@@ -193,7 +193,6 @@ VoiceChannel* ChannelManager::CreateVoiceChannel(
   voice_channels_.push_back(std::move(voice_channel));
   return voice_channel_ptr;
 }
-
 
 void ChannelManager::DestroyVoiceChannel(VoiceChannel* voice_channel) {
   TRACE_EVENT0("webrtc", "ChannelManager::DestroyVoiceChannel");
@@ -250,9 +249,9 @@ VideoChannel* ChannelManager::CreateVideoChannel(
     return nullptr;
   }
 
-  auto video_channel = rtc::MakeUnique<VideoChannel>(
+  auto video_channel = absl::make_unique<VideoChannel>(
       worker_thread_, network_thread_, signaling_thread,
-      rtc::WrapUnique(media_channel), content_name, srtp_required,
+      absl::WrapUnique(media_channel), content_name, srtp_required,
       crypto_options);
   video_channel->Init_w(rtp_transport);
 
@@ -260,8 +259,6 @@ VideoChannel* ChannelManager::CreateVideoChannel(
   video_channels_.push_back(std::move(video_channel));
   return video_channel_ptr;
 }
-
-
 
 void ChannelManager::DestroyVideoChannel(VideoChannel* video_channel) {
   TRACE_EVENT0("webrtc", "ChannelManager::DestroyVideoChannel");
@@ -310,9 +307,9 @@ RtpDataChannel* ChannelManager::CreateRtpDataChannel(
     return nullptr;
   }
 
-  auto data_channel = rtc::MakeUnique<RtpDataChannel>(
+  auto data_channel = absl::make_unique<RtpDataChannel>(
       worker_thread_, network_thread_, signaling_thread,
-      rtc::WrapUnique(media_channel), content_name, srtp_required,
+      absl::WrapUnique(media_channel), content_name, srtp_required,
       crypto_options);
   data_channel->Init_w(rtp_transport);
 

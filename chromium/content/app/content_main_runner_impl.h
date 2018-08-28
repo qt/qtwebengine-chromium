@@ -9,7 +9,9 @@
 
 #include "base/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/message_loop/message_loop.h"
 #include "build/build_config.h"
+#include "content/browser/startup_data_impl.h"
 #include "content/public/app/content_main.h"
 #include "content/public/app/content_main_runner.h"
 #include "content/public/common/content_client.h"
@@ -22,11 +24,9 @@
 
 namespace base {
 class AtExitManager;
-class SingleThreadTaskRunner;
 }  // namespace base
 
 namespace content {
-class BrowserProcessSubThread;
 class ContentMainDelegate;
 struct ContentMainParams;
 
@@ -41,15 +41,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
   // ContentMainRunner:
   int Initialize(const ContentMainParams& params) override;
-  int Run() override;
+  int Run(bool start_service_manager_only) override;
   void Shutdown() override;
-
-#if !defined(CHROME_MULTIPLE_DLL_CHILD)
-  // Creates a thread and returns the SingleThreadTaskRunner on which
-  // ServiceManager should run.
-  scoped_refptr<base::SingleThreadTaskRunner>
-  GetServiceManagerTaskRunnerForEmbedderProcess();
-#endif  // !defined(CHROME_MULTIPLE_DLL_CHILD)
 
  private:
   // True if the runner has been initialized.
@@ -75,11 +68,13 @@ class ContentMainRunnerImpl : public ContentMainRunner {
   base::mac::ScopedNSAutoreleasePool* autorelease_pool_ = nullptr;
 #endif
 
-  std::unique_ptr<BrowserProcessSubThread> service_manager_thread_;
-
   base::Closure* ui_task_ = nullptr;
 
   CreatedMainPartsClosure* created_main_parts_closure_ = nullptr;
+
+  std::unique_ptr<base::MessageLoop> main_message_loop_;
+
+  std::unique_ptr<StartupDataImpl> startup_data_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentMainRunnerImpl);
 };

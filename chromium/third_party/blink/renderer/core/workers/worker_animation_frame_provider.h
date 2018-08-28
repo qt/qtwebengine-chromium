@@ -8,13 +8,12 @@
 #include "base/macros.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/frame_request_callback_collection.h"
-#include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 #include "third_party/blink/renderer/platform/graphics/begin_frame_provider.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 
 namespace blink {
 
-class CanvasRenderingContext;
+class OffscreenCanvas;
 
 // WorkerAnimationFrameProvider is a member of WorkerGlobalScope and it provides
 // RequestAnimationFrame capabilities to Workers.
@@ -40,20 +39,14 @@ class CORE_EXPORT WorkerAnimationFrameProvider
   int RegisterCallback(FrameRequestCallbackCollection::FrameCallback* callback);
   void CancelCallback(int id);
 
-  void Trace(blink::Visitor* visitor) {
-    visitor->Trace(callback_collection_);
-    visitor->Trace(rendering_contexts_);
-  }
-
-  void TraceWrappers(ScriptWrappableVisitor* visitor) const {
-    visitor->TraceWrappers(callback_collection_);
-  }
+  void Trace(blink::Visitor* visitor);
 
   // BeginFrameProviderClient
   void BeginFrame() override;
+  bool InBeginFrame() const;
 
-  void AddContextToDispatch(CanvasRenderingContext*);
-  void RemoveContextToDispatch(CanvasRenderingContext*);
+  void RegisterOffscreenCanvas(OffscreenCanvas*);
+  void DeregisterOffscreenCanvas(OffscreenCanvas*);
 
  protected:
   WorkerAnimationFrameProvider(
@@ -65,7 +58,14 @@ class CORE_EXPORT WorkerAnimationFrameProvider
   DISALLOW_COPY_AND_ASSIGN(WorkerAnimationFrameProvider);
   FrameRequestCallbackCollection callback_collection_;
 
-  HeapVector<Member<CanvasRenderingContext>> rendering_contexts_;
+  // To avoid leaking OffscreenCanvas objects, the following vector must
+  // not hold strong references.
+  Vector<UntracedMember<OffscreenCanvas>> offscreen_canvases_;
+  bool in_begin_frame_;
+
+  Member<ExecutionContext> context_;
+
+  base::WeakPtrFactory<WorkerAnimationFrameProvider> weak_factory_;
 };
 
 }  // namespace blink

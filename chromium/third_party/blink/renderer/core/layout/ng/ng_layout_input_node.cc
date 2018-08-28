@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_input_node.h"
 
+#include "third_party/blink/renderer/core/layout/intrinsic_sizing_info.h"
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/min_max_size.h"
@@ -95,8 +96,8 @@ bool NGLayoutInputNode::IsListMarker() const {
   return IsBlock() && box_->IsLayoutNGListMarker();
 }
 
-bool NGLayoutInputNode::IsAnonymous() const {
-  return box_->IsAnonymous();
+bool NGLayoutInputNode::IsAnonymousBlock() const {
+  return box_->IsAnonymousBlock();
 }
 
 bool NGLayoutInputNode::IsQuirkyContainer() const {
@@ -182,12 +183,12 @@ NGPhysicalSize NGLayoutInputNode::InitialContainingBlockSize() const {
                         LayoutUnit(icb_size.Height())};
 }
 
-LayoutObject* NGLayoutInputNode::GetLayoutObject() const {
-  return box_;
-}
-
 const ComputedStyle& NGLayoutInputNode::Style() const {
   return box_->StyleRef();
+}
+
+bool NGLayoutInputNode::ShouldApplySizeContainment() const {
+  return box_->ShouldApplySizeContainment();
 }
 
 String NGLayoutInputNode::ToString() const {

@@ -25,12 +25,12 @@ namespace ShowPermissionPromptForDelegatedInstall =
 namespace {
 
 // Error messages that can be returned by the API.
-const char kInvalidIconUrlError[] = "Invalid icon url";
-const char kInvalidIdError[] = "Invalid id";
-const char kInvalidManifestError[] = "Invalid manifest";
-const char kUserCancelledError[] = "User cancelled install";
+const char kDashboardInvalidIconUrlError[] = "Invalid icon url";
+const char kDashboardInvalidIdError[] = "Invalid id";
+const char kDashboardInvalidManifestError[] = "Invalid manifest";
+const char kDashboardUserCancelledError[] = "User cancelled install";
 
-api::dashboard_private::Result WebstoreInstallHelperResultToApiResult(
+api::dashboard_private::Result WebstoreInstallHelperResultToDashboardApiResult(
     WebstoreInstallHelper::Delegate::InstallHelperResultCode result) {
   switch (result) {
     case WebstoreInstallHelper::Delegate::UNKNOWN_ERROR:
@@ -61,16 +61,16 @@ DashboardPrivateShowPermissionPromptForDelegatedInstallFunction::Run() {
 
   if (!crx_file::id_util::IdIsValid(params_->details.id)) {
     return RespondNow(BuildResponse(api::dashboard_private::RESULT_INVALID_ID,
-                                    kInvalidIdError));
+                                    kDashboardInvalidIdError));
   }
 
   GURL icon_url;
   if (params_->details.icon_url) {
     icon_url = source_url().Resolve(*params_->details.icon_url);
     if (!icon_url.is_valid()) {
-      return RespondNow(BuildResponse(
-          api::dashboard_private::RESULT_INVALID_ICON_URL,
-          kInvalidIconUrlError));
+      return RespondNow(
+          BuildResponse(api::dashboard_private::RESULT_INVALID_ICON_URL,
+                        kDashboardInvalidIconUrlError));
     }
   }
 
@@ -120,7 +120,7 @@ void DashboardPrivateShowPermissionPromptForDelegatedInstallFunction::
   if (!dummy_extension_.get()) {
     OnWebstoreParseFailure(params_->details.id,
                            WebstoreInstallHelper::Delegate::MANIFEST_ERROR,
-                           kInvalidManifestError);
+                           kDashboardInvalidManifestError);
     return;
   }
 
@@ -128,7 +128,7 @@ void DashboardPrivateShowPermissionPromptForDelegatedInstallFunction::
   if (!web_contents) {
     // The browser window has gone away.
     Respond(BuildResponse(api::dashboard_private::RESULT_USER_CANCELLED,
-                          kUserCancelledError));
+                          kDashboardUserCancelledError));
     // Matches the AddRef in Run().
     Release();
     return;
@@ -156,7 +156,7 @@ void DashboardPrivateShowPermissionPromptForDelegatedInstallFunction::
     const std::string& error_message) {
   CHECK_EQ(params_->details.id, id);
 
-  Respond(BuildResponse(WebstoreInstallHelperResultToApiResult(result),
+  Respond(BuildResponse(WebstoreInstallHelperResultToDashboardApiResult(result),
                         error_message));
 
   // Matches the AddRef in Run().
@@ -166,10 +166,10 @@ void DashboardPrivateShowPermissionPromptForDelegatedInstallFunction::
 void DashboardPrivateShowPermissionPromptForDelegatedInstallFunction::
     OnInstallPromptDone(ExtensionInstallPrompt::Result result) {
   bool accepted = (result == ExtensionInstallPrompt::Result::ACCEPTED);
-  Respond(BuildResponse(accepted
-                            ? api::dashboard_private::RESULT_EMPTY_STRING
-                            : api::dashboard_private::RESULT_USER_CANCELLED,
-                        accepted ? std::string() : kUserCancelledError));
+  Respond(
+      BuildResponse(accepted ? api::dashboard_private::RESULT_EMPTY_STRING
+                             : api::dashboard_private::RESULT_USER_CANCELLED,
+                    accepted ? std::string() : kDashboardUserCancelledError));
 
   Release();  // Matches the AddRef in Run().
 }

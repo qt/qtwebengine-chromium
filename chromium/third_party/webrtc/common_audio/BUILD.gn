@@ -6,7 +6,6 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("//build/config/arm.gni")
 import("../webrtc.gni")
 
 visibility = [ ":*" ]
@@ -61,10 +60,10 @@ rtc_static_library("common_audio") {
 
   deps = [
     ":common_audio_c",
+    ":fft4g",
     ":sinc_resampler",
     "..:webrtc_common",
     "../:typedefs",
-    "../api:optional",
     "../rtc_base:checks",
     "../rtc_base:gtest_prod",
     "../rtc_base:rtc_base_approved",
@@ -72,6 +71,7 @@ rtc_static_library("common_audio") {
     "../rtc_base/memory:aligned_malloc",
     "../system_wrappers",
     "../system_wrappers:cpu_features_api",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 
   defines = []
@@ -80,16 +80,7 @@ rtc_static_library("common_audio") {
     deps += [ ":common_audio_neon" ]
   }
 
-  if (is_win) {
-    cflags = [ "/wd4334" ]  # Ignore warning on shift operator promotion.
-  }
-
   public_configs = [ ":common_audio_config" ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 
   if (current_cpu == "x86" || current_cpu == "x64") {
     deps += [ ":common_audio_sse2" ]
@@ -130,8 +121,6 @@ rtc_source_set("common_audio_c_arm_asm") {
 rtc_source_set("common_audio_c") {
   visibility += webrtc_default_visibility
   sources = [
-    "fft4g.c",
-    "fft4g.h",
     "ring_buffer.c",
     "ring_buffer.h",
     "signal_processing/auto_corr_to_refl_coef.c",
@@ -208,14 +197,11 @@ rtc_source_set("common_audio_c") {
     ]
   }
 
-  if (is_win) {
-    cflags = [ "/wd4334" ]  # Ignore warning on shift operator promotion.
-  }
-
   public_configs = [ ":common_audio_config" ]
   deps = [
     ":common_audio_c_arm_asm",
     ":common_audio_cc",
+    ":fft4g",
     "..:webrtc_common",
     "../:typedefs",
     "../rtc_base:checks",
@@ -224,6 +210,14 @@ rtc_source_set("common_audio_c") {
     "../rtc_base:sanitizer",
     "../system_wrappers",
     "../system_wrappers:cpu_features_api",
+  ]
+}
+
+rtc_source_set("fft4g") {
+  visibility += webrtc_default_visibility
+  sources = [
+    "fft4g.c",
+    "fft4g.h",
   ]
 }
 
@@ -297,10 +291,6 @@ if (current_cpu == "x86" || current_cpu == "x64") {
       cflags = [ "-msse2" ]
     }
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
     deps = [
       ":fir_filter",
       ":sinc_resampler",
@@ -334,11 +324,6 @@ if (rtc_build_with_neon) {
         "-flto",
         "-ffat-lto-objects",
       ]
-    }
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
     deps = [
@@ -376,10 +361,6 @@ if (rtc_build_with_neon) {
       ]
     }
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
     deps = [
       ":common_audio_c",
       "../rtc_base:checks",
@@ -426,11 +407,6 @@ if (rtc_include_tests) {
     # Does not compile on iOS for arm: webrtc:5544.
     if (!is_ios || target_cpu != "arm") {
       sources += [ "resampler/sinc_resampler_unittest.cc" ]
-    }
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
 
     deps = [

@@ -35,12 +35,10 @@
 #include <memory>
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_url_request.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value_factory.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/events/message_event.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
@@ -51,6 +49,7 @@
 #include "third_party/blink/renderer/core/loader/threadable_loader.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/modules/eventsource/event_source_init.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_error.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
@@ -87,14 +86,15 @@ EventSource* EventSource::Create(ExecutionContext* context,
 
   if (url.IsEmpty()) {
     exception_state.ThrowDOMException(
-        kSyntaxError, "Cannot open an EventSource to an empty URL.");
+        DOMExceptionCode::kSyntaxError,
+        "Cannot open an EventSource to an empty URL.");
     return nullptr;
   }
 
   KURL full_url = context->CompleteURL(url);
   if (!full_url.IsValid()) {
     exception_state.ThrowDOMException(
-        kSyntaxError,
+        DOMExceptionCode::kSyntaxError,
         "Cannot open an EventSource to '" + url + "'. The URL is invalid.");
     return nullptr;
   }
@@ -108,10 +108,6 @@ EventSource* EventSource::Create(ExecutionContext* context,
 EventSource::~EventSource() {
   DCHECK_EQ(kClosed, state_);
   DCHECK(!loader_);
-}
-
-void EventSource::Dispose() {
-  probe::detachClientRequest(GetExecutionContext(), this);
 }
 
 void EventSource::ScheduleInitialConnect() {
@@ -170,8 +166,6 @@ void EventSource::Connect() {
 }
 
 void EventSource::NetworkRequestEnded() {
-  probe::didFinishEventSourceRequest(GetExecutionContext(), this);
-
   loader_ = nullptr;
 
   if (state_ != kClosed)
@@ -180,7 +174,8 @@ void EventSource::NetworkRequestEnded() {
 
 void EventSource::ScheduleReconnect() {
   state_ = kConnecting;
-  connect_timer_.StartOneShot(reconnect_delay_ / 1000.0, FROM_HERE);
+  connect_timer_.StartOneShot(TimeDelta::FromMilliseconds(reconnect_delay_),
+                              FROM_HERE);
   DispatchEvent(Event::Create(EventTypeNames::error));
 }
 
@@ -360,7 +355,6 @@ void EventSource::AbortConnectionAttempt() {
 }
 
 void EventSource::ContextDestroyed(ExecutionContext*) {
-  probe::detachClientRequest(GetExecutionContext(), this);
   close();
 }
 

@@ -41,7 +41,6 @@ const char kChromeUICrashHost[] = "crash";
 const char kChromeUICrashesHost[] = "crashes";
 const char kChromeUICreditsHost[] = "credits";
 const char kChromeUICreditsURL[] = "chrome://credits/";
-const char kChromeUIDNSHost[] = "dns";
 const char kChromeUIDefaultHost[] = "version";
 const char kChromeUIDelayedHangUIHost[] = "delayeduithreadhang";
 const char kChromeUIDevToolsBlankPath[] = "blank";
@@ -101,6 +100,7 @@ const char kChromeUINetExportHost[] = "net-export";
 const char kChromeUINetInternalsHost[] = "net-internals";
 const char kChromeUINetInternalsURL[] = "chrome://net-internals/";
 const char kChromeUINewTabHost[] = "newtab";
+const char kChromeUINewTabIconHost[] = "ntpicon";
 const char kChromeUINewTabURL[] = "chrome://newtab/";
 const char kChromeUIOmniboxHost[] = "omnibox";
 const char kChromeUIOmniboxURL[] = "chrome://omnibox/";
@@ -168,6 +168,7 @@ const char kDeprecatedChromeUIHistoryFrameHost[] = "history-frame";
 const char kDeprecatedChromeUIHistoryFrameURL[] = "chrome://history-frame/";
 
 #if defined(OS_ANDROID)
+const char kChromeUIEocInternalsHost[] = "eoc-internals";
 const char kChromeUIJavaCrashURL[] = "chrome://java-crash/";
 const char kChromeUINativeBookmarksURL[] = "chrome-native://bookmarks/";
 const char kChromeUINativeHistoryURL[] = "chrome-native://history/";
@@ -218,7 +219,6 @@ const char kChromeUISlowHost[] = "slow";
 const char kChromeUISlowTraceHost[] = "slow_trace";
 const char kChromeUISlowURL[] = "chrome://slow/";
 const char kChromeUISysInternalsHost[] = "sys-internals";
-const char kChromeUITermsOemURL[] = "chrome://terms/oem";
 const char kChromeUIUserImageHost[] = "userimage";
 const char kChromeUIUserImageURL[] = "chrome://userimage/";
 const char kChromeUIAssistantOptInHost[] = "assistant-optin";
@@ -293,6 +293,7 @@ const char kStylusSubPage[] = "stylus";
 #else
 const char kCreateProfileSubPage[] = "createProfile";
 const char kManageProfileSubPage[] = "manageProfile";
+const char kPeopleSubPage[] = "people";
 #endif  // defined(OS_CHROMEOS)
 #if defined(OS_WIN)
 const char kCleanupSubPage[] = "cleanup";
@@ -310,7 +311,6 @@ const char* const kChromeHostURLs[] = {
     kChromeUIComponentsHost,
     kChromeUICrashesHost,
     kChromeUICreditsHost,
-    kChromeUIDNSHost,
 #if defined(OS_CHROMEOS) && !defined(OFFICIAL_BUILD)
     kChromeUIDeviceEmulatorHost,
 #endif
@@ -376,6 +376,7 @@ const char* const kChromeHostURLs[] = {
     kChromeUIUberHost,
 #endif
 #if defined(OS_ANDROID)
+    kChromeUIEocInternalsHost,
     kChromeUIOfflineInternalsHost,
     kChromeUISnippetsInternalsHost,
     kChromeUIWebApksHost,

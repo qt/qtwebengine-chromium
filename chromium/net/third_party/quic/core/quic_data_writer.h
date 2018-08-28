@@ -14,13 +14,16 @@
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
-namespace net {
-// VarInt64 encoding masks
+namespace quic {
+
+// Maximum value that can be properly encoded using VarInt62 coding.
+const uint64_t kVarInt62MaxValue = UINT64_C(0x3fffffffffffffff);
+
+// VarInt62 encoding masks
 // If a uint64_t anded with a mask is not 0 then the value is encoded
-// using that length (or is too big, in the case of
-// kVarInt62ErrorMask). Values must be checked in order (error, 8-,
-// 4-, and then 2- bytes) and if none are non-0, the value is encoded
-// in 1 byte.
+// using that length (or is too big, in the case of kVarInt62ErrorMask).
+// Values must be checked in order (error, 8-, 4-, and then 2- bytes)
+// and if none are non-0, the value is encoded in 1 byte.
 const uint64_t kVarInt62ErrorMask = UINT64_C(0xc000000000000000);
 const uint64_t kVarInt62Mask8Bytes = UINT64_C(0x3fffffffc0000000);
 const uint64_t kVarInt62Mask4Bytes = UINT64_C(0x000000003fffc000);
@@ -61,7 +64,7 @@ class QUIC_EXPORT_PRIVATE QuicDataWriter {
   // buffer.
   bool WriteVarInt62(uint64_t value);
 
-  // Writes a std::string piece as a consecutive length/content pair. The
+  // Writes a string piece as a consecutive length/content pair. The
   // length is VarInt62 encoded.
   bool WriteStringPieceVarInt62(const QuicStringPiece& string_piece);
 
@@ -108,6 +111,8 @@ class QUIC_EXPORT_PRIVATE QuicDataWriter {
 
   size_t remaining() const { return capacity_ - length_; }
 
+  QuicString DebugString() const;
+
  private:
   // Returns the location that the data should be written at, or nullptr if
   // there is not enough room. Call EndWrite with the returned offset and the
@@ -126,6 +131,6 @@ class QUIC_EXPORT_PRIVATE QuicDataWriter {
   DISALLOW_COPY_AND_ASSIGN(QuicDataWriter);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_DATA_WRITER_H_

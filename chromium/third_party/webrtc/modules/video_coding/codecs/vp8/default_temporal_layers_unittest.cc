@@ -10,8 +10,8 @@
 
 #include "modules/video_coding/codecs/vp8/default_temporal_layers.h"
 #include "modules/video_coding/codecs/vp8/libvpx_vp8_encoder.h"
-#include "modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
 #include "modules/video_coding/include/video_codec_interface.h"
+#include "modules/video_coding/utility/simulcast_rate_allocator.h"
 #include "test/field_trial.h"
 #include "test/gtest.h"
 
@@ -56,7 +56,6 @@ std::vector<uint32_t> GetTemporalLayerRates(int target_bitrate_kbps,
   VideoCodec codec;
   codec.codecType = VideoCodecType::kVideoCodecVP8;
   codec.numberOfSimulcastStreams = 1;
-  codec.targetBitrate = target_bitrate_kbps;
   codec.maxBitrate = target_bitrate_kbps;
   codec.maxFramerate = framerate_fps;
   codec.simulcastStream[0].targetBitrate = target_bitrate_kbps;

@@ -730,6 +730,34 @@ TEST_F(PaintLayerScrollableAreaTest, FloatOverflowInRtlContainer) {
   EXPECT_FALSE(scrollable_area->HasHorizontalScrollbar());
 }
 
+TEST_F(PaintLayerScrollableAreaTest, ScrollOriginInRtlContainer) {
+  SetBodyInnerHTML(R"HTML(
+    <!DOCTYPE html>
+    <style>
+    #container {
+      width: 200px;
+      overflow: auto;
+      direction: rtl;
+    }
+    #content {
+      width: 300px;
+    }
+    </style>
+    <div id='container'>
+      <div id='content'>
+    lorem ipsum
+      <div>
+    </div>
+  )HTML");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  Element* container = GetDocument().getElementById("container");
+  ASSERT_TRUE(container);
+  PaintLayerScrollableArea* scrollable_area =
+      ToLayoutBoxModelObject(container->GetLayoutObject())->GetScrollableArea();
+  ASSERT_TRUE(scrollable_area);
+  EXPECT_EQ(scrollable_area->ScrollOrigin().X(), 100);
+}
+
 TEST_F(PaintLayerScrollableAreaTest,
        SlimmingPaintV2OverflowHiddenScrollOffsetInvalidation) {
   ScopedSlimmingPaintV2ForTest enabler(true);
@@ -883,20 +911,24 @@ TEST_F(PaintLayerScrollableAreaTest, HitTestOverlayScrollbars) {
   scrollable_area->SetScrollbarsHiddenIfOverlay(true);
 
   HitTestRequest hit_request(HitTestRequest::kMove | HitTestRequest::kReadOnly);
-  HitTestResult hit_result(hit_request, LayoutPoint(95, 5));
-  GetDocument().GetLayoutView()->HitTest(hit_result);
+  HitTestLocation location(LayoutPoint(95, 5));
+  HitTestResult hit_result(hit_request, location);
+  GetDocument().GetLayoutView()->HitTest(location, hit_result);
   EXPECT_EQ(hit_result.GetScrollbar(), nullptr);
-  hit_result = HitTestResult(hit_request, LayoutPoint(5, 95));
-  GetDocument().GetLayoutView()->HitTest(hit_result);
+  location = HitTestLocation(LayoutPoint(5, 95));
+  hit_result = HitTestResult(hit_request, location);
+  GetDocument().GetLayoutView()->HitTest(location, hit_result);
   EXPECT_EQ(hit_result.GetScrollbar(), nullptr);
 
   scrollable_area->SetScrollbarsHiddenIfOverlay(false);
 
-  hit_result = HitTestResult(hit_request, LayoutPoint(95, 5));
-  GetDocument().GetLayoutView()->HitTest(hit_result);
+  location = HitTestLocation(LayoutPoint(95, 5));
+  hit_result = HitTestResult(hit_request, location);
+  GetDocument().GetLayoutView()->HitTest(location, hit_result);
   EXPECT_EQ(hit_result.GetScrollbar(), scrollable_area->VerticalScrollbar());
-  hit_result = HitTestResult(hit_request, LayoutPoint(5, 95));
-  GetDocument().GetLayoutView()->HitTest(hit_result);
+  location = HitTestLocation(LayoutPoint(5, 95));
+  hit_result = HitTestResult(hit_request, location);
+  GetDocument().GetLayoutView()->HitTest(location, hit_result);
   EXPECT_EQ(hit_result.GetScrollbar(), scrollable_area->HorizontalScrollbar());
 }
 
@@ -929,6 +961,23 @@ TEST_F(PaintLayerScrollableAreaTest, CompositedStickyDescendant) {
                                   .Transform()
                                   ->Matrix()
                                   .To2DTranslation());
+}
+
+// Delayed scroll offset clamping should not crash. https://crbug.com/842495
+TEST_F(PaintLayerScrollableAreaTest, IgnoreDelayedScrollOnDestroyedLayer) {
+  SetBodyInnerHTML(R"HTML(
+    <div id=scroller style="overflow: scroll; width: 200px; height: 200px;">
+      <div style="height: 1000px;"></div>
+    </div>
+  )HTML");
+  Element* scroller = GetDocument().getElementById("scroller");
+  {
+    PaintLayerScrollableArea::DelayScrollOffsetClampScope scope;
+    PaintLayerScrollableArea::DelayScrollOffsetClampScope::SetNeedsClamp(
+        scroller->GetLayoutBox()->GetScrollableArea());
+    scroller->SetInlineStyleProperty(CSSPropertyDisplay, CSSValueNone);
+    GetDocument().View()->UpdateAllLifecyclePhases();
+  }
 }
 
 }  // namespace blink

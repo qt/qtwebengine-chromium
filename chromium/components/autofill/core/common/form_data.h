@@ -32,6 +32,9 @@ struct FormData {
   // compare fields.
   bool SimilarFormAs(const FormData& other) const;
 
+  // If |form| is the same as this from the POV of dynamic refills.
+  bool DynamicallySameFormAs(const FormData& form) const;
+
   // Note: operator==() performs a full-field-comparison(byte by byte), this is
   // different from SameFormAs(), which ignores comparison for those "values" of
   // all form fields, just like what FormFieldData::SameFieldAs() ignores.
@@ -61,6 +64,12 @@ struct FormData {
   uint32_t unique_renderer_id = kNotSetFormRendererId;
   // A vector of all the input fields in the form.
   std::vector<FormFieldData> fields;
+  // Contains unique renderer IDs of text elements which are predicted to be
+  // usernames. The order matters: elements are sorted in descending likelihood
+  // of being a username (the first one is the most likely username). Can
+  // contain IDs of elements which are not in |fields|. This is only used during
+  // parsing into PasswordForm, and hence not serialised for storage.
+  std::vector<uint32_t> username_predictions;
 };
 
 // For testing.

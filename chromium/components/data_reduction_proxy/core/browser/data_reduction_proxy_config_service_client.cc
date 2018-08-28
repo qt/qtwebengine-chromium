@@ -11,6 +11,7 @@
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
@@ -30,6 +31,7 @@
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_features.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_server.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
 #include "components/data_reduction_proxy/proto/client_config.pb.h"
 #include "components/data_use_measurement/core/data_use_user_data.h"
 #include "components/variations/net/variations_http_headers.h"
@@ -167,7 +169,8 @@ DataReductionProxyConfigServiceClient::DataReductionProxyConfigServiceClient(
 #endif
       previous_request_failed_authentication_(false),
       failed_attempts_before_success_(0),
-      fetch_in_progress_(false) {
+      fetch_in_progress_(false),
+      client_config_override_used_(false) {
   DCHECK(request_options);
   DCHECK(config_values);
   DCHECK(config);
@@ -175,13 +178,19 @@ DataReductionProxyConfigServiceClient::DataReductionProxyConfigServiceClient(
   DCHECK(io_data);
   DCHECK(net_log);
   DCHECK(config_service_url_.is_valid());
+
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  client_config_override_ = command_line.GetSwitchValueASCII(
+      switches::kDataReductionProxyServerClientConfig);
+
   // Constructed on the UI thread, but should be checked on the IO thread.
   thread_checker_.DetachFromThread();
 }
 
 DataReductionProxyConfigServiceClient::
     ~DataReductionProxyConfigServiceClient() {
-  net::NetworkChangeNotifier::RemoveIPAddressObserver(this);
+  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
 }
 
 base::TimeDelta
@@ -221,7 +230,7 @@ void DataReductionProxyConfigServiceClient::InitializeOnIOThread(
           &DataReductionProxyConfigServiceClient::OnApplicationStateChange,
           base::Unretained(this))));
 #endif
-  net::NetworkChangeNotifier::AddIPAddressObserver(this);
+  net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
   url_request_context_getter_ = url_request_context_getter;
 }
 
@@ -234,6 +243,29 @@ void DataReductionProxyConfigServiceClient::RetrieveConfig() {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!enabled_)
     return;
+
+  if (!client_config_override_.empty()) {
+    // Return fast if the override has already been attempted.
+    if (client_config_override_used_) {
+      return;
+    }
+    // Set this flag so that we only attempt to apply the given config once. If
+    // there are parse errors, the DCHECKs will catch them in a debug build.
+    client_config_override_used_ = true;
+
+    std::string override_config;
+    bool b64_decode_ok =
+        base::Base64Decode(client_config_override_, &override_config);
+    LOG_IF(DFATAL, !b64_decode_ok)
+        << "The given ClientConfig is not valid base64";
+
+    ClientConfig config;
+    bool was_valid_config = config.ParseFromString(override_config);
+    LOG_IF(DFATAL, !was_valid_config) << "The given ClientConfig was invalid.";
+    if (was_valid_config)
+      ParseAndApplyProxyConfig(config);
+    return;
+  }
 
   net_log_with_source_ = net::NetLogWithSource::Make(
       net_log_, net::NetLogSourceType::DATA_REDUCTION_PROXY);
@@ -258,6 +290,9 @@ void DataReductionProxyConfigServiceClient::ApplySerializedConfig(
     const std::string& config_value) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (RemoteConfigApplied())
+    return;
+
+  if (!client_config_override_.empty())
     return;
 
   std::string decoded_config;
@@ -356,8 +391,13 @@ base::Time DataReductionProxyConfigServiceClient::Now() {
   return base::Time::Now();
 }
 
-void DataReductionProxyConfigServiceClient::OnIPAddressChanged() {
+void DataReductionProxyConfigServiceClient::OnNetworkChanged(
+    net::NetworkChangeNotifier::ConnectionType type) {
   DCHECK(thread_checker_.CalledOnValidThread());
+
+  if (type == net::NetworkChangeNotifier::CONNECTION_NONE)
+    return;
+
   GetBackoffEntry()->Reset();
   last_ip_address_change_ = base::TimeTicks::Now();
   failed_attempts_before_success_ = 0;
@@ -554,6 +594,9 @@ bool DataReductionProxyConfigServiceClient::ParseAndApplyProxyConfig(
 
   if (!config.has_proxy_config())
     return false;
+
+  config_->SetIgnoreLongTermBlackListRules(
+      config.ignore_long_term_black_list_rules());
 
   // An empty proxy config is OK, and allows the server to effectively turn off
   // DataSaver if needed. See http://crbug.com/840978.

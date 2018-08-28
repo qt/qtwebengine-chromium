@@ -8,16 +8,16 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_info_collector.h"
+#include "gpu/config/gpu_preferences.h"
 #include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_switching.h"
 #include "gpu/config/gpu_util.h"
-#include "gpu/ipc/common/gpu_preferences_util.h"
 #include "media/gpu/vt_video_decode_accelerator_mac.h"
 #include "sandbox/mac/seatbelt.h"
+#include "sandbox/mac/seatbelt_exec.h"
 #include "services/service_manager/sandbox/mac/sandbox_mac.h"
 #include "services/service_manager/sandbox/sandbox.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
@@ -47,24 +47,18 @@ base::OnceClosure MaybeWrapWithGPUSandboxHook(
         if (command_line->HasSwitch(switches::kGpuPreferences)) {
           std::string value =
               command_line->GetSwitchValueASCII(switches::kGpuPreferences);
-          bool success =
-              gpu::SwitchValueToGpuPreferences(value, &gpu_preferences);
+          bool success = gpu_preferences.FromSwitchValue(value);
           CHECK(success);
         }
         bool needs_more_info = false;
         gpu::GpuFeatureInfo gpu_feature_info = gpu::ComputeGpuFeatureInfo(
-            gpu_info, gpu_preferences.ignore_gpu_blacklist,
-            gpu_preferences.disable_gpu_driver_bug_workarounds,
-            gpu_preferences.log_gpu_control_list_decisions, command_line,
-            &needs_more_info);
+            gpu_info, gpu_preferences, command_line, &needs_more_info);
         gpu::CacheGpuFeatureInfo(gpu_feature_info);
         if (gpu::SwitchableGPUsSupported(gpu_info, *command_line)) {
           gpu::InitializeSwitchableGPUs(
               gpu_feature_info.enabled_gpu_driver_bug_workarounds);
         }
-        // Calling ShouldEnableSwiftShader will append the proper command line
-        // switch in order to enable SwiftShader if required.
-        gpu::ShouldEnableSwiftShader(
+        gpu::EnableSwiftShaderIfNeeded(
             command_line, gpu_feature_info,
             gpu_preferences.disable_software_rasterizer, needs_more_info);
         // Preload either the desktop GL or the osmesa so, depending on the
@@ -92,7 +86,7 @@ bool GetSandboxTypeFromCommandLine(service_manager::SandboxType* sandbox_type) {
   if (service_manager::IsUnsandboxedSandboxType(*sandbox_type))
     return false;
 
-  if (command_line->HasSwitch(switches::kV2SandboxedEnabled)) {
+  if (command_line->HasSwitch(sandbox::switches::kSeatbeltClientName)) {
     CHECK(sandbox::Seatbelt::IsSandboxed());
     // Do not enable the sandbox if V2 is already enabled.
     return false;

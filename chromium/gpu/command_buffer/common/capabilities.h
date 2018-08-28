@@ -120,6 +120,9 @@ struct GPU_EXPORT Capabilities {
   int num_extensions = 0;
   int num_program_binary_formats = 0;
   int uniform_buffer_offset_alignment = 1;
+  // Describes how many buffers a surface uses in the swap chain. Default to 2
+  // since double buffering is the default in most cases.
+  int num_surface_buffers = 2;
 
   bool post_sub_buffer = false;
   bool swap_buffers_with_bounds = false;
@@ -191,8 +194,14 @@ struct GPU_EXPORT Capabilities {
 
   bool use_gpu_fences_for_overlay_planes = false;
 
+  bool chromium_nonblocking_readback = false;
+
   int major_version = 2;
   int minor_version = 0;
+
+  // Used by OOP raster.
+  bool context_supports_distance_field_text = true;
+  uint64_t glyph_cache_max_texture_bytes = 0.f;
 
   std::vector<gfx::BufferUsageAndFormat> texture_target_exception_list;
 };

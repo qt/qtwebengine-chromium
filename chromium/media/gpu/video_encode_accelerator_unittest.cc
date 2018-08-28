@@ -49,6 +49,7 @@
 #include "media/base/video_frame.h"
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "media/filters/ivf_parser.h"
+#include "media/filters/vp8_parser.h"
 #include "media/gpu/buildflags.h"
 #include "media/gpu/gpu_video_encode_accelerator_factory.h"
 #include "media/gpu/h264_decoder.h"
@@ -559,9 +560,10 @@ enum ClientState {
 class StreamValidator {
  public:
   // To be called when a complete frame is found while processing a stream
-  // buffer, passing true if the frame is a keyframe. Returns false if we
-  // are not interested in more frames and further processing should be aborted.
-  typedef base::Callback<bool(bool)> FrameFoundCallback;
+  // buffer, passing true if the frame is a keyframe and the visible size.
+  // Returns false if we are not interested in more frames and further
+  // processing should be aborted.
+  typedef base::Callback<bool(bool, const gfx::Size&)> FrameFoundCallback;
 
   virtual ~StreamValidator() {}
 
@@ -578,6 +580,7 @@ class StreamValidator {
       : frame_cb_(frame_cb) {}
 
   FrameFoundCallback frame_cb_;
+  gfx::Size visible_size_;
 };
 
 class H264Validator : public StreamValidator {
@@ -635,7 +638,7 @@ void H264Validator::ProcessStreamBuffer(const uint8_t* stream, size_t size) {
         ASSERT_EQ(H264Parser::kOk,
                   h264_parser_.ParseSliceHeader(nalu, &slice_hdr));
         if (IsNewPicture(slice_hdr)) {
-          if (!frame_cb_.Run(keyframe))
+          if (!frame_cb_.Run(keyframe, visible_size_))
             return;
           ASSERT_TRUE(UpdateCurrentPicture(slice_hdr));
         }
@@ -645,6 +648,11 @@ void H264Validator::ProcessStreamBuffer(const uint8_t* stream, size_t size) {
       case H264NALU::kSPS: {
         int sps_id;
         ASSERT_EQ(H264Parser::kOk, h264_parser_.ParseSPS(&sps_id));
+        // Check the visible size.
+        gfx::Rect visible_size =
+            h264_parser_.GetSPS(sps_id)->GetVisibleRect().value_or(gfx::Rect());
+        ASSERT_FALSE(visible_size.IsEmpty());
+        visible_size_ = visible_size.size();
         seen_sps_ = true;
         break;
       }
@@ -707,16 +715,20 @@ class VP8Validator : public StreamValidator {
 };
 
 void VP8Validator::ProcessStreamBuffer(const uint8_t* stream, size_t size) {
-  bool keyframe = !(stream[0] & 0x01);
-  if (keyframe)
-    seen_keyframe_ = true;
-
-  EXPECT_TRUE(seen_keyframe_);
-
-  frame_cb_.Run(keyframe);
   // TODO(posciak): We could be getting more frames in the buffer, but there is
   // no simple way to detect this. We'd need to parse the frames and go through
   // partition numbers/sizes. For now assume one frame per buffer.
+  Vp8Parser parser;
+  Vp8FrameHeader header;
+  EXPECT_TRUE(parser.ParseFrame(stream, size, &header));
+  if (header.IsKeyframe()) {
+    seen_keyframe_ = true;
+    visible_size_.SetSize(header.width, header.height);
+  }
+
+  EXPECT_TRUE(seen_keyframe_);
+  ASSERT_FALSE(visible_size_.IsEmpty());
+  frame_cb_.Run(header.IsKeyframe(), visible_size_);
 }
 
 // static
@@ -1186,10 +1198,9 @@ class VEAClient : public VEAClientBase {
   void RequireBitstreamBuffers(unsigned int input_count,
                                const gfx::Size& input_coded_size,
                                size_t output_buffer_size) override;
-  void BitstreamBufferReady(int32_t bitstream_buffer_id,
-                            size_t payload_size,
-                            bool key_frame,
-                            base::TimeDelta timestamp) override;
+  void BitstreamBufferReady(
+      int32_t bitstream_buffer_id,
+      const media::BitstreamBufferMetadata& metadata) override;
 
  private:
   // Return the number of encoded frames per second.
@@ -1210,9 +1221,10 @@ class VEAClient : public VEAClientBase {
   void FeedEncoderWithOutput(base::SharedMemory* shm);
 
   // Called on finding a complete frame (with |keyframe| set to true for
-  // keyframes) in the stream, to perform codec-independent, per-frame checks
-  // and accounting. Returns false once we have collected all frames we needed.
-  bool HandleEncodedFrame(bool keyframe);
+  // keyframes, |visible_size| for the visible size of encoded frame) in the
+  // stream, to perform codec-independent, per-frame checks and accounting.
+  // Returns false once we have collected all frames we needed.
+  bool HandleEncodedFrame(bool keyframe, const gfx::Size& visible_size);
 
   // Ask the encoder to flush the frame.
   void FlushEncoder();
@@ -1641,12 +1653,11 @@ void VEAClient::VerifyOutputTimestamp(base::TimeDelta timestamp) {
   }
 }
 
-void VEAClient::BitstreamBufferReady(int32_t bitstream_buffer_id,
-                                     size_t payload_size,
-                                     bool key_frame,
-                                     base::TimeDelta timestamp) {
+void VEAClient::BitstreamBufferReady(
+    int32_t bitstream_buffer_id,
+    const media::BitstreamBufferMetadata& metadata) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  ASSERT_LE(payload_size, output_buffer_size_);
+  ASSERT_LE(metadata.payload_size_bytes, output_buffer_size_);
 
   IdToSHM::iterator it = output_buffers_at_client_.find(bitstream_buffer_id);
   ASSERT_NE(it, output_buffers_at_client_.end());
@@ -1658,24 +1669,27 @@ void VEAClient::BitstreamBufferReady(int32_t bitstream_buffer_id,
 
   // When flush is completed, VEA may return an extra empty buffer. Skip
   // checking the buffer.
-  if (verify_output_timestamp_ && payload_size > 0) {
-    VerifyOutputTimestamp(timestamp);
+  if (verify_output_timestamp_ && metadata.payload_size_bytes > 0) {
+    VerifyOutputTimestamp(metadata.timestamp);
   }
 
-  encoded_stream_size_since_last_check_ += payload_size;
+  encoded_stream_size_since_last_check_ += metadata.payload_size_bytes;
 
   const uint8_t* stream_ptr = static_cast<const uint8_t*>(shm->memory());
-  if (payload_size > 0) {
+  if (metadata.payload_size_bytes > 0) {
     if (stream_validator_) {
-      stream_validator_->ProcessStreamBuffer(stream_ptr, payload_size);
+      stream_validator_->ProcessStreamBuffer(stream_ptr,
+                                             metadata.payload_size_bytes);
     } else {
-      HandleEncodedFrame(key_frame);
+      // We don't know the visible size of without stream validator, just
+      // send the expected value to pass the check.
+      HandleEncodedFrame(metadata.key_frame, test_stream_->visible_size);
     }
 
     if (quality_validator_) {
       scoped_refptr<DecoderBuffer> buffer(DecoderBuffer::CopyFrom(
           reinterpret_cast<const uint8_t*>(shm->memory()),
-          static_cast<int>(payload_size)));
+          static_cast<int>(metadata.payload_size_bytes)));
       quality_validator_->AddDecodeBuffer(buffer);
     }
     // If flush is disabled, pretend flush is done when all frames are received.
@@ -1685,16 +1699,17 @@ void VEAClient::BitstreamBufferReady(int32_t bitstream_buffer_id,
 
     if (save_to_file_) {
       if (IsVP8(test_stream_->requested_profile))
-        WriteIvfFrameHeader(num_encoded_frames_ - 1, payload_size);
+        WriteIvfFrameHeader(num_encoded_frames_ - 1,
+                            metadata.payload_size_bytes);
 
       EXPECT_TRUE(base::AppendToFile(
           base::FilePath::FromUTF8Unsafe(test_stream_->out_filename),
           static_cast<char*>(shm->memory()),
-          base::checked_cast<int>(payload_size)));
+          base::checked_cast<int>(metadata.payload_size_bytes)));
     }
   }
 
-  EXPECT_EQ(key_frame, seen_keyframe_in_this_buffer_);
+  EXPECT_EQ(metadata.key_frame, seen_keyframe_in_this_buffer_);
   seen_keyframe_in_this_buffer_ = false;
 
   FeedEncoderWithOutput(shm);
@@ -1855,7 +1870,8 @@ void VEAClient::FeedEncoderWithOutput(base::SharedMemory* shm) {
   encoder_->UseOutputBitstreamBuffer(bitstream_buffer);
 }
 
-bool VEAClient::HandleEncodedFrame(bool keyframe) {
+bool VEAClient::HandleEncodedFrame(bool keyframe,
+                                   const gfx::Size& visible_size) {
   DCHECK(thread_checker_.CalledOnValidThread());
   // This would be a bug in the test, which should not ignore false
   // return value from this method.
@@ -1890,6 +1906,7 @@ bool VEAClient::HandleEncodedFrame(bool keyframe) {
     }
     seen_keyframe_in_this_buffer_ = true;
   }
+  EXPECT_EQ(test_stream_->visible_size, visible_size);
 
   if (num_keyframes_requested_ > 0)
     EXPECT_LE(num_encoded_frames_, next_keyframe_at_ + kMaxKeyframeDelay);
@@ -2173,15 +2190,14 @@ class VEANoInputClient : public SimpleVEAClientBase {
   void RequireBitstreamBuffers(unsigned int input_count,
                                const gfx::Size& input_coded_size,
                                size_t output_buffer_size) override;
-  void BitstreamBufferReady(int32_t bitstream_buffer_id,
-                            size_t payload_size,
-                            bool key_frame,
-                            base::TimeDelta timestamp) override;
+  void BitstreamBufferReady(
+      int32_t bitstream_buffer_id,
+      const media::BitstreamBufferMetadata& metadata) override;
 
  private:
   // The timer used to monitor the encoder doesn't return an output buffer in
   // a period of time.
-  std::unique_ptr<base::Timer> timer_;
+  std::unique_ptr<base::OneShotTimer> timer_;
 };
 
 VEANoInputClient::VEANoInputClient(ClientStateNotification<ClientState>* note)
@@ -2202,18 +2218,15 @@ void VEANoInputClient::RequireBitstreamBuffers(
                                                output_size);
 
   // Timer is used to make sure there is no output frame in 100ms.
-  timer_.reset(
-      new base::Timer(FROM_HERE, base::TimeDelta::FromMilliseconds(100),
-                      base::BindRepeating(&VEANoInputClient::SetState,
-                                          base::Unretained(this), CS_FINISHED),
-                      false));
-  timer_->Reset();
+  timer_.reset(new base::OneShotTimer());
+  timer_->Start(FROM_HERE, base::TimeDelta::FromMilliseconds(100),
+                base::Bind(&VEANoInputClient::SetState, base::Unretained(this),
+                           CS_FINISHED));
 }
 
-void VEANoInputClient::BitstreamBufferReady(int32_t bitstream_buffer_id,
-                                            size_t payload_size,
-                                            bool key_frame,
-                                            base::TimeDelta timestamp) {
+void VEANoInputClient::BitstreamBufferReady(
+    int32_t bitstream_buffer_id,
+    const media::BitstreamBufferMetadata& metadata) {
   DCHECK(thread_checker_.CalledOnValidThread());
   SetState(CS_ERROR);
 }
@@ -2231,10 +2244,9 @@ class VEACacheLineUnalignedInputClient : public SimpleVEAClientBase {
   void RequireBitstreamBuffers(unsigned int input_count,
                                const gfx::Size& input_coded_size,
                                size_t output_buffer_size) override;
-  void BitstreamBufferReady(int32_t bitstream_buffer_id,
-                            size_t payload_size,
-                            bool key_frame,
-                            base::TimeDelta timestamp) override;
+  void BitstreamBufferReady(
+      int32_t bitstream_buffer_id,
+      const media::BitstreamBufferMetadata& metadata) override;
 
  private:
   // Feed the encoder with one input frame.
@@ -2259,9 +2271,7 @@ void VEACacheLineUnalignedInputClient::RequireBitstreamBuffers(
 
 void VEACacheLineUnalignedInputClient::BitstreamBufferReady(
     int32_t bitstream_buffer_id,
-    size_t payload_size,
-    bool key_frame,
-    base::TimeDelta timestamp) {
+    const media::BitstreamBufferMetadata& metadata) {
   DCHECK(thread_checker_.CalledOnValidThread());
   // It's enough to encode just one frame. If plane size is not aligned,
   // VideoEncodeAccelerator::Encode will fail.

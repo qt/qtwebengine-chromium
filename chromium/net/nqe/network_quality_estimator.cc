@@ -20,6 +20,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
+#include "base/task_scheduler/lazy_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/default_tick_clock.h"
 #include "base/trace_event/trace_event.h"
@@ -50,6 +51,17 @@ namespace net {
 class HostResolver;
 
 namespace {
+
+#if defined(OS_CHROMEOS)
+// SequencedTaskRunner to get the network id. A SequencedTaskRunner is used
+// rather than parallel tasks to avoid having many threads getting the network
+// id concurrently.
+base::LazySequencedTaskRunner g_get_network_id_task_runner =
+    LAZY_SEQUENCED_TASK_RUNNER_INITIALIZER(
+        base::TaskTraits(base::MayBlock(),
+                         base::TaskPriority::BACKGROUND,
+                         base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN));
+#endif
 
 NetworkQualityObservationSource ProtocolSourceToObservationSource(
     SocketPerformanceWatcherFactory::Protocol protocol) {
@@ -224,6 +236,7 @@ NetworkQualityEstimator::NetworkQualityEstimator(
       rtt_observations_size_at_last_ect_computation_(0),
       throughput_observations_size_at_last_ect_computation_(0),
       transport_rtt_observation_count_last_ect_computation_(0),
+      end_to_end_rtt_observation_count_at_last_ect_computation_(0),
       new_rtt_observations_since_last_ect_computation_(0),
       new_throughput_observations_since_last_ect_computation_(0),
       increase_in_transport_rtt_updater_posted_(false),
@@ -683,6 +696,7 @@ void NetworkQualityEstimator::OnConnectionTypeChanged(
   min_signal_strength_since_connection_change_.reset();
   max_signal_strength_since_connection_change_.reset();
   network_quality_ = nqe::internal::NetworkQuality();
+  end_to_end_rtt_ = base::nullopt;
   effective_connection_type_ = EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
   effective_connection_type_at_last_main_frame_ =
       EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
@@ -691,6 +705,7 @@ void NetworkQualityEstimator::OnConnectionTypeChanged(
   new_rtt_observations_since_last_ect_computation_ = 0;
   new_throughput_observations_since_last_ect_computation_ = 0;
   transport_rtt_observation_count_last_ect_computation_ = 0;
+  end_to_end_rtt_observation_count_at_last_ect_computation_ = 0;
   last_socket_watcher_rtt_notification_ = base::TimeTicks();
   estimated_quality_at_last_main_frame_ = nqe::internal::NetworkQuality();
   cached_estimate_applied_ = false;
@@ -702,28 +717,30 @@ void NetworkQualityEstimator::OnConnectionTypeChanged(
 void NetworkQualityEstimator::GatherEstimatesForNextConnectionType() {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  if (!get_network_id_task_runner_) {
-    ContinueGatherEstimatesForNextConnectionType(GetCurrentNetworkID());
+#if defined(OS_CHROMEOS)
+  if (get_network_id_asynchronously_) {
+    // Doing PostTaskAndReplyWithResult by handle because it requires the result
+    // type have a default constructor and nqe::internal::NetworkID does not
+    // have that.
+    g_get_network_id_task_runner.Get()->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            [](scoped_refptr<base::TaskRunner> reply_task_runner,
+               base::OnceCallback<void(const nqe::internal::NetworkID&)>
+                   reply_callback) {
+              reply_task_runner->PostTask(
+                  FROM_HERE, base::BindOnce(std::move(reply_callback),
+                                            DoGetCurrentNetworkID()));
+            },
+            base::ThreadTaskRunnerHandle::Get(),
+            base::BindOnce(&NetworkQualityEstimator::
+                               ContinueGatherEstimatesForNextConnectionType,
+                           weak_ptr_factory_.GetWeakPtr())));
     return;
   }
+#endif  // defined(OS_CHROMEOS)
 
-  // Doing PostTaskAndReplyWithResult by handle because it requires the result
-  // type have a default constructor and nqe::internal::NetworkID does not have
-  // that.
-  get_network_id_task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](scoped_refptr<base::TaskRunner> reply_task_runner,
-             base::OnceCallback<void(const nqe::internal::NetworkID&)>
-                 reply_callback) {
-            reply_task_runner->PostTask(
-                FROM_HERE, base::BindOnce(std::move(reply_callback),
-                                          DoGetCurrentNetworkID()));
-          },
-          base::ThreadTaskRunnerHandle::Get(),
-          base::BindOnce(&NetworkQualityEstimator::
-                             ContinueGatherEstimatesForNextConnectionType,
-                         weak_ptr_factory_.GetWeakPtr())));
+  ContinueGatherEstimatesForNextConnectionType(GetCurrentNetworkID());
 }
 
 void NetworkQualityEstimator::ContinueGatherEstimatesForNextConnectionType(
@@ -1009,7 +1026,8 @@ void NetworkQualityEstimator::ComputeEffectiveConnectionType() {
       GetRecentEffectiveConnectionTypeAndNetworkQuality(
           base::TimeTicks(), &http_rtt, &transport_rtt, &end_to_end_rtt,
           &downstream_throughput_kbps,
-          &transport_rtt_observation_count_last_ect_computation_);
+          &transport_rtt_observation_count_last_ect_computation_,
+          &end_to_end_rtt_observation_count_at_last_ect_computation_);
 
   network_quality_ = nqe::internal::NetworkQuality(http_rtt, transport_rtt,
                                                    downstream_throughput_kbps);
@@ -1031,6 +1049,9 @@ void NetworkQualityEstimator::ComputeEffectiveConnectionType() {
   if (end_to_end_rtt != nqe::internal::InvalidRTT()) {
     UMA_HISTOGRAM_TIMES("NQE.EndToEndRTT.OnECTComputation", end_to_end_rtt);
   }
+  end_to_end_rtt_ = base::nullopt;
+  if (end_to_end_rtt != nqe::internal::InvalidRTT())
+    end_to_end_rtt_ = end_to_end_rtt;
 
   if (network_quality_.downstream_throughput_kbps() !=
       nqe::internal::INVALID_RTT_THROUGHPUT) {
@@ -1075,7 +1096,7 @@ NetworkQualityEstimator::GetRecentEffectiveConnectionType(
 
   return GetRecentEffectiveConnectionTypeAndNetworkQuality(
       start_time, &http_rtt, &transport_rtt, &end_to_end_rtt,
-      &downstream_throughput_kbps, nullptr);
+      &downstream_throughput_kbps, nullptr, nullptr);
 }
 
 EffectiveConnectionType
@@ -1085,7 +1106,8 @@ NetworkQualityEstimator::GetRecentEffectiveConnectionTypeAndNetworkQuality(
     base::TimeDelta* transport_rtt,
     base::TimeDelta* end_to_end_rtt,
     int32_t* downstream_throughput_kbps,
-    size_t* transport_rtt_observation_count) const {
+    size_t* transport_rtt_observation_count,
+    size_t* end_to_end_rtt_observation_count) const {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   return GetRecentEffectiveConnectionTypeUsingMetrics(
@@ -1096,7 +1118,7 @@ NetworkQualityEstimator::GetRecentEffectiveConnectionTypeAndNetworkQuality(
       NetworkQualityEstimator::MetricUsage::
           USE_IF_AVAILABLE /* downstream_throughput_kbps_metric */,
       http_rtt, transport_rtt, end_to_end_rtt, downstream_throughput_kbps,
-      transport_rtt_observation_count);
+      transport_rtt_observation_count, end_to_end_rtt_observation_count);
 }
 
 EffectiveConnectionType
@@ -1109,7 +1131,8 @@ NetworkQualityEstimator::GetRecentEffectiveConnectionTypeUsingMetrics(
     base::TimeDelta* transport_rtt,
     base::TimeDelta* end_to_end_rtt,
     int32_t* downstream_throughput_kbps,
-    size_t* transport_rtt_observation_count) const {
+    size_t* transport_rtt_observation_count,
+    size_t* end_to_end_rtt_observation_count) const {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   *http_rtt = nqe::internal::InvalidRTT();
@@ -1147,7 +1170,7 @@ NetworkQualityEstimator::GetRecentEffectiveConnectionTypeUsingMetrics(
   }
 
   if (!GetRecentRTT(nqe::internal::OBSERVATION_CATEGORY_END_TO_END, start_time,
-                    end_to_end_rtt, nullptr)) {
+                    end_to_end_rtt, end_to_end_rtt_observation_count)) {
     *end_to_end_rtt = nqe::internal::InvalidRTT();
   }
 
@@ -1684,6 +1707,12 @@ void NetworkQualityEstimator::OnPrefsRead(
   ReadCachedNetworkQualityEstimate();
 }
 
+#if defined(OS_CHROMEOS)
+void NetworkQualityEstimator::EnableGetNetworkIdAsynchronously() {
+  get_network_id_asynchronously_ = true;
+}
+#endif  // defined(OS_CHROMEOS)
+
 base::Optional<base::TimeDelta> NetworkQualityEstimator::GetHttpRTT() const {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -1760,6 +1789,13 @@ bool NetworkQualityEstimator::ShouldSocketWatcherNotifyRTT(
   DCHECK(thread_checker_.CalledOnValidThread());
   return (now - last_socket_watcher_rtt_notification_ >=
           params_->socket_watchers_min_notification_interval());
+}
+
+void NetworkQualityEstimator::SimulateNetworkQualityChangeForTesting(
+    net::EffectiveConnectionType type) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  params_->SetForcedEffectiveConnectionTypeForTesting(type);
+  ComputeEffectiveConnectionType();
 }
 
 }  // namespace net

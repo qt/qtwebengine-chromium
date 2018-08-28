@@ -44,13 +44,26 @@ const base::Feature kNoScriptPreviews{"NoScriptPreviews",
 const base::Feature kStalePreviewsTimestamp{"StalePreviewsTimestamp",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
 
-const base::Feature kAMPRedirection{"AMPRedirectionPreviews",
-                                    base::FEATURE_DISABLED_BY_DEFAULT};
-
 // Enables the syncing of the Optimization Hints component, which provides
 // hints for what Previews can be applied on a page load.
 const base::Feature kOptimizationHints{"OptimizationHints",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables Optimization Hints that are marked as experimental. Optimizations are
+// marked experimental by setting an experiment name in the "experiment_name"
+// field of the Optimization proto. This allows experiments at the granularity
+// of a single PreviewType for a single host (or host suffix). The intent is
+// that optimizations that may not work properly for certain sites can be tried
+// at a small scale via Finch experiments. Experimental optimizations can be
+// activated by enabling this feature and passing an experiment name as a
+// parameter called "experiment_name" that matches the experiment name in the
+// Optimization proto.
+const base::Feature kOptimizationHintsExperiments{
+    "OptimizationHintsExperiments", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables the application of the resource loading hints when loading resources.
+const base::Feature kResourceLoadingHints{"ResourceLoadingHints",
+                                          base::FEATURE_DISABLED_BY_DEFAULT};
 
 }  // namespace features
 }  // namespace previews

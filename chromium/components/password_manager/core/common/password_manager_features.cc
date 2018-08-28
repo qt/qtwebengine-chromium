@@ -14,39 +14,33 @@ namespace features {
 const base::Feature kAffiliationBasedMatching = {
     "AffiliationBasedMatching", base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Enables links to the setting pages from the Chrome profile menu for Passwords
+// and Autofill.
+const base::Feature kAutofillHome = {"AutofillHome",
+                                     base::FEATURE_ENABLED_BY_DEFAULT};
+
 // Use HTML based username detector.
 const base::Feature kHtmlBasedUsernameDetector = {
     "HtmlBaseUsernameDetector", base::FEATURE_ENABLED_BY_DEFAULT};
-
-// Enable additional elements in the form popup UI, which will allow the user to
-// view all saved passwords.
-const base::Feature kEnableManualFallbacksGeneration = {
-    "EnableManualFallbacksGeneration", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Enable additional elements in the form popup UI, which will allow the user to
-// trigger generation or view all saved passwords.
-const base::Feature kManualFallbacksFilling = {
-    "ManualFallbacksFilling", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Enable a standalone popup UI, which will allow the user to view all saved
-// passwords.
-const base::Feature kEnableManualFallbacksFillingStandalone = {
-    "EnableManualFallbacksFillingStandalone",
-    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable a context menu item in the password field that allows the user
 // to manually enforce saving of their password.
 const base::Feature kPasswordForceSaving = {
     "PasswordForceSaving", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Enable the user to trigger password generation manually.
-const base::Feature kEnableManualPasswordGeneration = {
-    "enable-manual-password-generation", base::FEATURE_ENABLED_BY_DEFAULT};
+// Controls the ability to generate passwords that fit sites' requirements.
+const base::Feature kPasswordGenerationRequirements = {
+    "PasswordGenerationRequirements", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Controls whether password requirements can be overridden for domains
+// (as opposed to only relying on the autofill server).
+const base::Feature kPasswordGenerationRequirementsDomainOverrides = {
+    "PasswordGenerationRequirementsDomainOverrides",
+    base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables the "Show all saved passwords" option in Context Menu.
-const base::Feature kEnableShowAllSavedPasswordsContextMenu{
-    "kEnableShowAllSavedPasswordsContextMenu",
-    base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kShowAllSavedPasswordsContextMenu{
+    "ShowAllSavedPasswordsContextMenu", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Disallow autofilling of the sync credential.
 const base::Feature kProtectSyncCredential = {
@@ -81,6 +75,26 @@ const base::Feature kFillOnAccountSelect = {"fill-on-account-select",
 // go/new-cpm-design-refactoring.
 const base::Feature kNewPasswordFormParsing = {
     "new-password-form-parsing", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Field trial identifier for password generation requirements.
+const char* kGenerationRequirementsFieldTrial =
+    "PasswordGenerationRequirements";
+
+// The file version number of password requirements files. If the prefix length
+// changes, this version number needs to be updated.
+// Default to 0 in order to get an empty requirements file.
+const char* kGenerationRequirementsVersion = "version";
+
+// Length of a hash prefix of domain names. This is used to shard domains
+// across multiple files.
+// Default to 0 in order to put all domain names into the same shard.
+const char* kGenerationRequirementsPrefixLength = "prefix_length";
+
+// Timeout (in milliseconds) for password requirements lookups. As this is a
+// network request in the background that does not block the UI, the impact of
+// high values is not strong.
+// Default to 5000 ms.
+const char* kGenerationRequirementsTimeout = "timeout";
 
 }  // namespace features
 

@@ -33,7 +33,7 @@
 
 #include "net/third_party/quic/core/quic_time.h"
 
-namespace net {
+namespace quic {
 
 // Compares two values and returns true if the first is less than or equal
 // to the second.
@@ -95,14 +95,7 @@ class WindowedFilter {
     if (Compare()(new_sample, estimates_[1].sample)) {
       estimates_[1] = Sample(new_sample, new_time);
       estimates_[2] = estimates_[1];
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstrict-overflow"
-#endif
     } else if (Compare()(new_sample, estimates_[2].sample)) {
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
       estimates_[2] = Sample(new_sample, new_time);
     }
 
@@ -162,6 +155,6 @@ class WindowedFilter {
   Sample estimates_[3];       // Best estimate is element 0.
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_CONGESTION_CONTROL_WINDOWED_FILTER_H_

@@ -172,7 +172,10 @@ bool Scrollbar::ThumbWillBeUnderMouse() const {
   return PressedPos() >= thumb_pos && PressedPos() < thumb_pos + thumb_length;
 }
 
-void Scrollbar::AutoscrollPressedPart(double delay) {
+void Scrollbar::AutoscrollPressedPart(TimeDelta delay) {
+  if (!scrollable_area_)
+    return;
+
   // Don't do anything for the thumb or if nothing was pressed.
   if (pressed_part_ == kThumbPart || pressed_part_ == kNoPart)
     return;
@@ -185,15 +188,30 @@ void Scrollbar::AutoscrollPressedPart(double delay) {
   }
 
   // Handle the arrows and track.
-  if (scrollable_area_ &&
+  bool did_scroll =
       scrollable_area_
           ->UserScroll(PressedPartScrollGranularity(),
                        ToScrollDelta(PressedPartScrollDirectionPhysical(), 1))
-          .DidScroll())
+          .DidScroll();
+
+  // Always start timer when user press on button since scrollable area maybe
+  // infinite scrolling.
+  if (pressed_part_ == kBackButtonStartPart ||
+      pressed_part_ == kForwardButtonStartPart ||
+      pressed_part_ == kBackButtonEndPart ||
+      pressed_part_ == kForwardButtonEndPart) {
     StartTimerIfNeeded(delay);
+    return;
+  }
+
+  if ((pressed_part_ == kBackTrackPart || pressed_part_ == kForwardTrackPart) &&
+      did_scroll) {
+    StartTimerIfNeeded(delay);
+    return;
+  }
 }
 
-void Scrollbar::StartTimerIfNeeded(double delay) {
+void Scrollbar::StartTimerIfNeeded(TimeDelta delay) {
   // Don't do anything for the thumb.
   if (pressed_part_ == kThumbPart)
     return;
@@ -204,16 +222,6 @@ void Scrollbar::StartTimerIfNeeded(double delay) {
       ThumbWillBeUnderMouse()) {
     SetHoveredPart(kThumbPart);
     return;
-  }
-
-  // We can't scroll if we've hit the beginning or end.
-  ScrollDirectionPhysical dir = PressedPartScrollDirectionPhysical();
-  if (dir == kScrollUp || dir == kScrollLeft) {
-    if (current_pos_ == 0)
-      return;
-  } else {
-    if (current_pos_ == Maximum())
-      return;
   }
 
   scroll_timer_.StartOneShot(delay, FROM_HERE);
@@ -476,7 +484,8 @@ void Scrollbar::MouseUp(const WebMouseEvent& mouse_event) {
 
   if (scrollable_area_) {
     if (is_captured)
-      scrollable_area_->MouseReleasedScrollbar(orientation_);
+      scrollable_area_->MouseReleasedScrollbar();
+    scrollable_area_->SnapAfterScrollbarScrolling(orientation_);
 
     ScrollbarPart part = GetTheme().HitTest(
         *this, FlooredIntPoint(mouse_event.PositionInRootFrame()));
@@ -634,6 +643,11 @@ void Scrollbar::SetNeedsPaintInvalidation(ScrollbarPart invalid_parts) {
     thumb_needs_repaint_ = true;
   if (scrollable_area_)
     scrollable_area_->SetScrollbarNeedsPaintInvalidation(Orientation());
+}
+
+CompositorElementId Scrollbar::GetElementId() {
+  DCHECK(scrollable_area_);
+  return scrollable_area_->GetScrollbarElementId(orientation_);
 }
 
 STATIC_ASSERT_ENUM(kWebScrollbarOverlayColorThemeDark,

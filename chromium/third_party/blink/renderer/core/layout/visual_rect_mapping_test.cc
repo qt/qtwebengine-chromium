@@ -6,6 +6,7 @@
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/paint/paint_property_tree_printer.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
@@ -22,7 +23,7 @@ class VisualRectMappingTest : public PaintTestConfigurations,
  protected:
   LayoutView& GetLayoutView() const { return *GetDocument().GetLayoutView(); }
 
-  enum Flags { ContainsEnclosingIntRect = 1 << 0, AdjustForBacking = 1 << 1 };
+  enum Flags { kContainsEnclosingIntRect = 1 << 0 };
 
   void CheckPaintInvalidationVisualRect(
       const LayoutObject& object,
@@ -35,16 +36,7 @@ class VisualRectMappingTest : public PaintTestConfigurations,
     if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
       EXPECT_EQ(&ancestor, &object.ContainerForPaintInvalidation());
 
-    if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      EXPECT_EQ(expected_visual_rect_in_ancestor, object.VisualRect());
-      if (!object.FirstFragment().NextFragment()) {
-        EXPECT_EQ(expected_visual_rect_in_ancestor,
-                  object.FirstFragment().VisualRect());
-      }
-    }
-
-    CheckVisualRect(object, ancestor, rect, expected_visual_rect_in_ancestor,
-                    AdjustForBacking);
+    CheckVisualRect(object, ancestor, rect, expected_visual_rect_in_ancestor);
   }
 
   void CheckVisualRect(const LayoutObject& object,
@@ -74,7 +66,6 @@ class VisualRectMappingTest : public PaintTestConfigurations,
     // The following condition can be false if paintInvalidationContainer is
     // a LayoutView and compositing is not enabled.
     if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
-        (flags && AdjustForBacking) &&
         ancestor.IsPaintInvalidationContainer()) {
       PaintLayer::MapRectInPaintInvalidationContainerToBacking(ancestor,
                                                                slow_map_rect);
@@ -83,7 +74,7 @@ class VisualRectMappingTest : public PaintTestConfigurations,
       geometry_mapper_rect = FloatClipRect(FloatRect(temp));
     }
 
-    if (flags & ContainsEnclosingIntRect) {
+    if (flags & kContainsEnclosingIntRect) {
       EXPECT_TRUE(
           EnclosingIntRect(slow_map_rect)
               .Contains(EnclosingIntRect(expected_visual_rect_in_ancestor)));
@@ -217,7 +208,7 @@ TEST_P(VisualRectMappingTest, LayoutView) {
 
   // This case involves clipping: frame height is 50, y-coordinate of result
   // rect is 13, so height should be clipped to (50 - 13) == 37.
-  ChildDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
+  ChildDocument().View()->LayoutViewport()->SetScrollOffset(
       ScrollOffset(0, 47), kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
 
@@ -292,7 +283,7 @@ TEST_P(VisualRectMappingTest, LayoutViewDisplayNone) {
 
   // This part is copied from the LayoutView test, just to ensure that the
   // mapped rect is valid before display:none is set on the iframe.
-  ChildDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
+  ChildDocument().View()->LayoutViewport()->SetScrollOffset(
       ScrollOffset(0, 47), kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
 
@@ -810,7 +801,7 @@ TEST_P(VisualRectMappingTest, ShouldAccountForPreserve3d) {
   LayoutRect output(matrix.MapRect(FloatRect(original_rect)));
 
   CheckVisualRect(*target, *target->View(), original_rect, output,
-                  ContainsEnclosingIntRect);
+                  kContainsEnclosingIntRect);
 }
 
 TEST_P(VisualRectMappingTest, ShouldAccountForPreserve3dNested) {
@@ -874,7 +865,7 @@ TEST_P(VisualRectMappingTest, ShouldAccountForPerspective) {
   LayoutRect output(matrix.MapRect(FloatRect(original_rect)));
 
   CheckVisualRect(*target, *target->View(), original_rect, output,
-                  ContainsEnclosingIntRect);
+                  kContainsEnclosingIntRect);
 }
 
 TEST_P(VisualRectMappingTest, ShouldAccountForPerspectiveNested) {
@@ -978,7 +969,7 @@ TEST_P(VisualRectMappingTest, FixedContentsInIframe) {
                                       LayoutRect(0, 0, 400, 300), fixed,
                                       root_view, kDefaultVisualRectFlags, true);
 
-  ChildDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
+  ChildDocument().View()->LayoutViewport()->SetScrollOffset(
       ScrollOffset(0, 50), kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
 
@@ -1012,8 +1003,8 @@ TEST_P(VisualRectMappingTest, FixedContentsWithScrollOffset) {
                                       LayoutRect(0, -10, 400, 300), fixed,
                                       ancestor, kDefaultVisualRectFlags, true);
 
-  GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
-      ScrollOffset(0, 50), kProgrammaticScroll);
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(ScrollOffset(0, 50),
+                                                          kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   // The fixed element does not scroll but the ancestor does which changes the
@@ -1040,8 +1031,8 @@ TEST_P(VisualRectMappingTest, FixedContentsUnderViewWithScrollOffset) {
       LayoutRect(0, 0, 400, 300), LayoutRect(0, 0, 400, 300), fixed,
       fixed->View(), kDefaultVisualRectFlags, true);
 
-  GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
-      ScrollOffset(0, 50), kProgrammaticScroll);
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(ScrollOffset(0, 50),
+                                                          kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   // Results of mapping to ancestor are in absolute coordinates of the

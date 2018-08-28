@@ -37,6 +37,10 @@
     #elif __clang_major__ < 5
         #define JUMPER_IS_SCALAR
     #endif
+
+    #if defined(JUMPER_IS_NEON) && defined(JUMPER_IS_SCALAR)
+        #undef  JUMPER_IS_NEON
+    #endif
 #endif
 
 #if defined(JUMPER_IS_SCALAR)
@@ -972,6 +976,12 @@ STAGE(uniform_color, const SkJumper_UniformColorCtx* c) {
     b = c->b;
     a = c->a;
 }
+STAGE(unbounded_uniform_color, const SkJumper_UniformColorCtx* c) {
+    r = c->r;
+    g = c->g;
+    b = c->b;
+    a = c->a;
+}
 
 // splats opaque-black into r,g,b,a
 STAGE(black_color, Ctx::None) {
@@ -1310,24 +1320,18 @@ STAGE(unpremul, Ctx::None) {
 STAGE(force_opaque    , Ctx::None) {  a = 1; }
 STAGE(force_opaque_dst, Ctx::None) { da = 1; }
 
-SI F from_srgb_(F s) {
-    auto lo = s * (1/12.92f);
-    auto hi = mad(s*s, mad(s, 0.3000f, 0.6975f), 0.0025f);
-    return if_then_else(s < 0.055f, lo, hi);
-}
-
 STAGE(from_srgb, Ctx::None) {
-    r = from_srgb_(r);
-    g = from_srgb_(g);
-    b = from_srgb_(b);
-}
-STAGE(from_srgb_dst, Ctx::None) {
-    dr = from_srgb_(dr);
-    dg = from_srgb_(dg);
-    db = from_srgb_(db);
+    auto fn = [](F s) {
+        auto lo = s * (1/12.92f);
+        auto hi = mad(s*s, mad(s, 0.3000f, 0.6975f), 0.0025f);
+        return if_then_else(s < 0.055f, lo, hi);
+    };
+    r = fn(r);
+    g = fn(g);
+    b = fn(b);
 }
 STAGE(to_srgb, Ctx::None) {
-    auto fn = [&](F l) {
+    auto fn = [](F l) {
         // We tweak c and d for each instruction set to make sure fn(1) is exactly 1.
     #if defined(JUMPER_IS_AVX512)
         const float c = 1.130026340485f,
@@ -1479,25 +1483,23 @@ STAGE(byte_tables, const void* ctx) {  // TODO: rename Tables SkJumper_ByteTable
     a = from_byte(gather(tables->a, to_unorm(a, 255)));
 }
 
-SI F parametric(F v, const SkJumper_ParametricTransferFunction* ctx) {
-    F r = if_then_else(v <= ctx->D, mad(ctx->C, v, ctx->F)
-                                  , approx_powf(mad(ctx->A, v, ctx->B), ctx->G) + ctx->E);
-    return min(max(r, 0), 1.0f);  // Clamp to [0,1], with argument order mattering to handle NaN.
+STAGE(parametric, const SkJumper_ParametricTransferFunction* ctx) {
+    auto fn = [&](F v) {
+        F r = if_then_else(v <= ctx->D, mad(ctx->C, v, ctx->F)
+                                      , approx_powf(mad(ctx->A, v, ctx->B), ctx->G) + ctx->E);
+        // Clamp to [0,1], with argument order mattering to handle NaN.
+        // TODO: should we really be clamping here?
+        return min(max(r, 0), 1.0f);
+    };
+    r = fn(r);
+    g = fn(g);
+    b = fn(b);
 }
-STAGE(parametric_r, const SkJumper_ParametricTransferFunction* ctx) { r = parametric(r, ctx); }
-STAGE(parametric_g, const SkJumper_ParametricTransferFunction* ctx) { g = parametric(g, ctx); }
-STAGE(parametric_b, const SkJumper_ParametricTransferFunction* ctx) { b = parametric(b, ctx); }
-STAGE(parametric_a, const SkJumper_ParametricTransferFunction* ctx) { a = parametric(a, ctx); }
 
 STAGE(gamma, const float* G) {
     r = approx_powf(r, *G);
     g = approx_powf(g, *G);
     b = approx_powf(b, *G);
-}
-STAGE(gamma_dst, const float* G) {
-    dr = approx_powf(dr, *G);
-    dg = approx_powf(dg, *G);
-    db = approx_powf(db, *G);
 }
 
 STAGE(load_a8, const SkJumper_MemoryCtx* ctx) {
@@ -1714,15 +1716,23 @@ STAGE(store_u16_be, const SkJumper_MemoryCtx* ctx) {
 }
 
 STAGE(load_f32, const SkJumper_MemoryCtx* ctx) {
-    auto ptr = ptr_at_xy<const float>(ctx, 4*dx,dy);
+    auto ptr = ptr_at_xy<const float>(ctx, 4*dx,4*dy);
     load4(ptr,tail, &r,&g,&b,&a);
 }
 STAGE(load_f32_dst, const SkJumper_MemoryCtx* ctx) {
-    auto ptr = ptr_at_xy<const float>(ctx, 4*dx,dy);
+    auto ptr = ptr_at_xy<const float>(ctx, 4*dx,4*dy);
     load4(ptr,tail, &dr,&dg,&db,&da);
 }
+STAGE(gather_f32, const SkJumper_GatherCtx* ctx) {
+    const float* ptr;
+    U32 ix = ix_and_ptr(&ptr, ctx, r,g);
+    r = gather(ptr, 4*ix + 0);
+    g = gather(ptr, 4*ix + 1);
+    b = gather(ptr, 4*ix + 2);
+    a = gather(ptr, 4*ix + 3);
+}
 STAGE(store_f32, const SkJumper_MemoryCtx* ctx) {
-    auto ptr = ptr_at_xy<float>(ctx, 4*dx,dy);
+    auto ptr = ptr_at_xy<float>(ctx, 4*dx,4*dy);
     store4(ptr,tail, r,g,b,a);
 }
 
@@ -1796,6 +1806,14 @@ STAGE(matrix_2x3, const float* m) {
          G = mad(r,m[1], mad(g,m[3], m[5]));
     r = R;
     g = G;
+}
+STAGE(matrix_3x3, const float* m) {
+    auto R = mad(r,m[0], mad(g,m[3], b*m[6])),
+         G = mad(r,m[1], mad(g,m[4], b*m[7])),
+         B = mad(r,m[2], mad(g,m[5], b*m[8]));
+    r = R;
+    g = G;
+    b = B;
 }
 STAGE(matrix_3x4, const float* m) {
     auto R = mad(r,m[0], mad(g,m[3], mad(b,m[6], m[ 9]))),
@@ -2388,14 +2406,6 @@ SI D join(S lo, S hi) {
     memcpy((char*)&v + 1*sizeof(S), &hi, sizeof(S));
     return v;
 }
-template <typename V, typename H>
-SI V map(V v, H (*fn)(H)) {
-    H lo,hi;
-    split(v, &lo,&hi);
-    lo = fn(lo);
-    hi = fn(hi);
-    return join<V>(lo,hi);
-}
 
 SI F if_then_else(I32 c, F t, F e) {
     return bit_cast<F>( (bit_cast<I32>(t) & c) | (bit_cast<I32>(e) & ~c) );
@@ -2408,32 +2418,48 @@ SI U32 trunc_(F x) { return (U32)cast<I32>(x); }
 
 SI F rcp(F x) {
 #if defined(__AVX2__)
-    return map(x, _mm256_rcp_ps);
+    __m256 lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(_mm256_rcp_ps(lo), _mm256_rcp_ps(hi));
 #elif defined(__SSE__)
-    return map(x, _mm_rcp_ps);
+    __m128 lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(_mm_rcp_ps(lo), _mm_rcp_ps(hi));
 #elif defined(__ARM_NEON)
-    return map(x, +[](float32x4_t v) {
+    auto rcp = [](float32x4_t v) {
         auto est = vrecpeq_f32(v);
         return vrecpsq_f32(v,est)*est;
-    });
+    };
+    float32x4_t lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(rcp(lo), rcp(hi));
 #else
     return 1.0f / x;
 #endif
 }
 SI F sqrt_(F x) {
 #if defined(__AVX2__)
-    return map(x, _mm256_sqrt_ps);
+    __m256 lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(_mm256_sqrt_ps(lo), _mm256_sqrt_ps(hi));
 #elif defined(__SSE__)
-    return map(x, _mm_sqrt_ps);
+    __m128 lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(_mm_sqrt_ps(lo), _mm_sqrt_ps(hi));
 #elif defined(__aarch64__)
-    return map(x, vsqrtq_f32);
+    float32x4_t lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(vsqrtq_f32(lo), vsqrtq_f32(hi));
 #elif defined(__ARM_NEON)
-    return map(x, +[](float32x4_t v) {
+    auto sqrt = [](float32x4_t v) {
         auto est = vrsqrteq_f32(v);  // Estimate and two refinement steps for est = rsqrt(v).
         est *= vrsqrtsq_f32(v,est*est);
         est *= vrsqrtsq_f32(v,est*est);
         return v*est;                // sqrt(v) == v*rsqrt(v).
-    });
+    };
+    float32x4_t lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(sqrt(lo), sqrt(hi));
 #else
     return F{
         sqrtf(x[0]), sqrtf(x[1]), sqrtf(x[2]), sqrtf(x[3]),
@@ -2444,11 +2470,17 @@ SI F sqrt_(F x) {
 
 SI F floor_(F x) {
 #if defined(__aarch64__)
-    return map(x, vrndmq_f32);
+    float32x4_t lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(vrndmq_f32(lo), vrndmq_f32(hi));
 #elif defined(__AVX2__)
-    return map(x, +[](__m256 v){ return _mm256_floor_ps(v); });  // _mm256_floor_ps is a macro...
+    __m256 lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(_mm256_floor_ps(lo), _mm256_floor_ps(hi));
 #elif defined(__SSE4_1__)
-    return map(x, +[](__m128 v){ return    _mm_floor_ps(v); });  // _mm_floor_ps() is a macro too.
+    __m128 lo,hi;
+    split(x, &lo,&hi);
+    return join<F>(_mm_floor_ps(lo), _mm_floor_ps(hi));
 #else
     F roundtrip = cast<F>(cast<I32>(x));
     return roundtrip - if_then_else(roundtrip > x, F(1), F(0));
@@ -3168,70 +3200,6 @@ STAGE_PP(srcover_bgra_8888, const SkJumper_MemoryCtx* ctx) {
     store_8888_(ptr, tail, b,g,r,a);
 }
 
-#if defined(SK_DISABLE_LOWP_BILERP_CLAMP_CLAMP_STAGE)
-    static void(*bilerp_clamp_8888)(void) = nullptr;
-#else
-STAGE_GP(bilerp_clamp_8888, const SkJumper_GatherCtx* ctx) {
-    // (cx,cy) are the center of our sample.
-    F cx = x,
-      cy = y;
-
-    // All sample points are at the same fractional offset (fx,fy).
-    // They're the 4 corners of a logical 1x1 pixel surrounding (x,y) at (0.5,0.5) offsets.
-    F fx = fract(cx + 0.5f),
-      fy = fract(cy + 0.5f);
-
-    // We'll accumulate the color of all four samples into {r,g,b,a} directly.
-    r = g = b = a = 0;
-
-    // The first three sample points will calculate their area using math
-    // just like in the float code above, but the fourth will take up all the rest.
-    //
-    // Logically this is the same as doing the math for the fourth pixel too,
-    // but rounding error makes this a better strategy, keeping opaque opaque, etc.
-    //
-    // We can keep up to 8 bits of fractional precision without overflowing 16-bit,
-    // so our "1.0" area is 256.
-    const uint16_t bias = 256;
-    U16 remaining = bias;
-
-    for (float dy = -0.5f; dy <= +0.5f; dy += 1.0f)
-    for (float dx = -0.5f; dx <= +0.5f; dx += 1.0f) {
-        // (x,y) are the coordinates of this sample point.
-        F x = cx + dx,
-          y = cy + dy;
-
-        // ix_and_ptr() will clamp to the image's bounds for us.
-        const uint32_t* ptr;
-        U32 ix = ix_and_ptr(&ptr, ctx, x,y);
-
-        U16 sr,sg,sb,sa;
-        from_8888(gather<U32>(ptr, ix), &sr,&sg,&sb,&sa);
-
-        // In bilinear interpolation, the 4 pixels at +/- 0.5 offsets from the sample pixel center
-        // are combined in direct proportion to their area overlapping that logical query pixel.
-        // At positive offsets, the x-axis contribution to that rectangle is fx,
-        // or (1-fx) at negative x.  Same deal for y.
-        F sx = (dx > 0) ? fx : 1.0f - fx,
-          sy = (dy > 0) ? fy : 1.0f - fy;
-
-        U16 area = (dy == 0.5f && dx == 0.5f) ? remaining
-                                              : cast<U16>(sx * sy * bias);
-        remaining -= area;
-
-        r += sr * area;
-        g += sg * area;
-        b += sb * area;
-        a += sa * area;
-    }
-
-    r /= bias;
-    g /= bias;
-    b /= bias;
-    a /= bias;
-}
-#endif
-
 // Now we'll add null stand-ins for stages we haven't implemented in lowp.
 // If a pipeline uses these stages, it'll boot it out of lowp into highp.
 
@@ -3240,6 +3208,7 @@ using NotImplemented = void(*)(void);
 static NotImplemented
         callback, load_rgba, store_rgba,
         clamp_0, clamp_1,
+        unbounded_uniform_color,
         unpremul, dither,
         from_srgb, from_srgb_dst, to_srgb,
         load_f16    , load_f16_dst    , store_f16    , gather_f16,
@@ -3248,14 +3217,14 @@ static NotImplemented
         store_u16_be,
         byte_tables,
         colorburn, colordodge, softlight, hue, saturation, color, luminosity,
-        matrix_3x4, matrix_4x5, matrix_4x3,
-        parametric_r, parametric_g, parametric_b, parametric_a,
-        gamma, gamma_dst,
+        matrix_3x3, matrix_3x4, matrix_4x5, matrix_4x3,
+        parametric, gamma,
         rgb_to_hsl, hsl_to_rgb,
         gauss_a_to_rgba,
         mirror_x, repeat_x,
         mirror_y, repeat_y,
         negate_x,
+        bilerp_clamp_8888,
         bilinear_nx, bilinear_ny, bilinear_px, bilinear_py,
         bicubic_n3x, bicubic_n1x, bicubic_p1x, bicubic_p3x,
         bicubic_n3y, bicubic_n1y, bicubic_p1y, bicubic_p3y,

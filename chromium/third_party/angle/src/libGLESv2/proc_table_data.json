@@ -526,6 +526,10 @@
         "glFramebufferTextureMultiviewSideBySideANGLE"
     ],
 
+    "GL_KHR_parallel_shader_compile": [
+        "glMaxShaderCompilerThreadsKHR"
+    ],
+
     "GLES3 core": [
         "glReadBuffer",
         "glDrawRangeElements",
@@ -704,6 +708,10 @@
         "glVertexBindingDivisor"
     ],
 
+    "GL_EXT_geometry_shader": [
+        "glFramebufferTextureEXT"
+    ],
+
     "EGL 1.0": [
         "eglChooseConfig",
         "eglCopyBuffers",
@@ -772,7 +780,9 @@
     ],
 
     "EGL_EXT_platform_base": [
-        "eglGetPlatformDisplayEXT"
+        "eglGetPlatformDisplayEXT",
+        "eglCreatePlatformWindowSurfaceEXT",
+        "eglCreatePlatformPixmapSurfaceEXT"
     ],
 
     "EGL_EXT_device_query": [
@@ -818,8 +828,12 @@
         "eglGetSyncValuesCHROMIUM"
     ],
 
-    "EGL_EXT_swap_buffers_with_damage": [
-        "eglSwapBuffersWithDamageEXT"
+    "EGL_KHR_swap_buffers_with_damage": [
+        "eglSwapBuffersWithDamageKHR"
+    ],
+
+    "EGL_ANDROID_presentation_time": [
+        "eglPresentationTimeANDROID"
     ],
 
     "EGL_ANGLE_program_cache_control": [
@@ -827,6 +841,12 @@
         "eglProgramCacheQueryANGLE",
         "eglProgramCachePopulateANGLE",
         "eglProgramCacheResizeANGLE"
+    ],
+
+    "EGL_KHR_debug": [
+        "eglDebugMessageControlKHR",
+        "eglQueryDebugKHR",
+        "eglLabelObjectKHR"
     ],
 
     "angle::Platform related entry points": [

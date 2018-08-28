@@ -211,7 +211,8 @@ bool GenerateReferencesDelta(const ReferenceSet& src_refs,
                 dst_ref->location - equiv.dst_offset);
       offset_t old_offset =
           src_refs.target_pool().OffsetForKey(src_ref->target_key);
-      offset_t new_estimated_offset = offset_mapper.ForwardProject(old_offset);
+      offset_t new_estimated_offset =
+          offset_mapper.ExtendedForwardProject(old_offset);
       offset_t new_estimated_key =
           projected_target_pool.KeyForNearestOffset(new_estimated_offset);
       offset_t new_offset =
@@ -288,7 +289,7 @@ bool GenerateExecutableElement(ExecutableType exe_type,
   EquivalenceMap equivalences =
       CreateEquivalenceMap(old_image_index, new_image_index,
                            new_disasm->num_equivalence_iterations());
-  OffsetMapper offset_mapper(equivalences);
+  OffsetMapper offset_mapper(equivalences, old_image.size(), new_image.size());
 
   ReferenceDeltaSink reference_delta_sink;
   for (const auto& old_targets : old_image_index.target_pools()) {
@@ -319,13 +320,13 @@ bool GenerateExecutableElement(ExecutableType exe_type,
                           reference_bytes_mixer.get(), patch_writer);
 }
 
-status::Code GenerateEnsembleCommon(ConstBufferView old_image,
-                                    ConstBufferView new_image,
-                                    std::unique_ptr<EnsembleMatcher> matcher,
-                                    EnsemblePatchWriter* patch_writer) {
+status::Code GenerateBufferCommon(ConstBufferView old_image,
+                                  ConstBufferView new_image,
+                                  std::unique_ptr<EnsembleMatcher> matcher,
+                                  EnsemblePatchWriter* patch_writer) {
   if (!matcher->RunMatch(old_image, new_image)) {
     LOG(INFO) << "RunMatch() failed, generating raw patch.";
-    return GenerateRaw(old_image, new_image, patch_writer);
+    return GenerateBufferRaw(old_image, new_image, patch_writer);
   }
 
   const std::vector<ElementMatch>& matches = matcher->matches();
@@ -335,7 +336,7 @@ status::Code GenerateEnsembleCommon(ConstBufferView old_image,
   size_t num_elements = matches.size();
   if (num_elements == 0) {
     LOG(INFO) << "No nontrival matches, generating raw patch.";
-    return GenerateRaw(old_image, new_image, patch_writer);
+    return GenerateBufferRaw(old_image, new_image, patch_writer);
   }
 
   // "Gaps" are |new_image| bytes not covered by new_elements in |matches|.
@@ -421,30 +422,29 @@ status::Code GenerateEnsembleCommon(ConstBufferView old_image,
 
 /******** Exported Functions ********/
 
-status::Code GenerateEnsemble(ConstBufferView old_image,
-                              ConstBufferView new_image,
-                              EnsemblePatchWriter* patch_writer) {
-  return GenerateEnsembleCommon(
+status::Code GenerateBuffer(ConstBufferView old_image,
+                            ConstBufferView new_image,
+                            EnsemblePatchWriter* patch_writer) {
+  return GenerateBufferCommon(
       old_image, new_image, std::make_unique<HeuristicEnsembleMatcher>(nullptr),
       patch_writer);
 }
 
-status::Code GenerateEnsembleWithImposedMatches(
-    ConstBufferView old_image,
-    ConstBufferView new_image,
-    std::string imposed_matches,
-    EnsemblePatchWriter* patch_writer) {
+status::Code GenerateBufferImposed(ConstBufferView old_image,
+                                   ConstBufferView new_image,
+                                   std::string imposed_matches,
+                                   EnsemblePatchWriter* patch_writer) {
   if (imposed_matches.empty())
-    return GenerateEnsemble(old_image, new_image, patch_writer);
+    return GenerateBuffer(old_image, new_image, patch_writer);
 
-  return GenerateEnsembleCommon(
+  return GenerateBufferCommon(
       old_image, new_image,
       std::make_unique<ImposedEnsembleMatcher>(imposed_matches), patch_writer);
 }
 
-status::Code GenerateRaw(ConstBufferView old_image,
-                         ConstBufferView new_image,
-                         EnsemblePatchWriter* patch_writer) {
+status::Code GenerateBufferRaw(ConstBufferView old_image,
+                               ConstBufferView new_image,
+                               EnsemblePatchWriter* patch_writer) {
   ImageIndex old_image_index(old_image);
   EncodedView old_view(old_image_index);
   std::vector<offset_t> old_sa =

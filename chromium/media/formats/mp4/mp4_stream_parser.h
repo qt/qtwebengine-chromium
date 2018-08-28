@@ -39,7 +39,7 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
                   bool has_flac);
   ~MP4StreamParser() override;
 
-  void Init(const InitCB& init_cb,
+  void Init(InitCB init_cb,
             const NewConfigCB& config_cb,
             const NewBuffersCB& new_buffers_cb,
             bool ignore_text_tracks,
@@ -48,6 +48,7 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
             const EndMediaSegmentCB& end_of_segment_cb,
             MediaLog* media_log) override;
   void Flush() override;
+  bool GetGenerateTimestampsFlag() const override;
   bool Parse(const uint8_t* buf, int size) override;
 
   // Calculates the rotation value from the track header display matricies.

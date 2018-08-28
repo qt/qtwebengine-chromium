@@ -22,10 +22,9 @@
 
 #include "third_party/blink/renderer/core/dom/character_data.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "base/numerics/checked_math.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer_interest_group.h"
 #include "third_party/blink/renderer/core/dom/mutation_record.h"
 #include "third_party/blink/renderer/core/dom/processing_instruction.h"
@@ -33,7 +32,7 @@
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
 #include "third_party/blink/renderer/core/events/mutation_event.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
-#include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -55,9 +54,10 @@ String CharacterData::substringData(unsigned offset,
                                     ExceptionState& exception_state) {
   if (offset > length()) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "The offset " + String::Number(offset) +
-                             " is greater than the node's length (" +
-                             String::Number(length()) + ").");
+        DOMExceptionCode::kIndexSizeError,
+        "The offset " + String::Number(offset) +
+            " is greater than the node's length (" + String::Number(length()) +
+            ").");
     return String();
   }
 
@@ -85,9 +85,10 @@ void CharacterData::insertData(unsigned offset,
                                ExceptionState& exception_state) {
   if (offset > length()) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "The offset " + String::Number(offset) +
-                             " is greater than the node's length (" +
-                             String::Number(length()) + ").");
+        DOMExceptionCode::kIndexSizeError,
+        "The offset " + String::Number(offset) +
+            " is greater than the node's length (" + String::Number(length()) +
+            ").");
     return;
   }
 
@@ -106,13 +107,14 @@ static bool ValidateOffsetCount(unsigned offset,
                                 ExceptionState& exception_state) {
   if (offset > length) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "The offset " + String::Number(offset) +
-                             " is greater than the node's length (" +
-                             String::Number(length) + ").");
+        DOMExceptionCode::kIndexSizeError,
+        "The offset " + String::Number(offset) +
+            " is greater than the node's length (" + String::Number(length) +
+            ").");
     return false;
   }
 
-  CheckedNumeric<unsigned> offset_count = offset;
+  base::CheckedNumeric<unsigned> offset_count = offset;
   offset_count += count;
 
   if (!offset_count.IsValid() || offset + count > length)

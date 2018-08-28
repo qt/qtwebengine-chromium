@@ -220,6 +220,10 @@
         <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_EASYUNLOCK_ENABLED" file="cros/notification_easyunlock_enabled.png" />
         <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_EASYUNLOCK_PROMO" file="cros/notification_easyunlock_promo.png" />
       </if>
+      <if expr="not is_android">
+        <structure type="chrome_scaled_image" name="IDR_OMNIBOX_CALCULATOR_ROUND" file="chromium/calculator_round_24.png" />
+        <structure type="chrome_scaled_image" name="IDR_OMNIBOX_TRANSLATION_ROUND" file="chromium/translate_round_32.png" />
+      </if>
       <if expr="is_macosx">
         <structure type="chrome_scaled_image" name="IDR_OVERLAY_DROP_SHADOW" file="mac/overlay_drop_shadow.png" />
         <structure type="chrome_scaled_image" name="IDR_OMNIBOX_KEYWORD_HINT_TAB" file="mac/omnibox_keyword_hint_tab.png" />
@@ -387,6 +391,7 @@
       </if>
       <structure type="chrome_scaled_image" name="IDR_SHOW_PASSWORD_HOVER" file="common/show_password_hover.png" />
       <if expr="chromeos">
+        <structure type="chrome_scaled_image" name="IDR_SMB_ICON" file="cros/smb_icon.png" />
         <structure type="chrome_scaled_image" name="IDR_SUPERVISED_ILLUSTRATION_START" file="cros/supervised_illustration_start.png" />
         <structure type="chrome_scaled_image" name="IDR_SUPERVISED_ILLUSTRATION_DONE" file="cros/supervised_illsutration_done.png" />
         <structure type="chrome_scaled_image" name="IDR_LOGO_AVATAR_CIRCLE_BLUE_COLOR" file="cros/logo_avatar_circle_blue_color.png" />
@@ -430,11 +435,14 @@
         <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_INACTIVE" file="mac/theme_default_inactive_background.png" />
         <if expr="mac_views_browser">
           <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_INCOGNITO" file="mac/theme_default_inactive.png" />
+          <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_INCOGNITO_INACTIVE" file="mac/theme_default_inactive_background.png" />
         </if>
       </if>
       <if expr="not is_macosx">
         <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND" file="notused.png" />
+        <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_INACTIVE" file="notused.png" />
         <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_INCOGNITO" file="notused.png" />
+        <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_INCOGNITO_INACTIVE" file="notused.png" />
       </if>
       <structure type="chrome_scaled_image" name="IDR_THEME_TAB_BACKGROUND_V" file="notused.png" />
       <if expr="is_macosx">

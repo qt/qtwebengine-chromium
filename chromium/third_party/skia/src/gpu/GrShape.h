@@ -14,6 +14,7 @@
 #include "SkRRect.h"
 #include "SkTemplates.h"
 #include "SkTLazy.h"
+#include <new>
 
 /**
  * Represents a geometric shape (rrect or path) and the GrStyle that it should be rendered with.
@@ -396,9 +397,9 @@ public:
     /**
      * Adds a listener to the *original* path. Typically used to invalidate cached resources when
      * a path is no longer in-use. If the shape started out as something other than a path, this
-     * does nothing (but will delete the listener).
+     * does nothing.
      */
-    void addGenIDChangeListener(SkPathRef::GenIDChangeListener* listener) const;
+    void addGenIDChangeListener(sk_sp<SkPathRef::GenIDChangeListener>) const;
 
     /**
      * Helpers that are only exposed for unit tests, to determine if the shape is a path, and get

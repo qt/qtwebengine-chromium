@@ -23,7 +23,8 @@ if (is_android || is_chromeos) {
                  ".gclient configuration file (in the parent directory of " +
                  "src) must include \"android\" and/or \"chromeos\". For " +
                  "example:${n}${n}solutions = [${n}...${n}]${n}" +
-                 "target_os=[\"chromeos\"]${n}")
+                 "target_os=[\"chromeos\"]${n}${n}" +
+                 "After adding |target_os| please re-run \"gclient sync\".${n}")
     }
   }
 
@@ -78,7 +79,15 @@ if (is_android || is_chromeos) {
 
   if (android_sdk_release == "o_mr1") {
     default_android_sdk_root = "//third_party/android_tools/sdk"
-    default_android_sdk_version = "27"
+    default_android_sdk_version = 27
+    default_android_sdk_build_tools_version = "27.0.3"
+    default_android_sdk_tools_version_suffix = "-26.0.0-dev"
+    public_android_sdk = true
+  }
+
+  if (android_sdk_release == "p") {
+    default_android_sdk_root = "//third_party/android_tools/sdk"
+    default_android_sdk_version = 28
     default_android_sdk_build_tools_version = "27.0.3"
     default_android_sdk_tools_version_suffix = "-26.0.0-dev"
     public_android_sdk = true
@@ -88,7 +97,7 @@ if (is_android || is_chromeos) {
     # Purposefully repeated so that downstream can change
     # default_android_sdk_root without changing lint version.
     default_lint_android_sdk_root = "//third_party/android_tools/sdk"
-    default_lint_android_sdk_version = "26"
+    default_lint_android_sdk_version = 26
   }
 
   if (!defined(default_extras_android_sdk_root)) {
@@ -122,11 +131,6 @@ if (is_android || is_chromeos) {
       "//third_party/android_system_sdk:public_framework_system_java"
   if (!defined(webview_framework_dep)) {
     webview_framework_dep = webview_public_framework_dep
-  }
-
-  # TODO(crbug.com/807768): Remove this extra dependency.
-  if (!defined(android_extra_test_deps)) {
-    android_extra_test_deps = []
   }
 
   assert(defined(default_android_sdk_root),
@@ -209,6 +213,9 @@ if (is_android || is_chromeos) {
     # over the ones in other places. (instead of the support library from
     # android_tools for example)
     enable_android_deps_repository = true
+
+    # Turns off android lint. Useful for prototyping or for faster local builds.
+    disable_android_lint = false
   }
 
   # We need a second declare_args block to make sure we are using the overridden
@@ -263,10 +270,6 @@ if (is_android || is_chromeos) {
 
   android_sdk =
       "${android_sdk_root}/platforms/android-${android_sdk_platform_version}"
-
-  # Path to the Android NDK and SDK.
-  android_ndk_include_dir = "$android_ndk_root/usr/include"
-
   android_sdk_tools = "${android_sdk_root}/tools"
   android_sdk_build_tools =
       "${android_sdk_root}/build-tools/$android_sdk_build_tools_version"
@@ -351,20 +354,12 @@ if (is_android || is_chromeos) {
     android_libcpp_lib_dir = "${android_libcpp_root}/libs/${android_app_abi}"
   }
 
-  # Dynamic app bundles -------------------------------------------------------
-
-  # TODO(digit): Remove this once we roll a version of the Android SDK that
-  # has the proper build-tools binaries to both public and internal.
   declare_args() {
-    # To enable generation of application bundles, define
-    # android_sdk_app_bundle_build_tools to point to an Android SDK build-tools
-    # directory that has the relevant aapt2 and bundletool binaries.
-    #
-    android_sdk_app_bundle_build_tools = ""
+    # Location of aapt2 binary used for app bundles. For now, a more recent version
+    # than the one distributed with the Android SDK is required.
+    android_sdk_tools_bundle_aapt2 =
+        "//third_party/android_build_tools/aapt2/aapt2"
   }
-
-  # Whether building application bundles is supported.
-  android_enable_app_bundles = android_sdk_app_bundle_build_tools != ""
 }
 
 declare_args() {

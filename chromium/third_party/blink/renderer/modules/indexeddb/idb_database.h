@@ -71,7 +71,6 @@ class MODULES_EXPORT IDBDatabase final
                              v8::Isolate*);
   ~IDBDatabase() override;
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   // Overwrites the database metadata, including object store and index
   // metadata. Used to pass metadata to the database when it is opened.
@@ -198,9 +197,7 @@ class MODULES_EXPORT IDBDatabase final
 
   bool close_pending_ = false;
 
-  // Keep track of the versionchange events waiting to be fired on this
-  // database so that we can cancel them if the database closes.
-  HeapVector<Member<Event>> enqueued_events_;
+  Member<EventQueue> event_queue_;
 
   Member<IDBDatabaseCallbacks> database_callbacks_;
   // Maintain the isolate so that all externally allocated memory can be

@@ -27,15 +27,6 @@
 SkModeColorFilter::SkModeColorFilter(SkColor color, SkBlendMode mode) {
     fColor = color;
     fMode = mode;
-    // cache
-    fPMColor = SkPreMultiplyColor(fColor);
-}
-
-void SkModeColorFilter::toString(SkString* str) const {
-    str->append("SkModeColorFilter: color: 0x");
-    str->appendHex(fColor);
-    str->append(" mode: ");
-    str->append(SkBlendMode_Name(fMode));
 }
 
 bool SkModeColorFilter::asColorMode(SkColor* color, SkBlendMode* mode) const {
@@ -76,7 +67,7 @@ void SkModeColorFilter::onAppendStages(SkRasterPipeline* p,
                                        SkArenaAlloc* scratch,
                                        bool shaderIsOpaque) const {
     p->append(SkRasterPipeline::move_src_dst);
-    p->append_constant_color(scratch, SkPM4f_from_SkColor(fColor, dst));
+    p->append_constant_color(scratch, premul_in_dst_colorspace(fColor, dst));
     SkBlendMode_AppendStages(fMode, p);
 }
 

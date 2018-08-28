@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/platform/text/text_break_iterator_internal_icu.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/thread_specific.h"
 #include "third_party/blink/renderer/platform/wtf/threading_primitives.h"
@@ -730,17 +731,23 @@ void ReleaseLineBreakIterator(TextBreakIterator* iterator) {
   LineBreakIteratorPool::SharedPool().Put(iterator);
 }
 
-static TextBreakIterator* g_non_shared_character_break_iterator;
+static TextBreakIterator* GetNonSharedCharacterBreakIterator() {
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      ThreadSpecific<std::unique_ptr<TextBreakIterator>>, thread_specific, ());
 
-static inline bool CompareAndSwapNonSharedCharacterBreakIterator(
-    TextBreakIterator* expected,
-    TextBreakIterator* new_value) {
-  DEFINE_STATIC_LOCAL(Mutex, non_shared_character_break_iterator_mutex, ());
-  MutexLocker locker(non_shared_character_break_iterator_mutex);
-  if (g_non_shared_character_break_iterator != expected)
-    return false;
-  g_non_shared_character_break_iterator = new_value;
-  return true;
+  std::unique_ptr<TextBreakIterator>& iterator = *thread_specific;
+
+  if (!iterator) {
+    ICUError error_code;
+    iterator = base::WrapUnique(icu::BreakIterator::createCharacterInstance(
+        icu::Locale(CurrentTextBreakLocaleID()), error_code));
+    CHECK(U_SUCCESS(error_code) && iterator)
+        << "ICU could not open a break iterator: " << u_errorName(error_code)
+        << " (" << error_code << ")";
+  }
+
+  DCHECK(iterator);
+  return iterator.get();
 }
 
 NonSharedCharacterBreakIterator::NonSharedCharacterBreakIterator(
@@ -779,29 +786,13 @@ NonSharedCharacterBreakIterator::NonSharedCharacterBreakIterator(
 void NonSharedCharacterBreakIterator::CreateIteratorForBuffer(
     const UChar* buffer,
     unsigned length) {
-  iterator_ = g_non_shared_character_break_iterator;
-  bool created_iterator =
-      iterator_ &&
-      CompareAndSwapNonSharedCharacterBreakIterator(iterator_, nullptr);
-  if (!created_iterator) {
-    ICUError error_code;
-    iterator_ = icu::BreakIterator::createCharacterInstance(
-        icu::Locale(CurrentTextBreakLocaleID()), error_code);
-    CHECK(U_SUCCESS(error_code) && iterator_)
-        << "ICU could not open a break iterator: " << u_errorName(error_code)
-        << " (" << error_code << ")";
-  } else {
-    CHECK(iterator_);
-  }
-
+  iterator_ = GetNonSharedCharacterBreakIterator();
   SetText16(iterator_, buffer, length);
 }
 
 NonSharedCharacterBreakIterator::~NonSharedCharacterBreakIterator() {
   if (is8_bit_)
     return;
-  if (!CompareAndSwapNonSharedCharacterBreakIterator(nullptr, iterator_))
-    delete iterator_;
 }
 
 int NonSharedCharacterBreakIterator::Next() {
@@ -867,30 +858,6 @@ bool IsWordTextBreak(TextBreakIterator* iterator) {
       static_cast<icu::RuleBasedBreakIterator*>(iterator);
   int rule_status = rule_based_break_iterator->getRuleStatus();
   return rule_status != UBRK_WORD_NONE;
-}
-
-static TextBreakIterator* SetUpIteratorWithRules(const char* break_rules,
-                                                 const UChar* string,
-                                                 int length) {
-  if (!string)
-    return nullptr;
-
-  static TextBreakIterator* iterator = nullptr;
-  if (!iterator) {
-    UParseError parse_status;
-    UErrorCode open_status = U_ZERO_ERROR;
-    // break_rules is ASCII. Pick the most efficient UnicodeString ctor.
-    iterator = new icu::RuleBasedBreakIterator(
-        icu::UnicodeString(break_rules, -1, US_INV), parse_status, open_status);
-    DCHECK(U_SUCCESS(open_status))
-        << "ICU could not open a break iterator: " << u_errorName(open_status)
-        << " (" << open_status << ")";
-    if (!iterator)
-      return nullptr;
-  }
-
-  SetText16(iterator, string, length);
-  return iterator;
 }
 
 TextBreakIterator* CursorMovementIterator(const UChar* string, int length) {
@@ -983,7 +950,28 @@ TextBreakIterator* CursorMovementIterator(const UChar* string, int length) {
       "!!safe_reverse;"
       "!!safe_forward;";
 
-  return SetUpIteratorWithRules(kRules, string, length);
+  if (!string)
+    return nullptr;
+
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      ThreadSpecific<std::unique_ptr<icu::RuleBasedBreakIterator>>,
+      thread_specific, ());
+
+  std::unique_ptr<icu::RuleBasedBreakIterator>& iterator = *thread_specific;
+
+  if (!iterator) {
+    UParseError parse_status;
+    UErrorCode open_status = U_ZERO_ERROR;
+    // break_rules is ASCII. Pick the most efficient UnicodeString ctor.
+    iterator = std::make_unique<icu::RuleBasedBreakIterator>(
+        icu::UnicodeString(kRules, -1, US_INV), parse_status, open_status);
+    DCHECK(U_SUCCESS(open_status))
+        << "ICU could not open a break iterator: " << u_errorName(open_status)
+        << " (" << open_status << ")";
+  }
+
+  SetText16(iterator.get(), string, length);
+  return iterator.get();
 }
 
 }  // namespace blink

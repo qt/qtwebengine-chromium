@@ -28,6 +28,7 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/script_regexp.h"
 
+#include "base/stl_util.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
@@ -94,7 +95,7 @@ int ScriptRegexp::Match(const String& string,
       V8String(isolate, string.Substring(start_from))};
   v8::Local<v8::Value> return_value;
   if (!V8ScriptRunner::CallInternalFunction(isolate, exec.As<v8::Function>(),
-                                            regex, arraysize(argv), argv)
+                                            regex, base::size(argv), argv)
            .ToLocal(&return_value))
     return -1;
 

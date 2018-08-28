@@ -114,9 +114,6 @@ std::string GetLoadTimeClasses(bool in_dev_mode) {
 content::WebUIDataSource* CreateMdExtensionsSource(bool in_dev_mode) {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIExtensionsHost);
-  source->OverrideContentSecurityPolicyScriptSrc(
-      "script-src chrome://resources 'self';");
-
   source->SetJsonPath("strings.js");
 
   constexpr LocalizedString localized_strings[] = {
@@ -161,6 +158,13 @@ content::WebUIDataSource* CreateMdExtensionsSource(bool in_dev_mode) {
     {"openChromeWebStore", IDS_MD_EXTENSIONS_SIDEBAR_OPEN_CHROME_WEB_STORE},
     {"keyboardShortcuts", IDS_MD_EXTENSIONS_SIDEBAR_KEYBOARD_SHORTCUTS},
     {"incognitoInfoWarning", IDS_EXTENSIONS_INCOGNITO_WARNING},
+    {"itemHostPermissionsHeading",
+     IDS_MD_EXTENSIONS_ITEM_HOST_PERMISSIONS_HEADING},
+    {"itemHostAccessOnClick", IDS_MD_EXTENSIONS_HOST_ACCESS_ON_CLICK},
+    {"itemHostAccessOnSpecificSites",
+     IDS_MD_EXTENSIONS_HOST_ACCESS_ON_SPECIFIC_SITES},
+    {"itemHostAccessOnAllSites", IDS_MD_EXTENSIONS_HOST_ACCESS_ON_ALL_SITES},
+    {"itemAllowedHosts", IDS_EXTENSIONS_ITEM_ALLOWED_HOSTS},
     {"itemId", IDS_MD_EXTENSIONS_ITEM_ID},
     {"itemInspectViews", IDS_MD_EXTENSIONS_ITEM_INSPECT_VIEWS},
     // NOTE: This text reads "<n> more". It's possible that it should be using

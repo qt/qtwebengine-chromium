@@ -5,11 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include <cmath>
+#include "SkPath.h"
+
 #include "SkBuffer.h"
 #include "SkCubicClipper.h"
 #include "SkData.h"
 #include "SkGeometry.h"
+#include "SkMacros.h"
 #include "SkMath.h"
 #include "SkMatrixPriv.h"
 #include "SkPathPriv.h"
@@ -17,6 +19,10 @@
 #include "SkPointPriv.h"
 #include "SkRRect.h"
 #include "SkSafeMath.h"
+#include "SkTo.h"
+
+#include <cmath>
+#include <utility>
 
 static float poly_eval(float A, float B, float C, float t) {
     return (A * t + B) * t + C;
@@ -196,10 +202,11 @@ bool operator==(const SkPath& a, const SkPath& b) {
 
 void SkPath::swap(SkPath& that) {
     if (this != &that) {
+        using std::swap;
         fPathRef.swap(that.fPathRef);
-        SkTSwap<int>(fLastMoveToIndex, that.fLastMoveToIndex);
-        SkTSwap<uint8_t>(fFillType, that.fFillType);
-        SkTSwap<SkBool8>(fIsVolatile, that.fIsVolatile);
+        swap(fLastMoveToIndex, that.fLastMoveToIndex);
+        swap(fFillType, that.fFillType);
+        swap(fIsVolatile, that.fIsVolatile);
 
         // Non-atomic swaps of atomic values.
         Convexity c = fConvexity.load();
@@ -1816,15 +1823,6 @@ void SkPath::transform(const SkMatrix& matrix, SkPath* dst) const {
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-enum SegmentState {
-    kEmptyContour_SegmentState,   // The current contour is empty. We may be
-                                  // starting processing or we may have just
-                                  // closed a contour.
-    kAfterMove_SegmentState,      // We have seen a move, but nothing else.
-    kAfterPrimitive_SegmentState  // We have seen a primitive but not yet
-                                  // closed the path. Also the initial state.
-};
-
 SkPath::Iter::Iter() {
 #ifdef SK_DEBUG
     fPts = nullptr;
@@ -1913,11 +1911,11 @@ const SkPoint& SkPath::Iter::cons_moveTo() {
         // Set the first return pt to the move pt
         fSegmentState = kAfterPrimitive_SegmentState;
         return fMoveTo;
-    } else {
-        SkASSERT(fSegmentState == kAfterPrimitive_SegmentState);
-         // Set the first return pt to the last pt of the previous primitive.
-        return fPts[-1];
     }
+
+    SkASSERT(fSegmentState == kAfterPrimitive_SegmentState);
+    // Set the first return pt to the last pt of the previous primitive.
+    return fPts[-1];
 }
 
 void SkPath::Iter::consumeDegenerateSegments(bool exact) {
@@ -2801,7 +2799,8 @@ static int winding_mono_cubic(const SkPoint pts[], SkScalar x, SkScalar y, int* 
 
     int dir = 1;
     if (y0 > y3) {
-        SkTSwap(y0, y3);
+        using std::swap;
+        swap(y0, y3);
         dir = -1;
     }
     if (y < y0 || y > y3) {
@@ -2875,7 +2874,8 @@ static int winding_mono_conic(const SkConic& conic, SkScalar x, SkScalar y, int*
 
     int dir = 1;
     if (y0 > y2) {
-        SkTSwap(y0, y2);
+        using std::swap;
+        swap(y0, y2);
         dir = -1;
     }
     if (y < y0 || y > y2) {
@@ -2949,7 +2949,8 @@ static int winding_mono_quad(const SkPoint pts[], SkScalar x, SkScalar y, int* o
 
     int dir = 1;
     if (y0 > y2) {
-        SkTSwap(y0, y2);
+        using std::swap;
+        swap(y0, y2);
         dir = -1;
     }
     if (y < y0 || y > y2) {
@@ -3022,7 +3023,8 @@ static int winding_line(const SkPoint pts[], SkScalar x, SkScalar y, int* onCurv
 
     int dir = 1;
     if (y0 > y1) {
-        SkTSwap(y0, y1);
+        using std::swap;
+        swap(y0, y1);
         dir = -1;
     }
     if (y < y0 || y > y1) {

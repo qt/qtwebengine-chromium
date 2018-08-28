@@ -29,6 +29,8 @@
 
 #include "build/build_config.h"
 #include "third_party/blink/public/platform/web_screen_info.h"
+#include "third_party/blink/renderer/core/clipboard/clipboard_mime_types.h"
+#include "third_party/blink/renderer/core/clipboard/clipboard_utilities.h"
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer_access_policy.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer_item.h"
@@ -50,9 +52,8 @@
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
-#include "third_party/blink/renderer/platform/clipboard/clipboard_mime_types.h"
-#include "third_party/blink/renderer/platform/clipboard/clipboard_utilities.h"
 #include "third_party/blink/renderer/platform/drag_image.h"
+#include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record_builder.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
@@ -100,18 +101,20 @@ class DraggedNodeImageBuilder {
     // object contains transparency and there are other elements in the same
     // stacking context which stacked below.
     PaintLayer* layer = dragged_layout_object->EnclosingLayer();
-    if (!layer->StackingNode()->IsStackingContext())
-      layer = layer->StackingNode()->AncestorStackingContextNode()->Layer();
+    if (!layer->GetLayoutObject().StyleRef().IsStackingContext()) {
+      layer =
+          PaintLayerStackingNode::AncestorStackingContextNode(layer)->Layer();
+    }
     IntRect absolute_bounding_box =
         dragged_layout_object->AbsoluteBoundingBoxRectIncludingDescendants();
     // TODO(chrishtr): consider using the root frame's visible rect instead
     // of the local frame, to avoid over-clipping.
-    FloatRect visible_rect =
-        layer->GetLayoutObject().GetFrameView()->VisibleContentRect();
+    IntRect visible_rect(IntPoint(),
+                         layer->GetLayoutObject().GetFrameView()->Size());
     // If the absolute bounding box is large enough to be possibly a memory
     // or IPC payload issue, clip it to the visible content rect.
     if (absolute_bounding_box.Size().Area() > visible_rect.Size().Area()) {
-      absolute_bounding_box.Intersect(EnclosingIntRect(visible_rect));
+      absolute_bounding_box.Intersect(visible_rect);
     }
 
     FloatRect bounding_box =
@@ -134,15 +137,13 @@ class DraggedNodeImageBuilder {
         DocumentLifecycle::kPaintClean);
 
     FloatPoint paint_offset = bounding_box.Location();
-    PropertyTreeState border_box_properties = PropertyTreeState::Root();
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      border_box_properties =
-          layer->GetLayoutObject().FirstFragment().LocalBorderBoxProperties();
-      // In SPv175+ we paint in the containing transform node's space. Add the
-      // offset from the layer to this transform space.
-      paint_offset +=
-          FloatPoint(layer->GetLayoutObject().FirstFragment().PaintOffset());
-    }
+    PropertyTreeState border_box_properties =
+        layer->GetLayoutObject().FirstFragment().LocalBorderBoxProperties();
+    // We paint in the containing transform node's space. Add the offset from
+    // the layer to this transform space.
+    paint_offset +=
+        FloatPoint(layer->GetLayoutObject().FirstFragment().PaintOffset());
+
     return DataTransfer::CreateDragImageForFrame(
         *local_frame_, 1.0f,
         LayoutObject::ShouldRespectImageOrientation(dragged_layout_object),
@@ -371,7 +372,7 @@ FloatRect DataTransfer::ClipByVisualViewport(const FloatRect& absolute_rect,
   IntRect viewport_in_root_frame =
       EnclosingIntRect(frame.GetPage()->GetVisualViewport().VisibleRect());
   FloatRect absolute_viewport =
-      frame.View()->RootFrameToAbsolute(viewport_in_root_frame);
+      FloatRect(frame.View()->ConvertFromRootFrame(viewport_in_root_frame));
   return Intersection(absolute_viewport, absolute_rect);
 }
 

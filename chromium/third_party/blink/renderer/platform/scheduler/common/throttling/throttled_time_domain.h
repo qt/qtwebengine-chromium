@@ -6,15 +6,16 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_COMMON_THROTTLING_THROTTLED_TIME_DOMAIN_H_
 
 #include "base/macros.h"
-#include "third_party/blink/renderer/platform/scheduler/base/real_time_domain.h"
+#include "base/task/sequence_manager/time_domain.h"
+#include "third_party/blink/renderer/platform/platform_export.h"
 
 namespace blink {
 namespace scheduler {
 
-// A time domain for throttled tasks. behaves like an RealTimeDomain except it
+// A time domain for throttled tasks. Behaves like an RealTimeDomain except it
 // relies on the owner (TaskQueueThrottler) to schedule wake-ups.
 class PLATFORM_EXPORT ThrottledTimeDomain
-    : public base::sequence_manager::RealTimeDomain {
+    : public base::sequence_manager::TimeDomain {
  public:
   ThrottledTimeDomain();
   ~ThrottledTimeDomain() override;
@@ -22,13 +23,15 @@ class PLATFORM_EXPORT ThrottledTimeDomain
   void SetNextTaskRunTime(base::TimeTicks run_time);
 
   // TimeDomain implementation:
-  const char* GetName() const override;
-  void RequestWakeUpAt(base::TimeTicks now, base::TimeTicks run_time) override;
-  void CancelWakeUpAt(base::TimeTicks run_time) override;
+  base::sequence_manager::LazyNow CreateLazyNow() const override;
+  base::TimeTicks Now() const override;
   base::Optional<base::TimeDelta> DelayTillNextTask(
       base::sequence_manager::LazyNow* lazy_now) override;
 
-  using TimeDomain::WakeUpReadyDelayedQueues;
+ protected:
+  const char* GetName() const override;
+  void SetNextDelayedDoWork(base::sequence_manager::LazyNow* lazy_now,
+                            base::TimeTicks run_time) override;
 
  private:
   // Next task run time provided by task queue throttler. Note that it does not

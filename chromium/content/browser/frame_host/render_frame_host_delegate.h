@@ -177,9 +177,8 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // The render frame has requested access to media devices listed in
   // |request|, and the client should grant or deny that permission by
   // calling |callback|.
-  virtual void RequestMediaAccessPermission(
-      const MediaStreamRequest& request,
-      const MediaResponseCallback& callback);
+  virtual void RequestMediaAccessPermission(const MediaStreamRequest& request,
+                                            MediaResponseCallback callback);
 
   // Checks if we have permission to access the microphone or camera. Note that
   // this does not query the user. |type| must be MEDIA_DEVICE_AUDIO_CAPTURE
@@ -200,7 +199,7 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // from a render frame, when the accessibility mode has the
   // ui::AXMode::kWebContents flag set.
   virtual void AccessibilityEventReceived(
-      const std::vector<AXEventNotificationDetails>& details) {}
+      const AXEventNotificationDetails& details) {}
   virtual void AccessibilityLocationChangesReceived(
       const std::vector<AXLocationChangeNotificationDetails>& details) {}
 
@@ -232,6 +231,10 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // view resize. e.g. This will be false when going from tab fullscreen to
   // browser fullscreen.
   virtual void ExitFullscreenMode(bool will_cause_resize) {}
+
+  // Notification that this frame has changed fullscreen state.
+  virtual void FullscreenStateChanged(RenderFrameHost* rfh,
+                                      bool is_fullscreen) {}
 
   // Let the delegate decide whether postMessage should be delivered to
   // |target_rfh| from a source frame in the given SiteInstance.  This defaults

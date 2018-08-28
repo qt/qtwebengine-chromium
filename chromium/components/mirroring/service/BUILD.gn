@@ -18,6 +18,7 @@ source_set("interface") {
     "//media/capture/mojom:video_capture",
     "//media/cast:common",
     "//media/mojo/interfaces",
+    "//media/mojo/interfaces:remoting",
     "//net",
     "//services/network/public/mojom",
   ]
@@ -25,12 +26,18 @@ source_set("interface") {
 
 source_set("service") {
   sources = [
+    "captured_audio_input.cc",
+    "captured_audio_input.h",
+    "media_remoter.cc",
+    "media_remoter.h",
     "message_dispatcher.cc",
     "message_dispatcher.h",
     "mirror_settings.cc",
     "mirror_settings.h",
     "receiver_response.cc",
     "receiver_response.h",
+    "remoting_sender.cc",
+    "remoting_sender.h",
     "rtp_stream.cc",
     "rtp_stream.h",
     "session.cc",
@@ -62,6 +69,8 @@ source_set("service") {
     "//media/cast:net",
     "//media/cast:sender",
     "//media/mojo/common:common",
+    "//media/mojo/interfaces",
+    "//media/mojo/interfaces:remoting",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
     "//net",
@@ -74,12 +83,15 @@ source_set("service") {
 source_set("unittests") {
   testonly = true
   sources = [
+    "captured_audio_input_unittest.cc",
     "fake_network_service.cc",
     "fake_network_service.h",
     "fake_video_capture_host.cc",
     "fake_video_capture_host.h",
+    "media_remoter_unittest.cc",
     "message_dispatcher_unittest.cc",
     "receiver_response_unittest.cc",
+    "remoting_sender_unittest.cc",
     "rtp_stream_unittest.cc",
     "session_monitor_unittest.cc",
     "session_unittest.cc",
@@ -100,6 +112,8 @@ source_set("unittests") {
     "//media/cast:sender",
     "//media/cast:test_support",
     "//media/cast:test_support",
+    "//media/mojo/interfaces",
+    "//media/mojo/interfaces:remoting",
     "//mojo/public/cpp/bindings",
     "//net",
     "//services/network:test_support",

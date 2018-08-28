@@ -137,6 +137,11 @@ Polymer({
     },
   },
 
+  listeners: {
+    'cr-dialog-open': 'onCrDialogOpen_',
+    'close': 'onCrDialogClose_',
+  },
+
   /** @private {?WebUIListenerTracker} */
   listenerTracker_: null,
 
@@ -160,6 +165,9 @@ Polymer({
 
   /** @private {boolean} */
   isInKioskAutoPrintMode_: false,
+
+  /** @private {!Array<!CrDialogElement>} */
+  openDialogs_: [],
 
   /** @override */
   attached: function() {
@@ -216,8 +224,22 @@ Polymer({
    * @private
    */
   onKeyDown_: function(e) {
-    // Escape key closes the dialog.
+    // Escape key closes the topmost dialog that is currently open within
+    // Print Preview. If no such dialog exists, then the Print Preview dialog
+    // itself is closed.
     if (e.code == 'Escape' && !hasKeyModifiers(e)) {
+      // Don't close the Print Preview dialog if there is a child dialog open.
+      const destinations = this.$.destinationSettings;
+      const advanced = this.$.advancedSettings;
+      if (this.openDialogs_.length != 0) {
+        // Manually cancel the dialog, since we call preventDefault() to prevent
+        // views from closing the Print Preview dialog.
+        const dialogToClose = this.openDialogs_[this.openDialogs_.length - 1];
+        dialogToClose.cancel();
+        e.preventDefault();
+        return;
+      }
+
       // On non-mac with toolkit-views, ESC key is handled by C++-side instead
       // of JS-side.
       if (cr.isMac) {
@@ -263,6 +285,29 @@ Polymer({
   },
 
   /**
+   * @param {!Event} e The cr-dialog-open event.
+   * @private
+   */
+  onCrDialogOpen_: function(e) {
+    this.openDialogs_.push(
+        /** @type {!CrDialogElement} */ (e.composedPath()[0]));
+  },
+
+  /**
+   * @param {!Event} e The close event.
+   * @private
+   */
+  onCrDialogClose_: function(e) {
+    // Note: due to event re-firing in cr_dialog.js, this event will always
+    // appear to be coming from the outermost child dialog.
+    // TODO (rbpotter): Fix event re-firing so that the event comes from the
+    // dialog that has been closed, and add an assertion that the removed
+    // dialog matches e.composedPath()[0].
+    if (e.composedPath()[0].nodeName == 'CR-DIALOG')
+      this.openDialogs_.pop();
+  },
+
+  /**
    * @param {!print_preview.NativeInitialSettings} settings
    * @private
    */
@@ -285,6 +330,14 @@ Polymer({
         this.recentDestinations_);
     this.isInAppKioskMode_ = settings.isInAppKioskMode;
     this.isInKioskAutoPrintMode_ = settings.isInKioskAutoPrintMode;
+
+    // This is only visible in the task manager.
+    let title = document.head.querySelector('title');
+    if (!title) {
+      title = document.createElement('title');
+      document.head.appendChild(title);
+    }
+    title.textContent = settings.documentTitle;
   },
 
   /**
@@ -334,9 +387,10 @@ Polymer({
 
   /** @private */
   onDestinationUpdated_: function() {
-    this.set(
-        'destination_.capabilities',
-        this.destinationStore_.selectedDestination.capabilities);
+    // Notify observers, since destination_ ==
+    // destinationStore_.selectedDestination and this event indicates
+    // destinationStore_.selectedDestination.capabilities has been updated.
+    this.notifyPath('destination_.capabilities');
 
     if (!this.$.model.initialized())
       this.$.model.applyStickySettings();
@@ -363,7 +417,12 @@ Polymer({
       this.remove();
       this.nativeLayer_.dialogClose(this.cancelled_);
     } else if (this.state == print_preview_new.State.HIDDEN) {
-      this.nativeLayer_.hidePreview();
+      if (this.destination_.isLocal &&
+          this.destination_.id !==
+              print_preview.Destination.GooglePromotedId.SAVE_AS_PDF) {
+        // Only hide the preview for local, non PDF destinations.
+        this.nativeLayer_.hidePreview();
+      }
     } else if (this.state == print_preview_new.State.PRINTING) {
       if (this.shouldShowMoreSettings_) {
         new print_preview.PrintSettingsUiMetricsContext().record(

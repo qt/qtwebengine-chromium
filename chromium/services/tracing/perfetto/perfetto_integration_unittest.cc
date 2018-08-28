@@ -16,10 +16,10 @@
 #include "third_party/perfetto/include/perfetto/tracing/core/commit_data_request.h"
 #include "third_party/perfetto/include/perfetto/tracing/core/consumer.h"
 #include "third_party/perfetto/include/perfetto/tracing/core/data_source_descriptor.h"
-#include "third_party/perfetto/include/perfetto/tracing/core/service.h"
 #include "third_party/perfetto/include/perfetto/tracing/core/trace_config.h"
 #include "third_party/perfetto/include/perfetto/tracing/core/trace_packet.h"
 #include "third_party/perfetto/include/perfetto/tracing/core/trace_writer.h"
+#include "third_party/perfetto/include/perfetto/tracing/core/tracing_service.h"
 #include "third_party/perfetto/protos/perfetto/common/commit_data_request.pb.h"
 #include "third_party/perfetto/protos/perfetto/trace/test_event.pbzero.h"
 #include "third_party/perfetto/protos/perfetto/trace/trace_packet.pb.h"
@@ -170,7 +170,7 @@ class MockProducerClient : public ProducerClient {
 class MockConsumer : public perfetto::Consumer {
  public:
   using PacketReceivedCallback = std::function<void(bool)>;
-  MockConsumer(perfetto::Service* service,
+  MockConsumer(perfetto::TracingService* service,
                std::string data_source_name,
                PacketReceivedCallback packet_received_callback)
       : packet_received_callback_(packet_received_callback),
@@ -218,7 +218,8 @@ class MockConsumer : public perfetto::Consumer {
   }
 
  private:
-  std::unique_ptr<perfetto::Service::ConsumerEndpoint> consumer_endpoint_;
+  std::unique_ptr<perfetto::TracingService::ConsumerEndpoint>
+      consumer_endpoint_;
   size_t received_packets_ = 0;
   PacketReceivedCallback packet_received_callback_;
   std::string data_source_name_;
@@ -260,7 +261,7 @@ class MockProducer : public ProducerHost {
   }
 
   void OnMessagepipesReadyCallback(
-      perfetto::Service* perfetto_service,
+      perfetto::TracingService* perfetto_service,
       mojom::ProducerClientPtr producer_client_pipe,
       mojom::ProducerHostRequest producer_host_pipe) {
     Initialize(std::move(producer_client_pipe), std::move(producer_host_pipe),
@@ -291,7 +292,7 @@ TEST_F(PerfettoIntegrationTest, ProducerDatasourceInitialized) {
 
   producer_initialized_runloop.Run();
 
-  ProducerClient::DeleteSoon(std::move(dummy_client));
+  ProducerClient::DeleteSoonForTesting(std::move(dummy_client));
 }
 
 TEST_F(PerfettoIntegrationTest, ClientEnabledAndDisabled) {
@@ -326,7 +327,7 @@ TEST_F(PerfettoIntegrationTest, ClientEnabledAndDisabled) {
   on_trace_packets.Run();
   EXPECT_EQ(0u, consumer.received_packets());
 
-  ProducerClient::DeleteSoon(std::move(client));
+  ProducerClient::DeleteSoonForTesting(std::move(client));
 }
 
 TEST_F(PerfettoIntegrationTest, PacketsEndToEndProducerFirst) {
@@ -364,7 +365,7 @@ TEST_F(PerfettoIntegrationTest, PacketsEndToEndProducerFirst) {
 
   EXPECT_EQ(kNumPackets, consumer.received_packets());
 
-  ProducerClient::DeleteSoon(std::move(client));
+  ProducerClient::DeleteSoonForTesting(std::move(client));
 }
 
 TEST_F(PerfettoIntegrationTest, PacketsEndToEndConsumerFirst) {
@@ -399,7 +400,7 @@ TEST_F(PerfettoIntegrationTest, PacketsEndToEndConsumerFirst) {
   no_more_packets_runloop.Run();
 
   EXPECT_EQ(kNumPackets, consumer.received_packets());
-  ProducerClient::DeleteSoon(std::move(client));
+  ProducerClient::DeleteSoonForTesting(std::move(client));
 }
 
 #if defined(THREAD_SANITIZER)
@@ -443,7 +444,7 @@ TEST_F(PerfettoIntegrationTest, MAYBE_CommitDataRequestIsMaybeComplete) {
   EXPECT_EQ(client->all_client_commit_data_requests(),
             new_producer->all_host_commit_data_requests());
 
-  ProducerClient::DeleteSoon(std::move(client));
+  ProducerClient::DeleteSoonForTesting(std::move(client));
 }
 
 TEST_F(PerfettoIntegrationTest, TracingRestarted) {
@@ -500,7 +501,7 @@ TEST_F(PerfettoIntegrationTest, TracingRestarted) {
 
   EXPECT_EQ(kNumPackets * 2, consumer.received_packets());
 
-  ProducerClient::DeleteSoon(std::move(client));
+  ProducerClient::DeleteSoonForTesting(std::move(client));
 }
 
 TEST_F(PerfettoIntegrationTest, NoPacketsReceivedOnWrongSourceName) {
@@ -537,7 +538,7 @@ TEST_F(PerfettoIntegrationTest, NoPacketsReceivedOnWrongSourceName) {
   no_more_packets_runloop.Run();
 
   EXPECT_EQ(0u, consumer.received_packets());
-  ProducerClient::DeleteSoon(std::move(client));
+  ProducerClient::DeleteSoonForTesting(std::move(client));
 }
 
 TEST_F(PerfettoIntegrationTest,
@@ -571,8 +572,8 @@ TEST_F(PerfettoIntegrationTest,
   EXPECT_TRUE(client2->shared_memory());
   EXPECT_NE(client1->shared_memory(), client2->shared_memory());
 
-  ProducerClient::DeleteSoon(std::move(client1));
-  ProducerClient::DeleteSoon(std::move(client2));
+  ProducerClient::DeleteSoonForTesting(std::move(client1));
+  ProducerClient::DeleteSoonForTesting(std::move(client2));
 }
 
 }  // namespace

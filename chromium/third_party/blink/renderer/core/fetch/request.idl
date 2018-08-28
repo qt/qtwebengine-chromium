@@ -13,6 +13,7 @@ enum RequestCredentials { "omit", "same-origin", "include" };
 enum RequestRedirect { "follow", "error", "manual" };
 enum RequestCache { "default", "no-store", "reload", "no-cache", "force-cache", 
     "only-if-cached" };
+enum RequestImportance {"low", "auto", "high"};
 
 // https://w3c.github.io/webappsec-referrer-policy/#referrer-policies
 
@@ -20,14 +21,17 @@ enum ReferrerPolicy {
     "",
     "no-referrer",
     "no-referrer-when-downgrade",
+    "same-origin",
     "origin",
+    "strict-origin",
     "origin-when-cross-origin",
+    "strict-origin-when-cross-origin",
     "unsafe-url"
 };
 
 [
     ActiveScriptWrappable,
-    Constructor(RequestInfo input, optional Dictionary requestInitDict),
+    Constructor(RequestInfo input, optional RequestInit requestInitDict),
     ConstructorCallWith=ScriptState,
     Exposed=(Window,Worker),
     RaisesException=Constructor
@@ -40,12 +44,13 @@ enum ReferrerPolicy {
     [ImplementedAs=getReferrerPolicy] readonly attribute ReferrerPolicy referrerPolicy;
     readonly attribute RequestMode mode;
     readonly attribute RequestCredentials credentials;
-    [RuntimeEnabled=FetchRequestCache] readonly attribute RequestCache cache;
+    readonly attribute RequestCache cache;
     readonly attribute RequestRedirect redirect;
     readonly attribute DOMString integrity;
-    [RuntimeEnabled=FetchRequestKeepalive] readonly attribute boolean keepalive;
-    [RuntimeEnabled=FetchRequestSignal] readonly attribute AbortSignal signal;
+    readonly attribute boolean keepalive;
+    readonly attribute AbortSignal signal;
 
+    [RuntimeEnabled=RequestIsHistoryNavigation] readonly attribute boolean isHistoryNavigation;
     [RaisesException, CallWith=ScriptState, DoNotTestNewObject, NewObject] Request clone();
 };
 

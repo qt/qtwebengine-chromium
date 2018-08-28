@@ -15,7 +15,7 @@
 using base::StringToInt;
 using std::string;
 
-namespace net {
+namespace quic {
 
 QuicClientBase::NetworkHelper::~NetworkHelper() = default;
 
@@ -180,6 +180,12 @@ bool QuicClientBase::WaitForEvents() {
 }
 
 bool QuicClientBase::MigrateSocket(const QuicIpAddress& new_host) {
+  return MigrateSocketWithSpecifiedPort(new_host, local_port_);
+}
+
+bool QuicClientBase::MigrateSocketWithSpecifiedPort(
+    const QuicIpAddress& new_host,
+    int port) {
   if (!connected()) {
     return false;
   }
@@ -188,7 +194,7 @@ bool QuicClientBase::MigrateSocket(const QuicIpAddress& new_host) {
 
   set_bind_to_address(new_host);
   if (!network_helper_->CreateUDPSocketAndBind(server_address_,
-                                               bind_to_address_, local_port_)) {
+                                               bind_to_address_, port)) {
     return false;
   }
 
@@ -304,4 +310,4 @@ QuicConnectionId QuicClientBase::GenerateNewConnectionId() {
   return QuicRandom::GetInstance()->RandUint64();
 }
 
-}  // namespace net
+}  // namespace quic

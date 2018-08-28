@@ -113,6 +113,7 @@ if (is_android) {
       "../sdk/android:audio_api_java",
       "../sdk/android:base_java",
       "../sdk/android:camera_java",
+      "../sdk/android:default_video_codec_factory_java",
       "../sdk/android:filevideo_java",
       "../sdk/android:hwcodecs_java",
       "../sdk/android:java_audio_device_module_java",
@@ -223,14 +224,6 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
 
   config("apprtc_signaling_config") {
     include_dirs = [ "objc/AppRTCMobile" ]
-
-    # GN orders flags on a target before flags from configs. The default config
-    # adds these flags so to cancel them out they need to come from a config and
-    # cannot be on the target directly.
-    cflags = [
-      "-Wno-sign-compare",
-      "-Wno-unused-variable",
-    ]
   }
 
   rtc_static_library("apprtc_signaling") {
@@ -245,6 +238,8 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       "objc/AppRTCMobile/ARDBitrateTracker.m",
       "objc/AppRTCMobile/ARDCaptureController.h",
       "objc/AppRTCMobile/ARDCaptureController.m",
+      "objc/AppRTCMobile/ARDExternalSampleCapturer.h",
+      "objc/AppRTCMobile/ARDExternalSampleCapturer.m",
       "objc/AppRTCMobile/ARDJoinResponse+Internal.h",
       "objc/AppRTCMobile/ARDJoinResponse.h",
       "objc/AppRTCMobile/ARDJoinResponse.m",
@@ -297,6 +292,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "../sdk:peerconnectionfactory_base_objc",
         "../sdk:videocapture_objc",
         "../sdk:videocodec_objc",
+        "../sdk:videoframebuffer_objc",
         "../sdk:videosource_objc",
       ]
     }
@@ -359,8 +355,88 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "../sdk:framework_objc",
       ]
 
+      if (rtc_apprtcmobile_broadcast_extension) {
+        deps += [
+          ":AppRTCMobileBroadcastSetupUI_extension_bundle",
+          ":AppRTCMobileBroadcastUpload_extension_bundle",
+        ]
+      }
+
       if (target_cpu == "x86") {
         deps += [ "//testing/iossim:iossim" ]
+      }
+    }
+
+    if (rtc_apprtcmobile_broadcast_extension) {
+      bundle_data("AppRTCMobileBroadcastUpload_extension_bundle") {
+        testonly = true
+        public_deps = [
+          ":AppRTCMobileBroadcastUpload",
+        ]
+        sources = [
+          "$root_out_dir/AppRTCMobileBroadcastUpload.appex",
+        ]
+        outputs = [
+          "{{bundle_plugins_dir}}/{{source_file_part}}",
+        ]
+      }
+
+      bundle_data("AppRTCMobileBroadcastSetupUI_extension_bundle") {
+        testonly = true
+        public_deps = [
+          ":AppRTCMobileBroadcastSetupUI",
+        ]
+        sources = [
+          "$root_out_dir/AppRTCMobileBroadcastSetupUI.appex",
+        ]
+        outputs = [
+          "{{bundle_plugins_dir}}/{{source_file_part}}",
+        ]
+      }
+
+      rtc_static_library("AppRTCMobileBroadcastUpload_lib") {
+        check_includes = false
+        testonly = true
+        sources = [
+          "objc/AppRTCMobile/ios/broadcast_extension/ARDBroadcastSampleHandler.h",
+          "objc/AppRTCMobile/ios/broadcast_extension/ARDBroadcastSampleHandler.m",
+        ]
+
+        deps = [
+          ":AppRTCMobile_ios_frameworks",
+          ":apprtc_signaling",
+          "../sdk:framework_objc",
+        ]
+
+        libs = [ "ReplayKit.framework" ]
+      }
+
+      ios_appex_bundle("AppRTCMobileBroadcastUpload") {
+        testonly = true
+        configs += [ "..:common_config" ]
+        public_configs = [ "..:common_inherited_config" ]
+
+        info_plist = "objc/AppRTCMobile/ios/broadcast_extension/BroadcastUploadInfo.plist"
+
+        deps = [
+          ":AppRTCMobileBroadcastUpload_lib",
+          "../sdk:framework_objc",
+        ]
+      }
+
+      ios_appex_bundle("AppRTCMobileBroadcastSetupUI") {
+        sources = [
+          "objc/AppRTCMobile/ios/broadcast_extension/ARDBroadcastSetupViewController.h",
+          "objc/AppRTCMobile/ios/broadcast_extension/ARDBroadcastSetupViewController.m",
+        ]
+
+        info_plist = "objc/AppRTCMobile/ios/broadcast_extension/BroadcastSetupUIInfo.plist"
+
+        libs = [ "ReplayKit.framework" ]
+
+        deps = [
+          ":AppRTCMobile_ios_bundle_data",
+        ]
       }
     }
 
@@ -438,6 +514,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "../system_wrappers:field_trial_default",
         "../system_wrappers:metrics_default",
         "../system_wrappers:runtime_enabled_features_default",
+        "//third_party/abseil-cpp/absl/memory",
       ]
 
       if (current_cpu == "arm64") {
@@ -593,28 +670,6 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
 }
 
 if (is_linux || is_win) {
-  config("peerconnection_client_warnings_config") {
-    cflags = []
-    if (is_win && is_clang) {
-      cflags += [
-        # Disable warnings failing when compiling with Clang on Windows.
-        # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
-        "-Wno-format",
-
-        # See https://bugs.chromium.org/p/webrtc/issues/detail?id=6271
-        # for -Wno-reorder and -Wno-sign-compare
-        "-Wno-reorder",
-        "-Wno-sign-compare",
-      ]
-    }
-    if (is_linux && target_cpu == "x86") {
-      cflags += [
-        # Needed to compile on Linux 32-bit.
-        "-Wno-sentinel",
-      ]
-    }
-  }
-
   rtc_executable("peerconnection_client") {
     testonly = true
     sources = [
@@ -643,7 +698,6 @@ if (is_linux || is_win) {
         "peerconnection/client/main_wnd.cc",
         "peerconnection/client/main_wnd.h",
       ]
-      cflags = [ "/wd4245" ]
       configs += [ "//build/config/win:windowed" ]
       deps += [ "../media:rtc_media_base" ]
     }
@@ -662,7 +716,6 @@ if (is_linux || is_win) {
       ]
       deps += [ "//build/config/linux/gtk" ]
     }
-    configs += [ ":peerconnection_client_warnings_config" ]
 
     deps += [
       "../api:libjingle_peerconnection_api",
@@ -794,11 +847,7 @@ if (is_win || is_android) {
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
     if (is_win) {
-      cflags = [ "/wd4245" ]
-      configs += [
-        "//build/config/win:windowed",
-        ":peerconnection_client_warnings_config",
-      ]
+      configs += [ "//build/config/win:windowed" ]
     }
     deps = [
       "../api:libjingle_peerconnection_api",
@@ -818,6 +867,7 @@ if (is_win || is_android) {
       "../system_wrappers:field_trial_default",
       "../system_wrappers:metrics_default",
       "../system_wrappers:runtime_enabled_features_default",
+      "//third_party/abseil-cpp/absl/memory",
     ]
     if (is_android) {
       deps += [

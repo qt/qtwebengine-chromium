@@ -9,23 +9,17 @@
 
 #include <cctype>
 
-#include "SkDeduper.h"
 #include "SkGlyphCache.h"
 #include "SkGraphics.h"
 #include "SkMutex.h"
-#include "SkOnce.h"
+#include "SkTemplates.h"
 #include "SkTraceMemoryDump.h"
 #include "SkTypeface.h"
-#include "SkTypefaceCache.h"
 #include "SkPaintPriv.h"
 
-// Returns the shared globals
-static SkStrikeCache& get_globals() {
-    static SkOnce once;
-    static SkStrikeCache* globals;
-
-    once([]{ globals = new SkStrikeCache; });
-    return *globals;
+SkStrikeCache* SkStrikeCache::GlobalStrikeCache() {
+    static auto* cache = new SkStrikeCache;
+    return cache;
 }
 
 struct SkStrikeCache::Node {
@@ -42,33 +36,52 @@ struct SkStrikeCache::Node {
     std::unique_ptr<SkStrikePinner> fPinner;
 };
 
-SkStrikeCache::ExclusiveStrikePtr::ExclusiveStrikePtr(SkStrikeCache::Node* node) : fNode{node} {}
-SkStrikeCache::ExclusiveStrikePtr::ExclusiveStrikePtr() : fNode{nullptr} {}
+SkStrikeCache::ExclusiveStrikePtr::ExclusiveStrikePtr(
+        SkStrikeCache::Node* node, SkStrikeCache* strikeCache)
+    : fNode{node}
+    , fStrikeCache{strikeCache} {}
+
+SkStrikeCache::ExclusiveStrikePtr::ExclusiveStrikePtr()
+    : fNode{nullptr}
+    , fStrikeCache{nullptr} {}
+
 SkStrikeCache::ExclusiveStrikePtr::ExclusiveStrikePtr(ExclusiveStrikePtr&& o)
-    : fNode{o.fNode} {
+    : fNode{o.fNode}
+    , fStrikeCache{o.fStrikeCache}{
     o.fNode = nullptr;
+    o.fStrikeCache = nullptr;
 }
 
 SkStrikeCache::ExclusiveStrikePtr&
 SkStrikeCache::ExclusiveStrikePtr::operator = (ExclusiveStrikePtr&& o) {
-    Attach(fNode);
+    if (fStrikeCache != nullptr) {
+        fStrikeCache->attachNode(fNode);
+    }
     fNode = o.fNode;
+    fStrikeCache = o.fStrikeCache;
     o.fNode = nullptr;
+    o.fStrikeCache = nullptr;
     return *this;
 }
 
 SkStrikeCache::ExclusiveStrikePtr::~ExclusiveStrikePtr() {
-    SkStrikeCache::Attach(fNode);
+    if (fStrikeCache != nullptr) {
+        fStrikeCache->attachNode(fNode);
+    }
 }
+
 SkGlyphCache* SkStrikeCache::ExclusiveStrikePtr::get() const {
     return &fNode->fCache;
 }
+
 SkGlyphCache* SkStrikeCache::ExclusiveStrikePtr::operator -> () const {
     return this->get();
 }
+
 SkGlyphCache& SkStrikeCache::ExclusiveStrikePtr::operator *  () const {
     return *this->get();
 }
+
 SkStrikeCache::ExclusiveStrikePtr::operator bool () const {
     return fNode != nullptr;
 }
@@ -77,9 +90,11 @@ bool operator == (const SkStrikeCache::ExclusiveStrikePtr& lhs,
                   const SkStrikeCache::ExclusiveStrikePtr& rhs) {
     return lhs.fNode == rhs.fNode;
 }
+
 bool operator == (const SkStrikeCache::ExclusiveStrikePtr& lhs, decltype(nullptr)) {
     return lhs.fNode == nullptr;
 }
+
 bool operator == (decltype(nullptr), const SkStrikeCache::ExclusiveStrikePtr& rhs) {
     return nullptr == rhs.fNode;
 }
@@ -93,12 +108,8 @@ SkStrikeCache::~SkStrikeCache() {
     }
 }
 
-void SkStrikeCache::Attach(Node* node) {
-    get_globals().attachNode(node);
-}
-
 SkExclusiveStrikePtr SkStrikeCache::FindStrikeExclusive(const SkDescriptor& desc) {
-    return get_globals().findStrikeExclusive(desc);
+    return GlobalStrikeCache()->findStrikeExclusive(desc);
 }
 
 std::unique_ptr<SkScalerContext> SkStrikeCache::CreateScalerContext(
@@ -121,10 +132,16 @@ std::unique_ptr<SkScalerContext> SkStrikeCache::CreateScalerContext(
 SkExclusiveStrikePtr SkStrikeCache::FindOrCreateStrikeExclusive(
         const SkDescriptor& desc, const SkScalerContextEffects& effects, const SkTypeface& typeface)
 {
-    auto cache = FindStrikeExclusive(desc);
+    return GlobalStrikeCache()->findOrCreateStrikeExclusive(desc, effects, typeface);
+}
+
+SkExclusiveStrikePtr SkStrikeCache::findOrCreateStrikeExclusive(
+        const SkDescriptor& desc, const SkScalerContextEffects& effects, const SkTypeface& typeface)
+{
+    auto cache = this->findStrikeExclusive(desc);
     if (cache == nullptr) {
         auto scaler = CreateScalerContext(desc, effects, typeface);
-        cache = CreateStrikeExclusive(desc, std::move(scaler));
+        cache = this->createStrikeExclusive(desc, std::move(scaler));
     }
     return cache;
 }
@@ -152,15 +169,7 @@ SkExclusiveStrikePtr SkStrikeCache::FindOrCreateStrikeExclusive(const SkPaint& p
 }
 
 void SkStrikeCache::PurgeAll() {
-    get_globals().purgeAll();
-}
-
-void SkStrikeCache::Validate() {
-#ifdef SK_DEBUG
-    auto visitor = [](const SkGlyphCache& cache) { cache.forceValidate(); };
-
-    get_globals().forEachStrike(visitor);
-#endif
+    GlobalStrikeCache()->purgeAll();
 }
 
 void SkStrikeCache::Dump() {
@@ -180,7 +189,7 @@ void SkStrikeCache::Dump() {
         counter += 1;
     };
 
-    get_globals().forEachStrike(visitor);
+    GlobalStrikeCache()->forEachStrike(visitor);
 }
 
 namespace {
@@ -224,7 +233,7 @@ void SkStrikeCache::DumpMemoryStatistics(SkTraceMemoryDump* dump) {
         dump->setMemoryBacking(dumpName.c_str(), "malloc", nullptr);
     };
 
-    get_globals().forEachStrike(visitor);
+    GlobalStrikeCache()->forEachStrike(visitor);
 }
 
 
@@ -242,20 +251,112 @@ void SkStrikeCache::attachNode(Node* node) {
 }
 
 SkExclusiveStrikePtr SkStrikeCache::findStrikeExclusive(const SkDescriptor& desc) {
-    Node*           node;
     SkAutoExclusive ac(fLock);
 
-    for (node = internalGetHead(); node != nullptr; node = node->fNext) {
+    for (Node* node = internalGetHead(); node != nullptr; node = node->fNext) {
         if (node->fCache.getDescriptor() == desc) {
             this->internalDetachCache(node);
-            return SkExclusiveStrikePtr(node);
+            return SkExclusiveStrikePtr(node, this);
         }
     }
 
-    return SkExclusiveStrikePtr(nullptr);
+    return SkExclusiveStrikePtr();
+}
+
+static bool loose_compare(const SkDescriptor& lhs, const SkDescriptor& rhs) {
+    uint32_t size;
+    auto ptr = lhs.findEntry(kRec_SkDescriptorTag, &size);
+    SkScalerContextRec lhsRec;
+    std::memcpy(&lhsRec, ptr, size);
+
+    ptr = rhs.findEntry(kRec_SkDescriptorTag, &size);
+    SkScalerContextRec rhsRec;
+    std::memcpy(&rhsRec, ptr, size);
+
+    // If these don't match, there's no way we can use these strikes interchangeably.
+    // Note that a typeface from each renderer maps to a unique proxy typeface on the GPU,
+    // keyed in the glyph cache using fontID in the SkDescriptor. By limiting this search
+    // to descriptors with the same fontID, we ensure that a renderer never uses glyphs
+    // generated by a different renderer.
+    return
+        lhsRec.fFontID == rhsRec.fFontID &&
+        lhsRec.fTextSize == rhsRec.fTextSize &&
+        lhsRec.fPreScaleX == rhsRec.fPreScaleX &&
+        lhsRec.fPreSkewX == rhsRec.fPreSkewX &&
+        lhsRec.fPost2x2[0][0] == rhsRec.fPost2x2[0][0] &&
+        lhsRec.fPost2x2[0][1] == rhsRec.fPost2x2[0][1] &&
+        lhsRec.fPost2x2[1][0] == rhsRec.fPost2x2[1][0] &&
+        lhsRec.fPost2x2[1][1] == rhsRec.fPost2x2[1][1];
+}
+
+bool SkStrikeCache::desperationSearchForImage(const SkDescriptor& desc, SkGlyph* glyph,
+                                              SkGlyphCache* targetCache) {
+    SkAutoExclusive ac(fLock);
+
+    SkGlyphID glyphID = glyph->getGlyphID();
+    SkFixed targetSubX = glyph->getSubXFixed(),
+            targetSubY = glyph->getSubYFixed();
+
+    for (Node* node = internalGetHead(); node != nullptr; node = node->fNext) {
+        if (loose_compare(node->fCache.getDescriptor(), desc)) {
+            auto targetGlyphID = SkPackedGlyphID(glyphID, targetSubX, targetSubY);
+            if (node->fCache.isGlyphCached(glyphID, targetSubX, targetSubY)) {
+                SkGlyph* fallback = node->fCache.getRawGlyphByID(targetGlyphID);
+                // This desperate-match node may disappear as soon as we drop fLock, so we
+                // need to copy the glyph from node into this strike, including a
+                // deep copy of the mask.
+                targetCache->initializeGlyphFromFallback(glyph, *fallback);
+                return true;
+            }
+
+            // Look for any sub-pixel pos for this glyph, in case there is a pos mismatch.
+            if (const auto* fallback = node->fCache.getCachedGlyphAnySubPix(glyphID)) {
+                targetCache->initializeGlyphFromFallback(glyph, *fallback);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool SkStrikeCache::desperationSearchForPath(
+        const SkDescriptor& desc, SkGlyphID glyphID, SkPath* path) {
+    SkAutoExclusive ac(fLock);
+
+    // The following is wrong there is subpixel positioning with paths...
+    // Paths are only ever at sub-pixel position (0,0), so we can just try that directly rather
+    // than try our packed position first then search all others on failure like for masks.
+    //
+    // This will have to search the sub-pixel positions too.
+    // There is also a problem with accounting for cache size with shared path data.
+    for (Node* node = internalGetHead(); node != nullptr; node = node->fNext) {
+        if (loose_compare(node->fCache.getDescriptor(), desc)) {
+            if (node->fCache.isGlyphCached(glyphID, 0, 0)) {
+                SkGlyph* from = node->fCache.getRawGlyphByID(SkPackedGlyphID(glyphID));
+                if (from->fPathData->fPath != nullptr) {
+                    // We can just copy the path out by value here, so no need to worry
+                    // about the lifetime of this desperate-match node.
+                    *path = *from->fPathData->fPath;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 SkExclusiveStrikePtr SkStrikeCache::CreateStrikeExclusive(
+        const SkDescriptor& desc,
+        std::unique_ptr<SkScalerContext> scaler,
+        SkPaint::FontMetrics* maybeMetrics,
+        std::unique_ptr<SkStrikePinner> pinner)
+{
+    return GlobalStrikeCache()->createStrikeExclusive(
+            desc, std::move(scaler), maybeMetrics, std::move(pinner));
+}
+
+SkExclusiveStrikePtr SkStrikeCache::createStrikeExclusive(
         const SkDescriptor& desc,
         std::unique_ptr<SkScalerContext> scaler,
         SkPaint::FontMetrics* maybeMetrics,
@@ -268,7 +369,8 @@ SkExclusiveStrikePtr SkStrikeCache::CreateStrikeExclusive(
         scaler->getFontMetrics(&fontMetrics);
     }
 
-    return SkExclusiveStrikePtr(new Node(desc, std::move(scaler), fontMetrics, std::move(pinner)));
+    auto* node = new Node(desc, std::move(scaler), fontMetrics, std::move(pinner));
+    return SkExclusiveStrikePtr(node, this);
 }
 
 void SkStrikeCache::purgeAll() {
@@ -440,6 +542,20 @@ void SkStrikeCache::internalDetachCache(Node* node) {
     node->fPrev = node->fNext = nullptr;
 }
 
+void SkStrikeCache::ValidateGlyphCacheDataSize() {
+#ifdef SK_DEBUG
+    GlobalStrikeCache()->validateGlyphCacheDataSize();
+#endif
+}
+
+#ifdef SK_DEBUG
+void SkStrikeCache::validateGlyphCacheDataSize() const {
+    this->forEachStrike(
+            [](const SkGlyphCache& cache) { cache.forceValidate();
+    });
+}
+#endif
+
 #ifdef SK_DEBUG
 void SkStrikeCache::validate() const {
     size_t computedBytes = 0;
@@ -460,40 +576,3 @@ void SkStrikeCache::validate() const {
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-size_t SkGraphics::GetFontCacheLimit() {
-    return get_globals().getCacheSizeLimit();
-}
-
-size_t SkGraphics::SetFontCacheLimit(size_t bytes) {
-    return get_globals().setCacheSizeLimit(bytes);
-}
-
-size_t SkGraphics::GetFontCacheUsed() {
-    return get_globals().getTotalMemoryUsed();
-}
-
-int SkGraphics::GetFontCacheCountLimit() {
-    return get_globals().getCacheCountLimit();
-}
-
-int SkGraphics::SetFontCacheCountLimit(int count) {
-    return get_globals().setCacheCountLimit(count);
-}
-
-int SkGraphics::GetFontCacheCountUsed() {
-    return get_globals().getCacheCountUsed();
-}
-
-int SkGraphics::GetFontCachePointSizeLimit() {
-    return get_globals().getCachePointSizeLimit();
-}
-
-int SkGraphics::SetFontCachePointSizeLimit(int limit) {
-    return get_globals().setCachePointSizeLimit(limit);
-}
-
-void SkGraphics::PurgeFontCache() {
-    get_globals().purgeAll();
-    SkTypefaceCache::PurgeAll();
-}

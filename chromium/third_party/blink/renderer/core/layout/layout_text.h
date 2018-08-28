@@ -94,6 +94,9 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   virtual unsigned TextStartOffset() const { return 0; }
   String PlainText() const;
 
+  // Returns first letter part of |LayoutTextFragment|.
+  virtual LayoutText* GetFirstLetterPart() const { return nullptr; }
+
   InlineTextBox* CreateInlineTextBox(int start, unsigned short length);
   void DirtyOrDeleteLineBoxesIfNeeded(bool full_layout);
   void DirtyLineBoxes();
@@ -201,6 +204,9 @@ class CORE_EXPORT LayoutText : public LayoutObject {
 
   const InlineTextBoxList& TextBoxes() const { return text_boxes_; }
 
+  // Returns first |InlineTextBox| produces for associated |Node|.
+  // Note: When |this| is remaining part of ::first-letter, this function
+  // returns first-letter part of |InlineTextBox| instead of remaining part.
   InlineTextBox* FirstTextBox() const { return text_boxes_.First(); }
   InlineTextBox* LastTextBox() const { return text_boxes_.Last(); }
 
@@ -266,6 +272,9 @@ class CORE_EXPORT LayoutText : public LayoutObject {
 
   void AutosizingMultiplerChanged() {
     known_to_have_no_overflow_and_no_fallback_fonts_ = false;
+
+    // The font size is changing, so we need to make sure to rebuild everything.
+    valid_ng_items_ = false;
   }
 
   OnlyWhitespaceOrNbsp ContainsOnlyWhitespaceOrNbsp() const;
@@ -325,7 +334,7 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   unsigned length() const final { return TextLength(); }
 
   // See the class comment as to why we shouldn't call this function directly.
-  void Paint(const PaintInfo&, const LayoutPoint&) const final { NOTREACHED(); }
+  void Paint(const PaintInfo&) const final { NOTREACHED(); }
   void UpdateLayout() final { NOTREACHED(); }
   bool NodeAtPoint(HitTestResult&,
                    const HitTestLocation&,

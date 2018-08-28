@@ -15,7 +15,6 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
-#include "gpu/config/gpu_switches.h"
 #include "services/service_manager/sandbox/linux/sandbox_linux.h"
 #include "services/service_manager/zygote/common/common_sandbox_support_linux.h"
 #include "services/service_manager/zygote/common/zygote_handle.h"
@@ -25,10 +24,10 @@
 namespace content {
 namespace internal {
 
-mojo::edk::ScopedInternalPlatformHandle
-ChildProcessLauncherHelper::PrepareMojoPipeHandlesOnClientThread() {
+base::Optional<mojo::NamedPlatformChannel>
+ChildProcessLauncherHelper::CreateNamedPlatformChannelOnClientThread() {
   DCHECK_CURRENTLY_ON(client_thread_id_);
-  return mojo::edk::ScopedInternalPlatformHandle();
+  return base::nullopt;
 }
 
 void ChildProcessLauncherHelper::BeforeLaunchOnClientThread() {
@@ -38,7 +37,8 @@ void ChildProcessLauncherHelper::BeforeLaunchOnClientThread() {
 std::unique_ptr<FileMappedForLaunch>
 ChildProcessLauncherHelper::GetFilesToMap() {
   DCHECK(CurrentlyOnProcessLauncherTaskRunner());
-  return CreateDefaultPosixFilesToMap(child_process_id(), mojo_client_handle(),
+  return CreateDefaultPosixFilesToMap(child_process_id(),
+                                      mojo_channel_->remote_endpoint(),
                                       true /* include_service_required_files */,
                                       GetProcessType(), command_line());
 }
@@ -50,10 +50,7 @@ bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
   options->fds_to_remap = files_to_register.GetMappingWithIDAdjustment(
       base::GlobalDescriptors::kBaseDescriptor);
 
-  if (GetProcessType() == switches::kRendererProcess ||
-      (GetProcessType() == switches::kGpuProcess &&
-       base::CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kEnableOOPRasterization))) {
+  if (GetProcessType() == switches::kRendererProcess) {
     const int sandbox_fd = SandboxHostLinux::GetInstance()->GetChildSocket();
     options->fds_to_remap.push_back(
         std::make_pair(sandbox_fd, service_manager::GetSandboxFD()));
@@ -161,7 +158,7 @@ void ChildProcessLauncherHelper::SetProcessPriorityOnLauncherThread(
     const ChildProcessLauncherPriority& priority) {
   DCHECK(CurrentlyOnProcessLauncherTaskRunner());
   if (process.CanBackgroundProcesses())
-    process.SetProcessBackgrounded(priority.background);
+    process.SetProcessBackgrounded(priority.is_background());
 }
 
 // static

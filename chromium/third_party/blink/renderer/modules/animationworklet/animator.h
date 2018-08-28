@@ -6,7 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_ANIMATIONWORKLET_ANIMATOR_H_
 
 #include "third_party/blink/renderer/modules/animationworklet/effect_proxy.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_v8_reference.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_animators_state.h"
@@ -23,23 +23,19 @@ class ScriptState;
 // instance and knows how to invoke the |animate| function on it.
 // See also |AnimationWorkletGlobalScope::CreateInstance|.
 class Animator final : public GarbageCollectedFinalized<Animator>,
-                       public TraceWrapperBase {
+                       public NameClient {
  public:
   Animator(v8::Isolate*, AnimatorDefinition*, v8::Local<v8::Object> instance);
   ~Animator();
   void Trace(blink::Visitor*);
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "Animator"; }
 
   // Returns true if it successfully invoked animate callback in JS. It receives
   // latest state coming from |AnimationHost| as input and fills
   // the output state with new updates.
   bool Animate(ScriptState*,
-               const CompositorMutatorInputState::AnimationState&,
+               double current_time,
                CompositorMutatorOutputState::AnimationState*);
-
-  bool did_animate() const { return did_animate_; }
-  void clear_did_animate() { did_animate_ = false; }
 
  private:
   // This object keeps the definition object, and animator instance alive.
@@ -47,7 +43,6 @@ class Animator final : public GarbageCollectedFinalized<Animator>,
   TraceWrapperMember<AnimatorDefinition> definition_;
   TraceWrapperV8Reference<v8::Object> instance_;
 
-  bool did_animate_ = false;
   Member<EffectProxy> effect_;
 };
 

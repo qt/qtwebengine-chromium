@@ -138,12 +138,6 @@ class CONTENT_EXPORT ResourceHandler {
       const net::URLRequestStatus& status,
       std::unique_ptr<ResourceController> controller) = 0;
 
-  // This notification is synthesized by the RedirectToFileResourceHandler
-  // to indicate progress of 'download_to_file' requests. OnReadCompleted
-  // calls are consumed by the RedirectToFileResourceHandler and replaced
-  // with OnDataDownloaded calls.
-  virtual void OnDataDownloaded(int bytes_downloaded) = 0;
-
  protected:
   explicit ResourceHandler(net::URLRequest* request);
 
@@ -165,6 +159,8 @@ class CONTENT_EXPORT ResourceHandler {
   // These call the corresponding methods on the ResourceController previously
   // passed to HoldController and then destroy it.
   void Resume();
+  void ResumeForRedirect(
+      const base::Optional<net::HttpRequestHeaders>& modified_request_headers);
   void Cancel();
   void CancelWithError(int error_code);
 

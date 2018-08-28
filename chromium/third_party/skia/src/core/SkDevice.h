@@ -15,8 +15,9 @@
 #include "SkSurfaceProps.h"
 
 class SkBitmap;
-class SkDrawFilter;
 struct SkDrawShadowRec;
+class SkGlyphRun;
+class SkGlyphRunList;
 class SkImageFilterCache;
 struct SkIRect;
 class SkMatrix;
@@ -153,8 +154,7 @@ protected:
 
     /** These are called inside the per-device-layer loop for each draw call.
      When these are called, we have already applied any saveLayer operations,
-     and are handling any looping from the paint, and any effects from the
-     DrawFilter.
+     and are handling any looping from the paint.
      */
     virtual void drawPaint(const SkPaint& paint) = 0;
     virtual void drawPoints(SkCanvas::PointMode mode, size_t count,
@@ -218,25 +218,15 @@ protected:
     virtual void drawImageLattice(const SkImage*, const SkCanvas::Lattice&,
                                   const SkRect& dst, const SkPaint&);
 
-    /**
-     *  Does not handle text decoration.
-     *  Decorations (underline and stike-thru) will be handled by SkCanvas.
-     */
-    virtual void drawText(const void* text, size_t len,
-                          SkScalar x, SkScalar y, const SkPaint& paint) = 0;
-    virtual void drawPosText(const void* text, size_t len,
-                             const SkScalar pos[], int scalarsPerPos,
-                             const SkPoint& offset, const SkPaint& paint) = 0;
-    virtual void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) = 0;
+
+    virtual void drawVertices(const SkVertices*, const SkMatrix* bones, int boneCount, SkBlendMode,
+                              const SkPaint&) = 0;
     virtual void drawShadow(const SkPath&, const SkDrawShadowRec&);
 
-    // default implementation unrolls the blob runs.
-    virtual void drawTextBlob(const SkTextBlob*, SkScalar x, SkScalar y,
-                              const SkPaint& paint, SkDrawFilter* drawFilter);
+    virtual void drawGlyphRunList(SkGlyphRunList* glyphRunList);
     // default implementation calls drawVertices
     virtual void drawPatch(const SkPoint cubics[12], const SkColor colors[4],
-                           const SkPoint texCoords[4], SkBlendMode, bool interpColorsLinearly,
-                           const SkPaint& paint);
+                           const SkPoint texCoords[4], SkBlendMode, const SkPaint& paint);
 
     // default implementation calls drawPath
     virtual void drawAtlas(const SkImage* atlas, const SkRSXform[], const SkRect[],
@@ -252,8 +242,7 @@ protected:
 
     virtual void drawTextOnPath(const void* text, size_t len, const SkPath&,
                                 const SkMatrix*, const SkPaint&);
-    virtual void drawTextRSXform(const void* text, size_t len, const SkRSXform[],
-                                 const SkPaint&);
+    void drawGlyphRunRSXform(SkGlyphRun* run, const SkRSXform* xform);
 
     virtual void drawSpecial(SkSpecialImage*, int x, int y, const SkPaint&,
                              SkImage* clipImage, const SkMatrix& clipMatrix);
@@ -349,6 +338,18 @@ private:
     friend class SkSurface_Raster;
     friend class DeviceTestingAccess;
 
+    // Temporarily friend the SkGlyphRunBuilder until drawPosText is gone.
+    friend class SkGlyphRun;
+    friend class SkGlyphRunList;
+    virtual void drawPosText(const void* text, size_t len,
+                             const SkScalar pos[], int scalarsPerPos,
+                             const SkPoint& offset, const SkPaint& paint) = 0;
+
+    // Does not handle text decoration.
+    // Decorations (underline and stike-thru) will be handled by SkCanvas.
+    // default implementation unrolls the blob runs.
+    virtual void drawTextBlob(const SkTextBlob*, SkScalar x, SkScalar y, const SkPaint& paint);
+
     // used to change the backend's pixels (and possibly config/rowbytes)
     // but cannot change the width/height, so there should be no change to
     // any clip information.
@@ -427,11 +428,11 @@ protected:
     void drawSprite(const SkBitmap&, int, int, const SkPaint&) override {}
     void drawBitmapRect(const SkBitmap&, const SkRect*, const SkRect&, const SkPaint&,
                         SkCanvas::SrcRectConstraint) override {}
-    void drawText(const void*, size_t, SkScalar, SkScalar, const SkPaint&) override {}
     void drawPosText(const void*, size_t, const SkScalar[], int, const SkPoint&,
                      const SkPaint&) override {}
     void drawDevice(SkBaseDevice*, int, int, const SkPaint&) override {}
-    void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) override {}
+    void drawVertices(const SkVertices*, const SkMatrix*, int, SkBlendMode,
+                      const SkPaint&) override {}
 
 private:
     typedef SkBaseDevice INHERITED;

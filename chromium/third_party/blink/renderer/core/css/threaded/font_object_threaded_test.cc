@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/css/resolver/filter_operation_resolver.h"
 
+#include "cc/paint/paint_flags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
@@ -14,7 +15,7 @@
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
 #include "third_party/blink/renderer/platform/fonts/font_selector.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/caching_word_shape_iterator.h"
-#include "third_party/blink/renderer/platform/fonts/shaping/harf_buzz_shaper.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_shaper.h"
 #include "third_party/blink/renderer/platform/fonts/text_run_paint_info.h"
 #include "third_party/blink/renderer/platform/language.h"
 #include "third_party/blink/renderer/platform/testing/font_test_helpers.h"
@@ -84,7 +85,7 @@ TSAN_TEST(FontObjectThreadedTest, TextIntercepts) {
                                                 0x70, 0xc9, 0x70, 0xc9};
     TextRun ahem_above_below_baseline(ahem_above_below_baseline_string, 9);
     TextRunPaintInfo text_run_paint_info(ahem_above_below_baseline);
-    PaintFlags default_paint;
+    cc::PaintFlags default_paint;
     float device_scale_factor = 1;
     std::tuple<float, float> below_baseline_bounds = std::make_tuple(2, 4);
     Vector<Font::TextIntercept> text_intercepts;

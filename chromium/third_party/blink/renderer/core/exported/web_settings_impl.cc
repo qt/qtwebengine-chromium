@@ -71,6 +71,10 @@ void WebSettingsImpl::SetFixedFontFamily(const WebString& font,
     settings_->NotifyGenericFontFamilyChange();
 }
 
+void WebSettingsImpl::SetFMPNetworkQuietTimeout(double timeout) {
+  settings_->SetFMPNetworkQuietTimeout(timeout);
+}
+
 void WebSettingsImpl::SetForceMainWorldInitialization(bool enabled) {
   settings_->SetForceMainWorldInitialization(enabled);
 }
@@ -483,7 +487,7 @@ void WebSettingsImpl::SetMockScrollbarsEnabled(bool enabled) {
 }
 
 void WebSettingsImpl::SetHideScrollbars(bool enabled) {
-  settings_->SetHideScrollbars(enabled);
+  dev_tools_emulator_->SetHideScrollbars(enabled);
 }
 
 void WebSettingsImpl::SetMockGestureTapHighlightsEnabled(bool enabled) {
@@ -663,7 +667,7 @@ void WebSettingsImpl::SetSyncXHRInDocumentsEnabled(bool enabled) {
 }
 
 void WebSettingsImpl::SetCookieEnabled(bool enabled) {
-  settings_->SetCookieEnabled(enabled);
+  dev_tools_emulator_->SetCookieEnabled(enabled);
 }
 
 void WebSettingsImpl::SetNavigateOnDragDrop(bool enabled) {
@@ -722,6 +726,36 @@ void WebSettingsImpl::SetMediaDownloadInProductHelpEnabled(bool enabled) {
 void WebSettingsImpl::SetLowPriorityIframesThreshold(
     WebEffectiveConnectionType effective_connection_type) {
   settings_->SetLowPriorityIframesThreshold(effective_connection_type);
+}
+
+void WebSettingsImpl::SetLazyFrameLoadingDistanceThresholdPxUnknown(
+    int distance_px) {
+  settings_->SetLazyFrameLoadingDistanceThresholdPxUnknown(distance_px);
+}
+
+void WebSettingsImpl::SetLazyFrameLoadingDistanceThresholdPxOffline(
+    int distance_px) {
+  settings_->SetLazyFrameLoadingDistanceThresholdPxOffline(distance_px);
+}
+
+void WebSettingsImpl::SetLazyFrameLoadingDistanceThresholdPxSlow2G(
+    int distance_px) {
+  settings_->SetLazyFrameLoadingDistanceThresholdPxSlow2G(distance_px);
+}
+
+void WebSettingsImpl::SetLazyFrameLoadingDistanceThresholdPx2G(
+    int distance_px) {
+  settings_->SetLazyFrameLoadingDistanceThresholdPx2G(distance_px);
+}
+
+void WebSettingsImpl::SetLazyFrameLoadingDistanceThresholdPx3G(
+    int distance_px) {
+  settings_->SetLazyFrameLoadingDistanceThresholdPx3G(distance_px);
+}
+
+void WebSettingsImpl::SetLazyFrameLoadingDistanceThresholdPx4G(
+    int distance_px) {
+  settings_->SetLazyFrameLoadingDistanceThresholdPx4G(distance_px);
 }
 
 }  // namespace blink

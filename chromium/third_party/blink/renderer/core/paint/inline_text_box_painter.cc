@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/core/paint/inline_text_box_painter.h"
 
 #include "base/optional.h"
-#include "build/build_config.h"
 #include "third_party/blink/renderer/core/editing/editor.h"
 #include "third_party/blink/renderer/core/editing/markers/composition_marker.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker_controller.h"
@@ -19,6 +18,7 @@
 #include "third_party/blink/renderer/core/layout/text_decoration_offset.h"
 #include "third_party/blink/renderer/core/paint/applied_decoration_painter.h"
 #include "third_party/blink/renderer/core/paint/decoration_info.h"
+#include "third_party/blink/renderer/core/paint/document_marker_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/selection_painting_utils.h"
 #include "third_party/blink/renderer/core/paint/text_painter.h"
@@ -83,8 +83,6 @@ static LineLayoutItem EnclosingUnderlineObject(
   }
 }
 
-static const int kMisspellingLineThickness = 3;
-
 LayoutObject& InlineTextBoxPainter::InlineLayoutObject() const {
   return *LineLayoutAPIShim::LayoutObjectFrom(
       inline_text_box_.GetLineLayoutItem());
@@ -129,16 +127,11 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
       (inline_text_box_.IsHorizontal() ? paint_offset.X() : paint_offset.Y());
   LayoutUnit logical_extent = logical_visual_overflow.Width();
 
-  // We round the y-axis to ensure consistent line heights.
-  LayoutPoint adjusted_paint_offset(paint_offset);
-
   if (inline_text_box_.IsHorizontal()) {
-    adjusted_paint_offset.SetY(LayoutUnit(adjusted_paint_offset.Y().Round()));
     if (!paint_info.GetCullRect().IntersectsHorizontalRange(
             logical_start, logical_start + logical_extent))
       return;
   } else {
-    adjusted_paint_offset.SetX(LayoutUnit(adjusted_paint_offset.X().Round()));
     if (!paint_info.GetCullRect().IntersectsVerticalRange(
             logical_start, logical_start + logical_extent))
       return;
@@ -175,6 +168,7 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
 
   LayoutPoint box_origin(inline_text_box_.PhysicalLocation() + paint_offset);
 
+  // We round the y-axis to ensure consistent line heights.
   if (inline_text_box_.IsHorizontal()) {
     box_origin.SetY(LayoutUnit(box_origin.Y().Round()));
   } else {
@@ -316,6 +310,11 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
                                      static_cast<unsigned>(selection_end)});
   selection_start = selection_offsets.start;
   selection_end = selection_offsets.end;
+  if (have_selection) {
+    font.ExpandRangeToIncludePartialGlyphs(text_run, &selection_start,
+                                           &selection_end);
+  }
+
   if (inline_text_box_.Truncation() != kCNoTruncation) {
     // In a mixed-direction flow the ellipsis is at the start of the text
     // rather than at the end of it.
@@ -375,7 +374,6 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
       start_offset = selection_end;
       end_offset = selection_start;
     }
-
     text_painter.Paint(start_offset, end_offset, length, text_style);
 
     // Paint line-through decoration if needed.
@@ -388,8 +386,28 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
 
   if ((paint_selected_text_only || paint_selected_text_separately) &&
       selection_start < selection_end) {
-    // paint only the text that is selected
-    text_painter.Paint(selection_start, selection_end, length, selection_style);
+    // paint only the text that is selected.
+    // Because only a part of the text glyph can be selected, we need to draw
+    // the selection twice:
+    LayoutRect selection_rect =
+        GetSelectionRect<InlineTextBoxPainter::PaintOptions::kNormal>(
+            context, box_rect, style_to_use, font);
+
+    // the first time, we draw the glyphs outside the selection area, with
+    // the original style.
+    {
+      GraphicsContextStateSaver state_saver(context);
+      context.ClipOut(FloatRect(selection_rect));
+      text_painter.Paint(selection_start, selection_end, length, text_style);
+    }
+    // the second time, we draw the glyphs inside the selection area, with
+    // the selection style.
+    {
+      GraphicsContextStateSaver state_saver(context);
+      context.Clip(FloatRect(selection_rect));
+      text_painter.Paint(selection_start, selection_end, length,
+                         selection_style);
+    }
   }
 
   if (paint_info.phase == PaintPhase::kForeground) {
@@ -511,87 +529,13 @@ void InlineTextBoxPainter::PaintSingleMarkerBackgroundRun(
 }
 
 DocumentMarkerVector InlineTextBoxPainter::ComputeMarkersToPaint() const {
-  // We don't render composition or spelling markers that overlap suggestion
-  // markers.
-
   Node* const node = inline_text_box_.GetLineLayoutItem().GetNode();
   if (!node)
     return DocumentMarkerVector();
 
   DocumentMarkerController& document_marker_controller =
       inline_text_box_.GetLineLayoutItem().GetDocument().Markers();
-
-  // Note: DocumentMarkerController::MarkersFor() returns markers sorted by
-  // start offset.
-  const DocumentMarkerVector& suggestion_markers =
-      document_marker_controller.MarkersFor(node, DocumentMarker::kSuggestion);
-  if (suggestion_markers.IsEmpty()) {
-    // If there are no suggestion markers, we can return early as a minor
-    // performance optimization.
-    DocumentMarker::MarkerTypes remaining_types = DocumentMarker::AllMarkers();
-    remaining_types.Remove(DocumentMarker::kSuggestion);
-    return document_marker_controller.MarkersFor(node, remaining_types);
-  }
-
-  const DocumentMarkerVector& markers_overridden_by_suggestion_markers =
-      document_marker_controller.MarkersFor(
-          node, DocumentMarker::kComposition | DocumentMarker::kSpelling);
-
-  Vector<unsigned> suggestion_starts;
-  Vector<unsigned> suggestion_ends;
-  for (const DocumentMarker* suggestion_marker : suggestion_markers) {
-    suggestion_starts.push_back(suggestion_marker->StartOffset());
-    suggestion_ends.push_back(suggestion_marker->EndOffset());
-  }
-
-  std::sort(suggestion_starts.begin(), suggestion_starts.end());
-  std::sort(suggestion_ends.begin(), suggestion_ends.end());
-
-  unsigned suggestion_starts_index = 0;
-  unsigned suggestion_ends_index = 0;
-  unsigned number_suggestions_currently_inside = 0;
-
-  DocumentMarkerVector markers_to_paint;
-  for (DocumentMarker* marker : markers_overridden_by_suggestion_markers) {
-    while (suggestion_starts_index < suggestion_starts.size() &&
-           suggestion_starts[suggestion_starts_index] <=
-               marker->StartOffset()) {
-      ++suggestion_starts_index;
-      ++number_suggestions_currently_inside;
-    }
-    while (suggestion_ends_index < suggestion_ends.size() &&
-           suggestion_ends[suggestion_ends_index] <= marker->StartOffset()) {
-      ++suggestion_ends_index;
-      --number_suggestions_currently_inside;
-    }
-
-    // At this point, number_suggestions_currently_inside should be equal to the
-    // number of suggestion markers overlapping the point marker->StartOffset()
-    // (marker endpoints don't count as overlapping).
-
-    // Marker is overlapped by a suggestion marker, do not paint.
-    if (number_suggestions_currently_inside)
-      continue;
-
-    // Verify that no suggestion marker starts before the current marker ends.
-    if (suggestion_starts_index < suggestion_starts.size() &&
-        suggestion_starts[suggestion_starts_index] < marker->EndOffset())
-      continue;
-
-    markers_to_paint.push_back(marker);
-  }
-
-  markers_to_paint.AppendVector(suggestion_markers);
-
-  DocumentMarker::MarkerTypes remaining_types = DocumentMarker::AllMarkers();
-  remaining_types.Remove(DocumentMarker::kComposition |
-                         DocumentMarker::kSpelling |
-                         DocumentMarker::kSuggestion);
-
-  markers_to_paint.AppendVector(
-      document_marker_controller.MarkersFor(node, remaining_types));
-
-  return markers_to_paint;
+  return document_marker_controller.ComputeMarkersToPaint(*node);
 }
 
 void InlineTextBoxPainter::PaintDocumentMarkers(
@@ -672,149 +616,12 @@ void InlineTextBoxPainter::PaintDocumentMarkers(
   }
 }
 
-namespace {
-
-#if !defined(OS_MACOSX)
-
-static const float kMarkerWidth = 4;
-static const float kMarkerHeight = 2;
-
-sk_sp<PaintRecord> RecordMarker(DocumentMarker::MarkerType marker_type) {
-  SkColor color =
-      (marker_type == DocumentMarker::kGrammar)
-          ? LayoutTheme::GetTheme().PlatformGrammarMarkerUnderlineColor().Rgb()
-          : LayoutTheme::GetTheme()
-                .PlatformSpellingMarkerUnderlineColor()
-                .Rgb();
-
-  // Record the path equivalent to this legacy pattern:
-  //   X o   o X o   o X
-  //     o X o   o X o
-
-  // Adjust the phase such that f' == 0 is "pixel"-centered
-  // (for optimal rasterization at native rez).
-  SkPath path;
-  path.moveTo(kMarkerWidth * -3 / 8, kMarkerHeight * 3 / 4);
-  path.cubicTo(kMarkerWidth * -1 / 8, kMarkerHeight * 3 / 4,
-               kMarkerWidth * -1 / 8, kMarkerHeight * 1 / 4,
-               kMarkerWidth * 1 / 8, kMarkerHeight * 1 / 4);
-  path.cubicTo(kMarkerWidth * 3 / 8, kMarkerHeight * 1 / 4,
-               kMarkerWidth * 3 / 8, kMarkerHeight * 3 / 4,
-               kMarkerWidth * 5 / 8, kMarkerHeight * 3 / 4);
-  path.cubicTo(kMarkerWidth * 7 / 8, kMarkerHeight * 3 / 4,
-               kMarkerWidth * 7 / 8, kMarkerHeight * 1 / 4,
-               kMarkerWidth * 9 / 8, kMarkerHeight * 1 / 4);
-
-  PaintFlags flags;
-  flags.setAntiAlias(true);
-  flags.setColor(color);
-  flags.setStyle(PaintFlags::kStroke_Style);
-  flags.setStrokeWidth(kMarkerHeight * 1 / 2);
-
-  PaintRecorder recorder;
-  recorder.beginRecording(kMarkerWidth, kMarkerHeight);
-  recorder.getRecordingCanvas()->drawPath(path, flags);
-
-  return recorder.finishRecordingAsPicture();
-}
-
-#else  // defined(OS_MACOSX)
-
-static const float kMarkerWidth = 4;
-static const float kMarkerHeight = 3;
-
-sk_sp<PaintRecord> RecordMarker(DocumentMarker::MarkerType marker_type) {
-  SkColor color =
-      (marker_type == DocumentMarker::kGrammar)
-          ? LayoutTheme::GetTheme().PlatformGrammarMarkerUnderlineColor().Rgb()
-          : LayoutTheme::GetTheme()
-                .PlatformSpellingMarkerUnderlineColor()
-                .Rgb();
-
-  // Match the artwork used by the Mac.
-  static const float kR = 1.5f;
-
-  // top->bottom translucent gradient.
-  const SkColor colors[2] = {
-      SkColorSetARGB(0x48,
-                     SkColorGetR(color),
-                     SkColorGetG(color),
-                     SkColorGetB(color)),
-      color
-  };
-  const SkPoint pts[2] = {
-      SkPoint::Make(0, 0),
-      SkPoint::Make(0, 2 * kR)
-  };
-
-  PaintFlags flags;
-  flags.setAntiAlias(true);
-  flags.setColor(color);
-  flags.setShader(PaintShader::MakeLinearGradient(
-      pts, colors, nullptr, ARRAY_SIZE(colors), SkShader::kClamp_TileMode));
-  PaintRecorder recorder;
-  recorder.beginRecording(kMarkerWidth, kMarkerHeight);
-  recorder.getRecordingCanvas()->drawOval(SkRect::MakeWH(2 * kR, 2 * kR),
-                                          flags);
-  return recorder.finishRecordingAsPicture();
-}
-
-#endif  // defined(OS_MACOSX)
-
-void DrawDocumentMarker(GraphicsContext& context,
-                        const FloatPoint& pt,
-                        float width,
-                        DocumentMarker::MarkerType marker_type,
-                        float zoom) {
-  DCHECK(marker_type == DocumentMarker::kSpelling ||
-         marker_type == DocumentMarker::kGrammar);
-
-  DEFINE_STATIC_LOCAL(PaintRecord*, spelling_marker,
-                      (RecordMarker(DocumentMarker::kSpelling).release()));
-  DEFINE_STATIC_LOCAL(PaintRecord*, grammar_marker,
-                      (RecordMarker(DocumentMarker::kGrammar).release()));
-  auto* const marker = marker_type == DocumentMarker::kSpelling
-                           ? spelling_marker
-                           : grammar_marker;
-
-  // Position already includes zoom and device scale factor.
-  SkScalar origin_x = WebCoreFloatToSkScalar(pt.X());
-  SkScalar origin_y = WebCoreFloatToSkScalar(pt.Y());
-
-#if defined(OS_MACOSX)
-  // Make sure to draw only complete dots, and finish inside the marked text.
-  width -= fmodf(width, kMarkerWidth * zoom);
-#else
-  // Offset it vertically by 1 so that there's some space under the text.
-  origin_y += 1;
-#endif
-
-  const auto rect = SkRect::MakeWH(width, kMarkerHeight * zoom);
-  const auto local_matrix = SkMatrix::MakeScale(zoom, zoom);
-
-  PaintFlags flags;
-  flags.setAntiAlias(true);
-  flags.setShader(PaintShader::MakePaintRecord(
-      sk_ref_sp(marker), FloatRect(0, 0, kMarkerWidth, kMarkerHeight),
-      SkShader::kRepeat_TileMode, SkShader::kClamp_TileMode, &local_matrix));
-
-  // Apply the origin translation as a global transform.  This ensures that the
-  // shader local matrix depends solely on zoom => Skia can reuse the same
-  // cached tile for all markers at a given zoom level.
-  GraphicsContextStateSaver saver(context);
-  context.Translate(origin_x, origin_y);
-  context.DrawRect(rect, flags);
-}
-
-}  // anonymous ns
-
 void InlineTextBoxPainter::PaintDocumentMarker(GraphicsContext& context,
                                                const LayoutPoint& box_origin,
                                                const DocumentMarker& marker,
                                                const ComputedStyle& style,
                                                const Font& font,
                                                bool grammar) {
-  // Never print spelling/grammar markers (5327887)
   if (inline_text_box_.GetLineLayoutItem().GetDocument().Printing())
     return;
 
@@ -857,64 +664,23 @@ void InlineTextBoxPainter::PaintDocumentMarker(GraphicsContext& context,
     start = marker_rect.X() - start_point.X();
     width = LayoutUnit(marker_rect.Width());
   }
-
-  // IMPORTANT: The misspelling underline is not considered when calculating the
-  // text bounds, so we have to make sure to fit within those bounds.  This
-  // means the top pixel(s) of the underline will overlap the bottom pixel(s) of
-  // the glyphs in smaller font sizes.  The alternatives are to increase the
-  // line spacing (bad!!) or decrease the underline thickness.  The overlap is
-  // actually the most useful, and matches what AppKit does.  So, we generally
-  // place the underline at the bottom of the text, but in larger fonts that's
-  // not so good so we pin to two pixels under the baseline.
-  int line_thickness = kMisspellingLineThickness;
-
-  const SimpleFontData* font_data =
-      inline_text_box_.GetLineLayoutItem()
-          .Style(inline_text_box_.IsFirstLineStyle())
-          ->GetFont()
-          .PrimaryFont();
-  DCHECK(font_data);
-  int baseline = font_data ? font_data->GetFontMetrics().Ascent() : 0;
-  int descent = (inline_text_box_.LogicalHeight() - baseline).ToInt();
-  int underline_offset;
-  if (descent <= (line_thickness + 2)) {
-    // Place the underline at the very bottom of the text in small/medium fonts.
-    underline_offset =
-        (inline_text_box_.LogicalHeight() - line_thickness).ToInt();
-  } else {
-    // In larger fonts, though, place the underline up near the baseline to
-    // prevent a big gap.
-    underline_offset = baseline + 2;
-  }
-  DrawDocumentMarker(context,
-                     FloatPoint((box_origin.X() + start).ToFloat(),
-                                (box_origin.Y() + underline_offset).ToFloat()),
-                     width.ToFloat(), marker.GetType(), style.EffectiveZoom());
+  DocumentMarkerPainter::PaintDocumentMarker(
+      context, box_origin, style, marker.GetType(),
+      LayoutRect(start, LayoutUnit(), width, inline_text_box_.LogicalHeight()));
 }
 
 template <InlineTextBoxPainter::PaintOptions options>
-void InlineTextBoxPainter::PaintSelection(GraphicsContext& context,
-                                          const LayoutRect& box_rect,
-                                          const ComputedStyle& style,
-                                          const Font& font,
-                                          Color text_color,
-                                          LayoutTextCombine* combined_text) {
+LayoutRect InlineTextBoxPainter::GetSelectionRect(
+    GraphicsContext& context,
+    const LayoutRect& box_rect,
+    const ComputedStyle& style,
+    const Font& font,
+    LayoutTextCombine* combined_text) {
   // See if we have a selection to paint at all.
-  int s_pos, e_pos;
-  inline_text_box_.SelectionStartEnd(s_pos, e_pos);
-  if (s_pos >= e_pos)
-    return;
-
-  auto layout_item = inline_text_box_.GetLineLayoutItem();
-  Color c = SelectionPaintingUtils::SelectionBackgroundColor(
-      layout_item.GetDocument(), layout_item.StyleRef(), layout_item.GetNode());
-  if (!c.Alpha())
-    return;
-
-  // If the text color ends up being the same as the selection background,
-  // invert the selection background.
-  if (text_color == c)
-    c = Color(0xff - c.Red(), 0xff - c.Green(), 0xff - c.Blue());
+  int start_pos, end_pos;
+  inline_text_box_.SelectionStartEnd(start_pos, end_pos);
+  if (start_pos >= end_pos)
+    return LayoutRect();
 
   // If the text is truncated, let the thing being painted in the truncation
   // draw its own highlight.
@@ -930,7 +696,7 @@ void InlineTextBoxPainter::PaintSelection(GraphicsContext& context,
     // so we need to start after it. Otherwise we just need to make sure
     // the end of the text is where the ellipsis starts.
     if (ltr != flow_is_ltr)
-      s_pos = std::max<int>(s_pos, inline_text_box_.Truncation());
+      start_pos = std::max<int>(start_pos, inline_text_box_.Truncation());
     else
       length = inline_text_box_.Truncation();
   }
@@ -938,26 +704,20 @@ void InlineTextBoxPainter::PaintSelection(GraphicsContext& context,
                     static_cast<unsigned>(length));
 
   StringBuilder characters_with_hyphen;
-  bool respect_hyphen = e_pos == length && inline_text_box_.HasHyphen();
+  bool respect_hyphen = end_pos == length && inline_text_box_.HasHyphen();
   TextRun text_run = inline_text_box_.ConstructTextRun(
       style, string,
       inline_text_box_.GetLineLayoutItem().TextLength() -
           inline_text_box_.Start(),
       respect_hyphen ? &characters_with_hyphen : nullptr);
   if (respect_hyphen)
-    e_pos = text_run.length();
-
-  GraphicsContextStateSaver state_saver(context);
+    end_pos = text_run.length();
 
   if (options == InlineTextBoxPainter::PaintOptions::kCombinedText) {
     DCHECK(combined_text);
     // We can't use the height of m_inlineTextBox because LayoutTextCombine's
     // inlineTextBox is horizontal within vertical flow
     combined_text->TransformToInlineCoordinates(context, box_rect, true);
-    context.DrawHighlightForText(font, text_run,
-                                 FloatPoint(box_rect.Location()),
-                                 box_rect.Height().ToInt(), c, s_pos, e_pos);
-    return;
   }
 
   LayoutUnit selection_bottom = inline_text_box_.Root().SelectionBottom();
@@ -972,7 +732,7 @@ void InlineTextBoxPainter::PaintSelection(GraphicsContext& context,
   FloatPoint local_origin(box_rect.X().ToFloat(),
                           (box_rect.Y() - delta_y).ToFloat());
   LayoutRect selection_rect = LayoutRect(font.SelectionRectForText(
-      text_run, local_origin, sel_height, s_pos, e_pos));
+      text_run, local_origin, sel_height, start_pos, end_pos));
   // For line breaks, just painting a selection where the line break itself
   // is rendered is sufficient. Don't select it if there's an ellipsis
   // there.
@@ -988,9 +748,36 @@ void InlineTextBoxPainter::PaintSelection(GraphicsContext& context,
   if (!inline_text_box_.IsLeftToRightDirection() &&
       inline_text_box_.IsLineBreak())
     selection_rect.Move(-selection_rect.Width(), LayoutUnit());
-  if (!flow_is_ltr && !ltr && inline_text_box_.Truncation() != kCNoTruncation)
+  if (!flow_is_ltr && !ltr && inline_text_box_.Truncation() != kCNoTruncation) {
     selection_rect.Move(
         inline_text_box_.LogicalWidth() - selection_rect.Width(), LayoutUnit());
+  }
+
+  return selection_rect;
+}
+
+template <InlineTextBoxPainter::PaintOptions options>
+void InlineTextBoxPainter::PaintSelection(GraphicsContext& context,
+                                          const LayoutRect& box_rect,
+                                          const ComputedStyle& style,
+                                          const Font& font,
+                                          Color text_color,
+                                          LayoutTextCombine* combined_text) {
+  auto layout_item = inline_text_box_.GetLineLayoutItem();
+  Color c = SelectionPaintingUtils::SelectionBackgroundColor(
+      layout_item.GetDocument(), layout_item.StyleRef(), layout_item.GetNode());
+  if (!c.Alpha())
+    return;
+
+  LayoutRect selection_rect =
+      GetSelectionRect<options>(context, box_rect, style, font, combined_text);
+
+  // If the text color ends up being the same as the selection background,
+  // invert the selection background.
+  if (text_color == c)
+    c = Color(0xff - c.Red(), 0xff - c.Green(), 0xff - c.Blue());
+
+  GraphicsContextStateSaver state_saver(context);
 
   context.FillRect(FloatRect(selection_rect), c);
 }
@@ -1012,61 +799,17 @@ void InlineTextBoxPainter::PaintStyleableMarkerUnderline(
     const StyleableMarker& marker,
     const ComputedStyle& style,
     const Font& font) {
-  if (marker.HasThicknessNone() ||
-      (marker.UnderlineColor() == Color::kTransparent &&
-       !marker.UseTextColor()))
-    return;
-
   if (inline_text_box_.Truncation() == kCFullTruncation)
     return;
 
   const PaintOffsets marker_offsets = MarkerPaintStartAndEnd(marker);
-
   const TextRun& run = inline_text_box_.ConstructTextRun(style);
   // Pass 0 for height since we only care about the width
   const FloatRect& marker_rect = font.SelectionRectForText(
       run, FloatPoint(), 0, marker_offsets.start, marker_offsets.end);
-  // start of line to draw, relative to box_origin.X()
-  LayoutUnit start = LayoutUnit(marker_rect.X());
-  LayoutUnit width = LayoutUnit(marker_rect.Width());
-
-  // We need to have some space between underlines of subsequent clauses,
-  // because some input methods do not use different underline styles for those.
-  // We make each line shorter, which has a harmless side effect of shortening
-  // the first and last clauses, too.
-  start += 1;
-  width -= 2;
-
-  // Thick marked text underlines are 2px thick as long as there is room for the
-  // 2px line under the baseline.  All other marked text underlines are 1px
-  // thick.  If there's not enough space the underline will touch or overlap
-  // characters.
-  int line_thickness = 1;
-  const SimpleFontData* font_data =
-      inline_text_box_.GetLineLayoutItem()
-          .Style(inline_text_box_.IsFirstLineStyle())
-          ->GetFont()
-          .PrimaryFont();
-  DCHECK(font_data);
-  int baseline = font_data ? font_data->GetFontMetrics().Ascent() : 0;
-  if (marker.HasThicknessThick() &&
-      inline_text_box_.LogicalHeight() - baseline >= 2)
-    line_thickness = 2;
-
-  Color marker_color =
-      marker.UseTextColor()
-          ? inline_text_box_.GetLineLayoutItem().Style()->VisitedDependentColor(
-                GetCSSPropertyWebkitTextFillColor())
-          : marker.UnderlineColor();
-  context.SetStrokeColor(marker_color);
-
-  context.SetStrokeThickness(line_thickness);
-  context.DrawLineForText(
-      FloatPoint(
-          box_origin.X() + start,
-          (box_origin.Y() + inline_text_box_.LogicalHeight() - line_thickness)
-              .ToFloat()),
-      width);
+  DocumentMarkerPainter::PaintStyleableMarkerUnderline(
+      context, box_origin, marker, style, marker_rect,
+      inline_text_box_.LogicalHeight());
 }
 
 void InlineTextBoxPainter::PaintTextMatchMarkerForeground(
@@ -1085,21 +828,15 @@ void InlineTextBoxPainter::PaintTextMatchMarkerForeground(
       GetTextMatchMarkerPaintOffsets(marker, inline_text_box_);
   TextRun run = inline_text_box_.ConstructTextRun(style);
 
-  Color text_color =
-      LayoutTheme::GetTheme().PlatformTextSearchColor(marker.IsActiveMatch());
-  if (style.VisitedDependentColor(GetCSSPropertyColor()) == text_color)
-    return;
-
   const SimpleFontData* font_data = font.PrimaryFont();
   DCHECK(font_data);
   if (!font_data)
     return;
 
-  TextPaintStyle text_style;
-  text_style.current_color = text_style.fill_color = text_style.stroke_color =
-      text_style.emphasis_mark_color = text_color;
-  text_style.stroke_width = style.TextStrokeWidth();
-  text_style.shadow = nullptr;
+  const TextPaintStyle text_style =
+      DocumentMarkerPainter::ComputeTextPaintStyleFrom(style, marker);
+  if (text_style.current_color == Color::kTransparent)
+    return;
 
   LayoutRect box_rect(box_origin, LayoutSize(inline_text_box_.LogicalWidth(),
                                              inline_text_box_.LogicalHeight()));

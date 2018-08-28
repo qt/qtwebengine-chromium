@@ -44,7 +44,7 @@ using testing::InSequence;
 using testing::Return;
 using testing::StrictMock;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 typedef QuicSimpleServerSession::PromisedStreamInfo PromisedStreamInfo;
@@ -191,7 +191,6 @@ class QuicSimpleServerSessionTest
                        TlsServerHandshaker::CreateSslCtx()),
         compressed_certs_cache_(
             QuicCompressedCertsCache::kQuicCompressedCertsCacheSize) {
-    config_.SetMaxStreamsPerConnection(kMaxStreamsForTest, kMaxStreamsForTest);
     config_.SetMaxIncomingDynamicStreamsToSend(kMaxStreamsForTest);
     QuicConfigPeer::SetReceivedMaxIncomingDynamicStreams(&config_,
                                                          kMaxStreamsForTest);
@@ -325,6 +324,11 @@ TEST_P(QuicSimpleServerSessionTest, AcceptClosedStream) {
 }
 
 TEST_P(QuicSimpleServerSessionTest, CreateIncomingDynamicStreamDisconnected) {
+  // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
+  if (GetParam() != AllSupportedVersions()[0]) {
+    return;
+  }
+
   // Tests that incoming stream creation fails when connection is not connected.
   size_t initial_num_open_stream = session_->GetNumOpenIncomingStreams();
   QuicConnectionPeer::TearDownLocalConnectionState(connection_);
@@ -353,6 +357,11 @@ TEST_P(QuicSimpleServerSessionTest, CreateIncomingDynamicStream) {
 }
 
 TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamDisconnected) {
+  // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
+  if (GetParam() != AllSupportedVersions()[0]) {
+    return;
+  }
+
   // Tests that outgoing stream creation fails when connection is not connected.
   size_t initial_num_open_stream = session_->GetNumOpenOutgoingStreams();
   QuicConnectionPeer::TearDownLocalConnectionState(connection_);
@@ -364,6 +373,11 @@ TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamDisconnected) {
 }
 
 TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamUnencrypted) {
+  // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
+  if (GetParam() != AllSupportedVersions()[0]) {
+    return;
+  }
+
   // Tests that outgoing stream creation fails when encryption has not yet been
   // established.
   size_t initial_num_open_stream = session_->GetNumOpenOutgoingStreams();
@@ -386,9 +400,7 @@ TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamUptoLimit) {
   EXPECT_EQ(1u, session_->GetNumOpenIncomingStreams());
   EXPECT_EQ(0u, session_->GetNumOpenOutgoingStreams());
 
-  if (GetQuicReloadableFlag(quic_register_static_streams)) {
-    session_->UnregisterStreamPriority(kHeadersStreamId, /*is_static=*/true);
-  }
+  session_->UnregisterStreamPriority(kHeadersStreamId, /*is_static=*/true);
   // Assume encryption already established.
   QuicSimpleServerSessionPeer::SetCryptoStream(session_.get(), nullptr);
   MockQuicCryptoServerStream* crypto_stream =
@@ -396,10 +408,8 @@ TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamUptoLimit) {
                                      session_.get(), &stream_helper_);
   crypto_stream->set_encryption_established(true);
   QuicSimpleServerSessionPeer::SetCryptoStream(session_.get(), crypto_stream);
-  if (GetQuicReloadableFlag(quic_register_static_streams)) {
-    session_->RegisterStreamPriority(kHeadersStreamId, /*is_static=*/true,
-                                     QuicStream::kDefaultPriority);
-  }
+  session_->RegisterStreamPriority(kHeadersStreamId, /*is_static=*/true,
+                                   QuicStream::kDefaultPriority);
 
   // Create push streams till reaching the upper limit of allowed open streams.
   for (size_t i = 0; i < kMaxStreamsForTest; ++i) {
@@ -453,8 +463,6 @@ class QuicSimpleServerSessionServerPushTest
   const size_t kStreamFlowControlWindowSize = 32 * 1024;  // 32KB.
 
   QuicSimpleServerSessionServerPushTest() : QuicSimpleServerSessionTest() {
-    config_.SetMaxStreamsPerConnection(kMaxStreamsForTest, kMaxStreamsForTest);
-
     // Reset stream level flow control window to be 32KB.
     QuicConfigPeer::SetReceivedInitialStreamFlowControlWindow(
         &config_, kStreamFlowControlWindowSize);
@@ -482,9 +490,7 @@ class QuicSimpleServerSessionServerPushTest
 
     visitor_ = QuicConnectionPeer::GetVisitor(connection_);
 
-    if (GetQuicReloadableFlag(quic_register_static_streams)) {
-      session_->UnregisterStreamPriority(kHeadersStreamId, /*is_static=*/true);
-    }
+    session_->UnregisterStreamPriority(kHeadersStreamId, /*is_static=*/true);
     QuicSimpleServerSessionPeer::SetCryptoStream(session_.get(), nullptr);
     // Assume encryption already established.
     MockQuicCryptoServerStream* crypto_stream = new MockQuicCryptoServerStream(
@@ -493,10 +499,8 @@ class QuicSimpleServerSessionServerPushTest
 
     crypto_stream->set_encryption_established(true);
     QuicSimpleServerSessionPeer::SetCryptoStream(session_.get(), crypto_stream);
-    if (GetQuicReloadableFlag(quic_register_static_streams)) {
-      session_->RegisterStreamPriority(kHeadersStreamId, /*is_static=*/true,
-                                       QuicStream::kDefaultPriority);
-    }
+    session_->RegisterStreamPriority(kHeadersStreamId, /*is_static=*/true,
+                                     QuicStream::kDefaultPriority);
   }
 
   // Given |num_resources|, create this number of fake push resources and push
@@ -507,8 +511,6 @@ class QuicSimpleServerSessionServerPushTest
     // To prevent push streams from being closed the response need to be larger
     // than stream flow control window so stream won't send the full body.
     size_t body_size = 2 * kStreamFlowControlWindowSize;  // 64KB.
-
-    config_.SetMaxStreamsPerConnection(kMaxStreamsForTest, kMaxStreamsForTest);
 
     QuicString request_url = "mail.google.com/";
     spdy::SpdyHeaderBlock request_headers;
@@ -654,4 +656,4 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

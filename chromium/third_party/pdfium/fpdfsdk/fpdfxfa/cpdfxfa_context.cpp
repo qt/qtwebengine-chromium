@@ -36,11 +36,29 @@ extern void SetLastError(int err);
 extern int GetLastError();
 #endif
 
-CPDFXFA_Context::CPDFXFA_Context(std::unique_ptr<CPDF_Document> pPDFDoc)
-    : m_pPDFDoc(std::move(pPDFDoc)),
-      m_pXFAApp(pdfium::MakeUnique<CXFA_FFApp>(this)),
-      m_DocEnv(this) {
+namespace {
+
+bool IsValidAlertButton(int type) {
+  return type == JSPLATFORM_ALERT_BUTTON_OK ||
+         type == JSPLATFORM_ALERT_BUTTON_OKCANCEL ||
+         type == JSPLATFORM_ALERT_BUTTON_YESNO ||
+         type == JSPLATFORM_ALERT_BUTTON_YESNOCANCEL;
 }
+
+bool IsValidAlertIcon(int type) {
+  return type == JSPLATFORM_ALERT_ICON_ERROR ||
+         type == JSPLATFORM_ALERT_ICON_WARNING ||
+         type == JSPLATFORM_ALERT_ICON_QUESTION ||
+         type == JSPLATFORM_ALERT_ICON_STATUS ||
+         type == JSPLATFORM_ALERT_ICON_ASTERISK;
+}
+
+}  // namespace
+
+CPDFXFA_Context::CPDFXFA_Context(CPDF_Document* pPDFDoc)
+    : m_pPDFDoc(pPDFDoc),
+      m_pXFAApp(pdfium::MakeUnique<CXFA_FFApp>(this)),
+      m_DocEnv(this) {}
 
 CPDFXFA_Context::~CPDFXFA_Context() {
   m_nLoadStatus = FXFA_LOADSTATUS_CLOSING;
@@ -99,7 +117,7 @@ bool CPDFXFA_Context::LoadXFADoc() {
     return false;
 
   m_pXFADoc = pdfium::MakeUnique<CXFA_FFDoc>(pApp, &m_DocEnv);
-  if (!m_pXFADoc->OpenDoc(m_pPDFDoc.get())) {
+  if (!m_pXFADoc->OpenDoc(m_pPDFDoc.Get())) {
     SetLastError(FPDF_ERR_XFALOAD);
     return false;
   }
@@ -189,7 +207,7 @@ RetainPtr<CPDFXFA_Page> CPDFXFA_Context::GetXFAPage(
 }
 
 CPDF_Document* CPDFXFA_Context::GetPDFDoc() const {
-  return m_pPDFDoc.get();
+  return m_pPDFDoc.Get();
 }
 
 void CPDFXFA_Context::DeletePage(int page_index) {
@@ -201,6 +219,11 @@ void CPDFXFA_Context::DeletePage(int page_index) {
 
   if (pdfium::IndexInBounds(m_XFAPageList, page_index))
     m_XFAPageList[page_index].Reset();
+}
+
+uint32_t CPDFXFA_Context::GetUserPermissions() const {
+  // See https://bugs.chromium.org/p/pdfium/issues/detail?id=499
+  return 0xFFFFFFFF;
 }
 
 void CPDFXFA_Context::ClearChangeMark() {
@@ -243,50 +266,12 @@ int32_t CPDFXFA_Context::MsgBox(const WideString& wsMessage,
   if (!m_pFormFillEnv || m_nLoadStatus != FXFA_LOADSTATUS_LOADED)
     return -1;
 
-  uint32_t iconType = 0;
-  int iButtonType = 0;
-  switch (dwIconType) {
-    case XFA_MBICON_Error:
-      iconType |= 0;
-      break;
-    case XFA_MBICON_Warning:
-      iconType |= 1;
-      break;
-    case XFA_MBICON_Question:
-      iconType |= 2;
-      break;
-    case XFA_MBICON_Status:
-      iconType |= 3;
-      break;
-  }
-  switch (dwButtonType) {
-    case XFA_MB_OK:
-      iButtonType |= 0;
-      break;
-    case XFA_MB_OKCancel:
-      iButtonType |= 1;
-      break;
-    case XFA_MB_YesNo:
-      iButtonType |= 2;
-      break;
-    case XFA_MB_YesNoCancel:
-      iButtonType |= 3;
-      break;
-  }
-  int32_t iRet =
-      m_pFormFillEnv->JS_appAlert(wsMessage, wsTitle, iButtonType, iconType);
-
-  switch (iRet) {
-    case 1:
-      return XFA_IDOK;
-    case 2:
-      return XFA_IDCancel;
-    case 3:
-      return XFA_IDNo;
-    case 4:
-      return XFA_IDYes;
-  }
-  return XFA_IDYes;
+  int iconType =
+      IsValidAlertIcon(dwIconType) ? dwIconType : JSPLATFORM_ALERT_ICON_DEFAULT;
+  int iButtonType = IsValidAlertButton(dwButtonType)
+                        ? dwButtonType
+                        : JSPLATFORM_ALERT_BUTTON_DEFAULT;
+  return m_pFormFillEnv->JS_appAlert(wsMessage, wsTitle, iButtonType, iconType);
 }
 
 WideString CPDFXFA_Context::Response(const WideString& wsQuestion,
@@ -337,9 +322,8 @@ bool CPDFXFA_Context::PutRequestURL(const WideString& wsURL,
          m_pFormFillEnv->PutRequestURL(wsURL, wsData, wsEncode);
 }
 
-IFWL_AdapterTimerMgr* CPDFXFA_Context::GetTimerMgr() {
-  CXFA_FWLAdapterTimerMgr* pAdapter = nullptr;
-  if (m_pFormFillEnv)
-    pAdapter = new CXFA_FWLAdapterTimerMgr(m_pFormFillEnv.Get());
-  return pAdapter;
+std::unique_ptr<IFWL_AdapterTimerMgr> CPDFXFA_Context::NewTimerMgr() {
+  if (!m_pFormFillEnv)
+    return nullptr;
+  return pdfium::MakeUnique<CXFA_FWLAdapterTimerMgr>(m_pFormFillEnv.Get());
 }

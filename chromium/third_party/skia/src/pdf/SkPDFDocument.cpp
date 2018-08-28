@@ -13,6 +13,7 @@
 #include "SkPDFDevice.h"
 #include "SkPDFUtils.h"
 #include "SkStream.h"
+#include "SkTo.h"
 
 SkPDFObjectSerializer::SkPDFObjectSerializer() : fBaseOffset(0), fNextToBeSerialized(0) {}
 
@@ -122,7 +123,7 @@ static sk_sp<SkPDFDict> generate_page_tree(SkTArray<sk_sp<SkPDFDict>>* pages) {
     // curNodes takes a reference to its items, which it passes to pageTree.
     int totalPageCount = pages->count();
     SkTArray<sk_sp<SkPDFDict>> curNodes;
-    curNodes.swap(pages);
+    curNodes.swap(*pages);
 
     // nextRoundNodes passes its references to nodes on to curNodes.
     int treeCapacity = kNodeSize;
@@ -163,7 +164,7 @@ static sk_sp<SkPDFDict> generate_page_tree(SkTArray<sk_sp<SkPDFDict>>* pages) {
         }
         SkDEBUGCODE( for (const auto& n : curNodes) { SkASSERT(!n); } );
 
-        curNodes.swap(&nextRoundNodes);
+        curNodes.swap(nextRoundNodes);
         nextRoundNodes.reset();
         treeCapacity *= kNodeSize;
     } while (curNodes.count() > 1);

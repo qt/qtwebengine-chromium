@@ -141,8 +141,8 @@ RenderFrameProxy* RenderFrameProxy::CreateFrameProxy(
     // be updated, as the OnSwapOut flow which normally does this won't happen
     // in that case.  See https://crbug.com/653746 and
     // https://crbug.com/651980.
-    if (!render_view->is_swapped_out())
-      render_view->SetSwappedOut(true);
+    if (!render_widget->is_swapped_out())
+      render_widget->SetSwappedOut(true);
   } else {
     // Create a frame under an existing parent. The parent is always expected
     // to be a RenderFrameProxy, because navigations initiated by local frames
@@ -243,7 +243,7 @@ void RenderFrameProxy::Init(blink::WebRemoteFrame* web_frame,
       render_widget_->GetOriginalScreenInfo();
 
 #if defined(USE_AURA)
-  if (features::IsMashEnabled()) {
+  if (!features::IsAshInBrowserProcess()) {
     RendererWindowTreeClient* renderer_window_tree_client =
         RendererWindowTreeClient::Get(render_widget_->routing_id());
     // It's possible a MusEmbeddedFrame has already been scheduled for creation
@@ -256,7 +256,7 @@ void RenderFrameProxy::Init(blink::WebRemoteFrame* web_frame,
 #endif
 }
 
-void RenderFrameProxy::ResendResizeParams() {
+void RenderFrameProxy::ResendVisualProperties() {
   // Reset |sent_visual_properties_| in order to allocate a new
   // viz::LocalSurfaceId.
   sent_visual_properties_ = base::nullopt;
@@ -282,6 +282,11 @@ void RenderFrameProxy::OnScreenInfoChanged(const ScreenInfo& screen_info) {
                                         screen_info.device_scale_factor);
     return;
   }
+  SynchronizeVisualProperties();
+}
+
+void RenderFrameProxy::OnZoomLevelChanged(double zoom_level) {
+  pending_visual_properties_.zoom_level = zoom_level;
   SynchronizeVisualProperties();
 }
 
@@ -322,8 +327,10 @@ void RenderFrameProxy::SetReplicatedState(const FrameReplicationState& state) {
   web_frame_->SetReplicatedInsecureNavigationsSet(
       state.insecure_navigations_set);
   web_frame_->SetReplicatedFeaturePolicyHeader(state.feature_policy_header);
-  if (state.has_received_user_gesture)
-    web_frame_->SetHasReceivedUserGesture();
+  if (state.has_received_user_gesture) {
+    web_frame_->UpdateUserActivationState(
+        blink::UserActivationUpdateType::kNotifyActivation);
+  }
   web_frame_->SetHasReceivedUserGestureBeforeNavigation(
       state.has_received_user_gesture_before_nav);
 
@@ -367,24 +374,6 @@ void RenderFrameProxy::OnDidSetFramePolicyHeaders(
   web_frame_->SetReplicatedFeaturePolicyHeader(feature_policy_header);
 }
 
-void RenderFrameProxy::SetChildFrameSurface(
-    const viz::SurfaceInfo& surface_info) {
-  // If this WebFrame has already been detached, its parent will be null. This
-  // can happen when swapping a WebRemoteFrame with a WebLocalFrame, where this
-  // message may arrive after the frame was removed from the frame tree, but
-  // before the frame has been destroyed. http://crbug.com/446575.
-  if (!web_frame()->Parent())
-    return;
-
-  if (!enable_surface_synchronization_) {
-    compositing_helper_->SetPrimarySurfaceId(
-        surface_info.id(), local_frame_size(),
-        cc::DeadlinePolicy::UseDefaultDeadline());
-  }
-  compositing_helper_->SetFallbackSurfaceId(surface_info.id(),
-                                            local_frame_size());
-}
-
 bool RenderFrameProxy::OnMessageReceived(const IPC::Message& msg) {
   // Forward Page IPCs to the RenderView.
   if ((IPC_MESSAGE_CLASS(msg) == PageMsgStart)) {
@@ -398,7 +387,8 @@ bool RenderFrameProxy::OnMessageReceived(const IPC::Message& msg) {
   IPC_BEGIN_MESSAGE_MAP(RenderFrameProxy, msg)
     IPC_MESSAGE_HANDLER(FrameMsg_DeleteProxy, OnDeleteProxy)
     IPC_MESSAGE_HANDLER(FrameMsg_ChildFrameProcessGone, OnChildFrameProcessGone)
-    IPC_MESSAGE_HANDLER(FrameMsg_SetChildFrameSurface, OnSetChildFrameSurface)
+    IPC_MESSAGE_HANDLER(FrameMsg_FirstSurfaceActivation,
+                        OnFirstSurfaceActivation)
     IPC_MESSAGE_HANDLER(FrameMsg_IntrinsicSizingInfoOfChildChanged,
                         OnIntrinsicSizingInfoOfChildChanged)
     IPC_MESSAGE_HANDLER(FrameMsg_UpdateOpener, OnUpdateOpener)
@@ -431,8 +421,8 @@ bool RenderFrameProxy::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_DisableAutoResize, OnDisableAutoResize)
     IPC_MESSAGE_HANDLER(FrameMsg_SetFocusedFrame, OnSetFocusedFrame)
     IPC_MESSAGE_HANDLER(FrameMsg_WillEnterFullscreen, OnWillEnterFullscreen)
-    IPC_MESSAGE_HANDLER(FrameMsg_SetHasReceivedUserGesture,
-                        OnSetHasReceivedUserGesture)
+    IPC_MESSAGE_HANDLER(FrameMsg_UpdateUserActivationState,
+                        OnUpdateUserActivationState)
     IPC_MESSAGE_HANDLER(FrameMsg_ScrollRectToVisible, OnScrollRectToVisible)
     IPC_MESSAGE_HANDLER(FrameMsg_BubbleLogicalScroll, OnBubbleLogicalScroll)
     IPC_MESSAGE_HANDLER(FrameMsg_SetHasReceivedUserGestureBeforeNavigation,
@@ -459,9 +449,22 @@ void RenderFrameProxy::OnChildFrameProcessGone() {
                                       screen_info().device_scale_factor);
 }
 
-void RenderFrameProxy::OnSetChildFrameSurface(
+void RenderFrameProxy::OnFirstSurfaceActivation(
     const viz::SurfaceInfo& surface_info) {
-  SetChildFrameSurface(surface_info);
+  // If this WebFrame has already been detached, its parent will be null. This
+  // can happen when swapping a WebRemoteFrame with a WebLocalFrame, where this
+  // message may arrive after the frame was removed from the frame tree, but
+  // before the frame has been destroyed. http://crbug.com/446575.
+  if (!web_frame()->Parent())
+    return;
+
+  if (!enable_surface_synchronization_) {
+    compositing_helper_->SetPrimarySurfaceId(
+        surface_info.id(), local_frame_size(),
+        cc::DeadlinePolicy::UseDefaultDeadline());
+  }
+  compositing_helper_->SetFallbackSurfaceId(surface_info.id(),
+                                            local_frame_size());
 }
 
 void RenderFrameProxy::OnIntrinsicSizingInfoOfChildChanged(
@@ -482,12 +485,12 @@ void RenderFrameProxy::OnViewChanged(
     const FrameMsg_ViewChanged_Params& params) {
   crashed_ = false;
   // In mash the FrameSinkId comes from RendererWindowTreeClient.
-  if (!base::FeatureList::IsEnabled(features::kMash))
+  if (features::IsAshInBrowserProcess())
     frame_sink_id_ = *params.frame_sink_id;
 
   // Resend the FrameRects and allocate a new viz::LocalSurfaceId when the view
   // changes.
-  ResendResizeParams();
+  ResendVisualProperties();
 }
 
 void RenderFrameProxy::OnDidStopLoading() {
@@ -564,8 +567,9 @@ void RenderFrameProxy::OnWillEnterFullscreen() {
   web_frame_->WillEnterFullscreen();
 }
 
-void RenderFrameProxy::OnSetHasReceivedUserGesture() {
-  web_frame_->SetHasReceivedUserGesture();
+void RenderFrameProxy::OnUpdateUserActivationState(
+    blink::UserActivationUpdateType update_type) {
+  web_frame_->UpdateUserActivationState(update_type);
 }
 
 void RenderFrameProxy::OnScrollRectToVisible(
@@ -639,6 +643,8 @@ void RenderFrameProxy::SynchronizeVisualProperties() {
           pending_visual_properties_.screen_space_rect.size() ||
       sent_visual_properties_->screen_info !=
           pending_visual_properties_.screen_info ||
+      sent_visual_properties_->zoom_level !=
+          pending_visual_properties_.zoom_level ||
       capture_sequence_number_changed;
 
   if (synchronized_props_changed)
@@ -860,17 +866,17 @@ base::UnguessableToken RenderFrameProxy::GetDevToolsFrameToken() {
 #if defined(USE_AURA)
 void RenderFrameProxy::OnMusEmbeddedFrameSurfaceChanged(
     const viz::SurfaceInfo& surface_info) {
-  SetChildFrameSurface(surface_info);
+  OnFirstSurfaceActivation(surface_info);
 }
 
 void RenderFrameProxy::OnMusEmbeddedFrameSinkIdAllocated(
     const viz::FrameSinkId& frame_sink_id) {
   // RendererWindowTreeClient should only call this when mus is hosting viz.
-  DCHECK(base::FeatureList::IsEnabled(features::kMash));
+  DCHECK(!features::IsAshInBrowserProcess());
   frame_sink_id_ = frame_sink_id;
   // Resend the FrameRects and allocate a new viz::LocalSurfaceId when the view
   // changes.
-  ResendResizeParams();
+  ResendVisualProperties();
 }
 #endif
 
@@ -890,7 +896,7 @@ SkBitmap* RenderFrameProxy::GetSadPageBitmap() {
 }
 
 uint32_t RenderFrameProxy::Print(const blink::WebRect& rect,
-                                 blink::WebCanvas* canvas) {
+                                 cc::PaintCanvas* canvas) {
 #if BUILDFLAG(ENABLE_PRINTING)
   printing::PdfMetafileSkia* metafile =
       printing::MetafileSkiaWrapper::GetMetafileFromCanvas(canvas);

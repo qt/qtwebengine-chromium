@@ -14,6 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
+#include "base/trace_event/trace_config.h"
 #include "base/values.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "services/tracing/agent_registry.h"
@@ -40,22 +41,20 @@ namespace tracing {
 // should guard against it using timeouts.
 class Coordinator : public mojom::Coordinator {
  public:
-  static Coordinator* GetInstance();
-
-  explicit Coordinator(
-      service_manager::ServiceContextRefFactory* service_ref_factory);
+  explicit Coordinator(AgentRegistry* agent_registry);
 
   void BindCoordinatorRequest(
       mojom::CoordinatorRequest request,
       const service_manager::BindSourceInfo& source_info);
+
+ protected:
+  ~Coordinator() override;
 
  private:
   friend std::default_delete<Coordinator>;
   friend class CoordinatorTest;  // For testing.
 
   class TraceStreamer;
-
-  ~Coordinator() override;
 
   // mojom::Coordinator
   void StartTracing(const std::string& config,
@@ -94,6 +93,7 @@ class Coordinator : public mojom::Coordinator {
   scoped_refptr<base::SequencedTaskRunner> background_task_runner_;
   AgentRegistry* agent_registry_;
   std::string config_;
+  base::trace_event::TraceConfig parsed_config_;
   bool is_tracing_ = false;
 
   std::unique_ptr<TraceStreamer> trace_streamer_;
@@ -108,7 +108,6 @@ class Coordinator : public mojom::Coordinator {
   // For getting categories.
   std::set<std::string> category_set_;
   GetCategoriesCallback get_categories_callback_;
-  std::unique_ptr<service_manager::ServiceContextRef> service_ref_;
 
   base::WeakPtrFactory<Coordinator> weak_ptr_factory_;
 

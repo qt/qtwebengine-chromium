@@ -31,26 +31,6 @@
 
 namespace blink {
 
-// See WebFrameLoadType in public/web/WebFrameLoadType.h for details.
-enum FrameLoadType {
-  kFrameLoadTypeStandard,
-  kFrameLoadTypeBackForward,
-  kFrameLoadTypeReload,
-  kFrameLoadTypeReplaceCurrentItem,
-  kFrameLoadTypeInitialInChildFrame,
-  kFrameLoadTypeInitialHistoryLoad,
-  kFrameLoadTypeReloadBypassingCache,
-};
-
-enum NavigationType {
-  kNavigationTypeLinkClicked,
-  kNavigationTypeFormSubmitted,
-  kNavigationTypeBackForward,
-  kNavigationTypeReload,
-  kNavigationTypeFormResubmitted,
-  kNavigationTypeOther
-};
-
 enum ShouldSendReferrer { kMaybeSendReferrer, kNeverSendReferrer };
 
 enum ShouldSetOpener { kMaybeSetOpener, kNeverSetOpener };
@@ -68,18 +48,6 @@ enum LoadStartType {
 enum SameDocumentNavigationSource {
   kSameDocumentNavigationDefault,
   kSameDocumentNavigationHistoryApi,
-};
-
-enum HistoryLoadType {
-  kHistorySameDocumentLoad,
-  kHistoryDifferentDocumentLoad
-};
-
-enum HistoryCommitType {
-  kStandardCommit,
-  kBackForwardCommit,
-  kInitialCommitInChildFrame,
-  kHistoryInertCommit
 };
 
 enum HistoryScrollRestorationType {

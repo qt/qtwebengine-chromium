@@ -66,6 +66,7 @@ ERRMSG(InvalidBufferTypes, "Invalid buffer target enum.");
 ERRMSG(InvalidBufferUsage, "Invalid buffer usage enum.");
 ERRMSG(InvalidClearMask, "Invalid mask bits.");
 ERRMSG(InvalidClientState, "Invalid client vertex array type.");
+ERRMSG(InvalidClipPlane, "Invalid clip plane.");
 ERRMSG(InvalidCombinedImageUnit,
        "Specified unit must be in [GL_TEXTURE0, GL_TEXTURE0 + GL_MAX_COMBINED_IMAGE_UNITS)");
 ERRMSG(InvalidConstantColor,
@@ -85,6 +86,9 @@ ERRMSG(InvalidFence, "Invalid fence object.");
 ERRMSG(InvalidFenceState, "Fence must be set.");
 ERRMSG(InvalidFillMode, "Invalid fill mode.");
 ERRMSG(InvalidFilterTexture, "Texture only supports NEAREST and LINEAR filtering.");
+ERRMSG(InvalidFogDensity, "Invalid fog density (must be nonnegative).");
+ERRMSG(InvalidFogMode, "Invalid fog mode.");
+ERRMSG(InvalidFogParameter, "Invalid fog parameter.");
 ERRMSG(InvalidFormat, "Invalid format.");
 ERRMSG(InvalidFramebufferTarget, "Invalid framebuffer target.");
 ERRMSG(InvalidFramebufferTextureLevel, "Mipmap level must be 0 when attaching a texture.");
@@ -94,6 +98,11 @@ ERRMSG(InvalidFramebufferLayer,
 ERRMSG(InvalidImageUnit,
        "Image unit cannot be greater than or equal to the value of MAX_IMAGE_UNITS.");
 ERRMSG(InvalidInternalFormat, "Invalid internal format.");
+ERRMSG(InvalidLight, "Invalid light.");
+ERRMSG(InvalidLightModelParameter, "Invalid light model parameter.");
+ERRMSG(InvalidLightParameter, "Invalid light parameter.");
+ERRMSG(InvalidMaterialFace, "Invalid material face.");
+ERRMSG(InvalidMaterialParameter, "Invalid material parameter.");
 ERRMSG(InvalidMatrixMode, "Invalid matrix mode.");
 ERRMSG(InvalidMemoryBarrierBit, "Invalid memory barrier bit.");
 ERRMSG(InvalidMipLevel, "Level of detail outside of range.");
@@ -103,6 +112,9 @@ ERRMSG(InvalidName, "Invalid name.");
 ERRMSG(InvalidNameCharacters, "Name contains invalid characters.");
 ERRMSG(InvalidPname, "Invalid pname.");
 ERRMSG(InvalidPointerQuery, "Invalid pointer query.");
+ERRMSG(InvalidPointParameter, "Invalid point parameter.");
+ERRMSG(InvalidPointParameterValue, "Invalid point parameter value (must be non-negative).");
+ERRMSG(InvalidPointSizeValue, "Invalid point size (must be positive).");
 ERRMSG(InvalidPrecision, "Invalid or unsupported precision type.");
 ERRMSG(InvalidProgramName, "Program object expected.");
 ERRMSG(InvalidProjectionMatrix,
@@ -122,10 +134,19 @@ ERRMSG(InvalidSampleMaskNumber,
 ERRMSG(InvalidSampler, "Sampler is not valid");
 ERRMSG(InvalidShaderName, "Shader object expected.");
 ERRMSG(InvalidShaderType, "Invalid shader type.");
+ERRMSG(InvalidShadingModel, "Invalid shading model.");
 ERRMSG(InvalidStencil, "Invalid stencil.");
 ERRMSG(InvalidStencilBitMask, "Invalid stencil bit mask.");
 ERRMSG(InvalidTarget, "Invalid target.");
+ERRMSG(InvalidTextureCombine, "Invalid texture combine mode.");
+ERRMSG(InvalidTextureCombineSrc, "Invalid texture combine source.");
+ERRMSG(InvalidTextureCombineOp, "Invalid texture combine operand.");
+ERRMSG(InvalidTextureEnvMode, "Invalid texture environment mode.");
+ERRMSG(InvalidTextureEnvParameter, "Invalid texture environment parameter.");
+ERRMSG(InvalidTextureEnvScale, "Invalid texture environment scale.");
+ERRMSG(InvalidTextureEnvTarget, "Invalid texture environment target.");
 ERRMSG(InvalidTextureFilterParam, "Texture filter not recognized.");
+ERRMSG(InvalidTextureName, "Not a valid texture object name.");
 ERRMSG(InvalidTextureRange, "Cannot be less than 0 or greater than maximum number of textures.");
 ERRMSG(InvalidTextureTarget, "Invalid or unsupported texture target.");
 ERRMSG(InvalidTextureWrap, "Texture wrap mode not recognized.");
@@ -139,6 +160,8 @@ ERRMSG(InvalidVertexPointerType, "Invalid type for built-in vertex attribute.");
 ERRMSG(InvalidWidth, "Invalid width.");
 ERRMSG(InvalidWrapModeTexture, "Invalid wrap mode for texture type.");
 ERRMSG(LevelNotZero, "Texture level must be zero.");
+ERRMSG(LightParameterOutOfRange, "Light parameter out of range.");
+ERRMSG(MaterialParameterOutOfRange, "Material parameter out of range.");
 ERRMSG(MatrixStackOverflow, "Current matrix stack is full.");
 ERRMSG(MatrixStackUnderflow, "Current matrix stack has only a single matrix.");
 ERRMSG(MismatchedByteCountType, "Buffer size does not align with data type.");

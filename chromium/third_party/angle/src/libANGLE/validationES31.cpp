@@ -410,7 +410,7 @@ bool ValidateGetBooleani_vRobustANGLE(Context *context,
     return true;
 }
 
-bool ValidateDrawIndirectBase(Context *context, GLenum mode, const void *indirect)
+bool ValidateDrawIndirectBase(Context *context, PrimitiveMode mode, const void *indirect)
 {
     if (context->getClientVersion() < ES_3_1)
     {
@@ -468,10 +468,10 @@ bool ValidateDrawIndirectBase(Context *context, GLenum mode, const void *indirec
     return true;
 }
 
-bool ValidateDrawArraysIndirect(Context *context, GLenum mode, const void *indirect)
+bool ValidateDrawArraysIndirect(Context *context, PrimitiveMode mode, const void *indirect)
 {
-    const State &state                          = context->getGLState();
-    TransformFeedback *curTransformFeedback     = state.getCurrentTransformFeedback();
+    const State &state                      = context->getGLState();
+    TransformFeedback *curTransformFeedback = state.getCurrentTransformFeedback();
     if (curTransformFeedback && curTransformFeedback->isActive() &&
         !curTransformFeedback->isPaused())
     {
@@ -516,16 +516,19 @@ bool ValidateDrawArraysIndirect(Context *context, GLenum mode, const void *indir
     return true;
 }
 
-bool ValidateDrawElementsIndirect(Context *context, GLenum mode, GLenum type, const void *indirect)
+bool ValidateDrawElementsIndirect(Context *context,
+                                  PrimitiveMode mode,
+                                  GLenum type,
+                                  const void *indirect)
 {
     if (!ValidateDrawElementsBase(context, mode, type))
     {
         return false;
     }
 
-    const State &state             = context->getGLState();
-    const VertexArray *vao         = state.getVertexArray();
-    Buffer *elementArrayBuffer     = vao->getElementArrayBuffer().get();
+    const State &state         = context->getGLState();
+    const VertexArray *vao     = state.getVertexArray();
+    Buffer *elementArrayBuffer = vao->getElementArrayBuffer().get();
     if (!elementArrayBuffer)
     {
         context->handleError(InvalidOperation() << "zero is bound to ELEMENT_ARRAY_BUFFER");
@@ -1039,7 +1042,7 @@ bool ValidateTexStorage2DMultisample(Context *context,
     }
 
     const TextureCaps &formatCaps = context->getTextureCaps().get(internalFormat);
-    if (!formatCaps.renderable)
+    if (!formatCaps.textureAttachment)
     {
         context->handleError(InvalidEnum() << "SizedInternalformat must be color-renderable, "
                                               "depth-renderable, or stencil-renderable.");
@@ -1956,6 +1959,53 @@ bool ValidateSampleMaski(Context *context, GLuint maskNumber, GLbitfield mask)
     if (maskNumber >= context->getCaps().maxSampleMaskWords)
     {
         ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidSampleMaskNumber);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateFramebufferTextureEXT(Context *context,
+                                   GLenum target,
+                                   GLenum attachment,
+                                   GLuint texture,
+                                   GLint level)
+{
+    if (!context->getExtensions().geometryShader)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), GeometryShaderExtensionNotEnabled);
+        return false;
+    }
+
+    if (texture != 0)
+    {
+        gl::Texture *tex = context->getTexture(texture);
+
+        // [EXT_geometry_shader] Section 9.2.8 "Attaching Texture Images to a Framebuffer"
+        // An INVALID_VALUE error is generated if <texture> is not the name of a texture object.
+        // We put this validation before ValidateFramebufferTextureBase because it is an
+        // INVALID_OPERATION error for both FramebufferTexture2D and FramebufferTextureLayer:
+        // [OpenGL ES 3.1] Chapter 9.2.8 (FramebufferTexture2D)
+        // An INVALID_OPERATION error is generated if texture is not zero, and does not name an
+        // existing texture object of type matching textarget.
+        // [OpenGL ES 3.1 Chapter 9.2.8 (FramebufferTextureLayer)
+        // An INVALID_OPERATION error is generated if texture is non-zero and is not the name of a
+        // three-dimensional or two-dimensional array texture.
+        if (tex == nullptr)
+        {
+            ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidTextureName);
+            return false;
+        }
+
+        if (!ValidMipLevel(context, tex->getType(), level))
+        {
+            ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidMipLevel);
+            return false;
+        }
+    }
+
+    if (!ValidateFramebufferTextureBase(context, target, attachment, texture, level))
+    {
         return false;
     }
 

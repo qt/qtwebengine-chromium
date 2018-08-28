@@ -816,9 +816,13 @@
     {
       "id": 100,
       "description": "Disable Direct3D11 on systems with AMD switchable graphics",
-      "cr_bugs": [451420, 755722],
+      "cr_bugs": [451420, 721121, 755722],
       "os": {
-        "type": "win"
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10"
+        }
       },
       "driver_date": {
         "op": "<",
@@ -2863,14 +2867,8 @@
         "type": "linux"
       },
       "gl_vendor": "VMware.*",
-      "gl_renderer": "Gallium.*",
       "features": [
         "disable_timestamp_queries"
-      ],
-      "disabled_extensions": [
-        "GL_ARB_timer_query",
-        "GL_EXT_disjoint_timer_query",
-        "GL_EXT_disjoint_timer_query_webgl2"
       ]
     },
     {
@@ -2929,6 +2927,18 @@
       ]
     },
     {
+      "id": 270,
+      "cr_bugs": [859998],
+      "description": "AMD Linux driver crashes when copyTexImage2D is called with PIXEL_UNPACK_BUFFER set to an uninitialized buffer",
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x1002",
+      "features": [
+        "clear_pixel_unpack_buffer_before_copyteximage"
+      ]
+    },
+    {
       "id": 271,
       "cr_bugs": [860418],
       "description": "Frequent crashes in glClear on Mali-T7xx on N with driver 12.1.01alp0",
@@ -2946,6 +2956,34 @@
       "gl_renderer": ".*Mali-T7.*",
       "features": [
         "gl_clear_broken"
+      ]
+    },
+    {
+      "id": 272,
+      "cr_bugs": [858879],
+      "description": "A deleted query id for GL_TIMESTAMP cannot be reused for other query targets",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "features": [
+        "disable_timestamp_queries"
+      ]
+    },
+    {
+      "id":273,
+      "cr_bugs": [866613],
+      "description": "Frequent crashes on Adreno (TM) on L and below",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "6.0"
+        }
+      },
+      "gl_renderer": "Adreno.*",
+      "features": [
+        "use_es2_for_oopr"
       ]
     }
   ]

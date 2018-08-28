@@ -30,6 +30,8 @@ service_manifest("manifest") {
 
 source_set("lib") {
   sources = [
+    "audio_sandbox_win.cc",
+    "audio_sandbox_win.h",
     "debug_recording.cc",
     "debug_recording.h",
     "delay_buffer.cc",
@@ -41,10 +43,20 @@ source_set("lib") {
     "group_member.h",
     "in_process_audio_manager_accessor.cc",
     "in_process_audio_manager_accessor.h",
+    "input_controller.cc",
+    "input_controller.h",
     "input_stream.cc",
     "input_stream.h",
+    "input_sync_writer.cc",
+    "input_sync_writer.h",
     "local_muter.cc",
     "local_muter.h",
+    "log_adapter.cc",
+    "log_adapter.h",
+    "log_factory_adapter.cc",
+    "log_factory_adapter.h",
+    "log_factory_manager.cc",
+    "log_factory_manager.h",
     "loopback_stream.cc",
     "loopback_stream.h",
     "output_controller.cc",
@@ -78,7 +90,12 @@ source_set("lib") {
     "//media",
     "//services/audio/public/mojom",
     "//services/service_manager/public/cpp",
+    "//services/service_manager/sandbox:sandbox",
   ]
+
+  if (is_win) {
+    public_deps += [ "//sandbox/win:sandbox" ]
+  }
 }
 
 source_set("tests") {
@@ -89,12 +106,16 @@ source_set("tests") {
     "delay_buffer_unittest.cc",
     "device_notifier_unittest.cc",
     "group_coordinator_unittest.cc",
+    "input_controller_unittest.cc",
     "input_stream_unittest.cc",
+    "input_sync_writer_unittest.cc",
     "local_muter_unittest.cc",
+    "log_factory_manager_unittest.cc",
     "loopback_stream_unittest.cc",
     "output_controller_unittest.cc",
     "output_stream_unittest.cc",
     "public/cpp/input_ipc_unittest.cc",
+    "public/cpp/output_device_unittest.cc",
     "service_metrics_unittest.cc",
     "snooper_node_unittest.cc",
     "stream_factory_unittest.cc",
@@ -122,7 +143,7 @@ source_set("tests") {
     ":lib",
     "//base/test:test_support",
     "//media:test_support",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//services/audio/public/cpp",
     "//services/audio/public/cpp:test_support",
     "//services/audio/public/mojom",

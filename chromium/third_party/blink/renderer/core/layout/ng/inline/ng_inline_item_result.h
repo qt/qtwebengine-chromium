@@ -51,12 +51,12 @@ struct CORE_EXPORT NGInlineItemResult {
   scoped_refptr<NGLayoutResult> layout_result;
 
   // Margins and padding for atomic inline items and open/close tags.
-  NGBoxStrut margins;
-  NGBoxStrut padding;
+  NGLineBoxStrut margins;
+  NGLineBoxStrut padding;
 
   // Borders/padding for open tags.
-  LayoutUnit borders_paddings_block_start;
-  LayoutUnit borders_paddings_block_end;
+  LayoutUnit borders_paddings_line_over;
+  LayoutUnit borders_paddings_line_under;
 
   // Has start/end edge for open/close tags.
   bool has_edge = false;
@@ -78,6 +78,22 @@ struct CORE_EXPORT NGInlineItemResult {
   // characters.
   bool has_only_trailing_spaces = false;
 
+  // We don't create "certain zero-height line boxes".
+  // https://drafts.csswg.org/css2/visuren.html#phantom-line-box
+  // Such line boxes do not prevent two margins being "adjoining", and thus
+  // collapsing.
+  // https://drafts.csswg.org/css2/box.html#collapsing-margins
+  //
+  // This field should be initialized to the previous value in the
+  // NGInlineItemResults list. If line breaker rewinds NGInlineItemResults
+  // list, we can still look at the last value in the list to determine if we
+  // need a line box. E.g.
+  // [float should_create_line_box: false], [text should_create_line_box: true]
+  //
+  // If "text" doesn't fit, and we rewind so that we only have "float", we can
+  // correctly determine that we don't need a line box.
+  bool should_create_line_box = false;
+
   // End effects for text items.
   // The effects are included in |shape_result|, but not in text content.
   NGTextEndEffect text_end_effect = NGTextEndEffect::kNone;
@@ -86,10 +102,11 @@ struct CORE_EXPORT NGInlineItemResult {
   NGInlineItemResult(const NGInlineItem*,
                      unsigned index,
                      unsigned start,
-                     unsigned end);
+                     unsigned end,
+                     bool should_create_line_box);
 
 #if DCHECK_IS_ON()
-  void CheckConsistency() const;
+  void CheckConsistency(bool during_line_break = false) const;
 #endif
 };
 
@@ -105,9 +122,6 @@ class CORE_EXPORT NGLineInfo {
   DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 
  public:
-  NGLineInfo() = default;
-  explicit NGLineInfo(size_t capacity) : results_(capacity) {}
-
   const NGInlineItemsData& ItemsData() const {
     DCHECK(items_data_);
     return *items_data_;
@@ -137,8 +151,14 @@ class CORE_EXPORT NGLineInfo {
   bool IsLastLine() const { return is_last_line_; }
   void SetIsLastLine(bool is_last_line) { is_last_line_ = is_last_line; }
 
+  // If the line is marked as empty, it means that there's no content that
+  // requires it to be present at all, e.g. when there are only close tags with
+  // no margin/border/padding.
+  bool IsEmptyLine() const { return is_empty_line_; }
+  void SetIsEmptyLine() { is_empty_line_ = true; }
+
   // NGInlineItemResults for this line.
-  NGInlineItemResults& Results() { return results_; }
+  NGInlineItemResults* MutableResults() { return &results_; }
   const NGInlineItemResults& Results() const { return results_; }
 
   LayoutUnit TextIndent() const { return text_indent_; }
@@ -146,6 +166,7 @@ class CORE_EXPORT NGLineInfo {
   NGBfcOffset LineBfcOffset() const { return line_bfc_offset_; }
   LayoutUnit AvailableWidth() const { return available_width_; }
   LayoutUnit Width() const { return width_; }
+  LayoutUnit ComputeWidth() const;
   void SetLineBfcOffset(NGBfcOffset line_bfc_offset,
                         LayoutUnit available_width,
                         LayoutUnit width);
@@ -183,6 +204,7 @@ class CORE_EXPORT NGLineInfo {
 
   bool use_first_line_style_ = false;
   bool is_last_line_ = false;
+  bool is_empty_line_ = false;
 };
 
 }  // namespace blink

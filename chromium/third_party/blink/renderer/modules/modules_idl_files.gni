@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//third_party/blink/renderer/bindings/bindings.gni")
+import("//third_party/blink/renderer/config.gni")
 
 # The paths in this file are absolute since this file is imported and the
 # file lists must be valid from multple "current directories".
@@ -225,6 +226,7 @@ modules_idl_files =
           "peerconnection/rtc_rtp_contributing_source.idl",
           "peerconnection/rtc_rtp_receiver.idl",
           "peerconnection/rtc_rtp_sender.idl",
+          "peerconnection/rtc_rtp_transceiver.idl",
           "peerconnection/rtc_session_description.idl",
           "peerconnection/rtc_stats_report.idl",
           "peerconnection/rtc_stats_response.idl",
@@ -265,18 +267,18 @@ modules_idl_files =
           "sensor/relative_orientation_sensor.idl",
           "sensor/sensor.idl",
           "sensor/sensor_error_event.idl",
-          "serviceworkers/client.idl",
-          "serviceworkers/clients.idl",
-          "serviceworkers/extendable_event.idl",
-          "serviceworkers/extendable_message_event.idl",
-          "serviceworkers/fetch_event.idl",
-          "serviceworkers/install_event.idl",
-          "serviceworkers/navigation_preload_manager.idl",
-          "serviceworkers/service_worker.idl",
-          "serviceworkers/service_worker_container.idl",
-          "serviceworkers/service_worker_global_scope.idl",
-          "serviceworkers/service_worker_registration.idl",
-          "serviceworkers/window_client.idl",
+          "service_worker/client.idl",
+          "service_worker/clients.idl",
+          "service_worker/extendable_event.idl",
+          "service_worker/extendable_message_event.idl",
+          "service_worker/fetch_event.idl",
+          "service_worker/install_event.idl",
+          "service_worker/navigation_preload_manager.idl",
+          "service_worker/service_worker.idl",
+          "service_worker/service_worker_container.idl",
+          "service_worker/service_worker_global_scope.idl",
+          "service_worker/service_worker_registration.idl",
+          "service_worker/window_client.idl",
           "shapedetection/barcode_detector.idl",
           "shapedetection/detected_barcode.idl",
           "shapedetection/detected_face.idl",
@@ -397,6 +399,9 @@ modules_idl_files =
           "webgl/webgl_uniform_location.idl",
           "webgl/webgl_vertex_array_object.idl",
           "webgl/webgl_vertex_array_object_oes.idl",
+          "webgpu/webgpu.idl",
+          "webgpu/webgpu_adapter.idl",
+          "webgpu/webgpu_device.idl",
           "webmidi/midi_access.idl",
           "webmidi/midi_connection_event.idl",
           "webmidi/midi_input.idl",
@@ -424,13 +429,15 @@ modules_idl_files =
           "xr/xr_coordinate_system.idl",
           "xr/xr_device.idl",
           "xr/xr_device_pose.idl",
+          "xr/xr_frame.idl",
           "xr/xr_frame_of_reference.idl",
+          "xr/xr_hit_result.idl",
           "xr/xr_input_pose.idl",
           "xr/xr_input_source.idl",
           "xr/xr_input_source_event.idl",
           "xr/xr_layer.idl",
           "xr/xr_presentation_context.idl",
-          "xr/xr_presentation_frame.idl",
+          "xr/xr_ray.idl",
           "xr/xr_session.idl",
           "xr/xr_session_event.idl",
           "xr/xr_stage_bounds.idl",
@@ -440,6 +447,11 @@ modules_idl_files =
           "xr/xr_webgl_layer.idl",
         ],
         "abspath")
+
+if (support_webgl2_compute_context) {
+  modules_idl_files +=
+      get_path_info([ "webgl/webgl2_compute_rendering_context.idl" ], "abspath")
+}
 
 modules_callback_function_idl_files =
     get_path_info([
@@ -459,7 +471,6 @@ modules_dictionary_idl_files =
           "background_fetch/background_fetch_options.idl",
           "background_fetch/background_fetch_settled_event_init.idl",
           "background_fetch/background_fetched_event_init.idl",
-          "background_fetch/icon_definition.idl",
           "background_sync/sync_event_init.idl",
           "bluetooth/bluetooth_le_scan_filter_init.idl",
           "bluetooth/request_device_options.idl",
@@ -469,8 +480,10 @@ modules_dictionary_idl_files =
           "canvas/htmlcanvas/canvas_context_creation_attributes_module.idl",
           "cookie_store/cookie_change_event_init.idl",
           "cookie_store/cookie_list_item.idl",
+          "cookie_store/cookie_store_delete_options.idl",
           "cookie_store/cookie_store_get_options.idl",
           "cookie_store/cookie_store_set_options.idl",
+          "cookie_store/cookie_store_set_extra_options.idl",
           "cookie_store/extendable_cookie_change_event_init.idl",
           "credentialmanager/authentication_extensions_client_inputs.idl",
           "credentialmanager/authentication_extensions_client_outputs.idl",
@@ -518,6 +531,7 @@ modules_dictionary_idl_files =
           "locks/lock_info.idl",
           "locks/lock_manager_snapshot.idl",
           "locks/lock_options.idl",
+          "manifest/image_resource.idl",
           "media_capabilities/audio_configuration.idl",
           "media_capabilities/media_configuration.idl",
           "media_capabilities/media_decoding_configuration.idl",
@@ -549,11 +563,13 @@ modules_dictionary_idl_files =
           "notifications/notification_action.idl",
           "notifications/notification_event_init.idl",
           "notifications/notification_options.idl",
+          "payments/address_errors.idl",
           "payments/android_pay_method_data.idl",
           "payments/android_pay_tokenization.idl",
           "payments/basic_card_request.idl",
           "payments/can_make_payment_event_init.idl",
           "payments/image_object.idl",
+          "payments/payer_error_fields.idl",
           "payments/payment_handler_response.idl",
           "payments/payment_request_event_init.idl",
           "payments/payment_currency_amount.idl",
@@ -567,6 +583,7 @@ modules_dictionary_idl_files =
           "payments/payment_instrument.idl",
           "payments/payment_request_update_event_init.idl",
           "payments/payment_shipping_option.idl",
+          "payments/payment_validation_errors.idl",
           "peerconnection/rtc_answer_options.idl",
           "peerconnection/rtc_configuration.idl",
           "peerconnection/rtc_data_channel_event_init.idl",
@@ -578,9 +595,17 @@ modules_dictionary_idl_files =
           "peerconnection/rtc_offer_answer_options.idl",
           "peerconnection/rtc_offer_options.idl",
           "peerconnection/rtc_peer_connection_ice_event_init.idl",
+          "peerconnection/rtc_rtcp_parameters.idl",
+          "peerconnection/rtc_rtp_capabilities.idl",
+          "peerconnection/rtc_rtp_codec_capability.idl",
           "peerconnection/rtc_rtp_codec_parameters.idl",
+          "peerconnection/rtc_rtp_coding_parameters.idl",
           "peerconnection/rtc_rtp_encoding_parameters.idl",
+          "peerconnection/rtc_rtp_header_extension_capability.idl",
+          "peerconnection/rtc_rtp_header_extension_parameters.idl",
           "peerconnection/rtc_rtp_parameters.idl",
+          "peerconnection/rtc_rtp_transceiver_init.idl",
+          "peerconnection/rtc_rtp_send_parameters.idl",
           "peerconnection/rtc_session_description_init.idl",
           "peerconnection/rtc_track_event_init.idl",
           "permissions/clipboard_permission_descriptor.idl",
@@ -595,12 +620,12 @@ modules_dictionary_idl_files =
           "sensor/sensor_error_event_init.idl",
           "sensor/sensor_options.idl",
           "sensor/spatial_sensor_options.idl",
-          "serviceworkers/client_query_options.idl",
-          "serviceworkers/extendable_event_init.idl",
-          "serviceworkers/extendable_message_event_init.idl",
-          "serviceworkers/fetch_event_init.idl",
-          "serviceworkers/navigation_preload_state.idl",
-          "serviceworkers/registration_options.idl",
+          "service_worker/client_query_options.idl",
+          "service_worker/extendable_event_init.idl",
+          "service_worker/extendable_message_event_init.idl",
+          "service_worker/fetch_event_init.idl",
+          "service_worker/navigation_preload_state.idl",
+          "service_worker/registration_options.idl",
           "shapedetection/face_detector_options.idl",
           "shapedetection/landmark.idl",
           "speech/speech_recognition_error_init.idl",
@@ -638,6 +663,7 @@ modules_dictionary_idl_files =
           "webaudio/wave_shaper_options.idl",
           "webgl/webgl_context_attributes.idl",
           "webgl/webgl_context_event_init.idl",
+          "webgpu/webgpu_adapter_descriptor.idl",
           "webmidi/midi_connection_event_init.idl",
           "webmidi/midi_message_event_init.idl",
           "webmidi/midi_options.idl",
@@ -659,7 +685,7 @@ modules_dictionary_idl_files =
 modules_dependency_idl_files =
     get_path_info(
         [
-          "animationworklet/window_animation_worklet.idl",
+          "animationworklet/css_animation_worklet.idl",
           "app_banner/window_installation.idl",
           "audio_output_devices/html_media_element_audio_output_device.idl",
           "background_fetch/service_worker_global_scope_background_fetch.idl",
@@ -673,7 +699,6 @@ modules_dependency_idl_files =
           "budget/worker_navigator_budget.idl",
           "cache_storage/window_cache_storage.idl",
           "cache_storage/worker_cache_storage.idl",
-          "canvas/htmlcanvas/html_canvas_element_module.idl",
           "canvas/canvas2d/canvas_path.idl",
           "clipboard/navigator_clipboard.idl",
           "cookie_store/service_worker_global_scope_cookie_store.idl",
@@ -722,7 +747,6 @@ modules_dependency_idl_files =
           "netinfo/worker_navigator_network_information.idl",
           "notifications/service_worker_global_scope_notifications.idl",
           "notifications/service_worker_registration_notifications.idl",
-          "canvas/offscreencanvas/offscreen_canvas_module.idl",
           "payments/html_iframe_element_payments.idl",
           "payments/payment_app_service_worker_global_scope.idl",
           "payments/payment_app_service_worker_registration.idl",
@@ -740,7 +764,7 @@ modules_dependency_idl_files =
           "quota/worker_navigator_storage_quota.idl",
           "remoteplayback/html_media_element_remote_playback.idl",
           "screen_orientation/screen_screen_orientation.idl",
-          "serviceworkers/navigator_service_worker.idl",
+          "service_worker/navigator_service_worker.idl",
           "speech/window_speech.idl",
           "speech/window_speech_synthesis.idl",
           "srcobject/html_media_element_src_object.idl",
@@ -751,12 +775,31 @@ modules_dependency_idl_files =
           "webdatabase/window_web_database.idl",
           "webgl/webgl2_rendering_context_base.idl",
           "webgl/webgl_rendering_context_base.idl",
+          "webgpu/window_webgpu.idl",
           "webmidi/navigator_web_midi.idl",
           "webshare/navigator_share.idl",
           "webusb/navigator_usb.idl",
           "webusb/worker_navigator_usb.idl",
         ],
         "abspath")
+
+if (support_webgl2_compute_context) {
+  modules_dependency_idl_files += get_path_info(
+          [
+            "canvas/htmlcanvas/html_canvas_element_module_support_webgl2_compute.idl",
+            "canvas/offscreencanvas/offscreen_canvas_module_support_webgl2_compute.idl",
+            "webgl/webgl2_compute_rendering_context_base.idl",
+          ],
+          "abspath")
+} else {
+  modules_dependency_idl_files +=
+      get_path_info([
+                      "canvas/htmlcanvas/html_canvas_element_module.idl",
+                      "canvas/offscreencanvas/offscreen_canvas_module.idl",
+                      "webgl/webgl2_compute_rendering_context_base.idl",
+                    ],
+                    "abspath")
+}
 
 modules_testing_dependency_idl_files =
     get_path_info(
@@ -766,7 +809,7 @@ modules_testing_dependency_idl_files =
           "navigatorcontentutils/testing/internals_navigator_content_utils.idl",
           "peerconnection/testing/internals_rtc_certificate.idl",
           "peerconnection/testing/internals_rtc_peer_connection.idl",
-          "serviceworkers/testing/internals_service_worker.idl",
+          "service_worker/testing/internals_service_worker.idl",
           "speech/testing/internals_speech_synthesis.idl",
           "vibration/testing/internals_vibration.idl",
           "webaudio/testing/internals_web_audio.idl",

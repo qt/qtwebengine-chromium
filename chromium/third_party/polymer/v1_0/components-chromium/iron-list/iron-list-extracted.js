@@ -1551,7 +1551,7 @@
       // Assign models to the focused index.
       this._assignModels();
       // Get the new physical index for the focused index.
-      var fpidx = this._focusedPhysicalIndex;
+      var fpidx = this._focusedPhysicalIndex = this._getPhysicalIndex(this._focusedVirtualIndex);
 
       var onScreenItem = this._physicalItems[fpidx];
       if (!onScreenItem) {
@@ -1625,7 +1625,7 @@
           break;
         case /* ENTER */ 13:
           this._focusPhysicalItem(this._focusedVirtualIndex);
-          this._selectionHandler(e);
+          if (this.selectionEnabled) this._selectionHandler(e);
           break;
       }
     },

@@ -31,15 +31,15 @@
 #include "third_party/blink/renderer/core/html/track/vtt/vtt_region.h"
 
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/core/dom/dom_token_list.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
 #include "third_party/blink/renderer/core/html/html_div_element.h"
 #include "third_party/blink/renderer/core/html/track/vtt/vtt_parser.h"
 #include "third_party/blink/renderer/core/html/track/vtt/vtt_scanner.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 #define VTT_LOG_LEVEL 3
@@ -68,14 +68,14 @@ constexpr bool kDefaultScroll = false;
 constexpr float kLineHeight = 5.33;
 
 // Default scrolling animation time period (s).
-constexpr float kScrollTime = 0.433;
+constexpr TimeDelta kScrollTime = TimeDelta::FromMilliseconds(433);
 
 bool IsNonPercentage(double value,
                      const char* method,
                      ExceptionState& exception_state) {
   if (value < 0 || value > 100) {
     exception_state.ThrowDOMException(
-        kIndexSizeError,
+        DOMExceptionCode::kIndexSizeError,
         ExceptionMessages::IndexOutsideRange(
             "value", value, 0.0, ExceptionMessages::kInclusiveBound, 100.0,
             ExceptionMessages::kInclusiveBound));
@@ -397,7 +397,7 @@ void VTTRegion::StartTimer() {
   if (scroll_timer_.IsActive())
     return;
 
-  double duration = IsScrollingRegion() ? kScrollTime : 0;
+  TimeDelta duration = IsScrollingRegion() ? kScrollTime : TimeDelta();
   scroll_timer_.StartOneShot(duration, FROM_HERE);
 }
 

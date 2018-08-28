@@ -88,9 +88,6 @@ Polymer({
 
     if (!this.ignoreEnterKey)
       this.addEventListener('keypress', this.onKeypress_.bind(this));
-
-    if (this.noCancel)
-      this.addEventListener('cancel', this.onCancel_.bind(this));
   },
 
   /** @override */
@@ -151,6 +148,7 @@ Polymer({
         callback,
         /** @type {IntersectionObserverInit} */ ({
           root: bodyContainer,
+          rootMargin: '1px 0px',
           threshold: 0,
         }));
     this.intersectionObserver_.observe(bottomMarker);
@@ -167,18 +165,22 @@ Polymer({
 
   showModal: function() {
     this.$.dialog.showModal();
-    this.open = this.$.dialog.open;
+    assert(this.$.dialog.open);
+    this.open = true;
+    this.fire('cr-dialog-open');
   },
 
   cancel: function() {
     this.fire('cancel');
     this.$.dialog.close();
-    this.open = this.$.dialog.open;
+    assert(!this.$.dialog.open);
+    this.open = false;
   },
 
   close: function() {
     this.$.dialog.close('success');
-    this.open = this.$.dialog.open;
+    assert(!this.$.dialog.open);
+    this.open = false;
   },
 
   /**
@@ -189,6 +191,35 @@ Polymer({
     // Because the dialog may have a default Enter key handler, prevent
     // keypress events from bubbling up from this element.
     e.stopPropagation();
+  },
+
+  /**
+   * @param {!Event} e
+   * @private
+   */
+  onNativeDialogClose_: function(e) {
+    // TODO(dpapad): This is necessary to make the code work both for Polymer 1
+    // and Polymer 2. Remove once migration to Polymer 2 is completed.
+    e.stopPropagation();
+
+    // Catch and re-fire the 'close' event such that it bubbles across Shadow
+    // DOM v1.
+    this.fire('close');
+  },
+
+  /**
+   * @param {!Event} e
+   * @private
+   */
+  onNativeDialogCancel_: function(e) {
+    if (this.noCancel) {
+      e.preventDefault();
+      return;
+    }
+
+    // Catch and re-fire the native 'cancel' event such that it bubbles across
+    // Shadow DOM v1.
+    this.fire('cancel');
   },
 
   /**
@@ -214,8 +245,8 @@ Polymer({
     if (e.key != 'Enter')
       return;
 
-    // Accept Enter keys from either the dialog, or a child paper-input element.
-    if (e.target != this && e.target.tagName != 'PAPER-INPUT')
+    // Accept Enter keys from either the dialog, or a child input element.
+    if (e.target != this && e.target.tagName != 'CR-INPUT')
       return;
 
     var actionButton =
@@ -224,15 +255,6 @@ Polymer({
       actionButton.click();
       e.preventDefault();
     }
-  },
-
-  /**
-   * @param {!Event} e
-   * @private
-   */
-  onCancel_: function(e) {
-    if (this.noCancel)
-      e.preventDefault();
   },
 
   /** @param {!PointerEvent} e */

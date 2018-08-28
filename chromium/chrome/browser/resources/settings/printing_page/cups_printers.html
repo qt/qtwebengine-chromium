@@ -22,16 +22,6 @@
         margin-top: 80px;
         text-align: center;
       }
-
-      #addPrinterErrorMessage {
-        display: flex;
-        justify-content: space-around;
-      }
-
-      #addPrinterFailedMessage {
-        padding: 0 15px;
-        text-align: justify;
-      }
     </style>
 
     <div class="settings-box first">
@@ -47,7 +37,8 @@
       <template is="dom-if" if="[[!addPrinterButtonActive_(canAddPrinter_,
           prefs.native_printing.user_native_printers_allowed.value)]]">
         <cr-policy-pref-indicator
-            pref="[[prefs.native_printing.user_native_printers_allowed]]">
+            pref="[[prefs.native_printing.user_native_printers_allowed]]"
+            icon-aria-label="$i18n{printingPageTitle}">
         </cr-policy-pref-indicator>
       </template>
       <paper-button class="action-button" id="addPrinter"
@@ -64,7 +55,8 @@
 
     <template is="dom-if" if="[[showCupsEditPrinterDialog_]]" restamp>
       <settings-cups-edit-printer-dialog id="editPrinterDialog"
-          active-printer="{{activePrinter}}">
+          active-printer="{{activePrinter}}"
+          on-close="onEditPrinterDialogClose_">
       </settings-cups-edit-printer-dialog>
     </template>
 

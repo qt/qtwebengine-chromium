@@ -9,6 +9,10 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/power_monitor/power_monitor.h"
+#include "base/power_monitor/power_observer.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/win/object_watcher.h"
 #include "media/base/callback_registry.h"
 #include "media/base/cdm_context.h"
 #include "media/base/cdm_proxy_context.h"
@@ -17,6 +21,39 @@
 namespace media {
 
 namespace {
+
+// Checks whether there is a hardware protected key exhange method.
+// https://msdn.microsoft.com/en-us/library/windows/desktop/dn894125(v=vs.85).aspx
+// The key exhange capabilities are checked using these.
+// https://msdn.microsoft.com/en-us/library/windows/desktop/hh447640%28v=vs.85%29.aspx?f=255&MSPPError=-2147217396
+// https://msdn.microsoft.com/en-us/library/windows/desktop/hh447782(v=vs.85).aspx
+bool CanDoHardwareProtectedKeyExchange(
+    Microsoft::WRL::ComPtr<ID3D11VideoDevice> video_device,
+    const GUID& crypto_type) {
+  D3D11_VIDEO_CONTENT_PROTECTION_CAPS caps = {};
+  HRESULT hresult = video_device->GetContentProtectionCaps(
+      &crypto_type, &D3D11_DECODER_PROFILE_H264_VLD_NOFGT, &caps);
+  if (FAILED(hresult)) {
+    DVLOG(1) << "Failed to get content protection caps.";
+    return false;
+  }
+
+  for (uint32_t i = 0; i < caps.KeyExchangeTypeCount; ++i) {
+    GUID kex_guid = {};
+    hresult = video_device->CheckCryptoKeyExchange(
+        &crypto_type, &D3D11_DECODER_PROFILE_H264_VLD_NOFGT, i, &kex_guid);
+    if (FAILED(hresult)) {
+      DVLOG(1) << "Failed to get key exchange GUID";
+      return false;
+    }
+
+    if (kex_guid == D3D11_KEY_EXCHANGE_HW_PROTECTION)
+      return true;
+  }
+
+  DVLOG(1) << "Hardware key exchange is not supported.";
+  return false;
+}
 
 class D3D11CdmProxyContext : public CdmProxyContext {
  public:
@@ -40,6 +77,9 @@ class D3D11CdmProxyContext : public CdmProxyContext {
     std::string key_id_str(key_id.begin(), key_id.end());
     key_info_map_.erase(key_id_str);
   }
+
+  // Removes all keys from the context.
+  void RemoveAllKeys() { key_info_map_.clear(); }
 
   // CdmProxyContext implementation.
   base::Optional<D3D11DecryptContext> GetD3D11DecryptContext(
@@ -85,6 +125,62 @@ class D3D11CdmProxyContext : public CdmProxyContext {
 
 }  // namespace
 
+// Watches for any content protection teardown events.
+// If the instance has been started for watching, the destructor will
+// automatically stop watching.
+class D3D11CdmProxy::HardwareEventWatcher
+    : public base::win::ObjectWatcher::Delegate,
+      public base::PowerObserver {
+ public:
+  ~HardwareEventWatcher() override;
+
+  // |teardown_callback| is called on the current sequence.
+  // Returns an instance if it starts watching for events, otherwise returns
+  // nullptr.
+  static std::unique_ptr<HardwareEventWatcher> Create(
+      ComPtr<ID3D11Device> device,
+      base::RepeatingClosure teardown_callback);
+
+ private:
+  HardwareEventWatcher(ComPtr<ID3D11Device> device,
+                       base::RepeatingClosure teardown_callback);
+
+  // Start watching for events.
+  bool StartWatching();
+
+  // Registers for hardware content protection teardown events.
+  // Return true on success.
+  bool RegisterHardwareContentProtectionTeardown(ComPtr<ID3D11Device> device);
+
+  // Regiesters for power events, specifically power suspend event.
+  // Returns true on success.
+  bool RegisterPowerEvents();
+
+  // base::win::ObjectWatcher::Delegate implementation.
+  void OnObjectSignaled(HANDLE object) override;
+
+  // base::PowerObserver implementation. Other power events are not relevant to
+  // this class.
+  void OnSuspend() override;
+
+  // Stops watching for events. Good for clean up.
+  void StopWatching();
+
+  // IDXGIAdapter3::RegisterHardwareContentProtectionTeardownStatusEvent
+  // allows watching for teardown events. It is queried thru the following
+  // Devices.
+  ComPtr<ID3D11Device> device_;
+  ComPtr<IDXGIDevice2> dxgi_device_;
+  ComPtr<IDXGIAdapter3> dxgi_adapter_;
+
+  // Cookie, event, and watcher used for watching events from
+  // RegisterHardwareContentProtectionTeardownStatusEvent.
+  DWORD teardown_event_cookie_ = 0u;
+  base::WaitableEvent content_protection_teardown_event_;
+  base::RepeatingClosure teardown_callback_;
+  base::win::ObjectWatcher teardown_status_watcher_;
+};
+
 class D3D11CdmContext : public CdmContext {
  public:
   explicit D3D11CdmContext(const GUID& key_info_guid)
@@ -102,6 +198,9 @@ class D3D11CdmContext : public CdmContext {
                  const std::vector<uint8_t>& key_id) {
     cdm_proxy_context_.RemoveKey(crypto_session, key_id);
   }
+
+  // Removes all keys from the context.
+  void RemoveAllKeys() { cdm_proxy_context_.RemoveAllKeys(); }
 
   base::WeakPtr<D3D11CdmContext> GetWeakPtr() {
     return weak_factory_.GetWeakPtr();
@@ -140,7 +239,8 @@ D3D11CdmProxy::D3D11CdmProxy(const GUID& crypto_type,
       protocol_(protocol),
       function_id_map_(function_id_map),
       cdm_context_(std::make_unique<D3D11CdmContext>(crypto_type)),
-      create_device_func_(base::BindRepeating(D3D11CreateDevice)) {}
+      create_device_func_(base::BindRepeating(D3D11CreateDevice)),
+      weak_factory_(this) {}
 
 D3D11CdmProxy::~D3D11CdmProxy() {}
 
@@ -176,9 +276,28 @@ void D3D11CdmProxy::Initialize(Client* client, InitializeCB init_cb) {
     return;
   }
 
+  // TODO(rkuroiwa): This should be registered iff
+  // D3D11_CONTENT_PROTECTION_CAPS_HARDWARE_TEARDOWN is set in the capabilties.
+  hardware_event_watcher_ = HardwareEventWatcher::Create(
+      device_, base::BindRepeating(
+                   &D3D11CdmProxy::NotifyHardwareContentProtectionTeardown,
+                   weak_factory_.GetWeakPtr()));
+  if (!hardware_event_watcher_) {
+    DLOG(ERROR)
+        << "Failed to start waching for content protection teardown events.";
+    failed();
+    return;
+  }
+
   hresult = device_.CopyTo(video_device_.GetAddressOf());
   if (FAILED(hresult)) {
     DLOG(ERROR) << "Failed to get ID3D11VideoDevice: " << hresult;
+    failed();
+    return;
+  }
+
+  if (!CanDoHardwareProtectedKeyExchange(video_device_, crypto_type_)) {
+    DLOG(ERROR) << "Cannot do hardware proteted key exhange.";
     failed();
     return;
   }
@@ -204,7 +323,7 @@ void D3D11CdmProxy::Initialize(Client* client, InitializeCB init_cb) {
     return;
   }
 
-  Microsoft::WRL::ComPtr<ID3D11CryptoSession> csme_crypto_session;
+  ComPtr<ID3D11CryptoSession> csme_crypto_session;
   hresult = video_device_->CreateCryptoSession(
       &crypto_type_, &D3D11_DECODER_PROFILE_H264_VLD_NOFGT,
       &D3D11_KEY_EXCHANGE_HW_PROTECTION, csme_crypto_session.GetAddressOf());
@@ -259,8 +378,7 @@ void D3D11CdmProxy::Process(Function function,
     return;
   }
 
-  Microsoft::WRL::ComPtr<ID3D11CryptoSession>& crypto_session =
-      crypto_session_it->second;
+  ComPtr<ID3D11CryptoSession>& crypto_session = crypto_session_it->second;
 
   D3D11_KEY_EXCHANGE_HW_PROTECTION_DATA key_exchange_data = {};
   key_exchange_data.HWProtectionFunctionID = function_id_it->second;
@@ -302,10 +420,10 @@ void D3D11CdmProxy::Process(Function function,
     return;
   }
 
-  std::vector<uint8_t> output_vec;
-  output_vec.reserve(expected_output_data_size);
-  memcpy(output_vec.data(), output_data->pbOutput, expected_output_data_size);
-  std::move(process_cb).Run(Status::kOk, output_vec);
+  std::move(process_cb)
+      .Run(Status::kOk, std::vector<uint8_t>(
+                            output_data->pbOutput,
+                            output_data->pbOutput + expected_output_data_size));
   return;
 }
 
@@ -324,7 +442,7 @@ void D3D11CdmProxy::CreateMediaCryptoSession(
     return;
   }
 
-  Microsoft::WRL::ComPtr<ID3D11CryptoSession> media_crypto_session;
+  ComPtr<ID3D11CryptoSession> media_crypto_session;
   HRESULT hresult = video_device_->CreateCryptoSession(
       &crypto_type_, &D3D11_DECODER_PROFILE_H264_VLD_NOFGT, &crypto_type_,
       media_crypto_session.GetAddressOf());
@@ -389,8 +507,112 @@ void D3D11CdmProxy::RemoveKey(uint32_t crypto_session_id,
   cdm_context_->RemoveKey(crypto_session_it->second.Get(), key_id);
 }
 
-void D3D11CdmProxy::SetCreateDeviceCallbackForTesting(CreateDeviceCB callback) {
+void D3D11CdmProxy::SetCreateDeviceCallbackForTesting(
+    D3D11CreateDeviceCB callback) {
   create_device_func_ = std::move(callback);
+}
+
+void D3D11CdmProxy::NotifyHardwareContentProtectionTeardown() {
+  cdm_context_->RemoveAllKeys();
+  if (client_)
+    client_->NotifyHardwareReset();
+}
+
+D3D11CdmProxy::HardwareEventWatcher::~HardwareEventWatcher() {
+  StopWatching();
+}
+
+std::unique_ptr<D3D11CdmProxy::HardwareEventWatcher>
+D3D11CdmProxy::HardwareEventWatcher::Create(
+    Microsoft::WRL::ComPtr<ID3D11Device> device,
+    base::RepeatingClosure teardown_callback) {
+  std::unique_ptr<HardwareEventWatcher> event_watcher = base::WrapUnique(
+      new HardwareEventWatcher(device, std::move(teardown_callback)));
+  if (!event_watcher->StartWatching())
+    return nullptr;
+  return event_watcher;
+}
+
+D3D11CdmProxy::HardwareEventWatcher::HardwareEventWatcher(
+    Microsoft::WRL::ComPtr<ID3D11Device> device,
+    base::RepeatingClosure teardown_callback)
+    : device_(device), teardown_callback_(std::move(teardown_callback)) {}
+
+bool D3D11CdmProxy::HardwareEventWatcher::StartWatching() {
+  if (!RegisterPowerEvents() ||
+      !RegisterHardwareContentProtectionTeardown(device_)) {
+    StopWatching();
+    return false;
+  }
+
+  return true;
+}
+
+bool D3D11CdmProxy::HardwareEventWatcher::
+    RegisterHardwareContentProtectionTeardown(ComPtr<ID3D11Device> device) {
+  device_ = device;
+  HRESULT hresult = device_.CopyTo(dxgi_device_.ReleaseAndGetAddressOf());
+  if (FAILED(hresult)) {
+    DVLOG(1) << "Failed to get dxgi device from device: "
+             << logging::SystemErrorCodeToString(hresult);
+    return false;
+  }
+
+  hresult = dxgi_device_->GetParent(
+      IID_PPV_ARGS(dxgi_adapter_.ReleaseAndGetAddressOf()));
+  if (FAILED(hresult)) {
+    DVLOG(1) << "Failed to get dxgi adapter from dxgi device: "
+             << logging::SystemErrorCodeToString(hresult);
+    return false;
+  }
+
+  if (!teardown_status_watcher_.StartWatchingOnce(
+          content_protection_teardown_event_.handle(), this)) {
+    DVLOG(1) << "Failed to watch tear down event.";
+    return false;
+  }
+
+  hresult = dxgi_adapter_->RegisterHardwareContentProtectionTeardownStatusEvent(
+      content_protection_teardown_event_.handle(), &teardown_event_cookie_);
+  if (FAILED(hresult)) {
+    DVLOG(1)
+        << "Failed to register for HardwareContentProtectionTeardownStatus: "
+        << logging::SystemErrorCodeToString(hresult);
+    return false;
+  }
+
+  return true;
+}
+
+bool D3D11CdmProxy::HardwareEventWatcher::RegisterPowerEvents() {
+  base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
+  if (!power_monitor) {
+    DVLOG(1) << "Power monitor not available.";
+    return false;
+  }
+
+  power_monitor->AddObserver(this);
+  return true;
+}
+
+void D3D11CdmProxy::HardwareEventWatcher::OnObjectSignaled(HANDLE object) {
+  DCHECK_EQ(object, content_protection_teardown_event_.handle());
+  teardown_callback_.Run();
+}
+
+void D3D11CdmProxy::HardwareEventWatcher::OnSuspend() {
+  teardown_callback_.Run();
+}
+
+void D3D11CdmProxy::HardwareEventWatcher::StopWatching() {
+  if (dxgi_adapter_) {
+    dxgi_adapter_->UnregisterHardwareContentProtectionTeardownStatus(
+        teardown_event_cookie_);
+  }
+  teardown_status_watcher_.StopWatching();
+  base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
+  if (power_monitor)
+    power_monitor->RemoveObserver(this);
 }
 
 }  // namespace media

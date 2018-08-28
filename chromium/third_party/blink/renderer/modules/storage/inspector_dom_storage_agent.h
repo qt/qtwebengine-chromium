@@ -38,9 +38,7 @@
 
 namespace blink {
 
-class LocalFrame;
 class InspectedFrames;
-class StorageArea;
 
 class MODULES_EXPORT InspectorDOMStorageAgent final
     : public InspectorBaseAgent<protocol::DOMStorage::Metainfo> {
@@ -80,7 +78,6 @@ class MODULES_EXPORT InspectorDOMStorageAgent final
 
   protocol::Response FindStorageArea(
       std::unique_ptr<protocol::DOMStorage::StorageId>,
-      LocalFrame*&,
       StorageArea*&);
   std::unique_ptr<protocol::DOMStorage::StorageId> GetStorageId(
       const SecurityOrigin*,

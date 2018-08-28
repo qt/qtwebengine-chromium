@@ -64,7 +64,6 @@ ExtensionHost::ExtensionHost(const Extension* extension,
       document_element_available_(false),
       initial_url_(url),
       extension_host_type_(host_type) {
-  // Not used for panels, see PanelHost.
   DCHECK(host_type == VIEW_TYPE_EXTENSION_BACKGROUND_PAGE ||
          host_type == VIEW_TYPE_EXTENSION_DIALOG ||
          host_type == VIEW_TYPE_EXTENSION_POPUP);
@@ -132,7 +131,8 @@ bool ExtensionHost::IsRenderViewLive() const {
 }
 
 void ExtensionHost::CreateRenderViewSoon() {
-  if (render_process_host() && render_process_host()->HasConnection()) {
+  if (render_process_host() &&
+      render_process_host()->IsInitializedAndNotDead()) {
     // If the process is already started, go ahead and initialize the RenderView
     // synchronously. The process creation is the real meaty part that we want
     // to defer.
@@ -431,9 +431,9 @@ void ExtensionHost::RenderViewReady() {
 void ExtensionHost::RequestMediaAccessPermission(
     content::WebContents* web_contents,
     const content::MediaStreamRequest& request,
-    const content::MediaResponseCallback& callback) {
-  delegate_->ProcessMediaAccessRequest(
-      web_contents, request, callback, extension());
+    content::MediaResponseCallback callback) {
+  delegate_->ProcessMediaAccessRequest(web_contents, request,
+                                       std::move(callback), extension());
 }
 
 bool ExtensionHost::CheckMediaAccessPermission(

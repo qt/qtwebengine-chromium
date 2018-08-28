@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">posuvník</translation>
 <translation id="1211441953136645838">koncová poznámka</translation>
 <translation id="1281252709823657822">dialogové okno</translation>
+<translation id="1289247557029249093">Ukončit režim obrazu v obraze</translation>
 <translation id="1335095011850992622">poděkování</translation>
 <translation id="1342835525016946179">čl</translation>
 <translation id="1359897965706325498">banner</translation>
+<translation id="1548116112524424341">přehrát video v režimu obrazu v obraze</translation>
 <translation id="1589122976691792535">oblast</translation>
 <translation id="1591562245178063882">Tento měsíc</translation>
 <translation id="1637811476055996098">Zvolit soubory</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">stromová mřížka</translation>
 <translation id="1822429046913737220">AM/PM</translation>
 <translation id="1832974991323546415">přehrát ve vzdáleném zařízení</translation>
+<translation id="190587075670221089">smazání</translation>
 <translation id="1907737156431278478">příklad</translation>
 <translation id="1921819250265091946">dd</translation>
 <translation id="1930711995431081526">stav</translation>
 <translation id="1938124657309484470">Datum musí být <ph name="MAXIMUM_DATE_OR_TIME" /> nebo dříve.</translation>
+<translation id="1946271899482435442">Zobrazit výběr data</translation>
 <translation id="1993104285338243655">Přepnuto na zrcadlení</translation>
 <translation id="2060505056492490888">Znak <ph name="DOT" /> v doméně <ph name="INVALIDDOMAIN" /> není použitý správně.</translation>
 <translation id="2148716181193084225">Dnes</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">Odeslat</translation>
 <translation id="2657045182931379222">grafický objekt</translation>
 <translation id="2674318244760992338">zápatí</translation>
+<translation id="2706474812903655270">Toto video se přehrává v režimu obrazu v obraze</translation>
 <translation id="2709516037105925701">Automatické vyplňování</translation>
 <translation id="2723001399770238859">zvuk</translation>
 <translation id="2746543609216772311">Datum musí být <ph name="MINIMUM_DATE_OR_TIME" /> nebo později.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">Zobrazit další měsíc</translation>
 <translation id="512758898067543763">záhlaví řádku</translation>
 <translation id="5143125788380636750">epilog</translation>
-<translation id="5153163864850940242">Toto video se přehrává v režimu obrazu v obraze</translation>
 <translation id="5164977714490026579">Hodnota musí být větší nebo rovna <ph name="MINIMUM" />.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> PB</translation>
 <translation id="5307600278924710095">Zadejte část před znakem <ph name="ATSIGN" />. Adresa <ph name="INVALIDADDRESS" /> není úplná.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">kolofon</translation>
 <translation id="6934078000481955284">bloková citace</translation>
 <translation id="6941933287844615239">stáhnout média</translation>
+<translation id="6981594929165378967">vložení</translation>
 <translation id="6989848892321993519">Prodlužte prosím tento text na <ph name="MIN_CHARACTERS" /> či více znaků. (Aktuálně má 1 znak.)</translation>
 <translation id="709897737746224366">Zadejte hodnotu, která odpovídá požadovanému formátu.</translation>
 <translation id="7139483182332611405">předmluva</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">zbývající čas</translation>
 <translation id="7740016676195725605">ukončit zobrazování titulků</translation>
 <translation id="7740050170769002709">Obsah ve formátu HTML</translation>
+<translation id="7750228210027921155">Obraz v obraze</translation>
 <translation id="7789962463072032349">pozastavit</translation>
 <translation id="7802800022689234070">tlačítko k zobrazení skrytého obsahu</translation>
 <translation id="7888071071722539607">Do e-mailové adresy zahrňte znak <ph name="ATSIGN" />. V adrese <ph name="INVALIDADDRESS" /> chybí znak <ph name="ATSIGN" />.</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">obsah</translation>
 <translation id="8613126697340063924">ovládání vzdáleného přehrávání</translation>
 <translation id="862370744433916922">titulek</translation>
-<translation id="8741316211671074806">Obraz v obraze</translation>
 <translation id="8750798805984357768">Vyberte jednu z těchto možností.</translation>
 <translation id="8785498733064193001">zahájit přehrávání</translation>
 <translation id="8808573423886751634">kapitola</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">navigace</translation>
 <translation id="9050748414552849310">zobrazit titulky</translation>
 <translation id="9062295712474918030">dokument</translation>
+<translation id="9093215626363556771">ukončit režim obrazu v obraze</translation>
 <translation id="9108370397979208512">matematika</translation>
 <translation id="9132465097189459683">Jiné…</translation>
 <translation id="9138385573473225930">upozornění</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, začíná <ph name="WEEK_START_DATE" /></translation>
+<translation id="916607977885256133">Obraz v obraze</translation>
 <translation id="9168329111483466115">poznámka pod čarou</translation>
-<translation id="947831847158436616">buňka</translation>
+<translation id="954003015749068518">spustit režim obrazu v obraze</translation>
 <translation id="966787709310836684">nabídka</translation>
 </translationbundle>

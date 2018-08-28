@@ -5,20 +5,22 @@
  * found in the LICENSE file.
  */
 
+#include "../jumper/SkJumper.h"
 #include "SkArenaAlloc.h"
-#include "SkBlitter.h"
 #include "SkBlendModePriv.h"
+#include "SkBlitter.h"
 #include "SkColor.h"
 #include "SkColorFilter.h"
 #include "SkColorSpaceXformer.h"
+#include "SkColorSpaceXformSteps.h"
 #include "SkOpts.h"
 #include "SkPM4f.h"
 #include "SkPM4fPriv.h"
 #include "SkRasterPipeline.h"
 #include "SkShader.h"
 #include "SkShaderBase.h"
+#include "SkTo.h"
 #include "SkUtils.h"
-#include "../jumper/SkJumper.h"
 
 class SkRasterPipelineBlitter final : public SkBlitter {
 public:
@@ -88,8 +90,16 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
                                          const SkPaint& paint,
                                          const SkMatrix& ctm,
                                          SkArenaAlloc* alloc) {
+    // For legacy/SkColorSpaceXformCanvas to keep working,
+    // we need to sometimes still need to distinguish null dstCS from sRGB.
+#if 0
+    SkColorSpace* dstCS = dst.colorSpace() ? dst.colorSpace()
+                                           : SkColorSpace::MakeSRGB().get();
+#else
     SkColorSpace* dstCS = dst.colorSpace();
-    SkPM4f paintColor = SkPM4f_from_SkColor(paint.getColor(), dstCS);
+#endif
+    SkPM4f paintColor = premul_in_dst_colorspace(paint.getColor(), dstCS);
+
     auto shader = as_SB(paint.getShader());
 
     SkRasterPipeline_<256> shaderPipeline;
@@ -209,7 +219,8 @@ SkBlitter* SkRasterPipelineBlitter::Create(const SkPixmap& dst,
 
     // When we're drawing a constant color in Src mode, we can sometimes just memset.
     // (The previous two optimizations help find more opportunities for this one.)
-    if (is_constant && blitter->fBlend == SkBlendMode::kSrc) {
+    if (is_constant && blitter->fBlend == SkBlendMode::kSrc
+                    && blitter->fDst.shiftPerPixel() <= 3 /*TODO: F32*/) {
         // Run our color pipeline all the way through to produce what we'd memset when we can.
         // Not all blits can memset, so we need to keep colorPipeline too.
         SkRasterPipeline_<256> p;
@@ -242,14 +253,12 @@ void SkRasterPipelineBlitter::append_load_dst(SkRasterPipeline* p) const {
         case kRGBA_8888_SkColorType:    p->append(SkRasterPipeline::load_8888_dst,    ctx); break;
         case kRGBA_1010102_SkColorType: p->append(SkRasterPipeline::load_1010102_dst, ctx); break;
         case kRGBA_F16_SkColorType:     p->append(SkRasterPipeline::load_f16_dst,     ctx); break;
+        case kRGBA_F32_SkColorType:     p->append(SkRasterPipeline::load_f32_dst,     ctx); break;
 
         case kRGB_888x_SkColorType:     p->append(SkRasterPipeline::load_8888_dst,    ctx);
                                         p->append(SkRasterPipeline::force_opaque_dst     ); break;
         case kRGB_101010x_SkColorType:  p->append(SkRasterPipeline::load_1010102_dst, ctx);
                                         p->append(SkRasterPipeline::force_opaque_dst     ); break;
-    }
-    if (fDst.info().gammaCloseToSRGB()) {
-        p->append(SkRasterPipeline::from_srgb_dst);
     }
     if (fDst.info().alphaType() == kUnpremul_SkAlphaType) {
         p->append(SkRasterPipeline::premul_dst);
@@ -260,12 +269,7 @@ void SkRasterPipelineBlitter::append_store(SkRasterPipeline* p) const {
     if (fDst.info().alphaType() == kUnpremul_SkAlphaType) {
         p->append(SkRasterPipeline::unpremul);
     }
-    if (fDst.info().gammaCloseToSRGB()) {
-        p->append(SkRasterPipeline::to_srgb);
-    }
     if (fDitherRate > 0.0f) {
-        // We dither after any sRGB transfer function to make sure our 1/255.0f is sensible
-        // over the whole range.  If we did it before, 1/255.0f is too big a rate near zero.
         p->append(SkRasterPipeline::dither, &fDitherRate);
     }
 
@@ -282,6 +286,7 @@ void SkRasterPipelineBlitter::append_store(SkRasterPipeline* p) const {
         case kRGBA_8888_SkColorType:    p->append(SkRasterPipeline::store_8888,    ctx); break;
         case kRGBA_1010102_SkColorType: p->append(SkRasterPipeline::store_1010102, ctx); break;
         case kRGBA_F16_SkColorType:     p->append(SkRasterPipeline::store_f16,     ctx); break;
+        case kRGBA_F32_SkColorType:     p->append(SkRasterPipeline::store_f32,     ctx); break;
 
         case kRGB_888x_SkColorType:     p->append(SkRasterPipeline::force_opaque         );
                                         p->append(SkRasterPipeline::store_8888,       ctx); break;
@@ -312,7 +317,7 @@ void SkRasterPipelineBlitter::blitRect(int x, int y, int w, int h) {
                 case 1: sk_memset16(fDst.writable_addr16(x,y), fMemsetColor, w); break;
                 case 2: sk_memset32(fDst.writable_addr32(x,y), fMemsetColor, w); break;
                 case 3: sk_memset64(fDst.writable_addr64(x,y), fMemsetColor, w); break;
-                default: break;
+                default: SkASSERT(false); break;
             }
         }
         return;
@@ -472,19 +477,21 @@ void SkRasterPipelineBlitter::blitMask(const SkMask& mask, const SkIRect& clip) 
 
     std::function<void(size_t,size_t,size_t,size_t)>* blitter = nullptr;
     // Update fMaskPtr to point "into" this current mask, but lined up with fDstPtr at (0,0).
+    // This sort of trickery upsets UBSAN (pointer-overflow) so we do our math in uintptr_t.
+
     // mask.fRowBytes is a uint32_t, which would break our addressing math on 64-bit builds.
     size_t rowBytes = mask.fRowBytes;
     switch (effectiveMaskFormat) {
         case SkMask::kA8_Format:
             fMaskPtr.stride = rowBytes;
-            fMaskPtr.pixels = (uint8_t*)(mask.fImage - mask.fBounds.left() * (size_t)1
-                                                     - mask.fBounds.top()  * rowBytes);
+            fMaskPtr.pixels = (void*)((uintptr_t)mask.fImage - mask.fBounds.left() * (size_t)1
+                                                             - mask.fBounds.top()  * rowBytes);
             blitter = &fBlitMaskA8;
             break;
         case SkMask::kLCD16_Format:
             fMaskPtr.stride = rowBytes / 2;
-            fMaskPtr.pixels = (uint16_t*)(mask.fImage - mask.fBounds.left() * (size_t)2
-                                                      - mask.fBounds.top()  * rowBytes);
+            fMaskPtr.pixels = (void*)((uintptr_t)mask.fImage - mask.fBounds.left() * (size_t)2
+                                                             - mask.fBounds.top()  * rowBytes);
             blitter = &fBlitMaskLCD16;
             break;
         default:

@@ -16,6 +16,8 @@
 #include "device/fido/fido_constants.h"
 #include "device/fido/mac/keychain.h"
 #include "device/fido/mac/util.h"
+#include "device/fido/public_key_credential_descriptor.h"
+#include "device/fido/public_key_credential_user_entity.h"
 
 namespace device {
 namespace fido {
@@ -24,12 +26,12 @@ namespace mac {
 using base::ScopedCFTypeRef;
 
 GetAssertionOperation::GetAssertionOperation(CtapGetAssertionRequest request,
-                                             std::string profile_id,
+                                             std::string metadata_secret,
                                              std::string keychain_access_group,
                                              Callback callback)
     : OperationBase<CtapGetAssertionRequest, AuthenticatorGetAssertionResponse>(
           std::move(request),
-          std::move(profile_id),
+          std::move(metadata_secret),
           std::move(keychain_access_group),
           std::move(callback)) {}
 GetAssertionOperation::~GetAssertionOperation() = default;
@@ -39,16 +41,19 @@ const std::string& GetAssertionOperation::RpId() const {
 }
 
 void GetAssertionOperation::Run() {
+  if (!Init()) {
+    std::move(callback())
+        .Run(CtapDeviceResponseCode::kCtap2ErrOther, base::nullopt);
+    return;
+  }
+
   // Prompt the user for consent.
   // TODO(martinkr): Localize reason strings.
   PromptTouchId("sign in to " + RpId());
 }
 
-void GetAssertionOperation::PromptTouchIdDone(bool success, NSError* err) {
+void GetAssertionOperation::PromptTouchIdDone(bool success) {
   if (!success) {
-    // err is autoreleased.
-    CHECK(err != nil);
-    DVLOG(1) << "Touch ID prompt failed: " << base::mac::NSToCFCast(err);
     std::move(callback())
         .Run(CtapDeviceResponseCode::kCtap2ErrOperationDenied, base::nullopt);
     return;
@@ -120,6 +125,21 @@ void GetAssertionOperation::PromptTouchIdDone(bool success, NSError* err) {
         .Run(CtapDeviceResponseCode::kCtap2ErrNoCredentials, base::nullopt);
     return;
   }
+
+  // Decrypt the user entity from the credential ID.
+  base::Optional<CredentialMetadata::UserEntity> credential_user =
+      CredentialMetadata::UnsealCredentialId(metadata_secret(), RpId(),
+                                             credential_id);
+  if (!credential_user) {
+    // The keychain query already filtered for the RP ID encoded under this
+    // operation's metadata secret, so the credential id really should have
+    // been decryptable.
+    DVLOG(1) << "UnsealCredentialId failed";
+    std::move(callback())
+        .Run(CtapDeviceResponseCode::kCtap2ErrNoCredentials, base::nullopt);
+    return;
+  }
+
   base::ScopedCFTypeRef<SecKeyRef> public_key(
       Keychain::GetInstance().KeyCopyPublicKey(private_key));
   if (!public_key) {
@@ -130,8 +150,8 @@ void GetAssertionOperation::PromptTouchIdDone(bool success, NSError* err) {
     return;
   }
 
-  base::Optional<AuthenticatorData> authenticator_data =
-      MakeAuthenticatorData(RpId(), std::move(credential_id), public_key);
+  base::Optional<AuthenticatorData> authenticator_data = MakeAuthenticatorData(
+      RpId(), credential_id, SecKeyRefToECPublicKey(public_key));
   if (!authenticator_data) {
     DLOG(ERROR) << "MakeAuthenticatorData failed";
     std::move(callback())
@@ -146,10 +166,14 @@ void GetAssertionOperation::PromptTouchIdDone(bool success, NSError* err) {
         .Run(CtapDeviceResponseCode::kCtap2ErrOther, base::nullopt);
     return;
   }
+  auto response = AuthenticatorGetAssertionResponse(
+      std::move(*authenticator_data), std::move(*signature));
+  response.SetCredential(PublicKeyCredentialDescriptor(
+      CredentialType::kPublicKey, std::move(credential_id)));
+  response.SetUserEntity(credential_user->ToPublicKeyCredentialUserEntity());
+
   std::move(callback())
-      .Run(CtapDeviceResponseCode::kSuccess,
-           AuthenticatorGetAssertionResponse(std::move(*authenticator_data),
-                                             std::move(*signature)));
+      .Run(CtapDeviceResponseCode::kSuccess, std::move(response));
 }
 
 }  // namespace mac

@@ -16,6 +16,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
@@ -106,8 +107,9 @@ class COMPONENTS_PREFS_EXPORT PrefService {
     // policy, this is the controlling pref if set.
     bool IsManagedByCustodian() const;
 
-    // Returns true if the Preference is recommended, i.e. set by an admin
-    // policy but the user is allowed to change it.
+    // Returns true if the Preference's current value is one recommended by
+    // admin policy. Note that this will be false if any other higher-priority
+    // source overrides the value (e.g., the user has set a value).
     bool IsRecommended() const;
 
     // Returns true if the Preference has a value set by an extension, even if
@@ -246,11 +248,14 @@ class COMPONENTS_PREFS_EXPORT PrefService {
   uint64_t GetUint64(const std::string& path) const;
 
   // Time helper methods that actually store the given value as a string, which
-  // represents the number of microseconds elapsed since the Windows epoch. Note
-  // that if obtaining the named value via GetDictionary or GetList, the Value
-  // type will be Type::STRING.
+  // represents the number of microseconds elapsed (absolute for TimeDelta and
+  // relative to Windows epoch for Time variants). Note that if obtaining the
+  // named value via GetDictionary or GetList, the Value type will be
+  // Type::STRING.
   void SetTime(const std::string& path, base::Time value);
   base::Time GetTime(const std::string& path) const;
+  void SetTimeDelta(const std::string& path, base::TimeDelta value);
+  base::TimeDelta GetTimeDelta(const std::string& path) const;
 
   // Returns the value of the given preference, from the user pref store. If
   // the preference is not set in the user pref store, returns NULL.
@@ -354,8 +359,6 @@ class COMPONENTS_PREFS_EXPORT PrefService {
   // this PrefService. Subclasses may access it for unit testing.
   const std::unique_ptr<PrefValueStore> pref_value_store_;
 
-  const scoped_refptr<PrefRegistry> pref_registry_;
-
   // Pref Stores and profile that we passed to the PrefValueStore.
   const scoped_refptr<PersistentPrefStore> user_pref_store_;
 
@@ -430,6 +433,8 @@ class COMPONENTS_PREFS_EXPORT PrefService {
   // value (GetValue() calls back though the preference service to
   // actually get the value.).
   const base::Value* GetPreferenceValue(const std::string& path) const;
+
+  const scoped_refptr<PrefRegistry> pref_registry_;
 
   // Local cache of registered Preference objects. The pref_registry_
   // is authoritative with respect to what the types and default values

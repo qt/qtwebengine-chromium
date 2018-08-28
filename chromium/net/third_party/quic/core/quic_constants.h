@@ -16,7 +16,7 @@
 
 // Definitions of constant values used throughout the QUIC code.
 
-namespace net {
+namespace quic {
 
 // Simple time constants.
 const uint64_t kNumSecondsPerMinute = 60;
@@ -25,6 +25,8 @@ const uint64_t kNumSecondsPerWeek = kNumSecondsPerHour * 24 * 7;
 const uint64_t kNumMicrosPerMilli = 1000;
 const uint64_t kNumMicrosPerSecond = 1000 * 1000;
 
+// Default number of connections for N-connection emulation.
+const uint32_t kDefaultNumConnections = 2;
 // Default initial maximum size in bytes of a QUIC packet.
 const QuicByteCount kDefaultMaxPacketSize = 1350;
 // Default initial maximum size in bytes of a QUIC packet for servers.
@@ -34,9 +36,12 @@ const QuicByteCount kDefaultServerMaxPacketSize = 1000;
 // additional 8 bytes.  This is a total overhead of 48 bytes.  Ethernet's
 // max packet size is 1500 bytes,  1500 - 48 = 1452.
 const QuicByteCount kMaxPacketSize = 1452;
+// ETH_MAX_MTU - MAX(sizeof(iphdr), sizeof(ip6_hdr)) - sizeof(udphdr).
+const QuicByteCount kMaxGsoPacketSize = 65535 - 40 - 8;
 // Default maximum packet size used in the Linux TCP implementation.
 // Used in QUIC for congestion window computations in bytes.
 const QuicByteCount kDefaultTCPMSS = 1460;
+const QuicByteCount kMaxSegmentSize = kDefaultTCPMSS;
 
 // We match SPDY's use of 32 (since we'd compete with SPDY).
 const QuicPacketCount kInitialCongestionWindow = 32;
@@ -212,6 +217,9 @@ const QuicStreamId kMaxQuicStreamId = 0xffffffff;
 // Number of bytes reserved for packet header type.
 const size_t kPacketHeaderTypeSize = 1;
 
-}  // namespace net
+// Number of bytes reserved for connection ID length.
+const size_t kConnectionIdLengthSize = 1;
+
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_CONSTANTS_H_

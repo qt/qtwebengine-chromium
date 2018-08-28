@@ -4,6 +4,7 @@
 
 #include "extensions/browser/api/web_request/web_request_permissions.h"
 
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -14,6 +15,7 @@
 #include "extensions/browser/api/web_request/web_request_api_constants.h"
 #include "extensions/browser/api/web_request/web_request_info.h"
 #include "extensions/browser/extension_navigation_ui_data.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -29,6 +31,17 @@ using content::ResourceRequestInfo;
 using extensions::PermissionsData;
 
 namespace {
+
+// Describes the different cases pertaining to permissions check for the
+// initiator.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class InitiatorAccess {
+  kAbsent = 0,
+  kNoAccess = 1,
+  kHasAccess = 2,
+  kMaxValue = kHasAccess,
+};
 
 // Returns true if the scheme is one we want to allow extensions to have access
 // to. Extensions still need specific permissions for a given URL, which is
@@ -78,19 +91,85 @@ PermissionsData::PageAccess GetMinimumAccessType(
   return access;
 }
 
-bool IsWebUIAllowedToMakeNetworkRequests(const url::Origin& origin) {
-  // Whitelist to work around exceptional cases. This is only used to elide a
-  // DCHECK.
-  //
-  // If you are adding a new host to this list, please file a corresponding bug
-  // to track its removal. See https://crbug.com/829412 for the metabug.
-  return
-      // https://crbug.com/829414
-      origin.host() == "print" ||
-      // https://crbug.com/831812
-      origin.host() == "sync-confirmation" ||
-      // https://crbug.com/831813
-      origin.host() == "inspect";
+PermissionsData::PageAccess CanExtensionAccessURLInternal(
+    const extensions::InfoMap* extension_info_map,
+    const std::string& extension_id,
+    const GURL& url,
+    int tab_id,
+    bool crosses_incognito,
+    WebRequestPermissions::HostPermissionsCheck host_permissions_check,
+    const base::Optional<url::Origin>& initiator) {
+  // extension_info_map can be NULL in testing.
+  if (!extension_info_map)
+    return PermissionsData::PageAccess::kAllowed;
+
+  const extensions::Extension* extension =
+      extension_info_map->extensions().GetByID(extension_id);
+  if (!extension)
+    return PermissionsData::PageAccess::kDenied;
+
+  // Prevent viewing / modifying requests initiated by a host protected by
+  // policy.
+  if (initiator &&
+      extension->permissions_data()->IsPolicyBlockedHost(initiator->GetURL()))
+    return PermissionsData::PageAccess::kDenied;
+
+// When we are in a Public Session, allow all URLs for webRequests initiated
+// by a regular extension (but don't allow chrome:// URLs).
+#if defined(OS_CHROMEOS)
+  if (chromeos::LoginState::IsInitialized() &&
+      chromeos::LoginState::Get()->IsPublicSessionUser() &&
+      extension->is_extension() && !url.SchemeIs("chrome")) {
+    // Make sure that the extension is truly installed by policy (the assumption
+    // in Public Session is that all extensions are installed by policy).
+    CHECK(g_allow_all_extension_locations_in_public_session ||
+          extensions::Manifest::IsPolicyLocation(extension->location()));
+    return PermissionsData::PageAccess::kAllowed;
+  }
+#endif
+
+  // Check if this event crosses incognito boundaries when it shouldn't.
+  if (crosses_incognito && !extension_info_map->CanCrossIncognito(extension))
+    return PermissionsData::PageAccess::kDenied;
+
+  PermissionsData::PageAccess access = PermissionsData::PageAccess::kDenied;
+  switch (host_permissions_check) {
+    case WebRequestPermissions::DO_NOT_CHECK_HOST:
+      access = PermissionsData::PageAccess::kAllowed;
+      break;
+    case WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL:
+      access = GetHostAccessForURL(*extension, url, tab_id);
+      // If access to the host was withheld, check if the extension has access
+      // to the initiator. If it does, allow the extension to see the request.
+      // This is important for extensions with webRequest to work well with
+      // runtime host permissions.
+      if (access == PermissionsData::PageAccess::kWithheld) {
+        PermissionsData::PageAccess initiator_access =
+            initiator
+                ? GetHostAccessForURL(*extension, initiator->GetURL(), tab_id)
+                : PermissionsData::PageAccess::kDenied;
+        if (initiator_access == PermissionsData::PageAccess::kAllowed)
+          access = PermissionsData::PageAccess::kAllowed;
+      }
+      break;
+    case WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL_AND_INITIATOR: {
+      PermissionsData::PageAccess request_access =
+          GetHostAccessForURL(*extension, url, tab_id);
+      PermissionsData::PageAccess initiator_access =
+          initiator
+              ? GetHostAccessForURL(*extension, initiator->GetURL(), tab_id)
+              : PermissionsData::PageAccess::kAllowed;
+      access = GetMinimumAccessType(request_access, initiator_access);
+      break;
+    }
+    case WebRequestPermissions::REQUIRE_ALL_URLS:
+      if (extension->permissions_data()->HasEffectiveAccessToAllHosts())
+        access = PermissionsData::PageAccess::kAllowed;
+      // else ACCESS_DENIED
+      break;
+  }
+
+  return access;
 }
 
 }  // namespace
@@ -115,7 +194,8 @@ bool IsSensitiveRequest(const extensions::WebRequestInfo& request,
     // treat the requests as sensitive to ensure that the Web Request API
     // doesn't see them.
     DCHECK(request.initiator.has_value());
-    DCHECK(IsWebUIAllowedToMakeNetworkRequests(*request.initiator))
+    DCHECK(extensions::ExtensionsBrowserClient::Get()
+               ->IsWebUIAllowedToMakeNetworkRequests(*request.initiator))
         << "Unsupported network request from "
         << request.initiator->GetURL().spec() << " for " << url.spec();
     return true;
@@ -237,65 +317,31 @@ PermissionsData::PageAccess WebRequestPermissions::CanExtensionAccessURL(
     bool crosses_incognito,
     HostPermissionsCheck host_permissions_check,
     const base::Optional<url::Origin>& initiator) {
-  // extension_info_map can be NULL in testing.
-  if (!extension_info_map)
-    return PermissionsData::PageAccess::kAllowed;
+  PermissionsData::PageAccess access = CanExtensionAccessURLInternal(
+      extension_info_map, extension_id, url, tab_id, crosses_incognito,
+      host_permissions_check, initiator);
 
-  const extensions::Extension* extension =
-      extension_info_map->extensions().GetByID(extension_id);
-  if (!extension)
-    return PermissionsData::PageAccess::kDenied;
+  // For clients only checking host permissions for |url| (e.g. the web request
+  // API), log metrics to see whether they have host permissions to |initiator|,
+  // given they have access to |url|.
+  bool log_metrics =
+      host_permissions_check == REQUIRE_HOST_PERMISSION_FOR_URL &&
+      access != PermissionsData::PageAccess::kDenied;
+  if (!log_metrics)
+    return access;
 
-  // Prevent viewing / modifying requests initiated by a host protected by
-  // policy.
-  if (initiator &&
-      extension->permissions_data()->IsPolicyBlockedHost(initiator->GetURL()))
-    return PermissionsData::PageAccess::kDenied;
-
-  // When we are in a Public Session, allow all URLs for webRequests initiated
-  // by a regular extension (but don't allow chrome:// URLs).
-#if defined(OS_CHROMEOS)
-  if (chromeos::LoginState::IsInitialized() &&
-      chromeos::LoginState::Get()->IsPublicSessionUser() &&
-      extension->is_extension() &&
-      !url.SchemeIs("chrome")) {
-    // Make sure that the extension is truly installed by policy (the assumption
-    // in Public Session is that all extensions are installed by policy).
-    CHECK(g_allow_all_extension_locations_in_public_session ||
-          extensions::Manifest::IsPolicyLocation(extension->location()));
-    return PermissionsData::PageAccess::kAllowed;
-  }
-#endif
-
-  // Check if this event crosses incognito boundaries when it shouldn't.
-  if (crosses_incognito && !extension_info_map->CanCrossIncognito(extension))
-    return PermissionsData::PageAccess::kDenied;
-
-  PermissionsData::PageAccess access = PermissionsData::PageAccess::kDenied;
-  switch (host_permissions_check) {
-    case DO_NOT_CHECK_HOST:
-      access = PermissionsData::PageAccess::kAllowed;
-      break;
-    case REQUIRE_HOST_PERMISSION_FOR_URL:
-      access = GetHostAccessForURL(*extension, url, tab_id);
-      break;
-    case REQUIRE_HOST_PERMISSION_FOR_URL_AND_INITIATOR: {
-      PermissionsData::PageAccess request_access =
-          GetHostAccessForURL(*extension, url, tab_id);
-      PermissionsData::PageAccess initiator_access =
-          initiator
-              ? GetHostAccessForURL(*extension, initiator->GetURL(), tab_id)
-              : PermissionsData::PageAccess::kAllowed;
-      access = GetMinimumAccessType(request_access, initiator_access);
-      break;
-    }
-    case REQUIRE_ALL_URLS:
-      if (extension->permissions_data()->HasEffectiveAccessToAllHosts())
-        access = PermissionsData::PageAccess::kAllowed;
-      // else ACCESS_DENIED
-      break;
+  InitiatorAccess initiator_access = InitiatorAccess::kAbsent;
+  if (initiator) {
+    PermissionsData::PageAccess access = CanExtensionAccessURLInternal(
+        extension_info_map, extension_id, initiator->GetURL(), tab_id,
+        crosses_incognito, REQUIRE_HOST_PERMISSION_FOR_URL, base::nullopt);
+    initiator_access = access == PermissionsData::PageAccess::kDenied
+                           ? InitiatorAccess::kNoAccess
+                           : InitiatorAccess::kHasAccess;
   }
 
+  UMA_HISTOGRAM_ENUMERATION("Extensions.WebRequest.InitiatorAccess",
+                            initiator_access);
   return access;
 }
 
@@ -306,12 +352,12 @@ bool WebRequestPermissions::CanExtensionAccessInitiator(
     const base::Optional<url::Origin>& initiator,
     int tab_id,
     bool crosses_incognito) {
-  PermissionsData::PageAccess access = PermissionsData::PageAccess::kAllowed;
-  if (initiator) {
-    access = CanExtensionAccessURL(
-        extension_info_map, extension_id, initiator->GetURL(), tab_id,
-        crosses_incognito,
-        WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL, base::nullopt);
-  }
-  return access == PermissionsData::PageAccess::kAllowed;
+  if (!initiator)
+    return true;
+
+  return CanExtensionAccessURLInternal(
+             extension_info_map, extension_id, initiator->GetURL(), tab_id,
+             crosses_incognito,
+             WebRequestPermissions::REQUIRE_HOST_PERMISSION_FOR_URL,
+             base::nullopt) == PermissionsData::PageAccess::kAllowed;
 }

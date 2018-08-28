@@ -40,7 +40,7 @@ class StylePropertySerializer {
   explicit StylePropertySerializer(const CSSPropertyValueSet&);
 
   String AsText() const;
-  String GetPropertyValue(CSSPropertyID) const;
+  String SerializeShorthand(CSSPropertyID) const;
 
  private:
   String GetCommonValue(const StylePropertyShorthand&) const;
@@ -54,7 +54,7 @@ class StylePropertySerializer {
                            String separator = " ") const;
   String FontValue() const;
   String FontVariantValue() const;
-  void AppendFontLonghandValueIfNotNormal(const CSSProperty&,
+  bool AppendFontLonghandValueIfNotNormal(const CSSProperty&,
                                           StringBuilder& result) const;
   String OffsetValue() const;
   String BackgroundRepeatPropertyValue() const;

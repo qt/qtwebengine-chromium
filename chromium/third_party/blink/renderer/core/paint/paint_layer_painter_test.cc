@@ -22,8 +22,8 @@ class PaintLayerPainterTest : public PaintControllerPaintTest {
   void ExpectPaintedOutputInvisible(const char* element_name,
                                     bool expected_value) {
     // The optimization to skip painting for effectively-invisible content is
-    // limited to SPv1.
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
+    // limited to pre-SPv2.
+    if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
       return;
 
     PaintLayer* target_layer =
@@ -35,9 +35,8 @@ class PaintLayerPainterTest : public PaintControllerPaintTest {
             .PaintedOutputInvisible(target_layer->GetLayoutObject().StyleRef(),
                                     painting_info.GetGlobalPaintFlags());
     EXPECT_EQ(expected_value, invisible)
-        << "Failed painted output visibility [spv175_enabled="
-        << RuntimeEnabledFeatures::SlimmingPaintV175Enabled()
-        << ", expected=" << expected_value << ", actual=" << invisible << "].";
+        << "Failed painted output visibility, expected=" << expected_value
+        << ", actual=" << invisible << "].";
   }
 
   PaintController& MainGraphicsLayerPaintController() {
@@ -153,8 +152,7 @@ TEST_P(PaintLayerPainterTest, CachedSubsequence) {
                    other_chunk_state));
   };
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    check_chunks();
+  check_chunks();
 
   ToHTMLElement(content1.GetNode())
       ->setAttribute(HTMLNames::styleAttr,
@@ -164,7 +162,7 @@ TEST_P(PaintLayerPainterTest, CachedSubsequence) {
   EXPECT_TRUE(PaintWithoutCommit());
   EXPECT_EQ(6, NumCachedNewItems());
 
-  Commit();
+  CommitAndFinishCycle();
 
   EXPECT_DISPLAY_LIST(
       RootPaintController().GetDisplayItemList(), 7,
@@ -177,8 +175,7 @@ TEST_P(PaintLayerPainterTest, CachedSubsequence) {
       TestDisplayItem(filler2, kBackgroundType));
 
   // We should still have the paint chunks forced by the cached subsequences.
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    check_chunks();
+  check_chunks();
 }
 
 TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
@@ -256,7 +253,7 @@ TEST_P(PaintLayerPainterTest, CachedSubsequenceOnInterestRectChange) {
   // pair.
   EXPECT_EQ(5, NumCachedNewItems());
 
-  Commit();
+  CommitAndFinishCycle();
 
   EXPECT_DISPLAY_LIST(
       RootPaintController().GetDisplayItemList(), 6,
@@ -337,7 +334,7 @@ TEST_P(PaintLayerPainterTest,
   EXPECT_TRUE(PaintWithoutCommit(&interest_rect));
   EXPECT_EQ(4, NumCachedNewItems());
 
-  Commit();
+  CommitAndFinishCycle();
 
   EXPECT_DISPLAY_LIST(
       RootPaintController().GetDisplayItemList(), 5,

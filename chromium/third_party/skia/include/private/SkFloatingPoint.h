@@ -13,6 +13,8 @@
 #include "SkSafe_math.h"
 #include <float.h>
 #include <math.h>
+#include <cstring>
+
 
 #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
     #include <xmmintrin.h>
@@ -137,10 +139,9 @@ static inline float sk_double_to_float(double x) {
     return static_cast<float>(x);
 }
 
-static const uint32_t kIEEENotANumber = 0x7fffffff;
-#define SK_FloatNaN                 (*SkTCast<const float*>(&kIEEENotANumber))
-#define SK_FloatInfinity            (+(float)INFINITY)
-#define SK_FloatNegativeInfinity    (-(float)INFINITY)
+#define SK_FloatNaN                 NAN
+#define SK_FloatInfinity            (+INFINITY)
+#define SK_FloatNegativeInfinity    (-INFINITY)
 
 static inline float sk_float_rsqrt_portable(float x) {
     // Get initial estimate.

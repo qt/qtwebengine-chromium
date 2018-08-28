@@ -24,9 +24,9 @@
 
 #include <memory>
 #include "third_party/blink/renderer/core/animation/element_animations.h"
+#include "third_party/blink/renderer/core/aom/accessible_node.h"
 #include "third_party/blink/renderer/core/css/cssom/inline_style_property_map.h"
 #include "third_party/blink/renderer/core/css/inline_css_style_declaration.h"
-#include "third_party/blink/renderer/core/dom/accessible_node.h"
 #include "third_party/blink/renderer/core/dom/attr.h"
 #include "third_party/blink/renderer/core/dom/dataset_dom_string_map.h"
 #include "third_party/blink/renderer/core/dom/dom_token_list.h"
@@ -191,7 +191,6 @@ class ElementRareData : public NodeRareData {
   void SetNonce(const AtomicString& nonce) { nonce_ = nonce; }
 
   void TraceAfterDispatch(blink::Visitor*);
-  void TraceWrappersAfterDispatch(ScriptWrappableVisitor*) const;
 
  private:
   ScrollOffset saved_layer_scroll_offset_;
@@ -203,14 +202,14 @@ class ElementRareData : public NodeRareData {
   std::unique_ptr<SpaceSplitString> part_names_;
   std::unique_ptr<NamesMap> part_names_map_;
   TraceWrapperMember<NamedNodeMap> attribute_map_;
-  Member<AttrNodeList> attr_node_list_;
+  TraceWrapperMember<AttrNodeList> attr_node_list_;
   Member<InlineCSSStyleDeclaration> cssom_wrapper_;
   Member<InlineStylePropertyMap> cssom_map_wrapper_;
 
   Member<ElementAnimations> element_animations_;
   TraceWrapperMember<ElementIntersectionObserverData>
       intersection_observer_data_;
-  Member<ResizeObserverDataMap> resize_observer_data_;
+  TraceWrapperMember<ResizeObserverDataMap> resize_observer_data_;
 
   scoped_refptr<ComputedStyle> computed_style_;
   // TODO(davaajav):remove this field when v0 custom elements are deprecated
@@ -224,7 +223,6 @@ class ElementRareData : public NodeRareData {
 
   explicit ElementRareData(NodeRenderingData*);
 };
-DEFINE_TRAIT_FOR_TRACE_WRAPPERS(ElementRareData);
 
 inline LayoutSize DefaultMinimumSizeForResizing() {
   return LayoutSize(LayoutUnit::Max(), LayoutUnit::Max());
@@ -243,8 +241,11 @@ inline void ElementRareData::ClearPseudoElements() {
 
 inline void ElementRareData::SetPseudoElement(PseudoId pseudo_id,
                                               PseudoElement* element) {
-  if (!pseudo_element_data_)
+  if (!pseudo_element_data_) {
+    if (!element)
+      return;
     pseudo_element_data_ = PseudoElementData::Create();
+  }
   pseudo_element_data_->SetPseudoElement(pseudo_id, element);
 }
 

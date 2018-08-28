@@ -37,8 +37,11 @@ struct TextureCaps
     // Support for linear or anisotropic filtering
     bool filterable;
 
-    // Support for being used as a framebuffer attachment or renderbuffer format
-    bool renderable;
+    // Support for being used as a framebuffer attachment, i.e. glFramebufferTexture2D
+    bool textureAttachment;
+
+    // Support for being used as a renderbuffer format, i.e. glFramebufferRenderbuffer
+    bool renderbuffer;
 
     // Set of supported sample counts, only guaranteed to be valid in ES3.
     SupportedSampleSet sampleCounts;
@@ -410,12 +413,17 @@ struct Extensions
     bool pointSizeArray;
     // GL_OES_texture_cube_map
     bool textureCubeMap;
+    // GL_OES_point_sprite
+    bool pointSprite;
 
     // EGL_ANGLE_explicit_context GL subextensions
     // GL_ANGLE_explicit_context_gles1
     bool explicitContextGles1;
     // GL_ANGLE_explicit_context
     bool explicitContext;
+
+    // GL_KHR_parallel_shader_compile
+    bool parallelShaderCompile;
 };
 
 struct ExtensionInfo
@@ -537,26 +545,29 @@ struct Caps
     // ES 3.1 (April 29, 2015) Table 20.45: implementation dependent compute shader limits
     // GL_EXT_geometry_shader (May 31, 2016) Table 20.43gs: Implementation dependent geometry shader
     // limits
+    // GL_EXT_geometry_shader (May 31, 2016) Table 20.46: Implementation dependent aggregate shader
+    // limits
     ShaderMap<GLuint> maxShaderUniformBlocks;
     ShaderMap<GLuint> maxShaderTextureImageUnits;
     ShaderMap<GLuint> maxShaderStorageBlocks;
+    ShaderMap<GLuint> maxShaderUniformComponents;
+    ShaderMap<GLuint> maxShaderAtomicCounterBuffers;
+    ShaderMap<GLuint> maxShaderAtomicCounters;
+    ShaderMap<GLuint> maxShaderImageUniforms;
+    // Note that we can query MAX_COMPUTE_UNIFORM_COMPONENTS and MAX_GEOMETRY_UNIFORM_COMPONENTS_EXT
+    // by GetIntegerv, but we can only use GetInteger64v on MAX_VERTEX_UNIFORM_COMPONENTS and
+    // MAX_FRAGMENT_UNIFORM_COMPONENTS. Currently we use GLuint64 to store all these values so that
+    // we can put them together into one ShaderMap.
+    ShaderMap<GLuint64> maxCombinedShaderUniformComponents;
 
     // ES 3.1 (April 29, 2015) Table 20.43: Implementation dependent Vertex shader limits
     GLuint maxVertexAttributes;
-    GLuint maxVertexUniformComponents;
     GLuint maxVertexUniformVectors;
     GLuint maxVertexOutputComponents;
-    GLuint maxVertexAtomicCounterBuffers;
-    GLuint maxVertexAtomicCounters;
-    GLuint maxVertexImageUniforms;
 
     // ES 3.1 (April 29, 2015) Table 20.44: Implementation dependent Fragment shader limits
-    GLuint maxFragmentUniformComponents;
     GLuint maxFragmentUniformVectors;
     GLuint maxFragmentInputComponents;
-    GLuint maxFragmentAtomicCounterBuffers;
-    GLuint maxFragmentAtomicCounters;
-    GLuint maxFragmentImageUniforms;
     GLint minProgramTextureGatherOffset;
     GLuint maxProgramTextureGatherOffset;
     GLint minProgramTexelOffset;
@@ -567,19 +578,12 @@ struct Caps
     std::array<GLuint, 3> maxComputeWorkGroupSize;
     GLuint maxComputeWorkGroupInvocations;
     GLuint maxComputeSharedMemorySize;
-    GLuint maxComputeUniformComponents;
-    GLuint maxComputeAtomicCounterBuffers;
-    GLuint maxComputeAtomicCounters;
-    GLuint maxComputeImageUniforms;
-    GLuint maxCombinedComputeUniformComponents;
 
     // ES 3.1 (April 29, 2015) Table 20.46: implementation dependent aggregate shader limits
     GLuint maxUniformBufferBindings;
     GLuint64 maxUniformBlockSize;
     GLuint uniformBufferOffsetAlignment;
     GLuint maxCombinedUniformBlocks;
-    GLuint64 maxCombinedVertexUniformComponents;
-    GLuint64 maxCombinedFragmentUniformComponents;
     GLuint maxVaryingComponents;
     GLuint maxVaryingVectors;
     GLuint maxCombinedTextureImageUnits;
@@ -612,19 +616,11 @@ struct Caps
 
     // GL_EXT_geometry_shader (May 31, 2016) Table 20.43gs: Implementation dependent geometry shader
     // limits
-    GLuint maxGeometryUniformComponents;
     GLuint maxGeometryInputComponents;
     GLuint maxGeometryOutputComponents;
     GLuint maxGeometryOutputVertices;
     GLuint maxGeometryTotalOutputComponents;
-    GLuint maxGeometryAtomicCounterBuffers;
-    GLuint maxGeometryAtomicCounters;
     GLuint maxGeometryShaderInvocations;
-
-    // GL_EXT_geometry_shader (May 31, 2016) Table 20.46: Implementation dependent aggregate shader
-    // limits
-    GLuint maxGeometryImageUniforms;
-    GLuint maxCombinedGeometryUniformComponents;
 
     // GLES1 emulation: Caps for ES 1.1. Taken from Table 6.20 / 6.22 in the OpenGL ES 1.1 spec.
     GLuint maxMultitextureUnits;
@@ -634,6 +630,8 @@ struct Caps
     GLuint maxModelviewMatrixStackDepth;
     GLuint maxProjectionMatrixStackDepth;
     GLuint maxTextureMatrixStackDepth;
+    GLfloat minSmoothPointSize;
+    GLfloat maxSmoothPointSize;
 };
 
 Caps GenerateMinimumCaps(const Version &clientVersion, const Extensions &extensions);
@@ -744,7 +742,7 @@ struct DisplayExtensions
     // EGL_CHROMIUM_get_sync_values
     bool getSyncValues;
 
-    // EGL_EXT_swap_buffers_with_damage
+    // EGL_KHR_swap_buffers_with_damage
     bool swapBuffersWithDamage;
 
     // EGL_EXT_pixel_format_float
@@ -770,6 +768,9 @@ struct DisplayExtensions
 
     // EGL_ANGLE_create_context_extensions_enabled
     bool createContextExtensionsEnabled;
+
+    // EGL_ANDROID_presentation_time
+    bool presentationTime;
 };
 
 struct DeviceExtensions
@@ -815,6 +816,9 @@ struct ClientExtensions
     // EGL_ANGLE_platform_angle_vulkan
     bool platformANGLEVulkan;
 
+    // EGL_ANGLE_platform_angle_context_virtualization
+    bool platformANGLEContextVirtualization;
+
     // EGL_ANGLE_device_creation
     bool deviceCreation;
 
@@ -829,6 +833,9 @@ struct ClientExtensions
 
     // EGL_KHR_client_get_all_proc_addresses
     bool clientGetAllProcAddresses;
+
+    // EGL_KHR_debug
+    bool debug;
 
     // EGL_ANGLE_explicit_context
     bool explicitContext;

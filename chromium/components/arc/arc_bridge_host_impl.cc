@@ -46,6 +46,11 @@ void ArcBridgeHostImpl::OnAppInstanceReady(mojom::AppInstancePtr app_ptr) {
   OnInstanceReady(arc_bridge_service_->app(), std::move(app_ptr));
 }
 
+void ArcBridgeHostImpl::OnAppfuseInstanceReady(
+    mojom::AppfuseInstancePtr appfuse_ptr) {
+  OnInstanceReady(arc_bridge_service_->appfuse(), std::move(appfuse_ptr));
+}
+
 void ArcBridgeHostImpl::OnAudioInstanceReady(
     mojom::AudioInstancePtr audio_ptr) {
   OnInstanceReady(arc_bridge_service_->audio(), std::move(audio_ptr));
@@ -92,6 +97,11 @@ void ArcBridgeHostImpl::OnCrashCollectorInstanceReady(
     mojom::CrashCollectorInstancePtr crash_collector_ptr) {
   OnInstanceReady(arc_bridge_service_->crash_collector(),
                   std::move(crash_collector_ptr));
+}
+
+void ArcBridgeHostImpl::OnDiskQuotaInstanceReady(
+    mojom::DiskQuotaInstancePtr disk_quota_ptr) {
+  OnInstanceReady(arc_bridge_service_->disk_quota(), std::move(disk_quota_ptr));
 }
 
 void ArcBridgeHostImpl::OnEnterpriseReportingInstanceReady(

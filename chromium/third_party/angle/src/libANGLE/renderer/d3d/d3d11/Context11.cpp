@@ -34,7 +34,7 @@ namespace rx
 
 namespace
 {
-bool DrawCallHasStreamingVertexArrays(const gl::Context *context, GLenum mode)
+bool DrawCallHasStreamingVertexArrays(const gl::Context *context, gl::PrimitiveMode mode)
 {
     const gl::State &glState           = context->getGLState();
     const gl::VertexArray *vertexArray = glState.getVertexArray();
@@ -42,8 +42,8 @@ bool DrawCallHasStreamingVertexArrays(const gl::Context *context, GLenum mode)
     // Direct drawing doesn't support dynamic attribute storage since it needs the first and count
     // to translate when applyVertexBuffer. GL_LINE_LOOP and GL_TRIANGLE_FAN are not supported
     // either since we need to simulate them in D3D.
-    if (vertexArray11->hasActiveDynamicAttrib(context) || mode == GL_LINE_LOOP ||
-        mode == GL_TRIANGLE_FAN)
+    if (vertexArray11->hasActiveDynamicAttrib(context) || mode == gl::PrimitiveMode::LineLoop ||
+        mode == gl::PrimitiveMode::TriangleFan)
     {
         return true;
     }
@@ -120,6 +120,11 @@ Context11::~Context11()
 gl::Error Context11::initialize()
 {
     return gl::NoError();
+}
+
+void Context11::onDestroy(const gl::Context *context)
+{
+    mIncompleteTextures.onDestroy(context);
 }
 
 CompilerImpl *Context11::createCompiler()
@@ -234,7 +239,10 @@ gl::Error Context11::finish(const gl::Context *context)
     return mRenderer->finish();
 }
 
-gl::Error Context11::drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count)
+gl::Error Context11::drawArrays(const gl::Context *context,
+                                gl::PrimitiveMode mode,
+                                GLint first,
+                                GLsizei count)
 {
     const gl::DrawCallParams &drawCallParams = context->getParams<gl::DrawCallParams>();
     ASSERT(!drawCallParams.isDrawElements() && !drawCallParams.isDrawIndirect());
@@ -243,7 +251,7 @@ gl::Error Context11::drawArrays(const gl::Context *context, GLenum mode, GLint f
 }
 
 gl::Error Context11::drawArraysInstanced(const gl::Context *context,
-                                         GLenum mode,
+                                         gl::PrimitiveMode mode,
                                          GLint first,
                                          GLsizei count,
                                          GLsizei instanceCount)
@@ -255,7 +263,7 @@ gl::Error Context11::drawArraysInstanced(const gl::Context *context,
 }
 
 gl::Error Context11::drawElements(const gl::Context *context,
-                                  GLenum mode,
+                                  gl::PrimitiveMode mode,
                                   GLsizei count,
                                   GLenum type,
                                   const void *indices)
@@ -267,7 +275,7 @@ gl::Error Context11::drawElements(const gl::Context *context,
 }
 
 gl::Error Context11::drawElementsInstanced(const gl::Context *context,
-                                           GLenum mode,
+                                           gl::PrimitiveMode mode,
                                            GLsizei count,
                                            GLenum type,
                                            const void *indices,
@@ -280,7 +288,7 @@ gl::Error Context11::drawElementsInstanced(const gl::Context *context,
 }
 
 gl::Error Context11::drawRangeElements(const gl::Context *context,
-                                       GLenum mode,
+                                       gl::PrimitiveMode mode,
                                        GLuint start,
                                        GLuint end,
                                        GLsizei count,
@@ -294,7 +302,7 @@ gl::Error Context11::drawRangeElements(const gl::Context *context,
 }
 
 gl::Error Context11::drawArraysIndirect(const gl::Context *context,
-                                        GLenum mode,
+                                        gl::PrimitiveMode mode,
                                         const void *indirect)
 {
     if (DrawCallHasStreamingVertexArrays(context, mode))
@@ -316,7 +324,7 @@ gl::Error Context11::drawArraysIndirect(const gl::Context *context,
 }
 
 gl::Error Context11::drawElementsIndirect(const gl::Context *context,
-                                          GLenum mode,
+                                          gl::PrimitiveMode mode,
                                           GLenum type,
                                           const void *indirect)
 {
@@ -400,9 +408,10 @@ void Context11::popDebugGroup()
     popGroupMarker();
 }
 
-void Context11::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
+gl::Error Context11::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
 {
     mRenderer->getStateManager()->syncState(context, dirtyBits);
+    return gl::NoError();
 }
 
 GLint Context11::getGPUDisjoint()
@@ -415,14 +424,36 @@ GLint64 Context11::getTimestamp()
     return mRenderer->getTimestamp();
 }
 
-void Context11::onMakeCurrent(const gl::Context *context)
+gl::Error Context11::onMakeCurrent(const gl::Context *context)
 {
-    ANGLE_SWALLOW_ERR(mRenderer->getStateManager()->onMakeCurrent(context));
+    ANGLE_TRY(mRenderer->getStateManager()->onMakeCurrent(context));
+    return gl::NoError();
 }
 
-const gl::Caps &Context11::getNativeCaps() const
+gl::Caps Context11::getNativeCaps() const
 {
-    return mRenderer->getNativeCaps();
+    gl::Caps caps = mRenderer->getNativeCaps();
+
+    // For pixel shaders, the render targets and unordered access views share the same resource
+    // slots, so the maximum number of fragment shader outputs depends on the current context
+    // version:
+    // - If current context is ES 3.0 and below, we use D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT(8)
+    //   as the value of max draw buffers because UAVs are not used.
+    // - If current context is ES 3.1 and the feature level is 11_0, the RTVs and UAVs share 8
+    //   slots. As ES 3.1 requires at least 1 atomic counter buffer in compute shaders, the value
+    //   of max combined shader output resources is limited to 7, thus only 7 RTV slots can be
+    //   used simultaneously.
+    // - If current context is ES 3.1 and the feature level is 11_1, the RTVs and UAVs share 64
+    //   slots. Currently we allocate 60 slots for combined shader output resources, so we can use
+    //   at most D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT(8) RTVs simultaneously.
+    if (mState.getClientVersion() >= gl::ES_3_1 &&
+        mRenderer->getRenderer11DeviceCaps().featureLevel == D3D_FEATURE_LEVEL_11_0)
+    {
+        caps.maxDrawBuffers      = caps.maxCombinedShaderOutputResources;
+        caps.maxColorAttachments = caps.maxCombinedShaderOutputResources;
+    }
+
+    return caps;
 }
 
 const gl::TextureCapsMap &Context11::getNativeTextureCaps() const
@@ -455,7 +486,7 @@ gl::Error Context11::dispatchComputeIndirect(const gl::Context *context, GLintpt
 }
 
 gl::Error Context11::triggerDrawCallProgramRecompilation(const gl::Context *context,
-                                                         GLenum drawMode)
+                                                         gl::PrimitiveMode drawMode)
 {
     const auto &glState    = context->getGLState();
     const auto *va11       = GetImplAs<VertexArray11>(glState.getVertexArray());
@@ -546,4 +577,21 @@ gl::Error Context11::memoryBarrierByRegion(const gl::Context *context, GLbitfiel
     return gl::NoError();
 }
 
+gl::Error Context11::getIncompleteTexture(const gl::Context *context,
+                                          gl::TextureType type,
+                                          gl::Texture **textureOut)
+{
+    return mIncompleteTextures.getIncompleteTexture(context, type, this, textureOut);
+}
+
+gl::Error Context11::initializeMultisampleTextureToBlack(const gl::Context *context,
+                                                         gl::Texture *glTexture)
+{
+    ASSERT(glTexture->getType() == gl::TextureType::_2DMultisample);
+    TextureD3D *textureD3D        = GetImplAs<TextureD3D>(glTexture);
+    gl::ImageIndex index          = gl::ImageIndex::Make2DMultisample();
+    RenderTargetD3D *renderTarget = nullptr;
+    ANGLE_TRY(textureD3D->getRenderTarget(context, index, &renderTarget));
+    return mRenderer->clearRenderTarget(renderTarget, gl::ColorF(0.0f, 0.0f, 0.0f, 1.0f), 1.0f, 0);
+}
 }  // namespace rx

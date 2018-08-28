@@ -394,20 +394,23 @@ OPENSSL_EXPORT int SSL_pending(const SSL *ssl);
 // https://crbug.com/466303.
 OPENSSL_EXPORT int SSL_write(SSL *ssl, const void *buf, int num);
 
-// SSL_shutdown shuts down |ssl|. On success, it completes in two stages. First,
-// it returns 0 if |ssl| completed uni-directional shutdown; close_notify has
-// been sent, but the peer's close_notify has not been received. Most callers
-// may stop at this point. For bi-directional shutdown, call |SSL_shutdown|
-// again. It returns 1 if close_notify has been both sent and received.
+// SSL_shutdown shuts down |ssl|. It runs in two stages. First, it sends
+// close_notify and returns zero or one on success or -1 on failure. Zero
+// indicates that close_notify was sent, but not received, and one additionally
+// indicates that the peer's close_notify had already been received.
 //
-// If the peer's close_notify arrived first, the first stage is skipped.
-// |SSL_shutdown| will return 1 once close_notify is sent and skip 0. Callers
-// only interested in uni-directional shutdown must therefore allow for the
-// first stage returning either 0 or 1.
+// To then wait for the peer's close_notify, run |SSL_shutdown| to completion a
+// second time. This returns 1 on success and -1 on failure. Application data
+// is considered a fatal error at this point. To process or discard it, read
+// until close_notify with |SSL_read| instead.
 //
-// |SSL_shutdown| returns -1 on failure. The caller should pass the return value
-// into |SSL_get_error| to determine how to proceed. If the underlying |BIO| is
-// non-blocking, both stages may require retry.
+// In both cases, on failure, pass the return value into |SSL_get_error| to
+// determine how to proceed.
+//
+// Most callers should stop at the first stage. Reading for close_notify is
+// primarily used for uncommon protocols where the underlying transport is
+// reused after TLS completes. Additionally, DTLS uses an unordered transport
+// and is unordered, so the second stage is a no-op in DTLS.
 OPENSSL_EXPORT int SSL_shutdown(SSL *ssl);
 
 // SSL_CTX_set_quiet_shutdown sets quiet shutdown on |ctx| to |mode|. If
@@ -646,7 +649,6 @@ OPENSSL_EXPORT int SSL_version(const SSL *ssl);
 // The following flags toggle individual protocol versions. This is deprecated.
 // Use |SSL_CTX_set_min_proto_version| and |SSL_CTX_set_max_proto_version|
 // instead.
-#define SSL_OP_NO_SSLv3 0x02000000L
 #define SSL_OP_NO_TLSv1 0x04000000L
 #define SSL_OP_NO_TLSv1_2 0x08000000L
 #define SSL_OP_NO_TLSv1_1 0x10000000L
@@ -1672,10 +1674,19 @@ SSL_SESSION_get_protocol_version(const SSL_SESSION *session);
 OPENSSL_EXPORT int SSL_SESSION_set_protocol_version(SSL_SESSION *session,
                                                     uint16_t version);
 
+// SSL_MAX_SSL_SESSION_ID_LENGTH is the maximum length of an SSL session ID.
+#define SSL_MAX_SSL_SESSION_ID_LENGTH 32
+
 // SSL_SESSION_get_id returns a pointer to a buffer containing |session|'s
 // session ID and sets |*out_len| to its length.
 OPENSSL_EXPORT const uint8_t *SSL_SESSION_get_id(const SSL_SESSION *session,
                                                  unsigned *out_len);
+
+// SSL_SESSION_set1_id sets |session|'s session ID to |sid|, It returns one on
+// success and zero on error. This function may be useful in writing tests but
+// otherwise should not be used.
+OPENSSL_EXPORT int SSL_SESSION_set1_id(SSL_SESSION *session, const uint8_t *sid,
+                                       size_t sid_len);
 
 // SSL_SESSION_get_time returns the time at which |session| was established in
 // seconds since the UNIX epoch.
@@ -1717,6 +1728,9 @@ OPENSSL_EXPORT void SSL_SESSION_get0_ocsp_response(const SSL_SESSION *session,
                                                    const uint8_t **out,
                                                    size_t *out_len);
 
+// SSL_MAX_MASTER_KEY_LENGTH is the maximum length of a master secret.
+#define SSL_MAX_MASTER_KEY_LENGTH 48
+
 // SSL_SESSION_get_master_key writes up to |max_out| bytes of |session|'s master
 // secret to |out| and returns the number of bytes written. If |max_out| is
 // zero, it returns the size of the master secret.
@@ -1734,6 +1748,12 @@ OPENSSL_EXPORT uint64_t SSL_SESSION_set_time(SSL_SESSION *session,
 // be used.
 OPENSSL_EXPORT uint32_t SSL_SESSION_set_timeout(SSL_SESSION *session,
                                                 uint32_t timeout);
+
+// SSL_SESSION_get0_id_context returns a pointer to a buffer containing
+// |session|'s session ID context (see |SSL_CTX_set_session_id_context|) and
+// sets |*out_len| to its length.
+OPENSSL_EXPORT const uint8_t *SSL_SESSION_get0_id_context(
+    const SSL_SESSION *session, unsigned *out_len);
 
 // SSL_SESSION_set1_id_context sets |session|'s session ID context (see
 // |SSL_CTX_set_session_id_context|) to |sid_ctx|. It returns one on success and
@@ -1920,6 +1940,9 @@ OPENSSL_EXPORT void SSL_CTX_set_session_psk_dhe_timeout(SSL_CTX *ctx,
 // SSL_CTX_get_timeout returns the lifetime, in seconds, of TLS 1.2 (or earlier)
 // sessions created in |ctx|.
 OPENSSL_EXPORT uint32_t SSL_CTX_get_timeout(const SSL_CTX *ctx);
+
+// SSL_MAX_SID_CTX_LENGTH is the maximum length of a session ID context.
+#define SSL_MAX_SID_CTX_LENGTH 32
 
 // SSL_CTX_set_session_id_context sets |ctx|'s session ID context to |sid_ctx|.
 // It returns one on success and zero on error. The session ID context is an
@@ -2734,6 +2757,54 @@ OPENSSL_EXPORT void SSL_get0_alpn_selected(const SSL *ssl,
 // |SSL_CTX_set_alpn_protos|.
 OPENSSL_EXPORT void SSL_CTX_set_allow_unknown_alpn_protos(SSL_CTX *ctx,
                                                           int enabled);
+
+
+// Certificate compression.
+//
+// Certificates in TLS 1.3 can be compressed[1]. BoringSSL supports this as both
+// a client and a server, but does not link against any specific compression
+// libraries in order to keep dependencies to a minimum. Instead, hooks for
+// compression and decompression can be installed in an |SSL_CTX| to enable
+// support.
+//
+// [1] https://tools.ietf.org/html/draft-ietf-tls-certificate-compression-03.
+
+// ssl_cert_compression_func_t is a pointer to a function that performs
+// compression. It must write the compressed representation of |in| to |out|,
+// returning one on success and zero on error. The results of compressing
+// certificates are not cached internally. Implementations may wish to implement
+// their own cache if they expect it to be useful given the certificates that
+// they serve.
+typedef int (*ssl_cert_compression_func_t)(SSL *ssl, CBB *out,
+                                           const uint8_t *in, size_t in_len);
+
+// ssl_cert_decompression_func_t is a pointer to a function that performs
+// decompression. The compressed data from the peer is passed as |in| and the
+// decompressed result must be exactly |uncompressed_len| bytes long. It returns
+// one on success, in which case |*out| must be set to the result of
+// decompressing |in|, or zero on error. Setting |*out| transfers ownership,
+// i.e. |CRYPTO_BUFFER_free| will be called on |*out| at some point in the
+// future. The results of decompressions are not cached internally.
+// Implementations may wish to implement their own cache if they expect it to be
+// useful.
+typedef int (*ssl_cert_decompression_func_t)(SSL *ssl, CRYPTO_BUFFER **out,
+                                             size_t uncompressed_len,
+                                             const uint8_t *in, size_t in_len);
+
+// SSL_CTX_add_cert_compression_alg registers a certificate compression
+// algorithm on |ctx| with ID |alg_id|. (The value of |alg_id| should be an IANA
+// assigned value and each can only be registered once.)
+//
+// One of the function pointers may be NULL to avoid having to implement both
+// sides of a compression algorithm if you're only going to use it in one
+// direction. In this case, the unimplemented direction acts like it was never
+// configured.
+//
+// For a server, algorithms are registered in preference order with the most
+// preferable first. It returns one on success or zero on error.
+OPENSSL_EXPORT int SSL_CTX_add_cert_compression_alg(
+    SSL_CTX *ctx, uint16_t alg_id, ssl_cert_compression_func_t compress,
+    ssl_cert_decompression_func_t decompress);
 
 
 // Next protocol negotiation.
@@ -3976,6 +4047,7 @@ DEFINE_STACK_OF(SSL_COMP)
 #define SSL_OP_NO_COMPRESSION 0
 #define SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION 0
 #define SSL_OP_NO_SSLv2 0
+#define SSL_OP_NO_SSLv3 0
 #define SSL_OP_PKCS1_CHECK_1 0
 #define SSL_OP_PKCS1_CHECK_2 0
 #define SSL_OP_SINGLE_DH_USE 0
@@ -4267,143 +4339,6 @@ OPENSSL_EXPORT int SSL_CTX_set_tlsext_status_cb(SSL_CTX *ctx,
 OPENSSL_EXPORT int SSL_CTX_set_tlsext_status_arg(SSL_CTX *ctx, void *arg);
 
 
-// Private structures.
-//
-// This structures are exposed for historical reasons, but access to them is
-// deprecated.
-
-// TODO(davidben): Remove this forward declaration when |SSL_SESSION| is opaque.
-typedef struct ssl_x509_method_st SSL_X509_METHOD;
-
-#define SSL_MAX_SSL_SESSION_ID_LENGTH 32
-#define SSL_MAX_SID_CTX_LENGTH 32
-#define SSL_MAX_MASTER_KEY_LENGTH 48
-
-struct ssl_session_st {
-  CRYPTO_refcount_t references;
-  uint16_t ssl_version;  // what ssl version session info is being kept in here?
-
-  // group_id is the ID of the ECDH group used to establish this session or zero
-  // if not applicable or unknown.
-  uint16_t group_id;
-
-  // peer_signature_algorithm is the signature algorithm used to authenticate
-  // the peer, or zero if not applicable or unknown.
-  uint16_t peer_signature_algorithm;
-
-  // master_key, in TLS 1.2 and below, is the master secret associated with the
-  // session. In TLS 1.3 and up, it is the resumption secret.
-  int master_key_length;
-  uint8_t master_key[SSL_MAX_MASTER_KEY_LENGTH];
-
-  // session_id - valid?
-  unsigned int session_id_length;
-  uint8_t session_id[SSL_MAX_SSL_SESSION_ID_LENGTH];
-  // this is used to determine whether the session is being reused in
-  // the appropriate context. It is up to the application to set this,
-  // via SSL_new
-  uint8_t sid_ctx_length;
-  uint8_t sid_ctx[SSL_MAX_SID_CTX_LENGTH];
-
-  char *psk_identity;
-
-  // certs contains the certificate chain from the peer, starting with the leaf
-  // certificate.
-  STACK_OF(CRYPTO_BUFFER) *certs;
-
-  const SSL_X509_METHOD *x509_method;
-
-  // x509_peer is the peer's certificate.
-  X509 *x509_peer;
-
-  // x509_chain is the certificate chain sent by the peer. NOTE: for historical
-  // reasons, when a client (so the peer is a server), the chain includes
-  // |peer|, but when a server it does not.
-  STACK_OF(X509) *x509_chain;
-
-  // x509_chain_without_leaf is a lazily constructed copy of |x509_chain| that
-  // omits the leaf certificate. This exists because OpenSSL, historically,
-  // didn't include the leaf certificate in the chain for a server, but did for
-  // a client. The |x509_chain| always includes it and, if an API call requires
-  // a chain without, it is stored here.
-  STACK_OF(X509) *x509_chain_without_leaf;
-
-  // verify_result is the result of certificate verification in the case of
-  // non-fatal certificate errors.
-  long verify_result;
-
-  // timeout is the lifetime of the session in seconds, measured from |time|.
-  // This is renewable up to |auth_timeout|.
-  uint32_t timeout;
-
-  // auth_timeout is the non-renewable lifetime of the session in seconds,
-  // measured from |time|.
-  uint32_t auth_timeout;
-
-  // time is the time the session was issued, measured in seconds from the UNIX
-  // epoch.
-  uint64_t time;
-
-  const SSL_CIPHER *cipher;
-
-  CRYPTO_EX_DATA ex_data;  // application specific data
-
-  // These are used to make removal of session-ids more efficient and to
-  // implement a maximum cache size.
-  SSL_SESSION *prev, *next;
-
-  // RFC4507 info
-  uint8_t *tlsext_tick;               // Session ticket
-  size_t tlsext_ticklen;              // Session ticket length
-
-  CRYPTO_BUFFER *signed_cert_timestamp_list;
-
-  // The OCSP response that came with the session.
-  CRYPTO_BUFFER *ocsp_response;
-
-  // peer_sha256 contains the SHA-256 hash of the peer's certificate if
-  // |peer_sha256_valid| is true.
-  uint8_t peer_sha256[SHA256_DIGEST_LENGTH];
-
-  // original_handshake_hash contains the handshake hash (either SHA-1+MD5 or
-  // SHA-2, depending on TLS version) for the original, full handshake that
-  // created a session. This is used by Channel IDs during resumption.
-  uint8_t original_handshake_hash[EVP_MAX_MD_SIZE];
-  uint8_t original_handshake_hash_len;
-
-  uint32_t tlsext_tick_lifetime_hint;  // Session lifetime hint in seconds
-
-  uint32_t ticket_age_add;
-
-  // ticket_max_early_data is the maximum amount of data allowed to be sent as
-  // early data. If zero, 0-RTT is disallowed.
-  uint32_t ticket_max_early_data;
-
-  // early_alpn is the ALPN protocol from the initial handshake. This is only
-  // stored for TLS 1.3 and above in order to enforce ALPN matching for 0-RTT
-  // resumptions.
-  uint8_t *early_alpn;
-  size_t early_alpn_len;
-
-  // extended_master_secret is true if the master secret in this session was
-  // generated using EMS and thus isn't vulnerable to the Triple Handshake
-  // attack.
-  unsigned extended_master_secret:1;
-
-  // peer_sha256_valid is non-zero if |peer_sha256| is valid.
-  unsigned peer_sha256_valid:1;  // Non-zero if peer_sha256 is valid
-
-  // not_resumable is used to indicate that session resumption is disallowed.
-  unsigned not_resumable:1;
-
-  // ticket_age_add_valid is non-zero if |ticket_age_add| is valid.
-  unsigned ticket_age_add_valid:1;
-
-  // is_server is true if this session was created by a server.
-  unsigned is_server:1;
-};
-
-
 // Nodejs compatibility section (hidden).
 //
 // These defines exist for node.js, with the hope that we can eliminate the
@@ -4557,7 +4492,9 @@ namespace bssl {
 
 BORINGSSL_MAKE_DELETER(SSL, SSL_free)
 BORINGSSL_MAKE_DELETER(SSL_CTX, SSL_CTX_free)
+BORINGSSL_MAKE_UP_REF(SSL_CTX, SSL_CTX_up_ref)
 BORINGSSL_MAKE_DELETER(SSL_SESSION, SSL_SESSION_free)
+BORINGSSL_MAKE_UP_REF(SSL_SESSION, SSL_SESSION_up_ref)
 
 enum class OpenRecordResult {
   kOK,
@@ -4860,6 +4797,11 @@ OPENSSL_EXPORT bool SSL_apply_handback(SSL *ssl, Span<const uint8_t> handback);
 #define SSL_R_PRIVATE_KEY_OPERATION_FAILED 287
 #define SSL_R_SECOND_SERVERHELLO_VERSION_MISMATCH 288
 #define SSL_R_OCSP_CB_ERROR 289
+#define SSL_R_SSL_SESSION_ID_TOO_LONG 290
+#define SSL_R_APPLICATION_DATA_ON_SHUTDOWN 291
+#define SSL_R_CERT_DECOMPRESSION_FAILED 292
+#define SSL_R_UNCOMPRESSED_CERT_TOO_LARGE 293
+#define SSL_R_UNKNOWN_CERT_COMPRESSION_ALG 294
 #define SSL_R_SSLV3_ALERT_CLOSE_NOTIFY 1000
 #define SSL_R_SSLV3_ALERT_UNEXPECTED_MESSAGE 1010
 #define SSL_R_SSLV3_ALERT_BAD_RECORD_MAC 1020

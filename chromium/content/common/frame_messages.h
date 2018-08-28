@@ -58,6 +58,7 @@
 #include "ppapi/buildflags/buildflags.h"
 #include "third_party/blink/public/common/feature_policy/feature_policy.h"
 #include "third_party/blink/public/common/frame/frame_policy.h"
+#include "third_party/blink/public/common/frame/user_activation_update_type.h"
 #include "third_party/blink/public/common/message_port/message_port_channel.h"
 #include "third_party/blink/public/common/message_port/transferable_message.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
@@ -70,6 +71,7 @@
 #include "third_party/blink/public/web/web_frame_owner_properties.h"
 #include "third_party/blink/public/web/web_frame_serializer_cache_control_policy.h"
 #include "third_party/blink/public/web/web_fullscreen_options.h"
+#include "third_party/blink/public/web/web_media_player_action.h"
 #include "third_party/blink/public/web/web_tree_scope_type.h"
 #include "third_party/blink/public/web/web_triggering_event_info.h"
 #include "ui/gfx/geometry/rect.h"
@@ -111,8 +113,6 @@ IPC_ENUM_TRAITS_MIN_MAX_VALUE(content::JavaScriptDialogType,
                               content::JAVASCRIPT_DIALOG_TYPE_PROMPT)
 IPC_ENUM_TRAITS_MAX_VALUE(FrameMsg_Navigate_Type::Value,
                           FrameMsg_Navigate_Type::NAVIGATE_TYPE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(FrameMsg_UILoadMetricsReportType::Value,
-                          FrameMsg_UILoadMetricsReportType::REPORT_TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebContextMenuData::MediaType,
                           blink::WebContextMenuData::kMediaTypeLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebContextMenuData::InputFieldType,
@@ -137,7 +137,11 @@ IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::FeaturePolicyFeature,
 IPC_ENUM_TRAITS_MAX_VALUE(content::CSPDisposition,
                           content::CSPDisposition::LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebTriggeringEventInfo,
-                          blink::WebTriggeringEventInfo::kLast)
+                          blink::WebTriggeringEventInfo::kMaxValue)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::UserActivationUpdateType,
+                          blink::UserActivationUpdateType::kMaxValue)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebMediaPlayerAction::Type,
+                          blink::WebMediaPlayerAction::Type::kTypeLast)
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(blink::WebScrollDirection,
                               blink::kFirstScrollDirection,
                               blink::kLastScrollDirection)
@@ -252,6 +256,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameVisualProperties)
   IPC_STRUCT_TRAITS_MEMBER(screen_space_rect)
   IPC_STRUCT_TRAITS_MEMBER(local_frame_size)
   IPC_STRUCT_TRAITS_MEMBER(capture_sequence_number)
+  IPC_STRUCT_TRAITS_MEMBER(zoom_level)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::RenderFrameMetadata)
@@ -347,9 +352,6 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(content::ScreenInfo)
   IPC_STRUCT_TRAITS_MEMBER(device_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(color_space)
-#if defined(OS_MACOSX)
-  IPC_STRUCT_TRAITS_MEMBER(icc_profile)
-#endif
   IPC_STRUCT_TRAITS_MEMBER(depth)
   IPC_STRUCT_TRAITS_MEMBER(depth_per_component)
   IPC_STRUCT_TRAITS_MEMBER(is_monochrome)
@@ -420,13 +422,6 @@ IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
   // RenderFrameProxies.
   IPC_STRUCT_MEMBER(url::Origin, origin)
 
-  // How navigation metrics starting on UI action for this load should be
-  // reported.
-  IPC_STRUCT_MEMBER(FrameMsg_UILoadMetricsReportType::Value, report_type)
-
-  // Timestamp at which the UI action that triggered the navigation originated.
-  IPC_STRUCT_MEMBER(base::TimeTicks, ui_timestamp)
-
   // The insecure request policy the document for the load is enforcing.
   IPC_STRUCT_MEMBER(blink::WebInsecureRequestPolicy, insecure_request_policy)
 
@@ -481,8 +476,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::CommonNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(navigation_type)
   IPC_STRUCT_TRAITS_MEMBER(allow_download)
   IPC_STRUCT_TRAITS_MEMBER(should_replace_current_entry)
-  IPC_STRUCT_TRAITS_MEMBER(ui_timestamp)
-  IPC_STRUCT_TRAITS_MEMBER(report_type)
   IPC_STRUCT_TRAITS_MEMBER(base_url_for_data_url)
   IPC_STRUCT_TRAITS_MEMBER(history_url_for_data_url)
   IPC_STRUCT_TRAITS_MEMBER(previews_state)
@@ -495,6 +488,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::CommonNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(started_from_context_menu)
   IPC_STRUCT_TRAITS_MEMBER(initiator_csp)
   IPC_STRUCT_TRAITS_MEMBER(initiator_self_source)
+  IPC_STRUCT_TRAITS_MEMBER(origin_policy)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::NavigationTiming)
@@ -581,6 +575,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_DownloadUrl_Params)
   IPC_STRUCT_MEMBER(content::Referrer, referrer)
   IPC_STRUCT_MEMBER(url::Origin, initiator_origin)
   IPC_STRUCT_MEMBER(base::string16, suggested_name)
+  IPC_STRUCT_MEMBER(bool, follow_cross_origin_redirects)
   IPC_STRUCT_MEMBER(mojo::MessagePipeHandle, blob_url_token)
 IPC_STRUCT_END()
 
@@ -796,6 +791,11 @@ IPC_STRUCT_TRAITS_BEGIN(content::PepperRendererInstanceData)
 IPC_STRUCT_TRAITS_END()
 #endif
 
+IPC_STRUCT_TRAITS_BEGIN(blink::WebMediaPlayerAction)
+  IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(enable)
+IPC_STRUCT_TRAITS_END()
+
 // -----------------------------------------------------------------------------
 // Messages sent from the browser to the renderer.
 
@@ -804,7 +804,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_MESSAGE_ROUTED1(FrameMsg_IntrinsicSizingInfoOfChildChanged,
                     blink::WebIntrinsicSizingInfo)
 
-IPC_MESSAGE_ROUTED1(FrameMsg_SetChildFrameSurface,
+IPC_MESSAGE_ROUTED1(FrameMsg_FirstSurfaceActivation,
                     viz::SurfaceInfo /* surface_info */)
 
 // Notifies the embedding frame that the process rendering the child frame's
@@ -1121,12 +1121,15 @@ IPC_MESSAGE_ROUTED0(FrameMsg_EnableViewSourceMode)
 // ScopedPageLoadDeferrer is on the stack for SwapOut.
 IPC_MESSAGE_ROUTED0(FrameMsg_SuppressFurtherDialogs)
 
-// Notifies the RenderFrame about a user activation from the browser side.
+// Notifies the RenderFrame about a user activation detected in the browser side
+// (e.g. during Android voice search).
 IPC_MESSAGE_ROUTED0(FrameMsg_NotifyUserActivation)
 
-// Tells the frame to consider itself to have received a user gesture (based
-// on a user gesture processed in a different renderer process).
-IPC_MESSAGE_ROUTED0(FrameMsg_SetHasReceivedUserGesture)
+// Tells the frame to update the user activation state in appropriate part of
+// the frame tree (ancestors for activation notification and all nodes for
+// consumption).
+IPC_MESSAGE_ROUTED1(FrameMsg_UpdateUserActivationState,
+                    blink::UserActivationUpdateType /* type of state update */)
 
 // Tells the frame to mark that the previous document on that frame had received
 // a user gesture on the same eTLD+1.
@@ -1158,6 +1161,12 @@ IPC_MESSAGE_ROUTED2(FrameMsg_ScrollRectToVisible,
 IPC_MESSAGE_ROUTED2(FrameMsg_BubbleLogicalScroll,
                     blink::WebScrollDirection /* direction */,
                     blink::WebScrollGranularity /* granularity */)
+
+// Tells the renderer to perform the given action on the media player location
+// at the given point in the view coordinate space.
+IPC_MESSAGE_ROUTED2(FrameMsg_MediaPlayerActionAt,
+                    gfx::PointF /* location */,
+                    blink::WebMediaPlayerAction)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
@@ -1262,9 +1271,7 @@ IPC_MESSAGE_CONTROL3(FrameHostMsg_SaveImageFromDataURL,
 // in this frame. Sent for top-level frames. |report_type| and |ui_timestamp|
 // are used to report navigation metrics starting on the ui input event that
 // triggered the navigation timestamp.
-IPC_MESSAGE_ROUTED2(FrameHostMsg_DocumentOnLoadCompleted,
-                    FrameMsg_UILoadMetricsReportType::Value /* report_type */,
-                    base::TimeTicks /* ui_timestamp */)
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DocumentOnLoadCompleted)
 
 // Notifies that the initial empty document of a view has been accessed.
 // After this, it is no longer safe to show a pending navigation's URL without
@@ -1289,12 +1296,6 @@ IPC_MESSAGE_ROUTED2(
 IPC_MESSAGE_ROUTED2(FrameHostMsg_DidChangeFrameOwnerProperties,
                     int32_t /* subframe_routing_id */,
                     content::FrameOwnerProperties /* frame_owner_properties */)
-
-// Notifies the browser that document has parsed the body. This is used by the
-// ResourceScheduler as an indication that bandwidth contention won't block
-// first paint.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_WillInsertBody,
-                    int /* render_view_routing_id */)
 
 // Changes the title for the page in the UI when the page is navigated or the
 // title changes. Sent for top-level frames.
@@ -1373,13 +1374,6 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_PepperStartsPlayback,
 // instance has stopped playback.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_PepperStopsPlayback,
                     int32_t /* pp_instance */)
-
-// Used to get the list of plugins. |main_frame_origin| is used to handle
-// exceptions for plugin content settings.
-IPC_SYNC_MESSAGE_CONTROL2_1(FrameHostMsg_GetPlugins,
-                            bool /* refresh*/,
-                            url::Origin /* main_frame_origin */,
-                            std::vector<content::WebPluginInfo> /* plugins */)
 
 // Return information about a plugin for the given URL and MIME
 // type. If there is no matching plugin, |found| is false.
@@ -1516,9 +1510,11 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_UpdateRenderThrottlingStatus,
                     bool /* is_throttled */,
                     bool /* subtree_throttled */)
 
-// Indicates that this frame recieved a user gesture, so that the state can be
-// propagated to any remote frames.
-IPC_MESSAGE_ROUTED0(FrameHostMsg_SetHasReceivedUserGesture)
+// Indicates that the user activation state in the current frame has been
+// updated, so the replicated states need to be synced (in the browser process
+// as well as in all other renderer processes).
+IPC_MESSAGE_ROUTED1(FrameHostMsg_UpdateUserActivationState,
+                    blink::UserActivationUpdateType /* type of state update */)
 
 // Indicates that this frame received a user gesture on a previous navigation on
 // the same eTLD+1. This ensures the state is propagated to any remote frames.

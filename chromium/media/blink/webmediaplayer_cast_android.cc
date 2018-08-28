@@ -129,7 +129,6 @@ scoped_refptr<VideoFrame> MakeTextFrameForCast(
                  bitmap.getPixels());
 
   gpu::Mailbox texture_mailbox;
-  gl->GenMailboxCHROMIUM(texture_mailbox.name);
   gl->ProduceTextureDirectCHROMIUM(remote_playback_texture_id,
                                    texture_mailbox.name);
 
@@ -247,7 +246,7 @@ void WebMediaPlayerCast::OnConnectedToRemoteDevice(
   is_remote_ = true;
   initializing_ = true;
   paused_ = false;
-  client_->PlaybackStateChanged();
+  client_->RequestPlay();
 
   remote_playback_message_ = remote_playback_message;
   webmediaplayer_->SuspendForRemote();
@@ -312,7 +311,7 @@ void WebMediaPlayerCast::OnMediaPlayerPlay() {
   if (is_remote_ && paused_) {
     paused_ = false;
     remote_time_at_ = base::TimeTicks::Now();
-    client_->PlaybackStateChanged();
+    client_->RequestPlay();
   }
   // Blink expects a timeChanged() in response to a seek().
   if (should_notify_time_changed_)
@@ -323,7 +322,7 @@ void WebMediaPlayerCast::OnMediaPlayerPause() {
   DVLOG(1) << __func__ << " is_remote_ = " << is_remote_;
   if (is_remote_ && !paused_) {
     paused_ = true;
-    client_->PlaybackStateChanged();
+    client_->RequestPause();
   }
 }
 

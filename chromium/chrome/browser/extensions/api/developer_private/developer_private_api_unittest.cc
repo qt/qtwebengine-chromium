@@ -83,11 +83,6 @@ std::unique_ptr<KeyedService> BuildEventRouter(
   return std::make_unique<EventRouter>(profile, ExtensionPrefs::Get(profile));
 }
 
-bool HasAllUrlsPermission(const Extension* extension,
-                          content::BrowserContext* context) {
-  return ScriptingPermissionsModifier(context, extension).IsAllowedOnAllUrls();
-}
-
 bool HasPrefsPermission(bool (*has_pref)(const std::string&,
                                          content::BrowserContext*),
                         content::BrowserContext* context,
@@ -141,6 +136,11 @@ class DeveloperPrivateApiUnitTest : public ExtensionServiceTestWithInstall {
   // Uses ASSERT_* inside - callers should use ASSERT_NO_FATAL_FAILURE.
   void GetProfileConfiguration(
       std::unique_ptr<api::developer_private::ProfileInfo>* profile_info);
+
+  // Runs the API function to update host access for the given |extension| to
+  // |new_access|.
+  void RunUpdateHostAccess(const Extension& extension,
+                           base::StringPiece new_access);
 
   virtual bool ProfileIsSupervised() const { return false; }
 
@@ -322,6 +322,20 @@ void DeveloperPrivateApiUnitTest::GetProfileConfiguration(
       api::developer_private::ProfileInfo::FromValue(*response_value);
 }
 
+void DeveloperPrivateApiUnitTest::RunUpdateHostAccess(
+    const Extension& extension,
+    base::StringPiece new_access) {
+  SCOPED_TRACE(new_access);
+  ExtensionFunction::ScopedUserGestureForTests scoped_user_gesture;
+  scoped_refptr<UIThreadExtensionFunction> function = base::MakeRefCounted<
+      api::DeveloperPrivateUpdateExtensionConfigurationFunction>();
+  std::string args =
+      base::StringPrintf(R"([{"extensionId": "%s", "hostAccess": "%s"}])",
+                         extension.id().c_str(), new_access.data());
+  EXPECT_TRUE(api_test_utils::RunFunction(function.get(), args, profile()))
+      << function->GetError();
+}
+
 void DeveloperPrivateApiUnitTest::SetUp() {
   ExtensionServiceTestBase::SetUp();
 
@@ -369,7 +383,7 @@ TEST_F(DeveloperPrivateApiUnitTest,
   const std::string& id = extension->id();
 
   ScriptingPermissionsModifier(profile(), base::WrapRefCounted(extension))
-      .SetAllowedOnAllUrls(false);
+      .SetWithholdHostPermissions(true);
 
   TestExtensionPrefSetting(
       base::Bind(&HasPrefsPermission, &util::IsIncognitoEnabled, profile(), id),
@@ -377,9 +391,6 @@ TEST_F(DeveloperPrivateApiUnitTest,
   TestExtensionPrefSetting(
       base::Bind(&HasPrefsPermission, &util::AllowFileAccess, profile(), id),
       "fileAccess", id);
-  TestExtensionPrefSetting(base::Bind(&HasAllUrlsPermission,
-                                      base::RetainedRef(extension), profile()),
-                           "runOnAllUrls", id);
 }
 
 // Test developerPrivate.reload.
@@ -1309,8 +1320,8 @@ TEST_F(DeveloperPrivateApiUnitTest, GrantHostPermission) {
       ExtensionBuilder("test").AddPermission("<all_urls>").Build();
   service()->AddExtension(extension.get());
   ScriptingPermissionsModifier modifier(profile(), extension.get());
-  EXPECT_TRUE(modifier.IsAllowedOnAllUrls());
-  modifier.SetAllowedOnAllUrls(false);
+  EXPECT_FALSE(modifier.HasWithheldHostPermissions());
+  modifier.SetWithholdHostPermissions(true);
 
   auto run_add_host_permission = [this, extension](base::StringPiece host,
                                                    bool should_succeed,
@@ -1354,8 +1365,8 @@ TEST_F(DeveloperPrivateApiUnitTest, RemoveHostPermission) {
       ExtensionBuilder("test").AddPermission("<all_urls>").Build();
   service()->AddExtension(extension.get());
   ScriptingPermissionsModifier modifier(profile(), extension.get());
-  EXPECT_TRUE(modifier.IsAllowedOnAllUrls());
-  modifier.SetAllowedOnAllUrls(false);
+  EXPECT_FALSE(modifier.HasWithheldHostPermissions());
+  modifier.SetWithholdHostPermissions(true);
 
   auto run_remove_host_permission = [this, extension](
                                         base::StringPiece host,
@@ -1391,6 +1402,96 @@ TEST_F(DeveloperPrivateApiUnitTest, RemoveHostPermission) {
 
   run_remove_host_permission(host.spec(), true, nullptr);
   EXPECT_FALSE(modifier.HasGrantedHostPermission(host));
+}
+
+TEST_F(DeveloperPrivateApiUnitTest, UpdateHostAccess) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kRuntimeHostPermissions);
+
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("test").AddPermission("<all_urls>").Build();
+  service()->AddExtension(extension.get());
+  ScriptingPermissionsModifier modifier(profile(), extension.get());
+
+  EXPECT_FALSE(modifier.HasWithheldHostPermissions());
+
+  RunUpdateHostAccess(*extension, "ON_CLICK");
+  EXPECT_TRUE(modifier.HasWithheldHostPermissions());
+
+  RunUpdateHostAccess(*extension, "ON_ALL_SITES");
+  EXPECT_FALSE(modifier.HasWithheldHostPermissions());
+
+  RunUpdateHostAccess(*extension, "ON_SPECIFIC_SITES");
+  EXPECT_TRUE(modifier.HasWithheldHostPermissions());
+}
+
+TEST_F(DeveloperPrivateApiUnitTest,
+       UpdateHostAccess_SpecificSitesRemovedOnTransitionToOnClick) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kRuntimeHostPermissions);
+
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("test").AddPermission("<all_urls>").Build();
+  service()->AddExtension(extension.get());
+  ScriptingPermissionsModifier modifier(profile(), extension.get());
+  modifier.SetWithholdHostPermissions(true);
+
+  RunUpdateHostAccess(*extension, "ON_SPECIFIC_SITES");
+  const GURL example_com("https://example.com");
+  modifier.GrantHostPermission(example_com);
+  EXPECT_TRUE(modifier.HasWithheldHostPermissions());
+  EXPECT_TRUE(modifier.HasGrantedHostPermission(example_com));
+
+  RunUpdateHostAccess(*extension, "ON_CLICK");
+  EXPECT_TRUE(modifier.HasWithheldHostPermissions());
+  EXPECT_FALSE(modifier.HasGrantedHostPermission(example_com));
+
+  // NOTE(devlin): It's a bit unfortunate that by cycling between host access
+  // settings, a user loses any stored state. This would be painful if the user
+  // had set "always run on foo" for a dozen or so sites, and accidentally
+  // changed the setting.
+  // There are ways we could address this, such as introducing a tri-state for
+  // the preference and keeping a stored set of any granted host permissions,
+  // but this then results in a funny edge case:
+  // - User has "on specific sites" set, with access to example.com and
+  //   chromium.org granted.
+  // - User changes to "on click" -> no sites are granted.
+  // - User visits google.com, and says "always run on this site." This changes
+  //   the setting back to "on specific sites", and will implicitly re-grant
+  //   example.com and chromium.org permissions, without any additional
+  //   prompting.
+  // To avoid this, we just clear any granted permissions when the user
+  // transitions between states. Since this is definitely a power-user surface,
+  // this is likely okay.
+  RunUpdateHostAccess(*extension, "ON_SPECIFIC_SITES");
+  EXPECT_TRUE(modifier.HasWithheldHostPermissions());
+  EXPECT_FALSE(modifier.HasGrantedHostPermission(example_com));
+}
+
+TEST_F(DeveloperPrivateApiUnitTest,
+       UpdateHostAccess_SpecificSitesRemovedOnTransitionToAllSites) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kRuntimeHostPermissions);
+
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("test").AddPermission("<all_urls>").Build();
+  service()->AddExtension(extension.get());
+  ScriptingPermissionsModifier modifier(profile(), extension.get());
+  modifier.SetWithholdHostPermissions(true);
+
+  RunUpdateHostAccess(*extension, "ON_SPECIFIC_SITES");
+  const GURL example_com("https://example.com");
+  modifier.GrantHostPermission(example_com);
+  EXPECT_TRUE(modifier.HasWithheldHostPermissions());
+  EXPECT_TRUE(modifier.HasGrantedHostPermission(example_com));
+
+  RunUpdateHostAccess(*extension, "ON_ALL_SITES");
+  EXPECT_FALSE(modifier.HasWithheldHostPermissions());
+  EXPECT_TRUE(modifier.HasGrantedHostPermission(example_com));
+
+  RunUpdateHostAccess(*extension, "ON_SPECIFIC_SITES");
+  EXPECT_TRUE(modifier.HasWithheldHostPermissions());
+  EXPECT_FALSE(modifier.HasGrantedHostPermission(example_com));
 }
 
 class DeveloperPrivateZipInstallerUnitTest

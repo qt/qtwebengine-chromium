@@ -98,21 +98,12 @@ WindowEventDispatcher::ObserverNotifier::~ObserverNotifier() {
 ////////////////////////////////////////////////////////////////////////////////
 // WindowEventDispatcher, public:
 
-WindowEventDispatcher::WindowEventDispatcher(WindowTreeHost* host)
+WindowEventDispatcher::WindowEventDispatcher(WindowTreeHost* host,
+                                             bool are_events_in_pixels)
     : host_(host),
-      mouse_pressed_handler_(NULL),
-      mouse_moved_handler_(NULL),
-      touchpad_pinch_handler_(nullptr),
-      event_dispatch_target_(NULL),
-      old_dispatch_target_(NULL),
-      synthesize_mouse_move_(false),
-      move_hold_count_(0),
-      dispatching_held_event_(nullptr),
+      are_events_in_pixels_(are_events_in_pixels),
       observer_manager_(this),
-      event_targeter_(new WindowTargeter),
-      skip_ime_(false),
-      repost_event_factory_(this),
-      held_event_factory_(this) {
+      event_targeter_(std::make_unique<WindowTargeter>()) {
   ui::GestureRecognizer::Get()->AddGestureEventHelper(this);
   Env::GetInstance()->AddObserver(this);
   if (Env::GetInstance()->mode() == Env::Mode::MUS)
@@ -123,6 +114,10 @@ WindowEventDispatcher::~WindowEventDispatcher() {
   TRACE_EVENT0("shutdown", "WindowEventDispatcher::Destructor");
   Env::GetInstance()->RemoveObserver(this);
   ui::GestureRecognizer::Get()->RemoveGestureEventHelper(this);
+}
+
+void WindowEventDispatcher::Shutdown() {
+  in_shutdown_ = true;
 }
 
 ui::EventTargeter* WindowEventDispatcher::GetDefaultEventTargeter() {
@@ -295,6 +290,11 @@ void WindowEventDispatcher::TransformEventForDeviceScaleFactor(
 }
 
 void WindowEventDispatcher::DispatchMouseExitToHidingWindow(Window* window) {
+  // Dispatching events during shutdown can cause crashes (e.g. in Chrome OS
+  // system tray cleanup). https://crbug.com/874156
+  if (in_shutdown_)
+    return;
+
   // The mouse capture is intentionally ignored. Think that a mouse enters
   // to a window, the window sets the capture, the mouse exits the window,
   // and then it releases the capture. In that case OnMouseExited won't
@@ -546,11 +546,19 @@ ui::EventTarget* WindowEventDispatcher::GetRootForEvent(ui::Event* event) {
 }
 
 void WindowEventDispatcher::OnEventProcessingStarted(ui::Event* event) {
+  // Don't dispatch events during shutdown.
+  if (in_shutdown_) {
+    event->SetHandled();
+    return;
+  }
+
   // The held events are already in |window()|'s coordinate system. So it is
   // not necessary to apply the transform to convert from the host's
   // coordinate system to |window()|'s coordinate system.
-  if (event->IsLocatedEvent() && !is_dispatched_held_event(*event))
+  if (event->IsLocatedEvent() && !is_dispatched_held_event(*event) &&
+      are_events_in_pixels_) {
     TransformEventForDeviceScaleFactor(static_cast<ui::LocatedEvent*>(event));
+  }
 
   if (mus_mouse_location_updater_)
     mus_mouse_location_updater_->OnEventProcessingStarted(*event);
@@ -559,6 +567,9 @@ void WindowEventDispatcher::OnEventProcessingStarted(ui::Event* event) {
 }
 
 void WindowEventDispatcher::OnEventProcessingFinished(ui::Event* event) {
+  if (in_shutdown_)
+    return;
+
   if (mus_mouse_location_updater_)
     mus_mouse_location_updater_->OnEventProcessingFinished();
   observer_notifiers_.pop();

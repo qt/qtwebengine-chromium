@@ -91,7 +91,7 @@ void PropertyTreeManager::SetupRootTransformNode() {
   transform_tree.SetFromScreen(kRealRootNodeId, from_screen);
   transform_tree.set_needs_update(true);
 
-  transform_node_map_.Set(TransformPaintPropertyNode::Root(),
+  transform_node_map_.Set(&TransformPaintPropertyNode::Root(),
                           transform_node.id);
   root_layer_->SetTransformTreeIndex(transform_node.id);
 }
@@ -109,7 +109,7 @@ void PropertyTreeManager::SetupRootClipNode() {
       gfx::SizeF(root_layer_->layer_tree_host()->device_viewport_size()));
   clip_node.transform_id = kRealRootNodeId;
 
-  clip_node_map_.Set(ClipPaintPropertyNode::Root(), clip_node.id);
+  clip_node_map_.Set(&ClipPaintPropertyNode::Root(), clip_node.id);
   root_layer_->SetClipTreeIndex(clip_node.id);
 }
 
@@ -125,7 +125,7 @@ void PropertyTreeManager::SetupRootEffectNode() {
   static UniqueObjectId unique_id = NewUniqueObjectId();
 
   effect_node.stable_id =
-      CompositorElementIdFromUniqueObjectId(unique_id).ToInternalValue();
+      CompositorElementIdFromUniqueObjectId(unique_id).GetInternalValue();
   effect_node.transform_id = kRealRootNodeId;
   effect_node.clip_id = kSecondaryRootNodeId;
   effect_node.has_render_surface = true;
@@ -133,7 +133,7 @@ void PropertyTreeManager::SetupRootEffectNode() {
 
   current_effect_id_ = effect_node.id;
   current_effect_type_ = CcEffectType::kEffect;
-  current_effect_ = EffectPaintPropertyNode::Root();
+  current_effect_ = &EffectPaintPropertyNode::Root();
   current_clip_ = current_effect_->OutputClip();
 }
 
@@ -146,7 +146,7 @@ void PropertyTreeManager::SetupRootScrollNode() {
   DCHECK_EQ(scroll_node.id, kSecondaryRootNodeId);
   scroll_node.transform_id = kSecondaryRootNodeId;
 
-  scroll_node_map_.Set(ScrollPaintPropertyNode::Root(), scroll_node.id);
+  scroll_node_map_.Set(&ScrollPaintPropertyNode::Root(), scroll_node.id);
   root_layer_->SetScrollTreeIndex(scroll_node.id);
 }
 
@@ -184,6 +184,7 @@ int PropertyTreeManager::EnsureCompositorTransformNode(
   if (compositor_element_id) {
     property_trees_.element_id_to_transform_node_index[compositor_element_id] =
         id;
+    compositor_node.element_id = compositor_element_id;
   }
 
   // If this transform is a scroll offset translation, create the associated
@@ -210,6 +211,21 @@ int PropertyTreeManager::EnsureCompositorTransformNode(
   GetTransformTree().set_needs_update(true);
 
   return id;
+}
+
+void PropertyTreeManager::EnsureCompositorPageScaleTransformNode(
+    const TransformPaintPropertyNode* node) {
+  int id = EnsureCompositorTransformNode(node);
+  DCHECK(GetTransformTree().Node(id));
+  cc::TransformNode& compositor_node = *GetTransformTree().Node(id);
+
+  // The page scale node is special because its transform matrix is assumed to
+  // be in the post_local matrix by the compositor. There should be no
+  // translation from the origin so we clear the other matrices.
+  DCHECK(node->Origin() == FloatPoint3D());
+  compositor_node.post_local.matrix() = compositor_node.local.matrix();
+  compositor_node.pre_local.matrix().setIdentity();
+  compositor_node.local.matrix().setIdentity();
 }
 
 int PropertyTreeManager::EnsureCompositorClipNode(
@@ -263,6 +279,10 @@ void PropertyTreeManager::CreateCompositorScrollNode(
       scroll_node->UserScrollableHorizontal();
   compositor_node.user_scrollable_vertical =
       scroll_node->UserScrollableVertical();
+  compositor_node.scrolls_inner_viewport = scroll_node->ScrollsInnerViewport();
+  compositor_node.scrolls_outer_viewport = scroll_node->ScrollsOuterViewport();
+  compositor_node.max_scroll_offset_affected_by_page_scale =
+      scroll_node->MaxScrollOffsetAffectedByPageScale();
   compositor_node.main_thread_scrolling_reasons =
       scroll_node->GetMainThreadScrollingReasons();
 
@@ -305,17 +325,16 @@ void PropertyTreeManager::EmitClipMaskLayer() {
   // See PropertyTreeManager::SynthesizeCcEffectsForClipsIfNeeded().
   DCHECK_EQ(static_cast<uint64_t>(cc::EffectNode::INVALID_STABLE_ID),
             mask_isolation.stable_id);
-  mask_isolation.stable_id = mask_isolation_id.ToInternalValue();
+  mask_isolation.stable_id = mask_isolation_id.GetInternalValue();
 
   cc::EffectNode& mask_effect = *GetEffectTree().Node(
       GetEffectTree().Insert(cc::EffectNode(), current_effect_id_));
-  mask_effect.stable_id = mask_effect_id.ToInternalValue();
+  mask_effect.stable_id = mask_effect_id.GetInternalValue();
   mask_effect.clip_id = clip_id;
   mask_effect.has_render_surface = true;
   mask_effect.blend_mode = SkBlendMode::kDstIn;
 
-  const TransformPaintPropertyNode* clip_space =
-      current_clip_->LocalTransformSpace();
+  const auto* clip_space = current_clip_->LocalTransformSpace();
   root_layer_->AddChild(mask_layer);
   mask_layer->set_property_tree_sequence_number(sequence_number_);
   mask_layer->SetTransformTreeIndex(EnsureCompositorTransformNode(clip_space));
@@ -559,7 +578,7 @@ bool PropertyTreeManager::BuildEffectNodesRecursively(
   cc::EffectNode& effect_node = *GetEffectTree().Node(
       GetEffectTree().Insert(cc::EffectNode(), current_effect_id_));
   effect_node.stable_id =
-      next_effect->GetCompositorElementId().ToInternalValue();
+      next_effect->GetCompositorElementId().GetInternalValue();
   effect_node.clip_id = output_clip_id;
   // Every effect is supposed to have render surface enabled for grouping,
   // but we can get away without one if the effect is opacity-only and has only

@@ -31,12 +31,10 @@
 
 #include "build/build_config.h"
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/html_element_or_long.h"
 #include "third_party/blink/renderer/bindings/core/v8/html_option_element_or_html_opt_group_element.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer.h"
@@ -72,6 +70,7 @@
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 
@@ -257,7 +256,7 @@ void HTMLSelectElement::setValue(const String& value, bool send_events) {
   HTMLOptionElement* previous_selected_option = SelectedOption();
   SetSuggestedOption(nullptr);
   if (is_autofilled_by_preview_)
-    SetAutofilled(false);
+    SetAutofillState(WebAutofillState::kNotFilled);
   SelectOptionFlags flags = kDeselectOtherOptions | kMakeOptionDirty;
   if (send_events)
     flags |= kDispatchInputAndChangeEvent;
@@ -323,7 +322,7 @@ void HTMLSelectElement::ParseAttribute(
   }
 }
 
-bool HTMLSelectElement::ShouldShowFocusRingOnMouseFocus() const {
+bool HTMLSelectElement::MayTriggerVirtualKeyboard() const {
   return true;
 }
 
@@ -965,7 +964,7 @@ void HTMLSelectElement::OptionRemoved(HTMLOptionElement& option) {
   if (suggested_option_ == &option)
     SetSuggestedOption(nullptr);
   if (option.Selected())
-    SetAutofilled(false);
+    SetAutofillState(WebAutofillState::kNotFilled);
   SetNeedsValidityCheck();
   last_on_change_selection_.clear();
 
@@ -1001,7 +1000,7 @@ void HTMLSelectElement::SelectOption(HTMLOptionElement* element,
 
   // selectedOption() is O(N).
   if (IsAutofilled() && SelectedOption() != element)
-    SetAutofilled(false);
+    SetAutofillState(WebAutofillState::kNotFilled);
 
   if (element) {
     if (!element->Selected())
@@ -1232,7 +1231,7 @@ void HTMLSelectElement::AppendToFormData(FormData& form_data) {
 
   for (auto* const option : GetOptionList()) {
     if (option->Selected() && !option->IsDisabledFormControl())
-      form_data.append(name, option->value());
+      form_data.AppendFromElement(name, option->value());
   }
 }
 

@@ -21,11 +21,11 @@
 
 #include "base/win/scoped_handle.h"
 #elif defined(OS_FUCHSIA)
+#include <lib/zx/channel.h>
 #include <zircon/process.h>
 #include <zircon/processargs.h>
-#include <zircon/syscalls.h>
 
-#include "base/fuchsia/scoped_zx_handle.h"
+#include "base/fuchsia/fuchsia_logging.h"
 #elif defined(OS_POSIX)
 #include <fcntl.h>
 #include <sys/types.h>
@@ -66,7 +66,8 @@ void CreateChannel(PlatformHandle* local_endpoint,
   const DWORD kDesiredAccess = GENERIC_READ | GENERIC_WRITE;
   // The SECURITY_ANONYMOUS flag means that the server side cannot impersonate
   // the client.
-  DWORD kFlags = SECURITY_SQOS_PRESENT | SECURITY_ANONYMOUS;
+  DWORD kFlags =
+      SECURITY_SQOS_PRESENT | SECURITY_ANONYMOUS | FILE_FLAG_OVERLAPPED;
   // Allow the handle to be inherited by child processes.
   SECURITY_ATTRIBUTES security_attributes = {sizeof(SECURITY_ATTRIBUTES),
                                              nullptr, TRUE};
@@ -83,12 +84,12 @@ void CreateChannel(PlatformHandle* local_endpoint,
 #elif defined(OS_FUCHSIA)
 void CreateChannel(PlatformHandle* local_endpoint,
                    PlatformHandle* remote_endpoint) {
-  zx_handle_t handles[2] = {};
-  zx_status_t result = zx_channel_create(0, &handles[0], &handles[1]);
-  CHECK_EQ(ZX_OK, result);
+  zx::channel handles[2];
+  zx_status_t result = zx::channel::create(0, &handles[0], &handles[1]);
+  ZX_CHECK(result == ZX_OK, result);
 
-  *local_endpoint = PlatformHandle(base::ScopedZxHandle(handles[0]));
-  *remote_endpoint = PlatformHandle(base::ScopedZxHandle(handles[1]));
+  *local_endpoint = PlatformHandle(std::move(handles[0]));
+  *remote_endpoint = PlatformHandle(std::move(handles[1]));
   DCHECK(local_endpoint->is_valid());
   DCHECK(remote_endpoint->is_valid());
 }
@@ -173,13 +174,14 @@ void PlatformChannel::PrepareToPassRemoteEndpoint(HandlePassingInfo* info,
   *value = base::NumberToString(
       HandleToLong(remote_endpoint_.platform_handle().GetHandle().Get()));
 #elif defined(OS_FUCHSIA)
-  const uint32_t id = PA_HND(PA_USER0, 0);
+  const uint32_t id = PA_HND(PA_USER0, info->size());
   info->push_back({id, remote_endpoint_.platform_handle().GetHandle().get()});
   *value = base::NumberToString(id);
 #elif defined(OS_ANDROID)
   int fd = remote_endpoint_.platform_handle().GetFD().get();
-  info->emplace_back(fd, kAndroidClientHandleDescriptor);
-  *value = base::NumberToString(kAndroidClientHandleDescriptor);
+  int mapped_fd = kAndroidClientHandleDescriptor + info->size();
+  info->emplace_back(fd, mapped_fd);
+  *value = base::NumberToString(mapped_fd);
 #elif defined(OS_POSIX)
   // Arbitrary sanity check to ensure the loop below terminates reasonably
   // quickly.
@@ -206,10 +208,25 @@ void PlatformChannel::PrepareToPassRemoteEndpoint(
     command_line->AppendSwitchASCII(kHandleSwitch, value);
 }
 
-void PlatformChannel::RemoteProcessLaunched() {
+void PlatformChannel::PrepareToPassRemoteEndpoint(
+    base::LaunchOptions* options,
+    base::CommandLine* command_line) {
+#if defined(OS_WIN)
+  PrepareToPassRemoteEndpoint(&options->handles_to_inherit, command_line);
+#elif defined(OS_FUCHSIA)
+  PrepareToPassRemoteEndpoint(&options->handles_to_transfer, command_line);
+#elif defined(OS_POSIX)
+  PrepareToPassRemoteEndpoint(&options->fds_to_remap, command_line);
+#else
+#error "Platform not supported."
+#endif
+}
+
+void PlatformChannel::RemoteProcessLaunchAttempted() {
 #if defined(OS_FUCHSIA)
-  // Unlike other platforms, Fuchsia just transfers handle ownership to the
-  // launcher process rather than duplicating it.
+  // Unlike other platforms, Fuchsia transfers handle ownership to the new
+  // process, rather than duplicating it. For consistency the process-launch
+  // call will have consumed the handle regardless of whether launch succeeded.
   DCHECK(remote_endpoint_.platform_handle().is_valid_handle());
   ignore_result(remote_endpoint_.TakePlatformHandle().ReleaseHandle());
 #else
@@ -234,8 +251,8 @@ PlatformChannelEndpoint PlatformChannel::RecoverPassedEndpointFromString(
     DLOG(ERROR) << "Invalid PlatformChannel endpoint string.";
     return PlatformChannelEndpoint();
   }
-  return PlatformChannelEndpoint(PlatformHandle(base::ScopedZxHandle(
-      zx_get_startup_handle(base::checked_cast<uint32_t>(handle_value)))));
+  return PlatformChannelEndpoint(PlatformHandle(zx::handle(
+      zx_take_startup_handle(base::checked_cast<uint32_t>(handle_value)))));
 #elif defined(OS_ANDROID)
   base::GlobalDescriptors::Key key = -1;
   if (value.empty() || !base::StringToUint(value, &key)) {

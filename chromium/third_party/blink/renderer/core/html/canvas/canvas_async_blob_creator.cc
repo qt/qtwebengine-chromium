@@ -13,22 +13,25 @@
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/fileapi/blob.h"
+#include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/graphics/image_data_buffer.h"
 #include "third_party/blink/renderer/platform/histogram.h"
+#include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
+#include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
-#include "third_party/blink/renderer/platform/threading/background_task_runner.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
+#include "third_party/skia/include/core/SkColorSpaceXform.h"
 #include "third_party/skia/include/core/SkSurface.h"
 
 namespace blink {
 
 namespace {
 
-const double kSlackBeforeDeadline =
-    0.001;  // a small slack period between deadline and current time for safety
+// a small slack period between deadline and current time for safety
+constexpr TimeDelta kSlackBeforeDeadline = TimeDelta::FromMilliseconds(1);
 
 /* The value is based on user statistics on Nov 2017. */
 #if (defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_WIN))
@@ -50,10 +53,8 @@ const double kIdleTaskCompleteTimeoutDelayMs = 5700.0;
 const double kIdleTaskCompleteTimeoutDelayMs = 9000.0;
 #endif
 
-bool IsDeadlineNearOrPassed(double deadline_seconds) {
-  return (deadline_seconds - kSlackBeforeDeadline -
-              CurrentTimeTicksInSeconds() <=
-          0);
+bool IsDeadlineNearOrPassed(TimeTicks deadline) {
+  return CurrentTimeTicks() >= deadline - kSlackBeforeDeadline;
 }
 
 String ConvertMimeTypeEnumToString(ImageEncoder::MimeType mime_type_enum) {
@@ -103,47 +104,47 @@ enum ElapsedTimeHistogramType {
 
 void RecordElapsedTimeHistogram(ElapsedTimeHistogramType type,
                                 ImageEncoder::MimeType mime_type,
-                                double elapsed_time) {
+                                TimeDelta elapsed_time) {
   if (type == kInitiateEncodingDelay) {
     if (mime_type == ImageEncoder::kMimeTypePng) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_png_initiate_encoding_counter,
           ("Blink.Canvas.ToBlob.InitiateEncodingDelay.PNG", 0, 10000000, 50));
-      to_blob_png_initiate_encoding_counter.Count(elapsed_time * 1000000.0);
+      to_blob_png_initiate_encoding_counter.CountMicroseconds(elapsed_time);
     } else if (mime_type == ImageEncoder::kMimeTypeJpeg) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_jpeg_initiate_encoding_counter,
           ("Blink.Canvas.ToBlob.InitiateEncodingDelay.JPEG", 0, 10000000, 50));
-      to_blob_jpeg_initiate_encoding_counter.Count(elapsed_time * 1000000.0);
+      to_blob_jpeg_initiate_encoding_counter.CountMicroseconds(elapsed_time);
     }
   } else if (type == kCompleteEncodingDelay) {
     if (mime_type == ImageEncoder::kMimeTypePng) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_png_idle_encode_counter,
           ("Blink.Canvas.ToBlob.CompleteEncodingDelay.PNG", 0, 10000000, 50));
-      to_blob_png_idle_encode_counter.Count(elapsed_time * 1000000.0);
+      to_blob_png_idle_encode_counter.CountMicroseconds(elapsed_time);
     } else if (mime_type == ImageEncoder::kMimeTypeJpeg) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_jpeg_idle_encode_counter,
           ("Blink.Canvas.ToBlob.CompleteEncodingDelay.JPEG", 0, 10000000, 50));
-      to_blob_jpeg_idle_encode_counter.Count(elapsed_time * 1000000.0);
+      to_blob_jpeg_idle_encode_counter.CountMicroseconds(elapsed_time);
     }
   } else if (type == kToBlobDuration) {
     if (mime_type == ImageEncoder::kMimeTypePng) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_png_counter,
           ("Blink.Canvas.ToBlobDuration.PNG", 0, 10000000, 50));
-      to_blob_png_counter.Count(elapsed_time * 1000000.0);
+      to_blob_png_counter.CountMicroseconds(elapsed_time);
     } else if (mime_type == ImageEncoder::kMimeTypeJpeg) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_jpeg_counter,
           ("Blink.Canvas.ToBlobDuration.JPEG", 0, 10000000, 50));
-      to_blob_jpeg_counter.Count(elapsed_time * 1000000.0);
+      to_blob_jpeg_counter.CountMicroseconds(elapsed_time);
     } else if (mime_type == ImageEncoder::kMimeTypeWebp) {
       DEFINE_THREAD_SAFE_STATIC_LOCAL(
           CustomCountHistogram, to_blob_webp_counter,
           ("Blink.Canvas.ToBlobDuration.WEBP", 0, 10000000, 50));
-      to_blob_webp_counter.Count(elapsed_time * 1000000.0);
+      to_blob_webp_counter.CountMicroseconds(elapsed_time);
     }
   }
 }
@@ -154,40 +155,50 @@ CanvasAsyncBlobCreator* CanvasAsyncBlobCreator::Create(
     scoped_refptr<StaticBitmapImage> image,
     const String& mime_type,
     V8BlobCallback* callback,
-    double start_time,
+    ToBlobFunctionType function_type,
+    TimeTicks start_time,
     ExecutionContext* context) {
-  return new CanvasAsyncBlobCreator(image,
-                                    ConvertMimeTypeStringToEnum(mime_type),
-                                    callback, start_time, context, nullptr);
+  ImageEncodeOptions options;
+  options.setType(mime_type);
+  return new CanvasAsyncBlobCreator(image, options, function_type, callback,
+                                    start_time, context, nullptr);
 }
 
 CanvasAsyncBlobCreator* CanvasAsyncBlobCreator::Create(
     scoped_refptr<StaticBitmapImage> image,
-    const String& mime_type,
-    double start_time,
+    const ImageEncodeOptions& options,
+    ToBlobFunctionType function_type,
+    TimeTicks start_time,
     ExecutionContext* context,
     ScriptPromiseResolver* resolver) {
-  return new CanvasAsyncBlobCreator(image,
-                                    ConvertMimeTypeStringToEnum(mime_type),
-                                    nullptr, start_time, context, resolver);
+  return new CanvasAsyncBlobCreator(image, options, function_type, nullptr,
+                                    start_time, context, resolver);
 }
 
 CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
     scoped_refptr<StaticBitmapImage> image,
-    ImageEncoder::MimeType mime_type,
+    const ImageEncodeOptions& options,
+    ToBlobFunctionType function_type,
     V8BlobCallback* callback,
-    double start_time,
+    TimeTicks start_time,
     ExecutionContext* context,
     ScriptPromiseResolver* resolver)
     : fail_encoder_initialization_for_test_(false),
       image_(image),
       context_(context),
-      mime_type_(mime_type),
+      encode_options_(options),
+      function_type_(function_type),
       start_time_(start_time),
       static_bitmap_image_loaded_(false),
       callback_(ToV8PersistentCallbackFunction(callback)),
       script_promise_resolver_(resolver) {
   DCHECK(image);
+
+  String mime_type_string = ImageEncoderUtils::ToEncodingMimeType(
+      encode_options_.type(),
+      ImageEncoderUtils::kEncodeReasonConvertToBlobPromise);
+  mime_type_ = ConvertMimeTypeStringToEnum(mime_type_string);
+
   // We use pixmap to access the image pixels. Make the image unaccelerated if
   // necessary.
   image_ = image_->MakeUnaccelerated();
@@ -208,15 +219,74 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
     }
   }
 
-  // toBlob always encodes in sRGB and does not include the color space
-  // information.
-  if (skia_image->colorSpace()) {
-    image_ = image_->ConvertToColorSpace(SkColorSpace::MakeSRGB(),
-                                         SkTransferFunctionBehavior::kIgnore);
-    skia_image = image_->PaintImageForCurrentFrame().GetSkImage();
+  // For kHTMLCanvasToBlobCallback and kOffscreenCanvasConvertToBlobPromise
+  // to-blob function types, we color convert to sRGB and do not tag the image
+  // with any color space info.
+  // For kHTMLCanvasConvertToBlobPromise to-blob function type, we color
+  // covnert to the requested color space and pixel format.
+  if (function_type_ != kHTMLCanvasConvertToBlobPromise) {
+    if (skia_image->colorSpace()) {
+      image_ = image_->ConvertToColorSpace(SkColorSpace::MakeSRGB());
+      skia_image = image_->PaintImageForCurrentFrame().GetSkImage();
+    }
+
+    if (skia_image->peekPixels(&src_data_)) {
+      src_data_.setColorSpace(nullptr);
+      static_bitmap_image_loaded_ = true;
+    }
+    DCHECK(!src_data_.colorSpace());
+  } else {
+    sk_sp<SkColorSpace> blob_color_space =
+        BlobColorSpaceToSkColorSpace(encode_options_.colorSpace());
+
+    if (!SkColorSpace::Equals(skia_image->colorSpace(),
+                              blob_color_space.get())) {
+      if (!skia_image->colorSpace()) {
+        skia_image->peekPixels(&src_data_);
+        src_data_.setColorSpace(SkColorSpace::MakeSRGB());
+        skia_image = SkImage::MakeFromRaster(src_data_, nullptr, nullptr);
+      }
+      DCHECK(skia_image->colorSpace());
+      skia_image = skia_image->makeColorSpace(blob_color_space);
+      image_ = StaticBitmapImage::Create(skia_image);
+    }
+
+    if (skia_image->peekPixels(&src_data_))
+      static_bitmap_image_loaded_ = true;
+
+    // If the source image is 8 bit per channel but the blob is requested in
+    // 16 bpc PNG, we need to ensure the color type of the pixmap is
+    // kRGBA_F16_SkColorType to kick in 16 bit encoding in SkPngEncoder. Since
+    // SkPixmap only holds a pointer to data, we need a helper data member here.
+    if (mime_type_ == ImageEncoder::kMimeTypePng &&
+        encode_options_.pixelFormat() == kRGBA16ImagePixelFormatName &&
+        src_data_.colorType() == kN32_SkColorType) {
+      size_t data_length = src_data_.width() * src_data_.height() *
+                           SkColorTypeBytesPerPixel(kRGBA_F16_SkColorType);
+      png_16bit_data_helper_ = SkData::MakeUninitialized(data_length);
+      SkColorSpaceXform::ColorFormat src_format =
+          SkColorSpaceXform::ColorFormat::kRGBA_8888_ColorFormat;
+      if (kN32_SkColorType == kBGRA_8888_SkColorType)
+        src_format = SkColorSpaceXform::ColorFormat::kBGRA_8888_ColorFormat;
+      if (SkColorSpaceXform::Apply(
+              src_data_.colorSpace(),
+              SkColorSpaceXform::ColorFormat::kRGBA_F16_ColorFormat,
+              png_16bit_data_helper_->writable_data(), src_data_.colorSpace(),
+              src_format, src_data_.addr(),
+              src_data_.width() * src_data_.height(),
+              SkColorSpaceXform::AlphaOp::kPreserve_AlphaOp)) {
+        SkImageInfo info = SkImageInfo::Make(
+            src_data_.width(), src_data_.height(), kRGBA_F16_SkColorType,
+            src_data_.alphaType(), src_data_.info().refColorSpace());
+        src_data_.reset(info, png_16bit_data_helper_->data(),
+                        info.minRowBytes());
+      }
+      skia_image = SkImage::MakeFromRaster(src_data_, nullptr, nullptr);
+      image_ = StaticBitmapImage::Create(skia_image);
+    }
   }
 
-  if (skia_image->peekPixels(&src_data_)) {
+  if (static_bitmap_image_loaded_) {
     // Ensure that the size of the to-be-encoded-image does not pass the maximum
     // size supported by the encoders.
     int max_dimension = ImageEncoder::MaxDimension(mime_type_);
@@ -226,22 +296,13 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
                          std::min(info.height(), max_dimension));
       src_data_.reset(info, src_data_.addr(), src_data_.rowBytes());
     }
-
-    src_data_.setColorSpace(nullptr);
-    static_bitmap_image_loaded_ = true;
   }
-  DCHECK(!src_data_.colorSpace());
 
   idle_task_status_ = kIdleTaskNotSupported;
   num_rows_completed_ = 0;
   if (context->IsDocument()) {
     parent_frame_task_runner_ =
         context->GetTaskRunner(TaskType::kCanvasBlobSerialization);
-  }
-  if (script_promise_resolver_) {
-    function_type_ = kOffscreenCanvasToBlobPromise;
-  } else {
-    function_type_ = kHTMLCanvasToBlobCallback;
   }
 }
 
@@ -254,6 +315,13 @@ void CanvasAsyncBlobCreator::Dispose() {
   callback_.Clear();
   script_promise_resolver_.Clear();
   image_ = nullptr;
+}
+
+ImageEncodeOptions CanvasAsyncBlobCreator::GetImageEncodeOptionsForMimeType(
+    ImageEncoder::MimeType mime_type) {
+  ImageEncodeOptions encode_options;
+  encode_options.setType(ConvertMimeTypeEnumToString(mime_type));
+  return encode_options;
 }
 
 bool CanvasAsyncBlobCreator::EncodeImage(const double& quality) {
@@ -273,7 +341,8 @@ void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
   }
   if (mime_type_ == ImageEncoder::kMimeTypeWebp) {
     if (!IsMainThread()) {
-      DCHECK(function_type_ == kOffscreenCanvasToBlobPromise);
+      DCHECK(function_type_ == kHTMLCanvasConvertToBlobPromise ||
+             function_type_ == kOffscreenCanvasConvertToBlobPromise);
       // When OffscreenCanvas.convertToBlob() occurs on worker thread,
       // we do not need to use background task runner to reduce load on main.
       // So we just directly encode images on the worker thread.
@@ -293,7 +362,7 @@ void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
                         WrapPersistent(this)));
 
     } else {
-      BackgroundTaskRunner::PostOnBackgroundThread(
+      BackgroundScheduler::PostOnBackgroundThread(
           FROM_HERE,
           CrossThreadBind(&CanvasAsyncBlobCreator::EncodeImageOnEncoderThread,
                           WrapCrossThreadPersistent(this), quality));
@@ -313,20 +382,20 @@ void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
 }
 
 void CanvasAsyncBlobCreator::ScheduleInitiateEncoding(double quality) {
-  schedule_idle_task_start_time_ = WTF::CurrentTimeTicksInSeconds();
+  schedule_idle_task_start_time_ = WTF::CurrentTimeTicks();
   Platform::Current()->CurrentThread()->Scheduler()->PostIdleTask(
       FROM_HERE, WTF::Bind(&CanvasAsyncBlobCreator::InitiateEncoding,
                            WrapPersistent(this), quality));
 }
 
 void CanvasAsyncBlobCreator::InitiateEncoding(double quality,
-                                              double deadline_seconds) {
+                                              TimeTicks deadline) {
   if (idle_task_status_ == kIdleTaskSwitchedToImmediateTask) {
     return;
   }
   RecordElapsedTimeHistogram(
       kInitiateEncodingDelay, mime_type_,
-      WTF::CurrentTimeTicksInSeconds() - schedule_idle_task_start_time_);
+      WTF::CurrentTimeTicks() - schedule_idle_task_start_time_);
 
   DCHECK(idle_task_status_ == kIdleTaskNotStarted);
   idle_task_status_ = kIdleTaskStarted;
@@ -337,17 +406,17 @@ void CanvasAsyncBlobCreator::InitiateEncoding(double quality,
   }
 
   // Re-use this time variable to collect data on complete encoding delay
-  schedule_idle_task_start_time_ = WTF::CurrentTimeTicksInSeconds();
-  IdleEncodeRows(deadline_seconds);
+  schedule_idle_task_start_time_ = WTF::CurrentTimeTicks();
+  IdleEncodeRows(deadline);
 }
 
-void CanvasAsyncBlobCreator::IdleEncodeRows(double deadline_seconds) {
+void CanvasAsyncBlobCreator::IdleEncodeRows(TimeTicks deadline) {
   if (idle_task_status_ == kIdleTaskSwitchedToImmediateTask) {
     return;
   }
 
   for (int y = num_rows_completed_; y < src_data_.height(); ++y) {
-    if (IsDeadlineNearOrPassed(deadline_seconds)) {
+    if (IsDeadlineNearOrPassed(deadline)) {
       num_rows_completed_ = y;
       Platform::Current()->CurrentThread()->Scheduler()->PostIdleTask(
           FROM_HERE, WTF::Bind(&CanvasAsyncBlobCreator::IdleEncodeRows,
@@ -364,10 +433,10 @@ void CanvasAsyncBlobCreator::IdleEncodeRows(double deadline_seconds) {
   num_rows_completed_ = src_data_.height();
 
   idle_task_status_ = kIdleTaskCompleted;
-  double elapsed_time =
-      WTF::CurrentTimeTicksInSeconds() - schedule_idle_task_start_time_;
+  TimeDelta elapsed_time =
+      WTF::CurrentTimeTicks() - schedule_idle_task_start_time_;
   RecordElapsedTimeHistogram(kCompleteEncodingDelay, mime_type_, elapsed_time);
-  if (IsDeadlineNearOrPassed(deadline_seconds)) {
+  if (IsDeadlineNearOrPassed(deadline)) {
     context_->GetTaskRunner(TaskType::kCanvasBlobSerialization)
         ->PostTask(FROM_HERE,
                    WTF::Bind(&CanvasAsyncBlobCreator::CreateBlobAndReturnResult,
@@ -405,7 +474,7 @@ void CanvasAsyncBlobCreator::ForceEncodeRowsOnCurrentThread() {
 void CanvasAsyncBlobCreator::CreateBlobAndReturnResult() {
   RecordIdleTaskStatusHistogram(idle_task_status_);
   RecordElapsedTimeHistogram(kToBlobDuration, mime_type_,
-                             WTF::CurrentTimeTicksInSeconds() - start_time_);
+                             WTF::CurrentTimeTicks() - start_time_);
 
   Blob* result_blob = Blob::Create(encoded_image_.data(), encoded_image_.size(),
                                    ConvertMimeTypeEnumToString(mime_type_));
@@ -435,8 +504,9 @@ void CanvasAsyncBlobCreator::CreateNullAndReturnResult() {
                           V8BlobCallback>::InvokeAndReportException,
                       WrapPersistent(callback_.Get()), nullptr, nullptr));
   } else {
-    script_promise_resolver_->Reject(DOMException::Create(
-        kEncodingError, "Encoding of the source image has failed."));
+    script_promise_resolver_->Reject(
+        DOMException::Create(DOMExceptionCode::kEncodingError,
+                             "Encoding of the source image has failed."));
   }
   // Avoid unwanted retention, see dispose().
   Dispose();
@@ -468,7 +538,6 @@ bool CanvasAsyncBlobCreator::InitializeEncoder(double quality) {
     SkJpegEncoder::Options options;
     options.fQuality = ImageEncoder::ComputeJpegQuality(quality);
     options.fAlphaOption = SkJpegEncoder::AlphaOption::kBlendOnBlack;
-    options.fBlendBehavior = SkTransferFunctionBehavior::kIgnore;
     if (options.fQuality == 100) {
       options.fDownsample = SkJpegEncoder::Downsample::k444;
     }
@@ -483,7 +552,6 @@ bool CanvasAsyncBlobCreator::InitializeEncoder(double quality) {
     SkPngEncoder::Options options;
     options.fFilterFlags = SkPngEncoder::FilterFlag::kSub;
     options.fZLibLevel = 3;
-    options.fUnpremulBehavior = SkTransferFunctionBehavior::kIgnore;
     encoder_ = ImageEncoder::Create(&encoded_image_, src_data_, options);
   }
 
@@ -559,6 +627,26 @@ void CanvasAsyncBlobCreator::Trace(blink::Visitor* visitor) {
   visitor->Trace(context_);
   visitor->Trace(callback_);
   visitor->Trace(script_promise_resolver_);
+}
+
+sk_sp<SkColorSpace> CanvasAsyncBlobCreator::BlobColorSpaceToSkColorSpace(
+    String blob_color_space) {
+  SkColorSpace::Gamut gamut = SkColorSpace::kSRGB_Gamut;
+  if (blob_color_space == kDisplayP3ImageColorSpaceName)
+    gamut = SkColorSpace::kDCIP3_D65_Gamut;
+  else if (blob_color_space == kRec2020ImageColorSpaceName)
+    gamut = SkColorSpace::kRec2020_Gamut;
+  return SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma, gamut);
+}
+
+bool CanvasAsyncBlobCreator::EncodeImageForConvertToBlobTest() {
+  if (!static_bitmap_image_loaded_)
+    return false;
+  std::unique_ptr<ImageDataBuffer> buffer = ImageDataBuffer::Create(src_data_);
+  if (!buffer)
+    return false;
+  return buffer->EncodeImage(encode_options_.type(), encode_options_.quality(),
+                             &encoded_image_);
 }
 
 }  // namespace blink

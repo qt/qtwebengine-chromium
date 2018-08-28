@@ -420,7 +420,7 @@ DisplayScheduler::DesiredBeginFrameDeadlineMode() const {
   }
 
   if (!needs_draw_) {
-    TRACE_EVENT_INSTANT0("cc", "No damage yet", TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT0("viz", "No damage yet", TRACE_EVENT_SCOPE_THREAD);
     return BeginFrameDeadlineMode::kLate;
   }
 
@@ -463,7 +463,7 @@ void DisplayScheduler::ScheduleBeginFrameDeadline() {
   begin_frame_deadline_task_.Cancel();
 
   if (begin_frame_deadline_task_time_ == base::TimeTicks::Max()) {
-    TRACE_EVENT_INSTANT0("cc", "Using infinite deadline",
+    TRACE_EVENT_INSTANT0("viz", "Using infinite deadline",
                          TRACE_EVENT_SCOPE_THREAD);
     return;
   }
@@ -508,8 +508,7 @@ void DisplayScheduler::DidFinishFrame(bool did_draw) {
   DCHECK(begin_frame_source_);
   begin_frame_source_->DidFinishFrame(this);
 
-  BeginFrameAck ack(current_begin_frame_args_.source_id,
-                    current_begin_frame_args_.sequence_number, did_draw);
+  BeginFrameAck ack(current_begin_frame_args_, did_draw);
   client_->DidFinishFrame(ack);
 }
 

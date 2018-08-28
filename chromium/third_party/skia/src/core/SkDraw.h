@@ -62,16 +62,15 @@ public:
     void    drawBitmap(const SkBitmap&, const SkMatrix&, const SkRect* dstOrNull,
                        const SkPaint&) const;
     void    drawSprite(const SkBitmap&, int x, int y, const SkPaint&) const;
-    void    drawText(const char text[], size_t byteLength, SkScalar x,
-                     SkScalar y, const SkPaint& paint, const SkSurfaceProps*) const;
     void    drawPosText(const char text[], size_t byteLength,
                         const SkScalar pos[], int scalarsPerPosition,
                         const SkPoint& offset, const SkPaint&, const SkSurfaceProps*) const;
-    void    drawVertices(SkVertices::VertexMode mode, int count,
+    void    drawVertices(SkVertices::VertexMode mode, int vertexCount,
                          const SkPoint vertices[], const SkPoint textures[],
-                         const SkColor colors[], SkBlendMode bmode,
+                         const SkColor colors[], const SkVertices::BoneIndices boneIndices[],
+                         const SkVertices::BoneWeights boneWeights[], SkBlendMode bmode,
                          const uint16_t indices[], int ptCount,
-                         const SkPaint& paint) const;
+                         const SkPaint& paint, const SkMatrix* bones, int boneCount) const;
 
     /**
      *  Overwrite the target with the path's coverage (i.e. its mask).
@@ -117,8 +116,6 @@ public:
                                     SkPoint* strokeSize);
 
     static bool ShouldDrawTextAsPaths(const SkPaint&, const SkMatrix&, SkScalar sizeLimit = 1024);
-    void        drawText_asPaths(const char text[], size_t byteLength, SkScalar x, SkScalar y,
-                                 const SkPaint&) const;
     void        drawPosText_asPaths(const char text[], size_t byteLength, const SkScalar pos[],
                                     int scalarsPerPosition, const SkPoint& offset,
                                     const SkPaint&, const SkSurfaceProps*) const;

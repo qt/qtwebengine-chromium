@@ -6,7 +6,6 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("//build/config/arm.gni")
 import("../../../webrtc.gni")
 
 rtc_static_library("aec3") {
@@ -69,6 +68,8 @@ rtc_static_library("aec3") {
     "matched_filter_lag_aggregator.h",
     "matrix_buffer.cc",
     "matrix_buffer.h",
+    "moving_average.cc",
+    "moving_average.h",
     "render_buffer.cc",
     "render_buffer.h",
     "render_delay_buffer.cc",
@@ -83,6 +84,8 @@ rtc_static_library("aec3") {
     "residual_echo_estimator.h",
     "reverb_model.cc",
     "reverb_model.h",
+    "reverb_model_estimator.cc",
+    "reverb_model_estimator.h",
     "reverb_model_fallback.cc",
     "reverb_model_fallback.h",
     "shadow_filter_update_gain.cc",
@@ -93,7 +96,10 @@ rtc_static_library("aec3") {
     "stationarity_estimator.h",
     "subtractor.cc",
     "subtractor.h",
+    "subtractor_output.cc",
     "subtractor_output.h",
+    "subtractor_output_analyzer.cc",
+    "subtractor_output_analyzer.h",
     "suppression_filter.cc",
     "suppression_filter.h",
     "suppression_gain.cc",
@@ -107,12 +113,10 @@ rtc_static_library("aec3") {
 
   defines = []
   deps = [
-    "..:aec_core",
     "..:apm_logging",
     "..:audio_processing",
     "../../..:typedefs",
     "../../../api:array_view",
-    "../../../api:optional",
     "../../../api/audio:aec3_config",
     "../../../api/audio:echo_control",
     "../../../common_audio:common_audio_c",
@@ -122,9 +126,9 @@ rtc_static_library("aec3") {
     "../../../system_wrappers:cpu_features_api",
     "../../../system_wrappers:field_trial_api",
     "../../../system_wrappers:metrics_api",
+    "../utility:ooura_fft",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
-
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 }
 
 if (rtc_include_tests) {
@@ -133,9 +137,13 @@ if (rtc_include_tests) {
 
     configs += [ "..:apm_debug_dump" ]
     sources = [
+      "mock/mock_block_processor.cc",
       "mock/mock_block_processor.h",
+      "mock/mock_echo_remover.cc",
       "mock/mock_echo_remover.h",
+      "mock/mock_render_delay_buffer.cc",
       "mock/mock_render_delay_buffer.h",
+      "mock/mock_render_delay_controller.cc",
       "mock/mock_render_delay_controller.h",
     ]
 
@@ -146,13 +154,13 @@ if (rtc_include_tests) {
       "..:audio_processing_unittests",
       "../../..:typedefs",
       "../../../api:array_view",
-      "../../../api:optional",
       "../../../api/audio:aec3_config",
       "../../../rtc_base:checks",
       "../../../rtc_base:rtc_base_approved",
       "../../../rtc_base:safe_minmax",
       "../../../system_wrappers:cpu_features_api",
       "../../../test:test_support",
+      "//third_party/abseil-cpp/absl/types:optional",
     ]
 
     defines = []
@@ -180,12 +188,14 @@ if (rtc_include_tests) {
         "main_filter_update_gain_unittest.cc",
         "matched_filter_lag_aggregator_unittest.cc",
         "matched_filter_unittest.cc",
+        "moving_average_unittest.cc",
         "render_buffer_unittest.cc",
         "render_delay_buffer_unittest.cc",
         "render_delay_controller_metrics_unittest.cc",
         "render_delay_controller_unittest.cc",
         "render_signal_analyzer_unittest.cc",
         "residual_echo_estimator_unittest.cc",
+        "reverb_model_estimator_unittest.cc",
         "shadow_filter_update_gain_unittest.cc",
         "skew_estimator_unittest.cc",
         "subtractor_unittest.cc",
@@ -194,12 +204,5 @@ if (rtc_include_tests) {
         "vector_math_unittest.cc",
       ]
     }
-
-    if ((!build_with_chromium || is_win) && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
-    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
   }
 }

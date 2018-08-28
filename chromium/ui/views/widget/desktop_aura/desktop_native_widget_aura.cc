@@ -8,7 +8,7 @@
 #include "base/macros.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
-#include "services/ui/public/interfaces/window_manager_constants.mojom.h"
+#include "services/ui/public/interfaces/window_tree_constants.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/drag_drop_client.h"
@@ -737,7 +737,6 @@ void DesktopNativeWidgetAura::Close() {
     return;
 
   content_window_->SuppressPaint();
-  content_window_->Hide();
 
   desktop_window_tree_host_->Close();
 }
@@ -789,8 +788,20 @@ bool DesktopNativeWidgetAura::IsVisible() const {
 }
 
 void DesktopNativeWidgetAura::Activate() {
-  if (content_window_)
+  if (content_window_) {
+    bool was_active = IsActive();
     desktop_window_tree_host_->Activate();
+
+    // If the whole window tree host was already active,
+    // treat this as a request to focus |content_window_|.
+    //
+    // Note: it might make sense to always focus |content_window_|,
+    // since if client code is calling Widget::Activate() they probably
+    // want that particular widget to be activated, not just something
+    // within that widget hierarchy.
+    if (was_active && focus_client_->GetFocusedWindow() != content_window_)
+      focus_client_->FocusWindow(content_window_);
+  }
 }
 
 void DesktopNativeWidgetAura::Deactivate() {
@@ -856,6 +867,11 @@ bool DesktopNativeWidgetAura::IsFullscreen() const {
 void DesktopNativeWidgetAura::SetOpacity(float opacity) {
   if (content_window_)
     desktop_window_tree_host_->SetOpacity(opacity);
+}
+
+void DesktopNativeWidgetAura::SetAspectRatio(const gfx::SizeF& aspect_ratio) {
+  if (content_window_)
+    desktop_window_tree_host_->SetAspectRatio(aspect_ratio);
 }
 
 void DesktopNativeWidgetAura::FlashFrame(bool flash_frame) {

@@ -19,7 +19,7 @@
 
 namespace blink {
 namespace scheduler {
-class WebMainThreadScheduler;
+class WebThreadScheduler;
 }
 }  // namespace blink
 
@@ -41,13 +41,16 @@ class CONTENT_EXPORT DOMStorageCachedArea
       const std::string& namespace_id,
       const GURL& origin,
       DOMStorageProxy* proxy,
-      blink::scheduler::WebMainThreadScheduler* main_thread_scheduler);
+      blink::scheduler::WebThreadScheduler* main_thread_scheduler);
 
   const std::string& namespace_id() const { return namespace_id_; }
   const GURL& origin() const { return origin_; }
 
   unsigned GetLength(int connection_id);
-  base::NullableString16 GetKey(int connection_id, unsigned index);
+  // See DOMStorageMap for the meaning of |did_decrease_iterator|.
+  base::NullableString16 GetKey(int connection_id,
+                                unsigned index,
+                                bool* did_decrease_iterator = nullptr);
   base::NullableString16 GetItem(int connection_id, const base::string16& key);
   bool SetItem(int connection_id,
                const base::string16& key,
@@ -104,7 +107,7 @@ class CONTENT_EXPORT DOMStorageCachedArea
   scoped_refptr<DOMStorageProxy> proxy_;
 
   // Not owned.
-  blink::scheduler::WebMainThreadScheduler* main_thread_scheduler_;
+  blink::scheduler::WebThreadScheduler* main_thread_scheduler_;
 
   base::WeakPtrFactory<DOMStorageCachedArea> weak_factory_;
 };

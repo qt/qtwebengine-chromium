@@ -25,7 +25,6 @@
 
 #include "third_party/blink/renderer/core/html/html_element.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_event_listener.h"
 #include "third_party/blink/renderer/core/css/css_color_value.h"
 #include "third_party/blink/renderer/core/css/css_markup.h"
@@ -36,7 +35,6 @@
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event_listener.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
@@ -65,6 +63,7 @@
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
 #include "third_party/blink/renderer/core/xml_names.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/language.h"
 #include "third_party/blink/renderer/platform/text/bidi_resolver.h"
 #include "third_party/blink/renderer/platform/text/bidi_text_run.h"
@@ -257,7 +256,7 @@ void HTMLElement::CollectStyleForPresentationAttribute(
     if (value.IsEmpty() || DeprecatedEqualIgnoringCase(value, "true")) {
       AddPropertyToPresentationAttributeStyle(
           style, CSSPropertyWebkitUserModify, CSSValueReadWrite);
-      AddPropertyToPresentationAttributeStyle(style, CSSPropertyWordWrap,
+      AddPropertyToPresentationAttributeStyle(style, CSSPropertyOverflowWrap,
                                               CSSValueBreakWord);
       AddPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLineBreak,
                                               CSSValueAfterWhiteSpace);
@@ -269,7 +268,7 @@ void HTMLElement::CollectStyleForPresentationAttribute(
     } else if (DeprecatedEqualIgnoringCase(value, "plaintext-only")) {
       AddPropertyToPresentationAttributeStyle(
           style, CSSPropertyWebkitUserModify, CSSValueReadWritePlaintextOnly);
-      AddPropertyToPresentationAttributeStyle(style, CSSPropertyWordWrap,
+      AddPropertyToPresentationAttributeStyle(style, CSSPropertyOverflowWrap,
                                               CSSValueBreakWord);
       AddPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLineBreak,
                                               CSSValueAfterWhiteSpace);
@@ -686,8 +685,9 @@ void HTMLElement::setOuterText(const String& text,
                                ExceptionState& exception_state) {
   ContainerNode* parent = parentNode();
   if (!parent) {
-    exception_state.ThrowDOMException(kNoModificationAllowedError,
-                                      "The element has no parent.");
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNoModificationAllowedError,
+        "The element has no parent.");
     return;
   }
 
@@ -703,7 +703,7 @@ void HTMLElement::setOuterText(const String& text,
 
   // textToFragment might cause mutation events.
   if (!parentNode())
-    exception_state.ThrowDOMException(kHierarchyRequestError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kHierarchyRequestError,
                                       "The element has no parent.");
 
   if (exception_state.HadException())
@@ -788,7 +788,7 @@ void HTMLElement::setContentEditable(const String& enabled,
   else if (DeprecatedEqualIgnoringCase(enabled, "inherit"))
     removeAttribute(contenteditableAttr);
   else
-    exception_state.ThrowDOMException(kSyntaxError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
                                       "The value provided ('" + enabled +
                                           "') is not one of 'true', 'false', "
                                           "'plaintext-only', or 'inherit'.");

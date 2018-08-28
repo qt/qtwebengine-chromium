@@ -15,6 +15,7 @@
 source_set("base") {
   sources = [
     "build_config.h",
+    "export.h",
     "file_utils.h",
     "logging.h",
     "metatrace.h",
@@ -24,6 +25,7 @@ source_set("base") {
     "string_splitter.h",
     "string_utils.h",
     "task_runner.h",
+    "temp_file.h",
     "thread_checker.h",
     "time.h",
     "unix_task_runner.h",

@@ -11,7 +11,8 @@
 #include "base/optional.h"
 #include "base/time/time.h"
 #include "content/browser/web_package/signed_exchange_consts.h"
-#include "content/browser/web_package/signed_exchange_header.h"
+#include "content/browser/web_package/signed_exchange_envelope.h"
+#include "content/browser/web_package/signed_exchange_prologue.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/completion_callback.h"
@@ -71,6 +72,7 @@ class CONTENT_EXPORT SignedExchangeHandler {
       std::unique_ptr<net::SourceStream> body,
       ExchangeHeadersCallback headers_callback,
       std::unique_ptr<SignedExchangeCertFetcherFactory> cert_fetcher_factory,
+      int load_flags,
       scoped_refptr<net::URLRequestContextGetter> request_context_getter,
       std::unique_ptr<SignedExchangeDevToolsProxy> devtools_proxy);
   ~SignedExchangeHandler();
@@ -80,7 +82,7 @@ class CONTENT_EXPORT SignedExchangeHandler {
 
  private:
   enum class State {
-    kReadingHeadersLength,
+    kReadingPrologue,
     kReadingHeaders,
     kFetchingCertificate,
     kHeadersCallbackCalled,
@@ -89,30 +91,32 @@ class CONTENT_EXPORT SignedExchangeHandler {
   void SetupBuffers(size_t size);
   void DoHeaderLoop();
   void DidReadHeader(bool completed_syncly, int result);
-  bool ParseHeadersLength();
+  bool ParsePrologue();
   bool ParseHeadersAndFetchCertificate();
   void RunErrorCallback(net::Error);
 
   void OnCertReceived(
       std::unique_ptr<SignedExchangeCertificateChain> cert_chain);
   void OnCertVerifyComplete(int result);
+  bool CheckCertExtension(const net::X509Certificate* verified_cert);
   bool CheckOCSPStatus(const net::OCSPVerifyResult& ocsp_result);
+  int VerifyCT(net::ct::CTVerifyResult* ct_verify_result);
 
   ExchangeHeadersCallback headers_callback_;
   base::Optional<SignedExchangeVersion> version_;
   std::unique_ptr<net::SourceStream> source_;
 
-  State state_ = State::kReadingHeadersLength;
-  // Buffer used for header reading.
+  State state_ = State::kReadingPrologue;
+  // Buffer used for prologue and envelope reading.
   scoped_refptr<net::IOBuffer> header_buf_;
   // Wrapper around |header_buf_| to progressively read fixed-size data.
   scoped_refptr<net::DrainableIOBuffer> header_read_buf_;
-  size_t headers_length_ = 0;
-
-  base::Optional<SignedExchangeHeader> header_;
+  base::Optional<SignedExchangePrologue> prologue_;
+  base::Optional<SignedExchangeEnvelope> envelope_;
 
   std::unique_ptr<SignedExchangeCertFetcherFactory> cert_fetcher_factory_;
   std::unique_ptr<SignedExchangeCertFetcher> cert_fetcher_;
+  const int load_flags_;
 
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 

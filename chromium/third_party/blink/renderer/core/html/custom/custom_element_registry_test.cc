@@ -8,7 +8,6 @@
 
 #include "base/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/css/css_style_sheet_init.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -16,6 +15,7 @@
 #include "third_party/blink/renderer/core/dom/element_definition_options.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/shadow_root_init.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/html/custom/ce_reactions_scope.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_definition.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_definition_builder.h"
@@ -23,6 +23,7 @@
 #include "third_party/blink/renderer/core/html/custom/custom_element_test_helpers.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
@@ -436,9 +437,7 @@ TEST_F(CustomElementRegistryTest, defineCustomElementWithStyle) {
   RuntimeEnabledFeatures::SetConstructableStylesheetsEnabled(true);
   NonThrowableExceptionState should_not_throw;
   ElementDefinitionOptions options;
-  CSSStyleSheet* sheet =
-      CSSStyleSheet::Create(GetDocument(), ":host { color: red; }",
-                            CSSStyleSheetInit(), should_not_throw);
+  CSSStyleSheet* sheet = CSSStyleSheet::Create(GetDocument(), should_not_throw);
   options.setStyle(sheet);
   TestCustomElementDefinitionBuilder builder(sheet);
   CustomElementDefinition* definition_a =

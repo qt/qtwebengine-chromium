@@ -16,6 +16,7 @@
 #include "SkTArray.h"
 #include "SkTDArray.h"
 #include "SkTHash.h"
+#include "SkTo.h"
 #include "SkVertices.h"
 #include "SkWriter32.h"
 
@@ -195,7 +196,8 @@ protected:
     void onDrawImageLattice(const SkImage*, const SkCanvas::Lattice& lattice, const SkRect& dst,
                             const SkPaint*) override;
     void onDrawShadowRec(const SkPath&, const SkDrawShadowRec&) override;
-    void onDrawVerticesObject(const SkVertices*, SkBlendMode, const SkPaint&) override;
+    void onDrawVerticesObject(const SkVertices*, const SkMatrix* bones, int boneCount, SkBlendMode,
+                              const SkPaint&) override;
 
     void onClipRect(const SkRect&, SkClipOp, ClipEdgeStyle) override;
     void onClipRRect(const SkRRect&, SkClipOp, ClipEdgeStyle) override;

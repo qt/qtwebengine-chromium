@@ -23,6 +23,8 @@
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task_scheduler/task_scheduler.h"
+#include "base/test/gtest_util.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
@@ -1626,6 +1628,8 @@ TEST_P(MessageLoopTypedTest, RunLoopQuitOrderAfter) {
   ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
                                           BindOnce(&FuncThatQuitsNow));
 
+  run_loop.allow_quit_current_deprecated_ = true;
+
   RunLoop outer_run_loop;
   outer_run_loop.Run();
 
@@ -1650,7 +1654,13 @@ TEST_P(MessageLoopTypedTest, RunLoopQuitOrderAfter) {
 // On Linux, the pipe buffer size is 64KiB by default. The bug caused one
 // byte accumulated in the pipe per two posts, so we should repeat 128K
 // times to reproduce the bug.
-TEST_P(MessageLoopTypedTest, RecursivePosts) {
+#if defined(OS_FUCHSIA)
+// TODO(crbug.com/810077): This is flaky on Fuchsia.
+#define MAYBE_RecursivePosts DISABLED_RecursivePosts
+#else
+#define MAYBE_RecursivePosts RecursivePosts
+#endif
+TEST_P(MessageLoopTypedTest, MAYBE_RecursivePosts) {
   const int kNumTimes = 1 << 17;
   MessageLoop loop(GetMessageLoopType());
   loop.task_runner()->PostTask(FROM_HERE,
@@ -1747,6 +1757,33 @@ TEST_P(MessageLoopTypedTest, NestableTasksAllowedManually) {
           },
           Unretained(&run_loop)));
   run_loop.Run();
+}
+
+#if defined(OS_MACOSX)
+// This metric is a bit broken on Mac OS because CFRunLoop doesn't
+// deterministically invoke MessageLoop::DoIdleWork(). This being a temporary
+// diagnosis metric, we let this fly and simply not test it on Mac.
+#define MAYBE_MetricsOnlyFromUILoops DISABLED_MetricsOnlyFromUILoops
+#else
+#define MAYBE_MetricsOnlyFromUILoops MetricsOnlyFromUILoops
+#endif
+
+TEST_P(MessageLoopTypedTest, MAYBE_MetricsOnlyFromUILoops) {
+  MessageLoop loop(GetMessageLoopType());
+
+  const bool histograms_expected = GetMessageLoopType() == MessageLoop::TYPE_UI;
+
+  HistogramTester histogram_tester;
+
+  // Loop that goes idle with one pending task.
+  RunLoop run_loop;
+  loop.task_runner()->PostDelayedTask(FROM_HERE, run_loop.QuitClosure(),
+                                      TimeDelta::FromMilliseconds(1));
+  run_loop.Run();
+
+  histogram_tester.ExpectTotalCount(
+      "MessageLoop.DelayedTaskQueueForUI.PendingTasksCountOnIdle",
+      histograms_expected ? 1 : 0);
 }
 
 INSTANTIATE_TEST_CASE_P(
@@ -2204,5 +2241,50 @@ INSTANTIATE_TEST_CASE_P(
     ::testing::Values(TaskSchedulerAvailability::NO_TASK_SCHEDULER,
                       TaskSchedulerAvailability::WITH_TASK_SCHEDULER),
     MessageLoopTest::ParamInfoToString);
+
+namespace {
+
+class PostTaskOnDestroy {
+ public:
+  PostTaskOnDestroy(int times) : times_remaining_(times) {}
+  ~PostTaskOnDestroy() { PostTaskWithPostingDestructor(times_remaining_); }
+
+  // Post a task that will repost itself on destruction |times| times.
+  static void PostTaskWithPostingDestructor(int times) {
+    if (times > 0) {
+      ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, BindOnce([](std::unique_ptr<PostTaskOnDestroy>) {},
+                              std::make_unique<PostTaskOnDestroy>(times - 1)));
+    }
+  }
+
+ private:
+  const int times_remaining_;
+
+  DISALLOW_COPY_AND_ASSIGN(PostTaskOnDestroy);
+};
+
+}  // namespace
+
+// Test that MessageLoop destruction handles a task's destructor posting another
+// task by:
+//  1) Not getting stuck clearing its task queue.
+//  2) DCHECKing when clearing pending tasks many times still doesn't yield an
+//     empty queue.
+TEST(MessageLoopDestructionTest, ExpectDeathWithStubbornPostTaskOnDestroy) {
+  std::unique_ptr<MessageLoop> loop = std::make_unique<MessageLoop>();
+
+  EXPECT_DCHECK_DEATH({
+    PostTaskOnDestroy::PostTaskWithPostingDestructor(1000);
+    loop.reset();
+  });
+}
+
+TEST(MessageLoopDestructionTest, DestroysFineWithReasonablePostTaskOnDestroy) {
+  std::unique_ptr<MessageLoop> loop = std::make_unique<MessageLoop>();
+
+  PostTaskOnDestroy::PostTaskWithPostingDestructor(10);
+  loop.reset();
+}
 
 }  // namespace base

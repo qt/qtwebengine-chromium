@@ -77,7 +77,6 @@
 #include "media/base/android/media_codec_util.h"
 #endif
 
-using blink::WebCanvas;
 using blink::WebMediaPlayer;
 using blink::WebRect;
 using blink::WebSize;
@@ -236,7 +235,6 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       cast_impl_(this, client_, params->context_provider()),
 #endif
       renderer_factory_selector_(std::move(renderer_factory_selector)),
-      surface_manager_(params->surface_manager()),
       observer_(params->media_observer()),
       max_keyframe_distance_to_disable_background_video_(
           params->max_keyframe_distance_to_disable_background_video()),
@@ -247,6 +245,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       embedded_media_experience_enabled_(
           params->embedded_media_experience_enabled()),
       surface_layer_for_video_enabled_(params->use_surface_layer_for_video()),
+      create_bridge_callback_(params->create_bridge_callback()),
       request_routing_token_cb_(params->request_routing_token_cb()),
       overlay_routing_token_(OverlayInfo::RoutingToken()),
       media_metrics_provider_(params->take_metrics_provider()) {
@@ -255,9 +254,6 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
   DCHECK(renderer_factory_selector_);
   DCHECK(client_);
   DCHECK(delegate_);
-
-  if (surface_layer_for_video_enabled_)
-    bridge_ = params->create_bridge_callback().Run(this);
 
   // If we're supposed to force video overlays, then make sure that they're
   // enabled all the time.
@@ -331,12 +327,6 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
   client_->MediaRemotingStopped(
       blink::WebLocalizedString::kMediaRemotingStopNoText);
 
-  // If running in Picture-in-Picture but not in auto-pip, notify the player.
-  if (client_->DisplayType() ==
-          WebMediaPlayer::DisplayType::kPictureInPicture &&
-      !client_->IsInAutoPIP())
-    ExitPictureInPicture(base::DoNothing());
-
   if (!surface_layer_for_video_enabled_ && video_layer_) {
     video_layer_->StopUsingProvider();
   }
@@ -381,28 +371,34 @@ void WebMediaPlayerImpl::DemuxerDestructionHelper(
           std::move(demuxer)));
 }
 
-void WebMediaPlayerImpl::Load(LoadType load_type,
-                              const blink::WebMediaPlayerSource& source,
-                              CORSMode cors_mode) {
+WebMediaPlayer::LoadTiming WebMediaPlayerImpl::Load(
+    LoadType load_type,
+    const blink::WebMediaPlayerSource& source,
+    CORSMode cors_mode) {
   DVLOG(1) << __func__;
   // Only URL or MSE blob URL is supported.
   DCHECK(source.IsURL());
   blink::WebURL url = source.GetAsURL();
   DVLOG(1) << __func__ << "(" << load_type << ", " << GURL(url) << ", "
            << cors_mode << ")";
+
+  bool is_deferred = false;
+
   if (!defer_load_cb_.is_null()) {
-    defer_load_cb_.Run(base::Bind(&WebMediaPlayerImpl::DoLoad, AsWeakPtr(),
-                                  load_type, url, cors_mode));
-    return;
+    is_deferred = defer_load_cb_.Run(base::BindOnce(
+        &WebMediaPlayerImpl::DoLoad, AsWeakPtr(), load_type, url, cors_mode));
+  } else {
+    DoLoad(load_type, url, cors_mode);
   }
-  DoLoad(load_type, url, cors_mode);
+
+  return is_deferred ? LoadTiming::kDeferred : LoadTiming::kImmediate;
 }
 
 void WebMediaPlayerImpl::OnWebLayerUpdated() {}
 
 void WebMediaPlayerImpl::RegisterContentsLayer(cc::Layer* layer) {
   DCHECK(bridge_);
-  bridge_->GetCcLayer()->SetContentsOpaque(opaque_);
+  bridge_->SetContentsOpaque(opaque_);
   client_->SetCcLayer(layer);
 }
 
@@ -412,16 +408,11 @@ void WebMediaPlayerImpl::UnregisterContentsLayer(cc::Layer* layer) {
 }
 
 void WebMediaPlayerImpl::OnSurfaceIdUpdated(viz::SurfaceId surface_id) {
-  pip_surface_id_ = surface_id;
-
   // TODO(726619): Handle the behavior when Picture-in-Picture mode is
   // disabled.
   // The viz::SurfaceId may be updated when the video begins playback or when
   // the size of the video changes.
-  if (client_ &&
-      client_->DisplayType() ==
-          WebMediaPlayer::DisplayType::kPictureInPicture &&
-      !client_->IsInAutoPIP()) {
+  if (client_ && IsInPictureInPicture() && !client_->IsInAutoPIP()) {
     delegate_->DidPictureInPictureSurfaceChange(
         delegate_id_, surface_id, pipeline_metadata_.natural_size);
   }
@@ -438,14 +429,8 @@ bool WebMediaPlayerImpl::SupportsOverlayFullscreenVideo() {
 
 void WebMediaPlayerImpl::EnableOverlay() {
   overlay_enabled_ = true;
-  if (surface_manager_ && overlay_mode_ == OverlayMode::kUseContentVideoView) {
-    overlay_surface_id_.reset();
-    surface_created_cb_.Reset(
-        base::Bind(&WebMediaPlayerImpl::OnSurfaceCreated, AsWeakPtr()));
-    surface_manager_->CreateFullscreenSurface(pipeline_metadata_.natural_size,
-                                              surface_created_cb_.callback());
-  } else if (request_routing_token_cb_ &&
-             overlay_mode_ == OverlayMode::kUseAndroidOverlay) {
+  if (request_routing_token_cb_ &&
+      overlay_mode_ == OverlayMode::kUseAndroidOverlay) {
     overlay_routing_token_is_pending_ = true;
     token_available_cb_.Reset(
         base::Bind(&WebMediaPlayerImpl::OnOverlayRoutingToken, AsWeakPtr()));
@@ -464,7 +449,6 @@ void WebMediaPlayerImpl::DisableOverlay() {
   overlay_enabled_ = false;
   if (overlay_mode_ == OverlayMode::kUseContentVideoView) {
     surface_created_cb_.Cancel();
-    overlay_surface_id_ = SurfaceManager::kNoSurfaceID;
   } else if (overlay_mode_ == OverlayMode::kUseAndroidOverlay) {
     token_available_cb_.Cancel();
     overlay_routing_token_is_pending_ = false;
@@ -534,6 +518,15 @@ void WebMediaPlayerImpl::OnHasNativeControlsChanged(bool has_native_controls) {
 
 void WebMediaPlayerImpl::OnDisplayTypeChanged(
     WebMediaPlayer::DisplayType display_type) {
+  if (surface_layer_for_video_enabled_) {
+    vfc_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            &VideoFrameCompositor::SetForceSubmit,
+            base::Unretained(compositor_.get()),
+            display_type == WebMediaPlayer::DisplayType::kPictureInPicture));
+  }
+
   if (!watch_time_reporter_)
     return;
 
@@ -800,19 +793,20 @@ void WebMediaPlayerImpl::SetVolume(double volume) {
 
 void WebMediaPlayerImpl::EnterPictureInPicture(
     blink::WebMediaPlayer::PipWindowOpenedCallback callback) {
-  DCHECK(pip_surface_id_.is_valid());
+  DCHECK(bridge_);
+
+  const viz::SurfaceId& surface_id = bridge_->GetSurfaceId();
+  DCHECK(surface_id.is_valid());
 
   // Notifies the browser process that the player should now be in
   // Picture-in-Picture mode.
-  delegate_->DidPictureInPictureModeStart(delegate_id_, pip_surface_id_,
+  delegate_->DidPictureInPictureModeStart(delegate_id_, surface_id,
                                           pipeline_metadata_.natural_size,
                                           std::move(callback));
 }
 
 void WebMediaPlayerImpl::ExitPictureInPicture(
     blink::WebMediaPlayer::PipWindowClosedCallback callback) {
-  DCHECK(pip_surface_id_.is_valid());
-
   // Notifies the browser process that Picture-in-Picture has ended. It will
   // clear out the states and close the window.
   delegate_->DidPictureInPictureModeEnd(delegate_id_, std::move(callback));
@@ -823,10 +817,7 @@ void WebMediaPlayerImpl::ExitPictureInPicture(
 
 void WebMediaPlayerImpl::RegisterPictureInPictureWindowResizeCallback(
     blink::WebMediaPlayer::PipWindowResizedCallback callback) {
-  DCHECK(pip_surface_id_.is_valid());
-  DCHECK(client_->DisplayType() ==
-             WebMediaPlayer::DisplayType::kPictureInPicture &&
-         !client_->IsInAutoPIP());
+  DCHECK(IsInPictureInPicture() && !client_->IsInAutoPIP());
 
   delegate_->RegisterPictureInPictureWindowResizeCallback(delegate_id_,
                                                           std::move(callback));
@@ -1092,7 +1083,7 @@ bool WebMediaPlayerImpl::DidLoadingProgress() {
   return pipeline_progress || data_progress;
 }
 
-void WebMediaPlayerImpl::Paint(blink::WebCanvas* canvas,
+void WebMediaPlayerImpl::Paint(cc::PaintCanvas* canvas,
                                const blink::WebRect& rect,
                                cc::PaintFlags& flags,
                                int already_uploaded_id,
@@ -1139,6 +1130,12 @@ bool WebMediaPlayerImpl::DidGetOpaqueResponseFromServiceWorker() const {
 }
 
 bool WebMediaPlayerImpl::HasSingleSecurityOrigin() const {
+  if (demuxer_found_hls_) {
+    // HLS manifests might pull segments from a different origin. We can't know
+    // for sure, so we conservatively say no here.
+    return false;
+  }
+
   if (data_source_)
     return data_source_->HasSingleOrigin();
   return true;
@@ -1543,6 +1540,8 @@ void WebMediaPlayerImpl::OnError(PipelineStatus status) {
 
 #if defined(OS_ANDROID)
   if (status == PipelineStatus::DEMUXER_ERROR_DETECTED_HLS) {
+    demuxer_found_hls_ = true;
+
     renderer_factory_selector_->SetUseMediaPlayer(true);
 
     pipeline_controller_.Stop();
@@ -1631,8 +1630,6 @@ void WebMediaPlayerImpl::OnMetadata(PipelineMetadata metadata) {
       // then we don't need this check.
       if (!always_enable_overlays_ && !DoesOverlaySupportMetadata())
         DisableOverlay();
-      else if (surface_manager_)
-        surface_manager_->NaturalSizeChanged(pipeline_metadata_.natural_size);
     }
 
     if (!surface_layer_for_video_enabled_) {
@@ -1643,14 +1640,35 @@ void WebMediaPlayerImpl::OnMetadata(PipelineMetadata metadata) {
       video_layer_->SetContentsOpaque(opaque_);
       client_->SetCcLayer(video_layer_.get());
     } else {
+      DCHECK(!bridge_);
+
+      bridge_ = std::move(create_bridge_callback_)
+                    .Run(this, compositor_->GetUpdateSubmissionStateCallback());
+      bridge_->CreateSurfaceLayer();
+
       vfc_task_runner_->PostTask(
           FROM_HERE,
           base::BindOnce(
               &VideoFrameCompositor::EnableSubmission,
-              base::Unretained(compositor_.get()), bridge_->GetFrameSinkId(),
+              base::Unretained(compositor_.get()), bridge_->GetSurfaceId(),
               pipeline_metadata_.video_decoder_config.video_rotation(),
+              IsInPictureInPicture(), opaque_,
               BindToCurrentLoop(base::BindRepeating(
                   &WebMediaPlayerImpl::OnFrameSinkDestroyed, AsWeakPtr()))));
+      bridge_->SetContentsOpaque(opaque_);
+
+      // If the element is already in Picture-in-Picture mode, it means that it
+      // was set in this mode prior to this load, with a different
+      // WebMediaPlayerImpl. The new player needs to send its id, size and
+      // surface id to the browser process to make sure the states are properly
+      // updated.
+      // TODO(872056): the surface should be activated but for some reasons, it
+      // does not. It is possible that this will no longer be neded after 872056
+      // is fixed.
+      if (client_->DisplayType() ==
+          WebMediaPlayer::DisplayType::kPictureInPicture) {
+        OnSurfaceIdUpdated(bridge_->GetSurfaceId());
+      }
     }
   }
 
@@ -1754,9 +1772,9 @@ void WebMediaPlayerImpl::OnBufferingStateChangeInternal(
   DVLOG(1) << __func__ << "(" << state << ")";
   DCHECK(main_task_runner_->BelongsToCurrentThread());
 
-  // Ignore buffering state changes until we've completed all outstanding
-  // operations unless this is a buffering update for a suspended startup.
-  if (!pipeline_controller_.IsStable() && !for_suspended_start)
+  // Ignore buffering state changes caused by back-to-back seeking, so as not
+  // to assume the second seek has finished when it was only the first seek.
+  if (pipeline_controller_.IsPendingSeek())
     return;
 
   auto log_event = media_log_->CreateBufferingStateChangedEvent(
@@ -1833,6 +1851,8 @@ void WebMediaPlayerImpl::OnDurationChange() {
     return;
 
   client_->DurationChanged();
+  if (watch_time_reporter_)
+    watch_time_reporter_->OnDurationChanged(GetPipelineMediaDuration());
 }
 
 void WebMediaPlayerImpl::OnAddTextTrack(const TextTrackConfig& config,
@@ -1883,15 +1903,10 @@ void WebMediaPlayerImpl::OnVideoNaturalSizeChange(const gfx::Size& size) {
     return;
 
   pipeline_metadata_.natural_size = rotated_size;
-  CreateWatchTimeReporter();
+  UpdateSecondaryProperties();
 
   if (video_decode_stats_reporter_)
     video_decode_stats_reporter_->OnNaturalSizeChanged(rotated_size);
-
-  if (overlay_enabled_ && surface_manager_ &&
-      overlay_mode_ == OverlayMode::kUseContentVideoView) {
-    surface_manager_->NaturalSizeChanged(rotated_size);
-  }
 
   client_->SizeChanged();
 
@@ -1910,7 +1925,11 @@ void WebMediaPlayerImpl::OnVideoOpacityChange(bool opaque) {
     if (video_layer_)
       video_layer_->SetContentsOpaque(opaque_);
   } else if (bridge_->GetCcLayer()) {
-    bridge_->GetCcLayer()->SetContentsOpaque(opaque_);
+    bridge_->SetContentsOpaque(opaque_);
+    vfc_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(&VideoFrameCompositor::UpdateIsOpaque,
+                       base::Unretained(compositor_.get()), opaque_));
   }
 }
 
@@ -1926,7 +1945,7 @@ void WebMediaPlayerImpl::OnAudioConfigChange(const AudioDecoderConfig& config) {
     observer_->OnMetadataChanged(pipeline_metadata_);
 
   if (codec_change)
-    CreateWatchTimeReporter();
+    UpdateSecondaryProperties();
 }
 
 void WebMediaPlayerImpl::OnVideoConfigChange(const VideoDecoderConfig& config) {
@@ -1947,7 +1966,7 @@ void WebMediaPlayerImpl::OnVideoConfigChange(const VideoDecoderConfig& config) {
     video_decode_stats_reporter_->OnVideoConfigChanged(config);
 
   if (codec_change)
-    CreateWatchTimeReporter();
+    UpdateSecondaryProperties();
 }
 
 void WebMediaPlayerImpl::OnVideoAverageKeyframeDistanceUpdate() {
@@ -1958,34 +1977,26 @@ void WebMediaPlayerImpl::OnAudioDecoderChange(const std::string& name) {
   if (name == audio_decoder_name_)
     return;
 
-  const bool is_decoder_change = !audio_decoder_name_.empty();
   audio_decoder_name_ = name;
 
   // If there's no current reporter, there's nothing to be done.
   if (!watch_time_reporter_)
     return;
 
-  if (is_decoder_change)
-    CreateWatchTimeReporter();
-  else
-    watch_time_reporter_->SetAudioDecoderName(name);
+  UpdateSecondaryProperties();
 }
 
 void WebMediaPlayerImpl::OnVideoDecoderChange(const std::string& name) {
   if (name == video_decoder_name_)
     return;
 
-  const bool is_decoder_change = !video_decoder_name_.empty();
   video_decoder_name_ = name;
 
   // If there's no current reporter, there's nothing to be done.
   if (!watch_time_reporter_)
     return;
 
-  if (is_decoder_change)
-    CreateWatchTimeReporter();
-  else
-    watch_time_reporter_->SetVideoDecoderName(name);
+  UpdateSecondaryProperties();
 }
 
 void WebMediaPlayerImpl::OnFrameHidden() {
@@ -2070,13 +2081,11 @@ void WebMediaPlayerImpl::OnIdleTimeout() {
 }
 
 void WebMediaPlayerImpl::OnPlay() {
-  Play();
-  client_->PlaybackStateChanged();
+  client_->RequestPlay();
 }
 
 void WebMediaPlayerImpl::OnPause() {
-  Pause();
-  client_->PlaybackStateChanged();
+  client_->RequestPause();
 }
 
 void WebMediaPlayerImpl::OnSeekForward(double seconds) {
@@ -2099,14 +2108,20 @@ void WebMediaPlayerImpl::OnBecamePersistentVideo(bool value) {
 }
 
 void WebMediaPlayerImpl::OnPictureInPictureModeEnded() {
-  // This should never be called if |pip_surface_id_| is invalid. This is either
-  // called from the Picture-in-Picture window side by a user gesture to end
-  // Picture-in-Picture mode, or in ExitPictureInPicture(), which already checks
-  // for validity.
-  DCHECK(pip_surface_id_.is_valid());
+  // It is possible for this method to be called when the player is no longer in
+  // Picture-in-Picture mode.
+  if (!client_ || !IsInPictureInPicture())
+    return;
 
-  if (client_)
-    client_->PictureInPictureStopped();
+  client_->PictureInPictureStopped();
+}
+
+void WebMediaPlayerImpl::OnPictureInPictureControlClicked(
+    const std::string& control_id) {
+  if (client_ && IsInPictureInPicture()) {
+    client_->PictureInPictureControlClicked(
+        blink::WebString::FromUTF8(control_id));
+  }
 }
 
 void WebMediaPlayerImpl::ScheduleRestart() {
@@ -2186,7 +2201,7 @@ void WebMediaPlayerImpl::OnDisconnectedFromRemoteDevice(double t) {
   UpdatePlayState();
 
   // We already told the delegate we're paused when remoting started.
-  client_->PlaybackStateChanged();
+  client_->RequestPause();
   client_->DisconnectedFromRemoteDevice();
 }
 
@@ -2266,12 +2281,6 @@ void WebMediaPlayerImpl::NotifyDownloading(bool is_downloading) {
     SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
 }
 
-void WebMediaPlayerImpl::OnSurfaceCreated(int surface_id) {
-  DCHECK(overlay_mode_ == OverlayMode::kUseContentVideoView);
-  overlay_surface_id_ = surface_id;
-  MaybeSendOverlayInfoToDecoder();
-}
-
 void WebMediaPlayerImpl::OnOverlayRoutingToken(
     const base::UnguessableToken& token) {
   DCHECK(overlay_mode_ == OverlayMode::kUseAndroidOverlay);
@@ -2285,7 +2294,6 @@ void WebMediaPlayerImpl::OnOverlayInfoRequested(
     bool decoder_requires_restart_for_overlay,
     const ProvideOverlayInfoCB& provide_overlay_info_cb) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-  DCHECK(surface_manager_);
 
   // If we get a non-null cb, a decoder is initializing and requires overlay
   // info. If we get a null cb, a previously initialized decoder is
@@ -2338,12 +2346,7 @@ void WebMediaPlayerImpl::MaybeSendOverlayInfoToDecoder() {
   // Initialization requires this; AVDA should start with enough info to make an
   // overlay, so that (pre-M) the initial codec is created with the right output
   // surface; it can't switch later.
-  if (overlay_mode_ == OverlayMode::kUseContentVideoView) {
-    if (!overlay_surface_id_.has_value())
-      return;
-
-    overlay_info_.surface_id = *overlay_surface_id_;
-  } else if (overlay_mode_ == OverlayMode::kUseAndroidOverlay) {
+  if (overlay_mode_ == OverlayMode::kUseAndroidOverlay) {
     if (overlay_routing_token_is_pending_)
       return;
 
@@ -2563,7 +2566,12 @@ void WebMediaPlayerImpl::SetDelegateState(DelegateState new_state,
   // TODO(sandersd): WebContentsObserverSanityChecker does not allow sending the
   // 'playing' IPC more than once in a row, even if the metadata has changed.
   // Figure out whether it should.
-  bool has_audio = HasAudio() && !client_->IsAutoplayingMuted();
+  // Pretend that the media has no audio if it never played unmuted. This is to
+  // avoid any action related to audible media such as taking audio focus or
+  // showing a media notification. To preserve a consistent experience, it does
+  // not apply if a media was audible so the system states do not flicker
+  // depending on whether the user muted the player.
+  bool has_audio = HasAudio() && !client_->WasAlwaysMuted();
   if (delegate_state_ == new_state &&
       (delegate_state_ != DelegateState::PLAYING ||
        delegate_has_audio_ == has_audio)) {
@@ -2858,17 +2866,17 @@ void WebMediaPlayerImpl::CreateWatchTimeReporter() {
 
   // Create the watch time reporter and synchronize its initial state.
   watch_time_reporter_.reset(new WatchTimeReporter(
-      mojom::PlaybackProperties::New(
-          pipeline_metadata_.audio_decoder_config.codec(),
-          pipeline_metadata_.video_decoder_config.codec(),
-          pipeline_metadata_.has_audio, pipeline_metadata_.has_video, false,
-          false, !!chunk_demuxer_, is_encrypted_,
-          embedded_media_experience_enabled_, pipeline_metadata_.natural_size),
+      mojom::PlaybackProperties::New(pipeline_metadata_.has_audio,
+                                     pipeline_metadata_.has_video, false, false,
+                                     !!chunk_demuxer_, is_encrypted_,
+                                     embedded_media_experience_enabled_),
+      pipeline_metadata_.natural_size,
       base::BindRepeating(&WebMediaPlayerImpl::GetCurrentTimeInternal,
                           base::Unretained(this)),
       media_metrics_provider_.get(),
       frame_->GetTaskRunner(blink::TaskType::kInternalMedia)));
   watch_time_reporter_->OnVolumeChange(volume_);
+  watch_time_reporter_->OnDurationChanged(GetPipelineMediaDuration());
 
   if (delegate_->IsFrameHidden())
     watch_time_reporter_->OnHidden();
@@ -2879,11 +2887,6 @@ void WebMediaPlayerImpl::CreateWatchTimeReporter() {
     watch_time_reporter_->OnNativeControlsEnabled();
   else
     watch_time_reporter_->OnNativeControlsDisabled();
-
-  if (!audio_decoder_name_.empty())
-    watch_time_reporter_->SetAudioDecoderName(audio_decoder_name_);
-  if (!video_decoder_name_.empty())
-    watch_time_reporter_->SetVideoDecoderName(video_decoder_name_);
 
   switch (client_->DisplayType()) {
     case WebMediaPlayer::DisplayType::kInline:
@@ -2896,6 +2899,16 @@ void WebMediaPlayerImpl::CreateWatchTimeReporter() {
       watch_time_reporter_->OnDisplayTypePictureInPicture();
       break;
   }
+
+  UpdateSecondaryProperties();
+}
+
+void WebMediaPlayerImpl::UpdateSecondaryProperties() {
+  watch_time_reporter_->UpdateSecondaryProperties(
+      mojom::SecondaryPlaybackProperties::New(
+          pipeline_metadata_.audio_decoder_config.codec(),
+          pipeline_metadata_.video_decoder_config.codec(), audio_decoder_name_,
+          video_decoder_name_, pipeline_metadata_.natural_size));
 }
 
 bool WebMediaPlayerImpl::IsHidden() const {
@@ -2972,7 +2985,7 @@ bool WebMediaPlayerImpl::IsBackgroundOptimizationCandidate() const {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
 
   // Don't optimize Picture-in-Picture players.
-  if (client_->DisplayType() == WebMediaPlayer::DisplayType::kPictureInPicture)
+  if (IsInPictureInPicture())
     return false;
 
 #if defined(OS_ANDROID)  // WMPI_CAST
@@ -3222,6 +3235,12 @@ void WebMediaPlayerImpl::RecordEncryptionScheme(
       "Media.EME.EncryptionScheme.Initial." + stream_name,
       DetermineEncryptionSchemeUMAValue(encryption_scheme),
       EncryptionSchemeUMA::kCount);
+}
+
+bool WebMediaPlayerImpl::IsInPictureInPicture() const {
+  DCHECK(client_);
+  return client_->DisplayType() ==
+         WebMediaPlayer::DisplayType::kPictureInPicture;
 }
 
 }  // namespace media

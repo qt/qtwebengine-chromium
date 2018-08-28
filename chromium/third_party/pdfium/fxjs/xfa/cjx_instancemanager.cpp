@@ -27,7 +27,7 @@ const CJX_MethodSpec CJX_InstanceManager::MethodSpecs[] = {
 
 CJX_InstanceManager::CJX_InstanceManager(CXFA_InstanceManager* mgr)
     : CJX_Node(mgr) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_InstanceManager::~CJX_InstanceManager() {}
@@ -144,7 +144,7 @@ CJS_Return CJX_InstanceManager::moveInstance(
 
   CXFA_FFNotify* pNotify = GetDocument()->GetNotify();
   if (!pNotify)
-    return CJS_Return(true);
+    return CJS_Return();
 
   CXFA_Node* pToInstance = GetXFANode()->GetItemIfExists(iTo);
   if (pToInstance && pToInstance->GetElementType() == XFA_Element::Subform)
@@ -156,7 +156,7 @@ CJS_Return CJX_InstanceManager::moveInstance(
     pNotify->RunSubformIndexChange(pFromInstance);
   }
 
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_InstanceManager::removeInstance(
@@ -196,7 +196,7 @@ CJS_Return CJX_InstanceManager::removeInstance(
     pLayoutPro->AddChangedContainer(
         ToNode(GetDocument()->GetXFAObject(XFA_HASHCODE_Form)));
   }
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_InstanceManager::setInstances(
@@ -206,7 +206,7 @@ CJS_Return CJX_InstanceManager::setInstances(
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
 
   SetInstances(runtime->ToInt32(params[0]));
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_InstanceManager::addInstance(
@@ -320,8 +320,8 @@ void CJX_InstanceManager::count(CFXJSE_Value* pValue,
                                 bool bSetting,
                                 XFA_Attribute eAttribute) {
   if (bSetting) {
-    pValue->SetInteger(GetXFANode()->GetCount());
+    SetInstances(pValue->ToInteger());
     return;
   }
-  SetInstances(pValue->ToInteger());
+  pValue->SetInteger(GetXFANode()->GetCount());
 }

@@ -450,6 +450,14 @@ const char kMonitoringDestinationID[]       = "monitoring-destination-id";
 // description of their meaning.
 const char kNetLogCaptureMode[]             = "net-log-capture-mode";
 
+// Controls the position of the new tab button within the tabstrip.
+const char kNewTabButtonPosition[] = "new-tab-button-position";
+// Possible values for this switch.
+const char kNewTabButtonPositionOppositeCaption[] = "opposite-caption";
+const char kNewTabButtonPositionLeading[] = "leading";
+const char kNewTabButtonPositionAfterTabs[] = "after-tabs";
+const char kNewTabButtonPositionTrailing[] = "trailing";
+
 // Disables the default browser check. Useful for UI/browser tests where we
 // want to avoid having the default browser info-bar displayed.
 const char kNoDefaultBrowserCheck[]         = "no-default-browser-check";
@@ -708,13 +716,9 @@ const char kValidateCrx[]                   = "validate-crx";
 // Prints version information and quits.
 const char kVersion[]                       = "version";
 
-// Allows privileged JS applications to trigger event logging for peer
-// connections, and to later upload those logs to a remote server.
-// * If "disable" or "disabled", remote-logging will be disabled.
-// * If "enable" or "enabled", remote-logging will be enabled.
-// * If unset (or set to any other value), the platform-specific behavior
-//   will be used. (This behavior may depend on additional factors.)
-const char kWebRtcRemoteEventLog[] = "webrtc-remote-event-log";
+// Enables the work-in-progress modal dialog shown for pending WebAuthn
+// requests.
+const char kWebAuthenticationUI[] = "enable-web-authentication-ui";
 
 // Sets the delay (in seconds) between proactive prunings of remote-bound
 // WebRTC event logs which are pending upload.
@@ -723,6 +727,11 @@ const char kWebRtcRemoteEventLog[] = "webrtc-remote-event-log";
 // If set to 0, the meaning is "no proactive pruning".
 const char kWebRtcRemoteEventLogProactivePruningDelta[] =
     "webrtc-event-log-proactive-pruning-delta";
+
+// WebRTC event logs will only be uploaded if the conditions hold for this
+// many milliseconds.
+const char kWebRtcRemoteEventLogUploadDelayMs[] =
+    "webrtc-event-log-upload-delay-ms";
 
 // Normally, remote-bound WebRTC event logs are uploaded only when no
 // peer connections are active. With this flag, the upload is never suppressed.

@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/layout/ng/ng_out_of_flow_layout_part.h"
 
+#include "third_party/blink/renderer/core/layout/layout_block.h"
+#include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_physical_line_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_absolute_utils.h"
@@ -38,18 +40,21 @@ NGOutOfFlowLayoutPart::NGOutOfFlowLayoutPart(
 
   default_containing_block_.style = &container_style;
   default_containing_block_.content_size = container_builder_->Size();
-  default_containing_block_.content_size.inline_size -=
-      borders_and_scrollers.InlineSum();
-  default_containing_block_.content_size.block_size -=
-      borders_and_scrollers.BlockSum();
-
+  default_containing_block_.content_size.inline_size =
+      std::max(default_containing_block_.content_size.inline_size -
+                   borders_and_scrollers.InlineSum(),
+               LayoutUnit());
+  default_containing_block_.content_size.block_size =
+      std::max(default_containing_block_.content_size.block_size -
+                   borders_and_scrollers.BlockSum(),
+               LayoutUnit());
   default_containing_block_.content_offset = NGLogicalOffset{
       borders_and_scrollers.inline_start, borders_and_scrollers.block_start};
   default_containing_block_.content_physical_offset =
       NGPhysicalOffset(physical_borders.left, physical_borders.top);
 }
 
-void NGOutOfFlowLayoutPart::Run(bool update_legacy) {
+void NGOutOfFlowLayoutPart::Run(LayoutBox* only_layout) {
   Vector<NGOutOfFlowPositionedDescendant> descendant_candidates;
   container_builder_->GetAndClearOutOfFlowDescendantCandidates(
       &descendant_candidates, container_builder_->GetLayoutObject());
@@ -57,12 +62,13 @@ void NGOutOfFlowLayoutPart::Run(bool update_legacy) {
   while (descendant_candidates.size() > 0) {
     ComputeInlineContainingBlocks(descendant_candidates);
     for (auto& candidate : descendant_candidates) {
-      if (IsContainingBlockForDescendant(candidate)) {
+      if (IsContainingBlockForDescendant(candidate) &&
+          (!only_layout || candidate.node.GetLayoutBox() == only_layout)) {
         NGLogicalOffset offset;
         scoped_refptr<NGLayoutResult> result =
             LayoutDescendant(candidate, &offset);
         container_builder_->AddChild(std::move(result), offset);
-        if (update_legacy)
+        if (candidate.node.GetLayoutBox() != only_layout)
           candidate.node.UseOldOutOfFlowPositioning();
       } else {
         container_builder_->AddOutOfFlowDescendant(candidate);
@@ -287,11 +293,27 @@ scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
   WritingMode container_writing_mode(container_info.style->GetWritingMode());
   WritingMode descendant_writing_mode(descendant.node.Style().GetWritingMode());
 
-  // Adjust the static_position origin. The static_position coordinate origin is
-  // relative to the container's border box, ng_absolute_utils expects it to be
-  // relative to the container's padding box.
+  // Adjust the static_position origin.
+  // The static_position coordinate origin is relative to default_container's
+  // border box.
+  // ng_absolute_utils expects static position to be relative to
+  // the container's padding box.
+  // Adjust static position by offset of container from default container,
+  // and default_container border width.
   NGStaticPosition static_position(descendant.static_position);
-  static_position.offset -= container_info.content_physical_offset;
+  NGPhysicalSize default_containing_block_physical_size =
+      default_containing_block_.content_size.ConvertToPhysical(
+          default_containing_block_.style->GetWritingMode());
+  NGPhysicalOffset default_container_physical_offset =
+      container_info.default_container_offset.ConvertToPhysical(
+          default_containing_block_.style->GetWritingMode(),
+          default_containing_block_.style->Direction(),
+          default_containing_block_physical_size,
+          default_containing_block_physical_size);
+
+  static_position.offset = static_position.offset -
+                           default_containing_block_.content_physical_offset -
+                           default_container_physical_offset;
 
   // The block estimate is in the descendant's writing mode.
   scoped_refptr<NGConstraintSpace> descendant_constraint_space =
@@ -375,14 +397,27 @@ scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
   offset->inline_offset +=
       container_info.default_container_offset.inline_offset;
   offset->block_offset += container_info.default_container_offset.block_offset;
+
+  base::Optional<LayoutUnit> y = ComputeAbsoluteDialogYPosition(
+      *descendant.node.GetLayoutBox(),
+      layout_result->PhysicalFragment()->Size().height);
+  if (y.has_value()) {
+    if (IsHorizontalWritingMode(container_writing_mode))
+      offset->block_offset = y.value();
+    else
+      offset->inline_offset = y.value();
+  }
+
   return layout_result;
 }
 
 bool NGOutOfFlowLayoutPart::IsContainingBlockForDescendant(
     const NGOutOfFlowPositionedDescendant& descendant) {
   EPosition position = descendant.node.Style().GetPosition();
+
+  // Descendants whose containing block is inline are always positioned
+  // inside closest parent block flow.
   if (descendant.inline_container) {
-    DCHECK(position == EPosition::kAbsolute);
     return true;
   }
   return (contains_absolute_ && position == EPosition::kAbsolute) ||
@@ -398,7 +433,7 @@ scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::GenerateFragment(
     NGBlockNode descendant,
     const ContainingBlockInfo& container_info,
     const base::Optional<LayoutUnit>& block_estimate,
-    const NGAbsolutePhysicalPosition node_position) {
+    const NGAbsolutePhysicalPosition& node_position) {
   // As the block_estimate is always in the descendant's writing mode, we build
   // the constraint space in the descendant's writing mode.
   WritingMode writing_mode(descendant.Style().GetWritingMode());
@@ -426,7 +461,17 @@ scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::GenerateFragment(
   scoped_refptr<NGConstraintSpace> space =
       builder.ToConstraintSpace(writing_mode);
 
-  return descendant.Layout(*space);
+  scoped_refptr<NGLayoutResult> result = descendant.Layout(*space);
+
+  // Legacy Grid and Flexbox seem to handle oof margins correctly
+  // on their own, and break if we set them here.
+  if (!descendant.GetLayoutBox()
+           ->ContainingBlock()
+           ->Style()
+           ->IsDisplayFlexibleOrGridBox())
+    descendant.GetLayoutBox()->SetMargin(node_position.margins);
+
+  return result;
 }
 
 }  // namespace blink

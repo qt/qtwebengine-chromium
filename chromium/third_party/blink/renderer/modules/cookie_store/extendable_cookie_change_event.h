@@ -7,7 +7,7 @@
 
 #include "third_party/blink/renderer/modules/cookie_store/cookie_list_item.h"
 #include "third_party/blink/renderer/modules/event_modules.h"
-#include "third_party/blink/renderer/modules/serviceworkers/extendable_event.h"
+#include "third_party/blink/renderer/modules/service_worker/extendable_event.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -16,7 +16,6 @@ namespace blink {
 
 class ExtendableCookieChangeEventInit;
 class WaitUntilObserver;
-class WebString;
 
 class ExtendableCookieChangeEvent final : public ExtendableEvent {
   DEFINE_WRAPPERTYPEINFO();
@@ -52,16 +51,6 @@ class ExtendableCookieChangeEvent final : public ExtendableEvent {
 
   // GarbageCollected
   void Trace(blink::Visitor*) override;
-
-  // Helper for converting backend event information into a CookieChangeEvent.
-  //
-  // TODO(pwnall): Switch to blink::CanonicalCookie when
-  //               https://crrev.com/c/991196 lands.
-  static void ToCookieChangeListItem(const WebString& cookie_name,
-                                     const WebString& cookie_value,
-                                     bool is_cookie_delete,
-                                     HeapVector<CookieListItem>& changed,
-                                     HeapVector<CookieListItem>& deleted);
 
  private:
   ExtendableCookieChangeEvent(const AtomicString& type,

@@ -197,7 +197,7 @@ class VIEWS_EXPORT Textfield : public View,
   void SetHorizontalAlignment(gfx::HorizontalAlignment alignment);
 
   // Displays a virtual keyboard or alternate input view if enabled.
-  void ShowImeIfNeeded();
+  void ShowVirtualKeyboardIfEnabled();
 
   // Returns whether or not an IME is composing text.
   bool IsIMEComposing() const;
@@ -359,7 +359,7 @@ class VIEWS_EXPORT Textfield : public View,
   void EnsureCaretNotInRect(const gfx::Rect& rect) override;
   bool IsTextEditCommandEnabled(ui::TextEditCommand command) const override;
   void SetTextEditCommandForNextKeyEvent(ui::TextEditCommand command) override;
-  const std::string& GetClientSourceInfo() const override;
+  ukm::SourceId GetClientSourceForMetrics() const override;
   bool ShouldDoLearning() override;
 
  protected:
@@ -382,6 +382,15 @@ class VIEWS_EXPORT Textfield : public View,
   // case where the text changes on the second mousedown of a double-click.
   // This is harmless if there is not a currently double-clicked word.
   void OffsetDoubleClickWord(int offset);
+
+  // Returns true if the drop cursor is for insertion at a target text location,
+  // the standard behavior/style. Returns false when drop will do something
+  // else (like replace the text entirely).
+  virtual bool IsDropCursorForInsertion() const;
+
+  // Returns true if the placeholder text should be shown. Subclasses may
+  // override this to customize when the placeholder text is shown.
+  virtual bool ShouldShowPlaceholderText() const;
 
  private:
   friend class TextfieldTestApi;

@@ -43,7 +43,8 @@ class FrameGenerator : public viz::mojom::CompositorFrameSinkClient {
   void OnWindowDamaged();
   void OnWindowSizeChanged(const gfx::Size& pixel_size);
   void Bind(
-      std::unique_ptr<viz::mojom::CompositorFrameSink> compositor_frame_sink);
+      std::unique_ptr<viz::mojom::CompositorFrameSink> compositor_frame_sink,
+      viz::mojom::DisplayPrivateAssociatedPtr display_private);
 
   const viz::SurfaceInfo& window_manager_surface_info() const {
     return window_manager_surface_info_;
@@ -55,11 +56,9 @@ class FrameGenerator : public viz::mojom::CompositorFrameSinkClient {
   // viz::mojom::CompositorFrameSinkClient implementation:
   void DidReceiveCompositorFrameAck(
       const std::vector<viz::ReturnedResource>& resources) override;
-  void DidPresentCompositorFrame(uint32_t presentation_token,
-                                 base::TimeTicks time,
-                                 base::TimeDelta refresh,
-                                 uint32_t flags) override;
-  void DidDiscardCompositorFrame(uint32_t presentation_token) override;
+  void DidPresentCompositorFrame(
+      uint32_t presentation_token,
+      const gfx::PresentationFeedback& feedback) override;
   void OnBeginFrame(const viz::BeginFrameArgs& args) override;
   void OnBeginFramePausedChanged(bool paused) override {}
   void ReclaimResources(
@@ -79,6 +78,7 @@ class FrameGenerator : public viz::mojom::CompositorFrameSinkClient {
   gfx::Size pixel_size_;
 
   std::unique_ptr<viz::mojom::CompositorFrameSink> compositor_frame_sink_;
+  viz::mojom::DisplayPrivateAssociatedPtr display_private_;
   viz::BeginFrameArgs last_begin_frame_args_;
   viz::BeginFrameAck current_begin_frame_ack_;
   bool high_contrast_mode_enabled_ = false;

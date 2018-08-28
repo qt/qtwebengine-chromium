@@ -246,8 +246,14 @@ void StyleInvalidator::InvalidateChildren(Element& element) {
 
 void StyleInvalidator::Invalidate(Element& element, SiblingData& sibling_data) {
   sibling_data.Advance();
+  // Preserves the current stack of pending invalidations and other state and
+  // restores it when this method returns.
   RecursionCheckpoint checkpoint(this);
 
+  // If we have already entered a subtree that is going to be entirely
+  // recalculated then there is no need to test against current invalidation
+  // sets or to continue to accumulate new invalidation sets as we descend the
+  // tree.
   if (!WholeSubtreeInvalid()) {
     if (element.GetStyleChangeType() >= kSubtreeStyleChange) {
       SetWholeSubtreeInvalid();
@@ -258,17 +264,34 @@ void StyleInvalidator::Invalidate(Element& element, SiblingData& sibling_data) {
     }
     if (UNLIKELY(element.NeedsStyleInvalidation()))
       PushInvalidationSetsForContainerNode(element, sibling_data);
+
+    // When a slot element is invalidated, the slotted elements are also
+    // invalidated by HTMLSlotElement::DidRecalcStyle. So if WholeSubtreeInvalid
+    // is true, they will be included even though they are not part of the
+    // subtree. It's not necessary to fully recalc style for the slotted
+    // elements in that case as they just need to pick up changed inherited
+    // styles but we do it. If we ever stop doing that then this code and the
+    // PushInvalidationSetsForContainerNode above need to move out of the
+    // if-block.
+    if (InvalidatesSlotted() && IsHTMLSlotElement(element))
+      InvalidateSlotDistributedElements(ToHTMLSlotElement(element));
+
+    if (InsertionPointCrossing() && element.IsV0InsertionPoint()) {
+      element.SetNeedsStyleRecalc(kSubtreeStyleChange,
+                                  StyleChangeReasonForTracing::Create(
+                                      StyleChangeReason::kStyleInvalidator));
+    }
   }
 
-  if (HasInvalidationSets() || element.ChildNeedsStyleInvalidation())
+  // We need to recurse into children if:
+  // * the whole subtree is not invalid and we have invalidation sets that
+  //   could apply to the descendants.
+  // * there are invalidation sets attached to descendants then we need to
+  //   clear the flags on the nodes, whether we use the sets or not.
+  if ((!WholeSubtreeInvalid() && HasInvalidationSets()) ||
+      element.ChildNeedsStyleInvalidation()) {
     InvalidateChildren(element);
-
-  if (InsertionPointCrossing() && element.IsV0InsertionPoint())
-    element.SetNeedsStyleRecalc(kSubtreeStyleChange,
-                                StyleChangeReasonForTracing::Create(
-                                    StyleChangeReason::kStyleInvalidator));
-  if (InvalidatesSlotted() && IsHTMLSlotElement(element))
-    InvalidateSlotDistributedElements(ToHTMLSlotElement(element));
+  }
 
   element.ClearChildNeedsStyleInvalidation();
   element.ClearNeedsStyleInvalidation();

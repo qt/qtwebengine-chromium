@@ -35,6 +35,7 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/events/add_event_listener_options_resolved.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatch_result.h"
@@ -80,14 +81,11 @@ class CORE_EXPORT EventTargetData final
   ~EventTargetData();
 
   void Trace(blink::Visitor*);
-  void TraceWrappers(ScriptWrappableVisitor*) const;
 
   EventListenerMap event_listener_map;
   std::unique_ptr<FiringEventIteratorVector> firing_event_iterators;
   DISALLOW_COPY_AND_ASSIGN(EventTargetData);
 };
-
-DEFINE_TRAIT_FOR_TRACE_WRAPPERS(EventTargetData);
 
 // All DOM event targets extend EventTarget. The spec is defined here:
 // https://dom.spec.whatwg.org/#interface-eventtarget
@@ -157,6 +155,8 @@ class CORE_EXPORT EventTarget : public ScriptWrappable {
 
   DispatchEventResult DispatchEvent(Event*);
 
+  void EnqueueEvent(Event*, TaskType);
+
   // dispatchEventForBindings is intended to only be called from
   // javascript originated calls. This method will validate and may adjust
   // the Event object before dispatching.
@@ -220,6 +220,8 @@ class CORE_EXPORT EventTarget : public ScriptWrappable {
                          EventListenerVector*,
                          EventListenerVector*);
 
+  void DispatchEnqueuedEvent(Event*, ExecutionContext*);
+
   friend class EventListenerIterator;
 };
 
@@ -232,11 +234,6 @@ class CORE_EXPORT EventTargetWithInlineData : public EventTarget {
     EventTarget::Trace(visitor);
   }
 
-  void TraceWrappers(ScriptWrappableVisitor* visitor) const override {
-    visitor->TraceWrappers(event_target_data_);
-    EventTarget::TraceWrappers(visitor);
-  }
-
  protected:
   EventTargetData* GetEventTargetData() final { return &event_target_data_; }
   EventTargetData& EnsureEventTargetData() final { return event_target_data_; }
@@ -245,7 +242,7 @@ class CORE_EXPORT EventTargetWithInlineData : public EventTarget {
   // EventTargetData is a GCed object, so it should not be used as a part of
   // object. However, we intentionally use it as a part of object for
   // performance, assuming that no one extracts a pointer of
-  // EventTargetWithInlineData::m_eventTargetData and store it to a Member etc.
+  // EventTargetWithInlineData::event_target_data_ and store it to a Member etc.
   GC_PLUGIN_IGNORE("513199") EventTargetData event_target_data_;
 };
 

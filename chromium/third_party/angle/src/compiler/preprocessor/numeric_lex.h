@@ -9,7 +9,6 @@
 #ifndef COMPILER_PREPROCESSOR_NUMERICLEX_H_
 #define COMPILER_PREPROCESSOR_NUMERICLEX_H_
 
-#include <cmath>
 #include <sstream>
 
 namespace angle
@@ -46,15 +45,6 @@ bool numeric_lex_int(const std::string &str, IntType *value)
 
     stream >> (*value);
     return !stream.fail();
-}
-
-template <typename FloatType>
-bool numeric_lex_float(const std::string &str, FloatType *value)
-{
-    // Some platforms have issues with the usage of std::locale and std::stringstream and cause
-    // crashes. Usage of strtod appears to be safe.
-    *value = static_cast<FloatType>(strtod(str.c_str(), nullptr));
-    return errno != ERANGE && std::isfinite(*value);
 }
 
 }  // namespace pp

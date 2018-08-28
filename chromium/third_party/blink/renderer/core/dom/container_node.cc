@@ -23,7 +23,6 @@
 
 #include "third_party/blink/renderer/core/dom/container_node.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/css/selector_query.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
@@ -31,7 +30,8 @@
 #include "third_party/blink/renderer/core/dom/child_list_mutation_scope.h"
 #include "third_party/blink/renderer/core/dom/class_collection.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
+#include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
 #include "third_party/blink/renderer/core/dom/name_node_list.h"
 #include "third_party/blink/renderer/core/dom/node_child_removal_tracker.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
@@ -39,10 +39,12 @@
 #include "third_party/blink/renderer/core/dom/node_rare_data.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
+#include "third_party/blink/renderer/core/dom/slot_assignment_recalc_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/static_node_list.h"
 #include "third_party/blink/renderer/core/dom/whitespace_attacher.h"
 #include "third_party/blink/renderer/core/events/mutation_event.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/forms/radio_node_list.h"
 #include "third_party/blink/renderer/core/html/html_collection.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
@@ -53,10 +55,10 @@
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
 #include "third_party/blink/renderer/core/layout/line/root_inline_box.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/runtime_call_stats.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
@@ -82,13 +84,17 @@ class DOMTreeMutationDetector {
 
  public:
   DOMTreeMutationDetector(const Node& node, const Node& parent)
-      : node_document_(node.GetDocument()),
+      : node_(&node),
+        node_document_(node.GetDocument()),
         parent_document_(parent.GetDocument()),
         parent_(parent),
         original_node_document_version_(node_document_->DomTreeVersion()),
         original_parent_document_version_(parent_document_->DomTreeVersion()) {}
 
-  bool HadAtMostOneDOMMutation() {
+  bool NeedsRecheck() {
+    if (node_document_ != node_->GetDocument()) {
+      return false;
+    }
     if (node_document_->DomTreeVersion() > original_node_document_version_ + 1)
       return false;
     if (parent_document_ != parent_->GetDocument())
@@ -100,6 +106,7 @@ class DOMTreeMutationDetector {
   }
 
  private:
+  const Member<const Node> node_;
   const Member<Document> node_document_;
   const Member<Document> parent_document_;
   const Member<const Node> parent_;
@@ -112,7 +119,7 @@ inline bool CheckReferenceChildParent(const Node& parent,
                                       const Node* old_child,
                                       ExceptionState& exception_state) {
   if (next && next->parentNode() != &parent) {
-    exception_state.ThrowDOMException(kNotFoundError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotFoundError,
                                       "The node before which the new node is "
                                       "to be inserted is not a child of this "
                                       "node.");
@@ -120,7 +127,8 @@ inline bool CheckReferenceChildParent(const Node& parent,
   }
   if (old_child && old_child->parentNode() != &parent) {
     exception_state.ThrowDOMException(
-        kNotFoundError, "The node to be replaced is not a child of this node.");
+        DOMExceptionCode::kNotFoundError,
+        "The node to be replaced is not a child of this node.");
     return false;
   }
   return true;
@@ -197,7 +205,8 @@ bool ContainerNode::IsHostIncludingInclusiveAncestorOfThis(
   }
   if (child_contains_parent) {
     exception_state.ThrowDOMException(
-        kHierarchyRequestError, "The new child element contains the parent.");
+        DOMExceptionCode::kHierarchyRequestError,
+        "The new child element contains the parent.");
   }
   return child_contains_parent;
 }
@@ -231,7 +240,8 @@ bool ContainerNode::EnsurePreInsertionValidity(
   DCHECK(!new_child.IsPseudoElement());
   if (new_child.IsPseudoElement()) {
     exception_state.ThrowDOMException(
-        kHierarchyRequestError, "The new child element is a pseudo-element.");
+        DOMExceptionCode::kHierarchyRequestError,
+        "The new child element is a pseudo-element.");
     return false;
   }
 
@@ -261,7 +271,7 @@ bool ContainerNode::EnsurePreInsertionValidity(
   // doctype and parent is not a document, throw a HierarchyRequestError.
   if (!IsChildTypeAllowed(new_child)) {
     exception_state.ThrowDOMException(
-        kHierarchyRequestError,
+        DOMExceptionCode::kHierarchyRequestError,
         "Nodes of type '" + new_child.nodeName() +
             "' may not be inserted inside nodes of type '" + nodeName() + "'.");
     return false;
@@ -343,6 +353,9 @@ void ContainerNode::DidInsertNodeVector(
       DispatchChildInsertionEvents(*target_node);
   }
   DispatchSubtreeModifiedEvent();
+
+  if (AXObjectCache* cache = GetDocument().GetOrCreateAXObjectCache())
+    cache->DidInsertChildrenOfNode(this);
 }
 
 class ContainerNode::AdoptAndInsertBefore {
@@ -394,7 +407,7 @@ Node* ContainerNode::InsertBefore(Node* new_child,
   if (!CollectChildrenAndRemoveFromOldParent(*new_child, targets,
                                              exception_state))
     return new_child;
-  if (!detector.HadAtMostOneDOMMutation()) {
+  if (!detector.NeedsRecheck()) {
     if (!RecheckNodeInsertionStructuralPrereq(targets, ref_child,
                                               exception_state))
       return new_child;
@@ -403,6 +416,7 @@ Node* ContainerNode::InsertBefore(Node* new_child,
   // 5. Insert node into parent before reference child.
   NodeVector post_insertion_notification_targets;
   {
+    SlotAssignmentRecalcForbiddenScope forbid_slot_recalc(GetDocument());
     ChildListMutationScope mutation(*this);
     InsertNodeVector(targets, ref_child, AdoptAndInsertBefore(),
                      &post_insertion_notification_targets);
@@ -512,7 +526,7 @@ Node* ContainerNode::ReplaceChild(Node* new_child,
   // https://dom.spec.whatwg.org/#concept-node-replace
 
   if (!old_child) {
-    exception_state.ThrowDOMException(kNotFoundError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotFoundError,
                                       "The node to be replaced is null.");
     return nullptr;
   }
@@ -541,7 +555,7 @@ Node* ContainerNode::ReplaceChild(Node* new_child,
     new_child_parent->RemoveChild(new_child, exception_state);
     if (exception_state.HadException())
       return nullptr;
-    if (!detector.HadAtMostOneDOMMutation())
+    if (!detector.NeedsRecheck())
       needs_recheck = true;
   }
 
@@ -563,9 +577,11 @@ Node* ContainerNode::ReplaceChild(Node* new_child,
       old_child_parent->RemoveChild(old_child, exception_state);
       if (exception_state.HadException())
         return nullptr;
-      if (!detector.HadAtMostOneDOMMutation())
+      if (!detector.NeedsRecheck())
         needs_recheck = true;
     }
+
+    SlotAssignmentRecalcForbiddenScope forbid_slot_recalc(GetDocument());
 
     // 13. Let nodes be node’s children if node is a DocumentFragment node, and
     // a list containing solely node otherwise.
@@ -573,7 +589,7 @@ Node* ContainerNode::ReplaceChild(Node* new_child,
     if (!CollectChildrenAndRemoveFromOldParent(*new_child, targets,
                                                exception_state))
       return old_child;
-    if (!detector.HadAtMostOneDOMMutation() || needs_recheck) {
+    if (!detector.NeedsRecheck() || needs_recheck) {
       if (!RecheckNodeInsertionStructuralPrereq(targets, next, exception_state))
         return old_child;
     }
@@ -642,12 +658,6 @@ void ContainerNode::Trace(blink::Visitor* visitor) {
   Node::Trace(visitor);
 }
 
-void ContainerNode::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(first_child_);
-  visitor->TraceWrappers(last_child_);
-  Node::TraceWrappers(visitor);
-}
-
 Node* ContainerNode::RemoveChild(Node* old_child,
                                  ExceptionState& exception_state) {
   // NotFoundError: Raised if oldChild is not a child of this node.
@@ -657,7 +667,8 @@ Node* ContainerNode::RemoveChild(Node* old_child,
   if (!old_child || old_child->parentNode() != this ||
       old_child->IsPseudoElement()) {
     exception_state.ThrowDOMException(
-        kNotFoundError, "The node to be removed is not a child of this node.");
+        DOMExceptionCode::kNotFoundError,
+        "The node to be removed is not a child of this node.");
     return nullptr;
   }
 
@@ -669,7 +680,7 @@ Node* ContainerNode::RemoveChild(Node* old_child,
   // child into a different parent.
   if (child->parentNode() != this) {
     exception_state.ThrowDOMException(
-        kNotFoundError,
+        DOMExceptionCode::kNotFoundError,
         "The node to be removed is no longer a "
         "child of this node. Perhaps it was moved "
         "in a 'blur' event handler?");
@@ -681,7 +692,7 @@ Node* ContainerNode::RemoveChild(Node* old_child,
   // Mutation events might have moved this child into a different parent.
   if (child->parentNode() != this) {
     exception_state.ThrowDOMException(
-        kNotFoundError,
+        DOMExceptionCode::kNotFoundError,
         "The node to be removed is no longer a "
         "child of this node. Perhaps it was moved "
         "in response to a mutation?");
@@ -689,6 +700,7 @@ Node* ContainerNode::RemoveChild(Node* old_child,
   }
 
   {
+    SlotAssignmentRecalcForbiddenScope forbid_slot_recalc(GetDocument());
     HTMLFrameOwnerElement::PluginDisposeSuspendScope suspend_plugin_dispose;
     TreeOrderedMap::RemoveScope tree_remove_scope;
 
@@ -791,6 +803,7 @@ void ContainerNode::RemoveChildren(SubtreeModificationAction action) {
     HTMLFrameOwnerElement::PluginDisposeSuspendScope suspend_plugin_dispose;
     TreeOrderedMap::RemoveScope tree_remove_scope;
     {
+      SlotAssignmentRecalcForbiddenScope forbid_slot_recalc(GetDocument());
       EventDispatchForbiddenScope assert_no_event_dispatch;
       ScriptForbiddenScope forbid_script;
 
@@ -822,7 +835,7 @@ Node* ContainerNode::AppendChild(Node* new_child,
   if (!CollectChildrenAndRemoveFromOldParent(*new_child, targets,
                                              exception_state))
     return new_child;
-  if (!detector.HadAtMostOneDOMMutation()) {
+  if (!detector.NeedsRecheck()) {
     if (!RecheckNodeInsertionStructuralPrereq(targets, nullptr,
                                               exception_state))
       return new_child;
@@ -830,6 +843,7 @@ Node* ContainerNode::AppendChild(Node* new_child,
 
   NodeVector post_insertion_notification_targets;
   {
+    SlotAssignmentRecalcForbiddenScope forbid_slot_recalc(GetDocument());
     ChildListMutationScope mutation(*this);
     InsertNodeVector(targets, nullptr, AdoptAndAppendChild(),
                      &post_insertion_notification_targets);
@@ -1222,7 +1236,12 @@ Element* ContainerNode::QuerySelector(const AtomicString& selectors,
       selectors, GetDocument(), exception_state);
   if (!selector_query)
     return nullptr;
-  return selector_query->QueryFirst(*this);
+  Element* element = selector_query->QueryFirst(*this);
+  if (element && element->GetDocument().InDOMNodeRemovedHandler()) {
+    if (NodeChildRemovalTracker::IsBeingRemoved(element))
+      GetDocument().CountDetachingNodeAccessInDOMNodeRemovedHandler();
+  }
+  return element;
 }
 
 Element* ContainerNode::QuerySelector(const AtomicString& selectors) {
@@ -1285,24 +1304,47 @@ static void DispatchChildRemovalEvents(Node& child) {
   probe::willRemoveDOMNode(&child);
 
   Node* c = &child;
-  Document* document = &child.GetDocument();
+  Document& document = child.GetDocument();
 
   // Dispatch pre-removal mutation events.
   if (c->parentNode() &&
-      document->HasListenerType(Document::kDOMNodeRemovedListener)) {
+      document.HasListenerType(Document::kDOMNodeRemovedListener)) {
+    bool original_node_flag = c->InDOMNodeRemovedHandler();
+    auto original_document_state = document.GetInDOMNodeRemovedHandlerState();
+    if (ScopedEventQueue::Instance()->ShouldQueueEvents()) {
+      UseCounter::Count(document, WebFeature::kDOMNodeRemovedEventDelayed);
+    } else {
+      c->SetInDOMNodeRemovedHandler(true);
+      document.SetInDOMNodeRemovedHandlerState(
+          Document::InDOMNodeRemovedHandlerState::kDOMNodeRemoved);
+    }
     NodeChildRemovalTracker scope(child);
     c->DispatchScopedEvent(MutationEvent::Create(
         EventTypeNames::DOMNodeRemoved, Event::Bubbles::kYes, c->parentNode()));
+    document.SetInDOMNodeRemovedHandlerState(original_document_state);
+    c->SetInDOMNodeRemovedHandler(original_node_flag);
   }
 
   // Dispatch the DOMNodeRemovedFromDocument event to all descendants.
-  if (c->isConnected() && document->HasListenerType(
-                              Document::kDOMNodeRemovedFromDocumentListener)) {
+  if (c->isConnected() &&
+      document.HasListenerType(Document::kDOMNodeRemovedFromDocumentListener)) {
+    bool original_node_flag = c->InDOMNodeRemovedHandler();
+    auto original_document_state = document.GetInDOMNodeRemovedHandlerState();
+    if (ScopedEventQueue::Instance()->ShouldQueueEvents()) {
+      UseCounter::Count(document,
+                        WebFeature::kDOMNodeRemovedFromDocumentEventDelayed);
+    } else {
+      c->SetInDOMNodeRemovedHandler(true);
+      document.SetInDOMNodeRemovedHandlerState(
+          Document::InDOMNodeRemovedHandlerState::kDOMNodeRemovedFromDocument);
+    }
     NodeChildRemovalTracker scope(child);
     for (; c; c = NodeTraversal::Next(*c, &child)) {
       c->DispatchScopedEvent(MutationEvent::Create(
           EventTypeNames::DOMNodeRemovedFromDocument, Event::Bubbles::kNo));
     }
+    document.SetInDOMNodeRemovedHandlerState(original_document_state);
+    child.SetInDOMNodeRemovedHandler(original_node_flag);
   }
 }
 
@@ -1332,13 +1374,6 @@ void ContainerNode::RecalcDescendantStyles(StyleRecalcChange change) {
       if (element->ShouldCallRecalcStyle(change))
         element->RecalcStyle(change);
     }
-  }
-}
-
-void ContainerNode::RecalcDescendantStylesForReattach() {
-  for (Node* child = lastChild(); child; child = child->previousSibling()) {
-    if (child->IsElementNode())
-      ToElement(child)->RecalcStyleForReattach();
   }
 }
 

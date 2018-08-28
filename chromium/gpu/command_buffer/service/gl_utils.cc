@@ -4,6 +4,7 @@
 
 #include "gpu/command_buffer/service/gl_utils.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 #include "base/metrics/histogram.h"
@@ -208,7 +209,7 @@ void PopulateNumericCapabilities(Capabilities* caps,
                 &caps->num_compressed_texture_formats);
   glGetIntegerv(GL_NUM_SHADER_BINARY_FORMATS, &caps->num_shader_binary_formats);
 
-  if (feature_info->IsWebGL2OrES3Context()) {
+  if (feature_info->IsWebGL2OrES3OrHigherContext()) {
     glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &caps->max_3d_texture_size);
     glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &caps->max_array_texture_layers);
     glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &caps->max_color_attachments);
@@ -254,11 +255,15 @@ void PopulateNumericCapabilities(Capabilities* caps,
     glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT,
                   &caps->uniform_buffer_offset_alignment);
     caps->major_version = 3;
-    caps->minor_version = 0;
+    if (feature_info->IsWebGL2ComputeContext()) {
+      caps->minor_version = 1;
+    } else {
+      caps->minor_version = 0;
+    }
   }
   if (feature_info->feature_flags().multisampled_render_to_texture ||
       feature_info->feature_flags().chromium_framebuffer_multisample ||
-      feature_info->IsWebGL2OrES3Context()) {
+      feature_info->IsWebGL2OrES3OrHigherContext()) {
     glGetIntegerv(GL_MAX_SAMPLES, &caps->max_samples);
   }
 }
@@ -274,7 +279,9 @@ bool CheckUniqueAndNonNullIds(GLsizei n, const GLuint* client_ids) {
 const char* GetServiceVersionString(const FeatureInfo* feature_info) {
   if (feature_info->IsWebGL2OrES3Context())
     return "OpenGL ES 3.0 Chromium";
-  else
+  else if (feature_info->IsWebGL2ComputeContext()) {
+    return "OpenGL ES 3.1 Chromium";
+  } else
     return "OpenGL ES 2.0 Chromium";
 }
 
@@ -282,7 +289,9 @@ const char* GetServiceShadingLanguageVersionString(
     const FeatureInfo* feature_info) {
   if (feature_info->IsWebGL2OrES3Context())
     return "OpenGL ES GLSL ES 3.0 Chromium";
-  else
+  else if (feature_info->IsWebGL2ComputeContext()) {
+    return "OpenGL ES GLSL ES 3.1 Chromium";
+  } else
     return "OpenGL ES GLSL ES 1.0 Chromium";
 }
 
@@ -510,7 +519,7 @@ bool ValidateCopyTexFormatHelper(const FeatureInfo* feature_info,
     *output_error_msg = std::string("incompatible format");
     return false;
   }
-  if (feature_info->IsWebGL2OrES3Context()) {
+  if (feature_info->IsWebGL2OrES3OrHigherContext()) {
     GLint color_encoding =
         GLES2Util::GetColorEncodingFromInternalFormat(read_format);
     bool float_mismatch = feature_info->ext_color_buffer_float_available()
@@ -533,7 +542,7 @@ bool ValidateCopyTexFormatHelper(const FeatureInfo* feature_info,
         std::string("can not be used with depth or stencil textures");
     return false;
   }
-  if (feature_info->IsWebGL2OrES3Context() ||
+  if (feature_info->IsWebGL2OrES3OrHigherContext() ||
       (feature_info->feature_flags().chromium_color_buffer_float_rgb &&
        internal_format == GL_RGB32F) ||
       (feature_info->feature_flags().chromium_color_buffer_float_rgba &&
@@ -639,6 +648,102 @@ CopyTextureMethod GetCopyTextureCHROMIUMMethod(const FeatureInfo* feature_info,
   // Draw to a fbo attaching level 0 of an intermediate texture,
   // then copy from the fbo to dest texture level with glCopyTexImage2D.
   return CopyTextureMethod::DRAW_AND_COPY;
+}
+
+bool ValidateCopyTextureCHROMIUMInternalFormats(const FeatureInfo* feature_info,
+                                                GLenum source_internal_format,
+                                                GLenum dest_internal_format,
+                                                std::string* output_error_msg) {
+  bool valid_dest_format = false;
+  // TODO(qiankun.miao@intel.com): ALPHA, LUMINANCE and LUMINANCE_ALPHA formats
+  // are not supported on GL core profile. See https://crbug.com/577144. Enable
+  // the workaround for glCopyTexImage and glCopyTexSubImage in
+  // gles2_cmd_copy_tex_image.cc for glCopyTextureCHROMIUM implementation.
+  switch (dest_internal_format) {
+    case GL_RGB:
+    case GL_RGBA:
+    case GL_RGB8:
+    case GL_RGBA8:
+      valid_dest_format = true;
+      break;
+    case GL_BGRA_EXT:
+    case GL_BGRA8_EXT:
+      valid_dest_format =
+          feature_info->feature_flags().ext_texture_format_bgra8888;
+      break;
+    case GL_SRGB_EXT:
+    case GL_SRGB_ALPHA_EXT:
+      valid_dest_format = feature_info->feature_flags().ext_srgb;
+      break;
+    case GL_R8:
+    case GL_R8UI:
+    case GL_RG8:
+    case GL_RG8UI:
+    case GL_SRGB8:
+    case GL_RGB565:
+    case GL_RGB8UI:
+    case GL_SRGB8_ALPHA8:
+    case GL_RGB5_A1:
+    case GL_RGBA4:
+    case GL_RGBA8UI:
+    case GL_RGB10_A2:
+      valid_dest_format = feature_info->IsWebGL2OrES3OrHigherContext();
+      break;
+    case GL_RGB9_E5:
+    case GL_R16F:
+    case GL_R32F:
+    case GL_RG16F:
+    case GL_RG32F:
+    case GL_RGB16F:
+    case GL_RGBA16F:
+    case GL_R11F_G11F_B10F:
+      valid_dest_format = feature_info->ext_color_buffer_float_available();
+      break;
+    case GL_RGB32F:
+      valid_dest_format =
+          feature_info->ext_color_buffer_float_available() ||
+          feature_info->feature_flags().chromium_color_buffer_float_rgb;
+      break;
+    case GL_RGBA32F:
+      valid_dest_format =
+          feature_info->ext_color_buffer_float_available() ||
+          feature_info->feature_flags().chromium_color_buffer_float_rgba;
+      break;
+    case GL_ALPHA:
+    case GL_LUMINANCE:
+    case GL_LUMINANCE_ALPHA:
+      valid_dest_format = true;
+      break;
+    default:
+      valid_dest_format = false;
+      break;
+  }
+
+  // TODO(aleksandar.stojiljkovic): Use sized internal formats:
+  // https://crbug.com/628064
+  bool valid_source_format =
+      source_internal_format == GL_RED || source_internal_format == GL_ALPHA ||
+      source_internal_format == GL_RGB || source_internal_format == GL_RGBA ||
+      source_internal_format == GL_RGB8 || source_internal_format == GL_RGBA8 ||
+      source_internal_format == GL_LUMINANCE ||
+      source_internal_format == GL_LUMINANCE_ALPHA ||
+      source_internal_format == GL_BGRA_EXT ||
+      source_internal_format == GL_BGRA8_EXT ||
+      source_internal_format == GL_RGB_YCBCR_420V_CHROMIUM ||
+      source_internal_format == GL_RGB_YCBCR_422_CHROMIUM ||
+      source_internal_format == GL_R16_EXT;
+  if (!valid_source_format) {
+    *output_error_msg = "invalid source internal format " +
+                        GLES2Util::GetStringEnum(source_internal_format);
+    return false;
+  }
+  if (!valid_dest_format) {
+    *output_error_msg = "invalid dest internal format " +
+                        GLES2Util::GetStringEnum(dest_internal_format);
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace gles2

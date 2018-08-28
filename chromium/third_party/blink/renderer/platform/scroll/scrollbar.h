@@ -26,6 +26,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCROLL_SCROLLBAR_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCROLL_SCROLLBAR_H_
 
+#include "third_party/blink/renderer/platform/graphics/compositor_element_id.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
@@ -186,6 +187,8 @@ class PLATFORM_EXPORT Scrollbar : public GarbageCollectedFinalized<Scrollbar>,
   // part.
   void SetNeedsPaintInvalidation(ScrollbarPart invalid_parts);
 
+  CompositorElementId GetElementId();
+
   // Promptly unregister from the theme manager + run finalizers of derived
   // Scrollbars.
   EAGERLY_FINALIZE();
@@ -200,9 +203,9 @@ class PLATFORM_EXPORT Scrollbar : public GarbageCollectedFinalized<Scrollbar>,
             ScrollbarTheme* = nullptr);
 
   void AutoscrollTimerFired(TimerBase*);
-  void StartTimerIfNeeded(double delay);
+  void StartTimerIfNeeded(TimeDelta delay);
   void StopTimerIfNeeded();
-  void AutoscrollPressedPart(double delay);
+  void AutoscrollPressedPart(TimeDelta delay);
   ScrollDirectionPhysical PressedPartScrollDirectionPhysical();
   ScrollGranularity PressedPartScrollGranularity();
 

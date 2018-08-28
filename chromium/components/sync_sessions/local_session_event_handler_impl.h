@@ -57,18 +57,17 @@ class LocalSessionEventHandlerImpl : public LocalSessionEventHandler {
                                   const GURL& favicon_url) = 0;
   };
 
-  // Raw pointers must not be null and all pointees except |*initial_batch| must
-  // outlive this object. |*initial_batch| may or may not be initially empty
-  // (depending on whether the caller wants to bundle together other writes).
-  // This constructor populates |*initial_batch| to resync local window and tab
-  // information, but does *not* Commit() the batch.
+  // Raw pointers must not be null and all pointees must outlive this object.
+  // A side effect of this constructor could include (unless session restore is
+  // ongoing) the creation of a write batch (via |delegate| and committing
+  // changes).
   LocalSessionEventHandlerImpl(Delegate* delegate,
                                SyncSessionsClient* sessions_client,
-                               SyncedSessionTracker* session_tracker,
-                               WriteBatch* initial_batch);
+                               SyncedSessionTracker* session_tracker);
   ~LocalSessionEventHandlerImpl() override;
 
   // LocalSessionEventHandler implementation.
+  void OnSessionRestoreComplete() override;
   void OnLocalTabModified(SyncedTabDelegate* modified_tab) override;
   void OnFaviconsChanged(const std::set<GURL>& page_urls,
                          const GURL& icon_url) override;
@@ -80,43 +79,25 @@ class LocalSessionEventHandlerImpl : public LocalSessionEventHandler {
  private:
   enum ReloadTabsOption { RELOAD_TABS, DONT_RELOAD_TABS };
 
-  // Updates |session_tracker_| with tab_id<->tab_node_id association that the
-  // delegate already knows about, while resolving conflicts if the delegate
-  // reports conflicting sync IDs. This makes sure duplicate tab_node_id-s are
-  // not assigned. On return, the following conditions are met:
-  // 1. Delegate contains no duplicate sync IDs (tab_node_id).
-  // 2. Delegate contains no sync-ID <-> tab_id association that the tracker
-  //    doesn't know about (but not the opposite).
-  void AssociateExistingSyncIds();
-
   void AssociateWindows(ReloadTabsOption option,
-                        bool has_tabbed_window,
                         WriteBatch* batch);
 
   // Loads and reassociates the local tab referenced in |tab|.
   // |batch| must not be null. This function will append necessary
-  // changes for processing later. Will only assign a new sync id if there is
-  // a tabbed window, which results in failure for tabs without sync ids yet.
+  // changes for processing later.
   void AssociateTab(SyncedTabDelegate* const tab,
-                    bool has_tabbed_window,
                     WriteBatch* batch);
 
   // It's possible that when we associate windows, tabs aren't all loaded
   // into memory yet (e.g on android) and we don't have a WebContents. In this
   // case we can't do a full association, but we still want to update tab IDs
   // as they may have changed after a session was restored.  This method
-  // compares new_tab_id and new_window_id against the previously persisted tab
-  // ID and window ID (from our TabNodePool) and updates them if either differs.
+  // new_window_id against the previously persisted window ID (from our
+  // TabNodePool) and updates it.
   void AssociateRestoredPlaceholderTab(const SyncedTabDelegate& tab_delegate,
-                                       SessionID new_tab_id,
+                                       SessionID tab_id,
                                        SessionID new_window_id,
                                        WriteBatch* batch);
-
-  // Appends an ACTION_UPDATE for a sync tab entity onto |batch| to
-  // reflect the contents of |tab|, given the tab node id |sync_id|.
-  void AppendChangeForExistingTab(int sync_id,
-                                  const sessions::SessionTab& tab,
-                                  WriteBatch* batch) const;
 
   // Set |session_tab| from |tab_delegate|.
   sync_pb::SessionTab GetTabSpecificsFromDelegate(
@@ -127,12 +108,6 @@ class LocalSessionEventHandlerImpl : public LocalSessionEventHandler {
 
   // Update |tab_specifics| with the corresponding task ids.
   void WriteTasksIntoSpecifics(sync_pb::SessionTab* tab_specifics);
-
-  // On Android, it's possible to not have any tabbed windows when only custom
-  // tabs are currently open. This means that there is tab data that will be
-  // restored later, but we cannot access it. This method is an elaborate way to
-  // check if we're currently in that state or not.
-  bool ScanForTabbedWindow();
 
   // Injected dependencies (not owned).
   Delegate* const delegate_;

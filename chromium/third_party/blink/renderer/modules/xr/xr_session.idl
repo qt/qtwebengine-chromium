@@ -3,13 +3,20 @@
 // found in the LICENSE file.
 
 // https://immersive-web.github.io/webxr/#xrsession-interface
+enum XREnvironmentBlendMode {
+  "opaque",
+  "additive",
+  "alpha-blend",
+};
+
 [
     SecureContext,
     OriginTrialEnabled=WebXR
 ] interface XRSession : EventTarget {
   readonly attribute XRDevice device;
-  readonly attribute boolean exclusive;
+  readonly attribute boolean immersive;
   readonly attribute XRPresentationContext outputContext;
+  readonly attribute XREnvironmentBlendMode environmentBlendMode;
 
   attribute double depthNear;
   attribute double depthFar;
@@ -27,6 +34,8 @@
   void cancelAnimationFrame(long handle);
 
   [MeasureAs=XRSessionGetInputSources] FrozenArray<XRInputSource> getInputSources();
+
+  [RuntimeEnabled=WebXRHitTest, CallWith=ScriptState] Promise<FrozenArray<XRHitResult>> requestHitTest(Float32Array origin, Float32Array direction, XRCoordinateSystem coordinateSystem);
 
   [CallWith=ScriptState] Promise<void> end();
 };

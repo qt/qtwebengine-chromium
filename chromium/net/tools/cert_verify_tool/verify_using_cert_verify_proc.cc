@@ -15,6 +15,7 @@
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_proc.h"
 #include "net/cert/cert_verify_result.h"
+#include "net/cert/test_root_certs.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
 #include "net/tools/cert_verify_tool/cert_verify_tool_util.h"
@@ -60,8 +61,7 @@ std::string SubjectFromX509Certificate(const net::X509Certificate* cert) {
 // Returns a textual representation of the Subject of |cert_handle|.
 std::string SubjectFromCryptoBuffer(CRYPTO_BUFFER* cert_handle) {
   scoped_refptr<net::X509Certificate> cert =
-      net::X509Certificate::CreateFromBuffer(
-          net::x509_util::DupCryptoBuffer(cert_handle), {});
+      net::X509Certificate::CreateFromBuffer(bssl::UpRef(cert_handle), {});
   if (!cert)
     return std::string();
   return SubjectFromX509Certificate(cert.get());
@@ -152,16 +152,31 @@ bool VerifyUsingCertVerifyProc(
   // TODO(mattm): add command line flags to configure VerifyFlags.
   int flags = 0;
 
+  // Not all platforms support providing additional trust anchors to the
+  // verifier. To workaround this, use TestRootCerts to modify the
+  // system trust store globally.
+  net::TestRootCerts* test_root_certs = net::TestRootCerts::GetInstance();
+  CHECK(test_root_certs->IsEmpty());
+
   if (!x509_additional_trust_anchors.empty() &&
       !cert_verify_proc->SupportsAdditionalTrustAnchors()) {
-    std::cerr << "WARNING: Additional trust anchors not supported on this "
-                 "platform.\n";
+    std::cerr << "NOTE: Additional trust anchors not supported on this "
+                 "platform. Using TestRootCerts instead.\n";
+
+    for (const auto& trust_anchor : x509_additional_trust_anchors)
+      test_root_certs->Add(trust_anchor.get());
+
+    x509_additional_trust_anchors.clear();
   }
+
   net::CertVerifyResult result;
   int rv =
       cert_verify_proc->Verify(x509_target_and_intermediates.get(), hostname,
                                std::string() /* ocsp_response */, flags,
                                crl_set, x509_additional_trust_anchors, &result);
+
+  // Remove any temporary trust anchors.
+  test_root_certs->Clear();
 
   std::cout << "CertVerifyProc result: " << net::ErrorToShortString(rv) << "\n";
   PrintCertVerifyResult(result);

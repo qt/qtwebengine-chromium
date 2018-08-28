@@ -33,10 +33,11 @@
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/script/script_element_base.h"
 #include "third_party/blink/renderer/core/script/script_scheduling_type.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_position.h"
+#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
@@ -63,7 +64,7 @@ class CORE_EXPORT PendingScriptClient : public GarbageCollectedMixin {
 // PendingScriptClient is notified.
 class CORE_EXPORT PendingScript
     : public GarbageCollectedFinalized<PendingScript>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   virtual ~PendingScript();
 
@@ -72,19 +73,19 @@ class CORE_EXPORT PendingScript
   // Returns the time the load of this script started blocking the parser, or
   // zero if this script hasn't yet blocked the parser, in
   // monotonicallyIncreasingTime.
-  double ParserBlockingLoadStartTime() const {
+  TimeTicks ParserBlockingLoadStartTime() const {
     return parser_blocking_load_start_time_;
   }
 
   void WatchForLoad(PendingScriptClient*);
   void StopWatchingForLoad();
+  void PendingScriptFinished();
 
   ScriptElementBase* GetElement() const;
 
   virtual ScriptType GetScriptType() const = 0;
 
   virtual void Trace(blink::Visitor*);
-  void TraceWrappers(ScriptWrappableVisitor*) const override {}
   const char* NameInHeapSnapshot() const override { return "PendingScript"; }
 
   virtual Script* GetSource(const KURL& document_url,
@@ -149,14 +150,15 @@ class CORE_EXPORT PendingScript
   virtual void CheckState() const = 0;
 
  private:
-  static void ExecuteScriptBlockInternal(Script*,
-                                         bool error_occurred,
-                                         ScriptElementBase*,
-                                         bool was_canceled,
-                                         bool is_external,
-                                         bool created_during_document_write,
-                                         double parser_blocking_load_start_time,
-                                         bool is_controlled_by_script_runner);
+  static void ExecuteScriptBlockInternal(
+      Script*,
+      bool error_occurred,
+      ScriptElementBase*,
+      bool was_canceled,
+      bool is_external,
+      bool created_during_document_write,
+      TimeTicks parser_blocking_load_start_time,
+      bool is_controlled_by_script_runner);
 
   // |m_element| must points to the corresponding ScriptLoader's
   // ScriptElementBase and thus must be non-null before dispose() is called
@@ -164,7 +166,7 @@ class CORE_EXPORT PendingScript
   Member<ScriptElementBase> element_;
 
   TextPosition starting_position_;  // Only used for inline script tags.
-  double parser_blocking_load_start_time_;
+  TimeTicks parser_blocking_load_start_time_;
 
   ScriptSchedulingType scheduling_type_ = ScriptSchedulingType::kNotSet;
 

@@ -52,7 +52,9 @@ display::Display::Rotation GetRotation() {
 VROrientationDevice::VROrientationDevice(
     mojom::SensorProviderPtr* sensor_provider,
     base::OnceClosure ready_callback)
-    : ready_callback_(std::move(ready_callback)), binding_(this) {
+    : VRDeviceBase(VRDeviceId::ORIENTATION_DEVICE_ID),
+      ready_callback_(std::move(ready_callback)),
+      binding_(this) {
   (*sensor_provider)
       ->GetSensor(kOrientationSensorType,
                   base::BindOnce(&VROrientationDevice::SensorReady,
@@ -136,8 +138,17 @@ void VROrientationDevice::HandleSensorError() {
   binding_.Close();
 }
 
-void VROrientationDevice::OnMagicWindowPoseRequest(
-    mojom::VRMagicWindowProvider::GetPoseCallback callback) {
+void VROrientationDevice::RequestSession(
+    mojom::XRDeviceRuntimeSessionOptionsPtr options,
+    mojom::XRRuntime::RequestSessionCallback callback) {
+  DCHECK(!options->immersive);
+  // TODO(offenwanger): Perform a check to see if sensors are available when
+  // RequestSession is called for non-immersive sessions.
+  std::move(callback).Run(nullptr, nullptr);
+}
+
+void VROrientationDevice::OnMagicWindowFrameDataRequest(
+    mojom::VRMagicWindowProvider::GetFrameDataCallback callback) {
   mojom::VRPosePtr pose = mojom::VRPose::New();
   pose->orientation.emplace(4);
 
@@ -158,7 +169,10 @@ void VROrientationDevice::OnMagicWindowPoseRequest(
   pose->orientation.value()[2] = latest_pose_.z();
   pose->orientation.value()[3] = latest_pose_.w();
 
-  std::move(callback).Run(std::move(pose));
+  mojom::XRFrameDataPtr frame_data = mojom::XRFrameData::New();
+  frame_data->pose = std::move(pose);
+
+  std::move(callback).Run(std::move(frame_data));
 }
 
 Quaternion VROrientationDevice::SensorSpaceToWorldSpace(Quaternion q) {
@@ -203,9 +217,5 @@ Quaternion VROrientationDevice::WorldSpaceToUserOrientedSpace(Quaternion q) {
 
   return q;
 }
-
-bool VROrientationDevice::IsFallbackDevice() {
-  return true;
-};
 
 }  // namespace device

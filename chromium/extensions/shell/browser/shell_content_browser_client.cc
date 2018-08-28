@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "components/guest_view/browser/guest_view_message_filter.h"
@@ -286,12 +287,13 @@ void ShellContentBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories(
 }
 
 bool ShellContentBrowserClient::WillCreateURLLoaderFactory(
+    content::BrowserContext* browser_context,
     content::RenderFrameHost* frame,
     bool is_navigation,
     network::mojom::URLLoaderFactoryRequest* factory_request) {
   auto* web_request_api =
       extensions::BrowserContextKeyedAPIFactory<extensions::WebRequestAPI>::Get(
-          frame->GetProcess()->GetBrowserContext());
+          browser_context);
   return web_request_api->MaybeProxyURLLoaderFactory(frame, is_navigation,
                                                      factory_request);
 }

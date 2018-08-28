@@ -11,9 +11,11 @@
 
 #include "base/component_export.h"
 #include "base/macros.h"
+#include "components/content_settings/core/common/content_settings.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "net/cookies/cookie_change_dispatcher.h"
 #include "net/cookies/cookie_deletion_info.h"
+#include "services/network/cookie_settings.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
 
 namespace net {
@@ -23,6 +25,8 @@ class CookieStore;
 class GURL;
 
 namespace network {
+class SessionCleanupCookieStore;
+class SessionCleanupChannelIDStore;
 
 // Wrap a cookie store in an implementation of the mojo cookie interface.
 
@@ -30,17 +34,24 @@ namespace network {
 // the IO thread.  Note that this does not restrict the locations from which
 // mojo messages may be sent to the object.
 class COMPONENT_EXPORT(NETWORK_SERVICE) CookieManager
-    : public network::mojom::CookieManager {
+    : public mojom::CookieManager {
  public:
   // Construct a CookieService that can serve mojo requests for the underlying
   // cookie store.  |*cookie_store| must outlive this object.
-  explicit CookieManager(net::CookieStore* cookie_store);
+  CookieManager(
+      net::CookieStore* cookie_store,
+      scoped_refptr<SessionCleanupCookieStore> session_cleanup_cookie_store,
+      scoped_refptr<SessionCleanupChannelIDStore>
+          session_cleanup_channel_id_store,
+      mojom::CookieManagerParamsPtr params);
 
   ~CookieManager() override;
 
+  const CookieSettings& cookie_settings() const { return cookie_settings_; }
+
   // Bind a cookie request to this object.  Mojo messages
   // coming through the associated pipe will be served by this object.
-  void AddRequest(network::mojom::CookieManagerRequest request);
+  void AddRequest(mojom::CookieManagerRequest request);
 
   // TODO(rdsmith): Add a verion of AddRequest that does renderer-appropriate
   // security checks on bindings coming through that interface.
@@ -54,16 +65,18 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieManager
                           bool secure_source,
                           bool modify_http_only,
                           SetCanonicalCookieCallback callback) override;
-  void DeleteCookies(network::mojom::CookieDeletionFilterPtr filter,
+  void DeleteCanonicalCookie(const net::CanonicalCookie& cookie,
+                             DeleteCanonicalCookieCallback callback) override;
+  void SetContentSettings(const ContentSettingsForOneType& settings) override;
+  void DeleteCookies(mojom::CookieDeletionFilterPtr filter,
                      DeleteCookiesCallback callback) override;
   void AddCookieChangeListener(
       const GURL& url,
       const std::string& name,
-      network::mojom::CookieChangeListenerPtr listener) override;
+      mojom::CookieChangeListenerPtr listener) override;
   void AddGlobalChangeListener(
-      network::mojom::CookieChangeListenerPtr listener) override;
-  void CloneInterface(
-      network::mojom::CookieManagerRequest new_interface) override;
+      mojom::CookieChangeListenerPtr listener) override;
+  void CloneInterface(mojom::CookieManagerRequest new_interface) override;
 
   size_t GetClientsBoundForTesting() const { return bindings_.size(); }
   size_t GetListenersRegisteredForTesting() const {
@@ -71,6 +84,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieManager
   }
 
   void FlushCookieStore(FlushCookieStoreCallback callback) override;
+  void SetForceKeepSessionState() override;
+  void BlockThirdPartyCookies(bool block) override;
 
  private:
   // State associated with a CookieChangeListener.
@@ -86,7 +101,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieManager
     std::unique_ptr<net::CookieChangeSubscription> subscription;
 
     // The observer receiving change notifications.
-    network::mojom::CookieChangeListenerPtr listener;
+    mojom::CookieChangeListenerPtr listener;
 
     DISALLOW_COPY_AND_ASSIGN(ListenerRegistration);
   };
@@ -95,15 +110,18 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieManager
   void RemoveChangeListener(ListenerRegistration* registration);
 
   net::CookieStore* const cookie_store_;
-  mojo::BindingSet<network::mojom::CookieManager> bindings_;
+  scoped_refptr<SessionCleanupCookieStore> session_cleanup_cookie_store_;
+  scoped_refptr<SessionCleanupChannelIDStore> session_cleanup_channel_id_store_;
+  mojo::BindingSet<mojom::CookieManager> bindings_;
   std::vector<std::unique_ptr<ListenerRegistration>> listener_registrations_;
+  CookieSettings cookie_settings_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieManager);
 };
 
 COMPONENT_EXPORT(NETWORK_SERVICE)
 net::CookieDeletionInfo DeletionFilterToInfo(
-    network::mojom::CookieDeletionFilterPtr filter);
+    mojom::CookieDeletionFilterPtr filter);
 
 }  // namespace network
 

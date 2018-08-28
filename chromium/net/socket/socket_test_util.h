@@ -25,6 +25,7 @@
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "net/base/address_list.h"
+#include "net/base/completion_once_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -387,6 +388,9 @@ struct SSLSocketDataProvider {
   ChannelIDService* channel_id_service;
   base::Optional<NextProtoVector> next_protos_expected_in_ssl_config;
 
+  uint16_t expected_ssl_version_min;
+  uint16_t expected_ssl_version_max;
+
   bool is_connect_data_consumed = false;
 };
 
@@ -608,6 +612,9 @@ class MockClientSocket : public TransportClientSocket {
 
   // TransportClientSocket implementation.
   int Bind(const net::IPEndPoint& local_addr) override;
+  bool SetNoDelay(bool no_delay) override;
+  bool SetKeepAlive(bool enable, int delay) override;
+
   // StreamSocket implementation.
   int Connect(CompletionOnceCallback callback) override = 0;
   void Disconnect() override;
@@ -623,6 +630,7 @@ class MockClientSocket : public TransportClientSocket {
   void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
   int64_t GetTotalReceivedBytes() const override;
   void ApplySocketTag(const SocketTag& tag) override {}
+
  protected:
   ~MockClientSocket() override;
   void RunCallbackAsync(CompletionOnceCallback callback, int result);
@@ -810,6 +818,7 @@ class MockSSLClientSocket : public AsyncSocket, public SSLClientSocket {
             int buf_len,
             CompletionOnceCallback callback,
             const NetworkTrafficAnnotationTag& traffic_annotation) override;
+  int CancelReadIfReady() override;
 
   // StreamSocket implementation.
   int Connect(CompletionOnceCallback callback) override;
@@ -988,7 +997,10 @@ class TestSocketRequest : public TestCompletionCallbackBase {
 
   ClientSocketHandle* handle() { return &handle_; }
 
-  CompletionOnceCallback callback() const { return callback_; }
+  CompletionOnceCallback callback() {
+    return base::BindOnce(&TestSocketRequest::OnComplete,
+                          base::Unretained(this));
+  }
 
  private:
   void OnComplete(int result);
@@ -996,7 +1008,6 @@ class TestSocketRequest : public TestCompletionCallbackBase {
   ClientSocketHandle handle_;
   std::vector<TestSocketRequest*>* request_order_;
   size_t* completion_count_;
-  CompletionCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(TestSocketRequest);
 };
@@ -1120,7 +1131,7 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
                     const SocketTag& socket_tag,
                     RespectLimits respect_limits,
                     ClientSocketHandle* handle,
-                    const CompletionCallback& callback,
+                    CompletionOnceCallback callback,
                     const NetLogWithSource& net_log) override;
   void SetPriority(const std::string& group_name,
                    ClientSocketHandle* handle,
@@ -1156,7 +1167,7 @@ class MockSOCKSClientSocketPool : public SOCKSClientSocketPool {
                     const SocketTag& socket_tag,
                     RespectLimits respect_limits,
                     ClientSocketHandle* handle,
-                    const CompletionCallback& callback,
+                    CompletionOnceCallback callback,
                     const NetLogWithSource& net_log) override;
   void SetPriority(const std::string& group_name,
                    ClientSocketHandle* handle,

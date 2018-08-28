@@ -201,6 +201,9 @@ class ExtensionsBrowserClient {
   // ExternalProtocolHandler::PermitLaunchUrl() in Chrome.
   virtual void PermitExternalProtocolHandler() = 0;
 
+  // Return true if the device is enrolled in Demo Mode.
+  virtual bool IsInDemoMode() = 0;
+
   // Return true if the system is run in forced app mode.
   virtual bool IsRunningInForcedAppMode() = 0;
 
@@ -323,6 +326,13 @@ class ExtensionsBrowserClient {
   // value of this function is false.
   virtual bool IsExtensionEnabled(const std::string& extension_id,
                                   content::BrowserContext* context) const;
+
+  // http://crbug.com/829412
+  // Renderers with WebUI bindings shouldn't make http(s) requests for security
+  // reasons (e.g. to avoid malicious responses being able to run code in
+  // priviliged renderers). Fix these webui's to make requests through C++
+  // code instead.
+  virtual bool IsWebUIAllowedToMakeNetworkRequests(const url::Origin& origin);
 
   // Returns the single instance of |this|.
   static ExtensionsBrowserClient* Get();

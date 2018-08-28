@@ -137,7 +137,7 @@ HttpNetworkTransaction::~HttpNetworkTransaction() {
 }
 
 int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
-                                  const CompletionCallback& callback,
+                                  CompletionOnceCallback callback,
                                   const NetLogWithSource& net_log) {
   DCHECK(request_info->traffic_annotation.is_valid());
   net_log_ = net_log;
@@ -162,12 +162,12 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
   next_state_ = STATE_NOTIFY_BEFORE_CREATE_STREAM;
   int rv = DoLoop(OK);
   if (rv == ERR_IO_PENDING)
-    callback_ = callback;
+    callback_ = std::move(callback);
   return rv;
 }
 
 int HttpNetworkTransaction::RestartIgnoringLastError(
-    const CompletionCallback& callback) {
+    CompletionOnceCallback callback) {
   DCHECK(!stream_.get());
   DCHECK(!stream_request_.get());
   DCHECK_EQ(STATE_NONE, next_state_);
@@ -179,14 +179,14 @@ int HttpNetworkTransaction::RestartIgnoringLastError(
 
   int rv = DoLoop(OK);
   if (rv == ERR_IO_PENDING)
-    callback_ = callback;
+    callback_ = std::move(callback);
   return rv;
 }
 
 int HttpNetworkTransaction::RestartWithCertificate(
     scoped_refptr<X509Certificate> client_cert,
     scoped_refptr<SSLPrivateKey> client_private_key,
-    const CompletionCallback& callback) {
+    CompletionOnceCallback callback) {
   // In HandleCertificateRequest(), we always tear down existing stream
   // requests to force a new connection.  So we shouldn't have one here.
   DCHECK(!stream_request_.get());
@@ -210,12 +210,12 @@ int HttpNetworkTransaction::RestartWithCertificate(
   next_state_ = STATE_CREATE_STREAM;
   int rv = DoLoop(OK);
   if (rv == ERR_IO_PENDING)
-    callback_ = callback;
+    callback_ = std::move(callback);
   return rv;
 }
 
-int HttpNetworkTransaction::RestartWithAuth(
-    const AuthCredentials& credentials, const CompletionCallback& callback) {
+int HttpNetworkTransaction::RestartWithAuth(const AuthCredentials& credentials,
+                                            CompletionOnceCallback callback) {
   if (!CheckMaxRestarts())
     return ERR_TOO_MANY_RETRIES;
 
@@ -248,7 +248,7 @@ int HttpNetworkTransaction::RestartWithAuth(
   }
 
   if (rv == ERR_IO_PENDING)
-    callback_ = callback;
+    callback_ = std::move(callback);
   return rv;
 }
 
@@ -321,8 +321,9 @@ bool HttpNetworkTransaction::IsReadyToRestartForAuth() {
       HaveAuth(pending_auth_target_);
 }
 
-int HttpNetworkTransaction::Read(IOBuffer* buf, int buf_len,
-                                 const CompletionCallback& callback) {
+int HttpNetworkTransaction::Read(IOBuffer* buf,
+                                 int buf_len,
+                                 CompletionOnceCallback callback) {
   DCHECK(buf);
   DCHECK_LT(0, buf_len);
 
@@ -354,7 +355,7 @@ int HttpNetworkTransaction::Read(IOBuffer* buf, int buf_len,
 
   int rv = DoLoop(OK);
   if (rv == ERR_IO_PENDING)
-    callback_ = callback;
+    callback_ = std::move(callback);
   return rv;
 }
 
@@ -1296,6 +1297,11 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
       return ERR_METHOD_NOT_SUPPORTED;
   }
 
+  if (can_send_early_data_ && response_.headers.get() &&
+      response_.headers->response_code() == HTTP_TOO_EARLY) {
+    return HandleIOError(ERR_EARLY_DATA_REJECTED);
+  }
+
   // Check for an intermediate 100 Continue response.  An origin server is
   // allowed to send this response even if we didn't ask for it, so we just
   // need to skip over it.
@@ -1588,6 +1594,15 @@ int HttpNetworkTransaction::HandleIOError(int error) {
         error = OK;
       }
       break;
+    case ERR_EARLY_DATA_REJECTED:
+    case ERR_WRONG_VERSION_ON_EARLY_DATA:
+      net_log_.AddEventWithNetErrorCode(
+          NetLogEventType::HTTP_TRANSACTION_RESTART_AFTER_ERROR, error);
+      // Disable early data on the SSLConfig on a reset.
+      can_send_early_data_ = false;
+      ResetConnectionAndRequestForResend();
+      error = OK;
+      break;
     case ERR_SPDY_PING_FAILED:
     case ERR_SPDY_SERVER_REFUSED_STREAM:
     case ERR_SPDY_PUSHED_STREAM_NOT_AVAILABLE:
@@ -1661,7 +1676,7 @@ void HttpNetworkTransaction::ResetStateForAuthRestart() {
   establishing_tunnel_ = false;
   remote_endpoint_ = IPEndPoint();
   net_error_details_.quic_broken = false;
-  net_error_details_.quic_connection_error = QUIC_NO_ERROR;
+  net_error_details_.quic_connection_error = quic::QUIC_NO_ERROR;
   provided_token_binding_key_.reset();
   referred_token_binding_key_.reset();
 }

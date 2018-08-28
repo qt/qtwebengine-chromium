@@ -25,6 +25,9 @@ Polymer({
       notify: true,
     },
 
+    /** @private Filter applied to passwords and password exceptions. */
+    passwordFilter_: String,
+
     // <if expr="not chromeos">
     /**
      * This flag is used to conditionally show a set of new sign-in UIs to the
@@ -54,6 +57,10 @@ Polymer({
         return loadTimeData.getBoolean('unifiedConsentEnabled');
       },
     },
+
+    // TODO(jdoerrie): https://crbug.com/854562.
+    // Remove once Autofill Home is launched.
+    autofillHomeEnabled: Boolean,
 
     /**
      * The current sync status, supplied by SyncBrowserProxy.
@@ -129,30 +136,41 @@ Polymer({
       type: Object,
       value: function() {
         const map = new Map();
-        if (settings.routes.SYNC)
-          map.set(settings.routes.SYNC.path, '#sync-status .subpage-arrow');
+        if (settings.routes.SYNC) {
+          const syncId = loadTimeData.getBoolean('unifiedConsentEnabled') ?
+              '#sync-setup' :
+              '#sync-status';
+          map.set(settings.routes.SYNC.path, `${syncId} .subpage-arrow button`);
+        }
+        if (settings.routes.MANAGE_PASSWORDS) {
+          map.set(
+              settings.routes.MANAGE_PASSWORDS.path, '#passwordManagerButton');
+        }
+        if (settings.routes.AUTOFILL) {
+          map.set(settings.routes.AUTOFILL.path, '#paymentManagerButton');
+        }
         // <if expr="not chromeos">
         if (settings.routes.MANAGE_PROFILE) {
           map.set(
               settings.routes.MANAGE_PROFILE.path,
-              '#picture-subpage-trigger .subpage-arrow');
+              '#picture-subpage-trigger .subpage-arrow button');
         }
         // </if>
         // <if expr="chromeos">
         if (settings.routes.CHANGE_PICTURE) {
           map.set(
               settings.routes.CHANGE_PICTURE.path,
-              '#picture-subpage-trigger .subpage-arrow');
+              '#picture-subpage-trigger .subpage-arrow button');
         }
         if (settings.routes.LOCK_SCREEN) {
           map.set(
               settings.routes.LOCK_SCREEN.path,
-              '#lock-screen-subpage-trigger .subpage-arrow');
+              '#lock-screen-subpage-trigger .subpage-arrow button');
         }
         if (settings.routes.ACCOUNTS) {
           map.set(
               settings.routes.ACCOUNTS.path,
-              '#manage-other-people-subpage-trigger .subpage-arrow');
+              '#manage-other-people-subpage-trigger .subpage-arrow button');
         }
         // </if>
         return map;
@@ -313,6 +331,24 @@ Polymer({
     this.syncBrowserProxy_.startSignIn();
   },
 
+  /**
+   * Shows the manage passwords sub page.
+   * @param {!Event} event
+   * @private
+   */
+  onPasswordsTap_: function(event) {
+    settings.navigateTo(settings.routes.MANAGE_PASSWORDS);
+  },
+
+  /**
+   * Shows the manage autofill sub page.
+   * @param {!Event} event
+   * @private
+   */
+  onAutofillTap_: function(event) {
+    settings.navigateTo(settings.routes.AUTOFILL);
+  },
+
   /** @private */
   onDisconnectClosed_: function() {
     this.showDisconnectDialog_ = false;
@@ -456,7 +492,10 @@ Polymer({
    * @private
    */
   shouldShowSyncAccountControl_: function() {
-    return !!this.diceEnabled_ && !!this.syncStatus.syncSystemEnabled &&
+    if (this.syncStatus == undefined)
+      return false;
+
+    return this.diceEnabled_ && !!this.syncStatus.syncSystemEnabled &&
         !!this.syncStatus.signinAllowed;
   },
   // </if>
@@ -509,7 +548,7 @@ Polymer({
     if (!syncStatus)
       return '';
 
-    let syncIcon = 'settings:sync';
+    let syncIcon = 'cr:sync';
 
     if (syncStatus.hasError)
       syncIcon = 'settings:sync-problem';

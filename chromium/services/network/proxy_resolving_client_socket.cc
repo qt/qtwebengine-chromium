@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -57,6 +58,23 @@ int ProxyResolvingClientSocket::Read(net::IOBuffer* buf,
                                      net::CompletionOnceCallback callback) {
   if (socket_handle_->socket())
     return socket_handle_->socket()->Read(buf, buf_len, std::move(callback));
+  return net::ERR_SOCKET_NOT_CONNECTED;
+}
+
+int ProxyResolvingClientSocket::ReadIfReady(
+    net::IOBuffer* buf,
+    int buf_len,
+    net::CompletionOnceCallback callback) {
+  if (socket_handle_->socket()) {
+    return socket_handle_->socket()->ReadIfReady(buf, buf_len,
+                                                 std::move(callback));
+  }
+  return net::ERR_SOCKET_NOT_CONNECTED;
+}
+
+int ProxyResolvingClientSocket::CancelReadIfReady() {
+  if (socket_handle_->socket())
+    return socket_handle_->socket()->CancelReadIfReady();
   return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
@@ -247,7 +265,6 @@ int ProxyResolvingClientSocket::DoProxyResolve() {
 int ProxyResolvingClientSocket::DoProxyResolveComplete(int result) {
   proxy_resolve_request_ = nullptr;
   if (result == net::OK) {
-    next_state_ = STATE_INIT_CONNECTION;
     // Removes unsupported proxies from the list. Currently, this removes
     // just the SCHEME_QUIC proxy, which doesn't yet support tunneling.
     // TODO(xunjieli): Allow QUIC proxy once it supports tunneling.
@@ -259,8 +276,10 @@ int ProxyResolvingClientSocket::DoProxyResolveComplete(int result) {
     if (proxy_info_.is_empty()) {
       // No proxies/direct to choose from. This happens when we don't support
       // any of the proxies in the returned list.
-      result = net::ERR_NO_SUPPORTED_PROXIES;
+      return net::ERR_NO_SUPPORTED_PROXIES;
     }
+    next_state_ = STATE_INIT_CONNECTION;
+    return net::OK;
   }
   return result;
 }

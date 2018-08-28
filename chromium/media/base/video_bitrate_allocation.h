@@ -14,7 +14,7 @@
 namespace media {
 
 // Class that describes how video bitrate, in bps, is allocated across temporal
-// and spatial layers. Not that bitrates are NOT cumulative. Depending on if
+// and spatial layers. Note that bitrates are NOT cumulative. Depending on if
 // layers are dependent or not, it is up to the user to aggregate.
 class MEDIA_EXPORT VideoBitrateAllocation {
  public:
@@ -33,9 +33,14 @@ class MEDIA_EXPORT VideoBitrateAllocation {
   // Sum of all bitrates.
   int32_t GetSumBps() const;
 
+  bool operator==(const VideoBitrateAllocation& other) const;
+  inline bool operator!=(const VideoBitrateAllocation& other) const {
+    return !(*this == other);
+  }
+
  private:
+  int sum_;  // Cached sum of all elements of |bitrates_|, for perfomance.
   int bitrates_[kMaxSpatialLayers][kMaxTemporalLayers];
-  DISALLOW_COPY_AND_ASSIGN(VideoBitrateAllocation);
 };
 
 }  // namespace media

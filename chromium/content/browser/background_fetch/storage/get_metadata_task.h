@@ -12,7 +12,7 @@
 #include "base/callback_forward.h"
 #include "content/browser/background_fetch/background_fetch.pb.h"
 #include "content/browser/background_fetch/storage/database_task.h"
-#include "content/common/service_worker/service_worker_status_code.h"
+#include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "url/origin.h"
 
 namespace content {
@@ -26,7 +26,7 @@ class GetMetadataTask : public DatabaseTask {
       base::OnceCallback<void(blink::mojom::BackgroundFetchError,
                               std::unique_ptr<proto::BackgroundFetchMetadata>)>;
 
-  GetMetadataTask(BackgroundFetchDataManager* data_manager,
+  GetMetadataTask(DatabaseTaskHost* host,
                   int64_t service_worker_registration_id,
                   const url::Origin& origin,
                   const std::string& developer_id,
@@ -39,12 +39,14 @@ class GetMetadataTask : public DatabaseTask {
 
  private:
   void DidGetUniqueId(const std::vector<std::string>& data,
-                      ServiceWorkerStatusCode status);
+                      blink::ServiceWorkerStatusCode status);
 
   void DidGetMetadata(const std::vector<std::string>& data,
-                      ServiceWorkerStatusCode status);
+                      blink::ServiceWorkerStatusCode status);
 
   void ProcessMetadata(const std::string& metadata);
+
+  void FinishWithError(blink::mojom::BackgroundFetchError error) override;
 
   int64_t service_worker_registration_id_;
   url::Origin origin_;

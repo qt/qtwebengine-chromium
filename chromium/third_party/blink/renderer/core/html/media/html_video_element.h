@@ -78,9 +78,9 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
 
   // Used by canvas to gain raw pixel access
   void PaintCurrentFrame(
-      PaintCanvas*,
+      cc::PaintCanvas*,
       const IntRect&,
-      const PaintFlags*,
+      const cc::PaintFlags*,
       int already_uploaded_id = -1,
       WebMediaPlayer::VideoFrameUploadMetadata* = nullptr) const;
 
@@ -149,6 +149,7 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
   void MediaRemotingStarted(const WebString& remote_device_friendly_name) final;
   bool SupportsPictureInPicture() const final;
   void PictureInPictureStopped() final;
+  void PictureInPictureControlClicked(const WebString& control_id) final;
   void MediaRemotingStopped(WebLocalizedString::Name error_msg) final;
   WebMediaPlayer::DisplayType DisplayType() const final;
   bool IsInAutoPIP() const final;

@@ -80,6 +80,8 @@ class FakePasswordAutofillAgent
   // autofill::mojom::PasswordAutofillAgent:
   MOCK_METHOD2(FillPasswordForm,
                void(int, const autofill::PasswordFormFillData&));
+  MOCK_METHOD3(FillIntoFocusedField,
+               void(bool, const base::string16&, FillIntoFocusedFieldCallback));
 
   MOCK_METHOD0(BlacklistedFormFound, void());
 
@@ -242,16 +244,6 @@ TEST_F(ContentPasswordManagerDriverTest, NotInformAboutBlacklistedForm) {
   EXPECT_CALL(fake_agent_, BlacklistedFormFound()).Times(0);
   driver->FillPasswordForm(fill_data);
 }
-
-#if defined(SAFE_BROWSING_DB_LOCAL)
-TEST_F(ContentPasswordManagerDriverTest, CheckSafeBrowsingReputationCalled) {
-  std::unique_ptr<ContentPasswordManagerDriver> driver(
-      new ContentPasswordManagerDriver(main_rfh(), &password_manager_client_,
-                                       &autofill_client_));
-  EXPECT_CALL(password_manager_client_, CheckSafeBrowsingReputation(_, _));
-  driver->CheckSafeBrowsingReputation(GURL(), GURL());
-}
-#endif
 
 INSTANTIATE_TEST_CASE_P(,
                         ContentPasswordManagerDriverTest,

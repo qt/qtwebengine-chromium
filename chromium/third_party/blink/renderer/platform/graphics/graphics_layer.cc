@@ -45,11 +45,9 @@
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 #include "third_party/blink/renderer/platform/drag_image.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
-#include "third_party/blink/renderer/platform/geometry/geometry_as_json.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/geometry/region.h"
 #include "third_party/blink/renderer/platform/graphics/bitmap_image.h"
-#include "third_party/blink/renderer/platform/graphics/compositing/composited_layer_raster_invalidator.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_chunks_to_cc_layer.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_filter_operations.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
@@ -60,11 +58,10 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
 #include "third_party/blink/renderer/platform/graphics/paint/property_tree_state.h"
 #include "third_party/blink/renderer/platform/graphics/paint/raster_invalidation_tracking.h"
+#include "third_party/blink/renderer/platform/graphics/paint/raster_invalidator.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
-#include "third_party/blink/renderer/platform/json/json_values.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_snap_data.h"
-#include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -106,7 +103,6 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient& client)
       paint_count_(0),
       contents_layer_(nullptr),
       contents_layer_id_(0),
-      scrollable_area_(nullptr),
       rendering_context3d_(0),
       weak_ptr_factory_(this) {
 #if DCHECK_IS_ON()
@@ -136,13 +132,9 @@ GraphicsLayer::~GraphicsLayer() {
 }
 
 LayoutRect GraphicsLayer::VisualRect() const {
-  LayoutRect bounds = LayoutRect(FloatPoint(), Size());
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    DCHECK(layer_state_);
-    bounds.MoveBy(layer_state_->offset);
-  } else {
-    bounds.Move(OffsetFromLayoutObjectWithSubpixelAccumulation());
-  }
+  LayoutRect bounds = LayoutRect(LayoutPoint(), LayoutSize(Size()));
+  DCHECK(layer_state_);
+  bounds.MoveBy(layer_state_->offset);
   return bounds;
 }
 
@@ -264,24 +256,16 @@ void GraphicsLayer::RemoveFromParent() {
   CcLayer()->RemoveFromParent();
 }
 
-void GraphicsLayer::SetOffsetFromLayoutObject(
-    const IntSize& offset,
-    ShouldSetNeedsDisplay should_set_needs_display) {
-  SetOffsetDoubleFromLayoutObject(offset);
-}
-
-void GraphicsLayer::SetOffsetDoubleFromLayoutObject(
-    const DoubleSize& offset,
-    ShouldSetNeedsDisplay should_set_needs_display) {
+void GraphicsLayer::SetOffsetFromLayoutObject(const IntSize& offset) {
   if (offset == offset_from_layout_object_)
     return;
 
   offset_from_layout_object_ = offset;
-  CcLayer()->SetFiltersOrigin(FloatPoint() - ToFloatSize(offset));
+  CcLayer()->SetFiltersOrigin(FloatPoint() -
+                              FloatSize(offset_from_layout_object_));
 
   // If the compositing layer offset changes, we need to repaint.
-  if (should_set_needs_display == kSetNeedsDisplay)
-    SetNeedsDisplay();
+  SetNeedsDisplay();
 }
 
 LayoutSize GraphicsLayer::OffsetFromLayoutObjectWithSubpixelAccumulation()
@@ -297,26 +281,15 @@ void GraphicsLayer::PaintRecursively() {
   Vector<GraphicsLayer*> repainted_layers;
   PaintRecursivelyInternal(repainted_layers);
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    // Notify the controllers that the artifact has been pushed and some
-    // lifecycle state can be freed (such as raster invalidations).
-    for (auto* layer : repainted_layers)
-      layer->GetPaintController().FinishCycle();
-  }
-
+  // Notify the controllers that the artifact has been pushed and some
+  // lifecycle state can be freed (such as raster invalidations).
+  for (auto* layer : repainted_layers) {
 #if DCHECK_IS_ON()
-  if (VLOG_IS_ON(2)) {
-    static String s_previous_tree;
-    LayerTreeFlags flags = VLOG_IS_ON(3) ? 0xffffffff : kOutputAsLayerTree;
-    String new_tree = GetLayerTreeAsTextForTesting(flags);
-    if (new_tree != s_previous_tree) {
-      LOG(ERROR) << "After GraphicsLayer::PaintRecursively()\n"
-                 << "GraphicsLayer tree:\n"
-                 << new_tree.Utf8().data();
-      s_previous_tree = new_tree;
-    }
-  }
+    if (VLOG_IS_ON(2))
+      LOG(ERROR) << "FinishCycle for GraphicsLayer: " << layer->DebugName();
 #endif
+    layer->GetPaintController().FinishCycle();
+  }
 }
 
 void GraphicsLayer::PaintRecursivelyInternal(
@@ -340,7 +313,7 @@ bool GraphicsLayer::Paint(const IntRect* interest_rect,
 #if !DCHECK_IS_ON()
   // TODO(crbug.com/853096): Investigate why we can ever reach here without
   // a valid layer state. Seems to only happen on Android builds.
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() && !layer_state_)
+  if (!layer_state_)
     return false;
 #endif
 
@@ -356,14 +329,12 @@ bool GraphicsLayer::Paint(const IntRect* interest_rect,
   }
 #endif
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    DCHECK(layer_state_) << "No layer state for GraphicsLayer: " << DebugName();
-    // Generate raster invalidations for SPv175 (but not SPv2).
-    IntRect layer_bounds(layer_state_->offset, ExpandedIntSize(Size()));
-    EnsureRasterInvalidator().Generate(GetPaintController().GetPaintArtifact(),
-                                       layer_bounds, layer_state_->state,
-                                       VisualRectSubpixelOffset());
-  }
+  DCHECK(layer_state_) << "No layer state for GraphicsLayer: " << DebugName();
+  // Generate raster invalidations for SPv1.
+  IntRect layer_bounds(layer_state_->offset, Size());
+  EnsureRasterInvalidator().Generate(
+      GetPaintController().GetPaintArtifactShared(), layer_bounds,
+      layer_state_->state, VisualRectSubpixelOffset(), this);
 
   if (RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled() &&
       DrawsContent()) {
@@ -372,9 +343,8 @@ bool GraphicsLayer::Paint(const IntRect* interest_rect,
                                      InterestRect());
     if (auto record = tracking.UnderInvalidationRecord()) {
       // Add the under-invalidation overlay onto the painted result.
-      GetPaintController().AppendDebugDrawingAfterCommit(
-          *this, std::move(record),
-          layer_state_ ? &layer_state_->state : nullptr);
+      GetPaintController().AppendDebugDrawingAfterCommit(std::move(record),
+                                                         layer_state_->state);
       // Ensure the compositor will raster the under-invalidation overlay.
       layer_->SetNeedsDisplay();
     }
@@ -409,11 +379,9 @@ bool GraphicsLayer::PaintWithoutCommit(
   }
 
   GraphicsContext context(GetPaintController(), disabled_mode, nullptr);
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    DCHECK(layer_state_) << "No layer state for GraphicsLayer: " << DebugName();
-    GetPaintController().UpdateCurrentPaintChunkProperties(base::nullopt,
-                                                           layer_state_->state);
-  }
+  DCHECK(layer_state_) << "No layer state for GraphicsLayer: " << DebugName();
+  GetPaintController().UpdateCurrentPaintChunkProperties(base::nullopt,
+                                                         layer_state_->state);
 
   previous_interest_rect_ = *interest_rect;
   client_.PaintContents(this, context, painting_phase_, *interest_rect);
@@ -557,9 +525,9 @@ void GraphicsLayer::SetupContentsLayer(cc::Layer* contents_layer) {
   // Insert the content layer first. Video elements require this, because they
   // have shadow content that must display in front of the video.
   layer_->InsertChild(contents_layer_, 0);
-  cc::Layer* border_cc_layer = contents_clipping_mask_layer_
-                                   ? contents_clipping_mask_layer_->CcLayer()
-                                   : nullptr;
+  cc::PictureLayer* border_cc_layer =
+      contents_clipping_mask_layer_ ? contents_clipping_mask_layer_->CcLayer()
+                                    : nullptr;
   contents_layer_->SetMaskLayer(border_cc_layer);
 
   contents_layer_->Set3dSortingContextId(rendering_context3d_);
@@ -593,10 +561,10 @@ cc::Layer* GraphicsLayer::ContentsLayerIfRegistered() {
   return contents_layer_;
 }
 
-CompositedLayerRasterInvalidator& GraphicsLayer::EnsureRasterInvalidator() {
+RasterInvalidator& GraphicsLayer::EnsureRasterInvalidator() {
   if (!raster_invalidator_) {
-    raster_invalidator_ = std::make_unique<CompositedLayerRasterInvalidator>(
-        [this](const IntRect& r) { SetNeedsDisplayInRectInternal(r); });
+    raster_invalidator_ = std::make_unique<RasterInvalidator>(
+        [this](const IntRect& r) { SetNeedsDisplayInRect(r); });
     raster_invalidator_->SetTracksRasterInvalidations(
         client_.IsTrackingRasterInvalidations());
   }
@@ -609,9 +577,6 @@ void GraphicsLayer::UpdateTrackingRasterInvalidations() {
     EnsureRasterInvalidator().SetTracksRasterInvalidations(true);
   else if (raster_invalidator_)
     raster_invalidator_->SetTracksRasterInvalidations(false);
-
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() && paint_controller_)
-    paint_controller_->SetTracksRasterInvalidations(should_track);
 }
 
 void GraphicsLayer::ResetTrackedRasterInvalidations() {
@@ -636,331 +601,11 @@ void GraphicsLayer::TrackRasterInvalidation(const DisplayItemClient& client,
   if (RasterInvalidationTracking::ShouldAlwaysTrack())
     EnsureRasterInvalidator().EnsureTracking();
 
-  // For SPv175, this only tracks invalidations that the cc::Layer is fully
-  // invalidated directly, e.g. from SetContentsNeedsDisplay(), etc.
+  // This only tracks invalidations that the cc::Layer is fully invalidated
+  // directly, e.g. from SetContentsNeedsDisplay(), etc. Other raster
+  // invalidations are tracked in RasterInvalidator.
   if (auto* tracking = GetRasterInvalidationTracking())
     tracking->AddInvalidation(&client, client.DebugName(), rect, reason);
-}
-
-static String PointerAsString(const void* ptr) {
-  WTF::TextStream ts;
-  ts << ptr;
-  return ts.Release();
-}
-
-class GraphicsLayer::LayersAsJSONArray {
- public:
-  LayersAsJSONArray(LayerTreeFlags flags)
-      : flags_(flags),
-        next_transform_id_(1),
-        layers_json_(JSONArray::Create()),
-        transforms_json_(JSONArray::Create()) {}
-
-  // Outputs the layer tree rooted at |layer| as a JSON array, in paint order,
-  // and the transform tree also as a JSON array.
-  std::unique_ptr<JSONObject> operator()(const GraphicsLayer& layer) {
-    auto json = JSONObject::Create();
-    Walk(layer, 0, FloatPoint());
-    json->SetArray("layers", std::move(layers_json_));
-    if (transforms_json_->size())
-      json->SetArray("transforms", std::move(transforms_json_));
-    return json;
-  }
-
-  JSONObject* AddTransformJSON(int& transform_id) {
-    auto transform_json = JSONObject::Create();
-    int parent_transform_id = transform_id;
-    transform_id = next_transform_id_++;
-    transform_json->SetInteger("id", transform_id);
-    if (parent_transform_id)
-      transform_json->SetInteger("parent", parent_transform_id);
-    auto* result = transform_json.get();
-    transforms_json_->PushObject(std::move(transform_json));
-    return result;
-  }
-
-  static FloatPoint ScrollPosition(const GraphicsLayer& layer) {
-    if (const auto* scrollable_area = layer.GetScrollableArea())
-      return scrollable_area->ScrollPosition();
-    return FloatPoint();
-  }
-
-  void AddLayer(const GraphicsLayer& layer,
-                int& transform_id,
-                FloatPoint& position) {
-    FloatPoint scroll_position = ScrollPosition(layer);
-    if (scroll_position != FloatPoint()) {
-      // Output scroll position as a transform.
-      auto* scroll_translate_json = AddTransformJSON(transform_id);
-      scroll_translate_json->SetArray(
-          "transform", TransformAsJSONArray(TransformationMatrix().Translate(
-                           -scroll_position.X(), -scroll_position.Y())));
-      layer.AddFlattenInheritedTransformJSON(*scroll_translate_json);
-    }
-
-    if (!layer.transform_.IsIdentity() || layer.rendering_context3d_ ||
-        layer.GetCompositingReasons() & CompositingReason::k3DTransform) {
-      if (position != FloatPoint()) {
-        // Output position offset as a transform.
-        auto* position_translate_json = AddTransformJSON(transform_id);
-        position_translate_json->SetArray(
-            "transform", TransformAsJSONArray(TransformationMatrix().Translate(
-                             position.X(), position.Y())));
-        layer.AddFlattenInheritedTransformJSON(*position_translate_json);
-        if (layer.Parent() && !layer.Parent()->should_flatten_transform_) {
-          position_translate_json->SetBoolean("flattenInheritedTransform",
-                                              false);
-        }
-        position = FloatPoint();
-      }
-
-      if (!layer.transform_.IsIdentity() || layer.rendering_context3d_) {
-        auto* transform_json = AddTransformJSON(transform_id);
-        layer.AddTransformJSONProperties(*transform_json,
-                                         rendering_context_map_);
-      }
-    }
-
-    auto json =
-        layer.LayerAsJSONInternal(flags_, rendering_context_map_, position);
-    if (transform_id)
-      json->SetInteger("transform", transform_id);
-    layers_json_->PushObject(std::move(json));
-  }
-
-  void Walk(const GraphicsLayer& layer,
-            int parent_transform_id,
-            const FloatPoint& parent_position) {
-    FloatPoint position = parent_position + layer.position_;
-    int transform_id = parent_transform_id;
-    AddLayer(layer, transform_id, position);
-    for (auto* const child : layer.children_)
-      Walk(*child, transform_id, position);
-  }
-
- private:
-  LayerTreeFlags flags_;
-  int next_transform_id_;
-  RenderingContextMap rendering_context_map_;
-  std::unique_ptr<JSONArray> layers_json_;
-  std::unique_ptr<JSONArray> transforms_json_;
-};
-
-std::unique_ptr<JSONObject> GraphicsLayer::LayerTreeAsJSON(
-    LayerTreeFlags flags) const {
-  if (flags & kOutputAsLayerTree) {
-    RenderingContextMap rendering_context_map;
-    return LayerTreeAsJSONInternal(flags, rendering_context_map);
-  }
-
-  return LayersAsJSONArray(flags)(*this);
-}
-
-// This is the SPv1 version of ContentLayerClientImpl::LayerAsJSON().
-std::unique_ptr<JSONObject> GraphicsLayer::LayerAsJSONInternal(
-    LayerTreeFlags flags,
-    RenderingContextMap& rendering_context_map,
-    const FloatPoint& position) const {
-  std::unique_ptr<JSONObject> json = JSONObject::Create();
-
-  if (flags & kLayerTreeIncludesDebugInfo)
-    json->SetString("this", PointerAsString(this));
-
-  json->SetString("name", DebugName());
-
-  if (position != FloatPoint())
-    json->SetArray("position", PointAsJSONArray(position));
-
-  if (flags & kLayerTreeIncludesDebugInfo &&
-      offset_from_layout_object_ != DoubleSize()) {
-    json->SetArray("offsetFromLayoutObject",
-                   SizeAsJSONArray(offset_from_layout_object_));
-  }
-
-  if (size_ != IntSize())
-    json->SetArray("bounds", SizeAsJSONArray(size_));
-
-  if (opacity_ != 1)
-    json->SetDouble("opacity", opacity_);
-
-  if (blend_mode_ != BlendMode::kNormal) {
-    json->SetString("blendMode",
-                    CompositeOperatorName(kCompositeSourceOver, blend_mode_));
-  }
-
-  if (is_root_for_isolated_group_)
-    json->SetBoolean("isolate", true);
-
-  if (contents_opaque_)
-    json->SetBoolean("contentsOpaque", true);
-
-  if (!draws_content_)
-    json->SetBoolean("drawsContent", false);
-
-  if (!contents_visible_)
-    json->SetBoolean("contentsVisible", false);
-
-  if (!backface_visibility_)
-    json->SetString("backfaceVisibility", "hidden");
-
-  if (flags & kLayerTreeIncludesDebugInfo)
-    json->SetString("client", PointerAsString(&client_));
-
-  if (background_color_.Alpha()) {
-    json->SetString("backgroundColor",
-                    background_color_.NameForLayoutTreeAsText());
-  }
-
-  if (flags & kOutputAsLayerTree) {
-    AddTransformJSONProperties(*json, rendering_context_map);
-    if (!should_flatten_transform_)
-      json->SetBoolean("shouldFlattenTransform", false);
-    if (scrollable_area_ &&
-        scrollable_area_->ScrollPosition() != FloatPoint()) {
-      json->SetArray("scrollPosition",
-                     PointAsJSONArray(scrollable_area_->ScrollPosition()));
-    }
-  }
-
-  if ((flags & kLayerTreeIncludesPaintInvalidations) &&
-      client_.IsTrackingRasterInvalidations() &&
-      GetRasterInvalidationTracking())
-    GetRasterInvalidationTracking()->AsJSON(json.get());
-
-  if ((flags & kLayerTreeIncludesPaintingPhases) && painting_phase_) {
-    std::unique_ptr<JSONArray> painting_phases_json = JSONArray::Create();
-    if (painting_phase_ & kGraphicsLayerPaintBackground)
-      painting_phases_json->PushString("GraphicsLayerPaintBackground");
-    if (painting_phase_ & kGraphicsLayerPaintForeground)
-      painting_phases_json->PushString("GraphicsLayerPaintForeground");
-    if (painting_phase_ & kGraphicsLayerPaintMask)
-      painting_phases_json->PushString("GraphicsLayerPaintMask");
-    if (painting_phase_ & kGraphicsLayerPaintChildClippingMask)
-      painting_phases_json->PushString("GraphicsLayerPaintChildClippingMask");
-    if (painting_phase_ & kGraphicsLayerPaintAncestorClippingMask)
-      painting_phases_json->PushString(
-          "GraphicsLayerPaintAncestorClippingMask");
-    if (painting_phase_ & kGraphicsLayerPaintOverflowContents)
-      painting_phases_json->PushString("GraphicsLayerPaintOverflowContents");
-    if (painting_phase_ & kGraphicsLayerPaintCompositedScroll)
-      painting_phases_json->PushString("GraphicsLayerPaintCompositedScroll");
-    if (painting_phase_ & kGraphicsLayerPaintDecoration)
-      painting_phases_json->PushString("GraphicsLayerPaintDecoration");
-    json->SetArray("paintingPhases", std::move(painting_phases_json));
-  }
-
-  if (flags & kLayerTreeIncludesClipAndScrollParents) {
-    if (has_scroll_parent_)
-      json->SetBoolean("hasScrollParent", true);
-    if (has_clip_parent_)
-      json->SetBoolean("hasClipParent", true);
-  }
-
-  if (flags &
-      (kLayerTreeIncludesDebugInfo | kLayerTreeIncludesCompositingReasons)) {
-    bool debug = flags & kLayerTreeIncludesDebugInfo;
-    {
-      std::unique_ptr<JSONArray> compositing_reasons_json = JSONArray::Create();
-      auto names = debug ? CompositingReason::Descriptions(compositing_reasons_)
-                         : CompositingReason::ShortNames(compositing_reasons_);
-      for (const char* name : names)
-        compositing_reasons_json->PushString(name);
-      json->SetArray("compositingReasons", std::move(compositing_reasons_json));
-    }
-    {
-      std::unique_ptr<JSONArray> squashing_disallowed_reasons_json =
-          JSONArray::Create();
-      auto names = debug ? SquashingDisallowedReason::Descriptions(
-                               squashing_disallowed_reasons_)
-                         : SquashingDisallowedReason::ShortNames(
-                               squashing_disallowed_reasons_);
-      for (const char* name : names)
-        squashing_disallowed_reasons_json->PushString(name);
-      json->SetArray("squashingDisallowedReasons",
-                     std::move(squashing_disallowed_reasons_json));
-    }
-  }
-
-  if (mask_layer_) {
-    std::unique_ptr<JSONArray> mask_layer_json = JSONArray::Create();
-    mask_layer_json->PushObject(mask_layer_->LayerAsJSONInternal(
-        flags, rendering_context_map, mask_layer_->position_));
-    json->SetArray("maskLayer", std::move(mask_layer_json));
-  }
-
-  if (contents_clipping_mask_layer_) {
-    std::unique_ptr<JSONArray> contents_clipping_mask_layer_json =
-        JSONArray::Create();
-    contents_clipping_mask_layer_json->PushObject(
-        contents_clipping_mask_layer_->LayerAsJSONInternal(
-            flags, rendering_context_map,
-            contents_clipping_mask_layer_->position_));
-    json->SetArray("contentsClippingMaskLayer",
-                   std::move(contents_clipping_mask_layer_json));
-  }
-
-  if (layer_state_ && (flags & (kLayerTreeIncludesDebugInfo |
-                                kLayerTreeIncludesPaintRecords))) {
-    json->SetString("layerState", layer_state_->state.ToString());
-    json->SetValue("layerOffset", PointAsJSONArray(layer_state_->offset));
-  }
-
-#if DCHECK_IS_ON()
-  if (DrawsContent() && (flags & kLayerTreeIncludesPaintRecords))
-    json->SetValue("paintRecord", RecordAsJSON(*CapturePaintRecord()));
-#endif
-
-  return json;
-}
-
-std::unique_ptr<JSONObject> GraphicsLayer::LayerTreeAsJSONInternal(
-    LayerTreeFlags flags,
-    RenderingContextMap& rendering_context_map) const {
-  std::unique_ptr<JSONObject> json =
-      LayerAsJSONInternal(flags, rendering_context_map, position_);
-
-  if (children_.size()) {
-    std::unique_ptr<JSONArray> children_json = JSONArray::Create();
-    for (size_t i = 0; i < children_.size(); i++) {
-      children_json->PushObject(
-          children_[i]->LayerTreeAsJSONInternal(flags, rendering_context_map));
-    }
-    json->SetArray("children", std::move(children_json));
-  }
-
-  return json;
-}
-
-void GraphicsLayer::AddTransformJSONProperties(
-    JSONObject& json,
-    RenderingContextMap& rendering_context_map) const {
-  if (!transform_.IsIdentity())
-    json.SetArray("transform", TransformAsJSONArray(transform_));
-
-  if (!transform_.IsIdentityOrTranslation())
-    json.SetArray("origin", PointAsJSONArray(transform_origin_));
-
-  AddFlattenInheritedTransformJSON(json);
-
-  if (rendering_context3d_) {
-    auto it = rendering_context_map.find(rendering_context3d_);
-    int context_id = rendering_context_map.size() + 1;
-    if (it == rendering_context_map.end())
-      rendering_context_map.Set(rendering_context3d_, context_id);
-    else
-      context_id = it->value;
-
-    json.SetInteger("renderingContext", context_id);
-  }
-}
-
-void GraphicsLayer::AddFlattenInheritedTransformJSON(JSONObject& json) const {
-  if (Parent() && !Parent()->should_flatten_transform_)
-    json.SetBoolean("flattenInheritedTransform", false);
-}
-
-String GraphicsLayer::GetLayerTreeAsTextForTesting(LayerTreeFlags flags) const {
-  return LayerTreeAsJSON(flags)->ToPrettyJSONString();
 }
 
 String GraphicsLayer::DebugName(cc::Layer* layer) const {
@@ -999,8 +644,7 @@ void GraphicsLayer::SetSize(const IntSize& size) {
 
   size_ = clamped_size;
 
-  // Invalidate the layer as a DisplayItemClient.
-  SetDisplayItemsUncached();
+  Invalidate(PaintInvalidationReason::kIncremental);  // as DisplayItemClient.
 
   layer_->SetBounds(static_cast<gfx::Size>(size_));
   // Note that we don't resize m_contentsLayer. It's up the caller to do that.
@@ -1115,7 +759,7 @@ void GraphicsLayer::SetContentsClippingMaskLayer(
   cc::Layer* contents_layer = ContentsLayerIfRegistered();
   if (!contents_layer)
     return;
-  cc::Layer* contents_clipping_mask_cc_layer =
+  cc::PictureLayer* contents_clipping_mask_cc_layer =
       contents_clipping_mask_layer_ ? contents_clipping_mask_layer_->CcLayer()
                                     : nullptr;
   contents_layer->SetMaskLayer(contents_clipping_mask_cc_layer);
@@ -1158,7 +802,7 @@ void GraphicsLayer::SetContentsNeedsDisplay() {
   if (cc::Layer* contents_layer = ContentsLayerIfRegistered()) {
     contents_layer->SetNeedsDisplay();
     TrackRasterInvalidation(*this, contents_rect_,
-                            PaintInvalidationReason::kFull);
+                            PaintInvalidationReason::kFullLayer);
   }
 }
 
@@ -1166,33 +810,20 @@ void GraphicsLayer::SetNeedsDisplay() {
   if (!DrawsContent())
     return;
 
-  // TODO(chrishtr): Stop invalidating the rects once
-  // FrameView::paintRecursively() does so.
   layer_->SetNeedsDisplay();
   for (size_t i = 0; i < link_highlights_.size(); ++i)
     link_highlights_[i]->Invalidate();
+
   GetPaintController().InvalidateAll();
 
+  if (raster_invalidator_)
+    raster_invalidator_->ClearOldStates();
+
   TrackRasterInvalidation(*this, IntRect(IntPoint(), size_),
-                          PaintInvalidationReason::kFull);
+                          PaintInvalidationReason::kFullLayer);
 }
 
-DISABLE_CFI_PERF
-void GraphicsLayer::SetNeedsDisplayInRect(
-    const IntRect& rect,
-    PaintInvalidationReason invalidation_reason,
-    const DisplayItemClient& client) {
-  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
-  if (!DrawsContent())
-    return;
-
-  if (!ScopedSetNeedsDisplayInRectForTrackingOnly::s_enabled_)
-    SetNeedsDisplayInRectInternal(rect);
-
-  TrackRasterInvalidation(client, rect, invalidation_reason);
-}
-
-void GraphicsLayer::SetNeedsDisplayInRectInternal(const IntRect& rect) {
+void GraphicsLayer::SetNeedsDisplayInRect(const IntRect& rect) {
   DCHECK(DrawsContent());
 
   layer_->SetNeedsDisplayRect(rect);
@@ -1258,7 +889,7 @@ void GraphicsLayer::SetContentsToImage(
                 /*prevent_contents_opaque_changes=*/true);
 }
 
-cc::Layer* GraphicsLayer::CcLayer() const {
+cc::PictureLayer* GraphicsLayer::CcLayer() const {
   return layer_.get();
 }
 
@@ -1299,16 +930,6 @@ void GraphicsLayer::RemoveLinkHighlight(LinkHighlight* link_highlight) {
   UpdateChildList();
 }
 
-void GraphicsLayer::SetScrollableArea(ScrollableArea* scrollable_area) {
-  if (scrollable_area_ == scrollable_area)
-    return;
-  scrollable_area_ = scrollable_area;
-}
-
-void GraphicsLayer::ScrollableAreaDisposed() {
-  scrollable_area_.Clear();
-}
-
 std::unique_ptr<base::trace_event::TracedValue> GraphicsLayer::TakeDebugInfo(
     cc::Layer* layer) {
   auto traced_value = std::make_unique<base::trace_event::TracedValue>();
@@ -1340,19 +961,13 @@ std::unique_ptr<base::trace_event::TracedValue> GraphicsLayer::TakeDebugInfo(
 }
 
 void GraphicsLayer::DidChangeScrollbarsHiddenIfOverlay(bool hidden) {
-  if (scrollable_area_)
-    scrollable_area_->SetScrollbarsHiddenIfOverlay(hidden);
+  client_.SetOverlayScrollbarsHidden(hidden);
 }
 
 PaintController& GraphicsLayer::GetPaintController() const {
   CHECK(DrawsContent());
-  if (!paint_controller_) {
+  if (!paint_controller_)
     paint_controller_ = PaintController::Create();
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      paint_controller_->SetTracksRasterInvalidations(
-          client_.IsTrackingRasterInvalidations());
-    }
-  }
   return *paint_controller_;
 }
 
@@ -1373,24 +988,17 @@ sk_sp<PaintRecord> GraphicsLayer::CapturePaintRecord() const {
   if (client_.ShouldThrottleRendering())
     return sk_sp<PaintRecord>(new PaintRecord);
 
-  FloatRect bounds(IntRect(IntPoint(0, 0), ExpandedIntSize(Size())));
+  FloatRect bounds(IntRect(IntPoint(), Size()));
   GraphicsContext graphics_context(GetPaintController());
   graphics_context.BeginRecording(bounds);
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    DCHECK(layer_state_) << "No layer state for GraphicsLayer: " << DebugName();
-    GetPaintController().GetPaintArtifact().Replay(
-        graphics_context, layer_state_->state, layer_state_->offset);
-  } else {
-    GetPaintController().GetPaintArtifact().Replay(graphics_context,
-                                                   PropertyTreeState::Root());
-  }
+  DCHECK(layer_state_) << "No layer state for GraphicsLayer: " << DebugName();
+  GetPaintController().GetPaintArtifact().Replay(
+      graphics_context, layer_state_->state, layer_state_->offset);
   return graphics_context.EndRecording();
 }
 
 void GraphicsLayer::SetLayerState(const PropertyTreeState& layer_state,
                                   const IntPoint& layer_offset) {
-  DCHECK(RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
-
   if (!layer_state_) {
     layer_state_ =
         std::make_unique<LayerState>(LayerState{layer_state, layer_offset});
@@ -1398,6 +1006,17 @@ void GraphicsLayer::SetLayerState(const PropertyTreeState& layer_state,
   }
   layer_state_->state = layer_state;
   layer_state_->offset = layer_offset;
+}
+
+void GraphicsLayer::SetContentsLayerState(const PropertyTreeState& layer_state,
+                                          const IntPoint& layer_offset) {
+  if (!contents_layer_state_) {
+    contents_layer_state_ =
+        std::make_unique<LayerState>(LayerState{layer_state, layer_offset});
+    return;
+  }
+  contents_layer_state_->state = layer_state;
+  contents_layer_state_->offset = layer_offset;
 }
 
 scoped_refptr<cc::DisplayItemList> GraphicsLayer::PaintContentsToDisplayList(
@@ -1436,19 +1055,12 @@ scoped_refptr<cc::DisplayItemList> GraphicsLayer::PaintContentsToDisplayList(
 
   auto display_list = base::MakeRefCounted<cc::DisplayItemList>();
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    DCHECK(layer_state_) << "No layer state for GraphicsLayer: " << DebugName();
-    PaintChunksToCcLayer::ConvertInto(
-        GetPaintController().PaintChunks(), layer_state_->state,
-        gfx::Vector2dF(layer_state_->offset.X(), layer_state_->offset.Y()),
-        VisualRectSubpixelOffset(),
-        paint_controller.GetPaintArtifact().GetDisplayItemList(),
-        *display_list);
-  } else {
-    paint_controller.GetPaintArtifact().AppendToDisplayItemList(
-        FloatSize(OffsetFromLayoutObjectWithSubpixelAccumulation()),
-        *display_list);
-  }
+  DCHECK(layer_state_) << "No layer state for GraphicsLayer: " << DebugName();
+  PaintChunksToCcLayer::ConvertInto(
+      GetPaintController().PaintChunks(), layer_state_->state,
+      gfx::Vector2dF(layer_state_->offset.X(), layer_state_->offset.Y()),
+      VisualRectSubpixelOffset(),
+      paint_controller.GetPaintArtifact().GetDisplayItemList(), *display_list);
 
   paint_controller.SetDisplayItemConstructionIsDisabled(false);
   paint_controller.SetSubsequenceCachingIsDisabled(false);
@@ -1474,29 +1086,4 @@ FloatSize GraphicsLayer::VisualRectSubpixelOffset() const {
   return FloatSize();
 }
 
-bool ScopedSetNeedsDisplayInRectForTrackingOnly::s_enabled_ = false;
-
 }  // namespace blink
-
-#if DCHECK_IS_ON()
-void showGraphicsLayerTree(const blink::GraphicsLayer* layer) {
-  if (!layer) {
-    LOG(ERROR) << "Cannot showGraphicsLayerTree for (nil).";
-    return;
-  }
-
-  String output = layer->GetLayerTreeAsTextForTesting(0xffffffff);
-  LOG(ERROR) << output.Utf8().data();
-}
-
-void showGraphicsLayers(const blink::GraphicsLayer* layer) {
-  if (!layer) {
-    LOG(ERROR) << "Cannot showGraphicsLayers for (nil).";
-    return;
-  }
-
-  String output = layer->GetLayerTreeAsTextForTesting(
-      0xffffffff & ~blink::kOutputAsLayerTree);
-  LOG(ERROR) << output.Utf8().data();
-}
-#endif

@@ -11,7 +11,9 @@
 #include "pc/peerconnectionfactory.h"
 
 #include <utility>
+#include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/fec_controller.h"
 #include "api/mediaconstraintsinterface.h"
 #include "api/mediastreamproxy.h"
@@ -23,9 +25,9 @@
 #include "logging/rtc_event_log/rtc_event_log.h"
 #include "media/base/rtpdataengine.h"
 #include "media/sctp/sctptransport.h"
+#include "pc/rtpparametersconversion.h"
 #include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/ptr_util.h"
 // Adding 'nogncheck' to disable the gn include headers check to support modular
 // WebRTC build targets.
 // TODO(zhihuang): This wouldn't be necessary if the interface and
@@ -55,9 +57,14 @@ CreateModularPeerConnectionFactory(
     std::unique_ptr<cricket::MediaEngineInterface> media_engine,
     std::unique_ptr<CallFactoryInterface> call_factory,
     std::unique_ptr<RtcEventLogFactoryInterface> event_log_factory) {
-  return CreateModularPeerConnectionFactory(
-      network_thread, worker_thread, signaling_thread, std::move(media_engine),
-      std::move(call_factory), std::move(event_log_factory), nullptr, nullptr);
+  PeerConnectionFactoryDependencies dependencies;
+  dependencies.network_thread = network_thread;
+  dependencies.worker_thread = worker_thread;
+  dependencies.signaling_thread = signaling_thread;
+  dependencies.media_engine = std::move(media_engine);
+  dependencies.call_factory = std::move(call_factory);
+  dependencies.event_log_factory = std::move(event_log_factory);
+  return CreateModularPeerConnectionFactory(std::move(dependencies));
 }
 
 rtc::scoped_refptr<PeerConnectionFactoryInterface>
@@ -71,13 +78,25 @@ CreateModularPeerConnectionFactory(
     std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory,
     std::unique_ptr<NetworkControllerFactoryInterface>
         network_controller_factory) {
+  PeerConnectionFactoryDependencies dependencies;
+  dependencies.network_thread = network_thread;
+  dependencies.worker_thread = worker_thread;
+  dependencies.signaling_thread = signaling_thread;
+  dependencies.media_engine = std::move(media_engine);
+  dependencies.call_factory = std::move(call_factory);
+  dependencies.event_log_factory = std::move(event_log_factory);
+  dependencies.fec_controller_factory = std::move(fec_controller_factory);
+  dependencies.network_controller_factory =
+      std::move(network_controller_factory);
+  return CreateModularPeerConnectionFactory(std::move(dependencies));
+}
+
+rtc::scoped_refptr<PeerConnectionFactoryInterface>
+CreateModularPeerConnectionFactory(
+    PeerConnectionFactoryDependencies dependencies) {
   rtc::scoped_refptr<PeerConnectionFactory> pc_factory(
       new rtc::RefCountedObject<PeerConnectionFactory>(
-          network_thread, worker_thread, signaling_thread,
-          std::move(media_engine), std::move(call_factory),
-          std::move(event_log_factory), std::move(fec_controller_factory),
-          std::move(network_controller_factory)));
-
+          std::move(dependencies)));
   // Call Initialize synchronously but make sure it is executed on
   // |signaling_thread|.
   MethodCall0<PeerConnectionFactory, bool> call(
@@ -128,7 +147,7 @@ PeerConnectionFactory::PeerConnectionFactory(
       injected_network_controller_factory_(
           std::move(network_controller_factory)),
       bbr_network_controller_factory_(
-          rtc::MakeUnique<BbrNetworkControllerFactory>()) {
+          absl::make_unique<BbrNetworkControllerFactory>()) {
   if (!network_thread_) {
     owned_network_thread_ = rtc::Thread::CreateWithSocketServer();
     owned_network_thread_->SetName("pc_network_thread", nullptr);
@@ -158,6 +177,18 @@ PeerConnectionFactory::PeerConnectionFactory(
   // RTC_DCHECK(default_adm != NULL);
 }
 
+PeerConnectionFactory::PeerConnectionFactory(
+    PeerConnectionFactoryDependencies dependencies)
+    : PeerConnectionFactory(
+          dependencies.network_thread,
+          dependencies.worker_thread,
+          dependencies.signaling_thread,
+          std::move(dependencies.media_engine),
+          std::move(dependencies.call_factory),
+          std::move(dependencies.event_log_factory),
+          std::move(dependencies.fec_controller_factory),
+          std::move(dependencies.network_controller_factory)) {}
+
 PeerConnectionFactory::~PeerConnectionFactory() {
   RTC_DCHECK(signaling_thread_->IsCurrent());
   channel_manager_.reset(nullptr);
@@ -186,8 +217,8 @@ bool PeerConnectionFactory::Initialize() {
     return false;
   }
 
-  channel_manager_ = rtc::MakeUnique<cricket::ChannelManager>(
-      std::move(media_engine_), rtc::MakeUnique<cricket::RtpDataEngine>(),
+  channel_manager_ = absl::make_unique<cricket::ChannelManager>(
+      std::move(media_engine_), absl::make_unique<cricket::RtpDataEngine>(),
       worker_thread_, network_thread_);
 
   channel_manager_->SetVideoRtxEnabled(true);
@@ -202,13 +233,58 @@ void PeerConnectionFactory::SetOptions(const Options& options) {
   options_ = options;
 }
 
-rtc::scoped_refptr<AudioSourceInterface>
-PeerConnectionFactory::CreateAudioSource(
-    const MediaConstraintsInterface* constraints) {
-  RTC_DCHECK(signaling_thread_->IsCurrent());
-  rtc::scoped_refptr<LocalAudioSource> source(
-      LocalAudioSource::Create(constraints));
-  return source;
+RtpCapabilities PeerConnectionFactory::GetRtpSenderCapabilities(
+    cricket::MediaType kind) const {
+  RTC_DCHECK_RUN_ON(signaling_thread_);
+  switch (kind) {
+    case cricket::MEDIA_TYPE_AUDIO: {
+      cricket::AudioCodecs cricket_codecs;
+      cricket::RtpHeaderExtensions cricket_extensions;
+      channel_manager_->GetSupportedAudioSendCodecs(&cricket_codecs);
+      channel_manager_->GetSupportedAudioRtpHeaderExtensions(
+          &cricket_extensions);
+      return ToRtpCapabilities(cricket_codecs, cricket_extensions);
+    }
+    case cricket::MEDIA_TYPE_VIDEO: {
+      cricket::VideoCodecs cricket_codecs;
+      cricket::RtpHeaderExtensions cricket_extensions;
+      channel_manager_->GetSupportedVideoCodecs(&cricket_codecs);
+      channel_manager_->GetSupportedVideoRtpHeaderExtensions(
+          &cricket_extensions);
+      return ToRtpCapabilities(cricket_codecs, cricket_extensions);
+    }
+    case cricket::MEDIA_TYPE_DATA:
+      return RtpCapabilities();
+  }
+  // Not reached; avoids compile warning.
+  FATAL();
+}
+
+RtpCapabilities PeerConnectionFactory::GetRtpReceiverCapabilities(
+    cricket::MediaType kind) const {
+  RTC_DCHECK_RUN_ON(signaling_thread_);
+  switch (kind) {
+    case cricket::MEDIA_TYPE_AUDIO: {
+      cricket::AudioCodecs cricket_codecs;
+      cricket::RtpHeaderExtensions cricket_extensions;
+      channel_manager_->GetSupportedAudioReceiveCodecs(&cricket_codecs);
+      channel_manager_->GetSupportedAudioRtpHeaderExtensions(
+          &cricket_extensions);
+      return ToRtpCapabilities(cricket_codecs, cricket_extensions);
+    }
+    case cricket::MEDIA_TYPE_VIDEO: {
+      cricket::VideoCodecs cricket_codecs;
+      cricket::RtpHeaderExtensions cricket_extensions;
+      channel_manager_->GetSupportedVideoCodecs(&cricket_codecs);
+      channel_manager_->GetSupportedVideoRtpHeaderExtensions(
+          &cricket_extensions);
+      return ToRtpCapabilities(cricket_codecs, cricket_extensions);
+    }
+    case cricket::MEDIA_TYPE_DATA:
+      return RtpCapabilities();
+  }
+  // Not reached; avoids compile warning.
+  FATAL();
 }
 
 rtc::scoped_refptr<AudioSourceInterface>
@@ -292,8 +368,9 @@ PeerConnectionFactory::CreatePeerConnection(
 
   // Set internal defaults if optional dependencies are not set.
   if (!dependencies.cert_generator) {
-    dependencies.cert_generator = rtc::MakeUnique<rtc::RTCCertificateGenerator>(
-        signaling_thread_, network_thread_);
+    dependencies.cert_generator =
+        absl::make_unique<rtc::RTCCertificateGenerator>(signaling_thread_,
+                                                        network_thread_);
   }
   if (!dependencies.allocator) {
     dependencies.allocator.reset(new cricket::BasicPortAllocator(
@@ -318,7 +395,7 @@ PeerConnectionFactory::CreatePeerConnection(
   rtc::scoped_refptr<PeerConnection> pc(
       new rtc::RefCountedObject<PeerConnection>(this, std::move(event_log),
                                                 std::move(call)));
-
+  ActionsBeforeInitializeForTesting(pc);
   if (!pc->Initialize(configuration, std::move(dependencies))) {
     return nullptr;
   }
@@ -341,9 +418,9 @@ rtc::scoped_refptr<VideoTrackInterface> PeerConnectionFactory::CreateVideoTrack(
   return VideoTrackProxy::Create(signaling_thread_, worker_thread_, track);
 }
 
-rtc::scoped_refptr<AudioTrackInterface>
-PeerConnectionFactory::CreateAudioTrack(const std::string& id,
-                                        AudioSourceInterface* source) {
+rtc::scoped_refptr<AudioTrackInterface> PeerConnectionFactory::CreateAudioTrack(
+    const std::string& id,
+    AudioSourceInterface* source) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<AudioTrackInterface> track(AudioTrack::Create(id, source));
   return AudioTrackProxy::Create(signaling_thread_, track);
@@ -352,7 +429,7 @@ PeerConnectionFactory::CreateAudioTrack(const std::string& id,
 std::unique_ptr<cricket::SctpTransportInternalFactory>
 PeerConnectionFactory::CreateSctpTransportInternalFactory() {
 #ifdef HAVE_SCTP
-  return rtc::MakeUnique<cricket::SctpTransportFactory>(network_thread());
+  return absl::make_unique<cricket::SctpTransportFactory>(network_thread());
 #else
   return nullptr;
 #endif
@@ -381,7 +458,7 @@ std::unique_ptr<RtcEventLog> PeerConnectionFactory::CreateRtcEventLog_w() {
   const auto encoding_type = RtcEventLog::EncodingType::Legacy;
   return event_log_factory_
              ? event_log_factory_->CreateRtcEventLog(encoding_type)
-             : rtc::MakeUnique<RtcEventLogNullImpl>();
+             : absl::make_unique<RtcEventLogNullImpl>();
 }
 
 std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(

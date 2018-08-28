@@ -17,7 +17,7 @@
 #include "net/third_party/quic/test_tools/simulator/link.h"
 #include "net/third_party/quic/test_tools/simulator/queue.h"
 
-namespace net {
+namespace quic {
 namespace simulator {
 
 // Size of the TX queue used by the kernel/NIC.  1000 is the Linux
@@ -56,6 +56,9 @@ class QuicEndpoint : public Endpoint,
   // Send |bytes| bytes.  Initiates the transfer if one is not already in
   // progress.
   void AddBytesToTransfer(QuicByteCount bytes);
+
+  // Drop the next packet upon receipt.
+  void DropNextIncomingPacket();
 
   // UnconstrainedPortInterface method.  Called whenever the endpoint receives a
   // packet.
@@ -133,6 +136,10 @@ class QuicEndpoint : public Endpoint,
     void SetWritable() override;
     QuicByteCount GetMaxPacketSize(
         const QuicSocketAddress& peer_address) const override;
+    bool SupportsReleaseTime() const override;
+    bool IsBatchMode() const override;
+    char* GetNextWriteLocation() const override;
+    WriteResult Flush() override;
 
    private:
     QuicEndpoint* endpoint_;
@@ -174,6 +181,9 @@ class QuicEndpoint : public Endpoint,
   // expects.
   bool wrong_data_received_;
 
+  // If true, drop the next packet when receiving it.
+  bool drop_next_packet_;
+
   // Record of received offsets in the data stream.
   QuicIntervalSet<QuicStreamOffset> offsets_received_;
 
@@ -204,6 +214,6 @@ class QuicEndpointMultiplexer : public Endpoint,
 };
 
 }  // namespace simulator
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_TEST_TOOLS_SIMULATOR_QUIC_ENDPOINT_H_

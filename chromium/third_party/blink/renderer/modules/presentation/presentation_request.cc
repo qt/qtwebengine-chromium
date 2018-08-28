@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "third_party/blink/renderer/bindings/core/v8/callback_promise_adapter.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -25,6 +24,7 @@
 #include "third_party/blink/renderer/modules/presentation/presentation_connection_callbacks.h"
 #include "third_party/blink/renderer/modules/presentation/presentation_controller.h"
 #include "third_party/blink/renderer/modules/presentation/presentation_error.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -35,6 +35,12 @@ Settings* GetSettings(ExecutionContext* execution_context) {
 
   Document* document = ToDocument(execution_context);
   return document->GetSettings();
+}
+
+bool IsKnownProtocolForPresentationUrl(const KURL& url) {
+  // TODO(crbug.com/733381): Restrict to https + custom schemes.
+  return url.ProtocolIsInHTTPFamily() || url.ProtocolIs("cast") ||
+         url.ProtocolIs("cast-dial");
 }
 
 }  // anonymous namespace
@@ -60,19 +66,14 @@ PresentationRequest* PresentationRequest::Create(
     return nullptr;
   }
 
-  if (urls.IsEmpty()) {
-    exception_state.ThrowDOMException(kNotSupportedError,
-                                      "Do not support empty sequence of URLs.");
-    return nullptr;
-  }
-
-  Vector<KURL> parsed_urls(urls.size());
+  Vector<KURL> parsed_urls;
   for (size_t i = 0; i < urls.size(); ++i) {
     const KURL& parsed_url = KURL(execution_context->Url(), urls[i]);
 
     if (!parsed_url.IsValid()) {
       exception_state.ThrowDOMException(
-          kSyntaxError, "'" + urls[i] + "' can't be resolved to a valid URL.");
+          DOMExceptionCode::kSyntaxError,
+          "'" + urls[i] + "' can't be resolved to a valid URL.");
       return nullptr;
     }
 
@@ -85,8 +86,16 @@ PresentationRequest* PresentationRequest::Create(
       return nullptr;
     }
 
-    parsed_urls[i] = parsed_url;
+    if (IsKnownProtocolForPresentationUrl(parsed_url))
+      parsed_urls.push_back(parsed_url);
   }
+
+  if (parsed_urls.IsEmpty()) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                      "Do not support empty sequence of URLs.");
+    return nullptr;
+  }
+
   return new PresentationRequest(execution_context, parsed_urls);
 }
 
@@ -150,7 +159,7 @@ ScriptPromise PresentationRequest::start(ScriptState* script_state) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
-            kInvalidAccessError,
+            DOMExceptionCode::kInvalidAccessError,
             "PresentationRequest::start() requires user gesture."));
 
   PresentationController* controller =
@@ -159,7 +168,7 @@ ScriptPromise PresentationRequest::start(ScriptState* script_state) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
-            kInvalidStateError,
+            DOMExceptionCode::kInvalidStateError,
             "The PresentationRequest is no longer associated to a frame."));
 
   RecordStartOriginTypeAccess(*execution_context);
@@ -181,7 +190,7 @@ ScriptPromise PresentationRequest::reconnect(ScriptState* script_state,
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
-            kInvalidStateError,
+            DOMExceptionCode::kInvalidStateError,
             "The PresentationRequest is no longer associated to a frame."));
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
@@ -211,7 +220,7 @@ ScriptPromise PresentationRequest::getAvailability(ScriptState* script_state) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
-            kInvalidStateError,
+            DOMExceptionCode::kInvalidStateError,
             "The PresentationRequest is no longer associated to a frame."));
 
   if (!availability_property_) {

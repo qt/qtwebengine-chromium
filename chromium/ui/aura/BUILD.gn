@@ -50,6 +50,7 @@ jumbo_component("aura") {
     "mus/focus_synchronizer_observer.h",
     "mus/in_flight_change.h",
     "mus/input_method_mus.h",
+    "mus/input_method_mus_delegate.h",
     "mus/mus_context_factory.h",
     "mus/mus_mouse_location_updater.h",
     "mus/mus_types.h",
@@ -138,6 +139,7 @@ jumbo_component("aura") {
     "scoped_simple_keyboard_hook.cc",
     "scoped_window_targeter.cc",
     "window.cc",
+    "window_delegate.cc",
     "window_event_dispatcher.cc",
     "window_observer.cc",
     "window_occlusion_tracker.cc",
@@ -156,6 +158,7 @@ jumbo_component("aura") {
     "//base:i18n",
     "//base/third_party/dynamic_annotations",
     "//cc",
+    "//cc/mojo_embedder",
     "//components/discardable_memory/client",
     "//components/discardable_memory/public/interfaces",
     "//components/viz/client",
@@ -174,6 +177,7 @@ jumbo_component("aura") {
     "//ui/base/ime",
     "//ui/display",
     "//ui/events",
+    "//ui/events:dom_keyboard_layout",
     "//ui/events:events_base",
     "//ui/events/platform",
     "//ui/gfx",
@@ -205,7 +209,10 @@ jumbo_component("aura") {
   }
 
   if (use_ozone) {
-    deps += [ "//ui/ozone" ]
+    deps += [
+      "//ui/events/ozone:events_ozone_layout",
+      "//ui/ozone",
+    ]
     sources += [
       "mus/platform_event_source_mus_ozone.cc",
       "mus/platform_event_source_mus_ozone.h",
@@ -306,6 +313,7 @@ jumbo_static_library("test_support") {
     "//ui/events:test_support",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/platform_window",
     "//ui/wm",
   ]
 
@@ -341,9 +349,9 @@ executable("demo") {
     ":test_support",
     "//base",
     "//base:i18n",
-    "//build/config:exe_and_shlib_deps",
     "//build/win:default_exe_manifest",
     "//components/viz/host",
+    "//components/viz/service",
     "//skia",
     "//third_party/icu",
     "//ui/base",
@@ -391,8 +399,9 @@ test("aura_unittests") {
   deps = [
     ":test_support",
     "//base/test:test_support",
+    "//cc/mojo_embedder",
     "//components/viz/client",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//net",
     "//services/ui/common:task_runner_test_base",
     "//services/ui/public/cpp",
@@ -408,6 +417,7 @@ test("aura_unittests") {
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/gl:test_support",
+    "//ui/platform_window",
     "//ui/platform_window/stub",
     "//ui/wm",
   ]

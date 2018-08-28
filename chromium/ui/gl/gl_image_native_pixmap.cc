@@ -6,7 +6,10 @@
 
 #include <vector>
 
+#include "base/files/scoped_file.h"
+#include "build/build_config.h"
 #include "ui/gfx/buffer_format_util.h"
+#include "ui/gfx/gpu_fence.h"
 #include "ui/gl/egl_util.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_enums.h"
@@ -24,8 +27,7 @@
 #define DRM_FORMAT_ABGR8888 FOURCC('A', 'B', '2', '4')
 #define DRM_FORMAT_XRGB8888 FOURCC('X', 'R', '2', '4')
 #define DRM_FORMAT_XBGR8888 FOURCC('X', 'B', '2', '4')
-#define DRM_FORMAT_XRGB2101010 FOURCC('X', 'R', '3', '0')
-#define DRM_FORMAT_XBGR2101010 FOURCC('X', 'B', '3', '0')
+#define DRM_FORMAT_ABGR2101010 FOURCC('A', 'B', '3', '0')
 #define DRM_FORMAT_YVU420 FOURCC('Y', 'V', '1', '2')
 #define DRM_FORMAT_NV12 FOURCC('N', 'V', '1', '2')
 
@@ -37,8 +39,9 @@ bool ValidInternalFormat(unsigned internalformat, gfx::BufferFormat format) {
     case GL_RGB:
       return format == gfx::BufferFormat::BGR_565 ||
              format == gfx::BufferFormat::RGBX_8888 ||
-             format == gfx::BufferFormat::BGRX_8888 ||
-             format == gfx::BufferFormat::BGRX_1010102;
+             format == gfx::BufferFormat::BGRX_8888;
+    case GL_RGB10_A2_EXT:
+      return format == gfx::BufferFormat::RGBX_1010102;
     case GL_RGB_YCRCB_420_CHROMIUM:
       return format == gfx::BufferFormat::YVU_420;
     case GL_RGB_YCBCR_420V_CHROMIUM:
@@ -78,10 +81,10 @@ EGLint FourCC(gfx::BufferFormat format) {
       return DRM_FORMAT_ARGB8888;
     case gfx::BufferFormat::BGRX_8888:
       return DRM_FORMAT_XRGB8888;
-    case gfx::BufferFormat::BGRX_1010102:
-      return DRM_FORMAT_XRGB2101010;
     case gfx::BufferFormat::RGBX_1010102:
-      return DRM_FORMAT_XBGR2101010;
+      // We should use here DRM_FORMAT_XBGR2101010 format, but EGL on Intel
+      // doesn't support it for scanout, see https://crbug.com/776093#c14.
+      return DRM_FORMAT_ABGR2101010;
     case gfx::BufferFormat::YVU_420:
       return DRM_FORMAT_YVU420;
     case gfx::BufferFormat::YUV_420_BIPLANAR:
@@ -92,6 +95,7 @@ EGLint FourCC(gfx::BufferFormat format) {
     case gfx::BufferFormat::DXT5:
     case gfx::BufferFormat::ETC1:
     case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::BGRX_1010102:
     case gfx::BufferFormat::RGBA_F16:
     case gfx::BufferFormat::UYVY_422:
       NOTREACHED();
@@ -116,9 +120,9 @@ gfx::BufferFormat GetBufferFormatFromFourCCFormat(int format) {
       return gfx::BufferFormat::BGRA_8888;
     case DRM_FORMAT_XRGB8888:
       return gfx::BufferFormat::BGRX_8888;
-    case DRM_FORMAT_XRGB2101010:
-      return gfx::BufferFormat::BGRX_1010102;
-    case DRM_FORMAT_XBGR2101010:
+    case DRM_FORMAT_ABGR2101010:
+      // We should support DRM_FORMAT_XBGR2101010 format instead, but EGL on
+      // Intel doesn't support it for scanout, see https://crbug.com/776093#c14.
       return gfx::BufferFormat::RGBX_1010102;
     case DRM_FORMAT_RGB565:
       return gfx::BufferFormat::BGR_565;
@@ -148,13 +152,7 @@ GLImageNativePixmap::~GLImageNativePixmap() {}
 bool GLImageNativePixmap::Initialize(gfx::NativePixmap* pixmap,
                                      gfx::BufferFormat format) {
   DCHECK(!pixmap_);
-  if (pixmap->GetEGLClientBuffer()) {
-    EGLint attrs[] = {EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE};
-    if (!GLImageEGL::Initialize(EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
-                                pixmap->GetEGLClientBuffer(), attrs)) {
-      return false;
-    }
-  } else if (pixmap->AreDmaBufFdsValid()) {
+  if (pixmap->AreDmaBufFdsValid()) {
     if (!ValidFormat(format)) {
       LOG(ERROR) << "Invalid format: " << gfx::BufferFormatToString(format);
       return false;
@@ -287,6 +285,11 @@ gfx::NativePixmapHandle GLImageNativePixmap::ExportHandle() {
     }
   }
 
+#if defined(OS_FUCHSIA)
+  // TODO(crbug.com/852011): Implement image handle export on Fuchsia.
+  NOTIMPLEMENTED();
+  return gfx::NativePixmapHandle();
+#else   // defined(OS_FUCHSIA)
   std::vector<int> fds(num_planes);
   std::vector<EGLint> strides(num_planes);
   std::vector<EGLint> offsets(num_planes);
@@ -322,6 +325,7 @@ gfx::NativePixmapHandle GLImageNativePixmap::ExportHandle() {
   }
 
   return handle;
+#endif  // !defined(OS_FUCHSIA)
 }
 
 unsigned GLImageNativePixmap::GetInternalFormat() {
@@ -346,16 +350,18 @@ bool GLImageNativePixmap::CopyTexSubImage(unsigned target,
   return false;
 }
 
-bool GLImageNativePixmap::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
-                                               int z_order,
-                                               gfx::OverlayTransform transform,
-                                               const gfx::Rect& bounds_rect,
-                                               const gfx::RectF& crop_rect,
-                                               bool enable_blend,
-                                               gfx::GpuFence* gpu_fence) {
+bool GLImageNativePixmap::ScheduleOverlayPlane(
+    gfx::AcceleratedWidget widget,
+    int z_order,
+    gfx::OverlayTransform transform,
+    const gfx::Rect& bounds_rect,
+    const gfx::RectF& crop_rect,
+    bool enable_blend,
+    std::unique_ptr<gfx::GpuFence> gpu_fence) {
   DCHECK(pixmap_);
   return pixmap_->ScheduleOverlayPlane(widget, z_order, transform, bounds_rect,
-                                       crop_rect, enable_blend, gpu_fence);
+                                       crop_rect, enable_blend,
+                                       std::move(gpu_fence));
 }
 
 void GLImageNativePixmap::Flush() {
@@ -398,7 +404,6 @@ unsigned GLImageNativePixmap::GetInternalFormatForTesting(
       return GL_RGB;
     case gfx::BufferFormat::RGBA_8888:
       return GL_RGBA;
-    case gfx::BufferFormat::BGRX_1010102:
     case gfx::BufferFormat::RGBX_1010102:
       return GL_RGB10_A2_EXT;
     case gfx::BufferFormat::BGRA_8888:
@@ -413,6 +418,7 @@ unsigned GLImageNativePixmap::GetInternalFormatForTesting(
     case gfx::BufferFormat::DXT5:
     case gfx::BufferFormat::ETC1:
     case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::BGRX_1010102:
     case gfx::BufferFormat::RGBA_F16:
     case gfx::BufferFormat::UYVY_422:
       NOTREACHED();
@@ -434,7 +440,6 @@ bool GLImageNativePixmap::ValidFormat(gfx::BufferFormat format) {
     case gfx::BufferFormat::RGBX_8888:
     case gfx::BufferFormat::BGRA_8888:
     case gfx::BufferFormat::BGRX_8888:
-    case gfx::BufferFormat::BGRX_1010102:
     case gfx::BufferFormat::RGBX_1010102:
     case gfx::BufferFormat::YVU_420:
     case gfx::BufferFormat::YUV_420_BIPLANAR:
@@ -445,6 +450,7 @@ bool GLImageNativePixmap::ValidFormat(gfx::BufferFormat format) {
     case gfx::BufferFormat::DXT5:
     case gfx::BufferFormat::ETC1:
     case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::BGRX_1010102:
     case gfx::BufferFormat::RGBA_F16:
     case gfx::BufferFormat::UYVY_422:
       return false;

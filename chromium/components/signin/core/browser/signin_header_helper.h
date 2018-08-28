@@ -145,21 +145,39 @@ struct DiceResponseParams {
   DISALLOW_COPY_AND_ASSIGN(DiceResponseParams);
 };
 
+class RequestAdapter {
+ public:
+  explicit RequestAdapter(net::URLRequest* request);
+  virtual ~RequestAdapter();
+
+  virtual const GURL& GetUrl();
+  virtual bool HasHeader(const std::string& name);
+  virtual void RemoveRequestHeaderByName(const std::string& name);
+  virtual void SetExtraHeaderByName(const std::string& name,
+                                    const std::string& value);
+
+ protected:
+  net::URLRequest* const request_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RequestAdapter);
+};
+
 // Base class for managing the signin headers (Dice and Chrome-Connected).
 class SigninHeaderHelper {
  public:
   // Appends or remove the header to a network request if necessary.
   // Returns whether the request has the request header.
-  bool AppendOrRemoveRequestHeader(net::URLRequest* request,
+  bool AppendOrRemoveRequestHeader(RequestAdapter* request,
                                    const GURL& redirect_url,
                                    const char* header_name,
                                    const std::string& header_value);
 
   // Returns wether an account consistency header should be built for this
   // request.
-  bool ShouldBuildRequestHeader(
+  virtual bool ShouldBuildRequestHeader(
       const GURL& url,
-      const content_settings::CookieSettings* cookie_settings);
+      const content_settings::CookieSettings* cookie_settings) = 0;
 
  protected:
   SigninHeaderHelper() {}
@@ -192,7 +210,7 @@ std::string BuildMirrorRequestCookieIfPossible(
 // the exception of requests from gaia webview.
 // Removes the header in case it should not be transfered to a redirected url.
 void AppendOrRemoveMirrorRequestHeader(
-    net::URLRequest* request,
+    RequestAdapter* request,
     const GURL& redirect_url,
     const std::string& account_id,
     AccountConsistencyMethod account_consistency,
@@ -204,13 +222,14 @@ void AppendOrRemoveMirrorRequestHeader(
 // Removes the header in case it should not be transfered to a redirected url.
 // Returns whether the request has the Dice request header.
 bool AppendOrRemoveDiceRequestHeader(
-    net::URLRequest* request,
+    RequestAdapter* request,
     const GURL& redirect_url,
     const std::string& account_id,
     bool sync_enabled,
     bool sync_has_auth_error,
     AccountConsistencyMethod account_consistency,
-    const content_settings::CookieSettings* cookie_settings);
+    const content_settings::CookieSettings* cookie_settings,
+    const std::string& device_id);
 
 // Returns the parameters contained in the X-Chrome-Manage-Accounts response
 // header.

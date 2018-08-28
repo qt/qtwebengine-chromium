@@ -21,6 +21,7 @@ class DevToolsAgentHostImpl;
 class NavigationHandle;
 class NavigationThrottle;
 class RenderFrameHostImpl;
+class TargetRegistry;
 
 namespace protocol {
 
@@ -28,7 +29,9 @@ class TargetHandler : public DevToolsDomainHandler,
                       public Target::Backend,
                       public DevToolsAgentHostObserver {
  public:
-  explicit TargetHandler(bool browser_only);
+  TargetHandler(bool browser_only,
+                const std::string& owner_target_id,
+                TargetRegistry* target_registry);
   ~TargetHandler() override;
 
   static std::vector<TargetHandler*> ForAgentHost(DevToolsAgentHostImpl* host);
@@ -50,18 +53,22 @@ class TargetHandler : public DevToolsDomainHandler,
   Response SetRemoteLocations(
       std::unique_ptr<protocol::Array<Target::RemoteLocation>>) override;
   Response AttachToTarget(const std::string& target_id,
+                          Maybe<bool> flatten,
                           std::string* out_session_id) override;
+  Response AttachToBrowserTarget(std::string* out_session_id) override;
   Response DetachFromTarget(Maybe<std::string> session_id,
                             Maybe<std::string> target_id) override;
   Response SendMessageToTarget(const std::string& message,
                                Maybe<std::string> session_id,
                                Maybe<std::string> target_id) override;
   Response GetTargetInfo(
-      const std::string& target_id,
+      Maybe<std::string> target_id,
       std::unique_ptr<Target::TargetInfo>* target_info) override;
   Response ActivateTarget(const std::string& target_id) override;
   Response CloseTarget(const std::string& target_id,
                        bool* out_success) override;
+  Response ExposeDevToolsProtocol(const std::string& target_id,
+                                  Maybe<std::string> binding_name) override;
   Response CreateBrowserContext(std::string* out_context_id) override;
   Response DisposeBrowserContext(const std::string& context_id) override;
   Response GetBrowserContexts(
@@ -95,6 +102,8 @@ class TargetHandler : public DevToolsDomainHandler,
   void DevToolsAgentHostDestroyed(DevToolsAgentHost* agent_host) override;
   void DevToolsAgentHostAttached(DevToolsAgentHost* agent_host) override;
   void DevToolsAgentHostDetached(DevToolsAgentHost* agent_host) override;
+  void DevToolsAgentHostCrashed(DevToolsAgentHost* agent_host,
+                                base::TerminationStatus status) override;
 
   std::unique_ptr<Target::Frontend> frontend_;
   TargetAutoAttacher auto_attacher_;
@@ -102,8 +111,9 @@ class TargetHandler : public DevToolsDomainHandler,
   std::map<std::string, std::unique_ptr<Session>> attached_sessions_;
   std::map<DevToolsAgentHost*, Session*> auto_attached_sessions_;
   std::set<DevToolsAgentHost*> reported_hosts_;
-  int last_session_id_ = 0;
   bool browser_only_;
+  std::string owner_target_id_;
+  TargetRegistry* target_registry_;
   base::flat_set<Throttle*> throttles_;
   base::WeakPtrFactory<TargetHandler> weak_factory_;
 

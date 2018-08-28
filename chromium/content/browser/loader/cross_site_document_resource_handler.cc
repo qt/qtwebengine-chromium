@@ -20,6 +20,7 @@
 #include "content/browser/loader/detachable_resource_handler.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/site_instance_impl.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/resource_context.h"
@@ -66,16 +67,15 @@ void CrossSiteDocumentResourceHandler::LogBlockedResponseOnUIThread(
   if (!web_contents)
     return;
 
-  ukm::UkmRecorder* recorder = ukm::UkmRecorder::Get();
-  ukm::SourceId source_id = ukm::UkmRecorder::GetNewSourceID();
-  recorder->UpdateSourceURL(source_id, web_contents->GetLastCommittedURL());
+  ukm::SourceId source_id = static_cast<WebContentsImpl*>(web_contents)
+                                ->GetUkmSourceIdForLastCommittedSource();
   ukm::builders::SiteIsolation_XSD_Browser_Blocked(source_id)
       .SetCanonicalMimeType(static_cast<int64_t>(canonical_mime_type))
       .SetContentLengthWasZero(content_length == 0)
       .SetContentResourceType(resource_type)
       .SetHttpResponseCode(http_response_code)
       .SetNeededSniffing(needed_sniffing)
-      .Record(recorder);
+      .Record(ukm::UkmRecorder::Get());
 }
 
 void CrossSiteDocumentResourceHandler::LogBlockedResponse(
@@ -166,6 +166,14 @@ class CrossSiteDocumentResourceHandler::Controller : public ResourceController {
     }
   }
 
+  void ResumeForRedirect(const base::Optional<net::HttpRequestHeaders>&
+                             modified_request_headers) override {
+    DCHECK(!modified_request_headers.has_value())
+        << "Redirect with modified headers was not supported yet. "
+           "crbug.com/845683";
+    Resume();
+  }
+
   void Cancel() override {
     MarkAsUsed();
     document_handler_->Cancel();
@@ -212,8 +220,6 @@ void CrossSiteDocumentResourceHandler::OnResponseStarted(
     network::ResourceResponse* response,
     std::unique_ptr<ResourceController> controller) {
   has_response_started_ = true;
-  http_response_code_ =
-      response->head.headers ? response->head.headers->response_code() : 0;
 
   network::CrossOriginReadBlocking::LogAction(
       network::CrossOriginReadBlocking::Action::kResponseStarted);
@@ -388,8 +394,8 @@ void CrossSiteDocumentResourceHandler::OnReadCompleted(
     // If we have some new data, ask the |analyzer_| to sniff it.
     analyzer_->SniffResponseBody(data, new_data_offset);
 
-    const bool confirmed_allowed = analyzer_->should_allow();
-    confirmed_blockable = analyzer_->should_block();
+    const bool confirmed_allowed = analyzer_->ShouldAllow();
+    confirmed_blockable = analyzer_->ShouldBlock();
     DCHECK(!(confirmed_blockable && confirmed_allowed));
 
     // If sniffing didn't yield a conclusive response, and we haven't read too
@@ -425,11 +431,13 @@ void CrossSiteDocumentResourceHandler::OnReadCompleted(
                      : "null",
                  "url", request()->url().spec());
 
-    LogBlockedResponse(info, http_response_code_);
+    LogBlockedResponse(info, analyzer_->http_response_code());
 
     // Block the response and throw away the data.  Report zero bytes read.
     blocked_read_completed_ = true;
-    info->set_blocked_cross_site_document(true);
+    info->set_blocked_response_from_reaching_renderer(true);
+    if (analyzer_->ShouldReportBlockedResponse())
+      info->set_should_report_corb_blocking(true);
     network::CrossOriginReadBlocking::SanitizeBlockedResponse(
         pending_response_start_);
 
@@ -535,10 +543,17 @@ void CrossSiteDocumentResourceHandler::OnResponseCompleted(
 
 bool CrossSiteDocumentResourceHandler::ShouldBlockBasedOnHeaders(
     const network::ResourceResponse& response) {
+  // Give embedder a chance to skip document blocking for this response.
+  const char* initiator_scheme_exception =
+      GetContentClient()
+          ->browser()
+          ->GetInitatorSchemeBypassingDocumentBlocking();
+
+  // Delegate most decisions to CrossOriginReadBlocking::ResponseAnalyzer.
   analyzer_ =
       std::make_unique<network::CrossOriginReadBlocking::ResponseAnalyzer>(
-          *request(), response);
-  if (analyzer_->should_allow())
+          *request(), response, initiator_scheme_exception);
+  if (analyzer_->ShouldAllow())
     return false;
 
   // Check if the response's site needs to have its documents protected.  By
@@ -567,21 +582,12 @@ bool CrossSiteDocumentResourceHandler::ShouldBlockBasedOnHeaders(
   if (!info || info->GetChildID() == -1)
     return false;
 
-  // Give embedder a chance to skip document blocking for this response.
-  const char* initiator_scheme_exception =
-      GetContentClient()
-          ->browser()
-          ->GetInitatorSchemeBypassingDocumentBlocking();
-  if (initiator_scheme_exception && request()->initiator().has_value() &&
-      request()->initiator()->scheme() == initiator_scheme_exception) {
-    return false;
-  }
-
-  // Don't block plugin requests with universal access (e.g., Flash).  Such
-  // requests are made without CORS, and thus dont have an Origin request
-  // header.  Other plugin requests (e.g., NaCl) are made using CORS and have an
-  // Origin request header.  If they fail the CORS check above, they should be
-  // blocked.
+  // Don't block plugin requests.
+  // TODO(lukasza): Only disable CORB for plugins with universal access (see
+  // PepperURLLoaderHost::has_universal_access_), because only such plugins may
+  // have their own CORS-like mechanisms - e.g. crossdomain.xml in Flash).  We
+  // should still enforce CORB for other kinds of plugins (i.e. ones without
+  // universal access).
   if (info->GetResourceType() == RESOURCE_TYPE_PLUGIN_RESOURCE &&
       is_nocors_plugin_request_) {
     return false;

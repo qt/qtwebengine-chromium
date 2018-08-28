@@ -37,7 +37,7 @@ protected:
     SkAlphaType alphaType() const override { return fAlphaType; }
     void makeCopyKey(const CopyParams& params, GrUniqueKey* copyKey,
                      SkColorSpace* dstColorSpace) override;
-    void didCacheCopy(const GrUniqueKey& copyKey) override;
+    void didCacheCopy(const GrUniqueKey& copyKey, uint32_t contextUniqueID) override;
 
     GrTextureProxy* originalProxy() const { return fOriginal.get(); }
     sk_sp<GrTextureProxy> originalProxyRef() const { return fOriginal; }
@@ -46,11 +46,11 @@ private:
     sk_sp<GrTextureProxy> onRefTextureProxyForParams(const GrSamplerState&,
                                                      SkColorSpace* dstColorSpace,
                                                      sk_sp<SkColorSpace>* proxyColorSpace,
+                                                     bool willBeMipped,
                                                      SkScalar scaleAdjust[2]) override;
 
     sk_sp<GrTextureProxy> refTextureProxyCopy(const CopyParams& copyParams, bool willBeMipped);
 
-    GrContext*            fContext;
     sk_sp<GrTextureProxy> fOriginal;
     SkAlphaType           fAlphaType;
     SkColorSpace*         fColorSpace;

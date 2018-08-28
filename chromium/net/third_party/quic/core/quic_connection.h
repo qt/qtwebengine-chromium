@@ -31,6 +31,7 @@
 #include "net/third_party/quic/core/quic_alarm_factory.h"
 #include "net/third_party/quic/core/quic_blocked_writer_interface.h"
 #include "net/third_party/quic/core/quic_connection_stats.h"
+#include "net/third_party/quic/core/quic_debug_info_provider_interface.h"
 #include "net/third_party/quic/core/quic_framer.h"
 #include "net/third_party/quic/core/quic_one_block_arena.h"
 #include "net/third_party/quic/core/quic_packet_creator.h"
@@ -47,7 +48,7 @@
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
-namespace net {
+namespace quic {
 
 class QuicClock;
 class QuicConfig;
@@ -244,6 +245,10 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
   // Called when a ConnectionCloseFrame has been parsed.
   virtual void OnConnectionCloseFrame(const QuicConnectionCloseFrame& frame) {}
 
+  // Called when an ApplicationCloseFrame has been parsed.
+  virtual void OnApplicationCloseFrame(const QuicApplicationCloseFrame& frame) {
+  }
+
   // Called when a WindowUpdate has been parsed.
   virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame,
                                    const QuicTime& receive_time) {}
@@ -303,7 +308,8 @@ class QUIC_EXPORT_PRIVATE QuicConnectionHelperInterface {
 };
 
 class QUIC_EXPORT_PRIVATE QuicConnection
-    : public QuicFramerVisitorInterface,
+    : public QuicDebugInfoProviderInterface,
+      public QuicFramerVisitorInterface,
       public QuicBlockedWriterInterface,
       public QuicPacketGenerator::DelegateInterface,
       public QuicSentPacketManager::NetworkChangeVisitor {
@@ -447,6 +453,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     return framer_.supported_versions();
   }
 
+  // From QuicConnectionDebugInfoProviderInterface
+  QuicString DebugStringForAckProcessing() const override;
+
   // From QuicFramerVisitorInterface
   void OnError(QuicFramer* framer) override;
   bool OnProtocolVersionMismatch(ParsedQuicVersion received_version) override;
@@ -459,7 +468,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   void OnDecryptedPacket(EncryptionLevel level) override;
   bool OnPacketHeader(const QuicPacketHeader& header) override;
   bool OnStreamFrame(const QuicStreamFrame& frame) override;
-  bool OnAckFrame(const QuicAckFrame& frame) override;
   bool OnAckFrameStart(QuicPacketNumber largest_acked,
                        QuicTime::Delta ack_delay_time) override;
   bool OnAckRange(QuicPacketNumber start,
@@ -470,9 +478,16 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   bool OnPingFrame(const QuicPingFrame& frame) override;
   bool OnRstStreamFrame(const QuicRstStreamFrame& frame) override;
   bool OnConnectionCloseFrame(const QuicConnectionCloseFrame& frame) override;
+  bool OnApplicationCloseFrame(const QuicApplicationCloseFrame& frame) override;
+  bool OnStopSendingFrame(const QuicStopSendingFrame& frame) override;
+  bool OnPathChallengeFrame(const QuicPathChallengeFrame& frame) override;
+  bool OnPathResponseFrame(const QuicPathResponseFrame& frame) override;
   bool OnGoAwayFrame(const QuicGoAwayFrame& frame) override;
+  bool OnMaxStreamIdFrame(const QuicMaxStreamIdFrame& frame) override;
+  bool OnStreamIdBlockedFrame(const QuicStreamIdBlockedFrame& frame) override;
   bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) override;
   bool OnBlockedFrame(const QuicBlockedFrame& frame) override;
+  bool OnNewConnectionIdFrame(const QuicNewConnectionIdFrame& frame) override;
   void OnPacketComplete() override;
   bool IsValidStatelessResetToken(QuicUint128 token) const override;
   void OnAuthenticatedIetfStatelessResetPacket(
@@ -490,13 +505,11 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   void PopulateStopWaitingFrame(QuicStopWaitingFrame* stop_waiting) override;
 
   // QuicPacketCreator::DelegateInterface
+  char* GetPacketBuffer() override;
   void OnSerializedPacket(SerializedPacket* packet) override;
 
   // QuicSentPacketManager::NetworkChangeVisitor
   void OnCongestionChange() override;
-  // TODO(b/76462614): remove OnPathDegrading() once
-  // FLAGS_quic_reloadable_flag_quic_path_degrading_alarm2 is deprecated.
-  void OnPathDegrading() override;
   void OnPathMtuIncreased(QuicPacketLength packet_size) override;
 
   // Called by the crypto stream when the handshake completes. In the server's
@@ -534,19 +547,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     packet_generator_.set_debug_delegate(visitor);
   }
   const QuicSocketAddress& self_address() const { return self_address_; }
-  const QuicSocketAddress& peer_address() const {
-    if (enable_server_proxy_) {
-      return direct_peer_address_;
-    }
-    return peer_address_;
-  }
+  const QuicSocketAddress& peer_address() const { return direct_peer_address_; }
   const QuicSocketAddress& effective_peer_address() const {
-    if (enable_server_proxy_) {
-      return effective_peer_address_;
-    }
-    QUIC_BUG << "effective_peer_address() should only be called when "
-                "enable_server_proxy_ is true.";
-    return peer_address_;
+    return effective_peer_address_;
   }
   QuicConnectionId connection_id() const { return connection_id_; }
   const QuicClock* clock() const { return clock_; }
@@ -681,7 +684,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     // flusher goes out of scope.
     // TODO(fayang): Consider to combine flush_on_delete_ and
     // set_retransmission_alarm_on_delete_if_pending_ when deprecating
-    // quic_reloadable_flag_quic_deprecate_scoped_scheduler.
+    // quic_reloadable_flag_quic_deprecate_scoped_scheduler2.
     bool set_retransmission_alarm_on_delete_if_pending_;
   };
 
@@ -787,8 +790,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     per_packet_options_ = options;
   }
 
-  bool IsServerProxyEnabled() const { return enable_server_proxy_; }
-
   bool IsPathDegrading() const { return is_path_degrading_; }
 
   bool deprecate_scheduler() const { return deprecate_scheduler_; }
@@ -800,13 +801,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Send a packet to the peer, and takes ownership of the packet if the packet
   // cannot be written immediately.
   virtual void SendOrQueuePacket(SerializedPacket* packet);
-
-  // Called after a packet is received from a new peer address and is decrypted.
-  // Starts validation of peer's address change.
-  virtual void StartPeerMigration(AddressChangeType peer_migration_type);
-
-  // Called when a peer address migration is validated.
-  virtual void OnPeerMigrationValidated();
 
   // Called after a packet is received from a new effective peer address and is
   // decrypted. Starts validation of effective peer's address change. Calls
@@ -843,10 +837,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Returns the current per-packet options for the connection.
   PerPacketOptions* per_packet_options() { return per_packet_options_; }
 
-  AddressChangeType active_peer_migration_type() {
-    return active_peer_migration_type_;
-  }
-
   AddressChangeType active_effective_peer_migration_type() const {
     return active_effective_peer_migration_type_;
   }
@@ -876,6 +866,11 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // and/or peer address changes.
   bool IsCurrentPacketConnectivityProbing() const;
 
+  // Return true iff the writer is blocked, if blocked, call
+  // visitor_->OnWriteBlocked() to add the connection into the write blocked
+  // list.
+  bool HandleWriteBlocked();
+
  private:
   friend class test::QuicConnectionPeer;
 
@@ -902,6 +897,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Saves the connection close packet for later transmission, even if the
   // writer is write blocked.
   bool WritePacket(SerializedPacket* packet);
+
+  // Flush packets buffered in the writer, if any.
+  void FlushPackets();
 
   // Make sure an ack we got from our peer is sane.
   // Returns nullptr for valid acks or an error string if it was invalid.
@@ -931,6 +929,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Writes as many pending retransmissions as possible.
   void WritePendingRetransmissions();
+
+  // Writes new data if congestion control allows.
+  void WriteNewData();
 
   // Queues |packet| in the hopes that it can be decrypted in the
   // future, when a new key is installed.
@@ -1004,6 +1005,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // |acked_new_packet| is true if a previously-unacked packet was acked.
   void PostProcessAfterAckFrame(bool send_stop_waiting, bool acked_new_packet);
 
+  // Updates the release time into the future.
+  void UpdateReleaseTimeIntoFuture();
+
   QuicFramer framer_;
 
   // Contents received in the current packet, especially used to identify
@@ -1014,12 +1018,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // true as soon as |current_packet_content_| is set to
   // SECOND_FRAME_IS_PADDING.
   bool is_current_packet_connectivity_probing_;
-  // Caches the current peer migration type if a peer migration might be
-  // initiated. As soon as the current packet is confirmed not a connectivity
-  // probe, peer migration will start.
-  // TODO(wub): Remove once quic_reloadable_flag_quic_enable_server_proxy2 is
-  // deprecated.
-  AddressChangeType current_peer_migration_type_;
   // Caches the current effective peer migration type if a effective peer
   // migration might be initiated. As soon as the current packet is confirmed
   // not a connectivity probe, effective peer migration will start.
@@ -1049,17 +1047,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // |effective_peer_address_| to be the address of the endpoint behind the
   // proxy if the connection is proxied.
   QuicSocketAddress effective_peer_address_;
-
-  // Records change type when the peer initiates migration to a new peer
-  // address. Reset to NO_CHANGE after peer migration is validated.
-  // TODO(wub): Remove once quic_reloadable_flag_quic_enable_server_proxy2 is
-  // deprecated.
-  AddressChangeType active_peer_migration_type_;
-
-  // Records highest sent packet number when peer migration is started.
-  // TODO(wub): Remove once quic_reloadable_flag_quic_enable_server_proxy2 is
-  // deprecated.
-  QuicPacketNumber highest_packet_sent_before_peer_migration_;
 
   // Records change type when the effective peer initiates migration to a new
   // address. Reset to NO_CHANGE after effective peer migration is validated.
@@ -1128,9 +1115,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // When true, close the QUIC connection after 5 RTOs.  Due to the min rto of
   // 200ms, this is over 5 seconds.
   bool close_connection_after_five_rtos_;
-  // When true, close the QUIC connection when there are no open streams after
-  // 3 consecutive RTOs.
-  bool close_connection_after_three_rtos_;
 
   QuicReceivedPacketManager received_packet_manager_;
 
@@ -1139,6 +1123,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // How many retransmittable packets have arrived without sending an ack.
   QuicPacketCount num_retransmittable_packets_received_since_last_ack_sent_;
   // Whether there were missing packets in the last sent ack.
+  // TODO(ianswett): Deprecate with
+  // quic_reloadable_flag_quic_ack_reordered_packets.
   bool last_ack_had_missing_packets_;
   // How many consecutive packets have arrived without sending an ack.
   QuicPacketCount num_packets_received_since_last_ack_sent_;
@@ -1152,6 +1138,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // When true, removes ack decimation's max number of packets(10) before
   // sending an ack.
   bool unlimited_ack_decimation_;
+  // When true, use a 1ms delayed ack timer if it's been an SRTT since a packet
+  // was received.
+  bool fast_ack_after_quiescence_;
 
   // Indicates the retransmit alarm is going to be set by the
   // ScopedRetransmitAlarmDelayer
@@ -1181,9 +1170,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   QuicArenaScopedPtr<QuicAlarm> send_alarm_;
   // An alarm that is scheduled when the connection can still write and there
   // may be more data to send.
-  // TODO(ianswett): Remove resume_writes_alarm when deprecating
-  // FLAGS_quic_reloadable_flag_quic_unified_send_alarm
-  QuicArenaScopedPtr<QuicAlarm> resume_writes_alarm_;
   // An alarm that fires when the connection may have timed out.
   QuicArenaScopedPtr<QuicAlarm> timeout_alarm_;
   // An alarm that fires when a ping should be sent.
@@ -1213,6 +1199,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // The time that we got a packet for this connection.
   // This is used for timeouts, and does not indicate the packet was processed.
   QuicTime time_of_last_received_packet_;
+
+  // The time the previous ack-instigating packet was received and processed.
+  QuicTime time_of_previous_received_packet_;
 
   // The the send time of the first retransmittable packet sent after
   // |time_of_last_received_packet_|.
@@ -1317,25 +1306,33 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // True if the peer is unreachable on the current path.
   bool is_path_degrading_;
 
-  // Latched valure of
-  // quic_reloadable_flag_quic_handle_write_results_for_connectivity_probe.
-  const bool handle_write_results_for_connectivity_probe_;
+  // True if an ack frame is being processed.
+  bool processing_ack_frame_;
+
+  // True if the writer supports release timestamp.
+  const bool supports_release_time_;
+
+  // Time this connection can release packets into the future.
+  QuicTime::Delta release_time_into_future_;
+
+  // Latched value of quic_reloadable_flag_quic_deprecate_scoped_scheduler2.
+  // TODO(fayang): Remove ScopedRetransmissionScheduler when deprecating
+  // quic_reloadable_flag_quic_deprecate_scoped_scheduler2.
+  const bool deprecate_scheduler_;
 
   // Latched value of
-  // quic_reloadable_flag_quic_path_degrading_alarm2.
-  const bool use_path_degrading_alarm_;
+  // gfe2_reloadable_flag_quic_add_to_blocked_list_if_writer_blocked.
+  const bool add_to_blocked_list_if_writer_blocked_;
 
-  // Latched value of quic_reloadable_flag_quic_enable_server_proxy2.
-  const bool enable_server_proxy_;
+  // Latched value of quic_reloadable_flag_quic_ack_reordered_packets.
+  const bool ack_reordered_packets_;
 
-  // Latched value of quic_reloadable_flag_quic_deprecate_scoped_scheduler.
-  // TODO(fayang): Remove ScopedRetransmissionScheduler when deprecating
-  // quic_reloadable_flag_quic_deprecate_scoped_scheduler.
-  const bool deprecate_scheduler_;
+  // Latched value of quic_reloadable_flag_quic_retransmissions_app_limited.
+  const bool retransmissions_app_limited_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_CONNECTION_H_

@@ -7,8 +7,8 @@
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/blink/public/platform/web_url_loader_mock_factory.h"
 #include "third_party/blink/public/web/web_frame.h"
-#include "third_party/blink/public/web/web_frame_client.h"
 #include "third_party/blink/public/web/web_history_item.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_script_source.h"
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/public/web/web_view.h"
@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
@@ -55,7 +56,7 @@ TEST_F(ProgrammaticScrollTest, RestoreScrollPositionAndViewStateWithScale) {
   web_view->UpdateAllLifecyclePhases();
 
   FrameLoader& loader = web_view->MainFrameImpl()->GetFrame()->Loader();
-  loader.GetDocumentLoader()->SetLoadType(kFrameLoadTypeBackForward);
+  loader.GetDocumentLoader()->SetLoadType(WebFrameLoadType::kBackForward);
 
   web_view->SetPageScaleFactor(3.0f);
   web_view->MainFrameImpl()->SetScrollOffset(WebSize(0, 500));
@@ -87,7 +88,7 @@ TEST_F(ProgrammaticScrollTest, RestoreScrollPositionAndViewStateWithoutScale) {
   web_view->UpdateAllLifecyclePhases();
 
   FrameLoader& loader = web_view->MainFrameImpl()->GetFrame()->Loader();
-  loader.GetDocumentLoader()->SetLoadType(kFrameLoadTypeBackForward);
+  loader.GetDocumentLoader()->SetLoadType(WebFrameLoadType::kBackForward);
 
   web_view->SetPageScaleFactor(3.0f);
   web_view->MainFrameImpl()->SetScrollOffset(WebSize(0, 500));
@@ -142,8 +143,7 @@ TEST_F(ProgrammaticScrollSimTest, NavigateToHash) {
   // should cause the document to scroll to the hash.
   test::RunPendingTasks();
 
-  ScrollableArea* layout_viewport =
-      GetDocument().View()->LayoutViewportScrollableArea();
+  ScrollableArea* layout_viewport = GetDocument().View()->LayoutViewport();
   EXPECT_EQ(3001, layout_viewport->GetScrollOffset().Height());
 }
 

@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
+
 #include "third_party/blink/public/platform/blame_context.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
@@ -48,9 +49,11 @@
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable_marking_visitor.h"
 #include "third_party/blink/renderer/platform/bindings/wrapper_type_info.h"
+#include "third_party/blink/renderer/platform/heap/heap_stats_collector.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/partitions.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
@@ -191,10 +194,11 @@ void V8GCController::GcPrologue(v8::Isolate* isolate,
 namespace {
 
 void UpdateCollectedPhantomHandles(v8::Isolate* isolate) {
-  ThreadHeapStats& heap_stats = ThreadState::Current()->Heap().HeapStats();
-  size_t count = isolate->NumberOfPhantomHandleResetsSinceLastCall();
-  heap_stats.DecreaseWrapperCount(count);
-  heap_stats.IncreaseCollectedWrapperCount(count);
+  ThreadHeapStatsCollector* stats_collector =
+      ThreadState::Current()->Heap().stats_collector();
+  const size_t count = isolate->NumberOfPhantomHandleResetsSinceLastCall();
+  stats_collector->DecreaseWrapperCount(count);
+  stats_collector->IncreaseCollectedWrapperCount(count);
 }
 
 }  // namespace
@@ -208,6 +212,11 @@ void V8GCController::GcEpilogue(v8::Isolate* isolate,
     case v8::kGCTypeScavenge:
       TRACE_EVENT_END1("devtools.timeline,v8", "MinorGC", "usedHeapSizeAfter",
                        UsedHeapSize(isolate));
+      // Scavenger might have dropped nodes.
+      if (ThreadState::Current()) {
+        ThreadState::Current()->ScheduleV8FollowupGCIfNeeded(
+            BlinkGC::kV8MinorGC);
+      }
       break;
     case v8::kGCTypeMarkSweepCompact:
       TRACE_EVENT_END1("devtools.timeline,v8", "MajorGC", "usedHeapSizeAfter",
@@ -256,10 +265,10 @@ void V8GCController::GcEpilogue(v8::Isolate* isolate,
       // multiple V8's GC.
       current_thread_state->CollectGarbage(
           BlinkGC::kHeapPointersOnStack, BlinkGC::kAtomicMarking,
-          BlinkGC::kEagerSweeping, BlinkGC::kForcedGC);
+          BlinkGC::kEagerSweeping, BlinkGC::GCReason::kForcedGC);
 
       // Forces a precise GC at the end of the current event loop.
-      current_thread_state->SetGCState(ThreadState::kFullGCScheduled);
+      current_thread_state->ScheduleFullGC();
     }
 
     // v8::kGCCallbackFlagCollectAllAvailableGarbage is used when V8 handles
@@ -269,7 +278,7 @@ void V8GCController::GcEpilogue(v8::Isolate* isolate,
       // This single GC is not enough. See the above comment.
       current_thread_state->CollectGarbage(
           BlinkGC::kHeapPointersOnStack, BlinkGC::kAtomicMarking,
-          BlinkGC::kEagerSweeping, BlinkGC::kForcedGC);
+          BlinkGC::kEagerSweeping, BlinkGC::GCReason::kForcedGC);
 
       // The conservative GC might have left floating garbage. Schedule
       // precise GC to ensure that we collect all available garbage.
@@ -289,17 +298,17 @@ void V8GCController::GcEpilogue(v8::Isolate* isolate,
 
 void V8GCController::CollectGarbage(v8::Isolate* isolate, bool only_minor_gc) {
   v8::HandleScope handle_scope(isolate);
-  scoped_refptr<ScriptState> script_state = ScriptState::Create(
+  ScriptState* script_state = ScriptState::Create(
       v8::Context::New(isolate),
       DOMWrapperWorld::Create(isolate,
                               DOMWrapperWorld::WorldType::kGarbageCollector));
-  ScriptState::Scope scope(script_state.get());
+  ScriptState::Scope scope(script_state);
   StringBuilder builder;
   builder.Append("if (gc) gc(");
   builder.Append(only_minor_gc ? "true" : "false");
-  builder.Append(")");
+  builder.Append(");");
   V8ScriptRunner::CompileAndRunInternalScript(
-      isolate, script_state.get(),
+      isolate, script_state,
       ScriptSourceCode(builder.ToString(), ScriptSourceLocationType::kInternal,
                        nullptr, KURL(), TextPosition()));
   script_state->DisposePerContextData();
@@ -353,7 +362,7 @@ class DOMWrapperPurger final : public v8::PersistentHandleVisitor {
     void* values[] = {nullptr, nullptr};
     v8::Local<v8::Object> wrapper = v8::Local<v8::Object>::New(
         isolate_, v8::Persistent<v8::Object>::Cast(*value));
-    wrapper->SetAlignedPointerInInternalFields(arraysize(indices), indices,
+    wrapper->SetAlignedPointerInInternalFields(base::size(indices), indices,
                                                values);
     value->Reset();
   }

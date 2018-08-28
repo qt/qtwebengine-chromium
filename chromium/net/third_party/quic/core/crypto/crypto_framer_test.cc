@@ -17,9 +17,7 @@
 #include "net/third_party/quic/test_tools/crypto_test_utils.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 
-using std::string;
-
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -477,4 +475,4 @@ TEST_P(CryptoFramerTest, ProcessInputZeroLength) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

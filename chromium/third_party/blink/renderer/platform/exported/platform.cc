@@ -40,7 +40,6 @@
 #include "third_party/blink/public/platform/interface_provider.h"
 #include "third_party/blink/public/platform/modules/webmidi/web_midi_accessor.h"
 #include "third_party/blink/public/platform/web_canvas_capture_handler.h"
-#include "third_party/blink/public/platform/web_gesture_curve.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 #include "third_party/blink/public/platform/web_image_capture_frame_grabber.h"
 #include "third_party/blink/public/platform/web_media_recorder_handler.h"
@@ -65,6 +64,7 @@
 #include "third_party/blink/renderer/platform/partition_alloc_memory_dump_provider.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
+#include "third_party/webrtc/api/rtpparameters.h"
 
 namespace blink {
 
@@ -126,7 +126,6 @@ void Platform::Initialize(Platform* platform) {
   MemoryCoordinator::Initialize();
   if (base::ThreadTaskRunnerHandle::IsSet()) {
     base::trace_event::MemoryDumpProvider::Options options;
-    options.supports_heap_profiling = true;
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
         BlinkGCMemoryDumpProvider::Instance(), "BlinkGC",
         base::ThreadTaskRunnerHandle::Get(), options);
@@ -144,11 +143,9 @@ void Platform::Initialize(Platform* platform) {
   if (g_platform->main_thread_) {
     DCHECK(!g_gc_task_runner);
     g_gc_task_runner = new GCTaskRunner(g_platform->main_thread_);
-    base::trace_event::MemoryDumpProvider::Options heap_profiling_options;
-    heap_profiling_options.supports_heap_profiling = true;
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
         PartitionAllocMemoryDumpProvider::Instance(), "PartitionAlloc",
-        base::ThreadTaskRunnerHandle::Get(), heap_profiling_options);
+        base::ThreadTaskRunnerHandle::Get());
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
         FontCacheMemoryDumpProvider::Instance(), "FontCaches",
         base::ThreadTaskRunnerHandle::Get());
@@ -216,17 +213,10 @@ Platform::CreateOffscreenGraphicsContext3DProvider(
     const WebURL& top_document_url,
     Platform::GraphicsInfo*) {
   return nullptr;
-};
+}
 
 std::unique_ptr<WebGraphicsContext3DProvider>
 Platform::CreateSharedOffscreenGraphicsContext3DProvider() {
-  return nullptr;
-}
-
-std::unique_ptr<WebGestureCurve> Platform::CreateFlingAnimationCurve(
-    WebGestureDevice device_source,
-    const WebFloatPoint& velocity,
-    const WebSize& cumulative_scroll) {
   return nullptr;
 }
 
@@ -247,8 +237,7 @@ Platform::CreateRTCCertificateGenerator() {
   return nullptr;
 }
 
-std::unique_ptr<WebMediaStreamCenter> Platform::CreateMediaStreamCenter(
-    WebMediaStreamCenterClient*) {
+std::unique_ptr<WebMediaStreamCenter> Platform::CreateMediaStreamCenter() {
   return nullptr;
 }
 
@@ -266,6 +255,16 @@ Platform::CreateWebSocketHandshakeThrottle() {
 
 std::unique_ptr<WebImageCaptureFrameGrabber>
 Platform::CreateImageCaptureFrameGrabber() {
+  return nullptr;
+}
+
+std::unique_ptr<webrtc::RtpCapabilities> Platform::GetRtpSenderCapabilities(
+    const WebString& kind) {
+  return nullptr;
+}
+
+std::unique_ptr<webrtc::RtpCapabilities> Platform::GetRtpReceiverCapabilities(
+    const WebString& kind) {
   return nullptr;
 }
 

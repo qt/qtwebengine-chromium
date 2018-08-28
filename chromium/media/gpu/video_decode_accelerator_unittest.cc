@@ -56,8 +56,8 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
-#include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
+#include "gpu/config/gpu_preferences.h"
 #include "media/base/test_data_util.h"
 #include "media/gpu/buildflags.h"
 #include "media/gpu/fake_video_decode_accelerator.h"
@@ -67,6 +67,7 @@
 #include "media/gpu/test/video_accelerator_unittest_helpers.h"
 #include "media/gpu/test/video_decode_accelerator_unittest_helpers.h"
 #include "media/video/h264_parser.h"
+#include "mojo/core/embedder/embedder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gl/gl_image.h"
@@ -258,8 +259,8 @@ class GLRenderingVDAClient
   // will start delaying the call to ReusePictureBuffer() for kReuseDelay.
   // |decode_calls_per_second| is the number of VDA::Decode calls per second.
   // If |decode_calls_per_second| > 0, |num_in_flight_decodes| must be 1.
-  // |render_as_thumbnails| indicates if the decoded picture will be rendered
-  // as thumbnails at the end of tests.
+  // |num_frames| is the number of frames that must be verified to be decoded
+  // during the test.
   struct Config {
     size_t window_id = 0;
     size_t num_in_flight_decodes = 1;
@@ -275,7 +276,7 @@ class GLRenderingVDAClient
     bool fake_decoder = false;
     size_t delay_reuse_after_frame_num = std::numeric_limits<size_t>::max();
     size_t decode_calls_per_second = 0;
-    bool render_as_thumbnails = false;
+    size_t num_frames = 0;
   };
 
   // Doesn't take ownership of |rendering_helper| or |note|, which must outlive
@@ -323,6 +324,9 @@ class GLRenderingVDAClient
   void SetState(ClientState new_state);
   void FinishInitialization();
   void ReturnPicture(int32_t picture_buffer_id);
+  bool IsLastPlayThrough() {
+    return config_.num_play_throughs - completed_play_throughs_ == 1;
+  }
 
   // Delete the associated decoder helper.
   void DeleteDecoder();
@@ -343,7 +347,7 @@ class GLRenderingVDAClient
   std::unique_ptr<base::WeakPtrFactory<VideoDecodeAccelerator>>
       weak_vda_ptr_factory_;
   std::unique_ptr<GpuVideoDecodeAcceleratorFactory> vda_factory_;
-  size_t remaining_play_throughs_;
+  size_t completed_play_throughs_;
   ResetPoint reset_point_;
   ClientState state_;
   size_t num_queued_fragments_;
@@ -398,7 +402,7 @@ GLRenderingVDAClient::GLRenderingVDAClient(
       outstanding_decodes_(0),
       next_bitstream_buffer_id_(0),
       note_(note),
-      remaining_play_throughs_(config_.num_play_throughs),
+      completed_play_throughs_(0),
       reset_point_(config_.reset_point),
       state_(CS_CREATED),
       num_queued_fragments_(0),
@@ -525,14 +529,15 @@ void GLRenderingVDAClient::ProvidePictureBuffers(
     LOG_ASSERT(texture_ref);
 
     int32_t picture_buffer_id = next_picture_buffer_id_++;
+    int irrelevant_id = picture_buffer_id;
     LOG_ASSERT(
         active_textures_.insert(std::make_pair(picture_buffer_id, texture_ref))
             .second);
 
     PictureBuffer::TextureIds texture_ids(1, texture_id);
     buffers.push_back(PictureBuffer(picture_buffer_id, dimensions,
-                                    PictureBuffer::TextureIds(), texture_ids,
-                                    texture_target, pixel_format));
+                                    PictureBuffer::TextureIds{irrelevant_id++},
+                                    texture_ids, texture_target, pixel_format));
   }
   decoder_->AssignPictureBuffers(buffers);
 
@@ -554,11 +559,10 @@ void GLRenderingVDAClient::DismissPictureBuffer(int32_t picture_buffer_id) {
 }
 
 void GLRenderingVDAClient::PictureReady(const Picture& picture) {
-  // We shouldn't be getting pictures delivered after Reset has completed.
-  LOG_ASSERT(state_ < CS_RESET);
-
   if (decoder_deleted())
     return;
+  // We shouldn't be getting pictures delivered after Reset has completed.
+  LOG_ASSERT(state_ < CS_RESET);
 
   gfx::Rect visible_rect = picture.visible_rect();
   if (!visible_rect.IsEmpty())
@@ -580,7 +584,7 @@ void GLRenderingVDAClient::PictureReady(const Picture& picture) {
 
   // Mid-stream reset applies only to the last play-through per constructor
   // comment.
-  if (remaining_play_throughs_ == 1 && reset_point_ == MID_STREAM_RESET &&
+  if (IsLastPlayThrough() && reset_point_ == MID_STREAM_RESET &&
       config_.reset_after_frame_num == num_decoded_frames_) {
     decoder_->Reset();
     // Re-start decoding from the beginning of the stream to avoid needing to
@@ -597,19 +601,22 @@ void GLRenderingVDAClient::PictureReady(const Picture& picture) {
       base::Bind(&GLRenderingVDAClient::ReturnPicture, AsWeakPtr(),
                  picture.picture_buffer_id()));
   ASSERT_TRUE(pending_textures_.insert(*texture_it).second);
-
-  if (config_.render_as_thumbnails) {
-    rendering_helper_->RenderThumbnail(video_frame->texture_target(),
-                                       video_frame->texture_id());
-  } else {
-    rendering_helper_->QueueVideoFrame(config_.window_id, video_frame);
-  }
+  rendering_helper_->ConsumeVideoFrame(config_.window_id,
+                                       std::move(video_frame));
 }
 
 void GLRenderingVDAClient::ReturnPicture(int32_t picture_buffer_id) {
+  // Remove TextureRef from pending_textures_ regardless whether decoder is
+  // deleted.
+  LOG_ASSERT(1U == pending_textures_.erase(picture_buffer_id));
   if (decoder_deleted())
     return;
-  LOG_ASSERT(1U == pending_textures_.erase(picture_buffer_id));
+
+  if (active_textures_.find(picture_buffer_id) == active_textures_.end()) {
+    // The picture associated with picture_buffer_id is dismissed.
+    // Do not execute ReusePictureBuffer().
+    return;
+  }
 
   if (pending_textures_.empty() && state_ == CS_RESETTING) {
     SetState(CS_RESET);
@@ -628,8 +635,6 @@ void GLRenderingVDAClient::ReturnPicture(int32_t picture_buffer_id) {
 }
 
 void GLRenderingVDAClient::ResetDecoderAfterFlush() {
-  DCHECK_GE(remaining_play_throughs_, 1u);
-  --remaining_play_throughs_;
   // SetState(CS_RESETTING) should be called before decoder_->Reset(), because
   // VDA can call NotifyFlushDone() from Reset().
   // TODO(johnylin): call SetState() before all decoder Flush() and Reset().
@@ -681,6 +686,11 @@ void GLRenderingVDAClient::NotifyFlushDone() {
     return;
   }
 
+  // Check all the Decode()-ed frames are returned by PictureReady() in
+  // END_OF_STREAM_RESET case.
+  if (config_.reset_point == END_OF_STREAM_RESET)
+    EXPECT_EQ(num_decoded_frames_, config_.num_frames);
+
   SetState(CS_FLUSHED);
   ResetDecoderAfterFlush();
 }
@@ -693,9 +703,14 @@ void GLRenderingVDAClient::NotifyResetDone() {
     case DONE_RESET_AFTER_FIRST_CONFIG_INFO:
     case MID_STREAM_RESET:
       reset_point_ = END_OF_STREAM_RESET;
-      DecodeNextFragment();
+      // Because VDA::Decode() is executed if |reset_point_| is
+      // MID_STREAM_RESET or RESET_AFTER_FIRST_CONFIG_INFO,
+      // NotifyEndOfBitstreamBuffer() will be invoked. Next VDA::Decode() is
+      // triggered from NotifyEndOfBitstreamBuffer().
       return;
     case START_OF_STREAM_RESET:
+      EXPECT_EQ(num_decoded_frames_, 0u);
+      EXPECT_EQ(encoded_data_helper_->AtHeadOfStream(), true);
       reset_point_ = END_OF_STREAM_RESET;
       for (size_t i = 0; i < config_.num_in_flight_decodes; ++i)
         DecodeNextFragment();
@@ -708,12 +723,16 @@ void GLRenderingVDAClient::NotifyResetDone() {
       break;
   }
 
-  if (remaining_play_throughs_) {
+  completed_play_throughs_++;
+  DCHECK_GE(config_.num_play_throughs, completed_play_throughs_);
+
+  if (completed_play_throughs_ < config_.num_play_throughs) {
     encoded_data_helper_->Rewind();
     FinishInitialization();
     return;
   }
 
+  // completed_play_throughs == config.num_play_throughs.
   rendering_helper_->Flush(config_.window_id);
 
   if (pending_textures_.empty()) {
@@ -742,7 +761,11 @@ void GLRenderingVDAClient::OutputFrameDeliveryTimes(base::File* output) {
 void GLRenderingVDAClient::SetState(ClientState new_state) {
   note_->Notify(new_state);
   state_ = new_state;
-  if (!remaining_play_throughs_ && new_state == config_.delete_decoder_state) {
+  if (IsLastPlayThrough() && new_state == config_.delete_decoder_state) {
+    // If config_.delete_decoder_state is CS_RESET, IsLastPlayThrough() is
+    // false. But it does not matter, because DeleteDecoder() is executed after
+    // SetState(CS_RESET) in NotifyResetDone().
+    ASSERT_NE(config_.delete_decoder_state, CS_RESET);
     LOG_ASSERT(!decoder_deleted());
     DeleteDecoder();
   }
@@ -751,6 +774,10 @@ void GLRenderingVDAClient::SetState(ClientState new_state) {
 void GLRenderingVDAClient::FinishInitialization() {
   SetState(CS_INITIALIZED);
   initialize_done_ticks_ = base::TimeTicks::Now();
+  EXPECT_EQ(encoded_data_helper_->AtHeadOfStream(), true);
+  num_decoded_frames_ = 0;
+  if (decoder_deleted())
+    return;
 
   if (reset_point_ == START_OF_STREAM_RESET) {
     decoder_->Reset();
@@ -759,7 +786,7 @@ void GLRenderingVDAClient::FinishInitialization() {
 
   for (size_t i = 0; i < config_.num_in_flight_decodes; ++i)
     DecodeNextFragment();
-  DCHECK_EQ(outstanding_decodes_, config_.num_in_flight_decodes);
+  EXPECT_EQ(outstanding_decodes_, config_.num_in_flight_decodes);
 }
 
 void GLRenderingVDAClient::DeleteDecoder() {
@@ -817,7 +844,7 @@ void GLRenderingVDAClient::DecodeNextFragment() {
   next_bitstream_buffer_id_ = (next_bitstream_buffer_id_ + 1) & 0x3FFFFFFF;
   decoder_->Decode(bitstream_buffer);
   ++outstanding_decodes_;
-  if (!remaining_play_throughs_ &&
+  if (IsLastPlayThrough() &&
       -config_.delete_decoder_state == next_bitstream_buffer_id_) {
     DeleteDecoder();
   }
@@ -833,6 +860,12 @@ void GLRenderingVDAClient::DecodeNextFragment() {
         FROM_HERE,
         base::Bind(&GLRenderingVDAClient::DecodeNextFragment, AsWeakPtr()),
         base::TimeDelta::FromSeconds(1) / config_.decode_calls_per_second);
+  } else {
+    // Unless DecodeNextFragment() is posted from the above PostDelayedTask(),
+    // all the DecodeNextFragment() will be executed from
+    // NotifyEndOfBitstreamBuffer(). The number of Decode()s in flight must be
+    // less than or equal to the specified times.
+    EXPECT_LE(outstanding_decodes_, config_.num_in_flight_decodes);
   }
 }
 
@@ -1092,9 +1125,15 @@ static void AssertWaitForStateOrDeleted(
       << ", instead of " << expected_state;
 }
 
+// Fails on Win only. crbug.com/849368
+#if defined(OS_WIN)
+#define MAYBE_TestSimpleDecode DISABLED_TestSimpleDecode
+#else
+#define MAYBE_TestSimpleDecode TestSimpleDecode
+#endif
 // Test the most straightforward case possible: data is decoded from a single
 // chunk and rendered to the screen.
-TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
+TEST_P(VideoDecodeAcceleratorParamTest, MAYBE_TestSimpleDecode) {
   size_t num_concurrent_decoders = std::get<0>(GetParam());
   const size_t num_in_flight_decodes = std::get<1>(GetParam());
   size_t num_play_throughs = std::get<2>(GetParam());
@@ -1147,7 +1186,7 @@ TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
     config.profile = video_file->profile;
     config.fake_decoder = g_fake_decoder;
     config.delay_reuse_after_frame_num = delay_reuse_after_frame_num;
-    config.render_as_thumbnails = render_as_thumbnails;
+    config.num_frames = video_file->num_frames;
 
     clients_[index] = std::make_unique<GLRenderingVDAClient>(
         std::move(config), video_file->data_str, &rendering_helper_,
@@ -1176,7 +1215,9 @@ TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
   for (size_t i = 0; i < num_concurrent_decoders; ++i) {
     ClientStateNotification<ClientState>* note = notes_[i].get();
     ClientState state = note->Wait();
-    if (state != CS_INITIALIZED) {
+    EXPECT_TRUE(delete_decoder_state != CS_DECODER_SET ||
+                state == CS_DESTROYED);
+    if (delete_decoder_state != CS_DECODER_SET && state != CS_INITIALIZED) {
       skip_performance_and_correctness_checks = true;
       // We expect initialization to fail only when more than the supported
       // number of decoders is instantiated.  Assert here that something else
@@ -1406,7 +1447,6 @@ INSTANTIATE_TEST_CASE_P(
                         CS_RESETTING,
                         false,
                         false),
-        std::make_tuple(1, 1, 1, END_OF_STREAM_RESET, CS_RESET, false, false),
         std::make_tuple(1,
                         1,
                         1,
@@ -1494,6 +1534,7 @@ TEST_F(VideoDecodeAcceleratorTest, TestDecodeTimeMedian) {
   config.profile = video_file->profile;
   config.fake_decoder = g_fake_decoder;
   config.decode_calls_per_second = kWebRtcDecodeCallsPerSecond;
+  config.num_frames = video_file->num_frames;
 
   clients_.push_back(std::make_unique<GLRenderingVDAClient>(
       std::move(config), video_file->data_str, &rendering_helper_,
@@ -1527,6 +1568,7 @@ TEST_F(VideoDecodeAcceleratorTest, NoCrash) {
   config.frame_size = gfx::Size(video_file->width, video_file->height);
   config.profile = video_file->profile;
   config.fake_decoder = g_fake_decoder;
+  config.num_frames = video_file->num_frames;
 
   clients_.push_back(std::make_unique<GLRenderingVDAClient>(
       std::move(config), video_file->data_str, &rendering_helper_,
@@ -1550,6 +1592,8 @@ class VDATestSuite : public base::TestSuite {
 
   int Run() {
 #if defined(OS_WIN) || defined(OS_CHROMEOS)
+    mojo::core::Init();  // Required only for Win7 tests.
+
     // For windows the decoding thread initializes the media foundation decoder
     // which uses COM. We need the thread to be a UI thread.
     // On Ozone, the backend initializes the event system using a UI

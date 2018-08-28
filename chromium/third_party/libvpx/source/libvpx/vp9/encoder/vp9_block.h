@@ -92,6 +92,7 @@ struct macroblock {
   int sadperbit4;
   int rddiv;
   int rdmult;
+  int cb_rdmult;
   int mb_energy;
 
   // These are set to their default values at the beginning, and then adjusted
@@ -179,6 +180,8 @@ struct macroblock {
   int sb_mvrow_part;
 
   int sb_pickmode_part;
+
+  int zero_temp_sad_source;
 
   // For each superblock: saves the content value (e.g., low/high sad/sumdiff)
   // based on source sad, prior to encoding the frame.

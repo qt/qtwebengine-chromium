@@ -471,6 +471,7 @@ bool OutOfProcessInstance::Init(uint32_t argc,
 
   text_input_ = std::make_unique<pp::TextInput_Dev>(this);
 
+  bool enable_javascript = false;
   const char* stream_url = nullptr;
   const char* original_url = nullptr;
   const char* top_level_url = nullptr;
@@ -490,6 +491,8 @@ bool OutOfProcessInstance::Init(uint32_t argc,
     } else if (strcmp(argn[i], "top-toolbar-height") == 0) {
       success =
           base::StringToInt(argv[i], &top_toolbar_height_in_viewport_coords_);
+    } else if (strcmp(argn[i], "javascript") == 0) {
+      enable_javascript = (strcmp(argv[i], "allow") == 0);
     }
     if (!success)
       return false;
@@ -501,7 +504,10 @@ bool OutOfProcessInstance::Init(uint32_t argc,
   if (!stream_url)
     stream_url = original_url;
 
-  engine_ = PDFEngine::Create(this, true);
+  if (!engine_) {
+    // TODO(tsepez): fix lifetime issue, conditionalize javascript.
+    engine_ = PDFEngine::Create(this, true);
+  }
 
   // If we're in print preview mode we don't need to load the document yet.
   // A |kJSResetPrintPreviewModeType| message will be sent to the plugin letting
@@ -1232,14 +1238,6 @@ void OutOfProcessInstance::DidOpenPreview(int32_t result) {
   }
 }
 
-void OutOfProcessInstance::OnClientTouchTimerFired(int32_t id) {
-  engine_->OnTouchTimerCallback(id);
-}
-
-void OutOfProcessInstance::OnClientTimerFired(int32_t id) {
-  engine_->OnCallback(id);
-}
-
 void OutOfProcessInstance::CalculateBackgroundParts() {
   background_parts_.clear();
   int left_width = available_area_.x();
@@ -1542,7 +1540,7 @@ void OutOfProcessInstance::SubmitForm(const std::string& url,
 void OutOfProcessInstance::FormDidOpen(int32_t result) {
   // TODO: inform the user of success/failure.
   if (result != PP_OK) {
-    NOTREACHED();
+    LOG(ERROR) << "FormDidOpen failed: " << result;
   }
 }
 
@@ -1561,21 +1559,6 @@ pp::URLLoader OutOfProcessInstance::CreateURLLoader() {
   }
 
   return CreateURLLoaderInternal();
-}
-
-void OutOfProcessInstance::ScheduleCallback(int id, base::TimeDelta delay) {
-  pp::CompletionCallback callback =
-      callback_factory_.NewCallback(&OutOfProcessInstance::OnClientTimerFired);
-  pp::Module::Get()->core()->CallOnMainThread(delay.InMilliseconds(), callback,
-                                              id);
-}
-
-void OutOfProcessInstance::ScheduleTouchTimerCallback(int id,
-                                                      base::TimeDelta delay) {
-  pp::CompletionCallback callback = callback_factory_.NewCallback(
-      &OutOfProcessInstance::OnClientTouchTimerFired);
-  pp::Module::Get()->core()->CallOnMainThread(delay.InMilliseconds(), callback,
-                                              id);
 }
 
 std::vector<PDFEngine::Client::SearchStringResult>
@@ -1758,6 +1741,7 @@ pp::Instance* OutOfProcessInstance::GetPluginInstance() {
 
 void OutOfProcessInstance::DocumentHasUnsupportedFeature(
     const std::string& feature) {
+  DCHECK(!feature.empty());
   std::string metric("PDF_Unsupported_");
   metric += feature;
   if (!unsupported_features_reported_.count(metric)) {

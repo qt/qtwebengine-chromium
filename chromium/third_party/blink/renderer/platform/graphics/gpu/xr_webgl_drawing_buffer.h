@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_GPU_XR_WEBGL_DRAWING_BUFFER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_GPU_XR_WEBGL_DRAWING_BUFFER_H_
 
+#include "base/macros.h"
 #include "cc/layers/texture_layer_client.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
@@ -12,7 +13,6 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/deque.h"
-#include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
 namespace blink {
@@ -63,13 +63,18 @@ class PLATFORM_EXPORT XRWebGLDrawingBuffer
   void UseSharedBuffer(const gpu::MailboxHolder&);
   void DoneWithSharedBuffer();
 
+  // Prepare for destruction by breaking reference loops. This must be called to
+  // avoid memory leaks, drawing buffer and color buffers are refcounted and
+  // store references to each other.
+  void BeginDestruction();
+
  private:
   struct ColorBuffer : public RefCounted<ColorBuffer> {
     ColorBuffer(XRWebGLDrawingBuffer*, const IntSize&, GLuint texture_id);
     ~ColorBuffer();
 
     // The owning XRWebGLDrawingBuffer. Note that DrawingBuffer is explicitly
-    // destroyed by the beginDestruction method, which will eventually drain all
+    // destroyed by the BeginDestruction method, which will eventually drain all
     // of its ColorBuffers.
     scoped_refptr<XRWebGLDrawingBuffer> drawing_buffer;
     const IntSize size;
@@ -86,7 +91,7 @@ class PLATFORM_EXPORT XRWebGLDrawingBuffer
     gpu::SyncToken receive_sync_token;
 
    private:
-    WTF_MAKE_NONCOPYABLE(ColorBuffer);
+    DISALLOW_COPY_AND_ASSIGN(ColorBuffer);
   };
 
   XRWebGLDrawingBuffer(DrawingBuffer*,
@@ -107,6 +112,8 @@ class PLATFORM_EXPORT XRWebGLDrawingBuffer
   bool WantExplicitResolve() const;
   void BindAndResolveDestinationFramebuffer();
   void SwapColorBuffers();
+
+  void ClearBoundFramebuffer();
 
   void MailboxReleased(scoped_refptr<ColorBuffer>,
                        const gpu::SyncToken&,

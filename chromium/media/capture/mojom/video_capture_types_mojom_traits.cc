@@ -234,6 +234,84 @@ bool EnumTraits<media::mojom::VideoCapturePixelFormat,
 }
 
 // static
+media::mojom::VideoCaptureBufferType
+EnumTraits<media::mojom::VideoCaptureBufferType,
+           media::VideoCaptureBufferType>::ToMojom(media::VideoCaptureBufferType
+                                                       input) {
+  switch (input) {
+    case media::VideoCaptureBufferType::kSharedMemory:
+      return media::mojom::VideoCaptureBufferType::kSharedMemory;
+    case media::VideoCaptureBufferType::kSharedMemoryViaRawFileDescriptor:
+      return media::mojom::VideoCaptureBufferType::
+          kSharedMemoryViaRawFileDescriptor;
+    case media::VideoCaptureBufferType::kMailboxHolder:
+      return media::mojom::VideoCaptureBufferType::kMailboxHolder;
+  }
+  NOTREACHED();
+  return media::mojom::VideoCaptureBufferType::kSharedMemory;
+}
+
+// static
+bool EnumTraits<media::mojom::VideoCaptureBufferType,
+                media::VideoCaptureBufferType>::
+    FromMojom(media::mojom::VideoCaptureBufferType input,
+              media::VideoCaptureBufferType* output) {
+  switch (input) {
+    case media::mojom::VideoCaptureBufferType::kSharedMemory:
+      *output = media::VideoCaptureBufferType::kSharedMemory;
+      return true;
+    case media::mojom::VideoCaptureBufferType::
+        kSharedMemoryViaRawFileDescriptor:
+      *output =
+          media::VideoCaptureBufferType::kSharedMemoryViaRawFileDescriptor;
+      return true;
+    case media::mojom::VideoCaptureBufferType::kMailboxHolder:
+      *output = media::VideoCaptureBufferType::kMailboxHolder;
+      return true;
+  }
+  NOTREACHED();
+  return false;
+}
+
+// static
+media::mojom::VideoFacingMode
+EnumTraits<media::mojom::VideoFacingMode, media::VideoFacingMode>::ToMojom(
+    media::VideoFacingMode input) {
+  switch (input) {
+    case media::VideoFacingMode::MEDIA_VIDEO_FACING_NONE:
+      return media::mojom::VideoFacingMode::NONE;
+    case media::VideoFacingMode::MEDIA_VIDEO_FACING_USER:
+      return media::mojom::VideoFacingMode::USER;
+    case media::VideoFacingMode::MEDIA_VIDEO_FACING_ENVIRONMENT:
+      return media::mojom::VideoFacingMode::ENVIRONMENT;
+    case media::VideoFacingMode::NUM_MEDIA_VIDEO_FACING_MODES:
+      NOTREACHED();
+      return media::mojom::VideoFacingMode::NONE;
+  }
+  NOTREACHED();
+  return media::mojom::VideoFacingMode::NONE;
+}
+
+// static
+bool EnumTraits<media::mojom::VideoFacingMode, media::VideoFacingMode>::
+    FromMojom(media::mojom::VideoFacingMode input,
+              media::VideoFacingMode* output) {
+  switch (input) {
+    case media::mojom::VideoFacingMode::NONE:
+      *output = media::VideoFacingMode::MEDIA_VIDEO_FACING_NONE;
+      return true;
+    case media::mojom::VideoFacingMode::USER:
+      *output = media::VideoFacingMode::MEDIA_VIDEO_FACING_USER;
+      return true;
+    case media::mojom::VideoFacingMode::ENVIRONMENT:
+      *output = media::VideoFacingMode::MEDIA_VIDEO_FACING_ENVIRONMENT;
+      return true;
+  }
+  NOTREACHED();
+  return false;
+}
+
+// static
 media::mojom::VideoCaptureApi
 EnumTraits<media::mojom::VideoCaptureApi, media::VideoCaptureApi>::ToMojom(
     media::VideoCaptureApi input) {
@@ -258,6 +336,8 @@ EnumTraits<media::mojom::VideoCaptureApi, media::VideoCaptureApi>::ToMojom(
       return media::mojom::VideoCaptureApi::ANDROID_API2_FULL;
     case media::VideoCaptureApi::ANDROID_API2_LIMITED:
       return media::mojom::VideoCaptureApi::ANDROID_API2_LIMITED;
+    case media::VideoCaptureApi::VIRTUAL_DEVICE:
+      return media::mojom::VideoCaptureApi::VIRTUAL_DEVICE;
     case media::VideoCaptureApi::UNKNOWN:
       return media::mojom::VideoCaptureApi::UNKNOWN;
   }
@@ -299,6 +379,9 @@ bool EnumTraits<media::mojom::VideoCaptureApi, media::VideoCaptureApi>::
       return true;
     case media::mojom::VideoCaptureApi::ANDROID_API2_LIMITED:
       *output = media::VideoCaptureApi::ANDROID_API2_LIMITED;
+      return true;
+    case media::mojom::VideoCaptureApi::VIRTUAL_DEVICE:
+      *output = media::VideoCaptureApi::VIRTUAL_DEVICE;
       return true;
     case media::mojom::VideoCaptureApi::UNKNOWN:
       *output = media::VideoCaptureApi::UNKNOWN;
@@ -360,6 +443,8 @@ bool StructTraits<media::mojom::VideoCaptureParamsDataView,
          media::VideoCaptureParams* out) {
   if (!data.ReadRequestedFormat(&out->requested_format))
     return false;
+  if (!data.ReadBufferType(&out->buffer_type))
+    return false;
   if (!data.ReadResolutionChangePolicy(&out->resolution_change_policy))
     return false;
   if (!data.ReadPowerLineFrequency(&out->power_line_frequency))
@@ -393,6 +478,8 @@ bool StructTraits<media::mojom::VideoCaptureDeviceDescriptorDataView,
   if (!data.ReadDeviceId(&(output->device_id)))
     return false;
   if (!data.ReadModelId(&(output->model_id)))
+    return false;
+  if (!data.ReadFacingMode(&(output->facing)))
     return false;
   if (!data.ReadCaptureApi(&(output->capture_api)))
     return false;

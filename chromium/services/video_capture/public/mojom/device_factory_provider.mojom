@@ -4,19 +4,20 @@
 
 module video_capture.mojom;
 
+import "media/mojo/interfaces/jpeg_decode_accelerator.mojom";
 import "services/video_capture/public/mojom/device_factory.mojom";
+
+interface AcceleratorFactory {
+  // Creates a new JpegDecodeAccelerator and binds it to |jda|.
+  CreateJpegDecodeAccelerator(media.mojom.JpegDecodeAccelerator& jda);
+};
 
 // Entry point to the Video Capture Service API.
 // The factory provides access to the capture devices connected to the system.
 // By using command-line switches, it is possible to replace this with a "fake"
 // factory, which provides access to fake devices that generates test frames.
 interface DeviceFactoryProvider  {
-  ConnectToDeviceFactory(DeviceFactory& request);
+  InjectGpuDependencies(AcceleratorFactory accelerator_factory);
 
-  // The service shuts down after a certain delay when no client is connected.
-  // This method allows clients to customize this delay.
-  // An example use case for a custom delay is integration tests that want to
-  // minimize wait time.
-  // The default value is found in constants.mojom.
-  SetShutdownDelayInSeconds(float seconds);
+  ConnectToDeviceFactory(DeviceFactory& request);
 };

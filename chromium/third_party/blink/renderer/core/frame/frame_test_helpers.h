@@ -37,24 +37,27 @@
 #include <string>
 
 #include "base/macros.h"
+#include "cc/test/test_task_graph_runner.h"
+#include "content/renderer/gpu/layer_tree_view.h"
+#include "content/test/stub_layer_tree_view_delegate.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/platform/scheduler/test/fake_renderer_scheduler.h"
 #include "third_party/blink/public/platform/web_mouse_event.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_url_request.h"
-#include "third_party/blink/public/web/web_frame_client.h"
 #include "third_party/blink/public/web/web_frame_owner_properties.h"
 #include "third_party/blink/public/web/web_history_item.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_remote_frame_client.h"
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/public/web/web_view_client.h"
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/testing/use_mock_scrollbar_settings.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
-#include "third_party/blink/renderer/platform/testing/use_mock_scrollbar_settings.h"
-#include "third_party/blink/renderer/platform/testing/web_layer_tree_view_impl_for_testing.h"
 
 #define EXPECT_FLOAT_POINT_EQ(expected, actual)    \
   do {                                             \
@@ -101,7 +104,6 @@ void LoadHTMLString(WebLocalFrame*,
 // Same as above, but for WebLocalFrame::RequestFromHistoryItem/Load.
 void LoadHistoryItem(WebLocalFrame*,
                      const WebHistoryItem&,
-                     WebHistoryLoadType,
                      mojom::FetchCacheMode);
 // Same as above, but for WebLocalFrame::Reload().
 void ReloadFrame(WebLocalFrame*);
@@ -109,7 +111,7 @@ void ReloadFrameBypassingCache(WebLocalFrame*);
 
 // Pumps pending resource requests while waiting for a frame to load. Consider
 // using one of the above helper methods whenever possible.
-void PumpPendingRequestsForFrameToLoad(WebFrame*);
+void PumpPendingRequestsForFrameToLoad();
 
 WebMouseEvent CreateMouseEvent(WebInputEvent::Type,
                                WebMouseEvent::Button,
@@ -160,51 +162,54 @@ WebRemoteFrameImpl* CreateRemoteChild(WebRemoteFrame& parent,
                                       scoped_refptr<SecurityOrigin> = nullptr,
                                       TestWebRemoteFrameClient* = nullptr);
 
+// A class that constructs and owns a LayerTreeView for blink
+// unit tests.
+class LayerTreeViewFactory {
+ public:
+  // Use this to make a LayerTreeView with a stub delegate.
+  content::LayerTreeView* Initialize();
+  // Use this to specify a delegate instead of using a stub.
+  content::LayerTreeView* Initialize(content::LayerTreeViewDelegate*);
+
+ private:
+  content::StubLayerTreeViewDelegate delegate_;
+  cc::TestTaskGraphRunner test_task_graph_runner_;
+  blink::scheduler::FakeRendererScheduler fake_renderer_scheduler_;
+  std::unique_ptr<content::LayerTreeView> layer_tree_view_;
+};
+
 class TestWebWidgetClient : public WebWidgetClient {
  public:
   ~TestWebWidgetClient() override = default;
 
   // WebWidgetClient:
-  bool AllowsBrokenNullLayerTreeView() const override { return true; }
   WebLayerTreeView* InitializeLayerTreeView() override;
 
  private:
-  std::unique_ptr<WebLayerTreeView> layer_tree_view_;
+  LayerTreeViewFactory layer_tree_view_factory_;
 };
 
-class TestWebViewWidgetClient : public TestWebWidgetClient {
- public:
-  explicit TestWebViewWidgetClient(TestWebViewClient& test_web_view_client)
-      : test_web_view_client_(test_web_view_client) {}
-  ~TestWebViewWidgetClient() override = default;
-
-  // TestWebViewWidgetClient:
-  WebLayerTreeView* InitializeLayerTreeView() override;
-  void ScheduleAnimation() override;
-  void DidMeaningfulLayout(WebMeaningfulLayout) override;
-
- private:
-  TestWebViewClient& test_web_view_client_;
-};
-
-class TestWebViewClient : public WebViewClient {
+class TestWebViewClient : public WebViewClient, public WebWidgetClient {
  public:
   ~TestWebViewClient() override = default;
 
-  WebLayerTreeViewImplForTesting* GetLayerTreeViewForTesting();
+  content::LayerTreeView* layer_tree_view() { return layer_tree_view_; }
 
-  // WebViewClient:
+  // WebWidgetClient:
   WebLayerTreeView* InitializeLayerTreeView() override;
   void ScheduleAnimation() override { animation_scheduled_ = true; }
-  bool AnimationScheduled() { return animation_scheduled_; }
-  void ClearAnimationScheduled() { animation_scheduled_ = false; }
+
+  // WebViewClient:
   bool CanHandleGestureEvent() override { return true; }
   bool CanUpdateLayout() override { return true; }
+  WebWidgetClient* WidgetClient() override { return this; }
+
+  bool AnimationScheduled() { return animation_scheduled_; }
+  void ClearAnimationScheduled() { animation_scheduled_ = false; }
 
  private:
-  friend class TestWebViewWidgetClient;
-
-  std::unique_ptr<WebLayerTreeViewImplForTesting> layer_tree_view_;
+  content::LayerTreeView* layer_tree_view_ = nullptr;
+  LayerTreeViewFactory layer_tree_view_factory_;
   bool animation_scheduled_ = false;
 };
 
@@ -262,11 +267,12 @@ class WebViewHelper {
   void Reset();
 
   WebViewImpl* GetWebView() const { return web_view_; }
+  content::LayerTreeView* GetLayerTreeView() const {
+    return test_web_view_client_->layer_tree_view();
+  }
 
   WebLocalFrameImpl* LocalMainFrame() const;
   WebRemoteFrameImpl* RemoteMainFrame() const;
-
-  void SetViewportSize(const WebSize&);
 
  private:
   void InitializeWebView(TestWebViewClient*, class WebView* opener);
@@ -280,10 +286,10 @@ class WebViewHelper {
   DISALLOW_COPY_AND_ASSIGN(WebViewHelper);
 };
 
-// Minimal implementation of WebFrameClient needed for unit tests that load
+// Minimal implementation of WebLocalFrameClient needed for unit tests that load
 // frames. Tests that load frames and need further specialization of
-// WebFrameClient behavior should subclass this.
-class TestWebFrameClient : public WebFrameClient {
+// WebLocalFrameClient behavior should subclass this.
+class TestWebFrameClient : public WebLocalFrameClient {
  public:
   TestWebFrameClient();
   ~TestWebFrameClient() override = default;
@@ -296,9 +302,9 @@ class TestWebFrameClient : public WebFrameClient {
   void Bind(WebLocalFrame*,
             std::unique_ptr<TestWebFrameClient> self_owned = nullptr);
   // Note: only needed for local roots.
-  void BindWidgetClient(std::unique_ptr<TestWebWidgetClient>);
+  void BindWidgetClient(std::unique_ptr<WebWidgetClient>);
 
-  // WebFrameClient:
+  // WebLocalFrameClient:
   void FrameDetached(DetachType) override;
   WebLocalFrame* CreateChildFrame(WebLocalFrame* parent,
                                   WebTreeScopeType,
@@ -334,12 +340,12 @@ class TestWebFrameClient : public WebFrameClient {
   // Bind().
   WebLocalFrame* frame_ = nullptr;
 
-  std::unique_ptr<TestWebWidgetClient> owned_widget_client_;
+  std::unique_ptr<WebWidgetClient> owned_widget_client_;
 };
 
 // Minimal implementation of WebRemoteFrameClient needed for unit tests that
 // load remote frames. Tests that load frames and need further specialization
-// of WebFrameClient behavior should subclass this.
+// of WebLocalFrameClient behavior should subclass this.
 class TestWebRemoteFrameClient : public WebRemoteFrameClient {
  public:
   TestWebRemoteFrameClient();

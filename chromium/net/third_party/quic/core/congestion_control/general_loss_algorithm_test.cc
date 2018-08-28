@@ -7,15 +7,13 @@
 #include <algorithm>
 #include <cstdint>
 
-#include "base/stl_util.h"
 #include "net/third_party/quic/core/congestion_control/rtt_stats.h"
 #include "net/third_party/quic/core/quic_unacked_packet_map.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_test.h"
 #include "net/third_party/quic/test_tools/mock_clock.h"
-#include "net/third_party/quic/test_tools/quic_test_utils.h"
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -51,8 +49,8 @@ class GeneralLossAlgorithmTest : public QuicTest {
 
   void VerifyLosses(QuicPacketNumber largest_newly_acked,
                     const std::vector<QuicPacketNumber>& losses_expected) {
-    if (largest_newly_acked > unacked_packets_.largest_observed()) {
-      unacked_packets_.IncreaseLargestObserved(largest_newly_acked);
+    if (largest_newly_acked > unacked_packets_.largest_acked()) {
+      unacked_packets_.IncreaseLargestAcked(largest_newly_acked);
     }
     LostPacketVector lost_packets;
     loss_algorithm_.DetectLosses(unacked_packets_, clock_.Now(), rtt_stats_,
@@ -156,23 +154,11 @@ TEST_F(GeneralLossAlgorithmTest, EarlyRetransmitAllPackets) {
             loss_algorithm_.GetLossTimeout());
 
   clock_.AdvanceTime(rtt_stats_.smoothed_rtt());
-  if (GetQuicReloadableFlag(
-          quic_early_retransmit_detects_in_flight_packet_lost) &&
-      GetQuicReloadableFlag(quic_incremental_loss_detection)) {
-    VerifyLosses(kNumSentPackets, {3});
-  } else {
-    VerifyLosses(kNumSentPackets, {1, 2, 3});
-  }
+  VerifyLosses(kNumSentPackets, {3});
   EXPECT_EQ(clock_.Now() + 0.25 * rtt_stats_.smoothed_rtt(),
             loss_algorithm_.GetLossTimeout());
   clock_.AdvanceTime(0.25 * rtt_stats_.smoothed_rtt());
-  if (GetQuicReloadableFlag(
-          quic_early_retransmit_detects_in_flight_packet_lost) &&
-      GetQuicReloadableFlag(quic_incremental_loss_detection)) {
-    VerifyLosses(kNumSentPackets, {4});
-  } else {
-    VerifyLosses(kNumSentPackets, {1, 2, 3, 4});
-  }
+  VerifyLosses(kNumSentPackets, {4});
   EXPECT_EQ(QuicTime::Zero(), loss_algorithm_.GetLossTimeout());
 }
 
@@ -187,16 +173,11 @@ TEST_F(GeneralLossAlgorithmTest, DontEarlyRetransmitNeuteredPacket) {
   clock_.AdvanceTime(rtt_stats_.smoothed_rtt());
 
   // Early retransmit when the final packet gets acked and the first is nacked.
-  unacked_packets_.IncreaseLargestObserved(2);
+  unacked_packets_.IncreaseLargestAcked(2);
   unacked_packets_.RemoveFromInFlight(2);
   VerifyLosses(2, std::vector<QuicPacketNumber>{});
-  if (GetQuicReloadableFlag(
-          quic_early_retransmit_detects_in_flight_packet_lost)) {
-    EXPECT_EQ(clock_.Now() + 0.25 * rtt_stats_.smoothed_rtt(),
-              loss_algorithm_.GetLossTimeout());
-  } else {
-    EXPECT_EQ(QuicTime::Zero(), loss_algorithm_.GetLossTimeout());
-  }
+  EXPECT_EQ(clock_.Now() + 0.25 * rtt_stats_.smoothed_rtt(),
+            loss_algorithm_.GetLossTimeout());
 }
 
 TEST_F(GeneralLossAlgorithmTest, EarlyRetransmitWithLargerUnackablePackets) {
@@ -207,7 +188,7 @@ TEST_F(GeneralLossAlgorithmTest, EarlyRetransmitWithLargerUnackablePackets) {
   clock_.AdvanceTime(rtt_stats_.smoothed_rtt());
 
   // Early retransmit when the final packet gets acked and the first is nacked.
-  unacked_packets_.IncreaseLargestObserved(2);
+  unacked_packets_.IncreaseLargestAcked(2);
   unacked_packets_.RemoveFromInFlight(2);
   VerifyLosses(2, std::vector<QuicPacketNumber>{});
   EXPECT_EQ(clock_.Now() + 0.25 * rtt_stats_.smoothed_rtt(),
@@ -231,7 +212,7 @@ TEST_F(GeneralLossAlgorithmTest, AlwaysLosePacketSent1RTTEarlier) {
 
   // Wait another RTT and ack 2.
   clock_.AdvanceTime(rtt_stats_.smoothed_rtt());
-  unacked_packets_.IncreaseLargestObserved(2);
+  unacked_packets_.IncreaseLargestAcked(2);
   unacked_packets_.RemoveFromInFlight(2);
   VerifyLosses(2, {1});
 }
@@ -457,4 +438,4 @@ TEST_F(GeneralLossAlgorithmTest, IncreaseThresholdUponSpuriousLoss) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

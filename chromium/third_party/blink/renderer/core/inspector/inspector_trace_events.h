@@ -35,6 +35,7 @@ namespace blink {
 class Animation;
 class CSSStyleSheetResource;
 class ContainerNode;
+class Document;
 class DocumentLoader;
 class Element;
 class Event;
@@ -95,7 +96,7 @@ class CORE_EXPORT InspectorTraceEvents
                         TimeTicks monotonic_finish_time,
                         int64_t encoded_data_length,
                         int64_t decoded_body_length,
-                        bool blocked_cross_site_document);
+                        bool should_report_corb_blocking);
   void DidFailLoading(unsigned long identifier,
                       DocumentLoader*,
                       const ResourceError&);
@@ -111,7 +112,7 @@ class CORE_EXPORT InspectorTraceEvents
 
   void PaintTiming(Document*, const char* name, double timestamp);
 
-  void FrameStartedLoading(LocalFrame*, FrameLoadType);
+  void FrameStartedLoading(LocalFrame*);
 
   void Trace(blink::Visitor*) {}
 

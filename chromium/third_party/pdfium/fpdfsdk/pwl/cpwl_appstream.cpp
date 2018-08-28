@@ -1781,7 +1781,7 @@ void CPWL_AppStream::SetAsTextField(const WideString* sValue) {
 #ifdef PDF_ENABLE_XFA
   WideString sValueTmp;
   if (!sValue && widget_->GetMixXFAWidget()) {
-    sValueTmp = widget_->GetValue(true);
+    sValueTmp = widget_->GetValue();
     sValue = &sValueTmp;
   }
 #endif  // PDF_ENABLE_XFA
@@ -1910,9 +1910,8 @@ void CPWL_AppStream::AddImage(const ByteString& sAPType, CPDF_Stream* pImage) {
 
   CPDF_Dictionary* pXObject =
       pStreamResList->SetNewFor<CPDF_Dictionary>("XObject");
-  pXObject->SetNewFor<CPDF_Reference>(sImageAlias,
-                                      widget_->GetPageView()->GetPDFDocument(),
-                                      pImage->GetObjNum());
+  pXObject->SetFor(sImageAlias, pImage->MakeReference(
+                                    widget_->GetPageView()->GetPDFDocument()));
 }
 
 void CPWL_AppStream::Write(const ByteString& sAPType,
@@ -1935,7 +1934,7 @@ void CPWL_AppStream::Write(const ByteString& sAPType,
   if (!pStream) {
     CPDF_Document* doc = widget_->GetPageView()->GetPDFDocument();
     pStream = doc->NewIndirect<CPDF_Stream>();
-    pParentDict->SetNewFor<CPDF_Reference>(sAPType, doc, pStream->GetObjNum());
+    pParentDict->SetFor(sAPType, pStream->MakeReference(doc));
   }
 
   CPDF_Dictionary* pStreamDict = pStream->GetDict();
@@ -1950,8 +1949,7 @@ void CPWL_AppStream::Write(const ByteString& sAPType,
   }
   pStreamDict->SetMatrixFor("Matrix", widget_->GetMatrix());
   pStreamDict->SetRectFor("BBox", widget_->GetRotatedRect());
-  pStream->SetDataAndRemoveFilter((uint8_t*)(sContents.c_str()),
-                                  sContents.GetLength());
+  pStream->SetDataAndRemoveFilter(sContents.raw_str(), sContents.GetLength());
 }
 
 void CPWL_AppStream::Remove(const ByteString& sAPType) {

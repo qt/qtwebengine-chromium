@@ -27,7 +27,13 @@
 
 #include "hb-open-type-private.hh"
 
-#define HB_OT_TAG_SBIX HB_TAG('s','b','i','x')
+/*
+ * sbix -- Standard Bitmap Graphics
+ * https://docs.microsoft.com/en-us/typography/opentype/spec/sbix
+ * https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6sbix.html
+ */
+#define HB_OT_TAG_sbix HB_TAG('s','b','i','x')
+
 
 namespace OT {
 
@@ -45,7 +51,8 @@ struct SBIXGlyph
   Tag		graphicType;	/* Indicates the format of the embedded graphic
 				 * data: one of 'jpg ', 'png ' or 'tiff', or the
 				 * special format 'dupe'. */
-  HBUINT8	data[VAR];	/* The actual embedded graphic data. The total
+  UnsizedArrayOf<HBUINT8>
+		data;		/* The actual embedded graphic data. The total
 				 * length is inferred from sequential entries in
 				 * the glyphDataOffsets array and the fixed size
 				 * (8 bytes) of the preceding fields. */
@@ -55,72 +62,86 @@ struct SBIXGlyph
 
 struct SBIXStrike
 {
+  friend struct sbix;
+
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
     return_trace (c->check_struct (this) &&
-		  c->check_array (imageOffsetsZ,
-				  sizeof (HBUINT32),
-				  1 + c->num_glyphs));
+		  imageOffsetsZ.sanitize_shallow (c, c->num_glyphs + 1));
   }
 
-  HBUINT16		ppem;		/* The PPEM size for which this strike was designed. */
-  HBUINT16		resolution;	/* The device pixel density (in PPI) for which this
-					 * strike was designed. (E.g., 96 PPI, 192 PPI.) */
   protected:
-  LOffsetTo<SBIXGlyph>	imageOffsetsZ[VAR]; // VAR=maxp.numGlyphs + 1
-					/* Offset from the beginning of the strike data header
-					 * to bitmap data for an individual glyph ID. */
+  HBUINT16	ppem;		/* The PPEM size for which this strike was designed. */
+  HBUINT16	resolution;	/* The device pixel density (in PPI) for which this
+				 * strike was designed. (E.g., 96 PPI, 192 PPI.) */
+  UnsizedArrayOf<LOffsetTo<SBIXGlyph> >
+		imageOffsetsZ;	/* Offset from the beginning of the strike data header
+				 * to bitmap data for an individual glyph ID. */
   public:
   DEFINE_SIZE_STATIC (8);
 };
 
-/*
- * sbix -- Standard Bitmap Graphics Table
- */
-// It should be called with something like this so it can have
-// access to num_glyph while sanitizing.
-//
-//   static inline const OT::sbix*
-//   _get_sbix (hb_face_t *face)
-//   {
-//     OT::Sanitizer<OT::sbix> sanitizer;
-//     sanitizer.set_num_glyphs (face->get_num_glyphs ());
-//     hb_blob_t *sbix_blob = sanitizer.sanitize (face->reference_table (HB_OT_TAG_SBIX));
-//     return OT::Sanitizer<OT::sbix>::lock_instance (sbix_blob);
-//   }
-//
 struct sbix
 {
-  static const hb_tag_t tableTag = HB_OT_TAG_SBIX;
+  static const hb_tag_t tableTag = HB_OT_TAG_sbix;
 
   inline bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
-    return_trace (c->check_struct (this) && strikes.sanitize (c, this));
+    return_trace (likely (c->check_struct (this) && strikes.sanitize (c, this)));
   }
 
-  // inline void dump (unsigned int num_glyphs, unsigned int group) const
-  // {
-  //   const SBIXStrike &strike = strikes[group](this);
-  //   for (unsigned int i = 0; i < num_glyphs; ++i)
-  //     if (strike.imageOffsetsZ[i + 1] - strike.imageOffsetsZ[i] > 0)
-  //     {
-  //       const SBIXGlyph &sbixGlyph = strike.imageOffsetsZ[i]((const void *) &strike);
-  //       char outName[255];
-  //       sprintf (outName, "out/%d-%d.png", group, i);
-  //       FILE *f = fopen (outName, "wb");
-  //       fwrite (sbixGlyph.data, 1,
-  //         strike.imageOffsetsZ[i + 1] - strike.imageOffsetsZ[i] - 8, f);
-  //       fclose (f);
-  //     }
-  // }
+  struct accelerator_t
+  {
+    inline void init (hb_face_t *face)
+    {
+      num_glyphs = hb_face_get_glyph_count (face);
+
+      OT::Sanitizer<OT::sbix> sanitizer;
+      sanitizer.set_num_glyphs (num_glyphs);
+      sbix_blob = sanitizer.sanitize (face->reference_table (HB_OT_TAG_sbix));
+      sbix_len = hb_blob_get_length (sbix_blob);
+      sbix_table = sbix_blob->as<OT::sbix> ();
+
+    }
+
+    inline void fini (void)
+    {
+      hb_blob_destroy (sbix_blob);
+    }
+
+    inline void dump (void (*callback) (const uint8_t* data, unsigned int length,
+					unsigned int group, unsigned int gid)) const
+    {
+      for (unsigned group = 0; group < sbix_table->strikes.len; ++group)
+      {
+	const SBIXStrike &strike = sbix_table->strikes[group](sbix_table);
+	for (unsigned int glyph = 0; glyph < num_glyphs; ++glyph)
+	  if (strike.imageOffsetsZ[glyph + 1] - strike.imageOffsetsZ[glyph] > 0)
+	  {
+	    const SBIXGlyph &sbixGlyph = strike.imageOffsetsZ[glyph]((const void *) &strike);
+	    callback ((const uint8_t*) &sbixGlyph.data,
+		      strike.imageOffsetsZ[glyph + 1] - strike.imageOffsetsZ[glyph] - 8,
+		      group, glyph);
+	  }
+      }
+    }
+
+    private:
+    hb_blob_t *sbix_blob;
+    const sbix *sbix_table;
+
+    unsigned int sbix_len;
+    unsigned int num_glyphs;
+
+  };
 
   protected:
   HBUINT16	version;	/* Table version number — set to 1 */
   HBUINT16	flags;		/* Bit 0: Set to 1. Bit 1: Draw outlines.
 				 * Bits 2 to 15: reserved (set to 0). */
-  ArrayOf<LOffsetTo<SBIXStrike>, HBUINT32>
+  LArrayOf<LOffsetTo<SBIXStrike> >
 		strikes;	/* Offsets from the beginning of the 'sbix'
 				 * table to data for each individual bitmap strike. */
   public:

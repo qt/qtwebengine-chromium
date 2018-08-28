@@ -28,6 +28,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "third_party/blink/renderer/platform/graphics/decoding_image_generator.h"
 #include "third_party/blink/renderer/platform/graphics/image_decoding_store.h"
@@ -42,7 +43,6 @@ namespace blink {
 
 struct DeferredFrameData {
   DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
-  WTF_MAKE_NONCOPYABLE(DeferredFrameData);
 
  public:
   DeferredFrameData()
@@ -52,6 +52,9 @@ struct DeferredFrameData {
   ImageOrientation orientation_;
   TimeDelta duration_;
   bool is_received_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DeferredFrameData);
 };
 
 std::unique_ptr<DeferredImageDecoder> DeferredImageDecoder::Create(
@@ -60,7 +63,8 @@ std::unique_ptr<DeferredImageDecoder> DeferredImageDecoder::Create(
     ImageDecoder::AlphaOption alpha_option,
     const ColorBehavior& color_behavior) {
   std::unique_ptr<ImageDecoder> metadata_decoder =
-      ImageDecoder::Create(data, data_complete, alpha_option, color_behavior);
+      ImageDecoder::Create(data, data_complete, alpha_option,
+                           ImageDecoder::kDefaultBitDepth, color_behavior);
   if (!metadata_decoder)
     return nullptr;
 
@@ -170,12 +174,11 @@ void DeferredImageDecoder::SetDataInternal(scoped_refptr<SharedBuffer> data,
     if (!rw_buffer_)
       rw_buffer_ = std::make_unique<SkRWBuffer>(data->size());
 
-    const char* segment = nullptr;
-    for (size_t length = data->GetSomeData(segment, rw_buffer_->size()); length;
-         length = data->GetSomeData(segment, rw_buffer_->size())) {
-      DCHECK_GE(data->size(), rw_buffer_->size() + length);
-      const size_t remaining = data->size() - rw_buffer_->size() - length;
-      rw_buffer_->append(segment, length, remaining);
+    for (auto it = data->GetIteratorAt(rw_buffer_->size()); it != data->cend();
+         ++it) {
+      DCHECK_GE(data->size(), rw_buffer_->size() + it->size());
+      const size_t remaining = data->size() - rw_buffer_->size() - it->size();
+      rw_buffer_->append(it->data(), it->size(), remaining);
     }
   }
 }

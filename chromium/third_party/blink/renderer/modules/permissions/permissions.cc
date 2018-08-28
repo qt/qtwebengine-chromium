@@ -8,16 +8,15 @@
 #include <utility>
 
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_clipboard_permission_descriptor.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_midi_permission_descriptor.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_permission_descriptor.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_push_permission_descriptor.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -48,7 +47,7 @@ namespace {
 // current context. The caller should make sure that no assumption is made
 // after this has been called.
 PermissionDescriptorPtr ParsePermission(ScriptState* script_state,
-                                        const Dictionary raw_permission,
+                                        const ScriptValue raw_permission,
                                         ExceptionState& exception_state) {
   PermissionDescriptor permission =
       NativeValueTraits<PermissionDescriptor>::NativeValue(
@@ -82,7 +81,7 @@ PermissionDescriptorPtr ParsePermission(ScriptState* script_state,
     // Only "userVisibleOnly" push is supported for now.
     if (!push_permission.userVisibleOnly()) {
       exception_state.ThrowDOMException(
-          kNotSupportedError,
+          DOMExceptionCode::kNotSupportedError,
           "Push Permission without userVisibleOnly:true isn't supported yet.");
       return nullptr;
     }
@@ -98,11 +97,9 @@ PermissionDescriptorPtr ParsePermission(ScriptState* script_state,
   }
   if (name == "background-sync")
     return CreatePermissionDescriptor(PermissionName::BACKGROUND_SYNC);
-  // TODO(riju): Remove runtime flag check when Generic Sensor feature is
-  // stable.
   if (name == "ambient-light-sensor" || name == "accelerometer" ||
       name == "gyroscope" || name == "magnetometer") {
-    if (!OriginTrials::sensorEnabled(ExecutionContext::From(script_state))) {
+    if (!RuntimeEnabledFeatures::SensorEnabled()) {
       exception_state.ThrowTypeError("GenericSensor flag is not enabled.");
       return nullptr;
     }
@@ -147,14 +144,12 @@ PermissionDescriptorPtr ParsePermission(ScriptState* script_state,
 }  // anonymous namespace
 
 ScriptPromise Permissions::query(ScriptState* script_state,
-                                 const Dictionary& raw_permission) {
-  ExceptionState exception_state(script_state->GetIsolate(),
-                                 ExceptionState::kGetterContext, "Permissions",
-                                 "query");
+                                 const ScriptValue& raw_permission,
+                                 ExceptionState& exception_state) {
   PermissionDescriptorPtr descriptor =
       ParsePermission(script_state, raw_permission, exception_state);
   if (exception_state.HadException())
-    return exception_state.Reject(script_state);
+    return ScriptPromise();
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
@@ -173,14 +168,12 @@ ScriptPromise Permissions::query(ScriptState* script_state,
 }
 
 ScriptPromise Permissions::request(ScriptState* script_state,
-                                   const Dictionary& raw_permission) {
-  ExceptionState exception_state(script_state->GetIsolate(),
-                                 ExceptionState::kGetterContext, "Permissions",
-                                 "request");
+                                   const ScriptValue& raw_permission,
+                                   ExceptionState& exception_state) {
   PermissionDescriptorPtr descriptor =
       ParsePermission(script_state, raw_permission, exception_state);
   if (exception_state.HadException())
-    return exception_state.Reject(script_state);
+    return ScriptPromise();
 
   ExecutionContext* context = ExecutionContext::From(script_state);
 
@@ -202,14 +195,12 @@ ScriptPromise Permissions::request(ScriptState* script_state,
 }
 
 ScriptPromise Permissions::revoke(ScriptState* script_state,
-                                  const Dictionary& raw_permission) {
-  ExceptionState exception_state(script_state->GetIsolate(),
-                                 ExceptionState::kGetterContext, "Permissions",
-                                 "revoke");
+                                  const ScriptValue& raw_permission,
+                                  ExceptionState& exception_state) {
   PermissionDescriptorPtr descriptor =
       ParsePermission(script_state, raw_permission, exception_state);
   if (exception_state.HadException())
-    return exception_state.Reject(script_state);
+    return ScriptPromise();
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
@@ -226,20 +217,18 @@ ScriptPromise Permissions::revoke(ScriptState* script_state,
 
 ScriptPromise Permissions::requestAll(
     ScriptState* script_state,
-    const Vector<Dictionary>& raw_permissions) {
-  ExceptionState exception_state(script_state->GetIsolate(),
-                                 ExceptionState::kGetterContext, "Permissions",
-                                 "requestAll");
+    const Vector<ScriptValue>& raw_permissions,
+    ExceptionState& exception_state) {
   Vector<PermissionDescriptorPtr> internal_permissions;
   Vector<int> caller_index_to_internal_index;
   caller_index_to_internal_index.resize(raw_permissions.size());
   for (size_t i = 0; i < raw_permissions.size(); ++i) {
-    const Dictionary& raw_permission = raw_permissions[i];
+    const ScriptValue& raw_permission = raw_permissions[i];
 
     auto descriptor =
         ParsePermission(script_state, raw_permission, exception_state);
     if (exception_state.HadException())
-      return exception_state.Reject(script_state);
+      return ScriptPromise();
 
     // Only append permissions types that are not already present in the vector.
     size_t internal_index = kNotFound;

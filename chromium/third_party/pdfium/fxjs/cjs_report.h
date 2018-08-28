@@ -9,14 +9,14 @@
 
 #include <vector>
 
-#include "fxjs/JS_Define.h"
+#include "fxjs/js_define.h"
 
 class CJS_Report : public CJS_Object {
  public:
   static int GetObjDefnID();
   static void DefineJSObjects(CFXJS_Engine* pEngine, FXJSOBJTYPE eObjType);
 
-  explicit CJS_Report(v8::Local<v8::Object> pObject);
+  CJS_Report(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
   ~CJS_Report() override;
 
   JS_STATIC_METHOD(save, CJS_Report);

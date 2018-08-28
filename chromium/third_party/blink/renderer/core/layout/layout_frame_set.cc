@@ -50,9 +50,8 @@ HTMLFrameSetElement* LayoutFrameSet::FrameSet() const {
   return ToHTMLFrameSetElement(GetNode());
 }
 
-void LayoutFrameSet::Paint(const PaintInfo& paint_info,
-                           const LayoutPoint& paint_offset) const {
-  FrameSetPainter(*this).Paint(paint_info, paint_offset);
+void LayoutFrameSet::Paint(const PaintInfo& paint_info) const {
+  FrameSetPainter(*this).Paint(paint_info);
 }
 
 void LayoutFrameSet::ComputePreferredLogicalWidths() {
@@ -137,7 +136,9 @@ void LayoutFrameSet::LayOutAxis(GridAxis& axis,
 
     for (int i = 0; i < grid_len; ++i) {
       if (grid[i].IsAbsolute()) {
-        grid_layout[i] = (grid_layout[i] * remaining_fixed) / total_fixed;
+        long long temp_product =
+            static_cast<long long>(grid_layout[i]) * remaining_fixed;
+        grid_layout[i] = temp_product / total_fixed;
         remaining_len -= grid_layout[i];
       }
     }
@@ -155,7 +156,9 @@ void LayoutFrameSet::LayOutAxis(GridAxis& axis,
 
     for (int i = 0; i < grid_len; ++i) {
       if (grid[i].IsPercentage()) {
-        grid_layout[i] = (grid_layout[i] * remaining_percent) / total_percent;
+        long long temp_product =
+            static_cast<long long>(grid_layout[i]) * remaining_percent;
+        grid_layout[i] = temp_product / total_percent;
         remaining_len -= grid_layout[i];
       }
     }
@@ -203,7 +206,9 @@ void LayoutFrameSet::LayOutAxis(GridAxis& axis,
 
       for (int i = 0; i < grid_len; ++i) {
         if (grid[i].IsPercentage()) {
-          change_percent = (remaining_percent * grid_layout[i]) / total_percent;
+          long long temp_product =
+              static_cast<long long>(grid_layout[i]) * remaining_percent;
+          change_percent = temp_product / total_percent;
           grid_layout[i] += change_percent;
           remaining_len -= change_percent;
         }
@@ -217,7 +222,9 @@ void LayoutFrameSet::LayOutAxis(GridAxis& axis,
 
       for (int i = 0; i < grid_len; ++i) {
         if (grid[i].IsAbsolute()) {
-          change_fixed = (remaining_fixed * grid_layout[i]) / total_fixed;
+          long long temp_product =
+              static_cast<long long>(grid_layout[i]) * remaining_fixed;
+          change_fixed = temp_product / total_fixed;
           grid_layout[i] += change_fixed;
           remaining_len -= change_fixed;
         }

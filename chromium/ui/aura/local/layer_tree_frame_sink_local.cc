@@ -117,19 +117,10 @@ void LayerTreeFrameSinkLocal::DidReceiveCompositorFrameAck(
 
 void LayerTreeFrameSinkLocal::DidPresentCompositorFrame(
     uint32_t presentation_token,
-    base::TimeTicks time,
-    base::TimeDelta refresh,
-    uint32_t flags) {
+    const gfx::PresentationFeedback& feedback) {
   DCHECK(thread_checker_);
   DCHECK(thread_checker_->CalledOnValidThread());
-  client_->DidPresentCompositorFrame(presentation_token, time, refresh, flags);
-}
-
-void LayerTreeFrameSinkLocal::DidDiscardCompositorFrame(
-    uint32_t presentation_token) {
-  DCHECK(thread_checker_);
-  DCHECK(thread_checker_->CalledOnValidThread());
-  client_->DidDiscardCompositorFrame(presentation_token);
+  client_->DidPresentCompositorFrame(presentation_token, feedback);
 }
 
 void LayerTreeFrameSinkLocal::OnBeginFrame(const viz::BeginFrameArgs& args) {

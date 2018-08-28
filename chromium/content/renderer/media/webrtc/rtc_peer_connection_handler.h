@@ -18,15 +18,15 @@
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
-#include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "content/renderer/media/webrtc/media_stream_track_metrics.h"
 #include "content/renderer/media/webrtc/rtc_rtp_receiver.h"
 #include "content/renderer/media/webrtc/rtc_rtp_sender.h"
-#include "content/renderer/media/webrtc/webrtc_media_stream_adapter_map.h"
+#include "content/renderer/media/webrtc/transceiver_state_surfacer.h"
 #include "content/renderer/media/webrtc/webrtc_media_stream_track_adapter_map.h"
 #include "ipc/ipc_platform_file.h"
 #include "third_party/blink/public/platform/web_media_stream_source.h"
+#include "third_party/blink/public/platform/web_rtc_configuration.h"
 #include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
 #include "third_party/blink/public/platform/web_rtc_stats_request.h"
 #include "third_party/blink/public/platform/web_rtc_stats_response.h"
@@ -45,6 +45,7 @@ namespace content {
 class PeerConnectionDependencyFactory;
 class PeerConnectionTracker;
 class RtcDataChannelHandler;
+class SetLocalDescriptionRequest;
 
 // Mockable wrapper for blink::WebRTCStatsResponse
 class CONTENT_EXPORT LocalRTCStatsResponse : public rtc::RefCountInterface {
@@ -107,8 +108,10 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
       const base::WeakPtr<PeerConnectionTracker>& peer_connection_tracker);
 
   // blink::WebRTCPeerConnectionHandler implementation
-  bool Initialize(const blink::WebRTCConfiguration& server_configuration,
-                  const blink::WebMediaConstraints& options) override;
+  bool Initialize(
+      const blink::WebRTCConfiguration& server_configuration,
+      const blink::WebMediaConstraints& options,
+      blink::WebRTCSdpSemantics original_sdp_semantics_value) override;
 
   void CreateOffer(const blink::WebRTCSessionDescriptionRequest& request,
                    const blink::WebMediaConstraints& options) override;
@@ -143,10 +146,17 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   void GetStats(const blink::WebRTCStatsRequest& request) override;
   void GetStats(
       std::unique_ptr<blink::WebRTCStatsReportCallback> callback) override;
-  std::unique_ptr<blink::WebRTCRtpSender> AddTrack(
+  webrtc::RTCErrorOr<std::unique_ptr<blink::WebRTCRtpTransceiver>>
+  AddTransceiverWithTrack(const blink::WebMediaStreamTrack& web_track,
+                          const webrtc::RtpTransceiverInit& init) override;
+  webrtc::RTCErrorOr<std::unique_ptr<blink::WebRTCRtpTransceiver>>
+  AddTransceiverWithKind(std::string kind,
+                         const webrtc::RtpTransceiverInit& init) override;
+  webrtc::RTCErrorOr<std::unique_ptr<blink::WebRTCRtpTransceiver>> AddTrack(
       const blink::WebMediaStreamTrack& web_track,
       const blink::WebVector<blink::WebMediaStream>& web_streams) override;
-  bool RemoveTrack(blink::WebRTCRtpSender* web_sender) override;
+  webrtc::RTCErrorOr<std::unique_ptr<blink::WebRTCRtpTransceiver>> RemoveTrack(
+      blink::WebRTCRtpSender* web_sender) override;
 
   blink::WebRTCDataChannelHandler* CreateDataChannel(
       const blink::WebString& label,
@@ -185,8 +195,10 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
 
   class Observer;
   friend class Observer;
-  class WebRtcSetRemoteDescriptionObserverImpl;
-  friend class WebRtcSetRemoteDescriptionObserverImpl;
+  class WebRtcSetDescriptionObserverImpl;
+  friend class WebRtcSetDescriptionObserverImpl;
+  class SetLocalDescriptionRequest;
+  friend class SetLocalDescriptionRequest;
 
   void OnSignalingChange(
       webrtc::PeerConnectionInterface::SignalingState new_state);
@@ -195,14 +207,10 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   void OnIceGatheringChange(
       webrtc::PeerConnectionInterface::IceGatheringState new_state);
   void OnRenegotiationNeeded();
-  void OnAddRemoteTrack(
-      scoped_refptr<webrtc::RtpReceiverInterface> webrtc_receiver,
-      std::unique_ptr<WebRtcMediaStreamTrackAdapterMap::AdapterRef>
-          remote_track_adapter_ref,
-      std::vector<std::unique_ptr<WebRtcMediaStreamAdapterMap::AdapterRef>>
-          remote_stream_adapter_refs);
-  void OnRemoveRemoteTrack(
-      scoped_refptr<webrtc::RtpReceiverInterface> webrtc_receiver);
+  void OnAddReceiverPlanB(RtpReceiverState receiver_state);
+  void OnRemoveReceiverPlanB(uintptr_t receiver_id);
+  void OnModifyTransceivers(std::vector<RtpTransceiverState> transceiver_states,
+                            bool is_remote_description);
   void OnDataChannel(std::unique_ptr<RtcDataChannelHandler> handler);
   void OnIceCandidate(const std::string& sdp,
                       const std::string& sdp_mid,
@@ -240,7 +248,47 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   void ReportFirstSessionDescriptions(const FirstSessionDescription& local,
                                       const FirstSessionDescription& remote);
 
+  void AddTransceiverWithTrackOnSignalingThread(
+      rtc::scoped_refptr<webrtc::MediaStreamTrackInterface> webrtc_track,
+      webrtc::RtpTransceiverInit init,
+      TransceiverStateSurfacer* transceiver_state_surfacer,
+      webrtc::RTCErrorOr<rtc::scoped_refptr<webrtc::RtpTransceiverInterface>>*
+          error_or_transceiver);
+  void AddTransceiverWithMediaTypeOnSignalingThread(
+      cricket::MediaType media_type,
+      webrtc::RtpTransceiverInit init,
+      TransceiverStateSurfacer* transceiver_state_surfacer,
+      webrtc::RTCErrorOr<rtc::scoped_refptr<webrtc::RtpTransceiverInterface>>*
+          error_or_transceiver);
+  void AddTrackOnSignalingThread(
+      rtc::scoped_refptr<webrtc::MediaStreamTrackInterface> track,
+      std::vector<std::string> stream_ids,
+      TransceiverStateSurfacer* transceiver_state_surfacer,
+      webrtc::RTCErrorOr<rtc::scoped_refptr<webrtc::RtpSenderInterface>>*
+          error_or_sender);
+  bool RemoveTrackPlanB(blink::WebRTCRtpSender* web_sender);
+  webrtc::RTCErrorOr<std::unique_ptr<blink::WebRTCRtpTransceiver>>
+  RemoveTrackUnifiedPlan(blink::WebRTCRtpSender* web_sender);
+  void RemoveTrackUnifiedPlanOnSignalingThread(
+      rtc::scoped_refptr<webrtc::RtpSenderInterface> sender,
+      TransceiverStateSurfacer* transceiver_state_surfacer,
+      bool* result);
   std::vector<std::unique_ptr<RTCRtpSender>>::iterator FindSender(uintptr_t id);
+  std::vector<std::unique_ptr<RTCRtpReceiver>>::iterator FindReceiver(
+      uintptr_t id);
+  std::vector<std::unique_ptr<RTCRtpTransceiver>>::iterator FindTransceiver(
+      uintptr_t id);
+  // For full transceiver implementations, returns the index of
+  // |rtp_transceivers_| that correspond to |web_transceiver|.
+  // For sender-only transceiver implementations, returns the index of
+  // |rtp_senders_| that correspond to |web_transceiver.Sender()|.
+  // For receiver-only transceiver implementations, returns the index of
+  // |rtp_receivers_| that correspond to |web_transceiver.Receiver()|.
+  // NOTREACHED()-crashes if no correspondent is found.
+  size_t GetTransceiverIndex(
+      const blink::WebRTCRtpTransceiver& web_transceiver);
+  std::unique_ptr<RTCRtpTransceiver> CreateOrUpdateTransceiver(
+      RtpTransceiverState transceiver_state);
 
   scoped_refptr<base::SingleThreadTaskRunner> signaling_thread() const;
 
@@ -253,8 +301,6 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   // Initialize() is never expected to be called more than once, even if the
   // first call fails.
   bool initialize_called_;
-
-  base::ThreadChecker thread_checker_;
 
   // |client_| is a weak pointer to the blink object (blink::RTCPeerConnection)
   // that owns this object.
@@ -279,20 +325,20 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   // needs to reference it, and automatically disposed when there are no longer
   // any components referencing it.
   scoped_refptr<WebRtcMediaStreamTrackAdapterMap> track_adapter_map_;
-  // Map and owners of stream adapters. Every stream that is in use by the peer
-  // connection has an associated blink and webrtc layer representation of it.
-  // The map keeps track of the relationship between |blink::WebMediaStream|s
-  // and |webrtc::MediaStreamInterface|s. Stream adapters are created on the fly
-  // when a component (such as a sender or receiver) needs to reference it, and
-  // automatically disposed when there are no longer any components referencing
-  // it.
-  scoped_refptr<WebRtcMediaStreamAdapterMap> stream_adapter_map_;
+  // In Plan B, senders and receivers are added or removed independently of one
+  // another. In Unified Plan, senders and receivers are created in pairs as
+  // transceivers. Transceivers may become inactive, but are never removed.
+  // The value of this member affects the behavior of some methods and what
+  // information is surfaced from webrtc. After Initialize(), this is the actual
+  // mode used, meaning "kDefault" is no longer a valid value.
+  // TODO(hbos): Implement transceiver behaviors. https://crbug.com/777617
+  blink::WebRTCSdpSemantics sdp_semantics_;
   // Content layer correspondents of |webrtc::RtpSenderInterface|.
   std::vector<std::unique_ptr<RTCRtpSender>> rtp_senders_;
-  // Maps |RTCRtpReceiver::getId|s of |webrtc::RtpReceiverInterface|s to the
-  // corresponding content layer receivers. The set of receivers is needed in
-  // order to keep its associated track's and streams' adapters alive.
-  std::map<uintptr_t, std::unique_ptr<RTCRtpReceiver>> rtp_receivers_;
+  // Content layer correspondents of |webrtc::RtpReceiverInterface|.
+  std::vector<std::unique_ptr<RTCRtpReceiver>> rtp_receivers_;
+  // Content layer correspondents of |webrtc::RtpTransceiverInterface|.
+  std::vector<std::unique_ptr<RTCRtpTransceiver>> rtp_transceivers_;
 
   base::WeakPtr<PeerConnectionTracker> peer_connection_tracker_;
 
@@ -308,7 +354,6 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   // To make sure the observers are released after native_peer_connection_,
   // they have to come first.
   scoped_refptr<Observer> peer_connection_observer_;
-  scoped_refptr<webrtc::UMAObserver> uma_observer_;
 
   // |native_peer_connection_| is the libjingle native PeerConnection object.
   scoped_refptr<webrtc::PeerConnectionInterface> native_peer_connection_;

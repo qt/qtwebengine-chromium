@@ -12,7 +12,7 @@
 namespace blink {
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#creating-a-module-script
-ModuleScript* ModuleScript::Create(const String& source_text,
+ModuleScript* ModuleScript::Create(const MovableString& original_source_text,
                                    Modulator* modulator,
                                    const KURL& source_url,
                                    const KURL& base_url,
@@ -21,8 +21,9 @@ ModuleScript* ModuleScript::Create(const String& source_text,
                                    const TextPosition& start_position) {
   // <spec step="1">If scripting is disabled for settings's responsible browsing
   // context, then set source to the empty string.</spec>
-  //
-  // TODO(hiroshige): Implement this.
+  MovableString source_text;
+  if (!modulator->IsScriptingDisabled())
+    source_text = original_source_text;
 
   // <spec step="2">Let script be a new module script that this algorithm will
   // subsequently initialize.</spec>
@@ -39,10 +40,9 @@ ModuleScript* ModuleScript::Create(const String& source_text,
   ExceptionState exception_state(isolate, ExceptionState::kExecutionContext,
                                  "ModuleScript", "Create");
 
-  // Delegate to Modulator::CompileModule to process Steps 3-5.
-  ScriptModule result = modulator->CompileModule(
-      source_text, source_url, base_url, options, access_control_status,
-      start_position, exception_state);
+  ScriptModule result = ScriptModule::Compile(
+      isolate, source_text.ToString(), source_url, base_url, options,
+      access_control_status, start_position, exception_state);
 
   // CreateInternal processes Steps 4 and 8-10.
   //
@@ -101,14 +101,14 @@ ModuleScript* ModuleScript::CreateForTest(Modulator* modulator,
                                           ScriptModule record,
                                           const KURL& base_url,
                                           const ScriptFetchOptions& options) {
-  String dummy_source_text = "";
+  MovableString dummy_source_text(String("").ReleaseImpl());
   KURL dummy_source_url;
   return CreateInternal(dummy_source_text, modulator, record, dummy_source_url,
                         base_url, options, TextPosition::MinimumPosition());
 }
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#creating-a-module-script
-ModuleScript* ModuleScript::CreateInternal(const String& source_text,
+ModuleScript* ModuleScript::CreateInternal(const MovableString& source_text,
                                            Modulator* modulator,
                                            ScriptModule result,
                                            const KURL& source_url,
@@ -141,7 +141,7 @@ ModuleScript::ModuleScript(Modulator* settings_object,
                            const KURL& source_url,
                            const KURL& base_url,
                            const ScriptFetchOptions& fetch_options,
-                           const String& source_text,
+                           const MovableString& source_text,
                            const TextPosition& start_position)
     : Script(fetch_options, base_url),
       settings_object_(settings_object),
@@ -210,8 +210,8 @@ KURL ModuleScript::ResolveModuleSpecifier(const String& module_request,
   if (found != specifier_to_url_cache_.end())
     return found->value;
 
-  KURL url = Modulator::ResolveModuleSpecifier(module_request, BaseURL(),
-                                               failure_reason);
+  KURL url = settings_object_->ResolveModuleSpecifier(module_request, BaseURL(),
+                                                      failure_reason);
   // Cache the result only on success, so that failure_reason is set for
   // subsequent calls too.
   if (url.IsValid())
@@ -221,14 +221,10 @@ KURL ModuleScript::ResolveModuleSpecifier(const String& module_request,
 
 void ModuleScript::Trace(blink::Visitor* visitor) {
   visitor->Trace(settings_object_);
+  visitor->Trace(record_.UnsafeCast<v8::Value>());
+  visitor->Trace(parse_error_);
+  visitor->Trace(error_to_rethrow_);
   Script::Trace(visitor);
-}
-void ModuleScript::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  // TODO(mlippautz): Support TraceWrappers(const
-  // TraceWrapperV8Reference<v8::Module>&) to remove the cast.
-  visitor->TraceWrappers(record_.UnsafeCast<v8::Value>());
-  visitor->TraceWrappers(parse_error_);
-  visitor->TraceWrappers(error_to_rethrow_);
 }
 
 void ModuleScript::RunScript(LocalFrame* frame, const SecurityOrigin*) const {
@@ -238,7 +234,7 @@ void ModuleScript::RunScript(LocalFrame* frame, const SecurityOrigin*) const {
 }
 
 String ModuleScript::InlineSourceTextForCSP() const {
-  return source_text_;
+  return source_text_.ToString();
 }
 
 std::ostream& operator<<(std::ostream& stream,

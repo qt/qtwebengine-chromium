@@ -8,6 +8,8 @@
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/test/bind_test_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -23,9 +25,10 @@
 #include "components/prefs/testing_pref_service.h"
 #include "components/variations/variations_associated_data.h"
 #include "components/variations/variations_http_header_provider.h"
-#include "net/url_request/test_url_fetcher_factory.h"
-#include "net/url_request/url_request_test_util.h"
 #include "services/identity/public/cpp/identity_test_environment.h"
+#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+#include "services/network/test/test_url_loader_factory.h"
+#include "services/network/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace autofill {
@@ -62,25 +65,21 @@ class PaymentsClientTest : public testing::Test,
     real_pan_.clear();
     legal_message_.reset();
 
-    request_context_ = new net::TestURLRequestContextGetter(
-        base::ThreadTaskRunnerHandle::Get());
+    factory()->SetInterceptor(base::BindLambdaForTesting(
+        [&](const network::ResourceRequest& request) {
+          intercepted_headers_ = request.headers;
+          intercepted_body_ = network::GetUploadData(request);
+        }));
+    test_shared_loader_factory_ =
+        base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
+            &test_url_loader_factory_);
     TestingPrefServiceSimple pref_service_;
-    client_.reset(new PaymentsClient(request_context_.get(), &pref_service_,
-                                     identity_test_env_.identity_manager(),
-                                     this, this));
+    client_.reset(
+        new PaymentsClient(test_shared_loader_factory_, &pref_service_,
+                           identity_test_env_.identity_manager(), this, this));
   }
 
   void TearDown() override { client_.reset(); }
-
-  void DisableAutofillUpstreamSendDetectedValuesExperiment() {
-    scoped_feature_list_.InitAndDisableFeature(
-        kAutofillUpstreamSendDetectedValues);
-  }
-
-  void EnableAutofillUpstreamSendDetectedValuesExperiment() {
-    scoped_feature_list_.InitAndEnableFeature(
-        kAutofillUpstreamSendDetectedValues);
-  }
 
   void EnableAutofillUpstreamSendPanFirstSixExperiment() {
     scoped_feature_list_.InitAndEnableFeature(kAutofillUpstreamSendPanFirstSix);
@@ -163,9 +162,11 @@ class PaymentsClientTest : public testing::Test,
     client_->UploadCard(request_details);
   }
 
-  const std::string& GetUploadData() {
-    return factory_.GetFetcherByID(0)->upload_data();
-  }
+  network::TestURLLoaderFactory* factory() { return &test_url_loader_factory_; }
+
+  const std::string& GetUploadData() { return intercepted_body_; }
+
+  net::HttpRequestHeaders* GetRequestHeaders() { return &intercepted_headers_; }
 
   void IssueOAuthToken() {
     identity_test_env_.WaitForAccessTokenRequestIfNecessaryAndRespondWithToken(
@@ -173,23 +174,16 @@ class PaymentsClientTest : public testing::Test,
         base::Time::Now() + base::TimeDelta::FromDays(10));
 
     // Verify the auth header.
-    net::TestURLFetcher* fetcher = factory_.GetFetcherByID(0);
-    net::HttpRequestHeaders request_headers;
-    fetcher->GetExtraRequestHeaders(&request_headers);
     std::string auth_header_value;
-    EXPECT_TRUE(request_headers.GetHeader(
+    EXPECT_TRUE(intercepted_headers_.GetHeader(
         net::HttpRequestHeaders::kAuthorization, &auth_header_value))
-        << request_headers.ToString();
+        << intercepted_headers_.ToString();
     EXPECT_EQ("Bearer totally_real_token", auth_header_value);
   }
 
   void ReturnResponse(net::HttpStatusCode response_code,
                       const std::string& response_body) {
-    net::TestURLFetcher* fetcher = factory_.GetFetcherByID(0);
-    ASSERT_TRUE(fetcher);
-    fetcher->set_response_code(response_code);
-    fetcher->SetResponseString(response_body);
-    fetcher->delegate()->OnURLFetchComplete(fetcher);
+    client_->OnSimpleLoaderCompleteInternal(response_code, response_body);
   }
 
   AutofillClient::PaymentsRpcResult result_;
@@ -198,10 +192,13 @@ class PaymentsClientTest : public testing::Test,
   std::unique_ptr<base::DictionaryValue> legal_message_;
 
   base::test::ScopedTaskEnvironment scoped_task_environment_;
-  net::TestURLFetcherFactory factory_;
-  scoped_refptr<net::TestURLRequestContextGetter> request_context_;
+  network::TestURLLoaderFactory test_url_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> test_shared_loader_factory_;
   std::unique_ptr<PaymentsClient> client_;
   identity::IdentityTestEnvironment identity_test_env_;
+
+  net::HttpRequestHeaders intercepted_headers_;
+  std::string intercepted_body_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PaymentsClientTest);
@@ -248,6 +245,7 @@ TEST_F(PaymentsClientTest, OAuthError) {
 TEST_F(PaymentsClientTest,
        UnmaskRequestIncludesBillingCustomerNumberInRequest) {
   StartUnmasking();
+  IssueOAuthToken();
 
   // Verify that the billing customer number is included in the request.
   EXPECT_TRUE(
@@ -295,29 +293,13 @@ TEST_F(PaymentsClientTest, GetDetailsRemovesNonLocationData) {
   EXPECT_TRUE(GetUploadData().find("0090") == std::string::npos);
 }
 
-TEST_F(PaymentsClientTest,
-       GetDetailsIncludesDetectedValuesInRequestIfExperimentOn) {
-  EnableAutofillUpstreamSendDetectedValuesExperiment();
-
+TEST_F(PaymentsClientTest, GetDetailsIncludesDetectedValuesInRequest) {
   StartGettingUploadDetails();
 
   // Verify that the detected values were included in the request.
   std::string detected_values_string =
       "\"detected_values\":" + std::to_string(kAllDetectableValues);
   EXPECT_TRUE(GetUploadData().find(detected_values_string) !=
-              std::string::npos);
-}
-
-TEST_F(PaymentsClientTest,
-       GetDetailsDoesNotIncludeDetectedValuesInRequestIfExperimentOff) {
-  DisableAutofillUpstreamSendDetectedValuesExperiment();
-
-  StartGettingUploadDetails();
-
-  // Verify that the detected values were left out of the request.
-  std::string detected_values_string =
-      "\"detected_values\":" + std::to_string(kAllDetectableValues);
-  EXPECT_TRUE(GetUploadData().find(detected_values_string) ==
               std::string::npos);
 }
 
@@ -330,15 +312,10 @@ TEST_F(PaymentsClientTest, GetUploadDetailsVariationsTest) {
   CreateFieldTrialWithId("AutofillTest", "Group", 369);
   StartGettingUploadDetails();
 
-  net::TestURLFetcher* fetcher = factory_.GetFetcherByID(0);
-  net::HttpRequestHeaders headers;
-  fetcher->GetExtraRequestHeaders(&headers);
   std::string value;
-  EXPECT_TRUE(headers.GetHeader("X-Client-Data", &value));
+  EXPECT_TRUE(GetRequestHeaders()->GetHeader("X-Client-Data", &value));
   // Note that experiment information is stored in X-Client-Data.
   EXPECT_FALSE(value.empty());
-  // The fetcher's delegate is responsible for freeing the fetcher (and itself).
-  fetcher->delegate()->OnURLFetchComplete(fetcher);
 
   variations::VariationsHttpHeaderProvider::GetInstance()->ResetForTesting();
 }
@@ -353,15 +330,10 @@ TEST_F(PaymentsClientTest, GetUploadDetailsVariationsTestExperimentFlagOff) {
   CreateFieldTrialWithId("AutofillTest", "Group", 369);
   StartGettingUploadDetails();
 
-  net::TestURLFetcher* fetcher = factory_.GetFetcherByID(0);
-  net::HttpRequestHeaders headers;
-  fetcher->GetExtraRequestHeaders(&headers);
   std::string value;
-  EXPECT_FALSE(headers.GetHeader("X-Client-Data", &value));
+  EXPECT_FALSE(GetRequestHeaders()->GetHeader("X-Client-Data", &value));
   // Note that experiment information is stored in X-Client-Data.
   EXPECT_TRUE(value.empty());
-  // The fetcher's delegate is responsible for freeing the fetcher (and itself).
-  fetcher->delegate()->OnURLFetchComplete(fetcher);
 
   variations::VariationsHttpHeaderProvider::GetInstance()->ResetForTesting();
 }
@@ -374,16 +346,12 @@ TEST_F(PaymentsClientTest, UploadCardVariationsTest) {
   base::FieldTrialList field_trial_list_(nullptr);
   CreateFieldTrialWithId("AutofillTest", "Group", 369);
   StartUploading(/*include_cvc=*/true);
+  IssueOAuthToken();
 
-  net::TestURLFetcher* fetcher = factory_.GetFetcherByID(0);
-  net::HttpRequestHeaders headers;
-  fetcher->GetExtraRequestHeaders(&headers);
   std::string value;
-  EXPECT_TRUE(headers.GetHeader("X-Client-Data", &value));
+  EXPECT_TRUE(GetRequestHeaders()->GetHeader("X-Client-Data", &value));
   // Note that experiment information is stored in X-Client-Data.
   EXPECT_FALSE(value.empty());
-  // The fetcher's delegate is responsible for freeing the fetcher (and itself).
-  fetcher->delegate()->OnURLFetchComplete(fetcher);
 
   variations::VariationsHttpHeaderProvider::GetInstance()->ResetForTesting();
 }
@@ -398,15 +366,10 @@ TEST_F(PaymentsClientTest, UploadCardVariationsTestExperimentFlagOff) {
   CreateFieldTrialWithId("AutofillTest", "Group", 369);
   StartUploading(/*include_cvc=*/true);
 
-  net::TestURLFetcher* fetcher = factory_.GetFetcherByID(0);
-  net::HttpRequestHeaders headers;
-  fetcher->GetExtraRequestHeaders(&headers);
   std::string value;
-  EXPECT_FALSE(headers.GetHeader("X-Client-Data", &value));
+  EXPECT_FALSE(GetRequestHeaders()->GetHeader("X-Client-Data", &value));
   // Note that experiment information is stored in X-Client-Data.
   EXPECT_TRUE(value.empty());
-  // The fetcher's delegate is responsible for freeing the fetcher (and itself).
-  fetcher->delegate()->OnURLFetchComplete(fetcher);
 
   variations::VariationsHttpHeaderProvider::GetInstance()->ResetForTesting();
 }
@@ -419,16 +382,12 @@ TEST_F(PaymentsClientTest, UnmaskCardVariationsTest) {
   base::FieldTrialList field_trial_list_(nullptr);
   CreateFieldTrialWithId("AutofillTest", "Group", 369);
   StartUnmasking();
+  IssueOAuthToken();
 
-  net::TestURLFetcher* fetcher = factory_.GetFetcherByID(0);
-  net::HttpRequestHeaders headers;
-  fetcher->GetExtraRequestHeaders(&headers);
   std::string value;
-  EXPECT_TRUE(headers.GetHeader("X-Client-Data", &value));
+  EXPECT_TRUE(GetRequestHeaders()->GetHeader("X-Client-Data", &value));
   // Note that experiment information is stored in X-Client-Data.
   EXPECT_FALSE(value.empty());
-  // The fetcher's delegate is responsible for freeing the fetcher (and itself).
-  fetcher->delegate()->OnURLFetchComplete(fetcher);
 
   variations::VariationsHttpHeaderProvider::GetInstance()->ResetForTesting();
 }
@@ -443,15 +402,10 @@ TEST_F(PaymentsClientTest, UnmaskCardVariationsTestExperimentOff) {
   CreateFieldTrialWithId("AutofillTest", "Group", 369);
   StartUnmasking();
 
-  net::TestURLFetcher* fetcher = factory_.GetFetcherByID(0);
-  net::HttpRequestHeaders headers;
-  fetcher->GetExtraRequestHeaders(&headers);
   std::string value;
-  EXPECT_FALSE(headers.GetHeader("X-Client-Data", &value));
+  EXPECT_FALSE(GetRequestHeaders()->GetHeader("X-Client-Data", &value));
   // Note that experiment information is stored in X-Client-Data.
   EXPECT_TRUE(value.empty());
-  // The fetcher's delegate is responsible for freeing the fetcher (and itself).
-  fetcher->delegate()->OnURLFetchComplete(fetcher);
 
   variations::VariationsHttpHeaderProvider::GetInstance()->ResetForTesting();
 }
@@ -494,6 +448,7 @@ TEST_F(PaymentsClientTest, UploadSuccessWithServerId) {
 
 TEST_F(PaymentsClientTest, UploadIncludesNonLocationData) {
   StartUploading(/*include_cvc=*/true);
+  IssueOAuthToken();
 
   // Verify that the recipient name field and test names do appear in the upload
   // data.
@@ -518,6 +473,7 @@ TEST_F(PaymentsClientTest, UploadIncludesNonLocationData) {
 TEST_F(PaymentsClientTest,
        UploadRequestIncludesBillingCustomerNumberInRequest) {
   StartUploading(/*include_cvc=*/true);
+  IssueOAuthToken();
 
   // Verify that the billing customer number is included in the request.
   EXPECT_TRUE(
@@ -527,6 +483,7 @@ TEST_F(PaymentsClientTest,
 
 TEST_F(PaymentsClientTest, UploadIncludesCvcInRequestIfProvided) {
   StartUploading(/*include_cvc=*/true);
+  IssueOAuthToken();
 
   // Verify that the encrypted_cvc and s7e_13_cvc parameters were included in
   // the request.

@@ -41,20 +41,17 @@ class DummySetSessionDescriptionObserver
     : public webrtc::SetSessionDescriptionObserver {
  public:
   static DummySetSessionDescriptionObserver* Create() {
-    return
-        new rtc::RefCountedObject<DummySetSessionDescriptionObserver>();
+    return new rtc::RefCountedObject<DummySetSessionDescriptionObserver>();
   }
   virtual void OnSuccess() { RTC_LOG(INFO) << __FUNCTION__; }
-  virtual void OnFailure(const std::string& error) {
-    RTC_LOG(INFO) << __FUNCTION__ << " " << error;
+  virtual void OnFailure(webrtc::RTCError error) {
+    RTC_LOG(INFO) << __FUNCTION__ << " " << ToString(error.type()) << ": "
+                  << error.message();
   }
 };
 
 Conductor::Conductor(PeerConnectionClient* client, MainWindow* main_wnd)
-  : peer_id_(-1),
-    loopback_(false),
-    client_(client),
-    main_wnd_(main_wnd) {
+    : peer_id_(-1), loopback_(false), client_(client), main_wnd_(main_wnd) {
   client_->RegisterObserver(this);
   main_wnd->RegisterObserver(this);
 }
@@ -86,15 +83,14 @@ bool Conductor::InitializePeerConnection() {
       nullptr /* audio_processing */);
 
   if (!peer_connection_factory_) {
-    main_wnd_->MessageBox("Error",
-        "Failed to initialize PeerConnectionFactory", true);
+    main_wnd_->MessageBox("Error", "Failed to initialize PeerConnectionFactory",
+                          true);
     DeletePeerConnection();
     return false;
   }
 
   if (!CreatePeerConnection(/*dtls=*/true)) {
-    main_wnd_->MessageBox("Error",
-        "CreatePeerConnection failed", true);
+    main_wnd_->MessageBox("Error", "CreatePeerConnection failed", true);
     DeletePeerConnection();
   }
 
@@ -274,7 +270,7 @@ void Conductor::OnMessageFromPeer(int peer_id, const std::string& message) {
       }
       return;
     }
-    rtc::Optional<webrtc::SdpType> type_maybe =
+    absl::optional<webrtc::SdpType> type_maybe =
         webrtc::SdpTypeFromString(type_str);
     if (!type_maybe) {
       RTC_LOG(LS_ERROR) << "Unknown SDP type: " << type_str;
@@ -362,8 +358,8 @@ void Conductor::ConnectToPeer(int peer_id) {
   RTC_DCHECK(peer_id != -1);
 
   if (peer_connection_.get()) {
-    main_wnd_->MessageBox("Error",
-        "We only support connecting to one peer at a time", true);
+    main_wnd_->MessageBox(
+        "Error", "We only support connecting to one peer at a time", true);
     return;
   }
 
@@ -413,7 +409,8 @@ void Conductor::AddTracks() {
 
   rtc::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
       peer_connection_factory_->CreateAudioTrack(
-          kAudioLabel, peer_connection_factory_->CreateAudioSource(nullptr)));
+          kAudioLabel, peer_connection_factory_->CreateAudioSource(
+                           cricket::AudioOptions())));
   auto result_or_error = peer_connection_->AddTrack(audio_track, {kStreamId});
   if (!result_or_error.ok()) {
     RTC_LOG(LS_ERROR) << "Failed to add audio track to PeerConnection: "
@@ -545,8 +542,8 @@ void Conductor::OnSuccess(webrtc::SessionDescriptionInterface* desc) {
   SendMessage(writer.write(jmessage));
 }
 
-void Conductor::OnFailure(const std::string& error) {
-  RTC_LOG(LERROR) << error;
+void Conductor::OnFailure(webrtc::RTCError error) {
+  RTC_LOG(LERROR) << ToString(error.type()) << ": " << error.message();
 }
 
 void Conductor::SendMessage(const std::string& json_object) {

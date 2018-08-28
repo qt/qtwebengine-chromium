@@ -11,11 +11,11 @@
 #ifndef LIBANGLE_BUFFER_H_
 #define LIBANGLE_BUFFER_H_
 
+#include "common/PackedEnums.h"
 #include "common/angleutils.h"
 #include "libANGLE/Debug.h"
 #include "libANGLE/Error.h"
 #include "libANGLE/IndexRangeCache.h"
-#include "libANGLE/PackedEnums.h"
 #include "libANGLE/RefCountObject.h"
 
 namespace rx
@@ -60,7 +60,8 @@ class BufferState final : angle::NonCopyable
     GLint64 mMapOffset;
     GLint64 mMapLength;
     int mBindingCount;
-    int mTransformFeedbackBindingCount;
+    int mTransformFeedbackIndexedBindingCount;
+    int mTransformFeedbackGenericBindingCount;
 };
 
 class Buffer final : public RefCountObject, public LabeledObject
@@ -116,7 +117,7 @@ class Buffer final : public RefCountObject, public LabeledObject
 
     bool isBound() const;
     bool isBoundForTransformFeedbackAndOtherUse() const;
-    void onBindingChanged(const Context *context, bool bound, BufferBinding target);
+    void onBindingChanged(const Context *context, bool bound, BufferBinding target, bool indexed);
 
   private:
     BufferState mState;

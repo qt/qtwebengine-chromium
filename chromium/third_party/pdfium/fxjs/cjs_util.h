@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "fxjs/JS_Define.h"
+#include "fxjs/js_define.h"
 
 // Return values for ParseDataType() below.
 #define UTIL_INT 0
@@ -22,7 +22,7 @@ class CJS_Util : public CJS_Object {
   static int GetObjDefnID();
   static void DefineJSObjects(CFXJS_Engine* pEngine);
 
-  explicit CJS_Util(v8::Local<v8::Object> pObject);
+  CJS_Util(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
   ~CJS_Util() override;
 
   static WideString printx(const WideString& cFormat,

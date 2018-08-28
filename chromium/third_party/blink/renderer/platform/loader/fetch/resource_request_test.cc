@@ -18,7 +18,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData) {
   ResourceRequest original;
   original.SetURL(KURL("http://www.example.com/test.htm"));
   original.SetCacheMode(mojom::FetchCacheMode::kDefault);
-  original.SetTimeoutInterval(10);
+  original.SetTimeoutInterval(base::TimeDelta::FromSeconds(10));
   original.SetSiteForCookies(KURL("http://www.example.com/first_party.htm"));
   original.SetRequestorOrigin(
       SecurityOrigin::Create(KURL("http://www.example.com/first_party.htm")));
@@ -33,7 +33,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData) {
   original.SetAllowStoredCredentials(false);
   original.SetReportUploadProgress(false);
   original.SetHasUserGesture(false);
-  original.SetDownloadToFile(false);
+  original.SetDownloadToBlob(false);
   original.SetSkipServiceWorker(false);
   original.SetFetchRequestMode(network::mojom::FetchRequestMode::kCORS);
   original.SetFetchCredentialsMode(
@@ -49,7 +49,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData) {
   EXPECT_STREQ("http://www.example.com/test.htm",
                original.Url().GetString().Utf8().data());
   EXPECT_EQ(mojom::FetchCacheMode::kDefault, original.GetCacheMode());
-  EXPECT_EQ(10, original.TimeoutInterval());
+  EXPECT_EQ(base::TimeDelta::FromSeconds(10), original.TimeoutInterval());
   EXPECT_STREQ("http://www.example.com/first_party.htm",
                original.SiteForCookies().GetString().Utf8().data());
   EXPECT_STREQ("www.example.com",
@@ -63,7 +63,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData) {
   EXPECT_FALSE(original.AllowStoredCredentials());
   EXPECT_FALSE(original.ReportUploadProgress());
   EXPECT_FALSE(original.HasUserGesture());
-  EXPECT_FALSE(original.DownloadToFile());
+  EXPECT_FALSE(original.DownloadToBlob());
   EXPECT_FALSE(original.GetSkipServiceWorker());
   EXPECT_EQ(network::mojom::FetchRequestMode::kCORS,
             original.GetFetchRequestMode());
@@ -85,7 +85,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData) {
   EXPECT_STREQ("http://www.example.com/test.htm",
                copy1.Url().GetString().Utf8().data());
   EXPECT_EQ(mojom::FetchCacheMode::kDefault, copy1.GetCacheMode());
-  EXPECT_EQ(10, copy1.TimeoutInterval());
+  EXPECT_EQ(base::TimeDelta::FromSeconds(10), copy1.TimeoutInterval());
   EXPECT_STREQ("http://www.example.com/first_party.htm",
                copy1.SiteForCookies().GetString().Utf8().data());
   EXPECT_STREQ("www.example.com",
@@ -97,7 +97,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData) {
   EXPECT_FALSE(copy1.AllowStoredCredentials());
   EXPECT_FALSE(copy1.ReportUploadProgress());
   EXPECT_FALSE(copy1.HasUserGesture());
-  EXPECT_FALSE(copy1.DownloadToFile());
+  EXPECT_FALSE(copy1.DownloadToBlob());
   EXPECT_FALSE(copy1.GetSkipServiceWorker());
   EXPECT_EQ(network::mojom::FetchRequestMode::kCORS,
             copy1.GetFetchRequestMode());
@@ -116,7 +116,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData) {
   copy1.SetAllowStoredCredentials(true);
   copy1.SetReportUploadProgress(true);
   copy1.SetHasUserGesture(true);
-  copy1.SetDownloadToFile(true);
+  copy1.SetDownloadToBlob(true);
   copy1.SetSkipServiceWorker(true);
   copy1.SetFetchRequestMode(network::mojom::FetchRequestMode::kNoCORS);
   copy1.SetFetchCredentialsMode(network::mojom::FetchCredentialsMode::kInclude);
@@ -126,7 +126,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData) {
   EXPECT_TRUE(copy2.AllowStoredCredentials());
   EXPECT_TRUE(copy2.ReportUploadProgress());
   EXPECT_TRUE(copy2.HasUserGesture());
-  EXPECT_TRUE(copy2.DownloadToFile());
+  EXPECT_TRUE(copy2.DownloadToBlob());
   EXPECT_TRUE(copy2.GetSkipServiceWorker());
   EXPECT_EQ(network::mojom::FetchRequestMode::kNoCORS,
             copy1.GetFetchRequestMode());
@@ -156,6 +156,21 @@ TEST(ResourceRequestTest, SetIsAdResource) {
           original.SiteForCookies(), original.HttpReferrer(),
           original.GetReferrerPolicy(), original.GetSkipServiceWorker());
   EXPECT_TRUE(redirect_request->IsAdResource());
+}
+
+TEST(ResourceRequestTest, UpgradeIfInsecureAcrossRedirects) {
+  ResourceRequest original;
+  EXPECT_FALSE(original.UpgradeIfInsecure());
+  original.SetUpgradeIfInsecure(true);
+  EXPECT_TRUE(original.UpgradeIfInsecure());
+
+  // Should persist across redirects.
+  std::unique_ptr<ResourceRequest> redirect_request =
+      original.CreateRedirectRequest(
+          KURL("https://example.test/redirect"), original.HttpMethod(),
+          original.SiteForCookies(), original.HttpReferrer(),
+          original.GetReferrerPolicy(), original.GetSkipServiceWorker());
+  EXPECT_TRUE(redirect_request->UpgradeIfInsecure());
 }
 
 }  // namespace blink

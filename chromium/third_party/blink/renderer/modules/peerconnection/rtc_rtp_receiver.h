@@ -7,6 +7,7 @@
 
 #include <map>
 
+#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_rtc_rtp_receiver.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_track.h"
@@ -17,6 +18,7 @@
 #include "third_party/blink/renderer/platform/heap/visitor.h"
 
 namespace blink {
+class RTCRtpCapabilities;
 
 // https://w3c.github.io/webrtc-pc/#rtcrtpreceiver-interface
 class RTCRtpReceiver final : public ScriptWrappable {
@@ -28,20 +30,21 @@ class RTCRtpReceiver final : public ScriptWrappable {
                  MediaStreamTrack*,
                  MediaStreamVector);
 
+  static void getCapabilities(const String& kind,
+                              base::Optional<RTCRtpCapabilities>& result);
+
   MediaStreamTrack* track() const;
   const HeapVector<Member<RTCRtpContributingSource>>& getContributingSources();
   ScriptPromise getStats(ScriptState*);
 
   const WebRTCRtpReceiver& web_receiver() const;
   MediaStreamVector streams() const;
+  void set_streams(MediaStreamVector streams);
   void UpdateSourcesIfNeeded();
 
   void Trace(blink::Visitor*) override;
 
  private:
-#if DCHECK_IS_ON()
-  bool StateMatchesWebReceiver() const;
-#endif  // DCHECK_IS_ON()
   void SetContributingSourcesNeedsUpdating();
 
   std::unique_ptr<WebRTCRtpReceiver> receiver_;

@@ -24,6 +24,7 @@
 #include "ccpr/GrCCCoverageProcessor.h"
 #include "ccpr/GrCCGeometry.h"
 #include "gl/GrGLGpu.cpp"
+#include "glsl/GrGLSLFragmentProcessor.h"
 #include "ops/GrDrawOp.h"
 
 using TriPointInstance = GrCCCoverageProcessor::TriPointInstance;
@@ -85,8 +86,7 @@ public:
 
 private:
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-    RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*,
-                                GrPixelConfigIsClamped) override {
+    RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*) override {
         return RequiresDstTexture::kNo;
     }
     bool onCombineIfPossible(GrOp* other, const GrCaps& caps) override { return false; }
@@ -358,7 +358,7 @@ void CCPRGeometryView::DrawCoverageCountOp::onExecute(GrOpFlushState* state) {
 
     if (!mesh.empty()) {
         SkASSERT(1 == mesh.count());
-        proc.draw(state, pipeline, mesh.begin(), nullptr, 1, this->bounds());
+        proc.draw(state, pipeline, nullptr, mesh.begin(), 1, this->bounds());
     }
 
     if (glGpu) {

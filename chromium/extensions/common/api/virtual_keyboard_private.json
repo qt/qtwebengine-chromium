@@ -200,26 +200,6 @@
         ]
       },
       {
-        "name": "setMode",
-        "type": "function",
-        "description": "Sets the virtual keyboard container mode.",
-        "parameters": [
-          {
-            "$ref": "KeyboardMode",
-            "name": "mode",
-            "description": "The value of the virtual keyboard mode to set to."
-          },
-          {
-            "type": "function",
-            "name": "callback",
-            "optional": true,
-            "description": "Called when container mode is ready to change.",
-            "parameters": []
-          }
-        ],
-        "deprecated": "Please use $(ref:setContainerBehavior)"
-      },
-      {
         "name": "setContainerBehavior",
         "type": "function",
         "description": "Sets the virtual keyboard container behavior",
@@ -261,8 +241,33 @@
             "description": "The value of the virtual keyboard state to change to."
           }
         ]
+      },
+      {
+        "name": "setOccludedBounds",
+        "type": "function",
+        "description": "Sets the areas on the screen that are blocked by the virtual keyboard.",
+        "parameters": [
+          {
+            "name": "boundsList",
+            "type": "array",
+            "description": "List of rectangles representing regions occluded by the keyboard.",
+            "items": { "$ref": "Bounds" }
+          }
+        ]
+      },
+      {
+        "name": "setHitTestBounds",
+        "type": "function",
+        "description": "Sets the areas on the keyboard window where events are handled. Any event outside of these areas are passed on to the window behind it.",
+        "parameters": [
+          {
+            "name": "boundsList",
+            "type": "array",
+            "description": "List of rectangles representing regions where events targeting the keyboard should be handled.",
+            "items": { "$ref": "Bounds" }
+          }
+        ]
       }
-
     ],
     "events": [
       {

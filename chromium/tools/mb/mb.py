@@ -385,9 +385,9 @@ class MetaBuildWrapper(object):
       ('infra/tools/luci/logdog/butler/${platform}',
        'git_revision:e1abc57be62d198b5c2f487bfb2fa2d2eb0e867c'),
       ('infra/tools/luci/vpython-native/${platform}',
-       'git_revision:e1abc57be62d198b5c2f487bfb2fa2d2eb0e867c'),
+       'git_revision:b9c4670197dcefd8762d6e509302acd3efc6e303'),
       ('infra/tools/luci/vpython/${platform}',
-       'git_revision:e1abc57be62d198b5c2f487bfb2fa2d2eb0e867c'),
+       'git_revision:b9c4670197dcefd8762d6e509302acd3efc6e303'),
     ]
     for pkg, vers in cipd_packages:
       cmd.append('--cipd-package=.swarming_module:%s:%s' % (pkg, vers))
@@ -739,13 +739,13 @@ class MetaBuildWrapper(object):
         self.FlattenMixins(mixin_vals['mixins'], vals, visited)
     return vals
 
-  def RunGNGen(self, vals, compute_grit_inputs_for_analyze=False):
+  def RunGNGen(self, vals, compute_inputs_for_analyze=False):
     build_dir = self.args.path
 
     cmd = self.GNCmd('gen', build_dir, '--check')
     gn_args = self.GNArgs(vals)
-    if compute_grit_inputs_for_analyze:
-      gn_args += ' compute_grit_inputs_for_analyze=true'
+    if compute_inputs_for_analyze:
+      gn_args += ' compute_inputs_for_analyze=true'
 
     # Since GN hasn't run yet, the build directory may not even exist.
     self.MaybeMakeDirectory(self.ToAbsPath(build_dir))
@@ -920,6 +920,8 @@ class MetaBuildWrapper(object):
       subdir, exe = 'linux64', 'gn'
     elif self.platform == 'darwin':
       subdir, exe = 'mac', 'gn'
+    elif self.platform == 'aix6':
+      subdir, exe = 'aix', 'gn'
     else:
       subdir, exe = 'win', 'gn.exe'
 
@@ -935,6 +937,8 @@ class MetaBuildWrapper(object):
       if not re.search('target_os.*=.*"chromeos"', gn_args):
         raise MBErr('GN_ARGS is missing target_os = "chromeos": (GN_ARGS=%s)' %
                     gn_args)
+      if vals['gn_args']:
+        gn_args += ' ' + vals['gn_args']
     else:
       gn_args = vals['gn_args']
 
@@ -1078,7 +1082,7 @@ class MetaBuildWrapper(object):
   def RunGNAnalyze(self, vals):
     # Analyze runs before 'gn gen' now, so we need to run gn gen
     # in order to ensure that we have a build directory.
-    ret = self.RunGNGen(vals, compute_grit_inputs_for_analyze=True)
+    ret = self.RunGNGen(vals, compute_inputs_for_analyze=True)
     if ret:
       return ret
 

@@ -148,7 +148,7 @@ void NormalizeArgb(int src_value,
                    int src_alpha) {
   uint8_t back_alpha = dest[3];
   if (back_alpha == 0)
-    FXARGB_SETDIB(dest, FXARGB_MAKE(src_alpha, r, g, b));
+    FXARGB_SETDIB(dest, ArgbEncode(src_alpha, r, g, b));
   else if (src_alpha != 0)
     ApplyDestAlpha(back_alpha, src_alpha, r, g, b, dest);
 }
@@ -632,21 +632,24 @@ bool CFX_RenderDevice::DrawFillStrokePath(const CFX_PathData* pPathData,
     bbox = pObject2Device->TransformRect(bbox);
 
   FX_RECT rect = bbox.GetOuterRect();
+  if (!rect.Valid())
+    return false;
+
   auto bitmap = pdfium::MakeRetain<CFX_DIBitmap>();
-  auto Backdrop = pdfium::MakeRetain<CFX_DIBitmap>();
+  auto backdrop = pdfium::MakeRetain<CFX_DIBitmap>();
   if (!CreateCompatibleBitmap(bitmap, rect.Width(), rect.Height()))
     return false;
 
   if (bitmap->HasAlpha()) {
     bitmap->Clear(0);
-    Backdrop->Copy(bitmap);
+    backdrop->Copy(bitmap);
   } else {
     if (!m_pDeviceDriver->GetDIBits(bitmap, rect.left, rect.top))
       return false;
-    Backdrop->Copy(bitmap);
+    backdrop->Copy(bitmap);
   }
   CFX_DefaultRenderDevice bitmap_device;
-  bitmap_device.Attach(bitmap, false, Backdrop, true);
+  bitmap_device.Attach(bitmap, false, backdrop, true);
 
   CFX_Matrix matrix;
   if (pObject2Device)
@@ -936,11 +939,11 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
           charpos.m_AdjustMatrix[2], charpos.m_AdjustMatrix[3], 0, 0);
       new_matrix.Concat(deviceCtm);
       glyph.m_pGlyph = pFont->LoadGlyphBitmap(
-          charpos.m_GlyphIndex, charpos.m_bFontStyle, &new_matrix,
+          charpos.m_GlyphIndex, charpos.m_bFontStyle, new_matrix,
           charpos.m_FontCharWidth, anti_alias, nativetext_flags);
     } else {
       glyph.m_pGlyph = pFont->LoadGlyphBitmap(
-          charpos.m_GlyphIndex, charpos.m_bFontStyle, &deviceCtm,
+          charpos.m_GlyphIndex, charpos.m_bFontStyle, deviceCtm,
           charpos.m_FontCharWidth, anti_alias, nativetext_flags);
     }
   }

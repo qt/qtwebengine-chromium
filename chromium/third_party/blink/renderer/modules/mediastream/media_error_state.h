@@ -31,8 +31,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIASTREAM_MEDIA_ERROR_STATE_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIASTREAM_MEDIA_ERROR_STATE_H_
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/modules/v8/dom_exception_or_overconstrained_error.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -45,7 +45,7 @@ class MediaErrorState {
  public:
   MediaErrorState();
   void ThrowTypeError(const String& message);
-  void ThrowDOMException(ExceptionCode, const String& message);
+  void ThrowDOMException(DOMExceptionCode, const String& message);
   void ThrowConstraintError(const String& message, const String& constraint);
   void Reset();
 
@@ -59,7 +59,7 @@ class MediaErrorState {
   enum ErrorType { kNoError, kTypeError, kDOMException, kConstraintError };
   ErrorType error_type_;
   String name_;
-  ExceptionCode code_;
+  DOMExceptionCode code_;
   String message_;
   String constraint_;
 };

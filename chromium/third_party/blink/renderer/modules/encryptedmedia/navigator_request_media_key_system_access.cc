@@ -15,8 +15,8 @@
 #include "third_party/blink/public/platform/web_vector.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
@@ -51,6 +51,17 @@ static WebVector<WebEncryptedMediaInitDataType> ConvertInitDataTypes(
   return result;
 }
 
+static WebMediaKeySystemMediaCapability::EncryptionScheme
+ConvertEncryptionScheme(const String& encryption_scheme) {
+  if (encryption_scheme == "cenc")
+    return WebMediaKeySystemMediaCapability::EncryptionScheme::kCenc;
+  if (encryption_scheme == "cbcs")
+    return WebMediaKeySystemMediaCapability::EncryptionScheme::kCbcs;
+
+  NOTREACHED();
+  return WebMediaKeySystemMediaCapability::EncryptionScheme::kNotSpecified;
+}
+
 static WebVector<WebMediaKeySystemMediaCapability> ConvertCapabilities(
     const HeapVector<MediaKeySystemMediaCapability>& capabilities) {
   WebVector<WebMediaKeySystemMediaCapability> result(capabilities.size());
@@ -71,6 +82,17 @@ static WebVector<WebMediaKeySystemMediaCapability> ConvertCapabilities(
         result[i].codecs = type.ParameterValueForName("codecs");
     }
     result[i].robustness = capabilities[i].robustness();
+
+    // From
+    // https://github.com/WICG/encrypted-media-encryption-scheme/blob/master/explainer.md
+    // "Asking for "any" encryption scheme is unrealistic. Defining null as
+    // "any scheme" is convenient for backward compatibility, though.
+    // Applications which ignore this feature by leaving encryptionScheme null
+    // get the same user agent behavior they did before this feature existed."
+    result[i].encryption_scheme =
+        capabilities[i].hasEncryptionScheme()
+            ? ConvertEncryptionScheme(capabilities[i].encryptionScheme())
+            : WebMediaKeySystemMediaCapability::EncryptionScheme::kNotSpecified;
   }
   return result;
 }
@@ -214,7 +236,8 @@ void MediaKeySystemAccessInitializer::RequestNotSupported(
   if (!IsExecutionContextValid())
     return;
 
-  resolver_->Reject(DOMException::Create(kNotSupportedError, error_message));
+  resolver_->Reject(DOMException::Create(DOMExceptionCode::kNotSupportedError,
+                                         error_message));
   resolver_.Clear();
 }
 
@@ -290,7 +313,7 @@ ScriptPromise NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess(
       return ScriptPromise::RejectWithDOMException(
           script_state,
           DOMException::Create(
-              kSecurityError,
+              DOMExceptionCode::kSecurityError,
               "requestMediaKeySystemAccess is disabled by feature policy."));
     }
   } else {
@@ -324,7 +347,7 @@ ScriptPromise NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess(
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
-            kInvalidStateError,
+            DOMExceptionCode::kInvalidStateError,
             "The context provided is not associated with a page."));
   }
 

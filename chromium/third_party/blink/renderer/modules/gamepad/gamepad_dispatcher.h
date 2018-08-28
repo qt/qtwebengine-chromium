@@ -13,6 +13,8 @@
 
 namespace blink {
 
+class GamepadSharedMemoryReader;
+
 class GamepadDispatcher final
     : public GarbageCollectedFinalized<GamepadDispatcher>,
       public PlatformEventDispatcher,
@@ -34,16 +36,6 @@ class GamepadDispatcher final
                               device::mojom::blink::GamepadHapticsManager::
                                   ResetVibrationActuatorCallback);
 
-  struct ConnectionChange {
-    DISALLOW_NEW();
-    device::Gamepad pad;
-    unsigned index;
-  };
-
-  const ConnectionChange& LatestConnectionChange() const {
-    return latest_change_;
-  }
-
   void Trace(blink::Visitor*) override;
 
  private:
@@ -56,15 +48,14 @@ class GamepadDispatcher final
   void DidDisconnectGamepad(unsigned index, const device::Gamepad&) override;
 
   // PlatformEventDispatcher
-  void StartListening() override;
+  void StartListening(LocalFrame* frame) override;
   void StopListening() override;
 
   void DispatchDidConnectOrDisconnectGamepad(unsigned index,
                                              const device::Gamepad&,
                                              bool connected);
 
-  ConnectionChange latest_change_;
-
+  std::unique_ptr<GamepadSharedMemoryReader> reader_;
   device::mojom::blink::GamepadHapticsManagerPtr gamepad_haptics_manager_;
 };
 

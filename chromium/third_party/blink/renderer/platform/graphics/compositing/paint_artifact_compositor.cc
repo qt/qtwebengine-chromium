@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_artifact.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_chunk_subset.h"
+#include "third_party/blink/renderer/platform/graphics/paint/paint_flags.h"
 #include "third_party/blink/renderer/platform/graphics/paint/property_tree_state.h"
 #include "third_party/blink/renderer/platform/graphics/paint/raster_invalidation_tracking.h"
 #include "third_party/blink/renderer/platform/graphics/paint/scroll_hit_test_display_item.h"
@@ -66,7 +67,7 @@ void PaintArtifactCompositor::EnableExtraDataForTesting() {
 
 void PaintArtifactCompositor::SetTracksRasterInvalidations(bool should_track) {
   for (auto& client : content_layer_clients_)
-    client->SetTracksRasterInvalidations(should_track);
+    client->GetRasterInvalidator().SetTracksRasterInvalidations(should_track);
 }
 
 void PaintArtifactCompositor::WillBeRemovedFromFrame() {
@@ -128,7 +129,6 @@ static scoped_refptr<cc::Layer> ForeignLayerForPaintChunk(
          static_cast<gfx::Size>(foreign_layer_display_item.Bounds()))
       << "\n  layer bounds: " << layer->bounds().ToString()
       << "\n  display item bounds: " << foreign_layer_display_item.Bounds();
-  DCHECK(layer->DrawsContent());
   return layer;
 }
 
@@ -220,26 +220,27 @@ PaintArtifactCompositor::ClientForPaintChunk(const PaintChunk& paint_chunk) {
   }
 
   auto client = std::make_unique<ContentLayerClientImpl>();
-  client->SetTracksRasterInvalidations(tracks_raster_invalidations_);
+  client->GetRasterInvalidator().SetTracksRasterInvalidations(
+      tracks_raster_invalidations_);
   return client;
 }
 
 scoped_refptr<cc::Layer>
 PaintArtifactCompositor::CompositedLayerForPendingLayer(
-    const PaintArtifact& paint_artifact,
+    scoped_refptr<const PaintArtifact> paint_artifact,
     const PendingLayer& pending_layer,
     gfx::Vector2dF& layer_offset,
     Vector<std::unique_ptr<ContentLayerClientImpl>>& new_content_layer_clients,
     Vector<scoped_refptr<cc::Layer>>& new_scroll_hit_test_layers) {
   auto paint_chunks =
-      paint_artifact.GetPaintChunkSubset(pending_layer.paint_chunk_indices);
+      paint_artifact->GetPaintChunkSubset(pending_layer.paint_chunk_indices);
   DCHECK(paint_chunks.size());
   const PaintChunk& first_paint_chunk = paint_chunks[0];
   DCHECK(first_paint_chunk.size());
 
   // If the paint chunk is a foreign layer, just return that layer.
   if (scoped_refptr<cc::Layer> foreign_layer = ForeignLayerForPaintChunk(
-          paint_artifact, first_paint_chunk, layer_offset)) {
+          *paint_artifact, first_paint_chunk, layer_offset)) {
     DCHECK_EQ(paint_chunks.size(), 1u);
     if (extra_data_for_testing_enabled_)
       extra_data_for_testing_->content_layers.push_back(foreign_layer);
@@ -248,7 +249,7 @@ PaintArtifactCompositor::CompositedLayerForPendingLayer(
 
   // If the paint chunk is a scroll hit test layer, lookup/create the layer.
   if (scoped_refptr<cc::Layer> scroll_layer = ScrollHitTestLayerForPendingLayer(
-          paint_artifact, pending_layer, layer_offset)) {
+          *paint_artifact, pending_layer, layer_offset)) {
     new_scroll_hit_test_layers.push_back(scroll_layer);
     if (extra_data_for_testing_enabled_)
       extra_data_for_testing_->scroll_hit_test_layers.push_back(scroll_layer);
@@ -397,16 +398,12 @@ static const EffectPaintPropertyNode* StrictChildOfAlongPath(
 
 bool PaintArtifactCompositor::MightOverlap(const PendingLayer& layer_a,
                                            const PendingLayer& layer_b) {
-  PropertyTreeState root_property_tree_state(TransformPaintPropertyNode::Root(),
-                                             ClipPaintPropertyNode::Root(),
-                                             EffectPaintPropertyNode::Root());
-
   FloatClipRect bounds_a(layer_a.bounds);
-  GeometryMapper::LocalToAncestorVisualRect(layer_a.property_tree_state,
-                                            root_property_tree_state, bounds_a);
+  GeometryMapper::LocalToAncestorVisualRect(
+      layer_a.property_tree_state, PropertyTreeState::Root(), bounds_a);
   FloatClipRect bounds_b(layer_b.bounds);
-  GeometryMapper::LocalToAncestorVisualRect(layer_b.property_tree_state,
-                                            root_property_tree_state, bounds_b);
+  GeometryMapper::LocalToAncestorVisualRect(
+      layer_b.property_tree_state, PropertyTreeState::Root(), bounds_b);
 
   return bounds_a.Rect().Intersects(bounds_b.Rect());
 }
@@ -575,8 +572,8 @@ void PaintArtifactCompositor::CollectPendingLayers(
     Vector<PendingLayer>& pending_layers) {
   Vector<PaintChunk>::const_iterator cursor =
       paint_artifact.PaintChunks().begin();
-  LayerizeGroup(paint_artifact, pending_layers,
-                *EffectPaintPropertyNode::Root(), cursor);
+  LayerizeGroup(paint_artifact, pending_layers, EffectPaintPropertyNode::Root(),
+                cursor);
   DCHECK_EQ(paint_artifact.PaintChunks().end(), cursor);
 }
 
@@ -623,7 +620,7 @@ class SynthesizedClip : private cc::ContentLayerClient {
     if (local_rrect_ != new_local_rrect || path_in_layer_changed) {
       layer_->SetNeedsDisplay();
     }
-    layer_->set_offset_to_transform_parent(new_layer_origin);
+    layer_->SetOffsetToTransformParent(new_layer_origin);
     layer_->SetBounds(gfx::Size(layer_bounds.Width(), layer_bounds.Height()));
 
     layer_origin_ = new_layer_origin;
@@ -645,7 +642,7 @@ class SynthesizedClip : private cc::ContentLayerClient {
       PaintingControlSetting) final {
     auto cc_list = base::MakeRefCounted<cc::DisplayItemList>(
         cc::DisplayItemList::kTopLevelDisplayItemList);
-    cc::PaintFlags flags;
+    PaintFlags flags;
     flags.setAntiAlias(true);
     cc_list->StartPaint();
     if (!path_) {
@@ -696,8 +693,9 @@ cc::Layer* PaintArtifactCompositor::CreateOrReuseSynthesizedClipLayer(
 }
 
 void PaintArtifactCompositor::Update(
-    const PaintArtifact& paint_artifact,
-    CompositorElementIdSet& composited_element_ids) {
+    scoped_refptr<const PaintArtifact> paint_artifact,
+    CompositorElementIdSet& composited_element_ids,
+    TransformPaintPropertyNode* viewport_scale_node) {
   DCHECK(root_layer_);
 
   // The tree will be null after detaching and this update can be ignored.
@@ -705,6 +703,12 @@ void PaintArtifactCompositor::Update(
   cc::LayerTreeHost* host = root_layer_->layer_tree_host();
   if (!host)
     return;
+
+  // When using BlinkGenPropertyTrees, the compositor accepts a list of layers
+  // and property trees instead of building property trees. This DCHECK ensures
+  // we have not forgotten to set |use_layer_lists|.
+  DCHECK(!RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() ||
+         host->GetSettings().use_layer_lists);
 
   if (extra_data_for_testing_enabled_)
     extra_data_for_testing_.reset(new ExtraDataForTesting);
@@ -717,7 +721,15 @@ void PaintArtifactCompositor::Update(
                                             root_layer_.get(),
                                             g_s_property_tree_sequence_number);
   Vector<PendingLayer, 0> pending_layers;
-  CollectPendingLayers(paint_artifact, pending_layers);
+  CollectPendingLayers(*paint_artifact, pending_layers);
+
+  // The page scale layer would create this below but we need to use the
+  // special EnsureCompositorPageScaleTransformNode method since the transform
+  // created in a different way so we call it here.
+  if (viewport_scale_node) {
+    property_tree_manager.EnsureCompositorPageScaleTransformNode(
+        viewport_scale_node);
+  }
 
   Vector<std::unique_ptr<ContentLayerClientImpl>> new_content_layer_clients;
   new_content_layer_clients.ReserveCapacity(pending_layers.size());
@@ -754,11 +766,11 @@ void PaintArtifactCompositor::Update(
     // The compositor scroll node is not directly stored in the property tree
     // state but can be created via the scroll offset translation node.
     const auto& scroll_translation =
-        ScrollTranslationForPendingLayer(paint_artifact, pending_layer);
+        ScrollTranslationForPendingLayer(*paint_artifact, pending_layer);
     int scroll_id =
         property_tree_manager.EnsureCompositorScrollNode(&scroll_translation);
 
-    layer->set_offset_to_transform_parent(layer_offset);
+    layer->SetOffsetToTransformParent(layer_offset);
 
     // Get the compositor element id for the layer. Scrollable layers are only
     // associated with scroll element ids which are set in

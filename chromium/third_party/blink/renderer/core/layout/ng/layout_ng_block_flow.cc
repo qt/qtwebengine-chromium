@@ -5,9 +5,11 @@
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
 
 #include "third_party/blink/renderer/core/layout/layout_analyzer.h"
+#include "third_party/blink/renderer/core/layout/min_max_size.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_fragment_traversal.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_node_data.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_constraint_space_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_length_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_out_of_flow_layout_part.h"
@@ -26,8 +28,39 @@ bool LayoutNGBlockFlow::IsOfType(LayoutObjectType type) const {
          LayoutNGMixin<LayoutBlockFlow>::IsOfType(type);
 }
 
+void LayoutNGBlockFlow::ComputeIntrinsicLogicalWidths(
+    LayoutUnit& min_logical_width,
+    LayoutUnit& max_logical_width) const {
+  NGBlockNode node(const_cast<LayoutNGBlockFlow*>(this));
+  if (!node.CanUseNewLayout()) {
+    LayoutBlockFlow::ComputeIntrinsicLogicalWidths(min_logical_width,
+                                                   max_logical_width);
+    return;
+  }
+  MinMaxSize sizes =
+      node.ComputeMinMaxSize(StyleRef().GetWritingMode(), MinMaxSizeInput());
+  // ComputeMinMaxSize returns a border-box size. This function needs to return
+  // content-box plus scrollbar.
+  // We can't just call BorderAndPaddingLogicalWidth() here because that
+  // handles percentages differently from NG intrinsic sizing.
+  scoped_refptr<NGConstraintSpace> space =
+      NGConstraintSpaceBuilder(node.Style().GetWritingMode(),
+                               node.InitialContainingBlockSize())
+          .ToConstraintSpace(node.Style().GetWritingMode());
+  sizes -=
+      (ComputeBorders(*space, StyleRef()) + ComputePadding(*space, StyleRef()))
+          .InlineSum();
+  min_logical_width = sizes.min_size;
+  max_logical_width = sizes.max_size;
+}
+
 void LayoutNGBlockFlow::UpdateBlockLayout(bool relayout_children) {
   LayoutAnalyzer::BlockScope analyzer(*this);
+
+  // This block is an entry-point from the legacy engine to LayoutNG. This means
+  // that we need to be at a formatting context boundary, since NG and legacy
+  // don't cooperate on e.g. margin collapsing.
+  DCHECK(CreatesNewFormattingContext());
 
   if (IsOutOfFlowPositioned()) {
     UpdateOutOfFlowBlockLayout();
@@ -202,11 +235,15 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
   if (css_container->IsBox())
     scrollbar_sizes =
         NGBlockNode(ToLayoutBox(css_container)).GetScrollbarSizes();
+  // We really only want to lay out ourselves here, so we pass |this| to
+  // Run(). Otherwise, NGOutOfFlowLayoutPart may also lay out other objects
+  // it discovers that are part of the same containing block, but those
+  // should get laid out by the actual containing block.
   NGOutOfFlowLayoutPart(&container_builder,
                         css_container->CanContainAbsolutePositionObjects(),
                         css_container->CanContainFixedPositionObjects(),
                         scrollbar_sizes, *constraint_space, *container_style)
-      .Run(/* update_legacy */ false);
+      .Run(/* only_layout */ this);
   scoped_refptr<NGLayoutResult> result = container_builder.ToBoxFragment();
   // These are the unpositioned OOF descendants of the current OOF block.
   for (NGOutOfFlowPositionedDescendant descendant :

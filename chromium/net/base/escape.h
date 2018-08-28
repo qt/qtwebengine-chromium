@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <set>
 #include <string>
 
 #include "base/strings/string16.h"
@@ -101,9 +102,6 @@ class UnescapeRule {
 
     // URL queries use "+" for space. This flag controls that replacement.
     REPLACE_PLUS_WITH_SPACE = 1 << 4,
-
-    // Unescapes space characters that appears as plain blank in visual agents.
-    NONASCII_SPACES = 1 << 5,
   };
 };
 
@@ -149,6 +147,15 @@ NET_EXPORT std::string UnescapeBinaryURLComponent(
 // Unescapes the following ampersand character codes from |text|:
 // &lt; &gt; &amp; &quot; &#39;
 NET_EXPORT base::string16 UnescapeForHTML(base::StringPiece16 text);
+
+// Returns true if |escaped_text| contains any element of |bytes| in
+// percent-encoded form.
+//
+// For example, if |bytes| is {'%', '/'}, returns true if |escaped_text|
+// contains "%25" or "%2F", but not if it just contains bare '%' or '/'
+// characters.
+NET_EXPORT bool ContainsEncodedBytes(base::StringPiece escaped_text,
+                                     const std::set<unsigned char>& bytes);
 
 }  // namespace net
 

@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">لغزنده</translation>
 <translation id="1211441953136645838">ته‌نویس</translation>
 <translation id="1281252709823657822">کادر گفتگو</translation>
+<translation id="1289247557029249093">خروج از حالت تصویردرتصویر</translation>
 <translation id="1335095011850992622">دست‌اندرکاران</translation>
 <translation id="1342835525016946179">article</translation>
 <translation id="1359897965706325498">برنما</translation>
+<translation id="1548116112524424341">پخش ویدیو در حالت تصویر در تصویر</translation>
 <translation id="1589122976691792535">منطقه</translation>
 <translation id="1591562245178063882">این ماه</translation>
 <translation id="1637811476055996098">انتخاب فایل‌ها</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">شبکه درختی</translation>
 <translation id="1822429046913737220">ق.ظ/ب.ظ</translation>
 <translation id="1832974991323546415">پخش در دستگاه راه دور</translation>
+<translation id="190587075670221089">حذف</translation>
 <translation id="1907737156431278478">مثال</translation>
 <translation id="1921819250265091946">dd</translation>
 <translation id="1930711995431081526">وضعیت</translation>
 <translation id="1938124657309484470">مقدار باید <ph name="MAXIMUM_DATE_OR_TIME" /> یا قبل از آن باشد.</translation>
+<translation id="1946271899482435442">نمایش انتخابگر تاریخ</translation>
 <translation id="1993104285338243655">به نمایش صفحه‌نمایش روی دستگاه دیگر تغییر یافت</translation>
 <translation id="2060505056492490888">«<ph name="DOT" />» در «<ph name="INVALIDDOMAIN" />» در محل اشتباهی قرار دارد.</translation>
 <translation id="2148716181193084225">امروز</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">ارائه</translation>
 <translation id="2657045182931379222">شیء گرافیکی</translation>
 <translation id="2674318244760992338">پانویس</translation>
+<translation id="2706474812903655270">این ویدیو درحال پخش درحالت تصویردرتصویر است</translation>
 <translation id="2709516037105925701">تکمیل خودکار</translation>
 <translation id="2723001399770238859">صدا</translation>
 <translation id="2746543609216772311">مقدار باید <ph name="MINIMUM_DATE_OR_TIME" /> یا بعد از آن باشد.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">نمایش ماه بعدی</translation>
 <translation id="512758898067543763">عنوان ردیف</translation>
 <translation id="5143125788380636750">گفتار پایانی</translation>
-<translation id="5153163864850940242">این ویدیو درحال پخش شدن در حالت «تصویر در تصویر» است</translation>
 <translation id="5164977714490026579">مقدار باید بیشتر یا مساوی با <ph name="MINIMUM" /> باشد.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> پتابایت</translation>
 <translation id="5307600278924710095">لطفاً قسمت قبل از «<ph name="ATSIGN" />» را وارد کنید. «<ph name="INVALIDADDRESS" />» ناقص است.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">انجامه</translation>
 <translation id="6934078000481955284">نقل‌قول</translation>
 <translation id="6941933287844615239">بارگیری رسانه</translation>
+<translation id="6981594929165378967">درج</translation>
 <translation id="6989848892321993519">لطفاً این نوشتار را به <ph name="MIN_CHARACTERS" /> نویسه یا بیشتر افزایش دهید (درحال‌حاضر از ۱ نویسه استفاده می‌کنید).</translation>
 <translation id="709897737746224366">لطفاً با قالب درخواستی مطابقت دهید.</translation>
 <translation id="7139483182332611405">پیش‌گفتار</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">زمان باقی‌مانده</translation>
 <translation id="7740016676195725605">توقف نمایش زیرنویس ناشنوایان</translation>
 <translation id="7740050170769002709">‏محتوای HTML</translation>
+<translation id="7750228210027921155">تصویردرتصویر</translation>
 <translation id="7789962463072032349">مکث</translation>
 <translation id="7802800022689234070">مثلث افشا</translation>
 <translation id="7888071071722539607">لطفاً نماد «<ph name="ATSIGN" />» را به نشانی ایمیل اضافه کنید. «<ph name="INVALIDADDRESS" />» در «<ph name="ATSIGN" />» موجود نیست.</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">فهرست مطالب</translation>
 <translation id="8613126697340063924">کنترل بازپخش راه دور</translation>
 <translation id="862370744433916922">زیرنویس</translation>
-<translation id="8741316211671074806">تصویردرتصویر</translation>
 <translation id="8750798805984357768">لطفاً یکی از این گزینه‌ها را انتخاب کنید.</translation>
 <translation id="8785498733064193001">شروع بازپخش</translation>
 <translation id="8808573423886751634">فصل</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">پیمایش</translation>
 <translation id="9050748414552849310">نمایش زیرنویس ناشنوایان</translation>
 <translation id="9062295712474918030">سند</translation>
+<translation id="9093215626363556771">خروج از تصویر در تصویر</translation>
 <translation id="9108370397979208512">حساب</translation>
 <translation id="9132465097189459683">موارد دیگر...</translation>
 <translation id="9138385573473225930">هشدار</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />، شروع از <ph name="WEEK_START_DATE" /></translation>
+<translation id="916607977885256133">تصویر در تصویر</translation>
 <translation id="9168329111483466115">پانویس</translation>
-<translation id="947831847158436616">سلول</translation>
+<translation id="954003015749068518">ورود به تصویر در تصویر</translation>
 <translation id="966787709310836684">منو</translation>
 </translationbundle>

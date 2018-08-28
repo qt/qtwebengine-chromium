@@ -581,9 +581,11 @@ const char kErrorEapLocalTlsFailed[] = "eap-local-tls-failed";
 const char kErrorEapRemoteTlsFailed[] = "eap-remote-tls-failed";
 
 // Manager property names.
+const char kAlwaysOnVpnPackageProperty[] = "AlwaysOnVpnPackage";
 const char kDefaultServiceProperty[] = "DefaultService";
+const char kDhcpPropertyHostnameProperty[] = "DHCPProperty.Hostname";
+const char kDhcpPropertyVendorClassProperty[] = "DHCPProperty.VendorClass";
 const char kDisableWiFiVHTProperty[] = "DisableWiFiVHT";
-const char kHostNameProperty[] = "HostName";
 const char kIgnoredDNSSearchPathsProperty[] = "IgnoredDNSSearchPaths";
 const char kLinkMonitorTechnologiesProperty[] =
     "LinkMonitorTechnologies";

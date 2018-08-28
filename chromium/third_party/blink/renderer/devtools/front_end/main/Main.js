@@ -114,6 +114,7 @@ Main.Main = class {
     Runtime.experiments.register('nativeHeapProfiler', 'Native memory sampling heap profiler', true);
     Runtime.experiments.register('networkSearch', 'Network search');
     Runtime.experiments.register('oopifInlineDOM', 'OOPIF: inline DOM ', true);
+    Runtime.experiments.register('pinnedExpressions', 'Pinned expressions in Console', true);
     Runtime.experiments.register('protocolMonitor', 'Protocol Monitor');
     Runtime.experiments.register('sourceDiff', 'Source diff');
     Runtime.experiments.register('sourcesPrettyPrint', 'Automatically pretty print in the Sources Panel');
@@ -145,7 +146,7 @@ Main.Main = class {
     }
 
     Runtime.experiments.setDefaultExperiments(
-        ['colorContrastRatio', 'stepIntoAsync', 'oopifInlineDOM', 'consoleBelowPrompt']);
+        ['colorContrastRatio', 'stepIntoAsync', 'oopifInlineDOM', 'consoleBelowPrompt', 'timelineTracingJSProfile']);
   }
 
   /**
@@ -383,19 +384,8 @@ Main.Main = class {
   }
 
   _postDocumentKeyDown(event) {
-    if (event.handled)
-      return;
-
-    if (!UI.Dialog.hasInstance() && UI.inspectorView.currentPanelDeprecated() &&
-        UI.inspectorView.currentPanelDeprecated().hasFocus()) {
-      UI.inspectorView.currentPanelDeprecated().handleShortcut(event);
-      if (event.handled) {
-        event.consume(true);
-        return;
-      }
-    }
-
-    UI.shortcutRegistry.handleShortcut(event);
+    if (!event.handled)
+      UI.shortcutRegistry.handleShortcut(event);
   }
 
   /**

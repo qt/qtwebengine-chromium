@@ -7,14 +7,14 @@
 #ifndef FXJS_CJS_EVENT_H_
 #define FXJS_CJS_EVENT_H_
 
-#include "fxjs/JS_Define.h"
+#include "fxjs/js_define.h"
 
 class CJS_Event : public CJS_Object {
  public:
   static int GetObjDefnID();
   static void DefineJSObjects(CFXJS_Engine* pEngine);
 
-  explicit CJS_Event(v8::Local<v8::Object> pObject);
+  CJS_Event(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
   ~CJS_Event() override;
 
   JS_STATIC_PROP(change, change, CJS_Event);

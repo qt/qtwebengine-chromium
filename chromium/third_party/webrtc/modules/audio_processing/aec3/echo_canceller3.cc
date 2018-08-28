@@ -29,6 +29,10 @@ bool DetectSaturation(rtc::ArrayView<const float> y) {
   return false;
 }
 
+bool UseShortDelayEstimatorWindow() {
+  return field_trial::IsEnabled("WebRTC-Aec3UseShortDelayEstimatorWindow");
+}
+
 bool EnableReverbBasedOnRender() {
   return !field_trial::IsEnabled("WebRTC-Aec3ReverbBasedOnRenderKillSwitch");
 }
@@ -37,9 +41,31 @@ bool EnableReverbModelling() {
   return !field_trial::IsEnabled("WebRTC-Aec3ReverbModellingKillSwitch");
 }
 
+bool EnableSuppressorNearendAveraging() {
+  return !field_trial::IsEnabled(
+      "WebRTC-Aec3SuppressorNearendAveragingKillSwitch");
+}
+
+bool EnableSlowFilterAdaptation() {
+  return !field_trial::IsEnabled("WebRTC-Aec3SlowFilterAdaptationKillSwitch");
+}
+
+bool EnableShadowFilterJumpstart() {
+  return !field_trial::IsEnabled("WebRTC-Aec3ShadowFilterJumpstartKillSwitch");
+}
+
+bool EnableUnityInitialRampupGain() {
+  return field_trial::IsEnabled("WebRTC-Aec3EnableUnityInitialRampupGain");
+}
+
+bool EnableUnityNonZeroRampupGain() {
+  return field_trial::IsEnabled("WebRTC-Aec3EnableUnityNonZeroRampupGain");
+}
+
 // Method for adjusting config parameter dependencies..
 EchoCanceller3Config AdjustConfig(const EchoCanceller3Config& config) {
   EchoCanceller3Config adjusted_cfg = config;
+  const EchoCanceller3Config default_cfg;
 
   if (!EnableReverbModelling()) {
     adjusted_cfg.ep_strength.default_len = 0.f;
@@ -76,8 +102,49 @@ EchoCanceller3Config AdjustConfig(const EchoCanceller3Config& config) {
     }
   }
 
+  if (UseShortDelayEstimatorWindow()) {
+    adjusted_cfg.delay.num_filters =
+        std::min(adjusted_cfg.delay.num_filters, static_cast<size_t>(5));
+  }
+
   if (EnableReverbBasedOnRender() == false) {
     adjusted_cfg.ep_strength.reverb_based_on_render = false;
+  }
+
+  if (!EnableSuppressorNearendAveraging()) {
+    adjusted_cfg.suppressor.nearend_average_blocks = 1;
+  }
+
+  if (!EnableSlowFilterAdaptation()) {
+    if (!EnableShadowFilterJumpstart()) {
+      adjusted_cfg.filter.main.leakage_converged = 0.005f;
+      adjusted_cfg.filter.main.leakage_diverged = 0.1f;
+    }
+    adjusted_cfg.filter.main_initial.leakage_converged = 0.05f;
+    adjusted_cfg.filter.main_initial.leakage_diverged = 5.f;
+  }
+
+  if (!EnableShadowFilterJumpstart()) {
+    if (EnableSlowFilterAdaptation()) {
+      adjusted_cfg.filter.main.leakage_converged = 0.0005f;
+      adjusted_cfg.filter.main.leakage_diverged = 0.01f;
+    } else {
+      adjusted_cfg.filter.main.leakage_converged = 0.005f;
+      adjusted_cfg.filter.main.leakage_diverged = 0.1f;
+    }
+    adjusted_cfg.filter.main.error_floor = 0.001f;
+  }
+
+  if (EnableUnityInitialRampupGain() &&
+      adjusted_cfg.echo_removal_control.gain_rampup.initial_gain ==
+          default_cfg.echo_removal_control.gain_rampup.initial_gain) {
+    adjusted_cfg.echo_removal_control.gain_rampup.initial_gain = 1.f;
+  }
+
+  if (EnableUnityNonZeroRampupGain() &&
+      adjusted_cfg.echo_removal_control.gain_rampup.first_non_zero_gain ==
+          default_cfg.echo_removal_control.gain_rampup.first_non_zero_gain) {
+    adjusted_cfg.echo_removal_control.gain_rampup.first_non_zero_gain = 1.f;
   }
 
   return adjusted_cfg;

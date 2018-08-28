@@ -1436,7 +1436,6 @@ static vpx_codec_err_t ctrl_set_svc_layer_id(vpx_codec_alg_priv_t *ctx,
   VP9_COMP *const cpi = (VP9_COMP *)ctx->cpi;
   SVC *const svc = &cpi->svc;
 
-  svc->first_spatial_layer_to_encode = data->spatial_layer_id;
   svc->spatial_layer_to_encode = data->spatial_layer_id;
   svc->temporal_layer_id = data->temporal_layer_id;
   // Checks on valid layer_id input.
@@ -1444,10 +1443,7 @@ static vpx_codec_err_t ctrl_set_svc_layer_id(vpx_codec_alg_priv_t *ctx,
       svc->temporal_layer_id >= (int)ctx->cfg.ts_number_layers) {
     return VPX_CODEC_INVALID_PARAM;
   }
-  if (svc->first_spatial_layer_to_encode < 0 ||
-      svc->first_spatial_layer_to_encode >= (int)ctx->cfg.ss_number_layers) {
-    return VPX_CODEC_INVALID_PARAM;
-  }
+
   return VPX_CODEC_OK;
 }
 
@@ -1536,6 +1532,28 @@ static vpx_codec_err_t ctrl_set_svc_frame_drop_layer(vpx_codec_alg_priv_t *ctx,
   cpi->svc.framedrop_mode = data->framedrop_mode;
   for (sl = 0; sl < cpi->svc.number_spatial_layers; ++sl)
     cpi->svc.framedrop_thresh[sl] = data->framedrop_thresh[sl];
+  // Don't allow max_consec_drop values below 1.
+  cpi->svc.max_consec_drop = VPXMAX(1, data->max_consec_drop);
+  return VPX_CODEC_OK;
+}
+
+static vpx_codec_err_t ctrl_set_svc_gf_temporal_ref(vpx_codec_alg_priv_t *ctx,
+                                                    va_list args) {
+  VP9_COMP *const cpi = ctx->cpi;
+  const unsigned int data = va_arg(args, unsigned int);
+  cpi->svc.use_gf_temporal_ref = data;
+  return VPX_CODEC_OK;
+}
+
+static vpx_codec_err_t ctrl_set_svc_spatial_layer_sync(
+    vpx_codec_alg_priv_t *ctx, va_list args) {
+  VP9_COMP *const cpi = ctx->cpi;
+  vpx_svc_spatial_layer_sync_t *data =
+      va_arg(args, vpx_svc_spatial_layer_sync_t *);
+  int sl;
+  for (sl = 0; sl < cpi->svc.number_spatial_layers; ++sl)
+    cpi->svc.spatial_layer_sync[sl] = data->spatial_layer_sync[sl];
+  cpi->svc.set_intra_only_frame = data->base_layer_intra_only;
   return VPX_CODEC_OK;
 }
 
@@ -1624,6 +1642,8 @@ static vpx_codec_ctrl_fn_map_t encoder_ctrl_maps[] = {
   { VP9E_ENABLE_MOTION_VECTOR_UNIT_TEST, ctrl_enable_motion_vector_unit_test },
   { VP9E_SET_SVC_INTER_LAYER_PRED, ctrl_set_svc_inter_layer_pred },
   { VP9E_SET_SVC_FRAME_DROP_LAYER, ctrl_set_svc_frame_drop_layer },
+  { VP9E_SET_SVC_GF_TEMPORAL_REF, ctrl_set_svc_gf_temporal_ref },
+  { VP9E_SET_SVC_SPATIAL_LAYER_SYNC, ctrl_set_svc_spatial_layer_sync },
 
   // Getters
   { VP8E_GET_LAST_QUANTIZER, ctrl_get_quantizer },

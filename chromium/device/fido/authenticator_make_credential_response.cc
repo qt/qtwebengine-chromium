@@ -7,10 +7,10 @@
 #include <utility>
 
 #include "device/fido/attestation_object.h"
+#include "device/fido/attestation_statement_formats.h"
 #include "device/fido/attested_credential_data.h"
 #include "device/fido/authenticator_data.h"
 #include "device/fido/ec_public_key.h"
-#include "device/fido/fido_attestation_statement.h"
 #include "device/fido/fido_parsing_utils.h"
 
 namespace device {
@@ -18,7 +18,7 @@ namespace device {
 // static
 base::Optional<AuthenticatorMakeCredentialResponse>
 AuthenticatorMakeCredentialResponse::CreateFromU2fRegisterResponse(
-    const std::vector<uint8_t>& relying_party_id_hash,
+    base::span<const uint8_t, kRpIdHashLength> relying_party_id_hash,
     base::span<const uint8_t> u2f_data) {
   auto public_key = ECPublicKey::ExtractFromU2fRegistrationResponse(
       fido_parsing_utils::kEs256, u2f_data);
@@ -37,13 +37,12 @@ AuthenticatorMakeCredentialResponse::CreateFromU2fRegisterResponse(
       attested_credential_data->credential_id();
 
   // The counter is zeroed out for Register requests.
-  std::vector<uint8_t> counter(4u);
+  std::array<uint8_t, 4> counter = {};
   constexpr uint8_t flags =
       static_cast<uint8_t>(AuthenticatorData::Flag::kTestOfUserPresence) |
       static_cast<uint8_t>(AuthenticatorData::Flag::kAttestation);
 
-  AuthenticatorData authenticator_data(std::move(relying_party_id_hash), flags,
-                                       std::move(counter),
+  AuthenticatorData authenticator_data(relying_party_id_hash, flags, counter,
                                        std::move(attested_credential_data));
 
   auto fido_attestation_statement =
@@ -85,9 +84,14 @@ bool AuthenticatorMakeCredentialResponse::
       .IsAttestationCertificateInappropriatelyIdentifying();
 }
 
-const std::vector<uint8_t>& AuthenticatorMakeCredentialResponse::GetRpIdHash()
-    const {
+const std::array<uint8_t, kRpIdHashLength>&
+AuthenticatorMakeCredentialResponse::GetRpIdHash() const {
   return attestation_object_.rp_id_hash();
+}
+
+std::vector<uint8_t> GetSerializedCtapDeviceResponse(
+    const AuthenticatorMakeCredentialResponse& response) {
+  return SerializeToCtapStyleCborEncodedBytes(response.attestation_object());
 }
 
 }  // namespace device

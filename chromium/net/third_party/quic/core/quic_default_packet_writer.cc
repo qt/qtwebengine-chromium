@@ -6,7 +6,7 @@
 
 #include "net/third_party/quic/platform/impl/quic_socket_utils.h"
 
-namespace net {
+namespace quic {
 
 QuicDefaultPacketWriter::QuicDefaultPacketWriter(int fd)
     : fd_(fd), write_blocked_(false) {}
@@ -47,8 +47,24 @@ QuicByteCount QuicDefaultPacketWriter::GetMaxPacketSize(
   return kMaxPacketSize;
 }
 
+bool QuicDefaultPacketWriter::SupportsReleaseTime() const {
+  return false;
+}
+
+bool QuicDefaultPacketWriter::IsBatchMode() const {
+  return false;
+}
+
+char* QuicDefaultPacketWriter::GetNextWriteLocation() const {
+  return nullptr;
+}
+
+WriteResult QuicDefaultPacketWriter::Flush() {
+  return WriteResult(WRITE_STATUS_OK, 0);
+}
+
 void QuicDefaultPacketWriter::set_write_blocked(bool is_blocked) {
   write_blocked_ = is_blocked;
 }
 
-}  // namespace net
+}  // namespace quic

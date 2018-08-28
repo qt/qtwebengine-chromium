@@ -2,13 +2,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/buildflag_header.gni")
 import("//build/config/ios/rules.gni")
 import("//build/config/mac/base_rules.gni")
 import("//build/mac/tweak_info_plist.gni")
 import("//ios/build/chrome_build.gni")
 import("//ios/build/config.gni")
 import("//ios/public/provider/chrome/browser/build_config.gni")
+import("//ios/third_party/firebase/firebase.gni")
 import("//services/service_manager/public/service_manifest.gni")
+
+buildflag_header("firebase_buildflags") {
+  header = "firebase_buildflags.h"
+  flags = [ "FIREBASE_ENABLED=$ios_enable_firebase_sdk" ]
+}
 
 service_manifest("chrome_browser_manifest_overlay") {
   source = "//ios/chrome/browser/chrome_browser_manifest_overlay.json"
@@ -36,7 +43,7 @@ source_set("unit_tests") {
     "chrome_overlay_window_testing.h",
     "deferred_initialization_runner_unittest.mm",
     "main_application_delegate_unittest.mm",
-    "main_controller_unittest.mm",
+    "tab_opener_unittest.mm",
   ]
   deps = [
     ":app",
@@ -121,6 +128,7 @@ source_set("app_internal") {
 
   deps = [
     ":app",
+    ":firebase_buildflags",
     ":tests_hook",
     "//base",
     "//components/bookmarks/browser",
@@ -171,7 +179,7 @@ source_set("app_internal") {
     "//ios/chrome/browser/geolocation",
     "//ios/chrome/browser/geolocation:geolocation_internal",
     "//ios/chrome/browser/history",
-    "//ios/chrome/browser/mailto:features",
+    "//ios/chrome/browser/mailto:feature_flags",
     "//ios/chrome/browser/memory",
     "//ios/chrome/browser/metrics",
     "//ios/chrome/browser/metrics:metrics_internal",
@@ -230,7 +238,7 @@ source_set("app_internal") {
     "//ios/third_party/material_roboto_font_loader_ios",
     "//ios/web",
     "//ios/web/public/app",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//net",
     "//skia",
     "//ui/base",
@@ -283,6 +291,9 @@ ios_app_bundle("chrome") {
     ":main",
     ":tests_fake_hook",
   ]
+  if (ios_enable_firebase_sdk) {
+    deps += [ "//ios/third_party/firebase" ]
+  }
 
   if (current_toolchain == default_toolchain) {
     if (ios_enable_search_widget_extension) {

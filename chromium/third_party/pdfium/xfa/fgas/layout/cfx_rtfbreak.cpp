@@ -153,10 +153,18 @@ void CFX_RTFBreak::AppendChar_Tab(CFX_Char* pCurChar) {
 
   int32_t& iLineWidth = m_pCurLine->m_iWidth;
   int32_t iCharWidth = iLineWidth;
-  if (GetPositionedTab(&iCharWidth))
-    iCharWidth -= iLineWidth;
-  else
-    iCharWidth = m_iTabWidth * (iLineWidth / m_iTabWidth + 1) - iLineWidth;
+  FX_SAFE_INT32 iSafeCharWidth;
+  if (GetPositionedTab(&iCharWidth)) {
+    iSafeCharWidth = iCharWidth;
+  } else {
+    // Tab width is >= 160000, so this part does not need to be checked.
+    ASSERT(m_iTabWidth >= 160000);
+    iSafeCharWidth = iLineWidth / m_iTabWidth + 1;
+    iSafeCharWidth *= m_iTabWidth;
+  }
+  iSafeCharWidth -= iLineWidth;
+
+  iCharWidth = iSafeCharWidth.ValueOrDefault(0);
 
   pCurChar->m_iCharWidth = iCharWidth;
   iLineWidth += iCharWidth;
@@ -347,7 +355,7 @@ bool CFX_RTFBreak::EndBreak_SplitLine(CFX_BreakLine* pNextLine,
       case FX_CHARTYPE_Space:
         break;
       default:
-        SplitTextLine(m_pCurLine, pNextLine, !m_bPagination && bAllChars);
+        SplitTextLine(m_pCurLine.Get(), pNextLine, !m_bPagination && bAllChars);
         bDone = true;
         break;
     }
@@ -767,7 +775,6 @@ int32_t CFX_RTFBreak::GetDisplayPos(const FX_RTFTEXTOBJ* pText,
       } else if (bRTLPiece) {
         wForm = FX_GetMirrorChar(wch, dwProps);
       }
-      dwProps = FX_GetUnicodeProperties(wForm);
 
       if (!bEmptyChar) {
         if (bCharCode) {

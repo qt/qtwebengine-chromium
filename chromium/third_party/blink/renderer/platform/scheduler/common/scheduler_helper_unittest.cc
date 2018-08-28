@@ -9,12 +9,11 @@
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/task/sequence_manager/lazy_now.h"
+#include "base/task/sequence_manager/task_queue.h"
+#include "base/task/sequence_manager/test/sequence_manager_for_test.h"
 #include "base/test/scoped_task_environment.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/renderer/platform/scheduler/base/task_queue.h"
-#include "third_party/blink/renderer/platform/scheduler/base/test/task_queue_manager_for_test.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/non_main_thread_scheduler_helper.h"
 
 using testing::_;
@@ -55,15 +54,15 @@ class SchedulerHelperTest : public testing::Test {
             base::test::ScopedTaskEnvironment::ExecutionMode::QUEUED) {
     // Null clock triggers some assertions.
     task_environment_.FastForwardBy(base::TimeDelta::FromMilliseconds(5));
-    std::unique_ptr<base::sequence_manager::TaskQueueManagerForTest>
-        task_queue_manager =
-            base::sequence_manager::TaskQueueManagerForTest::Create(
-                nullptr, base::ThreadTaskRunnerHandle::Get(),
+    std::unique_ptr<base::sequence_manager::SequenceManagerForTest>
+        sequence_manager =
+            base::sequence_manager::SequenceManagerForTest::Create(
+                nullptr, task_environment_.GetMainThreadTaskRunner(),
                 task_environment_.GetMockTickClock());
-    task_queue_manager_ = task_queue_manager.get();
+    sequence_manager_ = sequence_manager.get();
     scheduler_helper_ = std::make_unique<NonMainThreadSchedulerHelper>(
-        std::move(task_queue_manager), nullptr, TaskType::kInternalTest);
-    default_task_runner_ = scheduler_helper_->DefaultWorkerTaskQueue();
+        std::move(sequence_manager), nullptr, TaskType::kInternalTest);
+    default_task_runner_ = scheduler_helper_->DefaultNonMainThreadTaskQueue();
   }
 
   ~SchedulerHelperTest() override = default;
@@ -87,8 +86,8 @@ class SchedulerHelperTest : public testing::Test {
  protected:
   base::test::ScopedTaskEnvironment task_environment_;
   std::unique_ptr<NonMainThreadSchedulerHelper> scheduler_helper_;
-  base::sequence_manager::TaskQueueManagerForTest*
-      task_queue_manager_;  // Owned by scheduler_helper.
+  base::sequence_manager::SequenceManagerForTest*
+      sequence_manager_;  // Owned by scheduler_helper.
   scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(SchedulerHelperTest);
@@ -132,15 +131,15 @@ TEST_F(SchedulerHelperTest, IsShutdown) {
 
 TEST_F(SchedulerHelperTest, GetNumberOfPendingTasks) {
   std::vector<std::string> run_order;
-  scheduler_helper_->DefaultWorkerTaskQueue()->PostTask(
+  scheduler_helper_->DefaultNonMainThreadTaskQueue()->PostTask(
       FROM_HERE, base::BindOnce(&AppendToVectorTestTask, &run_order, "D1"));
-  scheduler_helper_->DefaultWorkerTaskQueue()->PostTask(
+  scheduler_helper_->DefaultNonMainThreadTaskQueue()->PostTask(
       FROM_HERE, base::BindOnce(&AppendToVectorTestTask, &run_order, "D2"));
-  scheduler_helper_->ControlWorkerTaskQueue()->PostTask(
+  scheduler_helper_->ControlNonMainThreadTaskQueue()->PostTask(
       FROM_HERE, base::BindOnce(&AppendToVectorTestTask, &run_order, "C1"));
-  EXPECT_EQ(3U, task_queue_manager_->PendingTasksCount());
+  EXPECT_EQ(3U, sequence_manager_->PendingTasksCount());
   task_environment_.RunUntilIdle();
-  EXPECT_EQ(0U, task_queue_manager_->PendingTasksCount());
+  EXPECT_EQ(0U, sequence_manager_->PendingTasksCount());
 }
 
 namespace {
@@ -157,7 +156,7 @@ TEST_F(SchedulerHelperTest, ObserversNotifiedFor_DefaultTaskRunner) {
   MockTaskObserver observer;
   scheduler_helper_->AddTaskObserver(&observer);
 
-  scheduler_helper_->DefaultWorkerTaskQueue()->PostTask(
+  scheduler_helper_->DefaultNonMainThreadTaskQueue()->PostTask(
       FROM_HERE, base::BindOnce(&NopTask));
 
   EXPECT_CALL(observer, WillProcessTask(_)).Times(1);
@@ -169,7 +168,7 @@ TEST_F(SchedulerHelperTest, ObserversNotNotifiedFor_ControlTaskQueue) {
   MockTaskObserver observer;
   scheduler_helper_->AddTaskObserver(&observer);
 
-  scheduler_helper_->ControlWorkerTaskQueue()->PostTask(
+  scheduler_helper_->ControlNonMainThreadTaskQueue()->PostTask(
       FROM_HERE, base::BindOnce(&NopTask));
 
   EXPECT_CALL(observer, WillProcessTask(_)).Times(0);

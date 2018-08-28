@@ -39,6 +39,15 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <locale.h>
+
+#ifdef ENABLE_NLS
+#include <libintl.h>
+#define _(x)		(dgettext(GETTEXT_PACKAGE, x))
+#else
+#define dgettext(d, s)	(s)
+#define _(x)		(x)
+#endif
 
 #ifndef HAVE_GETOPT
 #define HAVE_GETOPT 0
@@ -52,8 +61,8 @@
 #define _GNU_SOURCE
 #include <getopt.h>
 static const struct option longopts[] = {
-    {"ignore-blanks", 0, 0, 'b'},
     {"index", 1, 0, 'i'},
+    {"brief", 0, 0, 'b'},
     {"format", 1, 0, 'f'},
     {"version", 0, 0, 'V'},
     {"help", 0, 0, 'h'},
@@ -71,26 +80,26 @@ usage (char *program, int error)
 {
     FILE *file = error ? stderr : stdout;
 #if HAVE_GETOPT_LONG
-    fprintf (file, "usage: %s [-Vbh] [-i index] [-f FORMAT] [--ignore-blanks] [--index index] [--format FORMAT] [--version] [--help] font-file...\n",
+    fprintf (file, _("usage: %s [-bVh] [-i index] [-f FORMAT] [--index index] [--brief] [--format FORMAT] [--version] [--help] font-file...\n"),
 	     program);
 #else
-    fprintf (file, "usage: %s [-Vbh] [-i index] [-f FORMAT] font-file...\n",
+    fprintf (file, _("usage: %s [-bVh] [-i index] [-f FORMAT] font-file...\n"),
 	     program);
 #endif
-    fprintf (file, "Query font files and print resulting pattern(s)\n");
+    fprintf (file, _("Query font files and print resulting pattern(s)\n"));
     fprintf (file, "\n");
 #if HAVE_GETOPT_LONG
-    fprintf (file, "  -b, --ignore-blanks  ignore blanks to compute langauges\n");
-    fprintf (file, "  -i, --index INDEX    display the INDEX face of each font file only\n");
-    fprintf (file, "  -f, --format=FORMAT  use the given output format\n");
-    fprintf (file, "  -V, --version        display font config version and exit\n");
-    fprintf (file, "  -h, --help           display this help and exit\n");
+    fprintf (file, _("  -i, --index INDEX    display the INDEX face of each font file only\n"));
+    fprintf (file, _("  -b, --brief          display font pattern briefly\n"));
+    fprintf (file, _("  -f, --format=FORMAT  use the given output format\n"));
+    fprintf (file, _("  -V, --version        display font config version and exit\n"));
+    fprintf (file, _("  -h, --help           display this help and exit\n"));
 #else
-    fprintf (file, "  -b         (ignore-blanks) ignore blanks to compute languages\n");
-    fprintf (file, "  -i INDEX   (index)         display the INDEX face of each font file only\n");
-    fprintf (file, "  -f FORMAT  (format)        use the given output format\n");
-    fprintf (file, "  -V         (version)       display font config version and exit\n");
-    fprintf (file, "  -h         (help)          display this help and exit\n");
+    fprintf (file, _("  -i INDEX   (index)         display the INDEX face of each font file only\n"));
+    fprintf (file, _("  -b         (brief)         display font pattern briefly\n"));
+    fprintf (file, _("  -f FORMAT  (format)        use the given output format\n"));
+    fprintf (file, _("  -V         (version)       display font config version and exit\n"));
+    fprintf (file, _("  -h         (help)          display this help and exit\n"));
 #endif
     exit (error);
 }
@@ -98,32 +107,28 @@ usage (char *program, int error)
 int
 main (int argc, char **argv)
 {
-    FT_Library	ftLibrary;
-    int		index_set = 0;
-    int		set_index = 0;
-    int		set_face_num = 0;
-    int		set_instance_num = 0;
-    int		ignore_blanks = 0;
+    unsigned int id = (unsigned int) -1;
+    int         brief = 0;
+    FcFontSet   *fs;
     FcChar8     *format = NULL;
-    FcBlanks    *blanks = NULL;
     int		err = 0;
     int		i;
 #if HAVE_GETOPT_LONG || HAVE_GETOPT
     int		c;
 
+    setlocale (LC_ALL, "");
 #if HAVE_GETOPT_LONG
-    while ((c = getopt_long (argc, argv, "bi:f:Vh", longopts, NULL)) != -1)
+    while ((c = getopt_long (argc, argv, "i:bf:Vh", longopts, NULL)) != -1)
 #else
-    while ((c = getopt (argc, argv, "bi:f:Vh")) != -1)
+    while ((c = getopt (argc, argv, "i:bf:Vh")) != -1)
 #endif
     {
 	switch (c) {
-	case 'b':
-	    ignore_blanks = 1;
-	    break;
 	case 'i':
-	    index_set = 1;
-	    set_index = atoi (optarg);
+	    id = (unsigned int) strtol (optarg, NULL, 0); /* strtol() To handle -1. */
+	    break;
+	case 'b':
+	    brief = 1;
 	    break;
 	case 'f':
 	    format = (FcChar8 *) strdup (optarg);
@@ -146,75 +151,46 @@ main (int argc, char **argv)
     if (i == argc)
 	usage (argv[0], 1);
 
-    if (FT_Init_FreeType (&ftLibrary))
-	return 1;
+    fs = FcFontSetCreate ();
 
-    if (!ignore_blanks)
-	blanks = FcConfigGetBlanks (NULL);
     for (; i < argc; i++)
     {
-	FT_Face face;
-	int num_faces = 0;
-	int num_instances = 0;
-	int face_num = 0;
-	int instance_num = 0;
-	int id;
-
-	if (index_set)
+	if (!FcFreeTypeQueryAll ((FcChar8*) argv[i], id, NULL, NULL, fs))
 	{
-	    face_num = set_face_num = set_index & 0xFFFF;
-	    instance_num = set_instance_num = set_index >> 16;
+	    fprintf (stderr, _("Can't query face %u of font file %s\n"), id, argv[i]);
+	    err = 1;
 	}
-
-	do {
-	    FcPattern *pat;
-
-	    id = ((instance_num << 16) + face_num);
-	    printf("id %d\n", id);
-	    if (FT_New_Face (ftLibrary, argv[i], id, &face))
-	      break;
-	    num_faces = face->num_faces;
-	    num_instances = face->style_flags >> 16;
-	    pat = FcFreeTypeQueryFace (face, (const FcChar8 *) argv[i], id, blanks);
-	    FT_Done_Face (face);
-
-	    if (pat)
-	    {
-		if (format)
-		{
-		    FcChar8 *s;
-
-		    s = FcPatternFormat (pat, format);
-		    if (s)
-		    {
-			printf ("%s", s);
-			FcStrFree (s);
-		    }
-		}
-		else
-		{
-		    FcPatternPrint (pat);
-		}
-
-		FcPatternDestroy (pat);
-	    }
-	    else
-	    {
-		fprintf (stderr, "Can't query face %d of font file %s\n", id, argv[i]);
-		err = 1;
-	    }
-
-	    if (instance_num < num_instances && !set_instance_num)
-		instance_num++;
-	    else
-	    {
-		face_num++;
-		instance_num = 0;
-	    }
-	} while (!err && (!index_set || face_num == set_face_num) && face_num < num_faces);
     }
 
-    FT_Done_FreeType (ftLibrary);
+    for (i = 0; i < fs->nfont; i++)
+    {
+	FcPattern *pat = fs->fonts[i];
+
+	if (brief)
+	{
+	    FcPatternDel (pat, FC_CHARSET);
+	    FcPatternDel (pat, FC_LANG);
+	}
+
+	if (format)
+	{
+	    FcChar8 *s;
+
+	    s = FcPatternFormat (pat, format);
+	    if (s)
+	    {
+		printf ("%s", s);
+		FcStrFree (s);
+	    }
+	}
+	else
+	{
+	    FcPatternPrint (pat);
+	}
+    }
+
+    FcFontSetDestroy (fs);
+
     FcFini ();
     return err;
 }

@@ -31,9 +31,8 @@
 #include "third_party/blink/renderer/core/fileapi/file_error.h"
 
 #include "third_party/blink/public/platform/web_file_error.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 
 namespace blink {
@@ -74,37 +73,37 @@ const char kTypeMismatchErrorMessage[] =
 
 namespace {
 
-ExceptionCode ErrorCodeToExceptionCode(ErrorCode code) {
+DOMExceptionCode ErrorCodeToExceptionCode(ErrorCode code) {
   switch (code) {
     case kOK:
-      return 0;
+      return DOMExceptionCode::kNoError;
     case kNotFoundErr:
-      return kNotFoundError;
+      return DOMExceptionCode::kNotFoundError;
     case kSecurityErr:
-      return kSecurityError;
+      return DOMExceptionCode::kSecurityError;
     case kAbortErr:
-      return kAbortError;
+      return DOMExceptionCode::kAbortError;
     case kNotReadableErr:
-      return kNotReadableError;
+      return DOMExceptionCode::kNotReadableError;
     case kEncodingErr:
-      return kEncodingError;
+      return DOMExceptionCode::kEncodingError;
     case kNoModificationAllowedErr:
-      return kNoModificationAllowedError;
+      return DOMExceptionCode::kNoModificationAllowedError;
     case kInvalidStateErr:
-      return kInvalidStateError;
+      return DOMExceptionCode::kInvalidStateError;
     case kSyntaxErr:
-      return kSyntaxError;
+      return DOMExceptionCode::kSyntaxError;
     case kInvalidModificationErr:
-      return kInvalidModificationError;
+      return DOMExceptionCode::kInvalidModificationError;
     case kQuotaExceededErr:
-      return kQuotaExceededError;
+      return DOMExceptionCode::kQuotaExceededError;
     case kTypeMismatchErr:
-      return kTypeMismatchError;
+      return DOMExceptionCode::kTypeMismatchError;
     case kPathExistsErr:
-      return kPathExistsError;
+      return DOMExceptionCode::kPathExistsError;
     default:
       NOTREACHED();
-      return code;
+      return DOMExceptionCode::kUnknownError;
   }
 }
 
@@ -146,19 +145,24 @@ const char* ErrorCodeToMessage(ErrorCode code) {
 
 }  // namespace
 
-void ThrowDOMException(ExceptionState& exception_state, ErrorCode code) {
+void ThrowDOMException(ExceptionState& exception_state,
+                       ErrorCode code,
+                       String message) {
   if (code == kOK)
     return;
 
   // SecurityError is special-cased, as we want to route those exceptions
-  // through ExceptionState::throwSecurityError.
+  // through ExceptionState::ThrowSecurityError.
   if (code == kSecurityErr) {
     exception_state.ThrowSecurityError(kSecurityErrorMessage);
     return;
   }
 
-  exception_state.ThrowDOMException(ErrorCodeToExceptionCode(code),
-                                    ErrorCodeToMessage(code));
+  if (message.IsNull()) {
+    message = ErrorCodeToMessage(code);
+  }
+
+  exception_state.ThrowDOMException(ErrorCodeToExceptionCode(code), message);
 }
 
 DOMException* CreateDOMException(ErrorCode code) {

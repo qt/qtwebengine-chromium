@@ -4,10 +4,11 @@
 
 #include "base/fuchsia/component_context.h"
 
-#include <fdio/util.h>
+#include <lib/fdio/util.h>
+#include <lib/zx/channel.h>
+#include <utility>
 
-#include "base/fuchsia/scoped_zx_handle.h"
-#include "base/fuchsia/services_directory.h"
+#include "base/fuchsia/fuchsia_logging.h"
 #include "base/no_destructor.h"
 
 namespace base {
@@ -16,19 +17,19 @@ namespace fuchsia {
 namespace {
 
 // static
-ScopedZxHandle ConnectToServiceRoot() {
-  ScopedZxHandle h1;
-  ScopedZxHandle h2;
-  zx_status_t result = zx_channel_create(0, h1.receive(), h2.receive());
+zx::channel ConnectToServiceRoot() {
+  zx::channel client_channel;
+  zx::channel server_channel;
+  zx_status_t result = zx::channel::create(0, &client_channel, &server_channel);
   ZX_CHECK(result == ZX_OK, result) << "zx_channel_create()";
-  result = fdio_service_connect("/svc/.", h1.release());
+  result = fdio_service_connect("/svc/.", server_channel.release());
   ZX_CHECK(result == ZX_OK, result) << "Failed to open /svc";
-  return h2;
+  return client_channel;
 }
 
 }  // namespace
 
-ComponentContext::ComponentContext(ScopedZxHandle service_root)
+ComponentContext::ComponentContext(zx::channel service_root)
     : service_root_(std::move(service_root)) {
   DCHECK(service_root_);
 }
@@ -42,12 +43,10 @@ ComponentContext* ComponentContext::GetDefault() {
   return component_context.get();
 }
 
-void ComponentContext::ConnectToService(FidlInterfaceRequest request) {
+zx_status_t ComponentContext::ConnectToService(FidlInterfaceRequest request) {
   DCHECK(request.is_valid());
-  zx_status_t result =
-      fdio_service_connect_at(service_root_.get(), request.interface_name(),
-                              request.TakeChannel().release());
-  ZX_CHECK(result == ZX_OK, result) << "fdio_service_connect_at()";
+  return fdio_service_connect_at(service_root_.get(), request.interface_name(),
+                                 request.TakeChannel().release());
 }
 
 }  // namespace fuchsia

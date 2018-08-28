@@ -74,7 +74,7 @@
     [CrossOrigin, Custom=Setter] attribute Window opener;
     [Replaceable, CrossOrigin] readonly attribute Window? parent;
     [CheckSecurity=ReturnValue, Custom=Getter] readonly attribute Element? frameElement;
-    [CallWith=(ExecutionContext,CurrentWindow,EnteredWindow), RaisesException] Window? open(optional [TreatNullAs=EmptyString] USVString url="", optional DOMString target = "_blank", optional [TreatNullAs=EmptyString] DOMString features = "");
+    [CallWith=(ExecutionContext,CurrentWindow,EnteredWindow), RaisesException] Window? open(optional [TreatNullAs=EmptyString] URLString url="", optional DOMString target = "_blank", optional [TreatNullAs=EmptyString] DOMString features = "");
 
     // indexed properties
     // https://html.spec.whatwg.org/C/browsers.html#windowproxy-getownproperty
@@ -100,7 +100,9 @@
     [Measure] long requestIdleCallback(IdleRequestCallback callback, optional IdleRequestOptions options);
     void cancelIdleCallback(long handle);
 
-    [CrossOrigin, Custom, RaisesException] void postMessage(any message, DOMString targetOrigin, optional sequence<object> transfer = []);
+    [CrossOrigin, CallWith=CurrentWindow, RaisesException] void postMessage(any message, USVString targetOrigin, optional sequence<object> transfer = []);
+
+    [CrossOrigin, CallWith=CurrentWindow, RaisesException, RuntimeEnabled=WindowPostMessageOptions] void postMessage(any message, optional sequence<object> transfer = [], optional WindowPostMessageOptions options);
 
     // Custom elements
     // https://w3c.github.io/webcomponents/spec/custom/#custom-elements-api

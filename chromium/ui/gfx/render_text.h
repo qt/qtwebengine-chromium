@@ -27,6 +27,7 @@
 #include "ui/gfx/font_render_params.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/range/range.h"
@@ -241,6 +242,13 @@ class GFX_EXPORT RenderText {
   }
   void set_selection_background_focused_color(SkColor color) {
     selection_background_focused_color_ = color;
+  }
+
+  bool symmetric_selection_visual_bounds() const {
+    return symmetric_selection_visual_bounds_;
+  }
+  void set_symmetric_selection_visual_bounds(bool symmetric) {
+    symmetric_selection_visual_bounds_ = symmetric;
   }
 
   bool focused() const { return focused_; }
@@ -490,6 +498,9 @@ class GFX_EXPORT RenderText {
   // chosen.
   virtual std::vector<FontSpan> GetFontSpansForTesting() = 0;
 
+  // Returns rectangle surrounding the current string (from origin to size)
+  RectF GetStringRect();
+
   // Get the visual bounds containing the logical substring within the |range|.
   // If |range| is empty, the result is empty. These bounds could be visually
   // discontinuous if the substring is split by a LTR/RTL level change.
@@ -693,6 +704,11 @@ class GFX_EXPORT RenderText {
   static int DetermineBaselineCenteringText(const int display_height,
                                             const FontList& font_list);
 
+  // Returns an expanded version of |rect| that is vertically symmetric with
+  // respect to the center of |display_rect|.
+  static gfx::Rect ExpandToBeVerticallySymmetric(const gfx::Rect& rect,
+                                                 const gfx::Rect& display_rect);
+
  private:
   friend class test::RenderTextTestApi;
 
@@ -778,6 +794,11 @@ class GFX_EXPORT RenderText {
 
   // The background color used for drawing the selection when focused.
   SkColor selection_background_focused_color_;
+
+  // Whether the selection visual bounds should be expanded vertically to be
+  // vertically symmetric with respect to the display rect. Note this flag has
+  // no effect on multi-line text.
+  bool symmetric_selection_visual_bounds_ = false;
 
   // The focus state of the text.
   bool focused_;

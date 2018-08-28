@@ -17,7 +17,6 @@ rtc_static_library("encoded_frame") {
   deps = [
     ":video_codec_interface",
     "../../:webrtc_common",
-    "../../api:optional",
     "../../api/video:video_frame_i420",
     "../../common_video:common_video",
     "../../modules:module_api",
@@ -28,6 +27,7 @@ rtc_static_library("encoded_frame") {
     "../../rtc_base/experiments:alr_experiment",
     "../../system_wrappers:field_trial_api",
     "../../system_wrappers:system_wrappers",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 
   if (!build_with_chromium && is_clang) {
@@ -36,9 +36,45 @@ rtc_static_library("encoded_frame") {
   }
 }
 
+rtc_static_library("nack_module") {
+  visibility = [ "*" ]
+  sources = [
+    "histogram.cc",
+    "histogram.h",
+    "nack_module.cc",
+    "nack_module.h",
+  ]
+
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
+
+  deps = [
+    ":packet",
+    "..:module_api",
+    "../../rtc_base:checks",
+    "../../rtc_base:rtc_base_approved",
+    "../../rtc_base:rtc_numerics",
+    "../../system_wrappers",
+    "../utility:utility",
+  ]
+}
+
+rtc_static_library("packet") {
+  visibility = [ "*" ]
+  sources = [
+    "packet.cc",
+    "packet.h",
+  ]
+  deps = [
+    "..:module_api",
+    "../../:typedefs",
+  ]
+}
+
 rtc_static_library("video_coding") {
   visibility = [ "*" ]
-  allow_poison = [ "software_video_codecs" ]  # TODO(bugs.webrtc.org/7925): Remove.
   deps = []
 
   sources = [
@@ -67,8 +103,6 @@ rtc_static_library("video_coding") {
     "h264_sprop_parameter_sets.h",
     "h264_sps_pps_tracker.cc",
     "h264_sps_pps_tracker.h",
-    "histogram.cc",
-    "histogram.h",
     "include/video_codec_initializer.h",
     "include/video_coding.h",
     "inter_frame_delay.cc",
@@ -84,10 +118,6 @@ rtc_static_library("video_coding") {
     "media_optimization.cc",
     "media_optimization.h",
     "nack_fec_tables.h",
-    "nack_module.cc",
-    "nack_module.h",
-    "packet.cc",
-    "packet.h",
     "packet_buffer.cc",
     "packet_buffer.h",
     "qp_parser.cc",
@@ -111,41 +141,29 @@ rtc_static_library("video_coding") {
     "video_sender.cc",
   ]
 
-  # TODO(jschuh): Bug 1348: fix this warning.
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
   if (!build_with_chromium && is_clang) {
     # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
-  if (rtc_use_builtin_sw_codecs) {
-    deps += [
-      ":webrtc_i420",
-      ":webrtc_vp8",
-      ":webrtc_vp9",
-    ]
-  }
-
   deps += [
     ":codec_globals_headers",
     ":encoded_frame",
+    ":packet",
     ":video_codec_interface",
     ":video_coding_utility",
-    ":webrtc_h264",
-    ":webrtc_vp8_helpers",
     ":webrtc_vp9_helpers",
     "..:module_api",
     "..:module_api_public",
     "../..:webrtc_common",
     "../../:typedefs",
     "../../api:fec_controller_api",
-    "../../api:optional",
     "../../api/video:encoded_frame",
     "../../api/video:video_frame",
     "../../api/video:video_frame_i420",
     "../../api/video_codecs:video_codecs_api",
     "../../common_video",
+    "../../rtc_base:base64",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base",
     "../../rtc_base:rtc_base_approved",
@@ -160,6 +178,8 @@ rtc_static_library("video_coding") {
     "../../system_wrappers:metrics_api",
     "../rtp_rtcp:rtp_rtcp_format",
     "../utility:utility",
+    "//third_party/abseil-cpp/absl/types:optional",
+    "//third_party/abseil-cpp/absl/types:variant",
   ]
 }
 
@@ -202,6 +222,10 @@ rtc_source_set("codec_globals_headers") {
     "codecs/vp8/include/vp8_globals.h",
     "codecs/vp9/include/vp9_globals.h",
   ]
+
+  deps = [
+    "../../rtc_base:checks",
+  ]
 }
 
 rtc_source_set("video_coding_utility") {
@@ -217,6 +241,10 @@ rtc_source_set("video_coding_utility") {
     "utility/moving_average.h",
     "utility/quality_scaler.cc",
     "utility/quality_scaler.h",
+    "utility/simulcast_rate_allocator.cc",
+    "utility/simulcast_rate_allocator.h",
+    "utility/simulcast_utility.cc",
+    "utility/simulcast_utility.h",
     "utility/vp8_header_parser.cc",
     "utility/vp8_header_parser.h",
     "utility/vp9_uncompressed_header_parser.cc",
@@ -233,7 +261,6 @@ rtc_source_set("video_coding_utility") {
     "..:module_api",
     "../..:webrtc_common",
     "../../:typedefs",
-    "../../api:optional",
     "../../api/video_codecs:video_codecs_api",
     "../../common_video",
     "../../modules/rtp_rtcp",
@@ -244,7 +271,10 @@ rtc_source_set("video_coding_utility") {
     "../../rtc_base:sequenced_task_checker",
     "../../rtc_base/experiments:quality_scaling_experiment",
     "../../system_wrappers",
+    "../../system_wrappers:field_trial_api",
+    "../../system_wrappers:metrics_api",
     "../rtp_rtcp:rtp_rtcp_format",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
@@ -271,13 +301,12 @@ rtc_static_library("webrtc_h264") {
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base",
     "../../system_wrappers:metrics_api",
+    "//third_party/abseil-cpp/absl/memory",
+    "//third_party/libyuv",
   ]
 
   if (rtc_use_h264) {
     defines += [ "WEBRTC_USE_H264" ]
-    if (rtc_initialize_ffmpeg) {
-      defines += [ "WEBRTC_INITIALIZE_FFMPEG" ]
-    }
     sources += [
       "codecs/h264/h264_decoder_impl.cc",
       "codecs/h264/h264_decoder_impl.h",
@@ -289,11 +318,6 @@ rtc_static_library("webrtc_h264") {
       "//third_party/ffmpeg:ffmpeg",
       "//third_party/openh264:encoder",
     ]
-
-    # TODO(bugs.webrtc.org/8745): stop using av_lockmgr_register
-    if (!is_win) {
-      cflags = [ "-Wno-deprecated-declarations" ]
-    }
 
     if (!build_with_mozilla) {
       deps += [ "../../media:rtc_media_base" ]
@@ -357,65 +381,23 @@ rtc_static_library("webrtc_multiplex") {
   ]
 }
 
-# This target includes VP8 files that may be used for any VP8 codec, internal SW or external HW.
-rtc_static_library("webrtc_vp8_helpers") {
-  visibility = [ "*" ]
-  sources = [
-    "codecs/vp8/default_temporal_layers.cc",
-    "codecs/vp8/default_temporal_layers.h",
-    "codecs/vp8/include/vp8.h",
-    "codecs/vp8/include/vp8_common_types.h",
-    "codecs/vp8/screenshare_layers.cc",
-    "codecs/vp8/screenshare_layers.h",
-    "codecs/vp8/simulcast_rate_allocator.cc",
-    "codecs/vp8/simulcast_rate_allocator.h",
-    "codecs/vp8/temporal_layers.cc",
-    "codecs/vp8/temporal_layers.h",
-  ]
-
-  # TODO(jschuh): Bug 1348: fix this warning.
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
-  deps = [
-    ":video_codec_interface",
-    ":video_coding_utility",
-    "..:module_api",
-    "../..:webrtc_common",
-    "../../:typedefs",
-    "../../api:optional",
-    "../../api/video:video_frame",
-    "../../api/video_codecs:video_codecs_api",
-    "../../common_video",
-    "../../rtc_base:checks",
-    "../../rtc_base:rtc_base_approved",
-    "../../rtc_base:rtc_numerics",
-    "../../system_wrappers",
-    "../../system_wrappers:field_trial_api",
-    "../../system_wrappers:metrics_api",
-    "//third_party/libyuv",
-  ]
-}
-
 # This target includes the internal SW codec.
 rtc_static_library("webrtc_vp8") {
   visibility = [ "*" ]
   poisonous = [ "software_video_codecs" ]
   sources = [
+    "codecs/vp8/default_temporal_layers.cc",
+    "codecs/vp8/default_temporal_layers.h",
     "codecs/vp8/include/vp8.h",
-    "codecs/vp8/include/vp8_common_types.h",
     "codecs/vp8/libvpx_vp8_decoder.cc",
     "codecs/vp8/libvpx_vp8_decoder.h",
     "codecs/vp8/libvpx_vp8_encoder.cc",
     "codecs/vp8/libvpx_vp8_encoder.h",
+    "codecs/vp8/screenshare_layers.cc",
+    "codecs/vp8/screenshare_layers.h",
+    "codecs/vp8/temporal_layers.cc",
+    "codecs/vp8/temporal_layers.h",
   ]
-
-  # TODO(jschuh): Bug 1348: fix this warning.
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   if (!build_with_chromium && is_clang) {
     # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
@@ -425,11 +407,9 @@ rtc_static_library("webrtc_vp8") {
   deps = [
     ":video_codec_interface",
     ":video_coding_utility",
-    ":webrtc_vp8_helpers",
     "..:module_api",
     "../..:webrtc_common",
     "../../:typedefs",
-    "../../api:optional",
     "../../api/video:video_frame",
     "../../api/video_codecs:video_codecs_api",
     "../../common_video",
@@ -439,6 +419,8 @@ rtc_static_library("webrtc_vp8") {
     "../../system_wrappers",
     "../../system_wrappers:field_trial_api",
     "../../system_wrappers:metrics_api",
+    "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/types:optional",
     "//third_party/libyuv",
   ]
   if (rtc_build_libvpx) {
@@ -455,9 +437,6 @@ rtc_static_library("webrtc_vp9_helpers") {
     "codecs/vp9/svc_rate_allocator.h",
   ]
 
-  # TODO(jschuh): Bug 1348: fix this warning.
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
   if (!build_with_chromium && is_clang) {
     # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
     suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
@@ -466,6 +445,7 @@ rtc_static_library("webrtc_vp9_helpers") {
   deps = [
     ":video_codec_interface",
     "../..:webrtc_common",
+    "../../api/video_codecs:video_codecs_api",
     "../../common_video",
     "../../rtc_base:checks",
   ]
@@ -499,11 +479,17 @@ rtc_static_library("webrtc_vp9") {
     ":webrtc_vp9_helpers",
     "..:module_api",
     "../..:webrtc_common",
+    "../../api/video:video_frame",
+    "../../api/video:video_frame_i010",
+    "../../api/video_codecs:video_codecs_api",
     "../../common_video",
+    "../../media:rtc_media_base",
+    "../../media:rtc_vp9_profile",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base",
     "../../system_wrappers",
     "../rtp_rtcp:rtp_rtcp_format",
+    "//third_party/abseil-cpp/absl/memory",
   ]
   if (rtc_build_libvpx) {
     deps += [ rtc_libvpx_dir ]
@@ -559,10 +545,11 @@ if (rtc_include_tests) {
     }
   }
 
-  rtc_source_set("simulcast_test_utility") {
+  rtc_source_set("simulcast_test_fixture_impl") {
     testonly = true
     sources = [
-      "codecs/vp8/simulcast_test_utility.h",
+      "utility/simulcast_test_fixture_impl.cc",
+      "utility/simulcast_test_fixture_impl.h",
     ]
 
     if (!build_with_chromium && is_clang) {
@@ -574,9 +561,12 @@ if (rtc_include_tests) {
       ":mock_headers",
       ":video_codec_interface",
       ":video_coding",
-      ":webrtc_vp8_helpers",
+      ":video_coding_utility",
+      "../../:webrtc_common",
+      "../../api:simulcast_test_fixture_api",
       "../../api/video:video_frame",
       "../../api/video:video_frame_i420",
+      "../../api/video_codecs:video_codecs_api",
       "../../common_video:common_video",
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base_approved",
@@ -602,7 +592,6 @@ if (rtc_include_tests) {
       ":video_codec_interface",
       ":video_coding",
       ":video_coding_utility",
-      ":webrtc_vp8_helpers",
       ":webrtc_vp9_helpers",
       "../..:webrtc_common",
       "../../:typedefs",
@@ -670,10 +659,7 @@ if (rtc_include_tests) {
     deps = [
       ":video_codec_interface",
       ":video_codecs_test_framework",
-      ":video_coding",
       ":video_coding_utility",
-      ":webrtc_multiplex",
-      ":webrtc_vp8_helpers",
       ":webrtc_vp9_helpers",
       "../..:webrtc_common",
       "../../api:videocodec_test_fixture_api",
@@ -683,10 +669,11 @@ if (rtc_include_tests) {
       "../../media:rtc_audio_video",
       "../../media:rtc_h264_profile_id",
       "../../media:rtc_internal_video_codecs",
-      "../../media:rtc_software_fallback_wrappers",
+      "../../media:rtc_media_base",
       "../../rtc_base:checks",
-      "../../rtc_base:rtc_base",
+      "../../rtc_base:rtc_base_approved",
       "../../rtc_base:rtc_base_tests_utils",
+      "../../rtc_base:rtc_event",
       "../../rtc_base:rtc_task_queue_for_test",
       "../../system_wrappers",
       "../../test:fileutils",
@@ -695,13 +682,11 @@ if (rtc_include_tests) {
       "../../test:video_test_common",
       "../../test:video_test_support",
       "../rtp_rtcp:rtp_rtcp_format",
+      "//third_party/abseil-cpp/absl/memory",
     ]
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-    if (is_android) {
-      deps += [ ":android_codec_factory_helper" ]
     }
   }
 
@@ -727,25 +712,31 @@ if (rtc_include_tests) {
       ":videocodec_test_impl",
       ":webrtc_h264",
       ":webrtc_multiplex",
-      ":webrtc_vp8_helpers",
+      ":webrtc_vp8",
       ":webrtc_vp9",
       ":webrtc_vp9_helpers",
       "../..:webrtc_common",
       "../../api:create_videocodec_test_fixture_api",
       "../../api:mock_video_codec_factory",
-      "../../api:optional",
       "../../api:videocodec_test_fixture_api",
+      "../../api/video:video_frame",
       "../../api/video:video_frame_i420",
+      "../../api/video_codecs:rtc_software_fallback_wrappers",
       "../../api/video_codecs:video_codecs_api",
       "../../common_video",
       "../../media:rtc_h264_profile_id",
       "../../media:rtc_internal_video_codecs",
       "../../media:rtc_media_base",
+      "../../media:rtc_vp9_profile",
       "../../rtc_base:rtc_base",
       "../../test:fileutils",
+      "../../test:test_common",
       "../../test:test_support",
       "../../test:video_test_common",
       "../rtp_rtcp:rtp_rtcp_format",
+      "//third_party/abseil-cpp/absl/memory",
+      "//third_party/abseil-cpp/absl/types:optional",
+      "//third_party/libyuv",
     ]
 
     data = video_coding_modules_tests_resources
@@ -780,8 +771,8 @@ if (rtc_include_tests) {
       "codecs/test/videocodec_test_stats_impl_unittest.cc",
       "codecs/test/videoprocessor_unittest.cc",
       "codecs/vp8/default_temporal_layers_unittest.cc",
+      "codecs/vp8/libvpx_vp8_simulcast_test.cc",
       "codecs/vp8/screenshare_layers_unittest.cc",
-      "codecs/vp8/simulcast_unittest.cc",
       "codecs/vp9/svc_config_unittest.cc",
       "codecs/vp9/svc_rate_allocator_unittest.cc",
       "decoding_state_unittest.cc",
@@ -815,14 +806,19 @@ if (rtc_include_tests) {
       "video_sender_unittest.cc",
     ]
     if (rtc_use_h264) {
-      sources += [ "codecs/h264/h264_encoder_impl_unittest.cc" ]
+      sources += [
+        "codecs/h264/h264_encoder_impl_unittest.cc",
+        "codecs/h264/h264_simulcast_unittest.cc",
+      ]
     }
 
     deps = [
       ":codec_globals_headers",
       ":encoded_frame",
       ":mock_headers",
-      ":simulcast_test_utility",
+      ":nack_module",
+      ":packet",
+      ":simulcast_test_fixture_impl",
       ":video_codec_interface",
       ":video_codecs_test_framework",
       ":video_coding",
@@ -830,12 +826,13 @@ if (rtc_include_tests) {
       ":videocodec_test_impl",
       ":webrtc_h264",
       ":webrtc_vp8",
-      ":webrtc_vp8_helpers",
       ":webrtc_vp9",
       ":webrtc_vp9_helpers",
       "..:module_api",
       "../..:webrtc_common",
       "../../:typedefs",
+      "../../api:create_simulcast_test_fixture_api",
+      "../../api:simulcast_test_fixture_api",
       "../../api:videocodec_test_fixture_api",
       "../../api/video:video_frame",
       "../../api/video:video_frame_i420",
@@ -855,17 +852,16 @@ if (rtc_include_tests) {
       "../../system_wrappers:metrics_default",
       "../../test:field_trial",
       "../../test:fileutils",
+      "../../test:test_common",
       "../../test:test_support",
       "../../test:video_test_common",
       "../../test:video_test_support",
       "../rtp_rtcp:rtp_rtcp_format",
+      "//third_party/abseil-cpp/absl/memory",
     ]
     if (rtc_build_libvpx) {
       deps += [ rtc_libvpx_dir ]
     }
-
-    # TODO(jschuh): bugs.webrtc.org/1348: fix this warning.
-    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]

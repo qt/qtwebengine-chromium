@@ -13,6 +13,7 @@
 <translation id="1413622004203049571"><ph name="NOTIFIER_NAME" /> এর থেকে বিজ্ঞপ্তিগুলি অক্ষম করুন</translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{১ মিনিট এবং }one{# মিনিট এবং }other{# মিনিট এবং }}</translation>
 <translation id="1643823602425662293">বিজ্ঞপ্তি</translation>
+<translation id="169515659049020177">Shift</translation>
 <translation id="1710340000377843106">এখন</translation>
 <translation id="1752946267035950200">{MINUTES,plural, =1{১ মিনিট}one{# মিনিট}other{# মিনিট}}</translation>
 <translation id="1761785978543082658"><ph name="QUANTITY" /> B</translation>
@@ -37,6 +38,7 @@
 <translation id="2295140143284145483">সমীক্ষা</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/s</translation>
 <translation id="24452542372838207">বিজ্ঞপ্তি প্রসারিত করুন</translation>
+<translation id="2482878487686419369">বিজ্ঞপ্তিগুলি</translation>
 <translation id="2497284189126895209">সকল ফাইল</translation>
 <translation id="2522350507219695259">ক্রমাঙ্কন সম্পূর্ণ হয়েছে</translation>
 <translation id="252373100621549798">অজানা প্রদর্শন</translation>
@@ -49,6 +51,7 @@
 <translation id="3036649622769666520">খোলা ফাইল</translation>
 <translation id="3049748772180311791"><ph name="QUANTITY" /> MB</translation>
 <translation id="3087734570205094154">নিচে</translation>
+<translation id="3126026824346185272">Ctrl</translation>
 <translation id="3157931365184549694">পুনরুদ্ধার করুন</translation>
 <translation id="3183922693828471536">এখান পর্যন্ত স্ক্রোল করুন</translation>
 <translation id="3234408098842461169">Down Arrow</translation>
@@ -76,6 +79,7 @@
 <translation id="4730374152663651037">ঘন ঘন ব্যবহার করা হয়</translation>
 <translation id="4788285488841504513">{MONTHS,plural, =1{১ মাস বাকি}one{# মাস বাকি}other{# মাস বাকি}}</translation>
 <translation id="4820616160060340806">Command+<ph name="KEY_COMBO_NAME" /></translation>
+<translation id="4841881773802181781">যোগ করা হচ্ছে</translation>
 <translation id="4968171027979920686">{SECONDS,plural, =1{১ সেকেন্ড}one{# সেকেন্ড}other{# সেকেন্ড}}</translation>
 <translation id="4971687151119236543">মিডিয়া পূর্ববর্তী ট্র্যাক</translation>
 <translation id="4999762576397546063">Ctrl+<ph name="KEY_COMBO_NAME" /></translation>
@@ -118,6 +122,7 @@
 <translation id="6612467943526193239">ক্রমাঙ্কন থেকে বেরিয়ে যেতে Esc টিপুন।</translation>
 <translation id="6620110761915583480">ফাইল সেভ করুন</translation>
 <translation id="6699343763173986273">মিডিয়া পরবর্তী ট্র্যাক</translation>
+<translation id="673773751041746814">মোছা হচ্ছে</translation>
 <translation id="6786750046913594791">ফোল্ডার বন্ধ করুন</translation>
 <translation id="6808150112686056157">মিডিয়া থামান</translation>
 <translation id="6845383723252244143">ফোল্ডার বেছে নিন</translation>

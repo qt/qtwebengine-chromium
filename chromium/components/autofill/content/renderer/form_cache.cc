@@ -33,6 +33,7 @@
 #include "third_party/blink/public/web/web_select_element.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using blink::WebAutofillState;
 using blink::WebConsoleMessage;
 using blink::WebDocument;
 using blink::WebElement;
@@ -322,7 +323,7 @@ bool FormCache::ClearSectionWithElement(const WebFormControlElement& element) {
     if (control_element.AutofillSection() != element.AutofillSection())
       continue;
 
-    control_element.SetAutofilled(false);
+    control_element.SetAutofillState(WebAutofillState::kNotFilled);
 
     WebInputElement* input_element = ToWebInputElement(&control_element);
     if (form_util::IsTextInput(input_element) ||
@@ -386,22 +387,18 @@ bool FormCache::ShowPredictions(const FormDataPredictions& form,
 
     for (size_t i = 0; i < web_forms.size(); ++i) {
       form_element = web_forms[i];
-      // Note: matching on the form name here which is not guaranteed to be
-      // unique for the page, nor is it guaranteed to be non-empty.  Ideally,
-      // we would have a way to uniquely identify the form cross-process. For
-      // now, we'll check form name and form action for identity.
-      // Also note that WebString() == WebString(string16()) does not evaluate
-      // to |true| -- WebKit distinguishes between a "null" string (lhs) and
-      // an "empty" string (rhs). We don't want that distinction, so forcing
-      // to string16.
+      // To match two forms, we look for the form's name and the number of
+      // fields on that form. (Form names may not be unique.)
+      // Note: WebString() == WebString(string16()) does not evaluate to |true|
+      // -- WebKit distinguishes between a "null" string (lhs) and an "empty"
+      // string (rhs). We don't want that distinction, so forcing to string16.
       base::string16 element_name = form_util::GetFormIdentifier(form_element);
-      GURL action(
-          form_element.GetDocument().CompleteURL(form_element.Action()));
-      if (element_name == form.data.name && action == form.data.action) {
+      if (element_name == form.data.name) {
         found_form = true;
         control_elements =
             form_util::ExtractAutofillableElementsInForm(form_element);
-        break;
+        if (control_elements.size() == form.fields.size())
+          break;
       }
     }
 

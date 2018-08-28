@@ -86,14 +86,16 @@ TEST_F(PageCoordinationUnitImplTest, RemoveFrame) {
 
 TEST_F(PageCoordinationUnitImplTest,
        CalculatePageCPUUsageForSinglePageInSingleProcess) {
-  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph;
+  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
   cu_graph.process->SetCPUUsage(40);
   EXPECT_EQ(40, cu_graph.page->GetCPUUsage());
 }
 
 TEST_F(PageCoordinationUnitImplTest,
        CalculatePageCPUUsageForMultiplePagesInSingleProcess) {
-  MockMultiplePagesInSingleProcessCoordinationUnitGraph cu_graph;
+  MockMultiplePagesInSingleProcessCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
   cu_graph.process->SetCPUUsage(40);
   EXPECT_EQ(20, cu_graph.page->GetCPUUsage());
   EXPECT_EQ(20, cu_graph.other_page->GetCPUUsage());
@@ -101,7 +103,8 @@ TEST_F(PageCoordinationUnitImplTest,
 
 TEST_F(PageCoordinationUnitImplTest,
        CalculatePageCPUUsageForSinglePageWithMultipleProcesses) {
-  MockSinglePageWithMultipleProcessesCoordinationUnitGraph cu_graph;
+  MockSinglePageWithMultipleProcessesCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
   cu_graph.process->SetCPUUsage(40);
   cu_graph.other_process->SetCPUUsage(30);
   EXPECT_EQ(70, cu_graph.page->GetCPUUsage());
@@ -109,7 +112,8 @@ TEST_F(PageCoordinationUnitImplTest,
 
 TEST_F(PageCoordinationUnitImplTest,
        CalculatePageCPUUsageForMultiplePagesWithMultipleProcesses) {
-  MockMultiplePagesWithMultipleProcessesCoordinationUnitGraph cu_graph;
+  MockMultiplePagesWithMultipleProcessesCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
   cu_graph.process->SetCPUUsage(40);
   cu_graph.other_process->SetCPUUsage(30);
   EXPECT_EQ(20, cu_graph.page->GetCPUUsage());
@@ -118,7 +122,8 @@ TEST_F(PageCoordinationUnitImplTest,
 
 TEST_F(PageCoordinationUnitImplTest,
        CalculatePageEQTForSinglePageInSingleProcess) {
-  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph;
+  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
 
   cu_graph.process->SetExpectedTaskQueueingDuration(
       base::TimeDelta::FromMilliseconds(1));
@@ -130,7 +135,8 @@ TEST_F(PageCoordinationUnitImplTest,
 
 TEST_F(PageCoordinationUnitImplTest,
        CalculatePageEQTForMultiplePagesInSingleProcess) {
-  MockMultiplePagesInSingleProcessCoordinationUnitGraph cu_graph;
+  MockMultiplePagesInSingleProcessCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
 
   cu_graph.process->SetExpectedTaskQueueingDuration(
       base::TimeDelta::FromMilliseconds(1));
@@ -144,7 +150,8 @@ TEST_F(PageCoordinationUnitImplTest,
 }
 
 TEST_F(PageCoordinationUnitImplTest, TimeSinceLastVisibilityChange) {
-  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph;
+  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
 
   cu_graph.page->SetVisibility(true);
   EXPECT_TRUE(cu_graph.page->IsVisible());
@@ -160,25 +167,32 @@ TEST_F(PageCoordinationUnitImplTest, TimeSinceLastVisibilityChange) {
 }
 
 TEST_F(PageCoordinationUnitImplTest, TimeSinceLastNavigation) {
-  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph;
+  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
   // Before any commit events, timedelta should be 0.
   EXPECT_TRUE(cu_graph.page->TimeSinceLastNavigation().is_zero());
 
   // 1st navigation.
-  cu_graph.page->OnMainFrameNavigationCommitted();
+  cu_graph.page->OnMainFrameNavigationCommitted(10u, "http://www.example.org");
+  EXPECT_EQ("http://www.example.org", cu_graph.page->main_frame_url());
+  EXPECT_EQ(10u, cu_graph.page->navigation_id());
   AdvanceClock(base::TimeDelta::FromSeconds(11));
   EXPECT_EQ(base::TimeDelta::FromSeconds(11),
             cu_graph.page->TimeSinceLastNavigation());
 
   // 2nd navigation.
-  cu_graph.page->OnMainFrameNavigationCommitted();
+  cu_graph.page->OnMainFrameNavigationCommitted(
+      20u, "http://www.example.org/bobcat");
+  EXPECT_EQ("http://www.example.org/bobcat", cu_graph.page->main_frame_url());
+  EXPECT_EQ(20u, cu_graph.page->navigation_id());
   AdvanceClock(base::TimeDelta::FromSeconds(17));
   EXPECT_EQ(base::TimeDelta::FromSeconds(17),
             cu_graph.page->TimeSinceLastNavigation());
 }
 
 TEST_F(PageCoordinationUnitImplTest, IsLoading) {
-  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph;
+  MockSinglePageInSingleProcessCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
   auto* page_cu = cu_graph.page.get();
 
   // First attempt should fail, as the property is unset.

@@ -9,7 +9,6 @@
 #include "services/ui/public/interfaces/ime/ime.mojom.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/mus/input_method_mus_test_api.h"
-#include "ui/aura/window.h"
 #include "ui/base/ime/dummy_text_input_client.h"
 #include "ui/base/ime/input_method_delegate.h"
 
@@ -94,13 +93,11 @@ void RunFunctionWithEventResult(bool* was_run, ui::mojom::EventResult result) {
 }  // namespace
 
 TEST_F(InputMethodMusTest, PendingCallbackRunFromDestruction) {
-  aura::Window window(nullptr);
-  window.Init(ui::LAYER_NOT_DRAWN);
   bool was_event_result_callback_run = false;
   // Create an InputMethodMus and foward an event to it.
   {
     TestInputMethodDelegate input_method_delegate;
-    InputMethodMus input_method_mus(&input_method_delegate, &window);
+    InputMethodMus input_method_mus(&input_method_delegate, nullptr);
     TestInputMethod test_input_method;
     InputMethodMusTestApi::SetInputMethod(&input_method_mus,
                                           &test_input_method);
@@ -130,13 +127,11 @@ TEST_F(InputMethodMusTest, PendingCallbackRunFromDestruction) {
 }
 
 TEST_F(InputMethodMusTest, PendingCallbackRunFromOnDidChangeFocusedClient) {
-  aura::Window window(nullptr);
-  window.Init(ui::LAYER_NOT_DRAWN);
   bool was_event_result_callback_run = false;
   ui::DummyTextInputClient test_input_client;
   // Create an InputMethodMus and foward an event to it.
   TestInputMethodDelegate input_method_delegate;
-  InputMethodMus input_method_mus(&input_method_delegate, &window);
+  InputMethodMus input_method_mus(&input_method_delegate, nullptr);
   TestInputMethod test_input_method;
   InputMethodMusTestApi::SetInputMethod(&input_method_mus, &test_input_method);
   EventResultCallback callback = base::BindOnce(&RunFunctionWithEventResult,
@@ -154,6 +149,33 @@ TEST_F(InputMethodMusTest, PendingCallbackRunFromOnDidChangeFocusedClient) {
 
   InputMethodMusTestApi::CallOnDidChangeFocusedClient(
       &input_method_mus, nullptr, &test_input_client);
+  // Changing the focused client should trigger running the callback.
+  EXPECT_TRUE(was_event_result_callback_run);
+}
+
+TEST_F(InputMethodMusTest,
+       PendingCallbackRunFromOnDidChangeFocusedClientToNull) {
+  bool was_event_result_callback_run = false;
+  // Create an InputMethodMus and foward an event to it.
+  TestInputMethodDelegate input_method_delegate;
+  InputMethodMus input_method_mus(&input_method_delegate, nullptr);
+  TestInputMethod test_input_method;
+  InputMethodMusTestApi::SetInputMethod(&input_method_mus, &test_input_method);
+  EventResultCallback callback = base::BindOnce(&RunFunctionWithEventResult,
+                                                &was_event_result_callback_run);
+  ui::EventDispatchDetails details =
+      InputMethodMusTestApi::CallSendKeyEventToInputMethod(
+          &input_method_mus,
+          ui::KeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_RETURN, 0),
+          std::move(callback));
+  ASSERT_TRUE(!details.dispatcher_destroyed && !details.target_destroyed);
+  // The event should have been queued.
+  EXPECT_EQ(1u, test_input_method.process_key_event_callbacks()->size());
+  // Callback should not have been run yet.
+  EXPECT_FALSE(was_event_result_callback_run);
+
+  InputMethodMusTestApi::CallOnDidChangeFocusedClient(&input_method_mus,
+                                                      nullptr, nullptr);
   // Changing the focused client should trigger running the callback.
   EXPECT_TRUE(was_event_result_callback_run);
 }
@@ -193,13 +215,11 @@ class TestInputMethodDelegate2 : public ui::internal::InputMethodDelegate {
 // SetFocusedTextInputClient() is called. This verifies we don't crash in this
 // scenario and the callback is correctly called.
 TEST_F(InputMethodMusTest, ChangeTextInputTypeWhileProcessingCallback) {
-  aura::Window window(nullptr);
-  window.Init(ui::LAYER_NOT_DRAWN);
   bool was_event_result_callback_run = false;
   ui::DummyTextInputClient test_input_client;
   // Create an InputMethodMus and foward an event to it.
   TestInputMethodDelegate2 input_method_delegate;
-  InputMethodMus input_method_mus(&input_method_delegate, &window);
+  InputMethodMus input_method_mus(&input_method_delegate, nullptr);
   input_method_delegate.SetInputMethodAndClient(&input_method_mus,
                                                 &test_input_client);
   TestInputMethod test_input_method;
@@ -224,13 +244,11 @@ TEST_F(InputMethodMusTest, ChangeTextInputTypeWhileProcessingCallback) {
 // Calling OnTextInputTypeChanged from unfocused client should
 // not trigger OnTextInputTypeChanged on mus side.
 TEST_F(InputMethodMusTest, ChangeTextInputTypeFromUnfocusedClient) {
-  aura::Window window(nullptr);
-  window.Init(ui::LAYER_NOT_DRAWN);
   ui::DummyTextInputClient focused_input_client;
   ui::DummyTextInputClient unfocused_input_client;
   // Create an InputMethodMus and set initial text input client.
   TestInputMethodDelegate input_method_delegate;
-  InputMethodMus input_method_mus(&input_method_delegate, &window);
+  InputMethodMus input_method_mus(&input_method_delegate, nullptr);
   TestInputMethod test_input_method;
   InputMethodMusTestApi::SetInputMethod(&input_method_mus, &test_input_method);
   InputMethodMusTestApi::CallOnDidChangeFocusedClient(
@@ -245,13 +263,11 @@ TEST_F(InputMethodMusTest, ChangeTextInputTypeFromUnfocusedClient) {
 // Calling OnCaretBoundsChanged from unfocused client should
 // not trigger OnCaretBoundsChanged on mus side.
 TEST_F(InputMethodMusTest, ChangeCaretBoundsFromUnfocusedClient) {
-  aura::Window window(nullptr);
-  window.Init(ui::LAYER_NOT_DRAWN);
   ui::DummyTextInputClient focused_input_client;
   ui::DummyTextInputClient unfocused_input_client;
   // Create an InputMethodMus and set initial text input client.
   TestInputMethodDelegate input_method_delegate;
-  InputMethodMus input_method_mus(&input_method_delegate, &window);
+  InputMethodMus input_method_mus(&input_method_delegate, nullptr);
   TestInputMethod test_input_method;
   InputMethodMusTestApi::SetInputMethod(&input_method_mus, &test_input_method);
   InputMethodMusTestApi::CallOnDidChangeFocusedClient(
@@ -266,13 +282,11 @@ TEST_F(InputMethodMusTest, ChangeCaretBoundsFromUnfocusedClient) {
 // Calling CancelComposition from unfocused client should
 // not trigger CancelComposition on mus side.
 TEST_F(InputMethodMusTest, CancelCompositionFromUnfocusedClient) {
-  aura::Window window(nullptr);
-  window.Init(ui::LAYER_NOT_DRAWN);
   ui::DummyTextInputClient focused_input_client;
   ui::DummyTextInputClient unfocused_input_client;
   // Create an InputMethodMus and set initial text input client.
   TestInputMethodDelegate input_method_delegate;
-  InputMethodMus input_method_mus(&input_method_delegate, &window);
+  InputMethodMus input_method_mus(&input_method_delegate, nullptr);
   TestInputMethod test_input_method;
   InputMethodMusTestApi::SetInputMethod(&input_method_mus, &test_input_method);
   InputMethodMusTestApi::CallOnDidChangeFocusedClient(

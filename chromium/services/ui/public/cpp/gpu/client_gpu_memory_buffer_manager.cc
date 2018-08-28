@@ -36,7 +36,8 @@ void NotifyDestructionOnCorrectThread(
 
 }  // namespace
 
-ClientGpuMemoryBufferManager::ClientGpuMemoryBufferManager(mojom::GpuPtr gpu)
+ClientGpuMemoryBufferManager::ClientGpuMemoryBufferManager(
+    mojom::GpuMemoryBufferFactoryPtr gpu)
     : thread_("GpuMemoryThread"),
       gpu_memory_buffer_support_(
           std::make_unique<gpu::GpuMemoryBufferSupport>()),
@@ -55,9 +56,18 @@ ClientGpuMemoryBufferManager::~ClientGpuMemoryBufferManager() {
       FROM_HERE, base::Bind(&ClientGpuMemoryBufferManager::TearDownThread,
                             base::Unretained(this)));
   thread_.Stop();
+  if (optional_destruction_callback_)
+    std::move(optional_destruction_callback_).Run();
 }
 
-void ClientGpuMemoryBufferManager::InitThread(mojom::GpuPtrInfo gpu_info) {
+void ClientGpuMemoryBufferManager::SetOptionalDestructionCallback(
+    base::OnceClosure callback) {
+  DCHECK(!optional_destruction_callback_);
+  optional_destruction_callback_ = std::move(callback);
+}
+
+void ClientGpuMemoryBufferManager::InitThread(
+    mojom::GpuMemoryBufferFactoryPtrInfo gpu_info) {
   gpu_.Bind(std::move(gpu_info));
   gpu_.set_connection_error_handler(
       base::Bind(&ClientGpuMemoryBufferManager::DisconnectGpuOnThread,
@@ -108,12 +118,12 @@ void ClientGpuMemoryBufferManager::AllocateGpuMemoryBufferOnThread(
 void ClientGpuMemoryBufferManager::OnGpuMemoryBufferAllocatedOnThread(
     gfx::GpuMemoryBufferHandle* ret_handle,
     base::WaitableEvent* wait,
-    const gfx::GpuMemoryBufferHandle& handle) {
+    gfx::GpuMemoryBufferHandle handle) {
   auto it = pending_allocation_waiters_.find(wait);
   DCHECK(it != pending_allocation_waiters_.end());
   pending_allocation_waiters_.erase(it);
 
-  *ret_handle = handle;
+  *ret_handle = std::move(handle);
   wait->Signal();
 }
 
@@ -154,16 +164,17 @@ ClientGpuMemoryBufferManager::CreateGpuMemoryBuffer(
   if (gmb_handle.is_null())
     return nullptr;
 
+  auto gmb_handle_id = gmb_handle.id;
   DestructionCallback callback =
       base::Bind(&ClientGpuMemoryBufferManager::DeletedGpuMemoryBuffer,
-                 weak_ptr_, gmb_handle.id);
+                 weak_ptr_, gmb_handle_id);
   std::unique_ptr<gpu::GpuMemoryBufferImpl> buffer(
       gpu_memory_buffer_support_->CreateGpuMemoryBufferImplFromHandle(
-          gmb_handle, size, format, usage,
+          std::move(gmb_handle), size, format, usage,
           base::Bind(&NotifyDestructionOnCorrectThread, thread_.task_runner(),
                      callback)));
   if (!buffer) {
-    DeletedGpuMemoryBuffer(gmb_handle.id, gpu::SyncToken());
+    DeletedGpuMemoryBuffer(gmb_handle_id, gpu::SyncToken());
     return nullptr;
   }
   return std::move(buffer);

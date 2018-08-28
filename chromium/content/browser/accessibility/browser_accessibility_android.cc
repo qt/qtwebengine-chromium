@@ -18,6 +18,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_assistant_structure.h"
 #include "ui/accessibility/ax_role_properties.h"
+#include "ui/accessibility/ax_table_info.h"
 #include "ui/accessibility/platform/ax_android_constants.h"
 #include "ui/accessibility/platform/ax_unique_id.h"
 
@@ -510,7 +511,7 @@ base::string16 BrowserAccessibilityAndroid::GetRoleDescription() const {
       // No role description.
       break;
     case ax::mojom::Role::kCell:
-      message_id = IDS_AX_ROLE_CELL;
+      // No role description.
       break;
     case ax::mojom::Role::kCheckBox:
       message_id = IDS_AX_ROLE_CHECK_BOX;
@@ -535,6 +536,12 @@ base::string16 BrowserAccessibilityAndroid::GetRoleDescription() const {
       break;
     case ax::mojom::Role::kComplementary:
       message_id = IDS_AX_ROLE_COMPLEMENTARY;
+      break;
+    case ax::mojom::Role::kContentDeletion:
+      message_id = IDS_AX_ROLE_CONTENT_DELETION;
+      break;
+    case ax::mojom::Role::kContentInsertion:
+      message_id = IDS_AX_ROLE_CONTENT_INSERTION;
       break;
     case ax::mojom::Role::kContentInfo:
       message_id = IDS_AX_ROLE_CONTENT_INFO;
@@ -785,9 +792,6 @@ base::string16 BrowserAccessibilityAndroid::GetRoleDescription() const {
       // No role description.
       break;
     case ax::mojom::Role::kList:
-      // No role description.
-      break;
-    case ax::mojom::Role::kLocationBar:
       // No role description.
       break;
     case ax::mojom::Role::kLog:
@@ -1320,7 +1324,9 @@ int BrowserAccessibilityAndroid::AndroidRangeType() const {
 
 int BrowserAccessibilityAndroid::RowCount() const {
   if (ui::IsTableLikeRole(GetRole())) {
-    return CountChildrenWithRole(ax::mojom::Role::kRow);
+    ui::AXTableInfo* table_info = manager()->ax_tree()->GetTableInfo(node());
+    if (table_info)
+      return table_info->row_count;
   }
 
   if (GetRole() == ax::mojom::Role::kList ||
@@ -1335,7 +1341,9 @@ int BrowserAccessibilityAndroid::RowCount() const {
 
 int BrowserAccessibilityAndroid::ColumnCount() const {
   if (ui::IsTableLikeRole(GetRole())) {
-    return CountChildrenWithRole(ax::mojom::Role::kColumn);
+    ui::AXTableInfo* table_info = manager()->ax_tree()->GetTableInfo(node());
+    if (table_info)
+      return table_info->col_count;
   }
   return 0;
 }

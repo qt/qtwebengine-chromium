@@ -10,10 +10,10 @@ FakeOAuth2TokenServiceDelegate::AccountInfo::AccountInfo(
     : refresh_token(refresh_token),
       error(GoogleServiceAuthError::NONE) {}
 
-FakeOAuth2TokenServiceDelegate::FakeOAuth2TokenServiceDelegate(
-    net::URLRequestContextGetter* request_context)
-    : request_context_(request_context) {
-}
+FakeOAuth2TokenServiceDelegate::FakeOAuth2TokenServiceDelegate()
+    : shared_factory_(
+          base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
+              &test_url_loader_factory_)) {}
 
 FakeOAuth2TokenServiceDelegate::~FakeOAuth2TokenServiceDelegate() {
 }
@@ -21,11 +21,11 @@ FakeOAuth2TokenServiceDelegate::~FakeOAuth2TokenServiceDelegate() {
 OAuth2AccessTokenFetcher*
 FakeOAuth2TokenServiceDelegate::CreateAccessTokenFetcher(
     const std::string& account_id,
-    net::URLRequestContextGetter* getter,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     OAuth2AccessTokenConsumer* consumer) {
   AccountInfoMap::const_iterator it = refresh_tokens_.find(account_id);
   DCHECK(it != refresh_tokens_.end());
-  return new OAuth2AccessTokenFetcherImpl(consumer, getter,
+  return new OAuth2AccessTokenFetcherImpl(consumer, url_loader_factory,
                                           it->second->refresh_token);
 }
 
@@ -105,9 +105,9 @@ void FakeOAuth2TokenServiceDelegate::RevokeCredentials(
   IssueRefreshTokenForUser(account_id, std::string());
 }
 
-net::URLRequestContextGetter*
-FakeOAuth2TokenServiceDelegate::GetRequestContext() const {
-  return request_context_.get();
+scoped_refptr<network::SharedURLLoaderFactory>
+FakeOAuth2TokenServiceDelegate::GetURLLoaderFactory() const {
+  return shared_factory_;
 }
 
 void FakeOAuth2TokenServiceDelegate::UpdateAuthError(

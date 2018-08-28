@@ -4,7 +4,8 @@
 
 #include "services/ui/ws2/window_delegate_impl.h"
 
-#include "services/ui/ws2/client_window.h"
+#include "services/ui/ws2/server_window.h"
+#include "services/ui/ws2/window_properties.h"
 #include "ui/aura/window.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/hit_test.h"
@@ -27,6 +28,27 @@ void WindowDelegateImpl::OnBoundsChanged(const gfx::Rect& old_bounds,
                                          const gfx::Rect& new_bounds) {}
 
 gfx::NativeCursor WindowDelegateImpl::GetCursor(const gfx::Point& point) {
+  // Find the cursor of the embed root for an embedded Window, or the toplevel
+  // if it's not an embedded client. This is done to match the behavior of Aura,
+  // which sets the cursor on the root.
+  for (ServerWindow* server_window = ServerWindow::GetMayBeNull(window_);
+       server_window; server_window = ServerWindow::GetMayBeNull(
+                          server_window->window()->parent())) {
+    if (server_window->IsTopLevel()) {
+      if (server_window->window() == window_)
+        return server_window->cursor();
+      gfx::Point toplevel_point = point;
+      aura::Window::ConvertPointToTarget(window_, server_window->window(),
+                                         &toplevel_point);
+      return server_window->window()->delegate()->GetCursor(toplevel_point);
+    }
+
+    if (server_window->HasEmbedding())
+      return server_window->cursor();
+  }
+
+  // TODO(sky): there should be a NOTREACHED() here, but we're hitting this on
+  // asan builder. Figure out. https://crbug.com/855767.
   return gfx::kNullCursor;
 }
 
@@ -41,7 +63,7 @@ bool WindowDelegateImpl::ShouldDescendIntoChildForEventHandling(
 }
 
 bool WindowDelegateImpl::CanFocus() {
-  return ClientWindow::GetMayBeNull(window_)->can_focus();
+  return window_->GetProperty(kCanFocus);
 }
 
 void WindowDelegateImpl::OnCaptureLost() {}

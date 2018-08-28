@@ -30,10 +30,10 @@
 
 #include "third_party/blink/renderer/modules/encoding/text_decoder.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer_view.h"
 #include "third_party/blink/renderer/modules/encoding/encoding.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/string_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding_registry.h"
 
@@ -98,7 +98,8 @@ String TextDecoder::decode(const char* start,
                            const TextDecodeOptions& options,
                            ExceptionState& exception_state) {
   WTF::FlushBehavior flush =
-      options.stream() ? WTF::kDoNotFlush : WTF::kDataEOF;
+      options.stream() ? WTF::FlushBehavior::kDoNotFlush
+                       : WTF::FlushBehavior::kDataEOF;
 
   bool saw_error = false;
   String s = codec_->Decode(start, length, flush, fatal_, saw_error);
@@ -116,7 +117,7 @@ String TextDecoder::decode(const char* start,
       s.Remove(0);
   }
 
-  if (flush)
+  if (flush != WTF::FlushBehavior::kDoNotFlush)
     bom_seen_ = false;
 
   return s;

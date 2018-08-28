@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-#include "api/optional.h"
+#include "absl/types/optional.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/include/module.h"
@@ -199,7 +199,7 @@ class RtpRtcp : public Module, public RtcpFeedbackSenderInterface {
                                      int associated_payload_type) = 0;
 
   // Returns the FlexFEC SSRC, if there is one.
-  virtual rtc::Optional<uint32_t> FlexfecSsrc() const = 0;
+  virtual absl::optional<uint32_t> FlexfecSsrc() const = 0;
 
   // Sets sending status. Sends kRtcpByeCode when going from true to false.
   // Returns -1 on failure else 0.
@@ -426,13 +426,8 @@ class RtpRtcp : public Module, public RtcpFeedbackSenderInterface {
 
   // Set RED and ULPFEC payload types. A payload type of -1 means that the
   // corresponding feature is turned off. Note that we DO NOT support enabling
-  // ULPFEC without enabling RED. However, we DO support enabling RED without
-  // enabling ULPFEC. This is due to an RED/RTX workaround, where the receiver
-  // assumes that RTX packets carry RED if RED has been configured in the SDP,
-  // regardless of what RTX payload type mapping was negotiated in the SDP.
-  // TODO(brandtr): Update this comment when we have removed the RED/RTX
-  // send-side workaround, i.e., when we do not support enabling RED without
-  // enabling ULPFEC.
+  // ULPFEC without enabling RED, and RED is only ever used when ULPFEC is
+  // enabled.
   virtual void SetUlpfecConfig(int red_payload_type,
                                int ulpfec_payload_type) = 0;
 

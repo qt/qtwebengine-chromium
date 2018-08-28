@@ -17,10 +17,10 @@ cast_source_set("browser") {
   sources = [
     "application_media_capabilities.cc",
     "application_media_capabilities.h",
+    "application_session_id_manager.cc",
+    "application_session_id_manager.h",
     "bluetooth/cast_bluetooth_chooser.cc",
     "bluetooth/cast_bluetooth_chooser.h",
-    "cast_back_gesture_dispatcher.cc",
-    "cast_back_gesture_dispatcher.h",
     "cast_browser_context.cc",
     "cast_browser_context.h",
     "cast_browser_main_parts.cc",
@@ -31,6 +31,8 @@ cast_source_set("browser") {
     "cast_content_browser_client.h",
     "cast_download_manager_delegate.cc",
     "cast_download_manager_delegate.h",
+    "cast_gesture_dispatcher.cc",
+    "cast_gesture_dispatcher.h",
     "cast_http_user_agent_settings.cc",
     "cast_http_user_agent_settings.h",
     "cast_media_blocker.cc",
@@ -84,11 +86,10 @@ cast_source_set("browser") {
     "tts/tts_controller.h",
     "tts/tts_controller_impl.cc",
     "tts/tts_controller_impl.h",
-    "tts/tts_message_filter.cc",
-    "tts/tts_message_filter.h",
     "tts/tts_platform.cc",
     "tts/tts_platform.h",
     "tts/tts_platform_stub.cc",
+    "tts/tts_platform_stub.h",
     "url_request_context_factory.cc",
     "url_request_context_factory.h",
   ]
@@ -148,7 +149,6 @@ cast_source_set("browser") {
     "//content/public/common:service_names",
     "//content/public/utility",
     "//device/bluetooth",
-    "//device/geolocation",
     "//gpu",
     "//ipc",
     "//media",
@@ -167,12 +167,11 @@ cast_source_set("browser") {
       "android/cast_content_window_android.cc",
       "android/cast_content_window_android.h",
       "android/cast_metrics_helper_android.cc",
-      "android/cast_web_contents_surface_helper.cc",
-      "android/cast_web_contents_surface_helper.h",
     ]
     deps += [
       ":jni_headers",
       "//components/cdm/browser",
+      "//components/embedder_support/android:view",
     ]
   } else {
     sources += [
@@ -260,10 +259,10 @@ cast_source_set("browser") {
       "extensions/api/module/module.h",
       "extensions/api/notifications/notifications_api.cc",
       "extensions/api/notifications/notifications_api.h",
-      "extensions/api/tts/tts_engine_extension_api.cc",
-      "extensions/api/tts/tts_engine_extension_api.h",
-      "extensions/api/tts/tts_engine_extension_observer.cc",
-      "extensions/api/tts/tts_engine_extension_observer.h",
+      "extensions/api/tabs/tabs_api.cc",
+      "extensions/api/tabs/tabs_api.h",
+      "extensions/api/tabs/tabs_constants.cc",
+      "extensions/api/tabs/tabs_constants.h",
       "extensions/api/tts/tts_extension_api.cc",
       "extensions/api/tts/tts_extension_api.h",
       "extensions/api/tts/tts_extension_api_constants.cc",
@@ -288,6 +287,12 @@ cast_source_set("browser") {
     ]
     if (use_aura) {
       sources += [
+        "accessibility/accessibility_manager.cc",
+        "accessibility/accessibility_manager.h",
+        "accessibility/touch_exploration_controller.cc",
+        "accessibility/touch_exploration_controller.h",
+        "accessibility/touch_exploration_manager.cc",
+        "accessibility/touch_exploration_manager.h",
         "cast_web_view_extension.h",
         "cast_web_view_extension.h",
         "ui/aura/accessibility/automation_manager_aura.cc",
@@ -308,11 +313,14 @@ cast_source_set("browser") {
       "//components/storage_monitor",
       "//components/user_prefs:user_prefs",
       "//components/version_info",
+      "//components/zoom",
       "//extensions/browser",
       "//extensions/common",
       "//extensions/common/api",
       "//google_apis:google_apis",
+      "//ui/events:gesture_detection",
       "//ui/views:views",
+      "//ui/wm/public:public",
     ]
   }
 
@@ -434,7 +442,7 @@ cast_source_set("test_support") {
 cast_source_set("browsertests") {
   testonly = true
   sources = [
-    "cast_back_gesture_dispatcher_test.cc",
+    "cast_gesture_dispatcher_test.cc",
     "cast_media_blocker_browsertest.cc",
     "renderer_prelauncher_test.cc",
     "test/cast_features_browsertest.cc",
@@ -451,6 +459,10 @@ cast_source_set("browsertests") {
     "//chromecast/base/metrics",
     "//components/prefs",
     "//media:test_support",
+  ]
+
+  data = [
+    "//media/test/data/",
   ]
 }
 
@@ -479,6 +491,14 @@ cast_source_set("unittests") {
     "//ui/events/devices:devices",
     "//ui/gl:test_support",
   ]
+
+  if (enable_chromecast_extensions && use_aura) {
+    sources += [ "accessibility/touch_exploration_controller_unittest.cc" ]
+    deps += [
+      "//ui/aura:test_support",
+      "//ui/events:test_support",
+    ]
+  }
 }
 
 if (is_android) {
@@ -488,7 +508,6 @@ if (is_android) {
       "android/apk/src/org/chromium/chromecast/shell/CastCrashHandler.java",
       "android/apk/src/org/chromium/chromecast/shell/CastMetricsHelper.java",
       "android/apk/src/org/chromium/chromecast/shell/CastSysInfoAndroid.java",
-      "android/apk/src/org/chromium/chromecast/shell/CastWebContentsSurfaceHelper.java",
     ]
 
     if (is_android_things_non_public) {

@@ -212,10 +212,10 @@ void Usage(const BuildConfig& config) {
 "  -n       dry run (don't run commands but act like they succeeded)\n"
 "  -v       show all command lines while building\n"
 "\n"
-"  -d MODE  enable debugging (use -d list to list modes)\n"
-"  -t TOOL  run a subtool (use -t list to list subtools)\n"
+"  -d MODE  enable debugging (use '-d list' to list modes)\n"
+"  -t TOOL  run a subtool (use '-t list' to list subtools)\n"
 "    terminates toplevel options; further flags are passed to the tool\n"
-"  -w FLAG  adjust warnings (use -w list to list warnings)\n",
+"  -w FLAG  adjust warnings (use '-w list' to list warnings)\n",
           kNinjaVersion, config.parallelism);
 }
 
@@ -494,7 +494,7 @@ int NinjaMain::ToolDeps(const Options* options, int argc, char** argv) {
     TimeStamp mtime = disk_interface.Stat((*it)->path(), &err);
     if (mtime == -1)
       Error("%s", err.c_str());  // Log and ignore Stat() errors;
-    printf("%s: #deps %d, deps mtime %d (%s)\n",
+    printf("%s: #deps %d, deps mtime %" PRId64 " (%s)\n",
            (*it)->path().c_str(), deps->node_count, deps->mtime,
            (!mtime || mtime > deps->mtime ? "STALE":"VALID"));
     for (int i = 0; i < deps->node_count; ++i)

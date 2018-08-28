@@ -57,6 +57,14 @@ void BindFramebufferAttachment(const FunctionsGL *functions,
                                                 ToGLenum(texture->getType()),
                                                 textureGL->getTextureID(), attachment->mipLevel());
             }
+            else if (attachment->isLayered())
+            {
+                TextureType textureType = texture->getType();
+                ASSERT(textureType == TextureType::_2DArray || textureType == TextureType::_3D ||
+                       textureType == TextureType::CubeMap);
+                functions->framebufferTexture(GL_FRAMEBUFFER, attachmentPoint,
+                                              textureGL->getTextureID(), attachment->mipLevel());
+            }
             else if (texture->getType() == TextureType::CubeMap)
             {
                 functions->framebufferTexture2D(GL_FRAMEBUFFER, attachmentPoint,
@@ -447,7 +455,7 @@ Error FramebufferGL::readPixels(const gl::Context *context,
                                         packBuffer && packState.rowLength != 0 &&
                                         packState.rowLength < area.width;
 
-    GLubyte *pixels = reinterpret_cast<GLubyte *>(ptrOrOffset);
+    GLubyte *pixels = static_cast<GLubyte *>(ptrOrOffset);
     int leftClip    = area.x - origArea.x;
     int topClip     = area.y - origArea.y;
     if (leftClip || topClip)
@@ -456,9 +464,8 @@ Error FramebufferGL::readPixels(const gl::Context *context,
         const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(readFormat, readType);
 
         GLuint rowBytes = 0;
-        ANGLE_TRY_RESULT(glFormat.computeRowPitch(readType, origArea.width, packState.alignment,
-                                                  packState.rowLength),
-                         rowBytes);
+        ANGLE_TRY_CHECKED_MATH(glFormat.computeRowPitch(
+            readType, origArea.width, packState.alignment, packState.rowLength, &rowBytes));
         pixels += leftClip * glFormat.pixelBytes + topClip * rowBytes;
     }
 
@@ -884,10 +891,10 @@ gl::Error FramebufferGL::readPixelsRowByRow(const gl::Context *context,
     const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(format, type);
 
     GLuint rowBytes = 0;
-    ANGLE_TRY_RESULT(glFormat.computeRowPitch(type, area.width, pack.alignment, pack.rowLength),
-                     rowBytes);
+    ANGLE_TRY_CHECKED_MATH(
+        glFormat.computeRowPitch(type, area.width, pack.alignment, pack.rowLength, &rowBytes));
     GLuint skipBytes = 0;
-    ANGLE_TRY_RESULT(glFormat.computeSkipBytes(type, rowBytes, 0, pack, false), skipBytes);
+    ANGLE_TRY_CHECKED_MATH(glFormat.computeSkipBytes(type, rowBytes, 0, pack, false, &skipBytes));
 
     gl::PixelPackState directPack;
     directPack.alignment   = 1;
@@ -926,10 +933,11 @@ gl::Error FramebufferGL::readPixelsAllAtOnce(const gl::Context *context,
         const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(format, type);
 
         GLuint rowBytes = 0;
-        ANGLE_TRY_RESULT(glFormat.computeRowPitch(type, area.width, pack.alignment, pack.rowLength),
-                         rowBytes);
+        ANGLE_TRY_CHECKED_MATH(
+            glFormat.computeRowPitch(type, area.width, pack.alignment, pack.rowLength, &rowBytes));
         GLuint skipBytes = 0;
-        ANGLE_TRY_RESULT(glFormat.computeSkipBytes(type, rowBytes, 0, pack, false), skipBytes);
+        ANGLE_TRY_CHECKED_MATH(
+            glFormat.computeSkipBytes(type, rowBytes, 0, pack, false, &skipBytes));
 
         gl::PixelPackState directPack;
         directPack.alignment = 1;

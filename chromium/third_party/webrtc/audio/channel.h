@@ -16,11 +16,11 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/optional.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/call/audio_sink.h"
 #include "api/call/transport.h"
-#include "api/optional.h"
 #include "audio/audio_level.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/audio_coding/include/audio_coding_module.h"
@@ -137,7 +137,6 @@ class ChannelState {
 
 class Channel
     : public RtpData,
-      public RtpFeedback,
       public Transport,
       public AudioPacketizationCallback,  // receive encoded packets from the
                                           // ACM
@@ -159,7 +158,7 @@ class Channel
           size_t jitter_buffer_max_packets,
           bool jitter_buffer_fast_playout,
           rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
-          rtc::Optional<AudioCodecPairId> codec_pair_id);
+          absl::optional<AudioCodecPairId> codec_pair_id);
   virtual ~Channel();
 
   void SetSink(AudioSinkInterface* sink);
@@ -219,6 +218,8 @@ class Channel
 
   // RTP+RTCP
   int SetLocalSSRC(unsigned int ssrc);
+  void SetRemoteSSRC(uint32_t ssrc);
+
   void SetMid(const std::string& mid, int extension_id);
   int SetSendAudioLevelIndicationStatus(bool enable, unsigned char id);
   void EnableSendTransportSequenceNumber(int id);
@@ -247,9 +248,6 @@ class Channel
   int32_t OnReceivedPayloadData(const uint8_t* payloadData,
                                 size_t payloadSize,
                                 const WebRtcRTPHeader* rtpHeader) override;
-
-  // From RtpFeedback in the RTP/RTCP module
-  void OnIncomingSSRCChanged(uint32_t ssrc) override;
 
   // From Transport (called by the RTP/RTCP module)
   bool SendRtp(const uint8_t* data,
@@ -316,8 +314,7 @@ class Channel
   bool ReceivePacket(const uint8_t* packet,
                      size_t packet_length,
                      const RTPHeader& header);
-  bool IsPacketInOrder(const RTPHeader& header) const;
-  bool IsPacketRetransmitted(const RTPHeader& header, bool in_order) const;
+  bool IsPacketRetransmitted(const RTPHeader& header) const;
   int ResendPackets(const uint16_t* sequence_numbers, int length);
   void UpdatePlayoutTimestamp(bool rtcp);
 
@@ -355,7 +352,7 @@ class Channel
   RemoteNtpTimeEstimator ntp_estimator_ RTC_GUARDED_BY(ts_stats_lock_);
 
   // Timestamp of the audio pulled from NetEq.
-  rtc::Optional<uint32_t> jitter_buffer_playout_timestamp_;
+  absl::optional<uint32_t> jitter_buffer_playout_timestamp_;
 
   rtc::CriticalSection video_sync_lock_;
   uint32_t playout_timestamp_rtp_ RTC_GUARDED_BY(video_sync_lock_);

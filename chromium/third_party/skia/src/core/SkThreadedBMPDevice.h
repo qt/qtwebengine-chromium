@@ -12,6 +12,7 @@
 #include "SkDraw.h"
 #include "SkRectPriv.h"
 #include "SkTaskGroup2D.h"
+#include <new>
 
 class SkThreadedBMPDevice : public SkBitmapDevice {
 public:
@@ -32,12 +33,10 @@ protected:
     void drawPath(const SkPath&, const SkPaint&, const SkMatrix* prePathMatrix,
                   bool pathIsMutable) override;
     void drawSprite(const SkBitmap&, int x, int y, const SkPaint&) override;
-
-    void drawText(const void* text, size_t len, SkScalar x, SkScalar y,
-                  const SkPaint&) override;
     void drawPosText(const void* text, size_t len, const SkScalar pos[],
                      int scalarsPerPos, const SkPoint& offset, const SkPaint& paint) override;
-    void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) override;
+    void drawVertices(const SkVertices*, const SkMatrix* bones, int boneCount, SkBlendMode,
+                      const SkPaint&) override;
 
     void drawBitmap(const SkBitmap&, const SkMatrix&, const SkRect* dstOrNull,
                     const SkPaint&) override;

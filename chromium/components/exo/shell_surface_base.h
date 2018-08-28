@@ -17,6 +17,7 @@
 #include "base/strings/string16.h"
 #include "components/exo/surface_observer.h"
 #include "components/exo/surface_tree_host.h"
+#include "ui/aura/client/capture_client_observer.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/hit_test.h"
 #include "ui/compositor/compositor_lock.h"
@@ -28,7 +29,6 @@
 #include "ui/wm/public/activation_change_observer.h"
 
 namespace ash {
-class WindowResizer;
 namespace wm {
 class WindowState;
 }
@@ -53,6 +53,7 @@ class Surface;
 class ShellSurfaceBase : public SurfaceTreeHost,
                          public SurfaceObserver,
                          public aura::WindowObserver,
+                         public aura::client::CaptureClientObserver,
                          public views::WidgetDelegate,
                          public views::View,
                          public wm::ActivationChangeObserver {
@@ -109,10 +110,6 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   // Sets the system modality.
   void SetSystemModal(bool system_modal);
 
-  // Start an interactive move of surface.
-  // TODO(oshima): Move this to ShellSurface.
-  void Move();
-
   // Sets the application ID for the window. The application ID identifies the
   // general class of applications to which the window belongs.
   static void SetApplicationId(aura::Window* window,
@@ -130,6 +127,9 @@ class ShellSurfaceBase : public SurfaceTreeHost,
 
   // Set the startup ID for the surface.
   void SetStartupId(const char* startup_id);
+
+  // Set the child ax tree ID for the surface.
+  void SetChildAxTreeId(int32_t child_ax_tree_id);
 
   // Signal a request to close the window. It is up to the implementation to
   // actually decide to do so though.
@@ -166,6 +166,12 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   // |window| must not be nullptr.
   static Surface* GetMainSurface(const aura::Window* window);
 
+  // Returns the target surface for the located event |event|.  If an
+  // event handling is grabbed by an window, it'll first examine that
+  // window, then traverse to its transeitn parent if the parent also
+  // requested grab.
+  static Surface* GetTargetSurfaceForLocatedEvent(ui::LocatedEvent* event);
+
   // Returns a trace value representing the state of the surface.
   std::unique_ptr<base::trace_event::TracedValue> AsTracedValue() const;
 
@@ -180,6 +186,10 @@ class ShellSurfaceBase : public SurfaceTreeHost,
 
   // Overridden from SurfaceObserver:
   void OnSurfaceDestroying(Surface* surface) override;
+
+  // Overridden from CaptureClientObserver:
+  void OnCaptureChanged(aura::Window* lost_capture,
+                        aura::Window* gained_capture) override;
 
   // Overridden from views::WidgetDelegate:
   bool CanResize() const override;
@@ -201,6 +211,7 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   gfx::Size CalculatePreferredSize() const override;
   gfx::Size GetMinimumSize() const override;
   gfx::Size GetMaximumSize() const override;
+  void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
 
   // Overridden from aura::WindowObserver:
   void OnWindowBoundsChanged(aura::Window* window,
@@ -214,13 +225,13 @@ class ShellSurfaceBase : public SurfaceTreeHost,
                          aura::Window* gained_active,
                          aura::Window* lost_active) override;
 
-  // Overridden from ui::EventHandler:
-  void OnKeyEvent(ui::KeyEvent* event) override;
-  void OnMouseEvent(ui::MouseEvent* event) override;
-  void OnGestureEvent(ui::GestureEvent* event) override;
-
   // Overridden from ui::AcceleratorTarget:
   bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+
+  bool frame_enabled() const {
+    return frame_type_ != SurfaceFrameType::NONE &&
+           frame_type_ != SurfaceFrameType::SHADOW;
+  }
 
   Surface* surface_for_testing() { return root_surface(); }
 
@@ -278,16 +289,17 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   // In the coordinate system of the parent root window.
   gfx::Point GetMouseLocation() const;
 
+  // Returns the bounds of the client area.nnn
+  gfx::Rect GetClientViewBounds() const;
+
   // In the local coordinate system of the window.
   virtual gfx::Rect GetShadowBounds() const;
 
-  // Attempt to start a drag operation. The type of drag operation to start is
-  // determined by |component|.
-  // TODO(oshima): Move this to ShellSurface.
-  void AttemptToStartDrag(int component);
-
   // Set the parent window of this surface.
   void SetParentWindow(aura::Window* parent);
+
+  // Start the event capture on this surface.
+  void StartCapture();
 
   const gfx::Rect& geometry() const { return geometry_; }
 
@@ -308,21 +320,15 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   gfx::Rect pending_geometry_;
   base::Optional<gfx::Rect> shadow_bounds_;
   bool shadow_bounds_changed_ = false;
-  std::unique_ptr<ash::WindowResizer> resizer_;
   base::string16 title_;
-  // The debug title string shown in the window frame (title bar).
-  base::string16 extra_title_;
   std::unique_ptr<ui::CompositorLock> configure_compositor_lock_;
   ConfigureCallback configure_callback_;
   // TODO(oshima): Remove this once the transition to new drag/resize
   // complete. https://crbug.com/801666.
   bool client_controlled_move_resize_ = true;
   SurfaceFrameType frame_type_ = SurfaceFrameType::NONE;
-
-  bool frame_enabled() const {
-    return frame_type_ != SurfaceFrameType::NONE &&
-           frame_type_ != SurfaceFrameType::SHADOW;
-  }
+  bool is_popup_ = false;
+  bool has_grab_ = false;
 
  private:
   struct Config;
@@ -333,20 +339,6 @@ class ShellSurfaceBase : public SurfaceTreeHost,
 
   // Returns the scale of the surface tree relative to the shell surface.
   virtual float GetScale() const;
-
-  // Returns the window that has capture during dragging.
-  virtual aura::Window* GetDragWindow();
-
-  // Creates the resizer for a dragging/resizing operation.
-  virtual std::unique_ptr<ash::WindowResizer> CreateWindowResizer(
-      aura::Window* window,
-      int component);
-
-  // Overridden from ui::EventHandler:
-  bool OnMouseDragged(const ui::MouseEvent& event) override;
-
-  // End current drag operation.
-  void EndDrag(bool revert);
 
   // Return the bounds of the widget/origin of surface taking visible
   // bounds and current resize direction into account.
@@ -372,6 +364,7 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   gfx::Size pending_minimum_size_;
   gfx::Size maximum_size_;
   gfx::Size pending_maximum_size_;
+  int32_t child_ax_tree_id_ = -1;
 
   DISALLOW_COPY_AND_ASSIGN(ShellSurfaceBase);
 };

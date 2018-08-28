@@ -69,7 +69,6 @@ component("base") {
     "accelerators/media_keys_listener.h",
     "accelerators/menu_label_accelerator_util_linux.cc",
     "accelerators/menu_label_accelerator_util_linux.h",
-    "accelerators/platform_accelerator.h",
     "accelerators/platform_accelerator_cocoa.h",
     "accelerators/platform_accelerator_cocoa.mm",
     "class_property.cc",
@@ -88,6 +87,7 @@ component("base") {
     "clipboard/custom_data_helper_mac.mm",
     "cocoa/a11y_util.h",
     "cocoa/a11y_util.mm",
+    "cocoa/accessibility_hostable.h",
     "cocoa/animation_utils.h",
     "cocoa/appkit_utils.h",
     "cocoa/appkit_utils.mm",
@@ -137,6 +137,8 @@ component("base") {
     "cocoa/nsgraphics_context_additions.mm",
     "cocoa/nsview_additions.h",
     "cocoa/nsview_additions.mm",
+    "cocoa/quartz_util.h",
+    "cocoa/quartz_util.mm",
     "cocoa/remote_layer_api.h",
     "cocoa/remote_layer_api.mm",
     "cocoa/scoped_cg_context_smooth_fonts.h",
@@ -584,6 +586,7 @@ component("base") {
     libs += [
       "Accelerate.framework",
       "AppKit.framework",
+      "QuartzCore.framework",
       "AudioUnit.framework",
       "Carbon.framework",
       "CoreVideo.framework",
@@ -689,6 +692,8 @@ static_library("test_support") {
 
   if (!is_ios) {
     sources += [
+      "accelerators/test_accelerator_target.cc",
+      "accelerators/test_accelerator_target.h",
       "test/cocoa_helper.h",
       "test/cocoa_helper.mm",
       "test/menu_test_observer.h",
@@ -886,6 +891,7 @@ test("ui_base_unittests") {
     sources += [
       "ime/candidate_window_unittest.cc",
       "ime/chromeos/character_composer_unittest.cc",
+      "ime/chromeos/extension_ime_util_unittest.cc",
       "ime/chromeos/ime_keyboard_unittest.cc",
       "ime/chromeos/input_method_util_unittest.cc",
       "ime/composition_text_unittest.cc",
@@ -897,7 +903,11 @@ test("ui_base_unittests") {
       "ime/win/tsf_text_store_unittest.cc",
     ]
     if (is_linux && use_aura && !is_chromeos) {
-      sources += [ "ime/input_method_auralinux_unittest.cc" ]
+      if (use_x11) {
+        sources += [ "ime/input_method_auralinux_unittest.cc" ]
+      } else {
+        sources += [ "ime/input_method_minimal_unittest.cc" ]
+      }
     }
     if (use_x11) {
       sources += [ "ime/composition_text_util_pango_unittest.cc" ]
@@ -911,7 +921,7 @@ test("ui_base_unittests") {
     ":ui_base_unittests_bundle_data",
     "//base",
     "//base/test:test_support",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//net",
     "//net:test_support",
     "//skia",

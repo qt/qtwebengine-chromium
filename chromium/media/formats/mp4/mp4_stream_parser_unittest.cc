@@ -96,12 +96,9 @@ class MP4StreamParserTest : public testing::Test {
 
   void InitF(const StreamParser::InitParameters& expected_params,
              const StreamParser::InitParameters& params) {
-    DVLOG(1) << "InitF: dur=" << params.duration.InMicroseconds()
-             << ", autoTimestampOffset=" << params.auto_update_timestamp_offset;
+    DVLOG(1) << "InitF: dur=" << params.duration.InMicroseconds();
     EXPECT_EQ(expected_params.duration, params.duration);
     EXPECT_EQ(expected_params.timeline_offset, params.timeline_offset);
-    EXPECT_EQ(expected_params.auto_update_timestamp_offset,
-              params.auto_update_timestamp_offset);
     EXPECT_EQ(expected_params.liveness, params.liveness);
     EXPECT_EQ(expected_params.detected_audio_track_count,
               params.detected_audio_track_count);
@@ -188,15 +185,20 @@ class MP4StreamParserTest : public testing::Test {
 
   void InitializeParserWithInitParametersExpectations(
       StreamParser::InitParameters params) {
-    parser_->Init(
-        base::Bind(&MP4StreamParserTest::InitF, base::Unretained(this), params),
-        base::Bind(&MP4StreamParserTest::NewConfigF, base::Unretained(this)),
-        base::Bind(&MP4StreamParserTest::NewBuffersF, base::Unretained(this)),
-        true,
-        base::Bind(&MP4StreamParserTest::KeyNeededF, base::Unretained(this)),
-        base::Bind(&MP4StreamParserTest::NewSegmentF, base::Unretained(this)),
-        base::Bind(&MP4StreamParserTest::EndOfSegmentF, base::Unretained(this)),
-        &media_log_);
+    parser_->Init(base::BindOnce(&MP4StreamParserTest::InitF,
+                                 base::Unretained(this), params),
+                  base::BindRepeating(&MP4StreamParserTest::NewConfigF,
+                                      base::Unretained(this)),
+                  base::BindRepeating(&MP4StreamParserTest::NewBuffersF,
+                                      base::Unretained(this)),
+                  true,
+                  base::BindRepeating(&MP4StreamParserTest::KeyNeededF,
+                                      base::Unretained(this)),
+                  base::BindRepeating(&MP4StreamParserTest::NewSegmentF,
+                                      base::Unretained(this)),
+                  base::BindRepeating(&MP4StreamParserTest::EndOfSegmentF,
+                                      base::Unretained(this)),
+                  &media_log_);
   }
 
   StreamParser::InitParameters GetDefaultInitParametersExpectations() {
@@ -348,7 +350,7 @@ TEST_F(MP4StreamParserTest, HEVC_in_MP4_container) {
   bool expect_success = true;
 #else
   bool expect_success = false;
-  EXPECT_MEDIA_LOG(ErrorLog("Parse unsupported video format hev1"));
+  EXPECT_MEDIA_LOG(ErrorLog("Unsupported VisualSampleEntry type hev1"));
 #endif
   auto params = GetDefaultInitParametersExpectations();
   params.duration = base::TimeDelta::FromMicroseconds(1002000);

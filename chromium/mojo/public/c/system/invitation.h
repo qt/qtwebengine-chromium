@@ -43,15 +43,13 @@ struct MOJO_ALIGNAS(8) MojoProcessErrorDetails {
   // An error message corresponding to the reason why the connection was
   // terminated. This is an information message which may be useful to
   // developers.
-  const char* error_message;
+  MOJO_POINTER_FIELD(const char*, error_message);
 
   // See |MojoProcessErrorFlags|.
   MojoProcessErrorFlags flags;
 };
-MOJO_STATIC_ASSERT_FOR_32_BIT(sizeof(MojoProcessErrorDetails) == 16,
-                              "MojoProcessErrorDetails has wrong size.");
-MOJO_STATIC_ASSERT_FOR_64_BIT(sizeof(MojoProcessErrorDetails) == 24,
-                              "MojoProcessErrorDetails has wrong size.");
+MOJO_STATIC_ASSERT(sizeof(MojoProcessErrorDetails) == 24,
+                   "MojoProcessErrorDetails has wrong size.");
 
 // An opaque process handle value which must be provided when sending an
 // invitation to another process via a platform transport. See
@@ -110,14 +108,10 @@ struct MOJO_ALIGNAS(8) MojoInvitationTransportEndpoint {
   //   - On Fuchsua, this is a single channel Fuchsia handle
   //   - On other POSIX systems, this is a single Unix domain socket file
   //     descriptor.
-  const struct MojoPlatformHandle* platform_handles;
+  MOJO_POINTER_FIELD(const struct MojoPlatformHandle*, platform_handles);
 };
-MOJO_STATIC_ASSERT_FOR_32_BIT(
-    sizeof(MojoInvitationTransportEndpoint) == 16,
-    "MojoInvitationTransportEndpoint has wrong size.");
-MOJO_STATIC_ASSERT_FOR_64_BIT(
-    sizeof(MojoInvitationTransportEndpoint) == 24,
-    "MojoInvitationTransportEndpoint has wrong size.");
+MOJO_STATIC_ASSERT(sizeof(MojoInvitationTransportEndpoint) == 24,
+                   "MojoInvitationTransportEndpoint has wrong size.");
 
 // Flags passed to |MojoCreateInvitation()| via |MojoCreateInvitationOptions|.
 typedef uint32_t MojoCreateInvitationFlags;
@@ -181,6 +175,17 @@ typedef uint32_t MojoSendInvitationFlags;
 // No flags. Default behavior.
 #define MOJO_SEND_INVITATION_FLAG_NONE ((MojoSendInvitationFlags)0)
 
+// Send an isolated invitation to the receiver. Isolated invitations only
+// establish communication between the sender and the receiver. Accepting an
+// isolated invitation does not make IPC possible between the sender and any
+// other members of the receiver's process graph, nor does it make IPC possible
+// between the receiver and any other members of the sender's process graph.
+//
+// Invitations sent with this flag set must be accepted with the corresponding
+// |MOJO_ACCEPT_INVITATION_FLAG_ISOLATED| flag set, and may only have a single
+// message pipe attached with a name of exactly four zero-bytes ("\0\0\0\0").
+#define MOJO_SEND_INVITATION_FLAG_ISOLATED ((MojoSendInvitationFlags)1)
+
 // Options passed to |MojoSendInvitation()|.
 struct MOJO_ALIGNAS(8) MojoSendInvitationOptions {
   // The size of this structure, used for versioning.
@@ -188,8 +193,16 @@ struct MOJO_ALIGNAS(8) MojoSendInvitationOptions {
 
   // See |MojoSendInvitationFlags|.
   MojoSendInvitationFlags flags;
+
+  // If |flags| includes |MOJO_SEND_INVITATION_FLAG_ISOLATED| then these fields
+  // specify a name identifying the established isolated connection. There are
+  // no restrictions on the value given. If |isolated_connection_name_length| is
+  // non-zero, the system ensures that only one isolated process connection can
+  // exist for the given name at any time.
+  MOJO_POINTER_FIELD(const char*, isolated_connection_name);
+  uint32_t isolated_connection_name_length;
 };
-MOJO_STATIC_ASSERT(sizeof(MojoSendInvitationOptions) == 8,
+MOJO_STATIC_ASSERT(sizeof(MojoSendInvitationOptions) == 24,
                    "MojoSendInvitationOptions has wrong size");
 
 // Flags passed to |MojoAcceptInvitation()| via |MojoAcceptInvitationOptions|.
@@ -197,6 +210,10 @@ typedef uint32_t MojoAcceptInvitationFlags;
 
 // No flags. Default behavior.
 #define MOJO_ACCEPT_INVITATION_FLAG_NONE ((MojoAcceptInvitationFlags)0)
+
+// Accept an isoalted invitation from the sender. See
+// |MOJO_SEND_INVITATION_FLAG_ISOLATED| for details.
+#define MOJO_ACCEPT_INVITATION_FLAG_ISOLATED ((MojoAcceptInvitationFlags)1)
 
 // Options passed to |MojoAcceptInvitation()|.
 struct MOJO_ALIGNAS(8) MojoAcceptInvitationOptions {
@@ -229,7 +246,7 @@ typedef void (*MojoProcessErrorHandler)(
 // An invitation is used to invite another process to join this process's
 // IPC network. The caller must already be a member of a Mojo network, either
 // either by itself having been previously invited, or by being the Mojo broker
-// process initialized via private Mojo APIs (i.e. the EDK).
+// process initialized via the Mojo Core Embedder API.
 //
 // Invitations can have message pipes attached to them, and these message pipes
 // are used to bootstrap Mojo IPC between the inviter and the invitee. See

@@ -14,52 +14,17 @@
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
+#include "base/threading/platform_thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/timer.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "media/audio/audio_device_description.h"
 #include "media/audio/audio_output_controller.h"
+#include "media/audio/audio_output_device_thread_callback.h"
 #include "media/base/limits.h"
 
 namespace media {
-
-// Takes care of invoking the render callback on the audio thread.
-// An instance of this class is created for each capture stream in
-// OnStreamCreated().
-class AudioOutputDevice::AudioThreadCallback
-    : public AudioDeviceThread::Callback {
- public:
-  AudioThreadCallback(const AudioParameters& audio_parameters,
-                      base::SharedMemoryHandle memory,
-                      AudioRendererSink::RenderCallback* render_callback);
-  ~AudioThreadCallback() override;
-
-  void MapSharedMemory() override;
-
-  // Called whenever we receive notifications about pending data.
-  void Process(uint32_t control_signal) override;
-
-  // Returns whether the current thread is the audio device thread or not.
-  // Will always return true if DCHECKs are not enabled.
-  bool CurrentThreadIsAudioDeviceThread();
-
-  // Sets |first_play_start_time_| to the current time unless it's already set,
-  // in which case it's a no-op. The first call to this method MUST have
-  // completed by the time we recieve our first Process() callback to avoid
-  // data races.
-  void InitializePlayStartTime();
-
- private:
-  const base::TimeTicks start_time_;
-  // If set, this is used to record the startup duration UMA stat.
-  base::Optional<base::TimeTicks> first_play_start_time_;
-  AudioRendererSink::RenderCallback* render_callback_;
-  std::unique_ptr<AudioBus> output_bus_;
-  uint64_t callback_num_;
-
-  DISALLOW_COPY_AND_ASSIGN(AudioThreadCallback);
-};
 
 AudioOutputDevice::AudioOutputDevice(
     std::unique_ptr<AudioOutputIPC> ipc,
@@ -199,7 +164,7 @@ void AudioOutputDevice::RequestDeviceAuthorizationOnIOThread() {
         FROM_HERE, auth_timeout_,
         base::BindRepeating(&AudioOutputDevice::OnDeviceAuthorized, this,
                             OUTPUT_DEVICE_STATUS_ERROR_TIMED_OUT,
-                            media::AudioParameters(), std::string()));
+                            AudioParameters(), std::string()));
   }
 }
 
@@ -250,6 +215,10 @@ void AudioOutputDevice::ShutDownOnIOThread() {
   // Destoy the timer on the thread it's used on.
   auth_timeout_action_.reset();
 
+  UMA_HISTOGRAM_ENUMERATION("Media.Audio.Render.StreamCallbackError2",
+                            had_error_);
+  had_error_ = kNoError;
+
   // We can run into an issue where ShutDownOnIOThread is called right after
   // OnStreamCreated is called in cases where Start/Stop are called before we
   // get the OnStreamCreated callback.  To handle that corner case, we call
@@ -263,9 +232,6 @@ void AudioOutputDevice::ShutDownOnIOThread() {
   audio_thread_.reset();
   audio_callback_.reset();
   stopping_hack_ = false;
-
-  UMA_HISTOGRAM_BOOLEAN("Media.Audio.Render.StreamCallbackError",
-                        had_callback_error_);
 }
 
 void AudioOutputDevice::SetVolumeOnIOThread(double volume) {
@@ -283,7 +249,6 @@ void AudioOutputDevice::OnError() {
   if (state_ == IDLE)
     return;
 
-  had_callback_error_ = true;
   // Don't dereference the callback object if the audio thread
   // is stopped or stopping.  That could mean that the callback
   // object has been deleted.
@@ -295,7 +260,7 @@ void AudioOutputDevice::OnError() {
 
 void AudioOutputDevice::OnDeviceAuthorized(
     OutputDeviceStatus device_status,
-    const media::AudioParameters& output_params,
+    const AudioParameters& output_params,
     const std::string& matched_device_id) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
 
@@ -357,19 +322,20 @@ void AudioOutputDevice::OnDeviceAuthorized(
   }
 }
 
-void AudioOutputDevice::OnStreamCreated(base::SharedMemoryHandle handle,
-                                        base::SyncSocket::Handle socket_handle,
-                                        bool playing_automatically) {
+void AudioOutputDevice::OnStreamCreated(
+    base::UnsafeSharedMemoryRegion shared_memory_region,
+    base::SyncSocket::Handle socket_handle,
+    bool playing_automatically) {
   TRACE_EVENT0("audio", "AudioOutputDevice::OnStreamCreated")
 
   DCHECK(io_task_runner_->BelongsToCurrentThread());
-  DCHECK(base::SharedMemory::IsHandleValid(handle));
+  DCHECK(shared_memory_region.IsValid());
 #if defined(OS_WIN)
   DCHECK(socket_handle);
 #else
   DCHECK_GE(socket_handle, 0);
 #endif
-  DCHECK_GT(handle.GetSize(), 0u);
+  DCHECK_GT(shared_memory_region.GetSize(), 0u);
 
   if (state_ != STREAM_CREATION_REQUESTED)
     return;
@@ -394,12 +360,14 @@ void AudioOutputDevice::OnStreamCreated(base::SharedMemoryHandle handle,
     DCHECK(!audio_thread_);
     DCHECK(!audio_callback_);
 
-    audio_callback_.reset(new AudioOutputDevice::AudioThreadCallback(
-        audio_parameters_, handle, callback_));
+    audio_callback_.reset(new AudioOutputDeviceThreadCallback(
+        audio_parameters_, std::move(shared_memory_region), callback_,
+        std::make_unique<AudioOutputDeviceThreadCallback::Metrics>()));
     if (playing_automatically)
       audio_callback_->InitializePlayStartTime();
     audio_thread_.reset(new AudioDeviceThread(
-        audio_callback_.get(), socket_handle, "AudioOutputDevice"));
+        audio_callback_.get(), socket_handle, "AudioOutputDevice",
+        base::ThreadPriority::REALTIME_AUDIO));
   }
 }
 
@@ -421,101 +389,14 @@ void AudioOutputDevice::NotifyRenderCallbackOfError() {
   base::AutoLock auto_lock(audio_thread_lock_);
   // Avoid signaling error if Initialize() hasn't been called yet, or if
   // Stop() has already been called.
-  if (callback_ && !stopping_hack_)
+  if (callback_ && !stopping_hack_) {
+    // Update |had_error_| for UMA stats.
+    if (audio_callback_)
+      had_error_ = kErrorDuringRendering;
+    else
+      had_error_ = kErrorDuringCreation;
     callback_->OnRenderError();
-}
-
-// AudioOutputDevice::AudioThreadCallback
-
-AudioOutputDevice::AudioThreadCallback::AudioThreadCallback(
-    const AudioParameters& audio_parameters,
-    base::SharedMemoryHandle memory,
-    AudioRendererSink::RenderCallback* render_callback)
-    : AudioDeviceThread::Callback(
-          audio_parameters,
-          memory,
-          /*read only*/ false,
-          ComputeAudioOutputBufferSize(audio_parameters),
-          /*segment count*/ 1),
-      start_time_(base::TimeTicks::Now()),
-      first_play_start_time_(base::nullopt),
-      render_callback_(render_callback),
-      callback_num_(0) {}
-
-AudioOutputDevice::AudioThreadCallback::~AudioThreadCallback() {
-  UMA_HISTOGRAM_LONG_TIMES("Media.Audio.Render.OutputStreamDuration",
-                           base::TimeTicks::Now() - start_time_);
-}
-
-void AudioOutputDevice::AudioThreadCallback::MapSharedMemory() {
-  CHECK_EQ(total_segments_, 1u);
-  CHECK(shared_memory_.Map(memory_length_));
-
-  AudioOutputBuffer* buffer =
-      reinterpret_cast<AudioOutputBuffer*>(shared_memory_.memory());
-  output_bus_ = AudioBus::WrapMemory(audio_parameters_, buffer->audio);
-  output_bus_->set_is_bitstream_format(audio_parameters_.IsBitstreamFormat());
-}
-
-// Called whenever we receive notifications about pending data.
-void AudioOutputDevice::AudioThreadCallback::Process(uint32_t control_signal) {
-  callback_num_++;
-
-  // Read and reset the number of frames skipped.
-  AudioOutputBuffer* buffer =
-      reinterpret_cast<AudioOutputBuffer*>(shared_memory_.memory());
-  uint32_t frames_skipped = buffer->params.frames_skipped;
-  buffer->params.frames_skipped = 0;
-
-  base::TimeDelta delay =
-      base::TimeDelta::FromMicroseconds(buffer->params.delay_us);
-
-  base::TimeTicks delay_timestamp =
-      base::TimeTicks() +
-      base::TimeDelta::FromMicroseconds(buffer->params.delay_timestamp_us);
-
-  TRACE_EVENT_BEGIN2("audio", "AudioOutputDevice::FireRenderCallback",
-                     "callback_num", callback_num_, "frames skipped",
-                     frames_skipped);
-  DVLOG(4) << __func__ << " delay:" << delay << " delay_timestamp:" << delay
-           << " frames_skipped:" << frames_skipped;
-
-  // When playback starts, we get an immediate callback to Process to make sure
-  // that we have some data, we'll get another one after the device is awake and
-  // ingesting data, which is what we want to track with this trace.
-  if (callback_num_ == 2) {
-    if (first_play_start_time_) {
-      UMA_HISTOGRAM_TIMES("Media.Audio.Render.OutputDeviceStartTime",
-                          base::TimeTicks::Now() - *first_play_start_time_);
-    }
-    TRACE_EVENT_ASYNC_END0("audio", "StartingPlayback", this);
   }
-
-  // Update the audio-delay measurement, inform about the number of skipped
-  // frames, and ask client to render audio.  Since |output_bus_| is wrapping
-  // the shared memory the Render() call is writing directly into the shared
-  // memory.
-  render_callback_->Render(delay, delay_timestamp, frames_skipped,
-                           output_bus_.get());
-
-  if (audio_parameters_.IsBitstreamFormat()) {
-    buffer->params.bitstream_data_size = output_bus_->GetBitstreamDataSize();
-    buffer->params.bitstream_frames = output_bus_->GetBitstreamFrames();
-  }
-  TRACE_EVENT_END2("audio", "AudioOutputDevice::FireRenderCallback",
-                   "timestamp (ms)",
-                   (delay_timestamp - base::TimeTicks()).InMillisecondsF(),
-                   "delay (ms)", delay.InMillisecondsF());
-}
-
-bool AudioOutputDevice::AudioThreadCallback::
-    CurrentThreadIsAudioDeviceThread() {
-  return thread_checker_.CalledOnValidThread();
-}
-
-void AudioOutputDevice::AudioThreadCallback::InitializePlayStartTime() {
-  if (!first_play_start_time_.has_value())
-    first_play_start_time_ = base::TimeTicks::Now();
 }
 
 }  // namespace media

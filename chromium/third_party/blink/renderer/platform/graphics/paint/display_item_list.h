@@ -7,7 +7,7 @@
 
 #include "third_party/blink/renderer/platform/graphics/contiguous_container.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item.h"
-#include "third_party/blink/renderer/platform/graphics/paint/transform_3d_display_item.h"
+#include "third_party/blink/renderer/platform/graphics/paint/foreign_layer_display_item.h"
 #include "third_party/blink/renderer/platform/wtf/alignment.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 
@@ -18,12 +18,11 @@ struct PaintChunk;
 
 // kDisplayItemAlignment must be a multiple of alignof(derived display item) for
 // each derived display item; the ideal value is the least common multiple.
-// Currently the limiting factor is TransformationMatrix (in
-// BeginTransform3DDisplayItem), which requests 16-byte alignment.
+// The validity of kDisplayItemAlignment and kMaximumDisplayItemSize are checked
+// in PaintController::CreateAndAppend().
 static const size_t kDisplayItemAlignment =
-    WTF_ALIGN_OF(BeginTransform3DDisplayItem);
-static const size_t kMaximumDisplayItemSize =
-    sizeof(BeginTransform3DDisplayItem);
+    WTF_ALIGN_OF(ForeignLayerDisplayItem);
+static const size_t kMaximumDisplayItemSize = sizeof(ForeignLayerDisplayItem);
 
 // A container for a list of display items.
 class PLATFORM_EXPORT DisplayItemList
@@ -55,19 +54,6 @@ class PLATFORM_EXPORT DisplayItemList
     item.visual_rect_ = result.visual_rect_;
     item.outset_for_raster_effects_ = result.outset_for_raster_effects_;
     return result;
-  }
-
-  // This is used by PaintUnderInvalidationChecking in SPv1 to restore a
-  // paired-begin display item that was moved to the new display item list then
-  // was removed because the pair is a no-op. This ensures that we won't compare
-  // the next new display item against the tombstone display item.
-  void RestoreTombstone(size_t index, DisplayItem& item) {
-    DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
-    DCHECK((*this)[index].IsTombstone());
-    SECURITY_CHECK((*this)[index].DerivedSize() == item.DerivedSize());
-    memcpy(static_cast<void*>(&(*this)[index]), static_cast<void*>(&item),
-           item.DerivedSize());
-    new (&item) DisplayItem;
   }
 
   // Useful for iterating with a range-based for loop.

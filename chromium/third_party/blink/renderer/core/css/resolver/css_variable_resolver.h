@@ -11,6 +11,10 @@
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
 
+namespace WTF {
+class TextEncoding;
+}  // namespace WTF
+
 namespace blink {
 
 class CSSCustomPropertyDeclaration;
@@ -18,10 +22,12 @@ class CSSParserTokenRange;
 class CSSPendingSubstitutionValue;
 class CSSVariableData;
 class CSSVariableReferenceValue;
+class KURL;
+class PropertyRegistration;
 class PropertyRegistry;
-class StyleResolverState;
 class StyleInheritedVariables;
 class StyleNonInheritedVariables;
+class StyleResolverState;
 
 class CSSVariableResolver {
   STACK_ALLOCATED();
@@ -43,46 +49,94 @@ class CSSVariableResolver {
   void ComputeRegisteredVariables();
 
  private:
+  struct Options {
+    STACK_ALLOCATED();
+
+    // Treat any references to animation-tainted custom properties as invalid.
+    //
+    // Custom properties used in @keyframe rules become 'animation-tainted'
+    // (see https://drafts.csswg.org/css-variables/#syntax). References to
+    // animation-tainted custom properties are not allowed for properties
+    // that affect animations.
+    bool disallow_animation_tainted = false;
+
+    // Treat any references to registered custom properties with font-relative
+    // units as invalid.
+    //
+    // This is used when resolving variable references for 'font-size', where
+    // registered custom properties with font-relative units may not be used.
+    //
+    // https://drafts.css-houdini.org/css-properties-values-api-1/#dependency-cycles-via-relative-units
+    bool disallow_registered_font_units = false;
+
+    // Treat any references to registered custom properties with
+    // root-font-relative units as invalid.
+    //
+    // This is used when resolving variable references for 'font-size' on the
+    // root element, where registered custom properties with root-font-relative
+    // units may not be used.
+    //
+    // https://drafts.css-houdini.org/css-properties-values-api-1/#dependency-cycles-via-relative-units
+    bool disallow_registered_root_font_units = false;
+  };
+
+  struct Result {
+    STACK_ALLOCATED();
+
+    Vector<CSSParserToken> tokens;
+    Vector<String> backing_strings;
+    bool is_animation_tainted = false;
+    bool has_font_units = false;
+    bool has_root_font_units = false;
+  };
+
   const CSSValue* ResolvePendingSubstitutions(
       CSSPropertyID,
       const CSSPendingSubstitutionValue&,
-      bool disallow_animation_tainted);
+      const Options&);
   const CSSValue* ResolveVariableReferences(CSSPropertyID,
                                             const CSSVariableReferenceValue&,
-                                            bool disallow_animation_tainted);
+                                            const Options&);
 
   // These return false if we encounter a reference to an invalid variable with
   // no fallback.
 
-  // Resolves a range which may contain var() references.
-  bool ResolveTokenRange(CSSParserTokenRange,
-                         bool disallow_animation_tainted,
-                         Vector<CSSParserToken>& result,
-                         Vector<String>& result_backing_strings,
-                         bool& result_is_animation_tainted);
-  // Resolves the fallback (if present) of a var() reference, starting from the
-  // comma.
-  bool ResolveFallback(CSSParserTokenRange,
-                       bool disallow_animation_tainted,
-                       Vector<CSSParserToken>& result,
-                       Vector<String>& result_backing_strings,
-                       bool& result_is_animation_tainted);
-  // Resolves the contents of a var() reference.
+  // Resolves a range which may contain var() or env() references.
+  bool ResolveTokenRange(CSSParserTokenRange, const Options&, Result&);
+  // Resolves the fallback (if present) of a var() or env() reference, starting
+  // from the comma.
+  bool ResolveFallback(CSSParserTokenRange, const Options&, Result&);
+  // Resolves the contents of a var() or env() reference.
   bool ResolveVariableReference(CSSParserTokenRange,
-                                bool disallow_animation_tainted,
-                                Vector<CSSParserToken>& result,
-                                Vector<String>& result_backing_strings,
-                                bool& result_is_animation_tainted);
+                                const Options&,
+                                bool is_env_variable,
+                                Result&);
 
   // These return null if the custom property is invalid.
 
+  // Returns the CSSVariableData for an environment variable.
+  CSSVariableData* ValueForEnvironmentVariable(const AtomicString& name);
   // Returns the CSSVariableData for a custom property, resolving and storing it
   // if necessary.
   CSSVariableData* ValueForCustomProperty(AtomicString name);
   // Resolves the CSSVariableData from a custom property declaration.
   scoped_refptr<CSSVariableData> ResolveCustomProperty(AtomicString name,
                                                        const CSSVariableData&,
+                                                       bool resolve_urls,
                                                        bool& cycle_detected);
+  // Rewrites (in-place) kUrlTokens and kFunctionToken/CSSValueUrls to contain
+  // absolute URLs.
+  void ResolveRelativeUrls(Vector<CSSParserToken>& tokens,
+                           Vector<String>& backing_strings,
+                           const KURL& base_url,
+                           const WTF::TextEncoding& charset);
+
+  bool ShouldResolveRelativeUrls(const AtomicString& name,
+                                 const CSSVariableData&);
+
+  bool IsVariableDisallowed(const CSSVariableData&,
+                            const Options&,
+                            const PropertyRegistration*);
 
   const StyleResolverState& state_;
   StyleInheritedVariables* inherited_variables_;

@@ -229,7 +229,7 @@ public:
 class LibGLES_CM
 {
 public:
-	LibGLES_CM(const std::string libraryDirectory) : libraryDirectory(libraryDirectory)
+	LibGLES_CM()
 	{
 	}
 
@@ -260,11 +260,7 @@ private:
 					const char *libGLES_CM_lib[] = {"libGLES_CM.dll", "libGLES_CM_translator.dll"};
 				#endif
 			#elif defined(__ANDROID__)
-				#if defined(__LP64__)
-					const char *libGLES_CM_lib[] = {"/vendor/lib64/egl/libGLESv1_CM_swiftshader.so", "/system/lib64/egl/libGLESv1_CM_swiftshader.so"};
-				#else
-					const char *libGLES_CM_lib[] = {"/vendor/lib/egl/libGLESv1_CM_swiftshader.so", "/system/lib/egl/libGLESv1_CM_swiftshader.so"};
-				#endif
+				const char *libGLES_CM_lib[] = {"libGLESv1_CM_swiftshader.so", "libGLESv1_CM_swiftshader.so"};
 			#elif defined(__linux__)
 				#if defined(__LP64__)
 					const char *libGLES_CM_lib[] = {"lib64GLES_CM_translator.so", "libGLES_CM.so.1", "libGLES_CM.so"};
@@ -283,7 +279,8 @@ private:
 				#error "libGLES_CM::loadExports unimplemented for this platform"
 			#endif
 
-			libGLES_CM = loadLibrary(libraryDirectory, libGLES_CM_lib, "libGLES_CM_swiftshader");
+			std::string directory = getModuleDirectory();
+			libGLES_CM = loadLibrary(directory, libGLES_CM_lib, "libGLES_CM_swiftshader");
 
 			if(libGLES_CM)
 			{
@@ -297,7 +294,6 @@ private:
 
 	void *libGLES_CM = nullptr;
 	LibGLES_CMexports *libGLES_CMexports = nullptr;
-	const std::string libraryDirectory;
 };
 
 #endif   // libGLES_CM_hpp

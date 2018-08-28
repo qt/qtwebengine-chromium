@@ -2019,6 +2019,8 @@ TEST_F(NGBlockLayoutAlgorithmTest, FloatFragmentationOrthogonalFlows) {
           NGLogicalSize(LayoutUnit(1000), NGSizeIndefinite), false, true,
           kFragmentainerSpaceAvailable);
 
+  AdvanceToLayoutPhase();
+
   scoped_refptr<const NGPhysicalFragment> fragment =
       NGBlockLayoutAlgorithm(node, *space).Layout()->PhysicalFragment();
   EXPECT_EQ(NGPhysicalSize(LayoutUnit(150), LayoutUnit(60)), fragment->Size());
@@ -2304,6 +2306,16 @@ TEST_F(NGBlockLayoutAlgorithmTest, RootFragmentOffsetInsideLegacy) {
   // the right time.
   // EXPECT_EQ(NGPhysicalOffset(LayoutUnit(20), LayoutUnit(10)),
   //          fragment->Offset());
+}
+
+// TODO(dgrogan): Move this to ng_flex_layout_algorithm_test.cc if there ever is
+// one.
+TEST_F(NGBlockLayoutAlgorithmTest, DetailsFlexDoesntCrash) {
+  SetBodyInnerHTML(R"HTML(
+    <details style="display:flex"></details>
+  )HTML");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  // No crash is good.
 }
 
 }  // namespace

@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/svg/svg_element.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
@@ -47,8 +48,7 @@ DoubleSize ContentsScrollOffset(AbstractView* abstract_view) {
   LocalFrame* frame = ToLocalDOMWindow(abstract_view)->GetFrame();
   if (!frame)
     return DoubleSize();
-  ScrollableArea* scrollable_area =
-      frame->View()->LayoutViewportScrollableArea();
+  ScrollableArea* scrollable_area = frame->View()->LayoutViewport();
   if (!scrollable_area)
     return DoubleSize();
   float scale_factor = frame->PageZoomFactor();
@@ -223,12 +223,10 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
   float scale_factor = 1.0f;
   if (dom_window && dom_window->GetFrame() && dom_window->GetFrame()->View()) {
     LocalFrame* frame = dom_window->GetFrame();
-    FloatPoint page_point = frame->View()->RootFrameToContents(
+    FloatPoint page_point = frame->View()->ConvertFromRootFrame(
         web_pointer_properties.PositionInWidget());
     scale_factor = 1.0f / frame->PageZoomFactor();
-    FloatPoint scroll_position(frame->View()->GetScrollOffset());
     client_point = page_point.ScaledBy(scale_factor);
-    client_point.MoveBy(scroll_position.ScaledBy(-scale_factor));
   }
 
   initializer.setScreenX(web_pointer_properties.PositionInScreen().x);
@@ -454,8 +452,7 @@ void MouseEvent::ComputePageLocation() {
   DoublePoint scaled_page_location =
       page_location_.ScaledBy(PageZoomFactor(this));
   if (frame && frame->View()) {
-    absolute_location_ =
-        frame->View()->DocumentToAbsolute(scaled_page_location);
+    absolute_location_ = frame->View()->DocumentToFrame(scaled_page_location);
   } else {
     absolute_location_ = scaled_page_location;
   }
@@ -509,7 +506,7 @@ void MouseEvent::ComputeRelativePosition() {
     DoublePoint scaled_page_location =
         page_location_.ScaledBy(PageZoomFactor(this));
     if (LocalFrameView* view = n->GetLayoutObject()->View()->GetFrameView())
-      layer_location_ = view->DocumentToAbsolute(scaled_page_location);
+      layer_location_ = view->DocumentToFrame(scaled_page_location);
 
     // FIXME: This logic is a wrong implementation of convertToLayerCoords.
     for (PaintLayer* layer = n->GetLayoutObject()->EnclosingLayer(); layer;

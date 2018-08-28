@@ -159,12 +159,15 @@ void ViewBlobInternalsJob::Start() {
                                 weak_factory_.GetWeakPtr()));
 }
 
-bool ViewBlobInternalsJob::IsRedirectResponse(GURL* location,
-                                              int* http_status_code) {
+bool ViewBlobInternalsJob::IsRedirectResponse(
+    GURL* location,
+    int* http_status_code,
+    bool* insecure_scheme_was_upgraded) {
   if (request_->url().has_query()) {
     // Strip the query parameters.
     GURL::Replacements replacements;
     replacements.ClearQuery();
+    *insecure_scheme_was_upgraded = false;
     *location = request_->url().ReplaceComponents(replacements);
     *http_status_code = 307;
     return true;
@@ -273,7 +276,10 @@ void ViewBlobInternalsJob::GenerateHTMLForBlobData(
         break;
       case BlobDataItem::Type::kDiskCacheEntry:
         AddHTMLListItem(kType, "disk cache entry", out);
-        AddHTMLListItem(kURL, item.disk_cache_entry()->GetKey(), out);
+        if (item.disk_cache_entry())
+          AddHTMLListItem(kURL, item.disk_cache_entry()->GetKey(), out);
+        else
+          AddHTMLListItem(kURL, "Broken", out);
         break;
       case BlobDataItem::Type::kBytesDescription:
         AddHTMLListItem(kType, "pending data", out);

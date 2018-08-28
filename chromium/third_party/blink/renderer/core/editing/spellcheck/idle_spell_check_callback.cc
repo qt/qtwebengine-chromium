@@ -29,12 +29,13 @@ namespace blink {
 
 namespace {
 
-const int kColdModeTimerIntervalMS = 1000;
-const int kConsecutiveColdModeTimerIntervalMS = 200;
+constexpr TimeDelta kColdModeTimerInterval = TimeDelta::FromMilliseconds(1000);
+constexpr TimeDelta kConsecutiveColdModeTimerInterval =
+    TimeDelta::FromMilliseconds(200);
 const int kHotModeRequestTimeoutMS = 200;
 const int kInvalidHandle = -1;
 const int kDummyHandleForForcedInvocation = -2;
-const double kForcedInvocationDeadlineSeconds = 10;
+constexpr TimeDelta kForcedInvocationDeadline = TimeDelta::FromSeconds(10);
 
 }  // namespace
 
@@ -73,6 +74,7 @@ void IdleSpellCheckCallback::Deactivate() {
   state_ = State::kInactive;
   if (cold_mode_timer_.IsActive())
     cold_mode_timer_.Stop();
+  cold_mode_requester_->ClearProgress();
   if (idle_callback_handle_ != kInvalidHandle && IsAvailable())
     GetDocument().CancelIdleCallback(idle_callback_handle_);
   idle_callback_handle_ = kInvalidHandle;
@@ -117,10 +119,10 @@ void IdleSpellCheckCallback::SetNeedsColdModeInvocation() {
     return;
 
   DCHECK(!cold_mode_timer_.IsActive());
-  int interval_ms = state_ == State::kInColdModeInvocation
-                        ? kConsecutiveColdModeTimerIntervalMS
-                        : kColdModeTimerIntervalMS;
-  cold_mode_timer_.StartOneShot(interval_ms / 1000.0, FROM_HERE);
+  TimeDelta interval = state_ == State::kInColdModeInvocation
+                           ? kConsecutiveColdModeTimerInterval
+                           : kColdModeTimerInterval;
+  cold_mode_timer_.StartOneShot(interval, FROM_HERE);
   state_ = State::kColdModeTimerStarted;
 }
 
@@ -205,9 +207,9 @@ void IdleSpellCheckCallback::ForceInvocationForTesting() {
   if (!IsSpellCheckingEnabled())
     return;
 
-  IdleDeadline* deadline = IdleDeadline::Create(
-      kForcedInvocationDeadlineSeconds + CurrentTimeTicksInSeconds(),
-      IdleDeadline::CallbackType::kCalledWhenIdle);
+  IdleDeadline* deadline =
+      IdleDeadline::Create(CurrentTimeTicks() + kForcedInvocationDeadline,
+                           IdleDeadline::CallbackType::kCalledWhenIdle);
 
   switch (state_) {
     case State::kColdModeTimerStarted:

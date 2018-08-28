@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "core/fpdfapi/page/cpdf_page.h"
+#include "core/fpdfapi/page/ipdf_page.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
@@ -21,36 +22,35 @@ class CPDF_Dictionary;
 class CPDFXFA_Context;
 class CXFA_FFPageView;
 
-class CPDFXFA_Page : public CPDF_Page::Extension {
+class CPDFXFA_Page : public IPDF_Page {
  public:
   template <typename T, typename... Args>
   friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
+  // IPDF_Page:
+  CPDF_Page* AsPDFPage() override;
+  CPDFXFA_Page* AsXFAPage() override;
+  CPDF_Document* GetDocument() const override;
+  float GetPageWidth() const override;
+  float GetPageHeight() const override;
+  CFX_Matrix GetDisplayMatrix(const FX_RECT& rect, int iRotate) const override;
+  Optional<CFX_PointF> DeviceToPage(
+      const FX_RECT& rect,
+      int rotate,
+      const CFX_PointF& device_point) const override;
+  Optional<CFX_PointF> PageToDevice(
+      const FX_RECT& rect,
+      int rotate,
+      const CFX_PointF& page_point) const override;
+
   bool LoadPage();
   bool LoadPDFPage(CPDF_Dictionary* pageDict);
-
-  // CPDF_Page::Extension:
-  CPDF_Document::Extension* GetDocumentExtension() const override;
-
+  CPDF_Document::Extension* GetDocumentExtension() const;
   int GetPageIndex() const { return m_iPageIndex; }
-  CPDF_Page* GetPDFPage() const { return m_pPDFPage.get(); }
   CXFA_FFPageView* GetXFAPageView() const { return m_pXFAPageView; }
-
   void SetXFAPageView(CXFA_FFPageView* pPageView) {
     m_pXFAPageView = pPageView;
   }
-
-  float GetPageWidth() const;
-  float GetPageHeight() const;
-
-  Optional<CFX_PointF> DeviceToPage(const FX_RECT& rect,
-                                    int rotate,
-                                    const CFX_PointF& device_point) const;
-  Optional<CFX_PointF> PageToDevice(const FX_RECT& rect,
-                                    int rotate,
-                                    const CFX_PointF& page_point) const;
-
-  CFX_Matrix GetDisplayMatrix(const FX_RECT& rect, int iRotate) const;
 
  protected:
   // Refcounted class.
@@ -61,7 +61,7 @@ class CPDFXFA_Page : public CPDF_Page::Extension {
   bool LoadXFAPageView();
 
  private:
-  std::unique_ptr<CPDF_Page> m_pPDFPage;
+  RetainPtr<CPDF_Page> m_pPDFPage;
   CXFA_FFPageView* m_pXFAPageView;
   UnownedPtr<CPDFXFA_Context> const m_pContext;
   const int m_iPageIndex;

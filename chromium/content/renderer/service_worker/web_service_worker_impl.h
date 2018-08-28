@@ -15,7 +15,7 @@
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker.h"
 #include "third_party/blink/public/web/web_frame.h"
 
 namespace blink {
@@ -51,8 +51,8 @@ class ServiceWorkerProviderContext;
 // blink::mojom::ServiceWorkerObjectInfo, otherwise reuse the existing one.
 //
 // WebServiceWorkerImpl holds a Mojo connection (|host_|). The connection keeps
-// the ServiceWorkerHandle in the browser process alive, which in turn keeps the
-// relevant ServiceWorkerVersion alive.
+// the ServiceWorkerObjectHost in the browser process alive, which in turn keeps
+// the relevant ServiceWorkerVersion alive.
 class CONTENT_EXPORT WebServiceWorkerImpl
     : public blink::mojom::ServiceWorkerObject,
       public blink::WebServiceWorker,
@@ -93,11 +93,11 @@ class CONTENT_EXPORT WebServiceWorkerImpl
   // worker thread for service worker execution contexts.
   //
   // |host_| keeps the Mojo connection to the
-  // browser-side ServiceWorkerHandle, whose lifetime is bound
+  // browser-side ServiceWorkerObjectHost, whose lifetime is bound
   // to |host_| via the Mojo connection.
   blink::mojom::ServiceWorkerObjectHostAssociatedPtr host_;
   // |binding_| keeps the Mojo binding to serve its other Mojo endpoint (i.e.
-  // the caller end) held by the content::ServiceWorkerHandle in the browser
+  // the caller end) held by the content::ServiceWorkerObjectHost in the browser
   // process.
   mojo::AssociatedBinding<blink::mojom::ServiceWorkerObject> binding_;
 

@@ -16,14 +16,12 @@ EnumTraits<memory_instrumentation::mojom::DumpType,
       return memory_instrumentation::mojom::DumpType::PERIODIC_INTERVAL;
     case base::trace_event::MemoryDumpType::EXPLICITLY_TRIGGERED:
       return memory_instrumentation::mojom::DumpType::EXPLICITLY_TRIGGERED;
-    case base::trace_event::MemoryDumpType::PEAK_MEMORY_USAGE:
-      return memory_instrumentation::mojom::DumpType::PEAK_MEMORY_USAGE;
     case base::trace_event::MemoryDumpType::SUMMARY_ONLY:
       return memory_instrumentation::mojom::DumpType::SUMMARY_ONLY;
     default:
       CHECK(false) << "Invalid type: " << static_cast<uint8_t>(type);
       // This should not be reached. Just return a random value.
-      return memory_instrumentation::mojom::DumpType::PEAK_MEMORY_USAGE;
+      return memory_instrumentation::mojom::DumpType::PERIODIC_INTERVAL;
   }
 }
 
@@ -38,9 +36,6 @@ bool EnumTraits<memory_instrumentation::mojom::DumpType,
       break;
     case memory_instrumentation::mojom::DumpType::EXPLICITLY_TRIGGERED:
       *out = base::trace_event::MemoryDumpType::EXPLICITLY_TRIGGERED;
-      break;
-    case memory_instrumentation::mojom::DumpType::PEAK_MEMORY_USAGE:
-      *out = base::trace_event::MemoryDumpType::PEAK_MEMORY_USAGE;
       break;
     case memory_instrumentation::mojom::DumpType::SUMMARY_ONLY:
       *out = base::trace_event::MemoryDumpType::SUMMARY_ONLY;
@@ -91,56 +86,6 @@ bool EnumTraits<memory_instrumentation::mojom::LevelOfDetail,
       return false;
   }
   return true;
-}
-
-// static
-memory_instrumentation::mojom::HeapProfilingMode
-EnumTraits<memory_instrumentation::mojom::HeapProfilingMode,
-           base::trace_event::HeapProfilingMode>::
-    ToMojom(base::trace_event::HeapProfilingMode mode) {
-  switch (mode) {
-    case base::trace_event::HeapProfilingMode::kHeapProfilingModePseudo:
-      return memory_instrumentation::mojom::HeapProfilingMode::PSEUDO_STACK;
-    case base::trace_event::HeapProfilingMode::kHeapProfilingModeNative:
-      return memory_instrumentation::mojom::HeapProfilingMode::NATIVE_STACK;
-    case base::trace_event::HeapProfilingMode::kHeapProfilingModeBackground:
-      return memory_instrumentation::mojom::HeapProfilingMode::BACKGROUND;
-    case base::trace_event::HeapProfilingMode::kHeapProfilingModeTaskProfiler:
-      return memory_instrumentation::mojom::HeapProfilingMode::TASK_PROFILER;
-    case base::trace_event::HeapProfilingMode::kHeapProfilingModeDisabled:
-      return memory_instrumentation::mojom::HeapProfilingMode::DISABLED;
-    case base::trace_event::HeapProfilingMode::kHeapProfilingModeInvalid:
-      break;
-  }
-  NOTREACHED() << "Invalid mode: " << static_cast<uint8_t>(mode);
-  return memory_instrumentation::mojom::HeapProfilingMode::DISABLED;
-}
-
-// static
-bool EnumTraits<memory_instrumentation::mojom::HeapProfilingMode,
-                base::trace_event::HeapProfilingMode>::
-    FromMojom(memory_instrumentation::mojom::HeapProfilingMode input,
-              base::trace_event::HeapProfilingMode* out) {
-  switch (input) {
-    case memory_instrumentation::mojom::HeapProfilingMode::DISABLED:
-      *out = base::trace_event::HeapProfilingMode::kHeapProfilingModeDisabled;
-      return true;
-    case memory_instrumentation::mojom::HeapProfilingMode::TASK_PROFILER:
-      *out =
-          base::trace_event::HeapProfilingMode::kHeapProfilingModeTaskProfiler;
-      return true;
-    case memory_instrumentation::mojom::HeapProfilingMode::BACKGROUND:
-      *out = base::trace_event::HeapProfilingMode::kHeapProfilingModeBackground;
-      return true;
-    case memory_instrumentation::mojom::HeapProfilingMode::PSEUDO_STACK:
-      *out = base::trace_event::HeapProfilingMode::kHeapProfilingModePseudo;
-      return true;
-    case memory_instrumentation::mojom::HeapProfilingMode::NATIVE_STACK:
-      *out = base::trace_event::HeapProfilingMode::kHeapProfilingModeNative;
-      return true;
-  }
-  NOTREACHED() << "Invalid mode: " << static_cast<uint8_t>(input);
-  return false;
 }
 
 // static
@@ -246,8 +191,7 @@ bool StructTraits<memory_instrumentation::mojom::RawProcessMemoryDumpDataView,
   std::vector<std::unique_ptr<base::trace_event::MemoryAllocatorDump>> dumps;
   if (!input.ReadAllocatorDumps(&dumps))
     return false;
-  auto pmd = std::make_unique<base::trace_event::ProcessMemoryDump>(nullptr,
-                                                                    dump_args);
+  auto pmd = std::make_unique<base::trace_event::ProcessMemoryDump>(dump_args);
   pmd->SetAllocatorDumpsForSerialization(std::move(dumps));
   pmd->SetAllEdgesForSerialization(edges);
   *out = std::move(pmd);

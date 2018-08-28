@@ -201,11 +201,8 @@ bool WaitForExitWithTimeoutImpl(base::ProcessHandle handle,
   }
 
   int status;
-  if (!WaitpidWithTimeout(handle, &status, timeout)) {
-    // If multiple threads wait on the same |handle| then one wait will succeed
-    // and the other will fail with errno set to ECHILD.
-    return exited || (errno == ECHILD);
-  }
+  if (!WaitpidWithTimeout(handle, &status, timeout))
+    return exited;
   if (WIFSIGNALED(status)) {
     if (exit_code)
       *exit_code = -1;
@@ -342,7 +339,7 @@ bool Process::WaitForExitWithTimeout(TimeDelta timeout, int* exit_code) const {
   // Record the event that this thread is blocking upon (for hang diagnosis).
   base::debug::ScopedProcessWaitActivity process_activity(this);
 
-  int local_exit_code;
+  int local_exit_code = 0;
   bool exited = WaitForExitWithTimeoutImpl(Handle(), &local_exit_code, timeout);
   if (exited) {
     Exited(local_exit_code);

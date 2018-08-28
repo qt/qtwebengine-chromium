@@ -6,7 +6,6 @@
 
 #include "base/test/fuzzed_data_provider.h"
 
-#include "net/base/completion_once_callback.h"
 #include "net/base/test_completion_callback.h"
 #include "net/cert/ct_policy_enforcer.h"
 #include "net/cert/do_nothing_ct_verifier.h"
@@ -54,8 +53,8 @@ const int kCertVerifyFlags = 0;
 // Static initialization for persistent factory data
 struct Env {
   Env() : host_port_pair(kServerHostName, kServerPort), random_generator(0) {
-    clock.AdvanceTime(QuicTime::Delta::FromSeconds(1));
-    ssl_config_service = base::MakeRefCounted<SSLConfigServiceDefaults>();
+    clock.AdvanceTime(quic::QuicTime::Delta::FromSeconds(1));
+    ssl_config_service = std::make_unique<SSLConfigServiceDefaults>();
     crypto_client_stream_factory.set_use_mock_crypter(true);
     cert_verifier = std::make_unique<MockCertVerifier>();
     channel_id_service =
@@ -67,18 +66,18 @@ struct Env {
     verify_details.cert_verify_result.is_issued_by_known_root = true;
   }
 
-  MockClock clock;
-  scoped_refptr<SSLConfigService> ssl_config_service;
+  quic::MockClock clock;
+  std::unique_ptr<SSLConfigService> ssl_config_service;
   ProofVerifyDetailsChromium verify_details;
   MockCryptoClientStreamFactory crypto_client_stream_factory;
   HostPortPair host_port_pair;
-  MockRandom random_generator;
+  quic::test::MockRandom random_generator;
   NetLogWithSource net_log;
   std::unique_ptr<CertVerifier> cert_verifier;
   std::unique_ptr<ChannelIDService> channel_id_service;
   TransportSecurityState transport_security_state;
-  QuicTagVector connection_options;
-  QuicTagVector client_connection_options;
+  quic::QuicTagVector connection_options;
+  quic::QuicTagVector client_connection_options;
   std::unique_ptr<CTVerifier> cert_transparency_verifier;
   DefaultCTPolicyEnforcer ct_policy_enforcer;
 };
@@ -108,19 +107,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   env->crypto_client_stream_factory.AddProofVerifyDetails(&env->verify_details);
 
-  bool migrate_sessions_on_network_change = false;
-  bool migrate_sessions_early = false;
+  bool goaway_sessions_on_ip_change = false;
   bool migrate_sessions_early_v2 = false;
   bool migrate_sessions_on_network_change_v2 = false;
 
   if (!close_sessions_on_ip_change) {
-    migrate_sessions_on_network_change_v2 = data_provider.ConsumeBool();
-    if (migrate_sessions_on_network_change_v2) {
-      migrate_sessions_early_v2 = data_provider.ConsumeBool();
-    } else {
-      migrate_sessions_on_network_change = data_provider.ConsumeBool();
-      if (migrate_sessions_on_network_change)
-        migrate_sessions_early = data_provider.ConsumeBool();
+    goaway_sessions_on_ip_change = data_provider.ConsumeBool();
+    if (!goaway_sessions_on_ip_change) {
+      migrate_sessions_on_network_change_v2 = data_provider.ConsumeBool();
+      if (migrate_sessions_on_network_change_v2) {
+        migrate_sessions_early_v2 = data_provider.ConsumeBool();
+      }
     }
   }
 
@@ -131,12 +128,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
           &env->ct_policy_enforcer, env->channel_id_service.get(),
           &env->transport_security_state, env->cert_transparency_verifier.get(),
           nullptr, &env->crypto_client_stream_factory, &env->random_generator,
-          &env->clock, kDefaultMaxPacketSize, std::string(),
+          &env->clock, quic::kDefaultMaxPacketSize, std::string(),
           store_server_configs_in_properties, close_sessions_on_ip_change,
+          goaway_sessions_on_ip_change,
           mark_quic_broken_when_network_blackholes,
-          kIdleConnectionTimeoutSeconds, kPingTimeoutSecs,
-          kMaxTimeForCryptoHandshakeSecs, kInitialIdleTimeoutSecs,
-          migrate_sessions_on_network_change, migrate_sessions_early,
+          kIdleConnectionTimeoutSeconds, quic::kPingTimeoutSecs,
+          quic::kMaxTimeForCryptoHandshakeSecs, quic::kInitialIdleTimeoutSecs,
           migrate_sessions_on_network_change_v2, migrate_sessions_early_v2,
           base::TimeDelta::FromSeconds(kMaxTimeOnNonDefaultNetworkSecs),
           kMaxMigrationsToNonDefaultNetworkOnPathDegrading,
@@ -148,11 +145,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   QuicStreamRequest request(factory.get());
   TestCompletionCallback callback;
   NetErrorDetails net_error_details;
-  request.Request(env->host_port_pair,
-                  data_provider.PickValueInArray(kSupportedTransportVersions),
-                  PRIVACY_MODE_DISABLED, DEFAULT_PRIORITY, SocketTag(),
-                  kCertVerifyFlags, GURL(kUrl), env->net_log,
-                  &net_error_details, callback.callback());
+  request.Request(
+      env->host_port_pair,
+      data_provider.PickValueInArray(quic::kSupportedTransportVersions),
+      PRIVACY_MODE_DISABLED, DEFAULT_PRIORITY, SocketTag(), kCertVerifyFlags,
+      GURL(kUrl), env->net_log, &net_error_details, callback.callback());
 
   callback.WaitForResult();
   std::unique_ptr<QuicChromiumClientSession::Handle> session =

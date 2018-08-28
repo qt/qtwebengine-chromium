@@ -306,14 +306,6 @@ static inline Element* ParentOrV0ShadowHostElement(const Element& element) {
   return element.ParentOrShadowHostElement();
 }
 
-static inline Element* ParentOrOpenShadowHostElement(const Element& element) {
-  if (element.parentNode() && element.parentNode()->IsShadowRoot()) {
-    if (ToShadowRoot(element.parentNode())->GetType() != ShadowRootType::kOpen)
-      return nullptr;
-  }
-  return element.ParentOrShadowHostElement();
-}
-
 SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
     const SelectorCheckingContext& context,
     MatchResult& result) const {
@@ -479,28 +471,6 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
           return match;
         if (NextSelectorExceedsScope(next_context))
           return kSelectorFailsCompletely;
-      }
-      return kSelectorFailsCompletely;
-    }
-
-    case CSSSelector::kShadowPiercingDescendant: {
-      DCHECK_EQ(mode_, kQueryingRules);
-      UseCounter::Count(context.element->GetDocument(),
-                        WebFeature::kCSSShadowPiercingDescendantCombinator);
-      // TODO(kochi): parentOrOpenShadowHostElement() is necessary because
-      // SelectorQuery can pass V0 shadow roots. All closed shadow roots are
-      // already filtered out, thus once V0 is removed this logic can use
-      // parentOrShadowHostElement() instead.
-      for (next_context.element =
-               ParentOrOpenShadowHostElement(*context.element);
-           next_context.element;
-           next_context.element =
-               ParentOrOpenShadowHostElement(*next_context.element)) {
-        MatchStatus match = MatchSelector(next_context, result);
-        if (match == kSelectorMatches || match == kSelectorFailsCompletely)
-          return match;
-        if (NextSelectorExceedsScope(next_context))
-          break;
       }
       return kSelectorFailsCompletely;
     }
@@ -1046,14 +1016,6 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     case CSSSelector::kPseudoFullscreen:
     // fall through
     case CSSSelector::kPseudoFullScreen:
-      // While a Document is in the fullscreen state, and the document's current
-      // fullscreen element is an element in the document, the 'full-screen'
-      // pseudoclass applies to that element. Also, an <iframe>, <object> or
-      // <embed> element whose child browsing context's Document is in the
-      // fullscreen state has the 'full-screen' pseudoclass applied.
-      if (IsHTMLFrameElementBase(element) &&
-          element.ContainsFullScreenElement())
-        return true;
       return Fullscreen::IsFullscreenElement(element);
     case CSSSelector::kPseudoFullScreenAncestor:
       return element.ContainsFullScreenElement();
@@ -1090,6 +1052,9 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     case CSSSelector::kPseudoSpatialNavigationFocus:
       DCHECK(is_ua_rule_);
       return MatchesSpatialNavigationFocusPseudoClass(element);
+    case CSSSelector::kPseudoIsHtml:
+      DCHECK(is_ua_rule_);
+      return element.GetDocument().IsHTMLDocument();
     case CSSSelector::kPseudoListBox:
       DCHECK(is_ua_rule_);
       return MatchesListBoxPseudoClass(element);
@@ -1383,14 +1348,17 @@ bool SelectorChecker::MatchesFocusVisiblePseudoClass(const Element& element) {
                           &force_pseudo_state);
   if (force_pseudo_state)
     return true;
-  bool always_show_focus_ring =
-      IsHTMLFormControlElement(element) &&
-      ToHTMLFormControlElement(element).ShouldShowFocusRingOnMouseFocus();
-  // Avoid probing for force_pseudo_state. Otherwise, as currently implemented,
-  // :focus-visible will always match if :focus is forced, since no focus
-  // source flags will be set.
-  return element.IsFocused() && IsFrameFocused(element) &&
-         (!element.WasFocusedByMouse() || always_show_focus_ring);
+
+  const Document& document = element.GetDocument();
+  bool always_show_focus_ring = element.MayTriggerVirtualKeyboard();
+  bool last_focus_from_mouse =
+      document.GetFrame() &&
+      document.GetFrame()->Selection().FrameIsFocusedAndActive() &&
+      document.LastFocusType() == kWebFocusTypeMouse;
+  bool had_keyboard_event = document.HadKeyboardEvent();
+
+  return element.IsFocused() && (!last_focus_from_mouse || had_keyboard_event ||
+                                 always_show_focus_ring);
 }
 
 }  // namespace blink

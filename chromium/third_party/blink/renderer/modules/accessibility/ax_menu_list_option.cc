@@ -26,7 +26,7 @@
 #include "third_party/blink/renderer/modules/accessibility/ax_menu_list_option.h"
 
 #include "SkMatrix44.h"
-#include "third_party/blink/renderer/core/dom/accessible_node.h"
+#include "third_party/blink/renderer/core/aom/accessible_node.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_menu_list.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_menu_list_popup.h"
@@ -111,6 +111,21 @@ bool AXMenuListOption::IsVisible() const {
 bool AXMenuListOption::IsOffScreen() const {
   // Invisible list options are considered to be offscreen.
   return !IsVisible();
+}
+
+int AXMenuListOption::PosInSet() const {
+  // Value should be 1-based. 0 means not supported.
+  return SetSize() ? element_->index() + 1 : 0;
+}
+
+int AXMenuListOption::SetSize() const {
+  // Return 0 if not supported.
+  if (!element_)
+    return 0;
+  HTMLSelectElement* select = element_->OwnerSelectElement();
+  if (!select)
+    return 0;
+  return select->length();
 }
 
 AccessibilitySelectedState AXMenuListOption::IsSelected() const {

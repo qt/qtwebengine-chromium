@@ -315,68 +315,6 @@ TEST(CSSSelectorParserTest, SerializedUniversal) {
   }
 }
 
-TEST(CSSSelectorParserTest, InvalidDescendantCombinatorInLiveProfile) {
-  const char* test_cases[] = {"div >>>> span", "div >>> span", "div >> span"};
-
-  CSSParserContext* context = CSSParserContext::Create(
-      kHTMLStandardMode, SecureContextMode::kInsecureContext,
-      CSSParserContext::kLiveProfile);
-  StyleSheetContents* sheet = StyleSheetContents::Create(context);
-
-  for (auto* test_case : test_cases) {
-    SCOPED_TRACE(test_case);
-    CSSTokenizer tokenizer(test_case);
-    const auto tokens = tokenizer.TokenizeToEOF();
-    CSSParserTokenRange range(tokens);
-    CSSSelectorList list =
-        CSSSelectorParser::ParseSelector(range, context, sheet);
-    EXPECT_FALSE(list.IsValid());
-  }
-}
-
-TEST(CSSSelectorParserTest, InvalidDescendantCombinatorInSnapshotProfile) {
-  const char* test_cases[] = {"div >>>> span", "div >> span", "div >> > span",
-                              "div > >> span", "div > > > span"};
-
-  CSSParserContext* context = CSSParserContext::Create(
-      kHTMLStandardMode, SecureContextMode::kInsecureContext,
-      CSSParserContext::kSnapshotProfile);
-  StyleSheetContents* sheet = StyleSheetContents::Create(context);
-
-  for (auto* test_case : test_cases) {
-    SCOPED_TRACE(test_case);
-    CSSTokenizer tokenizer(test_case);
-    const auto tokens = tokenizer.TokenizeToEOF();
-    CSSParserTokenRange range(tokens);
-    CSSSelectorList list =
-        CSSSelectorParser::ParseSelector(range, context, sheet);
-    EXPECT_FALSE(list.IsValid());
-  }
-}
-
-TEST(CSSSelectorParserTest, ShadowPiercingCombinatorInSnapshotProfile) {
-  const char* test_cases[][2] = {{"div >>> span", "div >>> span"},
-                                 {"div >>/**/> span", "div >>> span"},
-                                 {"div >/**/>> span", "div >>> span"},
-                                 {"div >/**/>/**/> span", "div >>> span"}};
-
-  CSSParserContext* context = CSSParserContext::Create(
-      kHTMLStandardMode, SecureContextMode::kInsecureContext,
-      CSSParserContext::kSnapshotProfile);
-  StyleSheetContents* sheet = StyleSheetContents::Create(context);
-
-  for (auto** test_case : test_cases) {
-    SCOPED_TRACE(test_case[0]);
-    CSSTokenizer tokenizer(test_case[0]);
-    const auto tokens = tokenizer.TokenizeToEOF();
-    CSSParserTokenRange range(tokens);
-    CSSSelectorList list =
-        CSSSelectorParser::ParseSelector(range, context, sheet);
-    EXPECT_TRUE(list.IsValid());
-    EXPECT_STREQ(test_case[1], list.SelectorsText().Ascii().data());
-  }
-}
-
 TEST(CSSSelectorParserTest, AttributeSelectorUniversalInvalid) {
   const char* test_cases[] = {"[*]", "[*|*]"};
 
@@ -398,6 +336,7 @@ TEST(CSSSelectorParserTest, AttributeSelectorUniversalInvalid) {
 TEST(CSSSelectorParserTest, InternalPseudo) {
   const char* test_cases[] = {"::-internal-whatever",
                               "::-internal-media-controls-text-track-list",
+                              ":-internal-is-html",
                               ":-internal-list-box",
                               ":-internal-shadow-host-has-appearance",
                               ":-internal-spatial-navigation-focus",
@@ -628,6 +567,7 @@ TEST(CSSSelectorParserTest, UseCountShadowPseudo) {
   std::unique_ptr<DummyPageHolder> dummy_holder =
       DummyPageHolder::Create(IntSize(500, 500));
   Document* doc = &dummy_holder->GetDocument();
+  Page::InsertOrdinaryPageForTesting(&dummy_holder->GetPage());
   CSSParserContext* context = CSSParserContext::Create(
       kHTMLStandardMode, SecureContextMode::kSecureContext,
       CSSParserContext::kLiveProfile, doc);

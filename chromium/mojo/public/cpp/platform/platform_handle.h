@@ -9,11 +9,12 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "build/build_config.h"
+#include "mojo/public/c/system/platform_handle.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_handle.h"
 #elif defined(OS_FUCHSIA)
-#include "base/fuchsia/scoped_zx_handle.h"
+#include <lib/zx/handle.h>
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
 #include "base/mac/scoped_mach_port.h"
 #endif
@@ -40,13 +41,25 @@ namespace mojo {
 // NOTE: This assumes ownership if the handle it represents.
 class COMPONENT_EXPORT(MOJO_CPP_PLATFORM) PlatformHandle {
  public:
+  enum class Type {
+    kNone,
+#if defined(OS_WIN) || defined(OS_FUCHSIA)
+    kHandle,
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+    kMachPort,
+#endif
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+    kFd,
+#endif
+  };
+
   PlatformHandle();
   PlatformHandle(PlatformHandle&& other);
 
 #if defined(OS_WIN)
   explicit PlatformHandle(base::win::ScopedHandle handle);
 #elif defined(OS_FUCHSIA)
-  explicit PlatformHandle(base::ScopedZxHandle handle);
+  explicit PlatformHandle(zx::handle handle);
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   explicit PlatformHandle(base::mac::ScopedMachSendRight mach_port);
 #endif
@@ -59,36 +72,76 @@ class COMPONENT_EXPORT(MOJO_CPP_PLATFORM) PlatformHandle {
 
   PlatformHandle& operator=(PlatformHandle&& other);
 
+  // Takes ownership of |handle|'s underlying platform handle and fills in
+  // |mojo_handle| with a representation of it. The caller assumes ownership of
+  // the platform handle.
+  static void ToMojoPlatformHandle(PlatformHandle handle,
+                                   MojoPlatformHandle* mojo_handle);
+
   // Closes the underlying platform handle.
+  // Assumes ownership of the platform handle described by |handle|, and returns
+  // it as a new PlatformHandle.
+  static PlatformHandle FromMojoPlatformHandle(
+      const MojoPlatformHandle* handle);
+
+  Type type() const { return type_; }
+
   void reset();
+
+  // Relinquishes ownership of the underlying handle, regardless of type, and
+  // discards its value. To release and obtain the underlying handle value, use
+  // one of the specific |Release*()| methods below.
+  void release();
 
   // Duplicates the underlying platform handle, returning a new PlatformHandle
   // which owns it.
   PlatformHandle Clone() const;
 
 #if defined(OS_WIN)
-  bool is_valid() const { return handle_.IsValid(); }
+  bool is_valid() const { return is_valid_handle(); }
+  bool is_valid_handle() const { return handle_.IsValid(); }
+  bool is_handle() const { return type_ == Type::kHandle; }
   const base::win::ScopedHandle& GetHandle() const { return handle_; }
-  base::win::ScopedHandle TakeHandle() { return std::move(handle_); }
-  HANDLE ReleaseHandle() WARN_UNUSED_RESULT { return handle_.Take(); }
+  base::win::ScopedHandle TakeHandle() {
+    DCHECK_EQ(type_, Type::kHandle);
+    type_ = Type::kNone;
+    return std::move(handle_);
+  }
+  HANDLE ReleaseHandle() WARN_UNUSED_RESULT {
+    DCHECK_EQ(type_, Type::kHandle);
+    type_ = Type::kNone;
+    return handle_.Take();
+  }
 #elif defined(OS_FUCHSIA)
   bool is_valid() const { return is_valid_fd() || is_valid_handle(); }
-
   bool is_valid_handle() const { return handle_.is_valid(); }
-  const base::ScopedZxHandle& GetHandle() const { return handle_; }
-  base::ScopedZxHandle TakeHandle() { return std::move(handle_); }
-  zx_handle_t ReleaseHandle() WARN_UNUSED_RESULT { return handle_.release(); }
+  bool is_handle() const { return type_ == Type::kHandle; }
+  const zx::handle& GetHandle() const { return handle_; }
+  zx::handle TakeHandle() {
+    if (type_ == Type::kHandle)
+      type_ = Type::kNone;
+    return std::move(handle_);
+  }
+  zx_handle_t ReleaseHandle() WARN_UNUSED_RESULT {
+    if (type_ == Type::kHandle)
+      type_ = Type::kNone;
+    return handle_.release();
+  }
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   bool is_valid() const { return is_valid_fd() || is_valid_mach_port(); }
-
   bool is_valid_mach_port() const { return mach_port_.is_valid(); }
+  bool is_mach_port() const { return type_ == Type::kMachPort; }
   const base::mac::ScopedMachSendRight& GetMachPort() const {
     return mach_port_;
   }
   base::mac::ScopedMachSendRight TakeMachPort() {
+    if (type_ == Type::kMachPort)
+      type_ = Type::kNone;
     return std::move(mach_port_);
   }
   mach_port_t ReleaseMachPort() WARN_UNUSED_RESULT {
+    if (type_ == Type::kMachPort)
+      type_ = Type::kNone;
     return mach_port_.release();
   }
 #elif defined(OS_POSIX)
@@ -99,16 +152,27 @@ class COMPONENT_EXPORT(MOJO_CPP_PLATFORM) PlatformHandle {
 
 #if defined(OS_POSIX) || defined(OS_FUCHSIA)
   bool is_valid_fd() const { return fd_.is_valid(); }
+  bool is_fd() const { return type_ == Type::kFd; }
   const base::ScopedFD& GetFD() const { return fd_; }
-  base::ScopedFD TakeFD() { return std::move(fd_); }
-  int ReleaseFD() WARN_UNUSED_RESULT { return fd_.release(); }
+  base::ScopedFD TakeFD() {
+    if (type_ == Type::kFd)
+      type_ = Type::kNone;
+    return std::move(fd_);
+  }
+  int ReleaseFD() WARN_UNUSED_RESULT {
+    if (type_ == Type::kFd)
+      type_ = Type::kNone;
+    return fd_.release();
+  }
 #endif
 
  private:
+  Type type_ = Type::kNone;
+
 #if defined(OS_WIN)
   base::win::ScopedHandle handle_;
 #elif defined(OS_FUCHSIA)
-  base::ScopedZxHandle handle_;
+  zx::handle handle_;
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   base::mac::ScopedMachSendRight mach_port_;
 #endif

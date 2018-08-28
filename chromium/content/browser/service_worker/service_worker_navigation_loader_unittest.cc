@@ -5,6 +5,7 @@
 #include "content/browser/service_worker/service_worker_navigation_loader.h"
 
 #include "base/run_loop.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "content/browser/loader/navigation_loader_interceptor.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
@@ -12,13 +13,13 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_test_utils.h"
 #include "content/browser/service_worker/service_worker_version.h"
-#include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
+#include "content/common/service_worker/service_worker.mojom.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/common/single_request_url_loader_factory.h"
+#include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/data_pipe_utils.h"
-#include "net/http/http_util.h"
 #include "net/ssl/ssl_info.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
@@ -53,7 +54,8 @@ void ReceiveRequestHandler(
 // 1. ServiceWorkerNavigationLoader asks ServiceWorkerFetchDispatcher to start
 //    navigation preload.
 // 2. ServiceWorkerFetchDispatcher starts the network request which is mocked
-//    by MockNetworkURLLoaderFactory. The response is sent to
+//    by EmbeddedWorkerTestHelper's default network loader factory. The
+//    response is sent to
 //    ServiceWorkerFetchDispatcher::DelegatingURLLoaderClient.
 // 3. DelegatingURLLoaderClient sends the response to the |preload_handle|
 //    that was passed to Helper::OnFetchEvent().
@@ -68,10 +70,9 @@ class NavigationPreloadLoaderClient final
     : public network::mojom::URLLoaderClient {
  public:
   NavigationPreloadLoaderClient(
-      mojom::FetchEventPreloadHandlePtr preload_handle,
+      blink::mojom::FetchEventPreloadHandlePtr preload_handle,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
-          finish_callback)
+      mojom::ServiceWorker::DispatchFetchEventCallback finish_callback)
       : url_loader_(std::move(preload_handle->url_loader)),
         binding_(this, std::move(preload_handle->url_loader_client_request)),
         response_callback_(std::move(response_callback)),
@@ -84,8 +85,7 @@ class NavigationPreloadLoaderClient final
 
   // network::mojom::URLLoaderClient implementation
   void OnReceiveResponse(
-      const network::ResourceResponseHead& response_head,
-      network::mojom::DownloadedTempFilePtr downloaded_file) override {
+      const network::ResourceResponseHead& response_head) override {
     response_head_ = response_head;
   }
   void OnStartLoadingResponseBody(
@@ -126,8 +126,6 @@ class NavigationPreloadLoaderClient final
   void OnReceiveRedirect(
       const net::RedirectInfo& redirect_info,
       const network::ResourceResponseHead& response_head) override {}
-  void OnDataDownloaded(int64_t data_length,
-                        int64_t encoded_data_length) override {}
   void OnUploadProgress(int64_t current_position,
                         int64_t total_size,
                         OnUploadProgressCallback ack_callback) override {}
@@ -145,72 +143,16 @@ class NavigationPreloadLoaderClient final
 
   // Callbacks that complete Helper::OnFetchEvent().
   mojom::ServiceWorkerFetchResponseCallbackPtr response_callback_;
-  mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
-      finish_callback_;
+  mojom::ServiceWorker::DispatchFetchEventCallback finish_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigationPreloadLoaderClient);
-};
-
-// A URLLoaderFactory that returns 200 OK with a simple body to any request.
-//
-// ServiceWorkerNavigationLoaderTest sets the network factory for
-// ServiceWorkerContextCore to MockNetworkURLLoaderFactory. So far, it's only
-// used for navigation preload in these tests.
-class MockNetworkURLLoaderFactory final
-    : public network::mojom::URLLoaderFactory {
- public:
-  MockNetworkURLLoaderFactory() = default;
-
-  // network::mojom::URLLoaderFactory implementation.
-  void CreateLoaderAndStart(network::mojom::URLLoaderRequest request,
-                            int32_t routing_id,
-                            int32_t request_id,
-                            uint32_t options,
-                            const network::ResourceRequest& url_request,
-                            network::mojom::URLLoaderClientPtr client,
-                            const net::MutableNetworkTrafficAnnotationTag&
-                                traffic_annotation) override {
-    std::string headers = "HTTP/1.1 200 OK\n\n";
-    net::HttpResponseInfo info;
-    info.headers = new net::HttpResponseHeaders(
-        net::HttpUtil::AssembleRawHeaders(headers.c_str(), headers.length()));
-    network::ResourceResponseHead response;
-    response.headers = info.headers;
-    response.headers->GetMimeType(&response.mime_type);
-    client->OnReceiveResponse(response, nullptr);
-
-    std::string body = "this body came from the network";
-    uint32_t bytes_written = body.size();
-    mojo::DataPipe data_pipe;
-    data_pipe.producer_handle->WriteData(body.data(), &bytes_written,
-                                         MOJO_WRITE_DATA_FLAG_ALL_OR_NONE);
-    client->OnStartLoadingResponseBody(std::move(data_pipe.consumer_handle));
-
-    network::URLLoaderCompletionStatus status;
-    status.error_code = net::OK;
-    client->OnComplete(status);
-  }
-
-  void Clone(network::mojom::URLLoaderFactoryRequest request) override {
-    bindings_.AddBinding(this, std::move(request));
-  }
-
- private:
-  mojo::BindingSet<network::mojom::URLLoaderFactory> bindings_;
-  DISALLOW_COPY_AND_ASSIGN(MockNetworkURLLoaderFactory);
 };
 
 // Helper simulates a service worker handling fetch events. The response can be
 // customized via RespondWith* functions.
 class Helper : public EmbeddedWorkerTestHelper {
  public:
-  Helper()
-      : EmbeddedWorkerTestHelper(
-            base::FilePath(),
-            base::MakeRefCounted<URLLoaderFactoryGetter>()) {
-    url_loader_factory_getter()->SetNetworkFactoryForTesting(
-        &mock_url_loader_factory_);
-  }
+  Helper() : EmbeddedWorkerTestHelper(base::FilePath()) {}
   ~Helper() override = default;
 
   // Tells this helper to respond to fetch events with the specified blob.
@@ -287,10 +229,10 @@ class Helper : public EmbeddedWorkerTestHelper {
   void OnFetchEvent(
       int embedded_worker_id,
       const network::ResourceRequest& request,
-      mojom::FetchEventPreloadHandlePtr preload_handle,
+      blink::mojom::FetchEventPreloadHandlePtr preload_handle,
       mojom::ServiceWorkerFetchResponseCallbackPtr response_callback,
-      mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
-          finish_callback) override {
+      mojom::ServiceWorker::DispatchFetchEventCallback finish_callback)
+      override {
     // Basic checks on DispatchFetchEvent parameters.
     EXPECT_TRUE(ServiceWorkerUtils::IsMainResourceType(
         static_cast<ResourceType>(request.resource_type)));
@@ -375,7 +317,7 @@ class Helper : public EmbeddedWorkerTestHelper {
         SimulateWorkerStopped(embedded_worker_id);
         // Finish the event by calling |finish_callback|.
         // This is the Mojo callback for
-        // mojom::ServiceWorkerEventDispatcher::DispatchFetchEvent().
+        // mojom::ServiceWorker::DispatchFetchEvent().
         // If this is not called, Mojo will complain. In production code,
         // ServiceWorkerContextClient would call this when it aborts all
         // callbacks after an unexpected stop.
@@ -444,13 +386,11 @@ class Helper : public EmbeddedWorkerTestHelper {
   blink::mojom::ServiceWorkerStreamHandlePtr stream_handle_;
 
   // For ResponseMode::kEarlyResponse.
-  mojom::ServiceWorkerEventDispatcher::DispatchFetchEventCallback
-      finish_callback_;
+  mojom::ServiceWorker::DispatchFetchEventCallback finish_callback_;
 
   // For ResponseMode::kRedirect.
   GURL redirected_url_;
 
-  MockNetworkURLLoaderFactory mock_url_loader_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Helper);
 };
@@ -471,6 +411,9 @@ CreateResponseInfoFromServiceWorker() {
   return head;
 }
 
+const char kHistogramMainResourceFetchEvent[] =
+    "ServiceWorker.FetchEvent.MainResource.Status";
+
 // ServiceWorkerNavigationLoaderTest is for testing the handling of requests
 // by a service worker via ServiceWorkerNavigationLoader.
 //
@@ -487,12 +430,12 @@ class ServiceWorkerNavigationLoaderTest
       public ServiceWorkerNavigationLoader::Delegate {
  public:
   ServiceWorkerNavigationLoaderTest()
-      : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP),
-        helper_(std::make_unique<Helper>()) {}
+      : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
   ~ServiceWorkerNavigationLoaderTest() override = default;
 
   void SetUp() override {
     feature_list_.InitAndEnableFeature(network::features::kNetworkService);
+    helper_ = std::make_unique<Helper>();
 
     // Create an active service worker.
     storage()->LazyInitializeForTest(base::DoNothing());
@@ -517,11 +460,11 @@ class ServiceWorkerNavigationLoaderTest
 
     // Make the registration findable via storage functions.
     registration_->set_last_update_check(base::Time::Now());
-    ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
+    base::Optional<blink::ServiceWorkerStatusCode> status;
     storage()->StoreRegistration(registration_.get(), version_.get(),
                                  CreateReceiverOnCurrentThread(&status));
     base::RunLoop().RunUntilIdle();
-    ASSERT_EQ(SERVICE_WORKER_OK, status);
+    ASSERT_EQ(blink::ServiceWorkerStatusCode::kOk, status.value());
   }
 
   ServiceWorkerStorage* storage() { return helper_->context()->storage(); }
@@ -620,6 +563,8 @@ class ServiceWorkerNavigationLoaderTest
 };
 
 TEST_F(ServiceWorkerNavigationLoaderTest, Basic) {
+  base::HistogramTester histogram_tester;
+
   // Perform the request
   LoaderResult result = StartRequest(CreateRequest());
   EXPECT_EQ(LoaderResult::kHandledRequest, result);
@@ -629,9 +574,14 @@ TEST_F(ServiceWorkerNavigationLoaderTest, Basic) {
   const network::ResourceResponseHead& info = client_.response_head();
   EXPECT_EQ(200, info.headers->response_code());
   ExpectResponseInfo(info, *CreateResponseInfoFromServiceWorker());
+
+  histogram_tester.ExpectUniqueSample(kHistogramMainResourceFetchEvent,
+                                      blink::ServiceWorkerStatusCode::kOk, 1);
 }
 
 TEST_F(ServiceWorkerNavigationLoaderTest, NoActiveWorker) {
+  base::HistogramTester histogram_tester;
+
   // Clear |version_| to make GetServiceWorkerVersion() return null.
   version_ = nullptr;
 
@@ -641,6 +591,9 @@ TEST_F(ServiceWorkerNavigationLoaderTest, NoActiveWorker) {
 
   client_.RunUntilComplete();
   EXPECT_EQ(net::ERR_FAILED, client_.completion_status().error_code);
+
+  // No fetch event was dispatched.
+  histogram_tester.ExpectTotalCount(kHistogramMainResourceFetchEvent, 0);
 }
 
 // Test that the request body is passed to the fetch event.
@@ -829,7 +782,8 @@ TEST_F(ServiceWorkerNavigationLoaderTest, StreamResponseAndCancel) {
   EXPECT_TRUE(data_pipe.producer_handle.is_valid());
   EXPECT_FALSE(loader_->WasCanceled());
   EXPECT_TRUE(version_->HasWorkInBrowser());
-  loader_->Cancel();
+  loader_ptr_.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(loader_->WasCanceled());
   EXPECT_FALSE(version_->HasWorkInBrowser());
 
@@ -850,6 +804,7 @@ TEST_F(ServiceWorkerNavigationLoaderTest, StreamResponseAndCancel) {
 // Test when the service worker responds with network fallback.
 // i.e., does not call respondWith().
 TEST_F(ServiceWorkerNavigationLoaderTest, FallbackResponse) {
+  base::HistogramTester histogram_tester;
   helper_->RespondWithFallback();
 
   // Perform the request.
@@ -859,10 +814,13 @@ TEST_F(ServiceWorkerNavigationLoaderTest, FallbackResponse) {
   // The request should not be handled by the loader, but it shouldn't be a
   // failure.
   EXPECT_FALSE(was_main_resource_load_failed_called_);
+  histogram_tester.ExpectUniqueSample(kHistogramMainResourceFetchEvent,
+                                      blink::ServiceWorkerStatusCode::kOk, 1);
 }
 
 // Test when the service worker rejects the FetchEvent.
 TEST_F(ServiceWorkerNavigationLoaderTest, ErrorResponse) {
+  base::HistogramTester histogram_tester;
   helper_->RespondWithError();
 
   // Perform the request.
@@ -871,16 +829,24 @@ TEST_F(ServiceWorkerNavigationLoaderTest, ErrorResponse) {
 
   client_.RunUntilComplete();
   EXPECT_EQ(net::ERR_FAILED, client_.completion_status().error_code);
+
+  // Event dispatch still succeeded.
+  histogram_tester.ExpectUniqueSample(kHistogramMainResourceFetchEvent,
+                                      blink::ServiceWorkerStatusCode::kOk, 1);
 }
 
 // Test when dispatching the fetch event to the service worker failed.
 TEST_F(ServiceWorkerNavigationLoaderTest, FailFetchDispatch) {
+  base::HistogramTester histogram_tester;
   helper_->FailToDispatchFetchEvent();
 
   // Perform the request.
   LoaderResult result = StartRequest(CreateRequest());
   EXPECT_EQ(LoaderResult::kDidNotHandleRequest, result);
   EXPECT_TRUE(was_main_resource_load_failed_called_);
+  histogram_tester.ExpectUniqueSample(
+      kHistogramMainResourceFetchEvent,
+      blink::ServiceWorkerStatusCode::kErrorFailed, 1);
 }
 
 // Test when the respondWith() promise resolves before the waitUntil() promise
@@ -908,6 +874,8 @@ TEST_F(ServiceWorkerNavigationLoaderTest, EarlyResponse) {
 // happens when there is no active service worker for the URL, or it must be
 // skipped, etc.
 TEST_F(ServiceWorkerNavigationLoaderTest, FallbackToNetwork) {
+  base::HistogramTester histogram_tester;
+
   network::ResourceRequest request;
   request.url = GURL("https://www.example.com/");
   request.method = "GET";
@@ -926,6 +894,9 @@ TEST_F(ServiceWorkerNavigationLoaderTest, FallbackToNetwork) {
   loader->FallbackToNetwork();
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(handler);
+
+  // No fetch event was dispatched.
+  histogram_tester.ExpectTotalCount(kHistogramMainResourceFetchEvent, 0);
 }
 
 // Test responding to the fetch event with the navigation preload response.
@@ -956,6 +927,7 @@ TEST_F(ServiceWorkerNavigationLoaderTest, NavigationPreload) {
 
 // Test responding to the fetch event with a redirect response.
 TEST_F(ServiceWorkerNavigationLoaderTest, Redirect) {
+  base::HistogramTester histogram_tester;
   GURL new_url("https://example.com/redirected");
   helper_->RespondWithRedirectResponse(new_url);
 
@@ -972,6 +944,60 @@ TEST_F(ServiceWorkerNavigationLoaderTest, Redirect) {
   EXPECT_EQ(301, redirect_info.status_code);
   EXPECT_EQ("GET", redirect_info.new_method);
   EXPECT_EQ(new_url, redirect_info.new_url);
+
+  histogram_tester.ExpectUniqueSample(kHistogramMainResourceFetchEvent,
+                                      blink::ServiceWorkerStatusCode::kOk, 1);
+}
+
+TEST_F(ServiceWorkerNavigationLoaderTest, LifetimeAfterForwardToServiceWorker) {
+  LoaderResult result = StartRequest(CreateRequest());
+  EXPECT_EQ(LoaderResult::kHandledRequest, result);
+  base::WeakPtr<ServiceWorkerNavigationLoader> loader = loader_->AsWeakPtr();
+  ASSERT_TRUE(loader);
+
+  client_.RunUntilComplete();
+  EXPECT_TRUE(loader);
+
+  // Even after calling DetachedFromRequest(), |loader_| should be alive until
+  // the Mojo connection to the loader is disconnected.
+  loader_.release()->DetachedFromRequest();
+  EXPECT_TRUE(loader);
+
+  // When the interface pointer to |loader_| is disconnected, its weak pointers
+  // (|loader|) are invalidated.
+  loader_ptr_.reset();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(loader);
+
+  // |loader_| is deleted here. LSan test will alert if it leaks.
+}
+
+TEST_F(ServiceWorkerNavigationLoaderTest, LifetimeAfterFallbackToNetwork) {
+  network::ResourceRequest request;
+  request.url = GURL("https://www.example.com/");
+  request.method = "GET";
+  request.fetch_request_mode = network::mojom::FetchRequestMode::kNavigate;
+  request.fetch_credentials_mode =
+      network::mojom::FetchCredentialsMode::kInclude;
+  request.fetch_redirect_mode = network::mojom::FetchRedirectMode::kManual;
+
+  SingleRequestURLLoaderFactory::RequestHandler handler;
+  auto loader = std::make_unique<ServiceWorkerNavigationLoader>(
+      base::BindOnce(&ReceiveRequestHandler, &handler), this, request,
+      base::WrapRefCounted<URLLoaderFactoryGetter>(
+          helper_->context()->loader_factory_getter()));
+  base::WeakPtr<ServiceWorkerNavigationLoader> loader_weakptr =
+      loader->AsWeakPtr();
+  // Ask the loader to fallback to network. In production code,
+  // ServiceWorkerControlleeRequestHandler calls FallbackToNetwork() to do this.
+  loader->FallbackToNetwork();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(handler);
+  EXPECT_TRUE(loader_weakptr);
+
+  // DetachedFromRequest() deletes |loader_|.
+  loader.release()->DetachedFromRequest();
+  EXPECT_FALSE(loader_weakptr);
 }
 
 }  // namespace service_worker_navigation_loader_unittest

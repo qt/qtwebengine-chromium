@@ -7,6 +7,7 @@
 #include <sstream>
 #include <utility>
 
+#include "base/callback.h"
 #include "base/logging.h"
 #include "chromeos/components/proximity_auth/logging/logging.h"
 #include "components/cryptauth/connection_observer.h"
@@ -48,6 +49,11 @@ void Connection::AddObserver(ConnectionObserver* observer) {
 
 void Connection::RemoveObserver(ConnectionObserver* observer) {
   observers_.RemoveObserver(observer);
+}
+
+void Connection::GetConnectionRssi(
+    base::OnceCallback<void(base::Optional<int32_t>)> callback) {
+  std::move(callback).Run(base::nullopt);
 }
 
 void Connection::SetStatus(Status status) {
@@ -102,11 +108,6 @@ void Connection::OnBytesReceived(const std::string& bytes) {
 std::unique_ptr<WireMessage> Connection::DeserializeWireMessage(
     bool* is_incomplete_message) {
   return WireMessage::Deserialize(received_bytes_, is_incomplete_message);
-}
-
-void Connection::NotifyGattCharacteristicsNotAvailable() {
-  for (auto& observer : observers_)
-    observer.OnGattCharacteristicsNotAvailable();
 }
 
 std::string Connection::GetDeviceInfoLogString() {

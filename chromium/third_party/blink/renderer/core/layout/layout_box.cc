@@ -73,11 +73,13 @@
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/style/shadow_list.h"
 #include "third_party/blink/renderer/platform/geometry/double_rect.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
 #include "third_party/blink/renderer/platform/geometry/float_rounded_rect.h"
 #include "third_party/blink/renderer/platform/length_functions.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -269,6 +271,8 @@ void LayoutBox::StyleDidChange(StyleDifference diff,
 
     ClearPercentHeightDescendants();
   }
+
+  SetShouldClipOverflow(ComputeShouldClipOverflow());
 
   // If our zoom factor changes and we have a defined scrollLeft/Top, we need to
   // adjust that value into the new zoomed coordinate space.  Note that the new
@@ -665,10 +669,9 @@ LayoutRect LayoutBox::ScrollRectToVisibleRecursive(
     absolute_rect_for_parent =
         GetScrollableArea()->ScrollIntoView(absolute_rect_to_scroll, params);
   } else if (!parent_box && CanBeProgramaticallyScrolled()) {
-    ScrollableArea* area_to_scroll =
-        params.make_visible_in_visual_viewport
-            ? GetFrameView()->GetScrollableArea()
-            : GetFrameView()->LayoutViewportScrollableArea();
+    ScrollableArea* area_to_scroll = params.make_visible_in_visual_viewport
+                                         ? GetFrameView()->GetScrollableArea()
+                                         : GetFrameView()->LayoutViewport();
     absolute_rect_for_parent =
         area_to_scroll->ScrollIntoView(absolute_rect_to_scroll, params);
 
@@ -684,7 +687,7 @@ LayoutRect LayoutBox::ScrollRectToVisibleRecursive(
     // end of the IPC call.
     HTMLFrameOwnerElement* owner_element = GetDocument().LocalOwner();
     if (owner_element && owner_element->GetLayoutObject() &&
-        AllowedToPropageRecursiveScrollToParentFrame(params)) {
+        AllowedToPropagateRecursiveScrollToParentFrame(params)) {
       parent_box = owner_element->GetLayoutObject()->EnclosingBox();
       LayoutView* parent_view = owner_element->GetLayoutObject()->View();
       absolute_rect_for_parent = EnclosingLayoutRect(
@@ -707,7 +710,7 @@ LayoutRect LayoutBox::ScrollRectToVisibleRecursive(
     return parent_box->ScrollRectToVisibleRecursive(absolute_rect_for_parent,
                                                     params);
   } else if (GetFrame()->IsLocalRoot() && !GetFrame()->IsMainFrame()) {
-    if (AllowedToPropageRecursiveScrollToParentFrame(params)) {
+    if (AllowedToPropagateRecursiveScrollToParentFrame(params)) {
       GetFrameView()->ScrollRectToVisibleInRemoteParent(
           absolute_rect_for_parent, params);
     }
@@ -989,9 +992,8 @@ LayoutUnit LayoutBox::VerticalScrollbarWidthClampedToContentBox() const {
   LayoutUnit width(VerticalScrollbarWidth());
   DCHECK_GE(width, LayoutUnit());
   if (width) {
-    LayoutUnit minimum_width = LogicalWidth() - BorderAndPaddingLogicalWidth();
-    DCHECK_GE(minimum_width, LayoutUnit());
-    width = std::min(width, minimum_width);
+    LayoutUnit maximum_width = LogicalWidth() - BorderAndPaddingLogicalWidth();
+    width = std::min(width, maximum_width.ClampNegativeToZero());
   }
   return width;
 }
@@ -1028,7 +1030,7 @@ void LayoutBox::Autoscroll(const IntPoint& position_in_root_frame) {
     return;
 
   IntPoint absolute_position =
-      frame_view->RootFrameToAbsolute(position_in_root_frame);
+      frame_view->ConvertFromRootFrame(position_in_root_frame);
   ScrollRectToVisibleRecursive(
       LayoutRect(absolute_position, LayoutSize(1, 1)),
       WebScrollIntoViewParams(ScrollAlignment::kAlignToEdgeIfNeeded,
@@ -1036,12 +1038,8 @@ void LayoutBox::Autoscroll(const IntPoint& position_in_root_frame) {
                               kUserScroll));
 }
 
-// There are two kinds of layoutObject that can autoscroll.
 bool LayoutBox::CanAutoscroll() const {
-  if (GetNode() && GetNode()->IsDocumentNode())
-    return View()->GetFrameView()->IsScrollable();
-
-  // Check for a box that can be scrolled in its own right.
+  // TODO(skobes): Remove one of these methods.
   return CanBeScrolledAndHasScrollableArea();
 }
 
@@ -1064,7 +1062,7 @@ IntSize LayoutBox::CalculateAutoscrollDirection(
   ExcludeScrollbars(absolute_scrolling_box,
                     kExcludeOverlayScrollbarSizeForHitTesting);
 
-  IntRect belt_box = View()->GetFrameView()->AbsoluteToRootFrame(
+  IntRect belt_box = View()->GetFrameView()->ConvertToRootFrame(
       PixelSnappedIntRect(absolute_scrolling_box));
   belt_box.Inflate(-kAutoscrollBeltSize);
   IntPoint point = point_in_root_frame;
@@ -1113,41 +1111,33 @@ void LayoutBox::DispatchFakeMouseMoveEventSoon(EventHandler& event_handler) {
 }
 
 void LayoutBox::ScrollByRecursively(const ScrollOffset& delta) {
-  if (delta.IsZero())
+  if (delta.IsZero() || !HasOverflowClip())
     return;
 
-  if (HasOverflowClip()) {
-    PaintLayerScrollableArea* scrollable_area = GetScrollableArea();
-    DCHECK(scrollable_area);
+  PaintLayerScrollableArea* scrollable_area = GetScrollableArea();
+  DCHECK(scrollable_area);
 
-    ScrollOffset new_scroll_offset = scrollable_area->GetScrollOffset() + delta;
-    scrollable_area->SetScrollOffset(new_scroll_offset, kProgrammaticScroll);
+  ScrollOffset new_scroll_offset = scrollable_area->GetScrollOffset() + delta;
+  scrollable_area->SetScrollOffset(new_scroll_offset, kProgrammaticScroll);
 
-    // If this layer can't do the scroll we ask the next layer up that can
-    // scroll to try.
-    ScrollOffset remaining_scroll_offset =
-        new_scroll_offset - scrollable_area->GetScrollOffset();
-    if (!remaining_scroll_offset.IsZero() && Parent()) {
-      if (LayoutBox* scrollable_box = EnclosingScrollableBox())
-        scrollable_box->ScrollByRecursively(remaining_scroll_offset);
+  // If this layer can't do the scroll we ask the next layer up that can
+  // scroll to try.
+  ScrollOffset remaining_scroll_offset =
+      new_scroll_offset - scrollable_area->GetScrollOffset();
+  if (!remaining_scroll_offset.IsZero() && Parent()) {
+    if (LayoutBox* scrollable_box = EnclosingScrollableBox())
+      scrollable_box->ScrollByRecursively(remaining_scroll_offset);
 
-      LocalFrame* frame = GetFrame();
-      if (frame && frame->GetPage())
-        frame->GetPage()
-            ->GetAutoscrollController()
-            .UpdateAutoscrollLayoutObject();
+    LocalFrame* frame = GetFrame();
+    if (frame && frame->GetPage()) {
+      frame->GetPage()
+          ->GetAutoscrollController()
+          .UpdateAutoscrollLayoutObject();
     }
-  } else if (View()->GetFrameView()) {
-    // If we are here, we were called on a layoutObject that can be
-    // programmatically scrolled, but doesn't have an overflow clip. Which means
-    // that it is a document node that can be scrolled.
-    // FIXME: Pass in DoubleSize. crbug.com/414283.
-    View()->GetFrameView()->ScrollBy(delta, kUserScroll);
-
-    // FIXME: If we didn't scroll the whole way, do we want to try looking at
-    // the frames ownerElement?
-    // https://bugs.webkit.org/show_bug.cgi?id=28237
   }
+  // FIXME: If we didn't scroll the whole way, do we want to try looking at
+  // the frames ownerElement?
+  // https://bugs.webkit.org/show_bug.cgi?id=28237
 }
 
 bool LayoutBox::NeedsPreferredWidthsRecalculation() const {
@@ -1523,9 +1513,10 @@ bool LayoutBox::HitTestAllPhases(HitTestResult& result,
   // If we have clipping, then we can't have any spillout.
   // TODO(pdr): Why is this optimization not valid for the effective root?
   if (!RootScrollerUtil::IsEffective(*this)) {
-    LayoutRect overflow_box = (HasOverflowClip() || Style()->ContainsPaint())
-                                  ? BorderBoxRect()
-                                  : VisualOverflowRect();
+    LayoutRect overflow_box =
+        (HasOverflowClip() || ShouldApplyPaintContainment())
+            ? BorderBoxRect()
+            : VisualOverflowRect();
     FlipForWritingMode(overflow_box);
     LayoutPoint adjusted_location = accumulated_offset + Location();
     overflow_box.MoveBy(adjusted_location);
@@ -1617,9 +1608,8 @@ bool LayoutBox::HitTestClippedOutByBorder(
       Style()->GetRoundedBorderFor(border_rect));
 }
 
-void LayoutBox::Paint(const PaintInfo& paint_info,
-                      const LayoutPoint& paint_offset) const {
-  BoxPainter(*this).Paint(paint_info, paint_offset);
+void LayoutBox::Paint(const PaintInfo& paint_info) const {
+  BoxPainter(*this).Paint(paint_info);
 }
 
 void LayoutBox::PaintBoxDecorationBackground(
@@ -1650,15 +1640,15 @@ bool LayoutBox::GetBackgroundPaintedExtent(LayoutRect& painted_extent) const {
   }
 
   BackgroundImageGeometry geometry(*this);
-  // TODO(jchaffraix): This function should be rethought as it's called during
+  // TODO(schenney): This function should be rethought as it's called during
   // and outside of the paint phase. Potentially returning different results at
-  // different phases.
+  // different phases. crbug.com/732934
   geometry.Calculate(nullptr, PaintPhase::kBlockBackground,
                      kGlobalPaintNormalPhase, Style()->BackgroundLayers(),
                      background_rect);
   if (geometry.HasNonLocalGeometry())
     return false;
-  painted_extent = LayoutRect(geometry.DestRect());
+  painted_extent = LayoutRect(geometry.SnappedDestRect());
   return true;
 }
 
@@ -2115,8 +2105,8 @@ LayoutUnit LayoutBox::PerpendicularContainingBlockLogicalHeight() const {
   if (!logical_height_length.IsFixed()) {
     LayoutUnit fill_fallback_extent =
         LayoutUnit(containing_block_style.IsHorizontalWritingMode()
-                       ? View()->GetFrameView()->VisibleContentSize().Height()
-                       : View()->GetFrameView()->VisibleContentSize().Width());
+                       ? View()->GetFrameView()->Size().Height()
+                       : View()->GetFrameView()->Size().Width());
     LayoutUnit fill_available_extent =
         ContainingBlock()->AvailableLogicalHeight(kExcludeMarginBorderPadding);
     if (fill_available_extent == -1)
@@ -2403,14 +2393,6 @@ bool LayoutBox::PaintedOutputOfObjectHasNoEffectRegardlessOfSize() const {
   if (HasMask() || HasClipPath())
     return false;
 
-  // If the box has any kind of clip, we need issue paint invalidation to cover
-  // the changed part of children when the box got resized. In SPv175 this is
-  // handled by detecting paint property changes.
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    if (HasClipRelatedProperty())
-      return false;
-  }
-
   // If the box paints into its own backing, we can assume that it's painting
   // may have some effect. For example, honoring the border-radius clip on
   // a composited child paints into a mask for an otherwise non-painting
@@ -2643,8 +2625,9 @@ static float GetMaxWidthListMarker(const LayoutBox* layout_object) {
 DISABLE_CFI_PERF
 void LayoutBox::ComputeLogicalWidth(
     LogicalExtentComputedValues& computed_values) const {
-  computed_values.extent_ =
-      Style()->ContainsSize() ? BorderAndPaddingLogicalWidth() : LogicalWidth();
+  computed_values.extent_ = ShouldApplySizeContainment()
+                                ? BorderAndPaddingLogicalWidth()
+                                : LogicalWidth();
   computed_values.position_ = LogicalLeft();
   computed_values.margins_.start_ = MarginStart();
   computed_values.margins_.end_ = MarginEnd();
@@ -2797,9 +2780,14 @@ LayoutUnit LayoutBox::ComputeIntrinsicLogicalWidthUsing(
     const Length& logical_width_length,
     LayoutUnit available_logical_width,
     LayoutUnit border_and_padding) const {
-  if (logical_width_length.GetType() == kFillAvailable)
+  if (logical_width_length.GetType() == kFillAvailable) {
+    if (!IsHTMLMarqueeElement(GetNode())) {
+      UseCounter::Count(GetDocument(),
+                        WebFeature::kCSSFillAvailableLogicalWidth);
+    }
     return std::max(border_and_padding,
                     FillAvailableMeasure(available_logical_width));
+  }
 
   LayoutUnit min_logical_width;
   LayoutUnit max_logical_width;
@@ -3119,8 +3107,9 @@ static inline Length HeightForDocumentElement(const Document& document) {
 
 void LayoutBox::ComputeLogicalHeight(
     LogicalExtentComputedValues& computed_values) const {
-  LayoutUnit height = Style()->ContainsSize() ? BorderAndPaddingLogicalHeight()
-                                              : LogicalHeight();
+  LayoutUnit height = ShouldApplySizeContainment()
+                          ? BorderAndPaddingLogicalHeight()
+                          : LogicalHeight();
   ComputeLogicalHeight(height, LogicalTop(), computed_values);
 }
 
@@ -3310,10 +3299,15 @@ LayoutUnit LayoutBox::ComputeIntrinsicLogicalContentHeightUsing(
       return IntrinsicSize().Height();
     return intrinsic_content_height;
   }
-  if (logical_height_length.IsFillAvailable())
+  if (logical_height_length.IsFillAvailable()) {
+    if (!IsHTMLMarqueeElement(GetNode())) {
+      UseCounter::Count(GetDocument(),
+                        WebFeature::kCSSFillAvailableLogicalHeight);
+    }
     return ContainingBlock()->AvailableLogicalHeight(
                kExcludeMarginBorderPadding) -
            border_and_padding;
+  }
   NOTREACHED();
   return LayoutUnit();
 }
@@ -3386,7 +3380,8 @@ LayoutUnit LayoutBox::ComputePercentageLogicalHeight(
   LayoutUnit root_margin_border_padding_height;
   while (!cb->IsLayoutView() &&
          SkipContainingBlockForPercentHeightCalculation(cb)) {
-    if (cb->IsBody() || cb->IsDocumentElement())
+    if ((cb->IsBody() || cb->IsDocumentElement()) &&
+        !HasOverrideContainingBlockContentLogicalHeight())
       root_margin_border_padding_height += cb->MarginBefore() +
                                            cb->MarginAfter() +
                                            cb->BorderAndPaddingLogicalHeight();
@@ -3692,6 +3687,19 @@ LayoutUnit LayoutBox::ComputeReplacedLogicalHeightUsing(
 
 LayoutUnit LayoutBox::AvailableLogicalHeight(
     AvailableLogicalHeightType height_type) const {
+  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
+    // LayoutNG code is correct, Legacy code incorrectly ConstrainsMinMax
+    // when height is -1, and returns 0, not -1.
+    // The reason this code is NG-only is that this code causes perfomance
+    // regression for nested-percent-height-tables test case.
+    // This code gets executed 740 times in the test case.
+    // https://chromium-review.googlesource.com/c/chromium/src/+/1103289
+    LayoutUnit height =
+        AvailableLogicalHeightUsing(Style()->LogicalHeight(), height_type);
+    if (UNLIKELY(height == -1))
+      return height;
+    return ConstrainContentBoxLogicalHeightByMinMax(height, LayoutUnit(-1));
+  }
   // http://www.w3.org/TR/CSS2/visudet.html#propdef-height - We are interested
   // in the content height.
   // FIXME: Should we pass intrinsicContentLogicalHeight() instead of -1 here?
@@ -3704,10 +3712,9 @@ LayoutUnit LayoutBox::AvailableLogicalHeightUsing(
     const Length& h,
     AvailableLogicalHeightType height_type) const {
   if (IsLayoutView()) {
-    return LayoutUnit(
-        IsHorizontalWritingMode()
-            ? ToLayoutView(this)->GetFrameView()->VisibleContentSize().Height()
-            : ToLayoutView(this)->GetFrameView()->VisibleContentSize().Width());
+    return LayoutUnit(IsHorizontalWritingMode()
+                          ? ToLayoutView(this)->GetFrameView()->Size().Height()
+                          : ToLayoutView(this)->GetFrameView()->Size().Width());
   }
 
   // We need to stop here, since we don't want to increase the height of the
@@ -3765,6 +3772,7 @@ LayoutUnit LayoutBox::AvailableLogicalHeightUsing(
   // mode.
   LayoutUnit available_height =
       ContainingBlockLogicalHeightForContent(height_type);
+  // FIXME: This is incorrect if available_height == -1 || 0
   if (height_type == kExcludeMarginBorderPadding) {
     // FIXME: Margin collapsing hasn't happened yet, so this incorrectly removes
     // collapsed margins.
@@ -3807,8 +3815,7 @@ LayoutUnit LayoutBox::ContainingBlockLogicalWidthForPositioned(
       // Don't use visibleContentRect since the PaintLayer's size has not been
       // set yet.
       LayoutSize viewport_size(
-          frame_view->LayoutViewportScrollableArea()->ExcludeScrollbars(
-              frame_view->Size()));
+          frame_view->LayoutViewport()->ExcludeScrollbars(frame_view->Size()));
       return LayoutUnit(containing_block->IsHorizontalWritingMode()
                             ? viewport_size.Width()
                             : viewport_size.Height());
@@ -3871,8 +3878,7 @@ LayoutUnit LayoutBox::ContainingBlockLogicalHeightForPositioned(
       // Don't use visibleContentRect since the PaintLayer's size has not been
       // set yet.
       LayoutSize viewport_size(
-          frame_view->LayoutViewportScrollableArea()->ExcludeScrollbars(
-              frame_view->Size()));
+          frame_view->LayoutViewport()->ExcludeScrollbars(frame_view->Size()));
       return containing_block->IsHorizontalWritingMode()
                  ? viewport_size.Height()
                  : viewport_size.Width();
@@ -5112,7 +5118,12 @@ LayoutRectOutsets LayoutBox::ComputeVisualEffectOverflowOutsets() {
     AddOutlineRects(outline_rects, LayoutPoint(),
                     OutlineRectsShouldIncludeBlockVisualOverflow());
     LayoutRect rect = UnionRectEvenIfEmpty(outline_rects);
-    SetOutlineMayBeAffectedByDescendants(rect.Size() != Size());
+    bool outline_affected = rect.Size() != Size();
+    // LayoutNG will set this flag for inline descendants
+    // which are not visible to Legacy code.
+    if (IsLayoutNGMixin())
+      outline_affected |= OutlineMayBeAffectedByDescendants();
+    SetOutlineMayBeAffectedByDescendants(outline_affected);
     rect.Inflate(style.OutlineOutsetExtent());
     outsets.Unite(rect.ToOutsets(Size()));
   }
@@ -5380,12 +5391,15 @@ LayoutRect LayoutBox::LayoutOverflowRectForPropagation(
   LayoutRect rect = BorderBoxRect();
   // We want to include the margin, but only when it adds height. Quirky margins
   // don't contribute height nor do the margins of self-collapsing blocks.
-  if (!StyleRef().HasMarginAfterQuirk() && !IsSelfCollapsingBlock())
+  if (!StyleRef().HasMarginAfterQuirk() && !IsSelfCollapsingBlock()) {
+    const ComputedStyle* container_style =
+        container ? container->Style() : nullptr;
     rect.Expand(IsHorizontalWritingMode()
-                    ? LayoutSize(LayoutUnit(), MarginAfter())
-                    : LayoutSize(MarginAfter(), LayoutUnit()));
+                    ? LayoutSize(LayoutUnit(), MarginAfter(container_style))
+                    : LayoutSize(MarginAfter(container_style), LayoutUnit()));
+  }
 
-  if (!HasOverflowClip())
+  if (!HasOverflowClip() && !ShouldApplyLayoutContainment())
     rect.Unite(LayoutOverflowRect());
 
   bool has_transform = HasLayer() && Layer()->Transform();
@@ -5487,20 +5501,6 @@ LayoutPoint LayoutBox::FlipForWritingModeForChild(
   return LayoutPoint(point.X() + Size().Width() - child->Size().Width() -
                          (2 * child->Location().X()),
                      point.Y());
-}
-
-LayoutPoint LayoutBox::FlipForWritingModeForChildForPaint(
-    const LayoutBox* child,
-    const LayoutPoint& point) const {
-  // Do nothing unless in FlippedBlocks(). Fast path optimization
-  if (!Style()->IsFlippedBlocksWritingMode())
-    return point;
-  // If child will be painted by LayoutNG, and will use fragment.Offset(),
-  // flip is not needed.
-  if (!AdjustPaintOffsetScope::WillUseLegacyLocation(child))
-    return point;
-
-  return FlipForWritingModeForChild(child, point);
 }
 
 LayoutBox* LayoutBox::LocationContainer() const {
@@ -5970,7 +5970,7 @@ void LayoutBox::RemoveSnapArea(const LayoutBox& snap_area) {
   }
 }
 
-bool LayoutBox::AllowedToPropageRecursiveScrollToParentFrame(
+bool LayoutBox::AllowedToPropagateRecursiveScrollToParentFrame(
     const WebScrollIntoViewParams& params) {
   if (!GetFrameView()->SafeToPropagateScrollToParent())
     return false;
@@ -5978,12 +5978,7 @@ bool LayoutBox::AllowedToPropageRecursiveScrollToParentFrame(
   if (params.GetScrollType() != kProgrammaticScroll)
     return true;
 
-  if (!IsSupportedInFeaturePolicy(
-          mojom::FeaturePolicyFeature::kVerticalScroll)) {
-    return true;
-  }
-  return GetFrame()->IsFeatureEnabled(
-      mojom::FeaturePolicyFeature::kVerticalScroll);
+  return !GetDocument().IsVerticalScrollEnforced();
 }
 
 SnapAreaSet* LayoutBox::SnapAreas() const {
@@ -6038,8 +6033,8 @@ LayoutRect LayoutBox::DebugRect() const {
   return rect;
 }
 
-bool LayoutBox::ShouldClipOverflow() const {
-  return HasOverflowClip() || StyleRef().ContainsPaint() || HasControlClip();
+bool LayoutBox::ComputeShouldClipOverflow() const {
+  return HasOverflowClip() || ShouldApplyPaintContainment() || HasControlClip();
 }
 
 void LayoutBox::MutableForPainting::

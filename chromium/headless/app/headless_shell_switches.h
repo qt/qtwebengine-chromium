@@ -13,7 +13,6 @@ namespace switches {
 extern const char kCrashDumpsDir[];
 extern const char kDefaultBackgroundColor[];
 extern const char kDeterministicMode[];
-extern const char kDeterministicFetch[];
 extern const char kDisableCrashReporter[];
 extern const char kDumpDom[];
 extern const char kEnableBeginFrameControl[];
@@ -35,6 +34,7 @@ extern const char kVirtualTimeBudget[];
 extern const char kWindowSize[];
 extern const char kAuthServerWhitelist[];
 extern const char kFontRenderHinting[];
+extern const char kBlockNewWebContents[];
 
 // Switches which are replicated from content.
 using ::switches::kRemoteDebuggingPort;

@@ -51,7 +51,7 @@ SpdySessionPool::SpdySessionPool(
     SSLConfigService* ssl_config_service,
     HttpServerProperties* http_server_properties,
     TransportSecurityState* transport_security_state,
-    const QuicTransportVersionVector& quic_supported_versions,
+    const quic::QuicTransportVersionVector& quic_supported_versions,
     bool enable_ping_based_connection_checking,
     bool support_ietf_format_quic_altsvc,
     size_t session_max_recv_window_size,
@@ -71,7 +71,7 @@ SpdySessionPool::SpdySessionPool(
       time_func_(time_func),
       push_delegate_(nullptr) {
   NetworkChangeNotifier::AddIPAddressObserver(this);
-  if (ssl_config_service_.get())
+  if (ssl_config_service_)
     ssl_config_service_->AddObserver(this);
   CertDatabase::GetInstance()->AddObserver(this);
 }
@@ -88,7 +88,7 @@ SpdySessionPool::~SpdySessionPool() {
     RemoveUnavailableSession((*sessions_.begin())->GetWeakPtr());
   }
 
-  if (ssl_config_service_.get())
+  if (ssl_config_service_)
     ssl_config_service_->RemoveObserver(this);
   NetworkChangeNotifier::RemoveIPAddressObserver(this);
   CertDatabase::GetInstance()->RemoveObserver(this);

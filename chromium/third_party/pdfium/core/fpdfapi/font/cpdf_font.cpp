@@ -164,7 +164,7 @@ bool CPDF_Font::HasFontWidths() const {
   return true;
 }
 
-void CPDF_Font::LoadFontDescriptor(CPDF_Dictionary* pFontDesc) {
+void CPDF_Font::LoadFontDescriptor(const CPDF_Dictionary* pFontDesc) {
   m_Flags = pFontDesc->GetIntegerFor("Flags", FXFONT_NONSYMBOLIC);
   int ItalicAngle = 0;
   bool bExistItalicAngle = false;
@@ -200,7 +200,7 @@ void CPDF_Font::LoadFontDescriptor(CPDF_Dictionary* pFontDesc) {
   }
   if (m_Descent > 10)
     m_Descent = -m_Descent;
-  CPDF_Array* pBBox = pFontDesc->GetArrayFor("FontBBox");
+  const CPDF_Array* pBBox = pFontDesc->GetArrayFor("FontBBox");
   if (pBBox) {
     m_FontBBox.left = pBBox->GetIntegerAt(0);
     m_FontBBox.bottom = pBBox->GetIntegerAt(1);
@@ -208,7 +208,7 @@ void CPDF_Font::LoadFontDescriptor(CPDF_Dictionary* pFontDesc) {
     m_FontBBox.top = pBBox->GetIntegerAt(3);
   }
 
-  CPDF_Stream* pFontFile = pFontDesc->GetStreamFor("FontFile");
+  const CPDF_Stream* pFontFile = pFontDesc->GetStreamFor("FontFile");
   if (!pFontFile)
     pFontFile = pFontDesc->GetStreamFor("FontFile2");
   if (!pFontFile)
@@ -277,7 +277,7 @@ void CPDF_Font::CheckFontMetrics() {
 
 void CPDF_Font::LoadUnicodeMap() const {
   m_bToUnicodeLoaded = true;
-  CPDF_Stream* pStream = m_pFontDict->GetStreamFor("ToUnicode");
+  const CPDF_Stream* pStream = m_pFontDict->GetStreamFor("ToUnicode");
   if (!pStream)
     return;
 
@@ -315,6 +315,7 @@ CPDF_Font* CPDF_Font::GetStockFont(CPDF_Document* pDoc,
   return pFontGlobals->Set(pDoc, font_id, CPDF_Font::Create(nullptr, pDict));
 }
 
+// static
 std::unique_ptr<CPDF_Font> CPDF_Font::Create(CPDF_Document* pDoc,
                                              CPDF_Dictionary* pFontDict) {
   ByteString type = pFontDict->GetStringFor("Subtype");
@@ -323,7 +324,8 @@ std::unique_ptr<CPDF_Font> CPDF_Font::Create(CPDF_Document* pDoc,
     ByteString tag = pFontDict->GetStringFor("BaseFont").Left(4);
     for (size_t i = 0; i < FX_ArraySize(kChineseFontNames); ++i) {
       if (tag == ByteString(kChineseFontNames[i], 4)) {
-        CPDF_Dictionary* pFontDesc = pFontDict->GetDictFor("FontDescriptor");
+        const CPDF_Dictionary* pFontDesc =
+            pFontDict->GetDictFor("FontDescriptor");
         if (!pFontDesc || !pFontDesc->KeyExist("FontFile2"))
           pFont = pdfium::MakeUnique<CPDF_CIDFont>();
         break;

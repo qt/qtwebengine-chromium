@@ -21,6 +21,10 @@
 
 namespace webrtc {
 namespace {
+bool ValidForApm(float x) {
+  return std::isfinite(x) && -1.0f <= x && x <= 1.0f;
+}
+
 void GenerateFloatFrame(test::FuzzDataHelper* fuzz_data,
                         size_t input_rate,
                         size_t num_channels,
@@ -29,10 +33,19 @@ void GenerateFloatFrame(test::FuzzDataHelper* fuzz_data,
       rtc::CheckedDivExact(input_rate, 100ul);
   RTC_DCHECK_LE(samples_per_input_channel, 480);
   for (size_t i = 0; i < num_channels; ++i) {
+    std::fill(float_frames[i], float_frames[i] + samples_per_input_channel, 0);
+    const size_t read_bytes = sizeof(float) * samples_per_input_channel;
+    if (fuzz_data->CanReadBytes(read_bytes)) {
+      rtc::ArrayView<const uint8_t> byte_array =
+          fuzz_data->ReadByteArray(read_bytes);
+      memmove(float_frames[i], byte_array.begin(), read_bytes);
+    }
+
+    // Sanitize input.
     for (size_t j = 0; j < samples_per_input_channel; ++j) {
-      float_frames[i][j] =
-          static_cast<float>(fuzz_data->ReadOrDefaultValue<int16_t>(0)) /
-          static_cast<float>(std::numeric_limits<int16_t>::max());
+      if (!ValidForApm(float_frames[i][j])) {
+        float_frames[i][j] = 0.f;
+      }
     }
   }
 }
@@ -80,11 +93,14 @@ void FuzzAudioProcessing(test::FuzzDataHelper* fuzz_data,
     const auto output_rate =
         static_cast<size_t>(fuzz_data->SelectOneOf(rate_kinds));
 
-    const bool num_channels = fuzz_data->ReadOrDefaultValue(true) ? 2 : 1;
+    const int num_channels = fuzz_data->ReadOrDefaultValue(true) ? 2 : 1;
     const uint8_t stream_delay = fuzz_data->ReadOrDefaultValue<uint8_t>(0);
 
     // API call needed for AEC-2 and AEC-m to run.
     apm->set_stream_delay_ms(stream_delay);
+
+    const bool key_pressed = fuzz_data->ReadOrDefaultValue(true);
+    apm->set_stream_key_pressed(key_pressed);
 
     // Make the APM call depending on capture/render mode and float /
     // fix interface.
@@ -118,6 +134,7 @@ void FuzzAudioProcessing(test::FuzzDataHelper* fuzz_data,
     // codeways.
     static_cast<void>(apm->GetStatistics());
     static_cast<void>(apm->GetStatistics(true));
+    static_cast<void>(apm->UpdateHistogramsOnCallEnd());
 
     RTC_DCHECK_NE(apm_return_code, AudioProcessing::kBadDataLengthError);
   }

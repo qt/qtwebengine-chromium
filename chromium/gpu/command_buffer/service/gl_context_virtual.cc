@@ -73,7 +73,7 @@ std::string GLContextVirtual::GetGLRenderer() {
   return shared_context_->GetGLRenderer();
 }
 
-const gl::ExtensionSet& GLContextVirtual::GetExtensions() {
+const gfx::ExtensionSet& GLContextVirtual::GetExtensions() {
   return shared_context_->GetExtensions();
 }
 
@@ -100,6 +100,12 @@ gl::YUVToRGBConverter* GLContextVirtual::GetYUVToRGBConverter(
 void GLContextVirtual::ForceReleaseVirtuallyCurrent() {
   shared_context_->OnReleaseVirtuallyCurrent(this);
 }
+
+#if defined(OS_MACOSX)
+void GLContextVirtual::FlushForDriverCrashWorkaround() {
+  shared_context_->FlushForDriverCrashWorkaround();
+}
+#endif
 
 GLContextVirtual::~GLContextVirtual() {
   Destroy();

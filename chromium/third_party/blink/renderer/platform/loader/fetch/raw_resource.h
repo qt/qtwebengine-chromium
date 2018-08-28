@@ -43,7 +43,9 @@ class SourceKeyedCachedMetadataHandler;
 
 class PLATFORM_EXPORT RawResource final : public Resource {
  public:
-  static RawResource* FetchSynchronously(FetchParameters&, ResourceFetcher*);
+  static RawResource* FetchSynchronously(FetchParameters&,
+                                         ResourceFetcher*,
+                                         RawResourceClient* = nullptr);
   static RawResource* Fetch(FetchParameters&,
                             ResourceFetcher*,
                             RawResourceClient*);
@@ -91,9 +93,6 @@ class PLATFORM_EXPORT RawResource final : public Resource {
   // keyed by the source code of the script.
   SourceKeyedCachedMetadataHandler* CacheHandler();
 
-  base::Optional<int64_t> DownloadedFileLength() const {
-    return downloaded_file_length_;
-  }
   scoped_refptr<BlobDataHandle> DownloadedBlob() const {
     return downloaded_blob_;
   }
@@ -134,7 +133,6 @@ class PLATFORM_EXPORT RawResource final : public Resource {
                     base::SingleThreadTaskRunner*) override;
   void NotifyFinished() override;
 
-  base::Optional<int64_t> downloaded_file_length_;
   scoped_refptr<BlobDataHandle> downloaded_blob_;
 
   // Used for preload matching.
@@ -144,12 +142,14 @@ class PLATFORM_EXPORT RawResource final : public Resource {
 
 // TODO(yhirano): Recover #if ENABLE_SECURITY_ASSERT when we stop adding
 // RawResources to MemoryCache.
-inline bool IsRawResource(const Resource& resource) {
-  Resource::Type type = resource.GetType();
+inline bool IsRawResource(Resource::Type type) {
   return type == Resource::kMainResource || type == Resource::kRaw ||
          type == Resource::kTextTrack || type == Resource::kAudio ||
          type == Resource::kVideo || type == Resource::kManifest ||
          type == Resource::kImportResource;
+}
+inline bool IsRawResource(const Resource& resource) {
+  return IsRawResource(resource.GetType());
 }
 inline RawResource* ToRawResource(Resource* resource) {
   SECURITY_DCHECK(!resource || IsRawResource(*resource));

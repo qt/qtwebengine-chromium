@@ -11,7 +11,7 @@
 #include "GrResourceHandle.h"
 #include "GrVkDescriptorPool.h"
 #include "GrVkDescriptorSetManager.h"
-#include "GrVkPipelineState.h"
+#include "GrVkPipelineStateBuilder.h"
 #include "GrVkRenderPass.h"
 #include "GrVkResource.h"
 #include "GrVkUtil.h"
@@ -28,6 +28,7 @@ class GrSamplerState;
 class GrVkCopyPipeline;
 class GrVkGpu;
 class GrVkPipeline;
+class GrVkPipelineState;
 class GrVkPrimaryCommandBuffer;
 class GrVkRenderTarget;
 class GrVkSampler;
@@ -42,9 +43,9 @@ public:
     // Set up any initial vk objects
     void init();
 
-    GrVkPipeline* createPipeline(const GrPipeline& pipeline,
+    GrVkPipeline* createPipeline(const GrPrimitiveProcessor& primProc,
+                                 const GrPipeline& pipeline,
                                  const GrStencilSettings& stencil,
-                                 const GrPrimitiveProcessor& primProc,
                                  VkPipelineShaderStageCreateInfo* shaderStageInfo,
                                  int shaderStageCount,
                                  GrPrimitiveType primitiveType,
@@ -170,8 +171,8 @@ private:
 
         void abandon();
         void release();
-        GrVkPipelineState* refPipelineState(const GrPipeline&,
-                                            const GrPrimitiveProcessor&,
+        GrVkPipelineState* refPipelineState(const GrPrimitiveProcessor&,
+                                            const GrPipeline&,
                                             GrPrimitiveType,
                                             const GrVkRenderPass& renderPass);
 
@@ -190,7 +191,7 @@ private:
             }
         };
 
-        SkLRUCache<const GrVkPipelineState::Desc, std::unique_ptr<Entry>, DescHash> fMap;
+        SkLRUCache<const GrVkPipelineStateBuilder::Desc, std::unique_ptr<Entry>, DescHash> fMap;
 
         GrVkGpu*                    fGpu;
 

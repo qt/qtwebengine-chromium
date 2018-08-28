@@ -8,34 +8,31 @@
 #include "net/third_party/quic/core/quic_time_wait_list_manager.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
-namespace net {
+namespace quic {
 namespace test {
 
 class MockTimeWaitListManager : public QuicTimeWaitListManager {
  public:
   MockTimeWaitListManager(QuicPacketWriter* writer,
                           Visitor* visitor,
-                          QuicConnectionHelperInterface* helper,
+                          const QuicClock* clock,
                           QuicAlarmFactory* alarm_factory);
   ~MockTimeWaitListManager() override;
 
-  MOCK_METHOD5(AddConnectionIdToTimeWait,
+  MOCK_METHOD4(AddConnectionIdToTimeWait,
                void(QuicConnectionId connection_id,
-                    ParsedQuicVersion version,
                     bool ietf_quic,
-                    bool connection_rejected_statelessly,
+                    QuicTimeWaitListManager::TimeWaitAction action,
                     std::vector<std::unique_ptr<QuicEncryptedPacket>>*
                         termination_packets));
 
   void QuicTimeWaitListManager_AddConnectionIdToTimeWait(
       QuicConnectionId connection_id,
-      ParsedQuicVersion version,
       bool ietf_quic,
-      bool connection_rejected_statelessly,
+      QuicTimeWaitListManager::TimeWaitAction action,
       std::vector<std::unique_ptr<QuicEncryptedPacket>>* termination_packets) {
     QuicTimeWaitListManager::AddConnectionIdToTimeWait(
-        connection_id, version, ietf_quic, connection_rejected_statelessly,
-        termination_packets);
+        connection_id, ietf_quic, action, termination_packets);
   }
 
   MOCK_METHOD3(ProcessPacket,
@@ -52,6 +49,6 @@ class MockTimeWaitListManager : public QuicTimeWaitListManager {
 };
 
 }  // namespace test
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_TEST_TOOLS_MOCK_QUIC_TIME_WAIT_LIST_MANAGER_H_

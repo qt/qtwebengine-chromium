@@ -546,9 +546,9 @@ IN_PROC_BROWSER_TEST_F(SyntheticKeyEventTest, KeyEventSynthesizeKey) {
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   Attach();
   ASSERT_TRUE(content::ExecuteScript(
-      shell()->web_contents()->GetRenderViewHost(),
+      shell()->web_contents(),
       "function handleKeyEvent(event) {"
-        "domAutomationController.send(event.key);"
+      "domAutomationController.send(event.key);"
       "}"
       "document.body.addEventListener('keydown', handleKeyEvent);"
       "document.body.addEventListener('keyup', handleKeyEvent);"));
@@ -579,7 +579,7 @@ IN_PROC_BROWSER_TEST_F(SyntheticKeyEventTest, KeyboardEventAck) {
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   Attach();
   ASSERT_TRUE(content::ExecuteScript(
-      shell()->web_contents()->GetRenderViewHost(),
+      shell()->web_contents(),
       "document.body.addEventListener('keydown', () => {debugger;});"));
 
   auto filter = std::make_unique<InputMsgWatcher>(
@@ -605,7 +605,7 @@ IN_PROC_BROWSER_TEST_F(SyntheticMouseEventTest, MouseEventAck) {
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   Attach();
   ASSERT_TRUE(content::ExecuteScript(
-      shell()->web_contents()->GetRenderViewHost(),
+      shell()->web_contents(),
       "document.body.addEventListener('mousedown', () => {debugger;});"));
 
   auto filter = std::make_unique<InputMsgWatcher>(
@@ -781,7 +781,7 @@ class CaptureScreenshotTest : public DevToolsProtocolTest {
 
     // Draw a blue box of provided size in the horizontal center of the page.
     EXPECT_TRUE(content::ExecuteScript(
-        shell()->web_contents()->GetRenderViewHost(),
+        shell()->web_contents(),
         base::StringPrintf(
             "var style = document.body.style;                             "
             "style.overflow = 'hidden';                                   "
@@ -2605,9 +2605,15 @@ IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, ResetDownloadState) {
   ASSERT_EQ(download::DownloadItem::COMPLETE, download->GetState());
 }
 
+// Flakly on ChromeOS https://crbug.com/860312
+#if defined(OS_CHROMEOS)
+#define MAYBE_MultiDownload DISABLED_MultiDownload
+#else
+#define MAYBE_MultiDownload MultiDownload
+#endif
 // Check that downloading multiple (in this case, 2) files does not result in
 // corrupted files.
-IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, MultiDownload) {
+IN_PROC_BROWSER_TEST_F(DevToolsDownloadContentTest, MAYBE_MultiDownload) {
   base::ThreadRestrictions::SetIOAllowed(true);
   SetupEnsureNoPendingDownloads();
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);

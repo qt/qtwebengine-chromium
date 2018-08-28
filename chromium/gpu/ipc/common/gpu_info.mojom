@@ -16,6 +16,9 @@ struct GpuDevice {
   bool active;
   string vendor_string;
   string device_string;
+  string driver_vendor;
+  string driver_version;
+  string driver_date;
 };
 
 // gpu::VideoCodecProfile
@@ -45,7 +48,9 @@ enum VideoCodecProfile {
   DOLBYVISION_PROFILE5,
   DOLBYVISION_PROFILE7,
   THEORAPROFILE_ANY,
-  AV1PROFILE_PROFILE0,
+  AV1PROFILE_PROFILE_MAIN,
+  AV1PROFILE_PROFILE_HIGH,
+  AV1PROFILE_PROFILE_PRO,
 };
 
 // gpu::VideoDecodeAcceleratorSupportedProfile
@@ -70,6 +75,20 @@ struct VideoEncodeAcceleratorSupportedProfile {
   uint32 max_framerate_denominator;
 };
 
+// gpu::OverlayFormat
+enum OverlayFormat {
+  UNKNOWN,
+  BGRA,
+  YUY2,
+  NV12,
+};
+
+// gpu::OverlayCapability
+struct OverlayCapability {
+  OverlayFormat format;
+  bool is_scaling_supported;
+};
+
 // Corresponds to |gpu::GPUInfo| in gpu/config/gpu_info.h
 struct GpuInfo {
   mojo_base.mojom.TimeDelta initialization_time;
@@ -77,9 +96,6 @@ struct GpuInfo {
   bool amd_switchable;
   GpuDevice gpu;
   array<GpuDevice> secondary_gpus;
-  string driver_vendor;
-  string driver_version;
-  string driver_date;
   string pixel_shader_version;
   string vertex_shader_version;
   string max_msaa_samples;
@@ -98,9 +114,13 @@ struct GpuInfo {
   bool sandboxed;
   bool in_process_gpu;
   bool passthrough_cmd_decoder;
-  bool direct_composition;
-  bool supports_overlays;
   bool can_support_threaded_texture_mailbox;
+  [EnableIf=is_win]
+  bool direct_composition;
+  [EnableIf=is_win]
+  bool supports_overlays;
+  [EnableIf=is_win]
+  array<OverlayCapability> overlay_capabilities;
   [EnableIf=is_win]
   DxDiagNode dx_diagnostics;
   [EnableIf=is_win]
@@ -117,4 +137,5 @@ struct GpuInfo {
   bool jpeg_decode_accelerator_supported;
   uint64 system_visual;
   uint64 rgba_visual;
+  bool oop_rasterization_supported;
 };

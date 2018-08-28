@@ -16,15 +16,13 @@
 #include <initializer_list>
 #include <vector>
 
-#include "api/optional.h"
+#include "absl/types/optional.h"
 #include "api/transport/network_control.h"
 #include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 
 class Clock;
-
-namespace webrtc_cc {
 
 // This class controls initiation of probing to estimate initial channel
 // capacity. There is also support for probing during a session when max
@@ -50,7 +48,7 @@ class ProbeController {
 
   void EnablePeriodicAlrProbing(bool enable);
 
-  void SetAlrStartTimeMs(rtc::Optional<int64_t> alr_start_time);
+  void SetAlrStartTimeMs(absl::optional<int64_t> alr_start_time);
   void SetAlrEndedTimeMs(int64_t alr_end_time);
 
   void RequestProbe(int64_t at_time_ms);
@@ -86,8 +84,8 @@ class ProbeController {
   int64_t start_bitrate_bps_;
   int64_t max_bitrate_bps_;
   int64_t last_bwe_drop_probing_time_ms_;
-  rtc::Optional<int64_t> alr_start_time_ms_;
-  rtc::Optional<int64_t> alr_end_time_ms_;
+  absl::optional<int64_t> alr_start_time_ms_;
+  absl::optional<int64_t> alr_end_time_ms_;
   bool enable_periodic_alr_probing_;
   int64_t time_of_last_large_drop_ms_;
   int64_t bitrate_before_last_large_drop_bps_;
@@ -104,7 +102,6 @@ class ProbeController {
   RTC_DISALLOW_COPY_AND_ASSIGN(ProbeController);
 };
 
-}  // namespace webrtc_cc
 }  // namespace webrtc
 
 #endif  // MODULES_CONGESTION_CONTROLLER_GOOG_CC_PROBE_CONTROLLER_H_

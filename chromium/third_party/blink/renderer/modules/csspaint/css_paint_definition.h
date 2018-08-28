@@ -10,8 +10,8 @@
 #include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/modules/csspaint/paint_rendering_context_2d_settings.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
-#include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_v8_reference.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -28,7 +28,7 @@ class ImageResourceObserver;
 // types as well.
 class MODULES_EXPORT CSSPaintDefinition final
     : public GarbageCollectedFinalized<CSSPaintDefinition>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   static CSSPaintDefinition* Create(
       ScriptState*,
@@ -65,14 +65,13 @@ class MODULES_EXPORT CSSPaintDefinition final
     return context_settings_;
   }
 
-  ScriptState* GetScriptState() const { return script_state_.get(); }
+  ScriptState* GetScriptState() const { return script_state_; }
 
   v8::Local<v8::Function> PaintFunctionForTesting(v8::Isolate* isolate) {
     return paint_.NewLocal(isolate);
   }
 
-  void Trace(blink::Visitor* visitor){};
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
+  virtual void Trace(blink::Visitor* visitor);
   const char* NameInHeapSnapshot() const override {
     return "CSSPaintDefinition";
   }
@@ -89,7 +88,7 @@ class MODULES_EXPORT CSSPaintDefinition final
 
   void MaybeCreatePaintInstance();
 
-  scoped_refptr<ScriptState> script_state_;
+  Member<ScriptState> script_state_;
 
   // This object keeps the class instance object, constructor function and
   // paint function alive. It participates in wrapper tracing as it holds onto

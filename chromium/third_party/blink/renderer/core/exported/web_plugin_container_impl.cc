@@ -45,8 +45,8 @@
 #include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/public/web/web_dom_message_event.h"
 #include "third_party/blink/public/web/web_element.h"
-#include "third_party/blink/public/web/web_frame_client.h"
 #include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/public/web/web_print_params.h"
 #include "third_party/blink/public/web/web_print_preset_options.h"
@@ -58,7 +58,6 @@
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer.h"
 #include "third_party/blink/renderer/core/clipboard/system_clipboard.h"
-#include "third_party/blink/renderer/core/dom/events/event_queue.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
 #include "third_party/blink/renderer/core/events/drag_event.h"
 #include "third_party/blink/renderer/core/events/gesture_event.h"
@@ -154,8 +153,10 @@ IntRect WebPluginContainerImpl::FrameRect() const {
   if (owner) {
     LayoutView* owner_layout_view = owner->View();
     DCHECK(owner_layout_view);
-    if (owner_layout_view->HasOverflowClip())
-      location.Move(-owner_layout_view->ScrolledContentOffset());
+    if (owner_layout_view->HasOverflowClip()) {
+      IntSize scroll_offset(owner_layout_view->ScrolledContentOffset());
+      location.SaturatedMove(-scroll_offset.Width(), -scroll_offset.Height());
+    }
   }
 
   return IntRect(location, frame_rect_.Size());
@@ -176,7 +177,7 @@ void WebPluginContainerImpl::Paint(GraphicsContext& context,
     // inserted rather than invoking WebPlugin::paint.
     RecordForeignLayer(context, *element_->GetLayoutObject(),
                        DisplayItem::kForeignLayerPlugin, layer_,
-                       FrameRect().Location(), frame_rect_.Size());
+                       FloatPoint(FrameRect().Location()), frame_rect_.Size());
     return;
   }
 
@@ -190,13 +191,13 @@ void WebPluginContainerImpl::Paint(GraphicsContext& context,
 
   // The plugin is positioned in the root frame's coordinates, so it needs to
   // be painted in them too.
-  FloatPoint origin(ParentFrameView().ContentsToRootFrame(IntPoint()));
+  FloatPoint origin(ParentFrameView().ConvertToRootFrame(IntPoint()));
   origin.Move(-paint_offset);
   context.Translate(-origin.X(), -origin.Y());
 
-  WebCanvas* canvas = context.Canvas();
+  cc::PaintCanvas* canvas = context.Canvas();
 
-  IntRect window_rect = ParentFrameView().ContentsToRootFrame(cull_rect.rect_);
+  IntRect window_rect = ParentFrameView().ConvertToRootFrame(cull_rect.Rect());
   web_plugin_->Paint(canvas, window_rect);
 
   context.Restore();
@@ -392,7 +393,7 @@ void WebPluginContainerImpl::PrintPage(int page_number, GraphicsContext& gc) {
                            DisplayItem::kWebPlugin);
   gc.Save();
 
-  WebCanvas* canvas = gc.Canvas();
+  cc::PaintCanvas* canvas = gc.Canvas();
   web_plugin_->PrintPage(page_number, canvas);
   gc.Restore();
 }
@@ -457,9 +458,9 @@ void WebPluginContainerImpl::DispatchProgressEvent(const WebString& type,
 
 void WebPluginContainerImpl::EnqueueMessageEvent(
     const WebDOMMessageEvent& event) {
-  static_cast<Event*>(event)->SetTarget(element_);
-  element_->GetExecutionContext()->GetEventQueue()->EnqueueEvent(FROM_HERE,
-                                                                 event);
+  if (!element_->GetExecutionContext())
+    return;
+  element_->EnqueueEvent(event, TaskType::kInternalDefault);
 }
 
 void WebPluginContainerImpl::Invalidate() {
@@ -522,13 +523,13 @@ WebString WebPluginContainerImpl::ExecuteScriptURL(const WebURL& url,
   const KURL& kurl = url;
   DCHECK(kurl.ProtocolIs("javascript"));
 
-  String script = DecodeURLEscapeSequences(
-      kurl.GetString().Substring(strlen("javascript:")));
+  String script = DecodeURLEscapeSequences(kurl.GetString());
 
   if (!element_->GetDocument().GetContentSecurityPolicy()->AllowJavaScriptURLs(
           element_, script, element_->GetDocument().Url(), OrdinalNumber())) {
     return WebString();
   }
+  script = script.Substring(strlen("javascript:"));
 
   std::unique_ptr<UserGestureIndicator> gesture_indicator;
   if (popups_allowed) {
@@ -571,26 +572,13 @@ bool WebPluginContainerImpl::IsRectTopmost(const WebRect& rect) {
   if (!frame)
     return false;
 
-  IntPoint location = FrameRect().Location();
-  LayoutRect document_rect(location.X() + rect.x, location.Y() + rect.y,
-                           rect.width, rect.height);
-  // hitTestResultAtPoint() takes a padding rectangle.
-  // FIXME: We'll be off by 1 when the width or height is even.
-  LayoutPoint center = document_rect.Center();
-  // Make the rect we're checking (the point surrounded by padding rects)
-  // contained inside the requested rect.
-  // TODO(pdr): This logic for calculating padding is only needed because the
-  // hit test rect for a point has non-zero dimensions. This can be simplified
-  // when the hit test rect is 0px x 0px, see: HitTestLocation::RectForPoint.
-  LayoutRect hit_rect = HitTestLocation::RectForPoint(center);
-  LayoutRectOutsets padding(
-      hit_rect.Y() - document_rect.Y(), document_rect.MaxX() - hit_rect.MaxX(),
-      document_rect.MaxY() - hit_rect.MaxY(), hit_rect.X() - document_rect.X());
-  HitTestResult result = frame->GetEventHandler().HitTestResultAtPoint(
-      center,
-      HitTestRequest::kReadOnly | HitTestRequest::kActive |
-          HitTestRequest::kListBased,
-      padding);
+  IntPoint frame_location = FrameRect().Location();
+  HitTestLocation location(LayoutRect(frame_location.X() + rect.x,
+                                      frame_location.Y() + rect.y, rect.width,
+                                      rect.height));
+  HitTestResult result = frame->GetEventHandler().HitTestResultAtLocation(
+      location, HitTestRequest::kReadOnly | HitTestRequest::kActive |
+                    HitTestRequest::kListBased);
   const HitTestResult::NodeSet& nodes = result.ListBasedTestResult();
   if (nodes.size() != 1)
     return false;
@@ -666,7 +654,7 @@ void WebPluginContainerImpl::SetWantsWheelEvents(bool wants_wheel_events) {
 WebPoint WebPluginContainerImpl::RootFrameToLocalPoint(
     const WebPoint& point_in_root_frame) {
   WebPoint point_in_content =
-      ParentFrameView().RootFrameToContents(point_in_root_frame);
+      ParentFrameView().ConvertFromRootFrame(point_in_root_frame);
   return RoundedIntPoint(element_->GetLayoutObject()->AbsoluteToLocal(
       FloatPoint(point_in_content), kUseTransforms));
 }
@@ -676,7 +664,7 @@ WebPoint WebPluginContainerImpl::LocalToRootFramePoint(
   IntPoint absolute_point =
       RoundedIntPoint(element_->GetLayoutObject()->LocalToAbsolute(
           FloatPoint(point_in_local), kUseTransforms));
-  return ParentFrameView().ContentsToRootFrame(absolute_point);
+  return ParentFrameView().ConvertToRootFrame(absolute_point);
 }
 
 void WebPluginContainerImpl::DidReceiveResponse(
@@ -863,7 +851,7 @@ void WebPluginContainerImpl::HandleWheelEvent(WheelEvent* event) {
   WebFloatPoint absolute_location = event->NativeEvent().PositionInRootFrame();
 
   // Translate the root frame position to content coordinates.
-  absolute_location = ParentFrameView().RootFrameToContents(absolute_location);
+  absolute_location = ParentFrameView().ConvertFromRootFrame(absolute_location);
 
   FloatPoint local_point = element_->GetLayoutObject()->AbsoluteToLocal(
       absolute_location, kUseTransforms);
@@ -958,7 +946,7 @@ WebTouchEvent WebPluginContainerImpl::TransformTouchEvent(
         transformed_event.touches[i].PositionInWidget();
 
     // Translate the root frame position to content coordinates.
-    absolute_location = parent.RootFrameToContents(absolute_location);
+    absolute_location = parent.ConvertFromRootFrame(absolute_location);
 
     FloatPoint local_point = element_->GetLayoutObject()->AbsoluteToLocal(
         absolute_location, kUseTransforms);
@@ -1079,7 +1067,7 @@ void WebPluginContainerImpl::ComputeClipRectsForPlugin(
   LayoutRect unclipped_absolute_rect(box->ContentBoxRect());
   box->MapToVisualRectInAncestorSpace(root_view, unclipped_absolute_rect);
   unclipped_absolute_rect =
-      box->View()->GetFrameView()->DocumentToAbsolute(unclipped_absolute_rect);
+      box->View()->GetFrameView()->DocumentToFrame(unclipped_absolute_rect);
 
   // The frameRect is already in absolute space of the local frame to the
   // plugin so map it up to the root frame.
@@ -1092,17 +1080,12 @@ void WebPluginContainerImpl::ComputeClipRectsForPlugin(
                                            kTraverseDocumentBoundaries)
                      .BoundingBox());
 
-  // Finally, adjust for scrolling of the root frame, which the above does not
-  // take into account (until root-layer-scrolling ships at which point we can
-  // remove the AbsoluteToRootFrame).
-  layout_window_rect =
-      root_view->GetFrameView()->AbsoluteToRootFrame(layout_window_rect);
   window_rect = PixelSnappedIntRect(layout_window_rect);
 
   LayoutRect layout_clipped_local_rect = unclipped_absolute_rect;
   LayoutRect unclipped_layout_local_rect = layout_clipped_local_rect;
   layout_clipped_local_rect.Intersect(
-      LayoutRect(root_view->GetFrameView()->VisibleContentRect()));
+      LayoutRect(LayoutPoint(), LayoutSize(root_view->GetFrameView()->Size())));
 
   unclipped_int_local_rect =
       box->AbsoluteToLocalQuad(FloatRect(unclipped_layout_local_rect),

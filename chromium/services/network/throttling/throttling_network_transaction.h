@@ -12,7 +12,7 @@
 #include "base/component_export.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "net/base/completion_callback.h"
+#include "net/base/completion_once_callback.h"
 #include "net/base/load_states.h"
 #include "net/base/net_error_details.h"
 #include "net/base/request_priority.h"
@@ -34,7 +34,6 @@ class X509Certificate;
 namespace network {
 
 class ThrottlingController;
-class ThrottlingControllerHelper;
 class ThrottlingUploadDataStream;
 
 // ThrottlingNetworkTransaction is a wrapper for network transaction. All
@@ -45,8 +44,6 @@ class ThrottlingUploadDataStream;
 class COMPONENT_EXPORT(NETWORK_SERVICE) ThrottlingNetworkTransaction
     : public net::HttpTransaction {
  public:
-  static const char kDevToolsEmulateNetworkConditionsClientId[];
-
   explicit ThrottlingNetworkTransaction(
       std::unique_ptr<net::HttpTransaction> network_transaction);
 
@@ -54,21 +51,20 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ThrottlingNetworkTransaction
 
   // HttpTransaction methods:
   int Start(const net::HttpRequestInfo* request,
-            const net::CompletionCallback& callback,
+            net::CompletionOnceCallback callback,
             const net::NetLogWithSource& net_log) override;
-  int RestartIgnoringLastError(
-      const net::CompletionCallback& callback) override;
+  int RestartIgnoringLastError(net::CompletionOnceCallback callback) override;
   int RestartWithCertificate(
       scoped_refptr<net::X509Certificate> client_cert,
       scoped_refptr<net::SSLPrivateKey> client_private_key,
-      const net::CompletionCallback& callback) override;
+      net::CompletionOnceCallback callback) override;
   int RestartWithAuth(const net::AuthCredentials& credentials,
-                      const net::CompletionCallback& callback) override;
+                      net::CompletionOnceCallback callback) override;
   bool IsReadyToRestartForAuth() override;
 
   int Read(net::IOBuffer* buf,
            int buf_len,
-           const net::CompletionCallback& callback) override;
+           net::CompletionOnceCallback callback) override;
   void StopCaching() override;
   bool GetFullRequestHeaders(net::HttpRequestHeaders* headers) const override;
   int64_t GetTotalReceivedBytes() const override;
@@ -94,19 +90,15 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ThrottlingNetworkTransaction
   void GetConnectionAttempts(net::ConnectionAttempts* out) const override;
 
  protected:
-  friend class ThrottlingControllerHelper;
+  friend class ThrottlingControllerTestHelper;
 
  private:
   void Fail();
   bool CheckFailed();
 
-  void IOCallback(const net::CompletionCallback& callback,
-                  bool start,
-                  int result);
-  int Throttle(const net::CompletionCallback& callback, bool start, int result);
-  void ThrottleCallback(const net::CompletionCallback& callback,
-                        int result,
-                        int64_t bytes);
+  void IOCallback(bool start, int result);
+  int Throttle(bool start, int result);
+  void ThrottleCallback(int result, int64_t bytes);
 
   ThrottlingNetworkInterceptor::ThrottleCallback throttle_callback_;
   int64_t throttled_byte_count_;
@@ -122,6 +114,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ThrottlingNetworkTransaction
 
   // Real network transaction.
   std::unique_ptr<net::HttpTransaction> network_transaction_;
+
+  // User callback.
+  net::CompletionOnceCallback callback_;
 
   const net::HttpRequestInfo* request_;
 

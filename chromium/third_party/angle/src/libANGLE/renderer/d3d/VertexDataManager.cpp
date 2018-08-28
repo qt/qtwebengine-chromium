@@ -138,7 +138,7 @@ gl::ErrorOrResult<unsigned int> TranslatedAttribute::computeOffset(GLint startVe
     CheckedNumeric<unsigned int> offset;
 
     offset = baseOffset + stride * static_cast<unsigned int>(startVertex);
-    ANGLE_TRY_CHECKED_MATH(offset);
+    ANGLE_TRY_CHECKED_MATH(offset.IsValid());
     return offset.ValueOrDie();
 }
 
@@ -206,11 +206,7 @@ gl::Error VertexDataManager::initialize()
 {
     mStreamingBuffer.reset(
         new StreamingVertexBufferInterface(mFactory, INITIAL_STREAM_BUFFER_SIZE));
-    if (!mStreamingBuffer)
-    {
-        return gl::OutOfMemory() << "Failed to allocate the streaming vertex buffer.";
-    }
-
+    ANGLE_TRY_ALLOCATION(mStreamingBuffer);
     return gl::NoError();
 }
 

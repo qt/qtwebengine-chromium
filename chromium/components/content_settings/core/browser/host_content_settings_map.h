@@ -59,6 +59,7 @@ class HostContentSettingsMap : public content_settings::Observer,
     SUPERVISED_PROVIDER,
     CUSTOM_EXTENSION_PROVIDER,
     NOTIFICATION_ANDROID_PROVIDER,
+    EPHEMERAL_PROVIDER,
     PREF_PROVIDER,
     DEFAULT_PROVIDER,
 
@@ -274,7 +275,7 @@ class HostContentSettingsMap : public content_settings::Observer,
   void OnContentSettingChanged(const ContentSettingsPattern& primary_pattern,
                                const ContentSettingsPattern& secondary_pattern,
                                ContentSettingsType content_type,
-                               std::string resource_identifier) override;
+                               const std::string& resource_identifier) override;
 
   // Returns the ProviderType associated with the given source string.
   // TODO(estade): I regret adding this. At the moment there are no legitimate

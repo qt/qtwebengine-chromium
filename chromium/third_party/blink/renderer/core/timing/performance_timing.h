@@ -100,6 +100,13 @@ class CORE_EXPORT PerformanceTiming final : public ScriptWrappable,
   // The time of the first 'meaningful' paint, A meaningful paint is a paint
   // where the page's primary content is visible.
   unsigned long long FirstMeaningfulPaint() const;
+  // The time of the candidate of first 'meaningful' paint, A meaningful paint
+  // candidate indicates the first time we considered a paint to qualify as the
+  // potential first meaningful paint. But, be careful that it may be an
+  // optimistic (i.e., too early) estimate.
+  // TODO(crbug.com/848639): This function is exposed as an experiment, and if
+  // not useful, this function can be removed.
+  unsigned long long FirstMeaningfulPaintCandidate() const;
   // The first time the page is considered 'interactive'. This is determined
   // using heuristics based on main thread and network activity.
   unsigned long long PageInteractive() const;
@@ -115,6 +122,12 @@ class CORE_EXPORT PerformanceTiming final : public ScriptWrappable,
   unsigned long long FirstInputDelay() const;
   // The timestamp of the event whose delay is reported by FirstInputDelay().
   unsigned long long FirstInputTimestamp() const;
+  // The longest duration between the hardware timestamp and being queued on the
+  // main thread for the click, tap, key press, cancellable touchstart, or
+  // pointer down followed by a pointer up.
+  unsigned long long LongestInputDelay() const;
+  // The timestamp of the event whose delay is reported by LongestInputDelay().
+  unsigned long long LongestInputTimestamp() const;
 
   unsigned long long ParseStart() const;
   unsigned long long ParseStop() const;
@@ -123,15 +136,12 @@ class CORE_EXPORT PerformanceTiming final : public ScriptWrappable,
   unsigned long long ParseBlockedOnScriptExecutionDuration() const;
   unsigned long long ParseBlockedOnScriptExecutionFromDocumentWriteDuration()
       const;
-  unsigned long long AuthorStyleSheetParseDurationBeforeFCP() const;
-  unsigned long long UpdateStyleDurationBeforeFCP() const;
 
   ScriptValue toJSONForBinding(ScriptState*) const;
 
   void Trace(blink::Visitor*) override;
 
   unsigned long long MonotonicTimeToIntegerMilliseconds(TimeTicks) const;
-  TimeTicks IntegerMillisecondsToMonotonicTime(unsigned long long) const;
 
  private:
   explicit PerformanceTiming(LocalFrame*);

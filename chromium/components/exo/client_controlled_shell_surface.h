@@ -102,6 +102,10 @@ class ClientControlledShellSurface
     bounds_changed_callback_ = bounds_changed_callback;
   }
 
+  bool has_bounds_changed_callback() const {
+    return static_cast<bool>(bounds_changed_callback_);
+  }
+
   // Set the callback to run when the drag operation started.
   using DragStartedCallback = base::RepeatingCallback<void(int direction)>;
   void set_drag_started_callback(const DragStartedCallback& callback) {
@@ -226,7 +230,7 @@ class ClientControlledShellSurface
   static void SetClientControlledStateDelegateFactoryForTest(
       const DelegateFactoryCallback& callback);
 
-  ash::WideFrameView* wide_frame_for_test() { return wide_frame_; }
+  ash::WideFrameView* wide_frame_for_test() { return wide_frame_.get(); }
 
  private:
   class ScopedSetBoundsLocally;
@@ -237,11 +241,6 @@ class ClientControlledShellSurface
   gfx::Rect GetShadowBounds() const override;
   void InitializeWindowState(ash::wm::WindowState* window_state) override;
   float GetScale() const override;
-  aura::Window* GetDragWindow() override;
-  std::unique_ptr<ash::WindowResizer> CreateWindowResizer(
-      aura::Window* window,
-      int component) override;
-  bool OnMouseDragged(const ui::MouseEvent& event) override;
   gfx::Rect GetWidgetBounds() const override;
   gfx::Point GetSurfaceOrigin() const override;
 
@@ -300,7 +299,7 @@ class ClientControlledShellSurface
   std::unique_ptr<ash::ImmersiveFullscreenController>
       immersive_fullscreen_controller_;
 
-  ash::WideFrameView* wide_frame_ = nullptr;
+  std::unique_ptr<ash::WideFrameView> wide_frame_;
 
   std::unique_ptr<ui::CompositorLock> orientation_compositor_lock_;
 

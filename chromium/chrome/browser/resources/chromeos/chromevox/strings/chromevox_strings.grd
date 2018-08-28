@@ -1045,6 +1045,12 @@
       <message desc="Describes an element with the ARIA role combobox." name="IDS_CHROMEVOX_ROLE_COMBOBOX">
         Combo box
       </message>
+      <message desc="Accessibility role description for content deletion, meaning content that is has been or is suggested to be removed from a document, such as in a revision review" name="IDS_CHROMEVOX_ROLE_CONTENT_DELETION">
+        Deletion
+      </message>
+      <message desc="Accessibility role description for content insertion, meaning content that is has been or is suggested to be inserted into a document, such as in a revision review" name="IDS_CHROMEVOX_ROLE_CONTENT_INSERTION">
+        Insertion
+      </message>
       <message desc="This is an abbreviated ARIA widget role name shown on a braille display. When translating, try to find a contracted form of the translation for 'combo box' according to local conventions. If reasonable, use all lowercase and avoid punctuation to keep the number of characters as low as possible." name="IDS_CHROMEVOX_ROLE_COMBOBOX_BRL">
         cbo
       </message>
@@ -2954,6 +2960,12 @@ If you're done with the tutorial, use ChromeVox to navigate to the Close button 
       <message desc="A hint to the user for interacting with the menu control." name="IDS_CHROMEVOX_HINT_MENU">
         Press up or down arrow to navigate; enter to activate.
       </message>
+      <message desc="A hint to the user that there are details associated with this element." name="IDS_CHROMEVOX_HINT_DETAILS">
+        Press Search+A, J to jump to details.
+      </message>
+      <message desc="The display name of the command that will jump to more details about an item." name="IDS_CHROMEVOX_JUMP_TO_DETAILS">
+        Jump to Details
+      </message>
       <message desc="Describes the action of decrementing a control." name="IDS_CHROMEVOX_ACTION_DECREMENT_DESCRIPTION">
         Decrease value
       </message>
@@ -2974,6 +2986,15 @@ If you're done with the tutorial, use ChromeVox to navigate to the Close button 
       </message>
       <message desc="A hint to the user controls that can be double tapped." name="IDS_CHROMEVOX_HINT_DOUBLE_TAP">
         Double tap to activate
+      </message>
+      <message desc="Shown to the user in braille and speech when the device goes into landscape orientation." name="IDS_CHROMEVOX_DEVICE_LANDSCAPE">
+        landscape
+      </message>
+      <message desc="Shown to the user in braille and speech when the device goes into portrait orientation." name="IDS_CHROMEVOX_DEVICE_PORTRAIT">
+        portrait
+      </message>
+      <message desc="A hint to the user for how to interact with math content using the keyboard." name="IDS_CHROMEVOX_HINT_MATH_KEYBOARD">
+        Press up, down, left, or right to explore math.
       </message>
     </messages>
   </release>

@@ -49,6 +49,40 @@ TEST(TransformationMatrixTest, IsIdentityOr2DTranslation) {
   EXPECT_FALSE(matrix.IsIdentityOr2DTranslation());
 }
 
+TEST(TransformationMatrixTest, Is2DProportionalUpscaleAndOr2DTranslation) {
+  TransformationMatrix matrix;
+  EXPECT_TRUE(matrix.Is2DProportionalUpscaleAndOr2DTranslation());
+
+  matrix.MakeIdentity();
+  matrix.Translate(10, 0);
+  EXPECT_TRUE(matrix.Is2DProportionalUpscaleAndOr2DTranslation());
+
+  matrix.MakeIdentity();
+  matrix.Scale(1.3);
+  EXPECT_TRUE(matrix.Is2DProportionalUpscaleAndOr2DTranslation());
+
+  matrix.MakeIdentity();
+  matrix.Translate(0, -20);
+  matrix.Scale(1.7);
+  EXPECT_TRUE(matrix.Is2DProportionalUpscaleAndOr2DTranslation());
+
+  matrix.MakeIdentity();
+  matrix.Scale(0.99);
+  EXPECT_FALSE(matrix.Is2DProportionalUpscaleAndOr2DTranslation());
+
+  matrix.MakeIdentity();
+  matrix.Translate3d(0, 0, 1);
+  EXPECT_FALSE(matrix.Is2DProportionalUpscaleAndOr2DTranslation());
+
+  matrix.MakeIdentity();
+  matrix.Rotate(40 /* degrees */);
+  EXPECT_FALSE(matrix.Is2DProportionalUpscaleAndOr2DTranslation());
+
+  matrix.MakeIdentity();
+  matrix.SkewX(30 /* degrees */);
+  EXPECT_FALSE(matrix.Is2DProportionalUpscaleAndOr2DTranslation());
+}
+
 TEST(TransformationMatrixTest, To2DTranslation) {
   TransformationMatrix matrix;
   EXPECT_EQ(FloatSize(), matrix.To2DTranslation());
@@ -283,6 +317,17 @@ TEST(TransformationMatrixTest, ToString) {
   // [ 6 7 8 9 ]
   EXPECT_EQ("[1,2,3,4,\n1,2,3,4,\n1,0,3,4,\n6,7,8,9]",
             column_major_constructor.ToString(true));
+}
+
+TEST(TransformationMatrix, IsInvertible) {
+  EXPECT_FALSE(
+      TransformationMatrix(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+          .IsInvertible());
+  EXPECT_TRUE(TransformationMatrix().IsInvertible());
+  EXPECT_TRUE(TransformationMatrix().Translate3d(10, 20, 30).IsInvertible());
+  EXPECT_TRUE(TransformationMatrix().Scale(1e-8).IsInvertible());
+  EXPECT_TRUE(TransformationMatrix().Scale3d(1e-8, -1e-8, 1).IsInvertible());
+  EXPECT_FALSE(TransformationMatrix().Scale(0).IsInvertible());
 }
 
 }  // namespace blink

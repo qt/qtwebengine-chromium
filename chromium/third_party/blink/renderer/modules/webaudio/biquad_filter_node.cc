@@ -27,11 +27,10 @@
 
 #include <memory>
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_basic_processor_handler.h"
 #include "third_party/blink/renderer/modules/webaudio/biquad_filter_options.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 
 namespace blink {
@@ -216,7 +215,7 @@ void BiquadFilterNode::getFrequencyResponse(
 
   if (mag_response.View()->length() != frequency_hz_length) {
     exception_state.ThrowDOMException(
-        kInvalidAccessError,
+        DOMExceptionCode::kInvalidAccessError,
         ExceptionMessages::IndexOutsideRange(
             "magResponse length", mag_response.View()->length(),
             frequency_hz_length, ExceptionMessages::kInclusiveBound,
@@ -226,7 +225,7 @@ void BiquadFilterNode::getFrequencyResponse(
 
   if (phase_response.View()->length() != frequency_hz_length) {
     exception_state.ThrowDOMException(
-        kInvalidAccessError,
+        DOMExceptionCode::kInvalidAccessError,
         ExceptionMessages::IndexOutsideRange(
             "phaseResponse length", phase_response.View()->length(),
             frequency_hz_length, ExceptionMessages::kInclusiveBound,

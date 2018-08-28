@@ -20,6 +20,7 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
@@ -30,8 +31,10 @@
 #include "pdf/draw_utils.h"
 #include "pdf/pdf_transform.h"
 #include "pdf/pdfium/pdfium_api_string_buffer_adapter.h"
+#include "pdf/pdfium/pdfium_document.h"
 #include "pdf/pdfium/pdfium_mem_buffer_file_read.h"
 #include "pdf/pdfium/pdfium_mem_buffer_file_write.h"
+#include "pdf/pdfium/pdfium_unsupported_features.h"
 #include "pdf/url_loader_wrapper_impl.h"
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/private/pdf.h"
@@ -419,19 +422,6 @@ void Release(FPDF_SYSFONTINFO* sysfontinfo) {
 PDFiumEngine::CreateDocumentLoaderFunction
     g_create_document_loader_for_testing = nullptr;
 
-PDFiumEngine* g_engine_for_unsupported = nullptr;
-
-void Unsupported_Handler(UNSUPPORT_INFO*, int type) {
-  if (!g_engine_for_unsupported) {
-    NOTREACHED();
-    return;
-  }
-
-  g_engine_for_unsupported->UnsupportedFeature(type);
-}
-
-UNSUPPORT_INFO g_unsupported_info = {1, Unsupported_Handler};
-
 template <class S>
 bool IsAboveOrDirectlyLeftOf(const S& lhs, const S& rhs) {
   return lhs.y() < rhs.y() || (lhs.y() == rhs.y() && lhs.x() < rhs.x());
@@ -669,7 +659,7 @@ bool InitializeSDK() {
   FPDF_SetSystemFontInfo(g_font_info);
 #endif
 
-  FSDK_SetUnSpObjProcessHandler(&g_unsupported_info);
+  InitializeUnsupportedFeaturesHandler();
 
   return true;
 }
@@ -689,24 +679,12 @@ std::unique_ptr<PDFEngine> PDFEngine::Create(PDFEngine::Client* client,
 
 PDFiumEngine::PDFiumEngine(PDFEngine::Client* client, bool enable_javascript)
     : client_(client),
+      form_filler_(this, enable_javascript),
       mouse_down_state_(PDFiumPage::NONSELECTABLE_AREA,
                         PDFiumPage::LinkTarget()),
-      form_filler_(this, enable_javascript),
       print_(this) {
   find_factory_.Initialize(this);
   password_factory_.Initialize(this);
-
-  file_access_.m_FileLen = 0;
-  file_access_.m_GetBlock = &GetBlock;
-  file_access_.m_Param = this;
-
-  file_availability_.version = 1;
-  file_availability_.IsDataAvail = &IsDataAvail;
-  file_availability_.engine = this;
-
-  download_hints_.version = 1;
-  download_hints_.AddSegment = &AddSegment;
-  download_hints_.engine = this;
 
   IFSDK_PAUSE::version = 1;
   IFSDK_PAUSE::user = nullptr;
@@ -724,7 +702,7 @@ PDFiumEngine::~PDFiumEngine() {
   for (auto& page : pages_)
     page->Unload();
 
-  if (doc_)
+  if (doc())
     FORM_DoDocumentAAction(form(), FPDFDOC_AACTION_WC);
 }
 
@@ -732,28 +710,6 @@ PDFiumEngine::~PDFiumEngine() {
 void PDFiumEngine::SetCreateDocumentLoaderFunctionForTesting(
     CreateDocumentLoaderFunction function) {
   g_create_document_loader_for_testing = function;
-}
-
-int PDFiumEngine::GetBlock(void* param,
-                           unsigned long position,
-                           unsigned char* buffer,
-                           unsigned long size) {
-  PDFiumEngine* engine = static_cast<PDFiumEngine*>(param);
-  return engine->doc_loader_->GetBlock(position, size, buffer);
-}
-
-FPDF_BOOL PDFiumEngine::IsDataAvail(FX_FILEAVAIL* param,
-                                    size_t offset,
-                                    size_t size) {
-  auto* file_avail = static_cast<FileAvail*>(param);
-  return file_avail->engine->doc_loader_->IsDataAvailable(offset, size);
-}
-
-void PDFiumEngine::AddSegment(FX_DOWNLOADHINTS* param,
-                              size_t offset,
-                              size_t size) {
-  auto* download_hints = static_cast<DownloadHints*>(param);
-  return download_hints->engine->doc_loader_->RequestData(offset, size);
 }
 
 bool PDFiumEngine::New(const char* url, const char* headers) {
@@ -900,6 +856,7 @@ bool PDFiumEngine::HandleDocumentLoad(const pp::URLLoader& loader) {
     if (!doc_loader_->Init(std::move(loader_wrapper), url_))
       return false;
   }
+  document_ = std::make_unique<PDFiumDocument>(doc_loader_.get());
 
   // request initial data.
   doc_loader_->RequestData(0, 1);
@@ -929,12 +886,6 @@ void PDFiumEngine::AppendPage(PDFEngine* engine, int index) {
   client_->Invalidate(GetPageScreenRect(index));
 }
 
-#if defined(PDF_ENABLE_XFA)
-void PDFiumEngine::SetScrollPosition(const pp::Point& position) {
-  position_ = position;
-}
-#endif
-
 std::string PDFiumEngine::GetMetadata(const std::string& key) {
   return GetDocumentMetadata(doc(), key);
 }
@@ -942,11 +893,11 @@ std::string PDFiumEngine::GetMetadata(const std::string& key) {
 void PDFiumEngine::OnPendingRequestComplete() {
   if (!process_when_pending_request_complete_)
     return;
-  if (!fpdf_availability_) {
-    file_access_.m_FileLen = doc_loader_->GetDocumentSize();
-    fpdf_availability_.reset(
-        FPDFAvail_Create(&file_availability_, &file_access_));
-    DCHECK(fpdf_availability_);
+
+  if (!fpdf_availability()) {
+    document_->file_access().m_FileLen = doc_loader_->GetDocumentSize();
+    document_->CreateFPDFAvailability();
+    DCHECK(fpdf_availability());
     // Currently engine does not deal efficiently with some non-linearized
     // files.
     // See http://code.google.com/p/chromium/issues/detail?id=59400
@@ -955,12 +906,12 @@ void PDFiumEngine::OnPendingRequestComplete() {
     if (FPDFAvail_IsLinearized(fpdf_availability()) != PDF_LINEARIZED) {
       // Wait complete document.
       process_when_pending_request_complete_ = false;
-      fpdf_availability_.reset();
+      document_->ResetFPDFAvailability();
       return;
     }
   }
 
-  if (!doc_) {
+  if (!doc()) {
     LoadDocument();
     return;
   }
@@ -995,14 +946,13 @@ void PDFiumEngine::OnNewDataReceived() {
 }
 
 void PDFiumEngine::OnDocumentComplete() {
-  if (doc_)
+  if (doc())
     return FinishLoadingDocument();
 
-  file_access_.m_FileLen = doc_loader_->GetDocumentSize();
-  if (!fpdf_availability_) {
-    fpdf_availability_.reset(
-        FPDFAvail_Create(&file_availability_, &file_access_));
-    DCHECK(fpdf_availability_);
+  document_->file_access().m_FileLen = doc_loader_->GetDocumentSize();
+  if (!fpdf_availability()) {
+    document_->CreateFPDFAvailability();
+    DCHECK(fpdf_availability());
   }
   LoadDocument();
 }
@@ -1019,11 +969,12 @@ void PDFiumEngine::CancelBrowserDownload() {
 }
 
 void PDFiumEngine::FinishLoadingDocument() {
-  DCHECK(doc_);
+  DCHECK(doc());
   DCHECK(doc_loader_->IsDocumentComplete());
 
   LoadBody();
 
+  FX_DOWNLOADHINTS& download_hints = document_->download_hints();
   bool need_update = false;
   for (size_t i = 0; i < pages_.size(); ++i) {
     if (pages_[i]->available())
@@ -1032,7 +983,7 @@ void PDFiumEngine::FinishLoadingDocument() {
     pages_[i]->set_available(true);
     // We still need to call IsPageAvail() even if the whole document is
     // already downloaded.
-    FPDFAvail_IsPageAvail(fpdf_availability(), i, &download_hints_);
+    FPDFAvail_IsPageAvail(fpdf_availability(), i, &download_hints);
     need_update = true;
     if (IsPageVisible(i))
       client_->Invalidate(GetPageScreenRect(i));
@@ -1052,7 +1003,7 @@ void PDFiumEngine::FinishLoadingDocument() {
     FORM_DoPageAAction(new_page, form(), FPDFPAGE_AACTION_OPEN);
   }
 
-  if (doc_) {
+  if (doc()) {
     DocumentFeatures document_features;
     document_features.page_count = pages_.size();
     document_features.has_attachments = (FPDFDoc_GetAttachmentCount(doc()) > 0);
@@ -1066,54 +1017,24 @@ void PDFiumEngine::FinishLoadingDocument() {
   }
 }
 
-void PDFiumEngine::UnsupportedFeature(int type) {
-  std::string feature;
-  switch (type) {
-#if !defined(PDF_ENABLE_XFA)
-    case FPDF_UNSP_DOC_XFAFORM:
-      feature = "XFA";
-      break;
-#endif
-    case FPDF_UNSP_DOC_PORTABLECOLLECTION:
-      feature = "Portfolios_Packages";
-      break;
-    case FPDF_UNSP_DOC_ATTACHMENT:
-    case FPDF_UNSP_ANNOT_ATTACHMENT:
-      feature = "Attachment";
-      break;
-    case FPDF_UNSP_DOC_SECURITY:
-      feature = "Rights_Management";
-      break;
-    case FPDF_UNSP_DOC_SHAREDREVIEW:
-      feature = "Shared_Review";
-      break;
-    case FPDF_UNSP_DOC_SHAREDFORM_ACROBAT:
-    case FPDF_UNSP_DOC_SHAREDFORM_FILESYSTEM:
-    case FPDF_UNSP_DOC_SHAREDFORM_EMAIL:
-      feature = "Shared_Form";
-      break;
-    case FPDF_UNSP_ANNOT_3DANNOT:
-      feature = "3D";
-      break;
-    case FPDF_UNSP_ANNOT_MOVIE:
-      feature = "Movie";
-      break;
-    case FPDF_UNSP_ANNOT_SOUND:
-      feature = "Sound";
-      break;
-    case FPDF_UNSP_ANNOT_SCREEN_MEDIA:
-    case FPDF_UNSP_ANNOT_SCREEN_RICHMEDIA:
-      feature = "Screen";
-      break;
-    case FPDF_UNSP_ANNOT_SIG:
-      feature = "Digital_Signature";
-      break;
-  }
+void PDFiumEngine::UnsupportedFeature(const std::string& feature) {
   client_->DocumentHasUnsupportedFeature(feature);
 }
 
 void PDFiumEngine::FontSubstituted() {
   client_->FontSubstituted();
+}
+
+FPDF_AVAIL PDFiumEngine::fpdf_availability() const {
+  return document_ ? document_->fpdf_availability() : nullptr;
+}
+
+FPDF_DOCUMENT PDFiumEngine::doc() const {
+  return document_ ? document_->doc() : nullptr;
+}
+
+FPDF_FORMHANDLE PDFiumEngine::form() const {
+  return document_ ? document_->form() : nullptr;
 }
 
 void PDFiumEngine::ContinueFind(int32_t result) {
@@ -1147,7 +1068,7 @@ bool PDFiumEngine::HandleEvent(const pp::InputEvent& event) {
       rv = OnChar(pp::KeyboardInputEvent(event));
       break;
     case PP_INPUTEVENT_TYPE_TOUCHSTART: {
-      KillTouchTimer(next_touch_timer_id_);
+      KillTouchTimer();
 
       pp::TouchInputEvent touch_event(event);
       if (touch_event.GetTouchCount(PP_TOUCHLIST_TYPE_TARGETTOUCHES) == 1)
@@ -1155,12 +1076,12 @@ bool PDFiumEngine::HandleEvent(const pp::InputEvent& event) {
       break;
     }
     case PP_INPUTEVENT_TYPE_TOUCHEND:
-      KillTouchTimer(next_touch_timer_id_);
+      KillTouchTimer();
       break;
     case PP_INPUTEVENT_TYPE_TOUCHMOVE:
       // TODO(dsinclair): This should allow a little bit of movement (up to the
       // touch radii) to account for finger jiggle.
-      KillTouchTimer(next_touch_timer_id_);
+      KillTouchTimer();
       break;
     default:
       break;
@@ -1221,7 +1142,7 @@ pp::Buffer_Dev PDFiumEngine::PrintPagesAsRasterPDF(
   DCHECK(page_range_count);
 
   // If document is not downloaded yet, disable printing.
-  if (doc_ && !doc_loader_->IsDocumentComplete())
+  if (doc() && !doc_loader_->IsDocumentComplete())
     return pp::Buffer_Dev();
 
   KillFormFocus();
@@ -1240,7 +1161,7 @@ pp::Buffer_Dev PDFiumEngine::PrintPagesAsPDF(
     const PP_PrintSettings_Dev& print_settings,
     const PP_PdfPrintSettings_Dev& pdf_print_settings) {
   DCHECK(page_range_count);
-  DCHECK(doc_);
+  DCHECK(doc());
 
   KillFormFocus();
 
@@ -1406,7 +1327,7 @@ bool PDFiumEngine::OnLeftMouseDown(const pp::MouseInputEvent& event) {
         is_form_text_area &&
         IsPointInEditableFormTextArea(page, page_x, page_y, form_type);
 
-    FORM_OnLButtonDown(form(), page, 0, page_x, page_y);
+    FORM_OnLButtonDown(form(), page, event.GetModifiers(), page_x, page_y);
     if (form_type != FPDF_FORMFIELD_UNKNOWN) {
       // Destroy SelectionChangeInvalidator object before SetInFormTextArea()
       // changes plugin's focus to be in form text area. This way, regular text
@@ -1556,18 +1477,18 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
 
   // Open link on mouse up for same link for which mouse down happened earlier.
   if (mouse_down_state_.Matches(area, target)) {
+    uint32_t modifiers = event.GetModifiers();
+    bool middle_button =
+        !!(modifiers & PP_INPUTEVENT_MODIFIER_MIDDLEBUTTONDOWN);
+    bool alt_key = !!(modifiers & PP_INPUTEVENT_MODIFIER_ALTKEY);
+    bool ctrl_key = !!(modifiers & PP_INPUTEVENT_MODIFIER_CONTROLKEY);
+    bool meta_key = !!(modifiers & PP_INPUTEVENT_MODIFIER_METAKEY);
+    bool shift_key = !!(modifiers & PP_INPUTEVENT_MODIFIER_SHIFTKEY);
+
+    WindowOpenDisposition disposition = ui::DispositionFromClick(
+        middle_button, alt_key, ctrl_key, meta_key, shift_key);
+
     if (area == PDFiumPage::WEBLINK_AREA) {
-      uint32_t modifiers = event.GetModifiers();
-      bool middle_button =
-          !!(modifiers & PP_INPUTEVENT_MODIFIER_MIDDLEBUTTONDOWN);
-      bool alt_key = !!(modifiers & PP_INPUTEVENT_MODIFIER_ALTKEY);
-      bool ctrl_key = !!(modifiers & PP_INPUTEVENT_MODIFIER_CONTROLKEY);
-      bool meta_key = !!(modifiers & PP_INPUTEVENT_MODIFIER_METAKEY);
-      bool shift_key = !!(modifiers & PP_INPUTEVENT_MODIFIER_SHIFTKEY);
-
-      WindowOpenDisposition disposition = ui::DispositionFromClick(
-          middle_button, alt_key, ctrl_key, meta_key, shift_key);
-
       client_->NavigateTo(target.url, disposition);
       SetInFormTextArea(false);
       return true;
@@ -1576,12 +1497,25 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
       if (!PageIndexInBounds(target.page))
         return true;
 
-      pp::Rect page_rect(GetPageScreenRect(target.page));
-      int y = position_.y() + page_rect.y();
-      if (target.y_in_pixels)
-        y += target.y_in_pixels.value() * current_zoom_;
-      client_->ScrollToY(y, /*compensate_for_toolbar=*/true);
+      if (disposition == WindowOpenDisposition::CURRENT_TAB) {
+        pp::Rect page_rect(GetPageScreenRect(target.page));
+        int y = position_.y() + page_rect.y();
+        if (target.y_in_pixels)
+          y += target.y_in_pixels.value() * current_zoom_;
+
+        client_->ScrollToY(y, /*compensate_for_toolbar=*/true);
+      } else {
+        std::string parameters =
+            base::StringPrintf("#page=%d", target.page + 1);
+        if (target.y_in_pixels) {
+          parameters += base::StringPrintf(
+              "&zoom=100,0,%d", static_cast<int>(target.y_in_pixels.value()));
+        }
+
+        client_->NavigateTo(parameters, disposition);
+      }
       SetInFormTextArea(false);
+
       return true;
     }
   }
@@ -1600,7 +1534,8 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
     double page_x;
     double page_y;
     DeviceToPage(page_index, point, &page_x, &page_y);
-    FORM_OnLButtonUp(form(), pages_[page_index]->GetPage(), 0, page_x, page_y);
+    FORM_OnLButtonUp(form(), pages_[page_index]->GetPage(),
+                     event.GetModifiers(), page_x, page_y);
   }
 
   if (!selecting_)
@@ -2430,25 +2365,6 @@ void PDFiumEngine::SetGrayscale(bool grayscale) {
   render_grayscale_ = grayscale;
 }
 
-void PDFiumEngine::OnCallback(int id) {
-  auto it = formfill_timers_.find(id);
-  if (it == formfill_timers_.end())
-    return;
-
-  it->second.timer_callback(id);
-  it = formfill_timers_.find(id);  // The callback might delete the timer.
-  if (it != formfill_timers_.end())
-    client_->ScheduleCallback(id, it->second.timer_period);
-}
-
-void PDFiumEngine::OnTouchTimerCallback(int id) {
-  if (!touch_timers_.count(id))
-    return;
-
-  HandleLongPress(touch_timers_[id]);
-  KillTouchTimer(id);
-}
-
 void PDFiumEngine::HandleLongPress(const pp::TouchInputEvent& event) {
   pp::FloatPoint fp =
       event.GetTouchByIndex(PP_TOUCHLIST_TYPE_TARGETTOUCHES, 0).position();
@@ -2523,7 +2439,7 @@ bool PDFiumEngine::GetPageSizeAndUniformity(pp::Size* size) {
 void PDFiumEngine::AppendBlankPages(int num_pages) {
   DCHECK_NE(num_pages, 0);
 
-  if (!doc_)
+  if (!doc())
     return;
 
   selection_.clear();
@@ -2579,9 +2495,10 @@ void PDFiumEngine::AppendBlankPages(int num_pages) {
 void PDFiumEngine::LoadDocument() {
   // Check if the document is ready for loading. If it isn't just bail for now,
   // we will call LoadDocument() again later.
-  if (!doc_ && !doc_loader_->IsDocumentComplete() &&
-      !FPDFAvail_IsDocAvail(fpdf_availability(), &download_hints_)) {
-    return;
+  if (!doc() && !doc_loader_->IsDocumentComplete()) {
+    FX_DOWNLOADHINTS& download_hints = document_->download_hints();
+    if (!FPDFAvail_IsDocAvail(fpdf_availability(), &download_hints))
+      return;
   }
 
   // If we're in the middle of getting a password, just return. We will retry
@@ -2605,11 +2522,12 @@ void PDFiumEngine::LoadDocument() {
 bool PDFiumEngine::TryLoadingDoc(const std::string& password,
                                  bool* needs_password) {
   *needs_password = false;
-  if (doc_) {
+  if (doc()) {
     // This is probably not necessary, because it should have already been
     // called below in the |doc_| initialization path. However, the previous
     // call may have failed, so call it again for good measure.
-    FPDFAvail_IsDocAvail(fpdf_availability(), &download_hints_);
+    FX_DOWNLOADHINTS& download_hints = document_->download_hints();
+    FPDFAvail_IsDocAvail(fpdf_availability(), &download_hints);
     return true;
   }
 
@@ -2618,13 +2536,8 @@ bool PDFiumEngine::TryLoadingDoc(const std::string& password,
     password_cstr = password.c_str();
     password_tries_remaining_--;
   }
-  if (doc_loader_->IsDocumentComplete() &&
-      !FPDFAvail_IsLinearized(fpdf_availability())) {
-    doc_.reset(FPDF_LoadCustomDocument(&file_access_, password_cstr));
-  } else {
-    doc_.reset(FPDFAvail_GetDocument(fpdf_availability(), password_cstr));
-  }
-  if (!doc_) {
+  document_->LoadDocument(password_cstr);
+  if (!doc()) {
     if (FPDF_GetLastError() == FPDF_ERR_PASSWORD)
       *needs_password = true;
     return false;
@@ -2632,13 +2545,14 @@ bool PDFiumEngine::TryLoadingDoc(const std::string& password,
 
   // Always call FPDFAvail_IsDocAvail() so PDFium initializes internal data
   // structures.
-  FPDFAvail_IsDocAvail(fpdf_availability(), &download_hints_);
+  FX_DOWNLOADHINTS& download_hints = document_->download_hints();
+  FPDFAvail_IsDocAvail(fpdf_availability(), &download_hints);
   return true;
 }
 
 void PDFiumEngine::GetPasswordAndLoad() {
   getting_password_ = true;
-  DCHECK(!doc_);
+  DCHECK(!doc());
   DCHECK_EQ(static_cast<unsigned long>(FPDF_ERR_PASSWORD), FPDF_GetLastError());
   client_->GetDocumentPassword(password_factory_.NewCallbackWithOutput(
       &PDFiumEngine::OnGetPasswordComplete));
@@ -2666,7 +2580,7 @@ void PDFiumEngine::ContinueLoadingDocument(const std::string& password) {
     return;
   }
 
-  if (!doc_) {
+  if (!doc()) {
     client_->DocumentLoadFailed();
     return;
   }
@@ -2710,8 +2624,9 @@ void PDFiumEngine::LoadPageInfo(bool reload) {
     if (reload) {
       page_available = pages_[i]->available();
     } else if (is_linear) {
+      FX_DOWNLOADHINTS& download_hints = document_->download_hints();
       int linear_page_avail =
-          FPDFAvail_IsPageAvail(fpdf_availability(), i, &download_hints_);
+          FPDFAvail_IsPageAvail(fpdf_availability(), i, &download_hints);
       page_available = linear_page_avail == PDF_DATA_AVAIL;
     } else {
       page_available = doc_complete;
@@ -2751,8 +2666,8 @@ void PDFiumEngine::LoadPageInfo(bool reload) {
 }
 
 void PDFiumEngine::LoadBody() {
-  DCHECK(doc_);
-  DCHECK(fpdf_availability_);
+  DCHECK(doc());
+  DCHECK(fpdf_availability());
   if (doc_loader_->IsDocumentComplete()) {
     LoadForm();
   } else if (FPDFAvail_IsLinearized(fpdf_availability()) == PDF_LINEARIZED &&
@@ -2761,7 +2676,7 @@ void PDFiumEngine::LoadBody() {
     // XFA document. And after loading form the page count and its contents may
     // be changed.
     LoadForm();
-    if (form_status_ == PDF_FORM_NOTAVAIL)
+    if (document_->form_status() == PDF_FORM_NOTAVAIL)
       return;
   }
   LoadPages();
@@ -2780,12 +2695,14 @@ void PDFiumEngine::LoadPages() {
 }
 
 void PDFiumEngine::LoadForm() {
-  if (form_)
+  if (form())
     return;
-  DCHECK(doc_);
-  form_status_ = FPDFAvail_IsFormAvail(fpdf_availability(), &download_hints_);
-  if (form_status_ != PDF_FORM_NOTAVAIL || doc_loader_->IsDocumentComplete()) {
-    form_.reset(FPDFDOC_InitFormFillEnvironment(doc(), &form_filler_));
+
+  DCHECK(doc());
+  document_->SetFormStatus();
+  if (document_->form_status() != PDF_FORM_NOTAVAIL ||
+      doc_loader_->IsDocumentComplete()) {
+    document_->InitializeForm(&form_filler_);
 #if defined(PDF_ENABLE_XFA)
     FPDF_LoadXFA(doc());
 #endif
@@ -2794,7 +2711,7 @@ void PDFiumEngine::LoadForm() {
                                     kFormHighlightColor);
     FPDF_SetFormFieldHighlightAlpha(form(), kFormHighlightAlpha);
   }
-}  // namespace chrome_pdf
+}
 
 void PDFiumEngine::CalculateVisiblePages() {
   if (!doc_loader_)
@@ -2870,14 +2787,15 @@ void PDFiumEngine::ScrollToPage(int page) {
 }
 
 bool PDFiumEngine::CheckPageAvailable(int index, std::vector<int>* pending) {
-  if (!doc_)
+  if (!doc())
     return false;
 
   const int num_pages = static_cast<int>(pages_.size());
   if (index < num_pages && pages_[index]->available())
     return true;
 
-  if (!FPDFAvail_IsPageAvail(fpdf_availability(), index, &download_hints_)) {
+  FX_DOWNLOADHINTS& download_hints = document_->download_hints();
+  if (!FPDFAvail_IsPageAvail(fpdf_availability(), index, &download_hints)) {
     if (!base::ContainsValue(*pending, index))
       pending->push_back(index);
     return false;
@@ -3394,7 +3312,7 @@ int PDFiumEngine::GetVisiblePageIndex(FPDF_PAGE page) {
 void PDFiumEngine::SetCurrentPage(int index) {
   in_flight_visible_page_.reset();
 
-  if (index == most_visible_page_ || !form_)
+  if (index == most_visible_page_ || !form())
     return;
 
   if (most_visible_page_ != -1 && called_do_document_action_) {
@@ -3578,13 +3496,13 @@ bool PDFiumEngine::IsPointInEditableFormTextArea(FPDF_PAGE page,
 }
 
 void PDFiumEngine::ScheduleTouchTimer(const pp::TouchInputEvent& evt) {
-  touch_timers_[++next_touch_timer_id_] = evt;
-  client_->ScheduleTouchTimerCallback(next_touch_timer_id_,
-                                      kTouchLongPressTimeout);
+  touch_timer_.Start(FROM_HERE, kTouchLongPressTimeout,
+                     base::BindRepeating(&PDFiumEngine::HandleLongPress,
+                                         base::Unretained(this), evt));
 }
 
-void PDFiumEngine::KillTouchTimer(int timer_id) {
-  touch_timers_.erase(timer_id);
+void PDFiumEngine::KillTouchTimer() {
+  touch_timer_.Stop();
 }
 
 bool PDFiumEngine::PageIndexInBounds(int index) const {
@@ -3670,10 +3588,6 @@ void PDFiumEngine::GetSelection(uint32_t* selection_start_page_index,
   }
 }
 
-PDFiumEngine::FormFillTimerData::FormFillTimerData(base::TimeDelta period,
-                                                   TimerCallback callback)
-    : timer_period(period), timer_callback(callback) {}
-
 PDFiumEngine::ProgressivePaint::ProgressivePaint(int index,
                                                  const pp::Rect& rect)
     : page_index_(index), rect_(rect) {}
@@ -3691,15 +3605,6 @@ void PDFiumEngine::ProgressivePaint::SetBitmapAndImageData(
     pp::ImageData image_data) {
   bitmap_ = std::move(bitmap);
   image_data_ = std::move(image_data);
-}
-
-ScopedUnsupportedFeature::ScopedUnsupportedFeature(PDFiumEngine* engine)
-    : old_engine_(g_engine_for_unsupported) {
-  g_engine_for_unsupported = engine;
-}
-
-ScopedUnsupportedFeature::~ScopedUnsupportedFeature() {
-  g_engine_for_unsupported = old_engine_;
 }
 
 ScopedSubstFont::ScopedSubstFont(PDFiumEngine* engine)

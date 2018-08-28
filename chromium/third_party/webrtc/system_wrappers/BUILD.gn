@@ -40,10 +40,10 @@ rtc_static_library("system_wrappers") {
     ":runtime_enabled_features_api",
     "..:webrtc_common",
     "../:typedefs",
-    "../api:optional",
     "../modules:module_api_public",
     "../rtc_base:checks",
     "../rtc_base/synchronization:rw_lock_wrapper",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 
   if (is_posix || is_fuchsia) {
@@ -83,22 +83,12 @@ rtc_static_library("system_wrappers") {
     defines += [ "WEBRTC_THREAD_RR" ]
   }
 
-  # TODO(jschuh): Bug 1348: fix this warning.
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
   if (is_win) {
     libs += [ "winmm.lib" ]
-
-    cflags = [ "/wd4334" ]  # Ignore warning on shift operator promotion.
 
     # Windows needs ../rtc_base:rtc_base due to include of
     # webrtc/rtc_base/win32.h in source/clock.cc.
     deps += [ "../rtc_base:rtc_base" ]
-  }
-
-  if (is_win && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 
   deps += [
@@ -218,17 +208,9 @@ if (rtc_include_tests) {
       "source/ntp_time_unittest.cc",
       "source/rtp_to_ntp_estimator_unittest.cc",
     ]
-    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
     if (is_posix || is_fuchsia) {
-      sources += [
-        "source/event_timer_posix_unittest.cc",
-      ]
-    }
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+      sources += [ "source/event_timer_posix_unittest.cc" ]
     }
 
     deps = [

@@ -71,6 +71,7 @@
 #include "components/exo/gamepad_delegate.h"
 #include "components/exo/gaming_seat.h"
 #include "components/exo/gaming_seat_delegate.h"
+#include "components/exo/input_method_surface.h"
 #include "components/exo/keyboard.h"
 #include "components/exo/keyboard_delegate.h"
 #include "components/exo/keyboard_device_configuration_delegate.h"
@@ -1085,7 +1086,7 @@ void shell_surface_move(wl_client* client,
                         wl_resource* resource,
                         wl_resource* seat_resource,
                         uint32_t serial) {
-  GetUserDataAs<ShellSurface>(resource)->Move();
+  GetUserDataAs<ShellSurface>(resource)->StartMove();
 }
 
 void shell_surface_resize(wl_client* client,
@@ -1376,49 +1377,137 @@ void bind_output(wl_client* client, void* data, uint32_t version, uint32_t id) {
 ////////////////////////////////////////////////////////////////////////////////
 // xdg_positioner_interface:
 
+uint32_t InvertBitfield(uint32_t bitfield, uint32_t mask) {
+  return (bitfield & ~mask) | ((bitfield & mask) ^ mask);
+}
+
+// TODO(oshima): propagate x/y flip state to children.
 struct WaylandPositioner {
-  // Calculate and return position from current state.
-  gfx::Point CalculatePosition() const {
-    gfx::Point position;
+  static constexpr uint32_t kHorizontalAnchors =
+      ZXDG_POSITIONER_V6_ANCHOR_LEFT | ZXDG_POSITIONER_V6_ANCHOR_RIGHT;
+  static constexpr uint32_t kVerticalAnchors =
+      ZXDG_POSITIONER_V6_ANCHOR_TOP | ZXDG_POSITIONER_V6_ANCHOR_BOTTOM;
+  static constexpr uint32_t kHorizontalGravities =
+      ZXDG_POSITIONER_V6_GRAVITY_LEFT | ZXDG_POSITIONER_V6_GRAVITY_RIGHT;
+  static constexpr uint32_t kVerticalGravities =
+      ZXDG_POSITIONER_V6_GRAVITY_TOP | ZXDG_POSITIONER_V6_GRAVITY_BOTTOM;
 
+  static int CalculateX(const gfx::Size& size,
+                        const gfx::Rect& anchor_rect,
+                        uint32_t anchor,
+                        uint32_t gravity,
+                        int offset,
+                        bool flipped) {
+    if (flipped) {
+      anchor = InvertBitfield(anchor, kHorizontalAnchors);
+      gravity = InvertBitfield(gravity, kHorizontalGravities);
+      offset = -offset;
+    }
+
+    int x = offset;
     if (anchor & ZXDG_POSITIONER_V6_ANCHOR_LEFT)
-      position.set_x(anchor_rect.x());
+      x += anchor_rect.x();
     else if (anchor & ZXDG_POSITIONER_V6_ANCHOR_RIGHT)
-      position.set_x(anchor_rect.right());
+      x += anchor_rect.right();
     else
-      position.set_x(anchor_rect.CenterPoint().x());
-
-    if (anchor & ZXDG_POSITIONER_V6_ANCHOR_TOP)
-      position.set_y(anchor_rect.y());
-    else if (anchor & ZXDG_POSITIONER_V6_ANCHOR_BOTTOM)
-      position.set_y(anchor_rect.bottom());
-    else
-      position.set_y(anchor_rect.CenterPoint().y());
-
-    gfx::Vector2d gravity_offset;
+      x += anchor_rect.CenterPoint().x();
 
     if (gravity & ZXDG_POSITIONER_V6_GRAVITY_LEFT)
-      gravity_offset.set_x(size.width());
-    else if (gravity & ZXDG_POSITIONER_V6_GRAVITY_RIGHT)
-      gravity_offset.set_x(0);
+      return x - size.width();
+    if (gravity & ZXDG_POSITIONER_V6_GRAVITY_RIGHT)
+      return x;
+    return x - size.width() / 2;
+  }
+
+  static int CalculateY(const gfx::Size& size,
+                        const gfx::Rect& anchor_rect,
+                        uint32_t anchor,
+                        uint32_t gravity,
+                        int offset,
+                        bool flipped) {
+    if (flipped) {
+      anchor = InvertBitfield(anchor, kVerticalAnchors);
+      gravity = InvertBitfield(gravity, kVerticalGravities);
+      offset = -offset;
+    }
+
+    int y = offset;
+    if (anchor & ZXDG_POSITIONER_V6_ANCHOR_TOP)
+      y += anchor_rect.y();
+    else if (anchor & ZXDG_POSITIONER_V6_ANCHOR_BOTTOM)
+      y += anchor_rect.bottom();
     else
-      gravity_offset.set_x(size.width() / 2);
+      y += anchor_rect.CenterPoint().y();
 
     if (gravity & ZXDG_POSITIONER_V6_GRAVITY_TOP)
-      gravity_offset.set_y(size.height());
-    else if (gravity & ZXDG_POSITIONER_V6_GRAVITY_BOTTOM)
-      gravity_offset.set_y(0);
-    else
-      gravity_offset.set_y(size.height() / 2);
+      return y - size.height();
+    if (gravity & ZXDG_POSITIONER_V6_GRAVITY_BOTTOM)
+      return y;
+    return y - size.height() / 2;
+  }
 
-    return position + offset - gravity_offset;
+  // Calculate and return position from current state.
+  gfx::Point CalculatePosition(const gfx::Rect& work_area) {
+    // TODO(oshima): The size must be smaller than work area.
+
+    gfx::Rect bounds(gfx::Point(CalculateX(size, anchor_rect, anchor, gravity,
+                                           offset.x(), x_flipped),
+                                CalculateY(size, anchor_rect, anchor, gravity,
+                                           offset.y(), y_flipped)),
+                     size);
+
+    // Adjust x position if the bounds are not fully contained by the work area.
+    if (work_area.x() > bounds.x() || work_area.right() < bounds.right()) {
+      // Allow sliding horizontally if the surface is attached below
+      // or above the parent surface.
+      bool can_slide_x = (anchor & ZXDG_POSITIONER_V6_ANCHOR_BOTTOM &&
+                          gravity & ZXDG_POSITIONER_V6_GRAVITY_BOTTOM) ||
+                         (anchor & ZXDG_POSITIONER_V6_ANCHOR_TOP &&
+                          gravity & ZXDG_POSITIONER_V6_GRAVITY_TOP);
+      if (adjustment & ZXDG_POSITIONER_V6_CONSTRAINT_ADJUSTMENT_SLIDE_X &&
+          can_slide_x) {
+        if (bounds.x() < work_area.x())
+          bounds.set_x(work_area.x());
+        else if (bounds.right() > work_area.right())
+          bounds.set_x(work_area.right() - size.width());
+      } else if (adjustment & ZXDG_POSITIONER_V6_CONSTRAINT_ADJUSTMENT_FLIP_X) {
+        x_flipped = !x_flipped;
+        bounds.set_x(CalculateX(size, anchor_rect, anchor, gravity, offset.x(),
+                                x_flipped));
+      }
+    }
+
+    // Adjust y position if the bounds are not fully contained by the work area.
+    if (work_area.y() > bounds.y() || work_area.bottom() < bounds.bottom()) {
+      // Allow sliding vertically if the surface is attached left or
+      // right of the parent surface.
+      bool can_slide_y = (anchor & ZXDG_POSITIONER_V6_ANCHOR_LEFT &&
+                          gravity & ZXDG_POSITIONER_V6_GRAVITY_LEFT) ||
+                         (anchor & ZXDG_POSITIONER_V6_ANCHOR_RIGHT &&
+                          gravity & ZXDG_POSITIONER_V6_GRAVITY_RIGHT);
+      if (adjustment & ZXDG_POSITIONER_V6_CONSTRAINT_ADJUSTMENT_SLIDE_Y &&
+          can_slide_y) {
+        if (bounds.y() < work_area.y())
+          bounds.set_y(work_area.y());
+        else if (bounds.bottom() > work_area.bottom())
+          bounds.set_y(work_area.bottom() - size.height());
+      } else if (adjustment & ZXDG_POSITIONER_V6_CONSTRAINT_ADJUSTMENT_FLIP_Y) {
+        y_flipped = !y_flipped;
+        bounds.set_y(CalculateY(size, anchor_rect, anchor, gravity, offset.y(),
+                                y_flipped));
+      }
+    }
+    return bounds.origin();
   }
 
   gfx::Size size;
   gfx::Rect anchor_rect;
   uint32_t anchor = ZXDG_POSITIONER_V6_ANCHOR_NONE;
   uint32_t gravity = ZXDG_POSITIONER_V6_GRAVITY_NONE;
+  uint32_t adjustment = ZXDG_POSITIONER_V6_CONSTRAINT_ADJUSTMENT_NONE;
   gfx::Vector2d offset;
+  bool y_flipped = false;
+  bool x_flipped = false;
 };
 
 void xdg_positioner_v6_destroy(wl_client* client, wl_resource* resource) {
@@ -1484,11 +1573,10 @@ void xdg_positioner_v6_set_gravity(wl_client* client,
   GetUserDataAs<WaylandPositioner>(resource)->gravity = gravity;
 }
 
-void xdg_positioner_v6_set_constraint_adjustment(
-    wl_client* client,
-    wl_resource* resource,
-    uint32_t constraint_adjustment) {
-  NOTIMPLEMENTED();
+void xdg_positioner_v6_set_constraint_adjustment(wl_client* client,
+                                                 wl_resource* resource,
+                                                 uint32_t adjustment) {
+  GetUserDataAs<WaylandPositioner>(resource)->adjustment = adjustment;
 }
 
 void xdg_positioner_v6_set_offset(wl_client* client,
@@ -1607,7 +1695,7 @@ class WaylandToplevel : public aura::WindowObserver {
 
   void Move() {
     if (shell_surface_)
-      shell_surface_->Move();
+      shell_surface_->StartMove();
   }
 
   void Resize(int component) {
@@ -1615,7 +1703,7 @@ class WaylandToplevel : public aura::WindowObserver {
       return;
 
     if (component != HTNOWHERE)
-      shell_surface_->Resize(component);
+      shell_surface_->StartResize(component);
   }
 
   void SetMaximumSize(const gfx::Size& size) {
@@ -1792,17 +1880,42 @@ const struct zxdg_toplevel_v6_interface xdg_toplevel_v6_implementation = {
 
 // Wrapper around shell surface that allows us to handle the case where the
 // xdg surface resource is destroyed before the popup resource.
-class WaylandPopup {
+class WaylandPopup : aura::WindowObserver {
  public:
   WaylandPopup(wl_resource* resource, wl_resource* surface_resource)
-      : resource_(resource), weak_ptr_factory_(this) {
-    ShellSurface* shell_surface = GetUserDataAs<ShellSurface>(surface_resource);
-    shell_surface->set_close_callback(
+      : resource_(resource),
+        shell_surface_(GetUserDataAs<ShellSurface>(surface_resource)),
+        weak_ptr_factory_(this) {
+    shell_surface_->host_window()->AddObserver(this);
+    shell_surface_->set_close_callback(
         base::Bind(&WaylandPopup::OnClose, weak_ptr_factory_.GetWeakPtr()));
-    shell_surface->set_configure_callback(
+    shell_surface_->set_configure_callback(
         base::Bind(&HandleXdgSurfaceV6ConfigureCallback, surface_resource,
                    base::Bind(&WaylandPopup::OnConfigure,
                               weak_ptr_factory_.GetWeakPtr())));
+  }
+  ~WaylandPopup() override {
+    if (shell_surface_)
+      shell_surface_->host_window()->RemoveObserver(this);
+  }
+
+  void Grab() {
+    if (!shell_surface_) {
+      wl_resource_post_error(resource_, ZXDG_POPUP_V6_ERROR_INVALID_GRAB,
+                             "the surface has already been destroyed");
+      return;
+    }
+    if (shell_surface_->GetWidget()) {
+      wl_resource_post_error(resource_, ZXDG_POPUP_V6_ERROR_INVALID_GRAB,
+                             "grab must be called before construction");
+      return;
+    }
+    shell_surface_->Grab();
+  }
+
+  // Overridden from aura::WindowObserver:
+  void OnWindowDestroying(aura::Window* window) override {
+    shell_surface_ = nullptr;
   }
 
  private:
@@ -1819,6 +1932,7 @@ class WaylandPopup {
   }
 
   wl_resource* const resource_;
+  ShellSurface* shell_surface_;
   base::WeakPtrFactory<WaylandPopup> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WaylandPopup);
@@ -1832,7 +1946,7 @@ void xdg_popup_v6_grab(wl_client* client,
                        wl_resource* resource,
                        wl_resource* seat,
                        uint32_t serial) {
-  NOTIMPLEMENTED();
+  GetUserDataAs<WaylandPopup>(resource)->Grab();
 }
 
 const struct zxdg_popup_v6_interface xdg_popup_v6_implementation = {
@@ -1878,15 +1992,37 @@ void xdg_surface_v6_get_popup(wl_client* client,
     return;
   }
 
-  ShellSurface* parent = GetUserDataAs<ShellSurface>(parent_resource);
+  XdgShellSurface* parent = GetUserDataAs<XdgShellSurface>(parent_resource);
   if (!parent->GetWidget()) {
     wl_resource_post_error(resource, ZXDG_SURFACE_V6_ERROR_NOT_CONSTRUCTED,
                            "popup parent not constructed");
     return;
   }
 
-  gfx::Point position = GetUserDataAs<WaylandPositioner>(positioner_resource)
-                            ->CalculatePosition();
+  if (shell_surface->GetWidget()) {
+    wl_resource_post_error(resource, ZXDG_SURFACE_V6_ERROR_ALREADY_CONSTRUCTED,
+                           "get_popup is called after constructed");
+    return;
+  }
+
+  display::Display display =
+      display::Screen::GetScreen()->GetDisplayNearestWindow(
+          parent->GetWidget()->GetNativeWindow());
+  gfx::Rect work_area = display.work_area();
+  wm::ConvertRectFromScreen(parent->GetWidget()->GetNativeWindow(), &work_area);
+
+  WaylandPositioner* positioner =
+      GetUserDataAs<WaylandPositioner>(positioner_resource);
+  // Try layout using parent's flip state.
+  positioner->x_flipped = parent->x_flipped();
+  positioner->y_flipped = parent->y_flipped();
+
+  gfx::Point position = positioner->CalculatePosition(work_area);
+
+  // Remember the new flip state for its child popups.
+  shell_surface->set_x_flipped(positioner->x_flipped);
+  shell_surface->set_y_flipped(positioner->y_flipped);
+
   // |position| is relative to the parent's contents view origin, and |origin|
   // is in screen coordinates.
   gfx::Point origin = position;
@@ -1897,6 +2033,8 @@ void xdg_surface_v6_get_popup(wl_client* client,
   shell_surface->DisableMovement();
   shell_surface->SetActivatable(false);
   shell_surface->SetCanMinimize(false);
+  shell_surface->SetParent(parent);
+  shell_surface->SetPopup();
   shell_surface->SetEnabled(true);
 
   wl_resource* xdg_popup_resource =
@@ -2160,7 +2298,7 @@ void remote_surface_ack_configure(wl_client* client,
 }
 
 void remote_surface_move(wl_client* client, wl_resource* resource) {
-  GetUserDataAs<ClientControlledShellSurface>(resource)->Move();
+  // DEPRECATED
 }
 
 void remote_surface_set_window_type(wl_client* client,
@@ -2169,7 +2307,7 @@ void remote_surface_set_window_type(wl_client* client,
   if (type == ZCR_REMOTE_SURFACE_V1_WINDOW_TYPE_SYSTEM_UI) {
     auto* widget = GetUserDataAs<ShellSurfaceBase>(resource)->GetWidget();
     if (widget) {
-      widget->GetNativeWindow()->SetProperty(ash::kShowInOverviewKey, false);
+      widget->GetNativeWindow()->SetProperty(ash::kHideInOverviewKey, true);
 
       wm::SetWindowVisibilityAnimationType(
           widget->GetNativeWindow(), wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
@@ -2359,6 +2497,16 @@ const struct zcr_notification_surface_v1_interface
                                            notification_surface_set_app_id};
 
 ////////////////////////////////////////////////////////////////////////////////
+// input_method_surface_interface:
+
+void input_method_surface_destroy(wl_client* client, wl_resource* resource) {
+  wl_resource_destroy(resource);
+}
+
+const struct zcr_input_method_surface_v1_interface
+    input_method_surface_implementation = {input_method_surface_destroy};
+
+////////////////////////////////////////////////////////////////////////////////
 // remote_shell_interface:
 
 // Implements remote shell interface and monitors workspace state needed
@@ -2416,6 +2564,13 @@ class WaylandRemoteShell : public ash::TabletModeObserver,
       Surface* surface,
       const std::string& notification_key) {
     return display_->CreateNotificationSurface(surface, notification_key);
+  }
+
+  std::unique_ptr<InputMethodSurface> CreateInputMethodSurface(
+      Surface* surface,
+      double default_device_scale_factor) {
+    return display_->CreateInputMethodSurface(surface,
+                                              default_device_scale_factor);
   }
 
   // Overridden from display::DisplayObserver:
@@ -2633,10 +2788,15 @@ void HandleRemoteSurfaceBoundsChangedCallback(
     reason = ZCR_REMOTE_SURFACE_V1_BOUNDS_CHANGE_REASON_DRAG_RESIZE;
   } else if (bounds_change & ash::WindowResizer::kBoundsChange_Repositions) {
     reason = ZCR_REMOTE_SURFACE_V1_BOUNDS_CHANGE_REASON_DRAG_MOVE;
-  } else if (requested_state == ash::mojom::WindowStateType::LEFT_SNAPPED) {
-    reason = ZCR_REMOTE_SURFACE_V1_BOUNDS_CHANGE_REASON_SNAP_TO_LEFT;
-  } else if (requested_state == ash::mojom::WindowStateType::RIGHT_SNAPPED) {
-    reason = ZCR_REMOTE_SURFACE_V1_BOUNDS_CHANGE_REASON_SNAP_TO_RIGHT;
+  }
+  // Override the reason only if the window enters snapped mode. If the window
+  // resizes by dragging in snapped mode, we need to keep the original reason.
+  if (requested_state != current_state) {
+    if (requested_state == ash::mojom::WindowStateType::LEFT_SNAPPED) {
+      reason = ZCR_REMOTE_SURFACE_V1_BOUNDS_CHANGE_REASON_SNAP_TO_LEFT;
+    } else if (requested_state == ash::mojom::WindowStateType::RIGHT_SNAPPED) {
+      reason = ZCR_REMOTE_SURFACE_V1_BOUNDS_CHANGE_REASON_SNAP_TO_RIGHT;
+    }
   }
   zcr_remote_surface_v1_send_bounds_changed(
       resource, static_cast<uint32_t>(display_id >> 32),
@@ -2772,11 +2932,39 @@ void remote_shell_get_notification_surface(wl_client* client,
                     std::move(notification_surface));
 }
 
+void remote_shell_get_input_method_surface(wl_client* client,
+                                           wl_resource* resource,
+                                           uint32_t id,
+                                           wl_resource* surface) {
+  if (GetUserDataAs<Surface>(surface)->HasSurfaceDelegate()) {
+    wl_resource_post_error(resource, ZCR_REMOTE_SHELL_V1_ERROR_ROLE,
+                           "surface has already been assigned a role");
+    return;
+  }
+
+  std::unique_ptr<ClientControlledShellSurface> input_method_surface =
+      GetUserDataAs<WaylandRemoteShell>(resource)->CreateInputMethodSurface(
+          GetUserDataAs<Surface>(surface), GetDefaultDeviceScaleFactor());
+  if (!input_method_surface) {
+    wl_resource_post_error(resource, ZCR_REMOTE_SHELL_V1_ERROR_ROLE,
+                           "Cannot create an IME surface");
+    return;
+  }
+
+  wl_resource* input_method_surface_resource =
+      wl_resource_create(client, &zcr_input_method_surface_v1_interface,
+                         wl_resource_get_version(resource), id);
+  SetImplementation(input_method_surface_resource,
+                    &input_method_surface_implementation,
+                    std::move(input_method_surface));
+}
+
 const struct zcr_remote_shell_v1_interface remote_shell_implementation = {
     remote_shell_destroy, remote_shell_get_remote_surface,
-    remote_shell_get_notification_surface};
+    remote_shell_get_notification_surface,
+    remote_shell_get_input_method_surface};
 
-const uint32_t remote_shell_version = 16;
+const uint32_t remote_shell_version = 17;
 
 void bind_remote_shell(wl_client* client,
                        void* data,
@@ -3625,16 +3813,16 @@ class WaylandKeyboardDelegate : public WaylandInputDelegate,
   }
   void OnKeyboardEnter(
       Surface* surface,
-      const base::flat_set<ui::DomCode>& pressed_keys) override {
+      const base::flat_map<ui::DomCode, ui::DomCode>& pressed_keys) override {
     wl_resource* surface_resource = GetSurfaceResource(surface);
     DCHECK(surface_resource);
     wl_array keys;
     wl_array_init(&keys);
-    for (auto key : pressed_keys) {
+    for (const auto& entry : pressed_keys) {
       uint32_t* value =
           static_cast<uint32_t*>(wl_array_add(&keys, sizeof(uint32_t)));
       DCHECK(value);
-      *value = DomCodeToKey(key);
+      *value = DomCodeToKey(entry.second);
     }
     wl_keyboard_send_enter(keyboard_resource_, next_serial(), surface_resource,
                            &keys);
@@ -4072,14 +4260,13 @@ void bind_viewporter(wl_client* client,
 ////////////////////////////////////////////////////////////////////////////////
 // presentation_interface:
 
-void HandleSurfacePresentationCallback(wl_resource* resource,
-                                       base::TimeTicks presentation_time,
-                                       base::TimeDelta refresh,
-                                       uint32_t flags) {
-  if (presentation_time.is_null()) {
+void HandleSurfacePresentationCallback(
+    wl_resource* resource,
+    const gfx::PresentationFeedback& feedback) {
+  if (feedback.timestamp.is_null()) {
     wp_presentation_feedback_send_discarded(resource);
   } else {
-    int64_t presentation_time_us = presentation_time.ToInternalValue();
+    int64_t presentation_time_us = feedback.timestamp.ToInternalValue();
     int64_t seconds = presentation_time_us / base::Time::kMicrosecondsPerSecond;
     int64_t microseconds =
         presentation_time_us % base::Time::kMicrosecondsPerSecond;
@@ -4103,8 +4290,9 @@ void HandleSurfacePresentationCallback(wl_resource* resource,
     wp_presentation_feedback_send_presented(
         resource, seconds >> 32, seconds & 0xffffffff,
         microseconds * base::Time::kNanosecondsPerMicrosecond,
-        refresh.InMicroseconds() * base::Time::kNanosecondsPerMicrosecond, 0, 0,
-        flags);
+        feedback.interval.InMicroseconds() *
+            base::Time::kNanosecondsPerMicrosecond,
+        0, 0, feedback.flags);
   }
   wl_client_flush(wl_resource_get_client(resource));
 }
@@ -4122,8 +4310,8 @@ void presentation_feedback(wl_client* client,
                          wl_resource_get_version(resource), id);
 
   // base::Unretained is safe as the resource owns the callback.
-  auto cancelable_callback = std::make_unique<base::CancelableCallback<void(
-      base::TimeTicks, base::TimeDelta, uint32_t)>>(
+  auto cancelable_callback = std::make_unique<
+      base::CancelableCallback<void(const gfx::PresentationFeedback&)>>(
       base::Bind(&HandleSurfacePresentationCallback,
                  base::Unretained(presentation_feedback_resource)));
 

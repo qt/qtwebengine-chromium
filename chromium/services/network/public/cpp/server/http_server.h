@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 
+#include "base/component_export.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "mojo/public/cpp/bindings/binding.h"
@@ -97,12 +98,6 @@ class COMPONENT_EXPORT(NETWORK_CPP) HttpServer {
   // |false| if there is no object indexed by |connection_id|.
   bool SetReceiveBufferSize(int connection_id, int32_t size);
   bool SetSendBufferSize(int connection_id, int32_t size);
-
-  // Asynchronously gets the local address of this http server. On completion,
-  // |callback| will be called with a network error code and the local address
-  // as arguments.
-  void GetLocalAddress(
-      mojom::TCPServerSocket::GetLocalAddressCallback callback);
 
  private:
   friend class HttpServerTest;

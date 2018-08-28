@@ -41,7 +41,8 @@ class CONTENT_EXPORT NotificationEventDispatcherImpl
   void DispatchNonPersistentShowEvent(
       const std::string& notification_id) override;
   void DispatchNonPersistentClickEvent(
-      const std::string& notification_id) override;
+      const std::string& notification_id,
+      NotificationClickEventCallback callback) override;
   void DispatchNonPersistentCloseEvent(
       const std::string& notification_id,
       base::OnceClosure completed_closure) override;
@@ -50,7 +51,7 @@ class CONTENT_EXPORT NotificationEventDispatcherImpl
   // non-persistent notification identified by |notification_id|.
   void RegisterNonPersistentNotificationListener(
       const std::string& notification_id,
-      blink::mojom::NonPersistentNotificationListenerPtrInfo listener_ptr_info);
+      blink::mojom::NonPersistentNotificationListenerPtr event_listener_ptr);
 
  private:
   friend class NotificationEventDispatcherImplTest;

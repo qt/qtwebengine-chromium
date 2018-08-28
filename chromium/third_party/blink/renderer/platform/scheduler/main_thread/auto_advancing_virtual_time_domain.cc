@@ -4,8 +4,16 @@
 
 #include "third_party/blink/renderer/platform/scheduler/main_thread/auto_advancing_virtual_time_domain.h"
 
+#include "base/atomicops.h"
 #include "base/time/time_override.h"
+#include "build/build_config.h"
 #include "third_party/blink/renderer/platform/scheduler/common/scheduler_helper.h"
+
+// windows.h #defines MemoryBarrier on x64. So we copy this bit
+// from base/atomicops.h to be independent of the include order in this file.
+#if defined(OS_WIN) && defined(ARCH_CPU_64_BITS)
+#undef MemoryBarrier
+#endif
 
 namespace blink {
 namespace scheduler {
@@ -15,38 +23,59 @@ AutoAdvancingVirtualTimeDomain::AutoAdvancingVirtualTimeDomain(
     base::TimeTicks initial_time_ticks,
     SchedulerHelper* helper,
     BaseTimeOverridePolicy policy)
-    : VirtualTimeDomain(initial_time_ticks),
-      task_starvation_count_(0),
+    : task_starvation_count_(0),
       max_task_starvation_count_(0),
       can_advance_virtual_time_(true),
       observer_(nullptr),
       helper_(helper),
+      now_ticks_(initial_time_ticks),
       initial_time_ticks_(initial_time_ticks),
       initial_time_(initial_time),
-      previous_time_(initial_time),
-      time_overrides_(
-          policy == BaseTimeOverridePolicy::OVERRIDE
-              ? std::make_unique<base::subtle::ScopedTimeClockOverrides>(
-                    &AutoAdvancingVirtualTimeDomain::GetVirtualTime,
-                    &AutoAdvancingVirtualTimeDomain::GetVirtualTimeTicks,
-                    nullptr)
-              : nullptr) {
-  helper_->AddTaskObserver(this);
+      previous_time_(initial_time) {
   DCHECK_EQ(AutoAdvancingVirtualTimeDomain::g_time_domain_, nullptr);
   AutoAdvancingVirtualTimeDomain::g_time_domain_ = this;
+
+  // GetVirtualTime / GetVirtualTimeTicks access g_time_domain_.
+  base::subtle::MemoryBarrier();
+
+  if (policy == BaseTimeOverridePolicy::OVERRIDE) {
+    time_overrides_ = std::make_unique<base::subtle::ScopedTimeClockOverrides>(
+        &AutoAdvancingVirtualTimeDomain::GetVirtualTime,
+        &AutoAdvancingVirtualTimeDomain::GetVirtualTimeTicks, nullptr);
+  }
+
+  helper_->AddTaskObserver(this);
 }
 
 AutoAdvancingVirtualTimeDomain::~AutoAdvancingVirtualTimeDomain() {
   helper_->RemoveTaskObserver(this);
+
+  time_overrides_.reset();
+
+  // GetVirtualTime / GetVirtualTimeTicks (the functions we may have
+  // temporariliy installed in the constructor) access g_time_domain_.
+  base::subtle::MemoryBarrier();
+
   DCHECK_EQ(AutoAdvancingVirtualTimeDomain::g_time_domain_, this);
   AutoAdvancingVirtualTimeDomain::g_time_domain_ = nullptr;
+}
+
+base::sequence_manager::LazyNow AutoAdvancingVirtualTimeDomain::CreateLazyNow()
+    const {
+  base::AutoLock lock(now_ticks_lock_);
+  return base::sequence_manager::LazyNow(now_ticks_);
+}
+
+base::TimeTicks AutoAdvancingVirtualTimeDomain::Now() const {
+  base::AutoLock lock(now_ticks_lock_);
+  return now_ticks_;
 }
 
 base::Optional<base::TimeDelta>
 AutoAdvancingVirtualTimeDomain::DelayTillNextTask(
     base::sequence_manager::LazyNow* lazy_now) {
-  base::TimeTicks run_time;
-  if (!NextScheduledRunTime(&run_time))
+  base::Optional<base::TimeTicks> run_time = NextScheduledRunTime();
+  if (!run_time)
     return base::nullopt;
 
   // We may have advanced virtual time past the next task when a
@@ -57,7 +86,7 @@ AutoAdvancingVirtualTimeDomain::DelayTillNextTask(
   if (!can_advance_virtual_time_)
     return base::nullopt;
 
-  if (MaybeAdvanceVirtualTime(run_time)) {
+  if (MaybeAdvanceVirtualTime(*run_time)) {
     task_starvation_count_ = 0;
     return base::TimeDelta();  // Makes DoWork post an immediate continuation.
   }
@@ -65,16 +94,17 @@ AutoAdvancingVirtualTimeDomain::DelayTillNextTask(
   return base::nullopt;
 }
 
-void AutoAdvancingVirtualTimeDomain::RequestWakeUpAt(base::TimeTicks now,
-                                                     base::TimeTicks run_time) {
-  // Avoid posting pointless DoWorks.  I.e. if the time domain has more then one
+void AutoAdvancingVirtualTimeDomain::SetNextDelayedDoWork(
+    base::sequence_manager::LazyNow* lazy_now,
+    base::TimeTicks run_time) {
+  // Ignore cancelation since no delayed work is actually being posted.
+  if (run_time == base::TimeTicks::Max())
+    return;
+
+  // Avoid posting pointless DoWorks, i.e. if the time domain has more then one
   // scheduled wake up then we don't need to do anything.
   if (can_advance_virtual_time_ && NumberOfScheduledWakeUps() == 1u)
     RequestDoWork();
-}
-
-void AutoAdvancingVirtualTimeDomain::CancelWakeUpAt(base::TimeTicks run_time) {
-  // We ignore this because RequestWakeUpAt doesn't post a delayed task.
 }
 
 void AutoAdvancingVirtualTimeDomain::SetObserver(Observer* observer) {
@@ -116,7 +146,10 @@ bool AutoAdvancingVirtualTimeDomain::MaybeAdvanceVirtualTime(
   if (new_virtual_time <= Now())
     return false;
 
-  AdvanceNowTo(new_virtual_time);
+  {
+    base::AutoLock lock(now_ticks_lock_);
+    now_ticks_ = new_virtual_time;
+  }
 
   if (observer_)
     observer_->OnVirtualTimeAdvanced();
@@ -140,8 +173,8 @@ void AutoAdvancingVirtualTimeDomain::DidProcessTask(
 
   // Delayed tasks are being excessively starved, so allow virtual time to
   // advance.
-  base::TimeTicks run_time;
-  if (NextScheduledRunTime(&run_time) && MaybeAdvanceVirtualTime(run_time))
+  base::Optional<base::TimeTicks> run_time = NextScheduledRunTime();
+  if (run_time && MaybeAdvanceVirtualTime(*run_time))
     task_starvation_count_ = 0;
 }
 

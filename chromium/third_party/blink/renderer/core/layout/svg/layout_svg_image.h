@@ -58,16 +58,12 @@ class LayoutSVGImage final : public LayoutSVGModelObject {
  private:
   FloatRect StrokeBoundingBox() const override { return object_bounding_box_; }
 
-  void AddOutlineRects(Vector<LayoutRect>&,
-                       const LayoutPoint& additional_offset,
-                       IncludeBlockVisualOverflowOrNot) const override;
-
   void ImageChanged(WrappedImagePtr,
                     CanDeferInvalidation,
                     const IntRect* = nullptr) override;
 
   void UpdateLayout() override;
-  void Paint(const PaintInfo&, const LayoutPoint&) const override;
+  void Paint(const PaintInfo&) const override;
 
   bool UpdateBoundingBox();
 

@@ -6,6 +6,7 @@
 #define SERVICES_RESOURCE_COORDINATOR_COORDINATION_UNIT_PROCESS_COORDINATION_UNIT_IMPL_H_
 
 #include "base/macros.h"
+#include "base/process/process_handle.h"
 #include "base/time/time.h"
 #include "services/resource_coordinator/coordination_unit/coordination_unit_base.h"
 
@@ -19,12 +20,11 @@ class ProcessCoordinationUnitImpl
                                        mojom::ProcessCoordinationUnit,
                                        mojom::ProcessCoordinationUnitRequest> {
  public:
-  static std::vector<ProcessCoordinationUnitImpl*>
-  GetAllProcessCoordinationUnits();
   static CoordinationUnitType Type() { return CoordinationUnitType::kProcess; }
 
   ProcessCoordinationUnitImpl(
       const CoordinationUnitID& id,
+      CoordinationUnitGraph* graph,
       std::unique_ptr<service_manager::ServiceContextRef> service_ref);
   ~ProcessCoordinationUnitImpl() override;
 
@@ -36,6 +36,7 @@ class ProcessCoordinationUnitImpl
   void SetLaunchTime(base::Time launch_time) override;
   void SetMainThreadTaskLoadIsLow(bool main_thread_task_load_is_low) override;
   void SetPID(int64_t pid) override;
+  void OnRendererIsBloated() override;
 
   // Private implementation properties.
   void set_private_footprint_kb(uint64_t private_footprint_kb) {
@@ -51,10 +52,13 @@ class ProcessCoordinationUnitImpl
   std::set<PageCoordinationUnitImpl*> GetAssociatedPageCoordinationUnits()
       const;
 
+  base::ProcessId process_id() const { return process_id_; }
+
  private:
   friend class FrameCoordinationUnitImpl;
 
   // CoordinationUnitInterface implementation.
+  void OnEventReceived(mojom::Event event) override;
   void OnPropertyChanged(mojom::PropertyType property_type,
                          int64_t value) override;
 
@@ -63,6 +67,8 @@ class ProcessCoordinationUnitImpl
 
   base::TimeDelta cumulative_cpu_usage_;
   uint64_t private_footprint_kb_ = 0u;
+
+  base::ProcessId process_id_ = base::kNullProcessId;
 
   std::set<FrameCoordinationUnitImpl*> frame_coordination_units_;
 

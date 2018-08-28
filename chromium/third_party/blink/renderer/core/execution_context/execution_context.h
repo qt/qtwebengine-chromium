@@ -32,17 +32,18 @@
 
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_notifier.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
-#include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/access_control_status.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
-#include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer_policy.h"
 #include "v8/include/v8.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace service_manager {
 class InterfaceProvider;
@@ -51,17 +52,19 @@ class InterfaceProvider;
 namespace blink {
 
 class ConsoleMessage;
+class ContentSecurityPolicy;
 class CoreProbeSink;
 class DOMTimerCoordinator;
 class ErrorEvent;
-class EventQueue;
 class EventTarget;
 class FrameOrWorkerScheduler;
 class InterfaceInvalidator;
+class KURL;
 class LocalDOMWindow;
 class PausableObject;
 class PublicURLManager;
 class ResourceFetcher;
+class SecurityContext;
 class SecurityOrigin;
 class ScriptState;
 
@@ -190,7 +193,6 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   int CircularSequentialID();
 
   virtual EventTarget* ErrorEventTarget() = 0;
-  virtual EventQueue* GetEventQueue() const = 0;
 
   // Methods related to window interaction. It should be used to manage window
   // focusing and window creation permission for an ExecutionContext.
@@ -208,7 +210,11 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
                              : SecureContextMode::kInsecureContext;
   }
 
+  // Returns a referrer to be used in the "Determine request's Referrer"
+  // algorithm defined in the Referrer Policy spec.
+  // https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
   virtual String OutgoingReferrer() const;
+
   // Parses a comma-separated list of referrer policy tokens, and sets
   // the context's referrer policy to the last one that is a valid
   // policy. Logs a message to the console if none of the policy

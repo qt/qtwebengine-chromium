@@ -8,10 +8,6 @@
 #include <set>
 #include <utility>
 
-#include "base/callback.h"
-#include "base/rand_util.h"
-#include "build/build_config.h"
-#include "net/test/gtest_util.h"
 #include "net/third_party/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quic/core/crypto/null_encrypter.h"
 #include "net/third_party/quic/core/quic_crypto_stream.h"
@@ -36,8 +32,14 @@
 #include "net/third_party/quic/test_tools/quic_stream_send_buffer_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 #include "net/third_party/spdy/core/spdy_framer.h"
-#include "testing/gmock_mutant.h"
 
+using spdy::kV3HighestPriority;
+using spdy::Spdy3PriorityToHttp2Weight;
+using spdy::SpdyFramer;
+using spdy::SpdyHeaderBlock;
+using spdy::SpdyPriority;
+using spdy::SpdyPriorityIR;
+using spdy::SpdySerializedFrame;
 using testing::_;
 using testing::AtLeast;
 using testing::InSequence;
@@ -45,7 +47,7 @@ using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -327,7 +329,7 @@ class QuicSpdySessionTestBase : public QuicTestWithParam<ParsedQuicVersion> {
   StrictMock<MockQuicConnection>* connection_;
   TestSession session_;
   std::set<QuicStreamId> closed_streams_;
-  spdy::SpdyHeaderBlock headers_;
+  SpdyHeaderBlock headers_;
 };
 
 class QuicSpdySessionTestServer : public QuicSpdySessionTestBase {
@@ -437,6 +439,11 @@ TEST_P(QuicSpdySessionTestServer, ManyAvailableStreams) {
 
 TEST_P(QuicSpdySessionTestServer,
        DebugDFatalIfMarkingClosedStreamWriteBlocked) {
+  // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
+  if (GetParam() != AllSupportedVersions()[0]) {
+    return;
+  }
+
   TestStream* stream2 = session_.CreateOutgoingDynamicStream();
   QuicStreamId closed_stream_id = stream2->id();
   // Close the stream.
@@ -517,7 +524,7 @@ TEST_P(QuicSpdySessionTestServer, TestBatchedWrites) {
   // Now let stream 4 do the 2nd of its 3 writes, but add a block for a high
   // priority stream 6.  4 should be preempted.  6 will write but *not* block so
   // will cede back to 4.
-  stream6->SetPriority(spdy::kV3HighestPriority);
+  stream6->SetPriority(kV3HighestPriority);
   EXPECT_CALL(*stream4, OnCanWrite())
       .WillOnce(Invoke([this, stream4, stream6]() {
         session_.SendLargeFakeData(stream4, 6000);
@@ -549,10 +556,8 @@ TEST_P(QuicSpdySessionTestServer, OnCanWriteBundlesStreams) {
   CryptoHandshakeMessage msg;
   MockPacketWriter* writer = static_cast<MockPacketWriter*>(
       QuicConnectionPeer::GetWriter(session_.connection()));
-  if (GetQuicReloadableFlag(quic_send_max_header_list_size)) {
-    EXPECT_CALL(*writer, WritePacket(_, _, _, _, _))
-        .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
-  }
+  EXPECT_CALL(*writer, WritePacket(_, _, _, _, _))
+      .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   session_.GetMutableCryptoStream()->OnHandshakeMessage(msg);
 
   // Drive congestion control manually.
@@ -777,6 +782,10 @@ TEST_P(QuicSpdySessionTestServer,
 }
 
 TEST_P(QuicSpdySessionTestServer, SendGoAway) {
+  if (transport_version() == QUIC_VERSION_99) {
+    // GoAway frames are not in version 99
+    return;
+  }
   MockPacketWriter* writer = static_cast<MockPacketWriter*>(
       QuicConnectionPeer::GetWriter(session_.connection()));
   EXPECT_CALL(*writer, WritePacket(_, _, _, _, _))
@@ -1005,12 +1014,13 @@ TEST_P(QuicSpdySessionTestServer,
   // Write until the header stream is flow control blocked.
   EXPECT_CALL(*connection_, SendControlFrame(_))
       .WillOnce(Invoke(&session_, &TestSession::ClearControlFrame));
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
+  SimpleRandom random;
   while (!headers_stream->flow_controller()->IsBlocked() && stream_id < 2000) {
     EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
     EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
-    headers["header"] = QuicStrCat("", base::RandUint64(), base::RandUint64(),
-                                   base::RandUint64());
+    headers["header"] = QuicStrCat("", random.RandUint64(), random.RandUint64(),
+                                   random.RandUint64());
     session_.WriteHeaders(stream_id, headers.Clone(), true, 0, nullptr);
     stream_id += 2;
   }
@@ -1386,16 +1396,6 @@ TEST_P(QuicSpdySessionTestClient, TestMaxIncomingAndOutgoingStreamsAllowed) {
             kDefaultMaxStreamsPerConnection);
 }
 
-TEST_P(QuicSpdySessionTestClient, EnableDHDTThroughConnectionOption) {
-  QuicTagVector copt;
-  copt.push_back(kDHDT);
-  QuicConfigPeer::SetConnectionOptionsToSend(session_.config(), copt);
-  session_.OnConfigNegotiated();
-  EXPECT_EQ(
-      QuicSpdySessionPeer::GetSpdyFramer(&session_).header_encoder_table_size(),
-      0UL);
-}
-
 TEST_P(QuicSpdySessionTestClient, WritePriority) {
   QuicSpdySessionPeer::SetHeadersStream(&session_, nullptr);
   TestHeadersStream* headers_stream = new TestHeadersStream(&session_);
@@ -1408,22 +1408,20 @@ TEST_P(QuicSpdySessionTestClient, WritePriority) {
 
   const QuicStreamId id = 4;
   const QuicStreamId parent_stream_id = 9;
-  const spdy::SpdyPriority priority = spdy::kV3HighestPriority;
+  const SpdyPriority priority = kV3HighestPriority;
   const bool exclusive = true;
   session_.WritePriority(id, parent_stream_id,
-                         spdy::Spdy3PriorityToHttp2Weight(priority), exclusive);
+                         Spdy3PriorityToHttp2Weight(priority), exclusive);
 
   QuicStreamSendBuffer& send_buffer =
       QuicStreamPeer::SendBuffer(headers_stream);
   if (transport_version() > QUIC_VERSION_42) {
     ASSERT_EQ(1u, send_buffer.size());
 
-    spdy::SpdyPriorityIR priority_frame(
-        id, parent_stream_id, spdy::Spdy3PriorityToHttp2Weight(priority),
-        exclusive);
-    spdy::SpdyFramer spdy_framer(spdy::SpdyFramer::ENABLE_COMPRESSION);
-    spdy::SpdySerializedFrame frame =
-        spdy_framer.SerializeFrame(priority_frame);
+    SpdyPriorityIR priority_frame(
+        id, parent_stream_id, Spdy3PriorityToHttp2Weight(priority), exclusive);
+    SpdyFramer spdy_framer(SpdyFramer::ENABLE_COMPRESSION);
+    SpdySerializedFrame frame = spdy_framer.SerializeFrame(priority_frame);
 
     const QuicMemSlice& slice =
         QuicStreamSendBufferPeer::CurrentWriteSlice(&send_buffer)->slice;
@@ -1590,10 +1588,10 @@ TEST_P(QuicSpdySessionTestServer, RetransmitFrames) {
 TEST_P(QuicSpdySessionTestServer, OnPriorityFrame) {
   QuicStreamId stream_id = GetNthClientInitiatedId(0);
   TestStream* stream = session_.CreateIncomingDynamicStream(stream_id);
-  session_.OnPriorityFrame(stream_id, spdy::kV3HighestPriority);
-  EXPECT_EQ(spdy::kV3HighestPriority, stream->priority());
+  session_.OnPriorityFrame(stream_id, kV3HighestPriority);
+  EXPECT_EQ(kV3HighestPriority, stream->priority());
 }
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

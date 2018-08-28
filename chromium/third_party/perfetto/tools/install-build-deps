@@ -195,13 +195,13 @@ TEST_DEPS_ANDROID = [
 
 UI_DEPS = [
   ('buildtools/nodejs.tgz',
-   'https://storage.googleapis.com/perfetto/node-v8.11.1-darwin-x64.tar.gz',
-   '01effb57fa711aa258d7aab26c6615e1f8a64b1a',
+   'https://storage.googleapis.com/perfetto/node-v10.3.0-darwin-x64.tar.gz',
+   '6d9a122785f38c256add3b25f74adf125497861a',
    'darwin'
   ),
   ('buildtools/nodejs.tgz',
-   'https://storage.googleapis.com/perfetto/node-v8.11.1-linux-x64.tar.xz',
-   '04c2e703b042ecfdc9deb32e4797a41c41482966',
+   'https://storage.googleapis.com/perfetto/node-v10.3.0-linux-x64.tar.xz',
+   '118f6ea19f75089b3f12ac2ddfce357bff872b5e',
    'linux2'
   ),
   ('buildtools/emsdk/emscripten.tgz',
@@ -215,8 +215,8 @@ UI_DEPS = [
    'darwin'
   ),
   ('buildtools/emsdk/llvm.tgz',
-   'https://storage.googleapis.com/perfetto/emscripten-llvm-e1.37.40-linux.tar.gz',
-   'fdc26481fe70001ea00e83b99d0df906c9b2a45f',
+   'https://storage.googleapis.com/perfetto/emscripten-llvm-e1.37.40-static-linux.tar.gz',
+   '478501b9b7a14884e546c84efe209a90052cbb07',
    'linux2'
   ),
 ]
@@ -273,6 +273,12 @@ def CheckoutGitRepo(path, git_url, revision):
   subprocess.check_call(['git', 'checkout', revision, '--quiet'], cwd=path)
   assert(IsGitRepoCheckoutOutAtRevision(path, revision))
 
+def InstallNodeModules():
+  ui_dir = os.path.join(ROOT_DIR, 'ui')
+  logging.info("Running npm install in {0}".format(ui_dir))
+  subprocess.check_call(
+    [os.path.join(ui_dir, 'npm'), 'install', '--no-save'],
+    cwd=os.path.join(ROOT_DIR, 'ui'))
 
 def Main():
   parser = argparse.ArgumentParser()
@@ -342,6 +348,9 @@ def Main():
         stamp_file.write(expected_sha1)
       os.remove(local_path)
 
+  if args.ui:
+    # Needs to happen after nodejs is installed above.
+    InstallNodeModules()
 
 if __name__ == '__main__':
   logging.basicConfig(level=logging.INFO)

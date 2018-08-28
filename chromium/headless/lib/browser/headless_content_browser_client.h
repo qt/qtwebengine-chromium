@@ -60,23 +60,6 @@ class HeadlessContentBrowserClient : public content::ContentBrowserClient {
 
   void ResourceDispatcherHostCreated() override;
 
-  net::NetLog* GetNetLog() override;
-
-  bool AllowGetCookie(const GURL& url,
-                      const GURL& first_party,
-                      const net::CookieList& cookie_list,
-                      content::ResourceContext* context,
-                      int render_process_id,
-                      int render_frame_id) override;
-
-  bool AllowSetCookie(const GURL& url,
-                      const GURL& first_party,
-                      const net::CanonicalCookie& cookie,
-                      content::ResourceContext* context,
-                      int render_process_id,
-                      int render_frame_id,
-                      const net::CookieOptions& options) override;
-
   bool DoesSiteRequireDedicatedProcess(content::BrowserContext* browser_context,
                                        const GURL& effective_site_url) override;
 

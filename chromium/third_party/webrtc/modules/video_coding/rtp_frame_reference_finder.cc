@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <limits>
 
+#include "absl/types/variant.h"
 #include "modules/video_coding/frame_object.h"
 #include "modules/video_coding/packet_buffer.h"
 #include "rtc_base/checks.h"
@@ -83,11 +84,6 @@ void RtpFrameReferenceFinder::RetryStashedFrames() {
 RtpFrameReferenceFinder::FrameDecision
 RtpFrameReferenceFinder::ManageFrameInternal(RtpFrameObject* frame) {
   switch (frame->codec_type()) {
-    case kVideoCodecFlexfec:
-    case kVideoCodecULPFEC:
-    case kVideoCodecRED:
-      RTC_NOTREACHED();
-      break;
     case kVideoCodecVP8:
       return ManageFrameVp8(frame);
     case kVideoCodecVP9:
@@ -245,14 +241,15 @@ RtpFrameReferenceFinder::ManageFrameGeneric(RtpFrameObject* frame,
 
 RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp8(
     RtpFrameObject* frame) {
-  rtc::Optional<RTPVideoTypeHeader> rtp_codec_header = frame->GetCodecHeader();
+  absl::optional<RTPVideoTypeHeader> rtp_codec_header = frame->GetCodecHeader();
   if (!rtp_codec_header) {
     RTC_LOG(LS_WARNING)
         << "Failed to get codec header from frame, dropping frame.";
     return kDrop;
   }
 
-  const RTPVideoHeaderVP8& codec_header = rtp_codec_header->VP8;
+  const RTPVideoHeaderVP8& codec_header =
+      absl::get<RTPVideoHeaderVP8>(*rtp_codec_header);
 
   if (codec_header.pictureId == kNoPictureId ||
       codec_header.temporalIdx == kNoTemporalIdx ||
@@ -277,8 +274,10 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp8(
     } while (last_picture_id_ != frame->id.picture_id);
   }
 
+  int64_t unwrapped_tl0 = tl0_unwrapper_.Unwrap(codec_header.tl0PicIdx);
+
   // Clean up info for base layers that are too old.
-  uint8_t old_tl0_pic_idx = codec_header.tl0PicIdx - kMaxLayerInfo;
+  int64_t old_tl0_pic_idx = unwrapped_tl0 - kMaxLayerInfo;
   auto clean_layer_info_to = layer_info_.lower_bound(old_tl0_pic_idx);
   layer_info_.erase(layer_info_.begin(), clean_layer_info_to);
 
@@ -291,14 +290,13 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp8(
 
   if (frame->frame_type() == kVideoFrameKey) {
     frame->num_references = 0;
-    layer_info_[codec_header.tl0PicIdx].fill(-1);
-    UpdateLayerInfoVp8(frame, codec_header);
+    layer_info_[unwrapped_tl0].fill(-1);
+    UpdateLayerInfoVp8(frame, unwrapped_tl0, codec_header.temporalIdx);
     return kHandOff;
   }
 
-  auto layer_info_it = layer_info_.find(codec_header.temporalIdx == 0
-                                            ? codec_header.tl0PicIdx - 1
-                                            : codec_header.tl0PicIdx);
+  auto layer_info_it = layer_info_.find(
+      codec_header.temporalIdx == 0 ? unwrapped_tl0 - 1 : unwrapped_tl0);
 
   // If we don't have the base layer frame yet, stash this frame.
   if (layer_info_it == layer_info_.end())
@@ -309,11 +307,10 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp8(
   // base layer frame.
   if (codec_header.temporalIdx == 0) {
     layer_info_it =
-        layer_info_.emplace(codec_header.tl0PicIdx, layer_info_it->second)
-            .first;
+        layer_info_.emplace(unwrapped_tl0, layer_info_it->second).first;
     frame->num_references = 1;
     frame->references[0] = layer_info_it->second[0];
-    UpdateLayerInfoVp8(frame, codec_header);
+    UpdateLayerInfoVp8(frame, unwrapped_tl0, codec_header.temporalIdx);
     return kHandOff;
   }
 
@@ -322,7 +319,7 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp8(
     frame->num_references = 1;
     frame->references[0] = layer_info_it->second[0];
 
-    UpdateLayerInfoVp8(frame, codec_header);
+    UpdateLayerInfoVp8(frame, unwrapped_tl0, codec_header.temporalIdx);
     return kHandOff;
   }
 
@@ -366,30 +363,28 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp8(
     frame->references[layer] = layer_info_it->second[layer];
   }
 
-  UpdateLayerInfoVp8(frame, codec_header);
+  UpdateLayerInfoVp8(frame, unwrapped_tl0, codec_header.temporalIdx);
   return kHandOff;
 }
 
-void RtpFrameReferenceFinder::UpdateLayerInfoVp8(
-    RtpFrameObject* frame,
-    const RTPVideoHeaderVP8& codec_header) {
-  uint8_t tl0_pic_idx = codec_header.tl0PicIdx;
-  uint8_t temporal_index = codec_header.temporalIdx;
-  auto layer_info_it = layer_info_.find(tl0_pic_idx);
+void RtpFrameReferenceFinder::UpdateLayerInfoVp8(RtpFrameObject* frame,
+                                                 int64_t unwrapped_tl0,
+                                                 uint8_t temporal_idx) {
+  auto layer_info_it = layer_info_.find(unwrapped_tl0);
 
   // Update this layer info and newer.
   while (layer_info_it != layer_info_.end()) {
-    if (layer_info_it->second[temporal_index] != -1 &&
-        AheadOf<uint16_t, kPicIdLength>(layer_info_it->second[temporal_index],
+    if (layer_info_it->second[temporal_idx] != -1 &&
+        AheadOf<uint16_t, kPicIdLength>(layer_info_it->second[temporal_idx],
                                         frame->id.picture_id)) {
       // The frame was not newer, then no subsequent layer info have to be
       // update.
       break;
     }
 
-    layer_info_it->second[codec_header.temporalIdx] = frame->id.picture_id;
-    ++tl0_pic_idx;
-    layer_info_it = layer_info_.find(tl0_pic_idx);
+    layer_info_it->second[temporal_idx] = frame->id.picture_id;
+    ++unwrapped_tl0;
+    layer_info_it = layer_info_.find(unwrapped_tl0);
   }
   not_yet_received_frames_.erase(frame->id.picture_id);
 
@@ -398,14 +393,15 @@ void RtpFrameReferenceFinder::UpdateLayerInfoVp8(
 
 RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp9(
     RtpFrameObject* frame) {
-  rtc::Optional<RTPVideoTypeHeader> rtp_codec_header = frame->GetCodecHeader();
+  absl::optional<RTPVideoTypeHeader> rtp_codec_header = frame->GetCodecHeader();
   if (!rtp_codec_header) {
     RTC_LOG(LS_WARNING)
         << "Failed to get codec header from frame, dropping frame.";
     return kDrop;
   }
 
-  const RTPVideoHeaderVP9& codec_header = rtp_codec_header->VP9;
+  const RTPVideoHeaderVP9& codec_header =
+      absl::get<RTPVideoHeaderVP9>(*rtp_codec_header);
 
   if (codec_header.picture_id == kNoPictureId ||
       codec_header.temporal_idx == kNoTemporalIdx) {
@@ -433,21 +429,33 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp9(
     return kHandOff;
   }
 
+  if (codec_header.tl0_pic_idx == kNoTl0PicIdx) {
+    RTC_LOG(LS_WARNING) << "TL0PICIDX is expected to be present in "
+                           "non-flexible mode.";
+    return kDrop;
+  }
+
   GofInfo* info;
+  int64_t unwrapped_tl0 = tl0_unwrapper_.Unwrap(codec_header.tl0_pic_idx);
   if (codec_header.ss_data_available) {
     if (codec_header.temporal_idx != 0) {
       RTC_LOG(LS_WARNING) << "Received scalability structure on a non base "
                              "layer frame. Scalability structure ignored.";
     } else {
       current_ss_idx_ = Add<kMaxGofSaved>(current_ss_idx_, 1);
+      if (codec_header.gof.num_frames_in_gof == 0 ||
+          codec_header.gof.num_frames_in_gof > kMaxVp9FramesInGof) {
+        return kDrop;
+      }
+
       scalability_structures_[current_ss_idx_] = codec_header.gof;
       scalability_structures_[current_ss_idx_].pid_start = frame->id.picture_id;
-      gof_info_.emplace(codec_header.tl0_pic_idx,
+      gof_info_.emplace(unwrapped_tl0,
                         GofInfo(&scalability_structures_[current_ss_idx_],
                                 frame->id.picture_id));
     }
 
-    const auto gof_info_it = gof_info_.find(codec_header.tl0_pic_idx);
+    const auto gof_info_it = gof_info_.find(unwrapped_tl0);
     if (gof_info_it == gof_info_.end())
       return kStash;
 
@@ -465,27 +473,25 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp9(
       return kDrop;
     }
 
-    auto gof_info_it = gof_info_.find((codec_header.temporal_idx == 0)
-                                          ? codec_header.tl0_pic_idx - 1
-                                          : codec_header.tl0_pic_idx);
+    auto gof_info_it = gof_info_.find(
+        (codec_header.temporal_idx == 0) ? unwrapped_tl0 - 1 : unwrapped_tl0);
 
     // Gof info for this frame is not available yet, stash this frame.
     if (gof_info_it == gof_info_.end())
       return kStash;
 
     if (codec_header.temporal_idx == 0) {
-      gof_info_it =
-          gof_info_
-              .emplace(codec_header.tl0_pic_idx,
-                       GofInfo(gof_info_it->second.gof, frame->id.picture_id))
-              .first;
+      gof_info_it = gof_info_
+                        .emplace(unwrapped_tl0, GofInfo(gof_info_it->second.gof,
+                                                        frame->id.picture_id))
+                        .first;
     }
 
     info = &gof_info_it->second;
   }
 
   // Clean up info for base layers that are too old.
-  uint8_t old_tl0_pic_idx = codec_header.tl0_pic_idx - kMaxGofSaved;
+  int64_t old_tl0_pic_idx = unwrapped_tl0 - kMaxGofSaved;
   auto clean_gof_info_to = gof_info_.lower_bound(old_tl0_pic_idx);
   gof_info_.erase(gof_info_.begin(), clean_gof_info_to);
 
@@ -572,7 +578,7 @@ void RtpFrameReferenceFinder::FrameReceivedVp9(uint16_t picture_id,
 
     last_picture_id = Add<kPicIdLength>(last_picture_id, 1);
     while (last_picture_id != picture_id) {
-      gof_idx = (gof_idx  + 1) % gof_size;
+      gof_idx = (gof_idx + 1) % gof_size;
       RTC_CHECK(gof_idx < kMaxVp9FramesInGof);
 
       size_t temporal_idx = info->gof->temporal_idx[gof_idx];

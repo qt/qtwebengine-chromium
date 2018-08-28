@@ -145,10 +145,6 @@ void RecordContentLengthHistograms(bool is_https,
                                    is_video, request_type,
                                    original_content_length);
 
-  UMA_HISTOGRAM_COUNTS_1M("Net.HttpOriginalContentLength",
-                          original_content_length);
-  UMA_HISTOGRAM_COUNTS_1M("Net.HttpContentLengthDifference",
-                          original_content_length - received_content_length);
   UMA_HISTOGRAM_CUSTOM_COUNTS("Net.HttpContentFreshnessLifetime",
                               freshness_lifetime.InSeconds(),
                               base::TimeDelta::FromHours(1).InSeconds(),
@@ -282,23 +278,8 @@ void DataReductionProxyNetworkDelegate::InitIODataAndUMA(
   data_reduction_proxy_bypass_stats_ = bypass_stats;
 }
 
-void DataReductionProxyNetworkDelegate::OnBeforeURLRequestInternal(
-    net::URLRequest* request,
-    const net::CompletionCallback& callback,
-    GURL* new_url) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-
-  if (data_reduction_proxy_io_data_ &&
-      data_reduction_proxy_io_data_->lofi_decider() &&
-      data_reduction_proxy_io_data_->IsEnabled()) {
-    data_reduction_proxy_io_data_->lofi_decider()->MaybeApplyAMPPreview(
-        request, new_url, data_reduction_proxy_io_data_->previews_decider());
-  }
-}
-
 void DataReductionProxyNetworkDelegate::OnBeforeStartTransactionInternal(
     net::URLRequest* request,
-    const net::CompletionCallback& callback,
     net::HttpRequestHeaders* headers) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -347,6 +328,12 @@ void DataReductionProxyNetworkDelegate::OnBeforeSendHeadersInternal(
                   data_reduction_proxy_request_options_->GetSecureSession()) {
     page_id = data->page_id();
   }
+  // Always persist data's |request_info| since it tracks connection pingback
+  // data for redirects on main frame requests. It should include re-issued
+  // requests and client redirects.
+  std::vector<DataReductionProxyData::RequestInfo> request_info;
+  if (data)
+    request_info = data->TakeRequestInfo();
 
   // Reset |request|'s DataReductionProxyData.
   DataReductionProxyData::ClearData(request);
@@ -401,6 +388,7 @@ void DataReductionProxyNetworkDelegate::OnBeforeSendHeadersInternal(
         page_id = data_reduction_proxy_request_options_->GeneratePageId();
       }
       data->set_page_id(page_id.value());
+      data->set_request_info(std::move(request_info));
     }
   }
 
@@ -446,6 +434,12 @@ void DataReductionProxyNetworkDelegate::OnBeforeRedirectInternal(
     page_id = data->page_id();
   }
 
+  // Persist data's |request_info| since it tracks connection pingback data for
+  // redirects on main frame requests.
+  std::vector<DataReductionProxyData::RequestInfo> request_info;
+  if (data)
+    request_info = data->TakeRequestInfo();
+
   DataReductionProxyData::ClearData(request);
 
   if (page_id) {
@@ -453,17 +447,16 @@ void DataReductionProxyNetworkDelegate::OnBeforeRedirectInternal(
     data->set_page_id(page_id.value());
     data->set_session_key(
         data_reduction_proxy_request_options_->GetSecureSession());
+    data->set_request_info(std::move(request_info));
   }
 }
 
 void DataReductionProxyNetworkDelegate::OnCompletedInternal(
     net::URLRequest* request,
-    bool started) {
+    bool started,
+    int net_error) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(request);
-  // TODO(maksims): remove this once OnCompletedInternal() has net_error in
-  // arguments.
-  int net_error = request->status().error();
   DCHECK_NE(net::ERR_IO_PENDING, net_error);
   if (data_reduction_proxy_bypass_stats_)
     data_reduction_proxy_bypass_stats_->OnUrlRequestCompleted(request, started,
@@ -516,7 +509,6 @@ void DataReductionProxyNetworkDelegate::OnCompletedInternal(
 
 void DataReductionProxyNetworkDelegate::OnHeadersReceivedInternal(
     net::URLRequest* request,
-    const net::CompletionCallback& callback,
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
     GURL* allowed_unsafe_redirect_url) {
@@ -570,21 +562,41 @@ void DataReductionProxyNetworkDelegate::CalculateAndRecordDataUsage(
   if (request.response_headers())
     request.response_headers()->GetMimeType(&mime_type);
 
-  AccumulateDataUsage(data_used, original_size, request_type, mime_type);
+  AccumulateDataUsage(
+      data_used, original_size, request_type, mime_type,
+      data_use_measurement::DataUseMeasurement::IsUserRequest(request),
+      data_use_measurement::DataUseMeasurement::GetContentTypeForRequest(
+          request),
+      request.traffic_annotation().unique_id_hash_code);
+
+  if (params::IsDataSaverSiteBreakdownUsingPLMEnabled() &&
+      data_reduction_proxy_io_data_ &&
+      data_reduction_proxy_io_data_->resource_type_provider() &&
+      data_reduction_proxy_io_data_->resource_type_provider()
+          ->IsNonContentInitiatedRequest(request)) {
+    // Record non-content initiated traffic to the Other bucket for data saver
+    // site-breakdown.
+    data_reduction_proxy_io_data_->UpdateDataUseForHost(
+        data_used, original_size, util::GetSiteBreakdownOtherHostName());
+  }
 }
 
 void DataReductionProxyNetworkDelegate::AccumulateDataUsage(
     int64_t data_used,
     int64_t original_size,
     DataReductionProxyRequestType request_type,
-    const std::string& mime_type) {
+    const std::string& mime_type,
+    bool is_user_traffic,
+    data_use_measurement::DataUseUserData::DataUseContentType content_type,
+    int32_t service_hash_code) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK_GE(data_used, 0);
   DCHECK_GE(original_size, 0);
   if (data_reduction_proxy_io_data_) {
     data_reduction_proxy_io_data_->UpdateContentLengths(
         data_used, original_size, data_reduction_proxy_io_data_->IsEnabled(),
-        request_type, mime_type);
+        request_type, mime_type, is_user_traffic, content_type,
+        service_hash_code);
   }
 }
 

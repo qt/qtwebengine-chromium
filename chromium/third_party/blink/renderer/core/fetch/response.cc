@@ -5,11 +5,12 @@
 #include "third_party/blink/renderer/core/fetch/response.h"
 
 #include <memory>
+
 #include "base/memory/scoped_refptr.h"
+#include "base/optional.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_response.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_response.h"
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_array_buffer.h"
@@ -29,8 +30,9 @@
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer_view.h"
 #include "third_party/blink/renderer/core/url/url_search_params.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
-#include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_utils.h"
 #include "third_party/blink/renderer/platform/network/encoded_form_data.h"
@@ -234,11 +236,17 @@ Response* Response::Create(ScriptState* script_state,
         new FormDataBytesConsumer(execution_context, std::move(form_data)),
         nullptr /* AbortSignal */);
     content_type = "application/x-www-form-urlencoded;charset=UTF-8";
-  } else if (ReadableStreamOperations::IsReadableStream(script_state,
-                                                        body_value)) {
+  } else if (ReadableStreamOperations::IsReadableStream(
+                 script_state, body_value, exception_state)
+                 .value_or(true)) {
+    if (exception_state.HadException())
+      return nullptr;
     UseCounter::Count(execution_context,
                       WebFeature::kFetchResponseConstructionWithStream);
-    body_buffer = new BodyStreamBuffer(script_state, body_value);
+    body_buffer =
+        new BodyStreamBuffer(script_state, body_value, exception_state);
+    if (exception_state.HadException())
+      return nullptr;
   } else {
     String string = NativeValueTraits<IDLUSVString>::NativeValue(
         isolate, body, exception_state);
@@ -316,7 +324,6 @@ Response* Response::Create(ScriptState* script_state,
       return nullptr;
     }
     r->response_->ReplaceBodyStreamBuffer(body);
-    r->RefreshBody(script_state);
     if (!content_type.IsEmpty() &&
         !r->response_->HeaderList()->Has("Content-Type"))
       r->response_->HeaderList()->Append("Content-Type", content_type);
@@ -443,13 +450,19 @@ Headers* Response::headers() const {
 
 Response* Response::clone(ScriptState* script_state,
                           ExceptionState& exception_state) {
-  if (IsBodyLocked() || bodyUsed()) {
+  if (IsBodyLocked(exception_state) == BodyLocked::kLocked ||
+      IsBodyUsed(exception_state) == BodyUsed::kUsed) {
+    DCHECK(!exception_state.HadException());
     exception_state.ThrowTypeError("Response body is already used");
     return nullptr;
   }
 
-  FetchResponseData* response = response_->Clone(script_state);
-  RefreshBody(script_state);
+  if (exception_state.HadException())
+    return nullptr;
+
+  FetchResponseData* response = response_->Clone(script_state, exception_state);
+  if (exception_state.HadException())
+    return nullptr;
   Headers* headers = Headers::Create(response->HeaderList());
   headers->SetGuard(headers_->GetGuard());
   return new Response(GetExecutionContext(), response, headers);
@@ -485,16 +498,22 @@ Response::Response(ExecutionContext* context, FetchResponseData* response)
 Response::Response(ExecutionContext* context,
                    FetchResponseData* response,
                    Headers* headers)
-    : Body(context), response_(response), headers_(headers) {
-  InstallBody();
-}
+    : Body(context), response_(response), headers_(headers) {}
 
 bool Response::HasBody() const {
   return response_->InternalBuffer();
 }
 
-bool Response::bodyUsed() {
-  return InternalBodyBuffer() && InternalBodyBuffer()->IsStreamDisturbed();
+Body::BodyUsed Response::IsBodyUsed(ExceptionState& exception_state) {
+  auto* body_buffer = InternalBodyBuffer();
+  if (!body_buffer)
+    return BodyUsed::kUnused;
+  base::Optional<bool> stream_disturbed =
+      body_buffer->IsStreamDisturbed(exception_state);
+  if (exception_state.HadException())
+    return BodyUsed::kBroken;
+  DCHECK(stream_disturbed.has_value());
+  return stream_disturbed.value() ? BodyUsed::kUsed : BodyUsed::kUnused;
 }
 
 String Response::MimeType() const {
@@ -515,31 +534,15 @@ const Vector<KURL>& Response::InternalURLList() const {
   return response_->InternalURLList();
 }
 
-void Response::InstallBody() {
-  if (!InternalBodyBuffer())
-    return;
-  RefreshBody(InternalBodyBuffer()->GetScriptState());
-}
-
-void Response::RefreshBody(ScriptState* script_state) {
-  v8::Local<v8::Value> body_buffer = ToV8(InternalBodyBuffer(), script_state);
-  v8::Local<v8::Value> response = ToV8(this, script_state);
-  if (response.IsEmpty()) {
-    // |toV8| can return an empty handle when the worker is terminating.
-    // We don't want the renderer to crash in such cases.
-    // TODO(yhirano): Delete this block after the graceful shutdown
-    // mechanism is introduced.
-    return;
-  }
-  DCHECK(response->IsObject());
-  V8PrivateProperty::GetInternalBodyBuffer(script_state->GetIsolate())
-      .Set(response.As<v8::Object>(), body_buffer);
-}
-
 void Response::Trace(blink::Visitor* visitor) {
   Body::Trace(visitor);
   visitor->Trace(response_);
   visitor->Trace(headers_);
+}
+
+bool Response::IsBodyUsedForDCheck() {
+  return InternalBodyBuffer() &&
+         InternalBodyBuffer()->IsStreamDisturbedForDCheck();
 }
 
 }  // namespace blink

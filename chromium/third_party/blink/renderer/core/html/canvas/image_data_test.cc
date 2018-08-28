@@ -5,11 +5,9 @@
 #include "third_party/blink/renderer/core/html/canvas/image_data.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/color_correction_test_utils.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
-#include "third_party/blink/renderer/platform/wtf/byte_swap.h"
 #include "third_party/skia/include/core/SkColorSpaceXform.h"
 
 namespace blink {
@@ -25,7 +23,7 @@ TEST_F(ImageDataTest, CreateImageDataTooBig) {
       ImageData::Create(32767, 32767, exception_state);
   if (!too_big_image_data) {
     EXPECT_TRUE(exception_state.HadException());
-    EXPECT_EQ(exception_state.Code(), kV8RangeError);
+    EXPECT_EQ(exception_state.CodeAs<ESErrorType>(), ESErrorType::kRangeError);
   }
 }
 

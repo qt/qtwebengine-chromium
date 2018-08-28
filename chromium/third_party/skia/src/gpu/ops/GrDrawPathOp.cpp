@@ -7,6 +7,7 @@
 
 #include "GrDrawPathOp.h"
 #include "GrAppliedClip.h"
+#include "GrMemoryPool.h"
 #include "GrRenderTargetContext.h"
 #include "GrRenderTargetPriv.h"
 #include "SkTemplates.h"
@@ -18,7 +19,6 @@ GrDrawPathOpBase::GrDrawPathOpBase(uint32_t classID, const SkMatrix& viewMatrix,
         , fInputColor(paint.getColor())
         , fFillType(fill)
         , fAAType(aaType)
-        , fPipelineSRGBFlags(GrPipeline::SRGBFlagsFromPaint(paint))
         , fProcessorSet(std::move(paint)) {}
 
 SkString GrDrawPathOp::dumpInfo() const {
@@ -39,7 +39,6 @@ GrPipeline::InitArgs GrDrawPathOpBase::pipelineInitArgs(const GrOpFlushState& st
                     0xffff>()
     };
     GrPipeline::InitArgs args;
-    args.fFlags = fPipelineSRGBFlags;
     if (GrAATypeIsHW(fAAType)) {
         args.fFlags |= GrPipeline::kHWAntialias_Flag;
     }
@@ -63,14 +62,27 @@ void init_stencil_pass_settings(const GrOpFlushState& flushState,
 
 //////////////////////////////////////////////////////////////////////////////
 
+std::unique_ptr<GrDrawOp> GrDrawPathOp::Make(GrContext* context,
+                                             const SkMatrix& viewMatrix,
+                                             GrPaint&& paint,
+                                             GrAAType aaType,
+                                             GrPath* path) {
+    GrOpMemoryPool* pool = context->contextPriv().opMemoryPool();
+
+    return pool->allocate<GrDrawPathOp>(viewMatrix, std::move(paint), aaType, path);
+}
+
 void GrDrawPathOp::onExecute(GrOpFlushState* state) {
+    GrAppliedClip appliedClip = state->detachAppliedClip();
+    GrPipeline::FixedDynamicState fixedDynamicState(appliedClip.scissorState().rect());
     GrPipeline pipeline(this->pipelineInitArgs(*state), this->detachProcessors(),
-                        state->detachAppliedClip());
+                        std::move(appliedClip));
     sk_sp<GrPathProcessor> pathProc(GrPathProcessor::Create(this->color(), this->viewMatrix()));
 
     GrStencilSettings stencil;
     init_stencil_pass_settings(*state, this->fillType(), &stencil);
-    state->gpu()->pathRendering()->drawPath(pipeline, *pathProc, stencil, fPath.get());
+    state->gpu()->pathRendering()->drawPath(*pathProc, pipeline, fixedDynamicState, stencil,
+                                            fPath.get());
 }
 
 //////////////////////////////////////////////////////////////////////////////

@@ -387,7 +387,7 @@ CSSInterpolationTypesMap::CreateInterpolationTypesForCSSSyntax(
       std::make_unique<CSSVarCycleInterpolationType>(property, registration));
 
   for (const CSSSyntaxComponent& component : descriptor.Components()) {
-    if (component.repeatable_) {
+    if (component.IsRepeatable()) {
       // TODO(alancutter): Support animation of repeatable types.
       continue;
     }
@@ -427,6 +427,7 @@ CSSInterpolationTypesMap::CreateInterpolationTypesForCSSSyntax(
         result.push_back(std::make_unique<CSSNumberInterpolationType>(
             property, &registration, true));
         break;
+      case CSSSyntaxType::kTransformFunction:
       case CSSSyntaxType::kTransformList:
         // TODO(alancutter): Support smooth interpolation of these types.
         break;

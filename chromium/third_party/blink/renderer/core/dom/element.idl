@@ -54,6 +54,7 @@ interface Element : Node {
     [CEReactions, CustomElementCallbacks] void removeAttributeNS(DOMString? namespaceURI, DOMString localName);
     [Affects=Nothing] boolean hasAttribute(DOMString name);
     [Affects=Nothing] boolean hasAttributeNS(DOMString? namespaceURI, DOMString localName);
+    [RaisesException] boolean toggleAttribute(DOMString qualifiedName, optional boolean force);
 
     Attr? getAttributeNode(DOMString name);
     Attr? getAttributeNodeNS(DOMString? namespaceURI, DOMString localName);
@@ -65,7 +66,7 @@ interface Element : Node {
     [RaisesException] boolean matches(DOMString selectors);
     [RaisesException, ImplementedAs=matches, MeasureAs=ElementPrefixedMatchesSelector] boolean webkitMatchesSelector(DOMString selectors); // historical alias of .matches
 
-    [RaisesException, CallWith=ScriptState, MeasureAs=ElementAttachShadow] ShadowRoot attachShadow(ShadowRootInit shadowRootInitDict);
+    [RaisesException, MeasureAs=ElementAttachShadow] ShadowRoot attachShadow(ShadowRootInit shadowRootInitDict);
     [Affects=Nothing, PerWorldBindings, ImplementedAs=OpenShadowRoot] readonly attribute ShadowRoot? shadowRoot;
 
     [Affects=Nothing] HTMLCollection getElementsByTagName(DOMString localName);
@@ -120,11 +121,11 @@ interface Element : Node {
 
     // Typed OM
     // https://drafts.css-houdini.org/css-typed-om/#inline-stylepropertymap-objects
-    [RuntimeEnabled=CSSTypedOM, SameObject, MeasureAs=CSSTypedOMStylePropertyMap] readonly attribute StylePropertyMap attributeStyleMap;
+    [SameObject, MeasureAs=CSSTypedOMStylePropertyMap] readonly attribute StylePropertyMap attributeStyleMap;
 
     // Non-standard API
     [MeasureAs=ElementScrollIntoViewIfNeeded] void scrollIntoViewIfNeeded(optional boolean centerIfNeeded);
-    [RuntimeEnabled=ShadowDOMV0, RaisesException, CallWith=ScriptState, MeasureAs=ElementCreateShadowRoot] ShadowRoot createShadowRoot();
+    [RuntimeEnabled=ShadowDOMV0, RaisesException, MeasureAs=ElementCreateShadowRoot] ShadowRoot createShadowRoot();
     [RuntimeEnabled=ShadowDOMV0] NodeList getDestinationInsertionPoints();
 
     // Experimental accessibility API

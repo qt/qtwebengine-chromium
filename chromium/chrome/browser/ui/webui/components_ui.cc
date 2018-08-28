@@ -41,6 +41,8 @@ content::WebUIDataSource* CreateComponentsUIHTMLSource(Profile* profile) {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIComponentsHost);
 
+  source->OverrideContentSecurityPolicyScriptSrc(
+      "script-src chrome://resources 'self' 'unsafe-eval';");
   source->AddLocalizedString("componentsTitle", IDS_COMPONENTS_TITLE);
   source->AddLocalizedString("componentsNoneInstalled",
                              IDS_COMPONENTS_NONE_INSTALLED);
@@ -164,8 +166,9 @@ ComponentsUI::~ComponentsUI() {
 void ComponentsUI::OnDemandUpdate(const std::string& component_id) {
   component_updater::ComponentUpdateService* cus =
       g_browser_process->component_updater();
-  cus->GetOnDemandUpdater().OnDemandUpdate(component_id,
-                                           component_updater::Callback());
+  cus->GetOnDemandUpdater().OnDemandUpdate(
+      component_id, component_updater::OnDemandUpdater::Priority::FOREGROUND,
+      component_updater::Callback());
 }
 
 // static

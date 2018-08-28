@@ -36,7 +36,7 @@ class LayoutText;
 // offsets in |text_|.
 // See https://goo.gl/CJbxky for more details about offset mapping.
 template <typename OffsetMappingBuilder>
-class CORE_TEMPLATE_CLASS_EXPORT NGInlineItemsBuilderTemplate {
+class NGInlineItemsBuilderTemplate {
   STACK_ALLOCATED();
 
  public:
@@ -107,6 +107,8 @@ class CORE_TEMPLATE_CLASS_EXPORT NGInlineItemsBuilderTemplate {
 
   OffsetMappingBuilder& GetOffsetMappingBuilder() { return mapping_builder_; }
 
+  void SetIsSymbolMarker(bool b);
+
  private:
   Vector<NGInlineItem>* items_;
   StringBuilder text_;
@@ -155,10 +157,11 @@ class CORE_TEMPLATE_CLASS_EXPORT NGInlineItemsBuilderTemplate {
 };
 
 template <>
-String NGInlineItemsBuilderTemplate<NGOffsetMappingBuilder>::ToString();
+CORE_EXPORT String
+NGInlineItemsBuilderTemplate<NGOffsetMappingBuilder>::ToString();
 
 template <>
-bool NGInlineItemsBuilderTemplate<NGOffsetMappingBuilder>::Append(
+CORE_EXPORT bool NGInlineItemsBuilderTemplate<NGOffsetMappingBuilder>::Append(
     const String&,
     LayoutObject*,
     const Vector<NGInlineItem*>&);

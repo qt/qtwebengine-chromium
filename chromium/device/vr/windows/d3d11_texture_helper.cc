@@ -21,6 +21,10 @@ D3D11TextureHelper::D3D11TextureHelper() {}
 
 D3D11TextureHelper::~D3D11TextureHelper() {}
 
+void D3D11TextureHelper::Reset() {
+  render_state_ = {};
+}
+
 bool D3D11TextureHelper::CopyTextureToBackBuffer(bool flipY) {
   if (!EnsureInitialized())
     return false;
@@ -210,7 +214,7 @@ void D3D11TextureHelper::AllocateBackBuffer() {
     D3D11_TEXTURE2D_DESC desc_target;
     render_state_.target_texture_->GetDesc(&desc_target);
     // If the target should change size, format, or other properties reallocate
-    // a new target.
+    // a new texture and new render target view.
     if (desc_source.Width != desc_target.Width ||
         desc_source.Height != desc_target.Height ||
         desc_source.MipLevels != desc_target.MipLevels ||
@@ -223,6 +227,7 @@ void D3D11TextureHelper::AllocateBackBuffer() {
         desc_source.CPUAccessFlags != desc_target.CPUAccessFlags ||
         desc_source.MiscFlags != desc_target.MiscFlags) {
       render_state_.target_texture_ = nullptr;
+      render_state_.render_target_view_ = nullptr;
     }
   }
 

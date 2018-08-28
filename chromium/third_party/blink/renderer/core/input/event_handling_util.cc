@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
 
 namespace blink {
@@ -17,18 +18,19 @@ namespace EventHandlingUtil {
 
 HitTestResult HitTestResultInFrame(
     LocalFrame* frame,
-    const LayoutPoint& point,
+    const HitTestLocation& location,
     HitTestRequest::HitTestRequestType hit_type) {
-  HitTestResult result(HitTestRequest(hit_type), point);
+  DCHECK(!location.IsRectBasedTest());
+  HitTestResult result(HitTestRequest(hit_type), location);
 
   if (!frame || !frame->ContentLayoutObject())
     return result;
   if (frame->View()) {
-    IntRect rect = frame->View()->VisibleContentRect(kIncludeScrollbars);
-    if (!rect.Contains(RoundedIntPoint(point)))
+    FloatRect rect(FloatPoint(), FloatSize(frame->View()->Size()));
+    if (!location.Intersects(rect))
       return result;
   }
-  frame->ContentLayoutObject()->HitTest(result);
+  frame->ContentLayoutObject()->HitTest(location, result);
   return result;
 }
 
@@ -111,7 +113,7 @@ LayoutPoint ContentPointFromRootFrame(LocalFrame* frame,
   LocalFrameView* view = frame->View();
   // FIXME: Is it really OK to use the wrong coordinates here when view is 0?
   // Historically the code would just crash; this is clearly no worse than that.
-  return LayoutPoint(view ? view->RootFrameToContents(point_in_root_frame)
+  return LayoutPoint(view ? view->ConvertFromRootFrame(point_in_root_frame)
                           : point_in_root_frame);
 }
 

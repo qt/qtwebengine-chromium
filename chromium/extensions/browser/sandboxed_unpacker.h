@@ -39,6 +39,10 @@ namespace extensions {
 class Extension;
 enum class SandboxedUnpackerFailureReason;
 
+namespace declarative_net_request {
+struct IndexAndPersistRulesResult;
+}
+
 class SandboxedUnpackerClient
     : public base::RefCountedDeleteOnSequence<SandboxedUnpackerClient> {
  public:
@@ -62,6 +66,9 @@ class SandboxedUnpackerClient
   // dnr_ruleset_checksum - Checksum for the indexed ruleset corresponding to
   // the Declarative Net Request API. Optional since it's only valid for
   // extensions which provide a declarative ruleset.
+  //
+  // Note: OnUnpackSuccess/Failure may be called either synchronously or
+  // asynchronously from SandboxedUnpacker::StartWithCrx/Directory.
   virtual void OnUnpackSuccess(
       const base::FilePath& temp_dir,
       const base::FilePath& extension_root,
@@ -163,9 +170,9 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
                         const base::Optional<std::string>& error);
   void UnpackExtensionSucceeded(
       std::unique_ptr<base::DictionaryValue> manifest);
-  void UnpackExtensionFailed(const base::string16& error);
 
-  void ReportUnpackingError(base::StringPiece error);
+  // Helper which calls ReportFailure.
+  void ReportUnpackExtensionFailed(base::StringPiece error);
 
   void ImageSanitizationDone(std::unique_ptr<base::DictionaryValue> manifest,
                              ImageSanitizer::Status status,
@@ -181,11 +188,6 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
   void MessageCatalogsSanitized(std::unique_ptr<base::DictionaryValue> manifest,
                                 JsonFileSanitizer::Status status,
                                 const std::string& error_msg);
-
-  void ReadJSONRulesetIfNeeded(std::unique_ptr<base::DictionaryValue> manifest);
-  void ReadJSONRulesetDone(std::unique_ptr<base::DictionaryValue> manifest,
-                           base::Optional<base::Value> json_ruleset,
-                           const base::Optional<std::string>& error);
 
   // Reports unpack success or failure, or unzip failure.
   void ReportSuccess(std::unique_ptr<base::DictionaryValue> original_manifest,
@@ -204,13 +206,15 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
   // Cleans up temp directory artifacts.
   void Cleanup();
 
-  // Indexes |json_ruleset| if it is non-null and persists the corresponding
-  // indexed file for the Declarative Net Request API. Also, returns the
-  // checksum of the indexed ruleset file if the ruleset was persisted. Returns
-  // false and reports failure in case of an error.
-  bool IndexAndPersistRulesIfNeeded(
-      std::unique_ptr<base::ListValue> json_ruleset,
-      base::Optional<int>* dnr_ruleset_checksum);
+  // If a Declarative Net Request JSON ruleset is present, parses the JSON
+  // ruleset for the Declarative Net Request API and persists the indexed
+  // ruleset.
+  void IndexAndPersistJSONRulesetIfNeeded(
+      std::unique_ptr<base::DictionaryValue> manifest);
+
+  void OnJSONRulesetIndexed(
+      std::unique_ptr<base::DictionaryValue> manifest,
+      declarative_net_request::IndexAndPersistRulesResult result);
 
   // Returns a JsonParser that can be used on the |unpacker_io_task_runner|.
   data_decoder::mojom::JsonParser* GetJsonParserPtr();
@@ -258,7 +262,7 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
   Manifest::Location location_;
 
   // Creation flags to use for the extension. These flags will be used
-  // when calling Extenion::Create() by the CRX installer.
+  // when calling Extension::Create() by the CRX installer.
   int creation_flags_;
 
   // Sequenced task runner where file I/O operations will be performed.

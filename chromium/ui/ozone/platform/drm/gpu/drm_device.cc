@@ -133,6 +133,15 @@ bool CanQueryForResources(int fd) {
 
 }  // namespace
 
+DrmPropertyBlobMetadata::DrmPropertyBlobMetadata(DrmDevice* drm, uint32_t id)
+    : drm_(drm), id_(id) {}
+
+DrmPropertyBlobMetadata::~DrmPropertyBlobMetadata() {
+  DCHECK(drm_);
+  DCHECK(id_);
+  drm_->DestroyPropertyBlob(id_);
+}
+
 class DrmDevice::PageFlipManager {
  public:
   PageFlipManager() : next_id_(0) {}
@@ -354,7 +363,7 @@ bool DrmDevice::RemoveFramebuffer(uint32_t framebuffer) {
 
 bool DrmDevice::PageFlip(uint32_t crtc_id,
                          uint32_t framebuffer,
-                         PageFlipCallback callback) {
+                         scoped_refptr<PageFlipRequest> page_flip_request) {
   DCHECK(file_.IsValid());
   TRACE_EVENT2("drm", "DrmDevice::PageFlip", "crtc", crtc_id, "framebuffer",
                framebuffer);
@@ -365,7 +374,8 @@ bool DrmDevice::PageFlip(uint32_t crtc_id,
   if (!drmModePageFlip(file_.GetPlatformFile(), crtc_id, framebuffer,
                        DRM_MODE_PAGE_FLIP_EVENT, reinterpret_cast<void*>(id))) {
     // If successful the payload will be removed by a PageFlip event.
-    page_flip_manager_->RegisterCallback(id, 1, std::move(callback));
+    page_flip_manager_->RegisterCallback(id, 1,
+                                         page_flip_request->AddPageFlip());
     return true;
   }
 
@@ -391,6 +401,17 @@ ScopedDrmFramebufferPtr DrmDevice::GetFramebuffer(uint32_t framebuffer) {
   TRACE_EVENT1("drm", "DrmDevice::GetFramebuffer", "framebuffer", framebuffer);
   return ScopedDrmFramebufferPtr(
       drmModeGetFB(file_.GetPlatformFile(), framebuffer));
+}
+
+ScopedDrmPlanePtr DrmDevice::GetPlane(uint32_t plane_id) {
+  DCHECK(file_.IsValid());
+  return ScopedDrmPlanePtr(drmModeGetPlane(file_.GetPlatformFile(), plane_id));
+}
+
+ScopedDrmPlaneResPtr DrmDevice::GetPlaneResources() {
+  DCHECK(file_.IsValid());
+  return ScopedDrmPlaneResPtr(
+      drmModeGetPlaneResources(file_.GetPlatformFile()));
 }
 
 ScopedDrmPropertyPtr DrmDevice::GetProperty(drmModeConnector* connector,
@@ -422,9 +443,27 @@ bool DrmDevice::SetProperty(uint32_t connector_id,
                                       property_id, value);
 }
 
+ScopedDrmPropertyBlob DrmDevice::CreatePropertyBlob(void* blob, size_t size) {
+  uint32_t id = 0;
+  int ret = drmModeCreatePropertyBlob(file_.GetPlatformFile(), blob, size, &id);
+  DCHECK(!ret && id);
+
+  return ScopedDrmPropertyBlob(new DrmPropertyBlobMetadata(this, id));
+}
+
+void DrmDevice::DestroyPropertyBlob(uint32_t id) {
+  drmModeDestroyPropertyBlob(file_.GetPlatformFile(), id);
+}
+
 bool DrmDevice::GetCapability(uint64_t capability, uint64_t* value) {
   DCHECK(file_.IsValid());
   return !drmGetCap(file_.GetPlatformFile(), capability, value);
+}
+
+ScopedDrmPropertyBlobPtr DrmDevice::GetPropertyBlob(uint32_t property_id) {
+  DCHECK(file_.IsValid());
+  return ScopedDrmPropertyBlobPtr(
+      drmModeGetPropertyBlob(file_.GetPlatformFile(), property_id));
 }
 
 ScopedDrmPropertyBlobPtr DrmDevice::GetPropertyBlob(drmModeConnector* connector,
@@ -445,6 +484,15 @@ ScopedDrmPropertyBlobPtr DrmDevice::GetPropertyBlob(drmModeConnector* connector,
   }
 
   return ScopedDrmPropertyBlobPtr();
+}
+
+bool DrmDevice::SetObjectProperty(uint32_t object_id,
+                                  uint32_t object_type,
+                                  uint32_t property_id,
+                                  uint32_t property_value) {
+  DCHECK(file_.IsValid());
+  return !drmModeObjectSetProperty(file_.GetPlatformFile(), object_id,
+                                   object_type, property_id, property_value);
 }
 
 bool DrmDevice::SetCursor(uint32_t crtc_id,
@@ -511,20 +559,23 @@ bool DrmDevice::CloseBufferHandle(uint32_t handle) {
                    &close_request);
 }
 
-bool DrmDevice::CommitProperties(drmModeAtomicReq* properties,
-                                 uint32_t flags,
-                                 uint32_t crtc_count,
-                                 PageFlipCallback callback) {
+bool DrmDevice::CommitProperties(
+    drmModeAtomicReq* properties,
+    uint32_t flags,
+    uint32_t crtc_count,
+    scoped_refptr<PageFlipRequest> page_flip_request) {
   uint64_t id = 0;
-  bool page_flip_event_requested = flags & DRM_MODE_PAGE_FLIP_EVENT;
-
-  if (page_flip_event_requested)
+  if (page_flip_request) {
+    flags |= DRM_MODE_PAGE_FLIP_EVENT;
     id = page_flip_manager_->GetNextId();
+  }
 
   if (!drmModeAtomicCommit(file_.GetPlatformFile(), properties, flags,
                            reinterpret_cast<void*>(id))) {
-    if (page_flip_event_requested)
-      page_flip_manager_->RegisterCallback(id, crtc_count, std::move(callback));
+    if (page_flip_request) {
+      page_flip_manager_->RegisterCallback(id, crtc_count,
+                                           page_flip_request->AddPageFlip());
+    }
 
     return true;
   }

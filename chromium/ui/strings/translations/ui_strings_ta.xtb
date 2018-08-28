@@ -13,6 +13,7 @@
 <translation id="1413622004203049571"><ph name="NOTIFIER_NAME" /> இடமிருந்து வரும் அறிவிப்புகளை முடக்கு</translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 நிமிடம், }other{# நிமிடங்கள், }}</translation>
 <translation id="1643823602425662293">அறிவிப்பு</translation>
+<translation id="169515659049020177">Shift</translation>
 <translation id="1710340000377843106">இப்போது</translation>
 <translation id="1752946267035950200">{MINUTES,plural, =1{1 நிமிடம்}other{# நிமிடங்கள்}}</translation>
 <translation id="1761785978543082658"><ph name="QUANTITY" /> பை</translation>
@@ -37,6 +38,7 @@
 <translation id="2295140143284145483">கருத்துக்கணிப்பு</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> டெ.பை/வி</translation>
 <translation id="24452542372838207">அறிவிப்பை விரிவாக்கு</translation>
+<translation id="2482878487686419369">அறிவிப்புகள்</translation>
 <translation id="2497284189126895209">அனைத்து கோப்புகளும்</translation>
 <translation id="2522350507219695259">அளவுத்திருத்தம் முடிந்தது</translation>
 <translation id="252373100621549798">அறியாதது</translation>
@@ -49,6 +51,7 @@
 <translation id="3036649622769666520">கோப்புகளைத் திற</translation>
 <translation id="3049748772180311791"><ph name="QUANTITY" /> மெ.பை</translation>
 <translation id="3087734570205094154">கீழே</translation>
+<translation id="3126026824346185272">Ctrl</translation>
 <translation id="3157931365184549694">மீட்டமை</translation>
 <translation id="3183922693828471536">இங்கே உருட்டு</translation>
 <translation id="3234408098842461169">கீழ்நோக்கிய அம்பு</translation>
@@ -76,6 +79,7 @@
 <translation id="4730374152663651037">அடிக்கடிப் பயன்படுத்தியவை</translation>
 <translation id="4788285488841504513">{MONTHS,plural, =1{1 மாதம் உள்ளது}other{# மாதங்கள் உள்ளன}}</translation>
 <translation id="4820616160060340806">Command+<ph name="KEY_COMBO_NAME" /></translation>
+<translation id="4841881773802181781">செருகும்</translation>
 <translation id="4968171027979920686">{SECONDS,plural, =1{1 நொடி}other{# நொடிகள்}}</translation>
 <translation id="4971687151119236543">ஊடகத்தின் முந்தைய டிராக்</translation>
 <translation id="4999762576397546063">Ctrl+<ph name="KEY_COMBO_NAME" /></translation>
@@ -118,6 +122,7 @@
 <translation id="6612467943526193239">அளவுத்திருத்தத்திலிருந்து வெளியேற, Esc எனும் விசையை அழுத்தவும்.</translation>
 <translation id="6620110761915583480">கோப்பைச் சேமி</translation>
 <translation id="6699343763173986273">ஊடகத்தின் அடுத்த டிராக்</translation>
+<translation id="673773751041746814">நீக்கும்</translation>
 <translation id="6786750046913594791">கோப்புறையை மூடு</translation>
 <translation id="6808150112686056157">ஊடகத்தை நிறுத்து</translation>
 <translation id="6845383723252244143">கோப்புறையைத் தேர்ந்தெடு</translation>

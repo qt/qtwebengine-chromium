@@ -65,9 +65,9 @@ class GpuBlacklistTest : public testing::Test {
   void SetUp() override {
     gpu_info_.gpu.vendor_id = 0x10de;
     gpu_info_.gpu.device_id = 0x0640;
-    gpu_info_.driver_vendor = "NVIDIA";
-    gpu_info_.driver_version = "1.6.18";
-    gpu_info_.driver_date = "7-14-2009";
+    gpu_info_.gpu.driver_vendor = "NVIDIA";
+    gpu_info_.gpu.driver_version = "1.6.18";
+    gpu_info_.gpu.driver_date = "7-14-2009";
     gpu_info_.machine_model_name = "MacBookPro";
     gpu_info_.machine_model_version = "7.1";
     gpu_info_.gl_vendor = "NVIDIA Corporation";
@@ -103,6 +103,8 @@ GPU_BLACKLIST_FEATURE_TEST(AcceleratedVideoDecode,
 
 GPU_BLACKLIST_FEATURE_TEST(GpuRasterization,
                            GPU_FEATURE_TYPE_GPU_RASTERIZATION)
+
+GPU_BLACKLIST_FEATURE_TEST(OOPRasterization, GPU_FEATURE_TYPE_OOP_RASTERIZATION)
 
 GPU_BLACKLIST_FEATURE_TEST(WebGL2,
                            GPU_FEATURE_TYPE_ACCELERATED_WEBGL2)

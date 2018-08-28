@@ -366,6 +366,10 @@ form {
     margin-top: 0__qem;
 }
 
+:-webkit-any(table, thead, tbody, tfoot, tr) > form:-internal-is-html {
+  display: none !important;
+}
+
 label {
     cursor: default;
 }
@@ -463,6 +467,7 @@ input[type="search" i]::-webkit-search-cancel-button {
     -webkit-margin-start: 1px;
     opacity: 0;
     pointer-events: none;
+    user-select: none !important;
 }
 
 input[type="search" i]:enabled:read-write:-webkit-any(:focus,:hover)::-webkit-search-cancel-button {
@@ -1049,7 +1054,7 @@ ruby > rt {
     text-align: start;
 }
 
-ruby > rp {
+rp {
     display: none;
 }
 
@@ -1120,6 +1125,8 @@ dialog {
     color: black
 }
 
+/* TODO(foolip): In the Fullscreen spec, there's a ::backdrop block with the
+   properties shared with :fullscreen::backdrop (see fullscreen.css). */
 dialog::backdrop {
     position: fixed;
     top: 0;

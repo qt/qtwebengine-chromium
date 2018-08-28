@@ -6,7 +6,6 @@
  */
 
 #include "GrAAConvexPathRenderer.h"
-
 #include "GrAAConvexTessellator.h"
 #include "GrCaps.h"
 #include "GrContext.h"
@@ -16,12 +15,15 @@
 #include "GrOpFlushState.h"
 #include "GrPathUtils.h"
 #include "GrProcessor.h"
+#include "GrRenderTargetContext.h"
+#include "GrShape.h"
 #include "GrSimpleMeshDrawOpHelper.h"
 #include "SkGeometry.h"
 #include "SkPathPriv.h"
 #include "SkPointPriv.h"
 #include "SkString.h"
 #include "SkTraceEvent.h"
+#include "SkTypes.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLGeometryProcessor.h"
 #include "glsl/GrGLSLProgramDataManager.h"
@@ -132,8 +134,8 @@ static bool compute_vectors(SegmentArray* segments,
         normSide = SkPointPriv::kLeft_Side;
     }
 
-    *vCount = 0;
-    *iCount = 0;
+    int64_t vCount64 = 0;
+    int64_t iCount64 = 0;
     // compute normals at all points
     for (int a = 0; a < count; ++a) {
         Segment& sega = (*segments)[a];
@@ -149,11 +151,11 @@ static bool compute_vectors(SegmentArray* segments,
             prevPt = &segb.fPts[p];
         }
         if (Segment::kLine == segb.fType) {
-            *vCount += 5;
-            *iCount += 9;
+            vCount64 += 5;
+            iCount64 += 9;
         } else {
-            *vCount += 6;
-            *iCount += 12;
+            vCount64 += 6;
+            iCount64 += 12;
         }
     }
 
@@ -166,9 +168,14 @@ static bool compute_vectors(SegmentArray* segments,
         segb.fMid = segb.fNorms[0] + sega.endNorm();
         segb.fMid.normalize();
         // corner wedges
-        *vCount += 4;
-        *iCount += 6;
+        vCount64 += 4;
+        iCount64 += 6;
     }
+    if (vCount64 > SK_MaxS32 || iCount64 > SK_MaxS32) {
+        return false;
+    }
+    *vCount = vCount64;
+    *iCount = iCount64;
     return true;
 }
 
@@ -570,21 +577,21 @@ public:
 
             GrGLSLVarying v(kHalf4_GrSLType);
             varyingHandler->addVarying("QuadEdge", &v);
-            vertBuilder->codeAppendf("%s = %s;", v.vsOut(), qe.fInQuadEdge->fName);
+            vertBuilder->codeAppendf("%s = %s;", v.vsOut(), qe.kInQuadEdge.name());
 
             // Setup pass through color
-            varyingHandler->addPassThroughAttribute(qe.fInColor, args.fOutputColor);
+            varyingHandler->addPassThroughAttribute(qe.kInColor, args.fOutputColor);
 
             GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
 
             // Setup position
-            this->writeOutputPosition(vertBuilder, gpArgs, qe.fInPosition->fName);
+            this->writeOutputPosition(vertBuilder, gpArgs, qe.kInPosition.name());
 
             // emit transforms
             this->emitTransforms(vertBuilder,
                                  varyingHandler,
                                  uniformHandler,
-                                 qe.fInPosition->asShaderVar(),
+                                 qe.kInPosition.asShaderVar(),
                                  qe.fLocalMatrix,
                                  args.fFPCoordTransformHandler);
 
@@ -640,21 +647,25 @@ private:
             : INHERITED(kQuadEdgeEffect_ClassID)
             , fLocalMatrix(localMatrix)
             , fUsesLocalCoords(usesLocalCoords) {
-        fInPosition = &this->addVertexAttrib("inPosition", kFloat2_GrVertexAttribType);
-        fInColor = &this->addVertexAttrib("inColor", kUByte4_norm_GrVertexAttribType);
-        fInQuadEdge = &this->addVertexAttrib("inQuadEdge", kHalf4_GrVertexAttribType);
+        this->setVertexAttributeCnt(3);
     }
 
-    const Attribute* fInPosition;
-    const Attribute* fInQuadEdge;
-    const Attribute* fInColor;
-    SkMatrix         fLocalMatrix;
-    bool             fUsesLocalCoords;
+    const Attribute& onVertexAttribute(int i) const override {
+        return IthAttribute(i, kInPosition, kInColor, kInQuadEdge);
+    }
+    static constexpr Attribute kInPosition = {"inPosition", kFloat2_GrVertexAttribType};
+    static constexpr Attribute kInColor = {"inColor", kUByte4_norm_GrVertexAttribType};
+    static constexpr Attribute kInQuadEdge = {"inQuadEdge", kHalf4_GrVertexAttribType};
+    SkMatrix fLocalMatrix;
+    bool fUsesLocalCoords;
 
     GR_DECLARE_GEOMETRY_PROCESSOR_TEST
 
     typedef GrGeometryProcessor INHERITED;
 };
+constexpr GrPrimitiveProcessor::Attribute QuadEdgeEffect::kInPosition;
+constexpr GrPrimitiveProcessor::Attribute QuadEdgeEffect::kInColor;
+constexpr GrPrimitiveProcessor::Attribute QuadEdgeEffect::kInQuadEdge;
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(QuadEdgeEffect);
 
@@ -712,7 +723,8 @@ static void extract_lines_only_verts(const GrAAConvexTessellator& tess,
     }
 }
 
-static sk_sp<GrGeometryProcessor> make_lines_only_gp(bool tweakAlphaForCoverage,
+static sk_sp<GrGeometryProcessor> make_lines_only_gp(const GrShaderCaps* shaderCaps,
+                                                     bool tweakAlphaForCoverage,
                                                      const SkMatrix& viewMatrix,
                                                      bool usesLocalCoords) {
     using namespace GrDefaultGeoProcFactory;
@@ -725,7 +737,10 @@ static sk_sp<GrGeometryProcessor> make_lines_only_gp(bool tweakAlphaForCoverage,
     }
     LocalCoords::Type localCoordsType =
             usesLocalCoords ? LocalCoords::kUsePosition_Type : LocalCoords::kUnused_Type;
-    return MakeForDeviceSpace(Color::kPremulGrColorAttribute_Type, coverageType, localCoordsType,
+    return MakeForDeviceSpace(shaderCaps,
+                              Color::kPremulGrColorAttribute_Type,
+                              coverageType,
+                              localCoordsType,
                               viewMatrix);
 }
 
@@ -738,10 +753,12 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrPaint&& paint, const SkMatrix& viewMatrix,
+    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+                                          GrPaint&& paint,
+                                          const SkMatrix& viewMatrix,
                                           const SkPath& path,
                                           const GrUserStencilSettings* stencilSettings) {
-        return Helper::FactoryHelper<AAConvexPathOp>(std::move(paint), viewMatrix, path,
+        return Helper::FactoryHelper<AAConvexPathOp>(context, std::move(paint), viewMatrix, path,
                                                      stencilSettings);
     }
 
@@ -769,17 +786,16 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
-                                GrPixelConfigIsClamped dstIsClamped) override {
-        return fHelper.xpRequiresDstTexture(caps, clip, dstIsClamped,
-                                            GrProcessorAnalysisCoverage::kSingleChannel,
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+        return fHelper.xpRequiresDstTexture(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
                                             &fPaths.back().fColor);
     }
 
 private:
     void prepareLinesOnlyDraws(Target* target) {
         // Setup GrGeometryProcessor
-        sk_sp<GrGeometryProcessor> gp(make_lines_only_gp(fHelper.compatibleWithAlphaAsCoverage(),
+        sk_sp<GrGeometryProcessor> gp(make_lines_only_gp(target->caps().shaderCaps(),
+                                                         fHelper.compatibleWithAlphaAsCoverage(),
                                                          fPaths.back().fViewMatrix,
                                                          fHelper.usesLocalCoords()));
         if (!gp) {
@@ -787,17 +803,15 @@ private:
             return;
         }
 
-        size_t vertexStride = gp->getVertexStride();
-
-        SkASSERT(fHelper.compatibleWithAlphaAsCoverage()
-                         ? vertexStride == sizeof(GrDefaultGeoProcFactory::PositionColorAttr)
-                         : vertexStride ==
-                                   sizeof(GrDefaultGeoProcFactory::PositionColorCoverageAttr));
+        size_t vertexStride = fHelper.compatibleWithAlphaAsCoverage()
+                                      ? sizeof(GrDefaultGeoProcFactory::PositionColorAttr)
+                                      : sizeof(GrDefaultGeoProcFactory::PositionColorCoverageAttr);
+        SkASSERT(vertexStride == gp->debugOnly_vertexStride());
 
         GrAAConvexTessellator tess;
 
         int instanceCount = fPaths.count();
-        const GrPipeline* pipeline = fHelper.makePipeline(target);
+        auto pipe = fHelper.makePipeline(target);
         for (int i = 0; i < instanceCount; i++) {
             tess.rewind();
 
@@ -830,9 +844,10 @@ private:
                                      fHelper.compatibleWithAlphaAsCoverage());
 
             GrMesh mesh(GrPrimitiveType::kTriangles);
-            mesh.setIndexed(indexBuffer, tess.numIndices(), firstIndex, 0, tess.numPts() - 1);
+            mesh.setIndexed(indexBuffer, tess.numIndices(), firstIndex, 0, tess.numPts() - 1,
+                            GrPrimitiveRestart::kNo);
             mesh.setVertexData(vertexBuffer, firstVertex);
-            target->draw(gp.get(), pipeline, mesh);
+            target->draw(gp.get(), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
         }
     }
 
@@ -843,7 +858,7 @@ private:
             return;
         }
 #endif
-        const GrPipeline* pipeline = fHelper.makePipeline(target);
+        auto pipe = fHelper.makePipeline(target);
         int instanceCount = fPaths.count();
 
         SkMatrix invert;
@@ -892,9 +907,9 @@ private:
             const GrBuffer* vertexBuffer;
             int firstVertex;
 
-            size_t vertexStride = quadProcessor->getVertexStride();
+            SkASSERT(sizeof(QuadVertex) == quadProcessor->debugOnly_vertexStride());
             QuadVertex* verts = reinterpret_cast<QuadVertex*>(target->makeVertexSpace(
-                vertexStride, vertexCount, &vertexBuffer, &firstVertex));
+                    sizeof(QuadVertex), vertexCount, &vertexBuffer, &firstVertex));
 
             if (!verts) {
                 SkDebugf("Could not allocate vertices\n");
@@ -917,9 +932,10 @@ private:
 
             for (int j = 0; j < draws.count(); ++j) {
                 const Draw& draw = draws[j];
-                mesh.setIndexed(indexBuffer, draw.fIndexCnt, firstIndex, 0, draw.fVertexCnt - 1);
+                mesh.setIndexed(indexBuffer, draw.fIndexCnt, firstIndex, 0, draw.fVertexCnt - 1,
+                                GrPrimitiveRestart::kNo);
                 mesh.setVertexData(vertexBuffer, firstVertex);
-                target->draw(quadProcessor.get(), pipeline, mesh);
+                target->draw(quadProcessor.get(), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
                 firstIndex += draw.fIndexCnt;
                 firstVertex += draw.fVertexCnt;
             }
@@ -969,7 +985,8 @@ bool GrAAConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
     SkPath path;
     args.fShape->asPath(&path);
 
-    std::unique_ptr<GrDrawOp> op = AAConvexPathOp::Make(std::move(args.fPaint), *args.fViewMatrix,
+    std::unique_ptr<GrDrawOp> op = AAConvexPathOp::Make(args.fContext, std::move(args.fPaint),
+                                                        *args.fViewMatrix,
                                                         path, args.fUserStencilSettings);
     args.fRenderTargetContext->addDrawOp(*args.fClip, std::move(op));
     return true;
@@ -983,7 +1000,7 @@ GR_DRAW_OP_TEST_DEFINE(AAConvexPathOp) {
     SkMatrix viewMatrix = GrTest::TestMatrixInvertible(random);
     SkPath path = GrTest::TestPathConvex(random);
     const GrUserStencilSettings* stencilSettings = GrGetRandomStencil(random, context);
-    return AAConvexPathOp::Make(std::move(paint), viewMatrix, path, stencilSettings);
+    return AAConvexPathOp::Make(context, std::move(paint), viewMatrix, path, stencilSettings);
 }
 
 #endif

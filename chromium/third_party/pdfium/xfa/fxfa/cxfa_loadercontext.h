@@ -11,6 +11,7 @@
 
 #include "core/fxcrt/css/cfx_csscomputedstyle.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 class CFX_XMLNode;
 class CXFA_Node;
@@ -29,8 +30,8 @@ class CXFA_LoaderContext {
   int32_t m_iLines;
   int32_t m_iTotalLines;
   uint32_t m_dwFlags;
-  CFX_XMLNode* m_pXMLNode;
-  CXFA_Node* m_pNode;
+  UnownedPtr<CFX_XMLNode> m_pXMLNode;
+  UnownedPtr<CXFA_Node> m_pNode;
   RetainPtr<CFX_CSSComputedStyle> m_pParentStyle;
   std::vector<float> m_lineHeights;
   std::vector<float> m_BlocksHeight;

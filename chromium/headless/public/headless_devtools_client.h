@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "headless/public/headless_devtools_channel.h"
 #include "headless/public/headless_export.h"
 
 namespace base {
@@ -132,6 +133,8 @@ class HEADLESS_EXPORT HeadlessDevToolsClient {
   };
 
   static std::unique_ptr<HeadlessDevToolsClient> Create();
+
+  // TODO(dgozman): remove this method and ExternalHost altogether.
   static std::unique_ptr<HeadlessDevToolsClient> CreateWithExternalHost(
       ExternalHost*);
 
@@ -181,7 +184,6 @@ class HEADLESS_EXPORT HeadlessDevToolsClient {
 
     // Returns true if the listener handled the message.
     virtual bool OnProtocolMessage(
-        const std::string& devtools_agent_host_id,
         const std::string& json_message,
         const base::DictionaryValue& parsed_message) = 0;
 
@@ -189,16 +191,23 @@ class HEADLESS_EXPORT HeadlessDevToolsClient {
     DISALLOW_COPY_AND_ASSIGN(RawProtocolListener);
   };
 
+  virtual void AttachToChannel(
+      std::unique_ptr<HeadlessDevToolsChannel> channel) = 0;
+  virtual void DetachFromChannel() = 0;
+
   virtual void SetRawProtocolListener(
       RawProtocolListener* raw_protocol_listener) = 0;
+
+  virtual std::unique_ptr<HeadlessDevToolsClient> CreateSession(
+      const std::string& session_id) = 0;
 
   // Generates an odd numbered ID.
   virtual int GetNextRawDevToolsMessageId() = 0;
 
   // The id within the message must be odd to prevent collisions.
   virtual void SendRawDevToolsMessage(const std::string& json_message) = 0;
-  virtual void SendRawDevToolsMessage(const base::DictionaryValue& message) = 0;
 
+  // TODO(dgozman): remove this method together with ExternalHost.
   virtual void DispatchMessageFromExternalHost(
       const std::string& json_message) = 0;
 

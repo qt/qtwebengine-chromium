@@ -64,8 +64,7 @@ enum RevealExtentOption { kRevealExtent, kDoNotRevealExtent };
 enum class CaretVisibility;
 
 enum class HandleVisibility { kNotVisible, kVisible };
-
-enum class SelectLineBreak { kNotSelected, kSelected };
+enum class SelectSoftLineBreak { kNotSelected, kSelected };
 
 // This is return type of ComputeLayoutSelectionStatus(paintfragment).
 // This structure represents how the fragment is selected.
@@ -74,13 +73,13 @@ enum class SelectLineBreak { kNotSelected, kSelected };
 //   |fragemnt.StartOffset <= start <= end <= fragment.EndOffset|.
 // |start| == |end| means this fragment is not selected.
 // |line_break| : This value represents If this fragment is selected and
-// selection wraps line break.
+// selection wraps soft line break.
 struct LayoutSelectionStatus {
   STACK_ALLOCATED();
 
   LayoutSelectionStatus(unsigned passed_start,
                         unsigned passed_end,
-                        SelectLineBreak passed_line_break)
+                        SelectSoftLineBreak passed_line_break)
       : start(passed_start), end(passed_end), line_break(passed_line_break) {
     DCHECK_LE(start, end);
   }
@@ -91,7 +90,7 @@ struct LayoutSelectionStatus {
 
   unsigned start;
   unsigned end;
-  SelectLineBreak line_break;
+  SelectSoftLineBreak line_break;
 };
 
 class CORE_EXPORT FrameSelection final

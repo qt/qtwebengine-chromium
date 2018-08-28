@@ -39,9 +39,7 @@ const char kQuicFieldTrialName[] = "QUIC";
 const char kQuicFieldTrialEnabledGroupName[] = "Enabled";
 const char kQuicFieldTrialHttpsEnabledGroupName[] = "HttpsEnabled";
 
-// Field trial for HTTP/2.
 const char kHttp2FieldTrialName[] = "HTTP2";
-const char kHttp2FieldTrialDisablePrefix[] = "Disable";
 
 // Gets the value of the specified command line switch, as an integer. If unable
 // to convert it to an int (It's not an int, or the switch is not present)
@@ -121,7 +119,7 @@ void ConfigureHttp2Params(const base::CommandLine& command_line,
                           base::StringPiece http2_trial_group,
                           const VariationParameters& http2_trial_params,
                           net::HttpNetworkSession::Params* params) {
-  if (http2_trial_group.starts_with(kHttp2FieldTrialDisablePrefix)) {
+  if (GetVariationParam(http2_trial_params, "http2_enabled") == "false") {
     params->enable_http2 = false;
     return;
   }
@@ -168,23 +166,23 @@ bool ShouldSupportIetfFormatQuicAltSvc(
       "true");
 }
 
-net::QuicTagVector GetQuicConnectionOptions(
+quic::QuicTagVector GetQuicConnectionOptions(
     const VariationParameters& quic_trial_params) {
   VariationParameters::const_iterator it =
       quic_trial_params.find("connection_options");
   if (it == quic_trial_params.end()) {
-    return net::QuicTagVector();
+    return quic::QuicTagVector();
   }
 
   return net::ParseQuicConnectionOptions(it->second);
 }
 
-net::QuicTagVector GetQuicClientConnectionOptions(
+quic::QuicTagVector GetQuicClientConnectionOptions(
     const VariationParameters& quic_trial_params) {
   VariationParameters::const_iterator it =
       quic_trial_params.find("client_connection_options");
   if (it == quic_trial_params.end()) {
-    return net::QuicTagVector();
+    return quic::QuicTagVector();
   }
 
   return net::ParseQuicConnectionOptions(it->second);
@@ -194,6 +192,13 @@ bool ShouldQuicCloseSessionsOnIpChange(
     const VariationParameters& quic_trial_params) {
   return base::LowerCaseEqualsASCII(
       GetVariationParam(quic_trial_params, "close_sessions_on_ip_change"),
+      "true");
+}
+
+bool ShouldQuicGoAwaySessionsOnIpChange(
+    const VariationParameters& quic_trial_params) {
+  return base::LowerCaseEqualsASCII(
+      GetVariationParam(quic_trial_params, "goaway_sessions_on_ip_change"),
       "true");
 }
 
@@ -327,7 +332,7 @@ size_t GetQuicMaxPacketLength(const VariationParameters& quic_trial_params) {
   return 0;
 }
 
-net::QuicTransportVersionVector GetQuicVersions(
+quic::QuicTransportVersionVector GetQuicVersions(
     const VariationParameters& quic_trial_params) {
   return network_session_configurator::ParseQuicVersions(
       GetVariationParam(quic_trial_params, "quic_version"));
@@ -368,6 +373,8 @@ void ConfigureQuicParams(base::StringPiece quic_trial_group,
         GetQuicClientConnectionOptions(quic_trial_params);
     params->quic_close_sessions_on_ip_change =
         ShouldQuicCloseSessionsOnIpChange(quic_trial_params);
+    params->quic_goaway_sessions_on_ip_change =
+        ShouldQuicGoAwaySessionsOnIpChange(quic_trial_params);
     int idle_connection_timeout_seconds =
         GetQuicIdleConnectionTimeoutSeconds(quic_trial_params);
     if (idle_connection_timeout_seconds != 0) {
@@ -377,7 +384,7 @@ void ConfigureQuicParams(base::StringPiece quic_trial_group,
     int reduced_ping_timeout_seconds =
         GetQuicReducedPingTimeoutSeconds(quic_trial_params);
     if (reduced_ping_timeout_seconds > 0 &&
-        reduced_ping_timeout_seconds < net::kPingTimeoutSecs) {
+        reduced_ping_timeout_seconds < quic::kPingTimeoutSecs) {
       params->quic_reduced_ping_timeout_seconds = reduced_ping_timeout_seconds;
     }
     int max_time_before_crypto_handshake_seconds =
@@ -427,7 +434,7 @@ void ConfigureQuicParams(base::StringPiece quic_trial_group,
 
   params->quic_user_agent_id = quic_user_agent_id;
 
-  net::QuicTransportVersionVector supported_versions =
+  quic::QuicTransportVersionVector supported_versions =
       GetQuicVersions(quic_trial_params);
   if (!supported_versions.empty())
     params->quic_supported_versions = supported_versions;
@@ -437,17 +444,17 @@ void ConfigureQuicParams(base::StringPiece quic_trial_group,
 
 namespace network_session_configurator {
 
-net::QuicTransportVersionVector ParseQuicVersions(
+quic::QuicTransportVersionVector ParseQuicVersions(
     const std::string& quic_versions) {
-  net::QuicTransportVersionVector supported_versions;
-  net::QuicTransportVersionVector all_supported_versions =
-      net::AllSupportedTransportVersions();
+  quic::QuicTransportVersionVector supported_versions;
+  quic::QuicTransportVersionVector all_supported_versions =
+      quic::AllSupportedTransportVersions();
 
   for (const base::StringPiece& version : base::SplitStringPiece(
            quic_versions, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL)) {
     auto it = all_supported_versions.begin();
     while (it != all_supported_versions.end()) {
-      if (net::QuicVersionToString(*it) == version) {
+      if (quic::QuicVersionToString(*it) == version) {
         supported_versions.push_back(*it);
         // Remove the supported version to deduplicate versions extracted from
         // |quic_versions|.
@@ -509,7 +516,7 @@ void ParseCommandLineAndFieldTrials(const base::CommandLine& command_line,
     }
 
     if (command_line.HasSwitch(switches::kQuicVersion)) {
-      net::QuicTransportVersionVector supported_versions =
+      quic::QuicTransportVersionVector supported_versions =
           network_session_configurator::ParseQuicVersions(
               command_line.GetSwitchValueASCII(switches::kQuicVersion));
       if (!supported_versions.empty())

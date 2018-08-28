@@ -44,6 +44,7 @@
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_ice_candidate.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_transceiver.h"
 #include "third_party/blink/renderer/platform/async_method_runner.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
@@ -52,6 +53,7 @@ namespace blink {
 
 class ExceptionState;
 class MediaStreamTrack;
+class MediaStreamTrackOrString;
 class RTCAnswerOptions;
 class RTCConfiguration;
 class RTCDTMFSender;
@@ -62,6 +64,7 @@ class RTCOfferOptions;
 class RTCPeerConnectionTest;
 class RTCRtpReceiver;
 class RTCRtpSender;
+class RTCRtpTransceiverInit;
 class RTCSessionDescription;
 class RTCSessionDescriptionInit;
 class ScriptState;
@@ -131,24 +134,24 @@ class MODULES_EXPORT RTCPeerConnection final
       ExceptionState&);
 
   ScriptPromise addIceCandidate(ScriptState*,
-                                const RTCIceCandidateInitOrRTCIceCandidate&);
+                                const RTCIceCandidateInitOrRTCIceCandidate&,
+                                ExceptionState&);
   ScriptPromise addIceCandidate(ScriptState*,
                                 const RTCIceCandidateInitOrRTCIceCandidate&,
                                 V8VoidFunction*,
-                                V8RTCPeerConnectionErrorCallback*);
+                                V8RTCPeerConnectionErrorCallback*,
+                                ExceptionState&);
 
   String iceGatheringState() const;
 
   String iceConnectionState() const;
 
+  // A local stream is any stream associated with a sender.
   MediaStreamVector getLocalStreams() const;
-
+  // A remote stream is any stream associated with a receiver.
   MediaStreamVector getRemoteStreams() const;
-  // Returns the remote stream for the descriptor, if one exists.
-  MediaStream* getRemoteStream(MediaStreamDescriptor*) const;
-  // Counts the number of receivers that have a remote stream for the descriptor
-  // in its set of associated remote streams.
-  size_t getRemoteStreamUsageCount(MediaStreamDescriptor*) const;
+  MediaStream* getRemoteStreamById(const WebString&) const;
+  bool IsRemoteStream(MediaStream* stream) const;
 
   void addStream(ScriptState*,
                  MediaStream*,
@@ -174,8 +177,12 @@ class MODULES_EXPORT RTCPeerConnection final
       MediaStreamTrack* selector);
   ScriptPromise PromiseBasedGetStats(ScriptState*, MediaStreamTrack* selector);
 
+  const HeapVector<Member<RTCRtpTransceiver>>& getTransceivers() const;
   const HeapVector<Member<RTCRtpSender>>& getSenders() const;
   const HeapVector<Member<RTCRtpReceiver>>& getReceivers() const;
+  RTCRtpTransceiver* addTransceiver(const MediaStreamTrackOrString&,
+                                    const RTCRtpTransceiverInit&,
+                                    ExceptionState&);
   RTCRtpSender* addTrack(MediaStreamTrack*, MediaStreamVector, ExceptionState&);
   void removeTrack(RTCRtpSender*, ExceptionState&);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(track);
@@ -189,6 +196,11 @@ class MODULES_EXPORT RTCPeerConnection final
 
   bool IsClosed() { return closed_; }
   void close();
+
+  // Makes the peer connection aware of the track. This is used to map web
+  // tracks to blink tracks, as is necessary for plumbing. There is no need to
+  // unregister the track because Weak references are used.
+  void RegisterTrack(MediaStreamTrack*);
 
   // We allow getStats after close, but not other calls or callbacks.
   bool ShouldFireDefaultCallbacks() { return !closed_ && !stopped_; }
@@ -213,15 +225,17 @@ class MODULES_EXPORT RTCPeerConnection final
   // WebRTCPeerConnectionHandlerClient
   void NegotiationNeeded() override;
   void DidGenerateICECandidate(scoped_refptr<WebRTCICECandidate>) override;
-  void DidChangeSignalingState(SignalingState) override;
+  void DidChangeSignalingState(
+      webrtc::PeerConnectionInterface::SignalingState) override;
   void DidChangeICEGatheringState(ICEGatheringState) override;
   void DidChangeICEConnectionState(ICEConnectionState) override;
-  void DidAddRemoteTrack(std::unique_ptr<WebRTCRtpReceiver>) override;
-  void DidRemoveRemoteTrack(std::unique_ptr<WebRTCRtpReceiver>) override;
+  void DidAddReceiverPlanB(std::unique_ptr<WebRTCRtpReceiver>) override;
+  void DidRemoveReceiverPlanB(std::unique_ptr<WebRTCRtpReceiver>) override;
+  void DidModifyTransceivers(std::vector<std::unique_ptr<WebRTCRtpTransceiver>>,
+                             bool is_remote_description) override;
   void DidAddRemoteDataChannel(WebRTCDataChannelHandler*) override;
   void ReleasePeerConnectionHandler() override;
   void ClosePeerConnection() override;
-  WebRTCOriginTrials GetOriginTrials() override;
 
   // EventTarget
   const AtomicString& InterfaceName() const override;
@@ -269,7 +283,7 @@ class MODULES_EXPORT RTCPeerConnection final
   };
 
   RTCPeerConnection(ExecutionContext*,
-                    const WebRTCConfiguration&,
+                    WebRTCConfiguration,
                     WebMediaConstraints,
                     ExceptionState&);
   void Dispose();
@@ -284,8 +298,71 @@ class MODULES_EXPORT RTCPeerConnection final
       const WebRTCRtpSender& web_sender);
   HeapVector<Member<RTCRtpReceiver>>::iterator FindReceiver(
       const WebRTCRtpReceiver& web_receiver);
+  HeapVector<Member<RTCRtpTransceiver>>::iterator FindTransceiver(
+      const WebRTCRtpTransceiver& web_transceiver);
 
-  // The "Change" methods set the state asynchronously and fire the
+  // Creates or updates the sender such that it is up-to-date with the
+  // WebRTCRtpSender in all regards *except for streams*. The web sender only
+  // knows of stream IDs; updating the stream objects requires additional logic
+  // which is different depending on context, e.g:
+  // - If created/updated with addTrack(), the streams were supplied as
+  //   arguments.
+  // The web sender's web track must already have a correspondent blink track in
+  // |tracks_|. The caller is responsible for ensuring this with
+  // RegisterTrack(), e.g:
+  // - On addTrack(), the track is supplied as an argument.
+  RTCRtpSender* CreateOrUpdateSender(std::unique_ptr<WebRTCRtpSender>,
+                                     String kind);
+  // Creates or updates the receiver such that it is up-to-date with the
+  // WebRTCRtpReceiver in all regards *except for streams*. The web receiver
+  // only knows of stream IDs; updating the stream objects requires additional
+  // logic which is different depending on context, e.g:
+  // - If created/updated with setRemoteDescription(), there is an algorithm for
+  //   processing the addition/removal of remote tracks which includes how to
+  //   create and update the associated streams set.
+  RTCRtpReceiver* CreateOrUpdateReceiver(std::unique_ptr<WebRTCRtpReceiver>);
+  // Creates or updates the transceiver such that it, including its sender and
+  // receiver, are up-to-date with the WebRTCRtpTransceiver in all regerds
+  // *except for sender and receiver streams*. The web sender and web receiver
+  // only knows of stream IDs; updating the stream objects require additional
+  // logic which is different depending on context. See above.
+  RTCRtpTransceiver* CreateOrUpdateTransceiver(
+      std::unique_ptr<WebRTCRtpTransceiver>);
+
+  // https://w3c.github.io/webrtc-pc/#process-remote-track-addition
+  void ProcessAdditionOfRemoteTrack(
+      RTCRtpTransceiver* transceiver,
+      const WebVector<WebString>& stream_ids,
+      HeapVector<std::pair<Member<MediaStream>, Member<MediaStreamTrack>>>*
+          add_list,
+      HeapVector<Member<RTCRtpTransceiver>>* track_events);
+  // https://w3c.github.io/webrtc-pc/#process-remote-track-removal
+  void ProcessRemovalOfRemoteTrack(
+      RTCRtpTransceiver* transceiver,
+      HeapVector<std::pair<Member<MediaStream>, Member<MediaStreamTrack>>>*
+          remove_list,
+      HeapVector<Member<MediaStreamTrack>>* mute_tracks);
+  // Update the |receiver->streams()| to the streams indicated by |stream_ids|,
+  // adding to |remove_list| and |add_list| accordingly.
+  // https://w3c.github.io/webrtc-pc/#set-associated-remote-streams
+  void SetAssociatedMediaStreams(
+      RTCRtpReceiver* receiver,
+      const WebVector<WebString>& stream_ids,
+      HeapVector<std::pair<Member<MediaStream>, Member<MediaStreamTrack>>>*
+          remove_list,
+      HeapVector<std::pair<Member<MediaStream>, Member<MediaStreamTrack>>>*
+          add_list);
+
+  // Sets the signaling state synchronously, and dispatches a
+  // signalingstatechange event synchronously or asynchronously depending on
+  // |dispatch_event_immediately|.
+  // TODO(hbos): The ability to not fire the event asynchronously is there
+  // because CloseInternal() has historically fired asynchronously along with
+  // other asynchronously fired events. If close() does not fire any events,
+  // |dispatch_event_immediately| can be removed. https://crbug.com/849247
+  void ChangeSignalingState(webrtc::PeerConnectionInterface::SignalingState,
+                            bool dispatch_event_immediately);
+  // The remaining "Change" methods set the state asynchronously and fire the
   // corresponding event immediately after changing the state (if it was really
   // changed).
   //
@@ -298,15 +375,6 @@ class MODULES_EXPORT RTCPeerConnection final
   // possible to, for example, end up with two "icegatheringstatechange" events
   // that are delayed somehow and cause the application to read a "complete"
   // gathering state twice, missing the "gathering" state in the middle.
-  //
-  // TODO(deadbeef): This wasn't done for the signaling state because it
-  // resulted in a change to the order of the signaling state being updated
-  // relative to the SetLocalDescription or SetRemoteDescription promise being
-  // resolved. Some additional refactoring would be necessary to fix this; for
-  // example, passing the new signaling state along with the SRD/SLD callbacks
-  // as opposed to relying on a separate event.
-  void ChangeSignalingState(WebRTCPeerConnectionHandlerClient::SignalingState);
-
   void ChangeIceGatheringState(
       WebRTCPeerConnectionHandlerClient::ICEGatheringState);
   bool SetIceGatheringState(
@@ -325,7 +393,7 @@ class MODULES_EXPORT RTCPeerConnection final
                                        const RTCSessionDescriptionInit&,
                                        String* sdp);
 
-  SignalingState signaling_state_;
+  webrtc::PeerConnectionInterface::SignalingState signaling_state_;
   ICEGatheringState ice_gathering_state_;
   ICEConnectionState ice_connection_state_;
 
@@ -333,8 +401,15 @@ class MODULES_EXPORT RTCPeerConnection final
   // includes tracks of |rtp_senders_| and |rtp_receivers_|.
   HeapHashMap<WeakMember<MediaStreamComponent>, WeakMember<MediaStreamTrack>>
       tracks_;
+  // In Plan B, senders and receivers exist independently of one another.
+  // In Unified Plan, all senders and receivers are the sender-receiver pairs of
+  // transceivers.
+  // TODO(hbos): When Plan B is removed, remove |rtp_senders_| and
+  // |rtp_receivers_| since these are part of |transceivers_|.
+  // https://crbug.com/857004
   HeapVector<Member<RTCRtpSender>> rtp_senders_;
   HeapVector<Member<RTCRtpReceiver>> rtp_receivers_;
+  HeapVector<Member<RTCRtpTransceiver>> transceivers_;
 
   std::unique_ptr<WebRTCPeerConnectionHandler> peer_handler_;
 
@@ -355,6 +430,13 @@ class MODULES_EXPORT RTCPeerConnection final
   String last_answer_;
 
   bool has_data_channels_;  // For RAPPOR metrics
+  // In Plan B, senders and receivers are added or removed independently of one
+  // another. In Unified Plan, senders and receivers are created in pairs as
+  // transceivers. Transceivers may become inactive, but are never removed.
+  // The value of this member affects the behavior of some methods and what
+  // information is surfaced from webrtc. This has the value "kPlanB" or
+  // "kUnifiedPlan", if constructed with "kDefault" it is translated to one or
+  // the other.
   WebRTCSdpSemantics sdp_semantics_;
 };
 

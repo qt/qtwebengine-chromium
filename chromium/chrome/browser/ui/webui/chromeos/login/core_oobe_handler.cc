@@ -47,8 +47,7 @@
 #include "google_apis/google_api_keys.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/aura/window_tree_host.h"
-#include "ui/display/display.h"
-#include "ui/display/manager/display_manager.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/display/screen.h"
 #include "ui/events/event_sink.h"
 #include "ui/gfx/geometry/size.h"
@@ -89,10 +88,11 @@ CoreOobeHandler::CoreOobeHandler(OobeUI* oobe_ui,
                                  JSCallsContainer* js_calls_container)
     : BaseWebUIHandler(js_calls_container),
       oobe_ui_(oobe_ui),
-      version_info_updater_(this) {
+      version_info_updater_(this),
+      weak_ptr_factory_(this) {
   DCHECK(js_calls_container);
   set_call_js_prefix(kJsScreenPath);
-  if (!ash_util::IsRunningInMash()) {
+  if (features::IsAshInBrowserProcess()) {
     AccessibilityManager* accessibility_manager = AccessibilityManager::Get();
     CHECK(accessibility_manager);
     accessibility_subscription_ = accessibility_manager->RegisterCallback(
@@ -104,9 +104,19 @@ CoreOobeHandler::CoreOobeHandler(OobeUI* oobe_ui,
 
   TabletModeClient* tablet_mode_client = TabletModeClient::Get();
   tablet_mode_client->AddObserver(this);
+
+  OobeConfiguration::Get()->AddObserver(this);
+
+  // |connector| may be null in tests.
+  auto* connector = ash_util::GetServiceManagerConnector();
+  if (connector) {
+    connector->BindInterface(ash::mojom::kServiceName,
+                             &cros_display_config_ptr_);
+  }
 }
 
 CoreOobeHandler::~CoreOobeHandler() {
+  OobeConfiguration::Get()->RemoveObserver(this);
   TabletModeClient::Get()->RemoveObserver(this);
 }
 
@@ -141,6 +151,14 @@ void CoreOobeHandler::DeclareLocalizedValues(
   builder->Add("deviceRequisitionSharkPromptText",
                IDS_ENTERPRISE_DEVICE_REQUISITION_SHARK_PROMPT_TEXT);
 
+  // Strings for enable demo mode dialog.
+  builder->Add("enableDemoModeDialogTitle", IDS_ENABLE_DEMO_MODE_DIALOG_TITLE);
+  builder->Add("enableDemoModeDialogText", IDS_ENABLE_DEMO_MODE_DIALOG_TEXT);
+  builder->Add("enableDemoModeDialogConfirm",
+               IDS_ENABLE_DEMO_MODE_DIALOG_CONFIRM);
+  builder->Add("enableDemoModeDialogCancel",
+               IDS_ENABLE_DEMO_MODE_DIALOG_CANCEL);
+
   // Strings for Asset Identifier shown in version string.
   builder->Add("assetIdLabel", IDS_OOBE_ASSET_ID_LABEL);
 
@@ -159,6 +177,7 @@ void CoreOobeHandler::Initialize() {
   UpdateDeviceRequisition();
   UpdateKeyboardState();
   UpdateClientAreaSize();
+  UpdateOobeConfiguration();
 }
 
 void CoreOobeHandler::GetAdditionalParameters(base::DictionaryValue* dict) {
@@ -195,6 +214,9 @@ void CoreOobeHandler::RegisterMessages() {
   AddCallback("raiseTabKeyEvent", &CoreOobeHandler::HandleRaiseTabKeyEvent);
   AddCallback("setOobeBootstrappingSlave",
               &CoreOobeHandler::HandleSetOobeBootstrappingSlave);
+  // Note: Used by enterprise_RemoraRequisitionDisplayUsage.py:
+  // TODO(felixe): Use chrome.system.display or cros_display_config.mojom,
+  // https://crbug.com/858958.
   AddRawCallback("getPrimaryDisplayNameForTesting",
                  &CoreOobeHandler::HandleGetPrimaryDisplayNameForTesting);
   AddCallback("setupDemoMode", &CoreOobeHandler::HandleSetupDemoMode);
@@ -257,10 +279,6 @@ void CoreOobeHandler::SetUsageStats(bool checked) {
   CallJSOrDefer("setUsageStats", checked);
 }
 
-void CoreOobeHandler::SetOemEulaUrl(const std::string& oem_eula_url) {
-  CallJSOrDefer("setOemEulaUrl", oem_eula_url);
-}
-
 void CoreOobeHandler::SetTpmPassword(const std::string& tpm_password) {
   CallJSOrDefer("setTpmPassword", tpm_password);
 }
@@ -293,6 +311,7 @@ void CoreOobeHandler::SetClientAreaSize(int width, int height) {
 void CoreOobeHandler::HandleInitialized() {
   ExecuteDeferredJSCalls();
   oobe_ui_->InitializeHandlers();
+  AllowJavascript();
 }
 
 void CoreOobeHandler::HandleSkipUpdateEnrollAfterEula() {
@@ -370,7 +389,15 @@ void CoreOobeHandler::HandleScreenAssetsLoaded(
 }
 
 void CoreOobeHandler::HandleSkipToLoginForTesting(const base::ListValue* args) {
-  LoginScreenContext context(args);
+  LoginScreenContext context;
+
+  // Parse |args|.
+  if (args->GetSize() > 0) {
+    std::string email;
+    if (args->GetString(0, &email))
+      context.set_email(email);
+  }
+
   if (WizardController::default_controller())
     WizardController::default_controller()->SkipToLoginForTesting(context);
 }
@@ -437,8 +464,12 @@ void CoreOobeHandler::SetLoginUserCount(int user_count) {
   CallJSOrDefer("setLoginUserCount", user_count);
 }
 
+void CoreOobeHandler::ForwardAccelerator(std::string accelerator_name) {
+  CallJSOrDefer("handleAccelerator", accelerator_name);
+}
+
 void CoreOobeHandler::UpdateA11yState() {
-  if (ash_util::IsRunningInMash()) {
+  if (!features::IsAshInBrowserProcess()) {
     NOTIMPLEMENTED();
     return;
   }
@@ -460,9 +491,11 @@ void CoreOobeHandler::UpdateA11yState() {
 
 void CoreOobeHandler::UpdateOobeUIVisibility() {
   const std::string& display = oobe_ui_->display_type();
-  CallJSOrDefer("showAPIKeysNotice", !google_apis::HasKeysConfigured() &&
-                                         (display == OobeUI::kOobeDisplay ||
-                                          display == OobeUI::kLoginDisplay));
+  bool has_api_keys_configured = google_apis::HasAPIKeyConfigured() &&
+                                 google_apis::HasOAuthClientConfigured();
+  CallJSOrDefer("showAPIKeysNotice",
+                !has_api_keys_configured && (display == OobeUI::kOobeDisplay ||
+                                             display == OobeUI::kLoginDisplay));
 
   // Don't show version label on the stable channel by default.
   bool should_show_version = true;
@@ -512,12 +545,15 @@ void CoreOobeHandler::UpdateDeviceRequisition() {
 }
 
 void CoreOobeHandler::UpdateKeyboardState() {
-  keyboard::KeyboardController* keyboard_controller =
-      keyboard::KeyboardController::GetInstance();
-  if (keyboard_controller) {
-    const bool is_keyboard_shown = keyboard_controller->keyboard_visible();
-    ShowControlBar(!is_keyboard_shown);
-    SetVirtualKeyboardShown(is_keyboard_shown);
+  // TODO(mash): Support virtual keyboard under MASH. There is no
+  // KeyboardController in the browser process under MASH.
+  if (features::IsAshInBrowserProcess()) {
+    auto* keyboard_controller = keyboard::KeyboardController::Get();
+    if (keyboard_controller->enabled()) {
+      const bool is_keyboard_shown = keyboard_controller->IsKeyboardVisible();
+      ShowControlBar(!is_keyboard_shown);
+      SetVirtualKeyboardShown(is_keyboard_shown);
+    }
   }
 }
 
@@ -529,6 +565,17 @@ void CoreOobeHandler::UpdateClientAreaSize() {
   const gfx::Size size =
       display::Screen::GetScreen()->GetPrimaryDisplay().size();
   SetClientAreaSize(size.width(), size.height());
+}
+
+void CoreOobeHandler::OnOobeConfigurationChanged() {
+  UpdateOobeConfiguration();
+}
+
+void CoreOobeHandler::UpdateOobeConfiguration() {
+  if (OobeConfiguration::Get()) {
+    CallJSOrDefer("updateOobeConfiguration",
+                  OobeConfiguration::Get()->GetConfiguration());
+  }
 }
 
 void CoreOobeHandler::OnAccessibilityStatusChanged(
@@ -577,27 +624,31 @@ void CoreOobeHandler::HandleGetPrimaryDisplayNameForTesting(
   const base::Value* callback_id;
   CHECK(args->Get(0, &callback_id));
 
-  const auto primary_display_id =
-      display::Screen::GetScreen()->GetPrimaryDisplay().id();
-  const display::DisplayManager* display_manager =
-      ash::Shell::Get()->display_manager();
-  const std::string display_name =
-      display_manager->GetDisplayNameForId(primary_display_id);
+  cros_display_config_ptr_->GetDisplayUnitInfoList(
+      false /* single_unified */,
+      base::BindOnce(&CoreOobeHandler::GetPrimaryDisplayNameCallback,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id->Clone()));
+}
 
+void CoreOobeHandler::GetPrimaryDisplayNameCallback(
+    const base::Value& callback_id,
+    std::vector<ash::mojom::DisplayUnitInfoPtr> info_list) {
   AllowJavascript();
-  ResolveJavascriptCallback(*callback_id, base::Value(display_name));
+  std::string display_name;
+  for (const ash::mojom::DisplayUnitInfoPtr& info : info_list) {
+    if (info->is_primary) {
+      display_name = info->name;
+      break;
+    }
+  }
+  DCHECK(!display_name.empty());
+  ResolveJavascriptCallback(callback_id, base::Value(display_name));
 }
 
 void CoreOobeHandler::HandleSetupDemoMode() {
-  const bool is_demo_mode_enabled =
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kEnableDemoMode);
-  if (!is_demo_mode_enabled)
-    return;
-
   WizardController* wizard_controller = WizardController::default_controller();
   if (wizard_controller && !wizard_controller->login_screen_started()) {
-    wizard_controller->AdvanceToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
+    wizard_controller->StartDemoModeSetup();
   }
 }
 

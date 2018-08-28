@@ -23,7 +23,6 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_NODE_RARE_DATA_H_
 
 #include "base/macros.h"
-#include "third_party/blink/renderer/core/dom/mutation_observer_registration.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
@@ -34,14 +33,13 @@ class ComputedStyle;
 enum class DynamicRestyleFlags;
 enum class ElementFlags;
 class LayoutObject;
+class MutationObserverRegistration;
 class NodeListsNodeData;
 
 class NodeMutationObserverData final
     : public GarbageCollected<NodeMutationObserverData> {
  public:
-  static NodeMutationObserverData* Create() {
-    return new NodeMutationObserverData;
-  }
+  static NodeMutationObserverData* Create();
 
   const HeapVector<TraceWrapperMember<MutationObserverRegistration>>&
   Registry() {
@@ -53,37 +51,12 @@ class NodeMutationObserverData final
     return transient_registry_;
   }
 
-  void AddTransientRegistration(MutationObserverRegistration* registration) {
-    transient_registry_.insert(registration);
-  }
+  void AddTransientRegistration(MutationObserverRegistration* registration);
+  void RemoveTransientRegistration(MutationObserverRegistration* registration);
+  void AddRegistration(MutationObserverRegistration* registration);
+  void RemoveRegistration(MutationObserverRegistration* registration);
 
-  void RemoveTransientRegistration(MutationObserverRegistration* registration) {
-    DCHECK(transient_registry_.Contains(registration));
-    transient_registry_.erase(registration);
-  }
-
-  void AddRegistration(MutationObserverRegistration* registration) {
-    registry_.push_back(registration);
-  }
-
-  void RemoveRegistration(MutationObserverRegistration* registration) {
-    DCHECK(registry_.Contains(registration));
-    registry_.EraseAt(registry_.Find(registration));
-  }
-
-  void Trace(blink::Visitor* visitor) {
-    visitor->Trace(registry_);
-    visitor->Trace(transient_registry_);
-  }
-
-  void TraceWrappers(ScriptWrappableVisitor* visitor) const {
-    for (auto registration : registry_) {
-      visitor->TraceWrappers(registration);
-    }
-    for (auto registration : transient_registry_) {
-      visitor->TraceWrappers(registration);
-    }
-  }
+  void Trace(blink::Visitor* visitor);
 
  private:
   NodeMutationObserverData() = default;
@@ -93,8 +66,6 @@ class NodeMutationObserverData final
       transient_registry_;
   DISALLOW_COPY_AND_ASSIGN(NodeMutationObserverData);
 };
-
-DEFINE_TRAIT_FOR_TRACE_WRAPPERS(NodeMutationObserverData);
 
 class NodeRenderingData {
  public:
@@ -206,12 +177,8 @@ class NodeRareData : public GarbageCollectedFinalized<NodeRareData>,
   };
 
   void Trace(blink::Visitor*);
-
   void TraceAfterDispatch(blink::Visitor*);
   void FinalizeGarbageCollectedObject();
-
-  void TraceWrappers(ScriptWrappableVisitor*) const;
-  void TraceWrappersAfterDispatch(ScriptWrappableVisitor*) const;
 
  protected:
   explicit NodeRareData(NodeRenderingData* node_layout_data)
@@ -237,8 +204,6 @@ class NodeRareData : public GarbageCollectedFinalized<NodeRareData>,
   unsigned is_element_rare_data_ : 1;
   DISALLOW_COPY_AND_ASSIGN(NodeRareData);
 };
-
-DEFINE_TRAIT_FOR_TRACE_WRAPPERS(NodeRareData);
 
 }  // namespace blink
 

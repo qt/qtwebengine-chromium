@@ -15,7 +15,7 @@
 #include "base/win/scoped_select_object.h"
 #include "gpu/command_buffer/common/swap_buffers_complete_params.h"
 #include "gpu/command_buffer/service/feature_info.h"
-#include "gpu/command_buffer/service/gpu_preferences.h"
+#include "gpu/config/gpu_preferences.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/win/hidden_window.h"
 #include "ui/gfx/buffer_format_util.h"
@@ -66,7 +66,6 @@ class TestImageTransportSurfaceDelegate
   const GpuPreferences& GetGpuPreferences() const override {
     return gpu_preferences_;
   }
-  void SetSnapshotRequestedCallback(const base::Closure& callback) override {}
   void BufferPresented(const gfx::PresentationFeedback& feedback) override {}
   void AddFilter(IPC::MessageFilter* message_filter) override {}
   int32_t GetRouteID() const override { return 0; }

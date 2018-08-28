@@ -86,7 +86,6 @@
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/html_slot_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
-#include "third_party/blink/renderer/core/layout/generated_children.h"
 #include "third_party/blink/renderer/core/media_type_names.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/style/style_inherited_variables.h"
@@ -281,15 +280,14 @@ void StyleResolver::MatchPseudoPartRules(const Element& element,
       collector.FinishAddingAuthorRulesForTreeScope();
     }
 
-    // We have reached the top-level document.
-    if (!(host = host->OwnerShadowHost()))
-      return;
-
-    // After the direct host of the element, if the host doesn't forward any
-    // parts using partmap= then the element is unreachable from any scope above
-    // and we can stop.
+    // If the host doesn't forward any parts using partmap= then the element is
+    // unreachable from any scope further above and we can stop.
     const NamesMap* part_map = host->PartNamesMap();
     if (!part_map)
+      return;
+
+    // We have reached the top-level document.
+    if (!(host = host->OwnerShadowHost()))
       return;
 
     current_names.PushMap(*part_map);
@@ -805,79 +803,9 @@ scoped_refptr<AnimatableValue> StyleResolver::CreateAnimatableValueSnapshot(
   return CSSAnimatableValueFactory::Create(property, *state.Style());
 }
 
-PseudoElement* StyleResolver::CreatePseudoElement(Element* parent,
-                                                  PseudoId pseudo_id) {
-  if (pseudo_id == kPseudoIdFirstLetter)
-    return FirstLetterPseudoElement::Create(parent);
-  return PseudoElement::Create(parent, pseudo_id);
-}
-
-PseudoElement* StyleResolver::CreatePseudoElementIfNeeded(Element& parent,
-                                                          PseudoId pseudo_id) {
-  if (!parent.CanGeneratePseudoElement(pseudo_id))
-    return nullptr;
-
-  LayoutObject* parent_layout_object = parent.GetLayoutObject();
-  if (!parent_layout_object) {
-    DCHECK(parent.HasDisplayContentsStyle());
-    parent_layout_object =
-        LayoutTreeBuilderTraversal::ParentLayoutObject(parent);
-  }
-
-  if (!parent_layout_object)
-    return nullptr;
-
-  ComputedStyle* parent_style = parent.MutableComputedStyle();
-  DCHECK(parent_style);
-
-  // The first letter pseudo element has to look up the tree and see if any
-  // of the ancestors are first letter.
-  if (pseudo_id < kFirstInternalPseudoId && pseudo_id != kPseudoIdFirstLetter &&
-      !parent_style->HasPseudoStyle(pseudo_id)) {
-    return nullptr;
-  }
-
-  if (pseudo_id == kPseudoIdBackdrop && !parent.IsInTopLayer())
-    return nullptr;
-
-  if (pseudo_id == kPseudoIdFirstLetter &&
-      (parent.IsSVGElement() ||
-       !FirstLetterPseudoElement::FirstLetterTextLayoutObject(parent)))
-    return nullptr;
-
-  if (!CanHaveGeneratedChildren(*parent_layout_object))
-    return nullptr;
-
-  if (ComputedStyle* cached_style =
-          parent_style->GetCachedPseudoStyle(pseudo_id)) {
-    if (!PseudoElementLayoutObjectIsNeeded(cached_style))
-      return nullptr;
-    return CreatePseudoElement(&parent, pseudo_id);
-  }
-
-  StyleResolverState state(GetDocument(), &parent, parent_style,
-                           parent_layout_object->Style());
-  if (!PseudoStyleForElementInternal(parent, pseudo_id, parent_style, state))
-    return nullptr;
-  scoped_refptr<ComputedStyle> style = state.TakeStyle();
-  DCHECK(style);
-  parent_style->AddCachedPseudoStyle(style);
-
-  if (!PseudoElementLayoutObjectIsNeeded(style.get()))
-    return nullptr;
-
-  PseudoElement* pseudo = CreatePseudoElement(&parent, pseudo_id);
-
-  SetAnimationUpdateIfNeeded(state, *pseudo);
-  if (ElementAnimations* element_animations = pseudo->GetElementAnimations())
-    element_animations->CssAnimations().MaybeApplyPendingUpdate(pseudo);
-  return pseudo;
-}
-
 bool StyleResolver::PseudoStyleForElementInternal(
     Element& element,
     const PseudoStyleRequest& pseudo_style_request,
-    const ComputedStyle* parent_style,
     StyleResolverState& state) {
   DCHECK(GetDocument().GetFrame());
   DCHECK(GetDocument().GetSettings());
@@ -967,8 +895,7 @@ scoped_refptr<ComputedStyle> StyleResolver::PseudoStyleForElement(
 
   StyleResolverState state(GetDocument(), element, parent_style,
                            parent_layout_object_style);
-  if (!PseudoStyleForElementInternal(*element, pseudo_style_request,
-                                     parent_style, state)) {
+  if (!PseudoStyleForElementInternal(*element, pseudo_style_request, state)) {
     if (pseudo_style_request.type == PseudoStyleRequest::kForRenderer)
       return nullptr;
     return state.TakeStyle();
@@ -1373,6 +1300,14 @@ static inline bool IsValidFirstLetterStyleProperty(CSSPropertyID id) {
     case CSSPropertyBackgroundRepeatX:
     case CSSPropertyBackgroundRepeatY:
     case CSSPropertyBackgroundSize:
+    case CSSPropertyBorderBlockEnd:
+    case CSSPropertyBorderBlockEndColor:
+    case CSSPropertyBorderBlockEndStyle:
+    case CSSPropertyBorderBlockEndWidth:
+    case CSSPropertyBorderBlockStart:
+    case CSSPropertyBorderBlockStartColor:
+    case CSSPropertyBorderBlockStartStyle:
+    case CSSPropertyBorderBlockStartWidth:
     case CSSPropertyBorderBottomColor:
     case CSSPropertyBorderBottomLeftRadius:
     case CSSPropertyBorderBottomRightRadius:
@@ -1383,6 +1318,14 @@ static inline bool IsValidFirstLetterStyleProperty(CSSPropertyID id) {
     case CSSPropertyBorderImageSlice:
     case CSSPropertyBorderImageSource:
     case CSSPropertyBorderImageWidth:
+    case CSSPropertyBorderInlineEnd:
+    case CSSPropertyBorderInlineEndColor:
+    case CSSPropertyBorderInlineEndStyle:
+    case CSSPropertyBorderInlineEndWidth:
+    case CSSPropertyBorderInlineStart:
+    case CSSPropertyBorderInlineStartColor:
+    case CSSPropertyBorderInlineStartStyle:
+    case CSSPropertyBorderInlineStartWidth:
     case CSSPropertyBorderLeftColor:
     case CSSPropertyBorderLeftStyle:
     case CSSPropertyBorderLeftWidth:
@@ -1413,7 +1356,11 @@ static inline bool IsValidFirstLetterStyleProperty(CSSPropertyID id) {
     case CSSPropertyFontWeight:
     case CSSPropertyLetterSpacing:
     case CSSPropertyLineHeight:
+    case CSSPropertyMarginBlockEnd:
+    case CSSPropertyMarginBlockStart:
     case CSSPropertyMarginBottom:
+    case CSSPropertyMarginInlineEnd:
+    case CSSPropertyMarginInlineStart:
     case CSSPropertyMarginLeft:
     case CSSPropertyMarginRight:
     case CSSPropertyMarginTop:
@@ -1431,34 +1378,14 @@ static inline bool IsValidFirstLetterStyleProperty(CSSPropertyID id) {
     case CSSPropertyTextTransform:
     case CSSPropertyTextUnderlinePosition:
     case CSSPropertyVerticalAlign:
-    case CSSPropertyWebkitBorderAfter:
-    case CSSPropertyWebkitBorderAfterColor:
-    case CSSPropertyWebkitBorderAfterStyle:
-    case CSSPropertyWebkitBorderAfterWidth:
-    case CSSPropertyWebkitBorderBefore:
-    case CSSPropertyWebkitBorderBeforeColor:
-    case CSSPropertyWebkitBorderBeforeStyle:
-    case CSSPropertyWebkitBorderBeforeWidth:
-    case CSSPropertyWebkitBorderEnd:
-    case CSSPropertyWebkitBorderEndColor:
-    case CSSPropertyWebkitBorderEndStyle:
-    case CSSPropertyWebkitBorderEndWidth:
     case CSSPropertyWebkitBorderHorizontalSpacing:
     case CSSPropertyWebkitBorderImage:
-    case CSSPropertyWebkitBorderStart:
-    case CSSPropertyWebkitBorderStartColor:
-    case CSSPropertyWebkitBorderStartStyle:
-    case CSSPropertyWebkitBorderStartWidth:
     case CSSPropertyWebkitBorderVerticalSpacing:
     case CSSPropertyWebkitFontSmoothing:
-    case CSSPropertyWebkitMarginAfter:
     case CSSPropertyWebkitMarginAfterCollapse:
-    case CSSPropertyWebkitMarginBefore:
     case CSSPropertyWebkitMarginBeforeCollapse:
     case CSSPropertyWebkitMarginBottomCollapse:
     case CSSPropertyWebkitMarginCollapse:
-    case CSSPropertyWebkitMarginEnd:
-    case CSSPropertyWebkitMarginStart:
     case CSSPropertyWebkitMarginTopCollapse:
     case CSSPropertyWordSpacing:
       return true;
@@ -1599,7 +1526,10 @@ void StyleResolver::ApplyProperties(
       // non-inherited properties as they might override the value inherited
       // here. For this reason we don't allow declarations with explicitly
       // inherited properties to be cached.
-      DCHECK(!current.Value().IsInheritedValue());
+      DCHECK(!current.Value().IsInheritedValue() ||
+             (!state.ApplyPropertyToRegularStyle() &&
+              (!state.ApplyPropertyToVisitedLinkStyle() ||
+               !current.Property().IsValidForVisitedLink())));
       continue;
     }
 

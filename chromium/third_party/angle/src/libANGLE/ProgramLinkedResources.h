@@ -12,8 +12,8 @@
 #define LIBANGLE_UNIFORMLINKER_H_
 
 #include "angle_gl.h"
+#include "common/PackedEnums.h"
 #include "common/angleutils.h"
-#include "libANGLE/PackedEnums.h"
 #include "libANGLE/VaryingPacking.h"
 
 #include <functional>
@@ -38,8 +38,9 @@ struct LinkedUniform;
 class ProgramState;
 class ProgramBindings;
 class Shader;
-struct VariableLocation;
 struct ShaderVariableBuffer;
+struct UnusedUniform;
+struct VariableLocation;
 
 using AtomicCounterBuffer = ShaderVariableBuffer;
 
@@ -54,6 +55,7 @@ class UniformLinker final : angle::NonCopyable
               const ProgramBindings &uniformLocationBindings);
 
     void getResults(std::vector<LinkedUniform> *uniforms,
+                    std::vector<UnusedUniform> *unusedUniforms,
                     std::vector<VariableLocation> *uniformLocations);
 
   private:
@@ -84,17 +86,11 @@ class UniformLinker final : angle::NonCopyable
 
     bool flattenUniformsAndCheckCapsForShader(const Context *context,
                                               Shader *shader,
-                                              GLuint maxUniformComponents,
-                                              GLuint maxTextureImageUnits,
-                                              GLuint maxImageUnits,
-                                              GLuint maxAtomicCounters,
-                                              const std::string &componentsErrorMessage,
-                                              const std::string &samplerErrorMessage,
-                                              const std::string &imageErrorMessage,
-                                              const std::string &atomicCounterErrorMessage,
+                                              const Caps &caps,
                                               std::vector<LinkedUniform> &samplerUniforms,
                                               std::vector<LinkedUniform> &imageUniforms,
                                               std::vector<LinkedUniform> &atomicCounterUniforms,
+                                              std::vector<UnusedUniform> &unusedUniforms,
                                               InfoLog &infoLog);
 
     bool flattenUniformsAndCheckCaps(const Context *context, InfoLog &infoLog);
@@ -104,6 +100,7 @@ class UniformLinker final : angle::NonCopyable
                                       std::vector<LinkedUniform> *samplerUniforms,
                                       std::vector<LinkedUniform> *imageUniforms,
                                       std::vector<LinkedUniform> *atomicCounterUniforms,
+                                      std::vector<UnusedUniform> *unusedUniforms,
                                       ShaderType shaderType);
 
     ShaderUniformCount flattenArrayOfStructsUniform(
@@ -114,7 +111,7 @@ class UniformLinker final : angle::NonCopyable
         std::vector<LinkedUniform> *samplerUniforms,
         std::vector<LinkedUniform> *imageUniforms,
         std::vector<LinkedUniform> *atomicCounterUniforms,
-
+        std::vector<UnusedUniform> *unusedUniforms,
         ShaderType shaderType,
         bool markActive,
         bool markStaticUse,
@@ -128,6 +125,7 @@ class UniformLinker final : angle::NonCopyable
                                             std::vector<LinkedUniform> *samplerUniforms,
                                             std::vector<LinkedUniform> *imageUniforms,
                                             std::vector<LinkedUniform> *atomicCounterUniforms,
+                                            std::vector<UnusedUniform> *unusedUniforms,
                                             ShaderType shaderType,
                                             bool markActive,
                                             bool markStaticUse,
@@ -141,6 +139,7 @@ class UniformLinker final : angle::NonCopyable
                                            std::vector<LinkedUniform> *samplerUniforms,
                                            std::vector<LinkedUniform> *imageUniforms,
                                            std::vector<LinkedUniform> *atomicCounterUniforms,
+                                           std::vector<UnusedUniform> *unusedUniforms,
                                            ShaderType shaderType,
                                            bool markActive,
                                            bool markStaticUse,
@@ -156,6 +155,7 @@ class UniformLinker final : angle::NonCopyable
                                           std::vector<LinkedUniform> *samplerUniforms,
                                           std::vector<LinkedUniform> *imageUniforms,
                                           std::vector<LinkedUniform> *atomicCounterUniforms,
+                                          std::vector<UnusedUniform> *unusedUniforms,
                                           ShaderType shaderType,
                                           bool markActive,
                                           bool markStaticUse,
@@ -172,6 +172,7 @@ class UniformLinker final : angle::NonCopyable
 
     const ProgramState &mState;
     std::vector<LinkedUniform> mUniforms;
+    std::vector<UnusedUniform> mUnusedUniforms;
     std::vector<VariableLocation> mUniformLocations;
 };
 
@@ -228,11 +229,11 @@ class InterfaceBlockLinker : angle::NonCopyable
                                        int blockIndex,
                                        const sh::BlockMemberInfo &memberInfo,
                                        int topLevelArraySize,
-                                       ShaderType shaderType) const             = 0;
-    virtual size_t getCurrentBlockMemberIndex() const                           = 0;
+                                       ShaderType shaderType) const = 0;
+    virtual size_t getCurrentBlockMemberIndex() const               = 0;
     virtual void updateBlockMemberActiveImpl(const std::string &fullName,
                                              ShaderType shaderType,
-                                             bool active) const                 = 0;
+                                             bool active) const     = 0;
 
     ShaderMap<const std::vector<sh::InterfaceBlock> *> mShaderBlocks;
 
@@ -310,12 +311,25 @@ class AtomicCounterBufferLinker final : angle::NonCopyable
 // The link operation is responsible for finishing the link of uniform and interface blocks.
 // This way it can filter out unreferenced resources and still have access to the info.
 // TODO(jmadill): Integrate uniform linking/filtering as well as interface blocks.
+struct UnusedUniform
+{
+    UnusedUniform(std::string name, bool isSampler)
+    {
+        this->name      = name;
+        this->isSampler = isSampler;
+    }
+
+    std::string name;
+    bool isSampler;
+};
+
 struct ProgramLinkedResources
 {
     VaryingPacking varyingPacking;
     UniformBlockLinker uniformBlockLinker;
     ShaderStorageBlockLinker shaderStorageBlockLinker;
     AtomicCounterBufferLinker atomicCounterBufferLinker;
+    std::vector<UnusedUniform> unusedUniforms;
 };
 
 }  // namespace gl

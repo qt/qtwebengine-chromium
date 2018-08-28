@@ -17,15 +17,14 @@
 #include "content/common/input/input_event_ack.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/input_event_ack_state.h"
-#include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "content/public/renderer/render_frame.h"
-#include "content/renderer/gpu/render_widget_compositor.h"
+#include "content/renderer/gpu/layer_tree_view.h"
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/input/render_widget_input_handler_delegate.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_widget.h"
-#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/public/platform/web_float_point.h"
 #include "third_party/blink/public/platform/web_float_size.h"
 #include "third_party/blink/public/platform/web_gesture_event.h"
@@ -194,7 +193,7 @@ RenderWidgetInputHandler::~RenderWidgetInputHandler() {}
 viz::FrameSinkId RenderWidgetInputHandler::GetFrameSinkIdAtPoint(
     const gfx::Point& point) {
   gfx::PointF point_in_pixel(point);
-  if (IsUseZoomForDSFEnabled()) {
+  if (widget_->compositor_deps()->IsUseZoomForDSFEnabled()) {
     point_in_pixel = gfx::ConvertPointToPixel(
         widget_->GetOriginalScreenInfo().device_scale_factor, point_in_pixel);
   }
@@ -305,10 +304,10 @@ void RenderWidgetInputHandler::HandleInputEvent(
   ui::LatencyInfo swap_latency_info(latency_info);
 
   swap_latency_info.AddLatencyNumber(
-      ui::LatencyComponentType::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT, 0);
-  if (widget_->compositor()) {
+      ui::LatencyComponentType::INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT);
+  if (widget_->layer_tree_view()) {
     latency_info_swap_promise_monitor =
-        widget_->compositor()->CreateLatencyInfoSwapPromiseMonitor(
+        widget_->layer_tree_view()->CreateLatencyInfoSwapPromiseMonitor(
             &swap_latency_info);
   }
 

@@ -8,7 +8,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/animation/property_handle.h"
 #include "third_party/blink/renderer/core/dom/element.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/animation/timing_function.h"
 
@@ -62,7 +61,7 @@ class AnimationAnimationInputHelpersTest : public PageTestBase {
     scoped_refptr<TimingFunction> timing_function =
         ParseTimingFunction(string, exception_state);
     EXPECT_TRUE(exception_state.HadException());
-    EXPECT_EQ(kV8TypeError, exception_state.Code());
+    EXPECT_EQ(ESErrorType::kTypeError, exception_state.CodeAs<ESErrorType>());
     exception_state.ClearException();
   }
 

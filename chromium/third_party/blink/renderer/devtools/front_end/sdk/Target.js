@@ -16,8 +16,9 @@ SDK.Target = class extends Protocol.TargetBase {
    * @param {!Protocol.InspectorBackend.Connection.Factory} connectionFactory
    * @param {?SDK.Target} parentTarget
    * @param {boolean} suspended
+   * @param {boolean} isNodeJS
    */
-  constructor(targetManager, id, name, capabilitiesMask, connectionFactory, parentTarget, suspended) {
+  constructor(targetManager, id, name, capabilitiesMask, connectionFactory, parentTarget, suspended, isNodeJS) {
     super(connectionFactory);
     this._targetManager = targetManager;
     this._name = name;
@@ -27,6 +28,7 @@ SDK.Target = class extends Protocol.TargetBase {
     this._id = id;
     this._modelByConstructor = new Map();
     this._isSuspended = suspended;
+    this._isNodeJS = isNodeJS;
   }
 
   createModels(required) {
@@ -46,12 +48,11 @@ SDK.Target = class extends Protocol.TargetBase {
    * @return {boolean}
    */
   isNodeJS() {
-    // TODO(lushnikov): this is an unreliable way to detect Node.js targets.
-    return this._capabilitiesMask === SDK.Target.Capability.JS || this._isNodeJSForTest;
+    return this._isNodeJS;
   }
 
-  setIsNodeJSForTest() {
-    this._isNodeJSForTest = true;
+  markAsNodeJSForTest() {
+    this._isNodeJS = true;
   }
 
   /**

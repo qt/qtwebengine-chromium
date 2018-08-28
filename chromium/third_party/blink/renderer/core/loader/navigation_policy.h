@@ -35,6 +35,9 @@
 
 namespace blink {
 
+class Event;
+struct WebWindowFeatures;
+
 enum NavigationPolicy {
   kNavigationPolicyIgnore,
   kNavigationPolicyDownload,
@@ -47,12 +50,17 @@ enum NavigationPolicy {
   kNavigationPolicyHandledByClientForInitialHistory,
 };
 
-CORE_EXPORT bool NavigationPolicyFromMouseEvent(unsigned short button,
-                                                bool ctrl,
-                                                bool shift,
-                                                bool alt,
-                                                bool meta,
-                                                NavigationPolicy*);
+// Returns a NavigationPolicy to use for starting a navigation
+// based on the Event. This function takes care of some security checks,
+// ensuring that synthesized events cannot trigger arbitrary downloads
+// or new tabs without user intention coming from a real input event.
+CORE_EXPORT NavigationPolicy NavigationPolicyFromEvent(Event*);
+
+// Returns a NavigationPolicy to use for navigating a new window.
+// This function respects user intention coming from a real input event,
+// and ensures that we don't perform a download instead of navigation.
+CORE_EXPORT NavigationPolicy
+NavigationPolicyForCreateWindow(const WebWindowFeatures&);
 
 }  // namespace blink
 

@@ -29,6 +29,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_GRAPHICS_CONTEXT_H_
 
 #include <memory>
+
+#include "base/macros.h"
 #include "third_party/blink/renderer/platform/fonts/font.h"
 #include "third_party/blink/renderer/platform/graphics/dash_array.h"
 #include "third_party/blink/renderer/platform/graphics/draw_looper_builder.h"
@@ -43,7 +45,6 @@
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
-#include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/skia/include/core/SkClipOp.h"
 #include "third_party/skia/include/core/SkMetaData.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -62,7 +63,6 @@ class Path;
 struct TextRunPaintInfo;
 
 class PLATFORM_EXPORT GraphicsContext {
-  WTF_MAKE_NONCOPYABLE(GraphicsContext);
   USING_FAST_MALLOC(GraphicsContext);
 
  public:
@@ -78,8 +78,8 @@ class PLATFORM_EXPORT GraphicsContext {
 
   ~GraphicsContext();
 
-  PaintCanvas* Canvas() { return canvas_; }
-  const PaintCanvas* Canvas() const { return canvas_; }
+  cc::PaintCanvas* Canvas() { return canvas_; }
+  const cc::PaintCanvas* Canvas() const { return canvas_; }
 
   PaintController& GetPaintController() { return paint_controller_; }
   const PaintController& GetPaintController() const {
@@ -189,6 +189,10 @@ class PLATFORM_EXPORT GraphicsContext {
   void FillEllipse(const FloatRect&);
   void StrokeEllipse(const FloatRect&);
 
+  void FillRect(const IntRect&);
+  void FillRect(const IntRect&,
+                const Color&,
+                SkBlendMode = SkBlendMode::kSrcOver);
   void FillRect(const FloatRect&);
   void FillRect(const FloatRect&,
                 const Color&,
@@ -219,12 +223,15 @@ class PLATFORM_EXPORT GraphicsContext {
       const FloatRect& src_rect,
       SkBlendMode = SkBlendMode::kSrcOver,
       RespectImageOrientationEnum = kDoNotRespectImageOrientation);
+  // Used for background image
   void DrawTiledImage(Image*,
-                      const FloatRect& dest_rect,
-                      const FloatPoint& src_point,
+                      const FloatSize& unsnapped_subset_size,
+                      const FloatRect& snapped_paint_rect,
+                      const FloatPoint& unsnapped_phase,
                       const FloatSize& tile_size,
                       SkBlendMode = SkBlendMode::kSrcOver,
                       const FloatSize& repeat_spacing = FloatSize());
+  // Used for border image
   void DrawTiledImage(Image*,
                       const FloatRect& dest_rect,
                       const FloatRect& src_rect,
@@ -389,9 +396,8 @@ class PLATFORM_EXPORT GraphicsContext {
 
   static int FocusRingOutsetExtent(int offset, int width);
 
-#if DCHECK_IS_ON()
   void SetInDrawingRecorder(bool);
-#endif
+  bool InDrawingRecorder() const { return in_drawing_recorder_; }
 
   static sk_sp<SkColorFilter> WebCoreColorFilterToSkiaColorFilter(ColorFilter);
 
@@ -465,7 +471,7 @@ class PLATFORM_EXPORT GraphicsContext {
   PaintFlags ApplyHighContrastFilter(const PaintFlags* input) const;
 
   // null indicates painting is contextDisabled. Never delete this object.
-  PaintCanvas* canvas_;
+  cc::PaintCanvas* canvas_;
 
   PaintController& paint_controller_;
 
@@ -487,7 +493,6 @@ class PLATFORM_EXPORT GraphicsContext {
 #if DCHECK_IS_ON()
   int layer_count_;
   bool disable_destruction_checks_;
-  bool in_drawing_recorder_;
 #endif
 
   const DisabledMode disabled_state_;
@@ -500,6 +505,9 @@ class PLATFORM_EXPORT GraphicsContext {
 
   unsigned printing_ : 1;
   unsigned has_meta_data_ : 1;
+  unsigned in_drawing_recorder_ : 1;
+
+  DISALLOW_COPY_AND_ASSIGN(GraphicsContext);
 };
 
 }  // namespace blink

@@ -9,9 +9,9 @@
 #include "services/device/public/cpp/generic_sensor/sensor_reading_shared_buffer_reader.h"
 #include "services/device/public/mojom/sensor.mojom-blink.h"
 #include "services/device/public/mojom/sensor_provider.mojom-blink.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/page/focus_changed_observer.h"
 #include "third_party/blink/renderer/core/page/page_visibility_observer.h"
+#include "third_party/blink/renderer/platform/bindings/exception_code.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 
 namespace blink {
@@ -36,7 +36,7 @@ class SensorProxy : public GarbageCollectedFinalized<SensorProxy>,
     // event if needed.
     virtual void OnSensorReadingChanged() {}
     // An error has occurred.
-    virtual void OnSensorError(ExceptionCode,
+    virtual void OnSensorError(DOMExceptionCode,
                                const String& sanitized_message,
                                const String& unsanitized_message) {}
   };
@@ -58,7 +58,7 @@ class SensorProxy : public GarbageCollectedFinalized<SensorProxy>,
   virtual std::pair<double, double> GetFrequencyLimits() const = 0;
   virtual void SetReadingForInspector(const device::SensorReading&) {}
 
-  virtual void ReportError(ExceptionCode code, const String& description);
+  virtual void ReportError(DOMExceptionCode code, const String& description);
   // Getters.
   bool IsInitializing() const { return state_ == kInitializing; }
   bool IsInitialized() const { return state_ == kInitialized; }
@@ -102,6 +102,9 @@ class SensorProxy : public GarbageCollectedFinalized<SensorProxy>,
 
   // FocusChangedObserver overrides.
   void FocusedFrameChanged() override;
+
+  // Returns true if conditions to suspend sensor reading updates are met.
+  bool ShouldSuspendUpdates() const;
 
   Member<SensorProviderProxy> provider_;
   bool detached_ = false;

@@ -23,20 +23,21 @@ namespace content {
 // ResourceDispatcherHost. It is initialized on the UI thread, and then passed
 // to the IO thread by a NavigationRequest object.
 struct CONTENT_EXPORT NavigationRequestInfo {
-  NavigationRequestInfo(
-      const CommonNavigationParams& common_params,
-      mojom::BeginNavigationParamsPtr begin_params,
-      const GURL& site_for_cookies,
-      bool is_main_frame,
-      bool parent_is_main_frame,
-      bool are_ancestors_secure,
-      int frame_tree_node_id,
-      bool is_for_guests_only,
-      bool report_raw_headers,
-      bool is_prerendering,
-      std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-          blob_url_loader_factory,
-      const base::UnguessableToken& devtools_navigation_token);
+  NavigationRequestInfo(const CommonNavigationParams& common_params,
+                        mojom::BeginNavigationParamsPtr begin_params,
+                        const GURL& site_for_cookies,
+                        bool is_main_frame,
+                        bool parent_is_main_frame,
+                        bool are_ancestors_secure,
+                        int frame_tree_node_id,
+                        bool is_for_guests_only,
+                        bool report_raw_headers,
+                        bool is_prerendering,
+                        bool upgrade_if_insecure,
+                        std::unique_ptr<network::SharedURLLoaderFactoryInfo>
+                            blob_url_loader_factory,
+                        const base::UnguessableToken& devtools_navigation_token,
+                        const base::UnguessableToken& devtools_frame_token);
   NavigationRequestInfo(const NavigationRequestInfo& other);
   ~NavigationRequestInfo();
 
@@ -62,10 +63,16 @@ struct CONTENT_EXPORT NavigationRequestInfo {
 
   const bool is_prerendering;
 
+  // If set to true, any HTTP redirects of this request will be upgraded to
+  // HTTPS. This only applies for subframe navigations.
+  const bool upgrade_if_insecure;
+
   // URLLoaderFactory to facilitate loading blob URLs.
   std::unique_ptr<network::SharedURLLoaderFactoryInfo> blob_url_loader_factory;
 
   const base::UnguessableToken devtools_navigation_token;
+
+  const base::UnguessableToken devtools_frame_token;
 };
 
 }  // namespace content

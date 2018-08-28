@@ -16,6 +16,12 @@
 
 namespace chromeos {
 class EasyUnlockServiceRegular;
+namespace multidevice_setup {
+class MultiDeviceSetupImpl;
+}  // namespace multidevice_setup
+namespace secure_channel {
+class SecureChannelClientImpl;
+}  // namespace secure_channel
 namespace tether {
 class TetherHostFetcherImpl;
 class TetherHostFetcherImplTest;
@@ -28,8 +34,6 @@ class ProximityAuthWebUIHandler;
 }  // namespace proximity_auth
 
 namespace cryptauth {
-
-class RemoteDeviceCache;
 
 // Contains metadata specific to a device associated with a user's account.
 // Because this metadata contains large and expensive data types, and that data
@@ -59,18 +63,11 @@ class RemoteDeviceRef {
   const std::string& persistent_symmetric_key() const {
     return remote_device_->persistent_symmetric_key;
   }
-  bool unlock_key() const { return remote_device_->unlock_key; }
-  bool supports_mobile_hotspot() const {
-    return remote_device_->supports_mobile_hotspot;
-  }
   int64_t last_update_time_millis() const {
     return remote_device_->last_update_time_millis;
   }
   const std::vector<BeaconSeed>& beacon_seeds() const {
     return remote_device_->beacon_seeds;
-  }
-  bool are_beacon_seeds_loaded() const {
-    return remote_device_->are_beacon_seeds_loaded;
   }
 
   std::string GetDeviceId() const;
@@ -83,15 +80,19 @@ class RemoteDeviceRef {
   std::string GetTruncatedDeviceIdForLogs() const;
 
   bool operator==(const RemoteDeviceRef& other) const;
-
-  // This function is necessary in order to use |RemoteDeviceRef| as a key of a
-  // std::map.
+  bool operator!=(const RemoteDeviceRef& other) const;
   bool operator<(const RemoteDeviceRef& other) const;
 
  private:
+  friend class chromeos::multidevice_setup::MultiDeviceSetupImpl;
+  friend class chromeos::secure_channel::SecureChannelClientImpl;
   friend class RemoteDeviceCache;
   friend class RemoteDeviceRefBuilder;
   friend class RemoteDeviceRefTest;
+  friend bool IsSameDevice(const cryptauth::RemoteDevice& remote_device,
+                           cryptauth::RemoteDeviceRef remote_device_ref);
+  friend RemoteDevice* GetMutableRemoteDevice(
+      const RemoteDeviceRef& remote_device_ref);
   FRIEND_TEST_ALL_PREFIXES(RemoteDeviceRefTest, TestFields);
   FRIEND_TEST_ALL_PREFIXES(RemoteDeviceRefTest, TestCopyAndAssign);
 
@@ -104,6 +105,11 @@ class RemoteDeviceRef {
   friend class proximity_auth::BluetoothLowEnergySetupConnectionFinder;
 
   explicit RemoteDeviceRef(std::shared_ptr<RemoteDevice> remote_device);
+
+  // Returns the raw RemoteDevice object. Should only be used when passing
+  // RemoteDevice objects through a Mojo API, which requires that the raw type
+  // is passed instead of the RemoteDeviceRef wrapper object.
+  const RemoteDevice& GetRemoteDevice() const;
 
   std::shared_ptr<const RemoteDevice> remote_device_;
 };

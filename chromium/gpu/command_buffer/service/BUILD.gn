@@ -48,8 +48,6 @@ target(link_target_type, "service_sources") {
     "common_decoder.cc",
     "common_decoder.h",
     "decoder_client.h",
-    "gpu_preferences.cc",
-    "gpu_preferences.h",
     "gpu_switches.cc",
     "gpu_switches.h",
     "image_factory.cc",
@@ -86,7 +84,6 @@ target(link_target_type, "service_sources") {
     "//gpu/command_buffer/client:client_sources",
     "//gpu/config:config_sources",
     "//gpu/ipc/common:surface_handle_type",
-    "//media:media_buildflags",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/gl",
@@ -106,6 +103,7 @@ target(link_target_type, "gles2_sources") {
   visibility = [ "//gpu/*" ]
 
   sources = [
+    "abstract_texture.h",
     "buffer_manager.cc",
     "buffer_manager.h",
     "client_service_map.h",
@@ -161,6 +159,8 @@ target(link_target_type, "gles2_sources") {
     "gpu_state_tracer.h",
     "gpu_tracer.cc",
     "gpu_tracer.h",
+    "gr_cache_controller.cc",
+    "gr_cache_controller.h",
     "id_manager.cc",
     "id_manager.h",
     "indexed_buffer_binding_host.cc",
@@ -175,6 +175,8 @@ target(link_target_type, "gles2_sources") {
     "mailbox_manager_sync.h",
     "memory_program_cache.cc",
     "memory_program_cache.h",
+    "passthrough_abstract_texture_impl.cc",
+    "passthrough_abstract_texture_impl.h",
     "passthrough_program_cache.cc",
     "passthrough_program_cache.h",
     "path_manager.cc",
@@ -191,6 +193,8 @@ target(link_target_type, "gles2_sources") {
     "raster_cmd_validation_implementation_autogen.h",
     "raster_decoder.cc",
     "raster_decoder.h",
+    "raster_decoder_context_state.cc",
+    "raster_decoder_context_state.h",
     "renderbuffer_manager.cc",
     "renderbuffer_manager.h",
     "sampler_manager.cc",
@@ -215,6 +219,8 @@ target(link_target_type, "gles2_sources") {
     "texture_manager.h",
     "transform_feedback_manager.cc",
     "transform_feedback_manager.h",
+    "validating_abstract_texture_impl.cc",
+    "validating_abstract_texture_impl.h",
     "vertex_array_manager.cc",
     "vertex_array_manager.h",
     "vertex_attrib_manager.cc",
@@ -224,6 +230,7 @@ target(link_target_type, "gles2_sources") {
   configs += [
     "//build/config:precompiled_headers",
     "//gpu:gpu_gles2_implementation",
+    "//gpu:raster_implementation",
     "//third_party/khronos:khronos_headers",
   ]
 

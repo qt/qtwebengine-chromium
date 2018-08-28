@@ -38,7 +38,7 @@ VideoBitrateAllocation SvcRateAllocator::GetAllocation(
     VideoBitrateAllocation bitrate_allocation;
     bitrate_allocation.SetBitrate(0, 0, total_bitrate_bps);
     return bitrate_allocation;
-  } else if (codec_.mode == kRealtimeVideo) {
+  } else if (codec_.mode == VideoCodecMode::kRealtimeVideo) {
     return GetAllocationNormalVideo(total_bitrate_bps);
   } else {
     return GetAllocationScreenSharing(total_bitrate_bps);
@@ -156,10 +156,6 @@ VideoBitrateAllocation SvcRateAllocator::GetAllocationScreenSharing(
   }
 
   return bitrate_allocation;
-}
-
-uint32_t SvcRateAllocator::GetPreferredBitrateBps(uint32_t framerate) {
-  return GetAllocation(codec_.maxBitrate * 1000, framerate).get_sum_bps();
 }
 
 std::vector<size_t> SvcRateAllocator::SplitBitrate(

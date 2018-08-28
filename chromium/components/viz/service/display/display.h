@@ -48,6 +48,7 @@ class VIZ_SERVICE_EXPORT DisplayObserver {
   virtual ~DisplayObserver() {}
 
   virtual void OnDisplayDidFinishFrame(const BeginFrameAck& ack) = 0;
+  virtual void OnDisplayDestroyed() = 0;
 };
 
 // A Display produces a surface that can be used to draw to a physical display
@@ -111,6 +112,7 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
       const gpu::TextureInUseResponses& responses) override;
   void DidReceiveCALayerParams(
       const gfx::CALayerParams& ca_layer_params) override;
+  void DidSwapWithSize(const gfx::Size& pixel_size) override;
   void DidReceivePresentationFeedback(
       const gfx::PresentationFeedback& feedback) override;
   void DidFinishLatencyInfo(
@@ -164,6 +166,7 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   std::unique_ptr<DirectRenderer> renderer_;
   SoftwareRenderer* software_renderer_ = nullptr;
   std::vector<ui::LatencyInfo> stored_latency_info_;
+  std::vector<SurfaceId> surfaces_to_ack_on_next_draw_;
 
   base::circular_deque<std::vector<Surface::PresentedCallback>>
       pending_presented_callbacks_;

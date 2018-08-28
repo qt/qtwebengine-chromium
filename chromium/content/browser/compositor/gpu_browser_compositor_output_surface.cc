@@ -38,18 +38,15 @@ GpuBrowserCompositorOutputSurface::GpuBrowserCompositorOutputSurface(
   }
   capabilities_.supports_stencil =
       context_provider()->ContextCapabilities().num_stencil_bits > 0;
+  // Since one of the buffers is used by the surface for presentation, there can
+  // be at most |num_surface_buffers - 1| pending buffers that the compositor
+  // can use.
+  capabilities_.max_frames_pending =
+      context_provider()->ContextCapabilities().num_surface_buffers - 1;
 }
 
 GpuBrowserCompositorOutputSurface::~GpuBrowserCompositorOutputSurface() =
     default;
-
-void GpuBrowserCompositorOutputSurface::SetNeedsVSync(bool needs_vsync) {
-#if defined(OS_WIN)
-  GetCommandBufferProxy()->SetNeedsVSync(needs_vsync);
-#else
-  NOTREACHED();
-#endif  // defined(OS_WIN)
-}
 
 void GpuBrowserCompositorOutputSurface::OnGpuSwapBuffersCompleted(
     std::vector<ui::LatencyInfo> latency_info,
@@ -60,7 +57,6 @@ void GpuBrowserCompositorOutputSurface::OnGpuSwapBuffersCompleted(
     client_->DidReceiveTextureInUseResponses(params.texture_in_use_responses);
   client_->DidReceiveSwapBuffersAck();
   UpdateLatencyInfoOnSwap(params.swap_response, &latency_info);
-  RenderWidgetHostImpl::OnGpuSwapBuffersCompleted(latency_info);
   latency_tracker_.OnGpuSwapBuffersCompleted(latency_info);
 }
 
@@ -110,9 +106,6 @@ void GpuBrowserCompositorOutputSurface::Reshape(
 
 void GpuBrowserCompositorOutputSurface::SwapBuffers(
     viz::OutputSurfaceFrame frame) {
-  if (LatencyInfoHasSnapshotRequest(frame.latency_info))
-    GetCommandBufferProxy()->SetSnapshotRequested();
-
   gfx::Size surface_size = frame.size;
   if (reflector_) {
     if (frame.sub_buffer_rect && reflector_texture_defined_) {

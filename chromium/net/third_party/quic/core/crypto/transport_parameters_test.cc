@@ -5,10 +5,11 @@
 #include "net/third_party/quic/core/crypto/transport_parameters.h"
 
 #include "net/third_party/quic/platform/api/quic_arraysize.h"
+#include "net/third_party/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quic/platform/api/quic_test.h"
 #include "third_party/boringssl/src/include/openssl/mem.h"
 
-namespace net {
+namespace quic {
 namespace test {
 
 class TransportParametersTest : public QuicTest {};
@@ -19,10 +20,10 @@ TEST_F(TransportParametersTest, RoundTripClient) {
   orig_params.initial_max_stream_data = 12;
   orig_params.initial_max_data = 34;
   orig_params.idle_timeout = 56;
-  orig_params.initial_max_stream_id_bidi.present = true;
-  orig_params.initial_max_stream_id_bidi.value = 2000;
-  orig_params.initial_max_stream_id_uni.present = true;
-  orig_params.initial_max_stream_id_uni.value = 3000;
+  orig_params.initial_max_bidi_streams.present = true;
+  orig_params.initial_max_bidi_streams.value = 2000;
+  orig_params.initial_max_uni_streams.present = true;
+  orig_params.initial_max_uni_streams.value = 3000;
   orig_params.max_packet_size.present = true;
   orig_params.max_packet_size.value = 9001;
   orig_params.ack_delay_exponent.present = true;
@@ -41,12 +42,12 @@ TEST_F(TransportParametersTest, RoundTripClient) {
   EXPECT_EQ(new_params.initial_max_data, orig_params.initial_max_data);
   EXPECT_EQ(new_params.idle_timeout, orig_params.idle_timeout);
   EXPECT_EQ(new_params.version, orig_params.version);
-  EXPECT_TRUE(new_params.initial_max_stream_id_bidi.present);
-  EXPECT_EQ(new_params.initial_max_stream_id_bidi.value,
-            orig_params.initial_max_stream_id_bidi.value);
-  EXPECT_TRUE(new_params.initial_max_stream_id_uni.present);
-  EXPECT_EQ(new_params.initial_max_stream_id_uni.value,
-            orig_params.initial_max_stream_id_uni.value);
+  EXPECT_TRUE(new_params.initial_max_bidi_streams.present);
+  EXPECT_EQ(new_params.initial_max_bidi_streams.value,
+            orig_params.initial_max_bidi_streams.value);
+  EXPECT_TRUE(new_params.initial_max_uni_streams.present);
+  EXPECT_EQ(new_params.initial_max_uni_streams.value,
+            orig_params.initial_max_uni_streams.value);
   EXPECT_TRUE(new_params.max_packet_size.present);
   EXPECT_EQ(new_params.max_packet_size.value,
             orig_params.max_packet_size.value);
@@ -89,14 +90,18 @@ TEST_F(TransportParametersTest, IsValid) {
   EXPECT_TRUE(empty_params.is_valid());
 
   {
-    TransportParameters params = empty_params;
+    TransportParameters params;
+    params.perspective = Perspective::IS_CLIENT;
+    EXPECT_TRUE(params.is_valid());
     params.idle_timeout = 600;
     EXPECT_TRUE(params.is_valid());
     params.idle_timeout = 601;
     EXPECT_FALSE(params.is_valid());
   }
   {
-    TransportParameters params = empty_params;
+    TransportParameters params;
+    params.perspective = Perspective::IS_CLIENT;
+    EXPECT_TRUE(params.is_valid());
     params.max_packet_size.present = true;
     params.max_packet_size.value = 0;
     EXPECT_FALSE(params.is_valid());
@@ -108,7 +113,9 @@ TEST_F(TransportParametersTest, IsValid) {
     EXPECT_FALSE(params.is_valid());
   }
   {
-    TransportParameters params = empty_params;
+    TransportParameters params;
+    params.perspective = Perspective::IS_CLIENT;
+    EXPECT_TRUE(params.is_valid());
     params.ack_delay_exponent.present = true;
     params.ack_delay_exponent.value = 0;
     EXPECT_TRUE(params.is_valid());
@@ -397,5 +404,43 @@ TEST_F(TransportParametersTest, ParseServerParametersWithInvalidParams) {
                                         Perspective::IS_SERVER, &out_params));
 }
 
+TEST_F(TransportParametersTest, CryptoHandshakeMessageRoundtrip) {
+  TransportParameters orig_params;
+  orig_params.perspective = Perspective::IS_CLIENT;
+  orig_params.initial_max_stream_data = 12;
+  orig_params.initial_max_data = 34;
+  orig_params.idle_timeout = 56;
+
+  orig_params.google_quic_params = QuicMakeUnique<CryptoHandshakeMessage>();
+  const QuicString kTestString = "test string";
+  orig_params.google_quic_params->SetStringPiece(42, kTestString);
+  const uint32_t kTestValue = 12;
+  orig_params.google_quic_params->SetValue(1337, kTestValue);
+
+  std::vector<uint8_t> serialized;
+  ASSERT_TRUE(SerializeTransportParameters(orig_params, &serialized));
+
+  TransportParameters new_params;
+  ASSERT_TRUE(ParseTransportParameters(serialized.data(), serialized.size(),
+                                       Perspective::IS_CLIENT, &new_params));
+
+  ASSERT_NE(new_params.google_quic_params.get(), nullptr);
+  EXPECT_EQ(new_params.google_quic_params->tag(),
+            orig_params.google_quic_params->tag());
+  QuicStringPiece test_string;
+  EXPECT_TRUE(new_params.google_quic_params->GetStringPiece(42, &test_string));
+  EXPECT_EQ(test_string, kTestString);
+  uint32_t test_value;
+  EXPECT_EQ(new_params.google_quic_params->GetUint32(1337, &test_value),
+            QUIC_NO_ERROR);
+  EXPECT_EQ(test_value, kTestValue);
+  LOG(ERROR) << "Original params:"
+             << orig_params.google_quic_params->DebugString(
+                    Perspective::IS_CLIENT);
+  LOG(ERROR) << "New params:"
+             << new_params.google_quic_params->DebugString(
+                    Perspective::IS_CLIENT);
+}
+
 }  // namespace test
-}  // namespace net
+}  // namespace quic

@@ -10,10 +10,10 @@
 #include "content/browser/service_worker/service_worker_new_script_loader.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_version.h"
-#include "content/common/service_worker/service_worker_utils.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 
 namespace content {
 
@@ -38,24 +38,30 @@ void ServiceWorkerScriptLoaderFactory::CreateLoaderAndStart(
     const network::ResourceRequest& resource_request,
     network::mojom::URLLoaderClientPtr client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
-  DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
-  if (!ShouldHandleScriptRequest(resource_request)) {
-    // If the request should not be handled, just do a passthrough load. This
-    // needs a relaying as we use different associated message pipes.
+  DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
+  if (!CheckIfScriptRequestIsValid(resource_request)) {
     // TODO(kinuko): Record the reason like what we do with netlog in
     // ServiceWorkerContextRequestHandler.
-    loader_factory_->CreateLoaderAndStart(
-        std::move(request), routing_id, request_id, options, resource_request,
-        std::move(client), traffic_annotation);
+    client->OnComplete(network::URLLoaderCompletionStatus(net::ERR_ABORTED));
     return;
   }
 
-  // If we get here, the service worker is not installed, so the script is
-  // usually not yet installed. However, there is a special case when an
-  // installing worker that imports the same script twice (e.g.
-  // importScripts('dupe.js'); importScripts('dupe.js');) or if it recursively
-  // imports the main script. In this case, read the installed script from
-  // storage.
+  // There are four cases of how to handle the request for the script.
+  // A) service worker is installed, script is installed: serve from storage
+  //    (use ServceWorkerInstalledScriptLoader). Typically this case is handled
+  //    by ServiceWorkerInstalledScriptsSender, but we can still get here when a
+  //    new service worker starts up and becomes installed while it is running.
+  // B) service worker is installed, script is not installed: serve from direct
+  //    network. This happens when the script is newly imported after
+  //    installation.
+  //    TODO(crbug.com/719052): deprecate this.
+  // C) service worker is not installed, script is installed: serve from
+  //    storage (use ServceWorkerInstalledScriptLoader)
+  // D) service worker is not installed, script is not installed: serve from
+  //    network with installing the script (use ServceWorkerNewScriptLoader)
+  //    This is the common case: load the script and install it.
+
+  // Case A and C:
   scoped_refptr<ServiceWorkerVersion> version =
       provider_host_->running_hosted_version();
   int64_t resource_id =
@@ -70,7 +76,17 @@ void ServiceWorkerScriptLoaderFactory::CreateLoaderAndStart(
     return;
   }
 
-  // The common case: load the script and install it.
+  // Case B:
+  if (ServiceWorkerVersion::IsInstalled(version->status())) {
+    // TODO(kinuko): Record the reason like what we do with netlog in
+    // ServiceWorkerContextRequestHandler.
+    loader_factory_->CreateLoaderAndStart(
+        std::move(request), routing_id, request_id, options, resource_request,
+        std::move(client), traffic_annotation);
+    return;
+  }
+
+  // Case D:
   mojo::MakeStrongBinding(
       std::make_unique<ServiceWorkerNewScriptLoader>(
           routing_id, request_id, options, resource_request, std::move(client),
@@ -81,12 +97,10 @@ void ServiceWorkerScriptLoaderFactory::CreateLoaderAndStart(
 
 void ServiceWorkerScriptLoaderFactory::Clone(
     network::mojom::URLLoaderFactoryRequest request) {
-  // This method is required to support synchronous requests which are not
-  // performed during installation.
-  NOTREACHED();
+  bindings_.AddBinding(this, std::move(request));
 }
 
-bool ServiceWorkerScriptLoaderFactory::ShouldHandleScriptRequest(
+bool ServiceWorkerScriptLoaderFactory::CheckIfScriptRequestIsValid(
     const network::ResourceRequest& resource_request) {
   if (!context_ || !provider_host_)
     return false;
@@ -98,45 +112,23 @@ bool ServiceWorkerScriptLoaderFactory::ShouldHandleScriptRequest(
 
   // Handle only the service worker main script (RESOURCE_TYPE_SERVICE_WORKER)
   // or importScripts() (RESOURCE_TYPE_SCRIPT).
-  switch (resource_request.resource_type) {
-    case RESOURCE_TYPE_SERVICE_WORKER:
-      // The main script should be fetched only when we start a new service
-      // worker.
-      if (version->status() != ServiceWorkerVersion::NEW)
-        return false;
-      break;
-    case RESOURCE_TYPE_SCRIPT:
-      // TODO(nhiroki): In the current implementation, importScripts() can be
-      // called in any ServiceWorkerVersion::Status except for REDUNDANT, but
-      // the spec defines importScripts() works only on the initial script
-      // evaluation and the install event. Update this check once
-      // importScripts() is fixed (https://crbug.com/719052).
-      if (version->status() == ServiceWorkerVersion::REDUNDANT) {
-        // This could happen if browser-side has set the status to redundant but
-        // the worker has not yet stopped. The worker is already doomed so just
-        // reject the request. Handle it specially here because otherwise it'd
-        // be unclear whether "REDUNDANT" should count as installed or not
-        // installed when making decisions about how to handle the request and
-        // logging UMA.
-        return false;
-      }
-      break;
-    default:
-      // TODO(nhiroki): Record bad message, we shouldn't come here for other
-      // request types.
-      NOTREACHED();
-      return false;
+  if (resource_request.resource_type != RESOURCE_TYPE_SERVICE_WORKER &&
+      resource_request.resource_type != RESOURCE_TYPE_SCRIPT) {
+    mojo::ReportBadMessage("SWSLF_BAD_RESOURCE_TYPE");
+    return false;
+  }
+
+  if (version->status() == ServiceWorkerVersion::REDUNDANT) {
+    // This could happen if browser-side has set the status to redundant but
+    // the worker has not yet stopped. The worker is already doomed so just
+    // reject the request. Handle it specially here because otherwise it'd
+    // be unclear whether "REDUNDANT" should count as installed or not
+    // installed when making decisions about how to handle the request and
+    // logging UMA.
+    return false;
   }
 
   // TODO(falken): Make sure we don't handle a redirected request.
-
-  // For installed service workers, typically all the scripts are served via
-  // script streaming, so we don't come here. However, we still come here when
-  // the service worker is importing a script that was never installed. For now,
-  // return false here to fallback to network. Eventually, it should be
-  // deprecated (https://crbug.com/719052).
-  if (ServiceWorkerVersion::IsInstalled(version->status()))
-    return false;
 
   return true;
 }

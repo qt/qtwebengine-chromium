@@ -25,6 +25,7 @@
 #include "content/common/content_constants_internal.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
+#include "content/common/skia_utils.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/renderer/content_renderer_client.h"
@@ -34,22 +35,13 @@
 #include "media/media_buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "services/service_manager/sandbox/switches.h"
-#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
-#include "third_party/skia/include/core/SkGraphics.h"
+#include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/library_loader/library_loader_hooks.h"
 #endif  // OS_ANDROID
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(OS_FUCHSIA)
-#include "content/common/font_config_ipc_linux.h"
-#include "services/service_manager/sandbox/linux/sandbox_linux.h"
-#include "services/service_manager/zygote/common/common_sandbox_support_linux.h"
-#include "third_party/skia/include/ports/SkFontConfigInterface.h"
-#endif
 
 #if defined(OS_MACOSX)
 #include <Carbon/Carbon.h>
@@ -121,46 +113,7 @@ int RendererMain(const MainFunctionParams& parameters) {
   }
 #endif
 
-  const base::CommandLine& process_command_line =
-      *base::CommandLine::ForCurrentProcess();
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(OS_FUCHSIA)
-  // This call could already have been made from zygote_main_linux.cc. However
-  // we need to do it here if Zygote is disabled.
-  if (process_command_line.HasSwitch(switches::kNoZygote)) {
-    SkFontConfigInterface::SetGlobal(
-        sk_make_sp<FontConfigIPC>(service_manager::GetSandboxFD()));
-  }
-#endif
-
-  if (!process_command_line.HasSwitch(switches::kDisableSkiaRuntimeOpts)) {
-    SkGraphics::Init();
-  }
-
-  const int kMB = 1024 * 1024;
-  size_t font_cache_limit;
-#if defined(OS_ANDROID)
-  font_cache_limit = base::SysInfo::IsLowEndDevice() ? kMB : 8 * kMB;
-  SkGraphics::SetFontCacheLimit(font_cache_limit);
-#else
-  if (process_command_line.HasSwitch(switches::kSkiaFontCacheLimitMb)) {
-    if (base::StringToSizeT(process_command_line.GetSwitchValueASCII(
-                                switches::kSkiaFontCacheLimitMb),
-                            &font_cache_limit)) {
-      SkGraphics::SetFontCacheLimit(font_cache_limit * kMB);
-    }
-  }
-
-  size_t resource_cache_limit;
-  if (process_command_line.HasSwitch(switches::kSkiaResourceCacheLimitMb)) {
-    if (base::StringToSizeT(process_command_line.GetSwitchValueASCII(
-                                switches::kSkiaResourceCacheLimitMb),
-                            &resource_cache_limit)) {
-      SkGraphics::SetResourceCacheTotalByteLimit(resource_cache_limit * kMB);
-    }
-  }
-#endif
+  InitializeSkia();
 
   // This function allows pausing execution using the --renderer-startup-dialog
   // flag allowing us to attach a debugger.
@@ -183,9 +136,6 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   base::PlatformThread::SetName("CrRendererMain");
 
-  bool no_sandbox =
-      command_line.HasSwitch(service_manager::switches::kNoSandbox);
-
 #if defined(OS_ANDROID)
   // If we have any pending LibraryLoader histograms, record them.
   base::android::RecordLibraryLoaderRendererHistograms();
@@ -200,8 +150,8 @@ int RendererMain(const MainFunctionParams& parameters) {
       initial_virtual_time = base::Time::FromDoubleT(initial_time);
     }
   }
-  std::unique_ptr<blink::scheduler::WebMainThreadScheduler>
-      main_thread_scheduler(blink::scheduler::WebMainThreadScheduler::Create(
+  std::unique_ptr<blink::scheduler::WebThreadScheduler> main_thread_scheduler(
+      blink::scheduler::WebThreadScheduler::CreateMainThreadScheduler(
           initial_virtual_time));
 
   // PlatformInitialize uses FieldTrials, so this must happen later.
@@ -218,21 +168,26 @@ int RendererMain(const MainFunctionParams& parameters) {
   InitializeWebRtcModule();
 
   {
-#if defined(OS_WIN) || defined(OS_MACOSX)
-    // TODO(markus): Check if it is OK to unconditionally move this
-    // instruction down.
-    auto render_process = RenderProcessImpl::Create();
-    RenderThreadImpl::Create(std::move(main_message_loop),
-                             std::move(main_thread_scheduler));
-#endif
     bool run_loop = true;
-    if (!no_sandbox)
+    bool need_sandbox =
+        !command_line.HasSwitch(service_manager::switches::kNoSandbox);
+
+#if !defined(OS_WIN) && !defined(OS_MACOSX)
+    // Sandbox is enabled before RenderProcess initialization on all platforms,
+    // except Windows and Mac.
+    // TODO(markus): Check if it is OK to remove ifdefs for Windows and Mac.
+    if (need_sandbox) {
       run_loop = platform.EnableSandbox();
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+      need_sandbox = false;
+    }
+#endif
+
     auto render_process = RenderProcessImpl::Create();
     RenderThreadImpl::Create(std::move(main_message_loop),
                              std::move(main_thread_scheduler));
-#endif
+
+    if (need_sandbox)
+      run_loop = platform.EnableSandbox();
 
     base::HighResolutionTimerManager hi_res_timer_manager;
 

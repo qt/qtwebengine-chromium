@@ -22,10 +22,12 @@
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/web/commit_result.mojom-shared.h"
 #include "third_party/blink/public/web/selection_menu_behavior.mojom-shared.h"
+#include "third_party/blink/public/web/web_document_loader.h"
 #include "third_party/blink/public/web/web_frame.h"
 #include "third_party/blink/public/web/web_frame_load_type.h"
 #include "third_party/blink/public/web/web_history_item.h"
 #include "third_party/blink/public/web/web_ime_text_span.h"
+#include "third_party/blink/public/web/web_navigation_timings.h"
 #include "third_party/blink/public/web/web_text_direction.h"
 #include "v8/include/v8.h"
 
@@ -37,11 +39,10 @@ class WebAssociatedURLLoader;
 class WebAutofillClient;
 class WebContentSettingsClient;
 class WebData;
-class WebDocumentLoader;
 class WebDocument;
 class WebDoubleSize;
 class WebDOMEvent;
-class WebFrameClient;
+class WebLocalFrameClient;
 class WebFrameWidget;
 class WebInputMethodController;
 class WebPerformance;
@@ -60,6 +61,7 @@ struct WebAssociatedURLLoaderOptions;
 struct WebConsoleMessage;
 struct WebContentSecurityPolicyViolation;
 struct WebFindOptions;
+struct WebMediaPlayerAction;
 struct WebPrintParams;
 struct WebPrintPresetOptions;
 struct WebScriptSource;
@@ -72,13 +74,13 @@ class WebLocalFrame : public WebFrame {
  public:
   // Creates a main local frame for the WebView. Can only be invoked when no
   // main frame exists yet. Call Close() to release the returned frame.
-  // WebFrameClient may not be null.
+  // WebLocalFrameClient may not be null.
   // TODO(dcheng): The argument order should be more consistent with
   // CreateLocalChild() and CreateRemoteChild() in WebRemoteFrame... but it's so
   // painful...
   BLINK_EXPORT static WebLocalFrame* CreateMainFrame(
       WebView*,
-      WebFrameClient*,
+      WebLocalFrameClient*,
       blink::InterfaceRegistry*,
       WebFrame* opener = nullptr,
       const WebString& name = WebString(),
@@ -102,7 +104,7 @@ class WebLocalFrame : public WebFrame {
   // Otherwise, if the load should not commit, call Detach() to discard the
   // frame.
   BLINK_EXPORT static WebLocalFrame* CreateProvisional(
-      WebFrameClient*,
+      WebLocalFrameClient*,
       blink::InterfaceRegistry*,
       WebRemoteFrame*,
       WebSandboxFlags,
@@ -112,7 +114,7 @@ class WebLocalFrame : public WebFrame {
   // create frames, the returned frame should be freed by calling Close() when
   // it's no longer needed.
   virtual WebLocalFrame* CreateLocalChild(WebTreeScopeType,
-                                          WebFrameClient*,
+                                          WebLocalFrameClient*,
                                           blink::InterfaceRegistry*) = 0;
 
   // Returns the WebFrame associated with the current V8 context. This
@@ -129,7 +131,7 @@ class WebLocalFrame : public WebFrame {
   // the given element is not a frame, iframe or if the frame is empty.
   BLINK_EXPORT static WebLocalFrame* FromFrameOwnerElement(const WebElement&);
 
-  virtual WebFrameClient* Client() const = 0;
+  virtual WebLocalFrameClient* Client() const = 0;
 
   // Initialization ---------------------------------------------------------
 
@@ -198,6 +200,13 @@ class WebLocalFrame : public WebFrame {
   // Note: this may lead to the destruction of the frame.
   virtual bool DispatchBeforeUnloadEvent(bool is_reload) = 0;
 
+  // Start reloading the current document.
+  // Note: StartReload() will be deprecated, use StartNavigation() instead.
+  virtual void StartReload(WebFrameLoadType) = 0;
+
+  // Start navigation to the given URL.
+  virtual void StartNavigation(const WebURLRequest&) = 0;
+
   // Commits a cross-document navigation in the frame. For history navigations,
   // a valid WebHistoryItem should be provided.
   // TODO(dgozman): return mojom::CommitResult.
@@ -205,9 +214,10 @@ class WebLocalFrame : public WebFrame {
       const WebURLRequest&,
       WebFrameLoadType,
       const WebHistoryItem&,
-      WebHistoryLoadType,
       bool is_client_redirect,
-      const base::UnguessableToken& devtools_navigation_token) = 0;
+      const base::UnguessableToken& devtools_navigation_token,
+      std::unique_ptr<WebDocumentLoader::ExtraData> extra_data,
+      const WebNavigationTimings& navigation_timings) = 0;
 
   // Commits a same-document navigation in the frame. For history navigations, a
   // valid WebHistoryItem should be provided. Returns CommitResult::Ok if the
@@ -235,17 +245,18 @@ class WebLocalFrame : public WebFrame {
   // unreachableURL is reported via WebDocumentLoader::unreachableURL.  If
   // replace is false, then this data will be loaded as a normal
   // navigation.  Otherwise, the current history item will be replaced.
-  // TODO(dgozman): rename to CommitDataNavigation.
-  virtual void LoadData(const WebData&,
-                        const WebString& mime_type,
-                        const WebString& text_encoding,
-                        const WebURL& base_url,
-                        const WebURL& unreachable_url = WebURL(),
-                        bool replace = false,
-                        WebFrameLoadType = WebFrameLoadType::kStandard,
-                        const WebHistoryItem& = WebHistoryItem(),
-                        WebHistoryLoadType = kWebHistoryDifferentDocumentLoad,
-                        bool is_client_redirect = false) = 0;
+  virtual void CommitDataNavigation(
+      const WebData&,
+      const WebString& mime_type,
+      const WebString& text_encoding,
+      const WebURL& base_url,
+      const WebURL& unreachable_url,
+      bool replace,
+      WebFrameLoadType,
+      const WebHistoryItem&,
+      bool is_client_redirect,
+      std::unique_ptr<WebDocumentLoader::ExtraData> navigation_data,
+      const WebNavigationTimings& navigation_timings) = 0;
 
   // Returns the document loader that is currently loading.  May be null.
   virtual WebDocumentLoader* GetProvisionalDocumentLoader() const = 0;
@@ -731,16 +742,6 @@ class WebLocalFrame : public WebFrame {
   virtual WebAssociatedURLLoader* CreateAssociatedURLLoader(
       const WebAssociatedURLLoaderOptions&) = 0;
 
-  // Reload the current document.
-  // Note: reload() will be deprecated.
-  // Do not use these APIs any more, but use loadRequest() instead.
-  virtual void Reload(WebFrameLoadType) = 0;
-
-  // Load the given URL.
-  // TODO(dgozman): rename to StartNavigation and audit usages. Most of them
-  // actually want to CommitNavigation.
-  virtual void LoadRequest(const WebURLRequest&) = 0;
-
   // Check whether loading has completed based on subframe state, etc.
   virtual void CheckCompleted() = 0;
 
@@ -787,7 +788,7 @@ class WebLocalFrame : public WebFrame {
   // Prints one page, and returns the calculated page shrinking factor
   // (usually between 1/1.33 and 1/2).  Returns 0 if the page number is
   // invalid or not in printing mode.
-  virtual float PrintPage(int page_to_print, WebCanvas*) = 0;
+  virtual float PrintPage(int page_to_print, cc::PaintCanvas*) = 0;
 
   // Reformats the WebFrame for screen display.
   virtual void PrintEnd() = 0;
@@ -832,13 +833,18 @@ class WebLocalFrame : public WebFrame {
 
   // Prints the frame into the canvas, with page boundaries drawn as one pixel
   // wide blue lines. This method exists to support layout tests.
-  virtual void PrintPagesForTesting(WebCanvas*, const WebSize&) = 0;
+  virtual void PrintPagesForTesting(cc::PaintCanvas*, const WebSize&) = 0;
 
   // Returns the bounds rect for current selection. If selection is performed
   // on transformed text, the rect will still bound the selection but will
   // not be transformed itself. If no selection is present, the rect will be
   // empty ((0,0), (0,0)).
   virtual WebRect GetSelectionBoundsRectForTesting() const = 0;
+
+  // Performs the specified media player action on the media element at the
+  // given location.
+  virtual void PerformMediaPlayerAction(const WebPoint&,
+                                        const WebMediaPlayerAction&) = 0;
 
  protected:
   explicit WebLocalFrame(WebTreeScopeType scope) : WebFrame(scope) {}

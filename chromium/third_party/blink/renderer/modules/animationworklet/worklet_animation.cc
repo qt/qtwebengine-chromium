@@ -4,21 +4,27 @@
 
 #include "third_party/blink/renderer/modules/animationworklet/worklet_animation.h"
 
+#include "base/optional.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 #include "third_party/blink/renderer/bindings/modules/v8/animation_effect_or_animation_effect_sequence.h"
 #include "third_party/blink/renderer/core/animation/element_animations.h"
 #include "third_party/blink/renderer/core/animation/keyframe_effect_model.h"
 #include "third_party/blink/renderer/core/animation/scroll_timeline.h"
 #include "third_party/blink/renderer/core/animation/timing.h"
+#include "third_party/blink/renderer/core/animation/worklet_animation_controller.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
+#include "third_party/blink/renderer/modules/animationworklet/css_animation_worklet.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
 namespace {
+
 bool ConvertAnimationEffects(
     const AnimationEffectOrAnimationEffectSequence& effects,
     HeapVector<Member<KeyframeEffect>>& keyframe_effects,
@@ -101,17 +107,18 @@ AnimationTimeline* ConvertAnimationTimeline(
   return &document.Timeline();
 }
 
-bool CheckElementComposited(const Element& target) {
+bool CheckElementComposited(const Node& target) {
   return target.GetLayoutObject() &&
          target.GetLayoutObject()->GetCompositingState() ==
              kPaintsIntoOwnBacking;
 }
 
-CompositorElementId GetCompositorScrollElementId(const Element& element) {
-  DCHECK(element.GetLayoutObject());
-  DCHECK(element.GetLayoutObject()->HasLayer());
+base::Optional<CompositorElementId> GetCompositorScrollElementId(
+    const Node& node) {
+  if (!node.GetLayoutObject() || !node.GetLayoutObject()->UniqueId())
+    return base::nullopt;
   return CompositorElementIdFromUniqueObjectId(
-      element.GetLayoutObject()->UniqueId(),
+      node.GetLayoutObject()->UniqueId(),
       CompositorElementIdNamespace::kScroll);
 }
 
@@ -148,18 +155,22 @@ std::unique_ptr<CompositorScrollTimeline> ToCompositorScrollTimeline(
     return nullptr;
 
   ScrollTimeline* scroll_timeline = ToScrollTimeline(timeline);
-  Element* scroll_source = scroll_timeline->scrollSource();
-  CompositorElementId element_id = GetCompositorScrollElementId(*scroll_source);
+  Node* scroll_source = scroll_timeline->ResolvedScrollSource();
+  base::Optional<CompositorElementId> element_id =
+      GetCompositorScrollElementId(*scroll_source);
 
   DoubleOrScrollTimelineAutoKeyword time_range;
   scroll_timeline->timeRange(time_range);
   // TODO(smcgruer): Handle 'auto' time range value.
   DCHECK(time_range.IsDouble());
 
+  // TODO(smcgruer): If the scroll source later gets a LayoutBox (e.g. was
+  // display:none and now isn't), we need to update the compositor with the
+  // writing mode to get the correct ScrollDirection conversion.
   LayoutBox* box = scroll_source->GetLayoutBox();
-  DCHECK(box);
-  CompositorScrollTimeline::ScrollDirection orientation = ConvertOrientation(
-      scroll_timeline->GetOrientation(), box->IsHorizontalWritingMode());
+  CompositorScrollTimeline::ScrollDirection orientation =
+      ConvertOrientation(scroll_timeline->GetOrientation(),
+                         box ? box->IsHorizontalWritingMode() : true);
 
   return std::make_unique<CompositorScrollTimeline>(element_id, orientation,
                                                     time_range.GetAsDouble());
@@ -190,21 +201,25 @@ unsigned NextSequenceNumber() {
 }  // namespace
 
 WorkletAnimation* WorkletAnimation::Create(
+    ScriptState* script_state,
     String animator_name,
     const AnimationEffectOrAnimationEffectSequence& effects,
     ExceptionState& exception_state) {
-  return Create(animator_name, effects, DocumentTimelineOrScrollTimeline(),
-                nullptr, exception_state);
+  return Create(script_state, animator_name, effects,
+                DocumentTimelineOrScrollTimeline(), nullptr, exception_state);
 }
 
 WorkletAnimation* WorkletAnimation::Create(
+    ScriptState* script_state,
     String animator_name,
     const AnimationEffectOrAnimationEffectSequence& effects,
     DocumentTimelineOrScrollTimeline timeline,
     ExceptionState& exception_state) {
-  return Create(animator_name, effects, timeline, nullptr, exception_state);
+  return Create(script_state, animator_name, effects, timeline, nullptr,
+                exception_state);
 }
 WorkletAnimation* WorkletAnimation::Create(
+    ScriptState* script_state,
     String animator_name,
     const AnimationEffectOrAnimationEffectSequence& effects,
     DocumentTimelineOrScrollTimeline timeline,
@@ -214,7 +229,7 @@ WorkletAnimation* WorkletAnimation::Create(
 
   if (!Platform::Current()->IsThreadedAnimationEnabled()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "AnimationWorklet requires threaded animations to be enabled");
     return nullptr;
   }
@@ -222,39 +237,49 @@ WorkletAnimation* WorkletAnimation::Create(
   HeapVector<Member<KeyframeEffect>> keyframe_effects;
   String error_string;
   if (!ConvertAnimationEffects(effects, keyframe_effects, error_string)) {
-    exception_state.ThrowDOMException(kNotSupportedError, error_string);
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                      error_string);
     return nullptr;
   }
 
   if (!ValidateTimeline(timeline, error_string)) {
-    exception_state.ThrowDOMException(kNotSupportedError, error_string);
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                      error_string);
     return nullptr;
   }
+
+  AnimationWorklet* worklet =
+      CSSAnimationWorklet::animationWorklet(script_state);
+
+  WorkletAnimationId id = worklet->NextWorkletAnimationId();
 
   Document& document = keyframe_effects.at(0)->target()->GetDocument();
   AnimationTimeline* animation_timeline =
       ConvertAnimationTimeline(document, timeline);
 
   WorkletAnimation* animation =
-      new WorkletAnimation(animator_name, document, keyframe_effects,
+      new WorkletAnimation(id, animator_name, document, keyframe_effects,
                            animation_timeline, std::move(options));
 
   return animation;
 }
 
 WorkletAnimation::WorkletAnimation(
+    WorkletAnimationId id,
     const String& animator_name,
     Document& document,
     const HeapVector<Member<KeyframeEffect>>& effects,
     AnimationTimeline* timeline,
     scoped_refptr<SerializedScriptValue> options)
     : sequence_number_(NextSequenceNumber()),
+      id_(id),
       animator_name_(animator_name),
       play_state_(Animation::kIdle),
       document_(document),
       effects_(effects),
       timeline_(timeline),
-      options_(std::move(options)) {
+      options_(std::make_unique<WorkletAnimationOptions>(options)),
+      effect_needs_restart_(false) {
   DCHECK(IsMainThread());
   DCHECK(Platform::Current()->IsThreadedAnimationEnabled());
 
@@ -319,6 +344,7 @@ void WorkletAnimation::UpdateIfNecessary() {
 }
 
 void WorkletAnimation::EffectInvalidated() {
+  effect_needs_restart_ = true;
   document_->GetWorkletAnimationController().InvalidateAnimation(*this);
 }
 
@@ -378,13 +404,6 @@ bool WorkletAnimation::StartOnCompositor(String* failure_message) {
     return false;
   }
 
-  if (timeline_->IsScrollTimeline() &&
-      !CheckElementComposited(*ToScrollTimeline(timeline_)->scrollSource())) {
-    if (failure_message)
-      *failure_message = "The ScrollTimeline scrollSource is not composited.";
-    return false;
-  }
-
   double playback_rate = 1;
   CompositorAnimations::FailureCode failure_code =
       GetEffect()->CheckCanStartAnimationOnCompositor(playback_rate);
@@ -398,7 +417,8 @@ bool WorkletAnimation::StartOnCompositor(String* failure_message) {
 
   if (!compositor_animation_) {
     compositor_animation_ = CompositorAnimation::CreateWorkletAnimation(
-        animator_name_, ToCompositorScrollTimeline(timeline_));
+        id_, animator_name_, ToCompositorScrollTimeline(timeline_),
+        std::move(options_));
     compositor_animation_->SetAnimationDelegate(this);
   }
 
@@ -424,11 +444,20 @@ bool WorkletAnimation::StartOnCompositor(String* failure_message) {
 }
 
 void WorkletAnimation::UpdateOnCompositor() {
-  // We want to update the keyframe effect on compositor animation without
-  // destroying the compositor animation instance. This is achieved by
-  // canceling, and start the blink keyframe effect on compositor.
-  GetEffect()->CancelAnimationOnCompositor(compositor_animation_.get());
-  StartEffectOnCompositor(compositor_animation_.get(), GetEffect());
+  if (effect_needs_restart_) {
+    // We want to update the keyframe effect on compositor animation without
+    // destroying the compositor animation instance. This is achieved by
+    // canceling, and start the blink keyframe effect on compositor.
+    effect_needs_restart_ = false;
+    GetEffect()->CancelAnimationOnCompositor(compositor_animation_.get());
+    StartEffectOnCompositor(compositor_animation_.get(), GetEffect());
+  }
+
+  if (timeline_->IsScrollTimeline()) {
+    Element* scroll_source = ToScrollTimeline(timeline_)->scrollSource();
+    compositor_animation_->UpdateScrollTimelineId(
+        GetCompositorScrollElementId(*scroll_source));
+  }
 }
 
 void WorkletAnimation::DestroyCompositorAnimation() {

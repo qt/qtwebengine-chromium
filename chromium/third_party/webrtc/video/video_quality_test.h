@@ -15,6 +15,9 @@
 #include <string>
 #include <vector>
 
+#include "api/fec_controller.h"
+#include "api/test/video_quality_test_fixture.h"
+#include "call/fake_network_pipe.h"
 #include "media/engine/internalencoderfactory.h"
 #include "test/call_test.h"
 #include "test/frame_generator.h"
@@ -22,85 +25,18 @@
 
 namespace webrtc {
 
-class VideoQualityTest : public test::CallTest {
+class VideoQualityTest :
+    public test::CallTest, public VideoQualityTestFixtureInterface {
  public:
-  // Parameters are grouped into smaller structs to make it easier to set
-  // the desired elements and skip unused, using aggregate initialization.
-  // Unfortunately, C++11 (as opposed to C11) doesn't support unnamed structs,
-  // which makes the implementation of VideoQualityTest a bit uglier.
-  struct Params {
-    Params();
-    ~Params();
-    struct CallConfig {
-      bool send_side_bwe;
-      BitrateConstraints call_bitrate_config;
-      int num_thumbnails;
-      // Indicates if secondary_(video|ss|screenshare) structures are used.
-      bool dual_video;
-    } call;
-    struct Video {
-      bool enabled;
-      size_t width;
-      size_t height;
-      int32_t fps;
-      int min_bitrate_bps;
-      int target_bitrate_bps;
-      int max_bitrate_bps;
-      bool suspend_below_min_bitrate;
-      std::string codec;
-      int num_temporal_layers;
-      int selected_tl;
-      int min_transmit_bps;
-      bool ulpfec;
-      bool flexfec;
-      std::string clip_name;  // "Generator" to generate frames instead.
-      size_t capture_device_index;
-    } video[2];
-    struct Audio {
-      bool enabled;
-      bool sync_video;
-      bool dtx;
-    } audio;
-    struct Screenshare {
-      bool enabled;
-      bool generate_slides;
-      int32_t slide_change_interval;
-      int32_t scroll_duration;
-      std::vector<std::string> slides;
-    } screenshare[2];
-    struct Analyzer {
-      std::string test_label;
-      double avg_psnr_threshold;  // (*)
-      double avg_ssim_threshold;  // (*)
-      int test_durations_secs;
-      std::string graph_data_output_filename;
-      std::string graph_title;
-    } analyzer;
-    FakeNetworkPipe::Config pipe;
-    struct SS {                          // Spatial scalability.
-      std::vector<VideoStream> streams;  // If empty, one stream is assumed.
-      size_t selected_stream;
-      int num_spatial_layers;
-      int selected_sl;
-      InterLayerPredMode inter_layer_pred;
-      // If empty, bitrates are generated in VP9Impl automatically.
-      std::vector<SpatialLayer> spatial_layers;
-      // If set, default parameters will be used instead of |streams|.
-      bool infer_streams;
-    } ss[2];
-    struct Logging {
-      bool logs;
-      std::string rtc_event_log_name;
-      std::string rtp_dump_name;
-      std::string encoded_frame_base_path;
-    } logging;
-  };
-
-  VideoQualityTest();
   explicit VideoQualityTest(
       std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory);
-  void RunWithAnalyzer(const Params& params);
-  void RunWithRenderers(const Params& params);
+
+  void RunWithAnalyzer(const Params& params) override;
+  void RunWithRenderers(const Params& params) override;
+
+  const std::map<uint8_t, webrtc::MediaType>& payload_type_map() override {
+    return payload_type_map_;
+  }
 
   static void FillScalabilitySettings(
       Params* params,
@@ -113,21 +49,13 @@ class VideoQualityTest : public test::CallTest {
       InterLayerPredMode inter_layer_pred,
       const std::vector<std::string>& sl_descriptors);
 
+  // Helper static methods.
+  static VideoStream DefaultVideoStream(const Params& params, size_t video_idx);
+  static VideoStream DefaultThumbnailStream();
+  static std::vector<int> ParseCSV(const std::string& str);
+
  protected:
-  class TestVideoEncoderFactory : public VideoEncoderFactory {
-    std::vector<SdpVideoFormat> GetSupportedFormats() const override;
-
-    CodecInfo QueryVideoEncoder(const SdpVideoFormat& format) const override;
-
-    std::unique_ptr<VideoEncoder> CreateVideoEncoder(
-        const SdpVideoFormat& format) override;
-
-   private:
-    InternalEncoderFactory internal_encoder_factory_;
-  };
-
   std::map<uint8_t, webrtc::MediaType> payload_type_map_;
-  std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory_;
 
   // No-op implementation to be able to instantiate this class from non-TEST_F
   // locations.
@@ -137,22 +65,16 @@ class VideoQualityTest : public test::CallTest {
   std::string GenerateGraphTitle() const;
   void CheckParams();
 
-  // Helper static methods.
-  static VideoStream DefaultVideoStream(const Params& params, size_t video_idx);
-  static VideoStream DefaultThumbnailStream();
-  static std::vector<int> ParseCSV(const std::string& str);
-
   // Helper methods for setting up the call.
-  void CreateVideoStreams();
-  void DestroyStreams();
   void CreateCapturers();
   std::unique_ptr<test::FrameGenerator> CreateFrameGenerator(size_t video_idx);
   void SetupThumbnailCapturers(size_t num_thumbnail_streams);
+  std::unique_ptr<VideoEncoder> CreateVideoEncoder(
+      const SdpVideoFormat& format);
   void SetupVideo(Transport* send_transport, Transport* recv_transport);
   void SetupThumbnails(Transport* send_transport, Transport* recv_transport);
   void DestroyThumbnailStreams();
-  void SetupAudio(Transport* transport,
-                  AudioReceiveStream** audio_receive_stream);
+  void SetupAudio(Transport* transport);
 
   void StartEncodedFrameLogs(VideoSendStream* stream);
   void StartEncodedFrameLogs(VideoReceiveStream* stream);
@@ -160,32 +82,25 @@ class VideoQualityTest : public test::CallTest {
   virtual std::unique_ptr<test::LayerFilteringTransport> CreateSendTransport();
   virtual std::unique_ptr<test::DirectTransport> CreateReceiveTransport();
 
-  std::vector<std::unique_ptr<test::VideoCapturer>> video_capturers_;
   std::vector<std::unique_ptr<test::VideoCapturer>> thumbnail_capturers_;
-  TestVideoEncoderFactory video_encoder_factory_;
+  Clock* const clock_;
 
+  test::FunctionVideoEncoderFactory video_encoder_factory_;
+  InternalEncoderFactory internal_encoder_factory_;
   std::vector<VideoSendStream::Config> thumbnail_send_configs_;
   std::vector<VideoEncoderConfig> thumbnail_encoder_configs_;
   std::vector<VideoSendStream*> thumbnail_send_streams_;
   std::vector<VideoReceiveStream::Config> thumbnail_receive_configs_;
   std::vector<VideoReceiveStream*> thumbnail_receive_streams_;
 
-  std::vector<VideoSendStream::Config> video_send_configs_;
-  std::vector<VideoEncoderConfig> video_encoder_configs_;
-  std::vector<VideoSendStream*> video_send_streams_;
-
-  Clock* const clock_;
-
   int receive_logs_;
   int send_logs_;
 
-  DegradationPreference degradation_preference_ =
-      DegradationPreference::MAINTAIN_FRAMERATE;
   Params params_;
 
-  std::unique_ptr<webrtc::RtcEventLog> recv_event_log_;
-  std::unique_ptr<webrtc::RtcEventLog> send_event_log_;
-
+  // Note: not same as similarly named member in CallTest. This is the number of
+  // separate send streams, the one in CallTest is the number of substreams for
+  // a single send stream.
   size_t num_video_streams_;
 };
 

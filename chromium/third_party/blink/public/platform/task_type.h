@@ -36,9 +36,15 @@ enum class TaskType : unsigned {
   // (e.g. click events) must be fired using tasks queued with the user
   // interaction task source.
   kUserInteraction = 2,
+  // TODO(altimin) Fix the networking task source related namings once it is
+  // clear how
+  // all loading tasks are annotated.
   // This task source is used for features that trigger in response to network
   // activity.
   kNetworking = 3,
+  // This is a part of Networking task source used to annotate tasks which are
+  // posted from the loading stack (i.e. WebURLLoader).
+  kNetworkingWithURLLoaderAnnotation = 50,
   // This task source is used for control messages between kNetworking tasks.
   kNetworkingControl = 4,
   // This task source is used to queue calls to history.back() and similar APIs.
@@ -118,6 +124,9 @@ enum class TaskType : unsigned {
   // The task runner may be throttled.
   kMiscPlatformAPI = 22,
 
+  // Tasks used for DedicatedWorker's requestAnimationFrame.
+  kWorkerAnimation = 51,
+
   ///////////////////////////////////////
   // Not-speced tasks should use one of the following task types
   ///////////////////////////////////////
@@ -172,7 +181,7 @@ enum class TaskType : unsigned {
   kInternalIntersectionObserver = 44,
 
   ///////////////////////////////////////
-  // The following task types are only for MainThreadTaskQueue.
+  // The following task types are only for thread-local queues.
   ///////////////////////////////////////
 
   kMainThreadTaskQueueV8 = 37,
@@ -183,17 +192,12 @@ enum class TaskType : unsigned {
   kMainThreadTaskQueueIPC = 42,
   kMainThreadTaskQueueControl = 43,
   kCompositorThreadTaskQueueDefault = 45,
+  kCompositorThreadTaskQueueInput = 49,
   kWorkerThreadTaskQueueDefault = 46,
+  kWorkerThreadTaskQueueV8 = 47,
+  kWorkerThreadTaskQueueCompositor = 48,
 
-  ///////////////////////////////////////
-  // The following task types are DEPRECATED! Use kInternal* instead.
-  ///////////////////////////////////////
-
-  // Tasks that must not be throttled should be posted here, but the usage
-  // should be very limited.
-  kUnthrottled = 25,
-
-  kCount = 47,
+  kCount = 52,
 };
 
 }  // namespace blink

@@ -50,6 +50,7 @@ source_set("passwords") {
     "//components/autofill/core/browser",
     "//components/autofill/core/common",
     "//components/autofill/ios/browser",
+    "//components/autofill/ios/form_util",
     "//components/browser_sync",
     "//components/image_fetcher/core",
     "//components/image_fetcher/ios",
@@ -126,6 +127,7 @@ source_set("unit_tests") {
   deps = [
     ":passwords",
     "//base",
+    "//base/test:test_support",
     "//components/autofill/core/common",
     "//components/autofill/ios/browser",
     "//components/password_manager/core/browser",
@@ -141,7 +143,6 @@ source_set("unit_tests") {
     "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/web:test_support",
     "//ios/chrome/browser/web:web_internal",
-    "//ios/testing:ios_test_support",
     "//ios/testing:ocmock_support",
     "//ios/web",
     "//ios/web/public/test",
@@ -174,7 +175,6 @@ source_set("eg_tests") {
     "//components/prefs:test_support",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
-    "//ios/testing:ios_test_support",
     "//ios/testing/earl_grey:earl_grey_support",
     "//ios/web/public/test/http_server",
   ]
@@ -190,7 +190,7 @@ js_compile_checked("injected_js") {
     "resources/password_controller.js",
   ]
   js_modules = [
-    "//components/autofill/ios/fill/resources/form.js",
-    "//components/autofill/ios/fill/resources/fill.js",
+    "//components/autofill/ios/form_util/resources/form.js",
+    "//components/autofill/ios/form_util/resources/fill.js",
   ]
 }

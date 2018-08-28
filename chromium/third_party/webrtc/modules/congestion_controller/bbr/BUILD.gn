@@ -17,6 +17,7 @@ rtc_static_library("bbr") {
     ":bbr_controller",
     "../../../api/transport:network_control",
     "../../../rtc_base:rtc_base_approved",
+    "//third_party/abseil-cpp/absl/memory",
   ]
 }
 
@@ -27,15 +28,17 @@ rtc_source_set("bbr_controller") {
     "bbr_network_controller.h",
   ]
   deps = [
-    ":data_transfer_tracker",
+    ":bandwidth_sampler",
+    ":loss_rate_filter",
     ":rtt_stats",
     ":windowed_filter",
-    "../../../api:optional",
     "../../../api/transport:network_control",
     "../../../rtc_base:checks",
     "../../../rtc_base:rtc_base_approved",
-    "../../../rtc_base/experiments:congestion_controller_experiment",
+    "../../../rtc_base/experiments:field_trial_parser",
     "../../../rtc_base/system:fallthrough",
+    "../../../system_wrappers:field_trial_api",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
@@ -47,13 +50,13 @@ rtc_source_set("bandwidth_sampler") {
   ]
   deps = [
     ":packet_number_indexed_queue",
-    "../../../api:optional",
     "../../../api/units:data_rate",
     "../../../api/units:data_size",
     "../../../api/units:time_delta",
     "../../../api/units:timestamp",
     "../../../rtc_base:checks",
     "../../../rtc_base:rtc_base_approved",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
@@ -82,6 +85,16 @@ rtc_source_set("packet_number_indexed_queue") {
   ]
 }
 
+rtc_source_set("loss_rate_filter") {
+  visibility = [ ":*" ]
+  sources = [
+    "loss_rate_filter.cc",
+    "loss_rate_filter.h",
+  ]
+  deps = [
+    "//third_party/abseil-cpp/absl/types:optional",
+  ]
+}
 rtc_source_set("rtt_stats") {
   visibility = [ ":*" ]
   sources = [
@@ -101,12 +114,25 @@ rtc_source_set("windowed_filter") {
   ]
 }
 if (rtc_include_tests) {
+  rtc_source_set("test_bbr_printer") {
+    testonly = true
+    sources = [
+      "test/bbr_printer.cc",
+      "test/bbr_printer.h",
+    ]
+    deps = [
+      ":bbr",
+      ":bbr_controller",
+      "..:test_controller_printer",
+    ]
+  }
   rtc_source_set("bbr_unittests") {
     testonly = true
     sources = [
       "bandwidth_sampler_unittest.cc",
       "bbr_network_controller_unittest.cc",
       "data_transfer_tracker_unittest.cc",
+      "loss_rate_filter_unittest.cc",
       "packet_number_indexed_queue_unittest.cc",
       "rtt_stats_unittest.cc",
       "windowed_filter_unittest.cc",
@@ -116,12 +142,14 @@ if (rtc_include_tests) {
       ":bbr",
       ":bbr_controller",
       ":data_transfer_tracker",
+      ":loss_rate_filter",
       ":packet_number_indexed_queue",
       ":rtt_stats",
       ":windowed_filter",
       "../../../api/transport:network_control_test",
       "../../../api/units:data_rate",
       "../../../api/units:time_delta",
+      "../../../api/units:timestamp",
       "../../../test:test_support",
     ]
     if (!build_with_chromium && is_clang) {

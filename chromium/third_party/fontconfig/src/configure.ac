@@ -33,7 +33,7 @@ dnl This is the package version number, not the shared library
 dnl version.  This same version number must appear in fontconfig/fontconfig.h
 dnl Yes, it is a pain to synchronize version numbers.  Unfortunately, it's
 dnl not possible to extract the version number here from fontconfig.h
-AC_INIT([fontconfig], [2.12.6], [https://bugs.freedesktop.org/enter_bug.cgi?product=fontconfig])
+AC_INIT([fontconfig], [2.13.0], [https://bugs.freedesktop.org/enter_bug.cgi?product=fontconfig])
 AM_INIT_AUTOMAKE([1.11 parallel-tests dist-bzip2])
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 
@@ -53,8 +53,6 @@ m4_ifdef([PKG_INSTALLDIR], [PKG_INSTALLDIR], AC_SUBST([pkgconfigdir], ${libdir}/
 
 AM_MISSING_PROG([GIT], [git])
 AM_MISSING_PROG([GPERF], [gperf])
-AM_PATH_PYTHON(,, [:])
-AM_CONDITIONAL([HAVE_PYTHON], [test "$PYTHON" != :])
 
 AC_MSG_CHECKING([for RM macro])
 _predefined_rm=`make -p -f /dev/null 2>/dev/null|grep '^RM ='|sed -e 's/^RM = //'`
@@ -74,11 +72,11 @@ dnl libtool versioning
 dnl bump revision when fixing bugs
 dnl bump current and age, reset revision to zero when adding APIs
 dnl bump current, leave age, reset revision to zero when changing/removing APIS
-LIBT_CURRENT=11
+LIBT_CURRENT=12
 LIBT_REVISION=1
 AC_SUBST(LIBT_CURRENT)
 AC_SUBST(LIBT_REVISION)
-LIBT_AGE=10
+LIBT_AGE=11
 
 LIBT_VERSION_INFO="$LIBT_CURRENT:$LIBT_REVISION:$LIBT_AGE"
 AC_SUBST(LIBT_VERSION_INFO)
@@ -90,7 +88,6 @@ PKGCONFIG_REQUIRES=
 PKGCONFIG_REQUIRES_PRIVATELY=
 
 dnl ==========================================================================
-
 case "$host" in
   *-*-mingw*)
     os_win32=yes
@@ -99,6 +96,18 @@ case "$host" in
     os_win32=no
 esac
 AM_CONDITIONAL(OS_WIN32, test "$os_win32" = "yes")
+
+dnl ==========================================================================
+dnl gettext stuff
+dnl ==========================================================================
+GETTEXT_PACKAGE=$PACKAGE
+AC_SUBST(GETTEXT_PACKAGE)
+AC_DEFINE_UNQUOTED(GETTEXT_PACKAGE, "$GETTEXT_PACKAGE", [Gettext package])
+
+AM_GNU_GETTEXT_VERSION([0.19.8])
+AM_GNU_GETTEXT([external])
+
+dnl ==========================================================================
 
 if test "$os_win32" = "yes"; then
   AC_CHECK_PROG(ms_librarian, lib.exe, yes, no)
@@ -160,7 +169,7 @@ AC_TYPE_PID_T
 # Checks for library functions.
 AC_FUNC_VPRINTF
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([link mkstemp mkostemp _mktemp_s mkdtemp getopt getopt_long getprogname getexecname rand random lrand48 random_r rand_r readlink fstatvfs fstatfs lstat])
+AC_CHECK_FUNCS([link mkstemp mkostemp _mktemp_s mkdtemp getopt getopt_long getprogname getexecname rand random lrand48 random_r rand_r readlink fstatvfs fstatfs lstat strerror strerror_r])
 
 dnl AC_CHECK_FUNCS doesn't check for header files.
 dnl posix_fadvise() may be not available in older libc.
@@ -298,8 +307,9 @@ AC_DEFINE_UNQUOTED(USE_ICONV,$use_iconv,[Use iconv.])
 #
 # Checks for FreeType
 #
-PKG_CHECK_MODULES(FREETYPE, freetype2)
-PKGCONFIG_REQUIRES="$PKGCONFIG_REQUIRES freetype2"
+dnl See http://git.savannah.gnu.org/cgit/freetype/freetype2.git/tree/docs/VERSIONS.TXT for versioning in freetype
+PKG_CHECK_MODULES(FREETYPE, freetype2 >= 21.0.15)
+PKGCONFIG_REQUIRES="$PKGCONFIG_REQUIRES freetype2 >= 21.0.15"
 
 AC_SUBST(FREETYPE_LIBS)
 AC_SUBST(FREETYPE_CFLAGS)
@@ -308,40 +318,52 @@ fontconfig_save_libs="$LIBS"
 fontconfig_save_cflags="$CFLAGS"
 LIBS="$LIBS $FREETYPE_LIBS"
 CFLAGS="$CFLAGS $FREETYPE_CFLAGS"
+AC_CHECK_FUNCS(FT_Get_BDF_Property FT_Get_PS_Font_Info FT_Has_PS_Glyph_Names FT_Get_X11_Font_Format FT_Done_MM_Var)
 
-dnl See http://git.savannah.gnu.org/cgit/freetype/freetype2.git/tree/docs/VERSIONS.TXT for versioning in freetype
-dnl
-dnl The outcome of the family property has been changed in freetype-2.7.1.
-dnl Our test cases relies on it and need to update the dependency to get it success.
-dnl However it isn't exactly required to run fontconfig itself.
-dnl so adding another test here for compatibility. it might be simplified in the future.
-PKG_CHECK_EXISTS([freetype2 = 19.0.13], [have_freetype_2_7_1=yes], [have_freetype_2_7_1=no])
-PKG_CHECK_EXISTS([freetype2 >= 20.0.14],
-	[AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-		#include <ft2build.h>
-		#include FT_CONFIG_OPTIONS_H
-		#ifndef PCF_CONFIG_OPTION_LONG_FAMILY_NAMES
-		#  error "No pcf long family names support"
-		#endif
-		]])], [have_pcf_long_family_names=yes], [have_pcf_long_family_names=no])],
-	[have_pcf_long_family_names=no])
-AM_CONDITIONAL(FREETYPE_PCF_LONG_FAMILY_NAMES, test "x$have_freetype_2_7_1" = xyes -o "x$have_pcf_long_family_names" = xyes)
+AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+	#include <ft2build.h>
+	#include FT_CONFIG_OPTIONS_H
+	#ifndef PCF_CONFIG_OPTION_LONG_FAMILY_NAMES
+	#  error "No pcf long family names support"
+	#endif
+	]])], [have_pcf_long_family_names=yes], [have_pcf_long_family_names=no])
+AM_CONDITIONAL(FREETYPE_PCF_LONG_FAMILY_NAMES, test "x$have_pcf_long_family_names" = xyes)
 
-AC_CHECK_FUNCS(FT_Get_Next_Char FT_Get_BDF_Property FT_Get_PS_Font_Info FT_Has_PS_Glyph_Names FT_Get_X11_Font_Format FT_Select_Size)
-AC_CHECK_MEMBER(FT_Bitmap_Size.y_ppem,
-		HAVE_FT_BITMAP_SIZE_Y_PPEM=1,
-		HAVE_FT_BITMAP_SIZE_Y_PPEM=0,
-[#include <ft2build.h>
-#include FT_FREETYPE_H])
-AC_DEFINE_UNQUOTED(HAVE_FT_BITMAP_SIZE_Y_PPEM,$HAVE_FT_BITMAP_SIZE_Y_PPEM,
-		   [FT_Bitmap_Size structure includes y_ppem field])
-AC_CHECK_MEMBERS([TT_OS2.usLowerOpticalPointSize, TT_OS2.usUpperOpticalPointSize], [], [], [[
-#include <ft2build.h>
-#include FT_FREETYPE_H
-#include FT_TRUETYPE_TABLES_H]])
-
-CFLAGS="$fontconfig_save_cflags"
 LIBS="$fontconfig_save_libs"
+CFLAGS="$fontconfig_save_cflags"
+
+#
+# Check for uuid
+#
+if test "$os_win32" != "yes"; then
+	use_pkgconfig_for_uuid=yes
+	if test -n "${UUID_LIBS}"; then
+		save_UUID_LIBS=$UUID_LIBS
+	fi
+	PKG_CHECK_MODULES([UUID], [uuid],
+			  [use_pkgconfig_for_uuid=yes],
+			  [use_pkgconfig_for_uuid=no])
+	if test "x$use_pkgconfig_for_uuid" = "xno"; then
+		AC_MSG_CHECKING([where uuid functions comes from])
+		AC_TRY_LINK([#include <uuid/uuid.h>],
+			[uuid_t a; uuid_generate(a);],
+			[AC_MSG_RESULT([builtin])
+			 UUID_CFLAGS=""
+			 UUID_LIBS=""
+			],[AC_MSG_ERROR([
+*** uuid is required. install util-linux.
+			])])
+	else
+		if test -z "${save_UUID_LIBS+x}" && test "x${UUID_LIBS}" != "x"; then
+			PKGCONFIG_REQUIRES_PRIVATELY="$PKGCONFIG_REQUIRES_PRIVATELY uuid"
+		fi
+	fi
+else
+	UUID_CFLAGS=""
+	UUID_LIBS=""
+fi
+AC_SUBST(UUID_CFLAGS)
+AC_SUBST(UUID_LIBS)
 
 #
 # Check expat configuration
@@ -383,8 +405,12 @@ if test "$enable_libxml2" != "yes"; then
 		else
 			EXPAT_LIBS="-lexpat"
 		fi
+		PKG_EXPAT_CFLAGS=$EXPAT_CFLAGS
+		PKG_EXPAT_LIBS=$EXPAT_LIBS
 	else
 		PKGCONFIG_REQUIRES_PRIVATELY="$PKGCONFIG_REQUIRES_PRIVATELY expat"
+		PKG_EXPAT_CFLAGS=
+		PKG_EXPAT_LIBS=
 	fi
 
 	expatsaved_CPPFLAGS="$CPPFLAGS"
@@ -415,6 +441,8 @@ if test "$enable_libxml2" != "yes"; then
 
 	AC_SUBST(EXPAT_CFLAGS)
 	AC_SUBST(EXPAT_LIBS)
+	AC_SUBST(PKG_EXPAT_CFLAGS)
+	AC_SUBST(PKG_EXPAT_LIBS)
 fi
 
 #
@@ -426,7 +454,7 @@ AC_ARG_ENABLE(libxml2,
 
 if test "$enable_libxml2" = "yes"; then
     PKG_CHECK_MODULES([LIBXML2], [libxml-2.0 >= 2.6])
-    PKGCONFIG_REQUIRES_PRIVATELY="$PKGCONFIG_REQUIRES_PRIVATELY libxml-2.0"
+    PKGCONFIG_REQUIRES_PRIVATELY="$PKGCONFIG_REQUIRES_PRIVATELY libxml-2.0 >= 2.6"
     AC_DEFINE_UNQUOTED(ENABLE_LIBXML2,1,[Use libxml2 instead of Expat])
 
     AC_SUBST(LIBXML2_CFLAGS)
@@ -444,6 +472,15 @@ if test "$enable_libxml2" = "yes"; then
 *** SAX1 support in libxml2 is required. enable it or use expat instead.])])
     CFLAGS="$fc_saved_CFLAGS"
 fi
+
+#
+# Check json-c
+#
+PKG_CHECK_MODULES([JSONC], [json-c], [use_jsonc=yes], [use_jsonc=no])
+
+AM_CONDITIONAL(ENABLE_JSONC, test "x$use_jsonc" = "xyes")
+AC_SUBST(JSONC_CFLAGS)
+AC_SUBST(JSONC_LIBS)
 
 #
 # Set default hinting
@@ -760,13 +797,12 @@ AC_CONFIG_FILES([
 Makefile
 fontconfig/Makefile
 fc-lang/Makefile
-fc-glyphname/Makefile
-fc-blanks/Makefile
 fc-case/Makefile
 src/Makefile
 conf.d/Makefile
 fc-cache/Makefile
 fc-cat/Makefile
+fc-conflist/Makefile
 fc-list/Makefile
 fc-match/Makefile
 fc-pattern/Makefile
@@ -775,6 +811,9 @@ fc-scan/Makefile
 fc-validate/Makefile
 doc/Makefile
 doc/version.sgml
+its/Makefile
+po/Makefile.in
+po-conf/Makefile.in
 test/Makefile
 fontconfig.spec
 fontconfig.pc

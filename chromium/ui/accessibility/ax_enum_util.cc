@@ -28,6 +28,8 @@ const char* ToString(ax::mojom::Event event) {
       return "clicked";
     case ax::mojom::Event::kDocumentSelectionChanged:
       return "documentSelectionChanged";
+    case ax::mojom::Event::kDocumentTitleChanged:
+      return "documentTitleChanged";
     case ax::mojom::Event::kExpandedChanged:
       return "expandedChanged";
     case ax::mojom::Event::kFocus:
@@ -136,6 +138,8 @@ ax::mojom::Event ParseEvent(const char* event) {
     return ax::mojom::Event::kClicked;
   if (0 == strcmp(event, "documentSelectionChanged"))
     return ax::mojom::Event::kDocumentSelectionChanged;
+  if (0 == strcmp(event, "documentTitleChanged"))
+    return ax::mojom::Event::kDocumentTitleChanged;
   if (0 == strcmp(event, "expandedChanged"))
     return ax::mojom::Event::kExpandedChanged;
   if (0 == strcmp(event, "focus"))
@@ -267,6 +271,10 @@ const char* ToString(ax::mojom::Role role) {
       return "comboBoxMenuButton";
     case ax::mojom::Role::kComplementary:
       return "complementary";
+    case ax::mojom::Role::kContentDeletion:
+      return "contentDeletion";
+    case ax::mojom::Role::kContentInsertion:
+      return "contentInsertion";
     case ax::mojom::Role::kContentInfo:
       return "contentInfo";
     case ax::mojom::Role::kDate:
@@ -437,8 +445,6 @@ const char* ToString(ax::mojom::Role role) {
       return "listMarker";
     case ax::mojom::Role::kList:
       return "list";
-    case ax::mojom::Role::kLocationBar:
-      return "locationBar";
     case ax::mojom::Role::kLog:
       return "log";
     case ax::mojom::Role::kMain:
@@ -619,6 +625,10 @@ ax::mojom::Role ParseRole(const char* role) {
     return ax::mojom::Role::kComboBoxMenuButton;
   if (0 == strcmp(role, "complementary"))
     return ax::mojom::Role::kComplementary;
+  if (0 == strcmp(role, "contentDeletion"))
+    return ax::mojom::Role::kContentDeletion;
+  if (0 == strcmp(role, "contentInsertion"))
+    return ax::mojom::Role::kContentInsertion;
   if (0 == strcmp(role, "contentInfo"))
     return ax::mojom::Role::kContentInfo;
   if (0 == strcmp(role, "date"))
@@ -705,8 +715,6 @@ ax::mojom::Role ParseRole(const char* role) {
     return ax::mojom::Role::kListMarker;
   if (0 == strcmp(role, "list"))
     return ax::mojom::Role::kList;
-  if (0 == strcmp(role, "locationBar"))
-    return ax::mojom::Role::kLocationBar;
   if (0 == strcmp(role, "log"))
     return ax::mojom::Role::kLog;
   if (0 == strcmp(role, "main"))
@@ -848,8 +856,6 @@ const char* ToString(ax::mojom::State state) {
       return "expanded";
     case ax::mojom::State::kFocusable:
       return "focusable";
-    case ax::mojom::State::kHasPopup:
-      return "haspopup";
     case ax::mojom::State::kHorizontal:
       return "horizontal";
     case ax::mojom::State::kHovered:
@@ -892,8 +898,6 @@ ax::mojom::State ParseState(const char* state) {
     return ax::mojom::State::kExpanded;
   if (0 == strcmp(state, "focusable"))
     return ax::mojom::State::kFocusable;
-  if (0 == strcmp(state, "haspopup"))
-    return ax::mojom::State::kHasPopup;
   if (0 == strcmp(state, "horizontal"))
     return ax::mojom::State::kHorizontal;
   if (0 == strcmp(state, "hovered"))

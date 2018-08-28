@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "gpu/vulkan/vulkan_command_buffer.h"
 #include "gpu/vulkan/vulkan_device_queue.h"
+#include "gpu/vulkan/vulkan_function_pointers.h"
 #include "gpu/vulkan/vulkan_image_view.h"
 #include "gpu/vulkan/vulkan_swap_chain.h"
 #include "ui/gfx/geometry/size.h"
@@ -361,6 +362,7 @@ void VulkanRenderPass::BeginRenderPass(
     bool exec_inline) {
   DCHECK(!executing_);
   DCHECK_NE(0u, num_sub_passes_);
+
   executing_ = true;
   execution_type_ = exec_inline ? VK_SUBPASS_CONTENTS_INLINE
                                 : VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS;

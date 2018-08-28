@@ -7,6 +7,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_object_parser.h"
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/inspector/main_thread_debugger.h"
@@ -68,7 +69,7 @@ void LayoutWorkletGlobalScope::registerLayout(
 
   if (layout_definitions_.Contains(name)) {
     exception_state.ThrowDOMException(
-        kNotSupportedError,
+        DOMExceptionCode::kNotSupportedError,
         "A class with name:'" + name + "' is already registered.");
     return;
   }
@@ -132,7 +133,7 @@ void LayoutWorkletGlobalScope::registerLayout(
     if (!existing_document_definition->RegisterAdditionalLayoutDefinition(
             *definition)) {
       document_definition_map->Set(name, kInvalidDocumentLayoutDefinition);
-      exception_state.ThrowDOMException(kNotSupportedError,
+      exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                         "A class with name:'" + name +
                                             "' was registered with a "
                                             "different definition.");
@@ -160,13 +161,6 @@ void LayoutWorkletGlobalScope::Trace(blink::Visitor* visitor) {
   visitor->Trace(layout_definitions_);
   visitor->Trace(pending_layout_registry_);
   MainThreadWorkletGlobalScope::Trace(visitor);
-}
-
-void LayoutWorkletGlobalScope::TraceWrappers(
-    ScriptWrappableVisitor* visitor) const {
-  for (auto definition : layout_definitions_)
-    visitor->TraceWrappers(definition.value);
-  MainThreadWorkletGlobalScope::TraceWrappers(visitor);
 }
 
 }  // namespace blink

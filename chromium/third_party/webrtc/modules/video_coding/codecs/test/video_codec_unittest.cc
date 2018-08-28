@@ -18,7 +18,6 @@ static const int kEncodeTimeoutMs = 100;
 static const int kDecodeTimeoutMs = 25;
 // Set bitrate to get higher quality.
 static const int kStartBitrate = 300;
-static const int kTargetBitrate = 2000;
 static const int kMaxBitrate = 4000;
 static const int kWidth = 176;        // Width of the input image.
 static const int kHeight = 144;       // Height of the input image.
@@ -50,8 +49,8 @@ VideoCodecUnitTest::FakeEncodeCompleteCallback::OnEncodedImage(
 
 void VideoCodecUnitTest::FakeDecodeCompleteCallback::Decoded(
     VideoFrame& frame,
-    rtc::Optional<int32_t> decode_time_ms,
-    rtc::Optional<uint8_t> qp) {
+    absl::optional<int32_t> decode_time_ms,
+    absl::optional<uint8_t> qp) {
   rtc::CritScope lock(&test_->decoded_frame_section_);
   test_->decoded_frame_.emplace(frame);
   test_->decoded_qp_ = qp;
@@ -61,7 +60,6 @@ void VideoCodecUnitTest::FakeDecodeCompleteCallback::Decoded(
 void VideoCodecUnitTest::SetUp() {
   webrtc::test::CodecSettings(kVideoCodecVP8, &codec_settings_);
   codec_settings_.startBitrate = kStartBitrate;
-  codec_settings_.targetBitrate = kTargetBitrate;
   codec_settings_.maxBitrate = kMaxBitrate;
   codec_settings_.maxFramerate = kMaxFramerate;
   codec_settings_.width = kWidth;
@@ -71,7 +69,7 @@ void VideoCodecUnitTest::SetUp() {
 
   input_frame_generator_ = test::FrameGenerator::CreateSquareGenerator(
       codec_settings_.width, codec_settings_.height,
-      rtc::Optional<test::FrameGenerator::OutputType>(), rtc::Optional<int>());
+      test::FrameGenerator::OutputType::I420, absl::optional<int>());
 
   encoder_ = CreateEncoder();
   decoder_ = CreateDecoder();
@@ -141,7 +139,7 @@ bool VideoCodecUnitTest::WaitForEncodedFrames(
 }
 
 bool VideoCodecUnitTest::WaitForDecodedFrame(std::unique_ptr<VideoFrame>* frame,
-                                             rtc::Optional<uint8_t>* qp) {
+                                             absl::optional<uint8_t>* qp) {
   bool ret = decoded_frame_event_.Wait(kDecodeTimeoutMs);
   EXPECT_TRUE(ret) << "Timed out while waiting for a decoded frame.";
   // This becomes unsafe if there are multiple threads waiting for frames.

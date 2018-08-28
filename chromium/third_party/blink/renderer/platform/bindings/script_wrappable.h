@@ -32,7 +32,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_SCRIPT_WRAPPABLE_H_
 
 #include "build/build_config.h"
-#include "third_party/blink/renderer/platform/bindings/trace_wrapper_base.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_v8_reference.h"
 #include "third_party/blink/renderer/platform/bindings/wrapper_type_info.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -51,18 +51,13 @@ namespace blink {
 // objects for other worlds are stored in DOMWrapperMap.
 class PLATFORM_EXPORT ScriptWrappable
     : public GarbageCollectedFinalized<ScriptWrappable>,
-      public TraceWrapperBase {
+      public NameClient {
   WTF_MAKE_NONCOPYABLE(ScriptWrappable);
 
  public:
   virtual ~ScriptWrappable() = default;
 
   virtual void Trace(blink::Visitor*);
-
-  // Traces wrapper objects corresponding to this ScriptWrappable in all worlds.
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
-
-  bool IsScriptWrappable() const override { return true; }
 
   const char* NameInHeapSnapshot() const override;
 
@@ -159,13 +154,6 @@ class PLATFORM_EXPORT ScriptWrappable
 
   v8::Local<v8::Object> MainWorldWrapper(v8::Isolate* isolate) const {
     return main_world_wrapper_.NewLocal(isolate);
-  }
-
-  // Only use when really necessary, i.e., when passing over this
-  // ScriptWrappable's reference to V8. Should only be needed by GC
-  // infrastructure.
-  const v8::Persistent<v8::Object>* RawMainWorldWrapper() const {
-    return &main_world_wrapper_.Get();
   }
 
   TraceWrapperV8Reference<v8::Object> main_world_wrapper_;

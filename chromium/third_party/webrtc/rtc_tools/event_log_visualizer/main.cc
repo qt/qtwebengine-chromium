@@ -151,8 +151,11 @@ DEFINE_bool(print_triage_alerts,
             false,
             "Print triage alerts, i.e. a list of potential problems.");
 
-void SetAllPlotFlags(bool setting);
+DEFINE_bool(normalize_time,
+            true,
+            "Normalize the log timestamps so that the call starts at time 0.");
 
+void SetAllPlotFlags(bool setting);
 
 int main(int argc, char* argv[]) {
   std::string program_name = argv[0];
@@ -227,7 +230,7 @@ int main(int argc, char* argv[]) {
               << std::endl;
   }
 
-  webrtc::EventLogAnalyzer analyzer(parsed_log);
+  webrtc::EventLogAnalyzer analyzer(parsed_log, FLAG_normalize_time);
   std::unique_ptr<webrtc::PlotCollection> collection(
       new webrtc::PythonPlotCollection());
 
@@ -332,32 +335,42 @@ int main(int argc, char* argv[]) {
           "audio_processing/conversational_speech/EN_script2_F_sp2_B1", "wav");
     }
     auto neteq_stats = analyzer.SimulateNetEq(wav_path, 48000);
-    analyzer.CreateAudioJitterBufferGraph(neteq_stats,
-                                          collection->AppendNewPlot());
-    analyzer.CreateNetEqStatsGraph(
+    for (webrtc::EventLogAnalyzer::NetEqStatsGetterMap::const_iterator it =
+             neteq_stats.cbegin();
+         it != neteq_stats.cend(); ++it) {
+      analyzer.CreateAudioJitterBufferGraph(it->first, it->second.get(),
+                                            collection->AppendNewPlot());
+    }
+    analyzer.CreateNetEqNetworkStatsGraph(
         neteq_stats,
         [](const webrtc::NetEqNetworkStatistics& stats) {
           return stats.expand_rate / 16384.f;
         },
         "Expand rate", collection->AppendNewPlot());
-    analyzer.CreateNetEqStatsGraph(
+    analyzer.CreateNetEqNetworkStatsGraph(
         neteq_stats,
         [](const webrtc::NetEqNetworkStatistics& stats) {
           return stats.speech_expand_rate / 16384.f;
         },
         "Speech expand rate", collection->AppendNewPlot());
-    analyzer.CreateNetEqStatsGraph(
+    analyzer.CreateNetEqNetworkStatsGraph(
         neteq_stats,
         [](const webrtc::NetEqNetworkStatistics& stats) {
           return stats.accelerate_rate / 16384.f;
         },
         "Accelerate rate", collection->AppendNewPlot());
-    analyzer.CreateNetEqStatsGraph(
+    analyzer.CreateNetEqNetworkStatsGraph(
         neteq_stats,
         [](const webrtc::NetEqNetworkStatistics& stats) {
           return stats.packet_loss_rate / 16384.f;
         },
         "Packet loss rate", collection->AppendNewPlot());
+    analyzer.CreateNetEqLifetimeStatsGraph(
+        neteq_stats,
+        [](const webrtc::NetEqLifetimeStatistics& stats) {
+          return static_cast<float>(stats.concealment_events);
+        },
+        "Concealment events", collection->AppendNewPlot());
   }
 
   if (FLAG_plot_ice_candidate_pair_config) {
@@ -376,7 +389,6 @@ int main(int argc, char* argv[]) {
 
   return 0;
 }
-
 
 void SetAllPlotFlags(bool setting) {
   FLAG_plot_incoming_packet_sizes = setting;

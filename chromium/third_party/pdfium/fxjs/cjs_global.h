@@ -11,8 +11,8 @@
 #include <memory>
 #include <vector>
 
-#include "fxjs/JS_Define.h"
 #include "fxjs/cjs_keyvalue.h"
+#include "fxjs/js_define.h"
 
 class CJS_GlobalData;
 
@@ -36,11 +36,8 @@ class CJS_Global : public CJS_Object {
   static void setPersistent_static(
       const v8::FunctionCallbackInfo<v8::Value>& info);
 
-  explicit CJS_Global(v8::Local<v8::Object> pObject);
+  CJS_Global(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
   ~CJS_Global() override;
-
-  // CJS_Object
-  void InitInstance(IJS_Runtime* pIRuntime) override;
 
   CJS_Return DelProperty(CJS_Runtime* pRuntime, const wchar_t* propname);
   void Initial(CPDFSDK_FormFillEnvironment* pFormFillEnv);
@@ -82,7 +79,7 @@ class CJS_Global : public CJS_Object {
                                 bool bDefaultPersistent);
   void ObjectToArray(CJS_Runtime* pRuntime,
                      v8::Local<v8::Object> pObj,
-                     CJS_GlobalVariableArray& array);
+                     CJS_GlobalVariableArray* pArray);
   void PutObjectProperty(v8::Local<v8::Object> obj, CJS_KeyValue* pData);
 
   std::map<ByteString, std::unique_ptr<JSGlobalData>> m_MapGlobal;

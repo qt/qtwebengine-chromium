@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_module.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/script/module_import_meta.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_context_data.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -22,28 +23,25 @@
 
 namespace blink {
 
-class ExceptionState;
+class FetchClientSettingsObjectSnapshot;
 class ModuleScript;
 class ModuleScriptFetchRequest;
 class ModuleScriptFetcher;
-class ModuleScriptLoaderClient;
 class ReferrerScriptInfo;
 class ScriptModuleResolver;
 class ScriptPromiseResolver;
 class ScriptState;
 class ScriptValue;
-class SecurityOrigin;
 
 // A SingleModuleClient is notified when single module script node (node as in a
 // module tree graph) load is complete and its corresponding entry is created in
 // module map.
 class CORE_EXPORT SingleModuleClient
     : public GarbageCollectedFinalized<SingleModuleClient>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   virtual ~SingleModuleClient() = default;
   virtual void Trace(blink::Visitor* visitor) {}
-  void TraceWrappers(ScriptWrappableVisitor*) const override {}
   const char* NameInHeapSnapshot() const override {
     return "SingleModuleClient";
   }
@@ -55,11 +53,10 @@ class CORE_EXPORT SingleModuleClient
 // tree load is complete.
 class CORE_EXPORT ModuleTreeClient
     : public GarbageCollectedFinalized<ModuleTreeClient>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   virtual ~ModuleTreeClient() = default;
   virtual void Trace(blink::Visitor* visitor) {}
-  void TraceWrappers(ScriptWrappableVisitor*) const override {}
   const char* NameInHeapSnapshot() const override { return "ModuleTreeClient"; }
 
   virtual void NotifyModuleTreeLoadFinished(ModuleScript*) = 0;
@@ -69,6 +66,23 @@ class CORE_EXPORT ModuleTreeClient
 // https://html.spec.whatwg.org/multipage/webappapis.html#fetching-scripts-is-top-level
 enum class ModuleGraphLevel { kTopLevelModuleFetch, kDependentModuleFetch };
 
+// spec: "custom peform the fetch hook"
+// https://html.spec.whatwg.org/multipage/webappapis.html#fetching-scripts-perform-fetch
+enum class ModuleScriptCustomFetchType {
+  // Fetch module scripts without invoking custom fetch steps.
+  kNone,
+
+  // Perform custom fetch steps for worker's constructor defined in the HTML
+  // spec:
+  // https://html.spec.whatwg.org/multipage/workers.html#worker-processing-model
+  kWorkerConstructor,
+
+  // Perform custom fetch steps for Worklet's addModule() function defined in
+  // the Worklet spec:
+  // https://drafts.css-houdini.org/worklets/#fetch-a-worklet-script
+  kWorkletAddModule
+};
+
 // A Modulator is an interface for "environment settings object" concept for
 // module scripts.
 // https://html.spec.whatwg.org/multipage/webappapis.html#environment-settings-object
@@ -76,7 +90,7 @@ enum class ModuleGraphLevel { kTopLevelModuleFetch, kDependentModuleFetch };
 // A Modulator also serves as an entry point for various module spec algorithms.
 class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
                               public V8PerContextData::Data,
-                              public TraceWrapperBase {
+                              public NameClient {
   USING_GARBAGE_COLLECTED_MIXIN(Modulator);
 
  public:
@@ -87,35 +101,43 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   static void ClearModulator(ScriptState*);
 
   void Trace(blink::Visitor* visitor) override {}
-  void TraceWrappers(ScriptWrappableVisitor*) const override {}
   const char* NameInHeapSnapshot() const override { return "Modulator"; }
 
   virtual ScriptModuleResolver* GetScriptModuleResolver() = 0;
   virtual base::SingleThreadTaskRunner* TaskRunner() = 0;
-  virtual ReferrerPolicy GetReferrerPolicy() = 0;
-
-  // Returns the security origin of the "fetch client settings object".
-  // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-worker-script-tree
-  // This should be called only from ModuleScriptLoader.
-  virtual const SecurityOrigin* GetSecurityOriginForFetch() = 0;
 
   virtual ScriptState* GetScriptState() = 0;
 
+  // https://html.spec.whatwg.org/multipage/webappapis.html#concept-bc-noscript
+  // "scripting is disabled for settings's responsible browsing context"
+  virtual bool IsScriptingDisabled() const = 0;
+
   // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-script-tree
-  virtual void FetchTree(const KURL&,
-                         WebURLRequest::RequestContext destination,
-                         const ScriptFetchOptions&,
-                         ModuleTreeClient*) = 0;
+  // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-worker-script-tree
+  // Note that |this| is the "module map settings object" used in the "fetch a
+  // module worker script graph" algorithm.
+  virtual void FetchTree(
+      const KURL&,
+      FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
+      WebURLRequest::RequestContext destination,
+      const ScriptFetchOptions&,
+      ModuleScriptCustomFetchType,
+      ModuleTreeClient*) = 0;
 
   // Asynchronously retrieve a module script from the module map, or fetch it
   // and put it in the map if it's not there already.
   // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-  virtual void FetchSingle(const ModuleScriptFetchRequest&,
-                           ModuleGraphLevel,
-                           SingleModuleClient*) = 0;
+  // Note that |this| is the "module map settings object".
+  virtual void FetchSingle(
+      const ModuleScriptFetchRequest&,
+      FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
+      ModuleGraphLevel,
+      ModuleScriptCustomFetchType,
+      SingleModuleClient*) = 0;
 
   virtual void FetchDescendantsForInlineScript(
       ModuleScript*,
+      FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
       WebURLRequest::RequestContext destination,
       ModuleTreeClient*) = 0;
 
@@ -126,9 +148,9 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   virtual ModuleScript* GetFetchedModuleScript(const KURL&) = 0;
 
   // https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
-  static KURL ResolveModuleSpecifier(const String& module_request,
-                                     const KURL& base_url,
-                                     String* failure_reason = nullptr);
+  virtual KURL ResolveModuleSpecifier(const String& module_request,
+                                      const KURL& base_url,
+                                      String* failure_reason = nullptr) = 0;
 
   // https://tc39.github.io/proposal-dynamic-import/#sec-hostimportmoduledynamically
   virtual void ResolveDynamically(const String& specifier,
@@ -140,14 +162,6 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   virtual ModuleImportMeta HostGetImportMetaProperties(ScriptModule) const = 0;
 
   virtual bool HasValidContext() = 0;
-
-  virtual ScriptModule CompileModule(const String& script,
-                                     const KURL& source_url,
-                                     const KURL& base_url,
-                                     const ScriptFetchOptions&,
-                                     AccessControlStatus,
-                                     const TextPosition&,
-                                     ExceptionState&) = 0;
 
   virtual ScriptValue InstantiateModule(ScriptModule) = 0;
 
@@ -174,18 +188,8 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   virtual ScriptValue ExecuteModule(const ModuleScript*,
                                     CaptureEvalErrorFlag) = 0;
 
-  virtual ModuleScriptFetcher* CreateModuleScriptFetcher() = 0;
-
- private:
-  friend class ModuleMap;
-
-  // Fetches a single module script.
-  // This is triggered from fetchSingle() implementation (which is in ModuleMap)
-  // if the cached entry doesn't exist.
-  // The client can be notified either synchronously or asynchronously.
-  virtual void FetchNewSingleModule(const ModuleScriptFetchRequest&,
-                                    ModuleGraphLevel,
-                                    ModuleScriptLoaderClient*) = 0;
+  virtual ModuleScriptFetcher* CreateModuleScriptFetcher(
+      ModuleScriptCustomFetchType) = 0;
 };
 
 }  // namespace blink

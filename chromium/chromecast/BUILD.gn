@@ -133,11 +133,6 @@ cast_test_group("cast_tests") {
         "--enable-local-file-accesses",
         "--test-launcher-jobs=1",
       ]
-      if (is_cast_audio_only) {
-        args += [ "--ozone-platform=headless" ]
-      } else {
-        args += [ "--ozone-platform=cast" ]
-      }
       if (!is_cast_desktop_build) {
         args += [ "--use-gpu-in-tests" ]
 
@@ -205,10 +200,10 @@ cast_test_group("cast_tests") {
     gtest_excludes = []
     if (target_os == "linux") {
       if (is_cast_desktop_build) {
-        # Disable PartitionAllocReturnNullTest.RepeatedReturnNullDirect (b/67975693)
+        # Disable PartitionAllocDeathTest.Repeated*ReturnNullDirect (b/67975693)
         gtest_excludes += [
-          "PartitionAllocReturnNullTest.RepeatedReturnNullDirect",
-          "PartitionReallocReturnNullTest.RepeatedReturnNullDirect",
+          "PartitionAllocDeathTest.RepeatedAllocReturnNullDirect",
+          "PartitionAllocDeathTest.RepeatedReallocReturnNullDirect",
         ]
       } else {
         # Disable ProcessMetricsTest.GetNumberOfThreads (b/15610509)
@@ -455,21 +450,26 @@ cast_executable("cast_shell") {
   deps = [
     ":cast_shell_lib",
     ":chromecast_locales_pak",
-    "//build/config:exe_and_shlib_deps",
     "//chromecast/app",
     "//content/public/app:both",
   ]
 }
 
 if (is_fuchsia) {
-  fuchsia_executable_runner("cast_shell_fuchsia") {
-    exe_target = ":cast_shell"
+  fuchsia_package("cast_shell_pkg") {
+    binary = ":cast_shell"
+    package_name_override = "cast_shell"
 
     if (chromecast_branding != "public") {
       deps = [
         "//chromecast/internal:fuchsia_internal_data_deps",
       ]
     }
+  }
+
+  fuchsia_package_runner("cast_shell_fuchsia") {
+    package = ":cast_shell_pkg"
+    package_name_override = "cast_shell"
   }
 }
 

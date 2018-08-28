@@ -27,6 +27,7 @@
 
 #include <cmath>
 #include <limits>
+
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_content_decryption_module.h"
 #include "third_party/blink/public/platform/web_content_decryption_module_exception.h"
@@ -38,8 +39,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/dom/events/media_element_event_queue.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/core/dom/events/event_queue.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/modules/encryptedmedia/content_decryption_module_result_promise.h"
@@ -92,7 +92,7 @@ static bool IsPersistentSessionType(WebEncryptedMediaSessionType session_type) {
       return false;
     case WebEncryptedMediaSessionType::kPersistentLicense:
       return true;
-    case WebEncryptedMediaSessionType::kPersistentReleaseMessage:
+    case WebEncryptedMediaSessionType::kPersistentUsageRecord:
       return true;
     case blink::WebEncryptedMediaSessionType::kUnknown:
       break;
@@ -105,14 +105,14 @@ static bool IsPersistentSessionType(WebEncryptedMediaSessionType session_type) {
 static ScriptPromise CreateRejectedPromiseNotCallable(
     ScriptState* script_state) {
   return ScriptPromise::RejectWithDOMException(
-      script_state,
-      DOMException::Create(kInvalidStateError, "The session is not callable."));
+      script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                                         "The session is not callable."));
 }
 
 static ScriptPromise CreateRejectedPromiseAlreadyClosed(
     ScriptState* script_state) {
   return ScriptPromise::RejectWithDOMException(
-      script_state, DOMException::Create(kInvalidStateError,
+      script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
                                          "The session is already closed."));
 }
 
@@ -120,7 +120,7 @@ static ScriptPromise CreateRejectedPromiseAlreadyInitialized(
     ScriptState* script_state) {
   return ScriptPromise::RejectWithDOMException(
       script_state,
-      DOMException::Create(kInvalidStateError,
+      DOMException::Create(DOMExceptionCode::kInvalidStateError,
                            "The session is already initialized."));
 }
 
@@ -227,8 +227,14 @@ class MediaKeySession::PendingAction final
 // is not expected to be called, and will reject the promise.
 class NewSessionResultPromise : public ContentDecryptionModuleResultPromise {
  public:
-  NewSessionResultPromise(ScriptState* script_state, MediaKeySession* session)
-      : ContentDecryptionModuleResultPromise(script_state), session_(session) {}
+  NewSessionResultPromise(ScriptState* script_state,
+                          MediaKeySession* session,
+                          const char* interface_name,
+                          const char* property_name)
+      : ContentDecryptionModuleResultPromise(script_state,
+                                             interface_name,
+                                             property_name),
+        session_(session) {}
 
   ~NewSessionResultPromise() override = default;
 
@@ -259,8 +265,14 @@ class NewSessionResultPromise : public ContentDecryptionModuleResultPromise {
 // is not expected to be called, and will reject the promise.
 class LoadSessionResultPromise : public ContentDecryptionModuleResultPromise {
  public:
-  LoadSessionResultPromise(ScriptState* script_state, MediaKeySession* session)
-      : ContentDecryptionModuleResultPromise(script_state), session_(session) {}
+  LoadSessionResultPromise(ScriptState* script_state,
+                           MediaKeySession* session,
+                           const char* interface_name,
+                           const char* property_name)
+      : ContentDecryptionModuleResultPromise(script_state,
+                                             interface_name,
+                                             property_name),
+        session_(session) {}
 
   ~LoadSessionResultPromise() override = default;
 
@@ -295,8 +307,14 @@ class LoadSessionResultPromise : public ContentDecryptionModuleResultPromise {
 // promise).
 class SimpleResultPromise : public ContentDecryptionModuleResultPromise {
  public:
-  SimpleResultPromise(ScriptState* script_state, MediaKeySession* session)
-      : ContentDecryptionModuleResultPromise(script_state), session_(session) {}
+  SimpleResultPromise(ScriptState* script_state,
+                      MediaKeySession* session,
+                      const char* interface_name,
+                      const char* property_name)
+      : ContentDecryptionModuleResultPromise(script_state,
+                                             interface_name,
+                                             property_name),
+        session_(session) {}
 
   ~SimpleResultPromise() override = default;
 
@@ -330,9 +348,8 @@ MediaKeySession::MediaKeySession(ScriptState* script_state,
                                  MediaKeys* media_keys,
                                  WebEncryptedMediaSessionType session_type)
     : ContextLifecycleObserver(ExecutionContext::From(script_state)),
-      async_event_queue_(
-          MediaElementEventQueue::Create(this,
-                                         ExecutionContext::From(script_state))),
+      async_event_queue_(EventQueue::Create(GetExecutionContext(),
+                                            TaskType::kMediaElementEvent)),
       media_keys_(media_keys),
       session_type_(session_type),
       expiration_(std::numeric_limits<double>::quiet_NaN()),
@@ -465,7 +482,7 @@ ScriptPromise MediaKeySession::generateRequest(
       EncryptedMediaUtils::ConvertToInitDataType(init_data_type_string);
   if (init_data_type == WebEncryptedMediaInitDataType::kUnknown) {
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kNotSupportedError,
+        script_state, DOMException::Create(DOMExceptionCode::kNotSupportedError,
                                            "The initialization data type '" +
                                                init_data_type_string +
                                                "' is not supported."));
@@ -479,8 +496,8 @@ ScriptPromise MediaKeySession::generateRequest(
   //    (Done in constructor.)
 
   // 9. Let promise be a new promise.
-  NewSessionResultPromise* result =
-      new NewSessionResultPromise(script_state, this);
+  NewSessionResultPromise* result = new NewSessionResultPromise(
+      script_state, this, "MediaKeySession", "generateRequest");
   ScriptPromise promise = result->Promise();
 
   // 10. Run the following steps asynchronously (done in generateRequestTask())
@@ -574,8 +591,8 @@ ScriptPromise MediaKeySession::load(ScriptState* script_state,
   //    (Available as getExecutionContext()->getSecurityOrigin() anytime.)
 
   // 7. Let promise be a new promise.
-  LoadSessionResultPromise* result =
-      new LoadSessionResultPromise(script_state, this);
+  LoadSessionResultPromise* result = new LoadSessionResultPromise(
+      script_state, this, "MediaKeySession", "load");
   ScriptPromise promise = result->Promise();
 
   // 8. Run the following steps asynchronously (done in loadTask())
@@ -694,7 +711,8 @@ ScriptPromise MediaKeySession::update(ScriptState* script_state,
       DOMArrayBuffer::Create(response.Data(), response.ByteLength());
 
   // 5. Let promise be a new promise.
-  SimpleResultPromise* result = new SimpleResultPromise(script_state, this);
+  SimpleResultPromise* result =
+      new SimpleResultPromise(script_state, this, "MediaKeySession", "update");
   ScriptPromise promise = result->Promise();
 
   // 6. Run the following steps asynchronously (done in updateTask())
@@ -739,7 +757,8 @@ ScriptPromise MediaKeySession::close(ScriptState* script_state) {
     return CreateRejectedPromiseNotCallable(script_state);
 
   // 4. Let promise be a new promise.
-  SimpleResultPromise* result = new SimpleResultPromise(script_state, this);
+  SimpleResultPromise* result =
+      new SimpleResultPromise(script_state, this, "MediaKeySession", "close");
   ScriptPromise promise = result->Promise();
 
   // 5. Run the following steps in parallel (done in closeTask()).
@@ -779,7 +798,8 @@ ScriptPromise MediaKeySession::remove(ScriptState* script_state) {
     return CreateRejectedPromiseNotCallable(script_state);
 
   // 3. Let promise be a new promise.
-  SimpleResultPromise* result = new SimpleResultPromise(script_state, this);
+  SimpleResultPromise* result =
+      new SimpleResultPromise(script_state, this, "MediaKeySession", "remove");
   ScriptPromise promise = result->Promise();
 
   // 4. Run the following steps asynchronously (done in removeTask()).
@@ -1004,7 +1024,6 @@ void MediaKeySession::ContextDestroyed(ExecutionContext*) {
   is_closed_ = true;
   action_timer_.Stop();
   pending_actions_.clear();
-  async_event_queue_->Close();
 }
 
 void MediaKeySession::Trace(blink::Visitor* visitor) {

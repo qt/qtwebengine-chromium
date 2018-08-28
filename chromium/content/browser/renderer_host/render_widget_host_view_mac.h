@@ -21,20 +21,13 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/common/content_export.h"
+#include "content/common/render_widget_host_ns_view.mojom.h"
 #include "ipc/ipc_sender.h"
 #include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
+#include "ui/accelerated_widget_mac/ca_transaction_observer.h"
 #include "ui/accelerated_widget_mac/display_link_mac.h"
 #include "ui/base/cocoa/remote_layer_api.h"
 #include "ui/events/gesture_detection/filtered_gesture_provider.h"
-
-namespace content {
-class CursorManager;
-class RenderWidgetHost;
-class RenderWidgetHostNSViewBridge;
-class RenderWidgetHostViewMac;
-class WebContents;
-class WebCursor;
-}
 
 namespace ui {
 enum class DomCode;
@@ -46,6 +39,13 @@ class ScopedPasswordInputEnabler;
 @class RenderWidgetHostViewCocoa;
 
 namespace content {
+
+class CursorManager;
+class RenderWidgetHost;
+class RenderWidgetHostNSViewBridgeLocal;
+class RenderWidgetHostViewMac;
+class WebContents;
+class WebCursor;
 
 ///////////////////////////////////////////////////////////////////////////////
 // RenderWidgetHostViewMac
@@ -65,9 +65,11 @@ namespace content {
 // RenderWidgetHostView class hierarchy described in render_widget_host_view.h.
 class CONTENT_EXPORT RenderWidgetHostViewMac
     : public RenderWidgetHostViewBase,
-      public RenderWidgetHostNSViewClient,
+      public RenderWidgetHostNSViewLocalClient,
+      public mojom::RenderWidgetHostNSViewClient,
       public BrowserCompositorMacClient,
       public TextInputManager::Observer,
+      public ui::CATransactionCoordinator::PreCommitObserver,
       public ui::GestureProviderClient,
       public ui::AcceleratedWidgetMacNSView,
       public IPC::Sender {
@@ -104,6 +106,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void WasUnOccluded() override;
   void WasOccluded() override;
   gfx::Rect GetViewBounds() const override;
+  bool IsMouseLocked() override;
   void SetActive(bool active) override;
   void ShowDefinitionForSelection() override;
   void SpeakSelection() override;
@@ -150,10 +153,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
       BrowserAccessibilityDelegate* delegate, bool for_root_frame) override;
   gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds) override;
-  gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() override;
+  gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() override;
   base::Optional<SkColor> GetBackgroundColor() const override;
 
-  bool ShouldContinueToPauseForFrame() override;
   void SetParentUiLayer(ui::Layer* parent_ui_layer) override;
   void TransformPointToRootSurface(gfx::PointF* point) override;
   gfx::Rect GetBoundsInRootWindow() override;
@@ -166,6 +168,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   bool LockKeyboard(base::Optional<base::flat_set<ui::DomCode>> codes) override;
   void UnlockKeyboard() override;
   bool IsKeyboardLocked() override;
+  base::flat_map<std::string, std::string> GetKeyboardLayoutMap() override;
   void GestureEventAck(const blink::WebGestureEvent& event,
                        InputEventAckState ack_result) override;
   void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
@@ -176,8 +179,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   std::unique_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
       override;
 
-  viz::FrameSinkId GetFrameSinkId() override;
-  viz::LocalSurfaceId GetLocalSurfaceId() const override;
+  const viz::FrameSinkId& GetFrameSinkId() const override;
+  const viz::LocalSurfaceId& GetLocalSurfaceId() const override;
   // Returns true when we can do SurfaceHitTesting for the event type.
   bool ShouldRouteEvent(const blink::WebInputEvent& event) const;
   // This method checks |event| to see if a GesturePinch event can be routed
@@ -220,11 +223,15 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void OnTextSelectionChanged(TextInputManager* text_input_manager,
                               RenderWidgetHostViewBase* updated_view) override;
 
+  // ui::CATransactionCoordinator::PreCommitObserver implementation
+  bool ShouldWaitInPreCommit() override;
+  base::TimeDelta PreCommitTimeout() override;
+
   // ui::GestureProviderClient implementation.
   void OnGestureEvent(const ui::GestureEventData& gesture) override;
 
   // RenderFrameMetadataProvider::Observer
-  void OnRenderFrameMetadataChanged() override;
+  void OnRenderFrameMetadataChangedAfterActivation() override;
 
   // IPC::Sender implementation.
   bool Send(IPC::Message* message) override;
@@ -292,74 +299,94 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // RenderWidgetHostImpl as well.
   void UpdateNSViewAndDisplayProperties();
 
-  void PauseForPendingResizeOrRepaintsAndDraw();
-
-  // RenderWidgetHostNSViewClient implementation.
+  // RenderWidgetHostNSViewLocalClient implementation.
   BrowserAccessibilityManager* GetRootBrowserAccessibilityManager() override;
-  void OnNSViewSyncIsRenderViewHost(bool* is_render_view) override;
-  void OnNSViewRequestShutdown() override;
-  void OnNSViewIsFirstResponderChanged(bool is_first_responder) override;
-  void OnNSViewWindowIsKeyChanged(bool is_key) override;
-  void OnNSViewBoundsInWindowChanged(const gfx::Rect& view_bounds_in_window_dip,
-                                     bool attached_to_window) override;
-  void OnNSViewWindowFrameInScreenChanged(
-      const gfx::Rect& window_frame_in_screen_dip) override;
-  void OnNSViewDisplayChanged(const display::Display& display) override;
-  void OnNSViewBeginKeyboardEvent() override;
-  void OnNSViewEndKeyboardEvent() override;
-  void OnNSViewForwardKeyboardEvent(
-      const NativeWebKeyboardEvent& key_event,
-      const ui::LatencyInfo& latency_info) override;
-  void OnNSViewForwardKeyboardEventWithCommands(
+  void ForwardKeyboardEvent(const NativeWebKeyboardEvent& key_event,
+                            const ui::LatencyInfo& latency_info) override;
+  void ForwardKeyboardEventWithCommands(
       const NativeWebKeyboardEvent& key_event,
       const ui::LatencyInfo& latency_info,
       const std::vector<EditCommand>& commands) override;
-  void OnNSViewRouteOrProcessMouseEvent(
-      const blink::WebMouseEvent& web_event) override;
-  void OnNSViewRouteOrProcessWheelEvent(
+  void RouteOrProcessMouseEvent(const blink::WebMouseEvent& web_event) override;
+  void RouteOrProcessWheelEvent(
       const blink::WebMouseWheelEvent& web_event) override;
-  void OnNSViewForwardMouseEvent(
-      const blink::WebMouseEvent& web_event) override;
-  void OnNSViewForwardWheelEvent(
-      const blink::WebMouseWheelEvent& web_event) override;
-  void OnNSViewGestureBegin(blink::WebGestureEvent begin_event,
-                            bool is_synthetically_injected) override;
-  void OnNSViewGestureUpdate(blink::WebGestureEvent update_event) override;
-  void OnNSViewGestureEnd(blink::WebGestureEvent end_event) override;
-  void OnNSViewSmartMagnify(
-      const blink::WebGestureEvent& smart_magnify_event) override;
-  void OnNSViewImeSetComposition(
-      const base::string16& text,
-      const std::vector<ui::ImeTextSpan>& ime_text_spans,
-      const gfx::Range& replacement_range,
-      int selection_start,
-      int selection_end) override;
-  void OnNSViewImeCommitText(const base::string16& text,
-                             const gfx::Range& replacement_range) override;
-  void OnNSViewImeFinishComposingText() override;
-  void OnNSViewImeCancelComposition() override;
-  void OnNSViewLookUpDictionaryOverlayAtPoint(
-      const gfx::PointF& root_point) override;
-  void OnNSViewLookUpDictionaryOverlayFromRange(
-      const gfx::Range& range) override;
-  void OnNSViewSyncGetCharacterIndexAtPoint(const gfx::PointF& root_point,
-                                            uint32_t* index) override;
-  void OnNSViewSyncGetFirstRectForRange(const gfx::Range& requested_range,
-                                        gfx::Rect* rect,
-                                        gfx::Range* actual_range,
-                                        bool* success) override;
-  void OnNSViewExecuteEditCommand(const std::string& command) override;
-  void OnNSViewUndo() override;
-  void OnNSViewRedo() override;
-  void OnNSViewCut() override;
-  void OnNSViewCopy() override;
-  void OnNSViewCopyToFindPboard() override;
-  void OnNSViewPaste() override;
-  void OnNSViewPasteAndMatchStyle() override;
-  void OnNSViewSelectAll() override;
-  void OnNSViewSpeakSelection() override;
-  void OnNSViewStopSpeaking() override;
-  void OnNSViewSyncIsSpeaking(bool* is_speaking) override;
+  void ForwardMouseEvent(const blink::WebMouseEvent& web_event) override;
+  void ForwardWheelEvent(const blink::WebMouseWheelEvent& web_event) override;
+  void GestureBegin(blink::WebGestureEvent begin_event,
+                    bool is_synthetically_injected) override;
+  void GestureUpdate(blink::WebGestureEvent update_event) override;
+  void GestureEnd(blink::WebGestureEvent end_event) override;
+  void SmartMagnify(const blink::WebGestureEvent& smart_magnify_event) override;
+
+  // mojom::RenderWidgetHostNSViewClient implementation.
+  void SyncIsRenderViewHost(SyncIsRenderViewHostCallback callback) override;
+  bool SyncIsRenderViewHost(bool* is_render_view) override;
+  void RequestShutdown() override;
+  void OnFirstResponderChanged(bool is_first_responder) override;
+  void OnWindowIsKeyChanged(bool is_key) override;
+  void OnBoundsInWindowChanged(const gfx::Rect& view_bounds_in_window_dip,
+                               bool attached_to_window) override;
+  void OnWindowFrameInScreenChanged(
+      const gfx::Rect& window_frame_in_screen_dip) override;
+  void OnDisplayChanged(const display::Display& display) override;
+  void BeginKeyboardEvent() override;
+  void EndKeyboardEvent() override;
+
+  void ForwardKeyboardEvent(std::unique_ptr<InputEvent> event,
+                            bool skip_in_browser) override;
+  void ForwardKeyboardEventWithCommands(
+      std::unique_ptr<InputEvent> event,
+      bool skip_in_browser,
+      const std::vector<EditCommand>& commands) override;
+  void RouteOrProcessMouseEvent(std::unique_ptr<InputEvent> event) override;
+  void RouteOrProcessWheelEvent(std::unique_ptr<InputEvent> event) override;
+  void ForwardMouseEvent(std::unique_ptr<InputEvent> event) override;
+  void ForwardWheelEvent(std::unique_ptr<InputEvent> event) override;
+  void GestureBegin(std::unique_ptr<InputEvent> event,
+                    bool is_synthetically_injected) override;
+  void GestureUpdate(std::unique_ptr<InputEvent> event) override;
+  void GestureEnd(std::unique_ptr<InputEvent> event) override;
+  void SmartMagnify(std::unique_ptr<InputEvent> event) override;
+  void ImeSetComposition(const base::string16& text,
+                         const std::vector<ui::ImeTextSpan>& ime_text_spans,
+                         const gfx::Range& replacement_range,
+                         int selection_start,
+                         int selection_end) override;
+  void ImeCommitText(const base::string16& text,
+                     const gfx::Range& replacement_range) override;
+  void ImeFinishComposingText() override;
+  void ImeCancelCompositionFromCocoa() override;
+  void LookUpDictionaryOverlayAtPoint(const gfx::PointF& root_point) override;
+  void LookUpDictionaryOverlayFromRange(const gfx::Range& range) override;
+  void SyncGetCharacterIndexAtPoint(
+      const gfx::PointF& root_point,
+      SyncGetCharacterIndexAtPointCallback callback) override;
+  bool SyncGetCharacterIndexAtPoint(const gfx::PointF& root_point,
+                                    uint32_t* index) override;
+  void SyncGetFirstRectForRange(
+      const gfx::Range& requested_range,
+      const gfx::Rect& rect,
+      const gfx::Range& actual_range,
+      SyncGetFirstRectForRangeCallback callback) override;
+  bool SyncGetFirstRectForRange(const gfx::Range& requested_range,
+                                const gfx::Rect& rect,
+                                const gfx::Range& actual_range,
+                                gfx::Rect* out_rect,
+                                gfx::Range* out_actual_range,
+                                bool* out_success) override;
+  void ExecuteEditCommand(const std::string& command) override;
+  void Undo() override;
+  void Redo() override;
+  void Cut() override;
+  void Copy() override;
+  void CopyToFindPboard() override;
+  void Paste() override;
+  void PasteAndMatchStyle() override;
+  void SelectAll() override;
+  void StartSpeaking() override;
+  void StopSpeaking() override;
+  bool SyncIsSpeaking(bool* is_speaking) override;
+  void SyncIsSpeaking(SyncIsSpeakingCallback callback) override;
 
   // BrowserCompositorMacClient implementation.
   SkColor BrowserCompositorMacGetGutterColor() const override;
@@ -367,10 +394,11 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void OnFrameTokenChanged(uint32_t frame_token) override;
   void DidReceiveFirstFrameAfterNavigation() override;
   void DestroyCompositorForShutdown() override;
-  bool SynchronizeVisualProperties() override;
+  bool SynchronizeVisualProperties(
+      const base::Optional<viz::LocalSurfaceId>&
+          child_allocated_local_surface_id) override;
 
   // AcceleratedWidgetMacNSView implementation.
-  NSView* AcceleratedWidgetGetNSView() const override;
   void AcceleratedWidgetCALayerParamsUpdated() override;
 
   void SetShowingContextMenu(bool showing) override;
@@ -423,6 +451,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
  private:
   friend class RenderWidgetHostViewMacTest;
+  friend class MockPointerLockRenderWidgetHostView;
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewMacTest, GetPageTextForSpeech);
 
   // Allocate a new FrameSinkId if this object is the platform view of a
@@ -465,8 +494,15 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   using SpeechCallback = base::OnceCallback<void(const base::string16&)>;
   void GetPageTextForSpeech(SpeechCallback callback);
 
-  // Interface through which the NSView is to be manipulated.
-  std::unique_ptr<RenderWidgetHostNSViewBridge> ns_view_bridge_;
+  // Interface through which the NSView is to be manipulated. This points either
+  // to |ns_view_bridge_local_| or to (to-be-added) |ns_view_bridge_remote_|.
+  mojom::RenderWidgetHostNSViewBridge* ns_view_bridge_ = nullptr;
+
+  // If |ns_view_bridge_| is hosted in this process, then this will be non-null,
+  // and may be used to query the actual RenderWidgetHostViewCocoa that is being
+  // used for |this|. Any functionality that uses |new_view_bridge_local_| will
+  // not work when the RenderWidgetHostViewCocoa is hosted in an app process.
+  std::unique_ptr<RenderWidgetHostNSViewBridgeLocal> ns_view_bridge_local_;
 
   // State tracked by Show/Hide/IsShowing.
   bool is_visible_ = false;
@@ -491,9 +527,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Indicates if the page is loading.
   bool is_loading_;
-
-  // Whether it's allowed to pause waiting for a new frame.
-  bool allow_pause_for_resize_or_repaint_;
 
   // True when this view acts as a platform view hack for a
   // RenderWidgetHostViewGuest.
@@ -523,8 +556,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // applied until the swap completes (see comments in
   // AcceleratedWidgetCALayerParamsUpdated).
   SkColor last_frame_root_background_color_ = SK_ColorTRANSPARENT;
-
-  int tab_show_sequence_ = 0;
 
   std::unique_ptr<CursorManager> cursor_manager_;
 
@@ -563,6 +594,13 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Tracks whether keyboard lock is active.
   bool is_keyboard_locked_ = false;
+
+  // While the mouse is locked, the cursor is hidden from the user. Mouse events
+  // are still generated. However, the position they report is the last known
+  // mouse position just as mouse lock was entered; the movement they report
+  // indicates what the change in position of the mouse would be had it not been
+  // locked.
+  bool mouse_locked_ = false;
 
   // Latest capture sequence number which is incremented when the caller
   // requests surfaces be synchronized via

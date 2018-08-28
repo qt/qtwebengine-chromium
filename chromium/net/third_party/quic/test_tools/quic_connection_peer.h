@@ -12,7 +12,7 @@
 #include "net/third_party/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
-namespace net {
+namespace quic {
 
 struct QuicPacketHeader;
 class QuicAlarm;
@@ -87,7 +87,6 @@ class QuicConnectionPeer {
 
   static QuicAlarm* GetAckAlarm(QuicConnection* connection);
   static QuicAlarm* GetPingAlarm(QuicConnection* connection);
-  static QuicAlarm* GetResumeWritesAlarm(QuicConnection* connection);
   static QuicAlarm* GetRetransmissionAlarm(QuicConnection* connection);
   static QuicAlarm* GetSendAlarm(QuicConnection* connection);
   static QuicAlarm* GetTimeoutAlarm(QuicConnection* connection);
@@ -116,6 +115,8 @@ class QuicConnectionPeer {
                                 QuicPacketNumber number);
   static void SetAckMode(QuicConnection* connection,
                          QuicConnection::AckMode ack_mode);
+  static void SetFastAckAfterQuiescence(QuicConnection* connection,
+                                        bool fast_ack_after_quiescence);
   static void SetAckDecimationDelay(QuicConnection* connection,
                                     float ack_decimation_delay);
   static bool HasRetransmittableFrames(QuicConnection* connection,
@@ -126,6 +127,7 @@ class QuicConnectionPeer {
   static void SetMaxTrackedPackets(QuicConnection* connection,
                                    QuicPacketCount max_tracked_packets);
   static void SetSessionDecidesWhatToWrite(QuicConnection* connection);
+  static void SetNegotiatedVersion(QuicConnection* connection);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicConnectionPeer);
@@ -133,6 +135,6 @@ class QuicConnectionPeer {
 
 }  // namespace test
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_TEST_TOOLS_QUIC_CONNECTION_PEER_H_

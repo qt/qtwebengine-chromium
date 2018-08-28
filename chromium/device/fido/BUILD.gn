@@ -11,6 +11,8 @@ component("fido") {
     "attestation_object.h",
     "attestation_statement.cc",
     "attestation_statement.h",
+    "attestation_statement_formats.cc",
+    "attestation_statement_formats.h",
     "attested_credential_data.cc",
     "attested_credential_data.h",
     "authenticator_data.cc",
@@ -25,21 +27,18 @@ component("fido") {
     "authenticator_selection_criteria.h",
     "authenticator_supported_options.cc",
     "authenticator_supported_options.h",
+    "ctap2_device_operation.h",
     "ctap_empty_authenticator_request.cc",
     "ctap_empty_authenticator_request.h",
     "ctap_get_assertion_request.cc",
     "ctap_get_assertion_request.h",
     "ctap_make_credential_request.cc",
     "ctap_make_credential_request.h",
-    "ctap_register_operation.cc",
-    "ctap_register_operation.h",
     "device_operation.h",
     "device_response_converter.cc",
     "device_response_converter.h",
     "ec_public_key.cc",
     "ec_public_key.h",
-    "fido_attestation_statement.cc",
-    "fido_attestation_statement.h",
     "fido_authenticator.h",
     "fido_ble_connection.cc",
     "fido_ble_connection.h",
@@ -59,6 +58,8 @@ component("fido") {
     "fido_cable_device.h",
     "fido_cable_discovery.cc",
     "fido_cable_discovery.h",
+    "fido_cable_handshake_handler.cc",
+    "fido_cable_handshake_handler.h",
     "fido_constants.cc",
     "fido_constants.h",
     "fido_device.cc",
@@ -105,12 +106,12 @@ component("fido") {
     "response_data.h",
     "u2f_command_constructor.cc",
     "u2f_command_constructor.h",
-    "u2f_register.cc",
-    "u2f_register.h",
-    "u2f_request.cc",
-    "u2f_request.h",
-    "u2f_sign.cc",
-    "u2f_sign.h",
+    "u2f_register_operation.cc",
+    "u2f_register_operation.h",
+    "u2f_sign_operation.cc",
+    "u2f_sign_operation.h",
+    "virtual_ctap2_device.cc",
+    "virtual_ctap2_device.h",
     "virtual_fido_device.cc",
     "virtual_fido_device.h",
     "virtual_u2f_device.cc",
@@ -156,6 +157,10 @@ component("fido") {
     sources += [
       "mac/authenticator.h",
       "mac/authenticator.mm",
+      "mac/browsing_data_deletion.h",
+      "mac/browsing_data_deletion.mm",
+      "mac/credential_metadata.cc",
+      "mac/credential_metadata.h",
       "mac/get_assertion_operation.h",
       "mac/get_assertion_operation.mm",
       "mac/keychain.h",
@@ -230,6 +235,17 @@ fuzzer_test("ctap_response_fuzzer") {
   ]
   seed_corpus = "response_data_fuzzer_corpus/"
   libfuzzer_options = [ "max_len=65537" ]
+}
+
+fuzzer_test("fido_cable_handshake_handler_fuzzer") {
+  sources = [
+    "fido_cable_handshake_handler_fuzzer.cc",
+  ]
+  deps = [
+    ":fido",
+    "//base",
+  ]
+  libfuzzer_options = [ "max_len=2048" ]
 }
 
 is_linux_without_udev = is_linux && !use_udev

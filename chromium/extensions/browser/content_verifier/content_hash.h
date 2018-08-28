@@ -15,11 +15,8 @@
 #include "extensions/browser/verified_contents.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_id.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "url/gurl.h"
-
-namespace net {
-class URLRequestContextGetter;
-}
 
 namespace extensions {
 
@@ -71,14 +68,15 @@ class ContentHash : public base::RefCountedThreadSafe<ContentHash> {
 
   // Parameters to fetch verified_contents.json.
   struct FetchParams {
-    net::URLRequestContextGetter* request_context;
+    FetchParams(
+        network::mojom::URLLoaderFactoryPtrInfo url_loader_factory_ptr_info,
+        const GURL& fetch_url);
+    ~FetchParams();
+    FetchParams(FetchParams&&);
+    FetchParams& operator=(FetchParams&&);
+
+    network::mojom::URLLoaderFactoryPtrInfo url_loader_factory_ptr_info;
     GURL fetch_url;
-
-    FetchParams(net::URLRequestContextGetter* request_context,
-                const GURL& fetch_url);
-
-    FetchParams(const FetchParams& other);
-    FetchParams& operator=(const FetchParams& other);
   };
 
   using IsCancelledCallback = base::RepeatingCallback<bool(void)>;
@@ -93,7 +91,7 @@ class ContentHash : public base::RefCountedThreadSafe<ContentHash> {
       base::OnceCallback<void(const scoped_refptr<ContentHash>& hash,
                               bool was_cancelled)>;
   static void Create(const ExtensionKey& key,
-                     const FetchParams& fetch_params,
+                     FetchParams fetch_params,
                      const IsCancelledCallback& is_cancelled,
                      CreatedCallback created_callback);
 
@@ -146,19 +144,20 @@ class ContentHash : public base::RefCountedThreadSafe<ContentHash> {
   ~ContentHash();
 
   static void FetchVerifiedContents(const ExtensionKey& extension_key,
-                                    const FetchParams& fetch_params,
+                                    FetchParams fetch_params,
                                     const IsCancelledCallback& is_cancelled,
                                     CreatedCallback created_callback);
   static void DidFetchVerifiedContents(
       CreatedCallback created_callback,
       const IsCancelledCallback& is_cancelled,
       const ExtensionKey& key,
-      const FetchParams& fetch_params,
       std::unique_ptr<std::string> fetched_contents);
 
   static void DispatchFetchFailure(const ExtensionKey& key,
                                    CreatedCallback created_callback,
                                    const IsCancelledCallback& is_cancelled);
+
+  static void RecordFetchResult(bool success);
 
   // Computes hashes for all files in |key_.extension_root|, and uses
   // a ComputedHashes::Writer to write that information into |hashes_file|.

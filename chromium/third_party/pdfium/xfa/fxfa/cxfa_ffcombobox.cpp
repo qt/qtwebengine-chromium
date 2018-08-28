@@ -120,14 +120,14 @@ bool CXFA_FFComboBox::IsDataChanged() {
   if (m_pNode->GetValue(XFA_VALUEPICTURE_Raw) == wsText)
     return false;
 
-  m_wsNewValue = wsText;
+  m_wsNewValue = std::move(wsText);
   return true;
 }
 
 void CXFA_FFComboBox::FWLEventSelChange(CXFA_EventParam* pParam) {
   pParam->m_eType = XFA_EVENT_Change;
   pParam->m_pTarget = m_pNode.Get();
-  pParam->m_wsNewText = ToComboBox(m_pNormalWidget.get())->GetEditText();
+  pParam->m_wsPrevText = ToComboBox(m_pNormalWidget.get())->GetEditText();
   m_pNode->ProcessEvent(GetDocView(), XFA_AttributeEnum::Change, pParam);
 }
 

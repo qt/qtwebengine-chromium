@@ -191,7 +191,7 @@ void CPDF_Array::ConvertToIndirectObjectAt(size_t i,
     return;
 
   CPDF_Object* pNew = pHolder->AddIndirectObject(std::move(m_Objects[i]));
-  m_Objects[i] = pdfium::MakeUnique<CPDF_Reference>(pHolder, pNew->GetObjNum());
+  m_Objects[i] = pNew->MakeReference(pHolder);
 }
 
 CPDF_Object* CPDF_Array::SetAt(size_t i, std::unique_ptr<CPDF_Object> pObj) {
@@ -235,16 +235,8 @@ bool CPDF_Array::WriteTo(IFX_ArchiveStream* archive) const {
     return false;
 
   for (size_t i = 0; i < GetCount(); ++i) {
-    const CPDF_Object* pElement = GetObjectAt(i);
-    if (!pElement->IsInline()) {
-      if (!archive->WriteString(" ") ||
-          !archive->WriteDWord(pElement->GetObjNum()) ||
-          !archive->WriteString(" 0 R")) {
-        return false;
-      }
-    } else if (!pElement->WriteTo(archive)) {
+    if (!GetObjectAt(i)->WriteTo(archive))
       return false;
-    }
   }
   return archive->WriteString("]");
 }

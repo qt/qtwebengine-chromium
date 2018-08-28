@@ -26,8 +26,8 @@
 
 #include <memory>
 #include "SkMatrixConvolutionImageFilter.h"
+#include "base/numerics/checked_math.h"
 #include "third_party/blink/renderer/platform/graphics/filters/paint_filter_builder.h"
-#include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_stream.h"
 
 namespace blink {
@@ -65,7 +65,7 @@ FloatRect FEConvolveMatrix::MapEffect(const FloatRect& rect) const {
   if (!ParametersValid())
     return rect;
   FloatRect result = rect;
-  result.MoveBy(-target_offset_);
+  result.MoveBy(FloatPoint(-target_offset_));
   result.Expand(FloatSize(kernel_size_));
   return result;
 }
@@ -123,7 +123,7 @@ bool FEConvolveMatrix::ParametersValid() const {
   if (kernel_size_.IsEmpty())
     return false;
   uint64_t kernel_area = kernel_size_.Area();
-  if (!CheckedNumeric<int>(kernel_area).IsValid())
+  if (!base::CheckedNumeric<int>(kernel_area).IsValid())
     return false;
   if (SafeCast<size_t>(kernel_area) != kernel_matrix_.size())
     return false;

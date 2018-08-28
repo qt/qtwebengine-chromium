@@ -260,7 +260,11 @@ std::unique_ptr<DragImage> DragImage::Create(const KURL& url,
   scaled_image_size.Scale(device_scale_factor);
   std::unique_ptr<CanvasResourceProvider> resource_provider(
       CanvasResourceProvider::Create(
-          scaled_image_size, CanvasResourceProvider::kSoftwareResourceUsage));
+          scaled_image_size, CanvasResourceProvider::kSoftwareResourceUsage,
+          nullptr,  // context_provider_wrapper
+          0,        // msaa_sample_count
+          CanvasColorParams(), CanvasResourceProvider::kDefaultPresentationMode,
+          nullptr));  // canvas_resource_dispatcher
   if (!resource_provider)
     return nullptr;
 
@@ -284,7 +288,7 @@ std::unique_ptr<DragImage> DragImage::Create(const KURL& url,
       url_string = StringTruncator::CenterTruncate(
           url_string, image_size.Width() - (kDragLabelBorderX * 2.0f),
           url_font);
-    IntPoint text_pos(
+    FloatPoint text_pos(
         kDragLabelBorderX,
         image_size.Height() -
             (kLabelBorderYOffset + url_font_data->GetFontMetrics().Descent()));

@@ -12,6 +12,8 @@
 #include "SkWriteBuffer.h"
 #include "../../jumper/SkJumper.h"
 
+#include <utility>
+
 // Please see https://skia.org/dev/design/conical for how our shader works.
 
 bool SkTwoPointConicalGradient::FocalData::set(SkScalar r0, SkScalar r1, SkMatrix* matrix) {
@@ -134,16 +136,17 @@ sk_sp<SkFlattenable> SkTwoPointConicalGradient::CreateProc(SkReadBuffer& buffer)
     SkScalar r2 = buffer.readScalar();
 
     if (buffer.isVersionLT(SkReadBuffer::k2PtConicalNoFlip_Version) && buffer.readBool()) {
+        using std::swap;
         // legacy flipped gradient
-        SkTSwap(c1, c2);
-        SkTSwap(r1, r2);
+        swap(c1, c2);
+        swap(r1, r2);
 
         SkColor4f* colors = desc.mutableColors();
         SkScalar* pos = desc.mutablePos();
         const int last = desc.fCount - 1;
         const int half = desc.fCount >> 1;
         for (int i = 0; i < half; ++i) {
-            SkTSwap(colors[i], colors[last - i]);
+            swap(colors[i], colors[last - i]);
             if (pos) {
                 SkScalar tmp = pos[i];
                 pos[i] = SK_Scalar1 - pos[last - i];
@@ -187,7 +190,7 @@ std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProces
 
     return Gr2PtConicalGradientEffect::Make(
             GrGradientEffect::CreateArgs(args.fContext, this, &matrix, fTileMode,
-                                         args.fDstColorSpaceInfo->colorSpace()));
+                                         args.fDstColorSpaceInfo));
 }
 
 #endif
@@ -197,31 +200,6 @@ sk_sp<SkShader> SkTwoPointConicalGradient::onMakeColorSpace(SkColorSpaceXformer*
     return SkGradientShader::MakeTwoPointConical(fCenter1, fRadius1, fCenter2, fRadius2,
                                                  xformedColors.fColors.get(), fOrigPos, fColorCount,
                                                  fTileMode, fGradFlags, &this->getLocalMatrix());
-}
-
-
-void SkTwoPointConicalGradient::toString(SkString* str) const {
-    str->append("SkTwoPointConicalGradient: (");
-
-    str->append("center1: (");
-    str->appendScalar(fCenter1.fX);
-    str->append(", ");
-    str->appendScalar(fCenter1.fY);
-    str->append(") radius1: ");
-    str->appendScalar(fRadius1);
-    str->append(" ");
-
-    str->append("center2: (");
-    str->appendScalar(fCenter2.fX);
-    str->append(", ");
-    str->appendScalar(fCenter2.fY);
-    str->append(") radius2: ");
-    str->appendScalar(fRadius2);
-    str->append(" ");
-
-    this->INHERITED::toString(str);
-
-    str->append(")");
 }
 
 void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* p,

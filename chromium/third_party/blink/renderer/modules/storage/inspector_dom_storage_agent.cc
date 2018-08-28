@@ -29,17 +29,16 @@
 
 #include "third_party/blink/renderer/modules/storage/inspector_dom_storage_agent.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/inspector/inspected_frames.h"
 #include "third_party/blink/renderer/core/page/page.h"
-#include "third_party/blink/renderer/modules/storage/storage.h"
+#include "third_party/blink/renderer/modules/storage/storage_area.h"
 #include "third_party/blink/renderer/modules/storage/storage_namespace.h"
 #include "third_party/blink/renderer/modules/storage/storage_namespace_controller.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
 namespace blink {
@@ -53,8 +52,13 @@ static const char kDomStorageAgentEnabled[] = "domStorageAgentEnabled";
 static Response ToResponse(ExceptionState& exception_state) {
   if (!exception_state.HadException())
     return Response::OK();
-  return Response::Error(DOMException::GetErrorName(exception_state.Code()) +
-                         " " + exception_state.Message());
+
+  String name_prefix = IsDOMExceptionCode(exception_state.Code())
+                           ? DOMException::GetErrorName(
+                                 exception_state.CodeAs<DOMExceptionCode>()) +
+                                 " "
+                           : g_empty_string;
+  return Response::Error(name_prefix + exception_state.Message());
 }
 
 InspectorDOMStorageAgent::InspectorDOMStorageAgent(
@@ -99,14 +103,12 @@ Response InspectorDOMStorageAgent::disable() {
 
 Response InspectorDOMStorageAgent::clear(
     std::unique_ptr<protocol::DOMStorage::StorageId> storage_id) {
-  LocalFrame* frame = nullptr;
   StorageArea* storage_area = nullptr;
-  Response response =
-      FindStorageArea(std::move(storage_id), frame, storage_area);
+  Response response = FindStorageArea(std::move(storage_id), storage_area);
   if (!response.isSuccess())
     return response;
   DummyExceptionStateForTesting exception_state;
-  storage_area->Clear(exception_state, frame);
+  storage_area->clear(exception_state);
   if (exception_state.HadException())
     return Response::Error("Could not clear the storage");
   return Response::OK();
@@ -115,10 +117,8 @@ Response InspectorDOMStorageAgent::clear(
 Response InspectorDOMStorageAgent::getDOMStorageItems(
     std::unique_ptr<protocol::DOMStorage::StorageId> storage_id,
     std::unique_ptr<protocol::Array<protocol::Array<String>>>* items) {
-  LocalFrame* frame = nullptr;
   StorageArea* storage_area = nullptr;
-  Response response =
-      FindStorageArea(std::move(storage_id), frame, storage_area);
+  Response response = FindStorageArea(std::move(storage_id), storage_area);
   if (!response.isSuccess())
     return response;
 
@@ -126,12 +126,12 @@ Response InspectorDOMStorageAgent::getDOMStorageItems(
       protocol::Array<protocol::Array<String>>::create();
 
   DummyExceptionStateForTesting exception_state;
-  for (unsigned i = 0; i < storage_area->length(exception_state, frame); ++i) {
-    String name(storage_area->Key(i, exception_state, frame));
+  for (unsigned i = 0; i < storage_area->length(exception_state); ++i) {
+    String name(storage_area->key(i, exception_state));
     response = ToResponse(exception_state);
     if (!response.isSuccess())
       return response;
-    String value(storage_area->GetItem(name, exception_state, frame));
+    String value(storage_area->getItem(name, exception_state));
     response = ToResponse(exception_state);
     if (!response.isSuccess())
       return response;
@@ -149,30 +149,26 @@ Response InspectorDOMStorageAgent::setDOMStorageItem(
     std::unique_ptr<protocol::DOMStorage::StorageId> storage_id,
     const String& key,
     const String& value) {
-  LocalFrame* frame = nullptr;
   StorageArea* storage_area = nullptr;
-  Response response =
-      FindStorageArea(std::move(storage_id), frame, storage_area);
+  Response response = FindStorageArea(std::move(storage_id), storage_area);
   if (!response.isSuccess())
     return response;
 
   DummyExceptionStateForTesting exception_state;
-  storage_area->SetItem(key, value, exception_state, frame);
+  storage_area->setItem(key, value, exception_state);
   return ToResponse(exception_state);
 }
 
 Response InspectorDOMStorageAgent::removeDOMStorageItem(
     std::unique_ptr<protocol::DOMStorage::StorageId> storage_id,
     const String& key) {
-  LocalFrame* frame = nullptr;
   StorageArea* storage_area = nullptr;
-  Response response =
-      FindStorageArea(std::move(storage_id), frame, storage_area);
+  Response response = FindStorageArea(std::move(storage_id), storage_area);
   if (!response.isSuccess())
     return response;
 
   DummyExceptionStateForTesting exception_state;
-  storage_area->RemoveItem(key, exception_state, frame);
+  storage_area->removeItem(key, exception_state);
   return ToResponse(exception_state);
 }
 
@@ -194,8 +190,8 @@ void InspectorDOMStorageAgent::DidDispatchDOMStorageEvent(
   if (!GetFrontend())
     return;
 
-  std::unique_ptr<protocol::DOMStorage::StorageId> id =
-      GetStorageId(security_origin, storage_type == StorageArea::kLocalStorage);
+  std::unique_ptr<protocol::DOMStorage::StorageId> id = GetStorageId(
+      security_origin, storage_type == StorageArea::StorageType::kLocalStorage);
 
   if (key.IsNull())
     GetFrontend()->domStorageItemsCleared(std::move(id));
@@ -210,11 +206,10 @@ void InspectorDOMStorageAgent::DidDispatchDOMStorageEvent(
 
 Response InspectorDOMStorageAgent::FindStorageArea(
     std::unique_ptr<protocol::DOMStorage::StorageId> storage_id,
-    LocalFrame*& frame,
     StorageArea*& storage_area) {
   String security_origin = storage_id->getSecurityOrigin();
   bool is_local_storage = storage_id->getIsLocalStorage();
-  frame =
+  LocalFrame* frame =
       inspected_frames_->FrameWithSecurityOrigin(security_origin);
   if (!frame)
     return Response::Error("Frame not found for the given security origin");
@@ -222,8 +217,11 @@ Response InspectorDOMStorageAgent::FindStorageArea(
   if (is_local_storage) {
     if (!frame->GetDocument()->GetSecurityOrigin()->CanAccessLocalStorage())
       return Response::Error("Security origin cannot access local storage");
-    storage_area = StorageNamespace::LocalStorageArea(
-        frame->GetDocument()->GetSecurityOrigin());
+    storage_area =
+        StorageArea::Create(frame,
+                            StorageNamespace::LocalStorageArea(
+                                frame->GetDocument()->GetSecurityOrigin()),
+                            StorageArea::StorageType::kLocalStorage);
     return Response::OK();
   }
 
@@ -233,8 +231,11 @@ Response InspectorDOMStorageAgent::FindStorageArea(
       StorageNamespaceController::From(frame->GetPage())->SessionStorage();
   if (!session_storage)
     return Response::Error("SessionStorage is not supported");
-  storage_area = session_storage->GetStorageArea(
-      frame->GetDocument()->GetSecurityOrigin());
+  storage_area =
+      StorageArea::Create(frame,
+                          session_storage->GetStorageArea(
+                              frame->GetDocument()->GetSecurityOrigin()),
+                          StorageArea::StorageType::kSessionStorage);
   return Response::OK();
 }
 

@@ -15,7 +15,6 @@
 #include "ImGuiLayer.h"
 #include "SkAnimTimer.h"
 #include "SkExecutor.h"
-#include "SkJSONCPP.h"
 #include "SkScan.h"
 #include "SkTouchGesture.h"
 #include "Slide.h"
@@ -48,6 +47,7 @@ public:
         bool fImageFilter = false;
 
         bool fTextSize = false;
+        SkScalar fTextSizeRange[2] = { 0, 20 };
         bool fTextScaleX = false;
         bool fTextSkewX = false;
         bool fColor = false;
@@ -132,6 +132,8 @@ private:
     bool                   fShowImGuiTestWindow;
 
     bool                   fShowZoomWindow;
+    bool                   fZoomWindowFixed;
+    SkPoint                fZoomWindowLocation;
     sk_sp<SkImage>         fLastImage;
 
     sk_app::Window::BackendType fBackendType;
@@ -144,6 +146,7 @@ private:
     // transform data
     SkScalar               fZoomLevel;
     SkScalar               fRotation;
+    SkVector               fOffset;
 
     sk_app::CommandSet     fCommands;
 
@@ -168,8 +171,6 @@ private:
     SkPoint                fPerspectivePoints[4];
 
     SkTArray<std::function<void(void)>> fDeferredActions;
-
-    Json::Value            fAllSlideNames; // cache all slide names for fast updateUIState
 
     int fTileCnt;
     int fThreadCnt;

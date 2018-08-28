@@ -92,6 +92,8 @@ void LayoutTable::StyleDidChange(StyleDifference diff,
   // In the collapsed border model, there is no cell spacing.
   h_spacing_ = ShouldCollapseBorders() ? 0 : Style()->HorizontalBorderSpacing();
   v_spacing_ = ShouldCollapseBorders() ? 0 : Style()->VerticalBorderSpacing();
+  DCHECK_GE(h_spacing_, 0);
+  DCHECK_GE(v_spacing_, 0);
 
   if (!table_layout_ ||
       Style()->IsFixedTableLayout() != old_fixed_table_layout) {
@@ -1006,9 +1008,13 @@ void LayoutTable::ComputePreferredLogicalWidths() {
   table_layout_->ApplyPreferredLogicalWidthQuirks(min_preferred_logical_width_,
                                                   max_preferred_logical_width_);
 
-  for (unsigned i = 0; i < captions_.size(); i++)
+  for (unsigned i = 0; i < captions_.size(); i++) {
     min_preferred_logical_width_ = std::max(
         min_preferred_logical_width_, captions_[i]->MinPreferredLogicalWidth());
+    // Note: using captions' min-width is intentional here:
+    max_preferred_logical_width_ = std::max(
+        max_preferred_logical_width_, captions_[i]->MinPreferredLogicalWidth());
+  }
 
   const ComputedStyle& style_to_use = StyleRef();
   // FIXME: This should probably be checking for isSpecified since you should be
@@ -1034,9 +1040,16 @@ void LayoutTable::ComputePreferredLogicalWidths() {
         std::min(max_preferred_logical_width_,
                  AdjustContentBoxLogicalWidthForBoxSizing(
                      style_to_use.LogicalMaxWidth().Value()));
-    max_preferred_logical_width_ =
-        std::max(min_preferred_logical_width_, max_preferred_logical_width_);
   }
+
+  // 2 cases need this:
+  // 1. When max_preferred_logical_width is shrunk to the specified max-width in
+  //    the block above but max-width < min_preferred_logical_width.
+  // 2. We buggily calculate min > max for some tables with colspans and
+  //    percent widths. See fast/table/spans-min-greater-than-max-crash.html and
+  //    http://crbug.com/857185
+  max_preferred_logical_width_ =
+      std::max(min_preferred_logical_width_, max_preferred_logical_width_);
 
   // FIXME: We should be adding borderAndPaddingLogicalWidth here, but
   // m_tableLayout->computePreferredLogicalWidths already does, so a bunch of

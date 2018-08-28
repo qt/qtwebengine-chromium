@@ -78,6 +78,8 @@ static_library("content_shell_lib") {
     "browser/layout_test/devtools_protocol_test_bindings.h",
     "browser/layout_test/fake_bluetooth_chooser.cc",
     "browser/layout_test/fake_bluetooth_chooser.h",
+    "browser/layout_test/layout_test_background_fetch_delegate.cc",
+    "browser/layout_test/layout_test_background_fetch_delegate.h",
     "browser/layout_test/layout_test_bluetooth_adapter_provider.cc",
     "browser/layout_test/layout_test_bluetooth_adapter_provider.h",
     "browser/layout_test/layout_test_bluetooth_chooser_factory.cc",
@@ -102,8 +104,6 @@ static_library("content_shell_lib") {
     "browser/layout_test/layout_test_javascript_dialog_manager.h",
     "browser/layout_test/layout_test_message_filter.cc",
     "browser/layout_test/layout_test_message_filter.h",
-    "browser/layout_test/layout_test_notification_manager.cc",
-    "browser/layout_test/layout_test_notification_manager.h",
     "browser/layout_test/layout_test_permission_manager.cc",
     "browser/layout_test/layout_test_permission_manager.h",
     "browser/layout_test/layout_test_push_messaging_service.cc",
@@ -249,6 +249,8 @@ static_library("content_shell_lib") {
     "//components/crash/content/app:test_support",
     "//components/crash/content/browser",
     "//components/crash/core/common:crash_key",
+    "//components/download/content/factory",
+    "//components/download/public/background_service:public",
     "//components/download/public/common:public",
     "//components/keyed_service/content",
     "//components/network_session_configurator/browser",
@@ -269,7 +271,6 @@ static_library("content_shell_lib") {
     "//device/bluetooth",
     "//device/bluetooth:fake_bluetooth",
     "//device/bluetooth:mocks",
-    "//device/geolocation/public/cpp:test_support",
     "//gin",
     "//gpu",
     "//media",
@@ -280,6 +281,7 @@ static_library("content_shell_lib") {
     "//net:test_support",
     "//ppapi/buildflags",
     "//sandbox",
+    "//services/device/public/cpp/test:test_support",
     "//services/device/public/mojom",
     "//services/network/public/cpp",
     "//services/service_manager/embedder:embedder_result_codes",
@@ -306,6 +308,7 @@ static_library("content_shell_lib") {
     "//ui/gfx/ipc/geometry",
     "//ui/gfx/ipc/skia",
     "//ui/gl",
+    "//ui/platform_window",
     "//url",
     "//v8",
   ]
@@ -317,6 +320,7 @@ static_library("content_shell_lib") {
       "//components/crash/content/app:test_support",
       "//components/crash/content/browser",
     ]
+    deps += [ "//third_party/fuchsia-sdk:policy" ]
   }
 
   # Annoyingly, this target and layouttest_support have circular includes.
@@ -365,7 +369,9 @@ static_library("content_shell_lib") {
     ]
     deps += [
       "//base/test:test_support",
+      "//components/embedder_support/android:view",
       "//content/shell/android:content_shell_jni_headers",
+      "//mojo/public/java/system:test_support",
     ]
   }
 
@@ -412,6 +418,10 @@ static_library("content_shell_lib") {
 
   if (is_linux) {
     deps += [ "//build/config/freetype" ]
+  }
+
+  if (use_ozone) {
+    deps += [ "//ui/ozone" ]
   }
 
   if (!enable_plugins) {
@@ -532,24 +542,17 @@ if (is_android) {
     testonly = true
     output_name = content_shell_product_name
     sources = [
-      "app/shell_main.cc",
+      "app/shell_main_mac.cc",
     ]
+    defines = [ "SHELL_PRODUCT_NAME=\"$content_shell_product_name\"" ]
     deps = [
       ":content_shell_framework_bundle_data",
       ":content_shell_resources_bundle_data",
-      "//build/config:exe_and_shlib_deps",
 
       # TODO(rsesek): Remove this after GYP is gone, since it only needs to
       # be here per the comment in blink_test_platform_support_mac.mm about
       # the bundle structure.
       "//content/shell/test_runner:resources",
-    ]
-    ldflags = [
-      # The main app is at Content Shell.app/Contents/MacOS/Content Shell
-      # so set the rpath up to Contents/ so that the loader can find
-      # Framworks/.
-      "-rpath",
-      "@executable_path/../",
     ]
     info_plist_target = ":content_shell_plist"
     data_deps = [
@@ -573,15 +576,11 @@ if (is_android) {
     deps = [
       ":content_shell_lib",
       ":pak",
-      "//build/config:exe_and_shlib_deps",
       "//build/win:default_exe_manifest",
     ]
 
     data_deps = [
       ":pak",
-    ]
-
-    public_deps = [
       "//tools/v8_context_snapshot:v8_context_snapshot",
     ]
 
@@ -608,16 +607,19 @@ if (is_android) {
       # Set rpath to find our own libfreetype even in a non-component build.
       configs += [ "//build/config/gcc:rpath_for_built_shared_libraries" ]
     }
-
-    if (use_aura) {
-      data_deps += [ "//services/ui" ]
-    }
   }
 
   if (is_fuchsia) {
-    fuchsia_executable_runner("content_shell_fuchsia") {
+    fuchsia_package("content_shell_pkg") {
       testonly = true
-      exe_target = ":content_shell"
+      binary = ":content_shell"
+      package_name_override = "content_shell"
+    }
+
+    fuchsia_package_runner("content_shell_fuchsia") {
+      testonly = true
+      package = ":content_shell_pkg"
+      package_name_override = "content_shell"
     }
   }
 }
@@ -751,11 +753,7 @@ if (is_mac) {
     # install_name_tool on one of the executables. However install_name_tool
     # only operates in-place, which is problematic to express in GN. Instead,
     # use rpath-based loading.
-    # TODO(rsesek): After GYP is gone, re-write content_shell_main to be like
-    # chrome_main and use dlopen() instead of a linked framework.
-    ldflags = [
-      "-Wl,-install_name,@rpath/Frameworks/$output_name.framework/$output_name",
-    ]
+    ldflags = [ "-Wl,-install_name,@executable_path/../Frameworks/$output_name.framework/$output_name" ]
 
     if (is_component_build) {
       # Set up the rpath for the framework so that it can find dylibs in the
@@ -787,17 +785,20 @@ if (is_mac) {
     testonly = true
     output_name = content_shell_helper_name
     sources = [
-      "app/shell_main.cc",
+      "app/shell_main_mac.cc",
+    ]
+    defines = [
+      "HELPER_EXECUTABLE",
+      "SHELL_PRODUCT_NAME=\"$content_shell_product_name\"",
     ]
     deps = [
-      ":content_shell_framework+link",
-      "//build/config:exe_and_shlib_deps",
+      "//sandbox/mac:seatbelt",
     ]
     ldflags = [
       # The helper is in Content Shell.app/Contents/Frameworks/Content Shell Helper.app/Contents/MacOS/
-      # so set rpath up to Contents/ so that the loader can find Frameworks/.
+      # so set rpath up to the base.
       "-rpath",
-      "@executable_path/../../../..",
+      "@executable_path/../../../../../..",
     ]
     info_plist_target = ":content_shell_helper_plist"
   }
@@ -812,7 +813,7 @@ if (is_mac) {
       "{{bundle_contents_dir}}/Frameworks/{{source_file_part}}",
     ]
     public_deps = [
-      ":content_shell_framework+link",
+      ":content_shell_framework",
       ":content_shell_helper_app",
     ]
   }

@@ -159,8 +159,7 @@ class Json5File(object):
     def _get_entry(self, item):
         entry = copy.deepcopy(self._defaults)
         if type(item) is not dict:
-            entry["name"] = item
-            entry["tokenized_name"] = NameStyleConverter(entry["name"])
+            entry["name"] = NameStyleConverter(item)
             return entry
         if "name" not in item:
             raise Exception("Missing name in item: %s" % item)
@@ -168,8 +167,7 @@ class Json5File(object):
             entry.update(item)
             return entry
         assert "name" not in self.parameters, "The parameter 'name' is reserved, use a different name."
-        entry["name"] = item.pop("name")
-        entry["tokenized_name"] = NameStyleConverter(entry["name"])
+        entry["name"] = NameStyleConverter(item.pop("name"))
         # Validate parameters if it's specified.
         for key, value in item.items():
             if key not in self.parameters:
@@ -251,7 +249,6 @@ class Writer(object):
         self.gperf_path = gperf_path
 
     def get_file_basename(self, name):
-        # Use NameStyleConverter instead of name_utilities for consistency.
         return NameStyleConverter(name).to_snake_case()
 
     def make_header_guard(self, path):

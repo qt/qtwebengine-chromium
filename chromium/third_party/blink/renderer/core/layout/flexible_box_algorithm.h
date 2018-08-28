@@ -63,6 +63,8 @@ enum class TransformedWritingMode {
 class FlexItem {
  public:
   FlexItem(LayoutBox*,
+           // flex_base_content_size includes scrollbar width but not border or
+           // padding.
            LayoutUnit flex_base_content_size,
            MinMaxSize min_max_sizes,
            LayoutUnit main_axis_border_and_padding,
@@ -274,7 +276,7 @@ class FlexLayoutAlgorithm {
   bool IsMultiline() const { return style_->FlexWrap() != EFlexWrap::kNowrap; }
 
   const ComputedStyle* style_;
-  LayoutUnit line_break_length_;
+  const LayoutUnit line_break_length_;
   Vector<FlexItem>& all_items_;
   Vector<FlexLine> flex_lines_;
   size_t next_item_index_;

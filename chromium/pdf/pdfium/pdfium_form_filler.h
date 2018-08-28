@@ -5,7 +5,12 @@
 #ifndef PDF_PDFIUM_PDFIUM_FORM_FILLER_H_
 #define PDF_PDFIUM_PDFIUM_FORM_FILLER_H_
 
+#include <map>
+#include <memory>
+
 #include "base/macros.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "third_party/pdfium/public/fpdf_formfill.h"
 
 namespace chrome_pdf {
@@ -15,6 +20,7 @@ class PDFiumEngine;
 class PDFiumFormFiller : public FPDF_FORMFILLINFO, public IPDF_JSPLATFORM {
  public:
   PDFiumFormFiller(PDFiumEngine* engine, bool enable_javascript);
+  ~PDFiumFormFiller();
 
  private:
   // FPDF_FORMFILLINFO callbacks.
@@ -165,7 +171,13 @@ class PDFiumFormFiller : public FPDF_FORMFILLINFO, public IPDF_JSPLATFORM {
   static PDFiumEngine* GetEngine(FPDF_FORMFILLINFO* info);
   static PDFiumEngine* GetEngine(IPDF_JSPLATFORM* platform);
 
+  int SetTimer(const base::TimeDelta& delay, TimerCallback timer_func);
+  void KillTimer(int timer_id);
+
   PDFiumEngine* const engine_;
+
+  std::map<int, std::unique_ptr<base::RepeatingTimer>> timers_;
+  int last_timer_id_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(PDFiumFormFiller);
 };

@@ -8,8 +8,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "base/metrics/histogram_macros.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
-#include "third_party/blink/common/oom_intervention/oom_intervention_types.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -36,17 +36,19 @@ bool ReadFileContents(int fd, char contents[kMaxLineSize]) {
 bool CalculateProcessMemoryFootprint(int statm_fd,
                                      int status_fd,
                                      uint64_t* private_footprint,
-                                     uint64_t* swap_footprint) {
+                                     uint64_t* swap_footprint,
+                                     uint64_t* vm_size) {
   // Get total resident and shared sizes from statm file.
   static size_t page_size = getpagesize();
   uint64_t resident_pages;
   uint64_t shared_pages;
+  uint64_t vm_size_pages;
   char line[kMaxLineSize];
   if (!ReadFileContents(statm_fd, line))
     return false;
-  int num_scanned =
-      sscanf(line, "%*s %" SCNu64 " %" SCNu64, &resident_pages, &shared_pages);
-  if (num_scanned != 2)
+  int num_scanned = sscanf(line, "%" SCNu64 " %" SCNu64 " %" SCNu64,
+                           &vm_size_pages, &resident_pages, &shared_pages);
+  if (num_scanned != 3)
     return false;
 
   // Get swap size from status file. The format is: VmSwap :  10 kB.
@@ -62,6 +64,7 @@ bool CalculateProcessMemoryFootprint(int statm_fd,
   *swap_footprint *= 1024;
   *private_footprint =
       (resident_pages - shared_pages) * page_size + *swap_footprint;
+  *vm_size = vm_size_pages * page_size;
   return true;
 }
 
@@ -80,31 +83,39 @@ uint64_t BlinkMemoryWorkloadCaculator() {
   return v8_size + blink_gc_size + partition_alloc_size;
 }
 
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class RendererInterventionEnabledStatus {
+  kDetectionOnlyEnabled = 0,
+  kTriggerEnabled = 1,
+  kDisabledFailedMemoryMetricsFetch = 2,
+  kMaxValue = kDisabledFailedMemoryMetricsFetch
+};
+
+void RecordEnabledStatus(RendererInterventionEnabledStatus status) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Memory.Experimental.OomIntervention.RendererEnabledStatus", status);
+}
+
 }  // namespace
 
 // static
 void OomInterventionImpl::Create(mojom::blink::OomInterventionRequest request) {
-  mojo::MakeStrongBinding(
-      std::make_unique<OomInterventionImpl>(
-          WTF::BindRepeating(&BlinkMemoryWorkloadCaculator)),
-      std::move(request));
+  mojo::MakeStrongBinding(std::make_unique<OomInterventionImpl>(),
+                          std::move(request));
 }
 
-OomInterventionImpl::OomInterventionImpl(
-    MemoryWorkloadCaculator workload_calculator)
-    : workload_calculator_(std::move(workload_calculator)),
-      timer_(Platform::Current()->MainThread()->GetTaskRunner(),
+OomInterventionImpl::OomInterventionImpl()
+    : timer_(Platform::Current()->MainThread()->GetTaskRunner(),
              this,
-             &OomInterventionImpl::Check) {
-  DCHECK(workload_calculator_);
-}
+             &OomInterventionImpl::Check) {}
 
 OomInterventionImpl::~OomInterventionImpl() {}
 
 void OomInterventionImpl::StartDetection(
     mojom::blink::OomInterventionHostPtr host,
     base::UnsafeSharedMemoryRegion shared_metrics_buffer,
-    uint64_t memory_workload_threshold,
+    mojom::blink::DetectionArgsPtr detection_args,
     bool trigger_intervention) {
   host_ = std::move(host);
   shared_metrics_buffer_ = shared_metrics_buffer.Map();
@@ -116,23 +127,57 @@ void OomInterventionImpl::StartDetection(
   if (!status_fd_.is_valid())
     status_fd_.reset(open("/proc/self/status", O_RDONLY));
   // Disable intervention if we cannot get memory details of current process.
-  // TODO(ssid): Add UMA here to make sure we don't stop disable intervention
-  // more often than expected.
-  if (!statm_fd_.is_valid() || !status_fd_.is_valid())
+  if (!statm_fd_.is_valid() || !status_fd_.is_valid()) {
+    RecordEnabledStatus(
+        RendererInterventionEnabledStatus::kDisabledFailedMemoryMetricsFetch);
     return;
+  }
+  RecordEnabledStatus(
+      trigger_intervention
+          ? RendererInterventionEnabledStatus::kTriggerEnabled
+          : RendererInterventionEnabledStatus::kDetectionOnlyEnabled);
 
-  memory_workload_threshold_ = memory_workload_threshold;
+  detection_args_ = std::move(detection_args);
   trigger_intervention_ = trigger_intervention;
 
   timer_.Start(TimeDelta(), TimeDelta::FromSeconds(1), FROM_HERE);
 }
 
+OomInterventionMetrics OomInterventionImpl::GetCurrentMemoryMetrics() {
+  OomInterventionMetrics metrics = {};
+  metrics.current_blink_usage_kb = BlinkMemoryWorkloadCaculator() / 1024;
+  uint64_t private_footprint, swap, vm_size;
+  if (CalculateProcessMemoryFootprint(statm_fd_.get(), status_fd_.get(),
+                                      &private_footprint, &swap, &vm_size)) {
+    metrics.current_private_footprint_kb = private_footprint / 1024;
+    metrics.current_swap_kb = swap / 1024;
+    metrics.current_vm_size_kb = vm_size / 1024;
+  }
+  return metrics;
+}
+
 void OomInterventionImpl::Check(TimerBase*) {
   DCHECK(host_);
-  DCHECK_GT(memory_workload_threshold_, 0UL);
+  DCHECK(statm_fd_.is_valid());
+  DCHECK(status_fd_.is_valid());
 
-  uint64_t workload = workload_calculator_.Run();
-  if (workload > memory_workload_threshold_) {
+  OomInterventionMetrics current_memory = GetCurrentMemoryMetrics();
+  bool oom_detected = false;
+
+  oom_detected |= detection_args_->blink_workload_threshold > 0 &&
+                  current_memory.current_blink_usage_kb * 1024 >
+                      detection_args_->blink_workload_threshold;
+  oom_detected |= detection_args_->private_footprint_threshold > 0 &&
+                  current_memory.current_private_footprint_kb * 1024 >
+                      detection_args_->private_footprint_threshold;
+  oom_detected |=
+      detection_args_->swap_threshold > 0 &&
+      current_memory.current_swap_kb * 1024 > detection_args_->swap_threshold;
+  oom_detected |= detection_args_->virtual_memory_thresold > 0 &&
+                  current_memory.current_vm_size_kb * 1024 >
+                      detection_args_->virtual_memory_thresold;
+
+  if (oom_detected) {
     host_->OnHighMemoryUsage(trigger_intervention_);
 
     if (trigger_intervention_) {
@@ -142,18 +187,9 @@ void OomInterventionImpl::Check(TimerBase*) {
     }
   }
 
-  // Write memory metrics to shared buffer accesible by browser.
   OomInterventionMetrics* metrics_shared =
       static_cast<OomInterventionMetrics*>(shared_metrics_buffer_.memory());
-  metrics_shared->current_blink_usage_kb = workload / 1024;
-  DCHECK(statm_fd_.is_valid());
-  DCHECK(status_fd_.is_valid());
-  uint64_t private_footprint, swap;
-  if (CalculateProcessMemoryFootprint(statm_fd_.get(), status_fd_.get(),
-                                      &private_footprint, &swap)) {
-    metrics_shared->current_private_footprint_kb = private_footprint / 1024;
-    metrics_shared->current_swap_kb = swap / 1024;
-  }
+  memcpy(metrics_shared, &current_memory, sizeof(OomInterventionMetrics));
 }
 
 }  // namespace blink

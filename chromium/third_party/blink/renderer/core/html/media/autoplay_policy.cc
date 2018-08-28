@@ -251,13 +251,13 @@ bool AutoplayPolicy::RequestAutoplayByAttribute() {
   return false;
 }
 
-base::Optional<ExceptionCode> AutoplayPolicy::RequestPlay() {
+base::Optional<DOMExceptionCode> AutoplayPolicy::RequestPlay() {
   if (!Frame::HasTransientUserActivation(element_->GetDocument().GetFrame())) {
     autoplay_uma_helper_->OnAutoplayInitiated(AutoplaySource::kMethod);
     if (IsGestureNeededForPlayback()) {
       autoplay_uma_helper_->RecordCrossOriginAutoplayResult(
           CrossOriginAutoplayResult::kAutoplayBlocked);
-      return kNotAllowedError;
+      return DOMExceptionCode::kNotAllowedError;
     }
 
     if (IsGestureNeededForPlaybackIfCrossOriginExperimentEnabled()) {
@@ -276,10 +276,6 @@ base::Optional<ExceptionCode> AutoplayPolicy::RequestPlay() {
   MaybeSetAutoplayInitiated();
 
   return base::nullopt;
-}
-
-bool AutoplayPolicy::IsAutoplayingMuted() const {
-  return IsAutoplayingMutedInternal(element_->muted());
 }
 
 bool AutoplayPolicy::IsAutoplayingMutedInternal(bool muted) const {
@@ -334,6 +330,12 @@ String AutoplayPolicy::GetPlayErrorMessage() const {
 bool AutoplayPolicy::WasAutoplayInitiated() const {
   DCHECK(autoplay_initiated_.has_value());
   return *autoplay_initiated_;
+}
+
+void AutoplayPolicy::EnsureAutoplayInitiatedSet() {
+  if (autoplay_initiated_)
+    return;
+  autoplay_initiated_ = false;
 }
 
 bool AutoplayPolicy::IsGestureNeededForPlaybackIfPendingUserGestureIsLocked()

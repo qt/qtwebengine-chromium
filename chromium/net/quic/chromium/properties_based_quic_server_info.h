@@ -10,7 +10,6 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "net/base/completion_callback.h"
 #include "net/quic/chromium/quic_server_info.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 
@@ -24,7 +23,7 @@ class HttpServerProperties;
 class QUIC_EXPORT_PRIVATE PropertiesBasedQuicServerInfo
     : public QuicServerInfo {
  public:
-  PropertiesBasedQuicServerInfo(const QuicServerId& server_id,
+  PropertiesBasedQuicServerInfo(const quic::QuicServerId& server_id,
                                 HttpServerProperties* http_server_properties);
   ~PropertiesBasedQuicServerInfo() override;
 

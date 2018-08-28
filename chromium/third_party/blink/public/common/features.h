@@ -13,6 +13,10 @@ namespace features {
 
 BLINK_COMMON_EXPORT extern const base::Feature
     kEagerCacheStorageSetupForServiceWorkers;
+BLINK_COMMON_EXPORT extern const base::Feature kLayoutNG;
+BLINK_COMMON_EXPORT extern const base::Feature kMojoBlobURLs;
+BLINK_COMMON_EXPORT extern const base::Feature kServiceWorkerServicification;
+BLINK_COMMON_EXPORT extern const base::Feature kNestedWorkers;
 
 }  // namespace features
 }  // namespace blink

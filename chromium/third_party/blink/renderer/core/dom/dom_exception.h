@@ -30,10 +30,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_DOM_EXCEPTION_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/platform/bindings/exception_code.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -42,14 +40,19 @@ class CORE_EXPORT DOMException final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  static DOMException* Create(ExceptionCode,
+  // This function shouldn't be used except for V8ThrowDOMException. Note that
+  // this function does not associate the stacktrace with the created object.
+  static DOMException* Create(DOMExceptionCode,
                               const String& sanitized_message = String(),
                               const String& unsanitized_message = String());
 
   // Constructor exposed to script.
   static DOMException* Create(const String& message, const String& name);
 
-  unsigned short code() const { return code_; }
+  static String GetErrorName(DOMExceptionCode);
+  static String GetErrorMessage(DOMExceptionCode);
+
+  unsigned short code() const { return legacy_code_; }
   String name() const { return name_; }
 
   // This is the message that's exposed to JavaScript: never return unsanitized
@@ -64,16 +67,13 @@ class CORE_EXPORT DOMException final : public ScriptWrappable {
   }
   String ToStringForConsole() const;
 
-  static String GetErrorName(ExceptionCode);
-  static String GetErrorMessage(ExceptionCode);
-
  private:
-  DOMException(unsigned short code,
+  DOMException(unsigned short legacy_code,
                const String& name,
                const String& sanitized_message,
                const String& unsanitized_message);
 
-  unsigned short code_;
+  unsigned short legacy_code_;
   String name_;
   String sanitized_message_;
   String unsanitized_message_;

@@ -16,6 +16,7 @@ jumbo_source_set("common") {
   sources = [
     # NOTE: Please do not add public headers that need to be referenced from
     # outside WebKit, add them in public/common instead.
+    "blob/blob_utils.cc",
     "client_hints/client_hints.cc",
     "common_export.h",
     "device_memory/approximated_device_memory.cc",
@@ -23,7 +24,9 @@ jumbo_source_set("common") {
     "feature_policy/feature_policy.cc",
     "features.cc",
     "frame/frame_policy.cc",
+    "frame/user_activation_state.cc",
     "manifest/manifest.cc",
+    "manifest/manifest_icon_selector.cc",
     "manifest/manifest_share_target_util.cc",
     "message_port/cloneable_message.cc",
     "message_port/cloneable_message_struct_traits.cc",
@@ -35,9 +38,15 @@ jumbo_source_set("common") {
     "message_port/transferable_message_struct_traits.h",
     "mime_util/mime_util.cc",
     "oom_intervention/oom_intervention_types.h",
-    "origin_manifest/origin_manifest.cc",
+    "origin_policy/origin_policy.cc",
+    "origin_policy/origin_policy_parser.cc",
+    "origin_policy/origin_policy_parser.h",
     "origin_trials/trial_token.cc",
     "origin_trials/trial_token_validator.cc",
+    "privacy_preferences.cc",
+    "service_worker/service_worker_status_code.cc",
+    "service_worker/service_worker_type_converters.cc",
+    "service_worker/service_worker_utils.cc",
   ]
 
   public_deps = [
@@ -48,6 +57,7 @@ jumbo_source_set("common") {
     "//base",
     "//mojo/public/cpp/system",
     "//net",
+    "//services/network/public/cpp:cpp",
   ]
 
   # iOS doesn't use and must not depend on //media
@@ -76,9 +86,11 @@ jumbo_source_set("common_unittests_sources") {
   sources = [
     "device_memory/approximated_device_memory_unittest.cc",
     "feature_policy/feature_policy_unittest.cc",
+    "frame/user_activation_state_unittest.cc",
+    "manifest/manifest_icon_selector_unittest.cc",
     "manifest/manifest_share_target_util_unittest.cc",
     "mime_util/mime_util_unittest.cc",
-    "origin_manifest/origin_manifest_unittest.cc",
+    "origin_policy/origin_policy_unittest.cc",
     "origin_trials/trial_token_unittest.cc",
     "origin_trials/trial_token_validator_unittest.cc",
     "test/run_all_unittests.cc",

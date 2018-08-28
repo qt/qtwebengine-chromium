@@ -179,9 +179,9 @@ typename memory_internal::MakeUniqueResult<T>::invalid make_unique(
 // useful within templates that need to handle a complement of raw pointers,
 // `std::nullptr_t`, and smart pointers.
 template <typename T>
-auto RawPtr(T&& ptr) -> decltype(&*ptr) {
+auto RawPtr(T&& ptr) -> decltype(std::addressof(*ptr)) {
   // ptr is a forwarding reference to support Ts with non-const operators.
-  return (ptr != nullptr) ? &*ptr : nullptr;
+  return (ptr != nullptr) ? std::addressof(*ptr) : nullptr;
 }
 inline std::nullptr_t RawPtr(std::nullptr_t) { return nullptr; }
 
@@ -635,6 +635,39 @@ struct default_allocator_is_nothrow : std::true_type {};
 #else
 struct default_allocator_is_nothrow : std::false_type {};
 #endif
+
+namespace memory_internal {
+// TODO(b110200014): Implement proper backports
+template <typename ForwardIt>
+void DefaultConstruct(ForwardIt it) {
+  using value_type = typename std::iterator_traits<ForwardIt>::value_type;
+  ::new (static_cast<void*>(std::addressof(*it))) value_type;
+}  // namespace memory_internal
+
+#ifdef ABSL_HAVE_EXCEPTIONS
+template <typename ForwardIt, typename Size>
+void uninitialized_default_construct_n(ForwardIt first, Size size) {
+  for (ForwardIt cur = first; size > 0; static_cast<void>(++cur), --size) {
+    try {
+      absl::memory_internal::DefaultConstruct(cur);
+    } catch (...) {
+      using value_type = typename std::iterator_traits<ForwardIt>::value_type;
+      for (; first != cur; ++first) {
+        first->~value_type();
+      }
+      throw;
+    }
+  }
+}
+#else   // ABSL_HAVE_EXCEPTIONS
+template <typename ForwardIt, typename Size>
+void uninitialized_default_construct_n(ForwardIt first, Size size) {
+  for (; size > 0; static_cast<void>(++first), --size) {
+    absl::memory_internal::DefaultConstruct(first);
+  }
+}
+#endif  // ABSL_HAVE_EXCEPTIONS
+}  // namespace memory_internal
 
 }  // namespace absl
 

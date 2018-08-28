@@ -49,8 +49,7 @@ class TransferCacheTest : public testing::Test {
     auto result = context_->Initialize(
         /*service=*/nullptr, attribs, gpu::SharedMemoryLimits(),
         &gpu_memory_buffer_manager_, &image_factory_,
-        /*gpu_channel_manager_delegate=*/nullptr,
-        base::ThreadTaskRunnerHandle::Get());
+        /*gpu_channel_manager_delegate=*/nullptr);
 
     ASSERT_EQ(result, gpu::ContextResult::kSuccess);
     ASSERT_TRUE(context_->GetCapabilities().supports_oop_raster);
@@ -61,6 +60,8 @@ class TransferCacheTest : public testing::Test {
   gpu::ServiceTransferCache* ServiceTransferCache() {
     return context_->GetTransferCacheForTest();
   }
+
+  int decoder_id() { return context_->GetRasterDecoderIdForTest(); }
 
   gpu::raster::RasterInterface* ri() { return context_->GetImplementation(); }
 
@@ -99,7 +100,9 @@ TEST_F(TransferCacheTest, Basic) {
   ri()->Finish();
 
   // Validate service-side state.
-  EXPECT_NE(nullptr, service_cache->GetEntry(entry.Type(), entry.Id()));
+  EXPECT_NE(nullptr,
+            service_cache->GetEntry(gpu::ServiceTransferCache::EntryKey(
+                decoder_id(), entry.Type(), entry.Id())));
 
   // Unlock on client side and flush to service.
   context_support->UnlockTransferCacheEntries(
@@ -114,7 +117,9 @@ TEST_F(TransferCacheTest, Basic) {
   // Delete on client side, flush, and validate that deletion reaches service.
   context_support->DeleteTransferCacheEntry(entry.UnsafeType(), entry.Id());
   ri()->Finish();
-  EXPECT_EQ(nullptr, service_cache->GetEntry(entry.Type(), entry.Id()));
+  EXPECT_EQ(nullptr,
+            service_cache->GetEntry(gpu::ServiceTransferCache::EntryKey(
+                decoder_id(), entry.Type(), entry.Id())));
 }
 
 TEST_F(TransferCacheTest, Eviction) {
@@ -127,7 +132,9 @@ TEST_F(TransferCacheTest, Eviction) {
   ri()->Finish();
 
   // Validate service-side state.
-  EXPECT_NE(nullptr, service_cache->GetEntry(entry.Type(), entry.Id()));
+  EXPECT_NE(nullptr,
+            service_cache->GetEntry(gpu::ServiceTransferCache::EntryKey(
+                decoder_id(), entry.Type(), entry.Id())));
 
   // Unlock on client side and flush to service.
   context_support->UnlockTransferCacheEntries(
@@ -136,7 +143,9 @@ TEST_F(TransferCacheTest, Eviction) {
 
   // Evict on the service side.
   service_cache->SetCacheSizeLimitForTesting(0);
-  EXPECT_EQ(nullptr, service_cache->GetEntry(entry.Type(), entry.Id()));
+  EXPECT_EQ(nullptr,
+            service_cache->GetEntry(gpu::ServiceTransferCache::EntryKey(
+                decoder_id(), entry.Type(), entry.Id())));
 
   // Try to re-lock on the client side. This should fail.
   EXPECT_FALSE(context_support->ThreadsafeLockTransferCacheEntry(
@@ -160,7 +169,8 @@ TEST_F(TransferCacheTest, RawMemoryTransfer) {
 
   // Validate service-side data matches.
   ServiceTransferCacheEntry* service_entry =
-      service_cache->GetEntry(client_entry.Type(), client_entry.Id());
+      service_cache->GetEntry(gpu::ServiceTransferCache::EntryKey(
+          decoder_id(), client_entry.Type(), client_entry.Id()));
   EXPECT_EQ(service_entry->Type(), client_entry.Type());
   const std::vector<uint8_t> service_data =
       static_cast<ServiceRawMemoryTransferCacheEntry*>(service_entry)->data();
@@ -185,13 +195,14 @@ TEST_F(TransferCacheTest, ImageMemoryTransfer) {
   SkPixmap pixmap(info, data.data(), info.minRowBytes());
 
   // Add the entry to the transfer cache
-  ClientImageTransferCacheEntry client_entry(&pixmap, nullptr);
+  ClientImageTransferCacheEntry client_entry(&pixmap, nullptr, false);
   CreateEntry(client_entry);
   ri()->Finish();
 
   // Validate service-side data matches.
   ServiceTransferCacheEntry* service_entry =
-      service_cache->GetEntry(client_entry.Type(), client_entry.Id());
+      service_cache->GetEntry(gpu::ServiceTransferCache::EntryKey(
+          decoder_id(), client_entry.Type(), client_entry.Id()));
   EXPECT_EQ(service_entry->Type(), client_entry.Type());
   sk_sp<SkImage> service_image =
       static_cast<ServiceImageTransferCacheEntry*>(service_entry)->image();

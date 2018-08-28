@@ -7,6 +7,7 @@ Audits2.ReportSelector = class {
     this._renderNewAuditView = renderNewAuditView;
     this._newAuditItem = createElement('option');
     this._comboBox = new UI.ToolbarComboBox(this._handleChange.bind(this), 'audits2-report');
+    this._comboBox.setTitle(ls`Reports`);
     this._comboBox.setMaxWidth(180);
     this._comboBox.setMinWidth(140);
     this._itemByOptionElement = new Map();
@@ -135,9 +136,10 @@ Audits2.ReportSelector.Item = class {
   }
 
   download() {
-    const url = new Common.ParsedURL(this._lighthouseResult.finalUrl).domain();
+    const domain = new Common.ParsedURL(this._lighthouseResult.finalUrl).domain();
+    const sanitizedDomain = domain.replace(/[^a-z0-9.-]+/gi, '_');
     const timestamp = this._lighthouseResult.fetchTime;
-    const fileName = `${url}-${new Date(timestamp).toISO8601Compact()}.json`;
+    const fileName = `${sanitizedDomain}-${new Date(timestamp).toISO8601Compact()}.json`;
     Workspace.fileManager.save(fileName, JSON.stringify(this._lighthouseResult), true);
   }
 };

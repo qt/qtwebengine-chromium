@@ -40,7 +40,7 @@ TEST_F(StatsEndToEndTest, GetStats) {
     StatsObserver()
         : EndToEndTest(kLongTimeoutMs),
           encoder_factory_([]() {
-            return rtc::MakeUnique<test::DelayedEncoder>(
+            return absl::make_unique<test::DelayedEncoder>(
                 Clock::GetRealTimeClock(), 10);
           }),
           send_stream_(nullptr),
@@ -158,9 +158,6 @@ TEST_F(StatsEndToEndTest, GetStats) {
           stats.encoder_implementation_name ==
           test::FakeEncoder::kImplementationName;
 
-      send_stats_filled_["EncoderPreferredBitrate"] |=
-          stats.preferred_media_bitrate_bps > 0;
-
       for (std::map<uint32_t, VideoSendStream::StreamStats>::const_iterator it =
                stats.substreams.begin();
            it != stats.substreams.end(); ++it) {
@@ -237,11 +234,8 @@ TEST_F(StatsEndToEndTest, GetStats) {
                                        test::PacketTransport::kSender,
                                        payload_type_map_, network_config);
     }
-
-    Call::Config GetSenderCallConfig() override {
-      Call::Config config = EndToEndTest::GetSenderCallConfig();
-      config.bitrate_config.start_bitrate_bps = kStartBitrateBps;
-      return config;
+    void ModifySenderCallConfig(Call::Config* config) override {
+      config->bitrate_config.start_bitrate_bps = kStartBitrateBps;
     }
 
     // This test use other VideoStream settings than the the default settings
@@ -514,8 +508,11 @@ TEST_F(StatsEndToEndTest, MAYBE_ContentTypeSwitches) {
 
   metrics::Reset();
 
-  Call::Config send_config(test.GetSenderCallConfig());
-  Call::Config recv_config(test.GetReceiverCallConfig());
+  Call::Config send_config(send_event_log_.get());
+  test.ModifySenderCallConfig(&send_config);
+  Call::Config recv_config(recv_event_log_.get());
+  test.ModifyReceiverCallConfig(&recv_config);
+
   VideoEncoderConfig encoder_config_with_screenshare;
 
   task_queue_.SendTask([this, &test, &send_config, &recv_config,
@@ -534,16 +531,16 @@ TEST_F(StatsEndToEndTest, MAYBE_ContentTypeSwitches) {
     CreateMatchingReceiveConfigs(receive_transport_.get());
 
     // Modify send and receive configs.
-    video_send_config_.rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
+    GetVideoSendConfig()->rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
     video_receive_configs_[0].rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
     video_receive_configs_[0].renderer = &test;
     // RTT needed for RemoteNtpTimeEstimator for the receive stream.
     video_receive_configs_[0].rtp.rtcp_xr.receiver_reference_time_report = true;
     // Start with realtime video.
-    video_encoder_config_.content_type =
+    GetVideoEncoderConfig()->content_type =
         VideoEncoderConfig::ContentType::kRealtimeVideo;
     // Second encoder config for the second part of the test uses screenshare
-    encoder_config_with_screenshare = video_encoder_config_.Copy();
+    encoder_config_with_screenshare = GetVideoEncoderConfig()->Copy();
     encoder_config_with_screenshare.content_type =
         VideoEncoderConfig::ContentType::kScreen;
 
@@ -557,12 +554,10 @@ TEST_F(StatsEndToEndTest, MAYBE_ContentTypeSwitches) {
 
   // Replace old send stream.
   task_queue_.SendTask([this, &encoder_config_with_screenshare]() {
-    sender_call_->DestroyVideoSendStream(video_send_stream_);
-    video_send_stream_ = sender_call_->CreateVideoSendStream(
-        video_send_config_.Copy(), encoder_config_with_screenshare.Copy());
-    video_send_stream_->SetSource(frame_generator_capturer_.get(),
-                                  DegradationPreference::BALANCED);
-    video_send_stream_->Start();
+    DestroyVideoSendStreams();
+    CreateVideoSendStream(encoder_config_with_screenshare);
+    SetVideoDegradation(DegradationPreference::BALANCED);
+    GetVideoSendStream()->Start();
   });
 
   // Continue to run test but now with screenshare.
@@ -714,11 +709,11 @@ TEST_F(StatsEndToEndTest, CallReportsRttForSender) {
   task_queue_.SendTask([this, &sender_transport, &receiver_transport]() {
     FakeNetworkPipe::Config config;
     config.queue_delay_ms = kSendDelayMs;
-    CreateCalls(Call::Config(event_log_.get()), Call::Config(event_log_.get()));
-    sender_transport = rtc::MakeUnique<test::DirectTransport>(
+    CreateCalls();
+    sender_transport = absl::make_unique<test::DirectTransport>(
         &task_queue_, config, sender_call_.get(), payload_type_map_);
     config.queue_delay_ms = kReceiveDelayMs;
-    receiver_transport = rtc::MakeUnique<test::DirectTransport>(
+    receiver_transport = absl::make_unique<test::DirectTransport>(
         &task_queue_, config, receiver_call_.get(), payload_type_map_);
     sender_transport->SetReceiver(receiver_call_->Receiver());
     receiver_transport->SetReceiver(sender_call_->Receiver());

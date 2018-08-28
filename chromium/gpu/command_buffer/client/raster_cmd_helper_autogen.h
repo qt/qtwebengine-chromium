@@ -134,17 +134,20 @@ void UnpremultiplyAndDitherCopyCHROMIUM(GLuint source_id,
   }
 }
 
-void BeginRasterCHROMIUM(GLuint texture_id,
-                         GLuint sk_color,
-                         GLuint msaa_sample_count,
-                         GLboolean can_use_lcd_text,
-                         GLint color_type,
-                         GLuint color_space_transfer_cache_id) {
-  raster::cmds::BeginRasterCHROMIUM* c =
-      GetCmdSpace<raster::cmds::BeginRasterCHROMIUM>();
+void BeginRasterCHROMIUMImmediate(GLuint sk_color,
+                                  GLuint msaa_sample_count,
+                                  GLboolean can_use_lcd_text,
+                                  GLint color_type,
+                                  GLuint color_space_transfer_cache_id,
+                                  const GLbyte* mailbox) {
+  const uint32_t size =
+      raster::cmds::BeginRasterCHROMIUMImmediate::ComputeSize();
+  raster::cmds::BeginRasterCHROMIUMImmediate* c =
+      GetImmediateCmdSpaceTotalSize<raster::cmds::BeginRasterCHROMIUMImmediate>(
+          size);
   if (c) {
-    c->Init(texture_id, sk_color, msaa_sample_count, can_use_lcd_text,
-            color_type, color_space_transfer_cache_id);
+    c->Init(sk_color, msaa_sample_count, can_use_lcd_text, color_type,
+            color_space_transfer_cache_id, mailbox);
   }
 }
 
@@ -221,7 +224,7 @@ void SetColorSpaceMetadata(GLuint texture_id,
   }
 }
 
-void ProduceTextureDirectImmediate(GLuint texture, const GLbyte* mailbox) {
+void ProduceTextureDirectImmediate(GLuint texture, GLbyte* mailbox) {
   const uint32_t size =
       raster::cmds::ProduceTextureDirectImmediate::ComputeSize();
   raster::cmds::ProduceTextureDirectImmediate* c =
@@ -270,13 +273,10 @@ void ReleaseTexImage2DCHROMIUM(GLuint texture_id, GLint image_id) {
   }
 }
 
-void TexStorage2D(GLuint texture_id,
-                  GLsizei levels,
-                  GLsizei width,
-                  GLsizei height) {
+void TexStorage2D(GLuint texture_id, GLsizei width, GLsizei height) {
   raster::cmds::TexStorage2D* c = GetCmdSpace<raster::cmds::TexStorage2D>();
   if (c) {
-    c->Init(texture_id, levels, width, height);
+    c->Init(texture_id, width, height);
   }
 }
 

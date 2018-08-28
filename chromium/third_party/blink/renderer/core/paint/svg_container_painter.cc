@@ -10,10 +10,10 @@
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_foreign_object.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_viewport_container.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_support.h"
-#include "third_party/blink/renderer/core/paint/float_clip_recorder.h"
 #include "third_party/blink/renderer/core/paint/object_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/svg_foreign_object_painter.h"
+#include "third_party/blink/renderer/core/paint/svg_model_object_painter.h"
 #include "third_party/blink/renderer/core/paint/svg_paint_context.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
 
@@ -25,15 +25,6 @@ void SVGContainerPainter::Paint(const PaintInfo& paint_info) {
       !layout_svg_container_.SelfWillPaint())
     return;
 
-  FloatRect bounding_box =
-      layout_svg_container_.VisualRectInLocalSVGCoordinates();
-  // LayoutSVGHiddenContainer's visual rect is always empty but we need to
-  // paint its descendants.
-  if (!layout_svg_container_.IsSVGHiddenContainer() &&
-      !paint_info.GetCullRect().IntersectsCullRect(
-          layout_svg_container_.LocalToSVGParentTransform(), bounding_box))
-    return;
-
   // Spec: An empty viewBox on the <svg> element disables rendering.
   DCHECK(layout_svg_container_.GetElement());
   if (IsSVGSVGElement(*layout_svg_container_.GetElement()) &&
@@ -41,17 +32,31 @@ void SVGContainerPainter::Paint(const PaintInfo& paint_info) {
     return;
 
   PaintInfo paint_info_before_filtering(paint_info);
-  paint_info_before_filtering.UpdateCullRect(
-      layout_svg_container_.LocalToSVGParentTransform());
+
+  if (SVGModelObjectPainter(layout_svg_container_)
+          .CullRectSkipsPainting(paint_info_before_filtering)) {
+    return;
+  }
+
+  // We do not apply cull rect optimizations across transforms for two reasons:
+  //   1) Performance: We can optimize transform changes by not repainting.
+  //   2) Complexity: Difficulty updating clips when ancestor transforms change.
+  // This is why we use an infinite cull rect if there is a transform. Non-svg
+  // content, does this in PaintLayerPainter::PaintSingleFragment.
+  if (layout_svg_container_.StyleRef().HasTransform()) {
+    paint_info_before_filtering.ApplyInfiniteCullRect();
+  } else {
+    paint_info_before_filtering.UpdateCullRect(
+        layout_svg_container_.LocalToSVGParentTransform());
+  }
+
   SVGTransformContext transform_context(
       paint_info_before_filtering, layout_svg_container_,
       layout_svg_container_.LocalToSVGParentTransform());
   {
-    base::Optional<FloatClipRecorder> clip_recorder;
     base::Optional<ScopedPaintChunkProperties> scoped_paint_chunk_properties;
     if (layout_svg_container_.IsSVGViewportContainer() &&
         SVGLayoutSupport::IsOverflowHidden(layout_svg_container_)) {
-      if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
         const auto* fragment =
             paint_info.FragmentToPaint(layout_svg_container_);
         if (!fragment)
@@ -66,14 +71,6 @@ void SVGContainerPainter::Paint(const PaintInfo& paint_info) {
               properties->OverflowClip(), layout_svg_container_,
               paint_info.DisplayItemTypeForClipping());
         }
-      } else {
-        FloatRect viewport =
-            layout_svg_container_.LocalToSVGParentTransform().Inverse().MapRect(
-                ToLayoutSVGViewportContainer(layout_svg_container_).Viewport());
-        clip_recorder.emplace(paint_info_before_filtering.context,
-                              layout_svg_container_,
-                              paint_info_before_filtering.phase, viewport);
-      }
     }
 
     SVGPaintContext paint_context(layout_svg_container_,
@@ -85,31 +82,24 @@ void SVGContainerPainter::Paint(const PaintInfo& paint_info) {
     if (continue_rendering) {
       for (LayoutObject* child = layout_svg_container_.FirstChild(); child;
            child = child->NextSibling()) {
-        if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-            child->IsSVGForeignObject()) {
+        if (child->IsSVGForeignObject()) {
           SVGForeignObjectPainter(ToLayoutSVGForeignObject(*child))
               .PaintLayer(paint_context.GetPaintInfo());
         } else {
-          child->Paint(paint_context.GetPaintInfo(), IntPoint());
+          child->Paint(paint_context.GetPaintInfo());
         }
       }
     }
   }
 
-  if (paint_info_before_filtering.phase != PaintPhase::kForeground)
-    return;
+  SVGModelObjectPainter(layout_svg_container_)
+      .PaintOutline(paint_info_before_filtering);
 
-  if (layout_svg_container_.Style()->OutlineWidth() &&
-      layout_svg_container_.Style()->Visibility() == EVisibility::kVisible) {
-    PaintInfo outline_paint_info(paint_info_before_filtering);
-    outline_paint_info.phase = PaintPhase::kSelfOutlineOnly;
-    ObjectPainter(layout_svg_container_)
-        .PaintOutline(outline_paint_info, LayoutPoint(bounding_box.Location()));
-  }
-
-  if (paint_info_before_filtering.IsPrinting())
+  if (paint_info_before_filtering.IsPrinting() &&
+      paint_info_before_filtering.phase == PaintPhase::kForeground) {
     ObjectPainter(layout_svg_container_)
         .AddPDFURLRectIfNeeded(paint_info_before_filtering, LayoutPoint());
+  }
 }
 
 }  // namespace blink

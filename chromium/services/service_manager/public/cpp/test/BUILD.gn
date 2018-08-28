@@ -18,13 +18,13 @@ source_set("common_initialization") {
   deps = [
     "//base",
     "//base/test:test_support",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//services/catalog:lib",
     "//services/service_manager/background:lib",
   ]
 
   if (is_android) {
-    deps += [ "//mojo/android:libsystem_java" ]
+    deps += [ "//mojo/public/java/system:native_support" ]
   }
   if (!is_ios) {
     deps += [ "//services/service_manager/public/cpp/standalone_service" ]

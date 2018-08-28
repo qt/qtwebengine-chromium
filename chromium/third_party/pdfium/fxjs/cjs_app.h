@@ -11,7 +11,7 @@
 #include <set>
 #include <vector>
 
-#include "fxjs/JS_Define.h"
+#include "fxjs/js_define.h"
 
 class CJS_Runtime;
 class GlobalTimer;
@@ -21,7 +21,7 @@ class CJS_App : public CJS_Object {
   static int GetObjDefnID();
   static void DefineJSObjects(CFXJS_Engine* pEngine);
 
-  explicit CJS_App(v8::Local<v8::Object> pObject);
+  CJS_App(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
   ~CJS_App() override;
 
   void TimerProc(GlobalTimer* pTimer);
@@ -154,8 +154,8 @@ class CJS_App : public CJS_Object {
   void RunJsScript(CJS_Runtime* pRuntime, const WideString& wsScript);
   void ClearTimerCommon(CJS_Runtime* pRuntime, v8::Local<v8::Value> param);
 
-  bool m_bCalculate;
-  bool m_bRuntimeHighLight;
+  bool m_bCalculate = true;
+  bool m_bRuntimeHighLight = false;
   std::set<std::unique_ptr<GlobalTimer>> m_Timers;
 };
 

@@ -106,12 +106,6 @@ net::NetLogEventType RequestJobResultToNetEventType(
       return n::SERVICE_WORKER_ERROR_BAD_DELEGATE;
     case m::REQUEST_JOB_ERROR_REQUEST_BODY_BLOB_FAILED:
       return n::SERVICE_WORKER_ERROR_REQUEST_BODY_BLOB_FAILED;
-    // We can't log if there's no request; fallthrough.
-    case m::REQUEST_JOB_ERROR_NO_REQUEST:
-    // Obsolete types; fallthrough.
-    case m::REQUEST_JOB_ERROR_DESTROYED:
-    case m::REQUEST_JOB_ERROR_DESTROYED_WITH_BLOB:
-    case m::REQUEST_JOB_ERROR_DESTROYED_WITH_STREAM:
     // Invalid type.
     case m::NUM_REQUEST_JOB_RESULT_TYPES:
       NOTREACHED() << result;
@@ -662,7 +656,7 @@ void ServiceWorkerURLRequestJob::DidPrepareFetchEvent(
 }
 
 void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
-    ServiceWorkerStatusCode status,
+    blink::ServiceWorkerStatusCode status,
     ServiceWorkerFetchDispatcher::FetchEventResult fetch_result,
     const ServiceWorkerResponse& response,
     blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
@@ -685,7 +679,7 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
     return;
   }
 
-  if (status != SERVICE_WORKER_OK) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     RecordResult(ServiceWorkerMetrics::REQUEST_JOB_ERROR_FETCH_EVENT_DISPATCH);
     if (IsMainResourceLoad()) {
       // Using the service worker failed, so fallback to network.

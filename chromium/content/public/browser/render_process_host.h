@@ -22,6 +22,7 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
 #include "media/media_buildflags.h"
+#include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -223,13 +224,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Returns true iff the Init() was called and the process hasn't died yet.
   //
-  // Note that even if HasConnection() returns true, then (for a short duration
-  // after calling Init()) the process might not be fully spawned *yet* - e.g.
-  // IsReady() might return false and GetProcess() might still return an invalid
-  // process with a null handle.
-  //
-  // TODO(lukasza): Rename to IsInitializedAndNotDead().
-  virtual bool HasConnection() const = 0;
+  // Note that even if IsInitializedAndNotDead() returns true, then (for a short
+  // duration after calling Init()) the process might not be fully spawned
+  // *yet*.  For example - IsReady() might return false and GetProcess() might
+  // still return an invalid process with a null handle.
+  virtual bool IsInitializedAndNotDead() const = 0;
 
   // Returns the renderer channel.
   virtual IPC::ChannelProxy* GetChannel() = 0;
@@ -393,6 +392,16 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual resource_coordinator::ProcessResourceCoordinator*
   GetProcessResourceCoordinator() = 0;
 
+  // Create an URLLoaderFactory for this process.
+  // When NetworkService is enabled, |request| will be bound with a new
+  // URLLoaderFactory created from the storage partition's Network Context. Note
+  // that the URLLoaderFactory returned by this method does NOT support
+  // auto-reconnect after a crash of Network Service.
+  // When NetworkService is not enabled, |request| will be bound with a
+  // URLLoaderFactory which routes requests to ResourceDispatcherHost.
+  virtual void CreateURLLoaderFactory(
+      network::mojom::URLLoaderFactoryRequest request) = 0;
+
   // Whether this process is locked out from ever being reused for sites other
   // than the ones it currently has.
   virtual void SetIsNeverSuitableForReuse() = 0;
@@ -419,6 +428,13 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // TODO(alexmos): can this be unified with IsUnused()? See also
   // crbug.com/738634.
   virtual bool HostHasNotBeenUsed() = 0;
+
+  // Locks this RenderProcessHost to the 'origin' |lock_url|. This method is
+  // public so that it can be called from SiteInstanceImpl, and used by
+  // MockRenderProcessHost. It isn't meant to be called outside of content.
+  // TODO(creis): Rename LockToOrigin to LockToPrincipal. See
+  // https://crbug.com/846155.
+  virtual void LockToOrigin(const GURL& lock_url) = 0;
 
   // Binds |request| to the CacheStorageDispatcherHost instance. The binding is
   // sent to the IO thread. This is for internal use only, and is only exposed

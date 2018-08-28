@@ -203,6 +203,7 @@ enum class SyncPasswordHashChange {
   SAVED_IN_CONTENT_AREA,
   CLEARED_ON_CHROME_SIGNOUT,
   CHANGED_IN_CONTENT_AREA,
+  NOT_SYNC_PASSWORD_CHANGE,
   SAVED_SYNC_PASSWORD_CHANGE_COUNT
 };
 
@@ -224,10 +225,8 @@ enum ShowAllSavedPasswordsContext {
   // The "Show all saved passwords..." fallback is shown below a list of
   // available passwords.
   SHOW_ALL_SAVED_PASSWORDS_CONTEXT_PASSWORD,
-  // The "Show all saved passwords..." fallback is shown when no available
-  // passwords can be suggested to the user, e.g. because none are saved or
-  // because of technical issues.
-  SHOW_ALL_SAVED_PASSWORDS_CONTEXT_MANUAL_FALLBACK,
+  // Obsolete.
+  SHOW_ALL_SAVED_PASSWORDS_CONTEXT_MANUAL_FALLBACK_DEPRECATED,
   // The "Show all saved  passwords..." fallback is shown in context menu.
   SHOW_ALL_SAVED_PASSWORDS_CONTEXT_CONTEXT_MENU,
   SHOW_ALL_SAVED_PASSWORDS_CONTEXT_COUNT
@@ -251,6 +250,20 @@ enum class ExportPasswordsResult {
   WRITE_FAILED = 2,
   NO_CONSUMER = 3,  // Only used on Android.
   COUNT,
+};
+
+// Used in UMA histograms, please do NOT reorder.
+// Metric: "PasswordManager.ReusedPasswordType".
+enum class PasswordType {
+  // Passwords saved by password manager.
+  SAVED_PASSWORD = 0,
+  // Passwords used for Chrome sign-in.
+  SYNC_PASSWORD = 1,
+  // Other Gaia passwords used in Chrome other than the sync password.
+  OTHER_GAIA_PASSWORD = 2,
+  // Passwords captured from enterprise login page.
+  ENTERPRISE_PASSWORD = 3,
+  PASSWORD_TYPE_COUNT
 };
 
 // A version of the UMA_HISTOGRAM_BOOLEAN macro that allows the |name|
@@ -319,7 +332,8 @@ void LogCredentialManagerGetResult(CredentialManagerGetResult result,
 void LogPasswordReuse(int password_length,
                       int saved_passwords,
                       int number_matches,
-                      bool password_field_detected);
+                      bool password_field_detected,
+                      PasswordType reused_password_type);
 
 // Log the context in which the "Show all saved passwords" fallback was shown.
 void LogContextOfShowAllSavedPasswordsShown(
@@ -348,6 +362,11 @@ void LogSyncPasswordHashChange(SyncPasswordHashChange event);
 
 // Log whether a sync password hash saved.
 void LogIsSyncPasswordHashSaved(IsSyncPasswordHashSaved state);
+
+// Log the number of Gaia password hashes saved, and the number of enterprise
+// password hashes saved.
+void LogProtectedPasswordHashCounts(size_t gaia_hash_count,
+                                    size_t enterprise_hash_count);
 #endif
 
 }  // namespace metrics_util

@@ -7,11 +7,10 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/trace_event/trace_event.h"
 #include "cc/layers/ui_resource_layer.h"
 #include "content/public/browser/android/compositor.h"
-#include "jni/HandleViewResources_jni.h"
-#include "ui/gfx/android/java_bitmap.h"
+#include "ui/android/handle_view_resources.h"
+#include "ui/android/view_android.h"
 
 using base::android::JavaRef;
 
@@ -19,88 +18,21 @@ namespace content {
 
 namespace {
 
-static SkBitmap CreateSkBitmapFromJavaBitmap(
-    base::android::ScopedJavaLocalRef<jobject> jbitmap) {
-  return jbitmap.is_null()
-             ? SkBitmap()
-             : CreateSkBitmapFromJavaBitmap(gfx::JavaBitmap(jbitmap));
-}
-
-class HandleResources {
- public:
-  HandleResources() : loaded_(false) {
-  }
-
-  void LoadIfNecessary(const JavaRef<jobject>& context) {
-    if (loaded_)
-      return;
-
-    loaded_ = true;
-
-    TRACE_EVENT0("browser", "HandleResources::Create");
-    JNIEnv* env = base::android::AttachCurrentThread();
-
-    left_bitmap_ = CreateSkBitmapFromJavaBitmap(
-        Java_HandleViewResources_getLeftHandleBitmap(env, context));
-    right_bitmap_ = CreateSkBitmapFromJavaBitmap(
-        Java_HandleViewResources_getRightHandleBitmap(env, context));
-    center_bitmap_ = CreateSkBitmapFromJavaBitmap(
-        Java_HandleViewResources_getCenterHandleBitmap(env, context));
-
-    left_bitmap_.setImmutable();
-    right_bitmap_.setImmutable();
-    center_bitmap_.setImmutable();
-
-    drawable_horizontal_padding_ratio_ =
-        Java_HandleViewResources_getHandleHorizontalPaddingRatio(env);
-  }
-
-  const SkBitmap& GetBitmap(ui::TouchHandleOrientation orientation) {
-    DCHECK(loaded_);
-    switch (orientation) {
-      case ui::TouchHandleOrientation::LEFT:
-        return left_bitmap_;
-      case ui::TouchHandleOrientation::RIGHT:
-        return right_bitmap_;
-      case ui::TouchHandleOrientation::CENTER:
-        return center_bitmap_;
-      case ui::TouchHandleOrientation::UNDEFINED:
-        NOTREACHED() << "Invalid touch handle orientation.";
-    };
-    return center_bitmap_;
-  }
-
-  float GetDrawableHorizontalPaddingRatio() const {
-    DCHECK(loaded_);
-    return drawable_horizontal_padding_ratio_;
-  }
-
- private:
-  SkBitmap left_bitmap_;
-  SkBitmap right_bitmap_;
-  SkBitmap center_bitmap_;
-  float drawable_horizontal_padding_ratio_;
-  bool loaded_;
-
-  DISALLOW_COPY_AND_ASSIGN(HandleResources);
-};
-
-base::LazyInstance<HandleResources>::Leaky g_selection_resources;
+base::LazyInstance<ui::HandleViewResources>::Leaky g_selection_resources;
 
 }  // namespace
 
 CompositedTouchHandleDrawable::CompositedTouchHandleDrawable(
-    cc::Layer* root_layer,
-    float dpi_scale,
+    gfx::NativeView view,
     const JavaRef<jobject>& context)
-    : dpi_scale_(dpi_scale),
+    : view_(view),
       orientation_(ui::TouchHandleOrientation::UNDEFINED),
       layer_(cc::UIResourceLayer::Create()) {
   g_selection_resources.Get().LoadIfNecessary(context);
   drawable_horizontal_padding_ratio_ =
       g_selection_resources.Get().GetDrawableHorizontalPaddingRatio();
-  DCHECK(root_layer);
-  root_layer->AddChild(layer_.get());
+  DCHECK(view->GetLayer());
+  view->GetLayer()->AddChild(layer_.get());
 }
 
 CompositedTouchHandleDrawable::~CompositedTouchHandleDrawable() {
@@ -146,7 +78,7 @@ void CompositedTouchHandleDrawable::SetOrientation(
 }
 
 void CompositedTouchHandleDrawable::SetOrigin(const gfx::PointF& origin) {
-  origin_position_ = gfx::ScalePoint(origin, dpi_scale_);
+  origin_position_ = origin;
   UpdateLayerPosition();
 }
 
@@ -159,11 +91,10 @@ void CompositedTouchHandleDrawable::SetAlpha(float alpha) {
 }
 
 gfx::RectF CompositedTouchHandleDrawable::GetVisibleBounds() const {
-  return gfx::ScaleRect(gfx::RectF(layer_->position().x(),
-                                   layer_->position().y(),
-                                   layer_->bounds().width(),
-                                   layer_->bounds().height()),
-                        1.f / dpi_scale_);
+  return gfx::ScaleRect(
+      gfx::RectF(layer_->position().x(), layer_->position().y(),
+                 layer_->bounds().width(), layer_->bounds().height()),
+      1.f / view_->GetDipScale());
 }
 
 float CompositedTouchHandleDrawable::GetDrawableHorizontalPaddingRatio() const {
@@ -175,7 +106,7 @@ void CompositedTouchHandleDrawable::DetachLayer() {
 }
 
 void CompositedTouchHandleDrawable::UpdateLayerPosition() {
-  layer_->SetPosition(origin_position_);
+  layer_->SetPosition(gfx::ScalePoint(origin_position_, view_->GetDipScale()));
 }
 
 }  // namespace content

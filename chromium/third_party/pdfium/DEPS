@@ -13,28 +13,29 @@ vars = {
   'chromium_git': 'https://chromium.googlesource.com',
   'pdfium_git': 'https://pdfium.googlesource.com',
 
-  'android_ndk_revision': 'e951c37287c7d8cd915bf8d4149fd4a06d808b55',
+  'android_ndk_revision': '5cd86312e794bdf542a3685c6f10cbb96072990b',
   'binutils_revision': 'e146228c20af6af922887d0be2d3641cbffb33c5',
-  'build_revision': '037f38ae0fe5e11b4f7c33b750fd7a1e9634a606',
-  'buildtools_revision': 'ab7b6a7b350dd15804c87c20ce78982811fdd76f',
-  'catapult_revision': '4f03e51f019492441438893094f789df20102a93',
-  'clang_revision': 'abe5e4f9dc0f1df848c7a0efa05256253e77a7b7',
+  'build_revision': '7ac293430bfc16826dc27680c6c3c60911f10759',
+  'buildtools_revision': '893eb86b02b2571894e328f05551112b96df1cce',
+  'catapult_revision': 'c61a0380486a3c952109d0024cf77dac8a05bbb5',
+  'clang_revision': 'dec27d726d78471325a143a49863846e91d39df8',
+  'code_coverage_revision': '14b8501b7d9f41826d632254a1df8bc664edeec7',
   'cygwin_revision': 'c89e446b273697fadf3a10ff1007a97c0b7de6df',
-  'depot_tools_revision': '869a2857a4f3acc08fdec6182ecec5b73593be3b',
-  'freetype_revision': '62b55f8e51ea8b2b244d8e2ccff5c6aa2170260c',
-  'gtest_revision': '4bd8c4638ada823a8da2569735cc0a9402fb8052',
+  'depot_tools_revision': '5484b866dc936fd1e148385fa1575b0369eec820',
+  'freetype_revision': 'b532d7ce708cb5ca9bf88abaa2eb213ddcf9babb',
+  'gtest_revision': 'ce468a17c434e4e79724396ee1b51d86bfc8a88b',
   'icu_revision': 'e4194dc7bbb3305d84cbb1b294274ca70d230721',
   'instrumented_lib_revision': '323cf32193caecbf074d1a0cb5b02b905f163e0f',
-  'jinja2_revision': 'd34383206fa42d52faa10bb9931d6d538f3a57e0',
+  'jinja2_revision': '45571de473282bd1d8b63a8dfcb1fd268d0635d2',
   'jpeg_turbo_revision': '7260e4d8b8e1e40b17f03fafdf1cd83296900f76',
   'markupsafe_revision': '8f45f5cfa0009d2a70589bcda0349b8cb2b72783',
   'pdfium_tests_revision': '9b7ff5b879ce578f4f186ad546f45fc9fb592943',
-  'skia_revision': 'af7700265b74123d8ad3de6dde0c21545453140b',
-  'tools_memory_revision': '427f10475e1a8d72424c29d00bf689122b738e5d',
-  'trace_event_revision': '0e9a47d74970bee1bbfc063c47215406f8918699',
+  'skia_revision': '588f879677d4f36e16a42dd96876534f104c2e2f',
+  'tools_memory_revision': 'f7b00daf4df7f6c469f5fbc68d7f40f6bd15d6e6',
+  'trace_event_revision': '211b3ed9d0481b4caddbee1322321b86a483ca1f',
   'v8_revision': '9cf8abb7ce7e3a3152fb71d0e87678e64f7ab0c8',
-  'yasm_source_revision': 'b98114e18d8b9b84586b10d24353ab8616d4c5fc',
-  'zlib_revision': '8c371ad77b836c02e44006dc2dc77c5d6d910861',
+  'yasm_source_revision': '720b70524a4424b15fc57e82263568c8ba0496ad',
+  'zlib_revision': '39b4a6260702da4c089eca57136abf40a39667e9',
 }
 
 deps = {
@@ -101,6 +102,10 @@ deps = {
 
   "tools/clang":
     Var('chromium_git') + "/chromium/src/tools/clang@" +  Var('clang_revision'),
+
+  "tools/code_coverage":
+    Var('chromium_git') + "/chromium/src/tools/code_coverage.git@" +
+        Var('code_coverage_revision'),
 
   # TODO(GYP): Remove this when no tools rely on GYP anymore.
   "tools/gyp":

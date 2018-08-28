@@ -246,17 +246,6 @@ TEST(EscapeTest, UnescapeURLComponent) {
        UnescapeRule::URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS,
        "%01%02%03%04%05%06%07%08%09 %"},
       {"Hello%20%13%10%02", UnescapeRule::SPACES, "Hello %13%10%02"},
-      // Ideographic space unescaped only if the NONASCII_SPACES flag is set.
-      {"日本語%E3%80%80日本語", UnescapeRule::NONASCII_SPACES,
-       "日本語　日本語"},
-      // Ideographic space remains escaped if the NONASCII_SPACES flag is not
-      // specified.
-      {"日本語%E3%80%80日本語", UnescapeRule::NORMAL, "日本語%E3%80%80日本語"},
-      {"日本語%E3%80%80日本語",
-       UnescapeRule::SPACES | UnescapeRule::PATH_SEPARATORS |
-           UnescapeRule::URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS |
-           UnescapeRule::REPLACE_PLUS_WITH_SPACE,
-       "日本語%E3%80%80日本語"},
 
       // '/' and '\\' should only be unescaped by PATH_SEPARATORS.
       {"%2F%5C", UnescapeRule::PATH_SEPARATORS, "/\\"},
@@ -507,6 +496,19 @@ TEST(EscapeTest, EscapeExternalHandlerValue) {
                 "http://example.com/path/sub?q=a%7Cb%7Cc&q=1%7C2%7C3#ref%7C"));
   ASSERT_EQ("http://[2001:db8:0:1]:80",
             EscapeExternalHandlerValue("http://[2001:db8:0:1]:80"));
+}
+
+TEST(EscapeTest, ContainsEncodedBytes) {
+  EXPECT_FALSE(ContainsEncodedBytes("abc/def", {'/', '\\'}));
+  EXPECT_FALSE(ContainsEncodedBytes("abc%2Fdef", {'%'}));
+  EXPECT_TRUE(ContainsEncodedBytes("abc%252Fdef", {'%'}));
+  EXPECT_TRUE(ContainsEncodedBytes("abc%2Fdef", {'/', '\\'}));
+  EXPECT_TRUE(ContainsEncodedBytes("abc%5Cdef", {'/', '\\'}));
+  EXPECT_TRUE(ContainsEncodedBytes("abc%2fdef", {'/', '\\'}));
+
+  // Should be looking for byte values, not UTF-8 character values.
+  EXPECT_TRUE(ContainsEncodedBytes("caf%C3%A9", {'\xc3'}));
+  EXPECT_FALSE(ContainsEncodedBytes("caf%C3%A9", {'\xe9'}));
 }
 
 }  // namespace

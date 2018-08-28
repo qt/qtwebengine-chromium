@@ -29,6 +29,7 @@
 
 #include "services/device/public/mojom/geolocation.mojom-blink.h"
 #include "third_party/blink/public/platform/modules/geolocation/geolocation_service.mojom-blink.h"
+#include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_position_callback.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_position_error_callback.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
@@ -61,7 +62,6 @@ class MODULES_EXPORT Geolocation final
   static Geolocation* Create(ExecutionContext*);
   ~Geolocation() override;
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   // Inherited from ContextLifecycleObserver and PageVisibilityObserver.
   void ContextDestroyed(ExecutionContext*) override;
@@ -156,7 +156,7 @@ class MODULES_EXPORT Geolocation final
   explicit Geolocation(ExecutionContext*);
 
   bool HasListeners() const {
-    return !one_shots_.IsEmpty() || !watchers_.IsEmpty();
+    return !one_shots_.IsEmpty() || !watchers_->IsEmpty();
   }
 
   void StopTimers();
@@ -196,7 +196,7 @@ class MODULES_EXPORT Geolocation final
   void OnGeolocationConnectionError();
 
   GeoNotifierSet one_shots_;
-  GeolocationWatchers watchers_;
+  TraceWrapperMember<GeolocationWatchers> watchers_;
   // GeoNotifiers that are in the middle of invocation.
   //
   // |HandleError(error)| and |MakeSuccessCallbacks| need to clear |one_shots_|

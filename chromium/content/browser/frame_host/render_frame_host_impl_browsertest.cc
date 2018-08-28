@@ -10,7 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/run_loop.h"
 #include "base/test/bind_test_util.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
 #include "base/test/test_timeouts.h"
 #include "build/build_config.h"
@@ -1036,7 +1036,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest, POSTNavigation) {
   EXPECT_TRUE(shell()
                   ->web_contents()
                   ->GetController()
-                  .GetActiveEntry()
+                  .GetLastCommittedEntry()
                   ->GetHasPostData());
 
   // Reload and verify the form was submitted.
@@ -1349,7 +1349,7 @@ class ScopedFakeInterfaceProviderRequestInjector
   }
 
  protected:
-  void WillDispatchDidCommitProvisionalLoad(
+  bool WillDispatchDidCommitProvisionalLoad(
       RenderFrameHost* render_frame_host,
       ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
       service_manager::mojom::InterfaceProviderRequest*
@@ -1357,6 +1357,7 @@ class ScopedFakeInterfaceProviderRequestInjector
     url_of_last_commit_ = params->url;
     original_request_of_last_commit_ = std::move(*interface_provider_request);
     *interface_provider_request = std::move(next_fake_request_);
+    return true;
   }
 
  private:

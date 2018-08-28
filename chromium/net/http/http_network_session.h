@@ -59,7 +59,11 @@ class NetLog;
 class NetworkQualityProvider;
 class ProxyDelegate;
 class ProxyResolutionService;
+}  // namespace net
+namespace quic {
 class QuicClock;
+}  // namespace quic
+namespace net {
 class QuicCryptoClientStreamFactory;
 class SocketPerformanceWatcherFactory;
 class SOCKSClientSocketPool;
@@ -123,7 +127,7 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     // QUIC runtime configuration options.
 
     // Versions of QUIC which may be used.
-    QuicTransportVersionVector quic_supported_versions;
+    quic::QuicTransportVersionVector quic_supported_versions;
     // User agent description to send in the QUIC handshake.
     std::string quic_user_agent_id;
     // Limit on the size of QUIC packets.
@@ -134,10 +138,10 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     // QUIC will be used for all connections in this set.
     std::set<HostPortPair> origins_to_force_quic_on;
     // Set of QUIC tags to send in the handshake's connection options.
-    QuicTagVector quic_connection_options;
+    quic::QuicTagVector quic_connection_options;
     // Set of QUIC tags to send in the handshake's connection options that only
     // affect the client.
-    QuicTagVector quic_client_connection_options;
+    quic::QuicTagVector quic_client_connection_options;
     // Enables experimental optimization for receiving data in UDPSocket.
     bool quic_enable_socket_recv_optimization;
 
@@ -154,6 +158,9 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     bool support_ietf_format_quic_altsvc;
     // If true, all QUIC sessions are closed when any local IP address changes.
     bool quic_close_sessions_on_ip_change;
+    // If true, all QUIC sessions are marked as goaway when any local IP address
+    // changes.
+    bool quic_goaway_sessions_on_ip_change;
     // Specifies QUIC idle connection state lifetime.
     int quic_idle_connection_timeout_seconds;
     // Specifies the reduced ping timeout subsequent connections should use when
@@ -164,12 +171,6 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     int quic_max_time_before_crypto_handshake_seconds;
     // Maximum idle time before the crypto handshake has completed.
     int quic_max_idle_time_before_crypto_handshake_seconds;
-    // If true, active QUIC sessions may be migrated onto a new network when
-    // the platform indicates that the default network is changing.
-    bool quic_migrate_sessions_on_network_change;
-    // If true, active QUIC sessions experiencing poor connectivity may be
-    // migrated onto a new network.
-    bool quic_migrate_sessions_early;
     // If true, connection migration v2 will be used to migrate existing
     // sessions to network when the platform indicates that the default network
     // is changing.
@@ -240,9 +241,9 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     NetworkQualityProvider* network_quality_provider;
 
     // Source of time for QUIC connections.
-    QuicClock* quic_clock;
+    quic::QuicClock* quic_clock;
     // Source of entropy for QUIC connections.
-    QuicRandom* quic_random;
+    quic::QuicRandom* quic_random;
     // Optional factory to use for creating QuicCryptoClientStreams.
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
 
@@ -284,7 +285,7 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
   ProxyResolutionService* proxy_resolution_service() {
       return proxy_resolution_service_;
   }
-  SSLConfigService* ssl_config_service() { return ssl_config_service_.get(); }
+  SSLConfigService* ssl_config_service() { return ssl_config_service_; }
   WebSocketEndpointLockManager* websocket_endpoint_lock_manager() {
     return websocket_endpoint_lock_manager_.get();
   }
@@ -363,7 +364,7 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
   HttpAuthHandlerFactory* const http_auth_handler_factory_;
 
   ProxyResolutionService* const proxy_resolution_service_;
-  const scoped_refptr<SSLConfigService> ssl_config_service_;
+  SSLConfigService* const ssl_config_service_;
 
   HttpAuthCache http_auth_cache_;
   SSLClientAuthCache ssl_client_auth_cache_;

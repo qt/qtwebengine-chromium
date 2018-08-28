@@ -16,24 +16,25 @@
 #include "SkFontDescriptor.h"
 #include "SkGlyph.h"
 #include "SkHRESULT.h"
+#include "SkMacros.h"
 #include "SkMakeUnique.h"
 #include "SkMaskGamma.h"
 #include "SkMatrix22.h"
-#include "SkOnce.h"
 #include "SkOTTable_OS_2.h"
 #include "SkOTTable_maxp.h"
 #include "SkOTTable_name.h"
 #include "SkOTUtils.h"
+#include "SkOnce.h"
 #include "SkPath.h"
 #include "SkSFNTHeader.h"
 #include "SkStream.h"
 #include "SkString.h"
 #include "SkTemplates.h"
-#include "SkTypeface_win.h"
+#include "SkTo.h"
 #include "SkTypefaceCache.h"
+#include "SkTypeface_win.h"
 #include "SkUtils.h"
 
-#include "SkTypes.h"
 #include <tchar.h>
 #include <usp10.h>
 #include <objbase.h>
@@ -168,7 +169,7 @@ static unsigned calculateGlyphCount(HDC hdc, const LOGFONT& lf) {
 
     // Binary search for glyph count.
     static const MAT2 mat2 = {{0, 1}, {0, 0}, {0, 0}, {0, 1}};
-    int32_t max = SK_MaxU16 + 1;
+    int32_t max = UINT16_MAX + 1;
     int32_t min = 0;
     GLYPHMETRICS gm;
     while (min < max) {
@@ -258,6 +259,7 @@ public:
 
 protected:
     SkStreamAsset* onOpenStream(int* ttcIndex) const override;
+    sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override;
     SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
                                            const SkDescriptor*) const override;
     void onFilterRec(SkScalerContextRec*) const override;
@@ -272,6 +274,11 @@ protected:
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override;
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
                                      int coordinateCount) const override
+    {
+        return -1;
+    }
+    int onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
+                                       int parameterCount) const override
     {
         return -1;
     }
@@ -1963,6 +1970,10 @@ SkStreamAsset* LogFontTypeface::onOpenStream(int* ttcIndex) const {
     DeleteDC(hdc);
 
     return stream;
+}
+
+sk_sp<SkTypeface> LogFontTypeface::onMakeClone(const SkFontArguments& args) const {
+    return sk_ref_sp(this);
 }
 
 static void bmpCharsToGlyphs(HDC hdc, const WCHAR* bmpChars, int count, uint16_t* glyphs,

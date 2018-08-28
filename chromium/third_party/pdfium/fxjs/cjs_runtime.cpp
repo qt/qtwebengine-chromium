@@ -9,7 +9,6 @@
 #include <algorithm>
 
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
-#include "fxjs/JS_Define.h"
 #include "fxjs/cjs_annot.h"
 #include "fxjs/cjs_app.h"
 #include "fxjs/cjs_border.h"
@@ -39,19 +38,13 @@
 #include "fxjs/cjs_timerobj.h"
 #include "fxjs/cjs_util.h"
 #include "fxjs/cjs_zoomtype.h"
+#include "fxjs/js_define.h"
 #include "public/fpdf_formfill.h"
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
 #include "fxjs/cfxjse_value.h"
 #endif  // PDF_ENABLE_XFA
-
-// static
-CJS_Runtime* CJS_Runtime::RuntimeFromIsolateCurrentContext(
-    v8::Isolate* pIsolate) {
-  return static_cast<CJS_Runtime*>(
-      CFXJS_Engine::EngineFromIsolateCurrentContext(pIsolate));
-}
 
 CJS_Runtime::CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv)
     : m_pFormFillEnv(pFormFillEnv),
@@ -80,19 +73,16 @@ CJS_Runtime::CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv)
   if (m_isolateManaged || FXJS_GlobalIsolateRefCount() == 0)
     DefineJSObjects();
 
-  IJS_EventContext* pContext = NewEventContext();
+  ScopedEventContext pContext(this);
   InitializeEngine();
-  ReleaseEventContext(pContext);
   SetFormFillEnvToDocument();
 }
 
 CJS_Runtime::~CJS_Runtime() {
-  NotifyObservedPtrs();
+  NotifyObservers();
   ReleaseEngine();
-  if (m_isolateManaged) {
-    GetIsolate()->Dispose();
-    SetIsolate(nullptr);
-  }
+  if (m_isolateManaged)
+    DisposeIsolate();
 }
 
 void CJS_Runtime::DefineJSObjects() {
@@ -153,11 +143,8 @@ IJS_EventContext* CJS_Runtime::NewEventContext() {
 }
 
 void CJS_Runtime::ReleaseEventContext(IJS_EventContext* pContext) {
-  auto it = std::find(m_EventContextArray.begin(), m_EventContextArray.end(),
-                      pdfium::FakeUniquePtr<CJS_EventContext>(
-                          static_cast<CJS_EventContext*>(pContext)));
-  if (it != m_EventContextArray.end())
-    m_EventContextArray.erase(it);
+  ASSERT(pContext == m_EventContextArray.back().get());
+  m_EventContextArray.pop_back();
 }
 
 CJS_EventContext* CJS_Runtime::GetCurrentEventContext() const {
@@ -175,11 +162,7 @@ void CJS_Runtime::SetFormFillEnvToDocument() {
   if (pThis.IsEmpty())
     return;
 
-  if (CFXJS_Engine::GetObjDefnID(pThis) != CJS_Document::GetObjDefnID())
-    return;
-
-  CJS_Document* pJSDocument =
-      static_cast<CJS_Document*>(GetObjectPrivate(pThis));
+  auto pJSDocument = JSGetObject<CJS_Document>(pThis);
   if (!pJSDocument)
     return;
 

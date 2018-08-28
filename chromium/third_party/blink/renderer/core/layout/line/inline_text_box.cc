@@ -58,7 +58,7 @@ typedef WTF::HashMap<const InlineTextBox*, LayoutRect> InlineTextBoxOverflowMap;
 static InlineTextBoxOverflowMap* g_text_boxes_with_overflow;
 
 void InlineTextBox::Destroy() {
-  AbstractInlineTextBox::WillDestroy(this);
+  LegacyAbstractInlineTextBox::WillDestroy(this);
 
   if (!KnownToHaveNoOverflow() && g_text_boxes_with_overflow)
     g_text_boxes_with_overflow->erase(this);
@@ -424,7 +424,10 @@ LayoutUnit InlineTextBox::PlaceEllipsisBox(bool flow_is_ltr,
     // more accurate position in rtl text.
     // TODO(crbug.com/722043: This doesn't always give the best results.
     bool ltr = IsLeftToRightDirection();
-    int offset = OffsetForPosition(ellipsis_x, !ltr);
+    int offset = OffsetForPosition(ellipsis_x,
+                                   ltr ? OnlyFullGlyphs : IncludePartialGlyphs,
+                                   DontBreakGlyphs);
+
     // Full truncation is only necessary when we're flowing left-to-right.
     if (flow_is_ltr && offset == 0 && ltr == flow_is_ltr) {
       // No characters should be laid out.  Set ourselves to full truncation and
@@ -625,7 +628,8 @@ LayoutUnit InlineTextBox::TextPos() const {
 }
 
 int InlineTextBox::OffsetForPosition(LayoutUnit line_offset,
-                                     bool include_partial_glyphs) const {
+                                     IncludePartialGlyphsOption partial_glyphs,
+                                     BreakGlyphsOption break_glyphs) const {
   if (IsLineBreak())
     return 0;
 
@@ -639,7 +643,7 @@ int InlineTextBox::OffsetForPosition(LayoutUnit line_offset,
   const Font& font = style.GetFont();
   return font.OffsetForPosition(ConstructTextRun(style),
                                 (line_offset - LogicalLeft()).ToFloat(),
-                                include_partial_glyphs);
+                                partial_glyphs, break_glyphs);
 }
 
 LayoutUnit InlineTextBox::PositionForOffset(int offset) const {
@@ -655,10 +659,10 @@ LayoutUnit InlineTextBox::PositionForOffset(int offset) const {
   int from = !IsLeftToRightDirection() ? offset - start_ : 0;
   int to = !IsLeftToRightDirection() ? len_ : offset - start_;
   // FIXME: Do we need to add rightBearing here?
-  return LayoutUnit(
-      font.SelectionRectForText(ConstructTextRun(style_to_use),
-                                IntPoint(LogicalLeft().ToInt(), 0), 0, from, to)
-          .MaxX());
+  return LayoutUnit(font.SelectionRectForText(
+                            ConstructTextRun(style_to_use),
+                            FloatPoint(LogicalLeft().ToInt(), 0), 0, from, to)
+                        .MaxX());
 }
 
 bool InlineTextBox::ContainsCaretOffset(int offset) const {

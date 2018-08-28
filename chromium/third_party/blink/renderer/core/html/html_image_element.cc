@@ -30,9 +30,9 @@
 #include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
-#include "third_party/blink/renderer/core/dom/sync_reattach_context.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
@@ -50,6 +50,7 @@
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
+#include "third_party/blink/renderer/core/layout/layout_object_factory.h"
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
 #include "third_party/blink/renderer/core/media_type_names.h"
@@ -57,7 +58,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/style/content_data.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image_for_container.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
+#include "third_party/blink/renderer/core/trustedtypes/trusted_url.h"
 #include "third_party/blink/renderer/platform/network/mime/content_type.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
@@ -357,9 +358,7 @@ LayoutObject* HTMLImageElement::CreateLayoutObject(const ComputedStyle& style) {
 
   switch (layout_disposition_) {
     case LayoutDisposition::kFallbackContent:
-      if (!RuntimeEnabledFeatures::LayoutNGEnabled())
-        return new LayoutBlockFlow(this);
-      return new LayoutNGBlockFlow(this);
+      return LayoutObjectFactory::CreateBlockFlow(*this, style);
     case LayoutDisposition::kPrimaryContent: {
       LayoutImage* image = new LayoutImage(this);
       image->SetImageResource(LayoutImageResource::Create());
@@ -374,7 +373,6 @@ LayoutObject* HTMLImageElement::CreateLayoutObject(const ComputedStyle& style) {
 }
 
 void HTMLImageElement::AttachLayoutTree(AttachContext& context) {
-  SyncReattachContext reattach_context(context);
   HTMLElement::AttachLayoutTree(context);
   if (GetLayoutObject() && GetLayoutObject()->IsImage()) {
     LayoutImage* layout_image = ToLayoutImage(GetLayoutObject());
@@ -567,6 +565,11 @@ void HTMLImageElement::SetSrc(const String& value) {
   setAttribute(srcAttr, AtomicString(value));
 }
 
+void HTMLImageElement::SetSrc(const USVStringOrTrustedURL& value,
+                              ExceptionState& exception_state) {
+  setAttribute(srcAttr, value, exception_state);
+}
+
 void HTMLImageElement::setWidth(unsigned value) {
   SetUnsignedIntegralAttribute(widthAttr, value);
 }
@@ -752,7 +755,7 @@ void HTMLImageElement::EnsureFallbackForGeneratedContent() {
   // appropriate for |m_layoutDisposition|. Force recreate it.
   // TODO(engedy): Remove this hack. See: https://crbug.com/671953.
   SetLayoutDisposition(LayoutDisposition::kFallbackContent,
-                       true /* forceReattach */);
+                       true /* force_reattach */);
 }
 
 void HTMLImageElement::EnsureCollapsedOrFallbackContent() {
@@ -781,19 +784,15 @@ void HTMLImageElement::SetLayoutDisposition(
   if (layout_disposition_ == layout_disposition && !force_reattach)
     return;
 
+  DCHECK(!GetDocument().InStyleRecalc());
+
   layout_disposition_ = layout_disposition;
 
-  if (GetDocument().InStyleRecalc()) {
-    // This can happen inside of AttachLayoutTree() in the middle of a
-    // RebuildLayoutTree, so we need to reattach synchronously here.
-    ReattachLayoutTree(SyncReattachContext::CurrentAttachContext());
-  } else {
-    if (layout_disposition_ == LayoutDisposition::kFallbackContent) {
-      EventDispatchForbiddenScope::AllowUserAgentEvents allow_events;
-      EnsureUserAgentShadowRoot();
-    }
-    LazyReattachIfAttached();
+  if (layout_disposition_ == LayoutDisposition::kFallbackContent) {
+    EventDispatchForbiddenScope::AllowUserAgentEvents allow_events;
+    EnsureUserAgentShadowRoot();
   }
+  LazyReattachIfAttached();
 }
 
 scoped_refptr<ComputedStyle> HTMLImageElement::CustomStyleForLayoutObject() {

@@ -24,6 +24,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task_runner_util.h"
+#include "base/task_scheduler/lazy_task_runner.h"
 #include "base/time/default_tick_clock.h"
 #include "build/build_config.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_configurator.h"
@@ -58,6 +59,17 @@
 using base::FieldTrialList;
 
 namespace {
+
+#if defined(OS_CHROMEOS)
+// SequencedTaskRunner to get the network id. A SequencedTaskRunner is used
+// rather than parallel tasks to avoid having many threads getting the network
+// id concurrently.
+base::LazySequencedTaskRunner g_get_network_id_task_runner =
+    LAZY_SEQUENCED_TASK_RUNNER_INITIALIZER(
+        base::TaskTraits(base::MayBlock(),
+                         base::TaskPriority::BACKGROUND,
+                         base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN));
+#endif
 
 // Values of the UMA DataReductionProxy.Protocol.NotAcceptingTransform histogram
 // defined in metrics/histograms/histograms.xml. This enum must remain
@@ -184,6 +196,7 @@ DataReductionProxyConfig::DataReductionProxyConfig(
       configurator_(configurator),
       event_creator_(event_creator),
       connection_type_(net::NetworkChangeNotifier::GetConnectionType()),
+      ignore_long_term_black_list_rules_(false),
       network_properties_manager_(nullptr),
       weak_factory_(this) {
   DCHECK(io_task_runner_);
@@ -616,16 +629,18 @@ void DataReductionProxyConfig::OnNetworkChanged(
   connection_type_ = type;
   RecordNetworkChangeEvent(NETWORK_CHANGED);
 
-  if (!get_network_id_task_runner_) {
-    ContinueNetworkChanged(GetCurrentNetworkID());
+#if defined(OS_CHROMEOS)
+  if (get_network_id_asynchronously_) {
+    base::PostTaskAndReplyWithResult(
+        g_get_network_id_task_runner.Get().get(), FROM_HERE,
+        base::BindOnce(&DoGetCurrentNetworkID),
+        base::BindOnce(&DataReductionProxyConfig::ContinueNetworkChanged,
+                       weak_factory_.GetWeakPtr()));
     return;
   }
+#endif  // defined(OS_CHROMEOS)
 
-  base::PostTaskAndReplyWithResult(
-      get_network_id_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&DoGetCurrentNetworkID),
-      base::BindOnce(&DataReductionProxyConfig::ContinueNetworkChanged,
-                     weak_factory_.GetWeakPtr()));
+  ContinueNetworkChanged(GetCurrentNetworkID());
 }
 
 void DataReductionProxyConfig::ContinueNetworkChanged(
@@ -752,7 +767,7 @@ bool DataReductionProxyConfig::IsBlackListedOrDisabled(
   // TODO(crbug.com/720102): Consider new method to just check blacklist.
   return !previews_decider.ShouldAllowPreviewAtECT(
       request, previews_type, net::EFFECTIVE_CONNECTION_TYPE_4G,
-      std::vector<std::string>());
+      std::vector<std::string>(), ignore_long_term_black_list_rules_);
 }
 
 bool DataReductionProxyConfig::ShouldAcceptServerPreview(
@@ -760,7 +775,7 @@ bool DataReductionProxyConfig::ShouldAcceptServerPreview(
     const previews::PreviewsDecider& previews_decider) const {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK((request.load_flags() & net::LOAD_MAIN_FRAME_DEPRECATED) != 0);
-  DCHECK(!request.url().SchemeIsCryptographic());
+  DCHECK(request.url().SchemeIsHTTPOrHTTPS());
 
   if (!previews::params::ArePreviewsAllowed() ||
       !base::FeatureList::IsEnabled(
@@ -830,6 +845,23 @@ DataReductionProxyConfig::GetInFlightWarmupProxyDetails() const {
 
   return std::make_pair(warmup_url_fetch_in_flight_secure_proxy_,
                         warmup_url_fetch_in_flight_core_proxy_);
+}
+
+#if defined(OS_CHROMEOS)
+void DataReductionProxyConfig::EnableGetNetworkIdAsynchronously() {
+  get_network_id_asynchronously_ = true;
+}
+#endif  // defined(OS_CHROMEOS)
+
+void DataReductionProxyConfig::SetIgnoreLongTermBlackListRules(
+    bool ignore_long_term_black_list_rules) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  ignore_long_term_black_list_rules_ = ignore_long_term_black_list_rules;
+}
+
+bool DataReductionProxyConfig::IgnoreBlackListLongTermRulesForTesting() const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return ignore_long_term_black_list_rules_;
 }
 
 }  // namespace data_reduction_proxy

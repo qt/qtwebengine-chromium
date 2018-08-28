@@ -12,7 +12,6 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
-#include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 
 #if DCHECK_IS_ON()
 #include "third_party/blink/renderer/platform/json/json_values.h"
@@ -35,7 +34,7 @@ class PLATFORM_EXPORT DisplayItem {
  public:
   enum {
     // Must be kept in sync with core/paint/PaintPhase.h.
-    kPaintPhaseMax = 11,
+    kPaintPhaseMax = 10,
   };
 
   // A display item type uniquely identifies a display item of a client.
@@ -58,24 +57,14 @@ class PLATFORM_EXPORT DisplayItem {
   //     <Category>[<Subset>]PaintPhaseFirst + PaintPhaseMax;
   // - DEFINE_PAINT_PHASE_CONVERSION_METHOD(<Category>[<Subset>]) to define
   //   paintPhaseTo<Category>[<Subset>]Type(PaintPhase) method.
-  //
-  // A category can be derived from another category, containing types each of
-  // which corresponds to a value of the latter category:
-  // - In enum Type:
-  //   - enum value <Category>First;
-  //   - enum value <Category>Last =
-  //     <Category>First + <BaseCategory>Last - <BaseCategory>First;
-  // - DEFINE_CONVERSION_METHODS(<Category>,
-  //                             <category>,
-  //                             <BaseCategory>,
-  //                             <baseCategory>)
-  //   to define methods to convert types between the categories.
   enum Type {
     kDrawingFirst,
     kDrawingPaintPhaseFirst = kDrawingFirst,
     kDrawingPaintPhaseLast = kDrawingFirst + kPaintPhaseMax,
     kBoxDecorationBackground,
+    kCapsLockIndicator,
     kCaret,
+    kClippingMask,
     kColumnRules,
     kDebugDrawing,
     kDocumentBackground,
@@ -85,6 +74,7 @@ class PLATFORM_EXPORT DisplayItem {
     kSVGImage,
     kLinkHighlight,
     kImageAreaFocusRing,
+    kOverflowControls,
     kPageOverlay,
     kPopupContainerBorder,
     kPopupListBoxBackground,
@@ -113,7 +103,12 @@ class PLATFORM_EXPORT DisplayItem {
     kWebPlugin,
     kWebFont,
     kReflectionMask,
-    kDrawingLast = kReflectionMask,
+    // Compositor hit testing requires that layers are created and sized to
+    // include content that does not paint. Hit test display items ensure
+    // a layer exists and is sized properly even if no content would otherwise
+    // be painted.
+    kHitTest,
+    kDrawingLast = kHitTest,
 
     kForeignLayerFirst,
     kForeignLayerCanvas = kForeignLayerFirst,
@@ -123,47 +118,11 @@ class PLATFORM_EXPORT DisplayItem {
     kForeignLayerContentsWrapper,
     kForeignLayerLast = kForeignLayerContentsWrapper,
 
-    kClipFirst,
-    kClipBoxPaintPhaseFirst = kClipFirst,
-    kClipBoxPaintPhaseLast = kClipBoxPaintPhaseFirst + kPaintPhaseMax,
-    kClipColumnBoundsPaintPhaseFirst,
-    kClipColumnBoundsPaintPhaseLast =
-        kClipColumnBoundsPaintPhaseFirst + kPaintPhaseMax,
-    kClipLayerFragmentPaintPhaseFirst,
-    kClipLayerFragmentPaintPhaseLast =
-        kClipLayerFragmentPaintPhaseFirst + kPaintPhaseMax,
-    kClipFileUploadControlRect,
-    kClipFrameToVisibleContentRect,
-    kClipFrameScrollbars,
-    kClipLayerBackground,
-    kClipLayerColumnBounds,
-    kClipLayerFilter,
-    kClipLayerForeground,
-    kClipLayerParent,
-    kClipLayerOverflowControls,
-    kClipPopupListBoxFrame,
-    kClipScrollbarsToBoxBounds,
-    kClipSelectionImage,
-    kClipLast = kClipSelectionImage,
+    kClipPaintPhaseFirst,
+    kClipPaintPhaseLast = kClipPaintPhaseFirst + kPaintPhaseMax,
 
-    kEndClipFirst,
-    kEndClipLast = kEndClipFirst + kClipLast - kClipFirst,
-
-    kFloatClipFirst,
-    kFloatClipPaintPhaseFirst = kFloatClipFirst,
-    kFloatClipPaintPhaseLast = kFloatClipFirst + kPaintPhaseMax,
-    kFloatClipClipPathBounds,
-    kFloatClipLast = kFloatClipClipPathBounds,
-    kEndFloatClipFirst,
-    kEndFloatClipLast = kEndFloatClipFirst + kFloatClipLast - kFloatClipFirst,
-
-    kScrollFirst,
-    kScrollPaintPhaseFirst = kScrollFirst,
+    kScrollPaintPhaseFirst,
     kScrollPaintPhaseLast = kScrollPaintPhaseFirst + kPaintPhaseMax,
-    kScrollOverflowControls,
-    kScrollLast = kScrollOverflowControls,
-    kEndScrollFirst,
-    kEndScrollLast = kEndScrollFirst + kScrollLast - kScrollFirst,
 
     kSVGTransformPaintPhaseFirst,
     kSVGTransformPaintPhaseLast = kSVGTransformPaintPhaseFirst + kPaintPhaseMax,
@@ -171,21 +130,6 @@ class PLATFORM_EXPORT DisplayItem {
     kSVGEffectPaintPhaseFirst,
     kSVGEffectPaintPhaseLast = kSVGEffectPaintPhaseFirst + kPaintPhaseMax,
 
-    kTransform3DFirst,
-    kTransform3DElementTransform = kTransform3DFirst,
-    kTransform3DLast = kTransform3DElementTransform,
-    kEndTransform3DFirst,
-    kEndTransform3DLast =
-        kEndTransform3DFirst + kTransform3DLast - kTransform3DFirst,
-
-    kBeginFilter,
-    kEndFilter,
-    kBeginCompositing,
-    kEndCompositing,
-    kBeginTransform,
-    kEndTransform,
-    kBeginClipPath,
-    kEndClipPath,
     kScrollHitTest,
 
     kLayerChunkBackground,
@@ -199,6 +143,8 @@ class PLATFORM_EXPORT DisplayItem {
     kTypeLast = kUninitializedType
   };
 
+  // Some fields are copied from |client|, because we need to access them in
+  // later paint cycles when |client| may have been destroyed.
   DisplayItem(const DisplayItemClient& client, Type type, size_t derived_size)
       : client_(&client),
         visual_rect_(client.VisualRect()),
@@ -206,7 +152,8 @@ class PLATFORM_EXPORT DisplayItem {
         type_(type),
         derived_size_(derived_size),
         fragment_(0),
-        skipped_cache_(false),
+        // TODO(pdr): Should this return true for IsScrollHitTestType too?
+        is_cacheable_(client.IsCacheable() && IsDrawingType(type)),
         is_tombstone_(false) {
     // |derived_size| must fit in |derived_size_|.
     // If it doesn't, enlarge |derived_size_| and fix this assert.
@@ -268,11 +215,6 @@ class PLATFORM_EXPORT DisplayItem {
     fragment_ = fragment;
   }
 
-  // For PaintController only. Painters should use DisplayItemCacheSkipper
-  // instead.
-  void SetSkippedCache() { skipped_cache_ = true; }
-  bool SkippedCache() const { return skipped_cache_; }
-
   // Appends this display item to the cc::DisplayItemList, if applicable.
   // |visual_rect_offset| is the offset between the space of the GraphicsLayer
   // which owns the display item and the coordinate space of VisualRect().
@@ -286,28 +228,6 @@ class PLATFORM_EXPORT DisplayItem {
     return type >= k##Category##First && type <= k##Category##Last; \
   }                                                                 \
   bool Is##Category() const { return Is##Category##Type(GetType()); }
-
-#define DEFINE_CONVERSION_METHODS(Category1, category1, Category2, category2) \
-  static Type Category1##TypeTo##Category2##Type(Type type) {                 \
-    static_assert(k##Category1##Last - k##Category1##First ==                 \
-                      k##Category2##Last - k##Category2##First,               \
-                  "Categories " #Category1 " and " #Category2                 \
-                  " should have same number of enum values. See comments of " \
-                  "DisplayItem::Type");                                       \
-    DCHECK(Is##Category1##Type(type));                                        \
-    return static_cast<Type>(type - k##Category1##First +                     \
-                             k##Category2##First);                            \
-  }                                                                           \
-  static Type category2##TypeTo##Category1##Type(Type type) {                 \
-    DCHECK(Is##Category2##Type(type));                                        \
-    return static_cast<Type>(type - k##Category2##First +                     \
-                             k##Category1##First);                            \
-  }
-
-#define DEFINE_PAIRED_CATEGORY_METHODS(Category, category) \
-  DEFINE_CATEGORY_METHODS(Category)                        \
-  DEFINE_CATEGORY_METHODS(End##Category)                   \
-  DEFINE_CONVERSION_METHODS(Category, category, End##Category, end##Category)
 
 #define DEFINE_PAINT_PHASE_CONVERSION_METHOD(Category)                \
   static Type PaintPhaseTo##Category##Type(PaintPhase paint_phase) {  \
@@ -325,47 +245,20 @@ class PLATFORM_EXPORT DisplayItem {
 
   DEFINE_CATEGORY_METHODS(ForeignLayer)
 
-  DEFINE_PAIRED_CATEGORY_METHODS(Clip, clip)
-  DEFINE_PAINT_PHASE_CONVERSION_METHOD(ClipLayerFragment)
-  DEFINE_PAINT_PHASE_CONVERSION_METHOD(ClipBox)
-  DEFINE_PAINT_PHASE_CONVERSION_METHOD(ClipColumnBounds)
-
-  DEFINE_PAIRED_CATEGORY_METHODS(FloatClip, floatClip)
-  DEFINE_PAINT_PHASE_CONVERSION_METHOD(FloatClip)
-
-  DEFINE_PAIRED_CATEGORY_METHODS(Scroll, scroll)
+  DEFINE_PAINT_PHASE_CONVERSION_METHOD(Clip)
   DEFINE_PAINT_PHASE_CONVERSION_METHOD(Scroll)
-
   DEFINE_PAINT_PHASE_CONVERSION_METHOD(SVGTransform)
   DEFINE_PAINT_PHASE_CONVERSION_METHOD(SVGEffect)
 
-  DEFINE_PAIRED_CATEGORY_METHODS(Transform3D, transform3D)
+  bool IsScrollHitTest() const { return type_ == kScrollHitTest; }
 
-  static bool IsScrollHitTestType(Type type) { return type == kScrollHitTest; }
-  bool IsScrollHitTest() const { return IsScrollHitTestType(GetType()); }
-
-  // TODO(pdr): Should this return true for IsScrollHitTestType too?
-  static bool IsCacheableType(Type type) { return IsDrawingType(type); }
-  bool IsCacheable() const {
-    return !SkippedCache() && IsCacheableType(GetType());
-  }
-
-  virtual bool IsBegin() const { return false; }
-  virtual bool IsEnd() const { return false; }
-
-#if DCHECK_IS_ON()
-  virtual bool IsEndAndPairedWith(DisplayItem::Type other_type) const {
-    return false;
-  }
-#endif
+  bool IsCacheable() const { return is_cacheable_; }
 
   virtual bool Equals(const DisplayItem& other) const {
     // Failure of this DCHECK would cause bad casts in subclasses.
     SECURITY_CHECK(!is_tombstone_);
     return client_ == other.client_ && type_ == other.type_ &&
-           fragment_ == other.fragment_ &&
-           derived_size_ == other.derived_size_ &&
-           skipped_cache_ == other.skipped_cache_;
+           fragment_ == other.fragment_ && derived_size_ == other.derived_size_;
   }
 
   // True if this DisplayItem is the tombstone/"dead display item" as part of
@@ -389,7 +282,7 @@ class PLATFORM_EXPORT DisplayItem {
   // The default DisplayItem constructor is only used by ContiguousContainer::
   // AppendByMoving() where a tombstone DisplayItem is constructed at the source
   // location. Only set is_tombstone_ to true, leaving other fields as-is so
-  // that we can get their original values for debugging. |visual_rect_| and
+  // that we can get their original values. |visual_rect_| and
   // |outset_for_raster_effects_| are special, see DisplayItemList::
   // AppendByMoving().
   DisplayItem() : is_tombstone_(true) {}
@@ -402,7 +295,7 @@ class PLATFORM_EXPORT DisplayItem {
   unsigned type_ : 8;
   unsigned derived_size_ : 8;  // size of the actual derived class
   unsigned fragment_ : 14;
-  unsigned skipped_cache_ : 1;
+  unsigned is_cacheable_ : 1;
   unsigned is_tombstone_ : 1;
 };
 
@@ -413,36 +306,6 @@ inline bool operator==(const DisplayItem::Id& a, const DisplayItem::Id& b) {
 inline bool operator!=(const DisplayItem::Id& a, const DisplayItem::Id& b) {
   return !(a == b);
 }
-
-class PLATFORM_EXPORT PairedBeginDisplayItem : public DisplayItem {
- protected:
-  PairedBeginDisplayItem(const DisplayItemClient& client,
-                         Type type,
-                         size_t derived_size)
-      : DisplayItem(client, type, derived_size) {
-    DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
-  }
-
- private:
-  bool IsBegin() const final { return true; }
-};
-
-class PLATFORM_EXPORT PairedEndDisplayItem : public DisplayItem {
- protected:
-  PairedEndDisplayItem(const DisplayItemClient& client,
-                       Type type,
-                       size_t derived_size)
-      : DisplayItem(client, type, derived_size) {
-    DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
-  }
-
-#if DCHECK_IS_ON()
-  bool IsEndAndPairedWith(DisplayItem::Type other_type) const override = 0;
-#endif
-
- private:
-  bool IsEnd() const final { return true; }
-};
 
 }  // namespace blink
 

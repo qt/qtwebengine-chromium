@@ -11,6 +11,7 @@
 #include "base/guid.h"
 #include "base/logging.h"
 #include "build/build_config.h"
+#include "content/public/browser/authenticator_request_client_delegate.h"
 #include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/browser/login_delegate.h"
 #include "content/public/browser/memory_coordinator_delegate.h"
@@ -20,16 +21,16 @@
 #include "content/public/browser/url_loader_request_interceptor.h"
 #include "content/public/browser/vpn_service_proxy.h"
 #include "content/public/common/url_loader_throttle.h"
-#include "device/geolocation/public/cpp/location_provider.h"
 #include "media/audio/audio_manager.h"
-#include "media/base/cdm_factory.h"
 #include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "net/ssl/client_cert_identity.h"
 #include "net/ssl/client_cert_store.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "services/device/public/cpp/geolocation/location_provider.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/mojom/network_service.mojom.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "ui/gfx/image/image_skia.h"
@@ -78,6 +79,10 @@ GURL ContentBrowserClient::GetEffectiveURL(BrowserContext* browser_context,
   return url;
 }
 
+bool ContentBrowserClient::ShouldUseMobileFlingCurve() const {
+  return false;
+}
+
 bool ContentBrowserClient::ShouldUseProcessPerSite(
     BrowserContext* browser_context, const GURL& effective_url) {
   return false;
@@ -110,6 +115,11 @@ void ContentBrowserClient::GetAdditionalViewSourceSchemes(
 }
 
 bool ContentBrowserClient::LogWebUIUrl(const GURL& web_ui_url) const {
+  return false;
+}
+
+bool ContentBrowserClient::IsWebUIAllowedToMakeNetworkRequests(
+    const url::Origin& origin) {
   return false;
 }
 
@@ -180,9 +190,11 @@ bool ContentBrowserClient::OverridesAudioManager() {
   return false;
 }
 
-std::unique_ptr<media::CdmFactory> ContentBrowserClient::CreateCdmFactory() {
-  return nullptr;
-}
+void ContentBrowserClient::GetHardwareSecureDecryptionCaps(
+    const std::string& key_system,
+    const base::flat_set<media::CdmProxy::Protocol>& cdm_proxy_protocols,
+    base::flat_set<media::VideoCodec>* video_codecs,
+    base::flat_set<media::EncryptionMode>* encryption_schemes) {}
 
 bool ContentBrowserClient::ShouldAssignSiteForURL(const GURL& url) {
   return true;
@@ -258,6 +270,10 @@ bool ContentBrowserClient::IsDataSaverEnabled(BrowserContext* context) {
   return false;
 }
 
+void ContentBrowserClient::UpdateRendererPreferencesForWorker(
+    BrowserContext* browser_context,
+    RendererPreferences* out_prefs) {}
+
 bool ContentBrowserClient::AllowGetCookie(const GURL& url,
                                           const GURL& first_party,
                                           const net::CookieList& cookie_list,
@@ -272,10 +288,23 @@ bool ContentBrowserClient::AllowSetCookie(const GURL& url,
                                           const net::CanonicalCookie& cookie,
                                           ResourceContext* context,
                                           int render_process_id,
-                                          int render_frame_id,
-                                          const net::CookieOptions& options) {
+                                          int render_frame_id) {
   return true;
 }
+
+void ContentBrowserClient::OnCookiesRead(int process_id,
+                                         int routing_id,
+                                         const GURL& url,
+                                         const GURL& first_party_url,
+                                         const net::CookieList& cookie_list,
+                                         bool blocked_by_policy) {}
+
+void ContentBrowserClient::OnCookieChange(int process_id,
+                                          int routing_id,
+                                          const GURL& url,
+                                          const GURL& first_party_url,
+                                          const net::CanonicalCookie& cookie,
+                                          bool blocked_by_policy) {}
 
 void ContentBrowserClient::AllowWorkerFileSystem(
     const GURL& url,
@@ -345,15 +374,20 @@ ContentBrowserClient::OverrideSystemLocationProvider() {
   return nullptr;
 }
 
-void ContentBrowserClient::GetGeolocationRequestContext(
-    base::OnceCallback<void(scoped_refptr<net::URLRequestContextGetter>)>
-        callback) {
-  std::move(callback).Run(scoped_refptr<net::URLRequestContextGetter>(nullptr));
+scoped_refptr<network::SharedURLLoaderFactory>
+ContentBrowserClient::GetSystemSharedURLLoaderFactory() {
+  return nullptr;
 }
 
 std::string ContentBrowserClient::GetGeolocationApiKey() {
   return std::string();
 }
+
+#if defined(OS_ANDROID)
+bool ContentBrowserClient::ShouldUseGmsCoreGeolocationProvider() {
+  return false;
+}
+#endif
 
 std::string ContentBrowserClient::GetStoragePartitionIdForSite(
     BrowserContext* browser_context,
@@ -549,16 +583,14 @@ ContentBrowserClient::OutOfProcessServiceInfo::OutOfProcessServiceInfo() =
     default;
 
 ContentBrowserClient::OutOfProcessServiceInfo::OutOfProcessServiceInfo(
-    const base::string16& process_name)
-    : process_name(process_name) {
-  DCHECK(!process_name.empty());
-}
+    const ProcessNameCallback& process_name_callback)
+    : process_name_callback(process_name_callback) {}
 
 ContentBrowserClient::OutOfProcessServiceInfo::OutOfProcessServiceInfo(
-    const base::string16& process_name,
+    const ProcessNameCallback& process_name_callback,
     const std::string& process_group)
-    : process_name(process_name), process_group(process_group) {
-  DCHECK(!process_name.empty());
+    : process_name_callback(process_name_callback),
+      process_group(process_group) {
   DCHECK(!process_group.empty());
 }
 
@@ -573,6 +605,11 @@ bool ContentBrowserClient::ShouldTerminateOnServiceQuit(
 std::vector<ContentBrowserClient::ServiceManifestInfo>
 ContentBrowserClient::GetExtraServiceManifests() {
   return std::vector<ContentBrowserClient::ServiceManifestInfo>();
+}
+
+std::vector<service_manager::Identity>
+ContentBrowserClient::GetStartupServices() {
+  return std::vector<service_manager::Identity>();
 }
 
 std::unique_ptr<MemoryCoordinatorDelegate>
@@ -609,11 +646,27 @@ void ContentBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories(
     NonNetworkURLLoaderFactoryMap* factories) {}
 
 bool ContentBrowserClient::WillCreateURLLoaderFactory(
+    BrowserContext* browser_context,
     RenderFrameHost* frame,
     bool is_navigation,
     network::mojom::URLLoaderFactoryRequest* factory_request) {
   return false;
 }
+
+void ContentBrowserClient::WillCreateWebSocket(
+    RenderFrameHost* frame,
+    network::mojom::WebSocketRequest* request,
+    network::mojom::AuthenticationHandlerPtr* auth_handler) {}
+
+std::vector<std::unique_ptr<URLLoaderRequestInterceptor>>
+ContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
+    NavigationUIData* navigation_ui_data,
+    int frame_tree_node_id) {
+  return std::vector<std::unique_ptr<URLLoaderRequestInterceptor>>();
+}
+
+void ContentBrowserClient::OnNetworkServiceCreated(
+    network::mojom::NetworkService* network_service) {}
 
 network::mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
     BrowserContext* context,
@@ -628,7 +681,6 @@ network::mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
   context_params->user_agent = GetContentClient()->GetUserAgent();
   context_params->accept_language = "en-us,en";
   context_params->enable_data_url_support = true;
-  context_params->enable_file_url_support = true;
   GetNetworkService()->CreateNetworkContext(MakeRequest(&network_context),
                                             std::move(context_params));
   return network_context;
@@ -679,22 +731,10 @@ bool ContentBrowserClient::ShouldCreateTaskScheduler() {
   return true;
 }
 
-bool ContentBrowserClient::ShouldPermitIndividualAttestationForWebauthnRPID(
-    content::BrowserContext* browser_context,
-    const std::string& rp_id) {
-  return false;
-}
-
-void ContentBrowserClient::ShouldReturnAttestationForWebauthnRPID(
-    content::RenderFrameHost* rfh,
-    const std::string& rp_id,
-    const url::Origin& origin,
-    base::OnceCallback<void(bool)> callback) {
-  std::move(callback).Run(true);
-}
-
-bool ContentBrowserClient::IsFocused(content::WebContents* web_contents) {
-  return true;
+std::unique_ptr<AuthenticatorRequestClientDelegate>
+ContentBrowserClient::GetWebAuthenticationRequestDelegate(
+    RenderFrameHost* render_frame_host) {
+  return std::make_unique<AuthenticatorRequestClientDelegate>();
 }
 
 std::unique_ptr<net::ClientCertStore>
@@ -705,8 +745,10 @@ ContentBrowserClient::CreateClientCertStore(ResourceContext* resource_context) {
 scoped_refptr<LoginDelegate> ContentBrowserClient::CreateLoginDelegate(
     net::AuthChallengeInfo* auth_info,
     content::ResourceRequestInfo::WebContentsGetter web_contents_getter,
+    const GlobalRequestID& request_id,
     bool is_request_for_main_frame,
     const GURL& url,
+    scoped_refptr<net::HttpResponseHeaders> response_headers,
     bool first_auth_attempt,
     LoginAuthRequiredCallback auth_required_callback) {
   return nullptr;
@@ -727,13 +769,6 @@ std::unique_ptr<OverlayWindow>
 ContentBrowserClient::CreateWindowForPictureInPicture(
     PictureInPictureWindowController* controller) {
   return nullptr;
-}
-
-std::vector<std::unique_ptr<URLLoaderRequestInterceptor>>
-ContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
-    NavigationUIData* navigation_ui_data,
-    int frame_tree_node_id) {
-  return std::vector<std::unique_ptr<URLLoaderRequestInterceptor>>();
 }
 
 }  // namespace content

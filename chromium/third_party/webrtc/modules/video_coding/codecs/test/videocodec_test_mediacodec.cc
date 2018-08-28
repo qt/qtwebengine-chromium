@@ -12,9 +12,11 @@
 #include <tuple>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/test/create_videocodec_test_fixture.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "media/base/mediaconstants.h"
+#include "modules/video_coding/codecs/test/android_codec_factory_helper.h"
 #include "modules/video_coding/codecs/test/videocodec_test_fixture_impl.h"
 #include "test/gtest.h"
 #include "test/testsupport/fileutils.h"
@@ -35,13 +37,22 @@ VideoCodecTestFixture::Config CreateConfig() {
   config.hw_decoder = true;
   return config;
 }
+
+std::unique_ptr<VideoCodecTestFixture> CreateTestFixtureWithConfig(
+    VideoCodecTestFixture::Config config) {
+  InitializeAndroidObjects();  // Idempotent.
+  auto encoder_factory = CreateAndroidEncoderFactory();
+  auto decoder_factory = CreateAndroidDecoderFactory();
+  return CreateVideoCodecTestFixture(config, std::move(decoder_factory),
+                                     std::move(encoder_factory));
+}
 }  // namespace
 
 TEST(VideoCodecTestMediaCodec, ForemanCif500kbpsVp8) {
   auto config = CreateConfig();
   config.SetCodecSettings(cricket::kVp8CodecName, 1, 1, 1, false, false, false,
                           352, 288);
-  auto fixture = CreateVideoCodecTestFixture(config);
+  auto fixture = CreateTestFixtureWithConfig(config);
 
   std::vector<RateProfile> rate_profiles = {
       {500, kForemanFramerateFps, kForemanNumFrames}};
@@ -54,18 +65,17 @@ TEST(VideoCodecTestMediaCodec, ForemanCif500kbpsVp8) {
 
   std::vector<QualityThresholds> quality_thresholds = {{36, 31, 0.92, 0.86}};
 
-  fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds, nullptr,
-                   nullptr);
+  fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds, nullptr);
 }
 
 TEST(VideoCodecTestMediaCodec, ForemanCif500kbpsH264CBP) {
   auto config = CreateConfig();
-  const auto frame_checker = rtc::MakeUnique<
-      VideoCodecTestFixtureImpl::H264KeyframeChecker>();
+  const auto frame_checker =
+      absl::make_unique<VideoCodecTestFixtureImpl::H264KeyframeChecker>();
   config.encoded_frame_checker = frame_checker.get();
   config.SetCodecSettings(cricket::kH264CodecName, 1, 1, 1, false, false, false,
                           352, 288);
-  auto fixture = CreateVideoCodecTestFixture(config);
+  auto fixture = CreateTestFixtureWithConfig(config);
 
   std::vector<RateProfile> rate_profiles = {
       {500, kForemanFramerateFps, kForemanNumFrames}};
@@ -78,22 +88,21 @@ TEST(VideoCodecTestMediaCodec, ForemanCif500kbpsH264CBP) {
 
   std::vector<QualityThresholds> quality_thresholds = {{36, 31, 0.92, 0.86}};
 
-  fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds, nullptr,
-                   nullptr);
+  fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds, nullptr);
 }
 
 // TODO(brandtr): Enable this test when we have trybots/buildbots with
 // HW encoders that support CHP.
 TEST(VideoCodecTestMediaCodec, DISABLED_ForemanCif500kbpsH264CHP) {
   auto config = CreateConfig();
-  const auto frame_checker = rtc::MakeUnique<
-      VideoCodecTestFixtureImpl::H264KeyframeChecker>();
+  const auto frame_checker =
+      absl::make_unique<VideoCodecTestFixtureImpl::H264KeyframeChecker>();
 
   config.h264_codec_settings.profile = H264::kProfileConstrainedHigh;
   config.encoded_frame_checker = frame_checker.get();
   config.SetCodecSettings(cricket::kH264CodecName, 1, 1, 1, false, false, false,
                           352, 288);
-  auto fixture = CreateVideoCodecTestFixture(config);
+  auto fixture = CreateTestFixtureWithConfig(config);
 
   std::vector<RateProfile> rate_profiles = {
       {500, kForemanFramerateFps, kForemanNumFrames}};
@@ -106,8 +115,7 @@ TEST(VideoCodecTestMediaCodec, DISABLED_ForemanCif500kbpsH264CHP) {
 
   std::vector<QualityThresholds> quality_thresholds = {{37, 35, 0.93, 0.91}};
 
-  fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds, nullptr,
-                   nullptr);
+  fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds, nullptr);
 }
 
 TEST(VideoCodecTestMediaCodec, ForemanMixedRes100kbpsVp8H264) {
@@ -133,10 +141,9 @@ TEST(VideoCodecTestMediaCodec, ForemanMixedRes100kbpsVp8H264) {
       config.SetCodecSettings(codec, 1, 1, 1, false, false, false, width,
                               height);
 
-      auto fixture = CreateVideoCodecTestFixture(config);
+      auto fixture = CreateTestFixtureWithConfig(config);
       fixture->RunTest(rate_profiles, nullptr /* rc_thresholds */,
-                       &quality_thresholds, nullptr /* bs_thresholds */,
-                       nullptr /* visualization_params */);
+                       &quality_thresholds, nullptr /* bs_thresholds */);
     }
   }
 }

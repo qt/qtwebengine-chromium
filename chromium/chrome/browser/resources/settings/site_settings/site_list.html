@@ -6,6 +6,7 @@
 <link rel="import" href="chrome://resources/cr_elements/icons.html">
 <link rel="import" href="chrome://resources/cr_elements/policy/cr_policy_pref_indicator.html">
 <link rel="import" href="chrome://resources/html/web_ui_listener_behavior.html">
+<link rel="import" href="chrome://resources/html/list_property_update_behavior.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icon/iron-icon.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-icon-button/paper-icon-button-light.html">
 <link rel="import" href="../i18n_setup.html">
@@ -59,7 +60,7 @@
         </button>
       </cr-action-menu>
 
-      <div class="list-frame" hidden$="[[hasSites_(sites)]]">
+      <div class="list-frame" hidden$="[[hasSites_(sites.*)]]">
         <div class="list-item secondary">$i18n{noSitesAdded}</div>
       </div>
       <div class="list-frame menu-content vertical-list" id="listContainer">
@@ -71,7 +72,9 @@
                   style$="[[computeSiteIcon(item.origin)]]">
               </div>
               <div class="middle no-min-width">
-                <div class="text-elide">[[item.displayName]]</div>
+                <div class="text-elide">
+                  <span class="url-directionality">[[item.displayName]]</span>
+                </div>
 
                 <!-- This div must not contain extra whitespace. -->
                 <div class="secondary text-elide"
@@ -114,6 +117,12 @@
       <settings-edit-exception-dialog model="[[actionMenuSite_]]"
           on-close="onEditExceptionDialogClosed_">
       </settings-edit-exception-dialog>
+    </template>
+    <template is="dom-if" if="[[showAddSiteDialog_]]" restamp>
+      <add-site-dialog has-incognito="[[hasIncognito_]]" category="[[category]]"
+          content-setting="[[categorySubtype]]"
+          on-close="onAddSiteDialogClosed_">
+      </add-site-dialog>
     </template>
   </template>
   <script src="site_list.js"></script>

@@ -28,9 +28,9 @@
 #include <assert.h>
 #include <string.h>
 
-#include <functiondiscoverykeys_devpkey.h>
 #include <comdef.h>
 #include <dmo.h>
+#include <functiondiscoverykeys_devpkey.h>
 #include <mmsystem.h>
 #include <strsafe.h>
 #include <uuids.h>
@@ -381,7 +381,9 @@ bool AudioDeviceWindowsCore::CoreAudioIsSupported() {
 // ----------------------------------------------------------------------------
 
 AudioDeviceWindowsCore::AudioDeviceWindowsCore()
-    : _comInit(ScopedCOMInitializer::kMTA),
+    : _avrtLibrary(NULL),
+      _winSupportAvrt(false),
+      _comInit(ScopedCOMInitializer::kMTA),
       _ptrAudioBuffer(NULL),
       _ptrEnumerator(NULL),
       _ptrRenderCollection(NULL),
@@ -397,6 +399,15 @@ AudioDeviceWindowsCore::AudioDeviceWindowsCore()
       _dmo(NULL),
       _mediaBuffer(NULL),
       _builtInAecEnabled(false),
+      _hRenderSamplesReadyEvent(NULL),
+      _hPlayThread(NULL),
+      _hRenderStartedEvent(NULL),
+      _hShutdownRenderEvent(NULL),
+      _hCaptureSamplesReadyEvent(NULL),
+      _hRecThread(NULL),
+      _hCaptureStartedEvent(NULL),
+      _hShutdownCaptureEvent(NULL),
+      _hMmTask(NULL),
       _playAudioFrameSize(0),
       _playSampleRate(0),
       _playBlockSize(0),
@@ -409,17 +420,6 @@ AudioDeviceWindowsCore::AudioDeviceWindowsCore()
       _recSampleRate(0),
       _recBlockSize(0),
       _recChannels(2),
-      _avrtLibrary(NULL),
-      _winSupportAvrt(false),
-      _hRenderSamplesReadyEvent(NULL),
-      _hPlayThread(NULL),
-      _hCaptureSamplesReadyEvent(NULL),
-      _hRecThread(NULL),
-      _hShutdownRenderEvent(NULL),
-      _hShutdownCaptureEvent(NULL),
-      _hRenderStartedEvent(NULL),
-      _hCaptureStartedEvent(NULL),
-      _hMmTask(NULL),
       _initialized(false),
       _recording(false),
       _playing(false),
@@ -1959,8 +1959,7 @@ int32_t AudioDeviceWindowsCore::InitPlayout() {
     RTC_LOG(LS_VERBOSE) << "cbSize             : " << Wfx.cbSize;
     RTC_LOG(LS_VERBOSE) << "Additional settings:";
     RTC_LOG(LS_VERBOSE) << "_playAudioFrameSize: " << _playAudioFrameSize;
-    RTC_LOG(LS_VERBOSE) << "_playBlockSize     : "
-                        << _playBlockSize;
+    RTC_LOG(LS_VERBOSE) << "_playBlockSize     : " << _playBlockSize;
     RTC_LOG(LS_VERBOSE) << "_playChannels      : " << _playChannels;
   }
 

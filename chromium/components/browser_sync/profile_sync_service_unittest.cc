@@ -9,16 +9,15 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
+#include "base/test/bind_test_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "components/browser_sync/browser_sync_switches.h"
 #include "components/browser_sync/profile_sync_test_util.h"
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/fake_signin_manager.h"
 #include "components/sync/base/pref_names.h"
-#include "components/sync/device_info/local_device_info_provider.h"
 #include "components/sync/driver/fake_data_type_controller.h"
 #include "components/sync/driver/signin_manager_wrapper.h"
 #include "components/sync/driver/sync_api_component_factory_mock.h"
@@ -27,7 +26,6 @@
 #include "components/sync/driver/sync_token_status.h"
 #include "components/sync/driver/sync_util.h"
 #include "components/sync/engine/fake_sync_engine.h"
-#include "components/sync/model/model_type_store_test_util.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "components/version_info/version_info_values.h"
 #include "google_apis/gaia/oauth2_token_service_delegate.h"
@@ -35,10 +33,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using syncer::DataTypeController;
-using syncer::FakeSyncEngine;
-using syncer::ModelTypeSet;
-using syncer::SyncMergeResult;
+using testing::_;
 using testing::ByMove;
 using testing::Return;
 
@@ -48,15 +43,17 @@ namespace {
 
 class FakeDataTypeManager : public syncer::DataTypeManager {
  public:
-  using ConfigureCalled = base::Callback<void(syncer::ConfigureReason)>;
+  using ConfigureCalled =
+      base::RepeatingCallback<void(syncer::ConfigureReason)>;
 
   explicit FakeDataTypeManager(const ConfigureCalled& configure_called)
-      : configure_called_(configure_called) {}
+      : configure_called_(configure_called), state_(STOPPED) {}
 
   ~FakeDataTypeManager() override {}
 
   void Configure(syncer::ModelTypeSet desired_types,
                  syncer::ConfigureReason reason) override {
+    state_ = CONFIGURED;
     DCHECK(!configure_called_.is_null());
     configure_called_.Run(reason);
   }
@@ -65,22 +62,21 @@ class FakeDataTypeManager : public syncer::DataTypeManager {
   void ResetDataTypeErrors() override {}
   void PurgeForMigration(syncer::ModelTypeSet undesired_types,
                          syncer::ConfigureReason reason) override {}
-  void Stop() override {}
-  ModelTypeSet GetActiveDataTypes() const override { return ModelTypeSet(); }
+  void Stop(syncer::ShutdownReason reason) override {}
+  syncer::ModelTypeSet GetActiveDataTypes() const override {
+    return syncer::ModelTypeSet();
+  }
   bool IsNigoriEnabled() const override { return true; }
-  State state() const override { return syncer::DataTypeManager::CONFIGURED; }
+  State state() const override { return state_; }
 
  private:
   ConfigureCalled configure_called_;
+  State state_;
 };
 
-ACTION_P(ReturnNewDataTypeManager, configure_called) {
+ACTION_P(ReturnNewFakeDataTypeManager, configure_called) {
   return std::make_unique<FakeDataTypeManager>(configure_called);
 }
-
-using testing::Return;
-using testing::StrictMock;
-using testing::_;
 
 class TestSyncServiceObserver : public syncer::SyncServiceObserver {
  public:
@@ -103,31 +99,44 @@ class TestSyncServiceObserver : public syncer::SyncServiceObserver {
 // A variant of the FakeSyncEngine that won't automatically call back when asked
 // to initialized. Allows us to test things that could happen while backend init
 // is in progress.
-class SyncEngineNoReturn : public FakeSyncEngine {
+class FakeSyncEngineNoReturn : public syncer::FakeSyncEngine {
   void Initialize(InitParams params) override {}
 };
 
-class FakeSyncEngineCollectDeleteDirParam : public FakeSyncEngine {
+// FakeSyncEngine that stores the SyncCredentials passed into Initialize(), and
+// optionally also whether InvalidateCredentials was called.
+class FakeSyncEngineCollectCredentials : public syncer::FakeSyncEngine {
  public:
-  explicit FakeSyncEngineCollectDeleteDirParam(
-      std::vector<bool>* delete_dir_param)
-      : delete_dir_param_(delete_dir_param) {}
+  explicit FakeSyncEngineCollectCredentials(
+      syncer::SyncCredentials* init_credentials,
+      const base::RepeatingClosure& invalidate_credentials_callback)
+      : init_credentials_(init_credentials),
+        invalidate_credentials_callback_(invalidate_credentials_callback) {}
 
   void Initialize(InitParams params) override {
-    delete_dir_param_->push_back(params.delete_sync_data_folder);
-    FakeSyncEngine::Initialize(std::move(params));
+    *init_credentials_ = params.credentials;
+    syncer::FakeSyncEngine::Initialize(std::move(params));
+  }
+
+  void InvalidateCredentials() override {
+    if (invalidate_credentials_callback_) {
+      invalidate_credentials_callback_.Run();
+    }
+    syncer::FakeSyncEngine::InvalidateCredentials();
   }
 
  private:
-  std::vector<bool>* delete_dir_param_;
+  syncer::SyncCredentials* init_credentials_;
+  base::RepeatingClosure invalidate_credentials_callback_;
 };
 
 // FakeSyncEngine that calls an external callback when ClearServerData is
 // called.
-class SyncEngineCaptureClearServerData : public FakeSyncEngine {
+class FakeSyncEngineCaptureClearServerData : public syncer::FakeSyncEngine {
  public:
-  using ClearServerDataCalled = base::Callback<void(const base::Closure&)>;
-  explicit SyncEngineCaptureClearServerData(
+  using ClearServerDataCalled =
+      base::RepeatingCallback<void(const base::Closure&)>;
+  explicit FakeSyncEngineCaptureClearServerData(
       const ClearServerDataCalled& clear_server_data_called)
       : clear_server_data_called_(clear_server_data_called) {}
 
@@ -139,24 +148,8 @@ class SyncEngineCaptureClearServerData : public FakeSyncEngine {
   ClearServerDataCalled clear_server_data_called_;
 };
 
-// FakeSyncEngine that calls an external callback when InvalidateCredentials is
-// called.
-class SyncEngineCaptureInvalidateCredentials : public FakeSyncEngine {
- public:
-  explicit SyncEngineCaptureInvalidateCredentials(
-      const base::RepeatingClosure& invalidate_credentials_called)
-      : invalidate_credentials_called_(invalidate_credentials_called) {}
-
-  void InvalidateCredentials() override {
-    invalidate_credentials_called_.Run();
-  }
-
- private:
-  base::RepeatingClosure invalidate_credentials_called_;
-};
-
 ACTION(ReturnNewFakeSyncEngine) {
-  return std::make_unique<FakeSyncEngine>();
+  return std::make_unique<syncer::FakeSyncEngine>();
 }
 
 void OnClearServerDataCalled(base::Closure* captured_callback,
@@ -165,13 +158,13 @@ void OnClearServerDataCalled(base::Closure* captured_callback,
 }
 
 // A test harness that uses a real ProfileSyncService and in most cases a
-// MockSyncEngine.
+// FakeSyncEngine.
 //
 // This is useful if we want to test the ProfileSyncService and don't care about
 // testing the SyncEngine.
 class ProfileSyncServiceTest : public ::testing::Test {
  protected:
-  ProfileSyncServiceTest() : component_factory_(nullptr) {}
+  ProfileSyncServiceTest() {}
   ~ProfileSyncServiceTest() override {}
 
   void SetUp() override {
@@ -181,35 +174,43 @@ class ProfileSyncServiceTest : public ::testing::Test {
 
   void TearDown() override {
     // Kill the service before the profile.
-    if (service_)
-      service_->Shutdown();
-
-    service_.reset();
+    ShutdownAndDeleteService();
   }
 
-  void IssueTestTokens() {
+  void SignIn() {
     identity::MakePrimaryAccountAvailable(signin_manager(), auth_service(),
                                           identity_manager(),
                                           "test_user@gmail.com");
   }
 
   void CreateService(ProfileSyncService::StartBehavior behavior) {
-    component_factory_ = profile_sync_service_bundle_.component_factory();
+    DCHECK(!service_);
+
     ProfileSyncServiceBundle::SyncClientBuilder builder(
         &profile_sync_service_bundle_);
     ProfileSyncService::InitParams init_params =
         profile_sync_service_bundle_.CreateBasicInitParams(behavior,
                                                            builder.Build());
-    init_params.model_type_store_factory =
-        syncer::ModelTypeStoreTestUtil::FactoryForInMemoryStoreForTest();
-
     service_ = std::make_unique<ProfileSyncService>(std::move(init_params));
-    service_->RegisterDataTypeController(
-        std::make_unique<syncer::FakeDataTypeController>(syncer::BOOKMARKS));
+
+    ON_CALL(*component_factory(), CreateCommonDataTypeControllers(_, _))
+        .WillByDefault(testing::InvokeWithoutArgs([=]() {
+          syncer::DataTypeController::TypeVector controllers;
+          controllers.push_back(
+              std::make_unique<syncer::FakeDataTypeController>(
+                  syncer::BOOKMARKS));
+          return controllers;
+        }));
+    ON_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+        .WillByDefault(ReturnNewFakeSyncEngine());
+    ON_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+        .WillByDefault(
+            ReturnNewFakeDataTypeManager(GetDefaultConfigureCalledCallback()));
   }
 
   void CreateServiceWithLocalSyncBackend() {
-    component_factory_ = profile_sync_service_bundle_.component_factory();
+    DCHECK(!service_);
+
     ProfileSyncServiceBundle::SyncClientBuilder builder(
         &profile_sync_service_bundle_);
     ProfileSyncService::InitParams init_params =
@@ -217,13 +218,24 @@ class ProfileSyncServiceTest : public ::testing::Test {
             ProfileSyncService::AUTO_START, builder.Build());
 
     prefs()->SetBoolean(syncer::prefs::kEnableLocalSyncBackend, true);
-    init_params.oauth2_token_service = nullptr;
     init_params.gaia_cookie_manager_service = nullptr;
     init_params.signin_wrapper.reset();
 
     service_ = std::make_unique<ProfileSyncService>(std::move(init_params));
-    service_->RegisterDataTypeController(
-        std::make_unique<syncer::FakeDataTypeController>(syncer::BOOKMARKS));
+
+    ON_CALL(*component_factory(), CreateCommonDataTypeControllers(_, _))
+        .WillByDefault(testing::InvokeWithoutArgs([=]() {
+          syncer::DataTypeController::TypeVector controllers;
+          controllers.push_back(
+              std::make_unique<syncer::FakeDataTypeController>(
+                  syncer::BOOKMARKS));
+          return controllers;
+        }));
+    ON_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+        .WillByDefault(ReturnNewFakeSyncEngine());
+    ON_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+        .WillByDefault(
+            ReturnNewFakeDataTypeManager(GetDefaultConfigureCalledCallback()));
   }
 
   void ShutdownAndDeleteService() {
@@ -265,52 +277,12 @@ class ProfileSyncServiceTest : public ::testing::Test {
                       base::Unretained(this));
   }
 
-  void OnConfigureCalledRecordReason(syncer::ConfigureReason* reason_dest,
-                                     syncer::ConfigureReason reason) {
-    DCHECK(reason_dest);
-    *reason_dest = reason;
-  }
-
   FakeDataTypeManager::ConfigureCalled GetRecordingConfigureCalledCallback(
-      syncer::ConfigureReason* reason) {
-    return base::Bind(&ProfileSyncServiceTest::OnConfigureCalledRecordReason,
-                      base::Unretained(this), reason);
-  }
-
-  void ExpectDataTypeManagerCreation(
-      int times,
-      const FakeDataTypeManager::ConfigureCalled& callback) {
-    EXPECT_CALL(*component_factory_, CreateDataTypeManager(_, _, _, _, _, _))
-        .Times(times)
-        .WillRepeatedly(ReturnNewDataTypeManager(callback));
-  }
-
-  void ExpectSyncEngineCreation(int times) {
-    EXPECT_CALL(*component_factory_, CreateSyncEngine(_, _, _, _))
-        .Times(times)
-        .WillRepeatedly(ReturnNewFakeSyncEngine());
-  }
-
-  void ExpectSyncEngineCreationCaptureClearServerData(
-      base::Closure* captured_callback) {
-    EXPECT_CALL(*component_factory_, CreateSyncEngine(_, _, _, _))
-        .WillOnce(
-            Return(ByMove(std::make_unique<SyncEngineCaptureClearServerData>(
-                base::BindRepeating(&OnClearServerDataCalled,
-                                    base::Unretained(captured_callback))))));
-  }
-
-  void ExpectSyncEngineCreationCaptureInvalidateCredentials(
-      const base::RepeatingClosure& callback) {
-    EXPECT_CALL(*component_factory_, CreateSyncEngine(_, _, _, _))
-        .WillOnce(Return(
-            ByMove(std::make_unique<SyncEngineCaptureInvalidateCredentials>(
-                callback))));
-  }
-
-  void PrepareDelayedInitSyncEngine() {
-    EXPECT_CALL(*component_factory_, CreateSyncEngine(_, _, _, _))
-        .WillOnce(Return(ByMove(std::make_unique<SyncEngineNoReturn>())));
+      syncer::ConfigureReason* reason_dest) {
+    return base::BindLambdaForTesting(
+        [reason_dest](syncer::ConfigureReason reason) {
+          *reason_dest = reason;
+        });
   }
 
   AccountTrackerService* account_tracker() {
@@ -342,25 +314,13 @@ class ProfileSyncServiceTest : public ::testing::Test {
   }
 
   syncer::SyncApiComponentFactoryMock* component_factory() {
-    return component_factory_;
-  }
-
- protected:
-  void PumpLoop() {
-    base::RunLoop run_loop;
-    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                  run_loop.QuitClosure());
-    run_loop.Run();
+    return profile_sync_service_bundle_.component_factory();
   }
 
  private:
   base::test::ScopedTaskEnvironment scoped_task_environment_;
   ProfileSyncServiceBundle profile_sync_service_bundle_;
   std::unique_ptr<ProfileSyncService> service_;
-
-  // The current component factory used by sync. May be null if the server
-  // hasn't been created yet.
-  syncer::SyncApiComponentFactoryMock* component_factory_;
 };
 
 // Verify that the server URLs are sane.
@@ -372,38 +332,40 @@ TEST_F(ProfileSyncServiceTest, InitialState) {
               url == syncer::internal::kSyncDevServerUrl);
 }
 
-// Verify a successful initialization.
 TEST_F(ProfileSyncServiceTest, SuccessfulInitialization) {
-  prefs()->SetManagedPref(syncer::prefs::kSyncManaged,
-                          std::make_unique<base::Value>(false));
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(ReturnNewFakeSyncEngine());
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(
+          ReturnNewFakeDataTypeManager(GetDefaultConfigureCalledCallback()));
   InitializeForNthSync();
-  EXPECT_FALSE(service()->IsManaged());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
   EXPECT_TRUE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 }
 
-// Verify a successful initialization.
 TEST_F(ProfileSyncServiceTest, SuccessfulLocalBackendInitialization) {
-  prefs()->SetManagedPref(syncer::prefs::kSyncManaged,
-                          std::make_unique<base::Value>(false));
   CreateServiceWithLocalSyncBackend();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(ReturnNewFakeSyncEngine());
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(
+          ReturnNewFakeDataTypeManager(GetDefaultConfigureCalledCallback()));
   InitializeForNthSync();
-  EXPECT_FALSE(service()->IsManaged());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
   EXPECT_TRUE(service()->IsSyncActive());
   EXPECT_FALSE(service()->IsSyncConfirmationNeeded());
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 }
 
 // Verify that an initialization where first setup is not complete does not
 // start up the backend.
 TEST_F(ProfileSyncServiceTest, NeedsConfirmation) {
-  prefs()->SetManagedPref(syncer::prefs::kSyncManaged,
-                          std::make_unique<base::Value>(false));
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::MANUAL_START);
 
   syncer::SyncPrefs sync_prefs(prefs());
@@ -411,8 +373,23 @@ TEST_F(ProfileSyncServiceTest, NeedsConfirmation) {
   sync_prefs.SetLastSyncedTime(now);
   sync_prefs.SetKeepEverythingSynced(true);
   service()->Initialize();
+
   EXPECT_FALSE(service()->IsSyncActive());
   EXPECT_TRUE(service()->IsSyncConfirmationNeeded());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
+  // Note: At this point the engine *can* start, but nothing has kicked it off
+  // (usually that happens via getting and then releasing a
+  // SyncSetupInProgressHandle), so the state is still WAITING_FOR_START_REQUEST
+  // and not PENDING_DESIRED_CONFIGURATION.
+  EXPECT_EQ(syncer::SyncService::State::WAITING_FOR_START_REQUEST,
+            service()->GetState());
+
+  // Once we kick off initialization by getting and releasing a setup handle,
+  // the state goes to PENDING_DESIRED_CONFIGURATION.
+  service()->GetSetupInProgressHandle();
+  EXPECT_EQ(syncer::SyncService::State::PENDING_DESIRED_CONFIGURATION,
+            service()->GetState());
 
   // The last sync time shouldn't be cleared.
   // TODO(zea): figure out a way to check that the directory itself wasn't
@@ -441,41 +418,48 @@ TEST_F(ProfileSyncServiceTest, SetupInProgress) {
 TEST_F(ProfileSyncServiceTest, DisabledByPolicyBeforeInit) {
   prefs()->SetManagedPref(syncer::prefs::kSyncManaged,
                           std::make_unique<base::Value>(true));
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
   InitializeForNthSync();
-  EXPECT_TRUE(service()->IsManaged());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_ENTERPRISE_POLICY,
+            service()->GetDisableReasons());
   EXPECT_FALSE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::DISABLED, service()->GetState());
 }
 
 // Verify that disable by enterprise policy works even after the backend has
 // been initialized.
 TEST_F(ProfileSyncServiceTest, DisabledByPolicyAfterInit) {
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
   InitializeForNthSync();
 
-  ASSERT_FALSE(service()->IsManaged());
+  ASSERT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
   ASSERT_TRUE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
   prefs()->SetManagedPref(syncer::prefs::kSyncManaged,
                           std::make_unique<base::Value>(true));
 
-  EXPECT_TRUE(service()->IsManaged());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_ENTERPRISE_POLICY,
+            service()->GetDisableReasons());
   EXPECT_FALSE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::DISABLED, service()->GetState());
 }
 
-// Exercies the ProfileSyncService's code paths related to getting shut down
+// Exercises the ProfileSyncService's code paths related to getting shut down
 // before the backend initialize call returns.
 TEST_F(ProfileSyncServiceTest, AbortedByShutdown) {
   CreateService(ProfileSyncService::AUTO_START);
-  PrepareDelayedInitSyncEngine();
+  ON_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillByDefault(
+          Return(ByMove(std::make_unique<FakeSyncEngineNoReturn>())));
 
-  IssueTestTokens();
+  SignIn();
   InitializeForNthSync();
   ASSERT_FALSE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::INITIALIZING, service()->GetState());
 
   ShutdownAndDeleteService();
 }
@@ -483,47 +467,55 @@ TEST_F(ProfileSyncServiceTest, AbortedByShutdown) {
 // Test RequestStop() before we've initialized the backend.
 TEST_F(ProfileSyncServiceTest, EarlyRequestStop) {
   CreateService(ProfileSyncService::AUTO_START);
-  IssueTestTokens();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+  SignIn();
 
   service()->RequestStop(ProfileSyncService::KEEP_DATA);
-  EXPECT_FALSE(service()->IsSyncRequested());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_USER_CHOICE,
+            service()->GetDisableReasons());
+  EXPECT_EQ(syncer::SyncService::State::DISABLED, service()->GetState());
 
   // Because sync is not requested, this should fail.
   InitializeForNthSync();
-  EXPECT_FALSE(service()->IsSyncRequested());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_USER_CHOICE,
+            service()->GetDisableReasons());
   EXPECT_FALSE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::DISABLED, service()->GetState());
 
   // Request start. This should be enough to allow init to happen.
   service()->RequestStart();
-  EXPECT_TRUE(service()->IsSyncRequested());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
   EXPECT_TRUE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 }
 
 // Test RequestStop() after we've initialized the backend.
 TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
   CreateService(ProfileSyncService::AUTO_START);
-  IssueTestTokens();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+  SignIn();
   InitializeForNthSync();
 
   ASSERT_TRUE(service()->IsSyncActive());
   ASSERT_FALSE(prefs()->GetBoolean(syncer::prefs::kSyncSuppressStart));
+  ASSERT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
   testing::Mock::VerifyAndClearExpectations(component_factory());
 
   service()->RequestStop(ProfileSyncService::KEEP_DATA);
   EXPECT_FALSE(service()->IsSyncActive());
   EXPECT_TRUE(prefs()->GetBoolean(syncer::prefs::kSyncSuppressStart));
-
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_USER_CHOICE,
+            service()->GetDisableReasons());
+  EXPECT_EQ(syncer::SyncService::State::DISABLED, service()->GetState());
 
   service()->RequestStart();
   EXPECT_TRUE(service()->IsSyncActive());
   EXPECT_FALSE(prefs()->GetBoolean(syncer::prefs::kSyncSuppressStart));
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 }
 
 // Certain ProfileSyncService tests don't apply to Chrome OS, for example
@@ -531,27 +523,30 @@ TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
 #if !defined(OS_CHROMEOS)
 TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOut) {
   CreateService(ProfileSyncService::AUTO_START);
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
-  IssueTestTokens();
+  SignIn();
   InitializeForNthSync();
 
   EXPECT_TRUE(service()->IsSyncActive());
   EXPECT_FALSE(prefs()->GetBoolean(syncer::prefs::kSyncSuppressStart));
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
   signin_manager()->SignOut(signin_metrics::SIGNOUT_TEST,
                             signin_metrics::SignoutDelete::IGNORE_METRIC);
   // Wait for PSS to be notified that the primary account has gone away.
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NOT_SIGNED_IN,
+            service()->GetDisableReasons());
+  EXPECT_EQ(syncer::SyncService::State::DISABLED, service()->GetState());
 }
 #endif  // !defined(OS_CHROMEOS)
 
 TEST_F(ProfileSyncServiceTest, GetSyncTokenStatus) {
   CreateService(ProfileSyncService::AUTO_START);
-  IssueTestTokens();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+
+  SignIn();
   InitializeForNthSync();
 
   // Initial status.
@@ -565,8 +560,7 @@ TEST_F(ProfileSyncServiceTest, GetSyncTokenStatus) {
   service()->OnConnectionStatusChange(syncer::CONNECTION_AUTH_ERROR);
 
   // The token request will take the form of a posted task.  Run it.
-  base::RunLoop loop;
-  loop.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   token_status = service()->GetSyncTokenStatus();
   EXPECT_EQ(syncer::CONNECTION_AUTH_ERROR, token_status.connection_status);
@@ -584,16 +578,32 @@ TEST_F(ProfileSyncServiceTest, GetSyncTokenStatus) {
 }
 
 TEST_F(ProfileSyncServiceTest, RevokeAccessTokenFromTokenService) {
+  syncer::SyncCredentials init_credentials;
+
   CreateService(ProfileSyncService::AUTO_START);
-  IssueTestTokens();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+  SignIn();
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(
+          Return(ByMove(std::make_unique<FakeSyncEngineCollectCredentials>(
+              &init_credentials, base::RepeatingClosure()))));
   InitializeForNthSync();
   ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
-  std::string primary_account_id =
+  const std::string primary_account_id =
       signin_manager()->GetAuthenticatedAccountId();
-  auth_service()->LoadCredentials(primary_account_id);
+
+  // Make sure the expected credentials (correct account_id, empty access token)
+  // were passed to the SyncEngine.
+  ASSERT_EQ(primary_account_id, init_credentials.account_id);
+  ASSERT_TRUE(init_credentials.sync_token.empty());
+
+  // At this point, the real SyncEngine would try to connect to the server, fail
+  // (because it has no access token), and eventually call
+  // OnConnectionStatusChange(CONNECTION_AUTH_ERROR). Since our fake SyncEngine
+  // doesn't do any of this, call that explicitly here.
+  service()->OnConnectionStatusChange(syncer::CONNECTION_AUTH_ERROR);
+
   base::RunLoop().RunUntilIdle();
   ASSERT_FALSE(service()->GetAccessTokenForTest().empty());
 
@@ -613,23 +623,43 @@ TEST_F(ProfileSyncServiceTest, RevokeAccessTokenFromTokenService) {
 // Checks that CREDENTIALS_REJECTED_BY_CLIENT resets the access token and stops
 // Sync. Regression test for https://crbug.com/824791.
 TEST_F(ProfileSyncServiceTest, CredentialsRejectedByClient) {
+  syncer::SyncCredentials init_credentials;
   bool invalidate_credentials_called = false;
   base::RepeatingClosure invalidate_credentials_callback =
       base::BindRepeating([](bool* called) { *called = true; },
                           base::Unretained(&invalidate_credentials_called));
+
   CreateService(ProfileSyncService::AUTO_START);
-  IssueTestTokens();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreationCaptureInvalidateCredentials(
-      invalidate_credentials_callback);
+  SignIn();
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(
+          Return(ByMove(std::make_unique<FakeSyncEngineCollectCredentials>(
+              &init_credentials, invalidate_credentials_callback))));
   InitializeForNthSync();
   ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
-  std::string primary_account_id =
+  TestSyncServiceObserver observer;
+  service()->AddObserver(&observer);
+
+  const std::string primary_account_id =
       signin_manager()->GetAuthenticatedAccountId();
-  auth_service()->LoadCredentials(primary_account_id);
+
+  // Make sure the expected credentials (correct account_id, empty access token)
+  // were passed to the SyncEngine.
+  ASSERT_EQ(primary_account_id, init_credentials.account_id);
+  ASSERT_TRUE(init_credentials.sync_token.empty());
+
+  // At this point, the real SyncEngine would try to connect to the server, fail
+  // (because it has no access token), and eventually call
+  // OnConnectionStatusChange(CONNECTION_AUTH_ERROR). Since our fake SyncEngine
+  // doesn't do any of this, call that explicitly here.
+  service()->OnConnectionStatusChange(syncer::CONNECTION_AUTH_ERROR);
+
   base::RunLoop().RunUntilIdle();
   ASSERT_FALSE(service()->GetAccessTokenForTest().empty());
+  ASSERT_EQ(GoogleServiceAuthError::AuthErrorNone(), service()->GetAuthError());
+  ASSERT_EQ(GoogleServiceAuthError::AuthErrorNone(), observer.auth_error());
 
   // Simulate the credentials getting locally rejected by the client by setting
   // the refresh token to a special invalid value.
@@ -643,21 +673,44 @@ TEST_F(ProfileSyncServiceTest, CredentialsRejectedByClient) {
             auth_service()->GetAuthError(primary_account_id));
   EXPECT_TRUE(service()->GetAccessTokenForTest().empty());
   EXPECT_TRUE(invalidate_credentials_called);
+
+  // The observer should have been notified of the auth error state.
+  EXPECT_EQ(rejected_by_client, observer.auth_error());
+  // The overall state should remain ACTIVE.
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
+
+  service()->RemoveObserver(&observer);
 }
 
 // CrOS does not support signout.
 #if !defined(OS_CHROMEOS)
 TEST_F(ProfileSyncServiceTest, SignOutRevokeAccessToken) {
-  CreateService(ProfileSyncService::AUTO_START);
-  IssueTestTokens();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
-  InitializeForNthSync();
-  EXPECT_TRUE(service()->IsSyncActive());
+  syncer::SyncCredentials init_credentials;
 
-  std::string primary_account_id =
+  CreateService(ProfileSyncService::AUTO_START);
+  SignIn();
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(
+          Return(ByMove(std::make_unique<FakeSyncEngineCollectCredentials>(
+              &init_credentials, base::RepeatingClosure()))));
+  InitializeForNthSync();
+  ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
+
+  const std::string primary_account_id =
       signin_manager()->GetAuthenticatedAccountId();
-  auth_service()->LoadCredentials(primary_account_id);
+
+  // Make sure the expected credentials (correct account_id, empty access token)
+  // were passed to the SyncEngine.
+  ASSERT_EQ(primary_account_id, init_credentials.account_id);
+  ASSERT_TRUE(init_credentials.sync_token.empty());
+
+  // At this point, the real SyncEngine would try to connect to the server, fail
+  // (because it has no access token), and eventually call
+  // OnConnectionStatusChange(CONNECTION_AUTH_ERROR). Since our fake SyncEngine
+  // doesn't do any of this, call that explicitly here.
+  service()->OnConnectionStatusChange(syncer::CONNECTION_AUTH_ERROR);
+
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(service()->GetAccessTokenForTest().empty());
 
@@ -669,19 +722,18 @@ TEST_F(ProfileSyncServiceTest, SignOutRevokeAccessToken) {
 
 // Verify that LastSyncedTime and local DeviceInfo is cleared on sign out.
 TEST_F(ProfileSyncServiceTest, ClearDataOnSignOut) {
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
   InitializeForNthSync();
   ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
   ASSERT_LT(base::Time::Now() - service()->GetLastSyncedTime(),
             base::TimeDelta::FromMinutes(1));
   ASSERT_TRUE(service()->GetLocalDeviceInfoProvider()->GetLocalDeviceInfo());
 
   // Sign out.
   service()->RequestStop(ProfileSyncService::CLEAR_DATA);
-  PumpLoop();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(service()->GetLastSyncedTime().is_null());
   EXPECT_FALSE(service()->GetLocalDeviceInfoProvider()->GetLocalDeviceInfo());
@@ -693,21 +745,36 @@ TEST_F(ProfileSyncServiceTest, CredentialErrorReturned) {
   // automatic replies to access token requests.
   auth_service()->set_auto_post_fetch_response_on_message_loop(false);
 
+  syncer::SyncCredentials init_credentials;
+
   CreateService(ProfileSyncService::AUTO_START);
-  IssueTestTokens();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+  SignIn();
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(
+          Return(ByMove(std::make_unique<FakeSyncEngineCollectCredentials>(
+              &init_credentials, base::RepeatingClosure()))));
   InitializeForNthSync();
   ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
+
+  const std::string primary_account_id =
+      signin_manager()->GetAuthenticatedAccountId();
+
+  // Make sure the expected credentials (correct account_id, empty access token)
+  // were passed to the SyncEngine.
+  ASSERT_EQ(primary_account_id, init_credentials.account_id);
+  ASSERT_TRUE(init_credentials.sync_token.empty());
 
   TestSyncServiceObserver observer;
   service()->AddObserver(&observer);
 
-  std::string primary_account_id =
-      signin_manager()->GetAuthenticatedAccountId();
-  auth_service()->LoadCredentials(primary_account_id);
-  // Wait for ProfileSyncService to be notified of the loaded credentials and
-  // send an access token request.
+  // At this point, the real SyncEngine would try to connect to the server, fail
+  // (because it has no access token), and eventually call
+  // OnConnectionStatusChange(CONNECTION_AUTH_ERROR). Since our fake SyncEngine
+  // doesn't do any of this, call that explicitly here.
+  service()->OnConnectionStatusChange(syncer::CONNECTION_AUTH_ERROR);
+
+  // Wait for ProfileSyncService to send an access token request.
   base::RunLoop().RunUntilIdle();
   auth_service()->IssueAllTokensForAccount(primary_account_id, "access token",
                                            base::Time::Max());
@@ -727,6 +794,8 @@ TEST_F(ProfileSyncServiceTest, CredentialErrorReturned) {
             service()->GetAuthError().state());
   EXPECT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
             observer.auth_error().state());
+  // The overall state should remain ACTIVE.
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
   service()->RemoveObserver(&observer);
 }
@@ -738,21 +807,36 @@ TEST_F(ProfileSyncServiceTest, CredentialErrorClearsOnNewToken) {
   // automatic replies to access token requests.
   auth_service()->set_auto_post_fetch_response_on_message_loop(false);
 
+  syncer::SyncCredentials init_credentials;
+
   CreateService(ProfileSyncService::AUTO_START);
-  IssueTestTokens();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+  SignIn();
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(
+          Return(ByMove(std::make_unique<FakeSyncEngineCollectCredentials>(
+              &init_credentials, base::RepeatingClosure()))));
   InitializeForNthSync();
   ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
+
+  const std::string primary_account_id =
+      signin_manager()->GetAuthenticatedAccountId();
+
+  // Make sure the expected credentials (correct account_id, empty access token)
+  // were passed to the SyncEngine.
+  ASSERT_EQ(primary_account_id, init_credentials.account_id);
+  ASSERT_TRUE(init_credentials.sync_token.empty());
 
   TestSyncServiceObserver observer;
   service()->AddObserver(&observer);
 
-  std::string primary_account_id =
-      signin_manager()->GetAuthenticatedAccountId();
-  auth_service()->LoadCredentials(primary_account_id);
-  // Wait for ProfileSyncService to be notified of the loaded credentials and
-  // send an access token request.
+  // At this point, the real SyncEngine would try to connect to the server, fail
+  // (because it has no access token), and eventually call
+  // OnConnectionStatusChange(CONNECTION_AUTH_ERROR). Since our fake SyncEngine
+  // doesn't do any of this, call that explicitly here.
+  service()->OnConnectionStatusChange(syncer::CONNECTION_AUTH_ERROR);
+
+  // Wait for ProfileSyncService to send an access token request.
   base::RunLoop().RunUntilIdle();
   auth_service()->IssueAllTokensForAccount(primary_account_id, "access token",
                                            base::Time::Max());
@@ -771,6 +855,8 @@ TEST_F(ProfileSyncServiceTest, CredentialErrorClearsOnNewToken) {
   // Check that the invalid token is returned from sync.
   ASSERT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
             service()->GetAuthError().state());
+  // The overall state should remain ACTIVE.
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
   // Now emulate Chrome receiving a new, valid LST.
   auth_service()->UpdateCredentials(primary_account_id, "totally valid token");
@@ -782,6 +868,7 @@ TEST_F(ProfileSyncServiceTest, CredentialErrorClearsOnNewToken) {
   // Check that sync auth error state cleared.
   EXPECT_EQ(GoogleServiceAuthError::NONE, service()->GetAuthError().state());
   EXPECT_EQ(GoogleServiceAuthError::NONE, observer.auth_error().state());
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
   service()->RemoveObserver(&observer);
 }
@@ -800,13 +887,12 @@ TEST_F(ProfileSyncServiceTest, NoDisableSyncFlag) {
 // Test Sync will stop after receive memory pressure
 TEST_F(ProfileSyncServiceTest, MemoryPressureRecording) {
   CreateService(ProfileSyncService::AUTO_START);
-  IssueTestTokens();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
+  SignIn();
   InitializeForNthSync();
 
   ASSERT_TRUE(service()->IsSyncActive());
   ASSERT_FALSE(prefs()->GetBoolean(syncer::prefs::kSyncSuppressStart));
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
   testing::Mock::VerifyAndClearExpectations(component_factory());
 
@@ -844,7 +930,7 @@ TEST_F(ProfileSyncServiceTest, OnLocalSetPassphraseEncryption) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndEnableFeature(
       switches::kSyncClearDataOnPassphraseEncryption);
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
 
   base::Closure captured_callback;
@@ -853,11 +939,17 @@ TEST_F(ProfileSyncServiceTest, OnLocalSetPassphraseEncryption) {
   // Initialize sync, ensure that both DataTypeManager and SyncEngine are
   // initialized and DTM::Configure is called with
   // CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE.
-  ExpectSyncEngineCreationCaptureClearServerData(&captured_callback);
-  ExpectDataTypeManagerCreation(
-      1, GetRecordingConfigureCalledCallback(&configure_reason));
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(
+          Return(ByMove(std::make_unique<FakeSyncEngineCaptureClearServerData>(
+              base::BindRepeating(&OnClearServerDataCalled,
+                                  base::Unretained(&captured_callback))))));
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(ReturnNewFakeDataTypeManager(
+          GetRecordingConfigureCalledCallback(&configure_reason)));
   InitializeForNthSync();
   ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
   testing::Mock::VerifyAndClearExpectations(component_factory());
   ASSERT_EQ(syncer::CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE, configure_reason);
   syncer::DataTypeManager::ConfigureResult result;
@@ -882,9 +974,9 @@ TEST_F(ProfileSyncServiceTest, OnLocalSetPassphraseEncryption) {
   // Once SBH::ClearServerData finishes successfully ensure that sync is
   // restarted.
   configure_reason = syncer::CONFIGURE_REASON_UNKNOWN;
-  ExpectSyncEngineCreation(1);
-  ExpectDataTypeManagerCreation(
-      1, GetRecordingConfigureCalledCallback(&configure_reason));
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(ReturnNewFakeDataTypeManager(
+          GetRecordingConfigureCalledCallback(&configure_reason)));
   captured_callback.Run();
   testing::Mock::VerifyAndClearExpectations(component_factory());
   EXPECT_EQ(syncer::CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE, configure_reason);
@@ -899,11 +991,11 @@ TEST_F(ProfileSyncServiceTest,
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndEnableFeature(
       switches::kSyncClearDataOnPassphraseEncryption);
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
-  ExpectSyncEngineCreation(1);
-  ExpectDataTypeManagerCreation(
-      1, GetRecordingConfigureCalledCallback(&configure_reason));
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(ReturnNewFakeDataTypeManager(
+          GetRecordingConfigureCalledCallback(&configure_reason)));
   InitializeForNthSync();
   testing::Mock::VerifyAndClearExpectations(component_factory());
   ASSERT_EQ(syncer::CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE, configure_reason);
@@ -922,9 +1014,14 @@ TEST_F(ProfileSyncServiceTest,
   ShutdownAndDeleteService();
   CreateService(ProfileSyncService::AUTO_START);
   base::Closure captured_callback;
-  ExpectSyncEngineCreationCaptureClearServerData(&captured_callback);
-  ExpectDataTypeManagerCreation(
-      1, GetRecordingConfigureCalledCallback(&configure_reason));
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(
+          Return(ByMove(std::make_unique<FakeSyncEngineCaptureClearServerData>(
+              base::BindRepeating(&OnClearServerDataCalled,
+                                  base::Unretained(&captured_callback))))));
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(ReturnNewFakeDataTypeManager(
+          GetRecordingConfigureCalledCallback(&configure_reason)));
   InitializeForNthSync();
   testing::Mock::VerifyAndClearExpectations(component_factory());
   EXPECT_EQ(syncer::CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE, configure_reason);
@@ -942,9 +1039,9 @@ TEST_F(ProfileSyncServiceTest,
   result.was_catch_up_configure = false;
   EXPECT_FALSE(captured_callback.is_null());
 
-  ExpectSyncEngineCreation(1);
-  ExpectDataTypeManagerCreation(
-      1, GetRecordingConfigureCalledCallback(&configure_reason));
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(ReturnNewFakeDataTypeManager(
+          GetRecordingConfigureCalledCallback(&configure_reason)));
   captured_callback.Run();
   testing::Mock::VerifyAndClearExpectations(component_factory());
   EXPECT_EQ(syncer::CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE, configure_reason);
@@ -959,10 +1056,13 @@ TEST_F(ProfileSyncServiceTest,
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndEnableFeature(
       switches::kSyncClearDataOnPassphraseEncryption);
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
-  ExpectSyncEngineCreationCaptureClearServerData(&captured_callback);
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(
+          Return(ByMove(std::make_unique<FakeSyncEngineCaptureClearServerData>(
+              base::BindRepeating(&OnClearServerDataCalled,
+                                  base::Unretained(&captured_callback))))));
   InitializeForNthSync();
   testing::Mock::VerifyAndClearExpectations(component_factory());
 
@@ -976,9 +1076,14 @@ TEST_F(ProfileSyncServiceTest,
   // Simulate browser restart. First configuration is a regular one.
   ShutdownAndDeleteService();
   CreateService(ProfileSyncService::AUTO_START);
-  ExpectSyncEngineCreationCaptureClearServerData(&captured_callback);
-  ExpectDataTypeManagerCreation(
-      1, GetRecordingConfigureCalledCallback(&configure_reason));
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(
+          Return(ByMove(std::make_unique<FakeSyncEngineCaptureClearServerData>(
+              base::BindRepeating(&OnClearServerDataCalled,
+                                  base::Unretained(&captured_callback))))));
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(ReturnNewFakeDataTypeManager(
+          GetRecordingConfigureCalledCallback(&configure_reason)));
   InitializeForNthSync();
   testing::Mock::VerifyAndClearExpectations(component_factory());
   EXPECT_EQ(syncer::CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE, configure_reason);
@@ -998,9 +1103,9 @@ TEST_F(ProfileSyncServiceTest,
   result.was_catch_up_configure = false;
   EXPECT_FALSE(captured_callback.is_null());
 
-  ExpectSyncEngineCreation(1);
-  ExpectDataTypeManagerCreation(
-      1, GetRecordingConfigureCalledCallback(&configure_reason));
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(ReturnNewFakeDataTypeManager(
+          GetRecordingConfigureCalledCallback(&configure_reason)));
   captured_callback.Run();
   testing::Mock::VerifyAndClearExpectations(component_factory());
   EXPECT_EQ(syncer::CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE, configure_reason);
@@ -1009,10 +1114,8 @@ TEST_F(ProfileSyncServiceTest,
 // Test that the passphrase prompt due to version change logic gets triggered
 // on a datatype type requesting startup, but only happens once.
 TEST_F(ProfileSyncServiceTest, PassphrasePromptDueToVersion) {
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
   InitializeForNthSync();
 
   syncer::SyncPrefs sync_prefs(service()->GetSyncClient()->GetPrefService());
@@ -1040,12 +1143,19 @@ TEST_F(ProfileSyncServiceTest, PassphrasePromptDueToVersion) {
 // Test that when ProfileSyncService receives actionable error
 // RESET_LOCAL_SYNC_DATA it restarts sync.
 TEST_F(ProfileSyncServiceTest, ResetSyncData) {
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
   // Backend should get initialized two times: once during initialization and
   // once when handling actionable error.
-  ExpectDataTypeManagerCreation(2, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(2);
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(
+          ReturnNewFakeDataTypeManager(GetDefaultConfigureCalledCallback()))
+      .WillOnce(
+          ReturnNewFakeDataTypeManager(GetDefaultConfigureCalledCallback()));
+  EXPECT_CALL(*component_factory(), CreateSyncEngine(_, _, _, _))
+      .WillOnce(ReturnNewFakeSyncEngine())
+      .WillOnce(ReturnNewFakeSyncEngine());
+
   InitializeForNthSync();
 
   syncer::SyncProtocolError client_cmd;
@@ -1056,13 +1166,12 @@ TEST_F(ProfileSyncServiceTest, ResetSyncData) {
 // Test that when ProfileSyncService receives actionable error
 // DISABLE_SYNC_ON_CLIENT it disables sync and signs out.
 TEST_F(ProfileSyncServiceTest, DisableSyncOnClient) {
-  IssueTestTokens();
+  SignIn();
   CreateService(ProfileSyncService::AUTO_START);
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
   InitializeForNthSync();
 
   ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
   ASSERT_LT(base::Time::Now() - service()->GetLastSyncedTime(),
             base::TimeDelta::FromMinutes(1));
   ASSERT_TRUE(service()->GetLocalDeviceInfoProvider()->GetLocalDeviceInfo());
@@ -1074,11 +1183,17 @@ TEST_F(ProfileSyncServiceTest, DisableSyncOnClient) {
 // CrOS does not support signout.
 #if !defined(OS_CHROMEOS)
   EXPECT_TRUE(signin_manager()->GetAuthenticatedAccountId().empty());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_USER_CHOICE |
+                syncer::SyncService::DISABLE_REASON_NOT_SIGNED_IN,
+            service()->GetDisableReasons());
 #else
   EXPECT_FALSE(signin_manager()->GetAuthenticatedAccountId().empty());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_USER_CHOICE,
+            service()->GetDisableReasons());
 #endif
 
   EXPECT_FALSE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::DISABLED, service()->GetState());
   EXPECT_TRUE(service()->GetLastSyncedTime().is_null());
   EXPECT_FALSE(service()->GetLocalDeviceInfoProvider()->GetLocalDeviceInfo());
 }
@@ -1088,61 +1203,73 @@ TEST_F(ProfileSyncServiceTest, LocalBackendDisabledByPolicy) {
   prefs()->SetManagedPref(syncer::prefs::kSyncManaged,
                           std::make_unique<base::Value>(false));
   CreateServiceWithLocalSyncBackend();
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
   InitializeForNthSync();
-  EXPECT_FALSE(service()->IsManaged());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
   EXPECT_TRUE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 
   prefs()->SetManagedPref(syncer::prefs::kSyncManaged,
                           std::make_unique<base::Value>(true));
 
-  EXPECT_TRUE(service()->IsManaged());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_ENTERPRISE_POLICY,
+            service()->GetDisableReasons());
   EXPECT_FALSE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::DISABLED, service()->GetState());
 
   prefs()->SetManagedPref(syncer::prefs::kSyncManaged,
                           std::make_unique<base::Value>(false));
 
-  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
-  ExpectSyncEngineCreation(1);
-
   service()->RequestStart();
-  EXPECT_FALSE(service()->IsManaged());
+  EXPECT_EQ(syncer::SyncService::DISABLE_REASON_NONE,
+            service()->GetDisableReasons());
   EXPECT_TRUE(service()->IsSyncActive());
+  EXPECT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
 }
 
-// Regression test for crbug/555434. The issue is that check for sessions DTC in
-// OnSessionRestoreComplete was creating map entry with nullptr which later was
-// dereferenced in OnSyncCycleCompleted. The fix is to use find() to check if
-// entry for sessions exists in map.
-TEST_F(ProfileSyncServiceTest, ValidPointersInDTCMap) {
-  CreateService(ProfileSyncService::AUTO_START);
-  service()->OnSessionRestoreComplete();
-  service()->OnSyncCycleCompleted(syncer::SyncCycleSnapshot(
-      syncer::ModelNeutralState(), syncer::ProgressMarkerMap(), false, 0, 0, 0,
-      false, 0, base::Time::Now(), base::Time::Now(),
-      std::vector<int>(syncer::MODEL_TYPE_COUNT, 0),
-      std::vector<int>(syncer::MODEL_TYPE_COUNT, 0),
-      sync_pb::SyncEnums::UNKNOWN_ORIGIN,
-      /*short_poll_interval=*/base::TimeDelta::FromMinutes(30),
-      /*long_poll_interval=*/base::TimeDelta::FromMinutes(180),
-      /*has_remaining_local_changes=*/false));
-}
+// Test ConfigureDataTypeManagerReason on First and Nth start.
+TEST_F(ProfileSyncServiceTest, ConfigureDataTypeManagerReason) {
+  const syncer::DataTypeManager::ConfigureResult configure_result(
+      syncer::DataTypeManager::OK, syncer::ModelTypeSet());
+  syncer::ConfigureReason configure_reason = syncer::CONFIGURE_REASON_UNKNOWN;
 
-// The OpenTabsUIDelegate should only be accessable when PROXY_TABS is enabled.
-TEST_F(ProfileSyncServiceTest, GetOpenTabsUIDelegate) {
+  SignIn();
+
+  // First sync.
   CreateService(ProfileSyncService::AUTO_START);
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(ReturnNewFakeDataTypeManager(
+          GetRecordingConfigureCalledCallback(&configure_reason)));
+  InitializeForFirstSync();
+  ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
+  ASSERT_TRUE(testing::Mock::VerifyAndClearExpectations(component_factory()));
+  EXPECT_EQ(syncer::CONFIGURE_REASON_NEW_CLIENT, configure_reason);
+  service()->OnConfigureDone(configure_result);
+
+  // Reconfiguration.
+  service()->ReconfigureDatatypeManager();
+  EXPECT_EQ(syncer::CONFIGURE_REASON_RECONFIGURATION, configure_reason);
+  service()->OnConfigureDone(configure_result);
+  ShutdownAndDeleteService();
+
+  // Nth sync.
+  CreateService(ProfileSyncService::AUTO_START);
+  EXPECT_CALL(*component_factory(), CreateDataTypeManager(_, _, _, _, _, _))
+      .WillOnce(ReturnNewFakeDataTypeManager(
+          GetRecordingConfigureCalledCallback(&configure_reason)));
   InitializeForNthSync();
-  EXPECT_EQ(nullptr, service()->GetOpenTabsUIDelegate());
+  ASSERT_TRUE(service()->IsSyncActive());
+  ASSERT_EQ(syncer::SyncService::State::ACTIVE, service()->GetState());
+  ASSERT_TRUE(testing::Mock::VerifyAndClearExpectations(component_factory()));
+  EXPECT_EQ(syncer::CONFIGURE_REASON_NEWLY_ENABLED_DATA_TYPE, configure_reason);
+  service()->OnConfigureDone(configure_result);
 
-  auto controller =
-      std::make_unique<syncer::FakeDataTypeController>(syncer::PROXY_TABS);
-  // Progress the controller to RUNNING first, which is how the service
-  // determines whether a type is enabled.
-  controller->StartAssociating(base::DoNothing());
-  controller->FinishStart(DataTypeController::OK_FIRST_RUN);
-  service()->RegisterDataTypeController(std::move(controller));
-  EXPECT_NE(nullptr, service()->GetOpenTabsUIDelegate());
+  // Reconfiguration.
+  service()->ReconfigureDatatypeManager();
+  EXPECT_EQ(syncer::CONFIGURE_REASON_RECONFIGURATION, configure_reason);
+  service()->OnConfigureDone(configure_result);
+  ShutdownAndDeleteService();
 }
 
 }  // namespace

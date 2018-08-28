@@ -38,8 +38,6 @@
 #include "gpu/ipc/service/gpu_channel_manager.h"
 #include "gpu/ipc/service/gpu_channel_manager_delegate.h"
 #include "gpu/ipc/service/gpu_memory_buffer_factory.h"
-#include "gpu/ipc/service/gpu_memory_manager.h"
-#include "gpu/ipc/service/gpu_memory_tracking.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
 #include "gpu/ipc/service/image_transport_surface.h"
 #include "ui/gl/gl_bindings.h"
@@ -81,7 +79,7 @@ GLES2CommandBufferStub::~GLES2CommandBufferStub() {}
 gpu::ContextResult GLES2CommandBufferStub::Initialize(
     CommandBufferStub* share_command_buffer_stub,
     const GPUCreateCommandBufferConfig& init_params,
-    std::unique_ptr<base::SharedMemory> shared_state_shm) {
+    base::UnsafeSharedMemoryRegion shared_state_shm) {
   TRACE_EVENT0("gpu", "GLES2CommandBufferStub::Initialize");
   FastSetActiveURL(active_url_, active_url_hash_, channel_);
 
@@ -93,8 +91,8 @@ gpu::ContextResult GLES2CommandBufferStub::Initialize(
     DCHECK(context_group_->bind_generates_resource() ==
            init_params.attribs.bind_generates_resource);
   } else {
-    scoped_refptr<gles2::FeatureInfo> feature_info =
-        new gles2::FeatureInfo(manager->gpu_driver_bug_workarounds());
+    scoped_refptr<gles2::FeatureInfo> feature_info = new gles2::FeatureInfo(
+        manager->gpu_driver_bug_workarounds(), manager->gpu_feature_info());
     gpu::GpuMemoryBufferFactory* gmb_factory =
         manager->gpu_memory_buffer_factory();
     context_group_ = new gles2::ContextGroup(
@@ -340,13 +338,15 @@ gpu::ContextResult GLES2CommandBufferStub::Initialize(
   }
 
   const size_t kSharedStateSize = sizeof(CommandBufferSharedState);
-  if (!shared_state_shm->Map(kSharedStateSize)) {
+  base::WritableSharedMemoryMapping shared_state_mapping =
+      shared_state_shm.MapAt(0, kSharedStateSize);
+  if (!shared_state_mapping.IsValid()) {
     LOG(ERROR) << "ContextResult::kFatalFailure: "
                   "Failed to map shared state buffer.";
     return gpu::ContextResult::kFatalFailure;
   }
   command_buffer_->SetSharedStateBuffer(MakeBackingFromSharedMemory(
-      std::move(shared_state_shm), kSharedStateSize));
+      std::move(shared_state_shm), std::move(shared_state_mapping)));
 
   if (offscreen && !active_url_.is_empty())
     manager->delegate()->DidCreateOffscreenContext(active_url_);
@@ -377,8 +377,8 @@ void GLES2CommandBufferStub::DidCreateAcceleratedSurfaceChildWindow(
     SurfaceHandle parent_window,
     SurfaceHandle child_window) {
   GpuChannelManager* gpu_channel_manager = channel_->gpu_channel_manager();
-  gpu_channel_manager->delegate()->SendAcceleratedSurfaceCreatedChildWindow(
-      parent_window, child_window);
+  gpu_channel_manager->delegate()->SendCreatedChildWindow(parent_window,
+                                                          child_window);
 }
 #endif
 
@@ -395,11 +395,6 @@ const gles2::FeatureInfo* GLES2CommandBufferStub::GetFeatureInfo() const {
 
 const GpuPreferences& GLES2CommandBufferStub::GetGpuPreferences() const {
   return context_group_->gpu_preferences();
-}
-
-void GLES2CommandBufferStub::SetSnapshotRequestedCallback(
-    const base::Closure& callback) {
-  snapshot_requested_callback_ = callback;
 }
 
 void GLES2CommandBufferStub::BufferPresented(

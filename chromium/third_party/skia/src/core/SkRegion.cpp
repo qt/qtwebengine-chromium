@@ -5,12 +5,17 @@
  * found in the LICENSE file.
  */
 
+#include "SkRegion.h"
 
 #include "SkAtomics.h"
+#include "SkMacros.h"
 #include "SkRegionPriv.h"
 #include "SkSafeMath.h"
 #include "SkTemplates.h"
+#include "SkTo.h"
 #include "SkUtils.h"
+
+#include <utility>
 
 /* Region Layout
  *
@@ -132,7 +137,7 @@ void SkRegion::freeRuns() {
         if (--fRunHead->fRefCnt == 0) {
             //SkASSERT(gRgnAllocCounter > 0);
             //SkDEBUGCODE(sk_atomic_dec(&gRgnAllocCounter));
-            //SkDEBUGF(("************** gRgnAllocCounter::free %d\n", gRgnAllocCounter));
+            //SkDEBUGF("************** gRgnAllocCounter::free %d\n", gRgnAllocCounter);
             sk_free(fRunHead);
         }
     }
@@ -158,8 +163,9 @@ SkRegion& SkRegion::operator=(const SkRegion& src) {
 }
 
 void SkRegion::swap(SkRegion& other) {
-    SkTSwap<SkIRect>(fBounds, other.fBounds);
-    SkTSwap<RunHead*>(fRunHead, other.fRunHead);
+    using std::swap;
+    swap(fBounds, other.fBounds);
+    swap(fRunHead, other.fRunHead);
 }
 
 int SkRegion::computeRegionComplexity() const {
@@ -272,7 +278,7 @@ bool SkRegion::setRuns(RunType runs[], int count) {
     SkASSERT(count > 0);
 
     if (isRunCountEmpty(count)) {
-    //  SkDEBUGF(("setRuns: empty\n"));
+    //  SkDEBUGF("setRuns: empty\n");
         assert_sentinel(runs[count-1], true);
         return this->setEmpty();
     }
@@ -1043,7 +1049,8 @@ bool SkRegion::Oper(const SkRegion& rgnaOrig, const SkRegion& rgnbOrig, Op op,
 
     // collaps difference and reverse-difference into just difference
     if (kReverseDifference_Op == op) {
-        SkTSwap<const SkRegion*>(rgna, rgnb);
+        using std::swap;
+        swap(rgna, rgnb);
         op = kDifference_Op;
     }
 

@@ -30,10 +30,12 @@ GL_EXPORT extern const char kANGLEImplementationD3D11Name[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLName[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLESName[];
 GL_EXPORT extern const char kANGLEImplementationNullName[];
+GL_EXPORT extern const char kANGLEImplementationVulkanName[];
 
 GL_EXPORT extern const char kANGLEImplementationD3D11NULLName[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLNULLName[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLESNULLName[];
+GL_EXPORT extern const char kANGLEImplementationVulkanNULLName[];
 
 }  // namespace gl
 
@@ -67,10 +69,6 @@ GL_EXPORT extern const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches;
 }  // namespace switches
 
 namespace features {
-
-#if defined(OS_WIN)
-GL_EXPORT extern const base::Feature kD3DVsync;
-#endif  // defined(OS_WIN)
 
 GL_EXPORT extern const base::Feature kDirectCompositionUnderlays;
 GL_EXPORT extern const base::Feature kDirectCompositionComplexOverlays;

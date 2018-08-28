@@ -7,7 +7,7 @@
 #ifndef FXJS_XFA_CJX_EVENTPSEUDOMODEL_H_
 #define FXJS_XFA_CJX_EVENTPSEUDOMODEL_H_
 
-#include "fxjs/CJX_Define.h"
+#include "fxjs/cjx_define.h"
 #include "fxjs/xfa/cjx_object.h"
 
 class CFXJSE_Value;
@@ -41,6 +41,7 @@ class CJX_EventPseudoModel : public CJX_Object {
   JS_METHOD(emit, CJX_EventPseudoModel);
   JS_METHOD(reset, CJX_EventPseudoModel);
 
+  JS_PROP(cancelAction);
   JS_PROP(change);
   JS_PROP(commitKey);
   JS_PROP(fullText);

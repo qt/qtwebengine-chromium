@@ -45,6 +45,7 @@
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
+#include "third_party/blink/renderer/core/layout/layout_object_factory.h"
 #include "third_party/blink/renderer/core/layout/layout_paged_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/line/glyph_overflow.h"
@@ -53,6 +54,8 @@
 #include "third_party/blink/renderer/core/layout/line/line_width.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_line_height_metrics.h"
 #include "third_party/blink/renderer/core/layout/ng/layout_ng_block_flow.h"
+#include "third_party/blink/renderer/core/layout/ng/legacy_layout_tree_walking.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_absolute_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_fragmentation_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
@@ -63,6 +66,7 @@
 #include "third_party/blink/renderer/core/paint/block_flow_paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
@@ -271,12 +275,13 @@ LayoutBlockFlow::LayoutBlockFlow(ContainerNode* node) : LayoutBlock(node) {
 
 LayoutBlockFlow::~LayoutBlockFlow() = default;
 
-LayoutBlockFlow* LayoutBlockFlow::CreateAnonymous(Document* document) {
-  // TODO(layout-ng): Find a way to check style.ForceLegacyLayout() Here
-  LayoutBlockFlow* layout_block_flow = RuntimeEnabledFeatures::LayoutNGEnabled()
-                                           ? new LayoutNGBlockFlow(nullptr)
-                                           : new LayoutBlockFlow(nullptr);
+LayoutBlockFlow* LayoutBlockFlow::CreateAnonymous(
+    Document* document,
+    scoped_refptr<ComputedStyle> style) {
+  LayoutBlockFlow* layout_block_flow =
+      LayoutObjectFactory::CreateBlockFlow(*document, *style);
   layout_block_flow->SetDocumentForAnonymous(document);
+  layout_block_flow->SetStyle(style);
   return layout_block_flow;
 }
 
@@ -2738,9 +2743,21 @@ void LayoutBlockFlow::RemoveFloatingObjectsFromDescendants() {
   // If our children are inline, then the only boxes which could contain floats
   // are atomic inlines (e.g. inline-block, float etc.) and these create
   // formatting contexts, so can't pick up intruding floats from
-  // ancestors/siblings - making them safe to skip.
-  if (ChildrenInline())
+  // ancestors/siblings - making them safe to skip. We do need to examine the
+  // lines, though, as there may be pointers to the any of the objects that we
+  // are going to remove. Mark those lines dirty, to avoid accessing dangling
+  // pointers. Also, yikes!
+  if (ChildrenInline()) {
+    for (auto* line = FirstRootBox(); line; line = line->NextRootBox()) {
+      if (!line->IsDirty()) {
+        if (const auto* floats = line->FloatsPtr()) {
+          if (floats->size())
+            line->MarkDirty();
+        }
+      }
+    }
     return;
+  }
   for (LayoutObject* child = FirstChild(); child;
        child = child->NextSibling()) {
     // We don't skip blocks that create formatting contexts as they may have
@@ -3051,6 +3068,21 @@ LayoutInline* LayoutBlockFlow::InlineElementContinuation() const {
                                                   : nullptr;
 }
 
+bool LayoutBlockFlow::NeedsAnonymousInlineWrapper() const {
+  // If ::first-line has background properties, create an anonymous inline
+  // wrapper. This helps paint code to handle it.
+  DCHECK(RuntimeEnabledFeatures::LayoutNGEnabled());
+  if (!GetDocument().GetStyleEngine().UsesFirstLineRules())
+    return false;
+  const ComputedStyle& first_line_style = FirstLineStyleRef();
+  const ComputedStyle& style = StyleRef();
+  if (&first_line_style == &style)
+    return false;
+  // We need an anonymous inline wrapper only if ::first-line has different
+  // background, but excessive anonymous inline will not harm.
+  return first_line_style.HasBackground();
+}
+
 void LayoutBlockFlow::AddChild(LayoutObject* new_child,
                                LayoutObject* before_child) {
   if (LayoutMultiColumnFlowThread* flow_thread = MultiColumnFlowThread()) {
@@ -3072,22 +3104,8 @@ void LayoutBlockFlow::AddChild(LayoutObject* new_child,
   // children as blocks.
   // So, if our children are currently inline and a block child has to be
   // inserted, we move all our inline children into anonymous block boxes.
-  bool child_is_block_level;
-  bool layout_ng_enabled = RuntimeEnabledFeatures::LayoutNGEnabled();
-  if (layout_ng_enabled && !FirstChild() &&
-      (new_child->IsFloating() ||
-       (new_child->IsOutOfFlowPositioned() &&
-        !new_child->StyleRef().IsOriginalDisplayInlineType()))) {
-    // TODO(kojii): We once forced all floats and OOF to create a block
-    // container in LayoutNG, which turned out to be not a great way, but
-    // completely turning this off breaks too much. When an OOF is an inline
-    // type, we need to disable this so that we can compute the inline static
-    // position. crbug.com/734554
-    child_is_block_level = true;
-  } else {
-    child_is_block_level =
-        !new_child->IsInline() && !new_child->IsFloatingOrOutOfFlowPositioned();
-  }
+  bool child_is_block_level =
+      !new_child->IsInline() && !new_child->IsFloatingOrOutOfFlowPositioned();
 
   if (ChildrenInline()) {
     if (child_is_block_level) {
@@ -3101,6 +3119,22 @@ void LayoutBlockFlow::AddChild(LayoutObject* new_child,
         DCHECK(before_child->IsAnonymousBlock());
         DCHECK_EQ(before_child->Parent(), this);
       }
+    } else if (UNLIKELY(RuntimeEnabledFeatures::LayoutNGEnabled() &&
+                        IsLayoutNGContainingBlock(this) &&
+                        NeedsAnonymousInlineWrapper())) {
+      LayoutObject* after_child =
+          before_child ? before_child->PreviousSibling() : LastChild();
+      if (after_child && after_child->IsAnonymous() &&
+          after_child->IsLayoutInline()) {
+        after_child->AddChild(new_child);
+        return;
+      }
+      LayoutInline* new_wrapper = LayoutInline::CreateAnonymous(&GetDocument());
+      new_wrapper->SetStyle(ComputedStyle::CreateAnonymousStyleWithDisplay(
+          StyleRef(), EDisplay::kInline));
+      LayoutBox::AddChild(new_wrapper, before_child);
+      new_wrapper->AddChild(new_child);
+      return;
     }
   } else if (!child_is_block_level) {
     // This block has block children. We may want to put the new child into an
@@ -3124,8 +3158,7 @@ void LayoutBlockFlow::AddChild(LayoutObject* new_child,
       LayoutBlockFlow* new_block = ToLayoutBlockFlow(CreateAnonymousBlock());
       LayoutBox::AddChild(new_block, before_child);
       // Reparent adjacent floating or out-of-flow siblings to the new box.
-      if (!layout_ng_enabled)
-        new_block->ReparentPrecedingFloatingOrOutOfFlowSiblings();
+      new_block->ReparentPrecedingFloatingOrOutOfFlowSiblings();
       new_block->AddChild(new_child);
       new_block->ReparentSubsequentFloatingOrOutOfFlowSiblings();
       return;
@@ -3158,19 +3191,43 @@ void LayoutBlockFlow::RemoveChild(LayoutObject* old_child) {
     return;
   }
 
-  // If this child is a block, and if our previous and next siblings are
-  // both anonymous blocks with inline content, then we can go ahead and
-  // fold the inline content back together.
+  // If this child is a block, and if our previous and next siblings are both
+  // anonymous blocks with inline content, then we can go ahead and fold the
+  // inline content back together. If only one of the siblings is such an
+  // anonymous blocks, check if the other sibling (and any of *its* siblings)
+  // are floating or out-of-flow positioned. In that case, they should be moved
+  // into the anonymous block.
   LayoutObject* prev = old_child->PreviousSibling();
   LayoutObject* next = old_child->NextSibling();
   bool merged_anonymous_blocks = false;
   if (prev && next && !old_child->IsInline() &&
-      !old_child->VirtualContinuation() && prev->IsLayoutBlockFlow() &&
-      next->IsLayoutBlockFlow()) {
-    if (ToLayoutBlockFlow(prev)->MergeSiblingContiguousAnonymousBlock(
+      !old_child->VirtualContinuation()) {
+    if (prev->IsLayoutBlockFlow() && next->IsLayoutBlockFlow() &&
+        ToLayoutBlockFlow(prev)->MergeSiblingContiguousAnonymousBlock(
             ToLayoutBlockFlow(next))) {
       merged_anonymous_blocks = true;
       next = nullptr;
+    } else if (prev->IsLayoutBlockFlow() &&
+               IsMergeableAnonymousBlock(ToLayoutBlockFlow(prev))) {
+      // The previous sibling is anonymous. Scan the next siblings and reparent
+      // any floating or out-of-flow positioned objects into the end of the
+      // previous anonymous block.
+      while (next && next->IsFloatingOrOutOfFlowPositioned()) {
+        LayoutObject* sibling = next->NextSibling();
+        MoveChildTo(ToLayoutBlockFlow(prev), next, nullptr, false);
+        next = sibling;
+      }
+    } else if (next->IsLayoutBlockFlow() &&
+               IsMergeableAnonymousBlock(ToLayoutBlockFlow(next))) {
+      // The next sibling is anonymous. Scan the previous siblings and reparent
+      // any floating or out-of-flow positioned objects into the start of the
+      // next anonymous block.
+      while (prev && prev->IsFloatingOrOutOfFlowPositioned()) {
+        LayoutObject* sibling = prev->PreviousSibling();
+        MoveChildTo(ToLayoutBlockFlow(next), prev,
+                    ToLayoutBlockFlow(next)->FirstChild(), false);
+        prev = sibling;
+      }
     }
   }
 
@@ -3235,6 +3292,9 @@ void LayoutBlockFlow::MoveAllChildrenIncludingFloatsTo(
     LayoutBlock* to_block,
     bool full_remove_insert) {
   LayoutBlockFlow* to_block_flow = ToLayoutBlockFlow(to_block);
+
+  DCHECK(full_remove_insert ||
+         to_block_flow->ChildrenInline() == ChildrenInline());
 
   // When a portion of the layout tree is being detached, anonymous blocks
   // will be combined as their children are deleted. In this process, the
@@ -4150,12 +4210,6 @@ bool LayoutBlockFlow::HitTestFloats(
   if (!floating_objects_)
     return false;
 
-  LayoutPoint adjusted_location = accumulated_offset;
-  if (IsLayoutView()) {
-    ScrollOffset offset = ToLayoutView(this)->GetFrameView()->GetScrollOffset();
-    adjusted_location.Move(LayoutSize(offset));
-  }
-
   const FloatingObjectSet& floating_object_set = floating_objects_->Set();
   FloatingObjectSetIterator begin = floating_object_set.begin();
   for (FloatingObjectSetIterator it = floating_object_set.end(); it != begin;) {
@@ -4169,7 +4223,7 @@ bool LayoutBlockFlow::HitTestFloats(
       LayoutUnit y_offset = YPositionForFloatIncludingMargin(floating_object) -
                             floating_object.GetLayoutObject()->Location().Y();
       LayoutPoint child_point = FlipFloatForWritingModeForChild(
-          floating_object, adjusted_location + LayoutSize(x_offset, y_offset));
+          floating_object, accumulated_offset + LayoutSize(x_offset, y_offset));
       if (floating_object.GetLayoutObject()->HitTestAllPhases(
               result, location_in_container, child_point)) {
         UpdateHitTestResult(
@@ -4373,7 +4427,7 @@ bool LayoutBlockFlow::CreatesNewFormattingContext() const {
       IsFlexItemIncludingDeprecated() || IsTableCell() || IsTableCaption() ||
       IsFieldset() || IsCustomItem() || IsDocumentElement() || IsGridItem() ||
       IsWritingModeRoot() || Style()->Display() == EDisplay::kFlowRoot ||
-      Style()->ContainsPaint() || Style()->ContainsLayout() ||
+      ShouldApplyPaintContainment() || ShouldApplyLayoutContainment() ||
       Style()->SpecifiesColumns() ||
       Style()->GetColumnSpan() == EColumnSpan::kAll) {
     // The specs require this object to establish a new formatting context.
@@ -4414,17 +4468,6 @@ bool LayoutBlockFlow::CreatesNewFormattingContext() const {
     return true;
   }
 
-  // NGBlockNode cannot compute margin collapsing across NG/non-NG boundary.
-  // Create a new formatting context for non-NG node to prevent margin
-  // collapsing.
-  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
-    if (Node* node = GetNode()) {
-      if (node->IsElementNode() && ToElement(*node).ShouldForceLegacyLayout())
-        return true;
-    }
-    return StyleRef().UserModify() != EUserModify::kReadOnly;
-  }
-
   return false;
 }
 
@@ -4442,38 +4485,6 @@ void LayoutBlockFlow::MoveChildrenTo(LayoutBoxModelObject* to_box_model_object,
   LayoutBoxModelObject::MoveChildrenTo(to_box_model_object, start_child,
                                        end_child, before_child,
                                        full_remove_insert);
-}
-
-LayoutUnit LayoutBlockFlow::LogicalLeftSelectionOffset(
-    const LayoutBlock* root_block,
-    LayoutUnit position) const {
-  LayoutUnit logical_left =
-      LogicalLeftOffsetForLine(position, kDoNotIndentText);
-  if (logical_left == LogicalLeftOffsetForContent())
-    return LayoutBlock::LogicalLeftSelectionOffset(root_block, position);
-
-  const LayoutBlock* cb = this;
-  while (cb != root_block) {
-    logical_left += cb->LogicalLeft();
-    cb = cb->ContainingBlock();
-  }
-  return logical_left;
-}
-
-LayoutUnit LayoutBlockFlow::LogicalRightSelectionOffset(
-    const LayoutBlock* root_block,
-    LayoutUnit position) const {
-  LayoutUnit logical_right =
-      LogicalRightOffsetForLine(position, kDoNotIndentText);
-  if (logical_right == LogicalRightOffsetForContent())
-    return LayoutBlock::LogicalRightSelectionOffset(root_block, position);
-
-  const LayoutBlock* cb = this;
-  while (cb != root_block) {
-    logical_right += cb->LogicalLeft();
-    cb = cb->ContainingBlock();
-  }
-  return logical_right;
 }
 
 RootInlineBox* LayoutBlockFlow::CreateRootInlineBox() {
@@ -4575,37 +4586,10 @@ LayoutBlockFlow::LayoutBlockFlowRareData& LayoutBlockFlow::EnsureRareData() {
 }
 
 void LayoutBlockFlow::PositionDialog() {
-  HTMLDialogElement* dialog = ToHTMLDialogElement(GetNode());
-  if (dialog->GetCenteringMode() == HTMLDialogElement::kNotCentered)
-    return;
-
-  bool can_center_dialog = (Style()->GetPosition() == EPosition::kAbsolute ||
-                            Style()->GetPosition() == EPosition::kFixed) &&
-                           Style()->HasAutoTopAndBottom();
-
-  if (dialog->GetCenteringMode() == HTMLDialogElement::kCentered) {
-    if (can_center_dialog)
-      SetY(dialog->CenteredPosition());
-    return;
-  }
-
-  DCHECK_EQ(dialog->GetCenteringMode(), HTMLDialogElement::kNeedsCentering);
-  if (!can_center_dialog) {
-    dialog->SetNotCentered();
-    return;
-  }
-
-  auto* scrollable_area = GetDocument().View()->LayoutViewportScrollableArea();
-  LayoutUnit top =
-      LayoutUnit((Style()->GetPosition() == EPosition::kFixed)
-                     ? 0
-                     : scrollable_area->ScrollOffsetInt().Height());
-
-  int visible_height = GetDocument().View()->Height();
-  if (Size().Height() < visible_height)
-    top += (visible_height - Size().Height()) / 2;
-  SetY(top);
-  dialog->SetCentered(top);
+  base::Optional<LayoutUnit> y =
+      ComputeAbsoluteDialogYPosition(*this, Size().Height());
+  if (y.has_value())
+    SetY(y.value());
 }
 
 void LayoutBlockFlow::SimplifiedNormalFlowInlineLayout() {

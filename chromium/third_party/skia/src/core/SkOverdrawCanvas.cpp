@@ -5,13 +5,14 @@
  * found in the LICENSE file.
  */
 
+#include "SkOverdrawCanvas.h"
+
 #include "SkColorFilter.h"
-#include "SkDrawable.h"
 #include "SkDrawShadowInfo.h"
+#include "SkDrawable.h"
 #include "SkFindAndPlaceGlyph.h"
 #include "SkImagePriv.h"
 #include "SkLatticeIter.h"
-#include "SkOverdrawCanvas.h"
 #include "SkPatchUtils.h"
 #include "SkPath.h"
 #include "SkRRect.h"
@@ -19,6 +20,7 @@
 #include "SkStrikeCache.h"
 #include "SkTextBlob.h"
 #include "SkTextBlobRunIterator.h"
+#include "SkTo.h"
 
 namespace {
 class ProcessOneGlyphBounds {
@@ -61,14 +63,7 @@ SkOverdrawCanvas::SkOverdrawCanvas(SkCanvas* canvas)
 
 void SkOverdrawCanvas::onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
                                   const SkPaint& paint) {
-    ProcessOneGlyphBounds processBounds(this);
-    SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
-    this->getProps(&props);
-    auto cache = SkStrikeCache::FindOrCreateStrikeExclusive(
-            paint, &props, SkScalerContextFlags::kNone, &this->getTotalMatrix());
-    SkFindAndPlaceGlyph::ProcessText(paint.getTextEncoding(), (const char*) text, byteLength,
-                                     SkPoint::Make(x, y), SkMatrix(), paint.getTextAlign(),
-                                     cache.get(), processBounds);
+    SK_ABORT("This canvas does not support draw text.");
 }
 
 void SkOverdrawCanvas::drawPosTextCommon(const void* text, size_t byteLength, const SkScalar pos[],
@@ -217,9 +212,14 @@ void SkOverdrawCanvas::onDrawPoints(PointMode mode, size_t count, const SkPoint 
     fList[0]->onDrawPoints(mode, count, points, this->overdrawPaint(paint));
 }
 
-void SkOverdrawCanvas::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode blendMode,
+void SkOverdrawCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkMatrix* bones,
+                                            int boneCount, SkBlendMode blendMode,
                                             const SkPaint& paint) {
-    fList[0]->onDrawVerticesObject(vertices, blendMode, this->overdrawPaint(paint));
+    fList[0]->onDrawVerticesObject(vertices,
+                                   bones,
+                                   boneCount,
+                                   blendMode,
+                                   this->overdrawPaint(paint));
 }
 
 void SkOverdrawCanvas::onDrawAtlas(const SkImage* image, const SkRSXform xform[],

@@ -7,11 +7,12 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/safe_browsing/chrome_password_protection_service.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/browser_resources.h"
 #include "components/safe_browsing/common/safe_browsing_prefs.h"
+#include "components/safe_browsing/password_protection/password_protection_service.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/url_formatter/url_formatter.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_entry.h"
@@ -19,6 +20,11 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "ui/base/l10n/l10n_util.h"
+
+namespace safe_browsing {
+using PasswordReuseEvent =
+    safe_browsing::LoginReputationClientRequest::PasswordReuseEvent;
+}
 
 namespace {
 
@@ -39,8 +45,11 @@ class ResetPasswordHandlerImpl : public mojom::ResetPasswordHandler {
  public:
   ResetPasswordHandlerImpl(
       content::WebContents* web_contents,
+      safe_browsing::ReusedPasswordType password_type,
       mojo::InterfaceRequest<mojom::ResetPasswordHandler> request)
-      : web_contents_(web_contents), binding_(this, std::move(request)) {
+      : web_contents_(web_contents),
+        password_type_(password_type),
+        binding_(this, std::move(request)) {
     DCHECK(web_contents);
   }
 
@@ -54,23 +63,52 @@ class ResetPasswordHandlerImpl : public mojom::ResetPasswordHandler {
         ChromePasswordProtectionService::GetPasswordProtectionService(profile);
     if (service) {
       service->OnUserAction(
-          web_contents_, safe_browsing::PasswordProtectionService::INTERSTITIAL,
+          web_contents_, password_type_,
+          safe_browsing::PasswordProtectionService::INTERSTITIAL,
           safe_browsing::PasswordProtectionService::CHANGE_PASSWORD);
     }
   }
 
  private:
   content::WebContents* web_contents_;
+  safe_browsing::ReusedPasswordType password_type_;
   mojo::Binding<mojom::ResetPasswordHandler> binding_;
 
   DISALLOW_COPY_AND_ASSIGN(ResetPasswordHandlerImpl);
 };
+
+// Gets the reused password type from post data, or returns
+// REUSED_PASSWORD_TYPE_UNKNOWN if post data is not available.
+safe_browsing::ReusedPasswordType GetPasswordType(
+    content::WebContents* web_contents) {
+  content::NavigationEntry* nav_entry =
+      web_contents->GetController().GetPendingEntry();
+  if (!nav_entry || !nav_entry->GetHasPostData())
+    return safe_browsing::PasswordReuseEvent::REUSED_PASSWORD_TYPE_UNKNOWN;
+  auto& post_data = nav_entry->GetPostData()->elements()->at(0);
+  int post_data_int = -1;
+  if (base::StringToInt(std::string(post_data.bytes(), post_data.length()),
+                        &post_data_int)) {
+    return static_cast<safe_browsing::ReusedPasswordType>(post_data_int);
+  }
+
+  return safe_browsing::PasswordReuseEvent::REUSED_PASSWORD_TYPE_UNKNOWN;
+}
+
+// Properly format host name based on text direction.
+base::string16 GetFormattedHostName(const std::string host_name) {
+  base::string16 host = url_formatter::IDNToUnicode(host_name);
+  if (base::i18n::IsRTL())
+    base::i18n::WrapStringWithLTRFormatting(&host);
+  return host;
+}
 
 }  // namespace
 
 ResetPasswordUI::ResetPasswordUI(content::WebUI* web_ui)
     : ui::MojoWebUIController(web_ui) {
   base::DictionaryValue load_time_data;
+  password_type_ = GetPasswordType(web_ui->GetWebContents());
   PopulateStrings(web_ui->GetWebContents(), &load_time_data);
   std::unique_ptr<content::WebUIDataSource> html_source(
       content::WebUIDataSource::Create(chrome::kChromeUIResetPasswordHost));
@@ -93,39 +131,47 @@ ResetPasswordUI::~ResetPasswordUI() {}
 void ResetPasswordUI::BindResetPasswordHandler(
     mojom::ResetPasswordHandlerRequest request) {
   ui_handler_ = std::make_unique<ResetPasswordHandlerImpl>(
-      web_ui()->GetWebContents(), std::move(request));
+      web_ui()->GetWebContents(), password_type_, std::move(request));
 }
 
 void ResetPasswordUI::PopulateStrings(content::WebContents* web_contents,
                                       base::DictionaryValue* load_time_data) {
-  content::NavigationEntry* nav_entry =
-      web_contents->GetController().GetPendingEntry();
   std::string org_name =
       safe_browsing::ChromePasswordProtectionService::
           GetPasswordProtectionService(
               Profile::FromBrowserContext(web_contents->GetBrowserContext()))
-              ->GetOrganizationName();
-  bool has_referrer = nav_entry->GetReferrer().url.is_valid();
-  int heading_string_id = has_referrer ? IDS_RESET_PASSWORD_WARNING_HEADING
-                                       : IDS_RESET_PASSWORD_HEADING;
+              ->GetOrganizationName(password_type_);
+  bool known_password_type =
+      password_type_ !=
+      safe_browsing::PasswordReuseEvent::REUSED_PASSWORD_TYPE_UNKNOWN;
+  if (!known_password_type) {
+    base::UmaHistogramEnumeration(
+        safe_browsing::kInterstitialActionByUserNavigationHistogram,
+        safe_browsing::PasswordProtectionService::SHOWN,
+        safe_browsing::PasswordProtectionService::MAX_ACTION);
+  }
+  int heading_string_id = known_password_type
+                              ? IDS_RESET_PASSWORD_WARNING_HEADING
+                              : IDS_RESET_PASSWORD_HEADING;
   base::string16 explanation_paragraph_string;
   if (org_name.empty()) {
     explanation_paragraph_string = l10n_util::GetStringUTF16(
-        has_referrer ? IDS_RESET_PASSWORD_WARNING_EXPLANATION_PARAGRAPH
-                     : IDS_RESET_PASSWORD_EXPLANATION_PARAGRAPH);
+        known_password_type ? IDS_RESET_PASSWORD_WARNING_EXPLANATION_PARAGRAPH
+                            : IDS_RESET_PASSWORD_EXPLANATION_PARAGRAPH);
     base::UmaHistogramEnumeration(
         kStringTypeUMAName,
-        has_referrer ? WARNING_NO_ORG_NAME : GENERIC_NO_ORG_NAME,
+        known_password_type ? WARNING_NO_ORG_NAME : GENERIC_NO_ORG_NAME,
         STRING_TYPE_COUNT);
   } else {
+    base::string16 formatted_org_name = GetFormattedHostName(org_name);
     explanation_paragraph_string = l10n_util::GetStringFUTF16(
-        has_referrer
+        known_password_type
             ? IDS_RESET_PASSWORD_WARNING_EXPLANATION_PARAGRAPH_WITH_ORG_NAME
             : IDS_RESET_PASSWORD_EXPLANATION_PARAGRAPH_WITH_ORG_NAME,
-        base::UTF8ToUTF16(org_name));
+        formatted_org_name);
     base::UmaHistogramEnumeration(
         kStringTypeUMAName,
-        has_referrer ? WARNING_WITH_ORG_NAME : GENERIC_WITH_ORG_NAME,
+        known_password_type ? WARNING_WITH_ORG_NAME : GENERIC_WITH_ORG_NAME,
         STRING_TYPE_COUNT);
   }
 

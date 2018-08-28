@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">thanh trượt</translation>
 <translation id="1211441953136645838">chú thích cuối</translation>
 <translation id="1281252709823657822">hộp thoại</translation>
+<translation id="1289247557029249093">Thoát khỏi chế độ hình trong hình</translation>
 <translation id="1335095011850992622">ghi nhận tác giả</translation>
 <translation id="1342835525016946179">bài viết</translation>
 <translation id="1359897965706325498">biểu ngữ</translation>
+<translation id="1548116112524424341">phát video ở chế độ hình trong hình</translation>
 <translation id="1589122976691792535">khu vực</translation>
 <translation id="1591562245178063882">Tháng này</translation>
 <translation id="1637811476055996098">Chọn tệp</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">lưới dạng cây</translation>
 <translation id="1822429046913737220">SA/CH</translation>
 <translation id="1832974991323546415">phát trên thiết bị từ xa</translation>
+<translation id="190587075670221089">xóa</translation>
 <translation id="1907737156431278478">ví dụ</translation>
 <translation id="1921819250265091946">dd</translation>
 <translation id="1930711995431081526">trạng thái</translation>
 <translation id="1938124657309484470">Giá trị phải là <ph name="MAXIMUM_DATE_OR_TIME" /> hoặc sớm hơn.</translation>
+<translation id="1946271899482435442">Hiển thị bộ chọn ngày</translation>
 <translation id="1993104285338243655">Đã chuyển sang chế độ phản chiếu</translation>
 <translation id="2060505056492490888">'<ph name="DOT" />' bị sử dụng sai vị trí trong '<ph name="INVALIDDOMAIN" />'.</translation>
 <translation id="2148716181193084225">Hôm nay</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">Gửi</translation>
 <translation id="2657045182931379222">đối tượng đồ họa</translation>
 <translation id="2674318244760992338">chân trang</translation>
+<translation id="2706474812903655270">Video này đang phát ở chế độ hình trong hình</translation>
 <translation id="2709516037105925701">Tự động điền</translation>
 <translation id="2723001399770238859">âm thanh</translation>
 <translation id="2746543609216772311">Giá trị phải là <ph name="MINIMUM_DATE_OR_TIME" /> hoặc muộn hơn.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">Hiển thị tháng tiếp theo</translation>
 <translation id="512758898067543763">tiêu đề hàng</translation>
 <translation id="5143125788380636750">lời kết</translation>
-<translation id="5153163864850940242">Video này đang phát ở chế độ Hình trong hình</translation>
 <translation id="5164977714490026579">Giá trị phải lớn hơn hoặc bằng <ph name="MINIMUM" />.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> PB</translation>
 <translation id="5307600278924710095">Vui lòng nhập phần đứng trước '<ph name="ATSIGN" />'. '<ph name="INVALIDADDRESS" />' không hoàn chỉnh.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">lời ghi cuối sách</translation>
 <translation id="6934078000481955284">khung trích dẫn</translation>
 <translation id="6941933287844615239">tải xuống phương tiện</translation>
+<translation id="6981594929165378967">chèn</translation>
 <translation id="6989848892321993519">Vui lòng kéo dài văn bản này thành <ph name="MIN_CHARACTERS" /> ký tự trở lên (bạn hiện đang sử dụng 1 ký tự).</translation>
 <translation id="709897737746224366">Vui lòng khớp với định dạng được yêu cầu.</translation>
 <translation id="7139483182332611405">lời nói đầu</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">thời gian còn lại</translation>
 <translation id="7740016676195725605">ngừng hiển thị phụ đề chi tiết</translation>
 <translation id="7740050170769002709">Nội dung HTML</translation>
+<translation id="7750228210027921155">Hình trong hình</translation>
 <translation id="7789962463072032349">tạm dừng</translation>
 <translation id="7802800022689234070">tam giác hiển thị</translation>
 <translation id="7888071071722539607">Vui lòng bao gồm '<ph name="ATSIGN" />' trong địa chỉ email. '<ph name="INVALIDADDRESS" />' bị thiếu '<ph name="ATSIGN" />'.</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">mục lục</translation>
 <translation id="8613126697340063924">điều khiển phát lại từ xa</translation>
 <translation id="862370744433916922">phụ đề</translation>
-<translation id="8741316211671074806">Chế độ hình trong hình</translation>
 <translation id="8750798805984357768">Vui lòng chọn một trong các tùy chọn sau.</translation>
 <translation id="8785498733064193001">bắt đầu phát lại</translation>
 <translation id="8808573423886751634">chương</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">điều hướng</translation>
 <translation id="9050748414552849310">hiển thị phụ đề chi tiết</translation>
 <translation id="9062295712474918030">tài liệu</translation>
+<translation id="9093215626363556771">thoát chế độ hình trong hình</translation>
 <translation id="9108370397979208512">toán học</translation>
 <translation id="9132465097189459683">Khác...</translation>
 <translation id="9138385573473225930">thông báo</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, bắt đầu vào <ph name="WEEK_START_DATE" /></translation>
+<translation id="916607977885256133">Ảnh trong ảnh</translation>
 <translation id="9168329111483466115">chú thích cuối trang</translation>
-<translation id="947831847158436616">ô</translation>
+<translation id="954003015749068518">vào chế độ hình trong hình</translation>
 <translation id="966787709310836684">menu</translation>
 </translationbundle>

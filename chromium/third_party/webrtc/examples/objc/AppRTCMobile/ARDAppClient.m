@@ -28,6 +28,7 @@
 #import "WebRTC/RTCVideoTrack.h"
 
 #import "ARDAppEngineClient.h"
+#import "ARDExternalSampleCapturer.h"
 #import "ARDJoinResponse.h"
 #import "ARDMessageResponse.h"
 #import "ARDSettingsModel.h"
@@ -53,10 +54,12 @@ static NSString * const kARDVideoTrackId = @"ARDAMSv0";
 static NSString * const kARDVideoTrackKind = @"video";
 
 // TODO(tkchin): Add these as UI options.
+#if defined(WEBRTC_IOS)
 static BOOL const kARDAppClientEnableTracing = NO;
 static BOOL const kARDAppClientEnableRtcEventLog = YES;
 static int64_t const kARDAppClientAecDumpMaxSizeInBytes = 5e6;  // 5 MB.
 static int64_t const kARDAppClientRtcEventLogMaxSizeInBytes = 5e6;  // 5 MB.
+#endif
 static int const kKbpsMultiplier = 1000;
 
 // We need a proxy to NSTimer because it causes a strong retain cycle. When
@@ -128,6 +131,7 @@ static int const kKbpsMultiplier = 1000;
 @synthesize defaultPeerConnectionConstraints =
     _defaultPeerConnectionConstraints;
 @synthesize isLoopback = _isLoopback;
+@synthesize broadcast = _broadcast;
 
 - (instancetype)init {
   return [self initWithDelegate:nil];
@@ -237,8 +241,7 @@ static int const kKbpsMultiplier = 1000;
   [_turnClient requestServersWithCompletionHandler:^(NSArray *turnServers,
                                                      NSError *error) {
     if (error) {
-      RTCLogError("Error retrieving TURN servers: %@",
-                  error.localizedDescription);
+      RTCLogError(@"Error retrieving TURN servers: %@", error.localizedDescription);
     }
     ARDAppClient *strongSelf = weakSelf;
     [strongSelf.iceServers addObjectsFromArray:turnServers];
@@ -696,6 +699,7 @@ static int const kKbpsMultiplier = 1000;
   _localVideoTrack = [self createLocalVideoTrack];
   if (_localVideoTrack) {
     [_peerConnection addTrack:_localVideoTrack streamIds:@[ kARDMediaStreamId ]];
+    [_delegate appClient:self didReceiveLocalVideoTrack:_localVideoTrack];
     // We can set up rendering for the remote track right away since the transceiver already has an
     // RTCRtpReceiver with a track. The track will automatically get unmuted and produce frames
     // once RTP is received.
@@ -712,9 +716,14 @@ static int const kKbpsMultiplier = 1000;
   RTCVideoSource *source = [_factory videoSource];
 
 #if !TARGET_IPHONE_SIMULATOR
-  RTCCameraVideoCapturer *capturer = [[RTCCameraVideoCapturer alloc] initWithDelegate:source];
-  [_delegate appClient:self didCreateLocalCapturer:capturer];
-
+  if (self.isBroadcast) {
+    ARDExternalSampleCapturer *capturer =
+        [[ARDExternalSampleCapturer alloc] initWithDelegate:source];
+    [_delegate appClient:self didCreateLocalExternalSampleCapturer:capturer];
+  } else {
+    RTCCameraVideoCapturer *capturer = [[RTCCameraVideoCapturer alloc] initWithDelegate:source];
+    [_delegate appClient:self didCreateLocalCapturer:capturer];
+  }
 #else
 #if defined(__IPHONE_11_0) && (__IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_11_0)
   if (@available(iOS 10, *)) {

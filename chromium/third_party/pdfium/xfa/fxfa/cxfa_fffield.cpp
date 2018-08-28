@@ -41,9 +41,7 @@ CXFA_FFField* ToField(CXFA_LayoutItem* widget) {
 
 CXFA_FFField::CXFA_FFField(CXFA_Node* pNode) : CXFA_FFWidget(pNode) {}
 
-CXFA_FFField::~CXFA_FFField() {
-  CXFA_FFField::UnloadWidget();
-}
+CXFA_FFField::~CXFA_FFField() = default;
 
 CFX_RectF CXFA_FFField::GetBBox(uint32_t dwStatus, bool bDrawFocus) {
   if (!bDrawFocus)
@@ -131,10 +129,6 @@ bool CXFA_FFField::LoadWidget() {
   m_pNode->LoadCaption(GetDoc());
   PerformLayout();
   return true;
-}
-
-void CXFA_FFField::UnloadWidget() {
-  m_pNormalWidget.reset();
 }
 
 void CXFA_FFField::SetEditScrollOffset() {
@@ -619,14 +613,13 @@ bool CXFA_FFField::ProcessCommittedData() {
     return false;
   if (!IsDataChanged())
     return false;
-  if (CalculateOverride() != 1)
-    return false;
-  if (!CommitData())
-    return false;
 
   m_pDocView->SetChangeMark();
   m_pDocView->AddValidateNode(m_pNode.Get());
-  return true;
+
+  if (CalculateOverride() != 1)
+    return false;
+  return CommitData();
 }
 
 int32_t CXFA_FFField::CalculateOverride() {
@@ -665,8 +658,9 @@ int32_t CXFA_FFField::CalculateNode(CXFA_Node* pNode) {
       IXFA_AppProvider* pAppProvider = GetApp()->GetAppProvider();
       if (pAppProvider) {
         pAppProvider->MsgBox(L"You are not allowed to modify this field.",
-                             L"Calculate Override", XFA_MBICON_Warning,
-                             XFA_MB_OK);
+                             L"Calculate Override",
+                             static_cast<uint32_t>(AlertIcon::kWarning),
+                             static_cast<uint32_t>(AlertButton::kOK));
       }
       return 0;
     }
@@ -692,7 +686,9 @@ int32_t CXFA_FFField::CalculateNode(CXFA_Node* pNode) {
 
       wsMessage += L"Are you sure you want to modify this field?";
       if (pAppProvider->MsgBox(wsMessage, L"Calculate Override",
-                               XFA_MBICON_Warning, XFA_MB_YesNo) == XFA_IDYes) {
+                               static_cast<uint32_t>(AlertIcon::kWarning),
+                               static_cast<uint32_t>(AlertButton::kYesNo)) ==
+          static_cast<uint32_t>(AlertReturn::kYes)) {
         pNode->SetFlag(XFA_NodeFlag_UserInteractive);
         return 1;
       }

@@ -88,7 +88,6 @@ SpellCheckRequest::SpellCheckRequest(Range* checking_range,
       request_number_(request_number) {
   DCHECK(checking_range_);
   DCHECK(checking_range_->IsConnected());
-  DCHECK(root_editable_element_);
 }
 
 SpellCheckRequest::~SpellCheckRequest() = default;
@@ -123,7 +122,15 @@ SpellCheckRequest* SpellCheckRequest::Create(
 
   Range* checking_range_object = CreateRange(checking_range);
 
-  return new SpellCheckRequest(checking_range_object, text, request_number);
+  SpellCheckRequest* request =
+      new SpellCheckRequest(checking_range_object, text, request_number);
+  if (request->RootEditableElement())
+    return request;
+
+  // We may reach here if |checking_range| crosses shadow boundary, in which
+  // case we don't want spellchecker to crash renderer.
+  request->Dispose();
+  return nullptr;
 }
 
 bool SpellCheckRequest::IsValid() const {
@@ -159,7 +166,6 @@ SpellCheckRequester::SpellCheckRequester(LocalFrame& frame)
     : frame_(&frame),
       last_request_sequence_(0),
       last_processed_sequence_(0),
-      last_request_time_(0.0),
       timer_to_process_queued_request_(
           frame.GetTaskRunner(TaskType::kInternalDefault),
           this,
@@ -189,14 +195,10 @@ bool SpellCheckRequester::RequestCheckingFor(const EphemeralRange& range,
   if (!request)
     return false;
 
-  DEFINE_STATIC_LOCAL(CustomCountHistogram,
-                      spell_checker_request_interval_histogram,
-                      ("WebCore.SpellChecker.RequestInterval", 0, 10000, 50));
-  const double current_request_time = CurrentTimeTicksInSeconds();
-  if (request_num == 0 && last_request_time_ > 0) {
-    const double interval_ms =
-        (current_request_time - last_request_time_) * 1000.0;
-    spell_checker_request_interval_histogram.Count(interval_ms);
+  const TimeTicks current_request_time = CurrentTimeTicks();
+  if (request_num == 0 && last_request_time_ > TimeTicks()) {
+    UMA_HISTOGRAM_TIMES("WebCore.SpellChecker.RequestInterval",
+                        current_request_time - last_request_time_);
   }
   last_request_time_ = current_request_time;
 

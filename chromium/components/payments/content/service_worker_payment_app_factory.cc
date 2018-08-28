@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
+#include "base/stl_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/payments/content/installable_payment_app_crawler.h"
 #include "components/payments/content/manifest_verifier.h"
@@ -66,9 +67,7 @@ bool AppSupportsAtLeastOneRequestedMethodData(
     const std::vector<mojom::PaymentMethodDataPtr>& requests) {
   for (const auto& enabled_method : app.enabled_methods) {
     for (const auto& request : requests) {
-      auto it = std::find(request->supported_methods.begin(),
-                          request->supported_methods.end(), enabled_method);
-      if (it != request->supported_methods.end()) {
+      if (enabled_method == request->supported_method) {
         if (enabled_method != "basic-card" ||
             BasicCardCapabilitiesMatch(app.capabilities, request)) {
           return true;
@@ -267,7 +266,7 @@ void ServiceWorkerPaymentAppFactory::GetAllPaymentApps(
           ? std::make_unique<payments::PaymentManifestDownloader>(
                 content::BrowserContext::GetDefaultStoragePartition(
                     web_contents->GetBrowserContext())
-                    ->GetURLRequestContext())
+                    ->GetURLLoaderFactoryForBrowserProcess())
           : std::move(test_downloader_),
       cache, requested_method_data, may_crawl_for_installable_payment_apps,
       std::move(callback),

@@ -6,8 +6,9 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
+#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
 namespace blink {
 namespace {
@@ -52,7 +53,8 @@ TEST(PresentationRequestTest, TestMultipleUrlConstructorInvalidUrl) {
   PresentationRequest::Create(scope.GetExecutionContext(), urls,
                               scope.GetExceptionState());
   EXPECT_TRUE(scope.GetExceptionState().HadException());
-  EXPECT_EQ(kSyntaxError, scope.GetExceptionState().Code());
+  EXPECT_EQ(DOMExceptionCode::kSyntaxError,
+            scope.GetExceptionState().CodeAs<DOMExceptionCode>());
 }
 
 TEST(PresentationRequestTest, TestMixedContentNotCheckedForNonHttpFamily) {
@@ -61,13 +63,14 @@ TEST(PresentationRequestTest, TestMixedContentNotCheckedForNonHttpFamily) {
       SecurityOrigin::CreateFromString("https://example.test"));
 
   PresentationRequest* request = PresentationRequest::Create(
-      scope.GetExecutionContext(), "foo://bar", scope.GetExceptionState());
+      scope.GetExecutionContext(), "cast://deadbeef?param=foo",
+      scope.GetExceptionState());
   ASSERT_FALSE(scope.GetExceptionState().HadException());
 
   WTF::Vector<KURL> request_urls = request->Urls();
   EXPECT_EQ(static_cast<size_t>(1), request_urls.size());
   EXPECT_TRUE(request_urls[0].IsValid());
-  EXPECT_EQ("foo://bar", request_urls[0].GetString());
+  EXPECT_EQ("cast://deadbeef?param=foo", request_urls[0].GetString());
 }
 
 TEST(PresentationRequestTest, TestSingleUrlConstructorMixedContent) {
@@ -78,7 +81,8 @@ TEST(PresentationRequestTest, TestSingleUrlConstructorMixedContent) {
   PresentationRequest::Create(scope.GetExecutionContext(), "http://example.com",
                               scope.GetExceptionState());
   EXPECT_TRUE(scope.GetExceptionState().HadException());
-  EXPECT_EQ(kSecurityError, scope.GetExceptionState().Code());
+  EXPECT_EQ(DOMExceptionCode::kSecurityError,
+            scope.GetExceptionState().CodeAs<DOMExceptionCode>());
 }
 
 TEST(PresentationRequestTest, TestMultipleUrlConstructorMixedContent) {
@@ -93,7 +97,8 @@ TEST(PresentationRequestTest, TestMultipleUrlConstructorMixedContent) {
   PresentationRequest::Create(scope.GetExecutionContext(), urls,
                               scope.GetExceptionState());
   EXPECT_TRUE(scope.GetExceptionState().HadException());
-  EXPECT_EQ(kSecurityError, scope.GetExceptionState().Code());
+  EXPECT_EQ(DOMExceptionCode::kSecurityError,
+            scope.GetExceptionState().CodeAs<DOMExceptionCode>());
 }
 
 TEST(PresentationRequestTest, TestMultipleUrlConstructorEmptySequence) {
@@ -103,7 +108,50 @@ TEST(PresentationRequestTest, TestMultipleUrlConstructorEmptySequence) {
   PresentationRequest::Create(scope.GetExecutionContext(), urls,
                               scope.GetExceptionState());
   EXPECT_TRUE(scope.GetExceptionState().HadException());
-  EXPECT_EQ(kNotSupportedError, scope.GetExceptionState().Code());
+  EXPECT_EQ(DOMExceptionCode::kNotSupportedError,
+            scope.GetExceptionState().CodeAs<DOMExceptionCode>());
+}
+
+TEST(PresentationRequestTest, TestSingleUrlConstructorUnknownScheme) {
+  V8TestingScope scope;
+  PresentationRequest::Create(scope.GetExecutionContext(), "foobar:unknown",
+                              scope.GetExceptionState());
+  EXPECT_TRUE(scope.GetExceptionState().HadException());
+  EXPECT_EQ(DOMExceptionCode::kNotSupportedError,
+            scope.GetExceptionState().CodeAs<DOMExceptionCode>());
+}
+
+TEST(PresentationRequestTest, TestMultipleUrlConstructorSomeUnknownSchemes) {
+  V8TestingScope scope;
+  WTF::Vector<String> urls;
+  urls.push_back("foobar:unknown");
+  urls.push_back("https://example.com");
+  urls.push_back("cast://deadbeef?param=foo");
+  urls.push_back("deadbeef:random");
+
+  PresentationRequest* request = PresentationRequest::Create(
+      scope.GetExecutionContext(), urls, scope.GetExceptionState());
+  ASSERT_FALSE(scope.GetExceptionState().HadException());
+
+  WTF::Vector<KURL> request_urls = request->Urls();
+  EXPECT_EQ(static_cast<size_t>(2), request_urls.size());
+  EXPECT_TRUE(request_urls[0].IsValid());
+  EXPECT_EQ("https://example.com/", request_urls[0].GetString());
+  EXPECT_TRUE(request_urls[1].IsValid());
+  EXPECT_EQ("cast://deadbeef?param=foo", request_urls[1].GetString());
+}
+
+TEST(PresentationRequestTest, TestMultipleUrlConstructorAllUnknownSchemes) {
+  V8TestingScope scope;
+  WTF::Vector<String> urls;
+  urls.push_back("foobar:unknown");
+  urls.push_back("deadbeef:random");
+
+  PresentationRequest::Create(scope.GetExecutionContext(), urls,
+                              scope.GetExceptionState());
+  EXPECT_TRUE(scope.GetExceptionState().HadException());
+  EXPECT_EQ(DOMExceptionCode::kNotSupportedError,
+            scope.GetExceptionState().CodeAs<DOMExceptionCode>());
 }
 
 }  // anonymous namespace

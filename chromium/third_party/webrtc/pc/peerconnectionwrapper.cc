@@ -15,12 +15,12 @@
 #include <utility>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/jsepsessiondescription.h"
-#include "media/base/fakevideocapturer.h"
 #include "pc/sdputils.h"
+#include "pc/test/fakevideotracksource.h"
 #include "rtc_base/function_view.h"
 #include "rtc_base/gunit.h"
-#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
@@ -269,9 +269,7 @@ rtc::scoped_refptr<AudioTrackInterface> PeerConnectionWrapper::CreateAudioTrack(
 
 rtc::scoped_refptr<VideoTrackInterface> PeerConnectionWrapper::CreateVideoTrack(
     const std::string& label) {
-  auto video_source = pc_factory()->CreateVideoSource(
-      rtc::MakeUnique<cricket::FakeVideoCapturer>());
-  return pc_factory()->CreateVideoTrack(label, video_source);
+  return pc_factory()->CreateVideoTrack(label, FakeVideoTrackSource::Create());
 }
 
 rtc::scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddTrack(
@@ -320,14 +318,6 @@ PeerConnectionWrapper::GetStats() {
   pc()->GetStats(callback);
   EXPECT_TRUE_WAIT(callback->called(), kDefaultTimeout);
   return callback->report();
-}
-
-rtc::scoped_refptr<FakeMetricsObserver>
-PeerConnectionWrapper::RegisterFakeMetricsObserver() {
-  RTC_DCHECK(!fake_metrics_observer_);
-  fake_metrics_observer_ = new rtc::RefCountedObject<FakeMetricsObserver>();
-  pc_->RegisterUMAObserver(fake_metrics_observer_);
-  return fake_metrics_observer_;
 }
 
 }  // namespace webrtc

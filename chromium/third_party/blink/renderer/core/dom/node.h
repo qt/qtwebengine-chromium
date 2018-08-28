@@ -31,7 +31,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
 #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
-#include "third_party/blink/renderer/core/dom/mutation_observer.h"
+#include "third_party/blink/renderer/core/dom/mutation_observer_options.h"
 #include "third_party/blink/renderer/core/dom/node_rare_data.h"
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
@@ -58,6 +58,8 @@ class KURL;
 class LayoutBox;
 class LayoutBoxModelObject;
 class LayoutObject;
+class MutationObserver;
+class MutationObserverRegistration;
 class NodeList;
 class NodeListsNodeData;
 class NodeOrString;
@@ -76,10 +78,17 @@ class WebPluginContainerImpl;
 const int kNodeStyleChangeShift = 18;
 const int kNodeCustomElementShift = 20;
 
+// Values for kChildNeedsStyleRecalcFlag, controlling whether a node gets its
+// style recalculated.
 enum StyleChangeType {
+  // This node does not need style recalculation.
   kNoStyleChange = 0,
+  // This node needs style recalculation.
   kLocalStyleChange = 1 << kNodeStyleChangeShift,
+  // This node and all of its flat-tree descendeants need style recalculation.
   kSubtreeStyleChange = 2 << kNodeStyleChangeShift,
+  // This node and all of its descendants are detached and need style
+  // recalculation.
   kNeedsReattachStyleChange = 3 << kNodeStyleChangeShift,
 };
 
@@ -172,6 +181,7 @@ class CORE_EXPORT Node : public EventTarget {
   virtual void setNodeValue(const String&);
   virtual NodeType getNodeType() const = 0;
   ContainerNode* parentNode() const;
+  ContainerNode* ParentNodeWithCounting() const;
   Element* parentElement() const;
   ContainerNode* ParentElementOrShadowRoot() const;
   ContainerNode* ParentElementOrDocumentFragment() const;
@@ -397,19 +407,24 @@ class CORE_EXPORT Node : public EventTarget {
   bool HasFocusWithin() const {
     return IsUserActionElement() && IsUserActionElementHasFocusWithin();
   }
-  bool WasFocusedByMouse() const {
-    return IsUserActionElement() && IsUserActionElementWasFocusedByMouse();
-  }
 
   bool NeedsAttach() const {
     return GetStyleChangeType() == kNeedsReattachStyleChange;
   }
+  // True if the style recalc process should recalculate style for this node.
   bool NeedsStyleRecalc() const {
-    return GetStyleChangeType() != kNoStyleChange;
+    // We do not ClearNeedsStyleRecalc() if the recalc triggers a layout re-
+    // attachment (see Element::RecalcStyle()). In order to avoid doing an extra
+    // StyleForLayoutObject for slotted elements, also check if we have been
+    // marked for re-attachment (which mean we have already gone through
+    // RecalcStyleForReattachment as a slot-assigned element).
+    return GetStyleChangeType() != kNoStyleChange && !NeedsReattachLayoutTree();
   }
   StyleChangeType GetStyleChangeType() const {
     return static_cast<StyleChangeType>(node_flags_ & kStyleChangeMask);
   }
+  // True if the style recalculation process should traverse this node's
+  // children when looking for nodes that need recalculation.
   bool ChildNeedsStyleRecalc() const {
     return GetFlag(kChildNeedsStyleRecalcFlag);
   }
@@ -426,6 +441,8 @@ class CORE_EXPORT Node : public EventTarget {
   void SetChildNeedsStyleRecalc() { SetFlag(kChildNeedsStyleRecalcFlag); }
   void ClearChildNeedsStyleRecalc() { ClearFlag(kChildNeedsStyleRecalcFlag); }
 
+  // Sets the flag for the current node and also calls
+  // MarkAncestorsWithChildNeedsStyleRecalc
   void SetNeedsStyleRecalc(StyleChangeType, const StyleChangeReasonForTracing&);
   void ClearNeedsStyleRecalc();
 
@@ -461,6 +478,8 @@ class CORE_EXPORT Node : public EventTarget {
   }
   void MarkAncestorsWithChildNeedsDistributionRecalc();
 
+  // True if the style invalidation process should traverse this node's children
+  // when looking for pending invalidations.
   bool ChildNeedsStyleInvalidation() const {
     return GetFlag(kChildNeedsStyleInvalidationFlag);
   }
@@ -471,10 +490,14 @@ class CORE_EXPORT Node : public EventTarget {
     ClearFlag(kChildNeedsStyleInvalidationFlag);
   }
   void MarkAncestorsWithChildNeedsStyleInvalidation();
+
+  // True if there are pending invalidations against this node.
   bool NeedsStyleInvalidation() const {
     return GetFlag(kNeedsStyleInvalidationFlag);
   }
   void ClearNeedsStyleInvalidation() { ClearFlag(kNeedsStyleInvalidationFlag); }
+  // Sets the flag for the current node and also calls
+  // MarkAncestorsWithChildNeedsStyleInvalidation
   void SetNeedsStyleInvalidation();
 
   // This needs to be called before using FlatTreeTraversal.
@@ -514,7 +537,6 @@ class CORE_EXPORT Node : public EventTarget {
   virtual void SetActive(bool flag = true);
   virtual void SetDragged(bool flag);
   virtual void SetHovered(bool flag = true);
-  void SetWasFocusedByMouse(bool flag);
 
   virtual int tabIndex() const;
 
@@ -785,7 +807,7 @@ class CORE_EXPORT Node : public EventTarget {
 
   void GetRegisteredMutationObserversOfType(
       HeapHashMap<Member<MutationObserver>, MutationRecordDeliveryOptions>&,
-      MutationObserver::MutationType,
+      MutationType,
       const QualifiedName* attribute_name);
   void RegisterMutationObserver(MutationObserver&,
                                 MutationObserverOptions,
@@ -821,12 +843,17 @@ class CORE_EXPORT Node : public EventTarget {
     return GetFlag(kHasDuplicateAttributes);
   }
 
+  void SetInDOMNodeRemovedHandler(bool flag) {
+    SetFlag(flag, kInDOMNodeRemovedHandler);
+  }
+  bool InDOMNodeRemovedHandler() const {
+    return GetFlag(kInDOMNodeRemovedHandler);
+  }
+
   // If the node is a plugin, then this returns its WebPluginContainer.
   WebPluginContainerImpl* GetWebPluginContainer() const;
 
   void Trace(blink::Visitor*) override;
-
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   enum NodeFlags {
@@ -878,11 +905,14 @@ class CORE_EXPORT Node : public EventTarget {
 
     kHasDuplicateAttributes = 1 << 28,
 
+    // Temporary flag for some UseCounter items. crbug.com/859391.
+    kInDOMNodeRemovedHandler = 1 << 29,
+
     kDefaultNodeFlags =
         kIsFinishedParsingChildrenFlag | kNeedsReattachStyleChange
   };
 
-  // 4 bits remaining.
+  // 3 bits remaining.
 
   bool GetFlag(NodeFlags mask) const { return node_flags_ & mask; }
   void SetFlag(bool f, NodeFlags mask) {
@@ -968,7 +998,6 @@ class CORE_EXPORT Node : public EventTarget {
   bool IsUserActionElementHovered() const;
   bool IsUserActionElementFocused() const;
   bool IsUserActionElementHasFocusWithin() const;
-  bool IsUserActionElementWasFocusedByMouse() const;
 
   void UpdateDistributionInternal();
   void RecalcDistribution();
@@ -1012,10 +1041,6 @@ inline ContainerNode* Node::ParentOrShadowHostNode() const {
   return reinterpret_cast<ContainerNode*>(parent_or_shadow_host_node_.Get());
 }
 
-inline ContainerNode* Node::parentNode() const {
-  return IsShadowRoot() ? nullptr : ParentOrShadowHostNode();
-}
-
 inline void Node::LazyReattachIfAttached() {
   if (NeedsAttach())
     return;
@@ -1030,6 +1055,8 @@ inline void Node::LazyReattachIfAttached() {
 }
 
 inline bool Node::ShouldCallRecalcStyle(StyleRecalcChange change) {
+  if (NeedsReattachLayoutTree())
+    return false;
   return change >= kIndependentInherit || NeedsStyleRecalc() ||
          ChildNeedsStyleRecalc();
 }

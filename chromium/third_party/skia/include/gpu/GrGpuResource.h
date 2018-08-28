@@ -9,6 +9,7 @@
 #define GrGpuResource_DEFINED
 
 #include "../private/GrTypesPriv.h"
+#include "../private/SkNoncopyable.h"
 #include "GrResourceKey.h"
 
 class GrContext;
@@ -281,12 +282,6 @@ protected:
         This may be called when the underlying 3D context is no longer valid and so no
         backend API calls should be made. */
     virtual void onAbandon() { }
-
-    /**
-     * This entry point should be called whenever gpuMemorySize() should report a different size.
-     * The cache will call gpuMemorySize() to update the current size of the resource.
-     */
-    void didChangeGpuMemorySize() const;
 
     /**
      * Allows subclasses to add additional backing information to the SkTraceMemoryDump.

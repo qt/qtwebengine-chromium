@@ -24,9 +24,25 @@ bool GrPixelConfigToMTLFormat(GrPixelConfig config, MTLPixelFormat* format);
 GrPixelConfig GrMTLFormatToPixelConfig(MTLPixelFormat format);
 
 /**
- * Returns true if the given vulkan texture format is sRGB encoded.
- * Also provides the non-sRGB version, if there is one.
+ * Returns a id<MTLTexture> to the MTLTexture pointed at by the const void*. Will use
+ * __bridge_transfer if we are adopting ownership.
  */
-bool GrMTLFormatIsSRGB(MTLPixelFormat format, MTLPixelFormat* linearFormat);
+id<MTLTexture> GrGetMTLTexture(const void* mtlTexture, GrWrapOwnership);
+
+/**
+ * Returns a const void* to whatever the id object is pointing to. Always uses __bridge.
+ */
+const void* GrGetPtrFromId(id idObject);
+
+/**
+ * Returns a const void* to whatever the id object is pointing to. Always uses __bridge_retained.
+ */
+const void* GrReleaseId(id idObject);
+
+/**
+ * Returns a MTLTextureDescriptor which describes the MTLTexture. Useful when creating a duplicate
+ * MTLTexture without the same storage allocation.
+ */
+MTLTextureDescriptor* GrGetMTLTextureDescriptor(id<MTLTexture> mtlTexture);
 
 #endif

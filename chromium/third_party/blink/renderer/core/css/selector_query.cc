@@ -30,17 +30,16 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/css/selector_checker.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/nth_index_cache.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/static_node_list.h"
 #include "third_party/blink/renderer/core/html_names.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 // Uncomment to run the SelectorQueryTests for stats in a release build.
 // #define RELEASE_QUERY_STATS
@@ -523,7 +522,7 @@ SelectorQuery* SelectorQueryCache::Add(const AtomicString& selectors,
                                        const Document& document,
                                        ExceptionState& exception_state) {
   if (selectors.IsEmpty()) {
-    exception_state.ThrowDOMException(kSyntaxError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
                                       "The provided selector is empty.");
     return nullptr;
   }
@@ -543,7 +542,8 @@ SelectorQuery* SelectorQueryCache::Add(const AtomicString& selectors,
 
   if (!selector_list.First()) {
     exception_state.ThrowDOMException(
-        kSyntaxError, "'" + selectors + "' is not a valid selector.");
+        DOMExceptionCode::kSyntaxError,
+        "'" + selectors + "' is not a valid selector.");
     return nullptr;
   }
 

@@ -63,8 +63,9 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
 
   // hitTest() will update layout, style and compositing first while
   // hitTestNoLifecycleUpdate() does not.
-  bool HitTest(HitTestResult&);
-  bool HitTestNoLifecycleUpdate(HitTestResult&);
+  bool HitTest(const HitTestLocation& location, HitTestResult&);
+  bool HitTestNoLifecycleUpdate(const HitTestLocation& location,
+                                HitTestResult&);
 
   // Returns the total count of calls to HitTest, for testing.
   unsigned HitTestCount() const { return hit_test_count_; }
@@ -136,13 +137,14 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
       const LayoutBoxModelObject* ancestor,
       TransformState&,
       VisualRectFlags = kDefaultVisualRectFlags) const override;
-  LayoutSize OffsetForFixedPosition(bool include_pending_scroll = false) const;
+  LayoutSize OffsetForFixedPosition() const;
 
   void InvalidatePaintForViewAndCompositedLayers();
 
-  void Paint(const PaintInfo&, const LayoutPoint&) const override;
-  void PaintBoxDecorationBackground(const PaintInfo&,
-                                    const LayoutPoint&) const override;
+  void Paint(const PaintInfo&) const override;
+  void PaintBoxDecorationBackground(
+      const PaintInfo&,
+      const LayoutPoint& paint_offset) const override;
 
   void ClearSelection();
   void CommitPendingSelection();
@@ -158,6 +160,15 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
       OverlayScrollbarClipBehavior =
           kIgnorePlatformOverlayScrollbarSize) const override;
 
+  // If either direction has a non-auto mode, the other must as well.
+  void SetAutosizeScrollbarModes(ScrollbarMode h_mode, ScrollbarMode v_mode);
+  ScrollbarMode AutosizeHorizontalScrollbarMode() const {
+    return autosize_h_scrollbar_mode_;
+  }
+  ScrollbarMode AutosizeVerticalScrollbarMode() const {
+    return autosize_v_scrollbar_mode_;
+  }
+
   void CalculateScrollbarModes(ScrollbarMode& h_mode,
                                ScrollbarMode& v_mode) const;
 
@@ -165,7 +176,7 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
 
   LayoutState* GetLayoutState() const { return layout_state_; }
 
-  void UpdateHitTestResult(HitTestResult&, const LayoutPoint&) override;
+  void UpdateHitTestResult(HitTestResult&, const LayoutPoint&) const override;
 
   ViewFragmentationContext* FragmentationContext() const {
     return fragmentation_context_.get();
@@ -242,6 +253,20 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
 
   IntSize ScrolledContentOffset() const override;
 
+  // Returns the coordinates of find-in-page scrollbar tickmarks.  These come
+  // from DocumentMarkerController, unless overridden by SetTickmarks.
+  Vector<IntRect> GetTickmarks() const;
+
+  // Sets the coordinates of find-in-page scrollbar tickmarks, bypassing
+  // DocumentMarkerController.  This is used by the PDF plugin.
+  void OverrideTickmarks(const Vector<IntRect>&);
+
+  // Issues a paint invalidation on the layout viewport's vertical scrollbar
+  // (which is responsible for painting the tickmarks).
+  void InvalidatePaintForTickmarks();
+
+  bool RecalcOverflowAfterStyleChange() override;
+
  private:
   void MapLocalToAncestor(
       const LayoutBoxModelObject* ancestor,
@@ -302,6 +327,14 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
   unsigned hit_test_count_;
   unsigned hit_test_cache_hits_;
   Persistent<HitTestCache> hit_test_cache_;
+
+  // FrameViewAutoSizeInfo controls scrollbar appearance manually rather than
+  // relying on layout. These members are used to override the ScrollbarModes
+  // calculated from style. kScrollbarAuto disables the override.
+  ScrollbarMode autosize_h_scrollbar_mode_;
+  ScrollbarMode autosize_v_scrollbar_mode_;
+
+  Vector<IntRect> tickmarks_override_;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutView, IsLayoutView());

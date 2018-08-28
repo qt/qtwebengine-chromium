@@ -7,13 +7,14 @@
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 
+#include "cc/paint/paint_canvas.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/retain_ptr.h"
 
 namespace blink {
 
-GraphicsContextCanvas::GraphicsContextCanvas(PaintCanvas* canvas,
+GraphicsContextCanvas::GraphicsContextCanvas(cc::PaintCanvas* canvas,
                                              const SkIRect& paint_rect,
                                              SkScalar bitmap_scale_factor)
     : canvas_(canvas),
@@ -37,7 +38,8 @@ void GraphicsContextCanvas::ReleaseIfNeeded() {
   canvas_->setMatrix(SkMatrix::I());  // Reset back to device space.
   canvas_->translate(paint_rect_.x(), paint_rect_.y());
   canvas_->scale(1.f / bitmap_scale_factor_, 1.f / bitmap_scale_factor_);
-  canvas_->drawBitmap(offscreen_, 0, 0);
+  canvas_->drawImage(cc::PaintImage::CreateFromBitmap(std::move(offscreen_)), 0,
+                     0);
   canvas_->restore();
 
   CGContextRelease(cg_context_);

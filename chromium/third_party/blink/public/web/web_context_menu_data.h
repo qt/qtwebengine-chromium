@@ -111,6 +111,7 @@ struct WebContextMenuData {
     kMediaCanPrint = 0x100,
     kMediaCanRotate = 0x200,
     kMediaCanPictureInPicture = 0x400,
+    kMediaPictureInPicture = 0x800,
   };
 
   // Extra attributes describing media elements.
@@ -144,10 +145,14 @@ struct WebContextMenuData {
   enum InputFieldType {
     // Not an input field.
     kInputFieldTypeNone,
-    // type = text, tel, search, number, email, url
+    // type = text, search, email, url
     kInputFieldTypePlainText,
     // type = password
     kInputFieldTypePassword,
+    // type = number
+    kInputFieldTypeNumber,
+    // type = tel
+    kInputFieldTypeTelephone,
     // type = <etc.>
     kInputFieldTypeOther,
     kInputFieldTypeLast = kInputFieldTypeOther

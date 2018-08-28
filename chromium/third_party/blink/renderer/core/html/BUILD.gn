@@ -9,6 +9,10 @@ blink_core_sources("html") {
   split_count = 4
 
   sources = [
+    "anchor_element_metrics.cc",
+    "anchor_element_metrics.h",
+    "anchor_element_metrics_sender.cc",
+    "anchor_element_metrics_sender.h",
     "canvas/canvas_async_blob_creator.cc",
     "canvas/canvas_async_blob_creator.h",
     "canvas/canvas_context_creation_attributes_core.cc",
@@ -451,6 +455,8 @@ blink_core_sources("html") {
     "imports/html_imports_controller.h",
     "imports/link_import.cc",
     "imports/link_import.h",
+    "lazy_load_frame_observer.cc",
+    "lazy_load_frame_observer.h",
     "link_manifest.cc",
     "link_manifest.h",
     "link_rel_attribute.cc",

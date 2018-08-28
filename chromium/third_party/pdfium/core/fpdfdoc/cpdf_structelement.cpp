@@ -6,6 +6,8 @@
 
 #include "core/fpdfdoc/cpdf_structelement.h"
 
+#include <utility>
+
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
@@ -17,7 +19,6 @@
 
 CPDF_StructKid::CPDF_StructKid()
     : m_Type(Invalid),
-      m_pDict(nullptr),
       m_PageObjNum(0),
       m_RefObjNum(0),
       m_ContentId(0) {}
@@ -28,7 +29,7 @@ CPDF_StructKid::~CPDF_StructKid() = default;
 
 CPDF_StructElement::CPDF_StructElement(CPDF_StructTree* pTree,
                                        CPDF_StructElement* pParent,
-                                       CPDF_Dictionary* pDict)
+                                       const CPDF_Dictionary* pDict)
     : m_pTree(pTree),
       m_pParent(pParent),
       m_pDict(pDict),
@@ -37,7 +38,7 @@ CPDF_StructElement::CPDF_StructElement(CPDF_StructTree* pTree,
   if (pTree->GetRoleMap()) {
     ByteString mapped = pTree->GetRoleMap()->GetStringFor(m_Type);
     if (!mapped.IsEmpty())
-      m_Type = mapped;
+      m_Type = std::move(mapped);
   }
   LoadKids(pDict);
 }
@@ -54,21 +55,21 @@ CPDF_StructElement* CPDF_StructElement::GetKidIfElement(size_t index) const {
              : nullptr;
 }
 
-void CPDF_StructElement::LoadKids(CPDF_Dictionary* pDict) {
-  CPDF_Object* pObj = pDict->GetObjectFor("Pg");
+void CPDF_StructElement::LoadKids(const CPDF_Dictionary* pDict) {
+  const CPDF_Object* pObj = pDict->GetObjectFor("Pg");
   uint32_t PageObjNum = 0;
-  if (CPDF_Reference* pRef = ToReference(pObj))
+  if (const CPDF_Reference* pRef = ToReference(pObj))
     PageObjNum = pRef->GetRefObjNum();
 
-  CPDF_Object* pKids = pDict->GetDirectObjectFor("K");
+  const CPDF_Object* pKids = pDict->GetDirectObjectFor("K");
   if (!pKids)
     return;
 
   m_Kids.clear();
-  if (CPDF_Array* pArray = pKids->AsArray()) {
+  if (const CPDF_Array* pArray = pKids->AsArray()) {
     m_Kids.resize(pArray->GetCount());
     for (uint32_t i = 0; i < pArray->GetCount(); i++) {
-      CPDF_Object* pKid = pArray->GetDirectObjectAt(i);
+      const CPDF_Object* pKid = pArray->GetDirectObjectAt(i);
       LoadKid(PageObjNum, pKid, &m_Kids[i]);
     }
     return;
@@ -79,7 +80,7 @@ void CPDF_StructElement::LoadKids(CPDF_Dictionary* pDict) {
 }
 
 void CPDF_StructElement::LoadKid(uint32_t PageObjNum,
-                                 CPDF_Object* pKidObj,
+                                 const CPDF_Object* pKidObj,
                                  CPDF_StructKid* pKid) {
   pKid->m_Type = CPDF_StructKid::Invalid;
   if (!pKidObj)
@@ -95,10 +96,10 @@ void CPDF_StructElement::LoadKid(uint32_t PageObjNum,
     return;
   }
 
-  CPDF_Dictionary* pKidDict = pKidObj->AsDictionary();
+  const CPDF_Dictionary* pKidDict = pKidObj->AsDictionary();
   if (!pKidDict)
     return;
-  if (CPDF_Reference* pRef = ToReference(pKidDict->GetObjectFor("Pg")))
+  if (const CPDF_Reference* pRef = ToReference(pKidDict->GetObjectFor("Pg")))
     PageObjNum = pRef->GetRefObjNum();
 
   ByteString type = pKidDict->GetStringFor("Type");
@@ -109,7 +110,7 @@ void CPDF_StructElement::LoadKid(uint32_t PageObjNum,
 
   if (type == "MCR") {
     pKid->m_Type = CPDF_StructKid::StreamContent;
-    CPDF_Reference* pRef = ToReference(pKidDict->GetObjectFor("Stm"));
+    const CPDF_Reference* pRef = ToReference(pKidDict->GetObjectFor("Stm"));
     pKid->m_RefObjNum = pRef ? pRef->GetRefObjNum() : 0;
     pKid->m_PageObjNum = PageObjNum;
     pKid->m_ContentId = pKidDict->GetIntegerFor("MCID");
@@ -118,7 +119,7 @@ void CPDF_StructElement::LoadKid(uint32_t PageObjNum,
 
   if (type == "OBJR") {
     pKid->m_Type = CPDF_StructKid::Object;
-    CPDF_Reference* pObj = ToReference(pKidDict->GetObjectFor("Obj"));
+    const CPDF_Reference* pObj = ToReference(pKidDict->GetObjectFor("Obj"));
     pKid->m_RefObjNum = pObj ? pObj->GetRefObjNum() : 0;
     pKid->m_PageObjNum = PageObjNum;
     return;

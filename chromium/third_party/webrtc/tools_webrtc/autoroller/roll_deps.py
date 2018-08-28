@@ -12,7 +12,6 @@
 import argparse
 import base64
 import collections
-import json
 import logging
 import os
 import re
@@ -23,7 +22,7 @@ import urllib2
 # Skip these dependencies (list without solution name prefix).
 DONT_AUTOROLL_THESE = [
   'src/examples/androidtests/third_party/gradle',
-  'src/third_party_chromium',
+  'src/third_party/ffmpeg',
 ]
 
 # Run these CQ trybots in addition to the default ones in infra/config/cq.cfg.
@@ -33,11 +32,9 @@ EXTRA_TRYBOTS = (
 
 WEBRTC_URL = 'https://webrtc.googlesource.com/src'
 CHROMIUM_SRC_URL = 'https://chromium.googlesource.com/chromium/src'
-CHROMIUM_THIRD_PARTY_URL = '%s/third_party' % CHROMIUM_SRC_URL
 CHROMIUM_COMMIT_TEMPLATE = CHROMIUM_SRC_URL + '/+/%s'
 CHROMIUM_LOG_TEMPLATE = CHROMIUM_SRC_URL + '/+log/%s'
 CHROMIUM_FILE_TEMPLATE = CHROMIUM_SRC_URL + '/+/%s/%s'
-CHROMIUM_3P_LOG_TEMPLATE = CHROMIUM_SRC_URL + '/third_party/+log/%s'
 
 COMMIT_POSITION_RE = re.compile('^Cr-Commit-Position: .*#([0-9]+).*$')
 CLANG_REVISION_RE = re.compile(r'^CLANG_REVISION = \'(\d+)\'$')
@@ -66,9 +63,7 @@ ChangedCipdPackage = collections.namedtuple(
 
 ChromiumRevisionUpdate = collections.namedtuple('ChromiumRevisionUpdate',
                                                 ('current_chromium_rev '
-                                                 'new_chromium_rev '
-                                                 'current_third_party_rev '
-                                                 'new_third_party_rev'))
+                                                 'new_chromium_rev '))
 
 
 class RollError(Exception):
@@ -123,7 +118,7 @@ def _RunCommand(command, working_dir=None, ignore_exit_code=False,
   logging.debug('CMD: %s CWD: %s', ' '.join(command), working_dir)
   env = os.environ.copy()
   if extra_env:
-    assert all(type(value) == str for value in extra_env.values())
+    assert all(isinstance(value, str) for value in extra_env.values())
     logging.debug('extra env: %s', extra_env)
     env.update(extra_env)
   p = subprocess.Popen(command,
@@ -239,18 +234,13 @@ def BuildDepsentryDict(deps_dict):
   return result
 
 
-def _RemoveStringPrefix(string, substring):
-  assert string.startswith(substring)
-  return string[len(substring):]
-
-
 def _FindChangedCipdPackages(path, old_pkgs, new_pkgs):
   assert ({p['package'] for p in old_pkgs} ==
           {p['package'] for p in new_pkgs})
   for old_pkg in old_pkgs:
     for new_pkg in new_pkgs:
-      old_version = _RemoveStringPrefix(old_pkg['version'], 'version:')
-      new_version = _RemoveStringPrefix(new_pkg['version'], 'version:')
+      old_version = old_pkg['version']
+      new_version = new_pkg['version']
       if (old_pkg['package'] == new_pkg['package'] and
           old_version != new_version):
         logging.debug('Roll dependency %s to %s', path, new_version)
@@ -294,10 +284,14 @@ def CalculateChangedDeps(webrtc_deps, new_cr_deps):
           'WebRTC DEPS entry %s has a different URL (%s) than Chromium (%s).' %
           (path, webrtc_deps_entry.url, cr_deps_entry.url))
     else:
-      # Use the HEAD of the deps repo.
-      stdout, _ = _RunCommand(['git', 'ls-remote', webrtc_deps_entry.url,
-                               'HEAD'])
-      new_rev = stdout.strip().split('\t')[0]
+      if isinstance(webrtc_deps_entry, DepsEntry):
+        # Use the HEAD of the deps repo.
+        stdout, _ = _RunCommand(['git', 'ls-remote', webrtc_deps_entry.url,
+                                'HEAD'])
+        new_rev = stdout.strip().split('\t')[0]
+      else:
+        raise RollError('WebRTC DEPS entry %s is missing from Chromium. Remove '
+                        'it or add it to DONT_AUTOROLL_THESE.' % path)
 
     # Check if an update is necessary.
     if webrtc_deps_entry.revision != new_rev:
@@ -330,18 +324,13 @@ def GenerateCommitMessage(rev_update, current_commit_pos,
   current_cr_rev = rev_update.current_chromium_rev[0:10]
   new_cr_rev = rev_update.new_chromium_rev[0:10]
   rev_interval = '%s..%s' % (current_cr_rev, new_cr_rev)
-  rev_3p_interval = '%s..%s' % (rev_update.current_third_party_rev[0:10],
-                                rev_update.new_third_party_rev[0:10])
   git_number_interval = '%s:%s' % (current_commit_pos, new_commit_pos)
 
   commit_msg = ['Roll chromium_revision %s (%s)\n' % (rev_interval,
                                                       git_number_interval),
                 'Change log: %s' % (CHROMIUM_LOG_TEMPLATE % rev_interval),
                 'Full diff: %s\n' % (CHROMIUM_COMMIT_TEMPLATE %
-                                     rev_interval),
-                'Roll chromium third_party %s' % rev_3p_interval,
-                'Change log: %s\n' % (
-                    CHROMIUM_3P_LOG_TEMPLATE % rev_3p_interval)]
+                                     rev_interval)]
   tbr_authors = ''
   if changed_deps_list:
     commit_msg.append('Changed dependencies:')
@@ -379,7 +368,6 @@ def GenerateCommitMessage(rev_update, current_commit_pos,
   commit_msg.append('TBR=%s' % tbr_authors)
   commit_msg.append('BUG=None')
   commit_msg.append('CQ_INCLUDE_TRYBOTS=%s' % EXTRA_TRYBOTS)
-  commit_msg.append('NO_AUTOIMPORT_DEPS_CHECK=true')
   return '\n'.join(commit_msg)
 
 
@@ -391,8 +379,6 @@ def UpdateDepsFile(deps_filename, rev_update, changed_deps):
     deps_content = deps_file.read()
   deps_content = deps_content.replace(rev_update.current_chromium_rev,
                                       rev_update.new_chromium_rev)
-  deps_content = deps_content.replace(rev_update.current_third_party_rev,
-                                      rev_update.new_third_party_rev)
   with open(deps_filename, 'wb') as deps_file:
     deps_file.write(deps_content)
 
@@ -408,53 +394,12 @@ def UpdateDepsFile(deps_filename, rev_update, changed_deps):
           'target_os = ["android", "unix", "mac", "ios", "win"];\n'
           'Then run "gclient sync" again.' % local_dep_dir)
     if isinstance(dep, ChangedCipdPackage):
-      update = '%s:%s@%s' % (dep.path, dep.package, dep.new_version)
+      package = dep.package.format()  # Eliminate double curly brackets
+      update = '%s:%s@%s' % (dep.path, package, dep.new_version)
     else:
       update = '%s@%s' % (dep.path, dep.new_rev)
     _RunCommand(['gclient', 'setdep', '--revision', update],
                 working_dir=CHECKOUT_SRC_DIR)
-
-
-def _LoadThirdPartyDepsAndFiles(filename):
-  with open(filename, 'rb') as f:
-    data = json.load(f)
-    return data.get('dependencies', [])
-
-
-def UpdateThirdPartyDeps(new_rev, dest_dir, source_dir,
-    third_party_deps_file):
-  """Syncing deps, specified in third_party_deps_file with repo in source_dir.
-
-  Will exit if sync failed for some reasons.
-  Params:
-    new_rev - revision of third_party to update to
-    dest_dir - webrtc directory, that will be used as root for third_party deps
-    source_dir - checked out chromium third_party repo
-    third_party_deps_file - file with list of third_party deps to copy
-  """
-
-  deps_to_checkout = _LoadThirdPartyDepsAndFiles(third_party_deps_file)
-  # Update existing chromium third_party checkout to new rev.
-  _RunCommand(['git', 'fetch', 'origin'], working_dir=source_dir)
-  _RunCommand(['git', 'checkout', new_rev], working_dir=source_dir)
-  # Checkout chromium repo into dest dir basing on source checkout.
-  _RunCommand(
-      ['git', '--git-dir', '%s/.git' % source_dir, 'checkout',
-       new_rev] + deps_to_checkout, working_dir=dest_dir)
-  # Ensure all chromium dependencies are presented
-  deps_set = set(deps_to_checkout)
-  stdout, _ = _RunCommand(['git', 'ls-tree', '--name-only', 'HEAD'],
-                          working_dir=source_dir)
-  if not deps_set.issubset(set(stdout.split('\n'))):
-    raise RollError('Missed required chromium dependencies in chromium '
-                    'third_party repo: %s' % json.dumps(
-        list(deps_set.difference(set(stdout.split('\n'))))))
-  stdout, _ = _RunCommand(['git', 'ls-tree', '--name-only', 'HEAD'],
-                          working_dir=dest_dir)
-  if not deps_set.issubset(set(stdout.split('\n'))):
-    raise RollError('Missed required chromium dependencies after checking in '
-                    'chromium third_party repo: %s' % json.dumps(
-        list(deps_set.difference(set(stdout.split('\n'))))))
 
 
 def _IsTreeClean():
@@ -499,7 +444,6 @@ def _LocalCommit(commit_msg, dry_run):
   logging.info('Committing changes locally.')
   if not dry_run:
     _RunCommand(['git', 'add', '--update', '.'])
-    _RunCommand(['git', 'add', '-A', 'third_party'])
     _RunCommand(['git', 'commit', '-m', commit_msg])
 
 
@@ -531,7 +475,6 @@ def _UploadCL(commit_queue_mode):
 
 def GetRollRevisionRanges(opts, webrtc_deps):
   current_cr_rev = webrtc_deps['vars']['chromium_revision']
-  current_third_party_rev = webrtc_deps['vars']['chromium_third_party_revision']
   new_cr_rev = opts.revision
   if not new_cr_rev:
     stdout, _ = _RunCommand(['git', 'ls-remote', CHROMIUM_SRC_URL, 'HEAD'])
@@ -539,18 +482,7 @@ def GetRollRevisionRanges(opts, webrtc_deps):
     logging.info('No revision specified. Using HEAD: %s', head_rev)
     new_cr_rev = head_rev
 
-  new_third_party_rev = opts.third_party_revision
-  if not new_third_party_rev:
-    stdout, _ = _RunCommand(
-        ['git', 'ls-remote', CHROMIUM_THIRD_PARTY_URL, 'HEAD'])
-    new_third_party_rev = stdout.strip().split('\t')[0]
-    logging.info(
-        'No third_party revision specified. Using HEAD: %s',
-        new_third_party_rev)
-
-  return ChromiumRevisionUpdate(current_cr_rev, new_cr_rev,
-                                current_third_party_rev,
-                                new_third_party_rev)
+  return ChromiumRevisionUpdate(current_cr_rev, new_cr_rev)
 
 
 def main():
@@ -560,9 +492,6 @@ def main():
   p.add_argument('-r', '--revision',
                  help=('Chromium Git revision to roll to. Defaults to the '
                        'Chromium HEAD revision if omitted.'))
-  p.add_argument('--third-party-revision',
-                 help=('Chromium third_party Git revision to roll to. Default '
-                       'to the Chromium third_party HEAD revision if omitted.'))
   p.add_argument('-u', '--rietveld-email',
                  help=('E-mail address to use for creating the CL at Rietveld'
                        'If omitted a previously cached one will be used or an '
@@ -602,15 +531,6 @@ def main():
 
   deps_filename = os.path.join(CHECKOUT_SRC_DIR, 'DEPS')
   webrtc_deps = ParseLocalDepsFile(deps_filename)
-  cr_3p_repo = os.path.join(CHECKOUT_SRC_DIR, 'third_party_chromium')
-  if not os.path.exists(cr_3p_repo):
-    raise RollError('missing third_party_chromium/. '
-                    'Please add this to your gclient: \n'
-                    '"custom_vars": {\n'
-                    '  "roll_chromium_into_webrtc": True,\n'
-                    '},\n'
-                    'Then run "gclient sync" again.')
-
   rev_update = GetRollRevisionRanges(opts, webrtc_deps)
 
   current_commit_pos = ParseCommitPosition(
@@ -627,12 +547,6 @@ def main():
   logging.debug('Commit message:\n%s', commit_msg)
 
   _CreateRollBranch(opts.dry_run)
-  third_party_chromium_deps_list = os.path.join(
-      CHECKOUT_SRC_DIR, 'THIRD_PARTY_CHROMIUM_DEPS.json')
-  UpdateThirdPartyDeps(rev_update.new_third_party_rev,
-                       os.path.join(CHECKOUT_SRC_DIR, 'third_party'),
-                       cr_3p_repo,
-                       third_party_chromium_deps_list)
   UpdateDepsFile(deps_filename, rev_update, changed_deps)
   if _IsTreeClean():
     logging.info("No DEPS changes detected, skipping CL creation.")

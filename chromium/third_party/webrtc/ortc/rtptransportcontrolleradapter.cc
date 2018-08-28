@@ -16,15 +16,15 @@
 #include <unordered_map>
 #include <utility>  // For std::move.
 
+#include "absl/memory/memory.h"
 #include "api/proxy.h"
 #include "media/base/mediaconstants.h"
 #include "ortc/ortcrtpreceiveradapter.h"
 #include "ortc/ortcrtpsenderadapter.h"
-#include "ortc/rtpparametersconversion.h"
 #include "ortc/rtptransportadapter.h"
 #include "pc/rtpmediautils.h"
+#include "pc/rtpparametersconversion.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
@@ -127,8 +127,7 @@ RtpTransportControllerAdapter::~RtpTransportControllerAdapter() {
   }
   // Call must be destroyed on the worker thread.
   worker_thread_->Invoke<void>(
-      RTC_FROM_HERE,
-      rtc::Bind(&RtpTransportControllerAdapter::Close_w, this));
+      RTC_FROM_HERE, rtc::Bind(&RtpTransportControllerAdapter::Close_w, this));
 }
 
 RTCErrorOr<std::unique_ptr<RtpTransportInterface>>
@@ -636,8 +635,7 @@ RtpTransportControllerAdapter::RtpTransportControllerAdapter(
   remote_video_description_.AddCodec(dummy_video);
 
   worker_thread_->Invoke<void>(
-      RTC_FROM_HERE,
-      rtc::Bind(&RtpTransportControllerAdapter::Init_w, this));
+      RTC_FROM_HERE, rtc::Bind(&RtpTransportControllerAdapter::Init_w, this));
 }
 
 // TODO(nisse): Duplicates corresponding method in PeerConnection (used
@@ -656,7 +654,7 @@ void RtpTransportControllerAdapter::Init_w() {
   call_config.bitrate_config.start_bitrate_bps = kStartBandwidthBps;
   call_config.bitrate_config.max_bitrate_bps = kMaxBandwidthBps;
   std::unique_ptr<RtpTransportControllerSend> controller_send =
-      rtc::MakeUnique<RtpTransportControllerSend>(
+      absl::make_unique<RtpTransportControllerSend>(
           Clock::GetRealTimeClock(), event_log_,
           call_config.network_controller_factory, call_config.bitrate_config);
   call_send_rtp_transport_controller_ = controller_send.get();

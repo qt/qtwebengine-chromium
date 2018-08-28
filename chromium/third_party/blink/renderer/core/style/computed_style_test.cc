@@ -6,10 +6,12 @@
 
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/renderer/core/css/css_gradient_value.h"
 #include "third_party/blink/renderer/core/style/clip_path_operation.h"
+#include "third_party/blink/renderer/core/style/shape_clip_path_operation.h"
 #include "third_party/blink/renderer/core/style/shape_value.h"
 #include "third_party/blink/renderer/core/style/style_difference.h"
-#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
+#include "third_party/blink/renderer/core/style/style_generated_image.h"
 
 namespace blink {
 
@@ -20,7 +22,7 @@ TEST(ComputedStyleTest, ShapeOutsideBoxEqual) {
   scoped_refptr<ComputedStyle> style2 = ComputedStyle::Create();
   style1->SetShapeOutside(shape1);
   style2->SetShapeOutside(shape2);
-  ASSERT_EQ(*style1, *style2);
+  EXPECT_EQ(*style1, *style2);
 }
 
 TEST(ComputedStyleTest, ShapeOutsideCircleEqual) {
@@ -34,7 +36,7 @@ TEST(ComputedStyleTest, ShapeOutsideCircleEqual) {
   scoped_refptr<ComputedStyle> style2 = ComputedStyle::Create();
   style1->SetShapeOutside(shape1);
   style2->SetShapeOutside(shape2);
-  ASSERT_EQ(*style1, *style2);
+  EXPECT_EQ(*style1, *style2);
 }
 
 TEST(ComputedStyleTest, ClipPathEqual) {
@@ -47,7 +49,7 @@ TEST(ComputedStyleTest, ClipPathEqual) {
   scoped_refptr<ComputedStyle> style2 = ComputedStyle::Create();
   style1->SetClipPath(path1);
   style2->SetClipPath(path2);
-  ASSERT_EQ(*style1, *style2);
+  EXPECT_EQ(*style1, *style2);
 }
 
 TEST(ComputedStyleTest, FocusRingWidth) {
@@ -55,11 +57,11 @@ TEST(ComputedStyleTest, FocusRingWidth) {
   style->SetEffectiveZoom(3.5);
 #if defined(OS_MACOSX)
   style->SetOutlineStyle(EBorderStyle::kSolid);
-  ASSERT_EQ(3, style->GetOutlineStrokeWidthForFocusRing());
+  EXPECT_EQ(3, style->GetOutlineStrokeWidthForFocusRing());
 #else
-  ASSERT_EQ(3.5, style->GetOutlineStrokeWidthForFocusRing());
+  EXPECT_EQ(3.5, style->GetOutlineStrokeWidthForFocusRing());
   style->SetEffectiveZoom(0.5);
-  ASSERT_EQ(1, style->GetOutlineStrokeWidthForFocusRing());
+  EXPECT_EQ(1, style->GetOutlineStrokeWidthForFocusRing());
 #endif
 }
 
@@ -69,9 +71,9 @@ TEST(ComputedStyleTest, FocusRingOutset) {
   style->SetOutlineStyleIsAuto(static_cast<bool>(OutlineIsAuto::kOn));
   style->SetEffectiveZoom(4.75);
 #if defined(OS_MACOSX)
-  ASSERT_EQ(4, style->OutlineOutsetExtent());
+  EXPECT_EQ(4, style->OutlineOutsetExtent());
 #else
-  ASSERT_EQ(3, style->OutlineOutsetExtent());
+  EXPECT_EQ(3, style->OutlineOutsetExtent());
 #endif
 }
 
@@ -79,13 +81,6 @@ TEST(ComputedStyleTest, SVGStackingContext) {
   scoped_refptr<ComputedStyle> style = ComputedStyle::Create();
   style->UpdateIsStackingContext(false, false, true);
   EXPECT_TRUE(style->IsStackingContext());
-}
-
-TEST(ComputedStyleTest, SVGStackingContextSPv1) {
-  ScopedSlimmingPaintV175ForTest spv175(false);
-  scoped_refptr<ComputedStyle> style = ComputedStyle::Create();
-  style->UpdateIsStackingContext(false, false, true);
-  EXPECT_FALSE(style->IsStackingContext());
 }
 
 TEST(ComputedStyleTest, Preserve3dForceStackingContext) {
@@ -217,6 +212,29 @@ TEST(ComputedStyleTest,
   EXPECT_TRUE(diff.CompositingReasonsChanged());
 }
 
+TEST(ComputedStyleTest,
+     UpdatePropertySpecificDifferencesCompositingReasonsOverflow) {
+  scoped_refptr<ComputedStyle> style = ComputedStyle::Create();
+  scoped_refptr<ComputedStyle> other = ComputedStyle::Clone(*style);
+
+  other->SetOverflowX(EOverflow::kHidden);
+  StyleDifference diff;
+  style->UpdatePropertySpecificDifferences(*other, diff);
+  EXPECT_TRUE(diff.CompositingReasonsChanged());
+}
+
+TEST(ComputedStyleTest,
+     UpdatePropertySpecificDifferencesCompositingReasonsContainsPaint) {
+  scoped_refptr<ComputedStyle> style = ComputedStyle::Create();
+  scoped_refptr<ComputedStyle> other = ComputedStyle::Clone(*style);
+
+  // This induces a flat used transform style.
+  other->SetContain(kContainsPaint);
+  StyleDifference diff;
+  style->UpdatePropertySpecificDifferences(*other, diff);
+  EXPECT_TRUE(diff.CompositingReasonsChanged());
+}
+
 TEST(ComputedStyleTest, HasOutlineWithCurrentColor) {
   scoped_refptr<ComputedStyle> style = ComputedStyle::Create();
   EXPECT_FALSE(style->HasOutline());
@@ -248,6 +266,24 @@ TEST(ComputedStyleTest, BorderWidth) {
   style->SetBorderBottomStyle(EBorderStyle::kSolid);
   EXPECT_EQ(style->BorderBottomWidth(), 5);
   EXPECT_EQ(style->BorderBottom().Width(), 5);
+}
+
+TEST(ComputedStyleTest, CursorList) {
+  scoped_refptr<ComputedStyle> style = ComputedStyle::Create();
+  scoped_refptr<ComputedStyle> other = ComputedStyle::Create();
+
+  cssvalue::CSSGradientValue* gradient =
+      cssvalue::CSSLinearGradientValue::Create(
+          nullptr, nullptr, nullptr, nullptr, nullptr, cssvalue::kRepeating);
+
+  StyleImage* image_value = StyleGeneratedImage::Create(*gradient);
+  StyleImage* other_image_value = StyleGeneratedImage::Create(*gradient);
+
+  EXPECT_TRUE(DataEquivalent(image_value, other_image_value));
+
+  style->AddCursor(image_value, false);
+  other->AddCursor(other_image_value, false);
+  EXPECT_EQ(*style, *other);
 }
 
 }  // namespace blink

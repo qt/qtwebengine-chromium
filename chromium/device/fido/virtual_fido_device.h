@@ -18,6 +18,8 @@
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/optional.h"
+#include "crypto/ec_private_key.h"
+#include "device/fido/fido_constants.h"
 #include "device/fido/fido_device.h"
 #include "device/fido/fido_parsing_utils.h"
 #include "net/cert/x509_util.h"
@@ -34,9 +36,10 @@ class COMPONENT_EXPORT(DEVICE_FIDO) VirtualFidoDevice : public FidoDevice {
   // authenticator device.
   struct COMPONENT_EXPORT(DEVICE_FIDO) RegistrationData {
     RegistrationData();
-    RegistrationData(std::unique_ptr<crypto::ECPrivateKey> private_key,
-                     std::vector<uint8_t> application_parameter,
-                     uint32_t counter);
+    RegistrationData(
+        std::unique_ptr<crypto::ECPrivateKey> private_key,
+        base::span<const uint8_t, kRpIdHashLength> application_parameter,
+        uint32_t counter);
 
     RegistrationData(RegistrationData&& data);
     RegistrationData& operator=(RegistrationData&& other);
@@ -44,7 +47,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) VirtualFidoDevice : public FidoDevice {
     ~RegistrationData();
 
     std::unique_ptr<crypto::ECPrivateKey> private_key;
-    std::vector<uint8_t> application_parameter;
+    std::array<uint8_t, kRpIdHashLength> application_parameter;
     uint32_t counter = 0;
 
     DISALLOW_COPY_AND_ASSIGN(RegistrationData);
@@ -117,6 +120,15 @@ class COMPONENT_EXPORT(DEVICE_FIDO) VirtualFidoDevice : public FidoDevice {
   // https://w3c.github.io/webauthn/#defined-attestation-formats
   base::Optional<std::vector<uint8_t>> GenerateAttestationCertificate(
       bool individual_attestation_requested) const;
+
+  void StoreNewKey(
+      base::span<const uint8_t, kRpIdHashLength> application_parameter,
+      base::span<const uint8_t> key_handle,
+      std::unique_ptr<crypto::ECPrivateKey> private_key);
+
+  RegistrationData* FindRegistrationData(
+      base::span<const uint8_t> key_handle,
+      base::span<const uint8_t, kRpIdHashLength> application_parameter);
 
   // FidoDevice:
   void TryWink(WinkCallback cb) override;

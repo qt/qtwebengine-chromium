@@ -38,7 +38,6 @@
 #include "build/build_config.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/font_family_names.h"
-#include "third_party/blink/renderer/platform/fonts/accept_languages_resolver.h"
 #include "third_party/blink/renderer/platform/fonts/alternate_font_family.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache_client.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache_key.h"
@@ -54,6 +53,7 @@
 #include "third_party/blink/renderer/platform/instrumentation/tracing/web_memory_allocator_dump.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/web_process_memory_dump.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/text/layout_locale.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
@@ -65,10 +65,13 @@ namespace blink {
 
 SkFontMgr* FontCache::static_font_manager_ = nullptr;
 
+#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+float FontCache::device_scale_factor_ = 1.0;
+#endif
+
 #if defined(OS_WIN)
 bool FontCache::antialiased_text_enabled_ = false;
 bool FontCache::lcd_text_enabled_ = false;
-float FontCache::device_scale_factor_ = 1.0;
 bool FontCache::use_skia_font_fallback_ = false;
 #endif  // defined(OS_WIN)
 
@@ -210,7 +213,7 @@ void FontCache::SetFontManager(sk_sp<SkFontMgr> font_manager) {
 }
 
 void FontCache::AcceptLanguagesChanged(const String& accept_languages) {
-  AcceptLanguagesResolver::AcceptLanguagesChanged(accept_languages);
+  LayoutLocale::AcceptLanguagesChanged(accept_languages);
   GetFontCache()->InvalidateShapeCache();
 }
 
@@ -283,7 +286,14 @@ scoped_refptr<SimpleFontData> FontCache::FallbackFontForCharacter(
     UChar32 lookup_char,
     const SimpleFontData* font_data_to_substitute,
     FontFallbackPriority fallback_priority) {
-  if (Character::IsUnassignedOrPrivateUse(lookup_char))
+  // In addition to PUA, do not perform fallback for non-characters either. Some
+  // of these are sentinel characters to detect encodings and do appear on
+  // websites. More details on
+  // http://www.unicode.org/faq/private_use.html#nonchar1 - See also
+  // crbug.com/862352 where performing fallback for U+FFFE causes a memory
+  // regression.
+  if (Character::IsPrivateUse(lookup_char) ||
+      Character::IsNonCharacter(lookup_char))
     return nullptr;
   return PlatformFallbackFontForCharacter(
       description, lookup_char, font_data_to_substitute, fallback_priority);

@@ -27,8 +27,9 @@ enum class PreviewsType {
   // The user is shown a server lite page.
   LITE_PAGE = 3,
 
-  // AMP version of the page is shown as a preview.
-  AMP_REDIRECTION = 4,
+  // AMP version of the page is shown as a preview. Deprecated, and should not
+  // be used.
+  DEPRECATED_AMP_REDIRECTION = 4,
 
   // Preview that disables JavaScript for the navigation.
   NOSCRIPT = 5,
@@ -37,9 +38,12 @@ enum class PreviewsType {
   // might be used for checks or logging that applies to any type.
   UNSPECIFIED = 6,
 
+  // Request that resource loading hints be used during pageload.
+  RESOURCE_LOADING_HINTS = 7,
+
   // Insert new enum values here. Keep values sequential to allow looping from
   // NONE+1 to LAST-1. Also add the enum to Previews.Types histogram suffix.
-  LAST = 7,
+  LAST = 8,
 };
 
 typedef std::vector<std::pair<PreviewsType, int>> PreviewsTypeList;
@@ -92,14 +96,14 @@ bool ArePreviewsAllowed();
 // Whether the preview type is enabled.
 bool IsOfflinePreviewsEnabled();
 bool IsClientLoFiEnabled();
-bool IsAMPRedirectionPreviewEnabled();
 bool IsNoScriptPreviewsEnabled();
+bool IsResourceLoadingHintsEnabled();
 
 // The blacklist version for each preview type.
 int OfflinePreviewsVersion();
 int ClientLoFiVersion();
-int AMPRedirectionPreviewsVersion();
 int NoScriptPreviewsVersion();
+int ResourceLoadingHintsVersion();
 
 // Whether server optimization hints are enabled.
 bool IsOptimizationHintsEnabled();

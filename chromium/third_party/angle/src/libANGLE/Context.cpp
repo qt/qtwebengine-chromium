@@ -14,6 +14,7 @@
 #include <sstream>
 #include <vector>
 
+#include "common/PackedEnums.h"
 #include "common/matrix_utils.h"
 #include "common/platform.h"
 #include "common/utilities.h"
@@ -254,6 +255,46 @@ void LimitCap(CapT *cap, MaxT maximum)
     *cap = std::min(*cap, static_cast<CapT>(maximum));
 }
 
+constexpr angle::PackedEnumMap<gl::PrimitiveMode, GLsizei> kMinimumPrimitiveCounts = {{
+    /* Points */ 1,
+    /* Lines */ 2,
+    /* LineLoop */ 2,
+    /* LineStrip */ 2,
+    /* Triangles */ 3,
+    /* TriangleStrip */ 3,
+    /* TriangleFan */ 3,
+    /* LinesAdjacency */ 2,
+    /* LineStripAdjacency */ 2,
+    /* TrianglesAdjacency */ 3,
+    /* TriangleStripAdjacency */ 3,
+}};
+// Indices above are code-gen'd so make sure they don't change
+//  if any of these static asserts are hit, must update kMinimumPrimitiveCounts abouve
+static_assert(static_cast<gl::PrimitiveMode>(0) == gl::PrimitiveMode::Points,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(1) == gl::PrimitiveMode::Lines,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(2) == gl::PrimitiveMode::LineLoop,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(3) == gl::PrimitiveMode::LineStrip,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(4) == gl::PrimitiveMode::Triangles,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(5) == gl::PrimitiveMode::TriangleStrip,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(6) == gl::PrimitiveMode::TriangleFan,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(7) == gl::PrimitiveMode::LinesAdjacency,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(8) == gl::PrimitiveMode::LineStripAdjacency,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(9) == gl::PrimitiveMode::TrianglesAdjacency,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(10) == gl::PrimitiveMode::TriangleStripAdjacency,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+static_assert(static_cast<gl::PrimitiveMode>(11) == gl::PrimitiveMode::EnumCount,
+              "gl::PrimitiveMode enum values have changed, update kMinimumPrimitiveCounts.");
+
 }  // anonymous namespace
 
 namespace gl
@@ -279,19 +320,27 @@ Context::Context(rx::EGLImplFactory *implFactory,
       mSkipValidation(GetNoError(attribs)),
       mDisplayTextureShareGroup(shareTextures != nullptr),
       mSavedArgsType(nullptr),
-      mImplementation(implFactory->createContext(mState)),
+      mImplementation(implFactory->createContext(mState, config, shareContext, attribs)),
+      mLabel(nullptr),
       mCompiler(),
+      mGLState(GetDebug(attribs),
+               GetBindGeneratesResource(attribs),
+               GetClientArraysEnabled(attribs),
+               GetRobustResourceInit(attribs),
+               memoryProgramCache != nullptr),
       mConfig(config),
       mClientType(EGL_OPENGL_ES_API),
+      mErrors(this),
       mHasBeenCurrent(false),
       mContextLost(false),
       mResetStatus(GL_NO_ERROR),
       mContextLostForced(false),
       mResetStrategy(GetResetStrategy(attribs)),
       mRobustAccess(GetRobustAccess(attribs)),
+      mSurfacelessSupported(displayExtensions.surfacelessContext),
+      mExplicitContextAvailable(clientExtensions.explicitContext),
       mCurrentSurface(static_cast<egl::Surface *>(EGL_NO_SURFACE)),
       mCurrentDisplay(static_cast<egl::Display *>(EGL_NO_DISPLAY)),
-      mSurfacelessFramebuffer(nullptr),
       mWebGLContext(GetWebGLContext(attribs)),
       mExtensionsEnabled(GetExtensionsEnabled(attribs, mWebGLContext)),
       mMemoryProgramCache(memoryProgramCache),
@@ -301,16 +350,16 @@ Context::Context(rx::EGLImplFactory *implFactory,
     // Needed to solve a Clang warning of unused variables.
     ANGLE_UNUSED_VARIABLE(mSavedArgsType);
     ANGLE_UNUSED_VARIABLE(mParamsBuffer);
+}
 
-    mImplementation->setMemoryProgramCache(memoryProgramCache);
+void Context::initialize()
+{
+    mImplementation->setMemoryProgramCache(mMemoryProgramCache);
 
-    bool robustResourceInit = GetRobustResourceInit(attribs);
-    initCaps(displayExtensions, clientExtensions, robustResourceInit);
+    initCaps();
     initWorkarounds();
 
-    mGLState.initialize(this, GetDebug(attribs), GetBindGeneratesResource(attribs),
-                        GetClientArraysEnabled(attribs), robustResourceInit,
-                        mMemoryProgramCache != nullptr);
+    mGLState.initialize(this);
 
     mFenceNVHandleAllocator.setBaseHandle(0);
 
@@ -404,6 +453,7 @@ Context::Context(rx::EGLImplFactory *implFactory,
     // Readpixels uses the pack state and read FBO
     mReadPixelsDirtyBits.set(State::DIRTY_BIT_PACK_STATE);
     mReadPixelsDirtyBits.set(State::DIRTY_BIT_PACK_BUFFER_BINDING);
+    mReadPixelsDirtyBits.set(State::DIRTY_BIT_READ_FRAMEBUFFER_BINDING);
     mReadPixelsDirtyObjects.set(State::DIRTY_OBJECT_READ_FRAMEBUFFER);
 
     mClearDirtyBits.set(State::DIRTY_BIT_RASTERIZER_DISCARD_ENABLED);
@@ -417,11 +467,14 @@ Context::Context(rx::EGLImplFactory *implFactory,
     mClearDirtyBits.set(State::DIRTY_BIT_DEPTH_MASK);
     mClearDirtyBits.set(State::DIRTY_BIT_STENCIL_WRITEMASK_FRONT);
     mClearDirtyBits.set(State::DIRTY_BIT_STENCIL_WRITEMASK_BACK);
+    mClearDirtyBits.set(State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
     mClearDirtyObjects.set(State::DIRTY_OBJECT_DRAW_FRAMEBUFFER);
 
     mBlitDirtyBits.set(State::DIRTY_BIT_SCISSOR_TEST_ENABLED);
     mBlitDirtyBits.set(State::DIRTY_BIT_SCISSOR);
     mBlitDirtyBits.set(State::DIRTY_BIT_FRAMEBUFFER_SRGB);
+    mBlitDirtyBits.set(State::DIRTY_BIT_READ_FRAMEBUFFER_BINDING);
+    mBlitDirtyBits.set(State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
     mBlitDirtyObjects.set(State::DIRTY_OBJECT_READ_FRAMEBUFFER);
     mBlitDirtyObjects.set(State::DIRTY_OBJECT_DRAW_FRAMEBUFFER);
 
@@ -434,6 +487,8 @@ Context::Context(rx::EGLImplFactory *implFactory,
     mComputeDirtyBits.set(State::DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING);
     mComputeDirtyObjects.set(State::DIRTY_OBJECT_PROGRAM_TEXTURES);
 
+    mImplementation->setErrorSet(&mErrors);
+
     handleError(mImplementation->initialize());
 }
 
@@ -445,12 +500,6 @@ egl::Error Context::onDestroy(const egl::Display *display)
     }
 
     // Delete the Surface first to trigger a finish() in Vulkan.
-    if (mSurfacelessFramebuffer)
-    {
-        mSurfacelessFramebuffer->onDestroy(this);
-        SafeDelete(mSurfacelessFramebuffer);
-    }
-
     ANGLE_TRY(releaseSurface(display));
 
     for (auto fence : mFenceNVMap)
@@ -518,12 +567,23 @@ Context::~Context()
 {
 }
 
+void Context::setLabel(EGLLabelKHR label)
+{
+    mLabel = label;
+}
+
+EGLLabelKHR Context::getLabel() const
+{
+    return mLabel;
+}
+
 egl::Error Context::makeCurrent(egl::Display *display, egl::Surface *surface)
 {
     mCurrentDisplay = display;
 
     if (!mHasBeenCurrent)
     {
+        initialize();
         initRendererString();
         initVersionStrings();
         initExtensionStrings();
@@ -553,16 +613,11 @@ egl::Error Context::makeCurrent(egl::Display *display, egl::Surface *surface)
     {
         ANGLE_TRY(surface->setIsCurrent(this, true));
         mCurrentSurface = surface;
-        newDefault      = surface->getDefaultFramebuffer();
+        newDefault      = surface->createDefaultFramebuffer(this);
     }
     else
     {
-        if (mSurfacelessFramebuffer == nullptr)
-        {
-            mSurfacelessFramebuffer = new Framebuffer(mImplementation.get());
-        }
-
-        newDefault = mSurfacelessFramebuffer;
+        newDefault = new Framebuffer(mImplementation.get());
     }
 
     // Update default framebuffer, the binding of the previous default
@@ -580,31 +635,31 @@ egl::Error Context::makeCurrent(egl::Display *display, egl::Surface *surface)
     }
 
     // Notify the renderer of a context switch
-    mImplementation->onMakeCurrent(this);
+    ANGLE_TRY(mImplementation->onMakeCurrent(this));
     return egl::NoError();
 }
 
 egl::Error Context::releaseSurface(const egl::Display *display)
 {
-    // Remove the default framebuffer
-    Framebuffer *currentDefault = nullptr;
-    if (mCurrentSurface != nullptr)
-    {
-        currentDefault = mCurrentSurface->getDefaultFramebuffer();
-    }
-    else if (mSurfacelessFramebuffer != nullptr)
-    {
-        currentDefault = mSurfacelessFramebuffer;
-    }
+    gl::Framebuffer *defaultFramebuffer = mState.mFramebuffers->getFramebuffer(0);
 
-    if (mGLState.getReadFramebuffer() == currentDefault)
+    // Remove the default framebuffer
+    if (mGLState.getReadFramebuffer() == defaultFramebuffer)
     {
         mGLState.setReadFramebufferBinding(nullptr);
     }
-    if (mGLState.getDrawFramebuffer() == currentDefault)
+
+    if (mGLState.getDrawFramebuffer() == defaultFramebuffer)
     {
         mGLState.setDrawFramebufferBinding(nullptr);
     }
+
+    if (defaultFramebuffer)
+    {
+        defaultFramebuffer->onDestroy(this);
+        delete defaultFramebuffer;
+    }
+
     mState.mFramebuffers->setDefaultFramebuffer(nullptr);
 
     if (mCurrentSurface)
@@ -908,7 +963,7 @@ ProgramPipeline *Context::getProgramPipeline(GLuint handle) const
     return mState.mPipelines->getProgramPipeline(handle);
 }
 
-LabeledObject *Context::getLabeledObject(GLenum identifier, GLuint name) const
+gl::LabeledObject *Context::getLabeledObject(GLenum identifier, GLuint name) const
 {
     switch (identifier)
     {
@@ -938,14 +993,14 @@ LabeledObject *Context::getLabeledObject(GLenum identifier, GLuint name) const
     }
 }
 
-LabeledObject *Context::getLabeledObjectFromPtr(const void *ptr) const
+gl::LabeledObject *Context::getLabeledObjectFromPtr(const void *ptr) const
 {
     return getSync(reinterpret_cast<GLsync>(const_cast<void *>(ptr)));
 }
 
 void Context::objectLabel(GLenum identifier, GLuint name, GLsizei length, const GLchar *label)
 {
-    LabeledObject *object = getLabeledObject(identifier, name);
+    gl::LabeledObject *object = getLabeledObject(identifier, name);
     ASSERT(object != nullptr);
 
     std::string labelName = GetObjectLabelFromPointer(length, label);
@@ -958,7 +1013,7 @@ void Context::objectLabel(GLenum identifier, GLuint name, GLsizei length, const 
 
 void Context::objectPtrLabel(const void *ptr, GLsizei length, const GLchar *label)
 {
-    LabeledObject *object = getLabeledObjectFromPtr(ptr);
+    gl::LabeledObject *object = getLabeledObjectFromPtr(ptr);
     ASSERT(object != nullptr);
 
     std::string labelName = GetObjectLabelFromPointer(length, label);
@@ -971,7 +1026,7 @@ void Context::getObjectLabel(GLenum identifier,
                              GLsizei *length,
                              GLchar *label) const
 {
-    LabeledObject *object = getLabeledObject(identifier, name);
+    gl::LabeledObject *object = getLabeledObject(identifier, name);
     ASSERT(object != nullptr);
 
     const std::string &objectLabel = object->getLabel();
@@ -983,7 +1038,7 @@ void Context::getObjectPtrLabel(const void *ptr,
                                 GLsizei *length,
                                 GLchar *label) const
 {
-    LabeledObject *object = getLabeledObjectFromPtr(ptr);
+    gl::LabeledObject *object = getLabeledObjectFromPtr(ptr);
     ASSERT(object != nullptr);
 
     const std::string &objectLabel = object->getLabel();
@@ -1295,6 +1350,10 @@ void Context::getFloatvImpl(GLenum pname, GLfloat *params)
             params[0] = mCaps.minAliasedPointSize;
             params[1] = mCaps.maxAliasedPointSize;
             break;
+        case GL_SMOOTH_POINT_SIZE_RANGE:
+            params[0] = mCaps.minSmoothPointSize;
+            params[1] = mCaps.maxSmoothPointSize;
+            break;
         case GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT:
             ASSERT(mExtensions.textureFilterAnisotropic);
             *params = mExtensions.maxTextureAnisotropy;
@@ -1341,7 +1400,7 @@ void Context::getIntegervImpl(GLenum pname, GLint *params)
             *params = mCaps.maxVertexUniformVectors;
             break;
         case GL_MAX_VERTEX_UNIFORM_COMPONENTS:
-            *params = mCaps.maxVertexUniformComponents;
+            *params = mCaps.maxShaderUniformComponents[ShaderType::Vertex];
             break;
         case GL_MAX_VARYING_VECTORS:
             *params = mCaps.maxVaryingVectors;
@@ -1362,7 +1421,7 @@ void Context::getIntegervImpl(GLenum pname, GLint *params)
             *params = mCaps.maxFragmentUniformVectors;
             break;
         case GL_MAX_FRAGMENT_UNIFORM_COMPONENTS:
-            *params = mCaps.maxFragmentUniformComponents;
+            *params = mCaps.maxShaderUniformComponents[ShaderType::Fragment];
             break;
         case GL_MAX_RENDERBUFFER_SIZE:
             *params = mCaps.maxRenderbufferSize;
@@ -1530,25 +1589,25 @@ void Context::getIntegervImpl(GLenum pname, GLint *params)
             *params = mCaps.maxVertexAttribStride;
             break;
         case GL_MAX_VERTEX_ATOMIC_COUNTER_BUFFERS:
-            *params = mCaps.maxVertexAtomicCounterBuffers;
+            *params = mCaps.maxShaderAtomicCounterBuffers[ShaderType::Vertex];
             break;
         case GL_MAX_VERTEX_ATOMIC_COUNTERS:
-            *params = mCaps.maxVertexAtomicCounters;
+            *params = mCaps.maxShaderAtomicCounters[ShaderType::Vertex];
             break;
         case GL_MAX_VERTEX_IMAGE_UNIFORMS:
-            *params = mCaps.maxVertexImageUniforms;
+            *params = mCaps.maxShaderImageUniforms[ShaderType::Vertex];
             break;
         case GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS:
             *params = mCaps.maxShaderStorageBlocks[ShaderType::Vertex];
             break;
         case GL_MAX_FRAGMENT_ATOMIC_COUNTER_BUFFERS:
-            *params = mCaps.maxFragmentAtomicCounterBuffers;
+            *params = mCaps.maxShaderAtomicCounterBuffers[ShaderType::Fragment];
             break;
         case GL_MAX_FRAGMENT_ATOMIC_COUNTERS:
-            *params = mCaps.maxFragmentAtomicCounters;
+            *params = mCaps.maxShaderAtomicCounters[ShaderType::Fragment];
             break;
         case GL_MAX_FRAGMENT_IMAGE_UNIFORMS:
-            *params = mCaps.maxFragmentImageUniforms;
+            *params = mCaps.maxShaderImageUniforms[ShaderType::Fragment];
             break;
         case GL_MAX_FRAGMENT_SHADER_STORAGE_BLOCKS:
             *params = mCaps.maxShaderStorageBlocks[ShaderType::Fragment];
@@ -1572,19 +1631,20 @@ void Context::getIntegervImpl(GLenum pname, GLint *params)
             *params = mCaps.maxComputeSharedMemorySize;
             break;
         case GL_MAX_COMPUTE_UNIFORM_COMPONENTS:
-            *params = mCaps.maxComputeUniformComponents;
+            *params = mCaps.maxShaderUniformComponents[ShaderType::Compute];
             break;
         case GL_MAX_COMPUTE_ATOMIC_COUNTER_BUFFERS:
-            *params = mCaps.maxComputeAtomicCounterBuffers;
+            *params = mCaps.maxShaderAtomicCounterBuffers[ShaderType::Compute];
             break;
         case GL_MAX_COMPUTE_ATOMIC_COUNTERS:
-            *params = mCaps.maxComputeAtomicCounters;
+            *params = mCaps.maxShaderAtomicCounters[ShaderType::Compute];
             break;
         case GL_MAX_COMPUTE_IMAGE_UNIFORMS:
-            *params = mCaps.maxComputeImageUniforms;
+            *params = mCaps.maxShaderImageUniforms[ShaderType::Compute];
             break;
         case GL_MAX_COMBINED_COMPUTE_UNIFORM_COMPONENTS:
-            *params = mCaps.maxCombinedComputeUniformComponents;
+            *params =
+                static_cast<GLint>(mCaps.maxCombinedShaderUniformComponents[ShaderType::Compute]);
             break;
         case GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS:
             *params = mCaps.maxShaderStorageBlocks[ShaderType::Compute];
@@ -1631,13 +1691,14 @@ void Context::getIntegervImpl(GLenum pname, GLint *params)
             *params = mCaps.layerProvokingVertex;
             break;
         case GL_MAX_GEOMETRY_UNIFORM_COMPONENTS_EXT:
-            *params = mCaps.maxGeometryUniformComponents;
+            *params = mCaps.maxShaderUniformComponents[ShaderType::Geometry];
             break;
         case GL_MAX_GEOMETRY_UNIFORM_BLOCKS_EXT:
             *params = mCaps.maxShaderUniformBlocks[ShaderType::Geometry];
             break;
         case GL_MAX_COMBINED_GEOMETRY_UNIFORM_COMPONENTS_EXT:
-            *params = mCaps.maxCombinedGeometryUniformComponents;
+            *params =
+                static_cast<GLint>(mCaps.maxCombinedShaderUniformComponents[ShaderType::Geometry]);
             break;
         case GL_MAX_GEOMETRY_INPUT_COMPONENTS_EXT:
             *params = mCaps.maxGeometryInputComponents;
@@ -1658,13 +1719,13 @@ void Context::getIntegervImpl(GLenum pname, GLint *params)
             *params = mCaps.maxShaderTextureImageUnits[ShaderType::Geometry];
             break;
         case GL_MAX_GEOMETRY_ATOMIC_COUNTER_BUFFERS_EXT:
-            *params = mCaps.maxGeometryAtomicCounterBuffers;
+            *params = mCaps.maxShaderAtomicCounterBuffers[ShaderType::Geometry];
             break;
         case GL_MAX_GEOMETRY_ATOMIC_COUNTERS_EXT:
-            *params = mCaps.maxGeometryAtomicCounters;
+            *params = mCaps.maxShaderAtomicCounters[ShaderType::Geometry];
             break;
         case GL_MAX_GEOMETRY_IMAGE_UNIFORMS_EXT:
-            *params = mCaps.maxGeometryImageUniforms;
+            *params = mCaps.maxShaderImageUniforms[ShaderType::Geometry];
             break;
         case GL_MAX_GEOMETRY_SHADER_STORAGE_BLOCKS_EXT:
             *params = mCaps.maxShaderStorageBlocks[ShaderType::Geometry];
@@ -1681,6 +1742,12 @@ void Context::getIntegervImpl(GLenum pname, GLint *params)
             break;
         case GL_MAX_TEXTURE_STACK_DEPTH:
             *params = mCaps.maxTextureMatrixStackDepth;
+            break;
+        case GL_MAX_LIGHTS:
+            *params = mCaps.maxLights;
+            break;
+        case GL_MAX_CLIP_PLANES:
+            *params = mCaps.maxClipPlanes;
             break;
         // GLES1 emulation: Vertex attribute queries
         case GL_VERTEX_ARRAY_BUFFER_BINDING:
@@ -1714,6 +1781,11 @@ void Context::getIntegervImpl(GLenum pname, GLint *params)
                               GL_VERTEX_ATTRIB_ARRAY_TYPE, params);
             break;
 
+        // GL_KHR_parallel_shader_compile
+        case GL_MAX_SHADER_COMPILER_THREADS_KHR:
+            *params = mGLState.getMaxShaderCompilerThreads();
+            break;
+
         default:
             handleError(mGLState.getIntegerv(this, pname, params));
             break;
@@ -1733,10 +1805,10 @@ void Context::getInteger64vImpl(GLenum pname, GLint64 *params)
             *params = mCaps.maxUniformBlockSize;
             break;
         case GL_MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS:
-            *params = mCaps.maxCombinedVertexUniformComponents;
+            *params = mCaps.maxCombinedShaderUniformComponents[ShaderType::Vertex];
             break;
         case GL_MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS:
-            *params = mCaps.maxCombinedFragmentUniformComponents;
+            *params = mCaps.maxCombinedShaderUniformComponents[ShaderType::Fragment];
             break;
         case GL_MAX_SERVER_WAIT_TIMEOUT:
             *params = mCaps.maxServerWaitTimeout;
@@ -2060,90 +2132,93 @@ void Context::texParameterIuivRobust(TextureType target,
     UNIMPLEMENTED();
 }
 
-void Context::drawArrays(GLenum mode, GLint first, GLsizei count)
+void Context::drawArrays(PrimitiveMode mode, GLint first, GLsizei count)
 {
-    // No-op if zero count
-    if (count == 0)
+    // No-op if count draws no primitives for given mode
+    if (noopDraw(mode, count))
     {
         return;
     }
 
-    ANGLE_CONTEXT_TRY(prepareForDraw());
+    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
     ANGLE_CONTEXT_TRY(mImplementation->drawArrays(this, mode, first, count));
     MarkTransformFeedbackBufferUsage(this, mGLState.getCurrentTransformFeedback(), count, 1);
 }
 
-void Context::drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount)
+void Context::drawArraysInstanced(PrimitiveMode mode,
+                                  GLint first,
+                                  GLsizei count,
+                                  GLsizei instanceCount)
 {
-    // No-op if zero count
-    if (count == 0 || instanceCount == 0)
+    // No-op if count draws no primitives for given mode
+    if (noopDrawInstanced(mode, count, instanceCount))
     {
         return;
     }
 
-    ANGLE_CONTEXT_TRY(prepareForDraw());
+    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
     ANGLE_CONTEXT_TRY(
         mImplementation->drawArraysInstanced(this, mode, first, count, instanceCount));
     MarkTransformFeedbackBufferUsage(this, mGLState.getCurrentTransformFeedback(), count,
                                      instanceCount);
 }
 
-void Context::drawElements(GLenum mode, GLsizei count, GLenum type, const void *indices)
+void Context::drawElements(PrimitiveMode mode, GLsizei count, GLenum type, const void *indices)
 {
-    // No-op if zero count
-    if (count == 0)
+    // No-op if count draws no primitives for given mode
+    if (noopDraw(mode, count))
     {
         return;
     }
 
-    ANGLE_CONTEXT_TRY(prepareForDraw());
+    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
     ANGLE_CONTEXT_TRY(mImplementation->drawElements(this, mode, count, type, indices));
 }
 
-void Context::drawElementsInstanced(GLenum mode,
+void Context::drawElementsInstanced(PrimitiveMode mode,
                                     GLsizei count,
                                     GLenum type,
                                     const void *indices,
                                     GLsizei instances)
 {
-    // No-op if zero count
-    if (count == 0 || instances == 0)
+    // No-op if count draws no primitives for given mode
+    if (noopDrawInstanced(mode, count, instances))
     {
         return;
     }
 
-    ANGLE_CONTEXT_TRY(prepareForDraw());
+    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
     ANGLE_CONTEXT_TRY(
         mImplementation->drawElementsInstanced(this, mode, count, type, indices, instances));
 }
 
-void Context::drawRangeElements(GLenum mode,
+void Context::drawRangeElements(PrimitiveMode mode,
                                 GLuint start,
                                 GLuint end,
                                 GLsizei count,
                                 GLenum type,
                                 const void *indices)
 {
-    // No-op if zero count
-    if (count == 0)
+    // No-op if count draws no primitives for given mode
+    if (noopDraw(mode, count))
     {
         return;
     }
 
-    ANGLE_CONTEXT_TRY(prepareForDraw());
+    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
     ANGLE_CONTEXT_TRY(
         mImplementation->drawRangeElements(this, mode, start, end, count, type, indices));
 }
 
-void Context::drawArraysIndirect(GLenum mode, const void *indirect)
+void Context::drawArraysIndirect(PrimitiveMode mode, const void *indirect)
 {
-    ANGLE_CONTEXT_TRY(prepareForDraw());
+    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
     ANGLE_CONTEXT_TRY(mImplementation->drawArraysIndirect(this, mode, indirect));
 }
 
-void Context::drawElementsIndirect(GLenum mode, GLenum type, const void *indirect)
+void Context::drawElementsIndirect(PrimitiveMode mode, GLenum type, const void *indirect)
 {
-    ANGLE_CONTEXT_TRY(prepareForDraw());
+    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
     ANGLE_CONTEXT_TRY(mImplementation->drawElementsIndirect(this, mode, type, indirect));
 }
 
@@ -2469,21 +2544,9 @@ void Context::getProgramInterfaceivRobust(GLuint program,
     UNIMPLEMENTED();
 }
 
-void Context::handleError(const Error &error) const
+void Context::handleError(const Error &error)
 {
-    if (ANGLE_UNLIKELY(error.isError()))
-    {
-        GLenum code = error.getCode();
-        mErrors.insert(code);
-        if (code == GL_OUT_OF_MEMORY && getWorkarounds().loseContextOnOutOfMemory)
-        {
-            markContextLost();
-        }
-
-        ASSERT(!error.getMessage().empty());
-        mGLState.getDebug().insertMessage(GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_ERROR, error.getID(),
-                                          GL_DEBUG_SEVERITY_HIGH, error.getMessage());
-    }
+    mErrors.handleError(error);
 }
 
 // Get one of the recorded errors and clear its flag, if any.
@@ -2496,14 +2559,12 @@ GLenum Context::getError()
     }
     else
     {
-        GLenum error = *mErrors.begin();
-        mErrors.erase(mErrors.begin());
-        return error;
+        return mErrors.popError();
     }
 }
 
 // NOTE: this function should not assume that this context is current!
-void Context::markContextLost() const
+void Context::markContextLost()
 {
     if (mResetStrategy == GL_LOSE_CONTEXT_ON_RESET_EXT)
     {
@@ -2999,7 +3060,7 @@ size_t Context::getRequestableExtensionStringCount() const
     return mRequestableExtensionStrings.size();
 }
 
-void Context::beginTransformFeedback(GLenum primitiveMode)
+void Context::beginTransformFeedback(PrimitiveMode primitiveMode)
 {
     TransformFeedback *transformFeedback = mGLState.getCurrentTransformFeedback();
     ASSERT(transformFeedback != nullptr);
@@ -3020,17 +3081,20 @@ bool Context::hasActiveTransformFeedback(GLuint program) const
     return false;
 }
 
-Extensions Context::generateSupportedExtensions(const egl::DisplayExtensions &displayExtensions,
-                                                const egl::ClientExtensions &clientExtensions,
-                                                bool robustResourceInit) const
+Extensions Context::generateSupportedExtensions() const
 {
     Extensions supportedExtensions = mImplementation->getNativeExtensions();
+
+    // Explicitly enable GL_KHR_parallel_shader_compile
+    supportedExtensions.parallelShaderCompile = true;
 
     if (getClientVersion() < ES_2_0)
     {
         // Default extensions for GLES1
         supportedExtensions.pointSizeArray = true;
         supportedExtensions.textureCubeMap = true;
+        supportedExtensions.pointSprite    = true;
+        supportedExtensions.parallelShaderCompile = false;
     }
 
     if (getClientVersion() < ES_3_0)
@@ -3066,7 +3130,7 @@ Extensions Context::generateSupportedExtensions(const egl::DisplayExtensions &di
     supportedExtensions.noError = mSkipValidation;
 
     // Enable surfaceless to advertise we'll have the correct behavior when there is no default FBO
-    supportedExtensions.surfacelessContext = displayExtensions.surfacelessContext;
+    supportedExtensions.surfacelessContext = mSurfacelessSupported;
 
     // Explicitly enable GL_KHR_debug
     supportedExtensions.debug                   = true;
@@ -3079,7 +3143,7 @@ Extensions Context::generateSupportedExtensions(const egl::DisplayExtensions &di
     supportedExtensions.robustClientMemory = true;
 
     // Determine robust resource init availability from EGL.
-    supportedExtensions.robustResourceInitialization = robustResourceInit;
+    supportedExtensions.robustResourceInitialization = mGLState.isRobustResourceInitEnabled();
 
     // mExtensions.robustBufferAccessBehavior is true only if robust access is true and the backend
     // supports it.
@@ -3090,7 +3154,7 @@ Extensions Context::generateSupportedExtensions(const egl::DisplayExtensions &di
     supportedExtensions.programCacheControl = true;
 
     // Enable EGL_ANGLE_explicit_context subextensions
-    if (clientExtensions.explicitContext)
+    if (mExplicitContextAvailable)
     {
         // GL_ANGLE_explicit_context_gles1
         supportedExtensions.explicitContextGles1 = true;
@@ -3101,14 +3165,11 @@ Extensions Context::generateSupportedExtensions(const egl::DisplayExtensions &di
     return supportedExtensions;
 }
 
-void Context::initCaps(const egl::DisplayExtensions &displayExtensions,
-                       const egl::ClientExtensions &clientExtensions,
-                       bool robustResourceInit)
+void Context::initCaps()
 {
     mCaps = mImplementation->getNativeCaps();
 
-    mSupportedExtensions =
-        generateSupportedExtensions(displayExtensions, clientExtensions, robustResourceInit);
+    mSupportedExtensions = generateSupportedExtensions();
     mExtensions          = mSupportedExtensions;
 
     mLimitations = mImplementation->getNativeLimitations();
@@ -3122,10 +3183,14 @@ void Context::initCaps(const egl::DisplayExtensions &displayExtensions,
         mCaps.maxModelviewMatrixStackDepth  = Caps::GlobalMatrixStackDepth;
         mCaps.maxProjectionMatrixStackDepth = Caps::GlobalMatrixStackDepth;
         mCaps.maxTextureMatrixStackDepth    = Caps::GlobalMatrixStackDepth;
+        mCaps.minSmoothPointSize            = 1.0f;
+        mCaps.maxSmoothPointSize            = 1.0f;
     }
 
-    // Apply implementation limits
+    // Apply/Verify implementation limits
     LimitCap(&mCaps.maxVertexAttributes, MAX_VERTEX_ATTRIBS);
+
+    ASSERT(mCaps.minAliasedPointSize >= 1.0f);
 
     if (getClientVersion() < ES_3_1)
     {
@@ -3181,14 +3246,17 @@ void Context::updateCaps()
         // ES3.
         formatCaps.texturable =
             formatCaps.texturable && formatInfo.textureSupport(getClientVersion(), mExtensions);
-        formatCaps.renderable =
-            formatCaps.renderable && formatInfo.renderSupport(getClientVersion(), mExtensions);
         formatCaps.filterable =
             formatCaps.filterable && formatInfo.filterSupport(getClientVersion(), mExtensions);
+        formatCaps.textureAttachment =
+            formatCaps.textureAttachment &&
+            formatInfo.textureAttachmentSupport(getClientVersion(), mExtensions);
+        formatCaps.renderbuffer = formatCaps.renderbuffer &&
+                                  formatInfo.renderbufferSupport(getClientVersion(), mExtensions);
 
         // OpenGL ES does not support multisampling with non-rendererable formats
         // OpenGL ES 3.0 or prior does not support multisampling with integer formats
-        if (!formatCaps.renderable ||
+        if (!formatCaps.renderbuffer ||
             (getClientVersion() < ES_3_1 &&
              (formatInfo.componentType == GL_INT || formatInfo.componentType == GL_UNSIGNED_INT)))
         {
@@ -3293,11 +3361,24 @@ void Context::initWorkarounds()
     mWorkarounds.loseContextOnOutOfMemory = (mResetStrategy == GL_LOSE_CONTEXT_ON_RESET_EXT);
 }
 
-Error Context::prepareForDraw()
+// Return true if the draw is a no-op, else return false.
+//  A no-op draw occurs if the count of vertices is less than the minimum required to
+//  have a valid primitive for this mode (0 for points, 0-1 for lines, 0-2 for tris).
+bool Context::noopDraw(PrimitiveMode mode, GLsizei count)
+{
+    return count < kMinimumPrimitiveCounts[mode];
+}
+
+bool Context::noopDrawInstanced(PrimitiveMode mode, GLsizei count, GLsizei instanceCount)
+{
+    return (instanceCount == 0) || noopDraw(mode, count);
+}
+
+Error Context::prepareForDraw(PrimitiveMode mode)
 {
     if (mGLES1Renderer)
     {
-        ANGLE_TRY(mGLES1Renderer->prepareForDraw(this, &mGLState));
+        ANGLE_TRY(mGLES1Renderer->prepareForDraw(mode, this, &mGLState));
     }
 
     ANGLE_TRY(syncDirtyObjects());
@@ -3346,7 +3427,7 @@ Error Context::syncState(const State::DirtyBits &bitMask, const State::DirtyObje
 Error Context::syncDirtyBits()
 {
     const State::DirtyBits &dirtyBits = mGLState.getDirtyBits();
-    mImplementation->syncState(this, dirtyBits);
+    ANGLE_TRY(mImplementation->syncState(this, dirtyBits));
     mGLState.clearDirtyBits();
     return NoError();
 }
@@ -3354,7 +3435,7 @@ Error Context::syncDirtyBits()
 Error Context::syncDirtyBits(const State::DirtyBits &bitMask)
 {
     const State::DirtyBits &dirtyBits = (mGLState.getDirtyBits() & bitMask);
-    mImplementation->syncState(this, dirtyBits);
+    ANGLE_TRY(mImplementation->syncState(this, dirtyBits));
     mGLState.clearDirtyBits(dirtyBits);
     return NoError();
 }
@@ -3685,6 +3766,27 @@ void Context::framebufferTextureMultiviewSideBySide(GLenum target,
     mGLState.setObjectDirty(target);
 }
 
+void Context::framebufferTexture(GLenum target, GLenum attachment, GLuint texture, GLint level)
+{
+    Framebuffer *framebuffer = mGLState.getTargetFramebuffer(target);
+    ASSERT(framebuffer);
+
+    if (texture != 0)
+    {
+        Texture *textureObj = getTexture(texture);
+
+        ImageIndex index = ImageIndex::MakeFromType(
+            textureObj->getType(), level, ImageIndex::kEntireLevel, ImageIndex::kEntireLevel);
+        framebuffer->setAttachment(this, GL_TEXTURE, attachment, index, textureObj);
+    }
+    else
+    {
+        framebuffer->resetAttachment(this, attachment);
+    }
+
+    mGLState.setObjectDirty(target);
+}
+
 void Context::drawBuffers(GLsizei n, const GLenum *bufs)
 {
     Framebuffer *framebuffer = mGLState.getDrawFramebuffer();
@@ -3769,7 +3871,7 @@ void Context::texImage2D(TextureTarget target,
     Extents size(width, height, 1);
     Texture *texture = getTargetTexture(TextureTargetToType(target));
     handleError(texture->setImage(this, mGLState.getUnpackState(), target, level, internalformat,
-                                  size, format, type, reinterpret_cast<const uint8_t *>(pixels)));
+                                  size, format, type, static_cast<const uint8_t *>(pixels)));
 }
 
 void Context::texImage2DRobust(TextureTarget target,
@@ -3803,7 +3905,7 @@ void Context::texImage3D(TextureType target,
     Texture *texture = getTargetTexture(target);
     handleError(texture->setImage(this, mGLState.getUnpackState(),
                                   NonCubeTextureTypeToTarget(target), level, internalformat, size,
-                                  format, type, reinterpret_cast<const uint8_t *>(pixels)));
+                                  format, type, static_cast<const uint8_t *>(pixels)));
 }
 
 void Context::texImage3DRobust(TextureType target,
@@ -3842,7 +3944,7 @@ void Context::texSubImage2D(TextureTarget target,
     Box area(xoffset, yoffset, 0, width, height, 1);
     Texture *texture = getTargetTexture(TextureTargetToType(target));
     handleError(texture->setSubImage(this, mGLState.getUnpackState(), target, level, area, format,
-                                     type, reinterpret_cast<const uint8_t *>(pixels)));
+                                     type, static_cast<const uint8_t *>(pixels)));
 }
 
 void Context::texSubImage2DRobust(TextureTarget target,
@@ -3883,7 +3985,7 @@ void Context::texSubImage3D(TextureType target,
     Texture *texture = getTargetTexture(target);
     handleError(texture->setSubImage(this, mGLState.getUnpackState(),
                                      NonCubeTextureTypeToTarget(target), level, area, format, type,
-                                     reinterpret_cast<const uint8_t *>(pixels)));
+                                     static_cast<const uint8_t *>(pixels)));
 }
 
 void Context::texSubImage3DRobust(TextureType target,
@@ -3918,7 +4020,7 @@ void Context::compressedTexImage2D(TextureTarget target,
     Texture *texture = getTargetTexture(TextureTargetToType(target));
     handleError(texture->setCompressedImage(this, mGLState.getUnpackState(), target, level,
                                             internalformat, size, imageSize,
-                                            reinterpret_cast<const uint8_t *>(data)));
+                                            static_cast<const uint8_t *>(data)));
 }
 
 void Context::compressedTexImage2DRobust(TextureTarget target,
@@ -3950,7 +4052,7 @@ void Context::compressedTexImage3D(TextureType target,
     Texture *texture = getTargetTexture(target);
     handleError(texture->setCompressedImage(
         this, mGLState.getUnpackState(), NonCubeTextureTypeToTarget(target), level, internalformat,
-        size, imageSize, reinterpret_cast<const uint8_t *>(data)));
+        size, imageSize, static_cast<const uint8_t *>(data)));
 }
 
 void Context::compressedTexImage3DRobust(TextureType target,
@@ -3984,7 +4086,7 @@ void Context::compressedTexSubImage2D(TextureTarget target,
     Texture *texture = getTargetTexture(TextureTargetToType(target));
     handleError(texture->setCompressedSubImage(this, mGLState.getUnpackState(), target, level, area,
                                                format, imageSize,
-                                               reinterpret_cast<const uint8_t *>(data)));
+                                               static_cast<const uint8_t *>(data)));
 }
 
 void Context::compressedTexSubImage2DRobust(TextureTarget target,
@@ -4026,7 +4128,7 @@ void Context::compressedTexSubImage3D(TextureType target,
     Texture *texture = getTargetTexture(target);
     handleError(texture->setCompressedSubImage(
         this, mGLState.getUnpackState(), NonCubeTextureTypeToTarget(target), level, area, format,
-        imageSize, reinterpret_cast<const uint8_t *>(data)));
+        imageSize, static_cast<const uint8_t *>(data)));
 }
 
 void Context::compressedTexSubImage3DRobust(TextureType target,
@@ -4908,24 +5010,16 @@ void Context::framebufferParameteri(GLenum target, GLenum pname, GLint param)
     SetFramebufferParameteri(framebuffer, pname, param);
 }
 
-Error Context::getScratchBuffer(size_t requstedSizeBytes,
-                                angle::MemoryBuffer **scratchBufferOut) const
+bool Context::getScratchBuffer(size_t requstedSizeBytes,
+                               angle::MemoryBuffer **scratchBufferOut) const
 {
-    if (!mScratchBuffer.get(requstedSizeBytes, scratchBufferOut))
-    {
-        return OutOfMemory() << "Failed to allocate internal buffer.";
-    }
-    return NoError();
+    return mScratchBuffer.get(requstedSizeBytes, scratchBufferOut);
 }
 
-Error Context::getZeroFilledBuffer(size_t requstedSizeBytes,
-                                   angle::MemoryBuffer **zeroBufferOut) const
+bool Context::getZeroFilledBuffer(size_t requstedSizeBytes,
+                                  angle::MemoryBuffer **zeroBufferOut) const
 {
-    if (!mZeroFilledBuffer.getInitialized(requstedSizeBytes, zeroBufferOut, 0))
-    {
-        return OutOfMemory() << "Failed to allocate internal buffer.";
-    }
-    return NoError();
+    return mZeroFilledBuffer.getInitialized(requstedSizeBytes, zeroBufferOut, 0);
 }
 
 Error Context::prepareForDispatch()
@@ -6602,14 +6696,14 @@ GLboolean Context::testFenceNV(GLuint fence)
 void Context::eGLImageTargetTexture2D(TextureType target, GLeglImageOES image)
 {
     Texture *texture        = getTargetTexture(target);
-    egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+    egl::Image *imageObject = static_cast<egl::Image *>(image);
     handleError(texture->setEGLImageTarget(this, target, imageObject));
 }
 
 void Context::eGLImageTargetRenderbufferStorage(GLenum target, GLeglImageOES image)
 {
     Renderbuffer *renderbuffer = mGLState.getCurrentRenderbuffer();
-    egl::Image *imageObject    = reinterpret_cast<egl::Image *>(image);
+    egl::Image *imageObject    = static_cast<egl::Image *>(image);
     handleError(renderbuffer->setStorageEGLImageTarget(this, imageObject));
 }
 
@@ -6938,6 +7032,13 @@ bool Context::getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *nu
         return true;
     }
 
+    if (getExtensions().parallelShaderCompile && pname == GL_MAX_SHADER_COMPILER_THREADS_KHR)
+    {
+        *type      = GL_INT;
+        *numParams = 1;
+        return true;
+    }
+
     // Check for ES3.0+ parameter names which are also exposed as ES2 extensions
     switch (pname)
     {
@@ -7058,6 +7159,8 @@ bool Context::getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *nu
             case GL_MAX_MODELVIEW_STACK_DEPTH:
             case GL_MAX_PROJECTION_STACK_DEPTH:
             case GL_MAX_TEXTURE_STACK_DEPTH:
+            case GL_MAX_LIGHTS:
+            case GL_MAX_CLIP_PLANES:
             case GL_VERTEX_ARRAY_STRIDE:
             case GL_NORMAL_ARRAY_STRIDE:
             case GL_COLOR_ARRAY_STRIDE:
@@ -7076,19 +7179,35 @@ bool Context::getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *nu
             case GL_POINT_SIZE_ARRAY_STRIDE_OES:
             case GL_POINT_SIZE_ARRAY_TYPE_OES:
             case GL_POINT_SIZE_ARRAY_BUFFER_BINDING_OES:
+            case GL_SHADE_MODEL:
                 *type      = GL_INT;
                 *numParams = 1;
                 return true;
             case GL_ALPHA_TEST_REF:
+            case GL_FOG_DENSITY:
+            case GL_FOG_START:
+            case GL_FOG_END:
+            case GL_FOG_MODE:
+            case GL_POINT_SIZE:
+            case GL_POINT_SIZE_MIN:
+            case GL_POINT_SIZE_MAX:
+            case GL_POINT_FADE_THRESHOLD_SIZE:
                 *type      = GL_FLOAT;
                 *numParams = 1;
                 return true;
+            case GL_SMOOTH_POINT_SIZE_RANGE:
+                *type      = GL_FLOAT;
+                *numParams = 2;
+                return true;
             case GL_CURRENT_COLOR:
             case GL_CURRENT_TEXTURE_COORDS:
+            case GL_LIGHT_MODEL_AMBIENT:
+            case GL_FOG_COLOR:
                 *type      = GL_FLOAT;
                 *numParams = 4;
                 return true;
             case GL_CURRENT_NORMAL:
+            case GL_POINT_DISTANCE_ATTENUATION:
                 *type      = GL_FLOAT;
                 *numParams = 3;
                 return true;
@@ -7097,6 +7216,10 @@ bool Context::getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *nu
             case GL_TEXTURE_MATRIX:
                 *type      = GL_FLOAT;
                 *numParams = 16;
+                return true;
+            case GL_LIGHT_MODEL_TWO_SIDE:
+                *type      = GL_BOOL;
+                *numParams = 1;
                 return true;
         }
     }
@@ -7403,4 +7526,53 @@ GLenum Context::getConvertedRenderbufferFormat(GLenum internalformat) const
                : internalformat;
 }
 
+void Context::maxShaderCompilerThreads(GLuint count)
+{
+    mGLState.setMaxShaderCompilerThreads(count);
+}
+
+// ErrorSet implementation.
+ErrorSet::ErrorSet(Context *context) : mContext(context)
+{
+}
+
+ErrorSet::~ErrorSet() = default;
+
+void ErrorSet::handleError(const Error &error)
+{
+    // This internal enum is used to filter internal errors that are already handled.
+    // TODO(jmadill): Remove this when refactor is done. http://anglebug.com/2491
+    if (error.getCode() == GL_INTERNAL_ERROR_ANGLEX)
+    {
+        return;
+    }
+
+    if (ANGLE_UNLIKELY(error.isError()))
+    {
+        GLenum code = error.getCode();
+        mErrors.insert(code);
+        if (code == GL_OUT_OF_MEMORY && mContext->getWorkarounds().loseContextOnOutOfMemory)
+        {
+            mContext->markContextLost();
+        }
+
+        ASSERT(!error.getMessage().empty());
+        mContext->getGLState().getDebug().insertMessage(GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_ERROR,
+                                                        error.getID(), GL_DEBUG_SEVERITY_HIGH,
+                                                        error.getMessage());
+    }
+}
+
+bool ErrorSet::empty() const
+{
+    return mErrors.empty();
+}
+
+GLenum ErrorSet::popError()
+{
+    ASSERT(!empty());
+    GLenum error = *mErrors.begin();
+    mErrors.erase(mErrors.begin());
+    return error;
+}
 }  // namespace gl

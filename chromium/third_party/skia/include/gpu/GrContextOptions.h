@@ -78,6 +78,13 @@ struct GrContextOptions {
     bool fDoManualMipmapping = false;
 
     /**
+     * Disables the coverage counting path renderer. Coverage counting can sometimes cause new
+     * rendering artifacts along shared edges if care isn't taken to ensure both contours wind in
+     * the same direction.
+     */
+    bool fDisableCoverageCountingPaths = false;
+
+    /**
      * Disables distance field rendering for paths. Distance field computation can be expensive,
      * and yields no benefit if a path is not rendered multiple times with different transforms.
      */
@@ -90,14 +97,6 @@ struct GrContextOptions {
     bool fAllowPathMaskCaching = true;
 
     /**
-     * If true, sRGB support will not be enabled unless sRGB decoding can be disabled (via an
-     * extension). If mixed use of "legacy" mode and sRGB/color-correct mode is not required, this
-     * can be set to false, which will significantly expand the number of devices that qualify for
-     * sRGB support.
-     */
-    bool fRequireDecodeDisableForSRGB = true;
-
-    /**
      * If true, the GPU will not be used to perform YUV -> RGB conversion when generating
      * textures from codec-backed images.
      */
@@ -106,7 +105,7 @@ struct GrContextOptions {
     /**
      * The maximum size of cache textures used for Skia's Glyph cache.
      */
-    float fGlyphCacheTextureMaximumBytes = 2048 * 1024 * 4;
+    size_t fGlyphCacheTextureMaximumBytes = 2048 * 1024 * 4;
 
     /**
      * Below this threshold size in device space distance field fonts won't be used. Distance field

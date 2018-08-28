@@ -13,19 +13,72 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_database.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
-#include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_storage.h"
-#include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/public/common/child_process_host.h"
 #include "net/base/io_buffer.h"
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_response_info.h"
+#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 
 namespace content {
 
 namespace {
+
+// A mock SharedURLLoaderFactory that always fails to start.
+// TODO(bashi): Make this factory not to fail when unit tests actually need
+// this to be working.
+class MockSharedURLLoaderFactory final
+    : public network::SharedURLLoaderFactory {
+ public:
+  MockSharedURLLoaderFactory() = default;
+
+  // network::mojom::URLLoaderFactory:
+  void CreateLoaderAndStart(network::mojom::URLLoaderRequest request,
+                            int32_t routing_id,
+                            int32_t request_id,
+                            uint32_t options,
+                            const network::ResourceRequest& url_request,
+                            network::mojom::URLLoaderClientPtr client,
+                            const net::MutableNetworkTrafficAnnotationTag&
+                                traffic_annotation) override {
+    client->OnComplete(
+        network::URLLoaderCompletionStatus(net::ERR_NOT_IMPLEMENTED));
+  }
+  void Clone(network::mojom::URLLoaderFactoryRequest request) override {
+    NOTREACHED();
+  }
+
+  // network::SharedURLLoaderFactory:
+  std::unique_ptr<network::SharedURLLoaderFactoryInfo> Clone() override {
+    NOTREACHED();
+    return nullptr;
+  }
+
+ private:
+  friend class base::RefCounted<MockSharedURLLoaderFactory>;
+
+  ~MockSharedURLLoaderFactory() override = default;
+
+  DISALLOW_COPY_AND_ASSIGN(MockSharedURLLoaderFactory);
+};
+
+// Returns MockSharedURLLoaderFactory.
+class MockSharedURLLoaderFactoryInfo final
+    : public network::SharedURLLoaderFactoryInfo {
+ public:
+  MockSharedURLLoaderFactoryInfo() = default;
+  ~MockSharedURLLoaderFactoryInfo() override = default;
+
+ protected:
+  scoped_refptr<network::SharedURLLoaderFactory> CreateFactory() override {
+    return base::MakeRefCounted<MockSharedURLLoaderFactory>();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockSharedURLLoaderFactoryInfo);
+};
 
 void OnWriteBodyInfoToDiskCache(
     std::unique_ptr<ServiceWorkerResponseWriter> writer,
@@ -90,11 +143,12 @@ ServiceWorkerRemoteProviderEndpoint::ServiceWorkerRemoteProviderEndpoint(
 ServiceWorkerRemoteProviderEndpoint::~ServiceWorkerRemoteProviderEndpoint() {}
 
 void ServiceWorkerRemoteProviderEndpoint::BindWithProviderHostInfo(
-    content::ServiceWorkerProviderHostInfo* info) {
+    mojom::ServiceWorkerProviderHostInfoPtr* info) {
   mojom::ServiceWorkerContainerAssociatedPtr client_ptr;
   client_request_ = mojo::MakeRequestAssociatedWithDedicatedPipe(&client_ptr);
-  info->client_ptr_info = client_ptr.PassInterface();
-  info->host_request = mojo::MakeRequestAssociatedWithDedicatedPipe(&host_ptr_);
+  (*info)->client_ptr_info = client_ptr.PassInterface();
+  (*info)->host_request =
+      mojo::MakeRequestAssociatedWithDedicatedPipe(&host_ptr_);
 }
 
 void ServiceWorkerRemoteProviderEndpoint::BindWithProviderInfo(
@@ -103,56 +157,55 @@ void ServiceWorkerRemoteProviderEndpoint::BindWithProviderInfo(
   host_ptr_.Bind(std::move(info->host_ptr_info));
 }
 
+mojom::ServiceWorkerProviderHostInfoPtr CreateProviderHostInfoForWindow(
+    int provider_id,
+    int route_id) {
+  return mojom::ServiceWorkerProviderHostInfo::New(
+      provider_id, route_id,
+      blink::mojom::ServiceWorkerProviderType::kForWindow,
+      true /* is_parent_frame_secure */, nullptr /* host_request */,
+      nullptr /* client_ptr_info */);
+}
+
 std::unique_ptr<ServiceWorkerProviderHost> CreateProviderHostForWindow(
     int process_id,
     int provider_id,
     bool is_parent_frame_secure,
     base::WeakPtr<ServiceWorkerContextCore> context,
     ServiceWorkerRemoteProviderEndpoint* output_endpoint) {
-  ServiceWorkerProviderHostInfo info(
-      provider_id, 1 /* route_id */,
-      blink::mojom::ServiceWorkerProviderType::kForWindow,
-      is_parent_frame_secure);
+  mojom::ServiceWorkerProviderHostInfoPtr info =
+      CreateProviderHostInfoForWindow(provider_id, 1 /* route_id */);
+  info->is_parent_frame_secure = is_parent_frame_secure;
   output_endpoint->BindWithProviderHostInfo(&info);
   return ServiceWorkerProviderHost::Create(process_id, std::move(info),
-                                           std::move(context), nullptr);
+                                           std::move(context));
 }
 
-std::unique_ptr<ServiceWorkerProviderHost>
+base::WeakPtr<ServiceWorkerProviderHost>
 CreateProviderHostForServiceWorkerContext(
     int process_id,
     bool is_parent_frame_secure,
     ServiceWorkerVersion* hosted_version,
     base::WeakPtr<ServiceWorkerContextCore> context,
     ServiceWorkerRemoteProviderEndpoint* output_endpoint) {
-  ServiceWorkerProviderHostInfo info(
-      kInvalidServiceWorkerProviderId, MSG_ROUTING_NONE,
-      blink::mojom::ServiceWorkerProviderType::kForServiceWorker,
-      is_parent_frame_secure);
-  std::unique_ptr<ServiceWorkerProviderHost> host =
-      ServiceWorkerProviderHost::PreCreateForController(std::move(context));
+  auto provider_info = mojom::ServiceWorkerProviderInfoForStartWorker::New();
+  base::WeakPtr<ServiceWorkerProviderHost> host =
+      ServiceWorkerProviderHost::PreCreateForController(
+          std::move(context), base::WrapRefCounted(hosted_version),
+          &provider_info);
+
   host->SetDocumentUrl(hosted_version->script_url());
-  mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info =
-      host->CompleteStartWorkerPreparation(
-          process_id, hosted_version, nullptr /* non_network_loader_factory */);
+
+  scoped_refptr<network::SharedURLLoaderFactory> loader_factory;
+  if (blink::ServiceWorkerUtils::IsServicificationEnabled()) {
+    loader_factory = network::SharedURLLoaderFactory::Create(
+        std::make_unique<MockSharedURLLoaderFactoryInfo>());
+  }
+
+  provider_info = host->CompleteStartWorkerPreparation(
+      process_id, loader_factory, std::move(provider_info));
   output_endpoint->BindWithProviderInfo(std::move(provider_info));
   return host;
-}
-
-std::unique_ptr<ServiceWorkerProviderHost> CreateProviderHostWithDispatcherHost(
-    int process_id,
-    int provider_id,
-    base::WeakPtr<ServiceWorkerContextCore> context,
-    int route_id,
-    ServiceWorkerDispatcherHost* dispatcher_host,
-    ServiceWorkerRemoteProviderEndpoint* output_endpoint) {
-  ServiceWorkerProviderHostInfo info(
-      provider_id, route_id,
-      blink::mojom::ServiceWorkerProviderType::kForWindow, true);
-  output_endpoint->BindWithProviderHostInfo(&info);
-  return ServiceWorkerProviderHost::Create(process_id, std::move(info),
-                                           std::move(context),
-                                           dispatcher_host->AsWeakPtr());
 }
 
 ServiceWorkerDatabase::ResourceRecord WriteToDiskCacheSync(

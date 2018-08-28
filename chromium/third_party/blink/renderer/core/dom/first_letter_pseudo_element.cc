@@ -32,7 +32,7 @@
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_text_fragment.h"
 #include "third_party/blink/renderer/platform/text/text_break_iterator.h"
-#include "third_party/blink/renderer/platform/wtf/text/icu/unicode_icu.h"
+#include "third_party/blink/renderer/platform/wtf/text/unicode.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -277,7 +277,9 @@ ComputedStyle* FirstLetterPseudoElement::StyleForFirstLetter(
   ComputedStyle* pseudo_style = style_container->GetCachedPseudoStyle(
       kPseudoIdFirstLetter, layout_object_container->FirstLineStyle());
   DCHECK(pseudo_style);
-
+  pseudo_style->UpdateIsStackingContext(false /* is_document_element */,
+                                        false /* is_in_top_layer */,
+                                        false /* is_svg_stacking */);
   return pseudo_style;
 }
 

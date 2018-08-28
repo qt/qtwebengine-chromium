@@ -9,6 +9,7 @@
 #include "base/memory/platform_shared_memory_region.h"
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/memory/shared_memory_mapping.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 
 namespace base {
 
@@ -50,6 +51,11 @@ class BASE_EXPORT WritableSharedMemoryRegion {
   static ReadOnlySharedMemoryRegion ConvertToReadOnly(
       WritableSharedMemoryRegion region);
 
+  // Makes the region unsafe. The region cannot be converted to read-only after
+  // this call. Returns an invalid region on failure.
+  static UnsafeSharedMemoryRegion ConvertToUnsafe(
+      WritableSharedMemoryRegion region);
+
   // Default constructor initializes an invalid instance.
   WritableSharedMemoryRegion();
 
@@ -81,6 +87,12 @@ class BASE_EXPORT WritableSharedMemoryRegion {
   size_t GetSize() const {
     DCHECK(IsValid());
     return handle_.GetSize();
+  }
+
+  // Returns 128-bit GUID of the region.
+  const UnguessableToken& GetGUID() const {
+    DCHECK(IsValid());
+    return handle_.GetGUID();
   }
 
  private:

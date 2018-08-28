@@ -71,7 +71,6 @@ struct VersionParam {
 static const size_t kTicketKeyLen = 48;
 
 static const VersionParam kAllVersions[] = {
-    {SSL3_VERSION, VersionParam::is_tls, "SSL3"},
     {TLS1_VERSION, VersionParam::is_tls, "TLS1"},
     {TLS1_1_VERSION, VersionParam::is_tls, "TLS1_1"},
     {TLS1_2_VERSION, VersionParam::is_tls, "TLS1_2"},
@@ -987,28 +986,20 @@ static bssl::UniquePtr<SSL_SESSION> CreateSessionWithTicket(uint16_t version,
   if (!ssl_ctx) {
     return nullptr;
   }
+  // Use a garbage ticket.
+  std::vector<uint8_t> ticket(ticket_len, 'a');
   bssl::UniquePtr<SSL_SESSION> session(
       SSL_SESSION_from_bytes(der.data(), der.size(), ssl_ctx.get()));
-  if (!session) {
+  if (!session ||
+      !SSL_SESSION_set_protocol_version(session.get(), version) ||
+      !SSL_SESSION_set_ticket(session.get(), ticket.data(), ticket.size())) {
     return nullptr;
   }
-
-  session->ssl_version = version;
-
-  // Swap out the ticket for a garbage one.
-  OPENSSL_free(session->tlsext_tick);
-  session->tlsext_tick = reinterpret_cast<uint8_t*>(OPENSSL_malloc(ticket_len));
-  if (session->tlsext_tick == nullptr) {
-    return nullptr;
-  }
-  OPENSSL_memset(session->tlsext_tick, 'a', ticket_len);
-  session->tlsext_ticklen = ticket_len;
-
   // Fix up the timeout.
 #if defined(BORINGSSL_UNSAFE_DETERMINISTIC_MODE)
-  session->time = 1234;
+  SSL_SESSION_set_time(session.get(), 1234);
 #else
-  session->time = time(NULL);
+  SSL_SESSION_set_time(session.get(), time(nullptr));
 #endif
   return session;
 }
@@ -1331,9 +1322,7 @@ TEST(SSLTest, ClientCAList) {
 
   bssl::UniquePtr<STACK_OF(X509_NAME)> stack(sk_X509_NAME_new_null());
   ASSERT_TRUE(stack);
-
-  ASSERT_TRUE(sk_X509_NAME_push(stack.get(), name_dup.get()));
-  name_dup.release();
+  ASSERT_TRUE(PushToStack(stack.get(), std::move(name_dup)));
 
   // |SSL_set_client_CA_list| takes ownership.
   SSL_set_client_CA_list(ssl.get(), stack.release());
@@ -1424,9 +1413,11 @@ static bssl::UniquePtr<SSL_SESSION> CreateTestSession(uint32_t number) {
     return nullptr;
   }
 
-  ret->session_id_length = SSL3_SSL_SESSION_ID_LENGTH;
-  OPENSSL_memset(ret->session_id, 0, ret->session_id_length);
-  OPENSSL_memcpy(ret->session_id, &number, sizeof(number));
+  uint8_t id[SSL3_SSL_SESSION_ID_LENGTH] = {0};
+  OPENSSL_memcpy(id, &number, sizeof(number));
+  if (!SSL_SESSION_set1_id(ret.get(), id, sizeof(id))) {
+    return nullptr;
+  }
   return ret;
 }
 
@@ -1725,7 +1716,7 @@ TEST(SSLTest, SessionDuplication) {
       bssl::SSL_SESSION_dup(session0, SSL_SESSION_DUP_ALL);
   ASSERT_TRUE(session1);
 
-  session1->not_resumable = 0;
+  session1->not_resumable = false;
 
   uint8_t *s0_bytes, *s1_bytes;
   size_t s0_len, s1_len;
@@ -1965,13 +1956,6 @@ TEST(SSLTest, ClientHello) {
     uint16_t max_version;
     std::vector<uint8_t> expected;
   } kTests[] = {
-    {SSL3_VERSION,
-     {0x16, 0x03, 0x00, 0x00, 0x3b, 0x01, 0x00, 0x00, 0x37, 0x03, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x10, 0xc0, 0x09, 0xc0, 0x13, 0xc0, 0x0a, 0xc0, 0x14, 0x00,
-      0x2f, 0x00, 0x35, 0x00, 0x0a, 0x00, 0xff, 0x01, 0x00}},
     {TLS1_VERSION,
      {0x16, 0x03, 0x01, 0x00, 0x5a, 0x01, 0x00, 0x00, 0x56, 0x03, 0x01, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -2015,8 +1999,6 @@ TEST(SSLTest, ClientHello) {
     // Our default cipher list varies by CPU capabilities, so manually place the
     // ChaCha20 ciphers in front.
     const char *cipher_list = "CHACHA20:ALL";
-    // SSLv3 is off by default.
-    ASSERT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), SSL3_VERSION));
     ASSERT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), t.max_version));
     ASSERT_TRUE(SSL_CTX_set_strict_cipher_list(ctx.get(), cipher_list));
 
@@ -2255,12 +2237,15 @@ static int RenewTicketCallback(SSL *ssl, uint8_t *key_name, uint8_t *iv,
 }
 
 static bool GetServerTicketTime(long *out, const SSL_SESSION *session) {
-  if (session->tlsext_ticklen < 16 + 16 + SHA256_DIGEST_LENGTH) {
+  const uint8_t *ticket;
+  size_t ticket_len;
+  SSL_SESSION_get0_ticket(session, &ticket, &ticket_len);
+  if (ticket_len < 16 + 16 + SHA256_DIGEST_LENGTH) {
     return false;
   }
 
-  const uint8_t *ciphertext = session->tlsext_tick + 16 + 16;
-  size_t len = session->tlsext_ticklen - 16 - 16 - SHA256_DIGEST_LENGTH;
+  const uint8_t *ciphertext = ticket + 16 + 16;
+  size_t len = ticket_len - 16 - 16 - SHA256_DIGEST_LENGTH;
   std::unique_ptr<uint8_t[]> plaintext(new uint8_t[len]);
 
 #if defined(BORINGSSL_UNSAFE_FUZZER_MODE)
@@ -2268,7 +2253,7 @@ static bool GetServerTicketTime(long *out, const SSL_SESSION *session) {
   OPENSSL_memcpy(plaintext.get(), ciphertext, len);
 #else
   static const uint8_t kZeros[16] = {0};
-  const uint8_t *iv = session->tlsext_tick + 16;
+  const uint8_t *iv = ticket + 16;
   bssl::ScopedEVP_CIPHER_CTX ctx;
   int len1, len2;
   if (!EVP_DecryptInit_ex(ctx.get(), EVP_aes_128_cbc(), nullptr, kZeros, iv) ||
@@ -2290,7 +2275,7 @@ static bool GetServerTicketTime(long *out, const SSL_SESSION *session) {
     return false;
   }
 
-  *out = server_session->time;
+  *out = SSL_SESSION_get_time(server_session.get());
   return true;
 }
 
@@ -2349,11 +2334,6 @@ TEST_P(SSLVersionTest, SessionTimeout) {
                                     session.get(),
                                     false /* expect session not reused */));
 
-    // SSL 3.0 cannot renew sessions.
-    if (version() == SSL3_VERSION) {
-      continue;
-    }
-
     // Renew the session 10 seconds before expiration.
     time_t new_start_time = kStartTime + timeout - 10;
     g_current_time.tv_sec = new_start_time;
@@ -2369,7 +2349,7 @@ TEST_P(SSLVersionTest, SessionTimeout) {
     if (server_test) {
       ASSERT_TRUE(GetServerTicketTime(&session_time, new_session.get()));
     } else {
-      session_time = new_session->time;
+      session_time = SSL_SESSION_get_time(new_session.get());
     }
 
     ASSERT_EQ(session_time, g_current_time.tv_sec);
@@ -2436,10 +2416,6 @@ TEST_P(SSLVersionTest, DefaultTicketKeyInitialization) {
 }
 
 TEST_P(SSLVersionTest, DefaultTicketKeyRotation) {
-  if (GetParam().version == SSL3_VERSION) {
-    return;
-  }
-
   static const time_t kStartTime = 1001;
   g_current_time.tv_sec = kStartTime;
   uint8_t ticket_key[kTicketKeyLen];
@@ -2509,11 +2485,6 @@ static int SwitchContext(SSL *ssl, int *out_alert, void *arg) {
 }
 
 TEST_P(SSLVersionTest, SNICallback) {
-  // SSL 3.0 lacks extensions.
-  if (version() == SSL3_VERSION) {
-    return;
-  }
-
   bssl::UniquePtr<X509> cert2 = GetECDSATestCertificate();
   ASSERT_TRUE(cert2);
   bssl::UniquePtr<EVP_PKEY> key2 = GetECDSATestKey();
@@ -2619,11 +2590,12 @@ TEST(SSLTest, SetVersion) {
   EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), 0));
   EXPECT_EQ(TLS1_VERSION, ctx->conf_min_version);
 
-  // SSL 3.0 and TLS 1.3 are available, but not by default.
-  EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), SSL3_VERSION));
-  EXPECT_EQ(SSL3_VERSION, ctx->conf_min_version);
+  // TLS 1.3 is available, but not by default.
   EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), TLS1_3_VERSION));
   EXPECT_EQ(TLS1_3_VERSION, ctx->conf_max_version);
+
+  // SSL 3.0 is not available.
+  EXPECT_FALSE(SSL_CTX_set_min_proto_version(ctx.get(), SSL3_VERSION));
 
   // TLS1_3_DRAFT_VERSION is not an API-level version.
   EXPECT_FALSE(
@@ -2655,8 +2627,6 @@ TEST(SSLTest, SetVersion) {
 
 static const char *GetVersionName(uint16_t version) {
   switch (version) {
-    case SSL3_VERSION:
-      return "SSLv3";
     case TLS1_VERSION:
       return "TLSv1";
     case TLS1_1_VERSION:
@@ -2697,11 +2667,6 @@ TEST_P(SSLVersionTest, Version) {
 // Tests that that |SSL_get_pending_cipher| is available during the ALPN
 // selection callback.
 TEST_P(SSLVersionTest, ALPNCipherAvailable) {
-  // SSL 3.0 lacks extensions.
-  if (version() == SSL3_VERSION) {
-    return;
-  }
-
   ASSERT_TRUE(UseCertAndKey(client_ctx_.get()));
 
   static const uint8_t kALPNProtos[] = {0x03, 'f', 'o', 'o'};
@@ -3018,11 +2983,6 @@ TEST_P(SSLVersionTest, RecordCallback) {
 }
 
 TEST_P(SSLVersionTest, GetServerName) {
-  // No extensions in SSL 3.0.
-  if (version() == SSL3_VERSION) {
-    return;
-  }
-
   ClientConfig config;
   config.servername = "host1";
 
@@ -3273,8 +3233,7 @@ TEST(SSLTest, ClientCABuffers) {
   bssl::UniquePtr<STACK_OF(CRYPTO_BUFFER)> ca_names(
       sk_CRYPTO_BUFFER_new_null());
   ASSERT_TRUE(ca_names);
-  ASSERT_TRUE(sk_CRYPTO_BUFFER_push(ca_names.get(), ca_name.get()));
-  ca_name.release();
+  ASSERT_TRUE(PushToStack(ca_names.get(), std::move(ca_name)));
   SSL_CTX_set0_client_CAs(server_ctx.get(), ca_names.release());
 
   // Configure client and server to accept all certificates.
@@ -3954,6 +3913,69 @@ TEST(SSLTest, SignatureAlgorithmProperties) {
   EXPECT_TRUE(SSL_is_signature_algorithm_rsa_pss(SSL_SIGN_RSA_PSS_RSAE_SHA384));
 }
 
+static int XORCompressFunc(SSL *ssl, CBB *out, const uint8_t *in,
+                           size_t in_len) {
+  for (size_t i = 0; i < in_len; i++) {
+    if (!CBB_add_u8(out, in[i] ^ 0x55)) {
+      return 0;
+    }
+  }
+
+  SSL_set_app_data(ssl, XORCompressFunc);
+
+  return 1;
+}
+
+static int XORDecompressFunc(SSL *ssl, CRYPTO_BUFFER **out,
+                             size_t uncompressed_len, const uint8_t *in,
+                             size_t in_len) {
+  if (in_len != uncompressed_len) {
+    return 0;
+  }
+
+  uint8_t *data;
+  *out = CRYPTO_BUFFER_alloc(&data, uncompressed_len);
+  if (*out == nullptr) {
+    return 0;
+  }
+
+  for (size_t i = 0; i < in_len; i++) {
+    data[i] = in[i] ^ 0x55;
+  }
+
+  SSL_set_app_data(ssl, XORDecompressFunc);
+
+  return 1;
+}
+
+TEST(SSLTest, CertCompression) {
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_method()));
+  bssl::UniquePtr<SSL_CTX> server_ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(client_ctx);
+  ASSERT_TRUE(server_ctx);
+
+  bssl::UniquePtr<X509> cert = GetTestCertificate();
+  bssl::UniquePtr<EVP_PKEY> key = GetTestKey();
+  ASSERT_TRUE(cert);
+  ASSERT_TRUE(key);
+  ASSERT_TRUE(SSL_CTX_use_certificate(server_ctx.get(), cert.get()));
+  ASSERT_TRUE(SSL_CTX_use_PrivateKey(server_ctx.get(), key.get()));
+
+  ASSERT_TRUE(SSL_CTX_set_max_proto_version(client_ctx.get(), TLS1_3_VERSION));
+  ASSERT_TRUE(SSL_CTX_set_max_proto_version(server_ctx.get(), TLS1_3_VERSION));
+  ASSERT_TRUE(SSL_CTX_add_cert_compression_alg(
+      client_ctx.get(), 0x1234, XORCompressFunc, XORDecompressFunc));
+  ASSERT_TRUE(SSL_CTX_add_cert_compression_alg(
+      server_ctx.get(), 0x1234, XORCompressFunc, XORDecompressFunc));
+
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get()));
+
+  EXPECT_TRUE(SSL_get_app_data(client.get()) == XORDecompressFunc);
+  EXPECT_TRUE(SSL_get_app_data(server.get()) == XORCompressFunc);
+}
+
 void MoveBIOs(SSL *dest, SSL *src) {
   BIO *rbio = SSL_get_rbio(src);
   BIO_up_ref(rbio);
@@ -4107,7 +4129,7 @@ TEST(SSLTest, AllTests) {
       !TestPaddingExtension(TLS1_3_VERSION, TLS1_2_VERSION) ||
       // Test the padding extension at TLS 1.3 with a TLS 1.3 session, so there
       // will be a PSK binder after the padding extension.
-      !TestPaddingExtension(TLS1_3_VERSION, TLS1_3_DRAFT23_VERSION)) {
+      !TestPaddingExtension(TLS1_3_VERSION, TLS1_3_VERSION)) {
     ADD_FAILURE() << "Tests failed";
   }
 }

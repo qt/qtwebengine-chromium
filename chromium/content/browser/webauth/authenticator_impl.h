@@ -30,7 +30,7 @@ class OneShotTimer;
 
 namespace device {
 
-class U2fRequest;
+class FidoAuthenticator;
 class FidoRequestHandlerBase;
 
 enum class FidoReturnCode : uint8_t;
@@ -47,6 +47,7 @@ class Origin;
 
 namespace content {
 
+class AuthenticatorRequestClientDelegate;
 class RenderFrameHost;
 
 namespace client_data {
@@ -58,7 +59,7 @@ CONTENT_EXPORT extern const char kGetType[];
 }  // namespace client_data
 
 // Implementation of the public Authenticator interface.
-class CONTENT_EXPORT AuthenticatorImpl : public webauth::mojom::Authenticator,
+class CONTENT_EXPORT AuthenticatorImpl : public blink::mojom::Authenticator,
                                          public WebContentsObserver {
  public:
   explicit AuthenticatorImpl(RenderFrameHost* render_frame_host);
@@ -76,7 +77,7 @@ class CONTENT_EXPORT AuthenticatorImpl : public webauth::mojom::Authenticator,
   // Note that one AuthenticatorImpl instance can be bound to exactly one
   // interface connection at a time, and disconnected when the frame navigates
   // to a new active document.
-  void Bind(webauth::mojom::AuthenticatorRequest request);
+  void Bind(blink::mojom::AuthenticatorRequest request);
 
  private:
   friend class AuthenticatorImplTest;
@@ -86,6 +87,8 @@ class CONTENT_EXPORT AuthenticatorImpl : public webauth::mojom::Authenticator,
     kDoCheck,
     kDontCheck,
   };
+
+  bool IsFocused() const;
 
   // Builds the CollectedClientData[1] dictionary with the given values,
   // serializes it to JSON, and returns the resulting string.
@@ -98,15 +101,15 @@ class CONTENT_EXPORT AuthenticatorImpl : public webauth::mojom::Authenticator,
 
   // mojom:Authenticator
   void MakeCredential(
-      webauth::mojom::PublicKeyCredentialCreationOptionsPtr options,
+      blink::mojom::PublicKeyCredentialCreationOptionsPtr options,
       MakeCredentialCallback callback) override;
-  void GetAssertion(
-      webauth::mojom::PublicKeyCredentialRequestOptionsPtr options,
-      GetAssertionCallback callback) override;
+  void GetAssertion(blink::mojom::PublicKeyCredentialRequestOptionsPtr options,
+                    GetAssertionCallback callback) override;
+  void IsUserVerifyingPlatformAuthenticatorAvailable(
+      IsUserVerifyingPlatformAuthenticatorAvailableCallback callback) override;
 
   // WebContentsObserver:
   void DidFinishNavigation(NavigationHandle* navigation_handle) override;
-  void RenderFrameDeleted(RenderFrameHost* render_frame_host) override;
 
   // Callback to handle the async response from a U2fDevice.
   void OnRegisterResponse(
@@ -130,25 +133,27 @@ class CONTENT_EXPORT AuthenticatorImpl : public webauth::mojom::Authenticator,
 
   void InvokeCallbackAndCleanup(
       MakeCredentialCallback callback,
-      webauth::mojom::AuthenticatorStatus status,
-      webauth::mojom::MakeCredentialAuthenticatorResponsePtr response,
+      blink::mojom::AuthenticatorStatus status,
+      blink::mojom::MakeCredentialAuthenticatorResponsePtr response,
       Focus focus_check);
   void InvokeCallbackAndCleanup(
       GetAssertionCallback callback,
-      webauth::mojom::AuthenticatorStatus status,
-      webauth::mojom::GetAssertionAuthenticatorResponsePtr response);
+      blink::mojom::AuthenticatorStatus status,
+      blink::mojom::GetAssertionAuthenticatorResponsePtr response);
   void Cleanup();
 
-  RenderFrameHost* render_frame_host_;
+  std::unique_ptr<device::FidoAuthenticator> MaybeCreatePlatformAuthenticator();
+
+  RenderFrameHost* const render_frame_host_;
   service_manager::Connector* connector_ = nullptr;
   base::flat_set<device::FidoTransportProtocol> protocols_;
 
-  std::unique_ptr<device::U2fRequest> u2f_request_;
-  std::unique_ptr<device::FidoRequestHandlerBase> ctap_request_;
+  std::unique_ptr<device::FidoRequestHandlerBase> request_;
+  std::unique_ptr<AuthenticatorRequestClientDelegate> request_delegate_;
   MakeCredentialCallback make_credential_response_callback_;
   GetAssertionCallback get_assertion_response_callback_;
   std::string client_data_json_;
-  webauth::mojom::AttestationConveyancePreference attestation_preference_;
+  blink::mojom::AttestationConveyancePreference attestation_preference_;
   std::string relying_party_id_;
   std::unique_ptr<base::OneShotTimer> timer_;
 
@@ -159,7 +164,7 @@ class CONTENT_EXPORT AuthenticatorImpl : public webauth::mojom::Authenticator,
   bool echo_appid_extension_ = false;
 
   // Owns pipes to this Authenticator from |render_frame_host_|.
-  mojo::Binding<webauth::mojom::Authenticator> binding_;
+  mojo::Binding<blink::mojom::Authenticator> binding_;
 
   base::WeakPtrFactory<AuthenticatorImpl> weak_factory_;
 

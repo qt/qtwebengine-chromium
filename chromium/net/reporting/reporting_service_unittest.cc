@@ -27,6 +27,7 @@ class ReportingServiceTest : public TestWithScopedTaskEnvironment {
   const GURL kUrl_ = GURL("https://origin/path");
   const url::Origin kOrigin_ = url::Origin::Create(kUrl_);
   const GURL kEndpoint_ = GURL("https://endpoint/");
+  const std::string kUserAgent_ = "Mozilla/1.0";
   const std::string kGroup_ = "group";
   const std::string kType_ = "type";
 
@@ -48,13 +49,14 @@ class ReportingServiceTest : public TestWithScopedTaskEnvironment {
 };
 
 TEST_F(ReportingServiceTest, QueueReport) {
-  service()->QueueReport(kUrl_, kGroup_, kType_,
+  service()->QueueReport(kUrl_, kUserAgent_, kGroup_, kType_,
                          std::make_unique<base::DictionaryValue>(), 0);
 
   std::vector<const ReportingReport*> reports;
   context()->cache()->GetReports(&reports);
   ASSERT_EQ(1u, reports.size());
   EXPECT_EQ(kUrl_, reports[0]->url);
+  EXPECT_EQ(kUserAgent_, reports[0]->user_agent);
   EXPECT_EQ(kGroup_, reports[0]->group);
   EXPECT_EQ(kType_, reports[0]->type);
 }
@@ -66,7 +68,7 @@ TEST_F(ReportingServiceTest, ProcessHeader) {
                                       "\"group\":\"" +
                                       kGroup_ +
                                       "\","
-                                      "\"max-age\":86400}");
+                                      "\"max_age\":86400}");
 
   const ReportingClient* client =
       FindClientInCache(context()->cache(), kOrigin_, kEndpoint_);
@@ -86,7 +88,7 @@ TEST_F(ReportingServiceTest, ProcessHeader_TooLong) {
       "\"group\":\"" +
       kGroup_ +
       "\","
-      "\"max-age\":86400," +
+      "\"max_age\":86400," +
       "\"junk\":\"" + std::string(32 * 1024, 'a') + "\"}";
   service()->ProcessHeader(kUrl_, header_too_long);
 
@@ -102,7 +104,7 @@ TEST_F(ReportingServiceTest, ProcessHeader_TooDeep) {
                                       "\"group\":\"" +
                                       kGroup_ +
                                       "\","
-                                      "\"max-age\":86400," +
+                                      "\"max_age\":86400," +
                                       "\"junk\":[[[[[[[[[[]]]]]]]]]]}";
   service()->ProcessHeader(kUrl_, header_too_deep);
 

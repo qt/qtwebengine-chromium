@@ -106,10 +106,12 @@ static WebSharedWorkerRepositoryClient::DocumentID GetId(void* document) {
       document);
 }
 
-void SharedWorkerRepositoryClientImpl::Connect(SharedWorker* worker,
-                                               MessagePortChannel port,
-                                               const KURL& url,
-                                               const String& name) {
+void SharedWorkerRepositoryClientImpl::Connect(
+    SharedWorker* worker,
+    MessagePortChannel port,
+    const KURL& url,
+    mojom::blink::BlobURLTokenPtr blob_url_token,
+    const String& name) {
   DCHECK(client_);
 
   // No nested workers (for now) - connect() should only be called from document
@@ -121,16 +123,15 @@ void SharedWorkerRepositoryClientImpl::Connect(SharedWorker* worker,
   // when multiple might have been sent. Fix by making the
   // SharedWorkerConnectListener interface take a map that can contain
   // multiple headers.
-  std::unique_ptr<Vector<CSPHeaderAndType>> headers =
+  Vector<CSPHeaderAndType> headers =
       worker->GetExecutionContext()->GetContentSecurityPolicy()->Headers();
   WebString header;
   WebContentSecurityPolicyType header_type =
       kWebContentSecurityPolicyTypeReport;
 
-  if (headers->size() > 0) {
-    header = (*headers)[0].first;
-    header_type =
-        static_cast<WebContentSecurityPolicyType>((*headers)[0].second);
+  if (headers.size() > 0) {
+    header = headers[0].first;
+    header_type = static_cast<WebContentSecurityPolicyType>(headers[0].second);
   }
 
   bool is_secure_context = worker->GetExecutionContext()->IsSecureContext();
@@ -139,8 +140,8 @@ void SharedWorkerRepositoryClientImpl::Connect(SharedWorker* worker,
   client_->Connect(
       url, name, GetId(document), header, header_type,
       worker->GetExecutionContext()->GetSecurityContext().AddressSpace(),
-      ToCreationContextType(is_secure_context),
-      std::move(port), std::move(listener));
+      ToCreationContextType(is_secure_context), std::move(port),
+      blob_url_token.PassInterface().PassHandle(), std::move(listener));
 }
 
 void SharedWorkerRepositoryClientImpl::DocumentDetached(Document* document) {

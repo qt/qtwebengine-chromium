@@ -320,6 +320,36 @@ class MockByteStreamReader : public ByteStreamReader {
   MOCK_METHOD1(RegisterCallback, void(const base::Closure&));
 };
 
+class TestInProgressManager : public download::InProgressDownloadManager {
+ public:
+  TestInProgressManager();
+  ~TestInProgressManager() override = default;
+
+  std::vector<std::unique_ptr<download::DownloadItemImpl>>
+  TakeInProgressDownloads() override;
+
+  void AddDownloadItem(std::unique_ptr<download::DownloadItemImpl> item);
+
+ private:
+  std::vector<std::unique_ptr<download::DownloadItemImpl>> download_items_;
+};
+
+TestInProgressManager::TestInProgressManager()
+    : download::InProgressDownloadManager(
+          nullptr,
+          base::FilePath(),
+          download::InProgressDownloadManager::IsOriginSecureCallback()) {}
+
+void TestInProgressManager::AddDownloadItem(
+    std::unique_ptr<download::DownloadItemImpl> item) {
+  download_items_.emplace_back(std::move(item));
+}
+
+std::vector<std::unique_ptr<download::DownloadItemImpl>>
+TestInProgressManager::TakeInProgressDownloads() {
+  return std::move(download_items_);
+}
+
 }  // namespace
 
 class DownloadManagerTest : public testing::Test {
@@ -448,6 +478,15 @@ class DownloadManagerTest : public testing::Test {
         item, base::Bind(
             &DownloadManagerTest::DownloadTargetDeterminedCallback,
             base::Unretained(this)));
+  }
+
+  void OnInProgressDownloadManagerInitialized() {
+    download_manager_->OnInProgressDownloadManagerInitialized();
+  }
+
+  void SetInProgressDownloadManager(
+      std::unique_ptr<download::InProgressDownloadManager> manager) {
+    download_manager_->in_progress_manager_ = std::move(manager);
   }
 
  protected:
@@ -607,6 +646,36 @@ TEST_F(DownloadManagerTest, RemoveDownloadsByURL) {
   int remove_count = download_manager_->RemoveDownloadsByURLAndTime(
       std::move(url_filter), base::Time(), base::Time::Max());
   EXPECT_EQ(remove_count, 1);
+}
+
+// Confirm that in-progress downloads will be taken and managed by
+// DownloadManager.
+TEST_F(DownloadManagerTest, OnInProgressDownloadsLoaded) {
+  auto in_progress_manager = std::make_unique<TestInProgressManager>();
+  const char kGuid[] = "8DF158E8-C980-4618-BB03-EBA3242EB48B";
+  auto in_progress_item = std::make_unique<download::DownloadItemImpl>(
+      in_progress_manager.get(), kGuid, 10, base::FilePath(), base::FilePath(),
+      std::vector<GURL>(), GURL("http://example.com/a"),
+      GURL("http://example.com/a"), GURL("http://example.com/a"),
+      GURL("http://example.com/a"), "application/octet-stream",
+      "application/octet-stream", base::Time::Now(), base::Time::Now(),
+      std::string(), std::string(), 10, 10, std::string(),
+      download::DownloadItem::INTERRUPTED,
+      download::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
+      download::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED, false,
+      base::Time::Now(), true,
+      std::vector<download::DownloadItem::ReceivedSlice>());
+  in_progress_manager->AddDownloadItem(std::move(in_progress_item));
+  SetInProgressDownloadManager(std::move(in_progress_manager));
+  EXPECT_CALL(GetMockObserver(), OnDownloadCreated(download_manager_.get(), _))
+      .WillOnce(Return());
+  OnInProgressDownloadManagerInitialized();
+  ASSERT_TRUE(download_manager_->GetDownloadByGuid(kGuid));
+
+  download::DownloadItem* download =
+      download_manager_->GetDownloadByGuid(kGuid);
+  download->Remove();
+  ASSERT_FALSE(download_manager_->GetDownloadByGuid(kGuid));
 }
 
 }  // namespace content

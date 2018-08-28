@@ -4,9 +4,34 @@
 
 #include "components/cryptauth/remote_device_cache.h"
 
+#include "base/memory/ptr_util.h"
+#include "base/no_destructor.h"
 #include "base/stl_util.h"
 
 namespace cryptauth {
+
+// static
+RemoteDeviceCache::Factory* RemoteDeviceCache::Factory::test_factory_ = nullptr;
+
+// static
+RemoteDeviceCache::Factory* RemoteDeviceCache::Factory::Get() {
+  if (test_factory_)
+    return test_factory_;
+
+  static base::NoDestructor<Factory> factory;
+  return factory.get();
+}
+
+// static
+void RemoteDeviceCache::Factory::SetFactoryForTesting(Factory* test_factory) {
+  test_factory_ = test_factory;
+}
+
+RemoteDeviceCache::Factory::~Factory() = default;
+
+std::unique_ptr<RemoteDeviceCache> RemoteDeviceCache::Factory::BuildInstance() {
+  return base::WrapUnique(new RemoteDeviceCache());
+}
 
 RemoteDeviceCache::RemoteDeviceCache() = default;
 
@@ -15,16 +40,23 @@ RemoteDeviceCache::~RemoteDeviceCache() = default;
 void RemoteDeviceCache::SetRemoteDevices(
     const RemoteDeviceList& remote_devices) {
   for (const auto& remote_device : remote_devices) {
-    if (!base::ContainsKey(remote_device_map_, remote_device.GetDeviceId())) {
+    if (base::ContainsKey(remote_device_map_, remote_device.GetDeviceId())) {
+      // Skip if the incoming remote device object contains
+      // a stale timestamp.
+      if (remote_device.last_update_time_millis <=
+          remote_device_map_[remote_device.GetDeviceId()]
+              ->last_update_time_millis) {
+        continue;
+      }
+
+      // Keep the same shared_ptr object, and simply
+      // update the RemoteDevice it references. This transparently updates
+      // the RemoteDeviceRefs used by clients.
+      *remote_device_map_[remote_device.GetDeviceId()] = remote_device;
+    } else {
       remote_device_map_[remote_device.GetDeviceId()] =
           std::make_shared<RemoteDevice>(remote_device);
-      continue;
     }
-
-    // Keep the same |shared_ptr| obect, and simply update the RemoteDevice it
-    // references. This transparently updates the RemoteDeviceRefs used by
-    // clients.
-    *remote_device_map_[remote_device.GetDeviceId()] = remote_device;
   }
 
   // Intentionally leave behind devices in the map which weren't in

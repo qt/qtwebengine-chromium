@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 
 #include <memory>
+
 #include "build/build_config.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -44,6 +45,7 @@
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_link_element.h"
@@ -57,6 +59,7 @@
 #include "third_party/blink/renderer/platform/weborigin/referrer_policy.h"
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
@@ -537,7 +540,7 @@ TEST_F(DocumentTest, OutgoingReferrer) {
 
 TEST_F(DocumentTest, OutgoingReferrerWithUniqueOrigin) {
   GetDocument().SetURL(KURL("https://www.example.com/hoge#fuga?piyo"));
-  GetDocument().SetSecurityOrigin(SecurityOrigin::CreateUnique());
+  GetDocument().SetSecurityOrigin(SecurityOrigin::CreateUniqueOpaque());
   EXPECT_EQ(String(), GetDocument().OutgoingReferrer());
 }
 
@@ -581,7 +584,7 @@ TEST_F(DocumentTest, EnforceSandboxFlags) {
 
   mask |= kSandboxOrigin;
   GetDocument().EnforceSandboxFlags(mask);
-  EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsUnique());
+  EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsOpaque());
   EXPECT_FALSE(GetDocument().GetSecurityOrigin()->IsPotentiallyTrustworthy());
 
   // A unique origin does not bypass secure context checks unless it
@@ -592,19 +595,19 @@ TEST_F(DocumentTest, EnforceSandboxFlags) {
       SecurityOrigin::CreateFromString("very-special-scheme://example.test");
   GetDocument().SetSecurityOrigin(origin);
   GetDocument().EnforceSandboxFlags(mask);
-  EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsUnique());
+  EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsOpaque());
   EXPECT_FALSE(GetDocument().GetSecurityOrigin()->IsPotentiallyTrustworthy());
 
   SchemeRegistry::RegisterURLSchemeAsSecure("very-special-scheme");
   GetDocument().SetSecurityOrigin(origin);
   GetDocument().EnforceSandboxFlags(mask);
-  EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsUnique());
+  EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsOpaque());
   EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsPotentiallyTrustworthy());
 
   origin = SecurityOrigin::CreateFromString("https://example.test");
   GetDocument().SetSecurityOrigin(origin);
   GetDocument().EnforceSandboxFlags(mask);
-  EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsUnique());
+  EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsOpaque());
   EXPECT_TRUE(GetDocument().GetSecurityOrigin()->IsPotentiallyTrustworthy());
 }
 
@@ -1059,8 +1062,12 @@ class ViewportFitDocumentTest : public DocumentTest {
   void SetUp() override {
     DocumentTest::SetUp();
 
-    RuntimeEnabledFeatures::SetDisplayCutoutViewportFitEnabled(true);
+    RuntimeEnabledFeatures::SetDisplayCutoutAPIEnabled(true);
     GetDocument().GetSettings()->SetViewportMetaEnabled(true);
+  }
+
+  mojom::ViewportFit GetViewportFit() const {
+    return GetDocument().GetViewportData().GetCurrentViewportFitForTests();
   }
 };
 
@@ -1070,30 +1077,45 @@ TEST_F(ViewportFitDocumentTest, MetaCSSViewportButNoFit) {
       "<style>@viewport { min-width: 100px; }</style>"
       "<meta name='viewport' content='initial-scale=1'>");
 
-  EXPECT_EQ(ViewportDescription::ViewportFit::kAuto,
-            GetDocument().GetViewportDescription().GetViewportFit());
+  EXPECT_EQ(mojom::ViewportFit::kAuto, GetViewportFit());
 }
 
 // Test @viewport present but no viewport-fit.
 TEST_F(ViewportFitDocumentTest, CSSViewportButNoFit) {
   SetHtmlInnerHTML("<style>@viewport { min-width: 100px; }</style>");
 
-  EXPECT_EQ(ViewportDescription::ViewportFit::kAuto,
-            GetDocument().GetViewportDescription().GetViewportFit());
+  EXPECT_EQ(mojom::ViewportFit::kAuto, GetViewportFit());
 }
 
 // Test meta viewport present but no viewport-fit.
 TEST_F(ViewportFitDocumentTest, MetaViewportButNoFit) {
   SetHtmlInnerHTML("<meta name='viewport' content='initial-scale=1'>");
 
-  EXPECT_EQ(ViewportDescription::ViewportFit::kAuto,
-            GetDocument().GetViewportDescription().GetViewportFit());
+  EXPECT_EQ(mojom::ViewportFit::kAuto, GetViewportFit());
+}
+
+// Test overriding the viewport fit using SetExpandIntoDisplayCutout.
+TEST_F(ViewportFitDocumentTest, ForceExpandIntoCutout) {
+  SetHtmlInnerHTML("<meta name='viewport' content='viewport-fit=contain'>");
+  EXPECT_EQ(mojom::ViewportFit::kContain, GetViewportFit());
+
+  // Now override the viewport fit value and expect it to be kCover.
+  GetDocument().GetViewportData().SetExpandIntoDisplayCutout(true);
+  EXPECT_EQ(mojom::ViewportFit::kCoverForcedByUserAgent, GetViewportFit());
+
+  // Test that even if we change the value we ignore it.
+  SetHtmlInnerHTML("<meta name='viewport' content='viewport-fit=auto'>");
+  EXPECT_EQ(mojom::ViewportFit::kCoverForcedByUserAgent, GetViewportFit());
+
+  // Now remove the override and check that it went back to the previous value.
+  GetDocument().GetViewportData().SetExpandIntoDisplayCutout(false);
+  EXPECT_EQ(mojom::ViewportFit::kAuto, GetViewportFit());
 }
 
 // This is a test case for testing a combination of viewport-fit meta value,
 // viewport CSS value and the expected outcome.
 using ViewportTestCase =
-    std::tuple<const char*, const char*, ViewportDescription::ViewportFit>;
+    std::tuple<const char*, const char*, mojom::ViewportFit>;
 
 class ParameterizedViewportFitDocumentTest
     : public ViewportFitDocumentTest,
@@ -1123,8 +1145,7 @@ class ParameterizedViewportFitDocumentTest
 
 TEST_P(ParameterizedViewportFitDocumentTest, EffectiveViewportFit) {
   LoadTestHTML();
-  EXPECT_EQ(std::get<2>(GetParam()),
-            GetDocument().GetViewportDescription().GetViewportFit());
+  EXPECT_EQ(std::get<2>(GetParam()), GetViewportFit());
 }
 
 INSTANTIATE_TEST_CASE_P(
@@ -1132,41 +1153,19 @@ INSTANTIATE_TEST_CASE_P(
     ParameterizedViewportFitDocumentTest,
     testing::Values(
         // Test the default case.
-        ViewportTestCase(nullptr,
-                         nullptr,
-                         ViewportDescription::ViewportFit::kAuto),
+        ViewportTestCase(nullptr, nullptr, mojom::ViewportFit::kAuto),
         // Test the different values set through CSS.
-        ViewportTestCase(nullptr,
-                         "auto",
-                         ViewportDescription::ViewportFit::kAuto),
-        ViewportTestCase(nullptr,
-                         "contain",
-                         ViewportDescription::ViewportFit::kContain),
-        ViewportTestCase(nullptr,
-                         "cover",
-                         ViewportDescription::ViewportFit::kCover),
-        ViewportTestCase(nullptr,
-                         "invalid",
-                         ViewportDescription::ViewportFit::kAuto),
+        ViewportTestCase(nullptr, "auto", mojom::ViewportFit::kAuto),
+        ViewportTestCase(nullptr, "contain", mojom::ViewportFit::kContain),
+        ViewportTestCase(nullptr, "cover", mojom::ViewportFit::kCover),
+        ViewportTestCase(nullptr, "invalid", mojom::ViewportFit::kAuto),
         // Test the different values set through the meta tag.
-        ViewportTestCase("auto",
-                         nullptr,
-                         ViewportDescription::ViewportFit::kAuto),
-        ViewportTestCase("contain",
-                         nullptr,
-                         ViewportDescription::ViewportFit::kContain),
-        ViewportTestCase("cover",
-                         nullptr,
-                         ViewportDescription::ViewportFit::kCover),
-        ViewportTestCase("invalid",
-                         nullptr,
-                         ViewportDescription::ViewportFit::kAuto),
+        ViewportTestCase("auto", nullptr, mojom::ViewportFit::kAuto),
+        ViewportTestCase("contain", nullptr, mojom::ViewportFit::kContain),
+        ViewportTestCase("cover", nullptr, mojom::ViewportFit::kCover),
+        ViewportTestCase("invalid", nullptr, mojom::ViewportFit::kAuto),
         // Test that the CSS should override the meta tag.
-        ViewportTestCase("cover",
-                         "auto",
-                         ViewportDescription::ViewportFit::kAuto),
-        ViewportTestCase("cover",
-                         "contain",
-                         ViewportDescription::ViewportFit::kContain)));
+        ViewportTestCase("cover", "auto", mojom::ViewportFit::kAuto),
+        ViewportTestCase("cover", "contain", mojom::ViewportFit::kContain)));
 
 }  // namespace blink

@@ -84,7 +84,7 @@ DOMHighResTimeStamp GetUnixAtZeroMonotonic() {
 
 using PerformanceObserverVector = HeapVector<Member<PerformanceObserver>>;
 
-static const size_t kDefaultResourceTimingBufferSize = 150;
+static const size_t kDefaultResourceTimingBufferSize = 250;
 static const size_t kDefaultFrameTimingBufferSize = 150;
 constexpr size_t kDefaultEventTimingBufferSize = 150;
 
@@ -118,6 +118,10 @@ PerformanceNavigation* Performance::navigation() const {
 
 MemoryInfo* Performance::memory() const {
   return nullptr;
+}
+
+bool Performance::shouldYield() const {
+  return false;
 }
 
 DOMHighResTimeStamp Performance::timeOrigin() const {
@@ -156,7 +160,8 @@ PerformanceEntryVector Performance::getEntries() {
   return entries;
 }
 
-PerformanceEntryVector Performance::getEntriesByType(const String& entry_type) {
+PerformanceEntryVector Performance::getEntriesByType(
+    const AtomicString& entry_type) {
   PerformanceEntryVector entries;
   PerformanceEntry::EntryType type =
       PerformanceEntry::ToEntryTypeEnum(entry_type);
@@ -224,8 +229,9 @@ PerformanceEntryVector Performance::getEntriesByType(const String& entry_type) {
   return entries;
 }
 
-PerformanceEntryVector Performance::getEntriesByName(const String& name,
-                                                     const String& entry_type) {
+PerformanceEntryVector Performance::getEntriesByName(
+    const String& name,
+    const AtomicString& entry_type) {
   PerformanceEntryVector entries;
   PerformanceEntry::EntryType type =
       PerformanceEntry::ToEntryTypeEnum(entry_type);
@@ -668,7 +674,7 @@ PerformanceMeasure* Performance::measureInternal(
     if (start_or_options.IsPerformanceMeasureOptions()) {
       if (!end.IsNull()) {
         exception_state.ThrowDOMException(
-            kSyntaxError,
+            DOMExceptionCode::kSyntaxError,
             "If a PerformanceMeasureOptions object was passed, |end| must be "
             "null.");
         return nullptr;
@@ -894,12 +900,6 @@ void Performance::Trace(blink::Visitor* visitor) {
   visitor->Trace(active_observers_);
   visitor->Trace(suspended_observers_);
   EventTargetWithInlineData::Trace(visitor);
-}
-
-void Performance::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  for (const auto& observer : observers_)
-    visitor->TraceWrappers(observer);
-  EventTargetWithInlineData::TraceWrappers(visitor);
 }
 
 }  // namespace blink

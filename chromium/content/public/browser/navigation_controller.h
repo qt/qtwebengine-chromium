@@ -94,7 +94,7 @@ class NavigationController {
   };
 
   // Creates a navigation entry and translates the virtual url to a real one.
-  // This is a general call; prefer LoadURL[FromRenderer]/TransferURL below.
+  // This is a general call; prefer LoadURL[WithParams] below.
   // Extra headers are separated by \n.
   CONTENT_EXPORT static std::unique_ptr<NavigationEntry> CreateNavigationEntry(
       const GURL& url,
@@ -143,11 +143,6 @@ class NavigationController {
     // UserAgentOverrideOption definition.
     UserAgentOverrideOption override_user_agent;
 
-    // Marks the new navigation as being transferred from one RVH to another.
-    // In this case the browser can recycle the old request once the new
-    // renderer wants to navigate. Identifies the request ID of the old request.
-    GlobalRequestID transferred_global_request_id;
-
     // Used in LOAD_TYPE_DATA loads only. Used for specifying a base URL
     // for pages loaded via data URLs.
     GURL base_url_for_data_url;
@@ -179,13 +174,6 @@ class NavigationController {
     // Used to specify which frame to navigate. If empty, the main frame is
     // navigated. This is currently only used in tests.
     std::string frame_name;
-
-#if defined(OS_ANDROID)
-    // On Android, for a load triggered by an intent, the time Chrome received
-    // the original intent that prompted the load (in milliseconds active time
-    // since boot).
-    int64_t intent_received_timestamp;
-#endif
 
     // Indicates that the navigation was triggered by a user gesture.
     bool has_user_gesture;

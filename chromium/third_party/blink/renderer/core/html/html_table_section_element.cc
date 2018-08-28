@@ -24,14 +24,13 @@
 
 #include "third_party/blink/renderer/core/html/html_table_section_element.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/node_lists_node_data.h"
 #include "third_party/blink/renderer/core/html/html_collection.h"
 #include "third_party/blink/renderer/core/html/html_table_element.h"
 #include "third_party/blink/renderer/core/html/html_table_row_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -60,9 +59,9 @@ HTMLElement* HTMLTableSectionElement::insertRow(
   int num_rows = children ? static_cast<int>(children->length()) : 0;
   if (index < -1 || index > num_rows) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "The provided index (" + String::Number(index) +
-                             " is outside the range [-1, " +
-                             String::Number(num_rows) + "].");
+        DOMExceptionCode::kIndexSizeError,
+        "The provided index (" + String::Number(index) +
+            " is outside the range [-1, " + String::Number(num_rows) + "].");
     return nullptr;
   }
 
@@ -88,9 +87,9 @@ void HTMLTableSectionElement::deleteRow(int index,
     HTMLElement::RemoveChild(row, exception_state);
   } else {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "The provided index (" + String::Number(index) +
-                             " is outside the range [-1, " +
-                             String::Number(num_rows) + "].");
+        DOMExceptionCode::kIndexSizeError,
+        "The provided index (" + String::Number(index) +
+            " is outside the range [-1, " + String::Number(num_rows) + "].");
   }
 }
 

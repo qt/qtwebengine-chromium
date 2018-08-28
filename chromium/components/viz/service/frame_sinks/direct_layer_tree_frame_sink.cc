@@ -7,6 +7,8 @@
 #include <memory>
 
 #include "base/bind.h"
+#include "base/compiler_specific.h"
+#include "build/build_config.h"
 #include "cc/trees/layer_tree_frame_sink_client.h"
 #include "components/viz/common/hit_test/hit_test_region_list.h"
 #include "components/viz/common/quads/compositor_frame.h"
@@ -44,10 +46,6 @@ DirectLayerTreeFrameSink::DirectLayerTreeFrameSink(
       use_viz_hit_test_(use_viz_hit_test),
       weak_factory_(this) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  capabilities_.must_always_swap = true;
-  // Display and DirectLayerTreeFrameSink share a GL context, so sync
-  // points aren't needed when passing resources between them.
-  capabilities_.delegated_sync_points_required = false;
 }
 
 DirectLayerTreeFrameSink::~DirectLayerTreeFrameSink() {
@@ -61,10 +59,9 @@ bool DirectLayerTreeFrameSink::BindToClient(
   if (!cc::LayerTreeFrameSink::BindToClient(client))
     return false;
 
-  constexpr bool is_root = true;
   support_ = support_manager_->CreateCompositorFrameSinkSupport(
-      this, frame_sink_id_, is_root,
-      capabilities_.delegated_sync_points_required);
+      this, frame_sink_id_, /*is_root=*/true,
+      /*return_sync_tokens_required=*/false);
   begin_frame_source_ = std::make_unique<ExternalBeginFrameSource>(this);
   client_->SetBeginFrameSource(begin_frame_source_.get());
 
@@ -201,11 +198,21 @@ void DirectLayerTreeFrameSink::DisplayDidDrawAndSwap() {
 
 void DirectLayerTreeFrameSink::DisplayDidReceiveCALayerParams(
     const gfx::CALayerParams& ca_layer_params) {
+#if defined(OS_MACOSX)
   // If |ca_layer_params| should have content only when there exists a client
   // to send it to.
   DCHECK(ca_layer_params.is_empty || display_client_);
   if (display_client_)
     display_client_->OnDisplayReceivedCALayerParams(ca_layer_params);
+#else
+  NOTREACHED();
+  ALLOW_UNUSED_LOCAL(display_client_);
+#endif
+}
+
+void DirectLayerTreeFrameSink::DisplayDidCompleteSwapWithSize(
+    const gfx::Size& pixel_size) {
+  // Not needed in non-OOP-D mode.
 }
 
 void DirectLayerTreeFrameSink::DidSwapAfterSnapshotRequestReceived(
@@ -233,15 +240,8 @@ void DirectLayerTreeFrameSink::DidReceiveCompositorFrameAckInternal(
 
 void DirectLayerTreeFrameSink::DidPresentCompositorFrame(
     uint32_t presentation_token,
-    base::TimeTicks time,
-    base::TimeDelta refresh,
-    uint32_t flags) {
-  client_->DidPresentCompositorFrame(presentation_token, time, refresh, flags);
-}
-
-void DirectLayerTreeFrameSink::DidDiscardCompositorFrame(
-    uint32_t presentation_token) {
-  client_->DidDiscardCompositorFrame(presentation_token);
+    const gfx::PresentationFeedback& feedback) {
+  client_->DidPresentCompositorFrame(presentation_token, feedback);
 }
 
 void DirectLayerTreeFrameSink::OnBeginFrame(const BeginFrameArgs& args) {

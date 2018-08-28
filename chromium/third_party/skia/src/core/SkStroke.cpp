@@ -6,9 +6,14 @@
  */
 
 #include "SkStrokerPriv.h"
+
 #include "SkGeometry.h"
+#include "SkMacros.h"
 #include "SkPathPriv.h"
 #include "SkPointPriv.h"
+#include "SkTo.h"
+
+#include <utility>
 
 enum {
     kTangent_RecursiveLimit,
@@ -980,7 +985,8 @@ static bool sharp_angle(const SkPoint quad[3]) {
     SkScalar smallerLen = SkPointPriv::LengthSqd(smaller);
     SkScalar largerLen = SkPointPriv::LengthSqd(larger);
     if (smallerLen > largerLen) {
-        SkTSwap(smaller, larger);
+        using std::swap;
+        swap(smaller, larger);
         largerLen = smallerLen;
     }
     if (!smaller.setLength(largerLen)) {

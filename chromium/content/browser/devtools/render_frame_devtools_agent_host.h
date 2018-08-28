@@ -42,6 +42,7 @@ class CompositorFrameMetadata;
 
 namespace net {
 class SSLInfo;
+class X509Certificate;
 }
 
 namespace content {
@@ -53,7 +54,8 @@ class NavigationHandleImpl;
 class NavigationRequest;
 class NavigationThrottle;
 class RenderFrameHostImpl;
-class SignedExchangeHeader;
+class SignedExchangeEnvelope;
+struct SignedExchangeError;
 
 class CONTENT_EXPORT RenderFrameDevToolsAgentHost
     : public DevToolsAgentHostImpl,
@@ -101,9 +103,10 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
       base::Optional<const base::UnguessableToken> devtools_navigation_token,
       const GURL& outer_request_url,
       const network::ResourceResponseHead& outer_response,
-      const base::Optional<SignedExchangeHeader>& header,
+      const base::Optional<SignedExchangeEnvelope>& header,
+      const scoped_refptr<net::X509Certificate>& certificate,
       const base::Optional<net::SSLInfo>& ssl_info,
-      const std::vector<std::string>& error_messages);
+      const std::vector<SignedExchangeError>& errors);
   static void OnSignedExchangeCertificateRequestSent(
       FrameTreeNode* frame_tree_node,
       const base::UnguessableToken& request_id,
@@ -158,11 +161,10 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   ~RenderFrameDevToolsAgentHost() override;
 
   // DevToolsAgentHostImpl overrides.
-  bool AttachSession(DevToolsSession* session) override;
+  bool AttachSession(DevToolsSession* session,
+                     TargetRegistry* registry) override;
   void DetachSession(DevToolsSession* session) override;
   void InspectElement(RenderFrameHost* frame_host, int x, int y) override;
-  void DispatchProtocolMessage(DevToolsSession* session,
-                               const std::string& message) override;
 
   // WebContentsObserver overrides.
   void DidStartNavigation(NavigationHandle* navigation_handle) override;
@@ -180,7 +182,6 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   void OnPageScaleFactorChanged(float page_scale_factor) override;
 
   bool IsChildFrame();
-  bool IsFrameHostAllowedForRestrictedSessions();
 
   void OnSwapCompositorFrame(const IPC::Message& message);
   void DestroyOnRenderFrameGone();

@@ -54,7 +54,7 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
       rtc::FunctionView<void(const AudioEncoder*)> query) override;
 
   // Get current send codec.
-  rtc::Optional<CodecInst> SendCodec() const override;
+  absl::optional<CodecInst> SendCodec() const override;
 
   // Get current send frequency.
   int SendFrequency() const override;
@@ -142,7 +142,7 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   // Get current received codec.
   int ReceiveCodec(CodecInst* current_codec) const override;
 
-  rtc::Optional<SdpAudioFormat> ReceiveFormat() const override;
+  absl::optional<SdpAudioFormat> ReceiveFormat() const override;
 
   // Incoming packet from network parsed and ready for decode.
   int IncomingPacket(const uint8_t* incoming_payload,
@@ -160,7 +160,7 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
 
   RTC_DEPRECATED int32_t PlayoutTimestamp(uint32_t* timestamp) override;
 
-  rtc::Optional<uint32_t> PlayoutTimestamp() override;
+  absl::optional<uint32_t> PlayoutTimestamp() override;
 
   int FilteredCurrentDelayMs() const override;
 
@@ -323,9 +323,10 @@ int DownMix(const AudioFrame& frame,
   if (!frame.muted()) {
     const int16_t* frame_data = frame.data();
     for (size_t n = 0; n < frame.samples_per_channel_; ++n) {
-      out_buff[n] = static_cast<int16_t>(
-          (static_cast<int32_t>(frame_data[2 * n]) +
-           static_cast<int32_t>(frame_data[2 * n + 1])) >> 1);
+      out_buff[n] =
+          static_cast<int16_t>((static_cast<int32_t>(frame_data[2 * n]) +
+                                static_cast<int32_t>(frame_data[2 * n + 1])) >>
+                               1);
     }
   } else {
     std::fill(out_buff, out_buff + frame.samples_per_channel_, 0);
@@ -472,7 +473,7 @@ int32_t AudioCodingModuleImpl::Encode(const InputData& input_data) {
   if (!HaveValidEncoder("Process"))
     return -1;
 
-  if(!first_frame_) {
+  if (!first_frame_) {
     RTC_DCHECK(IsNewerTimestamp(input_data.input_timestamp, last_timestamp_))
         << "Time should not move backwards";
   }
@@ -493,9 +494,10 @@ int32_t AudioCodingModuleImpl::Encode(const InputData& input_data) {
   // Clear the buffer before reuse - encoded data will get appended.
   encode_buffer_.Clear();
   encoded_info = encoder_stack_->Encode(
-      rtp_timestamp, rtc::ArrayView<const int16_t>(
-                         input_data.audio, input_data.audio_channel *
-                                               input_data.length_per_channel),
+      rtp_timestamp,
+      rtc::ArrayView<const int16_t>(
+          input_data.audio,
+          input_data.audio_channel * input_data.length_per_channel),
       &encode_buffer_);
 
   bitrate_logger_.MaybeLog(encoder_stack_->GetTargetBitrate() / 1000);
@@ -603,7 +605,7 @@ void AudioCodingModuleImpl::QueryEncoder(
 }
 
 // Get current send codec.
-rtc::Optional<CodecInst> AudioCodingModuleImpl::SendCodec() const {
+absl::optional<CodecInst> AudioCodingModuleImpl::SendCodec() const {
   rtc::CritScope lock(&acm_crit_sect_);
   if (encoder_factory_) {
     auto* ci = encoder_factory_->codec_manager.GetCodecInst();
@@ -616,12 +618,12 @@ rtc::Optional<CodecInst> AudioCodingModuleImpl::SendCodec() const {
     if (enc) {
       return acm2::CodecManager::ForgeCodecInst(enc.get());
     }
-    return rtc::nullopt;
+    return absl::nullopt;
   } else {
     return encoder_stack_
-               ? rtc::Optional<CodecInst>(
+               ? absl::optional<CodecInst>(
                      acm2::CodecManager::ForgeCodecInst(encoder_stack_.get()))
-               : rtc::nullopt;
+               : absl::nullopt;
   }
 }
 
@@ -640,7 +642,7 @@ int AudioCodingModuleImpl::SendFrequency() const {
 void AudioCodingModuleImpl::SetBitRate(int bitrate_bps) {
   rtc::CritScope lock(&acm_crit_sect_);
   if (encoder_stack_) {
-    encoder_stack_->OnReceivedUplinkBandwidth(bitrate_bps, rtc::nullopt);
+    encoder_stack_->OnReceivedUplinkBandwidth(bitrate_bps, absl::nullopt);
   }
 }
 
@@ -767,7 +769,6 @@ int AudioCodingModuleImpl::PreprocessToAddData(const AudioFrame& in_frame,
     expected_in_ts_ = in_frame.timestamp_;
   }
 
-
   if (!down_mix && !resample) {
     // No pre-processing is required.
     if (expected_in_ts_ == expected_codec_ts_) {
@@ -793,8 +794,8 @@ int AudioCodingModuleImpl::PreprocessToAddData(const AudioFrame& in_frame,
   if (down_mix) {
     // If a resampling is required the output of a down-mix is written into a
     // local buffer, otherwise, it will be written to the output frame.
-    int16_t* dest_ptr_audio = resample ?
-        audio : preprocess_frame_.mutable_data();
+    int16_t* dest_ptr_audio =
+        resample ? audio : preprocess_frame_.mutable_data();
     if (DownMix(in_frame, WEBRTC_10MS_PCM_AUDIO, dest_ptr_audio) < 0)
       return -1;
     preprocess_frame_.num_channels_ = 1;
@@ -912,7 +913,8 @@ int AudioCodingModuleImpl::SetVAD(bool enable_dtx,
 }
 
 // Get VAD/DTX settings.
-int AudioCodingModuleImpl::VAD(bool* dtx_enabled, bool* vad_enabled,
+int AudioCodingModuleImpl::VAD(bool* dtx_enabled,
+                               bool* vad_enabled,
                                ACMVADMode* mode) const {
   rtc::CritScope lock(&acm_crit_sect_);
   const auto* sp = encoder_factory_->codec_manager.GetStackParams();
@@ -1062,7 +1064,7 @@ int AudioCodingModuleImpl::ReceiveCodec(CodecInst* current_codec) const {
   return receiver_.LastAudioCodec(current_codec);
 }
 
-rtc::Optional<SdpAudioFormat> AudioCodingModuleImpl::ReceiveFormat() const {
+absl::optional<SdpAudioFormat> AudioCodingModuleImpl::ReceiveFormat() const {
   rtc::CritScope lock(&acm_crit_sect_);
   return receiver_.LastAudioFormat();
 }
@@ -1180,14 +1182,14 @@ int AudioCodingModuleImpl::DisableOpusDtx() {
 }
 
 int32_t AudioCodingModuleImpl::PlayoutTimestamp(uint32_t* timestamp) {
-  rtc::Optional<uint32_t> ts = PlayoutTimestamp();
+  absl::optional<uint32_t> ts = PlayoutTimestamp();
   if (!ts)
     return -1;
   *timestamp = *ts;
   return 0;
 }
 
-rtc::Optional<uint32_t> AudioCodingModuleImpl::PlayoutTimestamp() {
+absl::optional<uint32_t> AudioCodingModuleImpl::PlayoutTimestamp() {
   return receiver_.GetPlayoutTimestamp();
 }
 
@@ -1229,7 +1231,7 @@ int AudioCodingModuleImpl::LeastRequiredDelayMs() const {
 }
 
 void AudioCodingModuleImpl::GetDecodingCallStatistics(
-      AudioDecodingCallStats* call_stats) const {
+    AudioDecodingCallStats* call_stats) const {
   receiver_.GetDecodingCallStatistics(call_stats);
 }
 
@@ -1279,7 +1281,7 @@ int AudioCodingModule::Codec(const char* payload_name,
                              CodecInst* codec,
                              int sampling_freq_hz,
                              size_t channels) {
-  rtc::Optional<CodecInst> ci = acm2::RentACodec::CodecInstByParams(
+  absl::optional<CodecInst> ci = acm2::RentACodec::CodecInstByParams(
       payload_name, sampling_freq_hz, channels);
   if (ci) {
     *codec = *ci;
@@ -1299,12 +1301,12 @@ int AudioCodingModule::Codec(const char* payload_name,
 int AudioCodingModule::Codec(const char* payload_name,
                              int sampling_freq_hz,
                              size_t channels) {
-  rtc::Optional<acm2::RentACodec::CodecId> ci =
+  absl::optional<acm2::RentACodec::CodecId> ci =
       acm2::RentACodec::CodecIdByParams(payload_name, sampling_freq_hz,
                                         channels);
   if (!ci)
     return -1;
-  rtc::Optional<int> i = acm2::RentACodec::CodecIndexFromId(*ci);
+  absl::optional<int> i = acm2::RentACodec::CodecIndexFromId(*ci);
   return i ? *i : -1;
 }
 

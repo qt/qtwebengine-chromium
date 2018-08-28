@@ -102,13 +102,12 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
 #include "gpu/command_buffer/client/raster_implementation_autogen.h"
 
   // RasterInterface implementation.
-  void BeginRasterCHROMIUM(
-      GLuint texture_id,
-      GLuint sk_color,
-      GLuint msaa_sample_count,
-      GLboolean can_use_lcd_text,
-      GLint color_type,
-      const cc::RasterColorSpace& raster_color_space) override;
+  void BeginRasterCHROMIUM(GLuint sk_color,
+                           GLuint msaa_sample_count,
+                           GLboolean can_use_lcd_text,
+                           GLint color_type,
+                           const cc::RasterColorSpace& raster_color_space,
+                           const GLbyte* mailbox) override;
   void RasterCHROMIUM(const cc::DisplayItemList* list,
                       cc::ImageProvider* provider,
                       const gfx::Size& content_size,
@@ -146,7 +145,6 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   uint64_t ShareGroupTracingGUID() const override;
   void SetErrorMessageCallback(
       base::RepeatingCallback<void(const char*, int32_t)> callback) override;
-  void SetSnapshotRequested() override;
   bool ThreadSafeShallowLockDiscardableTexture(uint32_t texture_id) override;
   void CompleteLockDiscardableTexureOnContextThread(
       uint32_t texture_id) override;
@@ -309,6 +307,9 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   base::Optional<RasterProperties> raster_properties_;
 
   ClientTransferCache transfer_cache_;
+
+  // Tracing helpers.
+  int raster_chromium_id_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(RasterImplementation);
 };

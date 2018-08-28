@@ -15,7 +15,7 @@
 #include "build/buildflag.h"
 #include "content/public/common/content_client.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/media/audio_device_factory.h"
+#include "content/renderer/media/audio/audio_device_factory.h"
 #include "content/renderer/media/render_media_log.h"
 #include "content/renderer/media/renderer_webmediaplayer_delegate.h"
 #include "content/renderer/media/stream/media_stream_renderer_factory_impl.h"
@@ -28,7 +28,6 @@
 #include "media/base/decoder_factory.h"
 #include "media/base/media_switches.h"
 #include "media/base/renderer_factory_selector.h"
-#include "media/base/surface_manager.h"
 #include "media/blink/remote_playback_client_wrapper_impl.h"
 #include "media/blink/resource_fetch_context.h"
 #include "media/blink/webencryptedmediaclient_impl.h"
@@ -46,12 +45,12 @@
 #include "third_party/blink/public/platform/web_video_frame_submitter.h"
 #include "third_party/blink/public/web/blink.h"
 #include "third_party/blink/public/web/web_local_frame.h"
+#include "ui/base/ui_base_features.h"
 #include "url/origin.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/media/android/media_player_renderer_client_factory.h"
 #include "content/renderer/media/android/renderer_media_player_manager.h"
-#include "content/renderer/media/android/renderer_surface_view_manager.h"
 #include "content/renderer/media/android/stream_texture_wrapper_impl.h"
 #include "media/base/android/media_codec_util.h"
 #include "media/base/media.h"
@@ -139,6 +138,21 @@ void PostMediaContextProviderToCallback(
 
 namespace content {
 
+// static
+bool MediaFactory::VideoSurfaceLayerEnabled() {
+  // LayoutTests do not support SurfaceLayer by default at the moment.
+  // See https://crbug.com/838128
+  content::RenderThreadImpl* render_thread =
+      content::RenderThreadImpl::current();
+  if (render_thread && render_thread->layout_test_mode() &&
+      !render_thread->LayoutTestModeUsesDisplayCompositorPixelDump()) {
+    return false;
+  }
+
+  return base::FeatureList::IsEnabled(media::kUseSurfaceLayerForVideo) &&
+         features::IsAshInBrowserProcess();
+}
+
 MediaFactory::MediaFactory(
     RenderFrameImpl* render_frame,
     media::RequestRoutingTokenCallback request_routing_token_cb)
@@ -223,8 +237,6 @@ blink::WebMediaPlayer* MediaFactory::CreateMediaPlayer(
   bool use_media_player_renderer = false;
 #if defined(OS_ANDROID)
   use_media_player_renderer = UseMediaPlayerRenderer(url);
-  if (!use_media_player_renderer && !media_surface_manager_)
-    media_surface_manager_ = new RendererSurfaceViewManager(render_frame_);
   embedded_media_experience_enabled =
       webkit_preferences.embedded_media_experience_enabled;
 #endif  // defined(OS_ANDROID)
@@ -278,8 +290,7 @@ blink::WebMediaPlayer* MediaFactory::CreateMediaPlayer(
   scoped_refptr<base::SingleThreadTaskRunner>
       video_frame_compositor_task_runner;
   std::unique_ptr<blink::WebVideoFrameSubmitter> submitter;
-  bool use_surface_layer_for_video =
-      base::FeatureList::IsEnabled(media::kUseSurfaceLayerForVideo);
+  bool use_surface_layer_for_video = VideoSurfaceLayerEnabled();
   if (use_surface_layer_for_video) {
     // TODO(lethalantidote): Use a separate task_runner. https://crbug/753605.
     video_frame_compositor_task_runner =
@@ -298,25 +309,36 @@ blink::WebMediaPlayer* MediaFactory::CreateMediaPlayer(
   }
 
   DCHECK(layer_tree_view);
+  scoped_refptr<base::SingleThreadTaskRunner> media_task_runner =
+      render_thread->GetMediaThreadTaskRunner();
+
+  if (!media_task_runner) {
+    // If the media thread failed to start, we will receive a null task runner.
+    // Fail the creation by returning null, and let callers handle the error.
+    // See https://crbug.com/775393.
+    return nullptr;
+  }
+
   std::unique_ptr<media::WebMediaPlayerParams> params(
       new media::WebMediaPlayerParams(
           std::move(media_log),
-          base::Bind(&ContentRendererClient::DeferMediaLoad,
-                     base::Unretained(GetContentClient()->renderer()),
-                     static_cast<RenderFrame*>(render_frame_),
-                     GetWebMediaPlayerDelegate()->has_played_media()),
-          audio_renderer_sink, render_thread->GetMediaThreadTaskRunner(),
+          base::BindRepeating(&ContentRendererClient::DeferMediaLoad,
+                              base::Unretained(GetContentClient()->renderer()),
+                              static_cast<RenderFrame*>(render_frame_),
+                              GetWebMediaPlayerDelegate()->has_played_media()),
+          audio_renderer_sink, media_task_runner,
           render_thread->GetWorkerTaskRunner(),
           render_thread->compositor_task_runner(),
           video_frame_compositor_task_runner,
           base::Bind(&v8::Isolate::AdjustAmountOfExternalAllocatedMemory,
                      base::Unretained(blink::MainThreadIsolate())),
-          initial_cdm, media_surface_manager_, request_routing_token_cb_,
-          media_observer, max_keyframe_distance_to_disable_background_video,
+          initial_cdm, request_routing_token_cb_, media_observer,
+          max_keyframe_distance_to_disable_background_video,
           max_keyframe_distance_to_disable_background_video_mse,
           enable_instant_source_buffer_gc, embedded_media_experience_enabled,
           std::move(metrics_provider),
-          base::Bind(&blink::WebSurfaceLayerBridge::Create, layer_tree_view),
+          base::BindOnce(&blink::WebSurfaceLayerBridge::Create,
+                         layer_tree_view),
           RenderThreadImpl::current()->SharedMainThreadContextProvider(),
           use_surface_layer_for_video));
 

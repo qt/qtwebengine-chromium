@@ -50,7 +50,7 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
   void BeginFrame(base::TimeTicks last_frame_time) override;
   void UpdateLifecycle(LifecycleUpdate requested_update) override;
   void UpdateAllLifecyclePhasesAndCompositeForTesting() override;
-  void Paint(WebCanvas*, const WebRect& view_port) override;
+  void PaintContent(cc::PaintCanvas*, const WebRect& view_port) override;
   void LayoutAndPaintAsync(base::OnceClosure callback) override;
   void CompositeAndReadbackAsync(
       base::OnceCallback<void(const SkBitmap&)>) override;
@@ -74,8 +74,8 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
   void WillCloseLayerTreeView() override;
   SkColor BackgroundColor() const override;
   WebPagePopup* GetPagePopup() const override;
-  void UpdateBrowserControlsState(WebBrowserControlsState constraints,
-                                  WebBrowserControlsState current,
+  void UpdateBrowserControlsState(cc::BrowserControlsState constraints,
+                                  cc::BrowserControlsState current,
                                   bool animate) override;
   void SetVisibilityState(mojom::PageVisibilityState) override;
   void SetBackgroundColorOverride(SkColor) override;

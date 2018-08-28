@@ -89,11 +89,6 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceResponseInfo {
   // CanReadRawCookies permission.
   scoped_refptr<HttpRawRequestResponseInfo> raw_request_response_info;
 
-  // The path to a file that will contain the response body.  It may only
-  // contain a portion of the response body at the time that the ResponseInfo
-  // becomes available.
-  base::FilePath download_file_path;
-
   // True if the response was delivered using SPDY.
   bool was_fetched_via_spdy;
 
@@ -181,10 +176,14 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceResponseInfo {
   // for this response.
   bool did_service_worker_navigation_preload;
 
-  // Is used to report that cross-site document request response was blocked
-  // from entering renderer. Corresponding message will be generated in devtools
-  // console if this flag is set to true.
-  bool blocked_cross_site_document;
+  // Is used to report that a cross-origin response was blocked by Cross-Origin
+  // Read Blocking (CORB) from entering renderer. Corresponding message will be
+  // generated in devtools console if this flag is set to true.
+  bool should_report_corb_blocking;
+
+  // True if this resource is stale and needs async revalidation. Will only
+  // possibly be set if the load_flags indicated SUPPORT_ASYNC_REVALIDATION.
+  bool async_revalidation_requested;
 
   // NOTE: When adding or changing fields here, also update
   // ResourceResponse::DeepCopy in resource_response.cc.

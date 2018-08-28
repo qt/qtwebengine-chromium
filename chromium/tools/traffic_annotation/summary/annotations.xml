@@ -17,7 +17,6 @@ Refer to README.md for content description and update process.
  <item id="android_device_manager_socket" hash_code="37249086" type="0" content_hash_code="6436865" os_list="linux,windows" file_path="chrome/browser/devtools/device/android_device_manager.cc"/>
  <item id="android_web_socket" hash_code="39356976" type="0" content_hash_code="12310113" os_list="linux,windows" file_path="chrome/browser/devtools/device/android_web_socket.cc"/>
  <item id="appcache_update_job" hash_code="25790702" type="0" content_hash_code="27424887" os_list="linux,windows" file_path="content/browser/appcache/appcache_update_request_base.cc"/>
- <item id="asset_links" hash_code="89771989" type="0" content_hash_code="72216357" os_list="linux,windows" file_path="components/password_manager/core/browser/site_affiliation/asset_link_retriever.cc"/>
  <item id="autofill_query" hash_code="88863520" type="0" content_hash_code="15563339" os_list="linux,windows" file_path="components/autofill/core/browser/autofill_download_manager.cc"/>
  <item id="autofill_upload" hash_code="104798869" type="0" content_hash_code="110634763" os_list="linux,windows" file_path="components/autofill/core/browser/autofill_download_manager.cc"/>
  <item id="backdrop_collection_images_download" hash_code="34767164" type="0" content_hash_code="103835921" os_list="linux,windows" file_path="chrome/browser/search/background/ntp_background_service.cc"/>
@@ -28,7 +27,7 @@ Refer to README.md for content description and update process.
  <item id="blink_extension_resource_loader" hash_code="84165821" type="0" content_hash_code="3695143" os_list="linux,windows" file_path="content/renderer/loader/web_url_loader_impl.cc"/>
  <item id="blink_resource_loader" hash_code="101845102" type="0" content_hash_code="75331172" os_list="linux,windows" file_path="content/renderer/loader/web_url_loader_impl.cc"/>
  <item id="blob_read" hash_code="112303907" type="0" content_hash_code="135449692" os_list="linux,windows" file_path="storage/browser/blob/blob_url_request_job_factory.cc"/>
- <item id="blob_reader" hash_code="5154306" type="0" content_hash_code="39702178" os_list="linux,windows" file_path="extensions/browser/blob_reader.cc"/>
+ <item id="blob_reader" hash_code="5154306" type="0" deprecated="2018-06-14" content_hash_code="39702178" file_path=""/>
  <item id="bluetooth_socket" hash_code="94099818" type="0" content_hash_code="30932349" os_list="linux,windows" file_path="device/bluetooth/bluetooth_socket_net.cc"/>
  <item id="brandcode_config" hash_code="109679553" type="0" content_hash_code="128843792" os_list="linux,windows" file_path="chrome/browser/profile_resetter/brandcode_config_fetcher.cc"/>
  <item id="captive_portal_service" hash_code="88754904" type="0" content_hash_code="70737580" os_list="linux,windows" file_path="chrome/browser/captive_portal/captive_portal_service.cc"/>
@@ -41,7 +40,6 @@ Refer to README.md for content description and update process.
  <item id="certificate_verifier" hash_code="113553577" type="0" content_hash_code="62346354" os_list="linux,windows" file_path="net/cert_net/cert_net_fetcher_impl.cc"/>
  <item id="chrome_apps_socket_api" hash_code="8591273" type="0" content_hash_code="70868355" os_list="linux,windows" file_path="extensions/browser/api/socket/socket.cc"/>
  <item id="chrome_cleaner" hash_code="27071967" type="0" content_hash_code="111240292" os_list="windows" file_path="chrome/browser/safe_browsing/chrome_cleaner/chrome_cleaner_fetcher_win.cc"/>
- <item id="chrome_expect_ct_reporter" hash_code="57276415" type="0" content_hash_code="137551346" os_list="linux,windows" file_path="chrome/browser/ssl/chrome_expect_ct_reporter.cc"/>
  <item id="chrome_feedback_report_app" hash_code="134729048" type="0" content_hash_code="73916972" os_list="linux,windows" file_path="components/feedback/feedback_uploader.cc"/>
  <item id="chrome_variations_service" hash_code="115188287" type="0" content_hash_code="32485683" os_list="linux,windows" file_path="components/variations/service/variations_service.cc"/>
  <item id="client_download_request" hash_code="125522256" type="0" content_hash_code="23897505" os_list="linux,windows" file_path="chrome/browser/safe_browsing/download_protection/check_client_download_request.cc"/>
@@ -71,12 +69,12 @@ Refer to README.md for content description and update process.
  <item id="desktop_ios_promotion" hash_code="13694792" type="0" content_hash_code="19776951" os_list="windows" file_path="chrome/browser/ui/desktop_ios_promotion/sms_service.cc"/>
  <item id="device_geolocation_request" hash_code="77673751" type="0" deprecated="2017-10-20" content_hash_code="97181773" file_path=""/>
  <item id="device_management_service" hash_code="117782019" type="0" content_hash_code="127535409" os_list="linux,windows" file_path="components/policy/core/common/cloud/device_management_service.cc"/>
- <item id="devtools_free_data_source" hash_code="22774132" type="0" content_hash_code="136324050" os_list="linux,windows" file_path="chrome/browser/ui/webui/devtools_ui.cc"/>
- <item id="devtools_handle_front_end_messages" hash_code="135636011" type="0" content_hash_code="18422190" os_list="linux,windows" file_path="content/shell/browser/shell_devtools_bindings.cc"/>
- <item id="devtools_hard_coded_data_source" hash_code="111565057" type="0" content_hash_code="46074423" os_list="linux,windows" file_path="chrome/browser/ui/webui/devtools_ui.cc"/>
+ <item id="devtools_free_data_source" hash_code="22774132" type="0" content_hash_code="35733000" os_list="linux,windows" file_path="chrome/browser/ui/webui/devtools_ui.cc"/>
+ <item id="devtools_handle_front_end_messages" hash_code="135636011" type="0" content_hash_code="76808593" os_list="linux,windows" file_path="content/shell/browser/shell_devtools_bindings.cc"/>
+ <item id="devtools_hard_coded_data_source" hash_code="111565057" type="0" content_hash_code="75183720" os_list="linux,windows" file_path="chrome/browser/ui/webui/devtools_ui.cc"/>
  <item id="devtools_http_handler" hash_code="49160454" type="0" content_hash_code="88414393" os_list="linux,windows" file_path="content/browser/devtools/devtools_http_handler.cc"/>
- <item id="devtools_interceptor" hash_code="98123737" type="0" content_hash_code="19053470" os_list="linux,windows" file_path="content/browser/devtools/devtools_url_interceptor_request_job.cc"/>
- <item id="devtools_network_resource" hash_code="129652775" type="0" content_hash_code="24059212" os_list="linux,windows" file_path="chrome/browser/devtools/devtools_ui_bindings.cc"/>
+ <item id="devtools_interceptor" hash_code="98123737" type="0" content_hash_code="64591843" os_list="linux,windows" file_path="content/browser/devtools/devtools_url_interceptor_request_job.cc"/>
+ <item id="devtools_network_resource" hash_code="129652775" type="0" content_hash_code="32810159" os_list="linux,windows" file_path="chrome/browser/devtools/devtools_ui_bindings.cc"/>
  <item id="dial_get_app_info" hash_code="15952025" type="0" deprecated="2018-02-27" content_hash_code="90542080" file_path=""/>
  <item id="dial_get_device_description" hash_code="50422598" type="0" deprecated="2018-02-27" content_hash_code="129827780" file_path=""/>
  <item id="dial_url_fetcher" hash_code="41424546" type="0" content_hash_code="129828432" os_list="linux,windows" file_path="chrome/browser/media/router/discovery/dial/dial_url_fetcher.cc"/>
@@ -92,6 +90,7 @@ Refer to README.md for content description and update process.
  <item id="download_web_contents_frame" hash_code="56351037" type="0" content_hash_code="3657889" os_list="linux,windows" file_path="content/browser/web_contents/web_contents_impl.cc"/>
  <item id="downloads_api_run_async" hash_code="121068967" type="0" content_hash_code="87443585" os_list="linux,windows" file_path="chrome/browser/extensions/api/downloads/downloads_api.cc"/>
  <item id="drag_download_file" hash_code="95910019" type="0" content_hash_code="126492858" os_list="linux,windows" file_path="content/browser/download/drag_download_file.cc"/>
+ <item id="expect_ct_reporter" hash_code="57276415" type="0" deprecated="2018-06-20" content_hash_code="130492494" file_path="services/network/expect_ct_reporter.cc"/>
  <item id="extension_blacklist" hash_code="59592717" type="0" content_hash_code="116742516" os_list="linux,windows" file_path="chrome/browser/extensions/blacklist_state_fetcher.cc"/>
  <item id="extension_crx_fetcher" hash_code="21145003" type="0" content_hash_code="79150319" os_list="linux,windows" file_path="extensions/browser/updater/extension_downloader.cc"/>
  <item id="extension_install_signer" hash_code="50464499" type="0" content_hash_code="88088656" os_list="linux,windows" file_path="chrome/browser/extensions/install_signer.cc"/>
@@ -122,8 +121,10 @@ Refer to README.md for content description and update process.
  <item id="gcm_subscription" hash_code="56434025" type="0" content_hash_code="61632174" os_list="linux,windows" file_path="components/ntp_snippets/breaking_news/subscription_json_request.cc"/>
  <item id="gcm_unregistration" hash_code="119542033" type="0" content_hash_code="30144127" os_list="linux,windows" file_path="google_apis/gcm/engine/unregistration_request.cc"/>
  <item id="geo_language_provider" hash_code="52821843" type="1" second_id="96590038" content_hash_code="104675663" os_list="linux,windows" semantics_fields="1" policy_fields="3,4" file_path="components/language/content/browser/geo_language_provider.cc"/>
+ <item id="google_photos_album_names_download" hash_code="65075134" type="0" content_hash_code="124531309" os_list="linux,windows" file_path="chrome/browser/search/background/ntp_background_service.cc"/>
+ <item id="google_photos_metadata_download" hash_code="93441068" type="0" content_hash_code="48786223" os_list="linux,windows" file_path="chrome/browser/search/background/ntp_background_service.cc"/>
  <item id="google_url_tracker" hash_code="5492492" type="0" content_hash_code="54474899" os_list="linux,windows" file_path="components/google/core/browser/google_url_tracker.cc"/>
- <item id="headless_url_request" hash_code="29865866" type="0" content_hash_code="76700151" os_list="linux,windows" file_path="headless/public/util/http_url_fetcher.cc"/>
+ <item id="headless_url_request" hash_code="29865866" type="0" deprecated="2018-07-10" content_hash_code="76700151" file_path=""/>
  <item id="history_notice_utils_notice" hash_code="102595701" type="1" second_id="110307337" content_hash_code="130829410" os_list="linux,windows" semantics_fields="2,3,4" policy_fields="4" file_path="components/browsing_data/core/history_notice_utils.cc"/>
  <item id="history_notice_utils_popup" hash_code="80832574" type="1" second_id="110307337" content_hash_code="30618510" os_list="linux,windows" semantics_fields="2,3,4" policy_fields="4" file_path="components/browsing_data/core/history_notice_utils.cc"/>
  <item id="http_server_error_response" hash_code="32197336" type="0" content_hash_code="61082230" os_list="linux,windows" file_path="net/server/http_server.cc"/>
@@ -135,6 +136,7 @@ Refer to README.md for content description and update process.
  <item id="invalidation_service" hash_code="72354423" type="0" content_hash_code="78425687" os_list="linux,windows" file_path="components/invalidation/impl/gcm_network_channel.cc"/>
  <item id="lib_address_input" hash_code="50816767" type="0" content_hash_code="57977576" os_list="linux,windows" file_path="third_party/libaddressinput/chromium/chrome_metadata_source.cc"/>
  <item id="logo_tracker" hash_code="36859107" type="0" content_hash_code="67588075" os_list="linux,windows" file_path="components/search_provider_logos/logo_tracker.cc"/>
+ <item id="md_downloads_dom_handler" hash_code="65603364" type="0" content_hash_code="134779147" os_list="linux,windows" file_path="chrome/browser/ui/webui/md_downloads/md_downloads_dom_handler.cc"/>
  <item id="metrics_report_ukm" hash_code="727478" type="0" content_hash_code="40919254" os_list="linux,windows" file_path="components/metrics/net/net_metrics_log_uploader.cc"/>
  <item id="metrics_report_uma" hash_code="727528" type="0" content_hash_code="10176197" os_list="linux,windows" file_path="components/metrics/net/net_metrics_log_uploader.cc"/>
  <item id="mirroring_get_setup_info" hash_code="78447809" type="0" content_hash_code="112561099" os_list="linux,windows" file_path="components/mirroring/service/session_monitor.cc"/>
@@ -142,17 +144,18 @@ Refer to README.md for content description and update process.
  <item id="mojo_context_state" hash_code="93232258" type="0" deprecated="2017-10-20" content_hash_code="124821232" file_path=""/>
  <item id="navigation_url_loader" hash_code="63171670" type="0" content_hash_code="129352907" os_list="linux,windows" file_path="content/browser/loader/navigation_url_loader_impl.cc"/>
  <item id="net_error_helper" hash_code="60071001" type="0" content_hash_code="68322861" os_list="linux,windows" file_path="chrome/renderer/net/net_error_helper.cc"/>
- <item id="network_location_provider" hash_code="23472048" type="1" second_id="96590038" content_hash_code="41087976" os_list="linux,windows" semantics_fields="1" policy_fields="3,4" file_path="device/geolocation/network_location_provider.cc"/>
- <item id="network_location_request" hash_code="96590038" type="2" content_hash_code="59824433" os_list="linux,windows" semantics_fields="2,3,4,5" policy_fields="-1" file_path="device/geolocation/network_location_request.cc"/>
+ <item id="network_location_provider" hash_code="23472048" type="1" second_id="96590038" content_hash_code="41087976" os_list="linux,windows" semantics_fields="1" policy_fields="3,4" file_path="services/device/geolocation/network_location_provider.cc"/>
+ <item id="network_location_request" hash_code="96590038" type="2" content_hash_code="59824433" os_list="linux,windows" semantics_fields="2,3,4,5" policy_fields="-1" file_path="services/device/geolocation/network_location_request.cc"/>
  <item id="network_time_component" hash_code="46188932" type="0" content_hash_code="28051857" os_list="linux,windows" file_path="components/network_time/network_time_tracker.cc"/>
- <item id="notification_image_reporter" hash_code="70126372" type="0" content_hash_code="29754543" os_list="linux,windows" file_path="chrome/browser/safe_browsing/notification_image_reporter.cc"/>
- <item id="ntp_contextual_suggestions_fetch" hash_code="95711309" type="0" content_hash_code="71905054" os_list="linux,windows" file_path="components/ntp_snippets/contextual/contextual_suggestions_fetch.cc"/>
+ <item id="ntp_contextual_suggestions_fetch" hash_code="95711309" type="0" content_hash_code="107035434" os_list="linux,windows" file_path="components/ntp_snippets/contextual/contextual_suggestions_fetch.cc"/>
+ <item id="ntp_icon_source" hash_code="29197139" type="0" content_hash_code="16399294" os_list="linux,windows" file_path="chrome/browser/search/ntp_icon_source.cc"/>
  <item id="ntp_snippets_fetch" hash_code="15418154" type="0" content_hash_code="10078959" os_list="linux,windows" file_path="components/ntp_snippets/remote/json_request.cc"/>
  <item id="oauth2_access_token_fetcher" hash_code="27915688" type="0" content_hash_code="33501872" os_list="linux,windows" file_path="google_apis/gaia/oauth2_access_token_fetcher_impl.cc"/>
  <item id="oauth2_api_call_flow" hash_code="29188932" type="2" content_hash_code="108831236" os_list="linux,windows" policy_fields="-1" file_path="google_apis/gaia/oauth2_api_call_flow.cc"/>
  <item id="oauth2_mint_token_flow" hash_code="1112842" type="1" second_id="29188932" content_hash_code="91581432" os_list="linux,windows" semantics_fields="1,2,3,4,5" policy_fields="3,4" file_path="google_apis/gaia/oauth2_mint_token_flow.cc"/>
  <item id="ocsp_start_url_request" hash_code="60921996" type="0" content_hash_code="24127780" os_list="linux" file_path="net/cert_net/nss_ocsp.cc"/>
  <item id="offline_prefetch" hash_code="19185953" type="0" content_hash_code="57248156" os_list="linux,windows" file_path="components/offline_pages/core/prefetch/prefetch_request_fetcher.cc"/>
+ <item id="omnibox_documentsuggest" hash_code="6055066" type="0" content_hash_code="126973249" os_list="linux,windows" file_path="components/omnibox/browser/document_suggestions_service.cc"/>
  <item id="omnibox_navigation_observer" hash_code="61684939" type="0" content_hash_code="70941231" os_list="linux,windows" file_path="chrome/browser/ui/omnibox/chrome_omnibox_navigation_observer.cc"/>
  <item id="omnibox_prefetch_image" hash_code="109200878" type="0" content_hash_code="107906693" os_list="linux,windows" file_path="chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc"/>
  <item id="omnibox_result_change" hash_code="73107389" type="0" content_hash_code="24802647" os_list="linux,windows" file_path="chrome/browser/ui/omnibox/chrome_omnibox_client.cc"/>
@@ -162,9 +165,11 @@ Refer to README.md for content description and update process.
  <item id="omnibox_zerosuggest_experimental" hash_code="3813491" type="0" content_hash_code="22929259" os_list="linux,windows" file_path="components/omnibox/browser/contextual_suggestions_service.cc"/>
  <item id="one_google_bar_service" hash_code="78917933" type="0" content_hash_code="46527252" os_list="linux,windows" file_path="chrome/browser/search/one_google_bar/one_google_bar_loader_impl.cc"/>
  <item id="open_search" hash_code="107267424" type="0" content_hash_code="25715812" os_list="linux,windows" file_path="components/search_engines/template_url_fetcher.cc"/>
+ <item id="origin_policy_loader" hash_code="6483617" type="0" content_hash_code="20680909" os_list="linux,windows" file_path="content/browser/frame_host/origin_policy_throttle.cc"/>
  <item id="p2p_invalidator" hash_code="84201371" type="0" content_hash_code="117416248" os_list="linux,windows" file_path="components/invalidation/impl/p2p_invalidator.cc"/>
  <item id="parallel_download_job" hash_code="135118587" type="0" content_hash_code="105330419" os_list="linux,windows" file_path="components/download/internal/common/parallel_download_job.cc"/>
  <item id="password_protection_request" hash_code="66322287" type="0" content_hash_code="25596947" os_list="linux,windows" file_path="components/safe_browsing/password_protection/password_protection_request.cc"/>
+ <item id="password_requirements_spec_fetch" hash_code="69585116" type="0" content_hash_code="5591260" os_list="linux,windows" file_path="components/autofill/core/browser/password_requirements_spec_fetcher_impl.cc"/>
  <item id="payment_instrument_icon_fetcher" hash_code="73309970" type="0" deprecated="2017-09-16" content_hash_code="84709873" file_path=""/>
  <item id="payment_manifest_downloader" hash_code="84045030" type="0" content_hash_code="19293316" os_list="linux,windows" file_path="components/payments/core/payment_manifest_downloader.cc"/>
  <item id="payments_sync_cards" hash_code="95588446" type="0" content_hash_code="56526513" os_list="linux,windows" file_path="components/autofill/core/browser/payments/payments_client.cc"/>
@@ -207,7 +212,7 @@ Refer to README.md for content description and update process.
  <item id="safe_browsing_chunk_backup_request" hash_code="79957943" type="0" content_hash_code="133850277" os_list="linux,windows" file_path="chrome/browser/safe_browsing/protocol_manager.cc"/>
  <item id="safe_browsing_client_side_malware_detector" hash_code="102935425" type="0" content_hash_code="79591279" os_list="linux,windows" file_path="chrome/browser/safe_browsing/client_side_detection_service.cc"/>
  <item id="safe_browsing_client_side_phishing_detector" hash_code="1313982" type="0" content_hash_code="50199143" os_list="linux,windows" file_path="chrome/browser/safe_browsing/client_side_detection_service.cc"/>
- <item id="safe_browsing_extended_reporting" hash_code="42848942" type="0" content_hash_code="50089173" os_list="linux,windows" file_path="components/safe_browsing/base_ping_manager.cc"/>
+ <item id="safe_browsing_extended_reporting" hash_code="42848942" type="0" content_hash_code="50089173" os_list="linux,windows" file_path="components/safe_browsing/ping_manager.cc"/>
  <item id="safe_browsing_feedback" hash_code="44583821" type="0" content_hash_code="114076664" os_list="linux,windows" file_path="chrome/browser/safe_browsing/download_protection/download_feedback.cc"/>
  <item id="safe_browsing_g4_update" hash_code="75153841" type="0" content_hash_code="112049516" os_list="linux,windows" file_path="components/safe_browsing/db/v4_update_protocol_manager.cc"/>
  <item id="safe_browsing_get_full_hash" hash_code="68745894" type="0" content_hash_code="21739198" os_list="linux,windows" file_path="chrome/browser/safe_browsing/protocol_manager.cc"/>

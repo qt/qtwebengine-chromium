@@ -136,15 +136,17 @@ NonClientFrameView* BubbleDialogDelegateView::CreateNonClientFrameView(
     Widget* widget) {
   BubbleFrameView* frame = new BubbleDialogFrameView(title_margins_);
 
+  LayoutProvider* provider = LayoutProvider::Get();
   frame->set_footnote_margins(
-      LayoutProvider::Get()->GetInsetsMetric(INSETS_DIALOG_SUBSECTION));
+      provider->GetInsetsMetric(INSETS_DIALOG_SUBSECTION));
   frame->SetFootnoteView(CreateFootnoteView());
 
   BubbleBorder::Arrow adjusted_arrow = arrow();
   if (base::i18n::IsRTL() && mirror_arrow_in_rtl_)
     adjusted_arrow = BubbleBorder::horizontal_mirror(adjusted_arrow);
-  frame->SetBubbleBorder(std::unique_ptr<BubbleBorder>(
-      new BubbleBorder(adjusted_arrow, shadow(), color())));
+  std::unique_ptr<BubbleBorder> border =
+      std::make_unique<BubbleBorder>(adjusted_arrow, shadow(), color());
+  frame->SetBubbleBorder(std::move(border));
   return frame;
 }
 
@@ -323,24 +325,32 @@ void BubbleDialogDelegateView::SetAnchorView(View* anchor_view) {
   // change as well.
   if (!anchor_view || anchor_widget() != anchor_view->GetWidget()) {
     if (anchor_widget()) {
+      if (GetWidget() && GetWidget()->IsVisible())
+        UpdateAnchorWidgetRenderState(false);
       anchor_widget_->RemoveObserver(this);
       anchor_widget_ = NULL;
     }
     if (anchor_view) {
       anchor_widget_ = anchor_view->GetWidget();
-      if (anchor_widget_)
+      if (anchor_widget_) {
         anchor_widget_->AddObserver(this);
+        UpdateAnchorWidgetRenderState(GetWidget() && GetWidget()->IsVisible());
+      }
     }
   }
 
   anchor_view_tracker_->SetView(anchor_view);
 
-  // Do not update anchoring for NULL views; this could indicate that our
-  // NativeWindow is being destroyed, so it would be dangerous for us to update
-  // our anchor bounds at that point. (It's safe to skip this, since if we were
-  // to update the bounds when |anchor_view| is NULL, the bubble won't move.)
-  if (anchor_view && GetWidget())
+  if (anchor_view && GetWidget()) {
+    // Do not update anchoring for NULL views; this could indicate
+    // that our NativeWindow is being destroyed, so it would be
+    // dangerous for us to update our anchor bounds at that
+    // point. (It's safe to skip this, since if we were to update the
+    // bounds when |anchor_view| is NULL, the bubble won't move.)
     OnAnchorBoundsChanged();
+
+    EnableFocusTraversalFromAnchorView();
+  }
 }
 
 void BubbleDialogDelegateView::SetAnchorRect(const gfx::Rect& rect) {
@@ -385,10 +395,8 @@ void BubbleDialogDelegateView::UpdateColorsFromTheme(
 
 void BubbleDialogDelegateView::HandleVisibilityChanged(Widget* widget,
                                                        bool visible) {
-  if (widget == GetWidget() && anchor_widget() &&
-      anchor_widget()->GetTopLevelWidget()) {
-    anchor_widget()->GetTopLevelWidget()->SetAlwaysRenderAsActive(visible);
-  }
+  if (widget == GetWidget())
+    UpdateAnchorWidgetRenderState(visible);
 
   // Fire ax::mojom::Event::kAlert for bubbles marked as
   // ax::mojom::Role::kAlertDialog; this instructs accessibility tools to read
@@ -406,6 +414,13 @@ void BubbleDialogDelegateView::HandleVisibilityChanged(Widget* widget,
 void BubbleDialogDelegateView::OnDeactivate() {
   if (close_on_deactivate() && GetWidget())
     GetWidget()->Close();
+}
+
+void BubbleDialogDelegateView::UpdateAnchorWidgetRenderState(bool visible) {
+  if (!anchor_widget() || !anchor_widget()->GetTopLevelWidget())
+    return;
+
+  anchor_widget()->GetTopLevelWidget()->SetAlwaysRenderAsActive(visible);
 }
 
 }  // namespace views

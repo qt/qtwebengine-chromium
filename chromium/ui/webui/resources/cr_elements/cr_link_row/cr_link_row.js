@@ -16,9 +16,17 @@ Polymer({
   behaviors: [Polymer.PaperRippleBehavior],
 
   properties: {
+    startIcon: {
+      type: String,
+      value: '',
+    },
+
     iconClass: String,
 
-    label: String,
+    label: {
+      type: String,
+      value: '',
+    },
 
     subLabel: {
       type: String,
@@ -37,6 +45,11 @@ Polymer({
     'up': '_rippleUp',
     'focus': '_rippleDown',
     'blur': '_rippleUp',
+  },
+
+  focus: function() {
+    // Forward focus to the button wrapper.
+    this.$$('button').focus();
   },
 
   _rippleDown: function() {

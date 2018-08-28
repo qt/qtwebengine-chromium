@@ -61,6 +61,13 @@ class WTF_EXPORT AtomicString {
       : AtomicString(chars,
                      chars ? strlen(reinterpret_cast<const char*>(chars)) : 0) {
   }
+
+#if defined(ARCH_CPU_64_BITS)
+  // Only define a size_t constructor if size_t is 64 bit otherwise
+  // we'd have a duplicate define.
+  AtomicString(const LChar* chars, size_t length);
+#endif  // defined(ARCH_CPU_64_BITS)
+
   AtomicString(const char* chars)
       : AtomicString(reinterpret_cast<const LChar*>(chars)) {}
   AtomicString(const LChar* chars, unsigned length);
@@ -292,7 +299,7 @@ struct DefaultHash<AtomicString> {
 };
 
 // Pretty printer for gtest and base/logging.*.  It prepends and appends
-// double-quotes, and escapes chracters other than ASCII printables.
+// double-quotes, and escapes characters other than ASCII printables.
 WTF_EXPORT std::ostream& operator<<(std::ostream&, const AtomicString&);
 
 inline StringView::StringView(const AtomicString& string,

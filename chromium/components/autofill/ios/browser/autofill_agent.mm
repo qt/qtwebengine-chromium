@@ -35,6 +35,7 @@
 #include "components/autofill/ios/browser/autofill_util.h"
 #import "components/autofill/ios/browser/form_suggestion.h"
 #import "components/autofill/ios/browser/js_autofill_manager.h"
+#import "components/autofill/ios/form_util/form_activity_observer_bridge.h"
 #import "components/prefs/ios/pref_observer_bridge.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
@@ -89,7 +90,9 @@ void GetFormAndField(autofill::FormData* form,
 
 }  // namespace
 
-@interface AutofillAgent ()<CRWWebStateObserver, PrefObserverDelegate>
+@interface AutofillAgent ()<CRWWebStateObserver,
+                            FormActivityObserver,
+                            PrefObserverDelegate>
 
 // Notifies the autofill manager when forms are detected on a page.
 - (void)notifyAutofillManager:(autofill::AutofillManager*)autofillManager
@@ -134,7 +137,7 @@ void GetFormAndField(autofill::FormData* form,
 // Rearranges and filters the suggestions to move profile or credit card
 // suggestions to the front if the user has selected one recently and remove
 // key/value suggestions if the user hasn't started typing.
-- (NSArray*)processSuggestions:(NSArray*)suggestions;
+- (NSArray*)processSuggestions:(NSArray<FormSuggestion*>*)suggestions;
 
 // Sends the the |formData| to the JavaScript manager of |webState_| to actually
 // fill the data.
@@ -163,10 +166,6 @@ void GetFormAndField(autofill::FormData* form,
   // focused form element in order to force filling of the currently selected
   // form element, even if it's non-empty.
   base::string16 pendingAutocompleteField_;
-  // The identifier of the most recent suggestion accepted by the user. Only
-  // used to reorder future suggestion lists, placing matching suggestions first
-  // in the list.
-  NSInteger mostRecentSelectedIdentifier_;
 
   // Suggestions state:
   // The most recent form suggestions.
@@ -191,6 +190,10 @@ void GetFormAndField(autofill::FormData* form,
   std::unique_ptr<PrefObserverBridge> prefObserverBridge_;
   // Registrar for pref changes notifications.
   PrefChangeRegistrar prefChangeRegistrar_;
+
+  // Bridge to observe form activity in |webState_|.
+  std::unique_ptr<autofill::FormActivityObserverBridge>
+      formActivityObserverBridge_;
 }
 
 - (instancetype)initWithPrefService:(PrefService*)prefService
@@ -204,6 +207,8 @@ void GetFormAndField(autofill::FormData* form,
     webStateObserverBridge_ =
         std::make_unique<web::WebStateObserverBridge>(self);
     webState_->AddObserver(webStateObserverBridge_.get());
+    formActivityObserverBridge_ =
+        std::make_unique<autofill::FormActivityObserverBridge>(webState_, self);
     prefObserverBridge_ = std::make_unique<PrefObserverBridge>(self);
     prefChangeRegistrar_.Init(prefService);
     prefObserverBridge_->ObserveChangesForPreference(
@@ -222,6 +227,7 @@ void GetFormAndField(autofill::FormData* form,
 
 - (void)dealloc {
   if (webState_) {
+    formActivityObserverBridge_.reset();
     webState_->RemoveObserver(webStateObserverBridge_.get());
     webStateObserverBridge_.reset();
     webState_ = nullptr;
@@ -232,6 +238,7 @@ void GetFormAndField(autofill::FormData* form,
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 
   if (webState_) {
+    formActivityObserverBridge_.reset();
     webState_->RemoveObserver(webStateObserverBridge_.get());
     webStateObserverBridge_.reset();
     webState_ = nullptr;
@@ -297,27 +304,11 @@ void GetFormAndField(autofill::FormData* form,
                              }];
 }
 
-- (NSArray*)processSuggestions:(NSArray*)suggestions {
+- (NSArray*)processSuggestions:(NSArray<FormSuggestion*>*)suggestions {
   // The suggestion array is cloned (to claim ownership) and to slightly
   // reorder; a future improvement is to base order on text typed in other
   // fields by users as well as accepted suggestions (crbug.com/245261).
-  NSMutableArray* suggestionsCopy = [suggestions mutableCopy];
-
-  // If the most recently selected suggestion was a profile or credit card
-  // suggestion, move it to the front of the suggestions.
-  if (mostRecentSelectedIdentifier_ > 0) {
-    NSUInteger idx = [suggestionsCopy
-        indexOfObjectPassingTest:^BOOL(id obj, NSUInteger, BOOL*) {
-          FormSuggestion* suggestion = obj;
-          return suggestion.identifier == mostRecentSelectedIdentifier_;
-        }];
-
-    if (idx != NSNotFound) {
-      FormSuggestion* suggestion = suggestionsCopy[idx];
-      [suggestionsCopy removeObjectAtIndex:idx];
-      [suggestionsCopy insertObject:suggestion atIndex:0];
-    }
-  }
+  NSMutableArray<FormSuggestion*>* suggestionsCopy = [suggestions mutableCopy];
 
   // Filter out any key/value suggestions if the user hasn't typed yet.
   if ([typedValue_ length] == 0) {
@@ -330,12 +321,17 @@ void GetFormAndField(autofill::FormData* form,
   }
 
   // If "clear form" entry exists then move it to the front of the suggestions.
+  // If "GPay branding" icon is present, it remains as the first suggestion.
   for (NSInteger idx = [suggestionsCopy count] - 1; idx > 0; idx--) {
     FormSuggestion* suggestion = suggestionsCopy[idx];
     if (suggestion.identifier == autofill::POPUP_ITEM_ID_CLEAR_FORM) {
-      FormSuggestion* suggestionToMove = suggestionsCopy[idx];
+      BOOL hasGPayBranding = suggestionsCopy[0].identifier ==
+                             autofill::POPUP_ITEM_ID_GOOGLE_PAY_BRANDING;
+
+      FormSuggestion* clearFormSuggestion = suggestionsCopy[idx];
       [suggestionsCopy removeObjectAtIndex:idx];
-      [suggestionsCopy insertObject:suggestionToMove atIndex:0];
+      [suggestionsCopy insertObject:clearFormSuggestion
+                            atIndex:hasGPayBranding ? 1 : 0];
       break;
     }
   }
@@ -343,7 +339,7 @@ void GetFormAndField(autofill::FormData* form,
   return suggestionsCopy;
 }
 
-- (void)onSuggestionsReady:(NSArray*)suggestions
+- (void)onSuggestionsReady:(NSArray<FormSuggestion*>*)suggestions
              popupDelegate:
                  (const base::WeakPtr<autofill::AutofillPopupDelegate>&)
                      delegate {
@@ -384,7 +380,9 @@ void GetFormAndField(autofill::FormData* form,
 
   // Query the AutofillManager for suggestions. Results will arrive in
   // [AutofillController showAutofillPopup].
-  autofillManager->OnQueryFormFieldAutofill(queryId, form, field, gfx::RectF());
+  autofillManager->OnQueryFormFieldAutofill(
+      queryId, form, field, gfx::RectF(),
+      /*autoselect_first_suggestion=*/false);
 }
 
 - (void)checkIfSuggestionsAvailableForForm:(NSString*)formName
@@ -394,6 +392,7 @@ void GetFormAndField(autofill::FormData* form,
                                       type:(NSString*)type
                                 typedValue:(NSString*)typedValue
                                isMainFrame:(BOOL)isMainFrame
+                            hasUserGesture:(BOOL)hasUserGesture
                                   webState:(web::WebState*)webState
                          completionHandler:
                              (SuggestionsAvailableCompletion)completion {
@@ -406,6 +405,12 @@ void GetFormAndField(autofill::FormData* form,
   }
 
   if (![self isAutofillEnabled]) {
+    completion(NO);
+    return;
+  }
+
+  // Check for suggestions if the form activity is initiated by the user.
+  if (!hasUserGesture) {
     completion(NO);
     return;
   }
@@ -462,7 +467,6 @@ void GetFormAndField(autofill::FormData* form,
           completionHandler:(SuggestionHandledCompletion)completion {
   [[UIDevice currentDevice] playInputClick];
   suggestionHandledCompletion_ = [completion copy];
-  mostRecentSelectedIdentifier_ = suggestion.identifier;
 
   if (suggestion.identifier > 0) {
     pendingAutocompleteField_ = base::SysNSStringToUTF16(fieldIdentifier);
@@ -478,8 +482,9 @@ void GetFormAndField(autofill::FormData* form,
               value:base::SysNSStringToUTF16(suggestion.value)];
   } else if (suggestion.identifier == autofill::POPUP_ITEM_ID_CLEAR_FORM) {
     [jsAutofillManager_
-        clearAutofilledFieldsForFormNamed:formName
-                        completionHandler:suggestionHandledCompletion_];
+        clearAutofilledFieldsForFormName:formName
+                         fieldIdentifier:fieldIdentifier
+                       completionHandler:suggestionHandledCompletion_];
     suggestionHandledCompletion_ = nil;
   } else {
     NOTREACHED() << "unknown identifier " << suggestion.identifier;
@@ -500,51 +505,6 @@ void GetFormAndField(autofill::FormData* form,
     [self sendDataToWebState:pendingFormJSON_];
   }
   pendingFormJSON_ = nil;
-}
-
-- (void)webState:(web::WebState*)webState
-    didSubmitDocumentWithFormNamed:(const std::string&)formName
-                     userInitiated:(BOOL)userInitiated
-                       isMainFrame:(BOOL)isMainFrame {
-  if (!isMainFrame) {
-    // Saving from iframes is not implemented.
-    return;
-  }
-
-  if (![self isAutofillEnabled])
-    return;
-
-  __weak AutofillAgent* weakSelf = self;
-  id completionHandler = ^(BOOL success, const FormDataVector& forms) {
-    AutofillAgent* strongSelf = weakSelf;
-    if (!strongSelf || !success)
-      return;
-    autofill::AutofillManager* autofillManager =
-        [strongSelf autofillManagerFromWebState:webState];
-    if (!autofillManager || forms.empty())
-      return;
-    if (forms.size() > 1) {
-      DLOG(WARNING) << "Only one form should be extracted.";
-      return;
-    }
-    [strongSelf notifyAutofillManager:autofillManager
-                     ofFormsSubmitted:forms
-                        userInitiated:userInitiated];
-
-  };
-
-  web::URLVerificationTrustLevel trustLevel;
-  const GURL pageURL(webState->GetCurrentURL(&trustLevel));
-
-  // This code is racing against the new page loading and will not get the
-  // password form data if the page has changed. In most cases this code wins
-  // the race.
-  // TODO(crbug.com/418827): Fix this by passing in more data from the JS side.
-  [self fetchFormsFiltered:YES
-                        withName:base::UTF8ToUTF16(formName)
-      minimumRequiredFieldsCount:1
-                         pageURL:pageURL
-               completionHandler:completionHandler];
 }
 
 - (void)webState:(web::WebState*)webState
@@ -586,6 +546,10 @@ void GetFormAndField(autofill::FormData* form,
   web::URLVerificationTrustLevel trustLevel;
   const GURL pageURL(webState->GetCurrentURL(&trustLevel));
   [jsAutofillManager_ toggleTrackingFormMutations:YES];
+
+  [jsAutofillManager_ toggleTrackingUserEditedFields:
+                          base::FeatureList::IsEnabled(
+                              autofill::features::kAutofillPrefilledFields)];
   [self scanFormsInPage:webState pageURL:pageURL];
 }
 
@@ -613,8 +577,11 @@ void GetFormAndField(autofill::FormData* form,
                completionHandler:completionHandler];
 }
 
+#pragma mark -
+#pragma mark FormActivityObserver
+
 - (void)webState:(web::WebState*)webState
-    didRegisterFormActivity:(const web::FormActivityParams&)params {
+    registeredFormActivity:(const web::FormActivityParams&)params {
   if (![self isAutofillEnabled])
     return;
 
@@ -669,6 +636,51 @@ void GetFormAndField(autofill::FormData* form,
   // requirement because key/value suggestions are offered even on short forms.
   [self fetchFormsFiltered:YES
                         withName:base::UTF8ToUTF16(params.form_name)
+      minimumRequiredFieldsCount:1
+                         pageURL:pageURL
+               completionHandler:completionHandler];
+}
+
+- (void)webState:(web::WebState*)webState
+    submittedDocumentWithFormNamed:(const std::string&)formName
+                    hasUserGesture:(BOOL)hasUserGesture
+                   formInMainFrame:(BOOL)formInMainFrame {
+  if (!formInMainFrame) {
+    // Saving from iframes is not implemented.
+    return;
+  }
+
+  if (![self isAutofillEnabled])
+    return;
+
+  __weak AutofillAgent* weakSelf = self;
+  id completionHandler = ^(BOOL success, const FormDataVector& forms) {
+    AutofillAgent* strongSelf = weakSelf;
+    if (!strongSelf || !success)
+      return;
+    autofill::AutofillManager* autofillManager =
+        [strongSelf autofillManagerFromWebState:webState];
+    if (!autofillManager || forms.empty())
+      return;
+    if (forms.size() > 1) {
+      DLOG(WARNING) << "Only one form should be extracted.";
+      return;
+    }
+    [strongSelf notifyAutofillManager:autofillManager
+                     ofFormsSubmitted:forms
+                        userInitiated:hasUserGesture];
+
+  };
+
+  web::URLVerificationTrustLevel trustLevel;
+  const GURL pageURL(webState->GetCurrentURL(&trustLevel));
+
+  // This code is racing against the new page loading and will not get the
+  // password form data if the page has changed. In most cases this code wins
+  // the race.
+  // TODO(crbug.com/418827): Fix this by passing in more data from the JS side.
+  [self fetchFormsFiltered:YES
+                        withName:base::UTF8ToUTF16(formName)
       minimumRequiredFieldsCount:1
                          pageURL:pageURL
                completionHandler:completionHandler];
@@ -735,7 +747,10 @@ void GetFormAndField(autofill::FormData* form,
     if (field.value.empty() || !field.is_autofilled)
       continue;
 
-    fieldsData.SetKey(base::UTF16ToUTF8(field.id), base::Value(field.value));
+    base::Value fieldData(base::Value::Type::DICTIONARY);
+    fieldData.SetKey("value", base::Value(field.value));
+    fieldData.SetKey("section", base::Value(field.section));
+    fieldsData.SetKey(base::UTF16ToUTF8(field.id), std::move(fieldData));
   }
   autofillData.SetKey("fields", std::move(fieldsData));
 

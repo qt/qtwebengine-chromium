@@ -9,7 +9,7 @@
 #include "net/third_party/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quic/quartc/quartc_session.h"
 
-namespace net {
+namespace quic {
 
 namespace {
 
@@ -107,7 +107,6 @@ QuartcFactory::~QuartcFactory() {}
 std::unique_ptr<QuartcSessionInterface> QuartcFactory::CreateQuartcSession(
     const QuartcSessionConfig& quartc_session_config) {
   DCHECK(quartc_session_config.packet_transport);
-  SetQuicReloadableFlag(quic_is_write_blocked, true);
 
   Perspective perspective = quartc_session_config.is_server
                                 ? Perspective::IS_SERVER
@@ -117,11 +116,30 @@ std::unique_ptr<QuartcSessionInterface> QuartcFactory::CreateQuartcSession(
   auto writer =
       QuicMakeUnique<QuartcPacketWriter>(quartc_session_config.packet_transport,
                                          quartc_session_config.max_packet_size);
+
+  // This setting fixes an issue with excessive ACKs being sent for reordered
+  // packets, and instead bundles those ACKs better together. Combined with
+  // ACK_DECIMATION_WITH_REORDERING we reduce the number of excessive ACKs
+  // significantly. (Each one of the two features reduces ACKs by ~20%, but
+  // together they reduce number of standalone acks by 25-30%).
+  // This flag must be set before quic connection is created.
+  SetQuicReloadableFlag(quic_deprecate_scoped_scheduler2, true);
+
+  // ACK less aggressively when reordered packets are present.
+  // Must be set before the connection is created.
+  SetQuicReloadableFlag(quic_ack_reordered_packets, true);
+
   std::unique_ptr<QuicConnection> quic_connection =
       CreateQuicConnection(perspective, writer.get());
 
   QuicTagVector copt;
   copt.push_back(kNSTP);
+
+  // Enable ACK_DECIMATION_WITH_REORDERING. It requires ack_decimation to be
+  // false.
+  SetQuicReloadableFlag(quic_enable_ack_decimation, false);
+  copt.push_back(kAKD2);
+
   if (quartc_session_config.congestion_control ==
       QuartcCongestionControl::kBBR) {
     copt.push_back(kTBBR);
@@ -172,6 +190,21 @@ std::unique_ptr<QuartcSessionInterface> QuartcFactory::CreateQuartcSession(
     }
   }
   QuicConfig quic_config;
+
+  // Use the limits for the session & stream flow control. The default 16KB
+  // limit leads to significantly undersending (not reaching BWE on the outgoing
+  // bitrate) due to blocked frames, and it leads to high latency (and one-way
+  // delay). Setting it to its limits is not going to cause issues (our streams
+  // are small generally, and if we were to buffer 24MB it wouldn't be the end
+  // of the world). We can consider setting different limits in future (e.g. 1MB
+  // stream, 1.5MB session). It's worth noting that on 1mbps bitrate, limit of
+  // 24MB can capture approx 4 minutes of the call, and the default increase in
+  // size of the window (half of the window size) is approximately 2 minutes of
+  // the call.
+  quic_config.SetInitialSessionFlowControlWindowToSend(
+      kSessionReceiveWindowLimit);
+  quic_config.SetInitialStreamFlowControlWindowToSend(
+      kStreamReceiveWindowLimit);
   quic_config.SetConnectionOptionsToSend(copt);
   quic_config.SetClientConnectionOptions(copt);
   if (quartc_session_config.max_time_before_crypto_handshake_secs > 0) {
@@ -184,6 +217,15 @@ std::unique_ptr<QuartcSessionInterface> QuartcFactory::CreateQuartcSession(
         QuicTime::Delta::FromSeconds(
             quartc_session_config.max_idle_time_before_crypto_handshake_secs));
   }
+  if (quartc_session_config.idle_network_timeout > QuicTime::Delta::Zero()) {
+    quic_config.SetIdleNetworkTimeout(
+        quartc_session_config.idle_network_timeout,
+        quartc_session_config.idle_network_timeout);
+  }
+
+  // The ICE transport provides a unique 5-tuple for each connection. Save
+  // overhead by omitting the connection id.
+  quic_config.SetBytesForConnectionIdToSend(0);
   return QuicMakeUnique<QuartcSession>(
       std::move(quic_connection), quic_config,
       quartc_session_config.unique_remote_server_id, perspective,
@@ -237,4 +279,4 @@ std::unique_ptr<QuartcFactoryInterface> CreateQuartcFactory(
       new QuartcFactory(factory_config));
 }
 
-}  // namespace net
+}  // namespace quic

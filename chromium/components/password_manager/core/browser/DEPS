@@ -1,5 +1,6 @@
 include_rules = [
   "+components/autofill/core/browser",
+  "+components/favicon/core",
   "+components/keyed_service/core",
   "+components/pref_registry",
   "+components/security_state",
@@ -15,6 +16,8 @@ include_rules = [
   "+grit",
   "+net",
   "+services/metrics/public/cpp",
+  "+services/network/public/cpp",
+  "+services/network/test",
 ]
 
 specific_include_rules = {

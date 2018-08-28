@@ -16,6 +16,9 @@
 
 #include "tools/ftrace_proto_gen/ftrace_proto_gen.h"
 
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <algorithm>
 #include <fstream>
 #include <regex>
@@ -32,8 +35,81 @@ bool StartsWith(const std::string& str, const std::string& prefix) {
   return str.compare(0, prefix.length(), prefix) == 0;
 }
 
+bool EndsWith(const std::string& str, const std::string& pattern) {
+  return str.rfind(pattern) == str.size() - pattern.size();
+}
+
 bool Contains(const std::string& haystack, const std::string& needle) {
   return haystack.find(needle) != std::string::npos;
+}
+
+int SetNonBlocking(int fd) {
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags == -1)
+    return -1;
+  return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+std::string RunClangFmt(const std::string& input) {
+  std::string output;
+  pid_t pid;
+  int input_pipes[2];
+  int output_pipes[2];
+  PERFETTO_CHECK(pipe(input_pipes) != -1);
+  PERFETTO_CHECK(SetNonBlocking(input_pipes[0]) != -1);
+  PERFETTO_CHECK(SetNonBlocking(input_pipes[1]) != -1);
+  PERFETTO_CHECK(pipe(output_pipes) != -1);
+  PERFETTO_CHECK(SetNonBlocking(output_pipes[0]) != -1);
+  PERFETTO_CHECK(SetNonBlocking(output_pipes[1]) != -1);
+  if ((pid = fork()) == 0) {
+    // Child
+    PERFETTO_CHECK(dup2(input_pipes[0], STDIN_FILENO) != -1);
+    PERFETTO_CHECK(dup2(output_pipes[1], STDOUT_FILENO) != -1);
+    close(input_pipes[1]);
+    close(output_pipes[0]);
+    PERFETTO_CHECK(execl("buildtools/linux64/clang-format", "clang-format",
+                         nullptr) != -1);
+  }
+  PERFETTO_CHECK(pid > 0);
+  // Parent
+  size_t written = 0;
+  size_t bytes_read = 0;
+  close(input_pipes[0]);
+  close(output_pipes[1]);
+  // This cannot be left uninitialized because there's as continue statement
+  // before the first assignment to this in the loop.
+  ssize_t r = -1;
+  do {
+    if (written < input.size()) {
+      ssize_t w =
+          write(input_pipes[1], &(input[written]), input.size() - written);
+      if (w == -1) {
+        if (errno == EAGAIN || errno == EINTR)
+          continue;
+        PERFETTO_FATAL("write failed");
+      }
+      written += static_cast<size_t>(w);
+      if (written == input.size())
+        close(input_pipes[1]);
+    }
+
+    if (bytes_read + base::kPageSize > output.size())
+      output.resize(output.size() + base::kPageSize);
+    r = read(output_pipes[0], &(output[bytes_read]), base::kPageSize);
+    if (r == -1) {
+      if (errno == EAGAIN || errno == EINTR)
+        continue;
+      PERFETTO_FATAL("read failed");
+    }
+    if (r > 0)
+      bytes_read += static_cast<size_t>(r);
+  } while (r != 0);
+  output.resize(bytes_read);
+
+  int wstatus;
+  waitpid(pid, &wstatus, 0);
+  PERFETTO_CHECK(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0);
+  return output;
 }
 
 }  // namespace
@@ -44,8 +120,10 @@ VerifyStream::VerifyStream(std::string filename)
 }
 
 VerifyStream::~VerifyStream() {
-  // TODO(fmayer): Teach this clang-format.
-  if (expected_ != str()) {
+  std::string tidied = str();
+  if (EndsWith(filename_, "cc") || EndsWith(filename_, "proto"))
+    tidied = RunClangFmt(str());
+  if (expected_ != tidied) {
     PERFETTO_FATAL("%s is out of date. Please run tools/run_ftrace_proto_gen.",
                    filename_.c_str());
   }
@@ -368,7 +446,7 @@ void GenerateEventInfo(const std::vector<std::string>& events_info,
   s += std::string("// ") + __FILE__ + "\n";
   s += "// Do not edit.\n";
   s += R"(
-#include "src/ftrace_reader/event_info.h"
+#include "src/traced/probes/ftrace/event_info.h"
 
 namespace perfetto {
 

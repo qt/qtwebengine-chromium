@@ -100,7 +100,13 @@ DevToolsEmulator::DevToolsEmulator(WebViewImpl* web_view)
       original_max_touch_points_(0),
       embedder_script_enabled_(
           web_view->GetPage()->GetSettings().GetScriptEnabled()),
-      script_execution_disabled_(false) {}
+      script_execution_disabled_(false),
+      embedder_hide_scrollbars_(
+          web_view->GetPage()->GetSettings().GetHideScrollbars()),
+      scrollbars_hidden_(false),
+      embedder_cookie_enabled_(
+          web_view->GetPage()->GetSettings().GetCookieEnabled()),
+      document_cookie_disabled_(false) {}
 
 DevToolsEmulator::~DevToolsEmulator() = default;
 
@@ -161,6 +167,18 @@ void DevToolsEmulator::SetScriptEnabled(bool enabled) {
   embedder_script_enabled_ = enabled;
   if (!script_execution_disabled_)
     web_view_->GetPage()->GetSettings().SetScriptEnabled(enabled);
+}
+
+void DevToolsEmulator::SetHideScrollbars(bool hide) {
+  embedder_hide_scrollbars_ = hide;
+  if (!scrollbars_hidden_)
+    web_view_->GetPage()->GetSettings().SetHideScrollbars(hide);
+}
+
+void DevToolsEmulator::SetCookieEnabled(bool enabled) {
+  embedder_cookie_enabled_ = enabled;
+  if (!document_cookie_disabled_)
+    web_view_->GetPage()->GetSettings().SetCookieEnabled(enabled);
 }
 
 void DevToolsEmulator::SetDoubleTapToZoomEnabled(bool enabled) {
@@ -457,7 +475,8 @@ base::Optional<IntRect> DevToolsEmulator::VisibleContentRectForPainting()
     const {
   if (!viewport_override_)
     return base::nullopt;
-  FloatSize viewport_size(web_view_->LayerTreeView()->GetViewportSize());
+  FloatSize viewport_size(
+      IntSize(web_view_->LayerTreeView()->GetViewportSize()));
   viewport_size.Scale(1. / CompositorDeviceScaleFactor());
   viewport_size.Scale(1. / viewport_override_->scale);
   return EnclosingIntRect(
@@ -501,48 +520,20 @@ void DevToolsEmulator::SetScriptExecutionDisabled(
       script_execution_disabled_ ? false : embedder_script_enabled_);
 }
 
-bool DevToolsEmulator::HandleInputEvent(const WebInputEvent& input_event) {
-  Page* page = web_view_->GetPage();
-  if (!page)
-    return false;
+void DevToolsEmulator::SetScrollbarsHidden(bool hidden) {
+  if (scrollbars_hidden_ == hidden)
+    return;
+  scrollbars_hidden_ = hidden;
+  web_view_->GetPage()->GetSettings().SetHideScrollbars(
+      scrollbars_hidden_ ? true : embedder_hide_scrollbars_);
+}
 
-  if (!touch_event_emulation_enabled_ ||
-      !WebInputEvent::IsPinchGestureEventType(input_event.GetType())) {
-    return false;
-  }
-
-  // FIXME: This workaround is required for touch emulation on Mac, where
-  // compositor-side pinch handling is not enabled. See http://crbug.com/138003.
-  // TODO(lukasza): https://crbug.com/734201: Add OOPIF support.
-  LocalFrameView* frame_view = page->DeprecatedLocalMainFrame()->View();
-  WebGestureEvent scaled_event = TransformWebGestureEvent(
-      frame_view, static_cast<const WebGestureEvent&>(input_event));
-  float page_scale_factor = page->PageScaleFactor();
-  if (scaled_event.GetType() == WebInputEvent::kGesturePinchBegin) {
-    WebFloatPoint gesture_position = scaled_event.PositionInRootFrame();
-    last_pinch_anchor_css_ = std::make_unique<IntPoint>(
-        RoundedIntPoint(gesture_position + frame_view->GetScrollOffset()));
-    last_pinch_anchor_dip_ =
-        std::make_unique<IntPoint>(FlooredIntPoint(gesture_position));
-    last_pinch_anchor_dip_->Scale(page_scale_factor, page_scale_factor);
-  }
-  if (scaled_event.GetType() == WebInputEvent::kGesturePinchUpdate &&
-      last_pinch_anchor_css_) {
-    float new_page_scale_factor = page_scale_factor * scaled_event.PinchScale();
-    IntPoint anchor_css(*last_pinch_anchor_dip_.get());
-    anchor_css.Scale(1.f / new_page_scale_factor, 1.f / new_page_scale_factor);
-    web_view_->SetPageScaleFactor(new_page_scale_factor);
-    // TODO(lukasza): https://crbug.com/734201: Add OOPIF support.
-    if (web_view_->MainFrame()->IsWebLocalFrame()) {
-      web_view_->MainFrame()->ToWebLocalFrame()->SetScrollOffset(
-          ToIntSize(*last_pinch_anchor_css_.get() - ToIntSize(anchor_css)));
-    }
-  }
-  if (scaled_event.GetType() == WebInputEvent::kGesturePinchEnd) {
-    last_pinch_anchor_css_.reset();
-    last_pinch_anchor_dip_.reset();
-  }
-  return true;
+void DevToolsEmulator::SetDocumentCookieDisabled(bool disabled) {
+  if (document_cookie_disabled_ == disabled)
+    return;
+  document_cookie_disabled_ = disabled;
+  web_view_->GetPage()->GetSettings().SetCookieEnabled(
+      document_cookie_disabled_ ? false : embedder_cookie_enabled_);
 }
 
 }  // namespace blink

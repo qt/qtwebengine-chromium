@@ -10,12 +10,10 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/scoped_observer.h"
 #include "base/time/time.h"
-#include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/service_worker_register_job_base.h"
 #include "content/browser/service_worker/service_worker_registration.h"
-#include "content/common/service_worker/service_worker_status_code.h"
+#include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "url/gurl.h"
@@ -36,10 +34,9 @@ namespace content {
 //  - waiting for older ServiceWorkerVersions to deactivate
 //  - designating the new version to be the 'active' version
 //  - updating storage
-class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
-                                 public EmbeddedWorkerInstance::Listener {
+class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
  public:
-  typedef base::OnceCallback<void(ServiceWorkerStatusCode status,
+  typedef base::OnceCallback<void(blink::ServiceWorkerStatusCode status,
                                   const std::string& status_message,
                                   ServiceWorkerRegistration* registration)>
       RegistrationCallback;
@@ -103,44 +100,42 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
 
   void StartImpl();
   void ContinueWithRegistration(
-      ServiceWorkerStatusCode status,
+      blink::ServiceWorkerStatusCode status,
       scoped_refptr<ServiceWorkerRegistration> registration);
   void ContinueWithUpdate(
-      ServiceWorkerStatusCode status,
+      blink::ServiceWorkerStatusCode status,
       scoped_refptr<ServiceWorkerRegistration> registration);
   void RegisterAndContinue();
   void ContinueWithUninstallingRegistration(
       scoped_refptr<ServiceWorkerRegistration> existing_registration,
-      ServiceWorkerStatusCode status);
+      blink::ServiceWorkerStatusCode status);
   void ContinueWithRegistrationForSameScriptUrl(
       scoped_refptr<ServiceWorkerRegistration> existing_registration,
-      ServiceWorkerStatusCode status);
+      blink::ServiceWorkerStatusCode status);
   void UpdateAndContinue();
-  void OnStartWorkerFinished(ServiceWorkerStatusCode status);
-  void OnStoreRegistrationComplete(ServiceWorkerStatusCode status);
+  void OnStartWorkerFinished(blink::ServiceWorkerStatusCode status);
+  void OnStoreRegistrationComplete(blink::ServiceWorkerStatusCode status);
   void InstallAndContinue();
-  void DispatchInstallEvent(ServiceWorkerStatusCode start_worker_status);
+  void DispatchInstallEvent(blink::ServiceWorkerStatusCode start_worker_status);
   void OnInstallFinished(
       int request_id,
       blink::mojom::ServiceWorkerEventStatus event_status,
       bool has_fetch_handler,
       base::Time dispatch_event_time);
-  void OnInstallFailed(ServiceWorkerStatusCode status);
-  void Complete(ServiceWorkerStatusCode status);
-  void Complete(ServiceWorkerStatusCode status,
+  void OnInstallFailed(blink::ServiceWorkerStatusCode status);
+  void Complete(blink::ServiceWorkerStatusCode status);
+  void Complete(blink::ServiceWorkerStatusCode status,
                 const std::string& status_message);
-  void CompleteInternal(ServiceWorkerStatusCode status,
+  void CompleteInternal(blink::ServiceWorkerStatusCode status,
                         const std::string& status_message);
-  void ResolvePromise(ServiceWorkerStatusCode status,
+  void ResolvePromise(blink::ServiceWorkerStatusCode status,
                       const std::string& status_message,
                       ServiceWorkerRegistration* registration);
 
   void AddRegistrationToMatchingProviderHosts(
       ServiceWorkerRegistration* registration);
 
-  // EmbeddedWorkerInstance::Listener implementation:
-  void OnScriptLoaded() override;
-  void OnDestroyed() override;
+  void OnPausedAfterDownload();
 
   void BumpLastUpdateCheckTimeIfNeeded();
 
@@ -159,11 +154,10 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
   bool should_uninstall_on_failure_;
   bool force_bypass_cache_;
   bool skip_script_comparison_;
-  ServiceWorkerStatusCode promise_resolved_status_;
+  blink::ServiceWorkerStatusCode promise_resolved_status_;
   std::string promise_resolved_status_message_;
   scoped_refptr<ServiceWorkerRegistration> promise_resolved_registration_;
-  ScopedObserver<EmbeddedWorkerInstance, EmbeddedWorkerInstance::Listener>
-      observer_;
+
   base::WeakPtrFactory<ServiceWorkerRegisterJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegisterJob);

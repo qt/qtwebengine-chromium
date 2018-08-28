@@ -10,13 +10,48 @@
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/platform_window/platform_window.h"
+#include "ui/platform_window/platform_window_init_properties.h"
 #include "ui/views/corewm/tooltip_aura.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
+#include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/window/native_frame_view.h"
 #include "ui/wm/core/window_util.h"
 
 namespace views {
 
+namespace {
+
+ui::PlatformWindowInitProperties ConvertWidgetInitParamsToInitProperties(
+    const Widget::InitParams& params) {
+  ui::PlatformWindowInitProperties properties;
+
+  switch (params.type) {
+    case Widget::InitParams::TYPE_WINDOW:
+      properties.type = ui::PlatformWindowType::kWindow;
+      break;
+
+    case Widget::InitParams::TYPE_MENU:
+      properties.type = ui::PlatformWindowType::kMenu;
+      break;
+
+    case Widget::InitParams::TYPE_TOOLTIP:
+      properties.type = ui::PlatformWindowType::kTooltip;
+      break;
+
+    default:
+      properties.type = ui::PlatformWindowType::kPopup;
+      break;
+  }
+
+  properties.bounds = params.bounds;
+
+  if (params.parent && params.parent->GetHost())
+    properties.parent_widget = params.parent->GetHost()->GetAcceleratedWidget();
+
+  return properties;
+}
+
+}  // namespace
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopWindowTreeHostPlatform:
 
@@ -41,7 +76,10 @@ void DesktopWindowTreeHostPlatform::SetBoundsInDIP(
 }
 
 void DesktopWindowTreeHostPlatform::Init(const Widget::InitParams& params) {
-  CreateAndSetDefaultPlatformWindow();
+  ui::PlatformWindowInitProperties properties =
+      ConvertWidgetInitParamsToInitProperties(params);
+
+  CreateAndSetPlatformWindow(std::move(properties));
   CreateCompositor(viz::FrameSinkId(), params.force_software_compositing);
   aura::WindowTreeHost::OnAcceleratedWidgetAvailable();
   InitHost();
@@ -75,6 +113,8 @@ DesktopWindowTreeHostPlatform::CreateDragDropClient(
 void DesktopWindowTreeHostPlatform::Close() {
   if (waiting_for_close_now_)
     return;
+
+  desktop_native_widget_aura_->content_window()->Hide();
 
   // Hide while waiting for the close.
   // Please note that it's better to call WindowTreeHost::Hide, which also calls

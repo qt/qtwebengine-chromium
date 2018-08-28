@@ -14,8 +14,9 @@ class WebState;
 }  // namespace web
 
 typedef void (^SuggestionsAvailableCompletion)(BOOL suggestionsAvailable);
-typedef void (^SuggestionsReadyCompletion)(NSArray* suggestions,
-                                           id<FormSuggestionProvider> delegate);
+typedef void (^SuggestionsReadyCompletion)(
+    NSArray<FormSuggestion*>* suggestions,
+    id<FormSuggestionProvider> delegate);
 typedef void (^SuggestionHandledCompletion)(void);
 
 // Provides user-selectable suggestions for an input field of a web form
@@ -32,6 +33,7 @@ typedef void (^SuggestionHandledCompletion)(void);
                                       type:(NSString*)type
                                 typedValue:(NSString*)typedValue
                                isMainFrame:(BOOL)isMainFrame
+                            hasUserGesture:(BOOL)hasUserGesture
                                   webState:(web::WebState*)webState
                          completionHandler:
                              (SuggestionsAvailableCompletion)completion;

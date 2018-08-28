@@ -94,8 +94,9 @@ mojom::ProcessResourceMeasurementBatchPtr CreateMeasurementBatch(
 }  // namespace
 
 TEST_F(SystemCoordinationUnitImplTest, OnProcessCPUUsageReady) {
-  MockMultiplePagesWithMultipleProcessesCoordinationUnitGraph cu_graph;
   SystemAndProcessObserver observer;
+  MockMultiplePagesWithMultipleProcessesCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
   cu_graph.system->AddObserver(&observer);
   EXPECT_EQ(0u, observer.system_event_seen_count());
   cu_graph.system->OnProcessCPUUsageReady();
@@ -103,8 +104,9 @@ TEST_F(SystemCoordinationUnitImplTest, OnProcessCPUUsageReady) {
 }
 
 TEST_F(SystemCoordinationUnitImplTest, DistributeMeasurementBatch) {
-  MockMultiplePagesWithMultipleProcessesCoordinationUnitGraph cu_graph;
   SystemAndProcessObserver observer;
+  MockMultiplePagesWithMultipleProcessesCoordinationUnitGraph cu_graph(
+      coordination_unit_graph());
   cu_graph.system->AddObserver(&observer);
   cu_graph.process->AddObserver(&observer);
   cu_graph.other_process->AddObserver(&observer);
@@ -116,7 +118,11 @@ TEST_F(SystemCoordinationUnitImplTest, DistributeMeasurementBatch) {
   EXPECT_EQ(0U, observer.process_property_change_seen_count());
   cu_graph.system->DistributeMeasurementBatch(
       CreateMeasurementBatch(start_time, 3, base::TimeDelta()));
-  // EXPECT_EQ(2U, observer.process_property_change_seen_count());
+
+  EXPECT_EQ(start_time, cu_graph.system->last_measurement_start_time());
+  EXPECT_EQ(start_time, cu_graph.system->last_measurement_end_time());
+
+  EXPECT_EQ(2U, observer.process_property_change_seen_count());
   EXPECT_EQ(1u, observer.system_event_seen_count());
 
   // The first measurement batch results in a zero CPU usage for the processes.

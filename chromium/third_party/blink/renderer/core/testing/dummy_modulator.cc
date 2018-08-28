@@ -44,19 +44,13 @@ void DummyModulator::Trace(blink::Visitor* visitor) {
   Modulator::Trace(visitor);
 }
 
-ReferrerPolicy DummyModulator::GetReferrerPolicy() {
-  NOTREACHED();
-  return kReferrerPolicyDefault;
-}
-
-const SecurityOrigin* DummyModulator::GetSecurityOriginForFetch() {
-  NOTREACHED();
-  return nullptr;
-}
-
 ScriptState* DummyModulator::GetScriptState() {
   NOTREACHED();
   return nullptr;
+}
+
+bool DummyModulator::IsScriptingDisabled() const {
+  return false;
 }
 
 ScriptModuleResolver* DummyModulator::GetScriptModuleResolver() {
@@ -69,20 +63,25 @@ base::SingleThreadTaskRunner* DummyModulator::TaskRunner() {
 };
 
 void DummyModulator::FetchTree(const KURL&,
+                               FetchClientSettingsObjectSnapshot*,
                                WebURLRequest::RequestContext,
                                const ScriptFetchOptions&,
+                               ModuleScriptCustomFetchType,
                                ModuleTreeClient*) {
   NOTREACHED();
 }
 
 void DummyModulator::FetchSingle(const ModuleScriptFetchRequest&,
+                                 FetchClientSettingsObjectSnapshot*,
                                  ModuleGraphLevel,
+                                 ModuleScriptCustomFetchType,
                                  SingleModuleClient*) {
   NOTREACHED();
 }
 
 void DummyModulator::FetchDescendantsForInlineScript(
     ModuleScript*,
+    FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
     WebURLRequest::RequestContext,
     ModuleTreeClient*) {
   NOTREACHED();
@@ -93,10 +92,11 @@ ModuleScript* DummyModulator::GetFetchedModuleScript(const KURL&) {
   return nullptr;
 }
 
-void DummyModulator::FetchNewSingleModule(const ModuleScriptFetchRequest&,
-                                          ModuleGraphLevel,
-                                          ModuleScriptLoaderClient*) {
+KURL DummyModulator::ResolveModuleSpecifier(const String&,
+                                            const KURL&,
+                                            String*) {
   NOTREACHED();
+  return KURL();
 }
 
 bool DummyModulator::HasValidContext() {
@@ -116,17 +116,6 @@ ModuleImportMeta DummyModulator::HostGetImportMetaProperties(
   return ModuleImportMeta(String());
 }
 
-ScriptModule DummyModulator::CompileModule(const String& script,
-                                           const KURL& source_url,
-                                           const KURL& base_url,
-                                           const ScriptFetchOptions&,
-                                           AccessControlStatus,
-                                           const TextPosition&,
-                                           ExceptionState&) {
-  NOTREACHED();
-  return ScriptModule();
-}
-
 ScriptValue DummyModulator::InstantiateModule(ScriptModule) {
   NOTREACHED();
   return ScriptValue();
@@ -144,7 +133,8 @@ ScriptValue DummyModulator::ExecuteModule(const ModuleScript*,
   return ScriptValue();
 }
 
-ModuleScriptFetcher* DummyModulator::CreateModuleScriptFetcher() {
+ModuleScriptFetcher* DummyModulator::CreateModuleScriptFetcher(
+    ModuleScriptCustomFetchType) {
   NOTREACHED();
   return nullptr;
 }

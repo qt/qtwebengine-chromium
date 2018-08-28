@@ -28,13 +28,6 @@ rel_blink_core_gen_dir = rebase_path(blink_core_output_dir, root_build_dir)
 # Config for code that builds as part of core.
 config("config") {
   defines = [ "BLINK_CORE_IMPLEMENTATION=1" ]
-
-  cflags = []
-  if (is_win) {
-    # Suppress __declspec(dllexport)/extern conflict (C4910).
-    cflags += [ "/wd4910" ]
-  }
-
   if (is_chromecast) {
     defines += [ "BLINK_MEDIA_LOG=LOG(INFO)" ]
   }
@@ -52,12 +45,7 @@ import("//build/config/pch.gni")
 config("blink_core_pch") {
   # Add precompiled header (pch) support when enabled, possible and
   # making sense.
-
-  # Precompiled headers are disabled for jumbo builds because they
-  # slow down the build since each pch file is only used 1-3
-  # times. Not nearly enough to make up for the long time spent
-  # creating them.
-  if (enable_precompiled_headers && !use_jumbo_build) {
+  if (enable_precompiled_headers) {
     if (is_win) {
       # This is a string rather than a file GN knows about. It has to match
       # exactly what's in the /FI flag below, and what might appear in the
@@ -184,7 +172,9 @@ component("core") {
   ]
   deps = [
     "//third_party/blink/public/common",
+    "//third_party/blink/renderer/core/accessibility",
     "//third_party/blink/renderer/core/animation",
+    "//third_party/blink/renderer/core/aom",
     "//third_party/blink/renderer/core/clipboard",
     "//third_party/blink/renderer/core/context_features",
     "//third_party/blink/renderer/core/css",
@@ -221,6 +211,7 @@ component("core") {
     "//third_party/blink/renderer/core/style:svg_style",
     "//third_party/blink/renderer/core/svg",
     "//third_party/blink/renderer/core/timing",
+    "//third_party/blink/renderer/core/trustedtypes",
     "//third_party/blink/renderer/core/typed_arrays",
     "//third_party/blink/renderer/core/url",
     "//third_party/blink/renderer/core/workers",
@@ -307,6 +298,7 @@ jumbo_source_set("testing") {
     "testing/type_conversions.h",
     "testing/union_types_test.cc",
     "testing/union_types_test.h",
+    "testing/use_mock_scrollbar_settings.h",
     "testing/v8/web_core_test_support.cc",
     "testing/v8/web_core_test_support.h",
     "testing/worker_internals.cc",
@@ -351,6 +343,7 @@ generate_event_interfaces("core_event_interfaces") {
     "events/mouse_event.idl",
     "events/mutation_event.idl",
     "events/page_transition_event.idl",
+    "events/picture_in_picture_control_event.idl",
     "events/pointer_event.idl",
     "events/pop_state_event.idl",
     "events/progress_event.idl",
@@ -669,7 +662,9 @@ css_properties("make_core_generated_css_longhand_property_classes") {
     "$blink_core_output_dir/css/properties/longhands/grid_row_start.h",
     "$blink_core_output_dir/css/properties/longhands/grid_template_areas.h",
     "$blink_core_output_dir/css/properties/longhands/grid_template_columns.h",
+    "$blink_core_output_dir/css/properties/longhands/grid_template_columns.cc",
     "$blink_core_output_dir/css/properties/longhands/grid_template_rows.h",
+    "$blink_core_output_dir/css/properties/longhands/grid_template_rows.cc",
     "$blink_core_output_dir/css/properties/longhands/height.h",
     "$blink_core_output_dir/css/properties/longhands/hyphens.h",
     "$blink_core_output_dir/css/properties/longhands/image_orientation.h",
@@ -1128,20 +1123,6 @@ css_properties("make_core_generated_style_property_shorthand") {
   ]
 }
 
-css_properties("make_core_generated_style_builder") {
-  script = "../build/scripts/make_style_builder.py"
-  other_inputs = [
-    "../build/scripts/templates/style_builder.cc.tmpl",
-    "../build/scripts/templates/style_builder_functions.cc.tmpl",
-    "../build/scripts/templates/style_builder_functions.h.tmpl",
-  ]
-  outputs = [
-    "$blink_core_output_dir/style_builder.cc",
-    "$blink_core_output_dir/style_builder_functions.h",
-    "$blink_core_output_dir/style_builder_functions.cc",
-  ]
-}
-
 css_properties("make_core_generated_cssom_types") {
   script = "../build/scripts/core/css/make_cssom_types.py"
   other_inputs = [
@@ -1477,6 +1458,30 @@ action("make_core_generated_origin_trials") {
     ]
   }
 }
+action("make_core_generated_web_origin_trials") {
+  script = "../build/scripts/make_web_origin_trials.py"
+
+  inputs = scripts_for_json5_files + [
+             "../build/scripts/make_web_origin_trials.py",
+             "../platform/runtime_enabled_features.json5",
+             "../build/scripts/templates/web_origin_trials.cc.tmpl",
+           ]
+  outputs = [
+    "$blink_core_output_dir/exported/web_origin_trials.cc",
+  ]
+
+  args = [
+    rebase_path("../platform/runtime_enabled_features.json5", root_build_dir),
+    "--output_dir",
+    "$rel_blink_core_gen_dir/exported",
+  ]
+  if (is_mac && !use_system_xcode) {
+    args += [
+      "--developer_dir",
+      hermetic_xcode_path,
+    ]
+  }
+}
 
 action_foreach("make_core_generated_bison") {
   script = "../build/scripts/rule_bison.py"
@@ -1529,9 +1534,9 @@ targets_generating_sources = [
   ":make_core_generated_media_feature_names",
   ":make_core_generated_media_type_names",
   ":make_core_generated_origin_trials",
-  ":make_core_generated_style_builder",
   ":make_core_generated_style_property_shorthand",
   ":make_core_generated_svg_names",
+  ":make_core_generated_web_origin_trials",
   ":make_core_generated_xlink_names",
   ":make_core_generated_xml_names",
   ":make_core_generated_xml_ns_names",
@@ -1635,6 +1640,7 @@ jumbo_source_set("unit_tests") {
     "animation/animation_test_helper.cc",
     "animation/animation_test_helper.h",
     "animation/compositor_animations_test.cc",
+    "animation/css/css_animations_test.cc",
     "animation/css/css_transition_data_test.cc",
     "animation/document_timeline_test.cc",
     "animation/effect_input_test.cc",
@@ -1693,6 +1699,8 @@ jumbo_source_set("unit_tests") {
     "css/parser/sizes_attribute_parser_test.cc",
     "css/parser/sizes_calc_parser_test.cc",
     "css/properties/css_parsing_utils_test.cc",
+    "css/resolver/css_variable_data_test.cc",
+    "css/resolver/css_variable_resolver_test.cc",
     "css/resolver/font_builder_test.cc",
     "css/resolver/font_style_resolver_test.cc",
     "css/resolver/match_result_test.cc",
@@ -1703,8 +1711,8 @@ jumbo_source_set("unit_tests") {
     "css/selector_query_test.cc",
     "css/style_element_test.cc",
     "css/style_engine_test.cc",
+    "css/style_environment_variables_test.cc",
     "css/style_sheet_contents_test.cc",
-    "css/style_sheet_list_test.cc",
     "css/threaded/css_parser_threaded_test.cc",
     "css/threaded/css_to_length_conversion_data_threaded_test.cc",
     "css/threaded/filter_operation_resolver_threaded_test.cc",
@@ -1720,14 +1728,13 @@ jumbo_source_set("unit_tests") {
     "dom/events/event_target_test.cc",
     "dom/events/listener_leak_test.cc",
     "dom/first_letter_pseudo_element_test.cc",
+    "dom/flat_tree_traversal_ng_test.cc",
     "dom/flat_tree_traversal_test.cc",
     "dom/idle_deadline_test.cc",
     "dom/layout_tree_builder_traversal_test.cc",
     "dom/live_node_list_registry_test.cc",
     "dom/mutation_observer_test.cc",
     "dom/names_map_test.cc",
-    "dom/ng/flat_tree_traversal_ng_test.cc",
-    "dom/ng/slot_assignment_test.cc",
     "dom/node_test.cc",
     "dom/nth_index_cache_test.cc",
     "dom/pausable_object_test.cc",
@@ -1735,6 +1742,7 @@ jumbo_source_set("unit_tests") {
     "dom/scripted_animation_controller_test.cc",
     "dom/scripted_idle_task_controller_test.cc",
     "dom/shadow_dom_v0_test.cc",
+    "dom/slot_assignment_test.cc",
     "dom/space_split_string_test.cc",
     "dom/static_range_test.cc",
     "dom/text_test.cc",
@@ -1814,6 +1822,7 @@ jumbo_source_set("unit_tests") {
     "frame/use_counter_test.cc",
     "frame/visual_viewport_test.cc",
     "geometry/dom_matrix_test.cc",
+    "html/anchor_element_metrics_test.cc",
     "html/canvas/canvas_async_blob_creator_test.cc",
     "html/canvas/canvas_font_cache_test.cc",
     "html/canvas/image_data_test.cc",
@@ -1846,7 +1855,6 @@ jumbo_source_set("unit_tests") {
     "html/html_dimension_test.cc",
     "html/html_embed_element_test.cc",
     "html/html_frame_element_test.cc",
-    "html/html_frame_owner_element_test.cc",
     "html/html_iframe_element_test.cc",
     "html/html_image_element_test.cc",
     "html/html_link_element_sizes_attribute_test.cc",
@@ -1857,6 +1865,7 @@ jumbo_source_set("unit_tests") {
     "html/html_table_row_element_test.cc",
     "html/image_document_test.cc",
     "html/imports/html_import_sheets_test.cc",
+    "html/lazy_load_frame_observer_test.cc",
     "html/link_element_loading_test.cc",
     "html/link_rel_attribute_test.cc",
     "html/list_item_ordinal_test.cc",
@@ -1864,6 +1873,7 @@ jumbo_source_set("unit_tests") {
     "html/media/html_media_element_event_listeners_test.cc",
     "html/media/html_media_element_test.cc",
     "html/media/html_video_element_persistent_test.cc",
+    "html/media/html_video_element_test.cc",
     "html/media/media_custom_controls_fullscreen_detector_test.cc",
     "html/media_element_filling_viewport_test.cc",
     "html/parser/atomic_html_token_test.cc",
@@ -1906,6 +1916,7 @@ jumbo_source_set("unit_tests") {
     "layout/layout_count_test.cc",
     "layout/layout_embedded_content_test.cc",
     "layout/layout_geometry_map_test.cc",
+    "layout/layout_image_test.cc",
     "layout/layout_inline_test.cc",
     "layout/layout_media_test.cc",
     "layout/layout_multi_column_flow_thread_test.cc",
@@ -1979,6 +1990,7 @@ jumbo_source_set("unit_tests") {
     "loader/mixed_content_checker_test.cc",
     "loader/modulescript/module_script_loader_test.cc",
     "loader/modulescript/module_tree_linker_test.cc",
+    "loader/navigation_policy_test.cc",
     "loader/ping_loader_test.cc",
     "loader/programmatic_scroll_test.cc",
     "loader/progress_tracker_test.cc",
@@ -1999,7 +2011,6 @@ jumbo_source_set("unit_tests") {
     "page/chrome_client_test.cc",
     "page/context_menu_controller_test.cc",
     "page/drag_controller_test.cc",
-    "page/effective_navigation_policy_test.cc",
     "page/focus_controller_test.cc",
     "page/page_overlay_test.cc",
     "page/page_popup_client_test.cc",
@@ -2017,6 +2028,7 @@ jumbo_source_set("unit_tests") {
     "paint/block_painter_test.cc",
     "paint/box_paint_invalidator_test.cc",
     "paint/clip_path_clipper_test.cc",
+    "paint/clip_rect_test.cc",
     "paint/compositing/composited_layer_mapping_test.cc",
     "paint/compositing/compositing_inputs_updater_test.cc",
     "paint/compositing/compositing_layer_assigner_test.cc",
@@ -2028,16 +2040,16 @@ jumbo_source_set("unit_tests") {
     "paint/first_meaningful_paint_detector_test.cc",
     "paint/fragment_data_test.cc",
     "paint/html_canvas_painter_test.cc",
-    "paint/layer_clip_recorder_test.cc",
     "paint/link_highlight_impl_test.cc",
     "paint/ng/ng_paint_fragment_test.cc",
     "paint/ng/ng_paint_fragment_traversal_test.cc",
     "paint/ng/ng_text_fragment_painter_test.cc",
     "paint/nine_piece_image_grid_test.cc",
     "paint/object_paint_invalidator_test.cc",
+    "paint/paint_and_raster_invalidation_test.cc",
+    "paint/paint_and_raster_invalidation_test.h",
     "paint/paint_controller_paint_test.cc",
     "paint/paint_controller_paint_test.h",
-    "paint/paint_invalidation_test.cc",
     "paint/paint_layer_clipper_test.cc",
     "paint/paint_layer_painter_test.cc",
     "paint/paint_layer_scrollable_area_test.cc",
@@ -2047,7 +2059,6 @@ jumbo_source_set("unit_tests") {
     "paint/paint_property_tree_printer_test.cc",
     "paint/paint_property_tree_update_tests.cc",
     "paint/pre_paint_tree_walk_test.cc",
-    "paint/raster_invalidation_test.cc",
     "paint/stub_chrome_client_for_spv2.h",
     "paint/table_painter_test.cc",
     "paint/text_painter_test.cc",
@@ -2061,10 +2072,10 @@ jumbo_source_set("unit_tests") {
     "scheduler/frame_throttling_test.cc",
     "scheduler/throttling_test.cc",
     "scheduler/virtual_time_test.cc",
+    "script/document_modulator_impl_test.cc",
     "script/dynamic_module_resolver_test.cc",
     "script/layered_api_test.cc",
     "script/mock_script_element_base.h",
-    "script/modulator_test.cc",
     "script/module_map_test.cc",
     "script/script_module_resolver_impl_test.cc",
     "script/script_runner_test.cc",

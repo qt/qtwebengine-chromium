@@ -27,12 +27,10 @@
 #include "third_party/blink/renderer/core/url/dom_url.h"
 
 #include "base/auto_reset.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
 #include "third_party/blink/renderer/core/url/url_search_params.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
 
 namespace blink {
@@ -55,6 +53,10 @@ DOMURL::~DOMURL() = default;
 void DOMURL::Trace(blink::Visitor* visitor) {
   visitor->Trace(search_params_);
   ScriptWrappable::Trace(visitor);
+}
+
+void DOMURL::setHref(const String& value) {
+  SetInput(value);
 }
 
 void DOMURL::SetInput(const String& value) {

@@ -174,7 +174,7 @@ bool SkCodec::conversionSupported(const SkImageInfo& dst, SkColorType srcColor,
             return srcIsOpaque;
         case kGray_8_SkColorType:
             return kGray_8_SkColorType == srcColor && srcIsOpaque &&
-                   !needs_color_xform(dst, srcCS, false);
+                   !needs_color_xform(dst, srcCS);
         case kAlpha_8_SkColorType:
             // conceptually we can convert anything into alpha_8, but we haven't actually coded
             // all of those other conversions yet, so only return true for the case we have codec.
@@ -208,16 +208,37 @@ bool SkCodec::rewindIfNeeded() {
     return this->onRewind();
 }
 
-static void zero_rect(const SkImageInfo& dstInfo, void* pixels, size_t rowBytes,
-                      SkIRect frameRect) {
-    if (!frameRect.intersect(dstInfo.bounds())) {
-        return;
+bool zero_rect(const SkImageInfo& dstInfo, void* pixels, size_t rowBytes,
+               SkISize srcDimensions, SkIRect prevRect) {
+    const auto dimensions = dstInfo.dimensions();
+    if (dimensions != srcDimensions) {
+        SkRect src = SkRect::Make(srcDimensions);
+        SkRect dst = SkRect::Make(dimensions);
+        SkMatrix map = SkMatrix::MakeRectToRect(src, dst, SkMatrix::kCenter_ScaleToFit);
+        SkRect asRect = SkRect::Make(prevRect);
+        if (!map.mapRect(&asRect)) {
+            return false;
+        }
+        asRect.roundIn(&prevRect);
+        if (prevRect.isEmpty()) {
+            // Down-scaling shrank the empty portion to nothing,
+            // so nothing to zero.
+            return true;
+        }
     }
-    const auto info = dstInfo.makeWH(frameRect.width(), frameRect.height());
+
+    if (!prevRect.intersect(dstInfo.bounds())) {
+        SkCodecPrintf("rectangles do not intersect!");
+        SkASSERT(false);
+        return true;
+    }
+
+    const SkImageInfo info = dstInfo.makeWH(prevRect.width(), prevRect.height());
     const size_t bpp = dstInfo.bytesPerPixel();
-    const size_t offset = frameRect.x() * bpp + frameRect.y() * rowBytes;
-    auto* eraseDst = SkTAddOffset<void>(pixels, offset);
+    const size_t offset = prevRect.x() * bpp + prevRect.y() * rowBytes;
+    void* eraseDst = SkTAddOffset<void>(pixels, offset);
     SkSampler::Fill(info, eraseDst, rowBytes, 0, SkCodec::kNo_ZeroInitialized);
+    return true;
 }
 
 SkCodec::Result SkCodec::handleFrameIndex(const SkImageInfo& info, void* pixels, size_t rowBytes,
@@ -226,7 +247,7 @@ SkCodec::Result SkCodec::handleFrameIndex(const SkImageInfo& info, void* pixels,
     if (0 == index) {
         if (!this->conversionSupported(info, fSrcInfo.colorType(), fEncodedInfo.opaque(),
                                       fSrcInfo.colorSpace())
-            || !this->initializeColorXform(info, fEncodedInfo.alpha(), options.fPremulBehavior))
+            || !this->initializeColorXform(info, fEncodedInfo.alpha()))
         {
             return kInvalidConversion;
         }
@@ -276,28 +297,9 @@ SkCodec::Result SkCodec::handleFrameIndex(const SkImageInfo& info, void* pixels,
                     // need to clear, since it must be covered by the desired frame.
                     if (options.fPriorFrame == requiredFrame) {
                         SkIRect prevRect = prevFrame->frameRect();
-                        if (info.dimensions() != fSrcInfo.dimensions()) {
-                            auto src = SkRect::Make(fSrcInfo.dimensions());
-                            auto dst = SkRect::Make(info.dimensions());
-                            SkMatrix map = SkMatrix::MakeRectToRect(src, dst,
-                                    SkMatrix::kCenter_ScaleToFit);
-                            SkRect asRect = SkRect::Make(prevRect);
-                            if (!map.mapRect(&asRect)) {
-                                return kInternalError;
-                            }
-                            asRect.roundIn(&prevRect);
-                            if (prevRect.isEmpty()) {
-                                // Down-scaling shrank the empty portion to nothing,
-                                // so nothing to zero.
-                                break;
-                            }
-                            if (!prevRect.intersect(SkIRect::MakeSize(info.dimensions()))) {
-                                SkCodecPrintf("rectangles do not intersect!");
-                                SkASSERT(false);
-                                break;
-                            }
+                        if (!zero_rect(info, pixels, rowBytes, fSrcInfo.dimensions(), prevRect)) {
+                            return kInternalError;
                         }
-                        zero_rect(info, pixels, rowBytes, prevRect);
                     }
                     break;
                 default:
@@ -314,13 +316,15 @@ SkCodec::Result SkCodec::handleFrameIndex(const SkImageInfo& info, void* pixels,
             const auto* prevFrame = frameHolder->getFrame(requiredFrame);
             const auto disposalMethod = prevFrame->getDisposalMethod();
             if (disposalMethod == SkCodecAnimation::DisposalMethod::kRestoreBGColor) {
-                zero_rect(info, pixels, rowBytes, prevFrame->frameRect());
+                auto prevRect = prevFrame->frameRect();
+                if (!zero_rect(info, pixels, rowBytes, fSrcInfo.dimensions(), prevRect)) {
+                    return kInternalError;
+                }
             }
         }
     }
 
-    return this->initializeColorXform(info, frame->reportedAlpha(), options.fPremulBehavior)
-        ? kSuccess : kInvalidConversion;
+    return this->initializeColorXform(info, frame->reportedAlpha()) ? kSuccess : kInvalidConversion;
 }
 
 SkCodec::Result SkCodec::getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
@@ -643,8 +647,7 @@ static inline SkColorSpaceXform::ColorFormat select_xform_format_ct(SkColorType 
     }
 }
 
-bool SkCodec::initializeColorXform(const SkImageInfo& dstInfo, SkEncodedInfo::Alpha encodedAlpha,
-                                   SkTransferFunctionBehavior premulBehavior) {
+bool SkCodec::initializeColorXform(const SkImageInfo& dstInfo, SkEncodedInfo::Alpha encodedAlpha) {
     fColorXform = nullptr;
     fXformOnDecode = false;
     if (!this->usesColorXform()) {
@@ -654,12 +657,8 @@ bool SkCodec::initializeColorXform(const SkImageInfo& dstInfo, SkEncodedInfo::Al
     // a colorXform to do a color correct premul, since the blend step will handle
     // premultiplication. But there is no way to know whether we need to blend from
     // inside this call.
-    bool needsColorCorrectPremul = needs_premul(dstInfo.alphaType(), encodedAlpha) &&
-                                   SkTransferFunctionBehavior::kRespect == premulBehavior;
-    if (needs_color_xform(dstInfo, fSrcInfo.colorSpace(), needsColorCorrectPremul)) {
-        fColorXform = SkMakeColorSpaceXform(fSrcInfo.colorSpace(),
-                                            dstInfo.colorSpace(),
-                                            premulBehavior);
+    if (needs_color_xform(dstInfo, fSrcInfo.colorSpace())) {
+        fColorXform = SkMakeColorSpaceXform(fSrcInfo.colorSpace(), dstInfo.colorSpace());
         if (!fColorXform) {
             return false;
         }

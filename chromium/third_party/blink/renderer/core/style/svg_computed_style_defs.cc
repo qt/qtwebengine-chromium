@@ -28,13 +28,26 @@
 #include "third_party/blink/renderer/core/style/svg_computed_style_defs.h"
 
 #include "third_party/blink/renderer/core/style/data_equivalency.h"
+#include "third_party/blink/renderer/core/style/style_svg_resource.h"
 #include "third_party/blink/renderer/core/style/svg_computed_style.h"
 
 namespace blink {
 
+SVGPaint::SVGPaint() : type(SVG_PAINTTYPE_NONE) {}
+SVGPaint::SVGPaint(Color color) : color(color), type(SVG_PAINTTYPE_RGBCOLOR) {}
+SVGPaint::SVGPaint(const SVGPaint& paint) = default;
+
+SVGPaint::~SVGPaint() = default;
+
+SVGPaint& SVGPaint::operator=(const SVGPaint& paint) = default;
+
 bool SVGPaint::operator==(const SVGPaint& other) const {
   return type == other.type && color == other.color &&
-         resource == other.resource;
+         DataEquivalent(resource, other.resource);
+}
+
+const String& SVGPaint::GetUrl() const {
+  return Resource()->Url();
 }
 
 StyleFillData::StyleFillData()
@@ -116,8 +129,10 @@ StyleResourceData::StyleResourceData()
 StyleResourceData::StyleResourceData(const StyleResourceData& other)
     : RefCounted<StyleResourceData>(), masker(other.masker) {}
 
+StyleResourceData::~StyleResourceData() = default;
+
 bool StyleResourceData::operator==(const StyleResourceData& other) const {
-  return masker == other.masker;
+  return DataEquivalent(masker, other.masker);
 }
 
 StyleInheritedResourceData::StyleInheritedResourceData()
@@ -132,10 +147,13 @@ StyleInheritedResourceData::StyleInheritedResourceData(
       marker_mid(other.marker_mid),
       marker_end(other.marker_end) {}
 
+StyleInheritedResourceData::~StyleInheritedResourceData() = default;
+
 bool StyleInheritedResourceData::operator==(
     const StyleInheritedResourceData& other) const {
-  return marker_start == other.marker_start && marker_mid == other.marker_mid &&
-         marker_end == other.marker_end;
+  return DataEquivalent(marker_start, other.marker_start) &&
+         DataEquivalent(marker_mid, other.marker_mid) &&
+         DataEquivalent(marker_end, other.marker_end);
 }
 
 StyleGeometryData::StyleGeometryData()

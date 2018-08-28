@@ -84,7 +84,7 @@ void* InlineBox::operator new(size_t sz) {
 }
 
 void InlineBox::operator delete(void* ptr) {
-  WTF::PartitionFree(ptr);
+  base::PartitionFree(ptr);
 }
 
 const char* InlineBox::BoxName() const {
@@ -96,13 +96,11 @@ String InlineBox::DebugName() const {
 }
 
 LayoutRect InlineBox::VisualRect() const {
-  // TODO(wangxianzhu): tighten it.
   return GetLineLayoutItem().VisualRect();
 }
 
-LayoutRect InlineBox::PartialInvalidationRect() const {
-  // TODO(wangxianzhu): tighten it.
-  return GetLineLayoutItem().PartialInvalidationRect();
+LayoutRect InlineBox::PartialInvalidationVisualRect() const {
+  return GetLineLayoutItem().PartialInvalidationVisualRect();
 }
 
 #ifndef NDEBUG
@@ -238,10 +236,10 @@ void InlineBox::Move(const LayoutSize& delta) {
 }
 
 void InlineBox::Paint(const PaintInfo& paint_info,
-                      const LayoutPoint& paint_offset,
-                      LayoutUnit /* lineTop */,
-                      LayoutUnit /* lineBottom */) const {
-  BlockPainter::PaintInlineBox(*this, paint_info, paint_offset);
+                      const LayoutPoint&,
+                      LayoutUnit,
+                      LayoutUnit) const {
+  BlockPainter::PaintInlineBox(*this, paint_info);
 }
 
 bool InlineBox::NodeAtPoint(HitTestResult& result,

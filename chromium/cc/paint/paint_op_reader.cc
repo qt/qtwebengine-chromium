@@ -153,23 +153,6 @@ void PaintOpReader::ReadData(size_t bytes, void* data) {
   remaining_bytes_ -= bytes;
 }
 
-void PaintOpReader::ReadArray(size_t count, SkPoint* array) {
-  size_t bytes = count * sizeof(SkPoint);
-  if (remaining_bytes_ < bytes)
-    SetInvalid();
-  // Overflow?
-  if (count > static_cast<size_t>(~0) / sizeof(SkPoint))
-    SetInvalid();
-  if (!valid_)
-    return;
-  if (count == 0)
-    return;
-
-  memcpy(array, const_cast<const char*>(memory_), bytes);
-  memory_ += bytes;
-  remaining_bytes_ -= bytes;
-}
-
 void PaintOpReader::ReadSize(size_t* size) {
   ReadSimple(size);
 }
@@ -320,6 +303,11 @@ void PaintOpReader::Read(PaintImage* image) {
   if (!valid_)
     return;
 
+  bool needs_mips;
+  ReadSimple(&needs_mips);
+  if (!valid_)
+    return;
+
   // If we encountered a decode failure, we may write an invalid id for the
   // image. In these cases, just return, leaving the image as nullptr.
   if (transfer_cache_entry_id == kInvalidImageTransferCacheEntryId)
@@ -328,10 +316,16 @@ void PaintOpReader::Read(PaintImage* image) {
   if (auto* entry =
           options_.transfer_cache->GetEntryAs<ServiceImageTransferCacheEntry>(
               transfer_cache_entry_id)) {
+    if (needs_mips)
+      entry->EnsureMips();
     *image = PaintImageBuilder::WithDefault()
                  .set_id(PaintImage::GetNextId())
                  .set_image(entry->image(), PaintImage::kNonLazyStableId)
                  .TakePaintImage();
+  } else {
+    // If a transfer cache id exists, we must have a valid entry for it in the
+    // cache.
+    SetInvalid();
   }
 }
 

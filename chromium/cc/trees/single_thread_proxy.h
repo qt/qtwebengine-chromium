@@ -49,10 +49,10 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void SetNeedsCommit() override;
   void SetNeedsRedraw(const gfx::Rect& damage_rect) override;
   void SetNextCommitWaitsForActivation() override;
+  bool RequestedAnimatePending() override;
   void NotifyInputThrottledUntilCommit() override {}
   void SetDeferCommits(bool defer_commits) override;
   bool CommitRequested() const override;
-  void MainThreadHasStoppedFlinging() override {}
   void Start() override;
   void Stop() override;
   void SetMutator(std::unique_ptr<LayerTreeMutator> mutator) override;
@@ -63,7 +63,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
     // layout tests. This will still get called in the latter case, but we don't
     // need to record UKM in that case.
   }
-  void ClearHistoryOnNavigation() override;
+  void ClearHistory() override;
   void SetRenderFrameObserver(
       std::unique_ptr<RenderFrameMetadataObserver> observer) override;
 
@@ -85,7 +85,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void ScheduledActionActivateSyncTree() override;
   void ScheduledActionBeginLayerTreeFrameSinkCreation() override;
   void ScheduledActionPrepareTiles() override;
-  void ScheduledActionInvalidateLayerTreeFrameSink() override;
+  void ScheduledActionInvalidateLayerTreeFrameSink(bool needs_redraw) override;
   void ScheduledActionPerformImplSideInvalidation() override;
   void SendBeginMainFrameNotExpectedSoon() override;
   void ScheduledActionBeginMainFrameNotExpectedUntil(
@@ -117,15 +117,15 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void WillPrepareTiles() override;
   void DidPrepareTiles() override;
   void DidCompletePageScaleAnimationOnImplThread() override;
-  void OnDrawForLayerTreeFrameSink(bool resourceless_software_draw) override;
+  void OnDrawForLayerTreeFrameSink(bool resourceless_software_draw,
+                                   bool skip_draw) override;
   void NeedsImplSideInvalidation(bool needs_first_draw_on_activation) override;
   void RequestBeginMainFrameNotExpected(bool new_state) override;
   void NotifyImageDecodeRequestFinished() override;
   void DidPresentCompositorFrameOnImplThread(
-      const std::vector<int>& source_frames,
-      base::TimeTicks time,
-      base::TimeDelta refresh,
-      uint32_t flags) override;
+      uint32_t frame_token,
+      std::vector<LayerTreeHost::PresentationTimeCallback> callbacks,
+      const gfx::PresentationFeedback& feedback) override;
 
   void RequestNewLayerTreeFrameSink();
 

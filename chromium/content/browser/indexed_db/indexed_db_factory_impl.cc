@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/callback_helpers.h"
+#include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
@@ -110,7 +111,7 @@ const base::Feature kIDBTombstoneStatistics{"IDBTombstoneStatistics",
                                             base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kIDBTombstoneDeletion{"IDBTombstoneDeletion",
-                                          base::FEATURE_DISABLED_BY_DEFAULT};
+                                          base::FEATURE_ENABLED_BY_DEFAULT};
 
 constexpr const base::TimeDelta
     IndexedDBFactoryImpl::kMaxEarliestGlobalSweepFromNow;
@@ -176,6 +177,12 @@ void IndexedDBFactoryImpl::ReleaseBackingStore(const Origin& origin,
   // for a short period so that a re-open is fast.
   if (immediate) {
     CloseBackingStore(origin);
+    return;
+  }
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          kIDBCloseImmediatelySwitch)) {
+    MaybeCloseBackingStore(origin);
     return;
   }
 

@@ -15,7 +15,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/ui/webui/browsing_history_handler.h"
 #include "chrome/browser/ui/webui/foreign_session_handler.h"
 #include "chrome/browser/ui/webui/history_login_handler.h"
@@ -27,10 +27,10 @@
 #include "chrome/grit/locale_settings.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/core/browser/signin_manager.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "services/identity/public/cpp/identity_manager.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
@@ -39,9 +39,9 @@ constexpr char kIsUserSignedInKey[] = "isUserSignedIn";
 constexpr char kShowMenuPromoKey[] = "showMenuPromo";
 
 bool IsUserSignedIn(Profile* profile) {
-  SigninManagerBase* signin_manager =
-      SigninManagerFactory::GetForProfile(profile);
-  return signin_manager && signin_manager->IsAuthenticated();
+  identity::IdentityManager* identity_manager =
+      IdentityManagerFactory::GetForProfile(profile);
+  return identity_manager && identity_manager->HasPrimaryAccount();
 }
 
 bool MenuPromoShown(Profile* profile) {
@@ -52,8 +52,6 @@ content::WebUIDataSource* CreateMdHistoryUIHTMLSource(Profile* profile,
                                                       bool use_test_title) {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIHistoryHost);
-  source->OverrideContentSecurityPolicyScriptSrc(
-      "script-src chrome://resources 'self';");
 
   // Localized strings (alphabetical order).
   source->AddLocalizedString("bookmarked", IDS_HISTORY_ENTRY_BOOKMARKED);

@@ -22,7 +22,7 @@ const char RadioButton::kViewClassName[] = "RadioButton";
 RadioButton::RadioButton(const base::string16& label,
                          int group_id,
                          bool force_md)
-    : Checkbox(label, force_md) {
+    : Checkbox(label, nullptr, force_md) {
   SetGroup(group_id);
 
   if (!UseMd()) {
@@ -163,7 +163,7 @@ const gfx::VectorIcon& RadioButton::GetVectorIcon() const {
 
 SkPath RadioButton::GetFocusRingPath() const {
   SkPath path;
-  path.addOval(gfx::RectToSkRect(image()->bounds()));
+  path.addOval(gfx::RectToSkRect(image()->GetMirroredBounds()));
   return path;
 }
 

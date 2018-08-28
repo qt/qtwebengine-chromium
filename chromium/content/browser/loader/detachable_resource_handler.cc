@@ -38,6 +38,14 @@ class DetachableResourceHandler::Controller : public ResourceController {
     detachable_handler_->ResumeInternal();
   }
 
+  void ResumeForRedirect(const base::Optional<net::HttpRequestHeaders>&
+                             modified_request_headers) override {
+    DCHECK(!modified_request_headers.has_value())
+        << "Redirect with modified headers was not supported yet. "
+           "crbug.com/845683";
+    Resume();
+  }
+
   void Cancel() override {
     MarkAsUsed();
     detachable_handler_->Cancel();
@@ -247,13 +255,6 @@ void DetachableResourceHandler::OnResponseCompleted(
   HoldController(std::move(controller));
   next_handler_->OnResponseCompleted(status,
                                      std::make_unique<Controller>(this));
-}
-
-void DetachableResourceHandler::OnDataDownloaded(int bytes_downloaded) {
-  if (!next_handler_)
-    return;
-
-  next_handler_->OnDataDownloaded(bytes_downloaded);
 }
 
 void DetachableResourceHandler::ResumeInternal() {

@@ -15,12 +15,14 @@
 #include "services/service_manager/public/cpp/service.h"
 #include "services/service_manager/public/cpp/service_context.h"
 #include "services/service_manager/public/cpp/service_runner.h"
+#include "services/service_manager/public/mojom/service_factory.mojom.h"
+#include "services/ui/public/interfaces/constants.mojom.h"
 #include "services/ui/public/interfaces/window_tree_host_factory.mojom.h"
-#include "services/ui/ws2/gpu_support.h"
+#include "services/ui/test_ws/test_gpu_interface_provider.h"
 #include "services/ui/ws2/window_service.h"
-#include "services/ui/ws2/window_service_client.h"
-#include "services/ui/ws2/window_service_client_binding.h"
 #include "services/ui/ws2/window_service_delegate.h"
+#include "services/ui/ws2/window_tree.h"
+#include "services/ui/ws2/window_tree_binding.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/env.h"
@@ -50,12 +52,10 @@ class Client {
     window_->Init(LAYER_NOT_DRAWN);
     window_->set_owned_by_parent(false);
     root->AddChild(window_.get());
-    const bool intercepts_events = false;
-    binding_ = std::make_unique<ws2::WindowServiceClientBinding>();
+    binding_ = std::make_unique<ws2::WindowTreeBinding>();
     mojom::WindowTreeClient* tree_client = tree_client_ptr.get();
     binding_->InitForEmbed(
-        window_service, std::move(tree_client_ptr), tree_client,
-        intercepts_events, window_.get(),
+        window_service, std::move(tree_client_ptr), tree_client, window_.get(),
         base::BindOnce(&Client::OnConnectionLost, base::Unretained(this)));
   }
 
@@ -68,7 +68,7 @@ class Client {
   }
 
   std::unique_ptr<aura::Window> window_;
-  std::unique_ptr<ws2::WindowServiceClientBinding> binding_;
+  std::unique_ptr<ws2::WindowTreeBinding> binding_;
 
   DISALLOW_COPY_AND_ASSIGN(Client);
 };
@@ -109,13 +109,14 @@ class WindowTreeHostFactory : public mojom::WindowTreeHostFactory {
 // WindowTreeHostFactory to service requests for connections to the Window
 // Service.
 class TestWindowService : public service_manager::Service,
+                          public service_manager::mojom::ServiceFactory,
                           public ws2::WindowServiceDelegate {
  public:
   TestWindowService() = default;
 
   ~TestWindowService() override {
-    // Has dependencies upon Screen, which is owned by AuraTestHelper.
-    window_service_.reset();
+    // WindowService depends upon Screen, which is owned by AuraTestHelper.
+    service_context_.reset();
     // AuraTestHelper expects TearDown() to be called.
     aura_test_helper_->TearDown();
     aura_test_helper_.reset();
@@ -154,14 +155,9 @@ class TestWindowService : public service_manager::Service,
                                          &context_factory_private);
     aura_test_helper_ = std::make_unique<aura::test::AuraTestHelper>();
     aura_test_helper_->SetUp(context_factory, context_factory_private);
-    window_service_ = std::make_unique<ws2::WindowService>(
-        this, nullptr, aura_test_helper_->focus_client());
-    window_tree_host_factory_ = std::make_unique<WindowTreeHostFactory>(
-        window_service_.get(), aura_test_helper_->root_window());
 
-    registry_.AddInterface<mojom::WindowTreeHostFactory>(
-        base::BindRepeating(&WindowTreeHostFactory::AddBinding,
-                            base::Unretained(window_tree_host_factory_.get())));
+    registry_.AddInterface(base::BindRepeating(
+        &TestWindowService::BindServiceFactory, base::Unretained(this)));
   }
   void OnBindInterface(const service_manager::BindSourceInfo& source_info,
                        const std::string& interface_name,
@@ -169,13 +165,46 @@ class TestWindowService : public service_manager::Service,
     registry_.BindInterface(interface_name, std::move(interface_pipe));
   }
 
+  // service_manager::mojom::ServiceFactory:
+  void CreateService(
+      service_manager::mojom::ServiceRequest request,
+      const std::string& name,
+      service_manager::mojom::PIDReceiverPtr pid_receiver) override {
+    DCHECK_EQ(name, ui::mojom::kServiceName);
+    DCHECK(!ui_service_created_);
+    ui_service_created_ = true;
+
+    auto window_service = std::make_unique<ws2::WindowService>(
+        this, std::make_unique<TestGpuInterfaceProvider>(),
+        aura_test_helper_->focus_client());
+    window_tree_host_factory_ = std::make_unique<WindowTreeHostFactory>(
+        window_service.get(), aura_test_helper_->root_window());
+    window_service->registry()->AddInterface(
+        base::BindRepeating(&WindowTreeHostFactory::AddBinding,
+                            base::Unretained(window_tree_host_factory_.get())));
+    service_context_ = std::make_unique<service_manager::ServiceContext>(
+        std::move(window_service), std::move(request));
+    pid_receiver->SetPID(base::GetCurrentProcId());
+  }
+
+  void BindServiceFactory(
+      service_manager::mojom::ServiceFactoryRequest request) {
+    service_factory_bindings_.AddBinding(this, std::move(request));
+  }
+
   service_manager::BinderRegistry registry_;
 
+  mojo::BindingSet<service_manager::mojom::ServiceFactory>
+      service_factory_bindings_;
+
+  // Handles the ServiceRequest. Owns the WindowService instance.
+  std::unique_ptr<service_manager::ServiceContext> service_context_;
+
   std::unique_ptr<aura::test::AuraTestHelper> aura_test_helper_;
-  std::unique_ptr<ws2::WindowService> window_service_;
   std::unique_ptr<WindowTreeHostFactory> window_tree_host_factory_;
 
   bool started_ = false;
+  bool ui_service_created_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(TestWindowService);
 };

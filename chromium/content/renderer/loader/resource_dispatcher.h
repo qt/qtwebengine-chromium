@@ -28,6 +28,7 @@
 #include "content/public/common/url_loader_throttle.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -89,7 +90,8 @@ class CONTENT_EXPORT ResourceDispatcher {
   //
   // |routing_id| is used to associated the bridge with a frame's network
   // context.
-  // |timeout| (in seconds) is used to abort the sync request on timeouts.
+  // |timeout| is used to abort the sync request on timeouts. TimeDelta::Max()
+  // is interpreted as no-timeout.
   // If |download_to_blob_registry| is not null, it is used to redirect the
   // download to a blob, using StartAsync's |pass_response_pipe_to_peer| flag.
   virtual void StartSync(
@@ -99,7 +101,7 @@ class CONTENT_EXPORT ResourceDispatcher {
       SyncLoadResponse* response,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-      double timeout,
+      base::TimeDelta timeout,
       blink::mojom::BlobRegistryPtrInfo download_to_blob_registry,
       std::unique_ptr<RequestPeer> peer);
 
@@ -130,8 +132,6 @@ class CONTENT_EXPORT ResourceDispatcher {
       std::unique_ptr<NavigationResponseOverrideParameters>
           response_override_params,
       base::OnceClosure* continue_navigation_function);
-
-  network::mojom::DownloadedTempFilePtr TakeDownloadedTempFile(int request_id);
 
   // Removes a request from the |pending_requests_| list, returning true if the
   // request was found and removed.
@@ -185,7 +185,6 @@ class CONTENT_EXPORT ResourceDispatcher {
                        const GURL& request_url,
                        const std::string& method,
                        const GURL& referrer,
-                       bool download_to_file,
                        std::unique_ptr<NavigationResponseOverrideParameters>
                            response_override_params);
 
@@ -202,7 +201,6 @@ class CONTENT_EXPORT ResourceDispatcher {
     GURL response_url;
     std::string response_method;
     GURL response_referrer;
-    bool download_to_file;
     bool has_pending_redirect = false;
     base::TimeTicks local_request_start;
     base::TimeTicks local_response_start;
@@ -217,6 +215,10 @@ class CONTENT_EXPORT ResourceDispatcher {
         navigation_response_override;
     bool should_follow_redirect = true;
     bool always_access_network = false;
+    // Network error code the request completed with, or net::ERR_IO_PENDING if
+    // it's not completed. Used both to distinguish completion from
+    // cancellation, and to log histograms.
+    int net_error = net::ERR_IO_PENDING;
 
     std::vector<content::mojom::RedirectInfoPtr> redirect_info_chain;
 
@@ -245,7 +247,6 @@ class CONTENT_EXPORT ResourceDispatcher {
       scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   void OnStartLoadingResponseBody(int request_id,
                                   mojo::ScopedDataPipeConsumerHandle body);
-  void OnDownloadedData(int request_id, int data_len, int encoded_data_length);
   void OnRequestComplete(int request_id,
                          const network::URLLoaderCompletionStatus& status);
 

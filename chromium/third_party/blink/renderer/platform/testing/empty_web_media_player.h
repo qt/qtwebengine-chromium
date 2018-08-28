@@ -2,10 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "third_party/blink/public/platform/web_media_player.h"
-
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_TESTING_EMPTY_WEB_MEDIA_PLAYER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_TESTING_EMPTY_WEB_MEDIA_PLAYER_H_
+
+#include "base/callback.h"
+#include "third_party/blink/public/platform/web_media_player.h"
+
+namespace cc {
+class PaintCanvas;
+class PaintFlags;
+}  // namespace cc
 
 namespace blink {
 
@@ -16,7 +22,7 @@ class EmptyWebMediaPlayer : public WebMediaPlayer {
  public:
   ~EmptyWebMediaPlayer() override = default;
 
-  void Load(LoadType, const WebMediaPlayerSource&, CORSMode) override {}
+  LoadTiming Load(LoadType, const WebMediaPlayerSource&, CORSMode) override;
   void Play() override {}
   void Pause() override {}
   void Seek(double seconds) override {}
@@ -52,7 +58,7 @@ class EmptyWebMediaPlayer : public WebMediaPlayer {
   unsigned DroppedFrameCount() const override { return 0; }
   size_t AudioDecodedByteCount() const override { return 0; }
   size_t VideoDecodedByteCount() const override { return 0; }
-  void Paint(WebCanvas*,
+  void Paint(cc::PaintCanvas*,
              const WebRect&,
              cc::PaintFlags&,
              int already_uploaded_id,

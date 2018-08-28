@@ -130,25 +130,9 @@ class VIZ_SERVICE_EXPORT SurfaceManager {
   void SurfaceDamageExpected(const SurfaceId& surface_id,
                              const BeginFrameArgs& args);
 
-  void RegisterFrameSinkId(const FrameSinkId& frame_sink_id);
-
   // Invalidate a frame_sink_id that might still have associated sequences,
   // possibly because a renderer process has crashed.
   void InvalidateFrameSinkId(const FrameSinkId& frame_sink_id);
-
-  const base::flat_map<FrameSinkId, std::string>& valid_frame_sink_labels()
-      const {
-    return valid_frame_sink_labels_;
-  }
-
-  // Set |debug_label| of the |frame_sink_id|. |frame_sink_id| must exist in
-  // |valid_frame_sink_labels_| already when UpdateFrameSinkDebugLabel is
-  // called.
-  void SetFrameSinkDebugLabel(const FrameSinkId& frame_sink_id,
-                              const std::string& debug_label);
-
-  // Returns the debug label associated with |frame_sink_id| if any.
-  std::string GetFrameSinkDebugLabel(const FrameSinkId& frame_sink_id) const;
 
   // Register a relationship between two namespaces.  This relationship means
   // that surfaces from the child namespace will be displayed in the parent.
@@ -263,12 +247,10 @@ class VIZ_SERVICE_EXPORT SurfaceManager {
 
   // Adds a reference from |parent_id| to |child_id| without dealing with
   // temporary references.
-  void AddSurfaceReferenceImpl(const SurfaceId& parent_id,
-                               const SurfaceId& child_id);
+  void AddSurfaceReferenceImpl(const SurfaceReference& reference);
 
   // Removes a reference from a |parent_id| to |child_id|.
-  void RemoveSurfaceReferenceImpl(const SurfaceId& parent_id,
-                                  const SurfaceId& child_id);
+  void RemoveSurfaceReferenceImpl(const SurfaceReference& reference);
 
   // Removes all surface references to or from |surface_id|. Used when the
   // surface is about to be deleted.
@@ -314,11 +296,6 @@ class VIZ_SERVICE_EXPORT SurfaceManager {
   base::ThreadChecker thread_checker_;
 
   base::flat_set<SurfaceId> surfaces_to_destroy_;
-
-  // Set of valid FrameSinkIds and their labels. When a FrameSinkId is removed
-  // from this set, any remaining (surface) sequences with that FrameSinkId are
-  // considered satisfied.
-  base::flat_map<FrameSinkId, std::string> valid_frame_sink_labels_;
 
   // Root SurfaceId that references display root surfaces. There is no Surface
   // with this id, it's for bookkeeping purposes only.

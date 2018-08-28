@@ -56,7 +56,7 @@ void SensorProxy::Detach() {
   }
 }
 
-void SensorProxy::ReportError(ExceptionCode code, const String& message) {
+void SensorProxy::ReportError(DOMExceptionCode code, const String& message) {
   auto copy = observers_;
   for (Observer* observer : copy) {
     observer->OnSensorError(code, message, String());
@@ -103,17 +103,30 @@ void SensorProxy::UpdateSuspendedStatus() {
   if (!IsInitialized())
     return;
 
-  bool page_visible =
-      GetPage()->VisibilityState() == mojom::PageVisibilityState::kVisible;
+  if (ShouldSuspendUpdates())
+    Suspend();
+  else
+    Resume();
+}
+
+bool SensorProxy::ShouldSuspendUpdates() const {
+  if (GetPage()->VisibilityState() != mojom::PageVisibilityState::kVisible)
+    return true;
 
   LocalFrame* focused_frame = GetPage()->GetFocusController().FocusedFrame();
-  bool main_frame_focused =
-      focused_frame && !focused_frame->IsCrossOriginSubframe();
+  if (!focused_frame)
+    return true;
 
-  if (page_visible && main_frame_focused)
-    Resume();
-  else
-    Suspend();
+  LocalFrame* this_frame = provider_->GetSupplementable();
+  if (focused_frame == this_frame)
+    return false;
+
+  const SecurityOrigin* focused_frame_origin =
+      focused_frame->GetSecurityContext()->GetSecurityOrigin();
+  const SecurityOrigin* this_origin =
+      this_frame->GetSecurityContext()->GetSecurityOrigin();
+
+  return !focused_frame_origin->CanAccess(this_origin);
 }
 
 SensorProvider* SensorProxy::sensor_provider() const {

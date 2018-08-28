@@ -91,9 +91,21 @@ extern "C" {
 // AEAD algorithms.
 
 // EVP_aead_aes_128_gcm is AES-128 in Galois Counter Mode.
+//
+// Note: AES-GCM should only be used with 12-byte (96-bit) nonces. Although it
+// is specified to take a variable-length nonce, nonces with other lengths are
+// effectively randomized, which means one must consider collisions. Unless
+// implementing an existing protocol which has already specified incorrect
+// parameters, only use 12-byte nonces.
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_gcm(void);
 
 // EVP_aead_aes_256_gcm is AES-256 in Galois Counter Mode.
+//
+// Note: AES-GCM should only be used with 12-byte (96-bit) nonces. Although it
+// is specified to take a variable-length nonce, nonces with other lengths are
+// effectively randomized, which means one must consider collisions. Unless
+// implementing an existing protocol which has already specified incorrect
+// parameters, only use 12-byte nonces.
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_gcm(void);
 
 // EVP_aead_chacha20_poly1305 is the AEAD built from ChaCha20 and
@@ -361,19 +373,13 @@ OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_gcm_tls12(void);
 // 1.2 nonce construction.
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_gcm_tls12(void);
 
+// EVP_aead_aes_128_gcm_tls13 is AES-128 in Galois Counter Mode using the TLS
+// 1.3 nonce construction.
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_gcm_tls13(void);
 
-// SSLv3-specific AEAD algorithms.
-//
-// These AEAD primitives do not meet the definition of generic AEADs. They are
-// all specific to SSLv3 and should not be used outside of that context. They
-// must be initialized with |EVP_AEAD_CTX_init_with_direction|, are stateful,
-// and may not be used concurrently. They only accept an |ad| parameter of
-// length 9 (the standard TLS one with length and version omitted).
-
-OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_cbc_sha1_ssl3(void);
-OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_cbc_sha1_ssl3(void);
-OPENSSL_EXPORT const EVP_AEAD *EVP_aead_des_ede3_cbc_sha1_ssl3(void);
-OPENSSL_EXPORT const EVP_AEAD *EVP_aead_null_sha1_ssl3(void);
+// EVP_aead_aes_256_gcm_tls13 is AES-256 in Galois Counter Mode using the TLS
+// 1.3 nonce construction.
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_gcm_tls13(void);
 
 
 // Obscure functions.

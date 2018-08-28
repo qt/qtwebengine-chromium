@@ -26,7 +26,6 @@
 #include "third_party/blink/renderer/core/editing/commands/composite_edit_command.h"
 
 #include <algorithm>
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
@@ -81,6 +80,7 @@
 #include "third_party/blink/renderer/core/layout/layout_list_item.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -304,6 +304,7 @@ void CompositeEditCommand::InsertNodeBefore(
 void CompositeEditCommand::InsertNodeAfter(Node* insert_child,
                                            Node* ref_child,
                                            EditingState* editing_state) {
+  ABORT_EDITING_COMMAND_IF(!ref_child->parentNode());
   DCHECK(insert_child);
   DCHECK(ref_child);
   DCHECK_NE(GetDocument().body(), ref_child);

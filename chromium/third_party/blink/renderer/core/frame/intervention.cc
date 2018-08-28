@@ -8,7 +8,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/reporting.mojom-blink.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
-#include "third_party/blink/renderer/core/frame/intervention_report.h"
+#include "third_party/blink/renderer/core/frame/intervention_report_body.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/report.h"
@@ -19,37 +19,40 @@ namespace blink {
 
 // static
 void Intervention::GenerateReport(const LocalFrame* frame,
+                                  const String& id,
                                   const String& message) {
   if (!frame)
     return;
 
   // Send the message to the console.
-  frame->Console().AddMessage(ConsoleMessage::Create(
+  Document* document = frame->GetDocument();
+  document->AddConsoleMessage(ConsoleMessage::Create(
       kInterventionMessageSource, kErrorMessageLevel, message));
 
   if (!frame->Client())
     return;
 
-  Document* document = frame->GetDocument();
-
   // Construct the intervention report.
-  InterventionReport* body =
-      new InterventionReport(message, SourceLocation::Capture());
+  InterventionReportBody* body =
+      new InterventionReportBody(id, message, SourceLocation::Capture());
   Report* report =
       new Report("intervention", document->Url().GetString(), body);
 
   // Send the intervention report to any ReportingObservers.
-  ReportingContext* reporting_context = ReportingContext::From(document);
-  if (reporting_context->ObserverExists())
-    reporting_context->QueueReport(report);
+  ReportingContext::From(document)->QueueReport(report);
 
   // Send the intervention report to the Reporting API.
   mojom::blink::ReportingServiceProxyPtr service;
   Platform* platform = Platform::Current();
   platform->GetConnector()->BindInterface(platform->GetBrowserServiceName(),
                                           &service);
+  bool is_null;
+  int line_number = body->lineNumber(is_null);
+  line_number = is_null ? 0 : line_number;
+  int column_number = body->columnNumber(is_null);
+  column_number = is_null ? 0 : column_number;
   service->QueueInterventionReport(document->Url(), message, body->sourceFile(),
-                                   body->lineNumber(), body->columnNumber());
+                                   line_number, column_number);
 }
 
 }  // namespace blink

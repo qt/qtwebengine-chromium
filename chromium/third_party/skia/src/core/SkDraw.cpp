@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#define __STDC_LIMIT_MACROS
+#include "SkDraw.h"
 
 #include "SkArenaAlloc.h"
 #include "SkAutoBlitterChoose.h"
@@ -14,29 +14,32 @@
 #include "SkCanvas.h"
 #include "SkColorData.h"
 #include "SkDevice.h"
-#include "SkDraw.h"
 #include "SkDrawProcs.h"
 #include "SkFindAndPlaceGlyph.h"
 #include "SkMaskFilterBase.h"
+#include "SkMacros.h"
 #include "SkMatrix.h"
 #include "SkMatrixUtils.h"
 #include "SkPaint.h"
 #include "SkPathEffect.h"
 #include "SkPathPriv.h"
+#include "SkRRect.h"
 #include "SkRasterClip.h"
 #include "SkRectPriv.h"
-#include "SkRRect.h"
 #include "SkScalerContext.h"
 #include "SkScan.h"
 #include "SkShader.h"
 #include "SkString.h"
 #include "SkStroke.h"
 #include "SkStrokeRec.h"
+#include "SkTLazy.h"
 #include "SkTemplates.h"
 #include "SkTextMapStateProc.h"
 #include "SkThreadedBMPDevice.h"
-#include "SkTLazy.h"
+#include "SkTo.h"
 #include "SkUtils.h"
+
+#include <utility>
 
 static SkPaint make_paint_with_image(
     const SkPaint& origPaint, const SkBitmap& bitmap, SkMatrix* matrix = nullptr) {
@@ -722,11 +725,11 @@ SkDraw::RectType SkDraw::ComputeRectType(const SkPaint& paint,
 }
 
 static const SkPoint* rect_points(const SkRect& r) {
-    return SkTCast<const SkPoint*>(&r);
+    return reinterpret_cast<const SkPoint*>(&r);
 }
 
 static SkPoint* rect_points(SkRect& r) {
-    return SkTCast<SkPoint*>(&r);
+    return reinterpret_cast<SkPoint*>(&r);
 }
 
 static void draw_rect_as_path(const SkDraw& orig, const SkRect& prePaintRect,
@@ -869,7 +872,8 @@ static SkScalar fast_len(const SkVector& vec) {
     SkScalar x = SkScalarAbs(vec.fX);
     SkScalar y = SkScalarAbs(vec.fY);
     if (x < y) {
-        SkTSwap(x, y);
+        using std::swap;
+        swap(x, y);
     }
     return x + SkScalarHalf(y);
 }
@@ -1378,28 +1382,6 @@ bool SkDraw::ShouldDrawTextAsPaths(const SkPaint& paint, const SkMatrix& ctm, Sk
     return SkPaint::TooBigToUseCache(ctm, textM, sizeLimit);
 }
 
-void SkDraw::drawText_asPaths(const char text[], size_t byteLength, SkScalar x, SkScalar y,
-                              const SkPaint& paint) const {
-    SkDEBUGCODE(this->validate();)
-
-    SkTextToPathIter iter(text, byteLength, paint, true);
-
-    SkMatrix    matrix;
-    matrix.setScale(iter.getPathScale(), iter.getPathScale());
-    matrix.postTranslate(x, y);
-
-    const SkPath* iterPath;
-    SkScalar xpos, prevXPos = 0;
-
-    while (iter.next(&iterPath, &xpos)) {
-        matrix.postTranslate(xpos - prevXPos, 0);
-        if (iterPath) {
-            this->drawPath(*iterPath, iter.getPaint(), &matrix, false);
-        }
-        prevXPos = xpos;
-    }
-}
-
 // disable warning : local variable used without having been initialized
 #if defined _WIN32
 #pragma warning ( push )
@@ -1425,9 +1407,9 @@ public:
         // Comparisons written a little weirdly so that NaN coordinates are treated safely.
         auto gt = [](float a, int b) { return !(a <= (float)b); };
         auto lt = [](float a, int b) { return !(a >= (float)b); };
-        if (gt(position.fX, INT_MAX - (INT16_MAX + UINT16_MAX)) ||
+        if (gt(position.fX, INT_MAX - (INT16_MAX + SkTo<int>(UINT16_MAX))) ||
             lt(position.fX, INT_MIN - (INT16_MIN + 0 /*UINT16_MIN*/)) ||
-            gt(position.fY, INT_MAX - (INT16_MAX + UINT16_MAX)) ||
+            gt(position.fY, INT_MAX - (INT16_MAX + SkTo<int>(UINT16_MAX))) ||
             lt(position.fY, INT_MIN - (INT16_MIN + 0 /*UINT16_MIN*/))) {
             return;
         }
@@ -1530,42 +1512,14 @@ private:
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 SkScalerContextFlags SkDraw::scalerContextFlags() const {
-    SkScalerContextFlags flags = SkScalerContextFlags::kBoostContrast;
-    if (!fDst.colorSpace()) {
-        flags = kFakeGammaAndBoostContrast;
+    // If we're doing linear blending, then we can disable the gamma hacks.
+    // Otherwise, leave them on. In either case, we still want the contrast boost:
+    // TODO: Can we be even smarter about mask gamma based on the dest transfer function?
+    if (fDst.colorSpace() && fDst.colorSpace()->gammaIsLinear()) {
+        return SkScalerContextFlags::kBoostContrast;
+    } else {
+        return SkScalerContextFlags::kFakeGammaAndBoostContrast;
     }
-    return flags;
-}
-
-void SkDraw::drawText(const char text[], size_t byteLength, SkScalar x, SkScalar y,
-                      const SkPaint& paint, const SkSurfaceProps* props) const {
-    SkASSERT(byteLength == 0 || text != nullptr);
-
-    SkDEBUGCODE(this->validate();)
-
-    // nothing to draw
-    if (text == nullptr || byteLength == 0 || fRC->isEmpty()) {
-        return;
-    }
-
-    // SkScalarRec doesn't currently have a way of representing hairline stroke and
-    // will fill if its frame-width is 0.
-    if (ShouldDrawTextAsPaths(paint, *fMatrix)) {
-        this->drawText_asPaths(text, byteLength, x, y, paint);
-        return;
-    }
-
-    auto cache = SkStrikeCache::FindOrCreateStrikeExclusive(
-            paint, props, this->scalerContextFlags(), fMatrix);
-
-    // The Blitter Choose needs to be live while using the blitter below.
-    SkAutoBlitterChoose    blitterChooser(*this, nullptr, paint);
-    SkAAClipBlitterWrapper wrapper(*fRC, blitterChooser.get());
-    DrawOneGlyph           drawOneGlyph(*this, paint, cache.get(), wrapper.getBlitter());
-
-    SkFindAndPlaceGlyph::ProcessText(
-        paint.getTextEncoding(), text, byteLength,
-        {x, y}, *fMatrix, paint.getTextAlign(), cache.get(), drawOneGlyph);
 }
 
 //////////////////////////////////////////////////////////////////////////////

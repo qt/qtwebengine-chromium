@@ -46,6 +46,7 @@
 #include "ui/ozone/public/gpu_platform_support_host.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/ozone_switches.h"
+#include "ui/platform_window/platform_window_init_properties.h"
 
 #if BUILDFLAG(USE_XKBCOMMON)
 #include "ui/events/ozone/layout/xkb/xkb_evdev_codes.h"
@@ -104,9 +105,7 @@ class OzonePlatformGbm : public OzonePlatform {
   // ignored. While the caller may choose to invoke this method before entering
   // the sandbox, the actual interface adding has to happen on the DRM Device
   // thread and so will be deferred until the DRM thread is running.
-  void AddInterfaces(
-      service_manager::BinderRegistryWithArgs<
-          const service_manager::BindSourceInfo&>* registry) override {
+  void AddInterfaces(service_manager::BinderRegistry* registry) override {
     if (!using_mojo_)
       return;
 
@@ -123,20 +122,16 @@ class OzonePlatformGbm : public OzonePlatform {
 
   // Runs on the thread where AddInterfaces was invoked. But the endpoint is
   // always bound on the DRM thread.
-  void CreateDeviceCursorBinding(
-      ozone::mojom::DeviceCursorRequest request,
-      const service_manager::BindSourceInfo& source_info) {
+  void CreateDeviceCursorBinding(ozone::mojom::DeviceCursorRequest request) {
     if (drm_thread_started_)
       drm_thread_proxy_->AddBindingCursorDevice(std::move(request));
     else
       pending_cursor_requests_.push_back(std::move(request));
   }
+
   // Runs on the thread where AddInterfaces was invoked. But the endpoint is
   // always bound on the DRM thread.
-  // service_manager::InterfaceFactory<ozone::mojom::DrmDevice>:
-  void CreateDrmDeviceBinding(
-      ozone::mojom::DrmDeviceRequest request,
-      const service_manager::BindSourceInfo& source_info) {
+  void CreateDrmDeviceBinding(ozone::mojom::DrmDeviceRequest request) {
     if (drm_thread_started_)
       drm_thread_proxy_->AddBindingDrmDevice(std::move(request));
     else
@@ -159,15 +154,16 @@ class OzonePlatformGbm : public OzonePlatform {
 
   std::unique_ptr<PlatformWindow> CreatePlatformWindow(
       PlatformWindowDelegate* delegate,
-      const gfx::Rect& bounds) override {
+      PlatformWindowInitProperties properties) override {
     GpuThreadAdapter* adapter = gpu_platform_support_host_.get();
     if (using_mojo_) {
       adapter = host_drm_device_.get();
     }
 
     std::unique_ptr<DrmWindowHost> platform_window(new DrmWindowHost(
-        delegate, bounds, adapter, event_factory_ozone_.get(), cursor_.get(),
-        window_manager_.get(), display_manager_.get(), overlay_manager_.get()));
+        delegate, properties.bounds, adapter, event_factory_ozone_.get(),
+        cursor_.get(), window_manager_.get(), display_manager_.get(),
+        overlay_manager_.get()));
     platform_window->Initialize();
     return std::move(platform_window);
   }

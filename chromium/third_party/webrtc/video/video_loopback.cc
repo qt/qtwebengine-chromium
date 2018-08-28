@@ -73,7 +73,7 @@ int NumTemporalLayers() {
 }
 
 DEFINE_int(inter_layer_pred,
-           1,
+           2,
            "Inter-layer prediction mode. "
            "0 - enabled, 1 - disabled, 2 - enabled only for key pictures.");
 InterLayerPredMode InterLayerPred() {
@@ -242,8 +242,10 @@ DEFINE_bool(use_flexfec, false, "Use FlexFEC forward error correction.");
 
 DEFINE_bool(audio, false, "Add audio stream");
 
-DEFINE_bool(audio_video_sync, false, "Sync audio and video stream (no effect if"
-    " audio is false)");
+DEFINE_bool(audio_video_sync,
+            false,
+            "Sync audio and video stream (no effect if"
+            " audio is false)");
 
 DEFINE_bool(audio_dtx, false, "Enable audio DTX (no effect if audio is false)");
 
@@ -282,7 +284,7 @@ void Loopback() {
   BitrateConstraints call_bitrate_config;
   call_bitrate_config.min_bitrate_bps = flags::MinBitrateKbps() * 1000;
   call_bitrate_config.start_bitrate_bps = flags::StartBitrateKbps() * 1000;
-  call_bitrate_config.max_bitrate_bps = flags::MaxBitrateKbps() * 1000;
+  call_bitrate_config.max_bitrate_bps = -1;  // Don't cap bandwidth estimate.
 
   VideoQualityTest::Params params;
   params.call = {flags::FLAG_send_side_bwe, call_bitrate_config, 0};
@@ -300,6 +302,7 @@ void Loopback() {
                      0,  // No min transmit bitrate.
                      flags::FLAG_use_ulpfec,
                      flags::FLAG_use_flexfec,
+                     false,
                      flags::Clip(),
                      flags::GetCaptureDevice()};
   params.audio = {flags::FLAG_audio, flags::FLAG_audio_video_sync,
@@ -307,8 +310,12 @@ void Loopback() {
   params.logging = {flags::FLAG_logs, flags::FLAG_rtc_event_log_name,
                     flags::FLAG_rtp_dump_name, flags::FLAG_encoded_frame_path};
   params.screenshare[0].enabled = false;
-  params.analyzer = {"video", 0.0, 0.0, flags::DurationSecs(),
-      flags::OutputFilename(), flags::GraphTitle()};
+  params.analyzer = {"video",
+                     0.0,
+                     0.0,
+                     flags::DurationSecs(),
+                     flags::OutputFilename(),
+                     flags::GraphTitle()};
   params.pipe = pipe_config;
 
   if (flags::NumStreams() > 1 && flags::Stream0().empty() &&
@@ -327,11 +334,11 @@ void Loopback() {
       flags::SelectedStream(), flags::NumSpatialLayers(), flags::SelectedSL(),
       flags::InterLayerPred(), SL_descriptors);
 
-  VideoQualityTest test;
+  auto fixture = absl::make_unique<VideoQualityTest>(nullptr);
   if (flags::DurationSecs()) {
-    test.RunWithAnalyzer(params);
+    fixture->RunWithAnalyzer(params);
   } else {
-    test.RunWithRenderers(params);
+    fixture->RunWithRenderers(params);
   }
 }
 }  // namespace webrtc

@@ -63,11 +63,8 @@ RemoteFrameView* RemoteFrameView::Create(RemoteFrame* remote_frame) {
   return view;
 }
 
-void RemoteFrameView::UpdateViewportIntersectionsForSubtree(
-    DocumentLifecycle::LifecycleState target_state) {
+void RemoteFrameView::UpdateViewportIntersectionsForSubtree() {
   if (!remote_frame_->OwnerLayoutObject())
-    return;
-  if (target_state < DocumentLifecycle::kPaintClean)
     return;
 
   LocalFrameView* local_root_view =
@@ -84,16 +81,11 @@ void RemoteFrameView::UpdateViewportIntersectionsForSubtree(
   LayoutRect rect(0, 0, frame_rect_.Width(), frame_rect_.Height());
   rect.Move(remote_frame_->OwnerLayoutObject()->ContentBoxOffset());
   IntRect viewport_intersection;
-  VisualRectFlags flags =
-      RuntimeEnabledFeatures::IntersectionObserverGeometryMapperEnabled()
-          ? kUseGeometryMapper
-          : kDefaultVisualRectFlags;
   if (remote_frame_->OwnerLayoutObject()->MapToVisualRectInAncestorSpace(
-          nullptr, rect, flags)) {
-    IntRect root_visible_rect = local_root_view->VisibleContentRect();
+          nullptr, rect, kUseGeometryMapper)) {
+    IntRect root_visible_rect(IntPoint(), local_root_view->Size());
     IntRect intersected_rect = EnclosingIntRect(rect);
     intersected_rect.Intersect(root_visible_rect);
-    intersected_rect.Move(-local_root_view->ScrollOffsetInt());
 
     // Translate the intersection rect from the root frame's coordinate space
     // to the remote frame's coordinate space.
@@ -111,6 +103,7 @@ void RemoteFrameView::UpdateViewportIntersectionsForSubtree(
   if (viewport_intersection == last_viewport_intersection_)
     return;
 
+  // TODO(szager): Propagate occlusion information.
   last_viewport_intersection_ = viewport_intersection;
   remote_frame_->Client()->UpdateRemoteViewportIntersection(
       viewport_intersection);
@@ -128,7 +121,8 @@ IntRect RemoteFrameView::GetCompositingRect() {
   // that needs to be rastered by the OOPIF compositor.
   IntSize viewport_size = local_root_view->FrameRect().Size();
   if (local_root_view->GetPage()->MainFrame() != local_root_view->GetFrame()) {
-    viewport_size = local_root_view->RemoteViewportIntersection().Size();
+    viewport_size =
+        local_root_view->GetFrame().RemoteViewportIntersection().Size();
   }
 
   // The viewport size needs to account for intermediate CSS transforms before
@@ -205,8 +199,10 @@ IntRect RemoteFrameView::FrameRect() const {
   if (owner) {
     LayoutView* owner_layout_view = owner->View();
     DCHECK(owner_layout_view);
-    if (owner_layout_view->HasOverflowClip())
-      location.Move(-owner_layout_view->ScrolledContentOffset());
+    if (owner_layout_view->HasOverflowClip()) {
+      IntSize scroll_offset(owner_layout_view->ScrolledContentOffset());
+      location.SaturatedMove(-scroll_offset.Width(), -scroll_offset.Height());
+    }
   }
 
   return IntRect(location, frame_rect_.Size());
@@ -220,8 +216,7 @@ void RemoteFrameView::FrameRectsChanged() {
   IntRect screen_space_rect = frame_rect;
 
   if (LocalFrameView* parent = ParentFrameView()) {
-    screen_space_rect =
-        parent->ConvertToRootFrame(parent->ContentsToFrame(screen_space_rect));
+    screen_space_rect = parent->ConvertToRootFrame(screen_space_rect);
   }
   remote_frame_->Client()->FrameRectsChanged(frame_rect, screen_space_rect);
 }
@@ -344,7 +339,8 @@ bool RemoteFrameView::HasIntrinsicSizingInfo() const {
   return has_intrinsic_sizing_info_;
 }
 
-uint32_t RemoteFrameView::Print(const IntRect& rect, WebCanvas* canvas) const {
+uint32_t RemoteFrameView::Print(const IntRect& rect,
+                                cc::PaintCanvas* canvas) const {
   return remote_frame_->Client()->Print(rect, canvas);
 }
 

@@ -102,6 +102,9 @@ WebGestureEvent SyntheticWebGestureEventBuilder::Build(
     result.data.tap.tap_count = 1;
     result.data.tap.width = 10;
     result.data.tap.height = 10;
+  } else if (WebInputEvent::IsPinchGestureEventType(type)) {
+    result.SetNeedsWheelEvent(source_device ==
+                              blink::kWebGestureDeviceTouchpad);
   }
   return result;
 }
@@ -163,21 +166,26 @@ SyntheticWebTouchEvent::SyntheticWebTouchEvent() : WebTouchEvent() {
 
 void SyntheticWebTouchEvent::ResetPoints() {
   int activePointCount = 0;
-  for (unsigned int i = 0; i < touches_length; ++i) {
+  unsigned count = 0;
+  for (unsigned int i = 0; i < kTouchesLengthCap; ++i) {
     switch (touches[i].state) {
       case WebTouchPoint::kStatePressed:
       case WebTouchPoint::kStateMoved:
       case WebTouchPoint::kStateStationary:
         touches[i].state = WebTouchPoint::kStateStationary;
         ++activePointCount;
+        ++count;
         break;
       case WebTouchPoint::kStateReleased:
       case WebTouchPoint::kStateCancelled:
         touches[i] = WebTouchPoint();
+        ++count;
         break;
       case WebTouchPoint::kStateUndefined:
         break;
     }
+    if (count >= touches_length)
+      break;
   }
   touches_length = activePointCount;
   type_ = WebInputEvent::kUndefined;

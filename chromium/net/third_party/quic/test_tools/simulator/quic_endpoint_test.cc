@@ -4,6 +4,7 @@
 
 #include "net/third_party/quic/test_tools/simulator/quic_endpoint.h"
 
+#include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quic/platform/api/quic_test.h"
 #include "net/third_party/quic/test_tools/quic_connection_peer.h"
@@ -15,7 +16,7 @@ using ::testing::_;
 using ::testing::NiceMock;
 using ::testing::Return;
 
-namespace net {
+namespace quic {
 namespace simulator {
 
 const QuicBandwidth kDefaultBandwidth =
@@ -153,6 +154,8 @@ TEST_F(QuicEndpointTest, TwoWayTransmission) {
 
 // Simulate three hosts trying to send data to a fourth one simultaneously.
 TEST_F(QuicEndpointTest, Competition) {
+  // TODO(fayang): Turn back on this flag when the issue if fixed.
+  SetQuicReloadableFlag(quic_bbr_one_mss_conservation, false);
   auto endpoint_a = QuicMakeUnique<QuicEndpoint>(
       &simulator_, "Endpoint A", "Endpoint D (A)", Perspective::IS_CLIENT, 42);
   auto endpoint_b = QuicMakeUnique<QuicEndpoint>(
@@ -197,4 +200,4 @@ TEST_F(QuicEndpointTest, Competition) {
 }
 
 }  // namespace simulator
-}  // namespace net
+}  // namespace quic

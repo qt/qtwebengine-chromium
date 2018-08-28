@@ -37,13 +37,6 @@ void ModulePendingScriptTreeClient::Trace(blink::Visitor* visitor) {
   ModuleTreeClient::Trace(visitor);
 }
 
-void ModulePendingScriptTreeClient::TraceWrappers(
-    ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(module_script_);
-  visitor->TraceWrappers(pending_script_);
-  ModuleTreeClient::TraceWrappers(visitor);
-}
-
 ModulePendingScript::ModulePendingScript(ScriptElementBase* element,
                                          ModulePendingScriptTreeClient* client,
                                          bool is_external)
@@ -66,17 +59,10 @@ void ModulePendingScript::Trace(blink::Visitor* visitor) {
   PendingScript::Trace(visitor);
 }
 
-void ModulePendingScript::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(module_tree_client_);
-  PendingScript::TraceWrappers(visitor);
-}
-
 void ModulePendingScript::NotifyModuleTreeLoadFinished() {
   CHECK(!IsReady());
   ready_ = true;
-
-  if (Client())
-    Client()->PendingScriptFinished(this);
+  PendingScriptFinished();
 }
 
 Script* ModulePendingScript::GetSource(const KURL& document_url,

@@ -38,6 +38,7 @@
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/icc_profile.h"
+#include "ui/platform_window/platform_window_init_properties.h"
 
 namespace aura {
 
@@ -326,7 +327,8 @@ void WindowTreeHost::DestroyDispatcher() {
 
 void WindowTreeHost::CreateCompositor(const viz::FrameSinkId& frame_sink_id,
                                       bool force_software_compositor,
-                                      bool external_begin_frames_enabled) {
+                                      bool external_begin_frames_enabled,
+                                      bool are_events_in_pixels) {
   DCHECK(Env::GetInstance());
   ui::ContextFactory* context_factory = Env::GetInstance()->context_factory();
   DCHECK(context_factory);
@@ -350,7 +352,8 @@ void WindowTreeHost::CreateCompositor(const viz::FrameSinkId& frame_sink_id,
     window()->Init(ui::LAYER_NOT_DRAWN);
     window()->set_host(this);
     window()->SetName("RootWindow");
-    dispatcher_.reset(new WindowEventDispatcher(this));
+    dispatcher_ =
+        std::make_unique<WindowEventDispatcher>(this, are_events_in_pixels);
   }
 }
 

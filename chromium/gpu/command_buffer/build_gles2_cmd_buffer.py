@@ -224,6 +224,7 @@ _NAMED_TYPE_INFO = {
       'GL_STENCIL_BITS',
       'GL_TEXTURE_BINDING_2D',
       'GL_TEXTURE_BINDING_CUBE_MAP',
+      'GL_TEXTURE_FILTERING_HINT_CHROMIUM',
       'GL_UNPACK_ALIGNMENT',
       'GL_BIND_GENERATES_RESOURCE_CHROMIUM',
       # we can add this because we emulate it if the driver does not support it.
@@ -662,7 +663,7 @@ _NAMED_TYPE_INFO = {
       'GL_PIXEL_PACK_BUFFER',
     ],
   },
-  'FramebufferParameter': {
+  'FramebufferAttachmentParameter': {
     'type': 'GLenum',
     'valid': [
       'GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE',
@@ -741,6 +742,7 @@ _NAMED_TYPE_INFO = {
       'GL_LATENCY_QUERY_CHROMIUM',
       'GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM',
       'GL_COMMANDS_COMPLETED_CHROMIUM',
+      'GL_READBACK_SHADOW_COPIES_UPDATED_CHROMIUM',
     ],
   },
   'RenderBufferParameter': {
@@ -958,6 +960,7 @@ _NAMED_TYPE_INFO = {
     'type': 'GLenum',
     'valid': [
       'GL_GENERATE_MIPMAP_HINT',
+      'GL_TEXTURE_FILTERING_HINT_CHROMIUM',
     ],
     'valid_es3': [
       'GL_FRAGMENT_SHADER_DERIVATIVE_HINT',
@@ -2263,10 +2266,6 @@ _FUNCTION_INFO = {
     'resource_type': 'Buffer',
     'resource_types': 'Buffers',
   },
-  'GenMailboxCHROMIUM': {
-    'type': 'NoCommand',
-    'extension': "CHROMIUM_texture_mailbox",
-  },
   'GenFramebuffers': {
     'type': 'GENn',
     'gl_test_func': 'glGenFramebuffersEXT',
@@ -2974,6 +2973,7 @@ _FUNCTION_INFO = {
     'expectation': False,
     'extension': True,
     'trace_level': 1,
+    'trace_queueing_flow': True,
   },
   'SwapBuffersWithBoundsCHROMIUM': {
     'type': 'PUTn',
@@ -4044,7 +4044,21 @@ _FUNCTION_INFO = {
     'impl_func': True,
     'extension': 'CHROMIUM_unpremultiply_and_dither_copy',
     'extension_flag': 'unpremultiply_and_dither_copy',
-  }
+  },
+  'InvalidateReadbackBufferShadowDataCHROMIUM': {
+    'type': 'NoCommand',
+    'impl_func': False,
+    'es3': True,
+    'extension': 'CHROMIUM_nonblocking_readback',
+  },
+  'SetReadbackBufferShadowAllocationINTERNAL': {
+    'decoder_func': 'DoSetReadbackBufferShadowAllocationINTERNAL',
+    'client_test': False,
+    'unit_test': False,
+    'impl_func': True,
+    'internal': True,
+    'es3': True,
+  },
 }
 
 

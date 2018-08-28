@@ -69,6 +69,7 @@ DSP_SRCS-$(HAVE_MSA) += mips/deblock_msa.c
 DSP_SRCS-$(HAVE_NEON) += arm/deblock_neon.c
 DSP_SRCS-$(HAVE_SSE2) += x86/add_noise_sse2.asm
 DSP_SRCS-$(HAVE_SSE2) += x86/deblock_sse2.asm
+DSP_SRCS-$(HAVE_VSX) += ppc/deblock_vsx.c
 endif # CONFIG_POSTPROC
 
 DSP_SRCS-$(HAVE_NEON_ASM) += arm/intrapred_neon_asm$(ASM)
@@ -206,6 +207,7 @@ DSP_SRCS-$(HAVE_NEON)   += arm/fwd_txfm_neon.c
 DSP_SRCS-$(HAVE_MSA)    += mips/fwd_txfm_msa.h
 DSP_SRCS-$(HAVE_MSA)    += mips/fwd_txfm_msa.c
 DSP_SRCS-$(HAVE_MSA)    += mips/fwd_dct32x32_msa.c
+DSP_SRCS-$(HAVE_VSX)    += ppc/fdct32x32_vsx.c
 endif  # CONFIG_VP9_ENCODER
 
 # inverse transform
@@ -341,6 +343,7 @@ DSP_SRCS-$(HAVE_SSE2)   += x86/sad_sse2.asm
 DSP_SRCS-$(HAVE_SSE2)   += x86/subtract_sse2.asm
 
 DSP_SRCS-$(HAVE_VSX) += ppc/sad_vsx.c
+DSP_SRCS-$(HAVE_VSX) += ppc/subtract_vsx.c
 
 ifeq ($(CONFIG_VP9_HIGHBITDEPTH),yes)
 DSP_SRCS-$(HAVE_SSE2) += x86/highbd_sad4d_sse2.asm
@@ -390,6 +393,7 @@ DSP_SRCS-$(HAVE_NEON) += arm/vpx_convolve8_neon.h
 
 # PPC VSX utilities
 DSP_SRCS-$(HAVE_VSX)  += ppc/types_vsx.h
+DSP_SRCS-$(HAVE_VSX)  += ppc/txfm_common_vsx.h
 DSP_SRCS-$(HAVE_VSX)  += ppc/transpose_vsx.h
 DSP_SRCS-$(HAVE_VSX)  += ppc/bitdepth_conversion_vsx.h
 

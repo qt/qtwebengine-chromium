@@ -22,6 +22,7 @@ SPECIAL_TOKENS = [
     'Uint16',
     'Uint32',
     'WebGL2',
+    'WebGPU',
     'ASCII',
     'CSSOM',
     'CType',
@@ -58,6 +59,8 @@ SPECIAL_TOKENS = [
     'V8',
 ]
 
+_SPECIAL_TOKENS_WITH_NUMBERS = [token for token in SPECIAL_TOKENS if re.search(r'[0-9]', token)]
+
 # Applying _TOKEN_PATTERNS repeatedly should capture any sequence of a-z, A-Z,
 # 0-9.
 _TOKEN_PATTERNS = [
@@ -89,7 +92,16 @@ def tokenize_name(name):
         A list of token strings.
 
     """
-    return _TOKEN_RE.findall(name)
+
+    # In case |name| is written in lowerCamelCase, we try to match special
+    # tokens that contains numbers ignoring cases only at the first step.
+    tokens = []
+    match = re.search(r'^(' + '|'.join(_SPECIAL_TOKENS_WITH_NUMBERS) + r')', name, re.IGNORECASE)
+    if match:
+        tokens.append(match.group(0))
+        name = name[match.end(0):]
+
+    return tokens + _TOKEN_RE.findall(name)
 
 
 class NameStyleConverter(object):
@@ -98,6 +110,22 @@ class NameStyleConverter(object):
 
     def __init__(self, name):
         self.tokens = tokenize_name(name)
+        self._original = name
+
+    @property
+    def original(self):
+        return self._original
+
+    def __str__(self):
+        return self._original
+
+    # Make this class workable with sort().
+    def __lt__(self, other):
+        return self.original < other.original
+
+    # Make this class workable with groupby().
+    def __eq__(self, other):
+        return self.original == other.original
 
     def to_snake_case(self):
         """Snake case is the file and variable name style per Google C++ Style
@@ -151,3 +179,47 @@ class NameStyleConverter(object):
             'upper_camel_case': self.to_upper_camel_case(),
             'macro_case': self.to_macro_case(),
         }
+
+    # Use the following high level naming functions which describe the semantics
+    # of the name, rather than a particular style.
+
+    def to_class_name(self, prefix=None, suffix=None):
+        """Represents this name as a class name in Chromium C++ style.
+
+        i.e. UpperCamelCase.
+        """
+        camel_prefix = prefix[0].upper() + prefix[1:].lower() if prefix else ''
+        camel_suffix = suffix[0].upper() + suffix[1:].lower() if suffix else ''
+        return camel_prefix + self.to_upper_camel_case() + camel_suffix
+
+    def to_class_data_member(self, prefix=None, suffix=None):
+        """Represents this name as a data member name in Chromium C++ style.
+
+        i.e. snake_case_with_trailing_underscore_.
+        """
+        lower_prefix = prefix.lower() + '_' if prefix else ''
+        lower_suffix = suffix.lower() + '_' if suffix else ''
+        return lower_prefix + self.to_snake_case() + '_' + lower_suffix
+
+    def to_function_name(self, prefix=None, suffix=None):
+        """Represents this name as a function name in Blink C++ style.
+
+        i.e. UpperCamelCase
+        Note that this function should not be used for IDL operation names and
+        C++ functions implementing IDL operations and attributes.
+        """
+        camel_prefix = prefix[0].upper() + prefix[1:].lower() if prefix else ''
+        camel_suffix = ''
+        if type(suffix) is list:
+            for item in suffix:
+                camel_suffix += item[0].upper() + item[1:].lower()
+        elif suffix:
+            camel_suffix = suffix[0].upper() + suffix[1:].lower()
+        return camel_prefix + self.to_upper_camel_case() + camel_suffix
+
+    def to_enum_value(self):
+        """Represents this name as an enum value in Blink C++ style.
+
+        i.e. kUpperCamelCase
+        """
+        return 'k' + self.to_upper_camel_case()

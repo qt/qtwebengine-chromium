@@ -107,12 +107,12 @@ class CORE_EXPORT LayoutThemeDefault : public LayoutTheme {
   void AdjustMenuListStyle(ComputedStyle&, Element*) const override;
   void AdjustMenuListButtonStyle(ComputedStyle&, Element*) const override;
 
-  double AnimationRepeatIntervalForProgressBar() const override;
-  double AnimationDurationForProgressBar() const override;
+  TimeDelta AnimationRepeatIntervalForProgressBar() const override;
+  TimeDelta AnimationDurationForProgressBar() const override;
 
   // These methods define the padding for the MenuList's inner block.
   int PopupInternalPaddingStart(const ComputedStyle&) const override;
-  int PopupInternalPaddingEnd(const ChromeClient*,
+  int PopupInternalPaddingEnd(const PlatformChromeClient*,
                               const ComputedStyle&) const override;
   int PopupInternalPaddingTop(const ComputedStyle&) const override;
   int PopupInternalPaddingBottom(const ComputedStyle&) const override;
@@ -121,7 +121,7 @@ class CORE_EXPORT LayoutThemeDefault : public LayoutTheme {
   // thickness, which is 3px or 4px, and we use the value from the default Aura
   // theme.
   int MenuListArrowWidthInDIP() const;
-  float ClampedMenuListArrowPaddingSize(const ChromeClient*,
+  float ClampedMenuListArrowPaddingSize(const PlatformChromeClient*,
                                         const ComputedStyle&) const;
 
   static void SetSelectionColors(unsigned active_background_color,

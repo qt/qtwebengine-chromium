@@ -21,8 +21,7 @@ class MediaEngagementSession;
 class PluginInfoHostImpl;
 
 namespace autofill {
-class AutofillMetrics;
-class FormStructure;
+class TestAutofillClient;
 }  // namespace autofill
 
 namespace blink {
@@ -98,14 +97,16 @@ class METRICS_EXPORT UkmRecorder {
   // Add an entry to the UkmEntry list.
   virtual void AddEntry(mojom::UkmEntryPtr entry) = 0;
 
+  // Disables sampling for testing purposes.
+  virtual void DisableSamplingForTesting(){};
+
  private:
   friend DelegatingUkmRecorder;
   friend IOSChromePasswordManagerClient;
   friend MediaEngagementSession;
   friend PluginInfoHostImpl;
   friend TestRecordingHelper;
-  friend autofill::AutofillMetrics;
-  friend autofill::FormStructure;
+  friend autofill::TestAutofillClient;
   friend blink::Document;
   friend blink::NavigatorVR;
   friend cc::UkmManager;
@@ -128,6 +129,10 @@ class METRICS_EXPORT UkmRecorder {
   // than using this API directly. New uses of this API must be auditted to
   // maintain privacy constraints.
   virtual void UpdateSourceURL(SourceId source_id, const GURL& url) = 0;
+
+  // Associates the SourceId with an app URL for APP_ID sources. This method
+  // should only be called by AppSourceUrlRecorder and DelegatingUkmRecorder.
+  virtual void UpdateAppURL(SourceId source_id, const GURL& url) = 0;
 
   DISALLOW_COPY_AND_ASSIGN(UkmRecorder);
 };

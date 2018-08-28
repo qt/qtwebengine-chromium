@@ -24,16 +24,19 @@ class Outputter;
 }  // namespace gles2
 
 namespace raster {
+struct RasterDecoderContextState;
 
 // This class implements the AsyncAPIInterface interface, decoding
 // RasterInterface commands and calling GL.
 class GPU_GLES2_EXPORT RasterDecoder : public DecoderContext,
                                        public CommonDecoder {
  public:
-  static RasterDecoder* Create(DecoderClient* client,
-                               CommandBufferServiceBase* command_buffer_service,
-                               gles2::Outputter* outputter,
-                               gles2::ContextGroup* group);
+  static RasterDecoder* Create(
+      DecoderClient* client,
+      CommandBufferServiceBase* command_buffer_service,
+      gles2::Outputter* outputter,
+      gles2::ContextGroup* group,
+      scoped_refptr<RasterDecoderContextState> raster_decoder_context_state);
 
   ~RasterDecoder() override;
 
@@ -75,7 +78,10 @@ class GPU_GLES2_EXPORT RasterDecoder : public DecoderContext,
       gles2::CopyTextureCHROMIUMResourceManager*
           copy_texture_resource_manager) = 0;
 
+  virtual int DecoderIdForTest() = 0;
   virtual ServiceTransferCache* GetTransferCacheForTest() = 0;
+
+  virtual void SetUpForRasterCHROMIUMForTest() = 0;
 
  protected:
   RasterDecoder(CommandBufferServiceBase* command_buffer_service,

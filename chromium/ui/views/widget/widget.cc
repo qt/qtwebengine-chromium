@@ -718,6 +718,10 @@ void Widget::SetOpacity(float opacity) {
   native_widget_->SetOpacity(opacity);
 }
 
+void Widget::SetAspectRatio(const gfx::SizeF& aspect_ratio) {
+  native_widget_->SetAspectRatio(aspect_ratio);
+}
+
 void Widget::FlashFrame(bool flash) {
   native_widget_->FlashFrame(flash);
 }
@@ -830,6 +834,7 @@ void Widget::UpdateWindowTitle() {
   base::i18n::AdjustStringForLocaleDirection(&window_title);
   if (!native_widget_->SetWindowTitle(window_title))
     return;
+
   non_client_view_->UpdateWindowTitle();
 
   // If the non-client view is rendering its own title, it'll need to relayout
@@ -995,7 +1000,8 @@ bool Widget::IsTranslucentWindowOpacitySupported() const {
 
 void Widget::OnSizeConstraintsChanged() {
   native_widget_->OnSizeConstraintsChanged();
-  non_client_view_->SizeConstraintsChanged();
+  if (non_client_view_)
+    non_client_view_->SizeConstraintsChanged();
 }
 
 void Widget::OnOwnerClosing() {}

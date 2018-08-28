@@ -21,6 +21,8 @@
 #include "content/browser/renderer_host/media/media_stream_ui_proxy.h"
 #include "content/browser/speech/speech_recognition_engine.h"
 #include "content/browser/speech/speech_recognizer_impl.h"
+#include "content/browser/storage_partition_impl.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/resource_context.h"
@@ -30,9 +32,9 @@
 #include "content/public/browser/speech_recognition_session_context.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/common/speech_recognition_error.h"
-#include "content/public/common/speech_recognition_result.h"
 #include "media/audio/audio_device_description.h"
+#include "third_party/blink/public/mojom/speech/speech_recognition_error.mojom.h"
+#include "third_party/blink/public/mojom/speech/speech_recognition_result.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -281,7 +283,8 @@ int SpeechRecognitionManagerImpl::CreateSession(
   remote_engine_config.preamble = config.preamble;
 
   SpeechRecognitionEngine* google_remote_engine =
-      new SpeechRecognitionEngine(config.url_request_context_getter.get());
+      new SpeechRecognitionEngine(config.shared_url_loader_factory,
+                                  config.deprecated_url_request_context_getter);
   google_remote_engine->SetConfig(remote_engine_config);
 
   session->recognizer = new SpeechRecognizerImpl(
@@ -360,8 +363,10 @@ void SpeechRecognitionManagerImpl::RecognitionAllowedCallback(int session_id,
         base::BindOnce(&SpeechRecognitionManagerImpl::DispatchEvent,
                        weak_factory_.GetWeakPtr(), session_id, EVENT_START));
   } else {
-    OnRecognitionError(session_id, SpeechRecognitionError(
-        SPEECH_RECOGNITION_ERROR_NOT_ALLOWED));
+    OnRecognitionError(
+        session_id, blink::mojom::SpeechRecognitionError(
+                        blink::mojom::SpeechRecognitionErrorCode::kNotAllowed,
+                        blink::mojom::SpeechAudioErrorDetails::kNone));
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::BindOnce(&SpeechRecognitionManagerImpl::DispatchEvent,
@@ -539,7 +544,8 @@ void SpeechRecognitionManagerImpl::OnAudioEnd(int session_id) {
 }
 
 void SpeechRecognitionManagerImpl::OnRecognitionResults(
-    int session_id, const SpeechRecognitionResults& results) {
+    int session_id,
+    const std::vector<blink::mojom::SpeechRecognitionResultPtr>& results) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!SessionExists(session_id))
     return;
@@ -551,7 +557,8 @@ void SpeechRecognitionManagerImpl::OnRecognitionResults(
 }
 
 void SpeechRecognitionManagerImpl::OnRecognitionError(
-    int session_id, const SpeechRecognitionError& error) {
+    int session_id,
+    const blink::mojom::SpeechRecognitionError& error) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!SessionExists(session_id))
     return;

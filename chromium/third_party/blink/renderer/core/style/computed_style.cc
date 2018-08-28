@@ -60,6 +60,7 @@
 #include "third_party/blink/renderer/platform/fonts/font_selector.h"
 #include "third_party/blink/renderer/platform/geometry/float_rounded_rect.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
+#include "third_party/blink/renderer/platform/graphics/path.h"
 #include "third_party/blink/renderer/platform/length_functions.h"
 #include "third_party/blink/renderer/platform/text/capitalize.h"
 #include "third_party/blink/renderer/platform/transforms/rotate_transform_operation.h"
@@ -426,9 +427,7 @@ ComputedStyle* ComputedStyle::GetCachedPseudoStyle(PseudoId pid) const {
 
 ComputedStyle* ComputedStyle::AddCachedPseudoStyle(
     scoped_refptr<ComputedStyle> pseudo) {
-  if (!pseudo)
-    return nullptr;
-
+  DCHECK(pseudo);
   DCHECK_GT(pseudo->StyleType(), kPseudoIdNone);
 
   ComputedStyle* result = pseudo.get();
@@ -821,6 +820,9 @@ void ComputedStyle::UpdatePropertySpecificDifferences(
       (has_clip && Clip() != other.Clip()))
     diff.SetCSSClipChanged();
 
+  if (GetBlendMode() != other.GetBlendMode())
+    diff.SetBlendModeChanged();
+
   if (HasCurrentTransformAnimation() != other.HasCurrentTransformAnimation() ||
       HasCurrentOpacityAnimation() != other.HasCurrentOpacityAnimation() ||
       HasCurrentFilterAnimation() != other.HasCurrentFilterAnimation() ||
@@ -829,7 +831,9 @@ void ComputedStyle::UpdatePropertySpecificDifferences(
       HasInlineTransform() != other.HasInlineTransform() ||
       BackfaceVisibility() != other.BackfaceVisibility() ||
       HasWillChangeCompositingHint() != other.HasWillChangeCompositingHint() ||
-      UsedTransformStyle3D() != other.UsedTransformStyle3D()) {
+      UsedTransformStyle3D() != other.UsedTransformStyle3D() ||
+      ContainsPaint() != other.ContainsPaint() ||
+      IsOverflowVisible() != other.IsOverflowVisible()) {
     diff.SetCompositingReasonsChanged();
   }
 }
@@ -916,7 +920,7 @@ void ComputedStyle::UpdateIsStackingContext(bool is_document_element,
     return;
   }
 
-  if (is_document_element || is_in_top_layer ||
+  if (is_document_element || is_in_top_layer || is_svg_stacking ||
       StyleType() == kPseudoIdBackdrop || HasOpacity() ||
       HasTransformRelatedProperty() || HasMask() || ClipPath() ||
       BoxReflect() || HasFilterInducingProperty() || HasBackdropFilter() ||
@@ -926,9 +930,6 @@ void ComputedStyle::UpdateIsStackingContext(bool is_document_element,
       ContainsPaint()) {
     SetIsStackingContext(true);
   }
-
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled() && is_svg_stacking)
-    SetIsStackingContext(true);
 }
 
 void ComputedStyle::AddCallbackSelector(const String& selector) {

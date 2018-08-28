@@ -9,7 +9,8 @@ namespace resource_coordinator {
 PageResourceCoordinator::PageResourceCoordinator(
     service_manager::Connector* connector)
     : ResourceCoordinatorInterface(), weak_ptr_factory_(this) {
-  CoordinationUnitID new_cu_id(CoordinationUnitType::kPage, std::string());
+  CoordinationUnitID new_cu_id(CoordinationUnitType::kPage,
+                               CoordinationUnitID::RANDOM_ID);
   ResourceCoordinatorInterface::ConnectToService(connector, new_cu_id);
 }
 
@@ -45,10 +46,12 @@ void PageResourceCoordinator::OnTitleUpdated() {
   service_->OnTitleUpdated();
 }
 
-void PageResourceCoordinator::OnMainFrameNavigationCommitted() {
+void PageResourceCoordinator::OnMainFrameNavigationCommitted(
+    uint64_t navigation_id,
+    const std::string& url) {
   if (!service_)
     return;
-  service_->OnMainFrameNavigationCommitted();
+  service_->OnMainFrameNavigationCommitted(navigation_id, url);
 }
 
 void PageResourceCoordinator::AddFrame(const FrameResourceCoordinator& frame) {

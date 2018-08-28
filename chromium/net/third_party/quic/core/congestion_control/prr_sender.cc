@@ -6,12 +6,7 @@
 
 #include "net/third_party/quic/core/quic_packets.h"
 
-namespace net {
-
-namespace {
-// Constant based on TCP defaults.
-const QuicByteCount kMaxSegmentSize = kDefaultTCPMSS;
-}  // namespace
+namespace quic {
 
 PrrSender::PrrSender()
     : bytes_sent_since_loss_(0),
@@ -64,4 +59,4 @@ bool PrrSender::CanSend(QuicByteCount congestion_window,
   return false;
 }
 
-}  // namespace net
+}  // namespace quic

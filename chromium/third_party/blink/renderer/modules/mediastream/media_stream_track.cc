@@ -26,13 +26,12 @@
 #include "third_party/blink/renderer/modules/mediastream/media_stream_track.h"
 
 #include <memory>
+
 #include "third_party/blink/public/platform/web_media_stream_track.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
@@ -59,6 +58,7 @@ static const char kContentHintStringAudioSpeech[] = "speech";
 static const char kContentHintStringAudioMusic[] = "music";
 static const char kContentHintStringVideoMotion[] = "motion";
 static const char kContentHintStringVideoDetail[] = "detail";
+static const char kContentHintStringVideoText[] = "text";
 
 // The set of constrainable properties for image capture is available at
 // https://w3c.github.io/mediacapture-image/#constrainable-properties
@@ -225,6 +225,8 @@ String MediaStreamTrack::ContentHint() const {
       return kContentHintStringVideoMotion;
     case WebMediaStreamTrack::ContentHintType::kVideoDetail:
       return kContentHintStringVideoDetail;
+    case WebMediaStreamTrack::ContentHintType::kVideoText:
+      return kContentHintStringVideoText;
   }
 
   NOTREACHED();
@@ -256,6 +258,8 @@ void MediaStreamTrack::SetContentHint(const String& hint) {
         translated_hint = WebMediaStreamTrack::ContentHintType::kVideoMotion;
       } else if (hint == kContentHintStringVideoDetail) {
         translated_hint = WebMediaStreamTrack::ContentHintType::kVideoDetail;
+      } else if (hint == kContentHintStringVideoText) {
+        translated_hint = WebMediaStreamTrack::ContentHintType::kVideoText;
       } else {
         // TODO(pbos): Log warning?
         // Invalid values for video are to be ignored (similar to invalid enum
@@ -470,11 +474,22 @@ void MediaStreamTrack::getSettings(MediaTrackSettings& settings) {
     settings.setAutoGainControl(*platform_settings.auto_gain_control);
   if (platform_settings.noise_supression)
     settings.setNoiseSuppression(*platform_settings.noise_supression);
-  if (OriginTrials::experimentalHardwareEchoCancellationEnabled(
+  if (OriginTrials::ExperimentalHardwareEchoCancellationEnabled(
           GetExecutionContext()) &&
       !platform_settings.echo_cancellation_type.IsNull()) {
     settings.setEchoCancellationType(platform_settings.echo_cancellation_type);
   }
+
+  if (platform_settings.HasSampleRate())
+    settings.setSampleRate(platform_settings.sample_rate);
+  if (platform_settings.HasSampleSize())
+    settings.setSampleSize(platform_settings.sample_size);
+  if (platform_settings.HasChannelCount())
+    settings.setChannelCount(platform_settings.channel_count);
+  if (platform_settings.HasLatency())
+    settings.setLatency(platform_settings.latency);
+  if (platform_settings.HasVolume())
+    settings.setVolume(platform_settings.volume);
 
   if (image_capture_)
     image_capture_->GetMediaTrackSettings(settings);

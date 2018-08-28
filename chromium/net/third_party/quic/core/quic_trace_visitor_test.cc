@@ -12,10 +12,8 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace net {
+namespace quic {
 namespace {
-
-using std::string;
 
 const QuicByteCount kTransferSize = 1000 * kMaxPacketSize;
 const QuicByteCount kTestStreamNumber = 3;
@@ -76,12 +74,12 @@ class QuicTraceVisitorTest : public QuicTest {
 
 TEST_F(QuicTraceVisitorTest, ConnectionId) {
   char expected_cid[] = {0, 0, 0, 0, 0, 0, 0, 42};
-  EXPECT_EQ(string(expected_cid, sizeof(expected_cid)),
+  EXPECT_EQ(QuicString(expected_cid, sizeof(expected_cid)),
             trace_.destination_connection_id());
 }
 
 TEST_F(QuicTraceVisitorTest, Version) {
-  string version = trace_.protocol_version();
+  QuicString version = trace_.protocol_version();
   ASSERT_EQ(4u, version.size());
   EXPECT_EQ('Q', version[0]);
 }
@@ -164,4 +162,4 @@ TEST_F(QuicTraceVisitorTest, TransportState) {
 }
 
 }  // namespace
-}  // namespace net
+}  // namespace quic

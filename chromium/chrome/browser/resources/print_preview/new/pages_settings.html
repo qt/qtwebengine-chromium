@@ -22,7 +22,11 @@
         --settings-section-title-style: {
           padding-top: 7px;
           align-self: flex-start;
-        }
+        };
+      }
+
+      .custom-input-wrapper:focus {
+        outline: none;
       }
     </style>
     <print-preview-settings-section
@@ -32,17 +36,17 @@
         <div class="radio">
           <label><input type="radio" name="pages" id="all-radio-button"
               checked="{{allSelected_::change}}"
-              disabled$="[[getDisabled_(disabled, settings.pages.valid)]]">
+              disabled$="[[getDisabled_(disabled)]]">
             <span>$i18n{optionAllPages}</span>
           </label>
           <label class="custom-input-wrapper"
               for="pageSettingsCustomInput" tabindex=-1>
             <input type="radio" name="pages" id="custom-radio-button"
-                disabled$="[[getDisabled_(disabled, settings.pages.valid)]]"
+                disabled$="[[getDisabled_(disabled)]]"
                 on-click="onCustomRadioClick_">
             <input id="pageSettingsCustomInput" class="user-value" type="text"
                 checked="{{customSelected_::change}}" data-timeout-delay="500"
-                disabled$="[[getDisabled_(disabled, settings.pages.valid)]]"
+                disabled$="[[getDisabled_(disabled)]]"
                 pattern="[[inputPattern_]]"
                 on-focus="onCustomInputFocus_" on-blur="onCustomInputBlur_"
                 placeholder="$i18n{examplePageRangeText}"

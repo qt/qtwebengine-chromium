@@ -14,6 +14,7 @@
 #include "SkColorSpace.h"
 #include "SkFilterQuality.h"
 #include "SkFlattenable.h"
+#include "SkImageInfo.h"
 #include "SkMatrix.h"
 #include "SkRect.h"
 
@@ -41,11 +42,14 @@ public:
     // consumer of the DAG's output.
     class OutputProperties {
     public:
-        explicit OutputProperties(SkColorSpace* colorSpace) : fColorSpace(colorSpace) {}
+        explicit OutputProperties(SkColorType colorType, SkColorSpace* colorSpace)
+            : fColorType(colorType), fColorSpace(colorSpace) {}
 
+        SkColorType colorType() const { return fColorType; }
         SkColorSpace* colorSpace() const { return fColorSpace; }
 
     private:
+        SkColorType fColorType;
         // This will be a pointer to the device's color space, and our lifetime is bounded by
         // the device, so we can store a bare pointer.
         SkColorSpace* fColorSpace;
@@ -97,7 +101,6 @@ public:
             : fRect(rect), fFlags(flags) {}
         uint32_t flags() const { return fFlags; }
         const SkRect& rect() const { return fRect; }
-        void toString(SkString* str) const;
 
         /**
          *  Apply this cropRect to the imageBounds. If a given edge of the cropRect is not
@@ -248,8 +251,6 @@ public:
     static sk_sp<SkImageFilter> MakeMatrixFilter(const SkMatrix& matrix,
                                                  SkFilterQuality quality,
                                                  sk_sp<SkImageFilter> input);
-
-    virtual void toString(SkString* str) const = 0;
 
     static void InitializeFlattenables();
 

@@ -23,6 +23,7 @@ class PageCoordinationUnitImpl
 
   PageCoordinationUnitImpl(
       const CoordinationUnitID& id,
+      CoordinationUnitGraph* graph,
       std::unique_ptr<service_manager::ServiceContextRef> service_ref);
   ~PageCoordinationUnitImpl() override;
 
@@ -34,7 +35,8 @@ class PageCoordinationUnitImpl
   void SetUKMSourceId(int64_t ukm_source_id) override;
   void OnFaviconUpdated() override;
   void OnTitleUpdated() override;
-  void OnMainFrameNavigationCommitted() override;
+  void OnMainFrameNavigationCommitted(int64_t navigation_id,
+                                      const std::string& url) override;
 
   // There is no direct relationship between processes and pages. However,
   // frames are accessible by both processes and frames, so we find all of the
@@ -84,6 +86,9 @@ class PageCoordinationUnitImpl
     private_footprint_kb_estimate_ = private_footprint_kb_estimate;
   }
 
+  const std::string& main_frame_url() const { return main_frame_url_; }
+  int64_t navigation_id() const { return navigation_id_; }
+
  private:
   friend class FrameCoordinationUnitImpl;
 
@@ -113,6 +118,11 @@ class PageCoordinationUnitImpl
   base::TimeDelta cumulative_cpu_usage_estimate_;
   // The most current memory footprint estimate.
   uint64_t private_footprint_kb_estimate_ = 0;
+
+  // The URL the main frame last committed a navigation to and the unique ID of
+  // the associated navigation handle.
+  std::string main_frame_url_;
+  int64_t navigation_id_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(PageCoordinationUnitImpl);
 };

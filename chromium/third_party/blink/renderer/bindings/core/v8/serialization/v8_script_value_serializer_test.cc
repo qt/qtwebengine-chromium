@@ -8,7 +8,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/web_blob_info.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/unpacked_serialized_script_value.h"
@@ -45,6 +44,7 @@
 #include "third_party/blink/renderer/core/html/canvas/image_data.h"
 #include "third_party/blink/renderer/core/messaging/message_port.h"
 #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/wtf/date_math.h"
@@ -62,7 +62,7 @@ v8::Local<v8::Value> RoundTrip(
     ExceptionState* override_exception_state = nullptr,
     Transferables* transferables = nullptr,
     WebBlobInfoArray* blob_info = nullptr) {
-  scoped_refptr<ScriptState> script_state = scope.GetScriptState();
+  ScriptState* script_state = scope.GetScriptState();
   ExceptionState& exception_state = override_exception_state
                                         ? *override_exception_state
                                         : scope.GetExceptionState();
@@ -107,7 +107,7 @@ v8::Local<v8::Value> Eval(const String& source, V8TestingScope& scope) {
 }
 
 String ToJSON(v8::Local<v8::Object> object, const V8TestingScope& scope) {
-  return V8StringToWebCoreString<String>(
+  return ToBlinkString<String>(
       v8::JSON::Stringify(scope.GetContext(), object).ToLocalChecked(),
       kDoNotExternalize);
 }

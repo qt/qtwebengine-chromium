@@ -48,6 +48,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/platform/wtf/wtf.h"
 
 namespace blink {
 
@@ -507,11 +508,14 @@ CacheControlHeader ParseCacheControlDirectives(
   CacheControlHeader cache_control_header;
   cache_control_header.parsed = true;
   cache_control_header.max_age = std::numeric_limits<double>::quiet_NaN();
+  cache_control_header.stale_while_revalidate =
+      std::numeric_limits<double>::quiet_NaN();
 
   static const char kNoCacheDirective[] = "no-cache";
   static const char kNoStoreDirective[] = "no-store";
   static const char kMustRevalidateDirective[] = "must-revalidate";
   static const char kMaxAgeDirective[] = "max-age";
+  static const char kStaleWhileRevalidateDirective[] = "stale-while-revalidate";
 
   if (!cache_control_value.IsEmpty()) {
     Vector<std::pair<String, String>> directives;
@@ -540,6 +544,17 @@ CacheControlHeader ParseCacheControlDirectives(
         double max_age = directives[i].second.ToDouble(&ok);
         if (ok)
           cache_control_header.max_age = max_age;
+      } else if (DeprecatedEqualIgnoringCase(directives[i].first,
+                                             kStaleWhileRevalidateDirective)) {
+        if (!std::isnan(cache_control_header.stale_while_revalidate)) {
+          // First stale-while-revalidate directive wins if there are multiple
+          // ones.
+          continue;
+        }
+        bool ok;
+        double stale_while_revalidate = directives[i].second.ToDouble(&ok);
+        if (ok)
+          cache_control_header.stale_while_revalidate = stale_while_revalidate;
       }
     }
   }

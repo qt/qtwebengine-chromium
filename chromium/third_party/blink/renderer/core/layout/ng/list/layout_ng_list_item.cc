@@ -63,6 +63,21 @@ void LayoutNGListItem::OrdinalValueChanged() {
 }
 
 void LayoutNGListItem::SubtreeDidChange() {
+  if (!marker_)
+    return;
+
+  if (ordinal_.NotInListChanged()) {
+    UpdateMarker();
+    ordinal_.SetNotInListChanged(false);
+    return;
+  }
+
+  // Make sure outside marker is the direct child of ListItem.
+  if (!IsInside() && marker_->Parent() != this) {
+    marker_->Remove();
+    AddChild(marker_, FirstChild());
+  }
+
   UpdateMarkerContentIfNeeded();
 }
 
@@ -166,7 +181,7 @@ LayoutNGListItem::MarkerType LayoutNGListItem::MarkerText(
       text->Append(ListMarkerText::GetText(Style()->ListStyleType(), 0));
       if (format == kWithSuffix)
         text->Append(' ');
-      return kStatic;
+      return kSymbolValue;
     case EListStyleType::kArabicIndic:
     case EListStyleType::kArmenian:
     case EListStyleType::kBengali:
@@ -239,8 +254,7 @@ String LayoutNGListItem::MarkerTextWithoutSuffix() const {
 }
 
 void LayoutNGListItem::UpdateMarkerContentIfNeeded() {
-  if (!marker_)
-    return;
+  DCHECK(marker_);
 
   LayoutObject* child = marker_->SlowFirstChild();
   if (IsMarkerImage()) {
@@ -270,12 +284,12 @@ void LayoutNGListItem::UpdateMarkerContentIfNeeded() {
     // Create a LayoutText in it.
     LayoutText* text = nullptr;
     if (child) {
-      if (!child->IsText()) {
-        child->Destroy();
-        child = nullptr;
-      } else {
+      if (child->IsText()) {
         text = ToLayoutText(child);
         text->SetStyle(marker_->MutableStyle());
+      } else {
+        child->Destroy();
+        child = nullptr;
       }
     }
     if (!child) {
@@ -286,4 +300,29 @@ void LayoutNGListItem::UpdateMarkerContentIfNeeded() {
     }
   }
 }
+
+LayoutObject* LayoutNGListItem::SymbolMarkerLayoutText() const {
+  if (marker_type_ != kSymbolValue)
+    return nullptr;
+  DCHECK(marker_);
+  return marker_->SlowFirstChild();
+}
+
+const LayoutObject* LayoutNGListItem::FindSymbolMarkerLayoutText(
+    const LayoutObject* object) {
+  if (!object)
+    return nullptr;
+
+  if (object->IsLayoutNGListItem())
+    return ToLayoutNGListItem(object)->SymbolMarkerLayoutText();
+
+  if (object->IsLayoutNGListMarker())
+    return ToLayoutNGListMarker(object)->SymbolMarkerLayoutText();
+
+  if (object->IsAnonymousBlock())
+    return FindSymbolMarkerLayoutText(object->Parent());
+
+  return nullptr;
+}
+
 }  // namespace blink

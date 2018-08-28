@@ -14,11 +14,27 @@
 #include "core/fpdfapi/page/cpdf_contentparser.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
+#include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fxcrt/fx_extension.h"
+
+bool GraphicsData::operator<(const GraphicsData& other) const {
+  if (!FXSYS_SafeEQ(fillAlpha, other.fillAlpha))
+    return FXSYS_SafeLT(fillAlpha, other.fillAlpha);
+  if (!FXSYS_SafeEQ(strokeAlpha, other.strokeAlpha))
+    return FXSYS_SafeLT(strokeAlpha, other.strokeAlpha);
+  return blendType < other.blendType;
+}
+
+bool FontData::operator<(const FontData& other) const {
+  if (baseFont != other.baseFont)
+    return baseFont < other.baseFont;
+  return type < other.type;
+}
 
 CPDF_PageObjectHolder::CPDF_PageObjectHolder(CPDF_Document* pDoc,
-                                             CPDF_Dictionary* pFormDict)
-    : m_pFormDict(pFormDict), m_pDocument(pDoc) {
-  // TODO(thestig): Check if |m_pFormDict| is never a nullptr and simplify
+                                             CPDF_Dictionary* pDict)
+    : m_pDict(pDict), m_pDocument(pDoc) {
+  // TODO(thestig): Check if |m_pDict| is never a nullptr and simplify
   // callers that checks for that.
 }
 
@@ -28,16 +44,23 @@ bool CPDF_PageObjectHolder::IsPage() const {
   return false;
 }
 
-void CPDF_PageObjectHolder::ContinueParse(PauseIndicatorIface* pPause) {
-  if (!m_pParser) {
-    m_ParseState = CONTENT_PARSED;
-    return;
-  }
+void CPDF_PageObjectHolder::StartParse(
+    std::unique_ptr<CPDF_ContentParser> pParser) {
+  ASSERT(m_ParseState == ParseState::kNotParsed);
+  m_pParser = std::move(pParser);
+  m_ParseState = ParseState::kParsing;
+}
 
+void CPDF_PageObjectHolder::ContinueParse(PauseIndicatorIface* pPause) {
+  if (m_ParseState == ParseState::kParsed)
+    return;
+
+  ASSERT(m_ParseState == ParseState::kParsing);
   if (m_pParser->Continue(pPause))
     return;
 
-  m_ParseState = CONTENT_PARSED;
+  m_ParseState = ParseState::kParsed;
+  m_pDocument->IncrementParsedPageCount();
   if (m_pParser->GetCurStates())
     m_LastCTM = m_pParser->GetCurStates()->m_CTM;
 
@@ -71,10 +94,10 @@ CFX_FloatRect CPDF_PageObjectHolder::CalcBoundingBox() const {
 }
 
 void CPDF_PageObjectHolder::LoadTransInfo() {
-  if (!m_pFormDict)
+  if (!m_pDict)
     return;
 
-  CPDF_Dictionary* pGroup = m_pFormDict->GetDictFor("Group");
+  CPDF_Dictionary* pGroup = m_pDict->GetDictFor("Group");
   if (!pGroup)
     return;
 
@@ -111,6 +134,11 @@ bool CPDF_PageObjectHolder::RemovePageObject(CPDF_PageObject* pPageObj) {
 
   it->release();
   m_PageObjectList.erase(it);
+
+  int32_t content_stream = pPageObj->GetContentStream();
+  if (content_stream >= 0)
+    m_DirtyStreams.insert(content_stream);
+
   return true;
 }
 

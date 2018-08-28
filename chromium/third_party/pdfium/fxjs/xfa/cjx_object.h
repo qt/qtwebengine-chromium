@@ -15,12 +15,14 @@
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widestring.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
-#include "fxjs/CJX_Define.h"
+#include "fxjs/cjx_define.h"
 #include "third_party/base/optional.h"
+#include "third_party/base/span.h"
 #include "xfa/fxfa/fxfa_basic.h"
 
 class CFXJSE_Value;
 class CFX_V8;
+class CJX_Object;
 class CXFA_CalcData;
 class CXFA_Document;
 class CXFA_LayoutItem;
@@ -58,10 +60,8 @@ class CJX_Object {
 
   JS_PROP(className);
 
-  CXFA_Object* GetXFAObject() { return object_.Get(); }
-  const CXFA_Object* GetXFAObject() const { return object_.Get(); }
-
   CXFA_Document* GetDocument() const;
+  CXFA_Object* GetXFAObject() const { return object_.Get(); }
 
   void SetCalcRecursionCount(size_t count) { calc_recursion_count_ = count; }
   size_t GetCalcRecursionCount() const { return calc_recursion_count_; }
@@ -218,8 +218,7 @@ class CJX_Object {
   void ThrowTooManyOccurancesException(const WideString& obj) const;
 
  protected:
-  void DefineMethods(const CJX_MethodSpec method_specs[], size_t count);
-
+  void DefineMethods(pdfium::span<const CJX_MethodSpec> methods);
   void MoveBufferMapData(CXFA_Object* pSrcModule, CXFA_Object* pDstModule);
   void SetMapModuleString(void* pKey, const WideStringView& wsValue);
   void ThrowException(const wchar_t* str, ...) const;
@@ -283,6 +282,18 @@ class CJX_Object {
   std::unique_ptr<CXFA_CalcData> calc_data_;
   std::map<ByteString, CJX_MethodCall> method_specs_;
   size_t calc_recursion_count_ = 0;
+};
+
+typedef void (CJX_Object::*XFA_ATTRIBUTE_CALLBACK)(CFXJSE_Value* pValue,
+                                                   bool bSetting,
+                                                   XFA_Attribute eAttribute);
+
+struct XFA_SCRIPTATTRIBUTEINFO {
+  uint32_t uHash;
+  const wchar_t* pName;
+  XFA_ATTRIBUTE_CALLBACK callback;
+  XFA_Attribute attribute;
+  XFA_ScriptType eValueType;
 };
 
 #endif  // FXJS_XFA_CJX_OBJECT_H_

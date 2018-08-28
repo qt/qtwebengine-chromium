@@ -45,8 +45,6 @@ public:
                         SkArenaAlloc* scratch,
                         bool shaderIsOpaque) const override;
 
-    void toString(SkString* str) const override;
-
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkHighContrast_Filter)
 
 protected:
@@ -75,9 +73,7 @@ void SkHighContrast_Filter::onAppendStages(SkRasterPipeline* p,
         square->G = 2.0f; square->A = 1.0f;
         square->B = square->C = square->D = square->E = square->F = 0;
 
-        p->append(SkRasterPipeline::parametric_r, square);
-        p->append(SkRasterPipeline::parametric_g, square);
-        p->append(SkRasterPipeline::parametric_b, square);
+        p->append(SkRasterPipeline::parametric, square);
     }
 
     if (fConfig.fGrayscale) {
@@ -124,9 +120,7 @@ void SkHighContrast_Filter::onAppendStages(SkRasterPipeline* p,
         sqrt->G = 0.5f; sqrt->A = 1.0f;
         sqrt->B = sqrt->C = sqrt->D = sqrt->E = sqrt->F = 0;
 
-        p->append(SkRasterPipeline::parametric_r, sqrt);
-        p->append(SkRasterPipeline::parametric_g, sqrt);
-        p->append(SkRasterPipeline::parametric_b, sqrt);
+        p->append(SkRasterPipeline::parametric, sqrt);
     }
 
     if (!shaderIsOpaque) {
@@ -155,10 +149,6 @@ sk_sp<SkColorFilter> SkHighContrastFilter::Make(
         return nullptr;
     }
     return sk_make_sp<SkHighContrast_Filter>(config);
-}
-
-void SkHighContrast_Filter::toString(SkString* str) const {
-    str->append("SkHighContrastColorFilter ");
 }
 
 SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_START(SkHighContrastFilter)
@@ -370,7 +360,7 @@ void GLHighContrastFilterEffect::emitCode(EmitArgs& args) {
 
 std::unique_ptr<GrFragmentProcessor> SkHighContrast_Filter::asFragmentProcessor(
         GrContext*, const GrColorSpaceInfo& csi) const {
-    bool linearize = !csi.isGammaCorrect();
+    bool linearize = !csi.isLinearlyBlended();
     return HighContrastFilterEffect::Make(fConfig, linearize);
 }
 #endif

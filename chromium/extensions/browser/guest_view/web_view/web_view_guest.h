@@ -7,6 +7,9 @@
 
 #include <stdint.h>
 
+#include <map>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "base/macros.h"
@@ -172,7 +175,7 @@ class WebViewGuest : public guest_view::GuestView<WebViewGuest> {
 
   // GuestViewBase implementation.
   void CreateWebContents(const base::DictionaryValue& create_params,
-                         const WebContentsCreatedCallback& callback) final;
+                         WebContentsCreatedCallback callback) final;
   void DidAttachToEmbedder() final;
   void DidDropLink(const GURL& url) final;
   void DidInitialize(const base::DictionaryValue& create_params) final;
@@ -214,11 +217,12 @@ class WebViewGuest : public guest_view::GuestView<WebViewGuest> {
                           content::RenderWidgetHost* render_widget_host) final;
   void RendererUnresponsive(
       content::WebContents* source,
-      content::RenderWidgetHost* render_widget_host) final;
+      content::RenderWidgetHost* render_widget_host,
+      base::RepeatingClosure hang_monitor_restarter) final;
   void RequestMediaAccessPermission(
       content::WebContents* source,
       const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) final;
+      content::MediaResponseCallback callback) final;
   void RequestPointerLockPermission(
       bool user_gesture,
       bool last_unlocked_by_target,

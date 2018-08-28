@@ -165,24 +165,26 @@ class PLATFORM_EXPORT PersistentRegion final {
 #endif
 };
 
+// Protected by ProcessHeap::CrossThreadPersistentMutex.
 class CrossThreadPersistentRegion final {
   USING_FAST_MALLOC(CrossThreadPersistentRegion);
 
  public:
-  CrossThreadPersistentRegion()
-      : persistent_region_(std::make_unique<PersistentRegion>()) {}
-
   void AllocatePersistentNode(PersistentNode*& persistent_node,
                               void* self,
                               TraceCallback trace) {
-    RecursiveMutexLocker lock(ProcessHeap::CrossThreadPersistentMutex());
+#if DCHECK_IS_ON()
+    DCHECK(ProcessHeap::CrossThreadPersistentMutex().Locked());
+#endif
     PersistentNode* node =
-        persistent_region_->AllocatePersistentNode(self, trace);
+        persistent_region_.AllocatePersistentNode(self, trace);
     ReleaseStore(reinterpret_cast<void* volatile*>(&persistent_node), node);
   }
 
   void FreePersistentNode(PersistentNode*& persistent_node) {
-    RecursiveMutexLocker lock(ProcessHeap::CrossThreadPersistentMutex());
+#if DCHECK_IS_ON()
+    DCHECK(ProcessHeap::CrossThreadPersistentMutex().Locked());
+#endif
     // When the thread that holds the heap object that the cross-thread
     // persistent shuts down, prepareForThreadStateTermination() will clear out
     // the associated CrossThreadPersistent<> and PersistentNode so as to avoid
@@ -195,7 +197,7 @@ class CrossThreadPersistentRegion final {
     // check for this.
     if (!persistent_node)
       return;
-    persistent_region_->FreePersistentNode(persistent_node);
+    persistent_region_.FreePersistentNode(persistent_node);
     ReleaseStore(reinterpret_cast<void* volatile*>(&persistent_node), nullptr);
   }
 
@@ -204,7 +206,7 @@ class CrossThreadPersistentRegion final {
 #if DCHECK_IS_ON()
     DCHECK(ProcessHeap::CrossThreadPersistentMutex().Locked());
 #endif
-    persistent_region_->TracePersistentNodes(
+    persistent_region_.TracePersistentNodes(
         visitor, CrossThreadPersistentRegion::ShouldTracePersistentNode);
   }
 
@@ -222,13 +224,7 @@ class CrossThreadPersistentRegion final {
   // We don't make CrossThreadPersistentRegion inherit from PersistentRegion
   // because we don't want to virtualize performance-sensitive methods
   // such as PersistentRegion::allocate/freePersistentNode.
-  std::unique_ptr<PersistentRegion> persistent_region_;
-
-  // Recursive as prepareForThreadStateTermination() clears a PersistentNode's
-  // associated Persistent<> -- it in turn freeing the PersistentNode. And both
-  // CrossThreadPersistentRegion operations need a lock on the region before
-  // mutating.
-  RecursiveMutex mutex_;
+  PersistentRegion persistent_region_;
 };
 
 }  // namespace blink

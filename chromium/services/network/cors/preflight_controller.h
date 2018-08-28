@@ -33,11 +33,12 @@ namespace cors {
 class COMPONENT_EXPORT(NETWORK_SERVICE) PreflightController final {
  public:
   using CompletionCallback =
-      base::OnceCallback<void(base::Optional<CORSErrorStatus>)>;
+      base::OnceCallback<void(int, base::Optional<CORSErrorStatus>)>;
   // Creates a CORS-preflight ResourceRequest for a specified |request| for a
   // URL that is originally requested.
   static std::unique_ptr<ResourceRequest> CreatePreflightRequestForTesting(
-      const ResourceRequest& request);
+      const ResourceRequest& request,
+      bool tainted = false);
 
   // Obtains the shared default controller instance.
   // TODO(toyoshim): Find a right owner rather than a single design.
@@ -61,6 +62,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) PreflightController final {
       CompletionCallback callback,
       int32_t request_id,
       const ResourceRequest& resource_request,
+      bool tainted,
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
       mojom::URLLoaderFactory* loader_factory,
       base::OnceCallback<void()> preflight_finalizer);

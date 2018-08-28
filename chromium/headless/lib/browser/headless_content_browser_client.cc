@@ -13,6 +13,7 @@
 #include "base/json/json_reader.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "build/build_config.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/client_certificate_delegate.h"
@@ -163,7 +164,7 @@ void HeadlessContentBrowserClient::RegisterOutOfProcessServices(
     OutOfProcessServiceMap* services) {
 #if BUILDFLAG(ENABLE_PRINTING) && !defined(CHROME_MULTIPLE_DLL_CHILD)
   (*services)[printing::mojom::kServiceName] =
-      base::ASCIIToUTF16("PDF Compositor Service");
+      base::BindRepeating(&base::ASCIIToUTF16, "PDF Compositor Service");
 #endif
 }
 
@@ -313,43 +314,6 @@ void HeadlessContentBrowserClient::ResourceDispatcherHostCreated() {
       new HeadlessResourceDispatcherHostDelegate);
   content::ResourceDispatcherHost::Get()->SetDelegate(
       resource_dispatcher_host_delegate_.get());
-}
-
-net::NetLog* HeadlessContentBrowserClient::GetNetLog() {
-  return browser_->net_log();
-}
-
-bool HeadlessContentBrowserClient::AllowGetCookie(
-    const GURL& url,
-    const GURL& first_party,
-    const net::CookieList& cookie_list,
-    content::ResourceContext* context,
-    int render_process_id,
-    int render_frame_id) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
-  LockedPtr<HeadlessBrowserContextImpl> browser_context =
-      browser_->GetBrowserContextForRenderFrame(render_process_id,
-                                                render_frame_id);
-  if (!browser_context)
-    return false;
-  return browser_context->options()->allow_cookies();
-}
-
-bool HeadlessContentBrowserClient::AllowSetCookie(
-    const GURL& url,
-    const GURL& first_party,
-    const net::CanonicalCookie& cookie,
-    content::ResourceContext* context,
-    int render_process_id,
-    int render_frame_id,
-    const net::CookieOptions& options) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
-  LockedPtr<HeadlessBrowserContextImpl> browser_context =
-      browser_->GetBrowserContextForRenderFrame(render_process_id,
-                                                render_frame_id);
-  if (!browser_context)
-    return false;
-  return browser_context->options()->allow_cookies();
 }
 
 bool HeadlessContentBrowserClient::DoesSiteRequireDedicatedProcess(

@@ -115,7 +115,6 @@ RenderProcessImpl::RenderProcessImpl(
     // closer to V8s normal performance and behavior.
     constexpr char kDisabledFlags[] =
         "--noturbo_verify "
-        "--noverify_csa "
         "--noturbo_verify_allocation "
         "--nodebug_code";
 
@@ -138,23 +137,37 @@ RenderProcessImpl::RenderProcessImpl(
                      "--harmony-import-meta");
   SetV8FlagIfFeature(features::kAsmJsToWebAssembly, "--validate-asm");
   SetV8FlagIfNotFeature(features::kAsmJsToWebAssembly, "--no-validate-asm");
-  SetV8FlagIfNotFeature(features::kWebAssembly,
-                        "--wasm-disable-structured-cloning");
+
+  SetV8FlagIfFeature(features::kV8Orinoco, "--no-single-threaded-gc");
+  SetV8FlagIfNotFeature(features::kV8Orinoco, "--single-threaded-gc");
 
   SetV8FlagIfFeature(features::kV8VmFuture, "--future");
   SetV8FlagIfNotFeature(features::kV8VmFuture, "--no-future");
 
-  SetV8FlagIfFeature(features::kWebAssemblyBaseline, "--wasm-tier-up");
-  SetV8FlagIfNotFeature(features::kWebAssemblyBaseline, "--no-wasm-tier-up");
+  SetV8FlagIfFeature(features::kWebAssemblyBaseline,
+                     "--liftoff --wasm-tier-up");
+  SetV8FlagIfNotFeature(features::kWebAssemblyBaseline,
+                        "--no-liftoff --no-wasm-tier-up");
 
-  SetV8FlagIfFeature(features::kSharedArrayBuffer,
-                     "--harmony-sharedarraybuffer");
-  SetV8FlagIfNotFeature(features::kSharedArrayBuffer,
-                        "--no-harmony-sharedarraybuffer");
+  if (base::FeatureList::IsEnabled(features::kWebAssemblyThreads)) {
+    constexpr char kFlags[] =
+        "--harmony-sharedarraybuffer "
+        "--no-wasm-disable-structured-cloning "
+        "--experimental-wasm-threads";
+
+    v8::V8::SetFlagsFromString(kFlags, sizeof(kFlags));
+  } else {
+    SetV8FlagIfNotFeature(features::kWebAssembly,
+                          "--wasm-disable-structured-cloning");
+    SetV8FlagIfFeature(features::kSharedArrayBuffer,
+                       "--harmony-sharedarraybuffer");
+    SetV8FlagIfNotFeature(features::kSharedArrayBuffer,
+                          "--no-harmony-sharedarraybuffer");
+  }
 
   SetV8FlagIfNotFeature(features::kWebAssemblyTrapHandler,
                         "--no-wasm-trap-handler");
-#if defined(OS_LINUX) && defined(ARCH_CPU_X86_64) && !defined(OS_ANDROID)
+#if defined(OS_LINUX) && defined(ARCH_CPU_X86_64)
   if (base::FeatureList::IsEnabled(features::kWebAssemblyTrapHandler)) {
     bool use_v8_signal_handler = false;
     base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();

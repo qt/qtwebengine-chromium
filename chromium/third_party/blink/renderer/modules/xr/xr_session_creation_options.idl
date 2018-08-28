@@ -6,6 +6,7 @@
 [
     SecureContext
 ] dictionary XRSessionCreationOptions {
-  boolean exclusive = false;
+  [RuntimeEnabled=WebXRHitTest] boolean environmentIntegration = false;
+  boolean immersive = false;
   XRPresentationContext outputContext;
 };

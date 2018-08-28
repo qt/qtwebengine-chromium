@@ -16,6 +16,7 @@
 #include "base/files/important_file_writer.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "components/bookmarks/browser/titled_url_index.h"
@@ -103,8 +104,15 @@ class BookmarkLoadDetails {
   void set_ids_reassigned(bool value) { ids_reassigned_ = value; }
   bool ids_reassigned() const { return ids_reassigned_; }
 
+  // Returns the string blob representing the sync metadata in the json file.
+  // The string blob is set during decode time upon the call to Bookmark::Load.
+  void set_sync_metadata_str(std::string sync_metadata_str) {
+    sync_metadata_str_ = std::move(sync_metadata_str);
+  }
+  const std::string& sync_metadata_str() const { return sync_metadata_str_; }
+
   void CreateUrlIndex();
-  std::unique_ptr<UrlIndex> owned_url_index() { return std::move(url_index_); }
+  UrlIndex* url_index() { return url_index_.get(); }
 
  private:
   // Creates one of the possible permanent nodes (bookmark bar node, other node
@@ -125,7 +133,9 @@ class BookmarkLoadDetails {
   std::string computed_checksum_;
   std::string stored_checksum_;
   bool ids_reassigned_ = false;
-  std::unique_ptr<UrlIndex> url_index_;
+  scoped_refptr<UrlIndex> url_index_;
+  // A string blob represetning the sync metadata stored in the json file.
+  std::string sync_metadata_str_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkLoadDetails);
 };

@@ -18,17 +18,14 @@ from util import jar_info_utils
 
 import jar
 
-sys.path.append(build_utils.COLORAMA_ROOT)
+sys.path.append(
+    os.path.join(build_utils.DIR_SOURCE_ROOT, 'third_party', 'colorama', 'src'))
 import colorama
 
 
 ERRORPRONE_WARNINGS_TO_TURN_OFF = [
   # TODO(crbug.com/834807): Follow steps in bug
   'DoubleBraceInitialization',
-  # TODO(crbug.com/834801): Follow steps in bug.
-  'ParcelableCreator',
-  # TODO(crbug.com/834796): Follow steps in bug.
-  'OrphanedFormatString',
   # TODO(crbug.com/834790): Follow steps in bug.
   'CatchAndPrintStackTrace',
   # TODO(crbug.com/801210): Follow steps in bug.
@@ -100,6 +97,7 @@ ERRORPRONE_WARNINGS_TO_ERROR = [
   'MissingOverride',
   'NarrowingCompoundAssignment',
   'ParameterName',
+  'ParcelableCreator',
   'ReferenceEquality',
   'StaticGuardedByInstance',
   'StaticQualifiedUsingExpression',
@@ -256,8 +254,8 @@ def _CreateInfoFile(java_files, options, srcjar_files):
         'Chromium java files must only have one class: {}'.format(source))
     if options.chromium_code:
       _CheckPathMatchesClassName(java_file, package_name, class_names[0])
-  jar_info_utils.WriteJarInfoFile(options.jar_path + '.info', info_data,
-                                  srcjar_files)
+  with build_utils.AtomicOutput(options.jar_path + '.info') as f:
+    jar_info_utils.WriteJarInfoFile(f.name, info_data, srcjar_files)
 
 
 def _OnStaleMd5(changes, options, javac_cmd, java_files, classpath_inputs,
@@ -367,7 +365,8 @@ def _OnStaleMd5(changes, options, javac_cmd, java_files, classpath_inputs,
         attempt_build()
       except build_utils.CalledProcessError as e:
         # Work-around for a bug in jmake (http://crbug.com/551449).
-        if 'project database corrupted' not in e.output:
+        if ('project database corrupted' not in e.output
+            and 'jmake: internal Java exception' not in e.output):
           raise
         print ('Applying work-around for jmake project database corrupted '
                '(http://crbug.com/551449).')
@@ -378,10 +377,11 @@ def _OnStaleMd5(changes, options, javac_cmd, java_files, classpath_inputs,
       # Make sure output exists.
       build_utils.Touch(pdb_path)
 
-    jar.JarDirectory(classes_dir,
-                     options.jar_path,
-                     provider_configurations=options.provider_configurations,
-                     additional_files=options.additional_jar_files)
+    with build_utils.AtomicOutput(options.jar_path) as f:
+      jar.JarDirectory(classes_dir,
+                       f.name,
+                       provider_configurations=options.provider_configurations,
+                       additional_files=options.additional_jar_files)
 
 
 def _ParseAndFlattenGnLists(gn_lists):
@@ -571,7 +571,7 @@ def main(argv):
                       options.processorpath)
   # GN already knows of java_files, so listing them just make things worse when
   # they change.
-  depfile_deps = [javac_path] + classpath_inputs + options.java_srcjars
+  depfile_deps = ([javac_path] + classpath_inputs + options.java_srcjars)
   input_paths = depfile_deps + java_files
 
   output_paths = [

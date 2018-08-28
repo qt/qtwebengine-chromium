@@ -8,8 +8,7 @@
 
 #include <utility>
 
-#include "base/command_line.h"
-#import "base/mac/bind_objc_block.h"
+#include "base/bind.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
@@ -17,7 +16,6 @@
 #include "components/crash/core/common/crash_key.h"
 #import "ui/base/cocoa/constrained_window/constrained_window_animation.h"
 #import "ui/base/cocoa/window_size_constants.h"
-#include "ui/base/ui_base_switches.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/font_list.h"
@@ -49,11 +47,6 @@
 
 namespace views {
 namespace {
-
-bool AreModalAnimationsEnabled() {
-  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableModalAnimations);
-}
 
 NSInteger StyleMaskForParams(const Widget::InitParams& params) {
   // If the Widget is modal, it will be displayed as a sheet. This works best if
@@ -392,13 +385,17 @@ void NativeWidgetMac::Close() {
     // sheet has finished animating, it will call sheetDidEnd: on the parent
     // window's delegate. Note it still needs to be asynchronous, since code
     // calling Widget::Close() doesn't expect things to be deleted upon return.
-    [NSApp performSelector:@selector(endSheet:) withObject:window afterDelay:0];
+    // Ensure |window| is retained by a block. Note in some cases during
+    // teardown, [window sheetParent] may be nil.
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::BindOnce(base::RetainBlock(^{
+          [NSApp endSheet:window];
+        })));
     return;
   }
 
   // For other modal types, animate the close.
-  if (bridge_->animate() && AreModalAnimationsEnabled() &&
-      delegate_->IsModal()) {
+  if (bridge_->ShouldRunCustomAnimationFor(Widget::ANIMATE_HIDE)) {
     [ViewsNSWindowCloseAnimator closeWindowWithAnimation:window];
     return;
   }
@@ -416,9 +413,10 @@ void NativeWidgetMac::Close() {
   // Many tests assume that base::RunLoop().RunUntilIdle() is always sufficient
   // to execute a close. However, in rare cases, -performSelector:..afterDelay:0
   // does not do this. So post a regular task.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, base::BindBlock(^{
-    [window close];
-  }));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(base::RetainBlock(^{
+        [window close];
+      })));
 }
 
 void NativeWidgetMac::CloseNow() {
@@ -557,6 +555,11 @@ void NativeWidgetMac::SetOpacity(float opacity) {
   [GetNativeWindow() setAlphaValue:opacity];
 }
 
+void NativeWidgetMac::SetAspectRatio(const gfx::SizeF& aspect_ratio) {
+  [GetNativeWindow() setContentAspectRatio:NSMakeSize(aspect_ratio.width(),
+                                                      aspect_ratio.height())];
+}
+
 void NativeWidgetMac::FlashFrame(bool flash_frame) {
   NOTIMPLEMENTED();
 }
@@ -623,7 +626,7 @@ void NativeWidgetMac::EndMoveLoop() {
 
 void NativeWidgetMac::SetVisibilityChangedAnimationsEnabled(bool value) {
   if (bridge_)
-    bridge_->set_animate(value);
+    bridge_->SetAnimationEnabled(value);
 }
 
 void NativeWidgetMac::SetVisibilityAnimationDuration(
@@ -633,7 +636,8 @@ void NativeWidgetMac::SetVisibilityAnimationDuration(
 
 void NativeWidgetMac::SetVisibilityAnimationTransition(
     Widget::VisibilityTransition transition) {
-  NOTIMPLEMENTED();
+  if (bridge_)
+    bridge_->set_transitions_to_animate(transition);
 }
 
 bool NativeWidgetMac::IsTranslucentWindowOpacitySupported() const {
@@ -692,12 +696,6 @@ void Widget::CloseAllSecondaryWidgets() {
     if (widget && widget->is_secondary_widget())
       [window close];
   }
-}
-
-bool Widget::ConvertRect(const Widget* source,
-                         const Widget* target,
-                         gfx::Rect* rect) {
-  return false;
 }
 
 const ui::NativeTheme* Widget::GetNativeTheme() const {

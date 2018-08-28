@@ -25,6 +25,10 @@ const char kDisableRemoteCoreAnimation[] = "disable-remote-core-animation";
 const char kShowMacOverlayBorders[] = "show-mac-overlay-borders";
 #endif
 
+// Scale factor to apply to every animation duration. Must be >= 0.0. This will
+// only apply to LinearAnimation and its subclasses.
+const char kAnimationDurationScale[] = "animation-duration-scale";
+
 // Disables layer-edge anti-aliasing in the compositor.
 const char kDisableCompositedAntialiasing[] = "disable-composited-antialiasing";
 
@@ -40,7 +44,7 @@ const char kDisableTouchDragDrop[] = "disable-touch-drag-drop";
 // Enables touch event based drag and drop.
 const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
 
-// Enables touchable app context menus and notification indicators.
+// Enables touchable app context menus.
 const char kEnableTouchableAppContextMenu[] =
     "enable-touchable-app-context-menus";
 

@@ -6,14 +6,13 @@
 
 #include <memory>
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/html/forms/form_controller.h"
 #include "third_party/blink/renderer/core/html/forms/form_data.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -97,7 +96,7 @@ TEST_F(PasswordCredentialTest, CreateFromFormNoPassword) {
       PasswordCredential::Create(form, exception_state);
   EXPECT_EQ(nullptr, credential);
   EXPECT_TRUE(exception_state.HadException());
-  EXPECT_EQ(kV8TypeError, exception_state.Code());
+  EXPECT_EQ(ESErrorType::kTypeError, exception_state.CodeAs<ESErrorType>());
   EXPECT_EQ("'password' must not be empty.", exception_state.Message());
 }
 
@@ -116,7 +115,7 @@ TEST_F(PasswordCredentialTest, CreateFromFormNoId) {
       PasswordCredential::Create(form, exception_state);
   EXPECT_EQ(nullptr, credential);
   EXPECT_TRUE(exception_state.HadException());
-  EXPECT_EQ(kV8TypeError, exception_state.Code());
+  EXPECT_EQ(ESErrorType::kTypeError, exception_state.CodeAs<ESErrorType>());
   EXPECT_EQ("'id' must not be empty.", exception_state.Message());
 }
 

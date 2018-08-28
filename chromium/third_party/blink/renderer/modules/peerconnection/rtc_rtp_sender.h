@@ -8,19 +8,24 @@
 #include "third_party/blink/public/platform/web_rtc_rtp_sender.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
-#include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_parameters.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_encoding_parameters.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_send_parameters.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/heap/visitor.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/webrtc/api/rtptransceiverinterface.h"
 
 namespace blink {
 
 class MediaStreamTrack;
 class RTCDTMFSender;
 class RTCPeerConnection;
-class RTCRtpParameters;
+class RTCRtpCapabilities;
+
+webrtc::RtpEncodingParameters ToRtpEncodingParameters(
+    const RTCRtpEncodingParameters&);
 
 // https://w3c.github.io/webrtc-pc/#rtcrtpsender-interface
 class RTCRtpSender final : public ScriptWrappable {
@@ -31,14 +36,17 @@ class RTCRtpSender final : public ScriptWrappable {
   // https://github.com/w3c/webrtc-pc/issues/1712
   RTCRtpSender(RTCPeerConnection*,
                std::unique_ptr<WebRTCRtpSender>,
+               String kind,
                MediaStreamTrack*,
                MediaStreamVector streams);
 
   MediaStreamTrack* track();
   ScriptPromise replaceTrack(ScriptState*, MediaStreamTrack*);
   RTCDTMFSender* dtmf();
-  void getParameters(RTCRtpParameters&);
-  ScriptPromise setParameters(ScriptState*, const RTCRtpParameters&);
+  static void getCapabilities(const String& kind,
+                              base::Optional<RTCRtpCapabilities>& result);
+  void getParameters(RTCRtpSendParameters&);
+  ScriptPromise setParameters(ScriptState*, const RTCRtpSendParameters&);
   ScriptPromise getStats(ScriptState*);
 
   WebRTCRtpSender* web_sender();
@@ -47,19 +55,20 @@ class RTCRtpSender final : public ScriptWrappable {
   void SetTrack(MediaStreamTrack*);
   void ClearLastReturnedParameters();
   MediaStreamVector streams() const;
+  void set_streams(MediaStreamVector streams);
 
   void Trace(blink::Visitor*) override;
 
  private:
   Member<RTCPeerConnection> pc_;
   std::unique_ptr<WebRTCRtpSender> sender_;
-  Member<MediaStreamTrack> track_;
-  // The spec says that "kind" should be looked up in transceiver, but
-  // keeping it in sender at least until transceiver is implemented.
+  // The spec says that "kind" should be looked up in transceiver, but keeping
+  // a copy here as long as we support Plan B.
   String kind_;
+  Member<MediaStreamTrack> track_;
   Member<RTCDTMFSender> dtmf_;
   MediaStreamVector streams_;
-  base::Optional<RTCRtpParameters> last_returned_parameters_;
+  base::Optional<RTCRtpSendParameters> last_returned_parameters_;
 };
 
 }  // namespace blink

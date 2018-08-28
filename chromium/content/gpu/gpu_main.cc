@@ -24,6 +24,7 @@
 #include "components/viz/service/main/viz_main_impl.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/content_switches_internal.h"
+#include "content/common/skia_utils.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/gpu/gpu_process.h"
 #include "content/public/common/content_client.h"
@@ -34,16 +35,15 @@
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_driver_bug_list.h"
 #include "gpu/config/gpu_info_collector.h"
+#include "gpu/config/gpu_preferences.h"
 #include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_util.h"
 #include "gpu/ipc/common/gpu_memory_buffer_support.h"
-#include "gpu/ipc/common/gpu_preferences_util.h"
 #include "gpu/ipc/service/gpu_config.h"
 #include "gpu/ipc/service/gpu_init.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
 #include "media/gpu/buildflags.h"
 #include "third_party/angle/src/gpu_info_util/SystemInfo.h"
-#include "third_party/skia/include/core/SkGraphics.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_context.h"
@@ -78,12 +78,10 @@
 #endif
 
 #if defined(OS_LINUX)
-#include "content/common/font_config_ipc_linux.h"
 #include "content/gpu/gpu_sandbox_hook_linux.h"
 #include "content/public/common/sandbox_init.h"
 #include "services/service_manager/sandbox/linux/sandbox_linux.h"
 #include "services/service_manager/zygote/common/common_sandbox_support_linux.h"
-#include "third_party/skia/include/ports/SkFontConfigInterface.h"
 #endif
 
 #if defined(OS_MACOSX)
@@ -206,7 +204,7 @@ int GpuMain(const MainFunctionParams& parameters) {
   if (command_line.HasSwitch(switches::kGpuPreferences)) {
     std::string value =
         command_line.GetSwitchValueASCII(switches::kGpuPreferences);
-    bool success = gpu::SwitchValueToGpuPreferences(value, &gpu_preferences);
+    bool success = gpu_preferences.FromSwitchValue(value);
     CHECK(success);
   }
 
@@ -299,6 +297,10 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   gpu_init->set_sandbox_helper(&sandbox_helper);
 
+  // Since GPU initialization calls into skia, its important to initialize skia
+  // before it.
+  InitializeSkia();
+
   // Gpu initialization may fail for various reasons, in which case we will need
   // to tear down this process. However, we can not do so safely until the IPC
   // channel is set up, because the detection of early return of a child process
@@ -338,15 +340,6 @@ int GpuMain(const MainFunctionParams& parameters) {
       tracing::GraphicsMemoryDumpProvider::GetInstance(), "AndroidGraphics",
       nullptr);
 #endif
-
-  if (gpu_preferences.enable_oop_rasterization) {
-    SkGraphics::Init();
-#if defined(OS_LINUX)
-    // Set up the font IPC so that the GPU process can create typefaces.
-    SkFontConfigInterface::SetGlobal(
-        sk_make_sp<FontConfigIPC>(service_manager::GetSandboxFD()));
-#endif
-  }
 
   base::HighResolutionTimerManager hi_res_timer_manager;
 

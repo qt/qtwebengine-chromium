@@ -10,13 +10,13 @@
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
-#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/page_scheduler.h"
 
 namespace blink {
 namespace scheduler {
-class NonMainThreadScheduler;
+class NonMainThreadSchedulerImpl;
 }
 
 // This class is used to submit tasks and pass other information from Blink to
@@ -25,7 +25,7 @@ class NonMainThreadScheduler;
 class PLATFORM_EXPORT ThreadScheduler {
  public:
   using RendererPauseHandle =
-      scheduler::WebMainThreadScheduler::RendererPauseHandle;
+      scheduler::WebThreadScheduler::RendererPauseHandle;
 
   // Return the current thread's ThreadScheduler.
   //
@@ -68,6 +68,9 @@ class PLATFORM_EXPORT ThreadScheduler {
   virtual void PostNonNestableIdleTask(const base::Location&,
                                        WebThread::IdleTask) = 0;
 
+  virtual void AddRAILModeObserver(
+      scheduler::WebThreadScheduler::RAILModeObserver* observer) = 0;
+
   // Returns a task runner for kV8 tasks. Can be called from any thread.
   virtual scoped_refptr<base::SingleThreadTaskRunner> V8TaskRunner() = 0;
 
@@ -82,7 +85,7 @@ class PLATFORM_EXPORT ThreadScheduler {
   virtual std::unique_ptr<PageScheduler> CreatePageScheduler(
       PageScheduler::Delegate*) = 0;
 
-  // Pauses the scheduler. See WebMainThreadScheduler::PauseRenderer for
+  // Pauses the scheduler. See WebThreadScheduler::PauseRenderer for
   // details. May only be called from the main thread.
   virtual std::unique_ptr<RendererPauseHandle> PauseScheduler()
       WARN_UNUSED_RESULT = 0;
@@ -101,15 +104,14 @@ class PLATFORM_EXPORT ThreadScheduler {
 
   // Test helpers.
 
-  // Return a reference to an underlying WebMainThreadScheduler object.
-  // Can be null if there is no underlying WebMainThreadScheduler
+  // Return a reference to an underlying main thread WebThreadScheduler object.
+  // Can be null if there is no underlying main thread WebThreadScheduler
   // (e.g. worker threads).
-  virtual scheduler::WebMainThreadScheduler*
-  GetWebMainThreadSchedulerForTest() {
+  virtual scheduler::WebThreadScheduler* GetWebMainThreadSchedulerForTest() {
     return nullptr;
   }
 
-  virtual scheduler::NonMainThreadScheduler* AsNonMainThreadScheduler() = 0;
+  virtual scheduler::NonMainThreadSchedulerImpl* AsNonMainThreadScheduler() = 0;
 };
 
 }  // namespace blink

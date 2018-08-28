@@ -34,6 +34,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_cors.h"
 #include "third_party/blink/public/platform/web_data.h"
+#include "third_party/blink/public/platform/web_security_origin.h"
 #include "third_party/blink/public/platform/web_url_error.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/platform/web_url_response.h"
@@ -45,6 +46,9 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_error.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
+#include "third_party/blink/renderer/platform/network/http_names.h"
+#include "third_party/blink/renderer/platform/network/http_parsers.h"
+#include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/network/network_instrumentation.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
@@ -58,9 +62,15 @@ namespace blink {
 namespace {
 
 bool IsThrottlableRequestContext(WebURLRequest::RequestContext context) {
+  // Requests that could run long should not be throttled as they
+  // may stay there forever and avoid other requests from making
+  // progress.
+  // See https://crbug.com/837771 for the sample breakages.
   return context != WebURLRequest::kRequestContextEventSource &&
          context != WebURLRequest::kRequestContextFetch &&
-         context != WebURLRequest::kRequestContextXMLHttpRequest;
+         context != WebURLRequest::kRequestContextXMLHttpRequest &&
+         context != WebURLRequest::kRequestContextVideo &&
+         context != WebURLRequest::kRequestContextAudio;
 }
 
 }  // namespace
@@ -105,18 +115,25 @@ void ResourceLoader::Trace(blink::Visitor* visitor) {
 void ResourceLoader::Start() {
   const ResourceRequest& request = resource_->GetResourceRequest();
   ActivateCacheAwareLoadingIfNeeded(request);
-  loader_ = Context().CreateURLLoader(request, Context().GetLoadingTaskRunner(),
-                                      resource_->Options());
+  loader_ = Context().CreateURLLoader(request, resource_->Options());
   DCHECK_EQ(ResourceLoadScheduler::kInvalidClientId, scheduler_client_id_);
-  auto throttle_option = ResourceLoadScheduler::ThrottleOption::kCanBeThrottled;
+  auto throttle_option = ResourceLoadScheduler::ThrottleOption::kThrottleable;
 
-  // Synchronous requests should not work with a throttling. Also, disables
-  // throttling for the case that can be used for aka long-polling requests.
-  // We also disable throttling for non-http[s] requests.
+  // Synchronous requests should not work with throttling or stopping. Also,
+  // disables throttling for the case that can be used for aka long-polling
+  // requests, but allows stopping for long-polling requests.
+  // Top level frame main resource loads are also not throttleable or
+  // stoppable. We also disable throttling and stopping for non-http[s]
+  // requests.
   if (resource_->Options().synchronous_policy == kRequestSynchronously ||
-      !IsThrottlableRequestContext(request.GetRequestContext()) ||
+      (request.GetFrameType() ==
+           network::mojom::RequestContextFrameType::kTopLevel &&
+       resource_->GetType() == Resource::kMainResource) ||
       !request.Url().ProtocolIsInHTTPFamily()) {
-    throttle_option = ResourceLoadScheduler::ThrottleOption::kCanNotBeThrottled;
+    throttle_option =
+        ResourceLoadScheduler::ThrottleOption::kCanNotBeStoppedOrThrottled;
+  } else if (!IsThrottlableRequestContext(request.GetRequestContext())) {
+    throttle_option = ResourceLoadScheduler::ThrottleOption::kStoppable;
   }
 
   scheduler_->Request(this, throttle_option, request.Priority(),
@@ -170,8 +187,7 @@ void ResourceLoader::Release(
 void ResourceLoader::Restart(const ResourceRequest& request) {
   CHECK_EQ(resource_->Options().synchronous_policy, kRequestAsynchronously);
 
-  loader_ = Context().CreateURLLoader(request, Context().GetLoadingTaskRunner(),
-                                      resource_->Options());
+  loader_ = Context().CreateURLLoader(request, resource_->Options());
   StartWith(request);
 }
 
@@ -308,7 +324,7 @@ bool ResourceLoader::WillFollowRedirect(
       scoped_refptr<const SecurityOrigin> source_origin = GetSourceOrigin();
       WebSecurityOrigin source_web_origin(source_origin.get());
       WrappedResourceRequest new_request_wrapper(*new_request);
-      base::Optional<network::mojom::CORSError> cors_error =
+      base::Optional<network::CORSErrorStatus> cors_error =
           WebCORS::HandleRedirect(
               source_web_origin, new_request_wrapper, redirect_response.Url(),
               redirect_response.HttpStatusCode(),
@@ -320,10 +336,8 @@ bool ResourceLoader::WillFollowRedirect(
         if (!unused_preload) {
           Context().AddErrorConsoleMessage(
               CORS::GetErrorString(CORS::ErrorParameter::Create(
-                  network::CORSErrorStatus(*cors_error),
-                  redirect_response.Url(), new_url,
-                  redirect_response.HttpStatusCode(),
-                  redirect_response.HttpHeaderFields(), *source_origin.get(),
+                  *cors_error, redirect_response.Url(), new_url,
+                  redirect_response.HttpStatusCode(), *source_origin.get(),
                   resource_->LastResourceRequest().GetRequestContext())),
               FetchContext::kJSSource);
         }
@@ -481,7 +495,7 @@ CORSStatus ResourceLoader::DetermineCORSStatus(const ResourceResponse& response,
           ? resource_->GetResponse()
           : response;
 
-  base::Optional<network::mojom::CORSError> cors_error = CORS::CheckAccess(
+  base::Optional<network::CORSErrorStatus> cors_error = CORS::CheckAccess(
       response_for_access_control.Url(),
       response_for_access_control.HttpStatusCode(),
       response_for_access_control.HttpHeaderFields(),
@@ -500,9 +514,8 @@ CORSStatus ResourceLoader::DetermineCORSStatus(const ResourceResponse& response,
   error_msg.Append(source_origin->ToString());
   error_msg.Append("' has been blocked by CORS policy: ");
   error_msg.Append(CORS::GetErrorString(CORS::ErrorParameter::Create(
-      network::CORSErrorStatus(*cors_error), initial_request.Url(), KURL(),
-      response_for_access_control.HttpStatusCode(),
-      response_for_access_control.HttpHeaderFields(), *source_origin,
+      *cors_error, initial_request.Url(), KURL(),
+      response_for_access_control.HttpStatusCode(), *source_origin,
       initial_request.GetRequestContext())));
 
   return CORSStatus::kFailed;
@@ -545,7 +558,7 @@ void ResourceLoader::DidReceiveResponse(
           ? resource_->GetResponse()
           : response;
   base::Optional<ResourceRequestBlockedReason> blocked_reason =
-      Context().CheckResponseNosniff(request_context, nosniffed_response);
+      CheckResponseNosniff(request_context, nosniffed_response);
   if (blocked_reason) {
     HandleError(ResourceError::CancelledDueToAccessCheckError(
         response.Url(), blocked_reason.value()));
@@ -653,12 +666,6 @@ void ResourceLoader::DidStartLoadingResponseBody(
                 WrapWeakPersistent(this)));
 }
 
-void ResourceLoader::DidDownloadData(int length, int encoded_data_length) {
-  Context().DispatchDidDownloadData(resource_->Identifier(), length,
-                                    encoded_data_length);
-  resource_->DidDownloadData(length);
-}
-
 void ResourceLoader::DidReceiveData(const char* data, int length) {
   CHECK_GE(length, 0);
 
@@ -686,14 +693,14 @@ void ResourceLoader::DidFinishLoading(TimeTicks finish_time,
                                       int64_t encoded_data_length,
                                       int64_t encoded_body_length,
                                       int64_t decoded_body_length,
-                                      bool blocked_cross_site_document) {
+                                      bool should_report_corb_blocking) {
   resource_->SetEncodedDataLength(encoded_data_length);
   resource_->SetEncodedBodyLength(encoded_body_length);
   resource_->SetDecodedBodyLength(decoded_body_length);
 
   if (is_downloading_to_blob_ && !blob_finished_ && blob_response_started_) {
     load_did_finish_before_blob_ =
-        DeferedFinishLoadingInfo{finish_time, blocked_cross_site_document};
+        DeferedFinishLoadingInfo{finish_time, should_report_corb_blocking};
     return;
   }
 
@@ -708,7 +715,7 @@ void ResourceLoader::DidFinishLoading(TimeTicks finish_time,
 
   fetcher_->HandleLoaderFinish(
       resource_.Get(), finish_time, ResourceFetcher::kDidFinishLoading,
-      inflight_keepalive_bytes_, blocked_cross_site_document);
+      inflight_keepalive_bytes_, should_report_corb_blocking);
 }
 
 void ResourceLoader::DidFail(const WebURLError& error,
@@ -751,11 +758,10 @@ void ResourceLoader::RequestSynchronously(const ResourceRequest& request) {
   WebData data_out;
   int64_t encoded_data_length = WebURLLoaderClient::kUnknownEncodedDataLength;
   int64_t encoded_body_length = 0;
-  base::Optional<int64_t> downloaded_file_length;
   WebBlobInfo downloaded_blob;
   loader_->LoadSynchronously(request_in, this, response_out, error_out,
                              data_out, encoded_data_length, encoded_body_length,
-                             downloaded_file_length, downloaded_blob);
+                             downloaded_blob);
 
   // A message dispatched while synchronously fetching the resource
   // can bring about the cancellation of this load.
@@ -779,26 +785,16 @@ void ResourceLoader::RequestSynchronously(const ResourceRequest& request) {
   if (data_out.size()) {
     data_out.ForEachSegment([this](const char* segment, size_t segment_size,
                                    size_t segment_offset) {
-      Context().DispatchDidReceiveData(resource_->Identifier(), segment,
-                                       segment_size);
+      DidReceiveData(segment, segment_size);
       return true;
     });
-    resource_->SetResourceBuffer(data_out);
   }
 
-  if (downloaded_file_length) {
-    DCHECK(request.DownloadToFile());
-    DidDownloadData(*downloaded_file_length, encoded_body_length);
-  }
   if (request.DownloadToBlob()) {
     auto blob = downloaded_blob.GetBlobHandle();
-    if (blob) {
-      Context().DispatchDidReceiveData(resource_->Identifier(), nullptr,
-                                       blob->size());
-      resource_->DidDownloadData(blob->size());
-    }
-    Context().DispatchDidDownloadToBlob(resource_->Identifier(), blob.get());
-    resource_->DidDownloadToBlob(blob);
+    if (blob)
+      OnProgress(blob->size());
+    FinishedCreatingBlob(blob);
   }
   DidFinishLoading(CurrentTimeTicks(), encoded_data_length, encoded_body_length,
                    decoded_body_length, false);
@@ -806,6 +802,7 @@ void ResourceLoader::RequestSynchronously(const ResourceRequest& request) {
 
 void ResourceLoader::Dispose() {
   loader_ = nullptr;
+  progress_binding_.Close();
 
   // Release() should be called to release |scheduler_client_id_| beforehand in
   // DidFinishLoading() or DidFail(), but when a timer to call Cancel() is
@@ -838,8 +835,10 @@ void ResourceLoader::ActivateCacheAwareLoadingIfNeeded(
     return;
 
   // Don't activate if the page is controlled by service worker.
-  if (fetcher_->IsControlledByServiceWorker())
+  if (fetcher_->IsControlledByServiceWorker() !=
+      blink::mojom::ControllerServiceWorkerMode::kNoController) {
     return;
+  }
 
   is_cache_aware_loading_activated_ = true;
 }
@@ -880,8 +879,35 @@ void ResourceLoader::FinishedCreatingBlob(
     DidFinishLoading(load_did_finish_before_blob_->finish_time,
                      response.EncodedDataLength(), response.EncodedBodyLength(),
                      response.DecodedBodyLength(),
-                     load_did_finish_before_blob_->blocked_cross_site_document);
+                     load_did_finish_before_blob_->should_report_corb_blocking);
   }
+}
+
+base::Optional<ResourceRequestBlockedReason>
+ResourceLoader::CheckResponseNosniff(
+    WebURLRequest::RequestContext request_context,
+    const ResourceResponse& response) const {
+  bool sniffing_allowed =
+      ParseContentTypeOptionsHeader(response.HttpHeaderField(
+          HTTPNames::X_Content_Type_Options)) != kContentTypeOptionsNosniff;
+  if (sniffing_allowed)
+    return base::nullopt;
+
+  String mime_type = response.HttpContentType();
+  if (request_context == WebURLRequest::kRequestContextStyle &&
+      !MIMETypeRegistry::IsSupportedStyleSheetMIMEType(mime_type)) {
+    Context().AddErrorConsoleMessage(
+        "Refused to apply style from '" + response.Url().ElidedString() +
+            "' because its MIME type ('" + mime_type + "') " +
+            "is not a supported stylesheet MIME type, and strict MIME checking "
+            "is enabled.",
+        FetchContext::kSecuritySource);
+    return ResourceRequestBlockedReason::kContentType;
+  }
+  // TODO(mkwst): Move the 'nosniff' bit of 'AllowedByNosniff::MimeTypeAsScript'
+  // here alongside the style checks, and put its use counters somewhere else.
+
+  return base::nullopt;
 }
 
 }  // namespace blink

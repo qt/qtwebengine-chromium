@@ -982,12 +982,13 @@ void EffectTree::TakeCopyRequestsAndTransformToSurface(
       // copy of the exact source pixels. If the adjustment to the scale ratio
       // would produce out-of-range values, drop the copy request.
       if (request->is_scaled() || request->has_result_selection()) {
-        float scale_from_x = request->scale_from().x() * surface_rect.width();
-        float scale_from_y = request->scale_from().y() * surface_rect.height();
-        if (std::isnan(scale_from_x) ||
-            !base::IsValueInRangeForNumericType<int>(scale_from_x) ||
-            std::isnan(scale_from_y) ||
-            !base::IsValueInRangeForNumericType<int>(scale_from_y)) {
+        float scale_from_x_f = request->scale_from().x() * surface_rect.width();
+        float scale_from_y_f =
+            request->scale_from().y() * surface_rect.height();
+        if (std::isnan(scale_from_x_f) ||
+            !base::IsValueInRangeForNumericType<int>(scale_from_x_f) ||
+            std::isnan(scale_from_y_f) ||
+            !base::IsValueInRangeForNumericType<int>(scale_from_y_f)) {
           continue;
         }
         int scale_to_x = request->scale_to().x();
@@ -998,8 +999,15 @@ void EffectTree::TakeCopyRequestsAndTransformToSurface(
                  .AssignIfValid(&scale_to_y)) {
           continue;
         }
-        request->SetScaleRatio(gfx::Vector2d(gfx::ToRoundedInt(scale_from_x),
-                                             gfx::ToRoundedInt(scale_from_y)),
+        int scale_from_x = gfx::ToRoundedInt(scale_from_x_f);
+        int scale_from_y = gfx::ToRoundedInt(scale_from_y_f);
+        if (scale_from_x <= 0 || scale_from_y <= 0 || scale_to_x <= 0 ||
+            scale_to_y <= 0) {
+          // Transformed scaling ratio became illegal. Drop the request to
+          // provide an empty response.
+          continue;
+        }
+        request->SetScaleRatio(gfx::Vector2d(scale_from_x, scale_from_y),
                                gfx::Vector2d(scale_to_x, scale_to_y));
       }
 
@@ -1379,6 +1387,18 @@ const SyncedScrollOffset* ScrollTree::GetSyncedScrollOffset(
   DCHECK(!property_trees()->is_main_thread);
   auto it = synced_scroll_offset_map_.find(id);
   return it != synced_scroll_offset_map_.end() ? it->second.get() : nullptr;
+}
+
+gfx::Vector2dF ScrollTree::ClampScrollToMaxScrollOffset(
+    ScrollNode* node,
+    LayerTreeImpl* layer_tree_impl) {
+  gfx::ScrollOffset old_offset = current_scroll_offset(node->element_id);
+  gfx::ScrollOffset clamped_offset =
+      ClampScrollOffsetToLimits(old_offset, *node);
+  gfx::Vector2dF delta = clamped_offset.DeltaFrom(old_offset);
+  if (!delta.IsZero())
+    ScrollBy(node, delta, layer_tree_impl);
+  return delta;
 }
 
 const gfx::ScrollOffset ScrollTree::current_scroll_offset(ElementId id) const {

@@ -20,7 +20,7 @@ namespace internal {
 
 class SequencedTaskSource;
 
-// Implementation of this interface is used by TaskQueueManager to schedule
+// Implementation of this interface is used by SequenceManager to schedule
 // actual work to be run. Hopefully we can stop using MessageLoop and this
 // interface will become more concise.
 class ThreadController {
@@ -32,8 +32,10 @@ class ThreadController {
   // main message loop.
   virtual void SetWorkBatchSize(int work_batch_size = 1) = 0;
 
-  // Notifies that |pending_task| was enqueued. Needed for tracing purposes.
-  virtual void DidQueueTask(const PendingTask& pending_task) = 0;
+  // Notifies that |pending_task| is about to be enqueued. Needed for tracing
+  // purposes. The impl may use this opportunity add metadata to |pending_task|
+  // before it is moved into the queue.
+  virtual void WillQueueTask(PendingTask* pending_task) = 0;
 
   // Notify the controller that its associated sequence has immediate work
   // to run. Shortly after this is called, the thread associated with this
@@ -51,6 +53,7 @@ class ThreadController {
   // scheduled delayed work. Can only be called from the main sequence.
   // NOTE: DelayTillNextTask might return a different value as it also takes
   // immediate work into account.
+  // TODO(kraynov): Remove |lazy_now| parameter.
   virtual void SetNextDelayedDoWork(LazyNow* lazy_now, TimeTicks run_time) = 0;
 
   // Sets the sequenced task source from which to take tasks after
@@ -59,7 +62,7 @@ class ThreadController {
   virtual void SetSequencedTaskSource(SequencedTaskSource*) = 0;
 
   // TODO(altimin): Get rid of the methods below.
-  // These methods exist due to current integration of TaskQueueManager
+  // These methods exist due to current integration of SequenceManager
   // with MessageLoop.
 
   virtual bool RunsTasksInCurrentSequence() = 0;

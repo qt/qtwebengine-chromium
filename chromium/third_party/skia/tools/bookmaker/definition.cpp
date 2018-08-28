@@ -530,6 +530,75 @@ bool Definition::checkMethod() const {
             return paramError.reportError<bool>("#Param without param in #Method");
         }
     }
+    // check after end of #Line and before next child for description
+    const char* descStart = fContentStart;
+    const char* descEnd = nullptr;
+    const Definition* defEnd = nullptr;
+    const Definition* priorDef = nullptr;
+    for (auto& child : fChildren) {
+        if (MarkType::kAnchor == child->fMarkType) {
+            continue;
+        }
+        if (MarkType::kCode == child->fMarkType) {
+            priorDef = child;
+            continue;
+        }
+        if (MarkType::kDeprecated == child->fMarkType) {
+            return true;
+        }
+        if (MarkType::kExperimental == child->fMarkType) {
+            return true;
+        }
+        if (MarkType::kFormula == child->fMarkType) {
+            continue;
+        }
+        if (MarkType::kList == child->fMarkType) {
+            priorDef = child;
+            continue;
+        }
+        if (MarkType::kMarkChar == child->fMarkType) {
+            continue;
+        }
+        if (MarkType::kPhraseRef == child->fMarkType) {
+            continue;
+        }
+        if (MarkType::kPrivate == child->fMarkType) {
+            return true;
+        }
+        TextParser emptyCheck(fFileName, descStart, child->fStart, child->fLineCount);
+        if (!emptyCheck.eof() && emptyCheck.skipWhiteSpace()) {
+            descStart = emptyCheck.fChar;
+            emptyCheck.trimEnd();
+            defEnd = priorDef;
+            descEnd = emptyCheck.fEnd;
+            break;
+        }
+        descStart = child->fTerminator;
+        priorDef = nullptr;
+    }
+    if (!descEnd) {
+        return methodParser.reportError<bool>("missing description");
+    }
+    TextParser description(fFileName, descStart, descEnd, fLineCount);
+    // expect first word capitalized and pluralized. expect a trailing period
+    SkASSERT(descStart < descEnd);
+    if (!isupper(descStart[0])) {
+        description.reportWarning("expected capital");
+    } else if ('.' != descEnd[-1]) {
+        if (!defEnd || defEnd->fTerminator != descEnd) {
+            description.reportWarning("expected period");
+        }
+    } else {
+        if (!description.startsWith("For use by Android")) {
+            description.skipToSpace();
+            if (',' == description.fChar[-1]) {
+                --description.fChar;
+            }
+            if ('s' != description.fChar[-1]) {
+                description.reportWarning("expected plural");
+            }
+        }
+    }
     return true;
 }
 
@@ -558,10 +627,21 @@ bool Definition::crossCheck(const Definition& includeToken) const {
     return crossCheckInside(fContentStart, fContentEnd, includeToken);
 }
 
+const char* Definition::methodEnd() const {
+    const char defaultTag[] = " = default";
+    size_t tagSize = sizeof(defaultTag) - 1;
+    const char* tokenEnd = fContentEnd - tagSize;
+    if (tokenEnd <= fContentStart || strncmp(tokenEnd, defaultTag, tagSize)) {
+        tokenEnd = fContentEnd;
+    }
+    return tokenEnd;
+}
+
 bool Definition::crossCheckInside(const char* start, const char* end,
         const Definition& includeToken) const {
     TextParser def(fFileName, start, end, fLineCount);
-    TextParser inc("", includeToken.fContentStart, includeToken.fContentEnd, 0);
+    const char* tokenEnd = includeToken.methodEnd();
+    TextParser inc("", includeToken.fContentStart, tokenEnd, 0);
     if (inc.startsWith("SK_API")) {
         inc.skipWord("SK_API");
     }
@@ -691,7 +771,7 @@ string Definition::formatFunction(Format format) const {
     int written = 0;
     do {
         const char* nextStart = lastEnd;
-        SkASSERT(written < limit);
+//        SkASSERT(written < limit);
         const char* delimiter = methodParser.anyOf(",)");
         const char* nextEnd = delimiter ? delimiter : methodParser.fEnd;
         if (delimiter) {
@@ -814,21 +894,20 @@ bool Definition::hasMatch(string name) const {
 }
 
 string Definition::incompleteMessage(DetailsType detailsType) const {
-    if (!IncompleteAllowed(fMarkType)) {
-        auto iter = std::find_if(fChildren.begin(), fChildren.end(),
-                [](const Definition* test) { return IncompleteAllowed(test->fMarkType); });
-        SkASSERT(fChildren.end() != iter);
-        return (*iter)->incompleteMessage(detailsType);
-    }
-    string message = MarkType::kExperimental == fMarkType ?
+    SkASSERT(!IncompleteAllowed(fMarkType));
+    auto iter = std::find_if(fChildren.begin(), fChildren.end(),
+            [](const Definition* test) { return IncompleteAllowed(test->fMarkType); });
+    SkASSERT(fChildren.end() != iter);
+    SkASSERT(Details::kNone == (*iter)->fDetails);
+    string message = MarkType::kExperimental == (*iter)->fMarkType ?
             "Experimental." : "Deprecated.";
-    if (Definition::Details::kDoNotUse_Experiement == fDetails) {
+    if (Details::kDoNotUse_Experiment == fDetails) {
         message += " Do not use.";
-    } else if (Definition::Details::kNotReady_Experiment == fDetails) {
+    } else if (Details::kNotReady_Experiment == fDetails) {
         message += " Not ready for general use.";
-    } else if (Definition::Details::kSoonToBe_Deprecated == fDetails) {
-        message += " Soon to be deprecated.";
-    } else if (Definition::Details::kTestingOnly_Experiment == fDetails) {
+    } else if (Details::kSoonToBe_Deprecated == fDetails) {
+        message = "To be deprecated soon.";
+    } else if (Details::kTestingOnly_Experiment == fDetails) {
         message += " For testing only.";
     }
     if (DetailsType::kPhrase == detailsType) {
@@ -851,6 +930,9 @@ bool Definition::isStructOrClass() const {
 
 bool Definition::methodHasReturn(string name, TextParser* methodParser) const {
     if (methodParser->skipExact("static")) {
+        methodParser->skipWhiteSpace();
+    }
+    if (methodParser->skipExact("virtual")) {
         methodParser->skipWhiteSpace();
     }
     const char* lastStart = methodParser->fChar;

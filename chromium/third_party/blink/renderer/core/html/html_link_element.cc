@@ -105,6 +105,9 @@ void HTMLLinkElement::ParseAttribute(
     Process();
   } else if (name == integrityAttr) {
     integrity_ = value;
+  } else if (name == importanceAttr &&
+             RuntimeEnabledFeatures::PriorityHintsEnabled()) {
+    importance_ = value;
   } else if (name == disabledAttr) {
     UseCounter::Count(GetDocument(), WebFeature::kHTMLLinkElementDisabled);
     if (LinkStyle* link = GetLinkStyle())
@@ -126,9 +129,21 @@ bool HTMLLinkElement::ShouldLoadLink() {
          !href.PotentiallyDanglingMarkup();
 }
 
+bool HTMLLinkElement::IsLinkCreatedByParser() {
+  return IsCreatedByParser();
+}
+
 bool HTMLLinkElement::LoadLink(const LinkLoadParameters& params) {
   return link_loader_->LoadLink(params, GetDocument(),
                                 NetworkHintsInterfaceImpl());
+}
+
+void HTMLLinkElement::LoadStylesheet(const LinkLoadParameters& params,
+                                     const WTF::TextEncoding& charset,
+                                     FetchParameters::DeferOption defer_option,
+                                     ResourceClient* link_client) {
+  return link_loader_->LoadStylesheet(params, localName(), charset,
+                                      defer_option, GetDocument(), link_client);
 }
 
 LinkResource* HTMLLinkElement::LinkResourceToProcess() {
@@ -368,11 +383,6 @@ void HTMLLinkElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(rel_list_);
   HTMLElement::Trace(visitor);
   LinkLoaderClient::Trace(visitor);
-}
-
-void HTMLLinkElement::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(rel_list_);
-  HTMLElement::TraceWrappers(visitor);
 }
 
 }  // namespace blink

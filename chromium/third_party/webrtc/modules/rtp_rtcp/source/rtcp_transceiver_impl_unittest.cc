@@ -12,6 +12,7 @@
 
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "modules/rtp_rtcp/include/receive_statistics.h"
 #include "modules/rtp_rtcp/mocks/mock_rtcp_rtt_stats.h"
@@ -21,7 +22,6 @@
 #include "modules/rtp_rtcp/source/time_util.h"
 #include "rtc_base/event.h"
 #include "rtc_base/fakeclock.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/task_queue.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -144,7 +144,7 @@ TEST(RtcpTransceiverImplTest, DelaysSendingFirstCompondPacket) {
   config.outgoing_transport = &transport;
   config.initial_report_delay_ms = 10;
   config.task_queue = &queue;
-  rtc::Optional<RtcpTransceiverImpl> rtcp_transceiver;
+  absl::optional<RtcpTransceiverImpl> rtcp_transceiver;
 
   int64_t started_ms = rtc::TimeMillis();
   queue.PostTask([&] { rtcp_transceiver.emplace(config); });
@@ -169,7 +169,7 @@ TEST(RtcpTransceiverImplTest, PeriodicallySendsPackets) {
   config.initial_report_delay_ms = 0;
   config.report_period_ms = kReportPeriodMs;
   config.task_queue = &queue;
-  rtc::Optional<RtcpTransceiverImpl> rtcp_transceiver;
+  absl::optional<RtcpTransceiverImpl> rtcp_transceiver;
   int64_t time_just_before_1st_packet_ms = 0;
   queue.PostTask([&] {
     // Because initial_report_delay_ms is set to 0, time_just_before_the_packet
@@ -202,7 +202,7 @@ TEST(RtcpTransceiverImplTest, SendCompoundPacketDelaysPeriodicSendPackets) {
   config.initial_report_delay_ms = 0;
   config.report_period_ms = kReportPeriodMs;
   config.task_queue = &queue;
-  rtc::Optional<RtcpTransceiverImpl> rtcp_transceiver;
+  absl::optional<RtcpTransceiverImpl> rtcp_transceiver;
   queue.PostTask([&] { rtcp_transceiver.emplace(config); });
 
   // Wait for first packet.
@@ -246,7 +246,6 @@ TEST(RtcpTransceiverImplTest, SendsNoRtcpWhenNetworkStateIsDown) {
   config.outgoing_transport = &mock_transport;
   RtcpTransceiverImpl rtcp_transceiver(config);
 
-
   EXPECT_CALL(mock_transport, SendRtcp(_, _)).Times(0);
 
   const uint8_t raw[] = {1, 2, 3, 4};
@@ -288,7 +287,7 @@ TEST(RtcpTransceiverImplTest, SendsPeriodicRtcpWhenNetworkStateIsUp) {
   config.initial_ready_to_send = false;
   config.outgoing_transport = &transport;
   config.task_queue = &queue;
-  rtc::Optional<RtcpTransceiverImpl> rtcp_transceiver;
+  absl::optional<RtcpTransceiverImpl> rtcp_transceiver;
   rtcp_transceiver.emplace(config);
 
   rtcp_transceiver->SetReadyToSend(true);

@@ -11,10 +11,6 @@ Make sure you have followed
 build/android/gradle/generate_gradle.py --output-directory out/Debug
 ```
 
-Use the flag `--sdk AndroidStudioDefault` to create and use a custom sdk
-directory and avoid issues with `gclient sync` and to use emulators. This will
-become the default soon.
-
 ```shell
 build/android/gradle/generate_gradle.py --output-directory out/Debug --sdk AndroidStudioDefault
 ```
@@ -26,17 +22,14 @@ To import the project:
 * Use "Import Project", and select the directory containing the generated
   project, e.g. `out/Debug/gradle`.
 
-For first-time Android Studio users:
-* Only run the setup wizard if you are planning to use emulators.
-    * The wizard will force you to download SDK components that are only needed
-      for emulation.
-    * To skip it, select "Cancel" when it comes up.
-
 See [android_test_instructions.md](android_test_instructions.md#Using-Emulators)
 for more information about building and running emulators.
 
 If you're asked to use Studio's Android SDK:
-* No. (Always use your project's SDK configured by generate_gradle.py)
+* No.
+    * Selecting No ensures that the SDK used by Android Studio is the same as
+      the one set by `generate_gradle.py`. If you want a different SDK pass
+      `--sdk` to `generate_gradle.py`.
 
 If you're asked to use Studio's Gradle wrapper:
 * Yes.
@@ -76,16 +69,16 @@ allows imports and refactoring to be across all targets.
 ### Extracting .srcjars
 
 Most generated .java files in GN are stored as `.srcjars`. Android Studio does
-not support them. It is very slow to build all these generated files and they
-rarely change. The generator script does not do anything with them by default.
-If `--full` is passed then the generator script builds and extracts them all to
-`extracted-srcjars/` subdirectories for each target that contains them. This is
-the reason that the `_all` pseudo module may contain multiple copies of
-generated files.
+not support them. The generator script builds and extracts them to
+`extracted-srcjars/` subdirectories for each target that contains generated
+files. This is the reason that the `_all` pseudo module may contain multiple
+copies of generated files. It can be slow to build all these generated files,
+so if `--fast` is passed then the generator script skips building and
+extracting them.
 
 *** note
-** TLDR:** Re-generate project files with `--full` when generated files change (
-includes `R.java`) and to remove some red underlines in java files.
+** TLDR:** Always re-generate project files when generated files change (this
+includes `R.java`).
 ***
 
 ### Native Files
@@ -181,8 +174,9 @@ resources, native libraries, etc.
 
 * Android Studio v3.0-v3.2.
 * Java editing.
+    * Application code in `main` sourceset.
+    * Instrumentation test code in `androidTest` sourceset.
 * Native code editing (experimental).
-* Instrumentation tests included as androidTest.
 * Symlinks to existing .so files in jniLibs (doesn't generate them).
 * Editing resource xml files
 * Layout editor (limited functionality).

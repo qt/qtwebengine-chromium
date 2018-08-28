@@ -16,10 +16,10 @@ namespace content {
 namespace background_fetch {
 
 MarkRegistrationForDeletionTask::MarkRegistrationForDeletionTask(
-    BackgroundFetchDataManager* data_manager,
+    DatabaseTaskHost* host,
     const BackgroundFetchRegistrationId& registration_id,
     HandleBackgroundFetchErrorCallback callback)
-    : DatabaseTask(data_manager),
+    : DatabaseTask(host),
       registration_id_(registration_id),
       callback_(std::move(callback)),
       weak_factory_(this) {}
@@ -39,18 +39,15 @@ void MarkRegistrationForDeletionTask::Start() {
 
 void MarkRegistrationForDeletionTask::DidGetActiveUniqueId(
     const std::vector<std::string>& data,
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   switch (ToDatabaseStatus(status)) {
     case DatabaseStatus::kOk:
       break;
     case DatabaseStatus::kNotFound:
-      std::move(callback_).Run(blink::mojom::BackgroundFetchError::INVALID_ID);
-      Finished();  // Destroys |this|.
+      FinishWithError(blink::mojom::BackgroundFetchError::INVALID_ID);
       return;
     case DatabaseStatus::kFailed:
-      std::move(callback_).Run(
-          blink::mojom::BackgroundFetchError::STORAGE_ERROR);
-      Finished();  // Destroys |this|.
+      FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
       return;
   }
 
@@ -59,8 +56,7 @@ void MarkRegistrationForDeletionTask::DidGetActiveUniqueId(
   // If the |unique_id| does not match, then the registration identified by
   // |registration_id_.unique_id()| was already deactivated.
   if (data[0] != registration_id_.unique_id()) {
-    std::move(callback_).Run(blink::mojom::BackgroundFetchError::INVALID_ID);
-    Finished();  // Destroys |this|.
+    FinishWithError(blink::mojom::BackgroundFetchError::INVALID_ID);
     return;
   }
 
@@ -77,20 +73,21 @@ void MarkRegistrationForDeletionTask::DidGetActiveUniqueId(
         base::BindOnce(&MarkRegistrationForDeletionTask::DidDeactivate,
                        weak_factory_.GetWeakPtr()));
   } else {
-    NOTREACHED() << "Database is corrupt";  // TODO(crbug.com/780027): Nuke it.
+    // Service worker database has been corrupted. Abandon fetches.
+    AbandonFetches(registration_id_.service_worker_registration_id());
+    FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
+    return;
   }
 }
 
 void MarkRegistrationForDeletionTask::DidDeactivate(
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   switch (ToDatabaseStatus(status)) {
     case DatabaseStatus::kOk:
     case DatabaseStatus::kNotFound:
       break;
     case DatabaseStatus::kFailed:
-      std::move(callback_).Run(
-          blink::mojom::BackgroundFetchError::STORAGE_ERROR);
-      Finished();  // Destroys |this|.
+      FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
       return;
   }
 
@@ -98,7 +95,12 @@ void MarkRegistrationForDeletionTask::DidDeactivate(
   // |unique_id| as there may still be JavaScript references to it.
   ref_counted_unique_ids().emplace(registration_id_.unique_id());
 
-  std::move(callback_).Run(blink::mojom::BackgroundFetchError::NONE);
+  FinishWithError(blink::mojom::BackgroundFetchError::NONE);
+}
+
+void MarkRegistrationForDeletionTask::FinishWithError(
+    blink::mojom::BackgroundFetchError error) {
+  std::move(callback_).Run(error);
   Finished();  // Destroys |this|.
 }
 

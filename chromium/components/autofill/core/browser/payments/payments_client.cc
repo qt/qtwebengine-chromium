@@ -30,9 +30,11 @@
 #include "net/base/load_flags.h"
 #include "net/http/http_status_code.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
-#include "net/url_request/url_fetcher.h"
-#include "net/url_request/url_request_context_getter.h"
 #include "services/identity/public/cpp/identity_manager.h"
+#include "services/identity/public/cpp/primary_account_access_token_fetcher.h"
+#include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/simple_url_loader.h"
 
 namespace autofill {
 namespace payments {
@@ -292,19 +294,18 @@ class GetUploadDetailsRequest : public PaymentsRequest {
       // These addresses are used by Payments to (1) accurately determine the
       // user's country in order to show the correct legal documents and (2) to
       // verify that the addresses are valid for their purposes so that we don't
-      // offer save in a case where it would definitely fail (e.g. P.O. boxes).
-      // The final parameter directs BuildAddressDictionary to omit names and
-      // phone numbers, which aren't useful for these purposes.
+      // offer save in a case where it would definitely fail (e.g. P.O. boxes if
+      // min address is not possible). The final parameter directs
+      // BuildAddressDictionary to omit names and phone numbers, which aren't
+      // useful for these purposes.
       addresses->Append(BuildAddressDictionary(profile, app_locale_, false));
     }
     request_dict.Set("address", std::move(addresses));
 
-    // If the "send detected values" experiment is enabled, it's possible we may
-    // not have found name/address/CVC. The detected_values_ bitmask tells
-    // Payments what was found, and Payments will decide if the provided data is
-    // enough to offer upload save.
-    if (IsAutofillUpstreamSendDetectedValuesExperimentEnabled())
-      request_dict.SetInteger("detected_values", detected_values_);
+    // It's possible we may not have found name/address/CVC in the checkout
+    // flow. The detected_values_ bitmask tells Payments what *was* found, and
+    // Payments will decide if the provided data is enough to offer upload save.
+    request_dict.SetInteger("detected_values", detected_values_);
 
     if (IsAutofillUpstreamSendPanFirstSixExperimentEnabled() &&
         !pan_first_six_.empty())
@@ -454,13 +455,14 @@ PaymentsClient::UploadRequestDetails::UploadRequestDetails(
     const UploadRequestDetails& other) = default;
 PaymentsClient::UploadRequestDetails::~UploadRequestDetails() {}
 
-PaymentsClient::PaymentsClient(net::URLRequestContextGetter* context_getter,
-                               PrefService* pref_service,
-                               identity::IdentityManager* identity_manager,
-                               PaymentsClientUnmaskDelegate* unmask_delegate,
-                               PaymentsClientSaveDelegate* save_delegate,
-                               bool is_off_the_record)
-    : context_getter_(context_getter),
+PaymentsClient::PaymentsClient(
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+    PrefService* pref_service,
+    identity::IdentityManager* identity_manager,
+    PaymentsClientUnmaskDelegate* unmask_delegate,
+    PaymentsClientSaveDelegate* save_delegate,
+    bool is_off_the_record)
+    : url_loader_factory_(url_loader_factory),
       pref_service_(pref_service),
       identity_manager_(identity_manager),
       unmask_delegate_(unmask_delegate),
@@ -514,21 +516,186 @@ void PaymentsClient::UploadCard(
       true);
 }
 
+void PaymentsClient::CancelRequest() {
+  request_.reset();
+  resource_request_.reset();
+  simple_url_loader_.reset();
+  token_fetcher_.reset();
+  access_token_.clear();
+  has_retried_authorization_ = false;
+}
+
+void PaymentsClient::set_url_loader_factory_for_testing(
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory) {
+  url_loader_factory_ = std::move(url_loader_factory);
+}
+
 void PaymentsClient::IssueRequest(std::unique_ptr<PaymentsRequest> request,
                                   bool authenticate) {
   request_ = std::move(request);
   has_retried_authorization_ = false;
-  InitializeUrlFetcher();
 
-  if (!authenticate)
-    url_fetcher_->Start();
-  else if (access_token_.empty())
+  InitializeResourceRequest();
+
+  if (!authenticate) {
+    StartRequest();
+  } else if (access_token_.empty()) {
     StartTokenFetch(false);
-  else
+  } else {
+    SetOAuth2TokenAndStartRequest();
+  }
+}
+
+void PaymentsClient::InitializeResourceRequest() {
+  resource_request_ = std::make_unique<network::ResourceRequest>();
+  resource_request_->url = GetRequestUrl(request_->GetRequestUrlPath());
+  resource_request_->load_flags = net::LOAD_DO_NOT_SAVE_COOKIES |
+                                  net::LOAD_DO_NOT_SEND_COOKIES |
+                                  net::LOAD_DISABLE_CACHE;
+  resource_request_->method = "POST";
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillSendExperimentIdsInPaymentsRPCs)) {
+    // Add Chrome experiment state to the request headers.
+    net::HttpRequestHeaders headers;
+    // User is always signed-in to be able to upload card to Google Payments.
+    variations::AppendVariationHeaders(
+        resource_request_->url,
+        is_off_the_record_ ? variations::InIncognito::kYes
+                           : variations::InIncognito::kNo,
+        variations::SignedIn::kYes, &resource_request_->headers);
+  }
+}
+
+void PaymentsClient::OnSimpleLoaderComplete(
+    std::unique_ptr<std::string> response_body) {
+  int response_code = -1;
+  if (simple_url_loader_->ResponseInfo() &&
+      simple_url_loader_->ResponseInfo()->headers) {
+    response_code =
+        simple_url_loader_->ResponseInfo()->headers->response_code();
+  }
+  std::string data;
+  if (response_body)
+    data = std::move(*response_body);
+  OnSimpleLoaderCompleteInternal(response_code, data);
+}
+
+void PaymentsClient::OnSimpleLoaderCompleteInternal(int response_code,
+                                                    const std::string& data) {
+  std::unique_ptr<base::DictionaryValue> response_dict;
+  VLOG(2) << "Got data: " << data;
+
+  AutofillClient::PaymentsRpcResult result = AutofillClient::SUCCESS;
+
+  switch (response_code) {
+    // Valid response.
+    case net::HTTP_OK: {
+      std::string error_code;
+      std::unique_ptr<base::Value> message_value = base::JSONReader::Read(data);
+      if (message_value.get() && message_value->is_dict()) {
+        response_dict.reset(
+            static_cast<base::DictionaryValue*>(message_value.release()));
+        response_dict->GetString("error.code", &error_code);
+        request_->ParseResponse(std::move(response_dict));
+      }
+
+      if (base::LowerCaseEqualsASCII(error_code, "internal"))
+        result = AutofillClient::TRY_AGAIN_FAILURE;
+      else if (!error_code.empty() || !request_->IsResponseComplete())
+        result = AutofillClient::PERMANENT_FAILURE;
+
+      break;
+    }
+
+    case net::HTTP_UNAUTHORIZED: {
+      if (has_retried_authorization_) {
+        result = AutofillClient::PERMANENT_FAILURE;
+        break;
+      }
+      has_retried_authorization_ = true;
+
+      InitializeResourceRequest();
+      StartTokenFetch(true);
+      return;
+    }
+
+    // TODO(estade): is this actually how network connectivity issues are
+    // reported?
+    case net::HTTP_REQUEST_TIMEOUT: {
+      result = AutofillClient::NETWORK_ERROR;
+      break;
+    }
+
+    // Handle anything else as a generic (permanent) failure.
+    default: {
+      result = AutofillClient::PERMANENT_FAILURE;
+      break;
+    }
+  }
+
+  if (result != AutofillClient::SUCCESS) {
+    VLOG(1) << "Payments returned error: " << response_code
+            << " with data: " << data;
+  }
+
+  request_->RespondToDelegate(result);
+}
+
+void PaymentsClient::AccessTokenFetchFinished(
+    GoogleServiceAuthError error,
+    identity::AccessTokenInfo access_token_info) {
+  DCHECK(token_fetcher_);
+  token_fetcher_.reset();
+
+  if (error.state() != GoogleServiceAuthError::NONE) {
+    AccessTokenError(error);
+    return;
+  }
+
+  access_token_ = access_token_info.token;
+  if (resource_request_)
     SetOAuth2TokenAndStartRequest();
 }
 
-void PaymentsClient::InitializeUrlFetcher() {
+void PaymentsClient::AccessTokenError(const GoogleServiceAuthError& error) {
+  VLOG(1) << "Unhandled OAuth2 error: " << error.ToString();
+  if (simple_url_loader_)
+    simple_url_loader_.reset();
+  if (request_)
+    request_->RespondToDelegate(AutofillClient::PERMANENT_FAILURE);
+}
+
+void PaymentsClient::StartTokenFetch(bool invalidate_old) {
+  // We're still waiting for the last request to come back.
+  if (!invalidate_old && token_fetcher_)
+    return;
+
+  OAuth2TokenService::ScopeSet payments_scopes;
+  payments_scopes.insert(kPaymentsOAuth2Scope);
+  if (invalidate_old) {
+    DCHECK(!access_token_.empty());
+    identity_manager_->RemoveAccessTokenFromCache(
+        identity_manager_->GetPrimaryAccountInfo().account_id, payments_scopes,
+        access_token_);
+  }
+  access_token_.clear();
+  token_fetcher_ = std::make_unique<identity::PrimaryAccountAccessTokenFetcher>(
+      kTokenFetchId, identity_manager_, payments_scopes,
+      base::BindOnce(&PaymentsClient::AccessTokenFetchFinished,
+                     base::Unretained(this)),
+      identity::PrimaryAccountAccessTokenFetcher::Mode::kImmediate);
+}
+
+void PaymentsClient::SetOAuth2TokenAndStartRequest() {
+  DCHECK(resource_request_);
+  resource_request_->headers.AddHeaderFromString(
+      net::HttpRequestHeaders::kAuthorization + std::string(": Bearer ") +
+      access_token_);
+  StartRequest();
+}
+
+void PaymentsClient::StartRequest() {
+  DCHECK(resource_request_);
   net::NetworkTrafficAnnotationTag traffic_annotation =
       net::DefineNetworkTrafficAnnotation("payments_sync_cards", R"(
         semantics {
@@ -564,163 +731,18 @@ void PaymentsClient::InitializeUrlFetcher() {
             }
           }
         })");
-  url_fetcher_ =
-      net::URLFetcher::Create(0, GetRequestUrl(request_->GetRequestUrlPath()),
-                              net::URLFetcher::POST, this, traffic_annotation);
+  // TODO(https://crbug.com/808498): Re-add data use measurement once
+  // SimpleURLLoader supports it.
+  // ID=data_use_measurement::DataUseUserData::AUTOFILL
+  simple_url_loader_ = network::SimpleURLLoader::Create(
+      std::move(resource_request_), traffic_annotation);
+  simple_url_loader_->AttachStringForUpload(request_->GetRequestContent(),
+                                            request_->GetRequestContentType());
 
-  data_use_measurement::DataUseUserData::AttachToFetcher(
-      url_fetcher_.get(), data_use_measurement::DataUseUserData::AUTOFILL);
-  url_fetcher_->SetRequestContext(context_getter_.get());
-  url_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES |
-                             net::LOAD_DO_NOT_SEND_COOKIES |
-                             net::LOAD_DISABLE_CACHE);
-
-  url_fetcher_->SetUploadData(request_->GetRequestContentType(),
-                              request_->GetRequestContent());
-
-  if (base::FeatureList::IsEnabled(
-          features::kAutofillSendExperimentIdsInPaymentsRPCs)) {
-    // Add Chrome experiment state to the request headers.
-    net::HttpRequestHeaders headers;
-    // User is always signed-in to be able to upload card to Google Payments.
-    variations::AppendVariationHeaders(url_fetcher_->GetOriginalURL(),
-                                       is_off_the_record_
-                                           ? variations::InIncognito::kYes
-                                           : variations::InIncognito::kNo,
-                                       variations::SignedIn::kYes, &headers);
-    url_fetcher_->SetExtraRequestHeaders(headers.ToString());
-  }
-}
-
-void PaymentsClient::CancelRequest() {
-  request_.reset();
-  url_fetcher_.reset();
-  token_fetcher_.reset();
-  access_token_.clear();
-  has_retried_authorization_ = false;
-}
-
-void PaymentsClient::OnURLFetchComplete(const net::URLFetcher* source) {
-  DCHECK_EQ(source, url_fetcher_.get());
-
-  // |url_fetcher_|, which is aliased to |source|, might continue to be used in
-  // this method, but should be freed once control leaves the method.
-  std::unique_ptr<net::URLFetcher> scoped_url_fetcher(std::move(url_fetcher_));
-  std::unique_ptr<base::DictionaryValue> response_dict;
-  int response_code = source->GetResponseCode();
-  std::string data;
-  source->GetResponseAsString(&data);
-  VLOG(2) << "Got data: " << data;
-
-  AutofillClient::PaymentsRpcResult result = AutofillClient::SUCCESS;
-
-  switch (response_code) {
-    // Valid response.
-    case net::HTTP_OK: {
-      std::string error_code;
-      std::unique_ptr<base::Value> message_value = base::JSONReader::Read(data);
-      if (message_value.get() && message_value->is_dict()) {
-        response_dict.reset(
-            static_cast<base::DictionaryValue*>(message_value.release()));
-        response_dict->GetString("error.code", &error_code);
-        request_->ParseResponse(std::move(response_dict));
-      }
-
-      if (base::LowerCaseEqualsASCII(error_code, "internal"))
-        result = AutofillClient::TRY_AGAIN_FAILURE;
-      else if (!error_code.empty() || !request_->IsResponseComplete())
-        result = AutofillClient::PERMANENT_FAILURE;
-
-      break;
-    }
-
-    case net::HTTP_UNAUTHORIZED: {
-      if (has_retried_authorization_) {
-        result = AutofillClient::PERMANENT_FAILURE;
-        break;
-      }
-      has_retried_authorization_ = true;
-
-      InitializeUrlFetcher();
-      StartTokenFetch(true);
-      return;
-    }
-
-    // TODO(estade): is this actually how network connectivity issues are
-    // reported?
-    case net::HTTP_REQUEST_TIMEOUT: {
-      result = AutofillClient::NETWORK_ERROR;
-      break;
-    }
-
-    // Handle anything else as a generic (permanent) failure.
-    default: {
-      result = AutofillClient::PERMANENT_FAILURE;
-      break;
-    }
-  }
-
-  if (result != AutofillClient::SUCCESS) {
-    VLOG(1) << "Payments returned error: " << response_code
-            << " with data: " << data;
-  }
-
-  request_->RespondToDelegate(result);
-}
-
-void PaymentsClient::AccessTokenFetchFinished(
-    const GoogleServiceAuthError& error,
-    const std::string& access_token) {
-  // Delete the fetcher only after we leave this method (which is called from
-  // the fetcher itself).
-  DCHECK(token_fetcher_);
-  std::unique_ptr<identity::PrimaryAccountAccessTokenFetcher>
-      token_fetcher_deleter(std::move(token_fetcher_));
-
-  if (error.state() != GoogleServiceAuthError::NONE) {
-    AccessTokenError(error);
-    return;
-  }
-
-  access_token_ = access_token;
-  if (url_fetcher_)
-    SetOAuth2TokenAndStartRequest();
-}
-
-void PaymentsClient::AccessTokenError(const GoogleServiceAuthError& error) {
-  VLOG(1) << "Unhandled OAuth2 error: " << error.ToString();
-  if (url_fetcher_) {
-    url_fetcher_.reset();
-    request_->RespondToDelegate(AutofillClient::PERMANENT_FAILURE);
-  }
-}
-
-void PaymentsClient::StartTokenFetch(bool invalidate_old) {
-  // We're still waiting for the last request to come back.
-  if (!invalidate_old && token_fetcher_)
-    return;
-
-  OAuth2TokenService::ScopeSet payments_scopes;
-  payments_scopes.insert(kPaymentsOAuth2Scope);
-  if (invalidate_old) {
-    DCHECK(!access_token_.empty());
-    identity_manager_->RemoveAccessTokenFromCache(
-        identity_manager_->GetPrimaryAccountInfo(), payments_scopes,
-        access_token_);
-  }
-  access_token_.clear();
-  token_fetcher_ = identity_manager_->CreateAccessTokenFetcherForPrimaryAccount(
-      kTokenFetchId, payments_scopes,
-      base::BindOnce(&PaymentsClient::AccessTokenFetchFinished,
-                     base::Unretained(this)),
-      identity::PrimaryAccountAccessTokenFetcher::Mode::kImmediate);
-}
-
-void PaymentsClient::SetOAuth2TokenAndStartRequest() {
-  url_fetcher_->AddExtraRequestHeader(net::HttpRequestHeaders::kAuthorization +
-                                      std::string(": Bearer ") + access_token_);
-
-  url_fetcher_->Start();
+  simple_url_loader_->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+      url_loader_factory_.get(),
+      base::BindOnce(&PaymentsClient::OnSimpleLoaderComplete,
+                     base::Unretained(this)));
 }
 
 }  // namespace payments

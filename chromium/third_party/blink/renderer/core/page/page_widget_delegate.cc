@@ -31,7 +31,7 @@
 #include "third_party/blink/renderer/core/page/page_widget_delegate.h"
 
 #include "third_party/blink/public/platform/web_input_event.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/events/web_input_event_conversion.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -42,9 +42,7 @@
 #include "third_party/blink/renderer/core/page/autoscroll_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
-#include "third_party/blink/renderer/core/paint/transform_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
-#include "third_party/blink/renderer/platform/graphics/paint/clip_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/cull_rect.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record_builder.h"
@@ -64,17 +62,17 @@ void PageWidgetDelegate::UpdateLifecycle(
     LocalFrame& root,
     WebWidget::LifecycleUpdate requested_update) {
   if (requested_update == WebWidget::LifecycleUpdate::kPrePaint) {
-    page.Animator().UpdateLifecycleToPrePaintClean(root);
+    page.Animator().UpdateAllLifecyclePhasesExceptPaint(root);
   } else {
     page.Animator().UpdateAllLifecyclePhases(root);
   }
 }
 
-static void PaintInternal(Page& page,
-                          WebCanvas* canvas,
-                          const WebRect& rect,
-                          LocalFrame& root,
-                          const GlobalPaintFlags global_paint_flags) {
+static void PaintContentInternal(Page& page,
+                                 cc::PaintCanvas* canvas,
+                                 const WebRect& rect,
+                                 LocalFrame& root,
+                                 const GlobalPaintFlags global_paint_flags) {
   if (rect.IsEmpty())
     return;
 
@@ -95,7 +93,9 @@ static void PaintInternal(Page& page,
     builder.Context().SetDeviceScaleFactor(scale_factor);
     view->PaintWithLifecycleUpdate(builder.Context(), global_paint_flags,
                                    CullRect(dirty_rect));
-    builder.EndRecording(*canvas);
+    builder.EndRecording(
+        *canvas,
+        view->GetLayoutView()->FirstFragment().LocalBorderBoxProperties());
   } else {
     PaintFlags flags;
     flags.setColor(SK_ColorWHITE);
@@ -105,18 +105,20 @@ static void PaintInternal(Page& page,
   canvas->restore();
 }
 
-void PageWidgetDelegate::Paint(Page& page,
-                               WebCanvas* canvas,
-                               const WebRect& rect,
-                               LocalFrame& root) {
-  PaintInternal(page, canvas, rect, root, kGlobalPaintNormalPhase);
+void PageWidgetDelegate::PaintContent(Page& page,
+                                      cc::PaintCanvas* canvas,
+                                      const WebRect& rect,
+                                      LocalFrame& root) {
+  PaintContentInternal(page, canvas, rect, root, kGlobalPaintNormalPhase);
 }
 
-void PageWidgetDelegate::PaintIgnoringCompositing(Page& page,
-                                                  WebCanvas* canvas,
-                                                  const WebRect& rect,
-                                                  LocalFrame& root) {
-  PaintInternal(page, canvas, rect, root, kGlobalPaintFlattenCompositingLayers);
+void PageWidgetDelegate::PaintContentIgnoringCompositing(
+    Page& page,
+    cc::PaintCanvas* canvas,
+    const WebRect& rect,
+    LocalFrame& root) {
+  PaintContentInternal(page, canvas, rect, root,
+                       kGlobalPaintFlattenCompositingLayers);
 }
 
 WebInputEventResult PageWidgetDelegate::HandleInputEvent(
@@ -134,7 +136,7 @@ WebInputEventResult PageWidgetDelegate::HandleInputEvent(
     // interactive_detector is null in the OOPIF case.
     // TODO(crbug.com/808089): report across OOPIFs.
     if (interactive_detector)
-      interactive_detector->HandleForFirstInputDelay(event);
+      interactive_detector->HandleForInputDelay(event);
   }
 
   if (event.GetModifiers() & WebInputEvent::kIsTouchAccessibility &&
@@ -142,10 +144,10 @@ WebInputEventResult PageWidgetDelegate::HandleInputEvent(
     WebMouseEvent mouse_event = TransformWebMouseEvent(
         root->View(), static_cast<const WebMouseEvent&>(event));
 
-    IntPoint doc_point(root->View()->RootFrameToContents(
+    HitTestLocation location(root->View()->ConvertFromRootFrame(
         FlooredIntPoint(mouse_event.PositionInRootFrame())));
-    HitTestResult result = root->GetEventHandler().HitTestResultAtPoint(
-        doc_point, HitTestRequest::kReadOnly | HitTestRequest::kActive);
+    HitTestResult result = root->GetEventHandler().HitTestResultAtLocation(
+        location, HitTestRequest::kReadOnly | HitTestRequest::kActive);
     result.SetToShadowHostIfInRestrictedShadowRoot();
     if (result.InnerNodeFrame()) {
       Document* document = result.InnerNodeFrame()->GetDocument();
@@ -238,11 +240,11 @@ WebInputEventResult PageWidgetDelegate::HandleInputEvent(
       return WebInputEventResult::kNotHandled;
 
     case WebInputEvent::kGesturePinchBegin:
+      // Gesture pinch events are handled entirely on the compositor.
+      DLOG(INFO) << "Gesture pinch ignored by main thread.";
+      FALLTHROUGH;
     case WebInputEvent::kGesturePinchEnd:
     case WebInputEvent::kGesturePinchUpdate:
-      // Touchscreen pinch events are currently not handled in main thread.
-      // Once they are, these should be passed to |handleGestureEvent| similar
-      // to gesture scroll events.
       return WebInputEventResult::kNotHandled;
     default:
       return WebInputEventResult::kNotHandled;

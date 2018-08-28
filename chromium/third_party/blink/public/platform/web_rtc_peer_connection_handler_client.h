@@ -35,24 +35,17 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/public/platform/web_common.h"
+#include "third_party/webrtc/api/peerconnectioninterface.h"
 
 namespace blink {
 
 class WebRTCDataChannelHandler;
 class WebRTCICECandidate;
 class WebRTCRtpReceiver;
+class WebRTCRtpTransceiver;
 
 class BLINK_PLATFORM_EXPORT WebRTCPeerConnectionHandlerClient {
  public:
-  enum SignalingState {
-    kSignalingStateStable = 1,
-    kSignalingStateHaveLocalOffer = 2,
-    kSignalingStateHaveRemoteOffer = 3,
-    kSignalingStateHaveLocalPrAnswer = 4,
-    kSignalingStateHaveRemotePrAnswer = 5,
-    kSignalingStateClosed = 6,
-  };
-
   enum ICEConnectionState {
     kICEConnectionStateNew = 1,
     kICEConnectionStateChecking = 2,
@@ -72,23 +65,22 @@ class BLINK_PLATFORM_EXPORT WebRTCPeerConnectionHandlerClient {
     kICEGatheringStateComplete = 3
   };
 
-  struct WebRTCOriginTrials {
-    bool vaapi_hwvp8_encoding_enabled = false;
-  };
-
   virtual ~WebRTCPeerConnectionHandlerClient();
 
   virtual void NegotiationNeeded() = 0;
   virtual void DidGenerateICECandidate(scoped_refptr<WebRTCICECandidate>) = 0;
-  virtual void DidChangeSignalingState(SignalingState) = 0;
+  virtual void DidChangeSignalingState(
+      webrtc::PeerConnectionInterface::SignalingState) = 0;
   virtual void DidChangeICEGatheringState(ICEGatheringState) = 0;
   virtual void DidChangeICEConnectionState(ICEConnectionState) = 0;
-  virtual void DidAddRemoteTrack(std::unique_ptr<WebRTCRtpReceiver>) = 0;
-  virtual void DidRemoveRemoteTrack(std::unique_ptr<WebRTCRtpReceiver>) = 0;
+  virtual void DidAddReceiverPlanB(std::unique_ptr<WebRTCRtpReceiver>) = 0;
+  virtual void DidRemoveReceiverPlanB(std::unique_ptr<WebRTCRtpReceiver>) = 0;
+  virtual void DidModifyTransceivers(
+      std::vector<std::unique_ptr<WebRTCRtpTransceiver>>,
+      bool is_remote_description) = 0;
   virtual void DidAddRemoteDataChannel(WebRTCDataChannelHandler*) = 0;
   virtual void ReleasePeerConnectionHandler() = 0;
   virtual void ClosePeerConnection();
-  virtual WebRTCOriginTrials GetOriginTrials() = 0;
 };
 
 }  // namespace blink

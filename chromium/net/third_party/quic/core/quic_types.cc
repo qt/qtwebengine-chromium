@@ -4,7 +4,7 @@
 
 #include "net/third_party/quic/core/quic_types.h"
 
-namespace net {
+namespace quic {
 
 QuicConsumedData::QuicConsumedData(size_t bytes_consumed, bool fin_consumed)
     : bytes_consumed(bytes_consumed), fin_consumed(fin_consumed) {}
@@ -36,4 +36,15 @@ WriteResult::WriteResult() : status(WRITE_STATUS_ERROR), bytes_written(0) {}
 WriteResult::WriteResult(WriteStatus status, int bytes_written_or_error_code)
     : status(status), bytes_written(bytes_written_or_error_code) {}
 
-}  // namespace net
+std::ostream& operator<<(std::ostream& os, const WriteResult& s) {
+  os << "{ status: " << s.status;
+  if (s.status == WRITE_STATUS_OK) {
+    os << ", bytes_written: " << s.bytes_written;
+  } else {
+    os << ", error_code: " << s.error_code;
+  }
+  os << " }";
+  return os;
+}
+
+}  // namespace quic

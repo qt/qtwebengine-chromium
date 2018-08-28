@@ -41,10 +41,11 @@
 namespace blink {
 
 RawResource* RawResource::FetchSynchronously(FetchParameters& params,
-                                             ResourceFetcher* fetcher) {
+                                             ResourceFetcher* fetcher,
+                                             RawResourceClient* client) {
   params.MakeSynchronous();
   return ToRawResource(fetcher->RequestResource(
-      params, RawResourceFactory(Resource::kRaw), nullptr));
+      params, RawResourceFactory(Resource::kRaw), client));
 }
 
 RawResource* RawResource::FetchImport(FetchParameters& params,
@@ -251,8 +252,6 @@ void RawResource::DidSendData(unsigned long long bytes_sent,
 }
 
 void RawResource::DidDownloadData(int data_length) {
-  downloaded_file_length_ =
-      (downloaded_file_length_ ? *downloaded_file_length_ : 0) + data_length;
   ResourceClientWalker<RawResourceClient> w(Clients());
   while (RawResourceClient* c = w.Next())
     c->DataDownloaded(this, data_length);
@@ -314,10 +313,8 @@ bool RawResource::MatchPreload(const FetchParameters& params,
       std::move(producer), task_runner);
 
   if (Data()) {
-    Data()->ForEachSegment(
-        [this](const char* segment, size_t size, size_t offset) -> bool {
-          return data_pipe_writer_->Write(segment, size);
-        });
+    for (const auto& span : *Data())
+      data_pipe_writer_->Write(span.data(), span.size());
   }
   SetDataBufferingPolicy(kDoNotBufferData);
 
@@ -338,8 +335,7 @@ static bool ShouldIgnoreHeaderForCacheReuse(AtomicString header_name) {
   DEFINE_STATIC_LOCAL(
       HashSet<AtomicString>, headers,
       ({"Cache-Control", "If-Modified-Since", "If-None-Match", "Origin",
-        "Pragma", "Purpose", "Referer", "User-Agent",
-        HTTPNames::X_DevTools_Emulate_Network_Conditions_Client_Id}));
+        "Pragma", "Purpose", "Referer", "User-Agent"}));
   return headers.Contains(header_name);
 }
 
@@ -401,61 +397,61 @@ RawResourceClientStateChecker::RawResourceClientStateChecker()
 
 RawResourceClientStateChecker::~RawResourceClientStateChecker() = default;
 
-NEVER_INLINE void RawResourceClientStateChecker::WillAddClient() {
+NOINLINE void RawResourceClientStateChecker::WillAddClient() {
   SECURITY_CHECK(state_ == kNotAddedAsClient);
   state_ = kStarted;
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::WillRemoveClient() {
+NOINLINE void RawResourceClientStateChecker::WillRemoveClient() {
   SECURITY_CHECK(state_ != kNotAddedAsClient);
   state_ = kNotAddedAsClient;
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::RedirectReceived() {
+NOINLINE void RawResourceClientStateChecker::RedirectReceived() {
   SECURITY_CHECK(state_ == kStarted);
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::RedirectBlocked() {
+NOINLINE void RawResourceClientStateChecker::RedirectBlocked() {
   SECURITY_CHECK(state_ == kStarted);
   state_ = kRedirectBlocked;
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::DataSent() {
+NOINLINE void RawResourceClientStateChecker::DataSent() {
   SECURITY_CHECK(state_ == kStarted);
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::ResponseReceived() {
+NOINLINE void RawResourceClientStateChecker::ResponseReceived() {
   SECURITY_CHECK(state_ == kStarted);
   state_ = kResponseReceived;
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::SetSerializedCachedMetadata() {
+NOINLINE void RawResourceClientStateChecker::SetSerializedCachedMetadata() {
   SECURITY_CHECK(state_ == kResponseReceived);
   state_ = kSetSerializedCachedMetadata;
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::DataReceived() {
+NOINLINE void RawResourceClientStateChecker::DataReceived() {
   SECURITY_CHECK(state_ == kResponseReceived ||
                  state_ == kSetSerializedCachedMetadata ||
                  state_ == kDataReceived);
   state_ = kDataReceived;
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::DataDownloaded() {
+NOINLINE void RawResourceClientStateChecker::DataDownloaded() {
   SECURITY_CHECK(state_ == kResponseReceived ||
                  state_ == kSetSerializedCachedMetadata ||
                  state_ == kDataDownloaded);
   state_ = kDataDownloaded;
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::DidDownloadToBlob() {
+NOINLINE void RawResourceClientStateChecker::DidDownloadToBlob() {
   SECURITY_CHECK(state_ == kResponseReceived ||
                  state_ == kSetSerializedCachedMetadata ||
                  state_ == kDataDownloaded);
   state_ = kDidDownloadToBlob;
 }
 
-NEVER_INLINE void RawResourceClientStateChecker::NotifyFinished(
+NOINLINE void RawResourceClientStateChecker::NotifyFinished(
     Resource* resource) {
   SECURITY_CHECK(state_ != kNotAddedAsClient);
   SECURITY_CHECK(state_ != kNotifyFinished);

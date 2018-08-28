@@ -26,7 +26,6 @@
 #include "third_party/blink/renderer/core/inspector/inspector_css_agent.h"
 
 #include "base/macros.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/animation/css/css_animation_data.h"
 #include "third_party/blink/renderer/core/css/css_color_value.h"
 #include "third_party/blink/renderer/core/css/css_computed_style_declaration.h"
@@ -86,6 +85,7 @@
 #include "third_party/blink/renderer/core/style/style_image.h"
 #include "third_party/blink/renderer/core/style_property_shorthand.h"
 #include "third_party/blink/renderer/core/svg/svg_element.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/fonts/font.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_custom_platform_data.h"
@@ -152,13 +152,9 @@ HeapVector<Member<Element>> ElementsFromRect(LayoutRect rect,
                          HitTestRequest::kPenetratingList |
                          HitTestRequest::kIgnoreClipping);
 
-  LayoutPoint center = rect.Center();
-  LayoutUnit horizontal_padding = rect.Width() / 2;
-  LayoutUnit vertical_padding = rect.Height() / 2;
-  LayoutRectOutsets padding(vertical_padding, horizontal_padding,
-                            vertical_padding, horizontal_padding);
-  HitTestResult result(request, center, padding);
-  document.GetFrame()->ContentLayoutObject()->HitTest(result);
+  HitTestLocation location(rect);
+  HitTestResult result(request, location);
+  document.GetFrame()->ContentLayoutObject()->HitTest(location, result);
   HeapVector<Member<Element>> elements;
   Node* previous_node = nullptr;
   for (const auto hit_test_result_node : result.ListBasedTestResult()) {
@@ -1161,18 +1157,11 @@ Response InspectorCSSAgent::getComputedStyleForNode(
             .build());
   }
 
-  std::unique_ptr<HashMap<AtomicString, scoped_refptr<CSSVariableData>>>
-      variables = computed_style_info->GetVariables();
-
-  if (variables && !variables->IsEmpty()) {
-    for (const auto& it : *variables) {
-      if (!it.value)
-        continue;
-      (*style)->addItem(protocol::CSS::CSSComputedStyleProperty::create()
-                            .setName(it.key)
-                            .setValue(it.value->TokenRange().Serialize())
-                            .build());
-    }
+  for (const auto& it : computed_style_info->GetVariables()) {
+    (*style)->addItem(protocol::CSS::CSSComputedStyleProperty::create()
+                          .setName(it.key)
+                          .setValue(it.value->CssText())
+                          .build());
   }
   return Response::OK();
 }

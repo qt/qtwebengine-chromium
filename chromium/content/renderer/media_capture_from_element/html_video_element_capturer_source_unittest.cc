@@ -37,7 +37,11 @@ class MockWebMediaPlayer : public blink::WebMediaPlayer,
   MockWebMediaPlayer()  = default;
   ~MockWebMediaPlayer() override = default;
 
-  void Load(LoadType, const blink::WebMediaPlayerSource&, CORSMode) override {}
+  LoadTiming Load(LoadType,
+                  const blink::WebMediaPlayerSource&,
+                  CORSMode) override {
+    return LoadTiming::kImmediate;
+  }
   void Play() override {}
   void Pause() override {}
   void Seek(double seconds) override {}
@@ -80,7 +84,7 @@ class MockWebMediaPlayer : public blink::WebMediaPlayer,
   size_t AudioDecodedByteCount() const override { return 0; }
   size_t VideoDecodedByteCount() const override { return 0; }
 
-  void Paint(blink::WebCanvas* canvas,
+  void Paint(cc::PaintCanvas* canvas,
              const blink::WebRect& paint_rectangle,
              cc::PaintFlags&,
              int already_uploaded_id,

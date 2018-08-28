@@ -35,13 +35,11 @@
 #include "third_party/blink/public/platform/web_blob_info.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_vector.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value_factory.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_for_core.h"
 #include "third_party/blink/renderer/bindings/modules/v8/to_v8_for_modules.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_binding_for_modules.h"
 #include "third_party/blink/renderer/core/dom/dom_string_list.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_any.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_cursor_with_value.h"
@@ -50,6 +48,7 @@
 #include "third_party/blink/renderer/modules/indexeddb/idb_key_path.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_tracing.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_value_wrapping.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
@@ -80,18 +79,20 @@ void IDBObjectStore::setName(const String& name,
   IDB_TRACE("IDBObjectStore::setName");
   if (!transaction_->IsVersionChange()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         IDBDatabase::kNotVersionChangeTransactionErrorMessage);
     return;
   }
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return;
   }
 
@@ -99,11 +100,12 @@ void IDBObjectStore::setName(const String& name,
     return;
   if (transaction_->db()->ContainsObjectStore(name)) {
     exception_state.ThrowDOMException(
-        kConstraintError, IDBDatabase::kObjectStoreNameTakenErrorMessage);
+        DOMExceptionCode::kConstraintError,
+        IDBDatabase::kObjectStoreNameTakenErrorMessage);
     return;
   }
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return;
   }
@@ -133,12 +135,14 @@ IDBRequest* IDBObjectStore::get(ScriptState* script_state,
   IDBRequest::AsyncTraceState metrics("IDBObjectStore::get");
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
   IDBKeyRange* key_range = IDBKeyRange::FromScriptValue(
@@ -147,11 +151,12 @@ IDBRequest* IDBObjectStore::get(ScriptState* script_state,
     return nullptr;
   if (!key_range) {
     exception_state.ThrowDOMException(
-        kDataError, IDBDatabase::kNoKeyOrKeyRangeErrorMessage);
+        DOMExceptionCode::kDataError,
+        IDBDatabase::kNoKeyOrKeyRangeErrorMessage);
     return nullptr;
   }
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -172,12 +177,14 @@ IDBRequest* IDBObjectStore::getKey(ScriptState* script_state,
   IDBRequest::AsyncTraceState metrics("IDBObjectStore::getKey");
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
   IDBKeyRange* key_range = IDBKeyRange::FromScriptValue(
@@ -186,11 +193,12 @@ IDBRequest* IDBObjectStore::getKey(ScriptState* script_state,
     return nullptr;
   if (!key_range) {
     exception_state.ThrowDOMException(
-        kDataError, IDBDatabase::kNoKeyOrKeyRangeErrorMessage);
+        DOMExceptionCode::kDataError,
+        IDBDatabase::kNoKeyOrKeyRangeErrorMessage);
     return nullptr;
   }
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -222,12 +230,14 @@ IDBRequest* IDBObjectStore::getAll(ScriptState* script_state,
 
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
   IDBKeyRange* range = IDBKeyRange::FromScriptValue(
@@ -235,7 +245,7 @@ IDBRequest* IDBObjectStore::getAll(ScriptState* script_state,
   if (exception_state.HadException())
     return nullptr;
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -267,12 +277,14 @@ IDBRequest* IDBObjectStore::getAllKeys(ScriptState* script_state,
 
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
   IDBKeyRange* range = IDBKeyRange::FromScriptValue(
@@ -280,7 +292,7 @@ IDBRequest* IDBObjectStore::getAllKeys(ScriptState* script_state,
   if (exception_state.HadException())
     return nullptr;
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -387,17 +399,20 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
   IDBRequest::AsyncTraceState metrics(tracing_name);
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
   if (transaction_->IsReadOnly()) {
     exception_state.ThrowDOMException(
-        kReadOnlyError, IDBDatabase::kTransactionReadOnlyErrorMessage);
+        DOMExceptionCode::kReadOnlyError,
+        IDBDatabase::kTransactionReadOnlyErrorMessage);
     return nullptr;
   }
 
@@ -423,7 +438,7 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
   const bool has_key_generator = autoIncrement();
 
   if (put_mode != kWebIDBPutModeCursorUpdate && uses_in_line_keys && key) {
-    exception_state.ThrowDOMException(kDataError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kDataError,
                                       "The object store uses in-line keys and "
                                       "the key parameter was provided.");
     return nullptr;
@@ -447,7 +462,7 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
       return nullptr;
     if (!key_path_key || !key_path_key->IsEqual(key)) {
       exception_state.ThrowDOMException(
-          kDataError,
+          DOMExceptionCode::kDataError,
           "The effective object store of this cursor uses in-line keys and "
           "evaluating the key path of the value parameter results in a "
           "different value than the cursor's effective key.");
@@ -456,7 +471,7 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
   }
 
   if (!uses_in_line_keys && !has_key_generator && !key) {
-    exception_state.ThrowDOMException(kDataError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kDataError,
                                       "The object store uses out-of-line keys "
                                       "and has no key generator and the key "
                                       "parameter was not provided.");
@@ -476,7 +491,7 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
         return nullptr;
       if (key_path_key && !key_path_key->IsValid()) {
         exception_state.ThrowDOMException(
-            kDataError,
+            DOMExceptionCode::kDataError,
             "Evaluating the object store's key path yielded a value that is "
             "not a valid key.");
         return nullptr;
@@ -498,7 +513,7 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
 
     if (!key_path_key) {
       if (!has_key_generator) {
-        exception_state.ThrowDOMException(kDataError,
+        exception_state.ThrowDOMException(DOMExceptionCode::kDataError,
                                           "Evaluating the object store's key "
                                           "path did not yield a value.");
         return nullptr;
@@ -511,7 +526,7 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
       // them from the backing store.
       if (!CanInjectIDBKeyIntoScriptValue(script_state->GetIsolate(), clone,
                                           key_path)) {
-        exception_state.ThrowDOMException(kDataError,
+        exception_state.ThrowDOMException(DOMExceptionCode::kDataError,
                                           "A generated key could not be "
                                           "inserted into the value.");
         return nullptr;
@@ -523,13 +538,13 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
   }
 
   if (key && !key->IsValid()) {
-    exception_state.ThrowDOMException(kDataError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kDataError,
                                       IDBDatabase::kNotValidKeyErrorMessage);
     return nullptr;
   }
 
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -583,17 +598,20 @@ IDBRequest* IDBObjectStore::Delete(ScriptState* script_state,
   IDBRequest::AsyncTraceState metrics("IDBObjectStore::delete");
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
   if (transaction_->IsReadOnly()) {
     exception_state.ThrowDOMException(
-        kReadOnlyError, IDBDatabase::kTransactionReadOnlyErrorMessage);
+        DOMExceptionCode::kReadOnlyError,
+        IDBDatabase::kTransactionReadOnlyErrorMessage);
     return nullptr;
   }
 
@@ -603,11 +621,12 @@ IDBRequest* IDBObjectStore::Delete(ScriptState* script_state,
     return nullptr;
   if (!key_range) {
     exception_state.ThrowDOMException(
-        kDataError, IDBDatabase::kNoKeyOrKeyRangeErrorMessage);
+        DOMExceptionCode::kDataError,
+        IDBDatabase::kNoKeyOrKeyRangeErrorMessage);
     return nullptr;
   }
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -633,21 +652,24 @@ IDBRequest* IDBObjectStore::clear(ScriptState* script_state,
   IDBRequest::AsyncTraceState metrics("IDBObjectStore::clear");
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
   if (transaction_->IsReadOnly()) {
     exception_state.ThrowDOMException(
-        kReadOnlyError, IDBDatabase::kTransactionReadOnlyErrorMessage);
+        DOMExceptionCode::kReadOnlyError,
+        IDBDatabase::kTransactionReadOnlyErrorMessage);
     return nullptr;
   }
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -682,6 +704,7 @@ class IndexPopulator final : public EventListener {
   }
 
   void Trace(blink::Visitor* visitor) override {
+    visitor->Trace(script_state_);
     visitor->Trace(database_);
     EventListener::Trace(visitor);
   }
@@ -708,7 +731,7 @@ class IndexPopulator final : public EventListener {
       return;
     IDB_TRACE("IDBObjectStore::IndexPopulator::handleEvent");
 
-    DCHECK_EQ(ExecutionContext::From(script_state_.get()), execution_context);
+    DCHECK_EQ(ExecutionContext::From(script_state_), execution_context);
     DCHECK_EQ(event->type(), EventTypeNames::success);
     EventTarget* target = event->target();
     IDBRequest* request = static_cast<IDBRequest*>(target);
@@ -716,7 +739,7 @@ class IndexPopulator final : public EventListener {
     if (!database_->Backend())  // If database is stopped?
       return;
 
-    ScriptState::Scope scope(script_state_.get());
+    ScriptState::Scope scope(script_state_);
 
     IDBAny* cursor_any = request->ResultAsAny();
     IDBCursorWithValue* cursor = nullptr;
@@ -730,7 +753,7 @@ class IndexPopulator final : public EventListener {
                        ASSERT_NO_EXCEPTION);
 
       const IDBKey* primary_key = cursor->IdbPrimaryKey();
-      ScriptValue value = cursor->value(script_state_.get());
+      ScriptValue value = cursor->value(script_state_);
 
       WebVector<WebVector<WebIDBKey>> index_keys_list;
       index_keys_list.reserve(1);
@@ -750,7 +773,7 @@ class IndexPopulator final : public EventListener {
     }
   }
 
-  scoped_refptr<ScriptState> script_state_;
+  Member<ScriptState> script_state_;
   Member<IDBDatabase> database_;
   const int64_t transaction_id_;
   const int64_t object_store_id_;
@@ -768,38 +791,41 @@ IDBIndex* IDBObjectStore::createIndex(ScriptState* script_state,
   IDBRequest::AsyncTraceState metrics("IDBObjectStore::createIndex");
   if (!transaction_->IsVersionChange()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         IDBDatabase::kNotVersionChangeTransactionErrorMessage);
     return nullptr;
   }
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
   if (ContainsIndex(name)) {
-    exception_state.ThrowDOMException(kConstraintError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kConstraintError,
                                       IDBDatabase::kIndexNameTakenErrorMessage);
     return nullptr;
   }
   if (!key_path.IsValid()) {
     exception_state.ThrowDOMException(
-        kSyntaxError, "The keyPath argument contains an invalid key path.");
+        DOMExceptionCode::kSyntaxError,
+        "The keyPath argument contains an invalid key path.");
     return nullptr;
   }
   if (key_path.GetType() == IDBKeyPath::kArrayType && options.multiEntry()) {
     exception_state.ThrowDOMException(
-        kInvalidAccessError,
+        DOMExceptionCode::kInvalidAccessError,
         "The keyPath argument was an array and the multiEntry option is true.");
     return nullptr;
   }
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -841,12 +867,14 @@ IDBIndex* IDBObjectStore::index(const String& name,
   IDB_TRACE1("IDBObjectStore::index", "store_name", metadata_->name.Utf8());
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (transaction_->IsFinished() || transaction_->IsFinishing()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kTransactionFinishedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kTransactionFinishedErrorMessage);
     return nullptr;
   }
 
@@ -856,7 +884,7 @@ IDBIndex* IDBObjectStore::index(const String& name,
 
   int64_t index_id = FindIndexId(name);
   if (index_id == IDBIndexMetadata::kInvalidId) {
-    exception_state.ThrowDOMException(kNotFoundError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotFoundError,
                                       IDBDatabase::kNoSuchIndexErrorMessage);
     return nullptr;
   }
@@ -877,28 +905,30 @@ void IDBObjectStore::deleteIndex(const String& name,
              metadata_->name.Utf8());
   if (!transaction_->IsVersionChange()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         IDBDatabase::kNotVersionChangeTransactionErrorMessage);
     return;
   }
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return;
   }
   int64_t index_id = FindIndexId(name);
   if (index_id == IDBIndexMetadata::kInvalidId) {
-    exception_state.ThrowDOMException(kNotFoundError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotFoundError,
                                       IDBDatabase::kNoSuchIndexErrorMessage);
     return;
   }
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return;
   }
@@ -923,12 +953,14 @@ IDBRequest* IDBObjectStore::openCursor(ScriptState* script_state,
   IDBRequest::AsyncTraceState metrics("IDBObjectStore::openCursor");
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
 
@@ -940,7 +972,7 @@ IDBRequest* IDBObjectStore::openCursor(ScriptState* script_state,
     return nullptr;
 
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -973,12 +1005,14 @@ IDBRequest* IDBObjectStore::openKeyCursor(ScriptState* script_state,
   IDBRequest::AsyncTraceState metrics("IDBObjectStore::openKeyCursor");
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
 
@@ -990,7 +1024,7 @@ IDBRequest* IDBObjectStore::openKeyCursor(ScriptState* script_state,
     return nullptr;
 
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }
@@ -1014,12 +1048,14 @@ IDBRequest* IDBObjectStore::count(ScriptState* script_state,
   IDBRequest::AsyncTraceState metrics("IDBObjectStore::count");
   if (IsDeleted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, IDBDatabase::kObjectStoreDeletedErrorMessage);
+        DOMExceptionCode::kInvalidStateError,
+        IDBDatabase::kObjectStoreDeletedErrorMessage);
     return nullptr;
   }
   if (!transaction_->IsActive()) {
-    exception_state.ThrowDOMException(kTransactionInactiveError,
-                                      transaction_->InactiveErrorMessage());
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kTransactionInactiveError,
+        transaction_->InactiveErrorMessage());
     return nullptr;
   }
 
@@ -1029,7 +1065,7 @@ IDBRequest* IDBObjectStore::count(ScriptState* script_state,
     return nullptr;
 
   if (!BackendDB()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       IDBDatabase::kDatabaseClosedErrorMessage);
     return nullptr;
   }

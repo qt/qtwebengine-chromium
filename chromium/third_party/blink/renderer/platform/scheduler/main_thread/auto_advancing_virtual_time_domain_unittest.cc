@@ -6,14 +6,13 @@
 
 #include <memory>
 #include "base/run_loop.h"
+#include "base/task/sequence_manager/sequence_manager.h"
+#include "base/task/sequence_manager/test/sequence_manager_for_test.h"
+#include "base/task/sequence_manager/test/test_task_queue.h"
+#include "base/task/sequence_manager/test/test_task_time_observer.h"
 #include "base/test/test_mock_time_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/renderer/platform/scheduler/base/task_queue_manager.h"
-#include "third_party/blink/renderer/platform/scheduler/base/test/task_queue_manager_for_test.h"
-#include "third_party/blink/renderer/platform/scheduler/base/test/test_task_queue.h"
-#include "third_party/blink/renderer/platform/scheduler/base/test/test_task_time_observer.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/non_main_thread_scheduler_helper.h"
 
 namespace blink {
@@ -33,13 +32,12 @@ class AutoAdvancingVirtualTimeDomainTest : public testing::Test {
     test_task_runner_->AdvanceMockTickClock(
         base::TimeDelta::FromMilliseconds(5));
     scheduler_helper_.reset(new NonMainThreadSchedulerHelper(
-        base::sequence_manager::TaskQueueManagerForTest::Create(
-            nullptr, base::ThreadTaskRunnerHandle::Get(),
-            test_task_runner_->GetMockTickClock()),
+        base::sequence_manager::SequenceManagerForTest::Create(
+            nullptr, test_task_runner_, test_task_runner_->GetMockTickClock()),
         nullptr, TaskType::kInternalTest));
 
     scheduler_helper_->AddTaskTimeObserver(&test_task_time_observer_);
-    task_queue_ = scheduler_helper_->DefaultWorkerTaskQueue();
+    task_queue_ = scheduler_helper_->DefaultNonMainThreadTaskQueue();
     initial_time_ = base::Time::FromJsTime(100000.0);
     initial_time_ticks_ = test_task_runner_->NowTicks();
     auto_advancing_time_domain_.reset(new AutoAdvancingVirtualTimeDomain(

@@ -96,6 +96,13 @@ FONT_FILES = [
     [[CONTENT_SHELL_FONTS_DIR], 'Tinos-Regular.ttf', None],
 ]
 
+# This is the fingerprint of wpt's certificate found in
+# blinkpy/third_party/wpt/certs.  The following line is updated by
+# update_cert.py.
+WPT_FINGERPRINT = 'Nxvaj3+bY3oVrTc+Jp7m3E3sB1n3lXtnMDCyBsqEXiY='
+# One for 127.0.0.1.sxg.pem
+SXG_FINGERPRINT = '55qC1nKu2A88ESbFmk5sTPQS/ScG+8DD7P+2bgFA9iM='
+
 
 class Port(object):
     """Abstract class for Port-specific hooks for the layout_test package."""
@@ -242,18 +249,10 @@ class Port(object):
         if flags and flags[0] == self.primary_driver_flag():
             flags = flags[1:]
         if self.driver_name() == self.CONTENT_SHELL_NAME:
-            # This is the fingerprint of wpt's certificate found in
-            # blinkpy/third_party/wpt/certs.  To regenerate, use:
-            #
-            #   openssl x509 -noout -pubkey -in 127.0.0.1.pem |
-            #   openssl pkey -pubin -outform der |
-            #   openssl dgst -sha256 -binary |
-            #   base64
-            #
-            fingerprint = 'Nxvaj3+bY3oVrTc+Jp7m3E3sB1n3lXtnMDCyBsqEXiY='
             flags += [
                 '--run-web-tests',
-                '--ignore-certificate-errors-spki-list=' + fingerprint,
+                '--ignore-certificate-errors-spki-list=' + WPT_FINGERPRINT +
+                ',' + SXG_FINGERPRINT,
                 '--user-data-dir']
         return flags
 
@@ -535,17 +534,17 @@ class Port(object):
         Returns:
             A string, the output filename.
         """
-        test_name_root, test_name_ext = self._filesystem.splitext(test_name)
-
         # WPT names might contain query strings, e.g. external/wpt/foo.html?wss,
         # in which case we mangle test_name_root (the part of a path before the
         # last extension point) to external/wpt/foo_wss, and the output filename
         # becomes external/wpt/foo_wss-expected.txt.
-        index = test_name_ext.find('?')
+        index = test_name.find('?')
         if index != -1:
-            query_part = test_name_ext[index + 1:]
-            test_name_root += '_' + self._filesystem.sanitize_filename(query_part)
-
+            test_name_root, _ = self._filesystem.splitext(test_name[:index])
+            query_part = test_name[index:]
+            test_name_root += self._filesystem.sanitize_filename(query_part)
+        else:
+            test_name_root, _ = self._filesystem.splitext(test_name)
         return test_name_root + suffix + extension
 
     def expected_baselines(self, test_name, extension, all_baselines=False, match=True):
@@ -852,26 +851,6 @@ class Port(object):
         if not match:
             return False
         return self._wpt_manifest().is_slow_test(match.group(1))
-
-    ALL_TEST_TYPES = ['audio', 'harness', 'pixel', 'ref', 'text', 'unknown']
-
-    def test_type(self, test_name):
-        fs = self._filesystem
-        if fs.exists(self.expected_filename(test_name, '.png')):
-            return 'pixel'
-        if fs.exists(self.expected_filename(test_name, '.wav')):
-            return 'audio'
-        if self.reference_files(test_name):
-            return 'ref'
-        txt = self.expected_text(test_name)
-        if txt:
-            if 'layer at (0,0) size 800x600' in txt:
-                return 'pixel'
-            for line in txt.splitlines():
-                if line.startswith('FAIL') or line.startswith('TIMEOUT') or line.startswith('PASS'):
-                    return 'harness'
-            return 'text'
-        return 'unknown'
 
     def test_key(self, test_name):
         """Turns a test name into a pair of sublists: the natural sort key of the

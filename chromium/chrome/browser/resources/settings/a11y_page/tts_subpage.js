@@ -23,7 +23,8 @@ Polymer({
 
     /**
      * Available languages.
-     * @type {Array<{language: string, code: string, voice: TtsHandlerVoice}>}
+     * @type {Array<{language: string, code: string, preferred: boolean,
+     *     voice: TtsHandlerVoice}>}
      */
     languagesToVoices: {
       type: Array,
@@ -48,13 +49,16 @@ Polymer({
       notify: true,
     },
 
-    /**
-     * Whether any voices are loaded.
-     * @type {Boolean}
-     */
+    /** Whether any voices are loaded. */
     hasVoices: {
       type: Boolean,
       computed: 'hasVoices_(allVoices)',
+    },
+
+    /** Whether the additional languages section has been opened. */
+    languagesOpened: {
+      type: Boolean,
+      value: false,
     },
   },
 
@@ -71,7 +75,7 @@ Polymer({
   /**
    * Ticks for the Speech Rate slider. Non-linear as we expect people
    * to want more control near 1.0.
-   * @return Array<{value: number, label: string}>
+   * @return Array<SliderTick>
    * @private
    */
   speechRateTicks_: function() {
@@ -87,7 +91,7 @@ Polymer({
   /**
    * Ticks for the Speech Pitch slider. Valid pitches are between 0 and 2,
    * exclusive of 0.
-   * @return Array<{value: number, label: string}>
+   * @return Array<SliderTick>
    * @private
    */
   speechPitchTicks_: function() {
@@ -100,7 +104,7 @@ Polymer({
    * Ticks for the Speech Volume slider. Valid volumes are between 0 and
    * 1 (100%), but volumes lower than .2 are excluded as being too quiet.
    * The values are linear between .2 and 1.0.
-   * @return Array<{value: number, label: string}>
+   * @return Array<SliderTick>
    * @private
    */
   speechVolumeTicks_: function() {
@@ -112,14 +116,15 @@ Polymer({
   /**
    * Initializes i18n labels for ticks arrays.
    * @param {number} tick The value to make a tick for.
-   * @return {{value: number, label: string}}
+   * @return {SliderTick}
    * @private
    */
   initTick_: function(tick) {
-    let value = (100 * tick).toFixed(0);
-    let label = value === '100' ? this.i18n('defaultPercentage', value) :
-                                  this.i18n('percentage', value);
-    return {label: label, value: tick};
+    let value = Math.round(100 * tick);
+    let strValue = value.toFixed(0);
+    let label = strValue === '100' ? this.i18n('defaultPercentage', strValue) :
+                                     this.i18n('percentage', strValue);
+    return {label: label, value: tick, ariaValue: value};
   },
 
   /**
@@ -141,11 +146,14 @@ Polymer({
     // Build a map of language code to human-readable language and voice.
     let result = {};
     let languageCodeMap = {};
+    let pref = this.prefs.settings['language']['preferred_languages'];
+    let preferredLangs = pref.value.split(',');
     voices.forEach(voice => {
       if (!result[voice.languageCode]) {
         result[voice.languageCode] = {
           language: voice.displayLanguage,
           code: voice.languageCode,
+          preferred: false,
           voices: []
         };
       }
@@ -155,12 +163,40 @@ Polymer({
       // TODO(katie): Make voices a map rather than an array to enforce
       // uniqueness, then convert back to an array for polymer repeat.
       result[voice.languageCode].voices.push(voice);
+
+      // A language is "preferred" if it has a voice that uses the default
+      // locale of the device.
+      result[voice.languageCode].preferred =
+          result[voice.languageCode].preferred ||
+          preferredLangs.indexOf(voice.fullLanguageCode) != -1;
       languageCodeMap[voice.fullLanguageCode] = voice.languageCode;
     });
     this.updateLangToVoicePrefs_(result);
     this.set('languagesToVoices', Object.values(result));
     this.set('allVoices', voices);
     this.setDefaultPreviewVoiceForLocale_(voices, languageCodeMap);
+  },
+
+  /**
+   * Returns true if the language is a primary language and should be shown by
+   * default, false if it should be hidden by default.
+   * @param {{language: string, code: string, preferred: boolean,
+   *     voice: TtsHandlerVoice}} language
+   * @return {boolean} true if it's a primary language.
+   */
+  isPrimaryLanguage_: function(language) {
+    return language.preferred;
+  },
+
+  /**
+   * Returns true if the language is a secondary language and should be hidden
+   * by default, true if it should be shown by default.
+   * @param {{language: string, code: string, preferred: boolean,
+   *     voice: TtsHandlerVoice}} language
+   * @return {boolean} true if it's a secondary language.
+   */
+  isSecondaryLanguage_: function(language) {
+    return !language.preferred;
   },
 
   /**
@@ -208,7 +244,7 @@ Polymer({
 
   /**
    * Updates the preferences given the current list of voices.
-   * @param {Object<string, {language: string, code: string,
+   * @param {Object<string, {language: string, code: string, preferred: boolean,
    *     voices: Array<TtsHandlerVoice>}>} langToVoices
    * @private
    */
@@ -309,6 +345,19 @@ Polymer({
     chrome.send(
         'previewTtsVoice',
         [this.$.previewInput.value, this.$.previewVoice.value]);
+    chrome.metricsPrivate.recordSparseHashable(
+        'TextToSpeech.Settings.PreviewVoiceClicked', this.$.previewVoice.value);
   },
 
+  /** @private */
+  onDefaultTtsVoicePicked_: function(event) {
+    // Log the default voice the user selected. Each voice has at most one
+    // language, so there's no need to log language as well.
+    // The event target is the settings-dropdown-menu.
+    let target = /** @type {{prefStringValue_: function():string}} */
+        (event.target);
+    let newDefault = target.prefStringValue_();
+    chrome.metricsPrivate.recordSparseHashable(
+        'TextToSpeech.Settings.DefaultVoicePicked', newDefault);
+  },
 });

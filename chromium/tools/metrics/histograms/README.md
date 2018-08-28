@@ -8,7 +8,16 @@ range and/or the range is not possible to specify a priori).
 
 [TOC]
 
+## Naming Your Histogram
+
+Histogram names should be in the form Group.Name or Group.Subgroup.Name,
+etc., where each group organizes related histograms.
+
 ## Coding (Emitting to Histograms)
+
+Generally you'll be best served by using one of the macros in
+[https://cs.chromium.org/chromium/src/base/metrics/histogram_macros.h](histogram_macros.h)
+if possible.
 
 ### Don't Use the Same Histogram Logging Call in Multiple Places
 
@@ -189,6 +198,39 @@ good reason (and consider whether [sparse histograms](#When-To-Use-Sparse-
 Histograms) might work better for you in that case--they do not pre- allocate
 their buckets).
 
+### Percentage or Ratio Histograms
+
+You can easily emit a percentage histogram using the
+UMA_HISTOGRAM_PERCENTAGE macro provided in
+[histogram_macros.h](https://cs.chromium.org/chromium/src/base/metrics/histogram_macros.h).
+You can also easily emit any ratio as a linear histogram (for equally
+sized buckets).
+
+For such histograms, you should think carefully about _when_ the values are
+emitted.  Normally, you should emit values periodically at a set time interval,
+such as every 5 minutes.  Conversely, we strongly discourage emitting values
+based on event triggers.  For example, we do not recommend recording a ratio
+at the end of a video playback.
+
+Why?  You typically cannot make decisions based on histograms whose values are
+recorded in response to an event, because such metrics can conflate heavy usage
+with light usage.  It's easier to reason about metrics that route around this
+source of bias.
+
+Many developers have been bitten by this.  For example, it was previously common
+to emit an actions-per-minute ratio whenever Chrome was backgrounded.
+Precisely, these metrics computed the number of uses of a particular action
+during a Chrome session, divided by length of time Chrome had been open.
+Sometimes, the recorded rate was based on a short interaction with Chrome – a
+few seconds or a minute.  Other times, the recorded rate was based on a long
+interaction, tens of minutes or hours.  These two situations are
+indistinguishable in the UMA logs – the recorded values can be identical.
+
+This inability to distinguish these two qualitatively different settings make
+such histograms effectively uninterpretable and not actionable.  Emitting at a
+regular interval avoids the issue.  Each value will represent the same amount of
+time (e.g., one minute of video playback).
+
 ### Local Histograms
 
 Histograms can be added via [Local macros](https://codesearch.chromium.org/chromium/src/base/metrics/histogram_macros_local.h).
@@ -222,7 +264,7 @@ The code to record it becomes dead code, and should be removed from the
 codebase along with marking the histogram definition as obsolete. However, if
 histogram would remain useful, the expiration should be extended accordingly
 before it becomes expired. If histogram you care about already expired, see
-[Expired Histogram Whitelist](###Expired histogram whitelist).
+[Expired Histogram Whitelist](#Expired-histogram-whitelist).
 
 For all the new histograms the use of expiry attribute will be strongly
 encouraged and enforced by Chrome metrics team through reviews.
@@ -266,8 +308,12 @@ emitted to when you expect and not emitted to at other times. Also check that
 the values emitted to are correct.  Finally, for count histograms, make sure
 that buckets capture enough precision for your needs over the range.
 
+Pro tip: You can filter the set of histograms shown on `chrome://histograms` by
+specifying a prefix. For example, `chrome://histograms/Extensions.Load` will
+show only histograms whose names match the pattern "Extensions.Load*".
+
 In addition to testing interactively, you can have unit tests examine the
-values emitted to histograms.  See [histogram_tester.h](https://cs.chromium.org/chromium/src/base/test/histogram_tester.h)
+values emitted to histograms.  See [histogram_tester.h](https://cs.chromium.org/chromium/src/base/test/metrics/histogram_tester.h)
 for details.
 
 ## Interpreting the Resulting Data
@@ -295,6 +341,12 @@ Histograms take up memory.  Cleaning up histograms that you no longer care
 about is good!  But see the note below on [Deleting Histogram Entries](#Deleting-Histogram-Entries).
 
 ## Documenting Histograms
+
+Document histograms in [histograms.xml](./histograms.xml).  There is also a
+[google-internal version of the file](http://go/chrome-histograms-internal) for
+the rare case when the histogram is confidential (added only to Chrome code,
+not Chromium code; or, an accurate description about how to interpret the
+histogram would reveal information about Google's plans).
 
 ### Add Histogram and Documentation in the Same Changelist
 
@@ -340,6 +392,9 @@ unused histograms as obsolete, annotating them with the associated date or
 milestone in the obsolete tag entry.  If your histogram is being replaced by a
 new version, we suggest noting that in the previous histogram's description.
 
+A changelist that marks a histogram as obsolete should be reviewed by all
+current owners.
+
 Deleting histogram entries would be bad if someone to accidentally reused your
 old histogram name and thereby corrupts new data with whatever old data is still
 coming in.  It's also useful to keep obsolete histogram descriptions in
@@ -357,6 +412,9 @@ element is used only to construct a partial name, to be completed by further
 suffixes, annotate the element with the attribute `base="true"`. This instructs
 tools not to treat the partial base name as a distinct histogram. Note that
 suffixes can be applied recursively.
+
+You can also declare ownership of `<histogram_suffixes>`. If there's no owner
+specified, the generated histograms will inherit owners from the parents.
 
 ### Enum labels
 

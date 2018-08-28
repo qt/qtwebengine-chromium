@@ -5,10 +5,10 @@
   "interface_provider_specs": {
     "service_manager:connector": {
       "provides": {
-        "app": [ "font_service.mojom.FontService" ]
+        "font_service": [ "font_service.mojom.FontService" ]
       },
       "requires": {
-        "*": [ "app" ]
+        "service_manager": [ "service_manager:all_users" ]
       }
     }
   }

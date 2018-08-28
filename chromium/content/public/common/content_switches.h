@@ -33,7 +33,6 @@ CONTENT_EXPORT extern const char kDisable2dCanvasImageChromium[];
 CONTENT_EXPORT extern const char kDisable3DAPIs[];
 CONTENT_EXPORT extern const char kDisableAccelerated2dCanvas[];
 CONTENT_EXPORT extern const char kDisableAcceleratedJpegDecoding[];
-CONTENT_EXPORT extern const char kDisableAcceleratedMjpegDecode[];
 CONTENT_EXPORT extern const char kDisableAcceleratedVideoDecode[];
 CONTENT_EXPORT extern const char kDisableAcceleratedVideoEncode[];
 CONTENT_EXPORT extern const char kDisableAudioSupportForDesktopShare[];
@@ -105,12 +104,12 @@ CONTENT_EXPORT extern const char kDisableZeroCopyDxgiVideo[];
 CONTENT_EXPORT extern const char kDomAutomationController[];
 extern const char kDisable2dCanvasClipAntialiasing[];
 CONTENT_EXPORT extern const char kDumpBlinkRuntimeCallStats[];
+CONTENT_EXPORT extern const char kEnableAccessibilityObjectModel[];
 CONTENT_EXPORT extern const char kEnableAggressiveDOMStorageFlushing[];
 CONTENT_EXPORT extern const char kEnableAutomation[];
 CONTENT_EXPORT extern const char kEnablePreferCompositingToLCDText[];
 CONTENT_EXPORT extern const char kEnableBlinkFeatures[];
 CONTENT_EXPORT extern const char kEnableBlinkGenPropertyTrees[];
-CONTENT_EXPORT extern const char kEnableBackgroundFetchPersistence[];
 CONTENT_EXPORT extern const char kEnableDisplayList2dCanvas[];
 CONTENT_EXPORT extern const char kEnableExperimentalWebPlatformFeatures[];
 CONTENT_EXPORT extern const char kEnableGpuMemoryBufferCompositorResources[];
@@ -128,7 +127,6 @@ CONTENT_EXPORT extern const char kEnablePrintBrowser[];
 CONTENT_EXPORT extern const char kEnableRGBA4444Textures[];
 CONTENT_EXPORT extern const char kEnableServiceBinaryLauncher[];
 extern const char kEnableSkiaBenchmarking[];
-CONTENT_EXPORT extern const char kEnableSlimmingPaintV175[];
 CONTENT_EXPORT extern const char kEnableSlimmingPaintV2[];
 CONTENT_EXPORT extern const char kEnableSmoothScrolling[];
 CONTENT_EXPORT extern const char kEnableSpatialNavigation[];
@@ -137,23 +135,29 @@ CONTENT_EXPORT extern const char kEnableStrictPowerfulFeatureRestrictions[];
 CONTENT_EXPORT extern const char kEnableThreadedCompositing[];
 CONTENT_EXPORT extern const char kEnableTracing[];
 CONTENT_EXPORT extern const char kEnableTracingOutput[];
+CONTENT_EXPORT extern const char kEnableUnsafeWebGPU[];
 CONTENT_EXPORT extern const char kEnableUserMediaScreenCapturing[];
 CONTENT_EXPORT extern const char kEnableUseZoomForDSF[];
 CONTENT_EXPORT extern const char kEnableViewport[];
 CONTENT_EXPORT extern const char kEnableVtune[];
 CONTENT_EXPORT extern const char kEnableVulkan[];
 CONTENT_EXPORT extern const char kEnableWebAuthTestingAPI[];
+CONTENT_EXPORT extern const char kEnableWebGL2ComputeContext[];
 CONTENT_EXPORT extern const char kEnableWebGLDraftExtensions[];
 CONTENT_EXPORT extern const char kEnableWebGLImageChromium[];
 CONTENT_EXPORT extern const char kEnableWebVR[];
 CONTENT_EXPORT extern const char kEnableZeroCopy[];
 CONTENT_EXPORT extern const char kExplicitlyAllowedPorts[];
 CONTENT_EXPORT extern const char kFieldTrialHandle[];
+CONTENT_EXPORT extern const char kFileUrlPathAlias[];
 CONTENT_EXPORT extern const char kForceDisplayList2dCanvas[];
 CONTENT_EXPORT extern const char kForceGpuRasterization[];
+CONTENT_EXPORT extern const char kDisableOopRasterization[];
+CONTENT_EXPORT extern const char kEnableOopRasterization[];
 CONTENT_EXPORT extern const char kForceOverlayFullscreenVideo[];
 CONTENT_EXPORT extern const char kForcePresentationReceiverForTesting[];
 CONTENT_EXPORT extern const char kForceRendererAccessibility[];
+CONTENT_EXPORT extern const char kFMPNetworkQuietTimeout[];
 CONTENT_EXPORT extern const char kGenerateAccessibilityTestExpectations[];
 extern const char kGpuLauncher[];
 CONTENT_EXPORT extern const char kGpuProcess[];
@@ -295,11 +299,6 @@ CONTENT_EXPORT extern const char kTraceExportEventsToETW[];
 extern const char kIpcDumpDirectory[];
 extern const char kIpcFuzzerTestcase[];
 #endif
-
-#if defined(OS_MACOSX)
-extern const char kEnableV2Sandbox[];
-extern const char kV2SandboxedEnabled[];
-#endif  // defined(OS_MACOSX)
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in
 // alphabetical order, or in one of the ifdefs (also in order in each section).

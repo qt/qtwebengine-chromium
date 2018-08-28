@@ -26,7 +26,7 @@
 
 #include "third_party/blink/renderer/core/layout/layout_object_child_list.h"
 
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/layout/layout_counter.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
@@ -242,14 +242,6 @@ void LayoutObjectChildList::InvalidatePaintOnRemoval(LayoutObject& old_child) {
     old_child.View()->SetShouldDoFullPaintInvalidation();
   ObjectPaintInvalidator paint_invalidator(old_child);
   paint_invalidator.SlowSetPaintingLayerNeedsRepaint();
-
-  // For SPv175 raster invalidation will be done in PaintController.
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
-  paint_invalidator.InvalidatePaintOfPreviousVisualRect(
-      old_child.ContainerForPaintInvalidation(),
-      PaintInvalidationReason::kDisappeared);
 }
 
 }  // namespace blink

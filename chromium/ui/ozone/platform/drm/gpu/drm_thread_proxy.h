@@ -35,13 +35,14 @@ class DrmThreadProxy {
   scoped_refptr<GbmBuffer> CreateBuffer(gfx::AcceleratedWidget widget,
                                         const gfx::Size& size,
                                         gfx::BufferFormat format,
-                                        gfx::BufferUsage usage);
+                                        gfx::BufferUsage usage,
+                                        uint32_t flags);
 
   scoped_refptr<GbmBuffer> CreateBufferFromFds(
       gfx::AcceleratedWidget widget,
       const gfx::Size& size,
       gfx::BufferFormat format,
-      std::vector<base::ScopedFD>&& fds,
+      std::vector<base::ScopedFD> fds,
       const std::vector<gfx::NativePixmapPlane>& planes);
 
   void GetScanoutFormats(gfx::AcceleratedWidget widget,

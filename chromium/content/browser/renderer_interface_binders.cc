@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "content/browser/background_fetch/background_fetch_service_impl.h"
+#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/cookie_store/cookie_store_context.h"
 #include "content/browser/locks/lock_manager.h"
 #include "content/browser/notifications/platform_notification_context_impl.h"
@@ -28,7 +29,7 @@
 #include "services/network/restricted_cookie_manager.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "services/shape_detection/public/mojom/barcodedetection.mojom.h"
+#include "services/shape_detection/public/mojom/barcodedetection_provider.mojom.h"
 #include "services/shape_detection/public/mojom/constants.mojom.h"
 #include "services/shape_detection/public/mojom/facedetection_provider.mojom.h"
 #include "services/shape_detection/public/mojom/textdetection.mojom.h"
@@ -94,22 +95,15 @@ void ForwardServiceRequest(const char* service_name,
   connector->BindInterface(service_name, std::move(request));
 }
 
-void GetRestrictedCookieManagerForWorker(
+void GetRestrictedCookieManager(
     network::mojom::RestrictedCookieManagerRequest request,
     RenderProcessHost* render_process_host,
     const url::Origin& origin) {
-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableExperimentalWebPlatformFeatures)) {
-    return;
-  }
-
   StoragePartition* storage_partition =
       render_process_host->GetStoragePartition();
   network::mojom::NetworkContext* network_context =
       storage_partition->GetNetworkContext();
-  uint32_t render_process_id = render_process_host->GetID();
-  network_context->GetRestrictedCookieManager(
-      std::move(request), render_process_id, MSG_ROUTING_NONE);
+  network_context->GetRestrictedCookieManager(std::move(request), origin);
 }
 
 // Register renderer-exposed interfaces. Each registered interface binder is
@@ -120,7 +114,7 @@ void GetRestrictedCookieManagerForWorker(
 // override binders registered here.
 void RendererInterfaceBinders::InitializeParameterizedBinderRegistry() {
   parameterized_binder_registry_.AddInterface(base::Bind(
-      &ForwardServiceRequest<shape_detection::mojom::BarcodeDetection>,
+      &ForwardServiceRequest<shape_detection::mojom::BarcodeDetectionProvider>,
       shape_detection::mojom::kServiceName));
   parameterized_binder_registry_.AddInterface(base::Bind(
       &ForwardServiceRequest<shape_detection::mojom::FaceDetectionProvider>,
@@ -174,12 +168,12 @@ void RendererInterfaceBinders::InitializeParameterizedBinderRegistry() {
                     RenderProcessHost* host, const url::Origin& origin) {
         static_cast<StoragePartitionImpl*>(host->GetStoragePartition())
             ->GetPlatformNotificationContext()
-            ->CreateService(host->GetID(), origin, std::move(request));
+            ->CreateService(origin, std::move(request));
       }));
   parameterized_binder_registry_.AddInterface(
       base::BindRepeating(&BackgroundFetchServiceImpl::Create));
   parameterized_binder_registry_.AddInterface(
-      base::BindRepeating(GetRestrictedCookieManagerForWorker));
+      base::BindRepeating(GetRestrictedCookieManager));
   parameterized_binder_registry_.AddInterface(
       base::BindRepeating(&QuotaDispatcherHost::CreateForWorker));
   parameterized_binder_registry_.AddInterface(base::BindRepeating(
@@ -201,7 +195,7 @@ void RendererInterfaceBinders::CreateWebSocket(
     RenderProcessHost* host,
     const url::Origin& origin) {
   WebSocketManager::CreateWebSocket(host->GetID(), MSG_ROUTING_NONE, origin,
-                                    std::move(request));
+                                    nullptr, std::move(request));
 }
 
 }  // namespace

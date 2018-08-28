@@ -14,7 +14,6 @@
 
 namespace blink {
 
-class HTTPHeaderMap;
 class SecurityOrigin;
 
 // CORS error strings related utility functions.
@@ -28,7 +27,6 @@ struct PLATFORM_EXPORT ErrorParameter {
                                const KURL& first_url,
                                const KURL& second_url,
                                const int status_code,
-                               const HTTPHeaderMap&,
                                const SecurityOrigin&,
                                const WebURLRequest::RequestContext);
 
@@ -43,10 +41,9 @@ struct PLATFORM_EXPORT ErrorParameter {
   // |error| for redirect check needs to specify a valid |redirect_url|. The
   // |redirect_url| can be omitted not to include redirect related information.
   static ErrorParameter CreateForAccessCheck(
-      const network::mojom::CORSError,
+      const network::CORSErrorStatus&,
       const KURL& request_url,
       int response_status_code,
-      const HTTPHeaderMap& response_header_map,
       const SecurityOrigin&,
       const WebURLRequest::RequestContext,
       const KURL& redirect_url = KURL());
@@ -61,8 +58,7 @@ struct PLATFORM_EXPORT ErrorParameter {
   // Creates an ErrorParameter for an error that CORS::CheckExternalPreflight()
   // returns.
   static ErrorParameter CreateForExternalPreflightCheck(
-      const network::mojom::CORSError,
-      const HTTPHeaderMap& response_header_map);
+      const network::CORSErrorStatus&);
 
   // Creates an ErrorParameter for an error that is related to CORS-preflight
   // response checks.
@@ -84,7 +80,6 @@ struct PLATFORM_EXPORT ErrorParameter {
                  const KURL& first_url,
                  const KURL& second_url,
                  const int status_code,
-                 const HTTPHeaderMap&,
                  const SecurityOrigin&,
                  const WebURLRequest::RequestContext,
                  const String& hint,
@@ -95,10 +90,10 @@ struct PLATFORM_EXPORT ErrorParameter {
   const KURL& first_url;
   const KURL& second_url;
   const int status_code;
-  const HTTPHeaderMap& header_map;
   const SecurityOrigin& origin;
   const WebURLRequest::RequestContext context;
-  const String& hint;
+  // Do not use a reference here. See https://crbug.com/851419.
+  const String hint;
 
   // Set to true when an ErrorParameter was created in a wrong way. Used in
   // GetErrorString() to be robust for coding errors.

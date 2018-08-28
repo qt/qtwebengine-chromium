@@ -72,6 +72,7 @@ class CSSTransitionData;
 class CSSVariableData;
 class FilterOperations;
 class Font;
+class FloatRoundedRect;
 class Hyphenation;
 class NinePieceImage;
 class ShadowList;
@@ -1869,9 +1870,9 @@ class ComputedStyle : public ComputedStyleBase,
 
   // Cursor utility functions.
   CursorList* Cursors() const { return CursorDataInternal().Get(); }
-  void AddCursor(StyleImage*,
-                 bool hot_spot_specified,
-                 const IntPoint& hot_spot = IntPoint());
+  CORE_EXPORT void AddCursor(StyleImage*,
+                             bool hot_spot_specified,
+                             const IntPoint& hot_spot = IntPoint());
   void SetCursorList(CursorList*);
   void ClearCursorList();
 
@@ -2088,7 +2089,7 @@ class ComputedStyle : public ComputedStyleBase,
     return GetPosition() != EPosition::kStatic;
   }
   bool CanContainFixedPositionObjects(bool is_document_element) const {
-    return HasTransformRelatedProperty() || ContainsPaint() ||
+    return HasTransformRelatedProperty() ||
            // Filter establishes containing block for non-document elements:
            // https://drafts.fxtf.org/filter-effects-1/#FilterProperty
            (!is_document_element && HasFilter());
@@ -2217,6 +2218,21 @@ class ComputedStyle : public ComputedStyleBase,
                               ApplyMotionPath) const;
 
   InterpolationQuality GetInterpolationQuality() const;
+
+  bool CanGeneratePseudoElement(PseudoId pseudo) const {
+    // The first letter pseudo element has to look up the tree and see if any
+    // of the ancestors are first letter.
+    if (pseudo != kPseudoIdFirstLetter && !HasPseudoStyle(pseudo))
+      return false;
+    if (Display() == EDisplay::kNone)
+      return false;
+    if (Display() != EDisplay::kContents)
+      return true;
+    // For display: contents elements, we still need to generate ::before and
+    // ::after, but the rest of the pseudo-elements should only be used for
+    // elements with an actual layout object.
+    return pseudo == kPseudoIdBefore || pseudo == kPseudoIdAfter;
+  }
 
  private:
   void SetVisitedLinkBackgroundColor(const StyleColor& v) {
@@ -2543,6 +2559,12 @@ class ComputedStyle : public ComputedStyleBase,
   FRIEND_TEST_ALL_PREFIXES(
       ComputedStyleTest,
       UpdatePropertySpecificDifferencesCompositingReasonsUsedStylePreserve3D);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsOverflow);
+  FRIEND_TEST_ALL_PREFIXES(
+      ComputedStyleTest,
+      UpdatePropertySpecificDifferencesCompositingReasonsContainsPaint);
 };
 
 inline bool ComputedStyle::SetEffectiveZoom(float f) {

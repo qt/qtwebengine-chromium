@@ -23,14 +23,8 @@ struct RemoteDevice {
   std::string name;
   std::string public_key;
   std::string persistent_symmetric_key;
-  bool unlock_key;
-  bool supports_mobile_hotspot;
   int64_t last_update_time_millis;
   std::map<SoftwareFeature, SoftwareFeatureState> software_features;
-
-  // Note: To save space, the BeaconSeeds may not necessarily be included in
-  // this object.
-  bool are_beacon_seeds_loaded = false;
   std::vector<BeaconSeed> beacon_seeds;
 
   RemoteDevice();
@@ -39,15 +33,11 @@ struct RemoteDevice {
       const std::string& name,
       const std::string& public_key,
       const std::string& persistent_symmetric_key,
-      bool unlock_key,
-      bool supports_mobile_hotspot,
       int64_t last_update_time_millis,
-      const std::map<SoftwareFeature, SoftwareFeatureState>& software_features);
+      const std::map<SoftwareFeature, SoftwareFeatureState>& software_features,
+      const std::vector<BeaconSeed>& beacon_seeds);
   RemoteDevice(const RemoteDevice& other);
   ~RemoteDevice();
-
-  // Loads a vector of BeaconSeeds for the RemoteDevice.
-  void LoadBeaconSeeds(const std::vector<BeaconSeed>& beacon_seeds);
 
   std::string GetDeviceId() const;
 

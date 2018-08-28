@@ -119,12 +119,11 @@ class PLATFORM_EXPORT ResourceLoader final
   void DidReceiveTransferSizeUpdate(int transfer_size_diff) override;
   void DidStartLoadingResponseBody(
       mojo::ScopedDataPipeConsumerHandle body) override;
-  void DidDownloadData(int, int) override;
   void DidFinishLoading(TimeTicks finish_time,
                         int64_t encoded_data_length,
                         int64_t encoded_body_length,
                         int64_t decoded_body_length,
-                        bool blocked_cross_site_document) override;
+                        bool should_report_corb_blocking) override;
   void DidFail(const WebURLError&,
                int64_t encoded_data_length,
                int64_t encoded_body_length,
@@ -175,6 +174,10 @@ class PLATFORM_EXPORT ResourceLoader final
   void OnProgress(uint64_t delta) override;
   void FinishedCreatingBlob(const scoped_refptr<BlobDataHandle>&);
 
+  base::Optional<ResourceRequestBlockedReason> CheckResponseNosniff(
+      WebURLRequest::RequestContext,
+      const ResourceResponse&) const;
+
   std::unique_ptr<WebURLLoader> loader_;
   ResourceLoadScheduler::ClientId scheduler_client_id_;
   Member<ResourceFetcher> fetcher_;
@@ -194,7 +197,7 @@ class PLATFORM_EXPORT ResourceLoader final
   // when the blob is finished too.
   struct DeferedFinishLoadingInfo {
     TimeTicks finish_time;
-    bool blocked_cross_site_document;
+    bool should_report_corb_blocking;
   };
   base::Optional<DeferedFinishLoadingInfo> load_did_finish_before_blob_;
 

@@ -27,18 +27,17 @@
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_html.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/css/style_sheet_list.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
-#include "third_party/blink/renderer/core/dom/ng/slot_assignment_engine.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/shadow_root_v0.h"
 #include "third_party/blink/renderer/core/dom/slot_assignment.h"
+#include "third_party/blink/renderer/core/dom/slot_assignment_engine.h"
 #include "third_party/blink/renderer/core/dom/text.h"
-#include "third_party/blink/renderer/core/dom/trustedtypes/trusted_html.h"
 #include "third_party/blink/renderer/core/dom/v0_insertion_point.h"
 #include "third_party/blink/renderer/core/dom/whitespace_attacher.h"
 #include "third_party/blink/renderer/core/editing/serializers/serialization.h"
@@ -46,7 +45,8 @@
 #include "third_party/blink/renderer/core/html/html_shadow_element.h"
 #include "third_party/blink/renderer/core/html/html_slot_element.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
+#include "third_party/blink/renderer/core/trustedtypes/trusted_html.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -150,23 +150,18 @@ void ShadowRoot::RecalcStyle(StyleRecalcChange change) {
   DCHECK(!HasCustomStyleCallbacks());
 
   if (GetStyleChangeType() >= kSubtreeStyleChange) {
-    change = kForce;
-    if (NeedsAttach())
+    if (change < kForce)
+      change = kForce;
+    if (NeedsAttach() || change == kReattach)
       SetNeedsReattachLayoutTree();
   }
-
-  // There's no style to update so just calling recalcStyle means we're updated.
-  ClearNeedsStyleRecalc();
+  // There's no style to update so just calling RecalcStyle means we're updated.
+  if (change != kReattach)
+    ClearNeedsStyleRecalc();
 
   if (change >= kUpdatePseudoElements || ChildNeedsStyleRecalc())
     RecalcDescendantStyles(change);
   ClearChildNeedsStyleRecalc();
-}
-
-void ShadowRoot::RecalcStylesForReattach() {
-  // ShadowRoot doesn't support custom callbacks.
-  DCHECK(!HasCustomStyleCallbacks());
-  RecalcDescendantStylesForReattach();
 }
 
 void ShadowRoot::RebuildLayoutTree(WhitespaceAttacher& whitespace_attacher) {
@@ -297,11 +292,6 @@ void ShadowRoot::Trace(blink::Visitor* visitor) {
   visitor->Trace(shadow_root_v0_);
   TreeScope::Trace(visitor);
   DocumentFragment::Trace(visitor);
-}
-
-void ShadowRoot::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(style_sheet_list_);
-  DocumentFragment::TraceWrappers(visitor);
 }
 
 std::ostream& operator<<(std::ostream& ostream, const ShadowRootType& type) {

@@ -59,13 +59,14 @@ bool GetDcSize(HDC hdc, DesktopSize* size);
 // function returns false if native APIs fail.
 bool IsWindowMaximized(HWND window, bool* result);
 
-typedef HRESULT (WINAPI *DwmIsCompositionEnabledFunc)(BOOL* enabled);
+typedef HRESULT(WINAPI* DwmIsCompositionEnabledFunc)(BOOL* enabled);
 class WindowCaptureHelperWin {
  public:
   WindowCaptureHelperWin();
   ~WindowCaptureHelperWin();
 
   bool IsAeroEnabled();
+  bool IsWindowChromeNotification(HWND hwnd);
   bool IsWindowOnCurrentDesktop(HWND hwnd);
   bool IsWindowVisibleOnCurrentDesktop(HWND hwnd);
 

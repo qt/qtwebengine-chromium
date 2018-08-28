@@ -130,7 +130,7 @@ cc_test(
     deps = [
         ":graphcycles_internal",
         "//absl/base",
-        "@com_github_google_benchmark//:benchmark",
+        "@com_github_google_benchmark//:benchmark_main",
     ],
 )
 
@@ -149,9 +149,6 @@ cc_test(
     size = "large",
     srcs = ["mutex_test.cc"],
     copts = ABSL_TEST_COPTS,
-    tags = [
-        "no_test_loonix",  # Too slow.
-    ],
     deps = [
         ":synchronization",
         ":thread_pool",
@@ -173,7 +170,7 @@ cc_test(
         ":synchronization",
         ":thread_pool",
         "//absl/base",
-        "@com_github_google_benchmark//:benchmark",
+        "@com_github_google_benchmark//:benchmark_main",
     ],
 )
 
@@ -228,6 +225,7 @@ cc_test(
         "//absl:windows": [],
         "//conditions:default": ["-pthread"],
     }),
+    tags = ["no_test_ios_x86_64"],
     deps = [
         ":synchronization",
         "//absl/base",

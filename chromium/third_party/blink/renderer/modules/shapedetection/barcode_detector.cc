@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/shapedetection/barcode_detector.h"
 
 #include "services/service_manager/public/cpp/interface_provider.h"
+#include "services/shape_detection/public/mojom/barcodedetection_provider.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
@@ -20,10 +21,14 @@ BarcodeDetector* BarcodeDetector::Create(ExecutionContext* context) {
 }
 
 BarcodeDetector::BarcodeDetector(ExecutionContext* context) : ShapeDetector() {
-  auto request = mojo::MakeRequest(&barcode_service_);
+  shape_detection::mojom::blink::BarcodeDetectionProviderPtr provider;
+  auto request = mojo::MakeRequest(&provider);
   if (auto* interface_provider = context->GetInterfaceProvider()) {
     interface_provider->GetInterface(std::move(request));
   }
+  provider->CreateBarcodeDetection(
+      mojo::MakeRequest(&barcode_service_),
+      shape_detection::mojom::blink::BarcodeDetectorOptions::New());
 
   barcode_service_.set_connection_error_handler(
       WTF::Bind(&BarcodeDetector::OnBarcodeServiceConnectionError,
@@ -34,8 +39,9 @@ ScriptPromise BarcodeDetector::DoDetect(ScriptPromiseResolver* resolver,
                                         SkBitmap bitmap) {
   ScriptPromise promise = resolver->Promise();
   if (!barcode_service_) {
-    resolver->Reject(DOMException::Create(
-        kNotSupportedError, "Barcode detection service unavailable."));
+    resolver->Reject(
+        DOMException::Create(DOMExceptionCode::kNotSupportedError,
+                             "Barcode detection service unavailable."));
     return promise;
   }
   barcode_service_requests_.insert(resolver);
@@ -64,9 +70,9 @@ void BarcodeDetector::OnDetectBarcodes(
     }
     detected_barcodes.push_back(DetectedBarcode::Create(
         barcode->raw_value,
-        DOMRect::Create(barcode->bounding_box.x, barcode->bounding_box.y,
-                        barcode->bounding_box.width,
-                        barcode->bounding_box.height),
+        DOMRectReadOnly::Create(
+            barcode->bounding_box.x, barcode->bounding_box.y,
+            barcode->bounding_box.width, barcode->bounding_box.height),
         corner_points));
   }
 
@@ -75,7 +81,7 @@ void BarcodeDetector::OnDetectBarcodes(
 
 void BarcodeDetector::OnBarcodeServiceConnectionError() {
   for (const auto& request : barcode_service_requests_) {
-    request->Reject(DOMException::Create(kNotSupportedError,
+    request->Reject(DOMException::Create(DOMExceptionCode::kNotSupportedError,
                                          "Barcode Detection not implemented."));
   }
   barcode_service_requests_.clear();

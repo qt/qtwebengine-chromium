@@ -24,13 +24,9 @@ class CORE_EXPORT FragmentData {
   void ClearNextFragment() { next_fragment_.reset(); }
 
   // Visual offset of this fragment's top-left position from the
-  // "paint offset root":
-  // - In SPv1 mode, this is the containing composited PaintLayer, or
-  //   PaintLayer with a transform, whichever is nearer along the containing
-  //   block chain.
-  // - In SPv2 mode, this is the containing root PaintLayer of the
-  //   root LocalFrameView, or PaintLayer with a transform, whichever is nearer
-  //   along the containing block chain.
+  // "paint offset root" which is the containing root PaintLayer of the root
+  // LocalFrameView, or PaintLayer with a transform, whichever is nearer along
+  // the containing block chain.
   LayoutPoint PaintOffset() const { return paint_offset_; }
   void SetPaintOffset(const LayoutPoint& paint_offset) {
     paint_offset_ = paint_offset;
@@ -39,6 +35,8 @@ class CORE_EXPORT FragmentData {
   // The visual rect computed by the latest paint invalidation.
   // This rect does *not* account for composited scrolling. See LayoutObject::
   // AdjustVisualRectForCompositedScrolling().
+  // It's location may be different from PaintOffset when there is visual (ink)
+  // overflow to the top and/or the left.
   LayoutRect VisualRect() const { return visual_rect_; }
   void SetVisualRect(const LayoutRect& rect) { visual_rect_ = rect; }
 
@@ -54,17 +52,6 @@ class CORE_EXPORT FragmentData {
   }
   void SetLayer(std::unique_ptr<PaintLayer>);
 
-  // See PaintInvalidatorContext::old_location for details. This will be removed
-  // for SPv2.
-  LayoutPoint LocationInBacking() const {
-    return rare_data_ ? rare_data_->location_in_backing
-                      : visual_rect_.Location();
-  }
-  void SetLocationInBacking(const LayoutPoint& location) {
-    if (rare_data_ || location != visual_rect_.Location())
-      EnsureRareData().location_in_backing = location;
-  }
-
   // Visual rect of the selection on this object, in the same coordinate space
   // as DisplayItemClient::VisualRect().
   LayoutRect SelectionVisualRect() const {
@@ -75,12 +62,31 @@ class CORE_EXPORT FragmentData {
       EnsureRareData().selection_visual_rect = r;
   }
 
-  LayoutRect PartialInvalidationRect() const {
-    return rare_data_ ? rare_data_->partial_invalidation_rect : LayoutRect();
+  // Covers the sub-rectangles of the object that need to be re-rastered, in the
+  // object's local coordinate space.  During PrePaint, the rect mapped into
+  // visual rect space will be added into PartialInvalidationVisualRect(), and
+  // cleared.
+  LayoutRect PartialInvalidationLocalRect() const {
+    return rare_data_ ? rare_data_->partial_invalidation_local_rect
+                      : LayoutRect();
   }
-  void SetPartialInvalidationRect(const LayoutRect& r) {
+  // LayoutObject::InvalidatePaintRectangle() calls this method to accumulate
+  // the sub-rectangles needing re-rasterization.
+  void SetPartialInvalidationLocalRect(const LayoutRect& r) {
     if (rare_data_ || !r.IsEmpty())
-      EnsureRareData().partial_invalidation_rect = r;
+      EnsureRareData().partial_invalidation_local_rect = r;
+  }
+
+  // Covers the sub-rectangles of the object that need to be re-rastered, in
+  // visual rect space (see VisualRect()). It will be cleared after the raster
+  // invalidation is issued after paint.
+  LayoutRect PartialInvalidationVisualRect() const {
+    return rare_data_ ? rare_data_->partial_invalidation_visual_rect
+                      : LayoutRect();
+  }
+  void SetPartialInvalidationVisualRect(const LayoutRect& r) {
+    if (rare_data_ || !r.IsEmpty())
+      EnsureRareData().partial_invalidation_visual_rect = r;
   }
 
   LayoutUnit LogicalTopInFlowThread() const {
@@ -164,7 +170,7 @@ class CORE_EXPORT FragmentData {
       rare_data_->local_border_box_properties =
           std::make_unique<RefCountedPropertyTreeState>(state);
     } else {
-      *rare_data_->local_border_box_properties = std::move(state);
+      *rare_data_->local_border_box_properties = state;
     }
   }
 
@@ -211,16 +217,16 @@ class CORE_EXPORT FragmentData {
     USING_FAST_MALLOC(RareData);
 
    public:
-    RareData(const LayoutPoint& location_in_backing);
+    RareData();
     ~RareData();
 
     // The following data fields are not fragment specific. Placed here just to
     // avoid separate data structure for them.
     std::unique_ptr<PaintLayer> layer;
     UniqueObjectId unique_id;
-    LayoutPoint location_in_backing;
     LayoutRect selection_visual_rect;
-    LayoutRect partial_invalidation_rect;
+    LayoutRect partial_invalidation_local_rect;
+    LayoutRect partial_invalidation_visual_rect;
 
     // Fragment specific data.
     LayoutPoint pagination_offset;

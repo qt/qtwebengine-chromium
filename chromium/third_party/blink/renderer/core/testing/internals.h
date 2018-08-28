@@ -27,11 +27,11 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_TESTING_INTERNALS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_TESTING_INTERNALS_H_
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/core/css/css_computed_style_declaration.h"
 #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -57,6 +57,8 @@ class Element;
 class ExceptionState;
 class ExecutionContext;
 class GCObservation;
+class HitTestLocation;
+class HitTestResult;
 class HTMLInputElement;
 class HTMLMediaElement;
 class HTMLSelectElement;
@@ -219,7 +221,6 @@ class Internals final : public ScriptWrappable {
                                  bool);
   void setMarkedTextMatchesAreHighlighted(Document*, bool);
 
-  void setFrameViewPosition(Document*, long x, long y, ExceptionState&);
   String viewportAsText(Document*,
                         float device_pixel_ratio,
                         int available_width,
@@ -300,10 +301,8 @@ class Internals final : public ScriptWrappable {
   StaticNodeList* nodesFromRect(Document*,
                                 int x,
                                 int y,
-                                unsigned top_padding,
-                                unsigned right_padding,
-                                unsigned bottom_padding,
-                                unsigned left_padding,
+                                int width,
+                                int height,
                                 bool ignore_clipping,
                                 bool allow_child_frame_content,
                                 ExceptionState&) const;
@@ -521,17 +520,13 @@ class Internals final : public ScriptWrappable {
   String selectedTextForClipboard();
 
   void setVisualViewportOffset(int x, int y);
-  int visualViewportHeight();
-  int visualViewportWidth();
-  // The scroll position of the visual viewport relative to the document origin.
-  float visualViewportScrollX();
-  float visualViewportScrollY();
 
   // Return true if the given use counter exists for the given document.
   // |feature| must be one of the values from the WebFeature enum.
   bool isUseCounted(Document*, uint32_t feature);
   bool isCSSPropertyUseCounted(Document*, const String&);
   bool isAnimatedCSSPropertyUseCounted(Document*, const String&);
+  void clearUseCounter(Document*, uint32_t feature);
 
   Vector<String> getCSSPropertyLonghands() const;
   Vector<String> getCSSPropertyShorthands() const;
@@ -599,6 +594,13 @@ class Internals final : public ScriptWrappable {
   LocalFrame* GetFrame() const;
   Vector<String> IconURLs(Document*, int icon_types_mask) const;
   DOMRectList* AnnotatedRegions(Document*, bool draggable, ExceptionState&);
+  void HitTestRect(HitTestLocation&,
+                   HitTestResult&,
+                   long x,
+                   long y,
+                   long width,
+                   long height,
+                   Document*);
 
   DocumentMarker* MarkerAt(Node*,
                            const String& marker_type,

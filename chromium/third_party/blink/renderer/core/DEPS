@@ -2,17 +2,23 @@ include_rules = [
     "+base/atomic_sequence_num.h",
     "+base/memory/scoped_refptr.h",
     "+base/synchronization/waitable_event.h",
+    "+base/task/sequence_manager/task_time_observer.h",
     "+base/unguessable_token.h",
     "+build/mac",
     "+build/win",
     "+cc/base/region.h",
+    "+cc/input/browser_controls_state.h",
+    "+cc/input/event_listener_properties.h",
     "+cc/input/overscroll_behavior.h",
     "+cc/layers/content_layer_client.h",
     "+cc/layers/layer.h",
     "+cc/layers/layer_position_constraint.h",
     "+cc/layers/layer_sticky_position_constraint.h",
+    "+cc/layers/picture_layer.h",
     "+cc/layers/scrollbar_layer_interface.h",
     "+cc/paint/display_item_list.h",
+    "+cc/paint/paint_canvas.h",
+    "+cc/paint/paint_flags.h",
     "+gpu/config/gpu_feature_info.h",
     "-inspector/v8",
     "+inspector/v8/public",
@@ -20,7 +26,9 @@ include_rules = [
     "+mojo/public/cpp/bindings",
     "+mojo/public/cpp/system",
     "+services/metrics/public",
+    "+services/network/public/cpp/cors/cors_error_status.h",
     "+services/network/public/cpp/features.h",
+    "+services/network/public/cpp/shared_url_loader_factory.h",
     "+services/network/public/mojom",
     "+services/resource_coordinator/public/cpp/resource_coordinator_features.h",
     "+services/service_manager/public",
@@ -48,12 +56,20 @@ include_rules = [
 
 specific_include_rules = {
     # Additional allowed includes for tests.
-    ".*_test\.cc" : [
+    ".*_test(_.*)?\.(cc|h)" : [
+        # Test harness may use cc directly instead of going through WebViewImpl etc.
+        "+cc",
+	# TODO(crbug.com/838693): Test harnesses use LayerTreeView
+	# from content instead of a fake WebLayerTreeView implementation, so
+	# that the Web abstraction can go away.
+        "+content/renderer/gpu",
+        "+content/test",
         "+third_party/blink/renderer/core/frame/web_local_frame_impl.h",
         "+third_party/blink/renderer/core/frame/web_remote_frame_impl.h",
         "+gin"
     ],
-
+    "data_object_item.cc" : [ "+ui/gfx/codec" ],
+    "clipboard_utilities.cc" : [ "+net/base/escape.h" ],
     "find_in_page.cc" : [
         "+third_party/blink/renderer/core/frame/web_local_frame_impl.h",
     ],

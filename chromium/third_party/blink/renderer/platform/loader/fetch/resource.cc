@@ -224,7 +224,6 @@ void Resource::SetLoader(ResourceLoader* loader) {
   CHECK(!loader_);
   DCHECK(StillNeedsLoad());
   loader_ = loader;
-  status_ = ResourceStatus::kPending;
 }
 
 void Resource::CheckResourceIntegrity() {
@@ -336,6 +335,26 @@ void Resource::SetDataBufferingPolicy(
   SetEncodedSize(0);
 }
 
+static bool NeedsSynchronousCacheHit(Resource::Type type,
+                                     const ResourceLoaderOptions& options) {
+  // Synchronous requests must always succeed or fail synchronously.
+  if (options.synchronous_policy == kRequestSynchronously)
+    return true;
+  // Some resources types default to return data synchronously. For most of
+  // these, it's because there are layout tests that expect data to return
+  // synchronously in case of cache hit. In the case of fonts, there was a
+  // performance regression.
+  // FIXME: Get to the point where we don't need to special-case sync/async
+  // behavior for different resource types.
+  if (type == Resource::kCSSStyleSheet)
+    return true;
+  if (type == Resource::kScript)
+    return true;
+  if (type == Resource::kFont)
+    return true;
+  return false;
+}
+
 void Resource::FinishAsError(const ResourceError& error,
                              base::SingleThreadTaskRunner* task_runner) {
   error_ = error;
@@ -344,6 +363,7 @@ void Resource::FinishAsError(const ResourceError& error,
   if (IsMainThread())
     GetMemoryCache()->Remove(this);
 
+  bool failed_during_start = status_ == ResourceStatus::kNotStarted;
   if (!ErrorOccurred())
     SetStatus(ResourceStatus::kLoadError);
   DCHECK(ErrorOccurred());
@@ -351,7 +371,20 @@ void Resource::FinishAsError(const ResourceError& error,
   loader_ = nullptr;
   CheckResourceIntegrity();
   TriggerNotificationForFinishObservers(task_runner);
-  NotifyFinished();
+
+  // Most resource types don't expect to succeed or fail inside
+  // ResourceFetcher::RequestResource(). If the request does complete
+  // immediately, the convention is to notify the client asynchronously
+  // unless the type is exempted for historical reasons (mostly due to
+  // performance implications to making those notifications asynchronous).
+  // So if this is an immediate failure (i.e., before NotifyStartLoad()),
+  // post a task if the Resource::Type supports it.
+  if (failed_during_start && !NeedsSynchronousCacheHit(GetType(), options_)) {
+    task_runner->PostTask(FROM_HERE, WTF::Bind(&Resource::NotifyFinished,
+                                               WrapWeakPersistent(this)));
+  } else {
+    NotifyFinished();
+  }
 }
 
 void Resource::Finish(TimeTicks load_finish_time,
@@ -372,12 +405,12 @@ AtomicString Resource::HttpContentType() const {
 
 bool Resource::PassesAccessControlCheck(
     const SecurityOrigin& security_origin) const {
-  base::Optional<network::mojom::CORSError> cors_error = CORS::CheckAccess(
+  base::Optional<network::CORSErrorStatus> cors_status = CORS::CheckAccess(
       GetResponse().Url(), GetResponse().HttpStatusCode(),
       GetResponse().HttpHeaderFields(),
       LastResourceRequest().GetFetchCredentialsMode(), security_origin);
 
-  return !cors_error;
+  return !cors_status;
 }
 
 bool Resource::MustRefetchDueToIntegrityMetadata(
@@ -437,6 +470,7 @@ static double FreshnessLifetime(const ResourceResponse& response,
 }
 
 static bool CanUseResponse(const ResourceResponse& response,
+                           bool allow_stale,
                            double response_timestamp) {
   if (response.IsNull())
     return false;
@@ -459,8 +493,11 @@ static bool CanUseResponse(const ResourceResponse& response,
       return false;
   }
 
-  return CurrentAge(response, response_timestamp) <=
-         FreshnessLifetime(response, response_timestamp);
+  double max_life = FreshnessLifetime(response, response_timestamp);
+  if (allow_stale)
+    max_life += response.CacheControlStaleWhileRevalidate();
+
+  return CurrentAge(response, response_timestamp) <= max_life;
 }
 
 const ResourceRequest& Resource::LastResourceRequest() const {
@@ -565,13 +602,12 @@ String Resource::ReasonNotDeletable() const {
 
 void Resource::DidAddClient(ResourceClient* c) {
   if (scoped_refptr<SharedBuffer> data = Data()) {
-    data->ForEachSegment([this, &c](const char* segment, size_t segment_size,
-                                    size_t segment_offset) -> bool {
-      c->DataReceived(this, segment, segment_size);
-
+    for (const auto& span : *data) {
+      c->DataReceived(this, span.data(), span.size());
       // Stop pushing data if the client removed itself.
-      return HasClient(c);
-    });
+      if (!HasClient(c))
+        break;
+    }
   }
   if (!HasClient(c))
     return;
@@ -582,22 +618,6 @@ void Resource::DidAddClient(ResourceClient* c) {
       clients_.erase(c);
     }
   }
-}
-
-static bool TypeNeedsSynchronousCacheHit(Resource::Type type) {
-  // Some resources types default to return data synchronously. For most of
-  // these, it's because there are layout tests that expect data to return
-  // synchronously in case of cache hit. In the case of fonts, there was a
-  // performance regression.
-  // FIXME: Get to the point where we don't need to special-case sync/async
-  // behavior for different resource types.
-  if (type == Resource::kCSSStyleSheet)
-    return true;
-  if (type == Resource::kScript)
-    return true;
-  if (type == Resource::kFont)
-    return true;
-  return false;
 }
 
 void Resource::WillAddClientOrObserver() {
@@ -620,7 +640,7 @@ void Resource::AddClient(ResourceClient* client,
   // If an error has occurred or we have existing data to send to the new client
   // and the resource type supports it, send it asynchronously.
   if ((ErrorOccurred() || !GetResponse().IsNull()) &&
-      !TypeNeedsSynchronousCacheHit(GetType())) {
+      !NeedsSynchronousCacheHit(GetType(), options_)) {
     clients_awaiting_callback_.insert(client);
     if (!async_finish_pending_clients_task_.IsActive()) {
       async_finish_pending_clients_task_ = PostCancellableTask(
@@ -1017,7 +1037,8 @@ bool Resource::MatchPreload(const FetchParameters& params,
 
 bool Resource::CanReuseRedirectChain() const {
   for (auto& redirect : redirect_chain_) {
-    if (!CanUseResponse(redirect.redirect_response_, response_timestamp_))
+    if (!CanUseResponse(redirect.redirect_response_, false /*allow_stale*/,
+                        response_timestamp_))
       return false;
     if (redirect.request_.CacheControlContainsNoCache() ||
         redirect.request_.CacheControlContainsNoStore())
@@ -1051,10 +1072,47 @@ bool Resource::MustReloadDueToVaryHeader(
   return false;
 }
 
-bool Resource::MustRevalidateDueToCacheHeaders() const {
-  return !CanUseResponse(GetResponse(), response_timestamp_) ||
+bool Resource::MustRevalidateDueToCacheHeaders(bool allow_stale) const {
+  return !CanUseResponse(GetResponse(), allow_stale, response_timestamp_) ||
          GetResourceRequest().CacheControlContainsNoCache() ||
          GetResourceRequest().CacheControlContainsNoStore();
+}
+
+static bool ShouldRevalidateStaleResponse(const ResourceRequest& request,
+                                          const ResourceResponse& response,
+                                          double response_timestamp) {
+  double staleness = response.CacheControlStaleWhileRevalidate();
+  if (staleness == 0)
+    return false;
+
+  return CurrentAge(response, response_timestamp) >
+         FreshnessLifetime(response, response_timestamp);
+}
+
+bool Resource::ShouldRevalidateStaleResponse() const {
+  for (auto& redirect : redirect_chain_) {
+    // Use |response_timestamp_| since we don't store the timestamp
+    // of each redirect response.
+    if (blink::ShouldRevalidateStaleResponse(redirect.request_,
+                                             redirect.redirect_response_,
+                                             response_timestamp_)) {
+      return true;
+    }
+  }
+
+  return blink::ShouldRevalidateStaleResponse(
+      GetResourceRequest(), GetResponse(), response_timestamp_);
+}
+
+bool Resource::StaleRevalidationRequested() const {
+  if (GetResponse().AsyncRevalidationRequested())
+    return true;
+
+  for (auto& redirect : redirect_chain_) {
+    if (redirect.redirect_response_.AsyncRevalidationRequested())
+      return true;
+  }
+  return false;
 }
 
 bool Resource::CanUseCacheValidator() const {
@@ -1089,6 +1147,8 @@ void Resource::DidChangePriority(ResourceLoadPriority load_priority,
 // TODO(toyoshim): Consider to generate automatically. https://crbug.com/675515.
 static const char* InitiatorTypeNameToString(
     const AtomicString& initiator_type_name) {
+  if (initiator_type_name == FetchInitiatorTypeNames::audio)
+    return "Audio";
   if (initiator_type_name == FetchInitiatorTypeNames::css)
     return "CSS resource";
   if (initiator_type_name == FetchInitiatorTypeNames::document)
@@ -1097,21 +1157,27 @@ static const char* InitiatorTypeNameToString(
     return "Icon";
   if (initiator_type_name == FetchInitiatorTypeNames::internal)
     return "Internal resource";
+  if (initiator_type_name == FetchInitiatorTypeNames::fetch)
+    return "Fetch";
   if (initiator_type_name == FetchInitiatorTypeNames::link)
     return "Link element resource";
+  if (initiator_type_name == FetchInitiatorTypeNames::other)
+    return "Other resource";
   if (initiator_type_name == FetchInitiatorTypeNames::processinginstruction)
     return "Processing instruction";
-  if (initiator_type_name == FetchInitiatorTypeNames::texttrack)
-    return "Text track";
+  if (initiator_type_name == FetchInitiatorTypeNames::track)
+    return "Track";
   if (initiator_type_name == FetchInitiatorTypeNames::uacss)
     return "User Agent CSS resource";
+  if (initiator_type_name == FetchInitiatorTypeNames::video)
+    return "Video";
   if (initiator_type_name == FetchInitiatorTypeNames::xml)
     return "XML resource";
   if (initiator_type_name == FetchInitiatorTypeNames::xmlhttprequest)
     return "XMLHttpRequest";
 
   static_assert(
-      FetchInitiatorTypeNames::FetchInitiatorTypeNamesCount == 13,
+      FetchInitiatorTypeNames::FetchInitiatorTypeNamesCount == 17,
       "New FetchInitiatorTypeNames should be handled correctly here.");
 
   return "Resource";

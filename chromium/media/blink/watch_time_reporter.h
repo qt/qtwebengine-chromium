@@ -17,6 +17,7 @@
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_codecs.h"
 #include "media/blink/media_blink_export.h"
+#include "media/blink/watch_time_component.h"
 #include "media/mojo/interfaces/media_metrics_provider.mojom.h"
 #include "media/mojo/interfaces/watch_time_recorder.mojom.h"
 #include "third_party/blink/public/platform/web_media_player.h"
@@ -56,6 +57,7 @@ namespace media {
 // old metric finalized as accurately as possible.
 class MEDIA_BLINK_EXPORT WatchTimeReporter : base::PowerObserver {
  public:
+  using DisplayType = blink::WebMediaPlayer::DisplayType;
   using GetMediaTimeCB = base::RepeatingCallback<base::TimeDelta(void)>;
 
   // Constructor for the reporter; all requested metadata should be fully known
@@ -78,6 +80,7 @@ class MEDIA_BLINK_EXPORT WatchTimeReporter : base::PowerObserver {
   // TODO(dalecurtis): Should we only report when rate == 1.0? Should we scale
   // the elapsed media time instead?
   WatchTimeReporter(mojom::PlaybackPropertiesPtr properties,
+                    const gfx::Size& initial_natural_size,
                     GetMediaTimeCB get_media_time_cb,
                     mojom::MediaMetricsProvider* provider,
                     scoped_refptr<base::SequencedTaskRunner> task_runner,
@@ -130,29 +133,19 @@ class MEDIA_BLINK_EXPORT WatchTimeReporter : base::PowerObserver {
   void OnDisplayTypeFullscreen();
   void OnDisplayTypePictureInPicture();
 
-  // Sets the audio and video decoder names for reporting. Similar to OnError(),
-  // this value is always sent to the recorder regardless of whether we're
-  // currently reporting watch time or not. Must only be set once.
-  void SetAudioDecoderName(const std::string& name);
-  void SetVideoDecoderName(const std::string& name);
+  // Mutates various properties that may change over the lifetime of a playback
+  // but for which we don't want to interrupt reporting for. UMA watch time will
+  // not be interrupted by changes to these properties, while UKM will.
+  void UpdateSecondaryProperties(
+      mojom::SecondaryPlaybackPropertiesPtr secondary_properties);
 
   // Notifies the autoplay status of the playback. Must not be called multiple
   // times with different values.
   void SetAutoplayInitiated(bool autoplay_initiated);
 
-  // Setup the reporting interval to be immediate to avoid spinning real time
-  // within the unit test.
-  void set_reporting_interval_for_testing() {
-    reporting_interval_ = base::TimeDelta();
-  }
-
-  void set_is_on_battery_power_for_testing(bool on_battery_power) {
-    is_on_battery_power_ = on_battery_power;
-  }
-
-  void OnPowerStateChangeForTesting(bool on_battery_power) {
-    OnPowerStateChange(on_battery_power);
-  }
+  // Updates the duration maintained by the recorder. May be called any number
+  // of times during playback.
+  void OnDurationChanged(base::TimeDelta duration);
 
  private:
   friend class WatchTimeReporterTest;
@@ -161,6 +154,7 @@ class MEDIA_BLINK_EXPORT WatchTimeReporter : base::PowerObserver {
   WatchTimeReporter(mojom::PlaybackPropertiesPtr properties,
                     bool is_background,
                     bool is_muted,
+                    const gfx::Size& initial_natural_size,
                     GetMediaTimeCB get_media_time_cb,
                     mojom::MediaMetricsProvider* provider,
                     scoped_refptr<base::SequencedTaskRunner> task_runner,
@@ -172,18 +166,36 @@ class MEDIA_BLINK_EXPORT WatchTimeReporter : base::PowerObserver {
   // resume events because we report watch time in terms of elapsed media time
   // and not in terms of elapsed real time.
   void OnPowerStateChange(bool on_battery_power) override;
+  void OnNativeControlsChanged(bool has_native_controls);
+  void OnDisplayTypeChanged(blink::WebMediaPlayer::DisplayType display_type);
 
-  bool ShouldReportWatchTime();
+  bool ShouldReportWatchTime() const;
+  bool ShouldReportingTimerRun() const;
   void MaybeStartReportingTimer(base::TimeDelta start_timestamp);
   enum class FinalizeTime { IMMEDIATELY, ON_NEXT_UPDATE };
   void MaybeFinalizeWatchTime(FinalizeTime finalize_time);
+  void RestartTimerForHysteresis();
+
+  // UpdateWatchTime() both records watch time and processes any finalize event.
+  void RecordWatchTime();
   void UpdateWatchTime();
-  void OnDisplayTypeChanged(blink::WebMediaPlayer::DisplayType display_type);
+
+  // Helper methods for creating the components that make up the watch time
+  // report. All components except the base component require a creation method
+  // and a conversion method to get the correct WatchTimeKey.
+  std::unique_ptr<WatchTimeComponent<bool>> CreateBaseComponent();
+  std::unique_ptr<WatchTimeComponent<bool>> CreatePowerComponent();
+  WatchTimeKey GetPowerKey(bool is_on_battery_power);
+  std::unique_ptr<WatchTimeComponent<bool>> CreateControlsComponent();
+  WatchTimeKey GetControlsKey(bool has_native_controls);
+  std::unique_ptr<WatchTimeComponent<DisplayType>> CreateDisplayTypeComponent();
+  WatchTimeKey GetDisplayTypeKey(DisplayType display_type);
 
   // Initialized during construction.
   const mojom::PlaybackPropertiesPtr properties_;
   const bool is_background_;
   const bool is_muted_;
+  const gfx::Size initial_natural_size_;
   const GetMediaTimeCB get_media_time_cb_;
   mojom::WatchTimeRecorderPtr recorder_;
 
@@ -194,44 +206,27 @@ class MEDIA_BLINK_EXPORT WatchTimeReporter : base::PowerObserver {
 
   base::RepeatingTimer reporting_timer_;
 
-  // Updated by the OnXXX() methods above.
-  bool is_on_battery_power_ = false;
+  // Updated by the OnXXX() methods above; controls timer state.
   bool is_playing_ = false;
   bool is_visible_ = true;
-  bool has_native_controls_ = false;
+  bool is_seeking_ = false;
+  bool in_shutdown_ = false;
   double volume_ = 1.0;
+
   int underflow_count_ = 0;
   std::vector<base::TimeDelta> pending_underflow_events_;
 
-  blink::WebMediaPlayer::DisplayType display_type_ =
-      blink::WebMediaPlayer::DisplayType::kInline;
-  blink::WebMediaPlayer::DisplayType display_type_for_recording_ =
-      blink::WebMediaPlayer::DisplayType::kInline;
-
-  // The last media timestamp seen by UpdateWatchTime().
-  base::TimeDelta last_media_timestamp_ = kNoTimestamp;
-  base::TimeDelta last_media_power_timestamp_ = kNoTimestamp;
-  base::TimeDelta last_media_controls_timestamp_ = kNoTimestamp;
-  base::TimeDelta last_media_display_type_timestamp_ = kNoTimestamp;
-
-  // The starting and ending timestamps used for reporting watch time.
-  base::TimeDelta start_timestamp_;
-  base::TimeDelta end_timestamp_ = kNoTimestamp;
-
-  // Similar to the above but tracks watch time relative to whether or not
-  // battery or AC power is being used.
-  base::TimeDelta start_timestamp_for_power_;
-  base::TimeDelta end_timestamp_for_power_ = kNoTimestamp;
-
-  // Similar to the above but tracks watch time relative to whether or not
-  // native controls are being used.
-  base::TimeDelta start_timestamp_for_controls_;
-  base::TimeDelta end_timestamp_for_controls_ = kNoTimestamp;
-
-  // Similar to the above but tracks watch time relative to whether the display
-  // type is inline, fullscreen or picture-in-picture.
-  base::TimeDelta start_timestamp_for_display_type_;
-  base::TimeDelta end_timestamp_for_display_type_ = kNoTimestamp;
+  // The various components making up WatchTime. If the |base_component_| is
+  // finalized, all reporting will be stopped and finalized using its ending
+  // timestamp.
+  //
+  // Note: If you are adding a new type of component (i.e., one that is not
+  // bool, etc) you must also update the end of the WatchTimeComponent .cc file
+  // to add a new template class definition or you will get linking errors.
+  std::unique_ptr<WatchTimeComponent<bool>> base_component_;
+  std::unique_ptr<WatchTimeComponent<bool>> power_component_;
+  std::unique_ptr<WatchTimeComponent<DisplayType>> display_type_component_;
+  std::unique_ptr<WatchTimeComponent<bool>> controls_component_;
 
   // Special case reporter for handling background video watch time. Configured
   // as an audio only WatchTimeReporter with |is_background_| set to true.

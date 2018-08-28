@@ -78,7 +78,7 @@ class FakeCertVerifier : public net::CertVerifier {
   int Verify(const RequestParams& params,
              net::CRLSet*,
              net::CertVerifyResult* verify_result,
-             const net::CompletionCallback&,
+             net::CompletionOnceCallback,
              std::unique_ptr<Request>*,
              const net::NetLogWithSource&) override {
     verify_result->Reset();
@@ -623,7 +623,7 @@ void CastSocketImpl::CloseInternal() {
   SetReadyState(ReadyState::CLOSED);
 }
 
-base::Timer* CastSocketImpl::GetTimer() {
+base::OneShotTimer* CastSocketImpl::GetTimer() {
   return connect_timeout_timer_.get();
 }
 

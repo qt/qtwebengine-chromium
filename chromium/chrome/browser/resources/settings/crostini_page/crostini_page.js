@@ -12,7 +12,7 @@
 Polymer({
   is: 'settings-crostini-page',
 
-  behaviors: [PrefsBehavior],
+  behaviors: [I18nBehavior, PrefsBehavior],
 
   properties: {
     /** Preferences state. */
@@ -29,7 +29,7 @@ Polymer({
         if (settings.routes.CROSTINI_DETAILS) {
           map.set(
               settings.routes.CROSTINI_DETAILS.path,
-              '#crostini .subpage-arrow');
+              '#crostini .subpage-arrow button');
         }
         return map;
       },

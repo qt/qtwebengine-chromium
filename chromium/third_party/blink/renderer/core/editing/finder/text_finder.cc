@@ -35,9 +35,9 @@
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
 #include "third_party/blink/public/platform/web_vector.h"
 #include "third_party/blink/public/web/web_find_options.h"
-#include "third_party/blink/public/web/web_frame_client.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_view_client.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache_base.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache_base.h"
 #include "third_party/blink/renderer/core/dom/range.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/editing/editor.h"
@@ -55,6 +55,7 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
+#include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/text_autosizer.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/timer.h"
@@ -121,9 +122,11 @@ static void ScrollToVisible(Range* match) {
       smooth_find_enabled ? kScrollBehaviorSmooth : kScrollBehaviorAuto;
   first_node.GetLayoutObject()->ScrollRectToVisible(
       LayoutRect(match->BoundingBox()),
-      WebScrollIntoViewParams(ScrollAlignment::kAlignCenterIfNeeded,
-                              ScrollAlignment::kAlignCenterIfNeeded,
-                              kUserScroll, false, scroll_behavior, true));
+      WebScrollIntoViewParams(
+          ScrollAlignment::kAlignCenterIfNeeded,
+          ScrollAlignment::kAlignCenterIfNeeded, kUserScroll,
+          true /* make_visible_in_visual_viewport */, scroll_behavior,
+          true /* is_for_scroll_sequence */));
   first_node.GetDocument().SetSequentialFocusNavigationStartingPoint(
       const_cast<Node*>(&first_node));
 }
@@ -175,7 +178,7 @@ bool TextFinder::Find(int identifier,
     if (!options.find_next)
       ClearFindMatchesCache();
 
-    OwnerFrame().GetFrameView()->InvalidatePaintForTickmarks();
+    InvalidatePaintForTickmarks();
     return false;
   }
   ScrollToVisible(active_match_);
@@ -189,7 +192,7 @@ bool TextFinder::Find(int identifier,
           ->GetTextAutosizer()
           ->PageNeedsAutosizing()) {
     OwnerFrame().ViewImpl()->ZoomToFindInPageRect(
-        OwnerFrame().GetFrameView()->AbsoluteToRootFrame(
+        OwnerFrame().GetFrameView()->ConvertToRootFrame(
             EnclosingIntRect(LayoutObject::AbsoluteBoundingBoxRectForRange(
                 EphemeralRange(active_match_.Get())))));
   }
@@ -231,7 +234,7 @@ bool TextFinder::Find(int identifier,
       else if (active_match_index_ < 0)
         active_match_index_ = last_match_count_ - 1;
     }
-    WebRect selection_rect = OwnerFrame().GetFrameView()->AbsoluteToRootFrame(
+    WebRect selection_rect = OwnerFrame().GetFrameView()->ConvertToRootFrame(
         active_match_->BoundingBox());
     ReportFindInPageSelection(selection_rect, active_match_index_ + 1,
                               identifier);
@@ -347,7 +350,7 @@ void TextFinder::StopFindingAndClearSelection() {
   ResetActiveMatch();
 
   // Let the frame know that we don't want tickmarks anymore.
-  OwnerFrame().GetFrameView()->InvalidatePaintForTickmarks();
+  InvalidatePaintForTickmarks();
 }
 
 void TextFinder::ReportFindInPageResultToAccessibility(int identifier) {
@@ -440,7 +443,7 @@ void TextFinder::ScopeStringMatches(int identifier,
   const double kMaxScopingDuration = 0.1;  // seconds
 
   int match_count = 0;
-  bool timed_out = false;
+  bool full_range_searched = false;
   double start_time = CurrentTime();
   PositionInFlatTree next_scoping_start;
   do {
@@ -454,6 +457,7 @@ void TextFinder::ScopeStringMatches(int identifier,
                       search_text, options.match_case ? 0 : kCaseInsensitive);
     if (result.IsCollapsed()) {
       // Not found.
+      full_range_searched = true;
       break;
     }
     Range* result_range = Range::Create(
@@ -494,7 +498,7 @@ void TextFinder::ScopeStringMatches(int identifier,
 
       // Notify browser of new location for the selected rectangle.
       ReportFindInPageSelection(
-          OwnerFrame().GetFrameView()->AbsoluteToRootFrame(result_bounds),
+          OwnerFrame().GetFrameView()->ConvertToRootFrame(result_bounds),
           active_match_index_ + 1, identifier);
     }
 
@@ -513,8 +517,7 @@ void TextFinder::ScopeStringMatches(int identifier,
     search_start = result.EndPosition();
 
     next_scoping_start = search_start;
-    timed_out = (CurrentTime() - start_time) >= kMaxScopingDuration;
-  } while (!timed_out);
+  } while (CurrentTime() - start_time < kMaxScopingDuration);
 
   if (next_scoping_start.IsNotNull()) {
     resume_scoping_from_range_ =
@@ -537,7 +540,7 @@ void TextFinder::ScopeStringMatches(int identifier,
     IncreaseMatchCount(identifier, match_count);
   }
 
-  if (timed_out) {
+  if (!full_range_searched) {
     // If we found anything during this pass, we should redraw. However, we
     // don't want to spam too much if the page is extremely long, so if we
     // reach a certain point we start throttling the redraw requests.
@@ -570,7 +573,7 @@ void TextFinder::FinishCurrentScopingEffort(int identifier) {
   last_find_request_completed_with_no_matches_ = !last_match_count_;
 
   // This frame is done, so show any scrollbar tickmarks we haven't drawn yet.
-  OwnerFrame().GetFrameView()->InvalidatePaintForTickmarks();
+  InvalidatePaintForTickmarks();
 }
 
 void TextFinder::CancelPendingScopingEffort() {
@@ -777,7 +780,7 @@ int TextFinder::SelectFindMatch(unsigned index, WebRect* selection_rect) {
     }
 
     // Zoom to the active match.
-    active_match_rect = OwnerFrame().GetFrameView()->AbsoluteToRootFrame(
+    active_match_rect = OwnerFrame().GetFrameView()->ConvertToRootFrame(
         active_match_bounding_box);
     OwnerFrame().ViewImpl()->ZoomToFindInPageRect(active_match_rect);
   }
@@ -894,11 +897,15 @@ void TextFinder::InvalidateIfNecessary() {
 
   int i = last_match_count_ / kStartSlowingDownAfter;
   next_invalidate_after_ += i * kSlowdown;
-  OwnerFrame().GetFrameView()->InvalidatePaintForTickmarks();
+  InvalidatePaintForTickmarks();
 }
 
 void TextFinder::FlushCurrentScoping() {
   FlushCurrentScopingEffort(find_request_identifier_);
+}
+
+void TextFinder::InvalidatePaintForTickmarks() {
+  OwnerFrame().GetFrame()->ContentLayoutObject()->InvalidatePaintForTickmarks();
 }
 
 void TextFinder::Trace(blink::Visitor* visitor) {

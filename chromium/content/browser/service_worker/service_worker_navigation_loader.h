@@ -11,16 +11,17 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/loader/navigation_loader_interceptor.h"
+#include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_response_type.h"
 #include "content/browser/service_worker/service_worker_url_job_wrapper.h"
 #include "content/browser/url_loader_factory_getter.h"
-#include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
+#include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/mojom/blob/blob.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_stream_handle.mojom.h"
 
@@ -84,11 +85,8 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
 
   // Called via URLJobWrapper.
   void FallbackToNetwork();
-  void FallbackToNetworkOrRenderer();
   void ForwardToServiceWorker();
   bool ShouldFallbackToNetwork();
-  void FailDueToLostController();
-  void Cancel();
   bool WasCanceled() const;
 
   // The navigation request that was holding this job is
@@ -98,14 +96,17 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
   // endpoint is held by the client.
   void DetachedFromRequest();
 
+  base::WeakPtr<ServiceWorkerNavigationLoader> AsWeakPtr();
+
  private:
   class StreamWaiter;
 
   // For FORWARD_TO_SERVICE_WORKER case.
   void StartRequest();
-  void DidPrepareFetchEvent(scoped_refptr<ServiceWorkerVersion> version);
+  void DidPrepareFetchEvent(scoped_refptr<ServiceWorkerVersion> version,
+                            EmbeddedWorkerStatus initial_worker_status);
   void DidDispatchFetchEvent(
-      ServiceWorkerStatusCode status,
+      blink::ServiceWorkerStatusCode status,
       ServiceWorkerFetchDispatcher::FetchEventResult fetch_result,
       const ServiceWorkerResponse& response,
       blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
@@ -139,7 +140,9 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
   void ReturnNetworkError();
 
   // network::mojom::URLLoader:
-  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+  void FollowRedirect(const base::Optional<std::vector<std::string>>&
+                          to_be_removed_request_headers,
+                      const base::Optional<net::HttpRequestHeaders>&
                           modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
@@ -149,6 +152,7 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
 
   void OnBlobReadingComplete(int net_error);
 
+  void OnConnectionClosed();
   void DeleteIfNeeded();
 
   ResponseType response_type_ = ResponseType::NOT_DETERMINED;
@@ -164,7 +168,6 @@ class CONTENT_EXPORT ServiceWorkerNavigationLoader
 
   bool did_navigation_preload_ = false;
   network::ResourceResponseHead response_head_;
-  base::Optional<net::SSLInfo> ssl_info_;
 
   // Pointer to the URLLoaderClient (i.e. NavigationURLLoader).
   network::mojom::URLLoaderClientPtr url_loader_client_;

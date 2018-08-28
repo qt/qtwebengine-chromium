@@ -22,7 +22,7 @@
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 
-namespace net {
+namespace quic {
 
 class RttStats;
 
@@ -139,6 +139,30 @@ class QUIC_EXPORT_PRIVATE BbrSender : public SendAlgorithmInterface {
     return has_non_app_limited_sample_;
   }
 
+  // Sets the pacing gain used in STARTUP.  Must be greater than 1.
+  void set_high_gain(float high_gain) {
+    DCHECK_LT(1.0f, high_gain);
+    high_gain_ = high_gain;
+    if (mode_ == STARTUP) {
+      pacing_gain_ = high_gain;
+    }
+  }
+
+  // Sets the CWND gain used in STARTUP.  Must be greater than 1.
+  void set_high_cwnd_gain(float high_cwnd_gain) {
+    DCHECK_LT(1.0f, high_cwnd_gain);
+    high_cwnd_gain_ = high_cwnd_gain;
+    if (mode_ == STARTUP) {
+      congestion_window_gain_ = high_cwnd_gain;
+    }
+  }
+
+  // Sets the gain used in DRAIN.  Must be less than 1.
+  void set_drain_gain(float drain_gain) {
+    DCHECK_GT(1.0f, drain_gain);
+    drain_gain_ = drain_gain;
+  }
+
   DebugState ExportDebugState() const;
 
  private:
@@ -147,12 +171,6 @@ class QUIC_EXPORT_PRIVATE BbrSender : public SendAlgorithmInterface {
                          QuicRoundTripCount,
                          QuicRoundTripCount>
       MaxBandwidthFilter;
-
-  typedef WindowedFilter<QuicTime::Delta,
-                         MaxFilter<QuicTime::Delta>,
-                         QuicRoundTripCount,
-                         QuicRoundTripCount>
-      MaxAckDelayFilter;
 
   typedef WindowedFilter<QuicByteCount,
                          MaxFilter<QuicByteCount>,
@@ -209,13 +227,16 @@ class QUIC_EXPORT_PRIVATE BbrSender : public SendAlgorithmInterface {
                            bool is_round_start);
 
   // Updates the ack aggregation max filter in bytes.
-  void UpdateAckAggregationBytes(QuicTime ack_time,
-                                 QuicByteCount newly_acked_bytes);
+  // Returns the most recent addition to the filter, or |newly_acked_bytes| if
+  // nothing was fed in to the filter.
+  QuicByteCount UpdateAckAggregationBytes(QuicTime ack_time,
+                                          QuicByteCount newly_acked_bytes);
 
   // Determines the appropriate pacing rate for the connection.
   void CalculatePacingRate();
   // Determines the appropriate congestion window for the connection.
-  void CalculateCongestionWindow(QuicByteCount bytes_acked);
+  void CalculateCongestionWindow(QuicByteCount bytes_acked,
+                                 QuicByteCount excess_acked);
   // Determines the approriate window that constrains the in-flight during
   // recovery.
   void CalculateRecoveryWindow(QuicByteCount bytes_acked,
@@ -269,6 +290,15 @@ class QUIC_EXPORT_PRIVATE BbrSender : public SendAlgorithmInterface {
   // The smallest value the |congestion_window_| can achieve.
   QuicByteCount min_congestion_window_;
 
+  // The pacing gain applied during the STARTUP phase.
+  float high_gain_;
+
+  // The CWND gain applied during the STARTUP phase.
+  float high_cwnd_gain_;
+
+  // The pacing gain applied during the DRAIN phase.
+  float drain_gain_;
+
   // The current pacing rate of the connection.
   QuicBandwidth pacing_rate_;
 
@@ -280,9 +310,6 @@ class QUIC_EXPORT_PRIVATE BbrSender : public SendAlgorithmInterface {
   // The gain used for the congestion window during PROBE_BW.  Latched from
   // quic_bbr_cwnd_gain flag.
   const float congestion_window_gain_constant_;
-  // The coefficient by which mean RTT variance is added to the congestion
-  // window.  Latched from quic_bbr_rtt_variation_weight flag.
-  const float rtt_variance_weight_;
   // The number of RTTs to stay in STARTUP mode.  Defaults to 3.
   QuicRoundTripCount num_startup_rtts_;
   // If true, exit startup if 1RTT has passed with no bandwidth increase and
@@ -326,6 +353,8 @@ class QUIC_EXPORT_PRIVATE BbrSender : public SendAlgorithmInterface {
   QuicPacketNumber end_recovery_at_;
   // A window used to limit the number of bytes in flight during loss recovery.
   QuicByteCount recovery_window_;
+  // If true, consider all samples in recovery app-limited.
+  bool is_app_limited_recovery_;
 
   // When true, pace at 1.5x and disable packet conservation in STARTUP.
   bool slower_startup_;
@@ -333,6 +362,8 @@ class QUIC_EXPORT_PRIVATE BbrSender : public SendAlgorithmInterface {
   bool rate_based_startup_;
   // Used as the initial packet conservation mode when first entering recovery.
   RecoveryState initial_conservation_in_startup_;
+  // When true, add the most recent ack aggregation measurement during STARTUP.
+  bool enable_ack_aggregation_during_startup_;
 
   // If true, will not exit low gain mode until bytes_in_flight drops below BDP
   // or it's time for high gain mode.
@@ -360,6 +391,6 @@ QUIC_EXPORT_PRIVATE std::ostream& operator<<(
     std::ostream& os,
     const BbrSender::DebugState& state);
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_CONGESTION_CONTROL_BBR_SENDER_H_

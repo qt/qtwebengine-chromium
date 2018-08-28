@@ -14,24 +14,13 @@ namespace ntp_snippets {
 namespace test {
 
 FakeSyncService::FakeSyncService()
-    : can_sync_start_(true),
-      is_sync_active_(true),
-      configuration_done_(true),
-      is_encrypt_everything_enabled_(false),
+    : is_encrypt_everything_enabled_(false),
       active_data_types_(syncer::HISTORY_DELETE_DIRECTIVES) {}
 
 FakeSyncService::~FakeSyncService() = default;
 
-bool FakeSyncService::CanSyncStart() const {
-  return can_sync_start_;
-}
-
-bool FakeSyncService::IsSyncActive() const {
-  return is_sync_active_;
-}
-
-bool FakeSyncService::ConfigurationDone() const {
-  return configuration_done_;
+int FakeSyncService::GetDisableReasons() const {
+  return DISABLE_REASON_NONE;
 }
 
 bool FakeSyncService::IsEncryptEverythingEnabled() const {

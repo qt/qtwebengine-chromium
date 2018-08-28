@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "api/optional.h"
+#include "absl/types/optional.h"
 
 namespace webrtc {
 namespace test {
@@ -41,7 +41,7 @@ std::string OutputPath();
 // Generates an empty file with a unique name in the specified directory and
 // returns the file name and path.
 // TODO(titovartem) rename to TempFile and next method to TempFilename
-std::string TempFilename(const std::string &dir, const std::string &prefix);
+std::string TempFilename(const std::string& dir, const std::string& prefix);
 
 // Generates a unique file name that can be used for file creation. Doesn't
 // create any files.
@@ -67,8 +67,10 @@ std::string GenerateTempFilename(const std::string& dir,
 //           If a directory path is prepended to the filename, a subdirectory
 //           hierarchy reflecting that path is assumed to be present.
 //    extension - File extension, without the dot, i.e. "bmp" or "yuv".
-std::string ResourcePath(const std::string& name,
-                         const std::string& extension);
+std::string ResourcePath(const std::string& name, const std::string& extension);
+
+// Joins directory name and file name, separated by the path delimiter.
+std::string JoinFilename(const std::string& dir, const std::string& name);
 
 // Gets the current working directory for the executing program.
 // Returns "./" if for some reason it is not possible to find the working
@@ -79,7 +81,7 @@ std::string WorkingDir();
 // of strings with one element for each found file or directory. Each element is
 // a path created by prepending |dir| to the file/directory name. "." and ".."
 // are never added in the returned vector.
-rtc::Optional<std::vector<std::string>> ReadDirectory(std::string path);
+absl::optional<std::vector<std::string>> ReadDirectory(std::string path);
 
 // Creates a directory if it not already exists.
 // Returns true if successful. Will print an error message to stderr and return

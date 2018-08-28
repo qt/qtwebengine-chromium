@@ -18,6 +18,7 @@ from annotation_tools import NetworkTrafficAnnotationTools
 # //tools/traffic_annotation/OWNERS.
 TEST_IS_ENABLED = True
 
+MINIMUM_EXPECTED_NUMBER_OF_ANNOTATIONS = 260
 
 class TrafficAnnotationTestsChecker():
   def __init__(self, build_path=None):
@@ -28,6 +29,7 @@ class TrafficAnnotationTestsChecker():
           directory.
     """
     self.tools = NetworkTrafficAnnotationTools(build_path)
+    self.last_result = None
 
 
   def RunAllTests(self):
@@ -50,25 +52,36 @@ class TrafficAnnotationTestsChecker():
       ["--test-only", "--no-filtering"]      # Not using heuristic filtering.
     ]
 
-    last_result = None
+    self.last_result = None
     for config in configs:
       result = self._RunTest(config)
       if not result:
         print("No output for config: %s" % config)
         return False
-      if last_result and last_result != result:
+      if self.last_result and self.last_result != result:
         print("Unexpected different results for config: %s" % config)
         return False
-      last_result = result
+      self.last_result = result
     return True
 
 
   def CheckOutputExpectations(self):
-    # TODO(https://crbug.com/690323): Add tests to check for an expected minimum
-    # number of items for each type of pattern that auditor extracts. E.g., we
-    # should have many annotations of each type (complete, partial, ...),
-    # functions that need annotations, direct assignment to mutable annotations,
-    # etc.
+    # This test can be replaced by getting results from a diagnostic mode call
+    # to traffic_annotation_auditor, and checking for an expected minimum number
+    # of items for each type of pattern that it extracts. E.g., we should have
+    # many annotations of each type (complete, partial, ...), functions that
+    # need annotations, direct assignment to mutable annotations, etc.
+
+    # |self.last_result| includes the content of the TSV file that the auditor
+    # generates. Counting the number of end of lines in the text will give the
+    # number of extracted annotations.
+    annotations_count = self.last_result.count("\n")
+    print("%i annotations found in auditor's output." % annotations_count)
+
+    if annotations_count < MINIMUM_EXPECTED_NUMBER_OF_ANNOTATIONS:
+      print("Annotations are expected to be at least %i." %
+                MINIMUM_EXPECTED_NUMBER_OF_ANNOTATIONS)
+      return False
     return True
 
 
@@ -87,12 +100,18 @@ class TrafficAnnotationTestsChecker():
     temp_file = tempfile.NamedTemporaryFile()
     temp_filename = temp_file.name
     temp_file.close()
+
     _, stderr_text, return_code = self.tools.RunAuditor(
         args + ["--annotations-file=%s" % temp_filename])
 
     if os.path.exists(temp_filename):
-      annotations = None if (return_code or stderr_text) \
-                         else open(temp_filename).read()
+      # When tests are run on all files (without filtering), there might be some
+      # compile errors in irrelevant files on Windows that can be ignored.
+      if (return_code and "--no-filtering" in args and
+          sys.platform.startswith(('win', 'cygwin'))):
+        print("Ignoring return code: %i" % return_code)
+        return_code = 0
+      annotations = None if return_code else open(temp_filename).read()
       os.remove(temp_filename)
     else:
       annotations = None

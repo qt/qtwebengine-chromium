@@ -39,7 +39,8 @@ CPDFSDK_FormFillEnvironment::CPDFSDK_FormFillEnvironment(
       m_pCPDFDoc(pDoc),
       m_pSysHandler(pdfium::MakeUnique<CFX_SystemHandler>(this)),
       m_bChangeMask(false),
-      m_bBeingDestroyed(false) {}
+      m_bBeingDestroyed(false),
+      m_SaveCalled(nullptr) {}
 
 CPDFSDK_FormFillEnvironment::~CPDFSDK_FormFillEnvironment() {
   m_bBeingDestroyed = true;
@@ -64,12 +65,13 @@ CPDFSDK_FormFillEnvironment::~CPDFSDK_FormFillEnvironment() {
 
 int CPDFSDK_FormFillEnvironment::JS_appAlert(const WideString& Msg,
                                              const WideString& Title,
-                                             uint32_t Type,
-                                             uint32_t Icon) {
+                                             int Type,
+                                             int Icon) {
   if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
       !m_pInfo->m_pJsPlatform->app_alert) {
     return -1;
   }
+
   ByteString bsMsg = Msg.UTF16LE_Encode();
   ByteString bsTitle = Title.UTF16LE_Encode();
   return m_pInfo->m_pJsPlatform->app_alert(
@@ -231,19 +233,19 @@ CPDFSDK_FormFillEnvironment::GetInteractiveFormFiller() {
   return m_pFormFiller.get();
 }
 
-void CPDFSDK_FormFillEnvironment::Invalidate(UnderlyingPageType* page,
+void CPDFSDK_FormFillEnvironment::Invalidate(IPDF_Page* page,
                                              const FX_RECT& rect) {
   if (m_pInfo && m_pInfo->FFI_Invalidate) {
-    m_pInfo->FFI_Invalidate(m_pInfo, FPDFPageFromUnderlying(page), rect.left,
+    m_pInfo->FFI_Invalidate(m_pInfo, FPDFPageFromIPDFPage(page), rect.left,
                             rect.top, rect.right, rect.bottom);
   }
 }
 
 void CPDFSDK_FormFillEnvironment::OutputSelectedRect(
-    UnderlyingPageType* page,
+    IPDF_Page* page,
     const CFX_FloatRect& rect) {
   if (m_pInfo && m_pInfo->FFI_OutputSelectedRect) {
-    m_pInfo->FFI_OutputSelectedRect(m_pInfo, FPDFPageFromUnderlying(page),
+    m_pInfo->FFI_OutputSelectedRect(m_pInfo, FPDFPageFromIPDFPage(page),
                                     rect.left, rect.top, rect.right,
                                     rect.bottom);
   }
@@ -332,7 +334,7 @@ void CPDFSDK_FormFillEnvironment::DisplayCaret(CPDFXFA_Page* page,
                                                double right,
                                                double bottom) {
   if (m_pInfo && m_pInfo->FFI_DisplayCaret) {
-    m_pInfo->FFI_DisplayCaret(m_pInfo, FPDFPageFromUnderlying(page), bVisible,
+    m_pInfo->FFI_DisplayCaret(m_pInfo, FPDFPageFromIPDFPage(page), bVisible,
                               left, top, right, bottom);
   }
 }
@@ -387,8 +389,8 @@ void CPDFSDK_FormFillEnvironment::GetPageViewRect(CPDFXFA_Page* page,
   double top;
   double right;
   double bottom;
-  m_pInfo->FFI_GetPageViewRect(m_pInfo, FPDFPageFromUnderlying(page), &left,
-                               &top, &right, &bottom);
+  m_pInfo->FFI_GetPageViewRect(m_pInfo, FPDFPageFromIPDFPage(page), &left, &top,
+                               &right, &bottom);
 
   dstRect.left = static_cast<float>(left);
   dstRect.top = static_cast<float>(top);
@@ -401,18 +403,8 @@ bool CPDFSDK_FormFillEnvironment::PopupMenu(CPDFXFA_Page* page,
                                             int menuFlag,
                                             CFX_PointF pt) {
   return m_pInfo && m_pInfo->FFI_PopupMenu &&
-         m_pInfo->FFI_PopupMenu(m_pInfo, FPDFPageFromUnderlying(page), hWidget,
+         m_pInfo->FFI_PopupMenu(m_pInfo, FPDFPageFromIPDFPage(page), hWidget,
                                 menuFlag, pt.x, pt.y);
-}
-
-void CPDFSDK_FormFillEnvironment::Alert(FPDF_WIDESTRING Msg,
-                                        FPDF_WIDESTRING Title,
-                                        int Type,
-                                        int Icon) {
-  if (m_pInfo && m_pInfo->m_pJsPlatform && m_pInfo->m_pJsPlatform->app_alert) {
-    m_pInfo->m_pJsPlatform->app_alert(m_pInfo->m_pJsPlatform, Msg, Title, Type,
-                                      Icon);
-  }
 }
 
 void CPDFSDK_FormFillEnvironment::EmailTo(FPDF_FILEHANDLER* fileHandler,
@@ -531,7 +523,7 @@ void CPDFSDK_FormFillEnvironment::ClearAllFocusedAnnots() {
 }
 
 CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageView(
-    UnderlyingPageType* pUnderlyingPage,
+    IPDF_Page* pUnderlyingPage,
     bool renew) {
   auto it = m_PageMap.find(pUnderlyingPage);
   if (it != m_PageMap.end())
@@ -550,12 +542,12 @@ CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageView(
 }
 
 CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetCurrentView() {
-  UnderlyingPageType* pPage = UnderlyingFromFPDFPage(GetCurrentPage());
+  IPDF_Page* pPage = IPDFPageFromFPDFPage(GetCurrentPage());
   return pPage ? GetPageView(pPage, true) : nullptr;
 }
 
 CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageView(int nIndex) {
-  UnderlyingPageType* pTempPage = GetPage(nIndex);
+  IPDF_Page* pTempPage = GetPage(nIndex);
   if (!pTempPage)
     return nullptr;
 
@@ -581,7 +573,7 @@ bool CPDFSDK_FormFillEnvironment::ProcOpenAction() {
   if (!pRoot)
     return false;
 
-  CPDF_Object* pOpenAction = pRoot->GetDictFor("OpenAction");
+  const CPDF_Object* pOpenAction = pRoot->GetDictFor("OpenAction");
   if (!pOpenAction)
     pOpenAction = pRoot->GetArrayFor("OpenAction");
   if (!pOpenAction)
@@ -590,7 +582,7 @@ bool CPDFSDK_FormFillEnvironment::ProcOpenAction() {
   if (pOpenAction->IsArray())
     return true;
 
-  CPDF_Dictionary* pDict = pOpenAction->AsDictionary();
+  const CPDF_Dictionary* pDict = pOpenAction->AsDictionary();
   if (!pDict)
     return false;
 
@@ -599,8 +591,7 @@ bool CPDFSDK_FormFillEnvironment::ProcOpenAction() {
   return true;
 }
 
-void CPDFSDK_FormFillEnvironment::RemovePageView(
-    UnderlyingPageType* pUnderlyingPage) {
+void CPDFSDK_FormFillEnvironment::RemovePageView(IPDF_Page* pUnderlyingPage) {
   auto it = m_PageMap.find(pUnderlyingPage);
   if (it == m_PageMap.end())
     return;
@@ -626,10 +617,10 @@ void CPDFSDK_FormFillEnvironment::RemovePageView(
   m_PageMap.erase(it);
 }
 
-UnderlyingPageType* CPDFSDK_FormFillEnvironment::GetPage(int nIndex) {
+IPDF_Page* CPDFSDK_FormFillEnvironment::GetPage(int nIndex) {
   if (!m_pInfo || !m_pInfo->FFI_GetPage)
     return nullptr;
-  return UnderlyingFromFPDFPage(m_pInfo->FFI_GetPage(
+  return IPDFPageFromFPDFPage(m_pInfo->FFI_GetPage(
       m_pInfo, FPDFDocumentFromCPDFDocument(m_pCPDFDoc.Get()), nIndex));
 }
 
@@ -637,6 +628,13 @@ CPDFSDK_InterForm* CPDFSDK_FormFillEnvironment::GetInterForm() {
   if (!m_pInterForm)
     m_pInterForm = pdfium::MakeUnique<CPDFSDK_InterForm>(this);
   return m_pInterForm.get();
+}
+
+void CPDFSDK_FormFillEnvironment::SaveCalled() {
+  if (!m_pInfo || !m_SaveCalled)
+    return;
+
+  m_SaveCalled(m_pInfo);
 }
 
 void CPDFSDK_FormFillEnvironment::UpdateAllViews(CPDFSDK_PageView* pSender,
@@ -719,11 +717,8 @@ CPDFXFA_Context* CPDFSDK_FormFillEnvironment::GetXFAContext() const {
 #endif  // PDF_ENABLE_XFA
 
 int CPDFSDK_FormFillEnvironment::GetPageCount() const {
-#ifdef PDF_ENABLE_XFA
-  return GetXFAContext()->GetPageCount();
-#else
-  return m_pCPDFDoc->GetPageCount();
-#endif
+  CPDF_Document::Extension* pExtension = m_pCPDFDoc->GetExtension();
+  return pExtension ? pExtension->GetPageCount() : m_pCPDFDoc->GetPageCount();
 }
 
 bool CPDFSDK_FormFillEnvironment::GetPermissions(int nFlag) const {

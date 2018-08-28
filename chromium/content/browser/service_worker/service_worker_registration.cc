@@ -14,8 +14,8 @@
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_register_job.h"
 #include "content/common/service_worker/service_worker_messages.h"
-#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
+#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
 namespace content {
@@ -64,7 +64,7 @@ ServiceWorkerRegistration::~ServiceWorkerRegistration() {
   if (context_)
     context_->RemoveLiveRegistration(registration_id_);
   if (active_version())
-    active_version()->RemoveListener(this);
+    active_version()->RemoveObserver(this);
 }
 
 ServiceWorkerVersion* ServiceWorkerRegistration::GetNewestVersion() const {
@@ -126,10 +126,10 @@ void ServiceWorkerRegistration::SetActiveVersion(
   if (version)
     UnsetVersionInternal(version.get(), &mask);
   if (active_version_)
-    active_version_->RemoveListener(this);
+    active_version_->RemoveObserver(this);
   active_version_ = version;
   if (active_version_) {
-    active_version_->AddListener(this);
+    active_version_->AddObserver(this);
     active_version_->SetNavigationPreloadState(navigation_preload_state_);
   }
   mask.add(ChangedVersionAttributesMask::ACTIVE_VERSION);
@@ -188,7 +188,7 @@ void ServiceWorkerRegistration::UnsetVersionInternal(
     should_activate_when_ready_ = false;
     mask->add(ChangedVersionAttributesMask::WAITING_VERSION);
   } else if (active_version_.get() == version) {
-    active_version_->RemoveListener(this);
+    active_version_->RemoveObserver(this);
     active_version_ = nullptr;
     mask->add(ChangedVersionAttributesMask::ACTIVE_VERSION);
   }
@@ -212,12 +212,12 @@ void ServiceWorkerRegistration::ActivateWaitingVersionWhenReady() {
   }
 
   if (IsLameDuckActiveVersion()) {
-    if (ServiceWorkerUtils::IsServicificationEnabled() &&
+    if (blink::ServiceWorkerUtils::IsServicificationEnabled() &&
         active_version()->running_status() == EmbeddedWorkerStatus::RUNNING) {
       // If the waiting worker is ready and the active worker needs to be
       // swapped out, ask the active worker to trigger idle timer as soon as
       // possible.
-      active_version()->event_dispatcher()->SetIdleTimerDelayToZero();
+      active_version()->endpoint()->SetIdleTimerDelayToZero();
     }
     StartLameDuckTimer();
   }
@@ -260,7 +260,7 @@ void ServiceWorkerRegistration::ClearWhenReady() {
 void ServiceWorkerRegistration::AbortPendingClear(StatusCallback callback) {
   DCHECK(context_);
   if (!is_uninstalling()) {
-    std::move(callback).Run(SERVICE_WORKER_OK);
+    std::move(callback).Run(blink::ServiceWorkerStatusCode::kOk);
     return;
   }
   is_uninstalling_ = false;
@@ -294,13 +294,13 @@ void ServiceWorkerRegistration::OnNoControllees(ServiceWorkerVersion* version) {
   }
 
   if (IsLameDuckActiveVersion()) {
-    if (ServiceWorkerUtils::IsServicificationEnabled() &&
+    if (blink::ServiceWorkerUtils::IsServicificationEnabled() &&
         should_activate_when_ready_ &&
         active_version()->running_status() == EmbeddedWorkerStatus::RUNNING) {
       // If the waiting worker is ready and the active worker needs to be
       // swapped out, ask the active worker to trigger idle timer as soon as
       // possible.
-      active_version()->event_dispatcher()->SetIdleTimerDelayToZero();
+      active_version()->endpoint()->SetIdleTimerDelayToZero();
     }
     StartLameDuckTimer();
   }
@@ -497,13 +497,14 @@ void ServiceWorkerRegistration::RegisterRegistrationFinishedCallback(
 
 void ServiceWorkerRegistration::DispatchActivateEvent(
     scoped_refptr<ServiceWorkerVersion> activating_version,
-    ServiceWorkerStatusCode start_worker_status) {
-  if (start_worker_status != SERVICE_WORKER_OK) {
+    blink::ServiceWorkerStatusCode start_worker_status) {
+  if (start_worker_status != blink::ServiceWorkerStatusCode::kOk) {
     OnActivateEventFinished(activating_version, start_worker_status);
     return;
   }
   if (activating_version != active_version()) {
-    OnActivateEventFinished(activating_version, SERVICE_WORKER_ERROR_FAILED);
+    OnActivateEventFinished(activating_version,
+                            blink::ServiceWorkerStatusCode::kErrorFailed);
     return;
   }
 
@@ -514,13 +515,13 @@ void ServiceWorkerRegistration::DispatchActivateEvent(
       ServiceWorkerMetrics::EventType::ACTIVATE,
       base::BindOnce(&ServiceWorkerRegistration::OnActivateEventFinished, this,
                      activating_version));
-  activating_version->event_dispatcher()->DispatchActivateEvent(
+  activating_version->endpoint()->DispatchActivateEvent(
       activating_version->CreateSimpleEventCallback(request_id));
 }
 
 void ServiceWorkerRegistration::OnActivateEventFinished(
     scoped_refptr<ServiceWorkerVersion> activating_version,
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   // Activate is prone to failing due to shutdown, because it's triggered when
   // tabs close.
   bool is_shutdown =
@@ -537,7 +538,7 @@ void ServiceWorkerRegistration::OnActivateEventFinished(
   // it should still be activated. However, if the failure occurred during
   // shutdown, ignore it to give the worker another chance the next time the
   // browser starts up.
-  if (is_shutdown && status != SERVICE_WORKER_OK)
+  if (is_shutdown && status != blink::ServiceWorkerStatusCode::kOk)
     return;
 
   // "Run the Update State algorithm passing registration's active worker and
@@ -547,7 +548,7 @@ void ServiceWorkerRegistration::OnActivateEventFinished(
 }
 
 void ServiceWorkerRegistration::OnDeleteFinished(
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   for (auto& listener : listeners_)
     listener.OnRegistrationDeleted(this);
 }
@@ -581,7 +582,7 @@ void ServiceWorkerRegistration::Clear() {
   }
   if (active_version_.get()) {
     versions_to_doom.push_back(active_version_);
-    active_version_->RemoveListener(this);
+    active_version_->RemoveObserver(this);
     active_version_ = nullptr;
     mask.add(ChangedVersionAttributesMask::ACTIVE_VERSION);
   }
@@ -603,9 +604,9 @@ void ServiceWorkerRegistration::Clear() {
 void ServiceWorkerRegistration::OnRestoreFinished(
     StatusCallback callback,
     scoped_refptr<ServiceWorkerVersion> version,
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   if (!context_) {
-    std::move(callback).Run(SERVICE_WORKER_ERROR_ABORT);
+    std::move(callback).Run(blink::ServiceWorkerStatusCode::kErrorAbort);
     return;
   }
   context_->storage()->NotifyDoneInstallingRegistration(

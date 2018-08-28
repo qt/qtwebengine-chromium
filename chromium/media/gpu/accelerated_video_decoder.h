@@ -55,8 +55,10 @@ class MEDIA_GPU_EXPORT AcceleratedVideoDecoder {
     kRanOutOfSurfaces,     // Waiting for the client to free up output surfaces.
     kNeedContextUpdate,    // Waiting for the client to update decoding context
                            // with data acquired from the accelerator.
-    kNoKey,  // The buffer is encrypted and could not be processed because the
-             // key for decryption is missing.
+    kTryAgain,  // The accelerator needs additional data (independently
+    // provided) in order to proceed. This may be a new key in order to decrypt
+    // encrypted data, or existing hardware resources freed so that they can be
+    // reused. Decoding can resume once the data has been provided.
   };
 
   // Try to decode more of the stream, returning decoded frames asynchronously.
@@ -69,6 +71,14 @@ class MEDIA_GPU_EXPORT AcceleratedVideoDecoder {
   // To be used after Decode() returns kAllocateNewSurfaces.
   virtual gfx::Size GetPicSize() const = 0;
   virtual size_t GetRequiredNumOfPictures() const = 0;
+
+  // About 3 secs for 30 fps video. When the new sized keyframe is missed, the
+  // decoder cannot decode the frame. The number of frames are skipped until
+  // getting new keyframe. If dropping more than the number of frames, the
+  // decoder reports decode error, which may take longer time to recover it.
+  // The number is the sweet spot which the decoder can tolerate to handle the
+  // missing keyframe by itself. In addition, this situation is exceptional.
+  static constexpr size_t kVPxMaxNumOfSizeChangeFailures = 75;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AcceleratedVideoDecoder);

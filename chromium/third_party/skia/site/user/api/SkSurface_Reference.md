@@ -72,7 +72,6 @@ SkSurface related constants are defined by <code>enum</code>, <code>enum class</
   </tr>
 </table>
 
-
 ## <a name='Related_Function'>Related Function</a>
 
 
@@ -97,7 +96,6 @@ SkSurface global, <code>struct</code>, and <code>class</code> related member fun
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>rarely called management functions</td>
   </tr>
 </table>
-
 
 ## <a name='Member_Function'>Member Function</a>
 
@@ -216,7 +214,6 @@ SkSurface member functions read and modify the structure properties.
   </tr>
 </table>
 
-
 ## <a name='Constructor'>Constructor</a>
 
 
@@ -269,7 +266,6 @@ SkSurface can be constructed or initialized by these functions, including C++ cl
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>creates a compatible <a href='#Surface'>Surface</a></td>
   </tr>
 </table>
-
 
 <a name='SkSurface_MakeRasterDirect'></a>
 ## MakeRasterDirect
@@ -804,13 +800,13 @@ describes the pixel format in <a href='SkImageInfo_Reference#Color_Type'>Color T
 <a href='SkImageInfo_Reference#Alpha_Type'>Alpha Type</a>, and color matching in <a href='undocumented#Color_Space'>Color Space</a>.
 
 <a href='#SkSurface_MakeRenderTarget_sampleCount'>sampleCount</a> requests the number of samples per pixel.
-Pass zero to disable Multi_Sample_Anti_Aliasing.  The request is rounded
+Pass zero to disable <a href='undocumented#Multi_Sample_Anti_Aliasing'>Multi Sample Anti Aliasing</a>.  The request is rounded
 up to the next supported count, or rounded down if it is larger than the
 maximum supported count.
 
 <a href='#SkSurface_MakeRenderTarget_surfaceOrigin'>surfaceOrigin</a> pins either the top-left or the bottom-left corner to the origin.
 
-<a href='#SkSurface_MakeRenderTarget_shouldCreateWithMips'>shouldCreateWithMips</a> hints that <a href='SkImage_Reference#Image'>Image</a> returned by <a href='#SkSurface_makeImageSnapshot'>makeImageSnapshot</a> is Mip_Map.
+<a href='#SkSurface_MakeRenderTarget_shouldCreateWithMips'>shouldCreateWithMips</a> hints that <a href='SkImage_Reference#Image'>Image</a> returned by <a href='#SkSurface_makeImageSnapshot'>makeImageSnapshot</a> is <a href='undocumented#Mip_Map'>Mip Map</a>.
 
 If SK_SUPPORT_GPU is defined as zero, has no effect and returns nullptr.
 
@@ -837,7 +833,7 @@ width, or height, or both, may be zero</td>
 fonts; may be nullptr</td>
   </tr>
   <tr>    <td><a name='SkSurface_MakeRenderTarget_shouldCreateWithMips'><code><strong>shouldCreateWithMips</strong></code></a></td>
-    <td>hint that <a href='#Surface'>Surface</a> will host Mip_Map images</td>
+    <td>hint that <a href='#Surface'>Surface</a> will host <a href='undocumented#Mip_Map'>Mip Map</a> images</td>
   </tr>
 </table>
 
@@ -870,7 +866,7 @@ describes the pixel format in <a href='SkImageInfo_Reference#Color_Type'>Color T
 <a href='SkImageInfo_Reference#Alpha_Type'>Alpha Type</a>, and color matching in <a href='undocumented#Color_Space'>Color Space</a>.
 
 <a href='#SkSurface_MakeRenderTarget_2_sampleCount'>sampleCount</a> requests the number of samples per pixel.
-Pass zero to disable Multi_Sample_Anti_Aliasing.  The request is rounded
+Pass zero to disable <a href='undocumented#Multi_Sample_Anti_Aliasing'>Multi Sample Anti Aliasing</a>.  The request is rounded
 up to the next supported count, or rounded down if it is larger than the
 maximum supported count.
 
@@ -889,7 +885,7 @@ maximum supported count.
 of <a href='undocumented#Raster_Surface'>Raster Surface</a>; width, or height, or both, may be zero</td>
   </tr>
   <tr>    <td><a name='SkSurface_MakeRenderTarget_2_sampleCount'><code><strong>sampleCount</strong></code></a></td>
-    <td>samples per pixel, or 0 to disable Multi_Sample_Anti_Aliasing</td>
+    <td>samples per pixel, or 0 to disable <a href='undocumented#Multi_Sample_Anti_Aliasing'>Multi Sample Anti Aliasing</a></td>
   </tr>
   <tr>    <td><a name='SkSurface_MakeRenderTarget_2_props'><code><strong>props</strong></code></a></td>
     <td>LCD striping orientation and setting for device independent
@@ -1071,7 +1067,6 @@ surf->makeImageSnapshot() == nullptr
   </tr>
 </table>
 
-
 <a name='SkSurface_width'></a>
 ## width
 
@@ -1151,7 +1146,7 @@ unique content identifier
 
 ### Example
 
-<div><fiddle-embed name="be9574c4a14f891e1abb4ec2b1e51d6c">
+<div><fiddle-embed name="d8be8b6e59de244e4cbf58ec9554557b">
 
 #### Example Output
 
@@ -1220,7 +1215,6 @@ If a snapshot has been generated, this copies the <a href='#Surface'>Surface</a>
   </tr>
 </table>
 
-
 <a name='SkSurface_notifyContentWillChange'></a>
 ## notifyContentWillChange
 
@@ -1232,8 +1226,6 @@ Notifies that <a href='#Surface'>Surface</a> contents will be changed by code ou
 Subsequent calls to <a href='#SkSurface_generationID'>generationID</a> return a different value.
 
 <a href='#SkSurface_notifyContentWillChange_mode'>mode</a> is normally passed as <a href='#SkSurface_kRetain_ContentChangeMode'>kRetain ContentChangeMode</a>.
-
-Can we deprecate this?
 
 ### Parameters
 
@@ -1442,7 +1434,7 @@ compatible <a href='#Surface'>Surface</a> or nullptr
 
 ### Example
 
-<div><fiddle-embed name="a9889b519a26896b900da0444e423c61"></fiddle-embed></div>
+<div><fiddle-embed name="8f91f58001d9c10420eb146fbc169af4"></fiddle-embed></div>
 
 ### See Also
 
@@ -1527,7 +1519,6 @@ are not captured. <a href='SkImage_Reference#Image'>Image</a> allocation is acco
   </tr>
 </table>
 
-
 <a name='SkSurface_draw'></a>
 ## draw
 
@@ -1538,7 +1529,7 @@ void <a href='#SkSurface_draw'>draw</a>(<a href='SkCanvas_Reference#SkCanvas'>Sk
 Draws <a href='#Surface'>Surface</a> contents to <a href='#SkSurface_draw_canvas'>canvas</a>, with its top-left corner at (<a href='#SkSurface_draw_x'>x</a>, <a href='#SkSurface_draw_y'>y</a>).
 
 If <a href='SkPaint_Reference#Paint'>Paint</a> <a href='#SkSurface_draw_paint'>paint</a> is not nullptr, apply <a href='undocumented#Color_Filter'>Color Filter</a>, <a href='SkColor_Reference#Alpha'>Color Alpha</a>, <a href='undocumented#Image_Filter'>Image Filter</a>,
-<a href='undocumented#Blend_Mode'>Blend Mode</a>, and <a href='undocumented#Draw_Looper'>Draw Looper</a>.
+<a href='SkBlendMode_Reference#Blend_Mode'>Blend Mode</a>, and <a href='undocumented#Draw_Looper'>Draw Looper</a>.
 
 ### Parameters
 
@@ -1552,7 +1543,7 @@ If <a href='SkPaint_Reference#Paint'>Paint</a> <a href='#SkSurface_draw_paint'>p
     <td>vertical offset in <a href='SkCanvas_Reference#Canvas'>Canvas</a></td>
   </tr>
   <tr>    <td><a name='SkSurface_draw_paint'><code><strong>paint</strong></code></a></td>
-    <td><a href='SkPaint_Reference#Paint'>Paint</a> containing <a href='undocumented#Blend_Mode'>Blend Mode</a>, <a href='undocumented#Color_Filter'>Color Filter</a>, <a href='undocumented#Image_Filter'>Image Filter</a>,
+    <td><a href='SkPaint_Reference#Paint'>Paint</a> containing <a href='SkBlendMode_Reference#Blend_Mode'>Blend Mode</a>, <a href='undocumented#Color_Filter'>Color Filter</a>, <a href='undocumented#Image_Filter'>Image Filter</a>,
 and so on; or nullptr</td>
   </tr>
 </table>
@@ -1642,10 +1633,10 @@ Does not copy, and returns false if:
     <td>storage for pixels copied from <a href='#Surface'>Surface</a></td>
   </tr>
   <tr>    <td><a name='SkSurface_readPixels_srcX'><code><strong>srcX</strong></code></a></td>
-    <td>offset into readable pixels in x; may be negative</td>
+    <td>offset into readable pixels on x-axis; may be negative</td>
   </tr>
   <tr>    <td><a name='SkSurface_readPixels_srcY'><code><strong>srcY</strong></code></a></td>
-    <td>offset into readable pixels in y; may be negative</td>
+    <td>offset into readable pixels on y-axis; may be negative</td>
   </tr>
 </table>
 
@@ -1709,10 +1700,10 @@ Does not copy, and returns false if:
     <td>size of one destination row; <a href='#SkSurface_readPixels_2_dstInfo'>dstInfo</a>.<a href='#SkSurface_width'>width</a> times pixel size, or larger</td>
   </tr>
   <tr>    <td><a name='SkSurface_readPixels_2_srcX'><code><strong>srcX</strong></code></a></td>
-    <td>offset into readable pixels in x; may be negative</td>
+    <td>offset into readable pixels on x-axis; may be negative</td>
   </tr>
   <tr>    <td><a name='SkSurface_readPixels_2_srcY'><code><strong>srcY</strong></code></a></td>
-    <td>offset into readable pixels in y; may be negative</td>
+    <td>offset into readable pixels on y-axis; may be negative</td>
   </tr>
 </table>
 
@@ -1775,10 +1766,10 @@ Does not copy, and returns false if:
     <td>storage for pixels copied from <a href='#Surface'>Surface</a></td>
   </tr>
   <tr>    <td><a name='SkSurface_readPixels_3_srcX'><code><strong>srcX</strong></code></a></td>
-    <td>offset into readable pixels in x; may be negative</td>
+    <td>offset into readable pixels on x-axis; may be negative</td>
   </tr>
   <tr>    <td><a name='SkSurface_readPixels_3_srcY'><code><strong>srcY</strong></code></a></td>
-    <td>offset into readable pixels in y; may be negative</td>
+    <td>offset into readable pixels on y-axis; may be negative</td>
   </tr>
 </table>
 
@@ -1818,10 +1809,10 @@ converting to <a href='#Surface'>Surface</a> colorType() and <a href='#Surface'>
     <td>storage for pixels to copy to <a href='#Surface'>Surface</a></td>
   </tr>
   <tr>    <td><a name='SkSurface_writePixels_dstX'><code><strong>dstX</strong></code></a></td>
-    <td>x position relative to <a href='#Surface'>Surface</a> to begin copy; may be negative</td>
+    <td>x-axis position relative to <a href='#Surface'>Surface</a> to begin copy; may be negative</td>
   </tr>
   <tr>    <td><a name='SkSurface_writePixels_dstY'><code><strong>dstY</strong></code></a></td>
-    <td>x position relative to <a href='#Surface'>Surface</a> to begin copy; may be negative</td>
+    <td>y-axis position relative to <a href='#Surface'>Surface</a> to begin copy; may be negative</td>
   </tr>
 </table>
 
@@ -1856,16 +1847,16 @@ converting to <a href='#Surface'>Surface</a> colorType() and <a href='#Surface'>
     <td>storage for pixels to copy to <a href='#Surface'>Surface</a></td>
   </tr>
   <tr>    <td><a name='SkSurface_writePixels_2_dstX'><code><strong>dstX</strong></code></a></td>
-    <td>x position relative to <a href='#Surface'>Surface</a> to begin copy; may be negative</td>
+    <td>x-axis position relative to <a href='#Surface'>Surface</a> to begin copy; may be negative</td>
   </tr>
   <tr>    <td><a name='SkSurface_writePixels_2_dstY'><code><strong>dstY</strong></code></a></td>
-    <td>x position relative to <a href='#Surface'>Surface</a> to begin copy; may be negative</td>
+    <td>y-axis position relative to <a href='#Surface'>Surface</a> to begin copy; may be negative</td>
   </tr>
 </table>
 
 ### Example
 
-<div><fiddle-embed name="d77790dd3bc9f678fa4f582347fb8fba"></fiddle-embed></div>
+<div><fiddle-embed name="af0b72360c1c7a25b4754bfa47011dd5"></fiddle-embed></div>
 
 ### See Also
 
@@ -1940,7 +1931,6 @@ soon
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>pauses commands until signaled</td>
   </tr>
 </table>
-
 
 <a name='SkSurface_flush'></a>
 ## flush

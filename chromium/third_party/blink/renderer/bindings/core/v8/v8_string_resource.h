@@ -26,7 +26,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_V8_STRING_RESOURCE_H_
 #define THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_V8_STRING_RESOURCE_H_
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/string_resource.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
@@ -97,7 +97,7 @@ class V8StringResource {
       return true;
 
     if (LIKELY(v8_object_->IsInt32())) {
-      SetString(Int32ToWebCoreString(v8_object_.As<v8::Int32>()->Value()));
+      SetString(ToBlinkString(v8_object_.As<v8::Int32>()->Value()));
       return true;
     }
 
@@ -126,7 +126,7 @@ class V8StringResource {
   template <class StringType>
   StringType ToString() const {
     if (LIKELY(!v8_object_.IsEmpty()))
-      return V8StringToWebCoreString<StringType>(
+      return ToBlinkString<StringType>(
           const_cast<v8::Local<v8::Value>*>(&v8_object_)->As<v8::String>(),
           mode_);
 

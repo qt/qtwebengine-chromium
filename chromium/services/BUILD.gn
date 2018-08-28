@@ -19,6 +19,7 @@ service_test("services_unittests") {
   # If your service does not run on iOS, its tests should go in the !iOS
   # section below. If you are unsure, contact blundell@chromium.org.
   deps = [
+    "//services/content:tests",
     "//services/identity:tests",
     "//services/metrics/public/cpp:tests",
     "//services/network:tests",
@@ -44,21 +45,12 @@ service_test("services_unittests") {
 
   if (use_aura) {
     deps += [
-      "//services/ui/clipboard:tests",
       "//services/ui/ime:tests",
       "//services/ui/input_devices:tests",
       "//services/ui/public/cpp/tests",
       "//services/ui/public/interfaces:tests",
       "//services/ui/ws2:tests",
     ]
-
-    if (is_linux && !is_chromeos) {
-      deps += [ "//services/ui/demo:tests" ]
-    }
-
-    if (use_ozone || (!is_chromeos && !is_mac && !is_ios)) {
-      deps += [ "//services/ui/ws:tests" ]
-    }
   }
 
   if (is_android) {
@@ -118,18 +110,9 @@ catalog("services_unittests_catalog") {
 
   if (use_aura) {
     catalog_deps += [
-      "//services/ui/clipboard:tests_catalog",
       "//services/ui/ime:tests_catalog",
       "//services/ui/ws2:tests_catalog",
     ]
-
-    if (is_linux && !is_chromeos) {
-      catalog_deps += [ "//services/ui/demo:tests_catalog" ]
-    }
-
-    if (use_ozone || (!is_chromeos && !is_ios)) {
-      catalog_deps += [ "//services/ui/ws:tests_catalog" ]
-    }
   }
 }
 
@@ -151,6 +134,7 @@ if (is_android) {
     java_files = [
       "device/generic_sensor/android/junit/src/org/chromium/device/sensors/PlatformSensorAndProviderTest.java",
       "device/nfc/android/junit/src/org/chromium/device/nfc/NFCTest.java",
+      "device/geolocation/android/junit/src/org/chromium/device/geolocation/LocationProviderTest.java",
       "shape_detection/android/junit/src/org/chromium/shape_detection/BitmapUtilsTest.java",
     ]
     deps = [
@@ -164,7 +148,9 @@ if (is_android) {
       "//mojo/public/java:bindings_java",
       "//mojo/public/java:system_java",
       "//services/device/generic_sensor:java",
+      "//services/device/geolocation:geolocation_java",
       "//services/device/nfc/android:java",
+      "//services/device/public/java:geolocation_java_test_support",
       "//services/device/public/java:nfc_java",
       "//services/device/public/mojom:generic_sensor_java",
       "//services/device/public/mojom:mojom_java",

@@ -876,6 +876,8 @@ void ParamTraits<base::UnsafeSharedMemoryRegion>::Log(const param_type& p,
 void ParamTraits<base::subtle::PlatformSharedMemoryRegion>::Write(
     base::Pickle* m,
     const param_type& p) {
+  // This serialization must be kept in sync with
+  // nacl_message_scanner.cc::WriteHandle().
   const bool valid = p.IsValid();
   WriteParam(m, valid);
 
@@ -888,16 +890,16 @@ void ParamTraits<base::subtle::PlatformSharedMemoryRegion>::Write(
 
 #if defined(OS_WIN)
   base::win::ScopedHandle h = const_cast<param_type&>(p).PassPlatformHandle();
-  HandleWin handle_win(h.Take());
+  HandleWin handle_win(h.Get());
   WriteParam(m, handle_win);
 #elif defined(OS_FUCHSIA)
-  base::ScopedZxHandle h = const_cast<param_type&>(p).PassPlatformHandle();
-  HandleFuchsia handle_fuchsia(h.release());
+  zx::handle h = const_cast<param_type&>(p).PassPlatformHandle();
+  HandleFuchsia handle_fuchsia(h.get());
   WriteParam(m, handle_fuchsia);
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   base::mac::ScopedMachSendRight h =
       const_cast<param_type&>(p).PassPlatformHandle();
-  MachPortMac mach_port_mac(h.release());
+  MachPortMac mach_port_mac(h.get());
   WriteParam(m, mach_port_mac);
 #elif defined(OS_ANDROID)
   m->WriteAttachment(new internal::PlatformFileAttachment(
@@ -947,7 +949,7 @@ bool ParamTraits<base::subtle::PlatformSharedMemoryRegion>::Read(
   if (!ReadParam(m, iter, &handle_fuchsia))
     return false;
   *r = base::subtle::PlatformSharedMemoryRegion::Take(
-      base::ScopedZxHandle(handle_fuchsia.get_handle()), mode, size, guid);
+      zx::vmo(handle_fuchsia.get_handle()), mode, size, guid);
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   MachPortMac mach_port_mac;
   if (!ReadParam(m, iter, &mach_port_mac))
@@ -1259,8 +1261,6 @@ void ParamTraits<base::UnguessableToken>::Write(base::Pickle* m,
                                                 const param_type& p) {
   DCHECK(!p.is_empty());
 
-  // This serialization must be kept in sync with
-  // nacl_message_scanner.cc:WriteHandle().
   ParamTraits<uint64_t>::Write(m, p.GetHighForSerialization());
   ParamTraits<uint64_t>::Write(m, p.GetLowForSerialization());
 }
@@ -1412,31 +1412,6 @@ bool ParamTraits<HANDLE>::Read(const base::Pickle* m,
 
 void ParamTraits<HANDLE>::Log(const param_type& p, std::string* l) {
   l->append(base::StringPrintf("0x%p", p));
-}
-
-void ParamTraits<LOGFONT>::Write(base::Pickle* m, const param_type& p) {
-  m->WriteData(reinterpret_cast<const char*>(&p), sizeof(LOGFONT));
-}
-
-bool ParamTraits<LOGFONT>::Read(const base::Pickle* m,
-                                base::PickleIterator* iter,
-                                param_type* r) {
-  const char *data;
-  int data_size = 0;
-  if (iter->ReadData(&data, &data_size) && data_size == sizeof(LOGFONT)) {
-    const LOGFONT *font = reinterpret_cast<LOGFONT*>(const_cast<char*>(data));
-    if (_tcsnlen(font->lfFaceName, LF_FACESIZE) < LF_FACESIZE) {
-      memcpy(r, data, sizeof(LOGFONT));
-      return true;
-    }
-  }
-
-  NOTREACHED();
-  return false;
-}
-
-void ParamTraits<LOGFONT>::Log(const param_type& p, std::string* l) {
-  l->append(base::StringPrintf("<LOGFONT>"));
 }
 
 void ParamTraits<MSG>::Write(base::Pickle* m, const param_type& p) {

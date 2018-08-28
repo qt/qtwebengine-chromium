@@ -14,18 +14,18 @@
 #include <cstdio>
 #include <string>
 
+#include "absl/memory/memory.h"
 #include "logging/rtc_event_log/events/rtc_event_alr_state.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/experiments/alr_experiment.h"
 #include "rtc_base/format_macros.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/timeutils.h"
 #include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
-namespace webrtc_cc {
 AlrDetector::AlrDetector() : AlrDetector(nullptr) {}
 
 AlrDetector::AlrDetector(RtcEventLog* event_log)
@@ -35,7 +35,7 @@ AlrDetector::AlrDetector(RtcEventLog* event_log)
       alr_budget_(0, true),
       event_log_(event_log) {
   RTC_CHECK(AlrExperimentSettings::MaxOneFieldTrialEnabled());
-  rtc::Optional<AlrExperimentSettings> experiment_settings =
+  absl::optional<AlrExperimentSettings> experiment_settings =
       AlrExperimentSettings::CreateFromFieldTrial(
           AlrExperimentSettings::kScreenshareProbingBweExperimentName);
   if (!experiment_settings) {
@@ -78,7 +78,7 @@ void AlrDetector::OnBytesSent(size_t bytes_sent, int64_t send_time_ms) {
   }
   if (event_log_ && state_changed) {
     event_log_->Log(
-        rtc::MakeUnique<RtcEventAlrState>(alr_started_time_ms_.has_value()));
+        absl::make_unique<RtcEventAlrState>(alr_started_time_ms_.has_value()));
   }
 }
 
@@ -89,9 +89,8 @@ void AlrDetector::SetEstimatedBitrate(int bitrate_bps) {
   alr_budget_.set_target_rate_kbps(rtc::dchecked_cast<int>(target_rate_kbps));
 }
 
-rtc::Optional<int64_t> AlrDetector::GetApplicationLimitedRegionStartTime()
+absl::optional<int64_t> AlrDetector::GetApplicationLimitedRegionStartTime()
     const {
   return alr_started_time_ms_;
 }
-}  // namespace webrtc_cc
 }  // namespace webrtc

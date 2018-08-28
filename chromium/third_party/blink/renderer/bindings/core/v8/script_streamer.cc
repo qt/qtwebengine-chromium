@@ -8,7 +8,7 @@
 
 #include "base/memory/ptr_util.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_streamer_thread.h"
-#include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_code_cache.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -258,7 +258,7 @@ class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
     SingleCachedMetadataHandler* cache_handler = resource->CacheHandler();
     scoped_refptr<CachedMetadata> code_cache(
         cache_handler ? cache_handler->GetCachedMetadata(
-                            V8ScriptRunner::TagForCodeCache(cache_handler))
+                            V8CodeCache::TagForCodeCache(cache_handler))
                       : nullptr);
     if (code_cache.get()) {
       // The resource has a code cache, so it's unnecessary to stream and
@@ -287,18 +287,20 @@ class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
       return;
     }
 
-    // Get as much data from the ResourceBuffer as we can.
-    const char* data = nullptr;
-    while (size_t length =
-               resource_buffer_->GetSomeData(data, queue_tail_position_)) {
-      // Copy the data chunks into a new buffer, since we're going to
-      // give the data to a background thread.
-      uint8_t* copied_data = new uint8_t[length];
-      memcpy(copied_data, data, length);
-      data_queue_.Produce(copied_data, length);
+    // Get as much data from the ResourceBuffer as we can in one chunk.
+    const size_t length = resource_buffer_->size() - queue_tail_position_;
 
-      queue_tail_position_ += length;
+    uint8_t* const copied_data = new uint8_t[length];
+    size_t pos = 0;
+
+    for (auto it = resource_buffer_->GetIteratorAt(queue_tail_position_);
+         it != resource_buffer_->end(); ++it) {
+      memcpy(copied_data + pos, it->data(), it->size());
+      pos += it->size();
     }
+    DCHECK_EQ(pos, length);
+    queue_tail_position_ = resource_buffer_->size();
+    data_queue_.Produce(copied_data, length);
   }
 
   // For coordinating between the main thread and background thread tasks.
@@ -459,7 +461,7 @@ void ScriptStreamer::NotifyAppendData(ScriptResource* resource) {
     source_ = std::make_unique<v8::ScriptCompiler::StreamedSource>(stream_,
                                                                    encoding_);
 
-    ScriptState::Scope scope(script_state_.get());
+    ScriptState::Scope scope(script_state_);
     std::unique_ptr<v8::ScriptCompiler::ScriptStreamingTask>
         script_streaming_task(
             base::WrapUnique(v8::ScriptCompiler::StartStreamingScript(
@@ -529,6 +531,7 @@ ScriptStreamer::~ScriptStreamer() = default;
 
 void ScriptStreamer::Trace(blink::Visitor* visitor) {
   visitor->Trace(pending_script_);
+  visitor->Trace(script_state_);
 }
 
 void ScriptStreamer::StreamingComplete() {

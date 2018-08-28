@@ -9,7 +9,7 @@
 #include "base/macros.h"
 #include "base/stl_util.h"
 #include "gpu/vulkan/vulkan_device_queue.h"
-#include "gpu/vulkan/vulkan_platform.h"
+#include "gpu/vulkan/vulkan_function_pointers.h"
 #include "gpu/vulkan/vulkan_swap_chain.h"
 
 namespace gpu {
@@ -38,12 +38,16 @@ VulkanSurface::VulkanSurface(VkInstance vk_instance, VkSurfaceKHR surface)
 bool VulkanSurface::Initialize(VulkanDeviceQueue* device_queue,
                                VulkanSurface::Format format) {
   DCHECK(format >= 0 && format < NUM_SURFACE_FORMATS);
+  DCHECK(device_queue);
+
+  device_queue_ = device_queue;
+
   VkResult result = VK_SUCCESS;
 
   VkBool32 present_support;
   if (vkGetPhysicalDeviceSurfaceSupportKHR(
-          device_queue->GetVulkanPhysicalDevice(),
-          device_queue->GetVulkanQueueIndex(), surface_,
+          device_queue_->GetVulkanPhysicalDevice(),
+          device_queue_->GetVulkanQueueIndex(), surface_,
           &present_support) != VK_SUCCESS) {
     DLOG(ERROR) << "vkGetPhysicalDeviceSurfaceSupportKHR() failed: " << result;
     return false;
@@ -52,9 +56,6 @@ bool VulkanSurface::Initialize(VulkanDeviceQueue* device_queue,
     DLOG(ERROR) << "Surface not supported by present queue.";
     return false;
   }
-
-  DCHECK(device_queue);
-  device_queue_ = device_queue;
 
   // Get list of supported formats.
   uint32_t format_count = 0;

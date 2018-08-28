@@ -26,6 +26,7 @@
 #include "libANGLE/renderer/d3d/ShaderD3D.h"
 #include "libANGLE/renderer/d3d/ShaderExecutableD3D.h"
 #include "libANGLE/renderer/d3d/VertexDataManager.h"
+#include "libANGLE/renderer/renderer_utils.h"
 
 using namespace angle;
 
@@ -75,92 +76,32 @@ void GetDefaultOutputLayoutFromShader(
     }
 }
 
-template <typename T, int cols, int rows>
-bool TransposeExpandMatrix(T *target, const GLfloat *value)
-{
-    constexpr int targetWidth  = 4;
-    constexpr int targetHeight = rows;
-    constexpr int srcWidth     = rows;
-    constexpr int srcHeight    = cols;
-
-    constexpr int copyWidth  = std::min(targetHeight, srcWidth);
-    constexpr int copyHeight = std::min(targetWidth, srcHeight);
-
-    T staging[targetWidth * targetHeight] = {0};
-
-    for (int x = 0; x < copyWidth; x++)
-    {
-        for (int y = 0; y < copyHeight; y++)
-        {
-            staging[x * targetWidth + y] = static_cast<T>(value[y * srcWidth + x]);
-        }
-    }
-
-    if (memcmp(target, staging, targetWidth * targetHeight * sizeof(T)) == 0)
-    {
-        return false;
-    }
-
-    memcpy(target, staging, targetWidth * targetHeight * sizeof(T));
-    return true;
-}
-
-template <typename T, int cols, int rows>
-bool ExpandMatrix(T *target, const GLfloat *value)
-{
-    constexpr int targetWidth  = 4;
-    constexpr int targetHeight = rows;
-    constexpr int srcWidth     = cols;
-    constexpr int srcHeight    = rows;
-
-    constexpr int copyWidth  = std::min(targetWidth, srcWidth);
-    constexpr int copyHeight = std::min(targetHeight, srcHeight);
-
-    T staging[targetWidth * targetHeight] = {0};
-
-    for (int y = 0; y < copyHeight; y++)
-    {
-        for (int x = 0; x < copyWidth; x++)
-        {
-            staging[y * targetWidth + x] = static_cast<T>(value[y * srcWidth + x]);
-        }
-    }
-
-    if (memcmp(target, staging, targetWidth * targetHeight * sizeof(T)) == 0)
-    {
-        return false;
-    }
-
-    memcpy(target, staging, targetWidth * targetHeight * sizeof(T));
-    return true;
-}
-
-gl::PrimitiveType GetGeometryShaderTypeFromDrawMode(GLenum drawMode)
+gl::PrimitiveMode GetGeometryShaderTypeFromDrawMode(gl::PrimitiveMode drawMode)
 {
     switch (drawMode)
     {
         // Uses the point sprite geometry shader.
-        case GL_POINTS:
-            return gl::PRIMITIVE_POINTS;
+        case gl::PrimitiveMode::Points:
+            return gl::PrimitiveMode::Points;
 
         // All line drawing uses the same geometry shader.
-        case GL_LINES:
-        case GL_LINE_STRIP:
-        case GL_LINE_LOOP:
-            return gl::PRIMITIVE_LINES;
+        case gl::PrimitiveMode::Lines:
+        case gl::PrimitiveMode::LineStrip:
+        case gl::PrimitiveMode::LineLoop:
+            return gl::PrimitiveMode::Lines;
 
         // The triangle fan primitive is emulated with strips in D3D11.
-        case GL_TRIANGLES:
-        case GL_TRIANGLE_FAN:
-            return gl::PRIMITIVE_TRIANGLES;
+        case gl::PrimitiveMode::Triangles:
+        case gl::PrimitiveMode::TriangleFan:
+            return gl::PrimitiveMode::Triangles;
 
         // Special case for triangle strips.
-        case GL_TRIANGLE_STRIP:
-            return gl::PRIMITIVE_TRIANGLE_STRIP;
+        case gl::PrimitiveMode::TriangleStrip:
+            return gl::PrimitiveMode::TriangleStrip;
 
         default:
             UNREACHABLE();
-            return gl::PRIMITIVE_TYPE_MAX;
+            return gl::PrimitiveMode::InvalidEnum;
     }
 }
 
@@ -216,26 +157,6 @@ bool FindFlatInterpolationVarying(const gl::Context *context,
     }
 
     return false;
-}
-
-// Helper method to de-tranpose a matrix uniform for an API query.
-void GetMatrixUniform(GLint columns, GLint rows, GLfloat *dataOut, const GLfloat *source)
-{
-    for (GLint col = 0; col < columns; ++col)
-    {
-        for (GLint row = 0; row < rows; ++row)
-        {
-            GLfloat *outptr      = dataOut + ((col * rows) + row);
-            const GLfloat *inptr = source + ((row * 4) + col);
-            *outptr              = *inptr;
-        }
-    }
-}
-
-template <typename NonFloatT>
-void GetMatrixUniform(GLint columns, GLint rows, NonFloatT *dataOut, const NonFloatT *source)
-{
-    UNREACHABLE();
 }
 
 class UniformBlockInfo final : angle::NonCopyable
@@ -639,7 +560,6 @@ ProgramD3D::ProgramD3D(const gl::ProgramState &state, RendererD3D *renderer)
     : ProgramImpl(state),
       mRenderer(renderer),
       mDynamicHLSL(nullptr),
-      mGeometryExecutables(gl::PRIMITIVE_TYPE_MAX),
       mComputeExecutable(nullptr),
       mUsesPointSize(false),
       mUsesFlatInterpolation(false),
@@ -668,13 +588,13 @@ bool ProgramD3D::usesGeometryShaderForPointSpriteEmulation() const
     return usesPointSpriteEmulation() && !usesInstancedPointSpriteEmulation();
 }
 
-bool ProgramD3D::usesGeometryShader(GLenum drawMode) const
+bool ProgramD3D::usesGeometryShader(gl::PrimitiveMode drawMode) const
 {
     if (mHasANGLEMultiviewEnabled && !mRenderer->canSelectViewInVertexShader())
     {
         return true;
     }
-    if (drawMode != GL_POINTS)
+    if (drawMode != gl::PrimitiveMode::Points)
     {
         return mUsesFlatInterpolation;
     }
@@ -1043,8 +963,7 @@ gl::LinkResult ProgramD3D::load(const gl::Context *context,
         stream->skip(pixelShaderSize);
     }
 
-    for (unsigned int geometryExeIndex = 0; geometryExeIndex < gl::PRIMITIVE_TYPE_MAX;
-         ++geometryExeIndex)
+    for (auto &geometryExe : mGeometryExecutables)
     {
         unsigned int geometryShaderSize = stream->readInt<unsigned int>();
         if (geometryShaderSize == 0)
@@ -1065,7 +984,7 @@ gl::LinkResult ProgramD3D::load(const gl::Context *context,
             return false;
         }
 
-        mGeometryExecutables[geometryExeIndex].reset(geometryExecutable);
+        geometryExe.reset(geometryExecutable);
 
         stream->skip(geometryShaderSize);
     }
@@ -1356,7 +1275,7 @@ gl::Error ProgramD3D::getVertexExecutableForCachedInputLayout(ShaderExecutableD3
 }
 
 gl::Error ProgramD3D::getGeometryExecutableForPrimitiveType(const gl::Context *context,
-                                                            GLenum drawMode,
+                                                            gl::PrimitiveMode drawMode,
                                                             ShaderExecutableD3D **outExecutable,
                                                             gl::InfoLog *infoLog)
 {
@@ -1371,7 +1290,7 @@ gl::Error ProgramD3D::getGeometryExecutableForPrimitiveType(const gl::Context *c
         return gl::NoError();
     }
 
-    gl::PrimitiveType geometryShaderType = GetGeometryShaderTypeFromDrawMode(drawMode);
+    gl::PrimitiveMode geometryShaderType = GetGeometryShaderTypeFromDrawMode(drawMode);
 
     if (mGeometryExecutables[geometryShaderType])
     {
@@ -1497,10 +1416,10 @@ class ProgramD3D::GetGeometryExecutableTask : public ProgramD3D::GetExecutableTa
     {
         // Auto-generate the geometry shader here, if we expect to be using point rendering in
         // D3D11.
-        if (mProgram->usesGeometryShader(GL_POINTS))
+        if (mProgram->usesGeometryShader(gl::PrimitiveMode::Points))
         {
-            ANGLE_TRY(mProgram->getGeometryExecutableForPrimitiveType(mContext, GL_POINTS, &mResult,
-                                                                      &mInfoLog));
+            ANGLE_TRY(mProgram->getGeometryExecutableForPrimitiveType(
+                mContext, gl::PrimitiveMode::Points, &mResult, &mInfoLog));
         }
 
         return gl::NoError();
@@ -1562,7 +1481,7 @@ gl::LinkResult ProgramD3D::compileProgramExecutables(const gl::Context *context,
     const ShaderD3D *vertexShaderD3D =
         GetImplAs<ShaderD3D>(mState.getAttachedShader(gl::ShaderType::Vertex));
 
-    if (usesGeometryShader(GL_POINTS) && pointGS)
+    if (usesGeometryShader(gl::PrimitiveMode::Points) && pointGS)
     {
         // Geometry shaders are currently only used internally, so there is no corresponding shader
         // object at the interface level. For now the geometry shader debug info is prepended to
@@ -1585,7 +1504,7 @@ gl::LinkResult ProgramD3D::compileProgramExecutables(const gl::Context *context,
     }
 
     return (defaultVertexExecutable && defaultPixelExecutable &&
-            (!usesGeometryShader(GL_POINTS) || pointGS));
+            (!usesGeometryShader(gl::PrimitiveMode::Points) || pointGS));
 }
 
 gl::LinkResult ProgramD3D::compileComputeExecutable(const gl::Context *context,
@@ -1776,11 +1695,10 @@ void ProgramD3D::initializeUniformStorage(const gl::ShaderBitSet &availableShade
             continue;
         }
 
-        for (gl::ShaderType shaderType : gl::AllShaderTypes())
+        for (gl::ShaderType shaderType : availableShaderStages)
         {
             if (d3dUniform->isReferencedByShader(shaderType))
             {
-                ASSERT(availableShaderStages[shaderType]);
                 shaderRegisters[shaderType] = std::max(
                     shaderRegisters[shaderType],
                     d3dUniform->mShaderRegisterIndexes[shaderType] + d3dUniform->registerCount);
@@ -1790,13 +1708,10 @@ void ProgramD3D::initializeUniformStorage(const gl::ShaderBitSet &availableShade
 
     // We only reset uniform storages for the shader stages available in the program (attached
     // shaders in ProgramD3D::link() and linkedShaderStages in ProgramD3D::load()).
-    for (gl::ShaderType shaderType : gl::AllShaderTypes())
+    for (gl::ShaderType shaderType : availableShaderStages)
     {
-        if (availableShaderStages[shaderType])
-        {
-            mShaderUniformStorages[shaderType].reset(
-                mRenderer->createUniformStorage(shaderRegisters[shaderType] * 16u));
-        }
+        mShaderUniformStorages[shaderType].reset(
+            mRenderer->createUniformStorage(shaderRegisters[shaderType] * 16u));
     }
 
     // Iterate the uniforms again to assign data pointers to default block uniforms.
@@ -1808,7 +1723,7 @@ void ProgramD3D::initializeUniformStorage(const gl::ShaderBitSet &availableShade
             continue;
         }
 
-        for (gl::ShaderType shaderType : gl::AllShaderTypes())
+        for (gl::ShaderType shaderType : availableShaderStages)
         {
             if (d3dUniform->isReferencedByShader(shaderType))
             {
@@ -1905,7 +1820,7 @@ void ProgramD3D::setUniformMatrix2fv(GLint location,
                                      GLboolean transpose,
                                      const GLfloat *value)
 {
-    setUniformMatrixfvInternal<2, 2>(location, count, transpose, value, GL_FLOAT_MAT2);
+    setUniformMatrixfvInternal<2, 2>(location, count, transpose, value);
 }
 
 void ProgramD3D::setUniformMatrix3fv(GLint location,
@@ -1913,7 +1828,7 @@ void ProgramD3D::setUniformMatrix3fv(GLint location,
                                      GLboolean transpose,
                                      const GLfloat *value)
 {
-    setUniformMatrixfvInternal<3, 3>(location, count, transpose, value, GL_FLOAT_MAT3);
+    setUniformMatrixfvInternal<3, 3>(location, count, transpose, value);
 }
 
 void ProgramD3D::setUniformMatrix4fv(GLint location,
@@ -1921,7 +1836,7 @@ void ProgramD3D::setUniformMatrix4fv(GLint location,
                                      GLboolean transpose,
                                      const GLfloat *value)
 {
-    setUniformMatrixfvInternal<4, 4>(location, count, transpose, value, GL_FLOAT_MAT4);
+    setUniformMatrixfvInternal<4, 4>(location, count, transpose, value);
 }
 
 void ProgramD3D::setUniformMatrix2x3fv(GLint location,
@@ -1929,7 +1844,7 @@ void ProgramD3D::setUniformMatrix2x3fv(GLint location,
                                        GLboolean transpose,
                                        const GLfloat *value)
 {
-    setUniformMatrixfvInternal<2, 3>(location, count, transpose, value, GL_FLOAT_MAT2x3);
+    setUniformMatrixfvInternal<2, 3>(location, count, transpose, value);
 }
 
 void ProgramD3D::setUniformMatrix3x2fv(GLint location,
@@ -1937,7 +1852,7 @@ void ProgramD3D::setUniformMatrix3x2fv(GLint location,
                                        GLboolean transpose,
                                        const GLfloat *value)
 {
-    setUniformMatrixfvInternal<3, 2>(location, count, transpose, value, GL_FLOAT_MAT3x2);
+    setUniformMatrixfvInternal<3, 2>(location, count, transpose, value);
 }
 
 void ProgramD3D::setUniformMatrix2x4fv(GLint location,
@@ -1945,7 +1860,7 @@ void ProgramD3D::setUniformMatrix2x4fv(GLint location,
                                        GLboolean transpose,
                                        const GLfloat *value)
 {
-    setUniformMatrixfvInternal<2, 4>(location, count, transpose, value, GL_FLOAT_MAT2x4);
+    setUniformMatrixfvInternal<2, 4>(location, count, transpose, value);
 }
 
 void ProgramD3D::setUniformMatrix4x2fv(GLint location,
@@ -1953,7 +1868,7 @@ void ProgramD3D::setUniformMatrix4x2fv(GLint location,
                                        GLboolean transpose,
                                        const GLfloat *value)
 {
-    setUniformMatrixfvInternal<4, 2>(location, count, transpose, value, GL_FLOAT_MAT4x2);
+    setUniformMatrixfvInternal<4, 2>(location, count, transpose, value);
 }
 
 void ProgramD3D::setUniformMatrix3x4fv(GLint location,
@@ -1961,7 +1876,7 @@ void ProgramD3D::setUniformMatrix3x4fv(GLint location,
                                        GLboolean transpose,
                                        const GLfloat *value)
 {
-    setUniformMatrixfvInternal<3, 4>(location, count, transpose, value, GL_FLOAT_MAT3x4);
+    setUniformMatrixfvInternal<3, 4>(location, count, transpose, value);
 }
 
 void ProgramD3D::setUniformMatrix4x3fv(GLint location,
@@ -1969,7 +1884,7 @@ void ProgramD3D::setUniformMatrix4x3fv(GLint location,
                                        GLboolean transpose,
                                        const GLfloat *value)
 {
-    setUniformMatrixfvInternal<4, 3>(location, count, transpose, value, GL_FLOAT_MAT4x3);
+    setUniformMatrixfvInternal<4, 3>(location, count, transpose, value);
 }
 
 void ProgramD3D::setUniform1iv(GLint location, GLsizei count, const GLint *v)
@@ -2280,8 +2195,8 @@ void ProgramD3D::setUniformImpl(const gl::VariableLocation &locationInfo,
                                 uint8_t *targetData,
                                 GLenum uniformType)
 {
-    D3DUniform *targetUniform = mD3DUniforms[locationInfo.index];
-    const int components      = targetUniform->typeInfo.componentCount;
+    D3DUniform *targetUniform             = mD3DUniforms[locationInfo.index];
+    const int components                  = targetUniform->typeInfo.componentCount;
     const unsigned int arrayElementOffset = locationInfo.arrayIndex;
 
     if (targetUniform->typeInfo.type == uniformType)
@@ -2343,60 +2258,26 @@ void ProgramD3D::setUniformInternal(GLint location, GLsizei count, const T *v, G
 }
 
 template <int cols, int rows>
-bool ProgramD3D::setUniformMatrixfvImpl(GLint location,
-                                        GLsizei countIn,
-                                        GLboolean transpose,
-                                        const GLfloat *value,
-                                        uint8_t *targetData,
-                                        GLenum targetUniformType)
-{
-    D3DUniform *targetUniform = getD3DUniformFromLocation(location);
-
-    unsigned int elementCount       = targetUniform->getArraySizeProduct();
-    unsigned int arrayElementOffset = mState.getUniformLocations()[location].arrayIndex;
-    unsigned int count =
-        std::min(elementCount - arrayElementOffset, static_cast<unsigned int>(countIn));
-
-    const unsigned int targetMatrixStride = (4 * rows);
-    GLfloat *target                       = reinterpret_cast<GLfloat *>(
-        targetData + arrayElementOffset * sizeof(GLfloat) * targetMatrixStride);
-
-    bool dirty = false;
-
-    for (unsigned int i = 0; i < count; i++)
-    {
-        // Internally store matrices as transposed versions to accomodate HLSL matrix indexing
-        if (transpose == GL_FALSE)
-        {
-            dirty = TransposeExpandMatrix<GLfloat, cols, rows>(target, value) || dirty;
-        }
-        else
-        {
-            dirty = ExpandMatrix<GLfloat, cols, rows>(target, value) || dirty;
-        }
-        target += targetMatrixStride;
-        value += cols * rows;
-    }
-
-    return dirty;
-}
-
-template <int cols, int rows>
 void ProgramD3D::setUniformMatrixfvInternal(GLint location,
                                             GLsizei countIn,
                                             GLboolean transpose,
-                                            const GLfloat *value,
-                                            GLenum targetUniformType)
+                                            const GLfloat *value)
 {
     D3DUniform *targetUniform = getD3DUniformFromLocation(location);
+    const gl::VariableLocation &uniformLocation = mState.getUniformLocations()[location];
+    unsigned int arrayElementOffset             = uniformLocation.arrayIndex;
+    unsigned int elementCount                   = targetUniform->getArraySizeProduct();
+
+    // Internally store matrices as transposed versions to accomodate HLSL matrix indexing
+    transpose = !transpose;
 
     for (gl::ShaderType shaderType : gl::AllShaderTypes())
     {
         if (targetUniform->mShaderData[shaderType])
         {
-            if (setUniformMatrixfvImpl<cols, rows>(location, countIn, transpose, value,
-                                                   targetUniform->mShaderData[shaderType],
-                                                   targetUniformType))
+            if (SetFloatUniformMatrix<cols, rows>(arrayElementOffset, elementCount, countIn,
+                                                  transpose, value,
+                                                  targetUniform->mShaderData[shaderType]))
             {
                 mShaderUniformsDirty.set(shaderType);
             }
@@ -2726,29 +2607,31 @@ void ProgramD3D::gatherTransformFeedbackVaryings(const gl::VaryingPacking &varyi
         {
             if (builtins.glPosition.enabled)
             {
-                mStreamOutVaryings.push_back(D3DVarying(builtins.glPosition.semantic,
-                                                        builtins.glPosition.index, 4, outputSlot));
+                mStreamOutVaryings.emplace_back(builtins.glPosition.semantic,
+                                                builtins.glPosition.index, 4, outputSlot);
             }
         }
         else if (tfVaryingName == "gl_FragCoord")
         {
             if (builtins.glFragCoord.enabled)
             {
-                mStreamOutVaryings.push_back(D3DVarying(builtins.glFragCoord.semantic,
-                                                        builtins.glFragCoord.index, 4, outputSlot));
+                mStreamOutVaryings.emplace_back(builtins.glFragCoord.semantic,
+                                                builtins.glFragCoord.index, 4, outputSlot);
             }
         }
         else if (tfVaryingName == "gl_PointSize")
         {
             if (builtins.glPointSize.enabled)
             {
-                mStreamOutVaryings.push_back(D3DVarying("PSIZE", 0, 1, outputSlot));
+                mStreamOutVaryings.emplace_back("PSIZE", 0, 1, outputSlot);
             }
         }
         else
         {
-            for (const auto &registerInfo : varyingPacking.getRegisterList())
+            const auto &registerInfos = varyingPacking.getRegisterList();
+            for (GLuint registerIndex = 0u; registerIndex < registerInfos.size(); ++registerIndex)
             {
+                const auto &registerInfo = registerInfos[registerIndex];
                 const auto &varying   = *registerInfo.packedVarying->varying;
                 GLenum transposedType = gl::TransposeMatrixType(varying.type);
                 int componentCount    = gl::VariableColumnCount(transposedType);
@@ -2758,8 +2641,8 @@ void ProgramD3D::gatherTransformFeedbackVaryings(const gl::VaryingPacking &varyi
                 // register needs its own stream out entry.
                 if (registerInfo.tfVaryingName() == tfVaryingName)
                 {
-                    mStreamOutVaryings.push_back(D3DVarying(
-                        varyingSemantic, registerInfo.semanticIndex, componentCount, outputSlot));
+                    mStreamOutVaryings.emplace_back(varyingSemantic, registerIndex, componentCount,
+                                                    outputSlot);
                 }
             }
         }
@@ -2789,7 +2672,7 @@ bool ProgramD3D::hasVertexExecutableForCachedInputLayout()
     return mCachedVertexExecutableIndex.valid();
 }
 
-bool ProgramD3D::hasGeometryExecutableForPrimitiveType(GLenum drawMode)
+bool ProgramD3D::hasGeometryExecutableForPrimitiveType(gl::PrimitiveMode drawMode)
 {
     if (!usesGeometryShader(drawMode))
     {
@@ -2797,18 +2680,13 @@ bool ProgramD3D::hasGeometryExecutableForPrimitiveType(GLenum drawMode)
         return true;
     }
 
-    gl::PrimitiveType geometryShaderType = GetGeometryShaderTypeFromDrawMode(drawMode);
+    gl::PrimitiveMode geometryShaderType = GetGeometryShaderTypeFromDrawMode(drawMode);
     return mGeometryExecutables[geometryShaderType].get() != nullptr;
 }
 
 bool ProgramD3D::hasPixelExecutableForCachedOutputLayout()
 {
     return mCachedPixelExecutableIndex.valid();
-}
-
-bool ProgramD3D::anyShaderUniformsDirty() const
-{
-    return mShaderUniformsDirty.any();
 }
 
 template <typename DestT>
@@ -2822,8 +2700,7 @@ void ProgramD3D::getUniformInternal(GLint location, DestT *dataOut) const
 
     if (gl::IsMatrixType(uniform.type))
     {
-        GetMatrixUniform(gl::VariableColumnCount(uniform.type), gl::VariableRowCount(uniform.type),
-                         dataOut, reinterpret_cast<const DestT *>(srcPointer));
+        GetMatrixUniform(uniform.type, dataOut, reinterpret_cast<const DestT *>(srcPointer), true);
     }
     else
     {

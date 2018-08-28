@@ -6,25 +6,49 @@
 
 #include <utility>
 
+#include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/task_scheduler/post_task.h"
+#include "base/task_scheduler/task_traits.h"
 #include "content/browser/background_fetch/storage/database_helpers.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
-#include "content/common/service_worker/service_worker_status_code.h"
+#include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
+#include "ui/gfx/image/image.h"
 
 namespace content {
 
 namespace background_fetch {
 
+namespace {
+
+std::string ConvertAndSerializeIcon(const SkBitmap& icon) {
+  // Serialize the icon and copy the bytes over.
+  std::string serialized_icon;
+  auto icon_bytes = gfx::Image::CreateFrom1xBitmap(icon).As1xPNGBytes();
+  serialized_icon.assign(icon_bytes->front_as<char>(),
+                         icon_bytes->front_as<char>() + icon_bytes->size());
+  return serialized_icon;
+}
+
+}  // namespace
+
+// The max icon resolution, this is used as a threshold to decide
+// whether the icon should be persisted.
+constexpr int kMaxIconResolution = 256 * 256;
+
 CreateMetadataTask::CreateMetadataTask(
-    BackgroundFetchDataManager* data_manager,
+    DatabaseTaskHost* host,
     const BackgroundFetchRegistrationId& registration_id,
     const std::vector<ServiceWorkerFetchRequest>& requests,
     const BackgroundFetchOptions& options,
+    const SkBitmap& icon,
     CreateMetadataCallback callback)
-    : DatabaseTask(data_manager),
+    : DatabaseTask(host),
       registration_id_(registration_id),
       requests_(requests),
       options_(options),
+      icon_(icon),
       callback_(std::move(callback)),
       weak_factory_(this) {}
 
@@ -39,46 +63,62 @@ void CreateMetadataTask::Start() {
 }
 
 void CreateMetadataTask::DidGetUniqueId(const std::vector<std::string>& data,
-                                        ServiceWorkerStatusCode status) {
+                                        blink::ServiceWorkerStatusCode status) {
   switch (ToDatabaseStatus(status)) {
     case DatabaseStatus::kNotFound:
-      StoreMetadata();
+      InitializeMetadataProto();
       return;
     case DatabaseStatus::kOk:
       // Can't create a registration since there is already an active
       // registration with the same |developer_id|. It must be deactivated
       // (completed/failed/aborted) first.
-      std::move(callback_).Run(
-          blink::mojom::BackgroundFetchError::DUPLICATED_DEVELOPER_ID,
-          nullptr /* metadata */);
-      Finished();  // Destroys |this|.
+      FinishWithError(
+          blink::mojom::BackgroundFetchError::DUPLICATED_DEVELOPER_ID);
       return;
     case DatabaseStatus::kFailed:
-      std::move(callback_).Run(
-          blink::mojom::BackgroundFetchError::STORAGE_ERROR,
-          nullptr /* metadata */);
-      Finished();  // Destroys |this|.
+      FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
       return;
   }
 }
 
 void CreateMetadataTask::InitializeMetadataProto() {
   metadata_proto_ = std::make_unique<proto::BackgroundFetchMetadata>();
+
   // Set BackgroundFetchRegistration fields.
-  // Upload/Download stats default to correct initial values.
   auto* registration_proto = metadata_proto_->mutable_registration();
   registration_proto->set_unique_id(registration_id_.unique_id());
   registration_proto->set_developer_id(registration_id_.developer_id());
+  registration_proto->set_download_total(options_.download_total);
 
   // Set Options fields.
   auto* options_proto = metadata_proto_->mutable_options();
   options_proto->set_title(options_.title);
   options_proto->set_download_total(options_.download_total);
   for (const auto& icon : options_.icons) {
-    auto* icon_definition_proto = options_proto->add_icons();
-    icon_definition_proto->set_src(icon.src);
-    icon_definition_proto->set_sizes(icon.sizes);
-    icon_definition_proto->set_type(icon.type);
+    auto* image_resource_proto = options_proto->add_icons();
+
+    image_resource_proto->set_src(icon.src.spec());
+
+    for (const auto& size : icon.sizes) {
+      auto* size_proto = image_resource_proto->add_sizes();
+      size_proto->set_width(size.width());
+      size_proto->set_height(size.height());
+    }
+
+    image_resource_proto->set_type(base::UTF16ToASCII(icon.type));
+
+    for (const auto& purpose : icon.purpose) {
+      switch (purpose) {
+        case blink::Manifest::ImageResource::Purpose::ANY:
+          image_resource_proto->add_purpose(
+              proto::BackgroundFetchOptions_ImageResource_Purpose_ANY);
+          break;
+        case blink::Manifest::ImageResource::Purpose::BADGE:
+          image_resource_proto->add_purpose(
+              proto::BackgroundFetchOptions_ImageResource_Purpose_BADGE);
+          break;
+      }
+    }
   }
 
   // Set other metadata fields.
@@ -86,20 +126,40 @@ void CreateMetadataTask::InitializeMetadataProto() {
   metadata_proto_->set_creation_microseconds_since_unix_epoch(
       (base::Time::Now() - base::Time::UnixEpoch()).InMicroseconds());
   metadata_proto_->set_num_fetches(requests_.size());
+
+  // Check if |icon_| should be persisted.
+  if (icon_.height() * icon_.width() > kMaxIconResolution) {
+    StoreMetadata();
+    return;
+  }
+
+  // Do the initialization on a seperate thread to avoid blocking on
+  // expensive operations (image conversions), then post back to IO thread
+  // and continue normally.
+  base::PostTaskWithTraitsAndReplyWithResult(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN,
+       base::TaskPriority::BACKGROUND},
+      base::BindOnce(&ConvertAndSerializeIcon, icon_),
+      base::BindOnce(&CreateMetadataTask::StoreIcon,
+                     weak_factory_.GetWeakPtr()));
+}
+
+void CreateMetadataTask::StoreIcon(std::string serialized_icon) {
+  DCHECK(metadata_proto_);
+  metadata_proto_->set_icon(std::move(serialized_icon));
+  StoreMetadata();
 }
 
 void CreateMetadataTask::StoreMetadata() {
+  DCHECK(metadata_proto_);
   std::vector<std::pair<std::string, std::string>> entries;
   entries.reserve(requests_.size() * 2 + 1);
 
-  InitializeMetadataProto();
   std::string serialized_metadata_proto;
 
   if (!metadata_proto_->SerializeToString(&serialized_metadata_proto)) {
-    // TODO(crbug.com/780025): Log failures to UMA.
-    std::move(callback_).Run(blink::mojom::BackgroundFetchError::STORAGE_ERROR,
-                             nullptr /* metadata */);
-    Finished();  // Destroys |this|.
+    FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
     return;
   }
 
@@ -123,29 +183,32 @@ void CreateMetadataTask::StoreMetadata() {
   service_worker_context()->StoreRegistrationUserData(
       registration_id_.service_worker_registration_id(),
       registration_id_.origin().GetURL(), entries,
-      base::BindRepeating(&CreateMetadataTask::DidStoreMetadata,
-                          weak_factory_.GetWeakPtr()));
+      base::BindOnce(&CreateMetadataTask::DidStoreMetadata,
+                     weak_factory_.GetWeakPtr()));
 }
 
-void CreateMetadataTask::DidStoreMetadata(ServiceWorkerStatusCode status) {
-  DCHECK(metadata_proto_);
-
+void CreateMetadataTask::DidStoreMetadata(
+    blink::ServiceWorkerStatusCode status) {
   switch (ToDatabaseStatus(status)) {
     case DatabaseStatus::kOk:
       break;
     case DatabaseStatus::kFailed:
     case DatabaseStatus::kNotFound:
-      std::move(callback_).Run(
-          blink::mojom::BackgroundFetchError::STORAGE_ERROR,
-          nullptr /* metadata */);
-      Finished();  // Destroys |this|.
+      FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
       return;
   }
 
-  std::move(callback_).Run(blink::mojom::BackgroundFetchError::NONE,
-                           std::move(metadata_proto_));
+  FinishWithError(blink::mojom::BackgroundFetchError::NONE);
+}
+
+void CreateMetadataTask::FinishWithError(
+    blink::mojom::BackgroundFetchError error) {
+  if (error != blink::mojom::BackgroundFetchError::NONE)
+    metadata_proto_.reset();
+  std::move(callback_).Run(error, std::move(metadata_proto_));
   Finished();  // Destroys |this|.
 }
+
 }  // namespace background_fetch
 
 }  // namespace content

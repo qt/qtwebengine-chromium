@@ -48,7 +48,9 @@ std::map<K, V> MapFromKeyValuePairs(std::vector<std::pair<K, V>> pairs) {
 
 // Given two vectors of <K, V> key, value pairs representing an "old" vs "new"
 // state, or "before" vs "after", calls a callback function for each key that
-// changed value.
+// changed value. Note that if an attribute is removed, that will result in
+// a call to the callback with the value changing from the previous value to
+// |empty_value|, and similarly when an attribute is added.
 template <typename K, typename V, typename F>
 void CallIfAttributeValuesChanged(const std::vector<std::pair<K, V>>& pairs1,
                                   const std::vector<std::pair<K, V>>& pairs2,
@@ -140,7 +142,9 @@ AXTree::AXTree(const AXTreeUpdate& initial_state) {
 AXTree::~AXTree() {
   if (root_)
     DestroyNodeAndSubtree(root_, nullptr);
-  ClearTables();
+  for (auto& entry : table_info_map_)
+    delete entry.second;
+  table_info_map_.clear();
 }
 
 void AXTree::SetDelegate(AXTreeDelegate* delegate) {
@@ -244,17 +248,17 @@ gfx::RectF AXTree::RelativeToTreeBounds(const AXNode* node,
         // Totally offscreen. Find the nearest edge or corner.
         // Make the minimum dimension 1 instead of 0.
         if (clipped.x() >= container_bounds.width()) {
-          clipped.set_x(container_bounds.width() - 1);
+          clipped.set_x(container_bounds.right() - 1);
           clipped.set_width(1);
         } else if (clipped.x() + clipped.width() <= 0) {
-          clipped.set_x(0);
+          clipped.set_x(container_bounds.x());
           clipped.set_width(1);
         }
         if (clipped.y() >= container_bounds.height()) {
-          clipped.set_y(container_bounds.height() - 1);
+          clipped.set_y(container_bounds.bottom() - 1);
           clipped.set_height(1);
         } else if (clipped.y() + clipped.height() <= 0) {
-          clipped.set_y(0);
+          clipped.set_y(container_bounds.y());
           clipped.set_height(1);
         }
       }
@@ -320,7 +324,6 @@ std::set<int32_t> AXTree::GetReverseRelations(ax::mojom::IntListAttribute attr,
 }
 
 bool AXTree::Unserialize(const AXTreeUpdate& update) {
-  ClearTables();
   AXTreeUpdateState update_state;
   int32_t old_root_id = root_ ? root_->id() : 0;
 
@@ -387,6 +390,25 @@ bool AXTree::Unserialize(const AXTreeUpdate& update) {
     return false;
   }
 
+  // Look for changes to nodes that are a descendant of a table,
+  // and invalidate their table info if so.  We have to walk up the
+  // ancestry of every node that was updated potentially, so keep track of
+  // ids that were checked to eliminate duplicate work.
+  std::set<int32_t> table_ids_checked;
+  for (size_t i = 0; i < update.nodes.size(); ++i) {
+    AXNode* node = GetFromId(update.nodes[i].id);
+    while (node) {
+      if (table_ids_checked.find(node->id()) != table_ids_checked.end())
+        break;
+      // Remove any table infos.
+      const auto& table_info_entry = table_info_map_.find(node->id());
+      if (table_info_entry != table_info_map_.end())
+        table_info_entry->second->Invalidate();
+      table_ids_checked.insert(node->id());
+      node = node->parent();
+    }
+  }
+
   if (delegate_) {
     std::set<AXNode*>& new_nodes = update_state.new_nodes;
     std::vector<AXTreeDelegate::Change> changes;
@@ -437,14 +459,32 @@ bool AXTree::Unserialize(const AXTreeUpdate& update) {
 AXTableInfo* AXTree::GetTableInfo(AXNode* table_node) {
   DCHECK(table_node);
   const auto& cached = table_info_map_.find(table_node->id());
-  if (cached != table_info_map_.end())
-    return cached->second;
+  if (cached != table_info_map_.end()) {
+    // Get existing table info, and update if invalid because the
+    // tree has changed since the last time we accessed it.
+    AXTableInfo* table_info = cached->second;
+    if (!table_info->valid()) {
+      bool success = table_info->Update();
+      if (!success) {
+        // If Update() returned false, this is no longer a valid table.
+        // Remove it from the map.
+        delete table_info;
+        table_info_map_.erase(table_node->id());
+      }
+      if (delegate_)
+        delegate_->OnNodeChanged(this, table_node);
+    }
+    return table_info;
+  }
 
   AXTableInfo* table_info = AXTableInfo::Create(this, table_node);
   if (!table_info)
     return nullptr;
 
   table_info_map_[table_node->id()] = table_info;
+  if (delegate_)
+    delegate_->OnNodeChanged(this, table_node);
+
   return table_info;
 }
 
@@ -632,13 +672,19 @@ void AXTree::UpdateReverseRelations(AXNode* node, const AXNodeData& new_data) {
     if (!IsNodeIdIntAttribute(attr))
       return;
 
+    // Remove old_id -> id from the map, and clear map keys if their
+    // values are now empty.
     auto& map = int_reverse_relations_[attr];
     if (map.find(old_id) != map.end()) {
       map[old_id].erase(id);
       if (map[old_id].empty())
         map.erase(old_id);
     }
-    map[new_id].insert(id);
+
+    // Add new_id -> id to the map, unless new_id is zero indicating that
+    // we're only removing a relation.
+    if (new_id)
+      map[new_id].insert(id);
   };
   CallIfAttributeValuesChanged(old_data.int_attributes, new_data.int_attributes,
                                0, int_callback);
@@ -684,6 +730,13 @@ void AXTree::DestroyNodeAndSubtree(AXNode* node,
   AXNodeData empty_data;
   empty_data.id = node->id();
   UpdateReverseRelations(node, empty_data);
+
+  // Remove any table infos.
+  const auto& table_info_entry = table_info_map_.find(node->id());
+  if (table_info_entry != table_info_map_.end()) {
+    delete table_info_entry->second;
+    table_info_map_.erase(node->id());
+  }
 
   if (delegate_) {
     if (!update_state || !update_state->HasChangedNode(node))
@@ -761,10 +814,18 @@ bool AXTree::CreateNewChildVector(AXNode* node,
   return success;
 }
 
-void AXTree::ClearTables() {
-  for (auto& entry : table_info_map_)
-    delete entry.second;
-  table_info_map_.clear();
+void AXTree::SetEnableExtraMacNodes(bool enabled) {
+  DCHECK(enable_extra_mac_nodes_ != enabled);
+  DCHECK_EQ(0U, table_info_map_.size());
+  enable_extra_mac_nodes_ = enabled;
+}
+
+int32_t AXTree::GetNextNegativeInternalNodeId() {
+  int32_t return_value = next_negative_internal_node_id_;
+  next_negative_internal_node_id_--;
+  if (next_negative_internal_node_id_ > 0)
+    next_negative_internal_node_id_ = -1;
+  return return_value;
 }
 
 }  // namespace ui

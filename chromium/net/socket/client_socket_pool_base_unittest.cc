@@ -24,6 +24,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
+#include "net/base/completion_once_callback.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
 #include "net/base/net_errors.h"
@@ -529,13 +530,13 @@ class TestClientSocketPool : public ClientSocketPool {
                     const SocketTag& socket_tag,
                     RespectLimits respect_limits,
                     ClientSocketHandle* handle,
-                    const CompletionCallback& callback,
+                    CompletionOnceCallback callback,
                     const NetLogWithSource& net_log) override {
     const scoped_refptr<TestSocketParams>* casted_socket_params =
         static_cast<const scoped_refptr<TestSocketParams>*>(params);
     return base_.RequestSocket(group_name, *casted_socket_params, priority,
-                               socket_tag, respect_limits, handle, callback,
-                               net_log);
+                               socket_tag, respect_limits, handle,
+                               std::move(callback), net_log);
   }
 
   void RequestSockets(const std::string& group_name,
@@ -663,8 +664,7 @@ void MockClientSocketFactory::SetJobLoadState(size_t job,
 
 class TestConnectJobDelegate : public ConnectJob::Delegate {
  public:
-  TestConnectJobDelegate()
-      : have_result_(false), waiting_for_result_(false), result_(OK) {}
+  TestConnectJobDelegate() : have_result_(false), result_(OK) {}
   ~TestConnectJobDelegate() override = default;
 
   void OnConnectJobComplete(int result, ConnectJob* job) override {
@@ -674,16 +674,16 @@ class TestConnectJobDelegate : public ConnectJob::Delegate {
     // socket.get() should be NULL iff result != OK
     EXPECT_EQ(socket == NULL, result != OK);
     have_result_ = true;
-    if (waiting_for_result_)
-      base::RunLoop::QuitCurrentWhenIdleDeprecated();
+    if (quit_wait_on_result_)
+      std::move(quit_wait_on_result_).Run();
   }
 
   int WaitForResult() {
-    DCHECK(!waiting_for_result_);
+    DCHECK(!quit_wait_on_result_);
     while (!have_result_) {
-      waiting_for_result_ = true;
-      base::RunLoop().Run();
-      waiting_for_result_ = false;
+      base::RunLoop run_loop;
+      quit_wait_on_result_ = run_loop.QuitClosure();
+      run_loop.Run();
     }
     have_result_ = false;  // auto-reset for next callback
     return result_;
@@ -691,7 +691,7 @@ class TestConnectJobDelegate : public ConnectJob::Delegate {
 
  private:
   bool have_result_;
-  bool waiting_for_result_;
+  base::OnceClosure quit_wait_on_result_;
   int result_;
 };
 
@@ -2562,16 +2562,16 @@ class TestReleasingSocketRequest : public TestCompletionCallbackBase {
                              bool reset_releasing_handle)
       : pool_(pool),
         expected_result_(expected_result),
-        reset_releasing_handle_(reset_releasing_handle),
-        callback_(base::Bind(&TestReleasingSocketRequest::OnComplete,
-                             base::Unretained(this))) {
-  }
+        reset_releasing_handle_(reset_releasing_handle) {}
 
   ~TestReleasingSocketRequest() override = default;
 
   ClientSocketHandle* handle() { return &handle_; }
 
-  const CompletionCallback& callback() const { return callback_; }
+  CompletionOnceCallback callback() {
+    return base::BindOnce(&TestReleasingSocketRequest::OnComplete,
+                          base::Unretained(this));
+  }
 
  private:
   void OnComplete(int result) {
@@ -2580,10 +2580,11 @@ class TestReleasingSocketRequest : public TestCompletionCallbackBase {
       handle_.Reset();
 
     scoped_refptr<TestSocketParams> con_params(new TestSocketParams());
-    EXPECT_EQ(expected_result_,
-              handle2_.Init("a", con_params, DEFAULT_PRIORITY, SocketTag(),
-                            ClientSocketPool::RespectLimits::ENABLED,
-                            callback2_.callback(), pool_, NetLogWithSource()));
+    EXPECT_EQ(
+        expected_result_,
+        handle2_.Init("a", con_params, DEFAULT_PRIORITY, SocketTag(),
+                      ClientSocketPool::RespectLimits::ENABLED,
+                      CompletionOnceCallback(), pool_, NetLogWithSource()));
   }
 
   TestClientSocketPool* const pool_;
@@ -2591,8 +2592,6 @@ class TestReleasingSocketRequest : public TestCompletionCallbackBase {
   bool reset_releasing_handle_;
   ClientSocketHandle handle_;
   ClientSocketHandle handle2_;
-  CompletionCallback callback_;
-  TestCompletionCallback callback2_;
 };
 
 
@@ -2677,16 +2676,10 @@ TEST_F(ClientSocketPoolBaseTest, DoNotReuseSocketAfterFlush) {
 
 class ConnectWithinCallback : public TestCompletionCallbackBase {
  public:
-  ConnectWithinCallback(
-      const std::string& group_name,
-      const scoped_refptr<TestSocketParams>& params,
-      TestClientSocketPool* pool)
-      : group_name_(group_name),
-        params_(params),
-        pool_(pool),
-        callback_(base::Bind(&ConnectWithinCallback::OnComplete,
-                             base::Unretained(this))) {
-  }
+  ConnectWithinCallback(const std::string& group_name,
+                        const scoped_refptr<TestSocketParams>& params,
+                        TestClientSocketPool* pool)
+      : group_name_(group_name), params_(params), pool_(pool) {}
 
   ~ConnectWithinCallback() override = default;
 
@@ -2694,7 +2687,10 @@ class ConnectWithinCallback : public TestCompletionCallbackBase {
     return nested_callback_.WaitForResult();
   }
 
-  const CompletionCallback& callback() const { return callback_; }
+  CompletionOnceCallback callback() {
+    return base::BindOnce(&ConnectWithinCallback::OnComplete,
+                          base::Unretained(this));
+  }
 
  private:
   void OnComplete(int result) {
@@ -2710,7 +2706,6 @@ class ConnectWithinCallback : public TestCompletionCallbackBase {
   const scoped_refptr<TestSocketParams> params_;
   TestClientSocketPool* const pool_;
   ClientSocketHandle handle_;
-  CompletionCallback callback_;
   TestCompletionCallback nested_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ConnectWithinCallback);

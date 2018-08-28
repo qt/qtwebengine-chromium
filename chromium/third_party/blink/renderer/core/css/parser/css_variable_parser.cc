@@ -7,30 +7,55 @@
 #include "third_party/blink/renderer/core/css/css_custom_property_declaration.h"
 #include "third_party/blink/renderer/core/css/css_variable_reference_value.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_range.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
 namespace {
 
-bool IsValidVariableReference(CSSParserTokenRange);
+bool IsValidVariableReference(CSSParserTokenRange, bool);
+bool IsValidEnvVariableReference(CSSParserTokenRange, bool);
 
-bool ClassifyBlock(CSSParserTokenRange range, bool& has_references) {
+bool ClassifyBlock(CSSParserTokenRange range,
+                   bool& has_references,
+                   bool skip_variables) {
   size_t block_stack_size = 0;
 
   while (!range.AtEnd()) {
     // First check if this is a valid variable reference, then handle the next
     // token accordingly.
-    if (range.Peek().GetBlockType() == CSSParserToken::kBlockStart &&
-        range.Peek().FunctionId() == CSSValueVar) {
-      CSSParserTokenRange block = range.ConsumeBlock();
-      if (!IsValidVariableReference(block))
-        return false;  // Bail if any references are invalid
-      has_references = true;
-      continue;
+    if (range.Peek().GetBlockType() == CSSParserToken::kBlockStart) {
+      const CSSParserToken& token = range.Peek();
+
+      // A block may have both var and env references. They can also be nested
+      // and used as fallbacks.
+      switch (token.FunctionId()) {
+        case CSSValueVar:
+          if (!IsValidVariableReference(range.ConsumeBlock(), skip_variables))
+            return false;  // Invalid reference.
+          has_references = true;
+          continue;
+        case CSSValueEnv:
+          if (!RuntimeEnabledFeatures::CSSEnvironmentVariablesEnabled())
+            return false;
+          if (!IsValidEnvVariableReference(range.ConsumeBlock(),
+                                           skip_variables))
+            return false;  // Invalid reference.
+          has_references = true;
+          continue;
+        default:
+          break;
+      }
     }
 
     const CSSParserToken& token = range.Consume();
     if (token.GetBlockType() == CSSParserToken::kBlockStart) {
+      // If we are an invalid function then we should skip over any variables
+      // this function contains.
+      if (token.GetType() == CSSParserTokenType::kFunctionToken &&
+          token.FunctionId() == CSSValueInvalid) {
+        skip_variables = true;
+      }
       ++block_stack_size;
     } else if (token.GetBlockType() == CSSParserToken::kBlockEnd) {
       --block_stack_size;
@@ -59,8 +84,10 @@ bool ClassifyBlock(CSSParserTokenRange range, bool& has_references) {
   return true;
 }
 
-bool IsValidVariableReference(CSSParserTokenRange range) {
+bool IsValidVariableReference(CSSParserTokenRange range, bool skip_variables) {
   range.ConsumeWhitespace();
+  if (skip_variables)
+    return false;
   if (!CSSVariableParser::IsValidVariableName(
           range.ConsumeIncludingWhitespace()))
     return false;
@@ -73,7 +100,27 @@ bool IsValidVariableReference(CSSParserTokenRange range) {
     return false;
 
   bool has_references = false;
-  return ClassifyBlock(range, has_references);
+  return ClassifyBlock(range, has_references, skip_variables);
+}
+
+bool IsValidEnvVariableReference(CSSParserTokenRange range,
+                                 bool skip_variables) {
+  range.ConsumeWhitespace();
+  if (skip_variables)
+    return false;
+  if (range.ConsumeIncludingWhitespace().GetType() !=
+      CSSParserTokenType::kIdentToken)
+    return false;
+  if (range.AtEnd())
+    return true;
+
+  if (range.Consume().GetType() != kCommaToken)
+    return false;
+  if (range.AtEnd())
+    return false;
+
+  bool has_references = false;
+  return ClassifyBlock(range, has_references, skip_variables);
 }
 
 CSSValueID ClassifyVariableRange(CSSParserTokenRange range,
@@ -88,7 +135,7 @@ CSSValueID ClassifyVariableRange(CSSParserTokenRange range,
       return id;
   }
 
-  if (ClassifyBlock(range, has_references))
+  if (ClassifyBlock(range, has_references, false /* skip_variables */))
     return CSSValueInternalVariableValue;
   return CSSValueInvalid;
 }
@@ -117,7 +164,8 @@ bool CSSVariableParser::ContainsValidVariableReferences(
 CSSCustomPropertyDeclaration* CSSVariableParser::ParseDeclarationValue(
     const AtomicString& variable_name,
     CSSParserTokenRange range,
-    bool is_animation_tainted) {
+    bool is_animation_tainted,
+    const CSSParserContext& context) {
   if (range.AtEnd())
     return nullptr;
 
@@ -129,7 +177,8 @@ CSSCustomPropertyDeclaration* CSSVariableParser::ParseDeclarationValue(
   if (type == CSSValueInternalVariableValue) {
     return CSSCustomPropertyDeclaration::Create(
         variable_name,
-        CSSVariableData::Create(range, is_animation_tainted, has_references));
+        CSSVariableData::Create(range, is_animation_tainted, has_references,
+                                context.BaseURL(), context.Charset()));
   }
   return CSSCustomPropertyDeclaration::Create(variable_name, type);
 }
@@ -150,7 +199,8 @@ CSSVariableReferenceValue* CSSVariableParser::ParseRegisteredPropertyValue(
   if (require_var_reference && !has_references)
     return nullptr;
   return CSSVariableReferenceValue::Create(
-      CSSVariableData::Create(range, is_animation_tainted, has_references),
+      CSSVariableData::Create(range, is_animation_tainted, has_references,
+                              context.BaseURL(), context.Charset()),
       context);
 }
 

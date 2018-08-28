@@ -29,7 +29,9 @@
 #include "SkStrokeRec.h"
 #include "SkSurfacePriv.h"
 #include "SkTextFormatParams.h"
+#include "SkTo.h"
 #include "SkWriteBuffer.h"
+#include <new>
 
 ///////////////////////////////////////////////////////////////////////////////
 

@@ -2,6 +2,7 @@ SkColor Reference
 ===
 
 # <a name='Color'>Color</a>
+Types, consts, functions, and macros for colors.
 
 ## Overview
 
@@ -55,6 +56,7 @@ SkColor uses preprocessor definitions to inline code and constants, and to abstr
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>returns opaque <a href='#Color'>Color</a></td>
   </tr>
 </table>
+
 <a href='#Color'>Color</a> constants can be helpful to write code, documenting the meaning of values
 the represent transparency and color values. The use of <a href='#Color'>Color</a> constants is not
 required.
@@ -124,7 +126,6 @@ SkColor related constants are defined by <code>enum</code>, <code>enum class</co
   </tr>
 </table>
 
-
 ## <a name='Function'>Function</a>
 
 
@@ -165,7 +166,6 @@ SkColor related constants are defined by <code>enum</code>, <code>enum class</co
   </tr>
 </table>
 
-
 ## <a name='Typedef'>Typedef</a>
 
 
@@ -187,7 +187,6 @@ SkColor  <code>typedef</code> define a data type.
   </tr>
 </table>
 
-
 ## <a name='Alpha'>Alpha</a>
 
 <a href='#Alpha'>Alpha</a> represents the transparency of <a href='#Color'>Color</a>. <a href='#Color'>Color</a> with <a href='#Alpha'>Alpha</a> of zero is fully
@@ -203,7 +202,7 @@ zero, fully transparent, to one, fully opaque.
 typedef uint8_t <a href='#SkAlpha'>SkAlpha</a>;
 </pre>
 
-8-bit type for an alpha value. 0xFF is 100% opaque, 0x00 is 100% transparent.
+8-bit type for an alpha value. 255 is 100% opaque, zero is 100% transparent.
 
 ## <a name='SkColor'>Typedef SkColor</a>
 
@@ -478,7 +477,7 @@ opaque colors and masks. Their use is not required.
   <tr style='background-color: #f0f0f0; '>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a name='SK_AlphaTRANSPARENT'><code>SK_AlphaTRANSPARENT</code></a></td>
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>0x00</td>
-    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#Alpha_Constants_Transparent'>Alpha&nbsp;Constants&nbsp;Transparent</a>&nbsp;</td>
+    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#Transparent'>Transparent</a>&nbsp;</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
 Represents fully transparent <a href='#SkAlpha'>SkAlpha</a> value. <a href='#SkAlpha'>SkAlpha</a> ranges from zero,
 fully transparent; to 255, fully opaque.
@@ -487,7 +486,7 @@ fully transparent; to 255, fully opaque.
   <tr>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a name='SK_AlphaOPAQUE'><code>SK_AlphaOPAQUE</code></a></td>
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>0xFF</td>
-    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#Alpha_Constants_Opaque'>Alpha&nbsp;Constants&nbsp;Opaque</a>&nbsp;</td>
+    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#Opaque'>Opaque</a>&nbsp;</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
 Represents fully opaque <a href='#SkAlpha'>SkAlpha</a> value. <a href='#SkAlpha'>SkAlpha</a> ranges from zero,
 fully transparent; to 255, fully opaque.
@@ -622,7 +621,7 @@ The values chosen for names may not be the same as values used by
   <tr style='background-color: #f0f0f0; '>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a name='SK_ColorTRANSPARENT'><code>SK_ColorTRANSPARENT</code></a></td>
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>0x00000000</td>
-    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#Color_Constants_Transparent'>Color&nbsp;Constants&nbsp;Transparent</a>&nbsp;</td>
+    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#Transparent'>Transparent</a>&nbsp;</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
 Represents fully transparent <a href='#SkColor'>SkColor</a>. May be used to initialize a destination
 containing a mask or a non-rectangular image.
@@ -631,7 +630,7 @@ containing a mask or a non-rectangular image.
   <tr>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a name='SK_ColorBLACK'><code>SK_ColorBLACK</code></a></td>
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>0xFF000000</td>
-    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#Color_Constants_Black'>Color&nbsp;Constants&nbsp;Black</a>&nbsp;</td>
+    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#Black'>Black</a>&nbsp;</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
 Represents fully opaque black.
 </td>
@@ -642,7 +641,7 @@ Represents fully opaque black.
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '></td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
 Represents fully opaque dark gray.
-Note that SVG_darkgray is equivalent to 0xFFA9A9A9.
+Note that <a href='undocumented#SVG_darkgray'>SVG darkgray</a> is equivalent to 0xFFA9A9A9.
 </td>
   </tr>
   <tr>
@@ -651,7 +650,7 @@ Note that SVG_darkgray is equivalent to 0xFFA9A9A9.
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '></td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
 Represents fully opaque gray.
-Note that HTML_Gray is equivalent to 0xFF808080.
+Note that <a href='undocumented#HTML_Gray'>HTML Gray</a> is equivalent to 0xFF808080.
 </td>
   </tr>
   <tr style='background-color: #f0f0f0; '>
@@ -659,8 +658,8 @@ Note that HTML_Gray is equivalent to 0xFF808080.
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>0xFFCCCCCC</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '></td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
-Represents fully opaque light gray. HTML_Silver is equivalent to 0xFFC0C0C0.
-Note that SVG_lightgray is equivalent to 0xFFD3D3D3.
+Represents fully opaque light gray. <a href='undocumented#HTML_Silver'>HTML Silver</a> is equivalent to 0xFFC0C0C0.
+Note that <a href='undocumented#SVG_lightgray'>SVG lightgray</a> is equivalent to 0xFFD3D3D3.
 </td>
   </tr>
   <tr>
@@ -684,8 +683,8 @@ Represents fully opaque red.
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>0xFF00FF00</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '></td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
-Represents fully opaque green. HTML_Lime is equivalent.
-Note that HTML_Green is equivalent to 0xFF008000.
+Represents fully opaque green. <a href='undocumented#HTML_Lime'>HTML Lime</a> is equivalent.
+Note that <a href='undocumented#HTML_Green'>HTML Green</a> is equivalent to 0xFF008000.
 </td>
   </tr>
   <tr style='background-color: #f0f0f0; '>
@@ -709,7 +708,7 @@ Represents fully opaque yellow.
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>0xFF00FFFF</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '></td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
-Represents fully opaque cyan. HTML_Aqua is equivalent.
+Represents fully opaque cyan. <a href='undocumented#HTML_Aqua'>HTML Aqua</a> is equivalent.
 </td>
   </tr>
   <tr>
@@ -717,7 +716,7 @@ Represents fully opaque cyan. HTML_Aqua is equivalent.
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>0xFFFF00FF</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '></td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
-Represents fully opaque magenta. HTML_Fuchsia is equivalent.
+Represents fully opaque magenta. <a href='undocumented#HTML_Fuchsia'>HTML Fuchsia</a> is equivalent.
 </td>
   </tr>
 </table>
@@ -761,7 +760,13 @@ modulo 360, where zero degrees is red.
 
 ## <a name='HSV_Saturation'>HSV Saturation</a>
 
+<a href='#HSV_Saturation'>Saturation</a> represents the intensity of the color. <a href='#HSV_Saturation'>Saturation</a> varies from zero,
+with no <a href='#HSV_Hue'>Hue</a> contribution; to one, with full <a href='#HSV_Hue'>Hue</a> contribution.
+
 ## <a name='HSV_Value'>HSV Value</a>
+
+<a href='#HSV_Value'>Value</a> represents the lightness of the color. <a href='#HSV_Value'>Value</a> varies from zero, black; to
+one, full brightness.
 
 <a name='SkRGBToHSV'></a>
 ## SkRGBToHSV
@@ -771,9 +776,9 @@ void <a href='#SkRGBToHSV'>SkRGBToHSV</a>(<a href='undocumented#U8CPU'>U8CPU</a>
 </pre>
 
 Converts RGB to its <a href='#HSV'>HSV</a> components.
-<a href='#SkRGBToHSV_hsv'>hsv</a>[0] contains <a href='#HSV_Hue'>Hue</a>, a value from zero to less than 360.
-<a href='#SkRGBToHSV_hsv'>hsv</a>[1] contains <a href='#HSV_Saturation'>Saturation</a>, a value from zero to one.
-<a href='#SkRGBToHSV_hsv'>hsv</a>[2] contains <a href='#HSV_Value'>Value</a>, a value from zero to one.
+<a href='#SkRGBToHSV_hsv'>hsv</a>[0] contains <a href='#HSV_Hue'>HSV Hue</a>, a value from zero to less than 360.
+<a href='#SkRGBToHSV_hsv'>hsv</a>[1] contains <a href='#HSV_Saturation'>HSV Saturation</a>, a value from zero to one.
+<a href='#SkRGBToHSV_hsv'>hsv</a>[2] contains <a href='#HSV_Value'>HSV Value</a>, a value from zero to one.
 
 ### Parameters
 
@@ -809,9 +814,9 @@ void <a href='#SkColorToHSV'>SkColorToHSV</a>(<a href='#SkColor'>SkColor</a> col
 </pre>
 
 Converts ARGB to its <a href='#HSV'>HSV</a> components. <a href='#Alpha'>Alpha</a> in ARGB is ignored.
-<a href='#SkColorToHSV_hsv'>hsv</a>[0] contains <a href='#HSV_Hue'>Hue</a>, and is assigned a value from zero to less than 360.
-<a href='#SkColorToHSV_hsv'>hsv</a>[1] contains <a href='#HSV_Saturation'>Saturation</a>, a value from zero to one.
-<a href='#SkColorToHSV_hsv'>hsv</a>[2] contains <a href='#HSV_Value'>Value</a>, a value from zero to one.
+<a href='#SkColorToHSV_hsv'>hsv</a>[0] contains <a href='#HSV_Hue'>HSV Hue</a>, and is assigned a value from zero to less than 360.
+<a href='#SkColorToHSV_hsv'>hsv</a>[1] contains <a href='#HSV_Saturation'>HSV Saturation</a>, a value from zero to one.
+<a href='#SkColorToHSV_hsv'>hsv</a>[2] contains <a href='#HSV_Value'>HSV Value</a>, a value from zero to one.
 
 ### Parameters
 
@@ -825,7 +830,7 @@ Converts ARGB to its <a href='#HSV'>HSV</a> components. <a href='#Alpha'>Alpha</
 
 ### Example
 
-<div><fiddle-embed name="7d7e427e2b181c651abad5732bc46cf7"></fiddle-embed></div>
+<div><fiddle-embed name="1e0370f12c8aab5b84f9e824074f1e5a"></fiddle-embed></div>
 
 ### See Also
 
@@ -841,9 +846,9 @@ Converts ARGB to its <a href='#HSV'>HSV</a> components. <a href='#Alpha'>Alpha</
 </pre>
 
 Converts <a href='#HSV'>HSV</a> components to an ARGB color. <a href='#Alpha'>Alpha</a> is passed through unchanged.
-<a href='#SkHSVToColor_hsv'>hsv</a>[0] represents <a href='#HSV_Hue'>Hue</a>, an angle from zero to less than 360.
-<a href='#SkHSVToColor_hsv'>hsv</a>[1] represents <a href='#HSV_Saturation'>Saturation</a>, and varies from zero to one.
-<a href='#SkHSVToColor_hsv'>hsv</a>[2] represents <a href='#HSV_Value'>Value</a>, and varies from zero to one.
+<a href='#SkHSVToColor_hsv'>hsv</a>[0] represents <a href='#HSV_Hue'>HSV Hue</a>, an angle from zero to less than 360.
+<a href='#SkHSVToColor_hsv'>hsv</a>[1] represents <a href='#HSV_Saturation'>HSV Saturation</a>, and varies from zero to one.
+<a href='#SkHSVToColor_hsv'>hsv</a>[2] represents <a href='#HSV_Value'>HSV Value</a>, and varies from zero to one.
 
 Out of range <a href='#SkHSVToColor_hsv'>hsv</a> values are pinned.
 
@@ -877,10 +882,10 @@ ARGB equivalent to <a href='#HSV'>HSV</a>
 <a href='#SkColor'>SkColor</a> <a href='#SkHSVToColor'>SkHSVToColor</a>(const <a href='undocumented#SkScalar'>SkScalar</a> hsv[3])
 </pre>
 
-Convert <a href='#HSV'>HSV</a> components to an ARGB color. <a href='#Alpha'>Alpha</a> is set to 0xFF.
-<a href='#SkHSVToColor_2_hsv'>hsv</a>[0] represents <a href='#HSV_Hue'>Hue</a>, an angle from zero to less than 360.
-<a href='#SkHSVToColor_2_hsv'>hsv</a>[1] represents <a href='#HSV_Saturation'>Saturation</a>, and varies from zero to one.
-<a href='#SkHSVToColor_2_hsv'>hsv</a>[2] represents <a href='#HSV_Value'>Value</a>, and varies from zero to one.
+Converts <a href='#HSV'>HSV</a> components to an ARGB color. <a href='#Alpha'>Alpha</a> is set to 255.
+<a href='#SkHSVToColor_2_hsv'>hsv</a>[0] represents <a href='#HSV_Hue'>HSV Hue</a>, an angle from zero to less than 360.
+<a href='#SkHSVToColor_2_hsv'>hsv</a>[1] represents <a href='#HSV_Saturation'>HSV Saturation</a>, and varies from zero to one.
+<a href='#SkHSVToColor_2_hsv'>hsv</a>[2] represents <a href='#HSV_Value'>HSV Value</a>, and varies from zero to one.
 
 Out of range <a href='#SkHSVToColor_2_hsv'>hsv</a> values are pinned.
 

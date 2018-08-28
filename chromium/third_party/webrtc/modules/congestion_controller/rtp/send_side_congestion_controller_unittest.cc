@@ -74,7 +74,7 @@ class SendSideCongestionControllerTest : public ::testing::Test {
                 SetPacingRates(kInitialBitrateBps * kDefaultPacingRate, _));
     EXPECT_CALL(*pacer_, CreateProbeCluster(kInitialBitrateBps * 3));
     EXPECT_CALL(*pacer_, CreateProbeCluster(kInitialBitrateBps * 5));
-    task_queue_ = rtc::MakeUnique<rtc::TaskQueue>("SSCC Test");
+    task_queue_ = absl::make_unique<rtc::TaskQueue>("SSCC Test");
     controller_.reset(new SendSideCongestionControllerForTest(
         &clock_, task_queue_.get(), &event_log_, pacer_.get(),
         kInitialBitrateBps, 0, 5 * kInitialBitrateBps, nullptr));
@@ -94,7 +94,7 @@ class SendSideCongestionControllerTest : public ::testing::Test {
   void TargetBitrateTrackingSetup() {
     bandwidth_observer_ = nullptr;
     pacer_.reset(new NiceMock<MockPacedSender>());
-    task_queue_ = rtc::MakeUnique<rtc::TaskQueue>("SSCC Test");
+    task_queue_ = absl::make_unique<rtc::TaskQueue>("SSCC Test");
     controller_.reset(new SendSideCongestionControllerForTest(
         &clock_, task_queue_.get(), &event_log_, pacer_.get(),
         kInitialBitrateBps, 0, 5 * kInitialBitrateBps, nullptr));
@@ -167,7 +167,7 @@ class SendSideCongestionControllerTest : public ::testing::Test {
   PacketRouter packet_router_;
   std::unique_ptr<NiceMock<MockPacedSender>> pacer_;
   std::unique_ptr<SendSideCongestionControllerForTest> controller_;
-  rtc::Optional<uint32_t> target_bitrate_bps_;
+  absl::optional<uint32_t> target_bitrate_bps_;
   std::unique_ptr<rtc::TaskQueue> task_queue_;
 };
 

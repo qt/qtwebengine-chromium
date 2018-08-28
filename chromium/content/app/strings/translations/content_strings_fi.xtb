@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">liukusäädin</translation>
 <translation id="1211441953136645838">loppuhuomautus</translation>
 <translation id="1281252709823657822">valintaikkuna</translation>
+<translation id="1289247557029249093">Sulje kuva kuvassa ‑tila</translation>
 <translation id="1335095011850992622">tunnustukset</translation>
 <translation id="1342835525016946179">artikkeli</translation>
 <translation id="1359897965706325498">banneri</translation>
+<translation id="1548116112524424341">toista video kuva kuvassa ‑tilassa</translation>
 <translation id="1589122976691792535">alue</translation>
 <translation id="1591562245178063882">Tässä kuussa</translation>
 <translation id="1637811476055996098">Valitse tiedostot</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">puuruudukko</translation>
 <translation id="1822429046913737220">AP/IP</translation>
 <translation id="1832974991323546415">toista etälaitteella</translation>
+<translation id="190587075670221089">poisto</translation>
 <translation id="1907737156431278478">esimerkki</translation>
 <translation id="1921819250265091946">pp</translation>
 <translation id="1930711995431081526">tila</translation>
 <translation id="1938124657309484470">Arvon on oltava <ph name="MAXIMUM_DATE_OR_TIME" /> tai aiempi.</translation>
+<translation id="1946271899482435442">Näytä päivämäärävalitsin</translation>
 <translation id="1993104285338243655">Peilaus käynnissä</translation>
 <translation id="2060505056492490888"><ph name="DOT" />-merkkiä on käytetty väärässä kohdassa osoitteessa <ph name="INVALIDDOMAIN" />.</translation>
 <translation id="2148716181193084225">Tänään</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">Lähetä</translation>
 <translation id="2657045182931379222">grafiikkaobjekti</translation>
 <translation id="2674318244760992338">alaviite</translation>
+<translation id="2706474812903655270">Video toistetaan Kuva kuvassa ‑tilassa</translation>
 <translation id="2709516037105925701">Automaattinen täyttö</translation>
 <translation id="2723001399770238859">ääni</translation>
 <translation id="2746543609216772311">Arvon on oltava <ph name="MINIMUM_DATE_OR_TIME" /> tai myöhempi.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">Näytä seuraava kuukausi</translation>
 <translation id="512758898067543763">rivin otsikko</translation>
 <translation id="5143125788380636750">epilogi</translation>
-<translation id="5153163864850940242">Video toistetaan Kuva kuvassa ‑tilassa</translation>
 <translation id="5164977714490026579">Arvon tulee olla suurempi tai yhtä suuri kuin <ph name="MINIMUM" />.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> Pt</translation>
 <translation id="5307600278924710095">Lisää <ph name="ATSIGN" />-osaa ennen tuleva osa. <ph name="INVALIDADDRESS" /> on puutteellinen.</translation>
@@ -132,7 +136,7 @@
 <translation id="57838592816432529">Mykistä</translation>
 <translation id="5860033963881614850">Pois käytöstä</translation>
 <translation id="588258955323874662">Koko ruutu</translation>
-<translation id="5888666972993069672"><ph name="DEVICE_FRIENDLY_NAME" /> on suoratoiston kohde</translation>
+<translation id="5888666972993069672">Katsotaan TV:stä <ph name="DEVICE_FRIENDLY_NAME" /></translation>
 <translation id="5939518447894949180">Tyhjennä</translation>
 <translation id="5966707198760109579">Viikko</translation>
 <translation id="5987525920412732405">pyöräytyspainike</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">kolofoni</translation>
 <translation id="6934078000481955284">muotoiltu lainaus</translation>
 <translation id="6941933287844615239">lataa media</translation>
+<translation id="6981594929165378967">lisäys</translation>
 <translation id="6989848892321993519">Pidennä tämä teksti vähintään <ph name="MIN_CHARACTERS" /> merkkiin (tällä hetkellä käytössä 1 merkki).</translation>
 <translation id="709897737746224366">Käytä pyydettyä muotoilua.</translation>
 <translation id="7139483182332611405">johdanto</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">jäljellä oleva aika</translation>
 <translation id="7740016676195725605">älä näytä tekstityksiä</translation>
 <translation id="7740050170769002709">HTML-sisältö</translation>
+<translation id="7750228210027921155">Kuva kuvassa</translation>
 <translation id="7789962463072032349">tauko</translation>
 <translation id="7802800022689234070">näyttämiskolmio</translation>
 <translation id="7888071071722539607">Sähköpostiosoitteeseen kuuluu <ph name="ATSIGN" />-osa. Osoitteesta <ph name="INVALIDADDRESS" /> puuttuu <ph name="ATSIGN" />.</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">sisällysluettelo</translation>
 <translation id="8613126697340063924">hallinnoi etätoistoa</translation>
 <translation id="862370744433916922">alaotsikko</translation>
-<translation id="8741316211671074806">Kuva kuvassa</translation>
 <translation id="8750798805984357768">Valitse yksi vaihtoehdoista.</translation>
 <translation id="8785498733064193001">aloita toisto</translation>
 <translation id="8808573423886751634">luku</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">navigointi</translation>
 <translation id="9050748414552849310">näytä tekstitykset</translation>
 <translation id="9062295712474918030">dokumentti</translation>
+<translation id="9093215626363556771">sulje kuva kuvassa ‑tila</translation>
 <translation id="9108370397979208512">matematiikka</translation>
 <translation id="9132465097189459683">Muu...</translation>
 <translation id="9138385573473225930">ilmoitus</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, alkupäivä: <ph name="WEEK_START_DATE" /></translation>
+<translation id="916607977885256133">Kuva kuvassa</translation>
 <translation id="9168329111483466115">alaviite</translation>
-<translation id="947831847158436616">solu</translation>
+<translation id="954003015749068518">avaa kuva kuvassa ‑tila</translation>
 <translation id="966787709310836684">valikko</translation>
 </translationbundle>

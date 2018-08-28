@@ -26,9 +26,9 @@
 #include "third_party/blink/renderer/core/html/time_ranges.h"
 
 #include <math.h>
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -108,7 +108,7 @@ double TimeRanges::start(unsigned index,
                          ExceptionState& exception_state) const {
   if (index >= length()) {
     exception_state.ThrowDOMException(
-        kIndexSizeError,
+        DOMExceptionCode::kIndexSizeError,
         ExceptionMessages::IndexExceedsMaximumBound("index", index, length()));
     return 0;
   }
@@ -118,7 +118,7 @@ double TimeRanges::start(unsigned index,
 double TimeRanges::end(unsigned index, ExceptionState& exception_state) const {
   if (index >= length()) {
     exception_state.ThrowDOMException(
-        kIndexSizeError,
+        DOMExceptionCode::kIndexSizeError,
         ExceptionMessages::IndexExceedsMaximumBound("index", index, length()));
     return 0;
   }

@@ -72,7 +72,7 @@ class BackingVisitor : public Visitor {
   void Visit(const TraceWrapperV8Reference<v8::Value>&) final {}
   void Visit(DOMWrapperMap<ScriptWrappable>*,
              const ScriptWrappable* key) final {}
-  void Visit(void*, TraceWrapperDescriptor) final {}
+  void VisitWithWrappers(void*, TraceDescriptor) final {}
 
  private:
   std::vector<void*>* objects_;
@@ -844,10 +844,11 @@ template <typename Container>
 void Move() {
   Object* obj = Object::Create();
   Container container1;
+  Container container2;
   container1.insert(obj);
   {
     ExpectWriteBarrierFires scope(ThreadState::Current(), {obj});
-    Container container2(std::move(container1));
+    container2 = std::move(container1);
   }
 }
 
@@ -1059,7 +1060,7 @@ TEST(IncrementalMarkingTest, HeapLinkedHashSetMove) {
 TEST(IncrementalMarkingTest, HeapLinkedHashSetSwap) {
   Swap<HeapLinkedHashSet<Member<Object>>>();
   // Weak references are strongified for the current cycle.
-  Move<HeapLinkedHashSet<WeakMember<Object>>>();
+  Swap<HeapLinkedHashSet<WeakMember<Object>>>();
 }
 
 // =============================================================================
@@ -1482,7 +1483,6 @@ TEST(IncrementalMarkingTest, HeapHashMapCopyValuesToVectorMember) {
 // don't free marked backings.
 TEST(IncrementalMarkingTest, DISABLED_WeakHashMapPromptlyFreeDisabled) {
   ThreadState* state = ThreadState::Current();
-  state->SetGCState(ThreadState::kIncrementalMarkingStartScheduled);
   state->SetGCState(ThreadState::kIncrementalMarkingStepScheduled);
   Persistent<Object> obj1 = Object::Create();
   NormalPageArena* arena = static_cast<NormalPageArena*>(
@@ -1601,13 +1601,12 @@ class IncrementalMarkingTestDriver {
   }
 
   void Start() {
-    thread_state_->ScheduleIncrementalMarkingStart();
-    thread_state_->RunScheduledGC(BlinkGC::kNoHeapPointersOnStack);
+    thread_state_->IncrementalMarkingStart(BlinkGC::GCReason::kTesting);
   }
 
   bool SingleStep() {
     CHECK(thread_state_->IsIncrementalMarking());
-    if (thread_state_->GcState() ==
+    if (thread_state_->GetGCState() ==
         ThreadState::kIncrementalMarkingStepScheduled) {
       thread_state_->RunScheduledGC(BlinkGC::kNoHeapPointersOnStack);
       return true;
@@ -1625,7 +1624,7 @@ class IncrementalMarkingTestDriver {
     CHECK(thread_state_->IsIncrementalMarking());
     FinishSteps();
     CHECK_EQ(ThreadState::kIncrementalMarkingFinalizeScheduled,
-             thread_state_->GcState());
+             thread_state_->GetGCState());
     thread_state_->RunScheduledGC(BlinkGC::kNoHeapPointersOnStack);
     CHECK(!thread_state_->IsIncrementalMarking());
     thread_state_->CompleteSweep();

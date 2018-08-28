@@ -77,9 +77,6 @@ TEST_P(PaintControllerPaintTest, InlineRelayout) {
 }
 
 TEST_P(PaintControllerPaintTest, ChunkIdClientCacheFlag) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <div id='div' style='width: 200px; height: 200px; opacity: 0.5'>
       <div style='width: 100px; height: 100px; background-color:
@@ -120,9 +117,6 @@ TEST_P(PaintControllerPaintTest, ChunkIdClientCacheFlag) {
 }
 
 TEST_P(PaintControllerPaintTest, CompositingNoFold) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   SetBodyInnerHTML(R"HTML(
     <div id='div' style='width: 200px; height: 200px; opacity: 0.5'>
       <div style='width: 100px; height: 100px; background-color:
@@ -161,7 +155,7 @@ TEST_P(PaintControllerPaintTestForSPv2, FrameScrollingContents) {
                       TestDisplayItem(GetLayoutView(), kScrollHitTestType),
                       TestDisplayItem(div1, kBackgroundType));
 
-  GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(
       ScrollOffset(5000, 5000), kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
 

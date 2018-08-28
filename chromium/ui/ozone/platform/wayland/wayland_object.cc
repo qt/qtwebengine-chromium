@@ -103,6 +103,16 @@ void (*ObjectTraits<wl_shm_pool>::deleter)(wl_shm_pool*) = &wl_shm_pool_destroy;
 const wl_interface* ObjectTraits<wl_surface>::interface = &wl_surface_interface;
 void (*ObjectTraits<wl_surface>::deleter)(wl_surface*) = &wl_surface_destroy;
 
+const wl_interface* ObjectTraits<wl_subcompositor>::interface =
+    &wl_subcompositor_interface;
+void (*ObjectTraits<wl_subcompositor>::deleter)(wl_subcompositor*) =
+    &wl_subcompositor_destroy;
+
+const wl_interface* ObjectTraits<wl_subsurface>::interface =
+    &wl_subsurface_interface;
+void (*ObjectTraits<wl_subsurface>::deleter)(wl_subsurface*) =
+    &wl_subsurface_destroy;
+
 const wl_interface* ObjectTraits<wl_touch>::interface = &wl_touch_interface;
 void (*ObjectTraits<wl_touch>::deleter)(wl_touch*) = &delete_touch;
 
@@ -112,6 +122,9 @@ void (*ObjectTraits<xdg_shell>::deleter)(xdg_shell*) = &xdg_shell_destroy;
 const wl_interface* ObjectTraits<xdg_surface>::interface =
     &xdg_surface_interface;
 void (*ObjectTraits<xdg_surface>::deleter)(xdg_surface*) = &xdg_surface_destroy;
+
+const wl_interface* ObjectTraits<xdg_popup>::interface = &xdg_popup_interface;
+void (*ObjectTraits<xdg_popup>::deleter)(xdg_popup*) = &xdg_popup_destroy;
 
 const wl_interface* ObjectTraits<zxdg_shell_v6>::interface =
     &zxdg_shell_v6_interface;
@@ -127,5 +140,15 @@ const wl_interface* ObjectTraits<zxdg_toplevel_v6>::interface =
     &zxdg_toplevel_v6_interface;
 void (*ObjectTraits<zxdg_toplevel_v6>::deleter)(zxdg_toplevel_v6*) =
     &zxdg_toplevel_v6_destroy;
+
+const wl_interface* ObjectTraits<zxdg_popup_v6>::interface =
+    &zxdg_popup_v6_interface;
+void (*ObjectTraits<zxdg_popup_v6>::deleter)(zxdg_popup_v6*) =
+    &zxdg_popup_v6_destroy;
+
+const wl_interface* ObjectTraits<zxdg_positioner_v6>::interface =
+    &zxdg_positioner_v6_interface;
+void (*ObjectTraits<zxdg_positioner_v6>::deleter)(zxdg_positioner_v6*) =
+    &zxdg_positioner_v6_destroy;
 
 }  // namespace wl

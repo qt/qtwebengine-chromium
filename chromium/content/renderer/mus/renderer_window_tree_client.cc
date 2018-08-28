@@ -6,10 +6,11 @@
 
 #include <map>
 
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "cc/base/switches.h"
-#include "components/viz/client/client_layer_tree_frame_sink.h"
+#include "cc/mojo_embedder/async_layer_tree_frame_sink.h"
 #include "components/viz/client/hit_test_data_provider.h"
 #include "components/viz/client/hit_test_data_provider_draw_quad.h"
 #include "components/viz/client/local_surface_id_provider.h"
@@ -31,7 +32,7 @@ base::LazyInstance<ConnectionMap>::Leaky g_connections =
 
 // static
 void RendererWindowTreeClient::CreateIfNecessary(int routing_id) {
-  if (!features::IsMashEnabled() || Get(routing_id))
+  if (features::IsAshInBrowserProcess() || Get(routing_id))
     return;
   RendererWindowTreeClient* connection =
       new RendererWindowTreeClient(routing_id);
@@ -90,17 +91,18 @@ void RendererWindowTreeClient::SetVisible(bool visible) {
 void RendererWindowTreeClient::RequestLayerTreeFrameSink(
     scoped_refptr<viz::ContextProvider> context_provider,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-    const LayerTreeFrameSinkCallback& callback) {
+    LayerTreeFrameSinkCallback callback) {
   DCHECK(pending_layer_tree_frame_sink_callback_.is_null());
   if (tree_) {
     RequestLayerTreeFrameSinkInternal(std::move(context_provider),
-                                      gpu_memory_buffer_manager, callback);
+                                      gpu_memory_buffer_manager,
+                                      std::move(callback));
     return;
   }
 
   pending_context_provider_ = std::move(context_provider);
   pending_gpu_memory_buffer_manager_ = gpu_memory_buffer_manager;
-  pending_layer_tree_frame_sink_callback_ = callback;
+  pending_layer_tree_frame_sink_callback_ = std::move(callback);
 }
 
 std::unique_ptr<MusEmbeddedFrame>
@@ -126,14 +128,14 @@ RendererWindowTreeClient::~RendererWindowTreeClient() {
 void RendererWindowTreeClient::RequestLayerTreeFrameSinkInternal(
     scoped_refptr<viz::ContextProvider> context_provider,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-    const LayerTreeFrameSinkCallback& callback) {
+    LayerTreeFrameSinkCallback callback) {
   viz::mojom::CompositorFrameSinkPtrInfo sink_info;
   viz::mojom::CompositorFrameSinkRequest sink_request =
       mojo::MakeRequest(&sink_info);
   viz::mojom::CompositorFrameSinkClientPtr client;
   viz::mojom::CompositorFrameSinkClientRequest client_request =
       mojo::MakeRequest(&client);
-  viz::ClientLayerTreeFrameSink::InitParams params;
+  cc::mojo_embedder::AsyncLayerTreeFrameSink::InitParams params;
   params.gpu_memory_buffer_manager = gpu_memory_buffer_manager;
   params.pipes.compositor_frame_sink_info = std::move(sink_info);
   params.pipes.client_request = std::move(client_request);
@@ -145,12 +147,13 @@ void RendererWindowTreeClient::RequestLayerTreeFrameSinkInternal(
         std::make_unique<viz::HitTestDataProviderDrawQuad>(
             true /* should_ask_for_child_region */);
   }
-  auto frame_sink = std::make_unique<viz::ClientLayerTreeFrameSink>(
-      std::move(context_provider), nullptr /* worker_context_provider */,
-      &params);
+  auto frame_sink =
+      std::make_unique<cc::mojo_embedder::AsyncLayerTreeFrameSink>(
+          std::move(context_provider), nullptr /* worker_context_provider */,
+          &params);
   tree_->AttachCompositorFrameSink(root_window_id_, std::move(sink_request),
                                    std::move(client));
-  callback.Run(std::move(frame_sink));
+  std::move(callback).Run(std::move(frame_sink));
 }
 
 void RendererWindowTreeClient::OnEmbeddedFrameDestroyed(
@@ -207,9 +210,10 @@ void RendererWindowTreeClient::OnEmbed(
   }
 
   if (!pending_layer_tree_frame_sink_callback_.is_null()) {
-    RequestLayerTreeFrameSinkInternal(std::move(pending_context_provider_),
-                                      pending_gpu_memory_buffer_manager_,
-                                      pending_layer_tree_frame_sink_callback_);
+    RequestLayerTreeFrameSinkInternal(
+        std::move(pending_context_provider_),
+        pending_gpu_memory_buffer_manager_,
+        std::move(pending_layer_tree_frame_sink_callback_));
     pending_context_provider_ = nullptr;
     pending_gpu_memory_buffer_manager_ = nullptr;
     pending_layer_tree_frame_sink_callback_.Reset();
@@ -233,7 +237,7 @@ void RendererWindowTreeClient::OnFrameSinkIdAllocated(
     const viz::FrameSinkId& frame_sink_id) {
   // When mus is not hosting viz FrameSinkIds come from the browser, so we
   // ignore them here.
-  if (!base::FeatureList::IsEnabled(features::kMash))
+  if (features::IsAshInBrowserProcess())
     return;
 
   for (MusEmbeddedFrame* embedded_frame : embedded_frames_) {
@@ -334,7 +338,7 @@ void RendererWindowTreeClient::OnWindowCursorChanged(ui::Id window_id,
 void RendererWindowTreeClient::OnWindowSurfaceChanged(
     ui::Id window_id,
     const viz::SurfaceInfo& surface_info) {
-  DCHECK(base::FeatureList::IsEnabled(features::kMash));
+  DCHECK(!features::IsAshInBrowserProcess());
   for (MusEmbeddedFrame* embedded_frame : embedded_frames_) {
     if (embedded_frame->window_id_ == window_id) {
       embedded_frame->delegate_->OnMusEmbeddedFrameSurfaceChanged(surface_info);
@@ -388,5 +392,8 @@ void RendererWindowTreeClient::GetWindowManager(
     mojo::AssociatedInterfaceRequest<ui::mojom::WindowManager> internal) {
   NOTREACHED();
 }
+
+void RendererWindowTreeClient::GetScreenProviderObserver(
+    ui::mojom::ScreenProviderObserverAssociatedRequest observer) {}
 
 }  // namespace content

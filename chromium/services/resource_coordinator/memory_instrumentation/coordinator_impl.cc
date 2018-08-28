@@ -67,7 +67,8 @@ CoordinatorImpl* CoordinatorImpl::GetInstance() {
 
 CoordinatorImpl::CoordinatorImpl(service_manager::Connector* connector)
     : next_dump_id_(0),
-      client_process_timeout_(base::TimeDelta::FromSeconds(15)) {
+      client_process_timeout_(base::TimeDelta::FromSeconds(15)),
+      weak_ptr_factory_(this) {
   process_map_ = std::make_unique<ProcessMap>(connector);
   DCHECK(!g_coordinator_impl);
   g_coordinator_impl = this;
@@ -120,7 +121,8 @@ void CoordinatorImpl::RequestGlobalMemoryDump(
   };
 
   QueuedRequest::Args args(dump_type, level_of_detail, allocator_dump_names,
-                           false /* add_to_trace */, base::kNullProcessId);
+                           false /* add_to_trace */, base::kNullProcessId,
+                           /*memory_footprint_only=*/false);
   RequestGlobalMemoryDumpInternal(args,
                                   base::BindOnce(adapter, std::move(callback)));
 }
@@ -147,7 +149,27 @@ void CoordinatorImpl::RequestGlobalMemoryDumpForPid(
   QueuedRequest::Args args(
       base::trace_event::MemoryDumpType::SUMMARY_ONLY,
       base::trace_event::MemoryDumpLevelOfDetail::BACKGROUND,
-      allocator_dump_names, false /* add_to_trace */, pid);
+      allocator_dump_names, false /* add_to_trace */, pid,
+      /*memory_footprint_only=*/false);
+  RequestGlobalMemoryDumpInternal(args,
+                                  base::BindOnce(adapter, std::move(callback)));
+}
+
+void CoordinatorImpl::RequestPrivateMemoryFootprint(
+    base::ProcessId pid,
+    RequestPrivateMemoryFootprintCallback callback) {
+  // This merely strips out the |dump_guid| argument; this is not relevant
+  // as we are not adding to trace.
+  auto adapter = [](RequestPrivateMemoryFootprintCallback callback,
+                    bool success, uint64_t,
+                    mojom::GlobalMemoryDumpPtr global_memory_dump) {
+    std::move(callback).Run(success, std::move(global_memory_dump));
+  };
+
+  QueuedRequest::Args args(
+      base::trace_event::MemoryDumpType::SUMMARY_ONLY,
+      base::trace_event::MemoryDumpLevelOfDetail::BACKGROUND, {},
+      false /* add_to_trace */, pid, /*memory_footprint_only=*/true);
   RequestGlobalMemoryDumpInternal(args,
                                   base::BindOnce(adapter, std::move(callback)));
 }
@@ -164,7 +186,8 @@ void CoordinatorImpl::RequestGlobalMemoryDumpAndAppendToTrace(
   };
 
   QueuedRequest::Args args(dump_type, level_of_detail, {},
-                           true /* add_to_trace */, base::kNullProcessId);
+                           true /* add_to_trace */, base::kNullProcessId,
+                           /*memory_footprint_only=*/false);
   RequestGlobalMemoryDumpInternal(args,
                                   base::BindOnce(adapter, std::move(callback)));
 }
@@ -195,7 +218,7 @@ void CoordinatorImpl::GetVmRegionsForHeapProfiler(
       in_progress_vm_region_requests_[dump_guid].get();
   auto os_callback =
       base::BindRepeating(&CoordinatorImpl::OnOSMemoryDumpForVMRegions,
-                          base::Unretained(this), dump_guid);
+                          weak_ptr_factory_.GetWeakPtr(), dump_guid);
   QueuedRequestDispatcher::SetUpAndDispatchVmRegionRequest(request_ptr, clients,
                                                            pids, os_callback);
   FinalizeVmRegionDumpIfAllManagersReplied(dump_guid);
@@ -208,7 +231,7 @@ void CoordinatorImpl::RegisterClientProcess(
   mojom::ClientProcess* client_process = client_process_ptr.get();
   client_process_ptr.set_connection_error_handler(
       base::BindOnce(&CoordinatorImpl::UnregisterClientProcess,
-                     base::Unretained(this), client_process));
+                     weak_ptr_factory_.GetWeakPtr(), client_process));
   auto identity = GetClientIdentityForCurrentRequest();
   auto client_info = std::make_unique<ClientInfo>(
       std::move(identity), std::move(client_process_ptr), process_type);
@@ -256,7 +279,7 @@ void CoordinatorImpl::UnregisterClientProcess(
         FROM_HERE,
         base::BindOnce(
             &CoordinatorImpl::FinalizeVmRegionDumpIfAllManagersReplied,
-            base::Unretained(this), pair.second->dump_guid));
+            weak_ptr_factory_.GetWeakPtr(), pair.second->dump_guid));
   }
 
   size_t num_deleted = clients_.erase(client_process);
@@ -277,8 +300,7 @@ void CoordinatorImpl::RequestGlobalMemoryDumpInternal(
   // another request in the queue with the same level of detail, there's no
   // point in enqueuing this request.
   if (another_dump_is_queued &&
-      (args.dump_type == MemoryDumpType::PERIODIC_INTERVAL ||
-       args.dump_type == MemoryDumpType::PEAK_MEMORY_USAGE)) {
+      args.dump_type == MemoryDumpType::PERIODIC_INTERVAL) {
     for (const auto& request : queued_memory_dump_requests_) {
       if (request.args.level_of_detail == args.level_of_detail) {
         VLOG(1) << "RequestGlobalMemoryDump("
@@ -362,17 +384,19 @@ void CoordinatorImpl::PerformNextQueuedGlobalMemoryDump() {
     clients.emplace_back(kv.second->client.get(), pid, kv.second->process_type);
   }
 
-  auto chrome_callback = base::Bind(
-      &CoordinatorImpl::OnChromeMemoryDumpResponse, base::Unretained(this));
-  auto os_callback = base::Bind(&CoordinatorImpl::OnOSMemoryDumpResponse,
-                                base::Unretained(this), request->dump_guid);
+  auto chrome_callback =
+      base::Bind(&CoordinatorImpl::OnChromeMemoryDumpResponse,
+                 weak_ptr_factory_.GetWeakPtr());
+  auto os_callback =
+      base::Bind(&CoordinatorImpl::OnOSMemoryDumpResponse,
+                 weak_ptr_factory_.GetWeakPtr(), request->dump_guid);
   QueuedRequestDispatcher::SetUpAndDispatch(request, clients, chrome_callback,
                                             os_callback);
 
   base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&CoordinatorImpl::OnQueuedRequestTimedOut,
-                     base::Unretained(this), request->dump_guid),
+                     weak_ptr_factory_.GetWeakPtr(), request->dump_guid),
       client_process_timeout_);
 
   if (request->args.add_to_trace && heap_profiler_) {
@@ -388,13 +412,14 @@ void CoordinatorImpl::PerformNextQueuedGlobalMemoryDump() {
             .IsArgumentFilterEnabled();
     heap_profiler_->DumpProcessesForTracing(
         strip_path_from_mapped_files,
-            base::BindRepeating(&CoordinatorImpl::OnDumpProcessesForTracing,
-                           base::Unretained(this), request->dump_guid));
+        base::BindRepeating(&CoordinatorImpl::OnDumpProcessesForTracing,
+                            weak_ptr_factory_.GetWeakPtr(),
+                            request->dump_guid));
 
     base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&CoordinatorImpl::OnHeapDumpTimeOut,
-                       base::Unretained(this), request->dump_guid),
+                       weak_ptr_factory_.GetWeakPtr(), request->dump_guid),
         kHeapDumpTimeout);
   }
 
@@ -585,7 +610,7 @@ void CoordinatorImpl::FinalizeGlobalMemoryDumpIfAllManagersReplied() {
     base::SequencedTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::BindOnce(&CoordinatorImpl::PerformNextQueuedGlobalMemoryDump,
-                       base::Unretained(this)));
+                       weak_ptr_factory_.GetWeakPtr()));
   }
 }
 

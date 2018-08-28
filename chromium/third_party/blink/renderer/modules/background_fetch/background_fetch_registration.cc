@@ -7,9 +7,9 @@
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_bridge.h"
-#include "third_party/blink/renderer/modules/background_fetch/icon_definition.h"
 #include "third_party/blink/renderer/modules/event_target_modules_names.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_registration.h"
+#include "third_party/blink/renderer/modules/manifest/image_resource.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_registration.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 
 namespace blink {
@@ -116,8 +116,10 @@ void BackgroundFetchRegistration::DidAbort(
       return;
     case mojom::blink::BackgroundFetchError::STORAGE_ERROR:
       resolver->Reject(DOMException::Create(
-          kAbortError, "Failed to abort registration due to I/O error."));
+          DOMExceptionCode::kAbortError,
+          "Failed to abort registration due to I/O error."));
       return;
+    case mojom::blink::BackgroundFetchError::SERVICE_WORKER_UNAVAILABLE:
     case mojom::blink::BackgroundFetchError::DUPLICATED_DEVELOPER_ID:
     case mojom::blink::BackgroundFetchError::INVALID_ARGUMENT:
       // Not applicable for this callback.

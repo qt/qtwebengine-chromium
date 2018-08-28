@@ -11,10 +11,10 @@
 #include "SkImage.h"
 #include "SkSurface.h"
 
-#if SK_SUPPORT_GPU
-
 #include "GrContext.h"
 #include "GrContextPriv.h"
+
+#include <utility>
 
 /** These benchmarks were designed to measure changes to GrResourceCache's replacement policy */
 
@@ -104,7 +104,8 @@ protected:
                 }
                 for (int i = 0; i < kImagesToDraw - 1; ++i) {
                     int other = random.nextULessThan(kImagesToDraw - i) + i;
-                    SkTSwap(base[i], base[other]);
+                    using std::swap;
+                    swap(base[i], base[other]);
                 }
             }
         }
@@ -259,5 +260,3 @@ private:
 
 DEF_BENCH( return new ImageCacheBudgetDynamicBench(ImageCacheBudgetDynamicBench::Mode::kPingPong); )
 DEF_BENCH( return new ImageCacheBudgetDynamicBench(ImageCacheBudgetDynamicBench::Mode::kFlipFlop); )
-
-#endif

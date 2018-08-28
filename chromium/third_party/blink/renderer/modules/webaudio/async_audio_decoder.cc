@@ -27,13 +27,14 @@
 
 #include "base/location.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/audio_file_reader.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
-#include "third_party/blink/renderer/platform/threading/background_task_runner.h"
+#include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 
 namespace blink {
@@ -50,7 +51,7 @@ void AsyncAudioDecoder::DecodeAsync(
   if (!audio_data)
     return;
 
-  BackgroundTaskRunner::PostOnBackgroundThread(
+  BackgroundScheduler::PostOnBackgroundThread(
       FROM_HERE,
       CrossThreadBind(&AsyncAudioDecoder::DecodeOnBackgroundThread,
                       WrapCrossThreadPersistent(audio_data), sample_rate,

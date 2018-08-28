@@ -6,9 +6,11 @@
 
 #include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/numerics/safe_conversions.h"
 #include "services/resource_coordinator/public/cpp/resource_coordinator_features.h"
 #include "third_party/blink/public/platform/scheduler/renderer_process_type.h"
 #include "third_party/blink/renderer/platform/instrumentation/resource_coordinator/renderer_resource_coordinator.h"
+#include "third_party/blink/renderer/platform/scheduler/main_thread/frame_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 
@@ -16,19 +18,19 @@ namespace blink {
 namespace scheduler {
 
 #define DURATION_PER_QUEUE_TYPE_METRIC_NAME \
-  "RendererScheduler.TaskDurationPerQueueType2"
+  "RendererScheduler.TaskDurationPerQueueType3"
 #define COUNT_PER_QUEUE_TYPE_METRIC_NAME \
   "RendererScheduler.TaskCountPerQueueType"
 #define MAIN_THREAD_LOAD_METRIC_NAME "RendererScheduler.RendererMainThreadLoad5"
 #define EXTENSIONS_MAIN_THREAD_LOAD_METRIC_NAME \
   MAIN_THREAD_LOAD_METRIC_NAME ".Extension"
 #define DURATION_PER_FRAME_TYPE_METRIC_NAME \
-  "RendererScheduler.TaskDurationPerFrameType2"
+  "RendererScheduler.TaskDurationPerFrameType3"
 #define DURATION_PER_TASK_TYPE_METRIC_NAME \
-  "RendererScheduler.TaskDurationPerTaskType"
+  "RendererScheduler.TaskDurationPerTaskType2"
 #define COUNT_PER_FRAME_METRIC_NAME "RendererScheduler.TaskCountPerFrameType"
 #define DURATION_PER_TASK_USE_CASE_NAME \
-  "RendererScheduler.TaskDurationPerUseCase"
+  "RendererScheduler.TaskDurationPerUseCase2"
 
 enum class MainThreadTaskLoadState { kLow, kHigh, kUnknown };
 
@@ -66,19 +68,28 @@ MainThreadMetricsHelper::PerQueueTypeDurationReporters::
                               ".Background.FifthMinute"),
       background_after_fifth_minute(DURATION_PER_QUEUE_TYPE_METRIC_NAME
                                     ".Background.AfterFifthMinute"),
+      background_after_tenth_minute(DURATION_PER_QUEUE_TYPE_METRIC_NAME
+                                    ".Background.AfterTenthMinute"),
       background_keep_active_after_fifth_minute(
           DURATION_PER_QUEUE_TYPE_METRIC_NAME
           ".Background.KeepAlive.AfterFifthMinute"),
+      background_keep_active_after_tenth_minute(
+          DURATION_PER_QUEUE_TYPE_METRIC_NAME
+          ".Background.KeepAlive.AfterTenthMinute"),
       hidden(DURATION_PER_QUEUE_TYPE_METRIC_NAME ".Hidden"),
       visible(DURATION_PER_QUEUE_TYPE_METRIC_NAME ".Visible"),
       hidden_music(DURATION_PER_QUEUE_TYPE_METRIC_NAME ".HiddenMusic") {}
 
 MainThreadMetricsHelper::MainThreadMetricsHelper(
     MainThreadSchedulerImpl* main_thread_scheduler,
+    bool has_cpu_timing_for_each_task,
     base::TimeTicks now,
     bool renderer_backgrounded)
-    : MetricsHelper(WebThreadType::kMainThread),
+    : MetricsHelper(WebThreadType::kMainThread, has_cpu_timing_for_each_task),
       main_thread_scheduler_(main_thread_scheduler),
+      renderer_shutting_down_(false),
+      is_page_almost_idle_signal_enabled_(
+          ::resource_coordinator::IsPageAlmostIdleSignalEnabled()),
       main_thread_load_tracker_(
           now,
           base::BindRepeating(
@@ -109,7 +120,14 @@ MainThreadMetricsHelper::MainThreadMetricsHelper(
           DURATION_PER_TASK_TYPE_METRIC_NAME ".Foreground"),
       background_per_task_type_duration_reporter_(
           DURATION_PER_TASK_TYPE_METRIC_NAME ".Background"),
+      background_after_fifth_minute_per_task_type_duration_reporter_(
+          DURATION_PER_TASK_TYPE_METRIC_NAME ".Background.AfterFifthMinute"),
+      background_after_tenth_minute_per_task_type_duration_reporter_(
+          DURATION_PER_TASK_TYPE_METRIC_NAME ".Background.AfterTenthMinute"),
       per_task_use_case_duration_reporter_(DURATION_PER_TASK_USE_CASE_NAME),
+      total_task_time_reporter_(
+          "Scheduler.Experimental.Renderer.TotalTime.Wall.MainThread.Positive",
+          "Scheduler.Experimental.Renderer.TotalTime.Wall.MainThread.Negative"),
       main_thread_task_load_state_(MainThreadTaskLoadState::kUnknown) {
   main_thread_load_tracker_.Resume(now);
   if (renderer_backgrounded) {
@@ -132,6 +150,7 @@ void MainThreadMetricsHelper::OnRendererBackgrounded(base::TimeTicks now) {
 }
 
 void MainThreadMetricsHelper::OnRendererShutdown(base::TimeTicks now) {
+  renderer_shutting_down_ = true;
   foreground_main_thread_load_tracker_.RecordIdle(now);
   background_main_thread_load_tracker_.RecordIdle(now);
   main_thread_load_tracker_.RecordIdle(now);
@@ -177,38 +196,44 @@ base::TimeDelta DurationOfIntervalOverlap(base::TimeTicks start1,
 void MainThreadMetricsHelper::RecordTaskMetrics(
     MainThreadTaskQueue* queue,
     const base::sequence_manager::TaskQueue::Task& task,
-    base::TimeTicks start_time,
-    base::TimeTicks end_time,
-    base::Optional<base::TimeDelta> thread_time) {
-  if (ShouldDiscardTask(queue, task, start_time, end_time, thread_time))
+    const base::sequence_manager::TaskQueue::TaskTiming& task_timing) {
+  if (ShouldDiscardTask(queue, task, task_timing))
     return;
 
-  MetricsHelper::RecordCommonTaskMetrics(queue, task, start_time, end_time,
-                                         thread_time);
+  MetricsHelper::RecordCommonTaskMetrics(queue, task, task_timing);
+
+  total_task_time_reporter_.RecordAdditionalDuration(
+      task_timing.wall_duration());
 
   MainThreadTaskQueue::QueueType queue_type =
       queue ? queue->queue_type() : MainThreadTaskQueue::QueueType::kDetached;
-  base::TimeDelta duration = end_time - start_time;
+  base::TimeDelta duration = task_timing.wall_duration();
 
   // Discard anomalously long idle periods.
-  if (last_reported_task_ && start_time - last_reported_task_.value() >
-                                 kLongIdlePeriodDiscardingThreshold) {
-    main_thread_load_tracker_.Reset(end_time);
-    foreground_main_thread_load_tracker_.Reset(end_time);
-    background_main_thread_load_tracker_.Reset(end_time);
+  if (last_reported_task_ &&
+      task_timing.start_time() - last_reported_task_.value() >
+          kLongIdlePeriodDiscardingThreshold) {
+    main_thread_load_tracker_.Reset(task_timing.end_time());
+    foreground_main_thread_load_tracker_.Reset(task_timing.end_time());
+    background_main_thread_load_tracker_.Reset(task_timing.end_time());
     return;
   }
 
-  last_reported_task_ = end_time;
+  last_reported_task_ = task_timing.end_time();
 
   UMA_HISTOGRAM_CUSTOM_COUNTS("RendererScheduler.TaskTime2",
-                              duration.InMicroseconds(), 1, 1000 * 1000, 50);
+                              base::saturated_cast<base::HistogramBase::Sample>(
+                                  duration.InMicroseconds()),
+                              1, 1000 * 1000, 50);
 
   // We want to measure thread time here, but for efficiency reasons
   // we stick with wall time.
-  main_thread_load_tracker_.RecordTaskTime(start_time, end_time);
-  foreground_main_thread_load_tracker_.RecordTaskTime(start_time, end_time);
-  background_main_thread_load_tracker_.RecordTaskTime(start_time, end_time);
+  main_thread_load_tracker_.RecordTaskTime(task_timing.start_time(),
+                                           task_timing.end_time());
+  foreground_main_thread_load_tracker_.RecordTaskTime(task_timing.start_time(),
+                                                      task_timing.end_time());
+  background_main_thread_load_tracker_.RecordTaskTime(task_timing.start_time(),
+                                                      task_timing.end_time());
 
   UMA_HISTOGRAM_ENUMERATION(COUNT_PER_QUEUE_TYPE_METRIC_NAME, queue_type,
                             MainThreadTaskQueue::QueueType::kCount);
@@ -257,41 +282,50 @@ void MainThreadMetricsHelper::RecordTaskMetrics(
         main_thread_scheduler_->main_thread_only().background_status_changed_at;
 
     per_queue_type_reporters_.background_first_minute.RecordTask(
-        queue_type, DurationOfIntervalOverlap(
-                        start_time, end_time, backgrounded_at,
-                        backgrounded_at + base::TimeDelta::FromMinutes(1)));
+        queue_type,
+        DurationOfIntervalOverlap(
+            task_timing.start_time(), task_timing.end_time(), backgrounded_at,
+            backgrounded_at + base::TimeDelta::FromMinutes(1)));
 
     per_queue_type_reporters_.background_second_minute.RecordTask(
         queue_type, DurationOfIntervalOverlap(
-                        start_time, end_time,
+                        task_timing.start_time(), task_timing.end_time(),
                         backgrounded_at + base::TimeDelta::FromMinutes(1),
                         backgrounded_at + base::TimeDelta::FromMinutes(2)));
 
     per_queue_type_reporters_.background_third_minute.RecordTask(
         queue_type, DurationOfIntervalOverlap(
-                        start_time, end_time,
+                        task_timing.start_time(), task_timing.end_time(),
                         backgrounded_at + base::TimeDelta::FromMinutes(2),
                         backgrounded_at + base::TimeDelta::FromMinutes(3)));
 
     per_queue_type_reporters_.background_fourth_minute.RecordTask(
         queue_type, DurationOfIntervalOverlap(
-                        start_time, end_time,
+                        task_timing.start_time(), task_timing.end_time(),
                         backgrounded_at + base::TimeDelta::FromMinutes(3),
                         backgrounded_at + base::TimeDelta::FromMinutes(4)));
 
     per_queue_type_reporters_.background_fifth_minute.RecordTask(
         queue_type, DurationOfIntervalOverlap(
-                        start_time, end_time,
+                        task_timing.start_time(), task_timing.end_time(),
                         backgrounded_at + base::TimeDelta::FromMinutes(4),
                         backgrounded_at + base::TimeDelta::FromMinutes(5)));
 
     per_queue_type_reporters_.background_after_fifth_minute.RecordTask(
         queue_type,
         DurationOfIntervalOverlap(
-            start_time, end_time,
+            task_timing.start_time(), task_timing.end_time(),
             backgrounded_at + base::TimeDelta::FromMinutes(5),
             std::max(backgrounded_at + base::TimeDelta::FromMinutes(5),
-                     end_time)));
+                     task_timing.end_time())));
+
+    per_queue_type_reporters_.background_after_tenth_minute.RecordTask(
+        queue_type,
+        DurationOfIntervalOverlap(
+            task_timing.start_time(), task_timing.end_time(),
+            backgrounded_at + base::TimeDelta::FromMinutes(10),
+            std::max(backgrounded_at + base::TimeDelta::FromMinutes(10),
+                     task_timing.end_time())));
 
     if (main_thread_scheduler_->main_thread_only()
             .keep_active_fetch_or_worker) {
@@ -299,13 +333,36 @@ void MainThreadMetricsHelper::RecordTaskMetrics(
           .RecordTask(
               queue_type,
               DurationOfIntervalOverlap(
-                  start_time, end_time,
+                  task_timing.start_time(), task_timing.end_time(),
                   backgrounded_at + base::TimeDelta::FromMinutes(5),
                   std::max(backgrounded_at + base::TimeDelta::FromMinutes(5),
-                           end_time)));
+                           task_timing.end_time())));
+      per_queue_type_reporters_.background_keep_active_after_tenth_minute
+          .RecordTask(
+              queue_type,
+              DurationOfIntervalOverlap(
+                  task_timing.start_time(), task_timing.end_time(),
+                  backgrounded_at + base::TimeDelta::FromMinutes(10),
+                  std::max(backgrounded_at + base::TimeDelta::FromMinutes(10),
+                           task_timing.end_time())));
     }
 
     background_per_task_type_duration_reporter_.RecordTask(task_type, duration);
+
+    background_after_fifth_minute_per_task_type_duration_reporter_.RecordTask(
+        task_type,
+        DurationOfIntervalOverlap(
+            task_timing.start_time(), task_timing.end_time(),
+            backgrounded_at + base::TimeDelta::FromMinutes(5),
+            std::max(backgrounded_at + base::TimeDelta::FromMinutes(5),
+                     task_timing.end_time())));
+    background_after_tenth_minute_per_task_type_duration_reporter_.RecordTask(
+        task_type,
+        DurationOfIntervalOverlap(
+            task_timing.start_time(), task_timing.end_time(),
+            backgrounded_at + base::TimeDelta::FromMinutes(10),
+            std::max(backgrounded_at + base::TimeDelta::FromMinutes(10),
+                     task_timing.end_time())));
   } else {
     per_queue_type_reporters_.foreground.RecordTask(queue_type, duration);
 
@@ -315,29 +372,30 @@ void MainThreadMetricsHelper::RecordTaskMetrics(
         main_thread_scheduler_->main_thread_only().background_status_changed_at;
 
     per_queue_type_reporters_.foreground_first_minute.RecordTask(
-        queue_type, DurationOfIntervalOverlap(
-                        start_time, end_time, foregrounded_at,
-                        foregrounded_at + base::TimeDelta::FromMinutes(1)));
+        queue_type,
+        DurationOfIntervalOverlap(
+            task_timing.start_time(), task_timing.end_time(), foregrounded_at,
+            foregrounded_at + base::TimeDelta::FromMinutes(1)));
 
     per_queue_type_reporters_.foreground_second_minute.RecordTask(
         queue_type, DurationOfIntervalOverlap(
-                        start_time, end_time,
+                        task_timing.start_time(), task_timing.end_time(),
                         foregrounded_at + base::TimeDelta::FromMinutes(1),
                         foregrounded_at + base::TimeDelta::FromMinutes(2)));
 
     per_queue_type_reporters_.foreground_third_minute.RecordTask(
         queue_type, DurationOfIntervalOverlap(
-                        start_time, end_time,
+                        task_timing.start_time(), task_timing.end_time(),
                         foregrounded_at + base::TimeDelta::FromMinutes(2),
                         foregrounded_at + base::TimeDelta::FromMinutes(3)));
 
     per_queue_type_reporters_.foreground_after_third_minute.RecordTask(
         queue_type,
         DurationOfIntervalOverlap(
-            start_time, end_time,
+            task_timing.start_time(), task_timing.end_time(),
             foregrounded_at + base::TimeDelta::FromMinutes(3),
             std::max(foregrounded_at + base::TimeDelta::FromMinutes(3),
-                     end_time)));
+                     task_timing.end_time())));
 
     foreground_per_task_type_duration_reporter_.RecordTask(task_type, duration);
   }
@@ -401,21 +459,7 @@ void MainThreadMetricsHelper::RecordMainThreadTaskLoad(base::TimeTicks time,
   int load_percentage = static_cast<int>(load * 100);
   DCHECK_LE(load_percentage, 100);
 
-  if (::resource_coordinator::IsPageAlmostIdleSignalEnabled()) {
-    static const int main_thread_task_load_low_threshold =
-        ::resource_coordinator::GetMainThreadTaskLoadLowThreshold();
-
-    // Avoid sending duplicate IPCs when the state doesn't change.
-    if (load_percentage <= main_thread_task_load_low_threshold &&
-        main_thread_task_load_state_ != MainThreadTaskLoadState::kLow) {
-      RendererResourceCoordinator::Get().SetMainThreadTaskLoadIsLow(true);
-      main_thread_task_load_state_ = MainThreadTaskLoadState::kLow;
-    } else if (load_percentage > main_thread_task_load_low_threshold &&
-               main_thread_task_load_state_ != MainThreadTaskLoadState::kHigh) {
-      RendererResourceCoordinator::Get().SetMainThreadTaskLoadIsLow(false);
-      main_thread_task_load_state_ = MainThreadTaskLoadState::kHigh;
-    }
-  }
+  ReportLowThreadLoadForPageAlmostIdleSignal(load_percentage);
 
   UMA_HISTOGRAM_PERCENTAGE(MAIN_THREAD_LOAD_METRIC_NAME, load_percentage);
 
@@ -445,9 +489,10 @@ void MainThreadMetricsHelper::RecordForegroundMainThreadTaskLoad(
       UMA_HISTOGRAM_PERCENTAGE(MAIN_THREAD_LOAD_METRIC_NAME ".Foreground",
                                load_percentage);
 
-      if (time - main_thread_scheduler_->main_thread_only()
-                     .background_status_changed_at >
-          base::TimeDelta::FromMinutes(1)) {
+      base::TimeDelta time_since_foregrounded =
+          time - main_thread_scheduler_->main_thread_only()
+                     .background_status_changed_at;
+      if (time_since_foregrounded > base::TimeDelta::FromMinutes(1)) {
         UMA_HISTOGRAM_PERCENTAGE(MAIN_THREAD_LOAD_METRIC_NAME
                                  ".Foreground.AfterFirstMinute",
                                  load_percentage);
@@ -476,11 +521,22 @@ void MainThreadMetricsHelper::RecordBackgroundMainThreadTaskLoad(
       UMA_HISTOGRAM_PERCENTAGE(MAIN_THREAD_LOAD_METRIC_NAME ".Background",
                                load_percentage);
 
-      if (time - main_thread_scheduler_->main_thread_only()
-                     .background_status_changed_at >
-          base::TimeDelta::FromMinutes(1)) {
+      base::TimeDelta time_since_backgrounded =
+          time - main_thread_scheduler_->main_thread_only()
+                     .background_status_changed_at;
+      if (time_since_backgrounded > base::TimeDelta::FromMinutes(1)) {
         UMA_HISTOGRAM_PERCENTAGE(MAIN_THREAD_LOAD_METRIC_NAME
                                  ".Background.AfterFirstMinute",
+                                 load_percentage);
+      }
+      if (time_since_backgrounded > base::TimeDelta::FromMinutes(5)) {
+        UMA_HISTOGRAM_PERCENTAGE(MAIN_THREAD_LOAD_METRIC_NAME
+                                 ".Background.AfterFifthMinute",
+                                 load_percentage);
+      }
+      if (time_since_backgrounded > base::TimeDelta::FromMinutes(10)) {
+        UMA_HISTOGRAM_PERCENTAGE(MAIN_THREAD_LOAD_METRIC_NAME
+                                 ".Background.AfterTenthMinute",
                                  load_percentage);
       }
       break;
@@ -491,11 +547,32 @@ void MainThreadMetricsHelper::RecordBackgroundMainThreadTaskLoad(
                  load_percentage);
 }
 
-// static
-void MainThreadMetricsHelper::RecordBackgroundedTransition(
-    BackgroundedRendererTransition transition) {
-  UMA_HISTOGRAM_ENUMERATION("RendererScheduler.BackgroundedRendererTransition",
-                            transition, BackgroundedRendererTransition::kCount);
+void MainThreadMetricsHelper::ReportLowThreadLoadForPageAlmostIdleSignal(
+    int load_percentage) {
+  if (!is_page_almost_idle_signal_enabled_)
+    return;
+
+  // Avoid sending IPCs when the renderer is shutting down as this wreaks havoc
+  // in test harnesses. These messages aren't needed in production code either
+  // as the endpoint receiving them dies shortly after and does nothing with
+  // them.
+  if (renderer_shutting_down_)
+    return;
+
+  static const int main_thread_task_load_low_threshold =
+      ::resource_coordinator::GetMainThreadTaskLoadLowThreshold();
+
+  // Avoid sending duplicate IPCs when the state doesn't change.
+  if (load_percentage <= main_thread_task_load_low_threshold &&
+      main_thread_task_load_state_ != MainThreadTaskLoadState::kLow) {
+    RendererResourceCoordinator::Get().SetMainThreadTaskLoadIsLow(true);
+    main_thread_task_load_state_ = MainThreadTaskLoadState::kLow;
+  } else if (load_percentage > main_thread_task_load_low_threshold &&
+             main_thread_task_load_state_ != MainThreadTaskLoadState::kHigh) {
+    RendererResourceCoordinator::Get().SetMainThreadTaskLoadIsLow(false);
+    main_thread_task_load_state_ = MainThreadTaskLoadState::kHigh;
+  }
 }
+
 }  // namespace scheduler
 }  // namespace blink

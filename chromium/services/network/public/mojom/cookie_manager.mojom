@@ -4,8 +4,18 @@
 
 module network.mojom;
 
+import "components/content_settings/core/common/content_settings.mojom";
 import "mojo/public/mojom/base/time.mojom";
 import "url/mojom/url.mojom";
+
+// Parameters for constructing a cookie manager.
+struct CookieManagerParams {
+  // Whether or not third party cookies should be blocked.
+  bool block_third_party_cookies = false;
+
+  // Content settings for cookies.
+  array<content_settings.mojom.ContentSettingPatternSource> settings;
+};
 
 enum CookiePriority {
   LOW,
@@ -45,9 +55,9 @@ struct CanonicalCookie {
   string value;
   string domain;
   string path;
-  mojo_base.mojom.Time? creation;
-  mojo_base.mojom.Time? expiry;
-  mojo_base.mojom.Time? last_access;
+  mojo_base.mojom.Time creation;
+  mojo_base.mojom.Time expiry;
+  mojo_base.mojom.Time last_access;
   bool secure = false;
   bool httponly = false;
   CookieSameSite site_restrictions = NO_RESTRICTION;
@@ -170,9 +180,10 @@ interface CookieManager {
       CanonicalCookie cookie, bool secure_source, bool modify_http_only) =>
       (bool success);
 
+  // Delete a cookie. Returns true if a cookie was deleted.
+  DeleteCanonicalCookie(CanonicalCookie cookie) => (bool success);
+
   // Delete a set of cookies matching the passed filter.
-  // To delete a single cookie, use SetCanonicalCookie with an expiry
-  // time in the past.
   // Returns the number of cookies deleted.
   DeleteCookies(CookieDeletionFilter filter) => (uint32 num_deleted);
 
@@ -209,4 +220,15 @@ interface CookieManager {
 
   // Flush the backing store (if any) to disk.
   FlushCookieStore() => ();
+
+  // Sets content settings for cookies. These are used to determine cookie
+  // access and cookie deletion behavior.
+  SetContentSettings(
+      array<content_settings.mojom.ContentSettingPatternSource> settings);
+
+  // Instructs the cookie store to not discard session only cookies on shutdown.
+  SetForceKeepSessionState();
+
+  // Enables/Disables blocking of third-party cookies.
+  BlockThirdPartyCookies(bool block);
 };

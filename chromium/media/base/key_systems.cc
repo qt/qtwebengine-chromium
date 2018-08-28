@@ -102,17 +102,17 @@ class ClearKeyProperties : public KeySystemProperties {
            init_data_type == EmeInitDataType::KEYIDS;
   }
 
-  bool IsEncryptionSchemeSupported(
-      EncryptionMode encryption_scheme) const override {
+  media::EmeConfigRule GetEncryptionSchemeConfigRule(
+      media::EncryptionMode encryption_scheme) const override {
     switch (encryption_scheme) {
-      case EncryptionMode::kCenc:
-      case EncryptionMode::kCbcs:
-        return true;
-      case EncryptionMode::kUnencrypted:
+      case media::EncryptionMode::kCenc:
+      case media::EncryptionMode::kCbcs:
+        return media::EmeConfigRule::SUPPORTED;
+      case media::EncryptionMode::kUnencrypted:
         break;
     }
     NOTREACHED();
-    return false;
+    return media::EmeConfigRule::NOT_SUPPORTED;
   }
 
   SupportedCodecs GetSupportedCodecs() const override {
@@ -128,19 +128,24 @@ class ClearKeyProperties : public KeySystemProperties {
     return requested_robustness.empty() ? EmeConfigRule::SUPPORTED
                                         : EmeConfigRule::NOT_SUPPORTED;
   }
+
   EmeSessionTypeSupport GetPersistentLicenseSessionSupport() const override {
     return EmeSessionTypeSupport::NOT_SUPPORTED;
   }
-  EmeSessionTypeSupport GetPersistentReleaseMessageSessionSupport()
+
+  EmeSessionTypeSupport GetPersistentUsageRecordSessionSupport()
       const override {
     return EmeSessionTypeSupport::NOT_SUPPORTED;
   }
+
   EmeFeatureSupport GetPersistentStateSupport() const override {
     return EmeFeatureSupport::NOT_SUPPORTED;
   }
+
   EmeFeatureSupport GetDistinctiveIdentifierSupport() const override {
     return EmeFeatureSupport::NOT_SUPPORTED;
   }
+
   bool UseAesDecryptor() const override { return true; }
 };
 
@@ -200,8 +205,6 @@ class KeySystemsImpl : public KeySystems {
 
   std::string GetKeySystemNameForUMA(const std::string& key_system) const;
 
-  bool UseAesDecryptor(const std::string& key_system) const;
-
   // These two functions are for testing purpose only.
   void AddCodecMask(EmeMediaType media_type,
                     const std::string& codec,
@@ -211,10 +214,12 @@ class KeySystemsImpl : public KeySystems {
   // Implementation of KeySystems interface.
   bool IsSupportedKeySystem(const std::string& key_system) const override;
 
+  bool CanUseAesDecryptor(const std::string& key_system) const override;
+
   bool IsSupportedInitDataType(const std::string& key_system,
                                EmeInitDataType init_data_type) const override;
 
-  bool IsEncryptionSchemeSupported(
+  EmeConfigRule GetEncryptionSchemeConfigRule(
       const std::string& key_system,
       EncryptionMode encryption_scheme) const override;
 
@@ -232,7 +237,7 @@ class KeySystemsImpl : public KeySystems {
   EmeSessionTypeSupport GetPersistentLicenseSessionSupport(
       const std::string& key_system) const override;
 
-  EmeSessionTypeSupport GetPersistentReleaseMessageSessionSupport(
+  EmeSessionTypeSupport GetPersistentUsageRecordSessionSupport(
       const std::string& key_system) const override;
 
   EmeFeatureSupport GetPersistentStateSupport(
@@ -389,7 +394,7 @@ void KeySystemsImpl::AddSupportedKeySystems(
     DCHECK(!properties->GetKeySystemName().empty());
     DCHECK(properties->GetPersistentLicenseSessionSupport() !=
            EmeSessionTypeSupport::INVALID);
-    DCHECK(properties->GetPersistentReleaseMessageSessionSupport() !=
+    DCHECK(properties->GetPersistentUsageRecordSessionSupport() !=
            EmeSessionTypeSupport::INVALID);
     DCHECK(properties->GetPersistentStateSupport() !=
            EmeFeatureSupport::INVALID);
@@ -409,13 +414,13 @@ void KeySystemsImpl::AddSupportedKeySystems(
         EmeFeatureSupport::NOT_SUPPORTED) {
       DCHECK(properties->GetPersistentLicenseSessionSupport() ==
              EmeSessionTypeSupport::NOT_SUPPORTED);
-      DCHECK(properties->GetPersistentReleaseMessageSessionSupport() ==
+      DCHECK(properties->GetPersistentUsageRecordSessionSupport() ==
              EmeSessionTypeSupport::NOT_SUPPORTED);
     }
 
-    // persistent-release-message sessions are not currently supported.
+    // persistent-usage-record sessions are not currently supported.
     // http://crbug.com/448888
-    DCHECK(properties->GetPersistentReleaseMessageSessionSupport() ==
+    DCHECK(properties->GetPersistentUsageRecordSessionSupport() ==
            EmeSessionTypeSupport::NOT_SUPPORTED);
 
     // If distinctive identifiers are not supported, then no other features can
@@ -424,7 +429,7 @@ void KeySystemsImpl::AddSupportedKeySystems(
         EmeFeatureSupport::NOT_SUPPORTED) {
       DCHECK(properties->GetPersistentLicenseSessionSupport() !=
              EmeSessionTypeSupport::SUPPORTED_WITH_IDENTIFIER);
-      DCHECK(properties->GetPersistentReleaseMessageSessionSupport() !=
+      DCHECK(properties->GetPersistentUsageRecordSessionSupport() !=
              EmeSessionTypeSupport::SUPPORTED_WITH_IDENTIFIER);
     }
 
@@ -500,7 +505,7 @@ bool KeySystemsImpl::IsSupportedInitDataType(
   return key_system_iter->second->IsSupportedInitDataType(init_data_type);
 }
 
-bool KeySystemsImpl::IsEncryptionSchemeSupported(
+EmeConfigRule KeySystemsImpl::GetEncryptionSchemeConfigRule(
     const std::string& key_system,
     EncryptionMode encryption_scheme) const {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -509,9 +514,9 @@ bool KeySystemsImpl::IsEncryptionSchemeSupported(
       key_system_properties_map_.find(key_system);
   if (key_system_iter == key_system_properties_map_.end()) {
     NOTREACHED();
-    return false;
+    return EmeConfigRule::NOT_SUPPORTED;
   }
-  return key_system_iter->second->IsEncryptionSchemeSupported(
+  return key_system_iter->second->GetEncryptionSchemeConfigRule(
       encryption_scheme);
 }
 
@@ -529,18 +534,6 @@ std::string KeySystemsImpl::GetKeySystemNameForUMA(
     return kClearKeyKeySystemNameForUMA;
 
   return kUnknownKeySystemNameForUMA;
-}
-
-bool KeySystemsImpl::UseAesDecryptor(const std::string& key_system) const {
-  DCHECK(thread_checker_.CalledOnValidThread());
-
-  KeySystemPropertiesMap::const_iterator key_system_iter =
-      key_system_properties_map_.find(key_system);
-  if (key_system_iter == key_system_properties_map_.end()) {
-    DLOG(ERROR) << key_system << " is not a known key system";
-    return false;
-  }
-  return key_system_iter->second->UseAesDecryptor();
 }
 
 void KeySystemsImpl::AddCodecMask(EmeMediaType media_type,
@@ -570,6 +563,18 @@ bool KeySystemsImpl::IsSupportedKeySystem(const std::string& key_system) const {
   return true;
 }
 
+bool KeySystemsImpl::CanUseAesDecryptor(const std::string& key_system) const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  KeySystemPropertiesMap::const_iterator key_system_iter =
+      key_system_properties_map_.find(key_system);
+  if (key_system_iter == key_system_properties_map_.end()) {
+    DLOG(ERROR) << key_system << " is not a known key system";
+    return false;
+  }
+  return key_system_iter->second->UseAesDecryptor();
+}
+
 EmeConfigRule KeySystemsImpl::GetContentTypeConfigRule(
     const std::string& key_system,
     EmeMediaType media_type,
@@ -591,20 +596,20 @@ EmeConfigRule KeySystemsImpl::GetContentTypeConfigRule(
       break;
   }
 
-  // Look up the key system's supported codecs.
+  // Double check whether the key system is supported.
   KeySystemPropertiesMap::const_iterator key_system_iter =
       key_system_properties_map_.find(key_system);
   if (key_system_iter == key_system_properties_map_.end()) {
-    NOTREACHED();
+    NOTREACHED()
+        << "KeySystemConfigSelector should've checked key system support";
     return EmeConfigRule::NOT_SUPPORTED;
   }
 
+  // Look up the key system's supported codecs and secure codecs.
   SupportedCodecs key_system_codec_mask =
       key_system_iter->second->GetSupportedCodecs();
-#if defined(OS_ANDROID)
-  SupportedCodecs key_system_secure_codec_mask =
-      key_system_iter->second->GetSupportedSecureCodecs();
-#endif  // defined(OS_ANDROID)
+  SupportedCodecs key_system_hw_secure_codec_mask =
+      key_system_iter->second->GetSupportedHwSecureCodecs();
 
   // Check that the container is supported by the key system. (This check is
   // necessary because |codecs| may be empty.)
@@ -616,7 +621,12 @@ EmeConfigRule KeySystemsImpl::GetContentTypeConfigRule(
     return EmeConfigRule::NOT_SUPPORTED;
   }
 
-  // Check that the codecs are supported by the key system and container.
+  // Check that the codecs are supported by the key system and container based
+  // on the following rule:
+  // SupportedCodecs  | SupportedSecureCodecs  | Result
+  //       yes        |         yes            | SUPPORTED
+  //       yes        |         no             | HW_SECURE_CODECS_NOT_ALLOWED
+  //       no         |         any            | NOT_SUPPORTED
   EmeConfigRule support = EmeConfigRule::SUPPORTED;
   for (size_t i = 0; i < codecs.size(); i++) {
     SupportedCodecs codec = GetCodecForString(codecs[i]);
@@ -625,7 +635,7 @@ EmeConfigRule KeySystemsImpl::GetContentTypeConfigRule(
                << codecs[i] << ") not supported by " << key_system;
       return EmeConfigRule::NOT_SUPPORTED;
     }
-#if defined(OS_ANDROID)
+
     // Check whether the codec supports a hardware-secure mode. The goal is to
     // prevent mixing of non-hardware-secure codecs with hardware-secure codecs,
     // since the mode is fixed at CDM creation.
@@ -634,9 +644,8 @@ EmeConfigRule KeySystemsImpl::GetContentTypeConfigRule(
     // to consider codecs that are only supported in hardware-secure mode. We
     // could do so, and make use of HW_SECURE_CODECS_REQUIRED, if it turns out
     // that hardware-secure-only codecs actually exist and are useful.
-    if ((codec & key_system_secure_codec_mask) == 0)
+    if ((codec & key_system_hw_secure_codec_mask) == 0)
       support = EmeConfigRule::HW_SECURE_CODECS_NOT_ALLOWED;
-#endif  // defined(OS_ANDROID)
   }
 
   return support;
@@ -671,7 +680,7 @@ EmeSessionTypeSupport KeySystemsImpl::GetPersistentLicenseSessionSupport(
   return key_system_iter->second->GetPersistentLicenseSessionSupport();
 }
 
-EmeSessionTypeSupport KeySystemsImpl::GetPersistentReleaseMessageSessionSupport(
+EmeSessionTypeSupport KeySystemsImpl::GetPersistentUsageRecordSessionSupport(
     const std::string& key_system) const {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -681,7 +690,7 @@ EmeSessionTypeSupport KeySystemsImpl::GetPersistentReleaseMessageSessionSupport(
     NOTREACHED();
     return EmeSessionTypeSupport::INVALID;
   }
-  return key_system_iter->second->GetPersistentReleaseMessageSessionSupport();
+  return key_system_iter->second->GetPersistentUsageRecordSessionSupport();
 }
 
 EmeFeatureSupport KeySystemsImpl::GetPersistentStateSupport(
@@ -727,7 +736,7 @@ std::string GetKeySystemNameForUMA(const std::string& key_system) {
 }
 
 bool CanUseAesDecryptor(const std::string& key_system) {
-  return KeySystemsImpl::GetInstance()->UseAesDecryptor(key_system);
+  return KeySystemsImpl::GetInstance()->CanUseAesDecryptor(key_system);
 }
 
 // These two functions are for testing purpose only. The declaration in the

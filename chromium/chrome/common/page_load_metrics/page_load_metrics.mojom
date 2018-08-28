@@ -75,14 +75,6 @@ struct ParseTiming {
   mojo_base.mojom.TimeDelta? parse_blocked_on_script_execution_from_document_write_duration;
 };
 
-struct StyleSheetTiming {
-  // Total time spent parsing author style sheets, before the first contentful
-  // paint.
-  mojo_base.mojom.TimeDelta? author_style_sheet_parse_duration_before_fcp;
-  // Time spent in Document::updateStyle before FCP.
-  mojo_base.mojom.TimeDelta? update_style_duration_before_fcp;
-};
-
 struct InteractiveTiming {
   // The first time the page is considered 'interactive'. This is determined
   // using heuristics based on main thread and network activity. Time delta is
@@ -110,6 +102,14 @@ struct InteractiveTiming {
 
   // The timestamp of the event whose delay is reported by GetFirstInputDelay().
   mojo_base.mojom.TimeDelta? first_input_timestamp;
+
+  // Queueing Time of the meaningful input event with longest delay. Meaningful
+  // input events are click, tap, key press, cancellable touchstart, or pointer
+  // down followed by a pointer up.
+  mojo_base.mojom.TimeDelta? longest_input_delay;
+
+  // The timestamp of the event whose delay is reported as longest_input_delay.
+  mojo_base.mojom.TimeDelta? longest_input_timestamp;
 };
 
 
@@ -130,7 +130,6 @@ struct PageLoadTiming {
   InteractiveTiming interactive_timing;
   PaintTiming paint_timing;
   ParseTiming parse_timing;
-  StyleSheetTiming style_sheet_timing;
 
   // If you add additional members, also be sure to update page_load_timing.h.
 };
@@ -152,10 +151,22 @@ struct PageLoadFeatures {
   array<int32> animated_css_properties;
 };
 
+// Data used for the page load.
+struct PageLoadDataUse {
+  // Network bytes received for the page load.
+  int64 received_data_length = 0;
+
+  // The number of bytes saved by the data reduction proxy. Will be zero when
+  // data reduction proxy is not used. Can be negative if the proxy inflated the
+  // resource.
+  int64 data_reduction_proxy_bytes_saved = 0;
+};
+
 // Sent from renderer to browser process when the PageLoadTiming for the
 // associated frame changed.
 interface PageLoadMetrics {
   UpdateTiming(PageLoadTiming page_load_timing,
                PageLoadMetadata page_load_metadata,
-               PageLoadFeatures new_features);
+               PageLoadFeatures new_features,
+               PageLoadDataUse data_use);
 };

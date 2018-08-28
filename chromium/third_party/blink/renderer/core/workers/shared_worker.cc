@@ -31,8 +31,9 @@
 
 #include "third_party/blink/renderer/core/workers/shared_worker.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/public/common/blob/blob_utils.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
@@ -40,6 +41,7 @@
 #include "third_party/blink/renderer/core/messaging/message_port.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/workers/shared_worker_repository_client.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
@@ -80,9 +82,16 @@ SharedWorker* SharedWorker::Create(ExecutionContext* context,
   if (script_url.IsEmpty())
     return nullptr;
 
+  mojom::blink::BlobURLTokenPtr blob_url_token;
+  if (script_url.ProtocolIs("blob") && BlobUtils::MojoBlobURLsEnabled()) {
+    document->GetPublicURLManager().Resolve(script_url,
+                                            MakeRequest(&blob_url_token));
+  }
+
   if (document->GetFrame()->Client()->GetSharedWorkerRepositoryClient()) {
     document->GetFrame()->Client()->GetSharedWorkerRepositoryClient()->Connect(
-        worker, std::move(remote_port), script_url, name);
+        worker, std::move(remote_port), script_url, std::move(blob_url_token),
+        name);
   }
 
   return worker;

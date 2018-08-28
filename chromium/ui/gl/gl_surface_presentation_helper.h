@@ -20,6 +20,7 @@ class VSyncProvider;
 namespace gl {
 
 class GLContext;
+class GLFence;
 class GPUTimingClient;
 class GPUTimer;
 
@@ -59,9 +60,19 @@ class GL_EXPORT GLSurfacePresentationHelper {
     Frame(Frame&& other);
     Frame(std::unique_ptr<GPUTimer>&& timer,
           const GLSurface::PresentationCallback& callback);
+    Frame(std::unique_ptr<GLFence>&& fence,
+          const GLSurface::PresentationCallback& callback);
+    Frame(const GLSurface::PresentationCallback& callback);
     ~Frame();
     Frame& operator=(Frame&& other);
+
+    bool StillPending() const;
+    base::TimeTicks GetTimestamp() const;
+    void Destroy(bool has_context = false);
+
     std::unique_ptr<GPUTimer> timer;
+    // GLFence is used only if gpu timers are not available.
+    std::unique_ptr<GLFence> fence;
     GLSurface::PresentationCallback callback;
     gfx::SwapResult result = gfx::SwapResult::SWAP_ACK;
   };
@@ -85,6 +96,7 @@ class GL_EXPORT GLSurfacePresentationHelper {
   base::TimeTicks vsync_timebase_;
   base::TimeDelta vsync_interval_;
   bool check_pending_frame_scheduled_ = false;
+  bool gl_fence_supported_ = false;
 
   base::WeakPtrFactory<GLSurfacePresentationHelper> weak_ptr_factory_;
 

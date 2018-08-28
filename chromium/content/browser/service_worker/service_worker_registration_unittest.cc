@@ -25,7 +25,7 @@
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/test/test_content_browser_client.h"
-#include "mojo/edk/embedder/embedder.h"
+#include "mojo/core/embedder/embedder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
@@ -46,8 +46,8 @@ int CreateInflightRequest(ServiceWorkerVersion* version) {
 }
 
 static void SaveStatusCallback(bool* called,
-                               ServiceWorkerStatusCode* out,
-                               ServiceWorkerStatusCode status) {
+                               blink::ServiceWorkerStatusCode* out,
+                               blink::ServiceWorkerStatusCode status) {
   *called = true;
   *out = status;
 }
@@ -270,15 +270,13 @@ TEST_F(ServiceWorkerRegistrationTest, FailedRegistrationNoCrash) {
   options.scope = kScope;
   auto registration = base::MakeRefCounted<ServiceWorkerRegistration>(
       options, kRegistrationId, context()->AsWeakPtr());
-  auto dispatcher_host = base::MakeRefCounted<ServiceWorkerDispatcherHost>(
-      helper_->mock_render_process_id());
   // Prepare a ServiceWorkerProviderHost.
   ServiceWorkerRemoteProviderEndpoint remote_endpoint;
   std::unique_ptr<ServiceWorkerProviderHost> provider_host =
-      CreateProviderHostWithDispatcherHost(
-          helper_->mock_render_process_id(), 1 /* dummy provider_id */,
-          context()->AsWeakPtr(), 1 /* route_id */, dispatcher_host.get(),
-          &remote_endpoint);
+      CreateProviderHostForWindow(helper_->mock_render_process_id(),
+                                  1 /* dummy provider_id */,
+                                  true /* is_parent_frame_secure */,
+                                  context()->AsWeakPtr(), &remote_endpoint);
   auto registration_object_host =
       std::make_unique<ServiceWorkerRegistrationObjectHost>(
           context()->AsWeakPtr(), provider_host.get(), registration);
@@ -370,12 +368,12 @@ class ServiceWorkerActivationTest : public ServiceWorkerRegistrationTest {
     version_1->script_cache_map()->SetResources(records_1);
     version_1->SetMainScriptHttpResponseInfo(
         EmbeddedWorkerTestHelper::CreateHttpResponseInfo());
-    ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
+    base::Optional<blink::ServiceWorkerStatusCode> status;
     context()->storage()->StoreRegistration(
         registration_.get(), version_1.get(),
         CreateReceiverOnCurrentThread(&status));
     base::RunLoop().RunUntilIdle();
-    ASSERT_EQ(SERVICE_WORKER_OK, status);
+    ASSERT_EQ(blink::ServiceWorkerStatusCode::kOk, status.value());
 
     // Give the active version a controllee.
     host_ = CreateProviderHostForWindow(
@@ -417,7 +415,7 @@ class ServiceWorkerActivationTest : public ServiceWorkerRegistrationTest {
   }
 
   void TearDown() override {
-    registration_->active_version()->RemoveListener(registration_.get());
+    registration_->active_version()->RemoveObserver(registration_.get());
     ServiceWorkerRegistrationTest::TearDown();
   }
 
@@ -661,14 +659,14 @@ class ServiceWorkerRegistrationObjectHostTest
  protected:
   void SetUp() override {
     ServiceWorkerRegistrationTest::SetUp();
-    mojo::edk::SetDefaultProcessErrorCallback(base::AdaptCallbackForRepeating(
+    mojo::core::SetDefaultProcessErrorCallback(base::AdaptCallbackForRepeating(
         base::BindOnce(&ServiceWorkerRegistrationObjectHostTest::OnMojoError,
                        base::Unretained(this))));
   }
 
   void TearDown() override {
-    mojo::edk::SetDefaultProcessErrorCallback(
-        mojo::edk::ProcessErrorCallback());
+    mojo::core::SetDefaultProcessErrorCallback(
+        mojo::core::ProcessErrorCallback());
     ServiceWorkerRegistrationTest::TearDown();
   }
 
@@ -702,19 +700,21 @@ class ServiceWorkerRegistrationObjectHostTest
     return error;
   }
 
-  ServiceWorkerStatusCode FindRegistrationInStorage(int64_t registration_id,
-                                                    const GURL& scope) {
-    ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
+  blink::ServiceWorkerStatusCode FindRegistrationInStorage(
+      int64_t registration_id,
+      const GURL& scope) {
+    base::Optional<blink::ServiceWorkerStatusCode> status;
     storage()->FindRegistrationForId(
         registration_id, scope,
         base::AdaptCallbackForRepeating(base::BindOnce(
-            [](ServiceWorkerStatusCode* out_status,
-               ServiceWorkerStatusCode status,
+            [](base::Optional<blink::ServiceWorkerStatusCode>* out_status,
+               blink::ServiceWorkerStatusCode status,
                scoped_refptr<ServiceWorkerRegistration> registration) {
               *out_status = status;
             },
             &status)));
-    return status;
+    base::RunLoop().RunUntilIdle();
+    return status.value();
   }
 
   int64_t SetUpRegistration(const GURL& scope, const GURL& script_url) {
@@ -744,12 +744,13 @@ class ServiceWorkerRegistrationObjectHostTest
     version->SetStatus(ServiceWorkerVersion::INSTALLING);
     // Make the registration findable via storage functions.
     bool called = false;
-    ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
+    blink::ServiceWorkerStatusCode status =
+        blink::ServiceWorkerStatusCode::kErrorFailed;
     storage()->StoreRegistration(registration.get(), version.get(),
                                  base::AdaptCallbackForRepeating(base::BindOnce(
                                      &SaveStatusCallback, &called, &status)));
     base::RunLoop().RunUntilIdle();
-    EXPECT_EQ(SERVICE_WORKER_OK, status);
+    EXPECT_EQ(blink::ServiceWorkerStatusCode::kOk, status);
 
     return registration->id();
   }
@@ -759,10 +760,10 @@ class ServiceWorkerRegistrationObjectHostTest
       const GURL& document_url) {
     ServiceWorkerRemoteProviderEndpoint remote_endpoint;
     std::unique_ptr<ServiceWorkerProviderHost> host =
-        CreateProviderHostWithDispatcherHost(
-            helper_->mock_render_process_id(), provider_id,
-            context()->AsWeakPtr(), 1 /* route_id */, dispatcher_host(),
-            &remote_endpoint);
+        CreateProviderHostForWindow(helper_->mock_render_process_id(),
+                                    provider_id,
+                                    true /* is_parent_frame_secure */,
+                                    context()->AsWeakPtr(), &remote_endpoint);
     host->SetDocumentUrl(document_url);
     context()->AddProviderHost(std::move(host));
     return remote_endpoint;
@@ -788,11 +789,6 @@ class ServiceWorkerRegistrationObjectHostTest
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(registration_info->host_ptr_info.is_valid());
     return registration_info;
-  }
-
-  ServiceWorkerDispatcherHost* dispatcher_host() {
-    return helper_->GetDispatcherHostForProcess(
-        helper_->mock_render_process_id());
   }
 
   void OnMojoError(const std::string& error) { bad_messages_.push_back(error); }
@@ -902,12 +898,12 @@ TEST_F(ServiceWorkerRegistrationObjectHostTest, Unregister_Success) {
   info->request = nullptr;
   info->waiting->request = nullptr;
 
-  EXPECT_EQ(SERVICE_WORKER_OK,
+  EXPECT_EQ(blink::ServiceWorkerStatusCode::kOk,
             FindRegistrationInStorage(registration_id, kScope));
   EXPECT_EQ(blink::mojom::ServiceWorkerErrorType::kNone,
             CallUnregister(registration_host_ptr.get()));
 
-  EXPECT_EQ(SERVICE_WORKER_ERROR_NOT_FOUND,
+  EXPECT_EQ(blink::ServiceWorkerStatusCode::kErrorNotFound,
             FindRegistrationInStorage(registration_id, kScope));
   EXPECT_EQ(blink::mojom::ServiceWorkerErrorType::kNotFound,
             CallUnregister(registration_host_ptr.get()));

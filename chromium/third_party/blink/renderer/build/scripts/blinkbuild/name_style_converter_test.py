@@ -111,6 +111,11 @@ class SmartTokenizerTest(unittest.TestCase):
 
         self.assertEqual(tokenize_name('matrix3d'), ['matrix', '3d'])
 
+        self.assertEqual(tokenize_name('uint8ArrayMember'), ['uint8', 'Array', 'Member'])
+        self.assertEqual(tokenize_name('webgl2Element'), ['webgl2', 'Element'])
+        self.assertEqual(tokenize_name('webGL2Element'), ['webGL2', 'Element'])
+        self.assertEqual(tokenize_name('xssError'), ['xss', 'Error'])
+
     def test_ignoring_characters(self):
         self.assertEqual(tokenize_name('Animation.idl'), ['Animation', 'idl'])
         self.assertEqual(tokenize_name('-webkit-appearance'), ['webkit', 'appearance'])
@@ -118,9 +123,20 @@ class SmartTokenizerTest(unittest.TestCase):
 
 
 class NameStyleConverterTest(unittest.TestCase):
+    def test_original(self):
+        self.assertEqual(NameStyleConverter('-webkit-appearance').original, '-webkit-appearance')
+
     def test_snake_case(self):
         converter = NameStyleConverter('HTMLElement')
         self.assertEqual(converter.to_snake_case(), 'html_element')
+
+    def test_to_class_data_member(self):
+        converter = NameStyleConverter('HTMLElement')
+        self.assertEqual(converter.to_class_data_member(), 'html_element_')
+        self.assertEqual(converter.to_class_data_member(prefix='is'), 'is_html_element_')
+        self.assertEqual(converter.to_class_data_member(suffix='enabled'), 'html_element_enabled_')
+        self.assertEqual(converter.to_class_data_member(prefix='is', suffix='enabled'), 'is_html_element_enabled_')
+        self.assertEqual(converter.to_class_data_member(prefix='fooBar', suffix='V0V8'), 'foobar_html_element_v0v8_')
 
     def test_upper_camel_case(self):
         converter = NameStyleConverter('someSuperThing')
@@ -133,6 +149,24 @@ class NameStyleConverterTest(unittest.TestCase):
         self.assertEqual(converter.to_upper_camel_case(), 'XPathExpression')
         converter = NameStyleConverter('feDropShadow')
         self.assertEqual(converter.to_upper_camel_case(), 'FEDropShadow')
+
+    def test_to_class_name(self):
+        self.assertEqual(NameStyleConverter('').to_class_name(), '')
+        self.assertEqual(NameStyleConverter('').to_class_name(prefix='s', suffix='d'), 'SD')
+        self.assertEqual(NameStyleConverter('').to_class_name(prefix='style', suffix='data'), 'StyleData')
+        self.assertEqual(NameStyleConverter('foo').to_class_name(prefix='style', suffix='data'), 'StyleFooData')
+        self.assertEqual(NameStyleConverter('xpath').to_class_name(), 'XPath')
+
+    def test_to_function_name(self):
+        converter = NameStyleConverter('fooBar')
+        self.assertEqual(converter.to_function_name(), 'FooBar')
+        self.assertEqual(converter.to_function_name(prefix='is'), 'IsFooBar')
+        self.assertEqual(converter.to_function_name(suffix='BAZ'), 'FooBarBaz')
+        self.assertEqual(converter.to_function_name(prefix='IS', suffix='baz'), 'IsFooBarBaz')
+        self.assertEqual(converter.to_function_name(prefix='prefixPrefix', suffix=['a', 'b']), 'PrefixprefixFooBarAB')
+
+    def test_to_enum_value(self):
+        self.assertEqual(NameStyleConverter('fooBar').to_enum_value(), 'kFooBar')
 
     def test_lower_camel_case(self):
         converter = NameStyleConverter('someSuperThing')

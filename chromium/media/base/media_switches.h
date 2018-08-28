@@ -66,8 +66,7 @@ MEDIA_EXPORT extern const char kUseFakeDeviceForMediaStream[];
 MEDIA_EXPORT extern const char kUseFileForFakeVideoCapture[];
 MEDIA_EXPORT extern const char kUseFileForFakeAudioCapture[];
 MEDIA_EXPORT extern const char kUseFakeJpegDecodeAccelerator[];
-
-MEDIA_EXPORT extern const char kEnableInbandTextTracks[];
+MEDIA_EXPORT extern const char kDisableAcceleratedMjpegDecode[];
 
 MEDIA_EXPORT extern const char kRequireAudioHardwareForTesting[];
 MEDIA_EXPORT extern const char kMuteAudio[];
@@ -78,11 +77,12 @@ MEDIA_EXPORT extern const char kDisableRTCSmoothnessAlgorithm[];
 
 MEDIA_EXPORT extern const char kForceVideoOverlays[];
 
-MEDIA_EXPORT extern const char kMSEAudioBufferSizeLimit[];
-MEDIA_EXPORT extern const char kMSEVideoBufferSizeLimit[];
+MEDIA_EXPORT extern const char kMSEAudioBufferSizeLimitMb[];
+MEDIA_EXPORT extern const char kMSEVideoBufferSizeLimitMb[];
 
 MEDIA_EXPORT extern const char kClearKeyCdmPathForTesting[];
 MEDIA_EXPORT extern const char kOverrideEnabledCdmInterfaceVersion[];
+MEDIA_EXPORT extern const char kOverrideHardwareSecureCodecsForTesting[];
 
 #if !defined(OS_ANDROID)
 MEDIA_EXPORT extern const char kEnableInternalMediaSession[];
@@ -110,6 +110,7 @@ MEDIA_EXPORT extern const base::Feature kBackgroundVideoPauseOptimization;
 MEDIA_EXPORT extern const base::Feature kBackgroundVideoTrackOptimization;
 MEDIA_EXPORT extern const base::Feature kD3D11VideoDecoder;
 MEDIA_EXPORT extern const base::Feature kExternalClearKeyForTesting;
+MEDIA_EXPORT extern const base::Feature kHardwareSecureDecryption;
 MEDIA_EXPORT extern const base::Feature kLowDelayVideoRenderingOnLiveStream;
 MEDIA_EXPORT extern const base::Feature kMediaCastOverlayButton;
 MEDIA_EXPORT extern const base::Feature kRecordMediaEngagementScores;
@@ -138,6 +139,7 @@ MEDIA_EXPORT extern const base::Feature kUseSurfaceLayerForVideo;
 MEDIA_EXPORT extern const base::Feature kUseModernMediaControls;
 
 #if defined(OS_ANDROID)
+MEDIA_EXPORT extern const base::Feature kMediaControlsExpandGesture;
 MEDIA_EXPORT extern const base::Feature kVideoFullscreenOrientationLock;
 MEDIA_EXPORT extern const base::Feature kVideoRotateToFullscreen;
 MEDIA_EXPORT extern const base::Feature kMediaDrmPersistentLicense;
@@ -163,6 +165,8 @@ MEDIA_EXPORT std::string GetEffectiveAutoplayPolicy(
 // Based on the command line of the current process, determine if
 // audio focus duck flash should be enabled.
 MEDIA_EXPORT bool IsAudioFocusDuckFlashEnabled();
+
+MEDIA_EXPORT bool IsVideoCaptureAcceleratedJpegDecodingEnabled();
 
 }  // namespace media
 

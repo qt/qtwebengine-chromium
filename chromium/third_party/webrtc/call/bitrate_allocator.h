@@ -98,7 +98,7 @@ class BitrateAllocator : public BitrateAllocatorInterface {
   };
 
   explicit BitrateAllocator(LimitObserver* limit_observer);
-  ~BitrateAllocator();
+  ~BitrateAllocator() override;
 
   // Allocate target_bitrate across the registered BitrateAllocatorObservers.
   void OnNetworkChanged(uint32_t target_bitrate_bps,
@@ -205,8 +205,7 @@ class BitrateAllocator : public BitrateAllocatorInterface {
                                int max_multiplier,
                                ObserverAllocation* allocation)
       RTC_RUN_ON(&sequenced_checker_);
-  bool EnoughBitrateForAllObservers(uint32_t bitrate,
-                                    uint32_t sum_min_bitrates)
+  bool EnoughBitrateForAllObservers(uint32_t bitrate, uint32_t sum_min_bitrates)
       RTC_RUN_ON(&sequenced_checker_);
 
   // From the available |bitrate|, each observer will be allocated a

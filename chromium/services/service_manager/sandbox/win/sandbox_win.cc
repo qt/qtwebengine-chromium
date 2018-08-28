@@ -38,7 +38,9 @@
 #include "base/win/scoped_handle.h"
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
+#include "sandbox/constants.h"
 #include "sandbox/win/src/app_container_profile.h"
+#include "sandbox/win/src/job.h"
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
@@ -52,6 +54,8 @@ namespace service_manager {
 namespace {
 
 sandbox::BrokerServices* g_broker_services = NULL;
+
+HANDLE g_job_object_handle = NULL;
 
 // The DLLs listed here are known (or under strong suspicion) of causing crashes
 // when they are loaded in the renderer. Note: at runtime we generate short
@@ -562,13 +566,13 @@ sandbox::ResultCode SetJobMemoryLimit(const base::CommandLine& cmd_line,
   DCHECK_NE(policy->GetJobLevel(), sandbox::JOB_NONE);
 
 #ifdef _WIN64
-  int64_t GB = 1024 * 1024 * 1024;
-  size_t memory_limit = 4 * GB;
+  size_t memory_limit = static_cast<size_t>(sandbox::kDataSizeLimit);
 
   // Note that this command line flag hasn't been fetched by all
   // callers of SetJobLevel, only those in this file.
   if (service_manager::SandboxTypeFromCommandLine(cmd_line) ==
       service_manager::SANDBOX_TYPE_GPU) {
+    int64_t GB = 1024 * 1024 * 1024;
     // Allow the GPU process's sandbox to access more physical memory if
     // it's available on the system.
     int64_t physical_memory = base::SysInfo::AmountOfPhysicalMemory();
@@ -786,7 +790,7 @@ bool SandboxWin::InitBrokerServices(sandbox::BrokerServices* broker_services) {
       result = g_iat_patch_duplicate_handle.Patch(
           module_name, "kernel32.dll", "DuplicateHandle",
           reinterpret_cast<void*>(DuplicateHandlePatch));
-      CHECK(result == 0);
+      CHECK_EQ(0, result);
       g_iat_orig_duplicate_handle =
           reinterpret_cast<DuplicateHandleFunctionPtr>(
               g_iat_patch_duplicate_handle.original_function());
@@ -827,6 +831,20 @@ sandbox::ResultCode SandboxWin::StartSandboxedProcess(
           service_manager::switches::kNoSandbox)) {
     base::LaunchOptions options;
     options.handles_to_inherit = handles_to_inherit;
+    if (sandbox_type == SANDBOX_TYPE_NETWORK) {
+      // Launch the process in a job to ensure that the network process doesn't
+      // outlive the browser. This could happen if there is a lot of I/O on
+      // process shutdown, in which case TerminateProcess would fail.
+      // https://crbug.com/820996
+      if (!g_job_object_handle) {
+        sandbox::Job job_obj;
+        DWORD result = job_obj.Init(sandbox::JOB_UNPROTECTED, nullptr, 0, 0);
+        if (result != ERROR_SUCCESS)
+          return sandbox::SBOX_ERROR_GENERIC;
+        g_job_object_handle = job_obj.Take().Take();
+      }
+      options.job_handle = g_job_object_handle;
+    }
     *process = base::LaunchProcess(*cmd_line, options);
     return sandbox::SBOX_ALL_OK;
   }
@@ -869,8 +887,10 @@ sandbox::ResultCode SandboxWin::StartSandboxedProcess(
                 sandbox::MITIGATION_DLL_SEARCH_ORDER;
   if (!cmd_line->HasSwitch(switches::kAllowThirdPartyModules))
     mitigations |= sandbox::MITIGATION_FORCE_MS_SIGNED_BINS;
-  if (sandbox_type == SANDBOX_TYPE_NETWORK)
+  if (sandbox_type == SANDBOX_TYPE_NETWORK ||
+      sandbox_type == SANDBOX_TYPE_AUDIO) {
     mitigations |= sandbox::MITIGATION_DYNAMIC_CODE_DISABLE;
+  }
 
   result = policy->SetDelayedProcessMitigations(mitigations);
   if (result != sandbox::SBOX_ALL_OK)

@@ -8,7 +8,7 @@
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "net/third_party/quic/platform/api/quic_test.h"
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -30,28 +30,36 @@ TEST_F(QuicHostnameUtilsTest, IsValidSNI) {
 }
 
 TEST_F(QuicHostnameUtilsTest, NormalizeHostname) {
+  // clang-format off
   struct {
     const char *input, *expected;
   } tests[] = {
       {
-          "www.google.com", "www.google.com",
+          "www.google.com",
+          "www.google.com",
       },
       {
-          "WWW.GOOGLE.COM", "www.google.com",
+          "WWW.GOOGLE.COM",
+          "www.google.com",
       },
       {
-          "www.google.com.", "www.google.com",
+          "www.google.com.",
+          "www.google.com",
       },
       {
-          "www.google.COM.", "www.google.com",
+          "www.google.COM.",
+          "www.google.com",
       },
       {
-          "www.google.com..", "www.google.com",
+          "www.google.com..",
+          "www.google.com",
       },
       {
-          "www.google.com........", "www.google.com",
+          "www.google.com........",
+          "www.google.com",
       },
   };
+  // clang-format on
 
   for (size_t i = 0; i < QUIC_ARRAYSIZE(tests); ++i) {
     char buf[256];
@@ -63,4 +71,4 @@ TEST_F(QuicHostnameUtilsTest, NormalizeHostname) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

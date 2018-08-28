@@ -36,10 +36,10 @@ class ServiceWorkerActivationTest;
 // facilitate multiple controllees being associated with the same registration.
 class CONTENT_EXPORT ServiceWorkerRegistration
     : public base::RefCounted<ServiceWorkerRegistration>,
-      public ServiceWorkerVersion::Listener {
+      public ServiceWorkerVersion::Observer {
  public:
   using StatusCallback =
-      base::OnceCallback<void(ServiceWorkerStatusCode status)>;
+      base::OnceCallback<void(blink::ServiceWorkerStatusCode status)>;
 
   class CONTENT_EXPORT Listener {
    public:
@@ -91,7 +91,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   // state. If you require an ACTIVATED version, use
   // ServiceWorkerContextWrapper::FindReadyRegistration* to get a registration
   // with such a version. Alternatively, use
-  // ServiceWorkerVersion::Listener::OnVersionStateChanged to wait for the
+  // ServiceWorkerVersion::Observer::OnVersionStateChanged to wait for the
   // ACTIVATING version to become ACTIVATED.
   ServiceWorkerVersion* active_version() const {
     return active_version_.get();
@@ -187,7 +187,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
       ServiceWorkerVersion* version,
       ChangedVersionAttributesMask* mask);
 
-  // ServiceWorkerVersion::Listener override.
+  // ServiceWorkerVersion::Observer override.
   void OnNoControllees(ServiceWorkerVersion* version) override;
   void OnNoWork(ServiceWorkerVersion* version) override;
 
@@ -204,19 +204,19 @@ class CONTENT_EXPORT ServiceWorkerRegistration
       scoped_refptr<ServiceWorkerVersion> activating_version);
   void DispatchActivateEvent(
       scoped_refptr<ServiceWorkerVersion> activating_version,
-      ServiceWorkerStatusCode start_worker_status);
+      blink::ServiceWorkerStatusCode start_worker_status);
   void OnActivateEventFinished(
       scoped_refptr<ServiceWorkerVersion> activating_version,
-      ServiceWorkerStatusCode status);
+      blink::ServiceWorkerStatusCode status);
 
-  void OnDeleteFinished(ServiceWorkerStatusCode status);
+  void OnDeleteFinished(blink::ServiceWorkerStatusCode status);
 
   // This method corresponds to the [[ClearRegistration]] algorithm.
   void Clear();
 
   void OnRestoreFinished(StatusCallback callback,
                          scoped_refptr<ServiceWorkerVersion> version,
-                         ServiceWorkerStatusCode status);
+                         blink::ServiceWorkerStatusCode status);
 
   const GURL pattern_;
   blink::mojom::ServiceWorkerUpdateViaCache update_via_cache_;

@@ -23,7 +23,7 @@ class BidiAdjustment final {
  public:
   // Function to be called at the end of caret position resolution, adjusting
   // the result in bidi text runs.
-  // TODO(xiaochengh): Eliminate |unicode_bidi| from parameters.
+  // TODO(editing-dev): Eliminate |unicode_bidi| from parameters.
   static InlineBoxPosition AdjustForCaretPositionResolution(
       const InlineBoxPosition&,
       UnicodeBidi unicode_bidi);
@@ -62,29 +62,12 @@ class InlineBoxTraversal final {
   static const InlineBox* FindRightBidiRun(const InlineBox& box,
                                            unsigned bidi_level);
 
-  // Traverses left/right from |box|, and returns the last non-linebreak box
-  // with bidi level greater than |bidi_level| (including |box| itself).
-  static const InlineBox& FindLeftBoundaryOfBidiRunIgnoringLineBreak(
-      const InlineBox& box,
-      unsigned bidi_level);
-  static const InlineBox& FindRightBoundaryOfBidiRunIgnoringLineBreak(
-      const InlineBox& box,
-      unsigned bidi_level);
-
   // Traverses left/right from |box|, and returns the last box with bidi level
   // greater than or equal to |bidi_level| (including |box| itself).
   static const InlineBox& FindLeftBoundaryOfEntireBidiRun(const InlineBox& box,
                                                           unsigned bidi_level);
   static const InlineBox& FindRightBoundaryOfEntireBidiRun(const InlineBox& box,
                                                            unsigned bidi_level);
-
-  // Variants of the above two where line break boxes are ignored.
-  static const InlineBox& FindLeftBoundaryOfEntireBidiRunIgnoringLineBreak(
-      const InlineBox&,
-      unsigned bidi_level);
-  static const InlineBox& FindRightBoundaryOfEntireBidiRunIgnoringLineBreak(
-      const InlineBox&,
-      unsigned bidi_level);
 };
 
 }  // namespace blink

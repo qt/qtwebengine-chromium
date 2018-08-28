@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
+#include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/platform/heap/heap.h"
@@ -112,6 +113,8 @@ TEST_F(CSSLazyParsingTest, ShouldConsiderForMatchingRulesSimple) {
 TEST_F(CSSLazyParsingTest, ChangeDocuments) {
   std::unique_ptr<DummyPageHolder> dummy_holder =
       DummyPageHolder::Create(IntSize(500, 500));
+  Page::InsertOrdinaryPageForTesting(&dummy_holder->GetPage());
+
   CSSParserContext* context = CSSParserContext::Create(
       kHTMLStandardMode, SecureContextMode::kInsecureContext,
       CSSParserContext::kLiveProfile, &dummy_holder->GetDocument());
@@ -134,7 +137,7 @@ TEST_F(CSSLazyParsingTest, ChangeDocuments) {
     EXPECT_EQ(&dummy_holder->GetDocument(),
               cached_contents_->SingleOwnerDocument());
     UseCounter& use_counter1 =
-        dummy_holder->GetDocument().GetPage()->GetUseCounter();
+        dummy_holder->GetDocument().Loader()->GetUseCounter();
     EXPECT_TRUE(use_counter1.IsCounted(CSSPropertyBackgroundColor));
     EXPECT_FALSE(use_counter1.IsCounted(CSSPropertyColor));
 
@@ -147,6 +150,7 @@ TEST_F(CSSLazyParsingTest, ChangeDocuments) {
 
   std::unique_ptr<DummyPageHolder> dummy_holder2 =
       DummyPageHolder::Create(IntSize(500, 500));
+  Page::InsertOrdinaryPageForTesting(&dummy_holder2->GetPage());
   CSSStyleSheet* sheet2 =
       CSSStyleSheet::Create(cached_contents_, dummy_holder2->GetDocument());
 
@@ -160,7 +164,7 @@ TEST_F(CSSLazyParsingTest, ChangeDocuments) {
   EXPECT_TRUE(HasParsedProperties(rule2));
 
   UseCounter& use_counter2 =
-      dummy_holder2->GetDocument().GetPage()->GetUseCounter();
+      dummy_holder2->GetDocument().Loader()->GetUseCounter();
   EXPECT_TRUE(sheet2);
   EXPECT_TRUE(use_counter2.IsCounted(CSSPropertyColor));
   EXPECT_FALSE(use_counter2.IsCounted(CSSPropertyBackgroundColor));

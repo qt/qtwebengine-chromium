@@ -41,8 +41,8 @@ class DisplayNULL : public DisplayImpl
 
     DeviceImpl *createDevice() override;
 
-    egl::Error waitClient(const gl::Context *context) const override;
-    egl::Error waitNative(const gl::Context *context, EGLint engine) const override;
+    egl::Error waitClient(const gl::Context *context) override;
+    egl::Error waitNative(const gl::Context *context, EGLint engine) override;
     gl::Version getMaxSupportedESVersion() const override;
 
     SurfaceImpl *createWindowSurface(const egl::SurfaceState &state,
@@ -62,7 +62,10 @@ class DisplayNULL : public DisplayImpl
                            EGLenum target,
                            const egl::AttributeMap &attribs) override;
 
-    ContextImpl *createContext(const gl::ContextState &state) override;
+    ContextImpl *createContext(const gl::ContextState &state,
+                               const egl::Config *configuration,
+                               const gl::Context *shareContext,
+                               const egl::AttributeMap &attribs) override;
 
     StreamProducerImpl *createStreamProducerD3DTexture(egl::Stream::ConsumerType consumerType,
                                                        const egl::AttributeMap &attribs) override;

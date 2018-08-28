@@ -31,7 +31,7 @@ static_assert(File::FROM_BEGIN == SEEK_SET && File::FROM_CURRENT == SEEK_CUR &&
 namespace {
 
 #if defined(OS_BSD) || defined(OS_MACOSX) || defined(OS_NACL) || \
-    defined(OS_ANDROID) && __ANDROID_API__ < 21
+  defined(OS_FUCHSIA) || (defined(OS_ANDROID) && __ANDROID_API__ < 21)
 int CallFstat(int fd, stat_wrapper_t *sb) {
   AssertBlockingAllowed();
   return fstat(fd, sb);
@@ -395,10 +395,7 @@ File File::Duplicate() const {
   if (other_fd == -1)
     return File(File::GetLastFileError());
 
-  File other(other_fd);
-  if (async())
-    other.async_ = true;
-  return other;
+  return File(other_fd, async());
 }
 
 // Static.

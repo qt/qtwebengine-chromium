@@ -27,7 +27,7 @@
 #include "content/common/frame_messages.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/media/audio_device_factory.h"
+#include "content/renderer/media/audio/audio_device_factory.h"
 #include "content/renderer/pepper/event_conversion.h"
 #include "content/renderer/pepper/fullscreen_container.h"
 #include "content/renderer/pepper/gfx_conversion.h"
@@ -168,7 +168,6 @@ using ppapi::thunk::PPB_ImageData_API;
 using ppapi::Var;
 using ppapi::ArrayBufferVar;
 using ppapi::ViewData;
-using blink::WebCanvas;
 using blink::WebCursorInfo;
 using blink::WebDocument;
 using blink::WebElement;
@@ -537,7 +536,6 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       flash_fullscreen_(false),
       desired_fullscreen_state_(false),
       message_channel_(nullptr),
-      sad_plugin_(nullptr),
       input_event_mask_(0),
       filtered_input_event_mask_(0),
       text_input_type_(kPluginDefaultTextInputType),
@@ -710,16 +708,21 @@ void PepperPluginInstanceImpl::Delete() {
 
 bool PepperPluginInstanceImpl::is_deleted() const { return is_deleted_; }
 
-void PepperPluginInstanceImpl::Paint(WebCanvas* canvas,
+void PepperPluginInstanceImpl::Paint(cc::PaintCanvas* canvas,
                                      const gfx::Rect& plugin_rect,
                                      const gfx::Rect& paint_rect) {
   TRACE_EVENT0("ppapi", "PluginInstance::Paint");
   if (module()->is_crashed()) {
     // Crashed plugin painting.
-    if (!sad_plugin_)  // Lazily initialize bitmap.
-      sad_plugin_ = GetContentClient()->renderer()->GetSadPluginBitmap();
-    if (sad_plugin_)
-      PaintSadPlugin(canvas, plugin_rect, *sad_plugin_);
+    if (!sad_plugin_image_) {  // Lazily initialize bitmap.
+      if (SkBitmap* bitmap =
+              GetContentClient()->renderer()->GetSadPluginBitmap()) {
+        DCHECK(bitmap->isImmutable());
+        sad_plugin_image_ = cc::PaintImage::CreateFromBitmap(*bitmap);
+      }
+    }
+    if (sad_plugin_image_)
+      PaintSadPlugin(canvas, plugin_rect, sad_plugin_image_);
     return;
   }
 
@@ -914,7 +917,7 @@ bool PepperPluginInstanceImpl::HandleDocumentLoad(
     return true;
   }
 
-  if (module()->is_crashed()) {
+  if (module()->is_crashed() || !render_frame_) {
     // Don't create a resource for a crashed plugin.
     container()->GetDocument().GetFrame()->StopLoading();
     return false;
@@ -939,14 +942,13 @@ bool PepperPluginInstanceImpl::HandleDocumentLoad(
       std::unique_ptr<ppapi::host::ResourceHost>(std::move(loader_host)));
   DCHECK(pending_host_id);
 
-  DataFromWebURLResponse(
-      host_impl,
-      pp_instance(),
-      response,
-      base::Bind(&PepperPluginInstanceImpl::DidDataFromWebURLResponse,
-                 weak_factory_.GetWeakPtr(),
-                 response,
-                 pending_host_id));
+  render_frame()
+      ->GetTaskRunner(blink::TaskType::kInternalLoading)
+      ->PostTask(
+          FROM_HERE,
+          base::BindOnce(&PepperPluginInstanceImpl::DidDataFromWebURLResponse,
+                         weak_factory_.GetWeakPtr(), response, pending_host_id,
+                         DataFromWebURLResponse(response)));
 
   // If the load was not abandoned, document_loader_ will now be set. It's
   // possible that the load was canceled by now and document_loader_ was
@@ -1979,7 +1981,7 @@ int PepperPluginInstanceImpl::PrintBegin(const WebPrintParams& print_params) {
 
   if (LoadPdfInterface()) {
     PP_PdfPrintSettings_Dev pdf_print_settings;
-    pdf_print_settings.num_pages_per_sheet = print_params.num_pages_per_sheet;
+    pdf_print_settings.pages_per_sheet = print_params.pages_per_sheet;
     pdf_print_settings.scale_factor = print_params.scale_factor;
 
     num_pages = plugin_pdf_interface_->PrintBegin(
@@ -1998,7 +2000,7 @@ int PepperPluginInstanceImpl::PrintBegin(const WebPrintParams& print_params) {
 }
 
 void PepperPluginInstanceImpl::PrintPage(int page_number,
-                                         blink::WebCanvas* canvas) {
+                                         cc::PaintCanvas* canvas) {
 #if BUILDFLAG(ENABLE_PRINTING)
   DCHECK(plugin_print_interface_);
 
@@ -2815,7 +2817,7 @@ PP_Bool PepperPluginInstanceImpl::SetCursor(PP_Instance instance,
   SkBitmap bitmap(image_data->GetMappedBitmap());
   // Make a deep copy, so that the cursor remains valid even after the original
   // image data gets freed.
-  SkBitmap& dst = custom_cursor->custom_image.GetSkBitmap();
+  SkBitmap& dst = custom_cursor->custom_image;
   if (!dst.tryAllocPixels(bitmap.info()) ||
       !bitmap.readPixels(dst.info(), dst.getPixels(), dst.rowBytes(), 0, 0)) {
     return PP_FALSE;
@@ -3376,7 +3378,7 @@ MouseLockDispatcher* PepperPluginInstanceImpl::GetMouseLockDispatcher() {
     return container->mouse_lock_dispatcher();
   }
   if (render_frame_)
-    return render_frame_->render_view()->mouse_lock_dispatcher();
+    return render_frame_->render_view()->GetWidget()->mouse_lock_dispatcher();
   return nullptr;
 }
 

@@ -60,18 +60,6 @@ void TCPServerSocket::Accept(mojom::SocketObserverPtr observer,
     ProcessNextAccept();
 }
 
-void TCPServerSocket::GetLocalAddress(GetLocalAddressCallback callback) {
-  DCHECK(socket_);
-
-  net::IPEndPoint local_addr;
-  int result = socket_->GetLocalAddress(&local_addr);
-  if (result != net::OK) {
-    std::move(callback).Run(result, base::nullopt);
-    return;
-  }
-  std::move(callback).Run(result, local_addr);
-}
-
 void TCPServerSocket::SetSocketForTest(
     std::unique_ptr<net::ServerSocket> socket) {
   socket_ = std::move(socket);
@@ -101,7 +89,8 @@ void TCPServerSocket::OnAcceptCompleted(int result) {
     mojom::TCPConnectedSocketPtr socket;
     auto connected_socket = std::make_unique<TCPConnectedSocket>(
         std::move(pending_accept->observer),
-        base::WrapUnique(accepted_socket_.release()),
+        base::WrapUnique(static_cast<net::TransportClientSocket*>(
+            accepted_socket_.release())),
         std::move(receive_pipe.producer_handle),
         std::move(send_pipe.consumer_handle), traffic_annotation_);
     delegate_->OnAccept(std::move(connected_socket),

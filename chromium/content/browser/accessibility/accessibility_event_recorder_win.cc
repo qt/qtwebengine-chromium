@@ -258,12 +258,13 @@ void AccessibilityEventRecorderWin::OnWinEventHook(
   AccessibleStates ia2_state = 0;
   Microsoft::WRL::ComPtr<IAccessible2> iaccessible2;
   hr = QueryIAccessible2(iaccessible.Get(), iaccessible2.GetAddressOf());
+  bool has_ia2 = SUCCEEDED(hr) && iaccessible2;
 
   base::string16 html_tag;
   base::string16 obj_class;
   base::string16 html_id;
 
-  if (SUCCEEDED(hr)) {
+  if (has_ia2) {
     iaccessible2->get_states(&ia2_state);
     base::win::ScopedBstr attributes_bstr;
     if (S_OK == iaccessible2->get_attributes(attributes_bstr.Receive())) {
@@ -306,6 +307,19 @@ void AccessibilityEventRecorderWin::OnWinEventHook(
   log += base::UTF16ToUTF8(IAccessibleStateToString(ia_state));
   log += " ";
   log += base::UTF16ToUTF8(IAccessible2StateToString(ia2_state));
+
+  // Group position, e.g. L3, 5 of 7
+  LONG group_level, similar_items_in_group, position_in_group;
+  if (has_ia2 &&
+      iaccessible2->get_groupPosition(&group_level, &similar_items_in_group,
+                                      &position_in_group) == S_OK) {
+    if (group_level)
+      log += base::StringPrintf(" level=%ld", group_level);
+    if (similar_items_in_group) {
+      log += base::StringPrintf(" %ld of %ld", position_in_group,
+                                similar_items_in_group);
+    }
+  }
 
   // For TEXT_REMOVED and TEXT_INSERTED events, query the text that was
   // inserted or removed and include that in the log.

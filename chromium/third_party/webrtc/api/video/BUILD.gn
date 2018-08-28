@@ -11,6 +11,8 @@ import("../../webrtc.gni")
 rtc_source_set("video_frame") {
   visibility = [ "*" ]
   sources = [
+    "color_space.cc",
+    "color_space.h",
     "video_content_type.cc",
     "video_content_type.h",
     "video_frame.cc",
@@ -26,9 +28,9 @@ rtc_source_set("video_frame") {
   ]
 
   deps = [
-    "..:optional",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
@@ -40,6 +42,22 @@ rtc_source_set("video_frame_i420") {
   ]
   deps = [
     ":video_frame",
+    "../../rtc_base:checks",
+    "../../rtc_base:rtc_base",
+    "../../rtc_base/memory:aligned_malloc",
+    "//third_party/libyuv",
+  ]
+}
+
+rtc_source_set("video_frame_i010") {
+  visibility = [ "*" ]
+  sources = [
+    "i010_buffer.cc",
+    "i010_buffer.h",
+  ]
+  deps = [
+    ":video_frame",
+    ":video_frame_i420",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base",
     "../../rtc_base/memory:aligned_malloc",
@@ -66,11 +84,11 @@ rtc_source_set("video_bitrate_allocation") {
     "video_bitrate_allocation.h",
   ]
   deps = [
-    "..:optional",
     "../..:typedefs",
     "../../rtc_base:checks",
     "../../rtc_base:safe_conversions",
     "../../rtc_base:stringutils",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
@@ -83,14 +101,13 @@ rtc_source_set("video_stream_decoder") {
   deps = [
     ":encoded_frame",
     ":video_frame",
-    "..:optional",
     "../video_codecs:video_codecs_api",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
 rtc_source_set("video_stream_decoder_create") {
   visibility = [ "*" ]
-  allow_poison = [ "software_video_codecs" ]  # TODO(bugs.webrtc.org/7925): Remove.
   sources = [
     "video_stream_decoder_create.cc",
     "video_stream_decoder_create.h",
@@ -100,6 +117,7 @@ rtc_source_set("video_stream_decoder_create") {
     ":video_stream_decoder",
     "../../rtc_base:rtc_base_approved",
     "../../video:video_stream_decoder_impl",
+    "//third_party/abseil-cpp/absl/memory",
   ]
 }
 

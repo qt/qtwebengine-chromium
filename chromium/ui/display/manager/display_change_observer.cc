@@ -42,6 +42,7 @@ struct DeviceScaleFactorDPIThreshold {
 // Update the list of zoom levels whenever a new device scale factor is added
 // here. See zoom level list in /ui/display/manager/display_util.cc
 const DeviceScaleFactorDPIThreshold kThresholdTableForInternal[] = {
+    {270.0f, 2.25f},
     {220.0f, 2.0f},
     {180.0f, 1.6f},
     {150.0f, 1.25f},
@@ -67,12 +68,6 @@ DisplayChangeObserver::GetInternalManagedDisplayModeList(
                                  ui_native_mode->refresh_rate(),
                                  ui_native_mode->is_interlaced(), true, 1.0,
                                  display_info.device_scale_factor());
-  // When display zoom option is available, we cannot change the mode for
-  // internal displays.
-  if (features::IsDisplayZoomSettingEnabled()) {
-    native_mode.set_is_default(true);
-    return ManagedDisplayInfo::ManagedDisplayModeList{native_mode};
-  }
   return CreateInternalManagedDisplayModeList(native_mode);
 }
 

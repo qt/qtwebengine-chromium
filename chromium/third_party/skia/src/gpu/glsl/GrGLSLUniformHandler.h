@@ -17,13 +17,21 @@
 
 class GrGLSLProgramBuilder;
 
+// Handles for program uniforms (other than per-effect uniforms)
+struct GrGLSLBuiltinUniformHandles {
+    GrGLSLProgramDataManager::UniformHandle fRTAdjustmentUni;
+    // We use the render target height to provide a y-down frag coord when specifying
+    // origin_upper_left is not supported.
+    GrGLSLProgramDataManager::UniformHandle fRTHeightUni;
+};
+
 class GrGLSLUniformHandler {
 public:
     virtual ~GrGLSLUniformHandler() {}
 
     using UniformHandle = GrGLSLProgramDataManager::UniformHandle;
+
     GR_DEFINE_RESOURCE_HANDLE_CLASS(SamplerHandle);
-    GR_DEFINE_RESOURCE_HANDLE_CLASS(TexelBufferHandle);
 
     /** Add a uniform variable to the current program, that has visibility in one or more shaders.
         visibility is a bitfield of GrShaderFlag values indicating from which shaders the uniform
@@ -89,10 +97,6 @@ private:
 
     virtual SamplerHandle addSampler(uint32_t visibility, GrSwizzle, GrSLType, GrSLPrecision,
                                      const char* name) = 0;
-
-    virtual const GrShaderVar& texelBufferVariable(TexelBufferHandle) const = 0;
-    virtual TexelBufferHandle addTexelBuffer(uint32_t visibility, GrSLPrecision,
-                                             const char* name) = 0;
 
     virtual UniformHandle internalAddUniformArray(uint32_t visibility,
                                                   GrSLType type,

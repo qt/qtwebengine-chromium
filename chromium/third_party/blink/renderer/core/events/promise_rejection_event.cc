@@ -60,14 +60,9 @@ bool PromiseRejectionEvent::CanBeDispatchedInWorld(
 }
 
 void PromiseRejectionEvent::Trace(blink::Visitor* visitor) {
+  visitor->Trace(promise_);
+  visitor->Trace(reason_);
   Event::Trace(visitor);
-}
-
-void PromiseRejectionEvent::TraceWrappers(
-    ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(promise_);
-  visitor->TraceWrappers(reason_);
-  Event::TraceWrappers(visitor);
 }
 
 }  // namespace blink

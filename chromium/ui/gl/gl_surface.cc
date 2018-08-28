@@ -221,10 +221,6 @@ gfx::Vector2d GLSurface::GetDrawOffset() const {
   return gfx::Vector2d();
 }
 
-void GLSurface::WaitForSnapshotRendering() {
-  // By default, just executing the SwapBuffers is normally enough.
-}
-
 void GLSurface::SetRelyOnImplicitSync() {
   // Some GLSurface derived classes might not implement this workaround while
   // still being allocated on devices where the workaround is enabled.
@@ -242,6 +238,10 @@ void GLSurface::SetEnableSwapTimestamps() {
 void GLSurface::SetUsePlaneGpuFences() {
   // It's fine for GLSurface derived classes to ignore the fences
   // and synchronize using other methods.
+}
+
+int GLSurface::GetBufferCount() const {
+  return 2;
 }
 
 GLSurface* GLSurface::GetCurrent() {
@@ -474,10 +474,6 @@ gfx::Vector2d GLSurfaceAdapter::GetDrawOffset() const {
   return surface_->GetDrawOffset();
 }
 
-void GLSurfaceAdapter::WaitForSnapshotRendering() {
-  surface_->WaitForSnapshotRendering();
-}
-
 void GLSurfaceAdapter::SetRelyOnImplicitSync() {
   surface_->SetRelyOnImplicitSync();
 }
@@ -492,6 +488,10 @@ void GLSurfaceAdapter::SetEnableSwapTimestamps() {
 
 void GLSurfaceAdapter::SetUsePlaneGpuFences() {
   surface_->SetUsePlaneGpuFences();
+}
+
+int GLSurfaceAdapter::GetBufferCount() const {
+  return surface_->GetBufferCount();
 }
 
 GLSurfaceAdapter::~GLSurfaceAdapter() {}

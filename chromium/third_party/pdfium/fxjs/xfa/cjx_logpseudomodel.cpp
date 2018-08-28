@@ -20,7 +20,7 @@ const CJX_MethodSpec CJX_LogPseudoModel::MethodSpecs[] = {
 
 CJX_LogPseudoModel::CJX_LogPseudoModel(CScript_LogPseudoModel* model)
     : CJX_Object(model) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_LogPseudoModel::~CJX_LogPseudoModel() {}
@@ -28,29 +28,36 @@ CJX_LogPseudoModel::~CJX_LogPseudoModel() {}
 CJS_Return CJX_LogPseudoModel::message(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
-  return CJS_Return(true);
+  // Uncomment to allow using xfa.log.message(""); from JS.
+  // fprintf(stderr, "LOG\n");
+  // for (auto& val : params) {
+  //   v8::String::Utf8Value str(runtime->GetIsolate(), val);
+  //   fprintf(stderr, "  %ls\n", WideString::FromUTF8(*str).c_str());
+  // }
+
+  return CJS_Return();
 }
 
 CJS_Return CJX_LogPseudoModel::traceEnabled(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_LogPseudoModel::traceActivate(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_LogPseudoModel::traceDeactivate(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_LogPseudoModel::trace(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
-  return CJS_Return(true);
+  return CJS_Return();
 }

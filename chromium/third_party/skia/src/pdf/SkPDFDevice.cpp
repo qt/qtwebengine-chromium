@@ -17,7 +17,6 @@
 #include "SkColor.h"
 #include "SkColorFilter.h"
 #include "SkDraw.h"
-#include "SkDrawFilter.h"
 #include "SkGlyphCache.h"
 #include "SkImageFilterCache.h"
 #include "SkJpegEncoder.h"
@@ -45,6 +44,7 @@
 #include "SkTemplates.h"
 #include "SkTextBlobRunIterator.h"
 #include "SkTextFormatParams.h"
+#include "SkTo.h"
 #include "SkUtils.h"
 #include "SkXfermodeInterpretation.h"
 
@@ -283,6 +283,78 @@ bool apply_clip(SkClipOp op, const SkPath& u, const SkPath& v, SkPath* r)  {
     }
 }
 
+static SkRect rect_intersect(SkRect u, SkRect v) {
+    if (u.isEmpty() || v.isEmpty()) { return {0, 0, 0, 0}; }
+    return u.intersect(v) ? u : SkRect{0, 0, 0, 0};
+}
+
+// Test to see if the clipstack is a simple rect, If so, we can avoid all PathOps code
+// and speed thing up.
+static bool is_rect(const SkClipStack& clipStack, const SkRect& bounds, SkRect* dst) {
+    SkRect currentClip = bounds;
+    SkClipStack::Iter iter(clipStack, SkClipStack::Iter::kBottom_IterStart);
+    while (const SkClipStack::Element* element = iter.next()) {
+        SkRect elementRect{0, 0, 0, 0};
+        switch (element->getDeviceSpaceType()) {
+            case SkClipStack::Element::DeviceSpaceType::kEmpty:
+                break;
+            case SkClipStack::Element::DeviceSpaceType::kRect:
+                elementRect = element->getDeviceSpaceRect();
+                break;
+            default:
+                return false;
+        }
+        switch (element->getOp()) {
+            case kReplace_SkClipOp:
+                currentClip = rect_intersect(bounds, elementRect);
+                break;
+            case SkClipOp::kIntersect:
+                currentClip = rect_intersect(currentClip, elementRect);
+                break;
+            default:
+                return false;
+        }
+    }
+    *dst = currentClip;
+    return true;
+}
+
+static void append_clip(const SkClipStack& clipStack,
+                        const SkIRect& bounds,
+                        SkWStream* wStream) {
+    // The bounds are slightly outset to ensure this is correct in the
+    // face of floating-point accuracy and possible SkRegion bitmap
+    // approximations.
+    SkRect outsetBounds = SkRect::Make(bounds.makeOutset(1, 1));
+
+    SkRect clipStackRect;
+    if (is_rect(clipStack, outsetBounds, &clipStackRect)) {
+        SkPDFUtils::AppendRectangle(clipStackRect, wStream);
+        wStream->writeText("W* n\n");
+        return;
+    }
+
+    SkPath clipPath;
+    (void)clipStack.asPath(&clipPath);
+
+    SkPath clipBoundsPath;
+    clipBoundsPath.addRect(outsetBounds);
+
+    if (Op(clipPath, clipBoundsPath, kIntersect_SkPathOp, &clipPath)) {
+        SkPDFUtils::EmitPath(clipPath, SkPaint::kFill_Style, wStream);
+        SkPath::FillType clipFill = clipPath.getFillType();
+        NOT_IMPLEMENTED(clipFill == SkPath::kInverseEvenOdd_FillType, false);
+        NOT_IMPLEMENTED(clipFill == SkPath::kInverseWinding_FillType, false);
+        if (clipFill == SkPath::kEvenOdd_FillType) {
+            wStream->writeText("W* n\n");
+        } else {
+            wStream->writeText("W n\n");
+        }
+    }
+    // If Op() fails (pathological case; e.g. input values are
+    // extremely large or NaN), emit no clip at all.
+}
+
 // TODO(vandebo): Take advantage of SkClipStack::getSaveCount(), the PDF
 // graphic state stack, and the fact that we can know all the clips used
 // on the page to optimize this.
@@ -301,29 +373,7 @@ void GraphicStackState::updateClip(const SkClipStack& clipStack,
     push();
 
     currentEntry()->fClipStack = clipStack;
-
-    SkPath clipPath;
-    (void)clipStack.asPath(&clipPath);
-
-    // The bounds are slightly outset to ensure this is correct in the
-    // face of floating-point accuracy and possible SkRegion bitmap
-    // approximations.
-    SkPath clipBoundsPath;
-    clipBoundsPath.addRect(SkRect::Make(bounds.makeOutset(1, 1)));
-
-    if (Op(clipPath, clipBoundsPath, kIntersect_SkPathOp, &clipPath)) {
-        SkPDFUtils::EmitPath(clipPath, SkPaint::kFill_Style, fContentStream);
-        SkPath::FillType clipFill = clipPath.getFillType();
-        NOT_IMPLEMENTED(clipFill == SkPath::kInverseEvenOdd_FillType, false);
-        NOT_IMPLEMENTED(clipFill == SkPath::kInverseWinding_FillType, false);
-        if (clipFill == SkPath::kEvenOdd_FillType) {
-            fContentStream->writeText("W* n\n");
-        } else {
-            fContentStream->writeText("W n\n");
-        }
-    }
-    // If Op() fails (pathological case; e.g. input values are
-    // extremely large or NaN), emit no clip at all.
+    append_clip(clipStack, bounds, fContentStream);
 }
 
 void GraphicStackState::updateMatrix(const SkMatrix& matrix) {
@@ -1017,7 +1067,7 @@ public:
             SkPoint position = xy - fCurrentMatrixOrigin;
             if (position != SkPoint{fXAdvance, 0}) {
                 this->flush();
-                SkPDFUtils::AppendScalar(position.x(), fContent);
+                SkPDFUtils::AppendScalar(position.x() - position.y() * fTextSkewX, fContent);
                 fContent->writeText(" ");
                 SkPDFUtils::AppendScalar(-position.y(), fContent);
                 fContent->writeText(" Td ");
@@ -1400,12 +1450,6 @@ void SkPDFDevice::internalDrawText(
     }
 }
 
-void SkPDFDevice::drawText(const void* text, size_t len,
-                           SkScalar x, SkScalar y, const SkPaint& paint) {
-    this->internalDrawText(text, len, nullptr, SkTextBlob::kDefault_Positioning,
-                           SkPoint{x, y}, paint, nullptr, 0, nullptr);
-}
-
 void SkPDFDevice::drawPosText(const void* text, size_t len,
                               const SkScalar pos[], int scalarsPerPos,
                               const SkPoint& offset, const SkPaint& paint) {
@@ -1413,14 +1457,23 @@ void SkPDFDevice::drawPosText(const void* text, size_t len,
                            offset, paint, nullptr, 0, nullptr);
 }
 
+void SkPDFDevice::drawGlyphRunList(SkGlyphRunList* glyphRunList) {
+    auto blob = glyphRunList->blob();
+
+    if (blob == nullptr) {
+        glyphRunList->temporaryShuntToDrawPosText(this, SkPoint::Make(0, 0));
+    } else {
+        auto origin = glyphRunList->origin();
+        auto paint = glyphRunList->paint();
+        this->drawTextBlob(blob, origin.x(), origin.y(), paint);
+    }
+}
+
 void SkPDFDevice::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
-                               const SkPaint &paint, SkDrawFilter* drawFilter) {
+                               const SkPaint &paint) {
     for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {
         SkPaint runPaint(paint);
         it.applyFontToPaint(&runPaint);
-        if (drawFilter && !drawFilter->filter(&runPaint, SkDrawFilter::kText_Type)) {
-            continue;
-        }
         SkPoint offset = it.offset() + SkPoint{x, y};
         this->internalDrawText(it.glyphs(), sizeof(SkGlyphID) * it.glyphCount(),
                                it.pos(), it.positioning(), offset, runPaint,
@@ -1428,7 +1481,8 @@ void SkPDFDevice::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
     }
 }
 
-void SkPDFDevice::drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) {
+void SkPDFDevice::drawVertices(const SkVertices*, const SkMatrix*, int, SkBlendMode,
+                               const SkPaint&) {
     if (this->hasEmptyClip()) {
         return;
     }
@@ -1610,12 +1664,12 @@ void SkPDFDevice::appendAnnotations(SkPDFArray* array) const {
     for (const RectWithData& rectWithURL : fLinkToURLs) {
         SkRect r;
         fInitialTransform.mapRect(&r, rectWithURL.rect);
-        array->appendObject(create_link_to_url(rectWithURL.data.get(), r));
+        array->appendObjRef(create_link_to_url(rectWithURL.data.get(), r));
     }
     for (const RectWithData& linkToDestination : fLinkToDestinations) {
         SkRect r;
         fInitialTransform.mapRect(&r, linkToDestination.rect);
-        array->appendObject(
+        array->appendObjRef(
                 create_link_named_dest(linkToDestination.data.get(), r));
     }
 }
@@ -2296,9 +2350,9 @@ void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, int x, int y, const SkPain
         const SkIRect clipBounds =
             this->cs().bounds(this->bounds()).roundOut().makeOffset(-x, -y);
         sk_sp<SkImageFilterCache> cache(this->getImageFilterCache());
-        // TODO: Should PDF be operating in a specified color space? For now, run the filter
+        // TODO: Should PDF be operating in a specified color type/space? For now, run the filter
         // in the same color space as the source (this is different from all other backends).
-        SkImageFilter::OutputProperties outputProperties(srcImg->getColorSpace());
+        SkImageFilter::OutputProperties outputProperties(kN32_SkColorType, srcImg->getColorSpace());
         SkImageFilter::Context ctx(matrix, clipBounds, cache.get(), outputProperties);
 
         sk_sp<SkSpecialImage> resultImg(filter->filterImage(srcImg, ctx, &offset));

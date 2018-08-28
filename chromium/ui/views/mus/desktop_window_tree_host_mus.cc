@@ -21,6 +21,7 @@
 #include "ui/base/hit_test.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/dip_util.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/corewm/tooltip_aura.h"
 #include "ui/views/mus/mus_client.h"
 #include "ui/views/mus/mus_property_mirror.h"
@@ -46,7 +47,11 @@ namespace {
 class ClientSideNonClientFrameView : public NonClientFrameView {
  public:
   explicit ClientSideNonClientFrameView(views::Widget* widget)
-      : widget_(widget) {}
+      : widget_(widget) {
+    // Not part of the accessibility node hierarchy because the window frame is
+    // provided by the window manager.
+    GetViewAccessibility().set_is_ignored(true);
+  }
   ~ClientSideNonClientFrameView() override {}
 
  private:
@@ -55,6 +60,11 @@ class ClientSideNonClientFrameView : public NonClientFrameView {
     const WindowManagerFrameValues& values =
         WindowManagerFrameValues::instance();
     return is_maximized ? values.maximized_insets : values.normal_insets;
+  }
+
+  // View:
+  const char* GetClassName() const override {
+    return "ClientSideNonClientFrameView";
   }
 
   // NonClientFrameView:
@@ -294,15 +304,10 @@ bool DesktopWindowTreeHostMus::ShouldSendClientAreaToServer() const {
 }
 
 void DesktopWindowTreeHostMus::Init(const Widget::InitParams& params) {
-  // |TYPE_WINDOW| and |TYPE_PANEL| are forced to transparent as otherwise the
-  // window is opaque and the client decorations drawn by the window manager
-  // would not be seen.
-  const bool transparent =
-      params.opacity == Widget::InitParams::TRANSLUCENT_WINDOW ||
-      params.type == Widget::InitParams::TYPE_WINDOW ||
-      params.type == Widget::InitParams::TYPE_PANEL;
-  content_window()->SetTransparent(transparent);
-  window()->SetTransparent(transparent);
+  const bool translucent =
+      MusClient::ShouldMakeWidgetWindowsTranslucent(params);
+  content_window()->SetTransparent(translucent);
+  window()->SetTransparent(translucent);
 
   window()->SetProperty(aura::client::kShowStateKey, params.show_state);
 
@@ -316,9 +321,40 @@ void DesktopWindowTreeHostMus::Init(const Widget::InitParams& params) {
 
   NativeWidgetAura::SetShadowElevationFromInitParams(window(), params);
 
-  // Transient parents are connected using the Window created by WindowTreeHost,
-  // which is owned by the window manager. This way the window manager can
-  // properly identify and honor transients.
+  // Widget's |InitParams::parent| has different meanings depending on the
+  // NativeWidgetPrivate implementation that the Widget creates (each Widget
+  // creates a NativeWidgetPrivate). When DesktopNativeWidgetAura is used as
+  // the NativeWidgetPrivate implementation, |InitParams::parent| means the
+  // entirety of the contents of the new Widget should be stacked above the
+  // entirety of the contents of the Widget for |InitParams::parent|, and
+  // the new Widget should be deleted when the Widget for
+  // |InitParams::parent| is deleted. Aura and mus provide support for
+  // transient windows, which provides both the stacking and ownership needed to
+  // support |InitParams::parent|.
+  //
+  // DesktopNativeWidgetAura internally creates two aura::Windows (one by
+  // WindowTreeHost, the other in |DesktopNativeWidgetAura::content_window_|).
+  // To have the entirety of the contents of the Widget appear on top of the
+  // entirety of the contents of another Widget, the stacking is done on the
+  // WindowTreeHost's window. For these reasons, the following code uses the
+  // Window associated with the WindowTreeHost of the |params.parent|.
+  //
+  // Views/Aura provide support for child-modal windows. Child-modal windows
+  // are windows that are modal to their transient parent. Because this code
+  // implements |InitParams::parent| in terms of transient parents, it means
+  // it is not possible to support both |InitParams::parent| as well as a
+  // child-modal window. This is *only* an issue if a Widget that uses a
+  // DesktopNativeWidgetAura needs to be child-modal to another window. At
+  // the current time NativeWidgetAura is always used for child-modal windows,
+  // so this isn't an issue.
+  //
+  // If we end up needing to use DesktopNativeWidgetAura for child-modal
+  // Widgets then we need something different. Possibilities include:
+  // . Have mus ignore child-modal windows and instead implement child-modal
+  //   entirely in the client (this is what we do on Windows). To get this
+  //   right likely means we need the ability to disable windows (see
+  //   HWNDMessageHandler::InitModalType() for how Windows OS does this).
+  // . Implement |InitParams::parent| using a different (new) API.
   if (params.parent && params.parent->GetHost()) {
     aura::client::GetTransientWindowClient()->AddTransientChild(
         params.parent->GetHost()->window(), window());
@@ -367,6 +403,16 @@ void DesktopWindowTreeHostMus::OnWidgetInitDone() {
 
   MusClient::Get()->OnCaptureClientSet(
       aura::client::GetCaptureClient(window()));
+
+  // These views are not part of the accessibility node hierarchy because the
+  // window frame is provided by the window manager.
+  Widget* widget = native_widget_delegate_->AsWidget();
+  if (widget->non_client_view())
+    widget->non_client_view()->GetViewAccessibility().set_is_ignored(true);
+  if (widget->client_view())
+    widget->client_view()->GetViewAccessibility().set_is_ignored(true);
+
+  MusClient::Get()->OnWidgetInitDone(widget);
 }
 
 std::unique_ptr<corewm::Tooltip> DesktopWindowTreeHostMus::CreateTooltip() {
@@ -387,6 +433,9 @@ void DesktopWindowTreeHostMus::Close() {
   // Even though we don't close immediately, we need to hide immediately
   // (otherwise events may be processed, which is unexpected).
   Hide();
+
+  // This has to happen *after* Hide() above, otherwise animations won't work.
+  content_window()->Hide();
 
   // Close doesn't delete this immediately, as 'this' may still be on the stack
   // resulting in possible crashes when the stack unwindes.
@@ -640,8 +689,14 @@ bool DesktopWindowTreeHostMus::IsVisibleOnAllWorkspaces() const {
 }
 
 bool DesktopWindowTreeHostMus::SetWindowTitle(const base::string16& title) {
-  if (window()->GetTitle() == title)
+  WidgetDelegate* widget_delegate =
+      native_widget_delegate_->AsWidget()->widget_delegate();
+  const bool show = widget_delegate && widget_delegate->ShouldShowWindowTitle();
+  if (window()->GetTitle() == title &&
+      window()->GetProperty(aura::client::kTitleShownKey) == show) {
     return false;
+  }
+  window()->SetProperty(aura::client::kTitleShownKey, show);
   window()->SetTitle(title);
   return true;
 }
@@ -727,6 +782,9 @@ void DesktopWindowTreeHostMus::SetWindowIcons(const gfx::ImageSkia& window_icon,
 }
 
 void DesktopWindowTreeHostMus::InitModalType(ui::ModalType modal_type) {
+  // See comment in Init() related to |InitParams::parent| as to why this DCHECK
+  // is here.
+  DCHECK_NE(modal_type, ui::MODAL_TYPE_CHILD);
   window()->SetProperty(aura::client::kModalKey, modal_type);
 }
 

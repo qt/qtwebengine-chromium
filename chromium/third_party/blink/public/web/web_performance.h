@@ -90,11 +90,14 @@ class WebPerformance {
   BLINK_EXPORT double FirstImagePaint() const;
   BLINK_EXPORT double FirstContentfulPaint() const;
   BLINK_EXPORT double FirstMeaningfulPaint() const;
+  BLINK_EXPORT double FirstMeaningfulPaintCandidate() const;
   BLINK_EXPORT double PageInteractive() const;
   BLINK_EXPORT double PageInteractiveDetection() const;
   BLINK_EXPORT double FirstInputInvalidatingInteractive() const;
   BLINK_EXPORT double FirstInputDelay() const;
   BLINK_EXPORT double FirstInputTimestamp() const;
+  BLINK_EXPORT double LongestInputDelay() const;
+  BLINK_EXPORT double LongestInputTimestamp() const;
   BLINK_EXPORT double ParseStart() const;
   BLINK_EXPORT double ParseStop() const;
   BLINK_EXPORT double ParseBlockedOnScriptLoadDuration() const;
@@ -102,8 +105,6 @@ class WebPerformance {
   BLINK_EXPORT double ParseBlockedOnScriptExecutionDuration() const;
   BLINK_EXPORT double ParseBlockedOnScriptExecutionFromDocumentWriteDuration()
       const;
-  BLINK_EXPORT double AuthorStyleSheetParseDurationBeforeFCP() const;
-  BLINK_EXPORT double UpdateStyleDurationBeforeFCP() const;
 
 #if INSIDE_BLINK
   BLINK_EXPORT WebPerformance(WindowPerformance*);

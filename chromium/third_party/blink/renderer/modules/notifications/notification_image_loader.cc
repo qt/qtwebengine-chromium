@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/notifications/notification_image_loader.h"
 
 #include <memory>
+#include "base/numerics/safe_conversions.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/blink/public/platform/modules/notifications/web_notification_constants.h"
 #include "third_party/blink/public/platform/web_url_request.h"
@@ -48,7 +49,7 @@ const unsigned long kImageFetchTimeoutInMs = 90000;
 namespace blink {
 
 NotificationImageLoader::NotificationImageLoader(Type type)
-    : type_(type), stopped_(false), start_time_(0.0) {}
+    : type_(type), stopped_(false) {}
 
 NotificationImageLoader::~NotificationImageLoader() = default;
 
@@ -81,15 +82,17 @@ SkBitmap NotificationImageLoader::ScaleDownIfNeeded(const SkBitmap& image,
     double scale =
         std::min(static_cast<double>(max_width_px) / image.width(),
                  static_cast<double>(max_height_px) / image.height());
-    double start_time = CurrentTimeTicksInMilliseconds();
+    TimeTicks start_time = CurrentTimeTicks();
     // TODO(peter): Try using RESIZE_BETTER for large images.
     SkBitmap scaled_image =
         skia::ImageOperations::Resize(image, skia::ImageOperations::RESIZE_BEST,
                                       std::lround(scale * image.width()),
                                       std::lround(scale * image.height()));
-    NOTIFICATION_HISTOGRAM_COUNTS(LoadScaleDownTime, type,
-                                  CurrentTimeTicksInMilliseconds() - start_time,
-                                  1000 * 10 /* 10 seconds max */);
+    NOTIFICATION_HISTOGRAM_COUNTS(
+        LoadScaleDownTime, type,
+        base::saturated_cast<base::HistogramBase::Sample>(
+            (CurrentTimeTicks() - start_time).InMilliseconds()),
+        1000 * 10 /* 10 seconds max */);
     return scaled_image;
   }
   return image;
@@ -100,7 +103,7 @@ void NotificationImageLoader::Start(ExecutionContext* context,
                                     ImageCallback image_callback) {
   DCHECK(!stopped_);
 
-  start_time_ = CurrentTimeTicksInMilliseconds();
+  start_time_ = CurrentTimeTicks();
   image_callback_ = std::move(image_callback);
 
   ThreadableLoaderOptions threadable_loader_options;
@@ -147,17 +150,20 @@ void NotificationImageLoader::DidFinishLoading(
   if (stopped_)
     return;
 
-  NOTIFICATION_HISTOGRAM_COUNTS(LoadFinishTime, type_,
-                                CurrentTimeTicksInMilliseconds() - start_time_,
-                                1000 * 60 * 60 /* 1 hour max */);
+  NOTIFICATION_HISTOGRAM_COUNTS(
+      LoadFinishTime, type_,
+      base::saturated_cast<base::HistogramBase::Sample>(
+          (CurrentTimeTicks() - start_time_).InMilliseconds()),
+      1000 * 60 * 60 /* 1 hour max */);
 
   if (data_) {
     NOTIFICATION_HISTOGRAM_COUNTS(LoadFileSize, type_, data_->size(),
                                   10000000 /* ~10mb max */);
 
+    const bool data_complete = true;
     std::unique_ptr<ImageDecoder> decoder = ImageDecoder::Create(
-        data_, true /* dataComplete */, ImageDecoder::kAlphaPremultiplied,
-        ColorBehavior::TransformToSRGB());
+        data_, data_complete, ImageDecoder::kAlphaPremultiplied,
+        ImageDecoder::kDefaultBitDepth, ColorBehavior::TransformToSRGB());
     if (decoder) {
       // The |ImageFrame*| is owned by the decoder.
       ImageFrame* image_frame = decoder->DecodeFrameBufferAtIndex(0);
@@ -171,9 +177,11 @@ void NotificationImageLoader::DidFinishLoading(
 }
 
 void NotificationImageLoader::DidFail(const ResourceError& error) {
-  NOTIFICATION_HISTOGRAM_COUNTS(LoadFailTime, type_,
-                                CurrentTimeTicksInMilliseconds() - start_time_,
-                                1000 * 60 * 60 /* 1 hour max */);
+  NOTIFICATION_HISTOGRAM_COUNTS(
+      LoadFailTime, type_,
+      base::saturated_cast<base::HistogramBase::Sample>(
+          (CurrentTimeTicks() - start_time_).InMilliseconds()),
+      1000 * 60 * 60 /* 1 hour max */);
 
   RunCallbackWithEmptyBitmap();
 }

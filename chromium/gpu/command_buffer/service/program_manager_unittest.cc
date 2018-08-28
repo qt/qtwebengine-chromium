@@ -18,12 +18,12 @@
 #include "gpu/command_buffer/service/common_decoder.h"
 #include "gpu/command_buffer/service/decoder_client.h"
 #include "gpu/command_buffer/service/feature_info.h"
-#include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/command_buffer/service/gpu_service_test.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "gpu/command_buffer/service/test_helper.h"
+#include "gpu/config/gpu_preferences.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_mock.h"
 #include "ui/gl/gl_version_info.h"
@@ -94,6 +94,7 @@ class ProgramManagerTestBase : public GpuServiceTest, public DecoderClient {
   void OnDescheduleUntilFinished() override {}
   void OnRescheduleAfterFinished() override {}
   void OnSwapBuffers(uint64_t swap_id, uint32_t flags) override {}
+  void ScheduleGrContextCleanup() override {}
 
   std::unique_ptr<ProgramManager> manager_;
   GpuPreferences gpu_preferences_;

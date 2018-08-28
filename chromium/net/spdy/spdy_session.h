@@ -179,7 +179,9 @@ enum class SpdyPushedStreamFate {
   kVaryMismatch = 16,
   kAcceptedNoVary = 17,
   kAcceptedMatchingVary = 18,
-  kMaxValue = kAcceptedMatchingVary
+  kPushDisabled = 19,
+  kAlreadyInCache = 20,
+  kMaxValue = kAlreadyInCache
 };
 
 // If these compile asserts fail then SpdyProtocolErrorDetails needs
@@ -292,7 +294,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   SpdySession(const SpdySessionKey& spdy_session_key,
               HttpServerProperties* http_server_properties,
               TransportSecurityState* transport_security_state,
-              const QuicTransportVersionVector& quic_supported_versions,
+              const quic::QuicTransportVersionVector& quic_supported_versions,
               bool enable_sending_initial_data,
               bool enable_ping_based_connection_checking,
               bool support_ietf_format_quic_altsvc,
@@ -388,6 +390,11 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
                                                IOBuffer* data,
                                                int len,
                                                spdy::SpdyDataFlags flags);
+
+  // Send PRIORITY frames according to the new priority of an existing stream.
+  void UpdateStreamPriority(SpdyStream* stream,
+                            RequestPriority old_priority,
+                            RequestPriority new_priority);
 
   // Close the stream with the given ID, which must exist and be
   // active. Note that that stream may hold the last reference to the
@@ -1030,8 +1037,9 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   int streams_pushed_and_claimed_count_;
   int streams_abandoned_count_;
 
-  // Count of all pings on the wire, for which we have not gotten a response.
-  int64_t pings_in_flight_;
+  // True if there has been a ping sent for which we have not received a
+  // response yet.  There is always at most one ping in flight.
+  bool ping_in_flight_;
 
   // This is the next ping_id (unique_id) to be sent in PING frame.
   spdy::SpdyPingId next_ping_id_;
@@ -1090,18 +1098,22 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   NetLogWithSource net_log_;
 
   // Versions of QUIC which may be used.
-  const QuicTransportVersionVector quic_supported_versions_;
+  const quic::QuicTransportVersionVector quic_supported_versions_;
 
   // Outside of tests, these should always be true.
-  bool enable_sending_initial_data_;
-  bool enable_ping_based_connection_checking_;
+  const bool enable_sending_initial_data_;
+  const bool enable_ping_based_connection_checking_;
 
   // If true, alt-svc headers advertising QUIC in IETF format will be supported.
-  bool support_ietf_format_quic_altsvc_;
+  const bool support_ietf_format_quic_altsvc_;
 
   // If true, this session is being made to a trusted SPDY/HTTP2 proxy that is
   // allowed to push cross-origin resources.
   const bool is_trusted_proxy_;
+
+  // If true, accept pushed streams from server.
+  // If false, reset pushed streams immediately.
+  const bool enable_push_;
 
   // True if the server has advertised WebSocket support via
   // spdy::SETTINGS_ENABLE_CONNECT_PROTOCOL, see

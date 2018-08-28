@@ -4,7 +4,6 @@
 
 #include "net/third_party/quic/core/crypto/quic_decrypter.h"
 
-#include "crypto/hkdf.h"
 #include "net/third_party/quic/core/crypto/aes_128_gcm_12_decrypter.h"
 #include "net/third_party/quic/core/crypto/aes_128_gcm_decrypter.h"
 #include "net/third_party/quic/core/crypto/aes_256_gcm_decrypter.h"
@@ -12,15 +11,14 @@
 #include "net/third_party/quic/core/crypto/chacha20_poly1305_tls_decrypter.h"
 #include "net/third_party/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quic/core/crypto/null_decrypter.h"
+#include "net/third_party/quic/core/crypto/quic_hkdf.h"
 #include "net/third_party/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quic/platform/api/quic_logging.h"
 #include "net/third_party/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "third_party/boringssl/src/include/openssl/tls1.h"
 
-using std::string;
-
-namespace net {
+namespace quic {
 
 // static
 std::unique_ptr<QuicDecrypter> QuicDecrypter::Create(QuicTag algorithm) {
@@ -59,12 +57,12 @@ void QuicDecrypter::DiversifyPreliminaryKey(QuicStringPiece preliminary_key,
                                             size_t nonce_prefix_size,
                                             QuicString* out_key,
                                             QuicString* out_nonce_prefix) {
-  crypto::HKDF hkdf((string(preliminary_key)) + (string(nonce_prefix)),
-                    QuicStringPiece(nonce.data(), nonce.size()),
-                    "QUIC key diversification", 0, key_size, 0,
-                    nonce_prefix_size, 0);
-  *out_key = string(hkdf.server_write_key());
-  *out_nonce_prefix = string(hkdf.server_write_iv());
+  QuicHKDF hkdf((QuicString(preliminary_key)) + (QuicString(nonce_prefix)),
+                QuicStringPiece(nonce.data(), nonce.size()),
+                "QUIC key diversification", 0, key_size, 0, nonce_prefix_size,
+                0);
+  *out_key = QuicString(hkdf.server_write_key());
+  *out_nonce_prefix = QuicString(hkdf.server_write_iv());
 }
 
-}  // namespace net
+}  // namespace quic

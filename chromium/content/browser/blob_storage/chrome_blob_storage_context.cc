@@ -197,6 +197,49 @@ ChromeBlobStorageContext::URLLoaderFactoryForToken(
       std::move(blob_url_loader_factory_ptr));
 }
 
+// static
+scoped_refptr<network::SharedURLLoaderFactory>
+ChromeBlobStorageContext::URLLoaderFactoryForUrl(
+    BrowserContext* browser_context,
+    const GURL& url) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  network::mojom::URLLoaderFactoryPtr blob_url_loader_factory_ptr;
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::BindOnce(
+          [](scoped_refptr<ChromeBlobStorageContext> context,
+             network::mojom::URLLoaderFactoryRequest request, const GURL& url) {
+            auto blob_handle =
+                context->context()->GetBlobDataFromPublicURL(url);
+            storage::BlobURLLoaderFactory::Create(std::move(blob_handle), url,
+                                                  std::move(request));
+          },
+          base::WrapRefCounted(GetFor(browser_context)),
+          MakeRequest(&blob_url_loader_factory_ptr), url));
+  return base::MakeRefCounted<network::WrapperSharedURLLoaderFactory>(
+      std::move(blob_url_loader_factory_ptr));
+}
+
+// static
+blink::mojom::BlobPtr ChromeBlobStorageContext::GetBlobPtr(
+    BrowserContext* browser_context,
+    const std::string& uuid) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  blink::mojom::BlobPtr blob_ptr;
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::BindOnce(
+          [](scoped_refptr<ChromeBlobStorageContext> context,
+             blink::mojom::BlobRequest request, const std::string& uuid) {
+            auto handle = context->context()->GetBlobDataFromUUID(uuid);
+            if (handle)
+              storage::BlobImpl::Create(std::move(handle), std::move(request));
+          },
+          base::WrapRefCounted(GetFor(browser_context)), MakeRequest(&blob_ptr),
+          uuid));
+  return blob_ptr;
+}
+
 ChromeBlobStorageContext::~ChromeBlobStorageContext() {}
 
 void ChromeBlobStorageContext::DeleteOnCorrectThread() const {

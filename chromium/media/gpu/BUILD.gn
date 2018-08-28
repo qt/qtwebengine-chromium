@@ -105,6 +105,7 @@ component("gpu") {
     "gpu_video_decode_accelerator_factory.h",
     "gpu_video_encode_accelerator_factory.cc",
     "gpu_video_encode_accelerator_factory.h",
+    "image_processor.h",
   ]
 
   public_deps = [
@@ -148,9 +149,6 @@ component("gpu") {
 
   if (is_android) {
     sources += [
-      "android/android_image_reader_abi.h",
-      "android/android_image_reader_compat.cc",
-      "android/android_image_reader_compat.h",
       "android/android_video_decode_accelerator.cc",
       "android/android_video_decode_accelerator.h",
       "android/android_video_encode_accelerator.cc",
@@ -175,12 +173,10 @@ component("gpu") {
       "android/codec_image_group.h",
       "android/codec_wrapper.cc",
       "android/codec_wrapper.h",
-      "android/content_video_view_overlay.cc",
-      "android/content_video_view_overlay.h",
-      "android/content_video_view_overlay_allocator.cc",
-      "android/content_video_view_overlay_allocator.h",
       "android/device_info.cc",
       "android/device_info.h",
+      "android/image_reader_gl_owner.cc",
+      "android/image_reader_gl_owner.h",
       "android/media_codec_video_decoder.cc",
       "android/media_codec_video_decoder.h",
       "android/promotion_hint_aggregator.h",
@@ -194,17 +190,17 @@ component("gpu") {
       "android/texture_owner.h",
       "android/texture_pool.cc",
       "android/texture_pool.h",
-      "android/texture_wrapper.cc",
-      "android/texture_wrapper.h",
       "android/video_frame_factory.h",
       "android/video_frame_factory_impl.cc",
       "android/video_frame_factory_impl.h",
     ]
+    libs += [ "android" ]
     deps += [
       # TODO(crbug.com/789435): This can be removed once CdmManager is removed.
       "//media/mojo:buildflags",
       "//services/service_manager/public/cpp:cpp",
       "//third_party/libyuv",
+      "//ui/gl:gl_jni_headers",
     ]
 
     # TODO(crbug.com/789435): This is needed for AVDA to access the CDM
@@ -259,6 +255,7 @@ component("gpu") {
 
   if (is_win) {
     sources += [
+      "windows/d3d11_create_device_cb.h",
       "windows/d3d11_h264_accelerator.cc",
       "windows/d3d11_h264_accelerator.h",
       "windows/d3d11_picture_buffer.cc",
@@ -326,8 +323,6 @@ source_set("common") {
     "h264_decoder.h",
     "h264_dpb.cc",
     "h264_dpb.h",
-    "shared_memory_region.cc",
-    "shared_memory_region.h",
   ]
   if (use_v4l2_codec || use_vaapi) {
     sources += [
@@ -392,6 +387,7 @@ if (is_win || is_android || use_v4l2_codec || use_vaapi) {
         "video_decode_accelerator_unittest.cc",
       ]
       deps += [
+        "//mojo/core/embedder",
         "//ui/display",
         "//ui/display/types",
         "//ui/platform_window",
@@ -431,16 +427,15 @@ source_set("android_video_decode_accelerator_unittests") {
   if (is_android) {
     testonly = true
     sources = [
-      "android/android_image_reader_compat_unittest.cc",
       "android/android_video_decode_accelerator_unittest.cc",
       "android/android_video_surface_chooser_impl_unittest.cc",
       "android/avda_codec_allocator_unittest.cc",
       "android/codec_image_group_unittest.cc",
       "android/codec_image_unittest.cc",
       "android/codec_wrapper_unittest.cc",
-      "android/content_video_view_overlay_allocator_unittest.cc",
       "android/fake_codec_allocator.cc",
       "android/fake_codec_allocator.h",
+      "android/image_reader_gl_owner_unittest.cc",
       "android/media_codec_video_decoder_unittest.cc",
       "android/mock_android_video_surface_chooser.cc",
       "android/mock_android_video_surface_chooser.h",
@@ -552,6 +547,12 @@ if (use_v4l2_codec || use_vaapi) {
       "jpeg_decode_accelerator_unittest.cc",
       "test/video_accelerator_unittest_helpers.h",
     ]
+    data = [
+      "//media/test/data/peach_pi-1280x720.jpg",
+      "//media/test/data/peach_pi-40x23.jpg",
+      "//media/test/data/peach_pi-41x22.jpg",
+      "//media/test/data/peach_pi-41x23.jpg",
+    ]
     if (use_x11) {
       deps += [ "//ui/gfx/x" ]
     }
@@ -596,9 +597,13 @@ source_set("unit_tests") {
   if (use_vaapi) {
     deps += [ "//media/gpu/vaapi:unit_test" ]
   }
+  if (use_v4l2_codec || use_vaapi) {
+    sources += [ "vp8_decoder_unittest.cc" ]
+  }
   if (is_win && enable_library_cdms) {
     sources += [
       "windows/d3d11_cdm_proxy_unittest.cc",
+      "windows/d3d11_decryptor_unittest.cc",
       "windows/d3d11_mocks.cc",
       "windows/d3d11_mocks.h",
       "windows/d3d11_video_decoder_unittest.cc",

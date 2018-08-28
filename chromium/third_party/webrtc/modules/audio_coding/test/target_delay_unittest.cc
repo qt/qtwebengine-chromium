@@ -43,8 +43,6 @@ class TargetDelayTest : public ::testing::Test {
     rtp_info_.header.ssrc = 0x12345678;
     rtp_info_.header.markerBit = false;
     rtp_info_.header.sequenceNumber = 0;
-    rtp_info_.type.Audio.channel = 1;
-    rtp_info_.type.Audio.isCNG = false;
     rtp_info_.frameType = kAudioFrameSpeech;
 
     int16_t audio[kFrameSizeSamples];
@@ -73,8 +71,8 @@ class TargetDelayTest : public ::testing::Test {
 
   void WithTargetDelayBufferNotChanging() {
     // A target delay that is one packet larger than jitter.
-    const int kTargetDelayMs = (kInterarrivalJitterPacket + 1) *
-        kNum10msPerFrame * 10;
+    const int kTargetDelayMs =
+        (kInterarrivalJitterPacket + 1) * kNum10msPerFrame * 10;
     ASSERT_EQ(0, SetMinimumDelay(kTargetDelayMs));
     for (int n = 0; n < 30; ++n)  // Run enough iterations to fill the buffer.
       Run(true);
@@ -91,8 +89,8 @@ class TargetDelayTest : public ::testing::Test {
     int clean_optimal_delay = GetCurrentOptimalDelayMs();
 
     // A relatively large delay.
-    const int kTargetDelayMs = (kInterarrivalJitterPacket + 10) *
-        kNum10msPerFrame * 10;
+    const int kTargetDelayMs =
+        (kInterarrivalJitterPacket + 10) * kNum10msPerFrame * 10;
     ASSERT_EQ(0, SetMinimumDelay(kTargetDelayMs));
     for (int n = 0; n < 300; ++n)  // Run enough iterations to fill the buffer.
       Run(true);
@@ -146,8 +144,8 @@ class TargetDelayTest : public ::testing::Test {
   void Push() {
     rtp_info_.header.timestamp += kFrameSizeSamples;
     rtp_info_.header.sequenceNumber++;
-    ASSERT_EQ(0, acm_->IncomingPacket(payload_, kFrameSizeSamples * 2,
-                                      rtp_info_));
+    ASSERT_EQ(0,
+              acm_->IncomingPacket(payload_, kFrameSizeSamples * 2, rtp_info_));
   }
 
   // Pull audio equivalent to the amount of audio in one RTP packet.
@@ -195,9 +193,7 @@ class TargetDelayTest : public ::testing::Test {
     return stats.preferredBufferSize;
   }
 
-  int RequiredDelay() {
-    return acm_->LeastRequiredDelayMs();
-  }
+  int RequiredDelay() { return acm_->LeastRequiredDelayMs(); }
 
   std::unique_ptr<AudioCodingModule> acm_;
   WebRtcRTPHeader rtp_info_;

@@ -13,14 +13,13 @@
 
 #include "api/video/i420_buffer.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
-#include "modules/video_coding/codecs/vp8/include/vp8_common_types.h"
-#include "modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
 #include "modules/video_coding/codecs/vp8/temporal_layers.h"
 #include "modules/video_coding/include/mock/mock_vcm_callbacks.h"
 #include "modules/video_coding/include/mock/mock_video_codec_interface.h"
 #include "modules/video_coding/include/video_coding.h"
-#include "modules/video_coding/video_coding_impl.h"
 #include "modules/video_coding/utility/default_video_bitrate_allocator.h"
+#include "modules/video_coding/utility/simulcast_rate_allocator.h"
+#include "modules/video_coding/video_coding_impl.h"
 #include "system_wrappers/include/clock.h"
 #include "test/frame_generator.h"
 #include "test/gtest.h"
@@ -228,17 +227,16 @@ class TestVideoSenderWithMockEncoder : public TestVideoSender {
     ExpectEncodeWithFrameTypes(stream, false);
   }
 
-  void ExpectInitialKeyFrames() {
-    ExpectEncodeWithFrameTypes(-1, true);
-  }
+  void ExpectInitialKeyFrames() { ExpectEncodeWithFrameTypes(-1, true); }
 
   void ExpectEncodeWithFrameTypes(int intra_request_stream, bool first_frame) {
     if (intra_request_stream == -1) {
       // No intra request expected, keyframes on first frame.
       FrameType frame_type = first_frame ? kVideoFrameKey : kVideoFrameDelta;
-      EXPECT_CALL(encoder_,
-                  Encode(_, _, Pointee(ElementsAre(frame_type, frame_type,
-                                                   frame_type))))
+      EXPECT_CALL(
+          encoder_,
+          Encode(_, _,
+                 Pointee(ElementsAre(frame_type, frame_type, frame_type))))
           .Times(1)
           .WillRepeatedly(Return(0));
       return;
@@ -248,9 +246,10 @@ class TestVideoSenderWithMockEncoder : public TestVideoSender {
     ASSERT_LT(intra_request_stream, kNumberOfStreams);
     std::vector<FrameType> frame_types(kNumberOfStreams, kVideoFrameDelta);
     frame_types[intra_request_stream] = kVideoFrameKey;
-    EXPECT_CALL(encoder_,
-                Encode(_, _, Pointee(ElementsAreArray(&frame_types[0],
-                                                      frame_types.size()))))
+    EXPECT_CALL(
+        encoder_,
+        Encode(_, _,
+               Pointee(ElementsAreArray(&frame_types[0], frame_types.size()))))
         .Times(1)
         .WillRepeatedly(Return(0));
   }
@@ -472,9 +471,15 @@ class TestVideoSenderWithVp8 : public TestVideoSender {
 #define MAYBE_FixedTemporalLayersStrategy FixedTemporalLayersStrategy
 #endif
 TEST_F(TestVideoSenderWithVp8, MAYBE_FixedTemporalLayersStrategy) {
-  const int low_b = codec_bitrate_kbps_ * kVp8LayerRateAlloction[2][0];
-  const int mid_b = codec_bitrate_kbps_ * kVp8LayerRateAlloction[2][1];
-  const int high_b = codec_bitrate_kbps_ * kVp8LayerRateAlloction[2][2];
+  const int low_b =
+      codec_bitrate_kbps_ *
+      webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(3, 0);
+  const int mid_b =
+      codec_bitrate_kbps_ *
+      webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(3, 1);
+  const int high_b =
+      codec_bitrate_kbps_ *
+      webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(3, 2);
   {
     Vp8StreamInfo expected = {{7.5, 15.0, 30.0}, {low_b, mid_b, high_b}};
     EXPECT_THAT(SimulateWithFramerate(30.0), MatchesVp8StreamInfo(expected));

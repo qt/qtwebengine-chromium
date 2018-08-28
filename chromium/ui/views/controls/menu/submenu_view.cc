@@ -172,7 +172,7 @@ gfx::Size SubmenuView::CalculatePreferredSize() const {
     }
   }
   if (max_minor_text_width_ > 0)
-    max_minor_text_width_ += MenuConfig::instance().label_to_minor_text_padding;
+    max_minor_text_width_ += MenuConfig::instance().item_horizontal_padding;
 
   // Finish calculating our optimum width.
   gfx::Insets insets = GetInsets();
@@ -385,6 +385,7 @@ void SubmenuView::ShowAt(Widget* parent,
                          const gfx::Rect& bounds,
                          bool do_capture) {
   if (host_) {
+    host_->SetMenuHostBounds(bounds);
     host_->ShowMenuHost(do_capture);
   } else {
     host_ = new MenuHost(this);

@@ -60,6 +60,8 @@ Polymer({
 
     unifiedConsentEnabled: Boolean,
 
+    unifiedConsentGiven: Boolean,
+
     // <if expr="_google_chrome and not chromeos">
     // TODO(dbeam): make a virtual.* pref namespace and set/get this normally
     // (but handled differently in C++).
@@ -100,6 +102,7 @@ Polymer({
   },
 
   /**
+   * TODO(crbug.com/855945): Use this function for the spell check error hint
    * @param {!Event} e
    * @private
    */

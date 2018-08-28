@@ -90,9 +90,9 @@ INSTANTIATE_TYPED_TEST_CASE_P(GLImageNativePixmapScanout,
 
 using GLImageScanoutTypeDisabled = testing::Types<
     GLImageNativePixmapTestDelegate<gfx::BufferUsage::SCANOUT,
-                                    gfx::BufferFormat::BGRX_1010102>>;
+                                    gfx::BufferFormat::RGBX_1010102>>;
 
-// This test is disabled since we need mesa support for XR30 that is not
+// This test is disabled since we need mesa support for XR30/XB30 that is not
 // available on many boards yet.
 INSTANTIATE_TYPED_TEST_CASE_P(DISABLED_GLImageNativePixmapScanout,
                               GLImageTest,
@@ -108,7 +108,7 @@ using GLImageBindTestTypes = testing::Types<
     GLImageNativePixmapTestDelegate<gfx::BufferUsage::GPU_READ_CPU_READ_WRITE,
                                     gfx::BufferFormat::BGRA_8888>,
     GLImageNativePixmapTestDelegate<gfx::BufferUsage::GPU_READ_CPU_READ_WRITE,
-                                    gfx::BufferFormat::BGRX_1010102>,
+                                    gfx::BufferFormat::RGBX_1010102>,
     GLImageNativePixmapTestDelegate<gfx::BufferUsage::GPU_READ_CPU_READ_WRITE,
                                     gfx::BufferFormat::R_8>,
     GLImageNativePixmapTestDelegate<gfx::BufferUsage::GPU_READ_CPU_READ_WRITE,

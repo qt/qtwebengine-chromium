@@ -74,19 +74,15 @@ void StyleInheritedVariables::RemoveVariable(const AtomicString& name) {
     iterator->value = nullptr;
 }
 
-std::unique_ptr<HashMap<AtomicString, scoped_refptr<CSSVariableData>>>
-StyleInheritedVariables::GetVariables() const {
-  std::unique_ptr<HashMap<AtomicString, scoped_refptr<CSSVariableData>>> result;
+HashSet<AtomicString> StyleInheritedVariables::GetCustomPropertyNames() const {
+  HashSet<AtomicString> names;
   if (root_) {
-    result.reset(new HashMap<AtomicString, scoped_refptr<CSSVariableData>>(
-        root_->data_));
-    for (auto it = data_.begin(); it != data_.end(); ++it)
-      result->Set(it->key, it->value);
-  } else {
-    result.reset(
-        new HashMap<AtomicString, scoped_refptr<CSSVariableData>>(data_));
+    for (const auto& pair : root_->data_)
+      names.insert(pair.key);
   }
-  return result;
+  for (const auto& pair : data_)
+    names.insert(pair.key);
+  return names;
 }
 
 }  // namespace blink

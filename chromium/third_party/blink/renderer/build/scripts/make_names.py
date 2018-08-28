@@ -39,8 +39,8 @@ def _symbol(entry):
     if entry['Symbol'] is not None:
         return entry['Symbol']
     # FIXME: Remove this special case for the ugly x-webkit-foo attributes.
-    if entry['name'].startswith('-webkit-'):
-        return entry['name'].replace('-', '_')[1:]
+    if entry['name'].original.startswith('-webkit-'):
+        return entry['name'].original.replace('-', '_')[1:]
     return name_utilities.cpp_name(entry).replace('-', '_').replace(' ', '_')
 
 
@@ -61,7 +61,6 @@ class MakeNamesWriter(json5_generator.Writer):
         'hash': hasher.hash,
         'script_name': name_utilities.script_name,
         'symbol': _symbol,
-        'to_macro_style': name_utilities.to_macro_style,
     }
 
     def __init__(self, json5_file_path, output_dir):

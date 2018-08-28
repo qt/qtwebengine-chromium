@@ -18,6 +18,7 @@
 #include "build/build_config.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
+#include "components/password_manager/core/browser/form_submission_observer.h"
 #include "components/password_manager/core/browser/login_model.h"
 #include "components/password_manager/core/browser/password_form_manager.h"
 
@@ -44,7 +45,7 @@ class NewPasswordFormManager;
 // receiving password form data from the renderer and managing the password
 // database through the PasswordStore. The PasswordManager is a LoginModel
 // for purposes of supporting HTTP authentication dialogs.
-class PasswordManager : public LoginModel {
+class PasswordManager : public LoginModel, public FormSubmissionObserver {
  public:
   // Expresses which navigation entry to use to check whether password manager
   // is enabled.
@@ -117,12 +118,14 @@ class PasswordManager : public LoginModel {
       bool did_stop_loading);
 
   // Handles a password form being submitted.
-  virtual void OnPasswordFormSubmitted(
-      password_manager::PasswordManagerDriver* driver,
-      const autofill::PasswordForm& password_form);
+  void OnPasswordFormSubmitted(password_manager::PasswordManagerDriver* driver,
+                               const autofill::PasswordForm& password_form);
 
   // Handles a password form being submitted, assumes that submission is
   // successful and does not do any checks on success of submission.
+  // For example, this is called if |password_form| was filled
+  // upon in-page navigation. This often means history.pushState being
+  // called from JavaScript.
   void OnPasswordFormSubmittedNoChecks(
       password_manager::PasswordManagerDriver* driver,
       const autofill::PasswordForm& password_form);
@@ -140,13 +143,6 @@ class PasswordManager : public LoginModel {
 
   // Handles a request to hide manual fallback for password saving.
   void HideManualFallbackForSaving();
-
-  // Called if |password_form| was filled upon in-page navigation. This often
-  // means history.pushState being called from JavaScript. If this causes false
-  // positive in password saving, update http://crbug.com/357696.
-  // TODO(https://crbug.com/795462): find better name for this function.
-  void OnSameDocumentNavigation(password_manager::PasswordManagerDriver* driver,
-                                const autofill::PasswordForm& password_form);
 
   void ProcessAutofillPredictions(
       password_manager::PasswordManagerDriver* driver,
@@ -176,14 +172,28 @@ class PasswordManager : public LoginModel {
   const std::vector<std::unique_ptr<NewPasswordFormManager>>& form_managers() {
     return form_managers_;
   }
+
+  const PasswordFormManager* provisional_save_manager() {
+    return provisional_save_manager_.get();
+  }
 #endif
 
   NavigationEntryToCheck entry_to_check() const { return entry_to_check_; }
+
+  // Reports the priority of a PasswordGenerationRequirementsSpec for a
+  // generated password. See
+  // PasswordFormMetricsRecorder::ReportSpecPriorityForGeneratedPassword.
+  void ReportSpecPriorityForGeneratedPassword(
+      const autofill::PasswordForm& password_form,
+      uint32_t spec_priority);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(
       PasswordManagerTest,
       ShouldBlockPasswordForSameOriginButDifferentSchemeTest);
+
+  // FormSubmissionObserver:
+  void OnStartNavigation(PasswordManagerDriver* driver) override;
 
   // Clones |matched_manager| and keeps it as |provisional_save_manager_|.
   // |form| is saved provisionally to |provisional_save_manager_|.
@@ -202,11 +212,10 @@ class PasswordManager : public LoginModel {
   bool ShouldBlockPasswordForSameOriginButDifferentScheme(
       const autofill::PasswordForm& form) const;
 
-  // Returns true if the user needs to be prompted before a password can be
-  // saved (instead of automatically saving
-  // the password), based on inspecting the state of
-  // |provisional_save_manager_|.
-  bool ShouldPromptUserToSavePassword() const;
+  // The old version of ShouldPromptUserToSavePassword, it is left for
+  // comparison and metric sending.
+  // TODO(crbug.com/856543): Remove it after M-70.
+  bool ShouldPromptUserToSavePasswordOld() const;
 
   // Called when the login was deemed successful. It handles the special case
   // when the provisionally saved password is a sync credential, and otherwise

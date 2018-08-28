@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/mutation_observer.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
@@ -412,6 +413,17 @@ Node::InsertionNotificationRequest HTMLSlotElement::InsertedInto(
     if (root == insertion_point->ContainingShadowRoot()) {
       // This slot is inserted into the same tree of |insertion_point|
       root->DidAddSlot(*this);
+    } else if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled() &&
+               insertion_point->isConnected() &&
+               root->NeedsSlotAssignmentRecalc()) {
+      // Even when a slot and its containing shadow root is removed together
+      // and inserted together again, the slot's cached assigned nodes can be
+      // stale if the NeedsSlotAssignmentRecalc flag is set, and it may cause
+      // infinite recursion in DetachLayoutTree() when one of the stale node
+      // is a shadow-including ancestor of this slot by making a circular
+      // reference. Clear the cache here to avoid the situation.
+      // See http://crbug.com/849599 for details.
+      ClearAssignedNodesAndFlatTreeChildren();
     }
   }
   return kInsertionDone;
@@ -440,10 +452,30 @@ void HTMLSlotElement::RemovedFrom(ContainerNode* insertion_point) {
   // - For slot s2, s2.removedFrom(d) is called.
 
   // ContainingShadowRoot() is okay to use here because 1) It doesn't use
-  // kIsInShadowTreeFlag flag, and 2) TreeScope has been alreay updated for the
+  // kIsInShadowTreeFlag flag, and 2) TreeScope has been already updated for the
   // slot.
-  if (insertion_point->IsInV1ShadowTree() && !ContainingShadowRoot()) {
-    // This slot was in a shadow tree and got disconnected from the shadow tree
+  if (ShadowRoot* shadow_root = ContainingShadowRoot()) {
+    // In this case, the shadow host (or its shadow-inclusive ancestor) was
+    // removed originally. In the above example, (this slot == s2) and
+    // (shadow_root == sr2). The shadow tree (sr2)'s structure didn't change at
+    // all.
+    if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled()) {
+      if (shadow_root->NeedsSlotAssignmentRecalc()) {
+        // Clear |assigned_nodes_| here, so that the referenced node can get
+        // garbage collected if they no longer needed. See also InsertedInto()'s
+        // comment for cases that stale |assigned_nodes| can be problematic.
+        ClearAssignedNodesAndFlatTreeChildren();
+      } else {
+        // We don't need to clear |assigned_nodes_| here. That's an important
+        // optimization.
+      }
+    } else {
+      ClearDistribution();
+    }
+  } else if (insertion_point->IsInV1ShadowTree()) {
+    // This slot was in a shadow tree and got disconnected from the shadow tree.
+    // In the above example, (this slot == s1), (insertion point == d)
+    // and (insertion_point->ContainingShadowRoot == sr1).
     insertion_point->ContainingShadowRoot()->GetSlotAssignment().DidRemoveSlot(
         *this);
     if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled()) {
@@ -451,6 +483,8 @@ void HTMLSlotElement::RemovedFrom(ContainerNode* insertion_point) {
     } else {
       ClearDistribution();
     }
+  } else {
+    DCHECK(assigned_nodes_.IsEmpty());
   }
 
   HTMLElement::RemovedFrom(insertion_point);
@@ -477,6 +511,14 @@ void HTMLSlotElement::DidRecalcStyle(StyleRecalcChange change) {
   if (change < kIndependentInherit)
     return;
   for (auto& node : assigned_nodes_) {
+    if (change == kReattach && node->IsElementNode()) {
+      ToElement(node)->RecalcStyle(kReattach);
+      continue;
+    }
+    // We only need to pick up changes for inherited style, we do not actually
+    // need to match rules against this element but we do that for
+    // simplicity. If we ever stop doing this then we need to update
+    // StyleInvalidator::Invalidate as described in the comment there.
     node->SetNeedsStyleRecalc(
         kLocalStyleChange,
         StyleChangeReasonForTracing::Create(

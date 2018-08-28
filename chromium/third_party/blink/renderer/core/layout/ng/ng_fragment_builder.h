@@ -41,6 +41,7 @@ class CORE_EXPORT NGFragmentBuilder final : public NGContainerFragmentBuilder {
 
   NGFragmentBuilder& SetIntrinsicBlockSize(LayoutUnit);
   NGFragmentBuilder& SetPadding(const NGBoxStrut&);
+  NGFragmentBuilder& SetPadding(const NGLineBoxStrut&);
 
   using NGContainerFragmentBuilder::AddChild;
 
@@ -122,6 +123,7 @@ class CORE_EXPORT NGFragmentBuilder final : public NGContainerFragmentBuilder {
 
   // Creates the fragment. Can only be called once.
   scoped_refptr<NGLayoutResult> ToBoxFragment();
+  scoped_refptr<NGLayoutResult> ToInlineBoxFragment();
 
   scoped_refptr<NGLayoutResult> Abort(NGLayoutResult::NGLayoutResultStatus);
 
@@ -178,6 +180,8 @@ class CORE_EXPORT NGFragmentBuilder final : public NGContainerFragmentBuilder {
   LayoutObject* GetLayoutObject() { return layout_object_; }
 
  private:
+  scoped_refptr<NGLayoutResult> ToBoxFragment(WritingMode);
+
   NGLayoutInputNode node_;
   LayoutObject* layout_object_;
 

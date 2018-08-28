@@ -5,10 +5,12 @@
 #include "third_party/blink/renderer/core/page/page_overlay.h"
 
 #include <memory>
+
+#include "cc/paint/paint_canvas.h"
+#include "cc/trees/layer_tree_host.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_canvas.h"
 #include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
@@ -70,9 +72,9 @@ class PageOverlayTest : public testing::Test {
   enum CompositingMode { kAcceleratedCompositing, kUnacceleratedCompositing };
 
   void Initialize(CompositingMode compositing_mode) {
-    helper_.Initialize(nullptr /* webFrameClient */,
-                       nullptr /* webViewClient */,
-                       nullptr /* webWidgetClient */,
+    helper_.Initialize(nullptr /* web_frame_client */,
+                       nullptr /* web_view_client */,
+                       nullptr /* web_widget_client */,
                        compositing_mode == kAcceleratedCompositing
                            ? EnableAcceleratedCompositing
                            : DisableAcceleratedCompositing);
@@ -90,7 +92,12 @@ class PageOverlayTest : public testing::Test {
         std::make_unique<SolidColorOverlay>(SK_ColorYELLOW));
   }
 
-  void SetViewportSize(const WebSize& size) { helper_.SetViewportSize(size); }
+  void SetViewportSize(const WebSize& size) {
+    content::LayerTreeView* layer_tree_view = helper_.GetLayerTreeView();
+    layer_tree_view->SetViewportSizeAndScale(
+        static_cast<gfx::Size>(size), /*device_scale_factor=*/1.f,
+        layer_tree_view->layer_tree_host()->local_surface_id_from_parent());
+  }
 
   template <typename OverlayType>
   void RunPageOverlayTestWithAcceleratedCompositing();

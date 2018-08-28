@@ -10,6 +10,7 @@
 #include <list>
 #include <memory>
 #include <set>
+#include <utility>
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -54,6 +55,7 @@ class MenuRunnerImpl;
 namespace test {
 class MenuControllerTest;
 class MenuControllerTestApi;
+class MenuControllerUITest;
 }
 
 // MenuController -------------------------------------------------------------
@@ -118,7 +120,7 @@ class VIEWS_EXPORT MenuController
   // WARNING: this may be NULL.
   Widget* owner() { return owner_; }
 
-  // Get the anchor position wich is used to show this menu.
+  // Get the anchor position which is used to show this menu.
   MenuAnchorPosition GetAnchorPosition() { return state_.anchor; }
 
   // Cancels the current Run. See ExitType for a description of what happens
@@ -220,6 +222,7 @@ class VIEWS_EXPORT MenuController
   friend class internal::MenuRunnerImpl;
   friend class test::MenuControllerTest;
   friend class test::MenuControllerTestApi;
+  friend class test::MenuControllerUITest;
   friend class MenuHostRootView;
   friend class MenuItemView;
   friend class SubmenuView;
@@ -230,18 +233,18 @@ class VIEWS_EXPORT MenuController
 
   // Values supplied to SetSelection.
   enum SetSelectionTypes {
-    SELECTION_DEFAULT               = 0,
+    SELECTION_DEFAULT = 0,
 
     // If set submenus are opened immediately, otherwise submenus are only
-    // openned after a timer fires.
-    SELECTION_UPDATE_IMMEDIATELY    = 1 << 0,
+    // opened after a timer fires.
+    SELECTION_UPDATE_IMMEDIATELY = 1 << 0,
 
     // If set and the menu_item has a submenu, the submenu is shown.
-    SELECTION_OPEN_SUBMENU          = 1 << 1,
+    SELECTION_OPEN_SUBMENU = 1 << 1,
 
     // SetSelection is being invoked as the result exiting or cancelling the
     // menu. This is used for debugging.
-    SELECTION_EXIT                  = 1 << 2,
+    SELECTION_EXIT = 1 << 2,
   };
 
   // Direction for IncrementSelection and FindInitialSelectableMenuItem.
@@ -323,7 +326,7 @@ class VIEWS_EXPORT MenuController
   // Sets the selection to |menu_item|. A value of NULL unselects
   // everything. |types| is a bitmask of |SetSelectionTypes|.
   //
-  // Internally this updates pending_state_ immediatley. state_ is only updated
+  // Internally this updates pending_state_ immediately. state_ is only updated
   // immediately if SELECTION_UPDATE_IMMEDIATELY is set. If
   // SELECTION_UPDATE_IMMEDIATELY is not set CommitPendingSelection is invoked
   // to show/hide submenus and update state_.
@@ -498,7 +501,8 @@ class VIEWS_EXPORT MenuController
   MenuItemView* FindNextSelectableMenuItem(
       MenuItemView* parent,
       int index,
-      SelectionIncrementDirectionType direction);
+      SelectionIncrementDirectionType direction,
+      bool is_initial);
 
   // If the selected item has a submenu and it isn't currently open, the
   // the selection is changed such that the menu opens immediately.
@@ -559,7 +563,7 @@ class VIEWS_EXPORT MenuController
   // Sets exit type. Calling this can terminate the active nested message-loop.
   void SetExitType(ExitType type);
 
-  // Performs the teardown of menus. This will notifiy the |delegate_|. If
+  // Performs the teardown of menus. This will notify the |delegate_|. If
   // |exit_type_| is EXIT_ALL all nested runs will be exited.
   void ExitMenu();
 
@@ -689,6 +693,12 @@ class VIEWS_EXPORT MenuController
   // If a mouse press triggered this menu, this will have its location (in
   // screen coordinates). Otherwise this will be (0, 0).
   gfx::Point menu_start_mouse_press_loc_;
+
+  // If the mouse was under the menu when the menu was run, this will have its
+  // location. Otherwise it will be null. This is used to ignore mouse move
+  // events triggered by the menu opening, to avoid selecting the menu item
+  // over the mouse.
+  base::Optional<gfx::Point> menu_open_mouse_loc_;
 
   // Controls behavior differences between a combobox and other types of menu
   // (like a context menu).

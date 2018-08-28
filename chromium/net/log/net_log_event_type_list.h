@@ -545,6 +545,9 @@ EVENT_TYPE(SSL_VERIFICATION_MERGED)
 EVENT_TYPE(SSL_ALERT_RECEIVED)
 EVENT_TYPE(SSL_ALERT_SENT)
 
+// The SSL connection is being confirmed.
+EVENT_TYPE(SSL_CONFIRM_HANDSHAKE)
+
 // An SSL connection sent or received a handshake message.
 // The following parameters are attached:
 //   {
@@ -842,8 +845,16 @@ EVENT_TYPE(URL_REQUEST_START_JOB)
 EVENT_TYPE(URL_REQUEST_REDIRECTED)
 
 // Measures the time between when a net::URLRequest calls a delegate that can
-// block it, and when the delegate allows the request to resume.
-EVENT_TYPE(URL_REQUEST_DELEGATE)
+// block it, and when the delegate allows the request to resume. Each delegate
+// type has a corresponding event type.
+EVENT_TYPE(NETWORK_DELEGATE_AUTH_REQUIRED)
+EVENT_TYPE(NETWORK_DELEGATE_BEFORE_START_TRANSACTION)
+EVENT_TYPE(NETWORK_DELEGATE_BEFORE_URL_REQUEST)
+EVENT_TYPE(NETWORK_DELEGATE_HEADERS_RECEIVED)
+EVENT_TYPE(URL_REQUEST_DELEGATE_CERTIFICATE_REQUESTED)
+EVENT_TYPE(URL_REQUEST_DELEGATE_RECEIVED_REDIRECT)
+EVENT_TYPE(URL_REQUEST_DELEGATE_RESPONSE_STARTED)
+EVENT_TYPE(URL_REQUEST_DELEGATE_SSL_CERTIFICATE_ERROR)
 
 // Logged when a delegate informs the URL_REQUEST of what's currently blocking
 // the request. The parameters attached to the begin event are:
@@ -1636,7 +1647,7 @@ EVENT_TYPE(HTTP2_PROXY_CLIENT_SESSION)
 // Measures the time taken to execute the QuicStreamFactory::Job.
 // The event parameters are:
 //   {
-//     "server_id": <The QuicServerId that the Job serves>,
+//     "server_id": <The quic::QuicServerId that the Job serves>,
 //   }
 EVENT_TYPE(QUIC_STREAM_FACTORY_JOB)
 
@@ -1658,10 +1669,10 @@ EVENT_TYPE(QUIC_STREAM_FACTORY_JOB_BOUND_TO_HTTP_STREAM_JOB)
 EVENT_TYPE(QUIC_STREAM_FACTORY_JOB_CONNECT)
 
 // ------------------------------------------------------------------------
-// QuicSession
+// quic::QuicSession
 // ------------------------------------------------------------------------
 
-// The start/end of a QuicSession.
+// The start/end of a quic::QuicSession.
 //   {
 //     "host": <The host-port string>,
 //   }
@@ -1693,8 +1704,8 @@ EVENT_TYPE(QUIC_SESSION_PACKET_RECEIVED)
 
 // Session sent a QUIC packet.
 //   {
-//     "encryption_level": <The EncryptionLevel of the packet>,
-//     "transmission_type": <The TransmissionType of the packet>,
+//     "encryption_level": <The quic::EncryptionLevel of the packet>,
+//     "transmission_type": <The quic::TransmissionType of the packet>,
 //     "packet_sequence_number": <The packet's full 64-bit sequence number,
 //                                as a base-10 string.>,
 //     "size": <The size of the packet in bytes>
@@ -1815,7 +1826,7 @@ EVENT_TYPE(QUIC_SESSION_BLOCKED_FRAME_SENT)
 
 // Session received a GOAWAY frame.
 //   {
-//     "quic_error":          <QuicErrorCode in the frame>,
+//     "quic_error":          <quic::QuicErrorCode in the frame>,
 //     "last_good_stream_id": <Last correctly received stream id by the server>,
 //     "reason_phrase":       <Prose justifying go-away request>,
 //   }
@@ -1823,7 +1834,7 @@ EVENT_TYPE(QUIC_SESSION_GOAWAY_FRAME_RECEIVED)
 
 // Session sent a GOAWAY frame.
 //   {
-//     "quic_error":          <QuicErrorCode in the frame>,
+//     "quic_error":          <quic::QuicErrorCode in the frame>,
 //     "last_good_stream_id": <Last correctly received stream id by the server>,
 //     "reason_phrase":       <Prose justifying go-away request>,
 //   }
@@ -1861,7 +1872,7 @@ EVENT_TYPE(QUIC_SESSION_STOP_WAITING_FRAME_SENT)
 // Session recevied a RST_STREAM frame.
 //   {
 //     "offset": <Offset in the byte stream which triggered the reset>,
-//     "quic_rst_stream_error": <QuicRstStreamErrorCode in the frame>,
+//     "quic_rst_stream_error": <quic::QuicRstStreamErrorCode in the frame>,
 //     "details": <Human readable description>,
 //   }
 EVENT_TYPE(QUIC_SESSION_RST_STREAM_FRAME_RECEIVED)
@@ -1869,21 +1880,21 @@ EVENT_TYPE(QUIC_SESSION_RST_STREAM_FRAME_RECEIVED)
 // Session sent a RST_STREAM frame.
 //   {
 //     "offset": <Offset in the byte stream which triggered the reset>,
-//     "quic_rst_stream_error": <QuicRstStreamErrorCode in the frame>,
+//     "quic_rst_stream_error": <quic::QuicRstStreamErrorCode in the frame>,
 //     "details": <Human readable description>,
 //   }
 EVENT_TYPE(QUIC_SESSION_RST_STREAM_FRAME_SENT)
 
 // Session received a CONNECTION_CLOSE frame.
 //   {
-//     "quic_error": <QuicErrorCode in the frame>,
+//     "quic_error": <quic::QuicErrorCode in the frame>,
 //     "details": <Human readable description>,
 //   }
 EVENT_TYPE(QUIC_SESSION_CONNECTION_CLOSE_FRAME_RECEIVED)
 
 // Session received a CONNECTION_CLOSE frame.
 //   {
-//     "quic_error": <QuicErrorCode in the frame>,
+//     "quic_error": <quic::QuicErrorCode in the frame>,
 //     "details": <Human readable description>,
 //   }
 EVENT_TYPE(QUIC_SESSION_CONNECTION_CLOSE_FRAME_SENT)
@@ -1942,8 +1953,8 @@ EVENT_TYPE(QUIC_SESSION_PUSH_PROMISE_RECEIVED)
 
 // Session was closed, either remotely or by the peer.
 //   {
-//     "quic_error": <QuicErrorCode which caused the connection to be closed>,
-//     "from_peer":  <True if the peer closed the connection>
+//     "quic_error": <quic::QuicErrorCode which caused the connection to be
+//     closed>, "from_peer":  <True if the peer closed the connection>
 //   }
 EVENT_TYPE(QUIC_SESSION_CLOSED)
 
@@ -2190,10 +2201,6 @@ EVENT_TYPE(SERVICE_WORKER_ERROR_NO_PROVIDER_HOST)
 // This event is emitted when Service Worker fails to respond because
 // the registration had no active version.
 EVENT_TYPE(SERVICE_WORKER_ERROR_NO_ACTIVE_VERSION)
-
-// This event is emitted when Service Worker fails to respond because
-// the underlying request was detached.
-EVENT_TYPE(SERVICE_WORKER_ERROR_NO_REQUEST)
 
 // This event is emitted when Service Worker fails to respond because
 // the job delegate behaved incorrectly.
@@ -2506,16 +2513,6 @@ EVENT_TYPE(CHROME_EXTENSION_IGNORED_DUE_TO_CONFLICT)
 EVENT_TYPE(CHROME_EXTENSION_PROVIDE_AUTH_CREDENTIALS)
 
 // ------------------------------------------------------------------------
-// HostBlacklistManager
-// ------------------------------------------------------------------------
-
-// TODO(joaodasilva): Layering violation, see comment above.
-// http://crbug.com/90674.
-
-// This event is created when a request is blocked by a policy.
-EVENT_TYPE(CHROME_POLICY_ABORTED_REQUEST)
-
-// ------------------------------------------------------------------------
 // CertVerifier
 // ------------------------------------------------------------------------
 
@@ -2593,180 +2590,6 @@ EVENT_TYPE(TRIAL_CERT_VERIFIER_JOB)
 //                            that was started>,
 //   }
 EVENT_TYPE(TRIAL_CERT_VERIFIER_JOB_COMPARISON_STARTED)
-
-// ------------------------------------------------------------------------
-// Download start events.
-// ------------------------------------------------------------------------
-
-// This event is created when a download is started, and lets the URL request
-// event source know what download source it is using.
-//   {
-//     "source_dependency": <Source id of the download>,
-//   }
-EVENT_TYPE(DOWNLOAD_STARTED)
-
-// This event is created when a download is started, and lets the download
-// event source know what URL request it's associated with.
-//   {
-//     "source_dependency": <Source id of the request being waited on>,
-//   }
-EVENT_TYPE(DOWNLOAD_URL_REQUEST)
-
-// ------------------------------------------------------------------------
-// DownloadItem events.
-// ------------------------------------------------------------------------
-
-// This event lives for as long as a download item is active.
-// The BEGIN event occurs right after construction, and has the following
-// parameters:
-//   {
-//     "type": <New/history/save page>,
-//     "id": <Download ID>,
-//     "original_url": <URL that initiated the download>,
-//     "final_url": <URL of the actual download file>,
-//     "file_name": <initial file name, based on DownloadItem's members:
-//                   For History downloads it's the |full_path_|
-//                   For other downloads, uses the first non-empty variable of:
-//                     |state_info.force_filename|
-//                     |suggested_filename_|
-//                     the filename specified in the final URL>,
-//     "danger_type": <NOT_DANGEROUS, DANGEROUS_FILE, DANGEROUS_URL,
-//                     DANGEROUS_CONTENT, MAYBE_DANGEROUS_CONTENT,
-//                     UNCOMMON_CONTENT, USER_VALIDATED, DANGEROUS_HOST,
-//                     POTENTIALLY_UNWANTED>,
-//     "start_offset": <Where to start writing (defaults to 0)>,
-//     "has_user_gesture": <Whether or not we think the user initiated
-//                          the download>
-//   }
-// The END event will occur when the download is interrupted, canceled or
-// completed.
-// DownloadItems that are loaded from history and are never active simply ADD
-// one of these events.
-EVENT_TYPE(DOWNLOAD_ITEM_ACTIVE)
-
-// Recorded when the DownloadFile is created.
-//   {
-//     "source_dependency": <Source ID of DownloadFile>
-//   }
-EVENT_TYPE(DOWNLOAD_FILE_CREATED)
-
-// This event is created when a download item's danger type
-// has been modified.
-//   {
-//     "danger_type": <The new danger type.  See above for possible values.>,
-//   }
-EVENT_TYPE(DOWNLOAD_ITEM_SAFETY_STATE_UPDATED)
-
-// This event is created when a download item is updated.
-//   {
-//     "bytes_so_far": <Number of bytes received>,
-//     "hash_state": <Current hash state, as a hex-encoded binary string>,
-//   }
-EVENT_TYPE(DOWNLOAD_ITEM_UPDATED)
-
-// This event is created when a download item is renamed.
-//   {
-//     "old_filename": <Old file name>,
-//     "new_filename": <New file name>,
-//   }
-EVENT_TYPE(DOWNLOAD_ITEM_RENAMED)
-
-// This event is created when a download item is interrupted.
-//   {
-//     "interrupt_reason": <The reason for the interruption>,
-//     "bytes_so_far": <Number of bytes received>,
-//     "hash_state": <Current hash state, as a hex-encoded binary string>,
-//   }
-EVENT_TYPE(DOWNLOAD_ITEM_INTERRUPTED)
-
-// This event is created when a download item is resumed.
-//   {
-//     "user_initiated": <True if user initiated resume>,
-//     "reason": <The reason for the interruption>,
-//     "bytes_so_far": <Number of bytes received>,
-//     "hash_state": <Current hash state, as a hex-encoded binary string>,
-//   }
-EVENT_TYPE(DOWNLOAD_ITEM_RESUMED)
-
-// This event is created when a download item is completing.
-//   {
-//     "bytes_so_far": <Number of bytes received>,
-//     "final_hash": <Final hash, as a hex-encoded binary string>,
-//   }
-EVENT_TYPE(DOWNLOAD_ITEM_COMPLETING)
-
-// This event is created when a download item is finished.
-//   {
-//     "auto_opened": <Whether or not the download was auto-opened>
-//   }
-EVENT_TYPE(DOWNLOAD_ITEM_FINISHED)
-
-// This event is created when a download item is canceled.
-//   {
-//     "bytes_so_far": <Number of bytes received>,
-//     "hash_state": <Current hash state, as a hex-encoded binary string>,
-//   }
-EVENT_TYPE(DOWNLOAD_ITEM_CANCELED)
-
-// ------------------------------------------------------------------------
-// DownloadFile events.
-// ------------------------------------------------------------------------
-
-// A new download file was created.
-//   {
-//     "source_dependency": <Source ID of owning DownloadItem>
-//   }
-EVENT_TYPE(DOWNLOAD_FILE_ACTIVE)
-
-// This event is created when a download file is opened, and lasts until
-// the file is closed.
-// The BEGIN event has the following parameters:
-//   {
-//     "file_name": <The name of the file>,
-//     "start_offset": <The position at which to start writing>,
-//   }
-EVENT_TYPE(DOWNLOAD_FILE_OPENED)
-
-// This event is created when the stream between download source
-// and download file is drained.
-//   {
-//     "stream_size": <Total size of all bytes drained from the stream>
-//     "num_buffers": <How many separate buffers those bytes were in>
-//   }
-EVENT_TYPE(DOWNLOAD_STREAM_DRAINED)
-
-// Created when a buffer is written to the download file. The END event has the
-// following paramters:
-//   {
-//     "bytes": <Count of bytes written>
-//   }
-EVENT_TYPE(DOWNLOAD_FILE_WRITTEN)
-
-// This event is created when a download file is renamed.
-//   {
-//     "old_filename": <Old filename>,
-//     "new_filename": <New filename>,
-//   }
-EVENT_TYPE(DOWNLOAD_FILE_RENAMED)
-
-// This event is created when a download file is detached.
-EVENT_TYPE(DOWNLOAD_FILE_DETACHED)
-
-// This event is created when a download file is deleted.
-EVENT_TYPE(DOWNLOAD_FILE_DELETED)
-
-// This event is created when a download file operation has an error.
-//   {
-//     "operation": <open, write, close, etc>,
-//     "net_error": <net::Error code>,
-//     "os_error": <OS dependent error code>
-//     "interrupt_reason": <Download interrupt reason>
-//   }
-EVENT_TYPE(DOWNLOAD_FILE_ERROR)
-
-// This event is created when a download file is annotating with source
-// information (for Mark Of The Web and anti-virus integration).
-EVENT_TYPE(DOWNLOAD_FILE_ANNOTATED)
 
 // -----------------------------------------------------------------------------
 // FTP events.

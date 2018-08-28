@@ -8,8 +8,10 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_file.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -140,7 +142,7 @@ class ArcSessionImpl : public ArcSession,
 
   // ArcSession overrides:
   void StartMiniInstance() override;
-  void RequestUpgrade() override;
+  void RequestUpgrade(UpgradeParams params) override;
   void Stop() override;
   bool IsStopRequested() override;
   void OnShutdown() override;
@@ -199,6 +201,9 @@ class ArcSessionImpl : public ArcSession,
   // In CONNECTING_MOJO state, this is set to the write side of the pipe
   // to notify cancelling of the procedure.
   base::ScopedFD accept_cancel_pipe_;
+
+  // Parameters to upgrade request.
+  UpgradeParams upgrade_params_;
 
   // Mojo endpoint.
   std::unique_ptr<mojom::ArcBridgeHost> arc_bridge_host_;

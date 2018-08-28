@@ -51,12 +51,22 @@ static bool ShouldAppendLayer(const PaintLayer& layer) {
 
 void GraphicsLayerTreeBuilder::Rebuild(PaintLayer& layer,
                                        GraphicsLayerVector& child_layers) {
+  PendingOverflowControlReparents ignored;
+  RebuildRecursive(layer, child_layers, ignored);
+}
+
+using PendingPair = std::pair<const PaintLayer*, size_t>;
+
+void GraphicsLayerTreeBuilder::RebuildRecursive(
+    PaintLayer& layer,
+    GraphicsLayerVector& child_layers,
+    PendingOverflowControlReparents& pending_reparents) {
+  const ComputedStyle& style = layer.GetLayoutObject().StyleRef();
+
   // Make the layer compositing if necessary, and set up clipping and content
   // layers.  Note that we can only do work here that is independent of whether
   // the descendant layers have been processed. computeCompositingRequirements()
   // will already have done the paint invalidation if necessary.
-
-  layer.StackingNode()->UpdateLayerListsIfNeeded();
 
   const bool has_composited_layer_mapping = layer.HasCompositedLayerMapping();
   CompositedLayerMapping* current_composited_layer_mapping =
@@ -69,15 +79,24 @@ void GraphicsLayerTreeBuilder::Rebuild(PaintLayer& layer,
   GraphicsLayerVector* layer_vector_for_children =
       has_composited_layer_mapping ? &this_layer_children : &child_layers;
 
+  PendingOverflowControlReparents this_pending_reparents_children;
+  PendingOverflowControlReparents* pending_reparents_for_children =
+      has_composited_layer_mapping ? &this_pending_reparents_children
+                                   : &pending_reparents;
+
 #if DCHECK_IS_ON()
-  LayerListMutationDetector mutation_checker(layer.StackingNode());
+  base::Optional<LayerListMutationDetector> mutation_checker;
+  if (layer.StackingNode())
+    mutation_checker.emplace(layer.StackingNode());
 #endif
 
-  if (layer.StackingNode()->IsStackingContext()) {
+  if (style.IsStackingContext()) {
     PaintLayerStackingNodeIterator iterator(*layer.StackingNode(),
                                             kNegativeZOrderChildren);
-    while (PaintLayerStackingNode* cur_node = iterator.Next())
-      Rebuild(*cur_node->Layer(), *layer_vector_for_children);
+    while (PaintLayer* child_layer = iterator.Next()) {
+      RebuildRecursive(*child_layer, *layer_vector_for_children,
+                       *pending_reparents_for_children);
+    }
 
     // If a negative z-order child is compositing, we get a foreground layer
     // which needs to get parented.
@@ -88,16 +107,42 @@ void GraphicsLayerTreeBuilder::Rebuild(PaintLayer& layer,
     }
   }
 
-  PaintLayerStackingNodeIterator iterator(
-      *layer.StackingNode(), kNormalFlowChildren | kPositiveZOrderChildren);
-  while (PaintLayerStackingNode* cur_node = iterator.Next())
-    Rebuild(*cur_node->Layer(), *layer_vector_for_children);
+  if (layer.StackingNode()) {
+    PaintLayerStackingNodeIterator iterator(
+        *layer.StackingNode(), kNormalFlowChildren | kPositiveZOrderChildren);
+    while (PaintLayer* child_layer = iterator.Next()) {
+      RebuildRecursive(*child_layer, *layer_vector_for_children,
+                       *pending_reparents_for_children);
+    }
+  }
 
   if (has_composited_layer_mapping) {
     bool parented = false;
     if (layer.GetLayoutObject().IsLayoutEmbeddedContent()) {
       parented = PaintLayerCompositor::AttachFrameContentLayersToIframeLayer(
           ToLayoutEmbeddedContent(layer.GetLayoutObject()));
+    }
+
+    // Apply all pending reparents by inserting the overflow controls
+    // root layers into |this_layer_children|. To do this, first sort
+    // them by index. Then insert them one-by-one into the array,
+    // incrementing |offset| by one each time to account for previous
+    // insertions.
+    size_t offset = 0;
+    Vector<PendingPair> pending;
+    for (auto& item : *pending_reparents_for_children)
+      pending.push_back(std::make_pair(item.key, item.value));
+    pending_reparents_for_children->clear();
+
+    std::sort(pending.begin(), pending.end(),
+              [](const PendingPair& a, const PendingPair& b) {
+                return a.second < b.second;
+              });
+    for (auto& item : pending) {
+      this_layer_children.insert(item.second + offset,
+                                 item.first->GetCompositedLayerMapping()
+                                     ->DetachLayerForOverflowControls());
+      offset++;
     }
 
     if (!parented)
@@ -109,17 +154,23 @@ void GraphicsLayerTreeBuilder::Rebuild(PaintLayer& layer,
     }
   }
 
-  if (layer.ScrollParent() &&
-      layer.ScrollParent()->HasCompositedLayerMapping() &&
-      layer.ScrollParent()
-          ->GetCompositedLayerMapping()
-          ->NeedsToReparentOverflowControls() &&
-      layer.ScrollParent()->GetScrollableArea()->TopmostScrollChild() ==
-          &layer) {
-    child_layers.push_back(layer.ScrollParent()
-                               ->GetCompositedLayerMapping()
-                               ->DetachLayerForOverflowControls());
-  }
+  // Also insert for self, to handle the case of scrollers with negative
+  // z-index children (the scrolbars should still paint on top of the
+  // scroller itself).
+  if (style.IsStacked() && has_composited_layer_mapping &&
+      layer.GetCompositedLayerMapping()->NeedsToReparentOverflowControls())
+    pending_reparents.Set(&layer, child_layers.size());
+
+  // Set or overwrite the entry in |pending_reparents| for this scroller.
+  // Overlay controls need to paint on top of all content under the
+  // scroller, so keep overwriting if we find a PaintLayer that is
+  // later in paint order.
+  const PaintLayer* scroll_parent = layer.ScrollParent();
+  if (style.IsStacked() && scroll_parent &&
+      scroll_parent->HasCompositedLayerMapping() &&
+      scroll_parent->GetCompositedLayerMapping()
+          ->NeedsToReparentOverflowControls())
+    pending_reparents.Set(layer.ScrollParent(), child_layers.size());
 }
 
 }  // namespace blink

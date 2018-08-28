@@ -8,11 +8,13 @@
 #ifndef SkPDFTypes_DEFINED
 #define SkPDFTypes_DEFINED
 
+#include <new>
 #include <type_traits>
 
 #include "SkRefCnt.h"
 #include "SkScalar.h"
 #include "SkTHash.h"
+#include "SkTo.h"
 #include "SkTypes.h"
 
 class SkData;

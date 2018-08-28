@@ -8,12 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
+#include "modules/video_coding/utility/simulcast_rate_allocator.h"
 
 #include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
+
+#include "modules/video_coding/codecs/vp8/temporal_layers.h"
 
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -22,10 +24,11 @@ namespace webrtc {
 namespace {
 using ::testing::_;
 
-constexpr uint32_t kMinBitrateKbps = 50;
-constexpr uint32_t kTargetBitrateKbps = 100;
-constexpr uint32_t kMaxBitrateKbps = 1000;
 constexpr uint32_t kFramerateFps = 5;
+constexpr uint32_t kMinBitrateKbps = 50;
+// These correspond to kLegacyScreenshareTl(0|1)BitrateKbps in cc.
+constexpr uint32_t kTargetBitrateKbps = 200;
+constexpr uint32_t kMaxBitrateKbps = 1000;
 
 class MockTemporalLayers : public TemporalLayers {
  public:
@@ -48,8 +51,8 @@ class SimulcastRateAllocatorTest : public ::testing::TestWithParam<bool> {
  public:
   SimulcastRateAllocatorTest() {
     memset(&codec_, 0, sizeof(VideoCodec));
+    codec_.codecType = kVideoCodecVP8;
     codec_.minBitrate = kMinBitrateKbps;
-    codec_.targetBitrate = kTargetBitrateKbps;
     codec_.maxBitrate = kMaxBitrateKbps;
     codec_.active = true;
     CreateAllocator();
@@ -74,8 +77,8 @@ class SimulcastRateAllocatorTest : public ::testing::TestWithParam<bool> {
       if (layer_bitrate == 0) {
         EXPECT_FALSE(actual.IsSpatialLayerUsed(i));
       }
-      EXPECT_EQ(expected[i] * 1000U, layer_bitrate) << "Mismatch at index "
-                                                    << i;
+      EXPECT_EQ(expected[i] * 1000U, layer_bitrate)
+          << "Mismatch at index " << i;
       sum += layer_bitrate;
     }
     EXPECT_EQ(sum, actual.get_sum_bps());
@@ -463,42 +466,6 @@ TEST_F(SimulcastRateAllocatorTest, ThreeStreamsMiddleInactive) {
   }
 }
 
-TEST_F(SimulcastRateAllocatorTest, GetPreferredBitrateBps) {
-  MockTemporalLayers mock_layers;
-  allocator_.reset(new SimulcastRateAllocator(codec_));
-  EXPECT_CALL(mock_layers, OnRatesUpdated(_, _)).Times(0);
-  EXPECT_EQ(codec_.maxBitrate * 1000,
-            allocator_->GetPreferredBitrateBps(codec_.maxFramerate));
-}
-
-TEST_F(SimulcastRateAllocatorTest, GetPreferredBitrateSimulcast) {
-  codec_.numberOfSimulcastStreams = 3;
-  codec_.maxBitrate = 999999;
-  codec_.simulcastStream[0].minBitrate = 10;
-  codec_.simulcastStream[0].targetBitrate = 100;
-  codec_.simulcastStream[0].active = true;
-
-  codec_.simulcastStream[0].maxBitrate = 500;
-  codec_.simulcastStream[1].minBitrate = 50;
-  codec_.simulcastStream[1].targetBitrate = 500;
-  codec_.simulcastStream[1].maxBitrate = 1000;
-  codec_.simulcastStream[1].active = true;
-
-  codec_.simulcastStream[2].minBitrate = 2000;
-  codec_.simulcastStream[2].targetBitrate = 3000;
-  codec_.simulcastStream[2].maxBitrate = 4000;
-  codec_.simulcastStream[2].active = true;
-  CreateAllocator();
-
-  uint32_t preferred_bitrate_kbps;
-  preferred_bitrate_kbps = codec_.simulcastStream[0].targetBitrate;
-  preferred_bitrate_kbps += codec_.simulcastStream[1].targetBitrate;
-  preferred_bitrate_kbps += codec_.simulcastStream[2].maxBitrate;
-
-  EXPECT_EQ(preferred_bitrate_kbps * 1000,
-            allocator_->GetPreferredBitrateBps(codec_.maxFramerate));
-}
-
 class ScreenshareRateAllocationTest : public SimulcastRateAllocatorTest {
  public:
   void SetupConferenceScreenshare(bool use_simulcast, bool active = true) {
@@ -514,7 +481,6 @@ class ScreenshareRateAllocationTest : public SimulcastRateAllocatorTest {
       codec_.simulcastStream[0].active = active;
     } else {
       codec_.numberOfSimulcastStreams = 0;
-      codec_.targetBitrate = kTargetBitrateKbps;
       codec_.VP8()->numberOfTemporalLayers = 2;
       codec_.active = active;
     }

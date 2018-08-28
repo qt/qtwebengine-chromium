@@ -32,8 +32,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_V8_BINDING_FOR_CORE_H_
 #define THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_V8_BINDING_FOR_CORE_H_
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_for_core.h"
@@ -44,6 +42,7 @@
 #include "third_party/blink/renderer/core/typed_arrays/array_buffer_view_helpers.h"
 #include "third_party/blink/renderer/platform/bindings/dom_data_store.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding.h"
@@ -343,6 +342,30 @@ inline uint64_t ToUInt64(v8::Isolate* isolate,
     return value.As<v8::Int32>()->Value();
 
   return ToUInt64Slow(isolate, value, configuration, exception_state);
+}
+
+// NaNs and +/-Infinity should be 0, otherwise modulo 2^64.
+// Step 8 - 12 of https://heycam.github.io/webidl/#abstract-opdef-converttoint
+inline unsigned long long DoubleToInteger(double d) {
+  if (std::isnan(d) || std::isinf(d))
+    return 0;
+  constexpr unsigned long long kMaxULL =
+      std::numeric_limits<unsigned long long>::max();
+
+  // -2^{64} < fmod_value < 2^{64}.
+  double fmod_value = fmod(trunc(d), kMaxULL + 1.0);
+  if (fmod_value >= 0) {
+    // 0 <= fmod_value < 2^{64}.
+    // 0 <= value < 2^{64}. This cast causes no loss.
+    return static_cast<unsigned long long>(fmod_value);
+  }
+  // -2^{64} < fmod_value < 0.
+  // 0 < fmod_value_in_unsigned_long_long < 2^{64}. This cast causes no loss.
+  unsigned long long fmod_value_in_unsigned_long_long =
+      static_cast<unsigned long long>(-fmod_value);
+  // -1 < (kMaxULL - fmod_value_in_unsigned_long_long) < 2^{64} - 1.
+  // 0 < value < 2^{64}.
+  return kMaxULL - fmod_value_in_unsigned_long_long + 1;
 }
 
 // Convert a value to a double precision float, which might fail.

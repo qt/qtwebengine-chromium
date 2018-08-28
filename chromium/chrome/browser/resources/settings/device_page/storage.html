@@ -1,6 +1,7 @@
 <link rel="import" href="chrome://resources/html/polymer.html">
 
 <link rel="import" href="chrome://resources/cr_elements/icons.html">
+<link rel="import" href="chrome://resources/cr_elements/shared_vars_css.html">
 <link rel="import" href="chrome://resources/html/assert.html">
 <link rel="import" href="chrome://resources/html/cr/ui/focus_without_ink.html">
 <link rel="import" href="chrome://resources/html/web_ui_listener_behavior.html">
@@ -50,7 +51,7 @@
       }
 
       .storage-size {
-        color: var(--paper-grey-600);
+        color: var(--cr-secondary-text-color);
       }
 
       .message-area {
@@ -246,6 +247,20 @@
         <paper-icon-button-light class="icon-external">
           <button aria-label="$i18n{storageItemAndroid}"
               aria-describedby="androidSize"></button>
+        </paper-icon-button-light>
+      </div>
+    </template>
+    <template is="dom-if" if="[[showCrostiniStorage_]]">
+      <div class="settings-box two-line" on-click="onCrostiniTap_" actionable>
+        <div class="start">
+          $i18n{storageItemCrostini}
+          <div id="crostiniSize" class="secondary">
+            $i18n{storageSizeComputing}
+          </div>
+        </div>
+        <paper-icon-button-light class="subpage-arrow">
+          <button aria-label="$i18n{storageItemCrostini}"
+              aria-describedby="crostiniSize"></button>
         </paper-icon-button-light>
       </div>
     </template>

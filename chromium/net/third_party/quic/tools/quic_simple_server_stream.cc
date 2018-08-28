@@ -17,7 +17,7 @@
 #include "net/third_party/quic/tools/quic_simple_server_session.h"
 #include "net/third_party/spdy/core/spdy_protocol.h"
 
-namespace net {
+namespace quic {
 
 QuicSimpleServerStream::QuicSimpleServerStream(
     QuicStreamId id,
@@ -217,6 +217,14 @@ void QuicSimpleServerStream::OnResponseBackendComplete(
                                   request_headers_);
   }
 
+  if (response->response_type() == QuicBackendResponse::INCOMPLETE_RESPONSE) {
+    QUIC_DVLOG(1)
+        << "Stream " << id()
+        << " sending an incomplete response, i.e. no trailer, no fin.";
+    SendIncompleteResponse(response->headers().Clone(), response->body());
+    return;
+  }
+
   QUIC_DVLOG(1) << "Stream " << id() << " sending response.";
   SendHeadersAndBodyAndTrailers(response->headers().Clone(), response->body(),
                                 response->trailers().Clone());
@@ -246,6 +254,20 @@ void QuicSimpleServerStream::SendErrorResponse(int resp_code) {
   headers["content-length"] =
       QuicTextUtils::Uint64ToString(strlen(kErrorResponseBody));
   SendHeadersAndBody(std::move(headers), kErrorResponseBody);
+}
+
+void QuicSimpleServerStream::SendIncompleteResponse(
+    spdy::SpdyHeaderBlock response_headers,
+    QuicStringPiece body) {
+  QUIC_DLOG(INFO) << "Stream " << id() << " writing headers (fin = false) : "
+                  << response_headers.DebugString();
+  WriteHeaders(std::move(response_headers), /*fin=*/false, nullptr);
+
+  QUIC_DLOG(INFO) << "Stream " << id()
+                  << " writing body (fin = false) with size: " << body.size();
+  if (!body.empty()) {
+    WriteOrBufferData(body, /*fin=*/false, nullptr);
+  }
 }
 
 void QuicSimpleServerStream::SendHeadersAndBody(
@@ -291,4 +313,4 @@ const char* const QuicSimpleServerStream::kErrorResponseBody = "bad";
 const char* const QuicSimpleServerStream::kNotFoundResponseBody =
     "file not found";
 
-}  // namespace net
+}  // namespace quic

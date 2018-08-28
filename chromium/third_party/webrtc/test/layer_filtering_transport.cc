@@ -132,21 +132,35 @@ bool LayerFilteringTransport::SendRtp(const uint8_t* packet,
 
     const bool is_vp8 = header.payloadType == vp8_video_payload_type_;
     std::unique_ptr<RtpDepacketizer> depacketizer(
-        RtpDepacketizer::Create(is_vp8 ? kRtpVideoVp8 : kRtpVideoVp9));
+        RtpDepacketizer::Create(is_vp8 ? kVideoCodecVP8 : kVideoCodecVP9));
     RtpDepacketizer::ParsedPayload parsed_payload;
     if (depacketizer->Parse(&parsed_payload, payload, payload_data_length)) {
       const int temporal_idx = static_cast<int>(
-          is_vp8 ? parsed_payload.type.Video.codecHeader.VP8.temporalIdx
-                 : parsed_payload.type.Video.codecHeader.VP9.temporal_idx);
+          is_vp8 ? parsed_payload.video_header().vp8().temporalIdx
+                 : parsed_payload.video_header().vp9().temporal_idx);
       const int spatial_idx = static_cast<int>(
           is_vp8 ? kNoSpatialIdx
-                 : parsed_payload.type.Video.codecHeader.VP9.spatial_idx);
+                 : parsed_payload.video_header().vp9().spatial_idx);
       const bool non_ref_for_inter_layer_pred =
           is_vp8 ? false
-                 : parsed_payload.type.Video.codecHeader.VP9
+                 : parsed_payload.video_header()
+                       .vp9()
                        .non_ref_for_inter_layer_pred;
-      if (selected_sl_ >= 0 && spatial_idx == selected_sl_ &&
-          parsed_payload.type.Video.codecHeader.VP9.end_of_frame) {
+      // The number of spatial layers is sent in ssData, which is included only
+      // in the first packet of the first spatial layer of a key frame.
+      if (!parsed_payload.video_header().vp9().inter_pic_predicted &&
+          parsed_payload.video_header().vp9().beginning_of_frame == 1 &&
+          spatial_idx == 0) {
+        num_active_spatial_layers_ =
+            parsed_payload.video_header().vp9().num_spatial_layers;
+      } else if (spatial_idx == kNoSpatialIdx)
+        num_active_spatial_layers_ = 1;
+      RTC_CHECK_GT(num_active_spatial_layers_, 0);
+
+      if (selected_sl_ >= 0 &&
+          spatial_idx ==
+              std::min(num_active_spatial_layers_ - 1, selected_sl_) &&
+          parsed_payload.video_header().vp9().end_of_frame) {
         // This layer is now the last in the superframe.
         set_marker_bit = true;
       } else {
@@ -162,7 +176,9 @@ bool LayerFilteringTransport::SendRtp(const uint8_t* packet,
         // needed for decoding of target spatial layer.
         const bool lower_non_ref_spatial_layer =
             (selected_sl_ >= 0 && spatial_idx != kNoSpatialIdx &&
-             spatial_idx < selected_sl_ && non_ref_for_inter_layer_pred);
+             spatial_idx <
+                 std::min(num_active_spatial_layers_ - 1, selected_sl_) &&
+             non_ref_for_inter_layer_pred);
 
         if (higher_temporal_layer || higher_spatial_layer ||
             lower_non_ref_spatial_layer) {

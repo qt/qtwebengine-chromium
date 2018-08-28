@@ -63,18 +63,17 @@ class PLATFORM_EXPORT TransformPaintPropertyNode
 
   // This node is really a sentinel, and does not represent a real transform
   // space.
-  static TransformPaintPropertyNode* Root();
+  static const TransformPaintPropertyNode& Root();
 
   static scoped_refptr<TransformPaintPropertyNode> Create(
-      scoped_refptr<const TransformPaintPropertyNode> parent,
+      const TransformPaintPropertyNode& parent,
       State&& state) {
     return base::AdoptRef(
-        new TransformPaintPropertyNode(std::move(parent), std::move(state)));
+        new TransformPaintPropertyNode(&parent, std::move(state)));
   }
 
-  bool Update(scoped_refptr<const TransformPaintPropertyNode> parent,
-              State&& state) {
-    bool parent_changed = SetParent(parent);
+  bool Update(const TransformPaintPropertyNode& parent, State&& state) {
+    bool parent_changed = SetParent(&parent);
     if (state == state_)
       return parent_changed;
 
@@ -83,6 +82,12 @@ class PLATFORM_EXPORT TransformPaintPropertyNode
     Validate();
     return true;
   }
+
+  // If |relative_to_node| is an ancestor of |this|, returns true if any node is
+  // marked changed along the path from |this| to |relative_to_node| (not
+  // included). Otherwise returns the combined changed status of the paths
+  // from |this| and |relative_to_node| to the root.
+  bool Changed(const TransformPaintPropertyNode& relative_to_node) const;
 
   const TransformationMatrix& Matrix() const { return state_.matrix; }
   const FloatPoint3D& Origin() const { return state_.origin; }
@@ -147,10 +152,9 @@ class PLATFORM_EXPORT TransformPaintPropertyNode
   size_t CacheMemoryUsageInBytes() const;
 
  private:
-  TransformPaintPropertyNode(
-      scoped_refptr<const TransformPaintPropertyNode> parent,
-      State&& state)
-      : PaintPropertyNode(std::move(parent)), state_(std::move(state)) {
+  TransformPaintPropertyNode(const TransformPaintPropertyNode* parent,
+                             State&& state)
+      : PaintPropertyNode(parent), state_(std::move(state)) {
     Validate();
   }
 

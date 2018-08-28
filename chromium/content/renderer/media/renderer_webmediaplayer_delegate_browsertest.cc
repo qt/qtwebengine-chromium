@@ -9,7 +9,7 @@
 #include "base/location.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/common/media/media_player_delegate_messages.h"
@@ -49,6 +49,7 @@ class MockWebMediaPlayerDelegateObserver
   MOCK_METHOD1(OnVolumeMultiplierUpdate, void(double));
   MOCK_METHOD1(OnBecamePersistentVideo, void(bool));
   MOCK_METHOD0(OnPictureInPictureModeEnded, void());
+  MOCK_METHOD1(OnPictureInPictureControlClicked, void(const std::string&));
 };
 
 class RendererWebMediaPlayerDelegateTest : public content::RenderViewTest {

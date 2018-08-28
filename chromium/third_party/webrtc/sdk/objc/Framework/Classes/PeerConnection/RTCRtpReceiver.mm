@@ -36,6 +36,7 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
 }  // namespace webrtc
 
 @implementation RTCRtpReceiver {
+  RTCPeerConnectionFactory *_factory;
   rtc::scoped_refptr<webrtc::RtpReceiverInterface> _nativeRtpReceiver;
   std::unique_ptr<webrtc::RtpReceiverDelegateAdapter> _observer;
 }
@@ -62,7 +63,7 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
   rtc::scoped_refptr<webrtc::MediaStreamTrackInterface> nativeTrack(
     _nativeRtpReceiver->track());
   if (nativeTrack) {
-    return [RTCMediaStreamTrack mediaTrackForNativeTrack:nativeTrack];
+    return [RTCMediaStreamTrack mediaTrackForNativeTrack:nativeTrack factory:_factory];
   }
   return nil;
 }
@@ -102,9 +103,11 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
   return _nativeRtpReceiver;
 }
 
-- (instancetype)initWithNativeRtpReceiver:
-    (rtc::scoped_refptr<webrtc::RtpReceiverInterface>)nativeRtpReceiver {
+- (instancetype)initWithFactory:(RTCPeerConnectionFactory *)factory
+              nativeRtpReceiver:
+                  (rtc::scoped_refptr<webrtc::RtpReceiverInterface>)nativeRtpReceiver {
   if (self = [super init]) {
+    _factory = factory;
     _nativeRtpReceiver = nativeRtpReceiver;
     RTCLogInfo(
         @"RTCRtpReceiver(%p): created receiver: %@", self, self.description);

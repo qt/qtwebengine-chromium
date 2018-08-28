@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_gc_controller.h"
@@ -44,6 +45,7 @@
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_thread.h"
+#include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 
 namespace blink {
@@ -89,7 +91,12 @@ void ScheduledAction::Dispose() {
   code_ = String();
   info_.Clear();
   function_.Clear();
+  script_state_->Reset();
   script_state_.Clear();
+}
+
+void ScheduledAction::Trace(blink::Visitor* visitor) {
+  visitor->Trace(script_state_);
 }
 
 void ScheduledAction::Execute(ExecutionContext* context) {
@@ -99,7 +106,7 @@ void ScheduledAction::Execute(ExecutionContext* context) {
   }
   // ExecutionContext::CanExecuteScripts() relies on the current context to
   // determine if it is allowed. Enter the scope here.
-  ScriptState::Scope scope(script_state_.Get());
+  ScriptState::Scope scope(script_state_->Get());
 
   if (context->IsDocument()) {
     LocalFrame* frame = ToDocument(context)->GetFrame();
@@ -122,7 +129,7 @@ void ScheduledAction::Execute(ExecutionContext* context) {
 ScheduledAction::ScheduledAction(ScriptState* script_state,
                                  const ScriptValue& function,
                                  const Vector<ScriptValue>& arguments)
-    : script_state_(script_state), info_(script_state->GetIsolate()) {
+    : ScheduledAction(script_state) {
   DCHECK(function.IsFunction());
   function_.Set(script_state->GetIsolate(),
                 v8::Local<v8::Function>::Cast(function.V8Value()));
@@ -132,12 +139,13 @@ ScheduledAction::ScheduledAction(ScriptState* script_state,
 }
 
 ScheduledAction::ScheduledAction(ScriptState* script_state, const String& code)
-    : script_state_(script_state),
-      info_(script_state->GetIsolate()),
-      code_(code) {}
+    : ScheduledAction(script_state) {
+  code_ = code;
+}
 
 ScheduledAction::ScheduledAction(ScriptState* script_state)
-    : script_state_(script_state), info_(script_state->GetIsolate()) {}
+    : script_state_(ScriptStateProtectingContext::Create(script_state)),
+      info_(script_state->GetIsolate()) {}
 
 void ScheduledAction::Execute(LocalFrame* frame) {
   DCHECK(script_state_->ContextIsValid());
@@ -181,7 +189,7 @@ void ScheduledAction::Execute(WorkerGlobalScope* worker) {
   }
 
   if (!function_.IsEmpty()) {
-    ScriptState::Scope scope(script_state_.Get());
+    ScriptState::Scope scope(script_state_->Get());
     v8::Local<v8::Function> function =
         function_.NewLocal(script_state_->GetIsolate());
     ScriptState* script_state_for_func =

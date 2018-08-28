@@ -2839,7 +2839,7 @@ void CFXJSE_FormCalcContext::Eval(CFXJSE_Value* pThis,
   }
 
   std::unique_ptr<CFXJSE_Context> pNewContext(
-      CFXJSE_Context::Create(pIsolate, nullptr, nullptr, nullptr));
+      CFXJSE_Context::Create(pIsolate, nullptr, nullptr));
 
   auto returnValue = pdfium::MakeUnique<CFXJSE_Value>(pIsolate);
   pNewContext->ExecuteScript(
@@ -3807,16 +3807,14 @@ void CFXJSE_FormCalcContext::Format(CFXJSE_Value* pThis,
         wsPattern = L"num{" + wsPattern + L"}";
       } break;
       default: {
-        WideString wsTestPattern;
-        wsTestPattern = L"num{" + wsPattern + L"}";
+        WideString wsTestPattern = L"num{" + wsPattern + L"}";
         CXFA_LocaleValue tempLocaleValue(XFA_VT_FLOAT, wsValue, wsTestPattern,
                                          pLocale, pMgr);
         if (tempLocaleValue.IsValid()) {
-          wsPattern = wsTestPattern;
+          wsPattern = std::move(wsTestPattern);
           patternType = XFA_VT_FLOAT;
         } else {
-          wsTestPattern = L"text{" + wsPattern + L"}";
-          wsPattern = wsTestPattern;
+          wsPattern = L"text{" + wsPattern + L"}";
           patternType = XFA_VT_TEXT;
         }
       } break;
@@ -3893,17 +3891,12 @@ void CFXJSE_FormCalcContext::Lower(CFXJSE_Value* pThis,
   CFX_WideTextBuf lowStringBuf;
   ByteString argString = ValueToUTF8String(argOne.get());
   WideString wsArgString = WideString::FromUTF8(argString.AsStringView());
-  const wchar_t* pData = wsArgString.c_str();
-  size_t i = 0;
-  while (i < argString.GetLength()) {
-    int32_t ch = pData[i];
+  for (auto ch : wsArgString) {
     if ((ch >= 0x41 && ch <= 0x5A) || (ch >= 0xC0 && ch <= 0xDE))
       ch += 32;
     else if (ch == 0x100 || ch == 0x102 || ch == 0x104)
       ch += 1;
-
     lowStringBuf.AppendChar(ch);
-    ++i;
   }
   lowStringBuf.AppendChar(0);
 

@@ -46,6 +46,8 @@ TEST(TimestampTest, ComparisonOperators) {
   const int64_t kLarge = 451;
 
   EXPECT_EQ(Timestamp::Infinity(), Timestamp::Infinity());
+  EXPECT_GE(Timestamp::Infinity(), Timestamp::Infinity());
+  EXPECT_GT(Timestamp::Infinity(), Timestamp::ms(kLarge));
   EXPECT_EQ(Timestamp::ms(kSmall), Timestamp::ms(kSmall));
   EXPECT_LE(Timestamp::ms(kSmall), Timestamp::ms(kSmall));
   EXPECT_GE(Timestamp::ms(kSmall), Timestamp::ms(kSmall));
@@ -54,6 +56,39 @@ TEST(TimestampTest, ComparisonOperators) {
   EXPECT_LT(Timestamp::ms(kSmall), Timestamp::ms(kLarge));
   EXPECT_GE(Timestamp::ms(kLarge), Timestamp::ms(kSmall));
   EXPECT_GT(Timestamp::ms(kLarge), Timestamp::ms(kSmall));
+}
+
+TEST(TimestampTest, CanBeInititializedFromLargeInt) {
+  const int kMaxInt = std::numeric_limits<int>::max();
+  EXPECT_EQ(Timestamp::seconds(kMaxInt).us(),
+            static_cast<int64_t>(kMaxInt) * 1000000);
+  EXPECT_EQ(Timestamp::ms(kMaxInt).us(), static_cast<int64_t>(kMaxInt) * 1000);
+}
+
+TEST(TimestampTest, ConvertsToAndFromDouble) {
+  const int64_t kMicros = 17017;
+  const double kMicrosDouble = kMicros;
+  const double kMillisDouble = kMicros * 1e-3;
+  const double kSecondsDouble = kMillisDouble * 1e-3;
+
+  EXPECT_EQ(Timestamp::us(kMicros).seconds<double>(), kSecondsDouble);
+  EXPECT_EQ(Timestamp::seconds(kSecondsDouble).us(), kMicros);
+
+  EXPECT_EQ(Timestamp::us(kMicros).ms<double>(), kMillisDouble);
+  EXPECT_EQ(Timestamp::ms(kMillisDouble).us(), kMicros);
+
+  EXPECT_EQ(Timestamp::us(kMicros).us<double>(), kMicrosDouble);
+  EXPECT_EQ(Timestamp::us(kMicrosDouble).us(), kMicros);
+
+  const double kPlusInfinity = std::numeric_limits<double>::infinity();
+
+  EXPECT_EQ(Timestamp::Infinity().seconds<double>(), kPlusInfinity);
+  EXPECT_EQ(Timestamp::Infinity().ms<double>(), kPlusInfinity);
+  EXPECT_EQ(Timestamp::Infinity().us<double>(), kPlusInfinity);
+
+  EXPECT_TRUE(Timestamp::seconds(kPlusInfinity).IsInfinite());
+  EXPECT_TRUE(Timestamp::ms(kPlusInfinity).IsInfinite());
+  EXPECT_TRUE(Timestamp::us(kPlusInfinity).IsInfinite());
 }
 
 TEST(UnitConversionTest, TimestampAndTimeDeltaMath) {

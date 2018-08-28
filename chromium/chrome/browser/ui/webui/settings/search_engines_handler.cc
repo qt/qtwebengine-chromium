@@ -18,7 +18,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/search_engines/template_url_table_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -26,7 +25,6 @@
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
-#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/web_ui.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -34,8 +32,8 @@
 #include "extensions/common/extension.h"
 
 namespace {
-// The following strings need to match with the IDs of the paper-input elements
-// at settings/search_engines_page/add_search_engine_dialog.html.
+// The following strings need to match with the IDs of the text input elements
+// at settings/search_engines_page/search_engine_dialog.html.
 const char kSearchEngineField[] = "searchEngine";
 const char kKeywordField[] = "keyword";
 const char kQueryUrlField[] = "queryUrl";

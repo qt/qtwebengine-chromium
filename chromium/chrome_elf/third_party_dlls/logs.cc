@@ -26,8 +26,8 @@ HANDLE g_notification_event = nullptr;
 
 // This structure will be translated into LogEntry when draining log.
 struct LogEntryInternal {
-  uint8_t basename_hash[elf_sha1::kSHA1Length];
-  uint8_t code_id_hash[elf_sha1::kSHA1Length];
+  uint32_t image_size;
+  uint32_t time_date_stamp;
   std::string full_path;
 };
 
@@ -36,8 +36,8 @@ void TranslateEntry(LogType log_type,
                     const LogEntryInternal& src,
                     LogEntry* dst) {
   dst->type = log_type;
-  ::memcpy(dst->basename_hash, src.basename_hash, elf_sha1::kSHA1Length);
-  ::memcpy(dst->code_id_hash, src.code_id_hash, elf_sha1::kSHA1Length);
+  dst->module_size = src.image_size;
+  dst->time_date_stamp = src.time_date_stamp;
 
   // Sanity check - there should be no LogEntryInternal with a too long path.
   // LogLoadAttempt() ensures this.
@@ -46,8 +46,14 @@ void TranslateEntry(LogType log_type,
   ::memcpy(dst->path, src.full_path.c_str(), dst->path_len + 1);
 }
 
+//------------------------------------------------------------------------------
+// Log
 // Class wrapper for internal logging events of module load attempts.
 // - A Log instance will either track 'block' events, or 'allow' events.
+//------------------------------------------------------------------------------
+class Log;
+Log& GetBlockedRecordLog();
+
 class Log {
  public:
   // Move constructor
@@ -69,10 +75,13 @@ class Log {
 
   // Add a LogEntryInternal to the log.  Take ownership of the argument.
   void AddEntry(LogEntryInternal&& entry) {
-    // Sanity checks.  If load blocked, do not add duplicate logs.
+    // Sanity checks.  If this is a block, do not add duplicate logs.  Check
+    // both the "permanent" block record Log, as well as this Log (which
+    // hasn't been drained yet).
     if (entries_.size() == kMaxLogEntries ||
         (log_type_ == LogType::kBlocked &&
-         ContainsEntry(entry.basename_hash, entry.code_id_hash))) {
+         (GetBlockedRecordLog().ContainsEntry(entry) ||
+          ContainsEntry(entry)))) {
       return;
     }
     entries_.push_back(std::move(entry));
@@ -108,17 +117,32 @@ class Log {
     return bytes_written;
   }
 
+  // Insert a block of log entries, silently and efficiently.
+  // - Intended for use with backing up logs to another Log object.  Normal
+  //   logging events should be added via AddEntry().
+  void InsertAtEnd(std::vector<LogEntryInternal>::iterator first_element,
+                   uint32_t count) {
+    uint32_t elements = (entries_.size() + count <= kMaxLogEntries)
+                            ? count
+                            : kMaxLogEntries - entries_.size();
+    assert(elements <= count);
+
+    if (elements)
+      entries_.insert(entries_.end(), first_element, first_element + elements);
+  }
+
   // Empty the log.
-  void Reset() { DequeueEntries(static_cast<uint32_t>(entries_.size())); }
+  void Reset() { entries_.clear(); }
 
  private:
   // Logs are currently unordered, so just loop.
   // - Returns true if the given hashes already exist in the log.
-  bool ContainsEntry(const uint8_t* basename_hash,
-                     const uint8_t* code_id_hash) const {
+  bool ContainsEntry(const LogEntryInternal& new_entry) const {
     for (auto entry : entries_) {
-      if (!elf_sha1::CompareHashes(basename_hash, entry.basename_hash) &&
-          !elf_sha1::CompareHashes(code_id_hash, entry.code_id_hash)) {
+      // Compare strings last, only if everything else matches, for efficiency.
+      if (new_entry.image_size == entry.image_size &&
+          new_entry.time_date_stamp == entry.time_date_stamp &&
+          new_entry.full_path.compare(entry.full_path) == 0) {
         return true;
       }
     }
@@ -128,8 +152,13 @@ class Log {
   // Remove |count| entries from start of log vector.
   // - More efficient to take a chunk off the vector once, instead of one entry
   //   at a time.
+  // - NOTE: use this function from Drain().
   void DequeueEntries(uint32_t count) {
     assert(count <= entries_.size());
+    if (log_type_ == LogType::kBlocked) {
+      // Backup block logs to the "permanent" record log.
+      GetBlockedRecordLog().InsertAtEnd(entries_.begin(), count);
+    }
     entries_.erase(entries_.begin(), entries_.begin() + count);
   }
 
@@ -141,17 +170,31 @@ class Log {
   Log& operator=(const Log&) = delete;
 };
 
+//------------------------------------------------------------------------------
+// The internal log structures
+//
 // NOTE: these "globals" are only initialized once during InitLogs().
 // NOTE: they are wrapped in functions to prevent exit-time dtors.
+//
 // *These returned Log instances must only be accessed under g_log_mutex.
+//------------------------------------------------------------------------------
+
+Log& GetAllowedLog() {
+  static Log* const allowed_log = new Log(LogType::kAllowed);
+  return *allowed_log;
+}
+
 Log& GetBlockedLog() {
   static Log* const blocked_log = new Log(LogType::kBlocked);
   return *blocked_log;
 }
 
-Log& GetAllowedLog() {
-  static Log* const allowed_log = new Log(LogType::kAllowed);
-  return *allowed_log;
+// This Log will hold kBlocked logs "permanently" across calls to Drain(), to
+// prevent spammy duplicates across drains.  This Log is internal only, and
+// is not drained itself.
+Log& GetBlockedRecordLog() {
+  static Log* const blocked_record_log = new Log(LogType::kBlocked);
+  return *blocked_record_log;
 }
 
 }  // namespace
@@ -162,30 +205,23 @@ Log& GetAllowedLog() {
 
 // This is called from inside a hook shim, so don't bother with return status.
 void LogLoadAttempt(LogType log_type,
-                    const std::string& basename_hash,
-                    const std::string& code_id_hash,
+                    uint32_t image_size,
+                    uint32_t time_date_stamp,
                     const std::string& full_image_path) {
   assert(g_log_mutex);
-  assert(!basename_hash.empty() && !code_id_hash.empty());
-  assert(basename_hash.length() == elf_sha1::kSHA1Length &&
-         code_id_hash.length() == elf_sha1::kSHA1Length);
 
   if (::WaitForSingleObject(g_log_mutex, kMaxMutexWaitMs) != WAIT_OBJECT_0)
     return;
 
   // Build the new log entry.
   LogEntryInternal entry;
-  ::memcpy(&entry.basename_hash[0], basename_hash.data(),
-           elf_sha1::kSHA1Length);
-  ::memcpy(&entry.code_id_hash[0], code_id_hash.data(), elf_sha1::kSHA1Length);
+  entry.image_size = image_size;
+  entry.time_date_stamp = time_date_stamp;
+  entry.full_path = full_image_path;
 
-  // Only store full path if the module was allowed to load.
-  if (log_type == LogType::kAllowed) {
-    entry.full_path = full_image_path;
-    // Edge condition.  Ensure the path length is <= max(uint32_t) - 1.
-    if (entry.full_path.size() > std::numeric_limits<uint32_t>::max() - 1)
-      entry.full_path.resize(std::numeric_limits<uint32_t>::max() - 1);
-  }
+  // Edge condition.  Ensure the path length is <= max(uint32_t) - 1.
+  if (entry.full_path.size() > std::numeric_limits<uint32_t>::max() - 1)
+    entry.full_path.resize(std::numeric_limits<uint32_t>::max() - 1);
 
   // Add the new entry.
   Log& log =
@@ -195,16 +231,16 @@ void LogLoadAttempt(LogType log_type,
   ::ReleaseMutex(g_log_mutex);
 }
 
-LogStatus InitLogs() {
+ThirdPartyStatus InitLogs() {
   // Debug check: InitLogs should not be called more than once.
   assert(!g_log_mutex);
 
   // Create unnamed mutex for log access.
   g_log_mutex = ::CreateMutex(nullptr, false, nullptr);
   if (!g_log_mutex)
-    return LogStatus::kCreateMutexFailure;
+    return ThirdPartyStatus::kLogsCreateMutexFailure;
 
-  return LogStatus::kSuccess;
+  return ThirdPartyStatus::kSuccess;
 }
 
 void DeinitLogs() {
@@ -213,6 +249,7 @@ void DeinitLogs() {
   g_log_mutex = nullptr;
 
   GetBlockedLog().Reset();
+  GetBlockedRecordLog().Reset();
   GetAllowedLog().Reset();
 }
 

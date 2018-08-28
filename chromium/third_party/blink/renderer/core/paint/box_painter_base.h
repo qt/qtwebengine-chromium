@@ -18,13 +18,13 @@ namespace blink {
 
 class BackgroundImageGeometry;
 class ComputedStyle;
-class DisplayItemClient;
 class Document;
 class FillLayer;
 class FloatRoundedRect;
+class GraphicsContext;
 class ImageResourceObserver;
+class IntRect;
 class LayoutRect;
-class PaintLayer;
 struct PaintInfo;
 
 // Base class for box painting. Has no dependencies on the layout tree and thus
@@ -34,20 +34,16 @@ class BoxPainterBase {
   STACK_ALLOCATED();
 
  public:
-  BoxPainterBase(const DisplayItemClient& display_item,
-                 const Document* document,
+  BoxPainterBase(const Document* document,
                  const ComputedStyle& style,
                  Node* node,
                  LayoutRectOutsets border,
-                 LayoutRectOutsets padding,
-                 const PaintLayer* paint_layer)
-      : display_item_(display_item),
-        document_(document),
+                 LayoutRectOutsets padding)
+      : document_(document),
         style_(style),
         node_(node),
         border_(border),
-        padding_(padding),
-        paint_layer_(paint_layer) {}
+        padding_(padding) {}
 
   void PaintFillLayers(const PaintInfo&,
                        const Color&,
@@ -64,6 +60,7 @@ class BoxPainterBase {
                       BackgroundBleedAvoidance,
                       BackgroundImageGeometry&,
                       SkBlendMode = SkBlendMode::kSrcOver,
+                      bool object_has_multiple_boxes = false,
                       const LayoutSize flow_box_size = LayoutSize());
 
   void PaintMaskImages(const PaintInfo&,
@@ -142,51 +139,26 @@ class BoxPainterBase {
   };
 
  protected:
-  FloatRoundedRect BackgroundRoundedRectAdjustedForBleedAvoidance(
-      const LayoutRect& border_rect,
-      const LayoutSize& flow_box_size,
-      BackgroundBleedAvoidance,
-      bool include_logical_left_edge,
-      bool include_logical_right_edge) const;
-  FloatRoundedRect RoundedBorderRectForClip(
-      const FillLayerInfo&,
-      const FillLayer&,
-      const LayoutRect&,
-      const LayoutSize& flow_box_size,
-      BackgroundBleedAvoidance,
-      LayoutRectOutsets border_padding_insets) const;
-
-  void PaintFillLayerBackground(GraphicsContext&,
-                                const FillLayerInfo&,
-                                Image*,
-                                SkBlendMode,
-                                const BackgroundImageGeometry&,
-                                LayoutRect scrolled_paint_rect);
   LayoutRectOutsets BorderOutsets(const FillLayerInfo&) const;
-  LayoutRectOutsets PaddingOutsets(const FillLayerInfo&) const;
-
   void PaintFillLayerTextFillBox(GraphicsContext&,
                                  const FillLayerInfo&,
                                  Image*,
                                  SkBlendMode composite_op,
                                  const BackgroundImageGeometry&,
                                  const LayoutRect&,
-                                 const LayoutRect& scrolled_paint_rect);
+                                 const LayoutRect& scrolled_paint_rect,
+                                 bool object_has_multiple_boxes);
   virtual void PaintTextClipMask(GraphicsContext&,
                                  const IntRect& mask_rect,
-                                 const LayoutPoint& paint_offset) = 0;
-  virtual LayoutRect AdjustForScrolledContent(const PaintInfo&,
-                                              const FillLayerInfo&,
-                                              const LayoutRect&) = 0;
+                                 const LayoutPoint& paint_offset,
+                                 bool object_has_multiple_boxes) = 0;
+
+  virtual LayoutRect AdjustRectForScrolledContent(const PaintInfo&,
+                                                  const FillLayerInfo&,
+                                                  const LayoutRect&) = 0;
   virtual FillLayerInfo GetFillLayerInfo(const Color&,
                                          const FillLayer&,
                                          BackgroundBleedAvoidance) const = 0;
-  virtual FloatRoundedRect GetBackgroundRoundedRect(
-      const LayoutRect& border_rect,
-      const LayoutSize& flow_box_size,
-      bool include_logical_left_edge,
-      bool include_logical_right_edge) const;
-
   static void PaintInsetBoxShadow(const PaintInfo&,
                                   const FloatRoundedRect&,
                                   const ComputedStyle&,
@@ -194,13 +166,11 @@ class BoxPainterBase {
                                   bool include_logical_right_edge = true);
 
  private:
-  const DisplayItemClient& display_item_;
   Member<const Document> document_;
   const ComputedStyle& style_;
   Member<Node> node_;
-  LayoutRectOutsets border_;
-  LayoutRectOutsets padding_;
-  const PaintLayer* paint_layer_;
+  const LayoutRectOutsets border_;
+  const LayoutRectOutsets padding_;
 };
 
 }  // namespace blink

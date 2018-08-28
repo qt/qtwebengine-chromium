@@ -25,8 +25,9 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/base/unaligned_shared_memory.h"
+#include "media/base/video_bitrate_allocation.h"
 #include "media/gpu/h264_dpb.h"
-#include "media/gpu/shared_memory_region.h"
 #include "media/gpu/vaapi/h264_encoder.h"
 #include "media/gpu/vaapi/vaapi_common.h"
 #include "media/gpu/vaapi/vp8_encoder.h"
@@ -123,10 +124,15 @@ struct VaapiVideoEncodeAccelerator::InputFrameRef {
 };
 
 struct VaapiVideoEncodeAccelerator::BitstreamBufferRef {
-  BitstreamBufferRef(int32_t id, std::unique_ptr<SharedMemoryRegion> shm)
-      : id(id), shm(std::move(shm)) {}
+  BitstreamBufferRef(int32_t id, const BitstreamBuffer& buffer)
+      : id(id),
+        shm(std::make_unique<UnalignedSharedMemory>(buffer.handle(),
+                                                    buffer.size(),
+                                                    false)),
+        offset(buffer.offset()) {}
   const int32_t id;
-  const std::unique_ptr<SharedMemoryRegion> shm;
+  const std::unique_ptr<UnalignedSharedMemory> shm;
+  const off_t offset;
 };
 
 VideoEncodeAccelerator::SupportedProfiles
@@ -376,11 +382,8 @@ void VaapiVideoEncodeAccelerator::SubmitVAEncMiscParamBuffer(
 void VaapiVideoEncodeAccelerator::SubmitH264BitstreamBuffer(
     scoped_refptr<H264BitstreamBuffer> buffer) {
   DCHECK(encoder_thread_task_runner_->BelongsToCurrentThread());
-  // TODO(crbug.com/844303): use vaMapBuffer in VaapiWrapper::SubmitBuffer()
-  // instead to avoid this.
-  void* non_const_ptr = const_cast<uint8_t*>(buffer->data());
   if (!vaapi_wrapper_->SubmitBuffer(VAEncPackedHeaderDataBufferType,
-                                    buffer->BytesInBuffer(), non_const_ptr)) {
+                                    buffer->BytesInBuffer(), buffer->data())) {
     NOTIFY_ERROR(kPlatformFailureError, "Failed submitting a bitstream buffer");
   }
 }
@@ -432,10 +435,8 @@ void VaapiVideoEncodeAccelerator::ReturnBitstreamBuffer(
             << " id: " << buffer->id << " size: " << data_size;
 
   child_task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&Client::BitstreamBufferReady, client_, buffer->id,
-                     data_size, encode_job->IsKeyframeRequested(),
-                     encode_job->timestamp()));
+      FROM_HERE, base::BindOnce(&Client::BitstreamBufferReady, client_,
+                                buffer->id, encode_job->Metadata(data_size)));
 }
 
 void VaapiVideoEncodeAccelerator::Encode(const scoped_refptr<VideoFrame>& frame,
@@ -542,8 +543,7 @@ void VaapiVideoEncodeAccelerator::UseOutputBitstreamBuffer(
     return;
   }
 
-  auto buffer_ref = std::make_unique<BitstreamBufferRef>(
-      buffer.id(), std::make_unique<SharedMemoryRegion>(buffer, false));
+  auto buffer_ref = std::make_unique<BitstreamBufferRef>(buffer.id(), buffer);
 
   encoder_thread_task_runner_->PostTask(
       FROM_HERE,
@@ -556,7 +556,7 @@ void VaapiVideoEncodeAccelerator::UseOutputBitstreamBufferTask(
   DCHECK(encoder_thread_task_runner_->BelongsToCurrentThread());
   DCHECK_NE(state_, kUninitialized);
 
-  if (!buffer_ref->shm->Map()) {
+  if (!buffer_ref->shm->MapAt(buffer_ref->offset, buffer_ref->shm->size())) {
     NOTIFY_ERROR(kPlatformFailureError, "Failed mapping shared memory.");
     return;
   }
@@ -571,22 +571,41 @@ void VaapiVideoEncodeAccelerator::RequestEncodingParametersChange(
   VLOGF(2) << "bitrate: " << bitrate << " framerate: " << framerate;
   DCHECK(child_task_runner_->BelongsToCurrentThread());
 
+  VideoBitrateAllocation allocation;
+  allocation.SetBitrate(0, 0, bitrate);
   encoder_thread_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(
           &VaapiVideoEncodeAccelerator::RequestEncodingParametersChangeTask,
-          base::Unretained(this), bitrate, framerate));
+          base::Unretained(this), allocation, framerate));
+}
+
+void VaapiVideoEncodeAccelerator::RequestEncodingParametersChange(
+    const VideoBitrateAllocation& bitrate_allocation,
+    uint32_t framerate) {
+  VLOGF(2) << "bitrate: " << bitrate_allocation.GetSumBps()
+           << " framerate: " << framerate;
+  DCHECK(child_task_runner_->BelongsToCurrentThread());
+
+  encoder_thread_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &VaapiVideoEncodeAccelerator::RequestEncodingParametersChangeTask,
+          base::Unretained(this), bitrate_allocation, framerate));
 }
 
 void VaapiVideoEncodeAccelerator::RequestEncodingParametersChangeTask(
-    uint32_t bitrate,
+    VideoBitrateAllocation bitrate_allocation,
     uint32_t framerate) {
-  VLOGF(2) << "bitrate: " << bitrate << " framerate: " << framerate;
+  VLOGF(2) << "bitrate: " << bitrate_allocation.GetSumBps()
+           << " framerate: " << framerate;
   DCHECK(encoder_thread_task_runner_->BelongsToCurrentThread());
   DCHECK_NE(state_, kUninitialized);
 
-  if (!encoder_->UpdateRates(bitrate, framerate))
-    VLOGF(1) << "Failed to update rates to " << bitrate << " " << framerate;
+  if (!encoder_->UpdateRates(bitrate_allocation, framerate)) {
+    VLOGF(1) << "Failed to update rates to " << bitrate_allocation.GetSumBps()
+             << " " << framerate;
+  }
 }
 
 void VaapiVideoEncodeAccelerator::Flush(FlushCallback flush_callback) {
@@ -938,7 +957,7 @@ bool VaapiVideoEncodeAccelerator::VP8Accelerator::SubmitFrameParameters(
   seq_param.frame_width_scale = frame_header->horizontal_scale;
   seq_param.frame_height_scale = frame_header->vertical_scale;
   seq_param.error_resilient = 1;
-  seq_param.bits_per_second = encode_params.bitrate_bps;
+  seq_param.bits_per_second = encode_params.bitrate_allocation.GetSumBps();
   seq_param.intra_period = encode_params.kf_period_frames;
 
   VAEncPictureParameterBufferVP8 pic_param = {};
@@ -1035,7 +1054,8 @@ bool VaapiVideoEncodeAccelerator::VP8Accelerator::SubmitFrameParameters(
       frame_header->quantization_hdr.uv_ac_delta;
 
   VAEncMiscParameterRateControl rate_control_param = {};
-  rate_control_param.bits_per_second = encode_params.bitrate_bps;
+  rate_control_param.bits_per_second =
+      encode_params.bitrate_allocation.GetSumBps();
   rate_control_param.target_percentage = kTargetBitratePercentage;
   rate_control_param.window_size = encode_params.cpb_window_size_ms;
   rate_control_param.initial_qp = encode_params.initial_qp;

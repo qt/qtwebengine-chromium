@@ -13,7 +13,8 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
-#include "base/memory/shared_memory.h"
+#include "base/memory/shared_memory_mapping.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 #include "base/single_thread_task_runner.h"
 #include "base/sync_socket.h"
 #include "base/task_runner.h"
@@ -21,12 +22,12 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "media/audio/audio_sync_reader.h"
-#include "mojo/public/cpp/system/platform_handle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::CancelableSyncSocket;
-using base::SharedMemory;
+using base::UnsafeSharedMemoryRegion;
+using base::WritableSharedMemoryMapping;
 using base::SyncSocket;
 using testing::_;
 using testing::DoAll;
@@ -85,25 +86,6 @@ class MockAudioOutputIPC : public AudioOutputIPC {
   MOCK_METHOD1(SetVolume, void(double volume));
 };
 
-// Converts a new-style shared memory region to a old-style shared memory
-// handle using a mojo::ScopedSharedBufferHandle that supports both types.
-// TODO(https://crbug.com/844508): get rid of this when AudioOutputDevice shared
-// memory refactor is done.
-base::SharedMemoryHandle ToSharedMemoryHandle(
-    base::UnsafeSharedMemoryRegion region) {
-  mojo::ScopedSharedBufferHandle buffer_handle =
-      mojo::WrapUnsafeSharedMemoryRegion(std::move(region));
-  base::SharedMemoryHandle memory_handle;
-  mojo::UnwrappedSharedMemoryHandleProtection protection;
-  size_t memory_length = 0;
-  auto result = mojo::UnwrapSharedMemoryHandle(
-      std::move(buffer_handle), &memory_handle, &memory_length, &protection);
-  DCHECK_EQ(result, MOJO_RESULT_OK);
-  DCHECK_EQ(protection,
-            mojo::UnwrappedSharedMemoryHandleProtection::kReadWrite);
-  return memory_handle;
-}
-
 }  // namespace.
 
 class AudioOutputDeviceTest : public testing::Test {
@@ -131,7 +113,8 @@ class AudioOutputDeviceTest : public testing::Test {
  private:
   int CalculateMemorySize();
 
-  SharedMemory shared_memory_;
+  UnsafeSharedMemoryRegion shared_memory_region_;
+  WritableSharedMemoryMapping shared_memory_mapping_;
   CancelableSyncSocket browser_socket_;
   CancelableSyncSocket renderer_socket_;
 
@@ -207,8 +190,11 @@ void AudioOutputDeviceTest::CallOnStreamCreated() {
   const uint32_t kMemorySize =
       ComputeAudioOutputBufferSize(default_audio_parameters_);
 
-  ASSERT_TRUE(shared_memory_.CreateAndMapAnonymous(kMemorySize));
-  memset(shared_memory_.memory(), 0xff, kMemorySize);
+  shared_memory_region_ = base::UnsafeSharedMemoryRegion::Create(kMemorySize);
+  ASSERT_TRUE(shared_memory_region_.IsValid());
+  shared_memory_mapping_ = shared_memory_region_.Map();
+  ASSERT_TRUE(shared_memory_mapping_.IsValid());
+  memset(shared_memory_mapping_.memory(), 0xff, kMemorySize);
 
   ASSERT_TRUE(CancelableSyncSocket::CreatePair(&browser_socket_,
                                                &renderer_socket_));
@@ -219,14 +205,12 @@ void AudioOutputDeviceTest::CallOnStreamCreated() {
   SyncSocket::TransitDescriptor audio_device_socket_descriptor;
   ASSERT_TRUE(renderer_socket_.PrepareTransitDescriptor(
       base::GetCurrentProcessHandle(), &audio_device_socket_descriptor));
-  base::SharedMemoryHandle duplicated_memory_handle =
-      shared_memory_.handle().Duplicate();
-  ASSERT_TRUE(duplicated_memory_handle.IsValid());
+  base::UnsafeSharedMemoryRegion duplicated_memory_region =
+      shared_memory_region_.Duplicate();
+  ASSERT_TRUE(duplicated_memory_region.IsValid());
 
-  // TODO(erikchen): This appears to leak the SharedMemoryHandle.
-  // https://crbug.com/640840.
   audio_device_->OnStreamCreated(
-      duplicated_memory_handle,
+      std::move(duplicated_memory_region),
       SyncSocket::UnwrapHandle(audio_device_socket_descriptor),
       /*playing_automatically*/ false);
   task_env_.FastForwardBy(base::TimeDelta());
@@ -369,12 +353,11 @@ struct TestEnvironment {
     time_stamp = base::TimeTicks::Now();
 
 #if defined(OS_FUCHSIA)
-    // Raise the timeout limits to reduce bot flakiness.
-    // Fuchsia's task scheduler suffers from bad jitter on systems running many
-    // tests simultaneously on nested virtualized deployments (e.g. test bots),
-    // leading some read operations to randomly timeout.
+    // TODO(https://crbug.com/838367): Fuchsia bots use nested virtualization,
+    // which can result in unusually long scheduling delays, so allow a longer
+    // timeout.
     reader->set_max_wait_timeout_for_test(
-        base::TimeDelta::FromMilliseconds(50));
+        base::TimeDelta::FromMilliseconds(250));
 #endif
   }
 
@@ -412,9 +395,9 @@ TEST_F(AudioOutputDeviceTest, VerifyDataFlow) {
   Mock::VerifyAndClear(ipc);
   audio_device->OnDeviceAuthorized(OUTPUT_DEVICE_STATUS_OK, params,
                                    kDefaultDeviceId);
-  audio_device->OnStreamCreated(
-      ToSharedMemoryHandle(env.reader->TakeSharedMemoryRegion()),
-      env.renderer_socket.Release(), /*playing_automatically*/ false);
+  audio_device->OnStreamCreated(env.reader->TakeSharedMemoryRegion(),
+                                env.renderer_socket.Release(),
+                                /*playing_automatically*/ false);
 
   task_env_.RunUntilIdle();
   // At this point, the callback thread should be running. Send some data over
@@ -473,9 +456,9 @@ TEST_F(AudioOutputDeviceTest, CreateNondefaultDevice) {
   Mock::VerifyAndClear(ipc);
   audio_device->OnDeviceAuthorized(OUTPUT_DEVICE_STATUS_OK, params,
                                    kNonDefaultDeviceId);
-  audio_device->OnStreamCreated(
-      ToSharedMemoryHandle(env.reader->TakeSharedMemoryRegion()),
-      env.renderer_socket.Release(), /*playing_automatically*/ false);
+  audio_device->OnStreamCreated(env.reader->TakeSharedMemoryRegion(),
+                                env.renderer_socket.Release(),
+                                /*playing_automatically*/ false);
 
   audio_device->Stop();
   EXPECT_CALL(*ipc, CloseStream());
@@ -509,9 +492,9 @@ TEST_F(AudioOutputDeviceTest, CreateBitStreamStream) {
   Mock::VerifyAndClear(ipc);
   audio_device->OnDeviceAuthorized(OUTPUT_DEVICE_STATUS_OK, params,
                                    kNonDefaultDeviceId);
-  audio_device->OnStreamCreated(
-      ToSharedMemoryHandle(env.reader->TakeSharedMemoryRegion()),
-      env.renderer_socket.Release(), /*playing_automatically*/ false);
+  audio_device->OnStreamCreated(env.reader->TakeSharedMemoryRegion(),
+                                env.renderer_socket.Release(),
+                                /*playing_automatically*/ false);
 
   task_env_.RunUntilIdle();
   // At this point, the callback thread should be running. Send some data over
@@ -539,7 +522,9 @@ TEST_F(AudioOutputDeviceTest, CreateBitStreamStream) {
     EXPECT_EQ(kBitstreamFrames, test_bus->GetBitstreamFrames());
     EXPECT_EQ(kBitstreamDataSize, test_bus->GetBitstreamDataSize());
     for (size_t i = 0; i < kBitstreamDataSize / sizeof(float); ++i) {
-      EXPECT_EQ(kAudioData, test_bus->channel(0)[i]);
+      // Note: if all of these fail, the bots will behave strangely due to the
+      // large amount of text output. Assert is used to avoid this.
+      ASSERT_EQ(kAudioData, test_bus->channel(0)[i]);
     }
   }
 

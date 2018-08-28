@@ -10,16 +10,16 @@ assert(is_chromeos, "Non-ChromeOS builds cannot depend on //chromeos")
 
 static_library("device_sync") {
   sources = [
-    "cryptauth_client_factory_impl.cc",
-    "cryptauth_client_factory_impl.h",
     "cryptauth_enroller_factory_impl.cc",
     "cryptauth_enroller_factory_impl.h",
-    "cryptauth_token_fetcher_impl.cc",
-    "cryptauth_token_fetcher_impl.h",
+    "device_sync_base.cc",
+    "device_sync_base.h",
     "device_sync_impl.cc",
     "device_sync_impl.h",
     "device_sync_service.cc",
     "device_sync_service.h",
+    "device_sync_type_converters.cc",
+    "device_sync_type_converters.h",
   ]
 
   public_deps = [
@@ -50,6 +50,8 @@ static_library("test_support") {
   testonly = true
 
   sources = [
+    "fake_device_sync.cc",
+    "fake_device_sync.h",
     "fake_device_sync_observer.cc",
     "fake_device_sync_observer.h",
   ]
@@ -61,6 +63,7 @@ static_library("test_support") {
   deps = [
     ":device_sync",
     "//base",
+    "//chromeos/services/device_sync/public/cpp",
     "//chromeos/services/device_sync/public/mojom",
     "//testing/gtest",
   ]
@@ -70,7 +73,6 @@ source_set("unit_tests") {
   testonly = true
 
   sources = [
-    "cryptauth_token_fetcher_impl_unittest.cc",
     "device_sync_service_unittest.cc",
   ]
 
@@ -80,6 +82,7 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//chromeos",
+    "//chromeos/services/device_sync/public/cpp:unit_tests",
     "//chromeos/services/device_sync/public/mojom",
     "//chromeos/services/device_sync/public/mojom:unit_tests",
     "//components/cryptauth",

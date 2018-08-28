@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "components/reading_list/core/reading_list_model_storage.h"
 #include "components/reading_list/core/reading_list_store_delegate.h"
@@ -106,7 +107,7 @@ class ReadingListStore : public ReadingListModelStorage {
   void GetData(StorageKeyList storage_keys, DataCallback callback) override;
 
   // Asynchronously retrieve all of the local sync data.
-  void GetAllData(DataCallback callback) override;
+  void GetAllDataForDebugging(DataCallback callback) override;
 
   // Get or generate a client tag for |entity_data|. This must be the same tag
   // that was/would have been generated in the SyncableService/Directory world
@@ -166,6 +167,8 @@ class ReadingListStore : public ReadingListModelStorage {
   base::Clock* clock_;
 
   SEQUENCE_CHECKER(sequence_checker_);
+
+  base::WeakPtrFactory<ReadingListStore> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ReadingListStore);
 };

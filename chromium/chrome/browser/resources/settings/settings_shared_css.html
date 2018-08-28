@@ -1,5 +1,4 @@
 <link rel="import" href="chrome://resources/cr_elements/paper_button_style_css.html">
-<link rel="import" href="chrome://resources/cr_elements/paper_input_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/search_highlight_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/shared_vars_css.html">
 <link rel="import" href="chrome://resources/cr_elements/shared_style_css.html">
@@ -10,7 +9,7 @@
 <!-- Common styles for Material Design settings. -->
 <dom-module id="settings-shared">
   <template>
-    <style include="settings-icons paper-button-style paper-input-style cr-shared-style search-highlight-style">
+    <style include="settings-icons paper-button-style cr-shared-style search-highlight-style">
       /* Prevent action-links from being selected to avoid accidental
        * selection when trying to click it. */
       a[is=action-link] {
@@ -21,7 +20,7 @@
       h2 {
         align-items: center;
         align-self: flex-start;
-        color: var(--paper-grey-600);
+        color: var(--google-grey-refresh-700);
         display: flex;
         font-size: inherit;
         font-weight: 500;
@@ -34,9 +33,12 @@
         flex-shrink: 0;  /* Prevent distortion of icons in cramped UI. */
       }
 
-      iron-icon[icon='cr:check'],
-      iron-icon[icon='settings:done'] {
+      iron-icon[icon='cr:check'] {
        --iron-icon-fill-color: var(--google-green-500);
+      }
+
+      iron-icon.policy {
+        -webkit-margin-end: var(--cr-controlled-by-spacing);
       }
 
       iron-list {
@@ -97,7 +99,7 @@
       }
 
       .primary-toggle {
-        color: var(--paper-grey-600);
+        color: var(--cr-secondary-text-color);
         font-weight: 500;
       }
 
@@ -323,8 +325,9 @@
       }
 
       .column-header {
-        color: var(--paper-grey-600);
-        font-weight: 500;
+        color: var(--google-grey-refresh-700);
+        font-size: inherit;
+        font-weight: 400;
       }
 
       /* Error message that appears in a toast to indicate the success or
@@ -336,6 +339,13 @@
         padding-top: 15px;
         text-align: center;
         white-space: normal;
+      }
+
+      /* URLs should always be displayed using a LTR embedding - see
+       * https://url.spec.whatwg.org/#url-rendering. */
+      .url-directionality {
+        direction: ltr;
+        unicode-bidi: embed;
       }
     </style>
   </template>

@@ -64,7 +64,7 @@ class AutofillAgent : public content::RenderFrameObserver,
 
   const mojom::AutofillDriverPtr& GetAutofillDriver();
 
-  const mojom::PasswordManagerDriverPtr& GetPasswordManagerDriver();
+  const mojom::PasswordManagerDriverAssociatedPtr& GetPasswordManagerDriver();
 
   // mojom::AutofillAgent:
   void FillForm(int32_t id, const FormData& form) override;
@@ -149,6 +149,10 @@ class AutofillAgent : public content::RenderFrameObserver,
     // Specifies that only show a suggestions box if |element| is part of a
     // password form, otherwise show no suggestions.
     bool show_password_suggestions_only;
+
+    // Specifies that the first suggestion must be auto-selected when the
+    // dropdown is shown. Enabled when the user presses ARROW_DOWN on a field.
+    bool autoselect_first_suggestion;
   };
 
   // content::RenderFrameObserver:
@@ -208,7 +212,8 @@ class AutofillAgent : public content::RenderFrameObserver,
 
   // Queries the browser for Autocomplete and Autofill suggestions for the given
   // |element|.
-  void QueryAutofillSuggestions(const blink::WebFormControlElement& element);
+  void QueryAutofillSuggestions(const blink::WebFormControlElement& element,
+                                bool autoselect_first_suggestion);
 
   // Sets the element value to reflect the selected |suggested_value|.
   void DoAcceptDataListSuggestion(const base::string16& suggested_value);
@@ -266,6 +271,11 @@ class AutofillAgent : public content::RenderFrameObserver,
   // |element_| with it if it's found.
   void ReplaceElementIfNowInvalid(const FormData& form);
 
+  // Trigger a refill if needed for dynamic forms. A refill is needed if some
+  // properties of the form (name, number of fields), or fields (name, id,
+  // label, visibility, control type) have changed after an autofill.
+  void TriggerRefillIfNeeded(const FormData& form);
+
   // Formerly cached forms for all frames, now only caches forms for the current
   // frame.
   FormCache form_cache_;
@@ -302,8 +312,8 @@ class AutofillAgent : public content::RenderFrameObserver,
   // We use a simplified comparison function.
   std::set<FormData, FormDataCompare> submitted_forms_;
 
-  // Was the query node autofilled prior to previewing the form?
-  bool was_query_node_autofilled_;
+  // The query node autofill state prior to previewing the form.
+  blink::WebAutofillState query_node_autofill_state_;
 
   // Whether or not to ignore text changes.  Useful for when we're committing
   // a composition when we are defocusing the WebView and we don't want to

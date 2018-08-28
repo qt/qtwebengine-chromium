@@ -25,6 +25,7 @@ enum ChangeType {
   CHANGE_TYPE_CAPTURE_CHANGED,
   CHANGE_TYPE_FRAME_SINK_ID_ALLOCATED,
   CHANGE_TYPE_EMBED,
+  CHANGE_TYPE_EMBED_FROM_TOKEN,
   CHANGE_TYPE_EMBEDDED_APP_DISCONNECTED,
   CHANGE_TYPE_UNEMBED,
   // TODO(sky): nuke NODE.
@@ -44,8 +45,16 @@ enum ChangeType {
   CHANGE_TYPE_ON_CHANGE_COMPLETED,
   CHANGE_TYPE_ON_TOP_LEVEL_CREATED,
   CHANGE_TYPE_OPACITY,
+  CHANGE_TYPE_REQUEST_CLOSE,
   CHANGE_TYPE_SURFACE_CHANGED,
   CHANGE_TYPE_TRANSFORM_CHANGED,
+  CHANGE_TYPE_DRAG_DROP_START,
+  CHANGE_TYPE_DRAG_ENTER,
+  CHANGE_TYPE_DRAG_OVER,
+  CHANGE_TYPE_DRAG_LEAVE,
+  CHANGE_TYPE_COMPLETE_DROP,
+  CHANGE_TYPE_DRAG_DROP_DONE,
+  CHANGE_TYPE_ON_PERFORM_DRAG_DROP_COMPLETED,
 };
 
 // TODO(sky): consider nuking and converting directly to WindowData.
@@ -102,6 +111,8 @@ struct Change {
   int64_t display_id;
   gfx::Point location1;
   gfx::PointF location2;
+  base::flat_map<std::string, std::vector<uint8_t>> drag_data;
+  uint32_t drag_drop_action;
 };
 
 // The ChangeToDescription related functions convert a Change into a string.
@@ -135,6 +146,10 @@ std::string ChangeWindowDescription(const std::vector<Change>& changes);
 void WindowDatasToTestWindows(const std::vector<mojom::WindowDataPtr>& data,
                               std::vector<TestWindow>* test_windows);
 
+// Returns true if |changes| contains a Change matching |change_description|.
+bool ContainsChange(const std::vector<Change>& changes,
+                    const std::string& change_description);
+
 // TestChangeTracker is used to record WindowTreeClient functions. It notifies
 // a delegate any time a change is added.
 class TestChangeTracker {
@@ -159,6 +174,10 @@ class TestChangeTracker {
   // Each of these functions generate a Change. There is one per
   // WindowTreeClient function.
   void OnEmbed(mojom::WindowDataPtr root, bool drawn);
+  void OnEmbedFromToken(
+      mojom::WindowDataPtr root,
+      int64_t display_id,
+      const base::Optional<viz::LocalSurfaceId>& local_surface_id);
   void OnEmbeddedAppDisconnected(Id window_id);
   void OnUnembed(Id window_id);
   void OnCaptureChanged(Id new_capture_window_id, Id old_capture_window_id);
@@ -202,6 +221,17 @@ class TestChangeTracker {
                          bool drawn);
   void OnWindowSurfaceChanged(Id window_id,
                               const viz::SurfaceInfo& surface_info);
+  void OnDragDropStart(
+      const base::flat_map<std::string, std::vector<uint8_t>>& drag_data);
+  void OnDragEnter(Id window_id);
+  void OnDragOver(Id window_id);
+  void OnDragLeave(Id widnow_id);
+  void OnCompleteDrop(Id window_id);
+  void OnDragDropDone();
+  void OnPerformDragDropCompleted(uint32_t change_id,
+                                  bool success,
+                                  uint32_t action_taken);
+  void RequestClose(Id window_id);
 
  private:
   void AddChange(const Change& change);

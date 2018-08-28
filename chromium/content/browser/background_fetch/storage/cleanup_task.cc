@@ -8,9 +8,11 @@
 
 #include "base/containers/flat_set.h"
 #include "content/browser/background_fetch/background_fetch.pb.h"
+#include "content/browser/background_fetch/background_fetch_data_manager.h"
 #include "content/browser/background_fetch/storage/database_helpers.h"
 #include "content/browser/background_fetch/storage/delete_registration_task.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
+#include "url/origin.h"
 
 namespace content {
 
@@ -20,8 +22,8 @@ namespace {
 void EmptyErrorHandler(blink::mojom::BackgroundFetchError) {}
 }  // namespace
 
-CleanupTask::CleanupTask(BackgroundFetchDataManager* data_manager)
-    : DatabaseTask(data_manager), weak_factory_(this) {}
+CleanupTask::CleanupTask(DatabaseTaskHost* host)
+    : DatabaseTask(host), weak_factory_(this) {}
 
 CleanupTask::~CleanupTask() = default;
 
@@ -33,10 +35,10 @@ void CleanupTask::Start() {
 
 void CleanupTask::DidGetRegistrations(
     const std::vector<std::pair<int64_t, std::string>>& registration_data,
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   if (ToDatabaseStatus(status) != DatabaseStatus::kOk ||
       registration_data.empty()) {
-    Finished();  // Destroys |this|.
+    FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
     return;
   }
 
@@ -49,13 +51,13 @@ void CleanupTask::DidGetRegistrations(
 void CleanupTask::DidGetActiveUniqueIds(
     const std::vector<std::pair<int64_t, std::string>>& registration_data,
     const std::vector<std::pair<int64_t, std::string>>& active_unique_id_data,
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   switch (ToDatabaseStatus(status)) {
     case DatabaseStatus::kOk:
     case DatabaseStatus::kNotFound:
       break;
     case DatabaseStatus::kFailed:
-      Finished();  // Destroys |this|.
+      FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
       return;
   }
 
@@ -78,15 +80,20 @@ void CleanupTask::DidGetActiveUniqueIds(
           // This |unique_id| can be safely cleaned up. Re-use
           // DeleteRegistrationTask for the actual deletion logic.
           AddDatabaseTask(std::make_unique<DeleteRegistrationTask>(
-              data_manager(), service_worker_registration_id, unique_id,
+              data_manager(), service_worker_registration_id,
+              url::Origin::Create(GURL(metadata_proto.origin())), unique_id,
               base::BindOnce(&EmptyErrorHandler)));
         }
       }
     }
   }
 
-  Finished();  // Destroys |this|.
+  FinishWithError(blink::mojom::BackgroundFetchError::NONE);
   return;
+}
+
+void CleanupTask::FinishWithError(blink::mojom::BackgroundFetchError error) {
+  Finished();  // Destroys |this|.
 }
 
 }  // namespace background_fetch

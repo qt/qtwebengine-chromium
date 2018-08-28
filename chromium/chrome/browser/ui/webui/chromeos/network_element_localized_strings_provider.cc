@@ -63,6 +63,7 @@ void AddOncLocalizedStrings(content::WebUIDataSource* html_source) {
        IDS_ONC_CELLULAR_APN_ACCESS_POINT_NAME},
       {"OncCellular-APN-AccessPointName_none",
        IDS_ONC_CELLULAR_APN_ACCESS_POINT_NAME_NONE},
+      {"OncCellular-APN-Authentication", IDS_ONC_CELLULAR_APN_AUTHENTICATION},
       {"OncCellular-APN-Password", IDS_ONC_CELLULAR_APN_PASSWORD},
       {"OncCellular-APN-Username", IDS_ONC_CELLULAR_APN_USERNAME},
       {"OncCellular-ActivationState", IDS_ONC_CELLULAR_ACTIVATION_STATE},
@@ -302,9 +303,8 @@ void AddErrorLocalizedStrings(content::WebUIDataSource* html_source) {
       {NetworkConnectionHandler::kErrorPassphraseRequired,
        IDS_NETWORK_ERROR_PASSPHRASE_REQUIRED},
       {"networkErrorUnknown", IDS_NETWORK_ERROR_UNKNOWN},
-      // TODO(stevenjb): Move this id to settings_strings.grdp:
       {"networkErrorNotHardwareBacked",
-       IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_REQUIRE_HARDWARE_BACKED},
+       IDS_SETTINGS_INTERNET_NETWORK_REQUIRE_HARDWARE_BACKED},
   };
   for (const auto& entry : localized_strings)
     html_source->AddLocalizedString(entry.name, entry.id);

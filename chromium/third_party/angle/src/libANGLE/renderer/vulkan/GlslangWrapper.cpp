@@ -13,13 +13,14 @@
 #include <ShaderLang.h>
 
 // Other glslang includes.
-#include <StandAlone/ResourceLimits.h>
 #include <SPIRV/GlslangToSpv.h>
+#include <StandAlone/ResourceLimits.h>
 
 #include <array>
 
 #include "common/string_utils.h"
 #include "common/utilities.h"
+#include "libANGLE/Caps.h"
 #include "libANGLE/ProgramLinkedResources.h"
 
 namespace rx
@@ -33,6 +34,39 @@ constexpr char kLayoutMarkerBegin[]    = "@@ LAYOUT-";
 constexpr char kMarkerEnd[]            = " @@";
 constexpr char kUniformQualifier[]     = "uniform";
 
+void GetBuiltInResourcesFromCaps(const gl::Caps &caps, TBuiltInResource *outBuiltInResources)
+{
+    outBuiltInResources->maxDrawBuffers                   = caps.maxDrawBuffers;
+    outBuiltInResources->maxAtomicCounterBindings         = caps.maxAtomicCounterBufferBindings;
+    outBuiltInResources->maxAtomicCounterBufferSize       = caps.maxAtomicCounterBufferSize;
+    outBuiltInResources->maxClipPlanes                    = caps.maxClipPlanes;
+    outBuiltInResources->maxCombinedAtomicCounterBuffers  = caps.maxCombinedAtomicCounterBuffers;
+    outBuiltInResources->maxCombinedAtomicCounters        = caps.maxCombinedAtomicCounters;
+    outBuiltInResources->maxCombinedImageUniforms         = caps.maxCombinedImageUniforms;
+    outBuiltInResources->maxCombinedTextureImageUnits     = caps.maxCombinedTextureImageUnits;
+    outBuiltInResources->maxCombinedShaderOutputResources = caps.maxCombinedShaderOutputResources;
+    outBuiltInResources->maxComputeWorkGroupCountX        = caps.maxComputeWorkGroupCount[0];
+    outBuiltInResources->maxComputeWorkGroupCountY        = caps.maxComputeWorkGroupCount[1];
+    outBuiltInResources->maxComputeWorkGroupCountZ        = caps.maxComputeWorkGroupCount[2];
+    outBuiltInResources->maxComputeWorkGroupSizeX         = caps.maxComputeWorkGroupSize[0];
+    outBuiltInResources->maxComputeWorkGroupSizeY         = caps.maxComputeWorkGroupSize[1];
+    outBuiltInResources->maxComputeWorkGroupSizeZ         = caps.maxComputeWorkGroupSize[2];
+    outBuiltInResources->minProgramTexelOffset            = caps.minProgramTexelOffset;
+    outBuiltInResources->maxFragmentUniformVectors        = caps.maxFragmentUniformVectors;
+    outBuiltInResources->maxFragmentInputComponents       = caps.maxFragmentInputComponents;
+    outBuiltInResources->maxGeometryInputComponents       = caps.maxGeometryInputComponents;
+    outBuiltInResources->maxGeometryOutputComponents      = caps.maxGeometryOutputComponents;
+    outBuiltInResources->maxGeometryOutputVertices        = caps.maxGeometryOutputVertices;
+    outBuiltInResources->maxGeometryTotalOutputComponents = caps.maxGeometryTotalOutputComponents;
+    outBuiltInResources->maxLights                        = caps.maxLights;
+    outBuiltInResources->maxProgramTexelOffset            = caps.maxProgramTexelOffset;
+    outBuiltInResources->maxVaryingComponents             = caps.maxVaryingComponents;
+    outBuiltInResources->maxVaryingVectors                = caps.maxVaryingVectors;
+    outBuiltInResources->maxVertexAttribs                 = caps.maxVertexAttributes;
+    outBuiltInResources->maxVertexOutputComponents        = caps.maxVertexOutputComponents;
+    outBuiltInResources->maxVertexUniformVectors          = caps.maxVertexUniformVectors;
+}
+
 void InsertLayoutSpecifierString(std::string *shaderString,
                                  const std::string &variableName,
                                  const std::string &layoutString)
@@ -41,7 +75,7 @@ void InsertLayoutSpecifierString(std::string *shaderString,
     searchStringBuilder << kLayoutMarkerBegin << variableName << kMarkerEnd;
     std::string searchString = searchStringBuilder.str();
 
-    if (layoutString != "")
+    if (!layoutString.empty())
     {
         angle::ReplaceSubstring(shaderString, searchString, "layout(" + layoutString + ")");
     }
@@ -61,55 +95,51 @@ void InsertQualifierSpecifierString(std::string *shaderString,
     angle::ReplaceSubstring(shaderString, searchString, replacementString);
 }
 
+void EraseLayoutAndQualifierStrings(std::string *vertexSource,
+                                    std::string *fragmentSource,
+                                    const std::string &uniformName)
+{
+    InsertLayoutSpecifierString(vertexSource, uniformName, "");
+    InsertLayoutSpecifierString(fragmentSource, uniformName, "");
+
+    InsertQualifierSpecifierString(vertexSource, uniformName, "");
+    InsertQualifierSpecifierString(fragmentSource, uniformName, "");
+}
+
+std::string GetMappedSamplerName(const std::string &originalName)
+{
+    std::string samplerName = gl::ParseResourceName(originalName, nullptr);
+
+    // Samplers in structs are extracted.
+    std::replace(samplerName.begin(), samplerName.end(), '.', '_');
+
+    // Samplers in arrays of structs are also extracted.
+    std::replace(samplerName.begin(), samplerName.end(), '[', '_');
+    samplerName.erase(std::remove(samplerName.begin(), samplerName.end(), ']'), samplerName.end());
+    return samplerName;
+}
 }  // anonymous namespace
 
 // static
-GlslangWrapper *GlslangWrapper::mInstance = nullptr;
-
-// static
-GlslangWrapper *GlslangWrapper::GetReference()
-{
-    if (!mInstance)
-    {
-        mInstance = new GlslangWrapper();
-    }
-
-    mInstance->addRef();
-
-    return mInstance;
-}
-
-// static
-void GlslangWrapper::ReleaseReference()
-{
-    if (mInstance->getRefCount() == 1)
-    {
-        mInstance->release();
-        mInstance = nullptr;
-    }
-    else
-    {
-        mInstance->release();
-    }
-}
-
-GlslangWrapper::GlslangWrapper()
+void GlslangWrapper::Initialize()
 {
     int result = ShInitialize();
     ASSERT(result != 0);
 }
 
-GlslangWrapper::~GlslangWrapper()
+// static
+void GlslangWrapper::Release()
 {
     int result = ShFinalize();
     ASSERT(result != 0);
 }
 
-gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
-                                           const gl::ProgramState &programState,
-                                           const gl::ProgramLinkedResources &resources,
-                                           std::vector<uint32_t> *vertexCodeOut,
-                                           std::vector<uint32_t> *fragmentCodeOut)
+// static
+void GlslangWrapper::GetShaderSource(const gl::Context *glContext,
+                                     const gl::ProgramState &programState,
+                                     const gl::ProgramLinkedResources &resources,
+                                     std::string *vertexSourceOut,
+                                     std::string *fragmentSourceOut)
 {
     gl::Shader *glVertexShader   = programState.getAttachedShader(gl::ShaderType::Vertex);
     gl::Shader *glFragmentShader = programState.getAttachedShader(gl::ShaderType::Fragment);
@@ -148,10 +178,16 @@ gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
     // Assign varying locations.
     for (const gl::PackedVaryingRegister &varyingReg : resources.varyingPacking.getRegisterList())
     {
-        const auto &varying        = *varyingReg.packedVarying;
+        const auto &varying = *varyingReg.packedVarying;
 
-        std::string locationString = "location = " + Str(varyingReg.registerRow) +
-                                     ", component = " + Str(varyingReg.registerColumn);
+        std::string locationString = "location = " + Str(varyingReg.registerRow);
+        if (varyingReg.registerColumn > 0)
+        {
+            ASSERT(!varying.varying->isStruct());
+            ASSERT(!gl::IsMatrixType(varying.varying->type));
+            locationString += ", component = " + Str(varyingReg.registerColumn);
+        }
+
         InsertLayoutSpecifierString(&vertexSource, varying.varying->name, locationString);
         InsertLayoutSpecifierString(&fragmentSource, varying.varying->name, locationString);
 
@@ -163,10 +199,7 @@ gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
     // Remove all the markers for unused varyings.
     for (const std::string &varyingName : resources.varyingPacking.getInactiveVaryingNames())
     {
-        InsertLayoutSpecifierString(&vertexSource, varyingName, "");
-        InsertLayoutSpecifierString(&fragmentSource, varyingName, "");
-        InsertQualifierSpecifierString(&vertexSource, varyingName, "");
-        InsertQualifierSpecifierString(&fragmentSource, varyingName, "");
+        EraseLayoutAndQualifierStrings(&vertexSource, &fragmentSource, varyingName);
     }
 
     // Bind the default uniforms for vertex and fragment shaders.
@@ -187,36 +220,80 @@ gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
     for (unsigned int uniformIndex : programState.getSamplerUniformRange())
     {
         const gl::LinkedUniform &samplerUniform = uniforms[uniformIndex];
+        std::string setBindingString            = "set = 1, binding = " + Str(textureCount);
 
-        std::string setBindingString = "set = 1, binding = " + Str(textureCount);
+        // Samplers in structs are extracted and renamed.
+        const std::string samplerName = GetMappedSamplerName(samplerUniform.name);
 
         ASSERT(samplerUniform.isActive(gl::ShaderType::Vertex) ||
                samplerUniform.isActive(gl::ShaderType::Fragment));
         if (samplerUniform.isActive(gl::ShaderType::Vertex))
         {
-            InsertLayoutSpecifierString(&vertexSource, samplerUniform.name, setBindingString);
-            InsertQualifierSpecifierString(&vertexSource, samplerUniform.name, kUniformQualifier);
+            InsertLayoutSpecifierString(&vertexSource, samplerName, setBindingString);
         }
-        else
-        {
-            InsertQualifierSpecifierString(&vertexSource, samplerUniform.name, "");
-        }
+        InsertQualifierSpecifierString(&vertexSource, samplerName, kUniformQualifier);
 
         if (samplerUniform.isActive(gl::ShaderType::Fragment))
         {
-            InsertLayoutSpecifierString(&fragmentSource, samplerUniform.name, setBindingString);
-            InsertQualifierSpecifierString(&fragmentSource, samplerUniform.name, kUniformQualifier);
+            InsertLayoutSpecifierString(&fragmentSource, samplerName, setBindingString);
+        }
+        InsertQualifierSpecifierString(&fragmentSource, samplerName, kUniformQualifier);
+
+        textureCount++;
+    }
+
+    // Start the unused sampler bindings at something ridiculously high.
+    constexpr int kBaseUnusedSamplerBinding = 100;
+    int unusedSamplerBinding                = kBaseUnusedSamplerBinding;
+
+    for (const gl::UnusedUniform &unusedUniform : resources.unusedUniforms)
+    {
+        if (unusedUniform.isSampler)
+        {
+            // Samplers in structs are extracted and renamed.
+            std::string uniformName = GetMappedSamplerName(unusedUniform.name);
+
+            std::stringstream layoutStringStream;
+
+            layoutStringStream << "set = 0, binding = " << unusedSamplerBinding++;
+
+            std::string layoutString = layoutStringStream.str();
+
+            InsertLayoutSpecifierString(&vertexSource, uniformName, layoutString);
+            InsertLayoutSpecifierString(&fragmentSource, uniformName, layoutString);
+
+            InsertQualifierSpecifierString(&vertexSource, uniformName, kUniformQualifier);
+            InsertQualifierSpecifierString(&fragmentSource, uniformName, kUniformQualifier);
         }
         else
         {
-            InsertQualifierSpecifierString(&fragmentSource, samplerUniform.name, "");
+            EraseLayoutAndQualifierStrings(&vertexSource, &fragmentSource, unusedUniform.name);
         }
-
-        textureCount += samplerUniform.getBasicTypeElementCount();
     }
 
+    // Substitute layout and qualifier strings for the driver uniforms block.
+    constexpr char kDriverBlockLayoutString[] = "set = 2, binding = 0";
+    constexpr char kDriverBlockName[]         = "ANGLEUniforms";
+    InsertLayoutSpecifierString(&vertexSource, kDriverBlockName, kDriverBlockLayoutString);
+    InsertLayoutSpecifierString(&fragmentSource, kDriverBlockName, kDriverBlockLayoutString);
+
+    InsertQualifierSpecifierString(&vertexSource, kDriverBlockName, kUniformQualifier);
+    InsertQualifierSpecifierString(&fragmentSource, kDriverBlockName, kUniformQualifier);
+
+    *vertexSourceOut   = vertexSource;
+    *fragmentSourceOut = fragmentSource;
+}
+
+// static
+angle::Result GlslangWrapper::GetShaderCode(vk::Context *context,
+                                            const gl::Caps &glCaps,
+                                            const std::string &vertexSource,
+                                            const std::string &fragmentSource,
+                                            std::vector<uint32_t> *vertexCodeOut,
+                                            std::vector<uint32_t> *fragmentCodeOut)
+{
     std::array<const char *, 2> strings = {{vertexSource.c_str(), fragmentSource.c_str()}};
-    std::array<int, 2> lengths = {
+    std::array<int, 2> lengths          = {
         {static_cast<int>(vertexSource.length()), static_cast<int>(fragmentSource.length())}};
 
     // Enable SPIR-V and Vulkan rules when parsing GLSL
@@ -225,25 +302,31 @@ gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
     glslang::TShader vertexShader(EShLangVertex);
     vertexShader.setStringsWithLengths(&strings[0], &lengths[0], 1);
     vertexShader.setEntryPoint("main");
-    bool vertexResult = vertexShader.parse(&glslang::DefaultTBuiltInResource, 450, ECoreProfile,
-                                           false, false, messages);
+
+    TBuiltInResource builtInResources(glslang::DefaultTBuiltInResource);
+    GetBuiltInResourcesFromCaps(glCaps, &builtInResources);
+
+    bool vertexResult =
+        vertexShader.parse(&builtInResources, 450, ECoreProfile, false, false, messages);
     if (!vertexResult)
     {
-        return gl::InternalError() << "Internal error parsing Vulkan vertex shader:\n"
-                                   << vertexShader.getInfoLog() << "\n"
-                                   << vertexShader.getInfoDebugLog() << "\n";
+        ERR() << "Internal error parsing Vulkan vertex shader:\n"
+              << vertexShader.getInfoLog() << "\n"
+              << vertexShader.getInfoDebugLog() << "\n";
+        ANGLE_VK_CHECK(context, false, VK_ERROR_INVALID_SHADER_NV);
     }
 
     glslang::TShader fragmentShader(EShLangFragment);
     fragmentShader.setStringsWithLengths(&strings[1], &lengths[1], 1);
     fragmentShader.setEntryPoint("main");
-    bool fragmentResult = fragmentShader.parse(&glslang::DefaultTBuiltInResource, 450, ECoreProfile,
-                                               false, false, messages);
+    bool fragmentResult =
+        fragmentShader.parse(&builtInResources, 450, ECoreProfile, false, false, messages);
     if (!fragmentResult)
     {
-        return gl::InternalError() << "Internal error parsing Vulkan fragment shader:\n"
-                                   << fragmentShader.getInfoLog() << "\n"
-                                   << fragmentShader.getInfoDebugLog() << "\n";
+        ERR() << "Internal error parsing Vulkan fragment shader:\n"
+              << fragmentShader.getInfoLog() << "\n"
+              << fragmentShader.getInfoDebugLog() << "\n";
+        ANGLE_VK_CHECK(context, false, VK_ERROR_INVALID_SHADER_NV);
     }
 
     glslang::TProgram program;
@@ -252,8 +335,8 @@ gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
     bool linkResult = program.link(messages);
     if (!linkResult)
     {
-        return gl::InternalError() << "Internal error linking Vulkan shaders:\n"
-                                   << program.getInfoLog() << "\n";
+        ERR() << "Internal error linking Vulkan shaders:\n" << program.getInfoLog() << "\n";
+        ANGLE_VK_CHECK(context, false, VK_ERROR_INVALID_SHADER_NV);
     }
 
     glslang::TIntermediate *vertexStage   = program.getIntermediate(EShLangVertex);
@@ -261,7 +344,6 @@ gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
     glslang::GlslangToSpv(*vertexStage, *vertexCodeOut);
     glslang::GlslangToSpv(*fragmentStage, *fragmentCodeOut);
 
-    return true;
+    return angle::Result::Continue();
 }
-
 }  // namespace rx

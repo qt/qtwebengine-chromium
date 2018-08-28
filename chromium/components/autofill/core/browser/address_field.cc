@@ -63,6 +63,10 @@ std::unique_ptr<FormField> AddressField::Parse(AutofillScanner* scanner) {
         ParseField(scanner, base::UTF8ToUTF16(kAddressNameIgnoredRe),
                    nullptr)) {
       continue;
+      // Ignore email addresses.
+    } else if (ParseFieldSpecifics(scanner, base::UTF8ToUTF16(kEmailRe),
+                                   MATCH_DEFAULT | MATCH_TEXT_AREA, nullptr)) {
+      continue;
     } else if (address_field->ParseAddressLines(scanner) ||
         address_field->ParseCityStateZipCode(scanner) ||
         address_field->ParseCountry(scanner) ||
@@ -90,8 +94,6 @@ std::unique_ptr<FormField> AddressField::Parse(AutofillScanner* scanner) {
       }
 
       continue;
-    } else if (address_field->ParseSearchTerm(scanner)) {
-      continue;
     } else {
       // No field found.
       break;
@@ -100,15 +102,10 @@ std::unique_ptr<FormField> AddressField::Parse(AutofillScanner* scanner) {
 
   // If we have identified any address fields in this field then it should be
   // added to the list of fields.
-  if (address_field->company_ ||
-      address_field->address1_ ||
-      address_field->address2_ ||
-      address_field->address3_ ||
-      address_field->street_address_ ||
-      address_field->city_ ||
-      address_field->state_ ||
-      address_field->zip_ ||
-      address_field->zip4_ ||
+  if (address_field->company_ || address_field->address1_ ||
+      address_field->address2_ || address_field->address3_ ||
+      address_field->street_address_ || address_field->city_ ||
+      address_field->state_ || address_field->zip_ || address_field->zip4_ ||
       address_field->country_) {
     // Don't slurp non-labeled fields at the end into the address.
     if (has_trailing_non_labeled_fields)
@@ -130,8 +127,7 @@ AddressField::AddressField()
       state_(nullptr),
       zip_(nullptr),
       zip4_(nullptr),
-      country_(nullptr),
-      search_term_(nullptr) {}
+      country_(nullptr) {}
 
 void AddressField::AddClassifications(
     FieldCandidatesMap* field_candidates) const {
@@ -160,19 +156,10 @@ void AddressField::AddClassifications(
                     field_candidates);
   AddClassification(country_, ADDRESS_HOME_COUNTRY, kBaseAddressParserScore,
                     field_candidates);
-  AddClassification(search_term_, SEARCH_TERM, kBaseAddressParserScore,
-                    field_candidates);
-}
-
-bool AddressField::ParseSearchTerm(AutofillScanner* scanner) {
-  if (search_term_ && !search_term_->IsEmpty())
-    return false;
-
-  return ParseField(scanner, UTF8ToUTF16(kSearchTermRe), &search_term_);
 }
 
 bool AddressField::ParseCompany(AutofillScanner* scanner) {
-  if (company_ && !company_->IsEmpty())
+  if (company_)
     return false;
 
   return ParseField(scanner, UTF8ToUTF16(kCompanyRe), &company_);
@@ -236,7 +223,7 @@ bool AddressField::ParseAddressLines(AutofillScanner* scanner) {
 }
 
 bool AddressField::ParseCountry(AutofillScanner* scanner) {
-  if (country_ && !country_->IsEmpty())
+  if (country_)
     return false;
 
   scanner->SaveCursor();

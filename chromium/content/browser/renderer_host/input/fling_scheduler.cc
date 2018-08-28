@@ -78,6 +78,7 @@ ui::Compositor* FlingScheduler::GetCompositor() {
 }
 
 void FlingScheduler::OnAnimationStep(base::TimeTicks timestamp) {
+  DCHECK(observed_compositor_);
   if (fling_controller_)
     fling_controller_->ProgressFling(timestamp);
 }

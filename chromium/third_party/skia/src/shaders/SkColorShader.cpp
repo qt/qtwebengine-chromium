@@ -97,17 +97,6 @@ std::unique_ptr<GrFragmentProcessor> SkColorShader::asFragmentProcessor(
 
 #endif
 
-void SkColorShader::toString(SkString* str) const {
-    str->append("SkColorShader: (");
-
-    str->append("Color: ");
-    str->appendHex(fColor);
-
-    this->INHERITED::toString(str);
-
-    str->append(")");
-}
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -209,29 +198,17 @@ SkShader::GradientType SkColor4Shader::asAGradient(GradientInfo* info) const {
 
 std::unique_ptr<GrFragmentProcessor> SkColor4Shader::asFragmentProcessor(
         const GrFPArgs& args) const {
-    // Construct an xform assuming float inputs. The color space can have a transfer function on
-    // it, which will be applied below.
-    auto colorSpaceXform = GrColorSpaceXform::Make(fColorSpace.get(), kRGBA_float_GrPixelConfig,
-                                                   args.fDstColorSpaceInfo->colorSpace());
+    auto xform = GrColorSpaceXform::MakeUnpremulToUnpremul(fColorSpace.get(),
+                                                           args.fDstColorSpaceInfo->colorSpace());
     GrColor4f color = GrColor4f::FromSkColor4f(fColor4);
-    if (colorSpaceXform) {
-        color = colorSpaceXform->clampedXform(color);
+    if (xform) {
+        color = xform->apply(color);
     }
     return GrConstColorProcessor::Make(color.premul(),
                                        GrConstColorProcessor::InputMode::kModulateA);
 }
 
 #endif
-
-void SkColor4Shader::toString(SkString* str) const {
-    str->append("SkColor4Shader: (");
-
-    str->append("RGBA:");
-    for (int i = 0; i < 4; ++i) {
-        str->appendf(" %g", fColor4.vec()[i]);
-    }
-    str->append(" )");
-}
 
 sk_sp<SkShader> SkColor4Shader::onMakeColorSpace(SkColorSpaceXformer* xformer) const {
     return SkShader::MakeColorShader(xformer->apply(fCachedByteColor));
@@ -247,12 +224,13 @@ sk_sp<SkShader> SkShader::MakeColorShader(const SkColor4f& color, sk_sp<SkColorS
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool SkColorShader::onAppendStages(const StageRec& rec) const {
-    rec.fPipeline->append_constant_color(rec.fAlloc, SkPM4f_from_SkColor(fColor, rec.fDstCS));
+    rec.fPipeline->append_constant_color(rec.fAlloc,
+            premul_in_dst_colorspace(fColor, rec.fDstCS));
     return true;
 }
 
 bool SkColor4Shader::onAppendStages(const StageRec& rec) const {
-    rec.fPipeline->append_constant_color(
-                     rec.fAlloc, to_colorspace(fColor4, fColorSpace.get(), rec.fDstCS).premul());
+    rec.fPipeline->append_constant_color(rec.fAlloc,
+            premul_in_dst_colorspace(fColor4, fColorSpace.get(), rec.fDstCS));
     return true;
 }

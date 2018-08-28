@@ -2,22 +2,21 @@
 #External
  DirectWrite TrueType Windows Linux Android iOS __ANDROID_API__ AHardwareBuffer
  FreeType FreeType-based Harfbuzz
- Descenders Kerning Unhinted
  LCD RGB sRGB ARGB BGR YUV SDTV HDTV
- YUV_Component_Y YUV_Component_U YUV_Component_V
  Unicode Unicode5 UTF-8 UTF-16 UTF-32 ASCII Unichar
  API
  BMP GIF HEIF ICO JPEG PNG WBMP WebP
- CPU Little_Endian Big_Endian
- GPU GPU-backed OpenGL Vulkan I/O MSAA UV_Mapping Multi_Sample_Anti_Aliasing GPU_Share_Group
+ CPU
+ GPU GPU-backed OpenGL Vulkan I/O MSAA 
  PDF XPS
  RFC
  NaN NaNs
- Bezier_Curve Coons_Patch Cartesian_Coordinate Euclidean_Distance Euclidean_Space Mip_Map
- C C++ Destructor Subclasses
+ 
+ C C++ SIZE_MAX
  CSS HTML
- HTML_Gray HTML_DarkGray HTML_LightGray HTML_Silver HTML_Lime HTML_Green HTML_Aqua HTML_Fuchsia
- SVG_lightgray SVG_darkgray
+
+ Sa Da Sc Dc max min # temporary until figure out what to do
+
  SkUserConfig  # not external, but still thinking about how markup refers to this
  SkXXX.h        # ditto
  SkXXX_Reference # ditto
@@ -49,17 +48,136 @@ FT_Load_Glyph
 
 #External ##
 
+# this jargon requires a substitute to lower-case the word. The word is uppercase because
+# it is not a dictionary word. An alternative would be to put this in an exception list
+# in the spell checker
+#Topic Destructor
+#Substitute destructor
+##
+
+# see comment for Destructor above
+#Topic Subclasses
+#Substitute subclasses
+##
+
+# see comment for Destructor above
+#Topic Descenders
+#Substitute descenders
+##
+
+# see comment for Destructor above
+#Topic Grayscale
+#Substitute grayscale
+##
+
+# see comment for Destructor above
+#Topic Kerning
+#Substitute kerning
+##
+
+# see comment for Destructor above
+#Topic Unhinted
+#Substitute unhinted
+##
+
+# this jargon requires a substitute to space the phrase. 
+#Topic Little_Endian 
+#Substitute little endian
+##
+
+#Topic Big_Endian
+#Substitute big endian
+##
+
+#Topic YUV_Component_Y 
+#Substitute YUV component y
+##
+
+#Topic YUV_Component_U 
+#Substitute YUV component u
+##
+
+#Topic YUV_Component_V
+#Substitute YUV component v
+##
+
+#Topic UV_Mapping
+#Substitute UV mapping
+##
+
+#Topic Multi_Sample_Anti_Aliasing 
+#Substitute multi-sample anti-aliasing
+##
+
+#Topic GPU_Share_Group
+#Substitute GPU share group
+##
+
+#Topic Bezier_Curve 
+#Substitute Bezier cruve
+##
+
+#Topic Coons_Patch 
+#Substitute Coons patch
+##
+
+#Topic Cartesian_Coordinate 
+#Substitute Cartesian coordinate
+##
+
+#Topic Euclidean_Distance 
+#Substitute Euclidean distance
+##
+
+#Topic Euclidean_Space 
+#Substitute Euclidean space
+##
+
+#Topic HTML_Gray 
+#Substitute HTML gray
+##
+
+#Topic HTML_Silver 
+#Substitute HTML silver
+##
+
+#Topic HTML_Lime 
+#Substitute HTML lime
+##
+
+#Topic HTML_Green 
+#Substitute HTML green
+##
+
+#Topic HTML_Aqua 
+#Substitute HTML aqua
+##
+
+#Topic HTML_Fuchsia
+#Substitute HTML fuchsia
+##
+
+#Topic SVG_lightgray 
+#Substitute SVG light gray
+##
+
+#Topic SVG_darkgray
+#Substitute SVG dark gray
+##
+
+# start of topics to be documented in the future
+
 #Topic Alias
-#Alias Aliased
-#Alias Aliasing
+#Alias Aliased ##
+#Alias Aliasing ##
 ##
 
 #Topic Arc
-#Alias Arcs
+#Alias Arcs ##
 #Topic ##
 
 #Topic Backend_Semaphore
-#Alias Backend_Semaphores
+#Alias Backend_Semaphores ##
 #Class GrBackendSemaphore
 ##
 ##
@@ -69,19 +187,9 @@ FT_Load_Glyph
 ##
 ##
 
-#Topic Blend_Mode
-#EnumClass SkBlendMode
-    #Const kSrc 1
-    ##
-    #Const kSrcOver 3
-    ##
-    #Const kPlus 12
-    ##
-#EnumClass ##
-#Topic ##
 
 #Topic Circle
-#Alias Circles
+#Alias Circles ##
 #Topic ##
 
 #Topic Clip_Op
@@ -95,8 +203,6 @@ FT_Load_Glyph
 
 #Topic Color_Filter
 #Class SkColorFilter
-#Method void toString(SkString* str) const
-##
 #Class ##
 ##
 
@@ -109,12 +215,6 @@ FT_Load_Glyph
     #Method static bool Equals(const SkColorSpace* src, const SkColorSpace* dst)
     ##
 ##
-#EnumClass SkTransferFunctionBehavior
-#Const kRespect 0
-##
-#Const kIgnore 1
-##
-#EnumClass ##
 ##
 
 #Topic Create_Color_Space_Xform_Canvas
@@ -132,7 +232,7 @@ FT_Load_Glyph
 ##
 
 #Topic Curve
-#Alias Curves
+#Alias Curves ##
 ##
 
 #Topic Data
@@ -159,6 +259,11 @@ FT_Load_Glyph
 ##
 ##
 
+#Topic Deserial_Procs
+#Struct SkDeserialProcs
+##
+##
+
 #Topic Device
 #Class SkBaseDevice
 ##
@@ -171,11 +276,6 @@ FT_Load_Glyph
     ##
 ##
 #Subtopic PDF
-##
-##
-
-#Topic Draw_Filter
-#Class SkDrawFilter
 ##
 ##
 
@@ -261,7 +361,7 @@ FT_Load_Glyph
 #Topic ##
 
 #Topic Glyph
-#Alias Glyphs
+#Alias Glyphs ##
 ##
 
 #Topic GPU_Context
@@ -289,8 +389,6 @@ FT_Load_Glyph
 
 #Topic Image_Filter
 #Class SkImageFilter
-#Method void toString(SkString* str) const
-##
 #Class ##
 #Topic ##
 
@@ -309,7 +407,7 @@ FT_Load_Glyph
 ##
 
 #Topic Line
-#Alias Lines
+#Alias Lines ##
 #Topic ##
 
 # to be in Topic Malloc_Pixel_Ref
@@ -329,8 +427,6 @@ FT_Load_Glyph
 
 #Topic Mask_Filter
 #Class SkMaskFilter
-#Method void toString(SkString* str) const
-##
 #Class ##
 #Topic ##
 
@@ -363,6 +459,7 @@ FT_Load_Glyph
 ##
 
 #Topic Mip_Map
+#Substitute mip map
 ##
 
 #Topic Nine_Patch
@@ -372,7 +469,7 @@ FT_Load_Glyph
     #Typedef uint16_t SkGlyphID
     #Typedef ##
     #Topic Scalar
-    #Alias Scalar
+    #Alias Scalar ##
     #Typedef float SkScalar
     #Typedef ##
     ##
@@ -406,9 +503,6 @@ FT_Load_Glyph
     #Const SK_MaxS32
     to be written
     ##
-    #Const SK_MaxSizeT
-    to be written
-    ##
     #Typedef int32_t SkUnichar
     #Typedef ##
     #Typedef unsigned U8CPU
@@ -420,7 +514,7 @@ FT_Load_Glyph
 ##
 
 #Topic Oval
-#Alias Ovals
+#Alias Ovals ##
 #Topic ##
 
 #Topic Paint_Defaults
@@ -435,13 +529,11 @@ FT_Load_Glyph
 #Topic ##
 
 #Topic Patch
-#Alias Patches
+#Alias Patches ##
 #Topic ##
 
 #Topic Path_Effect
     #Class SkPathEffect
-    #Method void toString(SkString* str) const
-    ##
     #Class ##
 #Topic ##
 
@@ -459,19 +551,13 @@ FT_Load_Glyph
     ##
 #Topic ##
 
-#Topic Picture
-#Class SkPicture
-#Method virtual void playback(SkCanvas*, AbortCallback* = nullptr) const = 0
-##
-##
-#Subtopic Recorder
+#Topic Picture_Recorder
     #Class SkPictureRecorder
         #Method SkCanvas* beginRecording(const SkRect& bounds,
                              SkBBHFactory* bbhFactory = NULL,
                              uint32_t recordFlags = 0)
         ##
     ##
-##
 ##
 
 #Topic Pixel
@@ -495,10 +581,6 @@ FT_Load_Glyph
 #Enum SkPixelGeometry
 ##
 
-# Topic Point_Array
-# Substitute SkPoint arrays
-# Topic ##
-
 #Topic Point3
 #Struct SkPoint3
 ##
@@ -512,7 +594,8 @@ FT_Load_Glyph
 ##
 
 #Topic Premultiply
-#Alias Premultiplied
+#Alias Premultiplied ##
+#Alias Premultiplies ##
 ##
 
 #Topic Raster_Engine
@@ -561,17 +644,13 @@ FT_Load_Glyph
 #Topic Right_Side_Bearing
 ##
 
-#Topic Round_Rect
-    #Class SkRRect
-        #Method void dump() const
-        ##
-        #Method void dumpHex() const
-        ##
-    ##
-#Topic ##
-
 #Topic RSXform
 #Struct SkRSXform
+##
+##
+
+#Topic Serial_Procs
+#Struct SkSerialProcs
 ##
 ##
 
@@ -588,6 +667,9 @@ FT_Load_Glyph
     #Method static sk_sp<SkShader> MakeBitmapShader(const SkBitmap& src, TileMode tmx, TileMode tmy,
                                             const SkMatrix* localMatrix = nullptr)
     ##
+    #Method static sk_sp<SkShader> MakeCompose(sk_sp<SkShader> dst, sk_sp<SkShader> src,
+                                       SkBlendMode mode, float lerp = 1)
+    ##
 #Class ##
 #Topic ##
 
@@ -597,13 +679,13 @@ FT_Load_Glyph
 ##
 
 #Topic Sprite
-#Alias Sprites
+#Alias Sprites ##
 #Topic ##
 
 #Topic Stream
-#Class SkWStream
+#Class SkStream
 ##
-#Topic ##
+##
 
 #Topic String
 #Class SkString
@@ -670,6 +752,13 @@ FT_Load_Glyph
     #Typedef intptr_t GrBackendObject
     #Typedef ##
 
+    #EnumClass GrMipMapped
+    #Const kNo 0
+    ##
+    #Const kYes 1
+    ##
+    #EnumClass ##
+
     #Enum GrSurfaceOrigin
     #Const kBottomLeft_GrSurfaceOrigin 0
     ##
@@ -693,7 +782,7 @@ FT_Load_Glyph
 # end of defined in types
 
 #Topic Unpremultiply
-#Alias Unpremultiplied
+#Alias Unpremultiplied ##
 ##
 
 #Topic Vertices
@@ -705,8 +794,12 @@ FT_Load_Glyph
 ##
 #Topic ##
 
-# to be in Topic Read_Buffer
-    #Struct SkReadBuffer
-    #Struct ##
-# end of Topic Read_Buffer
+#Topic WStream
+#Class SkWStream
+##
+#Topic ##
 
+#Topic Xfermode_Image_Filter
+#Class SkXfermodeImageFilter
+##
+##

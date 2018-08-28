@@ -6,9 +6,9 @@
 
 #include "compiler/translator/OutputHLSL.h"
 
+#include <stdio.h>
 #include <algorithm>
 #include <cfloat>
-#include <stdio.h>
 
 #include "common/angleutils.h"
 #include "common/debug.h"
@@ -56,7 +56,7 @@ bool IsDeclarationWrittenOut(TIntermDeclaration *node)
     ASSERT(sequence->size() == 1);
     ASSERT(variable);
     return (variable->getQualifier() == EvqTemporary || variable->getQualifier() == EvqGlobal ||
-            variable->getQualifier() == EvqConst);
+            variable->getQualifier() == EvqConst || variable->getQualifier() == EvqShared);
 }
 
 bool IsInStd140InterfaceBlock(TIntermTyped *node)
@@ -78,6 +78,38 @@ bool IsInStd140InterfaceBlock(TIntermTyped *node)
     }
 
     return false;
+}
+
+const char *GetHLSLAtomicFunctionStringAndLeftParenthesis(TOperator op)
+{
+    switch (op)
+    {
+        case EOpAtomicAdd:
+            return "InterlockedAdd(";
+        case EOpAtomicMin:
+            return "InterlockedMin(";
+        case EOpAtomicMax:
+            return "InterlockedMax(";
+        case EOpAtomicAnd:
+            return "InterlockedAnd(";
+        case EOpAtomicOr:
+            return "InterlockedOr(";
+        case EOpAtomicXor:
+            return "InterlockedXor(";
+        case EOpAtomicExchange:
+            return "InterlockedExchange(";
+        case EOpAtomicCompSwap:
+            return "InterlockedCompareExchange(";
+        default:
+            UNREACHABLE();
+            return "";
+    }
+}
+
+bool IsAtomicFunctionDirectAssign(const TIntermBinary &node)
+{
+    return node.getOp() == EOpAssign && node.getRight()->getAsAggregate() &&
+           IsAtomicFunction(node.getRight()->getAsAggregate()->getOp());
 }
 
 }  // anonymous namespace
@@ -165,14 +197,14 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
 {
     mInsideFunction = false;
 
-    mUsesFragColor               = false;
-    mUsesFragData                = false;
-    mUsesDepthRange              = false;
-    mUsesFragCoord               = false;
-    mUsesPointCoord              = false;
-    mUsesFrontFacing             = false;
-    mUsesPointSize               = false;
-    mUsesInstanceID              = false;
+    mUsesFragColor   = false;
+    mUsesFragData    = false;
+    mUsesDepthRange  = false;
+    mUsesFragCoord   = false;
+    mUsesPointCoord  = false;
+    mUsesFrontFacing = false;
+    mUsesPointSize   = false;
+    mUsesInstanceID  = false;
     mHasMultiviewExtensionEnabled =
         IsExtensionEnabled(mExtensionBehavior, TExtension::OVR_multiview);
     mUsesViewID                  = false;
@@ -202,8 +234,7 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
 
     unsigned int firstUniformRegister =
         ((compileOptions & SH_SKIP_D3D_CONSTANT_REGISTER_ZERO) != 0) ? 1u : 0u;
-    mUniformHLSL =
-        new UniformHLSL(shaderType, mStructureHLSL, outputType, uniforms, firstUniformRegister);
+    mUniformHLSL = new UniformHLSL(mStructureHLSL, outputType, uniforms, firstUniformRegister);
 
     if (mOutputType == SH_HLSL_3_0_OUTPUT)
     {
@@ -394,7 +425,7 @@ TString OutputHLSL::generateStructMapping(const std::vector<MappedStruct> &std14
 
             if (structType->isArray())
             {
-                mappedStructs += ArrayString(*mappedStruct.field->type());
+                mappedStructs += ArrayString(*mappedStruct.field->type()).data();
             }
 
             mappedStructs += " =\n";
@@ -405,33 +436,36 @@ TString OutputHLSL::generateStructMapping(const std::vector<MappedStruct> &std14
     return mappedStructs;
 }
 
+void OutputHLSL::writeReferencedAttributes(TInfoSinkBase &out) const
+{
+    for (const auto &attribute : mReferencedAttributes)
+    {
+        const TType &type           = attribute.second->getType();
+        const ImmutableString &name = attribute.second->name();
+
+        out << "static " << TypeString(type) << " " << Decorate(name) << ArrayString(type) << " = "
+            << zeroInitializer(type) << ";\n";
+    }
+}
+
+void OutputHLSL::writeReferencedVaryings(TInfoSinkBase &out) const
+{
+    for (const auto &varying : mReferencedVaryings)
+    {
+        const TType &type           = varying.second->getType();
+
+        // Program linking depends on this exact format
+        out << "static " << InterpolationString(type.getQualifier()) << " " << TypeString(type)
+            << " " << DecorateVariableIfNeeded(*varying.second) << ArrayString(type) << " = "
+            << zeroInitializer(type) << ";\n";
+    }
+}
+
 void OutputHLSL::header(TInfoSinkBase &out,
                         const std::vector<MappedStruct> &std140Structs,
                         const BuiltInFunctionEmulator *builtInFunctionEmulator) const
 {
-    TString varyings;
-    TString attributes;
     TString mappedStructs = generateStructMapping(std140Structs);
-
-    for (const auto &varying : mReferencedVaryings)
-    {
-        const TType &type   = varying.second->getType();
-        const ImmutableString &name = varying.second->name();
-
-        // Program linking depends on this exact format
-        varyings += TString("static ") + InterpolationString(type.getQualifier()) + " " + TypeString(type) +
-                    " " + Decorate(name) + ArrayString(type) + " = " + zeroInitializer(type) +
-                    ";\n";
-    }
-
-    for (const auto &attribute : mReferencedAttributes)
-    {
-        const TType &type   = attribute.second->getType();
-        const ImmutableString &name = attribute.second->name();
-
-        attributes += "static " + TypeString(type) + " " + Decorate(name) + ArrayString(type) +
-                      " = " + zeroInitializer(type) + ";\n";
-    }
 
     out << mStructureHLSL->structsHeader();
 
@@ -492,7 +526,7 @@ void OutputHLSL::header(TInfoSinkBase &out,
             IsExtensionEnabled(mExtensionBehavior, TExtension::EXT_draw_buffers);
 
         out << "// Varyings\n";
-        out << varyings;
+        writeReferencedVaryings(out);
         out << "\n";
 
         if (mShaderVersion >= 300)
@@ -500,7 +534,7 @@ void OutputHLSL::header(TInfoSinkBase &out,
             for (const auto &outputVariable : mReferencedOutputVariables)
             {
                 const ImmutableString &variableName = outputVariable.second->name();
-                const TType &variableType   = outputVariable.second->getType();
+                const TType &variableType           = outputVariable.second->getType();
 
                 out << "static " << TypeString(variableType) << " out_" << variableName
                     << ArrayString(variableType) << " = " << zeroInitializer(variableType) << ";\n";
@@ -510,8 +544,9 @@ void OutputHLSL::header(TInfoSinkBase &out,
         {
             const unsigned int numColorValues = usingMRTExtension ? mNumRenderTargets : 1;
 
-            out << "static float4 gl_Color[" << numColorValues << "] =\n"
-                                                                  "{\n";
+            out << "static float4 gl_Color[" << numColorValues
+                << "] =\n"
+                   "{\n";
             for (unsigned int i = 0; i < numColorValues; i++)
             {
                 out << "    float4(0, 0, 0, 0)";
@@ -644,7 +679,7 @@ void OutputHLSL::header(TInfoSinkBase &out,
     else if (mShaderType == GL_VERTEX_SHADER)
     {
         out << "// Attributes\n";
-        out << attributes;
+        writeReferencedAttributes(out);
         out << "\n"
                "static float4 gl_Position = float4(0, 0, 0, 0);\n";
 
@@ -665,7 +700,7 @@ void OutputHLSL::header(TInfoSinkBase &out,
 
         out << "\n"
                "// Varyings\n";
-        out << varyings;
+        writeReferencedVaryings(out);
         out << "\n";
 
         if (mUsesDepthRange)
@@ -922,8 +957,8 @@ void OutputHLSL::visitSymbol(TIntermSymbol *node)
         else if (IsVarying(qualifier))
         {
             mReferencedVaryings[uniqueId.get()] = &variable;
-            out << Decorate(name);
-            if (name == "ViewID_OVR")
+            out << DecorateVariableIfNeeded(variable);
+            if (variable.symbolType() == SymbolType::AngleInternal && name == "ViewID_OVR")
             {
                 mUsesViewID = true;
             }
@@ -1008,11 +1043,6 @@ void OutputHLSL::visitSymbol(TIntermSymbol *node)
             out << DecorateVariableIfNeeded(variable);
         }
     }
-}
-
-void OutputHLSL::visitRaw(TIntermRaw *node)
-{
-    getInfoSink() << node->getRawText();
 }
 
 void OutputHLSL::outputEqual(Visit visit, const TType &type, TOperator op, TInfoSinkBase &out)
@@ -1143,6 +1173,27 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
                 // function call is assigned.
                 ASSERT(rightAgg == nullptr);
             }
+            // Assignment expressions with atomic functions should be transformed into atomic
+            // function calls in HLSL.
+            // e.g. original_value = atomicAdd(dest, value) should be translated into
+            //      InterlockedAdd(dest, value, original_value);
+            else if (IsAtomicFunctionDirectAssign(*node))
+            {
+                TIntermAggregate *atomicFunctionNode = node->getRight()->getAsAggregate();
+                TOperator atomicFunctionOp           = atomicFunctionNode->getOp();
+                out << GetHLSLAtomicFunctionStringAndLeftParenthesis(atomicFunctionOp);
+                TIntermSequence *argumentSeq = atomicFunctionNode->getSequence();
+                ASSERT(argumentSeq->size() >= 2u);
+                for (auto &argument : *argumentSeq)
+                {
+                    argument->traverse(this);
+                    out << ", ";
+                }
+                node->getLeft()->traverse(this);
+                out << ")";
+                return false;
+            }
+
             outputAssign(visit, node->getType(), out);
             break;
         case EOpInitialize:
@@ -1250,7 +1301,7 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
             {
                 if (visit == PreVisit)
                 {
-                    TIntermSymbol *instanceArraySymbol = node->getLeft()->getAsSymbolNode();
+                    TIntermSymbol *instanceArraySymbol    = node->getLeft()->getAsSymbolNode();
                     const TInterfaceBlock *interfaceBlock = leftType.getInterfaceBlock();
                     if (mReferencedUniformBlocks.count(interfaceBlock->uniqueId().get()) == 0)
                     {
@@ -1684,7 +1735,7 @@ ImmutableString OutputHLSL::samplerNamePrefixFromStruct(TIntermTyped *node)
         }
         default:
             UNREACHABLE();
-            return ImmutableString("");
+            return kEmptyImmutableString;
     }
 }
 
@@ -1813,7 +1864,11 @@ bool OutputHLSL::visitDeclaration(Visit visit, TIntermDeclaration *node)
                 declarator->getAsSymbolNode()->variable().symbolType() !=
                     SymbolType::Empty)  // Variable declaration
             {
-                if (!mInsideFunction)
+                if (declarator->getQualifier() == EvqShared)
+                {
+                    out << "groupshared ";
+                }
+                else if (!mInsideFunction)
                 {
                     out << "static ";
                 }
@@ -1826,7 +1881,15 @@ bool OutputHLSL::visitDeclaration(Visit visit, TIntermDeclaration *node)
                 {
                     symbol->traverse(this);
                     out << ArrayString(symbol->getType());
-                    out << " = " + zeroInitializer(symbol->getType());
+                    // We don't initialize shared variables because:
+                    // 1. It is very slow for D3D11 drivers to compile a compute shader if we add
+                    // code to initialize a groupshared array variable with a large array size.
+                    // 2. It is unnecessary to initialize shared variables, as GLSL even does not
+                    // allow initializing shared variables at all.
+                    if (declarator->getQualifier() != EvqShared)
+                    {
+                        out << " = " + zeroInitializer(symbol->getType());
+                    }
                 }
                 else
                 {
@@ -1934,8 +1997,8 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
             else if (node->getFunction()->isImageFunction())
             {
                 const ImmutableString &name = node->getFunction()->name();
-                TType type                = (*arguments)[0]->getAsTyped()->getType();
-                TString imageFunctionName   = mImageFunctionHLSL->useImageFunction(
+                TType type                               = (*arguments)[0]->getAsTyped()->getType();
+                const ImmutableString &imageFunctionName = mImageFunctionHLSL->useImageFunction(
                     name, type.getBasicType(), type.getLayoutQualifier().imageInternalFormat,
                     type.getMemoryQualifier().readonly);
                 out << imageFunctionName << "(";
@@ -2128,6 +2191,29 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpMemoryBarrier:
             outputTriplet(out, visit, "AllMemoryBarrier(", "", ")");
             break;
+
+        // Single atomic function calls without return value.
+        // e.g. atomicAdd(dest, value) should be translated into InterlockedAdd(dest, value).
+        case EOpAtomicAdd:
+        case EOpAtomicMin:
+        case EOpAtomicMax:
+        case EOpAtomicAnd:
+        case EOpAtomicOr:
+        case EOpAtomicXor:
+            outputTriplet(out, visit, GetHLSLAtomicFunctionStringAndLeftParenthesis(node->getOp()),
+                          ",", ")");
+            break;
+
+        // The parameter 'original_value' of InterlockedExchange(dest, value, original_value) and
+        // InterlockedCompareExchange(dest, compare_value, value, original_value) is not optional.
+        // https://docs.microsoft.com/en-us/windows/desktop/direct3dhlsl/interlockedexchange
+        // https://docs.microsoft.com/en-us/windows/desktop/direct3dhlsl/interlockedcompareexchange
+        // So all the call of atomicExchange(dest, value) and atomicCompSwap(dest, compare_value,
+        // value) should all be modified into the form of "int temp; temp = atomicExchange(dest,
+        // value);" and "int temp; temp = atomicCompSwap(dest, compare_value, value);" in the
+        // intermediate tree before traversing outputHLSL.
+        case EOpAtomicExchange:
+        case EOpAtomicCompSwap:
         default:
             UNREACHABLE();
     }

@@ -15,7 +15,7 @@
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "net/third_party/spdy/core/spdy_framer.h"
 
-namespace net {
+namespace quic {
 
 class QUIC_EXPORT_PRIVATE SpdyUtils {
  public:
@@ -25,12 +25,12 @@ class QUIC_EXPORT_PRIVATE SpdyUtils {
   static bool ExtractContentLengthFromHeaders(int64_t* content_length,
                                               spdy::SpdyHeaderBlock* headers);
 
-  // Copies a list of headers to a spdy::SpdyHeaderBlock.
+  // Copies a list of headers to a SpdyHeaderBlock.
   static bool CopyAndValidateHeaders(const QuicHeaderList& header_list,
                                      int64_t* content_length,
                                      spdy::SpdyHeaderBlock* headers);
 
-  // Copies a list of headers to a spdy::SpdyHeaderBlock.
+  // Copies a list of headers to a SpdyHeaderBlock.
   static bool CopyAndValidateTrailers(const QuicHeaderList& header_list,
                                       size_t* final_byte_offset,
                                       spdy::SpdyHeaderBlock* trailers);
@@ -42,7 +42,7 @@ class QUIC_EXPORT_PRIVATE SpdyUtils {
   static QuicString GetPromisedUrlFromHeaders(
       const spdy::SpdyHeaderBlock& headers);
 
-  // Returns hostname, or empty std::string if missing.
+  // Returns hostname, or empty string if missing.
   static QuicString GetPromisedHostNameFromHeaders(
       const spdy::SpdyHeaderBlock& headers);
 
@@ -59,6 +59,6 @@ class QUIC_EXPORT_PRIVATE SpdyUtils {
   DISALLOW_COPY_AND_ASSIGN(SpdyUtils);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_SPDY_UTILS_H_

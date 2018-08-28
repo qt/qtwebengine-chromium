@@ -4,6 +4,7 @@
 
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 
+#include "base/android/orderfile/orderfile_buildflags.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -15,6 +16,7 @@
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "components/viz/common/features.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
@@ -26,9 +28,14 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/ipc/in_process_command_buffer.h"
 #include "services/resource_coordinator/public/mojom/memory_instrumentation/constants.mojom.h"
 #include "services/service_manager/runner/common/client_util.h"
 #include "ui/base/ui_base_features.h"
+
+#if defined(OS_MACOSX)
+#include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
+#endif
 
 namespace content {
 
@@ -105,7 +112,13 @@ BrowserGpuChannelHostFactory::EstablishRequest::EstablishRequest(
       gpu_client_id_(gpu_client_id),
       gpu_client_tracing_id_(gpu_client_tracing_id),
       finished_(false),
-      main_task_runner_(base::ThreadTaskRunnerHandle::Get()) {}
+#if defined(OS_MACOSX)
+      main_task_runner_(ui::WindowResizeHelperMac::Get()->task_runner())
+#else
+      main_task_runner_(base::ThreadTaskRunnerHandle::Get())
+#endif
+{
+}
 
 void BrowserGpuChannelHostFactory::EstablishRequest::RestartTimeout() {
   BrowserGpuChannelHostFactory* factory =
@@ -273,7 +286,7 @@ BrowserGpuChannelHostFactory::~BrowserGpuChannelHostFactory() {
 void BrowserGpuChannelHostFactory::EstablishGpuChannel(
     gpu::GpuChannelEstablishedCallback callback) {
 #if defined(USE_AURA)
-  DCHECK(!base::FeatureList::IsEnabled(::features::kMash));
+  DCHECK(features::IsAshInBrowserProcess());
 #endif
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (gpu_channel_.get() && gpu_channel_->IsLost()) {
@@ -352,7 +365,7 @@ void BrowserGpuChannelHostFactory::RestartTimeout() {
     return;
 
 #if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || \
-    defined(CYGPROFILE_INSTRUMENTATION)
+    BUILDFLAG(ORDERFILE_INSTRUMENTATION)
   constexpr int64_t kGpuChannelTimeoutInSeconds = 40;
 #else
   // The GPU watchdog timeout is 15 seconds (1.5x the kGpuTimeout value due to
@@ -371,6 +384,10 @@ void BrowserGpuChannelHostFactory::InitializeShaderDiskCacheOnIO(
     int gpu_client_id,
     const base::FilePath& cache_dir) {
   GetShaderCacheFactorySingleton()->SetCacheInfo(gpu_client_id, cache_dir);
+  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor)) {
+    GetShaderCacheFactorySingleton()->SetCacheInfo(
+        gpu::InProcessCommandBuffer::kGpuClientId, cache_dir);
+  }
 }
 
 }  // namespace content

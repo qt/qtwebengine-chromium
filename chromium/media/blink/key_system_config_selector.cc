@@ -29,10 +29,12 @@ namespace media {
 
 using EmeFeatureRequirement =
     blink::WebMediaKeySystemConfiguration::Requirement;
+using EmeEncryptionScheme =
+    blink::WebMediaKeySystemMediaCapability::EncryptionScheme;
 
 namespace {
 
-static EmeConfigRule GetSessionTypeConfigRule(EmeSessionTypeSupport support) {
+EmeConfigRule GetSessionTypeConfigRule(EmeSessionTypeSupport support) {
   switch (support) {
     case EmeSessionTypeSupport::INVALID:
       NOTREACHED();
@@ -48,7 +50,7 @@ static EmeConfigRule GetSessionTypeConfigRule(EmeSessionTypeSupport support) {
   return EmeConfigRule::NOT_SUPPORTED;
 }
 
-static EmeConfigRule GetDistinctiveIdentifierConfigRule(
+EmeConfigRule GetDistinctiveIdentifierConfigRule(
     EmeFeatureSupport support,
     EmeFeatureRequirement requirement) {
   if (support == EmeFeatureSupport::INVALID) {
@@ -88,9 +90,8 @@ static EmeConfigRule GetDistinctiveIdentifierConfigRule(
   return EmeConfigRule::IDENTIFIER_REQUIRED;
 }
 
-static EmeConfigRule GetPersistentStateConfigRule(
-    EmeFeatureSupport support,
-    EmeFeatureRequirement requirement) {
+EmeConfigRule GetPersistentStateConfigRule(EmeFeatureSupport support,
+                                           EmeFeatureRequirement requirement) {
   if (support == EmeFeatureSupport::INVALID) {
     NOTREACHED();
     return EmeConfigRule::NOT_SUPPORTED;
@@ -131,14 +132,13 @@ static EmeConfigRule GetPersistentStateConfigRule(
   return EmeConfigRule::PERSISTENCE_REQUIRED;
 }
 
-static bool IsPersistentSessionType(
-    blink::WebEncryptedMediaSessionType sessionType) {
+bool IsPersistentSessionType(blink::WebEncryptedMediaSessionType sessionType) {
   switch (sessionType) {
     case blink::WebEncryptedMediaSessionType::kTemporary:
       return false;
     case blink::WebEncryptedMediaSessionType::kPersistentLicense:
       return true;
-    case blink::WebEncryptedMediaSessionType::kPersistentReleaseMessage:
+    case blink::WebEncryptedMediaSessionType::kPersistentUsageRecord:
       return true;
     case blink::WebEncryptedMediaSessionType::kUnknown:
       break;
@@ -146,6 +146,25 @@ static bool IsPersistentSessionType(
 
   NOTREACHED();
   return false;
+}
+
+bool IsSupportedMediaType(const std::string& container_mime_type,
+                          const std::string& codecs,
+                          bool use_aes_decryptor) {
+  DVLOG(3) << __func__ << ": container_mime_type=" << container_mime_type
+           << ", codecs=" << codecs
+           << ", use_aes_decryptor=" << use_aes_decryptor;
+
+  std::vector<std::string> codec_vector;
+  SplitCodecsToVector(codecs, &codec_vector, false);
+
+  // AesDecryptor decrypts the stream in the demuxer before it reaches the
+  // decoder so check whether the media format is supported when clear.
+  SupportsType support_result =
+      use_aes_decryptor
+          ? IsSupportedMediaFormat(container_mime_type, codec_vector)
+          : IsSupportedEncryptedMediaFormat(container_mime_type, codec_vector);
+  return (support_result == IsSupported);
 }
 
 }  // namespace
@@ -286,30 +305,13 @@ KeySystemConfigSelector::KeySystemConfigSelector(
     MediaPermission* media_permission)
     : key_systems_(key_systems),
       media_permission_(media_permission),
+      is_supported_media_type_cb_(base::BindRepeating(&IsSupportedMediaType)),
       weak_factory_(this) {
   DCHECK(key_systems_);
   DCHECK(media_permission_);
 }
 
 KeySystemConfigSelector::~KeySystemConfigSelector() = default;
-
-bool IsSupportedMediaFormat(const std::string& container_mime_type,
-                            const std::string& codecs,
-                            bool use_aes_decryptor) {
-  DVLOG(3) << __func__ << ": container_mime_type=" << container_mime_type
-           << ", codecs=" << codecs
-           << ", use_aes_decryptor=" << use_aes_decryptor;
-
-  std::vector<std::string> codec_vector;
-  SplitCodecsToVector(codecs, &codec_vector, false);
-  // AesDecryptor decrypts the stream in the demuxer before it reaches the
-  // decoder so check whether the media format is supported when clear.
-  SupportsType support_result =
-      use_aes_decryptor
-          ? IsSupportedMediaFormat(container_mime_type, codec_vector)
-          : IsSupportedEncryptedMediaFormat(container_mime_type, codec_vector);
-  return (support_result == IsSupported);
-}
 
 // TODO(sandersd): Move contentType parsing from Blink to here so that invalid
 // parameters can be rejected. http://crbug.com/449690, http://crbug.com/690131
@@ -337,8 +339,9 @@ bool KeySystemConfigSelector::IsSupportedContentType(
   // is done primarily to validate extended codecs, but it also ensures that the
   // CDM cannot support codecs that Chrome does not (which could complicate the
   // robustness algorithm).
-  if (!IsSupportedMediaFormat(container_lower, codecs,
-                              CanUseAesDecryptor(key_system))) {
+  if (!is_supported_media_type_cb_.Run(
+          container_lower, codecs,
+          key_systems_->CanUseAesDecryptor(key_system))) {
     DVLOG(3) << "Container mime type and codecs are not supported";
     return false;
   }
@@ -357,6 +360,31 @@ bool KeySystemConfigSelector::IsSupportedContentType(
   config_state->AddRule(codecs_rule);
 
   return true;
+}
+
+EmeConfigRule KeySystemConfigSelector::GetEncryptionSchemeConfigRule(
+    const std::string& key_system,
+    const EmeEncryptionScheme encryption_scheme) {
+  switch (encryption_scheme) {
+    // https://github.com/WICG/encrypted-media-encryption-scheme/blob/master/explainer.md
+    // "A missing or null value indicates that any encryption scheme is
+    // acceptable."
+    // To fully implement this, we need to get the config rules for both kCenc
+    // and kCbcs, which could be conflicting, and choose a final config rule
+    // somehow. If we end up choosing the rule for kCbcs, we could actually
+    // break legacy players which serves kCenc streams. Therefore, for backward
+    // compatibility and simplicity, we treat kNotSpecified the same as kCenc.
+    case EmeEncryptionScheme::kNotSpecified:
+    case EmeEncryptionScheme::kCenc:
+      return key_systems_->GetEncryptionSchemeConfigRule(key_system,
+                                                         EncryptionMode::kCenc);
+    case EmeEncryptionScheme::kCbcs:
+      return key_systems_->GetEncryptionSchemeConfigRule(key_system,
+                                                         EncryptionMode::kCbcs);
+  }
+
+  NOTREACHED();
+  return EmeConfigRule::NOT_SUPPORTED;
 }
 
 bool KeySystemConfigSelector::GetSupportedCapabilities(
@@ -425,13 +453,23 @@ bool KeySystemConfigSelector::GetSupportedCapabilities(
       DVLOG(3) << "The current robustness rule is not supported.";
       continue;
     }
+    proposed_config_state.AddRule(robustness_rule);
+
+    // Check for encryption scheme support.
+    // https://github.com/WICG/encrypted-media-encryption-scheme/blob/master/explainer.md.
+    EmeConfigRule encryption_scheme_rule =
+        GetEncryptionSchemeConfigRule(key_system, capability.encryption_scheme);
+    if (!proposed_config_state.IsRuleSupported(encryption_scheme_rule)) {
+      DVLOG(3) << "The current encryption scheme rule is not supported.";
+      continue;
+    }
 
     // 3.13.1. Add requested media capability to supported media capabilities.
     supported_media_capabilities->push_back(capability);
 
     // 3.13.2. Add requested media capability to the {audio|video}Capabilities
     // member of local accumulated configuration.
-    proposed_config_state.AddRule(robustness_rule);
+    proposed_config_state.AddRule(encryption_scheme_rule);
 
     // This is used as an intermediate variable so that |proposed_config_state|
     // is updated in the next iteration of the for loop.
@@ -633,10 +671,9 @@ KeySystemConfigSelector::GetSupportedConfiguration(
         session_type_rule = GetSessionTypeConfigRule(
             key_systems_->GetPersistentLicenseSessionSupport(key_system));
         break;
-      case blink::WebEncryptedMediaSessionType::kPersistentReleaseMessage:
+      case blink::WebEncryptedMediaSessionType::kPersistentUsageRecord:
         session_type_rule = GetSessionTypeConfigRule(
-            key_systems_->GetPersistentReleaseMessageSessionSupport(
-                key_system));
+            key_systems_->GetPersistentUsageRecordSessionSupport(key_system));
         break;
     }
 

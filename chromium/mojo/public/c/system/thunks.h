@@ -156,10 +156,8 @@ struct MojoSystemThunks {
                               const struct MojoRemoveTriggerOptions* options);
   MojoResult (*ArmTrap)(MojoHandle trap_handle,
                         const struct MojoArmTrapOptions* options,
-                        uint32_t* num_ready_triggers,
-                        uintptr_t* ready_triggers,
-                        MojoResult* ready_results,
-                        MojoHandleSignalsState* ready_signals_states);
+                        uint32_t* num_blocking_events,
+                        struct MojoTrapEvent* blocking_events);
 
   // Platform handle API.
   MojoResult (*WrapPlatformHandle)(
@@ -214,6 +212,15 @@ struct MojoSystemThunks {
       const struct MojoInvitationTransportEndpoint* transport_endpoint,
       const struct MojoAcceptInvitationOptions* options,
       MojoHandle* invitation_handle);
+  MojoResult (*SetQuota)(MojoHandle handle,
+                         MojoQuotaType type,
+                         uint64_t limit,
+                         const struct MojoSetQuotaOptions* options);
+  MojoResult (*QueryQuota)(MojoHandle handle,
+                           MojoQuotaType type,
+                           const struct MojoQueryQuotaOptions* options,
+                           uint64_t* limit,
+                           uint64_t* usage);
 };
 #pragma pack(pop)
 

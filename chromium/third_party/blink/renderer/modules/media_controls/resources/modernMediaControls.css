@@ -36,6 +36,11 @@ video::-webkit-media-controls {
   justify-content: flex-end;
   align-items: center;
   font-size: 14px;
+
+  margin-top: env(safe-area-inset-top);
+  margin-left: env(safe-area-inset-left);
+  margin-right: env(safe-area-inset-right);
+  margin-bottom: env(safe-area-inset-bottom);
 }
 
 audio::-webkit-media-controls-enclosure,
@@ -329,6 +334,10 @@ audio::-webkit-media-controls-toggle-closed-captions-button {
 }
 
 video::-webkit-media-controls-toggle-closed-captions-button {
+  background-image: -webkit-image-set(url(ic_subtitles.svg) 1x);
+}
+
+video::-webkit-media-controls-toggle-closed-captions-button.closed-captions {
   background-image: -webkit-image-set(url(ic_closed_caption.svg) 1x);
 }
 
@@ -345,6 +354,11 @@ audio::-internal-media-controls-overflow-button {
 video::-internal-media-controls-picture-in-picture-button {
   background-image: -webkit-image-set(
     url(ic_picture_in_picture.svg) 1x);
+}
+
+video::-internal-media-controls-picture-in-picture-button.on {
+  background-image: -webkit-image-set(
+    url(ic_picture_in_picture_exit.svg) 1x);
 }
 
 video::-webkit-media-controls:not(.audio-only) [pseudo="-webkit-media-controls-panel"] [pseudo="-internal-media-controls-overflow-button"] {
@@ -691,25 +705,6 @@ video::-webkit-media-controls.sizing-large div[pseudo="-internal-media-controls-
 }
 
 /* TODO(https://crbug.com/857120): All these are the same, so these are unnecessary. */
-video::-webkit-media-controls.sizing-small label[pseudo="-internal-media-controls-overflow-menu-list-item" i] {
-  font-size: 14px;
-  height: 48px;
-  padding: 0 16px 0;
-}
-
-video::-webkit-media-controls.sizing-medium label[pseudo="-internal-media-controls-overflow-menu-list-item" i] {
-  font-size: 14px;
-  height: 48px;
-  padding: 0 16px 0;
-}
-
-video::-webkit-media-controls.sizing-large label[pseudo="-internal-media-controls-overflow-menu-list-item" i] {
-  font-size: 14px;
-  height: 48px;
-  padding: 0 16px 0;
-}
-
-/* TODO(https://crbug.com/857120): All these are the same, so these are unnecessary. */
 video::-webkit-media-controls.sizing-small label[pseudo="-internal-media-controls-overflow-menu-list-item" i] input {
   margin-left: 0;
   margin-right: 16px;
@@ -770,6 +765,7 @@ video::-internal-media-controls-overflow-menu-list-item:focus,
 audio::-internal-media-controls-text-track-list-item:focus,
 video::-internal-media-controls-text-track-list-item:focus {
   background-color: #e0e0e0;
+  outline: none;
 }
 
 audio::-internal-media-controls-text-track-list-header,

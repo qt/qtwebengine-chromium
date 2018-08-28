@@ -57,6 +57,7 @@ supported_extensions = sorted(angle_extensions + gles1_extensions + [
     "GL_EXT_discard_framebuffer",
     "GL_EXT_disjoint_timer_query",
     "GL_EXT_draw_buffers",
+    "GL_EXT_geometry_shader",
     "GL_EXT_map_buffer_range",
     "GL_EXT_occlusion_query_boolean",
     "GL_EXT_robustness",
@@ -67,6 +68,7 @@ supported_extensions = sorted(angle_extensions + gles1_extensions + [
     "GL_OES_get_program_binary",
     "GL_OES_mapbuffer",
     "GL_OES_vertex_array_object",
+    "GL_KHR_parallel_shader_compile",
 ])
 
 # The EGL_ANGLE_explicit_context extension is generated differently from other extensions.
@@ -589,7 +591,7 @@ def write_glext_explicit_context_inc(version, ptrs, protos):
         function_pointers = ptrs,
         function_prototypes = protos)
 
-    path = path_to("../include/GLES{}".format(folder_version),
+    path = os.path.join(script_relative(".."), "include", "GLES{}".format(folder_version),
         "gl{}ext_explicit_context_autogen.inc".format(version))
 
     with open(path, "w") as out:

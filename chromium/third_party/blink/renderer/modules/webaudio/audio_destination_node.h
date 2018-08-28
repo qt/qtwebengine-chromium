@@ -26,42 +26,24 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_WEBAUDIO_AUDIO_DESTINATION_NODE_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBAUDIO_AUDIO_DESTINATION_NODE_H_
 
-#include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node.h"
-#include "third_party/blink/renderer/platform/audio/audio_bus.h"
-#include "third_party/blink/renderer/platform/audio/audio_io_callback.h"
-#include "third_party/blink/renderer/platform/audio/audio_source_provider.h"
+#include "third_party/blink/renderer/platform/wtf/atomics.h"
 
 namespace blink {
 
-class AudioBus;
-class BaseAudioContext;
-
-class AudioDestinationHandler : public AudioHandler, public AudioIOCallback {
+// The AudioDestinationHandler (ADH) is a base class for the rendering backend
+// for AudioDestinatioNode. It contains common information required for the
+// rendering such as current sample frame, sample rate and maximum channel count
+// of the context.
+class AudioDestinationHandler : public AudioHandler {
  public:
   AudioDestinationHandler(AudioNode&);
   ~AudioDestinationHandler() override;
 
-  // AudioHandler
-  void Process(size_t) final {
-  }  // we're pulled by hardware so this is never called
-
-  // The audio hardware calls render() to get the next render quantum of audio
-  // into destinationBus.  It will optionally give us local/live audio input in
-  // sourceBus (if it's not 0).
-  void Render(AudioBus* source_bus,
-              AudioBus* destination_bus,
-              size_t number_of_frames,
-              const AudioIOPosition& output_position) final;
-
-  size_t CurrentSampleFrame() const {
-    return AcquireLoad(&current_sample_frame_);
-  }
-  double CurrentTime() const {
-    return CurrentSampleFrame() / static_cast<double>(SampleRate());
-  }
-
-  virtual unsigned long MaxChannelCount() const { return 0; }
+  // The method MUST NOT be invoked when rendering a graph because the
+  // destination node is a sink. Instead, this node gets pulled by the
+  // underlying renderer (audio hardware or worker thread).
+  void Process(size_t) final { NOTREACHED(); }
 
   virtual void StartRendering() = 0;
   virtual void StopRendering() = 0;
@@ -71,60 +53,50 @@ class AudioDestinationHandler : public AudioHandler, public AudioIOCallback {
   // restart of the context.
   virtual void RestartRendering() = 0;
 
-  // Returns the rendering callback buffer size.
-  size_t CallbackBufferSize() const override = 0;
-  virtual double SampleRate() const = 0;
+  size_t CurrentSampleFrame() const {
+    return AcquireLoad(&current_sample_frame_);
+  }
 
-  // Returns the audio buffer size in frames used by the AudioContext.
-  virtual int FramesPerBuffer() const = 0;
+  double CurrentTime() const {
+    return CurrentSampleFrame() / SampleRate();
+  }
+
+  virtual double SampleRate() const = 0;
+  virtual unsigned long MaxChannelCount() const = 0;
+
+  void ContextDestroyed() { is_execution_context_destroyed_ = true; }
+  bool IsExecutionContextDestroyed() const {
+    return is_execution_context_destroyed_;
+  }
 
  protected:
-  // LocalAudioInputProvider allows us to expose an AudioSourceProvider for
-  // local/live audio input.  If there is local/live audio input, we call set()
-  // with the audio input data every render quantum.
-  class LocalAudioInputProvider final : public AudioSourceProvider {
-   public:
-    LocalAudioInputProvider()
-        : source_bus_(AudioBus::Create(
-              2,
-              AudioUtilities::kRenderQuantumFrames))  // FIXME: handle
-                                                      // non-stereo local input.
-    {}
-
-    void Set(AudioBus* bus) {
-      if (bus)
-        source_bus_->CopyFrom(*bus);
-    }
-
-    // AudioSourceProvider.
-    void ProvideInput(AudioBus* destination_bus,
-                      size_t number_of_frames) override {
-      bool is_good = destination_bus &&
-                     destination_bus->length() == number_of_frames &&
-                     source_bus_->length() == number_of_frames;
-      DCHECK(is_good);
-      if (is_good)
-        destination_bus->CopyFrom(*source_bus_);
-    }
-
-   private:
-    scoped_refptr<AudioBus> source_bus_;
-  };
-
-  // Counts the number of sample-frames processed by the destination.
+  // The number of sample frames processed by the destination so far.
   size_t current_sample_frame_;
 
-  LocalAudioInputProvider local_audio_input_provider_;
+ private:
+  // True if the execution context is being destroyed.  If this is true, the
+  // destination ndoe must avoid checking for or accessing the execution
+  // context.
+  bool is_execution_context_destroyed_ = false;
 };
 
+// -----------------------------------------------------------------------------
+
+// AudioDestinationNode (ADN) is a base class of two different types of nodes:
+//   1. DefaultDestinationNode for AudioContext (real time)
+//   2. OfflineDestinationNode for OfflineAudioContext (non-real time)
+// They have different rendering mechanisms, so the AudioDestinationHandler
+// (ADH), which is a counterpart of the destination node, encapsulates a
+// different rendering backend.
 class AudioDestinationNode : public AudioNode {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  AudioDestinationHandler& GetAudioDestinationHandler() const;
-
   unsigned long maxChannelCount() const;
-  size_t CallbackBufferSize() const { return Handler().CallbackBufferSize(); }
+
+  // Returns its own handler object instead of a generic one from
+  // AudioNode::Handler().
+  AudioDestinationHandler& GetAudioDestinationHandler() const;
 
  protected:
   AudioDestinationNode(BaseAudioContext&);

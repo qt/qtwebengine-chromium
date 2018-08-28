@@ -4,12 +4,11 @@
 
 #include "third_party/blink/renderer/core/testing/sim/sim_web_view_client.h"
 
-#include "third_party/blink/public/platform/web_layer_tree_view.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 
 namespace blink {
 
-SimWebViewClient::SimWebViewClient(WebLayerTreeView& layer_tree_view)
+SimWebViewClient::SimWebViewClient(content::LayerTreeView& layer_tree_view)
     : visually_non_empty_layout_count_(0),
       finished_parsing_layout_count_(0),
       finished_loading_layout_count_(0),
@@ -28,6 +27,10 @@ void SimWebViewClient::DidMeaningfulLayout(
       finished_loading_layout_count_++;
       break;
   }
+}
+
+WebLayerTreeView* SimWebViewClient::InitializeLayerTreeView() {
+  return layer_tree_view_;
 }
 
 WebView* SimWebViewClient::CreateView(WebLocalFrame* opener,

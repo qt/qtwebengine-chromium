@@ -294,7 +294,7 @@ TEST_F(ElementAnimationsTest,
                             CubicBezierTimingFunction::EaseType::EASE_IN_OUT)));
   const int animation2_id = 2;
   std::unique_ptr<KeyframeModel> keyframe_model(KeyframeModel::Create(
-      std::move(curve), animation2_id, 0, TargetProperty::SCROLL_OFFSET));
+      std::move(curve), animation2_id, 1, TargetProperty::SCROLL_OFFSET));
   animation_->AddKeyframeModel(std::move(keyframe_model));
   PushProperties();
   EXPECT_VECTOR2DF_EQ(provider_initial_value,
@@ -1417,7 +1417,7 @@ TEST_F(ElementAnimationsTest, Interrupt) {
   std::unique_ptr<KeyframeModel> to_add(CreateKeyframeModel(
       std::unique_ptr<AnimationCurve>(new FakeFloatTransition(1.0, 1.f, 0.5f)),
       2, TargetProperty::OPACITY));
-  animation_->AbortKeyframeModels(TargetProperty::OPACITY, false);
+  animation_->AbortKeyframeModelsWithProperty(TargetProperty::OPACITY, false);
   animation_->AddKeyframeModel(std::move(to_add));
 
   // Since the previous animation was aborted, the new animation should start
@@ -1830,9 +1830,9 @@ TEST_F(ElementAnimationsTest, InactiveObserverGetsTicked) {
             client_impl_.GetOpacity(element_id_, ElementListType::ACTIVE));
 }
 
-// Tests that AbortKeyframeModels aborts all animations targeting the
-// specified property.
-TEST_F(ElementAnimationsTest, AbortKeyframeModels) {
+// Tests that AbortKeyframeModelsWithProperty aborts all animations targeting
+// the specified property.
+TEST_F(ElementAnimationsTest, AbortKeyframeModelsWithProperty) {
   CreateTestLayer(false, false);
   AttachTimelineAnimationLayer();
 
@@ -1875,7 +1875,7 @@ TEST_F(ElementAnimationsTest, AbortKeyframeModels) {
       KeyframeModel::RUNNING,
       animation_->keyframe_effect()->GetKeyframeModelById(5)->run_state());
 
-  animation_->AbortKeyframeModels(TargetProperty::TRANSFORM, false);
+  animation_->AbortKeyframeModelsWithProperty(TargetProperty::TRANSFORM, false);
 
   // Only un-finished TRANSFORM animations should have been aborted.
   EXPECT_EQ(
@@ -1913,7 +1913,7 @@ TEST_F(ElementAnimationsTest, MainThreadAbortedAnimationGetsDeleted) {
       keyframe_model_id));
   EXPECT_FALSE(host_->needs_push_properties());
 
-  animation_->AbortKeyframeModels(TargetProperty::OPACITY, false);
+  animation_->AbortKeyframeModelsWithProperty(TargetProperty::OPACITY, false);
   EXPECT_EQ(KeyframeModel::ABORTED,
             animation_->GetKeyframeModel(TargetProperty::OPACITY)->run_state());
   EXPECT_TRUE(host_->needs_push_properties());
@@ -1955,7 +1955,8 @@ TEST_F(ElementAnimationsTest, ImplThreadAbortedAnimationGetsDeleted) {
   EXPECT_TRUE(animation_impl_->keyframe_effect()->GetKeyframeModelById(
       keyframe_model_id));
 
-  animation_impl_->AbortKeyframeModels(TargetProperty::OPACITY, false);
+  animation_impl_->AbortKeyframeModelsWithProperty(TargetProperty::OPACITY,
+                                                   false);
   EXPECT_EQ(
       KeyframeModel::ABORTED,
       animation_impl_->GetKeyframeModel(TargetProperty::OPACITY)->run_state());
@@ -2026,7 +2027,8 @@ TEST_F(ElementAnimationsTest, ImplThreadTakeoverAnimationGetsDeleted) {
   EXPECT_TRUE(animation_impl_->keyframe_effect()->GetKeyframeModelById(
       keyframe_model_id));
 
-  animation_impl_->AbortKeyframeModels(TargetProperty::SCROLL_OFFSET, true);
+  animation_impl_->AbortKeyframeModelsWithProperty(
+      TargetProperty::SCROLL_OFFSET, true);
   EXPECT_TRUE(host_impl_->needs_push_properties());
   EXPECT_EQ(KeyframeModel::ABORTED_BUT_NEEDS_COMPLETION,
             animation_impl_->GetKeyframeModel(TargetProperty::SCROLL_OFFSET)
@@ -2152,7 +2154,8 @@ TEST_F(ElementAnimationsTest, FinishedAndAbortedEventsForGroup) {
   EXPECT_EQ(AnimationEvent::STARTED, events->events_[0].type);
   EXPECT_EQ(AnimationEvent::STARTED, events->events_[1].type);
 
-  animation_impl_->AbortKeyframeModels(TargetProperty::OPACITY, false);
+  animation_impl_->AbortKeyframeModelsWithProperty(TargetProperty::OPACITY,
+                                                   false);
 
   events = CreateEventsForTesting();
   animation_impl_->Tick(kInitialTickTime + TimeDelta::FromMilliseconds(1000));
@@ -2877,7 +2880,8 @@ TEST_F(ElementAnimationsTest, ObserverNotifiedWhenTransformAnimationChanges) {
   animation_->keyframe_effect()->NotifyKeyframeModelStarted(events->events_[0]);
   events->events_.clear();
 
-  animation_impl_->AbortKeyframeModels(TargetProperty::TRANSFORM, false);
+  animation_impl_->AbortKeyframeModelsWithProperty(TargetProperty::TRANSFORM,
+                                                   false);
   EXPECT_FALSE(client_impl_.GetHasPotentialTransformAnimation(
       element_id_, ElementListType::PENDING));
   EXPECT_FALSE(client_impl_.GetTransformIsCurrentlyAnimating(
@@ -3091,7 +3095,8 @@ TEST_F(ElementAnimationsTest, ObserverNotifiedWhenOpacityAnimationChanges) {
   animation_->keyframe_effect()->NotifyKeyframeModelStarted(events->events_[0]);
   events->events_.clear();
 
-  animation_impl_->AbortKeyframeModels(TargetProperty::OPACITY, false);
+  animation_impl_->AbortKeyframeModelsWithProperty(TargetProperty::OPACITY,
+                                                   false);
   EXPECT_FALSE(client_impl_.GetHasPotentialOpacityAnimation(
       element_id_, ElementListType::PENDING));
   EXPECT_FALSE(client_impl_.GetOpacityIsCurrentlyAnimating(
@@ -3304,7 +3309,8 @@ TEST_F(ElementAnimationsTest, ObserverNotifiedWhenFilterAnimationChanges) {
   animation_->keyframe_effect()->NotifyKeyframeModelStarted(events->events_[0]);
   events->events_.clear();
 
-  animation_impl_->AbortKeyframeModels(TargetProperty::FILTER, false);
+  animation_impl_->AbortKeyframeModelsWithProperty(TargetProperty::FILTER,
+                                                   false);
   EXPECT_FALSE(client_impl_.GetHasPotentialFilterAnimation(
       element_id_, ElementListType::PENDING));
   EXPECT_FALSE(client_impl_.GetFilterIsCurrentlyAnimating(
@@ -3722,7 +3728,7 @@ TEST_F(ElementAnimationsTest, RemoveAndReAddAnimationToTicking) {
   // animations. Remove the animation using RemoveFromTicking().
   animation_->AddKeyframeModel(CreateKeyframeModel(
       std::unique_ptr<AnimationCurve>(new FakeFloatTransition(1.0, 1.f, 0.5f)),
-      2, TargetProperty::OPACITY));
+      1, TargetProperty::OPACITY));
   ASSERT_EQ(1u, host_->ticking_animations_for_testing().size());
   animation_->keyframe_effect()->RemoveFromTicking();
   ASSERT_EQ(0u, host_->ticking_animations_for_testing().size());
@@ -3753,6 +3759,40 @@ TEST_F(ElementAnimationsTest, TickingKeyframeModelsCount) {
   EXPECT_EQ(2u, host_->CompositedAnimationsCount());
   animation_->keyframe_effect()->RemoveFromTicking();
   EXPECT_EQ(0u, host_->CompositedAnimationsCount());
+}
+
+// This test verifies that finished keyframe models don't get copied over to
+// impl thread.
+TEST_F(ElementAnimationsTest, FinishedKeyframeModelsNotCopiedToImpl) {
+  CreateTestLayer(false, false);
+  AttachTimelineAnimationLayer();
+  CreateImplTimelineAndAnimation();
+
+  animation_->AddKeyframeModel(KeyframeModel::Create(
+      std::unique_ptr<AnimationCurve>(new FakeTransformTransition(1.0)), 1, 1,
+      TargetProperty::TRANSFORM));
+  animation_->AddKeyframeModel(KeyframeModel::Create(
+      std::unique_ptr<AnimationCurve>(new FakeFloatTransition(2.0, 0.f, 1.f)),
+      2, 2, TargetProperty::OPACITY));
+
+  // Finish the first keyframe model.
+  animation_->Tick(kInitialTickTime);
+  animation_->UpdateState(true, nullptr);
+  animation_->Tick(kInitialTickTime + TimeDelta::FromMilliseconds(1000));
+  animation_->UpdateState(true, nullptr);
+
+  EXPECT_EQ(
+      KeyframeModel::FINISHED,
+      animation_->keyframe_effect()->GetKeyframeModelById(1)->run_state());
+  EXPECT_EQ(
+      KeyframeModel::RUNNING,
+      animation_->keyframe_effect()->GetKeyframeModelById(2)->run_state());
+
+  PushProperties();
+
+  // Finished keyframe model doesn't get copied to impl thread.
+  EXPECT_FALSE(animation_impl_->keyframe_effect()->GetKeyframeModelById(1));
+  EXPECT_TRUE(animation_impl_->keyframe_effect()->GetKeyframeModelById(2));
 }
 
 }  // namespace

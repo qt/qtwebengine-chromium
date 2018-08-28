@@ -17,9 +17,12 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "base/message_loop/timer_slack.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/no_destructor.h"
+#include "base/optional.h"
 #include "base/process/process.h"
 #include "base/process/process_handle.h"
 #include "base/run_loop.h"
@@ -42,6 +45,7 @@
 #include "content/common/in_process_child_thread_params.h"
 #include "content/public/common/connection_filter.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
@@ -51,12 +55,13 @@
 #include "ipc/ipc_platform_file.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
-#include "mojo/edk/embedder/embedder.h"
-#include "mojo/edk/embedder/incoming_broker_client_invitation.h"
-#include "mojo/edk/embedder/named_platform_channel_pair.h"
-#include "mojo/edk/embedder/platform_channel_pair.h"
-#include "mojo/edk/embedder/scoped_ipc_support.h"
+#include "mojo/core/embedder/scoped_ipc_support.h"
+#include "mojo/public/cpp/platform/named_platform_channel.h"
+#include "mojo/public/cpp/platform/platform_channel.h"
+#include "mojo/public/cpp/platform/platform_channel_endpoint.h"
+#include "mojo/public/cpp/platform/platform_handle.h"
 #include "mojo/public/cpp/system/buffer.h"
+#include "mojo/public/cpp/system/invitation.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 #include "services/device/public/cpp/power_monitor/power_monitor_broadcast_source.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/client_process_impl.h"
@@ -74,7 +79,7 @@
 #endif
 
 #if defined(CLANG_COVERAGE)
-extern "C" int __llvm_profile_write_file(void);
+extern "C" int __llvm_profile_dump(void);
 #endif
 
 namespace content {
@@ -82,7 +87,14 @@ namespace {
 
 void WriteClangCoverageProfile() {
 #if defined(CLANG_COVERAGE)
-  __llvm_profile_write_file();
+  // __llvm_profile_dump() guarantees that it will not dump coverage information
+  // if it is being called twice or more. However, it is not thread safe, as it
+  // is supposed to be called from atexit() handler rather than being called
+  // directly from random places. Since we have to call it ourselves, we must
+  // ensure thread safety in order to prevent duplication of coverage counters.
+  static base::NoDestructor<base::Lock> lock;
+  base::AutoLock auto_lock(*lock);
+  __llvm_profile_dump();
 #endif
 }
 
@@ -236,40 +248,34 @@ base::LazyInstance<QuitClosure>::DestructorAtExit g_quit_closure =
     LAZY_INSTANCE_INITIALIZER;
 #endif
 
-std::unique_ptr<mojo::edk::IncomingBrokerClientInvitation>
-InitializeMojoIPCChannel() {
+base::Optional<mojo::IncomingInvitation> InitializeMojoIPCChannel() {
   TRACE_EVENT0("startup", "InitializeMojoIPCChannel");
-  mojo::edk::ScopedInternalPlatformHandle platform_channel;
+  mojo::PlatformChannelEndpoint endpoint;
 #if defined(OS_WIN)
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-      mojo::edk::PlatformChannelPair::kMojoPlatformChannelHandleSwitch)) {
-    platform_channel =
-        mojo::edk::PlatformChannelPair::PassClientHandleFromParentProcess(
-            *base::CommandLine::ForCurrentProcess());
+          mojo::PlatformChannel::kHandleSwitch)) {
+    endpoint = mojo::PlatformChannel::RecoverPassedEndpointFromCommandLine(
+        *base::CommandLine::ForCurrentProcess());
   } else {
     // If this process is elevated, it will have a pipe path passed on the
     // command line.
-    platform_channel =
-        mojo::edk::NamedPlatformChannelPair::PassClientHandleFromParentProcess(
-            *base::CommandLine::ForCurrentProcess());
+    endpoint = mojo::NamedPlatformChannel::ConnectToServer(
+        *base::CommandLine::ForCurrentProcess());
   }
 #elif defined(OS_FUCHSIA)
-  platform_channel =
-      mojo::edk::PlatformChannelPair::PassClientHandleFromParentProcess(
-          *base::CommandLine::ForCurrentProcess());
+  endpoint = mojo::PlatformChannel::RecoverPassedEndpointFromCommandLine(
+      *base::CommandLine::ForCurrentProcess());
 #elif defined(OS_POSIX)
-  platform_channel.reset(mojo::edk::InternalPlatformHandle(
-      base::GlobalDescriptors::GetInstance()->Get(
-          service_manager::kMojoIPCChannel)));
+  endpoint = mojo::PlatformChannelEndpoint(mojo::PlatformHandle(
+      base::ScopedFD(base::GlobalDescriptors::GetInstance()->Get(
+          service_manager::kMojoIPCChannel))));
 #endif
   // Mojo isn't supported on all child process types.
   // TODO(crbug.com/604282): Support Mojo in the remaining processes.
-  if (!platform_channel.is_valid())
-    return nullptr;
+  if (!endpoint.is_valid())
+    return base::nullopt;
 
-  return mojo::edk::IncomingBrokerClientInvitation::Accept(
-      mojo::edk::ConnectionParams(mojo::edk::TransportProtocol::kLegacy,
-                                  std::move(platform_channel)));
+  return mojo::IncomingInvitation::Accept(std::move(endpoint));
 }
 
 class ChannelBootstrapFilter : public ConnectionFilter {
@@ -321,7 +327,7 @@ ChildThreadImpl::Options::Builder::InBrowserProcess(
     const InProcessChildThreadParams& params) {
   options_.browser_process_io_runner = params.io_runner();
   options_.in_process_service_request_token = params.service_request_token();
-  options_.broker_client_invitation = params.broker_client_invitation();
+  options_.mojo_invitation = params.mojo_invitation();
   return *this;
 }
 
@@ -419,8 +425,7 @@ void ChildThreadImpl::OnFieldTrialGroupFinalized(
   field_trial_recorder->FieldTrialActivated(trial_name);
 }
 
-void ChildThreadImpl::ConnectChannel(
-    mojo::edk::IncomingBrokerClientInvitation* invitation) {
+void ChildThreadImpl::ConnectChannel() {
   DCHECK(service_manager_connection_);
   IPC::mojom::ChannelBootstrapPtr bootstrap;
   mojo::ScopedMessagePipeHandle handle =
@@ -457,12 +462,12 @@ void ChildThreadImpl::Init(const Options& options) {
     IPC::Logging::GetInstance()->SetIPCSender(this);
 #endif
 
-  std::unique_ptr<mojo::edk::IncomingBrokerClientInvitation> invitation;
   mojo::ScopedMessagePipeHandle service_request_pipe;
   if (!IsInBrowserProcess()) {
-    mojo_ipc_support_.reset(new mojo::edk::ScopedIPCSupport(
-        GetIOTaskRunner(), mojo::edk::ScopedIPCSupport::ShutdownPolicy::FAST));
-    invitation = InitializeMojoIPCChannel();
+    mojo_ipc_support_.reset(new mojo::core::ScopedIPCSupport(
+        GetIOTaskRunner(), mojo::core::ScopedIPCSupport::ShutdownPolicy::FAST));
+    base::Optional<mojo::IncomingInvitation> invitation =
+        InitializeMojoIPCChannel();
 
     std::string service_request_token =
         base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
@@ -472,9 +477,8 @@ void ChildThreadImpl::Init(const Options& options) {
           invitation->ExtractMessagePipe(service_request_token);
     }
   } else {
-    service_request_pipe =
-        options.broker_client_invitation->ExtractInProcessMessagePipe(
-            options.in_process_service_request_token);
+    service_request_pipe = options.mojo_invitation->ExtractMessagePipe(
+        options.in_process_service_request_token);
   }
 
   if (service_request_pipe.is_valid()) {
@@ -551,7 +555,7 @@ void ChildThreadImpl::Init(const Options& options) {
     channel_->AddFilter(startup_filter);
   }
 
-  ConnectChannel(invitation.get());
+  ConnectChannel();
 
   // This must always be done after ConnectChannel, because ConnectChannel() may
   // add a ConnectionFilter to the connection.
@@ -587,6 +591,20 @@ void ChildThreadImpl::Init(const Options& options) {
         new variations::ChildProcessFieldTrialSyncer(this));
     field_trial_syncer_->InitFieldTrialObserving(
         *base::CommandLine::ForCurrentProcess());
+  }
+
+  if (base::FeatureList::IsEnabled(features::kMemoryCoordinator)) {
+    // Disable MemoryPressureListener when memory coordinator is enabled.
+    base::MemoryPressureListener::SetNotificationsSuppressed(true);
+
+    // TODO(bashi): Revisit how to manage the lifetime of
+    // ChildMemoryCoordinatorImpl.
+    // https://codereview.chromium.org/2094583002/#msg52
+    mojom::MemoryCoordinatorHandlePtr parent_coordinator;
+    GetConnector()->BindInterface(mojom::kBrowserServiceName,
+                                  mojo::MakeRequest(&parent_coordinator));
+    memory_coordinator_ =
+        CreateChildMemoryCoordinator(std::move(parent_coordinator), this);
   }
 }
 

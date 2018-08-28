@@ -43,14 +43,12 @@ class RtpReceiver {
   static RtpReceiver* CreateVideoReceiver(
       Clock* clock,
       RtpData* incoming_payload_callback,
-      RtpFeedback* incoming_messages_callback,
       RTPPayloadRegistry* rtp_payload_registry);
 
   // Creates an audio-enabled RTP receiver.
   static RtpReceiver* CreateAudioReceiver(
       Clock* clock,
       RtpData* incoming_payload_callback,
-      RtpFeedback* incoming_messages_callback,
       RTPPayloadRegistry* rtp_payload_registry);
 
   virtual ~RtpReceiver() {}
@@ -102,9 +100,6 @@ class RtpReceiver {
 
   // Returns the current remote CSRCs.
   virtual int32_t CSRCs(uint32_t array_of_csrc[kRtpCsrcSize]) const = 0;
-
-  // Returns the current energy of the RTP stream received.
-  virtual int32_t Energy(uint8_t array_of_energy[kRtpCsrcSize]) const = 0;
 
   virtual std::vector<RtpSource> GetSources() const = 0;
 };

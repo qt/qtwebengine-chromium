@@ -231,6 +231,9 @@ static SkScalar compute_quad_len(const SkPoint pts[3]) {
 
 SkScalar SkPathMeasure::compute_quad_segs(const SkPoint pts[3],
                           SkScalar distance, int mint, int maxt, unsigned ptIndex) {
+#if defined(IS_FUZZING_WITH_LIBFUZZER)
+    --fSubdivisionsMax;
+#endif
     if (tspan_big_enough(maxt - mint) && quad_too_curvy(pts)) {
         SkPoint tmp[5];
         int     halft = (mint + maxt) >> 1;
@@ -256,10 +259,13 @@ SkScalar SkPathMeasure::compute_quad_segs(const SkPoint pts[3],
 SkScalar SkPathMeasure::compute_conic_segs(const SkConic& conic, SkScalar distance,
                                            int mint, const SkPoint& minPt,
                                            int maxt, const SkPoint& maxPt, unsigned ptIndex) {
+#if defined(IS_FUZZING_WITH_LIBFUZZER)
+    --fSubdivisionsMax;
+#endif
     int halft = (mint + maxt) >> 1;
     SkPoint halfPt = conic.evalAt(tValue2Scalar(halft));
     if (!halfPt.isFinite()) {
-        return 0;
+        return distance;
     }
     if (tspan_big_enough(maxt - mint) && conic_too_curvy(minPt, halfPt, maxPt)) {
         distance = this->compute_conic_segs(conic, distance, mint, minPt, halft, halfPt, ptIndex);
@@ -281,6 +287,9 @@ SkScalar SkPathMeasure::compute_conic_segs(const SkConic& conic, SkScalar distan
 
 SkScalar SkPathMeasure::compute_cubic_segs(const SkPoint pts[4],
                            SkScalar distance, int mint, int maxt, unsigned ptIndex) {
+#if defined(IS_FUZZING_WITH_LIBFUZZER)
+    --fSubdivisionsMax;
+#endif
     if (tspan_big_enough(maxt - mint) && cubic_too_curvy(pts)) {
         SkPoint tmp[7];
         int     halft = (mint + maxt) >> 1;
@@ -320,6 +329,9 @@ void SkPathMeasure::buildSegments() {
      */
     fSegments.reset();
     bool done = false;
+ #if defined(IS_FUZZING_WITH_LIBFUZZER)
+    fSubdivisionsMax = 10000000;
+#endif
     do {
         switch (fIter.next(pts)) {
             case SkPath::kMove_Verb:
@@ -401,6 +413,13 @@ void SkPathMeasure::buildSegments() {
                 done = true;
                 break;
         }
+#if defined(IS_FUZZING_WITH_LIBFUZZER)
+        if (fSubdivisionsMax < 0) {
+            fLength = 0;
+            return;
+        }
+#endif
+
     } while (!done);
 
     fLength = distance;
@@ -601,6 +620,9 @@ bool SkPathMeasure::getPosTan(SkScalar distance, SkPoint* pos, SkVector* tangent
 
     SkScalar        t;
     const Segment*  seg = this->distanceToSegment(distance, &t);
+    if (SkScalarIsNaN(t)) {
+        return false;
+    }
 
     compute_pos_tan(&fPts[seg->fPtIndex], seg->fType, t, pos, tangent);
     return true;
@@ -681,6 +703,11 @@ bool SkPathMeasure::isClosed() {
 */
 bool SkPathMeasure::nextContour() {
     (void)this->getLength();    // make sure we measure the current contour
+#if defined(IS_FUZZING_WITH_LIBFUZZER)
+    if (fSubdivisionsMax < 0) {
+        return false;
+    }
+#endif
     fLength = -1;               // now signal that we should build the next set of segments
     return this->getLength() > 0;
 }

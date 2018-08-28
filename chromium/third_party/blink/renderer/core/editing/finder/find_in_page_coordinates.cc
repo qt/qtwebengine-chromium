@@ -75,13 +75,13 @@ static FloatRect ToNormalizedRect(const FloatRect& absolute_rect,
   // For overflow:scroll we need to get where the actual origin is independently
   // of the scroll.
   if (container->HasOverflowClip())
-    scrolled_origin = -IntPoint(container->ScrolledContentOffset());
+    scrolled_origin = -FloatPoint(container->ScrolledContentOffset());
 
   FloatRect overflow_rect(scrolled_origin,
                           FloatSize(container->MaxLayoutOverflow()));
   FloatRect container_rect =
-      container->LocalToAbsoluteQuad(FloatQuad(overflow_rect))
-          .EnclosingBoundingBox();
+      FloatRect(container->LocalToAbsoluteQuad(FloatQuad(overflow_rect))
+                    .EnclosingBoundingBox());
 
   if (container_rect.IsEmpty())
     return FloatRect();
@@ -91,15 +91,6 @@ static FloatRect ToNormalizedRect(const FloatRect& absolute_rect,
   // transform-friendly.
   FloatRect normalized_rect = absolute_rect;
   normalized_rect.MoveBy(-container_rect.Location());
-
-  // Fixed positions do not make sense in this coordinate system, but need to
-  // leave consistent tickmarks.  So, use their position when the view is not
-  // scrolled, like an absolute position.
-  if (layout_object->Style()->GetPosition() == EPosition::kFixed &&
-      container->IsLayoutView()) {
-    normalized_rect.Move(
-        -ToLayoutView(container)->GetFrameView()->GetScrollOffset());
-  }
 
   normalized_rect.Scale(1 / container_rect.Width(),
                         1 / container_rect.Height());
@@ -126,8 +117,9 @@ FloatRect FindInPageRectFromAbsoluteRect(
       const LayoutBlock* container = EnclosingScrollableAncestor(layout_object);
 
       // Compose the normalized rects.
-      FloatRect normalized_box_rect = ToNormalizedRect(
-          layout_object->AbsoluteBoundingBoxRect(), layout_object, container);
+      FloatRect normalized_box_rect =
+          ToNormalizedRect(FloatRect(layout_object->AbsoluteBoundingBoxRect()),
+                           layout_object, container);
       normalized_rect.Scale(normalized_box_rect.Width(),
                             normalized_box_rect.Height());
       normalized_rect.MoveBy(normalized_box_rect.Location());

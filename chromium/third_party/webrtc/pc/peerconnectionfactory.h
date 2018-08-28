@@ -26,7 +26,7 @@
 namespace rtc {
 class BasicNetworkManager;
 class BasicPacketSocketFactory;
-}
+}  // namespace rtc
 
 namespace webrtc {
 
@@ -62,14 +62,17 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
 
   bool Initialize();
 
+  RtpCapabilities GetRtpSenderCapabilities(
+      cricket::MediaType kind) const override;
+
+  RtpCapabilities GetRtpReceiverCapabilities(
+      cricket::MediaType kind) const override;
+
   rtc::scoped_refptr<MediaStreamInterface> CreateLocalMediaStream(
       const std::string& stream_id) override;
 
   rtc::scoped_refptr<AudioSourceInterface> CreateAudioSource(
       const cricket::AudioOptions& options) override;
-  // Deprecated, use version without constraints.
-  rtc::scoped_refptr<AudioSourceInterface> CreateAudioSource(
-      const MediaConstraintsInterface* constraints) override;
 
   rtc::scoped_refptr<VideoTrackSourceInterface> CreateVideoSource(
       std::unique_ptr<cricket::VideoCapturer> capturer) override;
@@ -85,9 +88,9 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
       const std::string& id,
       VideoTrackSourceInterface* video_source) override;
 
-  rtc::scoped_refptr<AudioTrackInterface>
-      CreateAudioTrack(const std::string& id,
-                       AudioSourceInterface* audio_source) override;
+  rtc::scoped_refptr<AudioTrackInterface> CreateAudioTrack(
+      const std::string& id,
+      AudioSourceInterface* audio_source) override;
 
   bool StartAecDump(rtc::PlatformFile file, int64_t max_size_bytes) override;
   void StopAecDump() override;
@@ -119,6 +122,16 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
       std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory,
       std::unique_ptr<NetworkControllerFactoryInterface>
           network_controller_factory);
+  // Use this implementation for all future use. This structure allows simple
+  // management of all new dependencies being added to the
+  // PeerConnectionFactory.
+  explicit PeerConnectionFactory(
+      PeerConnectionFactoryDependencies dependencies);
+
+  // Hook to let testing framework insert actions between
+  // "new RTCPeerConnection" and "pc.Initialize"
+  virtual void ActionsBeforeInitializeForTesting(PeerConnectionInterface*) {}
+
   virtual ~PeerConnectionFactory();
 
  private:

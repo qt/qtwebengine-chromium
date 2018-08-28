@@ -18,16 +18,16 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
-#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
 
 namespace {
 
-const int32_t kMaxOffscreenDurationUmaMS = 60 * 60 * 1000;
-const int32_t kOffscreenDurationUmaBucketCount = 50;
-const int32_t kMaxWaitTimeUmaMS = 30 * 1000;
-const int32_t kWaitTimeBucketCount = 50;
+constexpr TimeDelta kMaxOffscreenDurationUma = TimeDelta::FromHours(1);
+constexpr int32_t kOffscreenDurationUmaBucketCount = 50;
+
+constexpr TimeDelta kMaxWaitTimeUma = TimeDelta::FromSeconds(30);
+constexpr int32_t kWaitTimeBucketCount = 50;
 
 // Returns a int64_t with the following structure:
 // 0b0001 set if there is a user gesture on the stack.
@@ -59,11 +59,8 @@ AutoplayUmaHelper::AutoplayUmaHelper(HTMLMediaElement* element)
       ContextLifecycleObserver(nullptr),
       element_(element),
       muted_video_play_method_visibility_observer_(nullptr),
-      muted_video_autoplay_offscreen_start_time_ms_(0),
-      muted_video_autoplay_offscreen_duration_ms_(0),
       is_visible_(false),
-      muted_video_offscreen_duration_visibility_observer_(nullptr),
-      load_start_time_ms_(0.0) {
+      muted_video_offscreen_duration_visibility_observer_(nullptr) {
   element->addEventListener(EventTypeNames::loadstart, this, false);
 }
 
@@ -75,16 +72,13 @@ bool AutoplayUmaHelper::operator==(const EventListener& other) const {
 
 void AutoplayUmaHelper::OnLoadStarted() {
   if (element_->GetLoadType() == WebMediaPlayer::kLoadTypeURL)
-    load_start_time_ms_ = CurrentTimeTicksInMilliseconds();
+    load_start_time_ = CurrentTimeTicks();
 }
 
 void AutoplayUmaHelper::OnAutoplayInitiated(AutoplaySource source) {
-  int32_t autoplay_wait_time_ms = -1;
-  if (load_start_time_ms_ != 0.0) {
-    autoplay_wait_time_ms = static_cast<int32_t>(std::min<int64_t>(
-        CurrentTimeTicksInMilliseconds() - load_start_time_ms_,
-        std::numeric_limits<int32_t>::max()));
-  }
+  base::Optional<TimeDelta> autoplay_wait_time;
+  if (!load_start_time_.is_null())
+    autoplay_wait_time = CurrentTimeTicks() - load_start_time_;
   DEFINE_STATIC_LOCAL(EnumerationHistogram, video_histogram,
                       ("Media.Video.Autoplay",
                        static_cast<int>(AutoplaySource::kNumberOfUmaSources)));
@@ -98,19 +92,6 @@ void AutoplayUmaHelper::OnAutoplayInitiated(AutoplaySource source) {
       EnumerationHistogram, blocked_muted_video_histogram,
       ("Media.Video.Autoplay.Muted.Blocked", kAutoplayBlockedReasonMax));
 
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, wait_time_video_attrib_histogram,
-                      ("Media.Video.Autoplay.Attribute.WaitTime", 1,
-                       kMaxWaitTimeUmaMS, kWaitTimeBucketCount));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, wait_time_audio_attrib_histogram,
-                      ("Media.Audio.Autoplay.Attribute.WaitTime", 1,
-                       kMaxWaitTimeUmaMS, kWaitTimeBucketCount));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, wait_time_video_play_histogram,
-                      ("Media.Video.Autoplay.PlayMethod.WaitTime", 1,
-                       kMaxWaitTimeUmaMS, kWaitTimeBucketCount));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, wait_time_audio_play_histogram,
-                      ("Media.Audio.Autoplay.PlayMethod.WaitTime", 1,
-                       kMaxWaitTimeUmaMS, kWaitTimeBucketCount));
-
   // Autoplay already initiated
   if (sources_.count(source))
     return;
@@ -122,20 +103,32 @@ void AutoplayUmaHelper::OnAutoplayInitiated(AutoplaySource source) {
     video_histogram.Count(static_cast<int>(source));
     if (element_->muted())
       muted_video_histogram.Count(static_cast<int>(source));
-    if (autoplay_wait_time_ms >= 0) {
+    if (autoplay_wait_time.has_value()) {
       if (source == AutoplaySource::kAttribute) {
-        wait_time_video_attrib_histogram.Count(autoplay_wait_time_ms);
+        UMA_HISTOGRAM_CUSTOM_TIMES("Media.Video.Autoplay.Attribute.WaitTime",
+                                   *autoplay_wait_time,
+                                   TimeDelta::FromMilliseconds(1),
+                                   kMaxWaitTimeUma, kWaitTimeBucketCount);
       } else if (source == AutoplaySource::kMethod) {
-        wait_time_video_play_histogram.Count(autoplay_wait_time_ms);
+        UMA_HISTOGRAM_CUSTOM_TIMES("Media.Video.Autoplay.PlayMethod.WaitTime",
+                                   *autoplay_wait_time,
+                                   TimeDelta::FromMilliseconds(1),
+                                   kMaxWaitTimeUma, kWaitTimeBucketCount);
       }
     }
   } else {
     audio_histogram.Count(static_cast<int>(source));
-    if (autoplay_wait_time_ms >= 0) {
+    if (autoplay_wait_time.has_value()) {
       if (source == AutoplaySource::kAttribute) {
-        wait_time_audio_attrib_histogram.Count(autoplay_wait_time_ms);
+        UMA_HISTOGRAM_CUSTOM_TIMES("Media.Audio.Autoplay.Attribute.WaitTime",
+                                   *autoplay_wait_time,
+                                   TimeDelta::FromMilliseconds(1),
+                                   kMaxWaitTimeUma, kWaitTimeBucketCount);
       } else if (source == AutoplaySource::kMethod) {
-        wait_time_audio_play_histogram.Count(autoplay_wait_time_ms);
+        UMA_HISTOGRAM_CUSTOM_TIMES("Media.Audio.Autoplay.PlayMethod.WaitTime",
+                                   *autoplay_wait_time,
+                                   TimeDelta::FromMilliseconds(1),
+                                   kMaxWaitTimeUma, kWaitTimeBucketCount);
       }
     }
   }
@@ -352,12 +345,10 @@ void AutoplayUmaHelper::OnVisibilityChangedForMutedVideoOffscreenDuration(
     return;
 
   if (is_visible) {
-    muted_video_autoplay_offscreen_duration_ms_ +=
-        static_cast<int64_t>(CurrentTimeTicksInMilliseconds()) -
-        muted_video_autoplay_offscreen_start_time_ms_;
+    muted_video_autoplay_offscreen_duration_ +=
+        CurrentTimeTicks() - muted_video_autoplay_offscreen_start_time_;
   } else {
-    muted_video_autoplay_offscreen_start_time_ms_ =
-        static_cast<int64_t>(CurrentTimeTicksInMilliseconds());
+    muted_video_autoplay_offscreen_start_time_ = CurrentTimeTicks();
   }
 
   is_visible_ = is_visible;
@@ -430,8 +421,7 @@ void AutoplayUmaHelper::MaybeStartRecordingMutedVideoOffscreenDuration() {
     return;
 
   // Start recording muted video playing offscreen duration.
-  muted_video_autoplay_offscreen_start_time_ms_ =
-      static_cast<int64_t>(CurrentTimeTicksInMilliseconds());
+  muted_video_autoplay_offscreen_start_time_ = CurrentTimeTicks();
   is_visible_ = false;
   muted_video_offscreen_duration_visibility_observer_ =
       new ElementVisibilityObserver(
@@ -449,28 +439,20 @@ void AutoplayUmaHelper::MaybeStopRecordingMutedVideoOffscreenDuration() {
     return;
 
   if (!is_visible_) {
-    muted_video_autoplay_offscreen_duration_ms_ +=
-        static_cast<int64_t>(CurrentTimeTicksInMilliseconds()) -
-        muted_video_autoplay_offscreen_start_time_ms_;
+    muted_video_autoplay_offscreen_duration_ +=
+        CurrentTimeTicks() - muted_video_autoplay_offscreen_start_time_;
   }
-
-  // Since histograms uses int32_t, the duration needs to be limited to
-  // std::numeric_limits<int32_t>::max().
-  int32_t bounded_time = static_cast<int32_t>(
-      std::min<int64_t>(muted_video_autoplay_offscreen_duration_ms_,
-                        std::numeric_limits<int32_t>::max()));
 
   DCHECK(sources_.count(AutoplaySource::kMethod));
 
-  DEFINE_STATIC_LOCAL(
-      CustomCountHistogram, duration_histogram,
-      ("Media.Video.Autoplay.Muted.PlayMethod.OffscreenDuration", 1,
-       kMaxOffscreenDurationUmaMS, kOffscreenDurationUmaBucketCount));
-  duration_histogram.Count(bounded_time);
+  UMA_HISTOGRAM_CUSTOM_TIMES(
+      "Media.Video.Autoplay.Muted.PlayMethod.OffscreenDuration",
+      muted_video_autoplay_offscreen_duration_, TimeDelta::FromMilliseconds(1),
+      kMaxOffscreenDurationUma, kOffscreenDurationUmaBucketCount);
 
   muted_video_offscreen_duration_visibility_observer_->Stop();
   muted_video_offscreen_duration_visibility_observer_ = nullptr;
-  muted_video_autoplay_offscreen_duration_ms_ = 0;
+  muted_video_autoplay_offscreen_duration_ = TimeDelta();
   MaybeUnregisterMediaElementPauseListener();
   MaybeUnregisterContextDestroyedObserver();
 }

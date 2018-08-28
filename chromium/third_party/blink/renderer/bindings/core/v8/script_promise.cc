@@ -28,11 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
+
+#include "third_party/blink/renderer/bindings/core/v8/script_function.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_for_core.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
 #include "third_party/blink/renderer/platform/instance_counters.h"
 #include "v8/include/v8.h"
@@ -258,7 +259,7 @@ ScriptPromise ScriptPromise::Then(v8::Local<v8::Function> on_fulfilled,
       return ScriptPromise();
   }
 
-  return ScriptPromise(script_state_.get(), result_promise);
+  return ScriptPromise(script_state_, result_promise);
 }
 
 ScriptPromise ScriptPromise::CastUndefined(ScriptState* script_state) {
@@ -296,6 +297,14 @@ ScriptPromise ScriptPromise::Reject(ScriptState* script_state,
   InternalResolver resolver(script_state);
   ScriptPromise promise = resolver.Promise();
   resolver.Reject(value);
+  return promise;
+}
+
+ScriptPromise ScriptPromise::Reject(ScriptState* script_state,
+                                    ExceptionState& exception_state) {
+  DCHECK(exception_state.HadException());
+  ScriptPromise promise = Reject(script_state, exception_state.GetException());
+  exception_state.ClearException();
   return promise;
 }
 

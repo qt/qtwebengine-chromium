@@ -36,7 +36,7 @@ H264SpsPpsTracker::PacketAction H264SpsPpsTracker::CopyAndFixBitstream(
   const uint8_t* data = packet->dataPtr;
   const size_t data_size = packet->sizeBytes;
   const RTPVideoHeader& video_header = packet->video_header;
-  RTPVideoHeaderH264* codec_header = &packet->video_header.codecHeader.H264;
+  RTPVideoHeaderH264* codec_header = &packet->video_header.h264();
 
   bool append_sps_pps = false;
   auto sps = sps_data_.end();
@@ -219,9 +219,9 @@ void H264SpsPpsTracker::InsertSpsPpsNalus(const std::vector<uint8_t>& sps,
     RTC_LOG(LS_WARNING) << "SPS Nalu header missing";
     return;
   }
-  rtc::Optional<SpsParser::SpsState> parsed_sps = SpsParser::ParseSps(
+  absl::optional<SpsParser::SpsState> parsed_sps = SpsParser::ParseSps(
       sps.data() + kNaluHeaderOffset, sps.size() - kNaluHeaderOffset);
-  rtc::Optional<PpsParser::PpsState> parsed_pps = PpsParser::ParsePps(
+  absl::optional<PpsParser::PpsState> parsed_pps = PpsParser::ParsePps(
       pps.data() + kNaluHeaderOffset, pps.size() - kNaluHeaderOffset);
 
   if (!parsed_sps) {

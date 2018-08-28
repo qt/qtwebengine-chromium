@@ -96,11 +96,15 @@ class FakeFidoAuthenticator : public FidoDeviceAuthenticator {
 
 class FakeFidoRequestHandler : public FidoRequestHandler<std::vector<uint8_t>> {
  public:
-  FakeFidoRequestHandler(const base::flat_set<FidoTransportProtocol>& protocols,
-                         FakeHandlerCallback callback)
+  FakeFidoRequestHandler(
+      const base::flat_set<FidoTransportProtocol>& protocols,
+      FakeHandlerCallback callback,
+      AddPlatformAuthenticatorCallback add_platform_authenticator =
+          AddPlatformAuthenticatorCallback())
       : FidoRequestHandler(nullptr /* connector */,
                            protocols,
-                           std::move(callback)),
+                           std::move(callback),
+                           std::move(add_platform_authenticator)),
         weak_factory_(this) {
     Start();
   }
@@ -151,6 +155,15 @@ class FidoRequestHandlerTest : public ::testing::Test {
         cb_.callback());
   }
 
+  std::unique_ptr<FakeFidoRequestHandler>
+  CreateFakeHandlerWithPlatformAuthenticatorCallback(
+      FidoRequestHandlerBase::AddPlatformAuthenticatorCallback
+          add_platform_authenticator) {
+    return std::make_unique<FakeFidoRequestHandler>(
+        base::flat_set<FidoTransportProtocol>(), cb_.callback(),
+        std::move(add_platform_authenticator));
+  }
+
   test::FakeFidoDiscovery* discovery() const { return discovery_; }
   FakeHandlerCallbackReceiver& callback() { return cb_; }
 
@@ -167,6 +180,8 @@ TEST_F(FidoRequestHandlerTest, TestSingleDeviceSuccess) {
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
   auto device = std::make_unique<MockFidoDevice>();
+  device->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo, base::nullopt);
   EXPECT_CALL(*device, GetId()).WillRepeatedly(testing::Return("device0"));
   // Device returns success response.
   device->ExpectRequestAndRespondWith(std::vector<uint8_t>(),
@@ -187,12 +202,16 @@ TEST_F(FidoRequestHandlerTest, TestAuthenticatorHandlerReset) {
   discovery()->WaitForCallToStartAndSimulateSuccess();
 
   auto device0 = std::make_unique<MockFidoDevice>();
-  device0->set_supported_protocol(ProtocolVersion::kCtap);
+  device0->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestAuthenticatorGetInfoResponse);
   EXPECT_CALL(*device0, GetId()).WillRepeatedly(testing::Return("device0"));
   device0->ExpectRequestAndDoNotRespond(std::vector<uint8_t>());
   EXPECT_CALL(*device0, Cancel());
   auto device1 = std::make_unique<MockFidoDevice>();
-  device1->set_supported_protocol(ProtocolVersion::kCtap);
+  device1->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestAuthenticatorGetInfoResponse);
   EXPECT_CALL(*device1, GetId()).WillRepeatedly(testing::Return("device1"));
   device1->ExpectRequestAndDoNotRespond(std::vector<uint8_t>());
   EXPECT_CALL(*device1, Cancel());
@@ -211,7 +230,9 @@ TEST_F(FidoRequestHandlerTest, TestRequestWithMultipleDevices) {
 
   // Represents a connected device that hangs without a response.
   auto device0 = std::make_unique<MockFidoDevice>();
-  device0->set_supported_protocol(ProtocolVersion::kCtap);
+  device0->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestAuthenticatorGetInfoResponse);
   EXPECT_CALL(*device0, GetId()).WillRepeatedly(testing::Return("device0"));
   // Device is unresponsive and cancel command is invoked afterwards.
   device0->ExpectRequestAndDoNotRespond(std::vector<uint8_t>());
@@ -219,7 +240,9 @@ TEST_F(FidoRequestHandlerTest, TestRequestWithMultipleDevices) {
 
   // Represents a connected device that response successfully.
   auto device1 = std::make_unique<MockFidoDevice>();
-  device1->set_supported_protocol(ProtocolVersion::kCtap);
+  device1->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestAuthenticatorGetInfoResponse);
   EXPECT_CALL(*device1, GetId()).WillRepeatedly(testing::Return("device1"));
   device1->ExpectRequestAndRespondWith(std::vector<uint8_t>(),
                                        CreateFakeSuccessDeviceResponse());
@@ -242,7 +265,9 @@ TEST_F(FidoRequestHandlerTest, TestRequestWithMultipleSuccessResponses) {
   // Represents a connected device that responds successfully after small time
   // delay.
   auto device0 = std::make_unique<MockFidoDevice>();
-  device0->set_supported_protocol(ProtocolVersion::kCtap);
+  device0->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestAuthenticatorGetInfoResponse);
   EXPECT_CALL(*device0, GetId()).WillRepeatedly(testing::Return("device0"));
   device0->ExpectRequestAndRespondWith(std::vector<uint8_t>(),
                                        CreateFakeSuccessDeviceResponse(),
@@ -251,7 +276,9 @@ TEST_F(FidoRequestHandlerTest, TestRequestWithMultipleSuccessResponses) {
   // Represents a device that returns a success response after a longer time
   // delay.
   auto device1 = std::make_unique<MockFidoDevice>();
-  device1->set_supported_protocol(ProtocolVersion::kCtap);
+  device1->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestAuthenticatorGetInfoResponse);
   EXPECT_CALL(*device1, GetId()).WillRepeatedly(testing::Return("device1"));
   device1->ExpectRequestAndRespondWith(std::vector<uint8_t>(),
                                        CreateFakeSuccessDeviceResponse(),
@@ -281,6 +308,9 @@ TEST_F(FidoRequestHandlerTest, TestRequestWithMultipleFailureResponses) {
   // Represents a connected device that immediately responds with a processing
   // error.
   auto device0 = std::make_unique<MockFidoDevice>();
+  device0->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestAuthenticatorGetInfoResponse);
   EXPECT_CALL(*device0, GetId()).WillRepeatedly(testing::Return("device0"));
   device0->ExpectRequestAndRespondWith(std::vector<uint8_t>(),
                                        CreateFakeDeviceProcesssingError());
@@ -288,6 +318,9 @@ TEST_F(FidoRequestHandlerTest, TestRequestWithMultipleFailureResponses) {
   // Represents a device that returns an UP verified failure response after a
   // small time delay.
   auto device1 = std::make_unique<MockFidoDevice>();
+  device1->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestAuthenticatorGetInfoResponse);
   EXPECT_CALL(*device1, GetId()).WillRepeatedly(testing::Return("device1"));
   device1->ExpectRequestAndRespondWith(std::vector<uint8_t>(),
                                        CreateFakeUserPresenceVerifiedError(),
@@ -296,7 +329,9 @@ TEST_F(FidoRequestHandlerTest, TestRequestWithMultipleFailureResponses) {
   // Represents a device that returns an UP verified failure response after a
   // big time delay.
   auto device2 = std::make_unique<MockFidoDevice>();
-  device2->set_supported_protocol(ProtocolVersion::kCtap);
+  device2->ExpectCtap2CommandAndRespondWith(
+      CtapRequestCommand::kAuthenticatorGetInfo,
+      test_data::kTestAuthenticatorGetInfoResponse);
   EXPECT_CALL(*device2, GetId()).WillRepeatedly(testing::Return("device2"));
   device2->ExpectRequestAndRespondWith(std::vector<uint8_t>(),
                                        CreateFakeDeviceProcesssingError(),
@@ -312,6 +347,33 @@ TEST_F(FidoRequestHandlerTest, TestRequestWithMultipleFailureResponses) {
   EXPECT_TRUE(request_handler->is_complete());
   EXPECT_EQ(FidoReturnCode::kUserConsentButCredentialNotRecognized,
             callback().status());
+}
+
+// Requests should be dispatched to the authenticator returned from the
+// AddPlatformAuthenticatorCallback if one is passed.
+TEST_F(FidoRequestHandlerTest, TestPlatformAuthenticatorCallback) {
+  // A platform authenticator usually wouldn't usually use a FidoDevice, but
+  // that's not the point of the test here. The test is only trying to ensure
+  // the authenticator gets injected and used.
+  auto device = MockFidoDevice::MakeCtap();
+  EXPECT_CALL(*device, GetId()).WillRepeatedly(testing::Return("device0"));
+  // Device returns success response.
+  device->ExpectRequestAndRespondWith(std::vector<uint8_t>(),
+                                      CreateFakeSuccessDeviceResponse());
+
+  FidoRequestHandlerBase::AddPlatformAuthenticatorCallback
+      make_platform_authenticator = base::BindOnce(
+          [](FidoDevice* device) -> std::unique_ptr<FidoAuthenticator> {
+            return std::make_unique<FakeFidoAuthenticator>(device);
+          },
+          device.get());
+  auto request_handler = CreateFakeHandlerWithPlatformAuthenticatorCallback(
+      std::move(make_platform_authenticator));
+
+  scoped_task_environment_.FastForwardUntilNoTasksRemain();
+  callback().WaitForCallback();
+  EXPECT_TRUE(request_handler->is_complete());
+  EXPECT_EQ(FidoReturnCode::kSuccess, callback().status());
 }
 
 }  // namespace device

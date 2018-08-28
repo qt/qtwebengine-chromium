@@ -29,7 +29,9 @@ const uint32_t kMaxXdgShellVersion = 1;
 
 WaylandConnection::WaylandConnection() : controller_(FROM_HERE) {}
 
-WaylandConnection::~WaylandConnection() {}
+WaylandConnection::~WaylandConnection() {
+  DCHECK(window_map_.empty());
+}
 
 bool WaylandConnection::Initialize() {
   static const wl_registry_listener registry_listener = {
@@ -103,6 +105,15 @@ void WaylandConnection::ScheduleFlush() {
 WaylandWindow* WaylandConnection::GetWindow(gfx::AcceleratedWidget widget) {
   auto it = window_map_.find(widget);
   return it == window_map_.end() ? nullptr : it->second;
+}
+
+WaylandWindow* WaylandConnection::GetCurrentFocusedWindow() {
+  for (auto entry : window_map_) {
+    WaylandWindow* window = entry.second;
+    if (window->has_pointer_focus())
+      return window;
+  }
+  return nullptr;
 }
 
 void WaylandConnection::AddWindow(gfx::AcceleratedWidget widget,
@@ -242,6 +253,11 @@ void WaylandConnection::Global(void* data,
         registry, name, std::min(version, kMaxCompositorVersion));
     if (!connection->compositor_)
       LOG(ERROR) << "Failed to bind to wl_compositor global";
+  } else if (!connection->subcompositor_ &&
+             strcmp(interface, "wl_subcompositor") == 0) {
+    connection->subcompositor_ = wl::Bind<wl_subcompositor>(registry, name, 1);
+    if (!connection->subcompositor_)
+      LOG(ERROR) << "Failed to bind to wl_subcompositor global";
   } else if (!connection->shm_ && strcmp(interface, "wl_shm") == 0) {
     connection->shm_ =
         wl::Bind<wl_shm>(registry, name, std::min(version, kMaxShmVersion));

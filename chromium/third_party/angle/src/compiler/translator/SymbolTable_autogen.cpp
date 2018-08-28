@@ -9793,7 +9793,7 @@ constexpr const TFunction kFunction_atomicAdd_0D0D(
     BuiltInParameters::p_io_0D0D0D,
     2,
     StaticType::Get<EbtUInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicAdd,
     false);
 constexpr const TFunction kFunction_atomicAdd_0C0C(
     BuiltInId::atomicAdd_Int1_Int1,
@@ -9802,7 +9802,7 @@ constexpr const TFunction kFunction_atomicAdd_0C0C(
     BuiltInParameters::p_io_0C0C0C,
     2,
     StaticType::Get<EbtInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicAdd,
     false);
 constexpr const TFunction kFunction_atomicMin_0D0D(
     BuiltInId::atomicMin_UInt1_UInt1,
@@ -9811,7 +9811,7 @@ constexpr const TFunction kFunction_atomicMin_0D0D(
     BuiltInParameters::p_io_0D0D0D,
     2,
     StaticType::Get<EbtUInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicMin,
     false);
 constexpr const TFunction kFunction_atomicMin_0C0C(
     BuiltInId::atomicMin_Int1_Int1,
@@ -9820,7 +9820,7 @@ constexpr const TFunction kFunction_atomicMin_0C0C(
     BuiltInParameters::p_io_0C0C0C,
     2,
     StaticType::Get<EbtInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicMin,
     false);
 constexpr const TFunction kFunction_atomicMax_0D0D(
     BuiltInId::atomicMax_UInt1_UInt1,
@@ -9829,7 +9829,7 @@ constexpr const TFunction kFunction_atomicMax_0D0D(
     BuiltInParameters::p_io_0D0D0D,
     2,
     StaticType::Get<EbtUInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicMax,
     false);
 constexpr const TFunction kFunction_atomicMax_0C0C(
     BuiltInId::atomicMax_Int1_Int1,
@@ -9838,7 +9838,7 @@ constexpr const TFunction kFunction_atomicMax_0C0C(
     BuiltInParameters::p_io_0C0C0C,
     2,
     StaticType::Get<EbtInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicMax,
     false);
 constexpr const TFunction kFunction_atomicAnd_0D0D(
     BuiltInId::atomicAnd_UInt1_UInt1,
@@ -9847,7 +9847,7 @@ constexpr const TFunction kFunction_atomicAnd_0D0D(
     BuiltInParameters::p_io_0D0D0D,
     2,
     StaticType::Get<EbtUInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicAnd,
     false);
 constexpr const TFunction kFunction_atomicAnd_0C0C(
     BuiltInId::atomicAnd_Int1_Int1,
@@ -9856,7 +9856,7 @@ constexpr const TFunction kFunction_atomicAnd_0C0C(
     BuiltInParameters::p_io_0C0C0C,
     2,
     StaticType::Get<EbtInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicAnd,
     false);
 constexpr const TFunction kFunction_atomicOr_0D0D(
     BuiltInId::atomicOr_UInt1_UInt1,
@@ -9865,7 +9865,7 @@ constexpr const TFunction kFunction_atomicOr_0D0D(
     BuiltInParameters::p_io_0D0D0D,
     2,
     StaticType::Get<EbtUInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicOr,
     false);
 constexpr const TFunction kFunction_atomicOr_0C0C(
     BuiltInId::atomicOr_Int1_Int1,
@@ -9874,7 +9874,7 @@ constexpr const TFunction kFunction_atomicOr_0C0C(
     BuiltInParameters::p_io_0C0C0C,
     2,
     StaticType::Get<EbtInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicOr,
     false);
 constexpr const TFunction kFunction_atomicXor_0D0D(
     BuiltInId::atomicXor_UInt1_UInt1,
@@ -9883,7 +9883,7 @@ constexpr const TFunction kFunction_atomicXor_0D0D(
     BuiltInParameters::p_io_0D0D0D,
     2,
     StaticType::Get<EbtUInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicXor,
     false);
 constexpr const TFunction kFunction_atomicXor_0C0C(
     BuiltInId::atomicXor_Int1_Int1,
@@ -9892,7 +9892,7 @@ constexpr const TFunction kFunction_atomicXor_0C0C(
     BuiltInParameters::p_io_0C0C0C,
     2,
     StaticType::Get<EbtInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicXor,
     false);
 constexpr const TFunction kFunction_atomicExchange_0D0D(
     BuiltInId::atomicExchange_UInt1_UInt1,
@@ -9901,7 +9901,7 @@ constexpr const TFunction kFunction_atomicExchange_0D0D(
     BuiltInParameters::p_io_0D0D0D,
     2,
     StaticType::Get<EbtUInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicExchange,
     false);
 constexpr const TFunction kFunction_atomicExchange_0C0C(
     BuiltInId::atomicExchange_Int1_Int1,
@@ -9910,7 +9910,7 @@ constexpr const TFunction kFunction_atomicExchange_0C0C(
     BuiltInParameters::p_io_0C0C0C,
     2,
     StaticType::Get<EbtInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicExchange,
     false);
 constexpr const TFunction kFunction_atomicCompSwap_0D0D0D(
     BuiltInId::atomicCompSwap_UInt1_UInt1_UInt1,
@@ -9919,7 +9919,7 @@ constexpr const TFunction kFunction_atomicCompSwap_0D0D0D(
     BuiltInParameters::p_io_0D0D0D,
     3,
     StaticType::Get<EbtUInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicCompSwap,
     false);
 constexpr const TFunction kFunction_atomicCompSwap_0C0C0C(
     BuiltInId::atomicCompSwap_Int1_Int1_Int1,
@@ -9928,7 +9928,7 @@ constexpr const TFunction kFunction_atomicCompSwap_0C0C0C(
     BuiltInParameters::p_io_0C0C0C,
     3,
     StaticType::Get<EbtInt, EbpUndefined, EvqGlobal, 1, 1>(),
-    EOpCallBuiltInFunction,
+    EOpAtomicCompSwap,
     false);
 constexpr const TFunction kFunction_imageSize_0c(
     BuiltInId::imageSize_Image2D1,
@@ -10344,17 +10344,20 @@ void TSymbolTable::initializeBuiltInVariables(sh::GLenum shaderType,
 {
     const TSourceLoc zeroSourceLoc             = {0, 0, 0, 0};
     TFieldList *fields_gl_DepthRangeParameters = new TFieldList();
-    fields_gl_DepthRangeParameters->push_back(new TField(
-        new TType(EbtFloat, EbpHigh, EvqGlobal, 1, 1), BuiltInName::near, zeroSourceLoc));
     fields_gl_DepthRangeParameters->push_back(
-        new TField(new TType(EbtFloat, EbpHigh, EvqGlobal, 1, 1), BuiltInName::far, zeroSourceLoc));
-    fields_gl_DepthRangeParameters->push_back(new TField(
-        new TType(EbtFloat, EbpHigh, EvqGlobal, 1, 1), BuiltInName::diff, zeroSourceLoc));
+        new TField(new TType(EbtFloat, EbpHigh, EvqGlobal, 1, 1), BuiltInName::near, zeroSourceLoc,
+                   SymbolType::BuiltIn));
+    fields_gl_DepthRangeParameters->push_back(
+        new TField(new TType(EbtFloat, EbpHigh, EvqGlobal, 1, 1), BuiltInName::far, zeroSourceLoc,
+                   SymbolType::BuiltIn));
+    fields_gl_DepthRangeParameters->push_back(
+        new TField(new TType(EbtFloat, EbpHigh, EvqGlobal, 1, 1), BuiltInName::diff, zeroSourceLoc,
+                   SymbolType::BuiltIn));
     TStructure *gl_DepthRangeParameters =
         new TStructure(BuiltInId::gl_DepthRangeParameters, BuiltInName::gl_DepthRangeParameters,
                        TExtension::UNDEFINED, fields_gl_DepthRangeParameters);
     mVar_gl_DepthRangeParameters = gl_DepthRangeParameters;
-    TType *type_gl_DepthRange    = new TType(gl_DepthRangeParameters);
+    TType *type_gl_DepthRange    = new TType(gl_DepthRangeParameters, false);
     type_gl_DepthRange->setQualifier(EvqUniform);
     type_gl_DepthRange->realize();
     mVar_gl_DepthRange =
@@ -10789,7 +10792,8 @@ void TSymbolTable::initializeBuiltInVariables(sh::GLenum shaderType,
         TExtension::NV_shader_framebuffer_fetch, type_gl_LastFragDataNV);
     TFieldList *fields_gl_PerVertex = new TFieldList();
     fields_gl_PerVertex->push_back(new TField(new TType(EbtFloat, EbpHigh, EvqPosition, 4, 1),
-                                              BuiltInName::gl_Position, zeroSourceLoc));
+                                              BuiltInName::gl_Position, zeroSourceLoc,
+                                              SymbolType::BuiltIn));
     TInterfaceBlock *gl_PerVertex =
         new TInterfaceBlock(BuiltInId::gl_PerVertex, BuiltInName::gl_PerVertex,
                             TExtension::EXT_geometry_shader, fields_gl_PerVertex);
@@ -10803,8 +10807,9 @@ void TSymbolTable::initializeBuiltInVariables(sh::GLenum shaderType,
                                    TExtension::EXT_geometry_shader, type_gl_in);
     }
     TFieldList *fields_gl_PerVertexOutBlock = new TFieldList();
-    fields_gl_PerVertexOutBlock->push_back(new TField(
-        new TType(EbtFloat, EbpHigh, EvqPosition, 4, 1), BuiltInName::gl_Position, zeroSourceLoc));
+    fields_gl_PerVertexOutBlock->push_back(
+        new TField(new TType(EbtFloat, EbpHigh, EvqPosition, 4, 1), BuiltInName::gl_Position,
+                   zeroSourceLoc, SymbolType::BuiltIn));
     TInterfaceBlock *gl_PerVertexOutBlock =
         new TInterfaceBlock(BuiltInId::gl_PerVertexOutBlock, BuiltInName::gl_PerVertex,
                             TExtension::EXT_geometry_shader, fields_gl_PerVertexOutBlock);

@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/debug/task_annotator.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_pump_default.h"
@@ -35,6 +36,95 @@ std::unique_ptr<MessagePump> ReturnPump(std::unique_ptr<MessagePump> pump) {
 }
 
 }  // namespace
+
+class MessageLoop::Controller : public internal::IncomingTaskQueue::Observer {
+ public:
+  // Constructs a MessageLoopController which controls |message_loop|, notifying
+  // |task_annotator_| when tasks are queued scheduling work on |message_loop|
+  // as fits. |message_loop| and |task_annotator_| will not be used after
+  // DisconnectFromParent() returns.
+  Controller(MessageLoop* message_loop);
+
+  ~Controller() override;
+
+  // IncomingTaskQueue::Observer:
+  void WillQueueTask(PendingTask* task) final;
+  void DidQueueTask(bool was_empty) final;
+
+  void StartScheduling();
+
+  // Disconnects |message_loop_| from this Controller instance (DidQueueTask()
+  // will no-op from this point forward).
+  void DisconnectFromParent();
+
+  // Shares this Controller's TaskAnnotator with MessageLoop as TaskAnnotator
+  // requires DidQueueTask(x)/RunTask(x) to be invoked on the same TaskAnnotator
+  // instance.
+  debug::TaskAnnotator& task_annotator() { return task_annotator_; }
+
+ private:
+  // A TaskAnnotator which is owned by this Controller to be able to use it
+  // without locking |message_loop_lock_|. It cannot be owned by MessageLoop
+  // because this Controller cannot access |message_loop_| safely without the
+  // lock. Note: the TaskAnnotator API itself is thread-safe.
+  debug::TaskAnnotator task_annotator_;
+
+  // Lock that serializes |message_loop_->ScheduleWork()| and access to all
+  // members below.
+  base::Lock message_loop_lock_;
+
+  // Points to this Controller's outer MessageLoop instance. Null after
+  // DisconnectFromParent().
+  MessageLoop* message_loop_;
+
+  // False until StartScheduling() is called.
+  bool is_ready_for_scheduling_ = false;
+
+  // True if DidQueueTask() has been called before StartScheduling(); letting it
+  // know whether it needs to ScheduleWork() right away or not.
+  bool pending_schedule_work_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(Controller);
+};
+
+MessageLoop::Controller::Controller(MessageLoop* message_loop)
+    : message_loop_(message_loop) {}
+
+MessageLoop::Controller::~Controller() {
+  DCHECK(!message_loop_)
+      << "DisconnectFromParent() needs to be invoked before destruction.";
+}
+
+void MessageLoop::Controller::WillQueueTask(PendingTask* task) {
+  task_annotator_.WillQueueTask("MessageLoop::PostTask", task);
+}
+
+void MessageLoop::Controller::DidQueueTask(bool was_empty) {
+  // Avoid locking if we don't need to schedule.
+  if (!was_empty)
+    return;
+
+  AutoLock auto_lock(message_loop_lock_);
+
+  if (message_loop_ && is_ready_for_scheduling_)
+    message_loop_->ScheduleWork();
+  else
+    pending_schedule_work_ = true;
+}
+
+void MessageLoop::Controller::StartScheduling() {
+  AutoLock lock(message_loop_lock_);
+  DCHECK(message_loop_);
+  DCHECK(!is_ready_for_scheduling_);
+  is_ready_for_scheduling_ = true;
+  if (pending_schedule_work_)
+    message_loop_->ScheduleWork();
+}
+
+void MessageLoop::Controller::DisconnectFromParent() {
+  AutoLock lock(message_loop_lock_);
+  message_loop_ = nullptr;
+}
 
 //------------------------------------------------------------------------------
 
@@ -94,7 +184,8 @@ MessageLoop::~MessageLoop() {
   thread_task_runner_handle_.reset();
 
   // Tell the incoming queue that we are dying.
-  incoming_task_queue_->WillDestroyCurrentMessageLoop();
+  message_loop_controller_->DisconnectFromParent();
+  incoming_task_queue_->Shutdown();
   incoming_task_queue_ = nullptr;
   unbound_task_runner_ = nullptr;
   task_runner_ = nullptr;
@@ -192,13 +283,18 @@ std::unique_ptr<MessageLoop> MessageLoop::CreateUnbound(
   return WrapUnique(new MessageLoop(type, std::move(pump_factory)));
 }
 
+// TODO(gab): Avoid bare new + WrapUnique below when introducing
+// SequencedTaskSource in follow-up @
+// https://chromium-review.googlesource.com/c/chromium/src/+/1088762.
 MessageLoop::MessageLoop(Type type, MessagePumpFactoryCallback pump_factory)
     : MessageLoopCurrent(this),
       type_(type),
       pump_factory_(std::move(pump_factory)),
-      incoming_task_queue_(new internal::IncomingTaskQueue(this)),
-      unbound_task_runner_(
-          new internal::MessageLoopTaskRunner(incoming_task_queue_)),
+      message_loop_controller_(new Controller(this)),
+      incoming_task_queue_(MakeRefCounted<internal::IncomingTaskQueue>(
+          WrapUnique(message_loop_controller_))),
+      unbound_task_runner_(MakeRefCounted<internal::MessageLoopTaskRunner>(
+          incoming_task_queue_)),
       task_runner_(unbound_task_runner_) {
   // If type is TYPE_CUSTOM non-null pump_factory must be given.
   DCHECK(type_ != TYPE_CUSTOM || !pump_factory_.is_null());
@@ -220,7 +316,7 @@ void MessageLoop::BindToCurrentThread() {
       << "should only have one message loop per thread";
   MessageLoopCurrent::BindToCurrentThreadInternal(this);
 
-  incoming_task_queue_->StartScheduling();
+  message_loop_controller_->StartScheduling();
   unbound_task_runner_->BindToCurrentThread();
   unbound_task_runner_ = nullptr;
   SetThreadTaskRunnerHandle();
@@ -231,6 +327,12 @@ void MessageLoop::BindToCurrentThread() {
       &sequence_local_storage_map_);
 
   RunLoop::RegisterDelegateForCurrentThread(this);
+
+#if defined(OS_ANDROID)
+  // On Android, attach to the native loop when there is one.
+  if (type_ == TYPE_UI || type_ == TYPE_JAVA)
+    static_cast<MessagePumpForUI*>(pump_.get())->Attach(this);
+#endif
 }
 
 std::string MessageLoop::GetThreadName() const {
@@ -316,7 +418,8 @@ void MessageLoop::RunTask(PendingTask* pending_task) {
 
   for (auto& observer : task_observers_)
     observer.WillProcessTask(*pending_task);
-  incoming_task_queue_->RunTask(pending_task);
+  message_loop_controller_->task_annotator().RunTask("MessageLoop::PostTask",
+                                                     pending_task);
   for (auto& observer : task_observers_)
     observer.DidProcessTask(*pending_task);
 
@@ -351,6 +454,10 @@ void MessageLoop::ScheduleWork() {
   pump_->ScheduleWork();
 }
 
+TimeTicks MessageLoop::CapAtOneDay(TimeTicks next_run_time) {
+  return std::min(next_run_time, recent_time_ + TimeDelta::FromDays(1));
+}
+
 bool MessageLoop::DoWork() {
   if (!task_execution_allowed_)
     return false;
@@ -382,7 +489,7 @@ bool MessageLoop::DoWork() {
 bool MessageLoop::DoDelayedWork(TimeTicks* next_delayed_work_time) {
   if (!task_execution_allowed_ ||
       !incoming_task_queue_->delayed_tasks().HasTasks()) {
-    recent_time_ = *next_delayed_work_time = TimeTicks();
+    *next_delayed_work_time = TimeTicks();
     return false;
   }
 
@@ -395,10 +502,11 @@ bool MessageLoop::DoDelayedWork(TimeTicks* next_delayed_work_time) {
 
   TimeTicks next_run_time =
       incoming_task_queue_->delayed_tasks().Peek().delayed_run_time;
+
   if (next_run_time > recent_time_) {
     recent_time_ = TimeTicks::Now();  // Get a better view of Now();
     if (next_run_time > recent_time_) {
-      *next_delayed_work_time = next_run_time;
+      *next_delayed_work_time = CapAtOneDay(next_run_time);
       return false;
     }
   }
@@ -406,8 +514,8 @@ bool MessageLoop::DoDelayedWork(TimeTicks* next_delayed_work_time) {
   PendingTask pending_task = incoming_task_queue_->delayed_tasks().Pop();
 
   if (incoming_task_queue_->delayed_tasks().HasTasks()) {
-    *next_delayed_work_time =
-        incoming_task_queue_->delayed_tasks().Peek().delayed_run_time;
+    *next_delayed_work_time = CapAtOneDay(
+        incoming_task_queue_->delayed_tasks().Peek().delayed_run_time);
   }
 
   return DeferOrRunPendingTask(std::move(pending_task));
@@ -417,21 +525,42 @@ bool MessageLoop::DoIdleWork() {
   if (ProcessNextDelayedNonNestableTask())
     return true;
 
-  if (ShouldQuitWhenIdle())
-    pump_->Quit();
-
-  // When we return we will do a kernel wait for more tasks.
 #if defined(OS_WIN)
-  // On Windows we activate the high resolution timer so that the wait
-  // _if_ triggered by the timer happens with good resolution. If we don't
-  // do this the default resolution is 15ms which might not be acceptable
-  // for some tasks.
-  bool high_res = incoming_task_queue_->HasPendingHighResolutionTasks();
-  if (high_res != in_high_res_mode_) {
-    in_high_res_mode_ = high_res;
+  bool need_high_res_timers = false;
+#endif
+
+  // Do not report idle metrics if about to quit the loop and/or in a nested
+  // loop where |!task_execution_allowed_|. In the former case, the loop isn't
+  // going to sleep and in the latter case DoDelayedWork() will not actually do
+  // the work this is prepping for.
+  if (ShouldQuitWhenIdle()) {
+    pump_->Quit();
+  } else if (task_execution_allowed_) {
+    // Only track idle metrics in MessageLoopForUI to avoid too much contention
+    // logging the histogram (https://crbug.com/860801) -- there's typically
+    // only one UI thread per process and, for practical purposes, restricting
+    // the MessageLoop diagnostic metrics to it yields similar information.
+    if (type_ == TYPE_UI)
+      incoming_task_queue_->ReportMetricsOnIdle();
+
+#if defined(OS_WIN)
+    // On Windows we activate the high resolution timer so that the wait
+    // _if_ triggered by the timer happens with good resolution. If we don't
+    // do this the default resolution is 15ms which might not be acceptable
+    // for some tasks.
+    need_high_res_timers =
+        incoming_task_queue_->HasPendingHighResolutionTasks();
+#endif
+  }
+
+#if defined(OS_WIN)
+  if (in_high_res_mode_ != need_high_res_timers) {
+    in_high_res_mode_ = need_high_res_timers;
     Time::ActivateHighResolutionTimer(in_high_res_mode_);
   }
 #endif
+
+  // When we return we will do a kernel wait for more tasks.
   return false;
 }
 
@@ -440,8 +569,13 @@ bool MessageLoop::DoIdleWork() {
 //------------------------------------------------------------------------------
 // MessageLoopForUI
 
-MessageLoopForUI::MessageLoopForUI(std::unique_ptr<MessagePump> pump)
-    : MessageLoop(TYPE_UI, BindOnce(&ReturnPump, std::move(pump))) {}
+MessageLoopForUI::MessageLoopForUI(Type type) : MessageLoop(type) {
+#if defined(OS_ANDROID)
+  DCHECK(type == TYPE_UI || type == TYPE_JAVA);
+#else
+  DCHECK_EQ(type, TYPE_UI);
+#endif
+}
 
 // static
 MessageLoopCurrentForUI MessageLoopForUI::current() {
@@ -460,13 +594,17 @@ void MessageLoopForUI::Attach() {
 #endif  // defined(OS_IOS)
 
 #if defined(OS_ANDROID)
-void MessageLoopForUI::Start() {
-  // No Histogram support for UI message loop as it is managed by Java side
-  static_cast<MessagePumpForUI*>(pump_.get())->Start(this);
-}
-
 void MessageLoopForUI::Abort() {
   static_cast<MessagePumpForUI*>(pump_.get())->Abort();
+}
+
+bool MessageLoopForUI::IsAborted() {
+  return static_cast<MessagePumpForUI*>(pump_.get())->IsAborted();
+}
+
+void MessageLoopForUI::QuitWhenIdle(base::OnceClosure callback) {
+  static_cast<MessagePumpForUI*>(pump_.get())
+      ->QuitWhenIdle(std::move(callback));
 }
 #endif  // defined(OS_ANDROID)
 

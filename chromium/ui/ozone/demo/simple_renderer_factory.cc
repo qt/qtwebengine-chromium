@@ -12,10 +12,13 @@
 #include "ui/ozone/demo/gl_renderer.h"
 #include "ui/ozone/demo/software_renderer.h"
 #include "ui/ozone/demo/surfaceless_gl_renderer.h"
+#include "ui/ozone/public/overlay_surface.h"
 #include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 
 #if BUILDFLAG(ENABLE_VULKAN)
 #include "gpu/vulkan/init/vulkan_factory.h"
+#include "ui/ozone/demo/vulkan_overlay_renderer.h"
 #include "ui/ozone/demo/vulkan_renderer.h"
 #endif
 
@@ -55,7 +58,8 @@ bool SimpleRendererFactory::Initialize() {
   if (command_line->HasSwitch(kEnableVulkan)) {
     vulkan_implementation_ = gpu::CreateVulkanImplementation();
     if (vulkan_implementation_ &&
-        vulkan_implementation_->InitializeVulkanInstance()) {
+        vulkan_implementation_->InitializeVulkanInstance() &&
+        gpu_helper_.Initialize(base::ThreadTaskRunnerHandle::Get())) {
       type_ = VULKAN;
       return true;
     } else {
@@ -87,9 +91,20 @@ std::unique_ptr<Renderer> SimpleRendererFactory::CreateRenderer(
       return std::make_unique<GlRenderer>(widget, surface, size);
     }
 #if BUILDFLAG(ENABLE_VULKAN)
-    case VULKAN:
+    case VULKAN: {
+      SurfaceFactoryOzone* surface_factory_ozone =
+          OzonePlatform::GetInstance()->GetSurfaceFactoryOzone();
+
+      std::unique_ptr<OverlaySurface> overlay_surface =
+          surface_factory_ozone->CreateOverlaySurface(widget);
+      if (overlay_surface) {
+        return std::make_unique<VulkanOverlayRenderer>(
+            std::move(overlay_surface), surface_factory_ozone,
+            vulkan_implementation_.get(), widget, size);
+      }
       return std::make_unique<VulkanRenderer>(vulkan_implementation_.get(),
                                               widget, size);
+    }
 #endif
     case SOFTWARE:
       return std::make_unique<SoftwareRenderer>(widget, size);

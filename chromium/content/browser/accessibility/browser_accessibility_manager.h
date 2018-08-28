@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "base/callback_forward.h"
@@ -218,8 +219,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXEventGenerator {
   void SetAccessibilityFocus(const BrowserAccessibility& node);
   void SetFocus(const BrowserAccessibility& node);
   void SetScrollOffset(const BrowserAccessibility& node, gfx::Point offset);
-  void SetValue(
-      const BrowserAccessibility& node, const base::string16& value);
+  void SetValue(const BrowserAccessibility& node, const std::string& value);
   void SetSelection(
       ui::AXRange<
           BrowserAccessibilityPosition::AXPositionInstance::element_type>
@@ -234,8 +234,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXEventGenerator {
   void ActivateFindInPageResult(int request_id, int match_index);
 
   // Called when the renderer process has notified us of about tree changes.
-  virtual void OnAccessibilityEvents(
-      const std::vector<AXEventNotificationDetails>& details);
+  virtual void OnAccessibilityEvents(const AXEventNotificationDetails& details);
 
   // Called when the renderer process updates the location of accessibility
   // objects. Calls SendLocationChangeEvents(), which can be overridden.

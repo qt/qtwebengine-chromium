@@ -16,7 +16,7 @@
 #include "SkReadBuffer.h"
 #include "SkRefSet.h"
 #include "SkRSXform.h"
-#include "SkTextBlob.h"
+#include "SkTextBlobPriv.h"
 #include "SkTypeface.h"
 #include "SkVertices.h"
 
@@ -51,14 +51,14 @@ public:
         return index ? fFactories->getAt(index - 1) : nullptr;
     }
 
-    bool setImage(int index, SkImage* img) {
-        return fImages->set(index - 1, img);
+    bool setImage(int index, sk_sp<SkImage> img) {
+        return fImages->set(index - 1, std::move(img));
     }
-    bool setPicture(int index, SkPicture* pic) {
-        return fPictures->set(index - 1, pic);
+    bool setPicture(int index, sk_sp<SkPicture> pic) {
+        return fPictures->set(index - 1, std::move(pic));
     }
-    bool setTypeface(int index, SkTypeface* face) {
-        return fTypefaces->set(index - 1, face);
+    bool setTypeface(int index, sk_sp<SkTypeface> face) {
+        return fTypefaces->set(index - 1, std::move(face));
     }
     bool setFactory(int index, SkFlattenable::Factory factory) {
         SkASSERT(index > 0);
@@ -401,7 +401,7 @@ static void drawTextOnPath_handler(SkPipeReader& reader, uint32_t packedVerb, Sk
 }
 
 static void drawTextBlob_handler(SkPipeReader& reader, uint32_t packedVerb, SkCanvas* canvas) {
-    sk_sp<SkTextBlob> tb = SkTextBlob::MakeFromBuffer(reader);
+    sk_sp<SkTextBlob> tb = SkTextBlobPriv::MakeFromBuffer(reader);
     SkScalar x = reader.readScalar();
     SkScalar y = reader.readScalar();
     canvas->drawTextBlob(tb, x, y, read_paint(reader));
@@ -562,9 +562,14 @@ static void drawImageLattice_handler(SkPipeReader& reader, uint32_t packedVerb, 
 static void drawVertices_handler(SkPipeReader& reader, uint32_t packedVerb, SkCanvas* canvas) {
     SkASSERT(SkPipeVerb::kDrawVertices == unpack_verb(packedVerb));
     SkBlendMode bmode = (SkBlendMode)unpack_verb_extra(packedVerb);
+    sk_sp<SkVertices> vertices = nullptr;
     if (sk_sp<SkData> data = reader.readByteArrayAsData()) {
-        canvas->drawVertices(SkVertices::Decode(data->data(), data->size()), bmode,
-                             read_paint(reader));
+        vertices = SkVertices::Decode(data->data(), data->size());
+    }
+    int boneCount = reader.read32();
+    const SkMatrix* bones = boneCount ? reader.skipT<SkMatrix>(boneCount) : nullptr;
+    if (vertices) {
+        canvas->drawVertices(vertices, bones, boneCount, bmode, read_paint(reader));
     }
 }
 
@@ -640,7 +645,7 @@ static void defineImage_handler(SkPipeReader& reader, uint32_t packedVerb, SkCan
         if (!image) {
             SkDebugf("-- failed to decode\n");
         }
-        inflator->setImage(index, image.get());
+        inflator->setImage(index, std::move(image));
     }
 }
 
@@ -666,7 +671,7 @@ static void defineTypeface_handler(SkPipeReader& reader, uint32_t packedVerb, Sk
         sk_sp<SkData> data = reader.readByteArrayAsData();
         // TODO: seems like we could "peek" to see the array, and not need to copy it.
         sk_sp<SkTypeface> tf = data ? inflator->makeTypeface(data->data(), data->size()) : nullptr;
-        inflator->setTypeface(index, tf.get());
+        inflator->setTypeface(index, std::move(tf));
     }
 }
 
@@ -702,7 +707,7 @@ static void definePicture_handler(SkPipeReader& reader, uint32_t packedVerb, SkC
         do_playback(reader, recorder.beginRecording(*cull), &pictureIndex);
         SkASSERT(pictureIndex > 0);
         sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
-        inflator->setPicture(pictureIndex, picture.get());
+        inflator->setPicture(pictureIndex, std::move(picture));
     }
 }
 

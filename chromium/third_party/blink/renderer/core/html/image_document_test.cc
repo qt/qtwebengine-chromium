@@ -7,11 +7,13 @@
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/document_init.h"
 #include "third_party/blink/renderer/core/dom/document_parser.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
@@ -223,22 +225,16 @@ TEST_F(ImageDocumentTest, MAYBE(ImageCenteredAtDeviceScaleFactor)) {
 
   EXPECT_TRUE(GetDocument().ShouldShrinkToFit());
   GetDocument().ImageClicked(15, 27);
-  ScrollOffset offset = GetDocument()
-                            .GetFrame()
-                            ->View()
-                            ->LayoutViewportScrollableArea()
-                            ->GetScrollOffset();
+  ScrollOffset offset =
+      GetDocument().GetFrame()->View()->LayoutViewport()->GetScrollOffset();
   EXPECT_EQ(22, offset.Width());
   EXPECT_EQ(42, offset.Height());
 
   GetDocument().ImageClicked(20, 20);
 
   GetDocument().ImageClicked(12, 15);
-  offset = GetDocument()
-               .GetFrame()
-               ->View()
-               ->LayoutViewportScrollableArea()
-               ->GetScrollOffset();
+  offset =
+      GetDocument().GetFrame()->View()->LayoutViewport()->GetScrollOffset();
   EXPECT_EQ(11, offset.Width());
   EXPECT_EQ(22, offset.Height());
 }
@@ -308,6 +304,100 @@ TEST_F(ImageDocumentViewportTest, HidingURLBarDoesntChangeImageLocation) {
   rect = img->getBoundingClientRect();
   EXPECT_EQ(0, rect->x());
   EXPECT_EQ(175, rect->y());
+}
+
+TEST_F(ImageDocumentViewportTest, ZoomForDSFScaleImage) {
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
+  SimRequest request("https://example.com/test.jpg", "image/jpeg");
+  LoadURL("https://example.com/test.jpg");
+
+  Vector<unsigned char> jpeg = JpegImage();
+  Vector<char> data = Vector<char>();
+  data.Append(jpeg.data(), jpeg.size());
+  request.Complete(data);
+
+  HTMLImageElement* img = GetDocument().ImageElement();
+
+  // no zoom
+  WebView().Resize(IntSize(100, 100));
+  WebView().SetZoomFactorForDeviceScaleFactor(1.f);
+  Compositor().BeginFrame();
+  EXPECT_EQ(50u, img->width());
+  EXPECT_EQ(50u, img->height());
+  EXPECT_EQ(100, GetDocument().CalculateDivWidth());
+  EXPECT_EQ(1.f, GetVisualViewport().Scale());
+  EXPECT_EQ(100, GetVisualViewport().Width());
+  EXPECT_EQ(100, GetVisualViewport().Height());
+
+  // zoom-for-dsf = 4. WebView size is in physical pixel(400*400), image and
+  // visual viewport should be same in CSS pixel, as no dsf applied.
+  // This simulates running on two phones with different screen densities but
+  // same (physical) screen size, image document should displayed the same.
+  WebView().Resize(IntSize(400, 400));
+  WebView().SetZoomFactorForDeviceScaleFactor(4.f);
+  Compositor().BeginFrame();
+  EXPECT_EQ(50u, img->width());
+  EXPECT_EQ(50u, img->height());
+  EXPECT_EQ(100, GetDocument().CalculateDivWidth());
+  EXPECT_EQ(1.f, GetVisualViewport().Scale());
+  EXPECT_EQ(100, GetVisualViewport().Width());
+  EXPECT_EQ(100, GetVisualViewport().Height());
+}
+
+// Tests that with zoom factor for device scale factor, image with different
+// size fit in the viewport correctly.
+TEST_F(ImageDocumentViewportTest, DivWidthWithZoomForDSF) {
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
+  SimRequest request("https://example.com/test.jpg", "image/jpeg");
+  LoadURL("https://example.com/test.jpg");
+
+  Vector<unsigned char> jpeg = JpegImage();
+  Vector<char> data = Vector<char>();
+  data.Append(jpeg.data(), jpeg.size());
+  request.Complete(data);
+
+  HTMLImageElement* img = GetDocument().ImageElement();
+
+  WebView().SetZoomFactorForDeviceScaleFactor(2.f);
+
+  // Image smaller then webview size, visual viewport is not zoomed, and image
+  // will be centered in the viewport.
+  WebView().Resize(IntSize(200, 200));
+  Compositor().BeginFrame();
+  EXPECT_EQ(50u, img->width());
+  EXPECT_EQ(50u, img->height());
+  EXPECT_EQ(100, GetDocument().CalculateDivWidth());
+  EXPECT_EQ(1.f, GetVisualViewport().Scale());
+  EXPECT_EQ(100, GetVisualViewport().Width());
+  EXPECT_EQ(100, GetVisualViewport().Height());
+  DOMRect* rect = img->getBoundingClientRect();
+  EXPECT_EQ(25, rect->x());
+  EXPECT_EQ(25, rect->y());
+
+  // Image wider than webview size, image should fill the visual viewport, and
+  // visual viewport zoom out to 0.5.
+  WebView().Resize(IntSize(50, 50));
+  Compositor().BeginFrame();
+  EXPECT_EQ(50u, img->width());
+  EXPECT_EQ(50u, img->height());
+  EXPECT_EQ(50, GetDocument().CalculateDivWidth());
+  EXPECT_EQ(0.5f, GetVisualViewport().Scale());
+  EXPECT_EQ(50, GetVisualViewport().Width());
+  EXPECT_EQ(50, GetVisualViewport().Height());
+
+  // When image is more than 10X wider than webview, shrink the image to fit the
+  // width of the screen.
+  WebView().Resize(IntSize(4, 20));
+  Compositor().BeginFrame();
+  EXPECT_EQ(20u, img->width());
+  EXPECT_EQ(20u, img->height());
+  EXPECT_EQ(20, GetDocument().CalculateDivWidth());
+  EXPECT_EQ(0.1f, GetVisualViewport().Scale());
+  EXPECT_EQ(20, GetVisualViewport().Width());
+  EXPECT_EQ(100, GetVisualViewport().Height());
+  rect = img->getBoundingClientRect();
+  EXPECT_EQ(0, rect->x());
+  EXPECT_EQ(40, rect->y());
 }
 
 #undef MAYBE

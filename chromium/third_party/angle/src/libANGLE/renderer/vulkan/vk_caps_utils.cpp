@@ -8,7 +8,15 @@
 //
 
 #include "libANGLE/renderer/vulkan/vk_caps_utils.h"
+
+#include <type_traits>
+
+#include "common/utilities.h"
 #include "libANGLE/Caps.h"
+#include "libANGLE/formatutils.h"
+#include "libANGLE/renderer/vulkan/DisplayVk.h"
+#include "libANGLE/renderer/vulkan/FeaturesVk.h"
+#include "libANGLE/renderer/vulkan/RendererVk.h"
 #include "vk_format_utils.h"
 
 namespace
@@ -34,6 +42,8 @@ void GenerateCaps(const VkPhysicalDeviceProperties &physicalDeviceProperties,
     outExtensions->mapBuffer      = true;
     outExtensions->mapBufferRange = true;
     outExtensions->textureStorage = true;
+    outExtensions->framebufferBlit = true;
+    outExtensions->copyTexture     = true;
 
     // TODO(lucferron): Eventually remove everything above this line in this function as the caps
     // get implemented.
@@ -45,7 +55,8 @@ void GenerateCaps(const VkPhysicalDeviceProperties &physicalDeviceProperties,
     outCaps->maxLODBias            = physicalDeviceProperties.limits.maxSamplerLodBias;
     outCaps->maxCubeMapTextureSize = physicalDeviceProperties.limits.maxImageDimensionCube;
     outCaps->maxRenderbufferSize   = outCaps->max2DTextureSize;
-    outCaps->minAliasedPointSize   = physicalDeviceProperties.limits.pointSizeRange[0];
+    outCaps->minAliasedPointSize =
+        std::max(1.0f, physicalDeviceProperties.limits.pointSizeRange[0]);
     outCaps->maxAliasedPointSize   = physicalDeviceProperties.limits.pointSizeRange[1];
     outCaps->minAliasedLineWidth   = physicalDeviceProperties.limits.lineWidthRange[0];
     outCaps->maxAliasedLineWidth   = physicalDeviceProperties.limits.lineWidthRange[1];
@@ -105,9 +116,9 @@ void GenerateCaps(const VkPhysicalDeviceProperties &physicalDeviceProperties,
     // Uniforms are implemented using a uniform buffer, so the max number of uniforms we can
     // support is the max buffer range divided by the size of a single uniform (4X float).
     outCaps->maxVertexUniformVectors      = maxUniformVectors;
-    outCaps->maxVertexUniformComponents   = maxUniformComponents;
+    outCaps->maxShaderUniformComponents[gl::ShaderType::Vertex]   = maxUniformComponents;
     outCaps->maxFragmentUniformVectors    = maxUniformVectors;
-    outCaps->maxFragmentUniformComponents = maxUniformComponents;
+    outCaps->maxShaderUniformComponents[gl::ShaderType::Fragment] = maxUniformComponents;
 
     // TODO(jmadill): this is an ES 3.0 property and we can skip implementing it for now.
     // This is maxDescriptorSetUniformBuffers minus the number of uniform buffers we
@@ -136,4 +147,138 @@ void GenerateCaps(const VkPhysicalDeviceProperties &physicalDeviceProperties,
     outCaps->maxVertexOutputComponents = outCaps->maxVaryingVectors * 4;
 }
 }  // namespace vk
+
+namespace egl_vk
+{
+
+namespace
+{
+
+EGLint ComputeMaximumPBufferPixels(const VkPhysicalDeviceProperties &physicalDeviceProperties)
+{
+    // EGLints are signed 32-bit integers, it's fairly easy to overflow them, especially since
+    // Vulkan's minimum guaranteed VkImageFormatProperties::maxResourceSize is 2^31 bytes.
+    constexpr uint64_t kMaxValueForEGLint =
+        static_cast<uint64_t>(std::numeric_limits<EGLint>::max());
+
+    // TODO(geofflang): Compute the maximum size of a pbuffer by using the maxResourceSize result
+    // from vkGetPhysicalDeviceImageFormatProperties for both the color and depth stencil format and
+    // the exact image creation parameters that would be used to create the pbuffer. Because it is
+    // always safe to return out-of-memory errors on pbuffer allocation, it's fine to simply return
+    // the number of pixels in a max width by max height pbuffer for now. http://anglebug.com/2622
+
+    // Storing the result of squaring a 32-bit unsigned int in a 64-bit unsigned int is safe.
+    static_assert(std::is_same<decltype(physicalDeviceProperties.limits.maxImageDimension2D),
+                               uint32_t>::value,
+                  "physicalDeviceProperties.limits.maxImageDimension2D expected to be a uint32_t.");
+    const uint64_t maxDimensionsSquared =
+        static_cast<uint64_t>(physicalDeviceProperties.limits.maxImageDimension2D) *
+        static_cast<uint64_t>(physicalDeviceProperties.limits.maxImageDimension2D);
+
+    return static_cast<EGLint>(std::min(maxDimensionsSquared, kMaxValueForEGLint));
+}
+
+// Generates a basic config for a combination of color format, depth stencil format and sample
+// count.
+egl::Config GenerateDefaultConfig(const VkPhysicalDeviceProperties &physicalDeviceProperties,
+                                  const gl::InternalFormat &colorFormat,
+                                  const gl::InternalFormat &depthStencilFormat,
+                                  EGLint sampleCount)
+{
+    egl::Config config;
+
+    config.renderTargetFormat    = colorFormat.internalFormat;
+    config.depthStencilFormat    = depthStencilFormat.internalFormat;
+    config.bufferSize            = colorFormat.pixelBytes * 8;
+    config.redSize               = colorFormat.redBits;
+    config.greenSize             = colorFormat.greenBits;
+    config.blueSize              = colorFormat.blueBits;
+    config.alphaSize             = colorFormat.alphaBits;
+    config.alphaMaskSize         = 0;
+    config.bindToTextureRGB      = EGL_FALSE;
+    config.bindToTextureRGBA     = EGL_FALSE;
+    config.colorBufferType       = EGL_RGB_BUFFER;
+    config.configCaveat          = EGL_NONE;
+    config.conformant            = 0;
+    config.depthSize             = depthStencilFormat.depthBits;
+    config.stencilSize           = depthStencilFormat.stencilBits;
+    config.level                 = 0;
+    config.matchNativePixmap     = EGL_NONE;
+    config.maxPBufferWidth       = physicalDeviceProperties.limits.maxImageDimension2D;
+    config.maxPBufferHeight      = physicalDeviceProperties.limits.maxImageDimension2D;
+    config.maxPBufferPixels      = ComputeMaximumPBufferPixels(physicalDeviceProperties);
+    config.maxSwapInterval       = 1;
+    config.minSwapInterval       = 1;
+    config.nativeRenderable      = EGL_TRUE;
+    config.nativeVisualID        = 0;
+    config.nativeVisualType      = EGL_NONE;
+    config.renderableType        = EGL_OPENGL_ES2_BIT;
+    config.sampleBuffers         = (sampleCount > 0) ? 1 : 0;
+    config.samples               = sampleCount;
+    config.surfaceType           = EGL_WINDOW_BIT | EGL_PBUFFER_BIT;
+    // Vulkan surfaces use a different origin than OpenGL, always prefer to be flipped vertically if
+    // possible.
+    config.optimalOrientation    = EGL_SURFACE_ORIENTATION_INVERT_Y_ANGLE;
+    config.transparentType       = EGL_NONE;
+    config.transparentRedValue   = 0;
+    config.transparentGreenValue = 0;
+    config.transparentBlueValue  = 0;
+    config.colorComponentType =
+        gl_egl::GLComponentTypeToEGLColorComponentType(colorFormat.componentType);
+
+    return config;
+}
+
+}  // anonymous namespace
+
+egl::ConfigSet GenerateConfigs(const GLenum *colorFormats,
+                               size_t colorFormatsCount,
+                               const GLenum *depthStencilFormats,
+                               size_t depthStencilFormatCount,
+                               const EGLint *sampleCounts,
+                               size_t sampleCountsCount,
+                               DisplayVk *display)
+{
+    ASSERT(colorFormatsCount > 0);
+    ASSERT(display != nullptr);
+
+    egl::ConfigSet configSet;
+
+    const RendererVk *renderer = display->getRenderer();
+    const VkPhysicalDeviceProperties &physicalDeviceProperties =
+        renderer->getPhysicalDeviceProperties();
+
+    for (size_t colorFormatIdx = 0; colorFormatIdx < colorFormatsCount; colorFormatIdx++)
+    {
+        const gl::InternalFormat &colorFormatInfo =
+            gl::GetSizedInternalFormatInfo(colorFormats[colorFormatIdx]);
+        ASSERT(colorFormatInfo.sized);
+
+        for (size_t depthStencilFormatIdx = 0; depthStencilFormatIdx < depthStencilFormatCount;
+             depthStencilFormatIdx++)
+        {
+            const gl::InternalFormat &depthStencilFormatInfo =
+                gl::GetSizedInternalFormatInfo(depthStencilFormats[depthStencilFormatIdx]);
+            ASSERT(depthStencilFormats[depthStencilFormatIdx] == GL_NONE ||
+                   depthStencilFormatInfo.sized);
+
+            for (size_t sampleCountIndex = 0; sampleCountIndex < sampleCountsCount;
+                 sampleCountIndex++)
+            {
+                egl::Config config =
+                    GenerateDefaultConfig(physicalDeviceProperties, colorFormatInfo,
+                                          depthStencilFormatInfo, sampleCounts[sampleCountIndex]);
+                if (display->checkConfigSupport(&config))
+                {
+                    configSet.add(config);
+                }
+            }
+        }
+    }
+
+    return configSet;
+}
+
+}  // namespace egl_vk
+
 }  // namespace rx

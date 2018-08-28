@@ -61,14 +61,11 @@ enum {
 namespace blink {
 
 Canvas2DLayerBridge::Canvas2DLayerBridge(const IntSize& size,
-                                         int msaa_sample_count,
                                          AccelerationMode acceleration_mode,
                                          const CanvasColorParams& color_params)
     : logger_(std::make_unique<Logger>()),
-      msaa_sample_count_(msaa_sample_count),
       bytes_allocated_(0),
       have_recorded_draw_commands_(false),
-      filter_quality_(kLow_SkFilterQuality),
       is_hidden_(false),
       is_deferral_enabled_(true),
       software_rendering_while_hidden_(false),
@@ -85,13 +82,12 @@ Canvas2DLayerBridge::Canvas2DLayerBridge(const IntSize& size,
   // Clear the background transparent or opaque. Similar code at
   // CanvasResourceProvider::Clear().
   if (IsValid()) {
-    DCHECK(!resource_provider_);
     DCHECK(recorder_);
     recorder_->getRecordingCanvas()->clear(
         color_params_.GetOpacityMode() == kOpaque ? SK_ColorBLACK
                                                   : SK_ColorTRANSPARENT);
+    DidDraw(FloatRect(FloatPoint(0, 0), FloatSize(size_)));
   }
-  DidDraw(FloatRect(FloatPoint(0, 0), FloatSize(size_)));
 }
 
 Canvas2DLayerBridge::~Canvas2DLayerBridge() {
@@ -119,7 +115,7 @@ Canvas2DLayerBridge::~Canvas2DLayerBridge() {
 void Canvas2DLayerBridge::StartRecording() {
   DCHECK(is_deferral_enabled_);
   recorder_ = std::make_unique<PaintRecorder>();
-  PaintCanvas* canvas =
+  cc::PaintCanvas* canvas =
       recorder_->beginRecording(size_.Width(), size_.Height());
   // Always save an initial frame, to support resetting the top level matrix
   // and clip.
@@ -137,7 +133,9 @@ void Canvas2DLayerBridge::SetLoggerForTesting(std::unique_ptr<Logger> logger) {
 }
 
 void Canvas2DLayerBridge::ResetResourceProvider() {
-  resource_provider_.reset();
+  if (resource_host_) {
+    resource_host_->ReplaceResourceProvider(nullptr);
+  }
 }
 
 bool Canvas2DLayerBridge::ShouldAccelerate(AccelerationHint hint) const {
@@ -170,8 +168,8 @@ bool Canvas2DLayerBridge::IsAccelerated() const {
     return false;
   if (software_rendering_while_hidden_)
     return false;
-  if (resource_provider_)
-    return resource_provider_->IsAccelerated();
+  if (resource_host_ && resource_host_->ResourceProvider())
+    return resource_host_->ResourceProvider()->IsAccelerated();
 
   // Whether or not to accelerate is not yet resolved. Determine whether
   // immediate presentation of the canvas would result in the canvas being
@@ -181,7 +179,7 @@ bool Canvas2DLayerBridge::IsAccelerated() const {
 }
 
 static void HibernateWrapper(base::WeakPtr<Canvas2DLayerBridge> bridge,
-                             double /*idleDeadline*/) {
+                             TimeTicks /*idleDeadline*/) {
   if (bridge) {
     bridge->Hibernate();
   } else {
@@ -194,7 +192,7 @@ static void HibernateWrapper(base::WeakPtr<Canvas2DLayerBridge> bridge,
 
 static void HibernateWrapperForTesting(
     base::WeakPtr<Canvas2DLayerBridge> bridge) {
-  HibernateWrapper(bridge, 0);
+  HibernateWrapper(std::move(bridge), TimeTicks());
 }
 
 void Canvas2DLayerBridge::Hibernate() {
@@ -203,7 +201,7 @@ void Canvas2DLayerBridge::Hibernate() {
 
   hibernation_scheduled_ = false;
 
-  if (!resource_provider_) {
+  if (!resource_host_ || !resource_host_->ResourceProvider()) {
     logger_->ReportHibernationEvent(kHibernationAbortedBecauseNoSurface);
     return;
   }
@@ -242,7 +240,8 @@ void Canvas2DLayerBridge::Hibernate() {
   DCHECK(!have_recorded_draw_commands_);
   SkPaint copy_paint;
   copy_paint.setBlendMode(SkBlendMode::kSrc);
-  scoped_refptr<StaticBitmapImage> snapshot = resource_provider_->Snapshot();
+  scoped_refptr<StaticBitmapImage> snapshot =
+      resource_host_->ResourceProvider()->Snapshot();
   temp_hibernation_surface->getCanvas()->drawImage(
       snapshot->PaintImageForCurrentFrame().GetSkImage(), 0, 0, &copy_paint);
   hibernation_image_ = temp_hibernation_surface->makeImageSnapshot();
@@ -266,15 +265,27 @@ void Canvas2DLayerBridge::ReportResourceProviderCreationFailure() {
   }
 }
 
+CanvasResourceProvider* Canvas2DLayerBridge::ResourceProvider() const {
+  return resource_host_ ? resource_host_->ResourceProvider() : nullptr;
+}
+
 CanvasResourceProvider* Canvas2DLayerBridge::GetOrCreateResourceProvider(
     AccelerationHint hint) {
+  DCHECK(resource_host_);
+  CanvasResourceProvider* resource_provider = ResourceProvider();
+
   if (context_lost_) {
-    DCHECK(!resource_provider_);
+    DCHECK(!resource_provider);
     return nullptr;
   }
 
-  if (resource_provider_)
-    return resource_provider_.get();
+  if (resource_provider && resource_provider->IsValid()) {
+    // If resource provider is accelerated, a layer should already exist.
+    // If not, it could mean that the resource provider was create without
+    // going through this method, which is bad.
+    DCHECK(!IsAccelerated() || !!layer_);
+    return resource_provider;
+  }
 
   if (layer_ && !IsHibernating() && hint == kPreferAcceleration &&
       acceleration_mode_ != kDisableAcceleration) {
@@ -287,37 +298,27 @@ CanvasResourceProvider* Canvas2DLayerBridge::GetOrCreateResourceProvider(
     want_acceleration = false;
     software_rendering_while_hidden_ = true;
   }
+  AccelerationHint adjusted_hint =
+      want_acceleration ? kPreferAcceleration : kPreferNoAcceleration;
 
-  CanvasResourceProvider::ResourceUsage usage =
-      want_acceleration
-          ? CanvasResourceProvider::kAcceleratedCompositedResourceUsage
-          : CanvasResourceProvider::kSoftwareCompositedResourceUsage;
+  resource_provider =
+      resource_host_->GetOrCreateCanvasResourceProvider(adjusted_hint);
 
-  resource_provider_ = CanvasResourceProvider::Create(
-      size_, usage, SharedGpuContext::ContextProviderWrapper(),
-      msaa_sample_count_, color_params_);
-
-  if (resource_provider_) {
-    // Always save an initial frame, to support resetting the top level matrix
-    // and clip.
-    resource_provider_->Canvas()->save();
-    resource_provider_->SetFilterQuality(filter_quality_);
-    resource_provider_->SetResourceRecyclingEnabled(!IsHidden());
-  } else {
+  if (!resource_provider)
     ReportResourceProviderCreationFailure();
-  }
 
-  if (resource_provider_ && resource_provider_->IsAccelerated() && !layer_) {
+  if (resource_provider && IsAccelerated() && !layer_) {
     layer_ = cc::TextureLayer::CreateForMailbox(this);
     layer_->SetIsDrawable(true);
     layer_->SetContentsOpaque(ColorParams().GetOpacityMode() == kOpaque);
     layer_->SetBlendBackgroundColor(ColorParams().GetOpacityMode() != kOpaque);
-    layer_->SetNearestNeighbor(filter_quality_ == kNone_SkFilterQuality);
+    layer_->SetNearestNeighbor(resource_host_->FilterQuality() ==
+                               kNone_SkFilterQuality);
     GraphicsLayer::RegisterContentsLayer(layer_.get());
   }
 
-  if (resource_provider_ && IsHibernating()) {
-    if (resource_provider_->IsAccelerated()) {
+  if (resource_provider && IsHibernating()) {
+    if (resource_provider->IsAccelerated()) {
       logger_->ReportHibernationEvent(kHibernationEndedNormally);
     } else {
       if (IsHidden()) {
@@ -328,21 +329,19 @@ CanvasResourceProvider* Canvas2DLayerBridge::GetOrCreateResourceProvider(
       }
     }
 
-    cc::PaintFlags copy_paint;
+    PaintFlags copy_paint;
     copy_paint.setBlendMode(SkBlendMode::kSrc);
     PaintImageBuilder builder = PaintImageBuilder::WithDefault();
     builder.set_image(hibernation_image_, PaintImage::GetNextContentId());
     builder.set_id(PaintImage::GetNextId());
-    resource_provider_->Canvas()->drawImage(builder.TakePaintImage(), 0, 0,
-                                            &copy_paint);
+    resource_provider->Canvas()->drawImage(builder.TakePaintImage(), 0, 0,
+                                           &copy_paint);
     hibernation_image_.reset();
 
     if (resource_host_) {
-      resource_host_->UpdateMemoryUsage();
-
       if (!is_deferral_enabled_) {
         resource_host_->RestoreCanvasMatrixClipStack(
-            resource_provider_->Canvas());
+            resource_provider->Canvas());
       }
 
       // shouldBeDirectComposited() may have changed.
@@ -350,13 +349,15 @@ CanvasResourceProvider* Canvas2DLayerBridge::GetOrCreateResourceProvider(
     }
   }
 
-  return resource_provider_.get();
+  return resource_provider;
 }
 
-PaintCanvas* Canvas2DLayerBridge::Canvas() {
+cc::PaintCanvas* Canvas2DLayerBridge::Canvas() {
+  DCHECK(resource_host_);
   if (!is_deferral_enabled_) {
-    GetOrCreateResourceProvider();
-    return resource_provider_ ? resource_provider_->Canvas() : nullptr;
+    if (GetOrCreateResourceProvider())
+      return ResourceProvider()->Canvas();
+    return nullptr;
   }
   return recorder_->getRecordingCanvas();
 }
@@ -371,7 +372,7 @@ void Canvas2DLayerBridge::DisableDeferral(DisableDeferralReason reason) {
   // required multiple times per frame, the repeated flushing of deferred
   // commands would cause significant overhead, so it is better to just stop
   // trying to defer altogether.
-  if (!is_deferral_enabled_)
+  if (!is_deferral_enabled_ || !resource_host_)
     return;
 
   DEFINE_STATIC_LOCAL(EnumerationHistogram, gpu_disabled_histogram,
@@ -388,15 +389,14 @@ void Canvas2DLayerBridge::DisableDeferral(DisableDeferralReason reason) {
   is_deferral_enabled_ = false;
   recorder_.reset();
   // install the current matrix/clip stack onto the immediate canvas
-  GetOrCreateResourceProvider();
-  if (resource_host_ && resource_provider_)
-    resource_host_->RestoreCanvasMatrixClipStack(resource_provider_->Canvas());
+  if (GetOrCreateResourceProvider())
+    resource_host_->RestoreCanvasMatrixClipStack(ResourceProvider()->Canvas());
 }
 
-void Canvas2DLayerBridge::SetFilterQuality(SkFilterQuality filter_quality) {
-  filter_quality_ = filter_quality;
-  if (resource_provider_)
-    resource_provider_->SetFilterQuality(filter_quality);
+void Canvas2DLayerBridge::UpdateFilterQuality() {
+  SkFilterQuality filter_quality = resource_host_->FilterQuality();
+  if (GetOrCreateResourceProvider())
+    ResourceProvider()->SetFilterQuality(filter_quality);
   if (layer_)
     layer_->SetNearestNeighbor(filter_quality == kNone_SkFilterQuality);
 }
@@ -406,11 +406,11 @@ void Canvas2DLayerBridge::SetIsHidden(bool hidden) {
     return;
 
   is_hidden_ = hidden;
-  if (resource_provider_)
-    resource_provider_->SetResourceRecyclingEnabled(!IsHidden());
+  if (ResourceProvider())
+    ResourceProvider()->SetResourceRecyclingEnabled(!IsHidden());
 
-  if (CANVAS2D_HIBERNATION_ENABLED && resource_provider_ && IsHidden() &&
-      !hibernation_scheduled_) {
+  if (CANVAS2D_HIBERNATION_ENABLED && ResourceProvider() && IsAccelerated() &&
+      IsHidden() && !hibernation_scheduled_) {
     if (layer_)
       layer_->ClearTexture();
     logger_->ReportHibernationEvent(kHibernationScheduled);
@@ -427,29 +427,28 @@ void Canvas2DLayerBridge::SetIsHidden(bool hidden) {
   }
   if (!IsHidden() && software_rendering_while_hidden_) {
     FlushRecording();
-    cc::PaintFlags copy_paint;
+    PaintFlags copy_paint;
     copy_paint.setBlendMode(SkBlendMode::kSrc);
 
     std::unique_ptr<CanvasResourceProvider> old_resource_provider =
-        std::move(resource_provider_);
-    ResetResourceProvider();
+        resource_host_->ReplaceResourceProvider(nullptr);
 
     software_rendering_while_hidden_ = false;
     GetOrCreateResourceProvider(kPreferAccelerationAfterVisibilityChange);
 
-    if (resource_provider_) {
+    if (ResourceProvider()) {
       if (old_resource_provider) {
         cc::PaintImage snapshot =
             old_resource_provider->Snapshot()->PaintImageForCurrentFrame();
-        resource_provider_->Canvas()->drawImage(snapshot, 0, 0, &copy_paint);
+        ResourceProvider()->Canvas()->drawImage(snapshot, 0, 0, &copy_paint);
       }
       if (resource_host_ && !is_deferral_enabled_) {
         resource_host_->RestoreCanvasMatrixClipStack(
-            resource_provider_->Canvas());
+            ResourceProvider()->Canvas());
       }
     } else {
       // New resource provider could not be created. Stay with old one.
-      resource_provider_ = std::move(old_resource_provider);
+      resource_host_->ReplaceResourceProvider(std::move(old_resource_provider));
     }
   }
   if (!IsHidden() && IsHibernating()) {
@@ -473,10 +472,11 @@ bool Canvas2DLayerBridge::WritePixels(const SkImageInfo& orig_info,
     SkipQueuedDrawCommands();
   } else {
     FlushRecording();
+    if (!GetOrCreateResourceProvider())
+      return false;
   }
 
-  GetOrCreateResourceProvider()->WritePixels(orig_info, pixels, row_bytes, x,
-                                             y);
+  ResourceProvider()->WritePixels(orig_info, pixels, row_bytes, x, y);
   DidDraw(FloatRect(x, y, orig_info.width(), orig_info.height()));
 
   return true;
@@ -500,7 +500,7 @@ void Canvas2DLayerBridge::FlushRecording() {
   if (have_recorded_draw_commands_ && GetOrCreateResourceProvider()) {
     TRACE_EVENT0("cc", "Canvas2DLayerBridge::flushRecording");
 
-    PaintCanvas* canvas = GetOrCreateResourceProvider()->Canvas();
+    cc::PaintCanvas* canvas = ResourceProvider()->Canvas();
     {
       sk_sp<PaintRecord> recording = recorder_->finishRecordingAsPicture();
       canvas->drawPicture(recording);
@@ -508,7 +508,10 @@ void Canvas2DLayerBridge::FlushRecording() {
 
     // Rastering the recording would have locked images, since we've flushed
     // all recorded ops, we should relase all locked images as well.
-    GetOrCreateResourceProvider()->ReleaseLockedImages();
+    // A new null check on the resource provider is necessary just in case
+    // the playback crashed the context.
+    if (GetOrCreateResourceProvider())
+      ResourceProvider()->ReleaseLockedImages();
 
     if (is_deferral_enabled_)
       StartRecording();
@@ -527,8 +530,8 @@ bool Canvas2DLayerBridge::CheckResourceProviderValid() {
     return true;
   if (context_lost_)
     return false;
-  if (resource_provider_ && resource_provider_->IsAccelerated() &&
-      resource_provider_->IsGpuContextLost()) {
+  if (ResourceProvider() && IsAccelerated() &&
+      ResourceProvider()->IsGpuContextLost()) {
     context_lost_ = true;
     ResetResourceProvider();
     if (resource_host_)
@@ -537,16 +540,14 @@ bool Canvas2DLayerBridge::CheckResourceProviderValid() {
         CanvasMetrics::kAccelerated2DCanvasGPUContextLost);
     return false;
   }
-  if (!GetOrCreateResourceProvider())
-    return false;
-  return resource_provider_.get();
+  return !!GetOrCreateResourceProvider();
 }
 
 bool Canvas2DLayerBridge::Restore() {
   DCHECK(context_lost_);
   if (!IsAccelerated())
     return false;
-  DCHECK(!resource_provider_);
+  DCHECK(!ResourceProvider());
 
   gpu::gles2::GLES2Interface* shared_gl = nullptr;
   layer_->ClearTexture();
@@ -556,11 +557,8 @@ bool Canvas2DLayerBridge::Restore() {
     shared_gl = context_provider_wrapper->ContextProvider()->ContextGL();
 
   if (shared_gl && shared_gl->GetGraphicsResetStatusKHR() == GL_NO_ERROR) {
-    std::unique_ptr<CanvasResourceProvider> resource_provider =
-        CanvasResourceProvider::Create(
-            size_, CanvasResourceProvider::kAcceleratedCompositedResourceUsage,
-            std::move(context_provider_wrapper), msaa_sample_count_,
-            color_params_);
+    CanvasResourceProvider* resource_provider =
+        resource_host_->GetOrCreateCanvasResourceProvider(kPreferAcceleration);
 
     if (!resource_provider)
       ReportResourceProviderCreationFailure();
@@ -569,17 +567,18 @@ bool Canvas2DLayerBridge::Restore() {
     // non-accelerated, which would be tricky due to changes to the layer tree,
     // which can only happen at specific times during the document lifecycle.
     // Therefore, we can only accept the restored surface if it is accelerated.
-    if (resource_provider && resource_provider->IsAccelerated()) {
-      resource_provider_ = std::move(resource_provider);
+    if (resource_provider && !IsAccelerated()) {
+      resource_host_->ReplaceResourceProvider(nullptr);
       // FIXME: draw sad canvas picture into new buffer crbug.com/243842
+    } else {
+      context_lost_ = false;
     }
-    context_lost_ = false;
   }
 
   if (resource_host_)
     resource_host_->UpdateMemoryUsage();
 
-  return resource_provider_.get();
+  return ResourceProvider();
 }
 
 bool Canvas2DLayerBridge::PrepareTransferableResource(
@@ -602,18 +601,19 @@ bool Canvas2DLayerBridge::PrepareTransferableResource(
   if (!IsValid())
     return false;
 
+  FlushRecording();
+
   // If the context is lost, we don't know if we should be producing GPU or
   // software frames, until we get a new context, since the compositor will
   // be trying to get a new context and may change modes.
   if (!GetOrCreateResourceProvider())
     return false;
 
-  FlushRecording();
-  scoped_refptr<CanvasResource> frame = resource_provider_->ProduceFrame();
+  scoped_refptr<CanvasResource> frame = ResourceProvider()->ProduceFrame();
   if (frame && frame->IsValid()) {
     // Note frame is kept alive via a reference kept in out_release_callback.
-    bool success =
-        frame->PrepareTransferableResource(out_resource, out_release_callback);
+    bool success = frame->PrepareTransferableResource(
+        out_resource, out_release_callback, kUnverifiedSyncToken);
     return success;
   }
   return false;
@@ -631,14 +631,14 @@ void Canvas2DLayerBridge::DidDraw(const FloatRect& rect) {
   if (is_deferral_enabled_) {
     have_recorded_draw_commands_ = true;
     IntRect pixel_bounds = EnclosingIntRect(rect);
-    CheckedNumeric<int> pixel_bounds_size = pixel_bounds.Width();
+    base::CheckedNumeric<int> pixel_bounds_size = pixel_bounds.Width();
     pixel_bounds_size *= pixel_bounds.Height();
     recording_pixel_count_ += pixel_bounds_size;
     if (!recording_pixel_count_.IsValid()) {
       DisableDeferral(kDisableDeferralReasonExpensiveOverdrawHeuristic);
       return;
     }
-    CheckedNumeric<int> threshold_size = size_.Width();
+    base::CheckedNumeric<int> threshold_size = size_.Width();
     threshold_size *= size_.Height();
     threshold_size *= CanvasHeuristicParameters::kExpensiveOverdrawThreshold;
     if (!threshold_size.IsValid()) {
@@ -662,7 +662,7 @@ void Canvas2DLayerBridge::FinalizeFrame() {
   ++frames_since_last_commit_;
 
   if (frames_since_last_commit_ >= 2) {
-    GetOrCreateResourceProvider()->FlushSkia();
+    ResourceProvider()->FlushSkia();
     if (IsAccelerated()) {
       if (!rate_limiter_) {
         rate_limiter_ =
@@ -689,10 +689,15 @@ scoped_refptr<StaticBitmapImage> Canvas2DLayerBridge::NewImageSnapshot(
     return StaticBitmapImage::Create(hibernation_image_);
   if (!IsValid())
     return nullptr;
+  // GetOrCreateResourceProvider needs to be called before FlushRecording, to
+  // make sure "hint" is properly taken into account, as well as after
+  // FlushRecording, in case the playback crashed the GPU context.
   if (!GetOrCreateResourceProvider(hint))
     return nullptr;
   FlushRecording();
-  return GetOrCreateResourceProvider()->Snapshot();
+  if (!GetOrCreateResourceProvider(hint))
+    return nullptr;
+  return ResourceProvider()->Snapshot();
 }
 
 void Canvas2DLayerBridge::WillOverwriteCanvas() {

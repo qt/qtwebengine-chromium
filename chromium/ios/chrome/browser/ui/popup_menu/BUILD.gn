@@ -17,6 +17,7 @@ source_set("popup_menu") {
     "//components/bookmarks/browser",
     "//components/feature_engagement/public",
     "//ios/chrome/app/strings",
+    "//ios/chrome/browser",
     "//ios/chrome/browser/bookmarks",
     "//ios/chrome/browser/browser_state",
     "//ios/chrome/browser/feature_engagement",
@@ -46,6 +47,7 @@ source_set("popup_menu") {
 source_set("popup_menu_ui") {
   configs += [ "//build/config/compiler:enable_arc" ]
   sources = [
+    "popup_menu_consumer.h",
     "popup_menu_controller.h",
     "popup_menu_controller.mm",
     "popup_menu_presenter.h",
@@ -60,7 +62,6 @@ source_set("popup_menu_ui") {
   ]
   deps = [
     ":constants",
-    ":flags",
     "resources:popup_background",
     "resources:popup_menu_add_bookmark",
     "resources:popup_menu_bookmarks",
@@ -71,6 +72,8 @@ source_set("popup_menu_ui") {
     "resources:popup_menu_history",
     "resources:popup_menu_new_incognito_tab",
     "resources:popup_menu_new_tab",
+    "resources:popup_menu_paste_and_go",
+    "resources:popup_menu_qr_scanner",
     "resources:popup_menu_read_later",
     "resources:popup_menu_reading_list",
     "resources:popup_menu_recent_tabs",
@@ -81,6 +84,7 @@ source_set("popup_menu_ui") {
     "resources:popup_menu_settings",
     "resources:popup_menu_site_information",
     "resources:popup_menu_stop",
+    "resources:popup_menu_voice_search",
     "//base",
     "//ios/chrome/app/strings",
     "//ios/chrome/browser/ui",
@@ -139,15 +143,4 @@ source_set("unit_tests") {
     "//third_party/ocmock",
   ]
   configs += [ "//build/config/compiler:enable_arc" ]
-}
-
-source_set("flags") {
-  configs += [ "//build/config/compiler:enable_arc" ]
-  sources = [
-    "popup_menu_flags.h",
-    "popup_menu_flags.mm",
-  ]
-  deps = [
-    "//base",
-  ]
 }

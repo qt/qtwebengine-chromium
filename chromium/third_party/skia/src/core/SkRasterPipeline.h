@@ -41,15 +41,15 @@
     M(unpremul) M(premul) M(premul_dst)                            \
     M(force_opaque) M(force_opaque_dst)                            \
     M(set_rgb) M(swap_rb)                                          \
-    M(from_srgb) M(from_srgb_dst) M(to_srgb)                       \
-    M(black_color) M(white_color) M(uniform_color)                 \
+    M(from_srgb) M(to_srgb)                                        \
+    M(black_color) M(white_color) M(uniform_color) M(unbounded_uniform_color) \
     M(seed_shader) M(dither)                                       \
     M(load_a8)   M(load_a8_dst)   M(store_a8)   M(gather_a8)       \
     M(load_g8)   M(load_g8_dst)                 M(gather_g8)       \
     M(load_565)  M(load_565_dst)  M(store_565)  M(gather_565)      \
     M(load_4444) M(load_4444_dst) M(store_4444) M(gather_4444)     \
     M(load_f16)  M(load_f16_dst)  M(store_f16)  M(gather_f16)      \
-    M(load_f32)  M(load_f32_dst)  M(store_f32)                     \
+    M(load_f32)  M(load_f32_dst)  M(store_f32)  M(gather_f32)      \
     M(load_8888) M(load_8888_dst) M(store_8888) M(gather_8888)     \
     M(load_bgra) M(load_bgra_dst) M(store_bgra) M(gather_bgra)     \
     M(load_1010102) M(load_1010102_dst) M(store_1010102) M(gather_1010102) \
@@ -67,10 +67,9 @@
     M(srcover_rgba_8888) M(srcover_bgra_8888)                      \
     M(luminance_to_alpha)                                          \
     M(matrix_translate) M(matrix_scale_translate)                  \
-    M(matrix_2x3) M(matrix_3x4) M(matrix_4x5) M(matrix_4x3)        \
+    M(matrix_2x3) M(matrix_3x3) M(matrix_3x4) M(matrix_4x5) M(matrix_4x3) \
     M(matrix_perspective)                                          \
-    M(parametric_r) M(parametric_g) M(parametric_b)                \
-    M(parametric_a) M(gamma) M(gamma_dst)                          \
+    M(parametric) M(gamma)                                         \
     M(mirror_x)   M(repeat_x)                                      \
     M(mirror_y)   M(repeat_y)                                      \
     M(decal_x)    M(decal_y)   M(decal_x_and_y)                    \

@@ -43,6 +43,8 @@ LOAD_FLAG(DISABLE_CERT_REVOCATION_CHECKING, 1 << 5)
 
 // This load will not make any changes to cookies, including storing new
 // cookies or updating existing ones.
+// Deprecated. Use URLRequest::set_allow_credentials instead. See
+// https://crbug.com/799935.
 LOAD_FLAG(DO_NOT_SAVE_COOKIES, 1 << 6)
 
 // Do not resolve proxies. This override is used when downloading PAC files
@@ -50,10 +52,14 @@ LOAD_FLAG(DO_NOT_SAVE_COOKIES, 1 << 6)
 LOAD_FLAG(BYPASS_PROXY, 1 << 7)
 
 // This load will not send any cookies.
+// Deprecated. Use URLRequest::set_allow_credentials instead. See
+// https://crbug.com/799935.
 LOAD_FLAG(DO_NOT_SEND_COOKIES, 1 << 8)
 
 // This load will not send authentication data (user name/password)
 // to the server (as opposed to the proxy).
+// Deprecated. Use URLRequest::set_allow_credentials instead. See
+// https://crbug.com/799935.
 LOAD_FLAG(DO_NOT_SEND_AUTH_DATA, 1 << 9)
 
 // This should only be used for testing (set by HttpNetworkTransaction).
@@ -85,10 +91,20 @@ LOAD_FLAG(MAYBE_USER_GESTURE, 1 << 14)
 // be honored, but that other forms of authority may be used.
 LOAD_FLAG(DO_NOT_USE_EMBEDDED_IDENTITY, 1 << 15)
 
-// Indicates that this request is not to be migrated to a new network when QUIC
-// connection migration is enabled.
-LOAD_FLAG(DISABLE_CONNECTION_MIGRATION, 1 << 16)
+// Indicates that this request is not to be migrated to a cellular network when
+// QUIC connection migration is enabled.
+LOAD_FLAG(DISABLE_CONNECTION_MIGRATION_TO_CELLULAR, 1 << 16)
 
 // Indicates that the cache should not check that the request matches the
 // response's vary header.
 LOAD_FLAG(SKIP_VARY_CHECK, 1 << 17)
+
+// The creator of this URLRequest wishes to receive stale responses when allowed
+// by the "Cache-Control: stale-while-revalidate" directive and is able to issue
+// an async revalidation to update the cache. If the callee needs to revalidate
+// the resource |async_revalidation_requested| attribute will be set on the
+// associated HttpResponseInfo. If indicated the callee should revalidate the
+// resource by issuing a new request without this flag set. If the revalidation
+// does not complete in 60 seconds, the cache treat the stale resource as
+// invalid, as it did not specify stale-while-revalidate.
+LOAD_FLAG(SUPPORT_ASYNC_REVALIDATION, 1 << 18)

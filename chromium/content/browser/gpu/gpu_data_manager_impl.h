@@ -14,7 +14,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/singleton.h"
+#include "base/no_destructor.h"
 #include "base/process/kill.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
@@ -24,6 +24,7 @@
 #include "gpu/config/gpu_control_list.h"
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/config/gpu_info.h"
+#include "gpu/config/gpu_mode.h"
 
 class GURL;
 
@@ -149,44 +150,27 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager {
   // status update.
   void NotifyGpuInfoUpdate();
 
-  // Called when GPU process initialization failed.
-  void OnGpuProcessInitFailure();
+  // Return mode describing what the GPU process will be launched to run.
+  gpu::GpuMode GetGpuMode() const;
 
-  void BlockSwiftShader();
-  bool SwiftShaderAllowed() const;
+  // Called when GPU process initialization failed or the GPU process has
+  // crashed repeatedly. This will try to disable hardware acceleration and then
+  // SwiftShader WebGL. It will also crash the browser process as a last resort
+  // on Android and Chrome OS.
+  void FallBackToNextGpuMode();
 
   // Returns false if the latest GPUInfo gl_renderer is from SwiftShader or
   // Disabled (in the viz case).
   bool IsGpuProcessUsingHardwareGpu() const;
 
+  // State tracking allows us to customize GPU process launch depending on
+  // whether we are in the foreground or background.
+  void SetApplicationVisible(bool is_visible);
+
  private:
   friend class GpuDataManagerImplPrivate;
   friend class GpuDataManagerImplPrivateTest;
-  friend struct base::DefaultSingletonTraits<GpuDataManagerImpl>;
-
-  // It's similar to AutoUnlock, but we want to make it a no-op
-  // if the owner GpuDataManagerImpl is null.
-  // This should only be used by GpuDataManagerImplPrivate where
-  // callbacks are called, during which re-entering
-  // GpuDataManagerImpl is possible.
-  class UnlockedSession {
-   public:
-    explicit UnlockedSession(GpuDataManagerImpl* owner)
-        : owner_(owner) {
-      DCHECK(owner_);
-      owner_->lock_.AssertAcquired();
-      owner_->lock_.Release();
-    }
-
-    ~UnlockedSession() {
-      DCHECK(owner_);
-      owner_->lock_.Acquire();
-    }
-
-   private:
-    GpuDataManagerImpl* owner_;
-    DISALLOW_COPY_AND_ASSIGN(UnlockedSession);
-  };
+  friend class base::NoDestructor<GpuDataManagerImpl>;
 
   GpuDataManagerImpl();
   ~GpuDataManagerImpl() override;

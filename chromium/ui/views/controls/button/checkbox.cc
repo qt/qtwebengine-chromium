@@ -33,8 +33,10 @@ namespace views {
 // static
 const char Checkbox::kViewClassName[] = "Checkbox";
 
-Checkbox::Checkbox(const base::string16& label, bool force_md)
-    : LabelButton(NULL, label),
+Checkbox::Checkbox(const base::string16& label,
+                   ButtonListener* listener,
+                   bool force_md)
+    : LabelButton(listener, label),
       checked_(false),
       label_ax_id_(0),
       use_md_(force_md ||
@@ -117,7 +119,7 @@ void Checkbox::SetAssociatedLabel(View* labelling_view) {
   ui::AXNodeData node_data;
   labelling_view->GetAccessibleNodeData(&node_data);
   // TODO(aleventhal) automatically handle setting the name from the related
-  // label in view_accessibility and have it update the name if the text of the
+  // label in ViewAccessibility and have it update the name if the text of the
   // associated label changes.
   SetAccessibleName(
       node_data.GetString16Attribute(ax::mojom::StringAttribute::kName));
@@ -223,7 +225,7 @@ void Checkbox::Layout() {
 
 SkPath Checkbox::GetFocusRingPath() const {
   SkPath path;
-  gfx::Rect bounds = image()->bounds();
+  gfx::Rect bounds = image()->GetMirroredBounds();
   bounds.Inset(1, 1);
   path.addRect(RectToSkRect(bounds));
   return path;

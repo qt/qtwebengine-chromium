@@ -21,6 +21,88 @@ namespace vk
 {
 class ImageHelper;
 
+// This is a very simple RefCount class that has no autoreleasing. Used in the descriptor set and
+// pipeline layout caches.
+template <typename T>
+class RefCounted : angle::NonCopyable
+{
+  public:
+    RefCounted() : mRefCount(0) {}
+    explicit RefCounted(T &&newObject) : mRefCount(0), mObject(std::move(newObject)) {}
+    ~RefCounted() { ASSERT(mRefCount == 0 && !mObject.valid()); }
+
+    RefCounted(RefCounted &&copy) : mRefCount(copy.mRefCount), mObject(std::move(copy.mObject))
+    {
+        copy.mRefCount = 0;
+    }
+
+    RefCounted &operator=(RefCounted &&rhs)
+    {
+        std::swap(mRefCount, rhs.mRefCount);
+        mObject = std::move(rhs.mObject);
+        return *this;
+    }
+
+    void addRef()
+    {
+        ASSERT(mRefCount != std::numeric_limits<uint32_t>::max());
+        mRefCount++;
+    }
+    void releaseRef()
+    {
+        ASSERT(isReferenced());
+        mRefCount--;
+    }
+    bool isReferenced() const { return mRefCount != 0; }
+
+    T &get() { return mObject; }
+    const T &get() const { return mObject; }
+
+  private:
+    uint32_t mRefCount;
+    T mObject;
+};
+
+template <typename T>
+class BindingPointer final : angle::NonCopyable
+{
+  public:
+    BindingPointer() : mRefCounted(nullptr) {}
+
+    ~BindingPointer() { reset(); }
+
+    void set(RefCounted<T> *refCounted)
+    {
+        if (mRefCounted)
+        {
+            mRefCounted->releaseRef();
+        }
+
+        mRefCounted = refCounted;
+
+        if (mRefCounted)
+        {
+            mRefCounted->addRef();
+        }
+    }
+
+    void reset() { set(nullptr); }
+
+    T &get() { return mRefCounted->get(); }
+    const T &get() const { return mRefCounted->get(); }
+
+    bool valid() const { return mRefCounted != nullptr; }
+
+  private:
+    RefCounted<T> *mRefCounted;
+};
+
+using RenderPassAndSerial = ObjectAndSerial<RenderPass>;
+using PipelineAndSerial   = ObjectAndSerial<Pipeline>;
+
+using SharedDescriptorSetLayout = RefCounted<DescriptorSetLayout>;
+using SharedPipelineLayout      = RefCounted<PipelineLayout>;
+
 // Packed Vk resource descriptions.
 // Most Vk types use many more bits than required to represent the underlying data.
 // Since ANGLE wants cache things like RenderPasses and Pipeline State Objects using
@@ -260,15 +342,19 @@ class PipelineDesc final
 
     void initDefaults();
 
-    Error initializePipeline(VkDevice device,
-                             const RenderPass &compatibleRenderPass,
-                             const PipelineLayout &pipelineLayout,
-                             const gl::AttributesMask &activeAttribLocationsMask,
-                             const ShaderModule &vertexModule,
-                             const ShaderModule &fragmentModule,
-                             Pipeline *pipelineOut) const;
+    angle::Result initializePipeline(vk::Context *context,
+                                     const RenderPass &compatibleRenderPass,
+                                     const PipelineLayout &pipelineLayout,
+                                     const gl::AttributesMask &activeAttribLocationsMask,
+                                     const ShaderModule &vertexModule,
+                                     const ShaderModule &fragmentModule,
+                                     Pipeline *pipelineOut) const;
 
-    void updateViewport(const gl::Rectangle &viewport, float nearPlane, float farPlane);
+    void updateViewport(FramebufferVk *framebufferVk,
+                        const gl::Rectangle &viewport,
+                        float nearPlane,
+                        float farPlane,
+                        bool invertViewport);
     void updateDepthRange(float nearPlane, float farPlane);
 
     // Shader stage info
@@ -280,11 +366,11 @@ class PipelineDesc final
                                const VertexInputAttributes &attribs);
 
     // Input assembly info
-    void updateTopology(GLenum drawMode);
+    void updateTopology(gl::PrimitiveMode drawMode);
 
     // Raster states
     void updateCullMode(const gl::RasterizerState &rasterState);
-    void updateFrontFace(const gl::RasterizerState &rasterState);
+    void updateFrontFace(const gl::RasterizerState &rasterState, bool invertFrontFace);
     void updateLineWidth(float lineWidth);
 
     // RenderPass description.
@@ -293,26 +379,34 @@ class PipelineDesc final
 
     // Scissor support
     const VkRect2D &getScissor() const { return mScissor; }
-    void updateScissor(const gl::Rectangle &rect);
+    void updateScissor(const gl::Rectangle &rect,
+                       bool invertScissor,
+                       const gl::Rectangle &renderArea);
 
     // Blend states
     void updateBlendEnabled(bool isBlendEnabled);
     void updateBlendColor(const gl::ColorF &color);
-    void updateBlendFuncs(const gl::BlendState &blend_state);
-    void updateBlendEquations(const gl::BlendState &blend_state);
-    void updateColorWriteMask(VkColorComponentFlags colorComponentFlags);
+    void updateBlendFuncs(const gl::BlendState &blendState);
+    void updateBlendEquations(const gl::BlendState &blendState);
+    void updateColorWriteMask(VkColorComponentFlags colorComponentFlags,
+                              const gl::DrawBufferMask &alphaMask);
 
     // Depth/stencil states.
-    void updateDepthTestEnabled(const gl::DepthStencilState &depthStencilState);
+    void updateDepthTestEnabled(const gl::DepthStencilState &depthStencilState,
+                                const gl::Framebuffer *drawFramebuffer);
     void updateDepthFunc(const gl::DepthStencilState &depthStencilState);
-    void updateDepthWriteEnabled(const gl::DepthStencilState &depthStencilState);
-    void updateStencilTestEnabled(const gl::DepthStencilState &depthStencilState);
+    void updateDepthWriteEnabled(const gl::DepthStencilState &depthStencilState,
+                                 const gl::Framebuffer *drawFramebuffer);
+    void updateStencilTestEnabled(const gl::DepthStencilState &depthStencilState,
+                                  const gl::Framebuffer *drawFramebuffer);
     void updateStencilFrontFuncs(GLint ref, const gl::DepthStencilState &depthStencilState);
     void updateStencilBackFuncs(GLint ref, const gl::DepthStencilState &depthStencilState);
     void updateStencilFrontOps(const gl::DepthStencilState &depthStencilState);
     void updateStencilBackOps(const gl::DepthStencilState &depthStencilState);
-    void updateStencilFrontWriteMask(const gl::DepthStencilState &depthStencilState);
-    void updateStencilBackWriteMask(const gl::DepthStencilState &depthStencilState);
+    void updateStencilFrontWriteMask(const gl::DepthStencilState &depthStencilState,
+                                     const gl::Framebuffer *drawFramebuffer);
+    void updateStencilBackWriteMask(const gl::DepthStencilState &depthStencilState,
+                                    const gl::Framebuffer *drawFramebuffer);
 
   private:
     // TODO(jmadill): Use gl::ShaderMap when we can pack into fewer bits. http://anglebug.com/2522
@@ -336,17 +430,105 @@ class PipelineDesc final
 // This is not guaranteed by the spec, but is validated by a compile-time check.
 // No gaps or padding at the end ensures that hashing and memcmp checks will not run
 // into uninitialized memory regions.
-constexpr size_t PipelineDescSumOfSizes =
+constexpr size_t kPipelineDescSumOfSizes =
     sizeof(ShaderStageInfo) + sizeof(VertexInputBindings) + sizeof(VertexInputAttributes) +
     sizeof(PackedInputAssemblyInfo) + sizeof(VkViewport) + sizeof(VkRect2D) +
     sizeof(PackedRasterizationStateInfo) + sizeof(PackedMultisampleStateInfo) +
     sizeof(PackedDepthStencilStateInfo) + sizeof(PackedColorBlendStateInfo) +
     sizeof(RenderPassDesc);
 
-static_assert(sizeof(PipelineDesc) == PipelineDescSumOfSizes, "Size mismatch");
+static_assert(sizeof(PipelineDesc) == kPipelineDescSumOfSizes, "Size mismatch");
 
-using RenderPassAndSerial = ObjectAndSerial<RenderPass>;
-using PipelineAndSerial   = ObjectAndSerial<Pipeline>;
+constexpr uint32_t kMaxDescriptorSetLayoutBindings = gl::IMPLEMENTATION_MAX_ACTIVE_TEXTURES;
+
+using DescriptorSetLayoutBindingVector =
+    angle::FixedVector<VkDescriptorSetLayoutBinding, kMaxDescriptorSetLayoutBindings>;
+
+// A packed description of a descriptor set layout. Use similarly to RenderPassDesc and
+// PipelineDesc. Currently we only need to differentiate layouts based on sampler usage. In the
+// future we could generalize this.
+class DescriptorSetLayoutDesc final
+{
+  public:
+    DescriptorSetLayoutDesc();
+    ~DescriptorSetLayoutDesc();
+    DescriptorSetLayoutDesc(const DescriptorSetLayoutDesc &other);
+    DescriptorSetLayoutDesc &operator=(const DescriptorSetLayoutDesc &other);
+
+    size_t hash() const;
+    bool operator==(const DescriptorSetLayoutDesc &other) const;
+
+    void update(uint32_t bindingIndex, VkDescriptorType type, uint32_t count);
+
+    void unpackBindings(DescriptorSetLayoutBindingVector *bindings) const;
+
+  private:
+    struct PackedDescriptorSetBinding
+    {
+        uint16_t type;   // Stores a packed VkDescriptorType descriptorType.
+        uint16_t count;  // Stores a packed uint32_t descriptorCount.
+        // We currently make all descriptors available in the VS and FS shaders.
+    };
+
+    static_assert(sizeof(PackedDescriptorSetBinding) == sizeof(uint32_t), "Unexpected size");
+
+    // This is a compact representation of a descriptor set layout.
+    std::array<PackedDescriptorSetBinding, kMaxDescriptorSetLayoutBindings>
+        mPackedDescriptorSetLayout;
+};
+
+// The following are for caching descriptor set layouts. Limited to max two descriptor set layouts
+// and two push constants. One push constant per shader stage. This can be extended in the future.
+constexpr size_t kMaxDescriptorSetLayouts = 3;
+constexpr size_t kMaxPushConstantRanges   = 2;
+
+struct PackedPushConstantRange
+{
+    uint32_t offset;
+    uint32_t size;
+};
+
+template <typename T>
+using DescriptorSetLayoutArray = std::array<T, kMaxDescriptorSetLayouts>;
+using DescriptorSetLayoutPointerArray =
+    DescriptorSetLayoutArray<BindingPointer<DescriptorSetLayout>>;
+template <typename T>
+using PushConstantRangeArray = std::array<T, kMaxPushConstantRanges>;
+
+class PipelineLayoutDesc final
+{
+  public:
+    PipelineLayoutDesc();
+    ~PipelineLayoutDesc();
+    PipelineLayoutDesc(const PipelineLayoutDesc &other);
+    PipelineLayoutDesc &operator=(const PipelineLayoutDesc &rhs);
+
+    size_t hash() const;
+    bool operator==(const PipelineLayoutDesc &other) const;
+
+    void updateDescriptorSetLayout(uint32_t setIndex, const DescriptorSetLayoutDesc &desc);
+    void updatePushConstantRange(gl::ShaderType shaderType, uint32_t offset, uint32_t size);
+
+    const PushConstantRangeArray<PackedPushConstantRange> &getPushConstantRanges() const;
+
+  private:
+    DescriptorSetLayoutArray<DescriptorSetLayoutDesc> mDescriptorSetLayouts;
+    PushConstantRangeArray<PackedPushConstantRange> mPushConstantRanges;
+
+    // Verify the arrays are properly packed.
+    static_assert(sizeof(decltype(mDescriptorSetLayouts)) ==
+                      (sizeof(DescriptorSetLayoutDesc) * kMaxDescriptorSetLayouts),
+                  "Unexpected size");
+    static_assert(sizeof(decltype(mPushConstantRanges)) ==
+                      (sizeof(PackedPushConstantRange) * kMaxPushConstantRanges),
+                  "Unexpected size");
+};
+
+// Verify the structure is properly packed.
+static_assert(sizeof(PipelineLayoutDesc) ==
+                  (sizeof(DescriptorSetLayoutArray<DescriptorSetLayoutDesc>) +
+                   sizeof(std::array<PackedPushConstantRange, kMaxPushConstantRanges>)),
+              "Unexpected Size");
 }  // namespace vk
 }  // namespace rx
 
@@ -371,6 +553,17 @@ struct hash<rx::vk::PipelineDesc>
     size_t operator()(const rx::vk::PipelineDesc &key) const { return key.hash(); }
 };
 
+template <>
+struct hash<rx::vk::DescriptorSetLayoutDesc>
+{
+    size_t operator()(const rx::vk::DescriptorSetLayoutDesc &key) const { return key.hash(); }
+};
+
+template <>
+struct hash<rx::vk::PipelineLayoutDesc>
+{
+    size_t operator()(const rx::vk::PipelineLayoutDesc &key) const { return key.hash(); }
+};
 }  // namespace std
 
 namespace rx
@@ -384,15 +577,15 @@ class RenderPassCache final : angle::NonCopyable
 
     void destroy(VkDevice device);
 
-    vk::Error getCompatibleRenderPass(VkDevice device,
-                                      Serial serial,
-                                      const vk::RenderPassDesc &desc,
-                                      vk::RenderPass **renderPassOut);
-    vk::Error getRenderPassWithOps(VkDevice device,
-                                   Serial serial,
-                                   const vk::RenderPassDesc &desc,
-                                   const vk::AttachmentOpsArray &attachmentOps,
-                                   vk::RenderPass **renderPassOut);
+    angle::Result getCompatibleRenderPass(vk::Context *context,
+                                          Serial serial,
+                                          const vk::RenderPassDesc &desc,
+                                          vk::RenderPass **renderPassOut);
+    angle::Result getRenderPassWithOps(vk::Context *context,
+                                       Serial serial,
+                                       const vk::RenderPassDesc &desc,
+                                       const vk::AttachmentOpsArray &attachmentOps,
+                                       vk::RenderPass **renderPassOut);
 
   private:
     // Use a two-layer caching scheme. The top level matches the "compatible" RenderPass elements.
@@ -413,18 +606,59 @@ class PipelineCache final : angle::NonCopyable
     void destroy(VkDevice device);
 
     void populate(const vk::PipelineDesc &desc, vk::Pipeline &&pipeline);
-    vk::Error getPipeline(VkDevice device,
-                          const vk::RenderPass &compatibleRenderPass,
-                          const vk::PipelineLayout &pipelineLayout,
-                          const gl::AttributesMask &activeAttribLocationsMask,
-                          const vk::ShaderModule &vertexModule,
-                          const vk::ShaderModule &fragmentModule,
-                          const vk::PipelineDesc &desc,
-                          vk::PipelineAndSerial **pipelineOut);
+    angle::Result getPipeline(vk::Context *context,
+                              const vk::RenderPass &compatibleRenderPass,
+                              const vk::PipelineLayout &pipelineLayout,
+                              const gl::AttributesMask &activeAttribLocationsMask,
+                              const vk::ShaderModule &vertexModule,
+                              const vk::ShaderModule &fragmentModule,
+                              const vk::PipelineDesc &desc,
+                              vk::PipelineAndSerial **pipelineOut);
 
   private:
     std::unordered_map<vk::PipelineDesc, vk::PipelineAndSerial> mPayload;
 };
+
+class DescriptorSetLayoutCache final : angle::NonCopyable
+{
+  public:
+    DescriptorSetLayoutCache();
+    ~DescriptorSetLayoutCache();
+
+    void destroy(VkDevice device);
+
+    angle::Result getDescriptorSetLayout(
+        vk::Context *context,
+        const vk::DescriptorSetLayoutDesc &desc,
+        vk::BindingPointer<vk::DescriptorSetLayout> *descriptorSetLayoutOut);
+
+  private:
+    std::unordered_map<vk::DescriptorSetLayoutDesc, vk::SharedDescriptorSetLayout> mPayload;
+};
+
+class PipelineLayoutCache final : angle::NonCopyable
+{
+  public:
+    PipelineLayoutCache();
+    ~PipelineLayoutCache();
+
+    void destroy(VkDevice device);
+
+    angle::Result getPipelineLayout(vk::Context *context,
+                                    const vk::PipelineLayoutDesc &desc,
+                                    const vk::DescriptorSetLayoutPointerArray &descriptorSetLayouts,
+                                    vk::BindingPointer<vk::PipelineLayout> *pipelineLayoutOut);
+
+  private:
+    std::unordered_map<vk::PipelineLayoutDesc, vk::SharedPipelineLayout> mPayload;
+};
+
+// Some descriptor set and pipeline layout constants.
+constexpr uint32_t kVertexUniformsBindingIndex       = 0;
+constexpr uint32_t kFragmentUniformsBindingIndex     = 1;
+constexpr uint32_t kUniformsDescriptorSetIndex       = 0;
+constexpr uint32_t kTextureDescriptorSetIndex        = 1;
+constexpr uint32_t kDriverUniformsDescriptorSetIndex = 2;
 
 }  // namespace rx
 

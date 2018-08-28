@@ -64,10 +64,11 @@ INTERFACE_H_INCLUDES = frozenset([
 ])
 INTERFACE_CPP_INCLUDES = frozenset([
     'base/memory/scoped_refptr.h',
-    'bindings/core/v8/exception_state.h',
     'bindings/core/v8/v8_dom_configuration.h',
-    'platform/bindings/v8_object_constructor.h',
     'core/execution_context/execution_context.h',
+    'platform/bindings/exception_messages.h',
+    'platform/bindings/exception_state.h',
+    'platform/bindings/v8_object_constructor.h',
     'platform/wtf/get_ptr.h',
 ])
 
@@ -341,6 +342,7 @@ def interface_context(interface, interfaces):
                             ' specified on partial interface definitions: '
                             '%s' % interface.name)
         if named_constructor:
+            includes.add('platform/bindings/v8_per_context_data.h')
             includes.add('platform/bindings/v8_private_property.h')
 
         includes.add('platform/bindings/v8_object_constructor.h')
@@ -475,6 +477,8 @@ def interface_context(interface, interfaces):
             sorted(origin_trial_features(interface, context['constants'], context['attributes'], context['methods']) +
                    context_enabled_features(context['attributes'])),
     })
+    if context['optional_features']:
+        includes.add('platform/bindings/v8_per_context_data.h')
 
     # Cross-origin interceptors
     has_cross_origin_named_getter = False
@@ -913,9 +917,8 @@ def overloads_context(interface, overloads):
             for length, effective_overloads in effective_overloads_by_length:
                 runtime_enabled_feature_names = set(
                     method['runtime_enabled_feature_name']
-                    for method, _, _ in effective_overloads
-                    if method.get('runtime_enabled_feature_name'))
-                if not runtime_enabled_feature_names:
+                    for method, _, _ in effective_overloads)
+                if None in runtime_enabled_feature_names:
                     # This "length" is unconditionally enabled, so stop here.
                     runtime_determined_lengths.append((length, [None]))
                     break

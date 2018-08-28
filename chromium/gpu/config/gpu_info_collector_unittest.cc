@@ -6,10 +6,13 @@
 #include <stdint.h>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "base/strings/string_split.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_info_collector.h"
+#include "gpu/config/gpu_preferences.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_context_stub.h"
@@ -62,8 +65,8 @@ class GPUInfoCollectorTest
       case kMockedAndroid: {
         test_values_.gpu.vendor_id = 0;  // not implemented
         test_values_.gpu.device_id = 0;  // not implemented
-        test_values_.driver_vendor = "";  // not implemented
-        test_values_.driver_version = "14.0";
+        test_values_.gpu.driver_vendor = "";  // not implemented
+        test_values_.gpu.driver_version = "14.0";
         test_values_.pixel_shader_version = "1.00";
         test_values_.vertex_shader_version = "1.00";
         test_values_.gl_renderer = "Adreno (TM) 320";
@@ -78,8 +81,8 @@ class GPUInfoCollectorTest
       case kMockedLinux: {
         test_values_.gpu.vendor_id = 0x10de;
         test_values_.gpu.device_id = 0x0658;
-        test_values_.driver_vendor = "NVIDIA";
-        test_values_.driver_version = "195.36.24";
+        test_values_.gpu.driver_vendor = "NVIDIA";
+        test_values_.gpu.driver_version = "195.36.24";
         test_values_.pixel_shader_version = "1.50";
         test_values_.vertex_shader_version = "1.50";
         test_values_.gl_renderer = "Quadro FX 380/PCI/SSE2";
@@ -94,8 +97,8 @@ class GPUInfoCollectorTest
       case kMockedMacOSX: {
         test_values_.gpu.vendor_id = 0x10de;
         test_values_.gpu.device_id = 0x0640;
-        test_values_.driver_vendor = "NVIDIA";
-        test_values_.driver_version = "1.6.18";
+        test_values_.gpu.driver_vendor = "NVIDIA";
+        test_values_.gpu.driver_version = "1.6.18";
         test_values_.pixel_shader_version = "1.20";
         test_values_.vertex_shader_version = "1.20";
         test_values_.gl_renderer = "NVIDIA GeForce GT 120 OpenGL Engine";
@@ -110,8 +113,8 @@ class GPUInfoCollectorTest
       case kMockedWindows: {
         test_values_.gpu.vendor_id = 0x10de;
         test_values_.gpu.device_id = 0x0658;
-        test_values_.driver_vendor = "";  // not implemented
-        test_values_.driver_version = "";
+        test_values_.gpu.driver_vendor = "";  // not implemented
+        test_values_.gpu.driver_version = "";
         test_values_.pixel_shader_version = "1.40";
         test_values_.vertex_shader_version = "1.40";
         test_values_.gl_renderer = "Quadro FX 380/PCI/SSE2";
@@ -205,34 +208,27 @@ INSTANTIATE_TEST_CASE_P(GPUConfig,
 // be fixed.
 TEST_P(GPUInfoCollectorTest, CollectGraphicsInfoGL) {
   GPUInfo gpu_info;
-  CollectGraphicsInfoGL(&gpu_info);
+  CollectGraphicsInfoGL(&gpu_info, GpuPreferences());
 #if defined(OS_WIN)
   if (GetParam() == kMockedWindows) {
-    EXPECT_EQ(test_values_.driver_vendor,
-              gpu_info.driver_vendor);
+    EXPECT_EQ(test_values_.gpu.driver_vendor, gpu_info.gpu.driver_vendor);
     // Skip testing the driver version on Windows because it's
     // obtained from the bot's registry.
   }
 #elif defined(OS_MACOSX)
   if (GetParam() == kMockedMacOSX) {
-    EXPECT_EQ(test_values_.driver_vendor,
-              gpu_info.driver_vendor);
-    EXPECT_EQ(test_values_.driver_version,
-              gpu_info.driver_version);
+    EXPECT_EQ(test_values_.gpu.driver_vendor, gpu_info.gpu.driver_vendor);
+    EXPECT_EQ(test_values_.gpu.driver_version, gpu_info.gpu.driver_version);
   }
 #elif defined(OS_ANDROID)
   if (GetParam() == kMockedAndroid) {
-    EXPECT_EQ(test_values_.driver_vendor,
-              gpu_info.driver_vendor);
-    EXPECT_EQ(test_values_.driver_version,
-              gpu_info.driver_version);
+    EXPECT_EQ(test_values_.gpu.driver_vendor, gpu_info.gpu.driver_vendor);
+    EXPECT_EQ(test_values_.gpu.driver_version, gpu_info.gpu.driver_version);
   }
 #else  // defined (OS_LINUX)
   if (GetParam() == kMockedLinux) {
-    EXPECT_EQ(test_values_.driver_vendor,
-              gpu_info.driver_vendor);
-    EXPECT_EQ(test_values_.driver_version,
-              gpu_info.driver_version);
+    EXPECT_EQ(test_values_.gpu.driver_vendor, gpu_info.gpu.driver_vendor);
+    EXPECT_EQ(test_values_.gpu.driver_version, gpu_info.gpu.driver_version);
   }
 #endif
 

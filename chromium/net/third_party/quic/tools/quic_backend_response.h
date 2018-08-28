@@ -8,7 +8,7 @@
 #include "net/third_party/quic/core/spdy_utils.h"
 #include "net/third_party/quic/platform/api/quic_url.h"
 
-namespace net {
+namespace quic {
 
 // Container for HTTP response header/body pairs
 // fetched by the QuicSimpleServerBackend
@@ -36,6 +36,9 @@ class QuicBackendResponse {
     BACKEND_ERR_RESPONSE,  // There was an error fetching the response from
                            // the backend, for example as a TCP connection
                            // error.
+    INCOMPLETE_RESPONSE,   // The server will act as if there is a non-empty
+                           // trailer but it will not be sent, as a result, FIN
+                           // will not be sent too.
   };
   QuicBackendResponse();
 
@@ -70,6 +73,6 @@ class QuicBackendResponse {
   QuicString body_;
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_TOOLS_QUIC_BACKEND_RESPONSE_H_

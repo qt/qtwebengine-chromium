@@ -7,9 +7,13 @@
 
 #include "SkottieSlide.h"
 
+#if defined(SK_ENABLE_SKOTTIE)
+
 #include "SkAnimTimer.h"
 #include "SkCanvas.h"
 #include "Skottie.h"
+
+#include <cmath>
 
 static void draw_stats_box(SkCanvas* canvas, const skottie::Animation::Stats& stats) {
     static constexpr SkRect kR = { 10, 10, 280, 120 };
@@ -61,11 +65,10 @@ void SkottieSlide::load(SkScalar w, SkScalar h) {
 
     if (fAnimation) {
         fAnimation->setShowInval(fShowAnimationInval);
-        SkDebugf("loaded Bodymovin animation v: %s, size: [%f %f], fr: %f\n",
+        SkDebugf("loaded Bodymovin animation v: %s, size: [%f %f]\n",
                  fAnimation->version().c_str(),
                  fAnimation->size().width(),
-                 fAnimation->size().height(),
-                 fAnimation->frameRate());
+                 fAnimation->size().height());
     } else {
         SkDebugf("failed to load Bodymovin animation: %s\n", fPath.c_str());
     }
@@ -99,8 +102,9 @@ bool SkottieSlide::animate(const SkAnimTimer& timer) {
     }
 
     if (fAnimation) {
-        auto t = timer.msec() - fTimeBase;
-        fAnimation->animationTick(t);
+        const auto t = timer.msec() - fTimeBase;
+        const auto d = fAnimation->duration() * 1000;
+        fAnimation->seek(std::fmod(t, d) / d);
     }
     return true;
 }
@@ -130,3 +134,5 @@ bool SkottieSlide::onMouse(SkScalar x, SkScalar y, sk_app::Window::InputState st
 
     return false;
 }
+
+#endif // SK_ENABLE_SKOTTIE

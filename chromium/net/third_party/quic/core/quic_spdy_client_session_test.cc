@@ -4,13 +4,14 @@
 
 #include "net/third_party/quic/core/quic_spdy_client_session.h"
 
+#include <memory>
 #include <vector>
 
 #include "net/third_party/quic/core/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/third_party/quic/core/quic_spdy_client_stream.h"
 #include "net/third_party/quic/core/spdy_utils.h"
 #include "net/third_party/quic/core/tls_client_handshaker.h"
-#include "net/third_party/quic/platform/api/quic_flags.h"
+#include "net/third_party/quic/platform/api/quic_arraysize.h"
 #include "net/third_party/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quic/platform/api/quic_str_cat.h"
@@ -20,17 +21,18 @@
 #include "net/third_party/quic/test_tools/mock_quic_spdy_client_stream.h"
 #include "net/third_party/quic/test_tools/quic_config_peer.h"
 #include "net/third_party/quic/test_tools/quic_connection_peer.h"
+#include "net/third_party/quic/test_tools/quic_framer_peer.h"
 #include "net/third_party/quic/test_tools/quic_packet_creator_peer.h"
 #include "net/third_party/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 
-using google::protobuf::implicit_cast;
+using spdy::SpdyHeaderBlock;
 using testing::_;
 using testing::AnyNumber;
 using testing::Invoke;
 using testing::Truly;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -82,15 +84,14 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
   }
 
   void Initialize() {
-    SetQuicReloadableFlag(quic_respect_ietf_header, true);
     session_.reset();
     connection_ = new PacketSavingConnection(&helper_, &alarm_factory_,
                                              Perspective::IS_CLIENT,
                                              SupportedVersions(GetParam()));
     session_ = QuicMakeUnique<TestQuicSpdyClientSession>(
         DefaultQuicConfig(), connection_,
-        QuicServerId(kServerHostname, kPort, PRIVACY_MODE_DISABLED),
-        &crypto_config_, &push_promise_index_);
+        QuicServerId(kServerHostname, kPort, false), &crypto_config_,
+        &push_promise_index_);
     session_->Initialize();
     push_promise_[":path"] = "/bar";
     push_promise_[":authority"] = "www.google.com";
@@ -125,7 +126,7 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
   PacketSavingConnection* connection_;
   std::unique_ptr<TestQuicSpdyClientSession> session_;
   QuicClientPushPromiseIndex push_promise_index_;
-  spdy::SpdyHeaderBlock push_promise_;
+  SpdyHeaderBlock push_promise_;
   QuicString promise_url_;
   QuicStreamId promised_stream_id_;
   QuicStreamId associated_stream_id_;
@@ -178,8 +179,8 @@ TEST_P(QuicSpdyClientSessionTest, NoEncryptionAfterInitialEncryption) {
   EXPECT_TRUE(session_->CreateOutgoingDynamicStream() == nullptr);
   // Verify that no data may be send on existing streams.
   char data[] = "hello world";
-  QuicConsumedData consumed =
-      session_->WritevData(stream, stream->id(), arraysize(data), 0, NO_FIN);
+  QuicConsumedData consumed = session_->WritevData(
+      stream, stream->id(), QUIC_ARRAYSIZE(data), 0, NO_FIN);
   EXPECT_FALSE(consumed.fin_consumed);
   EXPECT_EQ(0u, consumed.bytes_consumed);
 }
@@ -332,11 +333,7 @@ TEST_P(QuicSpdyClientSessionTest, InvalidPacketReceived) {
       .WillRepeatedly(Invoke(static_cast<MockQuicConnection*>(connection_),
                              &MockQuicConnection::ReallyProcessUdpPacket));
   EXPECT_CALL(*connection_, OnCanWrite()).Times(AnyNumber());
-  if (connection_->transport_version() == QUIC_VERSION_99) {
-    EXPECT_CALL(*connection_, OnError(_)).Times(3);
-  } else {
-    EXPECT_CALL(*connection_, OnError(_)).Times(1);
-  }
+  EXPECT_CALL(*connection_, OnError(_)).Times(1);
 
   // Verify that empty packets don't close the connection.
   QuicReceivedPacket zero_length_packet(nullptr, 0, QuicTime::Zero(), false);
@@ -346,26 +343,26 @@ TEST_P(QuicSpdyClientSessionTest, InvalidPacketReceived) {
 
   // Verifiy that small, invalid packets don't close the connection.
   char buf[2] = {0x00, 0x01};
+  QuicConnectionId connection_id = session_->connection()->connection_id();
   QuicReceivedPacket valid_packet(buf, 2, QuicTime::Zero(), false);
   // Close connection shouldn't be called.
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
   session_->ProcessUdpPacket(client_address, server_address, valid_packet);
 
   // Verify that a non-decryptable packet doesn't close the connection.
-  QuicConnectionId connection_id = session_->connection()->connection_id();
+  QuicFramerPeer::SetLastSerializedConnectionId(
+      QuicConnectionPeer::GetFramer(connection_), connection_id);
+  ParsedQuicVersionVector versions = SupportedVersions(GetParam());
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructEncryptedPacket(
-      connection_id, false, false, 100, "data", PACKET_8BYTE_CONNECTION_ID,
-      PACKET_4BYTE_PACKET_NUMBER, nullptr, Perspective::IS_SERVER));
+      connection_id, 0, false, false, 100, "data", PACKET_0BYTE_CONNECTION_ID,
+      PACKET_0BYTE_CONNECTION_ID, PACKET_4BYTE_PACKET_NUMBER, &versions,
+      Perspective::IS_SERVER));
   std::unique_ptr<QuicReceivedPacket> received(
       ConstructReceivedPacket(*packet, QuicTime::Zero()));
   // Change the last byte of the encrypted data.
   *(const_cast<char*>(received->data() + received->length() - 1)) += 1;
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
-  if (connection_->transport_version() == QUIC_VERSION_99) {
-    EXPECT_CALL(*connection_, OnError(Truly(CheckForDecryptionError))).Times(0);
-  } else {
-    EXPECT_CALL(*connection_, OnError(Truly(CheckForDecryptionError))).Times(1);
-  }
+  EXPECT_CALL(*connection_, OnError(Truly(CheckForDecryptionError))).Times(1);
   session_->ProcessUdpPacket(client_address, server_address, *received);
 }
 
@@ -381,10 +378,13 @@ TEST_P(QuicSpdyClientSessionTest, InvalidFramedPacketReceived) {
 
   // Verify that a decryptable packet with bad frames does close the connection.
   QuicConnectionId connection_id = session_->connection()->connection_id();
+  QuicFramerPeer::SetLastSerializedConnectionId(
+      QuicConnectionPeer::GetFramer(connection_), connection_id);
   ParsedQuicVersionVector versions = {GetParam()};
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructMisFramedEncryptedPacket(
-      connection_id, false, false, 100, "data", PACKET_8BYTE_CONNECTION_ID,
-      PACKET_4BYTE_PACKET_NUMBER, &versions, Perspective::IS_SERVER));
+      connection_id, 0, false, false, 100, "data", PACKET_0BYTE_CONNECTION_ID,
+      PACKET_0BYTE_CONNECTION_ID, PACKET_4BYTE_PACKET_NUMBER, &versions,
+      Perspective::IS_SERVER));
   std::unique_ptr<QuicReceivedPacket> received(
       ConstructReceivedPacket(*packet, QuicTime::Zero()));
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(1);
@@ -463,7 +463,7 @@ TEST_P(QuicSpdyClientSessionTest, PushPromiseAlreadyClosed) {
               OnStreamReset(promised_stream_id_, QUIC_REFUSED_STREAM));
 
   session_->ResetPromised(promised_stream_id_, QUIC_REFUSED_STREAM);
-  spdy::SpdyHeaderBlock promise_headers;
+  SpdyHeaderBlock promise_headers;
   EXPECT_FALSE(session_->HandlePromised(associated_stream_id_,
                                         promised_stream_id_, promise_headers));
 
@@ -560,16 +560,14 @@ TEST_P(QuicSpdyClientSessionTest, OnInitialHeadersCompleteIsPush) {
   EXPECT_NE(session_->GetPromisedStream(promised_stream_id_), nullptr);
   EXPECT_NE(session_->GetPromisedByUrl(promise_url_), nullptr);
 
-  session_->OnInitialHeadersComplete(promised_stream_id_,
-                                     spdy::SpdyHeaderBlock());
+  session_->OnInitialHeadersComplete(promised_stream_id_, SpdyHeaderBlock());
 }
 
 TEST_P(QuicSpdyClientSessionTest, OnInitialHeadersCompleteIsNotPush) {
   // Initialize crypto before the client session will create a stream.
   CompleteCryptoHandshake();
   session_->CreateOutgoingDynamicStream();
-  session_->OnInitialHeadersComplete(promised_stream_id_,
-                                     spdy::SpdyHeaderBlock());
+  session_->OnInitialHeadersComplete(promised_stream_id_, SpdyHeaderBlock());
 }
 
 TEST_P(QuicSpdyClientSessionTest, DeletePromised) {
@@ -644,4 +642,4 @@ TEST_P(QuicSpdyClientSessionTest, PushPromiseInvalidHost) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

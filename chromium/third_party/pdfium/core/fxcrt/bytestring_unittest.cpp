@@ -5,6 +5,7 @@
 #include "core/fxcrt/bytestring.h"
 
 #include <algorithm>
+#include <iterator>
 #include <vector>
 
 #include "core/fxcrt/fx_string.h"
@@ -57,6 +58,37 @@ TEST(ByteString, ElementAccess) {
   EXPECT_DEATH({ mutable_abc.SetAt(3, 'g'); }, ".*");
   EXPECT_EQ("abc", abc);
 #endif
+}
+
+TEST(ByteString, Assign) {
+  {
+    // Copy-assign.
+    ByteString string1;
+    EXPECT_EQ(0, string1.ReferenceCountForTesting());
+    {
+      ByteString string2("abc");
+      EXPECT_EQ(1, string2.ReferenceCountForTesting());
+
+      string1 = string2;
+      EXPECT_EQ(2, string1.ReferenceCountForTesting());
+      EXPECT_EQ(2, string2.ReferenceCountForTesting());
+    }
+    EXPECT_EQ(1, string1.ReferenceCountForTesting());
+  }
+  {
+    // Move-assign.
+    ByteString string1;
+    EXPECT_EQ(0, string1.ReferenceCountForTesting());
+    {
+      ByteString string2("abc");
+      EXPECT_EQ(1, string2.ReferenceCountForTesting());
+
+      string1 = std::move(string2);
+      EXPECT_EQ(1, string1.ReferenceCountForTesting());
+      EXPECT_EQ(0, string2.ReferenceCountForTesting());
+    }
+    EXPECT_EQ(1, string1.ReferenceCountForTesting());
+  }
 }
 
 TEST(ByteString, OperatorLT) {
@@ -1028,8 +1060,7 @@ TEST(ByteStringView, NotNull) {
   ByteStringView string3("abc");
   ByteStringView string6("abcdef");
   ByteStringView alternate_string3("abcdef", 3);
-  ByteStringView span_string4(
-      pdfium::span<const uint8_t>(reinterpret_cast<const uint8_t*>("abcd"), 4));
+  ByteStringView span_string4(pdfium::as_bytes(pdfium::make_span("abcd", 4)));
   ByteStringView embedded_nul_string7("abc\0def", 7);
   ByteStringView illegal_string7("abcdef", 7);
 
@@ -1323,8 +1354,8 @@ TEST(ByteStringView, OperatorEQ) {
   EXPECT_FALSE(c_string2 == byte_string_c);
   EXPECT_FALSE(c_string3 == byte_string_c);
 
-  pdfium::span<const uint8_t> span5(reinterpret_cast<const uint8_t*>("hello"),
-                                    5);
+  pdfium::span<const uint8_t> span5(
+      pdfium::as_bytes(pdfium::make_span("hello", 5)));
   EXPECT_EQ(byte_string_c.span(), span5);
 }
 
@@ -1601,6 +1632,15 @@ TEST(ByteString, MultiCharIterator) {
   }
   EXPECT_TRUE(any_present);
   EXPECT_EQ('a' + 'b' + 'c', sum);
+}
+
+TEST(ByteString, StdBegin) {
+  ByteString one_str("abc");
+  std::vector<uint8_t> vec(std::begin(one_str), std::end(one_str));
+  ASSERT_EQ(3u, vec.size());
+  EXPECT_EQ('a', vec[0]);
+  EXPECT_EQ('b', vec[1]);
+  EXPECT_EQ('c', vec[2]);
 }
 
 TEST(ByteString, AnyAllNoneOf) {

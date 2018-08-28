@@ -15,7 +15,7 @@
 const CJX_MethodSpec CJX_Delta::MethodSpecs[] = {{"restore", restore_static}};
 
 CJX_Delta::CJX_Delta(CXFA_Delta* delta) : CJX_Object(delta) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_Delta::~CJX_Delta() {}
@@ -24,7 +24,7 @@ CJS_Return CJX_Delta::restore(CFX_V8* runtime,
                               const std::vector<v8::Local<v8::Value>>& params) {
   if (!params.empty())
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 void CJX_Delta::currentValue(CFXJSE_Value* pValue,

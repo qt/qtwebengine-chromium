@@ -54,8 +54,10 @@ enum VideoCodecProfile {
   DOLBYVISION_PROFILE5,
   DOLBYVISION_PROFILE7,
   THEORAPROFILE_ANY,
-  AV1PROFILE_PROFILE0,
-  VIDEO_CODEC_PROFILE_MAX = AV1PROFILE_PROFILE0,
+  AV1PROFILE_PROFILE_MAIN,
+  AV1PROFILE_PROFILE_HIGH,
+  AV1PROFILE_PROFILE_PRO,
+  VIDEO_CODEC_PROFILE_MAX = AV1PROFILE_PROFILE_PRO,
 };
 
 // Specification of a decoding profile supported by a hardware decoder.
@@ -88,10 +90,31 @@ struct GPU_EXPORT VideoEncodeAcceleratorSupportedProfile {
 using VideoEncodeAcceleratorSupportedProfiles =
     std::vector<VideoEncodeAcceleratorSupportedProfile>;
 
+// Subset of DXGI_FORMAT that we're interested in.
+enum class OverlayFormat {
+  UNKNOWN,
+  BGRA,  // DXGI_FORMAT_B8G8R8A8_UNORM
+  YUY2,  // DXGI_FORMAT_YUY2
+  NV12,  // DXGI_FORMAT_NV12
+};
+
+GPU_EXPORT const char* OverlayFormatToString(OverlayFormat format);
+
+struct GPU_EXPORT OverlayCapability {
+  OverlayFormat format;
+  bool is_scaling_supported;
+  bool operator==(const OverlayCapability& other) const;
+};
+using OverlayCapabilities = std::vector<OverlayCapability>;
+
 struct GPU_EXPORT GPUInfo {
   struct GPU_EXPORT GPUDevice {
     GPUDevice();
-    ~GPUDevice();
+    GPUDevice(const GPUDevice& other);
+    GPUDevice(GPUDevice&& other) noexcept;
+    ~GPUDevice() noexcept;
+    GPUDevice& operator=(const GPUDevice& other);
+    GPUDevice& operator=(GPUDevice&& other) noexcept;
 
     // The DWORD (uint32_t) representing the graphics card vendor id.
     uint32_t vendor_id;
@@ -110,6 +133,10 @@ struct GPU_EXPORT GPUInfo {
     // In Android, these are respectively GL_VENDOR and GL_RENDERER.
     std::string vendor_string;
     std::string device_string;
+
+    std::string driver_vendor;
+    std::string driver_version;
+    std::string driver_date;
   };
 
   GPUInfo();
@@ -117,6 +144,7 @@ struct GPU_EXPORT GPUInfo {
   ~GPUInfo();
 
   // The currently active gpu.
+  GPUDevice& active_gpu();
   const GPUDevice& active_gpu() const;
 
   bool IsInitialized() const;
@@ -136,15 +164,6 @@ struct GPU_EXPORT GPUInfo {
 
   // Secondary GPUs, for example, the integrated GPU in a dual GPU machine.
   std::vector<GPUDevice> secondary_gpus;
-
-  // The vendor of the graphics driver currently installed.
-  std::string driver_vendor;
-
-  // The version of the graphics driver currently installed.
-  std::string driver_version;
-
-  // The date of the graphics driver currently installed.
-  std::string driver_date;
 
   // The version of the pixel/fragment shader used by the gpu.
   std::string pixel_shader_version;
@@ -208,18 +227,20 @@ struct GPU_EXPORT GPUInfo {
   // True if the GPU process is using the passthrough command decoder.
   bool passthrough_cmd_decoder;
 
-  // True if we use direct composition surfaces on Windows.
-  bool direct_composition = false;
-
-  // True if the current set of outputs supports overlays.
-  bool supports_overlays = false;
-
   // True only on android when extensions for threaded mailbox sharing are
   // present. Threaded mailbox sharing is used on Android only, so this check
   // is only implemented on Android.
   bool can_support_threaded_texture_mailbox = false;
 
 #if defined(OS_WIN)
+  // True if we use direct composition surfaces on Windows.
+  bool direct_composition = false;
+
+  // True if the current set of outputs supports overlays.
+  bool supports_overlays = false;
+
+  OverlayCapabilities overlay_capabilities;
+
   // The information returned by the DirectX Diagnostics Tool.
   DxDiagNode dx_diagnostics;
 
@@ -245,6 +266,8 @@ struct GPU_EXPORT GPUInfo {
   VisualID system_visual;
   VisualID rgba_visual;
 #endif
+
+  bool oop_rasterization_supported;
 
   // Note: when adding new members, please remember to update EnumerateFields
   // in gpu_info.cc.
@@ -284,6 +307,9 @@ struct GPU_EXPORT GPUInfo {
     // (according to the DevTools protocol) are being described.
     virtual void BeginAuxAttributes() = 0;
     virtual void EndAuxAttributes() = 0;
+
+    virtual void BeginOverlayCapability() = 0;
+    virtual void EndOverlayCapability() = 0;
 
    protected:
     virtual ~Enumerator() = default;

@@ -265,7 +265,7 @@ class FailingProxyResolverFactory : public ProxyResolverFactory {
   // ProxyResolverFactory override.
   int CreateProxyResolver(const scoped_refptr<PacFileData>& script_data,
                           std::unique_ptr<ProxyResolver>* result,
-                          const CompletionCallback& callback,
+                          CompletionOnceCallback callback,
                           std::unique_ptr<Request>* request) override {
     return ERR_PAC_SCRIPT_FAILED;
   }
@@ -274,12 +274,11 @@ class FailingProxyResolverFactory : public ProxyResolverFactory {
 class TestSSLConfigService : public SSLConfigService {
  public:
   explicit TestSSLConfigService(const SSLConfig& config) : config_(config) {}
+  ~TestSSLConfigService() override = default;
 
   void GetSSLConfig(SSLConfig* config) override { *config = config_; }
 
  private:
-  ~TestSSLConfigService() override = default;
-
   SSLConfig config_;
 };
 
@@ -570,7 +569,7 @@ class CaptureGroupNameSocketPool : public ParentPool {
                     const SocketTag& socket_tag,
                     ClientSocketPool::RespectLimits respect_limits,
                     ClientSocketHandle* handle,
-                    const CompletionCallback& callback,
+                    CompletionOnceCallback callback,
                     const NetLogWithSource& net_log) override {
     last_group_name_ = group_name;
     socket_requested_ = true;
@@ -4514,7 +4513,7 @@ class SameProxyWithDifferentSchemesProxyResolver : public ProxyResolver {
   // ProxyResolver implementation.
   int GetProxyForURL(const GURL& url,
                      ProxyInfo* results,
-                     const CompletionCallback& callback,
+                     CompletionOnceCallback callback,
                      std::unique_ptr<Request>* request,
                      const NetLogWithSource& /*net_log*/) override {
     *results = ProxyInfo();
@@ -4552,7 +4551,7 @@ class SameProxyWithDifferentSchemesProxyResolverFactory
 
   int CreateProxyResolver(const scoped_refptr<PacFileData>& pac_script,
                           std::unique_ptr<ProxyResolver>* resolver,
-                          const CompletionCallback& callback,
+                          CompletionOnceCallback callback,
                           std::unique_ptr<Request>* request) override {
     *resolver = std::make_unique<SameProxyWithDifferentSchemesProxyResolver>();
     return OK;
@@ -5086,7 +5085,6 @@ TEST_F(HttpNetworkTransactionTest, HttpsProxySpdyGetWithSessionRace) {
   HttpNetworkTransaction trans(DEFAULT_PRIORITY, session.get());
 
   // Stall the hostname resolution begun by the transaction.
-  session_deps_.host_resolver->set_synchronous_mode(false);
   session_deps_.host_resolver->set_ondemand_mode(true);
 
   int rv = trans.Start(&request, callback1.callback(), log.bound());
@@ -6821,7 +6819,7 @@ TEST_F(HttpNetworkTransactionTest, NTLMProxyTLSHandshakeReset) {
   SSLConfig config;
   config.version_max = SSL_PROTOCOL_VERSION_TLS1_3;
   session_deps_.ssl_config_service =
-      base::MakeRefCounted<TestSSLConfigService>(config);
+      std::make_unique<TestSSLConfigService>(config);
 
   HttpRequestInfo request;
   request.method = "GET";
@@ -6904,6 +6902,7 @@ TEST_F(HttpNetworkTransactionTest, NTLMProxyTLSHandshakeReset) {
 
   StaticSocketDataProvider data(data_reads, data_writes);
   SSLSocketDataProvider data_ssl(ASYNC, ERR_CONNECTION_RESET);
+  data_ssl.expected_ssl_version_max = SSL_PROTOCOL_VERSION_TLS1_3;
   StaticSocketDataProvider data2(data_reads, data_writes);
   SSLSocketDataProvider data_ssl2(ASYNC, ERR_CONNECTION_RESET);
   session_deps_.socket_factory->AddSocketDataProvider(&data);
@@ -12046,6 +12045,8 @@ TEST_F(HttpNetworkTransactionTest, AlternateProtocolWithSpdyLateBinding) {
 }
 
 TEST_F(HttpNetworkTransactionTest, StallAlternativeServiceForNpnSpdy) {
+  session_deps_.host_resolver->set_synchronous_mode(true);
+
   HttpRequestInfo request;
   request.method = "GET";
   request.url = GURL("https://www.example.org/");
@@ -12128,7 +12129,7 @@ class CapturingProxyResolver : public ProxyResolver {
 
   int GetProxyForURL(const GURL& url,
                      ProxyInfo* results,
-                     const CompletionCallback& callback,
+                     CompletionOnceCallback callback,
                      std::unique_ptr<Request>* request,
                      const NetLogWithSource& net_log) override {
     ProxyServer proxy_server(ProxyServer::SCHEME_HTTP,
@@ -12153,7 +12154,7 @@ class CapturingProxyResolverFactory : public ProxyResolverFactory {
 
   int CreateProxyResolver(const scoped_refptr<PacFileData>& pac_script,
                           std::unique_ptr<ProxyResolver>* resolver,
-                          const net::CompletionCallback& callback,
+                          CompletionOnceCallback callback,
                           std::unique_ptr<Request>* request) override {
     *resolver = std::make_unique<ForwardingProxyResolver>(resolver_);
     return OK;
@@ -13399,7 +13400,6 @@ TEST_F(HttpNetworkTransactionTest, MultiRoundAuth) {
   session_deps_.proxy_resolution_service =
       ProxyResolutionService::CreateDirect();
   session_deps_.host_resolver->rules()->AddRule("www.example.com", "10.0.0.1");
-  session_deps_.host_resolver->set_synchronous_mode(true);
 
   HttpAuthHandlerMock* auth_handler(new HttpAuthHandlerMock());
   auth_handler->set_connection_based(true);
@@ -13719,7 +13719,6 @@ TEST_F(HttpNetworkTransactionTest, SimpleCancel) {
   request.traffic_annotation =
       net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
-  session_deps_.host_resolver->set_synchronous_mode(true);
   std::unique_ptr<HttpNetworkSession> session(CreateSession(&session_deps_));
   auto trans =
       std::make_unique<HttpNetworkTransaction>(DEFAULT_PRIORITY, session.get());

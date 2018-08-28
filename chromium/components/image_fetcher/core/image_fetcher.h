@@ -10,20 +10,17 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/optional.h"
-#include "components/data_use_measurement/core/data_use_user_data.h"
+#include "components/image_fetcher/core/image_fetcher_types.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "url/gurl.h"
 
 namespace gfx {
-class Image;
 class Size;
 }  // namespace gfx
 
 namespace image_fetcher {
 
 class ImageDecoder;
-
-struct RequestMetadata;
 
 // A class used to fetch server images. It can be called from any thread and the
 // callback will be called on the thread which initiated the fetch.
@@ -32,27 +29,13 @@ class ImageFetcher {
   ImageFetcher() {}
   virtual ~ImageFetcher() {}
 
-  using ImageFetcherCallback =
-      base::OnceCallback<void(const std::string& id,
-                              const gfx::Image& image,
-                              const RequestMetadata& metadata)>;
-
-  // Callback with the |image_data|. If an error prevented a http response,
-  // |request_metadata.response_code| will be RESPONSE_CODE_INVALID.
-  // TODO(treib): Use RefCountedBytes to avoid copying.
-  using ImageDataFetcherCallback =
-      base::OnceCallback<void(const std::string& image_data,
-                              const RequestMetadata& request_metadata)>;
-
-  using DataUseServiceName = data_use_measurement::DataUseUserData::ServiceName;
-
   // Sets a service name against which to track data usage.
   virtual void SetDataUseServiceName(
       DataUseServiceName data_use_service_name) = 0;
 
   // Sets an upper limit for image downloads that is by default disabled.
   // Setting |max_download_bytes| to a negative value will disable the limit.
-  // Already running downloads are immediately affected.
+  // Already running downloads are not affected.
   virtual void SetImageDownloadLimit(
       base::Optional<int64_t> max_download_bytes) = 0;
 

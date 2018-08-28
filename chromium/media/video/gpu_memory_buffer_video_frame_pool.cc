@@ -21,6 +21,7 @@
 #include "base/containers/stack_container.h"
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/default_tick_clock.h"
 #include "base/trace_event/memory_dump_manager.h"
@@ -381,7 +382,7 @@ void CopyRowsToI420Buffer(int first_row,
   } else {
     const int scale = 0x10000 >> (bit_depth - 8);
     libyuv::Convert16To8Plane(
-        reinterpret_cast<const uint16*>(source + source_stride * first_row),
+        reinterpret_cast<const uint16_t*>(source + source_stride * first_row),
         source_stride / 2, output + dest_stride * first_row, dest_stride, scale,
         bytes_per_row, rows);
   }
@@ -589,6 +590,11 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::CreateHardwareFrame(
     case PIXEL_FORMAT_YUV444P12:
     case PIXEL_FORMAT_Y16:
     case PIXEL_FORMAT_UNKNOWN:
+      if (!video_frame->HasTextures()) {
+        UMA_HISTOGRAM_ENUMERATION(
+            "Media.GpuMemoryBufferVideoFramePool.UnsupportedFormat",
+            video_frame->format(), PIXEL_FORMAT_MAX + 1);
+      }
       passthrough = true;
   }
   // TODO(dcastagna): Handle odd positioned video frame input, see
@@ -904,7 +910,8 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::
       break;
     case GpuVideoAcceleratorFactories::OutputFormat::XR30:
     case GpuVideoAcceleratorFactories::OutputFormat::XB30:
-      allow_overlay = true;
+      // TODO(mcasas): Enable this for ChromeOS https://crbug.com/776093.
+      allow_overlay = false;
       // We've converted the YUV to RGB, fix the color space.
       // TODO(hubbe): The libyuv YUV to RGB conversion may not have
       // honored the color space conversion 100%. We should either fix
@@ -1007,7 +1014,6 @@ GpuMemoryBufferVideoFramePool::PoolImpl::GetOrCreateFrameResources(
     gles2->TexParameteri(texture_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     gles2->TexParameteri(texture_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     gles2->TexParameteri(texture_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    gles2->GenMailboxCHROMIUM(plane_resource.mailbox.name);
     gles2->ProduceTextureDirectCHROMIUM(plane_resource.texture_id,
                                         plane_resource.mailbox.name);
   }

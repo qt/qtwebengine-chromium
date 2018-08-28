@@ -29,6 +29,7 @@
 #include <utility>
 
 #include "SkData.h"
+#include "base/macros.h"
 #include "third_party/blink/renderer/platform/graphics/image_decoding_store.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
@@ -71,7 +72,6 @@ static bool CompatibleInfo(const SkImageInfo& src, const SkImageInfo& dst) {
 // decoding.
 class ExternalMemoryAllocator final : public SkBitmap::Allocator {
   USING_FAST_MALLOC(ExternalMemoryAllocator);
-  WTF_MAKE_NONCOPYABLE(ExternalMemoryAllocator);
 
  public:
   ExternalMemoryAllocator(const SkImageInfo& info,
@@ -94,6 +94,8 @@ class ExternalMemoryAllocator final : public SkBitmap::Allocator {
   SkImageInfo info_;
   void* pixels_;
   size_t row_bytes_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExternalMemoryAllocator);
 };
 
 static bool UpdateYUVComponentSizes(ImageDecoder* decoder,
@@ -164,9 +166,14 @@ bool ImageFrameGenerator::DecodeAndScale(
   // returning (i.e. a pointer to |pixels|) and therefore 2) should not live
   // longer than the call to the current method.
   ExternalMemoryAllocator external_allocator(info, pixels, row_bytes);
-  SkBitmap bitmap =
-      TryToResumeDecode(data, all_data_received, index, scaled_size,
-                        external_allocator, alpha_option);
+  ImageDecoder::HighBitDepthDecodingOption high_bit_depth_decoding_option =
+      ImageDecoder::kDefaultBitDepth;
+  if (info.colorType() == kRGBA_F16_SkColorType) {
+    high_bit_depth_decoding_option = ImageDecoder::kHighBitDepthToHalfFloat;
+  }
+  SkBitmap bitmap = TryToResumeDecode(
+      data, all_data_received, index, scaled_size, external_allocator,
+      alpha_option, high_bit_depth_decoding_option);
   DCHECK(external_allocator.unique());  // Verify we have the only ref-count.
 
   if (bitmap.isNull())
@@ -200,8 +207,10 @@ bool ImageFrameGenerator::DecodeToYUV(SegmentReader* data,
     return false;
   }
 
+  const bool data_complete = true;
   std::unique_ptr<ImageDecoder> decoder = ImageDecoder::Create(
-      data, true, ImageDecoder::kAlphaPremultiplied, decoder_color_behavior_);
+      data, data_complete, ImageDecoder::kAlphaPremultiplied,
+      ImageDecoder::kDefaultBitDepth, decoder_color_behavior_);
   // getYUVComponentSizes was already called and was successful, so
   // ImageDecoder::create must succeed.
   DCHECK(decoder);
@@ -228,7 +237,8 @@ SkBitmap ImageFrameGenerator::TryToResumeDecode(
     size_t index,
     const SkISize& scaled_size,
     SkBitmap::Allocator& allocator,
-    ImageDecoder::AlphaOption alpha_option) {
+    ImageDecoder::AlphaOption alpha_option,
+    ImageDecoder::HighBitDepthDecodingOption high_bit_depth_decoding_option) {
 #if DCHECK_IS_ON()
   DCHECK(decode_mutex_.Locked());
 #endif
@@ -242,9 +252,9 @@ SkBitmap ImageFrameGenerator::TryToResumeDecode(
   DCHECK(!resume_decoding || decoder);
 
   bool used_external_allocator = false;
-  ImageFrame* current_frame =
-      Decode(data, all_data_received, index, &decoder, allocator, alpha_option,
-             scaled_size, used_external_allocator);
+  ImageFrame* current_frame = Decode(
+      data, all_data_received, index, &decoder, allocator, alpha_option,
+      high_bit_depth_decoding_option, scaled_size, used_external_allocator);
 
   if (!decoder)
     return SkBitmap();
@@ -314,14 +324,16 @@ void ImageFrameGenerator::SetHasAlpha(size_t index, bool has_alpha) {
   has_alpha_[index] = has_alpha;
 }
 
-ImageFrame* ImageFrameGenerator::Decode(SegmentReader* data,
-                                        bool all_data_received,
-                                        size_t index,
-                                        ImageDecoder** decoder,
-                                        SkBitmap::Allocator& allocator,
-                                        ImageDecoder::AlphaOption alpha_option,
-                                        const SkISize& scaled_size,
-                                        bool& used_external_allocator) {
+ImageFrame* ImageFrameGenerator::Decode(
+    SegmentReader* data,
+    bool all_data_received,
+    size_t index,
+    ImageDecoder** decoder,
+    SkBitmap::Allocator& allocator,
+    ImageDecoder::AlphaOption alpha_option,
+    ImageDecoder::HighBitDepthDecodingOption high_bit_depth_decoding_option,
+    const SkISize& scaled_size,
+    bool& used_external_allocator) {
 #if DCHECK_IS_ON()
   DCHECK(decode_mutex_.Locked());
 #endif
@@ -341,6 +353,7 @@ ImageFrame* ImageFrameGenerator::Decode(SegmentReader* data,
 
     if (!*decoder) {
       *decoder = ImageDecoder::Create(data, all_data_received, alpha_option,
+                                      high_bit_depth_decoding_option,
                                       decoder_color_behavior_, scaled_size)
                      .release();
       // The newly created decoder just grabbed the data.  No need to reset it.
@@ -413,8 +426,10 @@ bool ImageFrameGenerator::GetYUVComponentSizes(SegmentReader* data,
   if (yuv_decoding_failed_)
     return false;
 
+  const bool data_complete = true;
   std::unique_ptr<ImageDecoder> decoder = ImageDecoder::Create(
-      data, true, ImageDecoder::kAlphaPremultiplied, decoder_color_behavior_);
+      data, data_complete, ImageDecoder::kAlphaPremultiplied,
+      ImageDecoder::kDefaultBitDepth, decoder_color_behavior_);
   if (!decoder)
     return false;
 

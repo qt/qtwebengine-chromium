@@ -25,6 +25,7 @@ class CPDF_TextObjectItem {
 
 class CPDF_TextObject : public CPDF_PageObject {
  public:
+  explicit CPDF_TextObject(int32_t content_stream);
   CPDF_TextObject();
   ~CPDF_TextObject() override;
 
@@ -59,7 +60,9 @@ class CPDF_TextObject : public CPDF_PageObject {
   const std::vector<uint32_t>& GetCharCodes() const { return m_CharCodes; }
   const std::vector<float>& GetCharPositions() const { return m_CharPos; }
 
-  void SetSegments(const ByteString* pStrs, const float* pKerning, int nSegs);
+  void SetSegments(const ByteString* pStrs,
+                   const std::vector<float>& kernings,
+                   size_t nSegs);
   CFX_PointF CalcPositionData(float horz_scale);
 
  private:

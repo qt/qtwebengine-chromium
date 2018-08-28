@@ -161,6 +161,129 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="Autofill.HiddenRepresentationalFieldSkipDecision">
+  <owner>parastoog@chromium.org</owner>
+  <summary>
+    Recorded while trying to fill or preview a hidden or a representational
+    field.
+  </summary>
+  <metric name="FieldOverallType">
+    <summary>
+      Field's overall |ServerFieldType|. See |AutofillField.GetStorableType()|.
+    </summary>
+  </metric>
+  <metric name="FieldSignature">
+    <summary>
+      The signature of the field. This is the hash identifier used to denote
+      this field for query and voting purposes. See
+      components/autofill/core/common/signatures_util.cc for more details.
+    </summary>
+  </metric>
+  <metric name="FieldTypeGroup">
+    <summary>
+      Field's |FieldTypeGroup|. See |AutofillType.group()|.
+    </summary>
+  </metric>
+  <metric name="FormSignature">
+    <summary>
+      The signature of the form. This is the hash identifier used to denote this
+      form for query and voting purposes. See
+      components/autofill/core/common/signatures_util.cc for more details.
+    </summary>
+  </metric>
+  <metric name="HeuristicType">
+    <summary>
+      Field's |ServerFieldType| based on heuristics. See
+      |AutofillField.heuristic_type()|.
+    </summary>
+  </metric>
+  <metric name="HtmlFieldMode">
+    <summary>
+      Whether the field's autocomplete hint specified 'billing' or 'shipping'.
+      See |AutofillField.html_mode()|.
+    </summary>
+  </metric>
+  <metric name="HtmlFieldType">
+    <summary>
+      Field's autocomplete field type hint. See |AutofillField.html_type()|.
+    </summary>
+  </metric>
+  <metric name="IsSkipped">
+    <summary>
+      True if the field was skipped while filling or previewing the form,
+      because it was hidden or representational, but not a 'select' one.
+    </summary>
+  </metric>
+  <metric name="ServerType">
+    <summary>
+      Field's |ServerFieldType| returned by server. See
+      |AutofillField.server_type()|.
+    </summary>
+  </metric>
+</event>
+
+<event name="Autofill.RepeatedServerTypePredictionRationalized">
+  <owner>parastoog@chromium.org</owner>
+  <summary>
+    Recorded when a field type predicted by server is rationalized because of
+    repetition.
+  </summary>
+  <metric name="FieldNewOverallType">
+    <summary>
+      Field's overall |ServerFieldType| after rationalization. See
+      |AutofillField.GetStorableType()|.
+    </summary>
+  </metric>
+  <metric name="FieldOldOverallType">
+    <summary>
+      Field's overall |ServerFieldType| before rationalization. See
+      |AutofillField.GetStorableType()|.
+    </summary>
+  </metric>
+  <metric name="FieldSignature">
+    <summary>
+      The signature of the field. This is the hash identifier used to denote
+      this field for query and voting purposes. See
+      components/autofill/core/common/signatures_util.cc for more details.
+    </summary>
+  </metric>
+  <metric name="FieldTypeGroup">
+    <summary>
+      Field's |FieldTypeGroup|. See |AutofillType.group()|.
+    </summary>
+  </metric>
+  <metric name="FormSignature">
+    <summary>
+      The signature of the form. This is the hash identifier used to denote this
+      form for query and voting purposes. See
+      components/autofill/core/common/signatures_util.cc for more details.
+    </summary>
+  </metric>
+  <metric name="HeuristicType">
+    <summary>
+      Field's |ServerFieldType| based on heuristics. See
+      |AutofillField.heuristic_type()|.
+    </summary>
+  </metric>
+  <metric name="HtmlFieldMode">
+    <summary>
+      Whether the field's autocomplete hint specified 'billing' or 'shipping'.
+      See |AutofillField.html_mode()|.
+    </summary>
+  </metric>
+  <metric name="HtmlFieldType">
+    <summary>
+      Field's autocomplete field type hint. See |AutofillField.html_type()|.
+    </summary>
+  </metric>
+  <metric name="ServerType">
+    <summary>
+      Field's |ServerFieldType| returned by server. See
+      |AutofillField.server_type()|.
+    </summary>
+  </metric>
+</event>
+
 <event name="Autofill.FormSubmitted">
   <owner>jiahuiguo@google.com</owner>
   <summary>
@@ -255,6 +378,11 @@ be describing additional metrics about the same event.
       The signature of the form.
     </summary>
   </metric>
+  <metric name="IsForCreditCard">
+    <summary>
+      True for credit card forms, false for address/profile forms.
+    </summary>
+  </metric>
   <metric name="MillisecondsSinceFormParsed">
     <summary>
       Time since form parse.
@@ -313,9 +441,19 @@ be describing additional metrics about the same event.
     Recorded when user edits a text field. The text field may have been
     autofilled.
   </summary>
+  <metric name="FieldSignature">
+    <summary>
+      The signature of the field
+    </summary>
+  </metric>
   <metric name="FieldTypeGroup">
     <summary>
       Field's |FieldTypeGroup|. See |AutofillType.group()|.
+    </summary>
+  </metric>
+  <metric name="FormSignature">
+    <summary>
+      The signature of the form.
     </summary>
   </metric>
   <metric name="HeuristicType">
@@ -442,6 +580,35 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="BloatedRenderer">
+  <owner>ulan@chromium.org</owner>
+  <summary>
+    Metrics related to a bloated renderer that is close to out-of-memory. They
+    are recorded only if the renderer process has a single page.
+  </summary>
+  <metric name="V8.Heap">
+    <summary>
+      The total physical size of V8's heap in MB.
+    </summary>
+  </metric>
+  <metric name="V8.Heap.AllocatedObjects">
+    <summary>
+      The total size of allocated on V8's heap in MB.
+    </summary>
+  </metric>
+  <metric name="V8.Heap.Limit">
+    <summary>
+      The V8 heap limit in MB.
+    </summary>
+  </metric>
+  <metric name="V8.NearV8HeapLimitHandling">
+    <summary>
+      An enum that specifies how the near V8 heap limit event was handled. See
+      blink::NearV8HeapLimitHandling for the enum elements.
+    </summary>
+  </metric>
+</event>
+
 <event name="Compositor.UserInteraction">
   <owner>khushalsagar@chromium.org</owner>
   <summary>
@@ -508,6 +675,20 @@ be describing additional metrics about the same event.
       not recorded if there was no subsequent scroll.
     </summary>
   </metric>
+  <metric name="EntityImpressionsCount">
+    <summary>
+      Emits an integer in the range of 0 - N that represents the number of
+      impressions of an Entity that were shown in the Bar, aggregated in Android
+      device storage for this user, starting in M-69.
+    </summary>
+  </metric>
+  <metric name="EntityOpensCount">
+    <summary>
+      Emits an integer in the range of 0 - N that represents the number of times
+      an Entity was shown in the Bar and the panel was opened, aggregated in
+      Android device storage for this user, starting in M-69.
+    </summary>
+  </metric>
   <metric name="FontSize">
     <summary>
       Emits a value from 0-10 representing the effective font size on the
@@ -566,6 +747,13 @@ be describing additional metrics about the same event.
       word, rather than in the middle 50% of the word.
     </summary>
   </metric>
+  <metric name="OpenCount">
+    <summary>
+      Emits an integer in the range of 0 - N that represents the total number of
+      times the user opened the panel, aggregated in Android device storage for
+      this user since M-69.
+    </summary>
+  </metric>
   <metric name="OutcomeRankerDidPredict">
     <summary>
       Emits a 1 or 0 to indicate whether Ranker was able to make a prediction.
@@ -611,32 +799,74 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="Previous28DayCtrPercent">
     <summary>
-      The CTR of the overlay panel for this user, aggregated over a previous 28
-      day period, expressed as an integer between 0-99.
+      The CTR of the overlay panel for this user, aggregated in Android device
+      storage over a previous 28 day period, expressed as an integer between
+      0-99, since M-60.
     </summary>
   </metric>
   <metric name="Previous28DayImpressionsCount">
     <summary>
-      The count of views of the overlay panel for this user, aggregated over a
-      previous 28 day period.
+      The count of views of the overlay panel for this user, aggregated in
+      Android device storage over a previous 28 day period, since M-60.
     </summary>
   </metric>
   <metric name="PreviousWeekCtrPercent">
     <summary>
-      The CTR of the overlay panel for this user, aggregated over the previous
-      week, expressed as an integer between 0-99.
+      The CTR of the overlay panel for this user, aggregated in Android device
+      storage over the previous week, expressed as an integer between 0-99,
+      since M-60.
     </summary>
   </metric>
   <metric name="PreviousWeekImpressionsCount">
     <summary>
-      The count of views of the overlay panel for this user, aggregated over the
-      previous week.
+      The count of views of the overlay panel for this user, aggregated in
+      Android device storage over the previous week, since M-60.
+    </summary>
+  </metric>
+  <metric name="QuickActionImpressionsCount">
+    <summary>
+      Emits an integer in the range of 0 - N that represents the total number of
+      times the user saw a quick action in the caption of the Bar, e.g. a phone
+      number to dial. Aggregated in Android device storage since M-69 for this
+      user.
+    </summary>
+  </metric>
+  <metric name="QuickActionsIgnored">
+    <summary>
+      Emits an integer in the range of 0 - N that represents the total number of
+      times the user ignored a quick action but opened the Bar instead, e.g. a
+      phone number was available but not dialed. Aggregated in Android device
+      storage starting at M-69.
+    </summary>
+  </metric>
+  <metric name="QuickActionsTaken">
+    <summary>
+      Emits an integer in the range of 0 - N that represents the total number of
+      times the user activated a quick action by tapping on a quick action shown
+      in the Bar, e.g. dialed a phone number. Aggregated in Android device
+      storage since M-69 for this user.
+    </summary>
+  </metric>
+  <metric name="QuickAnswerCount">
+    <summary>
+      Emits an integer in the range of 0 - N that represents the total number of
+      times the user saw a quick answer in the caption of the Bar. Typically
+      these quick answers represent an automatic translation of the selection.
+      Aggregated in Android device storage for all time for this user, since
+      M-57.
     </summary>
   </metric>
   <metric name="ScreenTopDps">
     <summary>
       The location of the tap relative to the top of the screen, expressed in
       DPs.
+    </summary>
+  </metric>
+  <metric name="TapCount">
+    <summary>
+      Emits an integer in the range of 0 - N that represents the total number of
+      taps that triggered the Bar, aggregated in Android device storage for this
+      user, since M-43.
     </summary>
   </metric>
   <metric name="TapDurationMs">
@@ -769,6 +999,12 @@ be describing additional metrics about the same event.
     navigation and whether the document was in the main frame. This can be used
     to link subframe UKM events to the parent document.
   </summary>
+  <metric name="IsCrossOriginFrame">
+    <summary>
+      Whether the document was in a cross origin iframe. This can either be 0 or
+      1.
+    </summary>
+  </metric>
   <metric name="IsMainFrame">
     <summary>
       Whether the document was in the main frame. This is can either be 0 or 1.
@@ -1073,6 +1309,53 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="Layout.DisplayCutout.StateChanged">
+  <owner>beccahughes@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <summary>
+    Recorded every time the ViewportFit that is supplied by a frame changes or
+    the fullscreen state of a frame or its parent WebContents changes.
+  </summary>
+  <metric name="IsMainFrame">
+    <summary>
+      Records '1' if the frame that triggered this event is the main frame.
+    </summary>
+  </metric>
+  <metric name="SafeAreasPresent">
+    <summary>
+      Records whether each safe area was present. It will contain the first flag
+      (1) if the top safe area is present. Likewise the second for the left, the
+      third for the bottom and the forth for the right. If the safe area is
+      updated whilst we are allowed to extend into the cutout then we will use
+      the newest safe area values.
+    </summary>
+  </metric>
+  <metric name="ViewportFit.Applied">
+    <summary>
+      Contains the ViewportFit value that was applied by the WebContents. The
+      frame that is fullscreen will always propagate it's ViewportFit value.
+      This is stored as a ViewportFit enum (see display_cutout.mojom).
+    </summary>
+  </metric>
+  <metric name="ViewportFit.IgnoredReason">
+    <summary>
+      Records the reason why the ViewportFit value of this frame was not the
+      applied value. It will be '0' if the value was allowed. It will be '1' if
+      the ViewportFit value from the frame was blocked because the WebContents
+      was not fullscreen. It will be '2' flag if the ViewportFit value from the
+      frame was blocked because another frame is fullscreen.
+    </summary>
+  </metric>
+  <metric name="ViewportFit.Supplied">
+    <summary>
+      Contains the ViewportFit value that was supplied by the frame that
+      triggered the event. This is stored as a ViewportFit enum (see
+      display_cutout.mojom). It can never be kAuto as we ignore events when the
+      page is not trying to use the viewport fit API.
+    </summary>
+  </metric>
+</event>
+
 <event name="LocalNetworkRequests">
   <owner>uthakore@chromium.org</owner>
   <owner>invernizzi@chromium.org</owner>
@@ -1166,6 +1449,33 @@ be describing additional metrics about the same event.
   <metric name="VideoTrack">
     <summary>
       Whether the element had a video track when autoplay was attempted.
+    </summary>
+  </metric>
+</event>
+
+<event name="Media.Autoplay.AudioContext">
+  <owner>mlamouri@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <summary>
+    Records the AudioContext autoplay information.
+  </summary>
+  <metric name="SourceNodeStarted">
+    <summary>
+      A boolean indicating if start() was called for any source node associated
+      to the AudioContext.
+    </summary>
+  </metric>
+  <metric name="Status">
+    <summary>
+      Status of this AudioContext when the autoplay policy applies. It will
+      match the values from AudioContext::AutoplayStatus.
+    </summary>
+  </metric>
+  <metric name="UnlockType">
+    <summary>
+      How the AudioContext was unlocked if it was. It will match the values from
+      AudioContext::AutoplayUnlockType unless the AudioContext was never
+      unlocked in which case it will be equal to -1.
     </summary>
   </metric>
 </event>
@@ -1458,6 +1768,12 @@ be describing additional metrics about the same event.
       autoplay. Multilpe chunk records of the same player should have the same
       value. Autoplay is defined as a playback starting before there was a user
       activation on the page or without a user initiated same-domain navigation.
+    </summary>
+  </metric>
+  <metric name="Duration">
+    <summary>
+      Duration in milliseconds, rounded to the most significant digit, of the
+      media being played. May be missing if the duration is unknown or infinite.
     </summary>
   </metric>
   <metric name="HasAudio">
@@ -1985,6 +2301,11 @@ be describing additional metrics about the same event.
       Measure of memory consumed by V8.
     </summary>
   </metric>
+  <metric name="V8.AllocatedObjects">
+    <summary>
+      Measure of memory consumed by live objects in V8.
+    </summary>
+  </metric>
   <metric name="WebCache">
     <summary>
       Measure of memory consumed by all resources in Blink Web Cache.
@@ -2101,6 +2422,19 @@ be describing additional metrics about the same event.
       detailed explanation. In ms.
     </summary>
   </metric>
+  <metric name="InteractiveTiming.LongestInputDelay">
+    <summary>
+      Measures longest Input Delay, the longest duration between the hardware
+      timestamp and the start of event processing on the main thread for the
+      meaningful input per navigation. In ms.
+    </summary>
+  </metric>
+  <metric name="InteractiveTiming.LongestInputTimestamp">
+    <summary>
+      The duration between navigation start and the hardware timestamp of the
+      meaningful input with longest queuing delay per navigation. In ms.
+    </summary>
+  </metric>
   <metric name="Navigation.PageTransition">
     <summary>
       The |ui::PageTransition| for the main frame navigation of this page load.
@@ -2201,6 +2535,21 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="PageLoadCapping" singular="True">
+  <owner>ryansturm@chromium.org</owner>
+  <summary>
+    Metrics related to PageLoadCapping that are recorded using the same UKM IDs
+    as PageLoad.
+  </summary>
+  <metric name="FinalState">
+    <summary>
+      Set to 1 when the InfoBar was shown, but not acted upon. Set to 2 when the
+      page was paused, but not resumed. Set to 3 when the page was resumed. If
+      the InfoBar was not shown, this metrics is not recorded.
+    </summary>
+  </metric>
+</event>
+
 <event name="PageLoad.FromGoogleSearch" singular="True">
   <owner>bmcquade@chromium.org</owner>
   <owner>mushan@chromium.org</owner>
@@ -2230,11 +2579,44 @@ be describing additional metrics about the same event.
       distinguish two forms on the same site.
     </summary>
   </metric>
+  <metric name="Generation.GeneratedPassword">
+    <summary>
+      Records '1' if the user has generated a password on this form.
+    </summary>
+  </metric>
+  <metric name="Generation.GeneratedPasswordModified">
+    <summary>
+      Records '1' if the user has modified a generated a password on this form.
+    </summary>
+  </metric>
+  <metric name="Generation.PopupShown">
+    <summary>
+      Records a PasswordFormMetricsRecorder::PasswordGenerationPopupShown entry
+      if (and only if) a popup was shown.
+    </summary>
+  </metric>
+  <metric name="Generation.SpecPriority">
+    <summary>
+      Reports the priority of a PasswordGenerationRequirementsSpec for a
+      generated password. This can be used for debugging as a 0 means that no
+      spec was used, a 10 means that the spec came from autofill and was crowd
+      sourced, a 20 means that it was overridden per domain and a 30 means that
+      is was overridden for the form.
+    </summary>
+  </metric>
   <metric name="ManagerFill.Action">
     <summary>
       Records for each password form (and HTTP auth), whether the password
       manager has filled/provided credentials. Recorded values correspond to the
       enum ManagerAutofillEvent.
+    </summary>
+  </metric>
+  <metric name="ParsingComparison">
+    <summary>
+      Records comparison result of old and new password form parsing algorithms.
+      Metric is recorded on a password form detection. Recorded values
+      correspond to the enum
+      password_manager::PasswordFormMetricsRecorder::ParsingComparisonResult.
     </summary>
   </metric>
   <metric name="Saving.Prompt.Interaction">
@@ -2641,20 +3023,26 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="RendererAudible">
     <summary>
-      Whether renderer was playing audio when this task was run. Boolean,
+      Whether renderer was playing audio when this task was completed. Boolean,
       encoded as an integer (0/1).
     </summary>
   </metric>
   <metric name="RendererBackgrounded">
     <summary>
-      Whether renderer was backgrounded when this task was run. Boolean, encoded
-      as an integer (0/1).
+      Whether renderer was backgrounded when this task was completed. Boolean,
+      encoded as an integer (0/1).
     </summary>
   </metric>
   <metric name="RendererHidden">
     <summary>
-      Whether renderer was hidden when this task was run. Boolean, encoded as an
-      integer (0/1).
+      Whether renderer was hidden when this task was completed. Boolean, encoded
+      as an integer (0/1).
+    </summary>
+  </metric>
+  <metric name="SecondsSinceBackgrounded">
+    <summary>
+      Seconds since the renderer was backgrounded, recorded when the task was
+      completed. Only set if the renderer is backgrounded.
     </summary>
   </metric>
   <metric name="TaskCPUDuration">
@@ -2674,7 +3062,7 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="UseCase">
     <summary>
-      MainThreadSchedulerImpl's UseCase when this task was run. See
+      MainThreadSchedulerImpl's UseCase when this task was completed. See
       blink::scheduler::UseCase for the values of this enum.
     </summary>
   </metric>
@@ -3121,6 +3509,13 @@ be describing additional metrics about the same event.
       closed.
     </summary>
   </metric>
+  <metric name="SequenceId">
+    <summary>
+      The sequence of this event and TabManager.TabMetrics event in the current
+      session. Incremented by 1 each time one of the two events is logged to
+      provide an ordering of events.
+    </summary>
+  </metric>
   <metric name="TimeFromBackgrounded">
     <summary>
       Duration in MS from when the tab is backgrounded to when it is brought to
@@ -3201,120 +3596,140 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="FailureHeuristicAudio">
     <summary>
-      Booling indicating that the intervention was disallowed because the origin
+      Boolean indicating that the intervention was disallowed because the origin
       has historically been observed emitting audio while in the background.
     </summary>
   </metric>
   <metric name="FailureHeuristicFavicon">
     <summary>
-      Booling indicating that the intervention was disallowed because the origin
+      Boolean indicating that the intervention was disallowed because the origin
       has historically been observed updating its favicon while in the
       background.
     </summary>
   </metric>
   <metric name="FailureHeuristicInsufficientObservation">
     <summary>
-      Booling indicating that the site is still being observed locally in order
+      Boolean indicating that the site is still being observed locally in order
       to determine which features are in use. In the meantime, it is protected
       from this intervention.
     </summary>
   </metric>
   <metric name="FailureHeuristicNotifications">
     <summary>
-      Booling indicating that the intervention was disallowed because the origin
+      Boolean indicating that the intervention was disallowed because the origin
       has historically been observed making use of notifications while in the
       background.
     </summary>
   </metric>
   <metric name="FailureHeuristicTitle">
     <summary>
-      Booling indicating that the intervention was disallowed because the origin
+      Boolean indicating that the intervention was disallowed because the origin
       has historically been observed updating its tab title while in the
       background.
     </summary>
   </metric>
   <metric name="FailureLifecyclesEnterprisePolicyOptOut">
     <summary>
-      Booling indicating that the browser was explicitly opted out of the
+      Boolean indicating that the browser was explicitly opted out of the
       intervention via enterprise policy.
     </summary>
   </metric>
   <metric name="FailureLifecyclesFeaturePolicyOptOut">
     <summary>
-      Booling indicating that the tab explicitly opted out of the intervention
+      Boolean indicating that the tab explicitly opted out of the intervention
       via feature policy.
     </summary>
   </metric>
   <metric name="FailureLiveStateCapturing">
     <summary>
-      Booling indicating that the intervention was disallowed because the tab is
+      Boolean indicating that the intervention was disallowed because the tab is
       currently capturing user media (making use of webcam or microphone, for
       example).
     </summary>
   </metric>
+  <metric name="FailureLiveStateDesktopCapture">
+    <summary>
+      Boolean indicating that the intervention was disallowed because the tab is
+      currently capturing a window or screen.
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateDevToolsOpen">
+    <summary>
+      Boolean indicating that the intervention was disallowed because the tab is
+      currently using DevTools.
+    </summary>
+  </metric>
   <metric name="FailureLiveStateExtensionDisallowed">
     <summary>
-      Booling indicating that the intervention was disallowed by an extension.
+      Boolean indicating that the intervention was disallowed by an extension.
     </summary>
   </metric>
   <metric name="FailureLiveStateFormEntry">
     <summary>
-      Booling indicating that the intervention was disallowed because the tab
+      Boolean indicating that the intervention was disallowed because the tab
       currently contains text form entry.
     </summary>
   </metric>
   <metric name="FailureLiveStateIsPDF">
     <summary>
-      Booling indicating that the intervention was disallowed because the tab is
+      Boolean indicating that the intervention was disallowed because the tab is
       currently hosting a PDF.
     </summary>
   </metric>
   <metric name="FailureLiveStateMirroring">
     <summary>
-      Booling indicating that the intervention was disallowed because the tab is
+      Boolean indicating that the intervention was disallowed because the tab is
       currently being mirrored (casting its contents, for example).
     </summary>
   </metric>
   <metric name="FailureLiveStatePlayingAudio">
     <summary>
-      Booling indicating that the intervention was disallowed because the tab is
+      Boolean indicating that the intervention was disallowed because the tab is
       currently playing audio.
+    </summary>
+  </metric>
+  <metric name="FailureLiveStateSharingBrowsingInstance">
+    <summary>
+      Boolean indicating that the intervention was disallowed because the tab is
+      sharing its BrowsingInstance with at least one other tab.
     </summary>
   </metric>
   <metric name="FailureLiveStateUsingWebSockets">
     <summary>
-      Booling indicating that the intervention was disallowed because the tab is
+      Boolean indicating that the intervention was disallowed because the tab is
       currently using WebSockets.
     </summary>
   </metric>
   <metric name="FailureLiveStateUsingWebUSB">
     <summary>
-      Booling indicating that the intervention was disallowed because the tab is
+      Boolean indicating that the intervention was disallowed because the tab is
       currently using WebUSB.
     </summary>
   </metric>
   <metric name="FailureLiveStateVisible">
     <summary>
-      Booling indicating that the intervention was disallowed because the tab is
+      Boolean indicating that the intervention was disallowed because the tab is
       currently visible.
     </summary>
   </metric>
   <metric name="LifecycleStateChangeReason">
     <summary>
       The reason the lifecycle state change was attempted. This corresponds to
-      the LifecycleStateChangeReason enumeration in lifecycle_state.h.
+      the LifecycleStateChangeReason enumeration in lifecycle_unit_state.mojom.
     </summary>
   </metric>
   <metric name="NewLifecycleState">
     <summary>
       The lifecycle state the tab will be in after the state change. Corresponds
-      to a value from the LifecycleState enum defined in lifecycle_state.h.
+      to a value from the LifecycleUnitState enum defined in
+      lifecycle_unit_state.mojom.
     </summary>
   </metric>
   <metric name="OldLifecycleState">
     <summary>
       The lifecycle state the tab was in prior to the state change. Corresponds
-      to a value from the LifecycleState enum defined in lifecycle_state.h.
+      to a value from the LifecycleUnitState enum defined in
+      lifecycle_unit_state.mojom.
     </summary>
   </metric>
   <metric name="Outcome">
@@ -3328,19 +3743,19 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="SuccessGlobalWhitelist">
     <summary>
-      Booling indicating that the tab was explicitly opted in to the
+      Boolean indicating that the tab was explicitly opted in to the
       intervention via the global whitelist.
     </summary>
   </metric>
   <metric name="SuccessHeuristic">
     <summary>
-      Booling indicating that the tab was deemed safe for the intervention via
+      Boolean indicating that the tab was deemed safe for the intervention via
       local observations and heuristics.
     </summary>
   </metric>
   <metric name="SuccessLifecyclesFeaturePolicyOptIn">
     <summary>
-      Booling indicating that the tab explicitly opted in to the intervention
+      Boolean indicating that the tab explicitly opted in to the intervention
       via feature policy.
     </summary>
   </metric>
@@ -3579,6 +3994,13 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="TrustedWebActivity.Open" singular="True">
+  <owner>peconn@chromium.org</owner>
+  <summary>
+    Collected when a page is opened in a Trusted Web Activity.
+  </summary>
+</event>
+
 <event name="UserActivity">
   <owner>jiameng@chromium.org</owner>
   <summary>
@@ -3651,6 +4073,26 @@ be describing additional metrics about the same event.
       Last user activity time as hours since midnight in the local time zone.
     </summary>
   </metric>
+  <metric name="ModelApplied">
+    <summary>
+      A boolean value whether model prediction is applied in the screen-dim
+      decision. False means powerd dims the screen regardless of the model
+      prediction.
+    </summary>
+  </metric>
+  <metric name="ModelDecisionThreshold">
+    <summary>
+      A threhold in the range of [0, 100]. Higher threshold makes screen-dim
+      less likely.
+    </summary>
+  </metric>
+  <metric name="ModelInactivityScore">
+    <summary>
+      Probability that user will remain inactive as predicted by the model. It
+      is in the range of [0, 100]. If score is less than the decision threshold,
+      dim will be deferred.
+    </summary>
+  </metric>
   <metric name="MouseEventsInLastHour">
     <summary>
       The number of mouse events reported as user activity in the last hour.
@@ -3663,6 +4105,16 @@ be describing additional metrics about the same event.
     <summary>
       Boolean value to represent whether the device is currently on battery
       power.
+    </summary>
+  </metric>
+  <metric name="PreviousNegativeActionsCount">
+    <summary>
+      Number of times user reactivated, not including the current event.
+    </summary>
+  </metric>
+  <metric name="PreviousPositiveActionsCount">
+    <summary>
+      Number of times user has remained idle, not including the current event.
     </summary>
   </metric>
   <metric name="RecentTimeActive">
@@ -3882,8 +4334,9 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="SequenceId">
     <summary>
-      The sequence of this event in the current session. Incremented by 1 each
-      time this event is logged to provide an ordering of events.
+      The sequence of this event and TabManager.ForegroundedOrClosed event in
+      the current session. Incremented by 1 each time one of the two events is
+      logged to provide an ordering of events.
     </summary>
   </metric>
   <metric name="SiteEngagementScore">
@@ -4029,6 +4482,19 @@ be describing additional metrics about the same event.
       on the page, which listens for headset activations to request
       presentation. 4: DeepLinkedApp, The page was launched in Chrome from the
       VR system home (e.g., Daydream Home) and requested presentation.
+    </summary>
+  </metric>
+</event>
+
+<event name="VirtualKeyboard.Open">
+  <owner>shend@chromium.org</owner>
+  <summary>
+    Collects the used input types with the Virtual Keyboard.
+  </summary>
+  <metric name="TextInputType">
+    <summary>
+      Type of a input field which the user is trying to use the Virtual Keyboard
+      on.
     </summary>
   </metric>
 </event>

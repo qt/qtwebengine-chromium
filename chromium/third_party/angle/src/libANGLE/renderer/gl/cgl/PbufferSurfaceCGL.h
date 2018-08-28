@@ -26,8 +26,7 @@ class PbufferSurfaceCGL : public SurfaceGL
     PbufferSurfaceCGL(const egl::SurfaceState &state,
                       RendererGL *renderer,
                       EGLint width,
-                      EGLint height,
-                      const FunctionsGL *functions);
+                      EGLint height);
     ~PbufferSurfaceCGL() override;
 
     egl::Error initialize(const egl::Display *display) override;
@@ -52,7 +51,8 @@ class PbufferSurfaceCGL : public SurfaceGL
     EGLint isPostSubBufferSupported() const override;
     EGLint getSwapBehavior() const override;
 
-    FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
+    FramebufferImpl *createDefaultFramebuffer(const gl::Context *context,
+                                              const gl::FramebufferState &state) override;
 
   private:
     unsigned mWidth;
@@ -63,7 +63,6 @@ class PbufferSurfaceCGL : public SurfaceGL
     const FunctionsGL *mFunctions;
     StateManagerGL *mStateManager;
 
-    GLuint mFramebuffer;
     GLuint mColorRenderbuffer;
     GLuint mDSRenderbuffer;
 };

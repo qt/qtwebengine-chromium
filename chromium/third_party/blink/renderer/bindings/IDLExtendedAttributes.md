@@ -148,6 +148,11 @@ are triggered for this method or attribute.
 
 Usage: `[CEReactions]` takes no arguments.
 
+`[CEReacionts]` doesn't work with `[Custom]`. Custom binding code should use
+`blink::CEReactionsScope` if the method or the attribute has `[CEReactions]`.
+
+Note that `blink::CEReactionsScope` must be constructed after `blink::ExceptionState`.
+
 ### [Clamp] _(a, p)_
 
 Standard: [Clamp](https://heycam.github.io/webidl/#Clamp)
@@ -307,6 +312,14 @@ Standard: [HTMLConstructor](https://html.spec.whatwg.org/multipage/dom.html#html
 Summary: HTML Elements have special constructor behavior. Interface object of given interface with the `[HTMLConstructor]` attribute will have specific behavior when called.
 
 Usage: Must take no arguments, and must not appear on anything other than an interface. It must appear once on an interface, and the interface cannot be annotated with `[Constructor]` or `[NoInterfaceObject]` extended attributes. It must not be used on a callback interface.
+
+### [LenientSetter] _(a)_
+
+Standard: [LenientSetter](https://heycam.github.io/webidl/#LenientSetter)
+
+Summary: `[LenientSetter]` indicates that a no-op setter will be generated for a readonly attribute’s accessor property. This results in erroneous assignments to the property in strict mode to be ignored rather than causing an exception to be thrown.
+
+`[LenientSetter]` must take no arguments, and must not appear on anything other than a readonly regular attribute.
 
 ### [LegacyUnenumerableNamedProperties] _(i)_
 
@@ -610,7 +623,7 @@ String Example::func(ScriptState* state, bool a, bool b);
 ```
 
 Be careful when you use `[CallWith=ScriptState]`.
-You should not store the passed-in ScriptState on a DOM object (using scoped_refptr<ScriptState>).
+You should not store the passed-in ScriptState on a DOM object.
 This is because if the stored ScriptState is used by some method called by a different
 world (note that the DOM object is shared among multiple worlds), it leaks the ScriptState
 to the world. ScriptState must be carefully maintained in a way that doesn't leak
@@ -696,7 +709,7 @@ scoped_refptr<XXX> XXX::create(ExecutionContext* context, float x, float y, Stri
 ```
 
 Be careful when you use `[ConstructorCallWith=ScriptState]`.
-You should not store the passed-in ScriptState on a DOM object (using scoped_refptr<ScriptState>).
+You should not store the passed-in ScriptState on a DOM object.
 This is because if the stored ScriptState is used by some method called by a different
 world (note that the DOM object is shared among multiple worlds), it leaks the ScriptState
 to the world. ScriptState must be carefully maintained in a way that doesn't leak

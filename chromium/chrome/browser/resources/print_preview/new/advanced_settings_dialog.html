@@ -13,18 +13,18 @@
 <link rel="import" href="strings.html">
 
 <dom-module id="print-preview-advanced-dialog">
-  <style include="print-preview-shared search-dialog button cr-hidden-style">
-  </style>
   <template>
+    <style include="print-preview-shared search-dialog button cr-hidden-style">
+    </style>
     <cr-dialog id="dialog" on-close="onCloseOrCancel_" show-close-button>
       <div slot="title">
         <div>[[i18n('advancedSettingsDialogTitle', destination.displayName)]]
         </div>
-        <print-preview-search-box id="searchBox"
+        <print-preview-search-box id="searchBox" on-keydown="onKeydown_"
             hidden$="[[!hasMultipleItems_(
                 destination.capabilities.printer.vendor_capability)]]"
             label="$i18n{advancedSettingsSearchBoxPlaceholder}"
-            search-query="{{searchQuery_}}">
+            search-query="{{searchQuery_}}" autofocus>
         </print-preview-search-box>
       </div>
       <div slot="body">

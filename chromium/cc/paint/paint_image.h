@@ -94,6 +94,10 @@ class CC_PAINT_EXPORT PaintImage {
   static Id GetNextId();
   static ContentId GetNextContentId();
 
+  // Creates a PaintImage wrapping |bitmap|. Note that the pixels will be copied
+  // unless the bitmap is marked immutable.
+  static PaintImage CreateFromBitmap(SkBitmap bitmap);
+
   PaintImage();
   PaintImage(const PaintImage& other);
   PaintImage(PaintImage&& other);
@@ -158,6 +162,9 @@ class CC_PAINT_EXPORT PaintImage {
   // Returns the total number of frames known to exist in this image.
   size_t FrameCount() const;
 
+  // Returns an SkImage for the frame at |index|.
+  sk_sp<SkImage> GetSkImageForFrame(size_t index) const;
+
   std::string ToString() const;
 
  private:
@@ -179,9 +186,6 @@ class CC_PAINT_EXPORT PaintImage {
                          size_t frame_index) const;
   void CreateSkImage();
   PaintImage MakeSubset(const gfx::Rect& subset) const;
-
-  // Returns an SkImage for the frame at |index|.
-  sk_sp<SkImage> GetSkImageForFrame(size_t index) const;
 
   sk_sp<SkImage> sk_image_;
   sk_sp<PaintRecord> paint_record_;

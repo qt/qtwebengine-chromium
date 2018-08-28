@@ -20,7 +20,6 @@ class TestPersonalDataManager : public PersonalDataManager {
   TestPersonalDataManager();
   ~TestPersonalDataManager() override;
 
-  using PersonalDataManager::set_database;
   using PersonalDataManager::SetPrefService;
 
   // PersonalDataManager overrides.  These functions are overridden as needed
@@ -44,9 +43,12 @@ class TestPersonalDataManager : public PersonalDataManager {
   void LoadProfiles() override;
   void LoadCreditCards() override;
   bool IsAutofillEnabled() const override;
+  bool IsAutofillProfileEnabled() const override;
   bool IsAutofillCreditCardEnabled() const override;
   bool IsAutofillWalletImportEnabled() const override;
+  bool ShouldSuggestServerCards() const override;
   std::string CountryCodeForCurrentTimezone() const override;
+  void ClearAllLocalData() override;
   bool IsDataLoaded() const override;
 
   // Unique to TestPersonalDataManager:
@@ -78,12 +80,20 @@ class TestPersonalDataManager : public PersonalDataManager {
     return num_times_save_imported_profile_called_;
   }
 
+  int num_times_save_imported_credit_card_called() const {
+    return num_times_save_imported_credit_card_called_;
+  }
+
   void SetAutofillEnabled(bool autofill_enabled) {
     autofill_enabled_ = autofill_enabled;
   }
 
   void SetAutofillCreditCardEnabled(bool autofill_credit_card_enabled) {
     autofill_credit_card_enabled_ = autofill_credit_card_enabled;
+  }
+
+  void SetAutofillProfileEnabled(bool autofill_profile_enabled) {
+    autofill_profile_enabled_ = autofill_profile_enabled;
   }
 
   void SetAutofillWalletImportEnabled(bool autofill_wallet_import_enabled) {
@@ -94,7 +104,9 @@ class TestPersonalDataManager : public PersonalDataManager {
   std::string timezone_country_code_;
   std::string default_country_code_;
   int num_times_save_imported_profile_called_ = 0;
+  int num_times_save_imported_credit_card_called_ = 0;
   base::Optional<bool> autofill_enabled_;
+  base::Optional<bool> autofill_profile_enabled_;
   base::Optional<bool> autofill_credit_card_enabled_;
   base::Optional<bool> autofill_wallet_import_enabled_;
 

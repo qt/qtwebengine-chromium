@@ -11,16 +11,16 @@
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 
-namespace net {
+namespace quic {
 
 // A QuicTag is a 32-bit used as identifiers in the QUIC handshake.  The use of
 // a uint32_t seeks to provide a balance between the tyranny of magic number
-// registries and the verbosity of std::strings. As far as the wire protocol is
+// registries and the verbosity of strings. As far as the wire protocol is
 // concerned, these are opaque, 32-bit values.
 //
 // Tags will often be referred to by their ASCII equivalent, e.g. EXMP. This is
 // just a mnemonic for the value 0x504d5845 (little-endian version of the ASCII
-// std::string E X M P).
+// string E X M P).
 typedef uint32_t QuicTag;
 typedef std::map<QuicTag, QuicString> QuicTagValueMap;
 typedef std::vector<QuicTag> QuicTagVector;
@@ -48,6 +48,6 @@ QUIC_EXPORT_PRIVATE bool FindMutualQuicTag(const QuicTagVector& our_tags,
 // treat it as a number if not.
 QUIC_EXPORT_PRIVATE QuicString QuicTagToString(QuicTag tag);
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_TAG_H_

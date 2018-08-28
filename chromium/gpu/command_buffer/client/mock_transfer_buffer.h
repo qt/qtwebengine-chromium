@@ -6,7 +6,6 @@
 #define GPU_COMMAND_BUFFER_CLIENT_MOCK_TRANSFER_BUFFER_H_
 
 #include "base/macros.h"
-#include "base/memory/shared_memory_handle.h"
 #include "gpu/command_buffer/client/ring_buffer.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 
@@ -30,13 +29,12 @@ class MockTransferBuffer : public TransferBufferInterface {
 
   ~MockTransferBuffer() override;
 
-  base::SharedMemoryHandle shared_memory_handle() const override;
+  base::UnguessableToken shared_memory_guid() const override;
   bool Initialize(unsigned int starting_buffer_size,
                   unsigned int result_size,
                   unsigned int /* min_buffer_size */,
                   unsigned int /* max_buffer_size */,
-                  unsigned int alignment,
-                  unsigned int size_to_flush) override;
+                  unsigned int alignment) override;
   int GetShmId() override;
   void* GetResultBuffer() override;
   int GetResultOffset() override;

@@ -22,7 +22,7 @@ VirtualAuthenticator::VirtualAuthenticator(
 VirtualAuthenticator::~VirtualAuthenticator() = default;
 
 void VirtualAuthenticator::AddBinding(
-    webauth::test::mojom::VirtualAuthenticatorRequest request) {
+    blink::test::mojom::VirtualAuthenticatorRequest request) {
   binding_set_.AddBinding(this, std::move(request));
 }
 
@@ -35,13 +35,14 @@ void VirtualAuthenticator::GetUniqueId(GetUniqueIdCallback callback) {
 }
 
 void VirtualAuthenticator::GetRegistrations(GetRegistrationsCallback callback) {
-  std::vector<webauth::test::mojom::RegisteredKeyPtr> mojo_registered_keys;
+  std::vector<blink::test::mojom::RegisteredKeyPtr> mojo_registered_keys;
   for (const auto& registration : state_->registrations) {
-    auto mojo_registered_key = webauth::test::mojom::RegisteredKey::New();
+    auto mojo_registered_key = blink::test::mojom::RegisteredKey::New();
     mojo_registered_key->key_handle = registration.first;
     mojo_registered_key->counter = registration.second.counter;
-    mojo_registered_key->application_parameter =
-        registration.second.application_parameter;
+    mojo_registered_key->application_parameter.assign(
+        registration.second.application_parameter.begin(),
+        registration.second.application_parameter.end());
     registration.second.private_key->ExportPrivateKey(
         &mojo_registered_key->private_key);
     mojo_registered_keys.push_back(std::move(mojo_registered_key));
@@ -50,16 +51,20 @@ void VirtualAuthenticator::GetRegistrations(GetRegistrationsCallback callback) {
 }
 
 void VirtualAuthenticator::AddRegistration(
-    webauth::test::mojom::RegisteredKeyPtr registration,
+    blink::test::mojom::RegisteredKeyPtr registration,
     AddRegistrationCallback callback) {
+  if (registration->application_parameter.size() != device::kRpIdHashLength) {
+    std::move(callback).Run(false);
+    return;
+  }
+
   bool success = false;
   std::tie(std::ignore, success) = state_->registrations.emplace(
       std::move(registration->key_handle),
       ::device::VirtualFidoDevice::RegistrationData(
           crypto::ECPrivateKey::CreateFromPrivateKeyInfo(
               registration->private_key),
-          std::move(registration->application_parameter),
-          registration->counter));
+          registration->application_parameter, registration->counter));
   std::move(callback).Run(success);
 }
 

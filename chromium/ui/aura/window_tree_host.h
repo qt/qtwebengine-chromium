@@ -40,6 +40,7 @@ enum class DomCode;
 class EventSink;
 class InputMethod;
 class ViewProp;
+struct PlatformWindowInitProperties;
 }
 
 namespace aura {
@@ -63,8 +64,9 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
  public:
   ~WindowTreeHost() override;
 
-  // Creates a new WindowTreeHost. The caller owns the returned value.
-  static WindowTreeHost* Create(const gfx::Rect& bounds_in_pixels);
+  // Creates a new WindowTreeHost with the specified |properties|.
+  static std::unique_ptr<WindowTreeHost> Create(
+      ui::PlatformWindowInitProperties properties);
 
   // Returns the WindowTreeHost for the specified accelerated widget, or NULL
   // if there is none associated.
@@ -148,17 +150,17 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   // InputMethod shared between multiple WindowTreeHost instances.
   //
   // This is used for Ash only. There are 2 reasons:
-  // 1) ChromeOS virtual keyboard needs to receive ShowImeIfNeeded notification
-  // from InputMethod. Multiple InputMethod instances makes it hard to
-  // register/unregister the observer for that notification.
-  // 2) For Ozone, there is no native focus state for the root window and
-  // WindowTreeHost. See DrmWindowHost::CanDispatchEvent, the key events always
-  // goes to the primary WindowTreeHost. And after InputMethod processed the key
-  // event and continue dispatching it, WindowTargeter::FindTargetForEvent may
-  // re-dispatch it to a different WindowTreeHost. So the singleton InputMethod
-  // can make sure the correct InputMethod instance processes the key event no
-  // matter which WindowTreeHost is the target for event. Please refer to the
-  // test: ExtendedDesktopTest.KeyEventsOnLockScreen.
+  // 1) ChromeOS virtual keyboard needs to receive ShowVirtualKeyboardIfEnabled
+  // notification from InputMethod. Multiple InputMethod instances makes it hard
+  // to register/unregister the observer for that notification. 2) For Ozone,
+  // there is no native focus state for the root window and WindowTreeHost. See
+  // DrmWindowHost::CanDispatchEvent, the key events always goes to the primary
+  // WindowTreeHost. And after InputMethod processed the key event and continue
+  // dispatching it, WindowTargeter::FindTargetForEvent may re-dispatch it to a
+  // different WindowTreeHost. So the singleton InputMethod can make sure the
+  // correct InputMethod instance processes the key event no matter which
+  // WindowTreeHost is the target for event. Please refer to the test:
+  // ExtendedDesktopTest.KeyEventsOnLockScreen.
   //
   // TODO(shuchen): remove this method after above reasons become invalid.
   // A possible solution is to make sure DrmWindowHost can find the correct
@@ -227,11 +229,14 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
   void DestroyDispatcher();
 
   // If frame_sink_id is not passed in, one will be grabbed from
-  // ContextFactoryPrivate.
+  // ContextFactoryPrivate. |are_events_in_pixels| indicates if events are
+  // received in pixels. If |are_events_in_pixels| is false, events are
+  // received in DIPs.
   void CreateCompositor(
       const viz::FrameSinkId& frame_sink_id = viz::FrameSinkId(),
       bool force_software_compositor = false,
-      bool external_begin_frames_enabled = false);
+      bool external_begin_frames_enabled = false,
+      bool are_events_in_pixels = true);
 
   void InitCompositor();
   void OnAcceleratedWidgetAvailable();

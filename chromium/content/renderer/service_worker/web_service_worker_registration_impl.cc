@@ -13,9 +13,9 @@
 #include "content/renderer/service_worker/service_worker_provider_context.h"
 #include "content/renderer/service_worker/web_service_worker_impl.h"
 #include "content/renderer/service_worker/web_service_worker_provider_impl.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_navigation_preload_state.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_error.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_registration_proxy.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_navigation_preload_state.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_error.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_registration_proxy.h"
 
 namespace content {
 
@@ -150,21 +150,8 @@ WebServiceWorkerRegistrationImpl::UpdateViaCache() const {
 
 void WebServiceWorkerRegistrationImpl::Update(
     std::unique_ptr<WebServiceWorkerUpdateCallbacks> callbacks) {
-  host_->Update(base::BindOnce(
-      [](std::unique_ptr<WebServiceWorkerUpdateCallbacks> callbacks,
-         blink::mojom::ServiceWorkerErrorType error,
-         const base::Optional<std::string>& error_msg) {
-        if (error != blink::mojom::ServiceWorkerErrorType::kNone) {
-          DCHECK(error_msg);
-          callbacks->OnError(blink::WebServiceWorkerError(
-              error, blink::WebString::FromUTF8(*error_msg)));
-          return;
-        }
-
-        DCHECK(!error_msg);
-        callbacks->OnSuccess();
-      },
-      std::move(callbacks)));
+  host_->Update(base::BindOnce(&WebServiceWorkerRegistrationImpl::OnUpdated,
+                               this, std::move(callbacks)));
 }
 
 void WebServiceWorkerRegistrationImpl::Unregister(
@@ -319,6 +306,19 @@ WebServiceWorkerRegistrationImpl::GetOrCreateServiceWorkerObject(
                          ->GetOrCreateServiceWorkerObject(std::move(info));
   }
   return service_worker;
+}
+
+void WebServiceWorkerRegistrationImpl::OnUpdated(
+    std::unique_ptr<WebServiceWorkerUpdateCallbacks> callbacks,
+    blink::mojom::ServiceWorkerErrorType error,
+    const base::Optional<std::string>& error_msg) {
+  if (error != blink::mojom::ServiceWorkerErrorType::kNone) {
+    callbacks->OnError(blink::WebServiceWorkerError(
+        error, blink::WebString::FromUTF8(*error_msg)));
+    return;
+  }
+  callbacks->OnSuccess(WebServiceWorkerRegistrationImpl::CreateHandle(
+      base::WrapRefCounted(this)));
 }
 
 void WebServiceWorkerRegistrationImpl::SetVersionAttributes(

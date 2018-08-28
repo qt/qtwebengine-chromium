@@ -7,29 +7,25 @@
 #include "net/third_party/quic/platform/api/quic_test.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 
-// using spdy::kV3HighestPriority;
-// using spdy::kV3LowestPriority;
+using spdy::kV3HighestPriority;
+using spdy::kV3LowestPriority;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
-class QuicWriteBlockedListTest : public QuicTestWithParam<bool> {};
+class QuicWriteBlockedListTest : public QuicTest {};
 
-INSTANTIATE_TEST_CASE_P(Tests, QuicWriteBlockedListTest, testing::Bool());
-
-TEST_P(QuicWriteBlockedListTest, PriorityOrder) {
-  QuicWriteBlockedList write_blocked_list(GetParam());
+TEST_F(QuicWriteBlockedListTest, PriorityOrder) {
+  QuicWriteBlockedList write_blocked_list;
 
   // Mark streams blocked in roughly reverse priority order, and
   // verify that streams are sorted.
-  write_blocked_list.RegisterStream(40, false, spdy::kV3LowestPriority);
-  write_blocked_list.RegisterStream(23, false, spdy::kV3HighestPriority);
-  write_blocked_list.RegisterStream(17, false, spdy::kV3HighestPriority);
-  write_blocked_list.RegisterStream(kCryptoStreamId, true,
-                                    spdy::kV3HighestPriority);
-  write_blocked_list.RegisterStream(kHeadersStreamId, true,
-                                    spdy::kV3HighestPriority);
+  write_blocked_list.RegisterStream(40, false, kV3LowestPriority);
+  write_blocked_list.RegisterStream(23, false, kV3HighestPriority);
+  write_blocked_list.RegisterStream(17, false, kV3HighestPriority);
+  write_blocked_list.RegisterStream(kCryptoStreamId, true, kV3HighestPriority);
+  write_blocked_list.RegisterStream(kHeadersStreamId, true, kV3HighestPriority);
 
   write_blocked_list.AddStream(40);
   EXPECT_TRUE(write_blocked_list.IsStreamBlocked(40));
@@ -68,10 +64,9 @@ TEST_P(QuicWriteBlockedListTest, PriorityOrder) {
   EXPECT_FALSE(write_blocked_list.HasWriteBlockedDataStreams());
 }
 
-TEST_P(QuicWriteBlockedListTest, CryptoStream) {
-  QuicWriteBlockedList write_blocked_list(GetParam());
-  write_blocked_list.RegisterStream(kCryptoStreamId, true,
-                                    spdy::kV3HighestPriority);
+TEST_F(QuicWriteBlockedListTest, CryptoStream) {
+  QuicWriteBlockedList write_blocked_list;
+  write_blocked_list.RegisterStream(kCryptoStreamId, true, kV3HighestPriority);
   write_blocked_list.AddStream(kCryptoStreamId);
 
   EXPECT_EQ(1u, write_blocked_list.NumBlockedStreams());
@@ -81,10 +76,9 @@ TEST_P(QuicWriteBlockedListTest, CryptoStream) {
   EXPECT_FALSE(write_blocked_list.HasWriteBlockedSpecialStream());
 }
 
-TEST_P(QuicWriteBlockedListTest, HeadersStream) {
-  QuicWriteBlockedList write_blocked_list(GetParam());
-  write_blocked_list.RegisterStream(kHeadersStreamId, true,
-                                    spdy::kV3HighestPriority);
+TEST_F(QuicWriteBlockedListTest, HeadersStream) {
+  QuicWriteBlockedList write_blocked_list;
+  write_blocked_list.RegisterStream(kHeadersStreamId, true, kV3HighestPriority);
   write_blocked_list.AddStream(kHeadersStreamId);
 
   EXPECT_EQ(1u, write_blocked_list.NumBlockedStreams());
@@ -94,11 +88,10 @@ TEST_P(QuicWriteBlockedListTest, HeadersStream) {
   EXPECT_FALSE(write_blocked_list.HasWriteBlockedSpecialStream());
 }
 
-TEST_P(QuicWriteBlockedListTest, VerifyHeadersStream) {
-  QuicWriteBlockedList write_blocked_list(GetParam());
-  write_blocked_list.RegisterStream(5, false, spdy::kV3HighestPriority);
-  write_blocked_list.RegisterStream(kHeadersStreamId, true,
-                                    spdy::kV3HighestPriority);
+TEST_F(QuicWriteBlockedListTest, VerifyHeadersStream) {
+  QuicWriteBlockedList write_blocked_list;
+  write_blocked_list.RegisterStream(5, false, kV3HighestPriority);
+  write_blocked_list.RegisterStream(kHeadersStreamId, true, kV3HighestPriority);
   write_blocked_list.AddStream(5);
   write_blocked_list.AddStream(kHeadersStreamId);
 
@@ -114,15 +107,14 @@ TEST_P(QuicWriteBlockedListTest, VerifyHeadersStream) {
   EXPECT_FALSE(write_blocked_list.HasWriteBlockedDataStreams());
 }
 
-TEST_P(QuicWriteBlockedListTest, NoDuplicateEntries) {
+TEST_F(QuicWriteBlockedListTest, NoDuplicateEntries) {
   // Test that QuicWriteBlockedList doesn't allow duplicate entries.
-  QuicWriteBlockedList write_blocked_list(GetParam());
+  QuicWriteBlockedList write_blocked_list;
 
   // Try to add a stream to the write blocked list multiple times at the same
   // priority.
   const QuicStreamId kBlockedId = kHeadersStreamId + 2;
-  write_blocked_list.RegisterStream(kBlockedId, false,
-                                    spdy::kV3HighestPriority);
+  write_blocked_list.RegisterStream(kBlockedId, false, kV3HighestPriority);
   write_blocked_list.AddStream(kBlockedId);
   write_blocked_list.AddStream(kBlockedId);
   write_blocked_list.AddStream(kBlockedId);
@@ -137,15 +129,15 @@ TEST_P(QuicWriteBlockedListTest, NoDuplicateEntries) {
   EXPECT_FALSE(write_blocked_list.HasWriteBlockedDataStreams());
 }
 
-TEST_P(QuicWriteBlockedListTest, BatchingWrites) {
-  QuicWriteBlockedList write_blocked_list(GetParam());
+TEST_F(QuicWriteBlockedListTest, BatchingWrites) {
+  QuicWriteBlockedList write_blocked_list;
 
   const QuicStreamId id1 = kHeadersStreamId + 2;
   const QuicStreamId id2 = id1 + 2;
   const QuicStreamId id3 = id2 + 2;
-  write_blocked_list.RegisterStream(id1, false, spdy::kV3LowestPriority);
-  write_blocked_list.RegisterStream(id2, false, spdy::kV3LowestPriority);
-  write_blocked_list.RegisterStream(id3, false, spdy::kV3HighestPriority);
+  write_blocked_list.RegisterStream(id1, false, kV3LowestPriority);
+  write_blocked_list.RegisterStream(id2, false, kV3LowestPriority);
+  write_blocked_list.RegisterStream(id3, false, kV3HighestPriority);
 
   write_blocked_list.AddStream(id1);
   write_blocked_list.AddStream(id2);
@@ -190,18 +182,16 @@ TEST_P(QuicWriteBlockedListTest, BatchingWrites) {
   EXPECT_EQ(id1, write_blocked_list.PopFront());
 }
 
-TEST_P(QuicWriteBlockedListTest, Ceding) {
-  QuicWriteBlockedList write_blocked_list(GetParam());
+TEST_F(QuicWriteBlockedListTest, Ceding) {
+  QuicWriteBlockedList write_blocked_list;
 
-  write_blocked_list.RegisterStream(15, false, spdy::kV3HighestPriority);
-  write_blocked_list.RegisterStream(16, false, spdy::kV3HighestPriority);
+  write_blocked_list.RegisterStream(15, false, kV3HighestPriority);
+  write_blocked_list.RegisterStream(16, false, kV3HighestPriority);
   write_blocked_list.RegisterStream(5, false, 5);
   write_blocked_list.RegisterStream(4, false, 5);
   write_blocked_list.RegisterStream(7, false, 7);
-  write_blocked_list.RegisterStream(kCryptoStreamId, true,
-                                    spdy::kV3HighestPriority);
-  write_blocked_list.RegisterStream(kHeadersStreamId, true,
-                                    spdy::kV3HighestPriority);
+  write_blocked_list.RegisterStream(kCryptoStreamId, true, kV3HighestPriority);
+  write_blocked_list.RegisterStream(kHeadersStreamId, true, kV3HighestPriority);
 
   // When nothing is on the list, nothing yields.
   EXPECT_FALSE(write_blocked_list.ShouldYield(5));
@@ -241,4 +231,4 @@ TEST_P(QuicWriteBlockedListTest, Ceding) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

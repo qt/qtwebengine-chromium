@@ -48,7 +48,7 @@ class CORE_EXPORT WebRemoteFrameImpl final
   WebLocalFrame* CreateLocalChild(WebTreeScopeType,
                                   const WebString& name,
                                   WebSandboxFlags,
-                                  WebFrameClient*,
+                                  WebLocalFrameClient*,
                                   blink::InterfaceRegistry*,
                                   WebFrame* previous_sibling,
                                   const ParsedFeaturePolicy&,
@@ -82,7 +82,7 @@ class CORE_EXPORT WebRemoteFrameImpl final
   void DidStopLoading() override;
   bool IsIgnoredForHitTest() const override;
   void WillEnterFullscreen() override;
-  void SetHasReceivedUserGesture() override;
+  void UpdateUserActivationState(UserActivationUpdateType) override;
   void ScrollRectToVisible(const WebRect&,
                            const WebScrollIntoViewParams&) override;
   void BubbleLogicalScroll(WebScrollDirection direction,

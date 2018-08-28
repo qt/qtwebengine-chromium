@@ -37,9 +37,8 @@ namespace blink {
 
 class ExceptionState;
 class Frame;
-class IntersectionObserver;
-class IntersectionObserverEntry;
 class LayoutEmbeddedContent;
+class LazyLoadFrameObserver;
 class WebPluginContainerImpl;
 
 class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
@@ -119,10 +118,6 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
 
   void CancelPendingLazyLoad();
 
-  // TODO(sclittle): Make the root margins configurable via field trial
-  // params instead of just hardcoding the value here.
-  static constexpr int kLazyLoadRootMarginPx = 800;
-
   void Trace(blink::Visitor*) override;
 
  protected:
@@ -143,7 +138,7 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
   // This method is intended to be overridden by specific frame classes.
   virtual scoped_refptr<const SecurityOrigin> GetOriginForFeaturePolicy()
       const {
-    return SecurityOrigin::CreateUnique();
+    return SecurityOrigin::CreateUniqueOpaque();
   }
 
   // Return a feature policy container policy for this frame, based on the
@@ -168,18 +163,13 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
     return kReferrerPolicyDefault;
   }
 
-  void LoadIfHiddenOrNearViewport(
-      const ResourceRequest&,
-      FrameLoadType,
-      const HeapVector<Member<IntersectionObserverEntry>>&);
-
   Member<Frame> content_frame_;
   Member<EmbeddedContentView> embedded_content_view_;
   SandboxFlags sandbox_flags_;
 
   ParsedFeaturePolicy container_policy_;
 
-  Member<IntersectionObserver> lazy_load_intersection_observer_;
+  Member<LazyLoadFrameObserver> lazy_load_frame_observer_;
   bool should_lazy_load_children_;
 };
 

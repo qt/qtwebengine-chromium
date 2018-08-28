@@ -41,6 +41,8 @@
 #include "components/history/core/browser/page_usage_data.h"
 #include "components/history/core/browser/url_utils.h"
 #include "components/sync/model_impl/client_tag_based_model_type_processor.h"
+#include "components/url_formatter/url_formatter.h"
+#include "net/base/escape.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sql/error_delegate_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -118,6 +120,17 @@ bool AreIconTypesEquivalent(favicon_base::IconType type_a,
 }
 
 }  // namespace
+
+base::string16 FormatUrlForRedirectComparison(const GURL& url) {
+  url::Replacements<char> remove_port;
+  remove_port.ClearPort();
+  return url_formatter::FormatUrl(
+      url.ReplaceComponents(remove_port),
+      url_formatter::kFormatUrlOmitHTTP | url_formatter::kFormatUrlOmitHTTPS |
+          url_formatter::kFormatUrlOmitUsernamePassword |
+          url_formatter::kFormatUrlOmitTrivialSubdomains,
+      net::UnescapeRule::NONE, nullptr, nullptr, nullptr);
+}
 
 QueuedHistoryDBTask::QueuedHistoryDBTask(
     std::unique_ptr<HistoryDBTask> task,
@@ -506,7 +519,8 @@ void HistoryBackend::AddPage(const HistoryAddPageArgs& request) {
 
     // No redirect case (one element means just the page itself).
     last_ids = AddPageVisit(request.url, request.time, last_ids.second, t,
-                            request.hidden, request.visit_source);
+                            request.hidden, request.visit_source,
+                            IsTypedIncrement(t), request.title);
 
     // Update the segment for this visit. KEYWORD_GENERATED visits should not
     // result in changing most visited, so we don't update segments (most
@@ -577,6 +591,21 @@ void HistoryBackend::AddPage(const HistoryAddPageArgs& request) {
       }
     }
 
+    bool transfer_typed_credit_from_first_to_second_url = false;
+    if (redirects.size() > 1) {
+      // Check if the first redirect is the same as the original URL but
+      // upgraded to HTTPS. This ignores the port numbers (in case of
+      // non-standard HTTP or HTTPS ports) and trivial subdomains (e.g., "www."
+      // or "m.").
+      if (IsTypedIncrement(request_transition) &&
+          redirects[0].SchemeIs(url::kHttpScheme) &&
+          redirects[1].SchemeIs(url::kHttpsScheme) &&
+          FormatUrlForRedirectComparison(redirects[0]) ==
+              FormatUrlForRedirectComparison(redirects[1])) {
+        transfer_typed_credit_from_first_to_second_url = true;
+      }
+    }
+
     for (size_t redirect_index = 0; redirect_index < redirects.size();
          redirect_index++) {
       ui::PageTransition t = ui::PageTransitionFromInt(
@@ -587,12 +616,21 @@ void HistoryBackend::AddPage(const HistoryAddPageArgs& request) {
         t = ui::PageTransitionFromInt(t | ui::PAGE_TRANSITION_CHAIN_END);
       }
 
+      bool should_increment_typed_count = IsTypedIncrement(t);
+      if (transfer_typed_credit_from_first_to_second_url) {
+        if (redirect_index == 0)
+          should_increment_typed_count = false;
+        else if (redirect_index == 1)
+          should_increment_typed_count = true;
+      }
+
       // Record all redirect visits with the same timestamp. We don't display
       // them anyway, and if we ever decide to, we can reconstruct their order
       // from the redirect chain.
       last_ids =
           AddPageVisit(redirects[redirect_index], request.time, last_ids.second,
-                       t, request.hidden, request.visit_source);
+                       t, request.hidden, request.visit_source,
+                       should_increment_typed_count, request.title);
 
       if (t & ui::PAGE_TRANSITION_CHAIN_START) {
         if (request.consider_for_ntp_most_visited) {
@@ -788,9 +826,9 @@ std::pair<URLID, VisitID> HistoryBackend::AddPageVisit(
     VisitID referring_visit,
     ui::PageTransition transition,
     bool hidden,
-    VisitSource visit_source) {
-  const bool typed_increment = IsTypedIncrement(transition);
-
+    VisitSource visit_source,
+    bool should_increment_typed_count,
+    base::Optional<base::string16> title) {
   if (!host_ranks_.empty() && visit_source == SOURCE_BROWSED &&
       (transition & ui::PAGE_TRANSITION_CHAIN_END)) {
     RecordTopHostsMetrics(url);
@@ -803,10 +841,12 @@ std::pair<URLID, VisitID> HistoryBackend::AddPageVisit(
     // Update of an existing row.
     if (!ui::PageTransitionCoreTypeIs(transition, ui::PAGE_TRANSITION_RELOAD))
       url_info.set_visit_count(url_info.visit_count() + 1);
-    if (typed_increment)
+    if (should_increment_typed_count)
       url_info.set_typed_count(url_info.typed_count() + 1);
     if (url_info.last_visit() < time)
       url_info.set_last_visit(time);
+    if (title)
+      url_info.set_title(title.value());
 
     // Only allow un-hiding of pages, never hiding.
     if (!hidden)
@@ -816,8 +856,10 @@ std::pair<URLID, VisitID> HistoryBackend::AddPageVisit(
   } else {
     // Addition of a new row.
     url_info.set_visit_count(1);
-    url_info.set_typed_count(typed_increment ? 1 : 0);
+    url_info.set_typed_count(should_increment_typed_count ? 1 : 0);
     url_info.set_last_visit(time);
+    if (title)
+      url_info.set_title(title.value());
     url_info.set_hidden(hidden);
 
     url_id = db_->AddURL(url_info);
@@ -830,7 +872,7 @@ std::pair<URLID, VisitID> HistoryBackend::AddPageVisit(
 
   // Add the visit with the time to the database.
   VisitRow visit_info(url_id, time, referring_visit, transition, 0,
-                      typed_increment);
+                      should_increment_typed_count);
   VisitID visit_id = db_->AddVisit(&visit_info, visit_source);
 
   if (visit_info.visit_time < first_recorded_time_)
@@ -1038,7 +1080,7 @@ bool HistoryBackend::AddVisits(const GURL& url,
          visit != visits.end(); ++visit) {
       if (!AddPageVisit(url, visit->first, 0, visit->second,
                         !ui::PageTransitionIsMainFrame(visit->second),
-                        visit_source)
+                        visit_source, IsTypedIncrement(visit->second))
                .first) {
         return false;
       }

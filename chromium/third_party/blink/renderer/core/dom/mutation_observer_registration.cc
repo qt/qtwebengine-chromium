@@ -116,9 +116,9 @@ void MutationObserverRegistration::Unregister() {
 
 bool MutationObserverRegistration::ShouldReceiveMutationFrom(
     Node& node,
-    MutationObserver::MutationType type,
+    MutationType type,
     const QualifiedName* attribute_name) const {
-  DCHECK((type == MutationObserver::kAttributes && attribute_name) ||
+  DCHECK((type == kMutationTypeAttributes && attribute_name) ||
          !attribute_name);
   if (!(options_ & type))
     return false;
@@ -126,7 +126,7 @@ bool MutationObserverRegistration::ShouldReceiveMutationFrom(
   if (registration_node_ != &node && !IsSubtree())
     return false;
 
-  if (type != MutationObserver::kAttributes ||
+  if (type != kMutationTypeAttributes ||
       !(options_ & MutationObserver::kAttributeFilter))
     return true;
 
@@ -153,11 +153,6 @@ void MutationObserverRegistration::Trace(blink::Visitor* visitor) {
   visitor->Trace(registration_node_);
   visitor->Trace(registration_node_keep_alive_);
   visitor->Trace(transient_registration_nodes_);
-}
-
-void MutationObserverRegistration::TraceWrappers(
-    ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(observer_);
 }
 
 }  // namespace blink

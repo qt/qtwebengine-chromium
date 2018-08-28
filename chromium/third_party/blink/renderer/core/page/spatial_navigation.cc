@@ -40,6 +40,7 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/frame_tree.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
 
 namespace blink {
@@ -154,7 +155,7 @@ bool HasOffscreenRect(const Node* node, WebFocusType direction) {
   DCHECK(!frame_view->NeedsLayout());
 
   LayoutRect container_viewport_rect(
-      frame_view->LayoutViewportScrollableArea()->VisibleContentRect());
+      frame_view->LayoutViewport()->VisibleContentRect());
   // We want to select a node if it is currently off screen, but will be
   // exposed after we scroll. Adjust the viewport to post-scrolling position.
   // If the container has overflow:hidden, we cannot scroll, so we do not pass
@@ -223,8 +224,8 @@ bool ScrollInDirection(LocalFrame* frame, WebFocusType direction) {
         return false;
     }
 
-    frame->View()->LayoutViewportScrollableArea()->ScrollBy(
-        ScrollOffset(dx, dy), kUserScroll);
+    frame->View()->LayoutViewport()->ScrollBy(ScrollOffset(dx, dy),
+                                              kUserScroll);
     return true;
   }
   return false;
@@ -390,8 +391,7 @@ bool CanScrollInDirection(const LocalFrame* frame, WebFocusType direction) {
   if ((direction == kWebFocusTypeUp || direction == kWebFocusTypeDown) &&
       kScrollbarAlwaysOff == vertical_mode)
     return false;
-  ScrollableArea* scrollable_area =
-      frame->View()->LayoutViewportScrollableArea();
+  ScrollableArea* scrollable_area = frame->View()->LayoutViewport();
   LayoutSize size(scrollable_area->ContentsSize());
   LayoutSize offset(scrollable_area->ScrollOffsetInt());
   LayoutRect rect(scrollable_area->VisibleContentRect(kIncludeScrollbars));
@@ -416,7 +416,7 @@ LayoutRect NodeRectInRootFrame(const Node* node, bool ignore_border) {
   DCHECK(node->GetLayoutObject());
   DCHECK(!node->GetDocument().View()->NeedsLayout());
 
-  LayoutRect rect = node->GetDocument().GetFrame()->View()->AbsoluteToRootFrame(
+  LayoutRect rect = node->GetDocument().GetFrame()->View()->ConvertToRootFrame(
       node->BoundingBox());
 
   // For authors that use border instead of outline in their CSS, we compensate
@@ -694,7 +694,7 @@ LayoutRect VirtualRectForAreaElementAndDirection(const HTMLAreaElement& area,
   // areas.
   LayoutRect rect = VirtualRectForDirection(
       direction,
-      area.GetDocument().GetFrame()->View()->AbsoluteToRootFrame(
+      area.GetDocument().GetFrame()->View()->ConvertToRootFrame(
           area.ComputeAbsoluteRect(area.ImageElement()->GetLayoutObject())),
       LayoutUnit(1));
   return rect;
@@ -710,10 +710,8 @@ LayoutRect FindSearchStartPoint(const LocalFrame* frame,
                                 WebFocusType direction) {
   LayoutRect starting_rect = VirtualRectForDirection(
       direction,
-      frame->View()->AbsoluteToRootFrame(frame->View()->DocumentToAbsolute(
-          LayoutRect(frame->View()
-                         ->LayoutViewportScrollableArea()
-                         ->VisibleContentRect()))));
+      frame->View()->ConvertToRootFrame(frame->View()->DocumentToFrame(
+          LayoutRect(frame->View()->LayoutViewport()->VisibleContentRect()))));
 
   const Element* focused_element = frame->GetDocument()->FocusedElement();
   if (focused_element) {

@@ -33,15 +33,20 @@ public:
      * Draw a SkVertices. The GrPaint param's color is used if the vertices lack per-vertex color.
      * If the vertices lack local coords then the vertex positions are used as local coords. The
      * primitive type drawn is derived from the SkVertices object, unless overridePrimType is
-     * specified. If gammaCorrect is true, the vertex colors will be linearized in the shader to get
-     * correct rendering.
+     * specified.
      */
-    static std::unique_ptr<GrDrawOp> Make(GrPaint&&, sk_sp<SkVertices>, const SkMatrix& viewMatrix,
-                                          GrAAType, bool gammaCorrect, sk_sp<GrColorSpaceXform>,
+    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+                                          GrPaint&&,
+                                          sk_sp<SkVertices>,
+                                          const SkMatrix bones[],
+                                          int boneCount,
+                                          const SkMatrix& viewMatrix,
+                                          GrAAType,
+                                          sk_sp<GrColorSpaceXform>,
                                           GrPrimitiveType* overridePrimType = nullptr);
 
-    GrDrawVerticesOp(const Helper::MakeArgs& helperArgs, GrColor, sk_sp<SkVertices>,
-                     GrPrimitiveType, GrAAType, bool gammaCorrect, sk_sp<GrColorSpaceXform>,
+    GrDrawVerticesOp(const Helper::MakeArgs&, GrColor, sk_sp<SkVertices>, const SkMatrix bones[],
+                     int boneCount, GrPrimitiveType, GrAAType, sk_sp<GrColorSpaceXform>,
                      const SkMatrix& viewMatrix);
 
     const char* name() const override { return "DrawVerticesOp"; }
@@ -54,8 +59,7 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override;
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
-                                GrPixelConfigIsClamped dstIsClamped) override;
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override;
 
 private:
     enum class ColorArrayType {
@@ -65,7 +69,27 @@ private:
 
     void onPrepareDraws(Target*) override;
 
-    sk_sp<GrGeometryProcessor> makeGP(bool* hasColorAttribute, bool* hasLocalCoordAttribute) const;
+    void drawVolatile(Target*);
+    void drawNonVolatile(Target*);
+
+    void fillBuffers(bool hasColorAttribute,
+                     bool hasLocalCoordsAttribute,
+                     bool hasBoneAttribute,
+                     size_t vertexStride,
+                     void* verts,
+                     uint16_t* indices) const;
+
+    void drawVertices(Target*,
+                      GrGeometryProcessor*,
+                      const GrBuffer* vertexBuffer,
+                      int firstVertex,
+                      const GrBuffer* indexBuffer,
+                      int firstIndex);
+
+    sk_sp<GrGeometryProcessor> makeGP(const GrShaderCaps* shaderCaps,
+                                      bool* hasColorAttribute,
+                                      bool* hasLocalCoordAttribute,
+                                      bool* hasBoneAttribute) const;
 
     GrPrimitiveType primitiveType() const { return fPrimitiveType; }
     bool combinablePrimitive() const {
@@ -79,9 +103,11 @@ private:
     struct Mesh {
         GrColor fColor;  // Used if this->hasPerVertexColors() is false.
         sk_sp<SkVertices> fVertices;
+        std::vector<float> fBones; // Transformation matrices stored in GPU format.
         SkMatrix fViewMatrix;
         bool fIgnoreTexCoords;
         bool fIgnoreColors;
+        bool fIgnoreBones;
 
         bool hasExplicitLocalCoords() const {
             return fVertices->hasTexCoords() && !fIgnoreTexCoords;
@@ -89,6 +115,10 @@ private:
 
         bool hasPerVertexColors() const {
             return fVertices->hasColors() && !fIgnoreColors;
+        }
+
+        bool hasBones() const {
+            return fVertices->hasBones() && fBones.size() && !fIgnoreBones;
         }
     };
 
@@ -102,18 +132,22 @@ private:
     }
 
     bool anyMeshHasExplicitLocalCoords() const {
-        return SkToBool(kAnyMeshHasExplicitLocalCoords & fFlags);
+        return SkToBool(kAnyMeshHasExplicitLocalCoords_Flag & fFlags);
     }
 
     bool hasMultipleViewMatrices() const {
         return SkToBool(kHasMultipleViewMatrices_Flag & fFlags);
     }
 
-    enum Flags {
-        kRequiresPerVertexColors_Flag = 0x1,
-        kAnyMeshHasExplicitLocalCoords = 0x2,
-        kHasMultipleViewMatrices_Flag = 0x4
+    bool hasBones() const {
+        return SkToBool(kHasBones_Flag & fFlags);
+    }
 
+    enum Flags {
+        kRequiresPerVertexColors_Flag       = 0x1,
+        kAnyMeshHasExplicitLocalCoords_Flag = 0x2,
+        kHasMultipleViewMatrices_Flag       = 0x4,
+        kHasBones_Flag                      = 0x8,
     };
 
     Helper fHelper;
@@ -125,7 +159,6 @@ private:
     int fVertexCount;
     int fIndexCount;
     ColorArrayType fColorArrayType;
-    bool fLinearizeColors;
     sk_sp<GrColorSpaceXform> fColorSpaceXform;
 
     typedef GrMeshDrawOp INHERITED;

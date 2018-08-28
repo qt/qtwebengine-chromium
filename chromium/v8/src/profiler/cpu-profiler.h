@@ -57,7 +57,7 @@ class CodeCreateEventRecord : public CodeEventRecord {
   CodeEntry* entry;
   unsigned size;
 
-  INLINE(void UpdateCodeMap(CodeMap* code_map));
+  V8_INLINE void UpdateCodeMap(CodeMap* code_map);
 };
 
 
@@ -66,7 +66,7 @@ class CodeMoveEventRecord : public CodeEventRecord {
   Address from;
   Address to;
 
-  INLINE(void UpdateCodeMap(CodeMap* code_map));
+  V8_INLINE void UpdateCodeMap(CodeMap* code_map);
 };
 
 
@@ -75,7 +75,7 @@ class CodeDisableOptEventRecord : public CodeEventRecord {
   Address start;
   const char* bailout_reason;
 
-  INLINE(void UpdateCodeMap(CodeMap* code_map));
+  V8_INLINE void UpdateCodeMap(CodeMap* code_map);
 };
 
 
@@ -86,8 +86,10 @@ class CodeDeoptEventRecord : public CodeEventRecord {
   int deopt_id;
   Address pc;
   int fp_to_sp_delta;
+  CpuProfileDeoptFrame* deopt_frames;
+  int deopt_frame_count;
 
-  INLINE(void UpdateCodeMap(CodeMap* code_map));
+  V8_INLINE void UpdateCodeMap(CodeMap* code_map);
 };
 
 
@@ -96,7 +98,7 @@ class ReportBuiltinEventRecord : public CodeEventRecord {
   Address start;
   Builtins::Name builtin_id;
 
-  INLINE(void UpdateCodeMap(CodeMap* code_map));
+  V8_INLINE void UpdateCodeMap(CodeMap* code_map);
 };
 
 
@@ -138,7 +140,7 @@ class ProfilerEventsProcessor : public base::Thread {
   // Thread control.
   virtual void Run();
   void StopSynchronously();
-  INLINE(bool running()) { return !!base::Relaxed_Load(&running_); }
+  V8_INLINE bool running() { return !!base::Relaxed_Load(&running_); }
   void Enqueue(const CodeEventsContainer& event);
 
   // Puts current stack into tick sample events buffer.
@@ -181,7 +183,7 @@ class ProfilerEventsProcessor : public base::Thread {
   SamplingCircularQueue<TickSampleEventRecord,
                         kTickSampleQueueLength> ticks_buffer_;
   LockedQueue<TickSampleEventRecord> ticks_from_vm_buffer_;
-  base::AtomicNumber<unsigned> last_code_event_id_;
+  std::atomic<unsigned> last_code_event_id_;
   unsigned last_processed_code_event_id_;
 };
 
@@ -197,10 +199,13 @@ class CpuProfiler : public CodeEventObserver {
 
   static void CollectSample(Isolate* isolate);
 
+  typedef v8::CpuProfilingMode ProfilingMode;
+
   void set_sampling_interval(base::TimeDelta value);
   void CollectSample();
-  void StartProfiling(const char* title, bool record_samples = false);
-  void StartProfiling(String* title, bool record_samples);
+  void StartProfiling(const char* title, bool record_samples = false,
+                      ProfilingMode mode = ProfilingMode::kLeafNodeLineNumbers);
+  void StartProfiling(String* title, bool record_samples, ProfilingMode mode);
   CpuProfile* StopProfiling(const char* title);
   CpuProfile* StopProfiling(String* title);
   int GetProfilesCount();

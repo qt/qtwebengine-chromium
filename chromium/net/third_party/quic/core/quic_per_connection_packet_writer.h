@@ -5,15 +5,16 @@
 #ifndef NET_THIRD_PARTY_QUIC_CORE_QUIC_PER_CONNECTION_PACKET_WRITER_H_
 #define NET_THIRD_PARTY_QUIC_CORE_QUIC_PER_CONNECTION_PACKET_WRITER_H_
 
-#include <stddef.h>
+#include <cstddef>
 
 #include "base/macros.h"
 #include "net/third_party/quic/core/quic_connection.h"
 #include "net/third_party/quic/core/quic_packet_writer.h"
 
-namespace net {
+namespace quic {
 
 // A connection-specific packet writer that wraps a shared writer.
+// TODO(wub): Get rid of this class.
 class QuicPerConnectionPacketWriter : public QuicPacketWriter {
  public:
   // Does not take ownership of |shared_writer|.
@@ -32,6 +33,11 @@ class QuicPerConnectionPacketWriter : public QuicPacketWriter {
   void SetWritable() override;
   QuicByteCount GetMaxPacketSize(
       const QuicSocketAddress& peer_address) const override;
+  bool SupportsReleaseTime() const override;
+
+  bool IsBatchMode() const override;
+  char* GetNextWriteLocation() const override;
+  WriteResult Flush() override;
 
  private:
   QuicPacketWriter* shared_writer_;  // Not owned.
@@ -39,6 +45,6 @@ class QuicPerConnectionPacketWriter : public QuicPacketWriter {
   DISALLOW_COPY_AND_ASSIGN(QuicPerConnectionPacketWriter);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_PER_CONNECTION_PACKET_WRITER_H_

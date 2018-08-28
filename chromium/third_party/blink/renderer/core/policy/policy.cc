@@ -25,7 +25,7 @@ bool Policy::allowsFeature(const String& feature) const {
 bool Policy::allowsFeature(const String& feature, const String& url) const {
   scoped_refptr<const SecurityOrigin> origin =
       SecurityOrigin::CreateFromString(url);
-  if (!origin || origin->IsUnique()) {
+  if (!origin || origin->IsOpaque()) {
     GetDocument()->AddConsoleMessage(ConsoleMessage::Create(
         kOtherMessageSource, kWarningMessageLevel,
         "Invalid origin url for feature '" + feature + "': " + url + "."));
@@ -77,5 +77,9 @@ void Policy::AddWarningForUnrecognizedFeature(const String& feature) const {
 void Policy::Trace(blink::Visitor* visitor) {
   ScriptWrappable::Trace(visitor);
 }
+
+void Policy::UpdateContainerPolicy(
+    const ParsedFeaturePolicy& container_policy,
+    scoped_refptr<const SecurityOrigin> src_origin) {}
 
 }  // namespace blink

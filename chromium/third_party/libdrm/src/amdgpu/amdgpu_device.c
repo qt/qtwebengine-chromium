@@ -130,7 +130,6 @@ static int amdgpu_get_auth(int fd, int *auth)
 
 static void amdgpu_device_free_internal(amdgpu_device_handle dev)
 {
-	const struct amdgpu_asic_id *id;
 	amdgpu_vamgr_deinit(&dev->vamgr_32);
 	amdgpu_vamgr_deinit(&dev->vamgr);
 	util_hash_table_destroy(dev->bo_flink_names);
@@ -140,12 +139,7 @@ static void amdgpu_device_free_internal(amdgpu_device_handle dev)
 	close(dev->fd);
 	if ((dev->flink_fd >= 0) && (dev->fd != dev->flink_fd))
 		close(dev->flink_fd);
-	if (dev->asic_ids) {
-		for (id = dev->asic_ids; id->did; id++)
-			free(id->marketing_name);
-
-		free(dev->asic_ids);
-	}
+	free(dev->marketing_name);
 	free(dev);
 }
 
@@ -270,27 +264,17 @@ int amdgpu_device_initialize(int fd,
 		goto cleanup;
 	}
 
-	amdgpu_vamgr_init(&dev->vamgr, dev->dev_info.virtual_address_offset,
-			  dev->dev_info.virtual_address_max,
-			  dev->dev_info.virtual_address_alignment);
-
+	start = dev->dev_info.virtual_address_offset;
 	max = MIN2(dev->dev_info.virtual_address_max, 0xffffffff);
-	start = amdgpu_vamgr_find_va(&dev->vamgr,
-				     max - dev->dev_info.virtual_address_offset,
-				     dev->dev_info.virtual_address_alignment, 0);
-	if (start > 0xffffffff) {
-		fprintf(stderr, "%s: amdgpu_vamgr_find_va failed\n", __func__);
-		goto free_va; /* shouldn't get here */
-	}
-
 	amdgpu_vamgr_init(&dev->vamgr_32, start, max,
 			  dev->dev_info.virtual_address_alignment);
 
-	r = amdgpu_parse_asic_ids(&dev->asic_ids);
-	if (r) {
-		fprintf(stderr, "%s: Cannot parse ASIC IDs, 0x%x.",
-			__func__, r);
-	}
+	start = MAX2(dev->dev_info.virtual_address_offset, 0x100000000ULL);
+	max = MAX2(dev->dev_info.virtual_address_max, 0x100000000ULL);
+	amdgpu_vamgr_init(&dev->vamgr, start, max,
+			  dev->dev_info.virtual_address_alignment);
+
+	amdgpu_parse_asic_ids(dev);
 
 	*major_version = dev->major_version;
 	*minor_version = dev->minor_version;
@@ -299,12 +283,6 @@ int amdgpu_device_initialize(int fd,
 	pthread_mutex_unlock(&fd_mutex);
 
 	return 0;
-
-free_va:
-	r = -ENOMEM;
-	amdgpu_vamgr_free_va(&dev->vamgr, start,
-			     max - dev->dev_info.virtual_address_offset);
-	amdgpu_vamgr_deinit(&dev->vamgr);
 
 cleanup:
 	if (dev->fd >= 0)
@@ -322,16 +300,5 @@ int amdgpu_device_deinitialize(amdgpu_device_handle dev)
 
 const char *amdgpu_get_marketing_name(amdgpu_device_handle dev)
 {
-	const struct amdgpu_asic_id *id;
-
-	if (!dev->asic_ids)
-		return NULL;
-
-	for (id = dev->asic_ids; id->did; id++) {
-		if ((id->did == dev->info.asic_id) &&
-		    (id->rid == dev->info.pci_rev_id))
-			return id->marketing_name;
-	}
-
-	return NULL;
+	return dev->marketing_name;
 }

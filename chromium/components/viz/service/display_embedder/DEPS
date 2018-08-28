@@ -9,6 +9,8 @@ include_rules = [
   "+components/viz/service/display/output_surface_frame.h",
   "+components/viz/service/display/output_surface.h",
   "+components/viz/service/display/overlay_candidate_validator.h",
+  "+components/viz/service/display/resource_metadata.h",
+  "+components/viz/service/display/shared_bitmap_manager.h",
   "+components/viz/service/display/skia_output_surface.h",
   "+components/viz/service/display/software_output_device.h",
   "+gpu/config/gpu_feature_info.h",
@@ -17,8 +19,10 @@ include_rules = [
   "+gpu/command_buffer/client",
   "+gpu/command_buffer/common",
   "+gpu/command_buffer/service",
+  "+gpu/config",
   "+gpu/ipc",
   "+gpu/skia_bindings",
+  "+gpu/vulkan",
   "+mojo/public/cpp/bindings",
   "+mojo/public/cpp/system",
   "+skia",
@@ -43,10 +47,6 @@ specific_include_rules = {
   ".*_unittest\.cc": [
     "+cc/test",
     "+third_party/khronos/GLES2",
-  ],
-  # TODO(kylechar): Move this class to components/viz/service/frame_sinks/.
-  "external_begin_frame_controller_impl.h": [
-    "+components/viz/service/display/display.h",
   ],
   # TODO(kylechar): Break these dependencies.
   "gpu_display_provider.cc": [

@@ -167,9 +167,11 @@ unsigned int ComputedStylePropertyMap::size() {
   if (!style)
     return 0;
 
-  const auto& variables = ComputedStyleCSSValueMapping::GetVariables(*style);
+  DCHECK(StyledNode());
   return CSSComputedStyleDeclaration::ComputableProperties().size() +
-         (variables ? variables->size() : 0);
+         ComputedStyleCSSValueMapping::GetVariables(
+             *style, StyledNode()->GetDocument().GetPropertyRegistry())
+             .size();
 }
 
 bool ComputedStylePropertyMap::ComparePropertyNames(const String& a,
@@ -264,15 +266,12 @@ void ComputedStylePropertyMap::ForEachProperty(
       values.emplace_back(property->GetPropertyNameAtomicString(), value);
   }
 
-  const auto& variables = ComputedStyleCSSValueMapping::GetVariables(*style);
-  if (variables) {
-    for (const auto& name_value : *variables) {
-      if (name_value.value) {
-        values.emplace_back(name_value.key,
-                            CSSCustomPropertyDeclaration::Create(
-                                name_value.key, name_value.value));
-      }
-    }
+  PropertyRegistry* registry =
+      StyledNode()->GetDocument().GetPropertyRegistry();
+
+  for (const auto& name_value :
+       ComputedStyleCSSValueMapping::GetVariables(*style, registry)) {
+    values.emplace_back(name_value.key, name_value.value);
   }
 
   std::sort(values.begin(), values.end(), [](const auto& a, const auto& b) {

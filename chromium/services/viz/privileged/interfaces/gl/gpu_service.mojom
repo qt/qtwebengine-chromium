@@ -83,9 +83,6 @@ interface GpuService {
   // Note that this method is used only from a trusted process.
   LoadedShader(string key, string data);
 
-  // Tells GPU to release the surface because it's being destroyed.
-  DestroyingVideoSurface(int32 surface_id) => ();
-
   // Tells GPU to wake up the GPU because we're about to draw.
   WakeUpGpu();
 
@@ -105,6 +102,15 @@ interface GpuService {
   OnBackgrounded();
   // Called by the browser immediately after the application is foregrounded.
   OnForegrounded();
+
+  // Begin a batch of layer tree changes.
+  [EnableIf=is_mac]
+  BeginCATransaction();
+
+  // Commit a batch of layer tree changes atomically. Returns after the commit
+  // completes.
+  [EnableIf=is_mac]
+  CommitCATransaction() => ();
 
   Crash();
   Hang();

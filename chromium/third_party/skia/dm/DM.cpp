@@ -268,7 +268,10 @@ static void find_culprit() {
     static void crash_handler(int sig) {
         SkAutoMutexAcquire lock(gMutex);
 
-        info("\nCaught signal %d [%s], was running:\n", sig, strsignal(sig));
+        info("\nCaught signal %d [%s] (%dMB RAM, peak %dMB), was running:\n",
+             sig, strsignal(sig),
+             sk_tools::getCurrResidentSetSizeMB(), sk_tools::getMaxResidentSetSizeMB());
+
         for (auto& task : gRunning) {
             task.dump();
         }
@@ -289,21 +292,11 @@ static void find_culprit() {
         raise(sig);
     }
 
-    static void term_handler(int sig) {
-        info("\nWe have been politely asked to die by %s (%d)."
-             "\nCurrently using %dMB RAM, peak %dMB.\n",
-             strsignal(sig), sig,
-             sk_tools::getCurrResidentSetSizeMB(), sk_tools::getMaxResidentSetSizeMB());
-        signal(sig, previous_handler[sig]);
-        raise(sig);
-    }
-
     static void setup_crash_handler() {
-        const int kSignals[] = { SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGSEGV };
+        const int kSignals[] = { SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGINT, SIGSEGV, SIGTERM };
         for (int sig : kSignals) {
             previous_handler[sig] = signal(sig, crash_handler);
         }
-        previous_handler[SIGTERM] = signal(SIGTERM, term_handler);
 
         if (FLAGS_ignoreSigInt) {
             signal(SIGINT, SIG_IGN);
@@ -857,17 +850,8 @@ static void push_sink(const SkCommandLineConfig& config, Sink* s) {
     ts.tag = config.getTag();
 }
 
-static bool gpu_supported() {
-#if SK_SUPPORT_GPU
-    return FLAGS_gpu;
-#else
-    return false;
-#endif
-}
-
 static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLineConfig* config) {
-#if SK_SUPPORT_GPU
-    if (gpu_supported()) {
+    if (FLAGS_gpu) {
         if (const SkCommandLineConfigGpu* gpuConfig = config->asConfigGpu()) {
             GrContextFactory::ContextType contextType = gpuConfig->getContextType();
             GrContextFactory::ContextOverrides contextOverrides = gpuConfig->getContextOverrides();
@@ -878,7 +862,14 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
                 return nullptr;
             }
             if (gpuConfig->getTestThreading()) {
+                SkASSERT(!gpuConfig->getTestPersistentCache());
                 return new GPUThreadTestingSink(
+                        contextType, contextOverrides, gpuConfig->getSurfType(),
+                        gpuConfig->getSamples(), gpuConfig->getUseDIText(),
+                        gpuConfig->getColorType(), gpuConfig->getAlphaType(),
+                        sk_ref_sp(gpuConfig->getColorSpace()), FLAGS_gpu_threading, grCtxOptions);
+            } else if (gpuConfig->getTestPersistentCache()) {
+                return new GPUPersistentCacheTestingSink(
                         contextType, contextOverrides, gpuConfig->getSurfType(),
                         gpuConfig->getSamples(), gpuConfig->getUseDIText(),
                         gpuConfig->getColorType(), gpuConfig->getAlphaType(),
@@ -892,7 +883,6 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
             }
         }
     }
-#endif
     if (const SkCommandLineConfigSvg* svgConfig = config->asConfigSvg()) {
         int pageIndex = svgConfig->getPageIndex();
         return new SVGSink(pageIndex);
@@ -901,23 +891,15 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
 #define SINK(t, sink, ...) if (config->getBackend().equals(t)) { return new sink(__VA_ARGS__); }
 
     if (FLAGS_cpu) {
-        auto srgbColorSpace = SkColorSpace::MakeSRGB();
-        auto srgbLinearColorSpace = SkColorSpace::MakeSRGBLinear();
-        auto esrgb = SkColorSpace::MakeSRGB()->makeNonlinearBlending();
-
         SINK("g8",      RasterSink, kGray_8_SkColorType);
         SINK("565",     RasterSink, kRGB_565_SkColorType);
         SINK("4444",    RasterSink, kARGB_4444_SkColorType);
         SINK("8888",    RasterSink, kN32_SkColorType);
-        SINK("srgb",    RasterSink, kN32_SkColorType, srgbColorSpace);
         SINK("rgba",    RasterSink, kRGBA_8888_SkColorType);
         SINK("bgra",    RasterSink, kBGRA_8888_SkColorType);
         SINK("rgbx",    RasterSink, kRGB_888x_SkColorType);
         SINK("1010102", RasterSink, kRGBA_1010102_SkColorType);
         SINK("101010x", RasterSink, kRGB_101010x_SkColorType);
-        SINK("f16",     RasterSink, kRGBA_F16_SkColorType, srgbLinearColorSpace);
-        SINK("esrgb",   RasterSink, kRGBA_F16_SkColorType, esrgb);
-        SINK("srgbnl",  RasterSink, kRGBA_8888_SkColorType, esrgb);
         SINK("t8888",   ThreadedSink, kN32_SkColorType);
         SINK("pdf",     PDFSink, false, SK_ScalarDefaultRasterDPI);
         SINK("skp",     SKPSink);
@@ -928,14 +910,27 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
         SINK("pdfa",    PDFSink, true,  SK_ScalarDefaultRasterDPI);
         SINK("pdf300",  PDFSink, false, 300);
         SINK("jsdebug", DebugSink);
+
+        // Configs relevant to color management testing (and 8888 for reference).
+
+        // 'narrow' has a gamut narrower than sRGB, and different transfer function.
+        SkMatrix44 narrow_gamut(SkMatrix44::kUninitialized_Constructor);
+        narrow_gamut.set3x3RowMajorf(gNarrow_toXYZD50);
+
+        auto narrow = SkColorSpace::MakeRGB(k2Dot2Curve_SkGammaNamed, narrow_gamut),
+               srgb = SkColorSpace::MakeSRGB(),
+         srgbLinear = SkColorSpace::MakeSRGBLinear();
+
+        SINK(    "f16",  RasterSink,  kRGBA_F16_SkColorType, srgbLinear);
+        SINK(   "srgb",  RasterSink, kRGBA_8888_SkColorType, srgb      );
+        SINK(  "esrgb",  RasterSink,  kRGBA_F16_SkColorType, srgb      );
+        SINK( "narrow",  RasterSink, kRGBA_8888_SkColorType, narrow    );
+        SINK("enarrow",  RasterSink,  kRGBA_F16_SkColorType, narrow    );
+
+        SINK(    "f32",  RasterSink,  kRGBA_F32_SkColorType, srgbLinear);
     }
 #undef SINK
     return nullptr;
-}
-
-static sk_sp<SkColorSpace> adobe_rgb() {
-    return SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
-                                 SkColorSpace::kAdobeRGB_Gamut);
 }
 
 static sk_sp<SkColorSpace> rgb_to_gbr() {
@@ -944,7 +939,6 @@ static sk_sp<SkColorSpace> rgb_to_gbr() {
 
 static Sink* create_via(const SkString& tag, Sink* wrapped) {
 #define VIA(t, via, ...) if (tag.equals(t)) { return new via(__VA_ARGS__); }
-    VIA("adobe",     ViaCSXform,           wrapped, adobe_rgb(), false);
     VIA("gbr",       ViaCSXform,           wrapped, rgb_to_gbr(), true);
     VIA("lite",      ViaLite,              wrapped);
     VIA("pipe",      ViaPipe,              wrapped);
@@ -1048,8 +1042,6 @@ static bool dump_png(SkBitmap bitmap, const char* path, const char* md5) {
     options.fComments         = SkDataTable::MakeCopyArrays((const void**)comments, lengths, 4);
     options.fFilterFlags      = SkPngEncoder::FilterFlag::kNone;
     options.fZLibLevel        = 1;
-    options.fUnpremulBehavior = pm.colorSpace() ? SkTransferFunctionBehavior::kRespect
-                                                : SkTransferFunctionBehavior::kIgnore;
     return SkPngEncoder::Encode(&dst, pm, options);
 }
 
@@ -1272,7 +1264,7 @@ static void gather_tests() {
         if (SkCommandLineFlags::ShouldSkip(FLAGS_match, test.name)) {
             continue;
         }
-        if (test.needsGpu && gpu_supported()) {
+        if (test.needsGpu && FLAGS_gpu) {
             (FLAGS_gpu_threading ? gParallelTests : gSerialTests).push(test);
         } else if (!test.needsGpu && FLAGS_cpu) {
             gParallelTests.push(test);
@@ -1303,20 +1295,6 @@ static void run_test(skiatest::Test test, const GrContextOptions& grCtxOptions) 
 }
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-
-#define PORTABLE_FONT_PREFIX "Toy Liberation "
-
-static sk_sp<SkTypeface> create_from_name(const char familyName[], SkFontStyle style) {
-    if (familyName && strlen(familyName) > sizeof(PORTABLE_FONT_PREFIX)
-            && !strncmp(familyName, PORTABLE_FONT_PREFIX, sizeof(PORTABLE_FONT_PREFIX) - 1)) {
-        return sk_tool_utils::create_portable_typeface(familyName, style);
-    }
-    return nullptr;
-}
-
-#undef PORTABLE_FONT_PREFIX
-
-extern sk_sp<SkTypeface> (*gCreateTypefaceDelegate)(const char [], SkFontStyle );
 
 int main(int argc, char** argv) {
 #if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && defined(SK_HAS_HEIF_LIBRARY)
@@ -1365,14 +1343,11 @@ int main(int argc, char** argv) {
     }
 
     GrContextOptions grCtxOptions;
-#if SK_SUPPORT_GPU
     SetCtxOptionsFromCommonFlags(&grCtxOptions);
-#endif
 
     JsonWriter::DumpJson();  // It's handy for the bots to assume this is ~never missing.
     SkAutoGraphics ag;
     SkTaskGroup::Enabler enabled(FLAGS_threads);
-    gCreateTypefaceDelegate = &create_from_name;
 
     if (nullptr == GetResourceAsData("images/color_wheel.png")) {
         info("Some resources are missing.  Do you need to set --resourcePath?\n");
@@ -1433,13 +1408,12 @@ int main(int argc, char** argv) {
     parallel.wait();
     gDefinitelyThreadSafeWork.wait();
 
+    // At this point we're back in single-threaded land.
+
     // We'd better have run everything.
     SkASSERT(gPending == 0);
     // Make sure we've flushed all our results to disk.
     JsonWriter::DumpJson();
-
-    // At this point we're back in single-threaded land.
-    sk_tool_utils::release_portable_typefaces();
 
     if (gFailures.count() > 0) {
         info("Failures:\n");

@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/style/shadow_list.h"
 #include "third_party/blink/renderer/platform/length_functions.h"
 #include "third_party/blink/renderer/platform/scroll/main_thread_scrolling_reason.h"
@@ -224,10 +225,8 @@ void LayoutBoxModelObject::StyleWillChange(StyleDifference diff,
     if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
       ObjectPaintInvalidator(*this).SlowSetPaintingLayerNeedsRepaint();
     } else {
-      // The following disablers are valid because we need to invalidate based
-      // on the current status.
+      // We need to invalidate based on the current compositing status.
       DisableCompositingQueryAsserts compositing_disabler;
-      DisablePaintInvalidationStateAsserts paint_disabler;
       ObjectPaintInvalidator(*this)
           .InvalidatePaintIncludingNonCompositingDescendants();
     }
@@ -293,7 +292,7 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
     Layer()->UpdateFilters(old_style, StyleRef());
     Layer()->UpdateClipPath(old_style, StyleRef());
     // Calls DestroyLayer() which clears the layer.
-    Layer()->RemoveOnlyThisLayerAfterStyleChange();
+    Layer()->RemoveOnlyThisLayerAfterStyleChange(old_style);
     if (EverHadLayout())
       SetChildNeedsLayout();
     if (had_transform_related_property) {
@@ -339,23 +338,6 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
         ToLayoutBox(child)->MarkOrthogonalWritingModeRoot();
       else
         ToLayoutBox(child)->UnmarkOrthogonalWritingModeRoot();
-    }
-  }
-
-  // Fixed-position is painted using transform. In the case that the object
-  // gets the same layout after changing position property, although no
-  // re-raster (rect-based invalidation) is needed, display items should
-  // still update their paint offset.
-  // For SPv175, invalidation for paint offset change is done during PrePaint.
-  if (old_style && !RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    bool new_style_is_fixed_position =
-        Style()->GetPosition() == EPosition::kFixed;
-    bool old_style_is_fixed_position =
-        old_style->GetPosition() == EPosition::kFixed;
-    if (new_style_is_fixed_position != old_style_is_fixed_position) {
-      ObjectPaintInvalidator(*this)
-          .InvalidateDisplayItemClientsIncludingNonCompositingDescendants(
-              PaintInvalidationReason::kStyle);
     }
   }
 
@@ -430,8 +412,7 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
     }
   }
 
-  if (old_style && RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-      HasLayer() && !Layer()->NeedsRepaint()) {
+  if (old_style && HasLayer() && !Layer()->NeedsRepaint()) {
     if (old_style->BackfaceVisibility() != StyleRef().BackfaceVisibility()) {
       // We need to repaint the layer to update the backface visibility value of
       // the paint chunk.
@@ -1035,10 +1016,8 @@ bool LayoutBoxModelObject::IsSlowRepaintConstrainedObject() const {
 
 FloatRect LayoutBoxModelObject::ComputeStickyConstrainingRect() const {
   if (Layer()->AncestorOverflowLayer()->IsRootLayer()) {
-    return View()
-        ->GetFrameView()
-        ->LayoutViewportScrollableArea()
-        ->VisibleContentRect();
+    return FloatRect(
+        View()->GetFrameView()->LayoutViewport()->VisibleContentRect());
   }
 
   LayoutBox* enclosing_clipping_box =

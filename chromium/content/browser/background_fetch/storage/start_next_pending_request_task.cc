@@ -5,6 +5,7 @@
 #include "content/browser/background_fetch/storage/start_next_pending_request_task.h"
 
 #include "base/guid.h"
+#include "content/browser/background_fetch/background_fetch_data_manager.h"
 #include "content/browser/background_fetch/storage/database_helpers.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 
@@ -13,11 +14,11 @@ namespace content {
 namespace background_fetch {
 
 StartNextPendingRequestTask::StartNextPendingRequestTask(
-    BackgroundFetchDataManager* data_manager,
+    DatabaseTaskHost* host,
     int64_t service_worker_registration_id,
     std::unique_ptr<proto::BackgroundFetchMetadata> metadata,
     NextRequestCallback callback)
-    : DatabaseTask(data_manager),
+    : DatabaseTask(host),
       service_worker_registration_id_(service_worker_registration_id),
       metadata_(std::move(metadata)),
       callback_(std::move(callback)),
@@ -41,25 +42,26 @@ void StartNextPendingRequestTask::GetPendingRequests() {
 
 void StartNextPendingRequestTask::DidGetPendingRequests(
     const std::vector<std::string>& data,
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   switch (ToDatabaseStatus(status)) {
     case DatabaseStatus::kNotFound:
     case DatabaseStatus::kFailed:
       // TODO(crbug.com/780025): Log failures to UMA.
-      std::move(callback_).Run(nullptr /* request */);
-      Finished();  // Destroys |this|.
+      FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
       return;
     case DatabaseStatus::kOk:
       if (data.empty()) {
         // There are no pending requests.
-        std::move(callback_).Run(nullptr /* request */);
-        Finished();  // Destroys |this|.
+        FinishWithError(blink::mojom::BackgroundFetchError::NONE);
         return;
       }
   }
 
   if (!pending_request_.ParseFromString(data.front())) {
-    NOTREACHED() << "Database is corrupt";  // TODO(crbug.com/780027): Nuke it.
+    // Service Worker database has been corrupted. Abandon fetches.
+    AbandonFetches(service_worker_registration_id_);
+    FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
+    return;
   }
 
   // Make sure there isn't already an Active Request.
@@ -74,12 +76,10 @@ void StartNextPendingRequestTask::DidGetPendingRequests(
 
 void StartNextPendingRequestTask::DidFindActiveRequest(
     const std::vector<std::string>& data,
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   switch (ToDatabaseStatus(status)) {
     case DatabaseStatus::kFailed:
-      // TODO(crbug.com/780025): Log failures to UMA.
-      std::move(callback_).Run(nullptr /* request */);
-      Finished();  // Destroys |this|.
+      FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
       return;
     case DatabaseStatus::kNotFound:
       CreateAndStoreActiveRequest();
@@ -87,8 +87,10 @@ void StartNextPendingRequestTask::DidFindActiveRequest(
     case DatabaseStatus::kOk:
       // We already stored the active request.
       if (!active_request_.ParseFromString(data.front())) {
-        NOTREACHED()
-            << "Database is corrupt";  // TODO(crbug.com/780027): Nuke it.
+        // Service worker database has been corrupted. Abandon fetches.
+        AbandonFetches(service_worker_registration_id_);
+        FinishWithError(blink::mojom::BackgroundFetchError::STORAGE_ERROR);
+        return;
       }
       StartDownload();
       return;
@@ -116,15 +118,13 @@ void StartNextPendingRequestTask::CreateAndStoreActiveRequest() {
 }
 
 void StartNextPendingRequestTask::DidStoreActiveRequest(
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   switch (ToDatabaseStatus(status)) {
     case DatabaseStatus::kOk:
       break;
     case DatabaseStatus::kFailed:
     case DatabaseStatus::kNotFound:
-      // TODO(crbug.com/780025): Log failures to UMA.
-      std::move(callback_).Run(nullptr /* request */);
-      Finished();  // Destroys |this|.
+      FinishWithError(blink::mojom::BackgroundFetchError::NONE);
       return;
   }
   StartDownload();
@@ -151,8 +151,15 @@ void StartNextPendingRequestTask::StartDownload() {
 }
 
 void StartNextPendingRequestTask::DidDeletePendingRequest(
-    ServiceWorkerStatusCode status) {
+    blink::ServiceWorkerStatusCode status) {
   // TODO(crbug.com/780025): Log failures to UMA.
+  FinishWithError(blink::mojom::BackgroundFetchError::NONE);
+}
+
+void StartNextPendingRequestTask::FinishWithError(
+    blink::mojom::BackgroundFetchError error) {
+  if (callback_)
+    std::move(callback_).Run(nullptr /* request */);
   Finished();  // Destroys |this|.
 }
 

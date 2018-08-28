@@ -19,7 +19,7 @@ const CJX_MethodSpec CJX_TreeList::MethodSpecs[] = {
     {"namedItem", namedItem_static}};
 
 CJX_TreeList::CJX_TreeList(CXFA_TreeList* list) : CJX_List(list) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_TreeList::~CJX_TreeList() {}
@@ -37,7 +37,7 @@ CJS_Return CJX_TreeList::namedItem(
   CXFA_Node* pNode = GetXFATreeList()->NamedItem(
       runtime->ToWideString(params[0]).AsStringView());
   if (!pNode)
-    return CJS_Return(true);
+    return CJS_Return();
 
   CFXJSE_Value* value =
       GetDocument()->GetScriptContext()->GetJSValueFromMap(pNode);

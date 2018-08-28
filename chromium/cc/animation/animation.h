@@ -14,7 +14,6 @@
 #include "cc/animation/animation_curve.h"
 #include "cc/animation/animation_export.h"
 #include "cc/animation/element_animations.h"
-#include "cc/animation/keyframe_effect.h"
 #include "cc/animation/keyframe_model.h"
 #include "cc/trees/element_id.h"
 
@@ -24,6 +23,7 @@ class AnimationDelegate;
 class AnimationEvents;
 class AnimationHost;
 class AnimationTimeline;
+class KeyframeEffect;
 struct AnimationEvent;
 
 // An Animation is responsible for managing animating properties for a set of
@@ -62,6 +62,10 @@ class CC_ANIMATION_EXPORT Animation : public base::RefCounted<Animation> {
   }
   virtual void SetAnimationTimeline(AnimationTimeline* timeline);
 
+  // TODO(smcgruer): If/once ScrollTimeline is supported on normal Animations,
+  // we will need to move the promotion logic from WorkletAnimation to here.
+  virtual void PromoteScrollTimelinePendingToActive() {}
+
   bool has_element_animations() const;
   scoped_refptr<ElementAnimations> element_animations(
       KeyframeEffectId keyframe_effect_id) const;
@@ -87,10 +91,10 @@ class CC_ANIMATION_EXPORT Animation : public base::RefCounted<Animation> {
       KeyframeEffectId keyframe_effect_id);
   void AbortKeyframeModelForKeyframeEffect(int keyframe_model_id,
                                            KeyframeEffectId keyframe_effect_id);
-  void AbortKeyframeModels(TargetProperty::Type target_property,
-                           bool needs_completion);
+  void AbortKeyframeModelsWithProperty(TargetProperty::Type target_property,
+                                       bool needs_completion);
 
-  void PushPropertiesTo(Animation* animation_impl);
+  virtual void PushPropertiesTo(Animation* animation_impl);
 
   void UpdateState(bool start_ready_keyframe_models, AnimationEvents* events);
   virtual void Tick(base::TimeTicks monotonic_time);

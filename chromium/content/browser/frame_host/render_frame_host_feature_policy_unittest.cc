@@ -30,7 +30,7 @@ class RenderFrameHostFeaturePolicyTest
   static constexpr const char* kOrigin4 = "https://test.com";
 
   static const blink::mojom::FeaturePolicyFeature kDefaultEnabledFeature =
-      blink::mojom::FeaturePolicyFeature::kDocumentStreamInsertion;
+      blink::mojom::FeaturePolicyFeature::kDocumentWrite;
   static const blink::mojom::FeaturePolicyFeature kDefaultSelfFeature =
       blink::mojom::FeaturePolicyFeature::kGeolocation;
 
@@ -113,7 +113,7 @@ TEST_F(RenderFrameHostFeaturePolicyTest, HeaderPolicy) {
   EXPECT_TRUE(parent->IsFeatureEnabled(kDefaultSelfFeature));
   EXPECT_TRUE(child->IsFeatureEnabled(kDefaultSelfFeature));
 
-  // Set an empty whitelist in the child to test that the policies combine
+  // Set an empty allowlist in the child to test that the policies combine
   // correctly.
   RefreshPageAndSetHeaderPolicy(&child, kDefaultSelfFeature,
                                 std::vector<std::string>());

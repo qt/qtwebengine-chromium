@@ -48,7 +48,7 @@ AudioOutputStreamBroker::AudioOutputStreamBroker(
 
   // Unretained is safe because |this| owns |client_|
   client_.set_connection_error_handler(base::BindOnce(
-      &AudioOutputStreamBroker::Cleanup, base::Unretained(this)));
+      &AudioOutputStreamBroker::ClientBindingLost, base::Unretained(this)));
 }
 
 AudioOutputStreamBroker::~AudioOutputStreamBroker() {
@@ -101,7 +101,7 @@ void AudioOutputStreamBroker::CreateStream(
 
 void AudioOutputStreamBroker::StreamCreated(
     media::mojom::AudioOutputStreamPtr stream,
-    media::mojom::AudioDataPipePtr data_pipe) {
+    media::mojom::ReadWriteAudioDataPipePtr data_pipe) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(owning_sequence_);
   TRACE_EVENT_NESTABLE_ASYNC_END1("audio", "CreateStream", this, "success",
                                   !!data_pipe);
@@ -146,6 +146,12 @@ void AudioOutputStreamBroker::ObserverBindingLost(
                                 DisconnectReason::kPlatformError),
       std::string());
 
+  Cleanup();
+}
+
+void AudioOutputStreamBroker::ClientBindingLost() {
+  disconnect_reason_ = media::mojom::AudioOutputStreamObserver::
+      DisconnectReason::kTerminatedByClient;
   Cleanup();
 }
 

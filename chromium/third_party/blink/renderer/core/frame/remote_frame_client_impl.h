@@ -7,6 +7,10 @@
 
 #include "third_party/blink/renderer/core/frame/remote_frame_client.h"
 
+namespace cc {
+class PaintCanvas;
+}
+
 namespace blink {
 class WebRemoteFrameImpl;
 
@@ -32,7 +36,7 @@ class RemoteFrameClientImpl final : public RemoteFrameClient {
   void Navigate(const ResourceRequest&,
                 bool should_replace_current_entry,
                 mojom::blink::BlobURLTokenPtr) override;
-  void Reload(FrameLoadType, ClientRedirectPolicy) override;
+  void Reload(WebFrameLoadType, ClientRedirectPolicy) override;
   unsigned BackForwardLength() override;
   void CheckCompleted() override;
   void ForwardPostMessage(MessageEvent*,
@@ -48,7 +52,7 @@ class RemoteFrameClientImpl final : public RemoteFrameClient {
   void SetInheritedEffectiveTouchAction(TouchAction) override;
   void UpdateRenderThrottlingStatus(bool is_throttled,
                                     bool subtree_throttled) override;
-  uint32_t Print(const IntRect&, WebCanvas*) const override;
+  uint32_t Print(const IntRect&, cc::PaintCanvas*) const override;
 
   WebRemoteFrameImpl* GetWebFrame() const { return web_frame_; }
 

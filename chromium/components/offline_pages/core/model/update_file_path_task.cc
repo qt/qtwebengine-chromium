@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "components/offline_pages/core/client_namespace_constants.h"
 #include "components/offline_pages/core/model/offline_page_model_utils.h"
-#include "components/offline_pages/core/offline_page_metadata_store_sql.h"
+#include "components/offline_pages/core/offline_page_metadata_store.h"
 #include "components/offline_pages/core/offline_store_utils.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
@@ -28,7 +28,7 @@ bool UpdateFilePathSync(const base::FilePath& new_file_path,
     return false;
 
   // Update the file_path to point to the new path.
-  const char kSqlUpdate[] =
+  static const char kSqlUpdate[] =
       "UPDATE OR IGNORE offlinepages_v1"
       " SET file_path = ?"
       " WHERE offline_id = ?";
@@ -49,7 +49,7 @@ bool UpdateFilePathSync(const base::FilePath& new_file_path,
 
 }  // namespace
 
-UpdateFilePathTask::UpdateFilePathTask(OfflinePageMetadataStoreSQL* store,
+UpdateFilePathTask::UpdateFilePathTask(OfflinePageMetadataStore* store,
                                        int64_t offline_id,
                                        const base::FilePath& file_path,
                                        UpdateFilePathDoneCallback callback)

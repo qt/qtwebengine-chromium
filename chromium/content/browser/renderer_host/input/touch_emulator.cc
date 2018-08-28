@@ -439,6 +439,10 @@ void TouchEmulator::OnGestureEvent(const ui::GestureEventData& gesture) {
   }
 }
 
+bool TouchEmulator::RequiresDoubleTapGestureEvents() const {
+  return true;
+}
+
 void TouchEmulator::InjectTouchEvent(const blink::WebTouchEvent& event,
                                      RenderWidgetHostViewBase* target_view,
                                      base::OnceClosure callback) {

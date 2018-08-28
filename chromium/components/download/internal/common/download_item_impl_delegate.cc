@@ -5,7 +5,7 @@
 #include "components/download/public/common/download_item_impl_delegate.h"
 
 #include "base/logging.h"
-#include "components/download/downloader/in_progress/download_entry.h"
+#include "components/download/database/in_progress/download_entry.h"
 #include "components/download/public/common/download_danger_type.h"
 #include "components/download/public/common/download_item_impl.h"
 
@@ -65,7 +65,6 @@ std::string DownloadItemImplDelegate::GetApplicationClientIdForFileScanning()
 
 void DownloadItemImplDelegate::ResumeInterruptedDownload(
     std::unique_ptr<DownloadUrlParameters> params,
-    uint32_t id,
     const GURL& site_url) {}
 
 void DownloadItemImplDelegate::UpdatePersistence(DownloadItemImpl* download) {}
@@ -81,9 +80,6 @@ void DownloadItemImplDelegate::ShowDownloadInShell(DownloadItemImpl* download) {
 }
 
 void DownloadItemImplDelegate::DownloadRemoved(DownloadItemImpl* download) {}
-
-void DownloadItemImplDelegate::AssertStateConsistent(
-    DownloadItemImpl* download) const {}
 
 void DownloadItemImplDelegate::DownloadInterrupted(DownloadItemImpl* download) {
 }

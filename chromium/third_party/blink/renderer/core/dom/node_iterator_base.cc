@@ -24,10 +24,11 @@
 
 #include "third_party/blink/renderer/core/dom/node_iterator_base.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_node_filter.h"
 #include "third_party/blink/renderer/core/dom/node.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -45,7 +46,7 @@ unsigned NodeIteratorBase::AcceptNode(Node* node,
   if (active_flag_) {
     // 1. If the active flag is set, then throw an "InvalidStateError"
     // DOMException.
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "Filter function can't be recursive");
     return V8NodeFilter::FILTER_REJECT;
   }
@@ -90,10 +91,6 @@ unsigned NodeIteratorBase::AcceptNode(Node* node,
 void NodeIteratorBase::Trace(blink::Visitor* visitor) {
   visitor->Trace(root_);
   visitor->Trace(filter_);
-}
-
-void NodeIteratorBase::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(filter_);
 }
 
 }  // namespace blink

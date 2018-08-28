@@ -5,11 +5,9 @@
  * found in the LICENSE file.
  */
 
-// Intentionally NO #pragma once
+// Intentionally NO #pragma once... included multiple times.
 
-#include "Transform.h"
-
-// This file is included from src/Transform.c, with some values and types pre-defined:
+// This file is included from skcms.c with some values and types pre-defined:
 //    N:    depth of all vectors, 1,4,8, or 16
 //
 //    F:    a vector of N float
@@ -74,12 +72,12 @@
 #elif defined(__clang__)
     #define CAST(T, v) __builtin_convertvector((v), T)
 #elif N == 4
-    #define CAST(T, v) (T){(v)[0],(v)[1],(v)[2],(v)[3]}
+    #define CAST(T, v) T{(v)[0],(v)[1],(v)[2],(v)[3]}
 #elif N == 8
-    #define CAST(T, v) (T){(v)[0],(v)[1],(v)[2],(v)[3], (v)[4],(v)[5],(v)[6],(v)[7]}
+    #define CAST(T, v) T{(v)[0],(v)[1],(v)[2],(v)[3], (v)[4],(v)[5],(v)[6],(v)[7]}
 #elif N == 16
-    #define CAST(T, v) (T){(v)[0],(v)[1],(v)[ 2],(v)[ 3], (v)[ 4],(v)[ 5],(v)[ 6],(v)[ 7], \
-                           (v)[8],(v)[9],(v)[10],(v)[11], (v)[12],(v)[13],(v)[14],(v)[15]}
+    #define CAST(T, v) T{(v)[0],(v)[1],(v)[ 2],(v)[ 3], (v)[ 4],(v)[ 5],(v)[ 6],(v)[ 7], \
+                         (v)[8],(v)[9],(v)[10],(v)[11], (v)[12],(v)[13],(v)[14],(v)[15]}
 #endif
 
 // When we convert from float to fixed point, it's very common to want to round,
@@ -225,23 +223,13 @@ SI ATTR F NS(approx_exp2_)(F x) {
 #define approx_exp2 NS(approx_exp2_)
 
 SI ATTR F NS(approx_pow_)(F x, float y) {
-#if defined(SKCMS_LEGACY_POWF)
-    F r = F1;
-    while (y >= 1.0f) {
-        r *= x;
-        y -= 1.0f;
-    }
-    return (F)if_then_else((x == F0) | (x == F1), x
-                                                , r * approx_exp2(approx_log2(x) * y));
-#else
     return (F)if_then_else((x == F0) | (x == F1), x
                                                 , approx_exp2(approx_log2(x) * y));
-#endif
 }
 #define approx_pow NS(approx_pow_)
 
 // Return tf(x).
-SI ATTR F NS(apply_transfer_function_)(const skcms_TransferFunction* tf, F x) {
+SI ATTR F NS(apply_tf_)(const skcms_TransferFunction* tf, F x) {
     F sign = (F)if_then_else(x < 0, -F1, F1);
     x *= sign;
 
@@ -250,7 +238,7 @@ SI ATTR F NS(apply_transfer_function_)(const skcms_TransferFunction* tf, F x) {
 
     return sign * (F)if_then_else(x < tf->d, linear, nonlinear);
 }
-#define apply_transfer_function NS(apply_transfer_function_)
+#define apply_tf NS(apply_tf_)
 
 // Strided loads and stores of N values, starting from p.
 #if N == 1
@@ -259,28 +247,28 @@ SI ATTR F NS(apply_transfer_function_)(const skcms_TransferFunction* tf, F x) {
     #define STORE_3(p, v) (p)[0] = v
     #define STORE_4(p, v) (p)[0] = v
 #elif N == 4 && !defined(USING_NEON)
-    #define LOAD_3(T, p) (T){(p)[0], (p)[3], (p)[6], (p)[ 9]}
-    #define LOAD_4(T, p) (T){(p)[0], (p)[4], (p)[8], (p)[12]};
+    #define LOAD_3(T, p) T{(p)[0], (p)[3], (p)[6], (p)[ 9]}
+    #define LOAD_4(T, p) T{(p)[0], (p)[4], (p)[8], (p)[12]};
     #define STORE_3(p, v) (p)[0] = (v)[0]; (p)[3] = (v)[1]; (p)[6] = (v)[2]; (p)[ 9] = (v)[3]
     #define STORE_4(p, v) (p)[0] = (v)[0]; (p)[4] = (v)[1]; (p)[8] = (v)[2]; (p)[12] = (v)[3]
 #elif N == 8
-    #define LOAD_3(T, p) (T){(p)[0], (p)[3], (p)[6], (p)[ 9],  (p)[12], (p)[15], (p)[18], (p)[21]}
-    #define LOAD_4(T, p) (T){(p)[0], (p)[4], (p)[8], (p)[12],  (p)[16], (p)[20], (p)[24], (p)[28]}
+    #define LOAD_3(T, p) T{(p)[0], (p)[3], (p)[6], (p)[ 9],  (p)[12], (p)[15], (p)[18], (p)[21]}
+    #define LOAD_4(T, p) T{(p)[0], (p)[4], (p)[8], (p)[12],  (p)[16], (p)[20], (p)[24], (p)[28]}
     #define STORE_3(p, v) (p)[ 0] = (v)[0]; (p)[ 3] = (v)[1]; (p)[ 6] = (v)[2]; (p)[ 9] = (v)[3]; \
                           (p)[12] = (v)[4]; (p)[15] = (v)[5]; (p)[18] = (v)[6]; (p)[21] = (v)[7]
     #define STORE_4(p, v) (p)[ 0] = (v)[0]; (p)[ 4] = (v)[1]; (p)[ 8] = (v)[2]; (p)[12] = (v)[3]; \
                           (p)[16] = (v)[4]; (p)[20] = (v)[5]; (p)[24] = (v)[6]; (p)[28] = (v)[7]
 #elif N == 16
     // TODO: revisit with AVX-512 gathers and scatters?
-    #define LOAD_3(T, p) (T){(p)[ 0], (p)[ 3], (p)[ 6], (p)[ 9], \
-                             (p)[12], (p)[15], (p)[18], (p)[21], \
-                             (p)[24], (p)[27], (p)[30], (p)[33], \
-                             (p)[36], (p)[39], (p)[42], (p)[45]}
+    #define LOAD_3(T, p) T{(p)[ 0], (p)[ 3], (p)[ 6], (p)[ 9], \
+                           (p)[12], (p)[15], (p)[18], (p)[21], \
+                           (p)[24], (p)[27], (p)[30], (p)[33], \
+                           (p)[36], (p)[39], (p)[42], (p)[45]}
 
-    #define LOAD_4(T, p) (T){(p)[ 0], (p)[ 4], (p)[ 8], (p)[12], \
-                             (p)[16], (p)[20], (p)[24], (p)[28], \
-                             (p)[32], (p)[36], (p)[40], (p)[44], \
-                             (p)[48], (p)[52], (p)[56], (p)[60]}
+    #define LOAD_4(T, p) T{(p)[ 0], (p)[ 4], (p)[ 8], (p)[12], \
+                           (p)[16], (p)[20], (p)[24], (p)[28], \
+                           (p)[32], (p)[36], (p)[40], (p)[44], \
+                           (p)[48], (p)[52], (p)[56], (p)[60]}
 
     #define STORE_3(p, v) \
         (p)[ 0] = (v)[ 0]; (p)[ 3] = (v)[ 1]; (p)[ 6] = (v)[ 2]; (p)[ 9] = (v)[ 3]; \
@@ -401,11 +389,11 @@ SI ATTR U32 NS(gather_24_)(const uint8_t* p, I32 ix) {
     #if N == 1
         *v = load_48_64(p,ix);
     #elif N == 4
-        *v = (U64){
+        *v = U64{
             load_48_64(p,ix[0]), load_48_64(p,ix[1]), load_48_64(p,ix[2]), load_48_64(p,ix[3]),
         };
     #elif N == 8 && !defined(__AVX2__)
-        *v = (U64){
+        *v = U64{
             load_48_64(p,ix[0]), load_48_64(p,ix[1]), load_48_64(p,ix[2]), load_48_64(p,ix[3]),
             load_48_64(p,ix[4]), load_48_64(p,ix[5]), load_48_64(p,ix[6]), load_48_64(p,ix[7]),
         };
@@ -583,16 +571,38 @@ static void NS(exec_ops)(const Op* ops, const void** args,
                          const char* src, char* dst, int i) {
     F r = F0, g = F0, b = F0, a = F0;
     while (true) {
-        switch (profile_next_op(*ops++)) {
+        switch (*ops++) {
             case Op_noop: break;
+
+            case Op_load_a8:{
+                U8 alpha;
+                small_memcpy(&alpha, src + i, N);
+                a = F_from_U8(alpha);
+            } break;
+
+            case Op_load_g8:{
+                U8 gray;
+                small_memcpy(&gray, src + i, N);
+                r = g = b = F_from_U8(gray);
+            } break;
+
+            case Op_load_4444:{
+                U16 abgr;
+                small_memcpy(&abgr, src + 2*i, 2*N);
+
+                r = CAST(F, (abgr >> 12) & 0xf) * (1/15.0f);
+                g = CAST(F, (abgr >>  8) & 0xf) * (1/15.0f);
+                b = CAST(F, (abgr >>  4) & 0xf) * (1/15.0f);
+                a = CAST(F, (abgr >>  0) & 0xf) * (1/15.0f);
+            } break;
 
             case Op_load_565:{
                 U16 rgb;
                 small_memcpy(&rgb, src + 2*i, 2*N);
 
-                r = CAST(F, rgb & (31<< 0)) * (1.0f / (31<< 0));
-                g = CAST(F, rgb & (63<< 5)) * (1.0f / (63<< 5));
-                b = CAST(F, rgb & (31<<11)) * (1.0f / (31<<11));
+                r = CAST(F, rgb & (uint16_t)(31<< 0)) * (1.0f / (31<< 0));
+                g = CAST(F, rgb & (uint16_t)(63<< 5)) * (1.0f / (63<< 5));
+                b = CAST(F, rgb & (uint16_t)(31<<11)) * (1.0f / (31<<11));
                 a = F1;
             } break;
 
@@ -802,7 +812,7 @@ static void NS(exec_ops)(const Op* ops, const void** args,
             } break;
 
             case Op_matrix_3x3:{
-                const skcms_Matrix3x3* matrix = *args++;
+                const skcms_Matrix3x3* matrix = (const skcms_Matrix3x3*) *args++;
                 const float* m = &matrix->vals[0][0];
 
                 F R = m[0]*r + m[1]*g + m[2]*b,
@@ -815,7 +825,7 @@ static void NS(exec_ops)(const Op* ops, const void** args,
             } break;
 
             case Op_matrix_3x4:{
-                const skcms_Matrix3x4* matrix = *args++;
+                const skcms_Matrix3x4* matrix = (const skcms_Matrix3x4*) *args++;
                 const float* m = &matrix->vals[0][0];
 
                 F R = m[0]*r + m[1]*g + m[ 2]*b + m[ 3],
@@ -848,46 +858,65 @@ static void NS(exec_ops)(const Op* ops, const void** args,
                 b = Z * 0.8249f;
             } break;
 
-            case Op_tf_r:{ r = apply_transfer_function(*args++, r); } break;
-            case Op_tf_g:{ g = apply_transfer_function(*args++, g); } break;
-            case Op_tf_b:{ b = apply_transfer_function(*args++, b); } break;
-            case Op_tf_a:{ a = apply_transfer_function(*args++, a); } break;
+            case Op_tf_r:{ r = apply_tf((const skcms_TransferFunction*)*args++, r); } break;
+            case Op_tf_g:{ g = apply_tf((const skcms_TransferFunction*)*args++, g); } break;
+            case Op_tf_b:{ b = apply_tf((const skcms_TransferFunction*)*args++, b); } break;
+            case Op_tf_a:{ a = apply_tf((const skcms_TransferFunction*)*args++, a); } break;
 
-            case Op_table_8_r: { r = NS(table_8_ )(*args++, r); } break;
-            case Op_table_8_g: { g = NS(table_8_ )(*args++, g); } break;
-            case Op_table_8_b: { b = NS(table_8_ )(*args++, b); } break;
-            case Op_table_8_a: { a = NS(table_8_ )(*args++, a); } break;
+            case Op_table_8_r: { r = NS(table_8_ )((const skcms_Curve*)*args++, r); } break;
+            case Op_table_8_g: { g = NS(table_8_ )((const skcms_Curve*)*args++, g); } break;
+            case Op_table_8_b: { b = NS(table_8_ )((const skcms_Curve*)*args++, b); } break;
+            case Op_table_8_a: { a = NS(table_8_ )((const skcms_Curve*)*args++, a); } break;
 
-            case Op_table_16_r:{ r = NS(table_16_)(*args++, r); } break;
-            case Op_table_16_g:{ g = NS(table_16_)(*args++, g); } break;
-            case Op_table_16_b:{ b = NS(table_16_)(*args++, b); } break;
-            case Op_table_16_a:{ a = NS(table_16_)(*args++, a); } break;
+            case Op_table_16_r:{ r = NS(table_16_)((const skcms_Curve*)*args++, r); } break;
+            case Op_table_16_g:{ g = NS(table_16_)((const skcms_Curve*)*args++, g); } break;
+            case Op_table_16_b:{ b = NS(table_16_)((const skcms_Curve*)*args++, b); } break;
+            case Op_table_16_a:{ a = NS(table_16_)((const skcms_Curve*)*args++, a); } break;
 
             case Op_clut_3D_8:{
-                const skcms_A2B* a2b = *args++;
+                const skcms_A2B* a2b = (const skcms_A2B*) *args++;
                 NS(clut_3_8_)(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
             } break;
 
             case Op_clut_3D_16:{
-                const skcms_A2B* a2b = *args++;
+                const skcms_A2B* a2b = (const skcms_A2B*) *args++;
                 NS(clut_3_16_)(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
             } break;
 
             case Op_clut_4D_8:{
-                const skcms_A2B* a2b = *args++;
+                const skcms_A2B* a2b = (const skcms_A2B*) *args++;
                 NS(clut_4_8_)(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
                 // 'a' was really a CMYK K, so our output is actually opaque.
                 a = F1;
             } break;
 
             case Op_clut_4D_16:{
-                const skcms_A2B* a2b = *args++;
+                const skcms_A2B* a2b = (const skcms_A2B*) *args++;
                 NS(clut_4_16_)(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
                 // 'a' was really a CMYK K, so our output is actually opaque.
                 a = F1;
             } break;
 
     // Notice, from here on down the store_ ops all return, ending the loop.
+
+            case Op_store_a8: {
+                U8 alpha = CAST(U8, to_fixed(a * 255));
+                small_memcpy(dst + i, &alpha, N);
+            } return;
+
+            case Op_store_g8: {
+                // g should be holding luminance (Y) (r,g,b ~~~> X,Y,Z)
+                U8 gray = CAST(U8, to_fixed(g * 255));
+                small_memcpy(dst + i, &gray, N);
+            } return;
+
+            case Op_store_4444: {
+                U16 abgr = CAST(U16, to_fixed(r * 15) << 12)
+                         | CAST(U16, to_fixed(g * 15) <<  8)
+                         | CAST(U16, to_fixed(b * 15) <<  4)
+                         | CAST(U16, to_fixed(a * 15) <<  0);
+                small_memcpy(dst + 2*i, &abgr, 2*N);
+            } return;
 
             case Op_store_565: {
                 U16 rgb = CAST(U16, to_fixed(r * 31) <<  0 )

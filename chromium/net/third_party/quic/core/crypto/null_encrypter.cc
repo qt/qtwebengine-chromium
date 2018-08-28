@@ -7,9 +7,7 @@
 #include "net/third_party/quic/core/quic_data_writer.h"
 #include "net/third_party/quic/core/quic_utils.h"
 
-using std::string;
-
-namespace net {
+namespace quic {
 
 const size_t kHashSizeShort = 12;  // size of uint128 serialized short
 
@@ -92,4 +90,4 @@ size_t NullEncrypter::GetHashLength() const {
   return kHashSizeShort;
 }
 
-}  // namespace net
+}  // namespace quic

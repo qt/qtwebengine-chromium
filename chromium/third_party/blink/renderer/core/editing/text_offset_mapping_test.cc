@@ -23,8 +23,6 @@ class ParameterizedTextOffsetMappingTest
  protected:
   ParameterizedTextOffsetMappingTest() : ScopedLayoutNGForTest(GetParam()) {}
 
-  bool LayoutNGEnabled() const { return GetParam(); }
-
   std::string ComputeTextOffset(const std::string& selection_text) {
     const PositionInFlatTree position =
         ToPositionInFlatTree(SetSelectionTextToBody(selection_text).Base());
@@ -248,8 +246,7 @@ TEST_P(ParameterizedTextOffsetMappingTest, RangeWithMulticol) {
 TEST_P(ParameterizedTextOffsetMappingTest, RangeWithNestedFloat) {
   InsertStyleElement("b, i { float: right; }");
   // Note: Legacy: BODY is inline, NG: BODY is block.
-  EXPECT_EQ(LayoutNGEnabled() ? "<b>^abc <i>def</i> ghi|</b>xyz"
-                              : "^<b>abc <i>def</i> ghi</b>xyz|",
+  EXPECT_EQ("^<b>abc <i>def</i> ghi</b>xyz|",
             GetRange("<b>abc <i>d|ef</i> ghi</b>xyz"));
 }
 
@@ -348,13 +345,13 @@ TEST_P(ParameterizedTextOffsetMappingTest, GetPositionBefore) {
 
 TEST_P(ParameterizedTextOffsetMappingTest, GetPositionAfter) {
   EXPECT_EQ("  0|12  456  ", GetPositionAfter("  012  456  ", 0));
-  EXPECT_EQ("  0|12  456  ", GetPositionAfter("  012  456  ", 1));
-  EXPECT_EQ("  01|2  456  ", GetPositionAfter("  012  456  ", 2));
-  EXPECT_EQ("  012|  456  ", GetPositionAfter("  012  456  ", 3));
-  EXPECT_EQ("  012 | 456  ", GetPositionAfter("  012  456  ", 4));
-  EXPECT_EQ("  012  4|56  ", GetPositionAfter("  012  456  ", 5));
-  EXPECT_EQ("  012  45|6  ", GetPositionAfter("  012  456  ", 6));
-  EXPECT_EQ("  012  456|  ", GetPositionAfter("  012  456  ", 7));
+  EXPECT_EQ("  01|2  456  ", GetPositionAfter("  012  456  ", 1));
+  EXPECT_EQ("  012|  456  ", GetPositionAfter("  012  456  ", 2));
+  EXPECT_EQ("  012 | 456  ", GetPositionAfter("  012  456  ", 3));
+  EXPECT_EQ("  012  4|56  ", GetPositionAfter("  012  456  ", 4));
+  EXPECT_EQ("  012  45|6  ", GetPositionAfter("  012  456  ", 5));
+  EXPECT_EQ("  012  456|  ", GetPositionAfter("  012  456  ", 6));
+  EXPECT_EQ("  012  456  |", GetPositionAfter("  012  456  ", 7));
   // We hit DCHECK for offset 8, because we walk on "012 456".
 }
 

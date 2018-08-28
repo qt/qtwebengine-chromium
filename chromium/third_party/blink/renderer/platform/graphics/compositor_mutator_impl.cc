@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/platform/graphics/compositor_mutator_impl.h"
 
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_animator.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_mutator_client.h"
@@ -39,67 +40,81 @@ std::unique_ptr<CompositorMutatorClient> CompositorMutatorImpl::CreateClient(
 }
 
 void CompositorMutatorImpl::Mutate(
-    std::unique_ptr<CompositorMutatorInputState> state) {
+    std::unique_ptr<CompositorMutatorInputState> mutator_input) {
   TRACE_EVENT0("cc", "CompositorMutatorImpl::mutate");
   DCHECK(mutator_queue_->BelongsToCurrentThread());
-  if (animators_.IsEmpty())
+  if (animator_map_.IsEmpty())
     return;
-  DCHECK(!animator_queue_->BelongsToCurrentThread());
   DCHECK(client_);
 
-  using Outputs = Vector<std::unique_ptr<CompositorMutatorOutputState>>;
-  Outputs outputs;
-  outputs.ReserveInitialCapacity(animators_.size());
+  Vector<std::unique_ptr<CompositorMutatorOutputState>> outputs(
+      animator_map_.size());
+  Vector<WaitableEvent> done_events(animator_map_.size());
 
-  WaitableEvent done;
-  PostCrossThreadTask(
-      *animator_queue_, FROM_HERE,
-      CrossThreadBind(
-          [](const CompositorAnimators* animators,
-             std::unique_ptr<CompositorMutatorInputState> state,
-             std::unique_ptr<AutoSignal> completion, Outputs* output) {
-            for (CompositorAnimator* animator : *animators)
-              output->push_back(animator->Mutate(*state));
-          },
-          CrossThreadUnretained(&animators_), WTF::Passed(std::move(state)),
-          WTF::Passed(std::make_unique<AutoSignal>(&done)),
-          CrossThreadUnretained(&outputs)));
-  // At some point the AutoSignal(&done) gets destroyed and unblocks us.
-  done.Wait();
+  int index = 0;
+  for (auto& pair : animator_map_) {
+    CompositorAnimator* animator = pair.key;
+    scoped_refptr<base::SingleThreadTaskRunner> animator_queue = pair.value;
+
+    std::unique_ptr<AnimationWorkletInput> animator_input =
+        mutator_input->TakeWorkletState(animator->GetScopeId());
+
+    DCHECK(!animator_queue->BelongsToCurrentThread());
+    std::unique_ptr<AutoSignal> done =
+        std::make_unique<AutoSignal>(&done_events[index]);
+    std::unique_ptr<CompositorMutatorOutputState>& output = outputs[index];
+
+    if (animator_input) {
+      PostCrossThreadTask(
+          *animator_queue, FROM_HERE,
+          CrossThreadBind(
+              [](CompositorAnimator* animator,
+                 std::unique_ptr<AnimationWorkletInput> input,
+                 std::unique_ptr<AutoSignal> completion,
+                 std::unique_ptr<CompositorMutatorOutputState>* output) {
+                *output = animator->Mutate(std::move(input));
+              },
+              WrapCrossThreadWeakPersistent(animator),
+              WTF::Passed(std::move(animator_input)),
+              WTF::Passed(std::move(done)), CrossThreadUnretained(&output)));
+    }
+    index++;
+  }
+
+  for (WaitableEvent& event : done_events) {
+    event.Wait();
+  }
 
   for (auto& output : outputs) {
+    // Animator that has no input does not produce any output.
+    if (!output)
+      continue;
     client_->SetMutationUpdate(std::move(output));
   }
 }
 
 void CompositorMutatorImpl::RegisterCompositorAnimator(
     CrossThreadPersistent<CompositorAnimator> animator,
-    scoped_refptr<base::SingleThreadTaskRunner> queue) {
+    scoped_refptr<base::SingleThreadTaskRunner> animator_runner) {
   TRACE_EVENT0("cc", "CompositorMutatorImpl::RegisterCompositorAnimator");
 
   DCHECK(animator);
   DCHECK(mutator_queue_->BelongsToCurrentThread());
-  if (animators_.IsEmpty()) {
-    animator_queue_ = std::move(queue);
-  } else {
-    DCHECK_EQ(queue, animator_queue_);
-  }
 
-  animators_.insert(animator);
+  animator_map_.insert(animator, animator_runner);
 }
 
 void CompositorMutatorImpl::UnregisterCompositorAnimator(
     CrossThreadPersistent<CompositorAnimator> animator) {
   TRACE_EVENT0("cc", "CompositorMutatorImpl::UnregisterCompositorAnimator");
-
   DCHECK(animator);
   DCHECK(mutator_queue_->BelongsToCurrentThread());
 
-  animators_.erase(animator);
+  animator_map_.erase(animator);
 }
 
 bool CompositorMutatorImpl::HasAnimators() {
-  return !animators_.IsEmpty();
+  return !animator_map_.IsEmpty();
 }
 
 CompositorMutatorImpl::AutoSignal::AutoSignal(WaitableEvent* event)

@@ -6,7 +6,11 @@
  */
 
 #include "GrShadowRRectOp.h"
+
+#include "GrContext.h"
+#include "GrContextPriv.h"
 #include "GrDrawOpTest.h"
+#include "GrMemoryPool.h"
 #include "GrOpFlushState.h"
 #include "SkRRectPriv.h"
 #include "effects/GrShadowGeoProc.h"
@@ -254,8 +258,7 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
 
-    RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*,
-                                GrPixelConfigIsClamped) override {
+    RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*) override {
         return RequiresDstTexture::kNo;
     }
 
@@ -572,13 +575,12 @@ private:
         sk_sp<GrGeometryProcessor> gp = GrRRectShadowGeoProc::Make();
 
         int instanceCount = fGeoData.count();
-        size_t vertexStride = gp->getVertexStride();
-        SkASSERT(sizeof(CircleVertex) == vertexStride);
+        SkASSERT(sizeof(CircleVertex) == gp->debugOnly_vertexStride());
 
         const GrBuffer* vertexBuffer;
         int firstVertex;
-        CircleVertex* verts = (CircleVertex*)target->makeVertexSpace(vertexStride, fVertCount,
-                                                                     &vertexBuffer, &firstVertex);
+        CircleVertex* verts = (CircleVertex*)target->makeVertexSpace(
+                sizeof(CircleVertex), fVertCount, &vertexBuffer, &firstVertex);
         if (!verts) {
             SkDebugf("Could not allocate vertices\n");
             return;
@@ -622,13 +624,14 @@ private:
         }
 
         static const uint32_t kPipelineFlags = 0;
-        const GrPipeline* pipeline = target->makePipeline(
-                kPipelineFlags, GrProcessorSet::MakeEmptySet(), target->detachAppliedClip());
+        auto pipe = target->makePipeline(kPipelineFlags, GrProcessorSet::MakeEmptySet(),
+                                         target->detachAppliedClip());
 
         GrMesh mesh(GrPrimitiveType::kTriangles);
-        mesh.setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1);
+        mesh.setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1,
+                        GrPrimitiveRestart::kNo);
         mesh.setVertexData(vertexBuffer, firstVertex);
-        target->draw(gp.get(), pipeline, mesh);
+        target->draw(gp.get(), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
     }
 
     bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
@@ -652,7 +655,8 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace GrShadowRRectOp {
-std::unique_ptr<GrDrawOp> Make(GrColor color,
+std::unique_ptr<GrDrawOp> Make(GrContext* context,
+                               GrColor color,
                                const SkMatrix& viewMatrix,
                                const SkRRect& rrect,
                                SkScalar blurWidth,
@@ -672,12 +676,14 @@ std::unique_ptr<GrDrawOp> Make(GrColor color,
     SkScalar scaledRadius = SkScalarAbs(radius*matrixFactor);
     SkScalar scaledInsetWidth = SkScalarAbs(insetWidth*matrixFactor);
 
-    return std::unique_ptr<GrDrawOp>(new ShadowCircularRRectOp(color, bounds,
-                                                               scaledRadius,
-                                                               rrect.isOval(),
-                                                               blurWidth,
-                                                               scaledInsetWidth,
-                                                               blurClamp));
+    GrOpMemoryPool* pool = context->contextPriv().opMemoryPool();
+
+    return pool->allocate<ShadowCircularRRectOp>(color, bounds,
+                                                 scaledRadius,
+                                                 rrect.isOval(),
+                                                 blurWidth,
+                                                 scaledInsetWidth,
+                                                 blurClamp);
 }
 }
 
@@ -690,7 +696,10 @@ GR_DRAW_OP_TEST_DEFINE(ShadowRRectOp) {
     SkScalar rotate = random->nextSScalar1() * 360.f;
     SkScalar translateX = random->nextSScalar1() * 1000.f;
     SkScalar translateY = random->nextSScalar1() * 1000.f;
-    SkScalar scale = random->nextSScalar1() * 100.f;
+    SkScalar scale;
+    do {
+        scale = random->nextSScalar1() * 100.f;
+    } while (scale == 0);
     SkMatrix viewMatrix;
     viewMatrix.setRotate(rotate);
     viewMatrix.postTranslate(translateX, translateY);
@@ -704,14 +713,16 @@ GR_DRAW_OP_TEST_DEFINE(ShadowRRectOp) {
     if (isCircle) {
         SkRect circle = GrTest::TestSquare(random);
         SkRRect rrect = SkRRect::MakeOval(circle);
-        return GrShadowRRectOp::Make(color, viewMatrix, rrect, blurWidth, insetWidth, blurClamp);
+        return GrShadowRRectOp::Make(context, color, viewMatrix, rrect, blurWidth,
+                                     insetWidth, blurClamp);
     } else {
         SkRRect rrect;
         do {
             // This may return a rrect with elliptical corners, which we don't support.
             rrect = GrTest::TestRRectSimple(random);
         } while (!SkRRectPriv::IsSimpleCircular(rrect));
-        return GrShadowRRectOp::Make(color, viewMatrix, rrect, blurWidth, insetWidth, blurClamp);
+        return GrShadowRRectOp::Make(context, color, viewMatrix, rrect, blurWidth,
+                                     insetWidth, blurClamp);
     }
 }
 

@@ -36,6 +36,7 @@
 
 #include "base/optional.h"
 #include "build/build_config.h"
+#include "cc/layers/picture_layer.h"
 #include "third_party/blink/public/platform/web_cursor_info.h"
 #include "third_party/blink/public/platform/web_float_rect.h"
 #include "third_party/blink/public/platform/web_rect.h"
@@ -43,12 +44,11 @@
 #include "third_party/blink/public/web/blink.h"
 #include "third_party/blink/public/web/web_autofill_client.h"
 #include "third_party/blink/public/web/web_console_message.h"
-#include "third_party/blink/public/web/web_frame_client.h"
 #include "third_party/blink/public/web/web_input_element.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_node.h"
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/public/web/web_popup_menu_info.h"
-#include "third_party/blink/public/web/web_selection.h"
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/public/web/web_text_direction.h"
 #include "third_party/blink/public/web/web_view_client.h"
@@ -159,6 +159,11 @@ ChromeClientImpl* ChromeClientImpl::Create(WebViewImpl* web_view) {
   return new ChromeClientImpl(web_view);
 }
 
+void ChromeClientImpl::Trace(Visitor* visitor) {
+  visitor->Trace(popup_opening_observers_);
+  ChromeClient::Trace(visitor);
+}
+
 WebViewImpl* ChromeClientImpl::GetWebView() const {
   return web_view_;
 }
@@ -238,7 +243,7 @@ bool ChromeClientImpl::HadFormInteraction() const {
 void ChromeClientImpl::StartDragging(LocalFrame* frame,
                                      const WebDragData& drag_data,
                                      WebDragOperationsMask mask,
-                                     const WebImage& drag_image,
+                                     const SkBitmap& drag_image,
                                      const WebPoint& drag_image_offset) {
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
   WebReferrerPolicy policy = web_frame->GetDocument().GetReferrerPolicy();
@@ -261,6 +266,7 @@ Page* ChromeClientImpl::CreateWindow(LocalFrame* frame,
   if (!frame->GetPage() || frame->GetPage()->Paused())
     return nullptr;
 
+  NotifyPopupOpeningObservers();
   const AtomicString& frame_name =
       !EqualIgnoringASCIICase(r.FrameName(), "_blank") ? r.FrameName()
                                                        : g_empty_atom;
@@ -281,17 +287,17 @@ void ChromeClientImpl::DidOverscroll(const FloatSize& overscroll_delta,
                                      const FloatPoint& position_in_viewport,
                                      const FloatSize& velocity_in_viewport,
                                      const cc::OverscrollBehavior& behavior) {
-  if (!web_view_->Client())
+  if (!web_view_->WidgetClient())
     return;
 
-  web_view_->Client()->DidOverscroll(overscroll_delta, accumulated_overscroll,
-                                     position_in_viewport, velocity_in_viewport,
-                                     behavior);
+  web_view_->WidgetClient()->DidOverscroll(
+      overscroll_delta, accumulated_overscroll, position_in_viewport,
+      velocity_in_viewport, behavior);
 }
 
 void ChromeClientImpl::Show(NavigationPolicy navigation_policy) {
-  if (web_view_->Client()) {
-    web_view_->Client()->Show(
+  if (web_view_->WidgetClient()) {
+    web_view_->WidgetClient()->Show(
         static_cast<WebNavigationPolicy>(navigation_policy));
   }
 }
@@ -334,8 +340,8 @@ bool ChromeClientImpl::OpenBeforeUnloadConfirmPanelDelegate(LocalFrame* frame,
 }
 
 void ChromeClientImpl::CloseWindowSoon() {
-  if (web_view_->Client())
-    web_view_->Client()->CloseWidgetSoon();
+  if (web_view_->WidgetClient())
+    web_view_->WidgetClient()->CloseWidgetSoon();
 }
 
 // Although a LocalFrame is passed in, we don't actually use it, since we
@@ -430,16 +436,17 @@ IntRect ChromeClientImpl::ViewportToScreen(
 }
 
 float ChromeClientImpl::WindowToViewportScalar(const float scalar_value) const {
-  if (!web_view_->Client())
+  if (!web_view_->WidgetClient())
     return scalar_value;
   WebFloatRect viewport_rect(0, 0, scalar_value, 0);
-  web_view_->Client()->ConvertWindowToViewport(&viewport_rect);
+  web_view_->WidgetClient()->ConvertWindowToViewport(&viewport_rect);
   return viewport_rect.width;
 }
 
 WebScreenInfo ChromeClientImpl::GetScreenInfo() const {
-  return web_view_->Client() ? web_view_->Client()->GetScreenInfo()
-                             : WebScreenInfo();
+  if (!web_view_->WidgetClient())
+    return {};
+  return web_view_->WidgetClient()->GetScreenInfo();
 }
 
 base::Optional<IntRect> ChromeClientImpl::VisibleContentRectForPainting()
@@ -576,7 +583,7 @@ void ChromeClientImpl::OpenFileChooser(
     LocalFrame* frame,
     scoped_refptr<FileChooser> file_chooser) {
   NotifyPopupOpeningObservers();
-  WebFrameClient* client = WebLocalFrameImpl::FromFrame(frame)->Client();
+  WebLocalFrameClient* client = WebLocalFrameImpl::FromFrame(frame)->Client();
   if (!client)
     return;
 
@@ -763,8 +770,36 @@ void ChromeClientImpl::UpdateCompositedSelection(
   if (!client)
     return;
 
-  if (WebLayerTreeView* layer_tree_view = widget->GetLayerTreeView())
-    layer_tree_view->RegisterSelection(WebSelection(selection));
+  if (WebLayerTreeView* layer_tree_view = widget->GetLayerTreeView()) {
+    DCHECK_NE(selection.type, kNoSelection);
+
+    cc::LayerSelection cc_selection;
+    if (selection.type == kRangeSelection) {
+      cc_selection.start.type = selection.start.is_text_direction_rtl
+                                    ? gfx::SelectionBound::Type::RIGHT
+                                    : gfx::SelectionBound::Type::LEFT;
+      cc_selection.end.type = selection.end.is_text_direction_rtl
+                                  ? gfx::SelectionBound::Type::LEFT
+                                  : gfx::SelectionBound::Type::RIGHT;
+    } else {
+      cc_selection.start.type = gfx::SelectionBound::Type::CENTER;
+      cc_selection.end.type = gfx::SelectionBound::Type::CENTER;
+    }
+    cc_selection.start.edge_top =
+        gfx::Point(RoundedIntPoint(selection.start.edge_top_in_layer));
+    cc_selection.start.edge_bottom =
+        gfx::Point(RoundedIntPoint(selection.start.edge_bottom_in_layer));
+    cc_selection.start.layer_id = selection.start.layer->CcLayer()->id();
+    cc_selection.start.hidden = selection.start.hidden;
+    cc_selection.end.edge_top =
+        gfx::Point(RoundedIntPoint(selection.end.edge_top_in_layer));
+    cc_selection.end.edge_bottom =
+        gfx::Point(RoundedIntPoint(selection.end.edge_bottom_in_layer));
+    cc_selection.end.layer_id = selection.end.layer->CcLayer()->id();
+    cc_selection.end.hidden = selection.end.hidden;
+
+    layer_tree_view->RegisterSelection(cc_selection);
+  }
 }
 
 bool ChromeClientImpl::HasOpenedPopup() const {
@@ -841,8 +876,8 @@ void ChromeClientImpl::RequestDecode(LocalFrame* frame,
 
 void ChromeClientImpl::SetEventListenerProperties(
     LocalFrame* frame,
-    WebEventListenerClass event_class,
-    WebEventListenerProperties properties) {
+    cc::EventListenerClass event_class,
+    cc::EventListenerProperties properties) {
   // |frame| might be null if called via TreeScopeAdopter::
   // moveNodeToNewDocument() and the new document has no frame attached.
   // Since a document without a frame cannot attach one later, it is safe to
@@ -857,7 +892,7 @@ void ChromeClientImpl::SetEventListenerProperties(
   if (web_frame->IsProvisional()) {
     // If we hit a provisional frame, we expect it to be during initialization
     // in which case the |properties| should be 'nothing'.
-    DCHECK(properties == WebEventListenerProperties::kNothing);
+    DCHECK(properties == cc::EventListenerProperties::kNone);
     return;
   }
   WebFrameWidgetBase* widget = web_frame->LocalRootFrameWidget();
@@ -874,18 +909,18 @@ void ChromeClientImpl::SetEventListenerProperties(
   WebWidgetClient* client = widget->Client();
   if (WebLayerTreeView* tree_view = widget->GetLayerTreeView()) {
     tree_view->SetEventListenerProperties(event_class, properties);
-    if (event_class == WebEventListenerClass::kTouchStartOrMove) {
+    if (event_class == cc::EventListenerClass::kTouchStartOrMove) {
       client->HasTouchEventHandlers(
-          properties != WebEventListenerProperties::kNothing ||
+          properties != cc::EventListenerProperties::kNone ||
           tree_view->EventListenerProperties(
-              WebEventListenerClass::kTouchEndOrCancel) !=
-              WebEventListenerProperties::kNothing);
-    } else if (event_class == WebEventListenerClass::kTouchEndOrCancel) {
+              cc::EventListenerClass::kTouchEndOrCancel) !=
+              cc::EventListenerProperties::kNone);
+    } else if (event_class == cc::EventListenerClass::kTouchEndOrCancel) {
       client->HasTouchEventHandlers(
-          properties != WebEventListenerProperties::kNothing ||
+          properties != cc::EventListenerProperties::kNone ||
           tree_view->EventListenerProperties(
-              WebEventListenerClass::kTouchStartOrMove) !=
-              WebEventListenerProperties::kNothing);
+              cc::EventListenerClass::kTouchStartOrMove) !=
+              cc::EventListenerProperties::kNone);
     }
   } else {
     client->HasTouchEventHandlers(true);
@@ -899,17 +934,17 @@ void ChromeClientImpl::BeginLifecycleUpdates() {
   }
 }
 
-WebEventListenerProperties ChromeClientImpl::EventListenerProperties(
+cc::EventListenerProperties ChromeClientImpl::EventListenerProperties(
     LocalFrame* frame,
-    WebEventListenerClass event_class) const {
+    cc::EventListenerClass event_class) const {
   if (!frame)
-    return WebEventListenerProperties::kNothing;
+    return cc::EventListenerProperties::kNone;
 
   WebFrameWidgetBase* widget =
       WebLocalFrameImpl::FromFrame(frame)->LocalRootFrameWidget();
 
   if (!widget || !widget->GetLayerTreeView())
-    return WebEventListenerProperties::kNothing;
+    return cc::EventListenerProperties::kNone;
   return widget->GetLayerTreeView()->EventListenerProperties(event_class);
 }
 
@@ -1086,19 +1121,19 @@ void ChromeClientImpl::SetOverscrollBehavior(
 void ChromeClientImpl::RegisterPopupOpeningObserver(
     PopupOpeningObserver* observer) {
   DCHECK(observer);
-  popup_opening_observers_.push_back(observer);
+  popup_opening_observers_.insert(observer);
 }
 
 void ChromeClientImpl::UnregisterPopupOpeningObserver(
     PopupOpeningObserver* observer) {
-  size_t index = popup_opening_observers_.Find(observer);
-  DCHECK_NE(index, kNotFound);
-  popup_opening_observers_.EraseAt(index);
+  DCHECK(popup_opening_observers_.Contains(observer));
+  popup_opening_observers_.erase(observer);
 }
 
 void ChromeClientImpl::NotifyPopupOpeningObservers() const {
-  const Vector<PopupOpeningObserver*> observers(popup_opening_observers_);
-  for (auto* const observer : observers)
+  const HeapHashSet<WeakMember<PopupOpeningObserver>> observers(
+      popup_opening_observers_);
+  for (const auto& observer : observers)
     observer->WillOpenPopup();
 }
 

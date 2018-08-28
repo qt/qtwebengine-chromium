@@ -37,6 +37,7 @@ enum class BackgroundFetchReasonToAbort {
   CANCELLED_FROM_UI,
   ABORTED_BY_DEVELOPER,
   TOTAL_DOWNLOAD_SIZE_EXCEEDED,
+  SERVICE_WORKER_UNAVAILABLE,
 };
 
 // Interface for launching background fetches. Implementing classes would
@@ -79,6 +80,9 @@ class CONTENT_EXPORT BackgroundFetchDelegate {
         const std::string& download_guid,
         std::unique_ptr<BackgroundFetchResult> result) = 0;
 
+    // Called when the UI of a background fetch job is activated.
+    virtual void OnUIActivated(const std::string& job_unique_id) = 0;
+
     // Called by the delegate when it's shutting down to signal that the
     // delegate is no longer valid.
     virtual void OnDelegateShutdown() = 0;
@@ -112,6 +116,11 @@ class CONTENT_EXPORT BackgroundFetchDelegate {
 
   // Aborts any downloads associated with |job_unique_id|.
   virtual void Abort(const std::string& job_unique_id) = 0;
+
+  // Updates the UI shown for the fetch job associated with |job_unique_id| to
+  // display a new |title|.
+  virtual void UpdateUI(const std::string& job_unique_id,
+                        const std::string& title) = 0;
 
   // Set the client that the delegate should communicate changes to.
   void SetDelegateClient(base::WeakPtr<Client> client) { client_ = client; }

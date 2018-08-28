@@ -7,12 +7,14 @@
 #include <memory>
 #include <string>
 
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
+#include "base/test/simple_test_clock.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/permissions/permission_decision_auto_blocker.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/site_settings_helper.h"
@@ -64,10 +66,11 @@ class FlashContentSettingsChangeWaiter : public content_settings::Observer {
   }
 
   // content_settings::Observer:
-  void OnContentSettingChanged(const ContentSettingsPattern& primary_pattern,
-                               const ContentSettingsPattern& secondary_pattern,
-                               ContentSettingsType content_type,
-                               std::string resource_identifier) override {
+  void OnContentSettingChanged(
+      const ContentSettingsPattern& primary_pattern,
+      const ContentSettingsPattern& secondary_pattern,
+      ContentSettingsType content_type,
+      const std::string& resource_identifier) override {
     if (content_type == CONTENT_SETTINGS_TYPE_PLUGINS)
       Proceed();
   }
@@ -353,6 +356,169 @@ TEST_F(SiteSettingsHandlerTest, GetAndSetDefault) {
   handler()->HandleGetDefaultValueForContentType(&get_args);
   ValidateDefault(CONTENT_SETTING_BLOCK,
                   site_settings::SiteSettingSource::kDefault, 3U);
+}
+
+TEST_F(SiteSettingsHandlerTest, GetAllSites) {
+  base::ListValue get_all_sites_args;
+  get_all_sites_args.AppendString(kCallbackId);
+  base::Value category_list(base::Value::Type::LIST);
+  category_list.GetList().emplace_back(kNotifications);
+  category_list.GetList().emplace_back(kFlash);
+  get_all_sites_args.GetList().push_back(std::move(category_list));
+
+  // Test all sites is empty when there are no preferences.
+  handler()->HandleGetAllSites(&get_all_sites_args);
+  EXPECT_EQ(1U, web_ui()->call_data().size());
+
+  {
+    const content::TestWebUI::CallData& data = *web_ui()->call_data().back();
+    EXPECT_EQ("cr.webUIResponse", data.function_name());
+    EXPECT_EQ(kCallbackId, data.arg1()->GetString());
+    ASSERT_TRUE(data.arg2()->GetBool());
+
+    const base::Value::ListStorage& site_groups = data.arg3()->GetList();
+    EXPECT_EQ(0UL, site_groups.size());
+  }
+
+  // Add a couple of exceptions and check they appear in all sites.
+  HostContentSettingsMap* map =
+      HostContentSettingsMapFactory::GetForProfile(profile());
+  const GURL url1("http://example.com");
+  const GURL url2("https://other.example.com");
+  map->SetContentSettingDefaultScope(url1, url1,
+                                     CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
+                                     std::string(), CONTENT_SETTING_BLOCK);
+  map->SetContentSettingDefaultScope(url2, url2, CONTENT_SETTINGS_TYPE_PLUGINS,
+                                     std::string(), CONTENT_SETTING_ALLOW);
+  handler()->HandleGetAllSites(&get_all_sites_args);
+
+  {
+    const content::TestWebUI::CallData& data = *web_ui()->call_data().back();
+    EXPECT_EQ("cr.webUIResponse", data.function_name());
+    EXPECT_EQ(kCallbackId, data.arg1()->GetString());
+    ASSERT_TRUE(data.arg2()->GetBool());
+
+    const base::Value::ListStorage& site_groups = data.arg3()->GetList();
+    EXPECT_EQ(1UL, site_groups.size());
+    for (const base::Value& site_group : site_groups) {
+      const std::string& etld_plus1_string =
+          site_group.FindKey("etldPlus1")->GetString();
+      const base::Value::ListStorage& origin_list =
+          site_group.FindKey("origins")->GetList();
+      EXPECT_EQ("example.com", etld_plus1_string);
+      EXPECT_EQ(2UL, origin_list.size());
+      EXPECT_EQ(url1.spec(), origin_list[0].GetString());
+      EXPECT_EQ(url2.spec(), origin_list[1].GetString());
+    }
+  }
+
+  // Add an additional exception belonging to a different eTLD+1.
+  const GURL url3("https://example2.net");
+  map->SetContentSettingDefaultScope(url3, url3, CONTENT_SETTINGS_TYPE_PLUGINS,
+                                     std::string(), CONTENT_SETTING_BLOCK);
+  handler()->HandleGetAllSites(&get_all_sites_args);
+
+  {
+    const content::TestWebUI::CallData& data = *web_ui()->call_data().back();
+    EXPECT_EQ("cr.webUIResponse", data.function_name());
+
+    EXPECT_EQ(kCallbackId, data.arg1()->GetString());
+    ASSERT_TRUE(data.arg2()->GetBool());
+
+    const base::Value::ListStorage& site_groups = data.arg3()->GetList();
+    EXPECT_EQ(2UL, site_groups.size());
+    for (const base::Value& site_group : site_groups) {
+      const std::string& etld_plus1_string =
+          site_group.FindKey("etldPlus1")->GetString();
+      const base::Value::ListStorage& origin_list =
+          site_group.FindKey("origins")->GetList();
+      if (etld_plus1_string == "example2.net") {
+        EXPECT_EQ(1UL, origin_list.size());
+        EXPECT_EQ(url3.spec(), origin_list[0].GetString());
+      } else {
+        EXPECT_EQ("example.com", etld_plus1_string);
+      }
+    }
+  }
+
+  // Test embargoed settings also appear.
+  PermissionDecisionAutoBlocker* auto_blocker =
+      PermissionDecisionAutoBlocker::GetForProfile(profile());
+  const GURL url4("https://example2.co.uk");
+  for (int i = 0; i < 3; ++i) {
+    auto_blocker->RecordDismissAndEmbargo(url4,
+                                          CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
+  }
+  EXPECT_EQ(
+      CONTENT_SETTING_BLOCK,
+      auto_blocker->GetEmbargoResult(url4, CONTENT_SETTINGS_TYPE_NOTIFICATIONS)
+          .content_setting);
+  handler()->HandleGetAllSites(&get_all_sites_args);
+
+  {
+    const content::TestWebUI::CallData& data = *web_ui()->call_data().back();
+    EXPECT_EQ("cr.webUIResponse", data.function_name());
+    EXPECT_EQ(kCallbackId, data.arg1()->GetString());
+    ASSERT_TRUE(data.arg2()->GetBool());
+
+    const base::Value::ListStorage& site_groups = data.arg3()->GetList();
+    EXPECT_EQ(3UL, site_groups.size());
+  }
+
+  // Add an expired embargo setting to a) an existing eTLD+1 group and b) a new
+  // eTLD+1 group.
+  base::SimpleTestClock clock;
+  clock.SetNow(base::Time::Now());
+  auto_blocker->SetClockForTesting(&clock);
+  for (int i = 0; i < 3; ++i) {
+    auto_blocker->RecordDismissAndEmbargo(url3,
+                                          CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
+  }
+  EXPECT_EQ(
+      CONTENT_SETTING_BLOCK,
+      auto_blocker->GetEmbargoResult(url3, CONTENT_SETTINGS_TYPE_NOTIFICATIONS)
+          .content_setting);
+  clock.Advance(base::TimeDelta::FromDays(8));
+  EXPECT_EQ(
+      CONTENT_SETTING_ASK,
+      auto_blocker->GetEmbargoResult(url3, CONTENT_SETTINGS_TYPE_NOTIFICATIONS)
+          .content_setting);
+
+  {
+    const content::TestWebUI::CallData& data = *web_ui()->call_data().back();
+    EXPECT_EQ("cr.webUIResponse", data.function_name());
+    EXPECT_EQ(kCallbackId, data.arg1()->GetString());
+    ASSERT_TRUE(data.arg2()->GetBool());
+
+    const base::Value::ListStorage& site_groups = data.arg3()->GetList();
+    EXPECT_EQ(3UL, site_groups.size());
+  }
+
+  clock.SetNow(base::Time::Now());
+  const GURL url5("http://test.example5.com");
+  for (int i = 0; i < 3; ++i) {
+    auto_blocker->RecordDismissAndEmbargo(url5,
+                                          CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
+  }
+  EXPECT_EQ(
+      CONTENT_SETTING_BLOCK,
+      auto_blocker->GetEmbargoResult(url5, CONTENT_SETTINGS_TYPE_NOTIFICATIONS)
+          .content_setting);
+  clock.Advance(base::TimeDelta::FromDays(8));
+  EXPECT_EQ(
+      CONTENT_SETTING_ASK,
+      auto_blocker->GetEmbargoResult(url5, CONTENT_SETTINGS_TYPE_NOTIFICATIONS)
+          .content_setting);
+
+  {
+    const content::TestWebUI::CallData& data = *web_ui()->call_data().back();
+    EXPECT_EQ("cr.webUIResponse", data.function_name());
+    EXPECT_EQ(kCallbackId, data.arg1()->GetString());
+    ASSERT_TRUE(data.arg2()->GetBool());
+
+    const base::Value::ListStorage& site_groups = data.arg3()->GetList();
+    EXPECT_EQ(3UL, site_groups.size());
+  }
 }
 
 TEST_F(SiteSettingsHandlerTest, Origins) {

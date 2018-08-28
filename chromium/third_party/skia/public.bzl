@@ -270,6 +270,9 @@ BASE_SRCS_ALL = struct(
 
         # Not time for skcms in Google3 yet.
         "src/core/SkColorSpaceXform_skcms.cpp",
+
+        # Compute backend not yet even hooked into Skia.
+	"src/compute/**/*",
     ],
 )
 
@@ -308,6 +311,7 @@ BASE_SRCS_UNIX = struct(
         "src/ports/SkFontMgr_fontconfig.cpp",
         "src/ports/SkFontMgr_fontconfig_factory.cpp",
         "src/ports/SkGlobalInitialization_none.cpp",
+        "src/ports/SkGlobalInitialization_none_imagefilters.cpp",
         "src/ports/SkImageGenerator_none.cpp",
         "src/ports/SkTLS_none.cpp",
     ],
@@ -337,6 +341,7 @@ BASE_SRCS_ANDROID = struct(
         "src/ports/SkFontMgr_custom_empty_factory.cpp",
         "src/ports/SkFontMgr_empty_factory.cpp",
         "src/ports/SkGlobalInitialization_none.cpp",
+        "src/ports/SkGlobalInitialization_none_imagefilters.cpp",
         "src/ports/SkImageGenerator_none.cpp",
         "src/ports/SkTLS_none.cpp",
     ],
@@ -369,6 +374,7 @@ BASE_SRCS_IOS = struct(
         "src/ports/SkFontMgr_custom_empty_factory.cpp",
         "src/ports/SkFontMgr_empty_factory.cpp",
         "src/ports/SkGlobalInitialization_none.cpp",
+        "src/ports/SkGlobalInitialization_none_imagefilters.cpp",
         "src/ports/SkImageGenerator_none.cpp",
         "src/ports/SkTLS_none.cpp",
     ],
@@ -433,7 +439,6 @@ DM_SRCS_ALL = struct(
         "dm/*.h",
         "experimental/svg/model/*.cpp",
         "experimental/svg/model/*.h",
-        "gm/*.c",
         "gm/*.cpp",
         "gm/*.h",
         "src/xml/*.cpp",
@@ -444,6 +449,10 @@ DM_SRCS_ALL = struct(
         "tools/BigPathBench.inc",
         "tools/CrashHandler.cpp",
         "tools/CrashHandler.h",
+        "tools/DDLPromiseImageHelper.cpp",
+        "tools/DDLPromiseImageHelper.h",
+        "tools/DDLTileHelper.cpp",
+        "tools/DDLTileHelper.h",
         "tools/ProcStats.cpp",
         "tools/ProcStats.h",
         "tools/Registry.h",
@@ -485,7 +494,9 @@ DM_SRCS_ALL = struct(
         "tools/trace/*.h",
     ],
     exclude = [
+        "gm/cgms.cpp",
         "tests/FontMgrAndroidParserTest.cpp",  # Android-only.
+        "tests/FontMgrFontConfigTest.cpp",  # FontConfig-only.
         "tests/skia_test.cpp",  # Old main.
         "tools/gpu/atlastext/*",
         "tools/gpu/gl/angle/*",
@@ -550,8 +561,10 @@ DM_INCLUDES = [
 def DM_ARGS(asan):
   source = ["tests", "gm", "image"]
   # TODO(benjaminwagner): f16, pic-8888, serialize-8888, and tiles_rt-8888 fail.
-  config = ["565", "8888", "pdf", "srgb"]
-  return ["--src"] + source + ["--config"] + config + ["--nonativeFonts"]
+  config = ["565", "8888", "pdf"]
+  match = ["~Codec_78329453"]
+  return (["--src"] + source + ["--config"] + config + ["--nonativeFonts"] +
+          ["--match"] + match)
 
 ################################################################################
 ## COPTS

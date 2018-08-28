@@ -21,7 +21,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -71,6 +71,7 @@
 using autofill::features::kAutofillEnforceMinRequiredFieldsForHeuristics;
 using autofill::features::kAutofillEnforceMinRequiredFieldsForQuery;
 using autofill::features::kAutofillEnforceMinRequiredFieldsForUpload;
+using autofill::features::kAutofillRestrictUnownedFieldsToFormlessCheckout;
 using base::ASCIIToUTF16;
 using base::UTF8ToUTF16;
 using testing::_;
@@ -289,7 +290,8 @@ class AutofillManagerTest : public testing::Test {
 
   void SetUp() override {
     autofill_client_.SetPrefs(test::PrefServiceForTesting());
-    personal_data_.set_database(autofill_client_.GetDatabase());
+    personal_data_.Init(autofill_client_.GetDatabase(), nullptr,
+                        autofill_client_.GetPrefs(), nullptr, false);
     personal_data_.SetPrefService(autofill_client_.GetPrefs());
     autofill_driver_ =
         std::make_unique<testing::NiceMock<MockAutofillDriver>>();
@@ -368,9 +370,6 @@ class AutofillManagerTest : public testing::Test {
     autofill_manager_.reset();
     autofill_driver_.reset();
 
-    // Remove the AutofillWebDataService so TestPersonalDataManager does not
-    // need to care about removing self as an observer in destruction.
-    personal_data_.set_database(scoped_refptr<AutofillWebDataService>(nullptr));
     personal_data_.SetPrefService(nullptr);
     personal_data_.ClearCreditCards();
 
@@ -380,8 +379,9 @@ class AutofillManagerTest : public testing::Test {
   void GetAutofillSuggestions(int query_id,
                               const FormData& form,
                               const FormFieldData& field) {
-    autofill_manager_->OnQueryFormFieldAutofill(query_id, form, field,
-                                                gfx::RectF());
+    autofill_manager_->OnQueryFormFieldAutofill(
+        query_id, form, field, gfx::RectF(),
+        /*autoselect_first_suggestion=*/false);
   }
 
   void GetAutofillSuggestions(const FormData& form,
@@ -995,9 +995,10 @@ TEST_F(AutofillManagerTest,
 
   // Test that we sent the right values to the external delegate. No labels,
   // with duplicate values "Grimes" merged.
-  CheckSuggestions(kDefaultPageID,
-                   Suggestion("Googler", "" /* no label */, "", 1),
-                   Suggestion("Grimes", "" /* no label */, "", 2));
+  CheckSuggestions(
+      kDefaultPageID, Suggestion("Googler", "1600 Amphitheater pkwy", "", 1),
+      Suggestion("Grimes", "1234 Smith Blvd., Carl Grimes", "", 2),
+      Suggestion("Grimes", "1234 Smith Blvd., Robin Grimes", "", 3));
 }
 
 // Tests that we return address profile suggestions values when the section
@@ -1019,7 +1020,7 @@ TEST_F(AutofillManagerTest, GetProfileSuggestions_AlreadyAutofilledNoLabels) {
 
   // Test that we sent the right values to the external delegate. No labels.
   CheckSuggestions(kDefaultPageID,
-                   Suggestion("Elvis", "" /* no label */, "", 1));
+                   Suggestion("Elvis", "3734 Elvis Presley Blvd.", "", 1));
 }
 
 // Test that we return no suggestions when the form has no relevant fields.
@@ -1545,7 +1546,7 @@ TEST_F(AutofillManagerTest,
       AutofillMetrics::FORM_EVENT_SUGGESTION_SHOWN_SUBMITTED_ONCE, 1);
 }
 
-// Test that we return autocomplete-like suggestions when trying to autofill
+// Test that we return normal autofill suggestions when trying to autofill
 // already filled forms.
 TEST_F(AutofillManagerTest, GetFieldSuggestionsWhenFormIsAutofilled) {
   // Set up our form data.
@@ -1560,8 +1561,9 @@ TEST_F(AutofillManagerTest, GetFieldSuggestionsWhenFormIsAutofilled) {
   GetAutofillSuggestions(form, field);
 
   // Test that we sent the right values to the external delegate.
-  CheckSuggestions(kDefaultPageID, Suggestion("Charles", "", "", 1),
-                   Suggestion("Elvis", "", "", 2));
+  CheckSuggestions(kDefaultPageID,
+                   Suggestion("Charles", "123 Apple St.", "", 1),
+                   Suggestion("Elvis", "3734 Elvis Presley Blvd.", "", 2));
 }
 
 // Test that nothing breaks when there are autocomplete suggestions but no
@@ -1612,7 +1614,8 @@ TEST_F(AutofillManagerTest, GetFieldSuggestionsWithDuplicateValues) {
   GetAutofillSuggestions(form, field);
 
   // Test that we sent the right values to the external delegate.
-  CheckSuggestions(kDefaultPageID, Suggestion("Elvis", "", "", 1));
+  CheckSuggestions(kDefaultPageID,
+                   Suggestion("Elvis", "3734 Elvis Presley Blvd.", "", 1));
 }
 
 TEST_F(AutofillManagerTest, GetProfileSuggestions_FancyPhone) {
@@ -4125,7 +4128,8 @@ TEST_F(AutofillManagerTest, OnLoadedServerPredictions) {
   // Simulate having seen this form on page load.
   // |form_structure| will be owned by |autofill_manager_|.
   TestFormStructure* form_structure = new TestFormStructure(form);
-  form_structure->DetermineHeuristicTypes(nullptr /* ukm_recorder */);
+  form_structure->DetermineHeuristicTypes(/*ukm_service=*/nullptr,
+                                          /*source_id=*/0);
   autofill_manager_->AddSeenFormStructure(base::WrapUnique(form_structure));
 
   // Similarly, a second form.
@@ -4145,7 +4149,8 @@ TEST_F(AutofillManagerTest, OnLoadedServerPredictions) {
   form2.fields.push_back(field);
 
   TestFormStructure* form_structure2 = new TestFormStructure(form2);
-  form_structure2->DetermineHeuristicTypes(nullptr /* ukm_recorder */);
+  form_structure2->DetermineHeuristicTypes(/*ukm_service=*/nullptr,
+                                           /*source_id=*/0);
   autofill_manager_->AddSeenFormStructure(base::WrapUnique(form_structure2));
 
   AutofillQueryResponseContents response;
@@ -4197,7 +4202,8 @@ TEST_F(AutofillManagerTest, OnLoadedServerPredictions_ResetManager) {
   // Simulate having seen this form on page load.
   // |form_structure| will be owned by |autofill_manager_|.
   TestFormStructure* form_structure = new TestFormStructure(form);
-  form_structure->DetermineHeuristicTypes(nullptr /* ukm_recorder */);
+  form_structure->DetermineHeuristicTypes(/*ukm_service=*/nullptr,
+                                          /*source_id=*/0);
   autofill_manager_->AddSeenFormStructure(base::WrapUnique(form_structure));
 
   AutofillQueryResponseContents response;
@@ -4250,7 +4256,8 @@ TEST_F(AutofillManagerTest, DetermineHeuristicsWithOverallPrediction) {
   // Simulate having seen this form on page load.
   // |form_structure| will be owned by |autofill_manager_|.
   TestFormStructure* form_structure = new TestFormStructure(form);
-  form_structure->DetermineHeuristicTypes(nullptr /* ukm_recorder */);
+  form_structure->DetermineHeuristicTypes(/*ukm_service=*/nullptr,
+                                          /*source_id=*/0);
   autofill_manager_->AddSeenFormStructure(base::WrapUnique(form_structure));
 
   AutofillQueryResponseContents response;
@@ -4317,7 +4324,8 @@ TEST_F(AutofillManagerTest, FormSubmittedServerTypes) {
   // Simulate having seen this form on page load.
   // |form_structure| will be owned by |autofill_manager_|.
   TestFormStructure* form_structure = new TestFormStructure(form);
-  form_structure->DetermineHeuristicTypes(nullptr /* ukm_recorder */);
+  form_structure->DetermineHeuristicTypes(/*ukm_service=*/nullptr,
+                                          /*source_id=*/0);
 
   // Clear the heuristic types, and instead set the appropriate server types.
   std::vector<ServerFieldType> heuristic_types, server_types;
@@ -5268,6 +5276,41 @@ TEST_F(AutofillManagerTest, FillInUpdatedExpirationDate) {
                                      "4012888888881881");
 }
 
+TEST_F(AutofillManagerTest, ProfileDisabledDoesNotFillFormData) {
+  autofill_manager_->SetProfileEnabled(false);
+
+  // Set up our form data.
+  FormData form;
+  test::CreateTestAddressFormData(&form);
+  std::vector<FormData> forms(1, form);
+  FormsSeen(forms);
+
+  const char guid[] = "00000000-0000-0000-0000-000000000001";
+
+  // Expect no fields filled, no form data sent to renderer.
+  EXPECT_CALL(*autofill_driver_, SendFormDataToRenderer(_, _, _)).Times(0);
+
+  FillAutofillFormData(kDefaultPageID, form, *form.fields.begin(),
+                       MakeFrontendID(std::string(), guid));
+}
+
+TEST_F(AutofillManagerTest, ProfileDisabledDoesNotSuggest) {
+  autofill_manager_->SetProfileEnabled(false);
+
+  // Set up our form data.
+  FormData form;
+  test::CreateTestAddressFormData(&form);
+  std::vector<FormData> forms(1, form);
+  FormsSeen(forms);
+
+  FormFieldData field;
+  test::CreateTestFormField("Email", "email", "", "email", &field);
+  GetAutofillSuggestions(form, field);
+  // Expect no suggestions as autofill and autocomplete are disabled for
+  // addresses.
+  EXPECT_FALSE(external_delegate_->on_suggestions_returned_seen());
+}
+
 TEST_F(AutofillManagerTest, CreditCardDisabledDoesNotFillFormData) {
   autofill_manager_->SetCreditCardEnabled(false);
 
@@ -5297,8 +5340,7 @@ TEST_F(AutofillManagerTest, CreditCardDisabledDoesNotSuggest) {
   FormsSeen(forms);
 
   FormFieldData field;
-  test::CreateTestFormField("Name on Card", "nameoncard", "pres", "text",
-                            &field);
+  test::CreateTestFormField("Name on Card", "nameoncard", "", "text", &field);
   GetAutofillSuggestions(form, field);
   // Expect no suggestions as autofill and autocomplete are disabled for credit
   // cards.
@@ -5922,7 +5964,8 @@ TEST_F(AutofillManagerTest, DisplaySuggestionsForUpdatedServerTypedForm) {
   form.fields.push_back(field);
 
   auto form_structure = std::make_unique<TestFormStructure>(form);
-  form_structure->DetermineHeuristicTypes(nullptr /* ukm_recorder */);
+  form_structure->DetermineHeuristicTypes(/*ukm_service=*/nullptr,
+                                          /*source_id=*/0);
   // Make sure the form can not be autofilled now.
   ASSERT_EQ(0u, form_structure->autofill_count());
   for (size_t idx = 0; idx < form_structure->field_count(); ++idx) {
@@ -6135,5 +6178,173 @@ TEST_F(AutofillManagerTest,
   // Test that we sent the right values to the external delegate.
   ASSERT_FALSE(external_delegate_->is_all_server_suggestions());
 }
+
+// Test param indicates if there is an active screen reader.
+class OnFocusOnFormFieldTest : public AutofillManagerTest,
+                               public testing::WithParamInterface<bool> {
+ protected:
+  OnFocusOnFormFieldTest() = default;
+  ~OnFocusOnFormFieldTest() override = default;
+
+  void SetUp() override {
+    AutofillManagerTest::SetUp();
+
+    has_active_screen_reader_ = GetParam();
+    external_delegate_->set_has_active_screen_reader(has_active_screen_reader_);
+
+    scoped_feature_list_.InitWithFeatures(
+        // Enabled
+        {},
+        // Disabled
+        {kAutofillEnforceMinRequiredFieldsForHeuristics,
+         kAutofillEnforceMinRequiredFieldsForQuery,
+         kAutofillEnforceMinRequiredFieldsForUpload,
+         kAutofillRestrictUnownedFieldsToFormlessCheckout});
+  }
+
+  void TearDown() override {
+    external_delegate_->set_has_active_screen_reader(false);
+
+    AutofillManagerTest::TearDown();
+  }
+
+  void CheckSuggestionsAvailableIfScreenReaderRunning() {
+    EXPECT_EQ(has_active_screen_reader_,
+              external_delegate_->has_suggestions_available_on_field_focus());
+  }
+
+  void CheckNoSuggestionsAvailableOnFieldFocus() {
+    EXPECT_FALSE(
+        external_delegate_->has_suggestions_available_on_field_focus());
+  }
+
+  bool has_active_screen_reader_;
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+TEST_P(OnFocusOnFormFieldTest, AddressSuggestions) {
+  FormData form;
+  form.name = ASCIIToUTF16("MyForm");
+  form.origin = GURL("https://myform.com/form.html");
+  form.action = GURL("https://myform.com/submit.html");
+  FormFieldData field;
+  // Set a valid autocomplete attribute for the first name.
+  test::CreateTestFormField("First name", "firstname", "", "text", &field);
+  field.autocomplete_attribute = "given-name";
+  form.fields.push_back(field);
+  // Set an unrecognized autocomplete attribute for the last name.
+  test::CreateTestFormField("Last Name", "lastname", "", "text", &field);
+  field.autocomplete_attribute = "unrecognized";
+  form.fields.push_back(field);
+  std::vector<FormData> forms(1, form);
+  FormsSeen(forms);
+
+  // Suggestions should be returned for the first field.
+  autofill_manager_->OnFocusOnFormFieldImpl(form, form.fields[0], gfx::RectF());
+  CheckSuggestionsAvailableIfScreenReaderRunning();
+
+  // No suggestions should be provided for the second field because of its
+  // unrecognized autocomplete attribute.
+  autofill_manager_->OnFocusOnFormFieldImpl(form, form.fields[1], gfx::RectF());
+  CheckNoSuggestionsAvailableOnFieldFocus();
+}
+
+TEST_P(OnFocusOnFormFieldTest, AddressSuggestions_AutocompleteOffNotRespected) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(kAutofillAlwaysFillAddresses);
+
+  FormData form;
+  form.name = ASCIIToUTF16("MyForm");
+  form.origin = GURL("https://myform.com/form.html");
+  form.action = GURL("https://myform.com/submit.html");
+  FormFieldData field;
+  // Set a valid autocomplete attribute for the first name.
+  test::CreateTestFormField("First name", "firstname", "", "text", &field);
+  field.autocomplete_attribute = "given-name";
+  form.fields.push_back(field);
+  // Set an autocomplete=off attribute for the last name.
+  test::CreateTestFormField("Last Name", "lastname", "", "text", &field);
+  field.should_autocomplete = false;
+  form.fields.push_back(field);
+  std::vector<FormData> forms(1, form);
+  FormsSeen(forms);
+
+  autofill_manager_->OnFocusOnFormFieldImpl(form, form.fields[1], gfx::RectF());
+  CheckSuggestionsAvailableIfScreenReaderRunning();
+}
+
+TEST_P(OnFocusOnFormFieldTest, AddressSuggestions_AutocompleteOffRespected) {
+  if (!IsDesktopPlatform())
+    return;
+
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(kAutofillAlwaysFillAddresses);
+
+  FormData form;
+  form.name = ASCIIToUTF16("MyForm");
+  form.origin = GURL("https://myform.com/form.html");
+  form.action = GURL("https://myform.com/submit.html");
+  FormFieldData field;
+  // Set a valid autocomplete attribute for the first name.
+  test::CreateTestFormField("First name", "firstname", "", "text", &field);
+  field.autocomplete_attribute = "given-name";
+  form.fields.push_back(field);
+  // Set an autocomplete=off attribute for the last name.
+  test::CreateTestFormField("Last Name", "lastname", "", "text", &field);
+  field.should_autocomplete = false;
+  form.fields.push_back(field);
+  std::vector<FormData> forms(1, form);
+  FormsSeen(forms);
+
+  autofill_manager_->OnFocusOnFormFieldImpl(form, form.fields[1], gfx::RectF());
+  CheckNoSuggestionsAvailableOnFieldFocus();
+}
+
+TEST_P(OnFocusOnFormFieldTest, CreditCardSuggestions_SecureContext) {
+  // Set up our form data.
+  FormData form;
+  CreateTestCreditCardFormData(&form, true, false);
+  // Clear the form action.
+  form.action = GURL();
+  std::vector<FormData> forms(1, form);
+  FormsSeen(forms);
+
+  autofill_manager_->OnFocusOnFormFieldImpl(form, form.fields[1], gfx::RectF());
+  CheckSuggestionsAvailableIfScreenReaderRunning();
+}
+
+TEST_P(OnFocusOnFormFieldTest, CreditCardSuggestions_NonSecureContext) {
+  // Set up our form data.
+  FormData form;
+  CreateTestCreditCardFormData(&form, false, false);
+  // Clear the form action.
+  form.action = GURL();
+  std::vector<FormData> forms(1, form);
+  FormsSeen(forms);
+
+  autofill_manager_->OnFocusOnFormFieldImpl(form, form.fields[1], gfx::RectF());
+  // In a non-HTTPS context, there will be a warning indicating the page is
+  // insecure.
+  CheckSuggestionsAvailableIfScreenReaderRunning();
+}
+
+TEST_P(OnFocusOnFormFieldTest, CreditCardSuggestions_Ablation) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      kAutofillCreditCardAblationExperiment);
+
+  // Set up our form data.
+  FormData form;
+  CreateTestCreditCardFormData(&form, true, false);
+  // Clear the form action.
+  form.action = GURL();
+  std::vector<FormData> forms(1, form);
+  FormsSeen(forms);
+
+  autofill_manager_->OnFocusOnFormFieldImpl(form, form.fields[1], gfx::RectF());
+  CheckNoSuggestionsAvailableOnFieldFocus();
+}
+
+INSTANTIATE_TEST_CASE_P(All, OnFocusOnFormFieldTest, testing::Bool());
 
 }  // namespace autofill

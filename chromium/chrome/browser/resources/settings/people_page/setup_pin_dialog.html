@@ -3,6 +3,7 @@
 <link rel="import" href="chrome://resources/html/polymer.html">
 
 <link rel="import" href="chrome://resources/cr_elements/cr_dialog/cr_dialog.html">
+<link rel="import" href="chrome://resources/cr_elements/shared_vars_css.html">
 <link rel="import" href="chrome://resources/html/assert.html">
 <link rel="import" href="chrome://resources/html/i18n_behavior.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
@@ -22,11 +23,11 @@
       }
 
       .warning {
-        color: var(--paper-grey-700);
+        color: var(--cr-secondary-text-color);
       }
 
       .warning > iron-icon {
-        --iron-icon-fill-color: var(--paper-grey-700);
+        --iron-icon-fill-color: var(--google-grey-refresh-700);
       }
 
       pin-keyboard {
@@ -59,7 +60,7 @@
         <div id="pinKeyboardDiv" class="settings-box continuation">
           <pin-keyboard id="pinKeyboard" on-pin-change="onPinChange_"
               on-submit="onPinSubmit_" value="{{pinKeyboardValue_}}"
-              has-error$="[[hasError_(problemMessage_, problemClass_)]]">
+              has-error="[[hasError_(problemMessage_, problemClass_)]]">
             <!-- Warning/error; only shown if title is hidden. -->
             <div id="problemDiv" class$="[[problemClass_]]"
                 invisible$="[[!problemMessage_]]" problem>

@@ -186,7 +186,9 @@ message VideoDecoderConfig {
     DOLBYVISION_PROFILE5 = 21;
     DOLBYVISION_PROFILE7 = 22;
     THEORAPROFILE_ANY = 23;
-    AV1PROFILE_PROFILE0 = 24;
+    AV1PROFILE_PROFILE_MAIN = 24;
+    AV1PROFILE_PROFILE_HIGH = 25;
+    AV1PROFILE_PROFILE_PRO = 26;
   };
 
   // Proto version of media::VideoPixelFormat.
@@ -318,9 +320,9 @@ enum CdmMessageType {
 // Proto version of media::CdmSessionType.
 // NEVER change these numbers or re-use old ones; only add new ones.
 enum CdmSessionType {
-  TEMPORARY_SESSION = 0;
-  PERSISTENT_LICENSE_SESSION = 1;
-  PERSISTENT_RELEASE_MESSAGE_SESSION = 2;
+  kTemporary = 0;
+  kPersistentLicense = 1;
+  kPersistentUsageRecord = 2;
 };
 
 message RendererInitialize {

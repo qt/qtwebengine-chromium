@@ -323,9 +323,10 @@ WebMediaPlayerMS::~WebMediaPlayerMS() {
   delegate_->RemoveObserver(delegate_id_);
 }
 
-void WebMediaPlayerMS::Load(LoadType load_type,
-                            const blink::WebMediaPlayerSource& source,
-                            CORSMode /*cors_mode*/) {
+blink::WebMediaPlayer::LoadTiming WebMediaPlayerMS::Load(
+    LoadType load_type,
+    const blink::WebMediaPlayerSource& source,
+    CORSMode /*cors_mode*/) {
   DVLOG(1) << __func__;
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -376,7 +377,7 @@ void WebMediaPlayerMS::Load(LoadType load_type,
 
   if (!video_frame_provider_ && !audio_renderer_) {
     SetNetworkState(WebMediaPlayer::kNetworkStateNetworkError);
-    return;
+    return blink::WebMediaPlayer::LoadTiming::kImmediate;
   }
 
   if (audio_renderer_) {
@@ -384,9 +385,9 @@ void WebMediaPlayerMS::Load(LoadType load_type,
     audio_renderer_->Start();
 
     // Store the ID of audio track being played in |current_video_track_id_|
-    blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
     if (!web_stream_.IsNull()) {
-      web_stream_.AudioTracks(audio_tracks);
+      blink::WebVector<blink::WebMediaStreamTrack> audio_tracks =
+          web_stream_.AudioTracks();
       DCHECK_GT(audio_tracks.size(), 0U);
       current_audio_track_id_ = audio_tracks[0].Id();
     }
@@ -397,8 +398,8 @@ void WebMediaPlayerMS::Load(LoadType load_type,
 
     // Store the ID of video track being played in |current_video_track_id_|
     if (!web_stream_.IsNull()) {
-      blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
-      web_stream_.VideoTracks(video_tracks);
+      blink::WebVector<blink::WebMediaStreamTrack> video_tracks =
+          web_stream_.VideoTracks();
       DCHECK_GT(video_tracks.size(), 0U);
       current_video_track_id_ = video_tracks[0].Id();
     }
@@ -413,6 +414,8 @@ void WebMediaPlayerMS::Load(LoadType load_type,
     SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
     SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
   }
+
+  return blink::WebMediaPlayer::LoadTiming::kImmediate;
 }
 
 void WebMediaPlayerMS::TrackAdded(const blink::WebMediaStreamTrack& track) {
@@ -455,9 +458,8 @@ void WebMediaPlayerMS::Reload() {
 void WebMediaPlayerMS::ReloadVideo() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!web_stream_.IsNull());
-  blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
-  // VideoTracks() is a getter.
-  web_stream_.VideoTracks(video_tracks);
+  blink::WebVector<blink::WebMediaStreamTrack> video_tracks =
+      web_stream_.VideoTracks();
 
   RendererReloadAction renderer_action = RendererReloadAction::KEEP_RENDERER;
   if (video_tracks.IsEmpty()) {
@@ -506,9 +508,8 @@ void WebMediaPlayerMS::ReloadAudio() {
   if (!frame)
     return;
 
-  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
-  // AudioTracks() is a getter.
-  web_stream_.AudioTracks(audio_tracks);
+  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks =
+      web_stream_.AudioTracks();
 
   RendererReloadAction renderer_action = RendererReloadAction::KEEP_RENDERER;
   if (audio_tracks.IsEmpty()) {
@@ -763,7 +764,7 @@ bool WebMediaPlayerMS::DidLoadingProgress() {
   return true;
 }
 
-void WebMediaPlayerMS::Paint(blink::WebCanvas* canvas,
+void WebMediaPlayerMS::Paint(cc::PaintCanvas* canvas,
                              const blink::WebRect& rect,
                              cc::PaintFlags& flags,
                              int already_uploaded_id,
@@ -918,6 +919,11 @@ void WebMediaPlayerMS::OnBecamePersistentVideo(bool value) {
 }
 
 void WebMediaPlayerMS::OnPictureInPictureModeEnded() {
+  NOTIMPLEMENTED();
+}
+
+void WebMediaPlayerMS::OnPictureInPictureControlClicked(
+    const std::string& control_id) {
   NOTIMPLEMENTED();
 }
 

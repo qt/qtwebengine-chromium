@@ -25,6 +25,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_FORMS_HTML_FORM_CONTROL_ELEMENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_FORMS_HTML_FORM_CONTROL_ELEMENT_H_
 
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_autofill_state.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/forms/form_associated.h"
 #include "third_party/blink/renderer/core/html/forms/labelable_element.h"
@@ -122,10 +124,13 @@ class CORE_EXPORT HTMLFormControlElement : public LabelableElement,
 
   bool IsAutofocusable() const;
 
-  virtual bool ShouldShowFocusRingOnMouseFocus() const;
+  bool MayTriggerVirtualKeyboard() const override;
 
-  bool IsAutofilled() const { return is_autofilled_; }
-  void SetAutofilled(bool = true);
+  WebAutofillState GetAutofillState() const { return autofill_state_; }
+  bool IsAutofilled() const {
+    return autofill_state_ != WebAutofillState::kNotFilled;
+  }
+  void SetAutofillState(WebAutofillState = WebAutofillState::kAutofilled);
 
   // The autofill section to which this element belongs (e.g. billing address,
   // shipping address, .. .)
@@ -171,7 +176,6 @@ class CORE_EXPORT HTMLFormControlElement : public LabelableElement,
   void DispatchBlurEvent(Element* new_focused_element,
                          WebFocusType,
                          InputDeviceCapabilities* source_capabilities) override;
-  void WillCallDefaultEventHandler(const Event&) final;
 
   void DidRecalcStyle(StyleRecalcChange) override;
 
@@ -202,6 +206,7 @@ class CORE_EXPORT HTMLFormControlElement : public LabelableElement,
   unsigned unique_renderer_form_control_id_;
 
   WebString autofill_section_;
+  enum WebAutofillState autofill_state_;
 
   enum AncestorDisabledState {
     kAncestorDisabledStateUnknown,
@@ -213,7 +218,7 @@ class CORE_EXPORT HTMLFormControlElement : public LabelableElement,
   enum DataListAncestorState { kUnknown, kInsideDataList, kNotInsideDataList };
   mutable enum DataListAncestorState data_list_ancestor_state_;
   mutable bool may_have_field_set_ancestor_ : 1;
-  bool is_autofilled_ : 1;
+
   bool has_validation_message_ : 1;
   // The initial value of m_willValidate depends on the derived class. We can't
   // initialize it with a virtual function in the constructor. m_willValidate

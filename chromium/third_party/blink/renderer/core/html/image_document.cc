@@ -25,7 +25,6 @@
 #include "third_party/blink/renderer/core/html/image_document.h"
 
 #include <limits>
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/events/event_listener.h"
 #include "third_party/blink/renderer/core/dom/raw_data_document_parser.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
@@ -51,6 +50,8 @@
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/platform_chrome_client.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -353,7 +354,7 @@ void ImageDocument::ImageClicked(int x, int y) {
     float scroll_y = (image_y * device_scale_factor) / scale -
                      static_cast<float>(GetFrame()->View()->Height()) / 2;
 
-    GetFrame()->View()->LayoutViewportScrollableArea()->SetScrollOffset(
+    GetFrame()->View()->LayoutViewport()->SetScrollOffset(
         ScrollOffset(scroll_x, scroll_y), kProgrammaticScroll);
   }
 }
@@ -454,7 +455,8 @@ int ImageDocument::CalculateDivWidth() {
   //   of the frame.
   // * Images smaller in either dimension are centered along that axis.
   int viewport_width =
-      GetFrame()->GetPage()->GetVisualViewport().Size().Width();
+      GetFrame()->GetPage()->GetVisualViewport().Size().Width() /
+      GetFrame()->PageZoomFactor();
 
   // For huge images, minimum-scale=0.1 is still too big on small screens.
   // Set the <div> width so that the image will shrink to fit the width of the

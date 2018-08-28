@@ -1344,6 +1344,21 @@ const char *amdgpu_get_marketing_name(amdgpu_device_handle dev);
 /**
  *  Create kernel sync object
  *
+ * \param   dev         - \c [in]  device handle
+ * \param   flags       - \c [in]  flags that affect creation
+ * \param   syncobj     - \c [out] sync object handle
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+*/
+int amdgpu_cs_create_syncobj2(amdgpu_device_handle dev,
+			      uint32_t  flags,
+			      uint32_t *syncobj);
+
+/**
+ *  Create kernel sync object
+ *
  * \param   dev	      - \c [in]  device handle
  * \param   syncobj   - \c [out] sync object handle
  *
@@ -1365,6 +1380,34 @@ int amdgpu_cs_create_syncobj(amdgpu_device_handle dev,
 */
 int amdgpu_cs_destroy_syncobj(amdgpu_device_handle dev,
 			      uint32_t syncobj);
+
+/**
+ * Reset kernel sync objects to unsignalled state.
+ *
+ * \param dev           - \c [in] device handle
+ * \param syncobjs      - \c [in] array of sync object handles
+ * \param syncobj_count - \c [in] number of handles in syncobjs
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+*/
+int amdgpu_cs_syncobj_reset(amdgpu_device_handle dev,
+			    const uint32_t *syncobjs, uint32_t syncobj_count);
+
+/**
+ * Signal kernel sync objects.
+ *
+ * \param dev           - \c [in] device handle
+ * \param syncobjs      - \c [in] array of sync object handles
+ * \param syncobj_count - \c [in] number of handles in syncobjs
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+*/
+int amdgpu_cs_syncobj_signal(amdgpu_device_handle dev,
+			     const uint32_t *syncobjs, uint32_t syncobj_count);
 
 /**
  *  Wait for one or all sync objects to signal.
@@ -1488,6 +1531,24 @@ void amdgpu_cs_chunk_fence_to_dep(struct amdgpu_cs_fence *fence,
 				  struct drm_amdgpu_cs_chunk_dep *dep);
 void amdgpu_cs_chunk_fence_info_to_data(struct amdgpu_cs_fence_info *fence_info,
 					struct drm_amdgpu_cs_chunk_data *data);
+
+/**
+ * Reserve VMID
+ * \param   context - \c [in]  GPU Context
+ * \param   flags - \c [in]  TBD
+ *
+ * \return  0 on success otherwise POSIX Error code
+*/
+int amdgpu_vm_reserve_vmid(amdgpu_device_handle dev, uint32_t flags);
+
+/**
+ * Free reserved VMID
+ * \param   context - \c [in]  GPU Context
+ * \param   flags - \c [in]  TBD
+ *
+ * \return  0 on success otherwise POSIX Error code
+*/
+int amdgpu_vm_unreserve_vmid(amdgpu_device_handle dev, uint32_t flags);
 
 #ifdef __cplusplus
 }

@@ -12,9 +12,7 @@
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "third_party/zlib/zlib.h"
 
-using std::string;
-
-namespace net {
+namespace quic {
 
 namespace {
 
@@ -403,7 +401,7 @@ bool ParseEntries(QuicStringPiece* in_out,
         if (cert.empty()) {
           return false;
         }
-        out_certs->push_back(string(cert));
+        out_certs->push_back(QuicString(cert));
         break;
       }
       default:
@@ -629,7 +627,7 @@ bool CertCompressor::DecompressChain(
         if (uncompressed.size() < cert_len) {
           return false;
         }
-        (*out_certs)[i] = string(uncompressed.substr(0, cert_len));
+        (*out_certs)[i] = QuicString(uncompressed.substr(0, cert_len));
         uncompressed.remove_prefix(cert_len);
         break;
       case CertEntry::CACHED:
@@ -645,4 +643,4 @@ bool CertCompressor::DecompressChain(
   return true;
 }
 
-}  // namespace net
+}  // namespace quic

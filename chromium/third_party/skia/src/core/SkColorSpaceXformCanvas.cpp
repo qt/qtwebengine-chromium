@@ -90,8 +90,8 @@ public:
                       const SkPaint& paint) override {
         fTarget->drawPoints(mode, count, pts, fXformer->apply(paint));
     }
-    void onDrawVerticesObject(const SkVertices* vertices, SkBlendMode mode,
-                              const SkPaint& paint) override {
+    void onDrawVerticesObject(const SkVertices* vertices, const SkMatrix* bones, int boneCount,
+                              SkBlendMode mode, const SkPaint& paint) override {
         sk_sp<SkVertices> copy;
         if (vertices->hasColors()) {
             int count = vertices->vertexCount();
@@ -99,11 +99,12 @@ public:
             fXformer->apply(xformed.begin(), vertices->colors(), count);
             copy = SkVertices::MakeCopy(vertices->mode(), count, vertices->positions(),
                                         vertices->texCoords(), xformed.begin(),
+                                        vertices->boneIndices(), vertices->boneWeights(),
                                         vertices->indexCount(), vertices->indices());
             vertices = copy.get();
         }
 
-        fTarget->drawVertices(vertices, mode, fXformer->apply(paint));
+        fTarget->drawVertices(vertices, bones, boneCount, mode, fXformer->apply(paint));
     }
 
     void onDrawText(const void* ptr, size_t len,
@@ -266,13 +267,6 @@ public:
         return kNoLayer_SaveLayerStrategy;
     }
 
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-    SkDrawFilter* setDrawFilter(SkDrawFilter* filter) override {
-        SkCanvas::setDrawFilter(filter);
-        return fTarget->setDrawFilter(filter);
-    }
-#endif
-
     // Everything from here on should be uninteresting strictly proxied state-change calls.
     void willSave()    override { fTarget->save(); }
     void willRestore() override { fTarget->restore(); }
@@ -331,10 +325,11 @@ public:
 private:
     sk_sp<SkImage> prepareImage(const SkImage* image) {
         GrContext* gr = fTarget->getGrContext();
-        if (gr) {
-            // If fTarget is GPU-accelerated, we want to upload to a texture
-            // before applying the transform. This way, we can get cache hits
-            // in the texture cache and the transform gets applied on the GPU.
+        // If fTarget is GPU-accelerated, we want to upload to a texture before applying the
+        // transform. This way, we can get cache hits in the texture cache and the transform gets
+        // applied on the GPU. We can't do A2B transforms on the GPU, though, so force those down
+        // the slower CPU path.
+        if (gr && (!image->colorSpace() || image->colorSpace()->toXYZD50())) {
             sk_sp<SkImage> textureImage = image->makeTextureImage(gr, nullptr);
             if (textureImage)
                 return fXformer->apply(textureImage.get());

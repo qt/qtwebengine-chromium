@@ -41,6 +41,10 @@ struct InvalidationLists;
 class QualifiedName;
 class RuleData;
 
+// Summarizes and indexes the contents of RuleData objects. It creates
+// invalidation sets from rule data and makes them available via several
+// CollectInvalidationSetForFoo methods which use the indices to quickly gather
+// the relevant InvalidationSets for a particular DOM mutation.
 class CORE_EXPORT RuleFeatureSet {
   DISALLOW_NEW();
 
@@ -48,6 +52,7 @@ class CORE_EXPORT RuleFeatureSet {
   RuleFeatureSet();
   ~RuleFeatureSet();
 
+  // Methods for updating the data in this object.
   void Add(const RuleFeatureSet&);
   void Clear();
 
@@ -55,6 +60,7 @@ class CORE_EXPORT RuleFeatureSet {
 
   SelectorPreMatch CollectFeaturesFromRuleData(const RuleData&);
 
+  // Methods for accessing the data in this object.
   bool UsesFirstLineRules() const { return metadata_.uses_first_line_rules; }
   bool UsesWindowInactiveSelector() const {
     return metadata_.uses_window_inactive_selector;
@@ -127,9 +133,11 @@ class CORE_EXPORT RuleFeatureSet {
       InvalidationLists&,
       unsigned min_direct_adjacent) const;
   void CollectNthInvalidationSet(InvalidationLists&) const;
+  void CollectPartInvalidationSet(InvalidationLists&) const;
   void CollectTypeRuleInvalidationSet(InvalidationLists&, ContainerNode&) const;
 
   bool HasIdsInSelectors() const { return id_invalidation_sets_.size() > 0; }
+  bool InvalidatesParts() const { return metadata_.invalidates_parts; }
 
   bool IsAlive() const { return is_alive_; }
 
@@ -161,6 +169,7 @@ class CORE_EXPORT RuleFeatureSet {
     bool uses_window_inactive_selector = false;
     bool needs_full_recalc_for_rule_set_invalidation = false;
     unsigned max_direct_adjacent_selectors = 0;
+    bool invalidates_parts = false;
   };
 
   SelectorPreMatch CollectFeaturesFromSelector(const CSSSelector&,
@@ -182,6 +191,7 @@ class CORE_EXPORT RuleFeatureSet {
   SiblingInvalidationSet& EnsureUniversalSiblingInvalidationSet();
   DescendantInvalidationSet& EnsureNthInvalidationSet();
   DescendantInvalidationSet& EnsureTypeRuleInvalidationSet();
+  DescendantInvalidationSet& EnsurePartInvalidationSet();
 
   void UpdateInvalidationSets(const RuleData&);
   void UpdateInvalidationSetsForContentAttribute(const RuleData&);
@@ -203,7 +213,6 @@ class CORE_EXPORT RuleFeatureSet {
     bool content_pseudo_crossing = false;
     bool has_nth_pseudo = false;
     bool has_features_for_rule_set_invalidation = false;
-    bool invalidates_parts = false;  // ::part() selector
   };
 
   static void ExtractInvalidationSetFeature(const CSSSelector&,

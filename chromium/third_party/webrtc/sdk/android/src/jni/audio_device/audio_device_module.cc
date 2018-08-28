@@ -31,8 +31,12 @@ namespace {
 // implementations.
 //
 // An instance can be created on any thread, but must then be used on one and
-// the same thread. All public methods must also be called on the same thread. A
-// thread checker will RTC_DCHECK if any method is called on an invalid thread.
+// the same thread. All public methods must also be called on the same thread.
+// A thread checker will RTC_DCHECK if any method is called on an invalid
+// thread.
+// TODO(henrika): it might be useful to also support a scenario where the ADM
+// is constructed on thread T1, used on thread T2 and destructed on T2 or T3.
+// If so, care must be taken to ensure that only T2 is a COM thread.
 class AndroidAudioDeviceModule : public AudioDeviceModule {
  public:
   // For use with UMA logging. Must be kept in sync with histograms.xml in
@@ -82,7 +86,7 @@ class AndroidAudioDeviceModule : public AudioDeviceModule {
   int32_t Init() override {
     RTC_LOG(INFO) << __FUNCTION__;
     RTC_DCHECK(thread_checker_.CalledOnValidThread());
-    audio_device_buffer_ = rtc::MakeUnique<AudioDeviceBuffer>();
+    audio_device_buffer_ = absl::make_unique<AudioDeviceBuffer>();
     AttachAudioBuffer();
     if (initialized_) {
       return 0;
@@ -115,6 +119,8 @@ class AndroidAudioDeviceModule : public AudioDeviceModule {
     int32_t err = input_->Terminate();
     err |= output_->Terminate();
     initialized_ = false;
+    thread_checker_.DetachFromThread();
+    audio_device_buffer_.reset(nullptr);
     RTC_DCHECK_EQ(err, 0);
     return err;
   }
@@ -235,11 +241,15 @@ class AndroidAudioDeviceModule : public AudioDeviceModule {
     if (Playing()) {
       return 0;
     }
-    audio_device_buffer_->StartPlayout();
     int32_t result = output_->StartPlayout();
     RTC_LOG(INFO) << "output: " << result;
     RTC_HISTOGRAM_BOOLEAN("WebRTC.Audio.StartPlayoutSuccess",
                           static_cast<int>(result == 0));
+    if (result == 0) {
+      // Only start playing the audio device buffer if starting the audio
+      // output succeeded.
+      audio_device_buffer_->StartPlayout();
+    }
     return result;
   }
 
@@ -270,11 +280,15 @@ class AndroidAudioDeviceModule : public AudioDeviceModule {
     if (Recording()) {
       return 0;
     }
-    audio_device_buffer_->StartRecording();
     int32_t result = input_->StartRecording();
     RTC_LOG(INFO) << "output: " << result;
     RTC_HISTOGRAM_BOOLEAN("WebRTC.Audio.StartRecordingSuccess",
                           static_cast<int>(result == 0));
+    if (result == 0) {
+      // Only start recording the audio device buffer if starting the audio
+      // input succeeded.
+      audio_device_buffer_->StartRecording();
+    }
     return result;
   }
 
@@ -337,7 +351,7 @@ class AndroidAudioDeviceModule : public AudioDeviceModule {
     RTC_LOG(INFO) << __FUNCTION__;
     if (!initialized_)
       return -1;
-    rtc::Optional<uint32_t> volume = output_->SpeakerVolume();
+    absl::optional<uint32_t> volume = output_->SpeakerVolume();
     if (!volume)
       return -1;
     *output_volume = *volume;
@@ -349,7 +363,7 @@ class AndroidAudioDeviceModule : public AudioDeviceModule {
     RTC_LOG(INFO) << __FUNCTION__;
     if (!initialized_)
       return -1;
-    rtc::Optional<uint32_t> max_volume = output_->MaxSpeakerVolume();
+    absl::optional<uint32_t> max_volume = output_->MaxSpeakerVolume();
     if (!max_volume)
       return -1;
     *output_max_volume = *max_volume;
@@ -360,7 +374,7 @@ class AndroidAudioDeviceModule : public AudioDeviceModule {
     RTC_LOG(INFO) << __FUNCTION__;
     if (!initialized_)
       return -1;
-    rtc::Optional<uint32_t> min_volume = output_->MinSpeakerVolume();
+    absl::optional<uint32_t> min_volume = output_->MinSpeakerVolume();
     if (!min_volume)
       return -1;
     *output_min_volume = *min_volume;

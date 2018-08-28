@@ -5,10 +5,9 @@
 #include "net/third_party/quic/core/quic_trace_visitor.h"
 
 #include "net/third_party/quic/platform/api/quic_endian.h"
+#include "net/third_party/quic/platform/api/quic_string.h"
 
-using std::string;
-
-namespace net {
+namespace quic {
 
 quic_trace::EncryptionLevel EncryptionLevelToProto(EncryptionLevel level) {
   switch (level) {
@@ -32,8 +31,8 @@ QuicTraceVisitor::QuicTraceVisitor(const QuicConnection* connection)
   // the standard treats it as an opaque blob.
   QuicConnectionId connection_id =
       QuicEndian::HostToNet64(connection->connection_id());
-  string binary_connection_id(reinterpret_cast<const char*>(&connection_id),
-                              sizeof(connection_id));
+  QuicString binary_connection_id(reinterpret_cast<const char*>(&connection_id),
+                                  sizeof(connection_id));
 
   // We assume that the connection ID in gQUIC is equivalent to the
   // server-chosen client-selected ID.
@@ -88,7 +87,6 @@ void QuicTraceVisitor::OnPacketSent(const SerializedPacket& serialized_packet,
       case PATH_RESPONSE_FRAME:
       case PATH_CHALLENGE_FRAME:
       case STOP_SENDING_FRAME:
-
         break;
 
       // Ignore gQUIC-specific frames.
@@ -99,6 +97,13 @@ void QuicTraceVisitor::OnPacketSent(const SerializedPacket& serialized_packet,
         QUIC_BUG << "Unknown frame type encountered";
         break;
     }
+  }
+
+  // Output PCC DebugState on packet sent for analysis.
+  if (connection_->sent_packet_manager()
+          .GetSendAlgorithm()
+          ->GetCongestionControlType() == kPCC) {
+    PopulateTransportState(event->mutable_transport_state());
   }
 }
 
@@ -258,7 +263,7 @@ void QuicTraceVisitor::OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame,
 void QuicTraceVisitor::OnSuccessfulVersionNegotiation(
     const ParsedQuicVersion& version) {
   uint32_t tag = QuicEndian::HostToNet32(CreateQuicVersionLabel(version));
-  string binary_tag(reinterpret_cast<const char*>(&tag), sizeof(tag));
+  QuicString binary_tag(reinterpret_cast<const char*>(&tag), sizeof(tag));
   trace_.set_protocol_version(binary_tag);
 }
 
@@ -288,6 +293,13 @@ void QuicTraceVisitor::PopulateTransportState(
                                  .GetSendAlgorithm()
                                  ->PacingRate(in_flight)
                                  .ToBitsPerSecond());
+
+  if (connection_->sent_packet_manager()
+          .GetSendAlgorithm()
+          ->GetCongestionControlType() == kPCC) {
+    state->set_congestion_control_state(
+        connection_->sent_packet_manager().GetSendAlgorithm()->GetDebugState());
+  }
 }
 
-};  // namespace net
+};  // namespace quic

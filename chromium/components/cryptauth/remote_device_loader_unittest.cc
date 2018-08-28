@@ -88,13 +88,13 @@ TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadZeroDevices) {
 
   EXPECT_CALL(*this, LoadCompleted());
   loader.Load(
-      false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
-                        base::Unretained(this)));
+      base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
+                 base::Unretained(this)));
 
   EXPECT_EQ(0u, remote_devices_.size());
 }
 
-TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadOneDeviceWithBeaconSeeds) {
+TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadOneDevice) {
   std::vector<cryptauth::ExternalDeviceInfo> device_infos(
       1, CreateDeviceInfo("0"));
   RemoteDeviceLoader loader(device_infos, user_private_key_, kUserId,
@@ -102,79 +102,19 @@ TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadOneDeviceWithBeaconSeeds) {
 
   EXPECT_CALL(*this, LoadCompleted());
   loader.Load(
-      true, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
-                       base::Unretained(this)));
+      base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
+                 base::Unretained(this)));
 
   EXPECT_EQ(1u, remote_devices_.size());
   EXPECT_FALSE(remote_devices_[0].persistent_symmetric_key.empty());
   EXPECT_EQ(device_infos[0].friendly_device_name(), remote_devices_[0].name);
   EXPECT_EQ(device_infos[0].public_key(), remote_devices_[0].public_key);
-  EXPECT_TRUE(remote_devices_[0].are_beacon_seeds_loaded);
   ASSERT_EQ(1u, remote_devices_[0].beacon_seeds.size());
 
   const BeaconSeed& beacon_seed = remote_devices_[0].beacon_seeds[0];
   EXPECT_EQ(kBeaconSeedData, beacon_seed.data());
   EXPECT_EQ(kBeaconSeedStartTimeMs, beacon_seed.start_time_millis());
   EXPECT_EQ(kBeaconSeedEndTimeMs, beacon_seed.end_time_millis());
-}
-
-TEST_F(CryptAuthRemoteDeviceLoaderTest, LoadDevicesWithAndWithoutBeaconSeeds) {
-  std::vector<cryptauth::ExternalDeviceInfo> device_infos(
-      1, CreateDeviceInfo("0"));
-
-  RemoteDeviceLoader loader1(device_infos, user_private_key_, kUserId,
-                             std::make_unique<FakeSecureMessageDelegate>());
-  EXPECT_CALL(*this, LoadCompleted());
-  loader1.Load(
-      false /* should_load_beacon_seeds */,
-      base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
-                 base::Unretained(this)));
-  RemoteDevice remote_device_without_beacon_seed = remote_devices_[0];
-
-  RemoteDeviceLoader loader2(device_infos, user_private_key_, kUserId,
-                             std::make_unique<FakeSecureMessageDelegate>());
-  EXPECT_CALL(*this, LoadCompleted());
-  loader2.Load(
-      true /* should_load_beacon_seeds */,
-      base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
-                 base::Unretained(this)));
-  RemoteDevice remote_device_with_beacon_seed = remote_devices_[0];
-
-  EXPECT_EQ(remote_device_without_beacon_seed,
-            remote_device_without_beacon_seed);
-  EXPECT_EQ(remote_device_with_beacon_seed, remote_device_with_beacon_seed);
-  EXPECT_FALSE(remote_device_with_beacon_seed ==
-               remote_device_without_beacon_seed);
-}
-
-TEST_F(CryptAuthRemoteDeviceLoaderTest, BooleanAttributes) {
-  cryptauth::ExternalDeviceInfo first = CreateDeviceInfo("0");
-  first.set_unlock_key(true);
-  first.set_mobile_hotspot_supported(true);
-
-  cryptauth::ExternalDeviceInfo second = CreateDeviceInfo("1");
-  second.set_unlock_key(false);
-  second.set_mobile_hotspot_supported(false);
-
-  std::vector<cryptauth::ExternalDeviceInfo> device_infos{first, second};
-
-  RemoteDeviceLoader loader(device_infos, user_private_key_, kUserId,
-                            std::move(secure_message_delegate_));
-
-  EXPECT_CALL(*this, LoadCompleted());
-  loader.Load(
-      false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
-                        base::Unretained(this)));
-
-  EXPECT_EQ(2u, remote_devices_.size());
-
-  EXPECT_FALSE(remote_devices_[0].persistent_symmetric_key.empty());
-  EXPECT_TRUE(remote_devices_[0].unlock_key);
-  EXPECT_TRUE(remote_devices_[0].supports_mobile_hotspot);
-
-  EXPECT_FALSE(remote_devices_[1].persistent_symmetric_key.empty());
-  EXPECT_FALSE(remote_devices_[1].unlock_key);
-  EXPECT_FALSE(remote_devices_[1].supports_mobile_hotspot);
 }
 
 TEST_F(CryptAuthRemoteDeviceLoaderTest, LastUpdateTimeMillis) {
@@ -191,8 +131,8 @@ TEST_F(CryptAuthRemoteDeviceLoaderTest, LastUpdateTimeMillis) {
 
   EXPECT_CALL(*this, LoadCompleted());
   loader.Load(
-      false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
-                        base::Unretained(this)));
+      base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
+                 base::Unretained(this)));
 
   EXPECT_EQ(2u, remote_devices_.size());
 
@@ -220,8 +160,8 @@ TEST_F(CryptAuthRemoteDeviceLoaderTest, SoftwareFeatures) {
 
   EXPECT_CALL(*this, LoadCompleted());
   loader.Load(
-      false, base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
-                        base::Unretained(this)));
+      base::Bind(&CryptAuthRemoteDeviceLoaderTest::OnRemoteDevicesLoaded,
+                 base::Unretained(this)));
 
   EXPECT_EQ(1u, remote_devices_.size());
 

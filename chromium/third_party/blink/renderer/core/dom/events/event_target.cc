@@ -33,15 +33,15 @@
 
 #include <memory>
 
+#include "base/format_macros.h"
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/renderer/bindings/core/v8/add_event_listener_options_or_boolean.h"
 #include "third_party/blink/renderer/bindings/core/v8/event_listener_options_or_boolean.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_event_listener.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/events/event_target_impl.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/editing/editor.h"
 #include "third_party/blink/renderer/core/events/event_util.h"
 #include "third_party/blink/renderer/core/events/pointer_event.h"
@@ -52,8 +52,8 @@
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_dom_activity_logger.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
@@ -108,12 +108,12 @@ bool IsInstrumentedForAsyncStack(const AtomicString& event_type) {
          event_type == EventTypeNames::error;
 }
 
-double BlockedEventsWarningThreshold(ExecutionContext* context,
-                                     const Event* event) {
+base::TimeDelta BlockedEventsWarningThreshold(ExecutionContext* context,
+                                              const Event* event) {
   if (!event->cancelable())
-    return 0.0;
+    return base::TimeDelta();
   if (!IsScrollBlockingEvent(event->type()))
-    return 0.0;
+    return base::TimeDelta();
   return PerformanceMonitor::Threshold(context,
                                        PerformanceMonitor::kBlockedEvent);
 }
@@ -121,20 +121,20 @@ double BlockedEventsWarningThreshold(ExecutionContext* context,
 void ReportBlockedEvent(ExecutionContext* context,
                         const Event* event,
                         RegisteredEventListener* registered_listener,
-                        double delayed_seconds) {
+                        base::TimeDelta delayed) {
   if (registered_listener->Callback()->GetType() !=
       EventListener::kJSEventListenerType)
     return;
 
   String message_text = String::Format(
-      "Handling of '%s' input event was delayed for %ld ms due to main thread "
-      "being busy. "
+      "Handling of '%s' input event was delayed for %" PRId64
+      " ms due to main thread being busy. "
       "Consider marking event handler as 'passive' to make the page more "
       "responsive.",
-      event->type().GetString().Utf8().data(), lround(delayed_seconds * 1000));
+      event->type().GetString().Utf8().data(), delayed.InMilliseconds());
 
   PerformanceMonitor::ReportGenericViolation(
-      context, PerformanceMonitor::kBlockedEvent, message_text, delayed_seconds,
+      context, PerformanceMonitor::kBlockedEvent, message_text, delayed,
       GetFunctionLocation(context, registered_listener->Callback()));
   registered_listener->SetBlockedEventWarningEmitted();
 }
@@ -159,10 +159,6 @@ EventTargetData::~EventTargetData() = default;
 
 void EventTargetData::Trace(blink::Visitor* visitor) {
   visitor->Trace(event_listener_map);
-}
-
-void EventTargetData::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(event_listener_map);
 }
 
 EventTarget::EventTarget() = default;
@@ -316,7 +312,7 @@ void EventTarget::SetDefaultAddEventListenerOptions(
 
     PerformanceMonitor::ReportGenericViolation(
         GetExecutionContext(), PerformanceMonitor::kDiscouragedAPIUse,
-        message_text, 0, nullptr);
+        message_text, base::TimeDelta(), nullptr);
   }
 }
 
@@ -402,8 +398,8 @@ void EventTarget::AddedEventListener(
           "Consider using MutationObserver to make the page more responsive.",
           event_type.GetString().Utf8().data());
       PerformanceMonitor::ReportGenericViolation(
-          context, PerformanceMonitor::kDiscouragedAPIUse, message_text, 0,
-          nullptr);
+          context, PerformanceMonitor::kDiscouragedAPIUse, message_text,
+          base::TimeDelta(), nullptr);
     }
   }
 }
@@ -530,12 +526,12 @@ EventListener* EventTarget::GetAttributeEventListener(
 bool EventTarget::dispatchEventForBindings(Event* event,
                                            ExceptionState& exception_state) {
   if (!event->WasInitialized()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The event provided is uninitialized.");
     return false;
   }
   if (event->IsBeingDispatched()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The event is already being dispatched.");
     return false;
   }
@@ -741,6 +737,18 @@ bool EventTarget::FireEventListeners(Event* event,
       } else if (CheckTypeThenUseCount(event, EventTypeNames::pointerout,
                                        WebFeature::kPointerOverOutFired,
                                        document)) {
+      } else if (event->eventPhase() == Event::kCapturingPhase ||
+                 event->eventPhase() == Event::kBubblingPhase) {
+        if (CheckTypeThenUseCount(
+                event, EventTypeNames::DOMNodeRemoved,
+                WebFeature::kDOMNodeRemovedEventListenedAtNonTarget,
+                document)) {
+        } else if (CheckTypeThenUseCount(
+                       event, EventTypeNames::DOMNodeRemovedFromDocument,
+                       WebFeature::
+                           kDOMNodeRemovedFromDocumentEventListenedAtNonTarget,
+                       document)) {
+        }
       }
     }
   }
@@ -756,15 +764,14 @@ bool EventTarget::FireEventListeners(Event* event,
   d->firing_event_iterators->push_back(
       FiringEventIterator(event->type(), i, size));
 
-  double blocked_event_threshold =
+  base::TimeDelta blocked_event_threshold =
       BlockedEventsWarningThreshold(context, event);
-  TimeTicks now;
+  base::TimeTicks now;
   bool should_report_blocked_event = false;
-  if (blocked_event_threshold) {
+  if (!blocked_event_threshold.is_zero()) {
     now = CurrentTimeTicks();
     should_report_blocked_event =
-        (now - event->PlatformTimeStamp()).InSecondsF() >
-        blocked_event_threshold;
+        now - event->PlatformTimeStamp() > blocked_event_threshold;
   }
   bool fired_listener = false;
 
@@ -816,7 +823,7 @@ bool EventTarget::FireEventListeners(Event* event,
         !entry[i - 1].BlockedEventWarningEmitted() &&
         !event->defaultPrevented()) {
       ReportBlockedEvent(context, event, &entry[i - 1],
-                         (now - event->PlatformTimeStamp()).InSecondsF());
+                         now - event->PlatformTimeStamp());
     }
 
     if (passive_forced) {
@@ -873,6 +880,27 @@ void EventTarget::RemoveAllEventListeners() {
       iterator.end = 0;
     }
   }
+}
+
+void EventTarget::EnqueueEvent(Event* event, TaskType task_type) {
+  ExecutionContext* context = GetExecutionContext();
+  if (!context)
+    return;
+  probe::AsyncTaskScheduled(context, event->type(), event);
+  context->GetTaskRunner(task_type)->PostTask(
+      FROM_HERE,
+      WTF::Bind(&EventTarget::DispatchEnqueuedEvent, WrapPersistent(this),
+                WrapPersistent(event), WrapPersistent(context)));
+}
+
+void EventTarget::DispatchEnqueuedEvent(Event* event,
+                                        ExecutionContext* context) {
+  if (!GetExecutionContext()) {
+    probe::AsyncTaskCanceled(context, event);
+    return;
+  }
+  probe::AsyncTask async_task(context, event);
+  DispatchEvent(event);
 }
 
 STATIC_ASSERT_ENUM(WebSettings::PassiveEventListenerDefault::kFalse,

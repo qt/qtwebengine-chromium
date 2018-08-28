@@ -6,8 +6,11 @@
 
 #include "third_party/blink/public/platform/web_point.h"
 #include "third_party/blink/public/platform/web_rect.h"
+#include "third_party/blink/renderer/platform/graphics/graphics_context.h"
+#include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record_builder.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
+#include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
 #include "ui/gfx/skia_util.h"
@@ -106,6 +109,18 @@ gfx::Rect ScrollbarLayerDelegate::NinePatchThumbAperture() const {
 }
 
 bool ScrollbarLayerDelegate::HasTickmarks() const {
+  // TODO(crbug.com/860499): Remove this condition, it should not occur.
+  // Layers may exist and be painted for a |scrollbar_| that has had its
+  // ScrollableArea detached. This seems weird because if the area is detached
+  // the layer should be destroyed but here we are. https://crbug.com/860499.
+  if (!scrollbar_->GetScrollableArea())
+    return false;
+  // When the frame is throttled, the scrollbar will not be painted because
+  // the frame has not had its lifecycle updated. Thus the actual value of
+  // HasTickmarks can't be known and may change once the frame is unthrottled.
+  if (scrollbar_->GetScrollableArea()->IsThrottled())
+    return false;
+
   Vector<IntRect> tickmarks;
   scrollbar_->GetTickmarks(tickmarks);
   return !tickmarks.IsEmpty();
@@ -116,6 +131,17 @@ void ScrollbarLayerDelegate::PaintPart(cc::PaintCanvas* canvas,
                                        const gfx::Rect& content_rect) {
   PaintCanvasAutoRestore auto_restore(canvas, true);
   blink::Scrollbar& scrollbar = *scrollbar_;
+
+  // TODO(crbug.com/860499): Remove this condition, it should not occur.
+  // Layers may exist and be painted for a |scrollbar_| that has had its
+  // ScrollableArea detached. This seems weird because if the area is detached
+  // the layer should be destroyed but here we are.
+  if (!scrollbar_->GetScrollableArea())
+    return;
+  // When the frame is throttled, the scrollbar will not be painted because
+  // the frame has not had its lifecycle updated.
+  if (scrollbar.GetScrollableArea()->IsThrottled())
+    return;
 
   if (part == cc::THUMB) {
     ScopedScrollbarPainter painter(*canvas, device_scale_factor_);

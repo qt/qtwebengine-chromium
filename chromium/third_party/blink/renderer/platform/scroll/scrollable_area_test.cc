@@ -10,6 +10,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
+#include "third_party/blink/renderer/platform/scroll/scroll_animator_base.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_test_suite.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme_mock.h"
@@ -266,12 +267,10 @@ TEST_F(ScrollableAreaTest, ScrollableAreaDidScroll) {
 
   MockScrollableArea* scrollable_area =
       MockScrollableArea::Create(ScrollOffset(100, 100));
-  scrollable_area->SetScrollOrigin(IntPoint(20, 30));
-  scrollable_area->DidScroll(gfx::ScrollOffset(40, 51));
+  scrollable_area->DidScroll(FloatPoint(40, 51));
 
-  // After calling didScroll, the new offset should account for scroll origin.
-  EXPECT_EQ(20, scrollable_area->ScrollOffsetInt().Width());
-  EXPECT_EQ(21, scrollable_area->ScrollOffsetInt().Height());
+  EXPECT_EQ(40, scrollable_area->ScrollOffsetInt().Width());
+  EXPECT_EQ(51, scrollable_area->ScrollOffsetInt().Height());
 }
 
 // Scrollbars in popups shouldn't fade out since they aren't composited and thus
@@ -290,7 +289,7 @@ TEST_F(ScrollableAreaTest, PopupOverlayScrollbarShouldNotFadeOut) {
 
   ScrollbarThemeOverlayMock& theme =
       (ScrollbarThemeOverlayMock&)scrollable_area->GetPageScrollbarTheme();
-  theme.SetOverlayScrollbarFadeOutDelay(1);
+  theme.SetOverlayScrollbarFadeOutDelay(TimeDelta::FromSeconds(1));
   Scrollbar* scrollbar = Scrollbar::CreateForTesting(
       scrollable_area, kHorizontalScrollbar, kRegularScrollbar, &theme);
 

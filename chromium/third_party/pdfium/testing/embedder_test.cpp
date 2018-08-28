@@ -351,7 +351,9 @@ FPDF_DOCUMENT EmbedderTest::OpenSavedDocument(const char* password) {
   memset(&saved_file_access_, 0, sizeof(saved_file_access_));
   saved_file_access_.m_FileLen = data_string_.size();
   saved_file_access_.m_GetBlock = GetBlockFromString;
-  saved_file_access_.m_Param = &data_string_;
+  // Copy data to prevent clearing it before saved document close.
+  saved_document_file_data_ = data_string_;
+  saved_file_access_.m_Param = &saved_document_file_data_;
 
   saved_fake_file_access_ =
       pdfium::MakeUnique<FakeFileAccess>(&saved_file_access_);
@@ -546,7 +548,12 @@ int EmbedderTest::WriteBlockCallback(FPDF_FILEWRITE* pFileWrite,
                                      const void* data,
                                      unsigned long size) {
   EmbedderTest* pThis = static_cast<EmbedderTest*>(pFileWrite);
+
   pThis->data_string_.append(static_cast<const char*>(data), size);
+
+  if (pThis->filestream_.is_open())
+    pThis->filestream_.write(static_cast<const char*>(data), size);
+
   return 1;
 }
 
@@ -586,4 +593,12 @@ int EmbedderTest::GetPageNumberForLoadedPage(FPDF_PAGE page) const {
 
 int EmbedderTest::GetPageNumberForSavedPage(FPDF_PAGE page) const {
   return GetPageNumberForPage(saved_page_map_, page);
+}
+
+void EmbedderTest::OpenPDFFileForWrite(const char* filename) {
+  filestream_.open(filename, std::ios_base::binary);
+}
+
+void EmbedderTest::ClosePDFFileForWrite() {
+  filestream_.close();
 }

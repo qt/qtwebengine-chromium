@@ -27,10 +27,12 @@ Node* FindNonEmptyAnchorNode(const FloatPoint& absolute_point,
                              const IntRect& view_rect,
                              EventHandler& event_handler) {
   IntPoint point = FlooredIntPoint(absolute_point);
-  Node* node = event_handler
-                   .HitTestResultAtPoint(point, HitTestRequest::kReadOnly |
-                                                    HitTestRequest::kActive)
-                   .InnerNode();
+  HitTestLocation location(point);
+  Node* node =
+      event_handler
+          .HitTestResultAtLocation(
+              location, HitTestRequest::kReadOnly | HitTestRequest::kActive)
+          .InnerNode();
 
   if (!node)
     return nullptr;
@@ -47,10 +49,10 @@ Node* FindNonEmptyAnchorNode(const FloatPoint& absolute_point,
   if (node_size.Width() * node_size.Height() > max_node_area) {
     IntSize point_offset = view_rect.Size();
     point_offset.Scale(kViewportAnchorRelativeEpsilon);
+    HitTestLocation location(point + point_offset);
     node = event_handler
-               .HitTestResultAtPoint(
-                   point + point_offset,
-                   HitTestRequest::kReadOnly | HitTestRequest::kActive)
+               .HitTestResultAtLocation(location, HitTestRequest::kReadOnly |
+                                                      HitTestRequest::kActive)
                .InnerNode();
   }
 
@@ -83,7 +85,7 @@ void MoveIntoRect(FloatRect& inner, const IntRect& outer) {
   // VisualViewport::maximumScrollPosition() does the same.
   // The value of minumumPosition is already adjusted since it is
   // constructed from an integer point.
-  maximum_position = FlooredIntPoint(maximum_position);
+  maximum_position = FloatPoint(FlooredIntPoint(maximum_position));
 
   FloatPoint inner_origin = inner.Location();
   inner_origin = inner_origin.ExpandedTo(minimum_position);
@@ -159,13 +161,13 @@ void RotationViewportAnchor::SetAnchor() {
           visual_viewport_->ViewportToRootFrame(anchor_offset));
 
   Node* node = FindNonEmptyAnchorNode(
-      root_frame_view_->DocumentToAbsolute(anchor_point_in_document),
+      root_frame_view_->DocumentToFrame(anchor_point_in_document),
       inner_view_rect, root_frame_view_->GetFrame().GetEventHandler());
   if (!node || !node->GetLayoutObject())
     return;
 
   anchor_node_ = node;
-  anchor_node_bounds_ = root_frame_view_->AbsoluteToDocument(
+  anchor_node_bounds_ = root_frame_view_->FrameToDocument(
       LayoutRect(node->GetLayoutObject()->AbsoluteBoundingBoxRect()));
   anchor_in_node_coords_ =
       anchor_point_in_document - FloatPoint(anchor_node_bounds_.Location());
@@ -190,8 +192,8 @@ void RotationViewportAnchor::RestoreToAnchor() {
   ComputeOrigins(visual_viewport_size, main_frame_origin,
                  visual_viewport_origin);
 
-  LayoutViewport().SetScrollOffset(ToScrollOffset(main_frame_origin),
-                                   kProgrammaticScroll);
+  LayoutViewport().SetScrollOffset(
+      ToScrollOffset(FloatPoint(main_frame_origin)), kProgrammaticScroll);
 
   // Set scale before location, since location can be clamped on setting scale.
   visual_viewport_->SetScale(new_page_scale_factor);
@@ -239,7 +241,7 @@ FloatPoint RotationViewportAnchor::GetInnerOrigin(
       !anchor_node_->GetLayoutObject())
     return visual_viewport_in_document_;
 
-  const LayoutRect current_node_bounds = root_frame_view_->AbsoluteToDocument(
+  const LayoutRect current_node_bounds = root_frame_view_->FrameToDocument(
       LayoutRect(anchor_node_->GetLayoutObject()->AbsoluteBoundingBoxRect()));
   if (anchor_node_bounds_ == current_node_bounds)
     return visual_viewport_in_document_;

@@ -33,9 +33,7 @@ public:
 
     void textureParamsModified() override {}
 
-    const GrVkImageView* textureView(bool allowSRGB);
-
-    bool reallocForMipmap(GrVkGpu* gpu, uint32_t mipLevels);
+    const GrVkImageView* textureView();
 
     // In Vulkan we call the release proc after we are finished with the underlying
     // GrVkImage::Resource object (which occurs after the GPU has finsihed all work on it).
@@ -67,7 +65,6 @@ private:
                 GrBackendObjectOwnership);
 
     const GrVkImageView*     fTextureView;
-    const GrVkImageView*     fLinearTextureView;
 
     typedef GrTexture INHERITED;
 };

@@ -80,6 +80,13 @@ net::URLRequestContextGetter* ContentAutofillDriver::GetURLRequestContext() {
           GetURLRequestContext();
 }
 
+scoped_refptr<network::SharedURLLoaderFactory>
+ContentAutofillDriver::GetURLLoaderFactory() {
+  return content::BrowserContext::GetDefaultStoragePartition(
+             render_frame_host_->GetSiteInstance()->GetBrowserContext())
+      ->GetURLLoaderFactoryForBrowserProcess();
+}
+
 bool ContentAutofillDriver::RendererIsAvailable() {
   return render_frame_host_->GetRenderViewHost() != nullptr;
 }
@@ -219,8 +226,10 @@ void ContentAutofillDriver::QueryFormFieldAutofill(
     int32_t id,
     const FormData& form,
     const FormFieldData& field,
-    const gfx::RectF& bounding_box) {
-  autofill_handler_->OnQueryFormFieldAutofill(id, form, field, bounding_box);
+    const gfx::RectF& bounding_box,
+    bool autoselect_first_suggestion) {
+  autofill_handler_->OnQueryFormFieldAutofill(id, form, field, bounding_box,
+                                              autoselect_first_suggestion);
 }
 
 void ContentAutofillDriver::HidePopup() {

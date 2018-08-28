@@ -8,9 +8,7 @@
 #include <algorithm>
 #include <iterator>
 #include <set>
-#include <string>
 #include <utility>
-#include <vector>
 
 #include "base/base64.h"
 #include "base/bind.h"
@@ -171,7 +169,7 @@ WebSocketBasicHandshakeStream::WebSocketBasicHandshakeStream(
     bool using_proxy,
     std::vector<std::string> requested_sub_protocols,
     std::vector<std::string> requested_extensions,
-    WebSocketStreamRequest* request,
+    WebSocketStreamRequestAPI* request,
     WebSocketEndpointLockManager* websocket_endpoint_lock_manager)
     : result_(HandshakeResult::INCOMPLETE),
       state_(std::move(connection),
@@ -179,8 +177,8 @@ WebSocketBasicHandshakeStream::WebSocketBasicHandshakeStream(
              false /* http_09_on_non_default_ports_enabled */),
       connect_delegate_(connect_delegate),
       http_response_info_(nullptr),
-      requested_sub_protocols_(requested_sub_protocols),
-      requested_extensions_(requested_extensions),
+      requested_sub_protocols_(std::move(requested_sub_protocols)),
+      requested_extensions_(std::move(requested_extensions)),
       stream_request_(request),
       websocket_endpoint_lock_manager_(websocket_endpoint_lock_manager) {
   DCHECK(connect_delegate);
@@ -188,6 +186,12 @@ WebSocketBasicHandshakeStream::WebSocketBasicHandshakeStream(
 }
 
 WebSocketBasicHandshakeStream::~WebSocketBasicHandshakeStream() {
+  // Some members are "stolen" by RenewStreamForAuth() and should not be touched
+  // here. Particularly |connect_delegate_|, |stream_request_|, and
+  // |websocket_endpoint_lock_manager_|.
+
+  // TODO(ricea): What's the right thing to do here if we renewed the stream for
+  // auth? Currently we record it as INCOMPLETE.
   RecordHandshakeResult(result_);
 }
 
@@ -362,8 +366,24 @@ void WebSocketBasicHandshakeStream::SetPriority(RequestPriority priority) {
 }
 
 HttpStream* WebSocketBasicHandshakeStream::RenewStreamForAuth() {
-  // Return null because we don't support renewing the stream.
-  return nullptr;
+  if (!base::FeatureList::IsEnabled(kWebSocketHandshakeReuseConnection))
+    return nullptr;
+
+  DCHECK(IsResponseBodyComplete());
+  DCHECK(!parser()->IsMoreDataBuffered());
+  // The HttpStreamParser object still has a pointer to the connection. Just to
+  // be extra-sure it doesn't touch the connection again, delete it here rather
+  // than leaving it until the destructor is called.
+  state_.DeleteParser();
+
+  auto handshake_stream = std::make_unique<WebSocketBasicHandshakeStream>(
+      state_.ReleaseConnection(), connect_delegate_, state_.using_proxy(),
+      std::move(requested_sub_protocols_), std::move(requested_extensions_),
+      stream_request_, websocket_endpoint_lock_manager_);
+
+  stream_request_->OnBasicHandshakeStreamCreated(handshake_stream.get());
+
+  return handshake_stream.release();
 }
 
 std::unique_ptr<WebSocketStream> WebSocketBasicHandshakeStream::Upgrade() {
@@ -403,10 +423,9 @@ void WebSocketBasicHandshakeStream::ReadResponseHeadersCallback(
 
 void WebSocketBasicHandshakeStream::OnFinishOpeningHandshake() {
   DCHECK(http_response_info_);
-  WebSocketDispatchOnFinishOpeningHandshake(connect_delegate_,
-                                            url_,
-                                            http_response_info_->headers,
-                                            http_response_info_->response_time);
+  WebSocketDispatchOnFinishOpeningHandshake(
+      connect_delegate_, url_, http_response_info_->headers,
+      http_response_info_->socket_address, http_response_info_->response_time);
 }
 
 int WebSocketBasicHandshakeStream::ValidateResponse(int rv) {
@@ -498,6 +517,8 @@ int WebSocketBasicHandshakeStream::ValidateUpgradeResponse(
 }
 
 void WebSocketBasicHandshakeStream::OnFailure(const std::string& message) {
+  // Avoid connection reuse if auth did not happen.
+  state_.connection()->socket()->Disconnect();
   stream_request_->OnFailure(message);
 }
 

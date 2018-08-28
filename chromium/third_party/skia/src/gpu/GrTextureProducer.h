@@ -11,6 +11,7 @@
 #include "GrResourceKey.h"
 #include "GrSamplerState.h"
 #include "SkImageInfo.h"
+#include "SkNoncopyable.h"
 
 class GrContext;
 class GrFragmentProcessor;
@@ -98,6 +99,21 @@ public:
                 proxyColorSpace, scaleAdjust);
     }
 
+    /**
+     * Returns a texture that is safe for use with the dstColorSpace. If willNeedMips is true then
+     * the returned texture is guaranteed to have allocated mip map levels. This can be a
+     * performance win if future draws with the texture require mip maps.
+     *
+     * Places the color space of the texture in (*proxyColorSpace).
+     */
+    // TODO: Once we remove support for npot textures, we should add a flag for must support repeat
+    // wrap mode. To support that flag now would require us to support scaleAdjust array like in
+    // refTextureProxyForParams, however the current public API that uses this call does not expose
+    // that array.
+    sk_sp<GrTextureProxy> refTextureProxy(GrMipMapped willNeedMips,
+                                          SkColorSpace* dstColorSpace,
+                                          sk_sp<SkColorSpace>* proxyColorSpace);
+
     virtual ~GrTextureProducer() {}
 
     int width() const { return fWidth; }
@@ -108,8 +124,9 @@ public:
 protected:
     friend class GrTextureProducer_TestAccess;
 
-    GrTextureProducer(int width, int height, bool isAlphaOnly)
-        : fWidth(width)
+    GrTextureProducer(GrContext* context, int width, int height, bool isAlphaOnly)
+        : fContext(context)
+        , fWidth(width)
         , fHeight(height)
         , fIsAlphaOnly(isAlphaOnly) {}
 
@@ -143,8 +160,7 @@ protected:
     *  makeCopyKey() returns true). In that case, the maker is notified in case it
     *  wants to note that for when the maker is destroyed.
     */
-    virtual void didCacheCopy(const GrUniqueKey& copyKey) = 0;
-
+    virtual void didCacheCopy(const GrUniqueKey& copyKey, uint32_t contextUniqueID) = 0;
 
     enum DomainMode {
         kNoDomain_DomainMode,
@@ -170,10 +186,13 @@ protected:
             const SkRect& domain,
             const GrSamplerState::Filter* filterOrNullForBicubic);
 
+    GrContext* fContext;
+
 private:
     virtual sk_sp<GrTextureProxy> onRefTextureProxyForParams(const GrSamplerState&,
                                                              SkColorSpace* dstColorSpace,
                                                              sk_sp<SkColorSpace>* proxyColorSpace,
+                                                             bool willBeMipped,
                                                              SkScalar scaleAdjust[2]) = 0;
 
     const int   fWidth;

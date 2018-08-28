@@ -32,7 +32,18 @@ class FidoRequestHandler : public FidoRequestHandlerBase {
   FidoRequestHandler(service_manager::Connector* connector,
                      const base::flat_set<FidoTransportProtocol>& transports,
                      CompletionCallback completion_callback)
-      : FidoRequestHandlerBase(connector, transports),
+      : FidoRequestHandler(connector,
+                           transports,
+                           std::move(completion_callback),
+                           AddPlatformAuthenticatorCallback()) {}
+  FidoRequestHandler(
+      service_manager::Connector* connector,
+      const base::flat_set<FidoTransportProtocol>& transports,
+      CompletionCallback completion_callback,
+      AddPlatformAuthenticatorCallback add_platform_authenticator)
+      : FidoRequestHandlerBase(connector,
+                               transports,
+                               std::move(add_platform_authenticator)),
         completion_callback_(std::move(completion_callback)) {}
   ~FidoRequestHandler() override {
     if (!is_complete())
@@ -87,6 +98,18 @@ class FidoRequestHandler : public FidoRequestHandlerBase {
         return FidoReturnCode::kUserConsentButCredentialExcluded;
       case CtapDeviceResponseCode::kCtap2ErrNoCredentials:
         return FidoReturnCode::kUserConsentButCredentialNotRecognized;
+
+      // This error is returned by some authenticators (e.g. the "Yubico FIDO
+      // 2" CTAP2 USB keys) during GetAssertion **before the user interacted
+      // with the device**. The authenticator does this to avoid blinking (and
+      // possibly asking the user for their PIN) for requests it knows
+      // beforehand it cannot handle.
+      //
+      // Ignore this error to avoid canceling the request without user
+      // interaction.
+      case CtapDeviceResponseCode::kCtap2ErrInvalidCredential:
+        return base::nullopt;
+
       default:
         return base::nullopt;
     }

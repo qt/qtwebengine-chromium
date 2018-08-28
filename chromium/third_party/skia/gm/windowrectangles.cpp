@@ -10,7 +10,6 @@
 #include "SkClipStack.h"
 #include "SkRRect.h"
 
-#if SK_SUPPORT_GPU
 #include "GrAppliedClip.h"
 #include "GrCaps.h"
 #include "GrContextPriv.h"
@@ -20,7 +19,6 @@
 #include "GrResourceProvider.h"
 #include "GrStencilClip.h"
 #include "effects/GrTextureDomain.h"
-#endif
 
 constexpr static SkIRect kDeviceRect = {0, 0, 600, 600};
 constexpr static SkIRect kCoverRect = {50, 50, 550, 550};
@@ -104,8 +102,6 @@ DEF_GM( return new WindowRectanglesGM(); )
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if SK_SUPPORT_GPU
-
 constexpr static int kNumWindows = 8;
 
 /**
@@ -183,8 +179,7 @@ void WindowRectanglesMaskGM::onCoverClipStack(const SkClipStack& stack, SkCanvas
         return;
     }
 
-    const GrReducedClip reducedClip(stack, SkRect::Make(kCoverRect), rtc->caps()->shaderCaps(),
-                                    kNumWindows);
+    const GrReducedClip reducedClip(stack, SkRect::Make(kCoverRect), rtc->caps(), kNumWindows);
 
     GrPaint paint;
     if (GrFSAAType::kNone == rtc->fsaaType()) {
@@ -285,7 +280,5 @@ void WindowRectanglesMaskGM::fail(SkCanvas* canvas) {
 }
 
 DEF_GM( return new WindowRectanglesMaskGM(); )
-
-#endif
 
 }

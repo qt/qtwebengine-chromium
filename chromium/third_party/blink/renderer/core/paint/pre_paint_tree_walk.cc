@@ -6,12 +6,15 @@
 
 #include "base/auto_reset.h"
 #include "third_party/blink/renderer/core/dom/document_lifecycle.h"
+#include "third_party/blink/renderer/core/frame/event_handler_registry.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/compositing/composited_layer_mapping.h"
 #include "third_party/blink/renderer/core/paint/compositing/compositing_layer_property_updater.h"
 #include "third_party/blink/renderer/core/paint/ng/ng_paint_fragment.h"
@@ -42,6 +45,12 @@ void PrePaintTreeWalk::WalkTree(LocalFrameView& root_frame_view) {
       NeedsTreeBuilderContextUpdate(root_frame_view, context_storage_.back());
   if (needs_tree_builder_context_update)
     GeometryMapper::ClearCache();
+
+  if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+    VisualViewportPaintPropertyTreeBuilder::Update(
+        root_frame_view.GetPage()->GetVisualViewport(),
+        *context_storage_.back().tree_builder_context);
+  }
 
   Walk(root_frame_view);
   paint_invalidator_.ProcessPendingDelayedPaintInvalidations();
@@ -92,7 +101,7 @@ void PrePaintTreeWalk::Walk(LocalFrameView& frame_view) {
     return context_storage_.back();
   };
 
-  // ancestorOverflowLayer does not cross frame boundaries.
+  // ancestor_overflow_paint_layer does not cross frame boundaries.
   context().ancestor_overflow_paint_layer = nullptr;
   if (context().tree_builder_context) {
     PaintPropertyTreeBuilder::SetupContextForFrame(
@@ -121,10 +130,88 @@ void PrePaintTreeWalk::Walk(LocalFrameView& frame_view) {
 #endif
   }
 
-  frame_view.ClearNeedsPaintPropertyUpdate();
   if (RuntimeEnabledFeatures::JankTrackingEnabled())
     frame_view.GetJankTracker().NotifyPrePaintFinished();
+
   context_storage_.pop_back();
+}
+
+bool PrePaintTreeWalk::NeedsEffectiveWhitelistedTouchActionUpdate(
+    const LayoutObject& object,
+    PrePaintTreeWalk::PrePaintTreeWalkContext& context) const {
+  if (!RuntimeEnabledFeatures::PaintTouchActionRectsEnabled())
+    return false;
+  return context.effective_whitelisted_touch_action_changed ||
+         object.EffectiveWhitelistedTouchActionChanged() ||
+         object.DescendantEffectiveWhitelistedTouchActionChanged();
+}
+
+namespace {
+bool HasBlockingTouchEventHandler(const LocalFrame& frame,
+                                  EventTarget& target) {
+  if (!target.HasEventListeners())
+    return false;
+  const auto& registry = frame.GetEventHandlerRegistry();
+  const auto* blocking = registry.EventHandlerTargets(
+      EventHandlerRegistry::kTouchStartOrMoveEventBlocking);
+  const auto* blocking_low_latency = registry.EventHandlerTargets(
+      EventHandlerRegistry::kTouchStartOrMoveEventBlocking);
+  return blocking->Contains(&target) || blocking_low_latency->Contains(&target);
+}
+
+bool HasBlockingTouchEventHandler(const LayoutObject& object) {
+  if (object.IsLayoutView()) {
+    auto* frame = object.GetFrame();
+    if (HasBlockingTouchEventHandler(*frame, *frame->DomWindow()))
+      return true;
+  }
+
+  auto* node = object.GetNode();
+  if (!node)
+    return false;
+  return HasBlockingTouchEventHandler(*object.GetFrame(), *node);
+}
+}  // namespace
+
+void PrePaintTreeWalk::UpdateEffectiveWhitelistedTouchAction(
+    const LayoutObject& object,
+    PrePaintTreeWalk::PrePaintTreeWalkContext& context) {
+  if (!RuntimeEnabledFeatures::PaintTouchActionRectsEnabled())
+    return;
+
+  if (object.EffectiveWhitelistedTouchActionChanged())
+    context.effective_whitelisted_touch_action_changed = true;
+
+  if (context.effective_whitelisted_touch_action_changed) {
+    object.GetMutableForPainting().UpdateInsideBlockingTouchEventHandler(
+        context.inside_blocking_touch_event_handler ||
+        HasBlockingTouchEventHandler(object));
+  }
+
+  if (object.InsideBlockingTouchEventHandler())
+    context.inside_blocking_touch_event_handler = true;
+}
+
+bool PrePaintTreeWalk::NeedsHitTestingPaintInvalidation(
+    const LayoutObject& object,
+    const PrePaintTreeWalk::PrePaintTreeWalkContext& context) const {
+  if (!RuntimeEnabledFeatures::PaintTouchActionRectsEnabled())
+    return false;
+  return context.effective_whitelisted_touch_action_changed;
+}
+
+void PrePaintTreeWalk::InvalidatePaintForHitTesting(
+    const LayoutObject& object,
+    PrePaintTreeWalk::PrePaintTreeWalkContext& context) {
+  if (!RuntimeEnabledFeatures::PaintTouchActionRectsEnabled())
+    return;
+
+  if (context.effective_whitelisted_touch_action_changed) {
+    if (auto* paint_layer = context.paint_invalidator_context.painting_layer)
+      paint_layer->SetNeedsRepaint();
+    ObjectPaintInvalidator(object).InvalidateDisplayItemClient(
+        object, PaintInvalidationReason::kHitTest);
+  }
 }
 
 void PrePaintTreeWalk::UpdateAuxiliaryObjectProperties(
@@ -175,9 +262,8 @@ void PrePaintTreeWalk::InvalidatePaintLayerOptimizationsIfNeeded(
 bool PrePaintTreeWalk::NeedsTreeBuilderContextUpdate(
     const LocalFrameView& frame_view,
     const PrePaintTreeWalkContext& context) {
-  return frame_view.NeedsPaintPropertyUpdate() ||
-         (frame_view.GetLayoutView() &&
-          NeedsTreeBuilderContextUpdate(*frame_view.GetLayoutView(), context));
+  return frame_view.GetLayoutView() &&
+         NeedsTreeBuilderContextUpdate(*frame_view.GetLayoutView(), context);
 }
 
 bool PrePaintTreeWalk::NeedsTreeBuilderContextUpdate(
@@ -232,7 +318,6 @@ void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
     }
 
     if (property_changed &&
-        RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
         !context.tree_builder_context
              ->supports_composited_raster_invalidation) {
       paint_invalidator_context.subtree_flags |=
@@ -240,16 +325,21 @@ void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
     }
   }
 
+  // This must happen before paint invalidation because background painting
+  // depends on the effective whitelisted touch action.
+  UpdateEffectiveWhitelistedTouchAction(object, context);
+
   paint_invalidator_.InvalidatePaint(
       object, base::OptionalOrNullptr(context.tree_builder_context),
       paint_invalidator_context);
+
+  InvalidatePaintForHitTesting(object, context);
 
   if (context.tree_builder_context) {
     property_changed |= property_tree_builder->UpdateForChildren();
     InvalidatePaintLayerOptimizationsIfNeeded(object, context);
 
-    if (property_changed &&
-        RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+    if (property_changed) {
       if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
         const auto* paint_invalidation_layer =
             paint_invalidator_context.paint_invalidation_container->Layer();
@@ -291,7 +381,10 @@ void PrePaintTreeWalk::Walk(const LayoutObject& object) {
       NeedsTreeBuilderContextUpdate(object, parent_context());
   // Early out from the tree walk if possible.
   if (!needs_tree_builder_context_update &&
-      !object.ShouldCheckForPaintInvalidation()) {
+      !object.ShouldCheckForPaintInvalidation() &&
+      !parent_context().paint_invalidator_context.NeedsSubtreeWalk() &&
+      !NeedsEffectiveWhitelistedTouchActionUpdate(object, parent_context()) &&
+      !NeedsHitTestingPaintInvalidation(object, parent_context())) {
     return;
   }
 

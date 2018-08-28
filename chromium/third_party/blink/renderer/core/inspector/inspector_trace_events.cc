@@ -8,7 +8,9 @@
 
 #include <memory>
 
+#include "cc/layers/picture_layer.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
+#include "third_party/blink/public/platform/web_layer_tree_view.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/core/animation/animation.h"
@@ -138,7 +140,7 @@ void InspectorTraceEvents::DidFinishLoading(unsigned long identifier,
                                             TimeTicks finish_time,
                                             int64_t encoded_data_length,
                                             int64_t decoded_body_length,
-                                            bool blocked_cross_site_document) {
+                                            bool should_report_corb_blocking) {
   LocalFrame* frame = loader ? loader->GetFrame() : nullptr;
   TRACE_EVENT_INSTANT1(
       "devtools.timeline", "ResourceFinish", TRACE_EVENT_SCOPE_THREAD, "data",
@@ -208,8 +210,7 @@ void InspectorTraceEvents::PaintTiming(Document* document,
                                    "frame", ToTraceValue(document->GetFrame()));
 }
 
-void InspectorTraceEvents::FrameStartedLoading(LocalFrame* frame,
-                                               FrameLoadType) {
+void InspectorTraceEvents::FrameStartedLoading(LocalFrame* frame) {
   TRACE_EVENT_INSTANT1("devtools.timeline", "FrameStartedLoading",
                        TRACE_EVENT_SCOPE_THREAD, "frame", ToTraceValue(frame));
 }
@@ -321,6 +322,7 @@ const char* PseudoTypeToString(CSSSelector::PseudoType pseudo_type) {
     DEFINE_STRING_MAPPING(PseudoShadow)
     DEFINE_STRING_MAPPING(PseudoSlotted)
     DEFINE_STRING_MAPPING(PseudoSpatialNavigationFocus)
+    DEFINE_STRING_MAPPING(PseudoIsHtml)
     DEFINE_STRING_MAPPING(PseudoListBox)
     DEFINE_STRING_MAPPING(PseudoHostHasAppearance)
     DEFINE_STRING_MAPPING(PseudoVideoPersistent)
@@ -928,6 +930,11 @@ std::unique_ptr<TracedValue> InspectorXhrLoadEvent::Data(
   return value;
 }
 
+static FloatPoint LocalCoordToFloatPoint(LocalFrameView* view,
+                                         const FloatPoint& local) {
+  return FloatPoint(view->ConvertToRootFrame(RoundedIntPoint(local)));
+}
+
 static void LocalToPageQuad(const LayoutObject& layout_object,
                             const LayoutRect& rect,
                             FloatQuad* quad) {
@@ -935,10 +942,10 @@ static void LocalToPageQuad(const LayoutObject& layout_object,
   LocalFrameView* view = frame->View();
   FloatQuad absolute =
       layout_object.LocalToAbsoluteQuad(FloatQuad(FloatRect(rect)));
-  quad->SetP1(view->ContentsToRootFrame(RoundedIntPoint(absolute.P1())));
-  quad->SetP2(view->ContentsToRootFrame(RoundedIntPoint(absolute.P2())));
-  quad->SetP3(view->ContentsToRootFrame(RoundedIntPoint(absolute.P3())));
-  quad->SetP4(view->ContentsToRootFrame(RoundedIntPoint(absolute.P4())));
+  quad->SetP1(LocalCoordToFloatPoint(view, absolute.P1()));
+  quad->SetP2(LocalCoordToFloatPoint(view, absolute.P2()));
+  quad->SetP3(LocalCoordToFloatPoint(view, absolute.P3()));
+  quad->SetP4(LocalCoordToFloatPoint(view, absolute.P4()));
 }
 
 const char InspectorLayerInvalidationTrackingEvent::

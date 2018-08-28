@@ -25,6 +25,7 @@ component("chromeos") {
     ":attestation_proto",
     ":authpolicy_proto",
     ":biod_proto",
+    ":cicerone_proto",
     ":concierge_proto",
     ":cryptohome_proto",
     ":login_manager_proto",
@@ -38,7 +39,7 @@ component("chromeos") {
     "//components/account_id",
     "//components/device_event_log",
     "//components/onc",
-    "//components/password_manager/core/browser:hash_password_manager",
+    "//components/password_manager/core/browser:password_hash_data",
     "//components/policy:cloud_policy_proto_generated_compile",
     "//components/policy/proto",
     "//components/pref_registry",
@@ -50,6 +51,7 @@ component("chromeos") {
     "//google_apis",
     "//media/base:video_facing",
     "//net",
+    "//services/network/public/cpp:cpp",
     "//skia",  # For components/user_manager
     "//third_party/icu",
     "//third_party/protobuf:protobuf_lite",
@@ -70,8 +72,6 @@ component("chromeos") {
     "account_manager/account_manager_factory.h",
     "app_mode/kiosk_oem_manifest_parser.cc",
     "app_mode/kiosk_oem_manifest_parser.h",
-    "attestation/attestation_constants.cc",
-    "attestation/attestation_constants.h",
     "attestation/attestation_flow.cc",
     "attestation/attestation_flow.h",
     "audio/audio_device.cc",
@@ -138,8 +138,6 @@ component("chromeos") {
     "cryptohome/homedir_methods.h",
     "cryptohome/system_salt_getter.cc",
     "cryptohome/system_salt_getter.h",
-    "cryptohome/tpm_util.cc",
-    "cryptohome/tpm_util.h",
     "dbus/arc_appfuse_provider_client.cc",
     "dbus/arc_appfuse_provider_client.h",
     "dbus/arc_midis_client.cc",
@@ -148,6 +146,8 @@ component("chromeos") {
     "dbus/arc_obb_mounter_client.h",
     "dbus/arc_oemcrypto_client.cc",
     "dbus/arc_oemcrypto_client.h",
+    "dbus/attestation_constants.cc",
+    "dbus/attestation_constants.h",
     "dbus/audio_node.cc",
     "dbus/audio_node.h",
     "dbus/auth_policy_client.cc",
@@ -160,6 +160,8 @@ component("chromeos") {
     "dbus/blocking_method_caller.h",
     "dbus/cec_service_client.cc",
     "dbus/cec_service_client.h",
+    "dbus/cicerone_client.cc",
+    "dbus/cicerone_client.h",
     "dbus/concierge_client.cc",
     "dbus/concierge_client.h",
     "dbus/cras_audio_client.cc",
@@ -175,6 +177,8 @@ component("chromeos") {
     "dbus/dbus_clients_common.h",
     "dbus/dbus_method_call_status.cc",
     "dbus/dbus_method_call_status.h",
+    "dbus/dbus_switches.cc",
+    "dbus/dbus_switches.h",
     "dbus/dbus_thread_manager.cc",
     "dbus/dbus_thread_manager.h",
     "dbus/debug_daemon_client.cc",
@@ -193,6 +197,8 @@ component("chromeos") {
     "dbus/fake_auth_policy_client.h",
     "dbus/fake_cec_service_client.cc",
     "dbus/fake_cec_service_client.h",
+    "dbus/fake_cicerone_client.cc",
+    "dbus/fake_cicerone_client.h",
     "dbus/fake_concierge_client.cc",
     "dbus/fake_concierge_client.h",
     "dbus/fake_cras_audio_client.cc",
@@ -215,6 +221,8 @@ component("chromeos") {
     "dbus/fake_image_loader_client.h",
     "dbus/fake_lorgnette_manager_client.cc",
     "dbus/fake_lorgnette_manager_client.h",
+    "dbus/fake_machine_learning_client.cc",
+    "dbus/fake_machine_learning_client.h",
     "dbus/fake_media_analytics_client.cc",
     "dbus/fake_media_analytics_client.h",
     "dbus/fake_modem_messaging_client.cc",
@@ -257,6 +265,8 @@ component("chromeos") {
     "dbus/image_loader_client.h",
     "dbus/lorgnette_manager_client.cc",
     "dbus/lorgnette_manager_client.h",
+    "dbus/machine_learning_client.cc",
+    "dbus/machine_learning_client.h",
     "dbus/media_analytics_client.cc",
     "dbus/media_analytics_client.h",
     "dbus/modem_messaging_client.cc",
@@ -309,6 +319,10 @@ component("chromeos") {
     "dbus/update_engine_client.h",
     "dbus/upstart_client.cc",
     "dbus/upstart_client.h",
+    "dbus/util/tpm_util.cc",
+    "dbus/util/tpm_util.h",
+    "dbus/util/version_loader.cc",
+    "dbus/util/version_loader.h",
     "dbus/virtual_file_provider_client.cc",
     "dbus/virtual_file_provider_client.h",
     "dbus/volume_state.cc",
@@ -528,8 +542,6 @@ component("chromeos") {
     "system/name_value_pairs_parser.h",
     "system/statistics_provider.cc",
     "system/statistics_provider.h",
-    "system/version_loader.cc",
-    "system/version_loader.h",
     "timezone/timezone_provider.cc",
     "timezone/timezone_provider.h",
     "timezone/timezone_request.cc",
@@ -588,6 +600,7 @@ static_library("test_support") {
     "//dbus:test_support",
     "//google_apis",
     "//net:test_support",
+    "//services/network:test_support",
     "//testing/gmock",
     "//testing/gtest",
   ]
@@ -643,6 +656,7 @@ static_library("test_support_without_gmock") {
     ":power_manager_proto",
     "//components/policy/proto",
     "//crypto",
+    "//url",
   ]
   sources = [
     "dbus/fake_cros_disks_client.cc",
@@ -682,9 +696,11 @@ test("chromeos_unittests") {
     "//dbus:test_support",
     "//google_apis",
     "//media/base:video_facing",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//net",
     "//net:test_support",
+    "//services/network:test_support",
+    "//services/network/public/cpp",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/icu",
@@ -725,6 +741,7 @@ test("chromeos_unittests") {
     "dbus/shill_profile_client_unittest.cc",
     "dbus/shill_service_client_unittest.cc",
     "dbus/shill_third_party_vpn_driver_client_unittest.cc",
+    "dbus/util/version_loader_unittest.cc",
     "disks/disk_mount_manager_unittest.cc",
     "disks/suspend_unmount_manager_unittest.cc",
     "geolocation/simple_geolocation_unittest.cc",
@@ -772,7 +789,6 @@ test("chromeos_unittests") {
     "system/cpu_temperature_reader_unittest.cc",
     "system/factory_ping_embargo_check_unittest.cc",
     "system/name_value_pairs_parser_unittest.cc",
-    "system/version_loader_unittest.cc",
     "timezone/timezone_unittest.cc",
     "tools/variable_expander_unittest.cc",
     "tpm/tpm_token_info_getter_unittest.cc",
@@ -823,17 +839,6 @@ if (cros_board != "") {
       "//:chromiumos_preflight",  # Builds the browser.
       ":cros_vm_sanity_test_wrapper",  # Builds the test wrapper.
     ]
-
-    # The following dependencies are needed to deploy chrome to the VM. See the
-    # link for the full list:
-    # https://codesearch.chromium.org/chromium/src/third_party/chromite/lib/chrome_util.py?l=341
-    data_deps += [ "//chrome:xdg_mime" ]
-
-    # TODO(bpastene): Figure out what's generating resources/chromeos/ and
-    # declare it as a dep instead of adding the dir directly.
-    data = [
-      "$root_out_dir/resources/chromeos/",
-    ]
   }
 }
 
@@ -864,38 +869,12 @@ proto_library("power_manager_proto") {
   proto_out_dir = "chromeos/dbus/power_manager"
 }
 
-proto_library("cryptohome_proto") {
-  sources = [
-    "//third_party/cros_system_api/dbus/cryptohome/key.proto",
-    "//third_party/cros_system_api/dbus/cryptohome/rpc.proto",
-  ]
-
-  proto_out_dir = "chromeos/dbus/cryptohome"
-}
-
-proto_library("login_manager_proto") {
-  sources = [
-    "//third_party/cros_system_api/dbus/login_manager/arc.proto",
-    "//third_party/cros_system_api/dbus/login_manager/policy_descriptor.proto",
-  ]
-
-  proto_out_dir = "chromeos/dbus/login_manager"
-}
-
 proto_library("attestation_proto") {
   sources = [
     "dbus/proto/attestation.proto",
   ]
 
-  proto_out_dir = "chromeos/attestation"
-}
-
-proto_library("cryptohome_signkey_proto") {
-  sources = [
-    "//third_party/cros_system_api/dbus/cryptohome/signed_secret.proto",
-  ]
-
-  proto_out_dir = "chromeos/cryptohome"
+  proto_out_dir = "chromeos/dbus/attestation"
 }
 
 proto_library("authpolicy_proto") {
@@ -915,28 +894,12 @@ proto_library("biod_proto") {
   proto_out_dir = "chromeos/dbus/biod"
 }
 
-proto_library("media_perception_proto") {
+proto_library("cicerone_proto") {
   sources = [
-    "dbus/proto/media_perception.proto",
+    "//third_party/cros_system_api/dbus/vm_cicerone/cicerone_service.proto",
   ]
 
-  proto_out_dir = "chromeos/media_perception"
-}
-
-proto_library("smbprovider_proto") {
-  sources = [
-    "//third_party/cros_system_api/dbus/smbprovider/directory_entry.proto",
-  ]
-
-  proto_out_dir = "chromeos/dbus/smbprovider"
-}
-
-proto_library("account_manager_proto") {
-  sources = [
-    "account_manager/tokens.proto",
-  ]
-
-  proto_out_dir = "chromeos/account_manager"
+  proto_out_dir = "chromeos/dbus/cicerone"
 }
 
 proto_library("concierge_proto") {
@@ -947,10 +910,60 @@ proto_library("concierge_proto") {
   proto_out_dir = "chromeos/dbus/concierge"
 }
 
+proto_library("cryptohome_proto") {
+  sources = [
+    "//third_party/cros_system_api/dbus/cryptohome/key.proto",
+    "//third_party/cros_system_api/dbus/cryptohome/rpc.proto",
+  ]
+
+  proto_out_dir = "chromeos/dbus/cryptohome"
+}
+
+proto_library("cryptohome_signkey_proto") {
+  sources = [
+    "//third_party/cros_system_api/dbus/cryptohome/signed_secret.proto",
+  ]
+
+  proto_out_dir = "chromeos/dbus/cryptohome"
+}
+
+proto_library("login_manager_proto") {
+  sources = [
+    "//third_party/cros_system_api/dbus/login_manager/arc.proto",
+    "//third_party/cros_system_api/dbus/login_manager/policy_descriptor.proto",
+  ]
+
+  proto_out_dir = "chromeos/dbus/login_manager"
+}
+
+proto_library("media_perception_proto") {
+  sources = [
+    "dbus/proto/media_perception.proto",
+  ]
+
+  proto_out_dir = "chromeos/dbus/media_perception"
+}
+
+proto_library("smbprovider_proto") {
+  sources = [
+    "//third_party/cros_system_api/dbus/smbprovider/directory_entry.proto",
+  ]
+
+  proto_out_dir = "chromeos/dbus/smbprovider"
+}
+
 proto_library("vm_applications_apps_proto") {
   sources = [
     "//third_party/cros_system_api/dbus/vm_applications/apps.proto",
   ]
 
   proto_out_dir = "chromeos/dbus/vm_applications"
+}
+
+proto_library("account_manager_proto") {
+  sources = [
+    "account_manager/tokens.proto",
+  ]
+
+  proto_out_dir = "chromeos/account_manager"
 }

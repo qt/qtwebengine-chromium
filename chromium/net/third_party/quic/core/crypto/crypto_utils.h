@@ -21,7 +21,7 @@
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 #include "third_party/boringssl/src/include/openssl/evp.h"
 
-namespace net {
+namespace quic {
 
 class QuicRandom;
 
@@ -77,7 +77,7 @@ class QUIC_EXPORT_PRIVATE CryptoUtils {
   // |label|, and |out_len|, respectively.
   static std::vector<uint8_t> QhkdfExpand(const EVP_MD* prf,
                                           const std::vector<uint8_t>& secret,
-                                          const std::string& label,
+                                          const QuicString& label,
                                           size_t out_len);
 
   // SetKeyAndIV derives the key and IV from the given packet protection secret
@@ -223,6 +223,6 @@ class QUIC_EXPORT_PRIVATE CryptoUtils {
   DISALLOW_COPY_AND_ASSIGN(CryptoUtils);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_CRYPTO_CRYPTO_UTILS_H_

@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/core/layout/text_autosizer.h"
 #include "third_party/blink/renderer/core/paint/block_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/length_functions.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -65,15 +66,12 @@ LayoutFlexibleBox::LayoutFlexibleBox(Element* element)
 
 LayoutFlexibleBox::~LayoutFlexibleBox() = default;
 
-LayoutFlexibleBox* LayoutFlexibleBox::CreateAnonymous(Document* document) {
-  LayoutFlexibleBox* layout_object = new LayoutFlexibleBox(nullptr);
-  layout_object->SetDocumentForAnonymous(document);
-  return layout_object;
-}
-
 void LayoutFlexibleBox::ComputeIntrinsicLogicalWidths(
     LayoutUnit& min_logical_width,
     LayoutUnit& max_logical_width) const {
+  if (ShouldApplySizeContainment())
+    return;
+
   // FIXME: We're ignoring flex-basis here and we shouldn't. We can't start
   // honoring it though until the flex shorthand stops setting it to 0. See
   // https://bugs.webkit.org/show_bug.cgi?id=116117 and
@@ -180,7 +178,8 @@ LayoutUnit LayoutFlexibleBox::BaselinePosition(FontBaseline,
 }
 
 LayoutUnit LayoutFlexibleBox::FirstLineBoxBaseline() const {
-  if (IsWritingModeRoot() || number_of_in_flow_children_on_first_line_ <= 0)
+  if (IsWritingModeRoot() || number_of_in_flow_children_on_first_line_ <= 0 ||
+      ShouldApplySizeContainment())
     return LayoutUnit(-1);
   LayoutBox* baseline_child = nullptr;
   int child_number = 0;
@@ -426,8 +425,8 @@ void LayoutFlexibleBox::UpdateBlockLayout(bool relayout_children) {
 }
 
 void LayoutFlexibleBox::PaintChildren(const PaintInfo& paint_info,
-                                      const LayoutPoint& paint_offset) const {
-  BlockPainter::PaintChildrenOfFlexibleBox(*this, paint_info, paint_offset);
+                                      const LayoutPoint&) const {
+  BlockPainter::PaintChildrenOfFlexibleBox(*this, paint_info);
 }
 
 void LayoutFlexibleBox::RepositionLogicalHeightDependentFlexItems(
@@ -510,7 +509,7 @@ LayoutUnit LayoutFlexibleBox::ChildIntrinsicLogicalHeight(
   DCHECK(!HasOrthogonalFlow(child));
   if (NeedToStretchChildLogicalHeight(child)) {
     LayoutUnit child_intrinsic_content_logical_height;
-    if (!child.StyleRef().ContainsSize()) {
+    if (!child.ShouldApplySizeContainment()) {
       child_intrinsic_content_logical_height =
           child.IntrinsicContentLogicalHeight();
     }
@@ -866,7 +865,7 @@ LayoutUnit LayoutFlexibleBox::ComputeInnerFlexBaseSizeForChild(
     return std::max(LayoutUnit(), ComputeMainAxisExtentForChild(
                                       child, kMainOrPreferredSize, flex_basis));
 
-  if (child.StyleRef().ContainsSize())
+  if (child.ShouldApplySizeContainment())
     return LayoutUnit();
 
   // The flex basis is indefinite (=auto), so we need to compute the actual
@@ -1094,7 +1093,7 @@ MinMaxSize LayoutFlexibleBox::ComputeMinAndMaxSizesForChild(
     // computeMainAxisExtentForChild can return -1 when the child has a
     // percentage min size, but we have an indefinite size in that axis.
     sizes.min_size = std::max(LayoutUnit(), sizes.min_size);
-  } else if (min.IsAuto() && !child.StyleRef().ContainsSize() &&
+  } else if (min.IsAuto() && !child.ShouldApplySizeContainment() &&
              MainAxisOverflowForChild(child) == EOverflow::kVisible &&
              !(IsColumnFlow() && child.IsFlexibleBox())) {
     // TODO(cbiesinger): For now, we do not handle min-height: auto for nested
@@ -1301,12 +1300,11 @@ static LayoutUnit AlignmentOffset(LayoutUnit available_free_space,
 void LayoutFlexibleBox::SetOverrideMainAxisContentSizeForChild(
     LayoutBox& child,
     LayoutUnit child_preferred_size) {
+  // child_preferred_size includes scrollbar width.
   if (HasOrthogonalFlow(child)) {
-    // TODO(rego): Shouldn't we add the scrollbar height too?
     child.SetOverrideLogicalHeight(child_preferred_size +
                                    child.BorderAndPaddingLogicalHeight());
   } else {
-    // TODO(rego): Shouldn't we add the scrollbar width too?
     child.SetOverrideLogicalWidth(child_preferred_size +
                                   child.BorderAndPaddingLogicalWidth());
   }
@@ -1730,14 +1728,15 @@ void LayoutFlexibleBox::ApplyStretchAlignmentToChild(
     // FIXME: Can avoid laying out here in some cases. See
     // https://webkit.org/b/87905.
     bool child_needs_relayout = desired_logical_height != child.LogicalHeight();
-    if (child.IsLayoutBlock() &&
-        ToLayoutBlock(child).HasPercentHeightDescendants() &&
-        relaid_out_children_.Contains(&child)) {
+    if ((child.IsLayoutNGMixin() &&
+         ShouldForceLayoutForNGChild(ToLayoutBlockFlow(child))) ||
+        (child.IsLayoutBlock() &&
+         ToLayoutBlock(child).HasPercentHeightDescendants())) {
       // Have to force another relayout even though the child is sized
       // correctly, because its descendants are not sized correctly yet. Our
       // previous layout of the child was done without an override height set.
       // So, redo it here.
-      child_needs_relayout = true;
+      child_needs_relayout = relaid_out_children_.Contains(&child);
     }
     if (child_needs_relayout || !child.HasOverrideLogicalHeight())
       child.SetOverrideLogicalHeight(desired_logical_height);

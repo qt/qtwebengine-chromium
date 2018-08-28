@@ -24,9 +24,7 @@
 
 #include "third_party/blink/renderer/core/html/forms/text_control_element.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
@@ -56,6 +54,8 @@
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -67,6 +67,7 @@ TextControlElement::TextControlElement(const QualifiedName& tag_name,
                                        Document& doc)
     : HTMLFormControlElementWithState(tag_name, doc),
       last_change_was_user_edit_(false),
+      user_has_edited_the_field_(false),
       cached_selection_start_(0),
       cached_selection_end_(0) {
   cached_selection_direction_ =
@@ -106,6 +107,7 @@ void TextControlElement::DefaultEventHandler(Event* event) {
   if (event->type() == EventTypeNames::webkitEditableContentChanged &&
       GetLayoutObject() && GetLayoutObject()->IsTextControl()) {
     last_change_was_user_edit_ = !GetDocument().IsRunningExecCommand();
+    user_has_edited_the_field_ |= last_change_was_user_edit_;
 
     if (IsFocused()) {
       // Updating the cache in SelectionChanged() isn't enough because
@@ -280,9 +282,10 @@ void TextControlElement::setRangeText(const String& replacement,
                                       ExceptionState& exception_state) {
   if (start > end) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "The provided start value (" + String::Number(start) +
-                             ") is larger than the provided end value (" +
-                             String::Number(end) + ").");
+        DOMExceptionCode::kIndexSizeError,
+        "The provided start value (" + String::Number(start) +
+            ") is larger than the provided end value (" + String::Number(end) +
+            ").");
     return;
   }
   if (OpenShadowRoot())
@@ -675,13 +678,15 @@ void TextControlElement::setMaxLength(int new_value,
                                       ExceptionState& exception_state) {
   int min = minLength();
   if (new_value < 0) {
-    exception_state.ThrowDOMException(
-        kIndexSizeError, "The value provided (" + String::Number(new_value) +
-                             ") is not positive or 0.");
+    exception_state.ThrowDOMException(DOMExceptionCode::kIndexSizeError,
+                                      "The value provided (" +
+                                          String::Number(new_value) +
+                                          ") is not positive or 0.");
   } else if (min >= 0 && new_value < min) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, ExceptionMessages::IndexExceedsMinimumBound(
-                             "maxLength", new_value, min));
+        DOMExceptionCode::kIndexSizeError,
+        ExceptionMessages::IndexExceedsMinimumBound("maxLength", new_value,
+                                                    min));
   } else {
     SetIntegralAttribute(maxlengthAttr, new_value);
   }
@@ -691,13 +696,15 @@ void TextControlElement::setMinLength(int new_value,
                                       ExceptionState& exception_state) {
   int max = maxLength();
   if (new_value < 0) {
-    exception_state.ThrowDOMException(
-        kIndexSizeError, "The value provided (" + String::Number(new_value) +
-                             ") is not positive or 0.");
+    exception_state.ThrowDOMException(DOMExceptionCode::kIndexSizeError,
+                                      "The value provided (" +
+                                          String::Number(new_value) +
+                                          ") is not positive or 0.");
   } else if (max >= 0 && new_value > max) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, ExceptionMessages::IndexExceedsMaximumBound(
-                             "minLength", new_value, max));
+        DOMExceptionCode::kIndexSizeError,
+        ExceptionMessages::IndexExceedsMaximumBound("minLength", new_value,
+                                                    max));
   } else {
     SetIntegralAttribute(minlengthAttr, new_value);
   }
@@ -743,6 +750,12 @@ void TextControlElement::ParseAttribute(
   } else {
     HTMLFormControlElementWithState::ParseAttribute(params);
   }
+}
+
+bool TextControlElement::UserHasEditedTheField() const {
+  if (!IsTextControl())
+    return false;
+  return user_has_edited_the_field_;
 }
 
 bool TextControlElement::LastChangeWasUserEdit() const {
@@ -999,6 +1012,7 @@ void TextControlElement::CloneNonAttributePropertiesFrom(
   const TextControlElement& source_element =
       static_cast<const TextControlElement&>(source);
   last_change_was_user_edit_ = source_element.last_change_was_user_edit_;
+  user_has_edited_the_field_ = source_element.user_has_edited_the_field_;
   HTMLFormControlElement::CloneNonAttributePropertiesFrom(source, flag);
 }
 

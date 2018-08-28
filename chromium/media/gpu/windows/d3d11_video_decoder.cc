@@ -4,8 +4,11 @@
 
 #include "media/gpu/windows/d3d11_video_decoder.h"
 
+#include <d3d11_4.h>
+
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/metrics/histogram_macros.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_codecs.h"
@@ -40,7 +43,6 @@ base::Callback<void(Args...)> BindToCurrentThreadIfWeakPtr(
   return media::BindToCurrentLoop(
       base::Bind(&CallbackOnProperThread<T, Args...>, weak_ptr, cb));
 }
-
 }  // namespace
 
 namespace media {
@@ -70,6 +72,7 @@ D3D11VideoDecoder::D3D11VideoDecoder(
       impl_task_runner_(std::move(gpu_task_runner)),
       gpu_preferences_(gpu_preferences),
       gpu_workarounds_(gpu_workarounds),
+      create_device_func_(base::BindRepeating(D3D11CreateDevice)),
       weak_factory_(this) {
   impl_weak_ = impl_->GetWeakPtr();
 }
@@ -78,7 +81,10 @@ D3D11VideoDecoder::~D3D11VideoDecoder() {
   // Post destruction to the main thread.  When this executes, it will also
   // cancel pending callbacks into |impl_| via |impl_weak_|.  Callbacks out
   // from |impl_| will be cancelled by |weak_factory_| when we return.
-  impl_task_runner_->DeleteSoon(FROM_HERE, std::move(impl_));
+  if (impl_task_runner_->RunsTasksInCurrentSequence())
+    impl_.reset();
+  else
+    impl_task_runner_->DeleteSoon(FROM_HERE, std::move(impl_));
 }
 
 std::string D3D11VideoDecoder::GetDisplayName() const {
@@ -98,8 +104,14 @@ void D3D11VideoDecoder::Initialize(
     return;
   }
 
-  // Bind our own init / output cb that hop to this thread, so we don't call the
-  // originals on some other thread.
+  if (impl_task_runner_->RunsTasksInCurrentSequence()) {
+    impl_->Initialize(config, low_delay, cdm_context, init_cb, output_cb,
+                      waiting_for_decryption_key_cb);
+    return;
+  }
+
+  // Bind our own init / output cb that hop to this thread, so we don't call
+  // the originals on some other thread.
   // Important but subtle note: base::Bind will copy |config_| since it's a
   // const ref.
   // TODO(liberato): what's the lifetime of |cdm_context|?
@@ -115,6 +127,11 @@ void D3D11VideoDecoder::Initialize(
 
 void D3D11VideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
                                const DecodeCB& decode_cb) {
+  if (impl_task_runner_->RunsTasksInCurrentSequence()) {
+    impl_->Decode(std::move(buffer), decode_cb);
+    return;
+  }
+
   impl_task_runner_->PostTask(
       FROM_HERE,
       base::BindOnce(
@@ -123,6 +140,11 @@ void D3D11VideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
 }
 
 void D3D11VideoDecoder::Reset(const base::Closure& closure) {
+  if (impl_task_runner_->RunsTasksInCurrentSequence()) {
+    impl_->Reset(closure);
+    return;
+  }
+
   impl_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&VideoDecoder::Reset, impl_weak_,
                                 BindToCurrentThreadIfWeakPtr(
@@ -144,23 +166,50 @@ int D3D11VideoDecoder::GetMaxDecodeRequests() const {
   return impl_->GetMaxDecodeRequests();
 }
 
+void D3D11VideoDecoder::SetCreateDeviceCallbackForTesting(
+    D3D11CreateDeviceCB callback) {
+  create_device_func_ = std::move(callback);
+}
+
+void D3D11VideoDecoder::SetWasSupportedReason(
+    D3D11VideoNotSupportedReason enum_value) {
+  UMA_HISTOGRAM_ENUMERATION("Media.D3D11.WasVideoSupported", enum_value);
+}
+
 bool D3D11VideoDecoder::IsPotentiallySupported(
     const VideoDecoderConfig& config) {
   // TODO(liberato): All of this could be moved into MojoVideoDecoder, so that
   // it could run on the client side and save the IPC hop.
 
-  // Must be H264.
-  const bool is_h264 = config.profile() >= H264PROFILE_MIN &&
-                       config.profile() <= H264PROFILE_MAX;
+  // Make sure that we support at least 11.1.
+  D3D_FEATURE_LEVEL levels[] = {
+      D3D_FEATURE_LEVEL_11_1,
+  };
+  HRESULT hr = create_device_func_.Run(
+      nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, levels, ARRAYSIZE(levels),
+      D3D11_SDK_VERSION, nullptr, nullptr, nullptr);
 
-  if (!is_h264) {
-    DVLOG(2) << "Profile is not H264.";
+  if (FAILED(hr)) {
+    SetWasSupportedReason(
+        D3D11VideoNotSupportedReason::kInsufficientD3D11FeatureLevel);
+    DVLOG(2) << "Insufficient D3D11 feature level";
     return false;
   }
 
-  // Must use NV12, which excludes HDR.
-  if (config.profile() == H264PROFILE_HIGH10PROFILE) {
-    DVLOG(2) << "High 10 profile is not supported.";
+  // Must be H264.
+  // TODO(tmathmeyer): vp9 should be supported.
+  const bool is_h264 = config.profile() >= H264PROFILE_MIN &&
+                       config.profile() <= H264PROFILE_MAX;
+
+  if (is_h264) {
+    if (config.profile() == H264PROFILE_HIGH10PROFILE) {
+      // Must use NV12, which excludes HDR.
+      SetWasSupportedReason(D3D11VideoNotSupportedReason::kProfileNotSupported);
+      DVLOG(2) << "High 10 profile is not supported.";
+      return false;
+    }
+  } else {
+    DVLOG(2) << "Profile is not H264.";
     return false;
   }
 
@@ -169,6 +218,8 @@ bool D3D11VideoDecoder::IsPotentiallySupported(
   // we skip it here for now.
 
   // Must use the validating decoder.
+  // TODO(tmathmeyer): support passthrough decoder. No logging to UMA since
+  // this condition should go away soon.
   if (gpu_preferences_.use_passthrough_cmd_decoder) {
     DVLOG(2) << "Must use validating decoder.";
     return false;
@@ -176,15 +227,18 @@ bool D3D11VideoDecoder::IsPotentiallySupported(
 
   // Must allow zero-copy of nv12 textures.
   if (!gpu_preferences_.enable_zero_copy_dxgi_video) {
+    SetWasSupportedReason(D3D11VideoNotSupportedReason::kZeroCopyNv12Required);
     DVLOG(2) << "Must allow zero-copy NV12.";
     return false;
   }
 
   if (gpu_workarounds_.disable_dxgi_zero_copy_video) {
+    SetWasSupportedReason(D3D11VideoNotSupportedReason::kZeroCopyVideoRequired);
     DVLOG(2) << "Must allow zero-copy video.";
     return false;
   }
 
+  SetWasSupportedReason(D3D11VideoNotSupportedReason::kVideoIsSupported);
   return true;
 }
 

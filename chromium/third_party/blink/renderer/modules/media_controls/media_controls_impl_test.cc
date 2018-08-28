@@ -15,10 +15,12 @@
 #include "third_party/blink/public/platform/web_screen_info.h"
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
+#include "third_party/blink/renderer/core/css/document_style_environment_variables.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
@@ -1332,6 +1334,44 @@ TEST_F(MediaControlsImplTest, CastOverlayShowsOnSomeEvents) {
 
     SimulateHideMediaControlsTimerFired();
     EXPECT_FALSE(IsElementVisible(*cast_overlay_button));
+  }
+}
+
+class ModernMediaControlsImplTest : public MediaControlsImplTest {
+ public:
+  void SetUp() override {
+    RuntimeEnabledFeatures::SetModernMediaControlsEnabled(true);
+    MediaControlsImplTest::SetUp();
+  }
+};
+
+TEST_F(ModernMediaControlsImplTest, ControlsShouldUseSafeAreaInsets) {
+  {
+    const ComputedStyle* style = MediaControls().EnsureComputedStyle();
+    EXPECT_EQ(0.0, style->MarginTop().Pixels());
+    EXPECT_EQ(0.0, style->MarginLeft().Pixels());
+    EXPECT_EQ(0.0, style->MarginBottom().Pixels());
+    EXPECT_EQ(0.0, style->MarginRight().Pixels());
+  }
+
+  GetStyleEngine().EnsureEnvironmentVariables().SetVariable(
+      "safe-area-inset-top", "1px");
+  GetStyleEngine().EnsureEnvironmentVariables().SetVariable(
+      "safe-area-inset-left", "2px");
+  GetStyleEngine().EnsureEnvironmentVariables().SetVariable(
+      "safe-area-inset-bottom", "3px");
+  GetStyleEngine().EnsureEnvironmentVariables().SetVariable(
+      "safe-area-inset-right", "4px");
+
+  EXPECT_TRUE(GetDocument().NeedsLayoutTreeUpdate());
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  {
+    const ComputedStyle* style = MediaControls().EnsureComputedStyle();
+    EXPECT_EQ(1.0, style->MarginTop().Pixels());
+    EXPECT_EQ(2.0, style->MarginLeft().Pixels());
+    EXPECT_EQ(3.0, style->MarginBottom().Pixels());
+    EXPECT_EQ(4.0, style->MarginRight().Pixels());
   }
 }
 

@@ -6,6 +6,7 @@
 #include "cc/test/scheduler_test_common.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
+#include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface_dependency_tracker.h"
@@ -28,7 +29,8 @@ TEST(SurfaceTest, PresentationCallback) {
   constexpr gfx::Rect kDamageRect(0, 0);
   const LocalSurfaceId local_surface_id(6, base::UnguessableToken::Create());
 
-  FrameSinkManagerImpl frame_sink_manager;
+  ServerSharedBitmapManager shared_bitmap_manager;
+  FrameSinkManagerImpl frame_sink_manager(&shared_bitmap_manager);
   MockCompositorFrameSinkClient client;
   auto support = std::make_unique<CompositorFrameSinkSupport>(
       &client, &frame_sink_manager, kArbitraryFrameSinkId, kIsRoot,
@@ -37,7 +39,8 @@ TEST(SurfaceTest, PresentationCallback) {
     CompositorFrame frame =
         CompositorFrameBuilder()
             .AddRenderPass(gfx::Rect(kSurfaceSize), kDamageRect)
-            .SetPresentationToken(1)
+            .SetFrameToken(1)
+            .SetRequestPresentationFeedback(true)
             .Build();
     EXPECT_CALL(client, DidReceiveCompositorFrameAck(testing::_)).Times(1);
     support->SubmitCompositorFrame(local_surface_id, std::move(frame));
@@ -50,9 +53,14 @@ TEST(SurfaceTest, PresentationCallback) {
     CompositorFrame frame =
         CompositorFrameBuilder()
             .AddRenderPass(gfx::Rect(kSurfaceSize), kDamageRect)
-            .SetPresentationToken(2)
+            .SetFrameToken(2)
+            .SetRequestPresentationFeedback(true)
             .Build();
-    EXPECT_CALL(client, DidDiscardCompositorFrame(1)).Times(1);
+    EXPECT_CALL(client, DidPresentCompositorFrame(
+                            1, testing::Field(
+                                   &gfx::PresentationFeedback::flags,
+                                   gfx::PresentationFeedback::Flags::kFailure)))
+        .Times(1);
     EXPECT_CALL(client, DidReceiveCompositorFrameAck(testing::_)).Times(1);
     support->SubmitCompositorFrame(local_surface_id, std::move(frame));
     testing::Mock::VerifyAndClearExpectations(&client);
@@ -76,7 +84,8 @@ void TestCopyResultCallback(bool* called,
 // Test that CopyOutputRequests can outlive the current frame and be
 // aggregated on the next frame.
 TEST(SurfaceTest, CopyRequestLifetime) {
-  FrameSinkManagerImpl frame_sink_manager;
+  ServerSharedBitmapManager shared_bitmap_manager;
+  FrameSinkManagerImpl frame_sink_manager(&shared_bitmap_manager);
   SurfaceManager* surface_manager = frame_sink_manager.surface_manager();
   auto support = std::make_unique<CompositorFrameSinkSupport>(
       nullptr, &frame_sink_manager, kArbitraryFrameSinkId, kIsRoot,

@@ -149,13 +149,10 @@ class CONTENT_EXPORT WebContentsDelegate {
   // it needs to do.
   virtual void CloseContents(WebContents* source) {}
 
-  // Request the delegate to move this WebContents to the specified position
-  // in screen coordinates.
-  virtual void MoveContents(WebContents* source, const gfx::Rect& pos) {}
-
-  // Called to determine if the WebContents is contained in a popup window
-  // or a panel window.
-  virtual bool IsPopupOrPanel(const WebContents* source) const;
+  // Request the delegate to resize this WebContents to the specified size in
+  // screen coordinates. The embedder is free to ignore the request.
+  virtual void SetContentsBounds(WebContents* source, const gfx::Rect& bounds) {
+  }
 
   // Notification that the target URL has changed.
   virtual void UpdateTargetURL(WebContents* source,
@@ -326,13 +323,18 @@ class CONTENT_EXPORT WebContentsDelegate {
   // the WebContents that is hung, and |render_widget_host| is the
   // RenderWidgetHost that, while routing events to it, discovered the hang.
   //
+  // |hang_monitor_restarter| can be used to restart the timer used to
+  // detect the hang.  The timer is typically restarted when the renderer has
+  // become active, the tab got hidden, or the user has chosen to wait some
+  // more.
+  //
   // Useful member functions on |render_widget_host|:
   // - Getting the hung render process: GetProcess()
   // - Querying whether the process is still hung: IsCurrentlyUnresponsive()
-  // - Waiting for the process to recover on its own:
-  //     RestartHangMonitorTimeoutIfNecessary()
-  virtual void RendererUnresponsive(WebContents* source,
-                                    RenderWidgetHost* render_widget_host) {}
+  virtual void RendererUnresponsive(
+      WebContents* source,
+      RenderWidgetHost* render_widget_host,
+      base::RepeatingClosure hang_monitor_restarter) {}
 
   // Notification that a process in the WebContents is no longer hung. |source|
   // is the WebContents that was hung, and |render_widget_host| is the
@@ -470,10 +472,9 @@ class CONTENT_EXPORT WebContentsDelegate {
   // request is denied, a call should be made to |callback| with an empty list
   // of devices. |request| has the details of the request (e.g. which of audio
   // and/or video devices are requested, and lists of available devices).
-  virtual void RequestMediaAccessPermission(
-      WebContents* web_contents,
-      const MediaStreamRequest& request,
-      const MediaResponseCallback& callback);
+  virtual void RequestMediaAccessPermission(WebContents* web_contents,
+                                            const MediaStreamRequest& request,
+                                            MediaResponseCallback callback);
 
   // Checks if we have permission to access the microphone or camera. Note that
   // this does not query the user. |type| must be MEDIA_DEVICE_AUDIO_CAPTURE
@@ -489,10 +490,6 @@ class CONTENT_EXPORT WebContentsDelegate {
                                               MediaStreamType type);
 
 #if defined(OS_ANDROID)
-  // Creates a view embedding the video view.
-  virtual base::android::ScopedJavaLocalRef<jobject>
-      GetContentVideoViewEmbedder();
-
   // Returns true if the given media should be blocked to load.
   virtual bool ShouldBlockMediaRequest(const GURL& url);
 

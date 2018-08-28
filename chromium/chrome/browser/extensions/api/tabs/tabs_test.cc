@@ -19,7 +19,7 @@
 #include "base/test/simple_test_tick_clock.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/browser/apps/app_browsertest_util.h"
+#include "chrome/browser/apps/platform_apps/app_browsertest_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/devtools_window_testing.h"
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
@@ -446,7 +446,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest,
       new TabsUpdateFunction());
   scoped_refptr<Extension> extension(ExtensionBuilder("Test").Build());
   update_tab_function->set_extension(extension.get());
-  update_tab_function->set_include_incognito(true);
+  update_tab_function->set_include_incognito_information(true);
 
   static const char kArgsWithNonIncognitoUrl[] =
       "[null, {\"url\": \"chrome://extensions/configureCommands\"}]";
@@ -1075,18 +1075,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionWindowCreateTest, MAYBE_AcceptState) {
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionWindowCreateTest, ValidateCreateWindowState) {
-  EXPECT_TRUE(base::MatchPattern(
-      RunCreateWindowExpectError(
-          "[{\"state\": \"fullscreen\", \"type\": \"panel\"}]"),
-      keys::kInvalidWindowStateError));
-  EXPECT_TRUE(base::MatchPattern(
-      RunCreateWindowExpectError(
-          "[{\"state\": \"maximized\", \"type\": \"panel\"}]"),
-      keys::kInvalidWindowStateError));
-  EXPECT_TRUE(base::MatchPattern(
-      RunCreateWindowExpectError(
-          "[{\"state\": \"minimized\", \"type\": \"panel\"}]"),
-      keys::kInvalidWindowStateError));
   EXPECT_TRUE(
       base::MatchPattern(RunCreateWindowExpectError(
                              "[{\"state\": \"minimized\", \"focused\": true}]"),

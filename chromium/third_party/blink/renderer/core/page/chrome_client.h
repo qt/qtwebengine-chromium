@@ -26,13 +26,13 @@
 #include <memory>
 #include "base/gtest_prod_util.h"
 #include "base/optional.h"
+#include "cc/input/event_listener_properties.h"
 #include "third_party/blink/public/platform/blame_context.h"
 #include "third_party/blink/public/platform/web_drag_operation.h"
-#include "third_party/blink/public/platform/web_event_listener_properties.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/animation_worklet_proxy_client.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
 #include "third_party/blink/renderer/core/frame/sandbox_flags.h"
 #include "third_party/blink/renderer/core/html/forms/popup_menu.h"
 #include "third_party/blink/renderer/core/inspector/console_types.h"
@@ -71,6 +71,7 @@ class GraphicsLayer;
 class HTMLFormControlElement;
 class HTMLInputElement;
 class HTMLSelectElement;
+class HitTestLocation;
 class HitTestResult;
 class IntRect;
 class KeyboardEvent;
@@ -82,7 +83,6 @@ class PagePopup;
 class PagePopupClient;
 class PopupOpeningObserver;
 class WebDragData;
-class WebImage;
 class WebLayerTreeView;
 class WebViewImpl;
 
@@ -130,7 +130,7 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
   virtual void StartDragging(LocalFrame*,
                              const WebDragData&,
                              WebDragOperationsMask,
-                             const WebImage& drag_image,
+                             const SkBitmap& drag_image,
                              const WebPoint& drag_image_offset) = 0;
   virtual bool AcceptsLoadDrops() const = 0;
 
@@ -219,7 +219,9 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
   virtual void ResizeAfterLayout() const {}
   virtual void LayoutUpdated() const {}
 
-  void MouseDidMoveOverElement(LocalFrame&, const HitTestResult&);
+  void MouseDidMoveOverElement(LocalFrame&,
+                               const HitTestLocation&,
+                               const HitTestResult&);
   virtual void SetToolTip(LocalFrame&, const String&, TextDirection) = 0;
   void ClearToolTip(LocalFrame&);
 
@@ -275,11 +277,11 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
                                          const CompositedSelection&) {}
 
   virtual void SetEventListenerProperties(LocalFrame*,
-                                          WebEventListenerClass,
-                                          WebEventListenerProperties) = 0;
-  virtual WebEventListenerProperties EventListenerProperties(
+                                          cc::EventListenerClass,
+                                          cc::EventListenerProperties) = 0;
+  virtual cc::EventListenerProperties EventListenerProperties(
       LocalFrame*,
-      WebEventListenerClass) const = 0;
+      cc::EventListenerClass) const = 0;
   virtual void SetHasScrollEventHandlers(LocalFrame*, bool) = 0;
   virtual void SetNeedsLowLatencyInput(LocalFrame*, bool) = 0;
   virtual void RequestUnbufferedInputEvents(LocalFrame*) = 0;
@@ -381,7 +383,7 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
   bool CanOpenModalIfDuringPageDismissal(Frame& main_frame,
                                          DialogType,
                                          const String& message);
-  void SetToolTip(LocalFrame&, const HitTestResult&);
+  void SetToolTip(LocalFrame&, const HitTestLocation&, const HitTestResult&);
 
   WeakMember<Node> last_mouse_over_node_;
   LayoutPoint last_tool_tip_point_;
@@ -389,6 +391,12 @@ class CORE_EXPORT ChromeClient : public PlatformChromeClient {
 
   FRIEND_TEST_ALL_PREFIXES(ChromeClientTest, SetToolTipFlood);
 };
+
+inline ChromeClient* ToChromeClient(PlatformChromeClient* client) {
+  // In production code, a PlatformChromeClient instance is always a
+  // ChromeClient instance.
+  return static_cast<ChromeClient*>(client);
+}
 
 }  // namespace blink
 

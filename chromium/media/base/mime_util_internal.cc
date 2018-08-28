@@ -74,11 +74,6 @@ const base::flat_map<std::string, MimeUtil::Codec>& GetStringToCodecMap() {
         {"vorbis", MimeUtil::VORBIS}, {"opus", MimeUtil::OPUS},
         {"flac", MimeUtil::FLAC}, {"vp8", MimeUtil::VP8},
         {"vp8.0", MimeUtil::VP8}, {"theora", MimeUtil::THEORA},
-// TODO(dalecurtis): This is not the correct final string. Fix before enabling
-// by default. http://crbug.com/784607
-#if BUILDFLAG(ENABLE_AV1_DECODER)
-        {"av1", MimeUtil::AV1},
-#endif
       },
       base::KEEP_FIRST_OF_DUPES);
 
@@ -780,16 +775,6 @@ bool MimeUtil::ParseCodecHelper(const std::string& mime_type_lower_case,
         case Codec::THEORA:
           out_result->video_profile = THEORAPROFILE_ANY;
           break;
-        case Codec::AV1: {
-#if BUILDFLAG(ENABLE_AV1_DECODER)
-          if (base::FeatureList::IsEnabled(kAv1Decoder)) {
-            out_result->video_profile = AV1PROFILE_PROFILE0;
-            break;
-          }
-#endif
-          return false;
-        }
-
         default:
           NOTREACHED();
       }
@@ -830,6 +815,14 @@ bool MimeUtil::ParseCodecHelper(const std::string& mime_type_lower_case,
     }
     return true;
   }
+
+#if BUILDFLAG(ENABLE_AV1_DECODER)
+  if (base::FeatureList::IsEnabled(kAv1Decoder) &&
+      ParseAv1CodecId(codec_id, out_profile, out_level, out_color_space)) {
+    out_result->codec = MimeUtil::AV1;
+    return true;
+  }
+#endif
 
   if (ParseAVCCodecId(codec_id, out_profile, out_level)) {
     out_result->codec = MimeUtil::H264;

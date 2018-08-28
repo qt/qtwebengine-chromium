@@ -74,8 +74,7 @@ protected:
 
     /** These are called inside the per-device-layer loop for each draw call.
      When these are called, we have already applied any saveLayer operations,
-     and are handling any looping from the paint, and any effects from the
-     DrawFilter.
+     and are handling any looping from the paint.
      */
     void drawPaint(const SkPaint& paint) override;
     void drawPoints(SkCanvas::PointMode mode, size_t count,
@@ -111,11 +110,10 @@ protected:
      *  Does not handle text decoration.
      *  Decorations (underline and stike-thru) will be handled by SkCanvas.
      */
-    void drawText(const void* text, size_t len, SkScalar x, SkScalar y,
-                  const SkPaint&) override;
     void drawPosText(const void* text, size_t len, const SkScalar pos[],
                      int scalarsPerPos, const SkPoint& offset, const SkPaint& paint) override;
-    void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) override;
+    void drawVertices(const SkVertices*, const SkMatrix* bones, int boneCount, SkBlendMode,
+                      const SkPaint& paint) override;
     void drawDevice(SkBaseDevice*, int x, int y, const SkPaint&) override;
 
     ///////////////////////////////////////////////////////////////////////////

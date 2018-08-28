@@ -29,6 +29,8 @@ class ContextualSuggestionsReporterProvider {
 
   virtual std::unique_ptr<ContextualSuggestionsReporter> CreateReporter();
 
+  virtual ContextualSuggestionsDebuggingReporter* GetDebuggingReporter();
+
  private:
   // The debugging reporter is shared between instances of top-level reporter.
   // Since multiple objects need a reference to this, it's kept as a unique
@@ -84,9 +86,11 @@ enum ContextualSuggestionsEvent {
   // The UI was dismissed after having been opened. This means the sheet was
   // closed from any position after it was expanded at least once.
   UI_DISMISSED_AFTER_OPEN = 14,
+  // The UI button was shown to the user.
+  UI_BUTTON_SHOWN = 15,
   // Special name that marks the maximum value in an Enum used for UMA.
   // https://cs.chromium.org/chromium/src/tools/metrics/histograms/README.md.
-  kMaxValue = UI_DISMISSED_AFTER_OPEN,
+  kMaxValue = UI_BUTTON_SHOWN,
 };
 
 // Tracks various metrics based on reports of events that take place

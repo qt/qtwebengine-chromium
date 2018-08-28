@@ -48,15 +48,15 @@ class InterfacePtr {
   InterfacePtr(decltype(nullptr)) {}
 
   // Takes over the binding of another InterfacePtr.
-  InterfacePtr(InterfacePtr&& other) {
+  InterfacePtr(InterfacePtr&& other) noexcept {
     internal_state_.Swap(&other.internal_state_);
   }
 
-  explicit InterfacePtr(PtrInfoType&& info) { Bind(std::move(info)); }
+  explicit InterfacePtr(PtrInfoType&& info) noexcept { Bind(std::move(info)); }
 
   // Takes over the binding of another InterfacePtr, and closes any message pipe
   // already bound to this pointer.
-  InterfacePtr& operator=(InterfacePtr&& other) {
+  InterfacePtr& operator=(InterfacePtr&& other) noexcept {
     reset();
     internal_state_.Swap(&other.internal_state_);
     return *this;
@@ -126,6 +126,12 @@ class InterfacePtr {
   // verify that no message was sent on a message pipe in response to some
   // stimulus.
   void FlushForTesting() { internal_state_.FlushForTesting(); }
+
+  // Same as |FlushForTesting()| but will call |callback| when the flush is
+  // complete.
+  void FlushAsyncForTesting(base::OnceClosure callback) {
+    internal_state_.FlushAsyncForTesting(std::move(callback));
+  }
 
   // Closes the bound message pipe, if any.
   void reset() {

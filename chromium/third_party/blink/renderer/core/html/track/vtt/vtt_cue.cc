@@ -30,8 +30,6 @@
 #include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"
 
 #include "third_party/blink/renderer/bindings/core/v8/double_or_auto_keyword.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
@@ -47,6 +45,8 @@
 #include "third_party/blink/renderer/core/html/track/vtt/vtt_region.h"
 #include "third_party/blink/renderer/core/html/track/vtt/vtt_scanner.h"
 #include "third_party/blink/renderer/core/layout/layout_vtt_cue.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/bidi_resolver.h"
 #include "third_party/blink/renderer/platform/text/text_run_iterator.h"
@@ -120,7 +120,7 @@ static bool IsInvalidPercentage(double value) {
 static bool IsInvalidPercentage(double value, ExceptionState& exception_state) {
   if (IsInvalidPercentage(value)) {
     exception_state.ThrowDOMException(
-        kIndexSizeError,
+        DOMExceptionCode::kIndexSizeError,
         ExceptionMessages::IndexOutsideRange<double>(
             "value", value, 0, ExceptionMessages::kInclusiveBound, 100,
             ExceptionMessages::kInclusiveBound));

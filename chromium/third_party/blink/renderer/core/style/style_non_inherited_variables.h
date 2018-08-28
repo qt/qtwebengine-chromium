@@ -44,6 +44,8 @@ class StyleNonInheritedVariables {
     return registered_data_.at(name);
   }
 
+  HashSet<AtomicString> GetCustomPropertyNames() const;
+
  private:
   StyleNonInheritedVariables() = default;
   StyleNonInheritedVariables(StyleNonInheritedVariables&);
@@ -51,7 +53,7 @@ class StyleNonInheritedVariables {
   friend class CSSVariableResolver;
 
   HashMap<AtomicString, scoped_refptr<CSSVariableData>> data_;
-  HashMap<AtomicString, Persistent<CSSValue>> registered_data_;
+  PersistentHeapHashMap<AtomicString, Member<CSSValue>> registered_data_;
 };
 
 }  // namespace blink

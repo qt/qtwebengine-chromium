@@ -30,7 +30,7 @@
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 #include "third_party/boringssl/src/include/openssl/base.h"
 
-namespace net {
+namespace quic {
 
 class CryptoHandshakeMessage;
 class EphemeralKeySource;
@@ -487,7 +487,8 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerConfig {
 
   // SelectNewPrimaryConfig reevaluates the primary config based on the
   // "primary_time" deadlines contained in each.
-  void SelectNewPrimaryConfig(QuicWallTime now) const;
+  void SelectNewPrimaryConfig(QuicWallTime now) const
+      EXCLUSIVE_LOCKS_REQUIRED(configs_lock_);
 
   // EvaluateClientHello checks |client_hello| for gross errors and determines
   // whether it can be shown to be fresh (i.e. not a replay). The results are
@@ -791,6 +792,6 @@ struct QUIC_EXPORT_PRIVATE QuicSignedServerConfig
   ~QuicSignedServerConfig() override;
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_CRYPTO_QUIC_CRYPTO_SERVER_CONFIG_H_

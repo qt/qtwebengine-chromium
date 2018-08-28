@@ -115,10 +115,8 @@ void SendFillInformationToRenderer(
   DCHECK(driver);
   DCHECK_EQ(PasswordForm::SCHEME_HTML, observed_form.scheme);
 
-  if (is_blacklisted)
-    driver->MatchingBlacklistedFormFound();
-
-  driver->AllowPasswordGenerationForForm(observed_form);
+  if (!is_blacklisted)
+    driver->AllowPasswordGenerationForForm(observed_form);
 
   if (best_matches.empty()) {
     driver->InformNoSavedCredentials();

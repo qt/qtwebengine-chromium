@@ -14,10 +14,11 @@
 #include "net/third_party/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_logging.h"
+#include "net/third_party/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
-namespace net {
+namespace quic {
 
 // Reads the value corresponding to |name_| from |msg| into |out|. If the
 // |name_| is absent in |msg| and |presence| is set to OPTIONAL |out| is set
@@ -104,6 +105,12 @@ QuicErrorCode QuicNegotiableUint32::ProcessPeerHello(
   if (error != QUIC_NO_ERROR) {
     return error;
   }
+  return ReceiveValue(value, hello_type, error_details);
+}
+
+QuicErrorCode QuicNegotiableUint32::ReceiveValue(uint32_t value,
+                                                 HelloType hello_type,
+                                                 QuicString* error_details) {
   if (hello_type == SERVER && value > max_value_) {
     *error_details = "Invalid value received for " + QuicTagToString(tag_);
     return QUIC_INVALID_NEGOTIATED_VALUE;
@@ -392,11 +399,7 @@ QuicConfig::QuicConfig()
       client_connection_options_(kCLOP, PRESENCE_OPTIONAL),
       idle_network_timeout_seconds_(kICSL, PRESENCE_REQUIRED),
       silent_close_(kSCLS, PRESENCE_OPTIONAL),
-      do_not_use_mspc_(GetQuicReloadableFlag(quic_no_mspc)),
-      max_streams_per_connection_(kMSPC, PRESENCE_OPTIONAL),
-      max_incoming_dynamic_streams_(
-          kMIDS,
-          do_not_use_mspc_ ? PRESENCE_REQUIRED : PRESENCE_OPTIONAL),
+      max_incoming_dynamic_streams_(kMIDS, PRESENCE_REQUIRED),
       bytes_for_connection_id_(kTCID, PRESENCE_OPTIONAL),
       initial_round_trip_time_us_(kIRTT, PRESENCE_OPTIONAL),
       initial_stream_flow_control_window_bytes_(kSFCW, PRESENCE_OPTIONAL),
@@ -405,9 +408,6 @@ QuicConfig::QuicConfig()
       alternate_server_address_(kASAD, PRESENCE_OPTIONAL),
       support_max_header_list_size_(kSMHL, PRESENCE_OPTIONAL),
       stateless_reset_token_(kSRST, PRESENCE_OPTIONAL) {
-  if (do_not_use_mspc_) {
-    QUIC_FLAG_COUNT(quic_reloadable_flag_quic_no_mspc);
-  }
   SetDefaults();
 }
 
@@ -498,15 +498,6 @@ void QuicConfig::SetSilentClose(bool silent_close) {
 
 bool QuicConfig::SilentClose() const {
   return silent_close_.GetUint32() > 0;
-}
-
-void QuicConfig::SetMaxStreamsPerConnection(size_t max_streams,
-                                            size_t default_streams) {
-  max_streams_per_connection_.set(max_streams, default_streams);
-}
-
-uint32_t QuicConfig::MaxStreamsPerConnection() const {
-  return max_streams_per_connection_.GetUint32();
 }
 
 void QuicConfig::SetMaxIncomingDynamicStreamsToSend(
@@ -652,10 +643,8 @@ QuicUint128 QuicConfig::ReceivedStatelessResetToken() const {
 
 bool QuicConfig::negotiated() const {
   // TODO(ianswett): Add the negotiated parameters once and iterate over all
-  // of them in negotiated, ToHandshakeMessage, ProcessClientHello, and
-  // ProcessServerHello.
-  return idle_network_timeout_seconds_.negotiated() &&
-         max_streams_per_connection_.negotiated();
+  // of them in negotiated, ToHandshakeMessage, and ProcessPeerHello.
+  return idle_network_timeout_seconds_.negotiated();
 }
 
 void QuicConfig::SetCreateSessionTagIndicators(QuicTagVector tags) {
@@ -670,8 +659,6 @@ void QuicConfig::SetDefaults() {
   idle_network_timeout_seconds_.set(kMaximumIdleTimeoutSecs,
                                     kDefaultIdleTimeoutSecs);
   silent_close_.set(1, 0);
-  SetMaxStreamsPerConnection(kDefaultMaxStreamsPerConnection,
-                             kDefaultMaxStreamsPerConnection);
   SetMaxIncomingDynamicStreamsToSend(kDefaultMaxStreamsPerConnection);
   max_time_before_crypto_handshake_ =
       QuicTime::Delta::FromSeconds(kMaxTimeForCryptoHandshakeSecs);
@@ -681,15 +668,12 @@ void QuicConfig::SetDefaults() {
 
   SetInitialStreamFlowControlWindowToSend(kMinimumFlowControlSendWindow);
   SetInitialSessionFlowControlWindowToSend(kMinimumFlowControlSendWindow);
-  if (GetQuicReloadableFlag(quic_send_max_header_list_size)) {
-    SetSupportMaxHeaderListSize();
-  }
+  SetSupportMaxHeaderListSize();
 }
 
 void QuicConfig::ToHandshakeMessage(CryptoHandshakeMessage* out) const {
   idle_network_timeout_seconds_.ToHandshakeMessage(out);
   silent_close_.ToHandshakeMessage(out);
-  max_streams_per_connection_.ToHandshakeMessage(out);
   max_incoming_dynamic_streams_.ToHandshakeMessage(out);
   bytes_for_connection_id_.ToHandshakeMessage(out);
   initial_round_trip_time_us_.ToHandshakeMessage(out);
@@ -716,10 +700,6 @@ QuicErrorCode QuicConfig::ProcessPeerHello(
   if (error == QUIC_NO_ERROR) {
     error =
         silent_close_.ProcessPeerHello(peer_hello, hello_type, error_details);
-  }
-  if (error == QUIC_NO_ERROR) {
-    error = max_streams_per_connection_.ProcessPeerHello(peer_hello, hello_type,
-                                                         error_details);
   }
   if (error == QUIC_NO_ERROR) {
     error = max_incoming_dynamic_streams_.ProcessPeerHello(
@@ -764,4 +744,79 @@ QuicErrorCode QuicConfig::ProcessPeerHello(
   return error;
 }
 
-}  // namespace net
+bool QuicConfig::FillTransportParameters(TransportParameters* params) const {
+  params->initial_max_stream_data =
+      initial_stream_flow_control_window_bytes_.GetSendValue();
+  params->initial_max_data =
+      initial_session_flow_control_window_bytes_.GetSendValue();
+
+  uint32_t idle_timeout = idle_network_timeout_seconds_.GetUint32();
+  if (idle_timeout > std::numeric_limits<uint16_t>::max()) {
+    QUIC_BUG << "idle network timeout set too large";
+    return false;
+  }
+  params->idle_timeout = idle_timeout;
+
+  uint32_t initial_max_streams = max_incoming_dynamic_streams_.GetSendValue();
+  if (initial_max_streams > std::numeric_limits<uint16_t>::max()) {
+    QUIC_BUG << "max incoming streams set too large";
+    return false;
+  }
+  params->initial_max_bidi_streams.present = true;
+  params->initial_max_bidi_streams.value = initial_max_streams;
+
+  if (!params->google_quic_params) {
+    params->google_quic_params = QuicMakeUnique<CryptoHandshakeMessage>();
+  }
+  silent_close_.ToHandshakeMessage(params->google_quic_params.get());
+  initial_round_trip_time_us_.ToHandshakeMessage(
+      params->google_quic_params.get());
+  connection_options_.ToHandshakeMessage(params->google_quic_params.get());
+  return true;
+}
+
+QuicErrorCode QuicConfig::ProcessTransportParameters(
+    const TransportParameters& params,
+    HelloType hello_type,
+    QuicString* error_details) {
+  QuicErrorCode error = idle_network_timeout_seconds_.ReceiveValue(
+      params.idle_timeout, hello_type, error_details);
+  if (error != QUIC_NO_ERROR) {
+    return error;
+  }
+  const CryptoHandshakeMessage* peer_params = params.google_quic_params.get();
+  if (!peer_params) {
+    return QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND;
+  }
+  error =
+      silent_close_.ProcessPeerHello(*peer_params, hello_type, error_details);
+  if (error != QUIC_NO_ERROR) {
+    return error;
+  }
+  error = initial_round_trip_time_us_.ProcessPeerHello(*peer_params, hello_type,
+                                                       error_details);
+  if (error != QUIC_NO_ERROR) {
+    return error;
+  }
+  error = connection_options_.ProcessPeerHello(*peer_params, hello_type,
+                                               error_details);
+  if (error != QUIC_NO_ERROR) {
+    return error;
+  }
+
+  initial_stream_flow_control_window_bytes_.SetReceivedValue(
+      params.initial_max_stream_data);
+  initial_session_flow_control_window_bytes_.SetReceivedValue(
+      params.initial_max_data);
+  if (params.initial_max_bidi_streams.present) {
+    max_incoming_dynamic_streams_.SetReceivedValue(
+        params.initial_max_bidi_streams.value);
+  } else {
+    // An absent value for initial_max_bidi_streams is treated as a value of 0.
+    max_incoming_dynamic_streams_.SetReceivedValue(0);
+  }
+
+  return QUIC_NO_ERROR;
+}
+
+}  // namespace quic

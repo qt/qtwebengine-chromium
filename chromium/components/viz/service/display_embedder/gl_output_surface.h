@@ -9,6 +9,7 @@
 
 #include "components/viz/service/display/output_surface.h"
 #include "components/viz/service/display_embedder/viz_process_context_provider.h"
+#include "gpu/command_buffer/client/context_support.h"
 #include "ui/latency/latency_tracker.h"
 
 namespace viz {
@@ -46,6 +47,8 @@ class GLOutputSurface : public OutputSurface {
   gpu::VulkanSurface* GetVulkanSurface() override;
 #endif
   unsigned UpdateGpuFence() override;
+  void SetNeedsSwapSizeNotifications(
+      bool needs_swap_size_notifications) override;
 
  protected:
   OutputSurfaceClient* client() const { return client_; }
@@ -53,9 +56,19 @@ class GLOutputSurface : public OutputSurface {
   // Called when a swap completion is signaled from ImageTransportSurface.
   virtual void DidReceiveSwapBuffersAck(gfx::SwapResult result);
 
+  // Called in SwapBuffers() when a swap is determined to be partial. Subclasses
+  // might override this method because different platforms handle partial swaps
+  // differently.
+  virtual void HandlePartialSwap(
+      const gfx::Rect& sub_buffer_rect,
+      uint32_t flags,
+      gpu::ContextSupport::SwapCompletedCallback swap_callback,
+      gpu::ContextSupport::PresentationCallback presentation_callback);
+
  private:
   // Called when a swap completion is signaled from ImageTransportSurface.
   void OnGpuSwapBuffersCompleted(std::vector<ui::LatencyInfo> latency_info,
+                                 const gfx::Size& pixel_size,
                                  const gpu::SwapBuffersCompleteParams& params);
   void OnVSyncParametersUpdated(base::TimeTicks timebase,
                                 base::TimeDelta interval);
@@ -71,6 +84,8 @@ class GLOutputSurface : public OutputSurface {
   gfx::Size size_;
   bool use_gpu_fence_;
   unsigned gpu_fence_id_ = 0;
+  // Whether to send OutputSurfaceClient::DidSwapWithSize notifications.
+  bool needs_swap_size_notifications_ = false;
 
   base::WeakPtrFactory<GLOutputSurface> weak_ptr_factory_;
 };

@@ -38,7 +38,6 @@
 #include "components/viz/common/quads/draw_quad.h"
 #include "components/viz/common/quads/tile_draw_quad.h"
 #include "components/viz/test/begin_frame_args_test.h"
-#include "components/viz/test/test_web_graphics_context_3d.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -808,7 +807,7 @@ TEST_F(PictureLayerImplTest, PinchGestureTilings) {
   EXPECT_NE(LOW_RESOLUTION, low_res_tiling->resolution());
 
   // Stop a pinch gesture.
-  host_impl()->PinchGestureEnd(gfx::Point(), true);
+  host_impl()->PinchGestureEnd(gfx::Point(), false);
 
   // Ensure UpdateTiles won't remove any tilings.
   active_layer()->MarkAllTilingsUsed();
@@ -938,7 +937,7 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
       1.f * low_res_factor,
       active_layer()->tilings()->tiling_at(1)->contents_scale_key());
 
-  host_impl()->PinchGestureEnd(gfx::Point(), true);
+  host_impl()->PinchGestureEnd(gfx::Point(), false);
 
   // Create a 1.2 scale tiling. Now we have 1.0 and 1.2 tilings. Ideal = 1.2.
   scale = 1.2f;
@@ -3769,7 +3768,7 @@ TEST_F(NoLowResPictureLayerImplTest, CleanUpTilings) {
   active_layer()->CleanUpTilingsOnActiveLayer(used_tilings);
   ASSERT_EQ(1u, active_layer()->tilings()->num_tilings());
 
-  host_impl()->PinchGestureEnd(gfx::Point(), true);
+  host_impl()->PinchGestureEnd(gfx::Point(), false);
 
   // Create a 1.2 scale tiling. Now we have 1.0 and 1.2 tilings. Ideal = 1.2.
   scale /= 4.f;

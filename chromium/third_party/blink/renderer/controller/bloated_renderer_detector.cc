@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/controller/bloated_renderer_detector.h"
 
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
+#include "third_party/blink/renderer/platform/instrumentation/resource_coordinator/renderer_resource_coordinator.h"
 
 namespace blink {
 
@@ -22,11 +23,14 @@ BloatedRendererDetector::OnNearV8HeapLimitOnMainThread() {
 
 NearV8HeapLimitHandling
 BloatedRendererDetector::OnNearV8HeapLimitOnMainThreadImpl() {
-  WTF::TimeDelta uptime = (WTF::CurrentTimeTicks() - startup_time_);
-  if (uptime.InMinutes() < kMinimumUptimeInMinutes) {
-    return NearV8HeapLimitHandling::kIgnoredDueToSmallUptime;
+  if (!RuntimeEnabledFeatures::
+          BloatedRendererDetectionSkipUptimeCheckEnabled()) {
+    WTF::TimeDelta uptime = (WTF::CurrentTimeTicks() - startup_time_);
+    if (uptime.InMinutes() < kMinimumUptimeInMinutes) {
+      return NearV8HeapLimitHandling::kIgnoredDueToSmallUptime;
+    }
   }
-  // TODO(ulan): Send message to the browser.
+  RendererResourceCoordinator::Get().OnRendererIsBloated();
   return NearV8HeapLimitHandling::kForwardedToBrowser;
 }
 

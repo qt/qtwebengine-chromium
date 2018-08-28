@@ -39,7 +39,6 @@
 #include "third_party/blink/public/platform/web_media_stream.h"
 #include "third_party/blink/public/platform/web_media_stream_center.h"
 #include "third_party/blink/public/platform/web_media_stream_source.h"
-#include "third_party/blink/public/platform/web_media_stream_track.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_descriptor.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_web_audio_source.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
@@ -53,7 +52,7 @@ MediaStreamCenter& MediaStreamCenter::Instance() {
 }
 
 MediaStreamCenter::MediaStreamCenter()
-    : private_(Platform::Current()->CreateMediaStreamCenter(this)) {}
+    : private_(Platform::Current()->CreateMediaStreamCenter()) {}
 
 MediaStreamCenter::~MediaStreamCenter() = default;
 
@@ -113,11 +112,11 @@ void MediaStreamCenter::DidStopMediaStreamSource(MediaStreamSource* source) {
     private_->DidStopMediaStreamSource(source);
 }
 
-void MediaStreamCenter::StopLocalMediaStream(const WebMediaStream& web_stream) {
-  MediaStreamDescriptor* stream = web_stream;
-  MediaStreamDescriptorClient* client = stream->Client();
-  if (client)
-    client->StreamEnded();
+void MediaStreamCenter::GetSourceSettings(
+    MediaStreamSource* source,
+    WebMediaStreamTrack::Settings& settings) {
+  if (private_)
+    private_->GetSourceSettings(source, settings);
 }
 
 }  // namespace blink

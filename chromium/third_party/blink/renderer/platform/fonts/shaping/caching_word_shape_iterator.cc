@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/platform/fonts/shaping/caching_word_shape_iterator.h"
 
-#include "third_party/blink/renderer/platform/fonts/shaping/harf_buzz_shaper.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/harfbuzz_shaper.h"
 
 namespace blink {
 
@@ -15,10 +15,8 @@ scoped_refptr<const ShapeResult> CachingWordShapeIterator::ShapeWordWithoutSpaci
   if (cache_entry && cache_entry->shape_result_)
     return cache_entry->shape_result_;
 
-  unsigned word_length = 0;
-  std::unique_ptr<UChar[]> word_text = word_run.NormalizedUTF16(&word_length);
-
-  HarfBuzzShaper shaper(word_text.get(), word_length);
+  const String word_text = word_run.NormalizedUTF16();
+  HarfBuzzShaper shaper(word_text);
   scoped_refptr<const ShapeResult> shape_result =
       shaper.Shape(font, word_run.Direction());
   if (!shape_result)

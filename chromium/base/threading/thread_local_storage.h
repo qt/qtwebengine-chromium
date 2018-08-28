@@ -19,12 +19,20 @@
 #endif
 
 namespace heap_profiling {
-class ScopedAllowLogging;
+class ScopedAllowAlloc;
 }  // namespace heap_profiling
+
+namespace ui {
+class TLSDestructionCheckerForX11;
+}
 
 namespace base {
 
 class SamplingHeapProfiler;
+
+namespace debug {
+class GlobalActivityTracker;
+}  // namespace debug
 
 namespace trace_event {
 class MallocDumpProvider;
@@ -156,7 +164,9 @@ class BASE_EXPORT ThreadLocalStorage {
   friend class base::SamplingHeapProfiler;
   friend class base::internal::ThreadLocalStorageTestInternal;
   friend class base::trace_event::MallocDumpProvider;
-  friend class heap_profiling::ScopedAllowLogging;
+  friend class debug::GlobalActivityTracker;
+  friend class heap_profiling::ScopedAllowAlloc;
+  friend class ui::TLSDestructionCheckerForX11;
   static bool HasBeenDestroyed();
 
   DISALLOW_COPY_AND_ASSIGN(ThreadLocalStorage);

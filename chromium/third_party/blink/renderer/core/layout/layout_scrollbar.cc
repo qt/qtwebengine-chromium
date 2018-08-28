@@ -86,15 +86,24 @@ LayoutScrollbar::~LayoutScrollbar() {
   UpdateScrollbarParts(true);
 }
 
+int LayoutScrollbar::HypotheticalScrollbarThickness(
+    ScrollbarOrientation orientation,
+    const LayoutBox& enclosing_box,
+    const LayoutObject& style_source) {
+  scoped_refptr<ComputedStyle> part_style = style_source.GetUncachedPseudoStyle(
+      PseudoStyleRequest(kPseudoIdScrollbar, nullptr, kScrollbarBGPart),
+      style_source.Style());
+  if (orientation == kHorizontalScrollbar) {
+    return LayoutScrollbarPart::ComputeScrollbarHeight(
+        enclosing_box.ClientHeight().ToInt(), part_style.get());
+  }
+  return LayoutScrollbarPart::ComputeScrollbarWidth(
+      enclosing_box.ClientWidth().ToInt(), part_style.get());
+}
+
 void LayoutScrollbar::Trace(blink::Visitor* visitor) {
   visitor->Trace(style_source_);
   Scrollbar::Trace(visitor);
-}
-
-LayoutBox* LayoutScrollbar::StyleSource() const {
-  return style_source_ && style_source_->GetLayoutObject()
-             ? style_source_->GetLayoutObject()->EnclosingBox()
-             : nullptr;
 }
 
 void LayoutScrollbar::DisconnectFromScrollableArea() {
@@ -141,11 +150,11 @@ void LayoutScrollbar::SetPressedPart(ScrollbarPart part) {
 scoped_refptr<ComputedStyle> LayoutScrollbar::GetScrollbarPseudoStyle(
     ScrollbarPart part_type,
     PseudoId pseudo_id) {
-  if (!StyleSource())
+  if (!style_source_->GetLayoutObject())
     return nullptr;
-
-  return StyleSource()->GetUncachedPseudoStyle(
-      PseudoStyleRequest(pseudo_id, this, part_type), StyleSource()->Style());
+  return style_source_->StyleForPseudoElement(
+      PseudoStyleRequest(pseudo_id, this, part_type),
+      style_source_->GetLayoutObject()->Style());
 }
 
 void LayoutScrollbar::UpdateScrollbarParts(bool destroy) {
@@ -178,7 +187,7 @@ void LayoutScrollbar::UpdateScrollbarParts(bool destroy) {
     SetFrameRect(
         IntRect(Location(), IntSize(is_horizontal ? Width() : new_thickness,
                                     is_horizontal ? new_thickness : Height())));
-    if (LayoutBox* box = StyleSource()) {
+    if (LayoutBox* box = GetScrollableArea()->GetLayoutBox()) {
       if (box->IsLayoutBlock())
         ToLayoutBlock(box)->NotifyScrollbarThicknessChanged();
       box->SetChildNeedsLayout();
@@ -261,7 +270,7 @@ void LayoutScrollbar::UpdateScrollbarPart(ScrollbarPart part_type,
   LayoutScrollbarPart* part_layout_object = parts_.at(part_type);
   if (!part_layout_object && need_layout_object && scrollable_area_) {
     part_layout_object = LayoutScrollbarPart::CreateAnonymous(
-        &StyleSource()->GetDocument(), scrollable_area_, this, part_type);
+        &style_source_->GetDocument(), scrollable_area_, this, part_type);
     parts_.Set(part_type, part_layout_object);
     SetNeedsPaintInvalidation(part_type);
   } else if (part_layout_object && !need_layout_object) {

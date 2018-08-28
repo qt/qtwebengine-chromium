@@ -28,33 +28,38 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
-#include "third_party/blink/renderer/platform/graphics/paint/float_clip_rect.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace blink {
 
+class FloatClipRect;
 class HitTestLocation;
 
-class ClipRect {
+class CORE_EXPORT ClipRect {
   USING_FAST_MALLOC(ClipRect);
 
  public:
-  ClipRect() : has_radius_(false) {}
+  ClipRect();
+  ClipRect(const LayoutRect& rect)
+      : rect_(rect), has_radius_(false), is_infinite_(false) {}
+  ClipRect(const FloatClipRect& rect);
 
-  ClipRect(const LayoutRect& rect) : rect_(rect), has_radius_(false) {}
+  void SetRect(const LayoutRect& rect);
+  const LayoutRect& Rect() const { return rect_; }
+  void SetRect(const FloatClipRect& rect);
 
-  ClipRect(const FloatClipRect& rect)
-      : rect_(rect.Rect()), has_radius_(rect.HasRadius()) {}
-
-  void SetRect(const FloatClipRect& rect) {
-    rect_ = LayoutRect(rect.Rect());
-    has_radius_ = rect.HasRadius();
+  // HasRadius is true if the clip this ClipRect has rounded corners.
+  // The ClipRect does not actually represent the rounded corners; those
+  // are computed as neeeded from the LayoutObject when actually applying the
+  // clip.
+  bool HasRadius() const { return has_radius_; }
+  void SetHasRadius(bool has_radius) {
+    if (IsInfinite())
+      return;
+    has_radius_ = has_radius;
   }
 
-  const LayoutRect& Rect() const { return rect_; }
-
-  bool HasRadius() const { return has_radius_; }
-  void SetHasRadius(bool has_radius) { has_radius_ = has_radius; }
+  bool IsInfinite() const { return is_infinite_; }
 
   bool operator==(const ClipRect& other) const {
     return Rect() == other.Rect() && HasRadius() == other.HasRadius();
@@ -66,12 +71,9 @@ class ClipRect {
     return Rect() != other_rect;
   }
 
-  void Intersect(const LayoutRect& other) { rect_.Intersect(other); }
-  void Intersect(const ClipRect& other) {
-    rect_.Intersect(other.Rect());
-    if (other.HasRadius())
-      has_radius_ = true;
-  }
+  void Intersect(const LayoutRect& other);
+  void Intersect(const ClipRect& other);
+
   void Move(const LayoutSize& size) { rect_.Move(size); }
   void Move(const IntSize& size) { rect_.Move(size); }
   void MoveBy(const LayoutPoint& point) { rect_.MoveBy(point); }
@@ -79,11 +81,14 @@ class ClipRect {
   bool IsEmpty() const { return rect_.IsEmpty(); }
   bool Intersects(const HitTestLocation&) const;
 
+  void Reset();
+
   String ToString() const;
 
  private:
   LayoutRect rect_;
-  bool has_radius_;
+  bool has_radius_ : 1;
+  bool is_infinite_ : 1;
 };
 
 inline ClipRect Intersection(const ClipRect& a, const ClipRect& b) {

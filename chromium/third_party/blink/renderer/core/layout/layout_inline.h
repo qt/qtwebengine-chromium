@@ -34,6 +34,7 @@
 namespace blink {
 
 class LayoutBlockFlow;
+class NGPaintFragment;
 
 // LayoutInline is the LayoutObject associated with display: inline.
 // This is called an "inline box" in CSS 2.1.
@@ -137,6 +138,10 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
     return ToElement(LayoutBoxModelObject::GetNode());
   }
 
+  // True if this is an anonymous inline box for ::first-line that wraps the
+  // whole inline formatting context.
+  bool IsFirstLineAnonymous() const;
+
   LayoutUnit MarginLeft() const final;
   LayoutUnit MarginRight() const final;
   LayoutUnit MarginTop() const final;
@@ -201,9 +206,15 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
                             int,
                             LayoutUnit* extra_width_to_end_of_line) const final;
 
+  // When this LayoutInline doesn't generate line boxes of its own, regenerate
+  // the rects of the line boxes and hit test the rects.
+  // In LayoutNG, |parent_fragment| is non-null, and limits the regenerated
+  // rects to be from descendant fragments of |parent_fragment|.
+  // In legacy, |parent_fragment| is always null, and all rects are regenerated.
   bool HitTestCulledInline(HitTestResult&,
                            const HitTestLocation& location_in_container,
-                           const LayoutPoint& accumulated_offset);
+                           const LayoutPoint& accumulated_offset,
+                           const NGPaintFragment* parent_fragment = nullptr);
 
   LayoutPoint FirstLineBoxTopLeft() const;
 
@@ -275,7 +286,7 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
 
   void UpdateLayout() final { NOTREACHED(); }  // Do nothing for layout()
 
-  void Paint(const PaintInfo&, const LayoutPoint&) const final;
+  void Paint(const PaintInfo&) const final;
 
   bool NodeAtPoint(HitTestResult&,
                    const HitTestLocation& location_in_container,
@@ -326,7 +337,7 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
 
   void ChildBecameNonInline(LayoutObject* child) final;
 
-  void UpdateHitTestResult(HitTestResult&, const LayoutPoint&) final;
+  void UpdateHitTestResult(HitTestResult&, const LayoutPoint&) const final;
 
   void ImageChanged(WrappedImagePtr,
                     CanDeferInvalidation,

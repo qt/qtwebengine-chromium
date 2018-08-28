@@ -13,7 +13,7 @@
 #include "SkWriteBuffer.h"
 
 #if SK_SUPPORT_GPU
-    #include "effects/GrNonlinearColorSpaceXformEffect.h"
+    #include "GrColorSpaceXform.h"
 #endif
 
 void SkToSRGBColorFilter::onAppendStages(SkRasterPipeline* p,
@@ -29,21 +29,18 @@ void SkToSRGBColorFilter::onAppendStages(SkRasterPipeline* p,
         p->append(SkRasterPipeline::from_srgb);
     } else if (fSrcColorSpace->isNumericalTransferFn(&srcFn)) {
         auto copy = alloc->make<SkColorSpaceTransferFn>(srcFn);
-        p->append(SkRasterPipeline::parametric_r, copy);
-        p->append(SkRasterPipeline::parametric_g, copy);
-        p->append(SkRasterPipeline::parametric_b, copy);
+        p->append(SkRasterPipeline::parametric, copy);
     } else {
         SkDEBUGFAIL("Looks like we got a table transfer function here, quite unexpectedly.");
         // TODO: If we really need to handle this, we can, but I don't think Ganesh does.
     }
 
-    // Step 2: Transform to sRGB gamut, without clamping.
-    // TODO: because...
-    float* gamut_transform = alloc->makeArrayDefault<float>(12);
-    (void)append_gamut_transform_noclamp(p,
-                                         gamut_transform,
-                                         fSrcColorSpace.get(),
-                                         SkColorSpace::MakeSRGB().get());
+    // Step 2: Transform to sRGB gamut (without clamping).
+    append_gamut_transform(p,
+                           alloc,
+                           fSrcColorSpace.get(),
+                           SkColorSpace::MakeSRGB().get(),
+                           kPremul_SkAlphaType);
 
     // Step 3: Back to sRGB encoding.
     p->append(SkRasterPipeline::to_srgb);
@@ -71,15 +68,9 @@ void SkToSRGBColorFilter::flatten(SkWriteBuffer& buffer) const {
     buffer.writeDataAsByteArray(fSrcColorSpace->serialize().get());
 }
 
-void SkToSRGBColorFilter::toString(SkString* str) const {
-    // TODO
-    str->append("SkToSRGBColorFilter ");
-}
-
 #if SK_SUPPORT_GPU
 std::unique_ptr<GrFragmentProcessor> SkToSRGBColorFilter::asFragmentProcessor(
         GrContext*, const GrColorSpaceInfo&) const {
-    return GrNonlinearColorSpaceXformEffect::Make(fSrcColorSpace.get(),
-                                                  SkColorSpace::MakeSRGB().get());
+    return GrColorSpaceXformEffect::Make(fSrcColorSpace.get(), SkColorSpace::MakeSRGB().get());
 }
 #endif

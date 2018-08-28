@@ -12,7 +12,6 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/frame/frame.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/modules/webusb/usb_connection_event.h"
@@ -32,8 +31,6 @@ namespace {
 
 const char kFeaturePolicyBlocked[] =
     "Access to the feature \"usb\" is disallowed by feature policy.";
-const char kIframeBlocked[] =
-    "Access to this method is not allowed in embedded frames.";
 const char kNoDeviceSelected[] = "No device selected.";
 
 UsbDeviceFilterPtr ConvertDeviceFilter(const USBDeviceFilter& filter) {
@@ -80,12 +77,13 @@ void USB::Dispose() {
 ScriptPromise USB::getDevices(ScriptState* script_state) {
   if (!IsContextSupported()) {
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kNotSupportedError));
+        script_state,
+        DOMException::Create(DOMExceptionCode::kNotSupportedError));
   }
   if (!IsFeatureEnabled()) {
     return ScriptPromise::RejectWithDOMException(
-        script_state,
-        DOMException::Create(kSecurityError, kFeaturePolicyBlocked));
+        script_state, DOMException::Create(DOMExceptionCode::kSecurityError,
+                                           kFeaturePolicyBlocked));
   }
 
   EnsureDeviceManagerConnection();
@@ -102,18 +100,14 @@ ScriptPromise USB::requestDevice(ScriptState* script_state,
   LocalFrame* frame = GetFrame();
   if (!frame) {
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kNotSupportedError));
+        script_state,
+        DOMException::Create(DOMExceptionCode::kNotSupportedError));
   }
 
-  if (IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kUsb)) {
-    if (!frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kUsb)) {
-      return ScriptPromise::RejectWithDOMException(
-          script_state,
-          DOMException::Create(kSecurityError, kFeaturePolicyBlocked));
-    }
-  } else if (!frame->IsMainFrame()) {
+  if (!frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kUsb)) {
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kSecurityError, kIframeBlocked));
+        script_state, DOMException::Create(DOMExceptionCode::kSecurityError,
+                                           kFeaturePolicyBlocked));
   }
 
   if (!chooser_service_) {
@@ -127,7 +121,7 @@ ScriptPromise USB::requestDevice(ScriptState* script_state,
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
-            kSecurityError,
+            DOMExceptionCode::kSecurityError,
             "Must be handling a user gesture to show a permission request."));
   }
 
@@ -197,10 +191,12 @@ void USB::OnGetPermission(ScriptPromiseResolver* resolver,
 
   EnsureDeviceManagerConnection();
 
-  if (device_manager_ && device_info)
+  if (device_manager_ && device_info) {
     resolver->Resolve(GetOrCreateDevice(std::move(device_info)));
-  else
-    resolver->Reject(DOMException::Create(kNotFoundError, kNoDeviceSelected));
+  } else {
+    resolver->Reject(DOMException::Create(DOMExceptionCode::kNotFoundError,
+                                          kNoDeviceSelected));
+  }
 }
 
 void USB::OnDeviceAdded(UsbDeviceInfoPtr device_info) {
@@ -232,8 +228,10 @@ void USB::OnDeviceManagerConnectionError() {
 
 void USB::OnChooserServiceConnectionError() {
   chooser_service_.reset();
-  for (ScriptPromiseResolver* resolver : chooser_service_requests_)
-    resolver->Reject(DOMException::Create(kNotFoundError, kNoDeviceSelected));
+  for (ScriptPromiseResolver* resolver : chooser_service_requests_) {
+    resolver->Reject(DOMException::Create(DOMExceptionCode::kNotFoundError,
+                                          kNoDeviceSelected));
+  }
   chooser_service_requests_.clear();
 }
 
@@ -270,39 +268,35 @@ void USB::EnsureDeviceManagerConnection() {
 }
 
 bool USB::IsContextSupported() const {
+  // Since WebUSB on Web Workers is in the process of being implemented, we
+  // check here if the runtime flag for the appropriate worker is enabled..
+  // TODO(https://crbug.com/837406): Remove this check once the feature has
+  // shipped.
   ExecutionContext* context = GetExecutionContext();
   if (!context)
     return false;
 
-  if (!(context->IsDedicatedWorkerGlobalScope() ||
-        context->IsSharedWorkerGlobalScope() || context->IsDocument()))
-    return false;
-
-  // Since WebUSB on Web Workers is in the process of being implemented, we
-  // check here if the runtime flag for this feature is enabled.
-  // TODO(https://crbug.com/837406): Remove this check once the feature has
-  // shipped.
-  if (!context->IsDocument() &&
-      !RuntimeEnabledFeatures::WebUSBOnDedicatedAndSharedWorkersEnabled())
-    return false;
+  DCHECK(context->IsDocument() || context->IsDedicatedWorkerGlobalScope() ||
+         context->IsSharedWorkerGlobalScope());
+  DCHECK(!context->IsDedicatedWorkerGlobalScope() ||
+         RuntimeEnabledFeatures::WebUSBOnDedicatedWorkersEnabled());
+  DCHECK(!context->IsSharedWorkerGlobalScope() ||
+         RuntimeEnabledFeatures::WebUSBOnSharedWorkersEnabled());
 
   return true;
 }
 
 bool USB::IsFeatureEnabled() const {
-  // At the moment, FeaturePolicy is not supported in workers, so we skip the
-  // check on workers.
-  // TODO(https://crbug.com/843780): Enable the FeaturePolicy check for the
-  // supported worker contexts once it is available for workers.
-  if (GetExecutionContext()->IsDocument()) {
-    FeaturePolicy* policy =
-        GetExecutionContext()->GetSecurityContext().GetFeaturePolicy();
+  ExecutionContext* context = GetExecutionContext();
+  FeaturePolicy* policy = context->GetSecurityContext().GetFeaturePolicy();
+  // Feature policy is not yet supported in all contexts.
+  if (policy)
     return policy->IsFeatureEnabled(mojom::FeaturePolicyFeature::kUsb);
-  }
-  if (GetExecutionContext()->IsDedicatedWorkerGlobalScope() ||
-      GetExecutionContext()->IsSharedWorkerGlobalScope()) {
+
+  // TODO(https://crbug.com/843780): Enable this check for shared workers.
+  if (context->IsSharedWorkerGlobalScope())
     return true;
-  }
+
   return false;
 }
 

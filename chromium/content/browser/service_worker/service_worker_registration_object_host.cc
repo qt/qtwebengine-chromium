@@ -6,7 +6,7 @@
 
 #include "content/browser/service_worker/service_worker_consts.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
-#include "content/browser/service_worker/service_worker_handle.h"
+#include "content/browser/service_worker/service_worker_object_host.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "net/http/http_util.h"
@@ -17,15 +17,15 @@ namespace content {
 namespace {
 
 // Returns an object info to send over Mojo. The info must be sent immediately.
-// See ServiceWorkerHandle::CreateCompleteObjectInfoToSend() for details.
+// See ServiceWorkerObjectHost::CreateCompleteObjectInfoToSend() for details.
 blink::mojom::ServiceWorkerObjectInfoPtr CreateCompleteObjectInfoToSend(
     ServiceWorkerProviderHost* provider_host,
     ServiceWorkerVersion* version) {
-  base::WeakPtr<ServiceWorkerHandle> service_worker_handle =
-      provider_host->GetOrCreateServiceWorkerHandle(version);
-  if (!service_worker_handle)
+  base::WeakPtr<ServiceWorkerObjectHost> service_worker_object_host =
+      provider_host->GetOrCreateServiceWorkerObjectHost(version);
+  if (!service_worker_object_host)
     return nullptr;
-  return service_worker_handle->CreateCompleteObjectInfoToSend();
+  return service_worker_object_host->CreateCompleteObjectInfoToSend();
 }
 
 }  // anonymous namespace
@@ -212,10 +212,10 @@ void ServiceWorkerRegistrationObjectHost::SetNavigationPreloadHeader(
 
 void ServiceWorkerRegistrationObjectHost::UpdateComplete(
     UpdateCallback callback,
-    ServiceWorkerStatusCode status,
+    blink::ServiceWorkerStatusCode status,
     const std::string& status_message,
     int64_t registration_id) {
-  if (status != SERVICE_WORKER_OK) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     std::string error_message;
     blink::mojom::ServiceWorkerErrorType error_type;
     GetServiceWorkerErrorTypeForRegistration(status, status_message,
@@ -231,8 +231,8 @@ void ServiceWorkerRegistrationObjectHost::UpdateComplete(
 
 void ServiceWorkerRegistrationObjectHost::UnregistrationComplete(
     UnregisterCallback callback,
-    ServiceWorkerStatusCode status) {
-  if (status != SERVICE_WORKER_OK) {
+    blink::ServiceWorkerStatusCode status) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     std::string error_message;
     blink::mojom::ServiceWorkerErrorType error_type;
     GetServiceWorkerErrorTypeForRegistration(status, std::string(), &error_type,
@@ -249,8 +249,8 @@ void ServiceWorkerRegistrationObjectHost::UnregistrationComplete(
 void ServiceWorkerRegistrationObjectHost::DidUpdateNavigationPreloadEnabled(
     bool enable,
     EnableNavigationPreloadCallback callback,
-    ServiceWorkerStatusCode status) {
-  if (status != SERVICE_WORKER_OK) {
+    blink::ServiceWorkerStatusCode status) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     std::move(callback).Run(
         blink::mojom::ServiceWorkerErrorType::kUnknown,
         std::string(ServiceWorkerConsts::kEnableNavigationPreloadErrorPrefix) +
@@ -267,8 +267,8 @@ void ServiceWorkerRegistrationObjectHost::DidUpdateNavigationPreloadEnabled(
 void ServiceWorkerRegistrationObjectHost::DidUpdateNavigationPreloadHeader(
     const std::string& value,
     SetNavigationPreloadHeaderCallback callback,
-    ServiceWorkerStatusCode status) {
-  if (status != SERVICE_WORKER_OK) {
+    blink::ServiceWorkerStatusCode status) {
+  if (status != blink::ServiceWorkerStatusCode::kOk) {
     std::move(callback).Run(
         blink::mojom::ServiceWorkerErrorType::kUnknown,
         std::string(

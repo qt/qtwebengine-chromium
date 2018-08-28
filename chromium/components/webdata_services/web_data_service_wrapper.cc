@@ -14,6 +14,7 @@
 #include "base/task_scheduler/post_task.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/webdata/autocomplete_sync_bridge.h"
+#include "components/autofill/core/browser/webdata/autofill_profile_sync_bridge.h"
 #include "components/autofill/core/browser/webdata/autofill_profile_syncable_service.h"
 #include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/autofill/core/browser/webdata/autofill_wallet_metadata_syncable_service.h"
@@ -40,6 +41,9 @@
 
 namespace {
 
+// TODO(jkrcal): Rename this function when the last webdata sync type get
+// converted to USS, e.g. to InitSyncBridgesOnDBSequence(). Check also other
+// related functions.
 void InitSyncableServicesOnDBSequence(
     scoped_refptr<base::SingleThreadTaskRunner> db_task_runner,
     const syncer::SyncableService::StartSyncFlare& sync_flare,
@@ -54,17 +58,22 @@ void InitSyncableServicesOnDBSequence(
   autofill::AutocompleteSyncBridge::CreateForWebDataServiceAndBackend(
       autofill_web_data.get(), autofill_backend);
 
-  autofill::AutofillProfileSyncableService::CreateForWebDataServiceAndBackend(
-      autofill_web_data.get(), autofill_backend, app_locale);
+  if (base::FeatureList::IsEnabled(switches::kSyncUSSAutofillProfile)) {
+    autofill::AutofillProfileSyncBridge::CreateForWebDataServiceAndBackend(
+        app_locale, autofill_backend, autofill_web_data.get());
+  } else {
+    autofill::AutofillProfileSyncableService::CreateForWebDataServiceAndBackend(
+        autofill_web_data.get(), autofill_backend, app_locale);
+    autofill::AutofillProfileSyncableService::FromWebDataService(
+        autofill_web_data.get())
+        ->InjectStartSyncFlare(sync_flare);
+  }
+
   autofill::AutofillWalletSyncableService::CreateForWebDataServiceAndBackend(
       autofill_web_data.get(), autofill_backend, app_locale);
   autofill::AutofillWalletMetadataSyncableService::
       CreateForWebDataServiceAndBackend(autofill_web_data.get(),
                                         autofill_backend, app_locale);
-
-  autofill::AutofillProfileSyncableService::FromWebDataService(
-      autofill_web_data.get())
-      ->InjectStartSyncFlare(sync_flare);
   autofill::AutofillWalletSyncableService::FromWebDataService(
       autofill_web_data.get())
       ->InjectStartSyncFlare(sync_flare);
@@ -87,63 +96,76 @@ WebDataServiceWrapper::WebDataServiceWrapper(
   auto db_task_runner = base::CreateSingleThreadTaskRunnerWithTraits(
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
        base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
-  web_database_ = new WebDatabaseService(path, ui_task_runner, db_task_runner);
+  profile_database_ =
+      new WebDatabaseService(path, ui_task_runner, db_task_runner);
 
   // All tables objects that participate in managing the database must
   // be added here.
-  web_database_->AddTable(std::make_unique<autofill::AutofillTable>());
-  web_database_->AddTable(std::make_unique<KeywordTable>());
+  profile_database_->AddTable(std::make_unique<autofill::AutofillTable>());
+  profile_database_->AddTable(std::make_unique<KeywordTable>());
   // TODO(mdm): We only really need the LoginsTable on Windows for IE7 password
   // access, but for now, we still create it on all platforms since it deletes
   // the old logins table. We can remove this after a while, e.g. in M22 or so.
-  web_database_->AddTable(std::make_unique<LoginsTable>());
-  web_database_->AddTable(std::make_unique<TokenServiceTable>());
+  profile_database_->AddTable(std::make_unique<LoginsTable>());
+  profile_database_->AddTable(std::make_unique<TokenServiceTable>());
 #if !defined(OS_IOS)
-  web_database_->AddTable(
+  profile_database_->AddTable(
       std::make_unique<payments::PaymentMethodManifestTable>());
-  web_database_->AddTable(
+  profile_database_->AddTable(
       std::make_unique<payments::WebAppManifestSectionTable>());
 #endif
-  web_database_->LoadDatabase();
+  profile_database_->LoadDatabase();
 
-  autofill_web_data_ = new autofill::AutofillWebDataService(
-      web_database_, ui_task_runner, db_task_runner,
+  profile_autofill_web_data_ = new autofill::AutofillWebDataService(
+      profile_database_, ui_task_runner, db_task_runner,
       base::Bind(show_error_callback, ERROR_LOADING_AUTOFILL));
-  autofill_web_data_->Init();
+  profile_autofill_web_data_->Init();
 
   keyword_web_data_ = new KeywordWebDataService(
-      web_database_, ui_task_runner,
+      profile_database_, ui_task_runner,
       base::Bind(show_error_callback, ERROR_LOADING_KEYWORD));
   keyword_web_data_->Init();
 
   token_web_data_ =
-      new TokenWebData(web_database_, ui_task_runner, db_task_runner,
+      new TokenWebData(profile_database_, ui_task_runner, db_task_runner,
                        base::Bind(show_error_callback, ERROR_LOADING_TOKEN));
   token_web_data_->Init();
 
 #if defined(OS_WIN)
   password_web_data_ = new PasswordWebDataService(
-      web_database_, ui_task_runner,
+      profile_database_, ui_task_runner,
       base::Bind(show_error_callback, ERROR_LOADING_PASSWORD));
   password_web_data_->Init();
 #endif
 
 #if !defined(OS_IOS)
   payment_manifest_web_data_ = new payments::PaymentManifestWebDataService(
-      web_database_,
+      profile_database_,
       base::Bind(show_error_callback, ERROR_LOADING_PAYMENT_MANIFEST),
       ui_task_runner);
 #endif
 
-  autofill_web_data_->GetAutofillBackend(
+  profile_autofill_web_data_->GetAutofillBackend(
       base::Bind(&InitSyncableServicesOnDBSequence, db_task_runner, flare,
-                 autofill_web_data_, context_path, application_locale));
+                 profile_autofill_web_data_, context_path, application_locale));
+
+  account_database_ =
+      new WebDatabaseService(base::FilePath(WebDatabase::kInMemoryPath),
+                             ui_task_runner, db_task_runner);
+  account_database_->AddTable(std::make_unique<autofill::AutofillTable>());
+  account_database_->LoadDatabase();
+
+  account_autofill_web_data_ = new autofill::AutofillWebDataService(
+      account_database_, ui_task_runner, db_task_runner,
+      base::Bind(show_error_callback, ERROR_LOADING_ACCOUNT_AUTOFILL));
+  account_autofill_web_data_->Init();
 }
 
 WebDataServiceWrapper::~WebDataServiceWrapper() {}
 
 void WebDataServiceWrapper::Shutdown() {
-  autofill_web_data_->ShutdownOnUISequence();
+  profile_autofill_web_data_->ShutdownOnUISequence();
+  account_autofill_web_data_->ShutdownOnUISequence();
   keyword_web_data_->ShutdownOnUISequence();
   token_web_data_->ShutdownOnUISequence();
 
@@ -155,12 +177,18 @@ void WebDataServiceWrapper::Shutdown() {
   payment_manifest_web_data_->ShutdownOnUISequence();
 #endif
 
-  web_database_->ShutdownDatabase();
+  profile_database_->ShutdownDatabase();
+  account_database_->ShutdownDatabase();
 }
 
 scoped_refptr<autofill::AutofillWebDataService>
-WebDataServiceWrapper::GetAutofillWebData() {
-  return autofill_web_data_.get();
+WebDataServiceWrapper::GetProfileAutofillWebData() {
+  return profile_autofill_web_data_.get();
+}
+
+scoped_refptr<autofill::AutofillWebDataService>
+WebDataServiceWrapper::GetAccountAutofillWebData() {
+  return account_autofill_web_data_.get();
 }
 
 scoped_refptr<KeywordWebDataService>

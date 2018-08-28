@@ -17,7 +17,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_priority.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loading_log.h"
-#include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/weborigin/origin_access_entry.h"
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
@@ -87,6 +86,21 @@ const char* GetDestinationFromContext(WebURLRequest::RequestContext context) {
   return "";
 }
 
+MessageSource ConvertLogSourceToMessageSource(FetchContext::LogSource source) {
+  // When LogSource is extended, this switch statement should be modified to
+  // convert LogSource to blink::MessageSource.
+  switch (source) {
+    case FetchContext::kJSSource:
+      return kJSMessageSource;
+    case FetchContext::kSecuritySource:
+      return kSecurityMessageSource;
+    case FetchContext::kOtherSource:
+      return kOtherMessageSource;
+  }
+  NOTREACHED();
+  return kOtherMessageSource;
+}
+
 }  // namespace
 
 void BaseFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
@@ -95,8 +109,10 @@ void BaseFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
   if (!is_main_resource) {
     if (!request.DidSetHTTPReferrer()) {
       request.SetHTTPReferrer(SecurityPolicy::GenerateReferrer(
-          GetReferrerPolicy(), request.Url(), GetOutgoingReferrer()));
-      request.SetHTTPOriginIfNeeded(GetSecurityOrigin());
+          GetFetchClientSettingsObject()->GetReferrerPolicy(), request.Url(),
+          GetFetchClientSettingsObject()->GetOutgoingReferrer()));
+      request.SetHTTPOriginIfNeeded(
+          GetFetchClientSettingsObject()->GetSecurityOrigin());
     } else {
       DCHECK_EQ(SecurityPolicy::GenerateReferrer(request.GetReferrerPolicy(),
                                                  request.Url(),
@@ -131,10 +147,9 @@ void BaseFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
         }
       }
 
-      String value = String::Format(
-          "cause=%s, destination=%s, target=subresource, site=%s",
-          request.HasUserGesture() ? "user-activation" : "forced",
-          destination_value, site_value);
+      String value =
+          String::Format("destination=%s, target=subresource, site=%s",
+                         destination_value, site_value);
       request.AddHTTPHeaderField("Sec-Metadata", AtomicString(value));
     }
   }
@@ -159,22 +174,16 @@ base::Optional<ResourceRequestBlockedReason> BaseFetchContext::CanRequest(
   return blocked_reason;
 }
 
-void BaseFetchContext::AddWarningConsoleMessage(const String& message,
-                                                LogSource source) const {
-  // When LogSource is extended, this DCHECK should be replaced with a logic to
-  // convert LogSource to blink::MessageSource.
-  DCHECK_EQ(source, kJSSource);
-  AddConsoleMessage(
-      ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel, message));
+void BaseFetchContext::AddInfoConsoleMessage(const String& message,
+                                             LogSource source) const {
+  AddConsoleMessage(ConsoleMessage::Create(
+      ConvertLogSourceToMessageSource(source), kInfoMessageLevel, message));
 }
 
 void BaseFetchContext::AddErrorConsoleMessage(const String& message,
                                               LogSource source) const {
-  // When LogSource is extended, this DCHECK should be replaced with a logic to
-  // convert LogSource to blink::MessageSource.
-  DCHECK_EQ(source, kJSSource);
-  AddConsoleMessage(
-      ConsoleMessage::Create(kJSMessageSource, kErrorMessageLevel, message));
+  AddConsoleMessage(ConsoleMessage::Create(
+      ConvertLogSourceToMessageSource(source), kErrorMessageLevel, message));
 }
 
 bool BaseFetchContext::IsAdResource(
@@ -209,15 +218,6 @@ void BaseFetchContext::PrintAccessDeniedMessage(const KURL& url) const {
 
   AddConsoleMessage(ConsoleMessage::Create(kSecurityMessageSource,
                                            kErrorMessageLevel, message));
-}
-
-void BaseFetchContext::AddCSPHeaderIfNecessary(Resource::Type type,
-                                               ResourceRequest& request) {
-  const ContentSecurityPolicy* csp = GetContentSecurityPolicy();
-  if (!csp)
-    return;
-  if (csp->ShouldSendCSPHeader(type))
-    request.AddHTTPHeaderField("CSP", "active");
 }
 
 base::Optional<ResourceRequestBlockedReason>
@@ -408,33 +408,6 @@ BaseFetchContext::CanRequestInternal(
       return ResourceRequestBlockedReason::kSubresourceFilter;
     }
   }
-
-  return base::nullopt;
-}
-
-base::Optional<ResourceRequestBlockedReason>
-BaseFetchContext::CheckResponseNosniff(
-    WebURLRequest::RequestContext request_context,
-    const ResourceResponse& response) const {
-  bool sniffing_allowed =
-      ParseContentTypeOptionsHeader(response.HttpHeaderField(
-          HTTPNames::X_Content_Type_Options)) != kContentTypeOptionsNosniff;
-  if (sniffing_allowed)
-    return base::nullopt;
-
-  String mime_type = response.HttpContentType();
-  if (request_context == WebURLRequest::kRequestContextStyle &&
-      !MIMETypeRegistry::IsSupportedStyleSheetMIMEType(mime_type)) {
-    AddConsoleMessage(ConsoleMessage::Create(
-        kSecurityMessageSource, kErrorMessageLevel,
-        "Refused to apply style from '" + response.Url().ElidedString() +
-            "' because its MIME type ('" + mime_type + "') " +
-            "is not a supported stylesheet MIME type, and strict MIME checking "
-            "is enabled."));
-    return ResourceRequestBlockedReason::kContentType;
-  }
-  // TODO(mkwst): Move the 'nosniff' bit of 'AllowedByNosniff::MimeTypeAsScript'
-  // here alongside the style checks, and put its use counters somewhere else.
 
   return base::nullopt;
 }

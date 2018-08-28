@@ -13,18 +13,23 @@
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/optional.h"
+#include "build/build_config.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "net/http/http_auth_preferences.h"
 #include "net/log/net_log.h"
 #include "services/network/keepalive_statistics_recorder.h"
 #include "services/network/network_change_manager.h"
-#include "services/network/network_service.h"
+#include "services/network/network_quality_estimator_manager.h"
 #include "services/network/public/mojom/network_change_manager.mojom.h"
+#include "services/network/public/mojom/network_quality_estimator_manager.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/service.h"
 
 namespace net {
 class HostResolver;
+class HttpAuthHandlerFactory;
 class LoggingNetworkChangeObserver;
 class NetworkQualityEstimator;
 class URLRequestContext;
@@ -44,7 +49,7 @@ class URLRequestContextBuilderMojo;
 
 class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
     : public service_manager::Service,
-      public network::mojom::NetworkService {
+      public mojom::NetworkService {
  public:
   // |net_log| is an optional shared NetLog, which will be used instead of the
   // service's own NetLog. It must outlive the NetworkService.
@@ -73,6 +78,12 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
       std::unique_ptr<URLRequestContextBuilderMojo> builder,
       net::URLRequestContext** url_request_context);
 
+  // Sets the HostResolver used by the NetworkService. Must be called before any
+  // NetworkContexts have been created. Used in the legacy path only.
+  // TODO(mmenke): Remove once the NetworkService can create a correct
+  // HostResolver for ChromeOS.
+  void SetHostResolver(std::unique_ptr<net::HostResolver> host_resolver);
+
   // Allows late binding if the mojo request wasn't specified in the
   // constructor.
   void Bind(mojom::NetworkServiceRequest request);
@@ -84,7 +95,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   // TODO(https://crbug.com/767450): Make it so NetworkService can always create
   // its own NetLog, instead of sharing one.
   static std::unique_ptr<NetworkService> Create(
-      network::mojom::NetworkServiceRequest request,
+      mojom::NetworkServiceRequest request,
       net::NetLog* net_log = nullptr);
 
   static std::unique_ptr<NetworkService> CreateForTesting();
@@ -105,20 +116,37 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   void SetClient(mojom::NetworkServiceClientPtr client) override;
   void CreateNetworkContext(mojom::NetworkContextRequest request,
                             mojom::NetworkContextParamsPtr params) override;
+  void ConfigureStubHostResolver(
+      bool stub_resolver_enabled,
+      base::Optional<std::vector<network::mojom::DnsOverHttpsServerPtr>>
+          dns_over_https_servers) override;
   void DisableQuic() override;
+  void SetUpHttpAuth(
+      mojom::HttpAuthStaticParamsPtr http_auth_static_params) override;
+  void ConfigureHttpAuthPrefs(
+      mojom::HttpAuthDynamicParamsPtr http_auth_dynamic_params) override;
   void SetRawHeadersAccess(uint32_t process_id, bool allow) override;
   void GetNetworkChangeManager(
       mojom::NetworkChangeManagerRequest request) override;
+  void GetNetworkQualityEstimatorManager(
+      mojom::NetworkQualityEstimatorManagerRequest request) override;
   void GetTotalNetworkUsages(
       mojom::NetworkService::GetTotalNetworkUsagesCallback callback) override;
   void UpdateSignedTreeHead(const net::ct::SignedTreeHead& sth) override;
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  void SetCryptConfig(mojom::CryptConfigPtr crypt_config) override;
+#endif
+
+  // Returns the shared HttpAuthHandlerFactory for the NetworkService, creating
+  // one if needed.
+  net::HttpAuthHandlerFactory* GetHttpAuthHandlerFactory();
 
   bool quic_disabled() const { return quic_disabled_; }
   bool HasRawHeadersAccess(uint32_t process_id) const;
 
   mojom::NetworkServiceClient* client() { return client_.get(); }
   net::NetworkQualityEstimator* network_quality_estimator() {
-    return network_quality_estimator_.get();
+    return network_quality_estimator_manager_->GetNetworkQualityEstimator();
   }
   net::NetLog* net_log() const;
   KeepaliveStatisticsRecorder* keepalive_statistics_recorder() {
@@ -131,11 +159,17 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 
   certificate_transparency::STHReporter* sth_reporter();
 
+  bool os_crypt_config_set() const { return os_crypt_config_set_; }
+
+  static NetworkService* GetNetworkServiceForTesting();
+
  private:
   // service_manager::Service implementation.
   void OnBindInterface(const service_manager::BindSourceInfo& source_info,
                        const std::string& interface_name,
                        mojo::ScopedMessagePipeHandle interface_pipe) override;
+
+  void DestroyNetworkContexts();
 
   // Called by a NetworkContext when its mojo pipe is closed. Deletes the
   // context.
@@ -161,11 +195,15 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 
   mojo::Binding<mojom::NetworkService> binding_;
 
-  std::unique_ptr<net::NetworkQualityEstimator> network_quality_estimator_;
+  std::unique_ptr<NetworkQualityEstimatorManager>
+      network_quality_estimator_manager_;
 
   std::unique_ptr<net::HostResolver> host_resolver_;
-
   std::unique_ptr<NetworkUsageAccumulator> network_usage_accumulator_;
+
+  // Must be above |http_auth_handler_factory_|, since it depends on this.
+  net::HttpAuthPreferences http_auth_preferences_;
+  std::unique_ptr<net::HttpAuthHandlerFactory> http_auth_handler_factory_;
 
   // NetworkContexts created by CreateNetworkContext(). They call into the
   // NetworkService when their connection is closed so that it can delete
@@ -188,6 +226,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   std::set<uint32_t> processes_with_raw_headers_access_;
 
   bool quic_disabled_ = false;
+
+  bool os_crypt_config_set_ = false;
 
   std::unique_ptr<certificate_transparency::STHDistributor> sth_distributor_;
 

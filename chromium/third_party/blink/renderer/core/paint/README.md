@@ -42,7 +42,7 @@ are treated in different ways during painting:
         elements because `z-index:auto` and `z-index:0` are considered equal for
         stacking context sorting and they may interleave by DOM order.
 
-        The difference of a stacked element of this type from a real stacking 
+        The difference of a stacked element of this type from a real stacking
         context is that it doesn't manage z-ordering of stacked descendants.
         These descendants are managed by the parent stacking context of this
         stacked element.
@@ -113,52 +113,49 @@ and associated display items).
 At the time of writing, there are three operation modes that are switched by
 `RuntimeEnabledFeatures`.
 
-### SlimmingPaintV1 (a.k.a. SPv1, SPv1.5, old-world compositing)
 
-This is the default operation mode. In this mode, layerization runs before
-pre-paint and paint. `PaintLayerCompositor` and `CompositedLayerMapping` use
-layout and style information to determine which subtrees of the `PaintLayer`
-tree should be pulled out to paint in its own layer, this is also known as
-'being composited'. Transforms, clips, and effects enclosing the subtree are
-applied as `GraphicsLayer` parameters.
+### SlimmingPaintV175 (a.k.a. SPv1.75)
 
-Then during pre-paint, a property tree is generated for fast calculating
-paint location and visual rects of each `LayoutObject` on their backing layer,
-for invalidation purposes.
+This mode is for incrementally shipping completed features from SPv2. SPv1.75
+reuses layerization from SPv1, but will cherrypick property-tree-based paint
+from SPv2. Meta display items are abandoned in favor of property tree. Each
+drawable GraphicsLayer's layer state will be computed by the property tree
+builder. During paint, each display item will be associated with a property
+tree state. At the end of paint, meta display items will be generated from
+the state differences between the chunk and the layer.
 
-During paint, the paint function of each `GraphicsLayer` created by
-`CompositedLayerMapping` will be invoked, which then calls into the painter
-of each `PaintLayer` subtree. The painter then outputs a list of display
-items which may be drawing, or meta display items that represents non-composited
-transforms, clips and effects.
-
+```
+from layout
   |
-  | from layout
   v
 +------------------------------+
-| LayoutObject/PaintLayer tree |
-+------------------------------+
-  |
-  | PaintLayerCompositor::UpdateIfNeeded()
-  |   CompositingInputsUpdater::Update()
-  |   CompositingLayerAssigner::Assign()
-  |   GraphicsLayerUpdater::Update()
-  |   GraphicsLayerTreeBuilder::Rebuild()
-  v
-+--------------------+
-| GraphicsLayer tree |
-+--------------------+
-  |   |
-  |   | LocalFrameView::PaintTree()
-  |   |   LocalFrameView::PaintGraphicsLayerRecursively()
-  |   |     GraphicsLayer::Paint()
-  |   |       CompositedLayerMapping::PaintContents()
-  |   |         PaintLayerPainter::PaintLayerContents()
-  |   |           ObjectPainter::Paint()
-  |   v
-  | +-----------------+
-  | | DisplayItemList |
-  | +-----------------+
+| LayoutObject/PaintLayer tree |-----------+
++------------------------------+           |
+  |                                        |
+  | PaintLayerCompositor::UpdateIfNeeded() |
+  |   CompositingInputsUpdater::Update()   |
+  |   CompositingLayerAssigner::Assign()   |
+  |   GraphicsLayerUpdater::Update()       | PrePaintTreeWalk::Walk()
+  |   GraphicsLayerTreeBuilder::Rebuild()  |   PaintPropertyTreeBuider::UpdatePropertiesForSelf()
+  v                                        |
++--------------------+                   +------------------+
+| GraphicsLayer tree |<------------------|  Property trees  |
++--------------------+                   +------------------+
+  |   |                                    |              |
+  |   |<-----------------------------------+              |
+  |   | LocalFrameView::PaintTree()                       |
+  |   |   LocalFrameView::PaintGraphicsLayerRecursively() |
+  |   |     GraphicsLayer::Paint()                        |
+  |   |       CompositedLayerMapping::PaintContents()     |
+  |   |         PaintLayerPainter::PaintLayerContents()   |
+  |   |           ObjectPainter::Paint()                  |
+  |   v                                                   |
+  | +---------------------------------+                   |
+  | | DisplayItemList/PaintChunk list |                   |
+  | +---------------------------------+                   |
+  |   |                                                   |
+  |   |<--------------------------------------------------+
+  |   | PaintChunksToCcLayer::Convert()
   |   |
   |   | WebContentLayer shim
   v   v
@@ -168,6 +165,139 @@ transforms, clips and effects.
   |
   | to compositor
   v
+```
+
+#### SPv1 compositing algorithm
+
+The SPv1 compositing system chooses which `LayoutObject`s paint into their
+own composited backing texture. This is called "having a compositing trigger".
+These textures correspond to GraphicsLayers. There are also additional
+`GraphicsLayer`s which represent property tree-related effects.
+
+All elements which do not have a compositing trigger paint into the texture
+of the nearest `LayoutObject`with a compositing trigger on its
+*compositing container chain* (except for squashed layers; see below). For
+historical, practical and implementation detail reasons, only `LayoutObject`s
+with `PaintLayer`s can have a compositing trigger. See crbug.com/370604 for a
+bug tracking this limitation, which is often referred to as the "fundamental
+compositing bug".
+
+The various compositing triggers are listed
+[here](../../platform/graphics/compositing_reasons.h).
+They fall in to several categories:
+1. Direct reasons due to CSS style (see `CompositingReason::kComboAllDirectStyleDeterminedReasons`)
+2. Direct reasons due to other conditions (see `CompositingReason::kComboAllDirectNonStyleDeterminedReasons`)
+3. Composited scrolling-dependent reasons (see `CompositingReason::kComboAllCompositedScrollingDeterminedReasons`)
+4. Composited descendant-dependent reasons (see `CompositingReason::kComboCompositedDescendants`)
+5. Overlap-dependent reasons (See `CompositingReasons::kComboSquashableReasons`)
+
+The triggers have no effect unless `PaintLayerCompositor::CanBeComposited`
+returns true.
+
+Category (1) always triggers compositing of a `LayoutObject` based on its own
+style. Category (2) triggers based on the `LayoutObject`'s style, its DOM
+ancestors, and whether it is a certain kind of frame root. Category (3)
+triggers based on whether composited scrolling applies to the `LayoutObject`,
+or the `LayoutObject` moves relative to a composited scroller (position: fixed
+or position: sticky). Category (4) triggers if there are any stacking
+descendants of the `LayoutObject` that end up composited. Category 5 triggers
+if the `LayoutObject` paints after and overlaps (or may overlap) another
+composited layer.
+
+Note that composited scrolling is special. Several ways it is special:
+ * Composited descendants do _not_ necessarily cause composited scrolling of an
+ancestor.
+ * The presence of LCD text prevents composited scrolling in the
+absence of other overriding triggers.
+ * Local frame roots always use
+composited scrolling if they have overflow.
+ * Non-local frame roots use
+composited scrolling if they have overflow and any composited descendants.
+ * Composited scrolling is indicated by a bit on PaintLayerScrollableArea, not
+ a direct compositing reason. This bit is then transformed into a compositing
+ reason from category (3) during the CompositingRequirementsUpdater
+
+Note that overlap triggers have two special behaviors:
+ * Any `LayoutObject`
+which may overlap a `LayoutObject` that uses composited scrolling or a
+transform animation, paints after it, and scrolls with respect to it, receives
+an overlap trigger. In some cases this trigger is too aggressive.
+ * Inline CSS
+transform is treated as if it was a transform animation. (This is a heuristic
+to speed up the compositing step but leads to more composited layers.)
+
+The sequence of work during the `DocumentLifecycle` to compute these triggers
+is as follows:
+
+ * `kInStyleRecalc`: compute (1) and most of (4) by calling
+`CompositingReasonFinder::PotentialCompositingReasonsFromStyle` and caching
+the result on `PaintLayer`, accessible via
+`PaintLayer::PotentialCompositingReasonsFromStyle`. Dirty bits in
+`StyleDifference` determine whether this has to be re-computed on a particular
+lifecycle update.
+ * `kInCompositingUpdate`: compute (2) `CompositingInputsUpdater`. Also
+ set the composited scrolling bit on `PaintLayerScrollableArea` if applicable.
+ * `kCompositingInputsClean`: compute (3), the rest of (4), and (5), in
+`CompositingRequirementsUpdater`
+
+### BlinkGenPropertyTrees
+
+This mode is for incrementally shipping completed features from SPv2. It is
+based on SPv1.75 and starts sending a layer list and property trees directly to
+the compositor. BlinkGenPropertyTrees still uses the GraphicsLayers from SPv1.75
+and plugs them in as foreign layers to the SPv2 compositor
+(PaintArtifactCompositor).
+
+```
+from layout
+  |
+  v
++------------------------------+
+| LayoutObject/PaintLayer tree |-----------+
++------------------------------+           |
+  |                                        |
+  | PaintLayerCompositor::UpdateIfNeeded() |
+  |   CompositingInputsUpdater::Update()   |
+  |   CompositingLayerAssigner::Assign()   |
+  |   GraphicsLayerUpdater::Update()       | PrePaintTreeWalk::Walk()
+  |   GraphicsLayerTreeBuilder::Rebuild()  |   PaintPropertyTreeBuider::UpdatePropertiesForSelf()
+  v                                        |
++--------------------+                   +------------------+
+| GraphicsLayer tree |<------------------|  Property trees  |
++--------------------+                   +------------------+
+      |                                    |              |
+      |<-----------------------------------+              |
+      | LocalFrameView::PaintTree()                       |
+      |   LocalFrameView::PaintGraphicsLayerRecursively() |
+      |     GraphicsLayer::Paint()                        |
+      |       CompositedLayerMapping::PaintContents()     |
+      |         PaintLayerPainter::PaintLayerContents()   |
+      |           ObjectPainter::Paint()                  |
+      v                                                   |
+    +---------------------------------+                   |
+    | DisplayItemList/PaintChunk list |                   |
+    +---------------------------------+                   |
+      |                                                   |
+      |<--------------------------------------------------+
+      | PaintChunksToCcLayer::Convert()                   |
+      v                                                   |
++----------------+                                        |
+| Foreign layers |                                        |
++----------------+                                        |
+  |                                                       |
+  |    LocalFrameView::PushPaintArtifactToCompositor()    |
+  |         PaintArtifactCompositor::Update()             |
+  +--------------------+       +--------------------------+
+                       |       |
+                       v       v
+        +----------------+  +-----------------------+
+        | cc::Layer list |  |   cc property trees   |
+        +----------------+  +-----------------------+
+                |              |
+  +-------------+--------------+
+  | to compositor
+  v
+```
 
 ### SlimmingPaintV2 (a.k.a. SPv2)
 
@@ -183,8 +313,9 @@ Adjacent display items having the same property tree state will be grouped as
 composited are converted into cc property nodes, while non-composited property
 nodes are converted into meta display items by `PaintChunksToCcLayer`.
 
+```
+from layout
   |
-  | from layout
   v
 +------------------------------+
 | LayoutObject/PaintLayer tree |
@@ -225,72 +356,18 @@ nodes are converted into meta display items by `PaintChunksToCcLayer`.
   +------------------+
   | to compositor
   v
-
-### SlimmingPaintV175 (a.k.a. SPv1.75)
-
-This mode is for incrementally shipping completed features from SPv2. It is
-numbered 1.75 because invalidation using property trees was called SPv1.5,
-which is now a part of SPv1. SPv1.75 will again replace SPv1 once completed.
-
-SPv1.75 reuses layerization from SPv1, but will cherrypick property-tree-based
-paint from SPv2. Meta display items are abandoned in favor of property tree.
-Each drawable GraphicsLayer's layer state will be computed by the property tree
-builder. During paint, each display item will be associated with a property
-tree state. At the end of paint, meta display items will be generated from
-the state differences between the chunk and the layer.
-
-  |
-  | from layout
-  v
-+------------------------------+
-| LayoutObject/PaintLayer tree |-----------+
-+------------------------------+           |
-  |                                        |
-  | PaintLayerCompositor::UpdateIfNeeded() |
-  |   CompositingInputsUpdater::Update()   |
-  |   CompositingLayerAssigner::Assign()   |
-  |   GraphicsLayerUpdater::Update()       | PrePaintTreeWalk::Walk()
-  |   GraphicsLayerTreeBuilder::Rebuild()  |   PaintPropertyTreeBuider::UpdatePropertiesForSelf()
-  v                                        |
-+--------------------+                   +------------------+
-| GraphicsLayer tree |<------------------|  Property trees  |
-+--------------------+                   +------------------+
-  |   |                                    |              |
-  |   |<-----------------------------------+              |
-  |   | LocalFrameView::PaintTree()                       |
-  |   |   LocalFrameView::PaintGraphicsLayerRecursively() |
-  |   |     GraphicsLayer::Paint()                        |
-  |   |       CompositedLayerMapping::PaintContents()     |
-  |   |         PaintLayerPainter::PaintLayerContents()   |
-  |   |           ObjectPainter::Paint()                  |
-  |   v                                                   |
-  | +---------------------------------+                   |
-  | | DisplayItemList/PaintChunk list |                   |
-  | +---------------------------------+                   |
-  |   |                                                   |
-  |   |<--------------------------------------------------+
-  |   | PaintChunksToCcLayer::Convert()
-  |   |
-  |   | WebContentLayer shim
-  v   v
-+----------------+
-| cc::Layer tree |
-+----------------+
-  |
-  | to compositor
-  v
+```
 
 ### Comparison of the three modes
 
-                          | SPv1               | SPv175             | SPv2
---------------------------+--------------------+--------------------+-------------
-REF::SPv175Enabled        | false              | true               | true
-REF::SPv2Enabled          | false              | false              | true
-Property tree             | without effects    | full               | full
-Paint chunks              | no                 | yes                | yes
-Layerization              | PLC/CLM            | PLC/CLM            | PAC
-Non-composited properties | meta items         | PC2CL              | PC2CL
-Raster invalidation       | LayoutObject-based | LayoutObject-based | chunk-based
+```
+                                 | SPv175             | BlinkGenPropertyTrees | SPv2
+---------------------------------+--------------------+-----------------------+-------
+REF::BlinkGenPropertyTreesEnabled| false              | true                  | false
+REF::SPv2Enabled                 | false              | false                 | true
+Layerization                     | PLC/CLM            | PLC/CLM               | PAC
+cc property tree builder         | on                 | off                   | off
+```
 
 ## PaintInvalidation (Deprecated by [PrePaint](#PrePaint))
 
@@ -321,7 +398,7 @@ is created for the root `LayoutView`. During the tree walk, one
 information to provide O(1) complexity access to them if possible:
 
 *   Paint invalidation container: Since as indicated by the definitions in
-    [Glossaries](#Other glossaries), the paint invalidation container for
+    [Glossaries](#other-glossaries), the paint invalidation container for
     stacked objects can differ from normal objects, we have to track both
     separately. Here is an example:
 
@@ -528,3 +605,32 @@ needs all paint phases that its container self-painting layer needs.
 We could update the `NeedsPaintPhaseXXX` flags in a separate tree walk, but that
 would regress performance of the first paint. For slimming paint v2, we can
 update the flags during the pre-painting tree walk to simplify the logics.
+
+### Hit test painting
+
+Hit testing is done in paint-order. The |PaintTouchActionRects| flag enables a
+mode where hit test display items are emitted in the background phase of
+painting. Hit test display items are produced even if there is no painted
+content.
+
+### PaintNG
+
+[LayoutNG](../layout/ng/README.md]) is a project that will change how Layout
+generates geometry/style information for painting. Instead of modifying
+LayoutObjects, LayoutNG will generate an NGFragment tree.
+
+NGPaintFragments are:
+* immutable
+* all coordinates are physical. See
+[layout_box_model_object.h](../layout/layout_box_model_object.h).
+* instead of Location(), NGFragment has Offset(), a physical offset from parent
+fragment.
+
+The goal is for PaintNG to eventually paint from NGFragment tree,
+and not see LayoutObjects at all. Until this goal is reached,
+LegacyPaint, and NGPaint will coexist.
+
+When a particular LayoutObject subclass fully migrates to NG, its LayoutObject
+geometry information might no longer be updated\(\*\), and its
+painter needs to be rewritten to paint NGFragments.
+For example, see how BlockPainter is being rewritten as NGBoxFragmentPainter.

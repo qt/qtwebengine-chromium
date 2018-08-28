@@ -17,11 +17,12 @@
 #include <utility>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/array_view.h"
 #include "audio/utility/audio_frame_operations.h"
 #include "call/rtp_transport_controller_send_interface.h"
-#include "logging/rtc_event_log/rtc_event_log.h"
 #include "logging/rtc_event_log/events/rtc_event_audio_playout.h"
+#include "logging/rtc_event_log/rtc_event_log.h"
 #include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor_config.h"
 #include "modules/audio_coding/codecs/audio_format_conversion.h"
 #include "modules/audio_device/include/audio_device.h"
@@ -38,7 +39,6 @@
 #include "rtc_base/format_macros.h"
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread_checker.h"
@@ -356,11 +356,6 @@ bool Channel::SendRtcp(const uint8_t* data, size_t len) {
   return true;
 }
 
-void Channel::OnIncomingSSRCChanged(uint32_t ssrc) {
-  // Update ssrc so that NTP for AV sync can be updated.
-  _rtpRtcpModule->SetRemoteSSRC(ssrc);
-}
-
 int32_t Channel::OnReceivedPayloadData(const uint8_t* payloadData,
                                        size_t payloadSize,
                                        const WebRtcRTPHeader* rtpHeader) {
@@ -398,7 +393,7 @@ AudioMixer::Source::AudioFrameInfo Channel::GetAudioFrameWithInfo(
 
   unsigned int ssrc;
   RTC_CHECK_EQ(GetRemoteSSRC(ssrc), 0);
-  event_log_proxy_->Log(rtc::MakeUnique<RtcEventAudioPlayout>(ssrc));
+  event_log_proxy_->Log(absl::make_unique<RtcEventAudioPlayout>(ssrc));
   // Get 10ms raw PCM data from the ACM (mixer limits output frequency)
   bool muted;
   if (audio_coding_->PlayoutData10Ms(audio_frame->sample_rate_hz_, audio_frame,
@@ -514,7 +509,7 @@ Channel::Channel(rtc::TaskQueue* encoder_queue,
               0,
               false,
               rtc::scoped_refptr<AudioDecoderFactory>(),
-              rtc::nullopt) {
+              absl::nullopt) {
   RTC_DCHECK(encoder_queue);
   encoder_queue_ = encoder_queue;
 }
@@ -525,14 +520,13 @@ Channel::Channel(ProcessThread* module_process_thread,
                  size_t jitter_buffer_max_packets,
                  bool jitter_buffer_fast_playout,
                  rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
-                 rtc::Optional<AudioCodecPairId> codec_pair_id)
+                 absl::optional<AudioCodecPairId> codec_pair_id)
     : event_log_proxy_(new RtcEventLogProxy()),
       rtp_payload_registry_(new RTPPayloadRegistry()),
       rtp_receive_statistics_(
           ReceiveStatistics::Create(Clock::GetRealTimeClock())),
       rtp_receiver_(
           RtpReceiver::CreateAudioReceiver(Clock::GetRealTimeClock(),
-                                           this,
                                            this,
                                            rtp_payload_registry_.get())),
       telephone_event_handler_(rtp_receiver_->GetTelephoneEventHandler()),
@@ -878,9 +872,8 @@ void Channel::OnRtpPacket(const RtpPacketReceived& packet) {
   header.payload_type_frequency =
       rtp_payload_registry_->GetPayloadTypeFrequency(header.payloadType);
   if (header.payload_type_frequency >= 0) {
-    bool in_order = IsPacketInOrder(header);
-    rtp_receive_statistics_->IncomingPacket(
-        header, packet.size(), IsPacketRetransmitted(header, in_order));
+    rtp_receive_statistics_->IncomingPacket(header, packet.size(),
+                                            IsPacketRetransmitted(header));
 
     ReceivePacket(packet.data(), packet.size(), header);
   }
@@ -901,24 +894,13 @@ bool Channel::ReceivePacket(const uint8_t* packet,
                                           pl->typeSpecific);
 }
 
-bool Channel::IsPacketInOrder(const RTPHeader& header) const {
-  StreamStatistician* statistician =
-      rtp_receive_statistics_->GetStatistician(header.ssrc);
-  if (!statistician)
-    return false;
-  return statistician->IsPacketInOrder(header.sequenceNumber);
-}
-
-bool Channel::IsPacketRetransmitted(const RTPHeader& header,
-                                    bool in_order) const {
+bool Channel::IsPacketRetransmitted(const RTPHeader& header) const {
   StreamStatistician* statistician =
       rtp_receive_statistics_->GetStatistician(header.ssrc);
   if (!statistician)
     return false;
   // Check if this is a retransmission.
-  int64_t min_rtt = 0;
-  _rtpRtcpModule->RTT(rtp_receiver_->SSRC(), NULL, NULL, &min_rtt, NULL);
-  return !in_order && statistician->IsRetransmitOfOldPacket(header, min_rtt);
+  return statistician->IsRetransmitOfOldPacket(header);
 }
 
 int32_t Channel::ReceivedRTCPPacket(const uint8_t* data, size_t length) {
@@ -951,9 +933,8 @@ int32_t Channel::ReceivedRTCPPacket(const uint8_t* data, size_t length) {
   uint32_t ntp_secs = 0;
   uint32_t ntp_frac = 0;
   uint32_t rtp_timestamp = 0;
-  if (0 !=
-      _rtpRtcpModule->RemoteNTP(&ntp_secs, &ntp_frac, NULL, NULL,
-                                &rtp_timestamp)) {
+  if (0 != _rtpRtcpModule->RemoteNTP(&ntp_secs, &ntp_frac, NULL, NULL,
+                                     &rtp_timestamp)) {
     // Waiting for RTCP.
     return 0;
   }
@@ -1001,7 +982,7 @@ int Channel::SendTelephoneEventOutband(int event, int duration_ms) {
     return -1;
   }
   if (_rtpRtcpModule->SendTelephoneEventOutband(
-      event, duration_ms, kTelephoneEventAttenuationdB) != 0) {
+          event, duration_ms, kTelephoneEventAttenuationdB) != 0) {
     RTC_DLOG(LS_ERROR) << "SendTelephoneEventOutband() failed to send event";
     return -1;
   }
@@ -1035,6 +1016,11 @@ int Channel::SetLocalSSRC(unsigned int ssrc) {
   }
   _rtpRtcpModule->SetSSRC(ssrc);
   return 0;
+}
+
+void Channel::SetRemoteSSRC(uint32_t ssrc) {
+  // Update ssrc so that NTP for AV sync can be updated.
+  _rtpRtcpModule->SetRemoteSSRC(ssrc);
 }
 
 void Channel::SetMid(const std::string& mid, int extension_id) {

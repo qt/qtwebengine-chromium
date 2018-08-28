@@ -14,10 +14,14 @@
 #include "content/browser/shared_worker/shared_worker_connector_impl.h"
 #include "content/browser/shared_worker/shared_worker_instance.h"
 #include "content/browser/shared_worker/shared_worker_service_impl.h"
+#include "content/public/test/mock_render_process_host.h"
+#include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/test_storage_partition.h"
 #include "content/public/test/test_utils.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
+#include "services/network/test/test_network_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/message_port/message_port_channel.h"
 #include "url/origin.h"
@@ -28,7 +32,11 @@ namespace content {
 
 class SharedWorkerHostTest : public testing::Test {
  public:
-  SharedWorkerHostTest() : service_(nullptr) {}
+  SharedWorkerHostTest()
+      : mock_render_process_host_(&browser_context_),
+        service_(&storage_partition_, nullptr /* service_worker_context */) {
+    storage_partition_.set_network_context(&network_context_);
+  }
 
   base::WeakPtr<SharedWorkerHost> CreateHost() {
     GURL url("http://www.example.com/w.js");
@@ -47,7 +55,7 @@ class SharedWorkerHostTest : public testing::Test {
         content_security_policy_type, creation_address_space,
         creation_context_type);
     auto host = std::make_unique<SharedWorkerHost>(
-        &service_, std::move(instance), 11 /* dummy process_id */);
+        &service_, std::move(instance), mock_render_process_host_.GetID());
     auto weak_host = host->AsWeakPtr();
     service_.worker_hosts_.insert(std::move(host));
     return weak_host;
@@ -56,7 +64,8 @@ class SharedWorkerHostTest : public testing::Test {
   void StartWorker(SharedWorkerHost* host,
                    mojom::SharedWorkerFactoryPtr factory) {
     host->Start(std::move(factory), nullptr /* service_worker_provider_info */,
-                {} /* script_loader_factory_info */);
+                {} /* script_loader_factory_info */,
+                nullptr /* factory_bundle */);
   }
 
   MessagePortChannel AddClient(SharedWorkerHost* host,
@@ -71,6 +80,11 @@ class SharedWorkerHostTest : public testing::Test {
 
  protected:
   TestBrowserThreadBundle test_browser_thread_bundle_;
+  TestStoragePartition storage_partition_;
+  network::TestNetworkContext network_context_;
+  TestBrowserContext browser_context_;
+  MockRenderProcessHost mock_render_process_host_;
+
   SharedWorkerServiceImpl service_;
 
   DISALLOW_COPY_AND_ASSIGN(SharedWorkerHostTest);
@@ -181,7 +195,8 @@ TEST_F(SharedWorkerHostTest, TerminateAfterStarting) {
 
   // Start the worker.
   host->Start(std::move(factory), nullptr /* service_worker_provider_info */,
-              {} /* script_loader_factory_info */);
+              {} /* script_loader_factory_info */,
+              nullptr /* factory_bundle */);
 
   // Add a client.
   MockSharedWorkerClient client;

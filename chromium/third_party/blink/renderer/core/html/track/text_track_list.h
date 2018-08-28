@@ -36,7 +36,6 @@
 
 namespace blink {
 
-class MediaElementEventQueue;
 class TextTrack;
 
 class CORE_EXPORT TextTrackList final : public EventTargetWithInlineData {
@@ -75,8 +74,6 @@ class CORE_EXPORT TextTrackList final : public EventTargetWithInlineData {
 
   void Trace(blink::Visitor*) override;
 
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
-
  private:
   explicit TextTrackList(HTMLMediaElement*);
 
@@ -88,8 +85,6 @@ class CORE_EXPORT TextTrackList final : public EventTargetWithInlineData {
   void InvalidateTrackIndexesAfterTrack(TextTrack*);
 
   Member<HTMLMediaElement> owner_;
-
-  Member<MediaElementEventQueue> async_event_queue_;
 
   HeapVector<TraceWrapperMember<TextTrack>> add_track_tracks_;
   HeapVector<TraceWrapperMember<TextTrack>> element_tracks_;

@@ -126,6 +126,8 @@ int CheckPDFiumCApi() {
 
     // fpdf_edit.h
     CHK(FPDFFont_Close);
+    CHK(FPDFFormObj_CountObjects);
+    CHK(FPDFFormObj_GetObject);
     CHK(FPDFImageObj_GetBitmap);
     CHK(FPDFImageObj_GetImageDataDecoded);
     CHK(FPDFImageObj_GetImageDataRaw);
@@ -138,10 +140,16 @@ int CheckPDFiumCApi() {
     CHK(FPDFImageObj_SetMatrix);
     CHK(FPDFPageObjMark_CountParams);
     CHK(FPDFPageObjMark_GetName);
+    CHK(FPDFPageObjMark_GetParamBlobValue);
     CHK(FPDFPageObjMark_GetParamIntValue);
     CHK(FPDFPageObjMark_GetParamKey);
     CHK(FPDFPageObjMark_GetParamStringValue);
     CHK(FPDFPageObjMark_GetParamValueType);
+    CHK(FPDFPageObjMark_RemoveParam);
+    CHK(FPDFPageObjMark_SetBlobParam);
+    CHK(FPDFPageObjMark_SetIntParam);
+    CHK(FPDFPageObjMark_SetStringParam);
+    CHK(FPDFPageObj_AddMark);
     CHK(FPDFPageObj_CountMarks);
     CHK(FPDFPageObj_CreateNewPath);
     CHK(FPDFPageObj_CreateNewRect);
@@ -156,6 +164,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFPageObj_HasTransparency);
     CHK(FPDFPageObj_NewImageObj);
     CHK(FPDFPageObj_NewTextObj);
+    CHK(FPDFPageObj_RemoveMark);
     CHK(FPDFPageObj_SetBlendMode);
     CHK(FPDFPageObj_SetFillColor);
     CHK(FPDFPageObj_SetLineCap);
@@ -181,7 +190,9 @@ int CheckPDFiumCApi() {
     CHK(FPDFPath_BezierTo);
     CHK(FPDFPath_Close);
     CHK(FPDFPath_CountSegments);
+    CHK(FPDFPath_GetDrawMode);
     CHK(FPDFPath_GetFillColor);
+    CHK(FPDFPath_GetMatrix);
     CHK(FPDFPath_GetPathSegment);
     CHK(FPDFPath_GetStrokeColor);
     CHK(FPDFPath_LineTo);
@@ -190,9 +201,14 @@ int CheckPDFiumCApi() {
     CHK(FPDFPath_SetFillColor);
     CHK(FPDFPath_SetLineCap);
     CHK(FPDFPath_SetLineJoin);
+    CHK(FPDFPath_SetMatrix);
     CHK(FPDFPath_SetStrokeColor);
     CHK(FPDFPath_SetStrokeWidth);
+    CHK(FPDFTextObj_GetFontSize);
+    CHK(FPDFText_GetMatrix);
+    CHK(FPDFText_GetTextRenderMode);
     CHK(FPDFText_LoadFont);
+    CHK(FPDFText_LoadStandardFont);
     CHK(FPDFText_SetFillColor);
     CHK(FPDFText_SetText);
     CHK(FPDF_CreateNewDocument);
@@ -231,6 +247,7 @@ int CheckPDFiumCApi() {
 #endif
     CHK(FORM_Redo);
     CHK(FORM_ReplaceSelection);
+    CHK(FORM_SetSaveCallback);
     CHK(FORM_Undo);
     CHK(FPDFDOC_ExitFormFillEnvironment);
     CHK(FPDFDOC_InitFormFillEnvironment);

@@ -18,8 +18,8 @@ namespace blink {
 
 namespace {
 
-// Field trial name.
-const char kResourceLoadSchedulerTrial[] = "ResourceLoadScheduler";
+// Field trial name for throttling.
+const char kResourceLoadThrottlingTrial[] = "ResourceLoadScheduler";
 
 // Field trial parameter names.
 // Note: bg_limit is supported on m61+, but bg_sub_limit is only on m63+.
@@ -44,11 +44,10 @@ constexpr int32_t kReportBucketCount = 25;
 constexpr char kRendererSideResourceScheduler[] =
     "RendererSideResourceScheduler";
 
-// These values are copied from resource_scheduler.cc, but the meaning is a bit
-// different because ResourceScheduler counts the running delayable requests
-// while ResourceLoadScheduler counts all the running requests.
-constexpr size_t kTightLimitForRendererSideResourceScheduler = 1u;
-constexpr size_t kLimitForRendererSideResourceScheduler = 10u;
+// Used in the tight mode (see the header file for details).
+constexpr size_t kTightLimitForRendererSideResourceScheduler = 2u;
+// Used in the normal mode (see the header file for details).
+constexpr size_t kLimitForRendererSideResourceScheduler = 1024u;
 
 constexpr char kTightLimitForRendererSideResourceSchedulerName[] =
     "tight_limit";
@@ -96,7 +95,7 @@ size_t GetOutstandingThrottledLimit(FetchContext* context) {
     return ResourceLoadScheduler::kOutstandingUnlimited;
 
   uint32_t main_frame_limit = GetFieldTrialUint32Param(
-      kResourceLoadSchedulerTrial, kOutstandingLimitForBackgroundMainFrameName,
+      kResourceLoadThrottlingTrial, kOutstandingLimitForBackgroundMainFrameName,
       kOutstandingLimitForBackgroundFrameDefault);
   if (context->IsMainFrame())
     return main_frame_limit;
@@ -104,7 +103,7 @@ size_t GetOutstandingThrottledLimit(FetchContext* context) {
   // We do not have a fixed default limit for sub-frames, but use the limit for
   // the main frame so that it works as how previous versions that haven't
   // consider sub-frames' specific limit work.
-  return GetFieldTrialUint32Param(kResourceLoadSchedulerTrial,
+  return GetFieldTrialUint32Param(kResourceLoadThrottlingTrial,
                                   kOutstandingLimitForBackgroundSubFrameName,
                                   main_frame_limit);
 }
@@ -113,6 +112,10 @@ int TakeWholeKilobytes(int64_t& bytes) {
   int kilobytes = bytes / 1024;
   bytes %= 1024;
   return kilobytes;
+}
+
+bool IsResourceLoadThrottlingEnabled() {
+  return RuntimeEnabledFeatures::ResourceLoadSchedulerEnabled();
 }
 
 }  // namespace
@@ -124,7 +127,7 @@ class ResourceLoadScheduler::TrafficMonitor {
   ~TrafficMonitor();
 
   // Notified when the ThrottlingState is changed.
-  void OnThrottlingStateChanged(FrameScheduler::ThrottlingState);
+  void OnLifecycleStateChanged(scheduler::SchedulingLifecycleState);
 
   // Reports resource request completion.
   void Report(const ResourceLoadScheduler::TrafficReportHints&);
@@ -137,8 +140,8 @@ class ResourceLoadScheduler::TrafficMonitor {
 
   const WeakPersistent<FetchContext> context_;  // NOT OWNED
 
-  FrameScheduler::ThrottlingState current_state_ =
-      FrameScheduler::ThrottlingState::kStopped;
+  scheduler::SchedulingLifecycleState current_state_ =
+      scheduler::SchedulingLifecycleState::kStopped;
 
   size_t total_throttled_request_count_ = 0;
   size_t total_throttled_traffic_bytes_ = 0;
@@ -171,8 +174,8 @@ ResourceLoadScheduler::TrafficMonitor::~TrafficMonitor() {
   ReportAll();
 }
 
-void ResourceLoadScheduler::TrafficMonitor::OnThrottlingStateChanged(
-    FrameScheduler::ThrottlingState state) {
+void ResourceLoadScheduler::TrafficMonitor::OnLifecycleStateChanged(
+    scheduler::SchedulingLifecycleState state) {
   current_state_ = state;
   throttling_state_change_count_++;
 }
@@ -224,8 +227,8 @@ void ResourceLoadScheduler::TrafficMonitor::Report(
        kMaximumReportSize1G, kReportBucketCount));
 
   switch (current_state_) {
-    case FrameScheduler::ThrottlingState::kThrottled:
-    case FrameScheduler::ThrottlingState::kHidden:
+    case scheduler::SchedulingLifecycleState::kThrottled:
+    case scheduler::SchedulingLifecycleState::kHidden:
       if (is_main_frame_) {
         request_count_by_circumstance.Count(
             ToSample(ReportCircumstance::kMainframeThrottled));
@@ -241,7 +244,7 @@ void ResourceLoadScheduler::TrafficMonitor::Report(
       total_throttled_traffic_bytes_ += hints.encoded_data_length();
       total_throttled_decoded_bytes_ += hints.decoded_body_length();
       break;
-    case FrameScheduler::ThrottlingState::kNotThrottled:
+    case scheduler::SchedulingLifecycleState::kNotThrottled:
       if (is_main_frame_) {
         request_count_by_circumstance.Count(
             ToSample(ReportCircumstance::kMainframeNotThrottled));
@@ -261,7 +264,7 @@ void ResourceLoadScheduler::TrafficMonitor::Report(
       total_not_throttled_traffic_bytes_ += hints.encoded_data_length();
       total_not_throttled_decoded_bytes_ += hints.decoded_body_length();
       break;
-    case FrameScheduler::ThrottlingState::kStopped:
+    case scheduler::SchedulingLifecycleState::kStopped:
       break;
   }
 
@@ -392,33 +395,21 @@ ResourceLoadScheduler::ResourceLoadScheduler(FetchContext* context)
   traffic_monitor_ =
       std::make_unique<ResourceLoadScheduler::TrafficMonitor>(context_);
 
-  if (!RuntimeEnabledFeatures::ResourceLoadSchedulerEnabled() &&
-      !Platform::Current()->IsRendererSideResourceSchedulerEnabled()) {
-    // Initialize TrafficMonitor's state to be |kNotThrottled| so that it
-    // reports metrics in a reasonable state group.
-    traffic_monitor_->OnThrottlingStateChanged(
-        FrameScheduler::ThrottlingState::kNotThrottled);
-    return;
-  }
-
   auto* scheduler = context->GetFrameScheduler();
   if (!scheduler)
     return;
 
-  if (Platform::Current()->IsRendererSideResourceSchedulerEnabled()) {
-    policy_ = context->InitialLoadThrottlingPolicy();
-    normal_outstanding_limit_ =
-        GetFieldTrialUint32Param(kRendererSideResourceScheduler,
-                                 kLimitForRendererSideResourceSchedulerName,
-                                 kLimitForRendererSideResourceScheduler);
-    tight_outstanding_limit_ = GetFieldTrialUint32Param(
-        kRendererSideResourceScheduler,
-        kTightLimitForRendererSideResourceSchedulerName,
-        kTightLimitForRendererSideResourceScheduler);
-  }
+  policy_ = context->InitialLoadThrottlingPolicy();
+  normal_outstanding_limit_ =
+      GetFieldTrialUint32Param(kRendererSideResourceScheduler,
+                               kLimitForRendererSideResourceSchedulerName,
+                               kLimitForRendererSideResourceScheduler);
+  tight_outstanding_limit_ =
+      GetFieldTrialUint32Param(kRendererSideResourceScheduler,
+                               kTightLimitForRendererSideResourceSchedulerName,
+                               kTightLimitForRendererSideResourceScheduler);
 
-  is_enabled_ = true;
-  scheduler_observer_handle_ = scheduler->AddThrottlingObserver(
+  scheduler_observer_handle_ = scheduler->AddLifecycleObserver(
       FrameScheduler::ObserverType::kLoader, this);
 }
 
@@ -466,44 +457,57 @@ void ResourceLoadScheduler::Request(ResourceLoadSchedulerClient* client,
   if (is_shutdown_)
     return;
 
-  if (!Platform::Current()->IsRendererSideResourceSchedulerEnabled()) {
-    // Prioritization is effectively disabled as we use the constant priority.
-    priority = ResourceLoadPriority::kMedium;
-    intra_priority = 0;
-  }
-
-  if (!is_enabled_ || option == ThrottleOption::kCanNotBeThrottled ||
-      !IsThrottablePriority(priority)) {
+  // Check if the request can be throttled.
+  ClientIdWithPriority request_info(*id, priority, intra_priority);
+  if (!IsClientDelayable(request_info, option)) {
     Run(*id, client, false);
     return;
   }
 
-  pending_requests_.emplace(*id, priority, intra_priority);
+  DCHECK(ThrottleOption::kStoppable == option ||
+         ThrottleOption::kThrottleable == option);
+  pending_requests_[option].insert(request_info);
   pending_request_map_.insert(
-      *id, new ClientWithPriority(client, priority, intra_priority));
+      *id, new ClientInfo(client, option, priority, intra_priority));
+
+  // Remember the ClientId since MaybeRun() below may destruct the caller
+  // instance and |id| may be inaccessible after the call.
+  ResourceLoadScheduler::ClientId client_id = *id;
   MaybeRun();
+
+  if (IsThrottledState() &&
+      pending_request_map_.find(client_id) != pending_request_map_.end()) {
+    // Note that this doesn't show the message when a frame is stopped (vs.
+    // this DOES when throttled).
+    context_->AddInfoConsoleMessage(
+        "Active resource loading counts reached to a per-frame limit while the "
+        "tab is in background. Network requests will be delayed until a "
+        "previous loading finishes, or the tab is foregrounded. See "
+        "https://www.chromestatus.com/feature/5527160148197376 for more "
+        "details",
+        FetchContext::kOtherSource);
+  }
 }
 
 void ResourceLoadScheduler::SetPriority(ClientId client_id,
                                         ResourceLoadPriority priority,
                                         int intra_priority) {
-  if (!Platform::Current()->IsRendererSideResourceSchedulerEnabled())
-    return;
-
   auto client_it = pending_request_map_.find(client_id);
   if (client_it == pending_request_map_.end())
     return;
 
-  auto it = pending_requests_.find(ClientIdWithPriority(
+  auto& throttle_option_queue = pending_requests_[client_it->value->option];
+
+  auto it = throttle_option_queue.find(ClientIdWithPriority(
       client_id, client_it->value->priority, client_it->value->intra_priority));
 
-  DCHECK(it != pending_requests_.end());
-  pending_requests_.erase(it);
+  DCHECK(it != throttle_option_queue.end());
+  throttle_option_queue.erase(it);
 
   client_it->value->priority = priority;
   client_it->value->intra_priority = intra_priority;
 
-  pending_requests_.emplace(client_id, priority, intra_priority);
+  throttle_option_queue.emplace(client_id, priority, intra_priority);
   MaybeRun();
 }
 
@@ -517,7 +521,7 @@ bool ResourceLoadScheduler::Release(
 
   if (running_requests_.find(id) != running_requests_.end()) {
     running_requests_.erase(id);
-    running_throttlable_requests_.erase(id);
+    running_throttleable_requests_.erase(id);
 
     if (traffic_monitor_)
       traffic_monitor_->Report(hints);
@@ -594,50 +598,56 @@ void ResourceLoadScheduler::OnNetworkQuiet() {
   }
 }
 
-bool ResourceLoadScheduler::IsThrottablePriority(
-    ResourceLoadPriority priority) const {
-  if (!Platform::Current()->IsRendererSideResourceSchedulerEnabled())
-    return true;
+bool ResourceLoadScheduler::IsClientDelayable(const ClientIdWithPriority& info,
+                                              ThrottleOption option) const {
+  const bool throttleable = option == ThrottleOption::kThrottleable &&
+                            info.priority < ResourceLoadPriority::kHigh;
+  const bool stoppable = option != ThrottleOption::kCanNotBeStoppedOrThrottled;
 
-  if (RuntimeEnabledFeatures::ResourceLoadSchedulerEnabled()) {
-    // If this scheduler is throttled by the associated FrameScheduler,
-    // consider every prioritiy as throttlable.
-    const auto state = frame_scheduler_throttling_state_;
-    if (state == FrameScheduler::ThrottlingState::kHidden ||
-        state == FrameScheduler::ThrottlingState::kThrottled ||
-        state == FrameScheduler::ThrottlingState::kStopped) {
-      return true;
-    }
+  // Also takes the lifecycle state of the associated FrameScheduler
+  // into account to determine if the request should be throttled
+  // regardless of the priority.
+  switch (frame_scheduler_lifecycle_state_) {
+    case scheduler::SchedulingLifecycleState::kNotThrottled:
+      return throttleable;
+    case scheduler::SchedulingLifecycleState::kHidden:
+    case scheduler::SchedulingLifecycleState::kThrottled:
+      if (IsResourceLoadThrottlingEnabled())
+        return option == ThrottleOption::kThrottleable;
+      return throttleable;
+    case scheduler::SchedulingLifecycleState::kStopped:
+      return stoppable;
   }
 
-  return priority < ResourceLoadPriority::kHigh;
+  NOTREACHED() << static_cast<int>(frame_scheduler_lifecycle_state_);
+  return throttleable;
 }
 
-void ResourceLoadScheduler::OnThrottlingStateChanged(
-    FrameScheduler::ThrottlingState state) {
-  if (frame_scheduler_throttling_state_ == state)
+void ResourceLoadScheduler::OnLifecycleStateChanged(
+    scheduler::SchedulingLifecycleState state) {
+  if (frame_scheduler_lifecycle_state_ == state)
     return;
 
   if (traffic_monitor_)
-    traffic_monitor_->OnThrottlingStateChanged(state);
+    traffic_monitor_->OnLifecycleStateChanged(state);
 
-  frame_scheduler_throttling_state_ = state;
+  frame_scheduler_lifecycle_state_ = state;
 
   switch (state) {
-    case FrameScheduler::ThrottlingState::kHidden:
-    case FrameScheduler::ThrottlingState::kThrottled:
+    case scheduler::SchedulingLifecycleState::kHidden:
+    case scheduler::SchedulingLifecycleState::kThrottled:
       if (throttling_history_ == ThrottlingHistory::kInitial)
         throttling_history_ = ThrottlingHistory::kThrottled;
       else if (throttling_history_ == ThrottlingHistory::kNotThrottled)
         throttling_history_ = ThrottlingHistory::kPartiallyThrottled;
       break;
-    case FrameScheduler::ThrottlingState::kNotThrottled:
+    case scheduler::SchedulingLifecycleState::kNotThrottled:
       if (throttling_history_ == ThrottlingHistory::kInitial)
         throttling_history_ = ThrottlingHistory::kNotThrottled;
       else if (throttling_history_ == ThrottlingHistory::kThrottled)
         throttling_history_ = ThrottlingHistory::kPartiallyThrottled;
       break;
-    case FrameScheduler::ThrottlingState::kStopped:
+    case scheduler::SchedulingLifecycleState::kStopped:
       throttling_history_ = ThrottlingHistory::kStopped;
       break;
   }
@@ -650,35 +660,71 @@ ResourceLoadScheduler::ClientId ResourceLoadScheduler::GenerateClientId() {
   return id;
 }
 
+bool ResourceLoadScheduler::GetNextPendingRequest(ClientId* id) {
+  bool needs_throttling =
+      running_throttleable_requests_.size() >= GetOutstandingLimit();
+
+  auto& stoppable_queue = pending_requests_[ThrottleOption::kStoppable];
+  auto& throttleable_queue = pending_requests_[ThrottleOption::kThrottleable];
+
+  // Check if stoppable or throttleable requests are allowed to be run.
+  auto stoppable_it = stoppable_queue.begin();
+  bool has_runnable_stoppable_request =
+      stoppable_it != stoppable_queue.end() &&
+      (!IsClientDelayable(*stoppable_it, ThrottleOption::kStoppable) ||
+       !needs_throttling);
+
+  auto throttleable_it = throttleable_queue.begin();
+  bool has_runnable_throttleable_request =
+      throttleable_it != throttleable_queue.end() &&
+      (!IsClientDelayable(*throttleable_it, ThrottleOption::kThrottleable) ||
+       !needs_throttling);
+
+  if (!has_runnable_throttleable_request && !has_runnable_stoppable_request)
+    return false;
+
+  // If both requests are allowed to be run, run the high priority requests
+  // first.
+  ClientIdWithPriority::Compare compare;
+  bool use_stoppable = has_runnable_stoppable_request &&
+                       (!has_runnable_throttleable_request ||
+                        compare(*stoppable_it, *throttleable_it));
+
+  // Remove the iterator from the correct set of pending_requests_.
+  if (use_stoppable) {
+    *id = stoppable_it->client_id;
+    stoppable_queue.erase(stoppable_it);
+    return true;
+  }
+  *id = throttleable_it->client_id;
+  throttleable_queue.erase(throttleable_it);
+  return true;
+}
+
 void ResourceLoadScheduler::MaybeRun() {
   // Requests for keep-alive loaders could be remained in the pending queue,
   // but ignore them once Shutdown() is called.
   if (is_shutdown_)
     return;
 
-  while (!pending_requests_.empty()) {
-    if (IsThrottablePriority(pending_requests_.begin()->priority) &&
-        running_throttlable_requests_.size() >= GetOutstandingLimit()) {
-      break;
-    }
-
-    ClientId id = pending_requests_.begin()->client_id;
-    pending_requests_.erase(pending_requests_.begin());
+  ClientId id = kInvalidClientId;
+  while (GetNextPendingRequest(&id)) {
     auto found = pending_request_map_.find(id);
     if (found == pending_request_map_.end())
       continue;  // Already released.
     ResourceLoadSchedulerClient* client = found->value->client;
+    ThrottleOption option = found->value->option;
     pending_request_map_.erase(found);
-    Run(id, client, true);
+    Run(id, client, option == ThrottleOption::kThrottleable);
   }
 }
 
 void ResourceLoadScheduler::Run(ResourceLoadScheduler::ClientId id,
                                 ResourceLoadSchedulerClient* client,
-                                bool throttlable) {
+                                bool throttleable) {
   running_requests_.insert(id);
-  if (throttlable)
-    running_throttlable_requests_.insert(id);
+  if (throttleable)
+    running_throttleable_requests_.insert(id);
   if (running_requests_.size() > maximum_running_requests_seen_) {
     maximum_running_requests_seen_ = running_requests_.size();
   }
@@ -688,16 +734,15 @@ void ResourceLoadScheduler::Run(ResourceLoadScheduler::ClientId id,
 size_t ResourceLoadScheduler::GetOutstandingLimit() const {
   size_t limit = kOutstandingUnlimited;
 
-  switch (frame_scheduler_throttling_state_) {
-    case FrameScheduler::ThrottlingState::kHidden:
-    case FrameScheduler::ThrottlingState::kThrottled:
+  switch (frame_scheduler_lifecycle_state_) {
+    case scheduler::SchedulingLifecycleState::kHidden:
+    case scheduler::SchedulingLifecycleState::kThrottled:
       limit = std::min(limit, outstanding_limit_for_throttled_frame_scheduler_);
       break;
-    case FrameScheduler::ThrottlingState::kNotThrottled:
+    case scheduler::SchedulingLifecycleState::kNotThrottled:
       break;
-    case FrameScheduler::ThrottlingState::kStopped:
-      if (RuntimeEnabledFeatures::ResourceLoadSchedulerEnabled())
-        limit = 0;
+    case scheduler::SchedulingLifecycleState::kStopped:
+      limit = 0;
       break;
   }
 
@@ -710,6 +755,18 @@ size_t ResourceLoadScheduler::GetOutstandingLimit() const {
       break;
   }
   return limit;
+}
+
+bool ResourceLoadScheduler::IsThrottledState() const {
+  switch (frame_scheduler_lifecycle_state_) {
+    case scheduler::SchedulingLifecycleState::kHidden:
+    case scheduler::SchedulingLifecycleState::kThrottled:
+      return true;
+    case scheduler::SchedulingLifecycleState::kStopped:
+    case scheduler::SchedulingLifecycleState::kNotThrottled:
+      break;
+  }
+  return false;
 }
 
 }  // namespace blink

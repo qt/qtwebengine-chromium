@@ -4,26 +4,43 @@
 
 #include "third_party/blink/renderer/core/fetch/request.h"
 
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_request.h"
+#include "third_party/blink/public/common/blob/blob_utils.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_request.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
+#include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
+#include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_abort_signal.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_array_buffer.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_array_buffer_view.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_blob.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_form_data.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_url_search_params.h"
 #include "third_party/blink/renderer/core/dom/abort_signal.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/fetch/blob_bytes_consumer.h"
 #include "third_party/blink/renderer/core/fetch/body_stream_buffer.h"
 #include "third_party/blink/renderer/core/fetch/fetch_manager.h"
+#include "third_party/blink/renderer/core/fetch/form_data_bytes_consumer.h"
 #include "third_party/blink/renderer/core/fetch/request_init.h"
+#include "third_party/blink/renderer/core/fileapi/blob.h"
 #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
+#include "third_party/blink/renderer/core/html/forms/form_data.h"
 #include "third_party/blink/renderer/core/loader/threadable_loader.h"
-#include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
+#include "third_party/blink/renderer/core/url/url_search_params.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/blob/blob_data.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_utils.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
+#include "third_party/blink/renderer/platform/network/encoded_form_data.h"
 #include "third_party/blink/renderer/platform/network/http_names.h"
 #include "third_party/blink/renderer/platform/network/http_parsers.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/origin_access_entry.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
+#include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 
 namespace blink {
 
@@ -50,7 +67,9 @@ FetchRequestData* CreateCopyOfFetchRequestDataForFetch(
   request->SetCacheMode(original->CacheMode());
   request->SetRedirect(original->Redirect());
   request->SetIntegrity(original->Integrity());
+  request->SetImportance(original->Importance());
   request->SetKeepalive(original->Keepalive());
+  request->SetIsHistoryNavigation(original->IsHistoryNavigation());
   if (original->URLLoaderFactory()) {
     network::mojom::blink::URLLoaderFactoryPtr factory_clone;
     original->URLLoaderFactory()->Clone(MakeRequest(&factory_clone));
@@ -59,20 +78,99 @@ FetchRequestData* CreateCopyOfFetchRequestDataForFetch(
   return request;
 }
 
+static bool AreAnyMembersPresent(const RequestInit& init) {
+  return init.hasMethod() || init.hasHeaders() || init.hasBody() ||
+         init.hasReferrer() || init.hasReferrerPolicy() || init.hasMode() ||
+         init.hasCredentials() || init.hasCache() || init.hasRedirect() ||
+         init.hasIntegrity() || init.hasKeepalive() || init.hasImportance() ||
+         init.hasSignal();
+}
+
+static BodyStreamBuffer* ExtractBody(ScriptState* script_state,
+                                     ExceptionState& exception_state,
+                                     v8::Local<v8::Value> body,
+                                     String& content_type) {
+  DCHECK(!body->IsNull());
+  BodyStreamBuffer* return_buffer = nullptr;
+
+  ExecutionContext* execution_context = ExecutionContext::From(script_state);
+  v8::Isolate* isolate = script_state->GetIsolate();
+
+  if (V8Blob::hasInstance(body, isolate)) {
+    Blob* blob = V8Blob::ToImpl(body.As<v8::Object>());
+    return_buffer = new BodyStreamBuffer(
+        script_state,
+        new BlobBytesConsumer(execution_context, blob->GetBlobDataHandle()),
+        nullptr /* AbortSignal */);
+    content_type = blob->type();
+  } else if (body->IsArrayBuffer()) {
+    // Avoid calling into V8 from the following constructor parameters, which
+    // is potentially unsafe.
+    DOMArrayBuffer* array_buffer = V8ArrayBuffer::ToImpl(body.As<v8::Object>());
+    return_buffer = new BodyStreamBuffer(
+        script_state, new FormDataBytesConsumer(array_buffer),
+        nullptr /* AbortSignal */);
+  } else if (body->IsArrayBufferView()) {
+    // Avoid calling into V8 from the following constructor parameters, which
+    // is potentially unsafe.
+    DOMArrayBufferView* array_buffer_view =
+        V8ArrayBufferView::ToImpl(body.As<v8::Object>());
+    return_buffer = new BodyStreamBuffer(
+        script_state, new FormDataBytesConsumer(array_buffer_view),
+        nullptr /* AbortSignal */);
+  } else if (V8FormData::hasInstance(body, isolate)) {
+    scoped_refptr<EncodedFormData> form_data =
+        V8FormData::ToImpl(body.As<v8::Object>())->EncodeMultiPartFormData();
+    // Here we handle formData->boundary() as a C-style string. See
+    // FormDataEncoder::generateUniqueBoundaryString.
+    content_type = AtomicString("multipart/form-data; boundary=") +
+                   form_data->Boundary().data();
+    return_buffer = new BodyStreamBuffer(
+        script_state,
+        new FormDataBytesConsumer(execution_context, std::move(form_data)),
+        nullptr /* AbortSignal */);
+  } else if (V8URLSearchParams::hasInstance(body, isolate)) {
+    scoped_refptr<EncodedFormData> form_data =
+        V8URLSearchParams::ToImpl(body.As<v8::Object>())->ToEncodedFormData();
+    return_buffer = new BodyStreamBuffer(
+        script_state,
+        new FormDataBytesConsumer(execution_context, std::move(form_data)),
+        nullptr /* AbortSignal */);
+    content_type = "application/x-www-form-urlencoded;charset=UTF-8";
+  } else {
+    String string = NativeValueTraits<IDLUSVString>::NativeValue(
+        isolate, body, exception_state);
+    if (exception_state.HadException())
+      return nullptr;
+
+    return_buffer =
+        new BodyStreamBuffer(script_state, new FormDataBytesConsumer(string),
+                             nullptr /* AbortSignal */);
+    content_type = "text/plain;charset=UTF-8";
+  }
+
+  return return_buffer;
+}
+
 Request* Request::CreateRequestWithRequestOrString(
     ScriptState* script_state,
     Request* input_request,
     const String& input_string,
-    RequestInit& init,
+    const RequestInit& init,
     ExceptionState& exception_state) {
+  // Setup RequestInit's body first
   // - "If |input| is a Request object and it is disturbed, throw a
   //   TypeError."
-  if (input_request && input_request->bodyUsed()) {
+  if (input_request &&
+      input_request->IsBodyUsed(exception_state) == BodyUsed::kUsed) {
+    DCHECK(!exception_state.HadException());
     exception_state.ThrowTypeError(
         "Cannot construct a Request with a Request object that has already "
         "been used.");
     return nullptr;
   }
+  if (exception_state.HadException())
+    return nullptr;
   // - "Let |temporaryBody| be |input|'s request's body if |input| is a
   //   Request object, and null otherwise."
   BodyStreamBuffer* temporary_body =
@@ -81,7 +179,7 @@ Request* Request::CreateRequestWithRequestOrString(
   // "Let |request| be |input|'s request, if |input| is a Request object,
   // and a new request otherwise."
 
-  auto* execution_context = ExecutionContext::From(script_state);
+  ExecutionContext* execution_context = ExecutionContext::From(script_state);
   scoped_refptr<const SecurityOrigin> origin =
       execution_context->GetSecurityOrigin();
 
@@ -148,8 +246,7 @@ Request* Request::CreateRequestWithRequestOrString(
     // Parsing URLs should also resolve blob URLs. This is important because
     // fetching of a blob URL should work even after the URL is revoked as long
     // as the request was created while the URL was still valid.
-    if (parsed_url.ProtocolIs("blob") &&
-        RuntimeEnabledFeatures::MojoBlobURLsEnabled()) {
+    if (parsed_url.ProtocolIs("blob") && BlobUtils::MojoBlobURLsEnabled()) {
       network::mojom::blink::URLLoaderFactoryPtr url_loader_factory;
       ExecutionContext::From(script_state)
           ->GetPublicURLManager()
@@ -162,56 +259,41 @@ Request* Request::CreateRequestWithRequestOrString(
     // - "Set |fallbackCredentials| to "omit"."
   }
 
-  // "If any of |init|'s members are present, run these substeps:"
-  if (init.AreAnyMembersSet()) {
-    // "If |request|'s |mode| is "navigate", throw a TypeError."
-    if (request->Mode() == network::mojom::FetchRequestMode::kNavigate) {
-      exception_state.ThrowTypeError(
-          "Cannot construct a Request with a Request whose mode is 'navigate' "
-          "and a non-empty RequestInit.");
-      return nullptr;
-    }
+  // "If any of |init|'s members are present, then:"
+  if (AreAnyMembersPresent(init)) {
+    // "If |request|'s |mode| is "navigate", then set it to "same-origin".
+    if (request->Mode() == network::mojom::FetchRequestMode::kNavigate)
+      request->SetMode(network::mojom::FetchRequestMode::kSameOrigin);
 
     // TODO(yhirano): Implement the following substep:
-    //   "Unset |request|'s omit-Origin-header flag."
+    // "Unset |request|'s reload-navigation flag."
 
-    // The substep "Set |request|'s referrer to "client"." is performed by
-    // the code below as follows:
-    // - |init.referrer.referrer| gets initialized by the RequestInit
-    //   constructor to "about:client" when any of |options|'s members are
-    //   present.
-    // - The code below does the equivalent as the step specified in the
-    //   spec by processing the "about:client".
+    // "Unset |request|'s history-navigation flag."
+    request->SetIsHistoryNavigation(false);
 
-    // The substep "Set |request|'s referrer policy to the empty string."
-    // is also performed by the code below similarly.
+    // "Set |request|’s referrer to "client"."
+    request->SetReferrerString(FetchRequestData::ClientReferrerString());
+
+    // "Set |request|’s referrer policy to the empty string."
+    request->SetReferrerPolicy(kReferrerPolicyDefault);
   }
 
-  // The following if-clause performs the following two steps:
-  // - "If |init|'s referrer member is present, run these substeps:"
-  //   "If |init|'s referrerPolicy member is present, set |request|'s
-  //    referrer policy to it."
-  //
-  // The condition "if any of |init|'s members are present"
-  // (areAnyMembersSet) is used for the if-clause instead of conditions
-  // indicating presence of each member as specified in the spec. This is to
-  // perform the substeps in the previous step together here.
-  if (init.AreAnyMembersSet()) {
+  // "If init’s referrer member is present, then:"
+  if (init.hasReferrer()) {
     // Nothing to do for the step "Let |referrer| be |init|'s referrer
     // member."
 
-    if (init.GetReferrer().referrer.IsEmpty()) {
+    if (init.referrer().IsEmpty()) {
       // "If |referrer| is the empty string, set |request|'s referrer to
       // "no-referrer" and terminate these substeps."
       request->SetReferrerString(AtomicString(Referrer::NoReferrer()));
     } else {
       // "Let |parsedReferrer| be the result of parsing |referrer| with
       // |baseURL|."
-      KURL parsed_referrer(base_url, init.GetReferrer().referrer);
+      KURL parsed_referrer(base_url, init.referrer());
       if (!parsed_referrer.IsValid()) {
         // "If |parsedReferrer| is failure, throw a TypeError."
-        exception_state.ThrowTypeError("Referrer '" +
-                                       init.GetReferrer().referrer +
+        exception_state.ThrowTypeError("Referrer '" + init.referrer() +
                                        "' is not a valid URL.");
         return nullptr;
       }
@@ -237,7 +319,23 @@ Request* Request::CreateRequestWithRequestOrString(
         request->SetReferrerString(AtomicString(parsed_referrer.GetString()));
       }
     }
-    request->SetReferrerPolicy(init.GetReferrer().referrer_policy);
+  }
+
+  // "If init's referrerPolicy member is present, set request's referrer
+  // policy to it."
+  if (init.hasReferrerPolicy()) {
+    // In case referrerPolicy = "", the SecurityPolicy method below will not
+    // actually set referrer_policy, so we'll default to
+    // kReferrerPolicyDefault.
+    ReferrerPolicy referrer_policy;
+    if (!SecurityPolicy::ReferrerPolicyFromString(
+            init.referrerPolicy(), kDoNotSupportReferrerPolicyLegacyKeywords,
+            &referrer_policy)) {
+      DCHECK(init.referrerPolicy().IsEmpty());
+      referrer_policy = kReferrerPolicyDefault;
+    }
+
+    request->SetReferrerPolicy(referrer_policy);
   }
 
   // The following code performs the following steps:
@@ -245,17 +343,17 @@ Request* Request::CreateRequestWithRequestOrString(
   //   |fallbackMode| otherwise."
   // - "If |mode| is "navigate", throw a TypeError."
   // - "If |mode| is non-null, set |request|'s mode to |mode|."
-  if (init.Mode() == "navigate") {
+  if (init.mode() == "navigate") {
     exception_state.ThrowTypeError(
         "Cannot construct a Request with a RequestInit whose mode member is "
         "set as 'navigate'.");
     return nullptr;
   }
-  if (init.Mode() == "same-origin") {
+  if (init.mode() == "same-origin") {
     request->SetMode(network::mojom::FetchRequestMode::kSameOrigin);
-  } else if (init.Mode() == "no-cors") {
+  } else if (init.mode() == "no-cors") {
     request->SetMode(network::mojom::FetchRequestMode::kNoCORS);
-  } else if (init.Mode() == "cors") {
+  } else if (init.mode() == "cors") {
     request->SetMode(network::mojom::FetchRequestMode::kCORS);
   } else {
     // |inputRequest| is directly checked here instead of setting and
@@ -264,30 +362,42 @@ Request* Request::CreateRequestWithRequestOrString(
       request->SetMode(network::mojom::FetchRequestMode::kCORS);
   }
 
+  // This is not yet standardized, but we can assume the following:
+  // "If |init|'s importance member is present, set |request|'s importance
+  // mode to it." For more information see Priority Hints at
+  // https://crbug.com/821464
+  DCHECK(init.importance().IsNull() ||
+         RuntimeEnabledFeatures::PriorityHintsEnabled());
+  if (init.importance() == "low") {
+    request->SetImportance(mojom::FetchImportanceMode::kImportanceLow);
+  } else if (init.importance() == "high") {
+    request->SetImportance(mojom::FetchImportanceMode::kImportanceHigh);
+  }
+
   // "Let |credentials| be |init|'s credentials member if it is present, and
   // |fallbackCredentials| otherwise."
   // "If |credentials| is non-null, set |request|'s credentials mode to
   // |credentials|."
 
   network::mojom::FetchCredentialsMode credentials_mode;
-  if (ParseCredentialsMode(init.Credentials(), &credentials_mode)) {
+  if (ParseCredentialsMode(init.credentials(), &credentials_mode)) {
     request->SetCredentials(credentials_mode);
   } else if (!input_request) {
     request->SetCredentials(network::mojom::FetchCredentialsMode::kSameOrigin);
   }
 
   // "If |init|'s cache member is present, set |request|'s cache mode to it."
-  if (init.CacheMode() == "default") {
+  if (init.cache() == "default") {
     request->SetCacheMode(mojom::FetchCacheMode::kDefault);
-  } else if (init.CacheMode() == "no-store") {
+  } else if (init.cache() == "no-store") {
     request->SetCacheMode(mojom::FetchCacheMode::kNoStore);
-  } else if (init.CacheMode() == "reload") {
+  } else if (init.cache() == "reload") {
     request->SetCacheMode(mojom::FetchCacheMode::kBypassCache);
-  } else if (init.CacheMode() == "no-cache") {
+  } else if (init.cache() == "no-cache") {
     request->SetCacheMode(mojom::FetchCacheMode::kValidateCache);
-  } else if (init.CacheMode() == "force-cache") {
+  } else if (init.cache() == "force-cache") {
     request->SetCacheMode(mojom::FetchCacheMode::kForceCache);
-  } else if (init.CacheMode() == "only-if-cached") {
+  } else if (init.cache() == "only-if-cached") {
     request->SetCacheMode(mojom::FetchCacheMode::kOnlyIfCached);
   }
 
@@ -302,47 +412,46 @@ Request* Request::CreateRequestWithRequestOrString(
 
   // "If |init|'s redirect member is present, set |request|'s redirect mode
   // to it."
-  if (init.Redirect() == "follow") {
+  if (init.redirect() == "follow") {
     request->SetRedirect(network::mojom::FetchRedirectMode::kFollow);
-  } else if (init.Redirect() == "error") {
+  } else if (init.redirect() == "error") {
     request->SetRedirect(network::mojom::FetchRedirectMode::kError);
-  } else if (init.Redirect() == "manual") {
+  } else if (init.redirect() == "manual") {
     request->SetRedirect(network::mojom::FetchRedirectMode::kManual);
   }
 
   // "If |init|'s integrity member is present, set |request|'s
   // integrity metadata to it."
-  if (!init.Integrity().IsNull())
-    request->SetIntegrity(init.Integrity());
+  if (init.hasIntegrity())
+    request->SetIntegrity(init.integrity());
 
-  if (init.Keepalive().has_value())
-    request->SetKeepalive(*init.Keepalive());
+  if (init.hasKeepalive())
+    request->SetKeepalive(init.keepalive());
 
   // "If |init|'s method member is present, let |method| be it and run these
   // substeps:"
-  if (!init.Method().IsNull()) {
+  if (init.hasMethod()) {
     // "If |method| is not a method or method is a forbidden method, throw
     // a TypeError."
-    if (!IsValidHTTPToken(init.Method())) {
-      exception_state.ThrowTypeError("'" + init.Method() +
+    if (!IsValidHTTPToken(init.method())) {
+      exception_state.ThrowTypeError("'" + init.method() +
                                      "' is not a valid HTTP method.");
       return nullptr;
     }
-    if (FetchUtils::IsForbiddenMethod(init.Method())) {
-      exception_state.ThrowTypeError("'" + init.Method() +
+    if (FetchUtils::IsForbiddenMethod(init.method())) {
+      exception_state.ThrowTypeError("'" + init.method() +
                                      "' HTTP method is unsupported.");
       return nullptr;
     }
     // "Normalize |method|."
     // "Set |request|'s method to |method|."
     request->SetMethod(
-        FetchUtils::NormalizeMethod(AtomicString(init.Method())));
+        FetchUtils::NormalizeMethod(AtomicString(init.method())));
   }
 
   // "If |init|'s signal member is present, then set |signal| to it."
-  auto init_signal = init.Signal();
-  if (init_signal.has_value()) {
-    signal = init_signal.value();
+  if (init.hasSignal()) {
+    signal = init.signal();
   }
 
   // "Let |r| be a new Request object associated with |request| and a new
@@ -356,7 +465,7 @@ Request* Request::CreateRequestWithRequestOrString(
   // We don't create a copy of r's Headers object when init's headers member
   // is present.
   Headers* headers = nullptr;
-  if (init.GetHeaders().IsNull()) {
+  if (!init.hasHeaders()) {
     headers = r->getHeaders()->Clone();
   }
   // "Empty |r|'s request's header list."
@@ -374,12 +483,12 @@ Request* Request::CreateRequestWithRequestOrString(
     r->getHeaders()->SetGuard(Headers::kRequestNoCORSGuard);
   }
   // "If |signal| is not null, then make |r|’s signal follow |signal|."
-  if (signal) {
+  if (signal)
     r->signal_->Follow(signal);
-  }
+
   // "Fill |r|'s Headers object with |headers|. Rethrow any exceptions."
-  if (!init.GetHeaders().IsNull()) {
-    r->getHeaders()->FillWith(init.GetHeaders(), exception_state);
+  if (init.hasHeaders()) {
+    r->getHeaders()->FillWith(init.headers(), exception_state);
   } else {
     DCHECK(headers);
     r->getHeaders()->FillWith(headers, exception_state);
@@ -389,7 +498,9 @@ Request* Request::CreateRequestWithRequestOrString(
 
   // "If either |init|'s body member is present or |temporaryBody| is
   // non-null, and |request|'s method is `GET` or `HEAD`, throw a TypeError.
-  if (init.GetBody() || temporary_body) {
+  v8::Local<v8::Value> init_body =
+      init.hasBody() ? init.body().V8Value() : v8::Local<v8::Value>();
+  if ((!init_body.IsEmpty() && !init_body->IsNull()) || temporary_body) {
     if (request->Method() == HTTPNames::GET ||
         request->Method() == HTTPNames::HEAD) {
       exception_state.ThrowTypeError(
@@ -398,8 +509,8 @@ Request* Request::CreateRequestWithRequestOrString(
     }
   }
 
-  // "If |init|'s body member is present, run these substeps:"
-  if (init.GetBody()) {
+  // "If |init|’s body member is present and is non-null, then:"
+  if (!init_body.IsEmpty() && !init_body->IsNull()) {
     // TODO(yhirano): Throw if keepalive flag is set and body is a
     // ReadableStream. We don't support body stream setting for Request yet.
 
@@ -411,11 +522,12 @@ Request* Request::CreateRequestWithRequestOrString(
     //   contains no header named `Content-Type`, append
     //   `Content-Type`/|Content-Type| to |r|'s Headers object. Rethrow any
     //   exception."
+    String content_type;
     temporary_body =
-        new BodyStreamBuffer(script_state, std::move(init.GetBody()), nullptr);
-    if (!init.ContentType().IsEmpty() &&
+        ExtractBody(script_state, exception_state, init_body, content_type);
+    if (!content_type.IsEmpty() &&
         !r->getHeaders()->has(HTTPNames::Content_Type, exception_state)) {
-      r->getHeaders()->append(HTTPNames::Content_Type, init.ContentType(),
+      r->getHeaders()->append(HTTPNames::Content_Type, content_type,
                               exception_state);
     }
     if (exception_state.HadException())
@@ -423,10 +535,8 @@ Request* Request::CreateRequestWithRequestOrString(
   }
 
   // "Set |r|'s request's body to |temporaryBody|.
-  if (temporary_body) {
+  if (temporary_body)
     r->request_->SetBuffer(temporary_body);
-    r->RefreshBody(script_state);
-  }
 
   // "Set |r|'s MIME type to the result of extracting a MIME type from |r|'s
   // request's header list."
@@ -441,10 +551,11 @@ Request* Request::CreateRequestWithRequestOrString(
     // "Set |input|'s request's body to a new body whose stream is
     // |dummyStream|."
     input_request->request_->SetBuffer(dummy_stream);
-    input_request->RefreshBody(script_state);
     // "Let |reader| be the result of getting reader from |dummyStream|."
     // "Read all bytes from |dummyStream| with |reader|."
-    input_request->BodyBuffer()->CloseAndLockAndDisturb();
+    input_request->BodyBuffer()->CloseAndLockAndDisturb(exception_state);
+    if (exception_state.HadException())
+      return nullptr;
   }
 
   // "Return |r|."
@@ -453,7 +564,7 @@ Request* Request::CreateRequestWithRequestOrString(
 
 Request* Request::Create(ScriptState* script_state,
                          const RequestInfo& input,
-                         const Dictionary& init,
+                         const RequestInit& init,
                          ExceptionState& exception_state) {
   DCHECK(!input.IsNull());
   if (input.IsUSVString())
@@ -464,33 +575,29 @@ Request* Request::Create(ScriptState* script_state,
 Request* Request::Create(ScriptState* script_state,
                          const String& input,
                          ExceptionState& exception_state) {
-  return Create(script_state, input, Dictionary(), exception_state);
+  return Create(script_state, input, RequestInit(), exception_state);
 }
 
 Request* Request::Create(ScriptState* script_state,
                          const String& input,
-                         const Dictionary& init,
+                         const RequestInit& init,
                          ExceptionState& exception_state) {
-  RequestInit request_init(ExecutionContext::From(script_state), init,
-                           exception_state);
-  return CreateRequestWithRequestOrString(script_state, nullptr, input,
-                                          request_init, exception_state);
+  return CreateRequestWithRequestOrString(script_state, nullptr, input, init,
+                                          exception_state);
 }
 
 Request* Request::Create(ScriptState* script_state,
                          Request* input,
                          ExceptionState& exception_state) {
-  return Create(script_state, input, Dictionary(), exception_state);
+  return Create(script_state, input, RequestInit(), exception_state);
 }
 
 Request* Request::Create(ScriptState* script_state,
                          Request* input,
-                         const Dictionary& init,
+                         const RequestInit& init,
                          ExceptionState& exception_state) {
-  RequestInit request_init(ExecutionContext::From(script_state), init,
-                           exception_state);
-  return CreateRequestWithRequestOrString(script_state, input, String(),
-                                          request_init, exception_state);
+  return CreateRequestWithRequestOrString(script_state, input, String(), init,
+                                          exception_state);
 }
 
 Request* Request::Create(ScriptState* script_state, FetchRequestData* request) {
@@ -530,7 +637,6 @@ Request::Request(ScriptState* script_state,
       request_(request),
       headers_(headers),
       signal_(signal) {
-  RefreshBody(script_state);
 }
 
 Request::Request(ScriptState* script_state, FetchRequestData* request)
@@ -724,15 +830,24 @@ bool Request::keepalive() const {
   return request_->Keepalive();
 }
 
+bool Request::isHistoryNavigation() const {
+  return request_->IsHistoryNavigation();
+}
+
 Request* Request::clone(ScriptState* script_state,
                         ExceptionState& exception_state) {
-  if (IsBodyLocked() || bodyUsed()) {
+  if (IsBodyLocked(exception_state) == BodyLocked::kLocked ||
+      IsBodyUsed(exception_state) == BodyUsed::kUsed) {
+    DCHECK(!exception_state.HadException());
     exception_state.ThrowTypeError("Request body is already used");
     return nullptr;
   }
+  if (exception_state.HadException())
+    return nullptr;
 
-  FetchRequestData* request = request_->Clone(script_state);
-  RefreshBody(script_state);
+  FetchRequestData* request = request_->Clone(script_state, exception_state);
+  if (exception_state.HadException())
+    return nullptr;
   Headers* headers = Headers::Create(request->HeaderList());
   headers->SetGuard(headers_->GetGuard());
   auto* signal = new AbortSignal(ExecutionContext::From(script_state));
@@ -740,10 +855,12 @@ Request* Request::clone(ScriptState* script_state,
   return new Request(script_state, request, headers, signal);
 }
 
-FetchRequestData* Request::PassRequestData(ScriptState* script_state) {
-  DCHECK(!bodyUsed());
-  FetchRequestData* data = request_->Pass(script_state);
-  RefreshBody(script_state);
+FetchRequestData* Request::PassRequestData(ScriptState* script_state,
+                                           ExceptionState& exception_state) {
+  DCHECK(!IsBodyUsedForDCheck());
+  FetchRequestData* data = request_->Pass(script_state, exception_state);
+  if (exception_state.HadException())
+    return nullptr;
   // |data|'s buffer('s js wrapper) has no retainer, but it's OK because
   // the only caller is the fetch function and it uses the body buffer
   // immediately.
@@ -762,6 +879,7 @@ void Request::PopulateWebServiceWorkerRequest(
   web_request.SetCacheMode(request_->CacheMode());
   web_request.SetRedirectMode(request_->Redirect());
   web_request.SetIntegrity(request_->Integrity());
+  web_request.SetIsHistoryNavigation(request_->IsHistoryNavigation());
   web_request.SetRequestContext(request_->Context());
 
   // Strip off the fragment part of URL. So far, all users of
@@ -792,21 +910,6 @@ String Request::ContentType() const {
   String result;
   request_->HeaderList()->Get(HTTPNames::Content_Type, result);
   return result;
-}
-
-void Request::RefreshBody(ScriptState* script_state) {
-  v8::Local<v8::Value> request = ToV8(this, script_state);
-  if (request.IsEmpty()) {
-    // |toV8| can return an empty handle when the worker is terminating.
-    // We don't want the renderer to crash in such cases.
-    // TODO(yhirano): Delete this block after the graceful shutdown
-    // mechanism is introduced.
-    return;
-  }
-  DCHECK(request->IsObject());
-  v8::Local<v8::Value> body_buffer = ToV8(this->BodyBuffer(), script_state);
-  V8PrivateProperty::GetInternalBodyBuffer(script_state->GetIsolate())
-      .Set(request.As<v8::Object>(), body_buffer);
 }
 
 void Request::Trace(blink::Visitor* visitor) {

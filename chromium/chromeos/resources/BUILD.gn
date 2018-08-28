@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//tools/grit/grit_rule.gni")
+import("//chromeos/assistant/assistant.gni")
 
 assert(is_chromeos, "Non-ChromeOS builds cannot depend on //chromeos")
 
@@ -17,12 +18,16 @@ grit("resources") {
   ]
   output_dir = "$root_gen_dir/chromeos"
 
+  defines = [ "enable_cros_libassistant=$enable_cros_libassistant" ]
+
   grit_flags = [
     "-E",
     "mojom_root=" + rebase_path(root_gen_dir, root_build_dir),
   ]
 
   deps = [
+    "//chromeos/services/device_sync/public/mojom:mojom_js",
     "//chromeos/services/multidevice_setup/public/mojom:mojom_js",
+    "//mojo/public/mojom/base:base_js",
   ]
 }

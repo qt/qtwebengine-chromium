@@ -126,15 +126,13 @@
           <div id="displayScreenTitle" class="start">
             $i18n{displayScreenTitle}
           </div>
-          <div class="md-select-wrapper">
-            <select class="md-select" on-change="updatePrimaryDisplay_"
-                aria-labelledby="displayScreenTitle"
-                value="[[getDisplaySelectMenuIndex_(
-                    selectedDisplay, primaryDisplayId)]]">
-              <option value="0">$i18n{displayScreenPrimary}</option>
-              <option value="1">$i18n{displayScreenExtended}</option>
-            </select>
-            <span class="md-select-underline"></span>
+          <select class="md-select" on-change="updatePrimaryDisplay_"
+              aria-labelledby="displayScreenTitle"
+              value="[[getDisplaySelectMenuIndex_(
+                  selectedDisplay, primaryDisplayId)]]">
+            <option value="0">$i18n{displayScreenPrimary}</option>
+            <option value="1">$i18n{displayScreenExtended}</option>
+          </select>
           </div>
         </div>
       </template>
@@ -195,22 +193,19 @@
           <div id="displayOrientation" class="start text-area">
             $i18n{displayOrientation}
           </div>
-          <div class="md-select-wrapper">
-            <select class="md-select" value="[[selectedDisplay.rotation]]"
-                disabled="[[selectedDisplay.isTabletMode]]"
-                aria-labelledby="displayOrientation"
-                on-change="onOrientationChange_">
-              <option value="0">$i18n{displayOrientationStandard}</option>
-              <option value="90">90</option>
-              <option value="180">180</option>
-              <option value="270">270</option>
-            </select>
-            <span class="md-select-underline"></span>
-          </div>
+          <select class="md-select" value="[[selectedDisplay.rotation]]"
+              disabled="[[selectedDisplay.isTabletMode]]"
+              aria-labelledby="displayOrientation"
+              on-change="onOrientationChange_">
+            <option value="0">$i18n{displayOrientationStandard}</option>
+            <option value="90">90</option>
+            <option value="180">180</option>
+            <option value="270">270</option>
+          </select>
         </div>
       </template>
 
-      <cr-link-row icon-class="subpage-arrow" class="indented hr"
+      <cr-link-row embedded icon-class="subpage-arrow" class="indented hr"
           id="overscan" label="$i18n{displayOverscanPageTitle}"
           sub-label="$i18n{displayOverscanPageText}" on-click="onOverscanTap_"
           hidden$="[[!showOverscanSetting_(selectedDisplay)]]">
@@ -221,21 +216,12 @@
           on-close="onCloseOverscanDialog_">
       </settings-display-overscan-dialog>
 
-      <div class="settings-box indented two-line"
+      <cr-link-row embedded icon-class="subpage-arrow" class="indented hr"
+          id="touchCalibration" label="$i18n{displayTouchCalibrationTitle}"
+          sub-label="$i18n{displayTouchCalibrationText}"
           on-click="onTouchCalibrationTap_"
-          hidden$="[[!showTouchCalibrationSetting_(selectedDisplay)]]"
-          actionable>
-        <div class="start">
-          $i18n{displayTouchCalibrationTitle}
-          <div class="secondary" id="touchCalibrationSecondary">
-            $i18n{displayTouchCalibrationText}
-          </div>
-        </div>
-        <paper-icon-button-light class="subpage-arrow">
-          <button aria-label="$i18n{displayTouchCalibrationTitle}"
-              aria-describedby="touchCalibrationSecondary"></button>
-        </paper-icon-button-light>
-      </div>
+          hidden$="[[!showTouchCalibrationSetting_(selectedDisplay)]]">
+      </cr-link-row>
     </div>
 
     <!-- Night Light Settings -->

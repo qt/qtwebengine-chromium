@@ -13,6 +13,7 @@
 <translation id="1413622004203049571"><ph name="NOTIFIER_NAME" /> నుండి వచ్చే నోటిఫికేషన్‌లను నిలిపివేయి</translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 నిమిషం మరియు }other{# నిమిషాలు మరియు }}</translation>
 <translation id="1643823602425662293">నోటిఫికేషన్</translation>
+<translation id="169515659049020177">Shift</translation>
 <translation id="1710340000377843106">ఇప్పుడు</translation>
 <translation id="1752946267035950200">{MINUTES,plural, =1{1 నిమిషం}other{# నిమిషాలు}}</translation>
 <translation id="1761785978543082658"><ph name="QUANTITY" /> B</translation>
@@ -37,6 +38,7 @@
 <translation id="2295140143284145483">సర్వే</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/s</translation>
 <translation id="24452542372838207">నోటిఫికేషన్‌ని విస్తరించు</translation>
+<translation id="2482878487686419369">ప్రకటనలు</translation>
 <translation id="2497284189126895209">మొత్తం ఫైళ్లు</translation>
 <translation id="2522350507219695259">క్రమాంకనం పూర్తయింది</translation>
 <translation id="252373100621549798">తెలియని ప్రదర్శన</translation>
@@ -49,6 +51,7 @@
 <translation id="3036649622769666520">ఫైళ్ళను తెరువు</translation>
 <translation id="3049748772180311791"><ph name="QUANTITY" /> MB</translation>
 <translation id="3087734570205094154">దిగువ</translation>
+<translation id="3126026824346185272">Ctrl</translation>
 <translation id="3157931365184549694">పునరుద్ధరించు</translation>
 <translation id="3183922693828471536">ఇక్కడ స్క్రోల్ చెయ్యండి</translation>
 <translation id="3234408098842461169">క్రింది బాణం</translation>
@@ -76,6 +79,7 @@
 <translation id="4730374152663651037">తరచుగా ఉపయోగించేవి</translation>
 <translation id="4788285488841504513">{MONTHS,plural, =1{1 నెల మిగిలి ఉంది}other{# నెలలు మిగిలి ఉన్నాయి}}</translation>
 <translation id="4820616160060340806">Command+<ph name="KEY_COMBO_NAME" /></translation>
+<translation id="4841881773802181781">చొప్పించడం</translation>
 <translation id="4968171027979920686">{SECONDS,plural, =1{1 సెకను}other{# సెకన్లు}}</translation>
 <translation id="4971687151119236543">మీడియా మునుపటి ట్రాక్</translation>
 <translation id="4999762576397546063">Ctrl+<ph name="KEY_COMBO_NAME" /></translation>
@@ -118,6 +122,7 @@
 <translation id="6612467943526193239">క్రమాంకనం నుండి నిష్క్రమించేందుకు, Esc నొక్కండి.</translation>
 <translation id="6620110761915583480">ఫైల్‌ను సేవ్ చేయి</translation>
 <translation id="6699343763173986273">మీడియా తదుపరి ట్రాక్</translation>
+<translation id="673773751041746814">తొలగింపు</translation>
 <translation id="6786750046913594791">ఫోల్డర్‌ను మూసివేయండి</translation>
 <translation id="6808150112686056157">మీడియా ఆపివేయి</translation>
 <translation id="6845383723252244143">ఫోల్డర్‌ను ఎంచుకో</translation>

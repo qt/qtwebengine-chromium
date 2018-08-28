@@ -12,6 +12,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/hit_test_region_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils_internal.h"
@@ -24,46 +25,6 @@
 #endif  // USE_AURA
 
 namespace content {
-
-namespace {
-
-#ifdef USE_AURA
-class MockRenderWidgetHostView : public RenderWidgetHostViewAura {
- public:
-  MockRenderWidgetHostView(RenderWidgetHost* host, bool is_guest_view_hack)
-      : RenderWidgetHostViewAura(host,
-                                 is_guest_view_hack,
-                                 false /* is_mus_browser_plugin_guest */),
-        host_(RenderWidgetHostImpl::From(host)) {}
-  ~MockRenderWidgetHostView() override {
-    if (mouse_locked_)
-      UnlockMouse();
-  }
-
-  bool LockMouse() override {
-    mouse_locked_ = true;
-    return true;
-  }
-
-  void UnlockMouse() override {
-    host_->LostMouseLock();
-    mouse_locked_ = false;
-  }
-
-  bool IsMouseLocked() override { return mouse_locked_; }
-
-  bool HasFocus() const override { return true; }
-
-  void OnWindowFocused(aura::Window* gained_focus,
-                       aura::Window* lost_focus) override {
-    // Ignore window focus events.
-  }
-
-  RenderWidgetHostImpl* host_;
-};
-#endif  // USE_AURA
-
-}  // namespace
 
 class MockPointerLockWebContentsDelegate : public WebContentsDelegate {
  public:
@@ -80,11 +41,47 @@ class MockPointerLockWebContentsDelegate : public WebContentsDelegate {
 };
 
 #ifdef USE_AURA
+class MockPointerLockRenderWidgetHostView : public RenderWidgetHostViewAura {
+ public:
+  MockPointerLockRenderWidgetHostView(RenderWidgetHost* host,
+                                      bool is_guest_view_hack)
+      : RenderWidgetHostViewAura(host,
+                                 is_guest_view_hack,
+                                 false /* is_mus_browser_plugin_guest */),
+        host_(RenderWidgetHostImpl::From(host)) {}
+  ~MockPointerLockRenderWidgetHostView() override {
+    if (IsMouseLocked())
+      UnlockMouse();
+  }
+
+  bool LockMouse() override {
+    event_handler()->mouse_locked_ = true;
+    return true;
+  }
+
+  void UnlockMouse() override {
+    host_->LostMouseLock();
+    event_handler()->mouse_locked_ = false;
+  }
+
+  bool IsMouseLocked() override { return event_handler()->mouse_locked(); }
+
+  bool HasFocus() const override { return true; }
+
+  void OnWindowFocused(aura::Window* gained_focus,
+                       aura::Window* lost_focus) override {
+    // Ignore window focus events.
+  }
+
+  RenderWidgetHostImpl* host_;
+};
+
 void InstallCreateHooksForPointerLockBrowserTests() {
   WebContentsViewAura::InstallCreateHookForTests(
       [](RenderWidgetHost* host,
          bool is_guest_view_hack) -> RenderWidgetHostViewAura* {
-        return new MockRenderWidgetHostView(host, is_guest_view_hack);
+        return new MockPointerLockRenderWidgetHostView(host,
+                                                       is_guest_view_hack);
       });
 }
 #endif  // USE_AURA
@@ -179,7 +176,7 @@ IN_PROC_BROWSER_TEST_F(PointerLockBrowserTest, PointerLockEventRouting) {
   RenderWidgetHostViewBase* child_view = static_cast<RenderWidgetHostViewBase*>(
       child->current_frame_host()->GetView());
 
-  WaitForChildFrameSurfaceReady(child->current_frame_host());
+  WaitForHitTestDataOrChildSurfaceReady(child->current_frame_host());
 
   // Request a pointer lock on the root frame's body.
   EXPECT_TRUE(ExecuteScript(root, "document.body.requestPointerLock()"));
@@ -397,7 +394,7 @@ IN_PROC_BROWSER_TEST_F(PointerLockBrowserTest, PointerLockWheelEventRouting) {
   RenderWidgetHostViewBase* child_view = static_cast<RenderWidgetHostViewBase*>(
       child->current_frame_host()->GetView());
 
-  WaitForChildFrameSurfaceReady(child->current_frame_host());
+  WaitForHitTestDataOrChildSurfaceReady(child->current_frame_host());
 
   // Request a pointer lock on the root frame's body.
   EXPECT_TRUE(ExecuteScript(root, "document.body.requestPointerLock()"));
@@ -431,18 +428,16 @@ IN_PROC_BROWSER_TEST_F(PointerLockBrowserTest, PointerLockWheelEventRouting) {
   // Make sure that the renderer handled the input event.
   root_observer.Wait();
 
-  if (root_view->wheel_scroll_latching_enabled()) {
-    // When wheel scroll latching is enabled all wheel events during a scroll
-    // sequence will be sent to a single target. Send a wheel end event to the
-    // current target before sending wheel events to a new target.
-    wheel_event.delta_x = 0;
-    wheel_event.delta_y = 0;
-    wheel_event.phase = blink::WebMouseWheelEvent::kPhaseEnded;
-    router->RouteMouseWheelEvent(root_view, &wheel_event, ui::LatencyInfo());
+  // All wheel events during a scroll sequence will be sent to a single target.
+  // Send a wheel end event to the current target before sending wheel events to
+  // a new target.
+  wheel_event.delta_x = 0;
+  wheel_event.delta_y = 0;
+  wheel_event.phase = blink::WebMouseWheelEvent::kPhaseEnded;
+  router->RouteMouseWheelEvent(root_view, &wheel_event, ui::LatencyInfo());
 
-    // Make sure that the renderer handled the input event.
-    root_observer.Wait();
-  }
+  // Make sure that the renderer handled the input event.
+  root_observer.Wait();
 
   int x, y, deltaX, deltaY;
   EXPECT_TRUE(ExecuteScriptAndExtractInt(
@@ -489,8 +484,7 @@ IN_PROC_BROWSER_TEST_F(PointerLockBrowserTest, PointerLockWheelEventRouting) {
                                   -transformed_point.y() + 15);
   wheel_event.delta_x = -16;
   wheel_event.delta_y = -17;
-  if (root_view->wheel_scroll_latching_enabled())
-    wheel_event.phase = blink::WebMouseWheelEvent::kPhaseBegan;
+  wheel_event.phase = blink::WebMouseWheelEvent::kPhaseBegan;
   // We use root_view intentionally as the RenderWidgetHostInputEventRouter is
   // responsible for correctly routing the event to the child frame.
   router->RouteMouseWheelEvent(root_view, &wheel_event, ui::LatencyInfo());
@@ -522,7 +516,7 @@ IN_PROC_BROWSER_TEST_F(PointerLockBrowserTest, PointerLockWidgetHidden) {
   RenderWidgetHostViewBase* child_view = static_cast<RenderWidgetHostViewBase*>(
       child->current_frame_host()->GetView());
 
-  WaitForChildFrameSurfaceReady(child->current_frame_host());
+  WaitForHitTestDataOrChildSurfaceReady(child->current_frame_host());
 
   // Request a pointer lock on the child frame's body.
   EXPECT_TRUE(ExecuteScript(child, "document.body.requestPointerLock()"));

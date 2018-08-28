@@ -46,7 +46,7 @@ class GbmBuffer;
 class ScanoutBufferGenerator;
 class ScreenManager;
 
-struct OverlayPlane;
+struct DrmOverlayPlane;
 
 // Holds all the DRM related state and performs all DRM related operations.
 //
@@ -70,11 +70,12 @@ class DrmThread : public base::Thread,
                     const gfx::Size& size,
                     gfx::BufferFormat format,
                     gfx::BufferUsage usage,
+                    uint32_t flags,
                     scoped_refptr<GbmBuffer>* buffer);
   void CreateBufferFromFds(gfx::AcceleratedWidget widget,
                            const gfx::Size& size,
                            gfx::BufferFormat format,
-                           std::vector<base::ScopedFD>&& fds,
+                           std::vector<base::ScopedFD> fds,
                            const std::vector<gfx::NativePixmapPlane>& planes,
                            scoped_refptr<GbmBuffer>* buffer);
   void GetScanoutFormats(gfx::AcceleratedWidget widget,
@@ -84,17 +85,18 @@ class DrmThread : public base::Thread,
 
   // DrmWindowProxy (on GPU thread) is the client for these methods.
   void SchedulePageFlip(gfx::AcceleratedWidget widget,
-                        const std::vector<OverlayPlane>& planes,
-                        SwapCompletionOnceCallback callback);
+                        std::vector<DrmOverlayPlane> planes,
+                        SwapCompletionOnceCallback submission_callback,
+                        PresentationOnceCallback presentation_callback);
   void GetVSyncParameters(
       gfx::AcceleratedWidget widget,
       const gfx::VSyncProvider::UpdateVSyncCallback& callback);
 
   // ozone::mojom::DrmDevice
   void StartDrmDevice(StartDrmDeviceCallback callback) override;
-  void CreateWindow(const gfx::AcceleratedWidget& widget) override;
-  void DestroyWindow(const gfx::AcceleratedWidget& widget) override;
-  void SetWindowBounds(const gfx::AcceleratedWidget& widget,
+  void CreateWindow(gfx::AcceleratedWidget widget) override;
+  void DestroyWindow(gfx::AcceleratedWidget widget) override;
+  void SetWindowBounds(gfx::AcceleratedWidget widget,
                        const gfx::Rect& bounds) override;
   void TakeDisplayControl(base::OnceCallback<void(bool)> callback) override;
   void RelinquishDisplayControl(
@@ -117,24 +119,25 @@ class DrmThread : public base::Thread,
   void SetHDCPState(int64_t display_id,
                     display::HDCPState state,
                     base::OnceCallback<void(int64_t, bool)> callback) override;
-  void SetColorCorrection(
+  void SetColorMatrix(int64_t display_id,
+                      const std::vector<float>& color_matrix) override;
+  void SetGammaCorrection(
       int64_t display_id,
       const std::vector<display::GammaRampRGBEntry>& degamma_lut,
-      const std::vector<display::GammaRampRGBEntry>& gamma_lut,
-      const std::vector<float>& correction_matrix) override;
+      const std::vector<display::GammaRampRGBEntry>& gamma_lut) override;
   void CheckOverlayCapabilities(
-      const gfx::AcceleratedWidget& widget,
+      gfx::AcceleratedWidget widget,
       const OverlaySurfaceCandidateList& overlays,
-      base::OnceCallback<void(const gfx::AcceleratedWidget&,
+      base::OnceCallback<void(gfx::AcceleratedWidget,
                               const OverlaySurfaceCandidateList&,
                               const OverlayStatusList&)> callback) override;
 
   // ozone::mojom::DeviceCursor
-  void SetCursor(const gfx::AcceleratedWidget& widget,
+  void SetCursor(gfx::AcceleratedWidget widget,
                  const std::vector<SkBitmap>& bitmaps,
                  const gfx::Point& location,
                  int32_t frame_delay_ms) override;
-  void MoveCursor(const gfx::AcceleratedWidget& widget,
+  void MoveCursor(gfx::AcceleratedWidget widget,
                   const gfx::Point& location) override;
 
   // base::Thread:
@@ -142,8 +145,9 @@ class DrmThread : public base::Thread,
 
  private:
   void OnPlanesReadyForPageFlip(gfx::AcceleratedWidget widget,
-                                const std::vector<OverlayPlane>& planes,
-                                SwapCompletionOnceCallback callback);
+                                SwapCompletionOnceCallback submission_callback,
+                                PresentationOnceCallback presentation_callback,
+                                std::vector<DrmOverlayPlane> planes);
 
   std::unique_ptr<DrmDeviceManager> device_manager_;
   std::unique_ptr<ScanoutBufferGenerator> buffer_generator_;

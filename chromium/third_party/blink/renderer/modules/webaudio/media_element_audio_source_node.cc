@@ -26,13 +26,14 @@
 #include "third_party/blink/renderer/modules/webaudio/media_element_audio_source_node.h"
 
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_output.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
 #include "third_party/blink/renderer/modules/webaudio/media_element_audio_source_options.h"
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/locker.h"
@@ -235,7 +236,7 @@ MediaElementAudioSourceNode* MediaElementAudioSourceNode::Create(
 
   // First check if this media element already has a source node.
   if (media_element.AudioSourceNode()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "HTMLMediaElement already connected "
                                       "previously to a different "
                                       "MediaElementSourceNode.");
@@ -249,6 +250,11 @@ MediaElementAudioSourceNode* MediaElementAudioSourceNode::Create(
     media_element.SetAudioSourceNode(node);
     // context keeps reference until node is disconnected
     context.NotifySourceNodeStartedProcessing(node);
+    if (!context.HasRealtimeConstraint()) {
+      Deprecation::CountDeprecation(
+          node->GetExecutionContext(),
+          WebFeature::kMediaElementSourceOnOfflineContext);
+    }
   }
 
   return node;

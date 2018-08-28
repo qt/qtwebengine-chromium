@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-
 #include "GrResourceCache.h"
 
 #include "GrCaps.h"
@@ -18,6 +17,7 @@
 #include "SkMessageBus.h"
 #include "SkOpts.h"
 #include "SkTSort.h"
+#include "SkTo.h"
 
 DECLARE_SKMESSAGEBUS_MESSAGE(GrUniqueKeyInvalidatedMessage);
 
@@ -29,7 +29,7 @@ GrScratchKey::ResourceType GrScratchKey::GenerateResourceType() {
     static int32_t gType = INHERITED::kInvalidDomain + 1;
 
     int32_t type = sk_atomic_inc(&gType);
-    if (type > SK_MaxU16) {
+    if (type > SkTo<int32_t>(UINT16_MAX)) {
         SK_ABORT("Too many Resource Types");
     }
 
@@ -40,7 +40,7 @@ GrUniqueKey::Domain GrUniqueKey::GenerateDomain() {
     static int32_t gDomain = INHERITED::kInvalidDomain + 1;
 
     int32_t domain = sk_atomic_inc(&gDomain);
-    if (domain > SK_MaxU16) {
+    if (domain > SkTo<int32_t>(UINT16_MAX)) {
         SK_ABORT("Too many GrUniqueKey Domains");
     }
 
@@ -63,27 +63,29 @@ private:
 
  //////////////////////////////////////////////////////////////////////////////
 
-
 GrResourceCache::GrResourceCache(const GrCaps* caps, uint32_t contextUniqueID)
-    : fProxyProvider(nullptr)
-    , fTimestamp(0)
-    , fMaxCount(kDefaultMaxCount)
-    , fMaxBytes(kDefaultMaxSize)
-    , fMaxUnusedFlushes(kDefaultMaxUnusedFlushes)
+        : fProxyProvider(nullptr)
+        , fTimestamp(0)
+        , fMaxCount(kDefaultMaxCount)
+        , fMaxBytes(kDefaultMaxSize)
+        , fMaxUnusedFlushes(kDefaultMaxUnusedFlushes)
 #if GR_CACHE_STATS
-    , fHighWaterCount(0)
-    , fHighWaterBytes(0)
-    , fBudgetedHighWaterCount(0)
-    , fBudgetedHighWaterBytes(0)
+        , fHighWaterCount(0)
+        , fHighWaterBytes(0)
+        , fBudgetedHighWaterCount(0)
+        , fBudgetedHighWaterBytes(0)
 #endif
-    , fBytes(0)
-    , fBudgetedCount(0)
-    , fBudgetedBytes(0)
-    , fPurgeableBytes(0)
-    , fRequestFlush(false)
-    , fExternalFlushCnt(0)
-    , fContextUniqueID(contextUniqueID)
-    , fPreferVRAMUseOverFlushes(caps->preferVRAMUseOverFlushes()) {
+        , fBytes(0)
+        , fBudgetedCount(0)
+        , fBudgetedBytes(0)
+        , fPurgeableBytes(0)
+        , fRequestFlush(false)
+        , fExternalFlushCnt(0)
+        , fInvalidUniqueKeyInbox(contextUniqueID)
+        , fFreedGpuResourceInbox(contextUniqueID)
+        , fContextUniqueID(contextUniqueID)
+        , fPreferVRAMUseOverFlushes(caps->preferVRAMUseOverFlushes()) {
+    SkASSERT(contextUniqueID != SK_InvalidUniqueID);
     SkDEBUGCODE(fCount = 0;)
     SkDEBUGCODE(fNewlyPurgeableResourceForValidation = nullptr;)
 }
@@ -413,29 +415,6 @@ void GrResourceCache::notifyCntReachedZero(GrGpuResource* resource, uint32_t fla
     this->validate();
 }
 
-void GrResourceCache::didChangeGpuMemorySize(const GrGpuResource* resource, size_t oldSize) {
-    SkASSERT(resource);
-    SkASSERT(this->isInCache(resource));
-
-    ptrdiff_t delta = resource->gpuMemorySize() - oldSize;
-
-    fBytes += delta;
-#if GR_CACHE_STATS
-    fHighWaterBytes = SkTMax(fBytes, fHighWaterBytes);
-#endif
-    if (SkBudgeted::kYes == resource->resourcePriv().isBudgeted()) {
-        fBudgetedBytes += delta;
-        TRACE_COUNTER2("skia.gpu.cache", "skia budget", "used",
-                       fBudgetedBytes, "free", fMaxBytes - fBudgetedBytes);
-#if GR_CACHE_STATS
-        fBudgetedHighWaterBytes = SkTMax(fBudgetedBytes, fBudgetedHighWaterBytes);
-#endif
-    }
-
-    this->purgeAsNeeded();
-    this->validate();
-}
-
 void GrResourceCache::didChangeBudgetStatus(GrGpuResource* resource) {
     SkASSERT(resource);
     SkASSERT(this->isInCache(resource));
@@ -627,9 +606,8 @@ void GrResourceCache::processFreedGpuResources() {
     SkTArray<GrGpuResourceFreedMessage> msgs;
     fFreedGpuResourceInbox.poll(&msgs);
     for (int i = 0; i < msgs.count(); ++i) {
-        if (msgs[i].fOwningUniqueID == fContextUniqueID) {
-            msgs[i].fResource->unref();
-        }
+        SkASSERT(msgs[i].fOwningUniqueID == fContextUniqueID);
+        msgs[i].fResource->unref();
     }
 }
 

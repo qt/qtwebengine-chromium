@@ -213,7 +213,7 @@ External library support:
   --enable-gmp             enable gmp, needed for rtmp(t)e support
                            if openssl or librtmp is not used [no]
   --enable-gnutls          enable gnutls, needed for https support
-                           if openssl or libtls is not used [no]
+                           if openssl, libtls or mbedtls is not used [no]
   --disable-iconv          disable iconv [autodetect]
   --enable-jni             enable JNI support [no]
   --enable-ladspa          enable LADSPA audio filtering [no]
@@ -259,10 +259,12 @@ External library support:
   --enable-libspeex        enable Speex de/encoding via libspeex [no]
   --enable-libsrt          enable Haivision SRT protocol via libsrt [no]
   --enable-libssh          enable SFTP protocol via libssh [no]
+  --enable-libtensorflow   enable TensorFlow as a DNN module backend
+                           for DNN based filters like srcnn [no]
   --enable-libtesseract    enable Tesseract, needed for ocr filter [no]
   --enable-libtheora       enable Theora encoding via libtheora [no]
   --enable-libtls          enable LibreSSL (via libtls), needed for https support
-                           if openssl or gnutls is not used [no]
+                           if openssl, gnutls or mbedtls is not used [no]
   --enable-libtwolame      enable MP2 encoding via libtwolame [no]
   --enable-libv4l2         enable libv4l2/v4l-utils [no]
   --enable-libvidstab      enable video stabilization using vid.stab [no]
@@ -282,7 +284,8 @@ External library support:
   --enable-libxcb-shape    enable X11 grabbing shape rendering [autodetect]
   --enable-libxvid         enable Xvid encoding via xvidcore,
                            native MPEG-4/Xvid encoder exists [no]
-  --enable-libxml2         enable XML parsing using the C library libxml2 [no]
+  --enable-libxml2         enable XML parsing using the C library libxml2, needed
+                           for dash demuxing support [no]
   --enable-libzimg         enable z.lib, needed for zscale filter [no]
   --enable-libzmq          enable message passing via libzmq [no]
   --enable-libzvbi         enable teletext support via libzvbi [no]
@@ -290,19 +293,22 @@ External library support:
   --disable-lzma           disable lzma [autodetect]
   --enable-decklink        enable Blackmagic DeckLink I/O support [no]
   --enable-libndi_newtek   enable Newteck NDI I/O support [no]
+  --enable-mbedtls         enable mbedTLS, needed for https support
+                           if openssl, gnutls or libtls is not used [no]
   --enable-mediacodec      enable Android MediaCodec support [no]
   --enable-libmysofa       enable libmysofa, needed for sofalizer filter [no]
   --enable-openal          enable OpenAL 1.1 capture support [no]
   --enable-opencl          enable OpenCL processing [no]
   --enable-opengl          enable OpenGL rendering [no]
   --enable-openssl         enable openssl, needed for https support
-                           if gnutls or libtls is not used [no]
+                           if gnutls, libtls or mbedtls is not used [no]
   --disable-sndio          disable sndio support [autodetect]
   --disable-schannel       disable SChannel SSP, needed for TLS support on
                            Windows if openssl and gnutls are not used [autodetect]
   --disable-sdl2           disable sdl2 [autodetect]
   --disable-securetransport disable Secure Transport, needed for TLS support
                            on OSX if openssl and gnutls are not used [autodetect]
+  --enable-vapoursynth     enable VapourSynth demuxer [no]
   --disable-xlib           disable xlib [autodetect]
   --disable-zlib           disable zlib [autodetect]
 
@@ -1654,6 +1660,7 @@ EXTERNAL_LIBRARY_VERSION3_LIST="
     libopencore_amrwb
     libvmaf
     libvo_amrwbenc
+    mbedtls
     rkmpp
 "
 
@@ -1708,6 +1715,7 @@ EXTERNAL_LIBRARY_LIST="
     libspeex
     libsrt
     libssh
+    libtensorflow
     libtesseract
     libtheora
     libtwolame
@@ -1724,6 +1732,7 @@ EXTERNAL_LIBRARY_LIST="
     mediacodec
     openal
     opengl
+    vapoursynth
 "
 
 HWACCEL_AUTODETECT_LIBRARY_LIST="
@@ -2236,7 +2245,9 @@ CONFIG_EXTRA="
     cbs_h264
     cbs_h265
     cbs_mpeg2
+    cbs_vp9
     dirac_parse
+    dnn
     dvprofile
     exif
     faandct
@@ -2497,8 +2508,10 @@ threads_if_any="$THREADS_LIST"
 cbs_h264_select="cbs golomb"
 cbs_h265_select="cbs golomb"
 cbs_mpeg2_select="cbs"
+cbs_vp9_select="cbs"
 dct_select="rdft"
 dirac_parse_select="golomb"
+dnn_suggest="libtensorflow"
 error_resilience_select="me_cmp"
 faandct_deps="faan"
 faandct_select="fdctdsp"
@@ -2876,7 +2889,7 @@ qsvdec_select="qsv"
 qsvenc_select="qsv"
 qsvvpp_select="qsv"
 vaapi_encode_deps="vaapi"
-v4l2_m2m_deps_any="linux_videodev2_h"
+v4l2_m2m_deps="linux_videodev2_h sem_timedwait"
 
 hwupload_cuda_filter_deps="ffnvcodec"
 scale_npp_filter_deps="ffnvcodec libnpp"
@@ -2987,6 +3000,7 @@ hevc_metadata_bsf_select="cbs_h265"
 mjpeg2jpeg_bsf_select="jpegtables"
 mpeg2_metadata_bsf_select="cbs_mpeg2"
 trace_headers_bsf_select="cbs"
+vp9_metadata_bsf_select="cbs_vp9"
 
 # external libraries
 aac_at_decoder_deps="audiotoolbox"
@@ -3088,6 +3102,7 @@ libx265_encoder_deps="libx265"
 libxavs_encoder_deps="libxavs"
 libxvid_encoder_deps="libxvid"
 libzvbi_teletext_decoder_deps="libzvbi"
+vapoursynth_demuxer_deps="vapoursynth"
 videotoolbox_suggest="coreservices"
 videotoolbox_deps="corefoundation coremedia corevideo"
 videotoolbox_encoder_deps="videotoolbox VTCompressionSessionPrepareToEncodeFrames"
@@ -3222,14 +3237,13 @@ v4l2_outdev_suggest="libv4l2"
 vfwcap_indev_deps="vfw32 vfwcap_defines"
 xcbgrab_indev_deps="libxcb"
 xcbgrab_indev_suggest="libxcb_shm libxcb_shape libxcb_xfixes"
-xv_outdev_deps="X11_extensions_Xvlib_h XvGetPortAttribute"
-xv_outdev_extralibs="-lXv -lX11 -lXext"
+xv_outdev_deps="xlib"
 
 # protocols
 async_protocol_deps="threads"
 bluray_protocol_deps="libbluray"
 ffrtmpcrypt_protocol_conflict="librtmp_protocol"
-ffrtmpcrypt_protocol_deps_any="gcrypt gmp openssl"
+ffrtmpcrypt_protocol_deps_any="gcrypt gmp openssl mbedtls"
 ffrtmpcrypt_protocol_select="tcp_protocol"
 ffrtmphttp_protocol_conflict="librtmp_protocol"
 ffrtmphttp_protocol_select="http_protocol"
@@ -3249,7 +3263,7 @@ librtmpt_protocol_deps="librtmp"
 librtmpte_protocol_deps="librtmp"
 libsmbclient_protocol_deps="libsmbclient gplv3"
 libssh_protocol_deps="libssh"
-libtls_conflict="openssl gnutls"
+libtls_conflict="openssl gnutls mbedtls"
 mmsh_protocol_select="http_protocol"
 mmst_protocol_select="network"
 libsrt_protocol_deps="libsrt"
@@ -3269,13 +3283,13 @@ rtmpte_protocol_suggest="zlib"
 rtmpts_protocol_select="ffrtmphttp_protocol https_protocol"
 rtmpts_protocol_suggest="zlib"
 rtp_protocol_select="udp_protocol"
-schannel_conflict="openssl gnutls libtls"
+schannel_conflict="openssl gnutls libtls mbedtls"
 sctp_protocol_deps="struct_sctp_event_subscribe struct_msghdr_msg_flags"
 sctp_protocol_select="network"
-securetransport_conflict="openssl gnutls libtls"
+securetransport_conflict="openssl gnutls libtls mbedtls"
 srtp_protocol_select="rtp_protocol srtp"
 tcp_protocol_select="network"
-tls_protocol_deps_any="gnutls openssl schannel securetransport libtls"
+tls_protocol_deps_any="gnutls openssl schannel securetransport libtls mbedtls"
 tls_protocol_select="tcp_protocol"
 udp_protocol_select="network"
 udplite_protocol_select="network"
@@ -3320,6 +3334,8 @@ elbg_filter_deps="avcodec"
 eq_filter_deps="gpl"
 fftfilt_filter_deps="avcodec"
 fftfilt_filter_select="rdft"
+fftdnoiz_filter_deps="avcodec"
+fftdnoiz_filter_select="fft"
 find_rect_filter_deps="avcodec avformat gpl"
 firequalizer_filter_deps="avcodec"
 firequalizer_filter_select="rdft"
@@ -3384,6 +3400,8 @@ spectrumsynth_filter_deps="avcodec"
 spectrumsynth_filter_select="fft"
 spp_filter_deps="gpl avcodec"
 spp_filter_select="fft idctdsp fdctdsp me_cmp pixblockdsp"
+srcnn_filter_deps="avformat"
+srcnn_filter_select="dnn"
 stereo3d_filter_deps="gpl"
 subtitles_filter_deps="avformat avcodec libass"
 super2xsai_filter_deps="gpl"
@@ -3907,6 +3925,12 @@ fi
 enabled_all gnutls openssl &&
     die "GnuTLS and OpenSSL must not be enabled at the same time."
 
+enabled_all gnutls mbedtls &&
+    die "GnuTLS and mbedTLS must not be enabled at the same time."
+
+enabled_all openssl mbedtls &&
+    die "OpenSSL and mbedTLS must not be enabled at the same time."
+
 # Disable all the library-specific components if the library itself
 # is disabled, see AVCODEC_LIST and following _LIST variables.
 
@@ -3924,7 +3948,7 @@ set >> $logfile
 
 test -n "$valgrind" && toolchain="valgrind-memcheck"
 
-enabled ossfuzz && {
+enabled ossfuzz && ! echo $CFLAGS | grep -q -- "-fsanitize="  &&{
     add_cflags  -fsanitize=address,undefined -fsanitize-coverage=trace-pc-guard,trace-cmp -fno-omit-frame-pointer
     add_ldflags -fsanitize=address,undefined -fsanitize-coverage=trace-pc-guard,trace-cmp
 }
@@ -3979,8 +4003,7 @@ case "$toolchain" in
             cc_default="cl"
             cxx_default="cl"
         else
-            cc_default="c99wrap cl"
-            cxx_default="c99wrap cl"
+            die "Unsupported MSVC version (2013 or newer required)"
         fi
         ld_default="$source_path/compat/windows/mslink"
         nm_default="dumpbin -symbols"
@@ -5802,7 +5825,7 @@ check_func_headers windows.h Sleep
 check_func_headers windows.h VirtualAlloc
 check_func_headers glob.h glob
 enabled xlib &&
-    check_func_headers "X11/Xlib.h X11/extensions/Xvlib.h" XvGetPortAttribute -lXv -lX11 -lXext
+    check_lib xlib "X11/Xlib.h X11/extensions/Xvlib.h" XvGetPortAttribute -lXv -lX11 -lXext
 
 check_header direct.h
 check_header dirent.h
@@ -5886,8 +5909,10 @@ check_type "va/va.h va/va_enc_vp9.h"  "VAEncPictureParameterBufferVP9"
 check_type "vdpau/vdpau.h" "VdpPictureInfoHEVC"
 
 if ! disabled ffnvcodec; then
-    check_pkg_config ffnvcodec "ffnvcodec >= 8.0.14.1" \
-        "ffnvcodec/nvEncodeAPI.h ffnvcodec/dynlink_cuda.h ffnvcodec/dynlink_cuviddec.h ffnvcodec/dynlink_nvcuvid.h" ""
+    check_pkg_config ffnvcodec "ffnvcodec >= 8.1.24.2" \
+          "ffnvcodec/nvEncodeAPI.h ffnvcodec/dynlink_cuda.h ffnvcodec/dynlink_cuviddec.h ffnvcodec/dynlink_nvcuvid.h" "" || \
+        { test_pkg_config ffnvcodec_tmp "ffnvcodec < 8.1" "" "" && check_pkg_config ffnvcodec "ffnvcodec >= 8.0.14.2" \
+          "ffnvcodec/nvEncodeAPI.h ffnvcodec/dynlink_cuda.h ffnvcodec/dynlink_cuviddec.h ffnvcodec/dynlink_nvcuvid.h" ""; }
 fi
 
 check_cpp_condition winrt windows.h "!WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)"
@@ -5932,7 +5957,8 @@ if ! disabled pthreads && ! enabled w32threads && ! enabled os2threads; then
     fi
 fi
 
-enabled  zlib && check_lib zlib   zlib.h      zlibVersion    -lz
+enabled  zlib && { check_pkg_config zlib zlib "zlib.h" zlibVersion ||
+                   check_lib zlib   zlib.h      zlibVersion    -lz; }
 enabled bzlib && check_lib bzlib bzlib.h BZ2_bzlibVersion    -lbz2
 enabled  lzma && check_lib lzma   lzma.h lzma_version_number -llzma
 
@@ -5967,7 +5993,7 @@ enabled gnutls            && require_pkg_config gnutls gnutls gnutls/gnutls.h gn
 enabled jni               && { [ $target_os = "android" ] && check_header jni.h && enabled pthreads || die "ERROR: jni not found"; }
 enabled ladspa            && require_header ladspa.h
 enabled libaom            && require_pkg_config libaom "aom >= 0.1.0" aom/aom_codec.h aom_codec_version
-enabled lv2               && require_pkg_config lv2 lilv-0 "lilv-0/lilv/lilv.h" lilv_world_new
+enabled lv2               && require_pkg_config lv2 lilv-0 "lilv/lilv.h" lilv_world_new
 enabled libiec61883       && require libiec61883 libiec61883/iec61883.h iec61883_cmp_connect -lraw1394 -lavc1394 -lrom1394 -liec61883
 enabled libass            && require_pkg_config libass libass ass/ass.h ass_library_init
 enabled libbluray         && require_pkg_config libbluray libbluray libbluray/bluray.h bd_open
@@ -6005,7 +6031,8 @@ enabled libmfx            && { check_pkg_config libmfx libmfx "mfx/mfxvideo.h" M
                                { require libmfx "mfx/mfxvideo.h" MFXInit "-llibmfx $advapi32_extralibs" && warn "using libmfx without pkg-config"; } }
 enabled libmodplug        && require_pkg_config libmodplug libmodplug libmodplug/modplug.h ModPlug_Load
 enabled libmp3lame        && require "libmp3lame >= 3.98.3" lame/lame.h lame_set_VBR_quality -lmp3lame $libm_extralibs
-enabled libmysofa         && require libmysofa "mysofa.h" mysofa_load -lmysofa $zlib_extralibs
+enabled libmysofa         && { check_pkg_config libmysofa libmysofa mysofa.h mysofa_load ||
+                               require libmysofa mysofa.h mysofa_load -lmysofa $zlib_extralibs; }
 enabled libnpp            && { check_lib libnpp npp.h nppGetLibVersion -lnppig -lnppicc -lnppc ||
                                check_lib libnpp npp.h nppGetLibVersion -lnppi -lnppc ||
                                die "ERROR: libnpp not found"; }
@@ -6040,6 +6067,7 @@ enabled libsoxr           && require libsoxr soxr.h soxr_create -lsoxr
 enabled libssh            && require_pkg_config libssh libssh libssh/sftp.h sftp_init
 enabled libspeex          && require_pkg_config libspeex speex speex/speex.h speex_decoder_init
 enabled libsrt            && require_pkg_config libsrt "srt >= 1.2.0" srt/srt.h srt_socket
+enabled libtensorflow     && require libtensorflow tensorflow/c/c_api.h TF_Version -ltensorflow
 enabled libtesseract      && require_pkg_config libtesseract tesseract tesseract/capi.h TessBaseAPICreate
 enabled libtheora         && require libtheora theora/theoraenc.h th_info_init -ltheoraenc -ltheoradec -logg
 enabled libtls            && require_pkg_config libtls libtls tls.h tls_configure
@@ -6096,6 +6124,10 @@ enabled libzvbi           && require_pkg_config libzvbi zvbi-0.2 libzvbi.h vbi_d
                              { test_cpp_condition libzvbi.h "VBI_VERSION_MAJOR > 0 || VBI_VERSION_MINOR > 2 || VBI_VERSION_MINOR == 2 && VBI_VERSION_MICRO >= 28" ||
                                enabled gpl || die "ERROR: libzvbi requires version 0.2.28 or --enable-gpl."; }
 enabled libxml2           && require_pkg_config libxml2 libxml-2.0 libxml2/libxml/xmlversion.h xmlCheckVersion
+enabled mbedtls           && { check_pkg_config mbedtls mbedtls mbedtls/x509_crt.h mbedtls_x509_crt_init ||
+                               check_pkg_config mbedtls mbedtls mbedtls/ssl.h mbedtls_ssl_init ||
+                               check_lib mbedtls mbedtls/ssl.h mbedtls_ssl_init -lmbedtls -lmbedx509 -lmbedcrypto ||
+                               die "ERROR: mbedTLS not found"; }
 enabled mediacodec        && { enabled jni || die "ERROR: mediacodec requires --enable-jni"; }
 enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host ||
                                { ! enabled cross_compile &&
@@ -6109,7 +6141,8 @@ enabled openal            && { { for al_extralibs in "${OPENAL_LIBS}" "-lopenal"
                                die "ERROR: openal not found"; } &&
                              { test_cpp_condition "AL/al.h" "defined(AL_VERSION_1_1)" ||
                                die "ERROR: openal must be installed and version must be 1.1 or compatible"; }
-enabled opencl            && { check_lib opencl OpenCL/cl.h clEnqueueNDRangeKernel -Wl,-framework,OpenCL ||
+enabled opencl            && { check_pkg_config opencl OpenCL CL/cl.h clEnqueueNDRangeKernel ||
+                               check_lib opencl OpenCL/cl.h clEnqueueNDRangeKernel -Wl,-framework,OpenCL ||
                                check_lib opencl CL/cl.h clEnqueueNDRangeKernel -lOpenCL ||
                                die "ERROR: opencl not found"; } &&
                              { test_cpp_condition "OpenCL/cl.h" "defined(CL_VERSION_1_2)" ||
@@ -6136,6 +6169,8 @@ enabled rkmpp             && { require_pkg_config rkmpp rockchip_mpp  rockchip/r
                                { enabled libdrm ||
                                  die "ERROR: rkmpp requires --enable-libdrm"; }
                              }
+enabled vapoursynth       && require_pkg_config vapoursynth "vapoursynth-script >= 42" VSScript.h vsscript_init
+
 
 if enabled gcrypt; then
     GCRYPT_CONFIG="${cross_prefix}libgcrypt-config"
@@ -6797,6 +6832,7 @@ enabled signature_filter    && prepend avfilter_deps "avcodec avformat"
 enabled smartblur_filter    && prepend avfilter_deps "swscale"
 enabled spectrumsynth_filter && prepend avfilter_deps "avcodec"
 enabled spp_filter          && prepend avfilter_deps "avcodec"
+enabled srcnn_filter        && prepend avfilter_deps "avformat"
 enabled subtitles_filter    && prepend avfilter_deps "avformat avcodec"
 enabled uspp_filter         && prepend avfilter_deps "avcodec"
 enabled zoompan_filter      && prepend avfilter_deps "swscale"

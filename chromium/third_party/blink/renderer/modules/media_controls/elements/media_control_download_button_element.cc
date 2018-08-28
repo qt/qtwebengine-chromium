@@ -76,14 +76,11 @@ void MediaControlDownloadButtonElement::DefaultEventHandler(Event* event) {
     Platform::Current()->RecordAction(
         UserMetricsAction("Media.Controls.Download"));
     ResourceRequest request(url);
-    request.SetUIStartTime(
-        (event->PlatformTimeStamp() - TimeTicks()).InSecondsF());
-    request.SetInputPerfMetricReportPolicy(
-        InputToLoadPerfMetricReportPolicy::kReportLink);
     request.SetSuggestedFilename(MediaElement().title());
     request.SetRequestContext(WebURLRequest::kRequestContextDownload);
     request.SetRequestorOrigin(SecurityOrigin::Create(GetDocument().Url()));
-    GetDocument().GetFrame()->Client()->DownloadURL(request);
+    GetDocument().GetFrame()->Client()->DownloadURL(
+        request, DownloadCrossOriginRedirects::kFollow);
   }
   MediaControlInputElement::DefaultEventHandler(event);
 }

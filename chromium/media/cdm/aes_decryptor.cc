@@ -417,7 +417,7 @@ void AesDecryptor::RemoveSession(const std::string& session_id,
   //              Let message be a message containing or reflecting the record
   //              of license destruction.
   std::vector<uint8_t> message;
-  if (it->second != CdmSessionType::TEMPORARY_SESSION) {
+  if (it->second != CdmSessionType::kTemporary) {
     // The license release message is specified in the spec:
     // https://w3c.github.io/encrypted-media/#clear-key-release-format.
     KeyIdList key_ids;
@@ -486,6 +486,8 @@ void AesDecryptor::RegisterNewKeyCB(StreamType stream_type,
 void AesDecryptor::Decrypt(StreamType stream_type,
                            scoped_refptr<DecoderBuffer> encrypted,
                            const DecryptCB& decrypt_cb) {
+  DVLOG(3) << __func__ << ": " << encrypted->AsHumanReadableString();
+
   if (!encrypted->decrypt_config()) {
     // If there is no DecryptConfig, then the data is unencrypted so return it
     // immediately.
@@ -575,7 +577,7 @@ std::string AesDecryptor::GetSessionStateAsJWK(const std::string& session_id) {
       }
     }
   }
-  return GenerateJWKSet(keys, CdmSessionType::PERSISTENT_LICENSE_SESSION);
+  return GenerateJWKSet(keys, CdmSessionType::kPersistentLicense);
 }
 
 bool AesDecryptor::AddDecryptionKey(const std::string& session_id,

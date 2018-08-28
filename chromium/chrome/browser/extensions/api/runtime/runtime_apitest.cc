@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/run_loop.h"
-#include "chrome/browser/apps/app_browsertest_util.h"
+#include "chrome/browser/apps/platform_apps/app_browsertest_util.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -214,7 +214,14 @@ IN_PROC_BROWSER_TEST_F(RuntimeAPIUpdateTest,
     ASSERT_TRUE(extension_v1);
     EXPECT_TRUE(catcher.GetNextResult());
   }
+
   ASSERT_TRUE(CrashEnabledExtension(extension_id));
+
+  // The process-terminated notification may be received immediately before
+  // the task that will actually update the active-extensions count, so spin
+  // the message loop to ensure we are up-to-date.
+  base::RunLoop().RunUntilIdle();
+
   {
     // Update to version 2, expect runtime.onInstalled with
     // previousVersion = '1'.

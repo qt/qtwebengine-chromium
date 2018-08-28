@@ -27,7 +27,6 @@
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/pipeline_status.h"
-#include "media/base/surface_manager.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_util.h"
 #include "media/media_buildflags.h"
@@ -144,6 +143,10 @@ static void ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB(
   }
 
   cb.Run(success);
+}
+
+bool GpuVideoDecoder::IsPlatformDecoder() const {
+  return true;
 }
 
 std::string GpuVideoDecoder::GetDisplayName() const {

@@ -22,6 +22,18 @@ CPDFXFA_Page::CPDFXFA_Page(CPDFXFA_Context* pContext, int page_index)
 
 CPDFXFA_Page::~CPDFXFA_Page() {}
 
+CPDF_Page* CPDFXFA_Page::AsPDFPage() {
+  return m_pPDFPage.Get();
+}
+
+CPDFXFA_Page* CPDFXFA_Page::AsXFAPage() {
+  return this;
+}
+
+CPDF_Document* CPDFXFA_Page::GetDocument() const {
+  return GetDocumentExtension()->GetPDFDoc();
+}
+
 bool CPDFXFA_Page::LoadPDFPage() {
   if (!m_pContext)
     return false;
@@ -34,8 +46,8 @@ bool CPDFXFA_Page::LoadPDFPage() {
   if (!pDict)
     return false;
 
-  if (!m_pPDFPage || m_pPDFPage->GetFormDict() != pDict) {
-    m_pPDFPage = pdfium::MakeUnique<CPDF_Page>(pPDFDoc, pDict, true);
+  if (!m_pPDFPage || m_pPDFPage->GetDict() != pDict) {
+    m_pPDFPage = pdfium::MakeRetain<CPDF_Page>(pPDFDoc, pDict, true);
     m_pPDFPage->ParseContent();
   }
   return true;
@@ -81,7 +93,7 @@ bool CPDFXFA_Page::LoadPDFPage(CPDF_Dictionary* pageDict) {
     return false;
 
   m_pPDFPage =
-      pdfium::MakeUnique<CPDF_Page>(m_pContext->GetPDFDoc(), pageDict, true);
+      pdfium::MakeRetain<CPDF_Page>(m_pContext->GetPDFDoc(), pageDict, true);
   m_pPDFPage->ParseContent();
   return true;
 }

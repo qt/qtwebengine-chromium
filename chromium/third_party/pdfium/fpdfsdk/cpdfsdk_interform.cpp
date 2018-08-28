@@ -10,6 +10,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_page.h"
@@ -19,6 +20,7 @@
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfdoc/cpdf_actionfields.h"
 #include "core/fpdfdoc/cpdf_interform.h"
+#include "core/fxcrt/autorestorer.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "fpdfsdk/cpdfsdk_actionhandler.h"
@@ -255,12 +257,11 @@ void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
   if (m_bBusy)
     return;
 
+  AutoRestorer<bool> restorer(&m_bBusy);
   m_bBusy = true;
 
-  if (!IsCalculateEnabled()) {
-    m_bBusy = false;
+  if (!IsCalculateEnabled())
     return;
-  }
 
   IJS_Runtime* pRuntime = m_pFormFillEnv->GetIJSRuntime();
   int nSize = m_pInterForm->CountFieldsInCalculationOrder();
@@ -285,18 +286,16 @@ void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
     if (csJS.IsEmpty())
       continue;
 
-    IJS_EventContext* pContext = pRuntime->NewEventContext();
     WideString sOldValue = pField->GetValue();
     WideString sValue = sOldValue;
     bool bRC = true;
-    pContext->OnField_Calculate(pFormField, pField, sValue, bRC);
+    IJS_Runtime::ScopedEventContext pContext(pRuntime);
+    pContext->OnField_Calculate(pFormField, pField, &sValue, &bRC);
 
     Optional<IJS_Runtime::JS_Error> err = pContext->RunScript(csJS);
-    pRuntime->ReleaseEventContext(pContext);
     if (!err && bRC && sValue.Compare(sOldValue) != 0)
       pField->SetValue(sValue, true);
   }
-  m_bBusy = false;
 }
 
 WideString CPDFSDK_InterForm::OnFormat(CPDF_FormField* pFormField,
@@ -324,14 +323,11 @@ WideString CPDFSDK_InterForm::OnFormat(CPDF_FormField* pFormField,
       WideString script = action.GetJavaScript();
       if (!script.IsEmpty()) {
         WideString Value = sValue;
-
-        IJS_EventContext* pContext = pRuntime->NewEventContext();
-        pContext->OnField_Format(pFormField, Value, true);
-
+        IJS_Runtime::ScopedEventContext pContext(pRuntime);
+        pContext->OnField_Format(pFormField, &Value, true);
         Optional<IJS_Runtime::JS_Error> err = pContext->RunScript(script);
-        pRuntime->ReleaseEventContext(pContext);
         if (!err) {
-          sValue = Value;
+          sValue = std::move(Value);
           bFormatted = true;
         }
       }
@@ -361,7 +357,7 @@ void CPDFSDK_InterForm::UpdateField(CPDF_FormField* pFormField) {
     if (!pWidget)
       continue;
 
-    UnderlyingPageType* pPage = pWidget->GetUnderlyingPage();
+    IPDF_Page* pPage = pWidget->GetPage();
     FX_RECT rect = formfiller->GetViewBBox(
         m_pFormFillEnv->GetPageView(pPage, false), pWidget);
     m_pFormFillEnv->Invalidate(pPage, rect);
@@ -412,7 +408,7 @@ bool CPDFSDK_InterForm::DoAction_Hide(const CPDF_Action& action) {
   ASSERT(action.GetDict());
 
   CPDF_ActionFields af(&action);
-  std::vector<CPDF_Object*> fieldObjects = af.GetAllFields();
+  std::vector<const CPDF_Object*> fieldObjects = af.GetAllFields();
   std::vector<CPDF_FormField*> fields = GetFieldFromObjects(fieldObjects);
 
   bool bHide = action.GetHideStatus();
@@ -446,11 +442,11 @@ bool CPDFSDK_InterForm::DoAction_SubmitForm(const CPDF_Action& action) {
   if (sDestination.IsEmpty())
     return false;
 
-  CPDF_Dictionary* pActionDict = action.GetDict();
+  const CPDF_Dictionary* pActionDict = action.GetDict();
   if (pActionDict->KeyExist("Fields")) {
     CPDF_ActionFields af(&action);
     uint32_t dwFlags = action.GetFlags();
-    std::vector<CPDF_Object*> fieldObjects = af.GetAllFields();
+    std::vector<const CPDF_Object*> fieldObjects = af.GetAllFields();
     std::vector<CPDF_FormField*> fields = GetFieldFromObjects(fieldObjects);
     if (!fields.empty()) {
       bool bIncludeOrExclude = !(dwFlags & 0x01);
@@ -519,7 +515,7 @@ bool CPDFSDK_InterForm::FDFToURLEncodedData(uint8_t*& pBuf, size_t& nBufSize) {
     ByteString csBValue = pField->GetStringFor("V");
     WideString csWValue = PDF_DecodeText(csBValue);
     ByteString csValue_b = ByteString::FromUnicode(csWValue);
-    fdfEncodedData << name_b.c_str() << "=" << csValue_b.c_str();
+    fdfEncodedData << name_b << "=" << csValue_b;
     if (i != pFields->GetCount() - 1)
       fdfEncodedData << "&";
   }
@@ -590,7 +586,7 @@ ByteString CPDFSDK_InterForm::ExportFormToFDFTextBuf() {
 void CPDFSDK_InterForm::DoAction_ResetForm(const CPDF_Action& action) {
   ASSERT(action.GetDict());
 
-  CPDF_Dictionary* pActionDict = action.GetDict();
+  const CPDF_Dictionary* pActionDict = action.GetDict();
   if (!pActionDict->KeyExist("Fields")) {
     m_pInterForm->ResetForm(true);
     return;
@@ -599,15 +595,15 @@ void CPDFSDK_InterForm::DoAction_ResetForm(const CPDF_Action& action) {
   CPDF_ActionFields af(&action);
   uint32_t dwFlags = action.GetFlags();
 
-  std::vector<CPDF_Object*> fieldObjects = af.GetAllFields();
+  std::vector<const CPDF_Object*> fieldObjects = af.GetAllFields();
   std::vector<CPDF_FormField*> fields = GetFieldFromObjects(fieldObjects);
   m_pInterForm->ResetForm(fields, !(dwFlags & 0x01), true);
 }
 
 std::vector<CPDF_FormField*> CPDFSDK_InterForm::GetFieldFromObjects(
-    const std::vector<CPDF_Object*>& objects) const {
+    const std::vector<const CPDF_Object*>& objects) const {
   std::vector<CPDF_FormField*> fields;
-  for (CPDF_Object* pObject : objects) {
+  for (const CPDF_Object* pObject : objects) {
     if (!pObject || !pObject->IsString())
       continue;
 

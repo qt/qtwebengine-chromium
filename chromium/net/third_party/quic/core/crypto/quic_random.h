@@ -10,7 +10,7 @@
 
 #include "net/third_party/quic/platform/api/quic_export.h"
 
-namespace net {
+namespace quic {
 
 // The interface for a random number generator.
 class QUIC_EXPORT_PRIVATE QuicRandom {
@@ -26,13 +26,8 @@ class QUIC_EXPORT_PRIVATE QuicRandom {
 
   // Returns a random number in the range [0, kuint64max].
   virtual uint64_t RandUint64() = 0;
-
-  // Reseeds the random number generator with additional entropy input.
-  // NOTE: the constructor of a QuicRandom object is responsible for seeding
-  // itself with enough entropy input.
-  virtual void Reseed(const void* additional_entropy, size_t entropy_len) = 0;
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_CRYPTO_QUIC_RANDOM_H_

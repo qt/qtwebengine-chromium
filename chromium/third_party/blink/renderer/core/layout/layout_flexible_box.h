@@ -46,8 +46,6 @@ class CORE_EXPORT LayoutFlexibleBox : public LayoutBlock {
   LayoutFlexibleBox(Element*);
   ~LayoutFlexibleBox() override;
 
-  static LayoutFlexibleBox* CreateAnonymous(Document*);
-
   const char* GetName() const override { return "LayoutFlexibleBox"; }
 
   bool IsFlexibleBox() const final { return true; }
@@ -69,7 +67,8 @@ class CORE_EXPORT LayoutFlexibleBox : public LayoutBlock {
   bool HasTopOverflow() const override;
   bool HasLeftOverflow() const override;
 
-  void PaintChildren(const PaintInfo&, const LayoutPoint&) const final;
+  void PaintChildren(const PaintInfo&,
+                     const LayoutPoint& paint_offset) const final;
 
   bool IsHorizontalFlow() const;
 

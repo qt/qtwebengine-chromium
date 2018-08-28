@@ -20,6 +20,7 @@
 #include "extensions/common/file_util.h"
 #include "net/base/load_flags.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace extensions {
 
@@ -79,17 +80,18 @@ ContentHash::ExtensionKey& ContentHash::ExtensionKey::operator=(
     const ContentHash::ExtensionKey& other) = default;
 
 ContentHash::FetchParams::FetchParams(
-    net::URLRequestContextGetter* request_context,
+    network::mojom::URLLoaderFactoryPtrInfo url_loader_factory_ptr_info,
     const GURL& fetch_url)
-    : request_context(request_context), fetch_url(fetch_url) {}
-
-ContentHash::FetchParams::FetchParams(const FetchParams& other) = default;
-ContentHash::FetchParams& ContentHash::FetchParams::operator=(
-    const FetchParams& other) = default;
+    : url_loader_factory_ptr_info(std::move(url_loader_factory_ptr_info)),
+      fetch_url(fetch_url) {}
+ContentHash::FetchParams::~FetchParams() = default;
+ContentHash::FetchParams::FetchParams(FetchParams&&) = default;
+ContentHash::FetchParams& ContentHash::FetchParams::operator=(FetchParams&&) =
+    default;
 
 // static
 void ContentHash::Create(const ExtensionKey& key,
-                         const FetchParams& fetch_params,
+                         FetchParams fetch_params,
                          const IsCancelledCallback& is_cancelled,
                          CreatedCallback created_callback) {
   base::AssertBlockingAllowed();
@@ -102,7 +104,7 @@ void ContentHash::Create(const ExtensionKey& key,
 
   if (!verified_contents) {
     // Fetch verified_contents.json and then respond.
-    FetchVerifiedContents(key, fetch_params, is_cancelled,
+    FetchVerifiedContents(key, std::move(fetch_params), is_cancelled,
                           std::move(created_callback));
     return;
   }
@@ -154,12 +156,12 @@ ContentHash::~ContentHash() = default;
 // static
 void ContentHash::FetchVerifiedContents(
     const ContentHash::ExtensionKey& extension_key,
-    const ContentHash::FetchParams& fetch_params,
+    ContentHash::FetchParams fetch_params,
     const ContentHash::IsCancelledCallback& is_cancelled,
     ContentHash::CreatedCallback created_callback) {
   // |fetcher| deletes itself when it's done.
   internals::ContentHashFetcher* fetcher =
-      new internals::ContentHashFetcher(extension_key, fetch_params);
+      new internals::ContentHashFetcher(extension_key, std::move(fetch_params));
   fetcher->Start(base::BindOnce(&ContentHash::DidFetchVerifiedContents,
                                 std::move(created_callback), is_cancelled));
 }
@@ -169,7 +171,6 @@ void ContentHash::DidFetchVerifiedContents(
     ContentHash::CreatedCallback created_callback,
     const ContentHash::IsCancelledCallback& is_cancelled,
     const ContentHash::ExtensionKey& key,
-    const ContentHash::FetchParams& fetch_params,
     std::unique_ptr<std::string> fetched_contents) {
   base::AssertBlockingAllowed();
   if (!fetched_contents) {
@@ -218,6 +219,7 @@ void ContentHash::DidFetchVerifiedContents(
     return;
   }
 
+  RecordFetchResult(true);
   scoped_refptr<ContentHash> hash =
       new ContentHash(key, std::move(verified_contents), nullptr);
   const bool did_fetch_verified_contents = true;
@@ -231,11 +233,17 @@ void ContentHash::DispatchFetchFailure(
     const ExtensionKey& key,
     CreatedCallback created_callback,
     const IsCancelledCallback& is_cancelled) {
+  RecordFetchResult(false);
   // NOTE: bare new because ContentHash constructor is private.
   scoped_refptr<ContentHash> content_hash =
       new ContentHash(key, nullptr, nullptr);
   std::move(created_callback)
       .Run(content_hash, is_cancelled && is_cancelled.Run());
+}
+
+// static
+void ContentHash::RecordFetchResult(bool success) {
+  UMA_HISTOGRAM_BOOLEAN("Extensions.ContentVerification.FetchResult", success);
 }
 
 bool ContentHash::CreateHashes(const base::FilePath& hashes_file,

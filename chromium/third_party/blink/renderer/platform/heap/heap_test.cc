@@ -37,6 +37,7 @@
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/heap/address_cache.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -64,7 +65,7 @@ class IntWrapper : public GarbageCollectedFinalized<IntWrapper> {
  public:
   static IntWrapper* Create(int x) { return new IntWrapper(x); }
 
-  virtual ~IntWrapper() { ++destructor_calls_; }
+  virtual ~IntWrapper() { AtomicIncrement(&destructor_calls_); }
 
   static int destructor_calls_;
   void Trace(blink::Visitor* visitor) {}
@@ -364,21 +365,20 @@ class TestGCMarkingScope : public TestGCCollectGarbageScope {
  public:
   explicit TestGCMarkingScope(BlinkGC::StackState state)
       : TestGCCollectGarbageScope(state),
-        atomic_pause_scope_(ThreadState::Current()),
-        persistent_lock_(ProcessHeap::CrossThreadPersistentMutex()) {
-    ThreadState::Current()->Heap().stats_collector()->Start(BlinkGC::kTesting);
-    ThreadState::Current()->MarkPhasePrologue(state, BlinkGC::kAtomicMarking,
-                                              BlinkGC::kPreciseGC);
+        atomic_pause_scope_(ThreadState::Current()) {
+    ThreadState::Current()->Heap().stats_collector()->NotifyMarkingStarted(
+        BlinkGC::GCReason::kTesting);
+    ThreadState::Current()->AtomicPausePrologue(state, BlinkGC::kAtomicMarking,
+                                                BlinkGC::GCReason::kPreciseGC);
   }
   ~TestGCMarkingScope() {
     ThreadState::Current()->MarkPhaseEpilogue(BlinkGC::kAtomicMarking);
-    ThreadState::Current()->PreSweep(BlinkGC::kAtomicMarking,
-                                     BlinkGC::kEagerSweeping);
+    ThreadState::Current()->AtomicPauseEpilogue(BlinkGC::kAtomicMarking,
+                                                BlinkGC::kEagerSweeping);
   }
 
  private:
   ThreadState::AtomicPauseScope atomic_pause_scope_;
-  RecursiveMutexLocker persistent_lock_;
 };
 
 class TestGCScope : public TestGCMarkingScope {
@@ -510,7 +510,7 @@ class ThreadedTesterBase {
           *threads.back()->GetTaskRunner(), FROM_HERE,
           CrossThreadBind(ThreadFunc, CrossThreadUnretained(tester)));
     }
-    while (tester->threads_to_finish_) {
+    while (AcquireLoad(&tester->threads_to_finish_)) {
       test::YieldCurrentThread();
     }
     delete tester;
@@ -528,7 +528,7 @@ class ThreadedTesterBase {
   virtual ~ThreadedTesterBase() = default;
 
   inline bool Done() const {
-    return gc_count_ >= kNumberOfThreads * kGcPerThread;
+    return AcquireLoad(&gc_count_) >= kNumberOfThreads * kGcPerThread;
   }
 
   volatile int gc_count_;
@@ -1741,7 +1741,7 @@ TEST(HeapTest, BasicFunctionality) {
     size_t base_level = initial_object_payload_size;
     bool test_pages_allocated = !base_level;
     if (test_pages_allocated)
-      EXPECT_EQ(heap.HeapStats().AllocatedSpace(), 0ul);
+      EXPECT_EQ(0ul, heap.stats_collector()->allocated_space_bytes());
 
     // This allocates objects on the general heap which should add a page of
     // memory.
@@ -1756,8 +1756,10 @@ TEST(HeapTest, BasicFunctionality) {
 
     CheckWithSlack(base_level + total, heap.ObjectPayloadSizeForTesting(),
                    slack);
-    if (test_pages_allocated)
-      EXPECT_EQ(heap.HeapStats().AllocatedSpace(), kBlinkPageSize * 2);
+    if (test_pages_allocated) {
+      EXPECT_EQ(kBlinkPageSize * 2,
+                heap.stats_collector()->allocated_space_bytes());
+    }
 
     EXPECT_EQ(alloc32->Get(0), 40);
     EXPECT_EQ(alloc32->Get(31), 40);
@@ -1778,7 +1780,7 @@ TEST(HeapTest, BasicFunctionality) {
   size_t base_level = heap.ObjectPayloadSizeForTesting();
   bool test_pages_allocated = !base_level;
   if (test_pages_allocated)
-    EXPECT_EQ(heap.HeapStats().AllocatedSpace(), 0ul);
+    EXPECT_EQ(0ul, heap.stats_collector()->allocated_space_bytes());
 
   size_t big = 1008;
   Persistent<DynamicallySizedObject> big_area =
@@ -1798,8 +1800,10 @@ TEST(HeapTest, BasicFunctionality) {
     slack += 4;
     CheckWithSlack(base_level + total, heap.ObjectPayloadSizeForTesting(),
                    slack);
-    if (test_pages_allocated)
-      EXPECT_EQ(0ul, heap.HeapStats().AllocatedSpace() & (kBlinkPageSize - 1));
+    if (test_pages_allocated) {
+      EXPECT_EQ(0ul, heap.stats_collector()->allocated_space_bytes() &
+                         (kBlinkPageSize - 1));
+    }
   }
 
   {
@@ -1814,15 +1818,19 @@ TEST(HeapTest, BasicFunctionality) {
     total += 96;
     CheckWithSlack(base_level + total, heap.ObjectPayloadSizeForTesting(),
                    slack);
-    if (test_pages_allocated)
-      EXPECT_EQ(0ul, heap.HeapStats().AllocatedSpace() & (kBlinkPageSize - 1));
+    if (test_pages_allocated) {
+      EXPECT_EQ(0ul, heap.stats_collector()->allocated_space_bytes() &
+                         (kBlinkPageSize - 1));
+    }
   }
 
   ClearOutOldGarbage();
   total -= 96;
   slack -= 8;
-  if (test_pages_allocated)
-    EXPECT_EQ(0ul, heap.HeapStats().AllocatedSpace() & (kBlinkPageSize - 1));
+  if (test_pages_allocated) {
+    EXPECT_EQ(0ul, heap.stats_collector()->allocated_space_bytes() &
+                       (kBlinkPageSize - 1));
+  }
 
   // Clear the persistent, so that the big area will be garbage collected.
   big_area.Release();
@@ -1831,12 +1839,16 @@ TEST(HeapTest, BasicFunctionality) {
   total -= big;
   slack -= 4;
   CheckWithSlack(base_level + total, heap.ObjectPayloadSizeForTesting(), slack);
-  if (test_pages_allocated)
-    EXPECT_EQ(0ul, heap.HeapStats().AllocatedSpace() & (kBlinkPageSize - 1));
+  if (test_pages_allocated) {
+    EXPECT_EQ(0ul, heap.stats_collector()->allocated_space_bytes() &
+                       (kBlinkPageSize - 1));
+  }
 
   CheckWithSlack(base_level + total, heap.ObjectPayloadSizeForTesting(), slack);
-  if (test_pages_allocated)
-    EXPECT_EQ(0ul, heap.HeapStats().AllocatedSpace() & (kBlinkPageSize - 1));
+  if (test_pages_allocated) {
+    EXPECT_EQ(0ul, heap.stats_collector()->allocated_space_bytes() &
+                       (kBlinkPageSize - 1));
+  }
 
   for (size_t i = 0; i < persistent_count; i++) {
     delete persistents[i];
@@ -1947,7 +1959,7 @@ TEST(HeapTest, LazySweepingPages) {
     SimpleFinalizedObject::Create();
   ThreadState::Current()->CollectGarbage(
       BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
-      BlinkGC::kLazySweeping, BlinkGC::kForcedGC);
+      BlinkGC::kLazySweeping, BlinkGC::GCReason::kForcedGC);
   EXPECT_EQ(0, SimpleFinalizedObject::destructor_calls_);
   for (int i = 0; i < 10000; i++)
     SimpleFinalizedObject::Create();
@@ -1975,7 +1987,7 @@ TEST(HeapTest, LazySweepingLargeObjectPages) {
     LargeHeapObject::Create();
   ThreadState::Current()->CollectGarbage(
       BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
-      BlinkGC::kLazySweeping, BlinkGC::kForcedGC);
+      BlinkGC::kLazySweeping, BlinkGC::GCReason::kForcedGC);
   EXPECT_EQ(0, LargeHeapObject::destructor_calls_);
   for (int i = 0; i < 10; i++) {
     LargeHeapObject::Create();
@@ -1986,7 +1998,7 @@ TEST(HeapTest, LazySweepingLargeObjectPages) {
   EXPECT_EQ(10, LargeHeapObject::destructor_calls_);
   ThreadState::Current()->CollectGarbage(
       BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
-      BlinkGC::kLazySweeping, BlinkGC::kForcedGC);
+      BlinkGC::kLazySweeping, BlinkGC::GCReason::kForcedGC);
   EXPECT_EQ(10, LargeHeapObject::destructor_calls_);
   PreciselyCollectGarbage();
   EXPECT_EQ(22, LargeHeapObject::destructor_calls_);
@@ -2060,7 +2072,7 @@ TEST(HeapTest, EagerlySweepingPages) {
     SimpleFinalizedObjectInstanceOfTemplate::Create();
   ThreadState::Current()->CollectGarbage(
       BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
-      BlinkGC::kLazySweeping, BlinkGC::kForcedGC);
+      BlinkGC::kLazySweeping, BlinkGC::GCReason::kForcedGC);
   EXPECT_EQ(0, SimpleFinalizedObject::destructor_calls_);
   EXPECT_EQ(100, SimpleFinalizedEagerObject::destructor_calls_);
   EXPECT_EQ(100, SimpleFinalizedObjectInstanceOfTemplate::destructor_calls_);
@@ -2310,7 +2322,8 @@ TEST(HeapTest, LargeHeapObjects) {
   ThreadHeap& heap = ThreadState::Current()->Heap();
   ClearOutOldGarbage();
   size_t initial_object_payload_size = heap.ObjectPayloadSizeForTesting();
-  size_t initial_allocated_space = heap.HeapStats().AllocatedSpace();
+  size_t initial_allocated_space =
+      heap.stats_collector()->allocated_space_bytes();
   IntWrapper::destructor_calls_ = 0;
   LargeHeapObject::destructor_calls_ = 0;
   {
@@ -2323,14 +2336,15 @@ TEST(HeapTest, LargeHeapObjects) {
         reinterpret_cast<char*>(object.Get()) + sizeof(LargeHeapObject) - 1));
 #endif
     ClearOutOldGarbage();
-    size_t after_allocation = heap.HeapStats().AllocatedSpace();
+    size_t after_allocation = heap.stats_collector()->allocated_space_bytes();
     {
       object->Set(0, 'a');
       EXPECT_EQ('a', object->Get(0));
       object->Set(object->length() - 1, 'b');
       EXPECT_EQ('b', object->Get(object->length() - 1));
       size_t expected_large_heap_object_payload_size =
-          ThreadHeap::AllocationSizeFromSize(sizeof(LargeHeapObject));
+          ThreadHeap::AllocationSizeFromSize(sizeof(LargeHeapObject)) -
+          sizeof(HeapObjectHeader);
       size_t expected_object_payload_size =
           expected_large_heap_object_payload_size + sizeof(IntWrapper);
       size_t actual_object_payload_size =
@@ -2354,14 +2368,16 @@ TEST(HeapTest, LargeHeapObjects) {
         object = LargeHeapObject::Create();
     }
     ClearOutOldGarbage();
-    EXPECT_TRUE(heap.HeapStats().AllocatedSpace() == after_allocation);
+    EXPECT_EQ(after_allocation,
+              heap.stats_collector()->allocated_space_bytes());
     EXPECT_EQ(10, IntWrapper::destructor_calls_);
     EXPECT_EQ(10, LargeHeapObject::destructor_calls_);
   }
   ClearOutOldGarbage();
   EXPECT_TRUE(initial_object_payload_size ==
               heap.ObjectPayloadSizeForTesting());
-  EXPECT_TRUE(initial_allocated_space == heap.HeapStats().AllocatedSpace());
+  EXPECT_EQ(initial_allocated_space,
+            heap.stats_collector()->allocated_space_bytes());
   EXPECT_EQ(11, IntWrapper::destructor_calls_);
   EXPECT_EQ(11, LargeHeapObject::destructor_calls_);
   PreciselyCollectGarbage();
@@ -4873,7 +4889,7 @@ TEST(HeapTest, NeedsAdjustPointer) {
   // class Mixin : public GarbageCollectedMixin {};
   static_assert(NeedsAdjustPointer<Mixin>::value,
                 "A Mixin pointer needs adjustment");
-  static_assert(NeedsAdjustPointer<Mixin>::value,
+  static_assert(NeedsAdjustPointer<const Mixin>::value,
                 "A const Mixin pointer needs adjustment");
 
   // class SimpleObject : public GarbageCollected<SimpleObject> {};
@@ -5815,11 +5831,6 @@ TEST(HeapTest, GarbageCollectionDuringMixinConstruction) {
   a->Verify();
 }
 
-static RecursiveMutex& GetRecursiveMutex() {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(RecursiveMutex, recursive_mutex, ());
-  return recursive_mutex;
-}
-
 class DestructorLockingObject
     : public GarbageCollectedFinalized<DestructorLockingObject> {
  public:
@@ -5828,7 +5839,6 @@ class DestructorLockingObject
   }
 
   virtual ~DestructorLockingObject() {
-    RecursiveMutexLocker lock(GetRecursiveMutex());
     ++destructor_calls_;
   }
 
@@ -6305,7 +6315,7 @@ enum GrowthDirection {
   kGrowsTowardsLower,
 };
 
-NEVER_INLINE NO_SANITIZE_ADDRESS GrowthDirection StackGrowthDirection() {
+NOINLINE NO_SANITIZE_ADDRESS GrowthDirection StackGrowthDirection() {
   // Disable ASan, otherwise its stack checking (use-after-return) will
   // confuse the direction check.
   static char* previous = nullptr;
@@ -6487,7 +6497,7 @@ void WorkerThreadMainForCrossThreadWeakPersistentTest(
   // Step 4: Run a GC.
   ThreadState::Current()->CollectGarbage(
       BlinkGC::kNoHeapPointersOnStack, BlinkGC::kAtomicMarking,
-      BlinkGC::kEagerSweeping, BlinkGC::kForcedGC);
+      BlinkGC::kEagerSweeping, BlinkGC::GCReason::kForcedGC);
   WakeMainThread();
   ParkWorkerThread();
 
@@ -6524,23 +6534,15 @@ TEST(HeapTest, CrossThreadWeakPersistent) {
   CrossThreadWeakPersistent<DestructorLockingObject>
       cross_thread_weak_persistent(object);
   object = nullptr;
-  {
-    RecursiveMutexLocker recursive_mutex_locker(GetRecursiveMutex());
-    EXPECT_EQ(0, DestructorLockingObject::destructor_calls_);
-  }
+  EXPECT_EQ(0, DestructorLockingObject::destructor_calls_);
 
-  {
-    // Pretend we have no pointers on stack during the step 4.
-    WakeWorkerThread();
-    ParkMainThread();
-  }
+  // Pretend we have no pointers on stack during the step 4.
+  WakeWorkerThread();
+  ParkMainThread();
 
   // Step 5: Make sure the weak persistent is cleared.
   EXPECT_FALSE(cross_thread_weak_persistent.Get());
-  {
-    RecursiveMutexLocker recursive_mutex_locker(GetRecursiveMutex());
-    EXPECT_EQ(1, DestructorLockingObject::destructor_calls_);
-  }
+  EXPECT_EQ(1, DestructorLockingObject::destructor_calls_);
 
   WakeWorkerThread();
   ParkMainThread();
@@ -6878,6 +6880,85 @@ TEST(HeapTest, PersistentHeapVectorCopyAssignment) {
     vector1 = vector2;
   }
   PreciselyCollectGarbage();
+}
+
+TEST(HeapTest, PromptlyFreeStackAllocatedHeapVector) {
+  NormalPageArena* normal_arena;
+  Address before;
+  {
+    HeapVector<Member<IntWrapper>> vector;
+    vector.push_back(new IntWrapper(0));
+    NormalPage* normal_page =
+        static_cast<NormalPage*>(PageFromObject(vector.data()));
+    normal_arena = normal_page->ArenaForNormalPage();
+    CHECK(normal_arena);
+    before = normal_arena->CurrentAllocationPoint();
+  }
+  Address after = normal_arena->CurrentAllocationPoint();
+  // We check the allocation point to see if promptly freed
+  EXPECT_NE(after, before);
+}
+
+TEST(HeapTest, PromptlyFreeStackAllocatedHeapDeque) {
+  NormalPageArena* normal_arena;
+  Address before;
+  {
+    HeapDeque<Member<IntWrapper>> deque;
+    deque.push_back(new IntWrapper(0));
+    NormalPage* normal_page =
+        static_cast<NormalPage*>(PageFromObject(&deque.front()));
+    normal_arena = normal_page->ArenaForNormalPage();
+    CHECK(normal_arena);
+    before = normal_arena->CurrentAllocationPoint();
+  }
+  Address after = normal_arena->CurrentAllocationPoint();
+  // We check the allocation point to see if promptly freed
+  EXPECT_NE(after, before);
+}
+
+TEST(HeapTest, PromptlyFreeStackAllocatedHeapHashSet) {
+  NormalPageArena* normal_arena = static_cast<NormalPageArena*>(
+      ThreadState::Current()->Heap().Arena(BlinkGC::kHashTableArenaIndex));
+  CHECK(normal_arena);
+  Address before;
+  {
+    HeapHashSet<Member<IntWrapper>> hash_set;
+    hash_set.insert(new IntWrapper(0));
+    before = normal_arena->CurrentAllocationPoint();
+  }
+  Address after = normal_arena->CurrentAllocationPoint();
+  // We check the allocation point to see if promptly freed
+  EXPECT_NE(after, before);
+}
+
+TEST(HeapTest, PromptlyFreeStackAllocatedHeapListHashSet) {
+  NormalPageArena* normal_arena = static_cast<NormalPageArena*>(
+      ThreadState::Current()->Heap().Arena(BlinkGC::kHashTableArenaIndex));
+  CHECK(normal_arena);
+  Address before;
+  {
+    HeapListHashSet<Member<IntWrapper>> list_hash_set;
+    list_hash_set.insert(new IntWrapper(0));
+    before = normal_arena->CurrentAllocationPoint();
+  }
+  Address after = normal_arena->CurrentAllocationPoint();
+  // We check the allocation point to see if promptly freed
+  EXPECT_NE(after, before);
+}
+
+TEST(HeapTest, PromptlyFreeStackAllocatedHeapLinkedHashSet) {
+  NormalPageArena* normal_arena = static_cast<NormalPageArena*>(
+      ThreadState::Current()->Heap().Arena(BlinkGC::kHashTableArenaIndex));
+  CHECK(normal_arena);
+  Address before;
+  {
+    HeapLinkedHashSet<Member<IntWrapper>> linked_hash_set;
+    linked_hash_set.insert(new IntWrapper(0));
+    before = normal_arena->CurrentAllocationPoint();
+  }
+  Address after = normal_arena->CurrentAllocationPoint();
+  // We check the allocation point to see if promptly freed
+  EXPECT_NE(after, before);
 }
 
 }  // namespace blink

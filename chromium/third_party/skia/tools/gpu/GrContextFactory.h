@@ -40,7 +40,6 @@ public:
         kANGLE_GL_ES3_ContextType,   //! ANGLE on OpenGL OpenGL ES 3 context.
         kCommandBuffer_ContextType,  //! Chromium command buffer OpenGL ES context.
         kNullGL_ContextType,         //! Non-rendering OpenGL mock context.
-        kDebugGL_ContextType,        //! Non-rendering, state verifying OpenGL context.
         kVulkan_ContextType,         //! Vulkan
         kMetal_ContextType,          //! Metal
         kMock_ContextType,           //! Mock context that does not draw.
@@ -56,17 +55,14 @@ public:
     enum class ContextOverrides {
         kNone                          = 0x0,
         kDisableNVPR                   = 0x1,
-        kAllowSRGBWithoutDecodeControl = 0x2,
-        kAvoidStencilBuffers           = 0x4,
+        kAvoidStencilBuffers           = 0x2,
 
-        kRequireNVPRSupport            = 0x8,
-        kRequireSRGBSupport            = 0x10,
+        kRequireNVPRSupport            = 0x4,
     };
 
     static bool IsRenderingContext(ContextType type) {
         switch (type) {
             case kNullGL_ContextType:
-            case kDebugGL_ContextType:
             case kMock_ContextType:
                 return false;
             default:
@@ -107,8 +103,6 @@ public:
                 return "Command Buffer";
             case kNullGL_ContextType:
                 return "Null GL";
-            case kDebugGL_ContextType:
-                return "Debug GL";
             case kVulkan_ContextType:
                 return "Vulkan";
             case kMetal_ContextType:

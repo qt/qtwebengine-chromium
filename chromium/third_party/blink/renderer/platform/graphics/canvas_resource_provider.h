@@ -5,16 +5,17 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_CANVAS_RESOURCE_PROVIDER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_CANVAS_RESOURCE_PROVIDER_H_
 
+#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "cc/paint/skia_paint_canvas.h"
 #include "cc/raster/playback_image_provider.h"
+#include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom-blink.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_color_params.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
 #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_provider_wrapper.h"
-#include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -38,7 +39,7 @@ class GLES2Interface;
 
 namespace blink {
 
-class StaticBitmapImage;
+class CanvasResourceDispatcher;
 class WebGraphicsContext3DProviderWrapper;
 
 // CanvasResourceProvider
@@ -58,7 +59,6 @@ class WebGraphicsContext3DProviderWrapper;
 
 class PLATFORM_EXPORT CanvasResourceProvider
     : public WebGraphicsContext3DProviderWrapper::DestructionObserver {
-  WTF_MAKE_NONCOPYABLE(CanvasResourceProvider);
 
  public:
   enum ResourceUsage {
@@ -68,12 +68,19 @@ class PLATFORM_EXPORT CanvasResourceProvider
     kAcceleratedCompositedResourceUsage,
   };
 
+  enum PresentationMode {
+    kDefaultPresentationMode,            // GPU Texture or shared memory bitmap
+    kAllowImageChromiumPresentationMode  // Use CHROMIUM_image gl extension
+  };
+
   static std::unique_ptr<CanvasResourceProvider> Create(
       const IntSize&,
       ResourceUsage,
-      base::WeakPtr<WebGraphicsContext3DProviderWrapper> = nullptr,
-      unsigned msaa_sample_count = 0,
-      const CanvasColorParams& = CanvasColorParams());
+      base::WeakPtr<WebGraphicsContext3DProviderWrapper>,
+      unsigned msaa_sample_count,
+      const CanvasColorParams&,
+      PresentationMode,
+      base::WeakPtr<CanvasResourceDispatcher>);
 
   // Use this method for capturing a frame that is intended to be displayed via
   // the compositor. Cases that need to acquire a snaptshot that is not destined
@@ -92,10 +99,16 @@ class PLATFORM_EXPORT CanvasResourceProvider
   const IntSize& Size() const { return size_; }
   virtual bool IsValid() const = 0;
   virtual bool IsAccelerated() const = 0;
+  virtual bool SupportsDirectCompositing() const = 0;
   uint32_t ContentUniqueID() const;
+  CanvasResourceDispatcher* ResourceDispatcher() {
+    return resource_dispatcher_.get();
+  }
 
-  virtual void RecycleResource(scoped_refptr<CanvasResource>);
-  virtual void SetResourceRecyclingEnabled(bool) {}
+  void RecycleResource(scoped_refptr<CanvasResource>);
+  void SetResourceRecyclingEnabled(bool);
+  void ClearRecycledResources();
+  scoped_refptr<CanvasResource> NewOrRecycledResource();
 
   SkSurface* GetSkSurface() const;
   bool IsGpuContextLost() const;
@@ -107,6 +120,10 @@ class PLATFORM_EXPORT CanvasResourceProvider
   virtual GLuint GetBackingTextureHandleForOverwrite() {
     NOTREACHED();
     return 0;
+  }
+  virtual void* GetPixelBufferAddressForOverwrite() {
+    NOTREACHED();
+    return nullptr;
   }
   void Clear();
   ~CanvasResourceProvider() override;
@@ -128,7 +145,8 @@ class PLATFORM_EXPORT CanvasResourceProvider
 
   CanvasResourceProvider(const IntSize&,
                          const CanvasColorParams&,
-                         base::WeakPtr<WebGraphicsContext3DProviderWrapper>);
+                         base::WeakPtr<WebGraphicsContext3DProviderWrapper>,
+                         base::WeakPtr<CanvasResourceDispatcher>);
 
  private:
   class CanvasImageProvider : public cc::ImageProvider {
@@ -147,6 +165,8 @@ class PLATFORM_EXPORT CanvasResourceProvider
 
     std::vector<ScopedDecodedDrawImage> locked_images_;
     cc::PlaybackImageProvider playback_image_provider_;
+
+    base::WeakPtrFactory<CanvasImageProvider> weak_factory_;
   };
 
   virtual sk_sp<SkSurface> CreateSkSurface() const = 0;
@@ -154,6 +174,7 @@ class PLATFORM_EXPORT CanvasResourceProvider
   cc::ImageDecodeCache* ImageDecodeCache();
 
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper_;
+  base::WeakPtr<CanvasResourceDispatcher> resource_dispatcher_;
   IntSize size_;
   CanvasColorParams color_params_;
   base::Optional<CanvasImageProvider> canvas_image_provider_;
@@ -167,7 +188,12 @@ class PLATFORM_EXPORT CanvasResourceProvider
       cc::PaintImage::kInvalidContentId;
   uint32_t snapshot_sk_image_id_ = 0u;
 
+  WTF::Vector<scoped_refptr<CanvasResource>> recycled_resources_;
+  bool resource_recycling_enabled_ = true;
+
   base::WeakPtrFactory<CanvasResourceProvider> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(CanvasResourceProvider);
 };
 
 }  // namespace blink

@@ -5,7 +5,9 @@
 <link rel="import" href="chrome://resources/html/action_link_css.html">
 <link rel="import" href="chrome://resources/html/event_tracker.html">
 <link rel="import" href="chrome://resources/html/i18n_behavior.html">
+<link rel="import" href="chrome://resources/html/list_property_update_behavior.html">
 <link rel="import" href="../metrics.html">
+<link rel="import" href="../print_preview_utils.html">
 <link rel="import" href="../data/destination.html">
 <link rel="import" href="../data/destination_store.html">
 <link rel="import" href="../data/invitation.html">
@@ -47,6 +49,7 @@
 
       :host .user-info {
         font-size: calc(13/15 * 1em);
+        line-height: normal;
         margin-top: 14px;
       }
 
@@ -139,8 +142,9 @@
             <option value="">$i18n{addAccountTitle}</option>
           </select>
         </div>
-        <print-preview-search-box id="searchBox"
-            label="$i18n{searchBoxPlaceholder}" search-query="{{searchQuery_}}">
+        <print-preview-search-box id="searchBox" on-keydown="onKeydown_"
+            label="$i18n{searchBoxPlaceholder}" search-query="{{searchQuery_}}"
+            autofocus>
         </print-preview-search-box>
       </div>
       <div slot="body" scrollable>

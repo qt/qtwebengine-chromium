@@ -11,8 +11,8 @@
 #ifndef MODULES_AUDIO_PROCESSING_AEC3_SUBTRACTOR_H_
 #define MODULES_AUDIO_PROCESSING_AEC3_SUBTRACTOR_H_
 
-#include <array>
 #include <algorithm>
+#include <array>
 #include <vector>
 #include "math.h"
 
@@ -54,23 +54,13 @@ class Subtractor {
   // Returns the block-wise frequency response for the main adaptive filter.
   const std::vector<std::array<float, kFftLengthBy2Plus1>>&
   FilterFrequencyResponse() const {
-    return main_filter_once_converged_ || (!shadow_filter_converged_)
-               ? main_filter_.FilterFrequencyResponse()
-               : shadow_filter_.FilterFrequencyResponse();
+    return main_filter_.FilterFrequencyResponse();
   }
 
   // Returns the estimate of the impulse response for the main adaptive filter.
   const std::vector<float>& FilterImpulseResponse() const {
-    return main_filter_once_converged_ || (!shadow_filter_converged_)
-               ? main_filter_.FilterImpulseResponse()
-               : shadow_filter_.FilterImpulseResponse();
+    return main_filter_.FilterImpulseResponse();
   }
-
-  bool ConvergedFilter() const {
-    return main_filter_converged_ || shadow_filter_converged_;
-  }
-
-  bool DivergedFilter() const { return main_filter_diverged_; }
 
   void DumpFilters() {
     main_filter_.DumpFilter("aec3_subtractor_H_main", "aec3_subtractor_h_main");
@@ -84,7 +74,7 @@ class Subtractor {
     FilterMisadjustmentEstimator() = default;
     ~FilterMisadjustmentEstimator() = default;
     // Update the misadjustment estimator.
-    void Update(float e2, float y2);
+    void Update(const SubtractorOutput& output);
     // GetMisadjustment() Returns a recommended scale for the filter so the
     // prediction error energy gets closer to the energy that is seen at the
     // microphone input.
@@ -116,15 +106,17 @@ class Subtractor {
   const EchoCanceller3Config config_;
   const bool adaptation_during_saturation_;
   const bool enable_misadjustment_estimator_;
+  const bool enable_agc_gain_change_response_;
+  const bool enable_shadow_filter_jumpstart_;
+  const bool enable_shadow_filter_boosted_jumpstart_;
+  const bool enable_early_shadow_filter_jumpstart_;
+
   AdaptiveFirFilter main_filter_;
   AdaptiveFirFilter shadow_filter_;
   MainFilterUpdateGain G_main_;
   ShadowFilterUpdateGain G_shadow_;
-  bool main_filter_converged_ = false;
-  bool main_filter_once_converged_ = false;
-  bool shadow_filter_converged_ = false;
-  bool main_filter_diverged_ = false;
   FilterMisadjustmentEstimator filter_misadjustment_estimator_;
+  size_t poor_shadow_filter_counter_ = 0;
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(Subtractor);
 };
 

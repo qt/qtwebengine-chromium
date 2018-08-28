@@ -22,7 +22,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_EVENTS_EVENT_LISTENER_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
@@ -33,7 +33,7 @@ class ExecutionContext;
 
 class CORE_EXPORT EventListener
     : public GarbageCollectedFinalized<EventListener>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   enum ListenerType {
     kJSEventListenerType,
@@ -55,7 +55,6 @@ class CORE_EXPORT EventListener
   ListenerType GetType() const { return type_; }
 
   virtual void Trace(blink::Visitor* visitor) {}
-  void TraceWrappers(ScriptWrappableVisitor* visitor) const override {}
   const char* NameInHeapSnapshot() const override { return "EventListener"; }
 
  protected:

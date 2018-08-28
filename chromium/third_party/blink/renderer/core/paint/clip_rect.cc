@@ -27,16 +27,69 @@
 #include "third_party/blink/renderer/core/paint/clip_rect.h"
 
 #include "third_party/blink/renderer/core/layout/hit_test_location.h"
+#include "third_party/blink/renderer/platform/graphics/paint/float_clip_rect.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
+ClipRect::ClipRect()
+    : rect_(LayoutRect::InfiniteIntRect()),
+      has_radius_(false),
+      is_infinite_(true) {}
+
+ClipRect::ClipRect(const FloatClipRect& rect)
+    : rect_(rect.Rect()),
+      has_radius_(rect.HasRadius()),
+      is_infinite_(rect.IsInfinite()) {}
+
+void ClipRect::SetRect(const FloatClipRect& rect) {
+  if (rect.IsInfinite() && IsInfinite())
+    return;
+  rect_ = LayoutRect(rect.Rect());
+  has_radius_ = rect.HasRadius();
+  is_infinite_ = rect.IsInfinite();
+}
+
+void ClipRect::SetRect(const LayoutRect& rect) {
+  rect_ = rect;
+  has_radius_ = false;
+  is_infinite_ = false;
+}
+
+void ClipRect::Intersect(const LayoutRect& other) {
+  if (IsInfinite()) {
+    rect_ = other;
+    is_infinite_ = false;
+  } else {
+    rect_.Intersect(other);
+  }
+}
+
+void ClipRect::Intersect(const ClipRect& other) {
+  if (other.IsInfinite())
+    return;
+  Intersect(other.Rect());
+  if (other.HasRadius())
+    has_radius_ = true;
+}
+
 bool ClipRect::Intersects(const HitTestLocation& hit_test_location) const {
+  if (is_infinite_)
+    return true;
   return hit_test_location.Intersects(rect_);
 }
 
+void ClipRect::Reset() {
+  if (is_infinite_)
+    return;
+  has_radius_ = true;
+  is_infinite_ = true;
+  rect_ = LayoutRect(LayoutRect::InfiniteIntRect());
+}
+
 String ClipRect::ToString() const {
-  return rect_.ToString() + (has_radius_ ? " hasRadius" : " noRadius");
+  return rect_.ToString() + (has_radius_ ? " hasRadius" : " noRadius") +
+         (is_infinite_ ? " isInfinite" : " notInfinite");
 }
 
 std::ostream& operator<<(std::ostream& ostream, const ClipRect& rect) {

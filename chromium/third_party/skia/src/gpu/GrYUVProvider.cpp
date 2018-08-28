@@ -7,6 +7,7 @@
 
 #include "GrYUVProvider.h"
 #include "GrClip.h"
+#include "GrColorSpaceXform.h"
 #include "GrContext.h"
 #include "GrContextPriv.h"
 #include "GrProxyProvider.h"
@@ -17,8 +18,6 @@
 #include "SkRefCnt.h"
 #include "SkResourceCache.h"
 #include "SkYUVPlanesCache.h"
-#include "effects/GrNonlinearColorSpaceXformEffect.h"
-#include "effects/GrSRGBEffect.h"
 #include "effects/GrYUVtoRGBEffect.h"
 
 sk_sp<SkCachedData> init_provider(GrYUVProvider* provider, SkYUVPlanesCache::Info* yuvInfo,
@@ -68,8 +67,8 @@ void GrYUVProvider::YUVGen_DataReleaseProc(const void*, void* data) {
 }
 
 sk_sp<GrTextureProxy> GrYUVProvider::refAsTextureProxy(GrContext* ctx, const GrSurfaceDesc& desc,
-                                                       const SkColorSpace* srcColorSpace,
-                                                       const SkColorSpace* dstColorSpace) {
+                                                       SkColorSpace* srcColorSpace,
+                                                       SkColorSpace* dstColorSpace) {
     SkYUVPlanesCache::Info yuvInfo;
     void* planes[3];
 
@@ -106,18 +105,15 @@ sk_sp<GrTextureProxy> GrYUVProvider::refAsTextureProxy(GrContext* ctx, const GrS
         auto proxyProvider = ctx->contextPriv().proxyProvider();
         yuvTextureProxies[i] = proxyProvider->createTextureProxy(yuvImage, kNone_GrSurfaceFlags,
                                                                  1, SkBudgeted::kYes, fit);
+
+        SkASSERT(yuvTextureProxies[i]->width() == yuvInfo.fSizeInfo.fSizes[i].fWidth);
+        SkASSERT(yuvTextureProxies[i]->height() == yuvInfo.fSizeInfo.fSizes[i].fHeight);
     }
 
-    // We never want to perform color-space conversion during the decode. However, if the proxy
-    // config is sRGB then we must use a sRGB color space.
-    sk_sp<SkColorSpace> colorSpace;
-    if (GrPixelConfigIsSRGB(desc.fConfig)) {
-        colorSpace = SkColorSpace::MakeSRGB();
-    }
     // TODO: investigate preallocating mip maps here
     sk_sp<GrRenderTargetContext> renderTargetContext(
         ctx->contextPriv().makeDeferredRenderTargetContext(
-            SkBackingFit::kExact, desc.fWidth, desc.fHeight, desc.fConfig, std::move(colorSpace),
+            SkBackingFit::kExact, desc.fWidth, desc.fHeight, desc.fConfig, nullptr,
             desc.fSampleCnt, GrMipMapped::kNo, kTopLeft_GrSurfaceOrigin));
     if (!renderTargetContext) {
         return nullptr;
@@ -128,28 +124,13 @@ sk_sp<GrTextureProxy> GrYUVProvider::refAsTextureProxy(GrContext* ctx, const GrS
             GrYUVtoRGBEffect::Make(std::move(yuvTextureProxies[0]),
                                    std::move(yuvTextureProxies[1]),
                                    std::move(yuvTextureProxies[2]),
-                                   yuvInfo.fSizeInfo.fSizes, yuvInfo.fColorSpace, false);
+                                   yuvInfo.fColorSpace, false);
     paint.addColorFragmentProcessor(std::move(yuvToRgbProcessor));
-
-    // If we're decoding an sRGB image, the result of our linear math on the YUV planes is already
-    // in sRGB. (The encoding is just math on bytes, with no concept of color spaces.) So, we need
-    // to output the results of that math directly to the buffer that we will then consider sRGB.
-    // If we have sRGB write control, we can just tell the HW not to do the Linear -> sRGB step.
-    // Otherwise, we do our shader math to go from YUV -> sRGB, manually convert sRGB -> Linear,
-    // then let the HW convert Linear -> sRGB.
-    if (GrPixelConfigIsSRGB(desc.fConfig)) {
-        if (ctx->contextPriv().caps()->srgbWriteControl()) {
-            paint.setDisableOutputConversionToSRGB(true);
-        } else {
-            paint.addColorFragmentProcessor(GrSRGBEffect::Make(GrSRGBEffect::Mode::kSRGBToLinear,
-                                                               GrSRGBEffect::Alpha::kOpaque));
-        }
-    }
 
     // If the caller expects the pixels in a different color space than the one from the image,
     // apply a color conversion to do this.
     std::unique_ptr<GrFragmentProcessor> colorConversionProcessor =
-            GrNonlinearColorSpaceXformEffect::Make(srcColorSpace, dstColorSpace);
+            GrColorSpaceXformEffect::Make(srcColorSpace, dstColorSpace);
     if (colorConversionProcessor) {
         paint.addColorFragmentProcessor(std::move(colorConversionProcessor));
     }

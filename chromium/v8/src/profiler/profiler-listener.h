@@ -15,6 +15,7 @@ namespace v8 {
 namespace internal {
 
 class CodeEventsContainer;
+class CodeDeoptEventRecord;
 
 class CodeEventObserver {
  public:
@@ -46,7 +47,7 @@ class ProfilerListener : public CodeEventListener {
   void CodeMoveEvent(AbstractCode* from, Address to) override;
   void CodeDisableOptEvent(AbstractCode* code,
                            SharedFunctionInfo* shared) override;
-  void CodeDeoptEvent(Code* code, DeoptKind kind, Address pc,
+  void CodeDeoptEvent(Code* code, DeoptimizeKind kind, Address pc,
                       int fp_to_sp_delta) override;
   void GetterCallbackEvent(Name* name, Address entry_point) override;
   void RegExpCodeCreateEvent(AbstractCode* code, String* source) override;
@@ -67,19 +68,16 @@ class ProfilerListener : public CodeEventListener {
   const char* GetName(int args_count) {
     return function_and_resource_names_.GetName(args_count);
   }
+  const char* GetName(const char* name) {
+    return function_and_resource_names_.GetCopy(name);
+  }
   const char* GetConsName(const char* prefix, Name* name) {
     return function_and_resource_names_.GetConsName(prefix, name);
-  }
-  const char* GetFunctionName(Name* name) {
-    return function_and_resource_names_.GetFunctionName(name);
-  }
-  const char* GetFunctionName(const char* name) {
-    return function_and_resource_names_.GetFunctionName(name);
   }
 
  private:
   void RecordInliningInfo(CodeEntry* entry, AbstractCode* abstract_code);
-  void RecordDeoptInlinedFrames(CodeEntry* entry, AbstractCode* abstract_code);
+  void AttachDeoptInlinedFrames(Code* code, CodeDeoptEventRecord* rec);
   Name* InferScriptName(Name* name, SharedFunctionInfo* info);
   V8_INLINE void DispatchCodeEvent(const CodeEventsContainer& evt_rec) {
     observer_->CodeEventHandler(evt_rec);

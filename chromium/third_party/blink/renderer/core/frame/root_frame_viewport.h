@@ -64,15 +64,20 @@ class CORE_EXPORT RootFrameViewport final
                             const WebScrollIntoViewParams&) override;
   IntRect VisibleContentRect(
       IncludeScrollbarsInRect = kExcludeScrollbars) const override;
-  LayoutRect VisibleScrollSnapportRect() const override;
+  LayoutRect VisibleScrollSnapportRect(
+      IncludeScrollbarsInRect = kExcludeScrollbars) const override;
   bool ShouldUseIntegerScrollOffset() const override;
+  bool IsThrottled() const override {
+    // RootFrameViewport is always in the main frame, so the frame does not get
+    // throttled.
+    return false;
+  }
   bool IsActive() const override;
   int ScrollSize(ScrollbarOrientation) const override;
   bool IsScrollCornerVisible() const override;
   IntRect ScrollCornerRect() const override;
   void UpdateScrollOffset(const ScrollOffset&, ScrollType) override;
   IntSize ScrollOffsetInt() const override;
-  IntPoint ScrollOrigin() const override;
   ScrollOffset GetScrollOffset() const override;
   IntSize MinimumScrollOffsetInt() const override;
   IntSize MaximumScrollOffsetInt() const override;
@@ -98,6 +103,8 @@ class CORE_EXPORT RootFrameViewport final
           kIgnorePlatformOverlayScrollbarSize) const override;
   ScrollResult UserScroll(ScrollGranularity, const FloatSize&) override;
   CompositorElementId GetCompositorElementId() const override;
+  CompositorElementId GetScrollbarElementId(
+      ScrollbarOrientation orientation) override;
   bool ScrollAnimatorEnabled() const override;
   PlatformChromeClient* GetChromeClient() const override;
   SmoothScrollSequencer* GetSmoothScrollSequencer() const override;

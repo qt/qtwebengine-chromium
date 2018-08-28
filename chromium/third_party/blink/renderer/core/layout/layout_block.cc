@@ -50,6 +50,7 @@
 #include "third_party/blink/renderer/core/layout/layout_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_grid.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
+#include "third_party/blink/renderer/core/layout/layout_object_factory.h"
 #include "third_party/blink/renderer/core/layout/layout_table_cell.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -61,6 +62,7 @@
 #include "third_party/blink/renderer/core/paint/block_painter.h"
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
@@ -158,12 +160,14 @@ void LayoutBlock::StyleWillChange(StyleDifference diff,
 
   if (old_style && Parent()) {
     bool old_style_contains_fixed_position =
-        old_style->CanContainFixedPositionObjects(IsDocumentElement());
+        old_style->CanContainFixedPositionObjects(IsDocumentElement()) ||
+        ShouldApplyPaintContainment();
     bool old_style_contains_absolute_position =
         old_style_contains_fixed_position ||
         old_style->CanContainAbsolutePositionObjects();
     bool new_style_contains_fixed_position =
-        new_style.CanContainFixedPositionObjects(IsDocumentElement());
+        new_style.CanContainFixedPositionObjects(IsDocumentElement()) ||
+        ShouldApplyPaintContainment();
     bool new_style_contains_absolute_position =
         new_style_contains_fixed_position ||
         new_style.CanContainAbsolutePositionObjects();
@@ -259,7 +263,8 @@ void LayoutBlock::StyleDidChange(StyleDifference diff,
   // transformed, or contain:paint is specified.
   SetCanContainFixedPositionObjects(
       IsLayoutView() || IsSVGForeignObject() || IsTextControl() ||
-      new_style.CanContainFixedPositionObjects(IsDocumentElement()));
+      new_style.CanContainFixedPositionObjects(IsDocumentElement()) ||
+      ShouldApplyPaintContainment());
 
   // It's possible for our border/padding to change, but for the overall logical
   // width or height of the block to end up being the same. We keep track of
@@ -311,11 +316,7 @@ void LayoutBlock::AddChildBeforeDescendant(LayoutObject* new_child,
   // If the requested insertion point is not one of our children, then this is
   // because there is an anonymous container within this object that contains
   // the beforeDescendant.
-  if (before_descendant_container->IsAnonymousBlock()
-      // Full screen layoutObjects and full screen placeholders act as anonymous
-      // blocks, not tables:
-      || before_descendant_container->IsLayoutFullScreen() ||
-      before_descendant_container->IsLayoutFullScreenPlaceholder()) {
+  if (before_descendant_container->IsAnonymousBlock()) {
     // Insert the child into the anonymous block box instead of here.
     if (new_child->IsInline() ||
         (new_child->IsFloatingOrOutOfFlowPositioned() && !IsFlexibleBox() &&
@@ -870,51 +871,18 @@ void LayoutBlock::MarkPositionedObjectsForLayout() {
   }
 }
 
-void LayoutBlock::Paint(const PaintInfo& paint_info,
-                        const LayoutPoint& paint_offset) const {
-  BlockPainter(*this).Paint(paint_info, paint_offset);
+void LayoutBlock::Paint(const PaintInfo& paint_info) const {
+  BlockPainter(*this).Paint(paint_info);
 }
 
 void LayoutBlock::PaintChildren(const PaintInfo& paint_info,
-                                const LayoutPoint& paint_offset) const {
-  BlockPainter(*this).PaintChildren(paint_info, paint_offset);
+                                const LayoutPoint&) const {
+  BlockPainter(*this).PaintChildren(paint_info);
 }
 
 void LayoutBlock::PaintObject(const PaintInfo& paint_info,
                               const LayoutPoint& paint_offset) const {
   BlockPainter(*this).PaintObject(paint_info, paint_offset);
-}
-
-LayoutUnit LayoutBlock::BlockDirectionOffset(
-    const LayoutSize& offset_from_block) const {
-  return IsHorizontalWritingMode() ? offset_from_block.Height()
-                                   : offset_from_block.Width();
-}
-
-LayoutUnit LayoutBlock::InlineDirectionOffset(
-    const LayoutSize& offset_from_block) const {
-  return IsHorizontalWritingMode() ? offset_from_block.Width()
-                                   : offset_from_block.Height();
-}
-
-LayoutUnit LayoutBlock::LogicalLeftSelectionOffset(
-    const LayoutBlock* root_block,
-    LayoutUnit position) const {
-  // The border can potentially be further extended by our containingBlock().
-  if (root_block != this)
-    return ContainingBlock()->LogicalLeftSelectionOffset(
-        root_block, position + LogicalTop());
-  return LogicalLeftOffsetForContent();
-}
-
-LayoutUnit LayoutBlock::LogicalRightSelectionOffset(
-    const LayoutBlock* root_block,
-    LayoutUnit position) const {
-  // The border can potentially be further extended by our containingBlock().
-  if (root_block != this)
-    return ContainingBlock()->LogicalRightSelectionOffset(
-        root_block, position + LogicalTop());
-  return LogicalRightOffsetForContent();
 }
 
 TrackedLayoutBoxListHashSet* LayoutBlock::PositionedObjectsInternal() const {
@@ -1355,7 +1323,7 @@ void LayoutBlock::ComputeIntrinsicLogicalWidths(
     LayoutUnit& min_logical_width,
     LayoutUnit& max_logical_width) const {
   // Size-contained elements don't consider their contents for preferred sizing.
-  if (Style()->ContainsSize())
+  if (ShouldApplySizeContainment())
     return;
 
   if (ChildrenInline()) {
@@ -1749,7 +1717,7 @@ bool LayoutBlock::UseLogicalBottomMarginEdgeForInlineBlockBaseline() const {
   // ancestors or siblings.
   return (!Style()->IsOverflowVisible() &&
           !ShouldIgnoreOverflowPropertyForInlineBlockBaseline()) ||
-         Style()->ContainsSize();
+         ShouldApplySizeContainment();
 }
 
 LayoutUnit LayoutBlock::InlineBlockBaseline(
@@ -1978,24 +1946,28 @@ const char* LayoutBlock::GetName() const {
 LayoutBlock* LayoutBlock::CreateAnonymousWithParentAndDisplay(
     const LayoutObject* parent,
     EDisplay display) {
-  // FIXME: Do we need to convert all our inline displays to block-type in the
-  // anonymous logic ?
-  EDisplay new_display;
-  LayoutBlock* new_box = nullptr;
-  if (display == EDisplay::kFlex || display == EDisplay::kInlineFlex) {
-    new_box = LayoutFlexibleBox::CreateAnonymous(&parent->GetDocument());
-    new_display = EDisplay::kFlex;
-  } else {
-    new_box = LayoutBlockFlow::CreateAnonymous(&parent->GetDocument());
-    new_display = EDisplay::kBlock;
-  }
-
+  // TODO(layout-dev): Do we need to convert all our inline displays to block
+  // type in the anonymous logic?
+  const EDisplay new_display =
+      display == EDisplay::kFlex || display == EDisplay::kInlineFlex
+          ? EDisplay::kFlex
+          : EDisplay::kBlock;
   scoped_refptr<ComputedStyle> new_style =
       ComputedStyle::CreateAnonymousStyleWithDisplay(parent->StyleRef(),
                                                      new_display);
-  parent->UpdateAnonymousChildStyle(*new_box, *new_style);
-  new_box->SetStyle(std::move(new_style));
-  return new_box;
+  parent->UpdateAnonymousChildStyle(nullptr, *new_style);
+  LayoutBlock* layout_block;
+  if (new_display == EDisplay::kFlex) {
+    layout_block = LayoutObjectFactory::CreateFlexibleBox(parent->GetDocument(),
+                                                          *new_style);
+  } else {
+    DCHECK_EQ(new_display, EDisplay::kBlock);
+    layout_block =
+        LayoutObjectFactory::CreateBlockFlow(parent->GetDocument(), *new_style);
+  }
+  layout_block->SetDocumentForAnonymous(&parent->GetDocument());
+  layout_block->SetStyle(std::move(new_style));
+  return layout_block;
 }
 
 bool LayoutBlock::RecalcNormalFlowChildOverflowIfNeeded(

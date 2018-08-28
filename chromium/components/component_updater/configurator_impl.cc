@@ -41,7 +41,8 @@ ConfiguratorImpl::ConfiguratorImpl(
       fast_update_(config_policy.FastUpdate()),
       pings_enabled_(config_policy.PingsEnabled()),
       require_encryption_(require_encryption),
-      url_source_override_(config_policy.UrlSourceOverride()) {
+      url_source_override_(config_policy.UrlSourceOverride()),
+      initial_delay_(config_policy.InitialDelay()) {
   if (config_policy.TestRequest())
     extra_info_ += "testrequest=\"1\"";
 }
@@ -49,6 +50,8 @@ ConfiguratorImpl::ConfiguratorImpl(
 ConfiguratorImpl::~ConfiguratorImpl() {}
 
 int ConfiguratorImpl::InitialDelay() const {
+  if (initial_delay_)
+    return initial_delay_;
   return fast_update_ ? 10 : (6 * kDelayOneMinute);
 }
 
@@ -117,6 +120,13 @@ std::vector<uint8_t> ConfiguratorImpl::GetRunActionKeyHash() const {
                               0xfe, 0x00, 0x9a, 0x27, 0x3e, 0x52, 0xbf, 0xa5,
                               0x84, 0xb9, 0xb3, 0x75, 0x07, 0x29, 0xde, 0xfa,
                               0x32, 0x76, 0xd9, 0x93, 0xb5, 0xa3, 0xce, 0x02};
+}
+
+// The default implementation for most embedders returns an empty string.
+// Desktop embedders, such as the Windows component updater can provide a
+// meaningful implementation for this function.
+std::string ConfiguratorImpl::GetAppGuid() const {
+  return {};
 }
 
 }  // namespace component_updater

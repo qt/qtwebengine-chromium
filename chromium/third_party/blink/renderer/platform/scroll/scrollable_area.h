@@ -26,19 +26,22 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCROLL_SCROLLABLE_AREA_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCROLL_SCROLLABLE_AREA_H_
 
-#include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
+#include "third_party/blink/renderer/platform/graphics/compositor_element_id.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/scroll/scroll_animator_base.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace blink {
 
@@ -110,11 +113,11 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   void MouseEnteredScrollbar(Scrollbar&);
   void MouseExitedScrollbar(Scrollbar&);
   void MouseCapturedScrollbar();
-  void MouseReleasedScrollbar(ScrollbarOrientation);
+  void MouseReleasedScrollbar();
   void ContentAreaDidShow() const;
   void ContentAreaDidHide() const;
 
-  virtual void SnapAfterScrollbarDragging(ScrollbarOrientation) {}
+  virtual void SnapAfterScrollbarScrolling(ScrollbarOrientation) {}
 
   void FinishCurrentScrollAnimations() const;
 
@@ -156,10 +159,6 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
     return nullptr;
   }
 
-  // See Source/core/layout/README.md for an explanation of scroll origin.
-  virtual IntPoint ScrollOrigin() const { return scroll_origin_; }
-  bool ScrollOriginChanged() const { return scroll_origin_changed_; }
-
   // This is used to determine whether the incoming fractional scroll offset
   // should be truncated to integer. Current rule is that if
   // preferCompositingToLCDTextEnabled() is disabled (which is true on low-dpi
@@ -173,6 +172,10 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   }
 
   virtual bool IsActive() const = 0;
+  // Returns true if the frame this ScrollableArea is attached to is being
+  // throttled for lifecycle updates. In this case it should also not be
+  // painted.
+  virtual bool IsThrottled() const = 0;
   virtual int ScrollSize(ScrollbarOrientation) const = 0;
   void SetScrollbarNeedsPaintInvalidation(ScrollbarOrientation);
   virtual bool IsScrollCornerVisible() const = 0;
@@ -214,14 +217,20 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
 
   virtual PaintLayer* Layer() const { return nullptr; }
 
-  // scrollPosition is the location of the top/left of the scroll viewport in
-  // the coordinate system defined by the top/left of the overflow rect.
-  // scrollOffset is the offset of the scroll viewport from its position when
-  // scrolled all the way to the beginning of its content's flow.
-  // For a more detailed explanation of scrollPosition, scrollOffset, and
-  // scrollOrigin, see core/layout/README.md.
-  FloatPoint ScrollPosition() const {
-    return FloatPoint(ScrollOrigin()) + GetScrollOffset();
+  // "Scroll offset" is in content-flow-aware coordinates, "Scroll position" is
+  // in physical (i.e., not flow-aware) coordinates. Among ScrollableArea
+  // sub-classes, only PaintLayerScrollableArea has a real distinction between
+  // the two. For a more detailed explanation of scrollPosition, scrollOffset,
+  // and scrollOrigin, see core/layout/README.md.
+  virtual FloatPoint ScrollPosition() const {
+    return FloatPoint(GetScrollOffset());
+  }
+  virtual FloatPoint ScrollOffsetToPosition(const ScrollOffset& offset) const {
+    return FloatPoint(offset);
+  }
+  virtual ScrollOffset ScrollPositionToOffset(
+      const FloatPoint& position) const {
+    return ToScrollOffset(position);
   }
   virtual IntSize ScrollOffsetInt() const = 0;
   virtual ScrollOffset GetScrollOffset() const {
@@ -246,8 +255,9 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   // container for the scroll snap areas when calculating snap positions. It's
   // the box's scrollport contracted by its scroll-padding.
   // https://drafts.csswg.org/css-scroll-snap-1/#scroll-padding
-  virtual LayoutRect VisibleScrollSnapportRect() const {
-    return LayoutRect(VisibleContentRect());
+  virtual LayoutRect VisibleScrollSnapportRect(
+      IncludeScrollbarsInRect scrollbar_inclusion = kExcludeScrollbars) const {
+    return LayoutRect(VisibleContentRect(scrollbar_inclusion));
   }
 
   virtual IntPoint LastKnownMousePosition() const { return IntPoint(); }
@@ -261,6 +271,10 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   virtual IntRect ScrollableAreaBoundingBox() const = 0;
 
   virtual CompositorElementId GetCompositorElementId() const = 0;
+
+  virtual CompositorElementId GetScrollbarElementId(
+      ScrollbarOrientation orientation);
+
   virtual bool ScrollAnimatorEnabled() const { return false; }
 
   // NOTE: Only called from Internals for testing.
@@ -286,9 +300,6 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   // Overlay scrollbars can "fade-out" when inactive.
   virtual bool ScrollbarsHiddenIfOverlay() const;
   virtual void SetScrollbarsHiddenIfOverlay(bool);
-
-  // Returns true if the GraphicsLayer tree needs to be rebuilt.
-  virtual bool UpdateAfterCompositingChange() { return false; }
 
   virtual bool UserInputScrollable(ScrollbarOrientation) const = 0;
   virtual bool ShouldPlaceVerticalScrollbarOnLeft() const = 0;
@@ -336,15 +347,6 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
     return kScrollBehaviorInstant;
   }
 
-  virtual bool IsScrollable() const { return true; }
-
-  // TODO(bokan): FrameView::setScrollOffset uses updateScrollbars to scroll
-  // which bails out early if its already in updateScrollbars, the effect being
-  // that programmatic scrolls (i.e. setScrollOffset) are disabled when in
-  // updateScrollbars. Expose this here to allow RootFrameViewport to match the
-  // semantics for now but it should be cleaned up at the source.
-  virtual bool IsProgrammaticallyScrollable() { return true; }
-
   // Subtracts space occupied by this ScrollableArea's scrollbars.
   // Does nothing if overlay scrollbars are enabled.
   IntSize ExcludeScrollbars(const IntSize&) const;
@@ -368,6 +370,8 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   virtual bool IsPaintLayerScrollableArea() const { return false; }
   virtual bool IsRootFrameViewport() const { return false; }
 
+  virtual bool VisualViewportSuppliesScrollbars() const { return false; }
+
   // Returns true if the scroller adjusts the scroll offset to compensate
   // for layout movements (bit.ly/scroll-anchoring).
   virtual bool ShouldPerformScrollAnchoring() const { return false; }
@@ -389,15 +393,11 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
       const = 0;
 
   // Callback for compositor-side scrolling.
-  virtual void DidScroll(const gfx::ScrollOffset&);
+  virtual void DidScroll(const FloatPoint&);
 
   virtual void ScrollbarFrameRectChanged() {}
 
   virtual ScrollbarTheme& GetPageScrollbarTheme() const = 0;
-
-  // If either direction has a non-auto mode, the other must as well.
-  void SetAutosizeScrollbarModes(ScrollbarMode vertical,
-                                 ScrollbarMode horizontal);
 
  protected:
   // Deduces the ScrollBehavior based on the element style and the parameter set
@@ -411,9 +411,6 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   ScrollbarOrientation ScrollbarOrientationFromDirection(
       ScrollDirectionPhysical) const;
   float ScrollStep(ScrollGranularity, ScrollbarOrientation) const;
-
-  void SetScrollOrigin(const IntPoint&);
-  void ResetScrollOriginChanged() { scroll_origin_changed_ = false; }
 
   // Needed to let the animators call scrollOffsetChanged.
   friend class ScrollAnimatorCompositorCoordinator;
@@ -441,13 +438,6 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   // then reset to alpha, causing spurrious "visibilityChanged" calls.
   virtual void ScrollbarVisibilityChanged() {}
 
-  ScrollbarMode AutosizeVerticalScrollbarMode() const {
-    return autosize_vertical_scrollbar_mode_;
-  }
-  ScrollbarMode AutosizeHorizontalScrollbarMode() const {
-    return autosize_horizontal_scrollbar_mode_;
-  }
-
   virtual bool HasBeenDisposed() const { return false; }
 
  private:
@@ -474,16 +464,7 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   std::unique_ptr<TaskRunnerTimer<ScrollableArea>>
       fade_overlay_scrollbars_timer_;
 
-  // FrameViewAutoSizeInfo controls scrollbar appearance manually rather than
-  // relying on layout. These members are used to override the
-  // ScrollableArea's ScrollbarModes as calculated from style. kScrollbarAuto
-  // disables the override.
-  ScrollbarMode autosize_vertical_scrollbar_mode_;
-  ScrollbarMode autosize_horizontal_scrollbar_mode_;
-
   unsigned scrollbar_overlay_color_theme_ : 2;
-
-  unsigned scroll_origin_changed_ : 1;
 
   unsigned horizontal_scrollbar_needs_paint_invalidation_ : 1;
   unsigned vertical_scrollbar_needs_paint_invalidation_ : 1;
@@ -496,18 +477,6 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   // cc::Layer::ShowScrollbars() on our scroll layer. Ignored if not composited.
   unsigned needs_show_scrollbar_layers_ : 1;
   unsigned uses_composited_scrolling_ : 1;
-
-  // There are 6 possible combinations of writing mode and direction. Scroll
-  // origin will be non-zero in the x or y axis if there is any reversed
-  // direction or writing-mode. The combinations are:
-  // writing-mode / direction     scrollOrigin.x() set    scrollOrigin.y() set
-  // horizontal-tb / ltr          NO                      NO
-  // horizontal-tb / rtl          YES                     NO
-  // vertical-lr / ltr            NO                      NO
-  // vertical-lr / rtl            NO                      YES
-  // vertical-rl / ltr            YES                     NO
-  // vertical-rl / rtl            YES                     YES
-  IntPoint scroll_origin_;
 };
 
 }  // namespace blink

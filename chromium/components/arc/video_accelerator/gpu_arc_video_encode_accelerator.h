@@ -13,7 +13,7 @@
 #include "base/macros.h"
 #include "components/arc/common/video_encode_accelerator.mojom.h"
 #include "components/arc/video_accelerator/video_frame_plane.h"
-#include "gpu/command_buffer/service/gpu_preferences.h"
+#include "gpu/config/gpu_preferences.h"
 #include "media/video/video_encode_accelerator.h"
 
 namespace arc {
@@ -38,10 +38,9 @@ class GpuArcVideoEncodeAccelerator
   void RequireBitstreamBuffers(unsigned int input_count,
                                const gfx::Size& input_coded_size,
                                size_t output_buffer_size) override;
-  void BitstreamBufferReady(int32_t bitstream_buffer_id,
-                            size_t payload_size,
-                            bool key_frame,
-                            base::TimeDelta timestamp) override;
+  void BitstreamBufferReady(
+      int32_t bitstream_buffer_id,
+      const media::BitstreamBufferMetadata& metadata) override;
   void NotifyError(Error error) override;
 
   // ::arc::mojom::VideoEncodeAccelerator implementation.

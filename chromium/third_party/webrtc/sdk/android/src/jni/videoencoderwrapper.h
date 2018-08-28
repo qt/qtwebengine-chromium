@@ -70,7 +70,7 @@ class VideoEncoderWrapper : public VideoEncoder {
 
  private:
   struct FrameExtraInfo {
-    uint64_t capture_time_ns;  // Used as an identifier of the frame.
+    int64_t capture_time_ns;  // Used as an identifier of the frame.
 
     uint32_t timestamp_rtp;
   };
@@ -106,15 +106,20 @@ class VideoEncoderWrapper : public VideoEncoder {
   VideoCodec codec_settings_;
   H264BitstreamParser h264_bitstream_parser_;
 
-  // RTP state.
-  uint16_t picture_id_;
-  uint8_t tl0_pic_idx_;
-
   // VP9 variables to populate codec specific structure.
   GofInfoVP9 gof_;  // Contains each frame's temporal information for
                     // non-flexible VP9 mode.
   size_t gof_idx_;
 };
+
+/* If the j_encoder is a wrapped native encoder, unwrap it. If it is not,
+ * wrap it in a VideoEncoderWrapper.
+ */
+std::unique_ptr<VideoEncoder> JavaToNativeVideoEncoder(
+    JNIEnv* jni,
+    const JavaRef<jobject>& j_encoder);
+
+bool IsHardwareVideoEncoder(JNIEnv* jni, const JavaRef<jobject>& j_encoder);
 
 }  // namespace jni
 }  // namespace webrtc

@@ -6,7 +6,7 @@
 
 #include "net/third_party/quic/core/quic_types.h"
 
-namespace net {
+namespace quic {
 
 QuicPacketWriterWrapper::QuicPacketWriterWrapper() = default;
 
@@ -41,6 +41,22 @@ QuicByteCount QuicPacketWriterWrapper::GetMaxPacketSize(
   return writer_->GetMaxPacketSize(peer_address);
 }
 
+bool QuicPacketWriterWrapper::SupportsReleaseTime() const {
+  return writer_->SupportsReleaseTime();
+}
+
+bool QuicPacketWriterWrapper::IsBatchMode() const {
+  return writer_->IsBatchMode();
+}
+
+char* QuicPacketWriterWrapper::GetNextWriteLocation() const {
+  return writer_->GetNextWriteLocation();
+}
+
+WriteResult QuicPacketWriterWrapper::Flush() {
+  return writer_->Flush();
+}
+
 void QuicPacketWriterWrapper::set_writer(QuicPacketWriter* writer) {
   unset_writer();
   writer_ = writer;
@@ -62,4 +78,4 @@ void QuicPacketWriterWrapper::unset_writer() {
   writer_ = nullptr;
 }
 
-}  // namespace net
+}  // namespace quic

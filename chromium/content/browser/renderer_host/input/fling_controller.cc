@@ -6,7 +6,8 @@
 
 #include "base/trace_event/trace_event.h"
 #include "content/browser/renderer_host/input/gesture_event_queue.h"
-#include "content/public/common/content_features.h"
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/common/content_client.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/blink/fling_booster.h"
 #include "ui/events/gestures/blink/web_gesture_curve_impl.h"
@@ -42,10 +43,6 @@ FlingController::FlingController(
       touchscreen_tap_suppression_controller_(
           config.touchscreen_tap_suppression_config),
       fling_in_progress_(false),
-      send_wheel_events_nonblocking_(
-          base::FeatureList::IsEnabled(
-              features::kTouchpadAndWheelScrollLatching) &&
-          base::FeatureList::IsEnabled(features::kAsyncWheelEvents)),
       weak_ptr_factory_(this) {
   DCHECK(gesture_event_queue);
   DCHECK(event_sender_client);
@@ -101,13 +98,6 @@ bool FlingController::ShouldForwardForTapSuppression(
 bool FlingController::FilterGestureEventForFlingBoosting(
     const GestureEventWithLatencyInfo& gesture_event) {
   if (!fling_booster_)
-    return false;
-
-  // TODO(sahel): Don't boost touchpad fling for now. Once browserside
-  // touchscreen fling is implemented, move the fling_controller_ from
-  // GestureEventQueue to RednerWidgetHostImpl. This will gaurantee proper
-  // gesture scroll event order in RednerWidgetHostImpl while boosting.
-  if (gesture_event.event.SourceDevice() == blink::kWebGestureDeviceTouchpad)
     return false;
 
   bool cancel_current_fling;
@@ -270,15 +260,8 @@ void FlingController::GenerateAndSendWheelEvents(
   synthetic_wheel.event.SetPositionInWidget(current_fling_parameters_.point);
   synthetic_wheel.event.SetPositionInScreen(
       current_fling_parameters_.global_point);
-  // Send wheel end events nonblocking since they have zero delta and are not
-  // sent to JS.
-  if (phase == blink::WebMouseWheelEvent::kPhaseEnded) {
-    synthetic_wheel.event.dispatch_type = WebInputEvent::kEventNonBlocking;
-  } else {
-    synthetic_wheel.event.dispatch_type = send_wheel_events_nonblocking_
-                                              ? WebInputEvent::kEventNonBlocking
-                                              : WebInputEvent::kBlocking;
-  }
+  // Send wheel events nonblocking.
+  synthetic_wheel.event.dispatch_type = WebInputEvent::kEventNonBlocking;
 
   event_sender_client_->SendGeneratedWheelEvent(synthetic_wheel);
 }
@@ -370,8 +353,13 @@ void FlingController::CancelCurrentFling() {
 
   // Synthesize a GestureScrollBegin, as the original event was suppressed. It
   // is important to send the GSB after resetting the fling_booster_ otherwise
-  // it will get filtered by the booster again.
+  // it will get filtered by the booster again. This is necessary for
+  // touchscreen fling cancelation only, since autoscroll fling cancelation
+  // doesn't get deferred and when the touchpad fling cancelation gets deferred,
+  // the first wheel event after the cancelation will cause a GSB generation.
   if (fling_cancellation_is_deferred &&
+      last_fling_boost_event.SourceDevice() ==
+          blink::kWebGestureDeviceTouchscreen &&
       (last_fling_boost_event.GetType() == WebInputEvent::kGestureScrollBegin ||
        last_fling_boost_event.GetType() ==
            WebInputEvent::kGestureScrollUpdate)) {
@@ -387,19 +375,11 @@ void FlingController::CancelCurrentFling() {
                   : last_fling_boost_event.data.scroll_begin.delta_y_hint;
     scroll_begin_event.data.scroll_begin.delta_x_hint = delta_x_hint;
     scroll_begin_event.data.scroll_begin.delta_y_hint = delta_y_hint;
-    ui::SourceEventType latency_source_event_type =
-        ui::SourceEventType::UNKNOWN;
-    if (scroll_begin_event.SourceDevice() ==
-        blink::kWebGestureDeviceTouchscreen) {
-      latency_source_event_type = ui::SourceEventType::INERTIAL;
-    } else if (scroll_begin_event.SourceDevice() ==
-               blink::kWebGestureDeviceTouchpad) {
-      latency_source_event_type = ui::SourceEventType::WHEEL;
-    }
 
     event_sender_client_->SendGeneratedGestureScrollEvents(
         GestureEventWithLatencyInfo(
-            scroll_begin_event, ui::LatencyInfo(latency_source_event_type)));
+            scroll_begin_event,
+            ui::LatencyInfo(ui::SourceEventType::INERTIAL)));
   }
 
   if (had_active_fling) {
@@ -430,7 +410,8 @@ bool FlingController::UpdateCurrentFlingState(
       ui::WebGestureCurveImpl::CreateFromDefaultPlatformCurve(
           current_fling_parameters_.source_device,
           current_fling_parameters_.velocity,
-          gfx::Vector2dF() /*initial_offset*/, false /*on_main_thread*/));
+          gfx::Vector2dF() /*initial_offset*/, false /*on_main_thread*/,
+          GetContentClient()->browser()->ShouldUseMobileFlingCurve()));
   return true;
 }
 

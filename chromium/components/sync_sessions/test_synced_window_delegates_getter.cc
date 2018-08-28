@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "components/sessions/core/serialized_navigation_entry_test_helper.h"
+#include "components/sync_sessions/synced_session.h"
 #include "components/sync_sessions/tab_node_pool.h"
 
 namespace sync_sessions {
@@ -36,7 +37,7 @@ void TestSyncedTabDelegate::Navigate(const std::string& url,
   tab_navigation.set_http_status_code(200);
 
   auto entry = std::make_unique<sessions::SerializedNavigationEntry>(
-      sessions::SerializedNavigationEntry::FromSyncData(0, tab_navigation));
+      SessionNavigationFromSyncData(0, tab_navigation));
   sessions::SerializedNavigationEntryTestHelper::SetTimestamp(time,
                                                               entry.get());
   sessions::SerializedNavigationEntryTestHelper::SetTransitionType(transition,
@@ -131,14 +132,6 @@ bool TestSyncedTabDelegate::IsPlaceholderTab() const {
   return false;
 }
 
-int TestSyncedTabDelegate::GetSyncId() const {
-  return sync_id_;
-}
-
-void TestSyncedTabDelegate::SetSyncId(int sync_id) {
-  sync_id_ = sync_id;
-}
-
 bool TestSyncedTabDelegate::ShouldSync(SyncSessionsClient* sessions_client) {
   // This is just a simple filter that isn't meant to fully reproduce
   // the TabContentsTabDelegate's ShouldSync logic.
@@ -158,21 +151,13 @@ SessionID TestSyncedTabDelegate::GetSourceTabID() const {
   return SessionID::InvalidValue();
 }
 
-PlaceholderTabDelegate::PlaceholderTabDelegate(SessionID tab_id, int sync_id)
-    : tab_id_(tab_id), sync_id_(sync_id) {}
+PlaceholderTabDelegate::PlaceholderTabDelegate(SessionID tab_id)
+    : tab_id_(tab_id) {}
 
 PlaceholderTabDelegate::~PlaceholderTabDelegate() = default;
 
 SessionID PlaceholderTabDelegate::GetSessionId() const {
   return tab_id_;
-}
-
-int PlaceholderTabDelegate::GetSyncId() const {
-  return sync_id_;
-}
-
-void PlaceholderTabDelegate::SetSyncId(int sync_id) {
-  sync_id_ = sync_id;
 }
 
 bool PlaceholderTabDelegate::IsPlaceholderTab() const {
@@ -361,6 +346,13 @@ TestSyncedTabDelegate* TestSyncedWindowDelegatesGetter::AddTab(
   return tabs_.back().get();
 }
 
+void TestSyncedWindowDelegatesGetter::SessionRestoreComplete() {
+  for (auto& window : windows_)
+    window->SetIsSessionRestoreInProgress(false);
+
+  router_.NotifySessionRestoreComplete();
+}
+
 LocalSessionEventRouter* TestSyncedWindowDelegatesGetter::router() {
   return &router_;
 }
@@ -396,6 +388,12 @@ void TestSyncedWindowDelegatesGetter::DummyRouter::NotifyNav(
     SyncedTabDelegate* tab) {
   if (handler_)
     handler_->OnLocalTabModified(tab);
+}
+
+void TestSyncedWindowDelegatesGetter::DummyRouter::
+    NotifySessionRestoreComplete() {
+  if (handler_)
+    handler_->OnSessionRestoreComplete();
 }
 
 }  // namespace sync_sessions

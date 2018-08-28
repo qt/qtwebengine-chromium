@@ -5,6 +5,7 @@
 #ifndef MEDIA_CAPTURE_MOJOM_VIDEO_CAPTURE_TYPES_MOJOM_TRAITS_H_
 #define MEDIA_CAPTURE_MOJOM_VIDEO_CAPTURE_TYPES_MOJOM_TRAITS_H_
 
+#include "media/base/video_facing.h"
 #include "media/capture/mojom/video_capture_types.mojom.h"
 #include "media/capture/video/video_capture_device_descriptor.h"
 #include "media/capture/video/video_capture_device_info.h"
@@ -38,6 +39,23 @@ struct EnumTraits<media::mojom::VideoCapturePixelFormat,
       media::VideoPixelFormat input);
   static bool FromMojom(media::mojom::VideoCapturePixelFormat input,
                         media::VideoPixelFormat* output);
+};
+
+template <>
+struct EnumTraits<media::mojom::VideoCaptureBufferType,
+                  media::VideoCaptureBufferType> {
+  static media::mojom::VideoCaptureBufferType ToMojom(
+      media::VideoCaptureBufferType buffer_type);
+
+  static bool FromMojom(media::mojom::VideoCaptureBufferType input,
+                        media::VideoCaptureBufferType* out);
+};
+
+template <>
+struct EnumTraits<media::mojom::VideoFacingMode, media::VideoFacingMode> {
+  static media::mojom::VideoFacingMode ToMojom(media::VideoFacingMode input);
+  static bool FromMojom(media::mojom::VideoFacingMode input,
+                        media::VideoFacingMode* output);
 };
 
 template <>
@@ -82,6 +100,11 @@ struct StructTraits<media::mojom::VideoCaptureParamsDataView,
   static media::VideoCaptureFormat requested_format(
       const media::VideoCaptureParams& params) {
     return params.requested_format;
+  }
+
+  static media::VideoCaptureBufferType buffer_type(
+      const media::VideoCaptureParams& params) {
+    return params.buffer_type;
   }
 
   static media::ResolutionChangePolicy resolution_change_policy(
@@ -143,6 +166,11 @@ struct StructTraits<media::mojom::VideoCaptureDeviceDescriptorDataView,
   static const std::string& model_id(
       const media::VideoCaptureDeviceDescriptor& input) {
     return input.model_id;
+  }
+
+  static media::VideoFacingMode facing_mode(
+      const media::VideoCaptureDeviceDescriptor& input) {
+    return input.facing;
   }
 
   static media::VideoCaptureApi capture_api(

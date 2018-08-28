@@ -11,9 +11,7 @@
 #include "net/third_party/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quic/platform/api/quic_uint128.h"
 
-using std::string;
-
-namespace net {
+namespace quic {
 
 NullDecrypter::NullDecrypter(Perspective perspective)
     : perspective_(perspective) {}
@@ -121,4 +119,4 @@ QuicUint128 NullDecrypter::ComputeHash(QuicTransportVersion version,
   return correct_hash;
 }
 
-}  // namespace net
+}  // namespace quic

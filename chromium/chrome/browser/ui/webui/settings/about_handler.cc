@@ -66,6 +66,7 @@
 #include "chrome/browser/ui/webui/help/version_updater_chromeos.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/power_manager_client.h"
+#include "chromeos/dbus/util/version_loader.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/system/statistics_provider.h"
@@ -321,6 +322,11 @@ AboutHandler* AboutHandler::Create(content::WebUIDataSource* html_source,
       IDS_ABOUT_CROS_VERSION_LICENSE,
       base::ASCIIToUTF16(chrome::kChromeUIOSCreditsURL));
   html_source->AddString("aboutProductOsLicense", os_license);
+  base::string16 os_with_linux_license = l10n_util::GetStringFUTF16(
+      IDS_ABOUT_CROS_WITH_LINUX_VERSION_LICENSE,
+      base::ASCIIToUTF16(chrome::kChromeUIOSCreditsURL));
+  html_source->AddString("aboutProductOsWithLinuxLicense",
+                         os_with_linux_license);
   html_source->AddBoolean("aboutEnterpriseManaged", IsEnterpriseManaged());
 
   base::Time build_time = base::SysInfo::GetLsbReleaseTime();
@@ -646,6 +652,7 @@ void AboutHandler::RequestUpdate() {
 
 void AboutHandler::SetUpdateStatus(VersionUpdater::Status status,
                                    int progress,
+                                   bool rollback,
                                    const std::string& version,
                                    int64_t size,
                                    const base::string16& message) {
@@ -656,6 +663,7 @@ void AboutHandler::SetUpdateStatus(VersionUpdater::Status status,
   event->SetString("status", UpdateStatusToString(status));
   event->SetString("message", message);
   event->SetInteger("progress", progress);
+  event->SetBoolean("rollback", rollback);
   event->SetString("version", version);
   // DictionaryValue does not support int64_t, so convert to string.
   event->SetString("size", base::Int64ToString(size));

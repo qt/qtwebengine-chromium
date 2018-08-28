@@ -12,19 +12,21 @@
 
 namespace blink {
 
-class Dictionary;
 class ExecutionContext;
 class ScriptPromiseResolver;
 class ScriptState;
+class ScriptValue;
 
 class Permissions final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  ScriptPromise query(ScriptState*, const Dictionary&);
-  ScriptPromise request(ScriptState*, const Dictionary&);
-  ScriptPromise revoke(ScriptState*, const Dictionary&);
-  ScriptPromise requestAll(ScriptState*, const Vector<Dictionary>&);
+  ScriptPromise query(ScriptState*, const ScriptValue&, ExceptionState&);
+  ScriptPromise request(ScriptState*, const ScriptValue&, ExceptionState&);
+  ScriptPromise revoke(ScriptState*, const ScriptValue&, ExceptionState&);
+  ScriptPromise requestAll(ScriptState*,
+                           const Vector<ScriptValue>&,
+                           ExceptionState&);
 
  private:
   mojom::blink::PermissionService& GetService(ExecutionContext*);

@@ -21,27 +21,27 @@ namespace {
 void Update(NetworkControlUpdate* target, const NetworkControlUpdate& update) {
   if (update.congestion_window) {
     RTC_LOG(LS_INFO) << "Received window="
-                     << ToString(*update.congestion_window) << "\n";
+                     << ToString(*update.congestion_window);
     target->congestion_window = update.congestion_window;
   }
   if (update.pacer_config) {
     RTC_LOG(LS_INFO) << "Received pacing at:"
                      << ToString(update.pacer_config->at_time)
                      << ": rate=" << ToString(update.pacer_config->data_rate())
-                     << "\n";
+                     << ", pad=" << ToString(update.pacer_config->pad_rate());
     target->pacer_config = update.pacer_config;
   }
   if (update.target_rate) {
-    RTC_LOG(LS_INFO) << "Received target at:"
-                     << ToString(update.target_rate->at_time)
-                     << ": rate=" << ToString(update.target_rate->target_rate)
-                     << "\n";
+    RTC_LOG(LS_INFO)
+        << "Received target at:" << ToString(update.target_rate->at_time)
+        << ": rate=" << ToString(update.target_rate->target_rate) << ", rtt="
+        << ToString(update.target_rate->network_estimate.round_trip_time);
     target->target_rate = update.target_rate;
   }
   for (const auto& probe : update.probe_cluster_configs) {
     target->probe_cluster_configs.push_back(probe);
     RTC_LOG(LS_INFO) << "Received probe at:" << ToString(probe.at_time)
-                     << ": target=" << ToString(probe.target_data_rate) << "\n";
+                     << ": target=" << ToString(probe.target_data_rate);
   }
 }
 }  // namespace
@@ -63,38 +63,23 @@ NetworkControllerTester::NetworkControllerTester(
     NetworkControllerConfig initial_config)
     : current_time_(Timestamp::seconds(100000)),
       packet_sequence_number_(1),
-      accumulated_delay_(TimeDelta::ms(0)) {
+      accumulated_buffer_(TimeDelta::Zero()) {
   initial_config.constraints.at_time = current_time_;
   controller_ = factory->Create(initial_config);
   process_interval_ = factory->GetProcessInterval();
   ProcessInterval interval_msg;
   interval_msg.at_time = current_time_;
-  state_ = controller_->OnProcessInterval(interval_msg);
+  Update(&state_, controller_->OnProcessInterval(interval_msg));
 }
 
 NetworkControllerTester::~NetworkControllerTester() = default;
-
-PacketResult NetworkControllerTester::SimulateSend(SentPacket packet,
-                                                   TimeDelta time_delta,
-                                                   TimeDelta propagation_delay,
-                                                   DataRate actual_bandwidth) {
-  TimeDelta bandwidth_delay = packet.size / actual_bandwidth;
-  accumulated_delay_ =
-      std::max(accumulated_delay_ - time_delta, TimeDelta::Zero());
-  accumulated_delay_ += bandwidth_delay;
-  TimeDelta total_delay = propagation_delay + accumulated_delay_;
-
-  PacketResult result;
-  result.sent_packet = packet;
-  result.receive_time = packet.send_time + total_delay;
-  return result;
-}
 
 void NetworkControllerTester::RunSimulation(TimeDelta duration,
                                             TimeDelta packet_interval,
                                             DataRate actual_bandwidth,
                                             TimeDelta propagation_delay,
                                             PacketProducer next_packet) {
+  RTC_CHECK(actual_bandwidth.bps() > 0);
   Timestamp start_time = current_time_;
   Timestamp last_process_time = current_time_;
   while (current_time_ - start_time < duration) {
@@ -111,10 +96,23 @@ void NetworkControllerTester::RunSimulation(TimeDelta duration,
       SentPacket sent_packet;
       sent_packet = next_packet(state_, current_time_, packet_interval);
       sent_packet.sequence_number = packet_sequence_number_++;
+      sent_packet.data_in_flight = sent_packet.size;
+      for (PacketResult& packet : outstanding_packets_)
+        sent_packet.data_in_flight += packet.sent_packet->size;
       Update(&state_, controller_->OnSentPacket(sent_packet));
-      outstanding_packets_.push_back(SimulateSend(
-          sent_packet, packet_interval, propagation_delay, actual_bandwidth));
+
+      TimeDelta time_in_flight = sent_packet.size / actual_bandwidth;
+      accumulated_buffer_ += time_in_flight;
+      TimeDelta total_delay = propagation_delay + accumulated_buffer_;
+      PacketResult result;
+      result.sent_packet = sent_packet;
+      result.receive_time = sent_packet.send_time + total_delay;
+
+      outstanding_packets_.push_back(result);
     }
+
+    TimeDelta buffer_consumed = std::min(accumulated_buffer_, packet_interval);
+    accumulated_buffer_ -= buffer_consumed;
 
     if (outstanding_packets_.size() >= 2 &&
         current_time_ >=

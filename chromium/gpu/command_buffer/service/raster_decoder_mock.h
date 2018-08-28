@@ -97,6 +97,8 @@ class MockRasterDecoder : public RasterDecoder {
   MOCK_METHOD1(SetIgnoreCachedStateForTest, void(bool ignore));
   MOCK_METHOD0(GetImageManagerForTest, gles2::ImageManager*());
   MOCK_METHOD0(GetTransferCacheForTest, ServiceTransferCache*());
+  MOCK_METHOD0(DecoderIdForTest, int());
+  MOCK_METHOD0(SetUpForRasterCHROMIUMForTest, void());
   MOCK_METHOD4(DoCommands,
                error::Error(unsigned int num_commands,
                             const volatile void* buffer,
@@ -105,6 +107,16 @@ class MockRasterDecoder : public RasterDecoder {
   MOCK_METHOD2(GetServiceTextureId,
                bool(uint32_t client_texture_id, uint32_t* service_texture_id));
   MOCK_METHOD0(GetErrorState, gles2::ErrorState*());
+  MOCK_METHOD8(CreateAbstractTexture,
+               std::unique_ptr<gpu::gles2::AbstractTexture>(
+                   unsigned /* GLenum */ target,
+                   unsigned /* GLenum */ internal_format,
+                   int /* GLsizei */ width,
+                   int /* GLsizei */ height,
+                   int /* GLsizei */ depth,
+                   int /* GLint */ border,
+                   unsigned /* GLenum */ format,
+                   unsigned /* GLenum */ type));
 
   MOCK_METHOD0(GetLogger, gles2::Logger*());
   MOCK_CONST_METHOD0(WasContextLost, bool());

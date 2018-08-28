@@ -15,6 +15,7 @@
 namespace blink {
 
 class ComputedStyle;
+class LayoutBox;
 class LayoutObject;
 class NGBlockNode;
 class NGFragmentBuilder;
@@ -37,9 +38,13 @@ class CORE_EXPORT NGOutOfFlowLayoutPart {
                         const NGConstraintSpace& container_space,
                         const ComputedStyle& container_style);
 
-  // update_legacy will place NG OOF descendants into their Legacy container.
-  // It should be false if OOF descendants have already been placed into Legacy.
-  void Run(bool update_legacy = true);
+  // Normally this function lays out and positions all out-of-flow objects
+  // from the container_builder and additional ones it discovers through laying
+  // out those objects. However, if only_layout is specified, only that object
+  // will get laid out; any additional ones will be stored as out-of-flow
+  // descendants in the builder for use via
+  // LayoutResult::OutOfFlowPositionedDescendants.
+  void Run(LayoutBox* only_layout = nullptr);
 
  private:
   // Information needed to position descendant within a containing block.
@@ -83,7 +88,7 @@ class CORE_EXPORT NGOutOfFlowLayoutPart {
       NGBlockNode node,
       const ContainingBlockInfo&,
       const base::Optional<LayoutUnit>& block_estimate,
-      const NGAbsolutePhysicalPosition node_position);
+      const NGAbsolutePhysicalPosition& node_position);
 
   NGFragmentBuilder* container_builder_;
   bool contains_absolute_;

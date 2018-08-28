@@ -96,7 +96,7 @@
         $i18n{internetPageTitle}
       </a>
       <a href="/bluetooth">
-        <iron-icon icon="settings:bluetooth"></iron-icon>
+        <iron-icon icon="cr:bluetooth"></iron-icon>
         $i18n{bluetoothPageTitle}
       </a>
 </if>
@@ -120,15 +120,15 @@
         $i18n{searchPageTitle}
       </a>
 <if expr="chromeos">
-      <a href="/crostini" hidden="[[!showCrostini]]">
-        <iron-icon icon="settings:crostini-mascot"></iron-icon>
-        $i18n{crostiniPageTitle}
-      </a>
-</if>
-<if expr="chromeos">
       <a href="/androidApps" hidden="[[!showAndroidApps]]">
         <iron-icon icon="settings:play-prism"></iron-icon>
         $i18n{androidAppsPageTitle}
+      </a>
+</if>
+<if expr="chromeos">
+      <a href="/crostini" hidden="[[!showCrostini]]">
+        <iron-icon icon="settings:crostini-mascot"></iron-icon>
+        $i18n{crostiniPageTitle}
       </a>
 </if>
 <if expr="not chromeos">
@@ -163,11 +163,13 @@
             <iron-icon icon="cr:security"></iron-icon>
             $i18n{privacyPageTitle}
           </a>
-          <a id= "passwordsAndForms" href="/passwordsAndForms"
-              hidden="[[!pageVisibility.passwordsAndForms]]">
-            <iron-icon icon="settings:assignment"></iron-icon>
-            $i18n{passwordsAndAutofillPageTitle}
-          </a>
+          <template is="dom-if" if="[[!autofillHomeEnabled]]">
+            <a id="passwordsAndForms" href="/passwordsAndForms"
+                hidden="[[!pageVisibility.passwordsAndForms]]">
+              <iron-icon icon="settings:assignment"></iron-icon>
+              $i18n{passwordsAndAutofillPageTitle}
+            </a>
+          </template>
           <a href="/languages">
             <iron-icon icon="settings:language"></iron-icon>
             $i18n{languagesPageTitle}

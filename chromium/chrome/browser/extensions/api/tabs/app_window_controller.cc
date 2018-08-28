@@ -38,24 +38,11 @@ int AppWindowController::GetWindowId() const {
 }
 
 std::string AppWindowController::GetWindowTypeText() const {
-  if (app_window_->window_type_is_panel())
-    return tabs_constants::kWindowTypeValuePanel;
   return tabs_constants::kWindowTypeValueApp;
 }
 
 bool AppWindowController::CanClose(Reason* reason) const {
   return true;
-}
-
-void AppWindowController::SetFullscreenMode(bool is_fullscreen,
-                                            const GURL& extension_url) const {
-  // Do nothing. Panels cannot be fullscreen.
-  if (app_window_->window_type_is_panel())
-    return;
-  // TODO(llandwerlin): should we prevent changes in fullscreen mode
-  // when the fullscreen state is FULLSCREEN_TYPE_FORCED?
-  app_window_->SetFullscreen(AppWindow::FULLSCREEN_TYPE_WINDOW_API,
-                             is_fullscreen);
 }
 
 Browser* AppWindowController::GetBrowser() const {

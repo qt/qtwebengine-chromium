@@ -325,6 +325,8 @@ void View::SetBoundsRect(const gfx::Rect& bounds) {
   if (bounds == bounds_) {
     if (needs_layout_) {
       needs_layout_ = false;
+      TRACE_EVENT1("views", "View::Layout(set_bounds)", "class",
+                   GetClassName());
       Layout();
     }
     return;
@@ -1419,12 +1421,14 @@ bool View::HandleAccessibleAction(const ui::AXActionData& action_data) {
       break;
     case ax::mojom::Action::kDoDefault: {
       const gfx::Point center = GetLocalBounds().CenterPoint();
-      OnMousePressed(ui::MouseEvent(
-          ui::ET_MOUSE_PRESSED, center, center, ui::EventTimeForNow(),
-          ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON));
-      OnMouseReleased(ui::MouseEvent(
-          ui::ET_MOUSE_RELEASED, center, center, ui::EventTimeForNow(),
-          ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON));
+      ui::MouseEvent press(ui::ET_MOUSE_PRESSED, center, center,
+                           ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON,
+                           ui::EF_LEFT_MOUSE_BUTTON);
+      OnEvent(&press);
+      ui::MouseEvent release(ui::ET_MOUSE_RELEASED, center, center,
+                             ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON,
+                             ui::EF_LEFT_MOUSE_BUTTON);
+      OnEvent(&release);
       return true;
     }
     case ax::mojom::Action::kFocus:
@@ -2185,6 +2189,8 @@ void View::BoundsChanged(const gfx::Rect& previous_bounds) {
 
   if (needs_layout_ || previous_bounds.size() != size()) {
     needs_layout_ = false;
+    TRACE_EVENT1("views", "View::Layout(bounds_changed)", "class",
+                 GetClassName());
     Layout();
   }
 

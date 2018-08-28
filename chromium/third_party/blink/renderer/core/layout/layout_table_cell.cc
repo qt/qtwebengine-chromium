@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/layout/collapsed_border_value.h"
 #include "third_party/blink/renderer/core/layout/layout_analyzer.h"
+#include "third_party/blink/renderer/core/layout/layout_object_factory.h"
 #include "third_party/blink/renderer/core/layout/layout_table_col.h"
 #include "third_party/blink/renderer/core/layout/subtree_layout_scope.h"
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
@@ -365,6 +366,21 @@ LayoutSize LayoutTableCell::OffsetFromContainerInternal(
   return offset;
 }
 
+void LayoutTableCell::SetIsSpanningCollapsedRow(bool spanning_collapsed_row) {
+  if (is_spanning_collapsed_row_ != spanning_collapsed_row) {
+    is_spanning_collapsed_row_ = spanning_collapsed_row;
+    SetShouldClipOverflow(ComputeShouldClipOverflow());
+  }
+}
+
+void LayoutTableCell::SetIsSpanningCollapsedColumn(
+    bool spanning_collapsed_column) {
+  if (is_spanning_collapsed_column_ != spanning_collapsed_column) {
+    is_spanning_collapsed_column_ = spanning_collapsed_column;
+    SetShouldClipOverflow(ComputeShouldClipOverflow());
+  }
+}
+
 void LayoutTableCell::ComputeOverflow(LayoutUnit old_client_after_edge,
                                       bool recompute_floats) {
   LayoutBlockFlow::ComputeOverflow(old_client_after_edge, recompute_floats);
@@ -417,9 +433,9 @@ void LayoutTableCell::ComputeOverflow(LayoutUnit old_client_after_edge,
   collapsed_border_values_->SetLocalVisualRect(rect);
 }
 
-bool LayoutTableCell::ShouldClipOverflow() const {
+bool LayoutTableCell::ComputeShouldClipOverflow() const {
   return IsSpanningCollapsedRow() || IsSpanningCollapsedColumn() ||
-         LayoutBox::ShouldClipOverflow();
+         LayoutBox::ComputeShouldClipOverflow();
 }
 
 LayoutUnit LayoutTableCell::CellBaselinePosition() const {
@@ -519,9 +535,9 @@ CollapsedBorderValue LayoutTableCell::ComputeCollapsedStartBorder() const {
   // For the start border, we need to check, in order of precedence:
   // (1) Our start border.
   const CSSProperty& start_color_property =
-      ResolveBorderProperty(GetCSSPropertyWebkitBorderStartColor());
+      ResolveBorderProperty(GetCSSPropertyBorderInlineStartColor());
   const CSSProperty& end_color_property =
-      ResolveBorderProperty(GetCSSPropertyWebkitBorderEndColor());
+      ResolveBorderProperty(GetCSSPropertyBorderInlineEndColor());
   CollapsedBorderValue result(BorderStartInTableDirection(),
                               ResolveColor(start_color_property),
                               kBorderPrecedenceCell);
@@ -652,9 +668,9 @@ CollapsedBorderValue LayoutTableCell::ComputeCollapsedEndBorder() const {
   // For end border, we need to check, in order of precedence:
   // (1) Our end border.
   const CSSProperty& start_color_property =
-      ResolveBorderProperty(GetCSSPropertyWebkitBorderStartColor());
+      ResolveBorderProperty(GetCSSPropertyBorderInlineStartColor());
   const CSSProperty& end_color_property =
-      ResolveBorderProperty(GetCSSPropertyWebkitBorderEndColor());
+      ResolveBorderProperty(GetCSSPropertyBorderInlineEndColor());
   CollapsedBorderValue result = CollapsedBorderValue(
       BorderEndInTableDirection(), ResolveColor(end_color_property),
       kBorderPrecedenceCell);
@@ -777,9 +793,9 @@ CollapsedBorderValue LayoutTableCell::ComputeCollapsedBeforeBorder() const {
   // For before border, we need to check, in order of precedence:
   // (1) Our before border.
   const CSSProperty& before_color_property =
-      ResolveBorderProperty(GetCSSPropertyWebkitBorderBeforeColor());
+      ResolveBorderProperty(GetCSSPropertyBorderBlockStartColor());
   const CSSProperty& after_color_property =
-      ResolveBorderProperty(GetCSSPropertyWebkitBorderAfterColor());
+      ResolveBorderProperty(GetCSSPropertyBorderBlockEndColor());
   CollapsedBorderValue result = CollapsedBorderValue(
       Style()->BorderBeforeStyle(), Style()->BorderBeforeWidth(),
       ResolveColor(before_color_property), kBorderPrecedenceCell);
@@ -908,9 +924,9 @@ CollapsedBorderValue LayoutTableCell::ComputeCollapsedAfterBorder() const {
   // For after border, we need to check, in order of precedence:
   // (1) Our after border.
   const CSSProperty& before_color_property =
-      ResolveBorderProperty(GetCSSPropertyWebkitBorderBeforeColor());
+      ResolveBorderProperty(GetCSSPropertyBorderBlockStartColor());
   const CSSProperty& after_color_property =
-      ResolveBorderProperty(GetCSSPropertyWebkitBorderAfterColor());
+      ResolveBorderProperty(GetCSSPropertyBorderBlockEndColor());
   CollapsedBorderValue result = CollapsedBorderValue(
       Style()->BorderAfterStyle(), Style()->BorderAfterWidth(),
       ResolveColor(after_color_property), kBorderPrecedenceCell);
@@ -1048,11 +1064,6 @@ bool LayoutTableCell::IsFirstColumnCollapsed() const {
   return Table()->IsAbsoluteColumnCollapsed(AbsoluteColumnIndex());
 }
 
-void LayoutTableCell::Paint(const PaintInfo& paint_info,
-                            const LayoutPoint& paint_offset) const {
-  TableCellPainter(*this).Paint(paint_info, paint_offset);
-}
-
 void LayoutTableCell::UpdateCollapsedBorderValues() const {
   bool changed = false;
 
@@ -1147,20 +1158,23 @@ void LayoutTableCell::ScrollbarsChanged(bool horizontal_scrollbar_changed,
   }
 }
 
-LayoutTableCell* LayoutTableCell::CreateAnonymous(Document* document) {
-  LayoutTableCell* layout_object = new LayoutTableCell(nullptr);
+LayoutTableCell* LayoutTableCell::CreateAnonymous(
+    Document* document,
+    scoped_refptr<ComputedStyle> style) {
+  LayoutTableCell* layout_object =
+      LayoutObjectFactory::CreateTableCell(*document, *style);
   layout_object->SetDocumentForAnonymous(document);
+  layout_object->SetStyle(std::move(style));
   return layout_object;
 }
 
 LayoutTableCell* LayoutTableCell::CreateAnonymousWithParent(
     const LayoutObject* parent) {
-  LayoutTableCell* new_cell =
-      LayoutTableCell::CreateAnonymous(&parent->GetDocument());
   scoped_refptr<ComputedStyle> new_style =
       ComputedStyle::CreateAnonymousStyleWithDisplay(parent->StyleRef(),
                                                      EDisplay::kTableCell);
-  new_cell->SetStyle(std::move(new_style));
+  LayoutTableCell* new_cell = LayoutTableCell::CreateAnonymous(
+      &parent->GetDocument(), std::move(new_style));
   return new_cell;
 }
 

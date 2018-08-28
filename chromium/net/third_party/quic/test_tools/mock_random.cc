@@ -6,7 +6,7 @@
 
 #include <string.h>
 
-namespace net {
+namespace quic {
 namespace test {
 
 MockRandom::MockRandom() : base_(0xDEADBEEF), increment_(0) {}
@@ -21,11 +21,9 @@ uint64_t MockRandom::RandUint64() {
   return base_ + increment_;
 }
 
-void MockRandom::Reseed(const void* additional_entropy, size_t entropy_len) {}
-
 void MockRandom::ChangeValue() {
   increment_++;
 }
 
 }  // namespace test
-}  // namespace net
+}  // namespace quic

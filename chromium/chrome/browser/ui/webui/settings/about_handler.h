@@ -22,7 +22,6 @@
 #if defined(OS_CHROMEOS)
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/chromeos/tpm_firmware_update.h"
-#include "chromeos/system/version_loader.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace base {
@@ -128,6 +127,7 @@ class AboutHandler : public settings::SettingsPageUIHandler,
   // Callback method which forwards status updates to the page.
   void SetUpdateStatus(VersionUpdater::Status status,
                        int progress,
+                       bool rollback,
                        const std::string& version,
                        int64_t size,
                        const base::string16& fail_message);

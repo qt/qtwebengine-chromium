@@ -27,6 +27,10 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SHARED_BUFFER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SHARED_BUFFER_H_
 
+#include <utility>
+#include <vector>
+
+#include "base/containers/span.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
@@ -43,7 +47,52 @@ class WebProcessMemoryDump;
 
 class PLATFORM_EXPORT SharedBuffer : public RefCounted<SharedBuffer> {
  public:
-  enum : unsigned { kSegmentSize = 0x1000 };
+  // Iterator for ShreadBuffer contents. An Iterator will get invalid once the
+  // associated SharedBuffer is modified (e.g., Append() is called). An Iterator
+  // doesn't retain the associated container.
+  class PLATFORM_EXPORT Iterator final {
+   public:
+    ~Iterator() = default;
+
+    Iterator& operator++();
+    Iterator operator++(int) {
+      auto temp = *this;
+      ++*this;
+      return temp;
+    }
+    bool operator==(const Iterator& that) const {
+      return value_ == that.value_ && buffer_ == that.buffer_;
+    }
+    bool operator!=(const Iterator& that) const { return !(*this == that); }
+    const base::span<const char>& operator*() const {
+      DCHECK(!IsEnd());
+      return value_;
+    }
+    const base::span<const char>* operator->() const {
+      DCHECK(!IsEnd());
+      return &value_;
+    }
+
+   private:
+    friend class SharedBuffer;
+    // for end()
+    Iterator(const SharedBuffer* buffer);
+    // for the consecutive part
+    Iterator(size_t offset, const SharedBuffer* buffer);
+    // for the rest
+    Iterator(size_t segment_index, size_t offset, const SharedBuffer* buffer);
+
+    void Init(size_t offset);
+    bool IsEnd() const { return index_ == buffer_->segments_.size() + 1; }
+
+    // It represents |buffer_->buffer| if |index_| is 0, and
+    // |buffer_->segments[index_ - 1]| otherwise.
+    size_t index_;
+    base::span<const char> value_;
+    const SharedBuffer* buffer_;
+  };
+
+  static constexpr unsigned kSegmentSize = 0x1000;
 
   static scoped_refptr<SharedBuffer> Create() {
     return base::AdoptRef(new SharedBuffer);
@@ -73,14 +122,13 @@ class PLATFORM_EXPORT SharedBuffer : public RefCounted<SharedBuffer> {
 
   ~SharedBuffer();
 
-  // DEPRECATED: use a segment iterator, FlatData or Copy() instead.
+  // DEPRECATED: use a segment iterator, FlatData or explicit Copy() instead.
   //
   // Calling this function will force internal segmented buffers to be merged
-  // into a flat buffer. Use getSomeData() whenever possible for better
-  // performance.
-  const char* Data() const;
+  // into a flat buffer. Use iterator whenever possible for better performance.
+  const char* Data();
 
-  size_t size() const;
+  size_t size() const { return size_; }
 
   bool IsEmpty() const { return !size(); }
 
@@ -91,32 +139,27 @@ class PLATFORM_EXPORT SharedBuffer : public RefCounted<SharedBuffer> {
     ALLOW_NUMERIC_ARG_TYPES_PROMOTABLE_TO(size_t);
     AppendInternal(data, size);
   }
-  void Append(const Vector<char>&);
+  void Append(const Vector<char>& data) { Append(data.data(), data.size()); }
 
   void Clear();
 
-  // Copies the segmented data into a contiguous buffer.  Use GetSomeData() or
-  // ForEachSegment() whenever possible, as they are cheaper.
-  Vector<char> Copy() const;
+  Iterator begin() const;
+  Iterator cbegin() const { return begin(); }
+  Iterator end() const;
+  Iterator cend() const { return end(); }
 
-  // Return the number of consecutive bytes after "position". "data"
-  // points to the first byte.
-  // Return 0 when no more data left.
-  // When extracting all data with getSomeData(), the caller should
-  // repeat calling it until it returns 0.
-  // Usage:
-  //      const char* segment;
-  //      size_t pos = 0;
-  //      while (size_t length = sharedBuffer->getSomeData(segment, pos)) {
-  //          // Use the data. for example: decoder->decode(segment, length);
-  //          pos += length;
-  //      }
+  // Copies the segmented data into a contiguous buffer.  Use GetSomeData() or
+  // iterators if a copy is not required, as they are cheaper.
+  // Supported Ts: WTF::Vector<char>, std::vector<char>.
+  template <typename T>
+  T CopyAs() const;
+
+  // Returns an iterator for the given position of bytes. Returns |cend()| if
+  // |position| is greater than or equal to |size()|.
   HAS_STRICTLY_TYPED_ARG
-  size_t GetSomeData(
-      const char*& data,
-      STRICTLY_TYPED_ARG(position) = static_cast<size_t>(0)) const {
+  Iterator GetIteratorAt(STRICTLY_TYPED_ARG(position)) const {
     STRICT_ARG_TYPE(size_t);
-    return GetSomeDataInternal(data, position);
+    return GetIteratorAtInternal(position);
   }
 
   // Copies |byteLength| bytes from the beginning of the content data into
@@ -134,25 +177,6 @@ class PLATFORM_EXPORT SharedBuffer : public RefCounted<SharedBuffer> {
   sk_sp<SkData> GetAsSkData() const;
 
   void OnMemoryDump(const String& dump_prefix, WebProcessMemoryDump*) const;
-
-  // Helper for applying a lambda to all data segments, sequentially:
-  //
-  //   bool func(const char* segment, size_t segment_size,
-  //             size_t segment_offset);
-  //
-  // The iterator stops early when the lambda returns |false|.
-  //
-  template <typename Func>
-  void ForEachSegment(Func&& func) const {
-    const char* segment;
-    size_t pos = 0;
-
-    while (size_t length = GetSomeData(segment, pos)) {
-      if (!func(segment, length, pos))
-        break;
-      pos += length;
-    }
-  }
 
   // Helper for providing a contiguous view of the data.  If the SharedBuffer is
   // segmented, this will copy/merge all segments into a temporary buffer.
@@ -173,22 +197,53 @@ class PLATFORM_EXPORT SharedBuffer : public RefCounted<SharedBuffer> {
   };
 
  private:
+  class Segment;
+
   SharedBuffer();
   explicit SharedBuffer(size_t);
   SharedBuffer(const char*, size_t);
   SharedBuffer(const unsigned char*, size_t);
 
   // See SharedBuffer::data().
-  void MergeSegmentsIntoBuffer() const;
+  void MergeSegmentsIntoBuffer();
 
   void AppendInternal(const char* data, size_t);
   bool GetBytesInternal(void* dest, size_t) const;
-  size_t GetSomeDataInternal(const char*& data, size_t position) const;
+  Iterator GetIteratorAtInternal(size_t position) const;
+  size_t GetLastSegmentSize() const {
+    DCHECK(!segments_.IsEmpty());
+    return (size_ - buffer_.size() + kSegmentSize - 1) % kSegmentSize + 1;
+  }
 
   size_t size_;
-  mutable Vector<char> buffer_;
-  mutable Vector<char*> segments_;
+  Vector<char> buffer_;
+  Vector<Segment> segments_;
 };
+
+// Current CopyAs specializations.
+template <>
+inline Vector<char> SharedBuffer::CopyAs() const {
+  Vector<char> buffer;
+  buffer.ReserveInitialCapacity(size_);
+
+  for (const auto& span : *this)
+    buffer.Append(span.data(), span.size());
+
+  DCHECK_EQ(buffer.size(), size_);
+  return buffer;
+}
+
+template <>
+inline std::vector<char> SharedBuffer::CopyAs() const {
+  std::vector<char> buffer;
+  buffer.reserve(size_);
+
+  for (const auto& span : *this)
+    buffer.insert(buffer.end(), span.data(), span.data() + span.size());
+
+  DCHECK_EQ(buffer.size(), size_);
+  return buffer;
+}
 
 }  // namespace blink
 

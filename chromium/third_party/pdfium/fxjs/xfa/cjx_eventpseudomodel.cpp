@@ -6,6 +6,7 @@
 
 #include "fxjs/xfa/cjx_eventpseudomodel.h"
 
+#include <algorithm>
 #include <vector>
 
 #include "fxjs/cfxjse_engine.h"
@@ -17,28 +18,29 @@
 
 namespace {
 
-void StringProperty(CFXJSE_Value* pValue, WideString* wsValue, bool bSetting) {
+void StringProperty(CFXJSE_Value* pReturn, WideString* wsValue, bool bSetting) {
   if (bSetting) {
-    *wsValue = pValue->ToWideString();
+    *wsValue = pReturn->ToWideString();
     return;
   }
-  pValue->SetString(wsValue->UTF8Encode().AsStringView());
+
+  pReturn->SetString(wsValue->UTF8Encode().AsStringView());
 }
 
-void InterProperty(CFXJSE_Value* pValue, int32_t* iValue, bool bSetting) {
+void InterProperty(CFXJSE_Value* pReturn, int32_t* iValue, bool bSetting) {
   if (bSetting) {
-    *iValue = pValue->ToInteger();
+    *iValue = pReturn->ToInteger();
     return;
   }
-  pValue->SetInteger(*iValue);
+  pReturn->SetInteger(*iValue);
 }
 
-void BooleanProperty(CFXJSE_Value* pValue, bool* bValue, bool bSetting) {
+void BooleanProperty(CFXJSE_Value* pReturn, bool* bValue, bool bSetting) {
   if (bSetting) {
-    *bValue = pValue->ToBoolean();
+    *bValue = pReturn->ToBoolean();
     return;
   }
-  pValue->SetBoolean(*bValue);
+  pReturn->SetBoolean(*bValue);
 }
 
 }  // namespace
@@ -49,10 +51,16 @@ const CJX_MethodSpec CJX_EventPseudoModel::MethodSpecs[] = {
 
 CJX_EventPseudoModel::CJX_EventPseudoModel(CScript_EventPseudoModel* model)
     : CJX_Object(model) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_EventPseudoModel::~CJX_EventPseudoModel() {}
+
+void CJX_EventPseudoModel::cancelAction(CFXJSE_Value* pValue,
+                                        bool bSetting,
+                                        XFA_Attribute eAttribute) {
+  Property(pValue, XFA_Event::CancelAction, bSetting);
+}
 
 void CJX_EventPseudoModel::change(CFXJSE_Value* pValue,
                                   bool bSetting,
@@ -93,7 +101,18 @@ void CJX_EventPseudoModel::newContentType(CFXJSE_Value* pValue,
 void CJX_EventPseudoModel::newText(CFXJSE_Value* pValue,
                                    bool bSetting,
                                    XFA_Attribute eAttribute) {
-  Property(pValue, XFA_Event::NewText, bSetting);
+  if (bSetting)
+    return;
+
+  CFXJSE_Engine* pScriptContext = GetDocument()->GetScriptContext();
+  if (!pScriptContext)
+    return;
+
+  CXFA_EventParam* pEventParam = pScriptContext->GetEventParam();
+  if (!pEventParam)
+    return;
+
+  pValue->SetString(pEventParam->GetNewText().UTF8Encode().AsStringView());
 }
 
 void CJX_EventPseudoModel::prevContentType(CFXJSE_Value* pValue,
@@ -155,22 +174,22 @@ CJS_Return CJX_EventPseudoModel::emit(
     const std::vector<v8::Local<v8::Value>>& params) {
   CFXJSE_Engine* pScriptContext = GetDocument()->GetScriptContext();
   if (!pScriptContext)
-    return CJS_Return(true);
+    return CJS_Return();
 
   CXFA_EventParam* pEventParam = pScriptContext->GetEventParam();
   if (!pEventParam)
-    return CJS_Return(true);
+    return CJS_Return();
 
   CXFA_FFNotify* pNotify = GetDocument()->GetNotify();
   if (!pNotify)
-    return CJS_Return(true);
+    return CJS_Return();
 
   CXFA_FFWidgetHandler* pWidgetHandler = pNotify->GetWidgetHandler();
   if (!pWidgetHandler)
-    return CJS_Return(true);
+    return CJS_Return();
 
-  pWidgetHandler->ProcessEvent(pEventParam->m_pTarget, pEventParam);
-  return CJS_Return(true);
+  pWidgetHandler->ProcessEvent(pEventParam->m_pTarget.Get(), pEventParam);
+  return CJS_Return();
 }
 
 CJS_Return CJX_EventPseudoModel::reset(
@@ -178,19 +197,26 @@ CJS_Return CJX_EventPseudoModel::reset(
     const std::vector<v8::Local<v8::Value>>& params) {
   CFXJSE_Engine* pScriptContext = GetDocument()->GetScriptContext();
   if (!pScriptContext)
-    return CJS_Return(true);
+    return CJS_Return();
 
   CXFA_EventParam* pEventParam = pScriptContext->GetEventParam();
   if (!pEventParam)
-    return CJS_Return(true);
+    return CJS_Return();
 
   pEventParam->Reset();
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 void CJX_EventPseudoModel::Property(CFXJSE_Value* pValue,
                                     XFA_Event dwFlag,
                                     bool bSetting) {
+  // Only the cancelAction, selStart, selEnd and change properties are writable.
+  if (bSetting && dwFlag != XFA_Event::CancelAction &&
+      dwFlag != XFA_Event::SelectionStart &&
+      dwFlag != XFA_Event::SelectionEnd && dwFlag != XFA_Event::Change) {
+    return;
+  }
+
   CFXJSE_Engine* pScriptContext = GetDocument()->GetScriptContext();
   if (!pScriptContext)
     return;
@@ -222,7 +248,7 @@ void CJX_EventPseudoModel::Property(CFXJSE_Value* pValue,
       StringProperty(pValue, &pEventParam->m_wsNewContentType, bSetting);
       break;
     case XFA_Event::NewText:
-      StringProperty(pValue, &pEventParam->m_wsNewText, bSetting);
+      NOTREACHED();
       break;
     case XFA_Event::PreviousContentType:
       StringProperty(pValue, &pEventParam->m_wsPrevContentType, bSetting);
@@ -235,9 +261,25 @@ void CJX_EventPseudoModel::Property(CFXJSE_Value* pValue,
       break;
     case XFA_Event::SelectionEnd:
       InterProperty(pValue, &pEventParam->m_iSelEnd, bSetting);
+
+      pEventParam->m_iSelEnd = std::max(0, pEventParam->m_iSelEnd);
+      pEventParam->m_iSelEnd =
+          std::min(static_cast<size_t>(pEventParam->m_iSelEnd),
+                   pEventParam->m_wsPrevText.GetLength());
+      pEventParam->m_iSelStart =
+          std::min(pEventParam->m_iSelStart, pEventParam->m_iSelEnd);
+
       break;
     case XFA_Event::SelectionStart:
       InterProperty(pValue, &pEventParam->m_iSelStart, bSetting);
+
+      pEventParam->m_iSelStart = std::max(0, pEventParam->m_iSelStart);
+      pEventParam->m_iSelStart =
+          std::min(static_cast<size_t>(pEventParam->m_iSelStart),
+                   pEventParam->m_wsPrevText.GetLength());
+      pEventParam->m_iSelEnd =
+          std::max(pEventParam->m_iSelStart, pEventParam->m_iSelEnd);
+
       break;
     case XFA_Event::Shift:
       BooleanProperty(pValue, &pEventParam->m_bShift, bSetting);

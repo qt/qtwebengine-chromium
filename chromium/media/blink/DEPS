@@ -1,14 +1,14 @@
 include_rules = [
   "+cc/layers/layer.h",
+  "+cc/layers/surface_layer.h",
   "+cc/layers/video_frame_provider.h",
   "+cc/layers/video_layer.h",
   "+components/scheduler",  # Only allowed in tests.
   "+components/viz/common/gpu/context_provider.h",
-  "+components/viz/common/resources/shared_bitmap_manager.h",
   "+components/viz/common/surfaces/frame_sink_id.h",
   "+gin",
   "+media",
-  "+mojo/edk/embedder",
+  "+mojo/core/embedder",
   "+mojo/public/cpp/bindings",
   "+net/base",
   "+net/http",

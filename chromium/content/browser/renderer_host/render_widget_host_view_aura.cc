@@ -56,7 +56,7 @@
 #include "gpu/ipc/common/gpu_messages.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/ui/common/switches.h"
-#include "services/ui/public/interfaces/window_manager_constants.mojom.h"
+#include "services/ui/public/interfaces/window_tree_constants.mojom.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/blink/public/web/web_ime_text_span.h"
 #include "ui/accessibility/platform/aura_window_properties.h"
@@ -98,6 +98,7 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/touch_selection/touch_selection_controller.h"
 #include "ui/wm/core/coordinate_conversion.h"
+#include "ui/wm/core/window_util.h"
 #include "ui/wm/public/activation_client.h"
 #include "ui/wm/public/scoped_tooltip_disabler.h"
 #include "ui/wm/public/tooltip_client.h"
@@ -364,7 +365,7 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
       is_guest_view_hack_(is_guest_view_hack),
       device_scale_factor_(0.0f),
       event_handler_(new RenderWidgetHostViewEventHandler(host(), this, this)),
-      frame_sink_id_(base::FeatureList::IsEnabled(features::kMash)
+      frame_sink_id_(!features::IsAshInBrowserProcess()
                          ? viz::FrameSinkId()
                          : is_guest_view_hack_
                                ? AllocateFrameSinkIdForGuestViewHack()
@@ -655,16 +656,6 @@ void RenderWidgetHostViewAura::WasUnOccluded() {
 
   bool has_saved_frame =
       delegated_frame_host_ ? delegated_frame_host_->HasSavedFrame() : false;
-  ui::LatencyInfo renderer_latency_info, browser_latency_info;
-  if (has_saved_frame) {
-    browser_latency_info.AddLatencyNumber(ui::TAB_SHOW_COMPONENT,
-                                          host()->GetLatencyComponentId());
-    browser_latency_info.set_trace_id(++tab_show_sequence_);
-  } else {
-    renderer_latency_info.AddLatencyNumber(ui::TAB_SHOW_COMPONENT,
-                                           host()->GetLatencyComponentId());
-    renderer_latency_info.set_trace_id(++tab_show_sequence_);
-  }
 
   // If the primary surface was evicted, we should create a new primary.
   if (delegated_frame_host_ &&
@@ -673,9 +664,8 @@ void RenderWidgetHostViewAura::WasUnOccluded() {
                                 base::nullopt);
   }
 
-  TRACE_EVENT_ASYNC_BEGIN0("latency", "TabSwitching::Latency",
-                           tab_show_sequence_);
-  host()->WasShown(renderer_latency_info);
+  const bool renderer_should_record_presentation_time = !has_saved_frame;
+  host()->WasShown(renderer_should_record_presentation_time);
 
   aura::Window* root = window_->GetRootWindow();
   if (root) {
@@ -686,9 +676,12 @@ void RenderWidgetHostViewAura::WasUnOccluded() {
   }
 
   if (delegated_frame_host_) {
+    // If the frame for the renderer is already available, then the
+    // tab-switching time is the presentation time for the browser-compositor.
+    const bool record_presentation_time = has_saved_frame;
     delegated_frame_host_->WasShown(window_->GetLocalSurfaceId(),
                                     window_->bounds().size(),
-                                    browser_latency_info);
+                                    record_presentation_time);
   }
 
 #if defined(OS_WIN)
@@ -829,12 +822,6 @@ void RenderWidgetHostViewAura::DisplayTooltipText(
     // Content tooltips should be visible indefinitely.
     tooltip_client->SetTooltipShownTimeout(window_, 0);
   }
-}
-
-gfx::Size RenderWidgetHostViewAura::GetRequestedRendererSize() const {
-  return delegated_frame_host_
-             ? delegated_frame_host_->GetRequestedRendererSize()
-             : RenderWidgetHostViewBase::GetRequestedRendererSize();
 }
 
 uint32_t RenderWidgetHostViewAura::GetCaptureSequenceNumber() const {
@@ -988,6 +975,8 @@ void RenderWidgetHostViewAura::GestureEventAck(
     }
   }
   event_handler_->GestureEventAck(event, ack_result);
+
+  ForwardTouchpadPinchIfNecessary(event, ack_result);
 }
 
 void RenderWidgetHostViewAura::ProcessAckedTouchEvent(
@@ -1460,12 +1449,14 @@ bool RenderWidgetHostViewAura::IsTextEditCommandEnabled(
 void RenderWidgetHostViewAura::SetTextEditCommandForNextKeyEvent(
     ui::TextEditCommand command) {}
 
-const std::string& RenderWidgetHostViewAura::GetClientSourceInfo() const {
+ukm::SourceId RenderWidgetHostViewAura::GetClientSourceForMetrics() const {
   RenderFrameHostImpl* frame = GetFocusedFrame();
   if (frame) {
-    return frame->GetLastCommittedURL().spec();
+    frame->GetRenderWidgetHost()
+        ->delegate()
+        ->GetUkmSourceIdForLastCommittedSource();
   }
-  return base::EmptyString();
+  return ukm::SourceId();
 }
 
 bool RenderWidgetHostViewAura::ShouldDoLearning() {
@@ -1519,7 +1510,7 @@ void RenderWidgetHostViewAura::OnBoundsChanged(const gfx::Rect& old_bounds,
 }
 
 gfx::NativeCursor RenderWidgetHostViewAura::GetCursor(const gfx::Point& point) {
-  if (mouse_locked_)
+  if (IsMouseLocked())
     return ui::CursorType::kNone;
   return current_cursor_.GetNativeCursor();
 }
@@ -1553,7 +1544,8 @@ void RenderWidgetHostViewAura::OnDeviceScaleFactorChanged(
   if (!window_->GetRootWindow())
     return;
 
-  SyncSurfaceProperties(cc::DeadlinePolicy::UseDefaultDeadline());
+  SynchronizeVisualProperties(cc::DeadlinePolicy::UseDefaultDeadline(),
+                              window_->GetLocalSurfaceId());
 
   device_scale_factor_ = new_device_scale_factor;
   const display::Display display =
@@ -1603,6 +1595,11 @@ bool RenderWidgetHostViewAura::HasHitTestMask() const {
 }
 
 void RenderWidgetHostViewAura::GetHitTestMask(gfx::Path* mask) const {
+}
+
+bool RenderWidgetHostViewAura::RequiresDoubleTapGestureEvents() const {
+  RenderViewHost* rvh = RenderViewHost::From(host());
+  return rvh && rvh->GetWebkitPreferences().double_tap_to_zoom_enabled;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1703,7 +1700,7 @@ void RenderWidgetHostViewAura::FocusedNodeChanged(
 void RenderWidgetHostViewAura::ScheduleEmbed(
     ui::mojom::WindowTreeClientPtr client,
     base::OnceCallback<void(const base::UnguessableToken&)> callback) {
-  DCHECK(features::IsMashEnabled());
+  DCHECK(!features::IsAshInBrowserProcess());
   aura::Env::GetInstance()->ScheduleEmbed(std::move(client),
                                           std::move(callback));
 }
@@ -1836,8 +1833,8 @@ void RenderWidgetHostViewAura::OnHostMovedInPixels(
 ////////////////////////////////////////////////////////////////////////////////
 // RenderWidgetHostViewAura, RenderFrameMetadataProvider::Observer
 // implementation:
-void RenderWidgetHostViewAura::OnRenderFrameMetadataChanged() {
-  RenderWidgetHostViewBase::OnRenderFrameMetadataChanged();
+void RenderWidgetHostViewAura::OnRenderFrameMetadataChangedAfterActivation() {
+  RenderWidgetHostViewBase::OnRenderFrameMetadataChangedAfterActivation();
   const cc::RenderFrameMetadata& metadata =
       host()->render_frame_metadata_provider()->LastRenderFrameMetadata();
   SetContentBackgroundColor(metadata.root_background_color);
@@ -1925,7 +1922,7 @@ void RenderWidgetHostViewAura::CreateAuraWindow(aura::client::WindowType type) {
   if (frame_sink_id_.is_valid())
     window_->SetEmbedFrameSinkId(frame_sink_id_);
 
-  if (!features::IsMashEnabled())
+  if (features::IsAshInBrowserProcess())
     return;
 
   // Embed the renderer into the Window.
@@ -2031,7 +2028,15 @@ bool RenderWidgetHostViewAura::SynchronizeVisualProperties(
   DCHECK(window_);
   window_->UpdateLocalSurfaceIdFromEmbeddedClient(
       child_allocated_local_surface_id);
-  return SyncSurfaceProperties(deadline_policy);
+  if (IsLocalSurfaceIdAllocationSuppressed())
+    return false;
+
+  if (delegated_frame_host_) {
+    delegated_frame_host_->EmbedSurface(window_->GetLocalSurfaceId(),
+                                        window_->bounds().size(),
+                                        deadline_policy);
+  }
+  return host()->SynchronizeVisualProperties();
 }
 
 ui::InputMethod* RenderWidgetHostViewAura::GetInputMethod() const {
@@ -2134,15 +2139,8 @@ void RenderWidgetHostViewAura::SnapToPhysicalPixelBoundary() {
   // to avoid the web contents area looking blurry we translate the web contents
   // in the +x, +y direction to land on the nearest pixel boundary. This may
   // cause the bottom and right edges to be clipped slightly, but that's ok.
-#if defined(OS_CHROMEOS)
-  aura::Window* snapped = window_->GetToplevelWindow();
-#else
-  aura::Window* snapped = window_->GetRootWindow();
-#endif
-
-  if (snapped && snapped != window_)
-    ui::SnapLayerToPhysicalPixelBoundary(snapped->layer(), window_->layer());
-
+  // We want to snap it to the nearest ancestor.
+  wm::SnapWindowToPixelBoundary(window_);
   has_snapped_to_boundary_ = true;
 }
 
@@ -2159,30 +2157,15 @@ void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
   if (!in_bounds_changed_)
     window_->SetBounds(rect);
 
-  SyncSurfaceProperties(cc::DeadlinePolicy::UseDefaultDeadline());
+  SynchronizeVisualProperties(cc::DeadlinePolicy::UseDefaultDeadline(),
+                              window_->GetLocalSurfaceId());
 
 #if defined(OS_WIN)
   UpdateLegacyWin();
 
-  if (mouse_locked_)
+  if (IsMouseLocked())
     UpdateMouseLockRegion();
 #endif
-}
-
-bool RenderWidgetHostViewAura::SyncSurfaceProperties(
-    const cc::DeadlinePolicy& deadline_policy) {
-  if (IsLocalSurfaceIdAllocationSuppressed())
-    return false;
-
-  if (delegated_frame_host_) {
-    delegated_frame_host_->SynchronizeVisualProperties(
-        window_->GetLocalSurfaceId(), window_->bounds().size(),
-        deadline_policy);
-  }
-  // Note that |host_| will retrieve resize parameters from
-  // |delegated_frame_host_|, so it must have SynchronizeVisualProperties called
-  // after.
-  return host()->SynchronizeVisualProperties();
 }
 
 #if defined(OS_WIN)
@@ -2335,11 +2318,11 @@ void RenderWidgetHostViewAura::OnDidNavigateMainFrameToNewPage() {
   ui::GestureRecognizer::Get()->CancelActiveTouches(window_);
 }
 
-viz::FrameSinkId RenderWidgetHostViewAura::GetFrameSinkId() {
+const viz::FrameSinkId& RenderWidgetHostViewAura::GetFrameSinkId() const {
   return frame_sink_id_;
 }
 
-viz::LocalSurfaceId RenderWidgetHostViewAura::GetLocalSurfaceId() const {
+const viz::LocalSurfaceId& RenderWidgetHostViewAura::GetLocalSurfaceId() const {
   return window_->GetLocalSurfaceId();
 }
 
@@ -2360,7 +2343,7 @@ void RenderWidgetHostViewAura::OnUpdateTextInputStateCalled(
       state->type != ui::TEXT_INPUT_TYPE_NONE &&
       state->mode != ui::TEXT_INPUT_MODE_NONE &&
       GetInputMethod()->GetTextInputClient() == this) {
-    GetInputMethod()->ShowImeIfNeeded();
+    GetInputMethod()->ShowVirtualKeyboardIfEnabled();
   }
 
   if (auto* render_widget_host = updated_view->host()) {
@@ -2493,7 +2476,8 @@ void RenderWidgetHostViewAura::DidNavigate() {
   // The first navigation does not need a new LocalSurfaceID. The renderer can
   // use the ID that was already provided.
   if (is_first_navigation_) {
-    SyncSurfaceProperties(cc::DeadlinePolicy::UseExistingDeadline());
+    SynchronizeVisualProperties(cc::DeadlinePolicy::UseExistingDeadline(),
+                                window_->GetLocalSurfaceId());
   } else {
     SynchronizeVisualProperties(cc::DeadlinePolicy::UseExistingDeadline(),
                                 base::nullopt);

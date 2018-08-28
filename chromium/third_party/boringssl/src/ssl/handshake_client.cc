@@ -269,15 +269,6 @@ static int ssl_write_client_cipher_list(SSL_HANDSHAKE *hs, CBB *out) {
     }
   }
 
-  // For SSLv3, the SCSV is added. Otherwise the renegotiation extension is
-  // added.
-  if (hs->max_version == SSL3_VERSION &&
-      !ssl->s3->initial_handshake_complete) {
-    if (!CBB_add_u16(&child, SSL3_CK_SCSV & 0xffff)) {
-      return 0;
-    }
-  }
-
   if (ssl->mode & SSL_MODE_SEND_FALLBACK_SCSV) {
     if (!CBB_add_u16(&child, SSL3_CK_FALLBACK_SCSV & 0xffff)) {
       return 0;
@@ -394,12 +385,6 @@ static enum ssl_hs_wait_t do_start_connect(SSL_HANDSHAKE *hs) {
     return ssl_hs_error;
   }
 
-  // SSL 3.0 ClientHellos should use SSL 3.0 not TLS 1.0, for the record-layer
-  // version.
-  if (hs->max_version == SSL3_VERSION) {
-    ssl->s3->aead_write_ctx->SetVersionIfNullCipher(SSL3_VERSION);
-  }
-
   // Always advertise the ClientHello version from the original maximum version,
   // even on renegotiation. The static RSA key exchange uses this field, and
   // some servers fail when it changes across handshakes.
@@ -417,7 +402,7 @@ static enum ssl_hs_wait_t do_start_connect(SSL_HANDSHAKE *hs) {
     if (ssl->session->is_server ||
         !ssl_supports_version(hs, ssl->session->ssl_version) ||
         (ssl->session->session_id_length == 0 &&
-         ssl->session->tlsext_ticklen == 0) ||
+         ssl->session->ticket.empty()) ||
         ssl->session->not_resumable ||
         !ssl_session_is_time_valid(ssl, ssl->session)) {
       ssl_set_session(ssl, NULL);
@@ -480,8 +465,7 @@ static enum ssl_hs_wait_t do_enter_early_data(SSL_HANDSHAKE *hs) {
   // Stash the early data session, so connection properties may be queried out
   // of it.
   hs->in_early_data = true;
-  SSL_SESSION_up_ref(ssl->session);
-  hs->early_session.reset(ssl->session);
+  hs->early_session = UpRef(ssl->session);
   hs->can_early_write = true;
 
   hs->state = state_read_server_hello;
@@ -788,16 +772,13 @@ static enum ssl_hs_wait_t do_read_server_certificate(SSL_HANDSHAKE *hs) {
 
   CBS body = msg.body;
   uint8_t alert = SSL_AD_DECODE_ERROR;
-  UniquePtr<STACK_OF(CRYPTO_BUFFER)> chain;
-  if (!ssl_parse_cert_chain(&alert, &chain, &hs->peer_pubkey, NULL, &body,
-                            ssl->ctx->pool)) {
+  if (!ssl_parse_cert_chain(&alert, &hs->new_session->certs, &hs->peer_pubkey,
+                            NULL, &body, ssl->ctx->pool)) {
     ssl_send_alert(ssl, SSL3_AL_FATAL, alert);
     return ssl_hs_error;
   }
-  sk_CRYPTO_BUFFER_pop_free(hs->new_session->certs, CRYPTO_BUFFER_free);
-  hs->new_session->certs = chain.release();
 
-  if (sk_CRYPTO_BUFFER_num(hs->new_session->certs) == 0 ||
+  if (sk_CRYPTO_BUFFER_num(hs->new_session->certs.get()) == 0 ||
       CBS_len(&body) != 0 ||
       !ssl->ctx->x509_method->session_cache_objects(hs->new_session.get())) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
@@ -807,7 +788,7 @@ static enum ssl_hs_wait_t do_read_server_certificate(SSL_HANDSHAKE *hs) {
 
   if (!ssl_check_leaf_certificate(
           hs, hs->peer_pubkey.get(),
-          sk_CRYPTO_BUFFER_value(hs->new_session->certs, 0))) {
+          sk_CRYPTO_BUFFER_value(hs->new_session->certs.get(), 0))) {
     ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
     return ssl_hs_error;
   }
@@ -854,9 +835,8 @@ static enum ssl_hs_wait_t do_read_certificate_status(SSL_HANDSHAKE *hs) {
     return ssl_hs_error;
   }
 
-  CRYPTO_BUFFER_free(hs->new_session->ocsp_response);
-  hs->new_session->ocsp_response =
-      CRYPTO_BUFFER_new_from_CBS(&ocsp_response, ssl->ctx->pool);
+  hs->new_session->ocsp_response.reset(
+      CRYPTO_BUFFER_new_from_CBS(&ocsp_response, ssl->ctx->pool));
   if (hs->new_session->ocsp_response == nullptr) {
     ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
     return ssl_hs_error;
@@ -1192,16 +1172,6 @@ static enum ssl_hs_wait_t do_send_client_certificate(SSL_HANDSHAKE *hs) {
   if (!ssl_has_certificate(hs->config)) {
     // Without a client certificate, the handshake buffer may be released.
     hs->transcript.FreeBuffer();
-
-    // In SSL 3.0, the Certificate message is replaced with a warning alert.
-    if (ssl->version == SSL3_VERSION) {
-      if (!ssl->method->add_alert(ssl, SSL3_AL_WARNING,
-                                  SSL_AD_NO_CERTIFICATE)) {
-        return ssl_hs_error;
-      }
-      hs->state = state_send_client_key_exchange;
-      return ssl_hs_ok;
-    }
   }
 
   if (!ssl_on_certificate_selected(hs) ||
@@ -1251,9 +1221,8 @@ static enum ssl_hs_wait_t do_send_client_key_exchange(SSL_HANDSHAKE *hs) {
     }
     assert(psk_len <= PSK_MAX_PSK_LEN);
 
-    OPENSSL_free(hs->new_session->psk_identity);
-    hs->new_session->psk_identity = BUF_strdup(identity);
-    if (hs->new_session->psk_identity == NULL) {
+    hs->new_session->psk_identity.reset(BUF_strdup(identity));
+    if (hs->new_session->psk_identity == nullptr) {
       OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
       return ssl_hs_error;
     }
@@ -1286,21 +1255,14 @@ static enum ssl_hs_wait_t do_send_client_key_exchange(SSL_HANDSHAKE *hs) {
       return ssl_hs_error;
     }
 
-    CBB child, *enc_pms = &body;
-    size_t enc_pms_len;
-    // In TLS, there is a length prefix.
-    if (ssl->version > SSL3_VERSION) {
-      if (!CBB_add_u16_length_prefixed(&body, &child)) {
-        return ssl_hs_error;
-      }
-      enc_pms = &child;
-    }
-
+    CBB enc_pms;
     uint8_t *ptr;
-    if (!CBB_reserve(enc_pms, &ptr, RSA_size(rsa)) ||
+    size_t enc_pms_len;
+    if (!CBB_add_u16_length_prefixed(&body, &enc_pms) ||
+        !CBB_reserve(&enc_pms, &ptr, RSA_size(rsa)) ||
         !RSA_encrypt(rsa, &enc_pms_len, ptr, RSA_size(rsa), pms.data(),
                      pms.size(), RSA_PKCS1_PADDING) ||
-        !CBB_did_write(enc_pms, enc_pms_len) ||
+        !CBB_did_write(&enc_pms, enc_pms_len) ||
         !CBB_flush(&body)) {
       return ssl_hs_error;
     }
@@ -1407,40 +1369,16 @@ static enum ssl_hs_wait_t do_send_client_certificate_verify(SSL_HANDSHAKE *hs) {
   }
 
   size_t sig_len = max_sig_len;
-  // The SSL3 construction for CertificateVerify does not decompose into a
-  // single final digest and signature, and must be special-cased.
-  if (ssl_protocol_version(ssl) == SSL3_VERSION) {
-    if (hs->config->cert->key_method != NULL) {
-      OPENSSL_PUT_ERROR(SSL, SSL_R_UNSUPPORTED_PROTOCOL_FOR_CUSTOM_KEY);
+  switch (ssl_private_key_sign(hs, ptr, &sig_len, max_sig_len,
+                               signature_algorithm,
+                               hs->transcript.buffer())) {
+    case ssl_private_key_success:
+      break;
+    case ssl_private_key_failure:
       return ssl_hs_error;
-    }
-
-    uint8_t digest[EVP_MAX_MD_SIZE];
-    size_t digest_len;
-    if (!hs->transcript.GetSSL3CertVerifyHash(
-            digest, &digest_len, hs->new_session.get(), signature_algorithm)) {
-      return ssl_hs_error;
-    }
-
-    UniquePtr<EVP_PKEY_CTX> pctx(
-        EVP_PKEY_CTX_new(hs->config->cert->privatekey.get(), nullptr));
-    if (!pctx ||
-        !EVP_PKEY_sign_init(pctx.get()) ||
-        !EVP_PKEY_sign(pctx.get(), ptr, &sig_len, digest, digest_len)) {
-      return ssl_hs_error;
-    }
-  } else {
-    switch (ssl_private_key_sign(hs, ptr, &sig_len, max_sig_len,
-                                 signature_algorithm,
-                                 hs->transcript.buffer())) {
-      case ssl_private_key_success:
-        break;
-      case ssl_private_key_failure:
-        return ssl_hs_error;
-      case ssl_private_key_retry:
-        hs->state = state_send_client_certificate_verify;
-        return ssl_hs_private_key_operation;
-    }
+    case ssl_private_key_retry:
+      hs->state = state_send_client_certificate_verify;
+      return ssl_hs_private_key_operation;
   }
 
   if (!CBB_did_write(&child, sig_len) ||
@@ -1583,8 +1521,8 @@ static enum ssl_hs_wait_t do_read_session_ticket(SSL_HANDSHAKE *hs) {
   }
 
   CBS new_session_ticket = msg.body, ticket;
-  uint32_t tlsext_tick_lifetime_hint;
-  if (!CBS_get_u32(&new_session_ticket, &tlsext_tick_lifetime_hint) ||
+  uint32_t ticket_lifetime_hint;
+  if (!CBS_get_u32(&new_session_ticket, &ticket_lifetime_hint) ||
       !CBS_get_u16_length_prefixed(&new_session_ticket, &ticket) ||
       CBS_len(&new_session_ticket) != 0) {
     ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
@@ -1618,14 +1556,13 @@ static enum ssl_hs_wait_t do_read_session_ticket(SSL_HANDSHAKE *hs) {
     session = renewed_session.get();
   }
 
-  // |tlsext_tick_lifetime_hint| is measured from when the ticket was issued.
+  // |ticket_lifetime_hint| is measured from when the ticket was issued.
   ssl_session_rebase_time(ssl, session);
 
-  if (!CBS_stow(&ticket, &session->tlsext_tick, &session->tlsext_ticklen)) {
-    OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+  if (!session->ticket.CopyFrom(ticket)) {
     return ssl_hs_error;
   }
-  session->tlsext_tick_lifetime_hint = tlsext_tick_lifetime_hint;
+  session->ticket_lifetime_hint = ticket_lifetime_hint;
 
   // Generate a session ID for this session based on the session ticket. We use
   // the session ID mechanism for detecting ticket resumption. This also fits in
@@ -1637,7 +1574,7 @@ static enum ssl_hs_wait_t do_read_session_ticket(SSL_HANDSHAKE *hs) {
   }
 
   if (renewed_session) {
-    session->not_resumable = 0;
+    session->not_resumable = false;
     SSL_SESSION_free(ssl->session);
     ssl->session = renewed_session.release();
   }
@@ -1678,8 +1615,7 @@ static enum ssl_hs_wait_t do_finish_client_handshake(SSL_HANDSHAKE *hs) {
   ssl->method->on_handshake_complete(ssl);
 
   if (ssl->session != NULL) {
-    SSL_SESSION_up_ref(ssl->session);
-    ssl->s3->established_session.reset(ssl->session);
+    ssl->s3->established_session = UpRef(ssl->session);
   } else {
     // We make a copy of the session in order to maintain the immutability
     // of the new established_session due to False Start. The caller may
@@ -1691,7 +1627,7 @@ static enum ssl_hs_wait_t do_finish_client_handshake(SSL_HANDSHAKE *hs) {
     }
     // Renegotiations do not participate in session resumption.
     if (!ssl->s3->initial_handshake_complete) {
-      ssl->s3->established_session->not_resumable = 0;
+      ssl->s3->established_session->not_resumable = false;
     }
 
     hs->new_session.reset();

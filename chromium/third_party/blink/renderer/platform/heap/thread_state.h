@@ -35,21 +35,21 @@
 
 #include "base/atomicops.h"
 #include "base/macros.h"
-#include "third_party/blink/public/platform/web_thread.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/heap/blink_gc.h"
 #include "third_party/blink/renderer/platform/heap/threading_traits.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/wtf/address_sanitizer.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
-#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/linked_hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/thread_specific.h"
 #include "third_party/blink/renderer/platform/wtf/threading.h"
 #include "third_party/blink/renderer/platform/wtf/threading_primitives.h"
+#include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace v8 {
 class Isolate;
@@ -138,7 +138,8 @@ class PLATFORM_EXPORT BlinkGCObserver {
   ThreadState* thread_state_;
 };
 
-class PLATFORM_EXPORT ThreadState {
+class PLATFORM_EXPORT ThreadState final
+    : scheduler::WebThreadScheduler::RAILModeObserver {
   USING_FAST_MALLOC(ThreadState);
 
  public:
@@ -146,12 +147,12 @@ class PLATFORM_EXPORT ThreadState {
   enum GCState {
     kNoGCScheduled,
     kIdleGCScheduled,
-    kIncrementalMarkingStartScheduled,
     kIncrementalMarkingStepScheduled,
     kIncrementalMarkingFinalizeScheduled,
     kPreciseGCScheduled,
     kFullGCScheduled,
     kPageNavigationGCScheduled,
+    kIncrementalGCScheduled,
   };
 
   // The phase that the GC is in. The GCPhase will not return kNone for mutators
@@ -266,20 +267,22 @@ class PLATFORM_EXPORT ThreadState {
   // in the dangling pointer situation.
   void RunTerminationGC();
 
-  void PerformIdleGC(double deadline_seconds);
-  void PerformIdleLazySweep(double deadline_seconds);
+  void PerformIdleGC(TimeTicks deadline);
+  void PerformIdleLazySweep(TimeTicks deadline);
 
   void ScheduleIdleGC();
   void ScheduleIdleLazySweep();
   void SchedulePreciseGC();
+  void ScheduleIncrementalGC(BlinkGC::GCReason);
   void ScheduleV8FollowupGCIfNeeded(BlinkGC::V8GCType);
   void SchedulePageNavigationGCIfNeeded(float estimated_removal_ratio);
   void SchedulePageNavigationGC();
+  void ScheduleFullGC();
   void ScheduleGCIfNeeded();
   void PostIdleGCTask();
   void WillStartV8GC(BlinkGC::V8GCType);
   void SetGCState(GCState);
-  GCState GcState() const { return gc_state_; }
+  GCState GetGCState() const { return gc_state_; }
   void SetGCPhase(GCPhase);
   bool IsMarkingInProgress() const { return gc_phase_ == GCPhase::kMarking; }
   bool IsSweepingInProgress() const { return gc_phase_ == GCPhase::kSweeping; }
@@ -288,38 +291,18 @@ class PLATFORM_EXPORT ThreadState {
   void DisableWrapperTracingBarrier();
 
   // Incremental GC.
-
-  void ScheduleIncrementalMarkingStart();
   void ScheduleIncrementalMarkingStep();
   void ScheduleIncrementalMarkingFinalize();
 
-  void IncrementalMarkingStart();
+  void IncrementalMarkingStart(BlinkGC::GCReason);
   void IncrementalMarkingStep();
   void IncrementalMarkingFinalize();
 
   void EnableIncrementalMarkingBarrier();
   void DisableIncrementalMarkingBarrier();
 
-  // A GC runs in the following sequence.
-  //
-  // 1) preGC() is called.
-  // 2) ThreadHeap::collectGarbage() is called. This marks live objects.
-  // 3) postGC() is called. This does thread-local weak processing.
-  // 4) preSweep() is called. This does pre-finalization, eager sweeping and
-  //    heap compaction.
-  // 4) Lazy sweeping sweeps heaps incrementally. completeSweep() may be called
-  //    to complete the sweeping.
-  // 5) postSweep() is called.
-  void MarkPhasePrologue(BlinkGC::StackState,
-                         BlinkGC::MarkingType,
-                         BlinkGC::GCReason);
-  void MarkPhaseVisitRoots();
-  bool MarkPhaseAdvanceMarking(double deadline_seconds);
-  void MarkPhaseEpilogue(BlinkGC::MarkingType);
-  void VerifyMarking(BlinkGC::MarkingType);
-
   void CompleteSweep();
-  void PreSweep(BlinkGC::MarkingType, BlinkGC::SweepingType);
+  void FinishSnapshot();
   void PostSweep();
 
   // Support for disallowing allocation. Mainly used for sanity
@@ -586,12 +569,19 @@ class PLATFORM_EXPORT ThreadState {
 
   MarkingVisitor* CurrentVisitor() { return current_gc_data_.visitor.get(); }
 
+  // Implementation for RAILModeObserver
+  void OnRAILModeChanged(v8::RAILMode new_mode) override {
+    should_optimize_for_load_time_ = new_mode == v8::RAILMode::PERFORMANCE_LOAD;
+  }
+
  private:
   // Needs to set up visitor for testing purposes.
   friend class incremental_marking_test::IncrementalMarkingScope;
   friend class incremental_marking_test::IncrementalMarkingTestDriver;
   template <typename T>
   friend class PrefinalizerRegistration;
+  friend class TestGCMarkingScope;
+  friend class ThreadStateSchedulingTest;
 
   // Number of ThreadState's that are currently in incremental marking. The
   // counter is incremented by one when some ThreadState enters incremental
@@ -602,7 +592,25 @@ class PLATFORM_EXPORT ThreadState {
   static base::subtle::AtomicWord wrapper_tracing_counter_;
 
   ThreadState();
-  ~ThreadState();
+  ~ThreadState() override;
+
+  // The version is needed to be able to start incremental marking.
+  void MarkPhasePrologue(BlinkGC::StackState,
+                         BlinkGC::MarkingType,
+                         BlinkGC::GCReason);
+  void AtomicPausePrologue(BlinkGC::StackState,
+                           BlinkGC::MarkingType,
+                           BlinkGC::GCReason);
+  void AtomicPauseEpilogue(BlinkGC::MarkingType, BlinkGC::SweepingType);
+  void MarkPhaseEpilogue(BlinkGC::MarkingType);
+  void MarkPhaseVisitRoots();
+  bool MarkPhaseAdvanceMarking(TimeTicks deadline);
+  void VerifyMarking(BlinkGC::MarkingType);
+
+  void RunAtomicPause(BlinkGC::StackState,
+                      BlinkGC::MarkingType,
+                      BlinkGC::SweepingType,
+                      BlinkGC::GCReason);
 
   void ClearSafePointScopeMarker() {
     safe_point_stack_copy_.clear();
@@ -621,7 +629,7 @@ class PLATFORM_EXPORT ThreadState {
   // collect garbage at this point.
   bool ShouldScheduleIdleGC();
   bool ShouldForceConservativeGC();
-  bool ShouldScheduleIncrementalMarking() const;
+  bool ShouldScheduleIncrementalMarking();
   // V8 minor or major GC is likely to drop a lot of references to objects
   // on Oilpan's heap. We give a chance to schedule a GC.
   bool ShouldScheduleV8FollowupGC();
@@ -630,6 +638,8 @@ class PLATFORM_EXPORT ThreadState {
   // estimatedRemovalRatio is the estimated ratio of objects that will be no
   // longer necessary due to the navigation.
   bool ShouldSchedulePageNavigationGC(float estimated_removal_ratio);
+
+  void RescheduleIdleGC();
 
   // Internal helpers to handle memory pressure conditions.
 
@@ -650,6 +660,8 @@ class PLATFORM_EXPORT ThreadState {
                         double heap_growing_rate_threshold);
 
   void RunScheduledGC(BlinkGC::StackState);
+
+  void UpdateIncrementalMarkingStepDuration();
 
   void EagerSweep();
 
@@ -699,10 +711,16 @@ class PLATFORM_EXPORT ThreadState {
   bool object_resurrection_forbidden_;
   bool in_atomic_pause_;
 
+  TimeDelta next_incremental_marking_step_duration_;
+  TimeDelta previous_incremental_marking_time_left_;
+
   GarbageCollectedMixinConstructorMarkerBase* gc_mixin_marker_;
 
   GCState gc_state_;
   GCPhase gc_phase_;
+  BlinkGC::GCReason reason_for_scheduled_gc_;
+
+  bool should_optimize_for_load_time_;
 
   using PreFinalizerCallback = bool (*)(void*);
   using PreFinalizer = std::pair<void*, PreFinalizerCallback>;
@@ -744,7 +762,6 @@ class PLATFORM_EXPORT ThreadState {
     BlinkGC::StackState stack_state;
     BlinkGC::MarkingType marking_type;
     BlinkGC::GCReason reason;
-    double marking_time_in_milliseconds;
     std::unique_ptr<MarkingVisitor> visitor;
   };
   GCData current_gc_data_;

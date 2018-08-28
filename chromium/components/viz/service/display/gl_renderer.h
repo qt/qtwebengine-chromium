@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_VIZ_SERVICE_DISPLAY_GL_RENDERER_H_
 #define COMPONENTS_VIZ_SERVICE_DISPLAY_GL_RENDERER_H_
 
+#include <map>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -241,7 +243,6 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
                            const gfx::QuadF* clip_region);
   void DrawYUVVideoQuad(const YUVVideoDrawQuad* quad,
                         const gfx::QuadF* clip_region);
-  void DrawOverlayCandidateQuadBorder(float* gl_matrix);
 
   void SetShaderOpacity(float opacity);
   void SetShaderQuadF(const gfx::QuadF& quad);

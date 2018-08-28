@@ -87,7 +87,6 @@ BrowserPluginGuest::BrowserPluginGuest(bool has_render_view,
     : WebContentsObserver(web_contents),
       owner_web_contents_(nullptr),
       attached_(false),
-      has_attached_since_surface_set_(false),
       browser_plugin_instance_id_(browser_plugin::kInstanceIDNone),
       focused_(false),
       mouse_locked_(false),
@@ -407,12 +406,11 @@ void BrowserPluginGuest::PointerLockPermissionResponse(bool allow) {
       browser_plugin_instance_id(), allow));
 }
 
-void BrowserPluginGuest::SetChildFrameSurface(
+void BrowserPluginGuest::FirstSurfaceActivation(
     const viz::SurfaceInfo& surface_info) {
-  has_attached_since_surface_set_ = false;
-  if (!base::FeatureList::IsEnabled(::features::kMash)) {
+  if (features::IsAshInBrowserProcess()) {
     SendMessageToEmbedder(
-        std::make_unique<BrowserPluginMsg_SetChildFrameSurface>(
+        std::make_unique<BrowserPluginMsg_FirstSurfaceActivation>(
             browser_plugin_instance_id(), surface_info));
   }
 }
@@ -663,7 +661,7 @@ void BrowserPluginGuest::RenderViewReady() {
   // In case we've created a new guest render process after a crash, let the
   // associated BrowserPlugin know. We only need to send this if we're attached,
   // as guest_crashed_ is cleared automatically on attach anyways.
-  if (attached() && !base::FeatureList::IsEnabled(::features::kMash)) {
+  if (attached() && features::IsAshInBrowserProcess()) {
     RenderWidgetHostViewGuest* rwhv = static_cast<RenderWidgetHostViewGuest*>(
         web_contents()->GetRenderWidgetHostView());
     if (rwhv) {
@@ -796,7 +794,6 @@ void BrowserPluginGuest::OnWillAttachComplete(
   InitInternal(params, embedder_web_contents);
 
   attached_ = true;
-  has_attached_since_surface_set_ = true;
   SendQueuedMessages();
 
   delegate_->DidAttach(GetGuestProxyRoutingID());
@@ -1038,8 +1035,8 @@ void BrowserPluginGuest::OnSynchronizeVisualProperties(
   if (local_surface_id_ > local_surface_id ||
       ((frame_rect_.size() != visual_properties.screen_space_rect.size() ||
         screen_info_ != visual_properties.screen_info ||
-        capture_sequence_number_ !=
-            visual_properties.capture_sequence_number) &&
+        capture_sequence_number_ != visual_properties.capture_sequence_number ||
+        zoom_level_ != visual_properties.zoom_level) &&
        local_surface_id_ == local_surface_id)) {
     SiteInstance* owner_site_instance = delegate_->GetOwnerSiteInstance();
     bad_message::ReceivedBadMessage(
@@ -1050,6 +1047,8 @@ void BrowserPluginGuest::OnSynchronizeVisualProperties(
 
   screen_info_ = visual_properties.screen_info;
   frame_rect_ = visual_properties.screen_space_rect;
+  zoom_level_ = visual_properties.zoom_level;
+
   GetWebContents()->SendScreenRects();
   local_surface_id_ = local_surface_id;
   bool capture_sequence_number_changed =

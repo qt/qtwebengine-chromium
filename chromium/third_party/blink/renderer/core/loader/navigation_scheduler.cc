@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/core/loader/navigation_scheduler.h"
 
 #include <memory>
+#include "third_party/blink/public/common/blob/blob_utils.h"
 #include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
@@ -132,7 +133,7 @@ class ScheduledURLNavigation : public ScheduledNavigation {
     }
 
     if (origin_document && url.ProtocolIs("blob") &&
-        RuntimeEnabledFeatures::MojoBlobURLsEnabled()) {
+        BlobUtils::MojoBlobURLsEnabled()) {
       origin_document->GetPublicURLManager().Resolve(
           url_, MakeRequest(&blob_url_token_));
     }
@@ -259,14 +260,14 @@ class ScheduledReload final : public ScheduledNavigation {
     std::unique_ptr<UserGestureIndicator> gesture_indicator =
         CreateUserGestureIndicator();
     ResourceRequest resource_request = frame->Loader().ResourceRequestForReload(
-        kFrameLoadTypeReload, ClientRedirectPolicy::kClientRedirect);
+        WebFrameLoadType::kReload, ClientRedirectPolicy::kClientRedirect);
     if (resource_request.IsNull())
       return;
     FrameLoadRequest request = FrameLoadRequest(nullptr, resource_request);
     request.SetClientRedirect(ClientRedirectPolicy::kClientRedirect);
     MaybeLogScheduledNavigationClobber(
         ScheduledNavigationType::kScheduledReload, frame);
-    frame->Loader().StartNavigation(request, kFrameLoadTypeReload);
+    frame->Loader().StartNavigation(request, WebFrameLoadType::kReload);
   }
 
   KURL Url() const override { return frame_->GetDocument()->Url(); }
@@ -331,7 +332,8 @@ class ScheduledFormSubmission final : public ScheduledNavigation {
     frame_request.SetReplacesCurrentItem(ReplacesCurrentItem());
     MaybeLogScheduledNavigationClobber(
         ScheduledNavigationType::kScheduledFormSubmission, frame);
-    frame->Loader().StartNavigation(frame_request);
+    frame->Loader().StartNavigation(frame_request, WebFrameLoadType::kStandard,
+                                    submission_->GetNavigationPolicy());
   }
 
   KURL Url() const override { return submission_->RequestURL(); }

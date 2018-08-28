@@ -12,7 +12,7 @@
 #include "net/third_party/quic/test_tools/quic_packet_generator_peer.h"
 #include "net/third_party/quic/test_tools/quic_sent_packet_manager_peer.h"
 
-namespace net {
+namespace quic {
 namespace test {
 
 // static
@@ -161,12 +161,6 @@ QuicAlarm* QuicConnectionPeer::GetPingAlarm(QuicConnection* connection) {
 }
 
 // static
-QuicAlarm* QuicConnectionPeer::GetResumeWritesAlarm(
-    QuicConnection* connection) {
-  return connection->resume_writes_alarm_.get();
-}
-
-// static
 QuicAlarm* QuicConnectionPeer::GetRetransmissionAlarm(
     QuicConnection* connection) {
   return connection->retransmission_alarm_.get();
@@ -268,6 +262,13 @@ void QuicConnectionPeer::SetAckMode(QuicConnection* connection,
 }
 
 // static
+void QuicConnectionPeer::SetFastAckAfterQuiescence(
+    QuicConnection* connection,
+    bool fast_ack_after_quiescence) {
+  connection->fast_ack_after_quiescence_ = fast_ack_after_quiescence;
+}
+
+// static
 void QuicConnectionPeer::SetAckDecimationDelay(QuicConnection* connection,
                                                float ack_decimation_delay) {
   connection->ack_decimation_delay_ = ack_decimation_delay;
@@ -306,5 +307,10 @@ void QuicConnectionPeer::SetSessionDecidesWhatToWrite(
   connection->packet_generator_.SetCanSetTransmissionType(true);
 }
 
+// static
+void QuicConnectionPeer::SetNegotiatedVersion(QuicConnection* connection) {
+  connection->version_negotiation_state_ = QuicConnection::NEGOTIATED_VERSION;
+}
+
 }  // namespace test
-}  // namespace net
+}  // namespace quic

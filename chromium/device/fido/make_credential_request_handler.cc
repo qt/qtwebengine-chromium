@@ -17,11 +17,28 @@ namespace device {
 MakeCredentialRequestHandler::MakeCredentialRequestHandler(
     service_manager::Connector* connector,
     const base::flat_set<FidoTransportProtocol>& protocols,
-    CtapMakeCredentialRequest request_parameter,
+    CtapMakeCredentialRequest request,
     AuthenticatorSelectionCriteria authenticator_selection_criteria,
     RegisterResponseCallback completion_callback)
-    : FidoRequestHandler(connector, protocols, std::move(completion_callback)),
-      request_parameter_(std::move(request_parameter)),
+    : MakeCredentialRequestHandler(connector,
+                                   protocols,
+                                   std::move(request),
+                                   authenticator_selection_criteria,
+                                   std::move(completion_callback),
+                                   AddPlatformAuthenticatorCallback()) {}
+
+MakeCredentialRequestHandler::MakeCredentialRequestHandler(
+    service_manager::Connector* connector,
+    const base::flat_set<FidoTransportProtocol>& protocols,
+    CtapMakeCredentialRequest request,
+    AuthenticatorSelectionCriteria authenticator_selection_criteria,
+    RegisterResponseCallback completion_callback,
+    AddPlatformAuthenticatorCallback add_platform_authenticator)
+    : FidoRequestHandler(connector,
+                         protocols,
+                         std::move(completion_callback),
+                         std::move(add_platform_authenticator)),
+      request_parameter_(std::move(request)),
       authenticator_selection_criteria_(
           std::move(authenticator_selection_criteria)),
       weak_factory_(this) {
@@ -30,10 +47,58 @@ MakeCredentialRequestHandler::MakeCredentialRequestHandler(
 
 MakeCredentialRequestHandler::~MakeCredentialRequestHandler() = default;
 
+namespace {
+
+bool CheckIfAuthenticatorSelectionCriteriaAreSatisfied(
+    FidoAuthenticator* authenticator,
+    const AuthenticatorSelectionCriteria& authenticator_selection_criteria,
+    CtapMakeCredentialRequest* request) {
+  using AuthenticatorAttachment =
+      AuthenticatorSelectionCriteria::AuthenticatorAttachment;
+  using UvAvailability =
+      AuthenticatorSupportedOptions::UserVerificationAvailability;
+
+  const auto& options = authenticator->Options();
+  if ((authenticator_selection_criteria.authenticator_attachement() ==
+           AuthenticatorAttachment::kPlatform &&
+       !options.is_platform_device()) ||
+      (authenticator_selection_criteria.authenticator_attachement() ==
+           AuthenticatorAttachment::kCrossPlatform &&
+       options.is_platform_device())) {
+    return false;
+  }
+
+  if (authenticator_selection_criteria.require_resident_key() &&
+      !options.supports_resident_key()) {
+    return false;
+  }
+
+  const auto& user_verification_requirement =
+      authenticator_selection_criteria.user_verification_requirement();
+  if (user_verification_requirement == UserVerificationRequirement::kRequired) {
+    request->SetUserVerificationRequired(true);
+  }
+
+  return user_verification_requirement !=
+             UserVerificationRequirement::kRequired ||
+         options.user_verification_availability() ==
+             UvAvailability::kSupportedAndConfigured;
+}
+
+}  // namespace
+
 void MakeCredentialRequestHandler::DispatchRequest(
     FidoAuthenticator* authenticator) {
-  return authenticator->MakeCredential(
-      authenticator_selection_criteria_, request_parameter_,
+  // The user verification field of the request may be adjusted to the
+  // authenticator, so we need to make a copy.
+  CtapMakeCredentialRequest request_copy = request_parameter_;
+  if (!CheckIfAuthenticatorSelectionCriteriaAreSatisfied(
+          authenticator, authenticator_selection_criteria_, &request_copy)) {
+    return;
+  }
+
+  authenticator->MakeCredential(
+      std::move(request_copy),
       base::BindOnce(&MakeCredentialRequestHandler::OnAuthenticatorResponse,
                      weak_factory_.GetWeakPtr(), authenticator));
 }

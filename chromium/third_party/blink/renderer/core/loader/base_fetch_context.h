@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/web_feature_forward.h"
+#include "third_party/blink/renderer/core/script/fetch_client_settings_object.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_context.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
@@ -44,12 +45,11 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       const ResourceLoaderOptions&,
       SecurityViolationReportingPolicy,
       ResourceRequest::RedirectStatus) const override;
-  base::Optional<ResourceRequestBlockedReason> CheckResponseNosniff(
-      WebURLRequest::RequestContext,
-      const ResourceResponse&) const override;
 
   void Trace(blink::Visitor*) override;
 
+  virtual const FetchClientSettingsObject* GetFetchClientSettingsObject()
+      const = 0;
   virtual KURL GetSiteForCookies() const = 0;
   virtual SubresourceFilter* GetSubresourceFilter() const = 0;
   virtual void CountUsage(WebFeature) const = 0;
@@ -58,7 +58,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
   virtual std::unique_ptr<WebSocketHandshakeThrottle>
   CreateWebSocketHandshakeThrottle() = 0;
 
-  void AddWarningConsoleMessage(const String&, LogSource) const override;
+  void AddInfoConsoleMessage(const String&, LogSource) const override;
   void AddErrorConsoleMessage(const String&, LogSource) const override;
   bool IsAdResource(const KURL&,
                     Resource::Type,
@@ -86,8 +86,6 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       SecurityViolationReportingPolicy) const = 0;
   virtual bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,
                                                          const KURL&) const = 0;
-  virtual ReferrerPolicy GetReferrerPolicy() const = 0;
-  virtual String GetOutgoingReferrer() const = 0;
   virtual const KURL& Url() const = 0;
   virtual const SecurityOrigin* GetParentSecurityOrigin() const = 0;
   virtual base::Optional<mojom::IPAddressSpace> GetAddressSpace() const = 0;
@@ -95,11 +93,9 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
 
   virtual void AddConsoleMessage(ConsoleMessage*) const = 0;
 
-  // Utility method that can be used to implement other methods.
-  void PrintAccessDeniedMessage(const KURL&) const;
-  void AddCSPHeaderIfNecessary(Resource::Type, ResourceRequest&);
-
  private:
+  void PrintAccessDeniedMessage(const KURL&) const;
+
   // Utility methods that are used in default implement for CanRequest,
   // CanFollowRedirect and AllowResponse.
   base::Optional<ResourceRequestBlockedReason> CanRequestInternal(

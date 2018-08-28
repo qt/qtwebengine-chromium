@@ -18,6 +18,7 @@
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/public/cpp/features.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
+#include "ui/message_center/views/notification_background_painter.h"
 #include "ui/message_center/views/notification_control_buttons_view.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
@@ -26,7 +27,6 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/focus/focus_manager.h"
-#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
 namespace message_center {
@@ -36,9 +36,6 @@ namespace {
 const SkColor kBorderColor = SkColorSetARGB(0x1F, 0x0, 0x0, 0x0);
 const int kShadowCornerRadius = 0;
 const int kShadowElevation = 2;
-
-// The global flag of Sidebar enability.
-bool sidebar_enabled = false;
 
 // Creates a text for spoken feedback from the data contained in the
 // notification.
@@ -67,11 +64,6 @@ bool ShouldRoundMessageViewCorners() {
 // static
 const char MessageView::kViewClassName[] = "MessageView";
 
-// static
-void MessageView::SetSidebarEnabled() {
-  sidebar_enabled = true;
-}
-
 MessageView::MessageView(const Notification& notification)
     : notification_id_(notification.id()), slide_out_controller_(this, this) {
   SetFocusBehavior(FocusBehavior::ALWAYS);
@@ -82,8 +74,7 @@ MessageView::MessageView(const Notification& notification)
 
   // Create the opaque background that's above the view's shadow.
   background_view_ = new views::View();
-  background_view_->SetBackground(
-      views::CreateSolidBackground(kNotificationBackgroundColor));
+  UpdateCornerRadius(0, 0);
   AddChildView(background_view_);
 
   focus_painter_ = views::Painter::CreateSolidFocusPainter(
@@ -101,32 +92,29 @@ void MessageView::UpdateWithNotification(const Notification& notification) {
     accessible_name_ = new_accessible_name;
     NotifyAccessibilityEvent(ax::mojom::Event::kTextChanged, true);
   }
-  slide_out_controller_.set_enabled(!GetPinned());
+  slide_out_controller_.set_slide_mode(CalculateSlideMode());
 }
 
 void MessageView::SetIsNested() {
-  is_nested_ = true;
+  DCHECK(!is_nested_) << "MessageView::SetIsNested() is called twice wrongly.";
 
-  if (sidebar_enabled) {
-    DCHECK(ShouldRoundMessageViewCorners());
-    SetBorder(views::CreateRoundedRectBorder(0, kNotificationCornerRadius,
-                                             kBorderColor));
+  is_nested_ = true;
+  // Update enability since it might be changed by "is_nested" flag.
+  slide_out_controller_.set_slide_mode(CalculateSlideMode());
+
+  if (ShouldRoundMessageViewCorners()) {
+    SetBorder(views::CreateRoundedRectBorder(
+        kNotificationBorderThickness, kNotificationCornerRadius, kBorderColor));
   } else {
-    if (ShouldRoundMessageViewCorners()) {
-      SetBorder(views::CreateRoundedRectBorder(kNotificationBorderThickness,
-                                               kNotificationCornerRadius,
-                                               kBorderColor));
-    } else {
-      const auto& shadow =
-          gfx::ShadowDetails::Get(kShadowElevation, kShadowCornerRadius);
-      gfx::Insets ninebox_insets =
-          gfx::ShadowValue::GetBlurRegion(shadow.values) +
-          gfx::Insets(kShadowCornerRadius);
-      SetBorder(views::CreateBorderPainter(
-          std::unique_ptr<views::Painter>(views::Painter::CreateImagePainter(
-              shadow.ninebox_image, ninebox_insets)),
-          -gfx::ShadowValue::GetMargin(shadow.values)));
-    }
+    const auto& shadow =
+        gfx::ShadowDetails::Get(kShadowElevation, kShadowCornerRadius);
+    gfx::Insets ninebox_insets =
+        gfx::ShadowValue::GetBlurRegion(shadow.values) +
+        gfx::Insets(kShadowCornerRadius);
+    SetBorder(views::CreateBorderPainter(
+        views::Painter::CreateImagePainter(shadow.ninebox_image,
+                                           ninebox_insets),
+        -gfx::ShadowValue::GetMargin(shadow.values)));
   }
 }
 
@@ -166,6 +154,13 @@ bool MessageView::IsManuallyExpandedOrCollapsed() const {
 
 void MessageView::SetManuallyExpandedOrCollapsed(bool value) {
   // Not implemented by default.
+}
+
+void MessageView::UpdateCornerRadius(int top_radius, int bottom_radius) {
+  background_view_->SetBackground(views::CreateBackgroundFromPainter(
+      std::make_unique<NotificationBackgroundPainter>(top_radius,
+                                                      bottom_radius)));
+  SchedulePaint();
 }
 
 void MessageView::OnContainerAnimationStarted() {
@@ -317,10 +312,35 @@ void MessageView::OnSlideOut() {
   }
 }
 
-bool MessageView::GetPinned() const {
+SlideOutController::SlideMode MessageView::CalculateSlideMode() const {
+  switch (GetMode()) {
+    case Mode::SETTING:
+      return SlideOutController::SlideMode::NO_SLIDE;
+    case Mode::PINNED:
+      return SlideOutController::SlideMode::PARTIALLY;
+    case Mode::NORMAL:
+      return SlideOutController::SlideMode::FULL;
+  }
+
+  NOTREACHED();
+  return SlideOutController::SlideMode::FULL;
+}
+
+MessageView::Mode MessageView::GetMode() const {
+  if (setting_mode_)
+    return Mode::SETTING;
+
   // Only nested notifications can be pinned. Standalones (i.e. popups) can't
   // be.
-  return pinned_ && is_nested_;
+  if (pinned_ && is_nested_)
+    return Mode::PINNED;
+
+  return Mode::NORMAL;
+}
+
+void MessageView::SetSettingMode(bool setting_mode) {
+  setting_mode_ = setting_mode;
+  slide_out_controller_.set_slide_mode(CalculateSlideMode());
 }
 
 void MessageView::OnCloseButtonPressed() {
@@ -332,10 +352,13 @@ void MessageView::OnSettingsButtonPressed(const ui::Event& event) {
   MessageCenter::Get()->ClickOnSettingsButton(notification_id_);
 }
 
+void MessageView::OnSnoozeButtonPressed(const ui::Event& event) {
+  // No default implementation for snooze.
+}
+
 void MessageView::SetDrawBackgroundAsActive(bool active) {
-  background_view_->background()->
-      SetNativeControlColor(active ? kHoveredButtonBackgroundColor :
-                                     kNotificationBackgroundColor);
+  background_view_->background()->SetNativeControlColor(
+      active ? kHoveredButtonBackgroundColor : kNotificationBackgroundColor);
   SchedulePaint();
 }
 

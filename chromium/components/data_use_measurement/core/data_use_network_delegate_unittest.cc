@@ -8,7 +8,7 @@
 
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "components/data_use_measurement/core/data_use_ascriber.h"
 #include "components/data_use_measurement/core/url_request_classifier.h"
 #include "components/metrics/data_use_tracker.h"
@@ -100,7 +100,6 @@ std::unique_ptr<net::URLRequest> RequestURL(
       response_mock_reads, base::span<net::MockWrite>());
   socket_factory->AddSocketDataProvider(&response_socket_data_provider);
   net::TestDelegate test_delegate;
-  test_delegate.set_quit_on_complete(true);
   std::unique_ptr<net::URLRequest> request(
       context->CreateRequest(GURL("http://example.com"), net::DEFAULT_PRIORITY,
                              &test_delegate, traffic_annotation));
@@ -113,7 +112,7 @@ std::unique_ptr<net::URLRequest> RequestURL(
             data_use_measurement::DataUseUserData::FOREGROUND));
   }
   request->Start();
-  base::RunLoop().RunUntilIdle();
+  test_delegate.RunUntilComplete();
   return request;
 }
 

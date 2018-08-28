@@ -10,7 +10,7 @@
 
 using std::string;
 
-namespace net {
+namespace quic {
 
 namespace {
 
@@ -176,10 +176,10 @@ QuartcSession::QuartcSession(std::unique_ptr<QuicConnection> connection,
     : QuicSession(connection.get(), nullptr /*visitor*/, config),
       unique_remote_server_id_(unique_remote_server_id),
       perspective_(perspective),
+      packet_writer_(std::move(packet_writer)),
       connection_(std::move(connection)),
       helper_(helper),
-      clock_(clock),
-      packet_writer_(std::move(packet_writer)) {
+      clock_(clock) {
   packet_writer_->set_connection(connection_.get());
 
   // Initialization with default crypto configuration.
@@ -278,9 +278,18 @@ void QuartcSession::OnConnectionClosed(QuicErrorCode error,
       error, source == ConnectionCloseSource::FROM_PEER);
 }
 
+void QuartcSession::SetPreSharedKey(QuicStringPiece key) {
+  if (perspective_ == Perspective::IS_CLIENT) {
+    quic_crypto_client_config_->set_pre_shared_key(key);
+  } else {
+    quic_crypto_server_config_->set_pre_shared_key(key);
+  }
+}
+
 void QuartcSession::StartCryptoHandshake() {
   if (perspective_ == Perspective::IS_CLIENT) {
-    QuicServerId server_id(unique_remote_server_id_, kQuicServerPort);
+    QuicServerId server_id(unique_remote_server_id_, kQuicServerPort,
+                           /*privacy_mode_enabled=*/false);
     QuicCryptoClientStream* crypto_stream =
         new QuicCryptoClientStream(server_id, this, new ProofVerifyContext(),
                                    quic_crypto_client_config_.get(), this);
@@ -443,4 +452,4 @@ QuartcStream* QuartcSession::ActivateDataStream(
   return raw;
 }
 
-}  // namespace net
+}  // namespace quic

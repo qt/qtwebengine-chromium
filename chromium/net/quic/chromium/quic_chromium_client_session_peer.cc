@@ -9,21 +9,13 @@
 
 namespace net {
 namespace test {
-
-// static
-void QuicChromiumClientSessionPeer::SetMaxOpenStreams(
-    QuicChromiumClientSession* session,
-    size_t max_streams,
-    size_t default_streams) {
-  session->config()->SetMaxStreamsPerConnection(max_streams, default_streams);
-}
-
 // static
 void QuicChromiumClientSessionPeer::SetHostname(
     QuicChromiumClientSession* session,
     const std::string& hostname) {
-  QuicServerId server_id(hostname, session->session_key_.server_id().port(),
-                         session->session_key_.privacy_mode());
+  quic::QuicServerId server_id(hostname,
+                               session->session_key_.server_id().port(),
+                               session->session_key_.privacy_mode());
   session->session_key_ = QuicSessionKey(server_id, SocketTag());
 }
 

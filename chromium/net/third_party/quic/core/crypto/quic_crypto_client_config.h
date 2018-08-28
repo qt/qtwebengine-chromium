@@ -20,7 +20,7 @@
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 #include "third_party/boringssl/src/include/openssl/base.h"
 
-namespace net {
+namespace quic {
 
 class ChannelIDKey;
 class ChannelIDSource;
@@ -343,6 +343,10 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
     user_agent_id_ = user_agent_id;
   }
 
+  // Returns the user_agent_id that will be provided in the client hello
+  // handshake message.
+  const QuicString& user_agent_id() const { return user_agent_id_; }
+
   // Saves the |alpn| that will be passed in QUIC's CHLO message.
   void set_alpn(const QuicString& alpn) { alpn_ = alpn; }
 
@@ -361,7 +365,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   QuicErrorCode CacheNewServerConfig(
       const CryptoHandshakeMessage& message,
       QuicWallTime now,
-      const QuicTransportVersion version,
+      QuicTransportVersion version,
       QuicStringPiece chlo_hash,
       const std::vector<QuicString>& cached_certs,
       CachedState* cached,
@@ -405,6 +409,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoClientConfig);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_CRYPTO_QUIC_CRYPTO_CLIENT_CONFIG_H_

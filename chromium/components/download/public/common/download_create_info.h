@@ -23,6 +23,7 @@
 #include "components/download/public/common/download_source.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "net/http/http_response_info.h"
+#include "net/url_request/url_request.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
@@ -41,12 +42,11 @@ struct COMPONENTS_DOWNLOAD_EXPORT DownloadCreateInfo {
   DownloadCreateInfo();
   ~DownloadCreateInfo();
 
+  bool is_new_download;
+
   // The URL from which we are downloading. This is the final URL after any
   // redirection by the server for |url_chain|.
   const GURL& url() const;
-
-  // The ID of the download. (Deprecated)
-  uint32_t download_id;
 
   // The unique identifier for the download.
   std::string guid;
@@ -54,8 +54,9 @@ struct COMPONENTS_DOWNLOAD_EXPORT DownloadCreateInfo {
   // The chain of redirects that leading up to and including the final URL.
   std::vector<GURL> url_chain;
 
-  // The URL that referred us.
+  // The URL and referrer policy that referred us.
   GURL referrer_url;
+  net::URLRequest::ReferrerPolicy referrer_policy;
 
   // Site URL for the site instance that initiated the download.
   GURL site_url;

@@ -57,7 +57,7 @@ string ArgToString(base::CommandLine::StringType arg) {
 }
 }  // namespace
 
-namespace net {
+namespace quic {
 
 class QuicPacketPrinter : public QuicFramerVisitorInterface {
  public:
@@ -105,10 +105,6 @@ class QuicPacketPrinter : public QuicFramerVisitorInterface {
               << " }\n";
     return true;
   }
-  bool OnAckFrame(const QuicAckFrame& frame) override {
-    std::cerr << "OnAckFrame: " << frame;
-    return true;
-  }
   bool OnAckFrameStart(QuicPacketNumber largest_acked,
                        QuicTime::Delta /*ack_delay_time*/) override {
     std::cerr << "OnAckFrameStart, largest_acked: " << largest_acked;
@@ -141,8 +137,37 @@ class QuicPacketPrinter : public QuicFramerVisitorInterface {
     std::cerr << "OnConnectionCloseFrame: " << frame;
     return true;
   }
+  bool OnApplicationCloseFrame(
+      const QuicApplicationCloseFrame& frame) override {
+    std::cerr << "OnApplicationCloseFrame: " << frame;
+    return true;
+  }
+  bool OnNewConnectionIdFrame(const QuicNewConnectionIdFrame& frame) override {
+    std::cerr << "OnNewConnectionIdFrame: " << frame;
+    return true;
+  }
+  bool OnStopSendingFrame(const QuicStopSendingFrame& frame) override {
+    std::cerr << "OnStopSendingFrame: " << frame;
+    return true;
+  }
+  bool OnPathChallengeFrame(const QuicPathChallengeFrame& frame) override {
+    std::cerr << "OnPathChallengeFrame: " << frame;
+    return true;
+  }
+  bool OnPathResponseFrame(const QuicPathResponseFrame& frame) override {
+    std::cerr << "OnPathResponseFrame: " << frame;
+    return true;
+  }
   bool OnGoAwayFrame(const QuicGoAwayFrame& frame) override {
     std::cerr << "OnGoAwayFrame: " << frame;
+    return true;
+  }
+  bool OnMaxStreamIdFrame(const QuicMaxStreamIdFrame& frame) override {
+    std::cerr << "OnMaxStreamIdFrame: " << frame;
+    return true;
+  }
+  bool OnStreamIdBlockedFrame(const QuicStreamIdBlockedFrame& frame) override {
+    std::cerr << "OnStreamIdBlockedFrame: " << frame;
     return true;
   }
   bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) override {
@@ -167,7 +192,7 @@ class QuicPacketPrinter : public QuicFramerVisitorInterface {
   QuicFramer* framer_;  // Unowned.
 };
 
-}  // namespace net
+}  // namespace quic
 
 int main(int argc, char* argv[]) {
   base::CommandLine::Init(argc, argv);
@@ -185,31 +210,31 @@ int main(int argc, char* argv[]) {
   }
 
   string perspective_string = ArgToString(args[0]);
-  net::Perspective perspective;
+  quic::Perspective perspective;
   if (perspective_string == "client") {
-    perspective = net::Perspective::IS_CLIENT;
+    perspective = quic::Perspective::IS_CLIENT;
   } else if (perspective_string == "server") {
-    perspective = net::Perspective::IS_SERVER;
+    perspective = quic::Perspective::IS_SERVER;
   } else {
     std::cerr << "Invalid perspective. " << perspective_string
               << " Usage: " << args[0] << " client|server <hex>\n";
     return 1;
   }
-  string hex = net::QuicTextUtils::HexDecode(argv[2]);
-  net::ParsedQuicVersionVector versions = net::AllSupportedVersions();
+  string hex = quic::QuicTextUtils::HexDecode(argv[2]);
+  quic::ParsedQuicVersionVector versions = quic::AllSupportedVersions();
   // Fake a time since we're not actually generating acks.
-  net::QuicTime start(net::QuicTime::Zero());
-  net::QuicFramer framer(versions, start, perspective);
+  quic::QuicTime start(quic::QuicTime::Zero());
+  quic::QuicFramer framer(versions, start, perspective);
   if (!FLAGS_quic_version.empty()) {
-    for (net::ParsedQuicVersion version : versions) {
-      if (net::QuicVersionToString(version.transport_version) ==
+    for (quic::ParsedQuicVersion version : versions) {
+      if (quic::QuicVersionToString(version.transport_version) ==
           FLAGS_quic_version) {
         framer.set_version(version);
       }
     }
   }
-  net::QuicPacketPrinter visitor(&framer);
+  quic::QuicPacketPrinter visitor(&framer);
   framer.set_visitor(&visitor);
-  net::QuicEncryptedPacket encrypted(hex.c_str(), hex.length());
+  quic::QuicEncryptedPacket encrypted(hex.c_str(), hex.length());
   return framer.ProcessPacket(encrypted);
 }

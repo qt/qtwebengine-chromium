@@ -16,28 +16,17 @@
 namespace blink {
 
 class Document;
+class LayoutObjectCounter;
 class PaintTiming;
 
 // FirstMeaningfulPaintDetector observes layout operations during page load
-// until network stable (2 seconds of no network activity), and computes the
+// until network stable (0.5 seconds of no network activity), and computes the
 // layout-based First Meaningful Paint.
 // See https://goo.gl/vpaxv6 and http://goo.gl/TEiMi4 for more details.
 class CORE_EXPORT FirstMeaningfulPaintDetector
     : public GarbageCollectedFinalized<FirstMeaningfulPaintDetector> {
 
  public:
-  // Used by FrameView to keep track of the number of layout objects created
-  // in the frame.
-  class LayoutObjectCounter {
-   public:
-    void Reset() { count_ = 0; }
-    void Increment() { count_++; }
-    unsigned Count() const { return count_; }
-
-   private:
-    unsigned count_ = 0;
-  };
-
   static FirstMeaningfulPaintDetector& From(Document&);
 
   FirstMeaningfulPaintDetector(PaintTiming*, Document&);
@@ -70,8 +59,10 @@ class CORE_EXPORT FirstMeaningfulPaintDetector
 
   // The page is n-quiet if there are no more than n active network requests for
   // this duration of time.
-  static constexpr double kNetwork2QuietWindowSeconds = 0.5;
-  static constexpr double kNetwork0QuietWindowSeconds = 0.5;
+  static constexpr TimeDelta kNetwork2QuietWindowTimeout =
+      TimeDelta::FromSecondsD(0.5);
+  static constexpr TimeDelta kNetwork0QuietWindowTimeout =
+      TimeDelta::FromSecondsD(0.5);
 
   Document* GetDocument();
   int ActiveConnections();
@@ -92,6 +83,8 @@ class CORE_EXPORT FirstMeaningfulPaintDetector
   TimeTicks provisional_first_meaningful_paint_swap_;
   double max_significance_so_far_ = 0.0;
   double accumulated_significance_while_having_blank_text_ = 0.0;
+  TimeDelta network2_quiet_window_timeout_ = kNetwork2QuietWindowTimeout;
+  TimeDelta network0_quiet_window_timeout_ = kNetwork0QuietWindowTimeout;
   unsigned prev_layout_object_count_ = 0;
   bool seen_first_meaningful_paint_candidate_ = false;
   bool network0_quiet_reached_ = false;

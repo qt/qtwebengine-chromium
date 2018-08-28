@@ -13,7 +13,6 @@ group("all") {
   deps = [
     ":ui",
     "//services/ui/ime/test_ime_driver",
-    "//services/ui/test_wm",
     "//services/viz",
   ]
 }
@@ -60,12 +59,13 @@ source_set("lib") {
     "//services/catalog/public/cpp",
     "//services/catalog/public/mojom:constants",
     "//services/service_manager/public/cpp",
-    "//services/ui/clipboard:lib",
+    "//services/ui/gpu_host",
     "//services/ui/ime:lib",
     "//services/ui/input_devices",
     "//services/ui/public/interfaces",
     "//services/ui/ws:lib",
     "//services/ui/ws:test_interface",
+    "//ui/base/mojo:lib",
     "//ui/events",
     "//ui/events/ozone:events_ozone_layout",
     "//ui/gl:gl",

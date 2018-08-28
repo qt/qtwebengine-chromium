@@ -27,6 +27,7 @@ _CONFIG = [
             'gfx::ColorSpace',
             'gfx::CubicBezier',
             'gfx::ICCProfile',
+            'gfx::RadToDeg',
             'gfx::ScrollOffset',
 
             # //base constructs that are allowed everywhere
@@ -39,6 +40,8 @@ _CONFIG = [
             'base::OptionalOrNullptr',
             'base::RefCountedData',
             'base::CreateSequencedTaskRunnerWithTraits',
+            'base::ReadOnlySharedMemoryMapping',
+            'base::ReadOnlySharedMemoryRegion',
             'base::SequencedTaskRunner',
             'base::SingleThreadTaskRunner',
             'base::ScopedFD',
@@ -74,11 +77,51 @@ _CONFIG = [
             # //base/memory/ptr_util.h.
             'base::WrapUnique',
 
+            # //base/numerics/safe_conversions.h.
+            'base::as_signed',
+            'base::as_unsigned',
+            'base::checked_cast',
+            'base::strict_cast',
+            'base::saturated_cast',
+            'base::SafeUnsignedAbs',
+            'base::StrictNumeric',
+            'base::MakeStrictNum',
+            'base::IsValueInRangeForNumericType',
+            'base::IsTypeInRangeForNumericType',
+            'base::IsValueNegative',
+
             # //base/synchronization/waitable_event.h.
             'base::WaitableEvent',
 
+            # //base/numerics/checked_math.h.
+            'base::CheckedNumeric',
+            'base::IsValidForType',
+            'base::ValueOrDieForType',
+            'base::ValueOrDefaultForType',
+            'base::MakeCheckedNum',
+            'base::CheckMax',
+            'base::CheckMin',
+            'base::CheckAdd',
+            'base::CheckSub',
+            'base::CheckMul',
+            'base::CheckDiv',
+            'base::CheckMod',
+            'base::CheckLsh',
+            'base::CheckRsh',
+            'base::CheckAnd',
+            'base::CheckOr',
+            'base::CheckXor',
+
             # Debugging helpers from //base/debug are allowed everywhere.
             'base::debug::.+',
+
+            # Base atomic utilities
+            'base::AtomicSequenceNumber',
+
+            # Byte order
+            'base::ByteSwap',
+            'base::NetToHost(16|32|64)',
+            'base::HostToNet(16|32|64)',
 
             # (Cryptographic) random number generation
             'base::RandUint64',
@@ -91,6 +134,13 @@ _CONFIG = [
             'base::Feature.*',
             'base::FEATURE_.+',
 
+            # PartitionAlloc
+            'base::PartitionFree',
+
+            # cc painting types.
+            'cc::PaintCanvas',
+            'cc::PaintFlags',
+
             # Chromium geometry types.
             'gfx::Point',
             'gfx::Rect',
@@ -98,6 +148,8 @@ _CONFIG = [
             'gfx::Size',
             'gfx::SizeF',
             'gfx::Transform',
+            'gfx::Vector2d',
+            'gfx::Vector2dF',
             # Wrapper of SkRegion used in Chromium.
             'cc::Region',
 
@@ -105,8 +157,13 @@ _CONFIG = [
             # depends on the geometry types above.
             'cc::TouchActionRegion',
 
+            # Selection bounds.
+            'cc::LayerSelection',
+            'gfx::SelectionBound',
+
             # cc::Layers.
             'cc::Layer',
+            'cc::PictureLayer',
 
             # cc::Layer helper data structs.
             'cc::ElementId',
@@ -123,6 +180,9 @@ _CONFIG = [
             'cc::VERTICAL',
             'cc::THUMB',
             'cc::TICKMARKS',
+            'cc::BrowserControlsState',
+            'cc::EventListenerClass',
+            'cc::EventListenerProperties',
 
             # Standalone utility libraries that only depend on //base
             'skia::.+',
@@ -152,6 +212,9 @@ _CONFIG = [
             # Assume that identifiers where the first qualifier is internal are
             # nested in the blink namespace.
             'internal::.+',
+
+            # Network service.
+            'network::.+',
 
             # Some test helpers live in the blink::test namespace.
             'test::.+',
@@ -188,6 +251,17 @@ _CONFIG = [
         'allowed': ['gin::.+'],
     },
     {
+        'paths': ['third_party/blink/renderer/bindings/core/v8/v8_gc_for_context_dispose.cc'],
+        'allowed': [
+            # For memory reduction histogram.
+            'base::ProcessMetrics',
+        ],
+    },
+    {
+        'paths': ['third_party/blink/renderer/core/clipboard'],
+        'allowed': ['gfx::PNGCodec', 'net::EscapeForHTML'],
+    },
+    {
         'paths': ['third_party/blink/renderer/core/css'],
         'allowed': [
             # Internal implementation details for CSS.
@@ -201,15 +275,11 @@ _CONFIG = [
             'cc::ContentLayerClient',
             'cc::DisplayItemList',
             'cc::DrawRecordOp',
-            'cc::PictureLayer',
         ],
     },
     {
         'paths': ['third_party/blink/renderer/core/page/scrolling'],
         'allowed': [
-            # cc painting types.
-            'cc::PaintCanvas',
-
             # cc scrollbar layer types.
             'cc::PaintedOverlayScrollbarLayer',
             'cc::PaintedScrollbarLayer',
@@ -234,7 +304,10 @@ _CONFIG = [
             'third_party/blink/renderer/modules/gamepad/',
             'third_party/blink/renderer/modules/sensor/',
         ],
-        'allowed': ['device::.+'],
+        'allowed': [
+            'base::subtle::Atomic32',
+            'device::.+',
+        ],
     },
     {
         'paths': [
@@ -270,6 +343,14 @@ _CONFIG = [
             'base::Time',
             'base::TimeTicks',
             'base::TimeDelta',
+        ],
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/modules/animationworklet/',
+        ],
+        'allowed': [
+            'cc::AnimationOptions',
         ],
     },
     {
@@ -378,8 +459,10 @@ def check(path, contents):
     # Only check code. Ignore tests.
     # TODO(tkent): Remove 'Test' after the great mv.
     if (ext not in ('.cc', '.cpp', '.h', '.mm')
+            or path.find('/testing/') >= 0
             or basename.endswith('Test')
             or basename.endswith('_test')
+            or basename.endswith('_test_helpers')
             or basename.endswith('_unittest')):
         return results
     entries = _find_matching_entries(path)

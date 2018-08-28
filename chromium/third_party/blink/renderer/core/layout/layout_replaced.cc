@@ -25,6 +25,7 @@
 
 #include "third_party/blink/renderer/core/editing/position_with_affinity.h"
 #include "third_party/blink/renderer/core/layout/api/line_layout_block_flow.h"
+#include "third_party/blink/renderer/core/layout/intrinsic_sizing_info.h"
 #include "third_party/blink/renderer/core/layout/layout_analyzer.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
@@ -115,9 +116,8 @@ void LayoutReplaced::IntrinsicSizeChanged() {
       LayoutInvalidationReason::kSizeChanged);
 }
 
-void LayoutReplaced::Paint(const PaintInfo& paint_info,
-                           const LayoutPoint& paint_offset) const {
-  ReplacedPainter(*this).Paint(paint_info, paint_offset);
+void LayoutReplaced::Paint(const PaintInfo& paint_info) const {
+  ReplacedPainter(*this).Paint(paint_info);
 }
 
 bool LayoutReplaced::HasReplacedLogicalHeight() const {
@@ -638,6 +638,11 @@ LayoutRect LayoutReplaced::ReplacedContentRect() const {
 
 void LayoutReplaced::ComputeIntrinsicSizingInfo(
     IntrinsicSizingInfo& intrinsic_sizing_info) const {
+  if (ShouldApplySizeContainment()) {
+    intrinsic_sizing_info.size = FloatSize();
+    return;
+  }
+
   intrinsic_sizing_info.size = FloatSize(IntrinsicLogicalWidth().ToFloat(),
                                          IntrinsicLogicalHeight().ToFloat());
 
@@ -961,6 +966,19 @@ PositionWithAffinity LayoutReplaced::PositionForPoint(
 LayoutRect LayoutReplaced::LocalSelectionRect() const {
   if (GetSelectionState() == SelectionState::kNone)
     return LayoutRect();
+
+  if (IsInline()) {
+    const auto fragments = NGPaintFragment::InlineFragmentsFor(this);
+    if (fragments.IsInLayoutNGInlineFormattingContext()) {
+      LayoutRect rect;
+      for (const NGPaintFragment* fragment : fragments) {
+        const NGPhysicalOffsetRect fragment_rect =
+            fragment->ComputeLocalSelectionRectForReplaced();
+        rect.Unite(fragment_rect.ToLayoutRect());
+      }
+      return rect;
+    }
+  }
 
   if (!InlineBoxWrapper()) {
     // We're a block-level replaced element.  Just return our own dimensions.

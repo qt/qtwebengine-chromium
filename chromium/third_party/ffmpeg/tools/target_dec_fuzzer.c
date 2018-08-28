@@ -56,6 +56,8 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
 
+extern AVCodec * codec_list[];
+
 static void error(const char *err)
 {
     fprintf(stderr, "%s", err);
@@ -144,6 +146,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 #define DECODER_SYMBOL0(CODEC) ff_##CODEC##_decoder
 #define DECODER_SYMBOL(CODEC) DECODER_SYMBOL0(CODEC)
         extern AVCodec DECODER_SYMBOL(FFMPEG_DECODER);
+        codec_list[0] = &DECODER_SYMBOL(FFMPEG_DECODER);
         avcodec_register(&DECODER_SYMBOL(FFMPEG_DECODER));
 
         c = &DECODER_SYMBOL(FFMPEG_DECODER);

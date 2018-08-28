@@ -24,6 +24,10 @@ def AddCommonArgs(arg_parser):
   common_args.add_argument('--package-manifest',
                            type=os.path.realpath, required=True,
                            help='Path to the Fuchsia package manifest file.')
+  common_args.add_argument('--package-dep', action='append', default=[],
+                           help='Path to an additional package to install.')
+  common_args.add_argument('--install-only', action='store_true', default=False,
+                           help='Install the packages but do not run them.')
   common_args.add_argument('--output-directory',
                            type=os.path.realpath, required=True,
                            help=('Path to the directory in which build files '
@@ -40,7 +44,9 @@ def AddCommonArgs(arg_parser):
   common_args.add_argument('--ssh-config', '-F',
                            help='The path to the SSH configuration used for '
                                 'connecting to the target device.')
-  common_args.add_argument('--include-system-logs', default=True, type=bool,
+  common_args.add_argument('--exclude-system-logs',
+                           action='store_false',
+                           dest='include_system_logs',
                            help='Do not show system log data.')
   common_args.add_argument('--verbose', '-v', default=False,
                            action='store_true',

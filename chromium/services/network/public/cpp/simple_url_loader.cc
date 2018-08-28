@@ -214,6 +214,7 @@ class SimpleURLLoaderImpl : public SimpleURLLoader,
   int NetError() const override;
   const ResourceResponseHead* ResponseInfo() const override;
   const GURL& GetFinalURL() const override;
+  bool LoadedFromCache() const override;
 
   // Called by BodyHandler when the BodyHandler body handler is done. If |error|
   // is not net::OK, some error occurred reading or consuming the body. If it is
@@ -253,6 +254,8 @@ class SimpleURLLoaderImpl : public SimpleURLLoader,
     // Result of the request.
     int net_error = net::ERR_IO_PENDING;
 
+    bool loaded_from_cache = false;
+
     std::unique_ptr<ResourceResponseHead> response_info;
   };
 
@@ -268,11 +271,9 @@ class SimpleURLLoaderImpl : public SimpleURLLoader,
   void Retry();
 
   // mojom::URLLoaderClient implementation;
-  void OnReceiveResponse(const ResourceResponseHead& response_head,
-                         mojom::DownloadedTempFilePtr downloaded_file) override;
+  void OnReceiveResponse(const ResourceResponseHead& response_head) override;
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          const ResourceResponseHead& response_head) override;
-  void OnDataDownloaded(int64_t data_length, int64_t encoded_length) override;
   void OnReceiveCachedMetadata(const std::vector<uint8_t>& data) override;
   void OnTransferSizeUpdated(int32_t transfer_size_diff) override;
   void OnUploadProgress(int64_t current_position,
@@ -305,7 +306,7 @@ class SimpleURLLoaderImpl : public SimpleURLLoader,
   // closed.
   void MaybeComplete();
 
-  OnRedirectCallback on_redirect_callback_;
+  std::vector<OnRedirectCallback> on_redirect_callback_;
   OnResponseStartedCallback on_response_started_callback_;
   bool allow_partial_results_ = false;
   bool allow_http_error_results_ = false;
@@ -1089,12 +1090,13 @@ void SimpleURLLoaderImpl::DownloadAsStream(
 
 void SimpleURLLoaderImpl::SetOnRedirectCallback(
     const OnRedirectCallback& on_redirect_callback) {
-  on_redirect_callback_ = on_redirect_callback;
+  on_redirect_callback_.push_back(on_redirect_callback);
 }
 
 void SimpleURLLoaderImpl::SetOnResponseStartedCallback(
     OnResponseStartedCallback on_response_started_callback) {
   on_response_started_callback_ = std::move(on_response_started_callback);
+  DCHECK(on_response_started_callback_);
 }
 
 void SimpleURLLoaderImpl::SetAllowPartialResults(bool allow_partial_results) {
@@ -1193,6 +1195,12 @@ const GURL& SimpleURLLoaderImpl::GetFinalURL() const {
   // Should only be called once the request is compelete.
   DCHECK(request_state_->finished);
   return final_url_;
+}
+
+bool SimpleURLLoaderImpl::LoadedFromCache() const {
+  // Should only be called once the request is compelete.
+  DCHECK(request_state_->finished);
+  return request_state_->loaded_from_cache;
 }
 
 const ResourceResponseHead* SimpleURLLoaderImpl::ResponseInfo() const {
@@ -1301,8 +1309,7 @@ void SimpleURLLoaderImpl::Retry() {
 }
 
 void SimpleURLLoaderImpl::OnReceiveResponse(
-    const ResourceResponseHead& response_head,
-    mojom::DownloadedTempFilePtr downloaded_file) {
+    const ResourceResponseHead& response_head) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (request_state_->response_info) {
     // The final headers have already been received, so the URLLoader is
@@ -1355,22 +1362,23 @@ void SimpleURLLoaderImpl::OnReceiveRedirect(
     return;
   }
 
-  if (on_redirect_callback_) {
-    base::WeakPtr<SimpleURLLoaderImpl> weak_this =
-        weak_ptr_factory_.GetWeakPtr();
-    on_redirect_callback_.Run(redirect_info, response_head);
-    // If deleted by the callback, bail now.
-    if (!weak_this)
-      return;
+  std::vector<std::string> to_be_removed_headers;
+  for (auto callback : on_redirect_callback_) {
+    if (callback) {
+      base::WeakPtr<SimpleURLLoaderImpl> weak_this =
+          weak_ptr_factory_.GetWeakPtr();
+      callback.Run(redirect_info, response_head, &to_be_removed_headers);
+      // If deleted by the callback, bail now.
+      if (!weak_this)
+        return;
+    }
   }
 
   final_url_ = redirect_info.new_url;
-  url_loader_->FollowRedirect(base::nullopt);
-}
-
-void SimpleURLLoaderImpl::OnDataDownloaded(int64_t data_length,
-                                           int64_t encoded_length) {
-  NOTIMPLEMENTED();
+  if (to_be_removed_headers.empty())
+    url_loader_->FollowRedirect(base::nullopt, base::nullopt);
+  else
+    url_loader_->FollowRedirect(to_be_removed_headers, base::nullopt);
 }
 
 void SimpleURLLoaderImpl::OnReceiveCachedMetadata(
@@ -1411,6 +1419,7 @@ void SimpleURLLoaderImpl::OnComplete(const URLLoaderCompletionStatus& status) {
   request_state_->request_completed = true;
   request_state_->expected_body_size = status.decoded_body_length;
   request_state_->net_error = status.error_code;
+  request_state_->loaded_from_cache = status.exists_in_cache;
   // If |status| indicates success, but the body pipe was never received, the
   // URLLoader is violating the API contract.
   if (request_state_->net_error == net::OK && !request_state_->body_started)

@@ -77,7 +77,7 @@ float WebFont::XHeight() const {
   return font_data ? font_data->GetFontMetrics().XHeight() : 0;
 }
 
-void WebFont::DrawText(WebCanvas* canvas,
+void WebFont::DrawText(cc::PaintCanvas* canvas,
                        const WebTextRun& run,
                        const WebFloatPoint& left_baseline,
                        SkColor color,
@@ -108,7 +108,8 @@ int WebFont::CalculateWidth(const WebTextRun& run) const {
 }
 
 int WebFont::OffsetForPosition(const WebTextRun& run, float position) const {
-  return private_->GetFont().OffsetForPosition(run, position, true);
+  return private_->GetFont().OffsetForPosition(
+      run, position, IncludePartialGlyphs, DontBreakGlyphs);
 }
 
 WebFloatRect WebFont::SelectionRectForText(const WebTextRun& run,

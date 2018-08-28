@@ -13,6 +13,7 @@
 #include <memory>
 #include <utility>  // for std::pair
 
+#include "absl/memory/memory.h"
 #include "api/candidate.h"
 #include "p2p/base/p2pconstants.h"
 #include "p2p/base/p2ptransportchannel.h"
@@ -20,7 +21,6 @@
 #include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/strings/string_builder.h"
 
 using webrtc::SdpType;
@@ -284,14 +284,14 @@ void JsepTransport::SetNeedsIceRestartFlag() {
   }
 }
 
-rtc::Optional<rtc::SSLRole> JsepTransport::GetDtlsRole() const {
+absl::optional<rtc::SSLRole> JsepTransport::GetDtlsRole() const {
   RTC_DCHECK(rtp_dtls_transport_);
   rtc::SSLRole dtls_role;
   if (!rtp_dtls_transport_->GetDtlsRole(&dtls_role)) {
-    return rtc::Optional<rtc::SSLRole>();
+    return absl::optional<rtc::SSLRole>();
   }
 
-  return rtc::Optional<rtc::SSLRole>(dtls_role);
+  return absl::optional<rtc::SSLRole>(dtls_role);
 }
 
 bool JsepTransport::GetStats(TransportStats* stats) {
@@ -330,6 +330,15 @@ webrtc::RTCError JsepTransport::VerifyCertificateFingerprint(
                           std::string(desc.str()));
 }
 
+void JsepTransport::SetActiveResetSrtpParams(bool active_reset_srtp_params) {
+  if (dtls_srtp_transport_) {
+    RTC_LOG(INFO)
+        << "Setting active_reset_srtp_params of DtlsSrtpTransport to: "
+        << active_reset_srtp_params;
+    dtls_srtp_transport_->SetActiveResetSrtpParams(active_reset_srtp_params);
+  }
+}
+
 void JsepTransport::SetLocalIceParameters(IceTransportInternal* ice_transport) {
   RTC_DCHECK(ice_transport);
   RTC_DCHECK(local_description_);
@@ -348,7 +357,7 @@ void JsepTransport::SetRemoteIceParameters(
 
 webrtc::RTCError JsepTransport::SetNegotiatedDtlsParameters(
     DtlsTransportInternal* dtls_transport,
-    rtc::Optional<rtc::SSLRole> dtls_role,
+    absl::optional<rtc::SSLRole> dtls_role,
     rtc::SSLFingerprint* remote_fingerprint) {
   RTC_DCHECK(dtls_transport);
   // Set SSL role. Role must be set before fingerprint is applied, which
@@ -474,14 +483,14 @@ webrtc::RTCError JsepTransport::NegotiateAndSetDtlsParameters(
                             "without applying any offer.");
   }
   std::unique_ptr<rtc::SSLFingerprint> remote_fingerprint;
-  rtc::Optional<rtc::SSLRole> negotiated_dtls_role;
+  absl::optional<rtc::SSLRole> negotiated_dtls_role;
 
   rtc::SSLFingerprint* local_fp =
       local_description_->transport_desc.identity_fingerprint.get();
   rtc::SSLFingerprint* remote_fp =
       remote_description_->transport_desc.identity_fingerprint.get();
   if (remote_fp && local_fp) {
-    remote_fingerprint = rtc::MakeUnique<rtc::SSLFingerprint>(*remote_fp);
+    remote_fingerprint = absl::make_unique<rtc::SSLFingerprint>(*remote_fp);
     webrtc::RTCError error =
         NegotiateDtlsRole(local_description_type,
                           local_description_->transport_desc.connection_role,
@@ -496,7 +505,7 @@ webrtc::RTCError JsepTransport::NegotiateAndSetDtlsParameters(
         "Local fingerprint supplied when caller didn't offer DTLS.");
   } else {
     // We are not doing DTLS
-    remote_fingerprint = rtc::MakeUnique<rtc::SSLFingerprint>("", nullptr, 0);
+    remote_fingerprint = absl::make_unique<rtc::SSLFingerprint>("", nullptr, 0);
   }
   // Now that we have negotiated everything, push it downward.
   // Note that we cache the result so that if we have race conditions
@@ -522,7 +531,7 @@ webrtc::RTCError JsepTransport::NegotiateDtlsRole(
     SdpType local_description_type,
     ConnectionRole local_connection_role,
     ConnectionRole remote_connection_role,
-    rtc::Optional<rtc::SSLRole>* negotiated_dtls_role) {
+    absl::optional<rtc::SSLRole>* negotiated_dtls_role) {
   // From RFC 4145, section-4.1, The following are the values that the
   // 'setup' attribute can take in an offer/answer exchange:
   //       Offer      Answer

@@ -265,8 +265,8 @@ bool AXPlatformNodeBase::IsTextOnlyObject() const {
          GetData().role == ax::mojom::Role::kInlineTextBox;
 }
 
-bool AXPlatformNodeBase::IsAutofillField() {
-  return IsAutofillShown() && IsPlainTextField() &&
+bool AXPlatformNodeBase::IsFocusedInputWithSuggestions() {
+  return HasInputSuggestions() && IsPlainTextField() &&
          delegate_->GetFocus() == GetNativeViewAccessible();
 }
 
@@ -327,6 +327,20 @@ base::string16 AXPlatformNodeBase::GetRangeValueText() {
     value = base::NumberToString16(fval);
   }
   return value;
+}
+
+AXPlatformNodeBase* AXPlatformNodeBase::GetSelectionContainer() const {
+  if (!delegate_)
+    return nullptr;
+  AXPlatformNodeBase* container = const_cast<AXPlatformNodeBase*>(this);
+  while (container &&
+         !IsContainerWithSelectableChildrenRole(container->GetData().role)) {
+    gfx::NativeViewAccessible parent_accessible = container->GetParent();
+    AXPlatformNodeBase* parent = FromNativeViewAccessible(parent_accessible);
+
+    container = parent;
+  }
+  return container;
 }
 
 AXPlatformNodeBase* AXPlatformNodeBase::GetTable() const {

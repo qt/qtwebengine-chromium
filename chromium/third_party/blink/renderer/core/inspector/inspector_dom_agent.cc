@@ -33,7 +33,6 @@
 #include <memory>
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_node.h"
 #include "third_party/blink/renderer/core/dom/attr.h"
@@ -80,6 +79,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/xml/document_xpath_evaluator.h"
 #include "third_party/blink/renderer/core/xml/xpath_result.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/wtf/text/cstring.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -148,8 +148,12 @@ void InspectorRevalidateDOMTask::Trace(blink::Visitor* visitor) {
 
 Response InspectorDOMAgent::ToResponse(ExceptionState& exception_state) {
   if (exception_state.HadException()) {
-    return Response::Error(DOMException::GetErrorName(exception_state.Code()) +
-                           " " + exception_state.Message());
+    String name_prefix = IsDOMExceptionCode(exception_state.Code())
+                             ? DOMException::GetErrorName(
+                                   exception_state.CodeAs<DOMExceptionCode>()) +
+                                   " "
+                             : g_empty_string;
+    return Response::Error(name_prefix + exception_state.Message());
   }
   return Response::OK();
 }
@@ -1293,6 +1297,21 @@ Response InspectorDOMAgent::getBoxModel(
   return Response::OK();
 }
 
+Response InspectorDOMAgent::getContentQuads(
+    Maybe<int> node_id,
+    Maybe<int> backend_node_id,
+    Maybe<String> object_id,
+    std::unique_ptr<protocol::Array<protocol::Array<double>>>* quads) {
+  Node* node = nullptr;
+  Response response = AssertNode(node_id, backend_node_id, object_id, node);
+  if (!response.isSuccess())
+    return response;
+  bool result = InspectorHighlight::GetContentQuads(node, quads);
+  if (!result)
+    return Response::Error("Could not compute content quads.");
+  return Response::OK();
+}
+
 Response InspectorDOMAgent::getNodeForLocation(
     int x,
     int y,
@@ -1308,9 +1327,9 @@ Response InspectorDOMAgent::getNodeForLocation(
   LayoutPoint document_point(x, y);
   HitTestRequest request(HitTestRequest::kMove | HitTestRequest::kReadOnly |
                          HitTestRequest::kAllowChildFrameContent);
-  HitTestResult result(request,
-                       document_->View()->DocumentToAbsolute(document_point));
-  document_->GetFrame()->ContentLayoutObject()->HitTest(result);
+  HitTestLocation location(document_->View()->DocumentToFrame(document_point));
+  HitTestResult result(request, location);
+  document_->GetFrame()->ContentLayoutObject()->HitTest(location, result);
   if (!include_user_agent_shadow_dom)
     result.SetToShadowHostIfInRestrictedShadowRoot();
   Node* node = result.InnerPossiblyPseudoNode();
@@ -1787,7 +1806,7 @@ void InspectorDOMAgent::CollectNodes(
   }
 }
 
-void InspectorDOMAgent::DomContentLoadedEventFired(LocalFrame* frame) {
+void InspectorDOMAgent::DOMContentLoadedEventFired(LocalFrame* frame) {
   if (frame != inspected_frames_->Root())
     return;
 

@@ -13,7 +13,7 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
     const KURL& script_url,
     ScriptType script_type,
     const String& user_agent,
-    const Vector<CSPHeaderAndType>* content_security_policy_parsed_headers,
+    const Vector<CSPHeaderAndType>& content_security_policy_parsed_headers,
     ReferrerPolicy referrer_policy,
     const SecurityOrigin* starter_origin,
     bool starter_secure_context,
@@ -26,7 +26,8 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
     WorkletModuleResponsesMap* module_responses_map,
     service_manager::mojom::blink::InterfaceProviderPtrInfo
         interface_provider_info,
-    BeginFrameProviderParams begin_frame_provider_params)
+    BeginFrameProviderParams begin_frame_provider_params,
+    const FeaturePolicy* parent_feature_policy)
     : script_url(script_url.Copy()),
       script_type(script_type),
       user_agent(user_agent.IsolatedCopy()),
@@ -40,15 +41,18 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
       v8_cache_options(v8_cache_options),
       module_responses_map(module_responses_map),
       interface_provider(std::move(interface_provider_info)),
-      begin_frame_provider_params(std::move(begin_frame_provider_params)) {
-  this->content_security_policy_parsed_headers =
-      std::make_unique<Vector<CSPHeaderAndType>>();
-  if (content_security_policy_parsed_headers) {
-    for (const auto& header : *content_security_policy_parsed_headers) {
-      CSPHeaderAndType copied_header(header.first.IsolatedCopy(),
-                                     header.second);
-      this->content_security_policy_parsed_headers->push_back(copied_header);
-    }
+      begin_frame_provider_params(std::move(begin_frame_provider_params)),
+      // At the moment, workers do not support their container policy being set,
+      // so it will just be an empty ParsedFeaturePolicy for now.
+      worker_feature_policy(FeaturePolicy::CreateFromParentPolicy(
+          parent_feature_policy,
+          ParsedFeaturePolicy() /* container_policy */,
+          starter_origin->ToUrlOrigin())) {
+  this->content_security_policy_parsed_headers.ReserveInitialCapacity(
+      content_security_policy_parsed_headers.size());
+  for (const auto& header : content_security_policy_parsed_headers) {
+    this->content_security_policy_parsed_headers.emplace_back(
+        header.first.IsolatedCopy(), header.second);
   }
 
   this->origin_trial_tokens = std::make_unique<Vector<String>>();

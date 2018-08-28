@@ -7,7 +7,7 @@
 #include "base/callback.h"
 #include "base/time/time.h"
 #include "content/common/background_fetch/background_fetch_types.h"
-#include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
+#include "content/common/service_worker/service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
 
 namespace content {
@@ -23,8 +23,7 @@ void BackgroundFetchEmbeddedWorkerTestHelper::OnBackgroundFetchAbortEvent(
     const std::string& developer_id,
     const std::string& unique_id,
     const std::vector<BackgroundFetchSettledFetch>& fetches,
-    mojom::ServiceWorkerEventDispatcher::
-        DispatchBackgroundFetchAbortEventCallback callback) {
+    mojom::ServiceWorker::DispatchBackgroundFetchAbortEventCallback callback) {
   last_developer_id_ = developer_id;
   last_unique_id_ = unique_id;
   last_fetches_ = fetches;
@@ -44,8 +43,7 @@ void BackgroundFetchEmbeddedWorkerTestHelper::OnBackgroundFetchAbortEvent(
 void BackgroundFetchEmbeddedWorkerTestHelper::OnBackgroundFetchClickEvent(
     const std::string& developer_id,
     mojom::BackgroundFetchState state,
-    mojom::ServiceWorkerEventDispatcher::
-        DispatchBackgroundFetchClickEventCallback callback) {
+    mojom::ServiceWorker::DispatchBackgroundFetchClickEventCallback callback) {
   last_developer_id_ = developer_id;
   last_state_ = state;
 
@@ -65,8 +63,7 @@ void BackgroundFetchEmbeddedWorkerTestHelper::OnBackgroundFetchFailEvent(
     const std::string& developer_id,
     const std::string& unique_id,
     const std::vector<BackgroundFetchSettledFetch>& fetches,
-    mojom::ServiceWorkerEventDispatcher::
-        DispatchBackgroundFetchFailEventCallback callback) {
+    mojom::ServiceWorker::DispatchBackgroundFetchFailEventCallback callback) {
   last_developer_id_ = developer_id;
   last_unique_id_ = unique_id;
   last_fetches_ = fetches;
@@ -87,8 +84,7 @@ void BackgroundFetchEmbeddedWorkerTestHelper::OnBackgroundFetchedEvent(
     const std::string& developer_id,
     const std::string& unique_id,
     const std::vector<BackgroundFetchSettledFetch>& fetches,
-    mojom::ServiceWorkerEventDispatcher::DispatchBackgroundFetchedEventCallback
-        callback) {
+    mojom::ServiceWorker::DispatchBackgroundFetchedEventCallback callback) {
   last_developer_id_ = developer_id;
   last_unique_id_ = unique_id;
   last_fetches_ = fetches;

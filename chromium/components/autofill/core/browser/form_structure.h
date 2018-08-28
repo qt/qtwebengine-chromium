@@ -16,7 +16,6 @@
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/optional.h"
-#include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
@@ -59,9 +58,10 @@ class FormStructure {
   virtual ~FormStructure();
 
   // Runs several heuristics against the form fields to determine their possible
-  // types. If |ukm_recorder| is specified, logs UKM for the form structure
-  // corresponding to |source_url_|.
-  void DetermineHeuristicTypes(ukm::UkmRecorder* ukm_recorder);
+  // types. If |ukm_recorder| and |source_id| is specified, logs UKM for
+  // the form structure corresponding to the source mapped from the |source_id|.
+  void DetermineHeuristicTypes(ukm::UkmRecorder* ukm_recorder,
+                               ukm::SourceId source_id);
 
   // Encodes the proto |upload| request from this FormStructure.
   // In some cases, a |login_form_signature| is included as part of the upload.
@@ -83,7 +83,8 @@ class FormStructure {
   // Parses the field types from the server query response. |forms| must be the
   // same as the one passed to EncodeQueryRequest when constructing the query.
   static void ParseQueryResponse(std::string response,
-                                 const std::vector<FormStructure*>& forms);
+                                 const std::vector<FormStructure*>& forms,
+                                 AutofillMetrics::FormInteractionsUkmLogger*);
 
   // Returns predictions using the details from the given |form_structures| and
   // their fields' predicted types.
@@ -270,6 +271,21 @@ class FormStructure {
   }
 #endif
 
+  void set_password_length_vote(const size_t noisified_password_length) {
+    DCHECK(password_attributes_vote_.has_value())
+        << "|password_length_vote_| doesn't make sense if "
+           "|password_attributes_vote_| has no value.";
+    password_length_vote_ = noisified_password_length;
+  }
+#if defined(UNIT_TEST)
+  size_t get_password_length_vote_for_testing() const {
+    DCHECK(password_attributes_vote_.has_value())
+        << "|password_length_vote_| doesn't make sense if "
+           "|password_attributes_vote_| has no value.";
+    return password_length_vote_;
+  }
+#endif
+
   bool operator==(const FormData& form) const;
   bool operator!=(const FormData& form) const;
 
@@ -286,13 +302,108 @@ class FormStructure {
   FRIEND_TEST_ALL_PREFIXES(FormStructureTest, FindLongestCommonPrefix);
   FRIEND_TEST_ALL_PREFIXES(FormStructureTest,
                            RationalizePhoneNumber_RunsOncePerSection);
+
+  class SectionedFieldsIndexes {
+   public:
+    SectionedFieldsIndexes();
+    ~SectionedFieldsIndexes();
+
+    size_t LastFieldIndex() const {
+      if (sectioned_indexes.empty())
+        return (size_t)-1;  // Shouldn't happen.
+      return sectioned_indexes.back().back();
+    };
+
+    void AddFieldIndex(const size_t index, bool is_new_section) {
+      if (is_new_section || Empty()) {
+        sectioned_indexes.push_back(std::vector<size_t>(1, index));
+        return;
+      }
+      sectioned_indexes.back().push_back(index);
+    }
+
+    void WalkForwardToTheNextSection() { current_section_ptr++; }
+
+    bool IsFinished() const {
+      return current_section_ptr >= sectioned_indexes.size();
+    }
+
+    size_t CurrentIndex() const { return CurrentSection()[0]; }
+
+    std::vector<size_t> CurrentSection() const {
+      if (current_section_ptr < sectioned_indexes.size())
+        return sectioned_indexes[current_section_ptr];
+      return std::vector<size_t>(1, (size_t)-1);  // To handle edge cases.
+    }
+
+    void Reset() { current_section_ptr = 0; }
+
+    bool Empty() const { return sectioned_indexes.empty(); }
+
+   private:
+    // A vector of sections. Each section is a vector of some of the indexes
+    // that belong to the same section. The sections and indexes are sorted by
+    // their order of appearance on the form.
+    std::vector<std::vector<size_t>> sectioned_indexes;
+    // Points to a vector of indexes that belong to the same section.
+    size_t current_section_ptr = 0;
+  };
+
   // A function to fine tune the credit cards related predictions. For example:
   // lone credit card fields in an otherwise non-credit-card related form is
   // unlikely to be correct, the function will override that prediction.
   void RationalizeCreditCardFieldPredictions();
 
+  // The rationalization is based on the visible fields, but should be applied
+  // to the hidden select fields. This is because hidden 'select' fields are
+  // also autofilled to take care of the synthetic fields.
+  void ApplyRationalizationsToHiddenSelects(
+      size_t field_index,
+      ServerFieldType new_type,
+      AutofillMetrics::FormInteractionsUkmLogger*);
+
+  // Returns true if we can replace server predictions with the heuristics one.
+  bool HeuristicsPredictionsAreApplicable(size_t upper_index,
+                                          size_t lower_index,
+                                          ServerFieldType first_type,
+                                          ServerFieldType second_type);
+
+  // Applies upper type to upper field, and lower type to lower field, and
+  // applies the rationalization also to hidden select fields if necessary.
+  void ApplyRationalizationsToFields(
+      size_t upper_index,
+      size_t lower_index,
+      ServerFieldType upper_type,
+      ServerFieldType lower_type,
+      AutofillMetrics::FormInteractionsUkmLogger*);
+
+  // Returns true if the fields_[index] server type should be rationalized to
+  // ADDRESS_HOME_COUNTRY.
+  bool FieldShouldBeRationalizedToCountry(size_t index);
+
+  // Set fields_[|field_index|] to |new_type| and log this change.
+  void ApplyRationalizationsToFieldAndLog(
+      size_t field_index,
+      ServerFieldType new_type,
+      AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger);
+
+  // Two or three fields predicted as the whole address should be address lines
+  // 1, 2 and 3 instead.
+  void RationalizeAddressLineFields(
+      SectionedFieldsIndexes& sections_of_address_indexes,
+      AutofillMetrics::FormInteractionsUkmLogger*);
+
+  // Rationalize state and country interdependently.
+  void RationalizeAddressStateCountry(
+      SectionedFieldsIndexes& sections_of_state_indexes,
+      SectionedFieldsIndexes& sections_of_country_indexes,
+      AutofillMetrics::FormInteractionsUkmLogger*);
+
+  // Tunes the fields with identical predictions.
+  void RationalizeRepeatedFields(AutofillMetrics::FormInteractionsUkmLogger*);
+
   // A helper function to review the predictions and do appropriate adjustments
-  // when it considers neccessary.
+  // when it considers necessary.
   void RationalizeFieldTypePredictions();
 
   // Encodes information about this form and its fields into |query_form|.
@@ -407,6 +518,10 @@ class FormStructure {
   // The vote about password attributes (e.g. whether the password has a numeric
   // character).
   base::Optional<std::pair<PasswordAttribute, bool>> password_attributes_vote_;
+
+  // Noisified password length for crowdsourcing. If |password_attributes_vote_|
+  // has no value, |password_length_vote_| should be ignored.
+  size_t password_length_vote_;
 
   DISALLOW_COPY_AND_ASSIGN(FormStructure);
 };

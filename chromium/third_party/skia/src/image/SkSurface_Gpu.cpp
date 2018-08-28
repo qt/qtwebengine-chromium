@@ -118,9 +118,8 @@ sk_sp<SkImage> SkSurface_Gpu::onNewImageSnapshot() {
         // The renderTargetContext coming out of SkGpuDevice should always be exact and the
         // above copy creates a kExact surfaceContext.
         SkASSERT(srcProxy->priv().isExact());
-        image = sk_make_sp<SkImage_Gpu>(ctx, kNeedNewImageUniqueID,
-                                        info.alphaType(), std::move(srcProxy),
-                                        info.refColorSpace(), budgeted);
+        image = sk_make_sp<SkImage_Gpu>(sk_ref_sp(ctx), kNeedNewImageUniqueID, info.alphaType(),
+                                        std::move(srcProxy), info.refColorSpace(), budgeted);
     }
     return image;
 }
@@ -270,10 +269,10 @@ bool SkSurface_Gpu::onDraw(const SkDeferredDisplayList* ddl) {
 bool SkSurface_Gpu::Valid(const SkImageInfo& info) {
     switch (info.colorType()) {
         case kRGBA_F16_SkColorType:
-            return true;
+        case kRGBA_F32_SkColorType:
         case kRGBA_8888_SkColorType:
         case kBGRA_8888_SkColorType:
-            return !info.colorSpace() || info.colorSpace()->gammaCloseToSRGB();
+            return true;
         default:
             return !info.colorSpace();
     }
@@ -281,18 +280,14 @@ bool SkSurface_Gpu::Valid(const SkImageInfo& info) {
 
 bool SkSurface_Gpu::Valid(const GrCaps* caps, GrPixelConfig config, SkColorSpace* colorSpace) {
     switch (config) {
-        case kRGBA_half_GrPixelConfig:
-            return true;
         case kSRGBA_8888_GrPixelConfig:
         case kSBGRA_8888_GrPixelConfig:
-            return caps->srgbSupport() && colorSpace && colorSpace->gammaCloseToSRGB();
+            return caps->srgbSupport();
+        case kRGBA_half_GrPixelConfig:
+        case kRGBA_float_GrPixelConfig:
         case kRGBA_8888_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
-            // We may get here with either a linear-gamma color space or with a sRGB-gamma color
-            // space when we lack GPU sRGB support.
-            return !colorSpace ||
-                   (colorSpace->gammaCloseToSRGB() && !caps->srgbSupport()) ||
-                   colorSpace->gammaIsLinear();
+            return true;
         default:
             return !colorSpace;
     }
@@ -541,14 +536,15 @@ sk_sp<SkSurface> SkSurface::MakeFromBackendTextureAsRenderTarget(GrContext* cont
     if (!context) {
         return nullptr;
     }
-    if (!tex.isValid() ||
-        !SkSurface_Gpu::Valid(context->contextPriv().caps(), tex.config(), colorSpace.get())) {
-        return nullptr;
-    }
+
     sampleCnt = SkTMax(1, sampleCnt);
     GrBackendTexture texCopy = tex;
     if (!validate_backend_texture(context, texCopy, &texCopy.fConfig,
                                   sampleCnt, colorType, colorSpace, false)) {
+        return nullptr;
+    }
+
+    if (!SkSurface_Gpu::Valid(context->contextPriv().caps(), texCopy.config(), colorSpace.get())) {
         return nullptr;
     }
 

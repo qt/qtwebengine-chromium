@@ -31,7 +31,6 @@
 #include "third_party/blink/public/platform/web_mouse_event.h"
 #include "third_party/blink/public/platform/web_point.h"
 #include "third_party/blink/public/platform/web_rect.h"
-#include "third_party/blink/public/platform/web_scrollbar_behavior.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context_state_saver.h"
@@ -209,13 +208,6 @@ void ScrollbarTheme::PaintScrollCorner(
 #endif
 }
 
-bool ScrollbarTheme::ShouldCenterOnThumb(const Scrollbar& scrollbar,
-                                         const WebMouseEvent& evt) {
-  return Platform::Current()->ScrollbarBehavior()->ShouldCenterOnThumb(
-      evt.button, evt.GetModifiers() & WebInputEvent::kShiftKey,
-      evt.GetModifiers() & WebInputEvent::kAltKey);
-}
-
 void ScrollbarTheme::PaintTickmarks(GraphicsContext& context,
                                     const Scrollbar& scrollbar,
                                     const IntRect& rect) {
@@ -260,24 +252,14 @@ void ScrollbarTheme::PaintTickmarks(GraphicsContext& context,
 #endif
 }
 
-bool ScrollbarTheme::ShouldSnapBackToDragOrigin(const Scrollbar& scrollbar,
-                                                const WebMouseEvent& evt) {
-  IntPoint mouse_position = scrollbar.ConvertFromRootFrame(
-      FlooredIntPoint(evt.PositionInRootFrame()));
-  mouse_position.Move(scrollbar.X(), scrollbar.Y());
-  return Platform::Current()->ScrollbarBehavior()->ShouldSnapBackToDragOrigin(
-      mouse_position, TrackRect(scrollbar),
-      scrollbar.Orientation() == kHorizontalScrollbar);
+TimeDelta ScrollbarTheme::OverlayScrollbarFadeOutDelay() const {
+  // On Mac, fading is controlled by the painting code in ScrollAnimatorMac.
+  return TimeDelta();
 }
 
-double ScrollbarTheme::OverlayScrollbarFadeOutDelaySeconds() const {
+TimeDelta ScrollbarTheme::OverlayScrollbarFadeOutDuration() const {
   // On Mac, fading is controlled by the painting code in ScrollAnimatorMac.
-  return 0.0;
-}
-
-double ScrollbarTheme::OverlayScrollbarFadeOutDurationSeconds() const {
-  // On Mac, fading is controlled by the painting code in ScrollAnimatorMac.
-  return 0.0;
+  return TimeDelta();
 }
 
 int ScrollbarTheme::ThumbPosition(const Scrollbar& scrollbar,
@@ -378,6 +360,14 @@ void ScrollbarTheme::SplitTrack(const Scrollbar& scrollbar,
         track_rect.X(), track_rect.Y() + before_thumb_rect.Height(),
         track_rect.Width(), track_rect.MaxY() - before_thumb_rect.MaxY());
   }
+}
+
+TimeDelta ScrollbarTheme::InitialAutoscrollTimerDelay() {
+  return TimeDelta::FromMilliseconds(250);
+}
+
+TimeDelta ScrollbarTheme::AutoscrollTimerDelay() {
+  return TimeDelta::FromMilliseconds(50);
 }
 
 ScrollbarTheme& ScrollbarTheme::DeprecatedStaticGetTheme() {

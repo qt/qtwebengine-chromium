@@ -106,6 +106,8 @@ base::WeakPtr<AppCacheURLLoaderJob> AppCacheURLLoaderJob::GetDerivedWeakPtr() {
 }
 
 void AppCacheURLLoaderJob::FollowRedirect(
+    const base::Optional<std::vector<std::string>>&
+        to_be_removed_request_headers,
     const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
   NOTREACHED() << "appcache never produces redirects";
 }
@@ -287,8 +289,7 @@ void AppCacheURLLoaderJob::SendResponseInfo() {
     response_head.ssl_info = http_info->ssl_info;
   response_head.load_timing = load_timing_info_;
 
-  client_->OnReceiveResponse(response_head,
-                             network::mojom::DownloadedTempFilePtr());
+  client_->OnReceiveResponse(response_head);
   client_->OnStartLoadingResponseBody(std::move(data_pipe_.consumer_handle));
 }
 

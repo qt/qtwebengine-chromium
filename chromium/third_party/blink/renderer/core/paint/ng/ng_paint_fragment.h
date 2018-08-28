@@ -5,6 +5,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_PAINT_NG_NG_PAINT_FRAGMENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_PAINT_NG_NG_PAINT_FRAGMENT_H_
 
+#include <iterator>
+
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_fragment.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_observer.h"
@@ -36,6 +38,7 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
                                     public ImageResourceObserver {
  public:
   NGPaintFragment(scoped_refptr<const NGPhysicalFragment>, NGPaintFragment*);
+  ~NGPaintFragment() override;
   static std::unique_ptr<NGPaintFragment> Create(
       scoped_refptr<const NGPhysicalFragment>);
 
@@ -50,6 +53,10 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
   const Vector<std::unique_ptr<NGPaintFragment>>& Children() const {
     return children_;
   }
+  // Note, as the name implies, |IsDescendantOfNotSelf| returns false for the
+  // same object. This is different from |LayoutObject::IsDescendant| but is
+  // same as |Node::IsDescendant|.
+  bool IsDescendantOfNotSelf(const NGPaintFragment&) const;
 
   // Returns the first line box for a block-level container.
   NGPaintFragment* FirstLineBox() const;
@@ -74,14 +81,24 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
   bool HasOverflowClip() const;
   bool ShouldClipOverflow() const;
   bool HasSelfPaintingLayer() const;
+  // This is equivalent to LayoutObject::VisualRect
   LayoutRect VisualRect() const override { return visual_rect_; }
   void SetVisualRect(const LayoutRect& rect) { visual_rect_ = rect; }
-  LayoutRect VisualOverflowRect() const;
 
-  LayoutRect PartialInvalidationRect() const override;
+  LayoutRect SelectionVisualRect() const { return selection_visual_rect_; }
+  void SetSelectionVisualRect(const LayoutRect& rect) {
+    selection_visual_rect_ = rect;
+  }
 
-  NGPhysicalOffsetRect ComputeLocalSelectionRect(
+  // CSS ink overflow https://www.w3.org/TR/css-overflow-3/#ink
+  // Encloses all pixels painted by self + children.
+  LayoutRect SelfInkOverflow() const;
+  // Union of children's ink overflows.
+  LayoutRect ChildrenInkOverflow() const;
+
+  NGPhysicalOffsetRect ComputeLocalSelectionRectForText(
       const LayoutSelectionStatus&) const;
+  NGPhysicalOffsetRect ComputeLocalSelectionRectForReplaced() const;
 
   // Set ShouldDoFullPaintInvalidation flag in the corresponding LayoutObject
   // recursively.
@@ -99,7 +116,7 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
                                     NGPhysicalOffset = {}) const;
 
   // DisplayItemClient methods.
-  String DebugName() const override { return "NGPaintFragment"; }
+  String DebugName() const override;
 
   // Commonly used functions for NGPhysicalFragment.
   Node* GetNode() const { return PhysicalFragment().GetNode(); }
@@ -114,8 +131,12 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
   // in DOM tree.
   PositionWithAffinity PositionForPoint(const NGPhysicalOffset&) const;
 
+  // The node to return when hit-testing on this fragment. This can be different
+  // from GetNode() when this fragment is content of a pseudo node.
+  Node* NodeForHitTest() const;
+
   // A range of fragments for |FragmentsFor()|.
-  class FragmentRange {
+  class CORE_EXPORT FragmentRange {
    public:
     explicit FragmentRange(
         NGPaintFragment* first,
@@ -130,15 +151,17 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
 
     bool IsEmpty() const { return !first_; }
 
-    class iterator {
+    class iterator final
+        : public std::iterator<std::forward_iterator_tag, NGPaintFragment*> {
      public:
       explicit iterator(NGPaintFragment* first) : current_(first) {}
 
       NGPaintFragment* operator*() const { return current_; }
       NGPaintFragment* operator->() const { return current_; }
-      void operator++() {
+      iterator& operator++() {
         CHECK(current_);
         current_ = current_->next_fragment_;
+        return *this;
       }
       bool operator==(const iterator& other) const {
         return current_ == other.current_;
@@ -153,6 +176,16 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
 
     iterator begin() const { return iterator(first_); }
     iterator end() const { return iterator(nullptr); }
+
+    // Returns the first |NGPaintFragment| in |FragmentRange| as STL container.
+    // It is error to call |front()| for empty range.
+    NGPaintFragment& front() const;
+
+    // Returns the last |NGPaintFragment| in |FragmentRange| as STL container.
+    // It is error to call |back()| for empty range.
+    // Note: The complicity of |back()| is O(n) where n is number of elements
+    // in this |FragmentRange|.
+    NGPaintFragment& back() const;
 
    private:
     NGPaintFragment* first_;
@@ -221,6 +254,7 @@ class CORE_EXPORT NGPaintFragment : public DisplayItemClient,
   //
 
   LayoutRect visual_rect_;
+  LayoutRect selection_visual_rect_;
 };
 
 }  // namespace blink

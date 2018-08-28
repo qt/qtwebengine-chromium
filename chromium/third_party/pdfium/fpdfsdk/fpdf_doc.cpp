@@ -26,7 +26,7 @@ namespace {
 CPDF_Bookmark FindBookmark(const CPDF_BookmarkTree& tree,
                            CPDF_Bookmark bookmark,
                            const WideString& title,
-                           std::set<CPDF_Dictionary*>* visited) {
+                           std::set<const CPDF_Dictionary*>* visited) {
   // Return if already checked to avoid circular calling.
   if (pdfium::ContainsKey(*visited, bookmark.GetDict()))
     return CPDF_Bookmark();
@@ -107,7 +107,7 @@ FPDFBookmark_Find(FPDF_DOCUMENT document, FPDF_WIDESTRING title) {
   CPDF_BookmarkTree tree(pDoc);
   size_t len = WideString::WStringLength(title);
   WideString encodedTitle = WideString::FromUTF16LE(title, len);
-  std::set<CPDF_Dictionary*> visited;
+  std::set<const CPDF_Dictionary*> visited;
   return FPDFBookmarkFromCPDFDictionary(
       FindBookmark(tree, CPDF_Bookmark(), encodedTitle, &visited).GetDict());
 }
@@ -339,9 +339,9 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFLink_Enumerate(FPDF_PAGE page,
   if (!start_pos || !link_annot)
     return false;
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
-  if (!pPage || !pPage->GetFormDict())
+  if (!pPage || !pPage->GetDict())
     return false;
-  CPDF_Array* pAnnots = pPage->GetFormDict()->GetArrayFor("Annots");
+  CPDF_Array* pAnnots = pPage->GetDict()->GetArrayFor("Annots");
   if (!pAnnots)
     return false;
   for (size_t i = *start_pos; i < pAnnots->GetCount(); i++) {
@@ -400,7 +400,7 @@ FPDF_EXPORT unsigned long FPDF_CALLCONV FPDF_GetMetaText(FPDF_DOCUMENT document,
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
   if (!pDoc)
     return 0;
-  pDoc->LoadDocumentInfo();
+
   const CPDF_Dictionary* pInfo = pDoc->GetInfo();
   if (!pInfo)
     return 0;

@@ -57,8 +57,8 @@ class ParsedRtcEventLog {
   struct BweProbeResultEvent {
     uint64_t timestamp;
     uint32_t id;
-    rtc::Optional<uint64_t> bitrate_bps;
-    rtc::Optional<ProbeFailureReason> failure_reason;
+    absl::optional<uint64_t> bitrate_bps;
+    absl::optional<ProbeFailureReason> failure_reason;
   };
 
   struct BweDelayBasedUpdate {
@@ -74,7 +74,7 @@ class ParsedRtcEventLog {
 
   struct IceCandidatePairConfig {
     uint64_t timestamp;
-    IceCandidatePairEventType type;
+    IceCandidatePairConfigType type;
     uint32_t candidate_pair_id;
     IceCandidateType local_candidate_type;
     IceCandidatePairProtocol local_relay_protocol;

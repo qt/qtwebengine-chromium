@@ -10,13 +10,14 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/manifest_icon_downloader.h"
-#include "content/public/browser/manifest_icon_selector.h"
 #include "content/public/browser/payment_app_provider.h"
-#include "content/public/browser/permission_manager.h"
+#include "content/public/browser/permission_controller.h"
 #include "content/public/browser/permission_type.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/console_message_level.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "third_party/blink/public/common/manifest/manifest.h"
+#include "third_party/blink/public/common/manifest/manifest_icon_selector.h"
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -51,13 +52,11 @@ void InstallablePaymentAppCrawler::Start(
 
   std::set<GURL> manifests_to_download;
   for (const auto& method_data : requested_method_data) {
-    for (const auto& method_name : method_data->supported_methods) {
-      if (!base::IsStringUTF8(method_name))
-        continue;
-      GURL url = GURL(method_name);
-      if (url.is_valid()) {
-        manifests_to_download.insert(url);
-      }
+    if (!base::IsStringUTF8(method_data->supported_method))
+      continue;
+    GURL url = GURL(method_data->supported_method);
+    if (url.is_valid()) {
+      manifests_to_download.insert(url);
     }
   }
 
@@ -106,10 +105,10 @@ void InstallablePaymentAppCrawler::OnPaymentMethodManifestParsed(
 
   if (web_contents() == nullptr)
     return;
-  content::PermissionManager* permission_manager =
-      web_contents()->GetBrowserContext()->GetPermissionManager();
-  if (permission_manager == nullptr)
-    return;
+  content::PermissionController* permission_controller =
+      content::BrowserContext::GetPermissionController(
+          web_contents()->GetBrowserContext());
+  DCHECK(permission_controller);
 
   for (const auto& url : default_applications) {
     if (downloaded_web_app_manifests_.find(url) !=
@@ -119,7 +118,16 @@ void InstallablePaymentAppCrawler::OnPaymentMethodManifestParsed(
       continue;
     }
 
-    if (permission_manager->GetPermissionStatus(
+    if (!net::registry_controlled_domains::SameDomainOrHost(
+            method_manifest_url, url,
+            net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
+      WarnIfPossible("Installable payment app from " + url.spec() +
+                     " is not allowed for the method " +
+                     method_manifest_url.spec());
+      continue;
+    }
+
+    if (permission_controller->GetPermissionStatus(
             content::PermissionType::PAYMENT_HANDLER, url.GetOrigin(),
             url.GetOrigin()) != blink::mojom::PermissionStatus::GRANTED) {
       // Do not download the web app manifest if it is blocked.
@@ -196,6 +204,14 @@ bool InstallablePaymentAppCrawler::CompleteAndStorePaymentWebAppInfoIfValid(
           app_info->sw_js_url + ").");
       return false;
     }
+    if (!net::registry_controlled_domains::SameDomainOrHost(
+            method_manifest_url, absolute_url,
+            net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
+      WarnIfPossible("Installable payment app's js url " + absolute_url.spec() +
+                     " is not allowed for the method " +
+                     method_manifest_url.spec());
+      return false;
+    }
     app_info->sw_js_url = absolute_url.spec();
   }
 
@@ -207,6 +223,14 @@ bool InstallablePaymentAppCrawler::CompleteAndStorePaymentWebAppInfoIfValid(
           "Failed to resolve the installable payment app's registration "
           "scope (" +
           app_info->sw_scope + ").");
+      return false;
+    }
+    if (!net::registry_controlled_domains::SameDomainOrHost(
+            method_manifest_url, absolute_scope,
+            net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
+      WarnIfPossible("Installable payment app's registration scope " +
+                     absolute_scope.spec() + " is not allowed for the method " +
+                     method_manifest_url.spec());
       return false;
     }
     app_info->sw_scope = absolute_scope.spec();
@@ -237,7 +261,7 @@ void InstallablePaymentAppCrawler::DownloadAndDecodeWebAppIcon(
   if (icons == nullptr || icons->empty())
     return;
 
-  std::vector<blink::Manifest::Icon> manifest_icons;
+  std::vector<blink::Manifest::ImageResource> manifest_icons;
   for (const auto& icon : *icons) {
     if (icon.src.empty() || !base::IsStringUTF8(icon.src)) {
       WarnIfPossible(
@@ -257,10 +281,11 @@ void InstallablePaymentAppCrawler::DownloadAndDecodeWebAppIcon(
       }
     }
 
-    blink::Manifest::Icon manifest_icon;
+    blink::Manifest::ImageResource manifest_icon;
     manifest_icon.src = icon_src;
     manifest_icon.type = base::UTF8ToUTF16(icon.type);
-    manifest_icon.purpose.emplace_back(blink::Manifest::Icon::ANY);
+    manifest_icon.purpose.emplace_back(
+        blink::Manifest::ImageResource::Purpose::ANY);
     // TODO(crbug.com/782270): Parse icon sizes.
     manifest_icon.sizes.emplace_back(gfx::Size());
     manifest_icons.emplace_back(manifest_icon);
@@ -275,9 +300,9 @@ void InstallablePaymentAppCrawler::DownloadAndDecodeWebAppIcon(
   // but not scale up.
   const int kPaymentAppIdealIconSize = 0xFFFF;
   const int kPaymentAppMinimumIconSize = 0;
-  GURL best_icon_url = content::ManifestIconSelector::FindBestMatchingIcon(
+  GURL best_icon_url = blink::ManifestIconSelector::FindBestMatchingIcon(
       manifest_icons, kPaymentAppIdealIconSize, kPaymentAppMinimumIconSize,
-      blink::Manifest::Icon::ANY);
+      blink::Manifest::ImageResource::Purpose::ANY);
   if (!best_icon_url.is_valid()) {
     WarnIfPossible(
         "No suitable icon found in the installabble payment app's manifest (" +

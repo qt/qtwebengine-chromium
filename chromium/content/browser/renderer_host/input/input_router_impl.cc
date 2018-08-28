@@ -23,7 +23,6 @@
 #include "content/common/view_messages.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/input_event_ack_state.h"
 #include "ipc/ipc_sender.h"
@@ -78,10 +77,9 @@ InputRouterImpl::InputRouterImpl(
       frame_tree_node_id_(-1),
       active_renderer_fling_count_(0),
       touch_scroll_started_sent_(false),
-      wheel_scroll_latching_enabled_(base::FeatureList::IsEnabled(
-          features::kTouchpadAndWheelScrollLatching)),
-      wheel_event_queue_(this, wheel_scroll_latching_enabled_),
+      wheel_event_queue_(this),
       touch_event_queue_(this, config.touch_config),
+      touchpad_pinch_event_queue_(this),
       gesture_event_queue_(this,
                            this,
                            fling_scheduler_client,
@@ -136,6 +134,13 @@ void InputRouterImpl::SendGestureEvent(
 
   GestureEventWithLatencyInfo gesture_event(original_gesture_event);
 
+  if (gesture_event_queue_.FlingControllerFilterEvent(gesture_event)) {
+    disposition_handler_->OnGestureEventAck(gesture_event,
+                                            InputEventAckSource::BROWSER,
+                                            INPUT_EVENT_ACK_STATE_CONSUMED);
+    return;
+  }
+
   if (touch_action_filter_.FilterGestureEvent(&gesture_event.event) ==
       FilterGestureEventResult::kFilterGestureEventFiltered) {
     disposition_handler_->OnGestureEventAck(gesture_event,
@@ -164,7 +169,14 @@ void InputRouterImpl::SendGestureEvent(
     touch_event_queue_.OnGestureScrollEvent(gesture_event);
   }
 
-  if (!gesture_event_queue_.QueueEvent(gesture_event)) {
+  if (blink::WebInputEvent::IsPinchGestureEventType(
+          gesture_event.event.GetType()) &&
+      gesture_event.event.NeedsWheelEvent()) {
+    touchpad_pinch_event_queue_.QueueEvent(gesture_event);
+    return;
+  }
+
+  if (!gesture_event_queue_.DebounceOrQueueEvent(gesture_event)) {
     disposition_handler_->OnGestureEventAck(gesture_event,
                                             InputEventAckSource::BROWSER,
                                             INPUT_EVENT_ACK_STATE_CONSUMED);
@@ -185,7 +197,9 @@ void InputRouterImpl::NotifySiteIsMobileOptimized(bool is_mobile_optimized) {
 
 bool InputRouterImpl::HasPendingEvents() const {
   return !touch_event_queue_.Empty() || !gesture_event_queue_.empty() ||
-         wheel_event_queue_.has_pending() || active_renderer_fling_count_ > 0;
+         wheel_event_queue_.has_pending() ||
+         touchpad_pinch_event_queue_.has_pending() ||
+         active_renderer_fling_count_ > 0;
 }
 
 void InputRouterImpl::SetDeviceScaleFactor(float device_scale_factor) {
@@ -200,8 +214,9 @@ void InputRouterImpl::SetForceEnableZoom(bool enabled) {
   touch_action_filter_.SetForceEnableZoom(enabled);
 }
 
-cc::TouchAction InputRouterImpl::AllowedTouchAction() {
-  return touch_action_filter_.allowed_touch_action();
+base::Optional<cc::TouchAction> InputRouterImpl::AllowedTouchAction() {
+  return touch_action_filter_.allowed_touch_action().value_or(
+      cc::kTouchActionAuto);
 }
 
 void InputRouterImpl::BindHost(mojom::WidgetInputHandlerHostRequest request,
@@ -224,15 +239,12 @@ bool InputRouterImpl::FlingCancellationIsDeferred() {
 }
 
 void InputRouterImpl::CancelTouchTimeout() {
-  touch_event_queue_.SetAckTimeoutEnabled(false);
+  UpdateTouchAckTimeoutEnabled();
 }
 
 void InputRouterImpl::SetWhiteListedTouchAction(cc::TouchAction touch_action,
                                                 uint32_t unique_touch_event_id,
                                                 InputEventAckState state) {
-  // TODO(hayleyferr): Catch the cases that we have filtered out sending the
-  // touchstart.
-
   touch_action_filter_.OnSetWhiteListedTouchAction(touch_action);
   client_->OnSetWhiteListedTouchAction(touch_action);
 }
@@ -337,12 +349,12 @@ void InputRouterImpl::OnTouchEventAck(const TouchEventWithLatencyInfo& event,
   // in some cases we may filter out sending the touchstart - catch those here.
   if (WebTouchEventTraits::IsTouchSequenceStart(event.event) &&
       ack_result == INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS) {
-    touch_action_filter_.ResetTouchAction();
+    // Touch action must be auto when there is no consumer
+    touch_action_filter_.OnSetTouchAction(cc::kTouchActionAuto);
     UpdateTouchAckTimeoutEnabled();
   }
   disposition_handler_->OnTouchEventAck(event, ack_source, ack_result);
 
-  // Reset the touch action at the end of a touch-action sequence.
   if (WebTouchEventTraits::IsTouchSequenceEnd(event.event)) {
     touch_action_filter_.ReportAndResetTouchAction();
     UpdateTouchAckTimeoutEnabled();
@@ -413,6 +425,18 @@ void InputRouterImpl::ForwardGestureEventWithLatencyInfo(
   client_->ForwardGestureEventWithLatencyInfo(event, latency_info);
 }
 
+void InputRouterImpl::SendMouseWheelEventForPinchImmediately(
+    const MouseWheelEventWithLatencyInfo& event) {
+  SendMouseWheelEventImmediately(event);
+}
+
+void InputRouterImpl::OnGestureEventForPinchAck(
+    const GestureEventWithLatencyInfo& event,
+    InputEventAckSource ack_source,
+    InputEventAckState ack_result) {
+  OnGestureEventAck(event, ack_source, ack_result);
+}
+
 bool InputRouterImpl::IsWheelScrollInProgress() {
   return client_->IsWheelScrollInProgress();
 }
@@ -444,8 +468,7 @@ void InputRouterImpl::FilterAndSendWebInputEvent(
 
   std::unique_ptr<InputEvent> event = std::make_unique<InputEvent>(
       ScaleEvent(input_event, device_scale_factor_), latency_info);
-  if (WebInputEventTraits::ShouldBlockEventStream(
-          input_event, wheel_scroll_latching_enabled_)) {
+  if (WebInputEventTraits::ShouldBlockEventStream(input_event)) {
     TRACE_EVENT_INSTANT0("input", "InputEventSentBlocking",
                          TRACE_EVENT_SCOPE_THREAD);
     client_->IncrementInFlightEventCount();
@@ -573,21 +596,21 @@ void InputRouterImpl::MouseWheelEventHandled(
     DidOverscroll(overscroll.value());
 
   wheel_event_queue_.ProcessMouseWheelAck(source, state, event.latency);
+  touchpad_pinch_event_queue_.ProcessMouseWheelAck(source, state,
+                                                   event.latency);
 }
 
 void InputRouterImpl::OnHasTouchEventHandlers(bool has_handlers) {
   TRACE_EVENT1("input", "InputRouterImpl::OnHasTouchEventHandlers",
                "has_handlers", has_handlers);
 
-  // Lack of a touch handler indicates that the page either has no touch-action
-  // modifiers or that all its touch-action modifiers are auto. Resetting the
-  // touch-action here allows forwarding of subsequent gestures even if the
-  // underlying touches never reach the router.
-  if (!has_handlers)
-    touch_action_filter_.ResetTouchAction();
-
+  touch_action_filter_.OnHasTouchEventHandlers(has_handlers);
   touch_event_queue_.OnHasTouchEventHandlers(has_handlers);
   client_->OnHasTouchEventHandlers(has_handlers);
+}
+
+void InputRouterImpl::ForceSetTouchActionAuto() {
+  touch_action_filter_.OnSetTouchAction(cc::kTouchActionAuto);
 }
 
 void InputRouterImpl::OnSetTouchAction(cc::TouchAction touch_action) {

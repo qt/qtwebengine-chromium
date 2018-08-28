@@ -21,11 +21,11 @@
 #include "net/third_party/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 
-using base::IntToString;
+using spdy::SpdyHeaderBlock;
 using testing::_;
 using testing::StrictMock;
 
-namespace net {
+namespace quic {
 namespace test {
 
 namespace {
@@ -35,12 +35,11 @@ class MockQuicSpdyClientSession : public QuicSpdyClientSession {
   explicit MockQuicSpdyClientSession(
       QuicConnection* connection,
       QuicClientPushPromiseIndex* push_promise_index)
-      : QuicSpdyClientSession(
-            DefaultQuicConfig(),
-            connection,
-            QuicServerId("example.com", 443, PRIVACY_MODE_DISABLED),
-            &crypto_config_,
-            push_promise_index),
+      : QuicSpdyClientSession(DefaultQuicConfig(),
+                              connection,
+                              QuicServerId("example.com", 443, false),
+                              &crypto_config_,
+                              push_promise_index),
         crypto_config_(crypto_test_utils::ProofVerifierForTesting(),
                        TlsClientHandshaker::CreateSslCtx()) {}
   ~MockQuicSpdyClientSession() override = default;
@@ -89,7 +88,7 @@ class QuicSpdyClientStreamTest : public QuicTest {
   MockQuicSpdyClientSession session_;
   std::unique_ptr<QuicSpdyClientStream> stream_;
   std::unique_ptr<StreamVisitor> stream_visitor_;
-  spdy::SpdyHeaderBlock headers_;
+  SpdyHeaderBlock headers_;
   QuicString body_;
 };
 
@@ -163,6 +162,7 @@ TEST_F(QuicSpdyClientStreamTest, DISABLED_TestFramingExtraData) {
 TEST_F(QuicSpdyClientStreamTest, ReceivingTrailers) {
   // Test that receiving trailing headers, containing a final offset, results in
   // the stream being closed at that byte offset.
+
   // Send headers as usual.
   auto headers = AsHeaderList(headers_);
   stream_->OnStreamHeaderList(false, headers.uncompressed_header_bytes(),
@@ -171,7 +171,7 @@ TEST_F(QuicSpdyClientStreamTest, ReceivingTrailers) {
   // Send trailers before sending the body. Even though a FIN has been received
   // the stream should not be closed, as it does not yet have all the data bytes
   // promised by the final offset field.
-  spdy::SpdyHeaderBlock trailer_block;
+  SpdyHeaderBlock trailer_block;
   trailer_block["trailer key"] = "trailer value";
   trailer_block[kFinalOffsetHeaderKey] =
       QuicTextUtils::Uint64ToString(body_.size());
@@ -188,4 +188,4 @@ TEST_F(QuicSpdyClientStreamTest, ReceivingTrailers) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

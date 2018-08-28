@@ -51,6 +51,7 @@
 #include "net/ssl/ssl_client_session_cache.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
+#include "net/ssl/ssl_key_logger.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/ssl/token_binding.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -61,8 +62,8 @@
 #include "third_party/boringssl/src/include/openssl/mem.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 
-#if !defined(OS_NACL)
-#include "net/ssl/ssl_key_logger.h"
+#if !defined(NET_DISABLE_BROTLI)
+#include "third_party/brotli/include/brotli/decode.h"
 #endif
 
 namespace net {
@@ -71,7 +72,7 @@ namespace {
 
 // This constant can be any non-negative/non-zero value (eg: it does not
 // overlap with any value of the net::Error range, including net::OK).
-const int kNoPendingResult = 1;
+const int kSSLClientSocketNoPendingResult = 1;
 
 // Default size of the internal BoringSSL buffers.
 const int kDefaultOpenSSLBufferSize = 17 * 1024;
@@ -263,6 +264,31 @@ RSAKeyUsage CheckRSAKeyUsage(const X509Certificate* cert,
                                 : RSAKeyUsage::kMissingDigitalSignature;
 }
 
+#if !defined(NET_DISABLE_BROTLI)
+int DecompressBrotliCert(SSL* ssl,
+                         CRYPTO_BUFFER** out,
+                         size_t uncompressed_len,
+                         const uint8_t* in,
+                         size_t in_len) {
+  uint8_t* data;
+  bssl::UniquePtr<CRYPTO_BUFFER> decompressed(
+      CRYPTO_BUFFER_alloc(&data, uncompressed_len));
+  if (!decompressed) {
+    return 0;
+  }
+
+  size_t output_size = uncompressed_len;
+  if (BrotliDecoderDecompress(in_len, in, &output_size, data) !=
+          BROTLI_DECODER_RESULT_SUCCESS ||
+      output_size != uncompressed_len) {
+    return 0;
+  }
+
+  *out = decompressed.release();
+  return 1;
+}
+#endif
+
 }  // namespace
 
 class SSLClientSocketImpl::SSLContext {
@@ -286,13 +312,11 @@ class SSLClientSocketImpl::SSLContext {
     return SSL_set_ex_data(ssl, ssl_socket_data_index_, socket) != 0;
   }
 
-#if !defined(OS_NACL)
-  void SetSSLKeyLogFile(const base::FilePath& path) {
+  void SetSSLKeyLogger(std::unique_ptr<SSLKeyLogger> logger) {
     DCHECK(!ssl_key_logger_);
-    ssl_key_logger_.reset(new SSLKeyLogger(path));
+    ssl_key_logger_ = std::move(logger);
     SSL_CTX_set_keylog_callback(ssl_ctx_.get(), KeyLogCallback);
   }
-#endif
 
   static const SSL_PRIVATE_KEY_METHOD kPrivateKeyMethod;
 
@@ -322,7 +346,14 @@ class SSLClientSocketImpl::SSLContext {
     // Deduplicate all certificates minted from the SSL_CTX in memory.
     SSL_CTX_set0_buffer_pool(ssl_ctx_.get(), x509_util::GetBufferPool());
 
+    SSL_CTX_set_info_callback(ssl_ctx_.get(), InfoCallback);
     SSL_CTX_set_msg_callback(ssl_ctx_.get(), MessageCallback);
+
+#if !defined(NET_DISABLE_BROTLI)
+    SSL_CTX_add_cert_compression_alg(
+        ssl_ctx_.get(), TLSEXT_cert_compression_brotli,
+        nullptr /* compression not supported */, DecompressBrotliCert);
+#endif
   }
 
   static int ClientCertRequestCallback(SSL* ssl, void* arg) {
@@ -361,11 +392,14 @@ class SSLClientSocketImpl::SSLContext {
     return socket->PrivateKeyCompleteCallback(out, out_len, max_out);
   }
 
-#if !defined(OS_NACL)
   static void KeyLogCallback(const SSL* ssl, const char* line) {
     GetInstance()->ssl_key_logger_->WriteLine(line);
   }
-#endif
+
+  static void InfoCallback(const SSL* ssl, int type, int value) {
+    SSLClientSocketImpl* socket = GetInstance()->GetClientSocketFromSSL(ssl);
+    socket->InfoCallback(type, value);
+  }
 
   static void MessageCallback(int is_write,
                               int version,
@@ -384,9 +418,7 @@ class SSLClientSocketImpl::SSLContext {
 
   bssl::UniquePtr<SSL_CTX> ssl_ctx_;
 
-#if !defined(OS_NACL)
   std::unique_ptr<SSLKeyLogger> ssl_key_logger_;
-#endif
 
   // TODO(davidben): Use a separate cache per URLRequestContext.
   // https://crbug.com/458365
@@ -415,7 +447,7 @@ SSLClientSocketImpl::SSLClientSocketImpl(
     const HostPortPair& host_and_port,
     const SSLConfig& ssl_config,
     const SSLClientSocketContext& context)
-    : pending_read_error_(kNoPendingResult),
+    : pending_read_error_(kSSLClientSocketNoPendingResult),
       pending_read_ssl_error_(SSL_ERROR_NONE),
       completed_connect_(false),
       was_ever_used_(false),
@@ -428,12 +460,13 @@ SSLClientSocketImpl::SSLClientSocketImpl(
       ssl_config_(ssl_config),
       ssl_session_cache_shard_(context.ssl_session_cache_shard),
       next_handshake_state_(STATE_NONE),
+      in_confirm_handshake_(false),
       disconnected_(false),
       negotiated_protocol_(kProtoUnknown),
       channel_id_sent_(false),
       certificate_verified_(false),
       certificate_requested_(false),
-      signature_result_(kNoPendingResult),
+      signature_result_(kSSLClientSocketNoPendingResult),
       transport_security_state_(context.transport_security_state),
       policy_enforcer_(context.ct_policy_enforcer),
       pkp_bypassed_(false),
@@ -450,12 +483,10 @@ SSLClientSocketImpl::~SSLClientSocketImpl() {
   Disconnect();
 }
 
-#if !defined(OS_NACL)
-void SSLClientSocketImpl::SetSSLKeyLogFile(
-    const base::FilePath& ssl_keylog_file) {
-  SSLContext::GetInstance()->SetSSLKeyLogFile(ssl_keylog_file);
+void SSLClientSocketImpl::SetSSLKeyLogger(
+    std::unique_ptr<SSLKeyLogger> logger) {
+  SSLContext::GetInstance()->SetSSLKeyLogger(std::move(logger));
 }
-#endif
 
 int SSLClientSocketImpl::ExportKeyingMaterial(const base::StringPiece& label,
                                               bool has_context,
@@ -529,6 +560,30 @@ void SSLClientSocketImpl::Disconnect() {
   user_write_buf_len_ = 0;
 
   transport_->socket()->Disconnect();
+}
+
+// ConfirmHandshake may only be called on a connected socket and, like other
+// socket methods, there may only be one ConfirmHandshake operation in progress
+// at once.
+int SSLClientSocketImpl::ConfirmHandshake(CompletionOnceCallback callback) {
+  CHECK(completed_connect_);
+  CHECK(!in_confirm_handshake_);
+  if (!SSL_in_early_data(ssl_.get())) {
+    return OK;
+  }
+
+  net_log_.BeginEvent(NetLogEventType::SSL_CONFIRM_HANDSHAKE);
+  next_handshake_state_ = STATE_HANDSHAKE;
+  in_confirm_handshake_ = true;
+  int rv = DoHandshakeLoop(OK);
+  if (rv == ERR_IO_PENDING) {
+    user_connect_callback_ = std::move(callback);
+  } else {
+    net_log_.EndEvent(NetLogEventType::SSL_CONFIRM_HANDSHAKE);
+    in_confirm_handshake_ = false;
+  }
+
+  return rv > OK ? OK : rv;
 }
 
 bool SSLClientSocketImpl::IsConnected() const {
@@ -847,6 +902,8 @@ int SSLClientSocketImpl::Init() {
     return ERR_UNEXPECTED;
   }
 
+  SSL_set_early_data_enabled(ssl_.get(), ssl_config_.early_data_enabled);
+
   switch (ssl_config_.tls13_variant) {
     case kTLS13VariantDraft23:
       SSL_set_tls13_variant(ssl_.get(), tls13_draft23);
@@ -928,9 +985,6 @@ int SSLClientSocketImpl::Init() {
   SSL_enable_signed_cert_timestamps(ssl_.get());
   SSL_enable_ocsp_stapling(ssl_.get());
 
-  if (cert_verifier_->SupportsOCSPStapling())
-    SSL_enable_ocsp_stapling(ssl_.get());
-
   // Configure BoringSSL to allow renegotiations. Once the initial handshake
   // completes, if renegotiations are not allowed, the default reject value will
   // be restored. This is done in this order to permit a BoringSSL
@@ -980,7 +1034,7 @@ int SSLClientSocketImpl::DoHandshake() {
     }
     if (ssl_error == SSL_ERROR_WANT_PRIVATE_KEY_OPERATION) {
       DCHECK(ssl_config_.client_private_key);
-      DCHECK_NE(kNoPendingResult, signature_result_);
+      DCHECK_NE(kSSLClientSocketNoPendingResult, signature_result_);
       next_handshake_state_ = STATE_HANDSHAKE;
       return ERR_IO_PENDING;
     }
@@ -1007,6 +1061,11 @@ int SSLClientSocketImpl::DoHandshake() {
 int SSLClientSocketImpl::DoHandshakeComplete(int result) {
   if (result < 0)
     return result;
+
+  if (in_confirm_handshake_) {
+    next_handshake_state_ = STATE_NONE;
+    return OK;
+  }
 
   if (ssl_config_.version_interference_probe) {
     DCHECK_LT(ssl_config_.version_max, TLS1_3_VERSION);
@@ -1199,15 +1258,6 @@ int SSLClientSocketImpl::DoVerifyCertComplete(int result) {
     bool ok = GetSSLInfo(&ssl_info);
     DCHECK(ok);
 
-    const uint8_t* ocsp_response_raw;
-    size_t ocsp_response_len;
-    SSL_get0_ocsp_response(ssl_.get(), &ocsp_response_raw, &ocsp_response_len);
-    base::StringPiece ocsp_response(
-        reinterpret_cast<const char*>(ocsp_response_raw), ocsp_response_len);
-
-    transport_security_state_->CheckExpectStaple(host_and_port_, ssl_info,
-                                                 ocsp_response);
-
     // See how feasible enforcing RSA key usage would be. See
     // https://crbug.com/795089.
     RSAKeyUsage rsa_key_usage = CheckRSAKeyUsage(
@@ -1240,7 +1290,12 @@ void SSLClientSocketImpl::DoConnectCallback(int rv) {
 void SSLClientSocketImpl::OnHandshakeIOComplete(int result) {
   int rv = DoHandshakeLoop(result);
   if (rv != ERR_IO_PENDING) {
-    LogConnectEndEvent(rv);
+    if (in_confirm_handshake_) {
+      in_confirm_handshake_ = false;
+      net_log_.EndEvent(NetLogEventType::SSL_CONFIRM_HANDSHAKE);
+    } else {
+      LogConnectEndEvent(rv);
+    }
     DoConnectCallback(rv);
   }
 }
@@ -1294,9 +1349,9 @@ int SSLClientSocketImpl::DoPayloadRead(IOBuffer* buf, int buf_len) {
   DCHECK(buf);
 
   int rv;
-  if (pending_read_error_ != kNoPendingResult) {
+  if (pending_read_error_ != kSSLClientSocketNoPendingResult) {
     rv = pending_read_error_;
-    pending_read_error_ = kNoPendingResult;
+    pending_read_error_ = kSSLClientSocketNoPendingResult;
     if (rv == 0) {
       net_log_.AddByteTransferEvent(NetLogEventType::SSL_SOCKET_BYTES_RECEIVED,
                                     rv, buf->data());
@@ -1327,14 +1382,6 @@ int SSLClientSocketImpl::DoPayloadRead(IOBuffer* buf, int buf_len) {
   // processed immediately, while the information still available in OpenSSL's
   // error queue.
   if (ssl_ret <= 0) {
-    // A zero return from SSL_read may mean any of:
-    // - The underlying BIO_read returned 0.
-    // - The peer sent a close_notify.
-    // - Any arbitrary error. https://crbug.com/466303
-    //
-    // TransportReadComplete converts the first to an ERR_CONNECTION_CLOSED
-    // error, so it does not occur. The second and third are distinguished by
-    // SSL_ERROR_ZERO_RETURN.
     pending_read_ssl_error_ = SSL_get_error(ssl_.get(), ssl_ret);
     if (pending_read_ssl_error_ == SSL_ERROR_ZERO_RETURN) {
       pending_read_error_ = 0;
@@ -1344,7 +1391,7 @@ int SSLClientSocketImpl::DoPayloadRead(IOBuffer* buf, int buf_len) {
     } else if (pending_read_ssl_error_ ==
                SSL_ERROR_WANT_PRIVATE_KEY_OPERATION) {
       DCHECK(ssl_config_.client_private_key);
-      DCHECK_NE(kNoPendingResult, signature_result_);
+      DCHECK_NE(kSSLClientSocketNoPendingResult, signature_result_);
       pending_read_error_ = ERR_IO_PENDING;
     } else {
       pending_read_error_ = MapLastOpenSSLError(
@@ -1368,12 +1415,12 @@ int SSLClientSocketImpl::DoPayloadRead(IOBuffer* buf, int buf_len) {
     // DoPayloadRead() - instead, let the call fall through to check SSL_read()
     // again. The transport may have data available by then.
     if (pending_read_error_ == ERR_IO_PENDING)
-      pending_read_error_ = kNoPendingResult;
+      pending_read_error_ = kSSLClientSocketNoPendingResult;
   } else {
     // No bytes were returned. Return the pending read error immediately.
-    DCHECK_NE(kNoPendingResult, pending_read_error_);
+    DCHECK_NE(kSSLClientSocketNoPendingResult, pending_read_error_);
     rv = pending_read_error_;
-    pending_read_error_ = kNoPendingResult;
+    pending_read_error_ = kSSLClientSocketNoPendingResult;
   }
 
   if (rv >= 0) {
@@ -1419,11 +1466,17 @@ void SSLClientSocketImpl::RetryAllOperations() {
   // so retry all operations for simplicity. (Otherwise, SSL_get_error for each
   // operation may be remembered to retry only the blocked ones.)
 
+  // Performing these callbacks may cause |this| to be deleted. If this
+  // happens, the other callbacks should not be invoked. Guard against this by
+  // holding a WeakPtr to |this| and ensuring it's still valid.
+  base::WeakPtr<SSLClientSocketImpl> guard(weak_factory_.GetWeakPtr());
   if (next_handshake_state_ == STATE_HANDSHAKE) {
     // In handshake phase. The parameter to OnHandshakeIOComplete is unused.
     OnHandshakeIOComplete(OK);
-    return;
   }
+
+  if (!guard.get())
+    return;
 
   int rv_read = ERR_IO_PENDING;
   int rv_write = ERR_IO_PENDING;
@@ -1438,10 +1491,6 @@ void SSLClientSocketImpl::RetryAllOperations() {
   if (user_write_buf_)
     rv_write = DoPayloadWrite();
 
-  // Performing the Read callback may cause |this| to be deleted. If this
-  // happens, the Write callback should not be invoked. Guard against this by
-  // holding a WeakPtr to |this| and ensuring it's still valid.
-  base::WeakPtr<SSLClientSocketImpl> guard(weak_factory_.GetWeakPtr());
   if (rv_read != ERR_IO_PENDING)
     DoReadCallback(rv_read);
 
@@ -1665,7 +1714,7 @@ ssl_private_key_result_t SSLClientSocketImpl::PrivateKeySignCallback(
     uint16_t algorithm,
     const uint8_t* in,
     size_t in_len) {
-  DCHECK_EQ(kNoPendingResult, signature_result_);
+  DCHECK_EQ(kSSLClientSocketNoPendingResult, signature_result_);
   DCHECK(signature_.empty());
   DCHECK(ssl_config_.client_private_key);
 
@@ -1685,7 +1734,7 @@ ssl_private_key_result_t SSLClientSocketImpl::PrivateKeyCompleteCallback(
     uint8_t* out,
     size_t* out_len,
     size_t max_out) {
-  DCHECK_NE(kNoPendingResult, signature_result_);
+  DCHECK_NE(kSSLClientSocketNoPendingResult, signature_result_);
   DCHECK(ssl_config_.client_private_key);
 
   if (signature_result_ == ERR_IO_PENDING)
@@ -1720,6 +1769,13 @@ void SSLClientSocketImpl::OnPrivateKeyComplete(
   // During a renegotiation, either Read or Write calls may be blocked on an
   // asynchronous private key operation.
   RetryAllOperations();
+}
+
+void SSLClientSocketImpl::InfoCallback(int type, int value) {
+  if (type == SSL_CB_HANDSHAKE_START && completed_connect_) {
+    UMA_HISTOGRAM_BOOLEAN("Net.SSLSecureRenegotiation",
+                          SSL_get_secure_renegotiation_support(ssl_.get()));
+  }
 }
 
 void SSLClientSocketImpl::MessageCallback(int is_write,

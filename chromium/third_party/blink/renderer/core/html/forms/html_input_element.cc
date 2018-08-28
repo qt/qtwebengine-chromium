@@ -32,17 +32,14 @@
 
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_event_listener.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
 #include "third_party/blink/renderer/core/dom/id_target_observer.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
-#include "third_party/blink/renderer/core/dom/sync_reattach_context.h"
 #include "third_party/blink/renderer/core/dom/v0_insertion_point.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
 #include "third_party/blink/renderer/core/editing/spellcheck/spell_checker.h"
@@ -71,6 +68,8 @@
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/language.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
@@ -293,8 +292,8 @@ bool HTMLInputElement::IsKeyboardFocusable() const {
   return input_type_->IsKeyboardFocusable();
 }
 
-bool HTMLInputElement::ShouldShowFocusRingOnMouseFocus() const {
-  return input_type_->ShouldShowFocusRingOnMouseFocus();
+bool HTMLInputElement::MayTriggerVirtualKeyboard() const {
+  return input_type_->MayTriggerVirtualKeyboard();
 }
 
 void HTMLInputElement::UpdateFocusAppearanceWithOptions(
@@ -615,7 +614,7 @@ void HTMLInputElement::setSelectionStartForBinding(
     bool is_null,
     ExceptionState& exception_state) {
   if (!input_type_->SupportsSelectionAPI()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The input element's type ('" +
                                           input_type_->FormControlType() +
                                           "') does not support selection.");
@@ -629,7 +628,7 @@ void HTMLInputElement::setSelectionEndForBinding(
     bool is_null,
     ExceptionState& exception_state) {
   if (!input_type_->SupportsSelectionAPI()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The input element's type ('" +
                                           input_type_->FormControlType() +
                                           "') does not support selection.");
@@ -642,7 +641,7 @@ void HTMLInputElement::setSelectionDirectionForBinding(
     const String& direction,
     ExceptionState& exception_state) {
   if (!input_type_->SupportsSelectionAPI()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The input element's type ('" +
                                           input_type_->FormControlType() +
                                           "') does not support selection.");
@@ -656,7 +655,7 @@ void HTMLInputElement::setSelectionRangeForBinding(
     unsigned end,
     ExceptionState& exception_state) {
   if (!input_type_->SupportsSelectionAPI()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The input element's type ('" +
                                           input_type_->FormControlType() +
                                           "') does not support selection.");
@@ -671,7 +670,7 @@ void HTMLInputElement::setSelectionRangeForBinding(
     const String& direction,
     ExceptionState& exception_state) {
   if (!input_type_->SupportsSelectionAPI()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The input element's type ('" +
                                           input_type_->FormControlType() +
                                           "') does not support selection.");
@@ -874,7 +873,6 @@ LayoutObject* HTMLInputElement::CreateLayoutObject(const ComputedStyle& style) {
 }
 
 void HTMLInputElement::AttachLayoutTree(AttachContext& context) {
-  SyncReattachContext reattach_context(context);
   TextControlElement::AttachLayoutTree(context);
   if (GetLayoutObject()) {
     input_type_->OnAttachWithLayoutObject();
@@ -1103,7 +1101,7 @@ void HTMLInputElement::setValue(const String& value,
                                 TextFieldEventBehavior event_behavior) {
   // FIXME: Remove type check.
   if (type() == InputTypeNames::file && !value.IsEmpty()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "This input element accepts a filename, "
                                       "which may only be programmatically set "
                                       "to the empty string.");
@@ -1125,7 +1123,7 @@ void HTMLInputElement::setValue(const String& value,
 
   // Set autofilled to false, as the value might have been set by the website.
   // If the field was autofilled, it'll be set to true from that method.
-  SetAutofilled(false);
+  SetAutofillState(WebAutofillState::kNotFilled);
 
   EventQueueScope scope;
   String sanitized_value = SanitizeValue(value);
@@ -1228,7 +1226,7 @@ void HTMLInputElement::SetValueFromRenderer(const String& value) {
   SetNeedsValidityCheck();
 
   // Clear autofill flag (and yellow background) on user edit.
-  SetAutofilled(false);
+  SetAutofillState(WebAutofillState::kNotFilled);
 }
 
 EventDispatchHandlingState* HTMLInputElement::PreDispatchEventHandler(
@@ -1450,7 +1448,8 @@ bool HTMLInputElement::Multiple() const {
 void HTMLInputElement::setSize(unsigned size, ExceptionState& exception_state) {
   if (size == 0) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "The value provided is 0, which is an invalid size.");
+        DOMExceptionCode::kIndexSizeError,
+        "The value provided is 0, which is an invalid size.");
   } else {
     SetUnsignedIntegralAttribute(sizeAttr, size ? size : kDefaultSize,
                                  kDefaultSize);
@@ -1816,7 +1815,7 @@ void ListAttributeTargetObserver::IdTargetChanged() {
 void HTMLInputElement::setRangeText(const String& replacement,
                                     ExceptionState& exception_state) {
   if (!input_type_->SupportsSelectionAPI()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The input element's type ('" +
                                           input_type_->FormControlType() +
                                           "') does not support selection.");
@@ -1832,7 +1831,7 @@ void HTMLInputElement::setRangeText(const String& replacement,
                                     const String& selection_mode,
                                     ExceptionState& exception_state) {
   if (!input_type_->SupportsSelectionAPI()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The input element's type ('" +
                                           input_type_->FormControlType() +
                                           "') does not support selection.");
@@ -1870,7 +1869,7 @@ bool HTMLInputElement::SetupDateTimeChooserParameters(
   }
 
   parameters.anchor_rect_in_screen =
-      GetDocument().View()->ContentsToScreen(PixelSnappedBoundingBox());
+      GetDocument().View()->FrameToScreen(PixelSnappedBoundingBox());
   parameters.double_value = input_type_->ValueAsDouble();
   parameters.is_anchor_element_rtl =
       input_type_view_->ComputedTextDirection() == TextDirection::kRtl;
@@ -1917,6 +1916,15 @@ bool HTMLInputElement::SupportsAutofocus() const {
 scoped_refptr<ComputedStyle> HTMLInputElement::CustomStyleForLayoutObject() {
   return input_type_view_->CustomStyleForLayoutObject(
       OriginalStyleForLayoutObject());
+}
+
+void HTMLInputElement::DidRecalcStyle(StyleRecalcChange change) {
+  TextControlElement::DidRecalcStyle(change);
+  if (change != kReattach)
+    return;
+  ComputedStyle* style = GetNonAttachedStyle();
+  if (style && style->Display() != EDisplay::kNone)
+    input_type_view_->StartResourceLoading();
 }
 
 void HTMLInputElement::DidNotifySubtreeInsertionsToDocument() {

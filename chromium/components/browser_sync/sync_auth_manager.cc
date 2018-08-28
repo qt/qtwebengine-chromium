@@ -8,7 +8,6 @@
 
 #include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
-#include "components/browser_sync/profile_sync_service.h"
 #include "components/sync/base/stop_source.h"
 #include "components/sync/base/sync_prefs.h"
 #include "components/sync/engine/sync_credentials.h"
@@ -51,27 +50,24 @@ constexpr net::BackoffEntry::Policy kRequestAccessTokenBackoffPolicy = {
 
 }  // namespace
 
-SyncAuthManager::SyncAuthManager(ProfileSyncService* sync_service,
-                                 syncer::SyncPrefs* sync_prefs,
-                                 identity::IdentityManager* identity_manager,
-                                 OAuth2TokenService* token_service)
-    : sync_service_(sync_service),
-      sync_prefs_(sync_prefs),
+SyncAuthManager::SyncAuthManager(
+    syncer::SyncPrefs* sync_prefs,
+    identity::IdentityManager* identity_manager,
+    const AccountStateChangedCallback& account_state_changed,
+    const CredentialsChangedCallback& credentials_changed)
+    : sync_prefs_(sync_prefs),
       identity_manager_(identity_manager),
-      token_service_(token_service),
+      account_state_changed_callback_(account_state_changed),
+      credentials_changed_callback_(credentials_changed),
       registered_for_auth_notifications_(false),
-      is_auth_in_progress_(false),
       request_access_token_backoff_(&kRequestAccessTokenBackoffPolicy),
       weak_ptr_factory_(this) {
-  DCHECK(sync_service_);
   DCHECK(sync_prefs_);
-  // |identity_manager_| and |token_service_| can be null if local Sync is
-  // enabled.
+  // |identity_manager_|can be null if local Sync is enabled.
 }
 
 SyncAuthManager::~SyncAuthManager() {
   if (registered_for_auth_notifications_) {
-    token_service_->RemoveObserver(this);
     identity_manager_->RemoveObserver(this);
   }
 }
@@ -79,19 +75,12 @@ SyncAuthManager::~SyncAuthManager() {
 void SyncAuthManager::RegisterForAuthNotifications() {
   DCHECK(!registered_for_auth_notifications_);
   identity_manager_->AddObserver(this);
-  token_service_->AddObserver(this);
   registered_for_auth_notifications_ = true;
 }
 
 AccountInfo SyncAuthManager::GetAuthenticatedAccountInfo() const {
   return identity_manager_ ? identity_manager_->GetPrimaryAccountInfo()
                            : AccountInfo();
-}
-
-bool SyncAuthManager::RefreshTokenIsAvailable() const {
-  std::string account_id = GetAuthenticatedAccountInfo().account_id;
-  return !account_id.empty() &&
-         token_service_->RefreshTokenIsAvailable(account_id);
 }
 
 const syncer::SyncTokenStatus& SyncAuthManager::GetSyncTokenStatus() const {
@@ -164,27 +153,19 @@ void SyncAuthManager::ConnectionStatusChanged(syncer::ConnectionStatus status) {
       if (!request_access_token_retry_timer_.IsRunning()) {
         request_access_token_backoff_.Reset();
       }
-      ClearAuthError();
+      last_auth_error_ = GoogleServiceAuthError::AuthErrorNone();
       break;
     case syncer::CONNECTION_SERVER_ERROR:
-      UpdateAuthErrorState(
-          GoogleServiceAuthError(GoogleServiceAuthError::CONNECTION_FAILED));
+      // TODO(crbug.com/839834): Verify whether CONNECTION_FAILED is really an
+      // appropriate auth error here; maybe SERVICE_ERROR would be better?
+      last_auth_error_ =
+          GoogleServiceAuthError(GoogleServiceAuthError::CONNECTION_FAILED);
       break;
     case syncer::CONNECTION_NOT_ATTEMPTED:
       // The connection status should never change to "not attempted".
       NOTREACHED();
       break;
   }
-}
-
-void SyncAuthManager::UpdateAuthErrorState(
-    const GoogleServiceAuthError& error) {
-  is_auth_in_progress_ = false;
-  last_auth_error_ = error;
-}
-
-void SyncAuthManager::ClearAuthError() {
-  UpdateAuthErrorState(GoogleServiceAuthError::AuthErrorNone());
 }
 
 void SyncAuthManager::ClearAccessTokenAndRequest() {
@@ -196,91 +177,89 @@ void SyncAuthManager::ClearAccessTokenAndRequest() {
 }
 
 void SyncAuthManager::Clear() {
-  ClearAuthError();
+  // TODO(crbug.com/839834): Clearing the auth error here isn't quite right.
+  // It makes sense to clear any auth error we got from the Sync server, but we
+  // should probably retain any errors from the identity manager.
+  last_auth_error_ = GoogleServiceAuthError::AuthErrorNone();
   ClearAccessTokenAndRequest();
 }
 
 void SyncAuthManager::OnPrimaryAccountSet(
     const AccountInfo& primary_account_info) {
-  // Track the fact that we're still waiting for auth to complete.
-  DCHECK(!is_auth_in_progress_);
-  is_auth_in_progress_ = true;
-
-  sync_service_->OnPrimaryAccountSet();
-
-  if (token_service_->RefreshTokenIsAvailable(
-          primary_account_info.account_id)) {
-    OnRefreshTokenAvailable(primary_account_info.account_id);
-  }
+  account_state_changed_callback_.Run();
 }
 
 void SyncAuthManager::OnPrimaryAccountCleared(
     const AccountInfo& previous_primary_account_info) {
   UMA_HISTOGRAM_ENUMERATION("Sync.StopSource", syncer::SIGN_OUT,
                             syncer::STOP_SOURCE_LIMIT);
-  is_auth_in_progress_ = false;
-  sync_service_->OnPrimaryAccountCleared();
+  account_state_changed_callback_.Run();
 }
 
-void SyncAuthManager::OnRefreshTokenAvailable(const std::string& account_id) {
-  if (account_id != GetAuthenticatedAccountInfo().account_id) {
+void SyncAuthManager::OnRefreshTokenUpdatedForAccount(
+    const AccountInfo& account_info,
+    bool is_valid) {
+  if (account_info.account_id != GetAuthenticatedAccountInfo().account_id) {
     return;
   }
 
-  GoogleServiceAuthError token_error =
-      token_service_->GetAuthError(GetAuthenticatedAccountInfo().account_id);
-  if (token_error == GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
-                         GoogleServiceAuthError::InvalidGaiaCredentialsReason::
-                             CREDENTIALS_REJECTED_BY_CLIENT)) {
-    is_auth_in_progress_ = false;
-    // When the refresh token is replaced by a new token with a
-    // CREDENTIALS_REJECTED_BY_CLIENT error, Sync must be stopped immediately,
-    // even if the current access token is still valid. This happens e.g. when
-    // the user signs out of the web with Dice enabled.
-    // It is not necessary to do this when the refresh token is
-    // CREDENTIALS_REJECTED_BY_SERVER, because in that case the access token
-    // will be rejected by the server too.
-    // We only do this in OnRefreshTokensLoaded(), as opposed to
-    // OAuth2TokenService::Observer::OnAuthErrorChanged(), because
-    // CREDENTIALS_REJECTED_BY_CLIENT is only set by the signin component when
-    // the refresh token is created.
+  if (!is_valid) {
+    // When the refresh token is replaced by an invalid token, Sync must be
+    // stopped immediately, even if the current access token is still valid.
+    // This happens e.g. when the user signs out of the web with Dice enabled.
     ClearAccessTokenAndRequest();
-    // TODO(treib): Should we also set our auth error state?
 
-    sync_service_->OnRefreshTokenRevoked();
-    // TODO(treib): We can probably early-out here - no point in also calling
-    // OnRefreshTokenAvailable on the ProfileSyncService.
-  }
+    // Set the last auth error to the one that is specified in
+    // google_service_auth_error.h to correspond to this case (token was
+    // invalidated client-side).
+    // TODO(blundell): Long-term, it would be nicer if Sync didn't have to
+    // cache signin-level authentication errors.
+    GoogleServiceAuthError invalid_token_error =
+        GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+            GoogleServiceAuthError::InvalidGaiaCredentialsReason::
+                CREDENTIALS_REJECTED_BY_CLIENT);
+    last_auth_error_ = invalid_token_error;
 
-  sync_service_->OnRefreshTokenAvailable();
-}
-
-void SyncAuthManager::OnRefreshTokenRevoked(const std::string& account_id) {
-  if (account_id != GetAuthenticatedAccountInfo().account_id) {
+    credentials_changed_callback_.Run();
     return;
   }
 
-  UpdateAuthErrorState(
-      GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
+  // If we already have an access token or previously failed to retrieve one
+  // (and hence the retry timer is running), then request a fresh access token
+  // now. This will also drop the current access token.
+  if (!access_token_.empty() || request_access_token_retry_timer_.IsRunning()) {
+    DCHECK(!ongoing_access_token_fetch_);
+    RequestAccessToken();
+  } else if (last_auth_error_ != GoogleServiceAuthError::AuthErrorNone()) {
+    // If we were in an auth error state, then now's also a good time to try
+    // again. In this case it's possible that there is already a pending
+    // request, in which case RequestAccessToken will simply do nothing.
+    RequestAccessToken();
+  }
+}
+
+void SyncAuthManager::OnRefreshTokenRemovedForAccount(
+    const AccountInfo& account_info) {
+  if (account_info.account_id != GetAuthenticatedAccountInfo().account_id) {
+    return;
+  }
+
+  // TODO(crbug.com/839834): REQUEST_CANCELED doesn't seem like the right auth
+  // error to use here. Maybe INVALID_GAIA_CREDENTIALS?
+  last_auth_error_ =
+      GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED);
 
   ClearAccessTokenAndRequest();
 
-  sync_service_->OnRefreshTokenRevoked();
-}
-
-void SyncAuthManager::OnRefreshTokensLoaded() {
-  // This notification gets fired when OAuth2TokenService loads the tokens from
-  // storage. Initialize the engine if sync is enabled. If the sync token was
-  // not loaded, GetCredentials() will generate invalid credentials to cause the
-  // engine to generate an auth error (https://crbug.com/121755).
-  // TODO(treib): Is this necessary? Either we actually have a refresh token, in
-  // which case this was already called from OnRefreshTokenAvailable above, or
-  // there is no refresh token, in which case Sync can't start anyway.
-  sync_service_->OnRefreshTokenAvailable();
+  credentials_changed_callback_.Run();
 }
 
 bool SyncAuthManager::IsRetryingAccessTokenFetchForTest() const {
   return request_access_token_retry_timer_.IsRunning();
+}
+
+void SyncAuthManager::ResetRequestAccessTokenBackoffForTest() {
+  request_access_token_backoff_.Reset();
 }
 
 void SyncAuthManager::RequestAccessToken() {
@@ -297,38 +276,39 @@ void SyncAuthManager::RequestAccessToken() {
   // Invalidate previous token, otherwise token service will return the same
   // token again.
   if (!access_token_.empty()) {
-    identity_manager_->RemoveAccessTokenFromCache(GetAuthenticatedAccountInfo(),
-                                                  oauth2_scopes, access_token_);
+    identity_manager_->RemoveAccessTokenFromCache(
+        GetAuthenticatedAccountInfo().account_id, oauth2_scopes, access_token_);
+
+    access_token_.clear();
+    credentials_changed_callback_.Run();
   }
 
-  access_token_.clear();
 
   token_status_.token_request_time = base::Time::Now();
   token_status_.token_receive_time = base::Time();
   token_status_.next_token_request_time = base::Time();
-  ongoing_access_token_fetch_ =
-      identity_manager_->CreateAccessTokenFetcherForPrimaryAccount(
-          kSyncOAuthConsumerName, oauth2_scopes,
-          base::BindOnce(&SyncAuthManager::AccessTokenFetched,
-                         base::Unretained(this)),
-          identity::PrimaryAccountAccessTokenFetcher::Mode::kImmediate);
+  ongoing_access_token_fetch_ = std::make_unique<
+      identity::PrimaryAccountAccessTokenFetcher>(
+      kSyncOAuthConsumerName, identity_manager_, oauth2_scopes,
+      base::BindOnce(&SyncAuthManager::AccessTokenFetched,
+                     base::Unretained(this)),
+      identity::PrimaryAccountAccessTokenFetcher::Mode::kWaitUntilAvailable);
 }
 
-void SyncAuthManager::AccessTokenFetched(const GoogleServiceAuthError& error,
-                                         const std::string& access_token) {
+void SyncAuthManager::AccessTokenFetched(
+    GoogleServiceAuthError error,
+    identity::AccessTokenInfo access_token_info) {
   DCHECK(ongoing_access_token_fetch_);
+  ongoing_access_token_fetch_.reset();
 
-  std::unique_ptr<identity::PrimaryAccountAccessTokenFetcher> fetcher_deleter(
-      std::move(ongoing_access_token_fetch_));
-
-  access_token_ = access_token;
+  access_token_ = access_token_info.token;
   token_status_.last_get_token_error = error;
 
   switch (error.state()) {
     case GoogleServiceAuthError::NONE:
       token_status_.token_receive_time = base::Time::Now();
       sync_prefs_->SetSyncAuthError(false);
-      ClearAuthError();
+      last_auth_error_ = GoogleServiceAuthError::AuthErrorNone();
       break;
     case GoogleServiceAuthError::CONNECTION_FAILED:
     case GoogleServiceAuthError::REQUEST_CANCELED:
@@ -346,14 +326,14 @@ void SyncAuthManager::AccessTokenFetched(const GoogleServiceAuthError& error,
       break;
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS:
       sync_prefs_->SetSyncAuthError(true);
-      UpdateAuthErrorState(error);
+      last_auth_error_ = error;
       break;
     default:
       LOG(ERROR) << "Unexpected persistent error: " << error.ToString();
-      UpdateAuthErrorState(error);
+      last_auth_error_ = error;
   }
 
-  sync_service_->AccessTokenFetched(error);
+  credentials_changed_callback_.Run();
 }
 
 }  // namespace browser_sync

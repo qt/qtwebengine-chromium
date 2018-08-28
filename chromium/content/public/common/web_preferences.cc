@@ -187,13 +187,16 @@ WebPreferences::WebPreferences()
       user_gesture_required_for_presentation(true),
       text_track_margin_percentage(0.0f),
       immersive_mode_enabled(false),
-#if defined(OS_ANDROID)
+#if !defined(OS_ANDROID)
+      text_autosizing_enabled(false),
+      double_tap_to_zoom_enabled(false),
+#else
       text_autosizing_enabled(true),
+      double_tap_to_zoom_enabled(true),
       font_scale_factor(1.0f),
       device_scale_adjustment(1.0f),
       force_enable_zoom(false),
       fullscreen_supported(true),
-      double_tap_to_zoom_enabled(true),
       support_deprecated_target_density_dpi(false),
       use_legacy_background_size_shorthand_behavior(false),
       wide_viewport_quirk(false),
@@ -233,7 +236,7 @@ WebPreferences::WebPreferences()
       do_not_update_selection_on_mutating_selection_range(false),
       autoplay_policy(AutoplayPolicy::kDocumentUserActivationRequired),
       low_priority_iframes_threshold(net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN),
-      picture_in_picture_enabled(false) {
+      picture_in_picture_enabled(true) {
   standard_font_family_map[kCommonScript] =
       base::ASCIIToUTF16("Times New Roman");
   fixed_font_family_map[kCommonScript] = base::ASCIIToUTF16("Courier New");

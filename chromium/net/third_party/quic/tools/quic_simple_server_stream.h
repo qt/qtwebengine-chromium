@@ -15,7 +15,7 @@
 #include "net/third_party/quic/tools/quic_simple_server_backend.h"
 #include "net/third_party/spdy/core/spdy_framer.h"
 
-namespace net {
+namespace quic {
 
 namespace test {
 class QuicSimpleServerStreamPeer;
@@ -74,6 +74,10 @@ class QuicSimpleServerStream : public QuicSpdyServerStreamBase,
   // for the body.
   void SendNotFoundResponse();
 
+  // Sends the response header and body, but not the fin.
+  void SendIncompleteResponse(spdy::SpdyHeaderBlock response_headers,
+                              QuicStringPiece body);
+
   void SendHeadersAndBody(spdy::SpdyHeaderBlock response_headers,
                           QuicStringPiece body);
   void SendHeadersAndBodyAndTrailers(spdy::SpdyHeaderBlock response_headers,
@@ -97,6 +101,6 @@ class QuicSimpleServerStream : public QuicSpdyServerStreamBase,
   DISALLOW_COPY_AND_ASSIGN(QuicSimpleServerStream);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_TOOLS_QUIC_SIMPLE_SERVER_STREAM_H_

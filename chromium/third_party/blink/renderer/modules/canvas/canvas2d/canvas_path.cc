@@ -35,8 +35,7 @@
 
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -55,18 +54,22 @@ void CanvasPath::closePath() {
 void CanvasPath::moveTo(float x, float y) {
   if (!std::isfinite(x) || !std::isfinite(y))
     return;
-  if (!IsTransformInvertible())
+  if (!IsTransformInvertible()) {
+    path_.MoveTo(Transform().MapPoint(FloatPoint(x, y)));
     return;
+  }
   path_.MoveTo(FloatPoint(x, y));
 }
 
 void CanvasPath::lineTo(float x, float y) {
   if (!std::isfinite(x) || !std::isfinite(y))
     return;
-  if (!IsTransformInvertible())
-    return;
-
   FloatPoint p1 = FloatPoint(x, y);
+
+  if (!IsTransformInvertible()) {
+    p1 = Transform().MapPoint(p1);
+  }
+
   if (!path_.HasCurrentPoint())
     path_.MoveTo(p1);
 
@@ -77,13 +80,16 @@ void CanvasPath::quadraticCurveTo(float cpx, float cpy, float x, float y) {
   if (!std::isfinite(cpx) || !std::isfinite(cpy) || !std::isfinite(x) ||
       !std::isfinite(y))
     return;
-  if (!IsTransformInvertible())
-    return;
-  if (!path_.HasCurrentPoint())
-    path_.MoveTo(FloatPoint(cpx, cpy));
-
   FloatPoint p1 = FloatPoint(x, y);
   FloatPoint cp = FloatPoint(cpx, cpy);
+
+  if (!IsTransformInvertible()) {
+    p1 = Transform().MapPoint(p1);
+    cp = Transform().MapPoint(cp);
+  }
+
+  if (!path_.HasCurrentPoint())
+    path_.MoveTo(FloatPoint(cpx, cpy));
 
   path_.AddQuadCurveTo(cp, p1);
 }
@@ -97,14 +103,18 @@ void CanvasPath::bezierCurveTo(float cp1x,
   if (!std::isfinite(cp1x) || !std::isfinite(cp1y) || !std::isfinite(cp2x) ||
       !std::isfinite(cp2y) || !std::isfinite(x) || !std::isfinite(y))
     return;
-  if (!IsTransformInvertible())
-    return;
-  if (!path_.HasCurrentPoint())
-    path_.MoveTo(FloatPoint(cp1x, cp1y));
 
   FloatPoint p1 = FloatPoint(x, y);
   FloatPoint cp1 = FloatPoint(cp1x, cp1y);
   FloatPoint cp2 = FloatPoint(cp2x, cp2y);
+
+  if (!IsTransformInvertible()) {
+    p1 = Transform().MapPoint(p1);
+    cp1 = Transform().MapPoint(cp1);
+    cp2 = Transform().MapPoint(cp2);
+  }
+  if (!path_.HasCurrentPoint())
+    path_.MoveTo(FloatPoint(cp1x, cp1y));
 
   path_.AddBezierCurveTo(cp1, cp2, p1);
 }
@@ -121,16 +131,18 @@ void CanvasPath::arcTo(float x1,
 
   if (r < 0) {
     exception_state.ThrowDOMException(
-        kIndexSizeError,
+        DOMExceptionCode::kIndexSizeError,
         "The radius provided (" + String::Number(r) + ") is negative.");
     return;
   }
 
-  if (!IsTransformInvertible())
-    return;
-
   FloatPoint p1 = FloatPoint(x1, y1);
   FloatPoint p2 = FloatPoint(x2, y2);
+
+  if (!IsTransformInvertible()) {
+    p1 = Transform().MapPoint(p1);
+    p2 = Transform().MapPoint(p2);
+  }
 
   if (!path_.HasCurrentPoint())
     path_.MoveTo(p1);
@@ -154,10 +166,10 @@ float AdjustEndAngle(float start_angle, float end_angle, bool anticlockwise) {
    * from the ellipse's semi-major axis, acts as both the start point and the
    * end point.
    */
-  if (!anticlockwise && end_angle - start_angle >= twoPiFloat) {
-    new_end_angle = start_angle + twoPiFloat;
-  } else if (anticlockwise && start_angle - end_angle >= twoPiFloat) {
-    new_end_angle = start_angle - twoPiFloat;
+  if (!anticlockwise && end_angle - start_angle >= kTwoPiFloat) {
+    new_end_angle = start_angle + kTwoPiFloat;
+  } else if (anticlockwise && start_angle - end_angle >= kTwoPiFloat) {
+    new_end_angle = start_angle - kTwoPiFloat;
 
     /*
      * Otherwise, the arc is the path along the circumference of this ellipse
@@ -173,11 +185,11 @@ float AdjustEndAngle(float start_angle, float end_angle, bool anticlockwise) {
      * We preserve backward-compatibility.
      */
   } else if (!anticlockwise && start_angle > end_angle) {
-    new_end_angle =
-        start_angle + (twoPiFloat - fmodf(start_angle - end_angle, twoPiFloat));
+    new_end_angle = start_angle +
+                    (kTwoPiFloat - fmodf(start_angle - end_angle, kTwoPiFloat));
   } else if (anticlockwise && start_angle < end_angle) {
-    new_end_angle =
-        start_angle - (twoPiFloat - fmodf(end_angle - start_angle, twoPiFloat));
+    new_end_angle = start_angle -
+                    (kTwoPiFloat - fmodf(end_angle - start_angle, kTwoPiFloat));
   }
 
   DCHECK(EllipseIsRenderable(start_angle, new_end_angle));
@@ -196,21 +208,22 @@ inline FloatPoint GetPointOnEllipse(float radius_x,
 
 void CanonicalizeAngle(float* start_angle, float* end_angle) {
   // Make 0 <= startAngle < 2*PI
-  float new_start_angle = fmodf(*start_angle, twoPiFloat);
+  float new_start_angle = fmodf(*start_angle, kTwoPiFloat);
 
   if (new_start_angle < 0) {
-    new_start_angle += twoPiFloat;
+    new_start_angle += kTwoPiFloat;
     // Check for possible catastrophic cancellation in cases where
     // newStartAngle was a tiny negative number (c.f. crbug.com/503422)
-    if (new_start_angle >= twoPiFloat)
-      new_start_angle -= twoPiFloat;
+    if (new_start_angle >= kTwoPiFloat)
+      new_start_angle -= kTwoPiFloat;
   }
 
   float delta = new_start_angle - *start_angle;
   *start_angle = new_start_angle;
   *end_angle = *end_angle + delta;
 
-  DCHECK(new_start_angle >= 0 && new_start_angle < twoPiFloat);
+  DCHECK_GE(new_start_angle, 0);
+  DCHECK_LT(new_start_angle, kTwoPiFloat);
 }
 
 /*
@@ -256,7 +269,8 @@ void DegenerateEllipse(CanvasPath* path,
                        float end_angle,
                        bool anticlockwise) {
   DCHECK(EllipseIsRenderable(start_angle, end_angle));
-  DCHECK(start_angle >= 0 && start_angle < twoPiFloat);
+  DCHECK_GE(start_angle, 0);
+  DCHECK_LT(start_angle, kTwoPiFloat);
   DCHECK((anticlockwise && (start_angle - end_angle) >= 0) ||
          (!anticlockwise && (end_angle - start_angle) >= 0));
 
@@ -272,19 +286,19 @@ void DegenerateEllipse(CanvasPath* path,
     return;
 
   if (!anticlockwise) {
-    // startAngle - fmodf(startAngle, piOverTwoFloat) + piOverTwoFloat is the
-    // one of (0, 0.5Pi, Pi, 1.5Pi, 2Pi) that is the closest to startAngle on
-    // the clockwise direction.
-    for (float angle =
-             start_angle - fmodf(start_angle, piOverTwoFloat) + piOverTwoFloat;
-         angle < end_angle; angle += piOverTwoFloat) {
+    // start_angle - fmodf(start_angle, kPiOverTwoFloat) + kPiOverTwoFloat is
+    // the one of (0, 0.5Pi, Pi, 1.5Pi, 2Pi) that is the closest to start_angle
+    // on the clockwise direction.
+    for (float angle = start_angle - fmodf(start_angle, kPiOverTwoFloat) +
+                       kPiOverTwoFloat;
+         angle < end_angle; angle += kPiOverTwoFloat) {
       LineToFloatPoint(
           path, center + rotation_matrix.MapPoint(
                              GetPointOnEllipse(radius_x, radius_y, angle)));
     }
   } else {
-    for (float angle = start_angle - fmodf(start_angle, piOverTwoFloat);
-         angle > end_angle; angle -= piOverTwoFloat) {
+    for (float angle = start_angle - fmodf(start_angle, kPiOverTwoFloat);
+         angle > end_angle; angle -= kPiOverTwoFloat) {
       LineToFloatPoint(
           path, center + rotation_matrix.MapPoint(
                              GetPointOnEllipse(radius_x, radius_y, angle)));
@@ -310,7 +324,7 @@ void CanvasPath::arc(float x,
 
   if (radius < 0) {
     exception_state.ThrowDOMException(
-        kIndexSizeError,
+        DOMExceptionCode::kIndexSizeError,
         "The radius provided (" + String::Number(radius) + ") is negative.");
     return;
   }
@@ -346,15 +360,17 @@ void CanvasPath::ellipse(float x,
     return;
 
   if (radius_x < 0) {
-    exception_state.ThrowDOMException(
-        kIndexSizeError, "The major-axis radius provided (" +
-                             String::Number(radius_x) + ") is negative.");
+    exception_state.ThrowDOMException(DOMExceptionCode::kIndexSizeError,
+                                      "The major-axis radius provided (" +
+                                          String::Number(radius_x) +
+                                          ") is negative.");
     return;
   }
   if (radius_y < 0) {
-    exception_state.ThrowDOMException(
-        kIndexSizeError, "The minor-axis radius provided (" +
-                             String::Number(radius_y) + ") is negative.");
+    exception_state.ThrowDOMException(DOMExceptionCode::kIndexSizeError,
+                                      "The minor-axis radius provided (" +
+                                          String::Number(radius_y) +
+                                          ") is negative.");
     return;
   }
 

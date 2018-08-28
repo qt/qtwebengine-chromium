@@ -8,12 +8,10 @@
 #include "net/third_party/quic/core/quic_utils.h"
 #include "net/third_party/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
-#include "net/third_party/quic/platform/api/quic_logging.h"
+#include "net/third_party/quic/platform/api/quic_str_cat.h"
+#include "net/third_party/quic/platform/api/quic_text_utils.h"
 
-namespace net {
-
-#define ENDPOINT \
-  (perspective_ == Perspective::IS_SERVER ? "Server: " : "Client: ")
+namespace quic {
 
 QuicDataReader::QuicDataReader(const char* data,
                                const size_t len,
@@ -279,4 +277,15 @@ bool QuicDataReader::ReadVarIntStreamId(QuicStreamId* result) {
   *result = static_cast<QuicStreamId>(temp_uint64);
   return true;
 }
-}  // namespace net
+
+QuicString QuicDataReader::DebugString() const {
+  return QuicStrCat(" { length: ", len_, ", position: ", pos_, " }");
+}
+
+QuicString QuicDataReader::VerboseDebugString() const {
+  return QuicStrCat(" {length: ", len_, ", position: ", pos_, " data:\n",
+                    QuicTextUtils::HexDump(QuicStringPiece(data_, len_)), " }");
+}
+
+#undef ENDPOINT  // undef for jumbo builds
+}  // namespace quic

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "cc/layers/picture_layer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/web/web_frame_content_dumper.h"
 #include "third_party/blink/public/web/web_hit_test_result.h"
@@ -20,6 +21,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/compositing/composited_layer_mapping.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_compositor.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
@@ -36,7 +38,7 @@ using namespace HTMLNames;
 
 // NOTE: This test uses <iframe sandbox> to create cross origin iframes.
 
-class FrameThrottlingTest : public SimTest, public PaintTestConfigurations {
+class FrameThrottlingTest : public PaintTestConfigurations, public SimTest {
  protected:
   void SetUp() override {
     SimTest::SetUp();
@@ -189,7 +191,8 @@ TEST_P(FrameThrottlingTest, IntersectionObservationOverridesThrottling) {
   EXPECT_TRUE(inner_frame_document->View()->ShouldThrottleRendering());
 
   // An intersection observation overrides...
-  inner_frame_document->View()->SetNeedsIntersectionObservation();
+  inner_frame_document->View()->SetNeedsIntersectionObservation(
+      LocalFrameView::kRequired);
   EXPECT_FALSE(inner_frame_document->View()->ShouldThrottleRendering());
   inner_frame_document->View()->ScheduleAnimation();
 
@@ -394,11 +397,8 @@ TEST_P(FrameThrottlingTest, UnthrottlingTriggersRepaint) {
 
   // Scroll down to unthrottle the frame. The first frame we composite after
   // scrolling won't contain the frame yet, but will schedule another repaint.
-  WebView()
-      .MainFrameImpl()
-      ->GetFrameView()
-      ->LayoutViewportScrollableArea()
-      ->SetScrollOffset(ScrollOffset(0, 480), kProgrammaticScroll);
+  WebView().MainFrameImpl()->GetFrameView()->LayoutViewport()->SetScrollOffset(
+      ScrollOffset(0, 480), kProgrammaticScroll);
   auto commands = CompositeFrame();
   EXPECT_FALSE(commands.Contains(SimCanvas::kRect, "green"));
 
@@ -436,11 +436,8 @@ TEST_P(FrameThrottlingTest, UnthrottlingTriggersRepaintInCompositedChild) {
 
   // Scroll down to unthrottle the frame. The first frame we composite after
   // scrolling won't contain the frame yet, but will schedule another repaint.
-  WebView()
-      .MainFrameImpl()
-      ->GetFrameView()
-      ->LayoutViewportScrollableArea()
-      ->SetScrollOffset(ScrollOffset(0, 480), kProgrammaticScroll);
+  WebView().MainFrameImpl()->GetFrameView()->LayoutViewport()->SetScrollOffset(
+      ScrollOffset(0, 480), kProgrammaticScroll);
   auto commands = CompositeFrame();
   EXPECT_FALSE(commands.Contains(SimCanvas::kRect, "green"));
 
@@ -472,11 +469,8 @@ TEST_P(FrameThrottlingTest, ChangeStyleInThrottledFrame) {
                                                          "background: green");
 
   // Scroll down to unthrottle the frame.
-  WebView()
-      .MainFrameImpl()
-      ->GetFrameView()
-      ->LayoutViewportScrollableArea()
-      ->SetScrollOffset(ScrollOffset(0, 480), kProgrammaticScroll);
+  WebView().MainFrameImpl()->GetFrameView()->LayoutViewport()->SetScrollOffset(
+      ScrollOffset(0, 480), kProgrammaticScroll);
   auto commands = CompositeFrame();
   EXPECT_FALSE(commands.Contains(SimCanvas::kRect, "red"));
   EXPECT_FALSE(commands.Contains(SimCanvas::kRect, "green"));
@@ -593,26 +587,24 @@ TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledFrame) {
   frame_element->contentDocument()->body()->setAttribute(styleAttr,
                                                          "background: green");
   // Change root frame's layout so that the next lifecycle update will call
-  // ScrollingCoordinator::updateAfterCompositingChangeIfNeeded().
+  // ScrollingCoordinator::UpdateAfterPaint().
   GetDocument().body()->setAttribute(styleAttr, "margin: 20px");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             frame_element->contentDocument()->Lifecycle().GetState());
 
   DocumentLifecycle::AllowThrottlingScope throttling_scope(
       GetDocument().Lifecycle());
-  // This will call ScrollingCoordinator::updateAfterCompositingChangeIfNeeded()
-  // and should not cause assert failure about
-  // isAllowedToQueryCompositingState() in the throttled frame.
+  // This will call ScrollingCoordinator::UpdateAfterPaint() and should not
+  // cause assert failure about isAllowedToQueryCompositingState() in the
+  // throttled frame.
   GetDocument().View()->UpdateAllLifecyclePhases();
   test::RunPendingTasks();
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             frame_element->contentDocument()->Lifecycle().GetState());
   // The fixed background in the throttled sub frame should not cause main
   // thread scrolling.
-  EXPECT_FALSE(GetDocument()
-                   .View()
-                   ->LayoutViewportScrollableArea()
-                   ->ShouldScrollOnMainThread());
+  EXPECT_FALSE(
+      GetDocument().View()->LayoutViewport()->ShouldScrollOnMainThread());
 
   // Make the frame visible by changing its transform. This doesn't cause a
   // layout, but should still unthrottle the frame.
@@ -623,12 +615,10 @@ TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledFrame) {
   // The fixed background in the throttled sub frame should be considered.
   EXPECT_TRUE(frame_element->contentDocument()
                   ->View()
-                  ->LayoutViewportScrollableArea()
+                  ->LayoutViewport()
                   ->ShouldScrollOnMainThread());
-  EXPECT_FALSE(GetDocument()
-                   .View()
-                   ->LayoutViewportScrollableArea()
-                   ->ShouldScrollOnMainThread());
+  EXPECT_FALSE(
+      GetDocument().View()->LayoutViewport()->ShouldScrollOnMainThread());
 }
 
 TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledLayer) {
@@ -661,16 +651,16 @@ TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledLayer) {
   frame_element->contentDocument()->body()->setAttribute(styleAttr,
                                                          "background: green");
   // Change root frame's layout so that the next lifecycle update will call
-  // ScrollingCoordinator::updateAfterCompositingChangeIfNeeded().
+  // ScrollingCoordinator::UpdateAfterPaint().
   GetDocument().body()->setAttribute(styleAttr, "margin: 20px");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             frame_element->contentDocument()->Lifecycle().GetState());
 
   DocumentLifecycle::AllowThrottlingScope throttling_scope(
       GetDocument().Lifecycle());
-  // This will call ScrollingCoordinator::updateAfterCompositingChangeIfNeeded()
-  // and should not cause assert failure about
-  // isAllowedToQueryCompositingState() in the throttled frame.
+  // This will call ScrollingCoordinator::UpdateAfterPaint() and should not
+  // cause an assert failure about isAllowedToQueryCompositingState() in the
+  // throttled frame.
   GetDocument().View()->UpdateAllLifecyclePhases();
   test::RunPendingTasks();
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
@@ -703,16 +693,16 @@ TEST_P(FrameThrottlingTest,
   frame_element->contentDocument()->body()->setAttribute(styleAttr,
                                                          "background: green");
   // Change root frame's layout so that the next lifecycle update will call
-  // ScrollingCoordinator::updateAfterCompositingChangeIfNeeded().
+  // ScrollingCoordinator::UpdateAfterPaint().
   GetDocument().body()->setAttribute(styleAttr, "margin: 20px");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             frame_element->contentDocument()->Lifecycle().GetState());
 
   DocumentLifecycle::AllowThrottlingScope throttling_scope(
       GetDocument().Lifecycle());
-  // This will call ScrollingCoordinator::updateAfterCompositingChangeIfNeeded()
-  // and should not cause assert failure about
-  // isAllowedToQueryCompositingState() in the throttled frame.
+  // This will call ScrollingCoordinator::UpdateAfterPaint() and should not
+  // cause an assert failure about isAllowedToQueryCompositingState() in the
+  // throttled frame.
   CompositeFrame();
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             frame_element->contentDocument()->Lifecycle().GetState());
@@ -721,12 +711,21 @@ TEST_P(FrameThrottlingTest,
   // layout, but should still unthrottle the frame.
   frame_element->setAttribute(styleAttr, "transform: translateY(0px)");
   CompositeFrame();  // Unthrottle the frame.
+
+  EXPECT_FALSE(
+      frame_element->contentDocument()->View()->ShouldThrottleRendering());
   CompositeFrame();  // Handle the pending visual update of the unthrottled
                      // frame.
   EXPECT_EQ(DocumentLifecycle::kPaintClean,
             frame_element->contentDocument()->Lifecycle().GetState());
-  EXPECT_TRUE(
-      frame_element->contentDocument()->View()->UsesCompositedScrolling());
+  // TODO(szager): Re-enable this check for SPv2 when it properly sets the
+  // bits for composited scrolling.
+  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+    EXPECT_TRUE(frame_element->contentDocument()
+                    ->View()
+                    ->LayoutViewport()
+                    ->UsesCompositedScrolling());
+  }
 }
 
 TEST_P(FrameThrottlingTest, UnthrottleByTransformingWithoutLayout) {

@@ -30,7 +30,7 @@
 
 using std::string;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -165,7 +165,7 @@ MockableQuicClient::MockableQuicClient(
     QuicSocketAddress server_address,
     const QuicServerId& server_id,
     const ParsedQuicVersionVector& supported_versions,
-    EpollServer* epoll_server)
+    net::EpollServer* epoll_server)
     : MockableQuicClient(server_address,
                          server_id,
                          QuicConfig(),
@@ -177,7 +177,7 @@ MockableQuicClient::MockableQuicClient(
     const QuicServerId& server_id,
     const QuicConfig& config,
     const ParsedQuicVersionVector& supported_versions,
-    EpollServer* epoll_server)
+    net::EpollServer* epoll_server)
     : MockableQuicClient(server_address,
                          server_id,
                          config,
@@ -190,7 +190,7 @@ MockableQuicClient::MockableQuicClient(
     const QuicServerId& server_id,
     const QuicConfig& config,
     const ParsedQuicVersionVector& supported_versions,
-    EpollServer* epoll_server,
+    net::EpollServer* epoll_server,
     std::unique_ptr<ProofVerifier> proof_verifier)
     : QuicClient(
           server_address,
@@ -261,13 +261,12 @@ QuicTestClient::QuicTestClient(
     const string& server_hostname,
     const QuicConfig& config,
     const ParsedQuicVersionVector& supported_versions)
-    : client_(new MockableQuicClient(server_address,
-                                     QuicServerId(server_hostname,
-                                                  server_address.port(),
-                                                  PRIVACY_MODE_DISABLED),
-                                     config,
-                                     supported_versions,
-                                     &epoll_server_)) {
+    : client_(new MockableQuicClient(
+          server_address,
+          QuicServerId(server_hostname, server_address.port(), false),
+          config,
+          supported_versions,
+          &epoll_server_)) {
   Initialize();
 }
 
@@ -277,14 +276,13 @@ QuicTestClient::QuicTestClient(
     const QuicConfig& config,
     const ParsedQuicVersionVector& supported_versions,
     std::unique_ptr<ProofVerifier> proof_verifier)
-    : client_(new MockableQuicClient(server_address,
-                                     QuicServerId(server_hostname,
-                                                  server_address.port(),
-                                                  PRIVACY_MODE_DISABLED),
-                                     config,
-                                     supported_versions,
-                                     &epoll_server_,
-                                     std::move(proof_verifier))) {
+    : client_(new MockableQuicClient(
+          server_address,
+          QuicServerId(server_hostname, server_address.port(), false),
+          config,
+          supported_versions,
+          &epoll_server_,
+          std::move(proof_verifier))) {
   Initialize();
 }
 
@@ -321,6 +319,23 @@ ssize_t QuicTestClient::SendRequest(const string& uri) {
     return 0;
   }
   return SendMessage(headers, "");
+}
+
+ssize_t QuicTestClient::SendRequestAndRstTogether(const string& uri) {
+  spdy::SpdyHeaderBlock headers;
+  if (!PopulateHeaderBlockFromUrl(uri, &headers)) {
+    return 0;
+  }
+
+  QuicSpdyClientSession* session = client()->client_session();
+  QuicConnection::ScopedPacketFlusher flusher(
+      session->connection(), QuicConnection::SEND_ACK_IF_PENDING);
+  ssize_t ret = SendMessage(headers, "", /*fin=*/true, /*flush=*/false);
+
+  QuicStreamId stream_id =
+      QuicSpdySessionPeer::GetNthClientInitiatedStreamId(*session, 0);
+  session->SendRstStream(stream_id, QUIC_STREAM_CANCELLED, 0);
+  return ret;
 }
 
 void QuicTestClient::SendRequestsAndWaitForResponses(
@@ -395,11 +410,21 @@ ssize_t QuicTestClient::SendMessage(const spdy::SpdyHeaderBlock& headers,
 ssize_t QuicTestClient::SendMessage(const spdy::SpdyHeaderBlock& headers,
                                     QuicStringPiece body,
                                     bool fin) {
+  return SendMessage(headers, body, fin, /*flush=*/true);
+}
+
+ssize_t QuicTestClient::SendMessage(const spdy::SpdyHeaderBlock& headers,
+                                    QuicStringPiece body,
+                                    bool fin,
+                                    bool flush) {
   // Always force creation of a stream for SendMessage.
   latest_created_stream_ = nullptr;
 
   ssize_t ret = GetOrCreateStreamAndSendRequest(&headers, body, fin, nullptr);
-  WaitForWriteToFlush();
+
+  if (flush) {
+    WaitForWriteToFlush();
+  }
   return ret;
 }
 
@@ -538,7 +563,7 @@ void QuicTestClient::Connect() {
   // If we've been asked to override SNI, set it now
   if (override_sni_set_) {
     client_->set_server_id(
-        QuicServerId(override_sni_, address().port(), PRIVACY_MODE_DISABLED));
+        QuicServerId(override_sni_, address().port(), false));
   }
 
   client_->Connect();
@@ -874,4 +899,4 @@ void QuicTestClient::WaitForDelayedAcks() {
 }
 
 }  // namespace test
-}  // namespace net
+}  // namespace quic

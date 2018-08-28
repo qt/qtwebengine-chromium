@@ -22,9 +22,8 @@ extern "C" {
 #define GL_MAILBOX_SIZE_CHROMIUM 16
 #endif
 #ifdef GL_GLEXT_PROTOTYPES
-GL_APICALL void GL_APIENTRY glGenMailboxCHROMIUM(GLbyte* mailbox);
-GL_APICALL void GL_APIENTRY
-glProduceTextureDirectCHROMIUM(GLuint texture, const GLbyte* mailbox);
+GL_APICALL void GL_APIENTRY glProduceTextureDirectCHROMIUM(GLuint texture,
+                                                           GLbyte* mailbox);
 GL_APICALL GLuint GL_APIENTRY
 glCreateAndConsumeTextureCHROMIUM(const GLbyte* mailbox);
 #endif
@@ -821,6 +820,15 @@ typedef void(GL_APIENTRYP PFNGLSCHEDULECALAYERINUSEQUERYCHROMIUMPROC)(
 #define GL_COMMANDS_COMPLETED_CHROMIUM 0x84F7
 #endif
 #endif  /* GL_CHROMIUM_sync_query */
+
+/* GL_CHROMIUM_nonblocking_readback */
+#ifndef GL_CHROMIUM_nonblocking_readback
+#define GL_CHROMIUM_nonblocking_readback 1
+
+#ifndef GL_READBACK_SHADOW_COPIES_UPDATED_CHROMIUM
+#define GL_READBACK_SHADOW_COPIES_UPDATED_CHROMIUM 0x84F8
+#endif
+#endif /* GL_CHROMIUM_nonblocking_readback */
 
 #ifndef GL_CHROMIUM_path_rendering
 #define GL_CHROMIUM_path_rendering 1

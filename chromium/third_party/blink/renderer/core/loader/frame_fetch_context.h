@@ -33,9 +33,12 @@
 
 #include "base/optional.h"
 #include "base/single_thread_task_runner.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom-blink.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/loader/base_fetch_context.h"
+#include "third_party/blink/renderer/core/script/fetch_client_settings_object_impl.h"
+#include "third_party/blink/renderer/core/script/fetch_client_settings_object_snapshot.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/client_hints_preferences.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
@@ -115,16 +118,13 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
                               int data_length) override;
   void DispatchDidReceiveEncodedData(unsigned long identifier,
                                      int encoded_data_length) override;
-  void DispatchDidDownloadData(unsigned long identifier,
-                               int data_length,
-                               int encoded_data_length) override;
   void DispatchDidDownloadToBlob(unsigned long identifier,
                                  BlobDataHandle*) override;
   void DispatchDidFinishLoading(unsigned long identifier,
                                 TimeTicks finish_time,
                                 int64_t encoded_data_length,
                                 int64_t decoded_body_length,
-                                bool blocked_cross_site_document) override;
+                                bool should_report_corb_blocking) override;
   void DispatchDidFail(const KURL&,
                        unsigned long identifier,
                        const ResourceError&,
@@ -139,7 +139,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   void AddResourceTiming(const ResourceTimingInfo&) override;
   bool AllowImage(bool images_enabled, const KURL&) const override;
-  bool IsControlledByServiceWorker() const override;
+  blink::mojom::ControllerServiceWorkerMode IsControlledByServiceWorker()
+      const override;
   int64_t ServiceWorkerID() const override;
   int ApplicationCacheHostID() const override;
 
@@ -165,7 +166,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   std::unique_ptr<WebURLLoader> CreateURLLoader(
       const ResourceRequest&,
-      scoped_refptr<base::SingleThreadTaskRunner>,
       const ResourceLoaderOptions&) override;
 
   ResourceLoadScheduler::ThrottlingPolicy InitialLoadThrottlingPolicy()
@@ -183,6 +183,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   ResourceLoadPriority ModifyPriorityForExperiments(
       ResourceLoadPriority) const override;
+  void DispatchNetworkQuiet() override;
 
  private:
   friend class FrameFetchContextTest;
@@ -205,8 +206,12 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   // FetchContext overrides:
   FrameScheduler* GetFrameScheduler() const override;
   scoped_refptr<base::SingleThreadTaskRunner> GetLoadingTaskRunner() override;
+  std::unique_ptr<scheduler::WebResourceLoadingTaskRunnerHandle>
+  CreateResourceLoadingTaskRunnerHandle() override;
 
   // BaseFetchContext overrides:
+  const FetchClientSettingsObject* GetFetchClientSettingsObject()
+      const override;
   KURL GetSiteForCookies() const override;
   SubresourceFilter* GetSubresourceFilter() const override;
   bool AllowScriptFromSource(const KURL&) const override;
@@ -231,8 +236,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,
                                                  const KURL&) const override;
 
-  ReferrerPolicy GetReferrerPolicy() const override;
-  String GetOutgoingReferrer() const override;
   const KURL& Url() const override;
   const SecurityOrigin* GetParentSecurityOrigin() const override;
   base::Optional<mojom::IPAddressSpace> GetAddressSpace() const override;
@@ -243,7 +246,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   Settings* GetSettings() const;
   String GetUserAgent() const;
   scoped_refptr<const SecurityOrigin> GetRequestorOrigin();
-  ClientHintsPreferences GetClientHintsPreferences() const;
+  const ClientHintsPreferences GetClientHintsPreferences() const;
   float GetDevicePixelRatio() const;
   bool ShouldSendClientHint(mojom::WebClientHintsType,
                             const ClientHintsPreferences&,
@@ -262,6 +265,10 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   // JavaScript was blocked from being executed.
   bool AllowScriptFromSourceWithoutNotifying(const KURL&) const;
 
+  // Returns true if the origin of |url| is same as the origin of the top level
+  // frame's main resource.
+  bool IsFirstPartyOrigin(const KURL& url) const;
+
   Member<DocumentLoader> document_loader_;
   Member<Document> document_;
 
@@ -272,6 +279,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   // Non-null only when detached.
   Member<const FrozenState> frozen_state_;
+
+  Member<FetchClientSettingsObject> fetch_client_settings_object_;
 };
 
 }  // namespace blink

@@ -10,39 +10,56 @@
 #include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#include "device/fido/virtual_ctap2_device.h"
 #include "device/fido/virtual_u2f_device.h"
 
 namespace device {
 namespace test {
 
 // A FidoDiscovery that always vends a single |VirtualFidoDevice|.
-class VirtualFidoDeviceDiscovery : public FidoDiscovery {
+class VirtualFidoDeviceDiscovery
+    : public FidoDiscovery,
+      public base::SupportsWeakPtr<VirtualFidoDeviceDiscovery> {
  public:
   explicit VirtualFidoDeviceDiscovery(
-      scoped_refptr<VirtualFidoDevice::State> state)
+      scoped_refptr<VirtualFidoDevice::State> state,
+      ProtocolVersion supported_protocol)
       : FidoDiscovery(FidoTransportProtocol::kUsbHumanInterfaceDevice),
-        state_(std::move(state)) {}
+        state_(std::move(state)),
+        supported_protocol_(supported_protocol) {}
   ~VirtualFidoDeviceDiscovery() override = default;
 
  protected:
   void StartInternal() override {
-    auto device = std::make_unique<VirtualU2fDevice>(state_);
+    std::unique_ptr<FidoDevice> device;
+    if (supported_protocol_ == ProtocolVersion::kCtap)
+      device = std::make_unique<VirtualCtap2Device>(state_);
+    else
+      device = std::make_unique<VirtualU2fDevice>(state_);
+
     AddDevice(std::move(device));
     base::SequencedTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::BindOnce(&VirtualFidoDeviceDiscovery::NotifyDiscoveryStarted,
-                       base::Unretained(this), true /* success */));
+                       AsWeakPtr(), true /* success */));
   }
 
  private:
   scoped_refptr<VirtualFidoDevice::State> state_;
+  ProtocolVersion supported_protocol_;
   DISALLOW_COPY_AND_ASSIGN(VirtualFidoDeviceDiscovery);
 };
 
 ScopedVirtualFidoDevice::ScopedVirtualFidoDevice()
     : state_(new VirtualFidoDevice::State) {}
 ScopedVirtualFidoDevice::~ScopedVirtualFidoDevice() = default;
+
+void ScopedVirtualFidoDevice::SetSupportedProtocol(
+    ProtocolVersion supported_protocol) {
+  supported_protocol_ = ProtocolVersion::kCtap;
+}
 
 VirtualFidoDevice::State* ScopedVirtualFidoDevice::mutable_state() {
   return state_.get();
@@ -54,7 +71,8 @@ std::unique_ptr<FidoDiscovery> ScopedVirtualFidoDevice::CreateFidoDiscovery(
   if (transport != FidoTransportProtocol::kUsbHumanInterfaceDevice) {
     return nullptr;
   }
-  return std::make_unique<VirtualFidoDeviceDiscovery>(state_);
+  return std::make_unique<VirtualFidoDeviceDiscovery>(state_,
+                                                      supported_protocol_);
 }
 
 }  // namespace test

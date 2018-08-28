@@ -85,6 +85,7 @@ class CONTENT_EXPORT RenderFrameMessageFilter
       const url::Origin& initiator,
       const base::string16& suggested_name,
       const bool use_prompt,
+      const bool follow_cross_origin_redirects,
       blink::mojom::BlobURLTokenPtrInfo blob_url_token) const;
 
  private:
@@ -141,12 +142,6 @@ class CONTENT_EXPORT RenderFrameMessageFilter
                   GetCookiesCallback callback) override;
 
 #if BUILDFLAG(ENABLE_PLUGINS)
-  void OnGetPlugins(bool refresh,
-                    const url::Origin& main_frame_origin,
-                    IPC::Message* reply_msg);
-  void GetPluginsCallback(IPC::Message* reply_msg,
-                          const url::Origin& main_frame_origin,
-                          const std::vector<WebPluginInfo>& plugins);
   void OnGetPluginInfo(int render_frame_id,
                        const GURL& url,
                        const url::Origin& main_frame_origin,

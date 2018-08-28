@@ -15,6 +15,7 @@
 #include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "components/history/core/browser/history_service.h"
 #include "components/safe_browsing/base_ui_manager.h"
@@ -91,7 +92,8 @@ ClientSafeBrowsingReportRequest::ReportType GetReportTypeFromSBThreatType(
       return ClientSafeBrowsingReportRequest::URL_CLIENT_SIDE_MALWARE;
     case SB_THREAT_TYPE_AD_SAMPLE:
       return ClientSafeBrowsingReportRequest::AD_SAMPLE;
-    case SB_THREAT_TYPE_PASSWORD_REUSE:
+    case SB_THREAT_TYPE_SIGN_IN_PASSWORD_REUSE:
+    case SB_THREAT_TYPE_ENTERPRISE_PASSWORD_REUSE:
       return ClientSafeBrowsingReportRequest::URL_PASSWORD_PROTECTION_PHISHING;
     case SB_THREAT_TYPE_SUSPICIOUS_SITE:
       return ClientSafeBrowsingReportRequest::URL_SUSPICIOUS;
@@ -251,8 +253,7 @@ void TrimElements(const std::set<int> target_ids,
     const HTMLElement& element = *element_iter->second;
 
     // Delete any elements that we do not want to keep.
-    if (std::find(ids_to_keep.begin(), ids_to_keep.end(), element.id()) ==
-        ids_to_keep.end()) {
+    if (!base::ContainsValue(ids_to_keep, element.id())) {
       if (element.has_resource_id()) {
         const std::string& resource_url =
             resource_id_to_url[element.resource_id()];
@@ -354,7 +355,6 @@ ThreatDetails::ThreatDetails()
       num_visits_(0),
       ambiguous_dom_(false),
       trim_to_ad_tags_(false),
-      done_callback_(nullptr),
       all_done_expected_(false),
       is_all_done_(false) {}
 
@@ -775,17 +775,9 @@ void ThreatDetails::OnCacheCollectionReady() {
     return;
   }
 
-  // For measuring performance impact of ad sampling reports, we may want to
-  // do all the heavy lifting of creating the report but not actually send it.
-  if (report_->type() == ClientSafeBrowsingReportRequest::AD_SAMPLE &&
-      base::FeatureList::IsEnabled(kAdSamplerCollectButDontSendFeature)) {
-    AllDone();
-    return;
-  }
-
   BrowserThread::PostTask(
       content::BrowserThread::UI, FROM_HERE,
-      base::BindOnce(&WebUIInfoSingleton::AddToReportsSent,
+      base::BindOnce(&WebUIInfoSingleton::AddToCSBRRsSent,
                      base::Unretained(WebUIInfoSingleton::GetInstance()),
                      std::move(report_)));
 

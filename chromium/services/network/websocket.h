@@ -24,7 +24,6 @@
 class GURL;
 
 namespace net {
-class HttpRequestHeaders;
 class URLRequestContext;
 class WebSocketChannel;
 class SSLInfo;
@@ -33,8 +32,7 @@ class SSLInfo;
 namespace network {
 
 // Host of net::WebSocketChannel.
-class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket
-    : public network::mojom::WebSocket {
+class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket : public mojom::WebSocket {
  public:
   class Delegate {
    public:
@@ -65,6 +63,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket
 
   WebSocket(std::unique_ptr<Delegate> delegate,
             mojom::WebSocketRequest request,
+            mojom::AuthenticationHandlerPtr auth_handler,
             WebSocketThrottler::PendingConnection pending_connection_tracker,
             int child_id,
             int frame_id,
@@ -80,7 +79,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket
   void AddChannelRequest(const GURL& url,
                          const std::vector<std::string>& requested_protocols,
                          const GURL& site_for_cookies,
-                         const std::string& user_agent_override,
+                         std::vector<mojom::HttpHeaderPtr> additional_headers,
                          mojom::WebSocketClientPtr client) override;
   void SendFrame(bool fin,
                  mojom::WebSocketMessageType type,
@@ -97,12 +96,16 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket
   void AddChannel(const GURL& socket_url,
                   const std::vector<std::string>& requested_protocols,
                   const GURL& site_for_cookies,
-                  const net::HttpRequestHeaders& additional_headers);
+                  std::vector<mojom::HttpHeaderPtr> additional_headers);
+  void OnAuthRequiredComplete(
+      base::OnceCallback<void(const net::AuthCredentials*)> callback,
+      const base::Optional<net::AuthCredentials>& credential);
 
   std::unique_ptr<Delegate> delegate_;
   mojo::Binding<mojom::WebSocket> binding_;
 
   mojom::WebSocketClientPtr client_;
+  mojom::AuthenticationHandlerPtr auth_handler_;
 
   WebSocketThrottler::PendingConnection pending_connection_tracker_;
 
@@ -123,8 +126,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket
   // The web origin to use for the WebSocket.
   const url::Origin origin_;
 
-  // handshake_succeeded_ is set and used by WebSocketManager to manage
-  // counters for per-renderer WebSocket throttling.
+  // handshake_succeeded_ is used by WebSocketManager to manage counters for
+  // per-renderer WebSocket throttling.
   bool handshake_succeeded_;
 
   base::WeakPtrFactory<WebSocket> weak_ptr_factory_;

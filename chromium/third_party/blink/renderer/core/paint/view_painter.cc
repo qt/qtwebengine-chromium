@@ -15,26 +15,19 @@
 #include "third_party/blink/renderer/core/paint/compositing/composited_layer_mapping.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
-#include "third_party/blink/renderer/core/paint/scroll_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/scoped_paint_chunk_properties.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
-void ViewPainter::Paint(const PaintInfo& paint_info,
-                        const LayoutPoint& paint_offset) {
+void ViewPainter::Paint(const PaintInfo& paint_info) {
   // If we ever require layout but receive a paint anyway, something has gone
   // horribly wrong.
   DCHECK(!layout_view_.NeedsLayout());
-  // LayoutViews should never be called to paint with an offset not on device
-  // pixels.
-  DCHECK(LayoutPoint(IntPoint(paint_offset.X().ToInt(),
-                              paint_offset.Y().ToInt())) == paint_offset);
-
   DCHECK(!layout_view_.GetFrameView()->ShouldThrottleRendering());
 
-  BlockPainter(layout_view_).Paint(paint_info, paint_offset);
+  BlockPainter(layout_view_).Paint(paint_info);
 }
 
 void ViewPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info) {
@@ -67,24 +60,16 @@ void ViewPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info) {
   const DisplayItemClient* display_item_client = &layout_view_;
 
   base::Optional<ScopedPaintChunkProperties> scoped_scroll_property;
-  base::Optional<ScrollRecorder> scroll_recorder;
   if (BoxModelObjectPainter::
           IsPaintingBackgroundOfPaintContainerIntoScrollingContentsLayer(
               &layout_view_, paint_info)) {
     // Layout overflow, combined with the visible content size.
     background_rect.Unite(layout_view_.DocumentRect());
     display_item_client = layout_view_.Layer()->GraphicsLayerBacking();
-    if (!layout_view_.ScrolledContentOffset().IsZero()) {
-      scroll_recorder.emplace(paint_info.context, layout_view_,
-                              paint_info.phase,
-                              layout_view_.ScrolledContentOffset());
-    }
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      scoped_scroll_property.emplace(
-          paint_info.context.GetPaintController(),
-          layout_view_.FirstFragment().ContentsProperties(),
-          *display_item_client, DisplayItem::kDocumentBackground);
-    }
+    scoped_scroll_property.emplace(
+        paint_info.context.GetPaintController(),
+        layout_view_.FirstFragment().ContentsProperties(), *display_item_client,
+        DisplayItem::kDocumentBackground);
   }
 
   if (DrawingRecorder::UseCachedDrawingIfPossible(

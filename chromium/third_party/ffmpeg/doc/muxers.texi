@@ -252,6 +252,8 @@ DASH-templated name to used for the initialization segment. Default is "init-str
 DASH-templated name to used for the media segments. Default is "chunk-stream$RepresentationID$-$Number%05d$.m4s"
 @item -utc_timing_url @var{utc_url}
 URL of the page that will return the UTC timestamp in ISO format. Example: "https://time.akamai.com/?iso"
+@item method @var{method}
+Use the given HTTP method to create output files. Generally set to PUT or POST.
 @item -http_user_agent @var{user_agent}
 Override User-Agent field in HTTP header. Applicable only for HTTP output.
 @item -http_persistent @var{http_persistent}
@@ -282,6 +284,19 @@ corrects that index value.
 Typically this logic is needed in live streaming use cases. The network bandwidth
 fluctuations are common during long run streaming. Each fluctuation can cause
 the segment indexes fall behind the expected real time position.
+@item -format_options @var{options_list}
+Set container format (mp4/webm) options using a @code{:} separated list of
+key=value parameters. Values containing @code{:} special characters must be
+escaped.
+
+@item dash_segment_type @var{dash_segment_type}
+Possible values:
+@item mp4
+If this flag is set, the dash segment files will be in in ISOBMFF format. This is the default format.
+
+@item webm
+If this flag is set, the dash segment files will be in in WebM format.
+
 @end table
 
 @anchor{framecrc}
@@ -1329,6 +1344,16 @@ be negative. This enables the initial sample to have DTS/CTS of zero, and
 reduces the need for edit lists for some cases such as video tracks with
 B-frames. Additionally, eases conformance with the DASH-IF interoperability
 guidelines.
+@item -write_prft
+Write producer time reference box (PRFT) with a specified time source for the
+NTP field in the PRFT box. Set value as @samp{wallclock} to specify timesource
+as wallclock time and @samp{pts} to specify timesource as input packets' PTS
+values.
+
+Setting value to @samp{pts} is applicable only for a live encoding use case,
+where PTS values are set as as wallclock time at the source. For example, an
+encoding use case with decklink capture source where @option{video_pts} and
+@option{audio_pts} are set to @samp{abs_wallclock}.
 @end table
 
 @subsection Example

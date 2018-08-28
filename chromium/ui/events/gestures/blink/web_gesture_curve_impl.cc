@@ -12,20 +12,12 @@
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/platform/web_float_size.h"
-#include "third_party/blink/public/platform/web_gesture_curve_target.h"
 #include "ui/events/gestures/fixed_velocity_curve.h"
 #include "ui/events/gestures/fling_curve.h"
+#include "ui/events/mobile_scroller.h"
 #include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/geometry/vector2d_f.h"
-
-#if defined(OS_ANDROID)
-#include "ui/events/android/scroller.h"
-#endif
-
-#if !defined(OS_ANDROID) && defined(CHROMECAST_BUILD)
-#include "ui/events/chromecast/scroller.h"
-#endif
 
 using blink::WebGestureCurve;
 
@@ -34,27 +26,29 @@ namespace {
 
 std::unique_ptr<GestureCurve> CreateDefaultPlatformCurve(
     blink::WebGestureDevice device_source,
-    const gfx::Vector2dF& initial_velocity) {
+    const gfx::Vector2dF& initial_velocity,
+    bool use_mobile_fling_curve) {
   if (device_source == blink::kWebGestureDeviceSyntheticAutoscroll) {
     return std::make_unique<FixedVelocityCurve>(initial_velocity,
                                                 base::TimeTicks());
   }
 
-#if defined(OS_ANDROID) || defined(CHROMECAST_BUILD)
-  auto scroller = std::make_unique<Scroller>(Scroller::Config());
-  scroller->Fling(0,
-                  0,
-                  initial_velocity.x(),
-                  initial_velocity.y(),
-                  INT_MIN,
-                  INT_MAX,
-                  INT_MIN,
-                  INT_MAX,
-                  base::TimeTicks());
-  return std::move(scroller);
-#else
-  return std::make_unique<FlingCurve>(initial_velocity, base::TimeTicks());
+#ifdef USE_MOBILE_FLING_CURVE
+  use_mobile_fling_curve = true;
 #endif
+
+  if (use_mobile_fling_curve) {
+    MobileScroller::Config config;
+#ifdef USE_MOBILE_FLING_CURVE
+    config.chromecast_optimized = true;
+#endif
+    auto scroller = std::make_unique<MobileScroller>(config);
+    scroller->Fling(0, 0, initial_velocity.x(), initial_velocity.y(), INT_MIN,
+                    INT_MAX, INT_MIN, INT_MAX, base::TimeTicks());
+    return std::move(scroller);
+  }
+
+  return std::make_unique<FlingCurve>(initial_velocity, base::TimeTicks());
 }
 
 }  // namespace
@@ -65,9 +59,11 @@ WebGestureCurveImpl::CreateFromDefaultPlatformCurve(
     blink::WebGestureDevice device_source,
     const gfx::Vector2dF& initial_velocity,
     const gfx::Vector2dF& initial_offset,
-    bool on_main_thread) {
+    bool on_main_thread,
+    bool use_mobile_fling_curve) {
   return std::unique_ptr<WebGestureCurve>(new WebGestureCurveImpl(
-      CreateDefaultPlatformCurve(device_source, initial_velocity),
+      CreateDefaultPlatformCurve(device_source, initial_velocity,
+                                 use_mobile_fling_curve),
       initial_offset, on_main_thread ? ThreadType::MAIN : ThreadType::IMPL));
 }
 

@@ -114,22 +114,32 @@ GrPixelConfig GrMTLFormatToPixelConfig(MTLPixelFormat format) {
     }
 }
 
-bool GrMTLFormatIsSRGB(MTLPixelFormat format, MTLPixelFormat* linearFormat) {
-    MTLPixelFormat linearFmt = format;
-    switch (format) {
-        case MTLPixelFormatRGBA8Unorm_sRGB:
-            linearFmt = MTLPixelFormatRGBA8Unorm;
-            break;
-        case MTLPixelFormatBGRA8Unorm_sRGB:
-            linearFmt = MTLPixelFormatBGRA8Unorm;
-            break;
-        default:
-            break;
+id<MTLTexture> GrGetMTLTexture(const void* mtlTexture, GrWrapOwnership wrapOwnership) {
+    if (GrWrapOwnership::kAdopt_GrWrapOwnership == wrapOwnership) {
+        return (__bridge_transfer id<MTLTexture>)mtlTexture;
+    } else {
+        return (__bridge id<MTLTexture>)mtlTexture;
     }
-
-    if (linearFormat) {
-        *linearFormat = linearFmt;
-    }
-    return (linearFmt != format);
 }
 
+const void* GrGetPtrFromId(id idObject) {
+    return (__bridge const void*)idObject;
+}
+
+const void* GrReleaseId(id idObject) {
+    return (__bridge_retained const void*)idObject;
+}
+
+MTLTextureDescriptor* GrGetMTLTextureDescriptor(id<MTLTexture> mtlTexture) {
+    MTLTextureDescriptor* texDesc = [[MTLTextureDescriptor alloc] init];
+    texDesc.textureType = mtlTexture.textureType;
+    texDesc.pixelFormat = mtlTexture.pixelFormat;
+    texDesc.width = mtlTexture.width;
+    texDesc.height = mtlTexture.height;
+    texDesc.depth = mtlTexture.depth;
+    texDesc.mipmapLevelCount = mtlTexture.mipmapLevelCount;
+    texDesc.arrayLength = mtlTexture.arrayLength;
+    texDesc.sampleCount = mtlTexture.sampleCount;
+    texDesc.usage = mtlTexture.usage;
+    return texDesc;
+}

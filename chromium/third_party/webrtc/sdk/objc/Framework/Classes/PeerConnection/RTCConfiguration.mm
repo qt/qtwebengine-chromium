@@ -45,6 +45,7 @@
 @synthesize iceRegatherIntervalRange = _iceRegatherIntervalRange;
 @synthesize sdpSemantics = _sdpSemantics;
 @synthesize turnCustomizer = _turnCustomizer;
+@synthesize activeResetSrtpParams = _activeResetSrtpParams;
 
 - (instancetype)init {
   // Copy defaults.
@@ -99,6 +100,7 @@
     }
     _sdpSemantics = [[self class] sdpSemanticsForNativeSdpSemantics:config.sdp_semantics];
     _turnCustomizer = config.turn_customizer;
+    _activeResetSrtpParams = config.active_reset_srtp_params;
   }
   return self;
 }
@@ -106,7 +108,7 @@
 - (NSString *)description {
   static NSString *formatString =
       @"RTCConfiguration: "
-      @"{\n%@\n%@\n%@\n%@\n%@\n%@\n%@\n%@\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%@\n%@\n%d\n%d\n}\n";
+      @"{\n%@\n%@\n%@\n%@\n%@\n%@\n%@\n%@\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n%@\n%@\n%d\n%d\n%d\n}\n";
 
   return [NSString
       stringWithFormat:formatString,
@@ -128,7 +130,8 @@
                        _iceCheckMinInterval,
                        _iceRegatherIntervalRange,
                        _disableLinkLocalNetworks,
-                       _maxIPv6Networks];
+                       _maxIPv6Networks,
+                       _activeResetSrtpParams];
 }
 
 #pragma mark - Private
@@ -168,8 +171,8 @@
   // Generate non-default certificate.
   if (keyType != rtc::KT_DEFAULT) {
     rtc::scoped_refptr<rtc::RTCCertificate> certificate =
-        rtc::RTCCertificateGenerator::GenerateCertificate(
-            rtc::KeyParams(keyType), rtc::Optional<uint64_t>());
+        rtc::RTCCertificateGenerator::GenerateCertificate(rtc::KeyParams(keyType),
+                                                          absl::optional<uint64_t>());
     if (!certificate) {
       RTCLogError(@"Failed to generate certificate.");
       return nullptr;
@@ -181,19 +184,19 @@
   nativeConfig->presume_writable_when_fully_relayed =
       _shouldPresumeWritableWhenFullyRelayed ? true : false;
   if (_iceCheckMinInterval != nil) {
-    nativeConfig->ice_check_min_interval =
-        rtc::Optional<int>(_iceCheckMinInterval.intValue);
+    nativeConfig->ice_check_min_interval = absl::optional<int>(_iceCheckMinInterval.intValue);
   }
   if (_iceRegatherIntervalRange != nil) {
     std::unique_ptr<rtc::IntervalRange> nativeIntervalRange(
         _iceRegatherIntervalRange.nativeIntervalRange);
     nativeConfig->ice_regather_interval_range =
-        rtc::Optional<rtc::IntervalRange>(*nativeIntervalRange);
+        absl::optional<rtc::IntervalRange>(*nativeIntervalRange);
   }
   nativeConfig->sdp_semantics = [[self class] nativeSdpSemanticsForSdpSemantics:_sdpSemantics];
   if (_turnCustomizer) {
     nativeConfig->turn_customizer = _turnCustomizer;
   }
+  nativeConfig->active_reset_srtp_params = _activeResetSrtpParams ? true : false;
   return nativeConfig.release();
 }
 

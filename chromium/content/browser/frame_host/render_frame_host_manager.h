@@ -22,6 +22,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/common/referrer.h"
+#include "third_party/blink/public/common/frame/user_activation_update_type.h"
 #include "ui/base/page_transition_types.h"
 #include "url/origin.h"
 
@@ -139,8 +140,8 @@ class CONTENT_EXPORT RenderFrameHostManager
     // TODO(nasko): This should be removed once extensions no longer use
     // NotificationService. See https://crbug.com/462682.
     virtual void NotifyMainFrameSwappedFromRenderManager(
-        RenderViewHost* old_host,
-        RenderViewHost* new_host) = 0;
+        RenderFrameHost* old_host,
+        RenderFrameHost* new_host) = 0;
     virtual NavigationControllerImpl&
         GetControllerForRenderManager() = 0;
 
@@ -467,7 +468,10 @@ class CONTENT_EXPORT RenderFrameHostManager
   // match the provided |render_frame_host|.
   void CancelPendingIfNecessary(RenderFrameHostImpl* render_frame_host);
 
-  void OnSetHasReceivedUserGesture();
+  // Updates the user activation state in all proxies of this frame.  For
+  // more details, see the comment on FrameTreeNode::user_activation_state_.
+  void UpdateUserActivationState(blink::UserActivationUpdateType update_type);
+
   void OnSetHasReceivedUserGestureBeforeNavigation(bool value);
 
   // Sets up the necessary state for a new RenderViewHost.  If |proxy| is not
@@ -561,7 +565,8 @@ class CONTENT_EXPORT RenderFrameHostManager
       bool current_is_view_source_mode,
       SiteInstance* new_site_instance,
       const GURL& new_effective_url,
-      bool new_is_view_source_mode) const;
+      bool new_is_view_source_mode,
+      bool is_failure) const;
 
   // Returns the SiteInstance to use for the navigation.
   scoped_refptr<SiteInstance> GetSiteInstanceForNavigation(
@@ -725,8 +730,7 @@ class CONTENT_EXPORT RenderFrameHostManager
   // Returns true if a subframe can navigate cross-process.
   bool CanSubframeSwapProcess(const GURL& dest_url,
                               SiteInstance* source_instance,
-                              SiteInstance* dest_instance,
-                              bool was_server_redirect);
+                              SiteInstance* dest_instance);
 
   // After a renderer process crash we'd have marked the host as invisible, so
   // we need to set the visibility of the new View to the correct value here

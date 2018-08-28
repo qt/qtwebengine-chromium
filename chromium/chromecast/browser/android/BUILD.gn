@@ -101,6 +101,7 @@ android_library("cast_shell_java") {
     "$java_src_dir/org/chromium/chromecast/shell/CastApplication.java",
     "$java_src_dir/org/chromium/chromecast/shell/CastBrowserHelper.java",
     "$java_src_dir/org/chromium/chromecast/shell/CastContentWindowAndroid.java",
+    "$java_src_dir/org/chromium/chromecast/shell/CastCommandLineHelper.java",
     "$java_src_dir/org/chromium/chromecast/shell/CastCrashHandler.java",
     "$java_src_dir/org/chromium/chromecast/shell/CastCrashUploader.java",
     "$java_src_dir/org/chromium/chromecast/shell/CastCrashUploaderFactory.java",
@@ -132,10 +133,10 @@ android_library("cast_shell_java") {
     ":reactive_android_java",
     "//base:base_java",
     "//chromecast/base:base_java",
-    "//components/content_view:content_view_java",
     "//components/crash/android:java",
+    "//components/embedder_support/android:content_view_java",
+    "//components/embedder_support/android:view_java",
     "//content/public/android:content_java",
-    "//device/geolocation:geolocation_java",
     "//media/base/android:media_java",
     "//net/android:net_java",
 
@@ -161,6 +162,7 @@ junit_binary("cast_shell_junit_tests") {
   java_files = [
     "junit/src/org/chromium/chromecast/shell/AsyncTaskRunnerTest.java",
     "junit/src/org/chromium/chromecast/shell/CastAudioManagerTest.java",
+    "junit/src/org/chromium/chromecast/shell/CastCommandLineHelperTest.java",
     "junit/src/org/chromium/chromecast/shell/CastWebContentsActivityTest.java",
     "junit/src/org/chromium/chromecast/shell/CastWebContentsComponentTest.java",
     "junit/src/org/chromium/chromecast/shell/CastWebContentsIntentUtilsTest.java",

@@ -15,7 +15,7 @@
 
 using spdy::SpdyPriority;
 
-namespace net {
+namespace quic {
 
 #define ENDPOINT \
   (perspective_ == Perspective::IS_SERVER ? "Server: " : "Client: ")
@@ -43,7 +43,7 @@ size_t GetReceivedFlowControlWindow(QuicSession* session) {
 }  // namespace
 
 // static
-const spdy::SpdyPriority QuicStream::kDefaultPriority;
+const SpdyPriority QuicStream::kDefaultPriority;
 
 QuicStream::QuicStream(QuicStreamId id, QuicSession* session, bool is_static)
     : sequencer_(this),
@@ -225,11 +225,11 @@ void QuicStream::CloseConnectionWithDetails(QuicErrorCode error,
       error, details, ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
 }
 
-spdy::SpdyPriority QuicStream::priority() const {
+SpdyPriority QuicStream::priority() const {
   return priority_;
 }
 
-void QuicStream::SetPriority(spdy::SpdyPriority priority) {
+void QuicStream::SetPriority(SpdyPriority priority) {
   DCHECK_EQ(0u, stream_bytes_written());
   priority_ = priority;
   session_->UpdateStreamPriority(id(), priority);
@@ -505,9 +505,15 @@ void QuicStream::OnClose() {
     // written on this stream before termination. Done here if needed, using a
     // RST_STREAM frame.
     QUIC_DLOG(INFO) << ENDPOINT << "Sending RST_STREAM in OnClose: " << id();
-    session_->OnStreamDoneWaitingForAcks(id_);
-    session_->SendRstStream(id(), QUIC_RST_ACKNOWLEDGEMENT,
-                            stream_bytes_written());
+    if (session_->connection()->deprecate_scheduler()) {
+      session_->SendRstStream(id(), QUIC_RST_ACKNOWLEDGEMENT,
+                              stream_bytes_written());
+      session_->OnStreamDoneWaitingForAcks(id_);
+    } else {
+      session_->OnStreamDoneWaitingForAcks(id_);
+      session_->SendRstStream(id(), QUIC_RST_ACKNOWLEDGEMENT,
+                              stream_bytes_written());
+    }
     rst_sent_ = true;
   }
 
@@ -850,4 +856,4 @@ void QuicStream::WritePendingRetransmission() {
   }
 }
 
-}  // namespace net
+}  // namespace quic

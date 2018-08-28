@@ -5,13 +5,13 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_wasm_response_extensions.h"
 
 #include "base/memory/scoped_refptr.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_response.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/fetch/body_stream_buffer.h"
 #include "third_party/blink/renderer/core/fetch/fetch_data_loader.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -25,7 +25,7 @@ class FetchDataLoaderAsWasmModule final : public FetchDataLoader,
   USING_GARBAGE_COLLECTED_MIXIN(FetchDataLoaderAsWasmModule);
 
  public:
-  FetchDataLoaderAsWasmModule(ScriptState* script_state)
+  explicit FetchDataLoaderAsWasmModule(ScriptState* script_state)
       : builder_(script_state->GetIsolate()), script_state_(script_state) {}
 
   void Start(BytesConsumer* consumer,
@@ -65,7 +65,7 @@ class FetchDataLoaderAsWasmModule final : public FetchDataLoader,
           break;
         }
         case BytesConsumer::Result::kDone: {
-          ScriptState::Scope scope(script_state_.get());
+          ScriptState::Scope scope(script_state_);
           builder_.Finish();
           client_->DidFetchDataLoadedCustomFormat();
           return;
@@ -87,6 +87,7 @@ class FetchDataLoaderAsWasmModule final : public FetchDataLoader,
   void Trace(blink::Visitor* visitor) override {
     visitor->Trace(consumer_);
     visitor->Trace(client_);
+    visitor->Trace(script_state_);
     FetchDataLoader::Trace(visitor);
     BytesConsumer::Client::Trace(visitor);
   }
@@ -95,8 +96,8 @@ class FetchDataLoaderAsWasmModule final : public FetchDataLoader,
   // TODO(mtrofin): replace with spec-ed error types, once spec clarifies
   // what they are.
   void AbortCompilation() {
-    ScriptState::Scope scope(script_state_.get());
-    if (!ExecutionContext::From(script_state_.get())->IsContextDestroyed()) {
+    ScriptState::Scope scope(script_state_);
+    if (!ExecutionContext::From(script_state_)->IsContextDestroyed()) {
       builder_.Abort(V8ThrowException::CreateTypeError(
           script_state_->GetIsolate(), "Could not download wasm module"));
     } else {
@@ -110,7 +111,7 @@ class FetchDataLoaderAsWasmModule final : public FetchDataLoader,
   Member<BytesConsumer> consumer_;
   Member<FetchDataLoader::Client> client_;
   v8::WasmModuleObjectBuilderStreaming builder_;
-  const scoped_refptr<ScriptState> script_state_;
+  const Member<ScriptState> script_state_;
 };
 
 // TODO(mtrofin): WasmDataLoaderClient is necessary so we may provide an
@@ -123,7 +124,7 @@ class WasmDataLoaderClient final
   USING_GARBAGE_COLLECTED_MIXIN(WasmDataLoaderClient);
 
  public:
-  explicit WasmDataLoaderClient() = default;
+  WasmDataLoaderClient() = default;
   void DidFetchDataLoadedCustomFormat() override {}
   void DidFetchDataLoadFailed() override { NOTREACHED(); }
   void Abort() override {
@@ -171,11 +172,15 @@ void CompileFromResponseCallback(
     return;
   }
 
-  if (response->IsBodyLocked() || response->bodyUsed()) {
+  if (response->IsBodyLocked(exception_state) == Body::BodyLocked::kLocked ||
+      response->IsBodyUsed(exception_state) == Body::BodyUsed::kUsed) {
+    DCHECK(!exception_state.HadException());
     exception_state.ThrowTypeError(
         "Cannot compile WebAssembly.Module from an already read Response");
     return;
   }
+  if (exception_state.HadException())
+    return;
 
   if (!response->BodyBuffer()) {
     exception_state.ThrowTypeError("Response object has a null body.");
@@ -185,7 +190,10 @@ void CompileFromResponseCallback(
   FetchDataLoaderAsWasmModule* loader =
       new FetchDataLoaderAsWasmModule(script_state);
   v8::Local<v8::Value> promise = loader->GetPromise();
-  response->BodyBuffer()->StartLoading(loader, new WasmDataLoaderClient());
+  response->BodyBuffer()->StartLoading(loader, new WasmDataLoaderClient(),
+                                       exception_state);
+  if (exception_state.HadException())
+    return;
 
   V8SetReturnValue(args, promise);
 }

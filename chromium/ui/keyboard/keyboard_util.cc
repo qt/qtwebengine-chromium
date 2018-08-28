@@ -72,8 +72,8 @@ bool UpdateKeyboardConfig(const KeyboardConfig& keyboard_config) {
   if (g_keyboard_config == keyboard_config)
     return false;
   g_keyboard_config = keyboard_config;
-  keyboard::KeyboardController* controller = KeyboardController::GetInstance();
-  if (controller)
+  auto* controller = KeyboardController::Get();
+  if (controller->enabled())
     controller->NotifyKeyboardConfigChanged();
   return true;
 }
@@ -143,8 +143,9 @@ bool IsKeyboardEnabled() {
 }
 
 bool IsKeyboardVisible() {
-  auto* keyboard_controller = keyboard::KeyboardController::GetInstance();
-  return keyboard_controller && keyboard_controller->keyboard_visible();
+  auto* keyboard_controller = keyboard::KeyboardController::Get();
+  return keyboard_controller->enabled() &&
+         keyboard_controller->IsKeyboardVisible();
 }
 
 bool IsKeyboardOverscrollEnabled() {
@@ -153,10 +154,9 @@ bool IsKeyboardOverscrollEnabled() {
 
   // Users of the sticky accessibility on-screen keyboard are likely to be using
   // mouse input, which may interfere with overscrolling.
-  if (keyboard::KeyboardController::GetInstance() &&
-      !keyboard::KeyboardController::GetInstance()->IsOverscrollAllowed()) {
+  if (keyboard::KeyboardController::Get()->enabled() &&
+      !keyboard::KeyboardController::Get()->IsOverscrollAllowed())
     return false;
-  }
 
   // If overscroll enabled override is set, use it instead. Currently
   // login / out-of-box disable keyboard overscroll. http://crbug.com/363635
@@ -203,6 +203,10 @@ bool IsStylusVirtualKeyboardEnabled() {
   return base::FeatureList::IsEnabled(features::kEnableStylusVirtualKeyboard);
 }
 
+bool IsVirtualKeyboardMdUiEnabled() {
+  return base::FeatureList::IsEnabled(features::kEnableVirtualKeyboardMdUi);
+}
+
 bool IsGestureTypingEnabled() {
   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableGestureTyping);
@@ -214,8 +218,8 @@ bool IsGestureEditingEnabled() {
 }
 
 bool InsertText(const base::string16& text) {
-  KeyboardController* controller = KeyboardController::GetInstance();
-  if (!controller)
+  auto* controller = KeyboardController::Get();
+  if (!controller->enabled())
     return false;
 
   ui::InputMethod* input_method = controller->ui()->GetInputMethod();

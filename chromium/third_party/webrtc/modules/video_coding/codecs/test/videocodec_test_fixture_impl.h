@@ -53,8 +53,7 @@ class VideoCodecTestFixtureImpl : public VideoCodecTestFixture {
   void RunTest(const std::vector<RateProfile>& rate_profiles,
                const std::vector<RateControlThresholds>* rc_thresholds,
                const std::vector<QualityThresholds>* quality_thresholds,
-               const BitstreamThresholds* bs_thresholds,
-               const VisualizationParams* visualization_params) override;
+               const BitstreamThresholds* bs_thresholds) override;
 
   VideoCodecTestStats& GetStats() override;
 
@@ -65,8 +64,7 @@ class VideoCodecTestFixtureImpl : public VideoCodecTestFixture {
   void DestroyEncoderAndDecoder();
   void SetUpAndInitObjects(rtc::test::TaskQueueForTest* task_queue,
                            int initial_bitrate_kbps,
-                           int initial_framerate_fps,
-                           const VisualizationParams* visualization_params);
+                           int initial_framerate_fps);
   void ReleaseAndCloseObjects(rtc::test::TaskQueueForTest* task_queue);
 
   void ProcessAllFrames(rtc::TaskQueue* task_queue,
@@ -86,13 +84,11 @@ class VideoCodecTestFixtureImpl : public VideoCodecTestFixture {
       float input_framerate_fps);
 
   void PrintSettings(rtc::test::TaskQueueForTest* task_queue) const;
-  std::unique_ptr<VideoDecoderFactory> CreateDecoderFactory();
-  std::unique_ptr<VideoEncoderFactory> CreateEncoderFactory();
 
   // Codecs.
-  std::unique_ptr<VideoDecoderFactory> decoder_factory_;
-  std::unique_ptr<VideoEncoderFactory> encoder_factory_;
+  const std::unique_ptr<VideoEncoderFactory> encoder_factory_;
   std::unique_ptr<VideoEncoder> encoder_;
+  const std::unique_ptr<VideoDecoderFactory> decoder_factory_;
   VideoProcessor::VideoDecoderList decoders_;
 
   // Helper objects.

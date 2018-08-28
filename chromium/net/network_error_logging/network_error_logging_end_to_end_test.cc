@@ -60,7 +60,7 @@ class NetworkErrorLoggingEndToEndTest : public TestWithScopedTaskEnvironment {
         upload_should_hang_(false),
         upload_received_(false) {
     // Make report delivery happen instantly.
-    auto policy = std::make_unique<ReportingPolicy>();
+    auto policy = ReportingPolicy::Create();
     policy->delivery_interval = base::TimeDelta::FromSeconds(0);
 
     URLRequestContextBuilder builder;
@@ -108,10 +108,10 @@ class NetworkErrorLoggingEndToEndTest : public TestWithScopedTaskEnvironment {
     response->AddCustomHeader(
         "Report-To",
         base::StringPrintf("{\"endpoints\":[{\"url\":\"%s\"}],\"group\":\"%s\","
-                           "\"max-age\":%d}",
+                           "\"max_age\":%d}",
                            endpoint_url.spec().c_str(), kGroup, kMaxAgeSec));
     response->AddCustomHeader(
-        "NEL", base::StringPrintf("{\"report-to\":\"%s\",\"max-age\":%d}",
+        "NEL", base::StringPrintf("{\"report_to\":\"%s\",\"max_age\":%d}",
                                   kGroup, kMaxAgeSec));
     response->set_content_type("text/plain");
     response->set_content("");
@@ -173,7 +173,7 @@ class NetworkErrorLoggingEndToEndTest : public TestWithScopedTaskEnvironment {
 #endif
 TEST_F(NetworkErrorLoggingEndToEndTest, MAYBE_ReportNetworkError) {
   TestDelegate configure_delegate;
-  configure_delegate.set_quit_on_complete(false);
+  configure_delegate.set_on_complete(base::DoNothing());
   auto configure_request = url_request_context_->CreateRequest(
       GetConfigureURL(), DEFAULT_PRIORITY, &configure_delegate,
       TRAFFIC_ANNOTATION_FOR_TESTS);
@@ -181,7 +181,7 @@ TEST_F(NetworkErrorLoggingEndToEndTest, MAYBE_ReportNetworkError) {
   configure_request->Start();
 
   TestDelegate fail_delegate;
-  fail_delegate.set_quit_on_complete(false);
+  fail_delegate.set_on_complete(base::DoNothing());
   auto fail_request = url_request_context_->CreateRequest(
       GetFailURL(), DEFAULT_PRIORITY, &fail_delegate,
       TRAFFIC_ANNOTATION_FOR_TESTS);
@@ -202,11 +202,10 @@ TEST_F(NetworkErrorLoggingEndToEndTest, MAYBE_ReportNetworkError) {
   ExpectDictStringValue("network-error", *report_dict, "type");
   ExpectDictStringValue(GetFailURL().spec(), *report_dict, "url");
   base::DictionaryValue* body_dict;
-  ASSERT_TRUE(report_dict->GetDictionary("report", &body_dict));
+  ASSERT_TRUE(report_dict->GetDictionary("body", &body_dict));
 
   ExpectDictStringValue("http.response.empty", *body_dict, "type");
-  ExpectDictIntegerValue(0, *body_dict, "status-code");
-  ExpectDictStringValue(GetFailURL().spec(), *body_dict, "uri");
+  ExpectDictIntegerValue(0, *body_dict, "status_code");
 }
 
 #if defined(OS_WIN)
@@ -221,7 +220,7 @@ TEST_F(NetworkErrorLoggingEndToEndTest, MAYBE_UploadAtShutdown) {
   upload_should_hang_ = true;
 
   TestDelegate configure_delegate;
-  configure_delegate.set_quit_on_complete(false);
+  configure_delegate.set_on_complete(base::DoNothing());
   auto configure_request = url_request_context_->CreateRequest(
       GetConfigureURL(), DEFAULT_PRIORITY, &configure_delegate,
       TRAFFIC_ANNOTATION_FOR_TESTS);
@@ -229,7 +228,7 @@ TEST_F(NetworkErrorLoggingEndToEndTest, MAYBE_UploadAtShutdown) {
   configure_request->Start();
 
   TestDelegate fail_delegate;
-  fail_delegate.set_quit_on_complete(false);
+  fail_delegate.set_on_complete(base::DoNothing());
   auto fail_request = url_request_context_->CreateRequest(
       GetFailURL(), DEFAULT_PRIORITY, &fail_delegate,
       TRAFFIC_ANNOTATION_FOR_TESTS);

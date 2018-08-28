@@ -137,23 +137,16 @@ void GLES1State::initialize(const Context *context, const State *state)
 
     mLogicOp = LogicalOperation::Copy;
 
-    mClipPlaneEnabled.resize(caps.maxClipPlanes, false);
-
-    mClipPlanes.resize(caps.maxClipPlanes, angle::Vector4(0.0f, 0.0f, 0.0f, 0.0f));
-
-    mPointParameters.pointSizeMin                = 0.1f;
-    mPointParameters.pointSizeMax                = 100.0f;
-    mPointParameters.pointFadeThresholdSize      = 0.1f;
-    mPointParameters.pointDistanceAttenuation[0] = 1.0f;
-    mPointParameters.pointDistanceAttenuation[1] = 0.0f;
-    mPointParameters.pointDistanceAttenuation[2] = 0.0f;
-
-    mPointParameters.pointSize = 1.0f;
+    mClipPlanes.resize(caps.maxClipPlanes, {false, angle::Vector4(0.0f, 0.0f, 0.0f, 0.0f)});
 
     mLineSmoothHint            = HintSetting::DontCare;
     mPointSmoothHint           = HintSetting::DontCare;
     mPerspectiveCorrectionHint = HintSetting::DontCare;
     mFogHint                   = HintSetting::DontCare;
+
+    // The user-specified point size, GL_POINT_SIZE_MAX,
+    // is initially equal to the implementation maximum.
+    mPointParameters.pointSizeMax = caps.maxAliasedPointSize;
 }
 
 void GLES1State::setAlphaFunc(AlphaTestFunc func, GLfloat ref)
@@ -240,6 +233,11 @@ GLES1State::MatrixStack &GLES1State::currentMatrixStack()
     }
 }
 
+const angle::Mat4 &GLES1State::getModelviewMatrix() const
+{
+    return mModelviewMatrices.back();
+}
+
 const GLES1State::MatrixStack &GLES1State::currentMatrixStack() const
 {
     switch (mMatrixMode)
@@ -321,6 +319,96 @@ bool GLES1State::isTexCoordArrayEnabled(unsigned int unit) const
 bool GLES1State::isTextureTargetEnabled(unsigned int unit, const TextureType type) const
 {
     return mTexUnitEnables[unit].test(type);
+}
+
+LightModelParameters &GLES1State::lightModelParameters()
+{
+    return mLightModel;
+}
+
+const LightModelParameters &GLES1State::lightModelParameters() const
+{
+    return mLightModel;
+}
+
+LightParameters &GLES1State::lightParameters(unsigned int light)
+{
+    return mLights[light];
+}
+
+const LightParameters &GLES1State::lightParameters(unsigned int light) const
+{
+    return mLights[light];
+}
+
+MaterialParameters &GLES1State::materialParameters()
+{
+    return mMaterial;
+}
+
+const MaterialParameters &GLES1State::materialParameters() const
+{
+    return mMaterial;
+}
+
+bool GLES1State::isColorMaterialEnabled() const
+{
+    return mColorMaterialEnabled;
+}
+
+void GLES1State::setShadeModel(ShadingModel model)
+{
+    mShadeModel = model;
+}
+
+void GLES1State::setClipPlane(unsigned int plane, const GLfloat *equation)
+{
+    assert(plane < mClipPlanes.size());
+    mClipPlanes[plane].equation[0] = equation[0];
+    mClipPlanes[plane].equation[1] = equation[1];
+    mClipPlanes[plane].equation[2] = equation[2];
+    mClipPlanes[plane].equation[3] = equation[3];
+}
+
+void GLES1State::getClipPlane(unsigned int plane, GLfloat *equation) const
+{
+    assert(plane < mClipPlanes.size());
+    equation[0] = mClipPlanes[plane].equation[0];
+    equation[1] = mClipPlanes[plane].equation[1];
+    equation[2] = mClipPlanes[plane].equation[2];
+    equation[3] = mClipPlanes[plane].equation[3];
+}
+
+FogParameters &GLES1State::fogParameters()
+{
+    return mFog;
+}
+
+const FogParameters &GLES1State::fogParameters() const
+{
+    return mFog;
+}
+
+TextureEnvironmentParameters &GLES1State::textureEnvironment(unsigned int unit)
+{
+    assert(unit < mTextureEnvironments.size());
+    return mTextureEnvironments[unit];
+}
+
+const TextureEnvironmentParameters &GLES1State::textureEnvironment(unsigned int unit) const
+{
+    assert(unit < mTextureEnvironments.size());
+    return mTextureEnvironments[unit];
+}
+
+PointParameters &GLES1State::pointParameters()
+{
+    return mPointParameters;
+}
+
+const PointParameters &GLES1State::pointParameters() const
+{
+    return mPointParameters;
 }
 
 }  // namespace gl

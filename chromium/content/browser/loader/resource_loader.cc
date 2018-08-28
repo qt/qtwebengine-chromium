@@ -43,6 +43,7 @@
 #include "net/url_request/url_request_status.h"
 #include "services/network/loader_util.h"
 #include "services/network/public/cpp/resource_response.h"
+#include "services/network/throttling/scoped_throttling_token.h"
 #include "url/url_constants.h"
 
 using base::TimeDelta;
@@ -84,6 +85,8 @@ void PopulateResourceResponse(
   response->head.socket_address = response_info.socket_address;
   response->head.was_fetched_via_proxy = request->was_fetched_via_proxy();
   response->head.network_accessed = response_info.network_accessed;
+  response->head.async_revalidation_requested =
+      response_info.async_revalidation_requested;
   const content::ResourceRequestInfo* request_info =
       content::ResourceRequestInfo::ForRequest(request);
   if (request_info) {
@@ -152,7 +155,15 @@ class ResourceLoader::Controller : public ResourceController {
   // ResourceController implementation:
   void Resume() override {
     MarkAsUsed();
-    resource_loader_->Resume(true /* called_from_resource_controller */);
+    resource_loader_->Resume(true /* called_from_resource_controller */,
+                             base::nullopt);
+  }
+
+  void ResumeForRedirect(const base::Optional<net::HttpRequestHeaders>&
+                             modified_request_headers) override {
+    MarkAsUsed();
+    resource_loader_->Resume(true /* called_from_resource_controller */,
+                             modified_request_headers);
   }
 
   void Cancel() override {
@@ -209,7 +220,8 @@ class ResourceLoader::ScopedDeferral {
     // If Resume() was called, it just advanced the state without doing
     // anything. Go ahead and resume the request now.
     if (old_deferred_stage == DEFERRED_NONE)
-      resource_loader_->Resume(false /* called_from_resource_controller */);
+      resource_loader_->Resume(false /* called_from_resource_controller */,
+                               base::nullopt);
   }
 
  private:
@@ -219,10 +231,12 @@ class ResourceLoader::ScopedDeferral {
   DISALLOW_COPY_AND_ASSIGN(ScopedDeferral);
 };
 
-ResourceLoader::ResourceLoader(std::unique_ptr<net::URLRequest> request,
-                               std::unique_ptr<ResourceHandler> handler,
-                               ResourceLoaderDelegate* delegate,
-                               ResourceContext* resource_context)
+ResourceLoader::ResourceLoader(
+    std::unique_ptr<net::URLRequest> request,
+    std::unique_ptr<ResourceHandler> handler,
+    ResourceLoaderDelegate* delegate,
+    ResourceContext* resource_context,
+    std::unique_ptr<network::ScopedThrottlingToken> throttling_token)
     : deferred_stage_(DEFERRED_NONE),
       request_(std::move(request)),
       handler_(std::move(handler)),
@@ -231,6 +245,7 @@ ResourceLoader::ResourceLoader(std::unique_ptr<net::URLRequest> request,
       started_request_(false),
       times_cancelled_after_request_start_(0),
       resource_context_(resource_context),
+      throttling_token_(std::move(throttling_token)),
       weak_ptr_factory_(this) {
   request_->set_delegate(this);
   handler_->SetDelegate(this);
@@ -515,9 +530,13 @@ void ResourceLoader::CancelCertificateSelection() {
   request_->CancelWithError(net::ERR_SSL_CLIENT_AUTH_CERT_NEEDED);
 }
 
-void ResourceLoader::Resume(bool called_from_resource_controller) {
+void ResourceLoader::Resume(
+    bool called_from_resource_controller,
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
   DeferredStage stage = deferred_stage_;
   deferred_stage_ = DEFERRED_NONE;
+  DCHECK(!modified_request_headers.has_value() || stage == DEFERRED_REDIRECT)
+      << "modified_request_headers can only be used with redirects";
   switch (stage) {
     case DEFERRED_NONE:
       NOTREACHED();
@@ -536,7 +555,7 @@ void ResourceLoader::Resume(bool called_from_resource_controller) {
       // URLRequest::Start completes asynchronously, so starting the request now
       // won't result in synchronously calling into a ResourceHandler, if this
       // was called from Resume().
-      FollowDeferredRedirectInternal();
+      FollowDeferredRedirectInternal(modified_request_headers);
       break;
     case DEFERRED_ON_WILL_READ:
       // Always post a task, as synchronous resumes don't go through this
@@ -611,8 +630,6 @@ void ResourceLoader::StartRequestInternal() {
     request_->SetResponseHeadersCallback(base::Bind(
         &ResourceLoader::SetRawResponseHeaders, base::Unretained(this)));
   }
-  UMA_HISTOGRAM_TIMES("Net.ResourceLoader.TimeToURLRequestStart",
-                      base::TimeTicks::Now() - request_->creation_time());
   request_->Start();
 
   delegate_->DidStartRequest(this);
@@ -664,14 +681,18 @@ void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
   }
 }
 
-void ResourceLoader::FollowDeferredRedirectInternal() {
+void ResourceLoader::FollowDeferredRedirectInternal(
+    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
   DCHECK(!deferred_redirect_url_.is_empty());
   GURL redirect_url = deferred_redirect_url_;
   deferred_redirect_url_ = GURL();
   if (delegate_->HandleExternalProtocol(this, redirect_url)) {
+    DCHECK(!modified_request_headers.has_value())
+        << "ResourceLoaderDelegate::HandleExternalProtocol() with modified "
+           "headers was not supported yet. crbug.com/845683";
     Cancel();
   } else {
-    request_->FollowDeferredRedirect();
+    request_->FollowDeferredRedirect(modified_request_headers);
   }
 }
 
@@ -797,7 +818,6 @@ void ResourceLoader::ResponseCompleted() {
                          TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
 
   DVLOG(1) << "ResponseCompleted: " << request_->url().spec();
-  RecordHistograms();
 
   ScopedDeferral scoped_deferral(this, DEFERRED_FINISH);
   handler_->OnResponseCompleted(request_->status(),
@@ -808,71 +828,6 @@ void ResourceLoader::CallDidFinishLoading() {
   TRACE_EVENT_WITH_FLOW0("loading", "ResourceLoader::CallDidFinishLoading",
                          this, TRACE_EVENT_FLAG_FLOW_IN);
   delegate_->DidFinishLoading(this);
-}
-
-void ResourceLoader::RecordHistograms() {
-  ResourceRequestInfoImpl* info = GetRequestInfo();
-  if (request_->response_info().network_accessed) {
-    if (info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME) {
-      UMA_HISTOGRAM_ENUMERATION("Net.HttpResponseInfo.ConnectionInfo.MainFrame",
-                                request_->response_info().connection_info,
-                                net::HttpResponseInfo::NUM_OF_CONNECTION_INFOS);
-    } else {
-      UMA_HISTOGRAM_ENUMERATION(
-          "Net.HttpResponseInfo.ConnectionInfo.SubResource",
-          request_->response_info().connection_info,
-          net::HttpResponseInfo::NUM_OF_CONNECTION_INFOS);
-    }
-  }
-
-  if (request_->load_flags() & net::LOAD_PREFETCH) {
-    // Note that RESOURCE_TYPE_PREFETCH requests are a subset of
-    // net::LOAD_PREFETCH requests. In the histograms below, "Prefetch" means
-    // RESOURCE_TYPE_PREFETCH and "LoadPrefetch" means net::LOAD_PREFETCH.
-    bool is_resource_type_prefetch =
-        info->GetResourceType() == RESOURCE_TYPE_PREFETCH;
-    PrefetchStatus prefetch_status = STATUS_UNDEFINED;
-    TimeDelta total_time = base::TimeTicks::Now() - request_->creation_time();
-
-    switch (request_->status().status()) {
-      case net::URLRequestStatus::SUCCESS:
-        if (request_->was_cached()) {
-          prefetch_status = request_->response_info().unused_since_prefetch
-                                ? STATUS_SUCCESS_ALREADY_PREFETCHED
-                                : STATUS_SUCCESS_FROM_CACHE;
-          if (is_resource_type_prefetch) {
-            UMA_HISTOGRAM_TIMES("Net.Prefetch.TimeSpentPrefetchingFromCache",
-                                total_time);
-          }
-        } else {
-          prefetch_status = STATUS_SUCCESS_FROM_NETWORK;
-          if (is_resource_type_prefetch) {
-            UMA_HISTOGRAM_TIMES("Net.Prefetch.TimeSpentPrefetchingFromNetwork",
-                                total_time);
-          }
-        }
-        break;
-      case net::URLRequestStatus::CANCELED:
-        prefetch_status = STATUS_CANCELED;
-        if (is_resource_type_prefetch)
-          UMA_HISTOGRAM_TIMES("Net.Prefetch.TimeBeforeCancel", total_time);
-        break;
-      case net::URLRequestStatus::IO_PENDING:
-      case net::URLRequestStatus::FAILED:
-        prefetch_status = STATUS_UNDEFINED;
-        break;
-    }
-
-    UMA_HISTOGRAM_ENUMERATION("Net.LoadPrefetch.Pattern", prefetch_status,
-                              STATUS_MAX);
-    if (is_resource_type_prefetch) {
-      UMA_HISTOGRAM_ENUMERATION("Net.Prefetch.Pattern", prefetch_status,
-                                STATUS_MAX);
-    }
-  } else if (request_->response_info().unused_since_prefetch) {
-    TimeDelta total_time = base::TimeTicks::Now() - request_->creation_time();
-    UMA_HISTOGRAM_TIMES("Net.Prefetch.TimeSpentOnPrefetchHit", total_time);
-  }
 }
 
 void ResourceLoader::SetRawResponseHeaders(

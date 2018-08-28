@@ -721,7 +721,7 @@ class SourceBufferStreamTest : public testing::TestWithParam<BufferingApi> {
           &kDataA, kDataSize, is_keyframe, GetStreamType(), 0);
       buffer->set_timestamp(buffer_timestamps[0]);
       if (is_duration_estimated)
-        buffer->set_duration_type(DurationType::kRoughEstimate);
+        buffer->set_is_duration_estimated(true);
 
       if (buffer_timestamps[1] != buffer_timestamps[0]) {
         buffer->SetDecodeTimestamp(
@@ -3472,7 +3472,7 @@ TEST_P(SourceBufferStreamTest, ConfigChange_Basic) {
   CheckVideoConfig(video_config_);
 
   // Signal a config change.
-  STREAM_OP(UpdateVideoConfig(new_config));
+  STREAM_OP(UpdateVideoConfig(new_config, false));
 
   // Make sure updating the config doesn't change anything since new_config
   // should not be associated with the buffer GetNextBuffer() will return.
@@ -3508,7 +3508,7 @@ TEST_P(SourceBufferStreamTest, ConfigChange_Seek) {
 
   Seek(0);
   NewCodedFrameGroupAppend(0, 5, &kDataA);
-  STREAM_OP(UpdateVideoConfig(new_config));
+  STREAM_OP(UpdateVideoConfig(new_config, false));
   NewCodedFrameGroupAppend(5, 5, &kDataB);
 
   // Seek to the start of the buffers with the new config and make sure a
@@ -4545,6 +4545,27 @@ TEST_P(SourceBufferStreamTest, Audio_NoSpliceForBadOverlap) {
   CheckNoNextBuffer();
 }
 
+TEST_P(SourceBufferStreamTest, Audio_NoSpliceForEstimatedDuration) {
+  SetAudioStream();
+  Seek(0);
+
+  // Append two buffers, the latter having estimated duration.
+  NewCodedFrameGroupAppend("0D10K 10D10EK");
+  CheckExpectedRangesByTimestamp("{ [0,20) }");
+  CheckExpectedBuffers("0D10K 10D10EK");
+  CheckNoNextBuffer();
+
+  Seek(0);
+
+  // Add a new frame in a separate coded frame group that falls in the middle of
+  // the second buffer. In spite of the overlap, no splice should be performed
+  // due to the overlapped buffer having estimated duration.
+  NewCodedFrameGroupAppend("15D10K");
+  CheckExpectedRangesByTimestamp("{ [0,25) }");
+  CheckExpectedBuffers("0D10K 10D10EK 15D10K");
+  CheckNoNextBuffer();
+}
+
 TEST_P(SourceBufferStreamTest, Audio_SpliceTrimming_ExistingTrimming) {
   const base::TimeDelta kDuration = base::TimeDelta::FromMilliseconds(4);
   const base::TimeDelta kNoDiscard = base::TimeDelta();
@@ -4688,7 +4709,7 @@ TEST_P(SourceBufferStreamTest, Audio_ConfigChangeWithPreroll) {
   NewCodedFrameGroupAppend("0K 3K 6K");
 
   // Update the configuration.
-  STREAM_OP(UpdateAudioConfig(new_config));
+  STREAM_OP(UpdateAudioConfig(new_config, false));
 
   // We haven't read any buffers at this point, so the config for the next
   // buffer at time 0 should still be the original config.
@@ -4948,7 +4969,7 @@ TEST_P(SourceBufferStreamTest, ConfigChange_ReSeek) {
   // Append a few buffers, with a config change in the middle.
   VideoDecoderConfig new_config = TestVideoConfig::Large();
   NewCodedFrameGroupAppend("2000K 2010 2020D10");
-  STREAM_OP(UpdateVideoConfig(new_config));
+  STREAM_OP(UpdateVideoConfig(new_config, false));
   NewCodedFrameGroupAppend("2030K 2040 2050D10");
   CheckExpectedRangesByTimestamp("{ [2000,2060) }");
 

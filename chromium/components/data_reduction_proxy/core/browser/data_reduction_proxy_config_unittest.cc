@@ -24,7 +24,7 @@
 #include "base/strings/safe_sprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/threading/platform_thread.h"
@@ -879,8 +879,10 @@ TEST_F(DataReductionProxyConfigTest,
 
   net::TestURLRequestContext context;
   net::TestDelegate delegate;
-  std::unique_ptr<net::URLRequest> request = context.CreateRequest(
-      GURL(), net::IDLE, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+  std::unique_ptr<net::URLRequest> request =
+      context.CreateRequest(GURL("http://origin.net:80"
+                                 ""),
+                            net::IDLE, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
   request->SetLoadFlags(request->load_flags() |
                         net::LOAD_MAIN_FRAME_DEPRECATED);
   std::unique_ptr<previews::TestPreviewsDecider> previews_decider =
@@ -898,8 +900,10 @@ TEST_F(DataReductionProxyConfigTest,
 
   net::TestURLRequestContext context;
   net::TestDelegate delegate;
-  std::unique_ptr<net::URLRequest> request = context.CreateRequest(
-      GURL(), net::IDLE, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+  std::unique_ptr<net::URLRequest> request =
+      context.CreateRequest(GURL("http://origin.net:80"
+                                 ""),
+                            net::IDLE, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
   request->SetLoadFlags(request->load_flags() |
                         net::LOAD_MAIN_FRAME_DEPRECATED);
   std::unique_ptr<previews::TestPreviewsDecider> previews_decider =
@@ -921,8 +925,9 @@ TEST_F(DataReductionProxyConfigTest, ShouldAcceptServerPreview) {
   base::HistogramTester histogram_tester;
   net::TestURLRequestContext context_;
   net::TestDelegate delegate_;
-  std::unique_ptr<net::URLRequest> request = context_.CreateRequest(
-      GURL(), net::IDLE, &delegate_, TRAFFIC_ANNOTATION_FOR_TESTS);
+  std::unique_ptr<net::URLRequest> request =
+      context_.CreateRequest(GURL("http://origin.net:80"), net::IDLE,
+                             &delegate_, TRAFFIC_ANNOTATION_FOR_TESTS);
   request->SetLoadFlags(request->load_flags() |
                         net::LOAD_MAIN_FRAME_DEPRECATED);
   std::unique_ptr<previews::TestPreviewsDecider> previews_decider =

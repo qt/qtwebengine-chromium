@@ -48,10 +48,14 @@ using input_method::InputMethodEngineBase;
 using chromeos::InputMethodEngine;
 
 namespace {
-const char kErrorEngineNotAvailable[] = "Engine is not available";
-const char kErrorSetMenuItemsFail[] = "Could not create menu Items";
-const char kErrorUpdateMenuItemsFail[] = "Could not update menu Items";
-const char kErrorEngineNotActive[] = "The engine is not active.";
+const char kInputImeApiChromeOSErrorEngineNotAvailable[] =
+    "Engine is not available";
+const char kInputImeApiChromeOSErrorSetMenuItemsFail[] =
+    "Could not create menu Items";
+const char kInputImeApiChromeOSErrorUpdateMenuItemsFail[] =
+    "Could not update menu Items";
+const char kInputImeApiChromeOSErrorEngineNotActive[] =
+    "The engine is not active.";
 
 void SetMenuItemToMenu(
     const input_ime::MenuItem& input,
@@ -300,6 +304,34 @@ class ImeObserverChromeOS : public ui::ImeObserver {
       case ui::TextInputClient::FOCUS_REASON_OTHER:
         return "other";
     }
+  }
+
+  bool ConvertInputContextAutoCorrect(
+      ui::IMEEngineHandlerInterface::InputContext input_context) override {
+    if (!keyboard::GetKeyboardConfig().auto_correct)
+      return false;
+    return ImeObserver::ConvertInputContextAutoCorrect(input_context);
+  }
+
+  bool ConvertInputContextAutoComplete(
+      ui::IMEEngineHandlerInterface::InputContext input_context) override {
+    if (!keyboard::GetKeyboardConfig().auto_complete)
+      return false;
+    return ImeObserver::ConvertInputContextAutoComplete(input_context);
+  }
+
+  input_ime::AutoCapitalizeType ConvertInputContextAutoCapitalize(
+      ui::IMEEngineHandlerInterface::InputContext input_context) override {
+    if (!keyboard::GetKeyboardConfig().auto_capitalize)
+      return input_ime::AUTO_CAPITALIZE_TYPE_NONE;
+    return ImeObserver::ConvertInputContextAutoCapitalize(input_context);
+  }
+
+  bool ConvertInputContextSpellCheck(
+      ui::IMEEngineHandlerInterface::InputContext input_context) override {
+    if (!keyboard::GetKeyboardConfig().spell_check)
+      return false;
+    return ImeObserver::ConvertInputContextSpellCheck(input_context);
   }
 
   DISALLOW_COPY_AND_ASSIGN(ImeObserverChromeOS);
@@ -590,7 +622,7 @@ ExtensionFunction::ResponseAction InputImeSetMenuItemsFunction::Run() {
       event_router ? event_router->GetEngine(extension_id(), params.engine_id)
                    : nullptr;
   if (!engine)
-    return RespondNow(Error(kErrorEngineNotAvailable));
+    return RespondNow(Error(kInputImeApiChromeOSErrorEngineNotAvailable));
 
   std::vector<chromeos::input_method::InputMethodManager::MenuItem> items_out;
   for (const input_ime::MenuItem& item_in : params.items) {
@@ -599,7 +631,7 @@ ExtensionFunction::ResponseAction InputImeSetMenuItemsFunction::Run() {
   }
 
   if (!engine->SetMenuItems(items_out))
-    return RespondNow(Error(kErrorSetMenuItemsFail));
+    return RespondNow(Error(kInputImeApiChromeOSErrorSetMenuItemsFail));
   return RespondNow(NoArguments());
 }
 
@@ -615,7 +647,7 @@ ExtensionFunction::ResponseAction InputImeUpdateMenuItemsFunction::Run() {
       event_router ? event_router->GetEngine(extension_id(), params.engine_id)
                    : nullptr;
   if (!engine)
-    return RespondNow(Error(kErrorEngineNotAvailable));
+    return RespondNow(Error(kInputImeApiChromeOSErrorEngineNotAvailable));
 
   std::vector<chromeos::input_method::InputMethodManager::MenuItem> items_out;
   for (const input_ime::MenuItem& item_in : params.items) {
@@ -624,7 +656,7 @@ ExtensionFunction::ResponseAction InputImeUpdateMenuItemsFunction::Run() {
   }
 
   if (!engine->UpdateMenuItems(items_out))
-    return RespondNow(Error(kErrorUpdateMenuItemsFail));
+    return RespondNow(Error(kInputImeApiChromeOSErrorUpdateMenuItemsFail));
   return RespondNow(NoArguments());
 }
 
@@ -640,7 +672,7 @@ ExtensionFunction::ResponseAction InputImeDeleteSurroundingTextFunction::Run() {
       event_router ? event_router->GetEngine(extension_id(), params.engine_id)
                    : nullptr;
   if (!engine)
-    return RespondNow(Error(kErrorEngineNotAvailable));
+    return RespondNow(Error(kInputImeApiChromeOSErrorEngineNotAvailable));
 
   std::string error;
   engine->DeleteSurroundingText(params.context_id, params.offset, params.length,
@@ -660,12 +692,12 @@ InputMethodPrivateNotifyImeMenuItemActivatedFunction::Run() {
   InputMethodEngine* engine = GetActiveEngine(
       Profile::FromBrowserContext(browser_context()), active_extension_id);
   if (!engine)
-    return RespondNow(Error(kErrorEngineNotAvailable));
+    return RespondNow(Error(kInputImeApiChromeOSErrorEngineNotAvailable));
 
   std::unique_ptr<NotifyImeMenuItemActivated::Params> params(
       NotifyImeMenuItemActivated::Params::Create(*args_));
   if (params->engine_id != engine->GetActiveComponentId())
-    return RespondNow(Error(kErrorEngineNotActive));
+    return RespondNow(Error(kInputImeApiChromeOSErrorEngineNotActive));
   engine->PropertyActivate(params->name);
   return RespondNow(NoArguments());
 }
@@ -675,7 +707,7 @@ InputMethodPrivateGetCompositionBoundsFunction::Run() {
   InputMethodEngine* engine = GetActiveEngine(
       Profile::FromBrowserContext(browser_context()), extension_id());
   if (!engine)
-    return RespondNow(Error(kErrorEngineNotAvailable));
+    return RespondNow(Error(kInputImeApiChromeOSErrorEngineNotAvailable));
 
   auto bounds_list = std::make_unique<base::ListValue>();
   for (const auto& bounds : engine->composition_bounds()) {
@@ -740,9 +772,8 @@ void InputImeAPI::OnExtensionUnloaded(content::BrowserContext* browser_context,
     // desktop shelf will disappear. see bugs: 775507,788247,786273,761714.
     // But still need to unload keyboard container document. Since ime extension
     // need to re-render the document when it's recovered.
-    keyboard::KeyboardController* keyboard_controller =
-        keyboard::KeyboardController::GetInstance();
-    if (keyboard_controller) {
+    auto* keyboard_controller = keyboard::KeyboardController::Get();
+    if (keyboard_controller->enabled()) {
       // Keyboard controller "Reload" method only reload current page when the
       // url is changed. So we need unload the current page first. Then next
       // engine->Enable() can refresh the inputview page correctly.

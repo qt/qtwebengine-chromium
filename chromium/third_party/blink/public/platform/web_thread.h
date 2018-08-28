@@ -27,7 +27,6 @@
 
 #include "base/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
 #include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/platform/web_thread_type.h"
@@ -35,6 +34,8 @@
 #include <stdint.h>
 
 namespace base {
+class SingleThreadTaskRunner;
+class TimeTicks;
 namespace sequence_manager {
 class TaskTimeObserver;
 }
@@ -42,7 +43,7 @@ class TaskTimeObserver;
 
 namespace blink {
 
-class FrameScheduler;
+class FrameOrWorkerScheduler;
 class ThreadScheduler;
 
 // Always an integer value.
@@ -53,13 +54,13 @@ struct BLINK_PLATFORM_EXPORT WebThreadCreationParams {
 
   WebThreadCreationParams& SetThreadNameForTest(const char* name);
 
-  // Sets a scheduler for the frame which was responsible for the creation
+  // Sets a scheduler for the context which was responsible for the creation
   // of this thread.
-  WebThreadCreationParams& SetFrameScheduler(FrameScheduler*);
+  WebThreadCreationParams& SetFrameOrWorkerScheduler(FrameOrWorkerScheduler*);
 
   WebThreadType thread_type;
   const char* name;
-  FrameScheduler* frame_scheduler;  // NOT OWNED
+  FrameOrWorkerScheduler* frame_or_worker_scheduler;  // NOT OWNED
   base::Thread::Options thread_options;
 };
 
@@ -69,9 +70,8 @@ struct BLINK_PLATFORM_EXPORT WebThreadCreationParams {
 // run.
 class BLINK_PLATFORM_EXPORT WebThread {
  public:
-  // An IdleTask is passed a deadline in CLOCK_MONOTONIC seconds and is
-  // expected to complete before this deadline.
-  using IdleTask = base::OnceCallback<void(double deadline_seconds)>;
+  // An IdleTask is expected to complete before the deadline it is passed.
+  using IdleTask = base::OnceCallback<void(base::TimeTicks deadline)>;
 
   class BLINK_PLATFORM_EXPORT TaskObserver {
    public:

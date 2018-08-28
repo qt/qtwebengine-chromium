@@ -338,23 +338,23 @@ void TaskTracker::FlushAsyncForTesting(OnceClosure flush_callback) {
   }
 }
 
-bool TaskTracker::WillPostTask(const Task& task) {
-  DCHECK(task.task);
+bool TaskTracker::WillPostTask(Task* task) {
+  DCHECK(task->task);
 
-  if (!BeforePostTask(task.traits.shutdown_behavior()))
+  if (!BeforePostTask(task->traits.shutdown_behavior()))
     return false;
 
-  if (task.delayed_run_time.is_null())
+  if (task->delayed_run_time.is_null())
     subtle::NoBarrier_AtomicIncrement(&num_incomplete_undelayed_tasks_, 1);
 
   {
     TRACE_EVENT_WITH_FLOW0(
         kTaskSchedulerFlowTracingCategory, kQueueFunctionName,
-        TRACE_ID_MANGLE(task_annotator_.GetTaskTraceID(task)),
+        TRACE_ID_MANGLE(task_annotator_.GetTaskTraceID(*task)),
         TRACE_EVENT_FLAG_FLOW_OUT);
   }
 
-  task_annotator_.DidQueueTask(nullptr, task);
+  task_annotator_.WillQueueTask(nullptr, task);
 
   return true;
 }
@@ -439,9 +439,7 @@ void TaskTracker::SetHasShutdownStartedForTesting() {
 
   // Create a dummy |shutdown_event_| to satisfy TaskTracker's expectation of
   // its existence during shutdown (e.g. in OnBlockingShutdownTasksComplete()).
-  shutdown_event_.reset(
-      new WaitableEvent(WaitableEvent::ResetPolicy::MANUAL,
-                        WaitableEvent::InitialState::NOT_SIGNALED));
+  shutdown_event_ = std::make_unique<WaitableEvent>();
 
   state_->StartShutdown();
 }
@@ -454,7 +452,7 @@ void TaskTracker::RecordLatencyHistogram(
 
   DCHECK(latency_histogram_type == LatencyHistogramType::TASK_LATENCY ||
          latency_histogram_type == LatencyHistogramType::HEARTBEAT_LATENCY);
-  auto& histograms =
+  const auto& histograms =
       latency_histogram_type == LatencyHistogramType::TASK_LATENCY
           ? task_latency_histograms_
           : heartbeat_latency_histograms_;
@@ -550,9 +548,7 @@ void TaskTracker::PerformShutdown() {
     DCHECK(!num_block_shutdown_tasks_posted_during_shutdown_);
     DCHECK(!state_->HasShutdownStarted());
 
-    shutdown_event_.reset(
-        new WaitableEvent(WaitableEvent::ResetPolicy::MANUAL,
-                          WaitableEvent::InitialState::NOT_SIGNALED));
+    shutdown_event_ = std::make_unique<WaitableEvent>();
 
     const bool tasks_are_blocking_shutdown = state_->StartShutdown();
 

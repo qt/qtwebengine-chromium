@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context.h"
 
 #include <memory>
+#include "base/numerics/checked_math.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
@@ -64,7 +65,6 @@
 #include "third_party/blink/renderer/modules/webgl/webgl_draw_buffers.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_lose_context.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/drawing_buffer.h"
-#include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
 
 namespace blink {
 
@@ -92,8 +92,8 @@ CanvasRenderingContext* WebGLRenderingContext::Factory::Create(
     const CanvasContextCreationAttributesCore& attrs) {
   bool using_gpu_compositing;
   std::unique_ptr<WebGraphicsContext3DProvider> context_provider(
-      CreateWebGraphicsContext3DProvider(host, attrs, 1,
-                                         &using_gpu_compositing));
+      CreateWebGraphicsContext3DProvider(
+          host, attrs, Platform::kWebGL1ContextType, &using_gpu_compositing));
   if (!ShouldCreateContext(context_provider.get()))
     return nullptr;
 
@@ -126,7 +126,7 @@ WebGLRenderingContext::WebGLRenderingContext(
                                 std::move(context_provider),
                                 using_gpu_compositing,
                                 requested_attributes,
-                                1) {}
+                                Platform::kWebGL1ContextType) {}
 
 void WebGLRenderingContext::SetCanvasGetContextResult(
     RenderingContext& result) {

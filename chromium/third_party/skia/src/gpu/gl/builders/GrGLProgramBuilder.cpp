@@ -29,8 +29,8 @@
 #define GL_CALL(X) GR_GL_CALL(this->gpu()->glInterface(), X)
 #define GL_CALL_RET(R, X) GR_GL_CALL_RET(this->gpu()->glInterface(), R, X)
 
-GrGLProgram* GrGLProgramBuilder::CreateProgram(const GrPipeline& pipeline,
-                                               const GrPrimitiveProcessor& primProc,
+GrGLProgram* GrGLProgramBuilder::CreateProgram(const GrPrimitiveProcessor& primProc,
+                                               const GrPipeline& pipeline,
                                                GrProgramDesc* desc,
                                                GrGLGpu* gpu) {
 #ifdef SK_DEBUG
@@ -55,7 +55,6 @@ GrGLProgram* GrGLProgramBuilder::CreateProgram(const GrPipeline& pipeline,
         // to skip the SkSL->GLSL step on a cache hit.
     }
     if (!builder.emitAndInstallProcs()) {
-        builder.cleanupFragmentProcessors();
         return nullptr;
     }
     return builder.finalize();
@@ -67,11 +66,14 @@ GrGLProgramBuilder::GrGLProgramBuilder(GrGLGpu* gpu,
                                        const GrPipeline& pipeline,
                                        const GrPrimitiveProcessor& primProc,
                                        GrProgramDesc* desc)
-    : INHERITED(pipeline, primProc, desc)
-    , fGpu(gpu)
-    , fVaryingHandler(this)
-    , fUniformHandler(this) {
-}
+        : INHERITED(primProc, pipeline, desc)
+        , fGpu(gpu)
+        , fVaryingHandler(this)
+        , fUniformHandler(this)
+        , fVertexAttributeCnt(0)
+        , fInstanceAttributeCnt(0)
+        , fVertexStride(0)
+        , fInstanceStride(0) {}
 
 const GrCaps* GrGLProgramBuilder::caps() const {
     return fGpu->caps();
@@ -130,6 +132,37 @@ bool GrGLProgramBuilder::compileAndAttachShaders(GrGLSLShaderBuilder& shader,
                                          *outInputs);
 }
 
+void GrGLProgramBuilder::computeCountsAndStrides(GrGLuint programID,
+                                                 const GrPrimitiveProcessor& primProc,
+                                                 bool bindAttribLocations) {
+    fVertexAttributeCnt = primProc.numVertexAttributes();
+    fInstanceAttributeCnt = primProc.numInstanceAttributes();
+    fAttributes.reset(
+            new GrGLProgram::Attribute[fVertexAttributeCnt + fInstanceAttributeCnt]);
+    auto addAttr = [&](int i, const auto& a, size_t* stride) {
+        fAttributes[i].fType = a.type();
+        fAttributes[i].fOffset = *stride;
+        *stride += a.sizeAlign4();
+        fAttributes[i].fLocation = i;
+        if (bindAttribLocations) {
+            GL_CALL(BindAttribLocation(programID, i, a.name()));
+        }
+    };
+    fVertexStride = 0;
+    int i = 0;
+    for (; i < fVertexAttributeCnt; i++) {
+        addAttr(i, primProc.vertexAttribute(i), &fVertexStride);
+        SkASSERT(fAttributes[i].fOffset == primProc.debugOnly_vertexAttributeOffset(i));
+    }
+    SkASSERT(fVertexStride == primProc.debugOnly_vertexStride());
+    fInstanceStride = 0;
+    for (int j = 0; j < fInstanceAttributeCnt; j++, ++i) {
+        addAttr(i, primProc.instanceAttribute(j), &fInstanceStride);
+        SkASSERT(fAttributes[i].fOffset == primProc.debugOnly_instanceAttributeOffset(j));
+    }
+    SkASSERT(fInstanceStride == primProc.debugOnly_instanceStride());
+}
+
 GrGLProgram* GrGLProgramBuilder::finalize() {
     TRACE_EVENT0("skia", TRACE_FUNC);
 
@@ -137,7 +170,6 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
     GrGLuint programID;
     GL_CALL_RET(programID, CreateProgram());
     if (0 == programID) {
-        this->cleanupFragmentProcessors();
         return nullptr;
     }
 
@@ -174,10 +206,13 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
                               ProgramBinary(programID, binaryFormat, (void*) (bytes + offset),
                                             fCached->size() - offset));
         if (GR_GL_GET_ERROR(this->gpu()->glInterface()) == GR_GL_NO_ERROR) {
-            if (inputs.fRTHeight) {
-                this->addRTHeightUniform(SKSL_RTHEIGHT_NAME);
-            }
             cached = this->checkLinkStatus(programID);
+            if (cached) {
+                if (inputs.fRTHeight) {
+                    this->addRTHeightUniform(SKSL_RTHEIGHT_NAME);
+                }
+                this->computeCountsAndStrides(programID, primProc, false);
+            }
         } else {
             cached = false;
         }
@@ -195,6 +230,10 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
                                                          fFS.fCompilerStrings.count(),
                                                          settings,
                                                          &glsl);
+        if (!fs) {
+            this->cleanupProgram(programID, shadersToDelete);
+            return nullptr;
+        }
         inputs = fs->fInputs;
         if (inputs.fRTHeight) {
             this->addRTHeightUniform(SKSL_RTHEIGHT_NAME);
@@ -213,9 +252,9 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
                                                          fVS.fCompilerStrings.count(),
                                                          settings,
                                                          &glsl);
-        if (!this->compileAndAttachShaders(glsl.c_str(), glsl.size(), programID,
-                                           GR_GL_VERTEX_SHADER, &shadersToDelete, settings,
-                                           inputs)) {
+        if (!vs || !this->compileAndAttachShaders(glsl.c_str(), glsl.size(), programID,
+                                                  GR_GL_VERTEX_SHADER, &shadersToDelete, settings,
+                                                  inputs)) {
             this->cleanupProgram(programID, shadersToDelete);
             return nullptr;
         }
@@ -223,10 +262,7 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
         // NVPR actually requires a vertex shader to compile
         bool useNvpr = primProc.isPathRendering();
         if (!useNvpr) {
-            int vaCount = primProc.numAttribs();
-            for (int i = 0; i < vaCount; i++) {
-                GL_CALL(BindAttribLocation(programID, i, primProc.getAttrib(i).fName));
-            }
+            this->computeCountsAndStrides(programID, primProc, true);
         }
 
         if (primProc.willUseGeoShader()) {
@@ -238,13 +274,12 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
                               fGS.fCompilerStrings.count(),
                               settings,
                               &glsl);
-            if (!this->compileAndAttachShaders(glsl.c_str(), glsl.size(), programID,
-                                               GR_GL_GEOMETRY_SHADER, &shadersToDelete, settings,
-                                               inputs)) {
+            if (!gs || !this->compileAndAttachShaders(glsl.c_str(), glsl.size(), programID,
+                                                      GR_GL_GEOMETRY_SHADER, &shadersToDelete,
+                                                      settings, inputs)) {
                 this->cleanupProgram(programID, shadersToDelete);
                 return nullptr;
             }
-
         }
         this->bindProgramResourceLocations(programID);
 
@@ -271,7 +306,6 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
             GrGLPrintShader(fGpu->glContext(), GR_GL_FRAGMENT_SHADER, fFS.fCompilerStrings.begin(),
                             fFS.fCompilerStringLengths.begin(), fFS.fCompilerStrings.count(),
                             settings);
-            SkDEBUGFAIL("");
             return nullptr;
         }
     }
@@ -375,24 +409,27 @@ void GrGLProgramBuilder::resolveProgramResourceLocations(GrGLuint programID) {
 void GrGLProgramBuilder::cleanupProgram(GrGLuint programID, const SkTDArray<GrGLuint>& shaderIDs) {
     GL_CALL(DeleteProgram(programID));
     this->cleanupShaders(shaderIDs);
-    this->cleanupFragmentProcessors();
 }
 void GrGLProgramBuilder::cleanupShaders(const SkTDArray<GrGLuint>& shaderIDs) {
     for (int i = 0; i < shaderIDs.count(); ++i) {
-      GL_CALL(DeleteShader(shaderIDs[i]));
+        GL_CALL(DeleteShader(shaderIDs[i]));
     }
 }
 
 GrGLProgram* GrGLProgramBuilder::createProgram(GrGLuint programID) {
     return new GrGLProgram(fGpu,
-                           *this->desc(),
                            fUniformHandles,
                            programID,
                            fUniformHandler.fUniforms,
                            fUniformHandler.fSamplers,
-                           fUniformHandler.fTexelBuffers,
                            fVaryingHandler.fPathProcVaryingInfos,
                            std::move(fGeometryProcessor),
                            std::move(fXferProcessor),
-                           fFragmentProcessors);
+                           std::move(fFragmentProcessors),
+                           fFragmentProcessorCnt,
+                           std::move(fAttributes),
+                           fVertexAttributeCnt,
+                           fInstanceAttributeCnt,
+                           fVertexStride,
+                           fInstanceStride);
 }

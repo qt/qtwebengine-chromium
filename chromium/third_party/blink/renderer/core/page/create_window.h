@@ -49,15 +49,7 @@ DOMWindow* CreateWindow(const String& url_string,
                         LocalFrame& opener_frame,
                         ExceptionState&);
 
-void CreateWindowForRequest(const FrameLoadRequest&,
-                            LocalFrame& opener_frame,
-                            NavigationPolicy);
-
-// Exposed for testing
-CORE_EXPORT NavigationPolicy
-EffectiveNavigationPolicy(NavigationPolicy,
-                          const WebInputEvent* current_event,
-                          const WebWindowFeatures&);
+void CreateWindowForRequest(const FrameLoadRequest&, LocalFrame& opener_frame);
 
 // Exposed for testing
 CORE_EXPORT WebWindowFeatures GetWindowFeaturesFromString(const String&);

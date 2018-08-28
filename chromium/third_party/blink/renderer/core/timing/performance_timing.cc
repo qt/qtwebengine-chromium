@@ -32,7 +32,6 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_object_builder.h"
-#include "third_party/blink/renderer/core/css/css_timing.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/document_parser_timing.h"
 #include "third_party/blink/renderer/core/dom/document_timing.h"
@@ -49,14 +48,11 @@
 // Legacy support for NT1(https://www.w3.org/TR/navigation-timing/).
 namespace blink {
 
-static unsigned long long ToIntegerMilliseconds(double seconds) {
-  DCHECK_GE(seconds, 0);
-  double clamped_seconds = Performance::ClampTimeResolution(seconds);
+static unsigned long long ToIntegerMilliseconds(TimeDelta duration) {
+  DCHECK_GE(duration, TimeDelta());
+  double clamped_seconds =
+      Performance::ClampTimeResolution(duration.InSecondsF());
   return static_cast<unsigned long long>(clamped_seconds * 1000.0);
-}
-
-static double ToDoubleSeconds(unsigned long long integer_milliseconds) {
-  return integer_milliseconds / 1000.0;
 }
 
 PerformanceTiming::PerformanceTiming(LocalFrame* frame)
@@ -350,6 +346,15 @@ unsigned long long PerformanceTiming::FirstMeaningfulPaint() const {
   return MonotonicTimeToIntegerMilliseconds(timing->FirstMeaningfulPaint());
 }
 
+unsigned long long PerformanceTiming::FirstMeaningfulPaintCandidate() const {
+  const PaintTiming* timing = GetPaintTiming();
+  if (!timing)
+    return 0;
+
+  return MonotonicTimeToIntegerMilliseconds(
+      timing->FirstMeaningfulPaintCandidate());
+}
+
 unsigned long long PerformanceTiming::PageInteractive() const {
   InteractiveDetector* interactive_detector = GetInteractiveDetector();
   if (!interactive_detector)
@@ -383,8 +388,7 @@ unsigned long long PerformanceTiming::FirstInputDelay() const {
   if (!interactive_detector)
     return 0;
 
-  return ToIntegerMilliseconds(
-      interactive_detector->GetFirstInputDelay().InSecondsF());
+  return ToIntegerMilliseconds(interactive_detector->GetFirstInputDelay());
 }
 
 unsigned long long PerformanceTiming::FirstInputTimestamp() const {
@@ -394,6 +398,23 @@ unsigned long long PerformanceTiming::FirstInputTimestamp() const {
 
   return MonotonicTimeToIntegerMilliseconds(
       interactive_detector->GetFirstInputTimestamp());
+}
+
+unsigned long long PerformanceTiming::LongestInputDelay() const {
+  const InteractiveDetector* interactive_detector = GetInteractiveDetector();
+  if (!interactive_detector)
+    return 0;
+
+  return ToIntegerMilliseconds(interactive_detector->GetLongestInputDelay());
+}
+
+unsigned long long PerformanceTiming::LongestInputTimestamp() const {
+  const InteractiveDetector* interactive_detector = GetInteractiveDetector();
+  if (!interactive_detector)
+    return 0;
+
+  return MonotonicTimeToIntegerMilliseconds(
+      interactive_detector->GetLongestInputTimestamp());
 }
 
 unsigned long long PerformanceTiming::ParseStart() const {
@@ -451,24 +472,6 @@ PerformanceTiming::ParseBlockedOnScriptExecutionFromDocumentWriteDuration()
       timing->ParserBlockedOnScriptExecutionFromDocumentWriteDuration());
 }
 
-unsigned long long PerformanceTiming::AuthorStyleSheetParseDurationBeforeFCP()
-    const {
-  const CSSTiming* timing = CssTiming();
-  if (!timing)
-    return 0;
-
-  return ToIntegerMilliseconds(
-      timing->AuthorStyleSheetParseDurationBeforeFCP());
-}
-
-unsigned long long PerformanceTiming::UpdateStyleDurationBeforeFCP() const {
-  const CSSTiming* timing = CssTiming();
-  if (!timing)
-    return 0;
-
-  return ToIntegerMilliseconds(timing->UpdateDurationBeforeFCP());
-}
-
 DocumentLoader* PerformanceTiming::GetDocumentLoader() const {
   if (!GetFrame())
     return nullptr;
@@ -496,17 +499,6 @@ const PaintTiming* PerformanceTiming::GetPaintTiming() const {
     return nullptr;
 
   return &PaintTiming::From(*document);
-}
-
-const CSSTiming* PerformanceTiming::CssTiming() const {
-  if (!GetFrame())
-    return nullptr;
-
-  Document* document = GetFrame()->GetDocument();
-  if (!document)
-    return nullptr;
-
-  return &CSSTiming::From(*document);
 }
 
 const DocumentParserTiming* PerformanceTiming::GetDocumentParserTiming() const {
@@ -581,16 +573,6 @@ unsigned long long PerformanceTiming::MonotonicTimeToIntegerMilliseconds(
     return 0;
 
   return ToIntegerMilliseconds(timing->MonotonicTimeToPseudoWallTime(time));
-}
-
-TimeTicks PerformanceTiming::IntegerMillisecondsToMonotonicTime(
-    unsigned long long integer_milliseconds) const {
-  const DocumentLoadTiming* timing = GetDocumentLoadTiming();
-  if (!timing)
-    return TimeTicks();
-
-  return timing->PseudoWallTimeToMonotonicTime(
-      ToDoubleSeconds(integer_milliseconds));
 }
 
 void PerformanceTiming::Trace(blink::Visitor* visitor) {

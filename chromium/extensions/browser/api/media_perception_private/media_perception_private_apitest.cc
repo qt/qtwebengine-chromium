@@ -8,7 +8,7 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_media_analytics_client.h"
 #include "chromeos/dbus/media_analytics_client.h"
-#include "chromeos/media_perception/media_perception.pb.h"
+#include "chromeos/dbus/media_perception/media_perception.pb.h"
 #include "extensions/browser/api/media_perception_private/media_perception_api_delegate.h"
 #include "extensions/browser/api/media_perception_private/media_perception_private_api.h"
 #include "extensions/common/api/media_perception_private.h"
@@ -45,6 +45,11 @@ class TestMediaPerceptionAPIDelegate : public MediaPerceptionAPIDelegate {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(load_callback), false, base::FilePath()));
+  }
+
+  void BindDeviceFactoryProviderToVideoCaptureService(
+      video_capture::mojom::DeviceFactoryProviderPtr* provider) override {
+    LOG(ERROR) << "Not implemented.";
   }
 };
 
@@ -112,6 +117,16 @@ IN_PROC_BROWSER_TEST_F(MediaPerceptionPrivateApiTest, SetAnalyticsComponent) {
   // ExtensionsAPIClient.
   TestExtensionsAPIClient test_api_client;
   ASSERT_TRUE(RunAppTest("media_perception_private/component")) << message_;
+}
+
+// Verify that we can use the new interface to set the process state of the
+// media perception component.
+IN_PROC_BROWSER_TEST_F(MediaPerceptionPrivateApiTest,
+                       SetComponentProcessState) {
+  // Constructing a TestExtensionsAPIClient to set the behavior of the
+  // ExtensionsAPIClient.
+  TestExtensionsAPIClient test_api_client;
+  ASSERT_TRUE(RunAppTest("media_perception_private/process_state")) << message_;
 }
 
 // Verify that we can set and get mediaPerception system state.

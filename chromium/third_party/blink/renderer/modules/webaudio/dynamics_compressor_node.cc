@@ -23,14 +23,15 @@
  * DAMAGE.
  */
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/modules/webaudio/dynamics_compressor_node.h"
+
 #include "third_party/blink/renderer/modules/webaudio/audio_node_input.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_output.h"
-#include "third_party/blink/renderer/modules/webaudio/dynamics_compressor_node.h"
 #include "third_party/blink/renderer/modules/webaudio/dynamics_compressor_options.h"
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
 #include "third_party/blink/renderer/platform/audio/dynamics_compressor.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 // Set output to stereo by default.
 static const unsigned defaultNumberOfOutputChannels = 2;
@@ -154,10 +155,11 @@ void DynamicsCompressorHandler::SetChannelCount(
     }
   } else {
     exception_state.ThrowDOMException(
-        kNotSupportedError, ExceptionMessages::IndexOutsideRange<unsigned long>(
-                                "channelCount", channel_count, 1,
-                                ExceptionMessages::kInclusiveBound, 2,
-                                ExceptionMessages::kInclusiveBound));
+        DOMExceptionCode::kNotSupportedError,
+        ExceptionMessages::IndexOutsideRange<unsigned long>(
+            "channelCount", channel_count, 1,
+            ExceptionMessages::kInclusiveBound, 2,
+            ExceptionMessages::kInclusiveBound));
   }
 }
 
@@ -176,7 +178,7 @@ void DynamicsCompressorHandler::SetChannelCountMode(
   } else if (mode == "max") {
     // This is not supported for a DynamicsCompressorNode, which can
     // only handle 1 or 2 channels.
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "The provided value 'max' is not an "
                                       "allowed value for ChannelCountMode");
     new_channel_count_mode_ = old_mode;

@@ -315,23 +315,30 @@ bool HostDrmDevice::GpuSetHDCPState(int64_t display_id,
   return true;
 }
 
-bool HostDrmDevice::GpuSetColorCorrection(
-    int64_t id,
-    const std::vector<display::GammaRampRGBEntry>& degamma_lut,
-    const std::vector<display::GammaRampRGBEntry>& gamma_lut,
-    const std::vector<float>& correction_matrix) {
+bool HostDrmDevice::GpuSetColorMatrix(int64_t display_id,
+                                      const std::vector<float>& color_matrix) {
   DCHECK_CALLED_ON_VALID_THREAD(on_window_server_thread_);
   if (!IsConnected())
     return false;
 
-  drm_device_ptr_->SetColorCorrection(id, degamma_lut, gamma_lut,
-                                      correction_matrix);
+  drm_device_ptr_->SetColorMatrix(display_id, color_matrix);
+  return true;
+}
 
+bool HostDrmDevice::GpuSetGammaCorrection(
+    int64_t display_id,
+    const std::vector<display::GammaRampRGBEntry>& degamma_lut,
+    const std::vector<display::GammaRampRGBEntry>& gamma_lut) {
+  DCHECK_CALLED_ON_VALID_THREAD(on_window_server_thread_);
+  if (!IsConnected())
+    return false;
+
+  drm_device_ptr_->SetGammaCorrection(display_id, degamma_lut, gamma_lut);
   return true;
 }
 
 void HostDrmDevice::GpuCheckOverlayCapabilitiesCallback(
-    const gfx::AcceleratedWidget& widget,
+    gfx::AcceleratedWidget widget,
     const OverlaySurfaceCandidateList& overlays,
     const OverlayStatusList& returns) const {
   DCHECK_CALLED_ON_VALID_THREAD(on_window_server_thread_);
@@ -412,6 +419,15 @@ void HostDrmDevice::OnGpuServiceLaunchedCompositor(
   DETACH_FROM_THREAD(on_ui_thread_);
   drm_device_ptr_compositor.Bind(drm_device_ptr_compositor.PassInterface());
   drm_device_ptr_compositor_ = std::move(drm_device_ptr_compositor);
+}
+
+void HostDrmDevice::OnGpuServiceLost() {
+  cursor_proxy_.reset();
+  connected_ = false;
+  drm_device_ptr_.reset();
+  // TODO(rjkroege): OnGpuThreadRetired is not currently used.
+  for (GpuThreadObserver& observer : gpu_thread_observers_)
+    observer.OnGpuThreadRetired();
 }
 
 }  // namespace ui

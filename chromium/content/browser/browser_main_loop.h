@@ -32,7 +32,6 @@ class Env;
 
 namespace base {
 class CommandLine;
-class DeferredSequencedTaskRunner;
 class FilePath;
 class HighResolutionTimerManager;
 class MemoryPressureMonitor;
@@ -72,25 +71,20 @@ class MidiService;
 }  // namespace midi
 
 namespace mojo {
-namespace edk {
+namespace core {
 class ScopedIPCSupport;
-}  // namespace edk
+}  // namespace core
 }  // namespace mojo
 
 namespace net {
 class NetworkChangeNotifier;
 }  // namespace net
 
-#if BUILDFLAG(ENABLE_MUS)
-namespace ui {
-class ImageCursorsSet;
-}
-#endif
-
 namespace viz {
 class CompositingModeReporterImpl;
 class FrameSinkManagerImpl;
 class HostFrameSinkManager;
+class ServerSharedBitmapManager;
 }
 
 namespace content {
@@ -126,13 +120,14 @@ class CONTENT_EXPORT BrowserMainLoop {
   // that return objects which are owned by this class.
   static BrowserMainLoop* GetInstance();
 
+  static media::AudioManager* GetAudioManager();
+
+  // The TaskScheduler instance must exist but not to be started when building
+  // BrowserMainLoop.
   explicit BrowserMainLoop(const MainFunctionParams& parameters);
   virtual ~BrowserMainLoop();
 
-  // |service_manager_thread| is optional. If set, it will be registered as
-  // BrowserThread::IO in CreateThreads() instead of creating a brand new
-  // thread.
-  void Init(std::unique_ptr<BrowserProcessSubThread> service_manager_thread);
+  void Init();
 
   // Return value is exit status. Anything other than RESULT_CODE_NORMAL_EXIT
   // is considered an error.
@@ -163,7 +158,6 @@ class CONTENT_EXPORT BrowserMainLoop {
   int GetResultCode() const { return result_code_; }
 
   media::AudioManager* audio_manager() const;
-  base::SequencedTaskRunner* audio_service_runner();
   bool AudioServiceOutOfProcess() const;
   media::AudioSystem* audio_system() const { return audio_system_.get(); }
   MediaStreamManager* media_stream_manager() const {
@@ -191,10 +185,6 @@ class CONTENT_EXPORT BrowserMainLoop {
     return startup_trace_file_;
   }
 
-#if BUILDFLAG(ENABLE_MUS)
-  ui::ImageCursorsSet* image_cursors_set() { return image_cursors_set_.get(); }
-#endif
-
   // Returns the task runner for tasks that that are critical to producing a new
   // CompositorFrame on resize. On Mac this will be the task runner provided by
   // WindowResizeHelperMac, on other platforms it will just be the thread task
@@ -217,6 +207,9 @@ class CONTENT_EXPORT BrowserMainLoop {
   // TODO(crbug.com/657959): This will be removed once there are no users, as
   // SurfaceManager is being moved out of process.
   viz::FrameSinkManagerImpl* GetFrameSinkManager() const;
+
+  // This returns null when the display compositor is out of process.
+  viz::ServerSharedBitmapManager* GetServerSharedBitmapManager() const;
 #endif
 
   // Fulfills a mojo pointer to the singleton CompositingModeReporter.
@@ -307,9 +300,6 @@ class CONTENT_EXPORT BrowserMainLoop {
 #if defined(USE_AURA)
   std::unique_ptr<aura::Env> env_;
 #endif
-#if BUILDFLAG(ENABLE_MUS)
-  std::unique_ptr<ui::ImageCursorsSet> image_cursors_set_;
-#endif
 
 #if defined(OS_ANDROID)
   // Android implementation of ScreenOrientationDelegate
@@ -345,7 +335,7 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   // Members initialized in |BrowserThreadsStarted()| --------------------------
   std::unique_ptr<ServiceManagerContext> service_manager_context_;
-  std::unique_ptr<mojo::edk::ScopedIPCSupport> mojo_ipc_support_;
+  std::unique_ptr<mojo::core::ScopedIPCSupport> mojo_ipc_support_;
 
   // |user_input_monitor_| has to outlive |audio_manager_|, so declared first.
   std::unique_ptr<media::UserInputMonitor> user_input_monitor_;
@@ -353,9 +343,6 @@ class CONTENT_EXPORT BrowserMainLoop {
   // |audio_manager_| is not instantiated when the audio service runs out of
   // process.
   std::unique_ptr<media::AudioManager> audio_manager_;
-
-  // Task runner for the audio service when it runs in the browser process.
-  scoped_refptr<base::DeferredSequencedTaskRunner> audio_service_runner_;
 
   std::unique_ptr<media::AudioSystem> audio_system_;
 
@@ -384,6 +371,11 @@ class CONTENT_EXPORT BrowserMainLoop {
   scoped_refptr<SaveFileManager> save_file_manager_;
   std::unique_ptr<content::TracingControllerImpl> tracing_controller_;
 #if !defined(OS_ANDROID)
+  // A SharedBitmapManager used to sharing and mapping IDs to shared memory
+  // between processes for software compositing. When the display compositor is
+  // in the browser process, then |server_shared_bitmap_manager_| is set, and
+  // when it is in the viz process, then it is null.
+  std::unique_ptr<viz::ServerSharedBitmapManager> server_shared_bitmap_manager_;
   std::unique_ptr<viz::HostFrameSinkManager> host_frame_sink_manager_;
   // This is owned here so that SurfaceManager will be accessible in process
   // when display is in the same process. Other than using SurfaceManager,

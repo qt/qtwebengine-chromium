@@ -20,7 +20,7 @@
 #include "base/trace_event/memory_dump_manager.h"
 #include "build/build_config.h"
 #include "cc/base/container_util.h"
-#include "cc/resources/layer_tree_resource_provider.h"
+#include "components/viz/client/client_resource_provider.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/resources/resource_sizes.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -50,8 +50,8 @@ bool ResourceMeetsSizeRequirements(const gfx::Size& requested_size,
     return false;
 
   // GetArea will crash on overflow, however all sizes in use are tile sizes.
-  // These are capped at LayerTreeResourceProvider::max_texture_size(), and will
-  // not overflow.
+  // These are capped at viz::ClientResourceProvider::max_texture_size(), and
+  // will not overflow.
   float actual_area = actual_size.GetArea();
   float requested_area = requested_size.GetArea();
   // Don't use a resource that is more than |kReuseThreshold| times the
@@ -67,7 +67,7 @@ bool ResourceMeetsSizeRequirements(const gfx::Size& requested_size,
 constexpr base::TimeDelta ResourcePool::kDefaultExpirationDelay;
 
 ResourcePool::ResourcePool(
-    LayerTreeResourceProvider* resource_provider,
+    viz::ClientResourceProvider* resource_provider,
     viz::ContextProvider* context_provider,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     const base::TimeDelta& expiration_delay,
@@ -83,6 +83,9 @@ ResourcePool::ResourcePool(
       this, "cc::ResourcePool", task_runner_.get());
   // Register this component with base::MemoryCoordinatorClientRegistry.
   base::MemoryCoordinatorClientRegistry::GetInstance()->Register(this);
+  memory_pressure_listener_.reset(
+      new base::MemoryPressureListener(base::BindRepeating(
+          &ResourcePool::OnMemoryPressure, weak_ptr_factory_.GetWeakPtr())));
 }
 
 ResourcePool::~ResourcePool() {
@@ -306,7 +309,6 @@ void ResourcePool::PrepareForExport(const InUsePoolResource& resource) {
         resource.resource_->size(), resource.resource_->format());
   }
   transferable.format = resource.resource_->format();
-  transferable.buffer_format = viz::BufferFormat(transferable.format);
   transferable.color_space = resource.resource_->color_space();
   resource.resource_->set_resource_id(resource_provider_->ImportResource(
       std::move(transferable),
@@ -557,6 +559,18 @@ void ResourcePool::OnMemoryStateChange(base::MemoryState state) {
   evict_busy_resources_when_unused_ = state == base::MemoryState::SUSPENDED;
 }
 
+void ResourcePool::OnMemoryPressure(
+    base::MemoryPressureListener::MemoryPressureLevel level) {
+  switch (level) {
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
+      break;
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
+      EvictResourcesNotUsedSince(base::TimeTicks() + base::TimeDelta::Max());
+      break;
+  }
+}
+
 ResourcePool::PoolResource::PoolResource(size_t unique_id,
                                          const gfx::Size& size,
                                          viz::ResourceFormat format,
@@ -571,7 +585,7 @@ ResourcePool::PoolResource::~PoolResource() = default;
 void ResourcePool::PoolResource::OnMemoryDump(
     base::trace_event::ProcessMemoryDump* pmd,
     int tracing_id,
-    const LayerTreeResourceProvider* resource_provider,
+    const viz::ClientResourceProvider* resource_provider,
     bool is_free) const {
   base::UnguessableToken shm_guid;
   base::trace_event::MemoryAllocatorDumpGuid backing_guid;

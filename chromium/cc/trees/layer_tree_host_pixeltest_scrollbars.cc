@@ -137,7 +137,13 @@ TEST_F(LayerTreeHostScrollbarsPixelTest, TransformScale) {
                base::FilePath(FILE_PATH_LITERAL("spiral_double_scale.png")));
 }
 
-TEST_F(LayerTreeHostScrollbarsPixelTest, HugeTransformScale) {
+// Disabled on TSan due to frequent timeouts. crbug.com/848994
+#if defined(THREAD_SANITIZER)
+#define MAYBE_HugeTransformScale DISABLED_HugeTransformScale
+#else
+#define MAYBE_HugeTransformScale HugeTransformScale
+#endif
+TEST_F(LayerTreeHostScrollbarsPixelTest, MAYBE_HugeTransformScale) {
   scoped_refptr<SolidColorLayer> background =
       CreateSolidColorLayer(gfx::Rect(400, 400), SK_ColorWHITE);
 
@@ -150,7 +156,8 @@ TEST_F(LayerTreeHostScrollbarsPixelTest, HugeTransformScale) {
   background->AddChild(layer);
 
   scoped_refptr<TestInProcessContextProvider> context(
-      new TestInProcessContextProvider(/*enable_oop_rasterization=*/false));
+      new TestInProcessContextProvider(/*enable_oop_rasterization=*/false,
+                                       /*support_locking=*/false));
   context->BindToCurrentThread();
   int max_texture_size = 0;
   context->ContextGL()->GetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);

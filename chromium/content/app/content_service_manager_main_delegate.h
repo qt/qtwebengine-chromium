@@ -25,15 +25,11 @@ class ContentServiceManagerMainDelegate : public service_manager::MainDelegate {
 
   // service_manager::MainDelegate:
   int Initialize(const InitializeParams& params) override;
-#if !defined(CHROME_MULTIPLE_DLL_CHILD)
-  scoped_refptr<base::SingleThreadTaskRunner>
-  GetServiceManagerTaskRunnerForEmbedderProcess() override;
-#endif  // !defined(CHROME_MULTIPLE_DLL_CHILD)
   bool IsEmbedderSubprocess() override;
   int RunEmbedderProcess() override;
   void ShutDownEmbedderProcess() override;
   service_manager::ProcessType OverrideProcessType() override;
-  void OverrideMojoConfiguration(mojo::edk::Configuration* config) override;
+  void OverrideMojoConfiguration(mojo::core::Configuration* config) override;
   std::unique_ptr<base::Value> CreateServiceCatalog() override;
   bool ShouldLaunchAsServiceProcess(
       const service_manager::Identity& identity) override;
@@ -46,6 +42,10 @@ class ContentServiceManagerMainDelegate : public service_manager::MainDelegate {
   std::unique_ptr<service_manager::Service> CreateEmbeddedService(
       const std::string& service_name) override;
 
+  // Sets the flag whether to start the Service Manager without starting the
+  // full browser.
+  void SetStartServiceManagerOnly(bool start_service_manager_only);
+
  private:
   ContentMainParams content_main_params_;
   std::unique_ptr<ContentMainRunnerImpl> content_main_runner_;
@@ -53,6 +53,10 @@ class ContentServiceManagerMainDelegate : public service_manager::MainDelegate {
 #if defined(OS_ANDROID)
   bool initialized_ = false;
 #endif
+
+  // Indicates whether to start the Service Manager without starting the full
+  // browser.
+  bool start_service_manager_only_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(ContentServiceManagerMainDelegate);
 };

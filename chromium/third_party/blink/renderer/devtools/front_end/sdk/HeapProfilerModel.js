@@ -72,6 +72,14 @@ SDK.HeapProfilerModel = class extends SDK.SDKModel {
   }
 
   /**
+   * @return {!Promise<!Protocol.HeapProfiler.SamplingHeapProfile>}
+   */
+  async takeNativeBrowserSnapshot() {
+    const rawProfile = await this._memoryAgent.getBrowserSamplingProfile();
+    return this._convertNativeProfile(rawProfile);
+  }
+
+  /**
    * @param {!Protocol.Memory.SamplingProfile} rawProfile
    * @return {!Protocol.HeapProfiler.SamplingHeapProfile}
    */
@@ -123,9 +131,9 @@ SDK.HeapProfilerModel = class extends SDK.SDKModel {
    * @param {string} objectGroupName
    * @return {!Promise<?SDK.RemoteObject>}
    */
-  objectForSnapshotObjectId(snapshotObjectId, objectGroupName) {
-    return this._heapProfilerAgent.getObjectByHeapObjectId(snapshotObjectId, objectGroupName)
-        .then(result => result && result.type ? this._runtimeModel.createRemoteObject(result) : null);
+  async objectForSnapshotObjectId(snapshotObjectId, objectGroupName) {
+    const result = await this._heapProfilerAgent.getObjectByHeapObjectId(snapshotObjectId, objectGroupName);
+    return result && result.type && this._runtimeModel.createRemoteObject(result) || null;
   }
 
   /**
@@ -210,7 +218,7 @@ SDK.HeapProfilerModel.Events = {
 };
 
 /**
- * @implements {Protocol.HeapProfilerDispatcher}
+ * @extends {Protocol.HeapProfilerDispatcher}
  * @unrestricted
  */
 SDK.HeapProfilerDispatcher = class {

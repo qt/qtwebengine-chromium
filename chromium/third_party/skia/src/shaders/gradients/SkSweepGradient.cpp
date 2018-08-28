@@ -224,7 +224,7 @@ std::unique_ptr<GrFragmentProcessor> SkSweepGradient::asFragmentProcessor(
 
     return GrSweepGradient::Make(
             GrGradientEffect::CreateArgs(args.fContext, this, &matrix, fTileMode,
-                                         args.fDstColorSpaceInfo->colorSpace()),
+                                         args.fDstColorSpaceInfo),
             fTBias, fTScale);
 }
 
@@ -239,20 +239,6 @@ sk_sp<SkShader> SkSweepGradient::onMakeColorSpace(SkColorSpaceXformer* xformer) 
     return SkGradientShader::MakeSweep(fCenter.fX, fCenter.fY, xformedColors.fColors.get(),
                                        fOrigPos, fColorCount, fTileMode, startAngle, endAngle,
                                        fGradFlags, &this->getLocalMatrix());
-}
-
-void SkSweepGradient::toString(SkString* str) const {
-    str->append("SkSweepGradient: (");
-
-    str->append("center: (");
-    str->appendScalar(fCenter.fX);
-    str->append(", ");
-    str->appendScalar(fCenter.fY);
-    str->append(") ");
-
-    this->INHERITED::toString(str);
-
-    str->append(")");
 }
 
 void SkSweepGradient::appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* p,

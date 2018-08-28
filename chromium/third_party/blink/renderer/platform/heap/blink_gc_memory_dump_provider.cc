@@ -52,7 +52,7 @@ bool BlinkGCMemoryDumpProvider::OnMemoryDump(
   if (level_of_detail == MemoryDumpLevelOfDetail::DETAILED) {
     ThreadState::Current()->CollectGarbage(
         BlinkGC::kNoHeapPointersOnStack, BlinkGC::kTakeSnapshot,
-        BlinkGC::kEagerSweeping, BlinkGC::kForcedGC);
+        BlinkGC::kEagerSweeping, BlinkGC::GCReason::kForcedGC);
   }
   DumpMemoryTotals(memory_dump);
 
@@ -76,7 +76,6 @@ void BlinkGCMemoryDumpProvider::ClearProcessDumpForCurrentGC() {
 
 BlinkGCMemoryDumpProvider::BlinkGCMemoryDumpProvider()
     : current_process_memory_dump_(new base::trace_event::ProcessMemoryDump(
-          nullptr,
           {base::trace_event::MemoryDumpLevelOfDetail::DETAILED})) {}
 
 }  // namespace blink

@@ -16,6 +16,7 @@
 #include "base/macros.h"
 #include "base/optional.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "pdf/document_loader.h"
 #include "pdf/pdf_engine.h"
 #include "pdf/pdfium/pdfium_form_filler.h"
@@ -30,13 +31,13 @@
 #include "ppapi/cpp/var_array.h"
 #include "ppapi/utility/completion_callback_factory.h"
 #include "third_party/pdfium/public/cpp/fpdf_scopers.h"
-#include "third_party/pdfium/public/fpdf_dataavail.h"
 #include "third_party/pdfium/public/fpdf_formfill.h"
 #include "third_party/pdfium/public/fpdf_progressive.h"
 #include "third_party/pdfium/public/fpdfview.h"
 
 namespace chrome_pdf {
 
+class PDFiumDocument;
 class ShadowMatrix;
 
 class PDFiumEngine : public PDFEngine,
@@ -103,8 +104,6 @@ class PDFiumEngine : public PDFEngine,
   pp::Rect GetPageScreenRect(int page_index) const override;
   int GetVerticalScrollbarYPosition() override;
   void SetGrayscale(bool grayscale) override;
-  void OnCallback(int id) override;
-  void OnTouchTimerCallback(int id) override;
   int GetCharCount(int page_index) override;
   pp::FloatRect GetCharBounds(int page_index, int char_index) override;
   uint32_t GetCharUnicode(int page_index, int char_index) override;
@@ -119,9 +118,6 @@ class PDFiumEngine : public PDFEngine,
   bool GetPageSizeAndUniformity(pp::Size* size) override;
   void AppendBlankPages(int num_pages) override;
   void AppendPage(PDFEngine* engine, int index) override;
-#if defined(PDF_ENABLE_XFA)
-  void SetScrollPosition(const pp::Point& position) override;
-#endif
   std::string GetMetadata(const std::string& key) override;
   void SetCaretPosition(const pp::Point& position) override;
   void MoveRangeSelectionExtent(const pp::Point& extent) override;
@@ -142,12 +138,12 @@ class PDFiumEngine : public PDFEngine,
   void CancelBrowserDownload() override;
   void KillFormFocus() override;
 
-  void UnsupportedFeature(int type);
+  void UnsupportedFeature(const std::string& feature);
   void FontSubstituted();
 
-  FPDF_AVAIL fpdf_availability() const { return fpdf_availability_.get(); }
-  FPDF_DOCUMENT doc() const { return doc_.get(); }
-  FPDF_FORMHANDLE form() const { return form_.get(); }
+  FPDF_AVAIL fpdf_availability() const;
+  FPDF_DOCUMENT doc() const;
+  FPDF_FORMHANDLE form() const;
 
  private:
   // This helper class is used to detect the difference in selection between
@@ -197,26 +193,6 @@ class PDFiumEngine : public PDFEngine,
 
   friend class PDFiumFormFiller;
   friend class SelectionChangeInvalidator;
-
-  struct FileAvail : public FX_FILEAVAIL {
-    PDFiumEngine* engine;
-  };
-
-  struct DownloadHints : public FX_DOWNLOADHINTS {
-    PDFiumEngine* engine;
-  };
-
-  // PDFium interface to get block of data.
-  static int GetBlock(void* param,
-                      unsigned long position,
-                      unsigned char* buffer,
-                      unsigned long size);
-
-  // PDFium interface to check is block of data is available.
-  static FPDF_BOOL IsDataAvail(FX_FILEAVAIL* param, size_t offset, size_t size);
-
-  // PDFium interface to request download of the block of data.
-  static void AddSegment(FX_DOWNLOADHINTS* param, size_t offset, size_t size);
 
   // We finished getting the pdf file, so load it. This will complete
   // asynchronously (due to password fetching) and may be run multiple times.
@@ -476,7 +452,7 @@ class PDFiumEngine : public PDFEngine,
   float GetToolbarHeightInScreenCoords();
 
   void ScheduleTouchTimer(const pp::TouchInputEvent& event);
-  void KillTouchTimer(int timer_id);
+  void KillTouchTimer();
   void HandleLongPress(const pp::TouchInputEvent& event);
 
   // Returns a VarDictionary (representing a bookmark), which in turn contains
@@ -515,41 +491,11 @@ class PDFiumEngine : public PDFEngine,
   bool getting_password_ = false;
   int password_tries_remaining_ = 0;
 
-  // Used to manage timers that form fill API needs. The key is the timer id.
-  // The value holds the timer period and the callback function.
-  struct FormFillTimerData {
-    FormFillTimerData(base::TimeDelta period, TimerCallback callback);
+  // Needs to be above pages_, as destroying a page may call some methods of
+  // form filler.
+  PDFiumFormFiller form_filler_;
 
-    base::TimeDelta timer_period;
-    TimerCallback timer_callback;
-  };
-
-  // Needs to be above pages_, as destroying a page may stop timers.
-  std::map<int, const FormFillTimerData> formfill_timers_;
-  int next_formfill_timer_id_ = 0;
-
-  // Interface structure to provide access to document stream.
-  FPDF_FILEACCESS file_access_;
-
-  // Interface structure to check data availability in the document stream.
-  FileAvail file_availability_;
-
-  // Interface structure to request data chunks from the document stream.
-  DownloadHints download_hints_;
-
-  // Pointer to the document availability interface.
-  ScopedFPDFAvail fpdf_availability_;
-
-  // The PDFium wrapper object for the document. Must come after
-  // |fpdf_availability_| to prevent outliving it.
-  ScopedFPDFDocument doc_;
-
-  // The PDFium wrapper for form data.  Used even if there are no form controls
-  // on the page. Must come after |doc_| to prevent outliving it.
-  ScopedFPDFFormHandle form_;
-
-  // Current form availability status.
-  int form_status_ = PDF_FORM_NOTAVAIL;
+  std::unique_ptr<PDFiumDocument> document_;
 
   // The page(s) of the document.
   std::vector<std::unique_ptr<PDFiumPage>> pages_;
@@ -618,9 +564,8 @@ class PDFiumEngine : public PDFEngine,
 
   pp::Size default_page_size_;
 
-  // Used to manage timers for touch long press.
-  std::map<int, pp::TouchInputEvent> touch_timers_;
-  int next_touch_timer_id_ = 0;
+  // Timer for touch long press detection.
+  base::OneShotTimer touch_timer_;
 
   // Holds the zero-based page index of the last page that the mouse clicked on.
   int last_page_mouse_down_ = -1;
@@ -704,23 +649,9 @@ class PDFiumEngine : public PDFEngine,
 
   bool edit_mode_ = false;
 
-  PDFiumFormFiller form_filler_;
   PDFiumPrint print_;
 
   DISALLOW_COPY_AND_ASSIGN(PDFiumEngine);
-};
-
-// Create a local variable of this when calling PDFium functions which can call
-// our global callback when an unsupported feature is reached.
-class ScopedUnsupportedFeature {
- public:
-  explicit ScopedUnsupportedFeature(PDFiumEngine* engine);
-  ~ScopedUnsupportedFeature();
-
- private:
-  PDFiumEngine* const old_engine_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedUnsupportedFeature);
 };
 
 // Create a local variable of this when calling PDFium functions which can call

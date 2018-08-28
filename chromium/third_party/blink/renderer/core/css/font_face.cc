@@ -31,7 +31,6 @@
 #include "third_party/blink/renderer/core/css/font_face.h"
 
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/string_or_array_buffer_or_array_buffer_view.h"
 #include "third_party/blink/renderer/core/css/binary_data_font_face_source.h"
 #include "third_party/blink/renderer/core/css/css_font_face.h"
@@ -54,7 +53,6 @@
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -62,6 +60,7 @@
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer_view.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/font_family_names.h"
 #include "third_party/blink/renderer/platform/histogram.h"
@@ -142,10 +141,12 @@ FontFace* FontFace::Create(ExecutionContext* context,
   FontFace* font_face = new FontFace(context, family, descriptors);
 
   const CSSValue* src = ParseCSSValue(context, source, AtRuleDescriptorID::Src);
-  if (!src || !src->IsValueList())
-    font_face->SetError(DOMException::Create(
-        kSyntaxError, "The source provided ('" + source +
-                          "') could not be parsed as a value list."));
+  if (!src || !src->IsValueList()) {
+    font_face->SetError(
+        DOMException::Create(DOMExceptionCode::kSyntaxError,
+                             "The source provided ('" + source +
+                                 "') could not be parsed as a value list."));
+  }
 
   font_face->InitCSSFontFace(context, *src);
   return font_face;
@@ -322,9 +323,9 @@ void FontFace::SetPropertyFromString(const ExecutionContext* context,
 
   String message = "Failed to set '" + s + "' as a property value.";
   if (exception_state)
-    exception_state->ThrowDOMException(kSyntaxError, message);
+    exception_state->ThrowDOMException(DOMExceptionCode::kSyntaxError, message);
   else
-    SetError(DOMException::Create(kSyntaxError, message));
+    SetError(DOMException::Create(DOMExceptionCode::kSyntaxError, message));
 }
 
 bool FontFace::SetPropertyFromStyle(const CSSPropertyValueSet& properties,
@@ -463,8 +464,10 @@ void FontFace::RunCallbacks() {
 }
 
 void FontFace::SetError(DOMException* error) {
-  if (!error_)
-    error_ = error ? error : DOMException::Create(kNetworkError);
+  if (!error_) {
+    error_ =
+        error ? error : DOMException::Create(DOMExceptionCode::kNetworkError);
+  }
   SetLoadStatus(kError);
 }
 
@@ -759,7 +762,7 @@ void FontFace::InitCSSFontFace(const unsigned char* data, size_t size) {
   if (source->IsValid())
     SetLoadStatus(kLoaded);
   else
-    SetError(DOMException::Create(kSyntaxError,
+    SetError(DOMException::Create(DOMExceptionCode::kSyntaxError,
                                   "Invalid font data in ArrayBuffer."));
   css_font_face_->AddSource(source);
 }

@@ -18,17 +18,21 @@ UI_BASE_EXPORT extern const base::Feature kEnableFloatingVirtualKeyboard;
 UI_BASE_EXPORT extern const base::Feature
     kEnableFullscreenHandwritingVirtualKeyboard;
 UI_BASE_EXPORT extern const base::Feature kEnableStylusVirtualKeyboard;
+UI_BASE_EXPORT extern const base::Feature kEnableVirtualKeyboardMdUi;
+UI_BASE_EXPORT extern const base::Feature kEnableVirtualKeyboardUkm;
+UI_BASE_EXPORT extern const base::Feature kExperimentalUi;
 UI_BASE_EXPORT extern const base::Feature kSecondaryUiMd;
 UI_BASE_EXPORT extern const base::Feature kSystemKeyboardLock;
 UI_BASE_EXPORT extern const base::Feature kTouchableAppContextMenu;
+UI_BASE_EXPORT extern const base::Feature kNotificationIndicator;
 UI_BASE_EXPORT extern const base::Feature kUiCompositorScrollWithLayers;
 
 UI_BASE_EXPORT bool IsTouchableAppContextMenuEnabled();
+UI_BASE_EXPORT bool IsNotificationIndicatorEnabled();
 
 UI_BASE_EXPORT bool IsUiGpuRasterizationEnabled();
 
 #if defined(OS_WIN)
-UI_BASE_EXPORT extern const base::Feature kDirectManipulationStylus;
 UI_BASE_EXPORT extern const base::Feature kInputPaneOnScreenKeyboard;
 UI_BASE_EXPORT extern const base::Feature kPointerEventsForTouch;
 UI_BASE_EXPORT extern const base::Feature kPrecisionTouchpad;
@@ -39,11 +43,20 @@ UI_BASE_EXPORT extern const base::Feature kTSFImeSupport;
 UI_BASE_EXPORT bool IsUsingWMPointerForTouch();
 #endif  // defined(OS_WIN)
 
-// TODO(sky): rename this to something that better conveys what it means.
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
+UI_BASE_EXPORT extern const base::Feature kDirectManipulationStylus;
+#endif  // defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
+
+// Used to have ash (Chrome OS system UI) run in its own process.
+// TODO(jamescook): Make flag only available in Chrome OS.
 UI_BASE_EXPORT extern const base::Feature kMash;
 
-// Returns true if mash (out-of-process ash system UI) is enabled.
-UI_BASE_EXPORT bool IsMashEnabled();
+// Deprecated. Use |kMash|.
+UI_BASE_EXPORT extern const base::Feature kMashDeprecated;
+
+// Returns true if ash is in process (the default). A value of false means ash
+// is running in a separate process (and is hosting the UI Service and Viz).
+UI_BASE_EXPORT bool IsAshInBrowserProcess();
 
 #if defined(OS_MACOSX)
 // Returns true if the NSWindows for apps will be created in the app's process,

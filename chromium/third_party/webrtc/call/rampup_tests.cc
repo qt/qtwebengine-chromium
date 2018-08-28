@@ -75,16 +75,13 @@ RampUpTester::RampUpTester(size_t num_video_streams,
   EXPECT_LE(num_audio_streams_, 1u);
 }
 
-RampUpTester::~RampUpTester() {
-}
+RampUpTester::~RampUpTester() {}
 
-Call::Config RampUpTester::GetSenderCallConfig() {
-  Call::Config call_config(&event_log_);
+void RampUpTester::ModifySenderCallConfig(Call::Config* config) {
   if (start_bitrate_bps_ != 0) {
-    call_config.bitrate_config.start_bitrate_bps = start_bitrate_bps_;
+    config->bitrate_config.start_bitrate_bps = start_bitrate_bps_;
   }
-  call_config.bitrate_config.min_bitrate_bps = 10000;
-  return call_config;
+  config->bitrate_config.min_bitrate_bps = 10000;
 }
 
 void RampUpTester::OnVideoStreamsCreated(
@@ -439,10 +436,8 @@ void RampUpDownUpTester::PollStats() {
   } while (!stop_event_.Wait(kPollIntervalMs));
 }
 
-Call::Config RampUpDownUpTester::GetReceiverCallConfig() {
-  Call::Config config(&event_log_);
-  config.bitrate_config.min_bitrate_bps = 10000;
-  return config;
+void RampUpDownUpTester::ModifyReceiverCallConfig(Call::Config* config) {
+  config->bitrate_config.min_bitrate_bps = 10000;
 }
 
 std::string RampUpDownUpTester::GetModifierString() const {
@@ -560,11 +555,6 @@ void RampUpDownUpTester::EvolveTestState(int bitrate_bps, bool suspended) {
 class RampUpTest : public test::CallTest {
  public:
   RampUpTest() {}
-
-  virtual ~RampUpTest() {
-    EXPECT_EQ(nullptr, video_send_stream_);
-    EXPECT_TRUE(video_receive_streams_.empty());
-  }
 };
 
 static const uint32_t kStartBitrateBps = 60000;

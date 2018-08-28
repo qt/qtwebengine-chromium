@@ -95,12 +95,8 @@ ScriptValue ErrorEvent::error(ScriptState* script_state) const {
 }
 
 void ErrorEvent::Trace(blink::Visitor* visitor) {
+  visitor->Trace(error_);
   Event::Trace(visitor);
-}
-
-void ErrorEvent::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(error_);
-  Event::TraceWrappers(visitor);
 }
 
 }  // namespace blink

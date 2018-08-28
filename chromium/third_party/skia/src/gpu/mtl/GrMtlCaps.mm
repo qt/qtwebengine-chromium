@@ -7,6 +7,8 @@
 
 #include "GrMtlCaps.h"
 
+#include "GrBackendSurface.h"
+#include "GrMtlUtil.h"
 #include "GrShaderCaps.h"
 
 GrMtlCaps::GrMtlCaps(const GrContextOptions& contextOptions, const id<MTLDevice> device,
@@ -233,14 +235,15 @@ void GrMtlCaps::initShaderCaps() {
     shaderCaps->fDstReadInShaderSupport = shaderCaps->fFBFetchSupport;
 
     shaderCaps->fIntegerSupport = true;
-    shaderCaps->fTexelBufferSupport = false;
-    shaderCaps->fTexelFetchSupport = false;
     shaderCaps->fVertexIDSupport = false;
     shaderCaps->fImageLoadStoreSupport = false;
 
     // Metal uses IEEE float and half floats so assuming those values here.
     shaderCaps->fFloatIs32Bits = true;
     shaderCaps->fHalfIs32Bits = false;
+
+    // Metal supports unsigned integers.
+    shaderCaps->fUnsignedSupport = true;
 
     shaderCaps->fMaxVertexSamplers =
     shaderCaps->fMaxFragmentSamplers = 16;
@@ -314,3 +317,15 @@ void GrMtlCaps::initConfigTable() {
     info = &fConfigTable[kRGBA_half_GrPixelConfig];
     info->fFlags = ConfigInfo::kAllFlags;
 }
+
+#ifdef GR_TEST_UTILS
+GrBackendFormat GrMtlCaps::onCreateFormatFromBackendTexture(
+        const GrBackendTexture& backendTex) const {
+    GrMtlTextureInfo mtlInfo;
+    SkAssertResult(backendTex.getMtlTextureInfo(&mtlInfo));
+    id<MTLTexture> mtlTexture = GrGetMTLTexture(mtlInfo.fTexture,
+                                                GrWrapOwnership::kBorrow_GrWrapOwnership);
+    return GrBackendFormat::MakeMtl(mtlTexture.pixelFormat);
+}
+#endif
+

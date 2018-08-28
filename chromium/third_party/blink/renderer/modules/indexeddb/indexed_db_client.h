@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -44,7 +45,7 @@ class WorkerClients;
 class IndexedDBClient : public GarbageCollected<IndexedDBClient>,
                         public Supplement<LocalFrame>,
                         public Supplement<WorkerClients>,
-                        public TraceWrapperBase {
+                        public NameClient {
   USING_GARBAGE_COLLECTED_MIXIN(IndexedDBClient);
   WTF_MAKE_NONCOPYABLE(IndexedDBClient);
 
@@ -55,7 +56,6 @@ class IndexedDBClient : public GarbageCollected<IndexedDBClient>,
   static IndexedDBClient* Create(WorkerClients&);
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "IndexedDBClient"; }
 
   bool AllowIndexedDB(ExecutionContext*, const String& name);

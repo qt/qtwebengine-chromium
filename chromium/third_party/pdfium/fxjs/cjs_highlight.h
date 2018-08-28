@@ -7,14 +7,14 @@
 #ifndef FXJS_CJS_HIGHLIGHT_H_
 #define FXJS_CJS_HIGHLIGHT_H_
 
-#include "fxjs/JS_Define.h"
+#include "fxjs/js_define.h"
 
 class CJS_Highlight : public CJS_Object {
  public:
   static void DefineJSObjects(CFXJS_Engine* pEngine);
 
-  explicit CJS_Highlight(v8::Local<v8::Object> pObject) : CJS_Object(pObject) {}
-  ~CJS_Highlight() override {}
+  CJS_Highlight(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
+  ~CJS_Highlight() override;
 
  private:
   static int ObjDefnID;

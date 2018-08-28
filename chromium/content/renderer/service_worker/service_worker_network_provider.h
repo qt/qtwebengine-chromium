@@ -16,7 +16,6 @@
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/controller_service_worker.mojom.h"
-#include "content/common/service_worker/service_worker.mojom.h"
 #include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/renderer/service_worker/service_worker_provider_context.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_provider_type.mojom.h"
@@ -60,6 +59,14 @@ class CONTENT_EXPORT ServiceWorkerNetworkProvider {
   // Creates a ServiceWorkerNetworkProvider for navigation and wraps it
   // with WebServiceWorkerNetworkProvider to be owned by Blink.
   //
+  // |request_params| are navigation parameters that were transmitted to the
+  // renderer by the browser on a navigation commit. It is null if we have not
+  // yet heard from the browser (currently only during the time it takes from
+  // having the renderer initiate a navigation until the browser commits it).
+  // TODO(ahemery): Update this comment when do not create placeholder document
+  // loaders for renderer-initiated navigations. In this case, this should never
+  // be null.
+  //
   // For S13nServiceWorker:
   // |controller_info| contains the endpoint and object info that is needed to
   // set up the controller service worker for the client.
@@ -70,9 +77,8 @@ class CONTENT_EXPORT ServiceWorkerNetworkProvider {
   static std::unique_ptr<blink::WebServiceWorkerNetworkProvider>
   CreateForNavigation(
       int route_id,
-      const RequestNavigationParams& request_params,
+      const RequestNavigationParams* request_params,
       blink::WebLocalFrame* frame,
-      bool content_initiated,
       mojom::ControllerServiceWorkerInfoPtr controller_info,
       scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory);
 
@@ -103,7 +109,12 @@ class CONTENT_EXPORT ServiceWorkerNetworkProvider {
     return script_loader_factory_.get();
   }
 
-  bool IsControlledByServiceWorker() const;
+  // Returns whether the context this provider is for is controlled by a service
+  // worker. Can be called only for providers for service worker clients.
+  blink::mojom::ControllerServiceWorkerMode IsControlledByServiceWorker() const;
+
+  // Called when blink::IdlenessDetector emits its network idle signal.
+  void DispatchNetworkQuiet();
 
  private:
   // Creates an invalid instance (provider_id() returns

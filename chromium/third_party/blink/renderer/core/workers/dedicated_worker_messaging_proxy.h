@@ -25,6 +25,7 @@ namespace blink {
 
 class DedicatedWorker;
 class DedicatedWorkerObjectProxy;
+class FetchClientSettingsObjectSnapshot;
 class SerializedScriptValue;
 class WorkerOptions;
 
@@ -38,11 +39,13 @@ class CORE_EXPORT DedicatedWorkerMessagingProxy
   ~DedicatedWorkerMessagingProxy() override;
 
   // These methods should only be used on the parent context thread.
-  void StartWorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
-                              const WorkerOptions&,
-                              const KURL& script_url,
-                              const v8_inspector::V8StackTraceId&,
-                              const String& source_code);
+  void StartWorkerGlobalScope(
+      std::unique_ptr<GlobalScopeCreationParams>,
+      const WorkerOptions&,
+      const KURL& script_url,
+      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      const v8_inspector::V8StackTraceId&,
+      const String& source_code);
   void PostMessageToWorkerGlobalScope(scoped_refptr<SerializedScriptValue>,
                                       Vector<MessagePortChannel>,
                                       const v8_inspector::V8StackTraceId&);

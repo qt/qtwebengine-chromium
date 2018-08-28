@@ -55,6 +55,22 @@ class PeerConnection : public PeerConnectionInternal,
                        public rtc::MessageHandler,
                        public sigslot::has_slots<> {
  public:
+  enum class UsageEvent : int {
+    TURN_SERVER_ADDED = 0x01,
+    STUN_SERVER_ADDED = 0x02,
+    DATA_ADDED = 0x04,
+    AUDIO_ADDED = 0x08,
+    VIDEO_ADDED = 0x10,
+    SET_LOCAL_DESCRIPTION_CALLED = 0x20,
+    SET_REMOTE_DESCRIPTION_CALLED = 0x40,
+    CANDIDATE_COLLECTED = 0x80,
+    REMOTE_CANDIDATE_ADDED = 0x100,
+    ICE_STATE_CONNECTED = 0x200,
+    CLOSE_CALLED = 0x400,
+    PRIVATE_CANDIDATE_COLLECTED = 0x800,
+    MAX_VALUE = 0x1000,
+  };
+
   explicit PeerConnection(PeerConnectionFactory* factory,
                           std::unique_ptr<RtcEventLog> event_log,
                           std::unique_ptr<Call> call);
@@ -71,9 +87,6 @@ class PeerConnection : public PeerConnectionInternal,
   RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
       rtc::scoped_refptr<MediaStreamTrackInterface> track,
       const std::vector<std::string>& stream_ids) override;
-  rtc::scoped_refptr<RtpSenderInterface> AddTrack(
-      MediaStreamTrackInterface* track,
-      std::vector<MediaStreamInterface*> streams) override;
   bool RemoveTrack(RtpSenderInterface* sender) override;
 
   RTCErrorOr<rtc::scoped_refptr<RtpTransceiverInterface>> AddTransceiver(
@@ -98,9 +111,6 @@ class PeerConnection : public PeerConnectionInternal,
 
   // Version of the above method that returns the full certificate chain.
   std::unique_ptr<rtc::SSLCertChain> GetRemoteAudioSSLCertChain();
-
-  rtc::scoped_refptr<DtmfSenderInterface> CreateDtmfSender(
-      AudioTrackInterface* track) override;
 
   rtc::scoped_refptr<RtpSenderInterface> CreateSender(
       const std::string& kind,
@@ -233,11 +243,11 @@ class PeerConnection : public PeerConnectionInternal,
     return sctp_data_channels_;
   }
 
-  rtc::Optional<std::string> sctp_content_name() const override {
+  absl::optional<std::string> sctp_content_name() const override {
     return sctp_mid_;
   }
 
-  rtc::Optional<std::string> sctp_transport_name() const override;
+  absl::optional<std::string> sctp_transport_name() const override;
 
   cricket::CandidateStatsList GetPooledCandidateStats() const override;
   std::map<std::string, std::string> GetTransportNamesByMid() const override;
@@ -253,6 +263,10 @@ class PeerConnection : public PeerConnectionInternal,
   bool IceRestartPending(const std::string& content_name) const override;
   bool NeedsIceRestart(const std::string& content_name) const override;
   bool GetSslRole(const std::string& content_name, rtc::SSLRole* role) override;
+
+  void ReturnHistogramVeryQuicklyForTesting() {
+    return_histogram_very_quickly_ = true;
+  }
 
  protected:
   ~PeerConnection() override;
@@ -349,6 +363,7 @@ class PeerConnection : public PeerConnectionInternal,
 
   rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>
   CreateSender(cricket::MediaType media_type,
+               const std::string& id,
                rtc::scoped_refptr<MediaStreamTrackInterface> track,
                const std::vector<std::string>& stream_ids);
 
@@ -455,6 +470,20 @@ class PeerConnection : public PeerConnectionInternal,
           transceiver,
       const SessionDescriptionInterface* sdesc) const;
 
+  // Runs the algorithm **process the removal of a remote track** specified in
+  // the WebRTC specification.
+  // This method will update the following lists:
+  // |remove_list| is the list of transceivers for which the receiving track is
+  //     being removed.
+  // |removed_streams| is the list of streams which no longer have a receiving
+  //     track so should be removed.
+  // https://w3c.github.io/webrtc-pc/#process-remote-track-removal
+  void ProcessRemovalOfRemoteTrack(
+      rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
+          transceiver,
+      std::vector<rtc::scoped_refptr<RtpTransceiverInterface>>* remove_list,
+      std::vector<rtc::scoped_refptr<MediaStreamInterface>>* removed_streams);
+
   void OnNegotiationNeeded();
 
   bool IsClosed() const {
@@ -502,9 +531,9 @@ class PeerConnection : public PeerConnectionInternal,
       const SessionDescriptionInterface* session_desc,
       RtpTransceiverDirection audio_direction,
       RtpTransceiverDirection video_direction,
-      rtc::Optional<size_t>* audio_index,
-      rtc::Optional<size_t>* video_index,
-      rtc::Optional<size_t>* data_index,
+      absl::optional<size_t>* audio_index,
+      absl::optional<size_t>* video_index,
+      absl::optional<size_t>* data_index,
       cricket::MediaSessionOptions* session_options);
 
   // Generates the active MediaDescriptionOptions for the local data channel
@@ -520,7 +549,7 @@ class PeerConnection : public PeerConnectionInternal,
   // Returns the MID for the data section associated with either the
   // RtpDataChannel or SCTP data channel, if it has been set. If no data
   // channels are configured this will return nullopt.
-  rtc::Optional<std::string> GetDataMid() const;
+  absl::optional<std::string> GetDataMid() const;
 
   // Remove all local and remote senders of type |media_type|.
   // Called when a media type is rejected (m-line set to port 0).
@@ -641,7 +670,10 @@ class PeerConnection : public PeerConnectionInternal,
   DataChannel* FindDataChannelBySid(int sid) const;
 
   // Called when first configuring the port allocator.
-  bool InitializePortAllocator_n(const RTCConfiguration& configuration);
+  bool InitializePortAllocator_n(
+      const cricket::ServerAddresses& stun_servers,
+      const std::vector<cricket::RelayServerConfig>& turn_servers,
+      const RTCConfiguration& configuration);
   // Called when SetConfiguration is called to apply the supported subset
   // of the configuration on the network thread.
   bool ReconfigurePortAllocator_n(
@@ -651,7 +683,7 @@ class PeerConnection : public PeerConnectionInternal,
       int candidate_pool_size,
       bool prune_turn_ports,
       webrtc::TurnCustomizer* turn_customizer,
-      rtc::Optional<int> stun_candidate_keepalive_interval);
+      absl::optional<int> stun_candidate_keepalive_interval);
 
   void SetMetricObserver_n(UMAObserver* observer);
 
@@ -797,7 +829,8 @@ class PeerConnection : public PeerConnectionInternal,
   // CONTROL messages on unused SIDs and processes them as OPEN messages.
   void OnSctpTransportDataReceived_s(const cricket::ReceiveDataParams& params,
                                      const rtc::CopyOnWriteBuffer& payload);
-  void OnSctpStreamClosedRemotely_n(int sid);
+  void OnSctpClosingProcedureStartedRemotely_n(int sid);
+  void OnSctpClosingProcedureComplete_n(int sid);
 
   bool ValidateBundleSettings(const cricket::SessionDescription* desc);
   bool HasRtcpMuxEnabled(const cricket::ContentInfo* content);
@@ -856,6 +889,9 @@ class PeerConnection : public PeerConnectionInternal,
 
   void ReportNegotiatedCiphers(const cricket::TransportStats& stats,
                                const std::set<cricket::MediaType>& media_types);
+
+  void NoteUsageEvent(UsageEvent event);
+  void ReportUsagePattern() const;
 
   void OnSentPacket_w(const rtc::SentPacket& sent_packet);
 
@@ -958,7 +994,7 @@ class PeerConnection : public PeerConnectionInternal,
 
   std::unique_ptr<cricket::SctpTransportInternal> sctp_transport_;
   // |sctp_mid_| is the content name (MID) in SDP.
-  rtc::Optional<std::string> sctp_mid_;
+  absl::optional<std::string> sctp_mid_;
   // Value cached on signaling thread. Only updated when SctpReadyToSendData
   // fires on the signaling thread.
   bool sctp_ready_to_send_data_ = false;
@@ -976,7 +1012,8 @@ class PeerConnection : public PeerConnectionInternal,
   sigslot::signal2<const cricket::ReceiveDataParams&,
                    const rtc::CopyOnWriteBuffer&>
       SignalSctpDataReceived;
-  sigslot::signal1<int> SignalSctpStreamClosedRemotely;
+  sigslot::signal1<int> SignalSctpClosingProcedureStartedRemotely;
+  sigslot::signal1<int> SignalSctpClosingProcedureComplete;
 
   std::unique_ptr<SessionDescriptionInterface> current_local_description_;
   std::unique_ptr<SessionDescriptionInterface> pending_local_description_;
@@ -999,6 +1036,9 @@ class PeerConnection : public PeerConnectionInternal,
   // Member variables for caching global options.
   cricket::AudioOptions audio_options_;
   cricket::VideoOptions video_options_;
+
+  int usage_event_accumulator_ = 0;
+  bool return_histogram_very_quickly_ = false;
 };
 
 }  // namespace webrtc

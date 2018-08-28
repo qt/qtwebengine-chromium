@@ -21,7 +21,8 @@ class PLATFORM_EXPORT DoubleSize {
  public:
   DoubleSize() : width_(0), height_(0) {}
   DoubleSize(double width, double height) : width_(width), height_(height) {}
-  DoubleSize(const IntSize& p) : width_(p.Width()), height_(p.Height()) {}
+  explicit DoubleSize(const IntSize& p)
+      : width_(p.Width()), height_(p.Height()) {}
   DoubleSize(const FloatSize& s) : width_(s.Width()), height_(s.Height()) {}
   explicit DoubleSize(const LayoutSize&);
 
@@ -87,13 +88,12 @@ inline IntSize FlooredIntSize(const DoubleSize& p) {
 }
 
 inline IntSize RoundedIntSize(const DoubleSize& p) {
-  return IntSize(clampTo<int>(roundf(p.Width())),
-                 clampTo<int>(roundf(p.Height())));
+  return IntSize(clampTo<int>(round(p.Width())),
+                 clampTo<int>(round(p.Height())));
 }
 
 inline IntSize ExpandedIntSize(const DoubleSize& p) {
-  return IntSize(clampTo<int>(ceilf(p.Width())),
-                 clampTo<int>(ceilf(p.Height())));
+  return IntSize(clampTo<int>(ceil(p.Width())), clampTo<int>(ceil(p.Height())));
 }
 
 inline FloatSize ToFloatSize(const DoubleSize& p) {

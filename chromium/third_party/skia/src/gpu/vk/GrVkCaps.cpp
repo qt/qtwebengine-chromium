@@ -22,14 +22,13 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
     fMustSubmitCommandsBeforeCopyOp = false;
     fMustSleepOnTearDown  = false;
     fNewCBOnPipelineChange = false;
-    fCanUseWholeSizeOnFlushMappedMemory = true;
+    fShouldAlwaysUseDedicatedImageMemory = false;
 
     /**************************************************************************
     * GrDrawTargetCaps fields
     **************************************************************************/
     fMipMapSupport = true;   // always available in Vulkan
     fSRGBSupport = true;   // always available in Vulkan
-    fSRGBDecodeDisableSupport = true;  // always available in Vulkan
     fNPOTTextureTileSupport = true;  // always available in Vulkan
     fDiscardRenderTargetSupport = true;
     fReuseScratchTextures = true; //TODO: figure this out
@@ -224,6 +223,12 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
         this->applyDriverCorrectnessWorkarounds(properties);
     }
 
+    // On nexus player we disable suballocating VkImage memory since we've seen large slow downs on
+    // bot run times.
+    if (kImagination_VkVendor == properties.vendorID) {
+        fShouldAlwaysUseDedicatedImageMemory = true;
+    }
+
     this->applyOptionsOverrides(contextOptions);
     fShaderCaps->applyOptionsOverrides(contextOptions);
 }
@@ -253,6 +258,11 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
         fNewCBOnPipelineChange = true;
     }
 
+    // On Mali galaxy s7 we see lots of rendering issues when we suballocate VkImages.
+    if (kARM_VkVendor == properties.vendorID) {
+        fShouldAlwaysUseDedicatedImageMemory = true;
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // GrCaps workarounds
     ////////////////////////////////////////////////////////////////////////////
@@ -264,10 +274,6 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     // AMD advertises support for MAX_UINT vertex input attributes, but in reality only supports 32.
     if (kAMD_VkVendor == properties.vendorID) {
         fMaxVertexAttributes = SkTMin(fMaxVertexAttributes, 32);
-    }
-
-    if (kIntel_VkVendor == properties.vendorID) {
-        fCanUseWholeSizeOnFlushMappedMemory = false;
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -386,14 +392,15 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties, uint
     shaderCaps->fDualSourceBlendingSupport = SkToBool(featureFlags & kDualSrcBlend_GrVkFeatureFlag);
 
     shaderCaps->fIntegerSupport = true;
-    shaderCaps->fTexelBufferSupport = true;
-    shaderCaps->fTexelFetchSupport = true;
     shaderCaps->fVertexIDSupport = true;
     shaderCaps->fFPManipulationSupport = true;
 
     // Assume the minimum precisions mandated by the SPIR-V spec.
     shaderCaps->fFloatIs32Bits = true;
     shaderCaps->fHalfIs32Bits = false;
+
+    // SPIR-V supports unsigned integers.
+    shaderCaps->fUnsignedSupport = true;
 
     shaderCaps->fMaxVertexSamplers =
     shaderCaps->fMaxGeometrySamplers =
@@ -477,15 +484,13 @@ void GrVkCaps::ConfigInfo::initSampleCounts(const GrVkInterface* interface,
                               VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                               VK_IMAGE_USAGE_SAMPLED_BIT |
                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    VkImageCreateFlags createFlags = GrVkFormatIsSRGB(format, nullptr)
-        ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
     VkImageFormatProperties properties;
     GR_VK_CALL(interface, GetPhysicalDeviceImageFormatProperties(physDev,
                                                                  format,
                                                                  VK_IMAGE_TYPE_2D,
                                                                  VK_IMAGE_TILING_OPTIMAL,
                                                                  usage,
-                                                                 createFlags,
+                                                                 0,  // createFlags
                                                                  &properties));
     VkSampleCountFlags flags = properties.sampleCounts;
     if (flags & VK_SAMPLE_COUNT_1_BIT) {
@@ -621,6 +626,11 @@ bool validate_image_info(VkFormat format, SkColorType ct, GrPixelConfig* config)
                 *config = kRGBA_half_GrPixelConfig;
             }
             break;
+        case kRGBA_F32_SkColorType:
+            if (VK_FORMAT_R32G32B32A32_SFLOAT == format) {
+                *config = kRGBA_float_GrPixelConfig;
+            }
+            break;
     }
 
     return kUnknown_GrPixelConfig != *config;
@@ -654,4 +664,13 @@ bool GrVkCaps::getConfigFromBackendFormat(const GrBackendFormat& format, SkColor
     }
     return validate_image_info(*vkFormat, ct, config);
 }
+
+#ifdef GR_TEST_UTILS
+GrBackendFormat GrVkCaps::onCreateFormatFromBackendTexture(
+        const GrBackendTexture& backendTex) const {
+    GrVkImageInfo vkInfo;
+    SkAssertResult(backendTex.getVkImageInfo(&vkInfo));
+    return GrBackendFormat::MakeVk(vkInfo.fFormat);
+}
+#endif
 

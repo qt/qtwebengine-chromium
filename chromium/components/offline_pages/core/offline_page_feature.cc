@@ -17,6 +17,7 @@ namespace {
 const char kOfflinePagesUseTestingSnapshotDelay[] =
     "short-offline-page-snapshot-delay-for-test";
 
+bool limitless_prefetching_enabled = false;
 }  // namespace
 
 namespace offline_pages {
@@ -31,7 +32,7 @@ const base::Feature kOfflinePagesCTFeature{"OfflinePagesCT",
                                            base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kOfflinePagesSharingFeature{
-    "OfflinePagesSharing", base::FEATURE_DISABLED_BY_DEFAULT};
+    "OfflinePagesSharing", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kOfflinePagesSvelteConcurrentLoadingFeature{
     "OfflinePagesSvelteConcurrentLoading", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -67,13 +68,16 @@ const base::Feature kOfflinePagesDescriptivePendingStatusFeature{
     "OfflinePagesDescriptivePendingStatus", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kOfflinePagesInDownloadHomeOpenInCctFeature{
-    "OfflinePagesInDownloadHomeOpenInCct", base::FEATURE_DISABLED_BY_DEFAULT};
+    "OfflinePagesInDownloadHomeOpenInCct", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kOfflinePagesCTSuppressNotificationsFeature{
     "OfflinePagesCTSuppressNotifications", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kOfflinePagesShowAlternateDinoPageFeature{
     "OfflinePagesShowAlternateDinoPage", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kOfflineIndicatorFeature{"OfflineIndicator",
+                                             base::FEATURE_DISABLED_BY_DEFAULT};
 
 const char kPrefetchingOfflinePagesExperimentsOption[] = "exp";
 
@@ -113,7 +117,11 @@ bool IsOfflinePagesPrefetchingUIEnabled() {
 
 bool IsLimitlessPrefetchingEnabled() {
   // TODO(https://crbug.com/803584): fix limitless mode or fully remove it.
-  return false;
+  return limitless_prefetching_enabled;
+}
+
+void SetLimitlessPrefetchingEnabledForTesting(bool enabled) {
+  limitless_prefetching_enabled = enabled;
 }
 
 bool IsOfflinePagesLoadSignalCollectingEnabled() {
@@ -167,6 +175,10 @@ std::string GetPrefetchingOfflinePagesExperimentTag() {
   return base::GetFieldTrialParamValueByFeature(
       kPrefetchingOfflinePagesFeature,
       kPrefetchingOfflinePagesExperimentsOption);
+}
+
+bool IsOfflineIndicatorFeatureEnabled() {
+  return base::FeatureList::IsEnabled(kOfflineIndicatorFeature);
 }
 
 }  // namespace offline_pages

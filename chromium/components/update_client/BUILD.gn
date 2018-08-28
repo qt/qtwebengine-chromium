@@ -76,6 +76,7 @@ static_library("update_client") {
     "//courgette:courgette_lib",
     "//crypto",
     "//net",
+    "//services/network/public/cpp:cpp",
     "//third_party/libxml",
     "//url",
   ]
@@ -92,8 +93,8 @@ static_library("test_support") {
     "test_configurator.h",
     "test_installer.cc",
     "test_installer.h",
-    "url_request_post_interceptor.cc",
-    "url_request_post_interceptor.h",
+    "url_loader_post_interceptor.cc",
+    "url_loader_post_interceptor.h",
   ]
 
   public_deps = [
@@ -107,6 +108,7 @@ static_library("test_support") {
     "//components/services/unzip:lib",
     "//mojo/public/cpp/bindings",
     "//net:test_support",
+    "//services/network:test_support",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/cpp/test:test_support",
     "//services/service_manager/public/mojom",
@@ -132,6 +134,8 @@ bundle_data("unit_tests_bundle_data") {
     "//components/test/data/update_client/updatecheck_reply_1.xml",
     "//components/test/data/update_client/updatecheck_reply_4.xml",
     "//components/test/data/update_client/updatecheck_reply_noupdate.xml",
+    "//components/test/data/update_client/updatecheck_reply_parse_error.xml",
+    "//components/test/data/update_client/updatecheck_reply_unknownapp.xml",
   ]
   outputs = [
     "{{bundle_resources_dir}}/" +
@@ -173,6 +177,7 @@ source_set("unit_tests") {
     "//components/version_info:version_info",
     "//courgette:courgette_lib",
     "//net:test_support",
+    "//services/network/public/cpp:cpp_base",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/cpp/test:test_support",
     "//testing/gmock",

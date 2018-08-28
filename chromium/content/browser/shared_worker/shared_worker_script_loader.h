@@ -53,7 +53,9 @@ class SharedWorkerScriptLoader : public network::mojom::URLLoader,
   ~SharedWorkerScriptLoader() override;
 
   // network::mojom::URLLoader:
-  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+  void FollowRedirect(const base::Optional<std::vector<std::string>>&
+                          to_be_removed_request_headers,
+                      const base::Optional<net::HttpRequestHeaders>&
                           modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
@@ -63,12 +65,10 @@ class SharedWorkerScriptLoader : public network::mojom::URLLoader,
 
   // network::mojom::URLLoaderClient:
   void OnReceiveResponse(
-      const network::ResourceResponseHead& response_head,
-      network::mojom::DownloadedTempFilePtr downloaded_file) override;
+      const network::ResourceResponseHead& response_head) override;
   void OnReceiveRedirect(
       const net::RedirectInfo& redirect_info,
       const network::ResourceResponseHead& response_head) override;
-  void OnDataDownloaded(int64_t data_len, int64_t encoded_data_len) override;
   void OnUploadProgress(int64_t current_position,
                         int64_t total_size,
                         OnUploadProgressCallback ack_callback) override;

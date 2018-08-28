@@ -28,9 +28,9 @@ cr.define('extensions', function() {
 
     /**
      * @param {string} id
-     * @param {boolean} isAllowedOnAllSites
+     * @param {!chrome.developerPrivate.HostAccess} hostAccess
      */
-    setItemAllowedOnAllSites(id, isAllowedOnAllSites) {}
+    setItemHostAccess(id, hostAccess) {}
 
     /**
      * @param {string} id
@@ -106,6 +106,16 @@ cr.define('extensions', function() {
     observers: [
       'observeIdVisibility_(inDevMode, showingDetails_, data.id)',
     ],
+
+    /** @return {!HTMLElement} The "Details" button. */
+    getDetailsButton: function() {
+      return this.$.detailsButton;
+    },
+
+    /** @return {?HTMLElement} The "Errors" button, if it exists. */
+    getErrorsButton: function() {
+      return /** @type {?HTMLElement} */ (this.$$('#errors-button'));
+    },
 
     /** @private string */
     a11yAssociation_: function() {
@@ -259,12 +269,12 @@ cr.define('extensions', function() {
     computeSourceIndicatorIcon_: function() {
       switch (extensions.getItemSource(this.data)) {
         case SourceType.POLICY:
-          return 'communication:business';
+          return 'extensions-icons:business';
         case SourceType.SIDELOADED:
-          return 'input';
+          return 'extensions-icons:input';
         case SourceType.UNKNOWN:
           // TODO(dpapad): Ask UX for a better icon for this case.
-          return 'input';
+          return 'extensions-icons:input';
         case SourceType.UNPACKED:
           return 'extensions-icons:unpacked';
         case SourceType.WEBSTORE:

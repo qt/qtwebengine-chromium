@@ -54,6 +54,8 @@ CSSSyntaxType ParseSyntaxType(String type) {
     return CSSSyntaxType::kTime;
   if (type == "resolution")
     return CSSSyntaxType::kResolution;
+  if (type == "transform-function")
+    return CSSSyntaxType::kTransformFunction;
   if (type == "transform-list")
     return CSSSyntaxType::kTransformList;
   if (type == "custom-ident")
@@ -96,8 +98,8 @@ CSSSyntaxDescriptor::CSSSyntaxDescriptor(const String& input) {
   if (ConsumeCharacterAndWhitespace(input, '*', offset)) {
     if (offset != input.length())
       return;
-    syntax_components_.push_back(
-        CSSSyntaxComponent(CSSSyntaxType::kTokenStream, g_empty_string, false));
+    syntax_components_.push_back(CSSSyntaxComponent(
+        CSSSyntaxType::kTokenStream, g_empty_string, CSSSyntaxRepeat::kNone));
     return;
   }
 
@@ -118,15 +120,23 @@ CSSSyntaxDescriptor::CSSSyntaxDescriptor(const String& input) {
       return;
     }
 
-    bool repeatable = ConsumeCharacterAndWhitespace(input, '+', offset);
+    CSSSyntaxRepeat repeat = CSSSyntaxRepeat::kNone;
+
+    if (ConsumeCharacterAndWhitespace(input, '+', offset))
+      repeat = CSSSyntaxRepeat::kSpaceSeparated;
+    else if (ConsumeCharacterAndWhitespace(input, '#', offset))
+      repeat = CSSSyntaxRepeat::kCommaSeparated;
+
     // <transform-list> is already a space separated list,
     // <transform-list>+ is invalid.
-    if (type == CSSSyntaxType::kTransformList && repeatable) {
+    // TODO(andruud): Is <transform-list># invalid?
+    if (type == CSSSyntaxType::kTransformList &&
+        repeat != CSSSyntaxRepeat::kNone) {
       syntax_components_.clear();
       return;
     }
     ConsumeWhitespace(input, offset);
-    syntax_components_.push_back(CSSSyntaxComponent(type, ident, repeatable));
+    syntax_components_.push_back(CSSSyntaxComponent(type, ident, repeat));
 
   } while (ConsumeCharacterAndWhitespace(input, '|', offset));
 
@@ -171,6 +181,8 @@ const CSSValue* ConsumeSingleType(const CSSSyntaxComponent& syntax,
       return ConsumeTime(range, ValueRange::kValueRangeAll);
     case CSSSyntaxType::kResolution:
       return ConsumeResolution(range);
+    case CSSSyntaxType::kTransformFunction:
+      return ConsumeTransformValue(range, *context);
     case CSSSyntaxType::kTransformList:
       return ConsumeTransformList(range, *context);
     case CSSSyntaxType::kCustomIdent:
@@ -185,7 +197,7 @@ const CSSValue* ConsumeSyntaxComponent(const CSSSyntaxComponent& syntax,
                                        CSSParserTokenRange range,
                                        const CSSParserContext* context) {
   // CSS-wide keywords are already handled by the CSSPropertyParser
-  if (syntax.repeatable_) {
+  if (syntax.repeat_ == CSSSyntaxRepeat::kSpaceSeparated) {
     CSSValueList* list = CSSValueList::CreateSpaceSeparated();
     while (!range.AtEnd()) {
       const CSSValue* value = ConsumeSingleType(syntax, range, context);
@@ -193,6 +205,16 @@ const CSSValue* ConsumeSyntaxComponent(const CSSSyntaxComponent& syntax,
         return nullptr;
       list->Append(*value);
     }
+    return list;
+  }
+  if (syntax.repeat_ == CSSSyntaxRepeat::kCommaSeparated) {
+    CSSValueList* list = CSSValueList::CreateCommaSeparated();
+    do {
+      const CSSValue* value = ConsumeSingleType(syntax, range, context);
+      if (!value)
+        return nullptr;
+      list->Append(*value);
+    } while (CSSPropertyParserHelpers::ConsumeCommaIncludingWhitespace(range));
     return list;
   }
   const CSSValue* result = ConsumeSingleType(syntax, range, context);

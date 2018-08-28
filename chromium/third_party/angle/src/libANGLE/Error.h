@@ -247,7 +247,7 @@ inline Error NoError()
     }                                                  \
     ANGLE_EMPTY_STATEMENT
 
-// TODO(jmadill): Introduce way to store errors to a const Context.
+// TODO(jmadill): Introduce way to store errors to a const Context. http://anglebug.com/2491
 #define ANGLE_SWALLOW_ERR(EXPR)                                       \
     {                                                                 \
         auto ANGLE_LOCAL_VAR = EXPR;                                  \
@@ -261,6 +261,35 @@ inline Error NoError()
 #undef ANGLE_LOCAL_VAR
 #undef ANGLE_CONCAT2
 #undef ANGLE_CONCAT1
+
+namespace angle
+{
+// Result signals if calling code should continue running or early exit. A value of Stop() can
+// either indicate and Error or a non-Error early exit condition such as a detected no-op.
+class ANGLE_NO_DISCARD Result
+{
+  public:
+    // TODO(jmadill): Rename when refactor is complete. http://anglebug.com/2491
+    bool isError() const { return mStop; }
+
+    static Result Stop() { return Result(true); }
+    static Result Continue() { return Result(false); }
+
+    // TODO(jmadill): Remove when refactor is complete. http://anglebug.com/2491
+    operator gl::Error() const;
+
+    // TODO(jmadill): Remove when refactor is complete. http://anglebug.com/2491
+    template <typename T>
+    operator gl::ErrorOrResult<T>() const
+    {
+        return operator gl::Error();
+    }
+
+  private:
+    Result(bool stop) : mStop(stop) {}
+    bool mStop;
+};
+}  // namespace angle
 
 #include "Error.inl"
 

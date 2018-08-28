@@ -29,10 +29,13 @@ class MessagePortChannel;
 namespace content {
 class SharedWorkerInstance;
 class SharedWorkerHost;
+class StoragePartition;
 
+// Created per StoragePartition.
 class CONTENT_EXPORT SharedWorkerServiceImpl : public SharedWorkerService {
  public:
-  explicit SharedWorkerServiceImpl(
+  SharedWorkerServiceImpl(
+      StoragePartition* storage_partition,
       scoped_refptr<ServiceWorkerContextWrapper> service_worker_context);
   ~SharedWorkerServiceImpl() override;
 
@@ -50,19 +53,24 @@ class CONTENT_EXPORT SharedWorkerServiceImpl : public SharedWorkerService {
       mojom::SharedWorkerInfoPtr info,
       mojom::SharedWorkerClientPtr client,
       blink::mojom::SharedWorkerCreationContextType creation_context_type,
-      const blink::MessagePortChannel& port);
+      const blink::MessagePortChannel& port,
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory);
 
   void DestroyHost(SharedWorkerHost* host);
+
+  StoragePartition* storage_partition() { return storage_partition_; }
 
  private:
   friend class SharedWorkerServiceImplTest;
   friend class SharedWorkerHostTest;
 
-  void CreateWorker(std::unique_ptr<SharedWorkerInstance> instance,
-                    mojom::SharedWorkerClientPtr client,
-                    int process_id,
-                    int frame_id,
-                    const blink::MessagePortChannel& message_port);
+  void CreateWorker(
+      std::unique_ptr<SharedWorkerInstance> instance,
+      mojom::SharedWorkerClientPtr client,
+      int process_id,
+      int frame_id,
+      const blink::MessagePortChannel& message_port,
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory);
   void StartWorker(std::unique_ptr<SharedWorkerInstance> instance,
                    base::WeakPtr<SharedWorkerHost> host,
                    mojom::SharedWorkerClientPtr client,
@@ -72,7 +80,8 @@ class CONTENT_EXPORT SharedWorkerServiceImpl : public SharedWorkerService {
                    mojom::ServiceWorkerProviderInfoForSharedWorkerPtr
                        service_worker_provider_info,
                    network::mojom::URLLoaderFactoryAssociatedPtrInfo
-                       script_loader_factory_info);
+                       script_loader_factory_info,
+                   std::unique_ptr<URLLoaderFactoryBundleInfo> factory_bundle);
 
   // Returns nullptr if there is no such host.
   SharedWorkerHost* FindSharedWorkerHost(int process_id, int route_id);
@@ -83,6 +92,8 @@ class CONTENT_EXPORT SharedWorkerServiceImpl : public SharedWorkerService {
       worker_hosts_;
   base::OnceClosure terminate_all_workers_callback_;
 
+  // |storage_partition_| owns |this|.
+  StoragePartition* const storage_partition_;
   scoped_refptr<ServiceWorkerContextWrapper> service_worker_context_;
 
   base::WeakPtrFactory<SharedWorkerServiceImpl> weak_factory_;

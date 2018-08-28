@@ -83,11 +83,11 @@ void NetworkStateEndToEndTest::VerifyNewVideoSendStreamsRespectNetworkState(
 
   task_queue_.SendTask([this, network_to_bring_up, &encoder_factory,
                         transport]() {
-    CreateSenderCall(Call::Config(event_log_.get()));
+    CreateSenderCall(Call::Config(send_event_log_.get()));
     sender_call_->SignalChannelNetworkState(network_to_bring_up, kNetworkUp);
 
     CreateSendConfig(1, 0, 0, transport);
-    video_send_config_.encoder_settings.encoder_factory = &encoder_factory;
+    GetVideoSendConfig()->encoder_settings.encoder_factory = &encoder_factory;
     CreateVideoStreams();
     CreateFrameGeneratorCapturer(kDefaultFramerate, kDefaultWidth,
                                  kDefaultHeight);
@@ -111,10 +111,9 @@ void NetworkStateEndToEndTest::VerifyNewVideoReceiveStreamsRespectNetworkState(
 
   task_queue_.SendTask([this, &sender_transport, network_to_bring_up,
                         transport]() {
-    Call::Config config(event_log_.get());
-    CreateCalls(config, config);
+    CreateCalls();
     receiver_call_->SignalChannelNetworkState(network_to_bring_up, kNetworkUp);
-    sender_transport = rtc::MakeUnique<test::DirectTransport>(
+    sender_transport = absl::make_unique<test::DirectTransport>(
         &task_queue_, sender_call_.get(), payload_type_map_);
     sender_transport->SetReceiver(receiver_call_->Receiver());
     CreateSendConfig(1, 0, 0, sender_transport.get());

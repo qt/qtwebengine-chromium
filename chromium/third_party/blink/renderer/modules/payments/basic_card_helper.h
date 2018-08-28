@@ -6,10 +6,12 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_PAYMENTS_BASIC_CARD_HELPER_H_
 
 #include "third_party/blink/public/platform/modules/payments/payment_request.mojom-blink.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
+
+class ScriptValue;
 
 class BasicCardHelper {
   STATIC_ONLY(BasicCardHelper);
@@ -25,8 +27,8 @@ class BasicCardHelper {
       Vector<::payments::mojom::blink::BasicCardType>& supported_types_output,
       ExceptionState&);
 
-  // Check whether |input| contains 'basic-card' network names.
-  static bool ContainsNetworkNames(const Vector<String>& input);
+  // Check whether |input| is 'basic-card' network name.
+  static bool IsNetworkName(const String& input);
 };
 
 }  // namespace blink

@@ -201,20 +201,10 @@ std::unique_ptr<GrFragmentProcessor> SkLinearGradient::asFragmentProcessor(
     matrix.postConcat(fPtsToUnit);
 
     return GrLinearGradient::Make(GrGradientEffect::CreateArgs(
-            args.fContext, this, &matrix, fTileMode, args.fDstColorSpaceInfo->colorSpace()));
+            args.fContext, this, &matrix, fTileMode, args.fDstColorSpaceInfo));
 }
 
 
 #endif
 
-void SkLinearGradient::toString(SkString* str) const {
-    str->append("SkLinearGradient (");
-
-    str->appendf("start: (%f, %f)", fStart.fX, fStart.fY);
-    str->appendf(" end: (%f, %f) ", fEnd.fX, fEnd.fY);
-
-    this->INHERITED::toString(str);
-
-    str->append(")");
-}
 

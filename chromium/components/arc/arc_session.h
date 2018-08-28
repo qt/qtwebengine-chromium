@@ -6,10 +6,18 @@
 #define COMPONENTS_ARC_ARC_SESSION_H_
 
 #include <memory>
+#include <string>
+#include <vector>
 
+#include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/observer_list.h"
 #include "components/arc/arc_stop_reason.h"
+#include "components/arc/arc_supervision_transition.h"
+
+namespace base {
+class FilePath;
+}
 
 namespace arc {
 
@@ -38,6 +46,43 @@ class ArcSession {
     virtual ~Observer() = default;
   };
 
+  // Parameters to upgrade request.
+  struct UpgradeParams {
+    // Explicit ctor/dtor declaration is necessary for complex struct. See
+    // https://cs.chromium.org/chromium/src/tools/clang/plugins/FindBadConstructsConsumer.cpp
+    UpgradeParams();
+    ~UpgradeParams();
+    UpgradeParams(UpgradeParams&& other);
+    UpgradeParams& operator=(UpgradeParams&& other);
+
+    // Whether the account is a child.
+    bool is_child;
+
+    // The supervision transition state for this account. Indicates whether
+    // child account should become regular, regular account should become child
+    // or neither.
+    ArcSupervisionTransition supervision_transition =
+        ArcSupervisionTransition::NO_TRANSITION;
+
+    // Define language configuration set during Android container boot.
+    // |preferred_languages| may be empty.
+    std::string locale;
+    std::vector<std::string> preferred_languages;
+
+    // Whether ARC is being upgraded in a demo session.
+    bool is_demo_session = false;
+
+    // |demo_session_apps_path| is a file path to the image containing set of
+    // demo apps that should be pre-installed into the Android container for
+    // demo sessions. It might be empty, in which case no demo apps will be
+    // pre-installed.
+    // Should be empty if |is_demo_session| is not set.
+    base::FilePath demo_session_apps_path;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(UpgradeParams);
+  };
+
   // Creates a default instance of ArcSession.
   static std::unique_ptr<ArcSession> Create(
       ArcBridgeService* arc_bridge_service);
@@ -46,10 +91,10 @@ class ArcSession {
   // Sends D-Bus message to start a mini-container.
   virtual void StartMiniInstance() = 0;
 
-  // Sends a D-Bus message to upgrade to a full instance if
-  // possible. This might be done asynchronously; the message might only be sent
-  // after other operations have completed.
-  virtual void RequestUpgrade() = 0;
+  // Sends a D-Bus message to upgrade to a full instance if possible. This might
+  // be done asynchronously; the message might only be sent after other
+  // operations have completed.
+  virtual void RequestUpgrade(UpgradeParams params) = 0;
 
   // Requests to stop the currently-running instance regardless of its mode.
   // The completion is notified via OnSessionStopped() of the Observer.

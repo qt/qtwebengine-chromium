@@ -8,6 +8,7 @@
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "cc/base/completion_event.h"
 #include "cc/base/region.h"
 #include "cc/layers/recording_source.h"
 #include "cc/paint/display_item_list.h"
@@ -28,6 +29,7 @@
 #include "gpu/ipc/gl_in_process_context.h"
 #include "gpu/skia_bindings/grcontext_for_gles2_interface.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/GrBackendSurface.h"
 #include "third_party/skia/include/gpu/GrContext.h"
@@ -55,7 +57,7 @@ class OopPixelTest : public testing::Test {
   void SetUp() override {
     raster_context_provider_ =
         base::MakeRefCounted<TestInProcessContextProvider>(
-            /*enable_oop_rasterization=*/true);
+            /*enable_oop_rasterization=*/true, /*support_locking=*/true);
     const int raster_max_texture_size =
         raster_context_provider_->ContextCapabilities().max_texture_size;
     oop_image_cache_.reset(new GpuImageDecodeCache(
@@ -64,7 +66,7 @@ class OopPixelTest : public testing::Test {
 
     gles2_context_provider_ =
         base::MakeRefCounted<TestInProcessContextProvider>(
-            /*enable_oop_rasterization=*/false);
+            /*enable_oop_rasterization=*/false, /*support_locking=*/true);
     const int gles2_max_texture_size =
         raster_context_provider_->ContextCapabilities().max_texture_size;
     gpu_image_cache_.reset(new GpuImageDecodeCache(
@@ -99,6 +101,7 @@ class OopPixelTest : public testing::Test {
     bool preclear = false;
     SkColor preclear_color;
     ImageDecodeCache* image_cache = nullptr;
+    std::vector<scoped_refptr<DisplayItemList>> additional_lists;
   };
 
   SkBitmap Raster(scoped_refptr<DisplayItemList> display_item_list,
@@ -126,7 +129,7 @@ class OopPixelTest : public testing::Test {
     auto* raster_implementation = raster_context_provider_->RasterInterface();
     raster_texture_id = raster_implementation->CreateTexture(
         false, gfx::BufferUsage::GPU_READ, viz::ResourceFormat::RGBA_8888);
-    raster_implementation->TexStorage2D(raster_texture_id, 1, width, height);
+    raster_implementation->TexStorage2D(raster_texture_id, width, height);
     raster_implementation->TexParameteri(raster_texture_id,
                                          GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
@@ -135,30 +138,32 @@ class OopPixelTest : public testing::Test {
 
     RasterColorSpace color_space(options.color_space, ++color_space_id_);
 
+    gpu::Mailbox mailbox;
+    raster_implementation->ProduceTextureDirect(raster_texture_id,
+                                                mailbox.name);
     if (options.preclear) {
       raster_implementation->BeginRasterCHROMIUM(
-          raster_texture_id, options.preclear_color, options.msaa_sample_count,
-          options.use_lcd_text, options.color_type, color_space);
+          options.preclear_color, options.msaa_sample_count,
+          options.use_lcd_text, options.color_type, color_space, mailbox.name);
       raster_implementation->EndRasterCHROMIUM();
     }
 
     // "Out of process" raster! \o/
 
     raster_implementation->BeginRasterCHROMIUM(
-        raster_texture_id, options.background_color, options.msaa_sample_count,
-        options.use_lcd_text, options.color_type, color_space);
+        options.background_color, options.msaa_sample_count,
+        options.use_lcd_text, options.color_type, color_space, mailbox.name);
     raster_implementation->RasterCHROMIUM(
         display_item_list.get(), &image_provider, options.content_size,
         options.full_raster_rect, options.playback_rect, options.post_translate,
         options.post_scale, options.requires_clear);
+    for (const auto& list : options.additional_lists) {
+      raster_implementation->RasterCHROMIUM(
+          list.get(), &image_provider, options.content_size,
+          options.full_raster_rect, options.playback_rect,
+          options.post_translate, options.post_scale, options.requires_clear);
+    }
     raster_implementation->EndRasterCHROMIUM();
-
-    // Produce a mailbox and insert an ordering barrier (assumes the raster
-    // interface and gl are on the same scheduling group).
-    gpu::Mailbox mailbox;
-    raster_implementation->GenMailbox(mailbox.name);
-    raster_implementation->ProduceTextureDirect(raster_texture_id,
-                                                mailbox.name);
     raster_implementation->OrderingBarrierCHROMIUM();
 
     EXPECT_EQ(raster_implementation->GetError(),
@@ -317,6 +322,12 @@ class OopImagePixelTest : public OopPixelTest,
     DCHECK_GT(kMaxSize, gles2_context_provider_->GrContext()->maxTextureSize());
     return UseTooLargeImage() ? gfx::Size(10, kMaxSize) : gfx::Size(10, 10);
   }
+};
+
+class OopClearPixelTest : public OopPixelTest,
+                          public ::testing::WithParamInterface<bool> {
+ public:
+  bool IsPartialRaster() const { return GetParam(); }
 };
 
 TEST_F(OopPixelTest, DrawColor) {
@@ -572,6 +583,50 @@ TEST_P(OopImagePixelTest, DrawRecordShaderWithImageScaled) {
   ExpectEquals(actual, expected);
 }
 
+TEST_F(OopImagePixelTest, DrawRecordShaderTranslatedTileRect) {
+  auto paint_record = sk_make_sp<PaintOpBuffer>();
+
+  // Arbitrary offsets.  The DrawRectOp inside the PaintShader draws
+  // with this offset, but the tile rect also has this offset, so they
+  // should cancel out, and it should be as if the DrawRectOp was at the
+  // origin.
+  int x_offset = 3901;
+  int y_offset = -234;
+
+  // Shader here is a tiled 2x3 rectangle with a 1x2 green block in the
+  // upper left and a 10pixel wide right/bottom border.  The shader
+  // tiling starts from the origin, so starting at 2,1 in the offset_rect
+  // below cuts off part of that, leaving two green i's.
+  PaintFlags internal_flags;
+  internal_flags.setColor(SK_ColorGREEN);
+  sk_sp<PaintOpBuffer> shader_buffer(new PaintOpBuffer);
+  shader_buffer->push<DrawRectOp>(SkRect::MakeXYWH(x_offset, y_offset, 1, 2),
+                                  internal_flags);
+
+  SkRect tile_rect = SkRect::MakeXYWH(x_offset, y_offset, 2, 3);
+  sk_sp<PaintShader> paint_record_shader = PaintShader::MakePaintRecord(
+      shader_buffer, tile_rect, SkShader::kRepeat_TileMode,
+      SkShader::kRepeat_TileMode, nullptr,
+      PaintShader::ScalingBehavior::kRasterAtScale);
+
+  gfx::Size output_size(10, 10);
+
+  auto display_item_list = base::MakeRefCounted<DisplayItemList>();
+  display_item_list->StartPaint();
+  display_item_list->push<DrawColorOp>(SK_ColorWHITE, SkBlendMode::kSrc);
+  display_item_list->push<ScaleOp>(2.f, 2.f);
+  PaintFlags raster_flags;
+  raster_flags.setShader(paint_record_shader);
+  SkRect offset_rect = SkRect::MakeXYWH(2, 1, 10, 10);
+  display_item_list->push<DrawRectOp>(offset_rect, raster_flags);
+  display_item_list->EndPaintOfUnpaired(gfx::Rect(output_size));
+  display_item_list->Finalize();
+
+  auto actual = Raster(display_item_list, output_size);
+  auto expected = RasterExpectedBitmap(display_item_list, output_size);
+  ExpectEquals(actual, expected);
+}
+
 TEST_P(OopImagePixelTest, DrawImageWithTargetColorSpace) {
   SCOPED_TRACE(base::StringPrintf("UseTooLargeImage: %d, FilterQuality: %d\n",
                                   UseTooLargeImage(), FilterQuality()));
@@ -724,7 +779,7 @@ TEST_F(OopPixelTest, Preclear) {
   ExpectEquals(actual, expected);
 }
 
-TEST_F(OopPixelTest, ClearingOpaqueCorner) {
+TEST_P(OopClearPixelTest, ClearingOpaqueCorner) {
   // Verify that clears work properly for both the right and bottom sides
   // of an opaque corner tile.
 
@@ -734,7 +789,14 @@ TEST_F(OopPixelTest, ClearingOpaqueCorner) {
   options.full_raster_rect = gfx::Rect(arbitrary_offset, gfx::Size(8, 7));
   options.content_size = gfx::Size(options.full_raster_rect.right(),
                                    options.full_raster_rect.bottom());
-  options.playback_rect = options.full_raster_rect;
+  if (IsPartialRaster()) {
+    options.playback_rect = gfx::Rect(options.full_raster_rect.x() + 1,
+                                      options.full_raster_rect.y() + 1,
+                                      options.full_raster_rect.width() - 1,
+                                      options.full_raster_rect.height() - 1);
+  } else {
+    options.playback_rect = options.full_raster_rect;
+  }
   options.background_color = SK_ColorGREEN;
   float arbitrary_scale = 0.25f;
   options.post_scale = arbitrary_scale;
@@ -754,13 +816,20 @@ TEST_F(OopPixelTest, ClearingOpaqueCorner) {
                                  options.resource_size.height()),
       SkBitmap::kZeroPixels_AllocFlag);
 
-  // Expect a two pixel border from texels 7-9 on the column and 6-8 on row.
   SkCanvas canvas(bitmap);
   canvas.drawColor(options.preclear_color);
   SkPaint green;
   green.setColor(options.background_color);
-  canvas.drawRect(SkRect::MakeXYWH(7, 0, 2, 8), green);
-  canvas.drawRect(SkRect::MakeXYWH(0, 6, 9, 2), green);
+  if (IsPartialRaster()) {
+    // Expect a two pixel border from texels 7-9 on the column and 6-8 on row,
+    // ignoring the top row and left column.
+    canvas.drawRect(SkRect::MakeXYWH(7, 1, 2, 7), green);
+    canvas.drawRect(SkRect::MakeXYWH(1, 6, 8, 2), green);
+  } else {
+    // Expect a two pixel border from texels 7-9 on the column and 6-8 on row.
+    canvas.drawRect(SkRect::MakeXYWH(7, 0, 2, 8), green);
+    canvas.drawRect(SkRect::MakeXYWH(0, 6, 9, 2), green);
+  }
 
   ExpectEquals(oop_result, bitmap, "oop");
   ExpectEquals(gpu_result, bitmap, "gpu");
@@ -820,11 +889,15 @@ TEST_F(OopPixelTest, ClearingOpaqueCornerPartialRaster) {
   options.content_size = gfx::Size(options.full_raster_rect.right(),
                                    options.full_raster_rect.bottom());
   options.playback_rect =
-      gfx::Rect(arbitrary_offset.x() + 5, arbitrary_offset.y() + 3, 2, 4);
+      gfx::Rect(arbitrary_offset.x() + 5, arbitrary_offset.y() + 3, 2, 3);
   options.background_color = SK_ColorGREEN;
   options.requires_clear = false;
   options.preclear = true;
   options.preclear_color = SK_ColorRED;
+
+  // Verify this is internal.
+  EXPECT_NE(options.playback_rect.right(), options.full_raster_rect.right());
+  EXPECT_NE(options.playback_rect.bottom(), options.full_raster_rect.bottom());
 
   // Make a non-empty but noop display list to avoid early outs.
   auto display_item_list = MakeNoopDisplayItemList();
@@ -846,17 +919,27 @@ TEST_F(OopPixelTest, ClearingOpaqueCornerPartialRaster) {
   ExpectEquals(gpu_result, bitmap, "gpu");
 }
 
-TEST_F(OopPixelTest, ClearingOpaqueRightEdge) {
+TEST_P(OopClearPixelTest, ClearingOpaqueRightEdge) {
   // Verify that a tile that intersects the right edge of content
   // but not the bottom only clears the right pixels.
-
   RasterOptions options;
   gfx::Point arbitrary_offset(30, 40);
   options.resource_size = gfx::Size(10, 10);
   options.full_raster_rect = gfx::Rect(arbitrary_offset, gfx::Size(3, 10));
   options.content_size = gfx::Size(options.full_raster_rect.right(),
                                    options.full_raster_rect.bottom() + 1000);
-  options.playback_rect = options.full_raster_rect;
+  if (IsPartialRaster()) {
+    // Ignore the left column of pixels here to force partial raster.
+    // Additionally ignore the bottom row of pixels to make sure
+    // that things are not cleared outside the rect.
+    options.playback_rect = gfx::Rect(options.full_raster_rect.x() + 1,
+                                      options.full_raster_rect.y(),
+                                      options.full_raster_rect.width() - 1,
+                                      options.full_raster_rect.height() - 1);
+  } else {
+    options.playback_rect = options.full_raster_rect;
+  }
+
   options.background_color = SK_ColorGREEN;
   options.requires_clear = false;
   options.preclear = true;
@@ -874,18 +957,23 @@ TEST_F(OopPixelTest, ClearingOpaqueRightEdge) {
                                  options.resource_size.height()),
       SkBitmap::kZeroPixels_AllocFlag);
 
-  // Expect a two pixel column border from texels 2-4.
   SkCanvas canvas(bitmap);
   canvas.drawColor(options.preclear_color);
   SkPaint green;
   green.setColor(options.background_color);
-  canvas.drawRect(SkRect::MakeXYWH(2, 0, 2, 10), green);
+  if (IsPartialRaster()) {
+    // Expect a two pixel column border from texels 2-4, ignoring the last row.
+    canvas.drawRect(SkRect::MakeXYWH(2, 0, 2, 9), green);
+  } else {
+    // Expect a two pixel column border from texels 2-4.
+    canvas.drawRect(SkRect::MakeXYWH(2, 0, 2, 10), green);
+  }
 
   ExpectEquals(oop_result, bitmap, "oop");
   ExpectEquals(gpu_result, bitmap, "gpu");
 }
 
-TEST_F(OopPixelTest, ClearingOpaqueBottomEdge) {
+TEST_P(OopClearPixelTest, ClearingOpaqueBottomEdge) {
   // Verify that a tile that intersects the bottom edge of content
   // but not the right only clears the bottom pixels.
 
@@ -895,7 +983,17 @@ TEST_F(OopPixelTest, ClearingOpaqueBottomEdge) {
   options.full_raster_rect = gfx::Rect(arbitrary_offset, gfx::Size(10, 5));
   options.content_size = gfx::Size(options.full_raster_rect.right() + 1000,
                                    options.full_raster_rect.bottom());
-  options.playback_rect = options.full_raster_rect;
+  if (IsPartialRaster()) {
+    // Ignore the top row of pixels here to force partial raster.
+    // Additionally ignore the right column of pixels to make sure
+    // that things are not cleared outside the rect.
+    options.playback_rect = gfx::Rect(options.full_raster_rect.x(),
+                                      options.full_raster_rect.y() + 1,
+                                      options.full_raster_rect.width() - 1,
+                                      options.full_raster_rect.height() - 1);
+  } else {
+    options.playback_rect = options.full_raster_rect;
+  }
   options.background_color = SK_ColorGREEN;
   float arbitrary_scale = 0.25f;
   options.post_scale = arbitrary_scale;
@@ -915,12 +1013,19 @@ TEST_F(OopPixelTest, ClearingOpaqueBottomEdge) {
                                  options.resource_size.height()),
       SkBitmap::kZeroPixels_AllocFlag);
 
-  // Expect a two pixel border from texels 4-6 on the row
   SkCanvas canvas(bitmap);
   canvas.drawColor(options.preclear_color);
   SkPaint green;
   green.setColor(options.background_color);
-  canvas.drawRect(SkRect::MakeXYWH(0, 4, 10, 2), green);
+
+  if (IsPartialRaster()) {
+    // Expect a two pixel border from texels 4-6 on the row, ignoring the last
+    // column.
+    canvas.drawRect(SkRect::MakeXYWH(0, 4, 9, 2), green);
+  } else {
+    // Expect a two pixel border from texels 4-6 on the row
+    canvas.drawRect(SkRect::MakeXYWH(0, 4, 10, 2), green);
+  }
 
   ExpectEquals(oop_result, bitmap, "oop");
   ExpectEquals(gpu_result, bitmap, "gpu");
@@ -1200,10 +1305,12 @@ TEST_F(OopPixelTest, DrawRectColorSpace) {
   ExpectEquals(actual, expected);
 }
 
-scoped_refptr<PaintTextBlob> buildTextBlob() {
+scoped_refptr<PaintTextBlob> BuildTextBlob(
+    PaintTypeface typeface = PaintTypeface()) {
   SkFontStyle style;
-  PaintTypeface typeface =
-      PaintTypeface::FromFamilyNameAndFontStyle("monospace", style);
+  if (!typeface) {
+    typeface = PaintTypeface::FromFamilyNameAndFontStyle("monospace", style);
+  }
 
   PaintFont font;
   font.SetTypeface(typeface);
@@ -1235,7 +1342,7 @@ TEST_F(OopPixelTest, DrawTextBlob) {
   PaintFlags flags;
   flags.setStyle(PaintFlags::kFill_Style);
   flags.setColor(SK_ColorGREEN);
-  display_item_list->push<DrawTextBlobOp>(buildTextBlob(), 0u, 0u, flags);
+  display_item_list->push<DrawTextBlobOp>(BuildTextBlob(), 0u, 0u, flags);
   display_item_list->EndPaintOfUnpaired(options.full_raster_rect);
   display_item_list->Finalize();
 
@@ -1256,7 +1363,7 @@ TEST_F(OopPixelTest, DrawRecordShaderWithTextScaled) {
   PaintFlags flags;
   flags.setStyle(PaintFlags::kFill_Style);
   flags.setColor(SK_ColorGREEN);
-  paint_record->push<DrawTextBlobOp>(buildTextBlob(), 0u, 0u, flags);
+  paint_record->push<DrawTextBlobOp>(BuildTextBlob(), 0u, 0u, flags);
   auto paint_record_shader = PaintShader::MakePaintRecord(
       paint_record, SkRect::MakeWH(25, 25), SkShader::kRepeat_TileMode,
       SkShader::kRepeat_TileMode, nullptr);
@@ -1287,7 +1394,7 @@ TEST_F(OopPixelTest, DrawRecordFilterWithTextScaled) {
   PaintFlags flags;
   flags.setStyle(PaintFlags::kFill_Style);
   flags.setColor(SK_ColorGREEN);
-  paint_record->push<DrawTextBlobOp>(buildTextBlob(), 0u, 0u, flags);
+  paint_record->push<DrawTextBlobOp>(BuildTextBlob(), 0u, 0u, flags);
   auto paint_record_filter =
       sk_make_sp<RecordPaintFilter>(paint_record, SkRect::MakeWH(100, 100));
 
@@ -1305,7 +1412,59 @@ TEST_F(OopPixelTest, DrawRecordFilterWithTextScaled) {
   ExpectEquals(actual, expected);
 }
 
+void ClearFontCache(CompletionEvent* event) {
+  SkGraphics::PurgeFontCache();
+  event->Signal();
+}
+
+TEST_F(OopPixelTest, DrawTextMultipleRasterCHROMIUM) {
+  RasterOptions options;
+  options.resource_size = gfx::Size(100, 100);
+  options.content_size = options.resource_size;
+  options.full_raster_rect = gfx::Rect(options.content_size);
+  options.playback_rect = options.full_raster_rect;
+  options.color_space = gfx::ColorSpace::CreateSRGB();
+
+  auto sk_typeface_1 = SkTypeface::MakeFromName("monospace", SkFontStyle());
+  auto sk_typeface_2 = SkTypeface::MakeFromName("roboto", SkFontStyle());
+
+  auto display_item_list = base::MakeRefCounted<DisplayItemList>();
+  display_item_list->StartPaint();
+  PaintFlags flags;
+  flags.setStyle(PaintFlags::kFill_Style);
+  flags.setColor(SK_ColorGREEN);
+  display_item_list->push<DrawTextBlobOp>(
+      BuildTextBlob(PaintTypeface::FromSkTypeface(sk_typeface_1)), 0u, 0u,
+      flags);
+  display_item_list->EndPaintOfUnpaired(options.full_raster_rect);
+  display_item_list->Finalize();
+
+  // Create another list with a different typeface.
+  auto display_item_list_2 = base::MakeRefCounted<DisplayItemList>();
+  display_item_list_2->StartPaint();
+  display_item_list_2->push<DrawTextBlobOp>(
+      BuildTextBlob(PaintTypeface::FromSkTypeface(sk_typeface_2)), 0u, 0u,
+      flags);
+  display_item_list_2->EndPaintOfUnpaired(options.full_raster_rect);
+  display_item_list_2->Finalize();
+
+  // Raster both these lists with 2 RasterCHROMIUM commands between a single
+  // Begin/EndRaster sequence.
+  options.additional_lists = {display_item_list_2};
+  Raster(display_item_list, options);
+
+  // Clear skia's font cache. No entries should remain since the service
+  // should unpin everything.
+  EXPECT_GT(SkGraphics::GetFontCacheUsed(), 0u);
+  CompletionEvent event;
+  raster_context_provider_->ExecuteOnGpuThread(
+      base::BindOnce(&ClearFontCache, &event));
+  event.Wait();
+  EXPECT_EQ(SkGraphics::GetFontCacheUsed(), 0u);
+}
+
 INSTANTIATE_TEST_CASE_P(P, OopImagePixelTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(P, OopClearPixelTest, ::testing::Bool());
 
 }  // namespace
 }  // namespace cc

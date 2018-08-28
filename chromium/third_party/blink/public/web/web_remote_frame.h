@@ -7,6 +7,7 @@
 
 #include "third_party/blink/public/common/feature_policy/feature_policy.h"
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
+#include "third_party/blink/public/common/frame/user_activation_update_type.h"
 #include "third_party/blink/public/platform/web_content_security_policy.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "third_party/blink/public/platform/web_scroll_types.h"
@@ -21,7 +22,7 @@ namespace blink {
 
 enum class WebTreeScopeType;
 class InterfaceRegistry;
-class WebFrameClient;
+class WebLocalFrameClient;
 class WebRemoteFrameClient;
 class WebString;
 class WebView;
@@ -50,7 +51,7 @@ class WebRemoteFrame : public WebFrame {
   virtual WebLocalFrame* CreateLocalChild(WebTreeScopeType,
                                           const WebString& name,
                                           WebSandboxFlags,
-                                          WebFrameClient*,
+                                          WebLocalFrameClient*,
                                           blink::InterfaceRegistry*,
                                           WebFrame* previous_sibling,
                                           const ParsedFeaturePolicy&,
@@ -114,9 +115,9 @@ class WebRemoteFrame : public WebFrame {
   // owner.
   virtual void WillEnterFullscreen() = 0;
 
-  // Mark the document for the corresponding LocalFrame as having received a
-  // user gesture.
-  virtual void SetHasReceivedUserGesture() = 0;
+  // Update the user activation state in appropriate part of this frame's
+  // "local" frame tree (ancestors-only vs all-nodes).
+  virtual void UpdateUserActivationState(UserActivationUpdateType) = 0;
 
   virtual void SetHasReceivedUserGestureBeforeNavigation(bool value) = 0;
 

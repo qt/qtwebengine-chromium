@@ -514,7 +514,6 @@ class WebMediaPlayerMSTest
   void Repaint() override {}
   void DurationChanged() override {}
   void SizeChanged() override;
-  void PlaybackStateChanged() override {}
   void SetCcLayer(cc::Layer* layer) override;
   blink::WebMediaPlayer::TrackId AddAudioTrack(const blink::WebString& id,
                                                AudioTrackKind,
@@ -545,7 +544,7 @@ class WebMediaPlayerMSTest
   void RemotePlaybackCompatibilityChanged(const blink::WebURL& url,
                                           bool is_compatible) override {}
   void OnBecamePersistentVideo(bool) override {}
-  bool IsAutoplayingMuted() override { return false; }
+  bool WasAlwaysMuted() override { return false; }
   bool HasSelectedVideoTrack() override { return false; }
   blink::WebMediaPlayer::TrackId GetSelectedVideoTrackId() override {
     return blink::WebMediaPlayer::TrackId();
@@ -562,12 +561,17 @@ class WebMediaPlayerMSTest
   void MediaRemotingStopped(
       blink::WebLocalizedString::Name error_msg) override {}
   void PictureInPictureStopped() override {}
+  void PictureInPictureControlClicked(
+      const blink::WebString& control_id) override {}
+  void RequestPlay() override {}
+  void RequestPause() override {}
 
   // Implementation of cc::VideoFrameProvider::Client
   void StopUsingProvider() override;
   void StartRendering() override;
   void StopRendering() override;
   void DidReceiveFrame() override;
+  bool IsDrivingFrameUpdates() const override { return true; }
 
   // For test use
   void SetBackgroundRendering(bool background_rendering) {

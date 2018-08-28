@@ -17,6 +17,7 @@
 #include "components/variations/service/variations_service.h"
 #include "net/base/url_util.h"
 #include "services/identity/public/cpp/primary_account_access_token_fetcher.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace ntp_snippets {
 
@@ -30,7 +31,7 @@ const char kAuthorizationRequestHeaderFormat[] = "Bearer %s";
 }  // namespace
 
 SubscriptionManagerImpl::SubscriptionManagerImpl(
-    scoped_refptr<net::URLRequestContextGetter> url_request_context_getter,
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     PrefService* pref_service,
     variations::VariationsService* variations_service,
     identity::IdentityManager* identity_manager,
@@ -38,7 +39,7 @@ SubscriptionManagerImpl::SubscriptionManagerImpl(
     const std::string& api_key,
     const GURL& subscribe_url,
     const GURL& unsubscribe_url)
-    : url_request_context_getter_(std::move(url_request_context_getter)),
+    : url_loader_factory_(std::move(url_loader_factory)),
       pref_service_(pref_service),
       variations_service_(variations_service),
       identity_manager_(identity_manager),
@@ -69,8 +70,7 @@ void SubscriptionManagerImpl::SubscribeInternal(
     const std::string& subscription_token,
     const std::string& access_token) {
   SubscriptionJsonRequest::Builder builder;
-  builder.SetToken(subscription_token)
-      .SetUrlRequestContextGetter(url_request_context_getter_);
+  builder.SetToken(subscription_token).SetUrlLoaderFactory(url_loader_factory_);
 
   if (!access_token.empty()) {
     builder.SetUrl(subscribe_url_);
@@ -101,30 +101,26 @@ void SubscriptionManagerImpl::StartAccessTokenRequest(
   }
 
   OAuth2TokenService::ScopeSet scopes = {kContentSuggestionsApiScope};
-  access_token_fetcher_ =
-      identity_manager_->CreateAccessTokenFetcherForPrimaryAccount(
-          "ntp_snippets", scopes,
-          base::BindOnce(&SubscriptionManagerImpl::AccessTokenFetchFinished,
-                         base::Unretained(this), subscription_token),
-          identity::PrimaryAccountAccessTokenFetcher::Mode::
-              kWaitUntilAvailable);
+  access_token_fetcher_ = std::make_unique<
+      identity::PrimaryAccountAccessTokenFetcher>(
+      "ntp_snippets", identity_manager_, scopes,
+      base::BindOnce(&SubscriptionManagerImpl::AccessTokenFetchFinished,
+                     base::Unretained(this), subscription_token),
+      identity::PrimaryAccountAccessTokenFetcher::Mode::kWaitUntilAvailable);
 }
 
 void SubscriptionManagerImpl::AccessTokenFetchFinished(
     const std::string& subscription_token,
-    const GoogleServiceAuthError& error,
-    const std::string& access_token) {
-  // Delete the fetcher only after we leave this method (which is called from
-  // the fetcher itself).
-  std::unique_ptr<identity::PrimaryAccountAccessTokenFetcher>
-      access_token_fetcher_deleter(std::move(access_token_fetcher_));
+    GoogleServiceAuthError error,
+    identity::AccessTokenInfo access_token_info) {
+  access_token_fetcher_.reset();
 
   if (error.state() != GoogleServiceAuthError::NONE) {
     // In case of error, we will retry on next Chrome restart.
     return;
   }
-  DCHECK(!access_token.empty());
-  SubscribeInternal(subscription_token, access_token);
+  DCHECK(!access_token_info.token.empty());
+  SubscribeInternal(subscription_token, access_token_info.token);
 }
 
 void SubscriptionManagerImpl::DidSubscribe(
@@ -171,8 +167,7 @@ void SubscriptionManagerImpl::ResubscribeInternal(
   }
 
   SubscriptionJsonRequest::Builder builder;
-  builder.SetToken(old_token).SetUrlRequestContextGetter(
-      url_request_context_getter_);
+  builder.SetToken(old_token).SetUrlLoaderFactory(url_loader_factory_);
   builder.SetUrl(
       net::AppendQueryParameter(unsubscribe_url_, kApiKeyParamName, api_key_));
 

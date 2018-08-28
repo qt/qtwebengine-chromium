@@ -18,7 +18,7 @@
 #include "base/sequenced_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
@@ -4991,9 +4991,10 @@ void DoReplaceStateWhilePending(Shell* shell,
 
 }  // namespace
 
+// Flaky on Linux TSan: https://crbug.com/847326
 IN_PROC_BROWSER_TEST_F(
     NavigationControllerBrowserTest,
-    NavigationTypeClassification_On1SameDocumentToXWhile2Pending) {
+    DISABLED_NavigationTypeClassification_On1SameDocumentToXWhile2Pending) {
   GURL url1(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   GURL url2(embedded_test_server()->GetURL(
@@ -5019,9 +5020,10 @@ IN_PROC_BROWSER_TEST_F(
   DoReplaceStateWhilePending(shell(), url, url, "x");
 }
 
+// Flaky on Linux TSan: https://crbug.com/847326
 IN_PROC_BROWSER_TEST_F(
     NavigationControllerBrowserTest,
-    NavigationTypeClassification_On1SameDocumentTo1While1Pending) {
+    DISABLED_NavigationTypeClassification_On1SameDocumentTo1While1Pending) {
   GURL url(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   DoReplaceStateWhilePending(shell(), url, url, "simple_page_1.html");
@@ -6670,7 +6672,7 @@ class HistoryNavigationBeforeCommitInjector
 
  private:
   // DidCommitProvisionalLoadInterceptor:
-  void WillDispatchDidCommitProvisionalLoad(
+  bool WillDispatchDidCommitProvisionalLoad(
       RenderFrameHost* render_frame_host,
       ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
       service_manager::mojom::InterfaceProviderRequest*
@@ -6679,6 +6681,7 @@ class HistoryNavigationBeforeCommitInjector
       did_trigger_history_navigation_ = true;
       web_contents()->GetController().GoBack();
     }
+    return true;
   }
 
   bool did_trigger_history_navigation_;
@@ -7934,111 +7937,6 @@ class NavigationControllerControllableResponseBrowserTest
   }
 };
 
-IN_PROC_BROWSER_TEST_F(NavigationControllerControllableResponseBrowserTest,
-                       ReloadDisablePreviewReloadsOriginalRequestURL) {
-  const std::string kOriginalPath = "/original.html";
-  const std::string kRedirectPath = "/redirect.html";
-  net::test_server::ControllableHttpResponse original_response1(
-      embedded_test_server(), kOriginalPath);
-  net::test_server::ControllableHttpResponse original_response2(
-      embedded_test_server(), kOriginalPath);
-  net::test_server::ControllableHttpResponse redirect_response1(
-      embedded_test_server(), kRedirectPath);
-  net::test_server::ControllableHttpResponse redirect_response2(
-      embedded_test_server(), kRedirectPath);
-
-  EXPECT_TRUE(embedded_test_server()->Start());
-
-  const GURL kOriginalURL =
-      embedded_test_server()->GetURL("a.com", kOriginalPath);
-  const GURL kRedirectURL =
-      embedded_test_server()->GetURL("b.com", kRedirectPath);
-  const GURL kReloadRedirectURL =
-      embedded_test_server()->GetURL("c.com", kRedirectPath);
-
-  // First navigate to the initial URL. This page will have a cross-site
-  // redirect to a 2nd domain.
-  shell()->LoadURL(kOriginalURL);
-  original_response1.WaitForRequest();
-  original_response1.Send(
-      "HTTP/1.1 302 FOUND\r\n"
-      "Location: " +
-      kRedirectURL.spec() +
-      "\r\n"
-      "\r\n");
-  original_response1.Done();
-  redirect_response1.WaitForRequest();
-  redirect_response1.Send(
-      "HTTP/1.1 200 OK\r\n"
-      "Content-Type: text/html; charset=utf-8\r\n"
-      "\r\n");
-  redirect_response1.Send(
-      "<html>"
-      "<body></body>"
-      "</html>");
-  redirect_response1.Done();
-  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
-  EXPECT_EQ(kRedirectURL, shell()->web_contents()->GetVisibleURL());
-
-  if (content::AreAllSitesIsolatedForTesting()) {
-    RenderFrameHostImpl* rfh =
-        static_cast<WebContentsImpl*>(shell()->web_contents())->GetMainFrame();
-    EXPECT_EQ(GURL("http://b.com"), rfh->GetSiteInstance()->GetSiteURL());
-  }
-
-  // Now simulate a 'Show original' reload via ReloadType::DISABLE_PREVIEWS.
-  // This reload will have a cross-site redirect to a 3rd domain.
-  TestNavigationManager reload(shell()->web_contents(), kOriginalURL);
-  shell()->web_contents()->GetController().Reload(ReloadType::DISABLE_PREVIEWS,
-                                                  false);
-  EXPECT_TRUE(reload.WaitForRequestStart());
-
-  // Verify reload is using the original request URL and no previews allowed.
-  EXPECT_EQ(kOriginalURL, reload.GetNavigationHandle()->GetURL());
-  NavigationRequest* navigation_request =
-      static_cast<WebContentsImpl*>(shell()->web_contents())
-          ->GetFrameTree()
-          ->root()
-          ->navigation_request();
-  CHECK(navigation_request);
-  EXPECT_EQ(content::PREVIEWS_NO_TRANSFORM,
-            navigation_request->common_params().previews_state);
-
-  reload.ResumeNavigation();
-  original_response2.WaitForRequest();
-  original_response2.Send(
-      "HTTP/1.1 302 FOUND\r\n"
-      "Location: " +
-      kReloadRedirectURL.spec() +
-      "\r\n"
-      "\r\n");
-  original_response2.Done();
-  redirect_response2.WaitForRequest();
-
-  // Verify now using new redirect URL.
-  EXPECT_EQ(kReloadRedirectURL, reload.GetNavigationHandle()->GetURL());
-
-  redirect_response2.Send(
-      "HTTP/1.1 200 OK\r\n"
-      "Content-Type: text/html; charset=utf-8\r\n"
-      "\r\n");
-  redirect_response2.Send(
-      "<html>"
-      "<body></body>"
-      "</html>");
-  redirect_response2.Done();
-  EXPECT_TRUE(reload.WaitForResponse());
-  reload.WaitForNavigationFinished();
-  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
-  EXPECT_EQ(kReloadRedirectURL, shell()->web_contents()->GetVisibleURL());
-
-  if (content::AreAllSitesIsolatedForTesting()) {
-    RenderFrameHostImpl* rfh =
-        static_cast<WebContentsImpl*>(shell()->web_contents())->GetMainFrame();
-    EXPECT_EQ(GURL("http://c.com"), rfh->GetSiteInstance()->GetSiteURL());
-  }
-}
-
 // This test reproduces issue 769645. It happens when the user reloads the page
 // and an "unload" event triggers a back navigation. If the reload navigation
 // has reached the ReadyToCommit stage but has not committed, the back
@@ -8135,6 +8033,77 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, DataURLSameDocumentNavigation) {
   shell()->LoadURL(url_second);
   capturer.Wait();
   EXPECT_TRUE(capturer.is_same_document());
+}
+
+// Verify that a session history navigation which results in a different
+// SiteInstance from the original commit is correctly handled - classified
+// as new navigation with replacement, resulting in no new navigation
+// entries.
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+                       SiteInstanceChangeOnHistoryNavigation) {
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+  const NavigationControllerImpl& controller =
+      static_cast<const NavigationControllerImpl&>(
+          shell()->web_contents()->GetController());
+  GURL url1(embedded_test_server()->GetURL("a.com", "/title1.html"));
+  GURL url2(embedded_test_server()->GetURL("b.com", "/title2.html"));
+  GURL url3(embedded_test_server()->GetURL("c.com", "/title3.html"));
+  GURL redirecting_url(embedded_test_server()->GetURL(
+      "a.com", "/server-redirect?" + url3.spec()));
+
+  // Start with an initial URL.
+  EXPECT_TRUE(NavigateToURL(shell(), url1));
+  EXPECT_EQ(1, controller.GetEntryCount());
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(url1, controller.GetEntryAtIndex(0)->GetURL());
+  scoped_refptr<SiteInstance> initial_site_instance =
+      root->current_frame_host()->GetSiteInstance();
+
+  {
+    // history.replaceState(), pointing to a URL that would redirect to |url3|.
+    FrameNavigateParamsCapturer capturer(root);
+    std::string script =
+        "history.replaceState({}, '', '" + redirecting_url.spec() + "')";
+    EXPECT_TRUE(ExecuteScript(root, script));
+    capturer.Wait();
+  }
+  EXPECT_EQ(1, controller.GetEntryCount());
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(redirecting_url, controller.GetEntryAtIndex(0)->GetURL());
+  EXPECT_EQ(initial_site_instance,
+            root->current_frame_host()->GetSiteInstance());
+
+  // Navigate to a new URL to get new session history entry.
+  EXPECT_TRUE(NavigateToURL(shell(), url2));
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+  EXPECT_NE(initial_site_instance,
+            root->current_frame_host()->GetSiteInstance());
+
+  // Back, which should redirect to |url3|.
+  FrameNavigateParamsCapturer capturer(root);
+  shell()->web_contents()->GetController().GoBack();
+  capturer.Wait();
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+
+  NavigationEntry* entry = controller.GetEntryAtIndex(0);
+  EXPECT_EQ(entry, controller.GetLastCommittedEntry());
+  EXPECT_EQ(url3, entry->GetURL());
+  if (AreAllSitesIsolatedForTesting()) {
+    EXPECT_NE(initial_site_instance,
+              root->current_frame_host()->GetSiteInstance());
+    EXPECT_EQ(SiteInstance::GetSiteForURL(
+                  shell()->web_contents()->GetBrowserContext(), url3),
+              root->current_frame_host()->GetSiteInstance()->GetSiteURL());
+    EXPECT_EQ(NAVIGATION_TYPE_NEW_PAGE, capturer.navigation_type());
+  } else {
+    EXPECT_EQ(initial_site_instance,
+              root->current_frame_host()->GetSiteInstance());
+    EXPECT_EQ(NAVIGATION_TYPE_EXISTING_PAGE, capturer.navigation_type());
+  }
 }
 
 }  // namespace content

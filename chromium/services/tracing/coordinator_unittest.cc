@@ -26,12 +26,10 @@ namespace tracing {
 class CoordinatorTest : public testing::Test,
                         public mojo::DataPipeDrainer::Client {
  public:
-  CoordinatorTest() : service_ref_factory_(base::DoNothing()) {}
-
   // testing::Test
   void SetUp() override {
-    agent_registry_.reset(new AgentRegistry(&service_ref_factory_));
-    coordinator_.reset(new Coordinator(&service_ref_factory_));
+    agent_registry_ = std::make_unique<AgentRegistry>();
+    coordinator_ = std::make_unique<Coordinator>(agent_registry_.get());
     output_ = "";
   }
 
@@ -48,20 +46,23 @@ class CoordinatorTest : public testing::Test,
   }
 
   // mojo::DataPipeDrainer::Client
-  void OnDataComplete() override { base::ResetAndReturn(&quit_closure_).Run(); }
+  void OnDataComplete() override { std::move(quit_closure_).Run(); }
 
-  MockAgent* AddArrayAgent() {
+  MockAgent* AddArrayAgent(base::ProcessId pid) {
     auto agent = std::make_unique<MockAgent>();
     agent_registry_->RegisterAgent(agent->CreateAgentPtr(), "traceEvents",
-                                   mojom::TraceDataType::ARRAY, false);
+                                   mojom::TraceDataType::ARRAY, false, pid);
     agents_.push_back(std::move(agent));
     return agents_.back().get();
   }
 
+  MockAgent* AddArrayAgent() { return AddArrayAgent(base::kNullProcessId); }
+
   MockAgent* AddObjectAgent() {
     auto agent = std::make_unique<MockAgent>();
     agent_registry_->RegisterAgent(agent->CreateAgentPtr(), "systemTraceEvents",
-                                   mojom::TraceDataType::OBJECT, false);
+                                   mojom::TraceDataType::OBJECT, false,
+                                   base::kNullProcessId);
     agents_.push_back(std::move(agent));
     return agents_.back().get();
   }
@@ -69,7 +70,8 @@ class CoordinatorTest : public testing::Test,
   MockAgent* AddStringAgent() {
     auto agent = std::make_unique<MockAgent>();
     agent_registry_->RegisterAgent(agent->CreateAgentPtr(), "battor",
-                                   mojom::TraceDataType::STRING, false);
+                                   mojom::TraceDataType::STRING, false,
+                                   base::kNullProcessId);
     agents_.push_back(std::move(agent));
     return agents_.back().get();
   }
@@ -162,7 +164,6 @@ class CoordinatorTest : public testing::Test,
   std::unique_ptr<mojo::DataPipeDrainer> drainer_;
   base::RepeatingClosure quit_closure_;
   std::string output_;
-  service_manager::ServiceContextRefFactory service_ref_factory_;
 };
 
 TEST_F(CoordinatorTest, StartTracingSimple) {
@@ -183,11 +184,41 @@ TEST_F(CoordinatorTest, StartTracingTwoAgents) {
   auto* agent2 = AddStringAgent();
   run_loop.RunUntilIdle();
 
-  // Each agent should have received exactly one call from the coordinatr.
+  // Each agent should have received exactly one call from the coordinator.
   EXPECT_EQ(1u, agent1->call_stat().size());
   EXPECT_EQ("StartTracing", agent1->call_stat()[0]);
   EXPECT_EQ(1u, agent2->call_stat().size());
   EXPECT_EQ("StartTracing", agent2->call_stat()[0]);
+}
+
+TEST_F(CoordinatorTest, StartTracingWithProcessFilter) {
+  base::RunLoop run_loop1;
+  auto* agent1 = AddArrayAgent(static_cast<base::ProcessId>(1));
+  auto* agent2 = AddArrayAgent(static_cast<base::ProcessId>(2));
+  StartTracing("{\"included_process_ids\":[2,4]}", true);
+  run_loop1.RunUntilIdle();
+
+  base::RunLoop run_loop2;
+  auto* agent3 = AddArrayAgent(static_cast<base::ProcessId>(3));
+  auto* agent4 = AddArrayAgent(static_cast<base::ProcessId>(4));
+  StartTracing("{\"included_process_ids\":[4,6]}", true);
+  run_loop2.RunUntilIdle();
+
+  base::RunLoop run_loop3;
+  auto* agent5 = AddArrayAgent(static_cast<base::ProcessId>(5));
+  auto* agent6 = AddArrayAgent(static_cast<base::ProcessId>(6));
+  run_loop3.RunUntilIdle();
+
+  // StartTracing should only be received by agents 2, 4, and 6.
+  EXPECT_EQ(0u, agent1->call_stat().size());
+  EXPECT_EQ(1u, agent2->call_stat().size());
+  EXPECT_EQ("StartTracing", agent2->call_stat()[0]);
+  EXPECT_EQ(0u, agent3->call_stat().size());
+  EXPECT_EQ(1u, agent4->call_stat().size());
+  EXPECT_EQ("StartTracing", agent4->call_stat()[0]);
+  EXPECT_EQ(0u, agent5->call_stat().size());
+  EXPECT_EQ(1u, agent6->call_stat().size());
+  EXPECT_EQ("StartTracing", agent6->call_stat()[0]);
 }
 
 TEST_F(CoordinatorTest, StartTracingWithDifferentConfigs) {
@@ -352,7 +383,7 @@ TEST_F(CoordinatorTest, RequestBufferUsage) {
   agent2->trace_log_status_.event_capacity = 8;
   agent2->trace_log_status_.event_count = 1;
   // The buffer usage of |agent2| is less than the buffer usage of |agent1| and
-  // so the total buffer usage, i.e 0.25, does not change. But, the approximage
+  // so the total buffer usage, i.e 0.25, does not change. But the approximate
   // count will be increased from 1 to 2.
   RequestBufferUsage(0.25, 2);
   base::RunLoop().RunUntilIdle();
@@ -367,7 +398,7 @@ TEST_F(CoordinatorTest, RequestBufferUsage) {
   base::RunLoop().RunUntilIdle();
   CheckDisconnectClosures(3);
 
-  // At the end |agent1| receveis 3 calls, |agent2| receives 2 calls, and
+  // At the end |agent1| receives 3 calls, |agent2| receives 2 calls, and
   // |agent3| receives 1 call.
   EXPECT_EQ(3u, agent1->call_stat().size());
   EXPECT_EQ(2u, agent2->call_stat().size());

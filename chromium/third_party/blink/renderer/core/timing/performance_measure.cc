@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/timing/performance_measure.h"
 
+#include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 
 namespace blink {
@@ -13,7 +14,7 @@ PerformanceMeasure::PerformanceMeasure(ScriptState* script_state,
                                        double start_time,
                                        double end_time,
                                        const ScriptValue& detail)
-    : PerformanceEntry(name, "measure", start_time, end_time) {
+    : PerformanceEntry(name, start_time, end_time) {
   if (detail.IsEmpty()) {
     detail_ = SerializedScriptValue::NullValue();
   } else {
@@ -26,6 +27,14 @@ ScriptValue PerformanceMeasure::detail(ScriptState* script_state) const {
   v8::Isolate* isolate = script_state->GetIsolate();
   v8::Local<v8::Value> detail = detail_->Deserialize(isolate);
   return ScriptValue(script_state, detail);
+}
+
+AtomicString PerformanceMeasure::entryType() const {
+  return PerformanceEntry::MeasureKeyword();
+}
+
+PerformanceEntryType PerformanceMeasure::EntryTypeEnum() const {
+  return PerformanceEntry::EntryType::kMeasure;
 }
 
 }  // namespace blink

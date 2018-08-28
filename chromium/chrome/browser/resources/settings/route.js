@@ -11,10 +11,10 @@
  *   ACCESSIBILITY: (undefined|!settings.Route),
  *   ACCOUNTS: (undefined|!settings.Route),
  *   ADVANCED: (undefined|!settings.Route),
- *   CROSTINI: (undefined|!settings.Route),
- *   CROSTINI_DETAILS: (undefined|!settings.Route),
  *   ANDROID_APPS: (undefined|!settings.Route),
  *   ANDROID_APPS_DETAILS: (undefined|!settings.Route),
+ *   CROSTINI: (undefined|!settings.Route),
+ *   CROSTINI_DETAILS: (undefined|!settings.Route),
  *   APPEARANCE: (undefined|!settings.Route),
  *   AUTOFILL: (undefined|!settings.Route),
  *   BASIC: (undefined|!settings.Route),
@@ -51,6 +51,7 @@
  *   MANAGE_PROFILE: (undefined|!settings.Route),
  *   MANAGE_TTS_SETTINGS: (undefined|!settings.Route),
  *   MULTIDEVICE: (undefined|!settings.Route),
+ *   MULTIDEVICE_FEATURES: (undefined|!settings.Route),
  *   NETWORK_DETAIL: (undefined|!settings.Route),
  *   ON_STARTUP: (undefined|!settings.Route),
  *   PASSWORDS: (undefined|!settings.Route),
@@ -210,6 +211,10 @@ cr.define('settings', function() {
     /** @type {!SettingsRoutes} */
     const r = {};
 
+    const autofillHomeEnabled =
+        loadTimeData.valueExists('autofillHomeEnabled') &&
+        loadTimeData.getBoolean('autofillHomeEnabled');
+
     // Root pages.
     r.BASIC = new Route('/');
     r.ABOUT = new Route('/help');
@@ -229,6 +234,9 @@ cr.define('settings', function() {
     r.KNOWN_NETWORKS = r.INTERNET.createChild('/knownNetworks');
     r.BLUETOOTH = r.BASIC.createSection('/bluetooth', 'bluetooth');
     r.BLUETOOTH_DEVICES = r.BLUETOOTH.createChild('/bluetoothDevices');
+
+    r.MULTIDEVICE = r.BASIC.createSection('/multidevice', 'multidevice');
+    r.MULTIDEVICE_FEATURES = r.MULTIDEVICE.createChild('/multidevice/features');
     // </if>
 
     if (pageVisibility.appearance !== false) {
@@ -246,14 +254,14 @@ cr.define('settings', function() {
     // <if expr="chromeos">
     r.GOOGLE_ASSISTANT = r.SEARCH.createChild('/googleAssistant');
 
+    r.ANDROID_APPS = r.BASIC.createSection('/androidApps', 'androidApps');
+    r.ANDROID_APPS_DETAILS = r.ANDROID_APPS.createChild('/androidApps/details');
+
     if (loadTimeData.valueExists('showCrostini') &&
         loadTimeData.getBoolean('showCrostini')) {
       r.CROSTINI = r.BASIC.createSection('/crostini', 'crostini');
       r.CROSTINI_DETAILS = r.CROSTINI.createChild('/crostini/details');
     }
-
-    r.ANDROID_APPS = r.BASIC.createSection('/androidApps', 'androidApps');
-    r.ANDROID_APPS_DETAILS = r.ANDROID_APPS.createChild('/androidApps/details');
     // </if>
 
     if (pageVisibility.onStartup !== false) {
@@ -264,6 +272,10 @@ cr.define('settings', function() {
     if (pageVisibility.people !== false) {
       r.PEOPLE = r.BASIC.createSection('/people', 'people');
       r.SYNC = r.PEOPLE.createChild('/syncSetup');
+      if (autofillHomeEnabled) {
+        r.AUTOFILL = r.PEOPLE.createChild('/autofill');
+        r.MANAGE_PASSWORDS = r.PEOPLE.createChild('/passwords');
+      }
       // <if expr="not chromeos">
       r.MANAGE_PROFILE = r.PEOPLE.createChild('/manageProfile');
       // </if>
@@ -358,7 +370,7 @@ cr.define('settings', function() {
       }
       // </if>
 
-      if (pageVisibility.passwordsAndForms !== false) {
+      if (!autofillHomeEnabled && pageVisibility.passwordsAndForms !== false) {
         r.PASSWORDS =
             r.ADVANCED.createSection('/passwordsAndForms', 'passwordsAndForms');
         r.AUTOFILL = r.PASSWORDS.createChild('/autofill');
@@ -384,8 +396,6 @@ cr.define('settings', function() {
       r.CLOUD_PRINTERS = r.PRINTING.createChild('/cloudPrinters');
       // <if expr="chromeos">
       r.CUPS_PRINTERS = r.PRINTING.createChild('/cupsPrinters');
-
-      r.MULTIDEVICE = r.ADVANCED.createSection('/multidevice', 'multidevice');
       // </if>
 
       r.ACCESSIBILITY = r.ADVANCED.createSection('/accessibility', 'a11y');

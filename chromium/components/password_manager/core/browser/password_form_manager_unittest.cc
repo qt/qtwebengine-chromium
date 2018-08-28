@@ -13,13 +13,11 @@
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/metrics_hashes.h"
-#include "base/optional.h"
-#include "base/rand_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
+#include "base/test/metrics/user_action_tester.h"
 #include "base/test/scoped_feature_list.h"
-#include "base/test/user_action_tester.h"
 #include "components/autofill/core/browser/autofill_experiments.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/proto/server.pb.h"
@@ -39,6 +37,7 @@
 #include "components/password_manager/core/browser/stub_form_saver.h"
 #include "components/password_manager/core/browser/stub_password_manager_client.h"
 #include "components/password_manager/core/browser/stub_password_manager_driver.h"
+#include "components/password_manager/core/browser/vote_uploads_test_matchers.h"
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -79,9 +78,6 @@ using ::testing::WithArg;
 namespace password_manager {
 
 namespace {
-
-constexpr int kNumberOfPasswordAttributes =
-    static_cast<int>(autofill::PasswordAttribute::kPasswordAttributesCount);
 
 // Enum that describes what button the user pressed on the save prompt.
 enum SavePromptInteraction { SAVE, NEVER, NO_INTERACTION };
@@ -164,158 +160,6 @@ MATCHER_P(UsernamePtrIs, username_value, "") {
   return true;
 }
 
-// Matches a FormStructure if its signature is the same as that of the
-// PasswordForm |form|.
-MATCHER_P(SignatureIsSameAs,
-          form,
-          std::string(negation ? "signature isn't " : "signature is ") +
-              autofill::FormStructure(form.form_data).FormSignatureAsStr()) {
-  if (autofill::FormStructure(form.form_data).FormSignatureAsStr() ==
-      arg.FormSignatureAsStr())
-    return true;
-
-  *result_listener << "signature is " << arg.FormSignatureAsStr() << " instead";
-  return false;
-}
-
-MATCHER_P(UploadedAutofillTypesAre, expected_types, "") {
-  size_t fields_matched_type_count = 0;
-  bool conflict_found = false;
-  for (const auto& field : arg) {
-    fields_matched_type_count +=
-        expected_types.find(field->name) == expected_types.end() ? 0 : 1;
-    if (field->possible_types().size() > 1) {
-      *result_listener << (conflict_found ? ", " : "") << "Field "
-                       << field->name << ": has several possible types";
-      conflict_found = true;
-    }
-
-    autofill::ServerFieldType expected_vote =
-        expected_types.find(field->name) == expected_types.end()
-            ? autofill::NO_SERVER_DATA
-            : expected_types.find(field->name)->second;
-    autofill::ServerFieldType actual_vote =
-        field->possible_types().empty() ? autofill::NO_SERVER_DATA
-                                        : *field->possible_types().begin();
-    if (expected_vote != actual_vote) {
-      *result_listener << (conflict_found ? ", " : "") << "Field "
-                       << field->name << ": expected vote " << expected_vote
-                       << " but found " << actual_vote;
-      conflict_found = true;
-    }
-  }
-  if (expected_types.size() != fields_matched_type_count) {
-    *result_listener << (conflict_found ? ", " : "")
-                     << "Some types were expected but not found in the vote";
-    return false;
-  }
-
-  return !conflict_found;
-}
-
-MATCHER_P(HasGenerationVote, expect_generation_vote, "") {
-  bool found_generation_vote = false;
-  for (const auto& field : arg) {
-    if (field->generation_type() !=
-        autofill::AutofillUploadContents::Field::NO_GENERATION) {
-      found_generation_vote = true;
-      break;
-    }
-  }
-  return found_generation_vote == expect_generation_vote;
-}
-
-// Matches if all fields with a vote type are described in |expected_vote_types|
-// and all votes from |expected_vote_types| are found in a field.
-MATCHER_P(VoteTypesAre, expected_vote_types, "") {
-  size_t matched_count = 0;
-  bool conflict_found = false;
-  for (const auto& field : arg) {
-    auto expectation = expected_vote_types.find(field->name);
-    if (expectation == expected_vote_types.end()) {
-      if (field->vote_type() !=
-          autofill::AutofillUploadContents::Field::NO_INFORMATION) {
-        *result_listener << (conflict_found ? ", " : "") << "field "
-                         << field->name << ": unexpected vote type "
-                         << field->vote_type();
-        conflict_found = true;
-      }
-      continue;
-    }
-
-    matched_count++;
-    if (expectation->second != field->vote_type()) {
-      *result_listener << (conflict_found ? ", " : "") << "field "
-                       << field->name << ": expected vote type "
-                       << expectation->second << " but has "
-                       << field->vote_type();
-      conflict_found = true;
-    }
-  }
-  if (expected_vote_types.size() != matched_count) {
-    *result_listener
-        << (conflict_found ? ", " : "")
-        << "some vote types were expected but not found in the vote";
-    conflict_found = true;
-  }
-
-  return !conflict_found;
-}
-
-MATCHER_P2(UploadedGenerationTypesAre,
-           expected_generation_types,
-           generated_password_changed,
-           "") {
-  for (const auto& field : arg) {
-    if (expected_generation_types.find(field->name) ==
-        expected_generation_types.end()) {
-      if (field->generation_type() !=
-          autofill::AutofillUploadContents::Field::NO_GENERATION) {
-        // Unexpected generation type.
-        *result_listener << "Expected no generation type for the field "
-                         << field->name << ", but found "
-                         << field->generation_type();
-        return false;
-      }
-    } else {
-      if (expected_generation_types.find(field->name)->second !=
-          field->generation_type()) {
-        // Wrong generation type.
-        *result_listener << "Expected generation type for the field "
-                         << field->name << " is "
-                         << expected_generation_types.find(field->name)->second
-                         << ", but found " << field->generation_type();
-        return false;
-      }
-
-      if (field->generation_type() !=
-          autofill::AutofillUploadContents::Field::IGNORED_GENERATION_POPUP) {
-        if (generated_password_changed != field->generated_password_changed())
-          return false;
-      }
-    }
-  }
-  return true;
-}
-
-MATCHER_P2(UploadedFormClassifierVoteIs,
-           found_generation_element,
-           generation_element,
-           "") {
-  for (const auto& field : arg) {
-    if (found_generation_element && field->name == generation_element) {
-      if (field->form_classifier_outcome() !=
-          autofill::AutofillUploadContents::Field::GENERATION_ELEMENT)
-        return false;
-    } else {
-      if (field->form_classifier_outcome() !=
-          autofill::AutofillUploadContents::Field::NON_GENERATION_ELEMENT)
-        return false;
-    }
-  }
-  return true;
-}
-
 MATCHER_P(PasswordsWereRevealed, revealed, "") {
   return arg.passwords_were_revealed() == revealed;
 }
@@ -324,6 +168,11 @@ MATCHER_P(HasPasswordAttributesVote, is_vote_expected, "") {
   base::Optional<std::pair<autofill::PasswordAttribute, bool>> vote =
       arg.get_password_attributes_vote_for_testing();
   EXPECT_EQ(is_vote_expected, vote.has_value());
+  if (vote.has_value()) {
+    size_t reported_length = arg.get_password_length_vote_for_testing();
+    EXPECT_LT(0u, reported_length);
+    EXPECT_LE(reported_length, 5u /* actual password length */);
+  }
   return true;
 }
 
@@ -429,7 +278,6 @@ class MockPasswordManagerDriver : public StubPasswordManagerDriver {
                void(const autofill::PasswordFormFillData&));
   MOCK_METHOD1(AllowPasswordGenerationForForm,
                void(const autofill::PasswordForm&));
-  MOCK_METHOD0(MatchingBlacklistedFormFound, void());
 
   MockAutofillManager* mock_autofill_manager() {
     return &mock_autofill_manager_;
@@ -598,7 +446,8 @@ class PasswordFormManagerTest : public testing::Test {
       // Show the password generation popup to check that the generation vote
       // would be ignored.
       form_manager.set_generation_element(saved_match()->password_element);
-      form_manager.set_generation_popup_was_shown(true);
+      form_manager.SetGenerationPopupWasShown(/*shown=*/true,
+                                              /*manually_triggered*/ true);
       expect_generation_vote =
           *field_type != autofill::ACCOUNT_CREATION_PASSWORD;
 
@@ -831,15 +680,14 @@ class PasswordFormManagerTest : public testing::Test {
     if (interaction == SAVE)
       expected_available_field_types.insert(autofill::PASSWORD);
 
-    form_manager.set_is_manual_generation(is_manual_generation);
     base::string16 generation_element = is_change_password_form
                                             ? form.new_password_element
                                             : form.password_element;
     form_manager.set_generation_element(generation_element);
-    form_manager.set_generation_popup_was_shown(true);
+    form_manager.SetGenerationPopupWasShown(true, is_manual_generation);
     form_manager.SetHasGeneratedPassword(has_generated_password);
     if (has_generated_password)
-      form_manager.set_generated_password_changed(generated_password_changed);
+      form_manager.SetGeneratedPasswordChanged(generated_password_changed);
 
     // Figure out expected generation event type.
     autofill::AutofillUploadContents::Field::PasswordGenerationType
@@ -876,6 +724,137 @@ class PasswordFormManagerTest : public testing::Test {
       histogram_tester.ExpectUniqueSample(
           "PasswordGeneration.GeneratedPasswordWasEdited",
           generated_password_changed /* sample */, 1);
+      histogram_tester.ExpectUniqueSample(
+          "PasswordGeneration.IsTriggeredManually",
+          is_manual_generation /* sample */, 1);
+    }
+    Mock::VerifyAndClearExpectations(
+        client()->mock_driver()->mock_autofill_download_manager());
+  }
+
+  void GeneratedPasswordUkmTest(bool is_manual_generation,
+                                bool is_change_password_form,
+                                bool has_generated_password,
+                                bool generated_password_changed,
+                                SavePromptInteraction interaction) {
+    SCOPED_TRACE(testing::Message()
+                 << "is_manual_generation=" << is_manual_generation
+                 << " is_change_password_form=" << is_change_password_form
+                 << " has_generated_password=" << has_generated_password
+                 << " generated_password_changed=" << generated_password_changed
+                 << " interaction=" << interaction);
+
+    ukm::TestAutoSetUkmRecorder test_ukm_recorder;
+    test_ukm_recorder.UpdateSourceURL(client()->GetUkmSourceId(),
+                                      client()->GetMainFrameURL());
+
+    PasswordForm form(*observed_form());
+    form.form_data = saved_match()->form_data;
+
+    if (is_change_password_form) {
+      // Turn |form| to a change password form.
+      form.new_password_element = ASCIIToUTF16("NewPasswd");
+
+      autofill::FormFieldData field;
+      field.label = ASCIIToUTF16("password");
+      field.name = ASCIIToUTF16("NewPasswd");
+      field.form_control_type = "password";
+      form.form_data.fields.push_back(field);
+    }
+
+    // Create submitted form.
+    PasswordForm submitted_form(form);
+    submitted_form.preferred = true;
+    submitted_form.username_value = saved_match()->username_value;
+    submitted_form.password_value = saved_match()->password_value;
+
+    if (is_change_password_form) {
+      submitted_form.new_password_value =
+          saved_match()->password_value + ASCIIToUTF16("1");
+    }
+
+    FakeFormFetcher fetcher;
+    fetcher.Fetch();
+    auto metrics_recorder = base::MakeRefCounted<PasswordFormMetricsRecorder>(
+        form.origin.SchemeIsCryptographic(), client()->GetUkmSourceId());
+    auto form_manager = std::make_unique<PasswordFormManager>(
+        password_manager(), client(), client()->driver(), form,
+        std::make_unique<NiceMock<MockFormSaver>>(), &fetcher);
+    // *Move* the metrics recorder to not hold on to a reference.
+    form_manager->Init(std::move(metrics_recorder));
+    fetcher.SetNonFederated(std::vector<const PasswordForm*>(), 0u);
+
+    autofill::ServerFieldTypeSet expected_available_field_types;
+    // Don't send autofill votes if the user didn't press "Save" button.
+    if (interaction == SAVE)
+      expected_available_field_types.insert(autofill::PASSWORD);
+
+    base::string16 generation_element = is_change_password_form
+                                            ? form.new_password_element
+                                            : form.password_element;
+    form_manager->set_generation_element(generation_element);
+    form_manager->SetGenerationPopupWasShown(true, is_manual_generation);
+    form_manager->SetHasGeneratedPassword(has_generated_password);
+    if (has_generated_password)
+      form_manager->SetGeneratedPasswordChanged(generated_password_changed);
+
+    // Figure out expected generation event type.
+    autofill::AutofillUploadContents::Field::PasswordGenerationType
+        expected_generation_type = GetExpectedPasswordGenerationType(
+            is_manual_generation, is_change_password_form,
+            has_generated_password);
+    std::map<base::string16,
+             autofill::AutofillUploadContents::Field::PasswordGenerationType>
+        expected_generation_types;
+    expected_generation_types[generation_element] = expected_generation_type;
+
+    EXPECT_CALL(
+        *client()->mock_driver()->mock_autofill_download_manager(),
+        StartUploadRequest(
+            AllOf(SignatureIsSameAs(submitted_form),
+                  UploadedGenerationTypesAre(expected_generation_types,
+                                             generated_password_changed)),
+            false, expected_available_field_types, std::string(), true));
+    form_manager->ProvisionallySave(submitted_form);
+    switch (interaction) {
+      case SAVE:
+        form_manager->Save();
+        break;
+      case NEVER:
+        form_manager->OnNeverClicked();
+        break;
+      case NO_INTERACTION:
+        form_manager->OnNoInteraction(false /* not an update prompt*/);
+        break;
+    }
+    // Reset form manager to flush UKM metrics.
+    form_manager.reset();
+
+    auto entries = test_ukm_recorder.GetEntriesByName(
+        ukm::builders::PasswordForm::kEntryName);
+    ASSERT_EQ(1u, entries.size());
+
+    ukm::TestUkmRecorder::ExpectEntryMetric(
+        entries[0], ukm::builders::PasswordForm::kGeneration_PopupShownName,
+        is_manual_generation
+            ? static_cast<int64_t>(
+                  password_manager::PasswordFormMetricsRecorder::
+                      PasswordGenerationPopupShown::kShownManually)
+            : static_cast<int64_t>(
+                  password_manager::PasswordFormMetricsRecorder::
+                      PasswordGenerationPopupShown::kShownAutomatically));
+
+    ukm::TestUkmRecorder::ExpectEntryMetric(
+        entries[0],
+        ukm::builders::PasswordForm::kGeneration_GeneratedPasswordName,
+        has_generated_password ? 1 : 0);
+
+    if (has_generated_password) {
+      ukm::TestUkmRecorder::ExpectEntryMetric(
+          entries[0],
+          ukm::builders::PasswordForm::
+              kGeneration_GeneratedPasswordModifiedName,
+          generated_password_changed ? 1 : 0);
     }
     Mock::VerifyAndClearExpectations(
         client()->mock_driver()->mock_autofill_download_manager());
@@ -1491,15 +1470,6 @@ TEST_F(PasswordFormManagerTest,
   EXPECT_CALL(*(client()->mock_driver()), AllowPasswordGenerationForForm(_));
   PasswordForm simulated_result = CreateSavedMatch(false);
   fetcher.SetNonFederated({&simulated_result}, 0u);
-}
-
-TEST_F(PasswordFormManagerTest,
-       TestSendMachedBlacklistedFoundMessage_BlacklistedCredentials) {
-  // Signing up on a previously visited site. Credentials are found in the
-  // password store, but they are blacklisted.
-  EXPECT_CALL(*client()->mock_driver(), MatchingBlacklistedFormFound());
-  PasswordForm simulated_result = CreateSavedMatch(true);
-  fake_form_fetcher()->SetNonFederated({&simulated_result}, 0u);
 }
 
 // Test that exactly one match for each username is chosen as a best match, even
@@ -2816,6 +2786,52 @@ TEST_F(PasswordFormManagerTest, GenerationStatusNotUpdatedIfPasswordUnchanged) {
   EXPECT_EQ(PasswordForm::TYPE_GENERATED, new_credentials.type);
   histogram_tester.ExpectBucketCount("PasswordGeneration.SubmissionEvent",
                                      metrics_util::PASSWORD_USED, 1);
+
+  // On the second reuse, the metric is not reported.
+  generated_form.times_used = 1;
+  fake_form_fetcher()->SetNonFederated({&generated_form}, 0u);
+  form_manager()->ProvisionallySave(submitted_form);
+  EXPECT_CALL(MockFormSaver::Get(form_manager()), Update(_, _, _, _));
+  form_manager()->Save();
+  histogram_tester.ExpectBucketCount("PasswordGeneration.SubmissionEvent",
+                                     metrics_util::PASSWORD_USED, 1);
+}
+
+TEST_F(PasswordFormManagerTest, GeneratedPasswordIsOverridden) {
+  base::HistogramTester histogram_tester;
+
+  PasswordForm generated_form = *observed_form();
+  generated_form.type = PasswordForm::TYPE_GENERATED;
+  generated_form.username_value = ASCIIToUTF16("username");
+  generated_form.password_value = ASCIIToUTF16("password2");
+  generated_form.preferred = true;
+
+  PasswordForm submitted_form(generated_form);
+  submitted_form.password_value = ASCIIToUTF16("another_password");
+
+  fake_form_fetcher()->SetNonFederated({&generated_form}, 0u);
+
+  form_manager()->ProvisionallySave(submitted_form);
+
+  PasswordForm new_credentials;
+  EXPECT_CALL(MockFormSaver::Get(form_manager()), Update(_, _, _, nullptr))
+      .WillOnce(testing::SaveArg<0>(&new_credentials));
+  form_manager()->Save();
+
+  EXPECT_EQ(PasswordForm::TYPE_MANUAL, new_credentials.type);
+  EXPECT_EQ(ASCIIToUTF16("another_password"), new_credentials.password_value);
+  histogram_tester.ExpectBucketCount("PasswordGeneration.SubmissionEvent",
+                                     metrics_util::PASSWORD_OVERRIDDEN, 1);
+
+  // On the reuse of the overriden password, the metric is not reported.
+  fake_form_fetcher()->SetNonFederated({&new_credentials}, 0u);
+  form_manager()->ProvisionallySave(new_credentials);
+  EXPECT_CALL(MockFormSaver::Get(form_manager()), Update(_, _, _, _));
+  form_manager()->Save();
+  histogram_tester.ExpectBucketCount("PasswordGeneration.SubmissionEvent",
+                                     metrics_util::PASSWORD_OVERRIDDEN, 1);
+  histogram_tester.ExpectBucketCount("PasswordGeneration.SubmissionEvent",
+                                     metrics_util::PASSWORD_USED, 0);
 }
 
 // Test that ProcessFrame is called on receiving matches from the fetcher,
@@ -3261,6 +3277,26 @@ TEST_F(PasswordFormManagerTest, GeneratedVoteUpload) {
                                     is_change_password_form,
                                     has_generated_password,
                                     generated_password_changed, interaction);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_F(PasswordFormManagerTest, GeneratedPasswordUkm) {
+  bool kFalseTrue[] = {false, true};
+  SavePromptInteraction kSavePromptInterations[] = {SAVE, NEVER,
+                                                    NO_INTERACTION};
+  for (bool is_manual_generation : kFalseTrue) {
+    for (bool is_change_password_form : kFalseTrue) {
+      for (bool has_generated_password : kFalseTrue) {
+        for (bool generated_password_changed : kFalseTrue) {
+          for (SavePromptInteraction interaction : kSavePromptInterations) {
+            GeneratedPasswordUkmTest(is_manual_generation,
+                                     is_change_password_form,
+                                     has_generated_password,
+                                     generated_password_changed, interaction);
           }
         }
       }
@@ -4363,27 +4399,17 @@ TEST_F(PasswordFormManagerTest, TestUkmContextMetrics) {
 }
 
 TEST_F(PasswordFormManagerTest,
-       TestSendNotBlacklistedMessage_BlacklistedCredentials) {
+       TestNotSendNotBlacklistedMessage_BlacklistedCredentials) {
   // Signing up on a previously visited site. Credentials are found in the
   // password store, but they are blacklisted. AllowPasswordGenerationForForm
-  // is still called.
-  EXPECT_CALL(*(client()->mock_driver()), AllowPasswordGenerationForForm(_));
+  // is not called.
+  EXPECT_CALL(*(client()->mock_driver()), AllowPasswordGenerationForForm(_))
+      .Times(0);
   PasswordForm simulated_result = CreateSavedMatch(true);
   fake_form_fetcher()->SetNonFederated({&simulated_result}, 0u);
 }
 
-TEST_F(PasswordFormManagerTest,
-       TestSendMachedBlacklistedFoundMessage_Credentials) {
-  // Signing up on a previously visited site. Credentials are found in the
-  // password store, and are not blacklisted.
-  EXPECT_CALL(*client()->mock_driver(), MatchingBlacklistedFormFound())
-      .Times(0);
-  PasswordForm simulated_result = CreateSavedMatch(false);
-  fake_form_fetcher()->SetNonFederated({&simulated_result}, 0u);
-}
-
 TEST_F(PasswordFormManagerTest, FirstLoginVote) {
-
   PasswordForm old_without_username = *saved_match();
   old_without_username.username_value.clear();
   old_without_username.username_element.clear();
@@ -4862,57 +4888,6 @@ TEST_F(PasswordFormManagerTest, FirstLoginVote_KnownValue) {
   form_manager()->Save();
 }
 
-TEST_F(PasswordFormManagerTest, GeneratePasswordAttributesVote) {
-  // Checks that randomization distorts information about present and missed
-  // character classess, but a true value is still restorable with aggregation
-  // of many distorted reports.
-  const char* kPasswordSnippets[] = {"abc", "XYZ", "123", "*-_"};
-  for (int test_case = 0; test_case < 10; ++test_case) {
-    bool has_password_attribute[kNumberOfPasswordAttributes];
-    base::string16 password_value;
-    for (int i = 0; i < kNumberOfPasswordAttributes; ++i) {
-      has_password_attribute[i] = base::RandGenerator(2);
-      if (has_password_attribute[i])
-        password_value += ASCIIToUTF16(kPasswordSnippets[i]);
-    }
-    if (password_value.empty())
-      continue;
-
-    autofill::FormData form;
-    autofill::FormStructure form_structure(form);
-    int reported_false[kNumberOfPasswordAttributes] = {0, 0, 0, 0};
-    int reported_true[kNumberOfPasswordAttributes] = {0, 0, 0, 0};
-
-    for (int i = 0; i < 1000; ++i) {
-      form_manager()->GeneratePasswordAttributesVote(password_value,
-                                                     &form_structure);
-      base::Optional<std::pair<autofill::PasswordAttribute, bool>> vote =
-          form_structure.get_password_attributes_vote_for_testing();
-      int attribute_index = static_cast<int>(vote->first);
-      if (vote->second)
-        reported_true[attribute_index]++;
-      else
-        reported_false[attribute_index]++;
-    }
-    for (int i = 0; i < kNumberOfPasswordAttributes; i++) {
-      EXPECT_LT(0, reported_false[i]);
-      EXPECT_LT(0, reported_true[i]);
-
-      // If the actual value is |true|, then it should report more |true|s than
-      // |false|s.
-      if (has_password_attribute[i]) {
-        EXPECT_LT(reported_false[i], reported_true[i])
-            << "Wrong distribution for attribute " << i
-            << ". password_value = " << password_value;
-      } else {
-        EXPECT_GT(reported_false[i], reported_true[i])
-            << "Wrong distribution for attribute " << i
-            << ". password_value = " << password_value;
-      }
-    }
-  }
-}
-
 TEST_F(PasswordFormManagerTest, UploadPasswordAttributesVote) {
   PasswordForm credentials = *observed_form();
   // Set FormData to enable crowdsourcing.
@@ -4933,6 +4908,53 @@ TEST_F(PasswordFormManagerTest, UploadPasswordAttributesVote) {
       StartUploadRequest(HasPasswordAttributesVote(true /* is_vote_expected */),
                          _, _, _, _));
   form_manager.Save();
+}
+
+TEST_F(PasswordFormManagerTest, PresaveGeneratedPassword_UnknownUsername) {
+  // Checks whether the generated password is presaved with the captured
+  // username. The username is new, so there will be no credentail override.
+  fake_form_fetcher()->SetNonFederated({saved_match()}, 0u);
+  PasswordForm credentials = *observed_form();
+  credentials.username_value = ASCIIToUTF16("new_user");
+  credentials.password_value = ASCIIToUTF16("generatated_password");
+
+  EXPECT_CALL(MockFormSaver::Get(form_manager()),
+              PresaveGeneratedPassword(credentials));
+  form_manager()->PresaveGeneratedPassword(credentials);
+}
+
+TEST_F(PasswordFormManagerTest, PresaveGeneratedPassword_KnownUsername) {
+  // Checks whether the generated password is presaved with empty username if
+  // there is already an entry with the captured username in the store.
+  PasswordForm saved_form_without_username(*saved_match());
+  saved_form_without_username.username_value.clear();
+  fake_form_fetcher()->SetNonFederated(
+      {saved_match(), &saved_form_without_username}, 0u);
+  PasswordForm credentials = *observed_form();
+  credentials.username_value = saved_match()->username_value;
+  credentials.password_value = ASCIIToUTF16("generatated_password");
+
+  PasswordForm credentials_without_username(credentials);
+  credentials_without_username.username_value.clear();
+  EXPECT_CALL(MockFormSaver::Get(form_manager()),
+              PresaveGeneratedPassword(credentials_without_username));
+  form_manager()->PresaveGeneratedPassword(credentials);
+}
+
+TEST_F(PasswordFormManagerTest, PresaveGeneratedPassword_EmptyUsername) {
+  // Checks whether the generated password is presaved even if the captured
+  // username is empty.
+  PasswordForm saved_form_without_username(*saved_match());
+  saved_form_without_username.username_value.clear();
+  fake_form_fetcher()->SetNonFederated(
+      {saved_match(), &saved_form_without_username}, 0u);
+  PasswordForm credentials = *observed_form();
+  credentials.username_value.clear();
+  credentials.password_value = ASCIIToUTF16("generatated_password");
+
+  EXPECT_CALL(MockFormSaver::Get(form_manager()),
+              PresaveGeneratedPassword(credentials));
+  form_manager()->PresaveGeneratedPassword(credentials);
 }
 
 }  // namespace password_manager

@@ -23,12 +23,14 @@ class WebRTCDTMFSenderHandler;
 class BLINK_PLATFORM_EXPORT WebRTCRtpSender {
  public:
   virtual ~WebRTCRtpSender();
+  virtual std::unique_ptr<WebRTCRtpSender> ShallowCopy() const = 0;
 
   // Two |WebRTCRtpSender|s referencing the same WebRTC-layer sender have the
   // same |id|. IDs are guaranteed to be unique amongst senders but they are
   // allowed to be reused after a sender is destroyed.
   virtual uintptr_t Id() const = 0;
   virtual WebMediaStreamTrack Track() const = 0;
+  virtual WebVector<WebString> StreamIds() const = 0;
   // TODO(hbos): Replace WebRTCVoidRequest by something resolving promises based
   // on RTCError, as to surface both exception type and error message.
   // https://crbug.com/790007

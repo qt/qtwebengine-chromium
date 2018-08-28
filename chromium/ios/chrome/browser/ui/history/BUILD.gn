@@ -13,6 +13,8 @@ source_set("history") {
     "favicon_view_provider.mm",
     "history_coordinator.h",
     "history_coordinator.mm",
+    "history_mediator.h",
+    "history_mediator.mm",
     "history_panel_view_controller.h",
     "history_panel_view_controller.mm",
     "history_search_view.h",
@@ -29,7 +31,8 @@ source_set("history") {
     "legacy_history_entry_item.mm",
   ]
   deps = [
-    ":history_base_feature",
+    ":clear_browsing_data",
+    ":feature_flags",
     ":history_ui",
     "//base",
     "//base:i18n",
@@ -97,6 +100,7 @@ source_set("history_ui") {
     "history_entry_item.mm",
     "history_entry_item_delegate.h",
     "history_entry_item_interface.h",
+    "history_image_data_source.h",
     "history_local_commands.h",
     "history_table_view_controller.h",
     "history_table_view_controller.mm",
@@ -108,6 +112,8 @@ source_set("history_ui") {
     "history_util.mm",
   ]
   deps = [
+    "public",
+    "resources:empty_history",
     "//base",
     "//base:i18n",
     "//components/browsing_data/core",
@@ -116,6 +122,7 @@ source_set("history_ui") {
     "//components/url_formatter",
     "//components/url_formatter",
     "//ios/chrome/app/strings",
+    "//ios/chrome/browser",
     "//ios/chrome/browser/browser_state",
     "//ios/chrome/browser/metrics:metrics_internal",
     "//ios/chrome/browser/sync",
@@ -128,15 +135,35 @@ source_set("history_ui") {
     "//ios/chrome/browser/ui/table_view:styler",
     "//ios/chrome/browser/ui/table_view/cells",
     "//ios/chrome/browser/ui/util",
+    "//ios/chrome/common/favicon",
     "//ui/base",
   ]
 }
 
-source_set("history_base_feature") {
+source_set("clear_browsing_data") {
   configs += [ "//build/config/compiler:enable_arc" ]
   sources = [
-    "history_base_feature.h",
-    "history_base_feature.mm",
+    "history_clear_browsing_data_coordinator.h",
+    "history_clear_browsing_data_coordinator.mm",
+  ]
+  deps = [
+    ":history_ui",
+    "//base",
+    "//ios/chrome/browser/ui",
+    "//ios/chrome/browser/ui/coordinators:chrome_coordinators",
+    "//ios/chrome/browser/ui/history/public",
+    "//ios/chrome/browser/ui/settings",
+    "//ios/chrome/browser/ui/table_view",
+    "//ios/chrome/browser/ui/table_view:presentation",
+    "//ios/web/public",
+  ]
+}
+
+source_set("feature_flags") {
+  configs += [ "//build/config/compiler:enable_arc" ]
+  sources = [
+    "features.cc",
+    "features.h",
   ]
   deps = [
     "//base",
@@ -240,7 +267,6 @@ source_set("eg_tests") {
     "//ios/chrome/test/earl_grey:test_support",
     "//ios/public/provider/chrome/browser/signin",
     "//ios/public/provider/chrome/browser/signin:test_support",
-    "//ios/testing:ios_test_support",
     "//ios/third_party/earl_grey:earl_grey+link",
     "//ios/web/public/test",
     "//ios/web/public/test/http_server",

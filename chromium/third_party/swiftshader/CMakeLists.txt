@@ -51,6 +51,11 @@ option(USE_GROUP_SOURCES "Group the source files in a folder tree for Visual Stu
 option(BUILD_SAMPLES "Build sample programs" 1)
 option(BUILD_TESTS "Build test programs" 1)
 
+option (MSAN "Build with memory sanitizer" 0)
+option (ASAN "Build with address sanitizer" 0)
+option (TSAN "Build with thread sanitizer" 0)
+option (UBSAN "Build with undefined behavior sanitizer" 0)
+
 if(ARCH STREQUAL "arm")
     set(DEFAULT_REACTOR_BACKEND "Subzero")
 else()
@@ -96,22 +101,30 @@ endmacro()
 # Takes target library and a directory where the export map is
 # and add the linker options so that only the API symbols are
 # exported.
-macro(set_target_export_map TARGET DIR)
-    get_target_property(LINKFLAGS ${TARGET} LINK_FLAGS)
-    if(LINKFLAGS MATCHES "NOTFOUND")
-        set(LINKFLAGS "")
-    endif()
+macro(set_shared_library_export_map TARGET DIR)
     if(MSVC)
-        set_target_properties(${TARGET} PROPERTIES LINK_FLAGS "/DEF:\"${DIR}/${TARGET}.def\"")
+        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " /DEF:\"${DIR}/${TARGET}.def\"")
     elseif(LINUX)
-        # Both hash-style are needed, because we want both gold and
-        # GNU ld to be able to read our libraries (maybe?).
         # The version script only exports the API functions and
-        # hides all the others. Gc sections is used in combination
-        # with each functions being in its section, to reduce the
-        # binary size.
-        set_target_properties(${TARGET} PROPERTIES LINK_FLAGS "${LINKFLAGS} -Wl,--hash-style=both,--version-script=${DIR}/${TARGET}.lds,--gc-sections,--no-undefined")
-        set_target_properties(${TARGET} PROPERTIES LINK_DEPENDS "${DIR}/${TARGET}.lds")
+        # hides all the others.
+        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--version-script=${DIR}/${TARGET}.lds")
+        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_DEPENDS "${DIR}/${TARGET}.lds;")
+
+        # Don't allow symbols to be overridden by another module.
+        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY COMPILE_FLAGS " -fvisibility=protected")
+
+        # Both hash-style are needed, because we want both gold and
+        # GNU ld to be able to read our libraries.
+        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--hash-style=both")
+
+        # Gc sections is used in combination with each functions being
+        # in its own section, to reduce the binary size.
+        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--gc-sections")
+
+        # Don't allow undefined symbols, unless it's a Sanitizer build.
+        if(NOT MSAN AND NOT ASAN AND NOT TSAN AND NOT UBSAN)
+            set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--no-undefined")
+        endif()
     endif()
 endmacro()
 
@@ -161,18 +174,22 @@ else()
     # LLVM headers requires these flags to be set
     set_cpp_flag("-D__STDC_CONSTANT_MACROS -D__STDC_LIMIT_MACROS")
 
-    if(ARCH EQUAL "x86")
+    if(ARCH STREQUAL "x86")
         set_cpp_flag("-m32")
         set_cpp_flag("-msse2")
         set_cpp_flag("-mfpmath=sse")
         set_cpp_flag("-march=pentium4")
         set_cpp_flag("-mtune=generic")
     endif()
-    if(ARCH EQUAL "x86_64")
+    if(ARCH STREQUAL "x86_64")
         set_cpp_flag("-m64")
         set_cpp_flag("-fPIC")
         set_cpp_flag("-march=x86-64")
         set_cpp_flag("-mtune=generic")
+    endif()
+
+    if(LINUX)
+        set_cpp_flag("-DUSE_X11=1")
     endif()
 
     # Use -g3 to have even more debug info
@@ -194,9 +211,21 @@ else()
     set_cpp_flag("-ffunction-sections" RELEASE)
     set_cpp_flag("-fdata-sections" RELEASE)
     set_cpp_flag("-fomit-frame-pointer" RELEASE)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        if(MSAN)
+            set_cpp_flag("-fsanitize=memory")
+        elseif(ASAN)
+            set_cpp_flag("-fsanitize=address")
+        elseif(TSAN)
+            set_cpp_flag("-fsanitize=thread")
+        elseif(UBSAN)
+            set_cpp_flag("-fsanitize=undefined -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/third_party/LLVM/ubsan_blacklist.txt")
+        endif()
+    endif()
 endif()
 
-if( WIN32 )
+if(WIN32)
     add_definitions(-DWINVER=0x501 -DNOMINMAX -DSTRICT)
     set(CMAKE_FIND_LIBRARY_PREFIXES ${CMAKE_FIND_LIBRARY_PREFIXES} "" "lib")
 endif()
@@ -905,7 +934,7 @@ if(BUILD_EGL)
         COMPILE_DEFINITIONS "EGL_EGLEXT_PROTOTYPES; EGLAPI=; NO_SANITIZE_FUNCTION=;"
         PREFIX ""
     )
-    set_target_export_map(libEGL ${SOURCE_DIR}/OpenGL/libEGL)
+    set_shared_library_export_map(libEGL ${SOURCE_DIR}/OpenGL/libEGL)
     target_link_libraries(libEGL ${OS_LIBS})
     add_custom_command(
         TARGET libEGL
@@ -925,7 +954,7 @@ if(BUILD_GL32)
         COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES"
         PREFIX ""
     )
-    set_target_export_map(libGL ${SOURCE_DIR}/OpenGL/libGL)
+    set_shared_library_export_map(libGL ${SOURCE_DIR}/OpenGL/libGL)
     target_link_libraries(libGL SwiftShader ${Reactor} GLCompiler ${OS_LIBS})
 endif()
 
@@ -937,7 +966,7 @@ if(BUILD_GLESv2)
         COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES; GL_API=; GL_APICALL=; GLAPI=; NO_SANITIZE_FUNCTION=;"
         PREFIX ""
     )
-    set_target_export_map(libGLESv2 ${SOURCE_DIR}/OpenGL/libGLESv2)
+    set_shared_library_export_map(libGLESv2 ${SOURCE_DIR}/OpenGL/libGLESv2)
     target_link_libraries(libGLESv2 SwiftShader ${Reactor} GLCompiler ${OS_LIBS})
     add_custom_command(
         TARGET libGLESv2
@@ -957,7 +986,7 @@ if(BUILD_GLES_CM)
         COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES; EGLAPI=; GL_API=; GL_APICALL=; GLAPI=;"
         PREFIX ""
     )
-    set_target_export_map(libGLES_CM ${SOURCE_DIR}/OpenGL/libGLES_CM)
+    set_shared_library_export_map(libGLES_CM ${SOURCE_DIR}/OpenGL/libGLES_CM)
     target_link_libraries(libGLES_CM SwiftShader ${Reactor} GLCompiler ${OS_LIBS})
     add_custom_command(
         TARGET libGLES_CM
@@ -1027,4 +1056,28 @@ if(BUILD_TESTS AND ${REACTOR_BACKEND} STREQUAL "Subzero")
     else()
         target_link_libraries(SubzeroTest ReactorSubzero pthread dl)
     endif()
+endif()
+
+if(BUILD_TESTS)
+    set(UNITTESTS_LIST
+        ${CMAKE_SOURCE_DIR}/tests/unittests/main.cpp
+        ${CMAKE_SOURCE_DIR}/tests/unittests/unittests.cpp
+        ${CMAKE_SOURCE_DIR}/third_party/googletest/googletest/src/gtest-all.cc
+    )
+
+    set(UNITTESTS_INCLUDE_DIR
+        ${CMAKE_SOURCE_DIR}/third_party/googletest/googletest/include/
+        ${CMAKE_SOURCE_DIR}/third_party/googletest/googlemock/include/
+        ${CMAKE_SOURCE_DIR}/third_party/googletest/googletest/
+        ${CMAKE_SOURCE_DIR}/include/
+    )
+
+    add_executable(unittests ${UNITTESTS_LIST})
+    set_target_properties(unittests PROPERTIES
+        INCLUDE_DIRECTORIES "${UNITTESTS_INCLUDE_DIR}"
+        FOLDER "Tests"
+        COMPILE_DEFINITIONS "STANDALONE"
+    )
+
+    target_link_libraries(unittests libEGL libGLESv2 ${OS_LIBS})
 endif()

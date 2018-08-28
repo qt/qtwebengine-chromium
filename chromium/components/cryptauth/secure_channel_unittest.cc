@@ -12,7 +12,6 @@
 #include "base/memory/weak_ptr.h"
 #include "components/cryptauth/fake_authenticator.h"
 #include "components/cryptauth/fake_connection.h"
-#include "components/cryptauth/fake_cryptauth_service.h"
 #include "components/cryptauth/fake_secure_context.h"
 #include "components/cryptauth/fake_secure_message_delegate.h"
 #include "components/cryptauth/remote_device_ref.h"
@@ -69,10 +68,6 @@ class TestObserver final : public SecureChannel::Observer {
     return sent_sequence_numbers_;
   }
 
-  int num_gatt_services_unavailable_events() {
-    return num_gatt_services_unavailable_events_;
-  }
-
   // SecureChannel::Observer:
   void OnSecureChannelStatusChanged(
       SecureChannel* secure_channel,
@@ -96,16 +91,11 @@ class TestObserver final : public SecureChannel::Observer {
     sent_sequence_numbers_.push_back(sequence_number);
   }
 
-  void OnGattCharacteristicsNotAvailable() override {
-    ++num_gatt_services_unavailable_events_;
-  }
-
  private:
   SecureChannel* secure_channel_;
   std::vector<SecureChannelStatusChange> connection_status_changes_;
   std::vector<ReceivedMessage> received_messages_;
   std::vector<int> sent_sequence_numbers_;
-  int num_gatt_services_unavailable_events_ = 0;
 };
 
 // Observer used in the ObserverDeletesChannel test. This Observer deletes the
@@ -172,8 +162,6 @@ class CryptAuthSecureChannelTest : public testing::Test {
         weak_ptr_factory_(this) {}
 
   void SetUp() override {
-    has_verified_gatt_services_event_ = false;
-
     test_authenticator_factory_ = std::make_unique<TestAuthenticatorFactory>();
     DeviceToDeviceAuthenticator::Factory::SetInstanceForTesting(
         test_authenticator_factory_.get());
@@ -185,14 +173,12 @@ class CryptAuthSecureChannelTest : public testing::Test {
 
     fake_secure_context_ = nullptr;
 
-    fake_cryptauth_service_ = std::make_unique<FakeCryptAuthService>();
-
     fake_connection_ =
         new FakeConnection(test_device_, /* should_auto_connect */ false);
 
     EXPECT_FALSE(fake_connection_->observers().size());
-    secure_channel_ = base::WrapUnique(new SecureChannel(
-        base::WrapUnique(fake_connection_), fake_cryptauth_service_.get()));
+    secure_channel_ =
+        base::WrapUnique(new SecureChannel(base::WrapUnique(fake_connection_)));
     EXPECT_EQ(static_cast<size_t>(1), fake_connection_->observers().size());
     EXPECT_EQ(secure_channel_.get(), fake_connection_->observers()[0]);
 
@@ -211,9 +197,6 @@ class CryptAuthSecureChannelTest : public testing::Test {
     // Same with messages being sent.
     if (secure_channel_)
       VerifyNoMessageBeingSent();
-
-    if (!has_verified_gatt_services_event_)
-      EXPECT_EQ(0, test_observer_->num_gatt_services_unavailable_events());
 
     cryptauth::SecureMessageDelegateImpl::Factory::SetInstanceForTesting(
         nullptr);
@@ -362,20 +345,25 @@ class CryptAuthSecureChannelTest : public testing::Test {
     EXPECT_EQ(expected_payload, wire_message->payload());
   }
 
-  void VerifyGattServicesUnavailableEvent() {
-    EXPECT_EQ(1, test_observer_->num_gatt_services_unavailable_events());
-    has_verified_gatt_services_event_ = true;
+  void VerifyRssi(base::Optional<int32_t> expected_rssi) {
+    fake_connection_->set_rssi_to_return(expected_rssi);
+
+    secure_channel_->GetConnectionRssi(base::Bind(
+        &CryptAuthSecureChannelTest::OnConnectionRssi, base::Unretained(this)));
+
+    base::Optional<int32_t> rssi = rssi_;
+    rssi_.reset();
+
+    EXPECT_EQ(expected_rssi, rssi);
   }
 
-  bool has_verified_gatt_services_event_;
+  void OnConnectionRssi(base::Optional<int32_t> rssi) { rssi_ = rssi; }
 
   // Owned by secure_channel_.
   FakeConnection* fake_connection_;
 
   std::unique_ptr<FakeSecureMessageDelegateFactory>
       fake_secure_message_delegate_factory_;
-
-  std::unique_ptr<FakeCryptAuthService> fake_cryptauth_service_;
 
   // Owned by secure_channel_ once authentication has completed successfully.
   FakeSecureContext* fake_secure_context_;
@@ -392,9 +380,10 @@ class CryptAuthSecureChannelTest : public testing::Test {
 
   const RemoteDeviceRef test_device_;
 
+  base::Optional<int32_t> rssi_;
+
   base::WeakPtrFactory<CryptAuthSecureChannelTest> weak_ptr_factory_;
 
- private:
   DISALLOW_COPY_AND_ASSIGN(CryptAuthSecureChannelTest);
 };
 
@@ -414,21 +403,6 @@ TEST_F(CryptAuthSecureChannelTest, ConnectionAttemptFails) {
         SecureChannel::Status::DISCONNECTED
       }
   });
-}
-
-TEST_F(CryptAuthSecureChannelTest, GattServicesUnavailable) {
-  secure_channel_->Initialize();
-  VerifyConnectionStateChanges(std::vector<SecureChannelStatusChange>{
-      {SecureChannel::Status::DISCONNECTED,
-       SecureChannel::Status::CONNECTING}});
-
-  fake_connection_->NotifyGattCharacteristicsNotAvailable();
-  VerifyGattServicesUnavailableEvent();
-
-  fake_connection_->CompleteInProgressConnection(/* success */ false);
-  VerifyConnectionStateChanges(std::vector<SecureChannelStatusChange>{
-      {SecureChannel::Status::CONNECTING,
-       SecureChannel::Status::DISCONNECTED}});
 }
 
 TEST_F(CryptAuthSecureChannelTest, DisconnectBeforeAuthentication) {
@@ -672,6 +646,20 @@ TEST_F(CryptAuthSecureChannelTest, ObserverDeletesChannel) {
   // fix for crbug.com/751884.
   StartAndFinishSendingMessage("feature", "request1", /* success */ true);
   EXPECT_FALSE(secure_channel_);
+}
+
+TEST_F(CryptAuthSecureChannelTest, GetRssi) {
+  // Test a few different values.
+  VerifyRssi(-50 /* expected_rssi */);
+  VerifyRssi(-40 /* expected_rssi */);
+  VerifyRssi(-30 /* expected_rssi */);
+}
+
+TEST_F(CryptAuthSecureChannelTest, GetChannelBindingData) {
+  ConnectAndAuthenticate();
+
+  fake_secure_context_->set_channel_binding_data("channel_binding_data");
+  EXPECT_EQ("channel_binding_data", secure_channel_->GetChannelBindingData());
 }
 
 }  // namespace cryptauth

@@ -12,13 +12,12 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_drag_data.h"
 #include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/renderer/core/clipboard/clipboard_mime_types.h"
+#include "third_party/blink/renderer/core/clipboard/clipboard_utilities.h"
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 #include "third_party/blink/renderer/platform/blob/blob_data.h"
-#include "third_party/blink/renderer/platform/clipboard/clipboard_mime_types.h"
-#include "third_party/blink/renderer/platform/clipboard/clipboard_utilities.h"
 #include "third_party/blink/renderer/platform/graphics/image.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
-#include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -154,13 +153,11 @@ String SystemClipboard::ReadRTF() {
   return rtf;
 }
 
-scoped_refptr<BlobDataHandle> SystemClipboard::ReadImage(
-    mojom::ClipboardBuffer buffer) {
-  if (!IsValidBufferType(buffer))
-    return nullptr;
-  scoped_refptr<BlobDataHandle> blob;
-  clipboard_->ReadImage(buffer, &blob);
-  return blob;
+SkBitmap SystemClipboard::ReadImage(mojom::ClipboardBuffer buffer) {
+  SkBitmap image;
+  if (IsValidBufferType(buffer))
+    clipboard_->ReadImage(buffer, &image);
+  return image;
 }
 
 void SystemClipboard::WriteImage(Image* image,
@@ -177,26 +174,12 @@ void SystemClipboard::WriteImage(Image* image,
 
   // Only 32-bit bitmaps are supported.
   DCHECK_EQ(bitmap.colorType(), kN32_SkColorType);
-  const WebSize size(bitmap.width(), bitmap.height());
   void* pixels = bitmap.getPixels();
   // TODO(piman): this should not be NULL, but it is. crbug.com/369621
   if (!pixels)
     return;
 
-  CheckedNumeric<uint32_t> checked_buf_size = 4;
-  checked_buf_size *= size.width;
-  checked_buf_size *= size.height;
-  if (!checked_buf_size.IsValid())
-    return;
-
-  // Allocate a shared memory buffer to hold the bitmap bits.
-  uint32_t buf_size = checked_buf_size.ValueOrDie();
-  auto shared_buffer = mojo::SharedBufferHandle::Create(buf_size);
-  auto mapping = shared_buffer->Map(buf_size);
-  memcpy(mapping.get(), pixels, buf_size);
-
-  clipboard_->WriteImage(mojom::ClipboardBuffer::kStandard, size,
-                         std::move(shared_buffer));
+  clipboard_->WriteImage(mojom::ClipboardBuffer::kStandard, bitmap);
 
   if (url.IsValid() && !url.IsEmpty()) {
     clipboard_->WriteBookmark(mojom::ClipboardBuffer::kStandard,

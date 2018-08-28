@@ -56,7 +56,7 @@ class ResidualEchoEstimator {
   // (ERLE) and the linear power estimate.
   void LinearEstimate(const std::array<float, kFftLengthBy2Plus1>& S2_linear,
                       const std::array<float, kFftLengthBy2Plus1>& erle,
-                      rtc::Optional<float> erle_uncertainty,
+                      absl::optional<float> erle_uncertainty,
                       std::array<float, kFftLengthBy2Plus1>* R2);
 
   // Estimates the residual echo power based on the estimate of the echo path
@@ -69,9 +69,11 @@ class ResidualEchoEstimator {
 
   // Estimates the echo generating signal power as gated maximal power over a
   // time window.
-  void EchoGeneratingPower(const RenderBuffer& render_buffer,
-                           size_t min_delay,
-                           size_t max_delay,
+  void EchoGeneratingPower(const VectorBuffer& spectrum_buffer,
+                           const EchoCanceller3Config::EchoModel& echo_model,
+                           int headroom_spectrum_buffer,
+                           int filter_delay_blocks,
+                           bool gain_limiter_running,
                            bool apply_noise_gating,
                            std::array<float, kFftLengthBy2Plus1>* X2) const;
 
@@ -89,6 +91,7 @@ class ResidualEchoEstimator {
   std::array<int, kFftLengthBy2Plus1> X2_noise_floor_counter_;
   const bool soft_transparent_mode_;
   const bool override_estimated_echo_path_gain_;
+  const bool use_fixed_nonlinear_reverb_model_;
   std::unique_ptr<ReverbModel> echo_reverb_;
   std::unique_ptr<ReverbModelFallback> echo_reverb_fallback;
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(ResidualEchoEstimator);

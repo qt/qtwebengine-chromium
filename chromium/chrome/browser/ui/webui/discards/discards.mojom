@@ -4,6 +4,8 @@
 
 module mojom;
 
+import "chrome/browser/resource_coordinator/lifecycle_unit_state.mojom";
+
 // Identical to content::Visibility.
 enum LifecycleUnitVisibility {
   HIDDEN = 0,
@@ -20,16 +22,18 @@ struct TabDiscardsInfo {
   string title;
   // The visibility of the LifecycleUnit.
   LifecycleUnitVisibility visibility;
-  // If the tab is currently using media functionality (casting, WebRTC, playing
-  // audio, etc) this is true.
-  bool is_media;
-  // If the tab is currently discarded, this is true.
-  bool is_discarded;
-  // If the tab is currently frozen, this is true.
-  // TODO(fmeawad): is_discarded and is_frozen are mutually exclusive, instead
-  // of representing each individually, we should add a "lifecycle_state" field
-  // instead.
-  bool is_frozen;
+  // The loading state of the LifecycleUnit.
+  LifecycleUnitLoadingState loading_state;
+  // The state of the LifecycleUnit.
+  LifecycleUnitState state;
+  // Whether the tab can be frozen.
+  bool can_freeze;
+  // List of human-readable reasons why a tab can't be frozen.
+  array<string> cannot_freeze_reasons;
+  // Whether the tab can be discarded.
+  bool can_discard;
+  // List of human-readable reasons why a tab can't be discarded.
+  array<string> cannot_discard_reasons;
   // The number of times this tab has been discarded in the current browser
   // session.
   int32 discard_count;
@@ -50,6 +54,8 @@ struct TabDiscardsInfo {
   bool has_reactivation_score;
   // Tab Ranker reactivation score, if |has_reactivation_score| is true.
   double reactivation_score;
+  // Site engagement score.
+  double site_engagement_score;
 };
 
 // Interface for providing information about discards. Lives in the browser
@@ -72,6 +78,9 @@ interface DiscardsDetailsProvider {
 
   // Freezes a tab given its |tab_id|.
   FreezeById(int32 tab_id);
+
+  // Loads a tab given its |tab_id|.
+  LoadById(int32 tab_id);
 
   // Discards the least important tab. If |urgent| is specified the unload
   // handlers will not be run, and the tab will be unloaded with prejudice.

@@ -61,8 +61,6 @@ component("gl") {
     "ca_renderer_layer_params.h",
     "dc_renderer_layer_params.cc",
     "dc_renderer_layer_params.h",
-    "extension_set.cc",
-    "extension_set.h",
     "gl_bindings.cc",
     "gl_bindings.h",
     "gl_bindings_autogen_gl.cc",
@@ -158,9 +156,6 @@ component("gl") {
     ":gl_features",
     "//base/third_party/dynamic_annotations",
 
-    # Remove after fixing crbug.com/724999.
-    "//components/crash/core/common:crash_key",
-
     # ANGLE includes are used cross-platform.
     "//third_party/angle:includes",
   ]
@@ -196,7 +191,7 @@ component("gl") {
       "gl_surface_egl.h",
     ]
 
-    if (is_linux || (is_win && use_ozone)) {
+    if (is_linux || use_ozone) {
       sources += [
         "gl_image_native_pixmap.cc",
         "gl_image_native_pixmap.h",
@@ -477,7 +472,7 @@ source_set("run_all_unittests") {
 
   if (use_ozone) {
     deps += [
-      "//mojo/edk",
+      "//mojo/core/embedder",
       "//services/service_manager/public/cpp/test:test_support",
       "//ui/ozone",
     ]

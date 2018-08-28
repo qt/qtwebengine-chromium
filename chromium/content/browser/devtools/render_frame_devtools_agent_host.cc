@@ -41,7 +41,7 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
-#include "content/browser/web_package/signed_exchange_header.h"
+#include "content/browser/web_package/signed_exchange_envelope.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -60,6 +60,7 @@
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 
 #if defined(OS_ANDROID)
+#include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "services/device/public/mojom/wake_lock_context.mojom.h"
 #endif
@@ -230,13 +231,14 @@ void RenderFrameDevToolsAgentHost::OnSignedExchangeReceived(
     base::Optional<const base::UnguessableToken> devtools_navigation_token,
     const GURL& outer_request_url,
     const network::ResourceResponseHead& outer_response,
-    const base::Optional<SignedExchangeHeader>& header,
+    const base::Optional<SignedExchangeEnvelope>& envelope,
+    const scoped_refptr<net::X509Certificate>& certificate,
     const base::Optional<net::SSLInfo>& ssl_info,
-    const std::vector<std::string>& error_messages) {
+    const std::vector<SignedExchangeError>& errors) {
   DispatchToAgents(frame_tree_node,
                    &protocol::NetworkHandler::OnSignedExchangeReceived,
                    devtools_navigation_token, outer_request_url, outer_response,
-                   header, ssl_info, error_messages);
+                   envelope, certificate, ssl_info, errors);
 }
 
 // static
@@ -334,6 +336,10 @@ void RenderFrameDevToolsAgentHost::ApplyOverrides(
     network->ApplyOverrides(&headers, &begin_params->skip_service_worker,
                             &disable_cache);
   }
+
+  for (auto* emulation : protocol::EmulationHandler::ForAgentHost(agent_host))
+    emulation->ApplyOverrides(&headers);
+
   if (disable_cache) {
     begin_params->load_flags &=
         ~(net::LOAD_VALIDATE_CACHE | net::LOAD_SKIP_CACHE_VALIDATION |
@@ -421,9 +427,18 @@ WebContents* RenderFrameDevToolsAgentHost::GetWebContents() {
   return web_contents();
 }
 
-bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
-  if (session->restricted() && !IsFrameHostAllowedForRestrictedSessions())
+bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session,
+                                                 TargetRegistry* registry) {
+  DevToolsManager* manager = DevToolsManager::GetInstance();
+  if (manager->delegate() && web_contents()) {
+    if (!manager->delegate()->AllowInspectingWebContents(web_contents()))
+      return false;
+  }
+  const bool is_webui =
+      frame_host_ && (frame_host_->web_ui() || frame_host_->pending_web_ui());
+  if (!session->client()->MayAttachToRenderer(frame_host_, is_webui))
     return false;
+
   session->SetRenderer(frame_host_ ? frame_host_->GetProcess()->GetID()
                                    : ChildProcessHost::kInvalidUniqueID,
                        frame_host_);
@@ -438,14 +453,17 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
   session->AddHandler(base::WrapUnique(new protocol::IOHandler(
       GetIOContext())));
   session->AddHandler(base::WrapUnique(new protocol::MemoryHandler()));
-  session->AddHandler(
-      base::WrapUnique(new protocol::NetworkHandler(GetId(), GetIOContext())));
+  session->AddHandler(base::WrapUnique(new protocol::NetworkHandler(
+      GetId(),
+      frame_tree_node_ ? frame_tree_node_->devtools_frame_token()
+                       : base::UnguessableToken(),
+      GetIOContext())));
   session->AddHandler(base::WrapUnique(new protocol::SchemaHandler()));
   session->AddHandler(base::WrapUnique(new protocol::ServiceWorkerHandler()));
   session->AddHandler(base::WrapUnique(new protocol::StorageHandler()));
   if (!session->restricted()) {
-    session->AddHandler(base::WrapUnique(
-        new protocol::TargetHandler(false /* browser_only */)));
+    session->AddHandler(base::WrapUnique(new protocol::TargetHandler(
+        false /* browser_only */, GetId(), registry)));
   }
   session->AddHandler(
       base::WrapUnique(new protocol::PageHandler(emulation_handler)));
@@ -459,12 +477,19 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
     session->AttachToAgent(agent_ptr_);
 
   if (sessions().size() == 1) {
-    // Taking screenshots using the video capture API is done in TracingHandler.
-    if (!base::FeatureList::IsEnabled(features::kVizDisplayCompositor) &&
-        !base::FeatureList::IsEnabled(
-            features::kUseVideoCaptureApiForDevToolsSnapshots)) {
+    bool use_video_capture_api =
+        base::FeatureList::IsEnabled(features::kVizDisplayCompositor) ||
+        base::FeatureList::IsEnabled(
+            features::kUseVideoCaptureApiForDevToolsSnapshots);
+#ifdef OS_ANDROID
+    // Video capture API cannot be used on Android WebView.
+    if (!CompositorImpl::IsInitialized())
+      use_video_capture_api = false;
+#endif
+    // When video capture API is used, don't instantiate
+    // DevToolsFrameTraceRecorder. Taking snapshots happens in TracingHandler.
+    if (!use_video_capture_api)
       frame_trace_recorder_.reset(new DevToolsFrameTraceRecorder());
-    }
     GrantPolicy();
 #if defined(OS_ANDROID)
     GetWakeLock()->RequestWakeLock();
@@ -482,12 +507,6 @@ void RenderFrameDevToolsAgentHost::DetachSession(DevToolsSession* session) {
     GetWakeLock()->CancelWakeLock();
 #endif
   }
-}
-
-void RenderFrameDevToolsAgentHost::DispatchProtocolMessage(
-    DevToolsSession* session,
-    const std::string& message) {
-  session->DispatchProtocolMessage(message);
 }
 
 void RenderFrameDevToolsAgentHost::InspectElement(RenderFrameHost* frame_host,
@@ -584,8 +603,17 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
   frame_host_ = frame_host;
   agent_ptr_.reset();
 
-  if (!IsFrameHostAllowedForRestrictedSessions())
-    ForceDetachRestrictedSessions();
+  std::vector<DevToolsSession*> restricted_sessions;
+  const bool is_webui =
+      frame_host && (frame_host->web_ui() || frame_host->pending_web_ui());
+
+  for (DevToolsSession* session : sessions()) {
+    if (!session->client()->MayAttachToRenderer(frame_host, is_webui))
+      restricted_sessions.push_back(session);
+  }
+
+  if (!restricted_sessions.empty())
+    ForceDetachRestrictedSessions(restricted_sessions);
 
   if (!render_frame_alive_) {
     render_frame_alive_ = true;
@@ -729,6 +757,7 @@ void RenderFrameDevToolsAgentHost::RenderProcessGone(
     case base::TERMINATION_STATUS_LAUNCH_FAILED:
       for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
         inspector->TargetCrashed();
+      NotifyCrashed(status);
       break;
     default:
       for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
@@ -950,11 +979,6 @@ bool RenderFrameDevToolsAgentHost::EnsureAgent() {
 
 bool RenderFrameDevToolsAgentHost::IsChildFrame() {
   return frame_tree_node_ && frame_tree_node_->parent();
-}
-
-bool RenderFrameDevToolsAgentHost::IsFrameHostAllowedForRestrictedSessions() {
-  return !frame_host_ ||
-         (!frame_host_->web_ui() && !frame_host_->pending_web_ui());
 }
 
 }  // namespace content

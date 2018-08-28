@@ -16,6 +16,16 @@ TestWindowServiceDelegate::TestWindowServiceDelegate(
 
 TestWindowServiceDelegate::~TestWindowServiceDelegate() = default;
 
+WindowServiceDelegate::DoneCallback
+TestWindowServiceDelegate::TakeMoveLoopCallback() {
+  return std::move(move_loop_callback_);
+}
+
+WindowServiceDelegate::DragDropCompletedCallback
+TestWindowServiceDelegate::TakeDragLoopCallback() {
+  return std::move(drag_loop_callback_);
+}
+
 std::unique_ptr<aura::Window> TestWindowServiceDelegate::NewTopLevel(
     aura::PropertyConverter* property_converter,
     const base::flat_map<std::string, std::vector<uint8_t>>& properties) {
@@ -30,6 +40,35 @@ std::unique_ptr<aura::Window> TestWindowServiceDelegate::NewTopLevel(
         window.get(), property.first, &property.second);
   }
   return window;
+}
+
+void TestWindowServiceDelegate::OnUnhandledKeyEvent(const KeyEvent& key_event) {
+  unhandled_key_events_.push_back(key_event);
+}
+
+void TestWindowServiceDelegate::RunWindowMoveLoop(aura::Window* window,
+                                                  mojom::MoveLoopSource source,
+                                                  const gfx::Point& cursor,
+                                                  DoneCallback callback) {
+  move_loop_callback_ = std::move(callback);
+}
+
+void TestWindowServiceDelegate::CancelWindowMoveLoop() {
+  cancel_window_move_loop_called_ = true;
+}
+
+void TestWindowServiceDelegate::RunDragLoop(
+    aura::Window* window,
+    const ui::OSExchangeData& data,
+    const gfx::Point& screen_location,
+    uint32_t drag_operation,
+    ui::DragDropTypes::DragEventSource source,
+    DragDropCompletedCallback callback) {
+  drag_loop_callback_ = std::move(callback);
+}
+
+void TestWindowServiceDelegate::CancelDragLoop(aura::Window* window) {
+  cancel_drag_loop_called_ = true;
 }
 
 }  // namespace ws2

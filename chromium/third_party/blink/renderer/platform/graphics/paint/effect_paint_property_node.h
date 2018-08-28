@@ -5,7 +5,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PAINT_EFFECT_PAINT_PROPERTY_NODE_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PAINT_EFFECT_PAINT_PROPERTY_NODE_H_
 
-#include "cc/layers/layer.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_element_id.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_filter_operations.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_types.h"
@@ -15,6 +14,8 @@
 #include "third_party/blink/renderer/platform/platform_export.h"
 
 namespace blink {
+
+class PropertyTreeState;
 
 // Effect nodes are abstraction of isolated groups, along with optional effects
 // that can be applied to the composited output of the group.
@@ -63,18 +64,17 @@ class PLATFORM_EXPORT EffectPaintPropertyNode
   };
 
   // This node is really a sentinel, and does not represent a real effect.
-  static EffectPaintPropertyNode* Root();
+  static const EffectPaintPropertyNode& Root();
 
   static scoped_refptr<EffectPaintPropertyNode> Create(
-      scoped_refptr<const EffectPaintPropertyNode> parent,
+      const EffectPaintPropertyNode& parent,
       State&& state) {
     return base::AdoptRef(
-        new EffectPaintPropertyNode(std::move(parent), std::move(state)));
+        new EffectPaintPropertyNode(&parent, std::move(state)));
   }
 
-  bool Update(scoped_refptr<const EffectPaintPropertyNode> parent,
-              State&& state) {
-    bool parent_changed = SetParent(parent);
+  bool Update(const EffectPaintPropertyNode& parent, State&& state) {
+    bool parent_changed = SetParent(&parent);
     if (state == state_)
       return parent_changed;
 
@@ -82,6 +82,17 @@ class PLATFORM_EXPORT EffectPaintPropertyNode
     state_ = std::move(state);
     return true;
   }
+
+  // Checks if the accumulated effect from |this| to |relative_to_state
+  // .Effect()| has changed in the space of |relative_to_state.Transform()|.
+  // We check for changes of not only effect nodes, but also LocalTransformSpace
+  // relative to |relative_to_state.Transform()| of the effect nodes having
+  // filters that move pixels. Change of OutputClip is not checked and the
+  // caller should check in other ways. |transform_not_to_check| specifies the
+  // transform node that the caller has checked or will check its change in
+  // other ways and this function should treat it as unchanged.
+  bool Changed(const PropertyTreeState& relative_to_state,
+               const TransformPaintPropertyNode* transform_not_to_check) const;
 
   const TransformPaintPropertyNode* LocalTransformSpace() const {
     return state_.local_transform_space.get();
@@ -138,9 +149,8 @@ class PLATFORM_EXPORT EffectPaintPropertyNode
   size_t TreeMemoryUsageInBytes() const;
 
  private:
-  EffectPaintPropertyNode(scoped_refptr<const EffectPaintPropertyNode> parent,
-                          State&& state)
-      : PaintPropertyNode(std::move(parent)), state_(std::move(state)) {}
+  EffectPaintPropertyNode(const EffectPaintPropertyNode* parent, State&& state)
+      : PaintPropertyNode(parent), state_(std::move(state)) {}
 
   State state_;
 };

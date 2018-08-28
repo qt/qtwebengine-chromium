@@ -38,13 +38,11 @@ class MODULES_EXPORT CredentialManagerProxy
   explicit CredentialManagerProxy(Document*);
   virtual ~CredentialManagerProxy();
 
-  ::password_manager::mojom::blink::CredentialManager* CredentialManager() {
+  mojom::blink::CredentialManager* CredentialManager() {
     return credential_manager_.get();
   }
 
-  ::webauth::mojom::blink::Authenticator* Authenticator() {
-    return authenticator_.get();
-  }
+  mojom::blink::Authenticator* Authenticator() { return authenticator_.get(); }
 
   void FlushCredentialManagerConnectionForTesting() {
     credential_manager_.FlushForTesting();
@@ -56,10 +54,8 @@ class MODULES_EXPORT CredentialManagerProxy
   static CredentialManagerProxy* From(Document*);
 
  private:
-  // TODO(crbug.com/740081): Merge |credential_manager_| and |authenticator_|
-  // into a single Mojo interface.
-  ::password_manager::mojom::blink::CredentialManagerPtr credential_manager_;
-  ::webauth::mojom::blink::AuthenticatorPtr authenticator_;
+  mojom::blink::AuthenticatorPtr authenticator_;
+  mojom::blink::CredentialManagerPtr credential_manager_;
 };
 
 }  // namespace blink

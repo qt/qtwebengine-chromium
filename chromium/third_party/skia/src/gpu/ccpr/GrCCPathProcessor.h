@@ -8,14 +8,16 @@
 #ifndef GrCCPathProcessor_DEFINED
 #define GrCCPathProcessor_DEFINED
 
+#include <array>
 #include "GrCaps.h"
 #include "GrGeometryProcessor.h"
+#include "GrPipeline.h"
 #include "SkPath.h"
-#include <array>
 
+class GrCCPathCacheEntry;
+class GrCCPerFlushResources;
 class GrOnFlushResourceProvider;
 class GrOpFlushState;
-class GrPipeline;
 
 /**
  * This class draws AA paths using the coverage count masks produced by GrCCCoverageProcessor.
@@ -32,23 +34,37 @@ public:
     enum class InstanceAttribs {
         kDevBounds,
         kDevBounds45,
-        kAtlasOffset,
+        kDevToAtlasOffset,
         kColor
     };
     static constexpr int kNumInstanceAttribs = 1 + (int)InstanceAttribs::kColor;
 
-    struct Instance {
-        SkRect fDevBounds; // "right < left" indicates even-odd fill type.
-        SkRect fDevBounds45; // Bounding box in "| 1  -1 | * devCoords" space.
-                             //                  | 1   1 |
-        std::array<int16_t, 2> fAtlasOffset;
-        uint32_t fColor;
+    // Helper to offset the 45-degree bounding box returned by GrCCPathParser::parsePath().
+    static SkRect MakeOffset45(const SkRect& devBounds45, float dx, float dy) {
+        // devBounds45 is in "| 1  -1 | * devCoords" space.
+        //                    | 1   1 |
+        return devBounds45.makeOffset(dx - dy, dx + dy);
+    }
 
-        void set(SkPath::FillType, const SkRect& devBounds, const SkRect& devBounds45,
-                 int16_t atlasOffsetX, int16_t atlasOffsetY, uint32_t color);
+    enum class DoEvenOddFill : bool {
+        kNo = false,
+        kYes = true
     };
 
-    GR_STATIC_ASSERT(4 * 10 == sizeof(Instance));
+    struct Instance {
+        SkRect fDevBounds;  // "right < left" indicates even-odd fill type.
+        SkRect fDevBounds45;  // Bounding box in "| 1  -1 | * devCoords" space.
+                              //                  | 1   1 |
+        SkIVector fDevToAtlasOffset;  // Translation from device space to location in atlas.
+        GrColor fColor;
+
+        void set(const SkRect& devBounds, const SkRect& devBounds45,
+                 const SkIVector& devToAtlasOffset, GrColor, DoEvenOddFill = DoEvenOddFill::kNo);
+        void set(const GrCCPathCacheEntry&, const SkIVector& shift, GrColor,
+                 DoEvenOddFill = DoEvenOddFill::kNo);
+    };
+
+    GR_STATIC_ASSERT(4 * 11 == sizeof(Instance));
 
     static sk_sp<const GrBuffer> FindVertexBuffer(GrOnFlushResourceProvider*);
     static sk_sp<const GrBuffer> FindIndexBuffer(GrOnFlushResourceProvider*);
@@ -61,43 +77,47 @@ public:
     const GrTexture* atlas() const { return fAtlasAccess.peekTexture(); }
     const SkMatrix& localMatrix() const { return fLocalMatrix; }
     const Attribute& getInstanceAttrib(InstanceAttribs attribID) const {
-        const Attribute& attrib = this->getAttrib((int)attribID);
-        SkASSERT(Attribute::InputRate::kPerInstance == attrib.fInputRate);
-        return attrib;
+        int idx = static_cast<int>(attribID);
+        SkASSERT(idx >= 0 && idx < static_cast<int>(SK_ARRAY_COUNT(kInstanceAttribs)));
+        return kInstanceAttribs[idx];
     }
-    const Attribute& getEdgeNormsAttrib() const {
-        SkASSERT(1 + kNumInstanceAttribs == this->numAttribs());
-        const Attribute& attrib = this->getAttrib(kNumInstanceAttribs);
-        SkASSERT(Attribute::InputRate::kPerVertex == attrib.fInputRate);
-        return attrib;
-    }
+    const Attribute& getEdgeNormsAttrib() const { return kEdgeNormsAttrib; }
 
     void getGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override {}
     GrGLSLPrimitiveProcessor* createGLSLInstance(const GrShaderCaps&) const override;
 
-    void drawPaths(GrOpFlushState*, const GrPipeline&, const GrBuffer* indexBuffer,
-                   const GrBuffer* vertexBuffer, GrBuffer* instanceBuffer, int baseInstance,
-                   int endInstance, const SkRect& bounds) const;
+    void drawPaths(GrOpFlushState*, const GrPipeline&, const GrPipeline::FixedDynamicState*,
+                   const GrCCPerFlushResources&, int baseInstance, int endInstance,
+                   const SkRect& bounds) const;
 
 private:
+    const Attribute& onVertexAttribute(int i) const override { return kEdgeNormsAttrib; }
+    const Attribute& onInstanceAttribute(int i) const override { return kInstanceAttribs[i]; }
+
     const TextureSampler fAtlasAccess;
     SkMatrix fLocalMatrix;
+    static constexpr Attribute kInstanceAttribs[kNumInstanceAttribs] = {
+            {"devbounds", kFloat4_GrVertexAttribType},
+            {"devbounds45", kFloat4_GrVertexAttribType},
+            {"dev_to_atlas_offset", kInt2_GrVertexAttribType},
+            {"color", kUByte4_norm_GrVertexAttribType}
+    };
+    static constexpr Attribute kEdgeNormsAttrib = {"edge_norms", kFloat4_GrVertexAttribType};
 
     typedef GrGeometryProcessor INHERITED;
 };
 
-inline void GrCCPathProcessor::Instance::set(SkPath::FillType fillType, const SkRect& devBounds,
-                                             const SkRect& devBounds45, int16_t atlasOffsetX,
-                                             int16_t atlasOffsetY, uint32_t color) {
-    if (SkPath::kEvenOdd_FillType == fillType) {
+inline void GrCCPathProcessor::Instance::set(const SkRect& devBounds, const SkRect& devBounds45,
+                                             const SkIVector& devToAtlasOffset, GrColor color,
+                                             DoEvenOddFill doEvenOddFill) {
+    if (DoEvenOddFill::kYes == doEvenOddFill) {
         // "right < left" indicates even-odd fill type.
         fDevBounds.setLTRB(devBounds.fRight, devBounds.fTop, devBounds.fLeft, devBounds.fBottom);
     } else {
-        SkASSERT(SkPath::kWinding_FillType == fillType);
         fDevBounds = devBounds;
     }
     fDevBounds45 = devBounds45;
-    fAtlasOffset = {{atlasOffsetX, atlasOffsetY}};
+    fDevToAtlasOffset = devToAtlasOffset;
     fColor = color;
 }
 

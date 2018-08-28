@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/modules/xr/xr_view.h"
 
-#include "third_party/blink/renderer/modules/xr/xr_presentation_frame.h"
+#include "third_party/blink/renderer/modules/xr/xr_frame.h"
 #include "third_party/blink/renderer/modules/xr/xr_session.h"
 #include "third_party/blink/renderer/platform/geometry/float_point_3d.h"
 
@@ -41,6 +41,8 @@ void XRView::UpdateProjectionMatrixFromRawValues(
   float inverse_near_far = 1.0f / (near_depth - far_depth);
   out[10] = (near_depth + far_depth) * inverse_near_far;
   out[14] = (2.0f * far_depth * near_depth) * inverse_near_far;
+
+  inv_projection_dirty_ = true;
 }
 
 void XRView::UpdateProjectionMatrixFromFoV(float up_rad,

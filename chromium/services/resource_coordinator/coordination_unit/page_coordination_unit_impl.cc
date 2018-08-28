@@ -15,8 +15,9 @@ namespace resource_coordinator {
 
 PageCoordinationUnitImpl::PageCoordinationUnitImpl(
     const CoordinationUnitID& id,
+    CoordinationUnitGraph* graph,
     std::unique_ptr<service_manager::ServiceContextRef> service_ref)
-    : CoordinationUnitInterface(id, std::move(service_ref)) {}
+    : CoordinationUnitInterface(id, graph, std::move(service_ref)) {}
 
 PageCoordinationUnitImpl::~PageCoordinationUnitImpl() {
   for (auto* child_frame : frame_coordination_units_)
@@ -26,8 +27,7 @@ PageCoordinationUnitImpl::~PageCoordinationUnitImpl() {
 void PageCoordinationUnitImpl::AddFrame(const CoordinationUnitID& cu_id) {
   DCHECK(cu_id.type == CoordinationUnitType::kFrame);
   FrameCoordinationUnitImpl* frame_cu =
-      FrameCoordinationUnitImpl::FromCoordinationUnitBase(
-          CoordinationUnitBase::GetCoordinationUnitByID(cu_id));
+      FrameCoordinationUnitImpl::GetCoordinationUnitByID(graph_, cu_id);
   if (!frame_cu)
     return;
   if (AddFrame(frame_cu))
@@ -37,7 +37,7 @@ void PageCoordinationUnitImpl::AddFrame(const CoordinationUnitID& cu_id) {
 void PageCoordinationUnitImpl::RemoveFrame(const CoordinationUnitID& cu_id) {
   DCHECK(cu_id != id());
   FrameCoordinationUnitImpl* frame_cu =
-      FrameCoordinationUnitImpl::GetCoordinationUnitByID(cu_id);
+      FrameCoordinationUnitImpl::GetCoordinationUnitByID(graph_, cu_id);
   if (!frame_cu)
     return;
   if (RemoveFrame(frame_cu))
@@ -64,7 +64,11 @@ void PageCoordinationUnitImpl::OnTitleUpdated() {
   SendEvent(mojom::Event::kTitleUpdated);
 }
 
-void PageCoordinationUnitImpl::OnMainFrameNavigationCommitted() {
+void PageCoordinationUnitImpl::OnMainFrameNavigationCommitted(
+    int64_t navigation_id,
+    const std::string& url) {
+  main_frame_url_ = url;
+  navigation_id_ = navigation_id;
   SendEvent(mojom::Event::kNavigationCommitted);
 }
 

@@ -146,22 +146,28 @@ int LayoutProvider::GetCornerRadiusMetric(EmphasisMetric emphasis_metric,
   const bool is_touch =
       ui::MaterialDesignController::IsTouchOptimizedUiEnabled();
   switch (emphasis_metric) {
-    case EMPHASIS_LOW:
-      return is_touch ? 4 : 2;
-    case EMPHASIS_MEDIUM:
-      return is_touch ? 8 : 4;
-    case EMPHASIS_HIGH:
-      return is_touch ? std::min(size.width(), size.height()) / 2 : 4;
-    default:
+    case views::EMPHASIS_NONE:
       NOTREACHED();
       return 0;
+    case EMPHASIS_LOW:
+    case EMPHASIS_MEDIUM:
+      return is_touch ? 4 : 2;
+    case EMPHASIS_HIGH:
+      return is_touch ? 8 : 4;
+    case EMPHASIS_MAXIMUM:
+      return is_touch ? std::min(size.width(), size.height()) / 2 : 4;
   }
 }
 
 int LayoutProvider::GetShadowElevationMetric(
     EmphasisMetric emphasis_metric) const {
-  // Just return a value for now.
-  return 2;
+  // Return a value similar to the (deprecated) default shadow style for bubbles
+  // and dialogs.
+  return 3;
+}
+
+gfx::ShadowValues LayoutProvider::MakeShadowValues(int elevation) const {
+  return gfx::ShadowValue::MakeMdShadowValues(elevation);
 }
 
 }  // namespace views

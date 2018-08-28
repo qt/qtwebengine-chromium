@@ -255,12 +255,6 @@ Process LaunchProcess(const string16& cmdline,
     startup_info->hStdError = options.stderr_handle;
   }
 
-  const bool launch_suspended =
-      options.job_handle || options.grant_foreground_privilege;
-
-  if (launch_suspended)
-    flags |= CREATE_SUSPENDED;
-
   if (options.job_handle) {
     // If this code is run under a debugger, the launched process is
     // automatically associated with a job object created by the debugger.
@@ -280,6 +274,10 @@ Process LaunchProcess(const string16& cmdline,
                                   : options.current_directory.value().c_str();
 
   string16 writable_cmdline(cmdline);
+  DCHECK(!(flags & CREATE_SUSPENDED))
+      << "Creating a suspended process can lead to hung processes if the "
+      << "launching process is killed before it assigns the process to the"
+      << "job. https://crbug.com/820996";
   if (options.as_user) {
     flags |= CREATE_UNICODE_ENVIRONMENT;
     void* enviroment_block = nullptr;
@@ -323,9 +321,6 @@ Process LaunchProcess(const string16& cmdline,
       !AllowSetForegroundWindow(GetProcId(process_info.process_handle()))) {
     DPLOG(ERROR) << "Failed to grant foreground privilege to launched process";
   }
-
-  if (launch_suspended)
-    ResumeThread(process_info.thread_handle());
 
   if (options.wait)
     WaitForSingleObject(process_info.process_handle(), INFINITE);

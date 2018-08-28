@@ -204,7 +204,7 @@ Mp2tStreamParser::~Mp2tStreamParser() {
 }
 
 void Mp2tStreamParser::Init(
-    const InitCB& init_cb,
+    InitCB init_cb,
     const NewConfigCB& config_cb,
     const NewBuffersCB& new_buffers_cb,
     bool /* ignore_text_tracks */,
@@ -221,7 +221,7 @@ void Mp2tStreamParser::Init(
   DCHECK(!new_segment_cb.is_null());
   DCHECK(!end_of_segment_cb.is_null());
 
-  init_cb_ = init_cb;
+  init_cb_ = std::move(init_cb);
   config_cb_ = config_cb;
   new_buffers_cb_ = new_buffers_cb;
   encrypted_media_init_data_cb_ = encrypted_media_init_data_cb;
@@ -276,6 +276,10 @@ void Mp2tStreamParser::Flush() {
 
   // Reset the timestamp unroller.
   timestamp_unroller_.Reset();
+}
+
+bool Mp2tStreamParser::GetGenerateTimestampsFlag() const {
+  return false;
 }
 
 bool Mp2tStreamParser::Parse(const uint8_t* buf, int size) {
@@ -699,7 +703,7 @@ bool Mp2tStreamParser::FinishInitializationIfNeeded() {
       queue_with_config.audio_config.IsValidConfig() ? 1 : 0;
   params.detected_video_track_count =
       queue_with_config.video_config.IsValidConfig() ? 1 : 0;
-  base::ResetAndReturn(&init_cb_).Run(params);
+  std::move(init_cb_).Run(params);
   is_initialized_ = true;
 
   return true;
@@ -899,17 +903,8 @@ void Mp2tStreamParser::RegisterNewKeyIdAndIv(const std::string& key_id,
         decrypt_config_ = DecryptConfig::CreateCencConfig(key_id, iv, {});
         break;
       case EncryptionScheme::CIPHER_MODE_AES_CBC:
-        // MP2 Transport Streams don't always specify the encryption pattern up
-        // front. Instead it is determined later by the stream type. So if the
-        // pattern is unknown, leave it out.
-        EncryptionPattern pattern = initial_scheme_.pattern();
-        if (pattern.IsInEffect()) {
-          decrypt_config_ =
-              DecryptConfig::CreateCbcsConfig(key_id, iv, {}, pattern);
-        } else {
-          decrypt_config_ =
-              DecryptConfig::CreateCbcsConfig(key_id, iv, {}, base::nullopt);
-        }
+        decrypt_config_ = DecryptConfig::CreateCbcsConfig(
+            key_id, iv, {}, initial_scheme_.pattern());
         break;
     }
   }

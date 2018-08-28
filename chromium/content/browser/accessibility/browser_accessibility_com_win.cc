@@ -4,9 +4,6 @@
 
 #include "content/browser/accessibility/browser_accessibility_com_win.h"
 
-#include <UIAutomationClient.h>
-#include <UIAutomationCoreApi.h>
-
 #include <algorithm>
 #include <iterator>
 #include <utility>
@@ -1550,95 +1547,8 @@ STDMETHODIMP BrowserAccessibilityComWin::QueryService(REFGUID guid_service,
     return QueryInterface(riid, object);
   }
 
-  // We only support the IAccessibleEx interface on Windows 8 and above. This
-  // is needed for the on-screen Keyboard to show up in metro mode, when the
-  // user taps an editable portion on the page.
-  // All methods in the IAccessibleEx interface are unimplemented.
-  if (riid == IID_IAccessibleEx &&
-      base::win::GetVersion() >= base::win::VERSION_WIN8) {
-    return QueryInterface(riid, object);
-  }
-
   *object = NULL;
   return E_FAIL;
-}
-
-STDMETHODIMP
-BrowserAccessibilityComWin::GetObjectForChild(long child_id,
-                                              IAccessibleEx** ret) {
-  WIN_ACCESSIBILITY_API_HISTOGRAM(UMA_API_GET_OBJECT_FOR_CHILD);
-  return E_NOTIMPL;
-}
-
-STDMETHODIMP
-BrowserAccessibilityComWin::GetIAccessiblePair(IAccessible** acc,
-                                               long* child_id) {
-  WIN_ACCESSIBILITY_API_HISTOGRAM(UMA_API_GET_IACCESSIBLE_PAIR);
-  return E_NOTIMPL;
-}
-
-STDMETHODIMP BrowserAccessibilityComWin::GetRuntimeId(SAFEARRAY** runtime_id) {
-  WIN_ACCESSIBILITY_API_HISTOGRAM(UMA_API_GET_RUNTIME_ID);
-  return E_NOTIMPL;
-}
-
-STDMETHODIMP
-BrowserAccessibilityComWin::ConvertReturnedElement(
-    IRawElementProviderSimple* element,
-    IAccessibleEx** acc) {
-  WIN_ACCESSIBILITY_API_HISTOGRAM(UMA_API_CONVERT_RETURNED_ELEMENT);
-  return E_NOTIMPL;
-}
-
-STDMETHODIMP BrowserAccessibilityComWin::GetPatternProvider(
-    PATTERNID id,
-    IUnknown** provider) {
-  WIN_ACCESSIBILITY_API_HISTOGRAM(UMA_API_GET_PATTERN_PROVIDER);
-  DVLOG(1) << "In Function: " << __func__ << " for pattern id: " << id;
-  if (!owner())
-    return E_FAIL;
-
-  if (id == UIA_ValuePatternId || id == UIA_TextPatternId) {
-    if (owner()->HasState(ax::mojom::State::kEditable)) {
-      DVLOG(1) << "Returning UIA text provider";
-      base::win::UIATextProvider::CreateTextProvider(GetRangeValueText(), true,
-                                                     provider);
-      return S_OK;
-    }
-  }
-  return E_NOTIMPL;
-}
-
-STDMETHODIMP BrowserAccessibilityComWin::GetPropertyValue(PROPERTYID id,
-                                                          VARIANT* ret) {
-  WIN_ACCESSIBILITY_API_HISTOGRAM(UMA_API_GET_PROPERTY_VALUE);
-  DVLOG(1) << "In Function: " << __func__ << " for property id: " << id;
-  if (!owner())
-    return E_FAIL;
-
-  V_VT(ret) = VT_EMPTY;
-  if (id == UIA_ControlTypePropertyId) {
-    if (owner()->HasState(ax::mojom::State::kEditable)) {
-      V_VT(ret) = VT_I4;
-      ret->lVal = UIA_EditControlTypeId;
-      DVLOG(1) << "Returning Edit control type";
-    } else {
-      DVLOG(1) << "Returning empty control type";
-    }
-  }
-  return S_OK;
-}
-
-STDMETHODIMP BrowserAccessibilityComWin::get_ProviderOptions(
-    ProviderOptions* ret) {
-  WIN_ACCESSIBILITY_API_HISTOGRAM(UMA_API_GET_PROVIDER_OPTIONS);
-  return E_NOTIMPL;
-}
-
-STDMETHODIMP BrowserAccessibilityComWin::get_HostRawElementProvider(
-    IRawElementProviderSimple** provider) {
-  WIN_ACCESSIBILITY_API_HISTOGRAM(UMA_API_GET_HOST_RAW_ELEMENT_PROVIDER);
-  return E_NOTIMPL;
 }
 
 //
@@ -1807,16 +1717,26 @@ void BrowserAccessibilityComWin::UpdateStep2ComputeHypertext() {
 
 void BrowserAccessibilityComWin::UpdateStep3FireEvents(
     bool is_subtree_creation) {
+  int32_t state = MSAAState();
+
   // Fire an event when a new subtree is created.
   if (is_subtree_creation)
     FireNativeEvent(EVENT_OBJECT_SHOW);
 
   // The rest of the events only fire on changes, not on new objects.
+
+  bool did_fire_namechange = false;
+
   if (old_win_attributes_->ia_role != 0 ||
       !old_win_attributes_->role_name.empty()) {
     // Fire an event if the name, description, help, or value changes.
-    if (name() != old_win_attributes_->name)
+    if (name() != old_win_attributes_->name &&
+        GetData().GetNameFrom() != ax::mojom::NameFrom::kContents) {
+      // Only fire name changes when the name comes from an attribute, otherwise
+      // name changes are redundant with text removed/inserted events.
       FireNativeEvent(EVENT_OBJECT_NAMECHANGE);
+      did_fire_namechange = true;
+    }
     if (description() != old_win_attributes_->description)
       FireNativeEvent(EVENT_OBJECT_DESCRIPTIONCHANGE);
     if (value() != old_win_attributes_->value)
@@ -1824,14 +1744,14 @@ void BrowserAccessibilityComWin::UpdateStep3FireEvents(
 
     // Do not fire EVENT_OBJECT_STATECHANGE if the change was due to a focus
     // change.
-    if ((MSAAState() & ~STATE_SYSTEM_FOCUSED) !=
+    if ((state & ~STATE_SYSTEM_FOCUSED) !=
             (old_win_attributes_->ia_state & ~STATE_SYSTEM_FOCUSED) ||
         ComputeIA2State() != old_win_attributes_->ia2_state) {
       FireNativeEvent(EVENT_OBJECT_STATECHANGE);
     }
 
     // Handle selection being added or removed.
-    bool is_selected_now = (MSAAState() & STATE_SYSTEM_SELECTED) != 0;
+    bool is_selected_now = (state & STATE_SYSTEM_SELECTED) != 0;
     bool was_selected_before =
         (old_win_attributes_->ia_state & STATE_SYSTEM_SELECTED) != 0;
     if (is_selected_now || was_selected_before) {
@@ -1866,17 +1786,22 @@ void BrowserAccessibilityComWin::UpdateStep3FireEvents(
     }
 
     // Fire hypertext-related events.
-    int start, old_len, new_len;
-    ComputeHypertextRemovedAndInserted(&start, &old_len, &new_len);
-    if (old_len > 0) {
-      // In-process screen readers may call IAccessibleText::get_oldText
-      // in reaction to this event to retrieve the text that was removed.
-      FireNativeEvent(IA2_EVENT_TEXT_REMOVED);
-    }
-    if (new_len > 0) {
-      // In-process screen readers may call IAccessibleText::get_newText
-      // in reaction to this event to retrieve the text that was inserted.
-      FireNativeEvent(IA2_EVENT_TEXT_INSERTED);
+    // Do not fire removed/inserted when a name change event was also fired, as
+    // they are providing redundant information and will lead to duplicate
+    // announcements.
+    if (!did_fire_namechange) {
+      int start, old_len, new_len;
+      ComputeHypertextRemovedAndInserted(&start, &old_len, &new_len);
+      if (old_len > 0) {
+        // In-process screen readers may call IAccessibleText::get_oldText
+        // in reaction to this event to retrieve the text that was removed.
+        FireNativeEvent(IA2_EVENT_TEXT_REMOVED);
+      }
+      if (new_len > 0) {
+        // In-process screen readers may call IAccessibleText::get_newText
+        // in reaction to this event to retrieve the text that was inserted.
+        FireNativeEvent(IA2_EVENT_TEXT_INSERTED);
+      }
     }
 
     // Changing a static text node can affect the IA2 hypertext of its parent

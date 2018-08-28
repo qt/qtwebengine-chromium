@@ -31,8 +31,6 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_window.h"
 
 #include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
@@ -58,6 +56,8 @@
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/messaging/message_port.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
 #include "third_party/blink/renderer/platform/layout_test_support.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
@@ -196,69 +196,6 @@ void V8Window::openerAttributeSetterCustom(
                   V8AtomicString(isolate, "opener"), value);
     ALLOW_UNUSED_LOCAL(unused);
   }
-}
-
-void V8Window::postMessageMethodCustom(
-    const v8::FunctionCallbackInfo<v8::Value>& info) {
-  ExceptionState exception_state(info.GetIsolate(),
-                                 ExceptionState::kExecutionContext, "Window",
-                                 "postMessage");
-  if (UNLIKELY(info.Length() < 2)) {
-    exception_state.ThrowTypeError(
-        ExceptionMessages::NotEnoughArguments(2, info.Length()));
-    return;
-  }
-
-  // None of these need to be RefPtr because info and context are guaranteed
-  // to hold on to them.
-  DOMWindow* window = V8Window::ToImpl(info.Holder());
-  // TODO(yukishiino): The HTML spec specifies that we should use the
-  // Incumbent Realm instead of the Current Realm, but currently we don't have
-  // a way to retrieve the Incumbent Realm.  See also:
-  // https://html.spec.whatwg.org/multipage/comms.html#dom-window-postmessage
-  LocalDOMWindow* source = CurrentDOMWindow(info.GetIsolate());
-
-  DCHECK(window);
-  UseCounter::Count(source->GetFrame(), WebFeature::kWindowPostMessage);
-
-  // If called directly by WebCore we don't have a calling context.
-  if (!source) {
-    exception_state.ThrowTypeError("No active calling context exists.");
-    return;
-  }
-
-  // This function has variable arguments and can be:
-  //   postMessage(message, targetOrigin)
-  //   postMessage(message, targetOrigin, {sequence of transferrables})
-  // TODO(foolip): Type checking of the arguments should happen in order, so
-  // that e.g. postMessage({}, { toString: () => { throw Error(); } }, 0)
-  // throws the Error from toString, not the TypeError for argument 3.
-  Transferables transferables;
-  const int kTargetOriginArgIndex = 1;
-  if (info.Length() > 2) {
-    const int kTransferablesArgIndex = 2;
-    if (!SerializedScriptValue::ExtractTransferables(
-            info.GetIsolate(), info[kTransferablesArgIndex],
-            kTransferablesArgIndex, transferables, exception_state)) {
-      return;
-    }
-  }
-  // TODO(foolip): targetOrigin should be a USVString in IDL and treated as
-  // such here, without TreatNullAndUndefinedAsNullString.
-  TOSTRING_VOID(V8StringResource<kTreatNullAndUndefinedAsNullString>,
-                target_origin, info[kTargetOriginArgIndex]);
-
-  SerializedScriptValue::SerializeOptions options;
-  options.transferables = &transferables;
-  scoped_refptr<SerializedScriptValue> message =
-      SerializedScriptValue::Serialize(info.GetIsolate(), info[0], options,
-                                       exception_state);
-  if (exception_state.HadException())
-    return;
-
-  message->UnregisterMemoryAllocatedWithCurrentScriptContext();
-  window->postMessage(std::move(message), transferables.message_ports,
-                      target_origin, source, exception_state);
 }
 
 void V8Window::namedPropertyGetterCustom(

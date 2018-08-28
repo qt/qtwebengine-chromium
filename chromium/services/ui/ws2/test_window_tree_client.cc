@@ -6,6 +6,8 @@
 
 #include <utility>
 
+#include "services/ui/ws2/window_tree.h"
+#include "services/ui/ws2/window_tree_test_helper.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -54,6 +56,16 @@ TestWindowTreeClient::PopObservedPointerEvent() {
   return event;
 }
 
+bool TestWindowTreeClient::AckFirstEvent(WindowTree* tree,
+                                         mojom::EventResult result) {
+  if (input_events_.empty())
+    return false;
+  InputEvent input_event = PopInputEvent();
+  WindowTreeTestHelper(tree).OnWindowInputEventAck(input_event.event_id,
+                                                   result);
+  return true;
+}
+
 void TestWindowTreeClient::OnChangeAdded() {}
 
 void TestWindowTreeClient::OnEmbed(
@@ -72,7 +84,9 @@ void TestWindowTreeClient::OnEmbedFromToken(
     const base::UnguessableToken& token,
     mojom::WindowDataPtr root,
     int64_t display_id,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {}
+    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+  tracker_.OnEmbedFromToken(std::move(root), display_id, local_surface_id);
+}
 
 void TestWindowTreeClient::OnEmbeddedAppDisconnected(Id window_id) {
   tracker_.OnEmbeddedAppDisconnected(window_id);
@@ -89,7 +103,9 @@ void TestWindowTreeClient::OnCaptureChanged(Id new_capture_window_id,
 
 void TestWindowTreeClient::OnFrameSinkIdAllocated(
     Id window_id,
-    const viz::FrameSinkId& frame_sink_id) {}
+    const viz::FrameSinkId& frame_sink_id) {
+  tracker_.OnFrameSinkIdAllocated(window_id, frame_sink_id);
+}
 
 void TestWindowTreeClient::OnTopLevelCreated(
     uint32_t change_id,
@@ -221,49 +237,70 @@ void TestWindowTreeClient::OnWindowCursorChanged(Id window_id,
   tracker_.OnWindowCursorChanged(window_id, cursor);
 }
 
-void TestWindowTreeClient::OnDragDropStart(
-    const base::flat_map<std::string, std::vector<uint8_t>>& drag_data) {}
-
 void TestWindowTreeClient::OnWindowSurfaceChanged(
     Id window_id,
     const viz::SurfaceInfo& surface_info) {
   tracker_.OnWindowSurfaceChanged(window_id, surface_info);
 }
 
+void TestWindowTreeClient::OnDragDropStart(
+    const base::flat_map<std::string, std::vector<uint8_t>>& drag_data) {
+  tracker_.OnDragDropStart(drag_data);
+}
+
 void TestWindowTreeClient::OnDragEnter(Id window,
                                        uint32_t key_state,
                                        const gfx::Point& position,
                                        uint32_t effect_bitmask,
-                                       OnDragEnterCallback callback) {}
+                                       OnDragEnterCallback callback) {
+  tracker_.OnDragEnter(window);
+}
 
 void TestWindowTreeClient::OnDragOver(Id window,
                                       uint32_t key_state,
                                       const gfx::Point& position,
                                       uint32_t effect_bitmask,
-                                      OnDragOverCallback callback) {}
+                                      OnDragOverCallback callback) {
+  tracker_.OnDragOver(window);
+}
 
-void TestWindowTreeClient::OnDragLeave(Id window) {}
+void TestWindowTreeClient::OnDragLeave(Id window) {
+  tracker_.OnDragLeave(window);
+}
 
 void TestWindowTreeClient::OnCompleteDrop(Id window,
                                           uint32_t key_state,
                                           const gfx::Point& position,
                                           uint32_t effect_bitmask,
-                                          OnCompleteDropCallback callback) {}
+                                          OnCompleteDropCallback callback) {
+  tracker_.OnCompleteDrop(window);
+}
 
 void TestWindowTreeClient::OnPerformDragDropCompleted(uint32_t change_id,
                                                       bool success,
-                                                      uint32_t action_taken) {}
+                                                      uint32_t action_taken) {
+  tracker_.OnPerformDragDropCompleted(change_id, success, action_taken);
+}
 
-void TestWindowTreeClient::OnDragDropDone() {}
+void TestWindowTreeClient::OnDragDropDone() {
+  tracker_.OnDragDropDone();
+}
 
 void TestWindowTreeClient::OnChangeCompleted(uint32_t change_id, bool success) {
   tracker_.OnChangeCompleted(change_id, success);
 }
 
-void TestWindowTreeClient::RequestClose(Id window_id) {}
+void TestWindowTreeClient::RequestClose(Id window_id) {
+  tracker_.RequestClose(window_id);
+}
 
 void TestWindowTreeClient::GetWindowManager(
     mojo::AssociatedInterfaceRequest<mojom::WindowManager> internal) {}
+
+void TestWindowTreeClient::GetScreenProviderObserver(
+    mojom::ScreenProviderObserverAssociatedRequest observer) {
+  screen_provider_observer_binding_.Bind(std::move(observer));
+}
 
 }  // namespace ws2
 }  // namespace ui

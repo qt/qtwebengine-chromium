@@ -16,6 +16,7 @@
 #include "base/containers/flat_map.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "base/single_thread_task_runner.h"
@@ -84,7 +85,6 @@ class GPU_EXPORT GpuChannelHost
   // that can be used to ensure or verify the flush later.
   uint32_t OrderingBarrier(int32_t route_id,
                            int32_t put_offset,
-                           bool snapshot_requested,
                            std::vector<SyncToken> sync_token_fences);
 
   // Ensure that the all ordering barriers prior upto |flush_id| have been
@@ -119,8 +119,16 @@ class GPU_EXPORT GpuChannelHost
   base::SharedMemoryHandle ShareToGpuProcess(
       const base::SharedMemoryHandle& source_handle);
 
+  base::UnsafeSharedMemoryRegion ShareToGpuProcess(
+      const base::UnsafeSharedMemoryRegion& source_region);
+
   // Reserve one unused transfer buffer ID.
   int32_t ReserveTransferBufferId();
+
+  // An ordering barrier must be placed after any commands that use the buffer
+  // before it is safe to call this function to destroy it. Returns a flush id
+  // just like OrderingBarrier.
+  uint32_t DestroyTransferBuffer(int32_t route_id, int32_t id_to_destroy);
 
   // Reserve one unused image ID.
   int32_t ReserveImageId();

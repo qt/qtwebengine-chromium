@@ -255,16 +255,16 @@ Audits2.RuntimeSettings = [
   {
     setting: Common.settings.createSetting('audits2.throttling', 'default'),
     setFlags: (flags, value) => {
-  switch (value) {
-    case 'devtools':
-      flags.throttlingMethod = 'devtools';
-      break;
-    case 'off':
-      flags.throttlingMethod = 'provided';
-      break;
-    default:
-      flags.throttlingMethod = 'simulate';
-  }
+      switch (value) {
+        case 'devtools':
+          flags.throttlingMethod = 'devtools';
+          break;
+        case 'off':
+          flags.throttlingMethod = 'provided';
+          break;
+        default:
+          flags.throttlingMethod = 'simulate';
+      }
     },
     options: [
       {
@@ -287,17 +287,16 @@ Audits2.RuntimeSettings = [
   {
     setting: Common.settings.createSetting('audits2.clear_storage', true),
     title: ls`Clear storage`,
-    description: ls
-    `Reset storage (localStorage, IndexedDB, etc) before auditing. (Recommended for performance & PWA testing)`,
+    description: ls`Reset storage (localStorage, IndexedDB, etc) before auditing. (Good for performance & PWA testing)`,
     setFlags: (flags, value) => {
       flags.disableStorageReset = !value;
     },
   },
 ];
 
-    Audits2.Events = {
-      PageAuditabilityChanged: Symbol('PageAuditabilityChanged'),
-      AuditProgressChanged: Symbol('AuditProgressChanged'),
-      RequestAuditStart: Symbol('RequestAuditStart'),
-      RequestAuditCancel: Symbol('RequestAuditCancel'),
-    };
+Audits2.Events = {
+  PageAuditabilityChanged: Symbol('PageAuditabilityChanged'),
+  AuditProgressChanged: Symbol('AuditProgressChanged'),
+  RequestAuditStart: Symbol('RequestAuditStart'),
+  RequestAuditCancel: Symbol('RequestAuditCancel'),
+};

@@ -69,7 +69,7 @@ SurfaceManager::~SurfaceManager() {
   base::flat_set<SurfaceId> children(
       GetSurfacesReferencedByParent(root_surface_id_));
   for (const auto& child : children)
-    RemoveSurfaceReferenceImpl(root_surface_id_, child);
+    RemoveSurfaceReferenceImpl(SurfaceReference(root_surface_id_, child));
 
   GarbageCollectSurfaces();
 
@@ -158,14 +158,7 @@ void SurfaceManager::DestroySurface(const SurfaceId& surface_id) {
   surfaces_to_destroy_.insert(surface_id);
 }
 
-void SurfaceManager::RegisterFrameSinkId(const FrameSinkId& frame_sink_id) {
-  bool inserted = valid_frame_sink_labels_.emplace(frame_sink_id, "").second;
-  DCHECK(inserted);
-}
-
 void SurfaceManager::InvalidateFrameSinkId(const FrameSinkId& frame_sink_id) {
-  valid_frame_sink_labels_.erase(frame_sink_id);
-
   // Remove any temporary references owned by |frame_sink_id|.
   std::vector<SurfaceId> temp_refs_to_clear;
   for (auto& map_entry : temporary_references_) {
@@ -177,22 +170,9 @@ void SurfaceManager::InvalidateFrameSinkId(const FrameSinkId& frame_sink_id) {
   for (auto& surface_id : temp_refs_to_clear)
     RemoveTemporaryReference(surface_id, RemovedReason::INVALIDATED);
 
+  dependency_tracker_.OnFrameSinkInvalidated(frame_sink_id);
+
   GarbageCollectSurfaces();
-}
-
-void SurfaceManager::SetFrameSinkDebugLabel(const FrameSinkId& frame_sink_id,
-                                            const std::string& debug_label) {
-  auto it = valid_frame_sink_labels_.find(frame_sink_id);
-  DCHECK(it != valid_frame_sink_labels_.end());
-  it->second = debug_label;
-}
-
-std::string SurfaceManager::GetFrameSinkDebugLabel(
-    const FrameSinkId& frame_sink_id) const {
-  auto it = valid_frame_sink_labels_.find(frame_sink_id);
-  if (it != valid_frame_sink_labels_.end())
-    return it->second;
-  return std::string();
 }
 
 const SurfaceId& SurfaceManager::GetRootSurfaceId() const {
@@ -211,7 +191,7 @@ void SurfaceManager::AddSurfaceReferences(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   for (const auto& reference : references)
-    AddSurfaceReferenceImpl(reference.parent_id(), reference.child_id());
+    AddSurfaceReferenceImpl(reference);
 }
 
 void SurfaceManager::RemoveSurfaceReferences(
@@ -219,7 +199,7 @@ void SurfaceManager::RemoveSurfaceReferences(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   for (const auto& reference : references)
-    RemoveSurfaceReferenceImpl(reference.parent_id(), reference.child_id());
+    RemoveSurfaceReferenceImpl(reference);
 }
 
 void SurfaceManager::AssignTemporaryReference(const SurfaceId& surface_id,
@@ -319,8 +299,11 @@ SurfaceManager::SurfaceIdSet SurfaceManager::GetLiveSurfacesForReferences() {
   return reachable_surfaces;
 }
 
-void SurfaceManager::AddSurfaceReferenceImpl(const SurfaceId& parent_id,
-                                             const SurfaceId& child_id) {
+void SurfaceManager::AddSurfaceReferenceImpl(
+    const SurfaceReference& reference) {
+  const SurfaceId& parent_id = reference.parent_id();
+  const SurfaceId& child_id = reference.child_id();
+
   if (parent_id.frame_sink_id() == child_id.frame_sink_id()) {
     DLOG(ERROR) << "Cannot add self reference from " << parent_id << " to "
                 << child_id;
@@ -344,8 +327,11 @@ void SurfaceManager::AddSurfaceReferenceImpl(const SurfaceId& parent_id,
     RemoveTemporaryReference(child_id, RemovedReason::EMBEDDED);
 }
 
-void SurfaceManager::RemoveSurfaceReferenceImpl(const SurfaceId& parent_id,
-                                                const SurfaceId& child_id) {
+void SurfaceManager::RemoveSurfaceReferenceImpl(
+    const SurfaceReference& reference) {
+  const SurfaceId& parent_id = reference.parent_id();
+  const SurfaceId& child_id = reference.child_id();
+
   auto iter_parent = references_.find(parent_id);
   auto iter_child = references_.find(child_id);
   if (iter_parent == references_.end() || iter_child == references_.end())
@@ -547,7 +533,8 @@ void SurfaceManager::SurfaceActivated(
   // Trigger a display frame if necessary.
   const CompositorFrame& frame = surface->GetActiveFrame();
   if (!SurfaceModified(surface->surface_id(), frame.metadata.begin_frame_ack)) {
-    TRACE_EVENT_INSTANT0("cc", "Damage not visible.", TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT0("viz", "Damage not visible.",
+                         TRACE_EVENT_SCOPE_THREAD);
     surface->RunDrawCallback();
   }
 
@@ -601,10 +588,6 @@ void SurfaceManager::SurfaceReferencesToStringImpl(const SurfaceId& surface_id,
   if (surface) {
     *str << surface->surface_id().ToString();
 
-    std::string frame_sink_label =
-        GetFrameSinkDebugLabel(surface_id.frame_sink_id());
-    if (!frame_sink_label.empty())
-      *str << " " << frame_sink_label;
     *str << (IsMarkedForDestruction(surface_id) ? " destroyed" : " live");
 
     if (surface->HasPendingFrame()) {

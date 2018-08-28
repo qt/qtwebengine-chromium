@@ -8,6 +8,7 @@
 #define SkPathOpsDebug_DEFINED
 
 #include "SkPathOps.h"
+#include "SkString.h"
 #include "SkTypes.h"
 
 #include <stdlib.h>
@@ -479,6 +480,8 @@ namespace SkOpDebug {
     void DumpID(const SkDQuad& , int id);
 
     void Dump(const SkDPoint& );
+
+    void Dump(const SkOpAngle& );
 
 // dummy declarations to fool msvs Visual Studio 2018 Immediate Window
 #define DummyDeclarations(a, b)                                      \

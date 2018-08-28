@@ -32,6 +32,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "api/mediaconstraintsinterface.h"
 #include "api/peerconnectioninterface.h"
 #include "api/rtpreceiverinterface.h"
@@ -39,7 +40,6 @@
 #include "api/rtptransceiverinterface.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
 #include "sdk/android/generated_peerconnection_jni/jni/PeerConnection_jni.h"
 #include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/jni_helpers.h"
@@ -232,6 +232,8 @@ void JavaToNativeRTCConfiguration(
   rtc_config->network_preference =
       JavaToNativeNetworkPreference(jni, j_network_preference);
   rtc_config->sdp_semantics = JavaToNativeSdpSemantics(jni, j_sdp_semantics);
+  rtc_config->active_reset_srtp_params =
+      Java_RTCConfiguration_getActiveResetSrtpParams(jni, j_rtc_config);
 }
 
 rtc::KeyType GetRtcConfigKeyType(JNIEnv* env,
@@ -303,8 +305,7 @@ void PeerConnectionObserverJni::OnRemoveStream(
     rtc::scoped_refptr<MediaStreamInterface> stream) {
   JNIEnv* env = AttachCurrentThreadIfNeeded();
   NativeToJavaStreamsMap::iterator it = remote_streams_.find(stream);
-  RTC_CHECK(it != remote_streams_.end())
-      << "unexpected stream: " << std::hex << stream;
+  RTC_CHECK(it != remote_streams_.end()) << "unexpected stream: " << stream;
   Java_Observer_onRemoveStream(env, j_observer_global_,
                                it->second.j_media_stream());
   remote_streams_.erase(it);

@@ -22,6 +22,7 @@
 #include "libANGLE/angletypes.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/queryconversions.h"
+#include "libANGLE/queryutils.h"
 #include "libANGLE/validationES2.h"
 #include "libANGLE/validationES3.h"
 
@@ -494,26 +495,48 @@ bool ValidateVertexShaderAttributeTypeMatch(Context *context)
     return true;
 }
 
-bool IsCompatibleDrawModeWithGeometryShader(GLenum drawMode,
-                                            GLenum geometryShaderInputPrimitiveType)
+bool IsCompatibleDrawModeWithGeometryShader(PrimitiveMode drawMode,
+                                            PrimitiveMode geometryShaderInputPrimitiveType)
 {
     // [EXT_geometry_shader] Section 11.1gs.1, Geometry Shader Input Primitives
-    switch (geometryShaderInputPrimitiveType)
+    switch (drawMode)
     {
-        case GL_POINTS:
-            return drawMode == GL_POINTS;
-        case GL_LINES:
-            return drawMode == GL_LINES || drawMode == GL_LINE_STRIP || drawMode == GL_LINE_LOOP;
-        case GL_LINES_ADJACENCY_EXT:
-            return drawMode == GL_LINES_ADJACENCY_EXT || drawMode == GL_LINE_STRIP_ADJACENCY_EXT;
-        case GL_TRIANGLES:
-            return drawMode == GL_TRIANGLES || drawMode == GL_TRIANGLE_FAN ||
-                   drawMode == GL_TRIANGLE_STRIP;
-        case GL_TRIANGLES_ADJACENCY_EXT:
-            return drawMode == GL_TRIANGLES_ADJACENCY_EXT ||
-                   drawMode == GL_TRIANGLE_STRIP_ADJACENCY_EXT;
+        case PrimitiveMode::Points:
+            return geometryShaderInputPrimitiveType == PrimitiveMode::Points;
+        case PrimitiveMode::Lines:
+        case PrimitiveMode::LineStrip:
+        case PrimitiveMode::LineLoop:
+            return geometryShaderInputPrimitiveType == PrimitiveMode::Lines;
+        case PrimitiveMode::LinesAdjacency:
+        case PrimitiveMode::LineStripAdjacency:
+            return geometryShaderInputPrimitiveType == PrimitiveMode::LinesAdjacency;
+        case PrimitiveMode::Triangles:
+        case PrimitiveMode::TriangleFan:
+        case PrimitiveMode::TriangleStrip:
+            return geometryShaderInputPrimitiveType == PrimitiveMode::Triangles;
+        case PrimitiveMode::TrianglesAdjacency:
+        case PrimitiveMode::TriangleStripAdjacency:
+            return geometryShaderInputPrimitiveType == PrimitiveMode::TrianglesAdjacency;
         default:
             UNREACHABLE();
+            return false;
+    }
+}
+
+// GLES1 texture parameters are a small subset of the others
+bool IsValidGLES1TextureParameter(GLenum pname)
+{
+    switch (pname)
+    {
+        case GL_TEXTURE_MAG_FILTER:
+        case GL_TEXTURE_MIN_FILTER:
+        case GL_TEXTURE_WRAP_S:
+        case GL_TEXTURE_WRAP_T:
+        case GL_TEXTURE_WRAP_R:
+        case GL_GENERATE_MIPMAP:
+        case GL_TEXTURE_CROP_RECT_OES:
+            return true;
+        default:
             return false;
     }
 }
@@ -635,8 +658,8 @@ bool ValidTexture2DDestinationTarget(const Context *context, TextureTarget targe
 }
 
 bool ValidateTransformFeedbackPrimitiveMode(const Context *context,
-                                            GLenum transformFeedbackPrimitiveMode,
-                                            GLenum renderPrimitiveMode)
+                                            PrimitiveMode transformFeedbackPrimitiveMode,
+                                            PrimitiveMode renderPrimitiveMode)
 {
     ASSERT(context);
 
@@ -649,17 +672,18 @@ bool ValidateTransformFeedbackPrimitiveMode(const Context *context,
     }
 
     // [GL_EXT_geometry_shader] Table 12.1gs
-    switch (transformFeedbackPrimitiveMode)
+    switch (renderPrimitiveMode)
     {
-        case GL_POINTS:
-            return renderPrimitiveMode == GL_POINTS;
-        case GL_TRIANGLES:
-            return renderPrimitiveMode == GL_TRIANGLES ||
-                   renderPrimitiveMode == GL_TRIANGLE_STRIP ||
-                   renderPrimitiveMode == GL_TRIANGLE_FAN;
-        case GL_LINES:
-            return renderPrimitiveMode == GL_LINES || renderPrimitiveMode == GL_LINE_LOOP ||
-                   renderPrimitiveMode == GL_LINE_STRIP;
+        case PrimitiveMode::Points:
+            return transformFeedbackPrimitiveMode == PrimitiveMode::Points;
+        case PrimitiveMode::Lines:
+        case PrimitiveMode::LineStrip:
+        case PrimitiveMode::LineLoop:
+            return transformFeedbackPrimitiveMode == PrimitiveMode::Lines;
+        case PrimitiveMode::Triangles:
+        case PrimitiveMode::TriangleFan:
+        case PrimitiveMode::TriangleStrip:
+            return transformFeedbackPrimitiveMode == PrimitiveMode::Triangles;
         default:
             UNREACHABLE();
             return false;
@@ -667,7 +691,7 @@ bool ValidateTransformFeedbackPrimitiveMode(const Context *context,
 }
 
 bool ValidateDrawElementsInstancedBase(Context *context,
-                                       GLenum mode,
+                                       PrimitiveMode mode,
                                        GLsizei count,
                                        GLenum type,
                                        const GLvoid *indices,
@@ -688,7 +712,7 @@ bool ValidateDrawElementsInstancedBase(Context *context,
 }
 
 bool ValidateDrawArraysInstancedBase(Context *context,
-                                     GLenum mode,
+                                     PrimitiveMode mode,
                                      GLint first,
                                      GLsizei count,
                                      GLsizei primcount)
@@ -951,18 +975,16 @@ bool ValidImageDataSize(Context *context,
     const auto &unpack = context->getGLState().getUnpackState();
 
     bool targetIs3D   = texType == TextureType::_3D || texType == TextureType::_2DArray;
-    auto endByteOrErr = formatInfo.computePackUnpackEndByte(type, size, unpack, targetIs3D);
-    if (endByteOrErr.isError())
+    GLuint endByte    = 0;
+    if (!formatInfo.computePackUnpackEndByte(type, size, unpack, targetIs3D, &endByte))
     {
-        context->handleError(endByteOrErr.getError());
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), IntegerOverflow);
         return false;
     }
 
-    GLuint endByte = endByteOrErr.getResult();
-
     if (pixelUnpackBuffer)
     {
-        CheckedNumeric<size_t> checkedEndByte(endByteOrErr.getResult());
+        CheckedNumeric<size_t> checkedEndByte(endByte);
         CheckedNumeric<size_t> checkedOffset(reinterpret_cast<size_t>(pixels));
         checkedEndByte += checkedOffset;
 
@@ -970,7 +992,7 @@ bool ValidImageDataSize(Context *context,
             (checkedEndByte.ValueOrDie() > static_cast<size_t>(pixelUnpackBuffer->getSize())))
         {
             // Overflow past the end of the buffer
-            context->handleError(InvalidOperation());
+            ANGLE_VALIDATION_ERR(context, InvalidOperation(), IntegerOverflow);
             return false;
         }
         if (context->getExtensions().webglCompatibility &&
@@ -1182,7 +1204,7 @@ bool ValidateRenderbufferStorageParametersBase(Context *context,
     GLenum convertedInternalFormat = context->getConvertedRenderbufferFormat(internalformat);
 
     const TextureCaps &formatCaps = context->getTextureCaps().get(convertedInternalFormat);
-    if (!formatCaps.renderable)
+    if (!formatCaps.renderbuffer)
     {
         context->handleError(InvalidEnum());
         return false;
@@ -2616,25 +2638,25 @@ bool ValidateCopyTexImageParametersBase(Context *context,
     return true;
 }
 
-bool ValidateDrawBase(Context *context, GLenum mode, GLsizei count)
+bool ValidateDrawBase(Context *context, PrimitiveMode mode, GLsizei count)
 {
     const Extensions &extensions = context->getExtensions();
 
     switch (mode)
     {
-        case GL_POINTS:
-        case GL_LINES:
-        case GL_LINE_LOOP:
-        case GL_LINE_STRIP:
-        case GL_TRIANGLES:
-        case GL_TRIANGLE_STRIP:
-        case GL_TRIANGLE_FAN:
+        case PrimitiveMode::Points:
+        case PrimitiveMode::Lines:
+        case PrimitiveMode::LineLoop:
+        case PrimitiveMode::LineStrip:
+        case PrimitiveMode::Triangles:
+        case PrimitiveMode::TriangleStrip:
+        case PrimitiveMode::TriangleFan:
             break;
 
-        case GL_LINES_ADJACENCY_EXT:
-        case GL_LINE_STRIP_ADJACENCY_EXT:
-        case GL_TRIANGLES_ADJACENCY_EXT:
-        case GL_TRIANGLE_STRIP_ADJACENCY_EXT:
+        case PrimitiveMode::LinesAdjacency:
+        case PrimitiveMode::LineStripAdjacency:
+        case PrimitiveMode::TrianglesAdjacency:
+        case PrimitiveMode::TriangleStripAdjacency:
             if (!extensions.geometryShader)
             {
                 ANGLE_VALIDATION_ERR(context, InvalidEnum(), GeometryShaderExtensionNotEnabled);
@@ -2696,8 +2718,8 @@ bool ValidateDrawBase(Context *context, GLenum mode, GLsizei count)
             {
                 if (!extensions.webglCompatibility)
                 {
-                    ERR() << "This ANGLE implementation does not support separate front/back "
-                             "stencil writemasks, reference values, or stencil mask values.";
+                    WARN() << "This ANGLE implementation does not support separate front/back "
+                              "stencil writemasks, reference values, or stencil mask values.";
                 }
                 ANGLE_VALIDATION_ERR(context, InvalidOperation(), StencilReferenceMaskOrMismatch);
                 return false;
@@ -2861,7 +2883,7 @@ bool ValidateDrawBase(Context *context, GLenum mode, GLsizei count)
 }
 
 bool ValidateDrawArraysCommon(Context *context,
-                              GLenum mode,
+                              PrimitiveMode mode,
                               GLint first,
                               GLsizei count,
                               GLsizei primcount)
@@ -2920,7 +2942,7 @@ bool ValidateDrawArraysCommon(Context *context,
 }
 
 bool ValidateDrawArraysInstancedANGLE(Context *context,
-                                      GLenum mode,
+                                      PrimitiveMode mode,
                                       GLint first,
                                       GLsizei count,
                                       GLsizei primcount)
@@ -2939,7 +2961,7 @@ bool ValidateDrawArraysInstancedANGLE(Context *context,
     return ValidateDrawInstancedANGLE(context);
 }
 
-bool ValidateDrawElementsBase(Context *context, GLenum mode, GLenum type)
+bool ValidateDrawElementsBase(Context *context, PrimitiveMode mode, GLenum type)
 {
     switch (type)
     {
@@ -2990,7 +3012,7 @@ bool ValidateDrawElementsBase(Context *context, GLenum mode, GLenum type)
 }
 
 bool ValidateDrawElementsCommon(Context *context,
-                                GLenum mode,
+                                PrimitiveMode mode,
                                 GLsizei count,
                                 GLenum type,
                                 const void *indices,
@@ -3050,11 +3072,11 @@ bool ValidateDrawElementsCommon(Context *context,
     if (context->getExtensions().webglCompatibility ||
         !context->getGLState().areClientArraysEnabled())
     {
-        if (!elementArrayBuffer && count > 0)
+        if (!elementArrayBuffer)
         {
             // [WebGL 1.0] Section 6.2 No Client Side Arrays
-            // If drawElements is called with a count greater than zero, and no WebGLBuffer is bound
-            // to the ELEMENT_ARRAY_BUFFER binding point, an INVALID_OPERATION error is generated.
+            // If an indexed draw command (drawElements) is called and no WebGLBuffer is bound to
+            // the ELEMENT_ARRAY_BUFFER binding point, an INVALID_OPERATION error is generated.
             ANGLE_VALIDATION_ERR(context, InvalidOperation(), MustHaveElementArrayBinding);
             return false;
         }
@@ -3164,7 +3186,7 @@ bool ValidateDrawElementsCommon(Context *context,
 }
 
 bool ValidateDrawElementsInstancedCommon(Context *context,
-                                         GLenum mode,
+                                         PrimitiveMode mode,
                                          GLsizei count,
                                          GLenum type,
                                          const void *indices,
@@ -3174,7 +3196,7 @@ bool ValidateDrawElementsInstancedCommon(Context *context,
 }
 
 bool ValidateDrawElementsInstancedANGLE(Context *context,
-                                        GLenum mode,
+                                        PrimitiveMode mode,
                                         GLsizei count,
                                         GLenum type,
                                         const void *indices,
@@ -3586,7 +3608,7 @@ bool ValidateEGLImageTargetTexture2DOES(Context *context, TextureType type, GLeg
             return false;
     }
 
-    egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+    egl::Image *imageObject = static_cast<egl::Image *>(image);
 
     ASSERT(context->getCurrentDisplay());
     if (!context->getCurrentDisplay()->isValidImage(imageObject))
@@ -3634,7 +3656,7 @@ bool ValidateEGLImageTargetRenderbufferStorageOES(Context *context,
             return false;
     }
 
-    egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+    egl::Image *imageObject = static_cast<egl::Image *>(image);
 
     ASSERT(context->getCurrentDisplay());
     if (!context->getCurrentDisplay()->isValidImage(imageObject))
@@ -3645,7 +3667,7 @@ bool ValidateEGLImageTargetRenderbufferStorageOES(Context *context,
 
     const TextureCaps &textureCaps =
         context->getTextureCaps().get(imageObject->getFormat().info->sizedInternalFormat);
-    if (!textureCaps.renderable)
+    if (!textureCaps.renderbuffer)
     {
         context->handleError(InvalidOperation()
                              << "EGL image internal format is not supported as a renderbuffer.");
@@ -4118,6 +4140,14 @@ bool ValidateGetFramebufferAttachmentParameterivBase(Context *context,
             if (clientVersion < 3)
             {
                 context->handleError(InvalidEnum());
+                return false;
+            }
+            break;
+
+        case GL_FRAMEBUFFER_ATTACHMENT_LAYERED_EXT:
+            if (!context->getExtensions().geometryShader)
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), GeometryShaderExtensionNotEnabled);
                 return false;
             }
             break;
@@ -5422,6 +5452,12 @@ bool ValidateGetTexParameterBase(Context *context,
         return false;
     }
 
+    if (context->getClientMajorVersion() == 1 && !IsValidGLES1TextureParameter(pname))
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), EnumNotSupported);
+        return false;
+    }
+
     switch (pname)
     {
         case GL_TEXTURE_MAG_FILTER:
@@ -5488,6 +5524,16 @@ bool ValidateGetTexParameterBase(Context *context,
             }
             break;
 
+        case GL_GENERATE_MIPMAP:
+        case GL_TEXTURE_CROP_RECT_OES:
+            // TODO(lfy@google.com): Restrict to GL_OES_draw_texture
+            // after GL_OES_draw_texture functionality implemented
+            if (context->getClientMajorVersion() > 1)
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), GLES1Only);
+                return false;
+            }
+            break;
         default:
             ANGLE_VALIDATION_ERR(context, InvalidEnum(), EnumNotSupported);
             return false;
@@ -5495,7 +5541,7 @@ bool ValidateGetTexParameterBase(Context *context,
 
     if (length)
     {
-        *length = 1;
+        *length = GetTexParameterCount(pname);
     }
     return true;
 }
@@ -5733,14 +5779,13 @@ bool ValidateReadPixelsBase(Context *context,
     const gl::Extents size(width, height, 1);
     const auto &pack = context->getGLState().getPackState();
 
-    auto endByteOrErr = formatInfo.computePackUnpackEndByte(type, size, pack, false);
-    if (endByteOrErr.isError())
+    GLuint endByte = 0;
+    if (!formatInfo.computePackUnpackEndByte(type, size, pack, false, &endByte))
     {
-        context->handleError(endByteOrErr.getError());
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), IntegerOverflow);
         return false;
     }
 
-    size_t endByte = endByteOrErr.getResult();
     if (bufSize >= 0)
     {
         if (pixelPackBuffer == nullptr && static_cast<size_t>(bufSize) < endByte)
@@ -5852,10 +5897,16 @@ bool ValidateTexParameterBase(Context *context,
         return false;
     }
 
-    const GLsizei minBufSize = 1;
+    const GLsizei minBufSize = GetTexParameterCount(pname);
     if (bufSize >= 0 && bufSize < minBufSize)
     {
         ANGLE_VALIDATION_ERR(context, InvalidOperation(), InsufficientBufferSize);
+        return false;
+    }
+
+    if (context->getClientMajorVersion() == 1 && !IsValidGLES1TextureParameter(pname))
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), EnumNotSupported);
         return false;
     }
 
@@ -5886,6 +5937,14 @@ bool ValidateTexParameterBase(Context *context,
             }
             break;
 
+        case GL_GENERATE_MIPMAP:
+        case GL_TEXTURE_CROP_RECT_OES:
+            if (context->getClientMajorVersion() > 1)
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), GLES1Only);
+                return false;
+            }
+            break;
         default:
             break;
     }
@@ -6070,6 +6129,14 @@ bool ValidateTexParameterBase(Context *context,
             }
             break;
 
+        case GL_GENERATE_MIPMAP:
+        case GL_TEXTURE_CROP_RECT_OES:
+            if (context->getClientMajorVersion() > 1)
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), GLES1Only);
+                return false;
+            }
+            break;
         default:
             ANGLE_VALIDATION_ERR(context, InvalidEnum(), EnumNotSupported);
             return false;
@@ -6334,7 +6401,7 @@ bool ValidateGetInternalFormativBase(Context *context,
     }
 
     const TextureCaps &formatCaps = context->getTextureCaps().get(internalformat);
-    if (!formatCaps.renderable)
+    if (!formatCaps.renderbuffer)
     {
         context->handleError(InvalidEnum() << "Internal format is not renderable.");
         return false;

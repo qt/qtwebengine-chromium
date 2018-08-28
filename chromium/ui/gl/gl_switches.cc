@@ -23,12 +23,14 @@ const char kANGLEImplementationD3D9Name[]     = "d3d9";
 const char kANGLEImplementationD3D11Name[]    = "d3d11";
 const char kANGLEImplementationOpenGLName[]   = "gl";
 const char kANGLEImplementationOpenGLESName[] = "gles";
-const char kANGLEImplementationNullName[]     = "null";
+const char kANGLEImplementationNullName[] = "null";
+const char kANGLEImplementationVulkanName[] = "vulkan";
 
 // Special switches for "NULL"/stub driver implementations.
 const char kANGLEImplementationD3D11NULLName[] = "d3d11-null";
 const char kANGLEImplementationOpenGLNULLName[] = "gl-null";
 const char kANGLEImplementationOpenGLESNULLName[] = "gles-null";
+const char kANGLEImplementationVulkanNULLName[] = "vulkan-null";
 
 }  // namespace gl
 
@@ -135,12 +137,6 @@ const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches =
 }  // namespace switches
 
 namespace features {
-
-#if defined(OS_WIN)
-// Wait for D3D VSync signals in GPU process (as opposed to delay based VSync
-// generated in Browser process based on VSync parameters).
-const base::Feature kD3DVsync{"D3DVsync", base::FEATURE_DISABLED_BY_DEFAULT};
-#endif  // defined(OS_WIN)
 
 // Allow putting a video swapchain underneath the main swapchain, so overlays
 // can be used even if there are controls on top of the video. This requires

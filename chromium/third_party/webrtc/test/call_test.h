@@ -70,8 +70,10 @@ class CallTest : public ::testing::Test {
   // to simplify test code.
   void RunBaseTest(BaseTest* test);
 
+  void CreateCalls();
   void CreateCalls(const Call::Config& sender_config,
                    const Call::Config& receiver_config);
+  void CreateSenderCall();
   void CreateSenderCall(const Call::Config& config);
   void CreateReceiverCall(const Call::Config& config);
   void DestroyCalls();
@@ -83,15 +85,45 @@ class CallTest : public ::testing::Test {
   void CreateAudioAndFecSendConfigs(size_t num_audio_streams,
                                     size_t num_flexfec_streams,
                                     Transport* send_transport);
+  void SetAudioConfig(const AudioSendStream::Config& config);
+
+  void SetSendFecConfig(std::vector<uint32_t> video_send_ssrcs);
+  void SetSendUlpFecConfig(VideoSendStream::Config* send_config);
+  void SetReceiveUlpFecConfig(VideoReceiveStream::Config* receive_config);
   void CreateSendConfig(size_t num_video_streams,
                         size_t num_audio_streams,
                         size_t num_flexfec_streams,
                         Transport* send_transport);
 
-  std::vector<VideoReceiveStream::Config> CreateMatchingVideoReceiveConfigs(
+  void CreateMatchingVideoReceiveConfigs(
       const VideoSendStream::Config& video_send_config,
       Transport* rtcp_send_transport);
+  void CreateMatchingVideoReceiveConfigs(
+      const VideoSendStream::Config& video_send_config,
+      Transport* rtcp_send_transport,
+      bool send_side_bwe,
+      absl::optional<size_t> decode_sub_stream,
+      bool receiver_reference_time_report,
+      int rtp_history_ms);
+  void AddMatchingVideoReceiveConfigs(
+      std::vector<VideoReceiveStream::Config>* receive_configs,
+      const VideoSendStream::Config& video_send_config,
+      Transport* rtcp_send_transport,
+      bool send_side_bwe,
+      absl::optional<size_t> decode_sub_stream,
+      bool receiver_reference_time_report,
+      int rtp_history_ms);
+
   void CreateMatchingAudioAndFecConfigs(Transport* rtcp_send_transport);
+  void CreateMatchingAudioConfigs(Transport* transport, std::string sync_group);
+  static AudioReceiveStream::Config CreateMatchingAudioConfig(
+      const AudioSendStream::Config& send_config,
+      rtc::scoped_refptr<AudioDecoderFactory> audio_decoder_factory,
+      Transport* transport,
+      std::string sync_group);
+  void CreateMatchingFecConfig(
+      Transport* transport,
+      const VideoSendStream::Config& video_send_config);
   void CreateMatchingReceiveConfigs(Transport* rtcp_send_transport);
 
   void CreateFrameGeneratorCapturerWithDrift(Clock* drift_clock,
@@ -105,26 +137,45 @@ class CallTest : public ::testing::Test {
       std::unique_ptr<TestAudioDeviceModule::Renderer> renderer);
 
   void CreateVideoStreams();
+  void CreateVideoSendStreams();
+  void CreateVideoSendStream(const VideoEncoderConfig& encoder_config);
   void CreateAudioStreams();
   void CreateFlexfecStreams();
+
+  void ConnectVideoSourcesToStreams();
 
   void AssociateFlexfecStreamsWithVideoStreams();
   void DissociateFlexfecStreamsFromVideoStreams();
 
   void Start();
+  void StartVideoStreams();
+  void StartVideoCapture();
   void Stop();
+  void StopVideoCapture();
+  void StopVideoStreams();
   void DestroyStreams();
+  void DestroyVideoSendStreams();
   void SetFakeVideoCaptureRotation(VideoRotation rotation);
+
+  void SetVideoDegradation(DegradationPreference preference);
+
+  VideoSendStream::Config* GetVideoSendConfig();
+  void SetVideoSendConfig(const VideoSendStream::Config& config);
+  VideoEncoderConfig* GetVideoEncoderConfig();
+  void SetVideoEncoderConfig(const VideoEncoderConfig& config);
+  VideoSendStream* GetVideoSendStream();
+  FlexfecReceiveStream::Config* GetFlexFecConfig();
 
   Clock* const clock_;
 
-  std::unique_ptr<webrtc::RtcEventLog> event_log_;
+  std::unique_ptr<webrtc::RtcEventLog> send_event_log_;
+  std::unique_ptr<webrtc::RtcEventLog> recv_event_log_;
   std::unique_ptr<Call> sender_call_;
   RtpTransportControllerSend* sender_call_transport_controller_;
   std::unique_ptr<PacketTransport> send_transport_;
-  VideoSendStream::Config video_send_config_;
-  VideoEncoderConfig video_encoder_config_;
-  VideoSendStream* video_send_stream_;
+  std::vector<VideoSendStream::Config> video_send_configs_;
+  std::vector<VideoEncoderConfig> video_encoder_configs_;
+  std::vector<VideoSendStream*> video_send_streams_;
   AudioSendStream::Config audio_send_config_;
   AudioSendStream* audio_send_stream_;
 
@@ -137,10 +188,18 @@ class CallTest : public ::testing::Test {
   std::vector<FlexfecReceiveStream::Config> flexfec_receive_configs_;
   std::vector<FlexfecReceiveStream*> flexfec_receive_streams_;
 
-  std::unique_ptr<test::FrameGeneratorCapturer> frame_generator_capturer_;
+  test::FrameGeneratorCapturer* frame_generator_capturer_;
+  std::vector<rtc::VideoSourceInterface<VideoFrame>*> video_sources_;
+  std::vector<std::unique_ptr<VideoCapturer>> video_capturers_;
+  DegradationPreference degradation_preference_ =
+      DegradationPreference::MAINTAIN_FRAMERATE;
+
+  std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory_;
+
   test::FunctionVideoEncoderFactory fake_encoder_factory_;
   int fake_encoder_max_bitrate_ = -1;
   std::vector<std::unique_ptr<VideoDecoder>> allocated_decoders_;
+  // Number of simulcast substreams.
   size_t num_video_streams_;
   size_t num_audio_streams_;
   size_t num_flexfec_streams_;
@@ -160,7 +219,7 @@ class CallTest : public ::testing::Test {
 class BaseTest : public RtpRtcpObserver {
  public:
   BaseTest();
-  explicit BaseTest(unsigned int timeout_ms);
+  explicit BaseTest(int timeout_ms);
   virtual ~BaseTest();
 
   virtual void PerformTest() = 0;
@@ -176,8 +235,9 @@ class BaseTest : public RtpRtcpObserver {
       TestAudioDeviceModule* send_audio_device,
       TestAudioDeviceModule* recv_audio_device);
 
-  virtual Call::Config GetSenderCallConfig();
-  virtual Call::Config GetReceiverCallConfig();
+  virtual void ModifySenderCallConfig(Call::Config* config);
+  virtual void ModifyReceiverCallConfig(Call::Config* config);
+
   virtual void OnRtpTransportControllerSendCreated(
       RtpTransportControllerSend* controller);
   virtual void OnCallsCreated(Call* sender_call, Call* receiver_call);
@@ -215,13 +275,11 @@ class BaseTest : public RtpRtcpObserver {
       FrameGeneratorCapturer* frame_generator_capturer);
 
   virtual void OnStreamsStopped();
-
-  std::unique_ptr<webrtc::RtcEventLog> event_log_;
 };
 
 class SendTest : public BaseTest {
  public:
-  explicit SendTest(unsigned int timeout_ms);
+  explicit SendTest(int timeout_ms);
 
   bool ShouldCreateReceivers() const override;
 };
@@ -229,7 +287,7 @@ class SendTest : public BaseTest {
 class EndToEndTest : public BaseTest {
  public:
   EndToEndTest();
-  explicit EndToEndTest(unsigned int timeout_ms);
+  explicit EndToEndTest(int timeout_ms);
 
   bool ShouldCreateReceivers() const override;
 };

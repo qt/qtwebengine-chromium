@@ -9,26 +9,27 @@
 #include "base/optional.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom-blink.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_response.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_response.h"
 #include "third_party/blink/renderer/bindings/core/v8/callback_promise_adapter.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_function.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_code_cache.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_response.h"
-#include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/fetch/body_stream_buffer.h"
 #include "third_party/blink/renderer/core/fetch/fetch_data_loader.h"
 #include "third_party/blink/renderer/core/fetch/request.h"
+#include "third_party/blink/renderer/core/fetch/request_init.h"
 #include "third_party/blink/renderer/core/fetch/response.h"
 #include "third_party/blink/renderer/core/html/parser/text_resource_decoder.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/modules/cache_storage/cache_storage_error.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_global_scope.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_global_scope.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
 #include "third_party/blink/renderer/platform/histogram.h"
@@ -83,20 +84,31 @@ bool ShouldGenerateV8CodeCache(ScriptState* script_state,
 // promise. It should be better to achieve this only within C++ world.
 class Cache::FetchResolvedForAdd final : public ScriptFunction {
  public:
+  // |exception_state| is passed so that the context_type, interface_name and
+  // property_name can be copied and then used to construct a new ExceptionState
+  // object asynchronously later.
   static v8::Local<v8::Function> Create(
       ScriptState* script_state,
       Cache* cache,
-      const HeapVector<Member<Request>>& requests) {
+      const HeapVector<Member<Request>>& requests,
+      const ExceptionState& exception_state) {
     FetchResolvedForAdd* self =
-        new FetchResolvedForAdd(script_state, cache, requests);
+        new FetchResolvedForAdd(script_state, cache, requests, exception_state);
     return self->BindToV8Function();
   }
 
   ScriptValue Call(ScriptValue value) override {
-    NonThrowableExceptionState exception_state;
+    ExceptionState exception_state(GetScriptState()->GetIsolate(),
+                                   context_type_, property_name_,
+                                   interface_name_);
     HeapVector<Member<Response>> responses =
         NativeValueTraits<IDLSequence<Response>>::NativeValue(
             GetScriptState()->GetIsolate(), value.V8Value(), exception_state);
+    if (exception_state.HadException()) {
+      ScriptPromise rejection =
+          ScriptPromise::Reject(GetScriptState(), exception_state);
+      return ScriptValue(GetScriptState(), rejection.V8Value());
+    }
 
     for (const auto& response : responses) {
       if (!response->ok()) {
@@ -118,8 +130,8 @@ class Cache::FetchResolvedForAdd final : public ScriptFunction {
     for (const auto& response : responses)
       RecordResponseTypeForAdd(response);
 
-    ScriptPromise put_promise =
-        cache_->PutImpl(GetScriptState(), requests_, responses);
+    ScriptPromise put_promise = cache_->PutImpl(GetScriptState(), requests_,
+                                                responses, exception_state);
     return ScriptValue(GetScriptState(), put_promise.V8Value());
   }
 
@@ -132,11 +144,20 @@ class Cache::FetchResolvedForAdd final : public ScriptFunction {
  private:
   FetchResolvedForAdd(ScriptState* script_state,
                       Cache* cache,
-                      const HeapVector<Member<Request>>& requests)
-      : ScriptFunction(script_state), cache_(cache), requests_(requests) {}
+                      const HeapVector<Member<Request>>& requests,
+                      const ExceptionState& exception_state)
+      : ScriptFunction(script_state),
+        cache_(cache),
+        requests_(requests),
+        context_type_(exception_state.Context()),
+        property_name_(exception_state.PropertyName()),
+        interface_name_(exception_state.InterfaceName()) {}
 
   Member<Cache> cache_;
   HeapVector<Member<Request>> requests_;
+  ExceptionState::ContextType context_type_;
+  const char* property_name_;
+  const char* interface_name_;
 };
 
 class Cache::BarrierCallbackForPut final
@@ -195,7 +216,7 @@ class Cache::BarrierCallbackForPut final
       return;
     completed_ = true;
     ScriptState::Scope scope(resolver_->GetScriptState());
-    resolver_->Reject(DOMException::Create(kAbortError));
+    resolver_->Reject(DOMException::Create(DOMExceptionCode::kAbortError));
   }
 
   virtual void Trace(blink::Visitor* visitor) {
@@ -337,15 +358,15 @@ class Cache::CodeCacheHandleCallbackForPut final
             TextResourceDecoderOptions::CreateAlwaysUseUTF8ForText());
 
     scoped_refptr<CachedMetadata> cached_metadata =
-        V8ScriptRunner::GenerateFullCodeCache(
-            script_state_.get(),
+        V8CodeCache::GenerateFullCodeCache(
+            script_state_,
             text_decoder->Decode(static_cast<const char*>(array_buffer->Data()),
                                  array_buffer->ByteLength()),
             web_request_.Url().GetString(), text_decoder->Encoding(),
             batch_operation->response->response_type ==
                     network::mojom::FetchResponseType::kOpaque
-                ? V8ScriptRunner::OpaqueMode::kOpaque
-                : V8ScriptRunner::OpaqueMode::kNotOpaque);
+                ? V8CodeCache::OpaqueMode::kOpaque
+                : V8CodeCache::OpaqueMode::kNotOpaque);
     if (!cached_metadata) {
       barrier_callback_->OnSuccess(index_, std::move(batch_operation));
       return;
@@ -367,12 +388,13 @@ class Cache::CodeCacheHandleCallbackForPut final
   void Abort() override { barrier_callback_->Abort(); }
 
   void Trace(blink::Visitor* visitor) override {
+    visitor->Trace(script_state_);
     visitor->Trace(barrier_callback_);
     FetchDataLoader::Client::Trace(visitor);
   }
 
  private:
-  const scoped_refptr<ScriptState> script_state_;
+  const Member<ScriptState> script_state_;
   const size_t index_;
   Member<BarrierCallbackForPut> barrier_callback_;
   const String mime_type_;
@@ -477,14 +499,14 @@ ScriptPromise Cache::put(ScriptState* script_state,
   if (request.IsRequest()) {
     return PutImpl(script_state,
                    HeapVector<Member<Request>>(1, request.GetAsRequest()),
-                   HeapVector<Member<Response>>(1, response));
+                   HeapVector<Member<Response>>(1, response), exception_state);
   }
   Request* new_request =
       Request::Create(script_state, request.GetAsUSVString(), exception_state);
   if (exception_state.HadException())
     return ScriptPromise();
   return PutImpl(script_state, HeapVector<Member<Request>>(1, new_request),
-                 HeapVector<Member<Response>>(1, response));
+                 HeapVector<Member<Response>>(1, response), exception_state);
 }
 
 ScriptPromise Cache::keys(ScriptState* script_state, ExceptionState&) {
@@ -643,11 +665,12 @@ ScriptPromise Cache::AddAllImpl(ScriptState* script_state,
     request_infos[i].SetRequest(requests[i]);
 
     promises[i] = scoped_fetcher_->Fetch(script_state, request_infos[i],
-                                         Dictionary(), exception_state);
+                                         RequestInit(), exception_state);
   }
 
   return ScriptPromise::All(script_state, promises)
-      .Then(FetchResolvedForAdd::Create(script_state, this, requests));
+      .Then(FetchResolvedForAdd::Create(script_state, this, requests,
+                                        exception_state));
 }
 
 ScriptPromise Cache::DeleteImpl(ScriptState* script_state,
@@ -696,7 +719,8 @@ ScriptPromise Cache::DeleteImpl(ScriptState* script_state,
 
 ScriptPromise Cache::PutImpl(ScriptState* script_state,
                              const HeapVector<Member<Request>>& requests,
-                             const HeapVector<Member<Response>>& responses) {
+                             const HeapVector<Member<Response>>& responses,
+                             ExceptionState& exception_state) {
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   const ScriptPromise promise = resolver->Promise();
   BarrierCallbackForPut* barrier_callback =
@@ -725,8 +749,16 @@ ScriptPromise Cache::PutImpl(ScriptState* script_state,
           "Partial response (status code 206) is unsupported");
       return promise;
     }
-    if (responses[i]->IsBodyLocked() || responses[i]->bodyUsed()) {
+    if (responses[i]->IsBodyLocked(exception_state) ==
+            Body::BodyLocked::kLocked ||
+        responses[i]->IsBodyUsed(exception_state) == Body::BodyUsed::kUsed) {
+      DCHECK(!exception_state.HadException());
       barrier_callback->OnError("Response body is already used");
+      return promise;
+    }
+    if (exception_state.HadException()) {
+      // TODO(ricea): Reject the promise with the actual exception.
+      barrier_callback->OnError("Could not inspect response body state");
       return promise;
     }
 
@@ -734,9 +766,15 @@ ScriptPromise Cache::PutImpl(ScriptState* script_state,
 
     if (ShouldGenerateV8CodeCache(script_state, responses[i])) {
       FetchDataLoader* loader = FetchDataLoader::CreateLoaderAsArrayBuffer();
-      buffer->StartLoading(loader, new CodeCacheHandleCallbackForPut(
-                                       script_state, i, barrier_callback,
-                                       requests[i], responses[i]));
+      buffer->StartLoading(
+          loader,
+          new CodeCacheHandleCallbackForPut(script_state, i, barrier_callback,
+                                            requests[i], responses[i]),
+          exception_state);
+      if (exception_state.HadException()) {
+        barrier_callback->OnError("Could not inspect response body state");
+        return promise;
+      }
       continue;
     }
 
@@ -745,9 +783,14 @@ ScriptPromise Cache::PutImpl(ScriptState* script_state,
       // the blob handle and dispatch the put batch asynchronously.
       FetchDataLoader* loader = FetchDataLoader::CreateLoaderAsBlobHandle(
           responses[i]->InternalMIMEType());
-      buffer->StartLoading(
-          loader, new BlobHandleCallbackForPut(i, barrier_callback, requests[i],
-                                               responses[i]));
+      buffer->StartLoading(loader,
+                           new BlobHandleCallbackForPut(
+                               i, barrier_callback, requests[i], responses[i]),
+                           exception_state);
+      if (exception_state.HadException()) {
+        barrier_callback->OnError("Could not inspect response body state");
+        return promise;
+      }
       continue;
     }
 

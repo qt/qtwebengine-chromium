@@ -283,7 +283,7 @@ bool ParseCommandLine(const std::vector<std::string>& args,
       options->save_attachments = true;
     } else if (cur_arg == "--save-images") {
       options->save_images = true;
-#if PDF_ENABLE_V8
+#ifdef PDF_ENABLE_V8
     } else if (cur_arg == "--disable-javascript") {
       options->disable_javascript = true;
 #ifdef PDF_ENABLE_XFA
@@ -806,9 +806,9 @@ constexpr char kUsageString[] =
     "  --save-images       - write embedded images "
     "<pdf-name>.<page-number>.<object-number>.png\n"
 #ifdef PDF_ENABLE_V8
-    "  --disable-javascript- do not execute JS in PDF files"
+    "  --disable-javascript- do not execute JS in PDF files\n"
 #ifdef PDF_ENABLE_XFA
-    "  --disable-xfa       - do not process XFA forms"
+    "  --disable-xfa       - do not process XFA forms\n"
 #endif  // PDF_ENABLE_XFA
 #endif  // PDF_ENABLE_V8
 #ifdef ENABLE_CALLGRIND

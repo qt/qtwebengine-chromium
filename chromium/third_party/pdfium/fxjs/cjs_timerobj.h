@@ -7,7 +7,7 @@
 #ifndef FXJS_CJS_TIMEROBJ_H_
 #define FXJS_CJS_TIMEROBJ_H_
 
-#include "fxjs/JS_Define.h"
+#include "fxjs/js_define.h"
 
 class GlobalTimer;
 
@@ -16,7 +16,7 @@ class CJS_TimerObj : public CJS_Object {
   static int GetObjDefnID();
   static void DefineJSObjects(CFXJS_Engine* pEngine);
 
-  explicit CJS_TimerObj(v8::Local<v8::Object> pObject);
+  CJS_TimerObj(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
   ~CJS_TimerObj() override;
 
   void SetTimer(GlobalTimer* pTimer);
@@ -25,7 +25,7 @@ class CJS_TimerObj : public CJS_Object {
  private:
   static int ObjDefnID;
 
-  int m_nTimerID;  // Weak reference to GlobalTimer through global map.
+  int m_nTimerID = 0;  // Weak reference to GlobalTimer through global map.
 };
 
 #endif  // FXJS_CJS_TIMEROBJ_H_

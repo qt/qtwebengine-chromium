@@ -13,6 +13,7 @@
 <translation id="1413622004203049571">Inaktivera aviseringar från <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 minut och }other{# minuter och }}</translation>
 <translation id="1643823602425662293">Avisering</translation>
+<translation id="169515659049020177">Skift</translation>
 <translation id="1710340000377843106">nu</translation>
 <translation id="1752946267035950200">{MINUTES,plural, =1{1 minut}other{# minuter}}</translation>
 <translation id="1761785978543082658"><ph name="QUANTITY" /> B</translation>
@@ -37,6 +38,7 @@
 <translation id="2295140143284145483">Enkät</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/sek</translation>
 <translation id="24452542372838207">Utöka avisering</translation>
+<translation id="2482878487686419369">Aviseringar</translation>
 <translation id="2497284189126895209">Alla filer</translation>
 <translation id="2522350507219695259">Kalibreringen är slutförd</translation>
 <translation id="252373100621549798">Okänd visning</translation>
@@ -49,6 +51,7 @@
 <translation id="3036649622769666520">Öppna filer</translation>
 <translation id="3049748772180311791"><ph name="QUANTITY" /> MB</translation>
 <translation id="3087734570205094154">Nederst</translation>
+<translation id="3126026824346185272">Ctrl</translation>
 <translation id="3157931365184549694">Återställ</translation>
 <translation id="3183922693828471536">Rulla hit</translation>
 <translation id="3234408098842461169">Nedpil</translation>
@@ -76,6 +79,7 @@
 <translation id="4730374152663651037">OFTA ANVÄNDA</translation>
 <translation id="4788285488841504513">{MONTHS,plural, =1{1 månad kvar}other{# månader kvar}}</translation>
 <translation id="4820616160060340806">Command + <ph name="KEY_COMBO_NAME" /></translation>
+<translation id="4841881773802181781">Infogning</translation>
 <translation id="4968171027979920686">{SECONDS,plural, =1{1 sekund}other{# sekunder}}</translation>
 <translation id="4971687151119236543">Föregående spår</translation>
 <translation id="4999762576397546063">Ctrl+<ph name="KEY_COMBO_NAME" /></translation>
@@ -118,6 +122,7 @@
 <translation id="6612467943526193239">Tryck på Esc för att avsluta kalibreringen.</translation>
 <translation id="6620110761915583480">Spara fil</translation>
 <translation id="6699343763173986273">Nästa spår</translation>
+<translation id="673773751041746814">Borttagning</translation>
 <translation id="6786750046913594791">Stäng mappen</translation>
 <translation id="6808150112686056157">Stoppa</translation>
 <translation id="6845383723252244143">Välj mapp</translation>

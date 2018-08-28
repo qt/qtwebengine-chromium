@@ -18,12 +18,14 @@
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/shadow_root_init.h"
-#include "third_party/blink/renderer/core/dom/viewport_description.h"
+#include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html/html_span_element.h"
 #include "third_party/blink/renderer/core/html/html_style_element.h"
+#include "third_party/blink/renderer/core/page/viewport_description.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/platform/geometry/float_size.h"
 #include "third_party/blink/renderer/platform/heap/heap.h"
@@ -955,6 +957,28 @@ TEST_F(StyleEngineTest, ModifyStyleRuleMatchedPropertiesCache) {
                                     GetCSSPropertyColor()));
 }
 
+TEST_F(StyleEngineTest, VisitedExplicitInheritanceMatchedPropertiesCache) {
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style>
+      :visited { overflow: inherit }
+    </style>
+    <span id="span"><a href></a></span>
+  )HTML");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  Element* span = GetDocument().getElementById("span");
+  const ComputedStyle* style = span->GetComputedStyle();
+  EXPECT_FALSE(style->HasExplicitlyInheritedProperties());
+
+  style = span->firstChild()->GetComputedStyle();
+  EXPECT_TRUE(MatchedPropertiesCache::IsStyleCacheable(*style));
+
+  span->SetInlineStyleProperty(CSSPropertyColor, "blue");
+
+  // Should not DCHECK on applying overflow:inherit on cached matched properties
+  GetDocument().View()->UpdateAllLifecyclePhases();
+}
+
 TEST_F(StyleEngineTest, ScheduleInvalidationAfterSubtreeRecalc) {
   GetDocument().body()->SetInnerHTMLFromString(R"HTML(
     <style id='s1'>
@@ -1153,29 +1177,21 @@ TEST_F(StyleEngineTest, ViewportDescriptionForZoomDSF) {
   Document* document =
       ToLocalFrame(web_view_impl->GetPage()->MainFrame())->GetDocument();
 
-  float min_width =
-      document->GetViewportDescription().min_width.GetFloatValue();
-  float max_width =
-      document->GetViewportDescription().max_width.GetFloatValue();
-  float min_height =
-      document->GetViewportDescription().min_height.GetFloatValue();
-  float max_height =
-      document->GetViewportDescription().max_height.GetFloatValue();
+  auto desc = document->GetViewportData().GetViewportDescription();
+  float min_width = desc.min_width.GetFloatValue();
+  float max_width = desc.max_width.GetFloatValue();
+  float min_height = desc.min_height.GetFloatValue();
+  float max_height = desc.max_height.GetFloatValue();
 
   const float device_scale = 3.5f;
   client.set_device_scale_factor(device_scale);
   web_view_impl->UpdateAllLifecyclePhases();
 
-  EXPECT_FLOAT_EQ(device_scale * min_width,
-                  document->GetViewportDescription().min_width.GetFloatValue());
-  EXPECT_FLOAT_EQ(device_scale * max_width,
-                  document->GetViewportDescription().max_width.GetFloatValue());
-  EXPECT_FLOAT_EQ(
-      device_scale * min_height,
-      document->GetViewportDescription().min_height.GetFloatValue());
-  EXPECT_FLOAT_EQ(
-      device_scale * max_height,
-      document->GetViewportDescription().max_height.GetFloatValue());
+  desc = document->GetViewportData().GetViewportDescription();
+  EXPECT_FLOAT_EQ(device_scale * min_width, desc.min_width.GetFloatValue());
+  EXPECT_FLOAT_EQ(device_scale * max_width, desc.max_width.GetFloatValue());
+  EXPECT_FLOAT_EQ(device_scale * min_height, desc.min_height.GetFloatValue());
+  EXPECT_FLOAT_EQ(device_scale * max_height, desc.max_height.GetFloatValue());
 }
 
 TEST_F(StyleEngineTest, MediaQueryAffectingValueChanged_StyleElementNoMedia) {
@@ -1415,6 +1431,28 @@ TEST_F(StyleEngineTest, MediaQueriesChangeDefaultFontSize) {
   EXPECT_EQ(MakeRGB(0, 128, 0),
             GetDocument().body()->GetComputedStyle()->VisitedDependentColor(
                 GetCSSPropertyColor()));
+}
+
+TEST_F(StyleEngineTest, ShadowRootStyleRecalcCrash) {
+  GetDocument().body()->SetInnerHTMLFromString("<div id=host></div>");
+  HTMLElement* host = ToHTMLElement(GetDocument().getElementById("host"));
+  ASSERT_TRUE(host);
+
+  ShadowRoot& shadow_root =
+      host->AttachShadowRootInternal(ShadowRootType::kOpen);
+
+  shadow_root.SetInnerHTMLFromString(R"HTML(
+    <span id=span></span>
+    <style>
+      :nth-child(odd) { color: green }
+    </style>
+  )HTML");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // This should not cause DCHECK errors on style recalc flags.
+  shadow_root.getElementById("span")->remove();
+  host->SetInlineStyleProperty(CSSPropertyDisplay, "inline");
+  GetDocument().View()->UpdateAllLifecyclePhases();
 }
 
 }  // namespace blink

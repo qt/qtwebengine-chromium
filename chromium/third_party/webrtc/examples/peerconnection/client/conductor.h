@@ -30,11 +30,10 @@ namespace cricket {
 class VideoRenderer;
 }  // namespace cricket
 
-class Conductor
-  : public webrtc::PeerConnectionObserver,
-    public webrtc::CreateSessionDescriptionObserver,
-    public PeerConnectionClientObserver,
-    public MainWndCallback {
+class Conductor : public webrtc::PeerConnectionObserver,
+                  public webrtc::CreateSessionDescriptionObserver,
+                  public PeerConnectionClientObserver,
+                  public MainWndCallback {
  public:
   enum CallbackID {
     MEDIA_CHANNELS_INITIALIZED = 1,
@@ -116,7 +115,7 @@ class Conductor
 
   // CreateSessionDescriptionObserver implementation.
   void OnSuccess(webrtc::SessionDescriptionInterface* desc) override;
-  void OnFailure(const std::string& error) override;
+  void OnFailure(webrtc::RTCError error) override;
 
  protected:
   // Send a message to the remote peer.

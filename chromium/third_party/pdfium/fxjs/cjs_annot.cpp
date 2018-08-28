@@ -6,9 +6,9 @@
 
 #include "fxjs/cjs_annot.h"
 
-#include "fxjs/JS_Define.h"
 #include "fxjs/cjs_event_context.h"
 #include "fxjs/cjs_object.h"
+#include "fxjs/js_define.h"
 #include "fxjs/js_resources.h"
 
 namespace {
@@ -37,16 +37,17 @@ int CJS_Annot::GetObjDefnID() {
 void CJS_Annot::DefineJSObjects(CFXJS_Engine* pEngine) {
   ObjDefnID = pEngine->DefineObj(CJS_Annot::kName, FXJSOBJTYPE_DYNAMIC,
                                  JSConstructor<CJS_Annot>, JSDestructor);
-  DefineProps(pEngine, ObjDefnID, PropertySpecs, FX_ArraySize(PropertySpecs));
+  DefineProps(pEngine, ObjDefnID, PropertySpecs);
 }
 
-CJS_Annot::CJS_Annot(v8::Local<v8::Object> pObject) : CJS_Object(pObject) {}
+CJS_Annot::CJS_Annot(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime)
+    : CJS_Object(pObject, pRuntime) {}
 
 CJS_Annot::~CJS_Annot() = default;
 
 CJS_Return CJS_Annot::get_hidden(CJS_Runtime* pRuntime) {
   if (!m_pAnnot)
-    return CJS_Return(JSGetStringFromID(JSMessage::kBadObjectError));
+    return CJS_Return(JSMessage::kBadObjectError);
 
   CPDF_Annot* pPDFAnnot = ToBAAnnot(m_pAnnot.Get())->GetPDFAnnot();
   return CJS_Return(pRuntime->NewBoolean(
@@ -58,7 +59,7 @@ CJS_Return CJS_Annot::set_hidden(CJS_Runtime* pRuntime,
   // May invalidate m_pAnnot.
   bool bHidden = pRuntime->ToBoolean(vp);
   if (!m_pAnnot)
-    return CJS_Return(JSGetStringFromID(JSMessage::kBadObjectError));
+    return CJS_Return(JSMessage::kBadObjectError);
 
   uint32_t flags = ToBAAnnot(m_pAnnot.Get())->GetFlags();
   if (bHidden) {
@@ -74,36 +75,36 @@ CJS_Return CJS_Annot::set_hidden(CJS_Runtime* pRuntime,
   }
   ToBAAnnot(m_pAnnot.Get())->SetFlags(flags);
 
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJS_Annot::get_name(CJS_Runtime* pRuntime) {
   if (!m_pAnnot)
-    return CJS_Return(JSGetStringFromID(JSMessage::kBadObjectError));
-  return CJS_Return(
-      pRuntime->NewString(ToBAAnnot(m_pAnnot.Get())->GetAnnotName().c_str()));
+    return CJS_Return(JSMessage::kBadObjectError);
+  return CJS_Return(pRuntime->NewString(
+      ToBAAnnot(m_pAnnot.Get())->GetAnnotName().AsStringView()));
 }
 
 CJS_Return CJS_Annot::set_name(CJS_Runtime* pRuntime, v8::Local<v8::Value> vp) {
   // May invalidate m_pAnnot.
   WideString annotName = pRuntime->ToWideString(vp);
   if (!m_pAnnot)
-    return CJS_Return(JSGetStringFromID(JSMessage::kBadObjectError));
+    return CJS_Return(JSMessage::kBadObjectError);
 
   ToBAAnnot(m_pAnnot.Get())->SetAnnotName(annotName);
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJS_Annot::get_type(CJS_Runtime* pRuntime) {
   if (!m_pAnnot)
-    return CJS_Return(JSGetStringFromID(JSMessage::kBadObjectError));
+    return CJS_Return(JSMessage::kBadObjectError);
   return CJS_Return(pRuntime->NewString(
       WideString::FromLocal(CPDF_Annot::AnnotSubtypeToString(
                                 ToBAAnnot(m_pAnnot.Get())->GetAnnotSubtype())
-                                .c_str())
-          .c_str()));
+                                .AsStringView())
+          .AsStringView()));
 }
 
 CJS_Return CJS_Annot::set_type(CJS_Runtime* pRuntime, v8::Local<v8::Value> vp) {
-  return CJS_Return(JSGetStringFromID(JSMessage::kReadOnlyError));
+  return CJS_Return(JSMessage::kReadOnlyError);
 }

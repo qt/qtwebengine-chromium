@@ -17,13 +17,16 @@
 #endif
 
 #include "modules/audio_processing/agc/gain_map_internal.h"
-#include "modules/audio_processing/gain_control_impl.h"
+#include "modules/audio_processing/agc2/adaptive_mode_level_estimator_agc.h"
+#include "modules/audio_processing/include/gain_control.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_minmax.h"
 #include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
+
+int AgcManagerDirect::instance_counter_ = 0;
 
 namespace {
 
@@ -69,12 +72,12 @@ int LevelFromGainError(int gain_error, int level) {
   int new_level = level;
   if (gain_error > 0) {
     while (kGainMap[new_level] - kGainMap[level] < gain_error &&
-          new_level < kMaxMicLevel) {
+           new_level < kMaxMicLevel) {
       ++new_level;
     }
   } else {
     while (kGainMap[new_level] - kGainMap[level] > gain_error &&
-          new_level > kMinMicLevel) {
+           new_level > kMinMicLevel) {
       --new_level;
     }
   }
@@ -88,57 +91,60 @@ int LevelFromGainError(int gain_error, int level) {
 class DebugFile {
 #ifdef WEBRTC_AGC_DEBUG_DUMP
  public:
-  explicit DebugFile(const char* filename)
-      : file_(fopen(filename, "wb")) {
+  explicit DebugFile(const char* filename) : file_(fopen(filename, "wb")) {
     RTC_DCHECK(file_);
   }
-  ~DebugFile() {
-    fclose(file_);
-  }
+  ~DebugFile() { fclose(file_); }
   void Write(const int16_t* data, size_t length_samples) {
     fwrite(data, 1, length_samples * sizeof(int16_t), file_);
   }
+
  private:
   FILE* file_;
 #else
  public:
-  explicit DebugFile(const char* filename) {
-  }
-  ~DebugFile() {
-  }
-  void Write(const int16_t* data, size_t length_samples) {
-  }
+  explicit DebugFile(const char* filename) {}
+  ~DebugFile() {}
+  void Write(const int16_t* data, size_t length_samples) {}
 #endif  // WEBRTC_AGC_DEBUG_DUMP
 };
 
 AgcManagerDirect::AgcManagerDirect(GainControl* gctrl,
                                    VolumeCallbacks* volume_callbacks,
                                    int startup_min_level,
-                                   int clipped_level_min)
-    : agc_(new Agc()),
-      gctrl_(gctrl),
-      volume_callbacks_(volume_callbacks),
-      frames_since_clipped_(kClippedWaitFrames),
-      level_(0),
-      max_level_(kMaxMicLevel),
-      max_compression_gain_(kMaxCompressionGain),
-      target_compression_(kDefaultCompressionGain),
-      compression_(target_compression_),
-      compression_accumulator_(compression_),
-      capture_muted_(false),
-      check_volume_on_next_process_(true),  // Check at startup.
-      startup_(true),
-      startup_min_level_(ClampLevel(startup_min_level)),
-      clipped_level_min_(clipped_level_min),
-      file_preproc_(new DebugFile("agc_preproc.pcm")),
-      file_postproc_(new DebugFile("agc_postproc.pcm")) {}
+                                   int clipped_level_min,
+                                   bool use_agc2_level_estimation,
+                                   bool use_agc2_digital_adaptive)
+    : AgcManagerDirect(new Agc(),
+                       gctrl,
+                       volume_callbacks,
+                       startup_min_level,
+                       clipped_level_min,
+                       use_agc2_level_estimation,
+                       use_agc2_digital_adaptive) {}
 
 AgcManagerDirect::AgcManagerDirect(Agc* agc,
                                    GainControl* gctrl,
                                    VolumeCallbacks* volume_callbacks,
                                    int startup_min_level,
                                    int clipped_level_min)
-    : agc_(agc),
+    : AgcManagerDirect(agc,
+                       gctrl,
+                       volume_callbacks,
+                       startup_min_level,
+                       clipped_level_min,
+                       false,
+                       false) {}
+
+AgcManagerDirect::AgcManagerDirect(Agc* agc,
+                                   GainControl* gctrl,
+                                   VolumeCallbacks* volume_callbacks,
+                                   int startup_min_level,
+                                   int clipped_level_min,
+                                   bool use_agc2_level_estimation,
+                                   bool use_agc2_digital_adaptive)
+    : data_dumper_(new ApmDataDumper(instance_counter_)),
+      agc_(agc),
       gctrl_(gctrl),
       volume_callbacks_(volume_callbacks),
       frames_since_clipped_(kClippedWaitFrames),
@@ -151,10 +157,23 @@ AgcManagerDirect::AgcManagerDirect(Agc* agc,
       capture_muted_(false),
       check_volume_on_next_process_(true),  // Check at startup.
       startup_(true),
+      use_agc2_level_estimation_(use_agc2_level_estimation),
+      use_agc2_digital_adaptive_(use_agc2_digital_adaptive),
       startup_min_level_(ClampLevel(startup_min_level)),
       clipped_level_min_(clipped_level_min),
       file_preproc_(new DebugFile("agc_preproc.pcm")),
-      file_postproc_(new DebugFile("agc_postproc.pcm")) {}
+      file_postproc_(new DebugFile("agc_postproc.pcm")) {
+  instance_counter_++;
+  if (use_agc2_level_estimation_) {
+    RTC_DCHECK(!agc);
+    agc_.reset(new AdaptiveModeLevelEstimatorAgc(data_dumper_.get()));
+  } else {
+    RTC_DCHECK(agc);
+  }
+  if (use_agc2_digital_adaptive_) {
+    RTC_NOTREACHED() << "Agc2 digital adaptive not implemented.";
+  }
+}
 
 AgcManagerDirect::~AgcManagerDirect() {}
 
@@ -168,6 +187,8 @@ int AgcManagerDirect::Initialize() {
   check_volume_on_next_process_ = true;
   // TODO(bjornv): Investigate if we need to reset |startup_| as well. For
   // example, what happens when we change devices.
+
+  data_dumper_->InitiateNewSetOfRecordings();
 
   if (gctrl_->set_mode(GainControl::kFixedDigital) != 0) {
     RTC_LOG(LS_ERROR) << "set_mode(GainControl::kFixedDigital) failed.";
@@ -254,6 +275,9 @@ void AgcManagerDirect::Process(const int16_t* audio,
   UpdateCompressor();
 
   file_postproc_->Write(audio, length);
+
+  data_dumper_->DumpRaw("experimental_gain_control_compression_gain_db", 1,
+                        &compression_);
 }
 
 void AgcManagerDirect::SetLevel(int new_level) {
@@ -272,7 +296,8 @@ void AgcManagerDirect::SetLevel(int new_level) {
   if (voe_level > level_ + kLevelQuantizationSlack ||
       voe_level < level_ - kLevelQuantizationSlack) {
     RTC_DLOG(LS_INFO) << "[agc] Mic volume was manually adjusted. Updating "
-                         "stored level from " << level_ << " to " << voe_level;
+                         "stored level from "
+                      << level_ << " to " << voe_level;
     level_ = voe_level;
     // Always allow the user to increase the volume.
     if (level_ > max_level_) {
@@ -383,15 +408,15 @@ void AgcManagerDirect::UpdateGain() {
   // target and the newly received target. This serves to soften perceptible
   // intra-talkspurt adjustments, at the cost of some adaptation speed.
   if ((raw_compression == max_compression_gain_ &&
-      target_compression_ == max_compression_gain_ - 1) ||
+       target_compression_ == max_compression_gain_ - 1) ||
       (raw_compression == kMinCompressionGain &&
-      target_compression_ == kMinCompressionGain + 1)) {
+       target_compression_ == kMinCompressionGain + 1)) {
     // Special case to allow the target to reach the endpoints of the
     // compression range. The deemphasis would otherwise halt it at 1 dB shy.
     target_compression_ = raw_compression;
   } else {
-    target_compression_ = (raw_compression - target_compression_) / 2
-        + target_compression_;
+    target_compression_ =
+        (raw_compression - target_compression_) / 2 + target_compression_;
   }
 
   // Residual error will be handled by adjusting the volume slider. Use the

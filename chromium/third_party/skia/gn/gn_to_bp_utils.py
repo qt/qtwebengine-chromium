@@ -33,6 +33,8 @@ def GrabDependentValues(js, name, value_type, list_to_extend, exclude):
   # Grab the values from other targets that $name depends on (e.g. optional
   # Skia components, gms, tests, etc).
   for dep in js['targets'][name]['deps']:
+    if 'modules' in dep:
+      continue   # Modules require special handling -- skip for now.
     if 'third_party' in dep:
       continue   # We've handled all third-party DEPS as static or shared_libs.
     if 'none' in dep:
@@ -45,6 +47,13 @@ def GrabDependentValues(js, name, value_type, list_to_extend, exclude):
 def CleanupCFlags(cflags):
   # Only use the generated flags related to warnings.
   cflags = {s for s in cflags if s.startswith('-W')}
+  # Add additional warning suppressions so we can build
+  # third_party/vulkanmemoryallocator
+  cflags = cflags.union([
+    "-Wno-thread-safety-analysis",
+    "-Wno-missing-field-initializers",
+    "-Wno-unused-variable",
+  ])
   # Add the rest of the flags we want.
   cflags = cflags.union([
     "-fvisibility=hidden",

@@ -14,7 +14,7 @@
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 
-namespace net {
+namespace quic {
 
 // An implementation of QuicCryptoClientStream::HandshakerDelegate which uses
 // TLS 1.3 for the crypto handshake protocol.
@@ -28,7 +28,8 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
                       ProofVerifier* proof_verifier,
                       SSL_CTX* ssl_ctx,
                       // Takes ownership of |verify_context|.
-                      ProofVerifyContext* verify_context);
+                      ProofVerifyContext* verify_context,
+                      const QuicString& user_agent_id);
 
   ~TlsClientHandshaker() override;
 
@@ -80,10 +81,12 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
     STATE_CONNECTION_CLOSED,
   } state_ = STATE_IDLE;
 
+  bool SetTransportParameters();
+  bool ProcessTransportParameters(QuicString* error_details);
   void AdvanceHandshake() override;
   void FinishHandshake();
 
-  void CloseConnection();
+  void CloseConnection(const QuicString& reason_phrase);
 
   // Certificate verification functions:
 
@@ -104,6 +107,8 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
   ProofVerifier* proof_verifier_;
   std::unique_ptr<ProofVerifyContext> verify_context_;
 
+  QuicString user_agent_id_;
+
   // ProofVerifierCallback used for async certificate verification. This object
   // is owned by |proof_verifier_|.
   ProofVerifierCallbackImpl* proof_verify_callback_ = nullptr;
@@ -119,6 +124,6 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
   DISALLOW_COPY_AND_ASSIGN(TlsClientHandshaker);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_TLS_CLIENT_HANDSHAKER_H_

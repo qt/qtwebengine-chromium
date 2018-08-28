@@ -86,6 +86,12 @@ class SynchronousLayerTreeFrameSink::SoftwareOutputSurface
   void BindFramebuffer() override {}
   void SetDrawRectangle(const gfx::Rect& rect) override {}
   void SwapBuffers(viz::OutputSurfaceFrame frame) override {}
+#if BUILDFLAG(ENABLE_VULKAN)
+  gpu::VulkanSurface* GetVulkanSurface() override {
+    NOTIMPLEMENTED();
+    return nullptr;
+  }
+#endif
   void Reshape(const gfx::Size& size,
                float scale_factor,
                const gfx::ColorSpace& color_space,
@@ -154,7 +160,10 @@ bool SynchronousLayerTreeFrameSink::BindToClient(
   if (!cc::LayerTreeFrameSink::BindToClient(sink_client))
     return false;
 
-  frame_sink_manager_ = std::make_unique<viz::FrameSinkManagerImpl>();
+  // The SharedBitmapManager is null since software compositing is not supported
+  // or used on Android.
+  frame_sink_manager_ = std::make_unique<viz::FrameSinkManagerImpl>(
+      /*shared_bitmap_manager=*/nullptr);
 
   client_->SetBeginFrameSource(synthetic_begin_frame_source_
                                    ? synthetic_begin_frame_source_.get()
@@ -361,10 +370,10 @@ void SynchronousLayerTreeFrameSink::FallbackTickFired() {
   frame_swap_message_queue_->NotifyFramesAreDiscarded(false);
 }
 
-void SynchronousLayerTreeFrameSink::Invalidate() {
+void SynchronousLayerTreeFrameSink::Invalidate(bool needs_draw) {
   DCHECK(CalledOnValidThread());
   if (sync_client_)
-    sync_client_->Invalidate();
+    sync_client_->Invalidate(needs_draw);
 
   if (!fallback_tick_pending_) {
     fallback_tick_.Reset(
@@ -413,6 +422,12 @@ void SynchronousLayerTreeFrameSink::DemandDrawSw(SkCanvas* canvas) {
   InvokeComposite(transform, viewport);
 }
 
+void SynchronousLayerTreeFrameSink::WillSkipDraw() {
+  CancelFallbackTick();
+  client_->OnDraw(gfx::Transform(), gfx::Rect(), in_software_draw_,
+                  true /*skip_draw*/);
+}
+
 void SynchronousLayerTreeFrameSink::InvokeComposite(
     const gfx::Transform& transform,
     const gfx::Rect& viewport) {
@@ -425,7 +440,8 @@ void SynchronousLayerTreeFrameSink::InvokeComposite(
   // SetExternalTilePriorityConstraints), surely this could be more clear?
   gfx::Transform adjusted_transform = transform;
   adjusted_transform.matrix().postTranslate(-viewport.x(), -viewport.y(), 0);
-  client_->OnDraw(adjusted_transform, viewport, in_software_draw_);
+  client_->OnDraw(adjusted_transform, viewport, in_software_draw_,
+                  false /*skip_draw*/);
 
   if (did_submit_frame_) {
     // This must happen after unwinding the stack and leaving the compositor.
@@ -500,12 +516,7 @@ void SynchronousLayerTreeFrameSink::DidReceiveCompositorFrameAck(
 
 void SynchronousLayerTreeFrameSink::DidPresentCompositorFrame(
     uint32_t presentation_token,
-    base::TimeTicks time,
-    base::TimeDelta refresh,
-    uint32_t flags) {}
-
-void SynchronousLayerTreeFrameSink::DidDiscardCompositorFrame(
-    uint32_t presentation_token) {}
+    const gfx::PresentationFeedback& feedback) {}
 
 void SynchronousLayerTreeFrameSink::OnBeginFrame(
     const viz::BeginFrameArgs& args) {}

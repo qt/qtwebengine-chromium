@@ -139,6 +139,19 @@ bool IsContainerWithSelectableChildrenRole(ax::mojom::Role role) {
   }
 }
 
+bool IsUIASelectable(ax::mojom::Role role) {
+  switch (role) {
+    case ax::mojom::Role::kListBoxOption:
+    case ax::mojom::Role::kMenuListOption:
+    case ax::mojom::Role::kRadioButton:
+    case ax::mojom::Role::kTab:
+    case ax::mojom::Role::kTreeItem:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool IsRowContainer(ax::mojom::Role role) {
   switch (role) {
     case ax::mojom::Role::kTree:
@@ -232,6 +245,51 @@ bool IsHeadingOrTableHeader(ax::mojom::Role role) {
     case ax::mojom::Role::kHeading:
     case ax::mojom::Role::kRowHeader:
     case ax::mojom::Role::kDocSubtitle:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool SupportsOrientation(ax::mojom::Role role) {
+  switch (role) {
+    case ax::mojom::Role::kComboBoxGrouping:
+    case ax::mojom::Role::kComboBoxMenuButton:
+    case ax::mojom::Role::kListBox:
+    case ax::mojom::Role::kMenu:
+    case ax::mojom::Role::kMenuBar:
+    case ax::mojom::Role::kRadioGroup:
+    case ax::mojom::Role::kScrollBar:
+    case ax::mojom::Role::kSlider:
+    case ax::mojom::Role::kSplitter:
+    case ax::mojom::Role::kTabList:
+    case ax::mojom::Role::kToolbar:
+    case ax::mojom::Role::kTreeGrid:
+    case ax::mojom::Role::kTree:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool SupportsToggle(ax::mojom::Role role) {
+  switch (role) {
+    case ax::mojom::Role::kCheckBox:
+    case ax::mojom::Role::kMenuItemCheckBox:
+    case ax::mojom::Role::kSwitch:
+    case ax::mojom::Role::kToggleButton:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool SupportsExpandCollapse(ax::mojom::Role role) {
+  switch (role) {
+    case ax::mojom::Role::kComboBoxGrouping:
+    case ax::mojom::Role::kComboBoxMenuButton:
+    case ax::mojom::Role::kDisclosureTriangle:
+    case ax::mojom::Role::kTextFieldWithComboBox:
       return true;
     default:
       return false;

@@ -1,6 +1,7 @@
 <link rel="import" href="chrome://resources/html/polymer.html">
 
 <link rel="import" href="chrome://resources/cr_elements/cr_action_menu/cr_action_menu.html">
+<link rel="import" href="chrome://resources/cr_elements/icons.html">
 <link rel="import" href="chrome://resources/html/web_ui_listener_behavior.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icon/iron-icon.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
@@ -79,8 +80,12 @@
         background: var(--settings-error-color);
       }
 
-      #sync-icon-container.sync-disabled {
+      #sync-icon-container.sync-paused {
         background: var(--google-blue-500);
+      }
+
+      #sync-icon-container.sync-disabled {
+        background: var(--google-grey-400);
       }
 
       #sync-icon-container iron-icon {
@@ -101,6 +106,8 @@
         background-size: 100% auto;
         display: none;
         padding-top: calc(120 / 680 * 100%); /* Keep background ratio. */
+
+        @apply --promo-banner;
       }
 
       :host([showing-promo]) #banner {
@@ -122,10 +129,6 @@
 
       :host([showing-promo]) #promo-separator {
         @apply --promo-separator;
-      }
-
-      :host([always-show-promo]) #turn-off {
-        display: none;
       }
     </style>
     <div id="banner" hidden="[[syncStatus.signedIn]]"></div>
@@ -155,26 +158,27 @@
           <img class="account-icon" alt=""
               src="[[getAccountImageSrc_(shownAccount_.avatarImage)]]">
           <div id="sync-icon-container" hidden="[[!syncStatus.signedIn]]"
-              class$="[[getSyncIcon_(
-                  syncStatus.hasError, syncStatus.statusAction)]]">
-            <iron-icon icon$="settings:[[getSyncIcon_(
-                syncStatus.hasError, syncStatus.statusAction)]]"></iron-icon>
+              class$="[[getSyncIconStyle_(
+                  syncStatus.hasError, syncStatus.statusAction,
+                  syncStatus.disabled)]]">
+            <iron-icon icon$="[[getSyncIcon_(
+                syncStatus.hasError, syncStatus.statusAction,
+                syncStatus.disabled)]]"></iron-icon>
           </div>
         </div>
         <div class="middle two-line no-min-width">
           <div class="flex text-elide" id="user-info">
-            <span hidden="[[syncStatus.hasError]]">
-              [[shownAccount_.fullName]]
-            </span>
-            <span hidden="[[!syncStatus.hasError]]">
-              [[getErrorLabel_('$i18nPolymer{syncNotWorking}',
-                  '$i18nPolymer{syncPaused}', syncStatus.hasError,
-                  syncStatus.statusAction)]]
+            <span>
+              [[getAvatarRowTitle_(shownAccount_.fullName,
+                  '$i18nPolymer{syncNotWorking}', '$i18nPolymer{syncPaused}',
+                  '$i18nPolymer{syncDisabled}', syncStatus.hasError,
+                  syncStatus.statusAction, syncStatus.disabled)]]
             </span>
             <div class="secondary">
               [[getAccountLabel_(
                   '$i18nPolymer{syncingTo}', shownAccount_.email,
-                  syncStatus.hasError, syncStatus.signedIn)]]
+                  syncStatus.hasError, syncStatus.signedIn,
+                  syncStatus.disabled)]]
             </div>
           </div>
         </div>
@@ -185,16 +189,24 @@
           </button>
         </paper-icon-button-light>
         <div class="separator" hidden="[[syncStatus.signedIn]]"></div>
-        <paper-button class="action-button" on-click="onSyncButtonTap_"
-            hidden="[[syncStatus.signedIn]]"
+        <paper-button id="sync-button" class="action-button"
+            hidden="[[syncStatus.signedIn]]" on-click="onSyncButtonTap_"
             disabled="[[syncStatus.setupInProgress]]">
           [[getSubstituteLabel_(
               '$i18nPolymer{syncAsName}', shownAccount_.givenName)]]
         </paper-button>
-        <paper-button class="secondary-button" on-click="onTurnOffButtonTap_"
-            hidden="[[!syncStatus.signedIn]]" id="turn-off"
+        <paper-button id="turn-off" class="secondary-button"
+            hidden="[[!shouldShowTurnOffButton_(syncStatus.signedIn)]]"
+            on-click="onTurnOffButtonTap_"
             disabled="[[syncStatus.setupInProgress]]">
           $i18n{turnOffSync}
+        </paper-button>
+        <paper-button id="sync-paused-button" class="action-button"
+            hidden="[[!shouldShowSigninAgainButton_(
+                syncStatus.signedIn, syncStatus.hasError,
+                syncStatus.statusAction)]]"
+            on-click="onSigninTap_" disabled="[[syncStatus.setupInProgress]]">
+          $i18n{signInAgain}
         </paper-button>
       </div>
       <template is="dom-if" if="[[!syncStatus.signedIn]]" restamp>
@@ -211,6 +223,11 @@
             <img class="account-icon small" alt=""
                 src="chrome://theme/IDR_PROFILE_AVATAR_PLACEHOLDER_LARGE">
             <span>$i18n{useAnotherAccount}</span>
+          </button>
+          <button class="dropdown-item" on-click="onSignoutTap_" slot="item"
+              disabled="[[syncStatus.setupInProgress]]" id="sign-out-item">
+            <iron-icon icon="settings:exit-to-app"></iron-icon>
+            <span>$i18n{peopleSignOut}</span>
           </button>
         </cr-action-menu>
       </template>

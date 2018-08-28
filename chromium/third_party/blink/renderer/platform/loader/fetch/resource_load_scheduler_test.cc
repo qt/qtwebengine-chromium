@@ -17,9 +17,29 @@ class MockClient final : public GarbageCollectedFinalized<MockClient>,
   USING_GARBAGE_COLLECTED_MIXIN(MockClient);
 
  public:
+  // A delegate that can be used to determine the order clients were run in.
+  class MockClientDelegate {
+   public:
+    MockClientDelegate() = default;
+    ~MockClientDelegate() = default;
+
+    void NotifyRun(MockClient* client) { client_order_.push_back(client); }
+
+    // The call order that hte clients ran in.
+    const std::vector<MockClient*>& client_order() { return client_order_; }
+
+   private:
+    std::vector<MockClient*> client_order_;
+  };
+
   ~MockClient() = default;
 
+  void SetDelegate(MockClientDelegate* delegate) { delegate_ = delegate; }
+
   void Run() override {
+    if (delegate_) {
+      delegate_->NotifyRun(this);
+    }
     EXPECT_FALSE(was_run_);
     was_run_ = true;
   }
@@ -30,6 +50,7 @@ class MockClient final : public GarbageCollectedFinalized<MockClient>,
   }
 
  private:
+  MockClientDelegate* delegate_;
   bool was_run_ = false;
 };
 
@@ -61,61 +82,90 @@ class ResourceLoadSchedulerTest : public testing::Test {
   Persistent<ResourceLoadScheduler> scheduler_;
 };
 
-class RendererSideResourceSchedulerTest : public testing::Test {
- public:
-  using ThrottleOption = ResourceLoadScheduler::ThrottleOption;
-  class TestingPlatformSupport : public ::blink::TestingPlatformSupport {
-   public:
-    bool IsRendererSideResourceSchedulerEnabled() const override {
-      return true;
-    }
-  };
-
-  void SetUp() override {
-    DCHECK(RuntimeEnabledFeatures::ResourceLoadSchedulerEnabled());
-    scheduler_ = ResourceLoadScheduler::Create(
-        MockFetchContext::Create(MockFetchContext::kShouldNotLoadNewResource));
-    Scheduler()->SetOutstandingLimitForTesting(1);
-  }
-  void TearDown() override { Scheduler()->Shutdown(); }
-
-  ResourceLoadScheduler* Scheduler() { return scheduler_; }
-
-  bool Release(ResourceLoadScheduler::ClientId client) {
-    return Scheduler()->Release(
-        client, ResourceLoadScheduler::ReleaseOption::kReleaseOnly,
-        ResourceLoadScheduler::TrafficReportHints::InvalidInstance());
-  }
-
- private:
-  ScopedTestingPlatformSupport<TestingPlatformSupport>
-      testing_platform_support_;
-  Persistent<ResourceLoadScheduler> scheduler_;
-};
-
-TEST_F(ResourceLoadSchedulerTest, Bypass) {
-  // A request that disallows throttling should be ran synchronously.
+TEST_F(ResourceLoadSchedulerTest, StopStoppableRequest) {
+  Scheduler()->OnLifecycleStateChanged(
+      scheduler::SchedulingLifecycleState::kStopped);
+  // A request that disallows throttling should be queued.
   MockClient* client1 = new MockClient;
   ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client1, ThrottleOption::kCanNotBeThrottled,
+  Scheduler()->Request(client1, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id1);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
-  EXPECT_TRUE(client1->WasRun());
+  EXPECT_FALSE(client1->WasRun());
 
-  // Another request that disallows throttling also should be ran even it makes
+  // Another request that disallows throttling, but allows stopping should also
+  // be queued.
+  MockClient* client2 = new MockClient;
+  ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
+  Scheduler()->Request(client2, ThrottleOption::kStoppable,
+                       ResourceLoadPriority::kMedium, 0 /* intra_priority */,
+                       &id2);
+  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
+  EXPECT_FALSE(client2->WasRun());
+
+  // Another request that disallows throttling and stopping also should be run
+  // even it makes the outstanding number reaches to the limit.
+  MockClient* client3 = new MockClient;
+  ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
+  Scheduler()->Request(client3, ThrottleOption::kCanNotBeStoppedOrThrottled,
+                       ResourceLoadPriority::kMedium, 0 /* intra_priority */,
+                       &id3);
+  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
+  EXPECT_TRUE(client3->WasRun());
+
+  // Call Release() with different options just in case.
+  EXPECT_TRUE(Release(id1));
+  EXPECT_TRUE(ReleaseAndSchedule(id2));
+  EXPECT_TRUE(ReleaseAndSchedule(id3));
+
+  // Should not succeed to call with the same ID twice.
+  EXPECT_FALSE(Release(id1));
+
+  // Should not succeed to call with the invalid ID or unused ID.
+  EXPECT_FALSE(Release(ResourceLoadScheduler::kInvalidClientId));
+
+  EXPECT_FALSE(Release(static_cast<ResourceLoadScheduler::ClientId>(774)));
+}
+
+TEST_F(ResourceLoadSchedulerTest, ThrottleThrottleableRequest) {
+  Scheduler()->OnLifecycleStateChanged(
+      scheduler::SchedulingLifecycleState::kThrottled);
+
+  Scheduler()->SetOutstandingLimitForTesting(0);
+  // A request that allows throttling should be queued.
+  MockClient* client1 = new MockClient;
+  ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
+  Scheduler()->Request(client1, ThrottleOption::kThrottleable,
+                       ResourceLoadPriority::kMedium, 0 /* intra_priority */,
+                       &id1);
+  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
+  EXPECT_FALSE(client1->WasRun());
+
+  // Another request that disallows throttling also should be run even it makes
   // the outstanding number reaches to the limit.
   MockClient* client2 = new MockClient;
   ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client2, ThrottleOption::kCanNotBeThrottled,
+  Scheduler()->Request(client2, ThrottleOption::kStoppable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id2);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
   EXPECT_TRUE(client2->WasRun());
 
+  // Another request that disallows stopping should be run even it makes the
+  // outstanding number reaches to the limit.
+  MockClient* client3 = new MockClient;
+  ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
+  Scheduler()->Request(client3, ThrottleOption::kCanNotBeStoppedOrThrottled,
+                       ResourceLoadPriority::kMedium, 0 /* intra_priority */,
+                       &id3);
+  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
+  EXPECT_TRUE(client3->WasRun());
+
   // Call Release() with different options just in case.
   EXPECT_TRUE(Release(id1));
   EXPECT_TRUE(ReleaseAndSchedule(id2));
+  EXPECT_TRUE(ReleaseAndSchedule(id3));
 
   // Should not succeed to call with the same ID twice.
   EXPECT_FALSE(Release(id1));
@@ -130,7 +180,7 @@ TEST_F(ResourceLoadSchedulerTest, Throttled) {
   // The first request should be ran synchronously.
   MockClient* client1 = new MockClient;
   ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client1, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client1, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id1);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
@@ -139,7 +189,7 @@ TEST_F(ResourceLoadSchedulerTest, Throttled) {
   // Another request should be throttled until the first request calls Release.
   MockClient* client2 = new MockClient;
   ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client2, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client2, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id2);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
@@ -148,7 +198,7 @@ TEST_F(ResourceLoadSchedulerTest, Throttled) {
   // Two more requests.
   MockClient* client3 = new MockClient;
   ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client3, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client3, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id3);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
@@ -156,7 +206,7 @@ TEST_F(ResourceLoadSchedulerTest, Throttled) {
 
   MockClient* client4 = new MockClient;
   ResourceLoadScheduler::ClientId id4 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client4, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client4, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id4);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id4);
@@ -182,7 +232,7 @@ TEST_F(ResourceLoadSchedulerTest, Unthrottle) {
   // Push three requests.
   MockClient* client1 = new MockClient;
   ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client1, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client1, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id1);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
@@ -190,7 +240,7 @@ TEST_F(ResourceLoadSchedulerTest, Unthrottle) {
 
   MockClient* client2 = new MockClient;
   ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client2, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client2, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id2);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
@@ -198,7 +248,7 @@ TEST_F(ResourceLoadSchedulerTest, Unthrottle) {
 
   MockClient* client3 = new MockClient;
   ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client3, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client3, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id3);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
@@ -219,7 +269,7 @@ TEST_F(ResourceLoadSchedulerTest, Stopped) {
   // Push three requests.
   MockClient* client1 = new MockClient;
   ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client1, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client1, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id1);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
@@ -227,7 +277,7 @@ TEST_F(ResourceLoadSchedulerTest, Stopped) {
 
   MockClient* client2 = new MockClient;
   ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client2, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client2, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id2);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
@@ -235,7 +285,7 @@ TEST_F(ResourceLoadSchedulerTest, Stopped) {
 
   MockClient* client3 = new MockClient;
   ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client3, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client3, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kMedium, 0 /* intra_priority */,
                        &id3);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
@@ -257,83 +307,35 @@ TEST_F(ResourceLoadSchedulerTest, Stopped) {
   EXPECT_TRUE(Release(id2));
 }
 
-TEST_F(ResourceLoadSchedulerTest, PriotrityIsNotConsidered) {
+TEST_F(ResourceLoadSchedulerTest, PriorityIsConsidered) {
   // Push three requests.
   MockClient* client1 = new MockClient;
 
   Scheduler()->SetOutstandingLimitForTesting(0);
 
   ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client1, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client1, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLowest, 10 /* intra_priority */,
                        &id1);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
 
   MockClient* client2 = new MockClient;
   ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client2, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client2, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLow, 1 /* intra_priority */,
                        &id2);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
 
   MockClient* client3 = new MockClient;
   ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client3, ThrottleOption::kCanBeThrottled,
-                       ResourceLoadPriority::kLow, 3 /* intra_priority */,
-                       &id3);
-  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
-
-  EXPECT_FALSE(client1->WasRun());
-  EXPECT_FALSE(client2->WasRun());
-  EXPECT_FALSE(client3->WasRun());
-
-  Scheduler()->SetOutstandingLimitForTesting(1);
-
-  EXPECT_TRUE(client1->WasRun());
-  EXPECT_FALSE(client2->WasRun());
-  EXPECT_FALSE(client3->WasRun());
-
-  Scheduler()->SetOutstandingLimitForTesting(2);
-
-  EXPECT_TRUE(client1->WasRun());
-  EXPECT_TRUE(client2->WasRun());
-  EXPECT_FALSE(client3->WasRun());
-
-  // Release all.
-  EXPECT_TRUE(Release(id3));
-  EXPECT_TRUE(Release(id2));
-  EXPECT_TRUE(Release(id1));
-}
-
-TEST_F(RendererSideResourceSchedulerTest, PriorityIsConsidered) {
-  // Push three requests.
-  MockClient* client1 = new MockClient;
-
-  Scheduler()->SetOutstandingLimitForTesting(0);
-
-  ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client1, ThrottleOption::kCanBeThrottled,
-                       ResourceLoadPriority::kLowest, 10 /* intra_priority */,
-                       &id1);
-  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
-
-  MockClient* client2 = new MockClient;
-  ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client2, ThrottleOption::kCanBeThrottled,
-                       ResourceLoadPriority::kLow, 1 /* intra_priority */,
-                       &id2);
-  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
-
-  MockClient* client3 = new MockClient;
-  ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client3, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client3, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLow, 3 /* intra_priority */,
                        &id3);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
 
   MockClient* client4 = new MockClient;
   ResourceLoadScheduler::ClientId id4 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client4, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client4, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kHigh, 0 /* intra_priority */,
                        &id4);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id4);
@@ -343,6 +345,8 @@ TEST_F(RendererSideResourceSchedulerTest, PriorityIsConsidered) {
   EXPECT_FALSE(client3->WasRun());
   EXPECT_TRUE(client4->WasRun());
 
+  // Client 4 does not count against the limit as it was not delayable when it
+  // was created.
   Scheduler()->SetOutstandingLimitForTesting(1);
 
   EXPECT_FALSE(client1->WasRun());
@@ -357,34 +361,118 @@ TEST_F(RendererSideResourceSchedulerTest, PriorityIsConsidered) {
   EXPECT_TRUE(client3->WasRun());
   EXPECT_TRUE(client4->WasRun());
 
-  // Release all.
+  Scheduler()->SetOutstandingLimitForTesting(3);
+
+  EXPECT_TRUE(client1->WasRun());
+  EXPECT_TRUE(client2->WasRun());
+  EXPECT_TRUE(client3->WasRun());
+  EXPECT_TRUE(client4->WasRun());
+
+  // Release the rest.
   EXPECT_TRUE(Release(id4));
   EXPECT_TRUE(Release(id3));
   EXPECT_TRUE(Release(id2));
   EXPECT_TRUE(Release(id1));
 }
 
-TEST_F(RendererSideResourceSchedulerTest, IsThrottablePriority) {
-  EXPECT_TRUE(
-      Scheduler()->IsThrottablePriority(ResourceLoadPriority::kVeryLow));
-  EXPECT_TRUE(Scheduler()->IsThrottablePriority(ResourceLoadPriority::kLow));
-  EXPECT_TRUE(Scheduler()->IsThrottablePriority(ResourceLoadPriority::kMedium));
-  EXPECT_FALSE(Scheduler()->IsThrottablePriority(ResourceLoadPriority::kHigh));
-  EXPECT_FALSE(
-      Scheduler()->IsThrottablePriority(ResourceLoadPriority::kVeryHigh));
+TEST_F(ResourceLoadSchedulerTest, AllowedRequestsRunInPriorityOrder) {
+  Scheduler()->OnLifecycleStateChanged(
+      scheduler::SchedulingLifecycleState::kStopped);
+  Scheduler()->SetOutstandingLimitForTesting(0);
 
-  Scheduler()->LoosenThrottlingPolicy();
+  MockClient::MockClientDelegate delegate;
+  // Push two requests.
+  MockClient* client1 = new MockClient;
+  MockClient* client2 = new MockClient;
 
-  EXPECT_TRUE(
-      Scheduler()->IsThrottablePriority(ResourceLoadPriority::kVeryLow));
-  EXPECT_TRUE(Scheduler()->IsThrottablePriority(ResourceLoadPriority::kLow));
-  EXPECT_TRUE(Scheduler()->IsThrottablePriority(ResourceLoadPriority::kMedium));
-  EXPECT_FALSE(Scheduler()->IsThrottablePriority(ResourceLoadPriority::kHigh));
-  EXPECT_FALSE(
-      Scheduler()->IsThrottablePriority(ResourceLoadPriority::kVeryHigh));
+  client1->SetDelegate(&delegate);
+  client2->SetDelegate(&delegate);
+
+  ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
+  Scheduler()->Request(client1, ThrottleOption::kStoppable,
+                       ResourceLoadPriority::kLowest, 10 /* intra_priority */,
+                       &id1);
+  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
+
+  ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
+  Scheduler()->Request(client2, ThrottleOption::kThrottleable,
+                       ResourceLoadPriority::kHigh, 1 /* intra_priority */,
+                       &id2);
+  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
+
+  EXPECT_FALSE(client1->WasRun());
+  EXPECT_FALSE(client2->WasRun());
+
+  Scheduler()->SetOutstandingLimitForTesting(1);
+
+  Scheduler()->OnLifecycleStateChanged(
+      scheduler::SchedulingLifecycleState::kThrottled);
+
+  EXPECT_TRUE(client1->WasRun());
+  EXPECT_TRUE(client2->WasRun());
+
+  // Verify high priority request ran first.
+  std::vector<MockClient*> order = delegate.client_order();
+  EXPECT_EQ(order[0], client2);
+  EXPECT_EQ(order[1], client1);
+
+  // Release all.
+  EXPECT_TRUE(Release(id1));
+  EXPECT_TRUE(Release(id2));
 }
 
-TEST_F(RendererSideResourceSchedulerTest, SetPriority) {
+TEST_F(ResourceLoadSchedulerTest, StoppableRequestResumesWhenThrottled) {
+  Scheduler()->OnLifecycleStateChanged(
+      scheduler::SchedulingLifecycleState::kStopped);
+  // Push two requests.
+  MockClient* client1 = new MockClient;
+
+  Scheduler()->SetOutstandingLimitForTesting(0);
+
+  ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
+  Scheduler()->Request(client1, ThrottleOption::kStoppable,
+                       ResourceLoadPriority::kLowest, 10 /* intra_priority */,
+                       &id1);
+  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
+
+  MockClient* client2 = new MockClient;
+  ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
+  Scheduler()->Request(client2, ThrottleOption::kThrottleable,
+                       ResourceLoadPriority::kHigh, 1 /* intra_priority */,
+                       &id2);
+  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
+
+  MockClient* client3 = new MockClient;
+  ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
+  Scheduler()->Request(client3, ThrottleOption::kStoppable,
+                       ResourceLoadPriority::kLowest, 10 /* intra_priority */,
+                       &id3);
+  EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
+
+  EXPECT_FALSE(client1->WasRun());
+  EXPECT_FALSE(client2->WasRun());
+  EXPECT_FALSE(client3->WasRun());
+
+  Scheduler()->OnLifecycleStateChanged(
+      scheduler::SchedulingLifecycleState::kThrottled);
+
+  EXPECT_TRUE(client1->WasRun());
+  EXPECT_FALSE(client2->WasRun());
+  EXPECT_TRUE(client3->WasRun());
+
+  Scheduler()->SetOutstandingLimitForTesting(1);
+
+  EXPECT_TRUE(client1->WasRun());
+  EXPECT_TRUE(client2->WasRun());
+  EXPECT_TRUE(client3->WasRun());
+
+  // Release all.
+  EXPECT_TRUE(Release(id1));
+  EXPECT_TRUE(Release(id2));
+  EXPECT_TRUE(Release(id3));
+}
+
+TEST_F(ResourceLoadSchedulerTest, SetPriority) {
   // Start with the normal scheduling policy.
   Scheduler()->LoosenThrottlingPolicy();
   // Push three requests.
@@ -393,21 +481,21 @@ TEST_F(RendererSideResourceSchedulerTest, SetPriority) {
   Scheduler()->SetOutstandingLimitForTesting(0);
 
   ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client1, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client1, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLowest, 0 /* intra_priority */,
                        &id1);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
 
   MockClient* client2 = new MockClient;
   ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client2, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client2, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLow, 5 /* intra_priority */,
                        &id2);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
 
   MockClient* client3 = new MockClient;
   ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client3, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client3, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLow, 10 /* intra_priority */,
                        &id3);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
@@ -440,34 +528,34 @@ TEST_F(RendererSideResourceSchedulerTest, SetPriority) {
   EXPECT_TRUE(Release(id1));
 }
 
-TEST_F(RendererSideResourceSchedulerTest, LoosenThrottlingPolicy) {
+TEST_F(ResourceLoadSchedulerTest, LoosenThrottlingPolicy) {
   MockClient* client1 = new MockClient;
 
   Scheduler()->SetOutstandingLimitForTesting(0, 0);
 
   ResourceLoadScheduler::ClientId id1 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client1, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client1, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLowest, 0 /* intra_priority */,
                        &id1);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id1);
 
   MockClient* client2 = new MockClient;
   ResourceLoadScheduler::ClientId id2 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client2, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client2, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLowest, 0 /* intra_priority */,
                        &id2);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id2);
 
   MockClient* client3 = new MockClient;
   ResourceLoadScheduler::ClientId id3 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client3, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client3, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLowest, 0 /* intra_priority */,
                        &id3);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id3);
 
   MockClient* client4 = new MockClient;
   ResourceLoadScheduler::ClientId id4 = ResourceLoadScheduler::kInvalidClientId;
-  Scheduler()->Request(client4, ThrottleOption::kCanBeThrottled,
+  Scheduler()->Request(client4, ThrottleOption::kThrottleable,
                        ResourceLoadPriority::kLowest, 0 /* intra_priority */,
                        &id4);
   EXPECT_NE(ResourceLoadScheduler::kInvalidClientId, id4);

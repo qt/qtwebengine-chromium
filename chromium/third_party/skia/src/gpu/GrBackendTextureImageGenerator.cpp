@@ -85,8 +85,7 @@ void GrBackendTextureImageGenerator::ReleaseRefHelper_TextureReleaseProc(void* c
 }
 
 sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(
-        GrContext* context, const SkImageInfo& info, const SkIPoint& origin,
-        SkTransferFunctionBehavior, bool willNeedMipMaps) {
+        GrContext* context, const SkImageInfo& info, const SkIPoint& origin, bool willNeedMipMaps) {
     SkASSERT(context);
 
     if (context->contextPriv().getBackend() != fBackendTexture.backend()) {
@@ -180,12 +179,6 @@ sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(
         return nullptr;
     }
 
-    // We can't pass the fact that this creates a wrapped texture into createLazyProxy so we need
-    // to manually call setDoesNotSupportMipMaps.
-    if (GrMipMapped::kNo == mipMapped) {
-        proxy->texPriv().setDoesNotSupportMipMaps();
-    }
-
     if (0 == origin.fX && 0 == origin.fY &&
         info.width() == fBackendTexture.width() && info.height() == fBackendTexture.height() &&
         (!willNeedMipMaps || GrMipMapped::kYes == proxy->mipMapped())) {
@@ -196,15 +189,11 @@ sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(
         // because Vulkan will want to do the copy as a draw. All other copies would require a
         // layout change in Vulkan and we do not change the layout of borrowed images.
         GrMipMapped mipMapped = willNeedMipMaps ? GrMipMapped::kYes : GrMipMapped::kNo;
-        sk_sp<SkColorSpace> colorSpace;
-        if (GrPixelConfigIsSRGB(desc.fConfig)) {
-            colorSpace = SkColorSpace::MakeSRGB();
-        }
 
         sk_sp<GrRenderTargetContext> rtContext(
             context->contextPriv().makeDeferredRenderTargetContext(
-                SkBackingFit::kExact, info.width(), info.height(), proxy->config(),
-                std::move(colorSpace), 1, mipMapped, proxy->origin(), nullptr, SkBudgeted::kYes));
+                SkBackingFit::kExact, info.width(), info.height(), proxy->config(), nullptr, 1,
+                mipMapped, proxy->origin(), nullptr, SkBudgeted::kYes));
 
         if (!rtContext) {
             return nullptr;

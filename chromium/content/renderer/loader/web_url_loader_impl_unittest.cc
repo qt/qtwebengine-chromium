@@ -39,6 +39,7 @@
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_url_error.h"
 #include "third_party/blink/public/platform/web_url_loader_client.h"
@@ -77,7 +78,7 @@ class TestResourceDispatcher : public ResourceDispatcher {
       SyncLoadResponse* response,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
-      double timeout,
+      base::TimeDelta timeout,
       blink::mojom::BlobRegistryPtrInfo download_to_blob_registry,
       std::unique_ptr<RequestPeer> peer) override {
     *response = std::move(sync_load_response_);
@@ -175,7 +176,9 @@ class TestWebURLLoaderClient : public blink::WebURLLoaderClient {
   TestWebURLLoaderClient(ResourceDispatcher* dispatcher)
       : loader_(new WebURLLoaderImpl(
             dispatcher,
-            blink::scheduler::GetSingleThreadTaskRunnerForTesting(),
+            blink::scheduler::WebResourceLoadingTaskRunnerHandle::
+                CreateUnprioritized(
+                    blink::scheduler::GetSingleThreadTaskRunnerForTesting()),
             base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
                 &fake_url_loader_factory_))),
         delete_on_receive_redirect_(false),
@@ -224,10 +227,6 @@ class TestWebURLLoaderClient : public blink::WebURLLoaderClient {
       loader_.reset();
   }
 
-  void DidDownloadData(int dataLength, int encodedDataLength) override {
-    EXPECT_TRUE(loader_);
-  }
-
   void DidReceiveData(const char* data, int dataLength) override {
     EXPECT_TRUE(loader_);
     // The response should have started, but must not have finished, or failed.
@@ -245,7 +244,7 @@ class TestWebURLLoaderClient : public blink::WebURLLoaderClient {
                         int64_t totalEncodedDataLength,
                         int64_t totalEncodedBodyLength,
                         int64_t totalDecodedBodyLength,
-                        bool blocked_cross_site_document) override {
+                        bool should_report_corb_blocking) override {
     EXPECT_TRUE(loader_);
     EXPECT_TRUE(did_receive_response_);
     EXPECT_FALSE(did_finish_);
@@ -796,15 +795,13 @@ TEST_F(WebURLLoaderImplTest, SyncLengths) {
   blink::WebData data;
   int64_t encoded_data_length = 0;
   int64_t encoded_body_length = 0;
-  base::Optional<int64_t> downloaded_file_length;
   blink::WebBlobInfo downloaded_blob;
-  client()->loader()->LoadSynchronously(
-      request, nullptr, response, error, data, encoded_data_length,
-      encoded_body_length, downloaded_file_length, downloaded_blob);
+  client()->loader()->LoadSynchronously(request, nullptr, response, error, data,
+                                        encoded_data_length,
+                                        encoded_body_length, downloaded_blob);
 
   EXPECT_EQ(kEncodedBodyLength, encoded_body_length);
   EXPECT_EQ(kEncodedDataLength, encoded_data_length);
-  EXPECT_FALSE(downloaded_file_length);
   EXPECT_TRUE(downloaded_blob.Uuid().IsNull());
 }
 

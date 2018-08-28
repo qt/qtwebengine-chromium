@@ -10,6 +10,7 @@
 #ifndef SkDrawLooper_DEFINED
 #define SkDrawLooper_DEFINED
 
+#include "../private/SkNoncopyable.h"
 #include "SkBlurTypes.h"
 #include "SkFlattenable.h"
 #include "SkPoint.h"
@@ -95,8 +96,6 @@ public:
      *  If any of the above are not met, return false and ignore the BlurShadowRec parameter.
      */
     virtual bool asABlurShadow(BlurShadowRec*) const;
-
-    virtual void toString(SkString* str) const = 0;
 
     static SkFlattenable::Type GetFlattenableType() {
         return kSkDrawLooper_Type;

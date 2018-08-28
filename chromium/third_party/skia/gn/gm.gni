@@ -7,6 +7,7 @@
 _gm = get_path_info("../gm", "abspath")
 
 gm_sources = [
+  "$_gm/3dgm.cpp",
   "$_gm/aaa.cpp",
   "$_gm/aaclip.cpp",
   "$_gm/aarectmodes.cpp",
@@ -112,7 +113,6 @@ gm_sources = [
   "$_gm/drawatlas.cpp",
   "$_gm/drawatlascolor.cpp",
   "$_gm/drawbitmaprect.cpp",
-  "$_gm/drawfilter.cpp",
   "$_gm/drawlooper.cpp",
   "$_gm/drawminibitmaprect.cpp",
   "$_gm/drawregion.cpp",
@@ -198,6 +198,8 @@ gm_sources = [
   "$_gm/lcdoverlap.cpp",
   "$_gm/lcdtext.cpp",
   "$_gm/lighting.cpp",
+  "$_gm/lightingshader.cpp",
+  "$_gm/lightingshader2.cpp",
   "$_gm/linepaths.cpp",
   "$_gm/localmatriximagefilter.cpp",
   "$_gm/localmatriximageshader.cpp",
@@ -285,6 +287,7 @@ gm_sources = [
   "$_gm/skbug_4868.cpp",
   "$_gm/skbug_5321.cpp",
   "$_gm/skbug1719.cpp",
+  "$_gm/skinning.cpp",
   "$_gm/smallarc.cpp",
   "$_gm/smallpaths.cpp",
   "$_gm/spritebitmap.cpp",

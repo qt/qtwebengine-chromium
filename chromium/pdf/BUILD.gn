@@ -8,6 +8,7 @@ import("//build/config/jumbo.gni")
 import("//pdf/features.gni")
 import("//testing/test.gni")
 import("//third_party/pdfium/pdfium.gni")
+import("//v8/gni/v8.gni")
 
 # Generate a buildflag header for compile-time checking of PDF support.
 buildflag_header("buildflags") {
@@ -59,8 +60,6 @@ if (enable_pdf) {
       "preview_mode_client.h",
       "range_set.cc",
       "range_set.h",
-      "timer.cc",
-      "timer.h",
       "url_loader_wrapper.h",
       "url_loader_wrapper_impl.cc",
       "url_loader_wrapper_impl.h",
@@ -80,6 +79,8 @@ if (enable_pdf) {
         "pdfium/pdfium_api_string_buffer_adapter.cc",
         "pdfium/pdfium_api_string_buffer_adapter.h",
         "pdfium/pdfium_assert_matching_enums.cc",
+        "pdfium/pdfium_document.cc",
+        "pdfium/pdfium_document.h",
         "pdfium/pdfium_engine.cc",
         "pdfium/pdfium_engine.h",
         "pdfium/pdfium_engine_exports.cc",
@@ -96,6 +97,8 @@ if (enable_pdf) {
         "pdfium/pdfium_print.h",
         "pdfium/pdfium_range.cc",
         "pdfium/pdfium_range.h",
+        "pdfium/pdfium_unsupported_features.cc",
+        "pdfium/pdfium_unsupported_features.h",
       ]
 
       include_dirs += [ "//third_party/pdfium" ]
@@ -132,8 +135,19 @@ if (enable_pdf) {
     ]
 
     if (pdf_engine == 0) {
-      sources += [ "pdfium/findtext_unittest.cc" ]
+      configs += [ "//v8:external_startup_data" ]
+      sources += [
+        "pdfium/findtext_unittest.cc",
+        "pdfium/pdfium_engine_exports_unittest.cc",
+      ]
       include_dirs = [ "//third_party/pdfium" ]
+
+      if (v8_use_external_startup_data) {
+        data += [
+          "$root_out_dir/natives_blob.bin",
+          "$root_out_dir/snapshot_blob.bin",
+        ]
+      }
     }
   }
 } else {

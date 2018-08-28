@@ -283,8 +283,7 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
   TargetData touchpad_gesture_target_;
   TargetData bubbling_gesture_scroll_target_;
   TargetData first_bubbling_scroll_target_;
-  // Used to target wheel events for the duration of a scroll when wheel scroll
-  // latching is enabled.
+  // Used to target wheel events for the duration of a scroll.
   TargetData wheel_target_;
   // Maintains the same target between mouse down and mouse up.
   TargetData mouse_capture_target_;
@@ -292,6 +291,9 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
   // Tracked for the purpose of generating MouseEnter and MouseLeave events.
   RenderWidgetHostViewBase* last_mouse_move_target_;
   RenderWidgetHostViewBase* last_mouse_move_root_view_;
+
+  // Tracked for the purpose of targeting subsequent fling cancel events.
+  RenderWidgetHostViewBase* last_fling_start_target_ = nullptr;
 
   // Tracked for the purpose of providing a root_view when dispatching emulated
   // touch/gesture events.
@@ -324,6 +326,8 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
                            InputEventRouterGesturePreventDefaultTargetMapTest);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessHitTestBrowserTest,
                            InputEventRouterTouchpadGestureTargetTest);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessHitTestBrowserTest,
+                           TouchpadPinchOverOOPIF);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessMouseWheelHitTestBrowserTest,
                            InputEventRouterWheelTargetTest);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessMacBrowserTest,

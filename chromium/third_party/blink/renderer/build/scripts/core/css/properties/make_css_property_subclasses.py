@@ -32,8 +32,8 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
         property_methods = json5_generator.Json5File.load_from_files(
             [json5_file_paths[2]])
         for property_method in property_methods.name_dictionaries:
-            self._property_methods[property_method['name']] = PropertyMethod(
-                name=property_method['name'],
+            self._property_methods[property_method['name'].original] = PropertyMethod(
+                name=property_method['name'].original,
                 return_type=property_method['return_type'],
                 parameters=property_method['parameters'],
             )
@@ -56,7 +56,7 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
             self._outputs[class_data.filename + '.h'] = (
                 self.generate_property_h_builder(
                     class_data.classname, class_data.filename, property_))
-            if 'should_implement_apply_functions_in_cpp' in property_:
+            if not property_['style_builder_inline']:
                 self._outputs[class_data.filename + '.cc'] = (
                     self.generate_property_cpp_builder(
                         class_data.filename, property_))
@@ -97,15 +97,17 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
         return generate_property_cpp
 
     def calculate_apply_functions_to_declare(self, property_):
-        if property_['style_builder_template'] in ['background_layer', 'color', 'counter', 'mask_layer']:
-            property_['should_implement_apply_functions_in_cpp'] = True
+        cc_templates = ['background_layer', 'color', 'counter', 'grid', 'mask_layer']
+        property_['style_builder_inline'] = property_['style_builder_template'] not in cc_templates
 
-        property_['should_implement_apply_functions'] = (
+        property_['style_builder_declare'] = (
             property_['is_property'] and
-            not property_['longhands'] and
-            not property_['direction_aware_options'] and
-            not property_['builder_skip'] and
-            not property_['style_builder_legacy'])
+            not property_['longhands'])
+
+        if not property_['style_builder_declare']:
+            for x in ['initial', 'inherit', 'value']:
+                property_['style_builder_generate_%s' % x] = False
+
 
     def h_includes(self, property_):
         if property_['alias_for']:
@@ -120,7 +122,7 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
             yield "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
     def cpp_includes(self, property_):
-        if 'should_implement_apply_functions_in_cpp' in property_:
+        if not property_['style_builder_inline']:
             for include in self.apply_includes(property_):
                 yield 'third_party/blink/renderer/' + include
 
@@ -132,6 +134,9 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
             yield "core/css/css_primitive_value_mappings.h"
         elif property_['converter'] == "CSSIdentifierValue":
             yield "core/css/css_identifier_value.h"
+        elif property_['converter'] == "ConvertElementReference":
+            yield "core/css/resolver/style_builder_converter.h"
+            yield "core/style/style_svg_resource.h"
         else:
             yield "core/css/css_primitive_value_mappings.h"
             yield "core/css/resolver/style_builder_converter.h"
@@ -153,7 +158,8 @@ class CSSPropertiesWriter(CSSPropertyBaseWriter):
         if property_.get('style_builder_template') in ['counter']:
             yield "core/css/css_value_pair.h"
             yield "core/css/css_custom_ident_value.h"
-
+        if property_.get('style_builder_template') in ['grid']:
+            yield "core/css/resolver/style_builder_converter.h"
 
 if __name__ == '__main__':
     json5_generator.Maker(CSSPropertiesWriter).main()

@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -52,7 +54,7 @@ class CONTENT_EXPORT ServiceWorkerContextWatcher
 
   void GetStoredRegistrationsOnIOThread();
   void OnStoredRegistrationsOnIOThread(
-      ServiceWorkerStatusCode status,
+      blink::ServiceWorkerStatusCode status,
       const std::vector<ServiceWorkerRegistrationInfo>& stored_registrations);
   void StopOnIOThread();
 
@@ -96,12 +98,8 @@ class CONTENT_EXPORT ServiceWorkerContextWatcher
       base::Time script_response_time,
       base::Time script_last_modified) override;
   void OnErrorReported(int64_t version_id,
-                       int process_id,
-                       int thread_id,
                        const ErrorInfo& info) override;
   void OnReportConsoleMessage(int64_t version_id,
-                              int process_id,
-                              int thread_id,
                               const ConsoleMessage& message) override;
   void OnControlleeAdded(int64_t version_id,
                          const std::string& uuid,

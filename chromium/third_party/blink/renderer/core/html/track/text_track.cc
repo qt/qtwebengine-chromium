@@ -31,12 +31,11 @@
 
 #include "third_party/blink/renderer/core/html/track/text_track.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/track/cue_timeline.h"
 #include "third_party/blink/renderer/core/html/track/text_track_cue_list.h"
 #include "third_party/blink/renderer/core/html/track/text_track_list.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -253,7 +252,7 @@ void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& exception_state) {
   // exception.
   if (cue->track() != this) {
     exception_state.ThrowDOMException(
-        kNotFoundError,
+        DOMExceptionCode::kNotFoundError,
         "The specified cue is not listed in the TextTrack's list of cues.");
     return;
   }
@@ -377,9 +376,4 @@ void TextTrack::Trace(blink::Visitor* visitor) {
   EventTargetWithInlineData::Trace(visitor);
 }
 
-void TextTrack::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(cues_);
-  EventTargetWithInlineData::TraceWrappers(visitor);
-  TrackBase::TraceWrappers(visitor);
-}
 }  // namespace blink

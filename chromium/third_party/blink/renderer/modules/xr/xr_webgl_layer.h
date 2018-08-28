@@ -60,6 +60,8 @@ class XRWebGLLayer final : public XRLayer,
   XRViewport* getViewport(XRView*);
   void requestViewportScaling(double scale_factor);
 
+  static double getNativeFramebufferScaleFactor(XRSession* session);
+
   XRViewport* GetViewportForEye(XRView::Eye);
 
   void UpdateViewports();
@@ -80,7 +82,6 @@ class XRWebGLLayer final : public XRLayer,
       std::unique_ptr<viz::SingleReleaseCallback>) override;
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   XRWebGLLayer(XRSession*,

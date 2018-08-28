@@ -186,6 +186,15 @@ void DataUseMeasurement::OnCompleted(const net::URLRequest& request,
     RecordFavIconDataUse(request);
 }
 
+// static
+DataUseUserData::DataUseContentType
+DataUseMeasurement::GetContentTypeForRequest(const net::URLRequest& request) {
+  DataUseUserData* attached_user_data = static_cast<DataUseUserData*>(
+      request.GetUserData(DataUseUserData::kUserDataKey));
+  return attached_user_data ? attached_user_data->content_type()
+                            : DataUseUserData::OTHER;
+}
+
 void DataUseMeasurement::ReportDataUseUMA(const net::URLRequest& request,
                                           TrafficDirection dir,
                                           int64_t bytes) {
@@ -434,22 +443,12 @@ void DataUseMeasurement::RecordContentTypeHistogram(
                        : (!is_tab_visible ? DataUseUserData::VIDEO_TABBACKGROUND
                                           : DataUseUserData::VIDEO);
   }
-  // Use the more primitive STATIC_HISTOGRAM_POINTER_BLOCK macro because the
-  // simple UMA_HISTOGRAM_ENUMERATION macros don't expose 'AddKiB'.
   if (is_user_traffic) {
-    STATIC_HISTOGRAM_POINTER_BLOCK(
-        "DataUse.ContentType.UserTrafficKB", AddKiB(content_type, bytes),
-        base::LinearHistogram::FactoryGet(
-            "DataUse.ContentType.UserTrafficKB", 1, DataUseUserData::TYPE_MAX,
-            DataUseUserData::TYPE_MAX + 1,
-            base::HistogramBase::kUmaTargetedHistogramFlag));
+    UMA_HISTOGRAM_SCALED_ENUMERATION("DataUse.ContentType.UserTrafficKB",
+                                     content_type, bytes, 1024);
   } else {
-    STATIC_HISTOGRAM_POINTER_BLOCK(
-        "DataUse.ContentType.ServicesKB", AddKiB(content_type, bytes),
-        base::LinearHistogram::FactoryGet(
-            "DataUse.ContentType.ServicesKB", 1, DataUseUserData::TYPE_MAX,
-            DataUseUserData::TYPE_MAX + 1,
-            base::HistogramBase::kUmaTargetedHistogramFlag));
+    UMA_HISTOGRAM_SCALED_ENUMERATION("DataUse.ContentType.ServicesKB",
+                                     content_type, bytes, 1024);
   }
 }
 
@@ -465,7 +464,8 @@ void DataUseMeasurement::RecordPageTransitionUMA(
   }
 }
 
-bool DataUseMeasurement::IsUserRequest(const net::URLRequest& request) const {
+// static
+bool DataUseMeasurement::IsUserRequest(const net::URLRequest& request) {
   static const std::set<int32_t> kUserInitiatedTrafficAnnotations = {
       COMPUTE_NETWORK_TRAFFIC_ANNOTATION_ID_HASH(
           "blink_extension_resource_loader"),

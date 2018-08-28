@@ -49,7 +49,8 @@ TEST_F(AutofillExperimentsTest, DenyUpload_FeatureDisabled) {
 
 TEST_F(AutofillExperimentsTest, DenyUpload_SyncServiceCannotStart) {
   scoped_feature_list_.InitAndEnableFeature(kAutofillUpstream);
-  sync_service_.SetCanSyncStart(false);
+  sync_service_.SetDisableReasons(
+      syncer::SyncService::DISABLE_REASON_USER_CHOICE);
   EXPECT_FALSE(IsCreditCardUploadEnabled());
 }
 
@@ -62,7 +63,7 @@ TEST_F(AutofillExperimentsTest, DenyUpload_AuthError) {
 TEST_F(AutofillExperimentsTest,
        DenyUpload_SyncServiceDoesNotHaveAutofillProfilePreferredDataType) {
   scoped_feature_list_.InitAndEnableFeature(kAutofillUpstream);
-  sync_service_.SetPreferredDataTypes(syncer::ModelTypeSet());
+  sync_service_.SetDataTypes(syncer::ModelTypeSet());
   EXPECT_FALSE(IsCreditCardUploadEnabled());
 }
 

@@ -12,12 +12,11 @@
 
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
-namespace webrtc_cc {
 
 namespace {
 bool IsInSendTimeHistory(const PacketFeedback& packet) {
@@ -26,7 +25,7 @@ bool IsInSendTimeHistory(const PacketFeedback& packet) {
 }  // namespace
 
 AcknowledgedBitrateEstimator::AcknowledgedBitrateEstimator()
-    : AcknowledgedBitrateEstimator(rtc::MakeUnique<BitrateEstimator>()) {}
+    : AcknowledgedBitrateEstimator(absl::make_unique<BitrateEstimator>()) {}
 
 AcknowledgedBitrateEstimator::~AcknowledgedBitrateEstimator() {}
 
@@ -48,13 +47,22 @@ void AcknowledgedBitrateEstimator::IncomingPacketFeedbackVector(
   }
 }
 
-rtc::Optional<uint32_t> AcknowledgedBitrateEstimator::bitrate_bps() const {
-  return bitrate_estimator_->bitrate_bps();
+absl::optional<uint32_t> AcknowledgedBitrateEstimator::bitrate_bps() const {
+  auto estimated_bitrate = bitrate_estimator_->bitrate_bps();
+  return estimated_bitrate
+             ? *estimated_bitrate +
+                   allocated_bitrate_without_feedback_bps_.value_or(0)
+             : estimated_bitrate;
 }
 
 void AcknowledgedBitrateEstimator::SetAlrEndedTimeMs(
     int64_t alr_ended_time_ms) {
   alr_ended_time_ms_.emplace(alr_ended_time_ms);
+}
+
+void AcknowledgedBitrateEstimator::SetAllocatedBitrateWithoutFeedback(
+    uint32_t bitrate_bps) {
+  allocated_bitrate_without_feedback_bps_.emplace(bitrate_bps);
 }
 
 void AcknowledgedBitrateEstimator::MaybeExpectFastRateChange(
@@ -65,5 +73,4 @@ void AcknowledgedBitrateEstimator::MaybeExpectFastRateChange(
   }
 }
 
-}  // namespace webrtc_cc
 }  // namespace webrtc

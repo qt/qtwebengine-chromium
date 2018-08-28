@@ -17,7 +17,7 @@
 #include "modules/audio_processing/include/audio_processing.h"
 #include "p2p/base/fakeportallocator.h"
 #include "pc/sdputils.h"
-#include "pc/test/fakeperiodicvideocapturer.h"
+#include "pc/test/fakeperiodicvideotracksource.h"
 #include "pc/test/fakertccertificategenerator.h"
 #include "pc/test/mockpeerconnectionobservers.h"
 #include "pc/test/peerconnectiontestwrapper.h"
@@ -52,8 +52,8 @@ void PeerConnectionTestWrapper::Connect(PeerConnectionTestWrapper* caller,
   callee->SignalOnIceCandidateReady.connect(
       caller, &PeerConnectionTestWrapper::AddIceCandidate);
 
-  caller->SignalOnSdpReady.connect(
-      callee, &PeerConnectionTestWrapper::ReceiveOfferSdp);
+  caller->SignalOnSdpReady.connect(callee,
+                                   &PeerConnectionTestWrapper::ReceiveOfferSdp);
   callee->SignalOnSdpReady.connect(
       caller, &PeerConnectionTestWrapper::ReceiveAnswerSdp);
 }
@@ -115,7 +115,7 @@ void PeerConnectionTestWrapper::OnAddTrack(
   if (receiver->track()->kind() == MediaStreamTrackInterface::kVideoKind) {
     auto* video_track =
         static_cast<VideoTrackInterface*>(receiver->track().get());
-    renderer_ = rtc::MakeUnique<FakeVideoTrackRenderer>(video_track);
+    renderer_ = absl::make_unique<FakeVideoTrackRenderer>(video_track);
   }
 }
 
@@ -180,9 +180,8 @@ void PeerConnectionTestWrapper::SetLocalDescription(SdpType type,
                    << ": SetLocalDescription " << webrtc::SdpTypeToString(type)
                    << " " << sdp;
 
-  rtc::scoped_refptr<MockSetSessionDescriptionObserver>
-      observer(new rtc::RefCountedObject<
-                   MockSetSessionDescriptionObserver>());
+  rtc::scoped_refptr<MockSetSessionDescriptionObserver> observer(
+      new rtc::RefCountedObject<MockSetSessionDescriptionObserver>());
   peer_connection_->SetLocalDescription(
       observer, webrtc::CreateSessionDescription(type, sdp).release());
 }
@@ -193,9 +192,8 @@ void PeerConnectionTestWrapper::SetRemoteDescription(SdpType type,
                    << ": SetRemoteDescription " << webrtc::SdpTypeToString(type)
                    << " " << sdp;
 
-  rtc::scoped_refptr<MockSetSessionDescriptionObserver>
-      observer(new rtc::RefCountedObject<
-                   MockSetSessionDescriptionObserver>());
+  rtc::scoped_refptr<MockSetSessionDescriptionObserver> observer(
+      new rtc::RefCountedObject<MockSetSessionDescriptionObserver>());
   peer_connection_->SetRemoteDescription(
       observer, webrtc::CreateSessionDescription(type, sdp).release());
 }
@@ -251,10 +249,12 @@ bool PeerConnectionTestWrapper::CheckForVideo() {
 }
 
 void PeerConnectionTestWrapper::GetAndAddUserMedia(
-    bool audio, const webrtc::FakeConstraints& audio_constraints,
-    bool video, const webrtc::FakeConstraints& video_constraints) {
+    bool audio,
+    const cricket::AudioOptions& audio_options,
+    bool video,
+    const webrtc::FakeConstraints& video_constraints) {
   rtc::scoped_refptr<webrtc::MediaStreamInterface> stream =
-      GetUserMedia(audio, audio_constraints, video, video_constraints);
+      GetUserMedia(audio, audio_options, video, video_constraints);
   for (auto audio_track : stream->GetAudioTracks()) {
     EXPECT_TRUE(peer_connection_->AddTrack(audio_track, {stream->id()}).ok());
   }
@@ -264,21 +264,22 @@ void PeerConnectionTestWrapper::GetAndAddUserMedia(
 }
 
 rtc::scoped_refptr<webrtc::MediaStreamInterface>
-    PeerConnectionTestWrapper::GetUserMedia(
-        bool audio, const webrtc::FakeConstraints& audio_constraints,
-        bool video, const webrtc::FakeConstraints& video_constraints) {
+PeerConnectionTestWrapper::GetUserMedia(
+    bool audio,
+    const cricket::AudioOptions& audio_options,
+    bool video,
+    const webrtc::FakeConstraints& video_constraints) {
   std::string stream_id =
       kStreamIdBase + rtc::ToString(num_get_user_media_calls_++);
   rtc::scoped_refptr<webrtc::MediaStreamInterface> stream =
       peer_connection_factory_->CreateLocalMediaStream(stream_id);
 
   if (audio) {
-    FakeConstraints constraints = audio_constraints;
+    cricket::AudioOptions options = audio_options;
     // Disable highpass filter so that we can get all the test audio frames.
-    constraints.AddMandatory(
-        MediaConstraintsInterface::kHighpassFilter, false);
+    options.highpass_filter = false;
     rtc::scoped_refptr<webrtc::AudioSourceInterface> source =
-        peer_connection_factory_->CreateAudioSource(&constraints);
+        peer_connection_factory_->CreateAudioSource(options);
     rtc::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
         peer_connection_factory_->CreateAudioTrack(kAudioTrackLabelBase,
                                                    source));
@@ -287,14 +288,13 @@ rtc::scoped_refptr<webrtc::MediaStreamInterface>
 
   if (video) {
     // Set max frame rate to 10fps to reduce the risk of the tests to be flaky.
-    FakeConstraints constraints = video_constraints;
-    constraints.SetMandatoryMaxFrameRate(10);
+    webrtc::FakePeriodicVideoSource::Config config;
+    config.frame_interval_ms = 100;
 
     rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> source =
-        peer_connection_factory_->CreateVideoSource(
-            std::unique_ptr<cricket::VideoCapturer>(
-                new webrtc::FakePeriodicVideoCapturer()),
-            &constraints);
+        new rtc::RefCountedObject<webrtc::FakePeriodicVideoTrackSource>(
+            config, /* remote */ false);
+
     std::string videotrack_label = stream_id + kVideoTrackLabelBase;
     rtc::scoped_refptr<webrtc::VideoTrackInterface> video_track(
         peer_connection_factory_->CreateVideoTrack(videotrack_label, source));

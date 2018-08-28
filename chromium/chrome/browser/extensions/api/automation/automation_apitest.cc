@@ -152,6 +152,13 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, ImageData) {
       << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, TableProperties) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(
+      RunExtensionSubtest("automation/tests/tabs", "table_properties.html"))
+      << message_;
+}
+
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, TabsAutomationBooleanPermissions) {
   StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionSubtest(
@@ -218,6 +225,13 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopFocusViews) {
 
   ASSERT_TRUE(
       RunExtensionSubtest("automation/tests/desktop", "focus_views.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopGetNextTextMatch) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop",
+                                  "get_next_text_match.html"))
       << message_;
 }
 

@@ -4,8 +4,6 @@
 
 #include "third_party/blink/renderer/platform/graphics/paint/paint_chunker.h"
 
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-
 namespace blink {
 
 static const PropertyTreeState& UninitializedProperties() {
@@ -23,14 +21,13 @@ bool PaintChunker::IsInInitialState() const {
   if (current_properties_ != UninitializedProperties())
     return false;
 
-  DCHECK(data_.chunks.IsEmpty());
+  DCHECK(chunks_.IsEmpty());
   return true;
 }
 
 void PaintChunker::UpdateCurrentPaintChunkProperties(
     const base::Optional<PaintChunk::Id>& chunk_id,
     const PropertyTreeState& properties) {
-  DCHECK(RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
   // If properties are the same, continue to use the previously set
   // |next_chunk_id_| because the id of the outer painting is likely to be
   // more stable to reduce invalidation because of chunk id changes.
@@ -51,7 +48,6 @@ void PaintChunker::ForceNewChunk() {
 }
 
 bool PaintChunker::IncrementDisplayItemIndex(const DisplayItem& item) {
-  DCHECK(RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
   // Property nodes should never be null because they should either be set to
   // properties created by a LayoutObject/FrameView, or be set to a non-null
   // root node. If these DCHECKs are hit we are missing a call to update the
@@ -65,7 +61,7 @@ bool PaintChunker::IncrementDisplayItemIndex(const DisplayItem& item) {
     force_new_chunk_ = true;
 
   size_t new_chunk_begin_index;
-  if (data_.chunks.IsEmpty()) {
+  if (chunks_.IsEmpty()) {
     new_chunk_begin_index = 0;
   } else {
     auto& last_chunk = LastChunk();
@@ -81,11 +77,9 @@ bool PaintChunker::IncrementDisplayItemIndex(const DisplayItem& item) {
     new_chunk_begin_index = last_chunk.end_index;
   }
 
-  auto cacheable =
-      item.SkippedCache() ? PaintChunk::kUncacheable : PaintChunk::kCacheable;
-  data_.chunks.emplace_back(new_chunk_begin_index, new_chunk_begin_index + 1,
-                            next_chunk_id_ ? *next_chunk_id_ : item.GetId(),
-                            current_properties_, cacheable);
+  chunks_.emplace_back(new_chunk_begin_index, new_chunk_begin_index + 1,
+                       next_chunk_id_ ? *next_chunk_id_ : item.GetId(),
+                       current_properties_);
   next_chunk_id_ = base::nullopt;
 
   // When forcing a new chunk, we still need to force new chunk for the next
@@ -96,27 +90,11 @@ bool PaintChunker::IncrementDisplayItemIndex(const DisplayItem& item) {
   return true;
 }
 
-void PaintChunker::TrackRasterInvalidation(const PaintChunk& chunk,
-                                           const RasterInvalidationInfo& info) {
-  size_t index = ChunkIndex(chunk);
-  auto& trackings = data_.raster_invalidation_trackings;
-  if (trackings.size() <= index)
-    trackings.resize(index + 1);
-  trackings[index].push_back(info);
-}
-
-void PaintChunker::Clear() {
-  data_.Clear();
+Vector<PaintChunk> PaintChunker::ReleasePaintChunks() {
   next_chunk_id_ = base::nullopt;
   current_properties_ = UninitializedProperties();
-}
-
-PaintChunksAndRasterInvalidations PaintChunker::ReleaseData() {
-  next_chunk_id_ = base::nullopt;
-  current_properties_ = UninitializedProperties();
-  data_.chunks.ShrinkToFit();
-  data_.raster_invalidation_rects.ShrinkToFit();
-  return std::move(data_);
+  chunks_.ShrinkToFit();
+  return std::move(chunks_);
 }
 
 }  // namespace blink

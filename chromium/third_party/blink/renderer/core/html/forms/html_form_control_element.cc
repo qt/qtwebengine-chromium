@@ -25,9 +25,10 @@
 #include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
 
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/forms/html_data_list_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_field_set_element.h"
@@ -40,7 +41,6 @@
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/validation_message_client.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/text/bidi_text_run.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -52,10 +52,10 @@ using namespace HTMLNames;
 HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tag_name,
                                                Document& document)
     : LabelableElement(tag_name, document),
+      autofill_state_(WebAutofillState::kNotFilled),
       ancestor_disabled_state_(kAncestorDisabledStateUnknown),
       data_list_ancestor_state_(kUnknown),
       may_have_field_set_ancestor_(true),
-      is_autofilled_(false),
       has_validation_message_(false),
       will_validate_initialized_(false),
       will_validate_(true),
@@ -147,7 +147,7 @@ void HTMLFormControlElement::AncestorDisabledStateWasChanged() {
 }
 
 void HTMLFormControlElement::Reset() {
-  SetAutofilled(false);
+  SetAutofillState(WebAutofillState::kNotFilled);
   ResetImpl();
 }
 
@@ -232,11 +232,11 @@ bool HTMLFormControlElement::IsAutofocusable() const {
   return FastHasAttribute(autofocusAttr) && SupportsAutofocus();
 }
 
-void HTMLFormControlElement::SetAutofilled(bool autofilled) {
-  if (autofilled == is_autofilled_)
+void HTMLFormControlElement::SetAutofillState(WebAutofillState autofill_state) {
+  if (autofill_state == autofill_state_)
     return;
 
-  is_autofilled_ = autofilled;
+  autofill_state_ = autofill_state;
   PseudoStateChanged(CSSSelector::kPseudoAutofill);
 }
 
@@ -409,30 +409,13 @@ bool HTMLFormControlElement::IsKeyboardFocusable() const {
   return IsFocusable();
 }
 
-bool HTMLFormControlElement::ShouldShowFocusRingOnMouseFocus() const {
+bool HTMLFormControlElement::MayTriggerVirtualKeyboard() const {
   return false;
 }
 
 bool HTMLFormControlElement::ShouldHaveFocusAppearance() const {
-  return !WasFocusedByMouse() || ShouldShowFocusRingOnMouseFocus();
-}
-
-void HTMLFormControlElement::WillCallDefaultEventHandler(const Event& event) {
-  if (!WasFocusedByMouse())
-    return;
-  if (!event.IsKeyboardEvent() || event.type() != EventTypeNames::keydown)
-    return;
-
-  bool old_should_have_focus_appearance = ShouldHaveFocusAppearance();
-  SetWasFocusedByMouse(false);
-
-  // Changes to WasFocusedByMouse may affect ShouldHaveFocusAppearance() and
-  // LayoutTheme::IsFocused(). Inform LayoutTheme if
-  // ShouldHaveFocusAppearance() changes.
-  if (old_should_have_focus_appearance != ShouldHaveFocusAppearance() &&
-      GetLayoutObject()) {
-    GetLayoutObject()->InvalidateIfControlStateChanged(kFocusControlState);
-  }
+  return (GetDocument().LastFocusType() != kWebFocusTypeMouse) ||
+         GetDocument().HadKeyboardEvent() || MayTriggerVirtualKeyboard();
 }
 
 int HTMLFormControlElement::tabIndex() const {

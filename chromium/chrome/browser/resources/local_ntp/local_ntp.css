@@ -4,8 +4,8 @@
 
 html {
   /* Material Design constants */
-  --md-tile-height: 104px;
-  --md-tile-margin: 8px;
+  --md-tile-height: 112px;
+  --md-tile-margin: 16px;
 
   /* This will be overridden based on the viewport width, see below. */
   --column-count: 2;
@@ -84,6 +84,10 @@ button {
   padding: 0;
 }
 
+.mouse-navigation {
+  outline: none;
+}
+
 #ntp-contents {
   display: flex;
   flex-direction: column;
@@ -98,14 +102,20 @@ button {
 }
 
 .non-google-page #ntp-contents {
+  /* The inherited height from #ntp-contents applies from the "top" location,
+   * but uses the size of the overall NTP content area, resulting in an
+   * unnecessary scrollbar. This height corresponds to MV tile height for a
+   * single row, but also works for a row of icons, and works well on small
+   * screens (like Pixelbook), as well as high-res screens. */
+  height: 155px;
   left: calc(50% - var(--content-width)/2);
   position: absolute;
   top: calc(50% - 155px);
 }
 
-body.hide-fakebox-logo #logo,
-body.hide-fakebox-logo #fakebox {
+body.hide-fakebox #fakebox {
   opacity: 0;
+  visibility: hidden;
 }
 
 #logo {
@@ -274,7 +284,7 @@ body.alternate-logo #logo-non-white {
 }
 
 #fakebox-container {
-  margin: 0 auto 8px auto;
+  margin: 0 auto 0 auto;
   width: var(--content-width);
 }
 
@@ -298,6 +308,14 @@ body.alternate-logo #logo-non-white {
   box-shadow: none;
   margin: 0 auto;
   max-width: 560px;
+  opacity: 1;
+  transition: background-color 300ms ease-in-out;
+  /* Transition should be similar to .mv-tile/.md-tile opacity transition. */
+  transition: opacity 200ms;
+}
+
+.md #fakebox:hover {
+  background-color: rgb(232, 234, 237);
 }
 
 .non-google-page #fakebox-container {
@@ -336,7 +354,7 @@ html[dir=rtl] #fakebox > input {
   right: 0;
 }
 
-.md html[dir=rtl] #fakebox > input {
+html[dir=rtl] .md  #fakebox > input {
   padding-right: 20px;
 }
 
@@ -371,6 +389,11 @@ html[dir=rtl] #fakebox-text {
   right: 13px;
 }
 
+html[dir=rtl] .md #fakebox-text {
+  padding-right: 20px;
+  right: 0;
+}
+
 #fakebox-cursor {
   background: #333;
   bottom: 12px;
@@ -390,12 +413,12 @@ html[dir=rtl] #fakebox-cursor {
   right: 13px;
 }
 
-.md html[dir=rtl] #fakebox-cursor {
+html[dir=rtl] .md #fakebox-cursor {
   right: 20px;
 }
 
 #fakebox-microphone {
-  background: url(googlemic_clr_24px.svg) no-repeat center;
+  background: url(icons/googlemic_clr_24px.svg) no-repeat center;
   background-size: 24px 24px;
   bottom: 0;
   cursor: pointer;
@@ -407,7 +430,6 @@ html[dir=rtl] #fakebox-cursor {
 }
 
 .md #fakebox-microphone {
-  background-size: 16px 16px;
   margin-right: 12px;
   width: 28px;
 }
@@ -415,6 +437,10 @@ html[dir=rtl] #fakebox-cursor {
 html[dir=rtl] #fakebox-microphone {
   left: 0;
   right: auto;
+}
+
+html[dir=rtl] .md #fakebox-microphone {
+  margin-left: 12px;
 }
 
 @keyframes blink {
@@ -446,8 +472,10 @@ body.fakebox-focused #fakebox-cursor {
   user-select: none;
 }
 
-.md-icons #most-visited {
-  margin-top: 30px;
+#most-visited.md-icons {
+  /* Total of 40px margin between fakebox and MV tiles: 8px fakebox
+   * margin-bottom + 22px here margin-top + 10px MV margin-top */
+  margin-top: 22px;
 }
 
 /* Non-Google pages have no Fakebox, so don't need top margin. */
@@ -467,10 +495,13 @@ body.fakebox-focused #fakebox-cursor {
 }
 
 .md-icons #mv-tiles {
-  /* Two rows of tiles of 104px each, 8px of spacing after each row, and 10px of
-   * margin on top and bottom. If you change this, also change the corresponding
-   * values in most_visited_single.css. */
-  height: calc(2*(var(--md-tile-height) + var(--md-tile-margin)) + 2*10px);
+  /* Two rows of tiles of 112px each, 16px of spacing after each row, and 10px
+   * of margin on top. If you change this, also change the corresponding values
+   * in most_visited_single.css. */
+  height: calc(2*(var(--md-tile-height) + var(--md-tile-margin)) + 10px);
+  /* Add 2*5px to account for drop shadow on the tiles. If you change this, also
+   * change the corresponding values in most_visited_single.css. */
+  width: calc(var(--content-width) + 2*5px);
 }
 
 #mv-notice-x {
@@ -600,11 +631,11 @@ html[dir=rtl] #mv-notice-x {
   padding: 0 16px;
 }
 
-.default-theme.dark #mv-msg {
+.default-theme.dark #mv-msg :not(.md-icons) {
   color: #fff;
 }
 
-.default-theme.dark #mv-notice-links span {
+.default-theme.dark #mv-notice-links :not(.md-icons) span {
   color: #fff;
 }
 
@@ -643,6 +674,32 @@ html[dir=rtl] #attribution,
   border: none;
   height: 100%;
   width: 100%;
+}
+
+#custom-links-edit-dialog {
+  background: transparent;
+  border: none;
+  height: 100%;
+  padding: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+#custom-links-edit-dialog::backdrop {
+  background-color: rgba(255, 255, 255, .75);
+}
+
+#custom-links-edit {
+  border: none;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+#custom-links-edit.show {
+  display: block;
 }
 
 #one-google {
@@ -740,3 +797,56 @@ input:checked + .toggle::before {
   transform: translateX(26px);
 }
 
+#message-box-container {
+  bottom: -50px;
+  margin-bottom: 16px;
+  position: fixed;
+  transition: bottom 400ms;
+  vertical-align: middle;
+  visibility: hidden;
+  width: 100%;
+}
+
+#message-box {
+  background-color: white;
+  border: 1px solid rgb(218, 220, 224);
+  border-radius: 16px;
+  color: rgb(255, 0, 0);
+  font-family: 'Roboto', arial, sans-serif;
+  font-size: 12px;
+  height: 32px;
+  left: 50%;
+  margin: 0 auto;
+  padding: 0 16px 0 4px;
+  text-align: center;
+  visibility: visible;
+  width: fit-content;
+}
+
+#message-box-container.float-up {
+  bottom: 0;
+}
+
+#message-box-container.message-box-hide {
+  display: none;
+}
+
+#message-box-icon {
+  background: url(../../../../ui/webui/resources/images/error.svg) no-repeat center;
+  height: 18px;
+  margin-right: 4px;
+  width: 18px;
+}
+
+#message-box-link.has-link {
+  color: rgb(66, 133, 244);
+  margin-left: 6px;
+}
+
+#message-box-message,
+#message-box-link,
+#message-box-icon {
+  vertical-align: middle;
+  display: inline-block;
+  line-height: 32px;
+}

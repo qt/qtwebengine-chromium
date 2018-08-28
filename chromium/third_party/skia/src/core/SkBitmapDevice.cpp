@@ -187,8 +187,6 @@ public:
     }
 };
 
-class SkColorTable;
-
 static bool valid_for_bitmap_device(const SkImageInfo& info,
                                     SkAlphaType* newAlphaType) {
     if (info.width() < 0 || info.height() < 0) {
@@ -212,6 +210,7 @@ static bool valid_for_bitmap_device(const SkImageInfo& info,
         case kBGRA_8888_SkColorType:
         case kRGBA_1010102_SkColorType:
         case kRGBA_F16_SkColorType:
+        case kRGBA_F32_SkColorType:
             break;
         case kGray_8_SkColorType:
         case kRGB_565_SkColorType:
@@ -421,9 +420,6 @@ void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y,
 
 void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, const SkMatrix& matrix,
                                 const SkRect* dstOrNull, const SkPaint& paint) {
-    // are we ever given a dst-rect AND have a maskfilter (which might change the bounds)?
-    SkASSERT(!dstOrNull || !paint.getMaskFilter());
-
     const SkRect* bounds = dstOrNull;
     SkRect storage;
     if (!bounds && SkDrawTiler::NeedsTiling(this)) {
@@ -567,12 +563,6 @@ void SkBitmapDevice::drawSprite(const SkBitmap& bitmap, int x, int y, const SkPa
     BDDraw(this).drawSprite(bitmap, x, y, paint);
 }
 
-void SkBitmapDevice::drawText(const void* text, size_t len,
-                              SkScalar x, SkScalar y, const SkPaint& paint) {
-    SkBitmapDeviceFilteredSurfaceProps props(fBitmap, paint, fSurfaceProps);
-    LOOP_TILER( drawText((const char*)text, len, x, y, paint, &props()), nullptr)
-}
-
 void SkBitmapDevice::drawPosText(const void* text, size_t len, const SkScalar xpos[],
                                  int scalarsPerPos, const SkPoint& offset, const SkPaint& paint) {
     SkBitmapDeviceFilteredSurfaceProps props(fBitmap, paint, fSurfaceProps);
@@ -580,11 +570,12 @@ void SkBitmapDevice::drawPosText(const void* text, size_t len, const SkScalar xp
                 nullptr)
 }
 
-void SkBitmapDevice::drawVertices(const SkVertices* vertices, SkBlendMode bmode,
-                                  const SkPaint& paint) {
+void SkBitmapDevice::drawVertices(const SkVertices* vertices, const SkMatrix* bones, int boneCount,
+                                  SkBlendMode bmode, const SkPaint& paint) {
     BDDraw(this).drawVertices(vertices->mode(), vertices->vertexCount(), vertices->positions(),
-                              vertices->texCoords(), vertices->colors(), bmode,
-                              vertices->indices(), vertices->indexCount(), paint);
+                              vertices->texCoords(), vertices->colors(), vertices->boneIndices(),
+                              vertices->boneWeights(), bmode, vertices->indices(),
+                              vertices->indexCount(), paint, bones, boneCount);
 }
 
 void SkBitmapDevice::drawDevice(SkBaseDevice* device, int x, int y, const SkPaint& origPaint) {
@@ -652,7 +643,7 @@ void SkBitmapDevice::drawSpecial(SkSpecialImage* src, int x, int y, const SkPain
             SkMatrix::MakeTrans(SkIntToScalar(-x), SkIntToScalar(-y)), this->ctm());
         const SkIRect clipBounds = fRCStack.rc().getBounds().makeOffset(-x, -y);
         sk_sp<SkImageFilterCache> cache(this->getImageFilterCache());
-        SkImageFilter::OutputProperties outputProperties(fBitmap.colorSpace());
+        SkImageFilter::OutputProperties outputProperties(fBitmap.colorType(), fBitmap.colorSpace());
         SkImageFilter::Context ctx(matrix, clipBounds, cache.get(), outputProperties);
 
         filteredImage = filter->filterImage(src, ctx, &offset);

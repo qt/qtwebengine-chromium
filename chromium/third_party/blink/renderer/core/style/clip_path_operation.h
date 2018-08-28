@@ -30,16 +30,10 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_STYLE_CLIP_PATH_OPERATION_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_STYLE_CLIP_PATH_OPERATION_H_
 
-#include <memory>
-#include "third_party/blink/renderer/core/style/basic_shapes.h"
-#include "third_party/blink/renderer/core/svg/svg_resource.h"
-#include "third_party/blink/renderer/platform/graphics/path.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
-
-class SVGResourceClient;
 
 class ClipPathOperation : public RefCounted<ClipPathOperation> {
  public:
@@ -58,80 +52,6 @@ class ClipPathOperation : public RefCounted<ClipPathOperation> {
  protected:
   ClipPathOperation() = default;
 };
-
-class ReferenceClipPathOperation final : public ClipPathOperation {
- public:
-  static scoped_refptr<ReferenceClipPathOperation> Create(
-      const String& url,
-      SVGResource* resource) {
-    return base::AdoptRef(new ReferenceClipPathOperation(url, resource));
-  }
-
-  void AddClient(SVGResourceClient&);
-  void RemoveClient(SVGResourceClient&);
-
-  SVGResource* Resource() const;
-  const String& Url() const { return url_; }
-
- private:
-  bool operator==(const ClipPathOperation&) const override;
-  OperationType GetType() const override { return REFERENCE; }
-
-  ReferenceClipPathOperation(const String& url, SVGResource* resource)
-      : resource_(resource), url_(url) {}
-
-  Persistent<SVGResource> resource_;
-  String url_;
-};
-
-DEFINE_TYPE_CASTS(ReferenceClipPathOperation,
-                  ClipPathOperation,
-                  op,
-                  op->GetType() == ClipPathOperation::REFERENCE,
-                  op.GetType() == ClipPathOperation::REFERENCE);
-
-class ShapeClipPathOperation final : public ClipPathOperation {
- public:
-  static scoped_refptr<ShapeClipPathOperation> Create(
-      scoped_refptr<BasicShape> shape) {
-    return base::AdoptRef(new ShapeClipPathOperation(std::move(shape)));
-  }
-
-  const BasicShape* GetBasicShape() const { return shape_.get(); }
-  bool IsValid() const { return shape_.get(); }
-  Path GetPath(const FloatRect& bounding_rect) const {
-    DCHECK(shape_);
-    Path path;
-    shape_->GetPath(path, bounding_rect);
-    path.SetWindRule(shape_->GetWindRule());
-    return path;
-  }
-
- private:
-  bool operator==(const ClipPathOperation&) const override;
-  OperationType GetType() const override { return SHAPE; }
-
-  ShapeClipPathOperation(scoped_refptr<BasicShape> shape)
-      : shape_(std::move(shape)) {}
-
-  scoped_refptr<BasicShape> shape_;
-};
-
-DEFINE_TYPE_CASTS(ShapeClipPathOperation,
-                  ClipPathOperation,
-                  op,
-                  op->GetType() == ClipPathOperation::SHAPE,
-                  op.GetType() == ClipPathOperation::SHAPE);
-
-inline bool ShapeClipPathOperation::operator==(
-    const ClipPathOperation& o) const {
-  if (!IsSameType(o))
-    return false;
-  BasicShape* other_shape = ToShapeClipPathOperation(o).shape_.get();
-  if (!shape_.get() || !other_shape)
-    return static_cast<bool>(shape_.get()) == static_cast<bool>(other_shape);
-  return *shape_ == *other_shape;
-}
 
 }  // namespace blink
 

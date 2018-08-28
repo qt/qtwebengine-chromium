@@ -34,18 +34,21 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/unguessable_token.h"
 #include "third_party/blink/public/platform/web_loading_behavior_flag.h"
+#include "third_party/blink/public/web/web_frame_load_type.h"
 #include "third_party/blink/public/web/web_global_object_reuse_policy.h"
+#include "third_party/blink/public/web/web_navigation_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/viewport_description.h"
 #include "third_party/blink/renderer/core/dom/weak_identifier_map.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/frame_types.h"
+#include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/parser/parser_synchronization_policy.h"
 #include "third_party/blink/renderer/core/loader/document_load_timing.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_types.h"
 #include "third_party/blink/renderer/core/loader/link_loader.h"
 #include "third_party/blink/renderer/core/loader/navigation_policy.h"
+#include "third_party/blink/renderer/core/page/viewport_description.h"
 #include "third_party/blink/renderer/platform/loader/fetch/client_hints_preferences.h"
 #include "third_party/blink/renderer/platform/loader/fetch/raw_resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_error.h"
@@ -132,7 +135,7 @@ class CORE_EXPORT DocumentLoader
                                        SameDocumentNavigationSource,
                                        scoped_refptr<SerializedScriptValue>,
                                        HistoryScrollRestorationType,
-                                       FrameLoadType,
+                                       WebFrameLoadType,
                                        Document*);
   const ResourceResponse& GetResponse() const { return response_; }
   bool IsClientRedirect() const { return is_client_redirect_; }
@@ -160,11 +163,11 @@ class CORE_EXPORT DocumentLoader
   void SetSentDidFinishLoad() { state_ = kSentDidFinishLoad; }
   bool SentDidFinishLoad() const { return state_ == kSentDidFinishLoad; }
 
-  FrameLoadType LoadType() const { return load_type_; }
-  void SetLoadType(FrameLoadType load_type) { load_type_ = load_type; }
+  WebFrameLoadType LoadType() const { return load_type_; }
+  void SetLoadType(WebFrameLoadType load_type) { load_type_ = load_type; }
 
-  NavigationType GetNavigationType() const { return navigation_type_; }
-  void SetNavigationType(NavigationType navigation_type) {
+  WebNavigationType GetNavigationType() const { return navigation_type_; }
+  void SetNavigationType(WebNavigationType navigation_type) {
     navigation_type_ = navigation_type;
   }
 
@@ -250,6 +253,24 @@ class CORE_EXPORT DocumentLoader
   void BlockParser();
   void ResumeParser();
 
+  // Returns the currently stored content security policy, if this is called
+  // after the document has been installed it will return nullptr as the
+  // CSP belongs to the document at that point.
+  const ContentSecurityPolicy* GetContentSecurityPolicy() const {
+    return content_security_policy_.Get();
+  }
+
+  // Updates navigation timings with provided values. This
+  // should be called before WebLocalFrameClient::didCommitProvisionalLoad.
+  // Calling it later may confuse users, because JavaScript may have run and
+  // the user may have already recorded the original value.
+  // Note: if |redirect_start_time| is null, redirect timings are not updated.
+  void UpdateNavigationTimings(base::TimeTicks navigation_start_time,
+                               base::TimeTicks redirect_start_time,
+                               base::TimeTicks redirect_end_time,
+                               base::TimeTicks fetch_start_time);
+  UseCounter& GetUseCounter() { return use_counter_; }
+
  protected:
   DocumentLoader(LocalFrame*,
                  const ResourceRequest&,
@@ -303,7 +324,7 @@ class CORE_EXPORT DocumentLoader
     kHistoryApi
   };
   void SetHistoryItemStateForCommit(HistoryItem* old_item,
-                                    FrameLoadType,
+                                    WebFrameLoadType,
                                     HistoryNavigationType);
 
   // RawResourceClient implementation
@@ -357,13 +378,13 @@ class CORE_EXPORT DocumentLoader
 
   ResourceResponse response_;
 
-  FrameLoadType load_type_;
+  WebFrameLoadType load_type_;
 
   bool is_client_redirect_;
   bool replaces_current_history_item_;
   bool data_received_;
 
-  NavigationType navigation_type_;
+  WebNavigationType navigation_type_;
 
   DocumentLoadTiming document_load_timing_;
 
@@ -400,6 +421,12 @@ class CORE_EXPORT DocumentLoader
 
   // Whether this load request comes from a user activation.
   bool user_activated_;
+  // This UseCounter tracks feature usage associated with the lifetime of the
+  // document load. Features recorded prior to commit will be recorded locally.
+  // Once commited, feature usage will be piped to the browser side page load
+  // metrics that aggregates usage from frames to one page load and report
+  // feature usage to UMA histograms per page load.
+  UseCounter use_counter_;
 };
 
 DECLARE_WEAK_IDENTIFIER_MAP(DocumentLoader);

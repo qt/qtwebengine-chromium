@@ -21,8 +21,11 @@
 #include "components/autofill/core/common/password_form_field_prediction_map.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/autofill/core/common/password_form_generation_data.h"
+#include "components/autofill/core/common/password_generation_util.h"
 #include "components/autofill/core/common/submission_source.h"
+#include "mojo/public/cpp/base/text_direction_mojom_traits.h"
 #include "mojo/public/cpp/bindings/struct_traits.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "url/origin.h"
 
 namespace mojo {
@@ -116,6 +119,13 @@ struct EnumTraits<autofill::mojom::LabelSource,
       autofill::FormFieldData::LabelSource input);
   static bool FromMojom(autofill::mojom::LabelSource input,
                         autofill::FormFieldData::LabelSource* output);
+};
+
+template <>
+struct EnumTraits<autofill::mojom::FillingStatus, autofill::FillingStatus> {
+  static autofill::mojom::FillingStatus ToMojom(autofill::FillingStatus input);
+  static bool FromMojom(autofill::mojom::FillingStatus input,
+                        autofill::FillingStatus* output);
 };
 
 template <>
@@ -262,6 +272,11 @@ struct StructTraits<autofill::mojom::FormDataDataView, autofill::FormData> {
     return r.fields;
   }
 
+  static const std::vector<uint32_t>& username_predictions(
+      const autofill::FormData& r) {
+    return r.username_predictions;
+  }
+
   static bool Read(autofill::mojom::FormDataDataView data,
                    autofill::FormData* out);
 };
@@ -347,6 +362,9 @@ struct StructTraits<autofill::mojom::PasswordAndRealmDataView,
 template <>
 struct StructTraits<autofill::mojom::PasswordFormFillDataDataView,
                     autofill::PasswordFormFillData> {
+  static uint32_t form_renderer_id(const autofill::PasswordFormFillData& r) {
+    return r.form_renderer_id;
+  }
 
   static const base::string16& name(const autofill::PasswordFormFillData& r) {
     return r.name;
@@ -370,6 +388,11 @@ struct StructTraits<autofill::mojom::PasswordFormFillDataDataView,
     return r.password_field;
   }
 
+  static bool username_may_use_prefilled_placeholder(
+      const autofill::PasswordFormFillData& r) {
+    return r.username_may_use_prefilled_placeholder;
+  }
+
   static const std::string& preferred_realm(
       const autofill::PasswordFormFillData& r) {
     return r.preferred_realm;
@@ -387,6 +410,10 @@ struct StructTraits<autofill::mojom::PasswordFormFillDataDataView,
   static bool is_possible_change_password_form(
       const autofill::PasswordFormFillData& r) {
     return r.is_possible_change_password_form;
+  }
+
+  static bool has_renderer_ids(const autofill::PasswordFormFillData& r) {
+    return r.has_renderer_ids;
   }
 
   static bool Read(autofill::mojom::PasswordFormFillDataDataView data,
@@ -418,6 +445,39 @@ struct StructTraits<autofill::mojom::PasswordFormGenerationDataDataView,
 
   static bool Read(autofill::mojom::PasswordFormGenerationDataDataView data,
                    autofill::PasswordFormGenerationData* out);
+};
+
+template <>
+struct StructTraits<autofill::mojom::PasswordGenerationUIDataDataView,
+                    autofill::password_generation::PasswordGenerationUIData> {
+  static const gfx::RectF& bounds(
+      const autofill::password_generation::PasswordGenerationUIData& r) {
+    return r.bounds;
+  }
+
+  static int max_length(
+      const autofill::password_generation::PasswordGenerationUIData& r) {
+    return r.max_length;
+  }
+
+  static const base::string16& generation_element(
+      const autofill::password_generation::PasswordGenerationUIData& r) {
+    return r.generation_element;
+  }
+
+  static base::i18n::TextDirection text_direction(
+      const autofill::password_generation::PasswordGenerationUIData& r) {
+    return r.text_direction;
+  }
+
+  static const autofill::PasswordForm& password_form(
+      const autofill::password_generation::PasswordGenerationUIData& r) {
+    return r.password_form;
+  }
+
+  static bool Read(
+      autofill::mojom::PasswordGenerationUIDataDataView data,
+      autofill::password_generation::PasswordGenerationUIData* out);
 };
 
 template <>

@@ -5,8 +5,9 @@
 // https://wicg.github.io/webusb/#usbintransferresult
 
 [
-    Exposed(DedicatedWorker WebUSBOnDedicatedAndSharedWorkers, SharedWorker WebUSBOnDedicatedAndSharedWorkers, Window WebUSB),
-    Constructor(USBTransferStatus status, optional DataView? data)
+    Exposed(DedicatedWorker WebUSBOnDedicatedWorkers, SharedWorker WebUSBOnSharedWorkers, Window WebUSB),
+    Constructor(USBTransferStatus status, optional DataView? data),
+    SecureContext
 ] interface USBInTransferResult {
     readonly attribute DataView? data;
     readonly attribute USBTransferStatus status;

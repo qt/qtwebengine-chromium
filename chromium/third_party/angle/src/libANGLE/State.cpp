@@ -52,30 +52,36 @@ bool GetAlternativeQueryType(QueryType type, QueryType *alternativeType)
 void UpdateBufferBinding(const Context *context,
                          BindingPointer<Buffer> *binding,
                          Buffer *buffer,
-                         BufferBinding target)
+                         BufferBinding target,
+                         bool indexed)
 {
     if (binding->get())
-        (*binding)->onBindingChanged(context, false, target);
+        (*binding)->onBindingChanged(context, false, target, indexed);
     binding->set(context, buffer);
     if (binding->get())
-        (*binding)->onBindingChanged(context, true, target);
+        (*binding)->onBindingChanged(context, true, target, indexed);
 }
 
 void UpdateBufferBinding(const Context *context,
                          OffsetBindingPointer<Buffer> *binding,
                          Buffer *buffer,
                          BufferBinding target,
+                         bool indexed,
                          GLintptr offset,
                          GLsizeiptr size)
 {
     if (binding->get())
-        (*binding)->onBindingChanged(context, false, target);
+        (*binding)->onBindingChanged(context, false, target, indexed);
     binding->set(context, buffer, offset, size);
     if (binding->get())
-        (*binding)->onBindingChanged(context, true, target);
+        (*binding)->onBindingChanged(context, true, target, indexed);
 }
 
-State::State()
+State::State(bool debug,
+             bool bindGeneratesResource,
+             bool clientArraysEnabled,
+             bool robustResourceInit,
+             bool programBinaryCacheEnabled)
     : mMaxDrawBuffers(0),
       mMaxCombinedTextureImageUnits(0),
       mDepthClearValue(0),
@@ -91,8 +97,8 @@ State::State()
       mLineWidth(0),
       mGenerateMipmapHint(GL_NONE),
       mFragmentShaderDerivativeHint(GL_NONE),
-      mBindGeneratesResource(true),
-      mClientArraysEnabled(true),
+      mBindGeneratesResource(bindGeneratesResource),
+      mClientArraysEnabled(clientArraysEnabled),
       mNearZ(0),
       mFarZ(0),
       mReadFramebuffer(nullptr),
@@ -101,11 +107,13 @@ State::State()
       mVertexArray(nullptr),
       mActiveSampler(0),
       mPrimitiveRestart(false),
+      mDebug(debug),
       mMultiSampling(false),
       mSampleAlphaToOne(false),
       mFramebufferSRGB(true),
-      mRobustResourceInit(false),
-      mProgramBinaryCacheEnabled(false)
+      mRobustResourceInit(robustResourceInit),
+      mProgramBinaryCacheEnabled(programBinaryCacheEnabled),
+      mMaxShaderCompilerThreads(std::numeric_limits<GLuint>::max())
 {
 }
 
@@ -113,12 +121,7 @@ State::~State()
 {
 }
 
-void State::initialize(const Context *context,
-                       bool debug,
-                       bool bindGeneratesResource,
-                       bool clientArraysEnabled,
-                       bool robustResourceInit,
-                       bool programBinaryCacheEnabled)
+void State::initialize(const Context *context)
 {
     const Caps &caps                   = context->getCaps();
     const Extensions &extensions       = context->getExtensions();
@@ -157,9 +160,6 @@ void State::initialize(const Context *context,
 
     mGenerateMipmapHint           = GL_DONT_CARE;
     mFragmentShaderDerivativeHint = GL_DONT_CARE;
-
-    mBindGeneratesResource = bindGeneratesResource;
-    mClientArraysEnabled   = clientArraysEnabled;
 
     mLineWidth = 1.0f;
 
@@ -234,7 +234,6 @@ void State::initialize(const Context *context,
 
     mPrimitiveRestart = false;
 
-    mDebug.setOutputEnabled(debug);
     mDebug.setMaxLoggedMessages(extensions.maxDebugLoggedMessages);
 
     mMultiSampling    = true;
@@ -247,9 +246,6 @@ void State::initialize(const Context *context,
     mPathStencilFunc = GL_ALWAYS;
     mPathStencilRef  = 0;
     mPathStencilMask = std::numeric_limits<GLuint>::max();
-
-    mRobustResourceInit        = robustResourceInit;
-    mProgramBinaryCacheEnabled = programBinaryCacheEnabled;
 
     // GLES1 emulation: Initialize state for GLES1 if version
     // applies
@@ -287,7 +283,7 @@ void State::reset(const Context *context)
 
     for (auto type : angle::AllEnums<BufferBinding>())
     {
-        UpdateBufferBinding(context, &mBoundBuffers[type], nullptr, type);
+        UpdateBufferBinding(context, &mBoundBuffers[type], nullptr, type, false);
     }
 
     if (mProgram)
@@ -309,17 +305,17 @@ void State::reset(const Context *context)
 
     for (auto &buf : mUniformBuffers)
     {
-        UpdateBufferBinding(context, &buf, nullptr, BufferBinding::Uniform);
+        UpdateBufferBinding(context, &buf, nullptr, BufferBinding::Uniform, true);
     }
 
     for (auto &buf : mAtomicCounterBuffers)
     {
-        UpdateBufferBinding(context, &buf, nullptr, BufferBinding::AtomicCounter);
+        UpdateBufferBinding(context, &buf, nullptr, BufferBinding::AtomicCounter, true);
     }
 
     for (auto &buf : mShaderStorageBuffers)
     {
-        UpdateBufferBinding(context, &buf, nullptr, BufferBinding::ShaderStorage);
+        UpdateBufferBinding(context, &buf, nullptr, BufferBinding::ShaderStorage, true);
     }
 
     angle::Matrix<GLfloat>::setToIdentity(mPathMatrixProj);
@@ -786,7 +782,45 @@ void State::setEnableFeature(GLenum feature, bool enabled)
         case GL_TEXTURE_CUBE_MAP:
             mGLES1State.mTexUnitEnables[mActiveSampler].set(TextureType::CubeMap, enabled);
             break;
-
+        case GL_LIGHTING:
+            mGLES1State.mLightingEnabled = enabled;
+            break;
+        case GL_LIGHT0:
+        case GL_LIGHT1:
+        case GL_LIGHT2:
+        case GL_LIGHT3:
+        case GL_LIGHT4:
+        case GL_LIGHT5:
+        case GL_LIGHT6:
+        case GL_LIGHT7:
+            mGLES1State.mLights[feature - GL_LIGHT0].enabled = enabled;
+            break;
+        case GL_NORMALIZE:
+            mGLES1State.mNormalizeEnabled = enabled;
+            break;
+        case GL_RESCALE_NORMAL:
+            mGLES1State.mRescaleNormalEnabled = enabled;
+            break;
+        case GL_COLOR_MATERIAL:
+            mGLES1State.mColorMaterialEnabled = enabled;
+            break;
+        case GL_CLIP_PLANE0:
+        case GL_CLIP_PLANE1:
+        case GL_CLIP_PLANE2:
+        case GL_CLIP_PLANE3:
+        case GL_CLIP_PLANE4:
+        case GL_CLIP_PLANE5:
+            mGLES1State.mClipPlanes[feature - GL_CLIP_PLANE0].enabled = enabled;
+            break;
+        case GL_FOG:
+            mGLES1State.mFogEnabled = enabled;
+            break;
+        case GL_POINT_SMOOTH:
+            mGLES1State.mPointSmoothEnabled = enabled;
+            break;
+        case GL_POINT_SPRITE_OES:
+            mGLES1State.mPointSpriteEnabled = enabled;
+            break;
         default:
             UNREACHABLE();
     }
@@ -856,6 +890,36 @@ bool State::getEnableFeature(GLenum feature) const
             return mGLES1State.mTexUnitEnables[mActiveSampler].test(TextureType::_2D);
         case GL_TEXTURE_CUBE_MAP:
             return mGLES1State.mTexUnitEnables[mActiveSampler].test(TextureType::CubeMap);
+        case GL_LIGHTING:
+            return mGLES1State.mLightingEnabled;
+        case GL_LIGHT0:
+        case GL_LIGHT1:
+        case GL_LIGHT2:
+        case GL_LIGHT3:
+        case GL_LIGHT4:
+        case GL_LIGHT5:
+        case GL_LIGHT6:
+        case GL_LIGHT7:
+            return mGLES1State.mLights[feature - GL_LIGHT0].enabled;
+        case GL_NORMALIZE:
+            return mGLES1State.mNormalizeEnabled;
+        case GL_RESCALE_NORMAL:
+            return mGLES1State.mRescaleNormalEnabled;
+        case GL_COLOR_MATERIAL:
+            return mGLES1State.mColorMaterialEnabled;
+        case GL_CLIP_PLANE0:
+        case GL_CLIP_PLANE1:
+        case GL_CLIP_PLANE2:
+        case GL_CLIP_PLANE3:
+        case GL_CLIP_PLANE4:
+        case GL_CLIP_PLANE5:
+            return mGLES1State.mClipPlanes[feature - GL_CLIP_PLANE0].enabled;
+        case GL_FOG:
+            return mGLES1State.mFogEnabled;
+        case GL_POINT_SMOOTH:
+            return mGLES1State.mPointSmoothEnabled;
+        case GL_POINT_SPRITE_OES:
+            return mGLES1State.mPointSpriteEnabled;
         default:
             UNREACHABLE();
             return false;
@@ -1146,11 +1210,6 @@ Framebuffer *State::getReadFramebuffer() const
     return mReadFramebuffer;
 }
 
-Framebuffer *State::getDrawFramebuffer() const
-{
-    return mDrawFramebuffer;
-}
-
 bool State::removeReadFramebufferBinding(GLuint framebuffer)
 {
     if (mReadFramebuffer != nullptr && mReadFramebuffer->id() == framebuffer)
@@ -1194,12 +1253,6 @@ GLuint State::getVertexArrayId() const
 {
     ASSERT(mVertexArray != nullptr);
     return mVertexArray->id();
-}
-
-VertexArray *State::getVertexArray() const
-{
-    ASSERT(mVertexArray != nullptr);
-    return mVertexArray;
 }
 
 bool State::removeVertexArrayBinding(const Context *context, GLuint vertexArray)
@@ -1271,11 +1324,6 @@ void State::setProgram(const Context *context, Program *newProgram)
     }
 }
 
-Program *State::getProgram() const
-{
-    return mProgram;
-}
-
 void State::setTransformFeedbackBinding(const Context *context,
                                         TransformFeedback *transformFeedback)
 {
@@ -1289,14 +1337,9 @@ void State::setTransformFeedbackBinding(const Context *context,
     mDirtyBits.set(DIRTY_BIT_TRANSFORM_FEEDBACK_BINDING);
 }
 
-TransformFeedback *State::getCurrentTransformFeedback() const
-{
-    return mTransformFeedback.get();
-}
-
 bool State::isTransformFeedbackActiveUnpaused() const
 {
-    TransformFeedback *curTransformFeedback = getCurrentTransformFeedback();
+    TransformFeedback *curTransformFeedback = mTransformFeedback.get();
     return curTransformFeedback && curTransformFeedback->isActive() &&
            !curTransformFeedback->isPaused();
 }
@@ -1376,19 +1419,19 @@ void State::setBufferBinding(const Context *context, BufferBinding target, Buffe
     switch (target)
     {
         case BufferBinding::PixelPack:
-            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target);
+            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target, false);
             mDirtyBits.set(DIRTY_BIT_PACK_BUFFER_BINDING);
             break;
         case BufferBinding::PixelUnpack:
-            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target);
+            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target, false);
             mDirtyBits.set(DIRTY_BIT_UNPACK_BUFFER_BINDING);
             break;
         case BufferBinding::DrawIndirect:
-            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target);
+            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target, false);
             mDirtyBits.set(DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING);
             break;
         case BufferBinding::DispatchIndirect:
-            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target);
+            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target, false);
             mDirtyBits.set(DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING);
             break;
         case BufferBinding::ElementArray:
@@ -1396,11 +1439,11 @@ void State::setBufferBinding(const Context *context, BufferBinding target, Buffe
             mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
             break;
         case BufferBinding::ShaderStorage:
-            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target);
+            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target, false);
             mDirtyBits.set(DIRTY_BIT_SHADER_STORAGE_BUFFER_BINDING);
             break;
         default:
-            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target);
+            UpdateBufferBinding(context, &mBoundBuffers[target], buffer, target, false);
             break;
     }
 }
@@ -1421,16 +1464,17 @@ void State::setIndexedBufferBinding(const Context *context,
             setBufferBinding(context, target, buffer);
             break;
         case BufferBinding::Uniform:
-            UpdateBufferBinding(context, &mUniformBuffers[index], buffer, target, offset, size);
+            UpdateBufferBinding(context, &mUniformBuffers[index], buffer, target, true, offset,
+                                size);
             mDirtyBits.set(DIRTY_BIT_UNIFORM_BUFFER_BINDINGS);
             break;
         case BufferBinding::AtomicCounter:
-            UpdateBufferBinding(context, &mAtomicCounterBuffers[index], buffer, target, offset,
-                                size);
+            UpdateBufferBinding(context, &mAtomicCounterBuffers[index], buffer, target, true,
+                                offset, size);
             break;
         case BufferBinding::ShaderStorage:
-            UpdateBufferBinding(context, &mShaderStorageBuffers[index], buffer, target, offset,
-                                size);
+            UpdateBufferBinding(context, &mShaderStorageBuffers[index], buffer, target, true,
+                                offset, size);
             break;
         default:
             UNREACHABLE();
@@ -1478,7 +1522,7 @@ void State::detachBuffer(const Context *context, const Buffer *buffer)
     {
         if (mBoundBuffers[target].id() == bufferName)
         {
-            UpdateBufferBinding(context, &mBoundBuffers[target], nullptr, target);
+            UpdateBufferBinding(context, &mBoundBuffers[target], nullptr, target, false);
         }
     }
 
@@ -1494,7 +1538,7 @@ void State::detachBuffer(const Context *context, const Buffer *buffer)
     {
         if (buf.id() == bufferName)
         {
-            UpdateBufferBinding(context, &buf, nullptr, BufferBinding::Uniform);
+            UpdateBufferBinding(context, &buf, nullptr, BufferBinding::Uniform, true);
         }
     }
 
@@ -1502,7 +1546,7 @@ void State::detachBuffer(const Context *context, const Buffer *buffer)
     {
         if (buf.id() == bufferName)
         {
-            UpdateBufferBinding(context, &buf, nullptr, BufferBinding::AtomicCounter);
+            UpdateBufferBinding(context, &buf, nullptr, BufferBinding::AtomicCounter, true);
         }
     }
 
@@ -1510,7 +1554,7 @@ void State::detachBuffer(const Context *context, const Buffer *buffer)
     {
         if (buf.id() == bufferName)
         {
-            UpdateBufferBinding(context, &buf, nullptr, BufferBinding::ShaderStorage);
+            UpdateBufferBinding(context, &buf, nullptr, BufferBinding::ShaderStorage, true);
         }
     }
 }
@@ -1814,6 +1858,16 @@ bool State::getFramebufferSRGB() const
     return mFramebufferSRGB;
 }
 
+void State::setMaxShaderCompilerThreads(GLuint count)
+{
+    mMaxShaderCompilerThreads = count;
+}
+
+GLuint State::getMaxShaderCompilerThreads() const
+{
+    return mMaxShaderCompilerThreads;
+}
+
 void State::getBooleanv(GLenum pname, GLboolean *params)
 {
     switch (pname)
@@ -1899,7 +1953,9 @@ void State::getBooleanv(GLenum pname, GLboolean *params)
         case GL_PROGRAM_CACHE_ENABLED_ANGLE:
             *params = mProgramBinaryCacheEnabled ? GL_TRUE : GL_FALSE;
             break;
-
+        case GL_LIGHT_MODEL_TWO_SIDE:
+            *params = IsLightModelTwoSided(&mGLES1State);
+            break;
         default:
             UNREACHABLE();
             break;
@@ -1992,6 +2048,25 @@ void State::getFloatv(GLenum pname, GLfloat *params)
         case GL_TEXTURE_MATRIX:
             memcpy(params, mGLES1State.mTextureMatrices[mActiveSampler].back().data(),
                    16 * sizeof(GLfloat));
+            break;
+        case GL_LIGHT_MODEL_AMBIENT:
+            GetLightModelParameters(&mGLES1State, pname, params);
+            break;
+        case GL_FOG_MODE:
+        case GL_FOG_DENSITY:
+        case GL_FOG_START:
+        case GL_FOG_END:
+        case GL_FOG_COLOR:
+            GetFogParameters(&mGLES1State, pname, params);
+            break;
+        case GL_POINT_SIZE:
+            GetPointSize(&mGLES1State, params);
+            break;
+        case GL_POINT_SIZE_MIN:
+        case GL_POINT_SIZE_MAX:
+        case GL_POINT_FADE_THRESHOLD_SIZE:
+        case GL_POINT_DISTANCE_ATTENUATION:
+            GetPointParameter(&mGLES1State, FromGLenum<PointParameter>(pname), params);
             break;
         default:
             UNREACHABLE();
@@ -2369,6 +2444,9 @@ Error State::getIntegerv(const Context *context, GLenum pname, GLint *params)
             break;
         case GL_MATRIX_MODE:
             *params = ToGLenum(mGLES1State.mMatrixMode);
+            break;
+        case GL_SHADE_MODEL:
+            *params = ToGLenum(mGLES1State.mShadeModel);
             break;
         default:
             UNREACHABLE();

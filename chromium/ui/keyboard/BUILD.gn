@@ -9,6 +9,8 @@ import("//third_party/google_input_tools/closure.gni")
 import("//third_party/google_input_tools/inputview.gni")
 import("//tools/grit/grit_rule.gni")
 
+assert(is_chromeos)
+
 jumbo_component("keyboard") {
   sources = [
     "container_behavior.h",
@@ -36,6 +38,8 @@ jumbo_component("keyboard") {
     "keyboard_switches.h",
     "keyboard_ui.cc",
     "keyboard_ui.h",
+    "keyboard_ukm_recorder.cc",
+    "keyboard_ukm_recorder.h",
     "keyboard_util.cc",
     "keyboard_util.h",
     "notification_manager.cc",
@@ -44,6 +48,8 @@ jumbo_component("keyboard") {
     "queued_container_type.h",
     "queued_display_change.cc",
     "queued_display_change.h",
+    "shaped_window_targeter.cc",
+    "shaped_window_targeter.h",
   ]
 
   defines = [ "KEYBOARD_IMPLEMENTATION" ]
@@ -51,6 +57,7 @@ jumbo_component("keyboard") {
   deps = [
     ":resources",
     "//base",
+    "//services/metrics/public/cpp:ukm_builders",
     "//ui/aura",
     "//ui/base",
     "//ui/base/ime",
@@ -75,8 +82,8 @@ jumbo_component("keyboard") {
 static_library("test_support") {
   testonly = true
   sources = [
-    "keyboard_test_util.cc",
-    "keyboard_test_util.h",
+    "test/keyboard_test_util.cc",
+    "test/keyboard_test_util.h",
   ]
   deps = [
     ":keyboard",
@@ -145,6 +152,7 @@ test("keyboard_unittests") {
     "container_full_width_behavior_unittest.cc",
     "keyboard_controller_unittest.cc",
     "keyboard_event_filter_unittest.cc",
+    "keyboard_ukm_recorder_unittest.cc",
     "keyboard_util_unittest.cc",
     "notification_manager_unittest.cc",
     "test/run_all_unittests.cc",
@@ -155,7 +163,8 @@ test("keyboard_unittests") {
     ":test_support",
     "//base",
     "//base/test:test_support",
-    "//mojo/edk",
+    "//components/ukm:test_support",
+    "//mojo/core/embedder",
     "//testing/gmock",
     "//testing/gtest",
     "//ui/aura:test_support",

@@ -11,9 +11,11 @@
 #include "base/optional.h"
 #include "base/scoped_observer.h"
 #include "chromeos/dbus/media_analytics_client.h"
-#include "chromeos/media_perception/media_perception.pb.h"
+#include "chromeos/dbus/media_perception/media_perception.pb.h"
+#include "chromeos/services/media_perception/public/mojom/connector.mojom.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/common/api/media_perception_private.h"
+#include "services/video_capture/public/mojom/device_factory_provider.mojom.h"
 
 namespace extensions {
 
@@ -25,7 +27,10 @@ class MediaPerceptionAPIManager
       extensions::api::media_perception_private::ComponentState
           component_state)>;
 
-  using APIStateCallback = base::Callback<void(
+  using APIComponentProcessStateCallback = base::OnceCallback<void(
+      extensions::api::media_perception_private::ProcessState process_state)>;
+
+  using APIStateCallback = base::OnceCallback<void(
       extensions::api::media_perception_private::State state)>;
 
   using APIGetDiagnosticsCallback = base::Callback<void(
@@ -46,10 +51,18 @@ class MediaPerceptionAPIManager
   void SetAnalyticsComponent(
       const extensions::api::media_perception_private::Component& component,
       APISetAnalyticsComponentCallback callback);
-  void GetState(const APIStateCallback& callback);
+  void SetComponentProcessState(
+      const extensions::api::media_perception_private::ProcessState&
+          process_state,
+      APIComponentProcessStateCallback callback);
+  void GetState(APIStateCallback callback);
   void SetState(const extensions::api::media_perception_private::State& state,
-                const APIStateCallback& callback);
+                APIStateCallback callback);
   void GetDiagnostics(const APIGetDiagnosticsCallback& callback);
+
+  // For testing purposes only. Allows the unittest to set the mount_point to
+  // something non-empty.
+  void SetMountPointNonEmptyForTesting();
 
  private:
   friend class BrowserContextKeyedAPIFactory<MediaPerceptionAPIManager>;
@@ -70,14 +83,13 @@ class MediaPerceptionAPIManager
   };
 
   // Sets the state of the analytics process.
-  void SetStateInternal(const APIStateCallback& callback,
-                        const mri::State& state);
+  void SetStateInternal(APIStateCallback callback, const mri::State& state);
 
   // MediaAnalyticsClient::Observer overrides.
   void OnDetectionSignal(const mri::MediaPerception& media_perception) override;
 
   // Callback for State D-Bus method calls to the media analytics process.
-  void StateCallback(const APIStateCallback& callback,
+  void StateCallback(APIStateCallback callback,
                      base::Optional<mri::State> state);
 
   // Callback for GetDiagnostics D-Bus method calls to the media analytics
@@ -85,16 +97,32 @@ class MediaPerceptionAPIManager
   void GetDiagnosticsCallback(const APIGetDiagnosticsCallback& callback,
                               base::Optional<mri::Diagnostics> diagnostics);
 
-  // Callback for Upstart command to start media analytics process.
-  void UpstartStartCallback(const APIStateCallback& callback,
+  // Callbacks for Upstart command to start media analytics process.
+  void UpstartStartProcessCallback(APIComponentProcessStateCallback callback,
+                                   bool succeeded);
+
+  // Sends a Mojo IPC message pipe invitation to the media analytics process.
+  void SendMojoInvitation(APIComponentProcessStateCallback callback);
+
+  // Callback for BootstrapMojoConnection D-Bus method calls to the media
+  // analytics process.
+  void OnBootstrapMojoConnection(APIComponentProcessStateCallback callback,
+                                 bool succeeded);
+
+  // This callback includes a mri::State so that the API manager can immediately
+  // set the state of rtanalytics after start-up.
+  void UpstartStartCallback(APIStateCallback callback,
                             const mri::State& state,
                             bool succeeded);
 
   // Callback for Upstart command to restart media analytics process.
-  void UpstartRestartCallback(const APIStateCallback& callback, bool succeeded);
+  void UpstartRestartCallback(APIStateCallback callback, bool succeeded);
 
   // Callback for Upstart command to stop media analytics process.
-  void UpstartStopCallback(const APIStateCallback& callback, bool succeeded);
+  void UpstartStopProcessCallback(APIComponentProcessStateCallback callback,
+                                  bool succeeded);
+
+  void UpstartStopCallback(APIStateCallback callback, bool succeeded);
 
   // Callback with the mount point for a loaded component.
   void LoadComponentCallback(APISetAnalyticsComponentCallback callback,

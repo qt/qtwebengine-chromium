@@ -35,6 +35,7 @@
 #include "base/debug/alias.h"
 #include "base/lazy_instance.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/partition_allocator.h"
+#include "third_party/blink/renderer/platform/wtf/wtf.h"
 
 namespace WTF {
 
@@ -136,19 +137,19 @@ void Partitions::DumpMemoryStats(
 
 namespace {
 
-class LightPartitionStatsDumperImpl : public WTF::PartitionStatsDumper {
+class LightPartitionStatsDumperImpl : public base::PartitionStatsDumper {
  public:
   LightPartitionStatsDumperImpl() : total_active_bytes_(0) {}
 
   void PartitionDumpTotals(
       const char* partition_name,
-      const WTF::PartitionMemoryStats* memory_stats) override {
+      const base::PartitionMemoryStats* memory_stats) override {
     total_active_bytes_ += memory_stats->total_active_bytes;
   }
 
   void PartitionsDumpBucketStats(
       const char* partition_name,
-      const WTF::PartitionBucketMemoryStats*) override {}
+      const base::PartitionBucketMemoryStats*) override {}
 
   size_t TotalActiveBytes() const { return total_active_bytes_; }
 
@@ -164,64 +165,64 @@ size_t Partitions::TotalActiveBytes() {
   return dumper.TotalActiveBytes();
 }
 
-static NEVER_INLINE void PartitionsOutOfMemoryUsing2G() {
+static NOINLINE void PartitionsOutOfMemoryUsing2G() {
   size_t signature = 2UL * 1024 * 1024 * 1024;
   base::debug::Alias(&signature);
   OOM_CRASH();
 }
 
-static NEVER_INLINE void PartitionsOutOfMemoryUsing1G() {
+static NOINLINE void PartitionsOutOfMemoryUsing1G() {
   size_t signature = 1UL * 1024 * 1024 * 1024;
   base::debug::Alias(&signature);
   OOM_CRASH();
 }
 
-static NEVER_INLINE void PartitionsOutOfMemoryUsing512M() {
+static NOINLINE void PartitionsOutOfMemoryUsing512M() {
   size_t signature = 512 * 1024 * 1024;
   base::debug::Alias(&signature);
   OOM_CRASH();
 }
 
-static NEVER_INLINE void PartitionsOutOfMemoryUsing256M() {
+static NOINLINE void PartitionsOutOfMemoryUsing256M() {
   size_t signature = 256 * 1024 * 1024;
   base::debug::Alias(&signature);
   OOM_CRASH();
 }
 
-static NEVER_INLINE void PartitionsOutOfMemoryUsing128M() {
+static NOINLINE void PartitionsOutOfMemoryUsing128M() {
   size_t signature = 128 * 1024 * 1024;
   base::debug::Alias(&signature);
   OOM_CRASH();
 }
 
-static NEVER_INLINE void PartitionsOutOfMemoryUsing64M() {
+static NOINLINE void PartitionsOutOfMemoryUsing64M() {
   size_t signature = 64 * 1024 * 1024;
   base::debug::Alias(&signature);
   OOM_CRASH();
 }
 
-static NEVER_INLINE void PartitionsOutOfMemoryUsing32M() {
+static NOINLINE void PartitionsOutOfMemoryUsing32M() {
   size_t signature = 32 * 1024 * 1024;
   base::debug::Alias(&signature);
   OOM_CRASH();
 }
 
-static NEVER_INLINE void PartitionsOutOfMemoryUsing16M() {
+static NOINLINE void PartitionsOutOfMemoryUsing16M() {
   size_t signature = 16 * 1024 * 1024;
   base::debug::Alias(&signature);
   OOM_CRASH();
 }
 
-static NEVER_INLINE void PartitionsOutOfMemoryUsingLessThan16M() {
+static NOINLINE void PartitionsOutOfMemoryUsingLessThan16M() {
   size_t signature = 16 * 1024 * 1024 - 1;
   base::debug::Alias(&signature);
   DLOG(FATAL) << "ParitionAlloc: out of memory with < 16M usage (error:"
-              << GetAllocPageErrorCode() << ")";
+              << base::GetAllocPageErrorCode() << ")";
 }
 
 void Partitions::HandleOutOfMemory() {
   volatile size_t total_usage = TotalSizeOfCommittedPages();
-  uint32_t alloc_page_error_code = GetAllocPageErrorCode();
+  uint32_t alloc_page_error_code = base::GetAllocPageErrorCode();
   base::debug::Alias(&alloc_page_error_code);
 
   if (total_usage >= 2UL * 1024 * 1024 * 1024)

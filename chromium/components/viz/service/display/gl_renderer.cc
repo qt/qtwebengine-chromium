@@ -13,6 +13,7 @@
 #include <numeric>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/bind.h"
@@ -41,7 +42,6 @@
 #include "components/viz/common/quads/stream_video_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/resources/platform_color.h"
-#include "components/viz/common/resources/resource_fence.h"
 #include "components/viz/common/resources/resource_format_utils.h"
 #include "components/viz/common/resources/resource_id.h"
 #include "components/viz/common/skia_helper.h"
@@ -50,6 +50,7 @@
 #include "components/viz/service/display/layer_quad.h"
 #include "components/viz/service/display/output_surface.h"
 #include "components/viz/service/display/output_surface_frame.h"
+#include "components/viz/service/display/resource_fence.h"
 #include "components/viz/service/display/scoped_render_pass_texture.h"
 #include "components/viz/service/display/static_geometry_binding.h"
 #include "components/viz/service/display/texture_deleter.h"
@@ -757,13 +758,21 @@ GLenum GLRenderer::GetFramebufferCopyTextureFormat() {
   // texture. Otherwise, we use the format of the default framebuffer. But
   // whatever the format is, convert it to a valid format for CopyTexSubImage2D.
   GLenum format;
-  if (!current_framebuffer_texture_)
+  if (!current_framebuffer_texture_) {
     format = output_surface_->GetFramebufferCopyTextureFormat();
-  else
-    format = GLCopyTextureInternalFormat(BackbufferFormat());
+  } else {
+    ResourceFormat resource_format = BackbufferFormat();
+    DCHECK(GLSupportsFormat(resource_format));
+    format = GLCopyTextureInternalFormat(resource_format);
+  }
   // Verify the format is valid for GLES2's glCopyTexSubImage2D.
   DCHECK(format == GL_ALPHA || format == GL_LUMINANCE ||
-         format == GL_LUMINANCE_ALPHA || format == GL_RGB || format == GL_RGBA)
+         format == GL_LUMINANCE_ALPHA || format == GL_RGB ||
+         format == GL_RGBA ||
+         (output_surface_->context_provider()
+              ->ContextCapabilities()
+              .texture_format_bgra8888 &&
+          format == GL_BGRA_EXT))
       << format;
   return format;
 }
@@ -831,7 +840,7 @@ sk_sp<SkImage> GLRenderer::ApplyBackgroundFilters(
   sk_sp<SkSurface> surface = SkSurface::MakeRenderTarget(
       use_gr_context->context(), SkBudgeted::kYes, dst_info);
   if (!surface) {
-    TRACE_EVENT_INSTANT0("cc",
+    TRACE_EVENT_INSTANT0("viz",
                          "ApplyBackgroundFilters surface allocation failed",
                          TRACE_EVENT_SCOPE_THREAD);
     return nullptr;
@@ -1260,7 +1269,7 @@ void GLRenderer::ChooseRPDQProgram(DrawRenderPassDrawQuadParams* params,
                                    const gfx::ColorSpace& target_color_space) {
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
       gl_, &highp_threshold_cache_, settings_->highp_threshold_min,
-      params->quad->shared_quad_state->visible_quad_layer_rect.bottom_right());
+      params->quad->shared_quad_state->visible_quad_layer_rect.size());
 
   BlendMode shader_blend_mode =
       params->use_shaders_for_blending
@@ -2048,7 +2057,7 @@ void GLRenderer::DrawYUVVideoQuad(const YUVVideoDrawQuad* quad,
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
       gl_, &highp_threshold_cache_, settings_->highp_threshold_min,
-      quad->shared_quad_state->visible_quad_layer_rect.bottom_right());
+      quad->shared_quad_state->visible_quad_layer_rect.size());
   YUVAlphaTextureMode alpha_texture_mode = quad->a_plane_resource_id()
                                                ? YUV_HAS_ALPHA_TEXTURE
                                                : YUV_NO_ALPHA_TEXTURE;
@@ -2219,7 +2228,7 @@ void GLRenderer::DrawStreamVideoQuad(const StreamVideoDrawQuad* quad,
 
   TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
       gl_, &highp_threshold_cache_, settings_->highp_threshold_min,
-      quad->shared_quad_state->visible_quad_layer_rect.bottom_right());
+      quad->shared_quad_state->visible_quad_layer_rect.size());
 
   DisplayResourceProvider::ScopedReadLockGL lock(resource_provider_,
                                                  quad->resource_id());
@@ -2360,12 +2369,15 @@ void GLRenderer::EnqueueTextureQuad(const TextureDrawQuad* quad,
     FlushTextureQuadCache(SHARED_BINDING);
   }
 
-  TexCoordPrecision tex_coord_precision = TexCoordPrecisionRequired(
-      gl_, &highp_threshold_cache_, settings_->highp_threshold_min,
-      quad->shared_quad_state->visible_quad_layer_rect.bottom_right());
-
   DisplayResourceProvider::ScopedReadLockGL lock(resource_provider_,
                                                  quad->resource_id());
+  // ScopedReadLockGL contains the correct texture size, even when
+  // quad->resource_size_in_pixesl() is empty.
+  const gfx::Size texture_size = lock.size();
+  TexCoordPrecision tex_coord_precision =
+      TexCoordPrecisionRequired(gl_, &highp_threshold_cache_,
+                                settings_->highp_threshold_min, texture_size);
+
   const SamplerType sampler = SamplerTypeFromTextureTarget(lock.target());
 
   bool need_tex_clamp_rect = !quad->resource_size_in_pixels().IsEmpty() &&
@@ -2400,7 +2412,6 @@ void GLRenderer::EnqueueTextureQuad(const TextureDrawQuad* quad,
     uv_transform = UVTransform(quad);
   if (sampler == SAMPLER_TYPE_2D_RECT) {
     // Un-normalize the texture coordiantes for rectangle targets.
-    gfx::Size texture_size = lock.size();
     uv_transform.data[0] *= texture_size.width();
     uv_transform.data[2] *= texture_size.width();
     uv_transform.data[1] *= texture_size.height();
@@ -2410,7 +2421,8 @@ void GLRenderer::EnqueueTextureQuad(const TextureDrawQuad* quad,
 
   if (need_tex_clamp_rect) {
     DCHECK_EQ(1u, draw_cache_.uv_xform_data.size());
-    gfx::Size texture_size = quad->resource_size_in_pixels();
+    DCHECK_EQ(texture_size.ToString(),
+              quad->resource_size_in_pixels().ToString());
     DCHECK(!texture_size.IsEmpty());
     gfx::RectF uv_visible_rect(
         quad->uv_top_left.x(), quad->uv_top_left.y(),
@@ -2485,8 +2497,8 @@ void GLRenderer::FinishDrawingFrame() {
   ScheduleDCLayers();
   ScheduleOverlays();
 
-  TRACE_COUNTER1(TRACE_DISABLED_BY_DEFAULT("cc.debug.triangles"),
-                 "Triangles Drawn", num_triangles_drawn_);
+  TRACE_COUNTER1(TRACE_DISABLED_BY_DEFAULT("viz.triangles"), "Triangles Drawn",
+                 num_triangles_drawn_);
 }
 
 void GLRenderer::FinishDrawingQuadList() {
@@ -3525,8 +3537,8 @@ void GLRenderer::FlushOverdrawFeedback(const gfx::Rect& output_rect) {
   // Occlusion queries can be expensive, so only collect trace data if we select
   // cc.debug.overdraw.
   bool tracing_enabled;
-  TRACE_EVENT_CATEGORY_GROUP_ENABLED(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug.overdraw"), &tracing_enabled);
+  TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("viz.overdraw"),
+                                     &tracing_enabled);
 
   // Trace only the root render pass.
   if (current_frame()->current_render_pass != current_frame()->root_render_pass)
@@ -3587,7 +3599,7 @@ void GLRenderer::ProcessOverdrawFeedback(std::vector<int>* overdraw,
 
   // Report GPU overdraw as a percentage of |max_result|.
   TRACE_COUNTER1(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug.overdraw"), "GPU Overdraw",
+      TRACE_DISABLED_BY_DEFAULT("viz.overdraw"), "GPU Overdraw",
       (std::accumulate(overdraw->begin(), overdraw->end(), 0) * 100) /
           max_result);
 }

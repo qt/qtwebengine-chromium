@@ -276,11 +276,6 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // offset.
   virtual gfx::Vector2d GetDrawOffset() const;
 
-  // This waits until rendering work is complete enough that an OS snapshot
-  // will capture the last swapped contents. A GL context must be current when
-  // calling this.
-  virtual void WaitForSnapshotRendering();
-
   // Tells the surface to rely on implicit sync when swapping buffers.
   virtual void SetRelyOnImplicitSync();
 
@@ -291,6 +286,11 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // Tells the surface to use the provided plane GPU fences when swapping
   // buffers.
   virtual void SetUsePlaneGpuFences();
+
+  // Returns the number of buffers the surface uses in the swap chain. For
+  // example, most surfaces are double-buffered, so this would return 2. For
+  // triple-buffered surfaces this would return 3, etc.
+  virtual int GetBufferCount() const;
 
   static GLSurface* GetCurrent();
 
@@ -382,11 +382,11 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
   bool SupportsProtectedVideo() const override;
   bool SetDrawRectangle(const gfx::Rect& rect) override;
   gfx::Vector2d GetDrawOffset() const override;
-  void WaitForSnapshotRendering() override;
   void SetRelyOnImplicitSync() override;
   bool SupportsSwapTimestamps() const override;
   void SetEnableSwapTimestamps() override;
   void SetUsePlaneGpuFences() override;
+  int GetBufferCount() const override;
 
   GLSurface* surface() const { return surface_.get(); }
 

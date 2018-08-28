@@ -43,13 +43,12 @@ void ViewPainterTest::RunFixedBackgroundTest(
   )HTML");
 
   LocalFrameView* frame_view = GetDocument().View();
-  ScrollableArea* layout_viewport = frame_view->LayoutViewportScrollableArea();
+  ScrollableArea* layout_viewport = frame_view->LayoutViewport();
 
   ScrollOffset scroll_offset(200, 150);
   layout_viewport->SetScrollOffset(scroll_offset, kUserScroll);
   frame_view->UpdateAllLifecyclePhases();
 
-  bool v175 = RuntimeEnabledFeatures::SlimmingPaintV175Enabled();
   CompositedLayerMapping* clm =
       GetLayoutView().Layer()->GetCompositedLayerMapping();
 
@@ -64,8 +63,7 @@ void ViewPainterTest::RunFixedBackgroundTest(
   }
   const DisplayItemList& display_items =
       layer_for_background->GetPaintController().GetDisplayItemList();
-  const DisplayItem& background =
-      display_items[!prefer_compositing_to_lcd_text && !v175 ? 2 : 0];
+  const DisplayItem& background = display_items[0];
   EXPECT_EQ(background.GetType(), kDocumentBackgroundType);
   DisplayItemClient* expected_client;
   if (!prefer_compositing_to_lcd_text)
@@ -112,16 +110,13 @@ TEST_P(ViewPainterTest, DocumentBackgroundWithScroll) {
       RootPaintController().GetDisplayItemList(), 1,
       TestDisplayItem(*background_item_client, kDocumentBackgroundType));
 
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
-    return;
-
   const auto& chunks = RootPaintController().GetPaintArtifact().PaintChunks();
   EXPECT_EQ(1u, chunks.size());
   const auto& chunk = chunks[0];
   EXPECT_EQ(background_chunk_client, &chunk.id.client);
 
   const auto& tree_state = chunk.properties;
-  EXPECT_EQ(EffectPaintPropertyNode::Root(), tree_state.Effect());
+  EXPECT_EQ(&EffectPaintPropertyNode::Root(), tree_state.Effect());
   const auto* properties = GetLayoutView().FirstFragment().PaintProperties();
   EXPECT_EQ(properties->ScrollTranslation(), tree_state.Transform());
   EXPECT_EQ(properties->OverflowClip(), tree_state.Clip());

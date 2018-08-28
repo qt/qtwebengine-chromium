@@ -6,12 +6,10 @@
 
 #include "net/third_party/quic/core/quic_session.h"
 
-namespace net {
+namespace quic {
 
-#define ENDPOINT                                                   \
-  (session()->perspective() == Perspective::IS_SERVER ? "Server: " \
-                                                      : "Client:"  \
-                                                        " ")
+#define ENDPOINT \
+  (session()->perspective() == Perspective::IS_SERVER ? "Server: " : "Client: ")
 
 QuicCryptoHandshaker::QuicCryptoHandshaker(QuicCryptoStream* stream,
                                            QuicSession* session)
@@ -49,4 +47,5 @@ CryptoMessageParser* QuicCryptoHandshaker::crypto_message_parser() {
   return &crypto_framer_;
 }
 
-}  // namespace net
+#undef ENDPOINT  // undef for jumbo builds
+}  // namespace quic

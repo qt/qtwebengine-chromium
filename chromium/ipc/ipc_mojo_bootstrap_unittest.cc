@@ -13,7 +13,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "ipc/ipc.mojom.h"
 #include "ipc/ipc_test_base.h"
-#include "mojo/edk/test/multiprocess_test_helper.h"
+#include "mojo/core/test/multiprocess_test_helper.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 
 namespace {
@@ -72,14 +72,11 @@ class PeerPidReceiver : public IPC::mojom::Channel {
     on_peer_pid_set_.Run();
   }
 
-  void Receive(base::span<const uint8_t> data,
-               base::Optional<std::vector<mojo::native::SerializedHandlePtr>>
-                   handles) override {
+  void Receive(IPC::MessageView message_view) override {
     ASSERT_NE(MessageExpectation::kNotExpected, message_expectation_);
     received_message_ = true;
 
-    IPC::Message message(reinterpret_cast<const char*>(data.data()),
-                         static_cast<uint32_t>(data.size()));
+    IPC::Message message(message_view.data(), message_view.size());
     bool expected_valid =
         message_expectation_ == MessageExpectation::kExpectedValid;
     EXPECT_EQ(expected_valid, message.IsValid());
@@ -106,7 +103,7 @@ class PeerPidReceiver : public IPC::mojom::Channel {
 
 class IPCMojoBootstrapTest : public testing::Test {
  protected:
-  mojo::edk::test::MultiprocessTestHelper helper_;
+  mojo::core::test::MultiprocessTestHelper helper_;
 };
 
 TEST_F(IPCMojoBootstrapTest, Connect) {
@@ -134,11 +131,11 @@ TEST_F(IPCMojoBootstrapTest, Connect) {
 // A long running process that connects to us.
 MULTIPROCESS_TEST_MAIN_WITH_SETUP(
     IPCMojoBootstrapTestClientTestChildMain,
-    ::mojo::edk::test::MultiprocessTestHelper::ChildSetup) {
+    ::mojo::core::test::MultiprocessTestHelper::ChildSetup) {
   base::MessageLoop message_loop;
   Connection connection(
       IPC::MojoBootstrap::Create(
-          std::move(mojo::edk::test::MultiprocessTestHelper::primordial_pipe),
+          std::move(mojo::core::test::MultiprocessTestHelper::primordial_pipe),
           IPC::Channel::MODE_CLIENT, base::ThreadTaskRunnerHandle::Get(),
           base::ThreadTaskRunnerHandle::Get()),
       kTestClientPid);
@@ -182,11 +179,11 @@ TEST_F(IPCMojoBootstrapTest, ReceiveEmptyMessage) {
 // A long running process that connects to us.
 MULTIPROCESS_TEST_MAIN_WITH_SETUP(
     IPCMojoBootstrapTestEmptyMessageTestChildMain,
-    ::mojo::edk::test::MultiprocessTestHelper::ChildSetup) {
+    ::mojo::core::test::MultiprocessTestHelper::ChildSetup) {
   base::MessageLoop message_loop;
   Connection connection(
       IPC::MojoBootstrap::Create(
-          std::move(mojo::edk::test::MultiprocessTestHelper::primordial_pipe),
+          std::move(mojo::core::test::MultiprocessTestHelper::primordial_pipe),
           IPC::Channel::MODE_CLIENT, base::ThreadTaskRunnerHandle::Get(),
           base::ThreadTaskRunnerHandle::Get()),
       kTestClientPid);
@@ -196,7 +193,9 @@ MULTIPROCESS_TEST_MAIN_WITH_SETUP(
   auto& sender = connection.GetSender();
 
   uint8_t data = 0;
-  sender->Receive(base::make_span(&data, 0), {});
+  sender->Receive(
+      IPC::MessageView(mojo_base::BigBufferView(base::make_span(&data, 0)),
+                       base::nullopt /* handles */));
 
   base::RunLoop run_loop;
   PeerPidReceiver impl(std::move(receiver), run_loop.QuitClosure());

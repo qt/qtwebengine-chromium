@@ -12,6 +12,7 @@
 #include "SkFlattenablePriv.h"
 #include "SkMask.h"
 #include "SkMatrix.h"
+#include "SkNoncopyable.h"
 #include "SkShader.h"
 #include "SkTLazy.h"
 
@@ -207,8 +208,6 @@ public:
     virtual SkImage* onIsAImage(SkMatrix*, TileMode[2]) const {
         return nullptr;
     }
-
-    virtual void toString(SkString* str) const;
 
     SK_DEFINE_FLATTENABLE_TYPE(SkShaderBase)
     SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()

@@ -16,9 +16,9 @@
 #include "third_party/blink/public/platform/interface_provider.h"
 #include "third_party/blink/public/platform/modules/hyphenation/hyphenation.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/renderer/platform/layout_locale.h"
 #include "third_party/blink/renderer/platform/text/character.h"
 #include "third_party/blink/renderer/platform/text/hyphenation/hyphenator_aosp.h"
+#include "third_party/blink/renderer/platform/text/layout_locale.h"
 
 namespace blink {
 
@@ -33,7 +33,7 @@ StringView SkipLeadingSpaces(const CharType* text,
   while (text != end && Character::TreatAsSpace(*text))
     text++;
   *num_leading_spaces_out = text - begin;
-  return StringView(text, end - text);
+  return StringView(text, static_cast<unsigned>(end - text));
 }
 
 StringView SkipLeadingSpaces(const StringView& text,
@@ -177,7 +177,7 @@ static LocaleMap CreateLocaleFallbackMap() {
   };
   LocaleMap map;
   for (const auto& it : locale_fallback_data)
-    map.insert(it[0], it[1]);
+    map.insert(AtomicString(it[0]), it[1]);
   return map;
 }
 

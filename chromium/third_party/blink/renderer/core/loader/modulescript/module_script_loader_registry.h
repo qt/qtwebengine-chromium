@@ -7,16 +7,11 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 
 namespace blink {
 
-class Modulator;
-class ModuleScriptFetchRequest;
 class ModuleScriptLoader;
-class ModuleScriptLoaderClient;
-enum class ModuleGraphLevel;
 
 // ModuleScriptLoaderRegistry keeps active ModuleLoaders alive.
 class CORE_EXPORT ModuleScriptLoaderRegistry final
@@ -27,15 +22,11 @@ class CORE_EXPORT ModuleScriptLoaderRegistry final
   }
   void Trace(blink::Visitor*);
 
-  ModuleScriptLoader* Fetch(const ModuleScriptFetchRequest&,
-                            ModuleGraphLevel,
-                            Modulator*,
-                            ModuleScriptLoaderClient*);
-
  private:
   ModuleScriptLoaderRegistry() = default;
 
   friend class ModuleScriptLoader;
+  void AddLoader(ModuleScriptLoader*);
   void ReleaseFinishedLoader(ModuleScriptLoader*);
 
   HeapHashSet<Member<ModuleScriptLoader>> active_loaders_;

@@ -143,8 +143,6 @@ class SyncedSessionTracker {
   // Returns a pointer to the SessionTab object associated with
   // |tab_id| for the session specified with |session_tag|.
   // Note: Ownership of the SessionTab remains within the SyncedSessionTracker.
-  // TODO(zea): Replace SessionTab with a Sync specific wrapper.
-  // https://crbug.com/662597
   sessions::SessionTab* GetTab(const std::string& session_tag,
                                SessionID tab_id);
 
@@ -194,10 +192,8 @@ class SyncedSessionTracker {
   int AssociateLocalTabWithFreeTabNode(SessionID tab_id);
 
   // Reassociates the tab denoted by |tab_node_id| with a new tab id, preserving
-  // any previous SessionTab object the node was associated with. This is useful
-  // on restart when sync needs to reassociate tabs from a previous session with
-  // newly restored tabs (and can be used in conjunction with PutTabInWindow).
-  // If |new_tab_id| is already associated with a tab object, that tab will be
+  // any previous SessionTab object the node was associated with. If
+  // |new_tab_id| is already associated with a tab object, that tab will be
   // overwritten. Reassociating a tab with a node it is already mapped to will
   // have no effect.
   void ReassociateLocalTab(int tab_node_id, SessionID new_tab_id);

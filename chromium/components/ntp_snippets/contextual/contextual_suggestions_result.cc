@@ -16,15 +16,17 @@ PeekConditions::PeekConditions()
 
 Cluster::Cluster() = default;
 
+Cluster::Cluster(const Cluster& other) = default;
+
 // MSVC doesn't support defaulted move constructors, so we have to define it
 // ourselves.
 Cluster::Cluster(Cluster&& other) noexcept
     : title(std::move(other.title)),
       suggestions(std::move(other.suggestions)) {}
 
-Cluster::Cluster(const Cluster&) = default;
-
 Cluster::~Cluster() = default;
+
+Cluster& Cluster::operator=(const Cluster&) = default;
 
 ClusterBuilder::ClusterBuilder(const std::string& title) {
   cluster_.title = title;
@@ -53,15 +55,37 @@ Cluster ClusterBuilder::Build() {
   return std::move(cluster_);
 }
 
+ServerExperimentInfo::ServerExperimentInfo() = default;
+
+ServerExperimentInfo::ServerExperimentInfo(std::string name, std::string group)
+    : name(name), group(group) {}
+
+ServerExperimentInfo::ServerExperimentInfo(const ServerExperimentInfo& other) =
+    default;
+
+ServerExperimentInfo::ServerExperimentInfo(
+    ServerExperimentInfo&& other) noexcept
+    : name(std::move(other.name)), group(std::move(other.group)) {}
+
+ServerExperimentInfo::~ServerExperimentInfo() = default;
+
+ServerExperimentInfo& ServerExperimentInfo::operator=(
+    ServerExperimentInfo&& other) = default;
+
+ServerExperimentInfo& ServerExperimentInfo::operator=(
+    const ServerExperimentInfo& other) = default;
+
 ContextualSuggestionsResult::ContextualSuggestionsResult() = default;
 
 ContextualSuggestionsResult::ContextualSuggestionsResult(
     std::string peek_text,
     std::vector<Cluster> clusters,
-    PeekConditions peek_conditions)
+    PeekConditions peek_conditions,
+    ServerExperimentInfos experiment_infos)
     : clusters(clusters),
       peek_text(peek_text),
-      peek_conditions(peek_conditions) {}
+      peek_conditions(peek_conditions),
+      experiment_infos(std::move(experiment_infos)) {}
 
 ContextualSuggestionsResult::ContextualSuggestionsResult(
     const ContextualSuggestionsResult& other) = default;
@@ -72,11 +96,15 @@ ContextualSuggestionsResult::ContextualSuggestionsResult(
     ContextualSuggestionsResult&& other) noexcept
     : clusters(std::move(other.clusters)),
       peek_text(std::move(other.peek_text)),
-      peek_conditions(std::move(other.peek_conditions)) {}
+      peek_conditions(std::move(other.peek_conditions)),
+      experiment_infos(std::move(other.experiment_infos)) {}
 
 ContextualSuggestionsResult::~ContextualSuggestionsResult() = default;
 
 ContextualSuggestionsResult& ContextualSuggestionsResult::operator=(
     ContextualSuggestionsResult&& other) = default;
+
+ContextualSuggestionsResult& ContextualSuggestionsResult::operator=(
+    const ContextualSuggestionsResult& other) = default;
 
 }  // namespace contextual_suggestions

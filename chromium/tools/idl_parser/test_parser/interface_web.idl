@@ -43,18 +43,24 @@ partial interface MyIFacePartial { };
 partial interface MyIFaceInherit : Foo {};
 
 /** TREE
- *InterfaceMixin(IFaceMixin)
+ *Interface(IFaceMixin)
+ *  MIXIN: True
  */
 interface mixin IFaceMixin {};
 
 /** ERROR Unexpected ":" after identifier "IFaceMixinInherit". */
 interface mixin IFaceMixinInherit : Foo {};
 
-/** ERROR Unexpected keyword "mixin" after keyword "interface". */
+/** TREE
+ *Interface(PartialIFaceMixin)
+ *  PARTIAL: True
+ *  MIXIN: True
+ */
 partial interface mixin PartialIFaceMixin {};
 
 /** TREE
- *InterfaceMixin(IFaceMixin)
+ *Interface(IFaceMixin)
+ *  MIXIN: True
  *  Error(Unexpected keyword "static" after "{".)
  */
 interface mixin IFaceMixin {
@@ -62,7 +68,8 @@ interface mixin IFaceMixin {
 };
 
 /** TREE
- *InterfaceMixin(IFaceMixin)
+ *Interface(IFaceMixin)
+ *  MIXIN: True
  *  Const(pi)
  *    PrimitiveType(double)
  *    Value() = "3.14159"
@@ -685,7 +692,7 @@ Foo includes Bar;
  *      PrimitiveType(void)
  */
 interface IFaceWithKeyword {
-  // '_' prefix is needed because "includes" is a keyword of Web IDL and our
-  // parser cannot handle a keyword as an identifier. (https://crbug.com/820353)
+  // '_' prefix needs to be removed in tokenization.
+  // https://heycam.github.io/webidl/#idl-names
   void _includes(DOMString val);
 };

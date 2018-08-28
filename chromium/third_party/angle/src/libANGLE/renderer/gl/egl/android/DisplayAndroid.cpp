@@ -9,10 +9,15 @@
 #include <android/native_window.h>
 
 #include "common/debug.h"
+#include "libANGLE/Context.h"
 #include "libANGLE/Display.h"
 #include "libANGLE/Surface.h"
+#include "libANGLE/renderer/gl/ContextGL.h"
+#include "libANGLE/renderer/gl/RendererGL.h"
+#include "libANGLE/renderer/gl/egl/ContextEGL.h"
 #include "libANGLE/renderer/gl/egl/FunctionsEGLDL.h"
 #include "libANGLE/renderer/gl/egl/PbufferSurfaceEGL.h"
+#include "libANGLE/renderer/gl/egl/RendererEGL.h"
 #include "libANGLE/renderer/gl/egl/WindowSurfaceEGL.h"
 #include "libANGLE/renderer/gl/egl/android/DisplayAndroid.h"
 #include "libANGLE/renderer/gl/renderergl_utils.h"
@@ -32,8 +37,13 @@ const char *GetEGLPath()
 namespace rx
 {
 
+static constexpr bool kDefaultEGLVirtualizedContexts = true;
+
 DisplayAndroid::DisplayAndroid(const egl::DisplayState &state)
-    : DisplayEGL(state), mDummyPbuffer(EGL_NO_SURFACE), mCurrentSurface(EGL_NO_SURFACE)
+    : DisplayEGL(state),
+      mVirtualizedContexts(kDefaultEGLVirtualizedContexts),
+      mSupportsSurfaceless(false),
+      mDummyPbuffer(EGL_NO_SURFACE)
 {
 }
 
@@ -43,10 +53,14 @@ DisplayAndroid::~DisplayAndroid()
 
 egl::Error DisplayAndroid::initialize(egl::Display *display)
 {
+    mDisplayAttributes = display->getAttributeMap();
+    mVirtualizedContexts =
+        ShouldUseVirtualizedContexts(mDisplayAttributes, kDefaultEGLVirtualizedContexts);
+
     FunctionsEGLDL *egl = new FunctionsEGLDL();
     mEGL = egl;
-    void *eglHandle     = reinterpret_cast<void *>(display->getAttributeMap().get(
-        EGL_PLATFORM_ANGLE_EGL_HANDLE_ANGLE, 0));
+    void *eglHandle =
+        reinterpret_cast<void *>(mDisplayAttributes.get(EGL_PLATFORM_ANGLE_EGL_HANDLE_ANGLE, 0));
     ANGLE_TRY(egl->initialize(display->getNativeDisplayId(), GetEGLPath(), eglHandle));
 
     gl::Version eglVersion(mEGL->majorVersion, mEGL->minorVersion);
@@ -112,14 +126,19 @@ egl::Error DisplayAndroid::initialize(egl::Display *display)
                << "eglChooseConfig failed with " << egl::Error(mEGL->getError());
     }
 
-    int dummyPbufferAttribs[] = {
-        EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE,
-    };
-    mDummyPbuffer = mEGL->createPbufferSurface(configWithFormat, dummyPbufferAttribs);
-    if (mDummyPbuffer == EGL_NO_SURFACE)
+    // A dummy pbuffer is only needed if surfaceless contexts are not supported.
+    mSupportsSurfaceless = mEGL->hasExtension("EGL_KHR_surfaceless_context");
+    if (!mSupportsSurfaceless)
     {
-        return egl::EglNotInitialized()
-               << "eglCreatePbufferSurface failed with " << egl::Error(mEGL->getError());
+        int dummyPbufferAttribs[] = {
+            EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE,
+        };
+        mDummyPbuffer = mEGL->createPbufferSurface(configWithFormat, dummyPbufferAttribs);
+        if (mDummyPbuffer == EGL_NO_SURFACE)
+        {
+            return egl::EglNotInitialized()
+                   << "eglCreatePbufferSurface failed with " << egl::Error(mEGL->getError());
+        }
     }
 
     // Create mDummyPbuffer with a normal config, but create a no_config mContext, if possible
@@ -134,18 +153,13 @@ egl::Error DisplayAndroid::initialize(egl::Display *display)
         mConfig           = configWithFormat;
     }
 
-    ANGLE_TRY(initializeContext(display->getAttributeMap()));
+    ANGLE_TRY(createRenderer(EGL_NO_CONTEXT, true, &mRenderer));
 
-    success = mEGL->makeCurrent(mDummyPbuffer, mContext);
-    if (success == EGL_FALSE)
+    const gl::Version &maxVersion = mRenderer->getMaxSupportedESVersion();
+    if (maxVersion < gl::Version(2, 0))
     {
-        return egl::EglNotInitialized()
-               << "eglMakeCurrent failed with " << egl::Error(mEGL->getError());
+        return egl::EglNotInitialized() << "OpenGL ES 2.0 is not supportable.";
     }
-    mCurrentSurface = mDummyPbuffer;
-
-    mFunctionsGL = mEGL->makeFunctionsGL();
-    mFunctionsGL->initialize(display->getAttributeMap());
 
     return DisplayGL::initialize(display);
 }
@@ -159,7 +173,6 @@ void DisplayAndroid::terminate()
     {
         ERR() << "eglMakeCurrent error " << egl::Error(mEGL->getError());
     }
-    mCurrentSurface = EGL_NO_SURFACE;
 
     if (mDummyPbuffer != EGL_NO_SURFACE)
     {
@@ -171,15 +184,8 @@ void DisplayAndroid::terminate()
         }
     }
 
-    if (mContext != EGL_NO_CONTEXT)
-    {
-        success = mEGL->destroyContext(mContext);
-        mContext = EGL_NO_CONTEXT;
-        if (success == EGL_FALSE)
-        {
-            ERR() << "eglDestroyContext error " << egl::Error(mEGL->getError());
-        }
-    }
+    mRenderer.reset();
+    mCurrentNativeContext.clear();
 
     egl::Error result = mEGL->terminate();
     if (result.isError())
@@ -188,7 +194,6 @@ void DisplayAndroid::terminate()
     }
 
     SafeDelete(mEGL);
-    SafeDelete(mFunctionsGL);
 }
 
 SurfaceImpl *DisplayAndroid::createWindowSurface(const egl::SurfaceState &state,
@@ -243,6 +248,39 @@ ImageImpl *DisplayAndroid::createImage(const egl::ImageState &state,
 {
     UNIMPLEMENTED();
     return DisplayGL::createImage(state, target, attribs);
+}
+
+ContextImpl *DisplayAndroid::createContext(const gl::ContextState &state,
+                                           const egl::Config *configuration,
+                                           const gl::Context *shareContext,
+                                           const egl::AttributeMap &attribs)
+{
+    std::shared_ptr<RendererEGL> renderer;
+    if (mVirtualizedContexts)
+    {
+        renderer = mRenderer;
+    }
+    else
+    {
+        EGLContext nativeShareContext = EGL_NO_CONTEXT;
+        if (shareContext)
+        {
+            ContextEGL *shareContextEGL = GetImplAs<ContextEGL>(shareContext);
+            nativeShareContext          = shareContextEGL->getContext();
+        }
+
+        // Create a new renderer for this context.  It only needs to share with the user's requested
+        // share context because there are no internal resources in DisplayAndroid that are shared
+        // at the GL level.
+        egl::Error error = createRenderer(nativeShareContext, false, &renderer);
+        if (error.isError())
+        {
+            ERR() << "Failed to create a shared renderer: " << error.getMessage();
+            return nullptr;
+        }
+    }
+
+    return new ContextEGL(state, renderer);
 }
 
 template <typename T>
@@ -423,42 +461,148 @@ DeviceImpl *DisplayAndroid::createDevice()
     return nullptr;
 }
 
-egl::Error DisplayAndroid::waitClient(const gl::Context *context) const
+egl::Error DisplayAndroid::waitClient(const gl::Context *context)
 {
     UNIMPLEMENTED();
     return egl::NoError();
 }
 
-egl::Error DisplayAndroid::waitNative(const gl::Context *context, EGLint engine) const
+egl::Error DisplayAndroid::waitNative(const gl::Context *context, EGLint engine)
 {
     UNIMPLEMENTED();
     return egl::NoError();
 }
+
 egl::Error DisplayAndroid::makeCurrent(egl::Surface *drawSurface,
                                        egl::Surface *readSurface,
                                        gl::Context *context)
 {
+    CurrentNativeContext &currentContext = mCurrentNativeContext[std::this_thread::get_id()];
+
+    EGLSurface newSurface = EGL_NO_SURFACE;
     if (drawSurface)
     {
         SurfaceEGL *drawSurfaceEGL = GetImplAs<SurfaceEGL>(drawSurface);
-        EGLSurface surface         = drawSurfaceEGL->getSurface();
-        if (surface != mCurrentSurface)
+        newSurface                 = drawSurfaceEGL->getSurface();
+    }
+
+    EGLContext newContext = EGL_NO_CONTEXT;
+    if (context)
+    {
+        ContextEGL *contextEGL = GetImplAs<ContextEGL>(context);
+        newContext             = contextEGL->getContext();
+    }
+
+    // The context should never change when context virtualization is being used, even when a null
+    // context is being bound.
+    if (mVirtualizedContexts)
+    {
+        ASSERT(newContext == EGL_NO_CONTEXT || currentContext.context == EGL_NO_CONTEXT ||
+               newContext == currentContext.context);
+
+        newContext = mRenderer->getContext();
+
+        // If we know that we're only running on one thread (mVirtualizedContexts == true) and
+        // EGL_NO_SURFACE is going to be bound, we can optimize this case by not changing the
+        // surface binding and emulate the surfaceless extension in the frontend.
+        if (newSurface == EGL_NO_SURFACE)
         {
-            if (mEGL->makeCurrent(surface, mContext) == EGL_FALSE)
-            {
-                return egl::Error(mEGL->getError(), "eglMakeCurrent failed");
-            }
-            mCurrentSurface = surface;
+            newSurface = currentContext.surface;
+        }
+
+        // It's possible that no surface has been created yet and the driver doesn't support
+        // surfaceless, bind the dummy pbuffer.
+        if (newSurface == EGL_NO_SURFACE && !mSupportsSurfaceless)
+        {
+            newSurface = mDummyPbuffer;
+            ASSERT(newSurface != EGL_NO_SURFACE);
         }
     }
 
+    if (newSurface != currentContext.surface || newContext != currentContext.context)
+    {
+        if (mEGL->makeCurrent(newSurface, newContext) == EGL_FALSE)
+        {
+            return egl::Error(mEGL->getError(), "eglMakeCurrent failed");
+        }
+        currentContext.surface = newSurface;
+        currentContext.context = newContext;
+    }
+
     return DisplayGL::makeCurrent(drawSurface, readSurface, context);
+}
+
+gl::Version DisplayAndroid::getMaxSupportedESVersion() const
+{
+    return mRenderer->getMaxSupportedESVersion();
+}
+
+void DisplayAndroid::destroyNativeContext(EGLContext context)
+{
+    mEGL->destroyContext(context);
+
+    // If this context is current, remove it from the tracking of current contexts to make sure we
+    // don't try to make it current again.
+    for (auto &currentContext : mCurrentNativeContext)
+    {
+        if (currentContext.second.context == context)
+        {
+            currentContext.second.surface = EGL_NO_SURFACE;
+            currentContext.second.context = EGL_NO_CONTEXT;
+        }
+    }
+}
+
+void DisplayAndroid::generateExtensions(egl::DisplayExtensions *outExtensions) const
+{
+    // Surfaceless can be support if the native driver supports it or we know that we are running on
+    // a single thread (mVirtualizedContexts == true)
+    outExtensions->surfacelessContext = mSupportsSurfaceless || mVirtualizedContexts;
+
+    DisplayEGL::generateExtensions(outExtensions);
 }
 
 egl::Error DisplayAndroid::makeCurrentSurfaceless(gl::Context *context)
 {
     // Nothing to do because EGL always uses the same context and the previous surface can be left
     // current.
+    return egl::NoError();
+}
+
+egl::Error DisplayAndroid::createRenderer(EGLContext shareContext,
+                                          bool makeNewContextCurrent,
+                                          std::shared_ptr<RendererEGL> *outRenderer)
+{
+    EGLContext context = EGL_NO_CONTEXT;
+    ANGLE_TRY(initializeContext(shareContext, mDisplayAttributes, &context));
+
+    if (mEGL->makeCurrent(mDummyPbuffer, context) == EGL_FALSE)
+    {
+        return egl::EglNotInitialized()
+               << "eglMakeCurrent failed with " << egl::Error(mEGL->getError());
+    }
+
+    std::unique_ptr<FunctionsGL> functionsGL(mEGL->makeFunctionsGL());
+    functionsGL->initialize(mDisplayAttributes);
+
+    outRenderer->reset(new RendererEGL(std::move(functionsGL), mDisplayAttributes, this, context));
+
+    CurrentNativeContext &currentContext = mCurrentNativeContext[std::this_thread::get_id()];
+    if (makeNewContextCurrent)
+    {
+        currentContext.surface = mDummyPbuffer;
+        currentContext.context = context;
+    }
+    else
+    {
+        // Reset the current context back to the previous state
+        if (mEGL->makeCurrent(currentContext.surface, currentContext.context) == EGL_FALSE)
+        {
+            return egl::EglNotInitialized()
+                   << "eglMakeCurrent failed with " << egl::Error(mEGL->getError());
+        }
+    }
+
     return egl::NoError();
 }
 

@@ -32,17 +32,16 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
-#include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_blacklist.h"
 #include "gpu/config/gpu_driver_bug_list.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/config/gpu_info_collector.h"
+#include "gpu/config/gpu_preferences.h"
 #include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_util.h"
 #include "gpu/config/software_rendering_list_autogen.h"
-#include "gpu/ipc/common/gpu_preferences_util.h"
 #include "gpu/ipc/common/memory_stats.h"
 #include "gpu/ipc/host/gpu_memory_buffer_support.h"
 #include "gpu/ipc/host/shader_disk_cache.h"
@@ -118,18 +117,21 @@ void UpdateFeatureStats(const gpu::GpuFeatureInfo& gpu_feature_info) {
       gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS,
       gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING,
       gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION,
+      gpu::GPU_FEATURE_TYPE_OOP_RASTERIZATION,
       gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL,
       gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL2};
   const std::string kGpuBlacklistFeatureHistogramNames[] = {
       "GPU.BlacklistFeatureTestResults.Accelerated2dCanvas",
       "GPU.BlacklistFeatureTestResults.GpuCompositing",
       "GPU.BlacklistFeatureTestResults.GpuRasterization",
+      "GPU.BlacklistFeatureTestResults.OopRasterization",
       "GPU.BlacklistFeatureTestResults.Webgl",
       "GPU.BlacklistFeatureTestResults.Webgl2"};
   const bool kGpuFeatureUserFlags[] = {
       command_line.HasSwitch(switches::kDisableAccelerated2dCanvas),
       command_line.HasSwitch(switches::kDisableGpu),
       command_line.HasSwitch(switches::kDisableGpuRasterization),
+      command_line.HasSwitch(switches::kDisableOopRasterization),
       command_line.HasSwitch(switches::kDisableWebGL),
       (command_line.HasSwitch(switches::kDisableWebGL) ||
        command_line.HasSwitch(switches::kDisableWebGL2))};
@@ -138,6 +140,7 @@ void UpdateFeatureStats(const gpu::GpuFeatureInfo& gpu_feature_info) {
       "GPU.BlacklistFeatureTestResultsWindows2.Accelerated2dCanvas",
       "GPU.BlacklistFeatureTestResultsWindows2.GpuCompositing",
       "GPU.BlacklistFeatureTestResultsWindows2.GpuRasterization",
+      "GPU.BlacklistFeatureTestResultsWindows2.OopRasterization",
       "GPU.BlacklistFeatureTestResultsWindows2.Webgl",
       "GPU.BlacklistFeatureTestResultsWindows2.Webgl2"};
 #endif
@@ -263,6 +266,35 @@ void UpdateGpuInfoOnIO(const gpu::GPUInfo& gpu_info) {
 
 }  // anonymous namespace
 
+GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(GpuDataManagerImpl* owner)
+    : owner_(owner),
+      observer_list_(base::MakeRefCounted<GpuDataManagerObserverList>()) {
+  DCHECK(owner_);
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableGpu))
+    DisableHardwareAcceleration();
+
+  if (command_line->HasSwitch(switches::kSingleProcess) ||
+      command_line->HasSwitch(switches::kInProcessGPU)) {
+    in_process_gpu_ = true;
+    AppendGpuCommandLine(command_line);
+  }
+
+#if defined(OS_MACOSX)
+  CGDisplayRegisterReconfigurationCallback(DisplayReconfigCallback, owner_);
+#endif  // OS_MACOSX
+
+  // For testing only.
+  if (command_line->HasSwitch(switches::kDisableDomainBlockingFor3DAPIs))
+    domain_blocking_enabled_ = false;
+}
+
+GpuDataManagerImplPrivate::~GpuDataManagerImplPrivate() {
+#if defined(OS_MACOSX)
+  CGDisplayRemoveReconfigurationCallback(DisplayReconfigCallback, owner_);
+#endif
+}
+
 void GpuDataManagerImplPrivate::BlacklistWebGLForTesting() {
   // This function is for testing only, so disable histograms.
   update_histograms_ = false;
@@ -286,8 +318,7 @@ gpu::GPUInfo GpuDataManagerImplPrivate::GetGPUInfoForHardwareGpu() const {
   return gpu_info_for_hardware_gpu_;
 }
 
-bool GpuDataManagerImplPrivate::GpuAccessAllowed(
-    std::string* reason) const {
+bool GpuDataManagerImplPrivate::GpuAccessAllowed(std::string* reason) const {
   bool swiftshader_available = false;
 #if BUILDFLAG(ENABLE_SWIFTSHADER)
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -322,8 +353,19 @@ bool GpuDataManagerImplPrivate::GpuAccessAllowed(
 }
 
 bool GpuDataManagerImplPrivate::GpuProcessStartAllowed() const {
-  return base::FeatureList::IsEnabled(features::kVizDisplayCompositor) ||
-         GpuAccessAllowed(nullptr);
+  if (GpuAccessAllowed(nullptr))
+    return true;
+
+#if defined(USE_X11) || defined(OS_MACOSX)
+  // If GPU access is disabled with OOP-D we run the display compositor in:
+  //   Browser process: Windows
+  //   GPU process: Linux and Mac
+  //   N/A: Android and Chrome OS (GPU access can't be disabled)
+  if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor))
+    return true;
+#endif
+
+  return false;
 }
 
 void GpuDataManagerImplPrivate::RequestCompleteGpuInfoIfNeeded() {
@@ -395,13 +437,11 @@ void GpuDataManagerImplPrivate::RequestVideoMemoryUsageStatsUpdate(
 }
 
 void GpuDataManagerImplPrivate::AddObserver(GpuDataManagerObserver* observer) {
-  GpuDataManagerImpl::UnlockedSession session(owner_);
   observer_list_->AddObserver(observer);
 }
 
 void GpuDataManagerImplPrivate::RemoveObserver(
     GpuDataManagerObserver* observer) {
-  GpuDataManagerImpl::UnlockedSession session(owner_);
   observer_list_->RemoveObserver(observer);
 }
 
@@ -514,7 +554,7 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
   gpu::GpuPreferences gpu_prefs = GetGpuPreferencesFromCommandLine();
   UpdateGpuPreferences(&gpu_prefs);
   command_line->AppendSwitchASCII(switches::kGpuPreferences,
-                                  gpu::GpuPreferencesToSwitchValue(gpu_prefs));
+                                  gpu_prefs.ToSwitchValue());
 
   std::string use_gl;
   if (card_disabled_ && SwiftShaderAllowed()) {
@@ -560,6 +600,8 @@ void GpuDataManagerImplPrivate::UpdateGpuPreferences(
 
   gpu_preferences->texture_target_exception_list =
       gpu::CreateBufferUsageAndFormatExceptionList();
+
+  gpu_preferences->watchdog_starts_backgrounded = !application_is_visible_;
 }
 
 void GpuDataManagerImplPrivate::DisableHardwareAcceleration() {
@@ -570,11 +612,6 @@ void GpuDataManagerImplPrivate::DisableHardwareAcceleration() {
 
 bool GpuDataManagerImplPrivate::HardwareAccelerationEnabled() const {
   return !card_disabled_;
-}
-
-void GpuDataManagerImplPrivate::BlockSwiftShader() {
-  swiftshader_blocked_ = true;
-  OnGpuBlocked();
 }
 
 bool GpuDataManagerImplPrivate::SwiftShaderAllowed() const {
@@ -613,27 +650,15 @@ void GpuDataManagerImplPrivate::AddLogMessage(
 
 void GpuDataManagerImplPrivate::ProcessCrashed(
     base::TerminationStatus exit_code) {
-  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    // Unretained is ok, because it's posted to UI thread, the thread
-    // where the singleton GpuDataManagerImpl lives until the end.
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::BindOnce(&GpuDataManagerImpl::ProcessCrashed,
-                       base::Unretained(owner_), exit_code));
-    return;
-  }
-  {
-    GpuDataManagerImpl::UnlockedSession session(owner_);
-    observer_list_->Notify(
-        FROM_HERE, &GpuDataManagerObserver::OnGpuProcessCrashed, exit_code);
-  }
+  observer_list_->Notify(
+      FROM_HERE, &GpuDataManagerObserver::OnGpuProcessCrashed, exit_code);
 }
 
 std::unique_ptr<base::ListValue> GpuDataManagerImplPrivate::GetLogMessages()
     const {
   auto value = std::make_unique<base::ListValue>();
   for (size_t ii = 0; ii < log_messages_.size(); ++ii) {
-    std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
+    auto dict = std::make_unique<base::DictionaryValue>();
     dict->SetInteger("level", log_messages_[ii].level);
     dict->SetString("header", log_messages_[ii].header);
     dict->SetString("message", log_messages_[ii].message);
@@ -643,7 +668,7 @@ std::unique_ptr<base::ListValue> GpuDataManagerImplPrivate::GetLogMessages()
 }
 
 void GpuDataManagerImplPrivate::HandleGpuSwitch() {
-  GpuDataManagerImpl::UnlockedSession session(owner_);
+  base::AutoUnlock unlock(owner_->lock_);
   // Notify observers in the browser process.
   ui::GpuSwitchingManager::GetInstance()->NotifyGpuSwitched();
   // Pass the notification to the GPU process to notify observers there.
@@ -701,48 +726,6 @@ void GpuDataManagerImplPrivate::DisableDomainBlockingFor3DAPIsForTesting() {
   domain_blocking_enabled_ = false;
 }
 
-// static
-GpuDataManagerImplPrivate* GpuDataManagerImplPrivate::Create(
-    GpuDataManagerImpl* owner) {
-  return new GpuDataManagerImplPrivate(owner);
-}
-
-GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(GpuDataManagerImpl* owner)
-    : complete_gpu_info_already_requested_(false),
-      observer_list_(new GpuDataManagerObserverList),
-      card_disabled_(false),
-      swiftshader_blocked_(false),
-      update_histograms_(true),
-      domain_blocking_enabled_(true),
-      owner_(owner),
-      in_process_gpu_(false) {
-  DCHECK(owner_);
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableGpu))
-    DisableHardwareAcceleration();
-
-  if (command_line->HasSwitch(switches::kSingleProcess) ||
-      command_line->HasSwitch(switches::kInProcessGPU)) {
-    in_process_gpu_ = true;
-    AppendGpuCommandLine(command_line);
-  }
-
-#if defined(OS_MACOSX)
-  CGDisplayRegisterReconfigurationCallback(DisplayReconfigCallback, owner_);
-#endif  // OS_MACOSX
-
-  // For testing only.
-  if (command_line->HasSwitch(switches::kDisableDomainBlockingFor3DAPIs)) {
-    domain_blocking_enabled_ = false;
-  }
-}
-
-GpuDataManagerImplPrivate::~GpuDataManagerImplPrivate() {
-#if defined(OS_MACOSX)
-  CGDisplayRemoveReconfigurationCallback(DisplayReconfigCallback, owner_);
-#endif
-}
-
 void GpuDataManagerImplPrivate::NotifyGpuInfoUpdate() {
   observer_list_->Notify(FROM_HERE, &GpuDataManagerObserver::OnGpuInfoUpdate);
 }
@@ -756,8 +739,11 @@ bool GpuDataManagerImplPrivate::IsGpuProcessUsingHardwareGpu() const {
   return true;
 }
 
-std::string GpuDataManagerImplPrivate::GetDomainFromURL(
-    const GURL& url) const {
+void GpuDataManagerImplPrivate::SetApplicationVisible(bool is_visible) {
+  application_is_visible_ = is_visible;
+}
+
+std::string GpuDataManagerImplPrivate::GetDomainFromURL(const GURL& url) const {
   // For the moment, we just use the host, or its IP address, as the
   // entry in the set, rather than trying to figure out the top-level
   // domain. This does mean that a.foo.com and b.foo.com will be
@@ -860,21 +846,44 @@ bool GpuDataManagerImplPrivate::NeedsCompleteGpuInfoCollection() const {
 #endif
 }
 
-void GpuDataManagerImplPrivate::OnGpuProcessInitFailure() {
+gpu::GpuMode GpuDataManagerImplPrivate::GetGpuMode() const {
+  if (HardwareAccelerationEnabled()) {
+    return gpu::GpuMode::HARDWARE_ACCELERATED;
+  } else if (SwiftShaderAllowed()) {
+    return gpu::GpuMode::SWIFTSHADER;
+  } else if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor)) {
+    return gpu::GpuMode::DISPLAY_COMPOSITOR;
+  } else {
+    return gpu::GpuMode::DISABLED;
+  }
+}
+
+void GpuDataManagerImplPrivate::FallBackToNextGpuMode() {
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+  // Android and Chrome OS can't switch to software compositing. If the GPU
+  // process initialization fails or GPU process is too unstable then crash the
+  // browser process to reset everything.
+  LOG(FATAL) << "GPU process isn't usable. Goodbye.";
+#else
+  // TODO(kylechar): Use GpuMode to store the current mode instead of
+  // multiple bools.
+
   if (!card_disabled_) {
     DisableHardwareAcceleration();
-    return;
-  }
-  if (SwiftShaderAllowed()) {
-    BlockSwiftShader();
-    return;
-  }
-  if (!base::FeatureList::IsEnabled(features::kVizDisplayCompositor)) {
-    // When Viz display compositor is not enabled, if GPU process fails to
-    // launch with hardware GPU, and then fails to launch with SwiftShader if
-    // available, then GPU process should not launch again.
+  } else if (SwiftShaderAllowed()) {
+    swiftshader_blocked_ = true;
+    OnGpuBlocked();
+  } else if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor)) {
+    // The GPU process is frequently crashing with only the display compositor
+    // running. This should never happen so something is wrong. Crash the
+    // browser process to reset everything.
+    LOG(FATAL) << "The display compositor is frequently crashing. Goodbye.";
+  } else {
+    // We are already at GpuMode::DISABLED. We shouldn't be launching the GPU
+    // process for it to fail.
     NOTREACHED();
   }
+#endif
 }
 
 }  // namespace content

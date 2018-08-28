@@ -24,7 +24,6 @@
 
 #include "third_party/blink/renderer/core/css/css_computed_style_declaration.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/css/computed_style_css_value_mapping.h"
 #include "third_party/blink/renderer/core/css/css_identifier_value.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
@@ -37,12 +36,12 @@
 #include "third_party/blink/renderer/core/css/zoom_adjusted_pixel_value.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -113,7 +112,7 @@ const CSSPropertyID kComputedPropertyArray[] = {
     CSSPropertyUnicodeBidi, CSSPropertyVerticalAlign, CSSPropertyVisibility,
     CSSPropertyWhiteSpace, CSSPropertyWidows, CSSPropertyWidth,
     CSSPropertyWillChange, CSSPropertyWordBreak, CSSPropertyWordSpacing,
-    CSSPropertyWordWrap, CSSPropertyZIndex, CSSPropertyZoom,
+    CSSPropertyZIndex, CSSPropertyZoom,
 
     CSSPropertyWebkitAppearance, CSSPropertyBackfaceVisibility,
     CSSPropertyWebkitBorderHorizontalSpacing, CSSPropertyWebkitBorderImage,
@@ -233,7 +232,7 @@ void CSSComputedStyleDeclaration::setCSSText(const ExecutionContext*,
                                              const String&,
                                              ExceptionState& exception_state) {
   exception_state.ThrowDOMException(
-      kNoModificationAllowedError,
+      DOMExceptionCode::kNoModificationAllowedError,
       "These styles are computed, and therefore read-only.");
 }
 
@@ -317,12 +316,14 @@ const CSSValue* CSSComputedStyleDeclaration::GetPropertyCSSValue(
       StyledNode()->GetDocument().GetPropertyRegistry());
 }
 
-std::unique_ptr<HashMap<AtomicString, scoped_refptr<CSSVariableData>>>
+HeapHashMap<AtomicString, Member<const CSSValue>>
 CSSComputedStyleDeclaration::GetVariables() const {
   const ComputedStyle* style = ComputeComputedStyle();
   if (!style)
-    return nullptr;
-  return ComputedStyleCSSValueMapping::GetVariables(*style);
+    return {};
+  DCHECK(StyledNode());
+  return ComputedStyleCSSValueMapping::GetVariables(
+      *style, StyledNode()->GetDocument().GetPropertyRegistry());
 }
 
 const CSSValue* CSSComputedStyleDeclaration::GetPropertyCSSValue(
@@ -479,7 +480,7 @@ void CSSComputedStyleDeclaration::setProperty(const ExecutionContext*,
                                               const String&,
                                               ExceptionState& exception_state) {
   exception_state.ThrowDOMException(
-      kNoModificationAllowedError,
+      DOMExceptionCode::kNoModificationAllowedError,
       "These styles are computed, and therefore the '" + name +
           "' property is read-only.");
 }
@@ -488,7 +489,7 @@ String CSSComputedStyleDeclaration::removeProperty(
     const String& name,
     ExceptionState& exception_state) {
   exception_state.ThrowDOMException(
-      kNoModificationAllowedError,
+      DOMExceptionCode::kNoModificationAllowedError,
       "These styles are computed, and therefore the '" + name +
           "' property is read-only.");
   return String();
@@ -521,7 +522,7 @@ void CSSComputedStyleDeclaration::SetPropertyInternal(
     SecureContextMode,
     ExceptionState& exception_state) {
   exception_state.ThrowDOMException(
-      kNoModificationAllowedError,
+      DOMExceptionCode::kNoModificationAllowedError,
       "These styles are computed, and therefore the '" +
           CSSUnresolvedProperty::Get(id).GetPropertyNameString() +
           "' property is read-only.");

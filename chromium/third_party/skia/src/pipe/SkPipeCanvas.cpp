@@ -5,21 +5,23 @@
  * found in the LICENSE file.
  */
 
+#include "SkPipeCanvas.h"
+
 #include "SkAutoMalloc.h"
 #include "SkCanvasPriv.h"
 #include "SkColorFilter.h"
-#include "SkDrawable.h"
 #include "SkDrawLooper.h"
 #include "SkDrawShadowInfo.h"
+#include "SkDrawable.h"
 #include "SkImageFilter.h"
 #include "SkMaskFilter.h"
 #include "SkPathEffect.h"
-#include "SkPipeCanvas.h"
 #include "SkPipeFormat.h"
 #include "SkRSXform.h"
 #include "SkShader.h"
 #include "SkStream.h"
-#include "SkTextBlob.h"
+#include "SkTextBlobPriv.h"
+#include "SkTo.h"
 #include "SkTypeface.h"
 
 template <typename T> void write_rrect(T* writer, const SkRRect& rrect) {
@@ -678,7 +680,7 @@ void SkPipeCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y
                                   const SkPaint &paint) {
     SkPipeWriter writer(this);
     writer.write32(pack_verb(SkPipeVerb::kDrawTextBlob, 0));
-    blob->flatten(writer);
+    SkTextBlobPriv::Flatten(*blob, writer);
     writer.writeScalar(x);
     writer.writeScalar(y);
     write_paint(writer, paint, kTextBlob_PaintUsage);
@@ -726,14 +728,16 @@ void SkPipeCanvas::onDrawRegion(const SkRegion& region, const SkPaint& paint) {
     write_paint(writer, paint, kGeometry_PaintUsage);
 }
 
-void SkPipeCanvas::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode bmode,
-                                        const SkPaint& paint) {
+void SkPipeCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkMatrix* bones,
+                                        int boneCount, SkBlendMode bmode, const SkPaint& paint) {
     unsigned extra = static_cast<unsigned>(bmode);
 
     SkPipeWriter writer(this);
     writer.write32(pack_verb(SkPipeVerb::kDrawVertices, extra));
     // TODO: dedup vertices?
     writer.writeDataAsByteArray(vertices->encode().get());
+    writer.write32(boneCount);
+    writer.write(bones, sizeof(SkMatrix) * boneCount);
     write_paint(writer, paint, kVertices_PaintUsage);
 }
 

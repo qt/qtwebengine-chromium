@@ -18,6 +18,7 @@
 #ifdef WEBRTC_ANDROID
 #include "pc/test/androidtestinitializer.h"
 #endif
+#include "absl/memory/memory.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/peerconnectionproxy.h"
@@ -26,7 +27,6 @@
 #include "pc/test/fakeaudiocapturemodule.h"
 #include "rtc_base/fakenetwork.h"
 #include "rtc_base/gunit.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/virtualsocketserver.h"
 
 namespace webrtc {
@@ -104,20 +104,20 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
   WrapperPtr CreatePeerConnection(const RTCConfiguration& config) {
     auto* fake_network = NewFakeNetwork();
     auto port_allocator =
-        rtc::MakeUnique<cricket::BasicPortAllocator>(fake_network);
+        absl::make_unique<cricket::BasicPortAllocator>(fake_network);
     port_allocator->set_flags(cricket::PORTALLOCATOR_DISABLE_TCP |
                               cricket::PORTALLOCATOR_DISABLE_RELAY);
     port_allocator->set_step_delay(cricket::kMinimumStepDelay);
     RTCConfiguration modified_config = config;
     modified_config.sdp_semantics = sdp_semantics_;
-    auto observer = rtc::MakeUnique<MockPeerConnectionObserver>();
+    auto observer = absl::make_unique<MockPeerConnectionObserver>();
     auto pc = pc_factory_->CreatePeerConnection(
         modified_config, std::move(port_allocator), nullptr, observer.get());
     if (!pc) {
       return nullptr;
     }
 
-    auto wrapper = rtc::MakeUnique<PeerConnectionWrapperForIceTest>(
+    auto wrapper = absl::make_unique<PeerConnectionWrapperForIceTest>(
         pc_factory_, pc, std::move(observer));
     wrapper->set_network(fake_network);
     return wrapper;
@@ -542,23 +542,23 @@ TEST_P(PeerConnectionIceTest,
 // The standard (https://tools.ietf.org/html/rfc5245#section-15.4) says that
 // pwd must be 22-256 characters and ufrag must be 4-256 characters.
 TEST_P(PeerConnectionIceTest, VerifyUfragPwdLength) {
-  auto set_local_description_with_ufrag_pwd_length =
-      [this](int ufrag_len, int pwd_len) {
-        auto pc = CreatePeerConnectionWithAudioVideo();
-        auto offer = pc->CreateOffer();
-        SetIceUfragPwd(offer.get(), std::string(ufrag_len, 'x'),
-                       std::string(pwd_len, 'x'));
-        return pc->SetLocalDescription(std::move(offer));
-      };
+  auto set_local_description_with_ufrag_pwd_length = [this](int ufrag_len,
+                                                            int pwd_len) {
+    auto pc = CreatePeerConnectionWithAudioVideo();
+    auto offer = pc->CreateOffer();
+    SetIceUfragPwd(offer.get(), std::string(ufrag_len, 'x'),
+                   std::string(pwd_len, 'x'));
+    return pc->SetLocalDescription(std::move(offer));
+  };
 
-  auto set_remote_description_with_ufrag_pwd_length =
-      [this](int ufrag_len, int pwd_len) {
-        auto pc = CreatePeerConnectionWithAudioVideo();
-        auto offer = pc->CreateOffer();
-        SetIceUfragPwd(offer.get(), std::string(ufrag_len, 'x'),
-                       std::string(pwd_len, 'x'));
-        return pc->SetRemoteDescription(std::move(offer));
-      };
+  auto set_remote_description_with_ufrag_pwd_length = [this](int ufrag_len,
+                                                             int pwd_len) {
+    auto pc = CreatePeerConnectionWithAudioVideo();
+    auto offer = pc->CreateOffer();
+    SetIceUfragPwd(offer.get(), std::string(ufrag_len, 'x'),
+                   std::string(pwd_len, 'x'));
+    return pc->SetRemoteDescription(std::move(offer));
+  };
 
   EXPECT_FALSE(set_local_description_with_ufrag_pwd_length(3, 22));
   EXPECT_FALSE(set_remote_description_with_ufrag_pwd_length(3, 22));
@@ -981,7 +981,7 @@ TEST_F(PeerConnectionIceConfigTest, SetStunCandidateKeepaliveInterval) {
   config.ice_candidate_pool_size = 1;
   CreatePeerConnection(config);
   ASSERT_NE(port_allocator_, nullptr);
-  rtc::Optional<int> actual_stun_keepalive_interval =
+  absl::optional<int> actual_stun_keepalive_interval =
       port_allocator_->stun_candidate_keepalive_interval();
   EXPECT_EQ(actual_stun_keepalive_interval.value_or(-1), 123);
   config.stun_candidate_keepalive_interval = 321;

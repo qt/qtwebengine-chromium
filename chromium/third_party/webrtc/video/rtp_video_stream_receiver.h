@@ -55,7 +55,6 @@ class VideoReceiver;
 
 class RtpVideoStreamReceiver : public RtpData,
                                public RecoveredPacketReceiver,
-                               public RtpFeedback,
                                public RtpPacketSinkInterface,
                                public VCMFrameTypeCallback,
                                public VCMPacketRequestCallback,
@@ -107,9 +106,6 @@ class RtpVideoStreamReceiver : public RtpData,
   // Implements RecoveredPacketReceiver.
   void OnRecoveredPacket(const uint8_t* packet, size_t packet_length) override;
 
-  // Implements RtpFeedback.
-  void OnIncomingSSRCChanged(uint32_t ssrc) override {}
-
   // Implements VCMFrameTypeCallback.
   int32_t RequestKeyFrame() override;
 
@@ -133,8 +129,8 @@ class RtpVideoStreamReceiver : public RtpData,
   // Called by VideoReceiveStream when stats are updated.
   void UpdateRtt(int64_t max_rtt_ms);
 
-  rtc::Optional<int64_t> LastReceivedPacketMs() const;
-  rtc::Optional<int64_t> LastReceivedKeyframePacketMs() const;
+  absl::optional<int64_t> LastReceivedPacketMs() const;
+  absl::optional<int64_t> LastReceivedKeyframePacketMs() const;
 
   // RtpDemuxer only forwards a given RTP packet to one sink. However, some
   // sinks, such as FlexFEC, might wish to be informed of all of the packets
@@ -144,7 +140,6 @@ class RtpVideoStreamReceiver : public RtpData,
   void RemoveSecondarySink(const RtpPacketSinkInterface* sink);
 
  private:
-  bool AddReceiveCodec(const VideoCodec& video_codec);
   void ReceivePacket(const uint8_t* packet,
                      size_t packet_length,
                      const RTPHeader& header);
@@ -155,8 +150,7 @@ class RtpVideoStreamReceiver : public RtpData,
                                          const RTPHeader& header);
   void NotifyReceiverOfEmptyPacket(uint16_t seq_num);
   void NotifyReceiverOfFecPacket(const RTPHeader& header);
-  bool IsPacketInOrder(const RTPHeader& header) const;
-  bool IsPacketRetransmitted(const RTPHeader& header, bool in_order) const;
+  bool IsPacketRetransmitted(const RTPHeader& header) const;
   void UpdateHistograms();
   bool IsRedEnabled() const;
   void InsertSpsPpsIntoTracker(uint8_t payload_type);

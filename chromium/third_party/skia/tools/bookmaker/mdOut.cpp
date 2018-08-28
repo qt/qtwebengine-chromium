@@ -420,8 +420,8 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
         // see if this should have been a findable reference
 
             // look for Sk / sk / SK ..
-        if (!ref.compare(0, 2, "Sk") && ref != "Skew" && ref != "Skews" &&
-              ref != "Skip" && ref != "Skips") {
+        if (!ref.compare(0, 2, "Sk") && ref != "Skew" && ref != "Skews" && ref != "Skewing"
+              && ref != "Skip" && ref != "Skips") {
             if (BmhParser::Resolvable::kOut != resolvable &&
                     BmhParser::Resolvable::kFormula != resolvable) {
                 t.reportError("missed Sk prefixed");
@@ -835,7 +835,8 @@ Definition* MdOut::csParent() {
                 break;
             }
         }
-        SkASSERT(csParent || string::npos == fRoot->fFileName.find("Sk"));
+        SkASSERT(csParent || string::npos == fRoot->fFileName.find("Sk")
+                || string::npos != fRoot->fFileName.find("SkBlendMode_Reference.bmh"));
     }
     return csParent;
 }
@@ -1353,7 +1354,7 @@ void MdOut::markTypeOut(Definition* def, const Definition** prior) {
                     if (fBmhParser.fTopicMap.end() == fBmhParser.fTopicMap.find(fullName)) {
                         (*subtopic)->reportError<void>("missing #Details subtopic");
                     }
-                    subtopicName = parentSubtopic->fName + '_' + subtopicName;
+             //       subtopicName = parentSubtopic->fName + '_' + subtopicName;
                     string noUnderscores = subtopicName;
                     replace_all(noUnderscores, "_", "&nbsp;");
                     details = this->anchorLocalRef(subtopicName, noUnderscores) + "&nbsp;";
@@ -1369,8 +1370,6 @@ void MdOut::markTypeOut(Definition* def, const Definition** prior) {
             this->mdHeaderOut(2);
             this->htmlOut(anchorDef(def->fFiddle, "Define " + def->fName));
             this->lf(2);
-            break;
-        case MarkType::kDefinedBy:
             break;
         case MarkType::kDeprecated:
             this->writeString("Deprecated.");
@@ -1434,6 +1433,8 @@ void MdOut::markTypeOut(Definition* def, const Definition** prior) {
             break;
         case MarkType::kExternal:
             break;
+        case MarkType::kFile:
+            break;
         case MarkType::kFormula:
             break;
         case MarkType::kFunction:
@@ -1442,6 +1443,10 @@ void MdOut::markTypeOut(Definition* def, const Definition** prior) {
             break;
         case MarkType::kIllustration: {
             string illustName = "Illustrations_" + def->fParent->fFiddle;
+            string number = string(def->fContentStart, def->length());
+            if (number.length() && "1" != number) {
+                illustName += "_" + number;
+            }
             auto illustIter = fBmhParser.fTopicMap.find(illustName);
             SkASSERT(fBmhParser.fTopicMap.end() != illustIter);
             Definition* illustDef = illustIter->second;
@@ -2115,9 +2120,16 @@ void MdOut::subtopicsOut(Definition* def) {
 }
 
 void MdOut::subtopicOut(string name) {
-    Definition* csParent = this->csParent();
-    SkASSERT(csParent);
     const Definition* topicParent = fSubtopic ? fSubtopic->topicParent() : nullptr;
+    Definition* csParent = this->csParent();
+    if (!csParent) {
+        auto csIter = std::find_if(topicParent->fChildren.begin(), topicParent->fChildren.end(),
+                [](const Definition* def){ return MarkType::kEnum == def->fMarkType
+                || MarkType::kEnumClass == def->fMarkType; } );
+        SkASSERT(topicParent->fChildren.end() != csIter);
+        csParent = *csIter;
+    }
+    SkASSERT(csParent);
     this->lfAlways(1);
     if (fPopulators.end() != fPopulators.find(name)) {
         const SubtopicDescriptions& tableDescriptions = this->populator(name);
@@ -2146,6 +2158,11 @@ void MdOut::subtopicOut(string name) {
             continue;
         }
         size_t start = entry->fName.find_last_of("::");
+        if (MarkType::kConst == entry->fMarkType && entry->fParent
+                && MarkType::kEnumClass == entry->fParent->fMarkType
+                && string::npos != start && start > 1) {
+            start = entry->fName.substr(0, start - 1).rfind("::");
+        }
         string entryName = entry->fName.substr(string::npos == start ? 0 : start + 1);
         items[entryName] = entry;
     }
@@ -2197,5 +2214,5 @@ void MdOut::subtopicOut(string name) {
         }
     }
     FPRINTF("</table>");
-    this->lfAlways(1);
+    this->lf(2);
 }

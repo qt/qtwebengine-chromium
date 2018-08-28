@@ -12,6 +12,7 @@
 #include "GrGlyph.h"
 #include "SkArenaAlloc.h"
 #include "SkGlyphCache.h"
+#include "SkMasks.h"
 #include "SkTDynamicHash.h"
 
 class GrGlyphCache;
@@ -108,7 +109,7 @@ private:
  */
 class GrGlyphCache {
 public:
-    GrGlyphCache(const GrCaps* caps, float maxTextureBytes);
+    GrGlyphCache(const GrCaps* caps, size_t maxTextureBytes);
     ~GrGlyphCache();
 
     SkScalar getGlyphSizeLimit() const { return fGlyphSizeLimit; }
@@ -127,9 +128,12 @@ public:
         return strike;
     }
 
+    const SkMasks& getMasks() const { return *f565Masks; }
+
     void freeAll();
 
     static void HandleEviction(GrDrawOpAtlas::AtlasID, void*);
+    static SkScalar ComputeGlyphSizeLimit(int maxTextureSize, size_t maxTextureBytes);
 
 private:
     sk_sp<GrTextStrike> generateStrike(const SkGlyphCache* cache) {
@@ -144,6 +148,7 @@ private:
     StrikeHash fCache;
     GrTextStrike* fPreserveStrike;
     SkScalar fGlyphSizeLimit;
+    std::unique_ptr<const SkMasks> f565Masks;
 };
 
 #endif

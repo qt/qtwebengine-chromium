@@ -33,6 +33,9 @@ class PLATFORM_EXPORT ScriptRunIterator {
 
   bool Consume(unsigned& limit, UScriptCode&);
 
+  static constexpr int kMaxScriptCount = 20;
+  using UScriptCodeList = Vector<UScriptCode, kMaxScriptCount>;
+
  private:
   struct BracketRec {
     DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
@@ -56,9 +59,12 @@ class PLATFORM_EXPORT ScriptRunIterator {
   // excessively large when processing long runs of text.
   static const int kMaxBrackets = 32;
 
-  Vector<UScriptCode> current_set_;
-  Vector<UScriptCode> next_set_;
-  Vector<UScriptCode> ahead_set_;
+  UScriptCodeList current_set_;
+  // Because next_set_ and ahead_set_ are swapped as we consume characters, and
+  // swapping inlined vector is not cheap, next_set_ and ahead_set_ are
+  // pointers.
+  std::unique_ptr<UScriptCodeList> next_set_;
+  std::unique_ptr<UScriptCodeList> ahead_set_;
 
   UChar32 ahead_character_;
   size_t ahead_pos_;
@@ -90,9 +96,10 @@ class PLATFORM_EXPORT ScriptData {
     kBracketTypeCount
   };
 
-  static const int kMaxScriptCount;
+  static constexpr int kMaxScriptCount = ScriptRunIterator::kMaxScriptCount;
+  using UScriptCodeList = ScriptRunIterator::UScriptCodeList;
 
-  virtual void GetScripts(UChar32, Vector<UScriptCode>& dst) const = 0;
+  virtual void GetScripts(UChar32, UScriptCodeList& dst) const = 0;
 
   virtual UChar32 GetPairedBracket(UChar32) const = 0;
 
@@ -105,7 +112,7 @@ class PLATFORM_EXPORT ICUScriptData : public ScriptData {
 
   static const ICUScriptData* Instance();
 
-  void GetScripts(UChar32, Vector<UScriptCode>& dst) const override;
+  void GetScripts(UChar32, UScriptCodeList& dst) const override;
 
   UChar32 GetPairedBracket(UChar32) const override;
 

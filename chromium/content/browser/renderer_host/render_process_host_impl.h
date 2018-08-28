@@ -40,22 +40,22 @@
 #include "content/common/media/renderer_audio_output_stream_factory.mojom.h"
 #include "content/common/renderer.mojom.h"
 #include "content/common/renderer_host.mojom.h"
-#include "content/common/storage_partition_service.mojom.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/service_manager_connection.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
 #include "media/media_buildflags.h"
-#include "mojo/edk/embedder/outgoing_broker_client_invitation.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/associated_binding_set.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
+#include "mojo/public/cpp/system/invitation.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/mojom/service.mojom.h"
 #include "services/ui/public/interfaces/gpu.mojom.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
+#include "third_party/blink/public/mojom/dom_storage/storage_partition_service.mojom.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gl/gpu_switching_observer.h"
 
@@ -79,6 +79,7 @@ class MediaStreamTrackMetricsHost;
 class P2PSocketDispatcherHost;
 class PermissionServiceContext;
 class PeerConnectionTrackerHost;
+class PluginRegistryImpl;
 class PushMessagingManager;
 class RenderFrameMessageFilter;
 class RenderProcessHostFactory;
@@ -86,6 +87,7 @@ class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
 class ResourceMessageFilter;
+class ServiceWorkerDispatcherHost;
 class SiteInstance;
 class SiteInstanceImpl;
 class StoragePartition;
@@ -160,7 +162,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   BrowserContext* GetBrowserContext() const override;
   bool InSameStoragePartition(StoragePartition* partition) const override;
   int GetID() const override;
-  bool HasConnection() const override;
+  bool IsInitializedAndNotDead() const override;
   void SetIgnoreInputEvents(bool ignore_input_events) override;
   bool IgnoreInputEvents() const override;
   void Cleanup() override;
@@ -206,6 +208,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   mojom::Renderer* GetRendererInterface() override;
   resource_coordinator::ProcessResourceCoordinator*
   GetProcessResourceCoordinator() override;
+  void CreateURLLoaderFactory(
+      network::mojom::URLLoaderFactoryRequest request) override;
 
   void SetIsNeverSuitableForReuse() override;
   bool MayReuseHost() override;
@@ -213,6 +217,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SetIsUsed() override;
 
   bool HostHasNotBeenUsed() override;
+  void LockToOrigin(const GURL& lock_url) override;
   void BindCacheStorage(blink::mojom::CacheStorageRequest request,
                         const url::Origin& origin) override;
 
@@ -323,7 +328,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // service.
   using CreateStoragePartitionServiceFunction =
       void (*)(RenderProcessHostImpl* rph,
-               mojom::StoragePartitionServiceRequest request);
+               blink::mojom::StoragePartitionServiceRequest request);
   static void SetCreateStoragePartitionServiceFunction(
       CreateStoragePartitionServiceFunction function);
 
@@ -466,8 +471,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       mojom::AssociatedInterfaceAssociatedRequest request) override;
 
   // mojom::RendererHost
-  void GetBlobURLLoaderFactory(
-      network::mojom::URLLoaderFactoryRequest request) override;
   using BrowserHistogramCallback =
       mojom::RendererHost::GetBrowserHistogramCallback;
   void GetBrowserHistogram(const std::string& name,
@@ -483,9 +486,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void BindCompositingModeReporter(
       viz::mojom::CompositingModeReporterRequest request);
   void CreateStoragePartitionService(
-      mojom::StoragePartitionServiceRequest request);
+      blink::mojom::StoragePartitionServiceRequest request);
   void CreateRendererHost(mojom::RendererHostAssociatedRequest request);
-  void CreateURLLoaderFactory(network::mojom::URLLoaderFactoryRequest request);
 
   // Control message handlers.
   void OnUserMetricsRecordAction(const std::string& action);
@@ -574,6 +576,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   base::FilePath GetAecDumpFilePathWithExtensions(const base::FilePath& file);
   base::SequencedTaskRunner& GetAecDumpFileTaskRunner();
   void OnAec3Enabled();
+  void NotifyRendererIfLockedToSite();
 
   static void OnMojoError(int render_process_id, const std::string& error);
 
@@ -612,8 +615,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // execute.
   void CancelProcessShutdownDelayForUnload();
 
-  std::unique_ptr<mojo::edk::OutgoingBrokerClientInvitation>
-      broker_client_invitation_;
+  mojo::OutgoingInvitation mojo_invitation_;
 
   std::unique_ptr<ChildConnection> child_connection_;
   int connection_filter_id_ =
@@ -788,6 +790,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   std::unique_ptr<IndexedDBDispatcherHost, BrowserThread::DeleteOnIOThread>
       indexed_db_factory_;
 
+  std::unique_ptr<ServiceWorkerDispatcherHost, BrowserThread::DeleteOnIOThread>
+      service_worker_dispatcher_host_;
+
   scoped_refptr<CacheStorageDispatcherHost> cache_storage_dispatcher_host_;
 
   bool channel_connected_;
@@ -808,6 +813,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
       push_messaging_manager_;
 
   std::unique_ptr<EmbeddedFrameSinkProviderImpl> embedded_frame_sink_provider_;
+  std::unique_ptr<PluginRegistryImpl, BrowserThread::DeleteOnIOThread>
+      plugin_registry_;
 
   mojom::ChildControlPtr child_control_interface_;
   mojom::RouteProviderAssociatedPtr remote_route_provider_;

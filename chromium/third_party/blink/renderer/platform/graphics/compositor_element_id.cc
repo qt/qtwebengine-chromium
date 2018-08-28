@@ -33,7 +33,9 @@ CompositorElementId PLATFORM_EXPORT CompositorElementIdFromUniqueObjectId(
          namespace_id == CompositorElementIdNamespace::kScroll ||
          namespace_id == CompositorElementIdNamespace::kEffectFilter ||
          namespace_id == CompositorElementIdNamespace::kEffectMask ||
-         namespace_id == CompositorElementIdNamespace::kEffectClipPath);
+         namespace_id == CompositorElementIdNamespace::kEffectClipPath ||
+         namespace_id == CompositorElementIdNamespace::kVerticalScrollbar ||
+         namespace_id == CompositorElementIdNamespace::kHorizontalScrollbar);
   return CreateCompositorElementId(id, namespace_id);
 }
 
@@ -52,7 +54,7 @@ CompositorElementIdFromUniqueObjectId(UniqueObjectId id) {
 CompositorElementIdNamespace NamespaceFromCompositorElementId(
     CompositorElementId element_id) {
   return static_cast<CompositorElementIdNamespace>(
-      element_id.ToInternalValue() %
+      element_id.GetInternalValue() %
       static_cast<uint64_t>(
           CompositorElementIdNamespace::kMaxRepresentableNamespaceId));
 }

@@ -13,7 +13,7 @@
 #include "net/third_party/quic/test_tools/mock_quic_session_visitor.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -187,10 +187,11 @@ class TestQuicCryptoClientStream : public TestQuicCryptoStream {
         handshaker_(new TlsClientHandshaker(
             this,
             session,
-            QuicServerId("test.example.com", 443),
+            QuicServerId("test.example.com", 443, false),
             proof_verifier_.get(),
             ssl_ctx_.get(),
-            crypto_test_utils::ProofVerifyContextForTesting())) {}
+            crypto_test_utils::ProofVerifyContextForTesting(),
+            "quic-tester")) {}
 
   ~TestQuicCryptoClientStream() override = default;
 
@@ -261,6 +262,8 @@ class TlsHandshakerTest : public QuicTest {
     server_stream_ =
         new TestQuicCryptoServerStream(&server_session_, &proof_source_);
     server_session_.SetCryptoStream(server_stream_);
+    client_session_.Initialize();
+    server_session_.Initialize();
     EXPECT_FALSE(client_stream_->encryption_established());
     EXPECT_FALSE(client_stream_->handshake_confirmed());
     EXPECT_FALSE(server_stream_->encryption_established());
@@ -401,4 +404,4 @@ TEST_F(TlsHandshakerTest, ServerConnectionClosedOnTlsAlert) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

@@ -8,7 +8,7 @@
 #include "base/single_thread_task_runner.h"
 #include "content/common/navigation_params.h"
 #include "content/common/service_worker/service_worker_messages.h"
-#include "content/common/service_worker/service_worker_provider_host_info.h"
+#include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/origin_util.h"
@@ -21,8 +21,9 @@
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
+#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_network_provider.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_network_provider.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 
@@ -54,7 +55,7 @@ bool IsFrameSecure(blink::WebFrame* frame) {
 class WebServiceWorkerNetworkProviderForFrame
     : public blink::WebServiceWorkerNetworkProvider {
  public:
-  WebServiceWorkerNetworkProviderForFrame(
+  explicit WebServiceWorkerNetworkProviderForFrame(
       std::unique_ptr<ServiceWorkerNetworkProvider> provider)
       : provider_(std::move(provider)) {}
 
@@ -74,14 +75,16 @@ class WebServiceWorkerNetworkProviderForFrame
             network::mojom::RequestContextFrameType::kTopLevel &&
         request.GetFrameType() !=
             network::mojom::RequestContextFrameType::kNested &&
-        !provider_->IsControlledByServiceWorker()) {
+        provider_->IsControlledByServiceWorker() ==
+            blink::mojom::ControllerServiceWorkerMode::kNoController) {
       request.SetSkipServiceWorker(true);
     }
   }
 
   int ProviderID() const override { return provider_->provider_id(); }
 
-  bool HasControllerServiceWorker() override {
+  blink::mojom::ControllerServiceWorkerMode IsControlledByServiceWorker()
+      override {
     return provider_->IsControlledByServiceWorker();
   }
 
@@ -95,14 +98,15 @@ class WebServiceWorkerNetworkProviderForFrame
 
   std::unique_ptr<blink::WebURLLoader> CreateURLLoader(
       const blink::WebURLRequest& request,
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner) override {
+      std::unique_ptr<blink::scheduler::WebResourceLoadingTaskRunnerHandle>
+          task_runner_handle) override {
     // RenderThreadImpl is nullptr in some tests.
     if (!RenderThreadImpl::current())
       return nullptr;
 
     // S13nServiceWorker:
     // We only install our own URLLoader if Servicification is enabled.
-    if (!ServiceWorkerUtils::IsServicificationEnabled())
+    if (!blink::ServiceWorkerUtils::IsServicificationEnabled())
       return nullptr;
 
     // We need SubresourceLoaderFactory populated in order to create our own
@@ -131,10 +135,12 @@ class WebServiceWorkerNetworkProviderForFrame
     // pointer into SharedURLLoaderFactory.
     return std::make_unique<WebURLLoaderImpl>(
         RenderThreadImpl::current()->resource_dispatcher(),
-        std::move(task_runner),
+        std::move(task_runner_handle),
         base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
             provider_->context()->GetSubresourceLoaderFactory()));
   }
+
+  void DispatchNetworkQuiet() override { provider_->DispatchNetworkQuiet(); }
 
  private:
   std::unique_ptr<ServiceWorkerNetworkProvider> provider_;
@@ -146,9 +152,8 @@ class WebServiceWorkerNetworkProviderForFrame
 std::unique_ptr<blink::WebServiceWorkerNetworkProvider>
 ServiceWorkerNetworkProvider::CreateForNavigation(
     int route_id,
-    const RequestNavigationParams& request_params,
+    const RequestNavigationParams* request_params,
     blink::WebLocalFrame* frame,
-    bool content_initiated,
     mojom::ControllerServiceWorkerInfoPtr controller_info,
     scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory) {
   // Determine if a ServiceWorkerNetworkProvider should be created and properly
@@ -157,13 +162,13 @@ ServiceWorkerNetworkProvider::CreateForNavigation(
   // however it will have an invalid id.
   bool should_create_provider = false;
   int provider_id = kInvalidServiceWorkerProviderId;
-  if (content_initiated) {
+  if (request_params) {
+    should_create_provider = request_params->should_create_service_worker;
+    provider_id = request_params->service_worker_provider_id;
+  } else {
     should_create_provider =
         ((frame->EffectiveSandboxFlags() & blink::WebSandboxFlags::kOrigin) !=
          blink::WebSandboxFlags::kOrigin);
-  } else {
-    should_create_provider = request_params.should_create_service_worker;
-    provider_id = request_params.service_worker_provider_id;
   }
 
   // If we shouldn't create a real ServiceWorkerNetworkProvider, return one with
@@ -206,7 +211,7 @@ ServiceWorkerNetworkProvider::CreateForSharedWorker(
     scoped_refptr<network::SharedURLLoaderFactory> fallback_loader_factory) {
   // S13nServiceWorker: |info| holds info about the precreated provider host.
   if (info) {
-    DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
+    DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
     return base::WrapUnique(new ServiceWorkerNetworkProvider(
         std::move(info), std::move(script_loader_factory_info),
         std::move(fallback_loader_factory)));
@@ -232,7 +237,7 @@ ServiceWorkerNetworkProvider*
 ServiceWorkerNetworkProvider::FromWebServiceWorkerNetworkProvider(
     blink::WebServiceWorkerNetworkProvider* provider) {
   if (!provider) {
-    DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
+    DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
     return nullptr;
   }
   return static_cast<WebServiceWorkerNetworkProviderForFrame*>(provider)
@@ -251,9 +256,17 @@ int ServiceWorkerNetworkProvider::provider_id() const {
   return context()->provider_id();
 }
 
-bool ServiceWorkerNetworkProvider::IsControlledByServiceWorker() const {
-  return context() && context()->GetControllerVersionId() !=
-                          blink::mojom::kInvalidServiceWorkerVersionId;
+blink::mojom::ControllerServiceWorkerMode
+ServiceWorkerNetworkProvider::IsControlledByServiceWorker() const {
+  if (!context())
+    return blink::mojom::ControllerServiceWorkerMode::kNoController;
+  return context()->IsControlledByServiceWorker();
+}
+
+void ServiceWorkerNetworkProvider::DispatchNetworkQuiet() {
+  if (!context())
+    return;
+  context()->DispatchNetworkQuiet();
 }
 
 // Creates an invalid instance (provider_id() returns
@@ -273,14 +286,15 @@ ServiceWorkerNetworkProvider::ServiceWorkerNetworkProvider(
          provider_type ==
              blink::mojom::ServiceWorkerProviderType::kForSharedWorker);
 
-  ServiceWorkerProviderHostInfo host_info(provider_id, route_id, provider_type,
-                                          is_parent_frame_secure);
+  auto host_info = mojom::ServiceWorkerProviderHostInfo::New(
+      provider_id, route_id, provider_type, is_parent_frame_secure,
+      nullptr /* host_request */, nullptr /* client_ptr_info */);
   mojom::ServiceWorkerContainerAssociatedRequest client_request =
-      mojo::MakeRequest(&host_info.client_ptr_info);
+      mojo::MakeRequest(&host_info->client_ptr_info);
   mojom::ServiceWorkerContainerHostAssociatedPtrInfo host_ptr_info;
-  host_info.host_request = mojo::MakeRequest(&host_ptr_info);
-  DCHECK(host_info.host_request.is_pending());
-  DCHECK(host_info.host_request.handle().is_valid());
+  host_info->host_request = mojo::MakeRequest(&host_ptr_info);
+  DCHECK(host_info->host_request.is_pending());
+  DCHECK(host_info->host_request.handle().is_valid());
 
   // current() may be null in tests.
   if (ChildThreadImpl::current()) {

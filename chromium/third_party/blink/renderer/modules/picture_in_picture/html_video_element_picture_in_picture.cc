@@ -6,6 +6,7 @@
 
 #include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
@@ -47,27 +48,32 @@ ScriptPromise HTMLVideoElementPictureInPicture::requestPictureInPicture(
     case Status::kFrameDetached:
       return ScriptPromise::RejectWithDOMException(
           script_state,
-          DOMException::Create(kInvalidStateError, kDetachedError));
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               kDetachedError));
     case Status::kMetadataNotLoaded:
       return ScriptPromise::RejectWithDOMException(
           script_state,
-          DOMException::Create(kInvalidStateError, kMetadataNotLoadedError));
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               kMetadataNotLoadedError));
     case Status::kVideoTrackNotAvailable:
       return ScriptPromise::RejectWithDOMException(
-          script_state, DOMException::Create(kInvalidStateError,
-                                             kVideoTrackNotAvailableError));
+          script_state,
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               kVideoTrackNotAvailableError));
     case Status::kDisabledByFeaturePolicy:
       return ScriptPromise::RejectWithDOMException(
-          script_state,
-          DOMException::Create(kSecurityError, kFeaturePolicyBlocked));
+          script_state, DOMException::Create(DOMExceptionCode::kSecurityError,
+                                             kFeaturePolicyBlocked));
     case Status::kDisabledByAttribute:
       return ScriptPromise::RejectWithDOMException(
-          script_state, DOMException::Create(kInvalidStateError,
-                                             kDisablePictureInPicturePresent));
+          script_state,
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               kDisablePictureInPicturePresent));
     case Status::kDisabledBySystem:
       return ScriptPromise::RejectWithDOMException(
           script_state,
-          DOMException::Create(kNotSupportedError, kNotAvailable));
+          DOMException::Create(DOMExceptionCode::kNotSupportedError,
+                               kNotAvailable));
     case Status::kEnabled:
       break;
   }
@@ -78,15 +84,15 @@ ScriptPromise HTMLVideoElementPictureInPicture::requestPictureInPicture(
   DCHECK(frame);
   if (!Frame::ConsumeTransientUserActivation(frame)) {
     return ScriptPromise::RejectWithDOMException(
-        script_state,
-        DOMException::Create(kNotAllowedError, kUserGestureRequired));
+        script_state, DOMException::Create(DOMExceptionCode::kNotAllowedError,
+                                           kUserGestureRequired));
   }
 
   // TODO(crbug.com/806249): Remove this when MediaStreams are supported.
   if (element.GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
-        DOMException::Create(kNotSupportedError,
+        DOMException::Create(DOMExceptionCode::kNotSupportedError,
                              "MediaStreams are not supported yet."));
   }
 

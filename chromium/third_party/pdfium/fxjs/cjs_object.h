@@ -10,9 +10,11 @@
 #include <memory>
 #include <utility>
 
+#include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fxjs/cfxjs_engine.h"
 #include "fxjs/cjs_runtime.h"
+#include "third_party/base/span.h"
 
 struct JSConstSpec {
   enum Type { Number = 0, String = 1 };
@@ -38,28 +40,25 @@ class CJS_Object {
  public:
   static void DefineConsts(CFXJS_Engine* pEngine,
                            int objId,
-                           const JSConstSpec consts[],
-                           size_t count);
+                           pdfium::span<const JSConstSpec> consts);
   static void DefineProps(CFXJS_Engine* pEngine,
                           int objId,
-                          const JSPropertySpec props[],
-                          size_t count);
+                          pdfium::span<const JSPropertySpec> consts);
   static void DefineMethods(CFXJS_Engine* pEngine,
                             int objId,
-                            const JSMethodSpec methods[],
-                            size_t count);
+                            pdfium::span<const JSMethodSpec> consts);
 
-  explicit CJS_Object(v8::Local<v8::Object> pObject);
+  CJS_Object(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
   virtual ~CJS_Object();
 
-  virtual void InitInstance(IJS_Runtime* pIRuntime);
+  v8::Local<v8::Object> ToV8Object() { return m_pV8Object.Get(GetIsolate()); }
+  v8::Isolate* GetIsolate() const { return m_pIsolate.Get(); }
+  CJS_Runtime* GetRuntime() const { return m_pRuntime.Get(); }
 
-  v8::Local<v8::Object> ToV8Object() { return m_pV8Object.Get(m_pIsolate); }
-  v8::Isolate* GetIsolate() const { return m_pIsolate; }
-
- protected:
+ private:
+  UnownedPtr<v8::Isolate> m_pIsolate;
   v8::Global<v8::Object> m_pV8Object;
-  v8::Isolate* m_pIsolate;
+  CJS_Runtime::ObservedPtr m_pRuntime;
 };
 
 #endif  // FXJS_CJS_OBJECT_H_

@@ -11,6 +11,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/i18n/base_i18n_switches.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/network_session_configurator/common/network_switches.h"
@@ -41,6 +42,7 @@
 #if defined(OS_WIN)
 #include "sandbox/win/src/sandbox_policy.h"
 #include "sandbox/win/src/sandbox_types.h"
+#include "services/audio/audio_sandbox_win.h"
 #include "services/network/network_sandbox_win.h"
 #endif
 
@@ -74,7 +76,8 @@ class UtilitySandboxedProcessLauncherDelegate
         sandbox_type_ == service_manager::SANDBOX_TYPE_CDM ||
         sandbox_type_ == service_manager::SANDBOX_TYPE_PDF_COMPOSITOR ||
         sandbox_type_ == service_manager::SANDBOX_TYPE_PROFILING ||
-        sandbox_type_ == service_manager::SANDBOX_TYPE_PPAPI;
+        sandbox_type_ == service_manager::SANDBOX_TYPE_PPAPI ||
+        sandbox_type_ == service_manager::SANDBOX_TYPE_AUDIO;
     DCHECK(supported_sandbox_type);
 #endif  // DCHECK_IS_ON()
   }
@@ -90,6 +93,9 @@ class UtilitySandboxedProcessLauncherDelegate
   bool PreSpawnTarget(sandbox::TargetPolicy* policy) override {
     if (sandbox_type_ == service_manager::SANDBOX_TYPE_NETWORK)
       return network::NetworkPreSpawnTarget(policy);
+
+    if (sandbox_type_ == service_manager::SANDBOX_TYPE_AUDIO)
+      return audio::AudioPreSpawnTarget(policy);
 
     return true;
   }
@@ -187,6 +193,10 @@ void UtilityProcessHost::BindInterface(
                                               std::move(interface_pipe));
 }
 
+void UtilityProcessHost::SetMetricsName(const std::string& metrics_name) {
+  metrics_name_ = metrics_name;
+}
+
 void UtilityProcessHost::SetName(const base::string16& name) {
   name_ = name;
 }
@@ -208,6 +218,7 @@ bool UtilityProcessHost::StartProcess() {
 
   started_ = true;
   process_->SetName(name_);
+  process_->SetMetricsName(metrics_name_);
   process_->GetHost()->CreateChannelMojo();
 
   if (RenderProcessHost::run_renderer_in_process()) {
@@ -217,7 +228,7 @@ bool UtilityProcessHost::StartProcess() {
     in_process_thread_.reset(
         g_utility_main_thread_factory(InProcessChildThreadParams(
             BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
-            process_->GetInProcessBrokerClientInvitation(),
+            process_->GetInProcessMojoInvitation(),
             process_->child_connection()->service_token())));
     in_process_thread_->Start();
   } else {
@@ -279,11 +290,15 @@ bool UtilityProcessHost::StartProcess() {
 #if defined(OS_MACOSX)
       service_manager::switches::kEnableSandboxLogging,
 #endif
+      switches::kForceTextDirection,
+      switches::kForceUIDirection,
       switches::kIgnoreCertificateErrors,
       switches::kOverrideUseSoftwareGLForTests,
       switches::kOverrideEnabledCdmInterfaceVersion,
       switches::kProxyServer,
+      switches::kDisableAcceleratedMjpegDecode,
       switches::kUseFakeDeviceForMediaStream,
+      switches::kUseFakeJpegDecodeAccelerator,
       switches::kUseFileForFakeVideoCapture,
       switches::kUseMockCertVerifierForTesting,
       switches::kUtilityStartupDialog,
@@ -372,24 +387,6 @@ void UtilityProcessHost::OnProcessCrashed(int exit_code) {
   client_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&UtilityProcessHostClient::OnProcessCrashed,
                                 client_, exit_code));
-}
-
-void UtilityProcessHost::NotifyAndDelete(int error_code) {
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::BindOnce(&UtilityProcessHost::NotifyLaunchFailedAndDelete,
-                     weak_ptr_factory_.GetWeakPtr(), error_code));
-}
-
-// static
-void UtilityProcessHost::NotifyLaunchFailedAndDelete(
-    base::WeakPtr<UtilityProcessHost> host,
-    int error_code) {
-  if (!host)
-    return;
-
-  host->OnProcessLaunchFailed(error_code);
-  delete host.get();
 }
 
 }  // namespace content

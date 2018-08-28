@@ -48,6 +48,8 @@ rtc_static_library("rtc_p2p") {
     "base/portinterface.h",
     "base/pseudotcp.cc",
     "base/pseudotcp.h",
+    "base/regatheringcontroller.cc",
+    "base/regatheringcontroller.h",
     "base/relayport.cc",
     "base/relayport.h",
     "base/stun.cc",
@@ -81,14 +83,17 @@ rtc_static_library("rtc_p2p") {
 
   deps = [
     "../api:libjingle_peerconnection_api",
-    "../api:optional",
     "../api:ortc_api",
     "../logging:ice_log",
+    "../rtc_base:base64",
     "../rtc_base:checks",
     "../rtc_base:rtc_base",
     "../rtc_base:safe_minmax",
     "../rtc_base:stringutils",
     "../system_wrappers:field_trial_api",
+    "../system_wrappers:metrics_api",
+    "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 
   if (build_with_chromium) {
@@ -135,6 +140,7 @@ if (rtc_include_tests) {
       "../rtc_base:rtc_base_approved",
       "../rtc_base:rtc_base_tests_utils",
       "../test:test_support",
+      "//third_party/abseil-cpp/absl/memory",
     ]
   }
 
@@ -149,6 +155,7 @@ if (rtc_include_tests) {
       "base/port_unittest.cc",
       "base/portallocator_unittest.cc",
       "base/pseudotcp_unittest.cc",
+      "base/regatheringcontroller_unittest.cc",
       "base/relayport_unittest.cc",
       "base/relayserver_unittest.cc",
       "base/stun_unittest.cc",
@@ -165,15 +172,16 @@ if (rtc_include_tests) {
     deps = [
       ":p2p_test_utils",
       ":rtc_p2p",
-      "../api:fakemetricsobserver",
       "../api:ortc_api",
       "../rtc_base:checks",
       "../rtc_base:rtc_base",
       "../rtc_base:rtc_base_approved",
       "../rtc_base:rtc_base_tests_utils",
       "../rtc_base:stringutils",
+      "../system_wrappers:metrics_default",
       "../test:test_support",
       "//testing/gtest",
+      "//third_party/abseil-cpp/absl/memory",
     ]
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).

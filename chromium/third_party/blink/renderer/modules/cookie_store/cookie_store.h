@@ -8,10 +8,11 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/network/public/mojom/restricted_cookie_manager.mojom-blink.h"
 #include "third_party/blink/public/mojom/cookie_store/cookie_store.mojom-blink.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/public/platform/web_canonical_cookie.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -19,8 +20,10 @@
 
 namespace blink {
 
+class CookieStoreDeleteOptions;
 class CookieStoreGetOptions;
 class CookieStoreSetOptions;
+class CookieStoreSetExtraOptions;
 class ScriptPromiseResolver;
 class ScriptState;
 
@@ -42,42 +45,26 @@ class CookieStore final : public EventTargetWithInlineData,
                            std::move(subscription_backend));
   }
 
+  ScriptPromise getAll(ScriptState*, const String& name, ExceptionState&);
   ScriptPromise getAll(ScriptState*,
                        const CookieStoreGetOptions&,
                        ExceptionState&);
-  ScriptPromise getAll(ScriptState*,
-                       const String& name,
-                       const CookieStoreGetOptions&,
-                       ExceptionState&);
+  ScriptPromise get(ScriptState*, const String& name, ExceptionState&);
   ScriptPromise get(ScriptState*,
-                    const CookieStoreGetOptions&,
-                    ExceptionState&);
-  ScriptPromise get(ScriptState*,
-                    const String& name,
-                    const CookieStoreGetOptions&,
-                    ExceptionState&);
-  ScriptPromise has(ScriptState*,
-                    const CookieStoreGetOptions&,
-                    ExceptionState&);
-  ScriptPromise has(ScriptState*,
-                    const String& name,
                     const CookieStoreGetOptions&,
                     ExceptionState&);
 
   ScriptPromise set(ScriptState*,
-                    const CookieStoreSetOptions&,
+                    const CookieStoreSetExtraOptions&,
                     ExceptionState&);
   ScriptPromise set(ScriptState*,
                     const String& name,
                     const String& value,
                     const CookieStoreSetOptions&,
                     ExceptionState&);
+  ScriptPromise Delete(ScriptState*, const String& name, ExceptionState&);
   ScriptPromise Delete(ScriptState*,
-                       const CookieStoreSetOptions&,
-                       ExceptionState&);
-  ScriptPromise Delete(ScriptState*,
-                       const String& name,
-                       const CookieStoreSetOptions&,
+                       const CookieStoreDeleteOptions&,
                        ExceptionState&);
   ScriptPromise subscribeToChanges(
       ScriptState*,
@@ -101,7 +88,7 @@ class CookieStore final : public EventTargetWithInlineData,
   void RemoveAllEventListeners() override;
 
   // RestrictedCookieChangeListener
-  void OnCookieChange(network::mojom::blink::CanonicalCookiePtr,
+  void OnCookieChange(const WebCanonicalCookie&,
                       network::mojom::blink::CookieChangeCause) override;
 
  protected:
@@ -113,21 +100,19 @@ class CookieStore final : public EventTargetWithInlineData,
 
  private:
   using DoReadBackendResultConverter =
-      void (*)(ScriptPromiseResolver*,
-               Vector<network::mojom::blink::CanonicalCookiePtr>);
+      void (*)(ScriptPromiseResolver*, const Vector<WebCanonicalCookie>&);
 
   CookieStore(ExecutionContext*,
               network::mojom::blink::RestrictedCookieManagerPtr backend,
               blink::mojom::blink::CookieStorePtr subscription_backend);
 
-  // Common code in CookieStore::{get,getAll,has}.
+  // Common code in CookieStore::{get,getAll}.
   //
   // All cookie-reading methods use the same RestrictedCookieManager API, and
   // only differ in how they present the returned data. The difference is
   // captured in the DoReadBackendResultConverter argument, which should point
   // to one of the static methods below.
   ScriptPromise DoRead(ScriptState*,
-                       const String& name,
                        const CookieStoreGetOptions&,
                        DoReadBackendResultConverter,
                        ExceptionState&);
@@ -136,26 +121,17 @@ class CookieStore final : public EventTargetWithInlineData,
   // the promise result expected by CookieStore.getAll.
   static void GetAllForUrlToGetAllResult(
       ScriptPromiseResolver*,
-      Vector<network::mojom::blink::CanonicalCookiePtr> backend_result);
+      const Vector<WebCanonicalCookie>& backend_result);
 
   // Converts the result of a RestrictedCookieManager::GetAllForUrl mojo call to
   // the promise result expected by CookieStore.get.
   static void GetAllForUrlToGetResult(
       ScriptPromiseResolver*,
-      Vector<network::mojom::blink::CanonicalCookiePtr> backend_result);
-
-  // Converts the result of a RestrictedCookieManager::GetAllForUrl mojo call to
-  // the promise result expected by CookieStore.has.
-  static void GetAllForUrlToHasResult(
-      ScriptPromiseResolver*,
-      Vector<network::mojom::blink::CanonicalCookiePtr> backend_result);
+      const Vector<WebCanonicalCookie>& backend_result);
 
   // Common code in CookieStore::delete and CookieStore::set.
   ScriptPromise DoWrite(ScriptState*,
-                        const String& name,
-                        const String& value,
-                        const CookieStoreSetOptions&,
-                        bool is_deletion,
+                        const CookieStoreSetExtraOptions&,
                         ExceptionState&);
 
   static void OnSetCanonicalCookieResult(ScriptPromiseResolver*,

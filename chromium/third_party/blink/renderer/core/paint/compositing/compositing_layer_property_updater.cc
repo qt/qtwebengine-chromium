@@ -9,11 +9,18 @@
 #include "third_party/blink/renderer/core/paint/fragment_data.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
+namespace {
+enum class ScrollbarOrCorner {
+  kHorizontalScrollbar,
+  kVerticalScrollbar,
+  kScrollbarCorner,
+};
+}
+
 namespace blink {
 
 void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled() ||
-      RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
     return;
 
   if (!object.HasLayer())
@@ -26,7 +33,10 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
   const FragmentData& fragment_data = object.FirstFragment();
   DCHECK(fragment_data.HasLocalBorderBoxProperties());
   // SPv1 compositing forces single fragment for composited elements.
-  DCHECK(!fragment_data.NextFragment());
+  DCHECK(!fragment_data.NextFragment() ||
+         // We create multiple fragments for composited repeating fixed-position
+         // during printing.
+         object.GetDocument().Printing());
 
   LayoutPoint layout_snapped_paint_offset =
       fragment_data.PaintOffset() - mapping->SubpixelAccumulation();
@@ -37,9 +47,12 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
   // that all of its ancestors have a visible subtree. An ancestor with no
   // visible subtree can be non-composited despite we expected it to, this
   // resulted in the paint offset used by CompositedLayerMapping to mismatch.
+#if 0
+  // TODO(crbug.com/838018): Re-enable this check.
   bool subpixel_accumulation_may_be_bogus = paint_layer->SubtreeIsInvisible();
   DCHECK(layout_snapped_paint_offset == snapped_paint_offset ||
          subpixel_accumulation_may_be_bogus);
+#endif
 
   base::Optional<PropertyTreeState> container_layer_state;
   auto SetContainerLayerState =
@@ -63,38 +76,48 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
   SetContainerLayerState(mapping->DecorationOutlineLayer());
   SetContainerLayerState(mapping->ChildClippingMaskLayer());
 
-  base::Optional<PropertyTreeState> scrollbar_layer_state;
-
   auto SetContainerLayerStateForScrollbars =
-      [&fragment_data, &snapped_paint_offset, &container_layer_state,
-       &scrollbar_layer_state](GraphicsLayer* graphics_layer) {
-        if (graphics_layer) {
-          if (!scrollbar_layer_state) {
-            // OverflowControlsClip should be applied within the scrollbar
-            // layers.
-            if (container_layer_state) {
-              scrollbar_layer_state = container_layer_state;
-            } else {
-              scrollbar_layer_state = fragment_data.LocalBorderBoxProperties();
-            }
+      [&fragment_data, &snapped_paint_offset, &container_layer_state](
+          GraphicsLayer* graphics_layer,
+          ScrollbarOrCorner scrollbar_or_corner) {
+        if (!graphics_layer)
+          return;
+        PropertyTreeState scrollbar_layer_state =
+            container_layer_state.value_or(
+                fragment_data.LocalBorderBoxProperties());
+        // OverflowControlsClip should be applied within the scrollbar
+        // layers.
+        if (const auto* properties = fragment_data.PaintProperties()) {
+          if (const auto* clip = properties->OverflowControlsClip()) {
+            scrollbar_layer_state.SetClip(clip);
+          } else if (const auto* css_clip = properties->CssClip()) {
+            scrollbar_layer_state.SetClip(css_clip->Parent());
+          }
+        }
 
-            if (const auto* properties = fragment_data.PaintProperties()) {
-              if (const auto* clip = properties->OverflowControlsClip()) {
-                scrollbar_layer_state->SetClip(clip);
-              } else if (const auto* css_clip = properties->CssClip()) {
-                scrollbar_layer_state->SetClip(css_clip->Parent());
-              }
+        if (const auto* properties = fragment_data.PaintProperties()) {
+          if (scrollbar_or_corner == ScrollbarOrCorner::kHorizontalScrollbar) {
+            if (const auto* effect = properties->HorizontalScrollbarEffect()) {
+              scrollbar_layer_state.SetEffect(effect);
             }
           }
-          graphics_layer->SetLayerState(
-              *scrollbar_layer_state,
-              snapped_paint_offset + graphics_layer->OffsetFromLayoutObject());
+
+          if (scrollbar_or_corner == ScrollbarOrCorner::kVerticalScrollbar) {
+            if (const auto* effect = properties->VerticalScrollbarEffect())
+              scrollbar_layer_state.SetEffect(effect);
+          }
         }
+        graphics_layer->SetLayerState(
+            scrollbar_layer_state,
+            snapped_paint_offset + graphics_layer->OffsetFromLayoutObject());
       };
 
-  SetContainerLayerStateForScrollbars(mapping->LayerForHorizontalScrollbar());
-  SetContainerLayerStateForScrollbars(mapping->LayerForVerticalScrollbar());
-  SetContainerLayerStateForScrollbars(mapping->LayerForScrollCorner());
+  SetContainerLayerStateForScrollbars(mapping->LayerForHorizontalScrollbar(),
+                                      ScrollbarOrCorner::kHorizontalScrollbar);
+  SetContainerLayerStateForScrollbars(mapping->LayerForVerticalScrollbar(),
+                                      ScrollbarOrCorner::kVerticalScrollbar);
+  SetContainerLayerStateForScrollbars(mapping->LayerForScrollCorner(),
+                                      ScrollbarOrCorner::kScrollbarCorner);
 
   if (mapping->ScrollingContentsLayer()) {
     auto paint_offset = snapped_paint_offset;
@@ -120,6 +143,15 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
     SetContainerLayerState(mapping->ForegroundLayer());
   }
 
+  auto* main_graphics_layer = mapping->MainGraphicsLayer();
+  if (const auto* contents_layer = main_graphics_layer->ContentsLayer()) {
+    auto position = contents_layer->position();
+    main_graphics_layer->SetContentsLayerState(
+        fragment_data.ContentsProperties(),
+        snapped_paint_offset + main_graphics_layer->OffsetFromLayoutObject() +
+            IntSize(position.x(), position.y()));
+  }
+
   if (auto* squashing_layer = mapping->SquashingLayer()) {
     auto state = fragment_data.PreEffectProperties();
     // The squashing layer's ClippingContainer is the common ancestor of clip
@@ -130,7 +162,7 @@ void CompositingLayerPropertyUpdater::Update(const LayoutObject& object) {
     state.SetClip(
         clipping_container
             ? clipping_container->FirstFragment().ContentsProperties().Clip()
-            : ClipPaintPropertyNode::Root());
+            : &ClipPaintPropertyNode::Root());
     squashing_layer->SetLayerState(
         state,
         snapped_paint_offset + mapping->SquashingLayerOffsetFromLayoutObject());

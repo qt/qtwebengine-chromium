@@ -28,179 +28,173 @@
 
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 
 namespace blink {
 
-static const struct CoreException {
-  const char* const name;
-  const char* const message;
-  const int code;
-} kCoreExceptions[] = {
-    // This list must be kept in sync with the one in ExceptionCode.h
-    {"IndexSizeError",
-     "Index or size was negative, or greater than the allowed value.", 1},
-    {"HierarchyRequestError",
-     "A Node was inserted somewhere it doesn't belong.", 3},
-    {"WrongDocumentError",
+namespace {
+
+// Name, decription, and legacy code name and value of DOMExceptions.
+// https://heycam.github.io/webidl/#idl-DOMException-error-names
+const struct DOMExceptionEntry {
+  DOMExceptionCode code;
+  const char* name;
+  const char* message;
+} kDOMExceptionEntryTable[] = {
+    // DOMException defined with legacy error code in Web IDL.
+    {DOMExceptionCode::kIndexSizeError, "IndexSizeError",
+     "Index or size was negative, or greater than the allowed value."},
+    {DOMExceptionCode::kHierarchyRequestError, "HierarchyRequestError",
+     "A Node was inserted somewhere it doesn't belong."},
+    {DOMExceptionCode::kWrongDocumentError, "WrongDocumentError",
      "A Node was used in a different document than the one that created it "
-     "(that doesn't support it).",
-     4},
-    {"InvalidCharacterError", "The string contains invalid characters.", 5},
-    {"NoModificationAllowedError",
+     "(that doesn't support it)."},
+    {DOMExceptionCode::kInvalidCharacterError, "InvalidCharacterError",
+     "The string contains invalid characters."},
+    {DOMExceptionCode::kNoModificationAllowedError,
+     "NoModificationAllowedError",
      "An attempt was made to modify an object where modifications are not "
-     "allowed.",
-     7},
-    {"NotFoundError",
+     "allowed."},
+    {DOMExceptionCode::kNotFoundError, "NotFoundError",
      "An attempt was made to reference a Node in a context where it does not "
-     "exist.",
-     8},
-    {"NotSupportedError",
+     "exist."},
+    {DOMExceptionCode::kNotSupportedError, "NotSupportedError",
      "The implementation did not support the requested type of object or "
-     "operation.",
-     9},
-    {"InUseAttributeError",
+     "operation."},
+    {DOMExceptionCode::kInUseAttributeError, "InUseAttributeError",
      "An attempt was made to add an attribute that is already in use "
-     "elsewhere.",
-     10},
-    {"InvalidStateError",
+     "elsewhere."},
+    {DOMExceptionCode::kInvalidStateError, "InvalidStateError",
      "An attempt was made to use an object that is not, or is no longer, "
-     "usable.",
-     11},
-    {"SyntaxError", "An invalid or illegal string was specified.", 12},
-    {"InvalidModificationError", "The object can not be modified in this way.",
-     13},
-    {"NamespaceError",
+     "usable."},
+    {DOMExceptionCode::kSyntaxError, "SyntaxError",
+     "An invalid or illegal string was specified."},
+    {DOMExceptionCode::kInvalidModificationError, "InvalidModificationError",
+     "The object can not be modified in this way."},
+    {DOMExceptionCode::kNamespaceError, "NamespaceError",
      "An attempt was made to create or change an object in a way which is "
-     "incorrect with regard to namespaces.",
-     14},
-    {"InvalidAccessError",
-     "A parameter or an operation was not supported by the underlying object.",
-     15},
-    {"TypeMismatchError",
+     "incorrect with regard to namespaces."},
+    {DOMExceptionCode::kInvalidAccessError, "InvalidAccessError",
+     "A parameter or an operation was not supported by the underlying object."},
+    {DOMExceptionCode::kTypeMismatchError, "TypeMismatchError",
      "The type of an object was incompatible with the expected type of the "
-     "parameter associated to the object.",
-     17},
-    {"SecurityError",
+     "parameter associated to the object."},
+    {DOMExceptionCode::kSecurityError, "SecurityError",
      "An attempt was made to break through the security policy of the user "
-     "agent.",
-     18},
-    {"NetworkError", "A network error occurred.", 19},
-    {"AbortError", "The user aborted a request.", 20},
-    {"URLMismatchError",
+     "agent."},
+    {DOMExceptionCode::kNetworkError, "NetworkError",
+     "A network error occurred."},
+    {DOMExceptionCode::kAbortError, "AbortError",
+     "The user aborted a request."},
+    {DOMExceptionCode::kURLMismatchError, "URLMismatchError",
      "A worker global scope represented an absolute URL that is not equal to "
-     "the resulting absolute URL.",
-     21},
-    {"QuotaExceededError",
-     "An attempt was made to add something to storage that exceeded the quota.",
-     22},
-    {"TimeoutError", "A timeout occurred.", 23},
-    {"InvalidNodeTypeError",
+     "the resulting absolute URL."},
+    {DOMExceptionCode::kQuotaExceededError, "QuotaExceededError",
+     "An attempt was made to add something to storage that exceeded the "
+     "quota."},
+    {DOMExceptionCode::kTimeoutError, "TimeoutError", "A timeout occurred."},
+    {DOMExceptionCode::kInvalidNodeTypeError, "InvalidNodeTypeError",
      "The supplied node is invalid or has an invalid ancestor for this "
-     "operation.",
-     24},
-    {"DataCloneError", "An object could not be cloned.", 25},
+     "operation."},
+    {DOMExceptionCode::kDataCloneError, "DataCloneError",
+     "An object could not be cloned."},
 
-    // Indexed DB
-    {"UnknownError", "An unknown error occurred within Indexed Database.", 0},
-    {"ConstraintError",
-     "A mutation operation in the transaction failed because a constraint was "
-     "not satisfied.",
-     0},
-    {"DataError", "The data provided does not meet requirements.", 0},
-    {"TransactionInactiveError",
-     "A request was placed against a transaction which is either currently not "
-     "active, or which is finished.",
-     0},
-    {"ReadOnlyError",
-     "A write operation was attempted in a read-only transaction.", 0},
-    {"VersionError",
-     "An attempt was made to open a database using a lower version than the "
-     "existing version.",
-     0},
-
-    // File system
-    {"NotReadableError",
-     "The requested file could not be read, typically due to permission "
-     "problems that have occurred after a reference to a file was acquired.",
-     0},
-    {"EncodingError",
+    // DOMException defined without legacy error code in Web IDL.
+    {DOMExceptionCode::kEncodingError, "EncodingError",
      "A URI supplied to the API was malformed, or the resulting Data URL has "
-     "exceeded the URL length limitations for Data URLs.",
-     0},
-    {"PathExistsError",
+     "exceeded the URL length limitations for Data URLs."},
+    {DOMExceptionCode::kNotReadableError, "NotReadableError",
+     "The requested file could not be read, typically due to permission "
+     "problems that have occurred after a reference to a file was acquired."},
+    {DOMExceptionCode::kUnknownError, "UnknownError",
+     "The operation failed for an unknown transient reason "
+     "(e.g. out of memory)."},
+    {DOMExceptionCode::kConstraintError, "ConstraintError",
+     "A mutation operation in the transaction failed because a constraint was "
+     "not satisfied."},
+    {DOMExceptionCode::kDataError, "DataError",
+     "The data provided does not meet requirements."},
+    {DOMExceptionCode::kTransactionInactiveError, "TransactionInactiveError",
+     "A request was placed against a transaction which is either currently not "
+     "active, or which is finished."},
+    {DOMExceptionCode::kReadOnlyError, "ReadOnlyError",
+     "A write operation was attempted in a read-only transaction."},
+    {DOMExceptionCode::kVersionError, "VersionError",
+     "An attempt was made to open a database using a lower version than the "
+     "existing version."},
+    {DOMExceptionCode::kOperationError, "OperationError",
+     "The operation failed for an operation-specific reason"},
+    {DOMExceptionCode::kNotAllowedError, "NotAllowedError",
+     "The request is not allowed by the user agent or the platform in the "
+     "current context."},
+
+    // DOMError (obsolete, not DOMException) defined in File system (obsolete).
+    // https://www.w3.org/TR/2012/WD-file-system-api-20120417/
+    {DOMExceptionCode::kPathExistsError, "PathExistsError",
      "An attempt was made to create a file or directory where an element "
-     "already exists.",
-     0},
-
-    // SQL
-    {"DatabaseError",
-     "The operation failed for some reason related to the database.", 0},
-
-    // Web Crypto
-    {"OperationError", "The operation failed for an operation-specific reason",
-     0},
+     "already exists."},
 
     // Push API
-    {"PermissionDeniedError", "User or security policy denied the request.", 0},
+    //
+    // PermissionDeniedError (obsolete) was replaced with NotAllowedError in the
+    // standard.
+    // https://github.com/WICG/BackgroundSync/issues/124
+    {DOMExceptionCode::kPermissionDeniedError, "PermissionDeniedError",
+     "User or security policy denied the request."},
 
-    // Used by HTML and Media Session API.
-    {"NotAllowedError",
-     "The request is not allowed by the user agent or the platform in the "
-     "current context.",
-     0},
-
-    // Pointer Event
-    {"InvalidPointerId", "PointerId was invalid.", 0},
+    // Pointer Events
+    // https://w3c.github.io/pointerevents/
+    // Pointer Events introduced a new DOMException outside Web IDL.
+    {DOMExceptionCode::kInvalidPointerId, "InvalidPointerId",
+     "PointerId was invalid."},
 };
 
-static const CoreException* GetErrorEntry(ExceptionCode ec) {
-  size_t table_size = arraysize(kCoreExceptions);
-  size_t table_index = ec - kIndexSizeError;
-
-  return table_index < table_size ? &kCoreExceptions[table_index] : nullptr;
-}
-
-static int GetErrorCode(const String& name) {
-  for (const CoreException& entry : kCoreExceptions) {
-    if (entry.name == name)
-      return entry.code;
+unsigned short ToLegacyErrorCode(DOMExceptionCode exception_code) {
+  if (DOMExceptionCode::kLegacyErrorCodeMin <= exception_code &&
+      exception_code <= DOMExceptionCode::kLegacyErrorCodeMax) {
+    return static_cast<unsigned short>(exception_code);
   }
   return 0;
 }
 
-DOMException::DOMException(unsigned short code,
-                           const String& name,
-                           const String& sanitized_message,
-                           const String& unsanitized_message) {
-  DCHECK(name);
-  code_ = code;
-  name_ = name;
-  sanitized_message_ = sanitized_message;
-  unsanitized_message_ = unsanitized_message;
+const DOMExceptionEntry* FindErrorEntry(DOMExceptionCode exception_code) {
+  for (const auto& entry : kDOMExceptionEntryTable) {
+    if (exception_code == entry.code)
+      return &entry;
+  }
+  NOTREACHED();
+  return nullptr;
 }
 
-DOMException* DOMException::Create(ExceptionCode ec,
+unsigned short FindLegacyErrorCode(const String& name) {
+  for (const auto& entry : kDOMExceptionEntryTable) {
+    if (name == entry.name)
+      return ToLegacyErrorCode(entry.code);
+  }
+  return 0;
+}
+
+}  // namespace
+
+// static
+DOMException* DOMException::Create(DOMExceptionCode exception_code,
                                    const String& sanitized_message,
                                    const String& unsanitized_message) {
-  const CoreException* entry = GetErrorEntry(ec);
-  DCHECK(entry);
+  const DOMExceptionEntry* entry = FindErrorEntry(exception_code);
   return new DOMException(
-      entry->code, entry->name ? entry->name : "Error",
+      ToLegacyErrorCode(entry->code), entry->name ? entry->name : "Error",
       sanitized_message.IsNull() ? String(entry->message) : sanitized_message,
       unsanitized_message);
 }
 
+// static
 DOMException* DOMException::Create(const String& message, const String& name) {
-  return new DOMException(GetErrorCode(name), name, message, message);
+  return new DOMException(FindLegacyErrorCode(name), name, message, String());
 }
 
-String DOMException::ToStringForConsole() const {
-  return name() + ": " + MessageForConsole();
-}
+// static
+String DOMException::GetErrorName(DOMExceptionCode exception_code) {
+  const DOMExceptionEntry* entry = FindErrorEntry(exception_code);
 
-String DOMException::GetErrorName(ExceptionCode ec) {
-  const CoreException* entry = GetErrorEntry(ec);
   DCHECK(entry);
   if (!entry)
     return "UnknownError";
@@ -208,13 +202,30 @@ String DOMException::GetErrorName(ExceptionCode ec) {
   return entry->name;
 }
 
-String DOMException::GetErrorMessage(ExceptionCode ec) {
-  const CoreException* entry = GetErrorEntry(ec);
+// static
+String DOMException::GetErrorMessage(DOMExceptionCode exception_code) {
+  const DOMExceptionEntry* entry = FindErrorEntry(exception_code);
+
   DCHECK(entry);
   if (!entry)
     return "Unknown error.";
 
   return entry->message;
+}
+
+DOMException::DOMException(unsigned short legacy_code,
+                           const String& name,
+                           const String& sanitized_message,
+                           const String& unsanitized_message)
+    : legacy_code_(legacy_code),
+      name_(name),
+      sanitized_message_(sanitized_message),
+      unsanitized_message_(unsanitized_message) {
+  DCHECK(name);
+}
+
+String DOMException::ToStringForConsole() const {
+  return name() + ": " + MessageForConsole();
 }
 
 }  // namespace blink

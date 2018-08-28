@@ -33,24 +33,22 @@
 #include "net/third_party/quic/test_tools/quic_crypto_server_config_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 
-namespace net {
+namespace quic {
 class QuicConnection;
 class QuicStream;
-}  // namespace net
+}  // namespace quic
 
-using std::string;
 using testing::NiceMock;
 using testing::_;
 
-namespace net {
+namespace quic {
 namespace test {
 
 class QuicCryptoServerStreamPeer {
  public:
   static bool DoesPeerSupportStatelessRejects(
       const CryptoHandshakeMessage& message) {
-    return net::QuicCryptoServerStream::DoesPeerSupportStatelessRejects(
-        message);
+    return QuicCryptoServerStream::DoesPeerSupportStatelessRejects(message);
   }
 };
 
@@ -72,7 +70,7 @@ class QuicCryptoServerStreamTest : public QuicTestWithParam<bool> {
                               TlsServerHandshaker::CreateSslCtx()),
         server_compressed_certs_cache_(
             QuicCompressedCertsCache::kQuicCompressedCertsCacheSize),
-        server_id_(kServerHostname, kServerPort, PRIVACY_MODE_DISABLED),
+        server_id_(kServerHostname, kServerPort, false),
         client_crypto_config_(crypto_test_utils::ProofVerifierForTesting(),
                               TlsClientHandshaker::CreateSslCtx()) {
     SetQuicReloadableFlag(enable_quic_stateless_reject_support, false);
@@ -92,7 +90,6 @@ class QuicCryptoServerStreamTest : public QuicTestWithParam<bool> {
   // Initializes the crypto server stream state for testing.  May be
   // called multiple times.
   void InitializeServer() {
-    SetQuicReloadableFlag(quic_respect_ietf_header, true);
     TestQuicSpdyServerSession* server_session = nullptr;
     helpers_.push_back(QuicMakeUnique<NiceMock<MockQuicConnectionHelper>>());
     alarm_factories_.push_back(QuicMakeUnique<MockAlarmFactory>());
@@ -452,12 +449,6 @@ TEST_P(QuicCryptoServerStreamTest, OnlySendSCUPAfterHandshakeComplete) {
 }
 
 TEST_P(QuicCryptoServerStreamTest, SendSCUPAfterHandshakeComplete) {
-  // Do not send MAX_HEADER_LIST_SIZE SETTING frame.
-  // TODO(fayang): This SETTING frame cannot be decrypted and
-  // crypto_test_utils::MovePackets stops processing parsing following packets.
-  // Actually, crypto stream test should use QuicSession instead of
-  // QuicSpdySession (b/32366134).
-  SetQuicReloadableFlag(quic_send_max_header_list_size, false);
   Initialize();
 
   InitializeFakeClient(/* supports_stateless_rejects= */ false);
@@ -588,7 +579,7 @@ TEST_P(QuicCryptoServerStreamTestWithFakeProofSource, MultipleChlo) {
   // Send in a second CHLO while processing of the first is still pending.
   // Verify that the server closes the connection rather than crashing.  Note
   // that the crash is a use-after-free, so it may only show up consistently in
-  // tests running with memory corruption detectors.
+  // ASAN tests.
   EXPECT_CALL(
       *server_connection_,
       CloseConnection(QUIC_CRYPTO_MESSAGE_WHILE_VALIDATING_CLIENT_HELLO,
@@ -599,4 +590,4 @@ TEST_P(QuicCryptoServerStreamTestWithFakeProofSource, MultipleChlo) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

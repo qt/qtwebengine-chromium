@@ -11,7 +11,6 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "services/ui/public/interfaces/window_manager.mojom.h"
-#include "services/ui/public/interfaces/window_manager_constants.mojom.h"
 #include "services/ui/public/interfaces/window_tree_constants.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
@@ -201,13 +200,15 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
     }
     // SetAlwaysOnTop before SetParent so that always-on-top container is used.
     SetAlwaysOnTop(params.keep_on_top);
+
     // Make sure we have a real |window_bounds|.
-    if (parent && window_bounds == gfx::Rect()) {
-      // If a parent is specified but no bounds are given,
-      // use the origin of the parent's display so that the widget
-      // will be added to the same display as the parent.
+    aura::Window* parent_or_context = parent ? parent : context;
+    if (parent_or_context && window_bounds == gfx::Rect()) {
+      // If a parent or context is specified but no bounds are given, use the
+      // origin of the display so that the widget will be added to the same
+      // display as the parent or context.
       gfx::Rect bounds = display::Screen::GetScreen()
-                             ->GetDisplayNearestWindow(parent)
+                             ->GetDisplayNearestWindow(parent_or_context)
                              .bounds();
       window_bounds.set_origin(bounds.origin());
     }
@@ -671,6 +672,16 @@ void NativeWidgetAura::SetOpacity(float opacity) {
     window_->layer()->SetOpacity(opacity);
 }
 
+void NativeWidgetAura::SetAspectRatio(const gfx::SizeF& aspect_ratio) {
+  DCHECK(!aspect_ratio.IsEmpty());
+  if (window_) {
+    // aura::client::kAspectRatio is owned, which allows for passing in this
+    // raw pointer.
+    window_->SetProperty(aura::client::kAspectRatio,
+                         new gfx::SizeF(aspect_ratio));
+  }
+}
+
 void NativeWidgetAura::FlashFrame(bool flash) {
   if (window_)
     window_->SetProperty(aura::client::kDrawAttentionKey, flash);
@@ -1063,12 +1074,6 @@ void Widget::CloseAllSecondaryWidgets() {
 #if defined(USE_X11)
   DesktopWindowTreeHostX11::CleanUpWindowList(CloseWindow);
 #endif
-}
-
-bool Widget::ConvertRect(const Widget* source,
-                         const Widget* target,
-                         gfx::Rect* rect) {
-  return false;
 }
 
 const ui::NativeTheme* Widget::GetNativeTheme() const {

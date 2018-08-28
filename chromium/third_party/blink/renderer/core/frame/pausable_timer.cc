@@ -31,15 +31,14 @@
 namespace blink {
 
 namespace {
-// The lowest value returned by TimerBase::nextUnalignedFireInterval is 0.0
-const double kNextFireIntervalInvalid = -1.0;
+// TimerBase::NextFireIntervalDelta returns a delta >= 0.
+constexpr TimeDelta kNextFireIntervalInvalid = TimeDelta::Min();
 }  // namespace
 
 PausableTimer::PausableTimer(ExecutionContext* context, TaskType task_type)
     : TimerBase(context->GetTaskRunner(task_type)),
       PausableObject(context),
-      next_fire_interval_(kNextFireIntervalInvalid),
-      repeat_interval_(0) {
+      next_fire_interval_(kNextFireIntervalInvalid) {
   DCHECK(context);
 }
 
@@ -61,7 +60,7 @@ void PausableTimer::Pause() {
 #endif
   if (IsActive()) {
     next_fire_interval_ = NextFireInterval();
-    DCHECK_GE(next_fire_interval_, 0.0);
+    DCHECK_GE(next_fire_interval_, TimeDelta());
     repeat_interval_ = RepeatInterval();
     TimerBase::Stop();
   }
@@ -72,7 +71,7 @@ void PausableTimer::Unpause() {
   DCHECK(paused_);
   paused_ = false;
 #endif
-  if (next_fire_interval_ >= 0.0) {
+  if (next_fire_interval_ >= TimeDelta()) {
     // start() was called before, therefore location() is already set.
     // m_nextFireInterval is only set in suspend() if the Timer was active.
     Start(next_fire_interval_, repeat_interval_, GetLocation());

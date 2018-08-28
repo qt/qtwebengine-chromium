@@ -42,11 +42,12 @@ RenderingTest::RenderingTest(LocalFrameClient* local_frame_client)
     : UseMockScrollbarSettings(), local_frame_client_(local_frame_client) {}
 
 const Node* RenderingTest::HitTest(int x, int y) {
+  HitTestLocation location(LayoutPoint(x, y));
   HitTestResult result(
       HitTestRequest(HitTestRequest::kReadOnly | HitTestRequest::kActive |
                      HitTestRequest::kAllowChildFrameContent),
-      IntPoint(x, y));
-  GetLayoutView().HitTest(result);
+      location);
+  GetLayoutView().HitTest(location, result);
   return result.InnerNode();
 }
 
@@ -80,6 +81,14 @@ void RenderingTest::TearDown() {
 void RenderingTest::SetChildFrameHTML(const String& html) {
   ChildDocument().SetBaseURLOverride(KURL("http://test.com"));
   ChildDocument().body()->SetInnerHTMLFromString(html, ASSERT_NO_EXCEPTION);
+
+  // Setting HTML implies the frame loads contents, so we need to advance the
+  // state machine to leave the initial empty document state.
+  auto* state_machine = ChildDocument().GetFrame()->Loader().StateMachine();
+  if (state_machine->IsDisplayingInitialEmptyDocument())
+    state_machine->AdvanceTo(FrameLoaderStateMachine::kCommittedFirstRealLoad);
+  // And let the frame view  exit the initial throttled state.
+  ChildDocument().View()->BeginLifecycleUpdates();
 }
 
 }  // namespace blink

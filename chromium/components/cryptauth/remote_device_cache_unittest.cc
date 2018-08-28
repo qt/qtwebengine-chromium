@@ -18,7 +18,9 @@ class RemoteDeviceCacheTest : public testing::Test {
         test_remote_device_ref_list_(CreateRemoteDeviceRefListForTest(5)){};
 
   // testing::Test:
-  void SetUp() override { cache_ = std::make_unique<RemoteDeviceCache>(); }
+  void SetUp() override {
+    cache_ = RemoteDeviceCache::Factory::Get()->BuildInstance();
+  }
 
   void VerifyCacheRemoteDevices(
       RemoteDeviceRefList expected_remote_device_ref_list) {
@@ -65,21 +67,49 @@ TEST_F(RemoteDeviceCacheTest,
 }
 
 TEST_F(RemoteDeviceCacheTest,
-       TestSetRemoteDevices_RemoteDeviceRefsRemainValidAfterCacheUpdate) {
+       TestSetRemoteDevices_RemoteDeviceRefsRemainValidAfterValidCacheUpdate) {
+  // Store the device with a last update time of 1000.
   cryptauth::RemoteDevice remote_device =
       cryptauth::CreateRemoteDeviceForTest();
+  remote_device.last_update_time_millis = 1000;
   cache_->SetRemoteDevices({remote_device});
 
   cryptauth::RemoteDeviceRef remote_device_ref =
       *cache_->GetRemoteDevice(remote_device.GetDeviceId());
   EXPECT_EQ(remote_device.name, remote_device_ref.name());
 
+  // Update the device's name and update time. Since the incoming remote device
+  // has a newer update time, the entry should successfully update.
   remote_device.name = "new name";
+  remote_device.last_update_time_millis = 2000;
   cache_->SetRemoteDevices({remote_device});
 
   EXPECT_EQ(remote_device.name, remote_device_ref.name());
 }
 
-// GetRemoteDevice
+TEST_F(
+    RemoteDeviceCacheTest,
+    TestSetRemoteDevices_RemoteDeviceCacheDoesNotUpdateWithStaleRemoteDevice) {
+  // Store the device with a last update time of 1000.
+  cryptauth::RemoteDevice remote_device =
+      cryptauth::CreateRemoteDeviceForTest();
+  remote_device.last_update_time_millis = 1000;
+  cache_->SetRemoteDevices({remote_device});
+
+  cryptauth::RemoteDeviceRef remote_device_ref =
+      *cache_->GetRemoteDevice(remote_device.GetDeviceId());
+  EXPECT_EQ(remote_device.name, remote_device_ref.name());
+
+  // Update the device's name and update time, this time reducing the
+  // last update time to 500. Since this is less than 1000, adding the
+  // device to the cache should not cause it to overwrite the previous
+  // entry, since this entry is older.
+  std::string prev_name = remote_device.name;
+  remote_device.last_update_time_millis = 500;
+  remote_device.name = "new name";
+  cache_->SetRemoteDevices({remote_device});
+
+  EXPECT_EQ(prev_name, remote_device_ref.name());
+}
 
 }  // namespace cryptauth

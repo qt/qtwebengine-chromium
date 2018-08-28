@@ -29,7 +29,7 @@
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/script/script_runner.h"
 #include "third_party/blink/renderer/core/script/script_scheduling_type.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/loader/fetch/integrity_metadata.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
@@ -40,17 +40,16 @@
 
 namespace blink {
 
+class FetchClientSettingsObjectSnapshot;
 class ScriptElementBase;
 class Script;
-
 class ScriptResource;
-
 class Modulator;
 
 class CORE_EXPORT ScriptLoader final
     : public GarbageCollectedFinalized<ScriptLoader>,
       public PendingScriptClient,
-      public TraceWrapperBase {
+      public NameClient {
   USING_GARBAGE_COLLECTED_MIXIN(ScriptLoader);
 
  public:
@@ -62,7 +61,6 @@ class CORE_EXPORT ScriptLoader final
 
   ~ScriptLoader() override;
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "ScriptLoader"; }
 
   enum LegacyTypeSupport {
@@ -131,6 +129,7 @@ class CORE_EXPORT ScriptLoader final
                           const WTF::TextEncoding&);
   // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-script-tree
   void FetchModuleScriptTree(const KURL&,
+                             FetchClientSettingsObjectSnapshot*,
                              Modulator*,
                              const ScriptFetchOptions&);
 

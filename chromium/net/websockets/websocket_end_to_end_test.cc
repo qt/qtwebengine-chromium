@@ -105,6 +105,12 @@ class ConnectTestingEventInterface : public WebSocketEventInterface {
       const SSLInfo& ssl_info,
       bool fatal) override;
 
+  int OnAuthRequired(scoped_refptr<AuthChallengeInfo> auth_info,
+                     scoped_refptr<HttpResponseHeaders> response_headers,
+                     const HostPortPair& host_port_pair,
+                     base::OnceCallback<void(const AuthCredentials*)> callback,
+                     base::Optional<AuthCredentials>* credentials) override;
+
  private:
   void QuitNestedEventLoop();
 
@@ -179,6 +185,16 @@ void ConnectTestingEventInterface::OnSSLCertificateError(
       FROM_HERE, base::Bind(&SSLErrorCallbacks::CancelSSLRequest,
                             base::Owned(ssl_error_callbacks.release()),
                             ERR_SSL_PROTOCOL_ERROR, &ssl_info));
+}
+
+int ConnectTestingEventInterface::OnAuthRequired(
+    scoped_refptr<AuthChallengeInfo> auth_info,
+    scoped_refptr<HttpResponseHeaders> response_headers,
+    const HostPortPair& host_port_pair,
+    base::OnceCallback<void(const AuthCredentials*)> callback,
+    base::Optional<AuthCredentials>* credentials) {
+  *credentials = base::nullopt;
+  return OK;
 }
 
 void ConnectTestingEventInterface::QuitNestedEventLoop() {
@@ -356,9 +372,7 @@ TEST_F(WebSocketEndToEndTest, MAYBE_HttpsProxyUsed) {
     std::unique_ptr<URLRequest> request(context_.CreateRequest(
         http_page, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
     request->Start();
-    // TestDelegate exits the message loop when the request completes by
-    // default.
-    base::RunLoop().Run();
+    delegate.RunUntilComplete();
     EXPECT_TRUE(delegate.auth_required_called());
   }
 
@@ -403,8 +417,7 @@ TEST_F(WebSocketEndToEndTest, HstsHttpsToWebSocket) {
   std::unique_ptr<URLRequest> request(context_.CreateRequest(
       https_page, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
   request->Start();
-  // TestDelegate exits the message loop when the request completes.
-  base::RunLoop().Run();
+  delegate.RunUntilComplete();
   EXPECT_EQ(OK, delegate.request_status());
 
   // Check HSTS with ws:
@@ -437,8 +450,7 @@ TEST_F(WebSocketEndToEndTest, HstsWebSocketToHttps) {
   std::unique_ptr<URLRequest> request(context_.CreateRequest(
       http_page, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
   request->Start();
-  // TestDelegate exits the message loop when the request completes.
-  base::RunLoop().Run();
+  delegate.RunUntilComplete();
   EXPECT_EQ(OK, delegate.request_status());
   EXPECT_TRUE(request->url().SchemeIs("https"));
 }

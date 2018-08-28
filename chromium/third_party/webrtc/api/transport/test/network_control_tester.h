@@ -15,7 +15,7 @@
 #include <functional>
 #include <memory>
 
-#include "api/optional.h"
+#include "absl/types/optional.h"
 #include "api/transport/network_control.h"
 
 namespace webrtc {
@@ -59,15 +59,11 @@ class NetworkControllerTester {
   NetworkControlUpdate GetState() { return state_; }
 
  private:
-  PacketResult SimulateSend(SentPacket packet,
-                            TimeDelta time_delta,
-                            TimeDelta propagation_delay,
-                            DataRate actual_bandwidth);
   std::unique_ptr<NetworkControllerInterface> controller_;
   TimeDelta process_interval_ = TimeDelta::PlusInfinity();
   Timestamp current_time_;
   int64_t packet_sequence_number_;
-  TimeDelta accumulated_delay_;
+  TimeDelta accumulated_buffer_;
   std::deque<PacketResult> outstanding_packets_;
   NetworkControlUpdate state_;
 };

@@ -13,15 +13,18 @@
 
 namespace blink {
 
+class ContainerNode;
+class EventTarget;
 class LocalFrame;
 class ScrollableArea;
 class PaintLayer;
+enum class DispatchEventResult;
 
 namespace EventHandlingUtil {
 
 HitTestResult HitTestResultInFrame(
     LocalFrame*,
-    const LayoutPoint&,
+    const HitTestLocation&,
     HitTestRequest::HitTestRequestType hit_type = HitTestRequest::kReadOnly |
                                                   HitTestRequest::kActive);
 

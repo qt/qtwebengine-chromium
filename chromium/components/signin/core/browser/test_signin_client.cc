@@ -11,10 +11,14 @@
 #include "components/signin/core/browser/webdata/token_service_table.h"
 #include "components/webdata/common/web_data_service_base.h"
 #include "components/webdata/common/web_database_service.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 TestSigninClient::TestSigninClient(PrefService* pref_service)
-    : pref_service_(pref_service),
+    : shared_factory_(
+          base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
+              &test_url_loader_factory_)),
+      pref_service_(pref_service),
       are_signin_cookies_allowed_(true),
       network_calls_delayed_(false) {}
 
@@ -33,7 +37,7 @@ scoped_refptr<TokenWebData> TestSigninClient::GetDatabase() {
 bool TestSigninClient::CanRevokeCredentials() { return true; }
 
 std::string TestSigninClient::GetSigninScopedDeviceId() {
-  return std::string();
+  return "DeviceID";
 }
 
 void TestSigninClient::OnSignedOut() {}
@@ -46,6 +50,11 @@ void TestSigninClient::PostSignedIn(const std::string& account_id,
 
 net::URLRequestContextGetter* TestSigninClient::GetURLRequestContext() {
   return request_context_.get();
+}
+
+scoped_refptr<network::SharedURLLoaderFactory>
+TestSigninClient::GetURLLoaderFactory() {
+  return shared_factory_;
 }
 
 void TestSigninClient::SetURLRequestContext(
@@ -68,10 +77,6 @@ void TestSigninClient::LoadTokenDatabase() {
                        base::ThreadTaskRunnerHandle::Get(),
                        WebDataServiceBase::ProfileErrorCallback());
   database_->Init();
-}
-
-bool TestSigninClient::ShouldMergeSigninCredentialsIntoCookieJar() {
-  return true;
 }
 
 std::unique_ptr<SigninClient::CookieChangeSubscription>
@@ -122,8 +127,9 @@ void TestSigninClient::DelayNetworkCall(const base::Closure& callback) {
 std::unique_ptr<GaiaAuthFetcher> TestSigninClient::CreateGaiaAuthFetcher(
     GaiaAuthConsumer* consumer,
     const std::string& source,
-    net::URLRequestContextGetter* getter) {
-  return std::make_unique<GaiaAuthFetcher>(consumer, source, getter);
+    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory) {
+  return std::make_unique<GaiaAuthFetcher>(consumer, source,
+                                           url_loader_factory);
 }
 
 void TestSigninClient::PreGaiaLogout(base::OnceClosure callback) {

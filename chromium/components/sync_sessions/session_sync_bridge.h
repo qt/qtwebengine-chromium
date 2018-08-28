@@ -56,12 +56,12 @@ class SessionSyncBridge : public AbstractSessionsSyncManager,
   FaviconCache* GetFaviconCache() override;
   SessionsGlobalIdMapper* GetGlobalIdMapper() override;
   OpenTabsUIDelegate* GetOpenTabsUIDelegate() override;
-  void OnSessionRestoreComplete() override;
   syncer::SyncableService* GetSyncableService() override;
   syncer::ModelTypeSyncBridge* GetModelTypeSyncBridge() override;
 
   // ModelTypeSyncBridge implementation.
-  void OnSyncStarting() override;
+  void OnSyncStarting(
+      const syncer::DataTypeActivationRequest& request) override;
   std::unique_ptr<syncer::MetadataChangeList> CreateMetadataChangeList()
       override;
   base::Optional<syncer::ModelError> MergeSyncData(
@@ -71,10 +71,10 @@ class SessionSyncBridge : public AbstractSessionsSyncManager,
       std::unique_ptr<syncer::MetadataChangeList> metadata_change_list,
       syncer::EntityChangeList entity_changes) override;
   void GetData(StorageKeyList storage_keys, DataCallback callback) override;
-  void GetAllData(DataCallback callback) override;
+  void GetAllDataForDebugging(DataCallback callback) override;
   std::string GetClientTag(const syncer::EntityData& entity_data) override;
   std::string GetStorageKey(const syncer::EntityData& entity_data) override;
-  DisableSyncResponse ApplyDisableSyncChanges(
+  StopSyncResponse ApplyStopSyncChanges(
       std::unique_ptr<syncer::MetadataChangeList> delete_metadata_change_list)
       override;
 
@@ -106,7 +106,6 @@ class SessionSyncBridge : public AbstractSessionsSyncManager,
   FaviconCache favicon_cache_;
   SessionsGlobalIdMapper global_id_mapper_;
   SessionStore::Factory session_store_factory_;
-  bool is_session_restore_in_progress_;
 
   // All data dependent on sync being starting or started.
   struct SyncingState {
@@ -128,6 +127,8 @@ class SessionSyncBridge : public AbstractSessionsSyncManager,
   };
 
   base::Optional<SyncingState> syncing_;
+
+  base::WeakPtrFactory<SessionSyncBridge> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SessionSyncBridge);
 };

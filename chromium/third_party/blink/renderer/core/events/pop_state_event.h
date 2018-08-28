@@ -53,17 +53,12 @@ class PopStateEvent final : public Event {
   SerializedScriptValue* SerializedState() const {
     return serialized_state_.get();
   }
-  void SetSerializedState(scoped_refptr<SerializedScriptValue> state) {
-    DCHECK(!serialized_state_);
-    serialized_state_ = std::move(state);
-  }
+  void SetSerializedState(scoped_refptr<SerializedScriptValue> state);
   History* GetHistory() const { return history_.Get(); }
 
   const AtomicString& InterfaceName() const override;
 
   void Trace(blink::Visitor*) override;
-
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   PopStateEvent();

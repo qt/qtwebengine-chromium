@@ -11,11 +11,18 @@ FidlInterfaceRequest::FidlInterfaceRequest(FidlInterfaceRequest&& moved) =
     default;
 
 FidlInterfaceRequest::FidlInterfaceRequest(const char* interface_name,
-                                           ScopedZxHandle channel)
+                                           zx::channel channel)
     : interface_name_(interface_name), channel_(std::move(channel)) {}
 FidlInterfaceRequest::~FidlInterfaceRequest() = default;
 
-ScopedZxHandle FidlInterfaceRequest::TakeChannel() {
+// static
+FidlInterfaceRequest FidlInterfaceRequest::CreateFromChannelUnsafe(
+    const char* interface_name,
+    zx::channel channel) {
+  return FidlInterfaceRequest(interface_name, std::move(channel));
+}
+
+zx::channel FidlInterfaceRequest::TakeChannel() {
   DCHECK(channel_);
   return std::move(channel_);
 }

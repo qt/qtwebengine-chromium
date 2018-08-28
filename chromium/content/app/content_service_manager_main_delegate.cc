@@ -50,7 +50,7 @@ bool ContentServiceManagerMainDelegate::IsEmbedderSubprocess() {
 }
 
 int ContentServiceManagerMainDelegate::RunEmbedderProcess() {
-  return content_main_runner_->Run();
+  return content_main_runner_->Run(start_service_manager_only_);
 }
 
 void ContentServiceManagerMainDelegate::ShutDownEmbedderProcess() {
@@ -65,7 +65,7 @@ ContentServiceManagerMainDelegate::OverrideProcessType() {
 }
 
 void ContentServiceManagerMainDelegate::OverrideMojoConfiguration(
-    mojo::edk::Configuration* config) {
+    mojo::core::Configuration* config) {
   // If this is the browser process and there's no remote service manager, we
   // will serve as the global Mojo broker.
   if (!service_manager::ServiceManagerIsRemote() &&
@@ -126,11 +126,9 @@ ContentServiceManagerMainDelegate::CreateEmbeddedService(
   return nullptr;
 }
 
-#if !defined(CHROME_MULTIPLE_DLL_CHILD)
-scoped_refptr<base::SingleThreadTaskRunner> ContentServiceManagerMainDelegate::
-    GetServiceManagerTaskRunnerForEmbedderProcess() {
-  return content_main_runner_->GetServiceManagerTaskRunnerForEmbedderProcess();
+void ContentServiceManagerMainDelegate::SetStartServiceManagerOnly(
+    bool start_service_manager_only) {
+  start_service_manager_only_ = start_service_manager_only;
 }
-#endif  // !defined(CHROME_MULTIPLE_DLL_CHILD)
 
 }  // namespace content

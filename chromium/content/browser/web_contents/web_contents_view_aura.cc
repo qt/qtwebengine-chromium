@@ -465,9 +465,9 @@ void WebContentsViewAura::InstallCreateHookForTests(
 
 WebContentsViewAura::WebContentsViewAura(WebContentsImpl* web_contents,
                                          WebContentsViewDelegate* delegate)
-    : is_mus_browser_plugin_guest_(
-          web_contents->GetBrowserPluginGuest() != nullptr &&
-          base::FeatureList::IsEnabled(features::kMash)),
+    : is_mus_browser_plugin_guest_(web_contents->GetBrowserPluginGuest() !=
+                                       nullptr &&
+                                   !features::IsAshInBrowserProcess()),
       web_contents_(web_contents),
       delegate_(delegate),
       current_drag_op_(blink::kWebDragOperationNone),
@@ -843,8 +843,10 @@ void WebContentsViewAura::SetPageTitle(const base::string16& title) {
 void WebContentsViewAura::RenderViewCreated(RenderViewHost* host) {
 }
 
-void WebContentsViewAura::RenderViewSwappedIn(RenderViewHost* host) {
-}
+void WebContentsViewAura::RenderViewReady() {}
+
+void WebContentsViewAura::RenderViewHostChanged(RenderViewHost* old_host,
+                                                RenderViewHost* new_host) {}
 
 void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
   RenderWidgetHostViewAura* view =

@@ -4,6 +4,11 @@
 
 import("//build_overrides/build.gni")
 
+declare_args() {
+  # If true, it assumes that //third_party/abseil-cpp is an available dependency.
+  gtest_enable_absl_printers = false
+}
+
 config("gtest_config") {
   visibility = [ ":*" ]  # gmock also shares this config.
 
@@ -32,6 +37,10 @@ config("gtest_config") {
 
   if (is_win) {
     cflags = [ "/wd4800" ]  # Unused variable warning.
+  }
+
+  if (!build_with_chromium && gtest_enable_absl_printers) {
+    defines += [ "GTEST_HAS_ABSL=1" ]
   }
 }
 
@@ -97,22 +106,28 @@ source_set("gtest") {
   configs += [ "//build/config/compiler:no_chromium_code" ]
 
   defines = []
+  deps = []
+  public_deps = []
   if (is_nacl || !build_with_chromium) {
     defines += [ "GTEST_DISABLE_PRINT_STACK_TRACE" ]
     sources -= [
       "custom/gtest/internal/custom/stack_trace_getter.cc",
       "custom/gtest/internal/custom/stack_trace_getter.h",
     ]
-  } else {
-    deps = [
-      "//base",
-    ]
-    if (is_fuchsia) {
-      deps += [
-        "//third_party/fuchsia-sdk:fdio",
-        "//third_party/fuchsia-sdk:launchpad",
+    if (gtest_enable_absl_printers) {
+      public_deps += [
+        "//third_party/abseil-cpp/absl/strings",
+        "//third_party/abseil-cpp/absl/types:optional",
       ]
     }
+  } else {
+    deps += [ "//base" ]
+  }
+
+  if (is_fuchsia) {
+    deps += [
+      "//third_party/fuchsia-sdk:fdio",
+    ]
   }
 }
 
@@ -157,9 +172,10 @@ source_set("gmock") {
     "src/googlemock/src/gmock.cc",
   ]
 
+  public_deps = [ ":gtest" ]
+
   public_configs = [
     ":gmock_config",
-    ":gtest_config",
   ]
 }
 

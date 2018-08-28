@@ -9,13 +9,11 @@
 #ifndef NET_THIRD_PARTY_QUIC_CORE_QUIC_TIME_WAIT_LIST_MANAGER_H_
 #define NET_THIRD_PARTY_QUIC_CORE_QUIC_TIME_WAIT_LIST_MANAGER_H_
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <memory>
 
 #include "base/macros.h"
 #include "net/third_party/quic/core/quic_blocked_writer_interface.h"
-#include "net/third_party/quic/core/quic_connection.h"
 #include "net/third_party/quic/core/quic_framer.h"
 #include "net/third_party/quic/core/quic_packet_writer.h"
 #include "net/third_party/quic/core/quic_packets.h"
@@ -23,7 +21,7 @@
 #include "net/third_party/quic/platform/api/quic_containers.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
 
-namespace net {
+namespace quic {
 
 namespace test {
 class QuicDispatcherPeer;
@@ -41,36 +39,45 @@ class QuicTimeWaitListManagerPeer;
 // connection_id.
 class QuicTimeWaitListManager : public QuicBlockedWriterInterface {
  public:
+  // Specifies what the time wait list manager should do when processing packets
+  // of a time wait connection.
+  enum TimeWaitAction : uint8_t {
+    // Send specified termination packets, error if termination packet is
+    // unavailable.
+    SEND_TERMINATION_PACKETS,
+    // Send stateless reset (public reset for GQUIC).
+    SEND_STATELESS_RESET,
+
+    DO_NOTHING,
+  };
+
   class Visitor : public QuicSession::Visitor {
    public:
-    // Called after the given connection is added to the time-wait std::list.
+    // Called after the given connection is added to the time-wait list.
     virtual void OnConnectionAddedToTimeWaitList(
         QuicConnectionId connection_id) = 0;
   };
 
-  // writer - the entity that writes to the socket. (Owned by the dispatcher)
-  // visitor - the entity that manages blocked writers. (The dispatcher)
-  // helper - provides a clock (Owned by the dispatcher)
-  // alarm_factory - used to run clean up alarms. (Owned by the dispatcher)
+  // writer - the entity that writes to the socket. (Owned by the caller)
+  // visitor - the entity that manages blocked writers. (Owned by the caller)
+  // clock - provide a clock (Owned by the caller)
+  // alarm_factory - used to run clean up alarms. (Owned by the caller)
   QuicTimeWaitListManager(QuicPacketWriter* writer,
                           Visitor* visitor,
-                          QuicConnectionHelperInterface* helper,
+                          const QuicClock* clock,
                           QuicAlarmFactory* alarm_factory);
   ~QuicTimeWaitListManager() override;
 
   // Adds the given connection_id to time wait state for time_wait_period_.
   // If |termination_packets| are provided, copies of these packets will be sent
-  // when a packet with this connection ID is processed. If no termination
-  // packets are provided, then a PUBLIC_RESET will be sent with the specified
-  // |version|. Any termination packets will be move from |termination_packets|
-  // and will become owned by the manager. If |connection_rejected_statelessly|
-  // is true, it means that the connection was closed due to a stateless reject,
-  // and termination packets are expected.
+  // when a packet with this connection ID is processed. Any termination packets
+  // will be move from |termination_packets| and will become owned by the
+  // manager. |action| specifies what the time wait list manager should do when
+  // processing packets of the connection.
   virtual void AddConnectionIdToTimeWait(
       QuicConnectionId connection_id,
-      ParsedQuicVersion version,
       bool ietf_quic,
-      bool connection_rejected_statelessly,
+      TimeWaitAction action,
       std::vector<std::unique_ptr<QuicEncryptedPacket>>* termination_packets);
 
   // Returns true if the connection_id is in time wait state, false otherwise.
@@ -99,11 +106,6 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface {
   // If necessary, trims the oldest connections from the time-wait list until
   // the size is under the configured maximum.
   void TrimTimeWaitListIfNeeded();
-
-  // Given a ConnectionId that exists in the time wait list, returns the
-  // ParsedQuicVersion associated with it.
-  ParsedQuicVersion GetQuicVersionFromConnectionId(
-      QuicConnectionId connection_id);
 
   // The number of connections on the time-wait list.
   size_t num_connections() const { return connection_id_map_.size(); }
@@ -173,10 +175,9 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface {
   // connection_id.
   struct ConnectionIdData {
     ConnectionIdData(int num_packets,
-                     ParsedQuicVersion version,
                      bool ietf_quic,
                      QuicTime time_added,
-                     bool connection_rejected_statelessly);
+                     TimeWaitAction action);
 
     ConnectionIdData(const ConnectionIdData& other) = delete;
     ConnectionIdData(ConnectionIdData&& other);
@@ -184,12 +185,11 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface {
     ~ConnectionIdData();
 
     int num_packets;
-    ParsedQuicVersion version;
     bool ietf_quic;
     QuicTime time_added;
     // These packets may contain CONNECTION_CLOSE frames, or SREJ messages.
     std::vector<std::unique_ptr<QuicEncryptedPacket>> termination_packets;
-    bool connection_rejected_statelessly;
+    TimeWaitAction action;
   };
 
   // QuicLinkedHashMap allows lookup by ConnectionId and traversal in add order.
@@ -219,6 +219,6 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface {
   DISALLOW_COPY_AND_ASSIGN(QuicTimeWaitListManager);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_TIME_WAIT_LIST_MANAGER_H_

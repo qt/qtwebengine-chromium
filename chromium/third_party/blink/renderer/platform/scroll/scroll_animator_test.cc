@@ -70,6 +70,7 @@ class MockScrollableAreaForAnimatorTest
 
   MOCK_CONST_METHOD0(VisualRectForScrollbarParts, LayoutRect());
   MOCK_CONST_METHOD0(IsActive, bool());
+  MOCK_CONST_METHOD0(IsThrottled, bool());
   MOCK_CONST_METHOD1(ScrollSize, int(ScrollbarOrientation));
   MOCK_CONST_METHOD0(IsScrollCornerVisible, bool());
   MOCK_CONST_METHOD0(ScrollCornerRect, IntRect());
@@ -622,7 +623,7 @@ TEST(ScrollAnimatorTest, ImplOnlyAnimationUpdatesCleared) {
   animator->AdjustImplOnlyScrollOffsetAnimation(IntSize(10, -10));
 
   EXPECT_TRUE(animator->HasAnimationThatRequiresService());
-  EXPECT_EQ(FloatSize(110, 90),
+  EXPECT_EQ(IntSize(110, 90),
             animator->ImplOnlyAnimationAdjustmentForTesting());
 
   animator->UpdateCompositorAnimations();

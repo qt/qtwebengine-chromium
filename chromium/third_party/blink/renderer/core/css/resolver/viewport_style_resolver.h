@@ -33,7 +33,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/rule_set.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
-#include "third_party/blink/renderer/core/dom/viewport_description.h"
+#include "third_party/blink/renderer/core/page/viewport_description.h"
 #include "third_party/blink/renderer/platform/length.h"
 
 namespace blink {
@@ -79,7 +79,7 @@ class CORE_EXPORT ViewportStyleResolver
 
   float ViewportArgumentValue(CSSPropertyID) const;
   Length ViewportLengthValue(CSSPropertyID);
-  ViewportDescription::ViewportFit ViewportFitValue() const;
+  mojom::ViewportFit ViewportFitValue() const;
 
   Member<Document> document_;
   Member<MutableCSSPropertyValueSet> property_set_;

@@ -46,7 +46,7 @@ namespace {
 FloatRect DeNormalizeRect(const WebFloatRect& normalized, const IntRect& base) {
   FloatRect result = normalized;
   result.Scale(base.Width(), base.Height());
-  result.MoveBy(base.Location());
+  result.MoveBy(FloatPoint(base.Location()));
   return result;
 }
 }  // namespace
@@ -141,7 +141,7 @@ WebLocalFrame* WebRemoteFrameImpl::CreateLocalChild(
     WebTreeScopeType scope,
     const WebString& name,
     WebSandboxFlags sandbox_flags,
-    WebFrameClient* client,
+    WebLocalFrameClient* client,
     blink::InterfaceRegistry* interface_registry,
     WebFrame* previous_sibling,
     const ParsedFeaturePolicy& container_policy,
@@ -342,10 +342,16 @@ void WebRemoteFrameImpl::WillEnterFullscreen() {
       Fullscreen::RequestType::kPrefixedForCrossProcessDescendant);
 }
 
-void WebRemoteFrameImpl::SetHasReceivedUserGesture() {
-  RemoteFrame* frame = GetFrame();
-  if (frame)
-    frame->NotifyUserActivationInLocalTree();
+void WebRemoteFrameImpl::UpdateUserActivationState(
+    UserActivationUpdateType update_type) {
+  switch (update_type) {
+    case UserActivationUpdateType::kNotifyActivation:
+      GetFrame()->NotifyUserActivationInLocalTree();
+      break;
+    case UserActivationUpdateType::kConsumeTransientActivation:
+      GetFrame()->ConsumeTransientUserActivationInLocalTree();
+      break;
+  }
 }
 
 void WebRemoteFrameImpl::ScrollRectToVisible(
@@ -387,7 +393,7 @@ void WebRemoteFrameImpl::ScrollRectToVisible(
   IntRect rect_in_document =
       view_impl->MainFrameImpl()->GetFrame()->View()->RootFrameToDocument(
           EnclosingIntRect(
-              owner_element->GetDocument().View()->AbsoluteToRootFrame(
+              owner_element->GetDocument().View()->ConvertToRootFrame(
                   absolute_rect)));
   IntRect element_bounds_in_document = EnclosingIntRect(
       DeNormalizeRect(params.relative_element_bounds, rect_in_document));

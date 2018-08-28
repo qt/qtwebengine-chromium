@@ -16,7 +16,7 @@
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/surface_info.h"
-#include "components/viz/service/frame_sinks/referenced_surface_tracker.h"
+#include "components/viz/common/surfaces/surface_range.h"
 #include "components/viz/service/frame_sinks/surface_resource_holder.h"
 #include "components/viz/service/frame_sinks/surface_resource_holder_client.h"
 #include "components/viz/service/frame_sinks/video_capture/capturable_frame_sink.h"
@@ -33,19 +33,23 @@ class LatestLocalSurfaceIdLookupDelegate;
 class Surface;
 class SurfaceManager;
 
+// Possible outcomes of MaybeSubmitCompositorFrame().
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class SubmitResult {
+  ACCEPTED = 0,
+  COPY_OUTPUT_REQUESTS_NOT_ALLOWED = 1,
+  SURFACE_INVARIANTS_VIOLATION = 2,
+  // Magic constant used by the histogram macros.
+  kMaxValue = SURFACE_INVARIANTS_VIOLATION,
+};
+
 class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
     : public BeginFrameObserver,
       public SurfaceResourceHolderClient,
       public SurfaceClient,
       public CapturableFrameSink {
  public:
-  // Possible outcomes of MaybeSubmitCompositorFrame().
-  enum SubmitResult {
-    ACCEPTED,
-    COPY_OUTPUT_REQUESTS_NOT_ALLOWED,
-    SURFACE_INVARIANTS_VIOLATION,
-  };
-
   using AggregatedDamageCallback =
       base::RepeatingCallback<void(const LocalSurfaceId& local_surface_id,
                                    const gfx::Size& frame_size_in_pixels,
@@ -84,9 +88,6 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   // or one of its descendents is determined to be damaged at aggregation time.
   void SetAggregatedDamageCallbackForTesting(AggregatedDamageCallback callback);
 
-  // Sets callback called on destruction.
-  void SetDestructionCallback(base::OnceClosure callback);
-
   // This allows the FrameSinkManagerImpl to pass a BeginFrameSource to use.
   void SetBeginFrameSource(BeginFrameSource* begin_frame_source);
 
@@ -103,6 +104,14 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   // most |local_surface_id|.
   std::vector<std::unique_ptr<CopyOutputRequest>> TakeCopyOutputRequests(
       const LocalSurfaceId& local_surface_id) override;
+  void OnFrameTokenChanged(uint32_t frame_token) override;
+  void OnSurfaceProcessed(Surface* surface) override;
+  void OnSurfaceAggregatedDamage(
+      Surface* surface,
+      const LocalSurfaceId& local_surface_id,
+      const CompositorFrame& frame,
+      const gfx::Rect& damage_rect,
+      base::TimeTicks expected_display_time) override;
 
   // mojom::CompositorFrameSink helpers.
   void SetNeedsBeginFrame(bool needs_begin_frame);
@@ -132,6 +141,7 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
       const LocalSurfaceId& local_surface_id,
       CompositorFrame frame,
       base::Optional<HitTestRegionList> hit_test_region_list,
+      uint64_t submit_time,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback);
 
   // CapturableFrameSink implementation.
@@ -159,22 +169,19 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
  private:
   friend class FrameSinkManagerTest;
 
-  // Updates surface references using |active_referenced_surfaces| from the most
-  // recent CompositorFrame. This will add and remove top-level root references
-  // if |is_root_| is true and |local_surface_id| has changed. Modifies surface
-  // references stored in SurfaceManager.
-  void UpdateSurfaceReferences(
-      const LocalSurfaceId& local_surface_id,
-      const std::vector<SurfaceId>& active_referenced_surfaces);
-
   // Creates a surface reference from the top-level root to |surface_id|.
   SurfaceReference MakeTopLevelRootReference(const SurfaceId& surface_id);
 
   void DidReceiveCompositorFrameAck();
   void DidPresentCompositorFrame(uint32_t presentation_token,
-                                 base::TimeTicks time,
-                                 base::TimeDelta refresh,
-                                 uint32_t flags);
+                                 const gfx::PresentationFeedback& feedback);
+  void DidRejectCompositorFrame(
+      uint32_t presentation_token,
+      bool request_presentation_feedback,
+      std::vector<TransferableResource> frame_resource_list);
+
+  // Update the display root reference with |surface|.
+  void UpdateDisplayRootReference(const Surface* surface);
 
   // BeginFrameObserver implementation.
   void OnBeginFrame(const BeginFrameArgs& args) override;
@@ -185,14 +192,11 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   void UpdateNeedsBeginFramesInternal();
   Surface* CreateSurface(const SurfaceInfo& surface_info);
 
-  void OnAggregatedDamage(const LocalSurfaceId& local_surface_id,
-                          const CompositorFrame& frame,
-                          const gfx::Rect& damage_rect,
-                          base::TimeTicks expected_display_time) const;
-
   // For the sync API calls, if we are blocking a client callback, runs it once
   // BeginFrame and FrameAck are done.
   void HandleCallback();
+
+  int64_t ComputeTraceId();
 
   mojom::CompositorFrameSinkClient* const client_;
 
@@ -241,9 +245,6 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   // clients would be able to capture content for which they are not authorized.
   bool allow_copy_output_requests_;
 
-  // A callback that will be run at the start of the destructor if set.
-  base::OnceClosure destruction_callback_;
-
   // TODO(crbug.com/754872): Remove once tab capture has moved into VIZ.
   AggregatedDamageCallback aggregated_damage_callback_;
 
@@ -274,6 +275,7 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
       compositor_frame_callback_;
   bool callback_received_begin_frame_ = true;
   bool callback_received_receive_ack_ = true;
+  uint32_t trace_sequence_ = 0;
 
   base::WeakPtrFactory<CompositorFrameSinkSupport> weak_factory_;
 

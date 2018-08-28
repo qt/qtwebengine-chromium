@@ -18,13 +18,11 @@ const char kStopAllVmsMethod[] = "StopAllVms";
 const char kGetVmInfoMethod[] = "GetVmInfo";
 const char kCreateDiskImageMethod[] = "CreateDiskImage";
 const char kDestroyDiskImageMethod[] = "DestroyDiskImage";
+const char kExportDiskImageMethod[] = "ExportDiskImage";
 const char kListVmDisksMethod[] = "ListVmDisks";
 const char kStartContainerMethod[] = "StartContainer";
-const char kLaunchContainerApplicationMethod[] = "LaunchContainerApplication";
-const char kGetContainerAppIconMethod[] = "GetContainerAppIcon";
 const char kGetContainerSshKeysMethod[] = "GetContainerSshKeys";
 
-const char kContainerStartedSignal[] = "ContainerStarted";
 const char kContainerStartupFailedSignal[] = "ContainerStartupFailed";
 
 }  // namespace concierge

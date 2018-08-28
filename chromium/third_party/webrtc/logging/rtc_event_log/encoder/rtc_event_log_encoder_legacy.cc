@@ -107,17 +107,17 @@ rtclog::VideoReceiveConfig_RtcpMode ConvertRtcpMode(RtcpMode rtcp_mode) {
 }
 
 rtclog::IceCandidatePairConfig::IceCandidatePairConfigType
-ConvertIceCandidatePairConfigType(IceCandidatePairEventType type) {
+ConvertIceCandidatePairConfigType(IceCandidatePairConfigType type) {
   switch (type) {
-    case IceCandidatePairEventType::kAdded:
+    case IceCandidatePairConfigType::kAdded:
       return rtclog::IceCandidatePairConfig::ADDED;
-    case IceCandidatePairEventType::kUpdated:
+    case IceCandidatePairConfigType::kUpdated:
       return rtclog::IceCandidatePairConfig::UPDATED;
-    case IceCandidatePairEventType::kDestroyed:
+    case IceCandidatePairConfigType::kDestroyed:
       return rtclog::IceCandidatePairConfig::DESTROYED;
-    case IceCandidatePairEventType::kSelected:
+    case IceCandidatePairConfigType::kSelected:
       return rtclog::IceCandidatePairConfig::SELECTED;
-    default:
+    case IceCandidatePairConfigType::kNumValues:
       RTC_NOTREACHED();
   }
   RTC_NOTREACHED();
@@ -127,6 +127,8 @@ ConvertIceCandidatePairConfigType(IceCandidatePairEventType type) {
 rtclog::IceCandidatePairConfig::IceCandidateType ConvertIceCandidateType(
     IceCandidateType type) {
   switch (type) {
+    case IceCandidateType::kUnknown:
+      return rtclog::IceCandidatePairConfig::UNKNOWN_CANDIDATE_TYPE;
     case IceCandidateType::kLocal:
       return rtclog::IceCandidatePairConfig::LOCAL;
     case IceCandidateType::kStun:
@@ -135,9 +137,7 @@ rtclog::IceCandidatePairConfig::IceCandidateType ConvertIceCandidateType(
       return rtclog::IceCandidatePairConfig::PRFLX;
     case IceCandidateType::kRelay:
       return rtclog::IceCandidatePairConfig::RELAY;
-    case IceCandidateType::kUnknown:
-      return rtclog::IceCandidatePairConfig::UNKNOWN_CANDIDATE_TYPE;
-    default:
+    case IceCandidateType::kNumValues:
       RTC_NOTREACHED();
   }
   RTC_NOTREACHED();
@@ -147,6 +147,8 @@ rtclog::IceCandidatePairConfig::IceCandidateType ConvertIceCandidateType(
 rtclog::IceCandidatePairConfig::Protocol ConvertIceCandidatePairProtocol(
     IceCandidatePairProtocol protocol) {
   switch (protocol) {
+    case IceCandidatePairProtocol::kUnknown:
+      return rtclog::IceCandidatePairConfig::UNKNOWN_PROTOCOL;
     case IceCandidatePairProtocol::kUdp:
       return rtclog::IceCandidatePairConfig::UDP;
     case IceCandidatePairProtocol::kTcp:
@@ -155,9 +157,7 @@ rtclog::IceCandidatePairConfig::Protocol ConvertIceCandidatePairProtocol(
       return rtclog::IceCandidatePairConfig::SSLTCP;
     case IceCandidatePairProtocol::kTls:
       return rtclog::IceCandidatePairConfig::TLS;
-    case IceCandidatePairProtocol::kUnknown:
-      return rtclog::IceCandidatePairConfig::UNKNOWN_PROTOCOL;
-    default:
+    case IceCandidatePairProtocol::kNumValues:
       RTC_NOTREACHED();
   }
   RTC_NOTREACHED();
@@ -168,13 +168,13 @@ rtclog::IceCandidatePairConfig::AddressFamily
 ConvertIceCandidatePairAddressFamily(
     IceCandidatePairAddressFamily address_family) {
   switch (address_family) {
+    case IceCandidatePairAddressFamily::kUnknown:
+      return rtclog::IceCandidatePairConfig::UNKNOWN_ADDRESS_FAMILY;
     case IceCandidatePairAddressFamily::kIpv4:
       return rtclog::IceCandidatePairConfig::IPV4;
     case IceCandidatePairAddressFamily::kIpv6:
       return rtclog::IceCandidatePairConfig::IPV6;
-    case IceCandidatePairAddressFamily::kUnknown:
-      return rtclog::IceCandidatePairConfig::UNKNOWN_ADDRESS_FAMILY;
-    default:
+    case IceCandidatePairAddressFamily::kNumValues:
       RTC_NOTREACHED();
   }
   RTC_NOTREACHED();
@@ -184,6 +184,8 @@ ConvertIceCandidatePairAddressFamily(
 rtclog::IceCandidatePairConfig::NetworkType ConvertIceCandidateNetworkType(
     IceCandidateNetworkType network_type) {
   switch (network_type) {
+    case IceCandidateNetworkType::kUnknown:
+      return rtclog::IceCandidatePairConfig::UNKNOWN_NETWORK_TYPE;
     case IceCandidateNetworkType::kEthernet:
       return rtclog::IceCandidatePairConfig::ETHERNET;
     case IceCandidateNetworkType::kLoopback:
@@ -194,9 +196,7 @@ rtclog::IceCandidatePairConfig::NetworkType ConvertIceCandidateNetworkType(
       return rtclog::IceCandidatePairConfig::VPN;
     case IceCandidateNetworkType::kCellular:
       return rtclog::IceCandidatePairConfig::CELLULAR;
-    case IceCandidateNetworkType::kUnknown:
-      return rtclog::IceCandidatePairConfig::UNKNOWN_NETWORK_TYPE;
-    default:
+    case IceCandidateNetworkType::kNumValues:
       RTC_NOTREACHED();
   }
   RTC_NOTREACHED();
@@ -214,7 +214,7 @@ ConvertIceCandidatePairEventType(IceCandidatePairEventType type) {
       return rtclog::IceCandidatePairEvent::CHECK_RESPONSE_SENT;
     case IceCandidatePairEventType::kCheckResponseReceived:
       return rtclog::IceCandidatePairEvent::CHECK_RESPONSE_RECEIVED;
-    default:
+    case IceCandidatePairEventType::kNumValues:
       RTC_NOTREACHED();
   }
   RTC_NOTREACHED();

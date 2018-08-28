@@ -39,7 +39,6 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/access_control_status.h"
 #include "third_party/blink/renderer/platform/loader/fetch/script_fetch_options.h"
-#include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_position.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -111,11 +110,8 @@ class CORE_EXPORT ScriptController final
   //
   // If an isolated world with the specified ID already exists, it is reused.
   // Otherwise, a new world is created.
-  //
-  // FIXME: We don't want to support multiple scripts.
-  void ExecuteScriptInIsolatedWorld(int world_id,
-                                    const HeapVector<ScriptSourceCode>& sources,
-                                    Vector<v8::Local<v8::Value>>* results);
+  v8::Local<v8::Value> ExecuteScriptInIsolatedWorld(int world_id,
+                                                    const ScriptSourceCode&);
 
   // Returns true if argument is a JavaScript URL.
   bool ExecuteScriptIfJavaScriptURL(const KURL&, Element*);

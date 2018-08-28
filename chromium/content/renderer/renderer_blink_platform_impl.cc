@@ -37,28 +37,26 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
+#include "content/public/common/service_names.mojom.h"
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/media_stream_utils.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/blob_storage/webblobregistry_impl.h"
-#include "content/renderer/device_sensors/device_motion_event_pump.h"
-#include "content/renderer/device_sensors/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/local_storage_cached_areas.h"
 #include "content/renderer/dom_storage/local_storage_namespace.h"
 #include "content/renderer/dom_storage/session_web_storage_namespace_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/file_info_util.h"
 #include "content/renderer/fileapi/webfilesystem_impl.h"
-#include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/image_capture/image_capture_frame_grabber.h"
 #include "content/renderer/indexed_db/webidbfactory_impl.h"
 #include "content/renderer/loader/child_url_loader_factory_bundle.h"
 #include "content/renderer/loader/resource_dispatcher.h"
 #include "content/renderer/loader/web_data_consumer_handle_impl.h"
 #include "content/renderer/loader/web_url_loader_impl.h"
+#include "content/renderer/media/audio/audio_device_factory.h"
 #include "content/renderer/media/audio_decoder.h"
-#include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/midi/renderer_webmidiaccessor_impl.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
 #include "content/renderer/media_capture_from_element/canvas_capture_handler.h"
@@ -71,7 +69,6 @@
 #include "content/renderer/storage_util.h"
 #include "content/renderer/web_database_observer_impl.h"
 #include "content/renderer/webgraphicscontext3d_provider_impl.h"
-#include "content/renderer/webpublicsuffixlist_impl.h"
 #include "content/renderer/worker_thread_registry.h"
 #include "device/gamepad/public/cpp/gamepads.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -86,8 +83,8 @@
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 #include "ppapi/buildflags/buildflags.h"
-#include "services/device/public/cpp/generic_sensor/motion_data.h"
 #include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
@@ -96,19 +93,15 @@
 #include "third_party/blink/public/common/origin_trials/trial_token_validator.h"
 #include "third_party/blink/public/platform/blame_context.h"
 #include "third_party/blink/public/platform/file_path_conversion.h"
-#include "third_party/blink/public/platform/modules/device_orientation/web_device_motion_listener.h"
-#include "third_party/blink/public/platform/modules/device_orientation/web_device_orientation_listener.h"
 #include "third_party/blink/public/platform/modules/webmidi/web_midi_accessor.h"
 #include "third_party/blink/public/platform/scheduler/child/webthread_base.h"
-#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/public/platform/url_conversion.h"
 #include "third_party/blink/public/platform/web_audio_latency_hint.h"
 #include "third_party/blink/public/platform/web_blob_registry.h"
 #include "third_party/blink/public/platform/web_file_info.h"
 #include "third_party/blink/public/platform/web_media_recorder_handler.h"
 #include "third_party/blink/public/platform/web_media_stream_center.h"
-#include "third_party/blink/public/platform/web_media_stream_center_client.h"
-#include "third_party/blink/public/platform/web_plugin_list_builder.h"
 #include "third_party/blink/public/platform/web_rtc_certificate_generator.h"
 #include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
@@ -125,7 +118,6 @@
 #if defined(OS_MACOSX)
 #include "content/child/child_process_sandbox_support_impl_mac.h"
 #include "content/common/mac/font_loader.h"
-#include "content/renderer/webscrollbarbehavior_impl_mac.h"
 #include "third_party/blink/public/platform/mac/web_sandbox_support.h"
 #endif
 
@@ -141,13 +133,6 @@
 #include "third_party/blink/public/platform/linux/web_sandbox_support.h"
 #include "third_party/icu/source/common/unicode/utf16.h"
 #endif
-#endif
-
-#if defined(USE_AURA)
-#include "content/renderer/webscrollbarbehavior_impl_aura.h"
-#elif !defined(OS_MACOSX)
-#include "third_party/blink/public/platform/web_scrollbar_behavior.h"
-#define WebScrollbarBehaviorImpl blink::WebScrollbarBehavior
 #endif
 
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
@@ -168,7 +153,6 @@ using blink::WebMediaPlayer;
 using blink::WebMediaRecorderHandler;
 using blink::WebMediaStream;
 using blink::WebMediaStreamCenter;
-using blink::WebMediaStreamCenterClient;
 using blink::WebMediaStreamTrack;
 using blink::WebRTCPeerConnectionHandler;
 using blink::WebRTCPeerConnectionHandlerClient;
@@ -183,10 +167,6 @@ namespace content {
 namespace {
 
 bool g_sandbox_enabled = true;
-base::LazyInstance<device::MotionData>::Leaky g_test_device_motion_data =
-    LAZY_INSTANCE_INITIALIZER;
-base::LazyInstance<device::OrientationData>::Leaky
-    g_test_device_orientation_data = LAZY_INSTANCE_INITIALIZER;
 
 media::AudioParameters GetAudioHardwareParams() {
   blink::WebLocalFrame* const web_frame =
@@ -200,19 +180,14 @@ media::AudioParameters GetAudioHardwareParams() {
       .output_params();
 }
 
-network::mojom::URLLoaderFactoryPtr GetBlobURLLoaderFactoryGetter() {
-  network::mojom::URLLoaderFactoryPtr blob_loader_factory;
-  RenderThreadImpl::current()->GetRendererHost()->GetBlobURLLoaderFactory(
-      mojo::MakeRequest(&blob_loader_factory));
-  return blob_loader_factory;
-}
-
 gpu::ContextType ToGpuContextType(blink::Platform::ContextType type) {
   switch (type) {
     case blink::Platform::kWebGL1ContextType:
       return gpu::CONTEXT_TYPE_WEBGL1;
     case blink::Platform::kWebGL2ContextType:
       return gpu::CONTEXT_TYPE_WEBGL2;
+    case blink::Platform::kWebGL2ComputeContextType:
+      return gpu::CONTEXT_TYPE_WEBGL2_COMPUTE;
     case blink::Platform::kGLES2ContextType:
       return gpu::CONTEXT_TYPE_OPENGLES2;
     case blink::Platform::kGLES3ContextType:
@@ -230,19 +205,26 @@ gpu::ContextType ToGpuContextType(blink::Platform::ContextType type) {
 class RendererBlinkPlatformImpl::SandboxSupport
     : public blink::WebSandboxSupport {
  public:
+#if defined(OS_LINUX)
+  explicit SandboxSupport(sk_sp<font_service::FontLoader> font_loader)
+      : font_loader_(std::move(font_loader)) {}
+#endif
   ~SandboxSupport() override {}
 
 #if defined(OS_MACOSX)
   bool LoadFont(CTFontRef src_font,
                 CGFontRef* container,
                 uint32_t* font_id) override;
-#elif defined(OS_POSIX)
+#elif defined(OS_LINUX)
   void GetFallbackFontForCharacter(
       blink::WebUChar32 character,
       const char* preferred_locale,
       blink::WebFallbackFont* fallbackFont) override;
   void GetWebFontRenderStyleForStrike(const char* family,
-                                      int sizeAndStyle,
+                                      int size,
+                                      bool is_bold,
+                                      bool is_italic,
+                                      float device_scale_factor,
                                       blink::WebFontRenderStyle* out) override;
 
  private:
@@ -251,6 +233,7 @@ class RendererBlinkPlatformImpl::SandboxSupport
   // here.
   base::Lock unicode_font_families_mutex_;
   std::map<int32_t, blink::WebFallbackFont> unicode_font_families_;
+  sk_sp<font_service::FontLoader> font_loader_;
 #endif
 };
 #endif  // !defined(OS_ANDROID) && !defined(OS_WIN)
@@ -258,7 +241,7 @@ class RendererBlinkPlatformImpl::SandboxSupport
 //------------------------------------------------------------------------------
 
 RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
-    blink::scheduler::WebMainThreadScheduler* main_thread_scheduler)
+    blink::scheduler::WebThreadScheduler* main_thread_scheduler)
     : BlinkPlatformImpl(main_thread_scheduler->DefaultTaskRunner(),
                         RenderThreadImpl::current()
                             ? RenderThreadImpl::current()->GetIOTaskRunner()
@@ -266,17 +249,9 @@ RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
       compositor_thread_(nullptr),
       main_thread_(main_thread_scheduler->CreateMainThread()),
       sudden_termination_disables_(0),
-      plugin_refresh_allowed_(true),
+      is_locked_to_site_(false),
       default_task_runner_(main_thread_scheduler->DefaultTaskRunner()),
-      web_scrollbar_behavior_(new WebScrollbarBehaviorImpl),
       main_thread_scheduler_(main_thread_scheduler) {
-#if !defined(OS_ANDROID) && !defined(OS_WIN) && !defined(OS_FUCHSIA)
-  if (g_sandbox_enabled && sandboxEnabled()) {
-    sandbox_support_.reset(new RendererBlinkPlatformImpl::SandboxSupport);
-  } else {
-    DVLOG(1) << "Disabling sandbox support for testing.";
-  }
-#endif
 
   // RenderThread may not exist in some tests.
   if (RenderThreadImpl::current()) {
@@ -290,10 +265,27 @@ RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
     web_idb_factory_.reset(new WebIDBFactoryImpl(
         sync_message_filter_,
         RenderThreadImpl::current()->GetIOTaskRunner().get()));
+#if defined(OS_LINUX)
+    font_loader_ = sk_make_sp<font_service::FontLoader>(connector_.get());
+    SkFontConfigInterface::SetGlobal(font_loader_);
+#endif
   } else {
     service_manager::mojom::ConnectorRequest request;
     connector_ = service_manager::Connector::Create(&request);
   }
+
+#if !defined(OS_ANDROID) && !defined(OS_WIN) && !defined(OS_FUCHSIA)
+  if (g_sandbox_enabled && sandboxEnabled()) {
+#if defined(OS_MACOSX)
+    sandbox_support_.reset(new RendererBlinkPlatformImpl::SandboxSupport());
+#else
+    sandbox_support_.reset(
+        new RendererBlinkPlatformImpl::SandboxSupport(font_loader_));
+#endif
+  } else {
+    DVLOG(1) << "Disabling sandbox support for testing.";
+  }
+#endif
 
   blink_interface_provider_.reset(
       new BlinkInterfaceProviderImpl(connector_.get()));
@@ -344,6 +336,14 @@ RendererBlinkPlatformImpl::WrapURLLoaderFactory(
               network::mojom::URLLoaderFactory::Version_)));
 }
 
+std::unique_ptr<blink::WebURLLoaderFactory>
+RendererBlinkPlatformImpl::WrapSharedURLLoaderFactory(
+    scoped_refptr<network::SharedURLLoaderFactory> factory) {
+  return std::make_unique<WebURLLoaderFactoryImpl>(
+      RenderThreadImpl::current()->resource_dispatcher()->GetWeakPtr(),
+      std::move(factory));
+}
+
 std::unique_ptr<blink::WebDataConsumerHandle>
 RendererBlinkPlatformImpl::CreateDataConsumerHandle(
     mojo::ScopedDataPipeConsumerHandle handle) {
@@ -354,10 +354,7 @@ scoped_refptr<ChildURLLoaderFactoryBundle>
 RendererBlinkPlatformImpl::CreateDefaultURLLoaderFactoryBundle() {
   return base::MakeRefCounted<ChildURLLoaderFactoryBundle>(
       base::BindOnce(&RendererBlinkPlatformImpl::CreateNetworkURLLoaderFactory,
-                     base::Unretained(this)),
-      base::FeatureList::IsEnabled(network::features::kNetworkService)
-          ? base::BindOnce(&GetBlobURLLoaderFactoryGetter)
-          : ChildURLLoaderFactoryBundle::FactoryGetterCallback());
+                     base::Unretained(this)));
 }
 
 PossiblyAssociatedInterfacePtr<network::mojom::URLLoaderFactory>
@@ -406,7 +403,7 @@ blink::WebSandboxSupport* RendererBlinkPlatformImpl::GetSandboxSupport() {
 }
 
 blink::WebCookieJar* RendererBlinkPlatformImpl::CookieJar() {
-  NOTREACHED() << "Use WebFrameClient::cookieJar() instead!";
+  NOTREACHED() << "Use WebLocalFrameClient::cookieJar() instead!";
   return nullptr;
 }
 
@@ -590,7 +587,7 @@ bool RendererBlinkPlatformImpl::SandboxSupport::LoadFont(CTFontRef src_font,
   return content::LoadFont(src_font, out, font_id);
 }
 
-#elif defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
+#elif defined(OS_POSIX) && !defined(OS_ANDROID)
 
 void RendererBlinkPlatformImpl::SandboxSupport::GetFallbackFontForCharacter(
     blink::WebUChar32 character,
@@ -610,16 +607,20 @@ void RendererBlinkPlatformImpl::SandboxSupport::GetFallbackFontForCharacter(
     return;
   }
 
-  content::GetFallbackFontForCharacter(character, preferred_locale,
-                                       fallbackFont);
+  content::GetFallbackFontForCharacter(font_loader_, character,
+                                       preferred_locale, fallbackFont);
   unicode_font_families_.insert(std::make_pair(character, *fallbackFont));
 }
 
 void RendererBlinkPlatformImpl::SandboxSupport::GetWebFontRenderStyleForStrike(
     const char* family,
-    int sizeAndStyle,
+    int size,
+    bool is_bold,
+    bool is_italic,
+    float device_scale_factor,
     blink::WebFontRenderStyle* out) {
-  GetRenderStyleForStrike(family, sizeAndStyle, out);
+  GetRenderStyleForStrike(font_loader_, family, size, is_bold, is_italic,
+                          device_scale_factor, out);
 }
 
 #endif
@@ -682,10 +683,12 @@ viz::FrameSinkId RendererBlinkPlatformImpl::GenerateFrameSinkId() {
                           RenderThread::Get()->GenerateRoutingID());
 }
 
-bool RendererBlinkPlatformImpl::IsThreadedCompositingEnabled() {
-  RenderThreadImpl* thread = RenderThreadImpl::current();
-  // thread can be NULL in tests.
-  return thread && thread->compositor_task_runner().get();
+bool RendererBlinkPlatformImpl::IsLockedToSite() const {
+  return is_locked_to_site_;
+}
+
+void RendererBlinkPlatformImpl::SetIsLockedToSite() {
+  is_locked_to_site_ = true;
 }
 
 bool RendererBlinkPlatformImpl::IsGpuCompositingDisabled() {
@@ -765,48 +768,6 @@ RendererBlinkPlatformImpl::CreateMIDIAccessor(
   return std::make_unique<RendererWebMIDIAccessorImpl>(client);
 }
 
-void RendererBlinkPlatformImpl::GetPluginList(
-    bool refresh,
-    const blink::WebSecurityOrigin& mainFrameOrigin,
-    blink::WebPluginListBuilder* builder) {
-#if BUILDFLAG(ENABLE_PLUGINS)
-  std::vector<WebPluginInfo> plugins;
-  if (!plugin_refresh_allowed_)
-    refresh = false;
-  RenderThread::Get()->Send(
-      new FrameHostMsg_GetPlugins(refresh, mainFrameOrigin, &plugins));
-  for (const WebPluginInfo& plugin : plugins) {
-    builder->AddPlugin(WebString::FromUTF16(plugin.name),
-                       WebString::FromUTF16(plugin.desc),
-                       blink::FilePathToWebString(plugin.path.BaseName()),
-                       plugin.background_color);
-
-    for (const WebPluginMimeType& mime_type : plugin.mime_types) {
-      builder->AddMediaTypeToLastPlugin(
-          WebString::FromUTF8(mime_type.mime_type),
-          WebString::FromUTF16(mime_type.description));
-
-      for (const auto& extension : mime_type.file_extensions) {
-        builder->AddFileExtensionToLastMediaType(
-            WebString::FromUTF8(extension));
-      }
-    }
-  }
-#endif
-}
-
-//------------------------------------------------------------------------------
-
-blink::WebPublicSuffixList* RendererBlinkPlatformImpl::PublicSuffixList() {
-  return &public_suffix_list_;
-}
-
-//------------------------------------------------------------------------------
-
-blink::WebScrollbarBehavior* RendererBlinkPlatformImpl::ScrollbarBehavior() {
-  return web_scrollbar_behavior_.get();
-}
-
 //------------------------------------------------------------------------------
 
 WebBlobRegistry* RendererBlinkPlatformImpl::GetBlobRegistry() {
@@ -817,11 +778,6 @@ WebBlobRegistry* RendererBlinkPlatformImpl::GetBlobRegistry() {
 //------------------------------------------------------------------------------
 
 void RendererBlinkPlatformImpl::SampleGamepads(device::Gamepads& gamepads) {
-  PlatformEventObserverBase* observer =
-      platform_event_observers_.Lookup(blink::kWebPlatformEventTypeGamepad);
-  if (!observer)
-    return;
-  static_cast<RendererGamepadProvider*>(observer)->SampleGamepads(gamepads);
 }
 
 //------------------------------------------------------------------------------
@@ -860,13 +816,12 @@ RendererBlinkPlatformImpl::CreateRTCCertificateGenerator() {
 //------------------------------------------------------------------------------
 
 std::unique_ptr<WebMediaStreamCenter>
-RendererBlinkPlatformImpl::CreateMediaStreamCenter(
-    WebMediaStreamCenterClient* client) {
+RendererBlinkPlatformImpl::CreateMediaStreamCenter() {
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   DCHECK(render_thread);
   if (!render_thread)
     return nullptr;
-  return render_thread->CreateMediaStreamCenter(client);
+  return render_thread->CreateMediaStreamCenter();
 }
 
 // static
@@ -943,6 +898,28 @@ RendererBlinkPlatformImpl::CreateImageCaptureFrameGrabber() {
   return std::make_unique<ImageCaptureFrameGrabber>();
 }
 
+//------------------------------------------------------------------------------
+
+std::unique_ptr<webrtc::RtpCapabilities>
+RendererBlinkPlatformImpl::GetRtpSenderCapabilities(
+    const blink::WebString& kind) {
+  PeerConnectionDependencyFactory* pc_dependency_factory =
+      RenderThreadImpl::current()->GetPeerConnectionDependencyFactory();
+  pc_dependency_factory->EnsureInitialized();
+  return pc_dependency_factory->GetSenderCapabilities(kind.Utf8());
+}
+
+std::unique_ptr<webrtc::RtpCapabilities>
+RendererBlinkPlatformImpl::GetRtpReceiverCapabilities(
+    const blink::WebString& kind) {
+  PeerConnectionDependencyFactory* pc_dependency_factory =
+      RenderThreadImpl::current()->GetPeerConnectionDependencyFactory();
+  pc_dependency_factory->EnsureInitialized();
+  return pc_dependency_factory->GetReceiverCapabilities(kind.Utf8());
+}
+
+//------------------------------------------------------------------------------
+
 void RendererBlinkPlatformImpl::UpdateWebRTCAPICount(
     blink::WebRTCAPIName api_name) {
   UpdateWebRTCMethodCount(api_name);
@@ -969,11 +946,12 @@ static void Collect3DContextInformation(
     blink::Platform::GraphicsInfo* gl_info,
     const gpu::GPUInfo& gpu_info) {
   DCHECK(gl_info);
-  gl_info->vendor_id = gpu_info.gpu.vendor_id;
-  gl_info->device_id = gpu_info.gpu.device_id;
+  const gpu::GPUInfo::GPUDevice& active_gpu = gpu_info.active_gpu();
+  gl_info->vendor_id = active_gpu.vendor_id;
+  gl_info->device_id = active_gpu.device_id;
   gl_info->renderer_info = WebString::FromUTF8(gpu_info.gl_renderer);
   gl_info->vendor_info = WebString::FromUTF8(gpu_info.gl_vendor);
-  gl_info->driver_version = WebString::FromUTF8(gpu_info.driver_version);
+  gl_info->driver_version = WebString::FromUTF8(active_gpu.driver_version);
   gl_info->reset_notification_strategy =
       gpu_info.gl_reset_notification_strategy;
   gl_info->sandboxed = gpu_info.sandboxed;
@@ -1002,8 +980,6 @@ RendererBlinkPlatformImpl::CreateOffscreenGraphicsContext3DProvider(
     return nullptr;
   }
   Collect3DContextInformation(gl_info, gpu_channel_host->gpu_info());
-
-  bool is_software_rendering = gpu_channel_host->gpu_info().software_rendering;
 
   // This is an offscreen context. Generally it won't use the default
   // frame buffer, in that case don't request any alpha, depth, stencil,
@@ -1040,9 +1016,9 @@ RendererBlinkPlatformImpl::CreateOffscreenGraphicsContext3DProvider(
           gpu::kNullSurfaceHandle, GURL(top_document_web_url),
           automatic_flushes, support_locking, web_attributes.support_grcontext,
           gpu::SharedMemoryLimits(), attributes,
-          ui::command_buffer_metrics::OFFSCREEN_CONTEXT_FOR_WEBGL));
+          ui::command_buffer_metrics::ContextType::WEBGL));
   return std::make_unique<WebGraphicsContext3DProviderImpl>(
-      std::move(provider), is_software_rendering);
+      std::move(provider));
 }
 
 //------------------------------------------------------------------------------
@@ -1061,15 +1037,12 @@ RendererBlinkPlatformImpl::CreateSharedOffscreenGraphicsContext3DProvider() {
   // channel can become lost on the IO thread since then. It is important that
   // this happens after getting |provider|. In the case that this GpuChannelHost
   // is not the same one backing |provider|, the context behind the |provider|
-  // will be already lost/dead on arrival, so the value we get for
-  // |is_software_rendering| will never be wrong.
+  // will be already lost/dead on arrival.
   if (!host)
     return nullptr;
 
-  bool is_software_rendering = host->gpu_info().software_rendering;
-
   return std::make_unique<WebGraphicsContext3DProviderImpl>(
-      std::move(provider), is_software_rendering);
+      std::move(provider));
 }
 
 //------------------------------------------------------------------------------
@@ -1099,65 +1072,6 @@ void RendererBlinkPlatformImpl::RecordRapporURL(const char* metric,
   GetContentClient()->renderer()->RecordRapporURL(metric, url);
 }
 
-//------------------------------------------------------------------------------
-
-// static
-void RendererBlinkPlatformImpl::SetMockDeviceMotionDataForTesting(
-    const device::MotionData& data) {
-  g_test_device_motion_data.Get() = data;
-}
-
-//------------------------------------------------------------------------------
-
-// static
-void RendererBlinkPlatformImpl::SetMockDeviceOrientationDataForTesting(
-    const device::OrientationData& data) {
-  g_test_device_orientation_data.Get() = data;
-}
-
-//------------------------------------------------------------------------------
-
-// static
-std::unique_ptr<PlatformEventObserverBase>
-RendererBlinkPlatformImpl::CreatePlatformEventObserverFromType(
-    blink::WebPlatformEventType type) {
-  RenderThread* thread = RenderThreadImpl::current();
-
-  // When running layout tests, those observers should not listen to the actual
-  // hardware changes. In order to make that happen, they will receive a null
-  // thread.
-  if (thread && RenderThreadImpl::current()->layout_test_mode())
-    thread = nullptr;
-
-  switch (type) {
-    case blink::kWebPlatformEventTypeDeviceMotion:
-      return std::make_unique<DeviceMotionEventPump>(thread);
-    case blink::kWebPlatformEventTypeDeviceOrientation:
-      return std::make_unique<DeviceOrientationEventPump>(thread,
-                                                          false /* absolute */);
-    case blink::kWebPlatformEventTypeDeviceOrientationAbsolute:
-      return std::make_unique<DeviceOrientationEventPump>(thread,
-                                                          true /* absolute */);
-    case blink::kWebPlatformEventTypeGamepad:
-      return std::make_unique<GamepadSharedMemoryReader>(thread);
-    default:
-      // A default statement is required to prevent compilation errors when
-      // Blink adds a new type.
-      DVLOG(1) << "RendererBlinkPlatformImpl::startListening() with "
-                  "unknown type.";
-  }
-
-  return nullptr;
-}
-
-void RendererBlinkPlatformImpl::SetPlatformEventObserverForTesting(
-    blink::WebPlatformEventType type,
-    std::unique_ptr<PlatformEventObserverBase> observer) {
-  if (platform_event_observers_.Lookup(type))
-    platform_event_observers_.Remove(type);
-  platform_event_observers_.AddWithID(std::move(observer), type);
-}
-
 service_manager::Connector* RendererBlinkPlatformImpl::GetConnector() {
   return connector_.get();
 }
@@ -1169,68 +1083,11 @@ blink::InterfaceProvider* RendererBlinkPlatformImpl::GetInterfaceProvider() {
 void RendererBlinkPlatformImpl::StartListening(
     blink::WebPlatformEventType type,
     blink::WebPlatformEventListener* listener) {
-  PlatformEventObserverBase* observer = platform_event_observers_.Lookup(type);
-  if (!observer) {
-    std::unique_ptr<PlatformEventObserverBase> new_observer =
-        CreatePlatformEventObserverFromType(type);
-    if (!new_observer)
-      return;
-    observer = new_observer.get();
-    platform_event_observers_.AddWithID(std::move(new_observer),
-                                        static_cast<int32_t>(type));
-  }
-  observer->Start(listener);
 
-  // Device events (motion and orientation) expect to get an event fired
-  // as soon as a listener is registered if a fake data was passed before.
-  // TODO(mlamouri,timvolodine): make those send mock values directly instead of
-  // using this broken pattern.
-  if (RenderThreadImpl::current() &&
-      RenderThreadImpl::current()->layout_test_mode() &&
-      (type == blink::kWebPlatformEventTypeDeviceMotion ||
-       type == blink::kWebPlatformEventTypeDeviceOrientation ||
-       type == blink::kWebPlatformEventTypeDeviceOrientationAbsolute)) {
-    SendFakeDeviceEventDataForTesting(type);
-  }
-}
-
-void RendererBlinkPlatformImpl::SendFakeDeviceEventDataForTesting(
-    blink::WebPlatformEventType type) {
-  PlatformEventObserverBase* observer = platform_event_observers_.Lookup(type);
-  CHECK(observer);
-
-  void* data = nullptr;
-
-  switch (type) {
-    case blink::kWebPlatformEventTypeDeviceMotion:
-      if (g_test_device_motion_data.IsCreated())
-        data = &g_test_device_motion_data.Get();
-      break;
-    case blink::kWebPlatformEventTypeDeviceOrientation:
-    case blink::kWebPlatformEventTypeDeviceOrientationAbsolute:
-      if (g_test_device_orientation_data.IsCreated())
-        data = &g_test_device_orientation_data.Get();
-      break;
-    default:
-      NOTREACHED();
-      break;
-  }
-
-  if (!data)
-    return;
-
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PlatformEventObserverBase::SendFakeDataForTesting,
-                     base::Unretained(observer), data));
 }
 
 void RendererBlinkPlatformImpl::StopListening(
     blink::WebPlatformEventType type) {
-  PlatformEventObserverBase* observer = platform_event_observers_.Lookup(type);
-  if (!observer)
-    return;
-  observer->Stop();
 }
 
 //------------------------------------------------------------------------------

@@ -16,7 +16,6 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "chrome/browser/media/router/issue_manager.h"
-#include "chrome/browser/media/router/issues_observer.h"
 #include "chrome/browser/media/router/media_router.h"
 #include "chrome/browser/media/router/media_router_factory.h"
 #include "chrome/browser/media/router/media_router_metrics.h"
@@ -63,135 +62,6 @@
 
 namespace media_router {
 
-// This class calls to refresh the UI when the highest priority issue is
-// updated.
-class MediaRouterUI::UIIssuesObserver : public IssuesObserver {
- public:
-  UIIssuesObserver(IssueManager* issue_manager, MediaRouterUI* ui)
-      : IssuesObserver(issue_manager), ui_(ui) {
-    DCHECK(ui);
-  }
-
-  ~UIIssuesObserver() override {}
-
-  // IssuesObserver implementation.
-  void OnIssue(const Issue& issue) override { ui_->SetIssue(issue); }
-  void OnIssuesCleared() override { ui_->ClearIssue(); }
-
- private:
-  // Reference back to the owning MediaRouterUI instance.
-  MediaRouterUI* ui_;
-
-  DISALLOW_COPY_AND_ASSIGN(UIIssuesObserver);
-};
-
-// Observes a WebContents and requests fullscreening of its first
-// video element.  The request is sent after the WebContents is loaded and tab
-// capture has begun. Marked final to prevent inheritance so delete calls are
-// contained to scenarios documented below.
-class MediaRouterUI::WebContentsFullscreenOnLoadedObserver final
-    : public content::WebContentsObserver {
- public:
-  WebContentsFullscreenOnLoadedObserver(const GURL& file_url,
-                                        content::WebContents* web_contents)
-      : file_url_(file_url), capture_poll_timer_(false, false) {
-    DCHECK(file_url_.SchemeIsFile());
-    DCHECK(fullscreen_request_time_.is_null());
-
-    // If the WebContents is loading, start listening, otherwise just call the
-    // fullscreen function.
-
-    // This class destroys itself in the following situations (at least one of
-    // which will occur):
-    //   * after loading is complete and,
-    //   ** capture has begun and fullscreen requested,
-    //   ** kMaxSecondsToWaitForCapture seconds have passed without capture,
-    //   * another navigation is started,
-    //   * the WebContents is destroyed.
-    if (web_contents->IsLoading()) {
-      Observe(web_contents);
-    } else {
-      FullScreenFirstVideoElement(web_contents);
-    }
-  }
-  ~WebContentsFullscreenOnLoadedObserver() override {}
-
-  // content::WebContentsObserver implementation.
-  void DidStopLoading() override {
-    FullScreenFirstVideoElement(web_contents());
-  }
-
-  void DidStartNavigation(
-      content::NavigationHandle* navigation_handle) override {
-    // If the user takes over and navigates away from the file, stop listening.
-    // (It is possible however for this listener to be created before the
-    // navigation to the requested file triggers, so provided we're still on the
-    // same URL, go ahead and keep listening).
-    if (file_url_ != navigation_handle->GetURL()) {
-      delete this;
-    }
-  }
-
-  void WebContentsDestroyed() override {
-    // If the WebContents is destroyed we will never trigger and need to clean
-    // up.
-    delete this;
-  }
-
- private:
-  const GURL file_url_;
-
-  // Time intervals used by the logic that detects if capture has started.
-  const int kMaxSecondsToWaitForCapture = 10;
-  const int kPollIntervalInSeconds = 1;
-
-  // The time at which fullscreen was requested.
-  base::TimeTicks fullscreen_request_time_;
-
-  // Poll timer to monitor the capturer count when fullscreening local files.
-  //
-  // TODO(crbug.com/540965): Add a method to WebContentsObserver to report
-  // capturer count changes and get rid of this polling-based approach.
-  base::Timer capture_poll_timer_;
-
-  // Sends a request for full screen to the WebContents targeted at the first
-  // video element.  The request is only sent after capture has begun.
-  void FullScreenFirstVideoElement(content::WebContents* web_contents) {
-    if (file_url_ != web_contents->GetLastCommittedURL()) {
-      // The user has navigated before the casting started. Do not attempt to
-      // fullscreen and cleanup.
-      return;
-    }
-
-    fullscreen_request_time_ = base::TimeTicks::Now();
-    FullscreenIfContentCaptured(web_contents);
-  }
-
-  void FullscreenIfContentCaptured(content::WebContents* web_contents) {
-    if (web_contents->IsBeingCaptured()) {
-      content::mojom::FullscreenVideoElementHandlerAssociatedPtr client;
-      web_contents->GetMainFrame()
-          ->GetRemoteAssociatedInterfaces()
-          ->GetInterface(&client);
-      client->RequestFullscreenVideoElement();
-      delete this;
-      return;
-    } else if (base::TimeTicks::Now() - fullscreen_request_time_ >
-               base::TimeDelta::FromSeconds(kMaxSecondsToWaitForCapture)) {
-      // If content capture hasn't started within the timeout skip fullscreen.
-      DLOG(WARNING) << "Capture of local content did not start within timeout";
-      delete this;
-      return;
-    }
-
-    capture_poll_timer_.Start(
-        FROM_HERE, base::TimeDelta::FromSeconds(kPollIntervalInSeconds),
-        base::BindRepeating(
-            &WebContentsFullscreenOnLoadedObserver::FullscreenIfContentCaptured,
-            base::Unretained(this), web_contents));
-  }
-};
-
 MediaRouterUI::MediaRouterUI(content::WebUI* web_ui)
     : ConstrainedWebDialogUI(web_ui),
       ui_initialized_(false),
@@ -231,36 +101,7 @@ void MediaRouterUI::OnUIInitialized() {
   // TODO(imcheng): We should be able to instantiate |issue_observer_| during
   // InitCommon by storing an initial Issue in this class.
   // Register for Issue updates.
-  issues_observer_ =
-      std::make_unique<UIIssuesObserver>(GetIssueManager(), this);
-  issues_observer_->Init();
-}
-
-bool MediaRouterUI::CreateRoute(const MediaSink::Id& sink_id,
-                                MediaCastMode cast_mode) {
-  // Default the tab casting the content to the initiator, and change if
-  // necessary.
-  content::WebContents* tab_contents = initiator();
-
-  base::Optional<RouteParameters> params;
-  if (cast_mode == MediaCastMode::LOCAL_FILE) {
-    GURL url = media_router_file_dialog_->GetLastSelectedFileUrl();
-    tab_contents = OpenTabWithUrl(url);
-    params = GetLocalFileRouteParameters(sink_id, url, tab_contents);
-  } else {
-    params = GetRouteParameters(sink_id, cast_mode);
-  }
-  if (!params) {
-    SendIssueForUnableToCast(cast_mode);
-    return false;
-  }
-
-  GetIssueManager()->ClearNonBlockingIssues();
-  GetMediaRouter()->CreateRoute(params->source_id, sink_id, params->origin,
-                                tab_contents,
-                                std::move(params->route_response_callbacks),
-                                params->timeout, params->incognito);
-  return true;
+  StartObservingIssues();
 }
 
 bool MediaRouterUI::ConnectRoute(const MediaSink::Id& sink_id,
@@ -277,22 +118,6 @@ bool MediaRouterUI::ConnectRoute(const MediaSink::Id& sink_id,
       std::move(params->route_response_callbacks), params->timeout,
       params->incognito);
   return true;
-}
-
-void MediaRouterUI::AddIssue(const IssueInfo& issue) {
-  GetIssueManager()->AddIssue(issue);
-}
-
-void MediaRouterUI::ClearIssue(const Issue::Id& issue_id) {
-  GetIssueManager()->ClearIssue(issue_id);
-}
-
-void MediaRouterUI::OpenFileDialog() {
-  if (!media_router_file_dialog_) {
-    media_router_file_dialog_ = std::make_unique<MediaRouterFileDialog>(this);
-  }
-
-  media_router_file_dialog_->OpenFileDialog(GetBrowser());
 }
 
 void MediaRouterUI::SearchSinksAndCreateRoute(
@@ -427,7 +252,7 @@ void MediaRouterUI::InitForTest(
 
 void MediaRouterUI::InitForTest(
     std::unique_ptr<MediaRouterFileDialog> file_dialog) {
-  media_router_file_dialog_ = std::move(file_dialog);
+  set_media_router_file_dialog_for_test(std::move(file_dialog));
 }
 
 MediaRouterUI::UIMediaRouteControllerObserver::UIMediaRouteControllerObserver(
@@ -450,40 +275,17 @@ void MediaRouterUI::UIMediaRouteControllerObserver::OnControllerInvalidated() {
   ui_->OnRouteControllerInvalidated();
 }
 
-Browser* MediaRouterUI::GetBrowser() {
-  CHECK(initiator());
-  return chrome::FindBrowserWithWebContents(initiator());
-}
-
-content::WebContents* MediaRouterUI::OpenTabWithUrl(const GURL url) {
-  // Check if the current page is a new tab. If so open file in current page.
-  // If not then open a new page.
-  if (initiator()->GetVisibleURL() == chrome::kChromeUINewTabURL) {
-    content::NavigationController::LoadURLParams load_params(url);
-    load_params.transition_type = ui::PAGE_TRANSITION_GENERATED;
-    initiator()->GetController().LoadURLWithParams(load_params);
-    return initiator();
-  } else {
-    return chrome::AddSelectedTabWithURL(GetBrowser(), url,
-                                         ui::PAGE_TRANSITION_LINK);
-  }
-}
-
 void MediaRouterUI::FileDialogFileSelected(
     const ui::SelectedFileInfo& file_info) {
   handler_->UserSelectedLocalMediaFile(file_info.display_name);
 }
 
-void MediaRouterUI::FileDialogSelectionFailed(const IssueInfo& issue) {
-  AddIssue(issue);
-}
-
-void MediaRouterUI::SetIssue(const Issue& issue) {
+void MediaRouterUI::OnIssue(const Issue& issue) {
   if (ui_initialized_)
     handler_->UpdateIssue(issue);
 }
 
-void MediaRouterUI::ClearIssue() {
+void MediaRouterUI::OnIssueCleared() {
   if (ui_initialized_)
     handler_->ClearIssue();
 }
@@ -522,12 +324,6 @@ void MediaRouterUI::OnRouteResponseReceived(
     SendIssueForRouteTimeout(cast_mode, presentation_request_source_name);
 }
 
-void MediaRouterUI::MaybeReportFileInformation(
-    const RouteRequestResult& result) {
-  if (result.result_code() == RouteRequestResult::OK)
-    media_router_file_dialog_->MaybeReportLastSelectedFileInformation();
-}
-
 void MediaRouterUI::HandleCreateSessionRequestRouteResponse(
     const RouteRequestResult&) {
   Close();
@@ -540,47 +336,7 @@ void MediaRouterUI::OnSearchSinkResponseReceived(
   handler_->ReturnSearchResult(found_sink_id);
 
   CreateRoute(found_sink_id, cast_mode);
-}
-
-void MediaRouterUI::SendIssueForRouteTimeout(
-    MediaCastMode cast_mode,
-    const base::string16& presentation_request_source_name) {
-  std::string issue_title;
-  switch (cast_mode) {
-    case PRESENTATION:
-      DLOG_IF(ERROR, presentation_request_source_name.empty())
-          << "Empty presentation request source name.";
-      issue_title =
-          l10n_util::GetStringFUTF8(IDS_MEDIA_ROUTER_ISSUE_CREATE_ROUTE_TIMEOUT,
-                                    presentation_request_source_name);
-      break;
-    case TAB_MIRROR:
-      issue_title = l10n_util::GetStringUTF8(
-          IDS_MEDIA_ROUTER_ISSUE_CREATE_ROUTE_TIMEOUT_FOR_TAB);
-      break;
-    case DESKTOP_MIRROR:
-      issue_title = l10n_util::GetStringUTF8(
-          IDS_MEDIA_ROUTER_ISSUE_CREATE_ROUTE_TIMEOUT_FOR_DESKTOP);
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  AddIssue(IssueInfo(issue_title, IssueInfo::Action::DISMISS,
-                     IssueInfo::Severity::NOTIFICATION));
-}
-
-void MediaRouterUI::SendIssueForUnableToCast(MediaCastMode cast_mode) {
-  // For a generic error, claim a tab error unless it was specifically desktop
-  // mirroring.
-  std::string issue_title =
-      (cast_mode == MediaCastMode::DESKTOP_MIRROR)
-          ? l10n_util::GetStringUTF8(
-                IDS_MEDIA_ROUTER_ISSUE_UNABLE_TO_CAST_DESKTOP)
-          : l10n_util::GetStringUTF8(
-                IDS_MEDIA_ROUTER_ISSUE_CREATE_ROUTE_TIMEOUT_FOR_TAB);
-  AddIssue(IssueInfo(issue_title, IssueInfo::Action::DISMISS,
-                     IssueInfo::Severity::WARNING));
+  MediaRouterMetrics::RecordSearchSinkOutcome(!found_sink_id.empty());
 }
 
 void MediaRouterUI::InitCommon(content::WebContents* initiator) {
@@ -606,53 +362,6 @@ void MediaRouterUI::OnDefaultPresentationRemoved() {
   // be safe.
   forced_cast_mode_ = base::nullopt;
   UpdateCastModes();
-}
-
-base::Optional<RouteParameters> MediaRouterUI::GetLocalFileRouteParameters(
-    const MediaSink::Id& sink_id,
-    const GURL& file_url,
-    content::WebContents* tab_contents) {
-  RouteParameters params;
-  SessionID::id_type tab_id = SessionTabHelper::IdForTab(tab_contents).id();
-  params.source_id = MediaSourceForTab(tab_id).id();
-
-  // Use a placeholder URL as origin for local file casting, which is
-  // essentially mirroring.
-  params.origin = url::Origin::Create(GURL(chrome::kChromeUIMediaRouterURL));
-
-  params.route_response_callbacks.push_back(base::BindOnce(
-      &MediaRouterUI::OnRouteResponseReceived, weak_factory_.GetWeakPtr(),
-      current_route_request_id(), sink_id, MediaCastMode::LOCAL_FILE,
-      base::UTF8ToUTF16(GetTruncatedPresentationRequestSourceName())));
-
-  params.route_response_callbacks.push_back(
-      base::BindOnce(&MediaRouterUIBase::MaybeReportCastingSource,
-                     weak_factory_.GetWeakPtr(), MediaCastMode::LOCAL_FILE));
-
-  params.route_response_callbacks.push_back(base::BindOnce(
-      &MediaRouterUI::MaybeReportFileInformation, weak_factory_.GetWeakPtr()));
-
-  params.route_response_callbacks.push_back(
-      base::BindOnce(&MediaRouterUI::FullScreenFirstVideoElement,
-                     weak_factory_.GetWeakPtr(), file_url, tab_contents));
-
-  params.timeout = GetRouteRequestTimeout(MediaCastMode::LOCAL_FILE);
-  CHECK(initiator());
-  params.incognito = initiator()->GetBrowserContext()->IsOffTheRecord();
-
-  return base::make_optional(std::move(params));
-}
-
-// TODO(crbug.com/792547): Refactor FullScreenFirstVideoElement() and
-// MaybeReportFileInformation() into a local media casting specific location
-// instead of here in the main ui.
-void MediaRouterUI::FullScreenFirstVideoElement(
-    const GURL& file_url,
-    content::WebContents* web_contents,
-    const RouteRequestResult& result) {
-  if (result.result_code() == RouteRequestResult::OK) {
-    new WebContentsFullscreenOnLoadedObserver(file_url, web_contents);
-  }
 }
 
 void MediaRouterUI::UpdateCastModes() {
@@ -695,10 +404,6 @@ void MediaRouterUI::OnRouteControllerInvalidated() {
 }
 void MediaRouterUI::UpdateMediaRouteStatus(const MediaStatus& status) {
   handler_->UpdateMediaRouteStatus(status);
-}
-
-IssueManager* MediaRouterUI::GetIssueManager() {
-  return GetMediaRouter()->GetIssueManager();
 }
 
 void MediaRouterUI::UpdateSinks() {

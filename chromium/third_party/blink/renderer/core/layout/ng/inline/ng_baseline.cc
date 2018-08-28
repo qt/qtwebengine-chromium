@@ -23,7 +23,7 @@ bool NGBaseline::ShouldPropagateBaselines(const NGLayoutInputNode node) {
   if (node.IsInline())
     return true;
 
-  return ShouldPropagateBaselines(ToLayoutBox(node.GetLayoutObject()));
+  return ShouldPropagateBaselines(node.GetLayoutBox());
 }
 
 bool NGBaseline::ShouldPropagateBaselines(LayoutBox* layout_box) {
@@ -38,12 +38,6 @@ bool NGBaseline::ShouldPropagateBaselines(LayoutBox* layout_box) {
   // call virtual functions.
   if (!NGBlockNode(layout_box).CanUseNewLayout())
     return true;
-
-  // CSS defines certain cases to synthesize baselines from box. See comments in
-  // UseLogicalBottomMarginEdgeForInlineBlockBaseline().
-  const LayoutBlock* layout_block = ToLayoutBlock(layout_box);
-  if (layout_block->UseLogicalBottomMarginEdgeForInlineBlockBaseline())
-    return false;
 
   return true;
 }

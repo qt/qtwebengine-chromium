@@ -335,8 +335,10 @@ public:
         GrGLFunction<GrEGLDestroyImageProc> fEGLDestroyImage;
     } fFunctions;
 
+#if GR_TEST_UTILS
     // This exists for internal testing.
-    virtual void abandon() const {}
+    virtual void abandon() const;
+#endif
 };
 
 #endif

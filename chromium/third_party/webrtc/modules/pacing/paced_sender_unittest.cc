@@ -141,6 +141,139 @@ class PacedSenderTest : public testing::TestWithParam<std::string> {
   std::unique_ptr<PacedSender> send_bucket_;
 };
 
+class PacedSenderFieldTrialTest : public testing::Test {
+ protected:
+  struct MediaStream {
+    const RtpPacketSender::Priority priority;
+    const uint32_t ssrc;
+    const size_t packet_size;
+    uint16_t seq_num;
+  };
+
+  const int kProcessIntervalsPerSecond = 1000 / 5;
+
+  PacedSenderFieldTrialTest() : clock_(123456) {}
+  void InsertPacket(PacedSender* pacer, MediaStream* stream) {
+    pacer->InsertPacket(stream->priority, stream->ssrc, stream->seq_num++,
+                        clock_.TimeInMilliseconds(), stream->packet_size,
+                        false);
+  }
+  void ProcessNext(PacedSender* pacer) {
+    clock_.AdvanceTimeMilliseconds(5);
+    pacer->Process();
+  }
+  MediaStream audio{/*priority*/ PacedSender::kHighPriority,
+                    /*ssrc*/ 3333, /*packet_size*/ 100, /*seq_num*/ 1000};
+  MediaStream video{/*priority*/ PacedSender::kNormalPriority,
+                    /*ssrc*/ 4444, /*packet_size*/ 1000, /*seq_num*/ 1000};
+  SimulatedClock clock_;
+  MockPacedSenderCallback callback_;
+};
+
+TEST_F(PacedSenderFieldTrialTest, DefaultNoPaddingInSilence) {
+  PacedSender pacer(&clock_, &callback_, nullptr);
+  pacer.SetPacingRates(kTargetBitrateBps, 0);
+  // Video packet to reset last send time and provide padding data.
+  InsertPacket(&pacer, &video);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  clock_.AdvanceTimeMilliseconds(5);
+  pacer.Process();
+  EXPECT_CALL(callback_, TimeToSendPadding).Times(0);
+  // Waiting 500 ms should not trigger sending of padding.
+  clock_.AdvanceTimeMilliseconds(500);
+  pacer.Process();
+}
+
+TEST_F(PacedSenderFieldTrialTest, PaddingInSilenceWithTrial) {
+  ScopedFieldTrials trial("WebRTC-Pacer-PadInSilence/Enabled/");
+  PacedSender pacer(&clock_, &callback_, nullptr);
+  pacer.SetPacingRates(kTargetBitrateBps, 0);
+  // Video packet to reset last send time and provide padding data.
+  InsertPacket(&pacer, &video);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  clock_.AdvanceTimeMilliseconds(5);
+  pacer.Process();
+  EXPECT_CALL(callback_, TimeToSendPadding).WillOnce(Return(1000));
+  // Waiting 500 ms should trigger sending of padding.
+  clock_.AdvanceTimeMilliseconds(500);
+  pacer.Process();
+}
+
+TEST_F(PacedSenderFieldTrialTest, DefaultCongestionWindowAffectsAudio) {
+  EXPECT_CALL(callback_, TimeToSendPadding).Times(0);
+  PacedSender pacer(&clock_, &callback_, nullptr);
+  pacer.SetPacingRates(10000000, 0);
+  pacer.SetCongestionWindow(800);
+  pacer.UpdateOutstandingData(0);
+  // Video packet fills congestion window.
+  InsertPacket(&pacer, &video);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  ProcessNext(&pacer);
+  // Audio packet blocked due to congestion.
+  InsertPacket(&pacer, &audio);
+  EXPECT_CALL(callback_, TimeToSendPacket).Times(0);
+  ProcessNext(&pacer);
+  ProcessNext(&pacer);
+  // Audio packet unblocked when congestion window clear.
+  testing::Mock::VerifyAndClearExpectations(&callback_);
+  pacer.UpdateOutstandingData(0);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  ProcessNext(&pacer);
+}
+
+TEST_F(PacedSenderFieldTrialTest, CongestionWindowDoesNotAffectAudioInTrial) {
+  ScopedFieldTrials trial("WebRTC-Pacer-BlockAudio/Disabled/");
+  EXPECT_CALL(callback_, TimeToSendPadding).Times(0);
+  PacedSender pacer(&clock_, &callback_, nullptr);
+  pacer.SetPacingRates(10000000, 0);
+  pacer.SetCongestionWindow(800);
+  pacer.UpdateOutstandingData(0);
+  // Video packet fills congestion window.
+  InsertPacket(&pacer, &video);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  ProcessNext(&pacer);
+  // Audio not blocked due to congestion.
+  InsertPacket(&pacer, &audio);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  ProcessNext(&pacer);
+}
+
+TEST_F(PacedSenderFieldTrialTest, DefaultBudgetAffectsAudio) {
+  PacedSender pacer(&clock_, &callback_, nullptr);
+  pacer.SetPacingRates(video.packet_size / 3 * 8 * kProcessIntervalsPerSecond,
+                       0);
+  // Video fills budget for following process periods.
+  InsertPacket(&pacer, &video);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  ProcessNext(&pacer);
+  // Audio packet blocked due to budget limit.
+  EXPECT_CALL(callback_, TimeToSendPacket).Times(0);
+  InsertPacket(&pacer, &audio);
+  ProcessNext(&pacer);
+  ProcessNext(&pacer);
+  testing::Mock::VerifyAndClearExpectations(&callback_);
+  // Audio packet unblocked when the budget has recovered.
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  ProcessNext(&pacer);
+  ProcessNext(&pacer);
+}
+
+TEST_F(PacedSenderFieldTrialTest, BudgetDoesNotAffectAudioInTrial) {
+  ScopedFieldTrials trial("WebRTC-Pacer-BlockAudio/Disabled/");
+  EXPECT_CALL(callback_, TimeToSendPadding).Times(0);
+  PacedSender pacer(&clock_, &callback_, nullptr);
+  pacer.SetPacingRates(video.packet_size / 3 * 8 * kProcessIntervalsPerSecond,
+                       0);
+  // Video fills budget for following process periods.
+  InsertPacket(&pacer, &video);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  ProcessNext(&pacer);
+  // Audio packet not blocked due to budget limit.
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  InsertPacket(&pacer, &audio);
+  ProcessNext(&pacer);
+}
+
 TEST_F(PacedSenderTest, FirstSentPacketTimeIsSet) {
   uint16_t sequence_number = 1234;
   const uint32_t kSsrc = 12345;
@@ -278,20 +411,12 @@ TEST_F(PacedSenderTest, CanQueuePacketsWithSameSequenceNumberOnDifferentSsrcs) {
   uint32_t ssrc = 12345;
   uint16_t sequence_number = 1234;
 
-  SendAndExpectPacket(PacedSender::kNormalPriority,
-                      ssrc,
-                      sequence_number,
-                      clock_.TimeInMilliseconds(),
-                      250,
-                      false);
+  SendAndExpectPacket(PacedSender::kNormalPriority, ssrc, sequence_number,
+                      clock_.TimeInMilliseconds(), 250, false);
 
   // Expect packet on second ssrc to be queued and sent as well.
-  SendAndExpectPacket(PacedSender::kNormalPriority,
-                      ssrc + 1,
-                      sequence_number,
-                      clock_.TimeInMilliseconds(),
-                      250,
-                      false);
+  SendAndExpectPacket(PacedSender::kNormalPriority, ssrc + 1, sequence_number,
+                      clock_.TimeInMilliseconds(), 250, false);
 
   clock_.AdvanceTimeMilliseconds(1000);
   send_bucket_->Process();
@@ -371,12 +496,8 @@ TEST_F(PacedSenderTest, VerifyPaddingUpToBitrate) {
 
   int64_t start_time = clock_.TimeInMilliseconds();
   while (clock_.TimeInMilliseconds() - start_time < kBitrateWindow) {
-    SendAndExpectPacket(PacedSender::kNormalPriority,
-                        ssrc,
-                        sequence_number++,
-                        capture_time_ms,
-                        250,
-                        false);
+    SendAndExpectPacket(PacedSender::kNormalPriority, ssrc, sequence_number++,
+                        capture_time_ms, 250, false);
     EXPECT_CALL(callback_, TimeToSendPadding(250, _))
         .Times(1)
         .WillOnce(Return(250));
@@ -598,6 +719,48 @@ TEST_F(PacedSenderTest, SendsOnlyPaddingWhenCongested) {
   clock_.AdvanceTimeMilliseconds(5);
   send_bucket_->Process();
   EXPECT_EQ(blocked_packets, send_bucket_->QueueSizePackets());
+}
+
+TEST_F(PacedSenderTest, DoesNotAllowOveruseAfterCongestion) {
+  uint32_t ssrc = 202020;
+  uint16_t seq_num = 1000;
+  RtpPacketSender::Priority prio = PacedSender::kNormalPriority;
+  int size = 1000;
+  auto now_ms = [this] { return clock_.TimeInMilliseconds(); };
+  EXPECT_CALL(callback_, TimeToSendPadding).Times(0);
+  // The pacing rate is low enough that the budget should not allow two packets
+  // to be sent in a row.
+  send_bucket_->SetPacingRates(400 * 8 * 1000 / 5, 0);
+  // The congestion window is small enough to only let one packet through.
+  send_bucket_->SetCongestionWindow(800);
+  send_bucket_->UpdateOutstandingData(0);
+  // Not yet budget limited or congested, packet is sent.
+  send_bucket_->InsertPacket(prio, ssrc, seq_num++, now_ms(), size, false);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  clock_.AdvanceTimeMilliseconds(5);
+  send_bucket_->Process();
+  // Packet blocked due to congestion.
+  send_bucket_->InsertPacket(prio, ssrc, seq_num++, now_ms(), size, false);
+  EXPECT_CALL(callback_, TimeToSendPacket).Times(0);
+  clock_.AdvanceTimeMilliseconds(5);
+  send_bucket_->Process();
+  // Packet blocked due to congestion.
+  send_bucket_->InsertPacket(prio, ssrc, seq_num++, now_ms(), size, false);
+  EXPECT_CALL(callback_, TimeToSendPacket).Times(0);
+  clock_.AdvanceTimeMilliseconds(5);
+  send_bucket_->Process();
+  send_bucket_->UpdateOutstandingData(0);
+  // Congestion removed and budget has recovered, packet is sent.
+  send_bucket_->InsertPacket(prio, ssrc, seq_num++, now_ms(), size, false);
+  EXPECT_CALL(callback_, TimeToSendPacket).WillOnce(Return(true));
+  clock_.AdvanceTimeMilliseconds(5);
+  send_bucket_->Process();
+  send_bucket_->UpdateOutstandingData(0);
+  // Should be blocked due to budget limitation as congestion has be removed.
+  send_bucket_->InsertPacket(prio, ssrc, seq_num++, now_ms(), size, false);
+  EXPECT_CALL(callback_, TimeToSendPacket).Times(0);
+  clock_.AdvanceTimeMilliseconds(5);
+  send_bucket_->Process();
 }
 
 TEST_F(PacedSenderTest, ResumesSendingWhenCongestionEnds) {
@@ -875,12 +1038,8 @@ TEST_F(PacedSenderTest, QueueTimeGrowsOverTime) {
   EXPECT_EQ(0, send_bucket_->QueueInMs());
 
   send_bucket_->SetPacingRates(30000 * kPaceMultiplier, 0);
-  SendAndExpectPacket(PacedSender::kNormalPriority,
-                      ssrc,
-                      sequence_number,
-                      clock_.TimeInMilliseconds(),
-                      1200,
-                      false);
+  SendAndExpectPacket(PacedSender::kNormalPriority, ssrc, sequence_number,
+                      clock_.TimeInMilliseconds(), 1200, false);
 
   clock_.AdvanceTimeMilliseconds(500);
   EXPECT_EQ(500, send_bucket_->QueueInMs());

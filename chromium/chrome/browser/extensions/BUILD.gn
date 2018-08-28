@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//chrome/common/features.gni")
 import("//components/nacl/features.gni")
@@ -12,7 +13,7 @@ import("//rlz/buildflags/buildflags.gni")
 
 assert(enable_extensions)
 
-static_library("extensions") {
+jumbo_static_library("extensions") {
   sources = [
     # TODO These references to files in //chrome/browser/ should either be
     # moved to the browser target or the files moved to this directory.
@@ -22,13 +23,6 @@ static_library("extensions") {
     "../ui/toolbar/toolbar_actions_model.h",
     "../ui/toolbar/toolbar_actions_model_factory.cc",
     "../ui/toolbar/toolbar_actions_model_factory.h",
-    "../web_applications/web_app.cc",
-    "../web_applications/web_app.h",
-    "../web_applications/web_app_chromeos.cc",
-    "../web_applications/web_app_mac.h",
-    "../web_applications/web_app_mac.mm",
-    "../web_applications/web_app_win.cc",
-    "../web_applications/web_app_win.h",
     "active_install_data.cc",
     "active_install_data.h",
     "active_tab_permission_granter.cc",
@@ -343,7 +337,6 @@ static_library("extensions") {
     "api/settings_private/generated_prefs_factory.cc",
     "api/settings_private/generated_prefs_factory.h",
     "api/settings_private/prefs_util.cc",
-    "api/settings_private/prefs_util.h",
     "api/settings_private/prefs_util.h",
     "api/settings_private/settings_private_api.cc",
     "api/settings_private/settings_private_api.h",
@@ -786,7 +779,9 @@ static_library("extensions") {
   # have the same dependencies. Once browser_extensions is untangled from
   # browser, then we can clean up these dependencies.
   public_deps = [
+    "//chrome/browser/extensions/api:api_registration",
     "//chrome/common/extensions/api",
+    "//components/safe_browsing:csd_proto",
     "//components/safe_browsing/db:util",
     "//content/public/browser",
   ]
@@ -801,12 +796,14 @@ static_library("extensions") {
     "//chrome/app/theme:theme_resources",
     "//chrome/app/vector_icons",
     "//chrome/browser/devtools",
+    "//chrome/browser/engagement:mojo_bindings",
     "//chrome/browser/media/router",
     "//chrome/browser/media/router/discovery",
+    "//chrome/browser/resource_coordinator:mojo_bindings",
     "//chrome/browser/safe_browsing",
+    "//chrome/browser/web_applications/extensions",
     "//chrome/common",
     "//chrome/common/extensions:mojo_bindings",
-    "//chrome/common/extensions/api:api_registration",
     "//chrome/common/extensions/api:extensions_features",
     "//chrome/common/safe_browsing:proto",
     "//chrome/services/media_gallery_util/public/cpp",
@@ -864,6 +861,7 @@ static_library("extensions") {
     "//components/sync_sessions",
     "//components/translate/core/browser",
     "//components/undo",
+    "//components/unified_consent",
     "//components/update_client",
     "//components/url_matcher",
     "//components/user_prefs",
@@ -1006,11 +1004,13 @@ static_library("extensions") {
       "//remoting/base",
       "//remoting/host",
       "//remoting/host/it2me:common",
+      "//services/video_capture/public/mojom:constants",
       "//third_party/protobuf:protobuf_lite",
-      "//ui/app_list",
       "//ui/chromeos",
       "//ui/chromeos/events",
       "//ui/file_manager",
+      "//ui/keyboard",
+      "//ui/keyboard:resources",
       "//ui/ozone",
       "//ui/views",
     ]
@@ -1149,11 +1149,7 @@ static_library("extensions") {
   }
 
   if (use_aura) {
-    deps += [
-      "//ui/aura",
-      "//ui/keyboard",
-      "//ui/keyboard:resources",
-    ]
+    deps += [ "//ui/aura" ]
   }
 
   if (use_brlapi) {

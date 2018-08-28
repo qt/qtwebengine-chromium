@@ -1,30 +1,6 @@
-/*
- * Copyright (C) 2017, Google Inc. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- * 2.  Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
- *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL APPLE OR ITS CONTRIBUTORS BE LIABLE FOR ANY
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// Copyright 2017 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "third_party/blink/renderer/modules/accessibility/ax_relation_cache.h"
 
@@ -55,13 +31,9 @@ void AXRelationCache::UpdateReverseRelations(const AXObject* relation_source,
 
   // Add entries to reverse map.
   for (const String& target_id : target_ids) {
-    HashSet<AXID>* source_axids = id_attr_to_related_mapping_.at(target_id);
-    if (!source_axids) {
-      source_axids = new HashSet<AXID>();
-      id_attr_to_related_mapping_.Set(target_id,
-                                      base::WrapUnique(source_axids));
-    }
-    source_axids->insert(relation_source_axid);
+    auto result =
+        id_attr_to_related_mapping_.insert(target_id, HashSet<AXID>());
+    result.stored_value->value.insert(relation_source_axid);
   }
 }
 
@@ -207,12 +179,11 @@ void AXRelationCache::GetReverseRelated(
   if (!element->HasID())
     return;
 
-  String id = element->GetIdAttribute();
-  HashSet<AXID>* source_axids = id_attr_to_related_mapping_.at(id);
-  if (!source_axids)
+  auto it = id_attr_to_related_mapping_.find(element->GetIdAttribute());
+  if (it == id_attr_to_related_mapping_.end())
     return;
 
-  for (const auto& source_axid : *source_axids) {
+  for (const auto& source_axid : it->value) {
     AXObject* source_object = ObjectFromAXID(source_axid);
     if (source_object)
       source_objects.push_back(source_object);

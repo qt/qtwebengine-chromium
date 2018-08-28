@@ -578,15 +578,26 @@ bool ssl_cipher_get_evp_aead(const EVP_AEAD **out_aead,
   *out_fixed_iv_len = 0;
 
   const int is_tls12 = version == TLS1_2_VERSION && !is_dtls;
+  const int is_tls13 = version == TLS1_3_VERSION && !is_dtls;
 
   if (cipher->algorithm_mac == SSL_AEAD) {
     if (cipher->algorithm_enc == SSL_AES128GCM) {
-      *out_aead =
-          is_tls12 ? EVP_aead_aes_128_gcm_tls12() : EVP_aead_aes_128_gcm();
+      if (is_tls12) {
+        *out_aead = EVP_aead_aes_128_gcm_tls12();
+      } else if (is_tls13) {
+        *out_aead = EVP_aead_aes_128_gcm_tls13();
+      } else {
+        *out_aead = EVP_aead_aes_128_gcm();
+      }
       *out_fixed_iv_len = 4;
     } else if (cipher->algorithm_enc == SSL_AES256GCM) {
-      *out_aead =
-          is_tls12 ? EVP_aead_aes_256_gcm_tls12() : EVP_aead_aes_256_gcm();
+      if (is_tls12) {
+        *out_aead = EVP_aead_aes_256_gcm_tls12();
+      } else if (is_tls13) {
+        *out_aead = EVP_aead_aes_256_gcm_tls13();
+      } else {
+        *out_aead = EVP_aead_aes_256_gcm();
+      }
       *out_fixed_iv_len = 4;
     } else if (cipher->algorithm_enc == SSL_CHACHA20POLY1305) {
       *out_aead = EVP_aead_chacha20_poly1305();
@@ -602,36 +613,23 @@ bool ssl_cipher_get_evp_aead(const EVP_AEAD **out_aead,
     }
   } else if (cipher->algorithm_mac == SSL_SHA1) {
     if (cipher->algorithm_enc == SSL_eNULL) {
-      if (version == SSL3_VERSION) {
-        *out_aead = EVP_aead_null_sha1_ssl3();
-      } else {
-        *out_aead = EVP_aead_null_sha1_tls();
-      }
+      *out_aead = EVP_aead_null_sha1_tls();
     } else if (cipher->algorithm_enc == SSL_3DES) {
-      if (version == SSL3_VERSION) {
-        *out_aead = EVP_aead_des_ede3_cbc_sha1_ssl3();
-        *out_fixed_iv_len = 8;
-      } else if (version == TLS1_VERSION) {
+      if (version == TLS1_VERSION) {
         *out_aead = EVP_aead_des_ede3_cbc_sha1_tls_implicit_iv();
         *out_fixed_iv_len = 8;
       } else {
         *out_aead = EVP_aead_des_ede3_cbc_sha1_tls();
       }
     } else if (cipher->algorithm_enc == SSL_AES128) {
-      if (version == SSL3_VERSION) {
-        *out_aead = EVP_aead_aes_128_cbc_sha1_ssl3();
-        *out_fixed_iv_len = 16;
-      } else if (version == TLS1_VERSION) {
+      if (version == TLS1_VERSION) {
         *out_aead = EVP_aead_aes_128_cbc_sha1_tls_implicit_iv();
         *out_fixed_iv_len = 16;
       } else {
         *out_aead = EVP_aead_aes_128_cbc_sha1_tls();
       }
     } else if (cipher->algorithm_enc == SSL_AES256) {
-      if (version == SSL3_VERSION) {
-        *out_aead = EVP_aead_aes_256_cbc_sha1_ssl3();
-        *out_fixed_iv_len = 16;
-      } else if (version == TLS1_VERSION) {
+      if (version == TLS1_VERSION) {
         *out_aead = EVP_aead_aes_256_cbc_sha1_tls_implicit_iv();
         *out_fixed_iv_len = 16;
       } else {

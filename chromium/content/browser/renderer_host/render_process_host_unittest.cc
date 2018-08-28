@@ -11,7 +11,7 @@
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "build/build_config.h"
 #include "content/common/frame_messages.h"
 #include "content/common/frame_owner_properties.h"
@@ -57,9 +57,6 @@ TEST_F(RenderProcessHostUnitTest, RendererProcessLimit) {
   if (AreAllSitesIsolatedForTesting())
     return;
 
-  // Disable any overrides.
-  RenderProcessHostImpl::SetMaxRendererProcessCount(0);
-
   // Verify that the limit is between 1 and kMaxRendererProcessCount.
   EXPECT_GT(RenderProcessHostImpl::GetMaxRendererProcessCount(), 0u);
   EXPECT_LE(RenderProcessHostImpl::GetMaxRendererProcessCount(),
@@ -81,9 +78,6 @@ TEST_F(RenderProcessHostUnitTest, RendererProcessLimit) {
 
 #if defined(OS_ANDROID) || defined(OS_CHROMEOS)
 TEST_F(RenderProcessHostUnitTest, NoRendererProcessLimitOnAndroidOrChromeOS) {
-  // Disable any overrides.
-  RenderProcessHostImpl::SetMaxRendererProcessCount(0);
-
   // Add a few dummy process hosts.
   ASSERT_NE(0u, kMaxRendererProcessCount);
   std::vector<std::unique_ptr<MockRenderProcessHost>> hosts;
@@ -888,9 +882,35 @@ TEST_F(RenderProcessHostUnitTest,
   SetBrowserClientForTesting(regular_client);
 }
 
+// Check whether we notify the renderer that it has been locked to a site or
+// not. This should depend on the URL from the SiteInstance.
+TEST_F(RenderProcessHostUnitTest, RendererLockedToSite) {
+  struct TestData {
+    GURL test_url;
+    bool should_lock_renderer;
+  } tests[] = {{GURL("http://"), false},
+               {GURL("http://foo.com"), true},
+               {GURL("http://bar.foo.com"), true},
+               {GURL(""), false},
+               {GURL("google.com"), false},
+               {GURL("http:"), false},
+               {GURL("http://user:pass@google.com:99/foo;bar?q=a#ref"), true}};
+  for (const auto& test : tests) {
+    scoped_refptr<SiteInstanceImpl> site_instance =
+        SiteInstanceImpl::CreateForURL(browser_context(), test.test_url);
+    auto* host =
+        static_cast<MockRenderProcessHost*>(site_instance->GetProcess());
+    if (AreAllSitesIsolatedForTesting())
+      EXPECT_EQ(test.should_lock_renderer, host->is_renderer_locked_to_site());
+    else
+      EXPECT_EQ(false, host->is_renderer_locked_to_site());
+  }
+}
+
 class SpareRenderProcessHostUnitTest : public RenderViewHostImplTestHarness {
  public:
   SpareRenderProcessHostUnitTest() {}
+  ~SpareRenderProcessHostUnitTest() override = default;
 
  protected:
   void SetUp() override {
@@ -901,6 +921,13 @@ class SpareRenderProcessHostUnitTest : public RenderViewHostImplTestHarness {
     while (!rph_factory_.GetProcesses()->empty()) {
       rph_factory_.Remove(rph_factory_.GetProcesses()->back().get());
     }
+  }
+
+  void TearDown() override {
+    // Important: Reset the max renderer count to leave this process in a
+    // pristine state.
+    RenderProcessHost::SetMaxRendererProcessCount(0);
+    RenderViewHostImplTestHarness::TearDown();
   }
 
   MockRenderProcessHostFactory rph_factory_;
@@ -1056,7 +1083,9 @@ TEST_F(SpareRenderProcessHostUnitTest,
 // in this scenario would put us over the process limit and is therefore
 // undesirable.
 TEST_F(SpareRenderProcessHostUnitTest, JustBelowProcessLimit) {
-  RenderProcessHostImpl::SetMaxRendererProcessCount(1);
+  // Override a global. TearDown() will call SetMaxRendererProcessCount() again
+  // to clean up.
+  RenderProcessHost::SetMaxRendererProcessCount(1);
 
   // No spare or any other renderer process at the start of the test.
   EXPECT_FALSE(RenderProcessHostImpl::GetSpareRenderProcessHostForTesting());
@@ -1078,7 +1107,9 @@ TEST_F(SpareRenderProcessHostUnitTest, JustBelowProcessLimit) {
 // This unit test verifies that a mismatched spare RenderProcessHost is dropped
 // before considering process reuse due to the process limit.
 TEST_F(SpareRenderProcessHostUnitTest, AtProcessLimit) {
-  RenderProcessHostImpl::SetMaxRendererProcessCount(2);
+  // Override a global. TearDown() will call SetMaxRendererProcessCount() again
+  // to clean up.
+  RenderProcessHost::SetMaxRendererProcessCount(2);
 
   // Create and navigate the 1st WebContents.
   const GURL kUrl1("http://foo.com");

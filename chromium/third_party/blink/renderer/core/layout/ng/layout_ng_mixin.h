@@ -25,7 +25,7 @@ struct NGInlineNodeData;
 // LayoutBlockFlow.
 
 template <typename Base>
-class CORE_TEMPLATE_CLASS_EXPORT LayoutNGMixin : public Base {
+class LayoutNGMixin : public Base {
  public:
   explicit LayoutNGMixin(Element* element);
   ~LayoutNGMixin() override;
@@ -42,7 +42,7 @@ class CORE_TEMPLATE_CLASS_EXPORT LayoutNGMixin : public Base {
 
   void InvalidateDisplayItemClients(PaintInvalidationReason) const override;
 
-  void Paint(const PaintInfo&, const LayoutPoint&) const override;
+  void Paint(const PaintInfo&) const override;
 
   bool NodeAtPoint(HitTestResult&,
                    const HitTestLocation& location_in_container,
@@ -76,6 +76,10 @@ class CORE_TEMPLATE_CLASS_EXPORT LayoutNGMixin : public Base {
 
   void AddOverflowFromChildren() override;
 
+ private:
+  void AddScrollingOverflowFromChildren();
+
+ protected:
   void AddOutlineRects(
       Vector<LayoutRect>&,
       const LayoutPoint& additional_offset,

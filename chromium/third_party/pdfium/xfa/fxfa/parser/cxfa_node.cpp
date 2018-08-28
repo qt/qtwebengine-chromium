@@ -1245,7 +1245,7 @@ void CXFA_Node::RemoveChild(CXFA_Node* pNode, bool bNotify) {
         static_cast<CFX_XMLElement*>(pNode->xml_node_.Get());
     WideString wsAttributeName =
         pNode->JSObject()->GetCData(XFA_Attribute::QualifiedName);
-    pXMLElement->RemoveAttribute(wsAttributeName.c_str());
+    pXMLElement->RemoveAttribute(wsAttributeName);
   }
 
   WideString wsName = pNode->JSObject()
@@ -2046,11 +2046,15 @@ void CXFA_Node::ProcessScriptTestValidate(CXFA_FFDocView* docView,
       wsScriptMsg = GetValidateMessage(false, bVersionFlag);
 
     if (bVersionFlag) {
-      pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Warning, XFA_MB_OK);
+      pAppProvider->MsgBox(wsScriptMsg, wsTitle,
+                           static_cast<uint32_t>(AlertIcon::kWarning),
+                           static_cast<uint32_t>(AlertButton::kOK));
       return;
     }
-    if (pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Warning,
-                             XFA_MB_YesNo) == XFA_IDYes) {
+    if (pAppProvider->MsgBox(wsScriptMsg, wsTitle,
+                             static_cast<uint32_t>(AlertIcon::kWarning),
+                             static_cast<uint32_t>(AlertButton::kYesNo)) ==
+        static_cast<uint32_t>(AlertReturn::kYes)) {
       SetFlag(XFA_NodeFlag_UserInteractive);
     }
     return;
@@ -2058,56 +2062,64 @@ void CXFA_Node::ProcessScriptTestValidate(CXFA_FFDocView* docView,
 
   if (wsScriptMsg.IsEmpty())
     wsScriptMsg = GetValidateMessage(true, bVersionFlag);
-  pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Error, XFA_MB_OK);
+  pAppProvider->MsgBox(wsScriptMsg, wsTitle,
+                       static_cast<uint32_t>(AlertIcon::kError),
+                       static_cast<uint32_t>(AlertButton::kOK));
 }
 
 int32_t CXFA_Node::ProcessFormatTestValidate(CXFA_FFDocView* docView,
                                              CXFA_Validate* validate,
                                              bool bVersionFlag) {
+  WideString wsPicture = validate->GetPicture();
+  if (wsPicture.IsEmpty())
+    return XFA_EVENTERROR_NotExist;
+
   WideString wsRawValue = GetRawValue();
-  if (!wsRawValue.IsEmpty()) {
-    WideString wsPicture = validate->GetPicture();
-    if (wsPicture.IsEmpty())
-      return XFA_EVENTERROR_NotExist;
+  if (wsRawValue.IsEmpty())
+    return XFA_EVENTERROR_Error;
 
-    LocaleIface* pLocale = GetLocale();
-    if (!pLocale)
-      return XFA_EVENTERROR_NotExist;
+  LocaleIface* pLocale = GetLocale();
+  if (!pLocale)
+    return XFA_EVENTERROR_NotExist;
 
-    CXFA_LocaleValue lcValue = XFA_GetLocaleValue(this);
-    if (!lcValue.ValidateValue(lcValue.GetValue(), wsPicture, pLocale,
-                               nullptr)) {
-      IXFA_AppProvider* pAppProvider =
-          docView->GetDoc()->GetApp()->GetAppProvider();
-      if (!pAppProvider)
-        return XFA_EVENTERROR_NotExist;
+  CXFA_LocaleValue lcValue = XFA_GetLocaleValue(this);
+  if (lcValue.ValidateValue(lcValue.GetValue(), wsPicture, pLocale, nullptr))
+    return XFA_EVENTERROR_Success;
 
-      WideString wsFormatMsg = validate->GetFormatMessageText();
-      WideString wsTitle = pAppProvider->GetAppTitle();
-      if (validate->GetFormatTest() == XFA_AttributeEnum::Error) {
-        if (wsFormatMsg.IsEmpty())
-          wsFormatMsg = GetValidateMessage(true, bVersionFlag);
-        pAppProvider->MsgBox(wsFormatMsg, wsTitle, XFA_MBICON_Error, XFA_MB_OK);
-        return XFA_EVENTERROR_Success;
-      }
-      if (IsUserInteractive())
-        return XFA_EVENTERROR_NotExist;
-      if (wsFormatMsg.IsEmpty())
-        wsFormatMsg = GetValidateMessage(false, bVersionFlag);
+  IXFA_AppProvider* pAppProvider =
+      docView->GetDoc()->GetApp()->GetAppProvider();
+  if (!pAppProvider)
+    return XFA_EVENTERROR_NotExist;
 
-      if (bVersionFlag) {
-        pAppProvider->MsgBox(wsFormatMsg, wsTitle, XFA_MBICON_Warning,
-                             XFA_MB_OK);
-        return XFA_EVENTERROR_Success;
-      }
-      if (pAppProvider->MsgBox(wsFormatMsg, wsTitle, XFA_MBICON_Warning,
-                               XFA_MB_YesNo) == XFA_IDYes) {
-        SetFlag(XFA_NodeFlag_UserInteractive);
-      }
-      return XFA_EVENTERROR_Success;
-    }
+  WideString wsFormatMsg = validate->GetFormatMessageText();
+  WideString wsTitle = pAppProvider->GetAppTitle();
+  if (validate->GetFormatTest() == XFA_AttributeEnum::Error) {
+    if (wsFormatMsg.IsEmpty())
+      wsFormatMsg = GetValidateMessage(true, bVersionFlag);
+    pAppProvider->MsgBox(wsFormatMsg, wsTitle,
+                         static_cast<uint32_t>(AlertIcon::kError),
+                         static_cast<uint32_t>(AlertButton::kOK));
+    return XFA_EVENTERROR_Error;
   }
-  return XFA_EVENTERROR_NotExist;
+
+  if (wsFormatMsg.IsEmpty())
+    wsFormatMsg = GetValidateMessage(false, bVersionFlag);
+
+  if (bVersionFlag) {
+    pAppProvider->MsgBox(wsFormatMsg, wsTitle,
+                         static_cast<uint32_t>(AlertIcon::kWarning),
+                         static_cast<uint32_t>(AlertButton::kOK));
+    return XFA_EVENTERROR_Error;
+  }
+
+  if (pAppProvider->MsgBox(wsFormatMsg, wsTitle,
+                           static_cast<uint32_t>(AlertIcon::kWarning),
+                           static_cast<uint32_t>(AlertButton::kYesNo)) ==
+      static_cast<uint32_t>(AlertReturn::kYes)) {
+    SetFlag(XFA_NodeFlag_UserInteractive);
+  }
+
+  return XFA_EVENTERROR_Error;
 }
 
 int32_t CXFA_Node::ProcessNullTestValidate(CXFA_FFDocView* docView,
@@ -2153,7 +2165,9 @@ int32_t CXFA_Node::ProcessNullTestValidate(CXFA_FFDocView* docView,
         wsNullMsg =
             WideString::Format(L"%ls cannot be blank.", wsCaptionName.c_str());
       }
-      pAppProvider->MsgBox(wsNullMsg, wsTitle, XFA_MBICON_Status, XFA_MB_OK);
+      pAppProvider->MsgBox(wsNullMsg, wsTitle,
+                           static_cast<uint32_t>(AlertIcon::kStatus),
+                           static_cast<uint32_t>(AlertButton::kOK));
       return XFA_EVENTERROR_Error;
     }
     case XFA_AttributeEnum::Warning: {
@@ -2167,8 +2181,10 @@ int32_t CXFA_Node::ProcessNullTestValidate(CXFA_FFDocView* docView,
             L"Ignore.",
             wsCaptionName.c_str(), wsCaptionName.c_str());
       }
-      if (pAppProvider->MsgBox(wsNullMsg, wsTitle, XFA_MBICON_Warning,
-                               XFA_MB_YesNo) == XFA_IDYes) {
+      if (pAppProvider->MsgBox(wsNullMsg, wsTitle,
+                               static_cast<uint32_t>(AlertIcon::kWarning),
+                               static_cast<uint32_t>(AlertButton::kYesNo)) ==
+          static_cast<uint32_t>(AlertReturn::kYes)) {
         SetFlag(XFA_NodeFlag_UserInteractive);
       }
       return XFA_EVENTERROR_Error;
@@ -2290,7 +2306,7 @@ std::pair<int32_t, bool> CXFA_Node::ExecuteBoolScript(
 
   CXFA_FFDoc* pDoc = docView->GetDoc();
   CFXJSE_Engine* pContext = pDoc->GetXFADoc()->GetScriptContext();
-  pContext->SetEventParam(*pEventParam);
+  pContext->SetEventParam(pEventParam);
   pContext->SetRunAtType(script->GetRunAt());
 
   std::vector<CXFA_Node*> refNodes;
@@ -2344,6 +2360,7 @@ std::pair<int32_t, bool> CXFA_Node::ExecuteBoolScript(
     }
   }
   pContext->SetNodesOfRunScript(nullptr);
+  pContext->SetEventParam(nullptr);
 
   return {iRet, pTmpRetValue->IsBoolean() ? pTmpRetValue->ToBoolean() : false};
 }

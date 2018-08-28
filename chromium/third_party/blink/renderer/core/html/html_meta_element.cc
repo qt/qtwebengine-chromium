@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/html_names.h"
@@ -304,18 +305,18 @@ float HTMLMetaElement::ParseViewportValueAsDPI(Document* document,
   return value;
 }
 
-ViewportDescription::ViewportFit HTMLMetaElement::ParseViewportFitValueAsEnum(
+blink::mojom::ViewportFit HTMLMetaElement::ParseViewportFitValueAsEnum(
     bool& unknown_value,
     const String& value_string) {
   if (DeprecatedEqualIgnoringCase(value_string, "auto"))
-    return ViewportDescription::ViewportFit::kAuto;
+    return mojom::ViewportFit::kAuto;
   if (DeprecatedEqualIgnoringCase(value_string, "contain"))
-    return ViewportDescription::ViewportFit::kContain;
+    return mojom::ViewportFit::kContain;
   if (DeprecatedEqualIgnoringCase(value_string, "cover"))
-    return ViewportDescription::ViewportFit::kCover;
+    return mojom::ViewportFit::kCover;
 
   unknown_value = true;
-  return ViewportDescription::ViewportFit::kAuto;
+  return mojom::ViewportFit::kAuto;
 }
 
 void HTMLMetaElement::ProcessViewportKeyValuePair(
@@ -366,7 +367,7 @@ void HTMLMetaElement::ProcessViewportKeyValuePair(
   } else if (key_string == "minimal-ui") {
     // Ignore vendor-specific argument.
   } else if (key_string == "viewport-fit") {
-    if (RuntimeEnabledFeatures::DisplayCutoutViewportFitEnabled()) {
+    if (RuntimeEnabledFeatures::DisplayCutoutAPIEnabled()) {
       bool unknown_value = false;
       description->SetViewportFit(
           ParseViewportFitValueAsEnum(unknown_value, value_string));
@@ -457,19 +458,20 @@ void HTMLMetaElement::ProcessViewportContentAttribute(
     ViewportDescription::Type origin) {
   DCHECK(!content.IsNull());
 
-  if (!GetDocument().ShouldOverrideLegacyDescription(origin))
+  ViewportData& viewport_data = GetDocument().GetViewportData();
+  if (!viewport_data.ShouldOverrideLegacyDescription(origin))
     return;
 
   ViewportDescription description_from_legacy_tag(origin);
-  if (GetDocument().ShouldMergeWithLegacyDescription(origin))
-    description_from_legacy_tag = GetDocument().GetViewportDescription();
+  if (viewport_data.ShouldMergeWithLegacyDescription(origin))
+    description_from_legacy_tag = viewport_data.GetViewportDescription();
 
   GetViewportDescriptionFromContentAttribute(
       content, description_from_legacy_tag, &GetDocument(),
       GetDocument().GetSettings() &&
           GetDocument().GetSettings()->GetViewportMetaZeroValuesQuirk());
 
-  GetDocument().SetViewportDescription(description_from_legacy_tag);
+  viewport_data.SetViewportDescription(description_from_legacy_tag);
 }
 
 void HTMLMetaElement::ParseAttribute(

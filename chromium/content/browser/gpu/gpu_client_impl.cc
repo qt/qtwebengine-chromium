@@ -7,7 +7,6 @@
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/common/child_process_host_impl.h"
-#include "content/public/browser/browser_thread.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "gpu/ipc/common/gpu_memory_buffer_impl.h"
 #include "gpu/ipc/common/gpu_memory_buffer_impl_shared_memory.h"
@@ -15,51 +14,67 @@
 namespace content {
 
 // static
-std::unique_ptr<GpuClient, BrowserThread::DeleteOnIOThread> GpuClient::Create(
+std::unique_ptr<GpuClient, base::OnTaskRunnerDeleter> GpuClient::Create(
     ui::mojom::GpuRequest request,
-    ConnectionErrorHandlerClosure connection_error_handler) {
-  std::unique_ptr<GpuClientImpl, BrowserThread::DeleteOnIOThread> gpu_client(
-      new GpuClientImpl(ChildProcessHostImpl::GenerateChildProcessUniqueId()));
+    ConnectionErrorHandlerClosure connection_error_handler,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+  const int client_id = ChildProcessHostImpl::GenerateChildProcessUniqueId();
+  const uint64_t client_tracing_id =
+      ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(client_id);
+  std::unique_ptr<GpuClientImpl, base::OnTaskRunnerDeleter> gpu_client(
+      new GpuClientImpl(client_id, client_tracing_id, task_runner),
+      base::OnTaskRunnerDeleter(task_runner));
   gpu_client->SetConnectionErrorHandler(std::move(connection_error_handler));
   gpu_client->Add(std::move(request));
   return gpu_client;
 }
 
-GpuClientImpl::GpuClientImpl(int render_process_id)
-    : render_process_id_(render_process_id), weak_factory_(this) {
-  bindings_.set_connection_error_handler(
-      base::Bind(&GpuClientImpl::OnError, base::Unretained(this),
-                 ErrorReason::kConnectionLost));
+GpuClientImpl::GpuClientImpl(
+    int client_id,
+    uint64_t client_tracing_id,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
+    : client_id_(client_id),
+      client_tracing_id_(client_tracing_id),
+      task_runner_(std::move(task_runner)),
+      weak_factory_(this) {
+  gpu_bindings_.set_connection_error_handler(
+      base::BindRepeating(&GpuClientImpl::OnError, base::Unretained(this),
+                          ErrorReason::kConnectionLost));
 }
 
 GpuClientImpl::~GpuClientImpl() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  bindings_.CloseAllBindings();
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  gpu_bindings_.CloseAllBindings();
   OnError(ErrorReason::kInDestructor);
 }
 
 void GpuClientImpl::Add(ui::mojom::GpuRequest request) {
-  bindings_.AddBinding(this, std::move(request));
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  gpu_bindings_.AddBinding(this, std::move(request));
 }
 
 void GpuClientImpl::OnError(ErrorReason reason) {
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
   ClearCallback();
-  if (bindings_.empty()) {
+  if (gpu_bindings_.empty()) {
     BrowserGpuMemoryBufferManager* gpu_memory_buffer_manager =
         BrowserGpuMemoryBufferManager::current();
     if (gpu_memory_buffer_manager)
-      gpu_memory_buffer_manager->ProcessRemoved(render_process_id_);
+      gpu_memory_buffer_manager->ProcessRemoved(client_id_);
   }
   if (reason == ErrorReason::kConnectionLost && connection_error_handler_)
     std::move(connection_error_handler_).Run(this);
 }
 
 void GpuClientImpl::PreEstablishGpuChannel() {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::BindOnce(&GpuClientImpl::EstablishGpuChannel,
-                     base::Unretained(this), EstablishGpuChannelCallback()));
+  if (task_runner_->RunsTasksInCurrentSequence()) {
+    EstablishGpuChannel(EstablishGpuChannelCallback());
+  } else {
+    task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(&GpuClientImpl::EstablishGpuChannel,
+                       base::Unretained(this), EstablishGpuChannelCallback()));
+  }
 }
 
 void GpuClientImpl::SetConnectionErrorHandler(
@@ -85,8 +100,8 @@ void GpuClientImpl::OnEstablishGpuChannel(
   }
   if (callback) {
     // A request is waiting.
-    std::move(callback).Run(render_process_id_, std::move(channel_handle),
-                            gpu_info, gpu_feature_info);
+    std::move(callback).Run(client_id_, std::move(channel_handle), gpu_info,
+                            gpu_feature_info);
     return;
   }
   if (status == GpuProcessHost::EstablishChannelStatus::SUCCESS) {
@@ -100,21 +115,21 @@ void GpuClientImpl::OnEstablishGpuChannel(
 
 void GpuClientImpl::OnCreateGpuMemoryBuffer(
     CreateGpuMemoryBufferCallback callback,
-    const gfx::GpuMemoryBufferHandle& handle) {
-  std::move(callback).Run(handle);
+    gfx::GpuMemoryBufferHandle handle) {
+  std::move(callback).Run(std::move(handle));
 }
 
 void GpuClientImpl::ClearCallback() {
   if (!callback_)
     return;
   EstablishGpuChannelCallback callback = std::move(callback_);
-  std::move(callback).Run(render_process_id_, mojo::ScopedMessagePipeHandle(),
+  std::move(callback).Run(client_id_, mojo::ScopedMessagePipeHandle(),
                           gpu::GPUInfo(), gpu::GpuFeatureInfo());
   DCHECK(!callback_);
 }
 
 void GpuClientImpl::EstablishGpuChannel(EstablishGpuChannelCallback callback) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
   // At most one channel should be requested. So clear previous request first.
   ClearCallback();
   if (channel_handle_.is_valid()) {
@@ -123,8 +138,8 @@ void GpuClientImpl::EstablishGpuChannel(EstablishGpuChannelCallback callback) {
     //   2) if callback is empty, it's PreEstablishGpyChannel() being called
     //      more than once, no need to do anything.
     if (callback) {
-      std::move(callback).Run(render_process_id_, std::move(channel_handle_),
-                              gpu_info_, gpu_feature_info_);
+      std::move(callback).Run(client_id_, std::move(channel_handle_), gpu_info_,
+                              gpu_feature_info_);
       DCHECK(!channel_handle_.is_valid());
     }
     return;
@@ -132,9 +147,8 @@ void GpuClientImpl::EstablishGpuChannel(EstablishGpuChannelCallback callback) {
   GpuProcessHost* host = GpuProcessHost::Get();
   if (!host) {
     if (callback) {
-      std::move(callback).Run(render_process_id_,
-                              mojo::ScopedMessagePipeHandle(), gpu::GPUInfo(),
-                              gpu::GpuFeatureInfo());
+      std::move(callback).Run(client_id_, mojo::ScopedMessagePipeHandle(),
+                              gpu::GPUInfo(), gpu::GpuFeatureInfo());
     }
     return;
   }
@@ -146,12 +160,10 @@ void GpuClientImpl::EstablishGpuChannel(EstablishGpuChannelCallback callback) {
   bool allow_view_command_buffers = false;
   bool allow_real_time_streams = false;
   host->EstablishGpuChannel(
-      render_process_id_,
-      ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(
-          render_process_id_),
-      preempts, allow_view_command_buffers, allow_real_time_streams,
-      base::Bind(&GpuClientImpl::OnEstablishGpuChannel,
-                 weak_factory_.GetWeakPtr()));
+      client_id_, client_tracing_id_, preempts, allow_view_command_buffers,
+      allow_real_time_streams,
+      base::BindRepeating(&GpuClientImpl::OnEstablishGpuChannel,
+                          weak_factory_.GetWeakPtr()));
 }
 
 void GpuClientImpl::CreateJpegDecodeAccelerator(
@@ -175,7 +187,7 @@ void GpuClientImpl::CreateGpuMemoryBuffer(
     const gfx::Size& size,
     gfx::BufferFormat format,
     gfx::BufferUsage usage,
-    ui::mojom::Gpu::CreateGpuMemoryBufferCallback callback) {
+    ui::mojom::GpuMemoryBufferFactory::CreateGpuMemoryBufferCallback callback) {
   DCHECK(BrowserGpuMemoryBufferManager::current());
 
   base::CheckedNumeric<int> bytes = size.width();
@@ -187,7 +199,7 @@ void GpuClientImpl::CreateGpuMemoryBuffer(
 
   BrowserGpuMemoryBufferManager::current()
       ->AllocateGpuMemoryBufferForChildProcess(
-          id, size, format, usage, render_process_id_,
+          id, size, format, usage, client_id_,
           base::BindOnce(&GpuClientImpl::OnCreateGpuMemoryBuffer,
                          weak_factory_.GetWeakPtr(), std::move(callback)));
 }
@@ -197,7 +209,12 @@ void GpuClientImpl::DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
   DCHECK(BrowserGpuMemoryBufferManager::current());
 
   BrowserGpuMemoryBufferManager::current()->ChildProcessDeletedGpuMemoryBuffer(
-      id, render_process_id_, sync_token);
+      id, client_id_, sync_token);
+}
+
+void GpuClientImpl::CreateGpuMemoryBufferFactory(
+    ui::mojom::GpuMemoryBufferFactoryRequest request) {
+  gpu_memory_buffer_factory_bindings_.AddBinding(this, std::move(request));
 }
 
 }  // namespace content

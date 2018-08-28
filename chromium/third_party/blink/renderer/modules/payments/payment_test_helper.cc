@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/modules/payments/payment_method_data.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
+#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
 namespace blink {
 namespace {
@@ -127,9 +128,7 @@ PaymentDetailsModifier BuildPaymentDetailsModifierForTest(
     item = BuildPaymentItemForTest();
 
   PaymentDetailsModifier modifier;
-  StringOrStringSequence supportedMethods;
-  supportedMethods.SetStringSequence(Vector<String>(1, "foo"));
-  modifier.setSupportedMethods(supportedMethods);
+  modifier.setSupportedMethod("foo");
   modifier.setTotal(total);
   modifier.setAdditionalDisplayItems(HeapVector<PaymentItem>(1, item));
   return modifier;
@@ -185,9 +184,7 @@ PaymentDetailsUpdate BuildPaymentDetailsErrorMsgForTest(
 
 HeapVector<PaymentMethodData> BuildPaymentMethodDataForTest() {
   HeapVector<PaymentMethodData> method_data(1, PaymentMethodData());
-  StringOrStringSequence supportedMethods;
-  supportedMethods.SetStringSequence(Vector<String>(1, "foo"));
-  method_data[0].setSupportedMethods(supportedMethods);
+  method_data[0].setSupportedMethod("foo");
   return method_data;
 }
 

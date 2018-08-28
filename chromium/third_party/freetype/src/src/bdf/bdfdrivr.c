@@ -41,12 +41,12 @@ THE SOFTWARE.
 #include "bdferror.h"
 
 
-  /*************************************************************************/
-  /*                                                                       */
-  /* The macro FT_COMPONENT is used in trace mode.  It is an implicit      */
-  /* parameter of the FT_TRACE() and FT_ERROR() macros, used to print/log  */
-  /* messages during execution.                                            */
-  /*                                                                       */
+  /**************************************************************************
+   *
+   * The macro FT_COMPONENT is used in trace mode.  It is an implicit
+   * parameter of the FT_TRACE() and FT_ERROR() macros, used to print/log
+   * messages during execution.
+   */
 #undef  FT_COMPONENT
 #define FT_COMPONENT  trace_bdfdriver
 
@@ -401,8 +401,7 @@ THE SOFTWARE.
       bdfface->face_index = 0;
 
       bdfface->face_flags |= FT_FACE_FLAG_FIXED_SIZES |
-                             FT_FACE_FLAG_HORIZONTAL  |
-                             FT_FACE_FLAG_FAST_GLYPHS;
+                             FT_FACE_FLAG_HORIZONTAL;
 
       prop = bdf_get_font_property( font, "SPACING" );
       if ( prop && prop->format == BDF_ATOM                             &&
@@ -863,7 +862,7 @@ THE SOFTWARE.
 
  /*
   *
-  *  BDF SERVICE
+  * BDF SERVICE
   *
   */
 
@@ -939,7 +938,7 @@ THE SOFTWARE.
 
  /*
   *
-  *  SERVICES LIST
+  * SERVICES LIST
   *
   */
 

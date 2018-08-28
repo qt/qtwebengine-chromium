@@ -73,6 +73,7 @@ void MaybeEmitNamedBoolean(StringBuilder& builder,
 }  // namespace
 
 const char kEchoCancellationTypeBrowser[] = "browser";
+const char kEchoCancellationTypeAec3[] = "aec3";
 const char kEchoCancellationTypeSystem[] = "system";
 
 class WebMediaConstraintsPrivate final
@@ -377,8 +378,6 @@ WebMediaTrackConstraintSet::WebMediaTrackConstraintSet()
       goog_highpass_filter("googHighpassFilter"),
       goog_typing_noise_detection("googTypingNoiseDetection"),
       goog_experimental_noise_suppression("googExperimentalNoiseSuppression"),
-      goog_beamforming("googBeamforming"),
-      goog_array_geometry("googArrayGeometry"),
       goog_audio_mirroring("googAudioMirroring"),
       goog_da_echo_cancellation("googDAEchoCancellation"),
       goog_noise_reduction("googNoiseReduction"),
@@ -441,8 +440,6 @@ std::vector<const BaseConstraint*> WebMediaTrackConstraintSet::AllConstraints()
                                   &goog_highpass_filter,
                                   &goog_typing_noise_detection,
                                   &goog_experimental_noise_suppression,
-                                  &goog_beamforming,
-                                  &goog_array_geometry,
                                   &goog_audio_mirroring,
                                   &goog_da_echo_cancellation,
                                   &goog_noise_reduction,

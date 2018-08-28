@@ -36,15 +36,13 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/modules/v8/rendering_context.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/css/css_font_selector.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/events/mouse_event.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -56,6 +54,7 @@
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_style.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/hit_region.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/path_2d.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/text_run_paint_info.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_2d_layer_bridge.h"
@@ -93,14 +92,14 @@ class CanvasRenderingContext2DAutoRestoreSkCanvas {
       CanvasRenderingContext2D* context)
       : context_(context), save_count_(0) {
     DCHECK(context_);
-    PaintCanvas* c = context_->DrawingCanvas();
+    cc::PaintCanvas* c = context_->DrawingCanvas();
     if (c) {
       save_count_ = c->getSaveCount();
     }
   }
 
   ~CanvasRenderingContext2DAutoRestoreSkCanvas() {
-    PaintCanvas* c = context_->DrawingCanvas();
+    cc::PaintCanvas* c = context_->DrawingCanvas();
     if (c)
       c->restoreToCount(save_count_);
     context_->ValidateStateStack();
@@ -147,7 +146,7 @@ CanvasRenderingContext2D::~CanvasRenderingContext2D() = default;
 
 void CanvasRenderingContext2D::ValidateStateStack() const {
 #if DCHECK_IS_ON()
-  if (PaintCanvas* sk_canvas = ExistingDrawingCanvas()) {
+  if (cc::PaintCanvas* sk_canvas = ExistingDrawingCanvas()) {
     // The canvas should always have an initial save frame, to support
     // resetting the top level matrix and clip.
     DCHECK_GT(sk_canvas->getSaveCount(), 1);
@@ -188,7 +187,7 @@ void CanvasRenderingContext2D::LoseContext(LostContextMode lost_mode) {
   if (context_lost_mode_ != kNotLostContext)
     return;
   context_lost_mode_ = lost_mode;
-  if (context_lost_mode_ == kSyntheticLostContext && canvas()) {
+  if (context_lost_mode_ == kSyntheticLostContext && Host()) {
     Host()->DiscardResourceProvider();
   }
   dispatch_context_lost_event_timer_.StartOneShot(TimeDelta(), FROM_HERE);
@@ -310,7 +309,7 @@ void CanvasRenderingContext2D::Reset() {
 }
 
 void CanvasRenderingContext2D::RestoreCanvasMatrixClipStack(
-    PaintCanvas* c) const {
+    cc::PaintCanvas* c) const {
   RestoreMatrixClipStack(c);
 }
 
@@ -413,7 +412,7 @@ void CanvasRenderingContext2D::SnapshotStateForFilter() {
   ModifiableState().SetFontForFilter(AccessFont());
 }
 
-PaintCanvas* CanvasRenderingContext2D::DrawingCanvas() const {
+cc::PaintCanvas* CanvasRenderingContext2D::DrawingCanvas() const {
   if (isContextLost())
     return nullptr;
   if (canvas()->GetOrCreateCanvas2DLayerBridge())
@@ -421,7 +420,7 @@ PaintCanvas* CanvasRenderingContext2D::DrawingCanvas() const {
   return nullptr;
 }
 
-PaintCanvas* CanvasRenderingContext2D::ExistingDrawingCanvas() const {
+cc::PaintCanvas* CanvasRenderingContext2D::ExistingDrawingCanvas() const {
   if (IsPaintable())
     return canvas()->GetCanvas2DLayerBridge()->Canvas();
   return nullptr;
@@ -796,7 +795,7 @@ void CanvasRenderingContext2D::DrawTextInternal(
   // to 0, for example), so update style before grabbing the drawingCanvas.
   canvas()->GetDocument().UpdateStyleAndLayoutTreeForNode(canvas());
 
-  PaintCanvas* c = DrawingCanvas();
+  cc::PaintCanvas* c = DrawingCanvas();
   if (!c)
     return;
 
@@ -883,7 +882,7 @@ void CanvasRenderingContext2D::DrawTextInternal(
 
   Draw(
       [&font, &text_run_paint_info, &location](
-          PaintCanvas* c, const PaintFlags* flags)  // draw lambda
+          cc::PaintCanvas* c, const PaintFlags* flags)  // draw lambda
       {
         font.DrawBidiText(c, text_run_paint_info, location,
                           Font::kUseFallbackIfFontNotReady, kCDeviceScaleFactor,
@@ -911,6 +910,10 @@ void CanvasRenderingContext2D::SetIsHidden(bool hidden) {
 
 bool CanvasRenderingContext2D::IsTransformInvertible() const {
   return GetState().IsTransformInvertible();
+}
+
+AffineTransform CanvasRenderingContext2D::Transform() const {
+  return GetState().Transform();
 }
 
 cc::Layer* CanvasRenderingContext2D::CcLayer() const {
@@ -1012,27 +1015,27 @@ void CanvasRenderingContext2D::UpdateElementAccessibility(const Path& path,
 void CanvasRenderingContext2D::addHitRegion(const HitRegionOptions& options,
                                             ExceptionState& exception_state) {
   if (options.id().IsEmpty() && !options.control()) {
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "Both id and control are null.");
     return;
   }
 
   if (options.control() &&
       !canvas()->IsSupportedInteractiveCanvasFallback(*options.control())) {
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "The control is neither null nor a "
                                       "supported interactive canvas fallback "
                                       "element.");
     return;
   }
 
-  Path hit_region_path = options.hasPath() ? options.path()->GetPath() : path_;
+  Path hit_region_path = options.path() ? options.path()->GetPath() : path_;
 
-  PaintCanvas* c = DrawingCanvas();
+  cc::PaintCanvas* c = DrawingCanvas();
 
   if (hit_region_path.IsEmpty() || !c || !GetState().IsTransformInvertible() ||
       c->isClipEmpty()) {
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "The specified path has no pixels.");
     return;
   }
@@ -1042,7 +1045,7 @@ void CanvasRenderingContext2D::addHitRegion(const HitRegionOptions& options,
   if (GetState().HasClip()) {
     hit_region_path.IntersectPath(GetState().GetCurrentClipPath());
     if (hit_region_path.IsEmpty()) {
-      exception_state.ThrowDOMException(kNotSupportedError,
+      exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                         "The specified path has no pixels.");
     }
   }

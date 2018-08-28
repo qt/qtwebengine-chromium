@@ -22,6 +22,8 @@
 
 #include "fxbarcode/datamatrix/BC_EncoderContext.h"
 
+#include <utility>
+
 #include "fxbarcode/BC_UtilCodingConvert.h"
 #include "fxbarcode/common/BC_CommonBitMatrix.h"
 #include "fxbarcode/datamatrix/BC_Encoder.h"
@@ -43,7 +45,8 @@ CBC_EncoderContext::CBC_EncoderContext(const WideString& msg,
     }
     sb += ch;
   }
-  m_msg = sb;
+  m_msg = std::move(sb);
+  m_codewords.Reserve(m_msg.GetLength());
   m_allowRectangular = true;
   m_newEncoding = -1;
   m_pos = 0;

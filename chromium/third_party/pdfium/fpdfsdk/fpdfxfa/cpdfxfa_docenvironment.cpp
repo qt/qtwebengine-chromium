@@ -7,6 +7,7 @@
 #include "fpdfsdk/fpdfxfa/cpdfxfa_docenvironment.h"
 
 #include <memory>
+#include <utility>
 
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
@@ -363,7 +364,7 @@ int32_t CPDFXFA_DocEnvironment::GetCurrentPage(CXFA_FFDoc* hDoc) {
 void CPDFXFA_DocEnvironment::SetCurrentPage(CXFA_FFDoc* hDoc,
                                             int32_t iCurPage) {
   if (hDoc != m_pContext->GetXFADoc() || !m_pContext->GetFormFillEnv() ||
-      m_pContext->GetFormType() != FormType::kXFAFull || iCurPage < 0 ||
+      !m_pContext->ContainsXFAForm() || iCurPage < 0 ||
       iCurPage >= m_pContext->GetFormFillEnv()->GetPageCount()) {
     return;
   }
@@ -404,7 +405,7 @@ void CPDFXFA_DocEnvironment::GetTitle(CXFA_FFDoc* hDoc, WideString& wsTitle) {
     return;
 
   ByteString csTitle = pInfoDict->GetStringFor("Title");
-  wsTitle = WideString::FromLocal(csTitle.c_str());
+  wsTitle = WideString::FromLocal(csTitle.AsStringView());
 }
 
 void CPDFXFA_DocEnvironment::SetTitle(CXFA_FFDoc* hDoc,
@@ -462,24 +463,24 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
     if (!pRoot)
       return;
 
-    CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
+    const CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
     if (!pAcroForm)
       return;
 
-    CPDF_Array* pArray = ToArray(pAcroForm->GetObjectFor("XFA"));
+    const CPDF_Array* pArray = ToArray(pAcroForm->GetObjectFor("XFA"));
     if (!pArray)
       return;
 
     int size = pArray->GetCount();
     for (int i = 1; i < size; i += 2) {
-      CPDF_Object* pPDFObj = pArray->GetObjectAt(i);
-      CPDF_Object* pPrePDFObj = pArray->GetObjectAt(i - 1);
+      const CPDF_Object* pPDFObj = pArray->GetObjectAt(i);
+      const CPDF_Object* pPrePDFObj = pArray->GetObjectAt(i - 1);
       if (!pPrePDFObj->IsString())
         continue;
       if (!pPDFObj->IsReference())
         continue;
 
-      CPDF_Stream* pStream = ToStream(pPDFObj->GetDirect());
+      const CPDF_Stream* pStream = ToStream(pPDFObj->GetDirect());
       if (!pStream)
         continue;
       if (pPrePDFObj->GetString() == "form") {
@@ -654,10 +655,9 @@ bool CPDFXFA_DocEnvironment::OnBeforeNotifySubmit() {
       if (!pFormFillEnv)
         return false;
 
-      WideString ws = WideString::FromLocal(IDS_XFA_Validate_Input);
-      ByteString bs = ws.UTF16LE_Encode();
-      pFormFillEnv->Alert(AsFPDFWideString(&bs),
-                          reinterpret_cast<FPDF_WIDESTRING>(L""), 0, 1);
+      pFormFillEnv->JS_appAlert(WideString::FromLocal(IDS_XFA_Validate_Input),
+                                L"", JSPLATFORM_ALERT_BUTTON_OK,
+                                JSPLATFORM_ALERT_ICON_WARNING);
       return false;
     }
     pNode = it->MoveToNext();
@@ -761,13 +761,13 @@ bool CPDFXFA_DocEnvironment::ExportSubmitFile(FPDF_FILEHANDLER* pFileHandler,
     return false;
   }
 
-  CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
+  const CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
   if (!pAcroForm) {
     fileStream->Flush();
     return false;
   }
 
-  CPDF_Array* pArray = ToArray(pAcroForm->GetObjectFor("XFA"));
+  const CPDF_Array* pArray = ToArray(pAcroForm->GetObjectFor("XFA"));
   if (!pArray) {
     fileStream->Flush();
     return false;
@@ -775,32 +775,33 @@ bool CPDFXFA_DocEnvironment::ExportSubmitFile(FPDF_FILEHANDLER* pFileHandler,
 
   int size = pArray->GetCount();
   for (int i = 1; i < size; i += 2) {
-    CPDF_Object* pPDFObj = pArray->GetObjectAt(i);
-    CPDF_Object* pPrePDFObj = pArray->GetObjectAt(i - 1);
+    const CPDF_Object* pPDFObj = pArray->GetObjectAt(i);
+    const CPDF_Object* pPrePDFObj = pArray->GetObjectAt(i - 1);
     if (!pPrePDFObj->IsString())
       continue;
     if (!pPDFObj->IsReference())
       continue;
 
-    CPDF_Object* pDirectObj = pPDFObj->GetDirect();
+    const CPDF_Object* pDirectObj = pPDFObj->GetDirect();
     if (!pDirectObj->IsStream())
       continue;
-    if (pPrePDFObj->GetString() == "config" && !(flag & FXFA_CONFIG))
+    ByteString bsType = pPrePDFObj->GetString();
+    if (bsType == "config" && !(flag & FXFA_CONFIG))
       continue;
-    if (pPrePDFObj->GetString() == "template" && !(flag & FXFA_TEMPLATE))
+    if (bsType == "template" && !(flag & FXFA_TEMPLATE))
       continue;
-    if (pPrePDFObj->GetString() == "localeSet" && !(flag & FXFA_LOCALESET))
+    if (bsType == "localeSet" && !(flag & FXFA_LOCALESET))
       continue;
-    if (pPrePDFObj->GetString() == "datasets" && !(flag & FXFA_DATASETS))
+    if (bsType == "datasets" && !(flag & FXFA_DATASETS))
       continue;
-    if (pPrePDFObj->GetString() == "xmpmeta" && !(flag & FXFA_XMPMETA))
+    if (bsType == "xmpmeta" && !(flag & FXFA_XMPMETA))
       continue;
-    if (pPrePDFObj->GetString() == "xfdf" && !(flag & FXFA_XFDF))
+    if (bsType == "xfdf" && !(flag & FXFA_XFDF))
       continue;
-    if (pPrePDFObj->GetString() == "form" && !(flag & FXFA_FORM))
+    if (bsType == "form" && !(flag & FXFA_FORM))
       continue;
 
-    if (pPrePDFObj->GetString() == "form") {
+    if (bsType == "form") {
       ffdoc->SavePackage(
           ToNode(ffdoc->GetXFADoc()->GetXFAObject(XFA_HASHCODE_Form)),
           fileStream);
@@ -847,27 +848,28 @@ bool CPDFXFA_DocEnvironment::MailToInfo(WideString& csURL,
     return false;
 
   auto pos = srcURL.Find(L'?');
-  WideString tmp;
-  if (!pos.has_value()) {
-    pos = srcURL.Find(L'@');
-    if (!pos.has_value())
-      return false;
 
-    tmp = srcURL.Right(csURL.GetLength() - 7);
-  } else {
-    tmp = srcURL.Left(pos.value());
-    tmp = tmp.Right(tmp.GetLength() - 7);
+  {
+    WideString tmp;
+    if (!pos.has_value()) {
+      pos = srcURL.Find(L'@');
+      if (!pos.has_value())
+        return false;
+
+      tmp = srcURL.Right(csURL.GetLength() - 7);
+    } else {
+      tmp = srcURL.Left(pos.value());
+      tmp = tmp.Right(tmp.GetLength() - 7);
+    }
+    tmp.Trim();
+    csToAddress = std::move(tmp);
   }
-  tmp.Trim();
-
-  csToAddress = tmp;
 
   srcURL = srcURL.Right(srcURL.GetLength() - (pos.value() + 1));
   while (!srcURL.IsEmpty()) {
     srcURL.Trim();
     pos = srcURL.Find(L'&');
-
-    tmp = (!pos.has_value()) ? srcURL : srcURL.Left(pos.value());
+    WideString tmp = (!pos.has_value()) ? srcURL : srcURL.Left(pos.value());
     tmp.Trim();
     if (tmp.GetLength() >= 3 && tmp.Left(3).CompareNoCase(L"cc=") == 0) {
       tmp = tmp.Right(tmp.GetLength() - 3);
@@ -907,10 +909,9 @@ bool CPDFXFA_DocEnvironment::SubmitInternal(CXFA_FFDoc* hDoc,
 
   WideString csURL = submit->GetSubmitTarget();
   if (csURL.IsEmpty()) {
-    WideString ws = WideString::FromLocal("Submit cancelled.");
-    ByteString bs = ws.UTF16LE_Encode();
-    pFormFillEnv->Alert(AsFPDFWideString(&bs),
-                        reinterpret_cast<FPDF_WIDESTRING>(L""), 0, 4);
+    pFormFillEnv->JS_appAlert(WideString::FromLocal("Submit cancelled."), L"",
+                              JSPLATFORM_ALERT_BUTTON_OK,
+                              JSPLATFORM_ALERT_ICON_ASTERISK);
     return false;
   }
 
@@ -993,10 +994,8 @@ bool CPDFXFA_DocEnvironment::SetPropertyInNonXFAGlobalObject(
   if (!pIJSRuntime)
     return false;
 
-  IJS_EventContext* pContext = pIJSRuntime->NewEventContext();
-  bool bRet = pIJSRuntime->SetValueByNameInGlobalObject(szPropName, pValue);
-  pIJSRuntime->ReleaseEventContext(pContext);
-  return bRet;
+  IJS_Runtime::ScopedEventContext pContext(pIJSRuntime);
+  return pIJSRuntime->SetValueByNameInGlobalObject(szPropName, pValue);
 }
 
 bool CPDFXFA_DocEnvironment::GetPropertyFromNonXFAGlobalObject(
@@ -1014,8 +1013,6 @@ bool CPDFXFA_DocEnvironment::GetPropertyFromNonXFAGlobalObject(
   if (!pIJSRuntime)
     return false;
 
-  IJS_EventContext* pContext = pIJSRuntime->NewEventContext();
-  bool bRet = pIJSRuntime->GetValueByNameFromGlobalObject(szPropName, pValue);
-  pIJSRuntime->ReleaseEventContext(pContext);
-  return bRet;
+  IJS_Runtime::ScopedEventContext pContext(pIJSRuntime);
+  return pIJSRuntime->GetValueByNameFromGlobalObject(szPropName, pValue);
 }

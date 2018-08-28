@@ -34,10 +34,10 @@
 #include "third_party/blink/renderer/core/dom/document_lifecycle.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
-#include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/layout/api/hit_test_action.h"
 #include "third_party/blink/renderer/core/layout/api/selection_state.h"
+#include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_object_child_list.h"
 #include "third_party/blink/renderer/core/layout/map_coordinates_flags.h"
 #include "third_party/blink/renderer/core/layout/subtree_layout_scope.h"
@@ -50,6 +50,7 @@
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/graphics/compositing_reasons.h"
+#include "third_party/blink/renderer/platform/graphics/image_orientation.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item_client.h"
 #include "third_party/blink/renderer/platform/graphics/paint_invalidation_reason.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action_rect.h"
@@ -62,7 +63,6 @@ class AffineTransform;
 class Cursor;
 class HitTestLocation;
 class HitTestRequest;
-class HitTestResult;
 class InlineBox;
 class LayoutBoxModelObject;
 class LayoutBlock;
@@ -71,6 +71,7 @@ class LayoutFlowThread;
 class LayoutGeometryMap;
 class LayoutMultiColumnSpannerPlaceholder;
 class LayoutView;
+class LocalFrameView;
 class NGPhysicalBoxFragment;
 class ObjectPaintProperties;
 class PaintLayer;
@@ -82,8 +83,9 @@ struct WebScrollIntoViewParams;
 
 enum VisualRectFlags {
   kDefaultVisualRectFlags = 0,
-  kEdgeInclusive = 1,
-  kUseGeometryMapper = 2,  // Use the GeometryMapper fast-path, if possible.
+  kEdgeInclusive = 1 << 0,
+  // Use the GeometryMapper fast-path, if possible.
+  kUseGeometryMapper = 1 << 1,
 };
 
 enum CursorDirective { kSetCursorBasedOnStyle, kSetCursor, kDoNotSetCursor };
@@ -208,8 +210,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
                                  public DisplayItemClient {
   friend class LayoutObjectChildList;
   FRIEND_TEST_ALL_PREFIXES(LayoutObjectTest, MutableForPaintingClearPaintFlags);
-  FRIEND_TEST_ALL_PREFIXES(LayoutObjectTest,
-                           LocationInBackingAndSelectionVisualRect);
   friend class VisualRectMappingTest;
 
  public:
@@ -226,17 +226,34 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   // state (e.g. positioning).
   String DecoratedName() const;
 
+  // This is an inexact determination of whether the display of this objects is
+  // altered or obscured by CSS effects.
+  bool HasDistortingVisualEffects() const;
+
+  // Returns false iff this object or one of its ancestors has opacity:0.
+  bool HasNonZeroEffectiveOpacity() const;
+
   // DisplayItemClient methods.
 
   // Do not call VisualRect directly outside of the DisplayItemClient
   // interface, use a per-fragment one on FragmentData instead.
  private:
+  // Hide DisplayItemClient methods whose names are too generic for
+  // LayoutObject. Use LayoutObject methods instead, or explicitly cast.
+  using DisplayItemClient::Invalidate;
+  using DisplayItemClient::IsValid;
+
   LayoutRect VisualRect() const final;
 
+  void ClearPartialInvalidationVisualRect() const final {
+    return GetMutableForPainting()
+        .FirstFragment()
+        .SetPartialInvalidationVisualRect(LayoutRect());
+  }
+
  public:
-  void ClearPartialInvalidationRect() const final {
-    DCHECK(RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
-    return GetMutableForPainting().SetPartialInvalidationRect(LayoutRect());
+  LayoutRect PartialInvalidationVisualRect() const final {
+    return FirstFragment().PartialInvalidationVisualRect();
   }
 
   String DebugName() const final;
@@ -272,7 +289,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
       const LayoutObject* stay_within) const;
   LayoutObject* PreviousInPreOrder() const;
   LayoutObject* PreviousInPreOrder(const LayoutObject* stay_within) const;
-  LayoutObject* ChildAt(unsigned) const;
 
   LayoutObject* LastLeafChild() const;
 
@@ -305,7 +321,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   // Convenience function for getting to the nearest enclosing box of a
   // LayoutObject.
   LayoutBox* EnclosingBox() const;
-  LayoutBoxModelObject* EnclosingBoxModelObject() const;
 
   LayoutBox* EnclosingScrollableBox() const;
 
@@ -424,6 +439,24 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   void SetDangerousOneWayParent(LayoutObject*);
 
   UniqueObjectId UniqueId() const { return fragment_.UniqueId(); }
+
+  inline bool ShouldApplyPaintContainment() const {
+    return StyleRef().ContainsPaint() &&
+           (!IsInline() || IsAtomicInlineLevel()) && !IsRubyText() &&
+           (!IsTablePart() || IsLayoutBlockFlow());
+  }
+
+  inline bool ShouldApplyLayoutContainment() const {
+    return StyleRef().ContainsLayout() &&
+           (!IsInline() || IsAtomicInlineLevel()) && !IsRubyText() &&
+           (!IsTablePart() || IsLayoutBlockFlow());
+  }
+
+  inline bool ShouldApplySizeContainment() const {
+    return StyleRef().ContainsSize() &&
+           (!IsInline() || IsAtomicInlineLevel()) && !IsRubyText() &&
+           (!IsTablePart() || IsTableCaption()) && !IsTable();
+  }
 
  private:
   //////////////////////////////////////////
@@ -546,12 +579,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   bool IsQuote() const { return IsOfType(kLayoutObjectQuote); }
   bool IsLayoutButton() const { return IsOfType(kLayoutObjectLayoutButton); }
   bool IsLayoutCustom() const { return IsOfType(kLayoutObjectLayoutCustom); }
-  bool IsLayoutFullScreen() const {
-    return IsOfType(kLayoutObjectLayoutFullScreen);
-  }
-  bool IsLayoutFullScreenPlaceholder() const {
-    return IsOfType(kLayoutObjectLayoutFullScreenPlaceholder);
-  }
   bool IsLayoutGrid() const { return IsOfType(kLayoutObjectLayoutGrid); }
   bool IsLayoutIFrame() const { return IsOfType(kLayoutObjectLayoutIFrame); }
   bool IsLayoutImage() const { return IsOfType(kLayoutObjectLayoutImage); }
@@ -767,12 +794,11 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     // LayoutTextFragment are not LayoutBlocks and will return false.
     // See https://bugs.webkit.org/show_bug.cgi?id=56709.
     return IsAnonymous() &&
-           (Style()->Display() == EDisplay::kBlock ||
-            Style()->Display() == EDisplay::kWebkitBox) &&
-           Style()->StyleType() == kPseudoIdNone && IsLayoutBlock() &&
+           (StyleRef().Display() == EDisplay::kBlock ||
+            StyleRef().Display() == EDisplay::kWebkitBox) &&
+           StyleRef().StyleType() == kPseudoIdNone && IsLayoutBlock() &&
            !IsListMarker() && !IsLayoutFlowThread() &&
-           !IsLayoutMultiColumnSet() && !IsLayoutFullScreen() &&
-           !IsLayoutFullScreenPlaceholder();
+           !IsLayoutMultiColumnSet();
   }
   bool IsElementContinuation() const {
     return GetNode() && GetNode()->GetLayoutObject() != this;
@@ -798,11 +824,11 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   bool IsStickyPositioned() const { return bitfields_.IsStickyPositioned(); }
   bool IsFixedPositioned() const {
     return IsOutOfFlowPositioned() &&
-           Style()->GetPosition() == EPosition::kFixed;
+           StyleRef().GetPosition() == EPosition::kFixed;
   }
   bool IsAbsolutePositioned() const {
     return IsOutOfFlowPositioned() &&
-           Style()->GetPosition() == EPosition::kAbsolute;
+           StyleRef().GetPosition() == EPosition::kAbsolute;
   }
   bool IsPositioned() const { return bitfields_.IsPositioned(); }
 
@@ -814,7 +840,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     return bitfields_.HorizontalWritingMode();
   }
   bool HasFlippedBlocksWritingMode() const {
-    return Style()->IsFlippedBlocksWritingMode();
+    return StyleRef().IsFlippedBlocksWritingMode();
   }
 
   bool HasLayer() const { return bitfields_.HasLayer(); }
@@ -870,34 +896,32 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   // CSS clip only applies when position is absolute or fixed. Prefer this check
   // over !Style()->HasAutoClip().
   bool HasClip() const {
-    return IsOutOfFlowPositioned() && !Style()->HasAutoClip();
+    return IsOutOfFlowPositioned() && !StyleRef().HasAutoClip();
   }
   bool HasOverflowClip() const { return bitfields_.HasOverflowClip(); }
+  bool ShouldClipOverflow() const { return bitfields_.ShouldClipOverflow(); }
   bool HasClipRelatedProperty() const;
 
   bool HasTransformRelatedProperty() const {
     return bitfields_.HasTransformRelatedProperty();
   }
   bool IsTransformApplicable() const { return IsBox() || IsSVG(); }
-  bool HasMask() const { return Style() && Style()->HasMask(); }
-  bool HasClipPath() const { return Style() && Style()->ClipPath(); }
+  bool HasMask() const { return StyleRef().HasMask(); }
+  bool HasClipPath() const { return StyleRef().ClipPath(); }
   bool HasHiddenBackface() const {
-    return Style() &&
-           Style()->BackfaceVisibility() == EBackfaceVisibility::kHidden;
+    return StyleRef().BackfaceVisibility() == EBackfaceVisibility::kHidden;
   }
-  bool HasBackdropFilter() const {
-    return Style() && Style()->HasBackdropFilter();
-  }
+  bool HasBackdropFilter() const { return StyleRef().HasBackdropFilter(); }
 
   // Returns |true| if any property that renders using filter operations is
   // used (including, but not limited to, 'filter' and 'box-reflect').
   // Not calling style()->hasFilterInducingProperty because some objects force
   // to ignore reflection style (e.g. LayoutInline).
   bool HasFilterInducingProperty() const {
-    return (Style() && Style()->HasFilter()) || HasReflection();
+    return StyleRef().HasFilter() || HasReflection();
   }
 
-  bool HasShapeOutside() const { return Style() && Style()->ShapeOutside(); }
+  bool HasShapeOutside() const { return StyleRef().ShapeOutside(); }
 
   // The pseudo element style can be cached or uncached.  Use the cached method
   // if the pseudo element doesn't respect any pseudo classes (and therefore
@@ -939,7 +963,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     return nullptr;
   }
   bool IsColumnSpanAll() const {
-    return Style()->GetColumnSpan() == EColumnSpan::kAll &&
+    return StyleRef().GetColumnSpan() == EColumnSpan::kAll &&
            SpannerPlaceholder();
   }
 
@@ -953,7 +977,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   // TODO(cbiesinger): Remove when buttons are implemented with align-items
   // instead of flex box. crbug.com/226252.
   bool BehavesLikeBlockContainer() const {
-    return (IsLayoutBlockFlow() && Style()->IsDisplayBlockContainer()) ||
+    return (IsLayoutBlockFlow() && StyleRef().IsDisplayBlockContainer()) ||
            IsLayoutButton();
   }
 
@@ -1104,6 +1128,9 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   void SetHasOverflowClip(bool has_overflow_clip) {
     bitfields_.SetHasOverflowClip(has_overflow_clip);
   }
+  void SetShouldClipOverflow(bool should_clip_overflow) {
+    bitfields_.SetShouldClipOverflow(should_clip_overflow);
+  }
   void SetHasLayer(bool has_layer) { bitfields_.SetHasLayer(has_layer); }
   void SetHasTransformRelatedProperty(bool has_transform) {
     bitfields_.SetHasTransformRelatedProperty(has_transform);
@@ -1115,9 +1142,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     bitfields_.SetCanContainFixedPositionObjects(can_contain_fixed_position);
   }
 
-  // paintOffset is the offset from the origin of the GraphicsContext at which
-  // to paint the current object.
-  virtual void Paint(const PaintInfo&, const LayoutPoint& paint_offset) const;
+  virtual void Paint(const PaintInfo&) const;
 
   virtual bool RecalcOverflowAfterStyleChange();
 
@@ -1183,7 +1208,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   // continuations and some psuedo elements) and it is important that the
   // node be consistent between point- and list-based hit test results.
   virtual Node* NodeForHitTest() const;
-  virtual void UpdateHitTestResult(HitTestResult&, const LayoutPoint&);
+  virtual void UpdateHitTestResult(HitTestResult&, const LayoutPoint&) const;
   virtual bool NodeAtPoint(HitTestResult&,
                            const HitTestLocation& location_in_container,
                            const LayoutPoint& accumulated_offset,
@@ -1415,7 +1440,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   }
 
   inline Color ResolveColor(const CSSProperty& color_property) const {
-    return Style()->VisitedDependentColor(color_property);
+    return StyleRef().VisitedDependentColor(color_property);
   }
 
   virtual CursorDirective GetCursor(const LayoutPoint&, Cursor&) const;
@@ -1430,8 +1455,9 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   bool IsPaintInvalidationContainer() const;
 
-  // Invalidate the paint of a specific subrectangle within a given object. The
-  // rect is in the object's coordinate space.
+  // Invalidate the raster of a specific sub-rectangle within the object. The
+  // rect is in the object's local coordinate space. This is useful e.g. when
+  // a small region of a canvas changes.
   void InvalidatePaintRectangle(const LayoutRect&);
 
   void SetShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
@@ -1487,6 +1513,12 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
       TransformState&,
       VisualRectFlags = kDefaultVisualRectFlags) const;
 
+  // Do a rect-based hit test with this object as the stop node.
+  HitTestResult HitTestForOcclusion(const LayoutRect&) const;
+  HitTestResult HitTestForOcclusion() const {
+    return HitTestForOcclusion(AbsoluteVisualRect());
+  }
+
   // Return the offset to the column in which the specified point (in
   // flow-thread coordinates) lives. This is used to convert a flow-thread point
   // to a point in the containing coordinate space.
@@ -1500,8 +1532,8 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     return (IsFloating() || IsOutOfFlowPositioned());
   }
 
-  bool IsTransparent() const { return Style()->HasOpacity(); }
-  float Opacity() const { return Style()->Opacity(); }
+  bool IsTransparent() const { return StyleRef().HasOpacity(); }
+  float Opacity() const { return StyleRef().Opacity(); }
 
   bool HasReflection() const { return bitfields_.HasReflection(); }
 
@@ -1569,6 +1601,14 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     return IsFlexibleBox() || IsDeprecatedFlexibleBox();
   }
 
+  bool IsListItemIncludingNG() const {
+    return IsListItem() || IsLayoutNGListItem();
+  }
+
+  bool IsListMarkerIncludingNG() const {
+    return IsListMarker() || IsLayoutNGListMarker();
+  }
+
   virtual bool IsCombineText() const { return false; }
 
   virtual int CaretMinOffset() const;
@@ -1590,15 +1630,15 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   }
 
   bool VisibleToHitTestRequest(const HitTestRequest& request) const {
-    return Style()->Visibility() == EVisibility::kVisible &&
+    return StyleRef().Visibility() == EVisibility::kVisible &&
            (request.IgnorePointerEventsNone() ||
-            Style()->PointerEvents() != EPointerEvents::kNone) &&
+            StyleRef().PointerEvents() != EPointerEvents::kNone) &&
            !IsInert();
   }
 
   // Warning: inertness can change without causing relayout.
   bool VisibleToHitTesting() const {
-    return Style()->VisibleToHitTesting() && !IsInert();
+    return StyleRef().VisibleToHitTesting() && !IsInert();
   }
 
   // Map points and quads through elements, potentially via 3d transforms. You
@@ -1634,7 +1674,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   bool CreatesGroup() const {
     return IsTransparent() || HasMask() || HasClipPath() ||
-           HasFilterInducingProperty() || Style()->HasBlendMode();
+           HasFilterInducingProperty() || StyleRef().HasBlendMode();
   }
 
   // Collects rectangles that the outline of this object would be drawing along
@@ -1669,11 +1709,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
       const LayoutPoint& additional_offset) const {
     AddOutlineRects(rects, additional_offset, kIncludeBlockVisualOverflow);
   }
-
-  // Returns the rect enclosing united visual overflow of the DOM subtree under
-  // this object. It includes continuations which may be not in the layout
-  // subtree of this object.
-  virtual IntRect AbsoluteElementBoundingBoxRect() const;
 
   // Compute a list of hit-test rectangles per layer rooted at this
   // layoutObject with at most the given touch action.
@@ -1755,9 +1790,9 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   virtual bool HasNonCompositedScrollbars() const { return false; }
 
-  // Called before anonymousChild.setStyle(). Override to set custom styles for
-  // the child.
-  virtual void UpdateAnonymousChildStyle(const LayoutObject& anonymous_child,
+  // Called before setting style for existing/new anonymous child. Override to
+  // set custom styles for the child. For new anonymous child, |child| is null.
+  virtual void UpdateAnonymousChildStyle(const LayoutObject* child,
                                          ComputedStyle& style) const {}
 
   // Returns a rect corresponding to this LayoutObject's bounds for use in
@@ -1776,8 +1811,36 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
   void InvalidateClipPathCache();
 
-  // Call |SetShouldInvalidateSelection| on all selected children.
-  void InvalidateSelectionOfSelectedChildren();
+  // Call |SetShouldDoFullPaintInvalidation| for LayoutNG or
+  // |SetShouldInvalidateSelection| on all selected children.
+  void InvalidateSelectedChildrenOnStyleChange();
+
+  // The whitelisted touch action is the union of the effective touch action
+  // (from style) and blocking touch event handlers.
+  TouchAction EffectiveWhitelistedTouchAction() const {
+    if (InsideBlockingTouchEventHandler())
+      return TouchAction::kTouchActionNone;
+    return StyleRef().GetEffectiveTouchAction();
+  }
+
+  // Whether this object's Node has a blocking touch event handler on itself
+  // or an ancestor.
+  bool InsideBlockingTouchEventHandler() const {
+    return bitfields_.InsideBlockingTouchEventHandler();
+  }
+  // Mark this object as having a |EffectiveWhitelistedTouchAction| changed, and
+  // mark all ancestors as having a descendant that changed. This will cause a
+  // PrePaint tree walk to update effective whitelisted touch action.
+  void MarkEffectiveWhitelistedTouchActionChanged();
+  bool EffectiveWhitelistedTouchActionChanged() const {
+    return bitfields_.EffectiveWhitelistedTouchActionChanged();
+  }
+  bool DescendantEffectiveWhitelistedTouchActionChanged() const {
+    return bitfields_.DescendantEffectiveWhitelistedTouchActionChanged();
+  }
+  void UpdateInsideBlockingTouchEventHandler(bool inside) {
+    bitfields_.SetInsideBlockingTouchEventHandler(inside);
+  }
 
   // Painters can use const methods only, except for these explicitly declared
   // methods.
@@ -1792,6 +1855,10 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
       layout_object_.bitfields_.SetNeedsPaintPropertyUpdate(false);
       layout_object_.bitfields_.SetSubtreeNeedsPaintPropertyUpdate(false);
       layout_object_.bitfields_.SetDescendantNeedsPaintPropertyUpdate(false);
+      layout_object_.bitfields_.SetEffectiveWhitelistedTouchActionChanged(
+          false);
+      layout_object_.bitfields_
+          .SetDescendantEffectiveWhitelistedTouchActionChanged(false);
     }
     void SetMayNeedPaintInvalidation() {
       layout_object_.SetMayNeedPaintInvalidation();
@@ -1839,11 +1906,17 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
       layout_object_.SetSubtreeNeedsPaintPropertyUpdate();
     }
 
-    void SetPartialInvalidationRect(const LayoutRect& r) {
-      layout_object_.SetPartialInvalidationRect(r);
+    void SetPartialInvalidationVisualRect(const LayoutRect& r) {
+      DCHECK_EQ(layout_object_.GetDocument().Lifecycle().GetState(),
+                DocumentLifecycle::kInPrePaint);
+      FirstFragment().SetPartialInvalidationVisualRect(r);
     }
 
     void InvalidateClipPathCache() { layout_object_.InvalidateClipPathCache(); }
+
+    void UpdateInsideBlockingTouchEventHandler(bool inside) {
+      layout_object_.UpdateInsideBlockingTouchEventHandler(inside);
+    }
 
 #if DCHECK_IS_ON()
     // Same as setNeedsPaintPropertyUpdate() but does not mark ancestors as
@@ -1861,7 +1934,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
    protected:
     friend class LayoutBoxModelObject;
     friend class LayoutScrollbar;
-    friend class PaintInvalidationCapableScrollableArea;
     friend class PaintInvalidator;
     friend class PaintPropertyTreeBuilder;
     friend class PrePaintTreeWalk;
@@ -1871,8 +1943,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
                              canStartElementOnCompositorEffectSPv2);
     FRIEND_TEST_ALL_PREFIXES(PrePaintTreeWalkTest, ClipRects);
     FRIEND_TEST_ALL_PREFIXES(LayoutObjectTest, VisualRect);
-    FRIEND_TEST_ALL_PREFIXES(LayoutObjectTest,
-                             LocationInBackingAndSelectionVisualRect);
     FRIEND_TEST_ALL_PREFIXES(BoxPaintInvalidatorTest,
                              ComputePaintInvalidationReasonBasic);
 
@@ -1961,8 +2031,8 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   LayoutRect SelectionVisualRect() const {
     return fragment_.SelectionVisualRect();
   }
-  LayoutRect PartialInvalidationRect() const override {
-    return fragment_.PartialInvalidationRect();
+  LayoutRect PartialInvalidationLocalRect() const {
+    return fragment_.PartialInvalidationLocalRect();
   }
 
   void InvalidateIfControlStateChanged(ControlState);
@@ -2004,8 +2074,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     kLayoutObjectLayoutButton,
     kLayoutObjectLayoutCustom,
     kLayoutObjectLayoutFlowThread,
-    kLayoutObjectLayoutFullScreen,
-    kLayoutObjectLayoutFullScreenPlaceholder,
     kLayoutObjectLayoutGrid,
     kLayoutObjectLayoutIFrame,
     kLayoutObjectLayoutImage,
@@ -2122,17 +2190,12 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   virtual void ComputeSelfHitTestRects(Vector<LayoutRect>&,
                                        const LayoutPoint& layer_offset) const {}
 
-  void SetPartialInvalidationRect(const LayoutRect& rect) {
-    fragment_.SetPartialInvalidationRect(rect);
-  }
-
 #if DCHECK_IS_ON()
   virtual bool PaintInvalidationStateIsDirty() const {
     return BackgroundChangedSinceLastPaintInvalidation() ||
            ShouldCheckForPaintInvalidation() || ShouldInvalidateSelection() ||
            NeedsPaintOffsetAndVisualRectUpdate() ||
-           (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
-            !fragment_.PartialInvalidationRect().IsEmpty());
+           !fragment_.PartialInvalidationLocalRect().IsEmpty();
   }
 #endif
 
@@ -2321,6 +2384,7 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
           horizontal_writing_mode_(true),
           has_layer_(false),
           has_overflow_clip_(false),
+          should_clip_overflow_(false),
           has_transform_related_property_(false),
           has_reflection_(false),
           can_contain_fixed_position_objects_(false),
@@ -2346,6 +2410,9 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
           outline_may_be_affected_by_descendants_(false),
           previous_outline_may_be_affected_by_descendants_(false),
           is_truncated_(false),
+          inside_blocking_touch_event_handler_(false),
+          effective_whitelisted_touch_action_changed_(true),
+          descendant_effective_whitelisted_touch_action_changed_(false),
           positioned_state_(kIsStaticallyPositioned),
           selection_state_(static_cast<unsigned>(SelectionState::kNone)),
           background_obscuration_state_(kBackgroundObscurationStatusInvalid),
@@ -2464,6 +2531,11 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
     // details). Only set for LayoutBoxes and descendants.
     ADD_BOOLEAN_BITFIELD(has_overflow_clip_, HasOverflowClip);
 
+    // Returns whether content which overflows should be clipped. This is not
+    // just because of overflow clip, but other types of clip as well, such as
+    // control clips or contain: paint.
+    ADD_BOOLEAN_BITFIELD(should_clip_overflow_, ShouldClipOverflow);
+
     // This boolean is the cached value from
     // ComputedStyle::hasTransformRelatedProperty.
     ADD_BOOLEAN_BITFIELD(has_transform_related_property_,
@@ -2547,9 +2619,28 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
 
     ADD_BOOLEAN_BITFIELD(is_truncated_, IsTruncated);
 
+    // Whether this object's Node has a blocking touch event handler on itself
+    // or an ancestor. This is updated during the PrePaint phase.
+    ADD_BOOLEAN_BITFIELD(inside_blocking_touch_event_handler_,
+                         InsideBlockingTouchEventHandler);
+
+    // Set when |EffectiveWhitelistedTouchAction| changes (i.e., blocking touch
+    // event handlers change or effective touch action style changes). This only
+    // needs to be set on the object that changes as the PrePaint walk will
+    // ensure descendants are updated.
+    ADD_BOOLEAN_BITFIELD(effective_whitelisted_touch_action_changed_,
+                         EffectiveWhitelistedTouchActionChanged);
+
+    // Set when a descendant's |EffectiveWhitelistedTouchAction| changes. This
+    // is used to ensure the PrePaint tree walk processes objects with
+    // |effective_whitelisted_touch_action_changed_|.
+    ADD_BOOLEAN_BITFIELD(descendant_effective_whitelisted_touch_action_changed_,
+                         DescendantEffectiveWhitelistedTouchActionChanged);
+
    protected:
     // Use protected to avoid warning about unused variable.
-    unsigned unused_bits_ : 4;
+    // Increment this to 63 if a new bit is added.
+    // unsigned unused_bits_ : 0;
 
    private:
     // This is the cached 'position' value of this object
@@ -2669,21 +2760,6 @@ class CORE_EXPORT LayoutObject : public ImageResourceObserver,
   DISALLOW_COPY_AND_ASSIGN(LayoutObject);
 };
 
-// FIXME: remove this once the layout object lifecycle ASSERTS are no longer
-// hit.
-class DeprecatedDisableModifyLayoutTreeStructureAsserts {
-  STACK_ALLOCATED();
-
- public:
-  DeprecatedDisableModifyLayoutTreeStructureAsserts();
-
-  static bool CanModifyLayoutTreeStateInAnyState();
-
- private:
-  base::AutoReset<bool> disabler_;
-  DISALLOW_COPY_AND_ASSIGN(DeprecatedDisableModifyLayoutTreeStructureAsserts);
-};
-
 // Allow equality comparisons of LayoutObjects by reference or pointer,
 // interchangeably.
 DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(LayoutObject)
@@ -2693,7 +2769,7 @@ inline bool LayoutObject::DocumentBeingDestroyed() const {
 }
 
 inline bool LayoutObject::IsBeforeContent() const {
-  if (Style()->StyleType() != kPseudoIdBefore)
+  if (StyleRef().StyleType() != kPseudoIdBefore)
     return false;
   // Text nodes don't have their own styles, so ignore the style on a text node.
   if (IsText() && !IsBR())
@@ -2702,7 +2778,7 @@ inline bool LayoutObject::IsBeforeContent() const {
 }
 
 inline bool LayoutObject::IsAfterContent() const {
-  if (Style()->StyleType() != kPseudoIdAfter)
+  if (StyleRef().StyleType() != kPseudoIdAfter)
     return false;
   // Text nodes don't have their own styles, so ignore the style on a text node.
   if (IsText() && !IsBR())

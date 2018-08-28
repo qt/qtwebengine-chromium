@@ -76,8 +76,8 @@ overview of this documentation and links back to various portions.
 <!-- XXX: broken link -->
 [new-testing-infra]: https://github.com/luci/luci-py/wiki
 [isolated-testing-infra]: https://www.chromium.org/developers/testing/isolated-testing/infrastructure
-[chromium.gpu]: https://build.chromium.org/p/chromium.gpu/console
-[chromium.gpu.fyi]: https://build.chromium.org/p/chromium.gpu.fyi/console
+[chromium.gpu]: https://ci.chromium.org/p/chromium/g/chromium.gpu/console
+[chromium.gpu.fyi]: https://ci.chromium.org/p/chromium/g/chromium.gpu.fyi/console
 [tools/build workspace]: https://code.google.com/p/chromium/codesearch#chromium/build/scripts/slave/recipe_modules/chromium_tests/chromium_gpu_fyi.py
 [bots-presentation]: https://docs.google.com/presentation/d/1BC6T7pndSqPFnituR7ceG7fMY7WaGqYHhx5i9ECa8EI/edit?usp=sharing
 
@@ -110,16 +110,13 @@ Sends your job to the default set of try servers.
 The GPU tests are part of the default set for Chromium CLs, and are run as part
 of the following tryservers' jobs:
 
-*   [linux_chromium_rel_ng] on the [tryserver.chromium.linux] waterfall
-*   [mac_chromium_rel_ng]   on the [tryserver.chromium.mac]   waterfall
-*   [win_chromium_rel_ng]   on the [tryserver.chromium.win]   waterfall
+*   [linux_chromium_rel_ng], formerly on the `tryserver.chromium.linux` waterfall
+*   [mac_chromium_rel_ng], formerly on the `tryserver.chromium.mac` waterfall
+*   [win_chromium_rel_ng], formerly on the `tryserver.chromium.win` waterfall
 
-[linux_chromium_rel_ng]:    http://build.chromium.org/p/tryserver.chromium.linux/builders/linux_chromium_rel_ng?numbuilds=100
-[mac_chromium_rel_ng]:      http://build.chromium.org/p/tryserver.chromium.mac/builders/mac_chromium_rel_ng?numbuilds=100
-[win_chromium_rel_ng]:      http://build.chromium.org/p/tryserver.chromium.win/builders/win_chromium_rel_ng?numbuilds=100
-[tryserver.chromium.linux]: http://build.chromium.org/p/tryserver.chromium.linux/waterfall?numbuilds=100
-[tryserver.chromium.mac]:   http://build.chromium.org/p/tryserver.chromium.mac/waterfall?numbuilds=100
-[tryserver.chromium.win]:   http://build.chromium.org/p/tryserver.chromium.win/waterfall?numbuilds=100
+[linux_chromium_rel_ng]:    https://ci.chromium.org/p/chromium/builders/luci.chromium.try/linux_chromium_rel_ng?limit=100
+[mac_chromium_rel_ng]:      https://ci.chromium.org/p/chromium/builders/luci.chromium.try/mac_chromium_rel_ng?limit=100
+[win7_chromium_rel_ng]:     https://ci.chromium.org/p/chromium/builders/luci.chromium.try/win7_chromium_rel_ng?limit=100
 
 Scan down through the steps looking for the text "GPU"; that identifies those
 tests run on the GPU bots. For each test the "trigger" step can be ignored; the
@@ -132,7 +129,7 @@ tryserver master you want to reference, for example:
 ```sh
 git cl try -b linux_chromium_rel_ng
 git cl try -b mac_chromium_rel_ng
-git cl try -b win_chromium_rel_ng
+git cl try -b win7_chromium_rel_ng
 ```
 
 Alternatively, the Gerrit UI can be used to send a patch set to these try
@@ -150,6 +147,7 @@ tryservers for code changes to certain sub-directories.
 [linux_optional_gpu_tests_rel]: https://ci.chromium.org/p/chromium/builders/luci.chromium.try/linux_optional_gpu_tests_rel
 [mac_optional_gpu_tests_rel]:   https://ci.chromium.org/p/chromium/builders/luci.chromium.try/mac_optional_gpu_tests_rel
 [win_optional_gpu_tests_rel]:   https://ci.chromium.org/p/chromium/builders/luci.chromium.try/win_optional_gpu_tests_rel
+[luci.chromium.try]:            https://ci.chromium.org/p/chromium/g/luci.chromium.try/builders
 
 Tryservers for the [ANGLE project] are also present on the
 [tryserver.chromium.angle] waterfall. These are invoked from the Gerrit user
@@ -358,6 +356,42 @@ See the [Swarming documentation] for instructions on how to upload your binaries
 
 [Swarming documentation]: https://www.chromium.org/developers/testing/isolated-testing/for-swes#TOC-Run-a-test-built-locally-on-Swarming
 
+## Moving Test Binaries from Machine to Machine
+
+To create a zip archive of your personal Chromium build plus all of
+the Telemetry-based GPU tests' dependencies, which you can then move
+to another machine for testing:
+
+1. Build Chrome (into `out/Release` in this example).
+1. `python tools/mb/mb.py zip out/Release/ telemetry_gpu_integration_test out/telemetry_gpu_integration_test.zip`
+
+Then copy telemetry_gpu_integration_test.zip to another machine. Unzip
+it, and cd into the resulting directory. Invoke
+`content/test/gpu/run_gpu_integration_test.py` as above.
+
+This workflow has been tested successfully on Windows with a
+statically-linked Release build of Chrome.
+
+Note: on one macOS machine, this command failed because of a broken
+`strip-json-comments` symlink in
+`src/third_party/catapult/common/node_runner/node_runner/node_modules/.bin`. Deleting
+that symlink allowed it to proceed.
+
+Note also: on the same macOS machine, with a component build, this
+command failed to zip up a working Chromium binary. The browser failed
+to start with the following error:
+
+`[0626/180440.571670:FATAL:chrome_main_delegate.cc(1057)] Check failed: service_manifest_data_pack_.`
+
+In a pinch, this command could be used to bundle up everything, but
+the "out" directory could be deleted from the resulting zip archive,
+and the Chromium binaries moved over to the target machine. Then the
+command line arguments `--browser=exact --browser-executable=[path]`
+can be used to launch that specific browser.
+
+See the [user guide for mb](../../tools/mb/docs/user_guide.md#mb-zip), the
+meta-build system, for more details.
+
 ## Adding New Tests to the GPU Bots
 
 The goal of the GPU bots is to avoid regressions in Chrome's rendering stack.
@@ -408,27 +442,33 @@ in the Chromium workspace:
 
 These files are autogenerated by the following script:
 
-*   [`generate_buildbot_json.py`](https://chromium.googlesource.com/chromium/src/+/master/content/test/gpu/generate_buildbot_json.py)
+*   [`generate_buildbot_json.py`](https://chromium.googlesource.com/chromium/src/+/master/testing/buildbot/generate_buildbot_json.py)
 
-This script is completely self-contained and should hopefully be
-self-explanatory. The JSON files are parsed by the chromium and chromium_trybot
-recipes, and describe two types of tests:
+This script is documented in
+[`testing/buildbot/README.md`](https://chromium.googlesource.com/chromium/src/+/master/testing/buildbot/README.md). The
+JSON files are parsed by the chromium and chromium_trybot recipes, and describe
+two basic types of tests:
 
 *   GTests: those which use the Googletest and Chromium's `base/test/launcher/`
     frameworks.
-*   Telemetry based tests: those which are built on the Telemetry framework and
-    launch the entire browser.
+*   Isolated scripts: tests whose initial entry point is a Python script which
+    follows a simple convention of command line argument parsing.
+
+The majority of the GPU tests are however:
+
+*   Telemetry based tests: an isolated script test which is built on the
+    Telemetry framework and which launches the entire browser.
 
 A prerequisite of adding a new test to the bots is that that test [run via
-isolates][new-isolates]. Once that is done, modify `generate_buildbot_json.py` to add the
-test to the appropriate set of bots. Be careful when adding large new test
-steps to all of the bots, because the GPU bots are a limited resource and do
-not currently have the capacity to absorb large new test suites. It is safer to
-get new tests running on the chromium.gpu.fyi waterfall first, and expand from
-there to the chromium.gpu waterfall (which will also make them run against
-every Chromium CL by virtue of the `linux_chromium_rel_ng`,
-`mac_chromium_rel_ng` and `win_chromium_rel_ng` tryservers' mirroring of the
-bots on this waterfall – so be careful!).
+isolates][new-isolates]. Once that is done, modify `test_suites.pyl` to add the
+test to the appropriate set of bots. Be careful when adding large new test steps
+to all of the bots, because the GPU bots are a limited resource and do not
+currently have the capacity to absorb large new test suites. It is safer to get
+new tests running on the chromium.gpu.fyi waterfall first, and expand from there
+to the chromium.gpu waterfall (which will also make them run against every
+Chromium CL by virtue of the `linux_chromium_rel_ng`, `mac_chromium_rel_ng`,
+`win7_chromium_rel_ng` and `android-marshmallow-arm64-rel` tryservers' mirroring
+of the bots on this waterfall – so be careful!).
 
 Tryjobs which add new test steps to the chromium.gpu.json file will run those
 new steps during the tryjob, which helps ensure that the new test won't break

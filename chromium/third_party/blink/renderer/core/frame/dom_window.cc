@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/core/frame/location.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
+#include "third_party/blink/renderer/core/frame/window_post_message_options.h"
 #include "third_party/blink/renderer/core/input/input_device_capabilities.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/loader/mixed_content_checker.h"
@@ -108,6 +109,50 @@ DOMWindow* DOMWindow::top() const {
   return GetFrame()->Tree().Top().DomWindow();
 }
 
+void DOMWindow::postMessage(LocalDOMWindow* incumbent_window,
+                            const ScriptValue& message,
+                            const String& target_origin,
+                            Vector<ScriptValue>& transfer,
+                            ExceptionState& exception_state) {
+  WindowPostMessageOptions options;
+  options.setTargetOrigin(target_origin);
+  postMessage(incumbent_window, message, transfer, options, exception_state);
+}
+
+void DOMWindow::postMessage(LocalDOMWindow* incumbent_window,
+                            const ScriptValue& message,
+                            Vector<ScriptValue>& transfer,
+                            const WindowPostMessageOptions& options,
+                            ExceptionState& exception_state) {
+  UseCounter::Count(incumbent_window->GetFrame(),
+                    WebFeature::kWindowPostMessage);
+
+  // Since remote windows do not have a v8::Context, we cannot use
+  // [CallWith=ScriptState], and there is no good way to get the v8::Isolate.
+  // As a compromise, ask the isolate to the WindowProxyManager.
+  v8::Isolate* isolate = window_proxy_manager_->GetIsolate();
+
+  Transferables transferables;
+  if (!transfer.IsEmpty()) {
+    if (!SerializedScriptValue::ExtractTransferables(
+            isolate, transfer, transferables, exception_state)) {
+      return;
+    }
+  }
+
+  SerializedScriptValue::SerializeOptions serialize_options;
+  serialize_options.transferables = &transferables;
+  scoped_refptr<SerializedScriptValue> serialized_message =
+      SerializedScriptValue::Serialize(isolate, message.V8Value(),
+                                       serialize_options, exception_state);
+  if (exception_state.HadException())
+    return;
+
+  serialized_message->UnregisterMemoryAllocatedWithCurrentScriptContext();
+  DoPostMessage(std::move(serialized_message), transferables.message_ports,
+                options.targetOrigin(), incumbent_window, exception_state);
+}
+
 DOMWindow* DOMWindow::AnonymousIndexedGetter(uint32_t index) const {
   if (!GetFrame())
     return nullptr;
@@ -147,86 +192,6 @@ bool DOMWindow::IsInsecureScriptAccess(LocalDOMWindow& calling_window,
   calling_window.PrintErrorMessage(
       CrossDomainAccessErrorMessage(&calling_window));
   return true;
-}
-
-void DOMWindow::postMessage(scoped_refptr<SerializedScriptValue> message,
-                            const MessagePortArray& ports,
-                            const String& target_origin,
-                            LocalDOMWindow* source,
-                            ExceptionState& exception_state) {
-  if (!IsCurrentlyDisplayedInFrame())
-    return;
-
-  Document* source_document = source->document();
-
-  // Compute the target origin.  We need to do this synchronously in order
-  // to generate the SyntaxError exception correctly.
-  scoped_refptr<const SecurityOrigin> target;
-  if (target_origin == "/") {
-    if (!source_document)
-      return;
-    target = source_document->GetSecurityOrigin();
-  } else if (target_origin != "*") {
-    target = SecurityOrigin::CreateFromString(target_origin);
-    // It doesn't make sense target a postMessage at a unique origin
-    // because there's no way to represent a unique origin in a string.
-    if (target->IsUnique()) {
-      exception_state.ThrowDOMException(
-          kSyntaxError, "Invalid target origin '" + target_origin +
-                            "' in a call to 'postMessage'.");
-      return;
-    }
-  }
-
-  auto channels = MessagePort::DisentanglePorts(GetExecutionContext(), ports,
-                                                exception_state);
-  if (exception_state.HadException())
-    return;
-
-  // Capture the source of the message.  We need to do this synchronously
-  // in order to capture the source of the message correctly.
-  if (!source_document)
-    return;
-
-  const SecurityOrigin* security_origin = source_document->GetSecurityOrigin();
-
-  String source_origin = security_origin->ToString();
-
-  KURL target_url = IsLocalDOMWindow()
-                        ? blink::ToLocalDOMWindow(this)->document()->Url()
-                        : KURL(NullURL(), GetFrame()
-                                              ->GetSecurityContext()
-                                              ->GetSecurityOrigin()
-                                              ->ToString());
-  if (MixedContentChecker::IsMixedContent(source_document->GetSecurityOrigin(),
-                                          target_url)) {
-    UseCounter::Count(source->GetFrame(),
-                      WebFeature::kPostMessageFromSecureToInsecure);
-  } else if (MixedContentChecker::IsMixedContent(
-                 GetFrame()->GetSecurityContext()->GetSecurityOrigin(),
-                 source_document->Url())) {
-    UseCounter::Count(source->GetFrame(),
-                      WebFeature::kPostMessageFromInsecureToSecure);
-    if (MixedContentChecker::IsMixedContent(
-            GetFrame()->Tree().Top().GetSecurityContext()->GetSecurityOrigin(),
-            source_document->Url())) {
-      UseCounter::Count(source->GetFrame(),
-                        WebFeature::kPostMessageFromInsecureToSecureToplevel);
-    }
-  }
-
-  if (!source_document->GetContentSecurityPolicy()->AllowConnectToSource(
-          target_url, RedirectStatus::kNoRedirect,
-          SecurityViolationReportingPolicy::kSuppressReporting)) {
-    UseCounter::Count(
-        source->GetFrame(),
-        WebFeature::kPostMessageOutgoingWouldBeBlockedByConnectSrc);
-  }
-
-  MessageEvent* event = MessageEvent::Create(
-      std::move(channels), std::move(message), source_origin, String(), source);
-
-  SchedulePostMessage(event, std::move(target), source_document);
 }
 
 // FIXME: Once we're throwing exceptions for cross-origin access violations, we
@@ -434,17 +399,103 @@ InputDeviceCapabilitiesConstants* DOMWindow::GetInputDeviceCapabilities() {
   return input_capabilities_;
 }
 
+void DOMWindow::PostMessageForTesting(
+    scoped_refptr<SerializedScriptValue> message,
+    const MessagePortArray& ports,
+    const String& target_origin,
+    LocalDOMWindow* source,
+    ExceptionState& exception_state) {
+  DoPostMessage(std::move(message), ports, target_origin, source,
+                exception_state);
+}
+
+void DOMWindow::DoPostMessage(scoped_refptr<SerializedScriptValue> message,
+                              const MessagePortArray& ports,
+                              const String& target_origin,
+                              LocalDOMWindow* source,
+                              ExceptionState& exception_state) {
+  if (!IsCurrentlyDisplayedInFrame())
+    return;
+
+  Document* source_document = source->document();
+
+  // Compute the target origin.  We need to do this synchronously in order
+  // to generate the SyntaxError exception correctly.
+  scoped_refptr<const SecurityOrigin> target;
+  if (target_origin == "/") {
+    if (!source_document)
+      return;
+    target = source_document->GetSecurityOrigin();
+  } else if (target_origin != "*") {
+    target = SecurityOrigin::CreateFromString(target_origin);
+    // It doesn't make sense target a postMessage at a unique origin
+    // because there's no way to represent a unique origin in a string.
+    if (target->IsOpaque()) {
+      exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
+                                        "Invalid target origin '" +
+                                            target_origin +
+                                            "' in a call to 'postMessage'.");
+      return;
+    }
+  }
+
+  auto channels = MessagePort::DisentanglePorts(GetExecutionContext(), ports,
+                                                exception_state);
+  if (exception_state.HadException())
+    return;
+
+  // Capture the source of the message.  We need to do this synchronously
+  // in order to capture the source of the message correctly.
+  if (!source_document)
+    return;
+
+  const SecurityOrigin* security_origin = source_document->GetSecurityOrigin();
+
+  String source_origin = security_origin->ToString();
+
+  KURL target_url = IsLocalDOMWindow()
+                        ? blink::ToLocalDOMWindow(this)->document()->Url()
+                        : KURL(NullURL(), GetFrame()
+                                              ->GetSecurityContext()
+                                              ->GetSecurityOrigin()
+                                              ->ToString());
+  if (MixedContentChecker::IsMixedContent(source_document->GetSecurityOrigin(),
+                                          target_url)) {
+    UseCounter::Count(source->GetFrame(),
+                      WebFeature::kPostMessageFromSecureToInsecure);
+  } else if (MixedContentChecker::IsMixedContent(
+                 GetFrame()->GetSecurityContext()->GetSecurityOrigin(),
+                 source_document->Url())) {
+    UseCounter::Count(source->GetFrame(),
+                      WebFeature::kPostMessageFromInsecureToSecure);
+    if (MixedContentChecker::IsMixedContent(
+            GetFrame()->Tree().Top().GetSecurityContext()->GetSecurityOrigin(),
+            source_document->Url())) {
+      UseCounter::Count(source->GetFrame(),
+                        WebFeature::kPostMessageFromInsecureToSecureToplevel);
+    }
+  }
+
+  if (!source_document->GetContentSecurityPolicy()->AllowConnectToSource(
+          target_url, RedirectStatus::kNoRedirect,
+          SecurityViolationReportingPolicy::kSuppressReporting)) {
+    UseCounter::Count(
+        source->GetFrame(),
+        WebFeature::kPostMessageOutgoingWouldBeBlockedByConnectSrc);
+  }
+
+  MessageEvent* event = MessageEvent::Create(
+      std::move(channels), std::move(message), source_origin, String(), source);
+
+  SchedulePostMessage(event, std::move(target), source_document);
+}
+
 void DOMWindow::Trace(blink::Visitor* visitor) {
   visitor->Trace(frame_);
   visitor->Trace(window_proxy_manager_);
   visitor->Trace(input_capabilities_);
   visitor->Trace(location_);
   EventTargetWithInlineData::Trace(visitor);
-}
-
-void DOMWindow::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(location_);
-  EventTargetWithInlineData::TraceWrappers(visitor);
 }
 
 }  // namespace blink

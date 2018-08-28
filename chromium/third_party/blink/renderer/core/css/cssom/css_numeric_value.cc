@@ -4,7 +4,8 @@
 
 #include "third_party/blink/renderer/core/css/cssom/css_numeric_value.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include <numeric>
+
 #include "third_party/blink/renderer/core/css/css_calculation_value.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
 #include "third_party/blink/renderer/core/css/cssom/css_math_invert.h"
@@ -16,8 +17,7 @@
 #include "third_party/blink/renderer/core/css/cssom/css_unit_value.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_stream.h"
 #include "third_party/blink/renderer/core/css/parser/css_tokenizer.h"
-
-#include <numeric>
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -128,16 +128,16 @@ CSSNumericValue* CalcToNumericValue(const CSSCalcExpressionNode& root) {
   CSSNumericValueVector values;
 
   // For cases like calc(1 + 2 + 3), the calc expression tree looks like:
-  //       +
-  //      / \
-  //     +   3
-  //    / \
-  //   1   2
+  //       +     //
+  //      / \    //
+  //     +   3   //
+  //    / \      //
+  //   1   2     //
   //
   // But we want to produce a CSSMathValue tree that looks like:
-  //       +
-  //      /|\
-  //     1 2 3
+  //       +     //
+  //      /|\    //
+  //     1 2 3   //
   //
   // So when the left child has the same operator as its parent, we can combine
   // the two nodes. We keep moving down the left side of the tree as long as the
@@ -209,7 +209,8 @@ CSSNumericValue* CSSNumericValue::parse(const String& css_text,
   auto range = stream.ConsumeUntilPeekedTypeIs<>();
   stream.ConsumeWhitespace();
   if (!stream.AtEnd()) {
-    exception_state.ThrowDOMException(kSyntaxError, "Invalid math expression");
+    exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
+                                      "Invalid math expression");
     return nullptr;
   }
 
@@ -237,7 +238,8 @@ CSSNumericValue* CSSNumericValue::parse(const String& css_text,
       break;
   }
 
-  exception_state.ThrowDOMException(kSyntaxError, "Invalid math expression");
+  exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
+                                    "Invalid math expression");
   return nullptr;
 }
 
@@ -260,7 +262,7 @@ CSSUnitValue* CSSNumericValue::to(const String& unit_string,
                                   ExceptionState& exception_state) {
   CSSPrimitiveValue::UnitType target_unit = UnitFromName(unit_string);
   if (!IsValidUnit(target_unit)) {
-    exception_state.ThrowDOMException(kSyntaxError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
                                       "Invalid unit for conversion");
     return nullptr;
   }
@@ -289,7 +291,7 @@ CSSMathSum* CSSNumericValue::toSum(const Vector<String>& unit_strings,
                                    ExceptionState& exception_state) {
   for (const auto& unit_string : unit_strings) {
     if (!IsValidUnit(UnitFromName(unit_string))) {
-      exception_state.ThrowDOMException(kSyntaxError,
+      exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
                                         "Invalid unit for conversion");
       return nullptr;
     }

@@ -39,6 +39,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/html/forms/html_text_area_element.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
@@ -50,6 +51,8 @@
 #include "third_party/blink/renderer/core/layout/layout_table.h"
 #include "third_party/blink/renderer/core/layout/layout_table_cell.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/layout/ng/list/layout_ng_list_item.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_block_node.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
@@ -100,7 +103,7 @@ static bool IsPotentialClusterRoot(const LayoutObject* layout_object) {
   if (layout_object->IsInline() &&
       !layout_object->Style()->IsDisplayReplacedType())
     return false;
-  if (layout_object->IsListItem())
+  if (layout_object->IsListItemIncludingNG())
     return (layout_object->IsFloating() ||
             layout_object->IsOutOfFlowPositioned());
 
@@ -457,13 +460,13 @@ float TextAutosizer::Inflate(LayoutObject* parent,
   if (has_text_child) {
     ApplyMultiplier(parent, multiplier,
                     layouter);  // Parent handles line spacing.
-  } else if (!parent->IsListItem()) {
+  } else if (!parent->IsListItemIncludingNG()) {
     // For consistency, a block with no immediate text child should always have
     // a multiplier of 1.
     ApplyMultiplier(parent, 1, layouter);
   }
 
-  if (parent->IsListItem()) {
+  if (parent->IsListItemIncludingNG()) {
     float multiplier = ClusterMultiplier(cluster);
     ApplyMultiplier(parent, multiplier, layouter);
 
@@ -471,10 +474,18 @@ float TextAutosizer::Inflate(LayoutObject* parent,
     // that you have a list item for a form inside it. The list marker then ends
     // up inside the form and when we try to get the clusterMultiplier we have
     // the wrong cluster root to work from and get the wrong value.
-    LayoutListItem* item = ToLayoutListItem(parent);
-    if (LayoutListMarker* marker = item->Marker()) {
-      ApplyMultiplier(marker, multiplier, layouter);
-      marker->SetPreferredLogicalWidthsDirty(kMarkOnlyThis);
+    LayoutObject* marker = nullptr;
+    if (parent->IsListItem())
+      marker = ToLayoutListItem(parent)->Marker();
+    else if (parent->IsLayoutNGListItem())
+      marker = ToLayoutNGListItem(parent)->Marker();
+
+    // A LayoutNGListMarker has a text child that needs its font multiplier
+    // updated. Just mark the entire subtree, to make sure we get to it.
+    for (LayoutObject* walker = marker; walker;
+         walker = walker->NextInPreOrder(marker)) {
+      ApplyMultiplier(walker, multiplier, layouter);
+      walker->SetPreferredLogicalWidthsDirty(kMarkOnlyThis);
     }
   }
 
@@ -592,7 +603,8 @@ void TextAutosizer::UpdatePageInfo() {
     // If the page has a meta viewport or @viewport, don't apply the device
     // scale adjustment.
     if (!main_frame.GetDocument()
-             ->GetViewportDescription()
+             ->GetViewportData()
+             .GetViewportDescription()
              .IsSpecifiedByAuthor()) {
       page_info_.device_scale_adjustment_ =
           document_->GetSettings()->GetDeviceScaleAdjustment();
@@ -962,7 +974,8 @@ float TextAutosizer::WidthFromBlock(const LayoutBlock* block) const {
   CHECK(block);
   CHECK(block->Style());
 
-  if (!(block->IsTable() || block->IsTableCell() || block->IsListItem()))
+  if (!(block->IsTable() || block->IsTableCell() ||
+        block->IsListItemIncludingNG()))
     return block->ContentLogicalWidth().ToFloat();
 
   if (!block->ContainingBlock())
@@ -1080,7 +1093,7 @@ const LayoutObject* TextAutosizer::FindTextLeaf(
     size_t& depth,
     TextLeafSearch first_or_last) const {
   // List items are treated as text due to the marker.
-  if (parent->IsListItem())
+  if (parent->IsListItemIncludingNG())
     return parent;
 
   if (parent->IsText())
@@ -1149,6 +1162,7 @@ void TextAutosizer::ApplyMultiplier(LayoutObject* layout_object,
       layout_object->SetNeedsLayoutAndFullPaintInvalidation(
           LayoutInvalidationReason::kTextAutosizing, kMarkContainerChain,
           layouter);
+      layout_object->MarkContainerNeedsCollectInlines();
       break;
 
     case kLayoutNeeded:
@@ -1332,6 +1346,35 @@ TextAutosizer::DeferUpdatePageInfo::DeferUpdatePageInfo(Page* page)
     DCHECK(!text_autosizer->update_page_info_deferred_);
     text_autosizer->update_page_info_deferred_ = true;
   }
+}
+
+TextAutosizer::NGLayoutScope::NGLayoutScope(const NGBlockNode& node,
+                                            LayoutUnit inline_size)
+    : text_autosizer_(node.GetLayoutBox()->GetDocument().GetTextAutosizer()),
+      block_(ToLayoutBlockFlow(node.GetLayoutBox())) {
+  if (!text_autosizer_ || !text_autosizer_->ShouldHandleLayout() ||
+      block_->IsLayoutNGListMarker()) {
+    // Bail if text autosizing isn't enabled, but also if this is a
+    // IsLayoutNGListMarker. They are super-small blocks, and using them to
+    // determine if we should autosize the text will typically always yield
+    // false, overriding whatever its parent (typically the list item) has
+    // already correctly determined.
+    text_autosizer_ = nullptr;
+    return;
+  }
+
+  // In order for the text autosizer to do anything useful at all, it needs to
+  // know the inline size of the block. So set it. LayoutNG normally writes back
+  // to the legacy tree *after* layout, but this one must be set before, at
+  // least if the autosizer is enabled.
+  block_->SetLogicalWidth(inline_size);
+
+  text_autosizer_->BeginLayout(block_, nullptr);
+}
+
+TextAutosizer::NGLayoutScope::~NGLayoutScope() {
+  if (text_autosizer_)
+    text_autosizer_->EndLayout(block_);
 }
 
 TextAutosizer::DeferUpdatePageInfo::~DeferUpdatePageInfo() {

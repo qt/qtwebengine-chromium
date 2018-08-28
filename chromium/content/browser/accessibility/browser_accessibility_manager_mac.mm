@@ -125,6 +125,7 @@ BrowserAccessibilityManagerMac::BrowserAccessibilityManagerMac(
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(delegate, factory) {
   Initialize(initial_tree);
+  tree_->SetEnableExtraMacNodes(true);
 }
 
 BrowserAccessibilityManagerMac::~BrowserAccessibilityManagerMac() {}
@@ -144,15 +145,10 @@ ui::AXTreeUpdate
 BrowserAccessibility* BrowserAccessibilityManagerMac::GetFocus() {
   BrowserAccessibility* focus = BrowserAccessibilityManager::GetFocus();
 
-  // On Mac, list boxes should always get focus on the whole list, otherwise
-  // information about the number of selected items will never be reported.
   // For editable combo boxes, focus should stay on the combo box so the user
   // will not be taken out of the combo box while typing.
-  if (focus &&
-      (focus->GetRole() == ax::mojom::Role::kListBox ||
-       (focus->GetRole() == ax::mojom::Role::kTextFieldWithComboBox))) {
+  if (focus && focus->GetRole() == ax::mojom::Role::kTextFieldWithComboBox)
     return focus;
-  }
 
   // For other roles, follow the active descendant.
   return GetActiveDescendant(focus);
@@ -386,7 +382,7 @@ void BrowserAccessibilityManagerMac::FireNativeMacNotification(
 }
 
 void BrowserAccessibilityManagerMac::OnAccessibilityEvents(
-    const std::vector<AXEventNotificationDetails>& details) {
+    const AXEventNotificationDetails& details) {
   text_edits_.clear();
   // Call the base method last as it might delete the tree if it receives an
   // invalid message.
@@ -415,7 +411,7 @@ void BrowserAccessibilityManagerMac::OnAtomicUpdateFinished(
     DCHECK(obj);
     const AXTextEdit text_edit = [obj computeTextEdit];
     if (!text_edit.IsEmpty())
-      text_edits_[[obj browserAccessibility]->GetId()] = text_edit;
+      text_edits_[[obj owner]->GetId()] = text_edit;
   }
 }
 
@@ -489,10 +485,7 @@ BrowserAccessibilityManagerMac::GetUserInfoForValueChangedNotification(
 }
 
 NSView* BrowserAccessibilityManagerMac::GetParentView() {
-  gfx::AcceleratedWidget accelerated_widget =
-      delegate() ? delegate()->AccessibilityGetAcceleratedWidget()
-                 : gfx::kNullAcceleratedWidget;
-  return ui::AcceleratedWidgetMac::GetNSView(accelerated_widget);
+  return delegate()->AccessibilityGetNativeViewAccessible();
 }
 
 }  // namespace content

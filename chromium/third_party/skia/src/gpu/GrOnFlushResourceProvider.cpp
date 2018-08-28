@@ -6,10 +6,11 @@
  */
 
 #include "GrOnFlushResourceProvider.h"
-
+#include "GrContext.h"
 #include "GrContextPriv.h"
 #include "GrDrawingManager.h"
 #include "GrProxyProvider.h"
+#include "GrRenderTargetContext.h"
 #include "GrSurfaceProxy.h"
 
 sk_sp<GrRenderTargetContext> GrOnFlushResourceProvider::makeRenderTargetContext(
@@ -29,7 +30,7 @@ sk_sp<GrRenderTargetContext> GrOnFlushResourceProvider::makeRenderTargetContext(
     sk_sp<GrSurfaceProxy> proxy =
             proxyProvider->createProxy(tmpDesc, origin, SkBackingFit::kExact, SkBudgeted::kYes,
                                        GrInternalSurfaceFlags::kNoPendingIO);
-    if (!proxy->asRenderTargetProxy()) {
+    if (!proxy || !proxy->asRenderTargetProxy()) {
         return nullptr;
     }
 
@@ -58,21 +59,19 @@ sk_sp<GrRenderTargetContext> GrOnFlushResourceProvider::makeRenderTargetContext(
                                                         sk_sp<GrSurfaceProxy> proxy,
                                                         sk_sp<SkColorSpace> colorSpace,
                                                         const SkSurfaceProps* props) {
+    // Since this is at flush time and these won't be allocated for us by the GrResourceAllocator
+    // we have to manually ensure it is allocated here. The proxy had best have been created
+    // with the kNoPendingIO flag!
+    if (!this->instatiateProxy(proxy.get())) {
+        return nullptr;
+    }
+
     sk_sp<GrRenderTargetContext> renderTargetContext(
         fDrawingMgr->makeRenderTargetContext(std::move(proxy),
                                              std::move(colorSpace),
                                              props, false));
 
     if (!renderTargetContext) {
-        return nullptr;
-    }
-
-    auto resourceProvider = fDrawingMgr->getContext()->contextPriv().resourceProvider();
-
-    // Since this is at flush time and these won't be allocated for us by the GrResourceAllocator
-    // we have to manually ensure it is allocated here. The proxy had best have been created
-    // with the kNoPendingIO flag!
-    if (!renderTargetContext->asSurfaceProxy()->instantiate(resourceProvider)) {
         return nullptr;
     }
 
@@ -130,6 +129,10 @@ sk_sp<const GrBuffer> GrOnFlushResourceProvider::findOrMakeStaticBuffer(GrBuffer
     // Static buffers should never have pending IO.
     SkASSERT(!buffer->resourcePriv().hasPendingIO_debugOnly());
     return buffer;
+}
+
+uint32_t GrOnFlushResourceProvider::contextUniqueID() const {
+    return fDrawingMgr->getContext()->uniqueID();
 }
 
 const GrCaps* GrOnFlushResourceProvider::caps() const {

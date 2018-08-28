@@ -5,8 +5,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_CALLBACK_INTERFACE_BASE_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_CALLBACK_INTERFACE_BASE_H_
 
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
-#include "third_party/blink/renderer/platform/bindings/trace_wrapper_base.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_v8_reference.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 
@@ -24,7 +24,7 @@ class V8PersistentCallbackInterfaceBase;
 // not implement any operation. Subclasses will implement it.
 class PLATFORM_EXPORT CallbackInterfaceBase
     : public GarbageCollectedFinalized<CallbackInterfaceBase>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   // Whether the callback interface is a "single operation callback interface"
   // or not.
@@ -36,17 +36,13 @@ class PLATFORM_EXPORT CallbackInterfaceBase
 
   virtual ~CallbackInterfaceBase() = default;
 
-  virtual void Trace(blink::Visitor*) {}
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
-  const char* NameInHeapSnapshot() const override {
-    return "CallbackInterfaceBase";
-  }
+  virtual void Trace(blink::Visitor*);
 
   v8::Isolate* GetIsolate() {
     return callback_relevant_script_state_->GetIsolate();
   }
   ScriptState* CallbackRelevantScriptState() {
-    return callback_relevant_script_state_.get();
+    return callback_relevant_script_state_;
   }
 
   // NodeIteratorBase counts the invocation of those which are callable and
@@ -65,7 +61,7 @@ class PLATFORM_EXPORT CallbackInterfaceBase
   // Returns true iff the callback interface is a single operation callback
   // interface and the callback interface type value is callable.
   bool IsCallbackObjectCallable() const { return is_callback_object_callable_; }
-  ScriptState* IncumbentScriptState() { return incumbent_script_state_.get(); }
+  ScriptState* IncumbentScriptState() { return incumbent_script_state_; }
 
  private:
   // The "callback interface type" value.
@@ -74,11 +70,11 @@ class PLATFORM_EXPORT CallbackInterfaceBase
   // The associated Realm of the callback interface type value. Note that the
   // callback interface type value can be different from the function object
   // to be invoked.
-  scoped_refptr<ScriptState> callback_relevant_script_state_;
+  Member<ScriptState> callback_relevant_script_state_;
   // The callback context, i.e. the incumbent Realm when an ECMAScript value is
   // converted to an IDL value.
   // https://heycam.github.io/webidl/#dfn-callback-context
-  scoped_refptr<ScriptState> incumbent_script_state_;
+  Member<ScriptState> incumbent_script_state_;
 
   friend class V8PersistentCallbackInterfaceBase;
   // ToV8 needs to call |CallbackObject| member function.

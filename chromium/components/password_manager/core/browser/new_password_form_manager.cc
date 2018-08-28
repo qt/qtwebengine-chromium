@@ -4,9 +4,11 @@
 
 #include "components/password_manager/core/browser/new_password_form_manager.h"
 
+#include "base/metrics/histogram_macros.h"
+#include "components/autofill/core/browser/form_structure.h"
 #include "components/password_manager/core/browser/browser_save_password_progress_logger.h"
 #include "components/password_manager/core/browser/form_fetcher_impl.h"
-#include "components/password_manager/core/browser/form_parsing/ios_form_parser.h"
+#include "components/password_manager/core/browser/form_parsing/form_parser.h"
 #include "components/password_manager/core/browser/password_form_filling.h"
 #include "components/password_manager/core/browser/password_form_metrics_recorder.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
@@ -14,6 +16,12 @@
 #include "components/password_manager/core/browser/password_manager_util.h"
 
 using autofill::FormData;
+using autofill::FormFieldData;
+using autofill::FormSignature;
+using autofill::FormStructure;
+using autofill::PasswordForm;
+using base::TimeDelta;
+using base::TimeTicks;
 
 using Logger = autofill::SavePasswordProgressLogger;
 
@@ -21,28 +29,18 @@ namespace password_manager {
 
 namespace {
 
-// On iOS, id are used for field identification, whereas on other platforms
-// name field is used. Set id equal to name.
-// TODO(https://crbug.com/831123): Remove this method when the browser side form
-// parsing is ready.
-FormData PreprocessFormData(const FormData& form) {
-  FormData result_form = form;
-  for (auto& field : result_form.fields)
-    field.id = field.name;
-  return result_form;
-}
+constexpr TimeDelta kMaxFillingDelayForServerPerdictions =
+    TimeDelta::FromMilliseconds(500);
 
 // Helper function for calling form parsing and logging results if logging is
 // active.
-std::unique_ptr<autofill::PasswordForm> ParseFormAndMakeLogging(
+std::unique_ptr<PasswordForm> ParseFormAndMakeLogging(
     PasswordManagerClient* client,
-    const FormData& form) {
-  // iOS form parsing is a prototype for parsing on all platforms. Call it for
-  // developing and experimentation purposes.
-  // TODO(https://crbug.com/831123): Call general form parsing instead of iOS
-  // one when it is ready.
-  std::unique_ptr<autofill::PasswordForm> password_form =
-      ParseFormData(PreprocessFormData(form), FormParsingMode::FILLING);
+    const FormData& form,
+    const base::Optional<FormPredictions>& predictions) {
+  std::unique_ptr<PasswordForm> password_form =
+      ParseFormData(form, predictions ? &predictions.value() : nullptr,
+                    FormParsingMode::FILLING);
 
   if (password_manager_util::IsLoggingActive(client)) {
     BrowserSavePasswordProgressLogger logger(client->GetLogManager());
@@ -71,7 +69,8 @@ NewPasswordFormManager::NewPasswordFormManager(
                              client_,
                              true /* should_migrate_http_passwords */,
                              true /* should_query_suppressed_https_forms */)),
-      form_fetcher_(form_fetcher ? form_fetcher : owned_form_fetcher_.get()) {
+      form_fetcher_(form_fetcher ? form_fetcher : owned_form_fetcher_.get()),
+      weak_ptr_factory_(this) {
   metrics_recorder_ = base::MakeRefCounted<PasswordFormMetricsRecorder>(
       client_->IsMainFrameSecure(), client_->GetUkmSourceId());
   metrics_recorder_->RecordFormSignature(CalculateFormSignature(observed_form));
@@ -84,7 +83,7 @@ NewPasswordFormManager::NewPasswordFormManager(
   // TODO(https://crbug.com/831123): remove it when NewPasswordFormManager will
   // be production ready.
   if (password_manager_util::IsLoggingActive(client_))
-    ParseFormAndMakeLogging(client_, observed_form_);
+    ParseFormAndMakeLogging(client_, observed_form_, predictions_);
 }
 NewPasswordFormManager::~NewPasswordFormManager() = default;
 
@@ -109,55 +108,51 @@ const GURL& NewPasswordFormManager::GetOrigin() const {
   return observed_form_.origin;
 }
 
-const std::map<base::string16, const autofill::PasswordForm*>&
+const std::map<base::string16, const PasswordForm*>&
 NewPasswordFormManager::GetBestMatches() const {
-  // TODO(https://crbug.com/831123): Implement.
-  DCHECK(false);
-  static std::map<base::string16, const autofill::PasswordForm*> dummy_map;
-  return dummy_map;
+  return best_matches_;
 }
-const autofill::PasswordForm& NewPasswordFormManager::GetPendingCredentials()
-    const {
+
+const PasswordForm& NewPasswordFormManager::GetPendingCredentials() const {
   // TODO(https://crbug.com/831123): Implement.
   DCHECK(false);
-  static autofill::PasswordForm dummy_form;
+  static PasswordForm dummy_form;
   return dummy_form;
 }
+
 metrics_util::CredentialSourceType
 NewPasswordFormManager::GetCredentialSource() {
   // TODO(https://crbug.com/831123): Implement.
   return metrics_util::CredentialSourceType::kPasswordManager;
 }
+
 PasswordFormMetricsRecorder* NewPasswordFormManager::GetMetricsRecorder() {
   return metrics_recorder_.get();
 }
-const std::vector<const autofill::PasswordForm*>&
+
+const std::vector<const PasswordForm*>&
 NewPasswordFormManager::GetBlacklistedMatches() const {
-  // TODO(https://crbug.com/831123): Implement.
-  DCHECK(false);
-  static std::vector<const autofill::PasswordForm*> dummy_vector;
-  return dummy_vector;
+  return blacklisted_matches_;
 }
+
 bool NewPasswordFormManager::IsBlacklisted() const {
-  // TODO(https://crbug.com/831123): Implement.
-  return false;
+  return !blacklisted_matches_.empty();
 }
+
 bool NewPasswordFormManager::IsPasswordOverridden() const {
   // TODO(https://crbug.com/831123): Implement.
   return false;
 }
-const autofill::PasswordForm* NewPasswordFormManager::GetPreferredMatch()
-    const {
-  // TODO(https://crbug.com/831123): Implement or remove from
-  // PasswordFormManagerForUI.
-  return nullptr;
+
+const PasswordForm* NewPasswordFormManager::GetPreferredMatch() const {
+  return preferred_match_;
 }
 
 // TODO(https://crbug.com/831123): Implement all methods from
 // PasswordFormManagerForUI.
 void NewPasswordFormManager::Save() {}
-void NewPasswordFormManager::Update(
-    const autofill::PasswordForm& credentials_to_update) {}
+void NewPasswordFormManager::Update(const PasswordForm& credentials_to_update) {
+}
 void NewPasswordFormManager::UpdateUsername(
     const base::string16& new_username) {}
 void NewPasswordFormManager::UpdatePasswordValue(
@@ -169,36 +164,40 @@ void NewPasswordFormManager::PermanentlyBlacklist() {}
 void NewPasswordFormManager::OnPasswordsRevealed() {}
 
 void NewPasswordFormManager::ProcessMatches(
-    const std::vector<const autofill::PasswordForm*>& non_federated,
+    const std::vector<const PasswordForm*>& non_federated,
     size_t filtered_count) {
-  if (!driver_)
-    return;
+  received_stored_credentials_time_ = TimeTicks::Now();
+  std::vector<const PasswordForm*> matches;
+  std::copy_if(non_federated.begin(), non_federated.end(),
+               std::back_inserter(matches), [](const PasswordForm* form) {
+                 return !form->blacklisted_by_user &&
+                        form->scheme == PasswordForm::SCHEME_HTML;
+               });
 
-  // There are additional signals (server-side data) and parse results in
-  // filling and saving mode might be different so it is better not to cache
-  // parse result, but to parse each time again.
-  std::unique_ptr<autofill::PasswordForm> observed_password_form =
-      ParseFormAndMakeLogging(client_, observed_form_);
-  if (!observed_password_form)
-    return;
+  std::vector<const PasswordForm*> not_best_matches;
+  password_manager_util::FindBestMatches(matches, &best_matches_,
+                                         &not_best_matches, &preferred_match_);
 
-  // TODO(https://crbug.com/831123). Implement correct treating of blacklisted
-  // matches.
-  std::map<base::string16, const autofill::PasswordForm*> best_matches;
-  std::vector<const autofill::PasswordForm*> not_best_matches;
-  const autofill::PasswordForm* preferred_match = nullptr;
-  password_manager_util::FindBestMatches(non_federated, &best_matches,
-                                         &not_best_matches, &preferred_match);
-  if (best_matches.empty())
-    return;
+  // Copy out blacklisted matches.
+  blacklisted_matches_.clear();
+  std::copy_if(
+      non_federated.begin(), non_federated.end(),
+      std::back_inserter(blacklisted_matches_), [](const PasswordForm* form) {
+        return form->blacklisted_by_user && !form->is_public_suffix_match;
+      });
 
-  // TODO(https://crbug.com/831123). Implement correct treating of federated
-  // matches.
-  std::vector<const autofill::PasswordForm*> federated_matches;
-  SendFillInformationToRenderer(
-      *client_, driver_.get(), false /* is_blaclisted */,
-      *observed_password_form.get(), best_matches, federated_matches,
-      preferred_match, metrics_recorder_.get());
+  autofills_left_ = kMaxTimesAutofill;
+
+  if (predictions_) {
+    ReportTimeBetweenStoreAndServerUMA();
+    Fill();
+  } else {
+    base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&NewPasswordFormManager::Fill,
+                       weak_ptr_factory_.GetWeakPtr()),
+        kMaxFillingDelayForServerPerdictions);
+  }
 }
 
 bool NewPasswordFormManager::SetSubmittedFormIfIsManaged(
@@ -209,6 +208,94 @@ bool NewPasswordFormManager::SetSubmittedFormIfIsManaged(
   submitted_form_ = submitted_form;
   is_submitted_ = true;
   return true;
+}
+
+void NewPasswordFormManager::ProcessServerPredictions(
+    const std::vector<FormStructure*>& predictions) {
+  FormSignature observed_form_signature =
+      CalculateFormSignature(observed_form_);
+  for (const FormStructure* form_predictions : predictions) {
+    if (form_predictions->form_signature() != observed_form_signature)
+      continue;
+    ReportTimeBetweenStoreAndServerUMA();
+    predictions_ = ConvertToFormPredictions(*form_predictions);
+    Fill();
+    break;
+  }
+}
+
+void NewPasswordFormManager::Fill() {
+  if (autofills_left_ <= 0)
+    return;
+  autofills_left_--;
+
+  // There are additional signals (server-side data) and parse results in
+  // filling and saving mode might be different so it is better not to cache
+  // parse result, but to parse each time again.
+  std::unique_ptr<PasswordForm> observed_password_form =
+      ParseFormAndMakeLogging(client_, observed_form_, predictions_);
+  if (!observed_password_form)
+    return;
+
+  RecordMetricOnCompareParsingResult(*observed_password_form);
+
+  // TODO(https://crbug.com/831123). Move this lines to the beginning of the
+  // function when the old parsing is removed.
+  if (!driver_)
+    return;
+
+  // TODO(https://crbug.com/831123). Implement correct treating of federated
+  // matches.
+  std::vector<const PasswordForm*> federated_matches;
+  SendFillInformationToRenderer(*client_, driver_.get(), IsBlacklisted(),
+                                *observed_password_form.get(), best_matches_,
+                                federated_matches, preferred_match_,
+                                metrics_recorder_.get());
+}
+
+void NewPasswordFormManager::RecordMetricOnCompareParsingResult(
+    const PasswordForm& parsed_form) {
+  bool same =
+      parsed_form.username_element == old_parsing_result_.username_element &&
+      parsed_form.password_element == old_parsing_result_.password_element &&
+      parsed_form.new_password_element ==
+          old_parsing_result_.new_password_element &&
+      parsed_form.confirmation_password_element ==
+          old_parsing_result_.confirmation_password_element;
+  if (same) {
+    metrics_recorder_->RecordParsingsComparisonResult(
+        PasswordFormMetricsRecorder::ParsingComparisonResult::kSame);
+    return;
+  }
+
+  // In the old parsing for fields with empty name, placeholders are used. The
+  // reason for this is that an empty "..._element" attribute in a PasswordForm
+  // means that no corresponding input element exists. The new form parsing sets
+  // empty string in that case because renderer ids are used instead of element
+  // names for fields identification. Hence in case of anonymous fields, the
+  // results will be different for sure. Compare to placeholders and record this
+  // case.
+  if (old_parsing_result_.username_element ==
+          base::ASCIIToUTF16("anonymous_username") ||
+      old_parsing_result_.password_element ==
+          base::ASCIIToUTF16("anonymous_password") ||
+      old_parsing_result_.new_password_element ==
+          base::ASCIIToUTF16("anonymous_new_password") ||
+      old_parsing_result_.confirmation_password_element ==
+          base::ASCIIToUTF16("anonymous_confirmation_password")) {
+    metrics_recorder_->RecordParsingsComparisonResult(
+        PasswordFormMetricsRecorder::ParsingComparisonResult::kAnonymousFields);
+  } else {
+    metrics_recorder_->RecordParsingsComparisonResult(
+        PasswordFormMetricsRecorder::ParsingComparisonResult::kDifferent);
+  }
+}
+
+void NewPasswordFormManager::ReportTimeBetweenStoreAndServerUMA() {
+  if (!received_stored_credentials_time_.is_null()) {
+    UMA_HISTOGRAM_TIMES("PasswordManager.TimeBetweenStoreAndServer",
+                        TimeTicks::Now() - received_stored_credentials_time_);
+  }
 }
 
 }  // namespace password_manager

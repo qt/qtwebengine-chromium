@@ -23,7 +23,6 @@ PerformanceNavigationTiming::PerformanceNavigationTiming(
     const WebVector<WebServerTimingInfo>& server_timing)
     : PerformanceResourceTiming(
           info ? info->FinalResponse().Url().GetString() : "",
-          "navigation",
           time_origin,
           server_timing),
       ContextClient(frame),
@@ -33,6 +32,14 @@ PerformanceNavigationTiming::PerformanceNavigationTiming(
 }
 
 PerformanceNavigationTiming::~PerformanceNavigationTiming() = default;
+
+AtomicString PerformanceNavigationTiming::entryType() const {
+  return PerformanceEntry::NavigationKeyword();
+}
+
+PerformanceEntryType PerformanceNavigationTiming::EntryTypeEnum() const {
+  return PerformanceEntry::EntryType::kNavigation;
+}
 
 void PerformanceNavigationTiming::Trace(blink::Visitor* visitor) {
   ContextClient::Trace(visitor);
@@ -88,21 +95,21 @@ unsigned long long PerformanceNavigationTiming::GetDecodedBodySize() const {
 }
 
 AtomicString PerformanceNavigationTiming::GetNavigationType(
-    NavigationType type,
+    WebNavigationType type,
     const Document* document) {
   if (document && document->GetPageVisibilityState() ==
                       mojom::PageVisibilityState::kPrerender) {
     return "prerender";
   }
   switch (type) {
-    case kNavigationTypeReload:
+    case kWebNavigationTypeReload:
       return "reload";
-    case kNavigationTypeBackForward:
+    case kWebNavigationTypeBackForward:
       return "back_forward";
-    case kNavigationTypeLinkClicked:
-    case kNavigationTypeFormSubmitted:
-    case kNavigationTypeFormResubmitted:
-    case kNavigationTypeOther:
+    case kWebNavigationTypeLinkClicked:
+    case kWebNavigationTypeFormSubmitted:
+    case kWebNavigationTypeFormResubmitted:
+    case kWebNavigationTypeOther:
       return "navigate";
   }
   NOTREACHED();
@@ -110,7 +117,7 @@ AtomicString PerformanceNavigationTiming::GetNavigationType(
 }
 
 AtomicString PerformanceNavigationTiming::initiatorType() const {
-  return "navigation";
+  return PerformanceEntry::NavigationKeyword();
 }
 
 bool PerformanceNavigationTiming::GetAllowRedirectDetails() const {

@@ -93,8 +93,7 @@ class TestRollChromiumRevision(unittest.TestCase):
 
     current_rev = TEST_DATA_VARS['chromium_revision']
     UpdateDepsFile(self._webrtc_depsfile,
-                   ChromiumRevisionUpdate(
-                       current_rev, new_rev, current_rev, new_rev),
+                   ChromiumRevisionUpdate(current_rev, new_rev),
                    [])
     with open(self._webrtc_depsfile) as deps_file:
       deps_contents = deps_file.read()
@@ -145,8 +144,8 @@ class TestRollChromiumRevision(unittest.TestCase):
 
     self.assertEquals(changed_deps[2].path, 'src/third_party/xstream')
     self.assertEquals(changed_deps[2].package, 'chromium/third_party/xstream')
-    self.assertEquals(changed_deps[2].current_version, '1.4.8-cr0')
-    self.assertEquals(changed_deps[2].new_version, '1.10.0-cr0')
+    self.assertEquals(changed_deps[2].current_version, 'version:1.4.8-cr0')
+    self.assertEquals(changed_deps[2].new_version, 'version:1.10.0-cr0')
 
 
 class TestChooseCQMode(unittest.TestCase):

@@ -16,22 +16,22 @@ class TestSyncService : public syncer::FakeSyncService {
   ~TestSyncService() override;
 
   // FakeSyncService:
-  bool CanSyncStart() const override;
+  int GetDisableReasons() const override;
   syncer::ModelTypeSet GetPreferredDataTypes() const override;
+  syncer::ModelTypeSet GetActiveDataTypes() const override;
   bool IsEngineInitialized() const override;
+  bool IsFirstSetupComplete() const override;
   bool IsUsingSecondaryPassphrase() const override;
-  bool IsSyncActive() const override;
-  bool ConfigurationDone() const override;
   syncer::SyncCycleSnapshot GetLastCycleSnapshot() const override;
   const GoogleServiceAuthError& GetAuthError() const override;
   syncer::SyncTokenStatus GetSyncTokenStatus() const override;
 
-  void SetCanSyncStart(bool can_sync_start) {
-    can_sync_start_ = can_sync_start;
+  void SetDisableReasons(int disable_reasons) {
+    disable_reasons_ = disable_reasons;
   }
 
-  void SetPreferredDataTypes(syncer::ModelTypeSet preferred_data_types) {
-    preferred_data_types_ = preferred_data_types;
+  void SetDataTypes(syncer::ModelTypeSet data_types) {
+    data_types_ = data_types;
   }
 
   void SetIsEngineInitialized(bool is_engine_initialized) {
@@ -42,25 +42,16 @@ class TestSyncService : public syncer::FakeSyncService {
     is_using_secondary_passphrase_ = is_using_secondary_passphrase;
   }
 
-  void SetIsSyncActive(bool is_sync_active) {
-    is_sync_active_ = is_sync_active;
-  }
-
-  void SetConfigurationDone(bool configuration_done) {
-    configuration_done_ = configuration_done;
-  }
-
   void SetSyncCycleComplete(bool complete) { sync_cycle_complete_ = complete; }
 
   void SetInAuthError(bool is_in_auth_error);
 
  private:
-  bool can_sync_start_ = true;
-  syncer::ModelTypeSet preferred_data_types_;
+  int disable_reasons_ = DISABLE_REASON_NONE;
+  // Used as both "preferred" and "active" data types.
+  syncer::ModelTypeSet data_types_;
   bool is_engine_initialized_ = true;
   bool is_using_secondary_passphrase_ = false;
-  bool is_sync_active_ = true;
-  bool configuration_done_ = true;
   bool sync_cycle_complete_ = true;
   GoogleServiceAuthError auth_error_;
   bool is_in_auth_error_ = false;

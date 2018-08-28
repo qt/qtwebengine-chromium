@@ -38,6 +38,7 @@ namespace blink {
 class Event;
 class HTMLVideoElement;
 class MediaControlsMediaEventListener;
+class MediaControlsDisplayCutoutDelegate;
 class MediaControlsOrientationLockDelegate;
 class MediaControlsRotateToFullscreenDelegate;
 class MediaControlsWindowEventListener;
@@ -200,6 +201,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   friend class MediaControlsWindowEventListener;
 
   // For tests.
+  friend class MediaControlsDisplayCutoutDelegateTest;
   friend class MediaControlsOrientationLockDelegateTest;
   friend class MediaControlsOrientationLockAndRotateToFullscreenDelegateTest;
   friend class MediaControlsRotateToFullscreenDelegateTest;
@@ -315,6 +317,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void OnLoadedMetadata();
   void OnEnteredFullscreen();
   void OnExitedFullscreen();
+  void OnPictureInPictureChanged();
   void OnPanelKeypress();
   void OnMediaKeyboardEvent(Event* event) { DefaultEventHandler(event); }
   void OnWaiting();
@@ -351,6 +354,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   Member<MediaControlsOrientationLockDelegate> orientation_lock_delegate_;
   Member<MediaControlsRotateToFullscreenDelegate>
       rotate_to_fullscreen_delegate_;
+  Member<MediaControlsDisplayCutoutDelegate> display_cutout_delegate_;
 
   TaskRunnerTimer<MediaControlsImpl> hide_media_controls_timer_;
   unsigned hide_timer_behavior_flags_;

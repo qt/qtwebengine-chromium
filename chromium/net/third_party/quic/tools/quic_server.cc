@@ -18,6 +18,7 @@
 #include "net/third_party/quic/core/crypto/quic_random.h"
 #include "net/third_party/quic/core/quic_crypto_stream.h"
 #include "net/third_party/quic/core/quic_data_reader.h"
+#include "net/third_party/quic/core/quic_default_packet_writer.h"
 #include "net/third_party/quic/core/quic_dispatcher.h"
 #include "net/third_party/quic/core/quic_epoll_alarm_factory.h"
 #include "net/third_party/quic/core/quic_epoll_connection_helper.h"
@@ -37,7 +38,7 @@
 #define SO_RXQ_OVFL 40
 #endif
 
-namespace net {
+namespace quic {
 
 namespace {
 
@@ -140,7 +141,7 @@ bool QuicServer::CreateUDPSocketAndListen(const QuicSocketAddress& address) {
   return true;
 }
 
-QuicDefaultPacketWriter* QuicServer::CreateWriter(int fd) {
+QuicPacketWriter* QuicServer::CreateWriter(int fd) {
   return new QuicDefaultPacketWriter(fd);
 }
 
@@ -183,7 +184,7 @@ void QuicServer::Shutdown() {
   fd_ = -1;
 }
 
-void QuicServer::OnEvent(int fd, EpollEvent* event) {
+void QuicServer::OnEvent(int fd, net::EpollEvent* event) {
   DCHECK_EQ(fd, fd_);
   event->out_ready_mask = 0;
 
@@ -214,4 +215,4 @@ void QuicServer::OnEvent(int fd, EpollEvent* event) {
   }
 }
 
-}  // namespace net
+}  // namespace quic

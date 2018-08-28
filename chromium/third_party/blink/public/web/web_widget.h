@@ -33,8 +33,8 @@
 
 #include "base/callback.h"
 #include "base/time/time.h"
-#include "third_party/blink/public/platform/web_browser_controls_state.h"
-#include "third_party/blink/public/platform/web_canvas.h"
+#include "cc/input/browser_controls_state.h"
+#include "cc/paint/paint_canvas.h"
 #include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/platform/web_float_size.h"
 #include "third_party/blink/public/platform/web_input_event_result.h"
@@ -109,21 +109,24 @@ class WebWidget {
   // Called to paint the rectangular region within the WebWidget
   // onto the specified canvas at (viewPort.x,viewPort.y).
   //
-  // Before calling Paint(), you must call
-  // UpdateLifecycle(LifecycleUpdate::All): this method assumes the lifecycle is
-  // clean. It is okay to call paint multiple times once the lifecycle is
+  // Before calling PaintContent(), you must call
+  // UpdateLifecycle(LifecycleUpdate::All): this method assumes the lifecycle
+  // is clean. It is okay to call paint multiple times once the lifecycle is
   // updated, assuming no other changes are made to the WebWidget (e.g., once
   // events are processed, it should be assumed that another call to
-  // UpdateLifecycle is warranted before painting again).
-  virtual void Paint(WebCanvas*, const WebRect& view_port) {}
+  // UpdateLifecycle is warranted before painting again). Paints starting from
+  // the main LayoutView's property tree state, thus ignoring any transient
+  // transormations (e.g. pinch-zoom, dev tools emulation, etc.).
+  virtual void PaintContent(cc::PaintCanvas*, const WebRect& view_port) {}
 
-  // Similar to paint() but ignores compositing decisions, squashing all
-  // contents of the WebWidget into the output given to the WebCanvas.
+  // Similar to PaintContent() but ignores compositing decisions, squashing all
+  // contents of the WebWidget into the output given to the cc::PaintCanvas.
   //
-  // Before calling PaintIgnoringCompositing(), you must call
+  // Before calling PaintContentIgnoringCompositing(), you must call
   // UpdateLifecycle(LifecycleUpdate::All): this method assumes the lifecycle is
   // clean.
-  virtual void PaintIgnoringCompositing(WebCanvas*, const WebRect&) {}
+  virtual void PaintContentIgnoringCompositing(cc::PaintCanvas*,
+                                               const WebRect&) {}
 
   // Run layout and paint of all pending document changes asynchronously.
   virtual void LayoutAndPaintAsync(base::OnceClosure callback) {}
@@ -226,8 +229,8 @@ class WebWidget {
   // Updates browser controls constraints and current state. Allows embedder to
   // control what are valid states for browser controls and if it should
   // animate.
-  virtual void UpdateBrowserControlsState(WebBrowserControlsState constraints,
-                                          WebBrowserControlsState current,
+  virtual void UpdateBrowserControlsState(cc::BrowserControlsState constraints,
+                                          cc::BrowserControlsState current,
                                           bool animate) {}
 
   // Called by client to request showing the context menu.

@@ -138,10 +138,6 @@ class CC_EXPORT LayerTreeSettings {
   // produces the active tree as its 'sync tree'.
   bool commit_to_active_tree = true;
 
-  // Whether to use out of process raster.  If true, whenever gpu raster
-  // would have been used, out of process gpu raster will be used instead.
-  bool enable_oop_rasterization = false;
-
   // Whether image animations can be reset to the beginning to avoid skipping
   // many frames.
   bool enable_image_animation_resync = true;
@@ -160,6 +156,10 @@ class CC_EXPORT LayerTreeSettings {
   // Whether a HitTestRegionList should be built from the active layer tree when
   // submitting a CompositorFrame.
   bool build_hit_test_data = false;
+
+  // When false, sync tokens are expected to be present, and are verified,
+  // before transfering gpu resources to the display compositor.
+  bool delegated_sync_points_required = true;
 };
 
 }  // namespace cc

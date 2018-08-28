@@ -75,7 +75,6 @@
 #include "chrome/browser/chromeos/crostini/crostini_util.h"
 #include "chrome/browser/chromeos/login/quick_unlock/quick_unlock_utils.h"
 #include "chrome/browser/signin/account_tracker_service_factory.h"
-#include "chrome/browser/ui/ash/ash_util.h"
 #include "chrome/browser/ui/webui/settings/chromeos/accessibility_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/account_manager_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/android_apps_handler.h"
@@ -92,17 +91,19 @@
 #include "chrome/browser/ui/webui/settings/chromeos/fingerprint_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/google_assistant_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/internet_handler.h"
+#include "chrome/browser/ui/webui/settings/chromeos/multidevice_handler.h"
 #include "chrome/browser/ui/webui/settings/chromeos/smb_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/account_manager/account_manager.h"
 #include "chromeos/account_manager/account_manager_factory.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/arc/arc_util.h"
+#include "ui/base/ui_base_features.h"
 #else  // !defined(OS_CHROMEOS)
+#include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/ui/webui/settings/settings_default_browser_handler.h"
 #include "chrome/browser/ui/webui/settings/settings_manage_profile_handler.h"
 #include "chrome/browser/ui/webui/settings/system_handler.h"
-#include "components/signin/core/browser/profile_management_switches.h"
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(USE_NSS_CERTS)
@@ -182,15 +183,19 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::AndroidAppsHandler>(profile));
 
-  chromeos::AccountManagerFactory* factory =
-      g_browser_process->platform_part()->GetAccountManagerFactory();
-  chromeos::AccountManager* account_manager =
-      factory->GetAccountManager(profile->GetPath().value());
-  DCHECK(account_manager);
-  AddSettingsPageUIHandler(
-      std::make_unique<chromeos::settings::AccountManagerUIHandler>(
-          account_manager,
-          AccountTrackerServiceFactory::GetInstance()->GetForProfile(profile)));
+  if (!profile->IsGuestSession()) {
+    chromeos::AccountManagerFactory* factory =
+        g_browser_process->platform_part()->GetAccountManagerFactory();
+    chromeos::AccountManager* account_manager =
+        factory->GetAccountManager(profile->GetPath().value());
+    DCHECK(account_manager);
+
+    AddSettingsPageUIHandler(
+        std::make_unique<chromeos::settings::AccountManagerUIHandler>(
+            account_manager,
+            AccountTrackerServiceFactory::GetInstance()->GetForProfile(
+                profile)));
+  }
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::ChangePictureHandler>());
   if (IsCrostiniUIAllowedForProfile(profile)) {
@@ -201,18 +206,21 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
       std::make_unique<chromeos::settings::CupsPrintersHandler>(web_ui));
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::FingerprintHandler>(profile));
-  if (chromeos::switches::IsVoiceInteractionEnabled()) {
+  if (chromeos::switches::IsVoiceInteractionEnabled() ||
+      chromeos::switches::IsAssistantEnabled()) {
     AddSettingsPageUIHandler(
         std::make_unique<chromeos::settings::GoogleAssistantHandler>(profile));
   }
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::KeyboardHandler>());
   AddSettingsPageUIHandler(
+      std::make_unique<chromeos::settings::MultideviceHandler>());
+  AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::PointerHandler>());
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::SmbHandler>(profile));
   AddSettingsPageUIHandler(
-      std::make_unique<chromeos::settings::StorageHandler>());
+      std::make_unique<chromeos::settings::StorageHandler>(profile));
   AddSettingsPageUIHandler(
       std::make_unique<chromeos::settings::StylusHandler>());
   AddSettingsPageUIHandler(
@@ -230,8 +238,6 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 
   content::WebUIDataSource* html_source =
       content::WebUIDataSource::Create(chrome::kChromeUISettingsHost);
-  html_source->OverrideContentSecurityPolicyScriptSrc(
-      "script-src chrome://resources 'self';");
 
 #if defined(OS_WIN)
   AddSettingsPageUIHandler(std::make_unique<ChromeCleanupHandler>(profile));
@@ -310,19 +316,26 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   html_source->AddBoolean("havePlayStoreApp", arc::IsPlayStoreAvailable());
 
   // TODO(mash): Support Chrome power settings in Mash. crbug.com/644348
-  bool enable_power_settings = !ash_util::IsRunningInMash();
+  bool enable_power_settings = features::IsAshInBrowserProcess();
   html_source->AddBoolean("enablePowerSettings", enable_power_settings);
   if (enable_power_settings) {
     AddSettingsPageUIHandler(std::make_unique<chromeos::settings::PowerHandler>(
         profile->GetPrefs()));
   }
 #else   // !defined(OS_CHROMEOS)
-  html_source->AddBoolean("diceEnabled",
-                          signin::IsDiceEnabledForProfile(profile->GetPrefs()));
+  html_source->AddBoolean(
+      "diceEnabled",
+      AccountConsistencyModeManager::IsDiceEnabledForProfile(profile));
 #endif  // defined(OS_CHROMEOS)
 
   html_source->AddBoolean("unifiedConsentEnabled",
                           IsUnifiedConsentEnabled(profile));
+
+  // TODO(jdoerrie): https://crbug.com/854562.
+  // Remove once Autofill Home is launched.
+  html_source->AddBoolean(
+      "autofillHomeEnabled",
+      base::FeatureList::IsEnabled(password_manager::features::kAutofillHome));
 
   html_source->AddBoolean("showImportPasswords",
                           base::FeatureList::IsEnabled(

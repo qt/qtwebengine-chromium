@@ -37,6 +37,19 @@ bool IsInlineBoxEmpty(const ComputedStyle& style,
   return true;
 }
 
+// TODO(xiaochengh): Deduplicate with a similar function in ng_paint_fragment.cc
+// ::before, ::after and ::first-letter can be hit test targets.
+bool CanBeHitTestTargetPseudoNodeStyle(const ComputedStyle& style) {
+  switch (style.StyleType()) {
+    case kPseudoIdBefore:
+    case kPseudoIdAfter:
+    case kPseudoIdFirstLetter:
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace
 
 NGInlineItem::NGInlineItem(NGInlineItemType type,
@@ -47,17 +60,20 @@ NGInlineItem::NGInlineItem(NGInlineItemType type,
                            bool end_may_collapse)
     : start_offset_(start),
       end_offset_(end),
-      script_(USCRIPT_INVALID_CODE),
       style_(style),
       layout_object_(layout_object),
       type_(type),
+      script_(0),
+      font_fallback_priority_(0),
+      render_orientation_(0),
       bidi_level_(UBIDI_LTR),
       shape_options_(kPreContext | kPostContext),
       is_empty_item_(false),
       should_create_box_fragment_(false),
       style_variant_(static_cast<unsigned>(NGStyleVariant::kStandard)),
       end_collapse_type_(kNotCollapsible),
-      end_may_collapse_(end_may_collapse) {
+      end_may_collapse_(end_may_collapse),
+      is_symbol_marker_(false) {
   DCHECK_GE(end, start);
   ComputeBoxProperties();
 }
@@ -68,18 +84,21 @@ NGInlineItem::NGInlineItem(const NGInlineItem& other,
                            scoped_refptr<const ShapeResult> shape_result)
     : start_offset_(start),
       end_offset_(end),
-      script_(other.script_),
       shape_result_(shape_result),
       style_(other.style_),
       layout_object_(other.layout_object_),
       type_(other.type_),
+      script_(other.script_),
+      font_fallback_priority_(other.font_fallback_priority_),
+      render_orientation_(other.render_orientation_),
       bidi_level_(other.bidi_level_),
       shape_options_(other.shape_options_),
       is_empty_item_(other.is_empty_item_),
       should_create_box_fragment_(other.should_create_box_fragment_),
       style_variant_(other.style_variant_),
       end_collapse_type_(other.end_collapse_type_),
-      end_may_collapse_(other.end_may_collapse_) {
+      end_may_collapse_(other.end_may_collapse_),
+      is_symbol_marker_(other.is_symbol_marker_) {
   DCHECK_GE(end, start);
 }
 
@@ -95,7 +114,7 @@ void NGInlineItem::ComputeBoxProperties() {
 
   if (type_ == NGInlineItem::kOpenTag) {
     DCHECK(style_ && layout_object_ && layout_object_->IsLayoutInline());
-    if (layout_object_->HasBoxDecorationBackground() || style_->HasPadding() ||
+    if (style_->HasBoxDecorationBackground() || style_->HasPadding() ||
         style_->HasMargin()) {
       is_empty_item_ = IsInlineBoxEmpty(*style_, *layout_object_);
       should_create_box_fragment_ = true;
@@ -104,7 +123,10 @@ void NGInlineItem::ComputeBoxProperties() {
       should_create_box_fragment_ =
           ToLayoutBoxModelObject(layout_object_)->HasSelfPaintingLayer() ||
           style_->HasOutline() || style_->CanContainAbsolutePositionObjects() ||
-          style_->CanContainFixedPositionObjects(false);
+          style_->CanContainFixedPositionObjects(false) ||
+          ToLayoutBoxModelObject(layout_object_)
+              ->ShouldApplyPaintContainment() ||
+          CanBeHitTestTargetPseudoNodeStyle(*style_);
     }
     return;
   }
@@ -119,6 +141,96 @@ void NGInlineItem::ComputeBoxProperties() {
 
 const char* NGInlineItem::NGInlineItemTypeToString(int val) const {
   return kNGInlineItemTypeStrings[val];
+}
+
+UScriptCode NGInlineItem::Script() const {
+  return script_ != kInvalidScript ? static_cast<UScriptCode>(script_)
+                                   : USCRIPT_INVALID_CODE;
+}
+
+FontFallbackPriority NGInlineItem::GetFontFallbackPriority() const {
+  return static_cast<enum FontFallbackPriority>(font_fallback_priority_);
+}
+
+OrientationIterator::RenderOrientation NGInlineItem::RenderOrientation() const {
+  return static_cast<OrientationIterator::RenderOrientation>(
+      render_orientation_);
+}
+
+RunSegmenter::RunSegmenterRange NGInlineItem::CreateRunSegmenterRange() const {
+  return {start_offset_, end_offset_, Script(), RenderOrientation(),
+          GetFontFallbackPriority()};
+}
+
+bool NGInlineItem::EqualsRunSegment(const NGInlineItem& other) const {
+  return script_ == other.script_ &&
+         font_fallback_priority_ == other.font_fallback_priority_ &&
+         render_orientation_ == other.render_orientation_;
+}
+
+void NGInlineItem::SetRunSegment(const RunSegmenter::RunSegmenterRange& range) {
+  DCHECK_EQ(Type(), NGInlineItem::kText);
+
+  // Orientation should be set in a separate pass. See
+  // NGInlineNode::SegmentScriptRuns().
+  DCHECK_EQ(range.render_orientation, OrientationIterator::kOrientationKeep);
+
+  script_ = static_cast<unsigned>(range.script);
+  font_fallback_priority_ = static_cast<unsigned>(range.font_fallback_priority);
+
+  // Ensure our bit fields are large enough by reading them back.
+  DCHECK_EQ(range.script, Script());
+  DCHECK_EQ(range.font_fallback_priority, GetFontFallbackPriority());
+}
+
+void NGInlineItem::SetFontOrientation(
+    OrientationIterator::RenderOrientation orientation) {
+  DCHECK_EQ(Type(), NGInlineItem::kText);
+
+  // Ensure the value can fit in the bit field.
+  DCHECK_LT(static_cast<unsigned>(orientation), 1u << 1);
+
+  render_orientation_ = orientation != 0;
+}
+
+unsigned NGInlineItem::PopulateItemsFromRun(
+    Vector<NGInlineItem>& items,
+    unsigned index,
+    const RunSegmenter::RunSegmenterRange& range) {
+  DCHECK_GE(range.end, items[index].start_offset_);
+
+  for (;; index++) {
+    NGInlineItem& item = items[index];
+    DCHECK_LE(item.start_offset_, range.end);
+
+    if (item.Type() == NGInlineItem::kText)
+      item.SetRunSegment(range);
+
+    if (range.end == item.end_offset_)
+      break;
+    if (range.end < item.end_offset_) {
+      Split(items, index, range.end);
+      break;
+    }
+  }
+  return index + 1;
+}
+
+unsigned NGInlineItem::PopulateItemsFromFontOrientation(
+    Vector<NGInlineItem>& items,
+    unsigned index,
+    unsigned end_offset,
+    OrientationIterator::RenderOrientation orientation) {
+  // FontOrientaiton is set per item, end_offset should be within this item.
+  NGInlineItem& item = items[index];
+  DCHECK_GE(end_offset, item.start_offset_);
+  DCHECK_LE(end_offset, item.end_offset_);
+
+  item.SetFontOrientation(orientation);
+
+  if (end_offset < item.end_offset_)
+    Split(items, index, end_offset);
+  return index + 1;
 }
 
 void NGInlineItem::SetBidiLevel(UBiDiLevel level) {

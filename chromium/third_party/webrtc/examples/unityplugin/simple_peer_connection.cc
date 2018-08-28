@@ -12,6 +12,7 @@
 
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/test/fakeconstraints.h"
@@ -25,7 +26,6 @@
 #include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_processing/include/audio_processing.h"
 #include "modules/video_capture/video_capture_factory.h"
-#include "rtc_base/ptr_util.h"
 
 #if defined(WEBRTC_ANDROID)
 #include "examples/unityplugin/classreferenceholder.h"
@@ -76,8 +76,9 @@ class DummySetSessionDescriptionObserver
     return new rtc::RefCountedObject<DummySetSessionDescriptionObserver>();
   }
   virtual void OnSuccess() { RTC_LOG(INFO) << __FUNCTION__; }
-  virtual void OnFailure(const std::string& error) {
-    RTC_LOG(INFO) << __FUNCTION__ << " " << error;
+  virtual void OnFailure(webrtc::RTCError error) {
+    RTC_LOG(INFO) << __FUNCTION__ << " " << ToString(error.type()) << ": "
+                  << error.message();
   }
 
  protected:
@@ -106,10 +107,10 @@ bool SimplePeerConnection::InitializePeerConnection(const char** turn_urls,
         webrtc::CreateBuiltinAudioDecoderFactory(),
         std::unique_ptr<webrtc::VideoEncoderFactory>(
             new webrtc::MultiplexEncoderFactory(
-                rtc::MakeUnique<webrtc::InternalEncoderFactory>())),
+                absl::make_unique<webrtc::InternalEncoderFactory>())),
         std::unique_ptr<webrtc::VideoDecoderFactory>(
             new webrtc::MultiplexDecoderFactory(
-                rtc::MakeUnique<webrtc::InternalDecoderFactory>())),
+                absl::make_unique<webrtc::InternalDecoderFactory>())),
         nullptr, nullptr);
   }
   if (!g_peer_connection_factory.get()) {
@@ -240,11 +241,12 @@ void SimplePeerConnection::OnSuccess(
     OnLocalSdpReady(desc->type().c_str(), sdp.c_str());
 }
 
-void SimplePeerConnection::OnFailure(const std::string& error) {
-  RTC_LOG(LERROR) << error;
+void SimplePeerConnection::OnFailure(webrtc::RTCError error) {
+  RTC_LOG(LERROR) << ToString(error.type()) << ": " << error.message();
 
+  // TODO(hta): include error.type in the message
   if (OnFailureMessage)
-    OnFailureMessage(error.c_str());
+    OnFailureMessage(error.message());
 }
 
 void SimplePeerConnection::OnIceCandidate(
@@ -427,7 +429,8 @@ void SimplePeerConnection::AddStreams(bool audio_only) {
 
   rtc::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
       g_peer_connection_factory->CreateAudioTrack(
-          kAudioLabel, g_peer_connection_factory->CreateAudioSource(nullptr)));
+          kAudioLabel, g_peer_connection_factory->CreateAudioSource(
+                           cricket::AudioOptions())));
   std::string id = audio_track->id();
   stream->AddTrack(audio_track);
 

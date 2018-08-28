@@ -161,6 +161,13 @@ const GpuFeatureData GetGpuFeatureData(
        "Accelerated rasterization has been disabled, either via blacklist, "
        "about:flags or the command line.",
        true, true},
+      {"oop_rasterization",
+       SafeGetFeatureStatus(gpu_feature_info,
+                            gpu::GPU_FEATURE_TYPE_OOP_RASTERIZATION),
+       command_line.HasSwitch(switches::kDisableOopRasterization),
+       "Out-of-process accelerated rasterization has been disabled, either "
+       "via blacklist, about:flags or the command line.",
+       false, true},
       {"multiple_raster_threads", gpu::kGpuFeatureStatusEnabled,
        NumberOfRendererRasterThreads() == 1, "Raster is using a single thread.",
        false, true},
@@ -215,8 +222,12 @@ std::unique_ptr<base::DictionaryValue> GetFeatureStatusImpl(
     const GpuFeatureData gpu_feature_data =
         GetGpuFeatureData(gpu_feature_info, type, i, &eof);
     std::string status;
-    if (gpu_feature_data.disabled || gpu_access_blocked ||
-        gpu_feature_data.status == gpu::kGpuFeatureStatusDisabled) {
+    if (gpu_feature_data.name == "surface_synchronization") {
+      status = (!gpu_feature_data.disabled ? "enabled_on" : "disabled_off");
+    } else if (gpu_feature_data.name == "viz_display_compositor") {
+      status = (!gpu_feature_data.disabled ? "enabled_on" : "disabled_off");
+    } else if (gpu_feature_data.disabled || gpu_access_blocked ||
+               gpu_feature_data.status == gpu::kGpuFeatureStatusDisabled) {
       status = "disabled";
       if (gpu_feature_data.fallback_to_software)
         status += "_software";
@@ -243,14 +254,6 @@ std::unique_ptr<base::DictionaryValue> GetFeatureStatusImpl(
         if (command_line.HasSwitch(switches::kNumRasterThreads))
           status += "_force";
         status += "_on";
-      }
-      if (gpu_feature_data.name == "surface_synchronization") {
-        if (features::IsSurfaceSynchronizationEnabled())
-          status += "_on";
-      }
-      if (gpu_feature_data.name == "viz_display_compositor") {
-        if (base::FeatureList::IsEnabled(features::kVizDisplayCompositor))
-          status += "_on";
       }
       if (gpu_feature_data.name == "skia_renderer") {
         if (features::IsUsingSkiaRenderer())

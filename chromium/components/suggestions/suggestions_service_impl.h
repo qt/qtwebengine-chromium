@@ -28,11 +28,12 @@
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/base/backoff_entry.h"
 #include "net/url_request/url_fetcher_delegate.h"
-#include "services/identity/public/cpp/primary_account_access_token_fetcher.h"
+#include "services/identity/public/cpp/access_token_info.h"
 #include "url/gurl.h"
 
 namespace identity {
 class IdentityManager;
+class PrimaryAccountAccessTokenFetcher;
 }  // namespace identity
 
 namespace net {
@@ -140,8 +141,8 @@ class SuggestionsServiceImpl : public SuggestionsService,
 
   // Called when an access token request completes (successfully or not).
   void AccessTokenAvailable(const GURL& url,
-                            const GoogleServiceAuthError& error,
-                            const std::string& access_token);
+                            GoogleServiceAuthError error,
+                            identity::AccessTokenInfo access_token_info);
 
   // Issues a network request for suggestions (fetch, blacklist, or clear
   // blacklist, depending on |url|).

@@ -79,11 +79,6 @@ const char kDisable3DAPIs[]                 = "disable-3d-apis";
 // Disable gpu-accelerated 2d canvas.
 const char kDisableAccelerated2dCanvas[]    = "disable-accelerated-2d-canvas";
 
-// Disable hardware acceleration of mjpeg decode for captured frame, where
-// available.
-const char kDisableAcceleratedMjpegDecode[] =
-    "disable-accelerated-mjpeg-decode";
-
 // Disables hardware acceleration of video decode, where available.
 const char kDisableAcceleratedVideoDecode[] =
     "disable-accelerated-video-decode";
@@ -333,10 +328,6 @@ const char kEnableLCDText[]                 = "enable-lcd-text";
 const char kEnablePreferCompositingToLCDText[] =
     "enable-prefer-compositing-to-lcd-text";
 
-// Enable work-in-progress persistent storage for the Background Fetch API.
-const char kEnableBackgroundFetchPersistence[] =
-    "enable-background-fetch-persistence";
-
 // Enable one or more Blink runtime-enabled features.
 // Use names from runtime_enabled_features.json5, separated by commas.
 // Applied before kDisableBlinkFeatures, and after other flags that change these
@@ -410,10 +401,6 @@ const char kEnableServiceBinaryLauncher[] = "enable-service-binary-launcher";
 // Enables the Skia benchmarking extension
 const char kEnableSkiaBenchmarking[]        = "enable-skia-benchmarking";
 
-// Enables slimming paint phase 1.75:
-// https://www.chromium.org/blink/slimming-paint
-const char kEnableSlimmingPaintV175[] = "enable-slimming-paint-v175";
-
 // Enables slimming paint phase 2: https://www.chromium.org/blink/slimming-paint
 const char kEnableSlimmingPaintV2[]         = "enable-slimming-paint-v2";
 
@@ -442,6 +429,9 @@ const char kEnableTracing[]                 = "enable-tracing";
 // The filename to write the output of the test tracing to.
 const char kEnableTracingOutput[]           = "enable-tracing-output";
 
+// Enables unsafe WebGPU support.
+const char kEnableUnsafeWebGPU[] = "enable-unsafe-webgpu";
+
 // Enable screen capturing support for MediaStream API.
 const char kEnableUserMediaScreenCapturing[] =
     "enable-usermedia-screen-capturing";
@@ -463,6 +453,9 @@ const char kEnableVulkan[] = "enable-vulkan";
 // Enable the Web Authentication Testing API.
 // https://w3c.github.io/webauthn
 const char kEnableWebAuthTestingAPI[] = "enable-web-authentication-testing-api";
+
+// Enable WebGL2 Compute context.
+const char kEnableWebGL2ComputeContext[] = "enable-webgl2-compute-context";
 
 // Enables WebGL extensions not yet approved by the community.
 const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
@@ -486,10 +479,22 @@ const char kExplicitlyAllowedPorts[]        = "explicitly-allowed-ports";
 // shared memory segment as a string.
 const char kFieldTrialHandle[] = "field-trial-handle";
 
+// Define an alias root directory which is replaced with the replacement string
+// in file URLs. The format is "/alias=/replacement", which would turn
+// file:///alias/some/path.html into file:///replacement/some/path.html.
+const char kFileUrlPathAlias[] = "file-url-path-alias";
+
 // Always use the Skia GPU backend for drawing layer tiles. Only valid with GPU
 // accelerated compositing + impl-side painting. Overrides the
 // kEnableGpuRasterization flag.
-const char kForceGpuRasterization[]        = "force-gpu-rasterization";
+const char kForceGpuRasterization[] = "force-gpu-rasterization";
+
+// Disables OOP rasterization.  Takes precedence over the enable flag.
+const char kDisableOopRasterization[] = "disable-oop-rasterization";
+
+// Turns on out of process raster for the renderer whenever gpu raster
+// would have been used.  Enables the chromium_raster_transport extension.
+const char kEnableOopRasterization[] = "enable-oop-rasterization";
 
 // The number of multisample antialiasing samples for GPU rasterization.
 // Requires MSAA support on GPU to have an effect. 0 disables MSAA.
@@ -510,6 +515,13 @@ const char kForcePresentationReceiverForTesting[] =
 // a screen reader is detected. The disable-renderer-accessibility switch
 // overrides this if present.
 const char kForceRendererAccessibility[]    = "force-renderer-accessibility";
+
+// Sets the timeout seconds of NetworkQuietTimers in
+// FirstMeaningfulPainterDectector. Used by embedders who want to change the
+// timeout time in order to run web contents on various embedded devices and
+// changeable network bandwidths in different regions. For example, it's useful
+// when using FMP signal to dismiss a splash screen.
+const char kFMPNetworkQuietTimeout[] = "fmp-network-quiet-timeout";
 
 // For development / testing only. When running content_browsertests,
 // saves output of failing accessibility tests to their expectations files in
@@ -944,6 +956,10 @@ const char kRendererWaitForJavaDebugger[] = "renderer-wait-for-java-debugger";
 const char kEnableOSKOverscroll[]               = "enable-osk-overscroll";
 #endif
 
+// Enable the experimental Accessibility Object Model APIs in development.
+const char kEnableAccessibilityObjectModel[] =
+    "enable-accessibility-object-model";
+
 // Enable the aggressive flushing of DOM Storage to minimize data loss.
 const char kEnableAggressiveDOMStorageFlushing[] =
     "enable-aggressive-domstorage-flushing";
@@ -1038,19 +1054,6 @@ const char kIpcDumpDirectory[] = "ipc-dump-directory";
 // Specifies the testcase used by the IPC fuzzer.
 const char kIpcFuzzerTestcase[] = "ipc-fuzzer-testcase";
 #endif
-
-#if defined(OS_MACOSX)
-// Enable the V2 sandbox during the helper executable initialization.
-const char kEnableV2Sandbox[] = "v2-sandbox";
-
-// The command line paramter indicating that the v2 sandbox is enabled. This
-// must be different than the "v2-sandbox" flag to avoid endless re-executing.
-// The flag tells the sandbox initialization code inside Chrome that the sandbox
-// should already be enabled.
-// TODO(kerrnel): Remove this once the V2 sandbox migration is complete, as
-// processes will be assumed to run under the V2 sandbox.
-const char kV2SandboxedEnabled[] = "v2-sandbox-enabled";
-#endif  // defined(OS_MACOSX)
 
 // Don't dump stuff here, follow the same order as the header.
 

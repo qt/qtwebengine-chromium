@@ -332,15 +332,13 @@ Path to the JSON file with per-apk details for incremental install.
 See `build/android/gyp/incremental/write_installer_json.py` for more
 details about its content.
 
-* `deps_info['non_native_packed_relocations']`:
-A string that is either "True" or "False" (why a string?). True to indicate
-that this uses packed relocations that may not be supported by the target
-Android system for this build (this generally requires the Chromium linker
-to be used to load the native libraries).
-
 * `deps_info['dist_jar']['all_interface_jars']`:
 For `android_apk` and `dist_jar` targets, a list of all interface jar files
 that will be merged into the final `.jar` file for distribution.
+
+* `deps_info['final_dex']['path']:
+Path to the final classes.dex file (or classes.zip in case of multi-dex)
+for this APK.
 
 * `deps_info['final_dex']['dependency_dex_files']`:
 The list of paths to all `deps_info['dex_path']` entries for all library
@@ -429,6 +427,10 @@ and all its dependencies.
 The collection of all 'deps_info['extra_classpath_jars']` values from all
 dependencies.
 
+* `deps_info['proguard_under_test_mapping"]`:
+Applicable to apks with proguard enabled that have an apk_under_test. This is
+the path to the apk_under_test's output proguard .mapping file.
+
 ## <a name="target_dist_aar">Target type `dist_aar`</a>:
 
 This type corresponds to a target used to generate an `.aar` archive for
@@ -497,6 +499,7 @@ invoking `javac`.
 """
 
 import itertools
+import json
 import optparse
 import os
 import sys
@@ -563,7 +566,8 @@ class AndroidManifest(object):
 dep_config_cache = {}
 def GetDepConfig(path):
   if not path in dep_config_cache:
-    dep_config_cache[path] = build_utils.ReadJson(path)['deps_info']
+    with open(path) as jsonfile:
+      dep_config_cache[path] = json.load(jsonfile)['deps_info']
   return dep_config_cache[path]
 
 
@@ -824,10 +828,6 @@ def main(argv):
   parser.add_option('--secondary-abi-shared-libraries-runtime-deps',
                     help='Path to file containing runtime deps for secondary '
                          'abi shared libraries.')
-  parser.add_option('--non-native-packed-relocations',
-                    action='store_true', default=False,
-                    help='Whether relocation packing was applied using the '
-                         'Android relocation_packer tool.')
   parser.add_option('--uncompress-shared-libraries', default=False,
                     action='store_true',
                     help='Whether to store native libraries uncompressed')
@@ -849,9 +849,14 @@ def main(argv):
       help='Whether proguard is enabled for this apk.')
   parser.add_option('--proguard-configs',
       help='GN-list of proguard flag files to use in final apk.')
+  parser.add_option('--proguard-output-jar-path',
+      help='Path to jar created by ProGuard step')
   parser.add_option('--fail',
       help='GN-list of error message lines to fail with.')
 
+  parser.add_option('--final-dex-path',
+                    help='Path to final input classes.dex (or classes.zip) to '
+                    'use in final apk.')
   parser.add_option('--apk-proto-resources',
                     help='Path to resources compiled in protocol buffer format '
                          ' for this apk.')
@@ -876,7 +881,8 @@ def main(argv):
 
   jar_path_options = ['jar_path', 'unprocessed_jar_path', 'interface_jar_path']
   required_options_map = {
-      'android_apk': ['build_config','dex_path'] + jar_path_options,
+      'android_apk': ['build_config', 'dex_path', 'final_dex_path'] + \
+          jar_path_options,
       'android_assets': ['build_config'],
       'android_resources': ['build_config', 'resources_zip'],
       'dist_aar': ['build_config'],
@@ -1033,8 +1039,6 @@ def main(argv):
       deps_info['incremental_apk_path'] = options.incremental_apk_path
       deps_info['incremental_install_json_path'] = (
           options.incremental_install_json_path)
-      deps_info['non_native_packed_relocations'] = str(
-          options.non_native_packed_relocations)
 
   if options.type == 'android_assets':
     all_asset_sources = []
@@ -1185,6 +1189,8 @@ def main(argv):
     deps_info['proguard_all_configs'] = all_configs
     deps_info['proguard_all_extra_jars'] = extra_jars
     deps_info['proguard_enabled'] = options.proguard_enabled
+    if options.proguard_output_jar_path:
+      deps_info['proguard_output_jar_path'] = options.proguard_output_jar_path
 
   # The java code for an instrumentation test apk is assembled differently for
   # ProGuard vs. non-ProGuard.
@@ -1211,6 +1217,13 @@ def main(argv):
                          if p not in all_configs)
       extra_jars.extend(p for p in tested_apk_config['proguard_all_extra_jars']
                         if p not in extra_jars)
+      tested_apk_config = GetDepConfig(options.tested_apk_config)
+      deps_info['proguard_under_test_mapping'] = (
+          tested_apk_config['proguard_output_jar_path'] + '.mapping')
+    elif options.proguard_enabled:
+      # Not sure why you'd want to proguard the test apk when the under-test apk
+      # is not proguarded, but it's easy enough to support.
+      deps_info['proguard_under_test_mapping'] = ''
 
     expected_tested_package = tested_apk_config['package_name']
     AndroidManifest(options.android_manifest).CheckInstrumentationElements(
@@ -1249,6 +1262,7 @@ def main(argv):
     config['final_dex'] = {}
     dex_config = config['final_dex']
     dex_config['dependency_dex_files'] = deps_dex_files
+    dex_config['path'] = options.final_dex_path
 
   system_jars = [c['jar_path'] for c in system_library_deps]
   system_interface_jars = [c['interface_jar_path'] for c in system_library_deps]
@@ -1349,7 +1363,8 @@ def main(argv):
   build_utils.WriteJson(config, options.build_config, only_if_changed=True)
 
   if options.depfile:
-    build_utils.WriteDepfile(options.depfile, options.build_config, all_inputs)
+    build_utils.WriteDepfile(options.depfile, options.build_config, all_inputs,
+                             add_pydeps=False)  # pydeps listed in GN.
 
 
 if __name__ == '__main__':

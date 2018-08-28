@@ -94,7 +94,6 @@ OffscreenTab::OffscreenTab(OffscreenTabsOwner* owner)
                       owner->extension_web_contents()->GetBrowserContext()),
                   base::BindOnce(&OffscreenTab::DieIfOriginalProfileDestroyed,
                                  base::Unretained(this)))),
-      capture_poll_timer_(false, false),
       content_capture_was_detected_(false),
       navigation_policy_(
           std::make_unique<media_router::DefaultNavigationPolicy>()) {
@@ -301,9 +300,9 @@ blink::WebDisplayMode OffscreenTab::GetDisplayMode(
 }
 
 void OffscreenTab::RequestMediaAccessPermission(
-      WebContents* contents,
-      const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) {
+    WebContents* contents,
+    const content::MediaStreamRequest& request,
+    content::MediaResponseCallback callback) {
   DCHECK_EQ(offscreen_tab_web_contents_.get(), contents);
 
   // This method is being called to check whether an extension is permitted to
@@ -342,9 +341,10 @@ void OffscreenTab::RequestMediaAccessPermission(
   DVLOG(2) << "Allowing " << devices.size()
            << " capture devices for OffscreenTab content.";
 
-  callback.Run(devices, devices.empty() ? content::MEDIA_DEVICE_INVALID_STATE
-                                        : content::MEDIA_DEVICE_OK,
-               std::unique_ptr<content::MediaStreamUI>(nullptr));
+  std::move(callback).Run(devices,
+                          devices.empty() ? content::MEDIA_DEVICE_INVALID_STATE
+                                          : content::MEDIA_DEVICE_OK,
+                          std::unique_ptr<content::MediaStreamUI>(nullptr));
 }
 
 bool OffscreenTab::CheckMediaAccessPermission(

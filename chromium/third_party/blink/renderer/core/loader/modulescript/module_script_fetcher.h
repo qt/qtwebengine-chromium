@@ -8,6 +8,8 @@
 #include "base/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_creation_params.h"
+#include "third_party/blink/renderer/core/loader/resource/script_resource.h"
+#include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
 
@@ -18,33 +20,28 @@ class ConsoleMessage;
 // ModuleScriptFetcher is an abstract class to fetch module scripts. Derived
 // classes are expected to fetch a module script for the given FetchParameters
 // and return its client a fetched resource as ModuleScriptCreationParams.
-class CORE_EXPORT ModuleScriptFetcher
-    : public GarbageCollectedFinalized<ModuleScriptFetcher> {
+class CORE_EXPORT ModuleScriptFetcher : public ResourceClient {
  public:
   class CORE_EXPORT Client : public GarbageCollectedMixin {
    public:
     virtual void NotifyFetchFinished(
         const base::Optional<ModuleScriptCreationParams>&,
         const HeapVector<Member<ConsoleMessage>>& error_messages) = 0;
-  };
 
-  ModuleScriptFetcher() = default;
-  virtual ~ModuleScriptFetcher() = default;
+    // These helpers are used only from WorkletModuleResponsesMap.
+    // TODO(nhiroki): Move these helpers to WorkletModuleResponsesMap.
+    void OnFetched(const base::Optional<ModuleScriptCreationParams>&);
+    void OnFailed();
+  };
 
   // Takes a non-const reference to FetchParameters because
   // ScriptResource::Fetch() requires it.
-  virtual void Fetch(FetchParameters&, Client*) = 0;
-
-  virtual void Trace(blink::Visitor*);
+  virtual void Fetch(FetchParameters&, ModuleGraphLevel, Client*) = 0;
 
  protected:
-  void NotifyFetchFinished(const base::Optional<ModuleScriptCreationParams>&,
-                           const HeapVector<Member<ConsoleMessage>>&);
-
-  void SetClient(Client*);
-
- private:
-  Member<Client> client_;
+  static bool WasModuleLoadSuccessful(
+      Resource*,
+      HeapVector<Member<ConsoleMessage>>* error_messages);
 };
 
 }  // namespace blink

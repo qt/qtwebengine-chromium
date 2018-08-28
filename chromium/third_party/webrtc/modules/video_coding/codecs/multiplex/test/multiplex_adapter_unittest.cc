@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "absl/memory/memory.h"
 #include "api/test/mock_video_decoder_factory.h"
 #include "api/test/mock_video_encoder_factory.h"
 #include "api/video_codecs/sdp_video_format.h"
@@ -20,7 +21,6 @@
 #include "modules/video_coding/codecs/test/video_codec_unittest.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
 #include "rtc_base/keep_ref_until_done.h"
-#include "rtc_base/ptr_util.h"
 #include "test/video_codec_settings.h"
 
 using testing::_;
@@ -40,12 +40,12 @@ class TestMultiplexAdapter : public VideoCodecUnitTest {
 
  protected:
   std::unique_ptr<VideoDecoder> CreateDecoder() override {
-    return rtc::MakeUnique<MultiplexDecoderAdapter>(
+    return absl::make_unique<MultiplexDecoderAdapter>(
         decoder_factory_.get(), SdpVideoFormat(kMultiplexAssociatedCodecName));
   }
 
   std::unique_ptr<VideoEncoder> CreateEncoder() override {
-    return rtc::MakeUnique<MultiplexEncoderAdapter>(
+    return absl::make_unique<MultiplexEncoderAdapter>(
         encoder_factory_.get(), SdpVideoFormat(kMultiplexAssociatedCodecName));
   }
 
@@ -65,8 +65,8 @@ class TestMultiplexAdapter : public VideoCodecUnitTest {
         yuv_buffer->StrideY(), yuv_buffer->DataU(), yuv_buffer->StrideU(),
         yuv_buffer->DataV(), yuv_buffer->StrideV(), yuv_buffer->DataY(),
         yuv_buffer->StrideY(), rtc::KeepRefUntilDone(yuv_buffer));
-    return rtc::WrapUnique<VideoFrame>(
-        new VideoFrame(yuva_buffer, 123 /* timestamp_us */,
+    return absl::WrapUnique<VideoFrame>(
+        new VideoFrame(yuva_buffer, 123 /* RTP timestamp */,
                        345 /* render_time_ms */, kVideoRotation_0));
   }
 
@@ -78,8 +78,8 @@ class TestMultiplexAdapter : public VideoCodecUnitTest {
         yuva_buffer->StrideA(), yuva_buffer->DataU(), yuva_buffer->StrideU(),
         yuva_buffer->DataV(), yuva_buffer->StrideV(),
         rtc::KeepRefUntilDone(yuva_frame.video_frame_buffer()));
-    return rtc::WrapUnique<VideoFrame>(
-        new VideoFrame(axx_buffer, 123 /* timestamp_us */,
+    return absl::WrapUnique<VideoFrame>(
+        new VideoFrame(axx_buffer, 123 /* RTP timestamp */,
                        345 /* render_time_ms */, kVideoRotation_0));
   }
 
@@ -128,11 +128,10 @@ TEST_F(TestMultiplexAdapter, EncodeDecodeI420Frame) {
   ASSERT_TRUE(WaitForEncodedFrame(&encoded_frame, &codec_specific_info));
   EXPECT_EQ(kVideoCodecMultiplex, codec_specific_info.codecType);
 
-  EXPECT_EQ(
-      WEBRTC_VIDEO_CODEC_OK,
-      decoder_->Decode(encoded_frame, false, &codec_specific_info, -1));
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            decoder_->Decode(encoded_frame, false, &codec_specific_info, -1));
   std::unique_ptr<VideoFrame> decoded_frame;
-  rtc::Optional<uint8_t> decoded_qp;
+  absl::optional<uint8_t> decoded_qp;
   ASSERT_TRUE(WaitForDecodedFrame(&decoded_frame, &decoded_qp));
   ASSERT_TRUE(decoded_frame);
   EXPECT_GT(I420PSNR(input_frame, decoded_frame.get()), 36);
@@ -150,7 +149,7 @@ TEST_F(TestMultiplexAdapter, EncodeDecodeI420AFrame) {
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
             decoder_->Decode(encoded_frame, false, nullptr, 0));
   std::unique_ptr<VideoFrame> decoded_frame;
-  rtc::Optional<uint8_t> decoded_qp;
+  absl::optional<uint8_t> decoded_qp;
   ASSERT_TRUE(WaitForDecodedFrame(&decoded_frame, &decoded_qp));
   ASSERT_TRUE(decoded_frame);
   EXPECT_GT(I420PSNR(yuva_frame.get(), decoded_frame.get()), 36);

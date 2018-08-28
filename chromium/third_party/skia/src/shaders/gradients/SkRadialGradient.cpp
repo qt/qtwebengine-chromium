@@ -169,7 +169,7 @@ std::unique_ptr<GrFragmentProcessor> SkRadialGradient::asFragmentProcessor(
     matrix.postConcat(fPtsToUnit);
 
     return GrRadialGradient::Make(GrGradientEffect::CreateArgs(
-            args.fContext, this, &matrix, fTileMode, args.fDstColorSpaceInfo->colorSpace()));
+            args.fContext, this, &matrix, fTileMode, args.fDstColorSpaceInfo));
 }
 
 #endif
@@ -184,20 +184,4 @@ sk_sp<SkShader> SkRadialGradient::onMakeColorSpace(SkColorSpaceXformer* xformer)
 void SkRadialGradient::appendGradientStages(SkArenaAlloc*, SkRasterPipeline* p,
                                             SkRasterPipeline*) const {
     p->append(SkRasterPipeline::xy_to_radius);
-}
-
-void SkRadialGradient::toString(SkString* str) const {
-    str->append("SkRadialGradient: (");
-
-    str->append("center: (");
-    str->appendScalar(fCenter.fX);
-    str->append(", ");
-    str->appendScalar(fCenter.fY);
-    str->append(") radius: ");
-    str->appendScalar(fRadius);
-    str->append(" ");
-
-    this->INHERITED::toString(str);
-
-    str->append(")");
 }

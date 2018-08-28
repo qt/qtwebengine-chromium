@@ -31,7 +31,6 @@
 #include "headless/public/headless_devtools_client.h"
 #include "headless/public/headless_devtools_target.h"
 #include "headless/test/headless_browser_test.h"
-#include "headless/test/test_protocol_handler.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -47,23 +46,6 @@ using testing::NotNull;
 using testing::UnorderedElementsAre;
 
 namespace headless {
-
-namespace {
-
-std::vector<HeadlessWebContents*> GetAllWebContents(HeadlessBrowser* browser) {
-  std::vector<HeadlessWebContents*> result;
-
-  for (HeadlessBrowserContext* browser_context :
-       browser->GetAllBrowserContexts()) {
-    std::vector<HeadlessWebContents*> web_contents =
-        browser_context->GetAllWebContents();
-    result.insert(result.end(), web_contents.begin(), web_contents.end());
-  }
-
-  return result;
-}
-
-}  // namespace
 
 class HeadlessDevToolsClientNavigationTest
     : public HeadlessAsyncDevTooledBrowserTest,
@@ -409,479 +391,6 @@ class HeadlessDevToolsClientExperimentalTest
 
 HEADLESS_ASYNC_DEVTOOLED_TEST_F(HeadlessDevToolsClientExperimentalTest);
 
-class TargetDomainCreateAndDeletePageTest
-    : public HeadlessAsyncDevTooledBrowserTest {
-  void RunDevTooledTest() override {
-    EXPECT_TRUE(embedded_test_server()->Start());
-
-    EXPECT_EQ(1u, GetAllWebContents(browser()).size());
-
-    devtools_client_->GetTarget()->GetExperimental()->CreateTarget(
-        target::CreateTargetParams::Builder()
-            .SetUrl(embedded_test_server()->GetURL("/hello.html").spec())
-            .SetWidth(1)
-            .SetHeight(1)
-            .Build(),
-        base::BindOnce(
-            &TargetDomainCreateAndDeletePageTest::OnCreateTargetResult,
-            base::Unretained(this)));
-  }
-
-  void OnCreateTargetResult(
-      std::unique_ptr<target::CreateTargetResult> result) {
-    EXPECT_EQ(2u, GetAllWebContents(browser()).size());
-
-    HeadlessWebContentsImpl* contents = HeadlessWebContentsImpl::From(
-        browser()->GetWebContentsForDevToolsAgentHostId(result->GetTargetId()));
-    EXPECT_SIZE_EQ(gfx::Size(1, 1), contents->web_contents()
-                                        ->GetRenderWidgetHostView()
-                                        ->GetViewBounds()
-                                        .size());
-
-    devtools_client_->GetTarget()->GetExperimental()->CloseTarget(
-        target::CloseTargetParams::Builder()
-            .SetTargetId(result->GetTargetId())
-            .Build(),
-        base::BindOnce(
-            &TargetDomainCreateAndDeletePageTest::OnCloseTargetResult,
-            base::Unretained(this)));
-  }
-
-  void OnCloseTargetResult(std::unique_ptr<target::CloseTargetResult> result) {
-    EXPECT_TRUE(result->GetSuccess());
-    EXPECT_EQ(1u, GetAllWebContents(browser()).size());
-    FinishAsynchronousTest();
-  }
-};
-
-HEADLESS_ASYNC_DEVTOOLED_TEST_F(TargetDomainCreateAndDeletePageTest);
-
-class TargetDomainCreateAndDeleteBrowserContextTest
-    : public HeadlessAsyncDevTooledBrowserTest {
-  void RunDevTooledTest() override {
-    EXPECT_TRUE(embedded_test_server()->Start());
-
-    EXPECT_EQ(1u, GetAllWebContents(browser()).size());
-
-    devtools_client_->GetTarget()->GetExperimental()->CreateBrowserContext(
-        target::CreateBrowserContextParams::Builder().Build(),
-        base::BindOnce(&TargetDomainCreateAndDeleteBrowserContextTest::
-                           OnCreateContextResult,
-                       base::Unretained(this)));
-  }
-
-  void OnCreateContextResult(
-      std::unique_ptr<target::CreateBrowserContextResult> result) {
-    browser_context_id_ = result->GetBrowserContextId();
-
-    devtools_client_->GetTarget()->GetExperimental()->CreateTarget(
-        target::CreateTargetParams::Builder()
-            .SetUrl(embedded_test_server()->GetURL("/hello.html").spec())
-            .SetBrowserContextId(result->GetBrowserContextId())
-            .SetWidth(1)
-            .SetHeight(1)
-            .Build(),
-        base::BindOnce(&TargetDomainCreateAndDeleteBrowserContextTest::
-                           OnCreateTargetResult,
-                       base::Unretained(this)));
-  }
-
-  void OnCreateTargetResult(
-      std::unique_ptr<target::CreateTargetResult> result) {
-    EXPECT_EQ(2u, GetAllWebContents(browser()).size());
-
-    devtools_client_->GetTarget()->GetExperimental()->CloseTarget(
-        target::CloseTargetParams::Builder()
-            .SetTargetId(result->GetTargetId())
-            .Build(),
-        base::BindOnce(
-            &TargetDomainCreateAndDeleteBrowserContextTest::OnCloseTargetResult,
-            base::Unretained(this)));
-  }
-
-  void OnCloseTargetResult(std::unique_ptr<target::CloseTargetResult> result) {
-    EXPECT_EQ(1u, GetAllWebContents(browser()).size());
-    EXPECT_TRUE(result->GetSuccess());
-
-    devtools_client_->GetTarget()->GetExperimental()->DisposeBrowserContext(
-        target::DisposeBrowserContextParams::Builder()
-            .SetBrowserContextId(browser_context_id_)
-            .Build(),
-        base::BindOnce(&TargetDomainCreateAndDeleteBrowserContextTest::
-                           OnDisposeBrowserContextResult,
-                       base::Unretained(this)));
-  }
-
-  void OnDisposeBrowserContextResult(
-      std::unique_ptr<target::DisposeBrowserContextResult> result) {
-    devtools_client_->GetTarget()->GetExperimental()->GetBrowserContexts(
-        target::GetBrowserContextsParams::Builder().Build(),
-        base::BindOnce(&TargetDomainCreateAndDeleteBrowserContextTest::
-                           OnGetBrowserContexts,
-                       base::Unretained(this)));
-  }
-
-  void OnGetBrowserContexts(
-      std::unique_ptr<target::GetBrowserContextsResult> result) {
-    const std::vector<std::string>* contexts = result->GetBrowserContextIds();
-    EXPECT_EQ(0u, contexts->size());
-    FinishAsynchronousTest();
-  }
-
- private:
-  std::string browser_context_id_;
-};
-
-HEADLESS_ASYNC_DEVTOOLED_TEST_F(TargetDomainCreateAndDeleteBrowserContextTest);
-
-class TargetDomainDisposeContextSucceedsIfInUse
-    : public target::Observer,
-      public HeadlessAsyncDevTooledBrowserTest {
-  void RunDevTooledTest() override {
-    EXPECT_TRUE(embedded_test_server()->Start());
-    EXPECT_EQ(1u, GetAllWebContents(browser()).size());
-
-    devtools_client_->GetTarget()->AddObserver(this);
-    devtools_client_->GetTarget()->SetDiscoverTargets(
-        target::SetDiscoverTargetsParams::Builder().SetDiscover(true).Build(),
-        base::BindOnce(&TargetDomainDisposeContextSucceedsIfInUse::
-                           OnDiscoverTargetsEnabled,
-                       base::Unretained(this)));
-  }
-
-  void OnDiscoverTargetsEnabled(
-      std::unique_ptr<target::SetDiscoverTargetsResult> result) {
-    devtools_client_->GetTarget()->GetExperimental()->CreateBrowserContext(
-        target::CreateBrowserContextParams::Builder().Build(),
-        base::BindOnce(
-            &TargetDomainDisposeContextSucceedsIfInUse::OnContextCreated,
-            base::Unretained(this)));
-  }
-
-  void OnContextCreated(
-      std::unique_ptr<target::CreateBrowserContextResult> result) {
-    context_id_ = result->GetBrowserContextId();
-
-    devtools_client_->GetTarget()->GetExperimental()->CreateTarget(
-        target::CreateTargetParams::Builder()
-            .SetUrl(embedded_test_server()->GetURL("/hello.html").spec())
-            .SetBrowserContextId(context_id_)
-            .Build(),
-        base::BindOnce(
-            &TargetDomainDisposeContextSucceedsIfInUse::OnCreateTargetResult,
-            base::Unretained(this)));
-  }
-
-  void OnCreateTargetResult(
-      std::unique_ptr<target::CreateTargetResult> result) {
-    page_id_ = result->GetTargetId();
-
-    destroyed_targets_.clear();
-    devtools_client_->GetTarget()->GetExperimental()->DisposeBrowserContext(
-        target::DisposeBrowserContextParams::Builder()
-            .SetBrowserContextId(context_id_)
-            .Build(),
-        base::BindOnce(&TargetDomainDisposeContextSucceedsIfInUse::
-                           OnDisposeBrowserContextResult,
-                       base::Unretained(this)));
-  }
-
-  void OnTargetDestroyed(const target::TargetDestroyedParams& params) override {
-    destroyed_targets_.push_back(params.GetTargetId());
-  }
-
-  void OnDisposeBrowserContextResult(
-      std::unique_ptr<target::DisposeBrowserContextResult> result) {
-    EXPECT_EQ(destroyed_targets_.size(), 1u);
-    EXPECT_EQ(destroyed_targets_[0], page_id_);
-    devtools_client_->GetTarget()->RemoveObserver(this);
-    FinishAsynchronousTest();
-  }
-
- private:
-  std::vector<std::string> destroyed_targets_;
-  std::string context_id_;
-  std::string page_id_;
-};
-
-HEADLESS_ASYNC_DEVTOOLED_TEST_F(TargetDomainDisposeContextSucceedsIfInUse);
-
-class TargetDomainCreateTwoContexts : public HeadlessAsyncDevTooledBrowserTest,
-                                      public target::Observer,
-                                      public page::Observer {
- public:
-  void RunDevTooledTest() override {
-    EXPECT_TRUE(embedded_test_server()->Start());
-
-    base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
-    devtools_client_->GetPage()->AddObserver(this);
-    devtools_client_->GetPage()->Enable(run_loop.QuitClosure());
-    run_loop.Run();
-
-    devtools_client_->GetTarget()->AddObserver(this);
-    devtools_client_->GetTarget()->SetDiscoverTargets(
-        target::SetDiscoverTargetsParams::Builder().SetDiscover(true).Build(),
-        base::BindOnce(&TargetDomainCreateTwoContexts::OnDiscoverTargetsEnabled,
-                       base::Unretained(this)));
-  }
-
-  void OnDiscoverTargetsEnabled(
-      std::unique_ptr<target::SetDiscoverTargetsResult> result) {
-    devtools_client_->GetTarget()->GetExperimental()->CreateBrowserContext(
-        target::CreateBrowserContextParams::Builder().Build(),
-        base::BindOnce(&TargetDomainCreateTwoContexts::OnContextOneCreated,
-                       base::Unretained(this)));
-
-    devtools_client_->GetTarget()->GetExperimental()->CreateBrowserContext(
-        target::CreateBrowserContextParams::Builder().Build(),
-        base::BindOnce(&TargetDomainCreateTwoContexts::OnContextTwoCreated,
-                       base::Unretained(this)));
-  }
-
-  void OnContextOneCreated(
-      std::unique_ptr<target::CreateBrowserContextResult> result) {
-    context_id_one_ = result->GetBrowserContextId();
-    MaybeCreatePages();
-  }
-
-  void OnContextTwoCreated(
-      std::unique_ptr<target::CreateBrowserContextResult> result) {
-    context_id_two_ = result->GetBrowserContextId();
-    MaybeCreatePages();
-  }
-
-  void MaybeCreatePages() {
-    if (context_id_one_.empty() || context_id_two_.empty())
-      return;
-
-    devtools_client_->GetTarget()->GetExperimental()->GetBrowserContexts(
-        target::GetBrowserContextsParams::Builder().Build(),
-        base::BindOnce(&TargetDomainCreateTwoContexts::OnGetBrowserContexts,
-                       base::Unretained(this)));
-  }
-
-  void OnGetBrowserContexts(
-      std::unique_ptr<target::GetBrowserContextsResult> result) {
-    const std::vector<std::string>* contexts = result->GetBrowserContextIds();
-    EXPECT_EQ(2u, contexts->size());
-    EXPECT_TRUE(std::find(contexts->begin(), contexts->end(),
-                          context_id_one_) != contexts->end());
-    EXPECT_TRUE(std::find(contexts->begin(), contexts->end(),
-                          context_id_two_) != contexts->end());
-
-    devtools_client_->GetTarget()->GetExperimental()->CreateTarget(
-        target::CreateTargetParams::Builder()
-            .SetUrl("about://blank")
-            .SetBrowserContextId(context_id_one_)
-            .Build(),
-        base::BindOnce(&TargetDomainCreateTwoContexts::OnCreateTargetOneResult,
-                       base::Unretained(this)));
-
-    devtools_client_->GetTarget()->GetExperimental()->CreateTarget(
-        target::CreateTargetParams::Builder()
-            .SetUrl("about://blank")
-            .SetBrowserContextId(context_id_two_)
-            .Build(),
-        base::BindOnce(&TargetDomainCreateTwoContexts::OnCreateTargetTwoResult,
-                       base::Unretained(this)));
-  }
-
-  void OnCreateTargetOneResult(
-      std::unique_ptr<target::CreateTargetResult> result) {
-    page_id_one_ = result->GetTargetId();
-    MaybeTestIsolation();
-  }
-
-  void OnCreateTargetTwoResult(
-      std::unique_ptr<target::CreateTargetResult> result) {
-    page_id_two_ = result->GetTargetId();
-    MaybeTestIsolation();
-  }
-
-  void MaybeTestIsolation() {
-    if (page_id_one_.empty() || page_id_two_.empty())
-      return;
-
-    devtools_client_->GetTarget()->GetExperimental()->AttachToTarget(
-        target::AttachToTargetParams::Builder()
-            .SetTargetId(page_id_one_)
-            .Build(),
-        base::BindOnce(&TargetDomainCreateTwoContexts::OnAttachedToTargetOne,
-                       base::Unretained(this)));
-
-    devtools_client_->GetTarget()->GetExperimental()->AttachToTarget(
-        target::AttachToTargetParams::Builder()
-            .SetTargetId(page_id_two_)
-            .Build(),
-        base::BindOnce(&TargetDomainCreateTwoContexts::OnAttachedToTargetTwo,
-                       base::Unretained(this)));
-  }
-
-  void OnAttachedToTargetOne(
-      std::unique_ptr<target::AttachToTargetResult> result) {
-    StopNavigationOnTarget(101, page_id_one_);
-  }
-
-  void OnAttachedToTargetTwo(
-      std::unique_ptr<target::AttachToTargetResult> result) {
-    StopNavigationOnTarget(102, page_id_two_);
-  }
-
-  void StopNavigationOnTarget(int message_id, std::string target_id) {
-    // Avoid triggering Page.loadEventFired for about://blank if loading hasn't
-    // finished yet.
-    devtools_client_->GetTarget()->GetExperimental()->SendMessageToTarget(
-        target::SendMessageToTargetParams::Builder()
-            .SetTargetId(target_id)
-            .SetMessage("{\"id\":" + std::to_string(message_id) +
-                        ", \"method\": \"Page.stopLoading\"}")
-            .Build());
-  }
-
-  void EnablePageOnTarget(int message_id, std::string target_id) {
-    devtools_client_->GetTarget()->GetExperimental()->SendMessageToTarget(
-        target::SendMessageToTargetParams::Builder()
-            .SetTargetId(target_id)
-            .SetMessage("{\"id\":" + std::to_string(message_id) +
-                        ", \"method\": \"Page.enable\"}")
-            .Build());
-  }
-
-  void NavigateTarget(int message_id, std::string target_id) {
-    devtools_client_->GetTarget()->GetExperimental()->SendMessageToTarget(
-        target::SendMessageToTargetParams::Builder()
-            .SetTargetId(target_id)
-            .SetMessage(
-                "{\"id\":" + std::to_string(message_id) +
-                ", \"method\": \"Page.navigate\", \"params\": {\"url\": \"" +
-                embedded_test_server()->GetURL("/hello.html").spec() + "\"}}")
-            .Build());
-  }
-
-  void MaybeSetCookieOnPageOne() {
-    if (!page_one_loaded_ || !page_two_loaded_)
-      return;
-
-    devtools_client_->GetTarget()->GetExperimental()->SendMessageToTarget(
-        target::SendMessageToTargetParams::Builder()
-            .SetTargetId(page_id_one_)
-            .SetMessage("{\"id\":401, \"method\": \"Runtime.evaluate\", "
-                        "\"params\": {\"expression\": "
-                        "\"document.cookie = 'foo=bar';\"}}")
-            .Build());
-  }
-
-  void OnReceivedMessageFromTarget(
-      const target::ReceivedMessageFromTargetParams& params) override {
-    std::unique_ptr<base::Value> message =
-        base::JSONReader::Read(params.GetMessage(), base::JSON_PARSE_RFC);
-    const base::DictionaryValue* message_dict;
-    if (!message || !message->GetAsDictionary(&message_dict)) {
-      return;
-    }
-
-    const base::Value* method_value = message_dict->FindKey("method");
-    if (method_value && method_value->GetString() == "Page.loadEventFired") {
-      if (params.GetTargetId() == page_id_one_) {
-        page_one_loaded_ = true;
-      } else if (params.GetTargetId() == page_id_two_) {
-        page_two_loaded_ = true;
-      }
-      MaybeSetCookieOnPageOne();
-      return;
-    }
-
-    const base::Value* id_value = message_dict->FindKey("id");
-    if (!id_value)
-      return;
-    int message_id = id_value->GetInt();
-    const base::DictionaryValue* result_dict;
-    if (message_dict->GetDictionary("result", &result_dict)) {
-      if (message_id == 101) {
-        // 101: Page.stopNavigation on target one.
-        EXPECT_EQ(page_id_one_, params.GetTargetId());
-        EnablePageOnTarget(201, page_id_one_);
-      } else if (message_id == 102) {
-        // 102: Page.stopNavigation on target two.
-        EXPECT_EQ(page_id_two_, params.GetTargetId());
-        EnablePageOnTarget(202, page_id_two_);
-      } else if (message_id == 201) {
-        // 201: Page.enable on target one.
-        EXPECT_EQ(page_id_one_, params.GetTargetId());
-        NavigateTarget(301, page_id_one_);
-      } else if (message_id == 202) {
-        // 202: Page.enable on target two.
-        EXPECT_EQ(page_id_two_, params.GetTargetId());
-        NavigateTarget(302, page_id_two_);
-      } else if (message_id == 401) {
-        // 401: Runtime.evaluate on target one.
-        EXPECT_EQ(page_id_one_, params.GetTargetId());
-
-        // TODO(alexclarke): Make some better bindings
-        // for Target.SendMessageToTarget.
-        devtools_client_->GetTarget()->GetExperimental()->SendMessageToTarget(
-            target::SendMessageToTargetParams::Builder()
-                .SetTargetId(page_id_two_)
-                .SetMessage("{\"id\":402, \"method\": \"Runtime.evaluate\", "
-                            "\"params\": {\"expression\": "
-                            "\"document.cookie;\"}}")
-                .Build());
-      } else if (message_id == 402) {
-        // 402: Runtime.evaluate on target two.
-        EXPECT_EQ(page_id_two_, params.GetTargetId());
-
-        // There's a nested result. We want the inner one.
-        EXPECT_TRUE(result_dict->GetDictionary("result", &result_dict));
-
-        const base::Value* value_value = result_dict->FindKey("value");
-        ASSERT_THAT(value_value, NotNull());
-        EXPECT_EQ("", value_value->GetString())
-            << "Page 2 should not share cookies from page one";
-
-        devtools_client_->GetTarget()->GetExperimental()->DisposeBrowserContext(
-            target::DisposeBrowserContextParams::Builder()
-                .SetBrowserContextId(context_id_one_)
-                .Build(),
-            base::BindOnce(&TargetDomainCreateTwoContexts::OnCloseContext,
-                           base::Unretained(this)));
-
-        devtools_client_->GetTarget()->GetExperimental()->DisposeBrowserContext(
-            target::DisposeBrowserContextParams::Builder()
-                .SetBrowserContextId(context_id_two_)
-                .Build(),
-            base::BindOnce(&TargetDomainCreateTwoContexts::OnCloseContext,
-                           base::Unretained(this)));
-      }
-    }
-  }
-
-  void OnTargetDestroyed(const target::TargetDestroyedParams& params) override {
-    ++page_close_count_;
-  }
-
-  void OnCloseContext(
-      std::unique_ptr<target::DisposeBrowserContextResult> result) {
-    if (++context_closed_count_ < 2)
-      return;
-    EXPECT_EQ(page_close_count_, 2);
-
-    devtools_client_->GetTarget()->RemoveObserver(this);
-    FinishAsynchronousTest();
-  }
-
- private:
-  std::string context_id_one_;
-  std::string context_id_two_;
-  std::string page_id_one_;
-  std::string page_id_two_;
-  bool page_one_loaded_ = false;
-  bool page_two_loaded_ = false;
-  int page_close_count_ = 0;
-  int context_closed_count_ = 0;
-};
-
-HEADLESS_ASYNC_DEVTOOLED_TEST_F(TargetDomainCreateTwoContexts);
-
 class HeadlessDevToolsNavigationControlTest
     : public HeadlessAsyncDevTooledBrowserTest,
       network::ExperimentalObserver,
@@ -952,11 +461,16 @@ class HeadlessCrashObserverTest : public HeadlessAsyncDevTooledBrowserTest,
   // Make sure we don't fail because the renderer crashed!
   void RenderProcessExited(base::TerminationStatus status,
                            int exit_code) override {
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_WIN) && defined(ADDRESS_SANITIZER)
+    // TODO(crbug.com/845011): Make ASan not interfere and expect a crash.
+    // ASan's normal error exit code is 1, which base categorizes as the process
+    // being killed.
+    EXPECT_EQ(base::TERMINATION_STATUS_PROCESS_WAS_KILLED, status);
+#elif defined(OS_WIN) || defined(OS_MACOSX)
     EXPECT_EQ(base::TERMINATION_STATUS_PROCESS_CRASHED, status);
 #else
     EXPECT_EQ(base::TERMINATION_STATUS_ABNORMAL_TERMINATION, status);
-#endif  // defined(OS_WIN) || defined(OS_MACOSX)
+#endif
   }
 };
 
@@ -1119,51 +633,6 @@ class HeadlessDevToolsNetworkBlockedUrlTest
 
 HEADLESS_ASYNC_DEVTOOLED_TEST_F(HeadlessDevToolsNetworkBlockedUrlTest);
 
-namespace {
-// Keep in sync with X_DevTools_Emulate_Network_Conditions_Client_Id defined in
-// HTTPNames.json5.
-const char kDevToolsEmulateNetworkConditionsClientId[] =
-    "X-DevTools-Emulate-Network-Conditions-Client-Id";
-}  // namespace
-
-class DevToolsHeaderStrippingTest : public HeadlessAsyncDevTooledBrowserTest,
-                                    public page::Observer,
-                                    public network::Observer {
-  void RunDevTooledTest() override {
-    EXPECT_TRUE(embedded_test_server()->Start());
-    base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
-    devtools_client_->GetPage()->AddObserver(this);
-    devtools_client_->GetPage()->Enable();
-    // Enable network domain in order to get DevTools to add the header.
-    devtools_client_->GetNetwork()->AddObserver(this);
-    devtools_client_->GetNetwork()->Enable(run_loop.QuitClosure());
-    run_loop.Run();
-    devtools_client_->GetPage()->Navigate(
-        "http://not-an-actual-domain.tld/hello.html");
-  }
-
-  ProtocolHandlerMap GetProtocolHandlers() override {
-    const std::string kResponseBody = "<p>HTTP response body</p>";
-    ProtocolHandlerMap protocol_handlers;
-    protocol_handlers[url::kHttpScheme] =
-        std::make_unique<TestProtocolHandler>(kResponseBody);
-    test_handler_ = static_cast<TestProtocolHandler*>(
-        protocol_handlers[url::kHttpScheme].get());
-    return protocol_handlers;
-  }
-
-  void OnLoadEventFired(const page::LoadEventFiredParams&) override {
-    EXPECT_FALSE(test_handler_->last_http_request_headers().IsEmpty());
-    EXPECT_FALSE(test_handler_->last_http_request_headers().HasHeader(
-        kDevToolsEmulateNetworkConditionsClientId));
-    FinishAsynchronousTest();
-  }
-
-  TestProtocolHandler* test_handler_;  // NOT OWNED
-};
-
-HEADLESS_ASYNC_DEVTOOLED_TEST_F(DevToolsHeaderStrippingTest);
-
 class DevToolsNetworkOfflineEmulationTest
     : public HeadlessAsyncDevTooledBrowserTest,
       public page::Observer,
@@ -1209,11 +678,12 @@ class RawDevtoolsProtocolTest
     std::unique_ptr<base::DictionaryValue> params(new base::DictionaryValue());
     params->SetString("expression", "1+1");
     message.Set("params", std::move(params));
-    devtools_client_->SendRawDevToolsMessage(message);
+    std::string json_message;
+    base::JSONWriter::Write(message, &json_message);
+    devtools_client_->SendRawDevToolsMessage(json_message);
   }
 
-  bool OnProtocolMessage(const std::string& devtools_agent_host_id,
-                         const std::string& json_message,
+  bool OnProtocolMessage(const std::string& json_message,
                          const base::DictionaryValue& parsed_message) override {
     EXPECT_EQ(
         "{\"id\":1,\"result\":{\"result\":{\"type\":\"number\","
@@ -1291,6 +761,10 @@ class DomTreeExtractionBrowserTest : public HeadlessAsyncDevTooledBrowserTest,
       dom_nodes[i].reset(
           static_cast<base::DictionaryValue*>(node->Serialize().release()));
       base::DictionaryValue* node_dict = dom_nodes[i].get();
+
+      // Node IDs are assigned in a non deterministic way.
+      if (node_dict->FindKey("backendNodeId"))
+        node_dict->SetString("backendNodeId", "?");
 
       // Frame IDs are random.
       if (node_dict->FindKey("frameId"))
@@ -1408,113 +882,7 @@ class DomTreeExtractionBrowserTest : public HeadlessAsyncDevTooledBrowserTest,
 
 HEADLESS_ASYNC_DEVTOOLED_TEST_F(DomTreeExtractionBrowserTest);
 
-class UrlRequestFailedTest : public HeadlessAsyncDevTooledBrowserTest,
-                             public HeadlessBrowserContext::Observer,
-                             public network::ExperimentalObserver,
-                             public page::Observer {
- public:
-  void RunDevTooledTest() override {
-    EXPECT_TRUE(embedded_test_server()->Start());
-    devtools_client_->GetNetwork()->GetExperimental()->AddObserver(this);
-    devtools_client_->GetNetwork()->Enable();
-
-    std::unique_ptr<headless::network::RequestPattern> match_all =
-        headless::network::RequestPattern::Builder().SetUrlPattern("*").Build();
-    std::vector<std::unique_ptr<headless::network::RequestPattern>> patterns;
-    patterns.push_back(std::move(match_all));
-    devtools_client_->GetNetwork()->GetExperimental()->SetRequestInterception(
-        network::SetRequestInterceptionParams::Builder()
-            .SetPatterns(std::move(patterns))
-            .Build());
-
-    browser_context_->AddObserver(this);
-
-    devtools_client_->GetPage()->AddObserver(this);
-
-    base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
-    devtools_client_->GetPage()->Enable(run_loop.QuitClosure());
-    run_loop.Run();
-
-    devtools_client_->GetPage()->Navigate(
-        embedded_test_server()->GetURL("/resource_cancel_test.html").spec());
-  }
-
-  bool ShouldCancel(const std::string& url) {
-    if (EndsWith(url, "/iframe.html", base::CompareCase::INSENSITIVE_ASCII))
-      return true;
-
-    if (EndsWith(url, "/test.jpg", base::CompareCase::INSENSITIVE_ASCII))
-      return true;
-
-    return false;
-  }
-
-  void OnRequestIntercepted(
-      const network::RequestInterceptedParams& params) override {
-    urls_seen_.push_back(GURL(params.GetRequest()->GetUrl()).ExtractFileName());
-    auto continue_intercept_params =
-        network::ContinueInterceptedRequestParams::Builder()
-            .SetInterceptionId(params.GetInterceptionId())
-            .Build();
-    if (ShouldCancel(params.GetRequest()->GetUrl()))
-      continue_intercept_params->SetErrorReason(GetErrorReason());
-
-    devtools_client_->GetNetwork()
-        ->GetExperimental()
-        ->ContinueInterceptedRequest(std::move(continue_intercept_params));
-  }
-
-  void OnLoadEventFired(const page::LoadEventFiredParams&) override {
-    browser_context_->RemoveObserver(this);
-
-    base::AutoLock lock(lock_);
-    EXPECT_THAT(urls_that_failed_to_load_,
-                ElementsAre("test.jpg", "iframe.html"));
-    EXPECT_THAT(
-        urls_seen_,
-        ElementsAre("resource_cancel_test.html", "dom_tree_test.css",
-                    "test.jpg", "iframe.html", "iframe2.html", "Ahem.ttf"));
-    FinishAsynchronousTest();
-  }
-
-  void UrlRequestFailed(net::URLRequest* request,
-                        int net_error,
-                        DevToolsStatus devtools_status) override {
-    base::AutoLock lock(lock_);
-    urls_that_failed_to_load_.push_back(request->url().ExtractFileName());
-    EXPECT_TRUE(devtools_status != DevToolsStatus::kNotCanceled);
-  }
-
-  virtual network::ErrorReason GetErrorReason() = 0;
-
- private:
-  base::Lock lock_;
-  std::vector<std::string> urls_seen_;
-  std::vector<std::string> urls_that_failed_to_load_;
-};
-
-class UrlRequestFailedTest_Failed : public UrlRequestFailedTest {
- public:
-  network::ErrorReason GetErrorReason() override {
-    return network::ErrorReason::FAILED;
-  }
-};
-
-HEADLESS_ASYNC_DEVTOOLED_TEST_F(UrlRequestFailedTest_Failed);
-
-class UrlRequestFailedTest_Abort : public UrlRequestFailedTest {
- public:
-  network::ErrorReason GetErrorReason() override {
-    return network::ErrorReason::ABORTED;
-  }
-};
-
-HEADLESS_ASYNC_DEVTOOLED_TEST_F(UrlRequestFailedTest_Abort);
-
-// A test for recording failed URL loading events, much like
-// UrlRequestFailedTest{_Failed,Abort} above, but without overriding
-// HeadlessBrowserContext::Observer. Instead, this feature uses
-// network observation and works exactly and only for
+// This feature uses network observation and works exactly and only for
 // network::ErrorReason::BLOCKED_BY_CLIENT modifications that are initiated
 // via network::ExperimentalObserver.
 class BlockedByClient_NetworkObserver_Test

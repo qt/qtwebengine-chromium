@@ -133,8 +133,6 @@ class CORE_EXPORT StyleResolver final
     return style_not_yet_available_;
   }
 
-  PseudoElement* CreatePseudoElementIfNeeded(Element& parent, PseudoId);
-
   void SetRuleUsageTracker(StyleRuleUsageTracker*);
   void UpdateMediaType();
 
@@ -280,15 +278,10 @@ class CORE_EXPORT StyleResolver final
 
   bool PseudoStyleForElementInternal(Element&,
                                      const PseudoStyleRequest&,
-                                     const ComputedStyle* parent_style,
                                      StyleResolverState&);
 
   bool HasAuthorBorder(const StyleResolverState&);
-
-  PseudoElement* CreatePseudoElement(Element* parent, PseudoId);
-
   Document& GetDocument() const { return *document_; }
-
   bool WasViewportResized() const { return was_viewport_resized_; }
 
   static ComputedStyle* style_not_yet_available_;

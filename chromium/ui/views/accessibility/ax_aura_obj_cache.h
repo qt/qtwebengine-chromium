@@ -38,6 +38,8 @@ class VIEWS_EXPORT AXAuraObjCache : public aura::client::FocusChangeObserver {
 
   class Delegate {
    public:
+    virtual ~Delegate() {}
+
     virtual void OnChildWindowRemoved(AXAuraObjWrapper* parent) = 0;
     virtual void OnEvent(AXAuraObjWrapper* aura_obj,
                          ax::mojom::Event event_type) = 0;
@@ -66,9 +68,6 @@ class VIEWS_EXPORT AXAuraObjCache : public aura::client::FocusChangeObserver {
 
   // Lookup a cached entry based on an id.
   AXAuraObjWrapper* Get(int32_t id);
-
-  // Remove a cached entry based on an id.
-  void Remove(int32_t id);
 
   // Get all top level windows this cache knows about.
   void GetTopLevelWindows(std::vector<AXAuraObjWrapper*>* children);

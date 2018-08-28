@@ -14,12 +14,18 @@ namespace features {
 
 // If enabled, the emoji picker context menu item may be shown for editable
 // text areas.
-const base::Feature kEnableEmojiContextMenu{"EnableEmojiContextMenu",
-                                            base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kEnableEmojiContextMenu {
+  "EnableEmojiContextMenu",
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
+      base::FEATURE_ENABLED_BY_DEFAULT
+#else
+      base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
 
 // Enables the floating virtual keyboard behavior.
 const base::Feature kEnableFloatingVirtualKeyboard = {
-    "enable-floating-virtual-keyboard", base::FEATURE_DISABLED_BY_DEFAULT};
+    "enable-floating-virtual-keyboard", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables the full screen handwriting virtual keyboard behavior.
 const base::Feature kEnableFullscreenHandwritingVirtualKeyboard = {
@@ -28,6 +34,17 @@ const base::Feature kEnableFullscreenHandwritingVirtualKeyboard = {
 
 const base::Feature kEnableStylusVirtualKeyboard = {
     "enable-stylus-virtual-keyboard", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// If enabled, uses the Material Design UI for virtual keyboard.
+const base::Feature kEnableVirtualKeyboardMdUi = {
+    "EnableVirtualKeyboardMdUi", base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kEnableVirtualKeyboardUkm = {
+    "EnableVirtualKeyboardUkm", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables all upcoming UI features.
+const base::Feature kExperimentalUi{"ExperimentalUi",
+                                    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Applies the material design mode to elements throughout Chrome (not just top
 // Chrome).
@@ -46,9 +63,21 @@ bool IsTouchableAppContextMenuEnabled() {
          switches::IsTouchableAppContextMenuEnabled();
 }
 
+const base::Feature kNotificationIndicator = {
+    "EnableNotificationIndicator", base::FEATURE_DISABLED_BY_DEFAULT};
+
+bool IsNotificationIndicatorEnabled() {
+  return base::FeatureList::IsEnabled(kNotificationIndicator);
+}
+
 // Enables GPU rasterization for all UI drawing (where not blacklisted).
 const base::Feature kUiGpuRasterization = {"UiGpuRasterization",
-                                           base::FEATURE_DISABLED_BY_DEFAULT};
+#if defined(OS_MACOSX)
+                                           base::FEATURE_ENABLED_BY_DEFAULT
+#else
+                                           base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
 
 bool IsUiGpuRasterizationEnabled() {
   return base::FeatureList::IsEnabled(kUiGpuRasterization);
@@ -66,13 +95,9 @@ const base::Feature kUiCompositorScrollWithLayers = {
 };
 
 #if defined(OS_WIN)
-// Enables stylus appearing as touch when in contact with digitizer.
-const base::Feature kDirectManipulationStylus = {
-    "DirectManipulationStylus", base::FEATURE_ENABLED_BY_DEFAULT};
-
 // Enables InputPane API for controlling on screen keyboard.
 const base::Feature kInputPaneOnScreenKeyboard = {
-    "InputPaneOnScreenKeyboard", base::FEATURE_DISABLED_BY_DEFAULT};
+    "InputPaneOnScreenKeyboard", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables using WM_POINTER instead of WM_TOUCH for touch events.
 const base::Feature kPointerEventsForTouch = {"PointerEventsForTouch",
@@ -95,12 +120,26 @@ const base::Feature kPrecisionTouchpadScrollPhase{
     "PrecisionTouchpadScrollPhase", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_WIN)
 
-// Used to have ash (Chrome OS system UI) run in its own process.
-// TODO(jamescook): Make flag only available in Chrome OS.
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
+// Enables stylus appearing as touch when in contact with digitizer.
+const base::Feature kDirectManipulationStylus = {
+    "DirectManipulationStylus",
+#if defined(OS_WIN)
+    base::FEATURE_ENABLED_BY_DEFAULT
+#else
+    base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
+#endif  // defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
+
 const base::Feature kMash = {"Mash", base::FEATURE_DISABLED_BY_DEFAULT};
 
-bool IsMashEnabled() {
-  return base::FeatureList::IsEnabled(features::kMash);
+const base::Feature kMashDeprecated = {"MashDeprecated",
+                                       base::FEATURE_DISABLED_BY_DEFAULT};
+
+bool IsAshInBrowserProcess() {
+  return !base::FeatureList::IsEnabled(features::kMashDeprecated) &&
+         !base::FeatureList::IsEnabled(features::kMash);
 }
 
 #if defined(OS_MACOSX)
@@ -122,7 +161,8 @@ const base::Feature kViewsBrowserWindows{"ViewsBrowserWindows",
 // Returns whether a Views-capable browser build should use the Cocoa browser
 // UI.
 bool IsViewsBrowserCocoa() {
-  return !base::FeatureList::IsEnabled(kViewsBrowserWindows);
+  return !base::FeatureList::IsEnabled(kViewsBrowserWindows) &&
+      !base::FeatureList::IsEnabled(kExperimentalUi);
 }
 #endif  //  BUILDFLAG(MAC_VIEWS_BROWSER)
 #endif  //  defined(OS_MACOSX)

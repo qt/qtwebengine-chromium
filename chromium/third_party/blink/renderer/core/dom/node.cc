@@ -26,14 +26,14 @@
 
 #include "third_party/blink/renderer/core/dom/node.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/node_or_string.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/css/css_selector.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
+#include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/attr.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/child_list_mutation_scope.h"
 #include "third_party/blink/renderer/core/dom/child_node_list.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -44,13 +44,13 @@
 #include "third_party/blink/renderer/core/dom/element_rare_data.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
 #include "third_party/blink/renderer/core/dom/events/event_listener.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/get_root_node_options.h"
 #include "third_party/blink/renderer/core/dom/layout_tree_builder_traversal.h"
-#include "third_party/blink/renderer/core/dom/ng/slot_assignment_engine.h"
+#include "third_party/blink/renderer/core/dom/mutation_observer_registration.h"
 #include "third_party/blink/renderer/core/dom/node_lists_node_data.h"
 #include "third_party/blink/renderer/core/dom/node_rare_data.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
@@ -58,6 +58,7 @@
 #include "third_party/blink/renderer/core/dom/range.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/slot_assignment.h"
+#include "third_party/blink/renderer/core/dom/slot_assignment_engine.h"
 #include "third_party/blink/renderer/core/dom/static_node_list.h"
 #include "third_party/blink/renderer/core/dom/template_content_document_fragment.h"
 #include "third_party/blink/renderer/core/dom/text.h"
@@ -100,10 +101,10 @@
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
 #include "third_party/blink/renderer/core/svg/svg_element.h"
 #include "third_party/blink/renderer/platform/bindings/dom_data_store.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/microtask.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable_visitor.h"
 #include "third_party/blink/renderer/platform/bindings/v8_dom_wrapper.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/instance_counters.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/traced_value.h"
@@ -154,6 +155,7 @@ NodeRenderingData::~NodeRenderingData() {
 void NodeRenderingData::SetNonAttachedStyle(
     scoped_refptr<ComputedStyle> non_attached_style) {
   DCHECK_NE(&SharedEmptyData(), this);
+  DCHECK(!non_attached_style || !non_attached_style_);
   non_attached_style_ = non_attached_style;
 }
 
@@ -355,6 +357,16 @@ void Node::setNodeValue(const String&) {
   // By default, setting nodeValue has no effect.
 }
 
+ContainerNode* Node::parentNode() const {
+  return IsShadowRoot() ? nullptr : ParentOrShadowHostNode();
+}
+
+ContainerNode* Node::ParentNodeWithCounting() const {
+  if (GetFlag(kInDOMNodeRemovedHandler))
+    GetDocument().CountDetachingNodeAccessInDOMNodeRemovedHandler();
+  return IsShadowRoot() ? nullptr : ParentOrShadowHostNode();
+}
+
 NodeList* Node::childNodes() {
   ThreadState::MainThreadGCForbiddenScope gc_forbidden;
   if (IsContainerNode())
@@ -437,7 +449,8 @@ Node* Node::insertBefore(Node* new_child,
                                                exception_state);
 
   exception_state.ThrowDOMException(
-      kHierarchyRequestError, "This node type does not support this method.");
+      DOMExceptionCode::kHierarchyRequestError,
+      "This node type does not support this method.");
   return nullptr;
 }
 
@@ -453,7 +466,8 @@ Node* Node::replaceChild(Node* new_child,
                                                exception_state);
 
   exception_state.ThrowDOMException(
-      kHierarchyRequestError, "This node type does not support this method.");
+      DOMExceptionCode::kHierarchyRequestError,
+      "This node type does not support this method.");
   return nullptr;
 }
 
@@ -466,7 +480,8 @@ Node* Node::removeChild(Node* old_child, ExceptionState& exception_state) {
     return ToContainerNode(this)->RemoveChild(old_child, exception_state);
 
   exception_state.ThrowDOMException(
-      kNotFoundError, "This node type does not support this method.");
+      DOMExceptionCode::kNotFoundError,
+      "This node type does not support this method.");
   return nullptr;
 }
 
@@ -479,7 +494,8 @@ Node* Node::appendChild(Node* new_child, ExceptionState& exception_state) {
     return ToContainerNode(this)->AppendChild(new_child, exception_state);
 
   exception_state.ThrowDOMException(
-      kHierarchyRequestError, "This node type does not support this method.");
+      DOMExceptionCode::kHierarchyRequestError,
+      "This node type does not support this method.");
   return nullptr;
 }
 
@@ -606,7 +622,7 @@ Node* Node::cloneNode(bool deep, ExceptionState& exception_state) const {
   // 1. If context object is a shadow root, then throw a
   // "NotSupportedError" DOMException.
   if (IsShadowRoot()) {
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "ShadowRoot nodes are not clonable.");
     return nullptr;
   }
@@ -942,11 +958,6 @@ bool Node::IsInert() const {
   DCHECK(!ChildNeedsDistributionRecalc());
 
   if (this != GetDocument()) {
-    // TODO(foolip): When fullscreen uses top layer, this can be simplified to
-    // just look at the topmost element in top layer. https://crbug.com/240576.
-    // Note: It's currently appropriate that a modal dialog element takes
-    // precedence over a fullscreen element, because it will be rendered on top,
-    // but with fullscreen merged into top layer that will no longer be true.
     const Element* modal_element = GetDocument().ActiveModalDialog();
     if (!modal_element)
       modal_element = Fullscreen::FullscreenElementFrom(GetDocument());
@@ -2114,7 +2125,7 @@ static inline void CollectMatchingObserversForMutation(
         observers,
     Registry* registry,
     Node& target,
-    MutationObserver::MutationType type,
+    MutationType type,
     const QualifiedName* attribute_name) {
   if (!registry)
     return;
@@ -2135,9 +2146,9 @@ static inline void CollectMatchingObserversForMutation(
 void Node::GetRegisteredMutationObserversOfType(
     HeapHashMap<Member<MutationObserver>, MutationRecordDeliveryOptions>&
         observers,
-    MutationObserver::MutationType type,
+    MutationType type,
     const QualifiedName* attribute_name) {
-  DCHECK((type == MutationObserver::kAttributes && attribute_name) ||
+  DCHECK((type == kMutationTypeAttributes && attribute_name) ||
          !attribute_name);
   CollectMatchingObserversForMutation(observers, MutationObserverRegistry(),
                                       *this, type, attribute_name);
@@ -2472,7 +2483,29 @@ void Node::DefaultEventHandler(Event* event) {
   }
 }
 
-void Node::WillCallDefaultEventHandler(const Event&) {}
+void Node::WillCallDefaultEventHandler(const Event& event) {
+  if (!event.IsKeyboardEvent())
+    return;
+
+  if (!IsFocused() || GetDocument().LastFocusType() != kWebFocusTypeMouse)
+    return;
+
+  if (event.type() != EventTypeNames::keydown ||
+      GetDocument().HadKeyboardEvent())
+    return;
+
+  GetDocument().SetHadKeyboardEvent(true);
+
+  // Changes to HadKeyboardEvent may affect :focus-visible matching,
+  // ShouldHaveFocusAppearance and LayoutTheme::IsFocused().
+  // Inform LayoutTheme if HadKeyboardEvent changes.
+  if (GetLayoutObject()) {
+    GetLayoutObject()->InvalidateIfControlStateChanged(kFocusControlState);
+
+    if (RuntimeEnabledFeatures::CSSFocusVisibleEnabled() && IsContainerNode())
+      ToContainerNode(*this).FocusVisibleStateChanged();
+  }
+}
 
 bool Node::HasActivationBehavior() const {
   return false;
@@ -2562,15 +2595,13 @@ HTMLSlotElement* Node::assignedSlotForBinding() {
 }
 
 void Node::SetFocused(bool flag, WebFocusType focus_type) {
+  if (!flag || focus_type == kWebFocusTypeMouse)
+    GetDocument().SetHadKeyboardEvent(false);
   GetDocument().UserActionElements().SetFocused(this, flag);
 }
 
 void Node::SetHasFocusWithin(bool flag) {
   GetDocument().UserActionElements().SetHasFocusWithin(this, flag);
-}
-
-void Node::SetWasFocusedByMouse(bool flag) {
-  GetDocument().UserActionElements().SetWasFocusedByMouse(this, flag);
 }
 
 void Node::SetActive(bool flag) {
@@ -2613,11 +2644,6 @@ bool Node::IsUserActionElementFocused() const {
 bool Node::IsUserActionElementHasFocusWithin() const {
   DCHECK(IsUserActionElement());
   return GetDocument().UserActionElements().HasFocusWithin(this);
-}
-
-bool Node::IsUserActionElementWasFocusedByMouse() const {
-  DCHECK(IsUserActionElement());
-  return GetDocument().UserActionElements().WasFocusedByMouse(this);
 }
 
 void Node::SetCustomElementState(CustomElementState new_state) {
@@ -2754,21 +2780,10 @@ void Node::Trace(blink::Visitor* visitor) {
   // rareData() and data_.node_layout_data_ share their storage. We have to
   // trace only one of them.
   if (HasRareData())
-    visitor->Trace(RareData());
-  visitor->Trace(GetEventTargetData());
+    visitor->TraceWithWrappers(RareData());
+  visitor->TraceWithWrappers(GetEventTargetData());
   visitor->Trace(tree_scope_);
   EventTarget::Trace(visitor);
-}
-
-void Node::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(parent_or_shadow_host_node_);
-  visitor->TraceWrappers(previous_);
-  visitor->TraceWrappers(next_);
-  if (HasRareData())
-    visitor->TraceWrappersWithManualWriteBarrier(RareData());
-  visitor->TraceWrappersWithManualWriteBarrier(
-      const_cast<Node*>(this)->GetEventTargetData());
-  EventTarget::TraceWrappers(visitor);
 }
 
 }  // namespace blink

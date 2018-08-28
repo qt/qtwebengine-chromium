@@ -36,6 +36,7 @@
 #include "content/browser/renderer_host/media/media_devices_manager.h"
 #include "content/browser/renderer_host/media/media_stream_ui_proxy.h"
 #include "content/browser/renderer_host/media/service_video_capture_provider.h"
+#include "content/browser/renderer_host/media/video_capture_dependencies.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
 #include "content/browser/renderer_host/media/video_capture_provider_switcher.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -54,7 +55,7 @@
 #include "media/base/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_switches.h"
-#include "media/capture/video/video_capture_device_factory.h"
+#include "media/capture/video/create_video_capture_device_factory.h"
 #include "media/capture/video/video_capture_system_impl.h"
 #include "services/video_capture/public/uma/video_capture_service_event.h"
 #include "url/gurl.h"
@@ -66,6 +67,9 @@
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
+#include "media/capture/video/chromeos/camera_hal_dispatcher_impl.h"
+#include "media/capture/video/chromeos/public/cros_features.h"
+#include "media/capture/video/chromeos/video_capture_device_factory_chromeos.h"
 #endif
 
 namespace content {
@@ -94,42 +98,6 @@ std::string RandomLabel() {
     DCHECK(std::isalnum(c)) << c;
   }
   return label;
-}
-
-void CreateJpegDecodeAcceleratorOnIOThread(
-    media::mojom::JpegDecodeAcceleratorRequest request) {
-  auto* host =
-      GpuProcessHost::Get(GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED, false);
-  if (host) {
-    host->gpu_service()->CreateJpegDecodeAccelerator(std::move(request));
-  } else {
-    LOG(ERROR) << "No GpuProcessHost";
-  }
-}
-
-void CreateJpegDecodeAccelerator(
-    media::mojom::JpegDecodeAcceleratorRequest request) {
-  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                          base::BindOnce(&CreateJpegDecodeAcceleratorOnIOThread,
-                                         std::move(request)));
-}
-
-void CreateJpegEncodeAcceleratorOnIOThread(
-    media::mojom::JpegEncodeAcceleratorRequest request) {
-  auto* host =
-      GpuProcessHost::Get(GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED, false);
-  if (host) {
-    host->gpu_service()->CreateJpegEncodeAccelerator(std::move(request));
-  } else {
-    LOG(ERROR) << "No GpuProcessHost";
-  }
-}
-
-void CreateJpegEncodeAccelerator(
-    media::mojom::JpegEncodeAcceleratorRequest request) {
-  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                          base::BindOnce(&CreateJpegEncodeAcceleratorOnIOThread,
-                                         std::move(request)));
 }
 
 void ParseStreamType(const StreamControls& controls,
@@ -197,13 +165,6 @@ void EnableHotwordEffect(const StreamControls& controls, int* effects) {
     }
 #endif
   }
-}
-
-bool CalledOnIOThread() {
-  // Check if this function call is on the IO thread, except for unittests where
-  // an IO thread might not have been created.
-  return BrowserThread::CurrentlyOn(BrowserThread::IO) ||
-         !BrowserThread::IsThreadInitialized(BrowserThread::IO);
 }
 
 bool GetDeviceIDFromHMAC(const std::string& salt,
@@ -502,6 +463,18 @@ MediaStreamManager::MediaStreamManager(
       device_task_runner = video_capture_thread_->task_runner();
     }
 
+#if defined(OS_CHROMEOS)
+    if (media::ShouldUseCrosCameraService()) {
+      media::VideoCaptureDeviceFactoryChromeOS::SetGpuBufferManager(
+          BrowserGpuMemoryBufferManager::current());
+      media::CameraHalDispatcherImpl::GetInstance()->Start(
+          base::BindRepeating(
+              &VideoCaptureDependencies::CreateJpegDecodeAccelerator),
+          base::BindRepeating(
+              &VideoCaptureDependencies::CreateJpegEncodeAccelerator));
+    }
+#endif
+
     if (base::FeatureList::IsEnabled(features::kMojoVideoCapture)) {
       video_capture_provider = std::make_unique<VideoCaptureProviderSwitcher>(
           std::make_unique<ServiceVideoCaptureProvider>(
@@ -514,11 +487,8 @@ MediaStreamManager::MediaStreamManager(
           video_capture::uma::BROWSER_USING_LEGACY_CAPTURE);
       video_capture_provider = InProcessVideoCaptureProvider::CreateInstance(
           std::make_unique<media::VideoCaptureSystemImpl>(
-              media::VideoCaptureDeviceFactory::CreateFactory(
-                  BrowserThread::GetTaskRunnerForThread(BrowserThread::UI),
-                  BrowserGpuMemoryBufferManager::current(),
-                  base::BindRepeating(&CreateJpegDecodeAccelerator),
-                  base::BindRepeating(&CreateJpegEncodeAccelerator))),
+              media::CreateVideoCaptureDeviceFactory(
+                  BrowserThread::GetTaskRunnerForThread(BrowserThread::UI))),
           std::move(device_task_runner),
           base::BindRepeating(&SendVideoCaptureLogMessage));
     }
@@ -767,6 +737,7 @@ int MediaStreamManager::VideoDeviceIdToSessionId(
 }
 
 void MediaStreamManager::StopDevice(MediaStreamType type, int session_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "StopDevice"
            << "{type = " << type << "}"
            << "{session_id = " << session_id << "}";
@@ -805,6 +776,7 @@ void MediaStreamManager::StopDevice(MediaStreamType type, int session_id) {
 }
 
 void MediaStreamManager::CloseDevice(MediaStreamType type, int session_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "CloseDevice("
            << "{type = " << type << "} "
            << "{session_id = " << session_id << "})";
@@ -1016,6 +988,7 @@ std::string MediaStreamManager::AddRequest(DeviceRequest* request) {
 
 MediaStreamManager::DeviceRequest* MediaStreamManager::FindRequest(
     const std::string& label) const {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   for (const LabeledDeviceRequest& labeled_request : requests_) {
     if (labeled_request.first == label)
       return labeled_request.second;
@@ -1024,6 +997,7 @@ MediaStreamManager::DeviceRequest* MediaStreamManager::FindRequest(
 }
 
 void MediaStreamManager::DeleteRequest(const std::string& label) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "DeleteRequest({label= " << label << "})";
   for (DeviceRequests::iterator request_it = requests_.begin();
        request_it != requests_.end(); ++request_it) {
@@ -1052,22 +1026,25 @@ void MediaStreamManager::ReadOutputParamsAndPostRequestToUI(
     audio_system_->GetOutputStreamParameters(
         media::AudioDeviceDescription::kDefaultDeviceId,
         base::BindOnce(&MediaStreamManager::PostRequestToUI,
-                       base::Unretained(this), label, request, enumeration));
+                       base::Unretained(this), label, enumeration));
   } else {
-    PostRequestToUI(label, request, enumeration,
+    PostRequestToUI(label, enumeration,
                     base::Optional<media::AudioParameters>());
   }
 }
 
 void MediaStreamManager::PostRequestToUI(
     const std::string& label,
-    DeviceRequest* request,
     const MediaDeviceEnumeration& enumeration,
     const base::Optional<media::AudioParameters>& output_parameters) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(request->HasUIRequest());
   DCHECK(!output_parameters || output_parameters->IsValid());
   DVLOG(1) << "PostRequestToUI({label= " << label << "})";
+
+  DeviceRequest* request = FindRequest(label);
+  if (!request)
+    return;
+  DCHECK(request->HasUIRequest());
 
   const MediaStreamType audio_type = request->audio_type();
   const MediaStreamType video_type = request->video_type();
@@ -1254,6 +1231,7 @@ bool MediaStreamManager::SetupScreenCaptureRequest(DeviceRequest* request) {
 
 MediaStreamDevices MediaStreamManager::GetDevicesOpenedByRequest(
     const std::string& label) const {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DeviceRequest* request = FindRequest(label);
   if (!request)
     return MediaStreamDevices();
@@ -1265,6 +1243,7 @@ bool MediaStreamManager::FindExistingRequestedDevice(
     const MediaStreamDevice& new_device,
     MediaStreamDevice* existing_device,
     MediaRequestState* existing_request_state) const {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(existing_device);
   DCHECK(existing_request_state);
 
@@ -1364,6 +1343,7 @@ void MediaStreamManager::FinalizeMediaAccessRequest(
     const std::string& label,
     DeviceRequest* request,
     const MediaStreamDevices& devices) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(request->media_access_request_cb);
   std::move(request->media_access_request_cb)
       .Run(devices, std::move(request->ui_proxy));
@@ -1405,8 +1385,14 @@ void MediaStreamManager::InitializeMaybeAsync(
                               base::BindRepeating(&SendVideoCaptureLogMessage));
   video_capture_manager_->RegisterListener(this);
 
-  media_devices_manager_.reset(
-      new MediaDevicesManager(audio_system_, video_capture_manager_, this));
+  // Using base::Unretained(this) is safe because |this| owns and therefore
+  // outlives |media_devices_manager_|.
+  media_devices_manager_.reset(new MediaDevicesManager(
+      audio_system_, video_capture_manager_,
+      base::BindRepeating(&MediaStreamManager::StopRemovedDevice,
+                          base::Unretained(this)),
+      base::BindRepeating(&MediaStreamManager::NotifyDevicesChanged,
+                          base::Unretained(this))));
 }
 
 void MediaStreamManager::Opened(MediaStreamType stream_type,
@@ -1689,7 +1675,8 @@ void MediaStreamManager::StopMediaStreamFromBrowser(const std::string& label) {
 
 void MediaStreamManager::WillDestroyCurrentMessageLoop() {
   DVLOG(3) << "MediaStreamManager::WillDestroyCurrentMessageLoop()";
-  DCHECK(CalledOnIOThread());
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO) ||
+         !BrowserThread::IsThreadInitialized(BrowserThread::IO));
   if (media_devices_manager_)
     media_devices_manager_->StopMonitoring();
   if (video_capture_manager_)
@@ -1898,6 +1885,7 @@ MediaStreamDevices MediaStreamManager::ConvertToMediaStreamDevices(
 }
 
 void MediaStreamManager::OnStreamStarted(const std::string& label) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DeviceRequest* const request = FindRequest(label);
   if (!request)
     return;

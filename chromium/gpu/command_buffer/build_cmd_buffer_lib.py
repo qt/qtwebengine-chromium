@@ -442,6 +442,13 @@ _STATE_INFO = {
         'enum': 'GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES',
         'default': 'GL_DONT_CARE',
         'extension_flag': 'oes_standard_derivatives'
+      },
+      {
+        'name': 'hint_texture_filtering',
+        'type': 'GLenum',
+        'enum': 'GL_TEXTURE_FILTERING_HINT_CHROMIUM',
+        'default': 'GL_NICEST',
+        'extension_flag': 'chromium_texture_filtering_hint'
       }
     ],
   },
@@ -962,6 +969,10 @@ class TypeHandler(object):
       for cmd_type, name in arg.GetArgDecls():
         f.write("  %s %s;\n" % (cmd_type, name))
         total_args += 1
+    trace_queue = func.GetInfo('trace_queueing_flow', False)
+    if trace_queue:
+      f.write("  uint32_t trace_id;\n")
+      total_args += 1
 
     consts = func.GetCmdConstants()
     for const in consts:
@@ -1075,7 +1086,7 @@ static_assert(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
         uint32_t immediate_data_size, const volatile void* cmd_data) {
       """ % {'name': func.name, 'prefix' : _prefix})
     if func.IsES3():
-      f.write("""if (!feature_info_->IsWebGL2OrES3Context())
+      f.write("""if (!feature_info_->IsWebGL2OrES3OrHigherContext())
           return error::kUnknownCommand;
         """)
     if func.GetCmdArgs():
@@ -1116,6 +1127,7 @@ static_assert(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
     self.WriteHandlerDeferReadWrite(func, f);
     self.WriteServiceHandlerArgGetCode(func, f)
     func.WriteHandlerValidation(f)
+    func.WriteQueueTraceEvent(f)
     func.WriteHandlerImplementation(f)
     f.write("  return error::kNoError;\n")
     f.write("}\n")
@@ -1128,6 +1140,7 @@ static_assert(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
     self.WriteHandlerDeferReadWrite(func, f);
     self.WriteImmediateServiceHandlerArgGetCode(func, f)
     func.WriteHandlerValidation(f)
+    func.WriteQueueTraceEvent(f)
     func.WriteHandlerImplementation(f)
     f.write("  return error::kNoError;\n")
     f.write("}\n")
@@ -1140,6 +1153,7 @@ static_assert(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
     self.WriteHandlerDeferReadWrite(func, f);
     self.WriteBucketServiceHandlerArgGetCode(func, f)
     func.WriteHandlerValidation(f)
+    func.WriteQueueTraceEvent(f)
     func.WriteHandlerImplementation(f)
     f.write("  return error::kNoError;\n")
     f.write("}\n")
@@ -1151,7 +1165,7 @@ static_assert(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
         uint32_t immediate_data_size, const volatile void* cmd_data) {
       """ % {'name': func.name})
     if func.IsES3():
-      f.write("""if (!feature_info_->IsWebGL2OrES3Context())
+      f.write("""if (!feature_info_->IsWebGL2OrES3OrHigherContext())
           return error::kUnknownCommand;
         """)
     if func.GetCmdArgs():
@@ -2172,10 +2186,10 @@ class GENnHandler(TypeHandler):
   def WriteGetDataSizeCode(self, func, f):
     """Overrriden from TypeHandler."""
     code = """  uint32_t data_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &data_size)) {
+  if (!%sSafeMultiplyUint32(n, sizeof(GLuint), &data_size)) {
     return error::kOutOfBounds;
   }
-"""
+""" % _Namespace()
     f.write(code)
 
   def WriteHandlerImplementation (self, func, f):
@@ -2188,10 +2202,12 @@ class GENnHandler(TypeHandler):
     f.write("  auto %(name)s_copy = std::make_unique<GLuint[]>(n);\n"
             "  GLuint* %(name)s_safe = %(name)s_copy.get();\n"
             "  std::copy(%(name)s, %(name)s + n, %(name)s_safe);\n"
-            "  if (!CheckUniqueAndNonNullIds(n, %(name)s_safe) ||\n"
+            "  if (!%(ns)sCheckUniqueAndNonNullIds(n, %(name)s_safe) ||\n"
             "      !%(func)sHelper(n, %(name)s_safe)) {\n"
             "    return error::kInvalidArguments;\n"
-            "  }\n" % {'name': param_name, 'func': func.original_name})
+            "  }\n" % {'name': param_name,
+                       'func': func.original_name,
+                       'ns': _Namespace()})
 
   def WriteGLES2Implementation(self, func, f):
     """Overrriden from TypeHandler."""
@@ -2622,10 +2638,10 @@ class DELnHandler(TypeHandler):
   def WriteGetDataSizeCode(self, func, f):
     """Overrriden from TypeHandler."""
     code = """  uint32_t data_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &data_size)) {
+  if (!%sSafeMultiplyUint32(n, sizeof(GLuint), &data_size)) {
     return error::kOutOfBounds;
   }
-"""
+""" % _Namespace()
     f.write(code)
 
   def WriteGLES2ImplementationUnitTest(self, func, f):
@@ -3300,11 +3316,13 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
   def WriteGetDataSizeCode(self, func, f):
     """Overrriden from TypeHandler."""
     code = """  uint32_t data_size;
-  if (!GLES2Util::ComputeDataSize<%s, %d>(1, &data_size)) {
+  if (!%sGLES2Util::ComputeDataSize<%s, %d>(1, &data_size)) {
     return error::kOutOfBounds;
   }
 """
-    f.write(code % (self.GetArrayType(func), self.GetArrayCount(func)))
+    f.write(code % (_Namespace(),
+                    self.GetArrayType(func),
+                    self.GetArrayCount(func)))
     if func.IsImmediate():
       f.write("  if (data_size > immediate_data_size) {\n")
       f.write("    return error::kOutOfBounds;\n")
@@ -3327,8 +3345,8 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
     self.WriteClientGLCallLog(func, f)
 
     if self.__NeedsToCalcDataCount(func):
-      f.write("  size_t count = GLES2Util::Calc%sDataCount(%s);\n" %
-                 (func.name, func.GetOriginalArgs()[0].name))
+      f.write("  size_t count = %sGLES2Util::Calc%sDataCount(%s);\n" %
+                 (_Namespace(), func.name, func.GetOriginalArgs()[0].name))
       f.write("  DCHECK_LE(count, %du);\n" % self.GetArrayCount(func))
     else:
       f.write("  size_t count = %d;" % self.GetArrayCount(func))
@@ -3394,8 +3412,8 @@ TEST_F(%(prefix)sImplementationTest, %(name)s) {
                  (func.GetOriginalArgs()[0].type,
                   func.GetOriginalArgs()[0].name))
       f.write("    return static_cast<uint32_t>(\n")
-      f.write("        sizeof(%s) * GLES2Util::Calc%sDataCount(%s));\n" %
-                 (self.GetArrayType(func), func.original_name,
+      f.write("        sizeof(%s) * %sGLES2Util::Calc%sDataCount(%s));\n" %
+                 (self.GetArrayType(func), _Namespace(), func.original_name,
                   func.GetOriginalArgs()[0].name))
       f.write("  }\n")
       f.write("\n")
@@ -3600,11 +3618,12 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
     """Overrriden from TypeHandler."""
     code = """  uint32_t data_size = 0;
   if (count >= 0 &&
-      !GLES2Util::ComputeDataSize<%s, %d>(count, &data_size)) {
+      !%sGLES2Util::ComputeDataSize<%s, %d>(count, &data_size)) {
     return error::kOutOfBounds;
   }
 """
-    f.write(code % (self.GetArrayType(func),
+    f.write(code % (_Namespace(),
+                    self.GetArrayType(func),
                     self.GetArrayCount(func)))
     if func.IsImmediate():
       f.write("  if (data_size > immediate_data_size) {\n")
@@ -4879,9 +4898,9 @@ class Argument(object):
   def GetLogArg(self):
     """Get argument appropriate for LOG macro."""
     if self.type == 'GLboolean':
-      return 'GLES2Util::GetStringBool(%s)' % self.name
+      return '%sGLES2Util::GetStringBool(%s)' % (_Namespace(), self.name)
     if self.type == 'GLenum':
-      return 'GLES2Util::GetStringEnum(%s)' % self.name
+      return '%sGLES2Util::GetStringEnum(%s)' % (_Namespace(), self.name)
     return self.name
 
   def WriteGetCode(self, f):
@@ -5236,8 +5255,8 @@ class ImmediatePointerArgument(Argument):
 
   def WriteGetCode(self, f):
     """Overridden from Argument."""
-    f.write("  volatile %s %s = GetImmediateDataAs<volatile %s>(\n" %
-            (self.type, self.name, self.type))
+    f.write("  volatile %s %s = %sGetImmediateDataAs<volatile %s>(\n" %
+            (self.type, self.name, _Namespace(), self.type))
     f.write("      c, data_size, immediate_data_size);\n")
 
   def WriteValidationCode(self, f, func):
@@ -5875,6 +5894,13 @@ class Function(object):
       arg.WriteValidationCode(f, self)
     self.WriteValidationCode(f)
 
+  def WriteQueueTraceEvent(self, f):
+    if self.GetInfo("trace_queueing_flow", False):
+      trace = 'TRACE_DISABLED_BY_DEFAULT("gpu_cmd_queue")'
+      f.write("""if (c.trace_id) {
+          TRACE_EVENT_WITH_FLOW0(%s, "CommandBufferQueue",
+          c.trace_id, TRACE_EVENT_FLAG_FLOW_IN);\n}""" % trace)
+
   def WritePassthroughHandlerValidation(self, f):
     """Writes validation code for the function."""
     for arg in self.GetOriginalArgs():
@@ -5890,19 +5916,12 @@ class Function(object):
 
   def WriteCmdFlag(self, f):
     """Writes the cmd cmd_flags constant."""
-    flags = []
     # By default trace only at the highest level 3.
     trace_level = int(self.GetInfo('trace_level', default = 3))
     if trace_level not in xrange(0, 4):
       raise KeyError("Unhandled trace_level: %d" % trace_level)
 
-    flags.append('CMD_FLAG_SET_TRACE_LEVEL(%d)' % trace_level)
-
-    if len(flags) > 0:
-      cmd_flags = ' | '.join(flags)
-    else:
-      cmd_flags = 0
-
+    cmd_flags = ('CMD_FLAG_SET_TRACE_LEVEL(%d)' % trace_level)
     f.write("  static const uint8_t cmd_flags = %s;\n" % cmd_flags)
 
 
@@ -5932,7 +5951,17 @@ class Function(object):
     args = self.GetCmdArgs()
     for arg in args:
       arg.WriteSetCode(f, 4, '_%s' % arg.name)
-    f.write("  }\n")
+    if self.GetInfo("trace_queueing_flow", False):
+      trace = 'TRACE_DISABLED_BY_DEFAULT("gpu_cmd_queue")'
+      f.write('bool is_tracing = false;')
+      f.write('TRACE_EVENT_CATEGORY_GROUP_ENABLED(%s, &is_tracing);' % trace)
+      f.write('if (is_tracing) {')
+      f.write('  trace_id = base::RandUint64();')
+      f.write('TRACE_EVENT_WITH_FLOW1(%s, "CommandBufferQueue",' % trace)
+      f.write('trace_id, TRACE_EVENT_FLAG_FLOW_OUT,')
+      f.write('"command", "%s");' % self.name)
+      f.write('} else {\n  trace_id = 0;\n}\n');
+    f.write("}\n")
     f.write("\n")
 
   def WriteCmdSet(self, f):
@@ -7193,7 +7222,7 @@ extern const NameToFunc g_gles2_function_table[] = {
             for value in named_type.GetDeprecatedValuesES3():
                 f.write("case %s:\n" % value)
             f.write("return !is_es3_;\n")
-          f.write("}\nreturn false;\n};\n")
+          f.write("}\nreturn false;\n}\n")
           f.write("\n")
         else:
           if named_type.GetValidValues():

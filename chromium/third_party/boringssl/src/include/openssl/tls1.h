@@ -205,8 +205,14 @@ extern "C" {
 // ExtensionType value from draft-ietf-tokbind-negotiation-10
 #define TLSEXT_TYPE_token_binding 24
 
-// ExtensionType value from draft-ietf-quic-tls
-#define TLSEXT_TYPE_quic_transport_parameters 26
+// ExtensionType value from draft-ietf-quic-tls. Note that this collides with
+// TLS-LTS and, based on scans, something else too. Since it's QUIC-only, that
+// shouldn't be a problem in practice.
+#define TLSEXT_TYPE_quic_transport_parameters 0xffa5
+
+// ExtensionType value assigned to
+// https://tools.ietf.org/html/draft-ietf-tls-certificate-compression-03
+#define TLSEXT_TYPE_cert_compression 27
 
 // ExtensionType value from RFC4507
 #define TLSEXT_TYPE_session_ticket 35
@@ -259,6 +265,10 @@ extern "C" {
 #define TLSEXT_hash_sha256 4
 #define TLSEXT_hash_sha384 5
 #define TLSEXT_hash_sha512 6
+
+// From https://tools.ietf.org/html/draft-ietf-tls-certificate-compression-03#section-3
+#define TLSEXT_cert_compression_zlib 1
+#define TLSEXT_cert_compression_brotli 2
 
 #define TLSEXT_MAXLEN_host_name 255
 

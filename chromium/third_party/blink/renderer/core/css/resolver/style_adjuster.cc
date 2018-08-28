@@ -56,7 +56,6 @@
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
 #include "third_party/blink/renderer/core/svg_names.h"
-#include "third_party/blink/renderer/platform/feature_policy/feature_policy.h"
 #include "third_party/blink/renderer/platform/length.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/transforms/transform_operations.h"
@@ -482,14 +481,8 @@ static void AdjustEffectiveTouchAction(ComputedStyle& style,
       AdjustTouchActionForElement(inherited_action, style, element);
 
   TouchAction enforced_by_policy = TouchAction::kTouchActionNone;
-  if (element &&
-      IsSupportedInFeaturePolicy(
-          mojom::FeaturePolicyFeature::kVerticalScroll) &&
-      element->GetDocument().GetFrame() &&
-      !element->GetDocument().GetFrame()->IsFeatureEnabled(
-          mojom::FeaturePolicyFeature::kVerticalScroll)) {
+  if (element->GetDocument().IsVerticalScrollEnforced())
     enforced_by_policy = TouchAction::kTouchActionPanY;
-  }
 
   // Apply the adjusted parent effective touch actions.
   style.SetEffectiveTouchAction((element_touch_action & inherited_action) |
@@ -520,9 +513,13 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
     AdjustStyleForHTMLElement(style, ToHTMLElement(*element));
   }
   if (style.Display() != EDisplay::kNone) {
+    bool is_document_element =
+        element && element->GetDocument().documentElement() == element;
     // Per the spec, position 'static' and 'relative' in the top layer compute
-    // to 'absolute'.
-    if (IsInTopLayer(element, style) &&
+    // to 'absolute'. Root elements that are in the top layer should just
+    // be left alone because the fullscreen.css doesn't apply any style to
+    // them.
+    if (IsInTopLayer(element, style) && !is_document_element &&
         (style.GetPosition() == EPosition::kStatic ||
          style.GetPosition() == EPosition::kRelative))
       style.SetPosition(EPosition::kAbsolute);
@@ -533,7 +530,7 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
         (style.HasOutOfFlowPosition() || style.IsFloating()))
       style.SetDisplay(EquivalentBlockDisplay(style.Display()));
 
-    if (element && element->GetDocument().documentElement() == element)
+    if (is_document_element)
       style.SetDisplay(EquivalentBlockDisplay(style.Display()));
 
     // We don't adjust the first letter style earlier because we may change the
@@ -542,11 +539,6 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
 
     AdjustStyleForDisplay(style, layout_parent_style,
                           element ? &element->GetDocument() : nullptr);
-
-    // Paint containment forces a block formatting context, so we must coerce
-    // from inline.  https://drafts.csswg.org/css-containment/#containment-paint
-    if (style.ContainsPaint() && style.Display() == EDisplay::kInline)
-      style.SetDisplay(EDisplay::kBlock);
 
     // If this is a child of a LayoutCustom, we need the name of the parent
     // layout function for invalidation purposes.
@@ -686,15 +678,13 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
       // Form controls are not supported yet.
       style.SetForceLegacyLayout(true);
     } else if (style.UserModify() != EUserModify::kReadOnly ||
-               document.InDesignMode()) {
+               document.InDesignMode() ||
+               style.Display() == EDisplay::kWebkitBox ||
+               style.Display() == EDisplay::kWebkitInlineBox) {
       // TODO(layout-dev): Once LayoutNG handles inline content editable, we
       // should get rid of following code fragment.
       style.SetForceLegacyLayout(true);
 
-      if (style.Display() == EDisplay::kInline &&
-          parent_style.UserModify() == EUserModify::kReadOnly) {
-        style.SetDisplay(EDisplay::kInlineBlock);
-      }
     } else if (!RuntimeEnabledFeatures::LayoutNGBlockFragmentationEnabled()) {
       // Disable NG for the entire subtree if we're establishing a block
       // fragmentation context.
@@ -702,19 +692,26 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
           (style.IsOverflowPaged() &&
            element != document.ViewportDefiningElement())) {
         style.SetForceLegacyLayout(true);
-      } else if (document.Paginated()) {
+      } else if (document.Printing()) {
         // This needs to be discovered on the root element.
         DCHECK_EQ(element, document.documentElement());
         style.SetForceLegacyLayout(true);
       }
+    }
+    if (!style.ForceLegacyLayout()) {
+      // The custom container is laid out by the legacy engine. Its children may
+      // not establish new formatting contexts, so we need to protect against
+      // re-entering LayoutNG there.
+      if (style.Display() == EDisplay::kLayoutCustom ||
+          style.Display() == EDisplay::kInlineLayoutCustom)
+        style.SetForceLegacyLayout(true);
     }
   }
 
   // If intrinsically sized images or videos are disallowed by feature policy,
   // use default size (300 x 150) instead.
   if (IsImageOrVideoElement(element)) {
-    if (IsSupportedInFeaturePolicy(
-            mojom::FeaturePolicyFeature::kUnsizedMedia) &&
+    if (RuntimeEnabledFeatures::ExperimentalProductivityFeaturesEnabled() &&
         element->GetDocument().GetFrame() &&
         !element->GetDocument().GetFrame()->IsFeatureEnabled(
             mojom::FeaturePolicyFeature::kUnsizedMedia)) {

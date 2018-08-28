@@ -36,12 +36,15 @@
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/blink/public/platform/interface_provider.h"
 #include "third_party/blink/public/platform/interface_registry.h"
+#include "third_party/blink/public/platform/scheduler/web_resource_loading_task_runner_handle.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/core/CoreProbeSink.h"
+#include "third_party/blink/renderer/core/aom/computed_accessible_node.h"
 #include "third_party/blink/renderer/core/core_initializer.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/dom/child_frame_disconnector.h"
+#include "third_party/blink/renderer/core/dom/document_init.h"
 #include "third_party/blink/renderer/core/dom/document_parser.h"
 #include "third_party/blink/renderer/core/dom/document_type.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
@@ -77,20 +80,19 @@
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
 #include "third_party/blink/renderer/core/loader/idleness_detector.h"
 #include "third_party/blink/renderer/core/loader/navigation_scheduler.h"
+#include "third_party/blink/renderer/core/loader/previews_resource_loading_hints_receiver_impl.h"
 #include "third_party/blink/renderer/core/page/drag_controller.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
+#include "third_party/blink/renderer/core/paint/compositing/graphics_layer_tree_as_text.h"
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/core/paint/object_painter.h"
-#include "third_party/blink/renderer/core/paint/transform_recorder.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/svg/svg_document_extensions.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
-#include "third_party/blink/renderer/platform/graphics/paint/clip_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
-#include "third_party/blink/renderer/platform/graphics/paint/transform_display_item.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/resource_coordinator/blink_resource_coordinator_base.h"
 #include "third_party/blink/renderer/platform/instrumentation/resource_coordinator/frame_resource_coordinator.h"
@@ -151,17 +153,20 @@ class EmptyFrameScheduler final : public FrameScheduler {
     return Platform::Current()->MainThread()->GetTaskRunner();
   }
 
-  std::unique_ptr<ThrottlingObserverHandle> AddThrottlingObserver(
-      ObserverType,
-      Observer*) override {
-    return nullptr;
+  std::unique_ptr<scheduler::WebResourceLoadingTaskRunnerHandle>
+  CreateResourceLoadingTaskRunnerHandle() override {
+    return scheduler::WebResourceLoadingTaskRunnerHandle::CreateUnprioritized(
+        GetTaskRunner(TaskType::kNetworkingWithURLLoaderAnnotation));
   }
+
   void SetFrameVisible(bool) override {}
   bool IsFrameVisible() const override { return false; }
   bool IsPageVisible() const override { return false; }
   void SetPaused(bool) override {}
   void SetCrossOrigin(bool) override {}
   bool IsCrossOrigin() const override { return false; }
+  void SetIsAdFrame() override {}
+  bool IsAdFrame() const override { return false; }
   void TraceUrlChange(const String& override) override {}
   FrameScheduler::FrameType GetFrameType() const override {
     return FrameScheduler::FrameType::kSubframe;
@@ -181,6 +186,10 @@ class EmptyFrameScheduler final : public FrameScheduler {
     return nullptr;
   }
   bool IsExemptFromBudgetBasedThrottling() const override { return false; }
+  std::unique_ptr<blink::mojom::blink::PauseSubresourceLoadingHandle>
+  GetPauseSubresourceLoadingHandle() override {
+    return nullptr;
+  }
 };
 
 }  // namespace
@@ -302,10 +311,10 @@ bool LocalFrame::IsLocalRoot() const {
   return Tree().Parent()->IsRemoteFrame();
 }
 
-void LocalFrame::Navigate(Document& origin_document,
-                          const KURL& url,
-                          bool replace_current_item,
-                          UserGestureStatus user_gesture_status) {
+void LocalFrame::ScheduleNavigation(Document& origin_document,
+                                    const KURL& url,
+                                    bool replace_current_item,
+                                    UserGestureStatus user_gesture_status) {
   navigation_scheduler_->ScheduleFrameNavigation(&origin_document, url,
                                                  replace_current_item);
 }
@@ -314,7 +323,7 @@ void LocalFrame::Navigate(const FrameLoadRequest& request) {
   loader_.StartNavigation(request);
 }
 
-void LocalFrame::Reload(FrameLoadType load_type,
+void LocalFrame::Reload(WebFrameLoadType load_type,
                         ClientRedirectPolicy client_redirect_policy) {
   DCHECK(IsReloadLoadType(load_type));
   if (client_redirect_policy == ClientRedirectPolicy::kNotClientRedirect) {
@@ -326,7 +335,7 @@ void LocalFrame::Reload(FrameLoadType load_type,
     request.SetClientRedirect(client_redirect_policy);
     loader_.StartNavigation(request, load_type);
   } else {
-    DCHECK_EQ(kFrameLoadTypeReload, load_type);
+    DCHECK_EQ(WebFrameLoadType::kReload, load_type);
     navigation_scheduler_->ScheduleReload();
   }
 }
@@ -344,7 +353,8 @@ void LocalFrame::Detach(FrameDetachType type) {
 
   if (IsLocalRoot()) {
     performance_monitor_->Shutdown();
-    ad_tracker_->Shutdown();
+    if (ad_tracker_)
+      ad_tracker_->Shutdown();
   }
   idleness_detector_->Shutdown();
   if (inspector_trace_events_)
@@ -484,6 +494,7 @@ void LocalFrame::DocumentAttached() {
   GetInputMethodController().DocumentAttached(GetDocument());
   GetSpellChecker().DocumentAttached(GetDocument());
   GetTextSuggestionController().DocumentAttached(GetDocument());
+  previews_resource_loading_hints_receiver_.reset();
 }
 
 Frame* LocalFrame::FindFrameForNavigation(const AtomicString& name,
@@ -547,13 +558,13 @@ void LocalFrame::DidFreeze() {
 void LocalFrame::DidResume() {
   DCHECK(RuntimeEnabledFeatures::PageLifecycleEnabled());
   if (GetDocument()) {
-    const double resume_event_start = CurrentTimeTicksInSeconds();
+    const TimeTicks resume_event_start = CurrentTimeTicks();
     GetDocument()->DispatchEvent(Event::Create(EventTypeNames::resume));
-    const double resume_event_end = CurrentTimeTicksInSeconds();
+    const TimeTicks resume_event_end = CurrentTimeTicks();
     DEFINE_STATIC_LOCAL(
         CustomCountHistogram, resume_histogram,
         ("DocumentEventTiming.ResumeDuration", 0, 10000000, 50));
-    resume_histogram.Count((resume_event_end - resume_event_start) * 1000000.0);
+    resume_histogram.CountMicroseconds(resume_event_end - resume_event_start);
     // TODO(fmeawad): Move the following logic to the page once we have a
     // PageResourceCoordinator in Blink
     if (auto* frame_resource_coordinator = GetFrameResourceCoordinator()) {
@@ -808,7 +819,8 @@ String LocalFrame::SelectedTextForClipboard() const {
 
 PositionWithAffinity LocalFrame::PositionForPoint(
     const LayoutPoint& frame_point) {
-  HitTestResult result = GetEventHandler().HitTestResultAtPoint(frame_point);
+  HitTestLocation location(frame_point);
+  HitTestResult result = GetEventHandler().HitTestResultAtLocation(location);
   Node* node = result.InnerNodeOrImageMapImage();
   if (!node)
     return PositionWithAffinity();
@@ -826,20 +838,32 @@ Document* LocalFrame::DocumentAtPoint(const LayoutPoint& point_in_root_frame) {
   if (!View())
     return nullptr;
 
-  LayoutPoint pt = View()->RootFrameToContents(point_in_root_frame);
+  HitTestLocation location(View()->ConvertFromRootFrame(point_in_root_frame));
 
   if (!ContentLayoutObject())
     return nullptr;
-  HitTestResult result = GetEventHandler().HitTestResultAtPoint(
-      pt, HitTestRequest::kReadOnly | HitTestRequest::kActive);
+  HitTestResult result = GetEventHandler().HitTestResultAtLocation(
+      location, HitTestRequest::kReadOnly | HitTestRequest::kActive);
   return result.InnerNode() ? &result.InnerNode()->GetDocument() : nullptr;
 }
 
-bool LocalFrame::ShouldReuseDefaultView(const KURL& url) const {
+bool LocalFrame::ShouldReuseDefaultView(
+    const KURL& url,
+    const ContentSecurityPolicy* csp) const {
   // Secure transitions can only happen when navigating from the initial empty
   // document.
   if (!Loader().StateMachine()->IsDisplayingInitialEmptyDocument())
     return false;
+
+  // The Window object should only be re-used if it is same-origin.
+  // Since sandboxing turns the origin into an opaque origin it needs to also
+  // be considered when deciding whether to reuse it.
+  // Spec:
+  // https://html.spec.whatwg.org/multipage/browsing-the-web.html#initialise-the-document-object
+  if (csp &&
+      SecurityContext::IsSandboxed(kSandboxOrigin, csp->GetSandboxMask())) {
+    return false;
+  }
 
   return GetDocument()->IsSecureTransitionTo(url);
 }
@@ -862,7 +886,8 @@ String LocalFrame::GetLayerTreeAsTextForTesting(unsigned flags) const {
         while (root_layer->Parent())
           root_layer = root_layer->Parent();
       }
-      layers = root_layer->LayerTreeAsJSON(static_cast<LayerTreeFlags>(flags));
+      layers = GraphicsLayerTreeAsJSON(root_layer,
+                                       static_cast<LayerTreeFlags>(flags));
     }
   }
 
@@ -917,10 +942,12 @@ inline LocalFrame::LocalFrame(LocalFrameClient* client,
       interface_registry_(interface_registry) {
   if (IsLocalRoot()) {
     probe_sink_ = new CoreProbeSink();
-    ad_tracker_ = new AdTracker(this);
     performance_monitor_ = new PerformanceMonitor(this);
     inspector_trace_events_ = new InspectorTraceEvents();
     probe_sink_->addInspectorTraceEvents(inspector_trace_events_);
+    if (RuntimeEnabledFeatures::AdTaggingEnabled()) {
+      ad_tracker_ = new AdTracker(this);
+    }
   } else {
     // Inertness only needs to be updated if this frame might inherit the
     // inert state from a higher-level frame. If this is an OOPIF local root,
@@ -934,8 +961,11 @@ inline LocalFrame::LocalFrame(LocalFrameClient* client,
   idleness_detector_ = new IdlenessDetector(this);
   inspector_task_runner_->InitIsolate(V8PerIsolateData::MainThreadIsolate());
 
-  if (ComputeIsAdSubFrame())
-    SetIsAdSubframe();
+  if (ad_tracker_) {
+    SetIsAdSubframeIfNecessary();
+  }
+  DCHECK(ad_tracker_ ? RuntimeEnabledFeatures::AdTaggingEnabled()
+                     : !RuntimeEnabledFeatures::AdTaggingEnabled());
 }
 
 FrameScheduler* LocalFrame::GetFrameScheduler() {
@@ -1088,16 +1118,6 @@ static bool CanAccessAncestor(const SecurityOrigin& active_security_origin,
   return false;
 }
 
-blink::mojom::blink::PrefetchURLLoaderService*
-LocalFrame::PrefetchURLLoaderService() {
-  if (!prefetch_loader_service_ &&
-      base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-    GetInterfaceProvider().GetInterface(
-        mojo::MakeRequest(&prefetch_loader_service_));
-  }
-  return prefetch_loader_service_.get();
-}
-
 bool LocalFrame::CanNavigateWithoutFramebusting(const Frame& target_frame,
                                                 String& reason) {
   if (&target_frame == this)
@@ -1193,17 +1213,20 @@ bool LocalFrame::CanNavigateWithoutFramebusting(const Frame& target_frame,
   return false;
 }
 
-bool LocalFrame::ComputeIsAdSubFrame() const {
+void LocalFrame::SetIsAdSubframeIfNecessary() {
   DCHECK(ad_tracker_);
   Frame* parent = Tree().Parent();
   if (!parent)
-    return false;
+    return;
 
-  // If the parent frame is local, directly determine if it's an ad. If
-  // it's remote, then blink relies on the embedder to call SetIsAdFrame.
+  // If the parent frame is local, directly determine if it's an ad. If it's
+  // remote, then it is up to the embedder that moved this frame out-of-
+  // process to set this frame as an ad via SetIsAdSubframe before commit.
   bool parent_is_ad =
       parent->IsLocalFrame() && ToLocalFrame(parent)->IsAdSubframe();
-  return parent_is_ad || ad_tracker_->IsAdScriptInStack(GetDocument());
+
+  if (parent_is_ad || ad_tracker_->IsAdScriptInStack())
+    SetIsAdSubframe();
 }
 
 service_manager::InterfaceProvider& LocalFrame::GetInterfaceProvider() {
@@ -1243,6 +1266,12 @@ PluginData* LocalFrame::GetPluginData() const {
     return nullptr;
   return GetPage()->GetPluginData(
       Tree().Top().GetSecurityContext()->GetSecurityOrigin());
+}
+
+void LocalFrame::SetAdTrackerForTesting(AdTracker* ad_tracker) {
+  if (ad_tracker_)
+    ad_tracker_->Shutdown();
+  ad_tracker_ = ad_tracker;
 }
 
 DEFINE_WEAK_IDENTIFIER_MAP(LocalFrame);
@@ -1349,18 +1378,15 @@ void LocalFrame::ForceSynchronousDocumentInstall(
 
   GetDocument()->OpenForNavigation(kForceSynchronousParsing, mime_type,
                                    AtomicString("UTF-8"));
-  data->ForEachSegment(
-      [this](const char* segment, size_t segment_size, size_t segment_offset) {
-        GetDocument()->Parser()->AppendBytes(segment, segment_size);
-        return true;
-      });
+  for (const auto& segment : *data)
+    GetDocument()->Parser()->AppendBytes(segment.data(), segment.size());
   GetDocument()->Parser()->Finish();
 
   // Upon loading of SVGIamges, log PageVisits in UseCounter.
   // Do not track PageVisits for inspector, web page popups, and validation
   // message overlays (the other callers of this method).
-  if (GetPage() && GetDocument()->IsSVGDocument())
-    GetPage()->GetUseCounter().DidCommitLoad(this);
+  if (GetDocument()->IsSVGDocument())
+    loader_.GetDocumentLoader()->GetUseCounter().DidCommitLoad(this);
 }
 
 bool LocalFrame::IsProvisional() const {
@@ -1397,6 +1423,30 @@ ComputedAccessibleNode* LocalFrame::GetOrCreateComputedAccessibleNode(
     computed_node_mapping_.insert(ax_id, node);
   }
   return computed_node_mapping_.at(ax_id);
+}
+
+void LocalFrame::PauseSubresourceLoading(
+    blink::mojom::blink::PauseSubresourceLoadingHandleRequest request) {
+  auto handle = GetFrameScheduler()->GetPauseSubresourceLoadingHandle();
+  if (!handle)
+    return;
+  pause_handle_bindings_.AddBinding(std::move(handle), std::move(request));
+}
+
+void LocalFrame::ResumeSubresourceLoading() {
+  pause_handle_bindings_.CloseAllBindings();
+}
+
+void LocalFrame::AnimateSnapFling(base::TimeTicks monotonic_time) {
+  GetEventHandler().AnimateSnapFling(monotonic_time);
+}
+
+void LocalFrame::BindPreviewsResourceLoadingHintsRequest(
+    blink::mojom::blink::PreviewsResourceLoadingHintsReceiverRequest request) {
+  DCHECK(!previews_resource_loading_hints_receiver_);
+  previews_resource_loading_hints_receiver_ =
+      std::make_unique<PreviewsResourceLoadingHintsReceiverImpl>(
+          std::move(request));
 }
 
 }  // namespace blink

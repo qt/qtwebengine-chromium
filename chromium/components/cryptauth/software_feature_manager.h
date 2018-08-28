@@ -6,6 +6,7 @@
 #define COMPONENTS_CRYPTAUTH_SOFTWARE_FEATURE_MANAGER_H_
 
 #include "base/callback.h"
+#include "components/cryptauth/network_request_error.h"
 #include "components/cryptauth/proto/cryptauth_api.pb.h"
 
 namespace cryptauth {
@@ -20,12 +21,16 @@ class SoftwareFeatureManager {
   // |public_key|. If |enabled| and |is_exclusive| are both true, then all other
   // devices associated with this account will have |sofware_feature| disabled.
   // |is_exclusive| is ignored if |enabled| is false.
+  //
+  // Note: In the special case of passing |software_feature| =
+  // SoftwareFeature::EASY_UNLOCK_HOST and |enabled| = false, |public_key| is
+  // ignored.
   virtual void SetSoftwareFeatureState(
       const std::string& public_key,
       SoftwareFeature software_feature,
       bool enabled,
       const base::Closure& success_callback,
-      const base::Callback<void(const std::string&)>& error_callback,
+      const base::Callback<void(NetworkRequestError)>& error_callback,
       bool is_exclusive = false) = 0;
 
   // Finds eligible devices associated with the logged-in account which support
@@ -35,7 +40,7 @@ class SoftwareFeatureManager {
       const base::Callback<void(const std::vector<ExternalDeviceInfo>&,
                                 const std::vector<IneligibleDevice>&)>&
           success_callback,
-      const base::Callback<void(const std::string&)>& error_callback) = 0;
+      const base::Callback<void(NetworkRequestError)>& error_callback) = 0;
 };
 
 }  // namespace cryptauth

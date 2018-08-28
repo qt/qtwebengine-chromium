@@ -6,6 +6,7 @@
 
 #include "third_party/blink/renderer/core/css/css_calculation_value.h"
 #include "third_party/blink/renderer/core/css/cssom/css_math_negate.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
@@ -51,7 +52,8 @@ bool operator==(const CSSNumericSumValue::Term& a, const UnitMapComparator& b) {
 CSSMathSum* CSSMathSum::Create(const HeapVector<CSSNumberish>& args,
                                ExceptionState& exception_state) {
   if (args.IsEmpty()) {
-    exception_state.ThrowDOMException(kSyntaxError, "Arguments can't be empty");
+    exception_state.ThrowDOMException(DOMExceptionCode::kSyntaxError,
+                                      "Arguments can't be empty");
     return nullptr;
   }
 

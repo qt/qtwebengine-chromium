@@ -27,6 +27,7 @@
 #include "components/viz/common/gpu/context_provider.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
+#include "ui/gfx/presentation_feedback.h"
 
 namespace cc {
 
@@ -136,17 +137,12 @@ void ProxyImpl::InitializeLayerTreeFrameSinkOnImpl(
   proxy_main_frame_sink_bound_weak_ptr_ = proxy_main_frame_sink_bound_weak_ptr;
 
   LayerTreeHostImpl* host_impl = host_impl_.get();
-  bool success = host_impl->InitializeRenderer(layer_tree_frame_sink);
+  bool success = host_impl->InitializeFrameSink(layer_tree_frame_sink);
   MainThreadTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(&ProxyMain::DidInitializeLayerTreeFrameSink,
                                 proxy_main_weak_ptr_, success));
   if (success)
     scheduler_->DidCreateAndInitializeLayerTreeFrameSink();
-}
-
-void ProxyImpl::MainThreadHasStoppedFlingingOnImpl() {
-  DCHECK(IsImplThread());
-  host_impl_->MainThreadHasStoppedFlinging();
 }
 
 void ProxyImpl::SetInputThrottledUntilCommitOnImpl(bool is_throttled) {
@@ -463,9 +459,11 @@ void ProxyImpl::DidCompletePageScaleAnimationOnImplThread() {
                                 proxy_main_weak_ptr_));
 }
 
-void ProxyImpl::OnDrawForLayerTreeFrameSink(bool resourceless_software_draw) {
+void ProxyImpl::OnDrawForLayerTreeFrameSink(bool resourceless_software_draw,
+                                            bool skip_draw) {
   DCHECK(IsImplThread());
-  scheduler_->OnDrawForLayerTreeFrameSink(resourceless_software_draw);
+  scheduler_->OnDrawForLayerTreeFrameSink(resourceless_software_draw,
+                                          skip_draw);
 }
 
 void ProxyImpl::NeedsImplSideInvalidation(bool needs_first_draw_on_activation) {
@@ -479,14 +477,13 @@ void ProxyImpl::NotifyImageDecodeRequestFinished() {
 }
 
 void ProxyImpl::DidPresentCompositorFrameOnImplThread(
-    const std::vector<int>& source_frames,
-    base::TimeTicks time,
-    base::TimeDelta refresh,
-    uint32_t flags) {
+    uint32_t frame_token,
+    std::vector<LayerTreeHost::PresentationTimeCallback> callbacks,
+    const gfx::PresentationFeedback& feedback) {
   MainThreadTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(&ProxyMain::DidPresentCompositorFrame,
-                                proxy_main_weak_ptr_, source_frames, time,
-                                refresh, flags));
+                                proxy_main_weak_ptr_, frame_token,
+                                std::move(callbacks), feedback));
 }
 
 bool ProxyImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
@@ -611,10 +608,10 @@ void ProxyImpl::ScheduledActionPrepareTiles() {
   host_impl_->PrepareTiles();
 }
 
-void ProxyImpl::ScheduledActionInvalidateLayerTreeFrameSink() {
+void ProxyImpl::ScheduledActionInvalidateLayerTreeFrameSink(bool needs_redraw) {
   TRACE_EVENT0("cc", "ProxyImpl::ScheduledActionInvalidateLayerTreeFrameSink");
   DCHECK(IsImplThread());
-  host_impl_->InvalidateLayerTreeFrameSink();
+  host_impl_->InvalidateLayerTreeFrameSink(needs_redraw);
 }
 
 void ProxyImpl::ScheduledActionPerformImplSideInvalidation() {
@@ -727,10 +724,10 @@ void ProxyImpl::SetURLForUkm(const GURL& url) {
   host_impl_->ukm_manager()->SetSourceURL(url);
 }
 
-void ProxyImpl::ClearHistoryOnNavigation() {
+void ProxyImpl::ClearHistory() {
   DCHECK(IsImplThread());
   DCHECK(IsMainThreadBlocked());
-  scheduler_->ClearHistoryOnNavigation();
+  scheduler_->ClearHistory();
 }
 
 void ProxyImpl::SetRenderFrameObserver(

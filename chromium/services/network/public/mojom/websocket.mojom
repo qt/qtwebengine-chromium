@@ -5,6 +5,7 @@
 module network.mojom;
 
 import "url/mojom/url.mojom";
+import "services/network/public/mojom/network_param.mojom";
 
 enum WebSocketMessageType {
   CONTINUATION,
@@ -29,10 +30,22 @@ struct WebSocketHandshakeRequest {
 
 struct WebSocketHandshakeResponse {
   url.mojom.Url url;
+  HttpVersion http_version;
   int32 status_code;
   string status_text;
+  HostPortPair socket_address;
   array<HttpHeader> headers;
   string headers_text;
+};
+
+// This interface is for HTTP Authentication.
+interface AuthenticationHandler {
+  // Returns null credentials when it wants to cancel authentication, and
+  // returns a non-null credentials when it wants to use the credentials for
+  // authentication.
+  OnAuthRequired(AuthChallengeInfo info,
+                 HttpResponseHeaders headers,
+                 HostPortPair socket_address) => (AuthCredentials? credentials);
 };
 
 interface WebSocketClient {
@@ -45,8 +58,8 @@ interface WebSocketClient {
 
   // Notify the renderer that the browser has finished an opening handshake.
   // This message precedes AddChannelResponse.
-  // This message is for showing the response in the inspector and
-  // can be omitted if the inspector is not active.
+  // |response| may contains cookie-related headers when the client has
+  // an access to raw cookie information.
   OnFinishOpeningHandshake(WebSocketHandshakeResponse response);
 
   // Response to an AddChannelRequest. |selected_protocol| is the sub-protocol
@@ -102,10 +115,15 @@ interface WebSocket {
   // Open new WebSocket connection to |socket_url|. |requested_protocols| is a
   // list of tokens identifying sub-protocols the renderer would like to use,
   // as described in RFC6455 "Subprotocols Using the WebSocket Protocol".
+  // |additional_headers| are miscellaneous HTTP headers to be added to the
+  // request. Headers semantically relevant to the WebSocket handshake such
+  // as "sec-websocket-protocol" and "origin" are handled separately, (e.g.,
+  // "sec-websocket-protocol" is constructed from  |requested_protocols| in
+  // this message).
   AddChannelRequest(url.mojom.Url url,
                     array<string> requested_protocols,
                     url.mojom.Url first_party_for_cookies,
-                    string user_agent_override,
+                    array<HttpHeader> additional_headers,
                     WebSocketClient client);
 
   // Send a non-control frame to the remote server.

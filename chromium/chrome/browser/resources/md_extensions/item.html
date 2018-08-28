@@ -3,6 +3,7 @@
 <link rel="import" href="chrome://resources/cr_elements/cr_icons_css.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_toggle/cr_toggle.html">
 <link rel="import" href="chrome://resources/cr_elements/hidden_style_css.html">
+<link rel="import" href="chrome://resources/cr_elements/icons.html">
 <link rel="import" href="chrome://resources/cr_elements/paper_button_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/shared_vars_css.html">
 <link rel="import" href="chrome://resources/html/action_link.html">
@@ -10,15 +11,13 @@
 <link rel="import" href="chrome://resources/html/assert.html">
 <link rel="import" href="chrome://resources/html/cr.html">
 <link rel="import" href="chrome://resources/html/i18n_behavior.html">
-<link rel="import" href="item_behavior.html">
 <link rel="import" href="icons.html">
+<link rel="import" href="item_behavior.html">
 <link rel="import" href="item_util.html">
 <link rel="import" href="strings.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/iron-icons.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/communication-icons.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-flex-layout/iron-flex-layout-classes.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/iron-icon/iron-icon.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-icon-button/paper-icon-button-light.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/paper-styles/shadow.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-tooltip/paper-tooltip.html">
 <link rel="import" href="navigation_helper.html">
 
@@ -60,7 +59,7 @@
       }
 
       #card {
-        @apply --shadow-elevation-2dp;
+        @apply --cr-card-elevation;
         background: white;
         border-radius: var(--cr-card-border-radius);
         display: flex;
@@ -68,7 +67,6 @@
         height: 160px;
         /* Duration matches --drawer-transition from toolbar.html. */
         transition: height 300ms cubic-bezier(.25, .1, .25, 1);
-        width: var(--extensions-card-width, 400px);
       }
 
       #card.dev-mode {
@@ -120,9 +118,7 @@
       #extension-id,
       #inspect-views,
       #button-strip {
-        /* TODO(dschuyler): use --cr-secondary-text. */
-        color: var(--paper-grey-600);
-        font-weight: 400;
+        @apply --cr-secondary-text;
       }
 
       #extension-id {
@@ -257,12 +253,13 @@
             </div>
           </div>
           <div id="description" class="multiline-clippable-text"
-              hidden$="[[hasWarnings_(data.*)]]">
+              hidden$="[[hasWarnings_(data.disableReasons.*, data.*)]]">
             [[data.description]]
           </div>
-          <template is="dom-if" if="[[hasWarnings_(data.*)]]">
+          <template is="dom-if"
+              if="[[hasWarnings_(data.disableReasons.*, data.*)]]">
             <div id="warnings">
-              <iron-icon id="error-icon" icon="error"></iron-icon>
+              <iron-icon id="error-icon" icon="cr:error"></iron-icon>
               <span id="runtime-warnings" aria-describedby="a11yAssociation"
                   hidden$="[[!data.runtimeWarnings.length]]">
                 <template is="dom-repeat" items="[[data.runtimeWarnings]]">
@@ -315,7 +312,7 @@
       </div>
       <div id="button-strip" class="layout horizontal center">
         <div class="layout flex horizontal center">
-          <paper-button id="details-button" on-click="onDetailsTap_"
+          <paper-button id="detailsButton" on-click="onDetailsTap_"
               aria-describedby="a11yAssociation">
             $i18n{itemDetails}
           </paper-button>

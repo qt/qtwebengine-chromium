@@ -33,6 +33,7 @@ class GrGlyphCache;
 class GrGpu;
 class GrIndexBuffer;
 struct GrMockOptions;
+class GrOpMemoryPool;
 class GrOvalRenderer;
 class GrPath;
 class GrProxyProvider;
@@ -68,8 +69,8 @@ public:
     static sk_sp<GrContext> MakeGL();
 
 #ifdef SK_VULKAN
-    static sk_sp<GrContext> MakeVulkan(sk_sp<const GrVkBackendContext>, const GrContextOptions&);
-    static sk_sp<GrContext> MakeVulkan(sk_sp<const GrVkBackendContext>);
+    static sk_sp<GrContext> MakeVulkan(const GrVkBackendContext&, const GrContextOptions&);
+    static sk_sp<GrContext> MakeVulkan(const GrVkBackendContext&);
 #endif
 
 #ifdef SK_METAL
@@ -112,6 +113,11 @@ public:
      * API calls may crash.
      */
     virtual void abandonContext();
+
+    /**
+     * Returns true if the context was abandoned.
+     */
+    bool abandoned() const;
 
     /**
      * This is similar to abandonContext() however the underlying 3D context is not yet lost and
@@ -303,6 +309,8 @@ private:
     GrProxyProvider*                        fProxyProvider;
     std::unique_ptr<GrTextureStripAtlasManager> fTextureStripAtlasManager;
 
+    // All the GrOp-derived classes use this pool.
+    sk_sp<GrOpMemoryPool>                   fOpMemoryPool;
 
     GrGlyphCache*                           fGlyphCache;
     std::unique_ptr<GrTextBlobCache>        fTextBlobCache;

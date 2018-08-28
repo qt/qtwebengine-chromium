@@ -28,7 +28,7 @@
 #include "net/third_party/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 
-namespace net {
+namespace quic {
 
 class QuicCryptoStream;
 class QuicFlowController;
@@ -72,7 +72,7 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
     // connection should resend any packets that were sent under
     // ENCRYPTION_INITIAL. (Client only.)
     ENCRYPTION_REESTABLISHED,
-    // HANDSHAKE_CONFIRMED, in a client, indicates the the server has accepted
+    // HANDSHAKE_CONFIRMED, in a client, indicates the server has accepted
     // our handshake. In a server it indicates that a full, valid client hello
     // has been received. (Client and server.)
     HANDSHAKE_CONFIRMED,
@@ -204,7 +204,7 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   virtual void RegisterStreamPriority(QuicStreamId id,
                                       bool is_static,
                                       spdy::SpdyPriority priority);
-  // Called by the stream on deletion to clear priority crom the write blocked
+  // Called by the stream on deletion to clear priority from the write blocked
   // list.
   virtual void UnregisterStreamPriority(QuicStreamId id, bool is_static);
   // Called by the stream on SetPriority to update priority on the write blocked
@@ -237,6 +237,9 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Returns the number of currently open streams, excluding the reserved
   // headers and crypto streams, and never counting unfinished streams.
   size_t GetNumActiveStreams() const;
+
+  // Returns the number of currently draining streams.
+  size_t GetNumDrainingStreams() const;
 
   // Returns the number of currently open peer initiated streams, excluding the
   // reserved headers and crypto streams.
@@ -415,7 +418,7 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // stream to be promised before creating an active stream.
   virtual void HandleFrameOnNonexistentOutgoingStream(QuicStreamId stream_id);
 
-  bool MaybeIncreaseLargestPeerStreamId(const QuicStreamId stream_id);
+  virtual bool MaybeIncreaseLargestPeerStreamId(const QuicStreamId stream_id);
 
   void InsertLocallyClosedStreamsHighestOffset(const QuicStreamId id,
                                                QuicStreamOffset offset);
@@ -552,6 +555,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   DISALLOW_COPY_AND_ASSIGN(QuicSession);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_SESSION_H_

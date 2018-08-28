@@ -27,7 +27,7 @@ bool VideoBitrateAllocation::SetBitrate(size_t spatial_index,
   RTC_CHECK_LT(spatial_index, kMaxSpatialLayers);
   RTC_CHECK_LT(temporal_index, kMaxTemporalStreams);
   int64_t new_bitrate_sum_bps = sum_;
-  rtc::Optional<uint32_t>& layer_bitrate =
+  absl::optional<uint32_t>& layer_bitrate =
       bitrates_[spatial_index][temporal_index];
   if (layer_bitrate) {
     RTC_DCHECK_LE(*layer_bitrate, sum_);
@@ -105,6 +105,23 @@ std::vector<uint32_t> VideoBitrateAllocation::GetTemporalLayerAllocation(
   }
 
   return temporal_rates;
+}
+
+std::vector<absl::optional<VideoBitrateAllocation>>
+VideoBitrateAllocation::GetSimulcastAllocations() const {
+  std::vector<absl::optional<VideoBitrateAllocation>> bitrates;
+  for (size_t si = 0; si < kMaxSpatialLayers; ++si) {
+    absl::optional<VideoBitrateAllocation> layer_bitrate;
+    if (IsSpatialLayerUsed(si)) {
+      layer_bitrate = VideoBitrateAllocation();
+      for (int tl = 0; tl < kMaxTemporalStreams; ++tl) {
+        if (HasBitrate(si, tl))
+          layer_bitrate->SetBitrate(0, tl, GetBitrate(si, tl));
+      }
+    }
+    bitrates.push_back(layer_bitrate);
+  }
+  return bitrates;
 }
 
 bool VideoBitrateAllocation::operator==(

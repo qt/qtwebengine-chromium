@@ -25,7 +25,6 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_TEXT_TEXT_RUN_H_
 
 #include "base/optional.h"
-#include "third_party/blink/renderer/platform/fonts/glyph.h"
 #include "third_party/blink/renderer/platform/heap/heap.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/text/tab_size.h"
@@ -263,7 +262,7 @@ class PLATFORM_EXPORT TextRun final {
   // Up-converts to UTF-16 as needed and normalizes spaces and Unicode control
   // characters as per the CSS Text Module Level 3 specification.
   // https://drafts.csswg.org/css-text-3/#white-space-processing
-  std::unique_ptr<UChar[]> NormalizedUTF16(unsigned* result_length) const;
+  String NormalizedUTF16() const;
 
  private:
   union {

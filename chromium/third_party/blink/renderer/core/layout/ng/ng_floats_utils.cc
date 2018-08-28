@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/layout/ng/ng_floats_utils.h"
 
+#include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/min_max_size.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_break_token.h"
@@ -214,13 +215,19 @@ LayoutUnit ComputeInlineSizeForUnpositionedFloat(
   // because NG cannot figure out the size of such objects on its own,
   // especially not for tables.
   if (is_same_writing_mode && unpositioned_float->node.CanUseNewLayout()) {
-    base::Optional<MinMaxSize> min_max_size;
-    if (NeedMinMaxSize(*space.get(), style)) {
-      MinMaxSizeInput zero_input;  // Floats do not intrude into floats.
-      min_max_size = unpositioned_float->node.ComputeMinMaxSize(
-          style.GetWritingMode(), zero_input);
-    }
-    return ComputeInlineSizeForFragment(*space.get(), style, min_max_size);
+    return ComputeInlineSizeForFragment(*space.get(), unpositioned_float->node);
+  }
+
+  // Here we need to lay out the float. However, it is possible that we are
+  // not inside Layout, in which case we may not be able to actually lay out
+  // the node. Instead, we have to fallback to legacy sizing.
+  if (!unpositioned_float->node.GetLayoutBox()
+           ->GetFrameView()
+           ->IsInPerformLayout()) {
+    LayoutBox* box = unpositioned_float->node.GetLayoutBox();
+    LayoutBox::LogicalExtentComputedValues values;
+    box->ComputeLogicalWidth(values);
+    return values.extent_;
   }
 
   // A float which has a different writing mode can't fragment, and we
@@ -302,8 +309,8 @@ NGPositionedFloat PositionFloat(LayoutUnit origin_block_offset,
   // Add the float as an exclusion.
   scoped_refptr<NGExclusion> exclusion = CreateExclusion(
       float_fragment, float_margin_bfc_offset, unpositioned_float->margins,
-      ToLayoutBox(unpositioned_float->node.GetLayoutObject()),
-      *unpositioned_float, parent_space, parent_space.Direction(),
+      unpositioned_float->node.GetLayoutBox(), *unpositioned_float,
+      parent_space, parent_space.Direction(),
       unpositioned_float->IsRight() ? EFloat::kRight : EFloat::kLeft);
   exclusion_space->Add(std::move(exclusion));
 
@@ -339,11 +346,28 @@ void AddUnpositionedFloat(
     Vector<scoped_refptr<NGUnpositionedFloat>>* unpositioned_floats,
     NGContainerFragmentBuilder* fragment_builder,
     scoped_refptr<NGUnpositionedFloat> unpositioned_float) {
+  // The same float node should not be added more than once.
+  DCHECK(
+      !RemoveUnpositionedFloat(unpositioned_floats, unpositioned_float->node));
+
   if (fragment_builder && !fragment_builder->BfcOffset()) {
     fragment_builder->AddAdjoiningFloatTypes(
         unpositioned_float->IsLeft() ? kFloatTypeLeft : kFloatTypeRight);
   }
   unpositioned_floats->push_back(std::move(unpositioned_float));
+}
+
+bool RemoveUnpositionedFloat(
+    Vector<scoped_refptr<NGUnpositionedFloat>>* unpositioned_floats,
+    NGBlockNode float_node) {
+  for (scoped_refptr<NGUnpositionedFloat>& unpositioned_float :
+       *unpositioned_floats) {
+    if (unpositioned_float->node == float_node) {
+      unpositioned_floats->erase(&unpositioned_float);
+      return true;
+    }
+  }
+  return false;
 }
 
 NGFloatTypes ToFloatTypes(EClear clear) {

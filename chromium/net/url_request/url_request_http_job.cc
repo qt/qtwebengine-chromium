@@ -443,6 +443,8 @@ void URLRequestHttpJob::Start() {
 
   request_info_.token_binding_referrer = request_->token_binding_referrer();
 
+  // This should be kept in sync with the corresponding code in
+  // URLRequest::GetUserAgent.
   request_info_.extra_headers.SetHeaderIfMissing(
       HttpRequestHeaders::kUserAgent,
       http_user_agent_settings_ ?
@@ -538,15 +540,16 @@ void URLRequestHttpJob::DestroyTransaction() {
 
 void URLRequestHttpJob::StartTransaction() {
   if (network_delegate()) {
-    OnCallToDelegate();
+    OnCallToDelegate(
+        NetLogEventType::NETWORK_DELEGATE_BEFORE_START_TRANSACTION);
     // The NetworkDelegate must watch for OnRequestDestroyed and not modify
     // |extra_headers| or invoke the callback after it's called. Not using a
     // WeakPtr here because it's not enough, the consumer has to watch for
     // destruction regardless, due to the headers parameter.
     int rv = network_delegate()->NotifyBeforeStartTransaction(
         request_,
-        base::Bind(&URLRequestHttpJob::NotifyBeforeStartTransactionCallback,
-                   base::Unretained(this)),
+        base::BindOnce(&URLRequestHttpJob::NotifyBeforeStartTransactionCallback,
+                       base::Unretained(this)),
         &request_info_.extra_headers);
     // If an extension blocks the request, we rely on the callback to
     // MaybeStartTransactionInternal().
@@ -952,7 +955,14 @@ void URLRequestHttpJob::ProcessNetworkErrorLoggingHeader() {
     return;
   }
 
-  service->OnHeader(url::Origin::Create(request_info_.url), value);
+  IPEndPoint endpoint;
+  if (!GetRemoteEndpoint(&endpoint)) {
+    NetworkErrorLoggingService::RecordHeaderDiscardedForMissingRemoteEndpoint();
+    return;
+  }
+
+  service->OnHeader(url::Origin::Create(request_info_.url), endpoint.address(),
+                    value);
 }
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
@@ -990,15 +1000,16 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
       // Note that |this| may not be deleted until
       // |URLRequestHttpJob::OnHeadersReceivedCallback()| or
       // |NetworkDelegate::URLRequestDestroyed()| has been called.
-      OnCallToDelegate();
+      OnCallToDelegate(NetLogEventType::NETWORK_DELEGATE_HEADERS_RECEIVED);
       allowed_unsafe_redirect_url_ = GURL();
       // The NetworkDelegate must watch for OnRequestDestroyed and not modify
       // any of the arguments or invoke the callback after it's called. Not
       // using a WeakPtr here because it's not enough, the consumer has to watch
       // for destruction regardless, due to the pointer parameters.
       int error = network_delegate()->NotifyHeadersReceived(
-          request_, base::Bind(&URLRequestHttpJob::OnHeadersReceivedCallback,
-                               base::Unretained(this)),
+          request_,
+          base::BindOnce(&URLRequestHttpJob::OnHeadersReceivedCallback,
+                         base::Unretained(this)),
           headers.get(), &override_response_headers_,
           &allowed_unsafe_redirect_url_);
       if (error != OK) {

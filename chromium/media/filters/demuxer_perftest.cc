@@ -40,9 +40,6 @@ class DemuxerHostImpl : public media::DemuxerHost {
       const Ranges<base::TimeDelta>& ranges) override {}
   void SetDuration(base::TimeDelta duration) override {}
   void OnDemuxerError(media::PipelineStatus error) override {}
-  void AddTextStream(media::DemuxerStream* text_stream,
-                     const media::TextTrackConfig& config) override {}
-  void RemoveTextStream(media::DemuxerStream* text_stream) override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DemuxerHostImpl);
@@ -185,7 +182,7 @@ static void RunDemuxerBenchmark(const std::string& filename) {
     ASSERT_TRUE(data_source.Initialize(file_path));
 
     Demuxer::EncryptedMediaInitDataCB encrypted_media_init_data_cb =
-        base::Bind(&OnEncryptedMediaInitData);
+        base::BindRepeating(&OnEncryptedMediaInitData);
     Demuxer::MediaTracksUpdatedCB tracks_updated_cb =
         base::Bind(&OnMediaTracksUpdated);
     FFmpegDemuxer demuxer(base::ThreadTaskRunnerHandle::Get(), &data_source,
@@ -194,9 +191,8 @@ static void RunDemuxerBenchmark(const std::string& filename) {
 
     {
       base::RunLoop run_loop;
-      demuxer.Initialize(
-          &demuxer_host,
-          base::Bind(&QuitLoopWithStatus, run_loop.QuitClosure()), false);
+      demuxer.Initialize(&demuxer_host, base::Bind(&QuitLoopWithStatus,
+                                                   run_loop.QuitClosure()));
       run_loop.Run();
     }
 

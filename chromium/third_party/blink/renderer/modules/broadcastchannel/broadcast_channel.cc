@@ -7,8 +7,6 @@
 #include "third_party/blink/public/platform/interface_provider.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
-#include "third_party/blink/renderer/core/dom/events/event_queue.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/events/message_event.h"
 #include "third_party/blink/renderer/platform/mojo/mojo_helper.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -38,11 +36,11 @@ mojom::blink::BroadcastChannelProviderPtr& GetThreadSpecificProvider() {
 BroadcastChannel* BroadcastChannel::Create(ExecutionContext* execution_context,
                                            const String& name,
                                            ExceptionState& exception_state) {
-  if (execution_context->GetSecurityOrigin()->IsUnique()) {
+  if (execution_context->GetSecurityOrigin()->IsOpaque()) {
     // TODO(mek): Decide what to do here depending on
     // https://github.com/whatwg/html/issues/1319
     exception_state.ThrowDOMException(
-        kNotSupportedError,
+        DOMExceptionCode::kNotSupportedError,
         "Can't create BroadcastChannel in an opaque origin");
     return nullptr;
   }
@@ -58,7 +56,8 @@ void BroadcastChannel::Dispose() {
 void BroadcastChannel::postMessage(const ScriptValue& message,
                                    ExceptionState& exception_state) {
   if (!binding_.is_bound()) {
-    exception_state.ThrowDOMException(kInvalidStateError, "Channel is closed");
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "Channel is closed");
     return;
   }
   scoped_refptr<SerializedScriptValue> value = SerializedScriptValue::Serialize(
@@ -100,11 +99,7 @@ void BroadcastChannel::OnMessage(BlinkCloneableMessage message) {
   MessageEvent* event = MessageEvent::Create(
       nullptr, std::move(message.message),
       GetExecutionContext()->GetSecurityOrigin()->ToString());
-  event->SetTarget(this);
-  bool success =
-      GetExecutionContext()->GetEventQueue()->EnqueueEvent(FROM_HERE, event);
-  DCHECK(success);
-  ALLOW_UNUSED_LOCAL(success);
+  EnqueueEvent(event, TaskType::kInternalMedia);
 }
 
 void BroadcastChannel::OnError() {

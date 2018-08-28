@@ -110,9 +110,13 @@ class WebContentsView {
   // fully created.
   virtual void RenderViewCreated(RenderViewHost* host) = 0;
 
-  // Invoked when the WebContents is notified that the RenderView has been
-  // swapped in.
-  virtual void RenderViewSwappedIn(RenderViewHost* host) = 0;
+  // Invoked when the WebContents is notified that the RenderView is ready.
+  virtual void RenderViewReady() = 0;
+
+  // Invoked when the WebContents is notified that the RenderViewHost has been
+  // changed.
+  virtual void RenderViewHostChanged(RenderViewHost* old_host,
+                                     RenderViewHost* new_host) = 0;
 
   // Invoked to enable/disable overscroll gesture navigation.
   virtual void SetOverscrollControllerEnabled(bool enabled) = 0;

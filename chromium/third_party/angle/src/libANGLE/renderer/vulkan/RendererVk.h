@@ -10,12 +10,13 @@
 #ifndef LIBANGLE_RENDERER_VULKAN_RENDERERVK_H_
 #define LIBANGLE_RENDERER_VULKAN_RENDERERVK_H_
 
-#include <memory>
 #include <vulkan/vulkan.h>
+#include <memory>
 
 #include "common/angleutils.h"
 #include "libANGLE/Caps.h"
 #include "libANGLE/renderer/vulkan/CommandGraph.h"
+#include "libANGLE/renderer/vulkan/FeaturesVk.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
 #include "libANGLE/renderer/vulkan/vk_internal_shaders.h"
 
@@ -27,7 +28,6 @@ class AttributeMap;
 namespace rx
 {
 class FramebufferVk;
-class GlslangWrapper;
 
 namespace vk
 {
@@ -40,7 +40,10 @@ class RendererVk : angle::NonCopyable
     RendererVk();
     ~RendererVk();
 
-    vk::Error initialize(const egl::AttributeMap &attribs, const char *wsiName);
+    angle::Result initialize(vk::Context *context,
+                             const egl::AttributeMap &attribs,
+                             const char *wsiName);
+    void onDestroy(vk::Context *context);
 
     std::string getVendorString() const;
     std::string getRendererDescription() const;
@@ -54,12 +57,14 @@ class RendererVk : angle::NonCopyable
     VkQueue getQueue() const { return mQueue; }
     VkDevice getDevice() const { return mDevice; }
 
-    vk::ErrorOrResult<uint32_t> selectPresentQueueForSurface(VkSurfaceKHR surface);
+    angle::Result selectPresentQueueForSurface(vk::Context *context,
+                                               VkSurfaceKHR surface,
+                                               uint32_t *presentQueueOut);
 
-    vk::Error finish(const gl::Context *context);
-    vk::Error flush(const gl::Context *context,
-                    const vk::Semaphore &waitSemaphore,
-                    const vk::Semaphore &signalSemaphore);
+    angle::Result finish(vk::Context *context);
+    angle::Result flush(vk::Context *context,
+                        const vk::Semaphore &waitSemaphore,
+                        const vk::Semaphore &signalSemaphore);
 
     const vk::CommandPool &getCommandPool() const;
 
@@ -68,21 +73,10 @@ class RendererVk : angle::NonCopyable
     const gl::Extensions &getNativeExtensions() const;
     const gl::Limitations &getNativeLimitations() const;
     uint32_t getMaxActiveTextures();
-    uint32_t getUniformBufferDescriptorCount();
-
-    GlslangWrapper *getGlslangWrapper();
 
     Serial getCurrentQueueSerial() const;
 
-    bool isResourceInUse(const vk::CommandGraphResource &resource);
-    bool isSerialInUse(Serial serial);
-
-    template <typename T>
-    void releaseResource(const vk::CommandGraphResource &resource, T *object)
-    {
-        Serial resourceSerial = resource.getQueueSerial();
-        releaseObject(resourceSerial, object);
-    }
+    bool isSerialInUse(Serial serial) const;
 
     template <typename T>
     void releaseObject(Serial resourceSerial, T *object)
@@ -107,55 +101,64 @@ class RendererVk : angle::NonCopyable
         return mFormatTable[internalFormat];
     }
 
-    vk::Error getCompatibleRenderPass(const vk::RenderPassDesc &desc,
-                                      vk::RenderPass **renderPassOut);
-    vk::Error getRenderPassWithOps(const vk::RenderPassDesc &desc,
-                                   const vk::AttachmentOpsArray &ops,
-                                   vk::RenderPass **renderPassOut);
+    const vk::Format &getFormat(angle::Format::ID formatID) const { return mFormatTable[formatID]; }
 
-    // For getting a vk::Pipeline for the an application's draw call. RenderPassDesc is automatic.
-    vk::Error getAppPipeline(const ProgramVk *programVk,
-                             const vk::PipelineDesc &desc,
-                             const gl::AttributesMask &activeAttribLocationsMask,
-                             vk::PipelineAndSerial **pipelineOut);
+    angle::Result getCompatibleRenderPass(vk::Context *context,
+                                          const vk::RenderPassDesc &desc,
+                                          vk::RenderPass **renderPassOut);
+    angle::Result getRenderPassWithOps(vk::Context *context,
+                                       const vk::RenderPassDesc &desc,
+                                       const vk::AttachmentOpsArray &ops,
+                                       vk::RenderPass **renderPassOut);
 
-    // For getting a vk::Pipeline for an internal draw call. Use an explicit RenderPass.
-    vk::Error getInternalPipeline(const vk::ShaderAndSerial &vertexShader,
-                                  const vk::ShaderAndSerial &fragmentShader,
-                                  const vk::PipelineLayout &pipelineLayout,
-                                  const vk::PipelineDesc &pipelineDesc,
-                                  const gl::AttributesMask &activeAttribLocationsMask,
-                                  vk::PipelineAndSerial **pipelineOut);
+    // For getting a vk::Pipeline and checking the pipeline cache.
+    angle::Result getPipeline(vk::Context *context,
+                              const vk::ShaderAndSerial &vertexShader,
+                              const vk::ShaderAndSerial &fragmentShader,
+                              const vk::PipelineLayout &pipelineLayout,
+                              const vk::PipelineDesc &pipelineDesc,
+                              const gl::AttributesMask &activeAttribLocationsMask,
+                              vk::PipelineAndSerial **pipelineOut);
+
+    // Queries the descriptor set layout cache. Creates the layout if not present.
+    angle::Result getDescriptorSetLayout(
+        vk::Context *context,
+        const vk::DescriptorSetLayoutDesc &desc,
+        vk::BindingPointer<vk::DescriptorSetLayout> *descriptorSetLayoutOut);
+
+    // Queries the pipeline layout cache. Creates the layout if not present.
+    angle::Result getPipelineLayout(vk::Context *context,
+                                    const vk::PipelineLayoutDesc &desc,
+                                    const vk::DescriptorSetLayoutPointerArray &descriptorSetLayouts,
+                                    vk::BindingPointer<vk::PipelineLayout> *pipelineLayoutOut);
 
     // This should only be called from ResourceVk.
     // TODO(jmadill): Keep in ContextVk to enable threaded rendering.
-    vk::CommandGraphNode *allocateCommandNode();
-
-    const vk::PipelineLayout &getGraphicsPipelineLayout() const;
-    const std::vector<vk::DescriptorSetLayout> &getGraphicsDescriptorSetLayouts() const;
-
-    // Used in internal shaders.
-    vk::Error getInternalPushConstantPipelineLayout(const vk::PipelineLayout **pipelineLayoutOut);
+    vk::CommandGraph *getCommandGraph();
 
     // Issues a new serial for linked shader modules. Used in the pipeline cache.
     Serial issueShaderSerial();
 
     vk::ShaderLibrary *getShaderLibrary();
+    const FeaturesVk &getFeatures() const { return mFeatures; }
 
   private:
-    vk::Error initializeDevice(uint32_t queueFamilyIndex);
+    angle::Result initializeDevice(vk::Context *context, uint32_t queueFamilyIndex);
     void ensureCapsInitialized() const;
-    vk::Error submitFrame(const VkSubmitInfo &submitInfo, vk::CommandBuffer &&commandBatch);
-    vk::Error checkInFlightCommands();
+    angle::Result submitFrame(vk::Context *context,
+                              const VkSubmitInfo &submitInfo,
+                              vk::CommandBuffer &&commandBuffer);
+    angle::Result checkInFlightCommands(vk::Context *context);
     void freeAllInFlightResources();
-    vk::Error flushCommandGraph(const gl::Context *context, vk::CommandBuffer *commandBatch);
-    vk::Error initGraphicsPipelineLayout();
+    angle::Result flushCommandGraph(vk::Context *context, vk::CommandBuffer *commandBatch);
+    void initFeatures();
 
     mutable bool mCapsInitialized;
     mutable gl::Caps mNativeCaps;
     mutable gl::TextureCapsMap mNativeTextureCaps;
     mutable gl::Extensions mNativeExtensions;
     mutable gl::Limitations mNativeLimitations;
+    mutable FeaturesVk mFeatures;
 
     VkInstance mInstance;
     bool mEnableValidationLayers;
@@ -167,7 +170,6 @@ class RendererVk : angle::NonCopyable
     uint32_t mCurrentQueueFamilyIndex;
     VkDevice mDevice;
     vk::CommandPool mCommandPool;
-    GlslangWrapper *mGlslangWrapper;
     SerialFactory mQueueSerialFactory;
     SerialFactory mShaderSerialFactory;
     Serial mLastCompletedQueueSerial;
@@ -179,6 +181,8 @@ class RendererVk : angle::NonCopyable
         ~CommandBatch();
         CommandBatch(CommandBatch &&other);
         CommandBatch &operator=(CommandBatch &&other);
+
+        void destroy(VkDevice device);
 
         vk::CommandPool commandPool;
         vk::Fence fence;
@@ -196,17 +200,17 @@ class RendererVk : angle::NonCopyable
     // See CommandGraph.h for a desription of the Command Graph.
     vk::CommandGraph mCommandGraph;
 
-    // ANGLE uses a single pipeline layout for all GL programs. It is owned here in the Renderer.
-    // See the design doc for an overview of the pipeline layout structure.
-    vk::PipelineLayout mGraphicsPipelineLayout;
-    std::vector<vk::DescriptorSetLayout> mGraphicsDescriptorSetLayouts;
+    // ANGLE uses a PipelineLayout cache to store compatible pipeline layouts.
+    PipelineLayoutCache mPipelineLayoutCache;
 
-    // Used for internal shaders.
-    vk::PipelineLayout mInternalPushConstantPipelineLayout;
+    // DescriptorSetLayouts are also managed in a cache.
+    DescriptorSetLayoutCache mDescriptorSetLayoutCache;
 
     // Internal shader library.
     vk::ShaderLibrary mShaderLibrary;
 };
+
+uint32_t GetUniformBufferDescriptorCount();
 
 }  // namespace rx
 

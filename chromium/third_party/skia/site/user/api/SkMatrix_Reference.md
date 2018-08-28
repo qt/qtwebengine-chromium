@@ -117,6 +117,7 @@ SkMatrix related constants are defined by <code>enum</code>, <code>enum class</c
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>translation <a href='#Matrix'>Matrix</a></td>
   </tr>
 </table>
+
 <a href='#Matrix'>Matrix</a> holds a 3x3 matrix for transforming coordinates. This allows mapping
 <a href='SkPoint_Reference#Point'>Points</a> and <a href='SkPoint_Reference#Vector'>Vectors</a> with translation, scaling, skewing, rotation, and
 perspective.
@@ -496,12 +497,7 @@ SkMatrix member functions read and modify the structure properties.
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#SkMatrix_setTranslateY'>setTranslateY</a></td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>sets vertical translation</td>
   </tr>
-  <tr>
-    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#SkMatrix_toString'>toString</a></td>
-    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>converts <a href='#Matrix'>Matrix</a> to machine readable form</td>
-  </tr>
 </table>
-
 
 ## <a name='Related_Function'>Related Function</a>
 
@@ -535,7 +531,6 @@ SkMatrix global, <code>struct</code>, and <code>class</code> related member func
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>rarely called management functions</td>
   </tr>
 </table>
-
 
 ## <a name='Constructor'>Constructor</a>
 
@@ -669,7 +664,6 @@ SkMatrix can be constructed or initialized by these functions, including C++ cla
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#SkMatrix_setTranslate_2'>setTranslate(const SkVector& v)</a></td>
   </tr>
 </table>
-
 
 <a name='SkMatrix_MakeScale'></a>
 ## MakeScale
@@ -822,10 +816,10 @@ Sets <a href='#Matrix'>Matrix</a> to:
     <td>vertical translation</td>
   </tr>
   <tr>    <td><a name='SkMatrix_MakeAll_pers0'><code><strong>pers0</strong></code></a></td>
-    <td>input x perspective factor</td>
+    <td>input x-axis perspective factor</td>
   </tr>
   <tr>    <td><a name='SkMatrix_MakeAll_pers1'><code><strong>pers1</strong></code></a></td>
-    <td>input y perspective factor</td>
+    <td>input y-axis perspective factor</td>
   </tr>
   <tr>    <td><a name='SkMatrix_MakeAll_pers2'><code><strong>pers2</strong></code></a></td>
     <td>perspective scale factor</td>
@@ -1031,7 +1025,6 @@ after setPolyToPoly: kTranslate_Mask kScale_Mask kAffine_Mask kPerspective_Mask
   </tr>
 </table>
 
-
 <a name='SkMatrix_getType'></a>
 ## getType
 
@@ -1195,7 +1188,7 @@ bool <a href='#SkMatrix_rectStaysRect'>rectStaysRect</a>() const
 </pre>
 
 Returns true <a href='#Matrix'>Matrix</a> maps <a href='SkRect_Reference#Rect'>Rect</a> to another <a href='SkRect_Reference#Rect'>Rect</a>. If true, <a href='#Matrix'>Matrix</a> is identity,
-or scales, or rotates a multiple of 90 degrees, or mirrors in x or y. In all
+or scales, or rotates a multiple of 90 degrees, or mirrors on axes. In all
 cases, <a href='#Matrix'>Matrix</a> may also have translation. <a href='#Matrix'>Matrix</a> form is either:
 
 <pre style="padding: 1em 1em 1em 1em;width: 62.5em; background-color: #f0f0f0">
@@ -1250,7 +1243,7 @@ bool <a href='#SkMatrix_preservesAxisAlignment'>preservesAxisAlignment</a>() con
 </pre>
 
 Returns true <a href='#Matrix'>Matrix</a> maps <a href='SkRect_Reference#Rect'>Rect</a> to another <a href='SkRect_Reference#Rect'>Rect</a>. If true, <a href='#Matrix'>Matrix</a> is identity,
-or scales, or rotates a multiple of 90 degrees, or mirrors in x or y. In all
+or scales, or rotates a multiple of 90 degrees, or mirrors on axes. In all
 cases, <a href='#Matrix'>Matrix</a> may also have translation. <a href='#Matrix'>Matrix</a> form is either:
 
 <pre style="padding: 1em 1em 1em 1em;width: 62.5em; background-color: #f0f0f0">
@@ -1343,7 +1336,7 @@ degenerate forms that collapse to a line or point.
 
 Describes that the <a href='#Matrix'>Matrix</a> makes rendering with and without the matrix are
 visually alike; a transformed circle remains a circle. Mathematically, this is
-referred to as similarity of a Euclidean_Space, or a similarity transformation.
+referred to as similarity of a <a href='undocumented#Euclidean_Space'>Euclidean Space</a>, or a similarity transformation.
 
 Preserves right angles, keeping the arms of the angle equal lengths.
 
@@ -1692,7 +1685,6 @@ SkMatrix operators inline class member functions with arithmetic equivalents.
   </tr>
 </table>
 
-
 <a name='SkMatrix_array_operator'></a>
 ## operator[]
 
@@ -1782,7 +1774,7 @@ matrix.get(SkMatrix::kMSkewY) == 24
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkMatrix_getScaleX'>getScaleX</a>() const
 </pre>
 
-Returns scale factor multiplied by x input, contributing to x output.
+Returns scale factor multiplied by x-axis input, contributing to x-axis output.
 With <a href='#SkMatrix_mapPoints'>mapPoints</a>, scales <a href='SkPoint_Reference#Point'>Points</a> along the x-axis.
 
 ### Return Value
@@ -1814,7 +1806,7 @@ matrix.getScaleX() == 42
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkMatrix_getScaleY'>getScaleY</a>() const
 </pre>
 
-Returns scale factor multiplied by y input, contributing to y output.
+Returns scale factor multiplied by y-axis input, contributing to y-axis output.
 With <a href='#SkMatrix_mapPoints'>mapPoints</a>, scales <a href='SkPoint_Reference#Point'>Points</a> along the y-axis.
 
 ### Return Value
@@ -1846,9 +1838,9 @@ matrix.getScaleY() == 24
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkMatrix_getSkewY'>getSkewY</a>() const
 </pre>
 
-Returns scale factor multiplied by x input, contributing to y output.
+Returns scale factor multiplied by x-axis input, contributing to y-axis output.
 With <a href='#SkMatrix_mapPoints'>mapPoints</a>, skews <a href='SkPoint_Reference#Point'>Points</a> along the y-axis.
-Skew x and y together can rotate <a href='SkPoint_Reference#Point'>Points</a>.
+Skewing both axes can rotate <a href='SkPoint_Reference#Point'>Points</a>.
 
 ### Return Value
 
@@ -1879,9 +1871,9 @@ matrix.getSkewY() == 24
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkMatrix_getSkewX'>getSkewX</a>() const
 </pre>
 
-Returns scale factor multiplied by y input, contributing to x output.
+Returns scale factor multiplied by y-axis input, contributing to x-axis output.
 With <a href='#SkMatrix_mapPoints'>mapPoints</a>, skews <a href='SkPoint_Reference#Point'>Points</a> along the x-axis.
-Skew x and y together can rotate <a href='SkPoint_Reference#Point'>Points</a>.
+Skewing both axes can rotate <a href='SkPoint_Reference#Point'>Points</a>.
 
 ### Return Value
 
@@ -1912,7 +1904,7 @@ matrix.getSkewX() == 42
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkMatrix_getTranslateX'>getTranslateX</a>() const
 </pre>
 
-Returns translation contributing to x output.
+Returns translation contributing to x-axis output.
 With <a href='#SkMatrix_mapPoints'>mapPoints</a>, moves <a href='SkPoint_Reference#Point'>Points</a> along the x-axis.
 
 ### Return Value
@@ -1944,7 +1936,7 @@ matrix.getTranslateX() == 42
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkMatrix_getTranslateY'>getTranslateY</a>() const
 </pre>
 
-Returns translation contributing to y output.
+Returns translation contributing to y-axis output.
 With <a href='#SkMatrix_mapPoints'>mapPoints</a>, moves <a href='SkPoint_Reference#Point'>Points</a> along the y-axis.
 
 ### Return Value
@@ -1976,11 +1968,11 @@ matrix.getTranslateY() == 24
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkMatrix_getPerspX'>getPerspX</a>() const
 </pre>
 
-Returns factor scaling input x relative to input y.
+Returns factor scaling input x-axis relative to input y-axis.
 
 ### Return Value
 
-input x perspective factor
+input x-axis perspective factor
 
 ### Example
 
@@ -1999,11 +1991,11 @@ input x perspective factor
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkMatrix_getPerspY'>getPerspY</a>() const
 </pre>
 
-Returns factor scaling input y relative to input x.
+Returns factor scaling input y-axis relative to input x-axis.
 
 ### Return Value
 
-input y perspective factor
+input y-axis perspective factor
 
 ### Example
 
@@ -2213,7 +2205,6 @@ after dirty cache:    x = 66
   </tr>
 </table>
 
-
 <a name='SkMatrix_set'></a>
 ## set
 
@@ -2418,8 +2409,8 @@ Sets vertical translation.
 void <a href='#SkMatrix_setPerspX'>setPerspX</a>(<a href='undocumented#SkScalar'>SkScalar</a> v)
 </pre>
 
-Sets input x perspective factor, which causes <a href='#SkMatrix_mapXY'>mapXY</a> to vary input x inversely
-proportional to input y.
+Sets input x-axis perspective factor, which causes <a href='#SkMatrix_mapXY'>mapXY</a> to vary input x-axis values
+inversely proportional to input y-axis values.
 
 ### Parameters
 
@@ -2445,8 +2436,8 @@ proportional to input y.
 void <a href='#SkMatrix_setPerspY'>setPerspY</a>(<a href='undocumented#SkScalar'>SkScalar</a> v)
 </pre>
 
-Sets input y perspective factor, which causes <a href='#SkMatrix_mapXY'>mapXY</a> to vary input y inversely
-proportional to input x.
+Sets input y-axis perspective factor, which causes <a href='#SkMatrix_mapXY'>mapXY</a> to vary input y-axis values
+inversely proportional to input x-axis values.
 
 ### Parameters
 
@@ -2502,10 +2493,10 @@ Sets all values from parameters. Sets matrix to:
     <td>vertical translation to store</td>
   </tr>
   <tr>    <td><a name='SkMatrix_setAll_persp0'><code><strong>persp0</strong></code></a></td>
-    <td>input x perspective factor to store</td>
+    <td>input x-axis values perspective factor to store</td>
   </tr>
   <tr>    <td><a name='SkMatrix_setAll_persp1'><code><strong>persp1</strong></code></a></td>
-    <td>input y perspective factor to store</td>
+    <td>input y-axis values perspective factor to store</td>
   </tr>
   <tr>    <td><a name='SkMatrix_setAll_persp2'><code><strong>persp2</strong></code></a></td>
     <td>perspective scale factor to store</td>
@@ -2867,16 +2858,16 @@ The pivot point is unchanged when mapped with <a href='#Matrix'>Matrix</a>.
 ### Parameters
 
 <table>  <tr>    <td><a name='SkMatrix_setSinCos_sinValue'><code><strong>sinValue</strong></code></a></td>
-    <td>rotation vector x component</td>
+    <td>rotation vector x-axis component</td>
   </tr>
   <tr>    <td><a name='SkMatrix_setSinCos_cosValue'><code><strong>cosValue</strong></code></a></td>
-    <td>rotation vector y component</td>
+    <td>rotation vector y-axis component</td>
   </tr>
   <tr>    <td><a name='SkMatrix_setSinCos_px'><code><strong>px</strong></code></a></td>
-    <td>pivot x</td>
+    <td>pivot x-axis</td>
   </tr>
   <tr>    <td><a name='SkMatrix_setSinCos_py'><code><strong>py</strong></code></a></td>
-    <td>pivot y</td>
+    <td>pivot y-axis</td>
   </tr>
 </table>
 
@@ -2904,10 +2895,10 @@ Sets <a href='#Matrix'>Matrix</a> to rotate by <a href='#SkMatrix_setSinCos_2_si
 ### Parameters
 
 <table>  <tr>    <td><a name='SkMatrix_setSinCos_2_sinValue'><code><strong>sinValue</strong></code></a></td>
-    <td>rotation vector x component</td>
+    <td>rotation vector x-axis component</td>
   </tr>
   <tr>    <td><a name='SkMatrix_setSinCos_2_cosValue'><code><strong>cosValue</strong></code></a></td>
-    <td>rotation vector y component</td>
+    <td>rotation vector y-axis component</td>
   </tr>
 </table>
 
@@ -3097,10 +3088,10 @@ Matrix * T(dx, dy) = | D E F | | 0 1 dy | = | D E D*dx+E*dy+F |
 ### Parameters
 
 <table>  <tr>    <td><a name='SkMatrix_preTranslate_dx'><code><strong>dx</strong></code></a></td>
-    <td>x translation before applying <a href='#Matrix'>Matrix</a></td>
+    <td>x-axis translation before applying <a href='#Matrix'>Matrix</a></td>
   </tr>
   <tr>    <td><a name='SkMatrix_preTranslate_dy'><code><strong>dy</strong></code></a></td>
-    <td>y translation before applying <a href='#Matrix'>Matrix</a></td>
+    <td>y-axis translation before applying <a href='#Matrix'>Matrix</a></td>
   </tr>
 </table>
 
@@ -3513,10 +3504,10 @@ T(dx, dy) * Matrix = | 0 1 dy | | M N O | = | M+dy*P N+dy*Q O+dy*R |
 ### Parameters
 
 <table>  <tr>    <td><a name='SkMatrix_postTranslate_dx'><code><strong>dx</strong></code></a></td>
-    <td>x translation after applying <a href='#Matrix'>Matrix</a></td>
+    <td>x-axis translation after applying <a href='#Matrix'>Matrix</a></td>
   </tr>
   <tr>    <td><a name='SkMatrix_postTranslate_dy'><code><strong>dy</strong></code></a></td>
-    <td>y translation after applying <a href='#Matrix'>Matrix</a></td>
+    <td>y-axis translation after applying <a href='#Matrix'>Matrix</a></td>
   </tr>
 </table>
 
@@ -4447,7 +4438,6 @@ ScaleX: 2 SkewY: 5 SkewX: 3 ScaleY: 6 TransX: 4 TransY: 7
   </tr>
 </table>
 
-
 <a name='SkMatrix_mapPoints'></a>
 ## mapPoints
 
@@ -4631,10 +4621,10 @@ Matrix * pt = |D E F| |y| = |Ax+By+C Dx+Ey+F Gx+Hy+I| = ------- , -------
 ### Parameters
 
 <table>  <tr>    <td><a name='SkMatrix_mapXY_x'><code><strong>x</strong></code></a></td>
-    <td><a href='#SkMatrix_mapXY_x'>x</a>-coordinate of <a href='SkPoint_Reference#Point'>Point</a> to map</td>
+    <td><a href='#SkMatrix_mapXY_x'>x</a>-axis value of <a href='SkPoint_Reference#Point'>Point</a> to map</td>
   </tr>
   <tr>    <td><a name='SkMatrix_mapXY_y'><code><strong>y</strong></code></a></td>
-    <td><a href='#SkMatrix_mapXY_y'>y</a>-coordinate of <a href='SkPoint_Reference#Point'>Point</a> to map</td>
+    <td><a href='#SkMatrix_mapXY_y'>y</a>-axis value of <a href='SkPoint_Reference#Point'>Point</a> to map</td>
   </tr>
   <tr>    <td><a name='SkMatrix_mapXY_result'><code><strong>result</strong></code></a></td>
     <td>storage for mapped <a href='SkPoint_Reference#Point'>Point</a></td>
@@ -4676,10 +4666,10 @@ Matrix * pt = |D E F| |y| = |Ax+By+C Dx+Ey+F Gx+Hy+I| = ------- , -------
 ### Parameters
 
 <table>  <tr>    <td><a name='SkMatrix_mapXY_2_x'><code><strong>x</strong></code></a></td>
-    <td><a href='#SkMatrix_mapXY_2_x'>x</a>-coordinate of <a href='SkPoint_Reference#Point'>Point</a> to map</td>
+    <td><a href='#SkMatrix_mapXY_2_x'>x</a>-axis value of <a href='SkPoint_Reference#Point'>Point</a> to map</td>
   </tr>
   <tr>    <td><a name='SkMatrix_mapXY_2_y'><code><strong>y</strong></code></a></td>
-    <td><a href='#SkMatrix_mapXY_2_y'>y</a>-coordinate of <a href='SkPoint_Reference#Point'>Point</a> to map</td>
+    <td><a href='#SkMatrix_mapXY_2_y'>y</a>-axis value of <a href='SkPoint_Reference#Point'>Point</a> to map</td>
   </tr>
 </table>
 
@@ -4835,10 +4825,10 @@ Matrix * vec = |D E 0| |dy| = |A*dx+B*dy D*dx+E*dy G*dx+H*dy+I| = ----------- , 
 ### Parameters
 
 <table>  <tr>    <td><a name='SkMatrix_mapVector_dx'><code><strong>dx</strong></code></a></td>
-    <td>x-coordinate of <a href='SkPoint_Reference#Vector'>Vector</a> to map</td>
+    <td>x-axis value of <a href='SkPoint_Reference#Vector'>Vector</a> to map</td>
   </tr>
   <tr>    <td><a name='SkMatrix_mapVector_dy'><code><strong>dy</strong></code></a></td>
-    <td>y-coordinate of <a href='SkPoint_Reference#Vector'>Vector</a> to map</td>
+    <td>y-axis value of <a href='SkPoint_Reference#Vector'>Vector</a> to map</td>
   </tr>
   <tr>    <td><a name='SkMatrix_mapVector_result'><code><strong>result</strong></code></a></td>
     <td>storage for mapped <a href='SkPoint_Reference#Vector'>Vector</a></td>
@@ -4881,10 +4871,10 @@ Matrix * vec = |D E 0| |dy| = |A*dx+B*dy D*dx+E*dy G*dx+H*dy+I| = ----------- , 
 ### Parameters
 
 <table>  <tr>    <td><a name='SkMatrix_mapVector_2_dx'><code><strong>dx</strong></code></a></td>
-    <td>x-coordinate of <a href='SkPoint_Reference#Vector'>Vector</a> to map</td>
+    <td>x-axis value of <a href='SkPoint_Reference#Vector'>Vector</a> to map</td>
   </tr>
   <tr>    <td><a name='SkMatrix_mapVector_2_dy'><code><strong>dy</strong></code></a></td>
-    <td>y-coordinate of <a href='SkPoint_Reference#Vector'>Vector</a> to map</td>
+    <td>y-axis value of <a href='SkPoint_Reference#Vector'>Vector</a> to map</td>
   </tr>
 </table>
 
@@ -5125,9 +5115,9 @@ the area enclosed by the ellipse major and minor axes.
 bool <a href='#SkMatrix_isFixedStepInX'>isFixedStepInX</a>() const
 </pre>
 
-Returns true if a unit step in x at some y mapped through <a href='#Matrix'>Matrix</a> can be
-represented by a constant <a href='SkPoint_Reference#Vector'>Vector</a>. Returns true if <a href='#SkMatrix_getType'>getType</a> returns <a href='#SkMatrix_kIdentity_Mask'>kIdentity Mask</a>,
-or combinations of: <a href='#SkMatrix_kTranslate_Mask'>kTranslate Mask</a>, <a href='#SkMatrix_kScale_Mask'>kScale Mask</a>, and <a href='#SkMatrix_kAffine_Mask'>kAffine Mask</a>.
+Returns true if a unit step on x-axis at some y-axis value mapped through <a href='#Matrix'>Matrix</a>
+can be represented by a constant <a href='SkPoint_Reference#Vector'>Vector</a>. Returns true if <a href='#SkMatrix_getType'>getType</a> returns
+<a href='#SkMatrix_kIdentity_Mask'>kIdentity Mask</a>, or combinations of: <a href='#SkMatrix_kTranslate_Mask'>kTranslate Mask</a>, <a href='#SkMatrix_kScale_Mask'>kScale Mask</a>, and <a href='#SkMatrix_kAffine_Mask'>kAffine Mask</a>.
 
 May return true if <a href='#SkMatrix_getType'>getType</a> returns <a href='#SkMatrix_kPerspective_Mask'>kPerspective Mask</a>, but only when <a href='#Matrix'>Matrix</a>
 does not include rotation or skewing along the y-axis.
@@ -5176,7 +5166,7 @@ isFixedStepInX: false
 <a href='SkPoint_Reference#SkVector'>SkVector</a> <a href='#SkMatrix_fixedStepInX'>fixedStepInX</a>(<a href='undocumented#SkScalar'>SkScalar</a> y) const
 </pre>
 
-Returns <a href='SkPoint_Reference#Vector'>Vector</a> representing a unit step in x at <a href='#SkMatrix_fixedStepInX_y'>y</a> mapped through <a href='#Matrix'>Matrix</a>.
+Returns <a href='SkPoint_Reference#Vector'>Vector</a> representing a unit step on x-axis at <a href='#SkMatrix_fixedStepInX_y'>y</a> mapped through <a href='#Matrix'>Matrix</a>.
 If <a href='#SkMatrix_isFixedStepInX'>isFixedStepInX</a> is false, returned value is undefined.
 
 ### Parameters
@@ -5188,7 +5178,7 @@ If <a href='#SkMatrix_isFixedStepInX'>isFixedStepInX</a> is false, returned valu
 
 ### Return Value
 
-<a href='SkPoint_Reference#Vector'>Vector</a> advance of mapped unit step in x
+<a href='SkPoint_Reference#Vector'>Vector</a> advance of mapped unit step on x-axis
 
 ### Example
 
@@ -5341,12 +5331,7 @@ true if <a href='#Matrix'>Matrix</a> <a href='#SkMatrix_notequal_operator_a'>a</
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#SkMatrix_dump'>dump</a></td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>sends text representation using floats to standard output</td>
   </tr>
-  <tr style='background-color: #f0f0f0; '>
-    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#SkMatrix_toString'>toString</a></td>
-    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>converts <a href='#Matrix'>Matrix</a> to machine readable form</td>
-  </tr>
 </table>
-
 
 <a name='SkMatrix_dump'></a>
 ## dump
@@ -5375,45 +5360,7 @@ matrix != nearlyEqual
 
 ### See Also
 
-<a href='#SkMatrix_toString'>toString</a>
-
----
-
-<a name='SkMatrix_toString'></a>
-## toString
-
-<pre style="padding: 1em 1em 1em 1em; width: 62.5em;background-color: #f0f0f0">
-void <a href='#SkMatrix_toString'>toString</a>(<a href='undocumented#SkString'>SkString</a>* str) const
-</pre>
-
-Creates string representation of <a href='#Matrix'>Matrix</a>. Floating point values
-are written with limited precision; it may not be possible to reconstruct
-original <a href='#Matrix'>Matrix</a> from output.
-
-### Parameters
-
-<table>  <tr>    <td><a name='SkMatrix_toString_str'><code><strong>str</strong></code></a></td>
-    <td>storage for string representation of <a href='#Matrix'>Matrix</a></td>
-  </tr>
-</table>
-
-### Example
-
-<div><fiddle-embed name="1d86e43958e42b8eaaa9b16df1baa4c8">
-
-#### Example Output
-
-~~~~
-mStr  [  0.7071  -0.7071   0.0000][  0.7071   0.7071   0.0000][  0.0000   0.0000   1.0000]
-neStr [  0.7071  -0.7071   0.0000][  0.7071   0.7071   0.0000][  0.0000   0.0000   1.0000]
-matrix != nearlyEqual
-~~~~
-
-</fiddle-embed></div>
-
-### See Also
-
-<a href='#SkMatrix_dump'>dump</a>
+<a href='SkPath_Reference#SkPath_dump'>SkPath::dump</a><sup><a href='SkPath_Reference#SkPath_dump_2'>[2]</a></sup>
 
 ---
 
@@ -5536,20 +5483,20 @@ bool <a href='#SkMatrix_decomposeScale'>decomposeScale</a>(<a href='undocumented
 Decomposes <a href='#Matrix'>Matrix</a> into <a href='#SkMatrix_decomposeScale_scale'>scale</a> components and whatever remains. Returns false if
 <a href='#Matrix'>Matrix</a> could not be decomposed.
 
-Sets <a href='#SkMatrix_decomposeScale_scale'>scale</a> to portion of <a href='#Matrix'>Matrix</a> that scales in x and y. Sets <a href='#SkMatrix_decomposeScale_remaining'>remaining</a> to <a href='#Matrix'>Matrix</a>
-with x and y scaling factored out. <a href='#SkMatrix_decomposeScale_remaining'>remaining</a> may be passed as nullptr
+Sets <a href='#SkMatrix_decomposeScale_scale'>scale</a> to portion of <a href='#Matrix'>Matrix</a> that <a href='#SkMatrix_decomposeScale_scale'>scale</a> axes. Sets <a href='#SkMatrix_decomposeScale_remaining'>remaining</a> to <a href='#Matrix'>Matrix</a>
+with scaling factored out. <a href='#SkMatrix_decomposeScale_remaining'>remaining</a> may be passed as nullptr
 to determine if <a href='#Matrix'>Matrix</a> can be decomposed without computing remainder.
 
 Returns true if <a href='#SkMatrix_decomposeScale_scale'>scale</a> components are found. <a href='#SkMatrix_decomposeScale_scale'>scale</a> and <a href='#SkMatrix_decomposeScale_remaining'>remaining</a> are
 unchanged if <a href='#Matrix'>Matrix</a> contains perspective; <a href='#SkMatrix_decomposeScale_scale'>scale</a> factors are not finite, or
 are nearly zero.
 
-On success<a href='#Matrix'>Matrix</a> = <a href='#SkMatrix_decomposeScale_scale'>scale</a> * Remaining
+On success<a href='#Matrix'>Matrix</a> = <a href='#SkMatrix_decomposeScale_scale'>scale</a> * Remaining.
 
 ### Parameters
 
 <table>  <tr>    <td><a name='SkMatrix_decomposeScale_scale'><code><strong>scale</strong></code></a></td>
-    <td>x and y scaling factors; may be nullptr</td>
+    <td>axes scaling factors; may be nullptr</td>
   </tr>
   <tr>    <td><a name='SkMatrix_decomposeScale_remaining'><code><strong>remaining</strong></code></a></td>
     <td><a href='#Matrix'>Matrix</a> without scaling; may be nullptr</td>

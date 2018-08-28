@@ -7,8 +7,10 @@ import("//third_party/closure_compiler/compile_js.gni")
 js_type_check("closure_compile") {
   deps = [
     ":async_util",
+    ":closure_compile_externs",
     ":error_util",
     ":file_type",
+    ":files_app_entry_types",
     ":importer_common",
     ":lru_cache",
     ":metrics",
@@ -21,10 +23,31 @@ js_type_check("closure_compile") {
   ]
 }
 
+js_library("closure_compile_externs") {
+  sources = []
+  externs_list = [
+    "$externs_path/chrome_extensions.js",
+    "$externs_path/command_line_private.js",
+    "$externs_path/file_manager_private.js",
+    "$externs_path/file_system_provider.js",
+    "$externs_path/metrics_private.js",
+    "../../../externs/app_window_common.js",
+    "../../../externs/background/file_browser_background.js",
+    "../../../externs/background_window.js",
+    "../../../externs/entry_location.js",
+    "../../../externs/platform.js",
+    "../../../externs/volume_info.js",
+    "//third_party/analytics/externs.js",
+  ]
+}
+
 js_library("async_util") {
 }
 
 js_library("error_util") {
+}
+
+js_library("files_app_entry_types") {
 }
 
 js_library("file_type") {
@@ -34,13 +57,6 @@ js_library("importer_common") {
   deps = [
     ":file_type",
     ":volume_manager_common",
-  ]
-  externs_list = [
-    "../../../externs/background_window.js",
-    "../../../externs/background/file_browser_background.js",
-    "//third_party/analytics/externs.js",
-    "$externs_path/chrome_extensions.js",
-    "$externs_path/command_line_private.js",
   ]
 }
 
@@ -52,22 +68,15 @@ js_library("metrics") {
     ":metrics_base",
     "//ui/webui/resources/js:assert",
   ]
-  externs_list = [
-    "$externs_path/file_manager_private.js",
-    "$externs_path/chrome_extensions.js",
-    "//third_party/analytics/externs.js",
-  ]
 }
 
 js_library("metrics_base") {
-  externs_list = [ "$externs_path/metrics_private.js" ]
 }
 
 js_library("metrics_events") {
   deps = [
     ":metrics_base",
   ]
-  externs_list = [ "//third_party/analytics/externs.js" ]
 }
 
 js_library("mock_entry") {
@@ -82,19 +91,12 @@ js_library("progress_center_common") {
 
 js_library("util") {
   deps = [
+    ":files_app_entry_types",
     ":volume_manager_common",
     "//ui/webui/resources/js:load_time_data",
     "//ui/webui/resources/js:util",
     "//ui/webui/resources/js/cr:event_target",
     "//ui/webui/resources/js/cr:ui",
-  ]
-  externs_list = [
-    "../../../externs/app_window_common.js",
-    "../../../externs/entry_location.js",
-    "../../../externs/platform.js",
-    "$externs_path/chrome_extensions.js",
-    "$externs_path/command_line_private.js",
-    "$externs_path/file_manager_private.js",
   ]
 }
 
@@ -102,5 +104,4 @@ js_library("volume_manager_common") {
   deps = [
     "//ui/webui/resources/js:assert",
   ]
-  externs_list = [ "../../../externs/volume_info.js" ]
 }

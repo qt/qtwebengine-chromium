@@ -68,12 +68,27 @@ WebString WebFormControlElement::FormControlTypeForAutofill() const {
   return ConstUnwrap<HTMLFormControlElement>()->type();
 }
 
+WebAutofillState WebFormControlElement::GetAutofillState() const {
+  return ConstUnwrap<HTMLFormControlElement>()->GetAutofillState();
+}
+
 bool WebFormControlElement::IsAutofilled() const {
   return ConstUnwrap<HTMLFormControlElement>()->IsAutofilled();
 }
 
-void WebFormControlElement::SetAutofilled(bool autofilled) {
-  Unwrap<HTMLFormControlElement>()->SetAutofilled(autofilled);
+bool WebFormControlElement::UserHasEditedTheField() const {
+  if (auto* input = ToHTMLInputElementOrNull(*private_))
+    return input->UserHasEditedTheField();
+  return true;
+}
+
+void WebFormControlElement::SetUserHasEditedTheFieldForTest() {
+  if (auto* input = ToHTMLInputElementOrNull(*private_))
+    input->SetUserHasEditedTheFieldForTest();
+}
+
+void WebFormControlElement::SetAutofillState(WebAutofillState autofill_state) {
+  Unwrap<HTMLFormControlElement>()->SetAutofillState(autofill_state);
 }
 
 WebString WebFormControlElement::AutofillSection() const {

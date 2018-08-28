@@ -10,6 +10,7 @@
 #include "base/callback.h"
 #include "base/callback_list.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/signin/core/browser/account_info.h"
 #include "components/signin/core/browser/profile_management_switches.h"
@@ -28,6 +29,13 @@ class Observer;
 
 namespace net {
 class URLRequestContextGetter;
+}
+namespace network {
+class SharedURLLoaderFactory;
+}
+
+namespace network {
+class SharedURLLoaderFactory;
 }
 
 // An interface that needs to be supplied to the Signin component by its
@@ -70,11 +78,13 @@ class SigninClient : public KeyedService {
   virtual std::string GetSigninScopedDeviceId() = 0;
 
   // Returns the URL request context information associated with the client.
+  // DEPRECATED, new code should be using GetURLLoaderFactory instead.
   virtual net::URLRequestContextGetter* GetURLRequestContext() = 0;
 
-  // Returns whether the user's credentials should be merged into the cookie
-  // jar on signin completion.
-  virtual bool ShouldMergeSigninCredentialsIntoCookieJar() = 0;
+  // Returns the SharedURLLoaderFactory that should be used to fetch resources
+  // associated with the client.
+  virtual scoped_refptr<network::SharedURLLoaderFactory>
+  GetURLLoaderFactory() = 0;
 
   // Returns a string containing the version info of the product in which the
   // Signin component is being used.
@@ -129,13 +139,19 @@ class SigninClient : public KeyedService {
   virtual std::unique_ptr<GaiaAuthFetcher> CreateGaiaAuthFetcher(
       GaiaAuthConsumer* consumer,
       const std::string& source,
-      net::URLRequestContextGetter* getter) = 0;
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory) = 0;
 
   // Called once the credentials has been copied to another SigninManager.
   virtual void AfterCredentialsCopied() {}
 
   // Schedules migration to happen at next startup.
   virtual void SetReadyForDiceMigration(bool is_ready) {}
+
+#if !defined(OS_CHROMEOS)
+  // Forces the generation of a new device ID, and stores it in the pref
+  // service.
+  void RecreateSigninScopedDeviceId();
+#endif
 
  protected:
   // Returns device id that is scoped to single signin.

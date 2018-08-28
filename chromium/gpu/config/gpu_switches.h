@@ -12,13 +12,16 @@ namespace switches {
 GPU_EXPORT extern const char kDisableGpuDriverBugWorkarounds[];
 GPU_EXPORT extern const char kDisableGpuRasterization[];
 GPU_EXPORT extern const char kEnableGpuRasterization[];
-GPU_EXPORT extern const char kEnableOOPRasterization[];
-GPU_EXPORT extern const char kGpuPreferences[];
-GPU_EXPORT extern const char kIgnoreGpuBlacklist[];
 GPU_EXPORT extern const char kGpuBlacklistTestGroup[];
 GPU_EXPORT extern const char kGpuDriverBugListTestGroup[];
+GPU_EXPORT extern const char kGpuPreferences[];
+GPU_EXPORT extern const char kIgnoreGpuBlacklist[];
+GPU_EXPORT extern const char kMaxActiveWebGLContexts[];
+GPU_EXPORT extern const char kShaderDiskCacheSizeKB[];
 GPU_EXPORT extern const char kUseGpuFencesForOverlayPlanes[];
-
+GPU_EXPORT extern const char kWebglAntialiasingMode[];
+GPU_EXPORT extern const char kWebglMSAASampleCount[];
+GPU_EXPORT extern const char kDisableGpuProcessForDX12VulkanInfoCollection[];
 }  // namespace switches
 
 #endif  // GPU_CONFIG_GPU_SWITCHES_H_

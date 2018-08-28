@@ -1,6 +1,6 @@
 #Topic Point
-#Alias Points
-#Alias Point_Reference
+#Alias Points ##
+#Alias Point_Reference ##
 
 #Struct SkPoint
 
@@ -777,6 +777,7 @@ Multiplies Point by scale. Sets Point to:
 #Formula
 (fX * scale, fY * scale)
 ##
+.
 
 #Param scale  Scalar to multiply by ##
 
@@ -1261,15 +1262,15 @@ Returns the dot product of Vector and Vector vec.
 
 #Subtopic Vector
 #Line # alias for Point ##
-    #Alias Vector
-    #Alias Vectors
+    #Alias Vector ##
+    #Alias Vectors ##
     #Typedef SkPoint SkVector
     #Line # alias for Point ##
     #Code
     typedef SkPoint SkVector;
     ##
     SkVector provides an alternative name for SkPoint. SkVector and SkPoint can
-    be used interchangably for all purposes.
+    be used interchangeably for all purposes.
     #Typedef ##
 ##
 

@@ -17,7 +17,8 @@ class MockWebRTCPeerConnectionHandler : public WebRTCPeerConnectionHandler {
   ~MockWebRTCPeerConnectionHandler() override;
 
   bool Initialize(const WebRTCConfiguration&,
-                  const WebMediaConstraints&) override;
+                  const WebMediaConstraints&,
+                  WebRTCSdpSemantics original_sdp_semantics_value) override;
 
   void CreateOffer(const WebRTCSessionDescriptionRequest&,
                    const WebMediaConstraints&) override;
@@ -36,10 +37,17 @@ class MockWebRTCPeerConnectionHandler : public WebRTCPeerConnectionHandler {
   webrtc::RTCErrorType SetConfiguration(const WebRTCConfiguration&) override;
   void GetStats(const WebRTCStatsRequest&) override;
   void GetStats(std::unique_ptr<WebRTCStatsReportCallback>) override;
-  std::unique_ptr<WebRTCRtpSender> AddTrack(
+  webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>>
+  AddTransceiverWithTrack(const WebMediaStreamTrack&,
+                          const webrtc::RtpTransceiverInit&) override;
+  webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>>
+  AddTransceiverWithKind(std::string kind,
+                         const webrtc::RtpTransceiverInit&) override;
+  webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>> AddTrack(
       const WebMediaStreamTrack&,
       const WebVector<WebMediaStream>&) override;
-  bool RemoveTrack(WebRTCRtpSender*) override;
+  webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>> RemoveTrack(
+      WebRTCRtpSender*) override;
   WebRTCDataChannelHandler* CreateDataChannel(
       const WebString& label,
       const WebRTCDataChannelInit&) override;

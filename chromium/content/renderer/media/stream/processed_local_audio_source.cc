@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
-#include "content/renderer/media/audio_device_factory.h"
+#include "content/renderer/media/audio/audio_device_factory.h"
 #include "content/renderer/media/stream/media_stream_audio_processor_options.h"
 #include "content/renderer/media/stream/media_stream_constraints_util.h"
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
@@ -23,6 +23,8 @@
 #include "third_party/webrtc/media/base/mediachannel.h"
 
 namespace content {
+
+using EchoCancellationType = AudioProcessingProperties::EchoCancellationType;
 
 namespace {
 // Used as an identifier for ProcessedLocalAudioSource::From().
@@ -97,19 +99,22 @@ bool ProcessedLocalAudioSource::EnsureSourceIsStarted() {
   MediaStreamDevice modified_device(device());
   bool device_is_modified = false;
 
-  // Disable HW echo cancellation if constraints explicitly specified no
-  // echo cancellation.
-  if (audio_processing_properties_.disable_hw_echo_cancellation &&
-      (device().input.effects() & media::AudioParameters::ECHO_CANCELLER)) {
+  // Disable system echo cancellation if specified by
+  // |audio_processing_properties_|.
+  if (audio_processing_properties_.echo_cancellation_type !=
+          EchoCancellationType::kEchoCancellationSystem &&
+      device().input.effects() & media::AudioParameters::ECHO_CANCELLER) {
     modified_device.input.set_effects(modified_device.input.effects() &
                                       ~media::AudioParameters::ECHO_CANCELLER);
     device_is_modified = true;
-  } else if (audio_processing_properties_
-                 .enable_experimental_hw_echo_cancellation &&
+  } else if (audio_processing_properties_.echo_cancellation_type ==
+                 EchoCancellationType::kEchoCancellationSystem &&
              (device().input.effects() &
               media::AudioParameters::EXPERIMENTAL_ECHO_CANCELLER)) {
     // Set the ECHO_CANCELLER effect, since that is what controls what's
     // actually being used. The EXPERIMENTAL_ flag only indicates availability.
+    // TODO(grunell): AND with
+    // ~media::AudioParameters::EXPERIMENTAL_ECHO_CANCELLER.
     modified_device.input.set_effects(modified_device.input.effects() |
                                       media::AudioParameters::ECHO_CANCELLER);
     device_is_modified = true;

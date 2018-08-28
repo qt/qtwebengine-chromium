@@ -28,8 +28,11 @@ source_set("test_support") {
     "ios_chrome_scoped_testing_local_state.h",
     "ios_chrome_unit_test_suite.h",
     "ios_chrome_unit_test_suite.mm",
+    "root_view_controller_test.h",
+    "root_view_controller_test.mm",
     "scoped_block_popups_pref.h",
     "scoped_block_popups_pref.mm",
+    "scoped_eg_synchronization_disabler.h",
     "scoped_key_window.h",
     "testing_application_context.h",
     "testing_application_context.mm",
@@ -57,6 +60,7 @@ source_set("test_support") {
     "//ios/web",
     "//ios/web/public/test",
     "//net",
+    "//services/network:test_support",
     "//testing/gmock",
     "//testing/gtest",
     "//ui/base",
@@ -88,7 +92,7 @@ source_set("run_all_unittests") {
     ":test_support",
     "//base",
     "//base/test:test_support",
-    "//mojo/edk",
+    "//mojo/core/embedder",
   ]
 }
 

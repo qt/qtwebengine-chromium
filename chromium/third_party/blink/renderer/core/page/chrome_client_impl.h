@@ -52,6 +52,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
  public:
   static ChromeClientImpl* Create(WebViewImpl*);
   ~ChromeClientImpl() override;
+  void Trace(Visitor* visitor) override;
 
   WebViewImpl* GetWebView() const override;
 
@@ -69,7 +70,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void StartDragging(LocalFrame*,
                      const WebDragData&,
                      WebDragOperationsMask,
-                     const WebImage& drag_image,
+                     const SkBitmap& drag_image,
                      const WebPoint& drag_image_offset) override;
   bool AcceptsLoadDrops() const override;
   Page* CreateWindow(LocalFrame*,
@@ -137,11 +138,11 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   // allows the client to know which optimizations can be used for the
   // associated event classes.
   void SetEventListenerProperties(LocalFrame*,
-                                  WebEventListenerClass,
-                                  WebEventListenerProperties) override;
-  WebEventListenerProperties EventListenerProperties(
+                                  cc::EventListenerClass,
+                                  cc::EventListenerProperties) override;
+  cc::EventListenerProperties EventListenerProperties(
       LocalFrame*,
-      WebEventListenerClass) const override;
+      cc::EventListenerClass) const override;
   // Informs client about the existence of handlers for scroll events so
   // appropriate scroll optimizations can be chosen.
   void SetHasScrollEventHandlers(LocalFrame*, bool has_event_handlers) override;
@@ -243,7 +244,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   WebAutofillClient* AutofillClientFromFrame(LocalFrame*);
 
   WebViewImpl* web_view_;  // Weak pointer.
-  Vector<PopupOpeningObserver*> popup_opening_observers_;
+  HeapHashSet<WeakMember<PopupOpeningObserver>> popup_opening_observers_;
   Cursor last_set_mouse_cursor_for_testing_;
   bool cursor_overridden_;
   bool did_request_non_empty_tool_tip_;

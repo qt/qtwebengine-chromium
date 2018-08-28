@@ -28,7 +28,6 @@
 #include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_resources_cache.h"
 #include "third_party/blink/renderer/core/paint/svg_paint_context.h"
-#include "third_party/blink/renderer/core/paint/transform_recorder.h"
 #include "third_party/blink/renderer/core/svg/svg_fit_to_view_box.h"
 #include "third_party/blink/renderer/core/svg/svg_pattern_element.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
@@ -215,7 +214,7 @@ sk_sp<PaintRecord> LayoutSVGResourcePattern::AsPaintRecord(
        child = child->NextSibling())
     SVGPaintContext::PaintResourceSubtree(builder.Context(), child);
   PaintRecorder paint_recorder;
-  PaintCanvas* canvas = paint_recorder.beginRecording(bounds);
+  cc::PaintCanvas* canvas = paint_recorder.beginRecording(bounds);
   canvas->save();
   canvas->concat(AffineTransformToSkMatrix(tile_transform));
   builder.EndRecording(*canvas);

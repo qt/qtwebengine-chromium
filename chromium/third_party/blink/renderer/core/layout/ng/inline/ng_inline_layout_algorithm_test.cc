@@ -266,10 +266,11 @@ TEST_F(NGInlineLayoutAlgorithmTest, TextFloatsAroundFloatsBefore) {
       ToNGPhysicalBoxFragment(html_fragment->Children()[0].get());
   auto* container_fragment =
       ToNGPhysicalBoxFragment(body_fragment->Children()[0].get());
-  auto* span_box_fragments_wrapper =
-      ToNGPhysicalBoxFragment(container_fragment->Children()[3].get());
   Vector<NGPhysicalLineBoxFragment*> line_boxes;
-  for (const auto& child : span_box_fragments_wrapper->Children()) {
+  for (const auto& child : container_fragment->Children()) {
+    if (!child->IsLineBox())
+      continue;
+
     line_boxes.push_back(ToNGPhysicalLineBoxFragment(child.get()));
   }
 
@@ -433,8 +434,8 @@ TEST_F(NGInlineLayoutAlgorithmTest, PositionFloatsWithMargins) {
   EXPECT_EQ(LayoutUnit(53), span->OffsetLeft());
 }
 
-// Test glyph bounding box causes visual overflow.
-TEST_F(NGInlineLayoutAlgorithmTest, VisualRect) {
+// Test glyph bounding box causes ink overflow.
+TEST_F(NGInlineLayoutAlgorithmTest, InkOverflow) {
   LoadAhem();
   SetBodyInnerHTML(R"HTML(
     <!DOCTYPE html>
@@ -452,9 +453,9 @@ TEST_F(NGInlineLayoutAlgorithmTest, VisualRect) {
 
   EXPECT_EQ(LayoutUnit(10), box_fragment->Size().height);
 
-  NGPhysicalOffsetRect visual_rect = box_fragment->ContentsVisualRect();
-  EXPECT_EQ(LayoutUnit(-5), visual_rect.offset.top);
-  EXPECT_EQ(LayoutUnit(20), visual_rect.size.height);
+  NGPhysicalOffsetRect ink_overflow = box_fragment->ContentsInkOverflow();
+  EXPECT_EQ(LayoutUnit(-5), ink_overflow.offset.top);
+  EXPECT_EQ(LayoutUnit(20), ink_overflow.size.height);
 }
 
 TEST_F(NGInlineLayoutAlgorithmTest,

@@ -42,18 +42,18 @@ class DynamicBuffer : angle::NonCopyable
     // This call will allocate a new region at the end of the buffer. It internally may trigger
     // a new buffer to be created (which is returned in 'newBufferAllocatedOut'. This param may
     // be nullptr.
-    Error allocate(RendererVk *renderer,
-                   size_t sizeInBytes,
-                   uint8_t **ptrOut,
-                   VkBuffer *handleOut,
-                   uint32_t *offsetOut,
-                   bool *newBufferAllocatedOut);
+    angle::Result allocate(Context *context,
+                           size_t sizeInBytes,
+                           uint8_t **ptrOut,
+                           VkBuffer *handleOut,
+                           uint32_t *offsetOut,
+                           bool *newBufferAllocatedOut);
 
     // After a sequence of writes, call flush to ensure the data is visible to the device.
-    Error flush(VkDevice device);
+    angle::Result flush(Context *context);
 
     // After a sequence of writes, call invalidate to ensure the data is visible to the host.
-    Error invalidate(VkDevice device);
+    angle::Result invalidate(Context *context);
 
     // This releases resources when they might currently be in use.
     void release(RendererVk *renderer);
@@ -83,43 +83,44 @@ class DynamicBuffer : angle::NonCopyable
     std::vector<BufferAndMemory> mRetainedBuffers;
 };
 
-// Uses DescriptorPool to allocate descriptor sets as needed. If the descriptor pool
-// is full, we simply allocate a new pool to keep allocating descriptor sets as needed and
-// leave the renderer take care of the life time of the pools that become unused.
-enum DescriptorPoolIndex : uint8_t
-{
-    UniformBufferIndex       = 0,
-    TextureIndex             = 1,
-    DescriptorPoolIndexCount = 2
-};
+// Uses DescriptorPool to allocate descriptor sets as needed. If a descriptor pool becomes full, we
+// allocate new pools internally as needed. RendererVk takes care of the lifetime of the discarded
+// pools. Note that we used a fixed layout for descriptor pools in ANGLE. Uniform buffers must
+// use set zero and combined Image Samplers must use set 1. We conservatively count each new set
+// using the maximum number of descriptor sets and buffers with each allocation. Currently: 2
+// (Vertex/Fragment) uniform buffers and 64 (MAX_ACTIVE_TEXTURES) image/samplers.
+
+// This is an arbitrary max. We can change this later if necessary.
+constexpr uint32_t kDefaultDescriptorPoolMaxSets = 2048;
 
 class DynamicDescriptorPool final : angle::NonCopyable
 {
   public:
     DynamicDescriptorPool();
     ~DynamicDescriptorPool();
-    void destroy(RendererVk *rendererVk);
-    Error init(const VkDevice &device,
-               uint32_t uniformBufferDescriptorsPerSet,
-               uint32_t combinedImageSamplerDescriptorsPerSet);
 
-    // It is an undefined behavior to pass a different descriptorSetLayout from call to call.
-    Error allocateDescriptorSets(ContextVk *contextVk,
-                                 const VkDescriptorSetLayout *descriptorSetLayout,
-                                 uint32_t descriptorSetCount,
-                                 VkDescriptorSet *descriptorSetsOut);
+    // The DynamicDescriptorPool only handles one pool size at at time.
+    angle::Result init(Context *context, const VkDescriptorPoolSize &poolSize);
+    void destroy(VkDevice device);
+
+    // We use the descriptor type to help count the number of free sets.
+    // By convention, sets are indexed according to the constants in vk_cache_utils.h.
+    angle::Result allocateSets(Context *context,
+                               const VkDescriptorSetLayout *descriptorSetLayout,
+                               uint32_t descriptorSetCount,
+                               VkDescriptorSet *descriptorSetsOut);
 
     // For testing only!
     void setMaxSetsPerPoolForTesting(uint32_t maxSetsPerPool);
 
   private:
-    Error allocateNewPool(const VkDevice &device);
+    angle::Result allocateNewPool(Context *context);
 
     uint32_t mMaxSetsPerPool;
-    DescriptorPool mCurrentDescriptorSetPool;
-    size_t mCurrentAllocatedDescriptorSetCount;
-    uint32_t mUniformBufferDescriptorsPerSet;
-    uint32_t mCombinedImageSamplerDescriptorsPerSet;
+    uint32_t mCurrentSetsCount;
+    DescriptorPool mCurrentDescriptorPool;
+    VkDescriptorPoolSize mPoolSize;
+    uint32_t mFreeDescriptorSets;
 };
 
 // This class' responsibility is to create index buffers needed to support line loops in Vulkan.
@@ -135,23 +136,21 @@ class LineLoopHelper final : public vk::CommandGraphResource
     LineLoopHelper(RendererVk *renderer);
     ~LineLoopHelper();
 
-    gl::Error getIndexBufferForDrawArrays(RendererVk *renderer,
-                                          const gl::DrawCallParams &drawCallParams,
-                                          VkBuffer *bufferHandleOut,
-                                          VkDeviceSize *offsetOut);
-    gl::Error getIndexBufferForElementArrayBuffer(RendererVk *renderer,
-                                                  BufferVk *elementArrayBufferVk,
-                                                  VkIndexType indexType,
-                                                  int indexCount,
-                                                  intptr_t elementArrayOffset,
-                                                  VkBuffer *bufferHandleOut,
-                                                  VkDeviceSize *bufferOffsetOut);
-    gl::Error getIndexBufferForClientElementArray(RendererVk *renderer,
-                                                  const void *indicesInput,
-                                                  VkIndexType indexType,
-                                                  int indexCount,
-                                                  VkBuffer *bufferHandleOut,
-                                                  VkDeviceSize *bufferOffsetOut);
+    angle::Result getIndexBufferForDrawArrays(Context *context,
+                                              const gl::DrawCallParams &drawCallParams,
+                                              VkBuffer *bufferHandleOut,
+                                              VkDeviceSize *offsetOut);
+    angle::Result getIndexBufferForElementArrayBuffer(Context *context,
+                                                      BufferVk *elementArrayBufferVk,
+                                                      VkIndexType indexType,
+                                                      int indexCount,
+                                                      intptr_t elementArrayOffset,
+                                                      VkBuffer *bufferHandleOut,
+                                                      VkDeviceSize *bufferOffsetOut);
+    angle::Result getIndexBufferForClientElementArray(Context *context,
+                                                      const gl::DrawCallParams &drawCallParams,
+                                                      VkBuffer *bufferHandleOut,
+                                                      VkDeviceSize *bufferOffsetOut);
 
     void destroy(VkDevice device);
 
@@ -170,28 +169,29 @@ class ImageHelper final : angle::NonCopyable
 
     bool valid() const;
 
-    Error init(VkDevice device,
-               gl::TextureType textureType,
-               const gl::Extents &extents,
-               const Format &format,
-               GLint samples,
-               VkImageUsageFlags usage,
-               uint32_t mipLevels);
-    Error initMemory(VkDevice device,
-                     const MemoryProperties &memoryProperties,
-                     VkMemoryPropertyFlags flags);
-    Error initImageView(VkDevice device,
-                        gl::TextureType textureType,
-                        VkImageAspectFlags aspectMask,
-                        const gl::SwizzleState &swizzleMap,
-                        ImageView *imageViewOut,
-                        uint32_t levelCount);
-    Error init2DStaging(VkDevice device,
-                        const MemoryProperties &memoryProperties,
-                        const Format &format,
-                        const gl::Extents &extent,
-                        StagingUsage usage);
+    angle::Result init(Context *context,
+                       gl::TextureType textureType,
+                       const gl::Extents &extents,
+                       const Format &format,
+                       GLint samples,
+                       VkImageUsageFlags usage,
+                       uint32_t mipLevels);
+    angle::Result initMemory(Context *context,
+                             const MemoryProperties &memoryProperties,
+                             VkMemoryPropertyFlags flags);
+    angle::Result initImageView(Context *context,
+                                gl::TextureType textureType,
+                                VkImageAspectFlags aspectMask,
+                                const gl::SwizzleState &swizzleMap,
+                                ImageView *imageViewOut,
+                                uint32_t levelCount);
+    angle::Result init2DStaging(Context *context,
+                                const MemoryProperties &memoryProperties,
+                                const Format &format,
+                                const gl::Extents &extent,
+                                StagingUsage usage);
 
+    VkImageAspectFlags getAspectFlags() const;
     void release(Serial serial, RendererVk *renderer);
     void destroy(VkDevice device);
     void dumpResources(Serial serial, std::vector<GarbageObject> *garbageQueue);
@@ -208,7 +208,6 @@ class ImageHelper final : angle::NonCopyable
     const gl::Extents &getExtents() const;
     const Format &getFormat() const;
     GLint getSamples() const;
-    size_t getAllocatedMemorySize() const;
 
     VkImageLayout getCurrentLayout() const { return mCurrentLayout; }
     void updateLayout(VkImageLayout layout) { mCurrentLayout = layout; }
@@ -219,7 +218,10 @@ class ImageHelper final : angle::NonCopyable
                                 VkPipelineStageFlags dstStageMask,
                                 CommandBuffer *commandBuffer);
 
-    void clearColor(const VkClearColorValue &color, CommandBuffer *commandBuffer);
+    void clearColor(const VkClearColorValue &color,
+                    uint32_t mipLevel,
+                    uint32_t levelCount,
+                    CommandBuffer *commandBuffer);
 
     void clearDepthStencil(VkImageAspectFlags aspectFlags,
                            const VkClearDepthStencilValue &depthStencil,
@@ -243,7 +245,6 @@ class ImageHelper final : angle::NonCopyable
     gl::Extents mExtents;
     const Format *mFormat;
     GLint mSamples;
-    size_t mAllocatedMemorySize;
 
     // Current state.
     VkImageLayout mCurrentLayout;

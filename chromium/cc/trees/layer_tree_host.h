@@ -48,6 +48,10 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/rect.h"
 
+namespace gfx {
+struct PresentationFeedback;
+}
+
 namespace cc {
 class HeadsUpDisplayLayer;
 class Layer;
@@ -167,6 +171,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // synchronization.
   virtual void SetNeedsCommit();
 
+  // Returns true after SetNeedsAnimate(), SetNeedsUpdateLayers() or
+  // SetNeedsCommit(), until it is satisfied.
+  bool RequestedMainFramePending();
+
   // Requests that the next frame re-chooses crisp raster scales for all layers.
   void SetNeedsRecalculateRasterScales();
 
@@ -177,6 +185,9 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // Enables/disables the compositor from requesting main frame updates from the
   // client.
   void SetDeferCommits(bool defer_commits);
+  // Returns the value last passed to SetDeferCommits(), though commits may be
+  // deferred also when the local_surface_id_from_parent() is not valid.
+  bool defer_commits() const { return defer_commits_; }
 
   // Synchronously performs a main frame update and layer updates. Used only in
   // single threaded mode when the compositor's internal scheduling is disabled.
@@ -212,10 +223,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // the compositor thread.
   const base::WeakPtr<InputHandler>& GetInputHandler() const;
 
-  // Informs the compositor that an active fling gesture being processed on the
-  // main thread has been finished.
-  void DidStopFlinging();
-
   // Debugging and benchmarks ---------------------------------
   void SetDebugState(const LayerTreeDebugState& debug_state);
   const LayerTreeDebugState& GetDebugState() const;
@@ -242,7 +249,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // to the screen (it's entirely possible some frames may be dropped between
   // the time this is called and the callback is run).
   using PresentationTimeCallback =
-      base::OnceCallback<void(base::TimeTicks, base::TimeDelta, uint32_t)>;
+      base::OnceCallback<void(const gfx::PresentationFeedback&)>;
   void RequestPresentationTimeForNextFrame(PresentationTimeCallback callback);
 
   void SetRootLayer(scoped_refptr<Layer> root_layer);
@@ -336,6 +343,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void SetContentSourceId(uint32_t);
   uint32_t content_source_id() const { return content_source_id_; }
 
+  // Clears image caches and resets the scheduling history for the content
+  // produced by this host so far.
+  void ClearCachesOnNextCommit();
+
   // If this LayerTreeHost needs a valid viz::LocalSurfaceId then commits will
   // be deferred until a valid viz::LocalSurfaceId is provided.
   void SetLocalSurfaceIdFromParent(
@@ -371,8 +382,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void UnregisterLayer(Layer* layer);
   Layer* LayerById(int id) const;
 
-  size_t NumLayers() const;
-
   bool in_update_property_trees() const { return in_update_property_trees_; }
   bool PaintContent(const LayerList& update_layer_list,
                     bool* content_has_slow_paths,
@@ -382,9 +391,9 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void SetHasCopyRequest(bool has_copy_request);
   bool has_copy_request() const { return has_copy_request_; }
 
-  void AddSurfaceLayerId(const viz::SurfaceId& surface_id);
-  void RemoveSurfaceLayerId(const viz::SurfaceId& surface_id);
-  base::flat_set<viz::SurfaceId> SurfaceLayerIds() const;
+  void AddSurfaceRange(const viz::SurfaceRange& surface_range);
+  void RemoveSurfaceRange(const viz::SurfaceRange& surface_range);
+  base::flat_set<viz::SurfaceRange> SurfaceRanges() const;
 
   void AddLayerShouldPushProperties(Layer* layer);
   void RemoveLayerShouldPushProperties(Layer* layer);
@@ -401,16 +410,16 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   virtual void SetNeedsFullTreeSync();
   bool needs_full_tree_sync() const { return needs_full_tree_sync_; }
 
-  bool needs_surface_ids_sync() const { return needs_surface_ids_sync_; }
-  void set_needs_surface_ids_sync(bool needs_surface_ids_sync) {
-    needs_surface_ids_sync_ = needs_surface_ids_sync;
+  bool needs_surface_ranges_sync() const { return needs_surface_ranges_sync_; }
+  void set_needs_surface_ranges_sync(bool needs_surface_ranges_sync) {
+    needs_surface_ranges_sync_ = needs_surface_ranges_sync;
   }
 
   void SetPropertyTreesNeedRebuild();
 
   void PushPropertyTreesTo(LayerTreeImpl* tree_impl);
   void PushLayerTreePropertiesTo(LayerTreeImpl* tree_impl);
-  void PushSurfaceIdsTo(LayerTreeImpl* tree_impl);
+  void PushSurfaceRangesTo(LayerTreeImpl* tree_impl);
   void PushLayerTreeHostPropertiesTo(LayerTreeHostImpl* host_impl);
 
   MutatorHost* mutator_host() const { return mutator_host_; }
@@ -454,10 +463,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
     client_->DidReceiveCompositorFrameAck();
   }
   bool UpdateLayers();
-  void DidPresentCompositorFrame(const std::vector<int>& source_frames,
-                                 base::TimeTicks time,
-                                 base::TimeDelta refresh,
-                                 uint32_t flags);
+  void DidPresentCompositorFrame(
+      uint32_t frame_token,
+      std::vector<LayerTreeHost::PresentationTimeCallback> callbacks,
+      const gfx::PresentationFeedback& feedback);
   // Called when the compositor completed page scale animation.
   void DidCompletePageScaleAnimation();
   void ApplyScrollAndScale(ScrollAndScaleSet* info);
@@ -647,6 +656,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   int raster_color_space_id_ = -1;
   gfx::ColorSpace raster_color_space_;
 
+  bool clear_caches_on_next_commit_ = false;
   uint32_t content_source_id_;
   viz::LocalSurfaceId local_surface_id_from_parent_;
   // Used to detect surface invariant violations.
@@ -663,8 +673,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   gfx::Rect viewport_visible_rect_;
 
   bool have_scroll_event_handlers_ = false;
-  EventListenerProperties event_listener_properties_[static_cast<size_t>(
-      EventListenerClass::kNumClasses)];
+  EventListenerProperties event_listener_properties_
+      [static_cast<size_t>(EventListenerClass::kLast) + 1];
 
   std::unique_ptr<PendingPageScaleAnimation> pending_page_scale_animation_;
 
@@ -672,14 +682,15 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   bool needs_full_tree_sync_ = true;
 
-  bool needs_surface_ids_sync_ = false;
+  bool needs_surface_ranges_sync_ = false;
 
   gfx::Vector2dF elastic_overscroll_;
 
   scoped_refptr<HeadsUpDisplayLayer> hud_layer_;
 
-  // The number of SurfaceLayers that have fallback set to viz::SurfaceId.
-  base::flat_map<viz::SurfaceId, int> surface_layer_ids_;
+  // The number of SurfaceRanges that have (fallback,primary) set to
+  // viz::SurfaceRange.
+  base::flat_map<viz::SurfaceRange, int> surface_ranges_;
 
   // Set of layers that need to push properties.
   std::unordered_set<Layer*> layers_that_should_push_properties_;
@@ -707,11 +718,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // Presentation time callbacks requested for the next frame are initially
   // added here.
   std::vector<PresentationTimeCallback> pending_presentation_time_callbacks_;
-
-  // Maps from the source frame presentation callbacks are requested for to
-  // the callbacks.
-  std::map<int, std::vector<PresentationTimeCallback>>
-      frame_to_presentation_time_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHost);
 };

@@ -7,6 +7,7 @@
 #ifndef FPDFSDK_CPDFSDK_HELPERS_H_
 #define FPDFSDK_CPDFSDK_HELPERS_H_
 
+#include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_parser.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/fx_dib.h"
@@ -29,7 +30,6 @@ class CPDF_ContentMarkItem;
 class CPDF_Object;
 class CPDF_Font;
 class CPDF_LinkExtract;
-class CPDF_Page;
 class CPDF_PageObject;
 class CPDF_PageRenderContext;
 class CPDF_PathObject;
@@ -47,28 +47,19 @@ class CPDFXFA_Page;
 class CXFA_FFWidget;
 #endif  // PDF_ENABLE_XFA
 
-// Object types for public FPDF_ types; these correspond to next layer down
-// from fpdfsdk. For master, these are CPDF_ types, but for XFA, these are
-// CPDFXFA_ types.
-#ifndef PDF_ENABLE_XFA
-using UnderlyingPageType = CPDF_Page;
-#else   // PDF_ENABLE_XFA
-using UnderlyingPageType = CPDFXFA_Page;
-#endif  // PDF_ENABLE_XFA
-
 // Conversions to/from underlying types.
-UnderlyingPageType* UnderlyingFromFPDFPage(FPDF_PAGE page);
-FPDF_PAGE FPDFPageFromUnderlying(UnderlyingPageType* page);
+IPDF_Page* IPDFPageFromFPDFPage(FPDF_PAGE page);
+FPDF_PAGE FPDFPageFromIPDFPage(IPDF_Page* page);
 CPDF_Page* CPDFPageFromFPDFPage(FPDF_PAGE page);
 FPDF_DOCUMENT FPDFDocumentFromCPDFDocument(CPDF_Document* doc);
 CPDF_Document* CPDFDocumentFromFPDFDocument(FPDF_DOCUMENT doc);
 
 // Conversions to/from incomplete FPDF_ API types.
-inline FPDF_ACTION FPDFActionFromCPDFDictionary(CPDF_Dictionary* action) {
+inline FPDF_ACTION FPDFActionFromCPDFDictionary(const CPDF_Dictionary* action) {
   return reinterpret_cast<FPDF_ACTION>(action);
 }
-inline CPDF_Dictionary* CPDFDictionaryFromFPDFAction(FPDF_ACTION action) {
-  return reinterpret_cast<CPDF_Dictionary*>(action);
+inline const CPDF_Dictionary* CPDFDictionaryFromFPDFAction(FPDF_ACTION action) {
+  return reinterpret_cast<const CPDF_Dictionary*>(action);
 }
 
 inline FPDF_ANNOTATION FPDFAnnotationFromCPDFAnnotContext(
@@ -94,11 +85,13 @@ inline CFX_DIBitmap* CFXDIBitmapFromFPDFBitmap(FPDF_BITMAP bitmap) {
   return reinterpret_cast<CFX_DIBitmap*>(bitmap);
 }
 
-inline FPDF_BOOKMARK FPDFBookmarkFromCPDFDictionary(CPDF_Dictionary* bookmark) {
+inline FPDF_BOOKMARK FPDFBookmarkFromCPDFDictionary(
+    const CPDF_Dictionary* bookmark) {
   return reinterpret_cast<FPDF_BOOKMARK>(bookmark);
 }
-inline CPDF_Dictionary* CPDFDictionaryFromFPDFBookmark(FPDF_BOOKMARK bookmark) {
-  return reinterpret_cast<CPDF_Dictionary*>(bookmark);
+inline const CPDF_Dictionary* CPDFDictionaryFromFPDFBookmark(
+    FPDF_BOOKMARK bookmark) {
+  return reinterpret_cast<const CPDF_Dictionary*>(bookmark);
 }
 
 inline FPDF_CLIPPATH FPDFClipPathFromCPDFClipPath(CPDF_ClipPath* path) {
@@ -108,11 +101,11 @@ inline CPDF_ClipPath* CPDFClipPathFromFPDFClipPath(FPDF_CLIPPATH path) {
   return reinterpret_cast<CPDF_ClipPath*>(path);
 }
 
-inline FPDF_DEST FPDFDestFromCPDFArray(CPDF_Array* dest) {
+inline FPDF_DEST FPDFDestFromCPDFArray(const CPDF_Array* dest) {
   return reinterpret_cast<FPDF_DEST>(dest);
 }
-inline CPDF_Array* CPDFArrayFromFPDFDest(FPDF_DEST dest) {
-  return reinterpret_cast<CPDF_Array*>(dest);
+inline const CPDF_Array* CPDFArrayFromFPDFDest(FPDF_DEST dest) {
+  return reinterpret_cast<const CPDF_Array*>(dest);
 }
 
 inline FPDF_FONT FPDFFontFromCPDFFont(CPDF_Font* font) {
@@ -146,12 +139,12 @@ inline CPDF_PageObject* CPDFPageObjectFromFPDFPageObject(
 }
 
 inline FPDF_PAGEOBJECTMARK FPDFPageObjectMarkFromCPDFContentMarkItem(
-    const CPDF_ContentMarkItem* mark) {
+    CPDF_ContentMarkItem* mark) {
   return reinterpret_cast<FPDF_PAGEOBJECTMARK>(mark);
 }
-inline const CPDF_ContentMarkItem* CPDFContentMarkItemFromFPDFPageObjectMark(
+inline CPDF_ContentMarkItem* CPDFContentMarkItemFromFPDFPageObjectMark(
     FPDF_PAGEOBJECTMARK mark) {
-  return reinterpret_cast<const CPDF_ContentMarkItem*>(mark);
+  return reinterpret_cast<CPDF_ContentMarkItem*>(mark);
 }
 
 inline FPDF_PAGERANGE FPDFPageRangeFromCPDFArray(const CPDF_Array* range) {
@@ -220,7 +213,8 @@ RetainPtr<IFX_SeekableStream> MakeSeekableStream(
     FPDF_FILEHANDLER* pFileHandler);
 #endif  // PDF_ENABLE_XFA
 
-CPDF_Array* GetQuadPointsArrayFromDictionary(const CPDF_Dictionary* dict);
+const CPDF_Array* GetQuadPointsArrayFromDictionary(const CPDF_Dictionary* dict);
+CPDF_Array* GetQuadPointsArrayFromDictionary(CPDF_Dictionary* dict);
 CPDF_Array* AddQuadPointsArrayToDictionary(CPDF_Dictionary* dict);
 bool IsValidQuadPointsIndex(const CPDF_Array* array, size_t index);
 bool GetQuadPointsAtIndex(const CPDF_Array* array,
@@ -252,7 +246,7 @@ void FPDF_RenderPage_Retail(CPDF_PageRenderContext* pContext,
                             bool bNeedToRestore,
                             IPDFSDK_PauseAdapter* pause);
 
-void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code);
+void ReportUnsupportedFeatures(CPDF_Document* pDoc);
 void CheckUnSupportAnnot(CPDF_Document* pDoc, const CPDF_Annot* pPDFAnnot);
 
 #ifndef _WIN32

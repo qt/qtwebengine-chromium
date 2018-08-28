@@ -24,7 +24,7 @@ class WindowSurfaceVkAndroid : public WindowSurfaceVk
                            EGLint height);
 
   private:
-    vk::ErrorOrResult<gl::Extents> createSurfaceVk(RendererVk *renderer) override;
+    angle::Result createSurfaceVk(vk::Context *context, gl::Extents *extentsOut) override;
 };
 
 }  // namespace rx

@@ -238,10 +238,9 @@ class MODULES_EXPORT AudioHandler : public ThreadSafeRefCounted<AudioHandler> {
   void UpdateChannelCountMode();
   void UpdateChannelInterpretation();
 
-  // Default callbackBufferSize should be the render quantum size
-  virtual size_t CallbackBufferSize() const {
-    return AudioUtilities::kRenderQuantumFrames;
-  }
+  // Called when this node's outputs may have become connected or disconnected
+  // to handle automatic pull nodes.
+  virtual void UpdatePullStatusIfNeeded() {}
 
  protected:
   // Inputs and outputs must be created before the AudioHandler is
@@ -320,13 +319,13 @@ class MODULES_EXPORT AudioNode : public EventTargetWithInlineData {
 
   void HandleChannelOptions(const AudioNodeOptions&, ExceptionState&);
 
-  virtual AudioNode* connect(AudioNode*,
-                             unsigned output_index,
-                             unsigned input_index,
-                             ExceptionState&);
+  AudioNode* connect(AudioNode*,
+                     unsigned output_index,
+                     unsigned input_index,
+                     ExceptionState&);
   void connect(AudioParam*, unsigned output_index, ExceptionState&);
   void disconnect();
-  virtual void disconnect(unsigned output_index, ExceptionState&);
+  void disconnect(unsigned output_index, ExceptionState&);
   void disconnect(AudioNode*, ExceptionState&);
   void disconnect(AudioNode*, unsigned output_index, ExceptionState&);
   void disconnect(AudioNode*,
@@ -351,9 +350,6 @@ class MODULES_EXPORT AudioNode : public EventTargetWithInlineData {
 
   // Called inside AudioHandler constructors.
   void DidAddOutput(unsigned number_of_outputs);
-  // Like disconnect, but no exception is thrown if the outputIndex is invalid.
-  // Just do nothing in that case.
-  void DisconnectWithoutException(unsigned output_index);
 
  protected:
   explicit AudioNode(BaseAudioContext&);

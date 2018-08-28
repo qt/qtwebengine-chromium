@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/platform/scroll/scrollable_area.h"
 
 #include "build/build_config.h"
+#include "cc/layers/picture_layer.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
@@ -39,6 +40,7 @@
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scroll/main_thread_scrolling_reason.h"
 #include "third_party/blink/renderer/platform/scroll/programmatic_scroll_animator.h"
+#include "third_party/blink/renderer/platform/scroll/scroll_animator_base.h"
 #include "third_party/blink/renderer/platform/scroll/scrollbar_theme.h"
 #include "third_party/blink/renderer/platform/scroll/smooth_scroll_sequencer.h"
 
@@ -77,10 +79,7 @@ ScrollBehavior ScrollableArea::DetermineScrollBehavior(
 }
 
 ScrollableArea::ScrollableArea()
-    : autosize_vertical_scrollbar_mode_(kScrollbarAuto),
-      autosize_horizontal_scrollbar_mode_(kScrollbarAuto),
-      scrollbar_overlay_color_theme_(kScrollbarOverlayColorThemeDark),
-      scroll_origin_changed_(false),
+    : scrollbar_overlay_color_theme_(kScrollbarOverlayColorThemeDark),
       horizontal_scrollbar_needs_paint_invalidation_(false),
       vertical_scrollbar_needs_paint_invalidation_(false),
       scroll_corner_needs_paint_invalidation_(false),
@@ -118,13 +117,6 @@ ProgrammaticScrollAnimator& ScrollableArea::GetProgrammaticScrollAnimator()
         ProgrammaticScrollAnimator::Create(const_cast<ScrollableArea*>(this));
 
   return *programmatic_scroll_animator_;
-}
-
-void ScrollableArea::SetScrollOrigin(const IntPoint& origin) {
-  if (scroll_origin_ != origin) {
-    scroll_origin_ = origin;
-    scroll_origin_changed_ = true;
-  }
 }
 
 GraphicsLayer* ScrollableArea::LayerForContainer() const {
@@ -398,11 +390,10 @@ void ScrollableArea::MouseCapturedScrollbar() {
     fade_overlay_scrollbars_timer_->Stop();
 }
 
-void ScrollableArea::MouseReleasedScrollbar(ScrollbarOrientation orientation) {
+void ScrollableArea::MouseReleasedScrollbar() {
   scrollbar_captured_ = false;
   // This will kick off the fade out timer.
   ShowOverlayScrollbars();
-  SnapAfterScrollbarDragging(orientation);
 }
 
 void ScrollableArea::ContentAreaDidShow() const {
@@ -621,9 +612,9 @@ void ScrollableArea::ShowOverlayScrollbars() {
   SetScrollbarsHiddenIfOverlay(false);
   needs_show_scrollbar_layers_ = true;
 
-  const double time_until_disable =
-      GetPageScrollbarTheme().OverlayScrollbarFadeOutDelaySeconds() +
-      GetPageScrollbarTheme().OverlayScrollbarFadeOutDurationSeconds();
+  const TimeDelta time_until_disable =
+      GetPageScrollbarTheme().OverlayScrollbarFadeOutDelay() +
+      GetPageScrollbarTheme().OverlayScrollbarFadeOutDuration();
 
   // If the overlay scrollbars don't fade out, don't do anything. This is the
   // case for the mock overlays used in tests and on Mac, where the fade-out is
@@ -631,7 +622,7 @@ void ScrollableArea::ShowOverlayScrollbars() {
   // We also don't fade out overlay scrollbar for popup since we don't create
   // compositor for popup and thus they don't appear on hover so users without
   // a wheel can't scroll if they fade out.
-  if (!time_until_disable || GetChromeClient()->IsPopup())
+  if (time_until_disable.is_zero() || GetChromeClient()->IsPopup())
     return;
 
   if (!fade_overlay_scrollbars_timer_) {
@@ -661,9 +652,14 @@ int ScrollableArea::LineStep(ScrollbarOrientation) const {
 }
 
 int ScrollableArea::PageStep(ScrollbarOrientation orientation) const {
-  IntRect visible_rect = VisibleContentRect(kIncludeScrollbars);
-  int length = (orientation == kHorizontalScrollbar) ? visible_rect.Width()
-                                                     : visible_rect.Height();
+  // Paging scroll operations should take scroll-padding into account [1]. So we
+  // use the snapport rect to calculate the page step instead of the visible
+  // rect.
+  // [1] https://drafts.csswg.org/css-scroll-snap/#scroll-padding
+  IntSize snapport_size =
+      VisibleScrollSnapportRect(kIncludeScrollbars).PixelSnappedSize();
+  int length = (orientation == kHorizontalScrollbar) ? snapport_size.Width()
+                                                     : snapport_size.Height();
   int min_page_step =
       static_cast<float>(length) * MinFractionToStepWhenPaging();
   int page_step = std::max(min_page_step, length - MaxOverlapBetweenPages());
@@ -708,17 +704,21 @@ IntSize ScrollableArea::ExcludeScrollbars(const IntSize& size) const {
                  std::max(0, size.Height() - HorizontalScrollbarHeight()));
 }
 
-void ScrollableArea::DidScroll(const gfx::ScrollOffset& offset) {
-  ScrollOffset new_offset = ScrollOffset(offset.x() - ScrollOrigin().X(),
-                                         offset.y() - ScrollOrigin().Y());
+void ScrollableArea::DidScroll(const FloatPoint& position) {
+  ScrollOffset new_offset(ScrollPositionToOffset(position));
   SetScrollOffset(new_offset, kCompositorScroll);
 }
 
-void ScrollableArea::SetAutosizeScrollbarModes(ScrollbarMode vertical,
-                                               ScrollbarMode horizontal) {
-  DCHECK_EQ(vertical == kScrollbarAuto, horizontal == kScrollbarAuto);
-  autosize_vertical_scrollbar_mode_ = vertical;
-  autosize_horizontal_scrollbar_mode_ = horizontal;
+CompositorElementId ScrollableArea::GetScrollbarElementId(
+    ScrollbarOrientation orientation) {
+  CompositorElementId scrollable_element_id = GetCompositorElementId();
+  DCHECK(scrollable_element_id);
+  CompositorElementIdNamespace element_id_namespace =
+      orientation == kHorizontalScrollbar
+          ? CompositorElementIdNamespace::kHorizontalScrollbar
+          : CompositorElementIdNamespace::kVerticalScrollbar;
+  return CompositorElementIdFromUniqueObjectId(
+      scrollable_element_id.GetInternalValue(), element_id_namespace);
 }
 
 void ScrollableArea::Trace(blink::Visitor* visitor) {

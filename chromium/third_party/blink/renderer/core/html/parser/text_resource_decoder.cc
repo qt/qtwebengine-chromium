@@ -126,7 +126,8 @@ TextResourceDecoder::TextResourceDecoder(
       checked_for_css_charset_(false),
       checked_for_xml_charset_(false),
       checked_for_meta_charset_(false),
-      saw_error_(false) {
+      saw_error_(false),
+      detection_completed_(false) {
   // TODO(hiroshige): Move the invariant check to TextResourceDecoderOptions.
   if (options_.GetEncodingDetectionOption() ==
       TextResourceDecoderOptions::kAlwaysUseUTF8ForText) {
@@ -373,7 +374,8 @@ void TextResourceDecoder::CheckForMetaCharset(const char* data, size_t length) {
 void TextResourceDecoder::AutoDetectEncodingIfAllowed(const char* data,
                                                       size_t len) {
   if (options_.GetEncodingDetectionOption() !=
-      TextResourceDecoderOptions::kUseAllAutoDetection)
+          TextResourceDecoderOptions::kUseAllAutoDetection ||
+      detection_completed_)
     return;
 
   // Just checking hint_encoding_ suffices here because it's only set
@@ -386,6 +388,8 @@ void TextResourceDecoder::AutoDetectEncodingIfAllowed(const char* data,
   if (DetectTextEncoding(data, len, options_.HintEncoding(), options_.HintURL(),
                          options_.HintLanguage(), &detected_encoding))
     SetEncoding(detected_encoding, kEncodingFromContentSniffing);
+  if (detected_encoding != WTF::UnknownEncoding())
+    detection_completed_ = true;
 }
 
 String TextResourceDecoder::Decode(const char* data, size_t len) {
@@ -446,7 +450,7 @@ String TextResourceDecoder::Decode(const char* data, size_t len) {
     codec_ = NewTextCodec(encoding_);
 
   String result = codec_->Decode(
-      data_for_decode, length_for_decode, WTF::kDoNotFlush,
+      data_for_decode, length_for_decode, WTF::FlushBehavior::kDoNotFlush,
       options_.GetContentType() == TextResourceDecoderOptions::kXMLContent &&
           !options_.GetUseLenientXMLDecoding(),
       saw_error_);
@@ -474,7 +478,7 @@ String TextResourceDecoder::Flush() {
     codec_ = NewTextCodec(encoding_);
 
   String result = codec_->Decode(
-      buffer_.data(), buffer_.size(), WTF::kFetchEOF,
+      buffer_.data(), buffer_.size(), WTF::FlushBehavior::kFetchEOF,
       options_.GetContentType() == TextResourceDecoderOptions::kXMLContent &&
           !options_.GetUseLenientXMLDecoding(),
       saw_error_);

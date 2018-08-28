@@ -197,8 +197,6 @@ class CORE_EXPORT LayoutTableCell : public LayoutBlockFlow {
 
   void UpdateLayout() override;
 
-  void Paint(const PaintInfo&, const LayoutPoint&) const override;
-
   LayoutUnit CellBaselinePosition() const;
   bool IsBaselineAligned() const {
     EVerticalAlign va = Style()->VerticalAlign();
@@ -237,7 +235,8 @@ class CORE_EXPORT LayoutTableCell : public LayoutBlockFlow {
     cell_children_need_layout_ = b;
   }
 
-  static LayoutTableCell* CreateAnonymous(Document*);
+  static LayoutTableCell* CreateAnonymous(Document*,
+                                          scoped_refptr<ComputedStyle>);
   static LayoutTableCell* CreateAnonymousWithParent(const LayoutObject*);
   LayoutBox* CreateAnonymousBoxWithSameTypeAs(
       const LayoutObject* parent) const override {
@@ -332,15 +331,11 @@ class CORE_EXPORT LayoutTableCell : public LayoutBlockFlow {
                         other->RowIndex() + other->ResolvedRowSpan();
   }
 
-  void SetIsSpanningCollapsedRow(bool spanningCollapsedRow) {
-    is_spanning_collapsed_row_ = spanningCollapsedRow;
-  }
+  void SetIsSpanningCollapsedRow(bool spanning_collapsed_row);
 
   bool IsSpanningCollapsedRow() const { return is_spanning_collapsed_row_; }
 
-  void SetIsSpanningCollapsedColumn(bool spanningCollapsedColumn) {
-    is_spanning_collapsed_column_ = spanningCollapsedColumn;
-  }
+  void SetIsSpanningCollapsedColumn(bool spanningCollapsedColumn);
 
   bool IsSpanningCollapsedColumn() const {
     return is_spanning_collapsed_column_;
@@ -380,11 +375,13 @@ class CORE_EXPORT LayoutTableCell : public LayoutBlockFlow {
 
   void UpdateLogicalWidth() override;
 
-  void PaintBoxDecorationBackground(const PaintInfo&,
-                                    const LayoutPoint&) const override;
-  void PaintMask(const PaintInfo&, const LayoutPoint&) const override;
+  void PaintBoxDecorationBackground(
+      const PaintInfo&,
+      const LayoutPoint& paint_offset) const override;
+  void PaintMask(const PaintInfo&,
+                 const LayoutPoint& paint_offset) const override;
 
-  bool ShouldClipOverflow() const override;
+  bool ComputeShouldClipOverflow() const override;
 
   using CollapsedBorderValuesMethod =
       const CollapsedBorderValue& (CollapsedBorderValues::*)() const;

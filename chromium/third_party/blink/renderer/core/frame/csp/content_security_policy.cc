@@ -422,13 +422,12 @@ void ContentSecurityPolicy::SetOverrideURLForSelf(const KURL& url) {
                     String(), CSPSource::kNoWildcard, CSPSource::kNoWildcard);
 }
 
-std::unique_ptr<Vector<CSPHeaderAndType>> ContentSecurityPolicy::Headers()
-    const {
-  std::unique_ptr<Vector<CSPHeaderAndType>> headers =
-      std::make_unique<Vector<CSPHeaderAndType>>();
+Vector<CSPHeaderAndType> ContentSecurityPolicy::Headers() const {
+  Vector<CSPHeaderAndType> headers;
+  headers.ReserveInitialCapacity(policies_.size());
   for (const auto& policy : policies_) {
-    CSPHeaderAndType header_and_type(policy->Header(), policy->HeaderType());
-    headers->push_back(header_and_type);
+    headers.UncheckedAppend(
+        CSPHeaderAndType(policy->Header(), policy->HeaderType()));
   }
   return headers;
 }
@@ -502,9 +501,17 @@ bool ContentSecurityPolicy::AllowJavaScriptURLs(
     const String& context_url,
     const WTF::OrdinalNumber& context_line,
     SecurityViolationReportingPolicy reporting_policy) const {
+  // Javascript URLs may be whitelisted by hash, if
+  // 'unsafe-hashes' is present in a policy. Check against the digest
+  // of the |source| and also check whether inline script is allowed.
+  Vector<CSPHashValue> csp_hash_values;
+  FillInCSPHashValues(source, script_hash_algorithms_used_, csp_hash_values);
+
   bool is_allowed = true;
   for (const auto& policy : policies_) {
-    is_allowed &= policy->AllowJavaScriptURLs(element, source, context_url,
+    is_allowed &= CheckScriptHashAgainstPolicy(csp_hash_values, policy,
+                                               InlineType::kAttribute) ||
+                  policy->AllowJavaScriptURLs(element, source, context_url,
                                               context_line, reporting_policy);
   }
   return is_allowed;
@@ -517,7 +524,7 @@ bool ContentSecurityPolicy::AllowInlineEventHandler(
     const WTF::OrdinalNumber& context_line,
     SecurityViolationReportingPolicy reporting_policy) const {
   // Inline event handlers may be whitelisted by hash, if
-  // 'unsafe-hash-attributes' is present in a policy. Check against the digest
+  // 'unsafe-hashes' is present in a policy. Check against the digest
   // of the |source| and also check whether inline script is allowed.
   Vector<CSPHashValue> csp_hash_values;
   FillInCSPHashValues(source, script_hash_algorithms_used_, csp_hash_values);
@@ -1409,12 +1416,6 @@ void ContentSecurityPolicy::PostViolationReport(
 void ContentSecurityPolicy::DispatchViolationEvents(
     const SecurityPolicyViolationEventInit& violation_data,
     Element* element) {
-  // If the context is detached or closed (thus clearing its event queue)
-  // between the violation occuring and this event dispatch, exit early.
-  EventQueue* queue = execution_context_->GetEventQueue();
-  if (!queue)
-    return;
-
   // Worklets don't support Events in general.
   if (execution_context_->IsWorkletGlobalScope())
     return;
@@ -1426,17 +1427,18 @@ void ContentSecurityPolicy::DispatchViolationEvents(
   if (execution_context_->IsDocument()) {
     Document* document = ToDocument(execution_context_);
     if (element && element->isConnected() && element->GetDocument() == document)
-      event->SetTarget(element);
+      element->EnqueueEvent(event, TaskType::kInternalDefault);
     else
-      event->SetTarget(document);
+      document->EnqueueEvent(event, TaskType::kInternalDefault);
   } else if (execution_context_->IsWorkerGlobalScope()) {
-    event->SetTarget(ToWorkerGlobalScope(execution_context_));
+    ToWorkerGlobalScope(execution_context_)
+        ->EnqueueEvent(event, TaskType::kInternalDefault);
   }
-  queue->EnqueueEvent(FROM_HERE, event);
 }
 
-void ContentSecurityPolicy::ReportMixedContent(const KURL& mixed_url,
-                                               RedirectStatus redirect_status) {
+void ContentSecurityPolicy::ReportMixedContent(
+    const KURL& mixed_url,
+    RedirectStatus redirect_status) const {
   for (const auto& policy : policies_)
     policy->ReportMixedContent(mixed_url, redirect_status);
 }

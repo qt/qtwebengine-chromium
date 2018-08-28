@@ -21,7 +21,7 @@ const CJX_MethodSpec CJX_SignaturePseudoModel::MethodSpecs[] = {
 CJX_SignaturePseudoModel::CJX_SignaturePseudoModel(
     CScript_SignaturePseudoModel* model)
     : CJX_Object(model) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_SignaturePseudoModel::~CJX_SignaturePseudoModel() {}
@@ -47,7 +47,7 @@ CJS_Return CJX_SignaturePseudoModel::enumerate(
     const std::vector<v8::Local<v8::Value>>& params) {
   if (!params.empty())
     return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_SignaturePseudoModel::clear(

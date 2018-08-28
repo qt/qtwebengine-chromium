@@ -104,7 +104,10 @@ class CORE_EXPORT ScrollingCoordinator final
   // Called when any layoutBox has transform changed
   void NotifyTransformChanged(LocalFrame*, const LayoutBox&);
 
-  void UpdateAfterCompositingChangeIfNeeded(LocalFrameView*);
+  // Update non-fast scrollable regions, touch event target rects, main thread
+  // scrolling reasons, and whether the visual viewport is user scrollable.
+  // TODO(pdr): Refactor this out of ScrollingCoordinator.
+  void UpdateAfterPaint(LocalFrameView*);
 
   // Should be called whenever the slow repaint objects counter changes between
   // zero and one.
@@ -120,7 +123,8 @@ class CORE_EXPORT ScrollingCoordinator final
       ScrollbarOrientation,
       int thumb_thickness,
       int track_start,
-      bool is_left_side_vertical_scrollbar);
+      bool is_left_side_vertical_scrollbar,
+      cc::ElementId);
 
   void WillDestroyScrollableArea(ScrollableArea*);
 

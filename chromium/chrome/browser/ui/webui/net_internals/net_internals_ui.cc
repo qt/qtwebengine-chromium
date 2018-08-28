@@ -38,7 +38,6 @@
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/net_export_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ssl/chrome_expect_ct_reporter.h"
 #include "chrome/common/channel_info.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
@@ -73,6 +72,7 @@
 #include "net/proxy_resolution/proxy_resolution_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "services/network/expect_ct_reporter.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/file_manager/filesystem_api_util.h"
@@ -139,31 +139,6 @@ std::string HashesToBase64String(const net::HashValueVector& hashes) {
   return str;
 }
 
-bool Base64StringToHashes(const std::string& hashes_str,
-                          net::HashValueVector* hashes) {
-  hashes->clear();
-  std::vector<std::string> vector_hash_str = base::SplitString(
-      hashes_str, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-
-  for (size_t i = 0; i != vector_hash_str.size(); ++i) {
-    std::string hash_str;
-    base::RemoveChars(vector_hash_str[i], " \t\r\n", &hash_str);
-    net::HashValue hash;
-    // Skip past unrecognized hash algos
-    // But return false on malformatted input
-    if (hash_str.empty())
-      return false;
-    if (hash_str.compare(0, 5, "sha1/") != 0 &&
-        hash_str.compare(0, 7, "sha256/") != 0) {
-      continue;
-    }
-    if (!hash.FromString(hash_str))
-      return false;
-    hashes->push_back(hash);
-  }
-  return true;
-}
-
 // Returns the http network session for |context| if there is one.
 // Otherwise, returns NULL.
 net::HttpNetworkSession* GetHttpNetworkSession(
@@ -176,6 +151,8 @@ net::HttpNetworkSession* GetHttpNetworkSession(
 content::WebUIDataSource* CreateNetInternalsHTMLSource() {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUINetInternalsHost);
+  source->OverrideContentSecurityPolicyScriptSrc(
+      "script-src chrome://resources 'self' 'unsafe-eval';");
 
   source->SetDefaultResource(IDR_NET_INTERNALS_INDEX_HTML);
   source->AddResourcePath("index.js", IDR_NET_INTERNALS_INDEX_JS);
@@ -387,7 +364,7 @@ class NetInternalsMessageHandler::IOThreadImpl
   // local variable so that it lives long enough to receive the result of
   // sending a report, which is delivered to the JavaScript via a JavaScript
   // command.
-  std::unique_ptr<ChromeExpectCTReporter> expect_ct_reporter_;
+  std::unique_ptr<network::ExpectCTReporter> expect_ct_reporter_;
 
   DISALLOW_COPY_AND_ASSIGN(IOThreadImpl);
 };
@@ -810,8 +787,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSQuery(
 
 void NetInternalsMessageHandler::IOThreadImpl::OnHSTSAdd(
     const base::ListValue* list) {
-  // |list| should be: [<domain to query>, <STS include subdomains>, <PKP
-  // include subdomains>, <key pins>].
+  // |list| should be: [<domain to query>, <STS include subdomains>]
   std::string domain;
   bool result = list->GetString(0, &domain);
   DCHECK(result);
@@ -823,12 +799,6 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSAdd(
   bool sts_include_subdomains;
   result = list->GetBoolean(1, &sts_include_subdomains);
   DCHECK(result);
-  bool pkp_include_subdomains;
-  result = list->GetBoolean(2, &pkp_include_subdomains);
-  DCHECK(result);
-  std::string hashes_str;
-  result = list->GetString(3, &hashes_str);
-  DCHECK(result);
 
   net::TransportSecurityState* transport_security_state =
       GetMainContext()->transport_security_state();
@@ -836,15 +806,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSAdd(
     return;
 
   base::Time expiry = base::Time::Now() + base::TimeDelta::FromDays(1000);
-  net::HashValueVector hashes;
-  if (!hashes_str.empty()) {
-    if (!Base64StringToHashes(hashes_str, &hashes))
-      return;
-  }
-
   transport_security_state->AddHSTS(domain, expiry, sts_include_subdomains);
-  transport_security_state->AddHPKP(domain, expiry, pkp_include_subdomains,
-                                    hashes, GURL());
 }
 
 void NetInternalsMessageHandler::IOThreadImpl::OnExpectCTQuery(
@@ -937,7 +899,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnExpectCTTestReport(
         std::make_unique<base::Value>("success");
     std::unique_ptr<base::Value> failure =
         std::make_unique<base::Value>("failure");
-    expect_ct_reporter_ = std::make_unique<ChromeExpectCTReporter>(
+    expect_ct_reporter_ = std::make_unique<network::ExpectCTReporter>(
         GetMainContext(),
         base::Bind(
             &NetInternalsMessageHandler::IOThreadImpl::SendJavascriptCommand,

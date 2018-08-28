@@ -21,7 +21,7 @@
 
 #define MMSG_MORE 0
 
-namespace net {
+namespace quic {
 
 #if MMSG_MORE
 // Read in larger batches to minimize recvmmsg overhead.
@@ -65,21 +65,19 @@ class QuicPacketReader {
                                           ProcessPacketInterface* processor,
                                           QuicPacketCount* packets_dropped);
 
-// Storage only used when recvmmsg is available.
-
 #if MMSG_MORE
+  // Storage only used when recvmmsg is available.
   // TODO(danzh): change it to be a pointer to avoid the allocation on the stack
   // from exceeding maximum allowed frame size.
   // packets_ and mmsg_hdr_ are used to supply cbuf and buf to the recvmmsg
   // call.
-
   struct PacketData {
     iovec iov;
     // raw_address is used for address information provided by the recvmmsg
     // call on the packets.
     struct sockaddr_storage raw_address;
     // cbuf is used for ancillary data from the kernel on recvmmsg.
-    char cbuf[QuicSocketUtils::kSpaceForCmsg];
+    char cbuf[kCmsgSpaceForReadPacket];
     // buf is used for the data read from the kernel on recvmmsg.
     char buf[kMaxPacketSize];
   };
@@ -90,6 +88,6 @@ class QuicPacketReader {
   DISALLOW_COPY_AND_ASSIGN(QuicPacketReader);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_PACKET_READER_H_

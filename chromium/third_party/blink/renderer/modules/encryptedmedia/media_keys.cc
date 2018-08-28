@@ -26,13 +26,13 @@
 #include "third_party/blink/renderer/modules/encryptedmedia/media_keys.h"
 
 #include <memory>
+
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_content_decryption_module.h"
 #include "third_party/blink/public/platform/web_encrypted_media_key_information.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
@@ -114,8 +114,13 @@ class MediaKeys::PendingAction final
 class SetCertificateResultPromise
     : public ContentDecryptionModuleResultPromise {
  public:
-  SetCertificateResultPromise(ScriptState* script_state, MediaKeys* media_keys)
-      : ContentDecryptionModuleResultPromise(script_state),
+  SetCertificateResultPromise(ScriptState* script_state,
+                              MediaKeys* media_keys,
+                              const char* interface_name,
+                              const char* property_name)
+      : ContentDecryptionModuleResultPromise(script_state,
+                                             interface_name,
+                                             property_name),
         media_keys_(media_keys) {}
 
   ~SetCertificateResultPromise() override = default;
@@ -164,8 +169,12 @@ class GetStatusForPolicyResultPromise
     : public ContentDecryptionModuleResultPromise {
  public:
   GetStatusForPolicyResultPromise(ScriptState* script_state,
-                                  MediaKeys* media_keys)
-      : ContentDecryptionModuleResultPromise(script_state),
+                                  MediaKeys* media_keys,
+                                  const char* interface_name,
+                                  const char* property_name)
+      : ContentDecryptionModuleResultPromise(script_state,
+                                             interface_name,
+                                             property_name),
         media_keys_(media_keys) {}
 
   ~GetStatusForPolicyResultPromise() override = default;
@@ -238,7 +247,7 @@ MediaKeySession* MediaKeys::createSession(ScriptState* script_state,
   WebEncryptedMediaSessionType session_type =
       EncryptedMediaUtils::ConvertToSessionType(session_type_string);
   if (!SessionTypeSupported(session_type)) {
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "Unsupported session type.");
     return nullptr;
   }
@@ -278,8 +287,8 @@ ScriptPromise MediaKeys::setServerCertificate(
       server_certificate.Data(), server_certificate.ByteLength());
 
   // 4. Let promise be a new promise.
-  SetCertificateResultPromise* result =
-      new SetCertificateResultPromise(script_state, this);
+  SetCertificateResultPromise* result = new SetCertificateResultPromise(
+      script_state, this, "MediaKeys", "setServerCertificate");
   ScriptPromise promise = result->Promise();
 
   // 5. Run the following steps asynchronously. See SetServerCertificateTask().
@@ -319,8 +328,8 @@ ScriptPromise MediaKeys::getStatusForPolicy(
   String min_hdcp_version = media_keys_policy.minHdcpVersion();
 
   // Let promise be a new promise.
-  GetStatusForPolicyResultPromise* result =
-      new GetStatusForPolicyResultPromise(script_state, this);
+  GetStatusForPolicyResultPromise* result = new GetStatusForPolicyResultPromise(
+      script_state, this, "MediaKeys", "getStatusForPolicy");
   ScriptPromise promise = result->Promise();
 
   // Run the following steps asynchronously. See GetStatusForPolicyTask().

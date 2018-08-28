@@ -31,8 +31,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_DOM_DATA_STORE_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_DOM_DATA_STORE_H_
 
-#include <memory>
-
 #include "base/optional.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_map.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
@@ -145,11 +143,6 @@ class DOMDataStore {
 
   void Trace(const ScriptWrappable* script_wrappable, Visitor* visitor) {
     visitor->Trace(&wrapper_map_.value(), script_wrappable);
-  }
-
-  void TraceWrappers(const ScriptWrappable* script_wrappable,
-                     ScriptWrappableVisitor* visitor) {
-    visitor->TraceWrappers(&wrapper_map_.value(), script_wrappable);
   }
 
   void MarkWrapper(ScriptWrappable* script_wrappable) {

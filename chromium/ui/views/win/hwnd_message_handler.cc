@@ -245,6 +245,31 @@ bool IsHitTestOnResizeHandle(LRESULT hittest) {
          hittest == HTBOTTOMLEFT || hittest == HTBOTTOMRIGHT;
 }
 
+// Convert |param| to the HitTest used in WindowResizeUtils.
+HitTest GetWindowResizeHitTest(UINT param) {
+  switch (param) {
+    case WMSZ_BOTTOM:
+      return HitTest::kBottom;
+    case WMSZ_TOP:
+      return HitTest::kTop;
+    case WMSZ_LEFT:
+      return HitTest::kLeft;
+    case WMSZ_RIGHT:
+      return HitTest::kRight;
+    case WMSZ_TOPLEFT:
+      return HitTest::kTopLeft;
+    case WMSZ_TOPRIGHT:
+      return HitTest::kTopRight;
+    case WMSZ_BOTTOMLEFT:
+      return HitTest::kBottomLeft;
+    case WMSZ_BOTTOMRIGHT:
+      return HitTest::kBottomRight;
+    default:
+      NOTREACHED();
+      return HitTest::kBottomRight;
+  }
+}
+
 const int kTouchDownContextResetTimeout = 500;
 
 // Windows does not flag synthesized mouse messages from touch or pen in all
@@ -868,6 +893,23 @@ void HWNDMessageHandler::SetFullscreen(bool fullscreen) {
     PerformDwmTransition();
 }
 
+void HWNDMessageHandler::SetAspectRatio(float aspect_ratio) {
+  // If the aspect ratio is not in the valid range, do nothing.
+  DCHECK_GT(aspect_ratio, 0.0f);
+
+  aspect_ratio_ = aspect_ratio;
+
+  // When the aspect ratio is set, size the window to adhere to it. This keeps
+  // the same origin point as the original window.
+  RECT window_rect;
+  if (GetWindowRect(hwnd(), &window_rect)) {
+    gfx::Rect rect(window_rect);
+
+    SizeRectToAspectRatio(WMSZ_BOTTOMRIGHT, &rect);
+    SetBoundsInternal(rect, false);
+  }
+}
+
 void HWNDMessageHandler::SizeConstraintsChanged() {
   LONG style = GetWindowLong(hwnd(), GWL_STYLE);
   // Ignore if this is not a standard window.
@@ -987,7 +1029,7 @@ void HWNDMessageHandler::OnInputMethodDestroyed(
   DestroyAXSystemCaret();
 }
 
-void HWNDMessageHandler::OnShowImeIfNeeded() {}
+void HWNDMessageHandler::OnShowVirtualKeyboardIfEnabled() {}
 
 LRESULT HWNDMessageHandler::HandleMouseMessage(unsigned int message,
                                                WPARAM w_param,
@@ -1599,18 +1641,26 @@ LRESULT HWNDMessageHandler::OnDpiChanged(UINT msg,
   if (LOWORD(w_param) != HIWORD(w_param))
     NOTIMPLEMENTED() << "Received non-square scaling factors";
 
+  int dpi;
+  float scaling_factor;
+  if (display::Display::HasForceDeviceScaleFactor()) {
+    scaling_factor = display::Display::GetForcedDeviceScaleFactor();
+    dpi = display::win::GetDPIFromScalingFactor(scaling_factor);
+  } else {
+    dpi = LOWORD(w_param);
+    scaling_factor = display::win::GetScalingFactorFromDPI(dpi_);
+  }
+
   // The first WM_DPICHANGED originates from EnableChildWindowDpiMessage during
   // initialization. We don't want to propagate this as the client is already
   // set at the current scale factor and may cause the window to display too
   // soon. See http://crbug.com/625076.
-  int dpi = LOWORD(w_param);
   if (dpi_ == dpi)
     return 0;
 
   dpi_ = dpi;
   SetBoundsInternal(gfx::Rect(*reinterpret_cast<RECT*>(l_param)), false);
-  delegate_->HandleWindowScaleFactorChanged(
-      display::win::GetScalingFactorFromDPI(dpi_));
+  delegate_->HandleWindowScaleFactorChanged(scaling_factor);
   return 0;
 }
 
@@ -2329,6 +2379,19 @@ void HWNDMessageHandler::OnSize(UINT param, const gfx::Size& size) {
   ResetWindowRegion(false, true);
 }
 
+void HWNDMessageHandler::OnSizing(UINT param, RECT* rect) {
+  // If the aspect ratio was not specified for the window, do nothing.
+  if (!aspect_ratio_.has_value())
+    return;
+
+  gfx::Rect window_rect(*rect);
+  SizeRectToAspectRatio(param, &window_rect);
+
+  // TODO(apacible): Account for window borders as part of the aspect ratio.
+  // https://crbug/869487.
+  *rect = window_rect.ToRECT();
+}
+
 void HWNDMessageHandler::OnSysCommand(UINT notification_code,
                                       const gfx::Point& point) {
   // Windows uses the 4 lower order bits of |notification_code| for type-
@@ -2912,17 +2975,21 @@ LRESULT HWNDMessageHandler::HandlePointerEventTypeTouch(UINT message,
       ui::GetModifiersFromKeyState(), rotation_angle);
 
   event.latency()->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, event_time, 1);
+      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, event_time, 1);
 
   // There are cases where the code handling the message destroys the
   // window, so use the weak ptr to check if destruction occurred or not.
   base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
   delegate_->HandleTouchEvent(&event);
 
-  if (event_type == ui::ET_TOUCH_RELEASED)
-    id_generator_.ReleaseNumber(pointer_id);
-  if (ref)
+  if (ref) {
+    // Release the pointer id only when |HWNDMessageHandler| and |id_generator_|
+    // are not destroyed.
+    if (event_type == ui::ET_TOUCH_RELEASED)
+      id_generator_.ReleaseNumber(pointer_id);
+
     SetMsgHandled(event.handled());
+  }
   return 0;
 }
 
@@ -3031,10 +3098,7 @@ void HWNDMessageHandler::GenerateTouchEvent(ui::EventType event_type,
   event.set_flags(ui::GetModifiersFromKeyState());
 
   event.latency()->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
-      0,
-      time_stamp,
-      1);
+      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, time_stamp, 1);
 
   touch_events->push_back(event);
 }
@@ -3182,6 +3246,20 @@ void HWNDMessageHandler::OnBackgroundFullscreen() {
 
 void HWNDMessageHandler::DestroyAXSystemCaret() {
   ax_system_caret_ = nullptr;
+}
+
+void HWNDMessageHandler::SizeRectToAspectRatio(UINT param,
+                                               gfx::Rect* window_rect) {
+  gfx::Size min_window_size;
+  gfx::Size max_window_size;
+  delegate_->GetMinMaxSize(&min_window_size, &max_window_size);
+  WindowResizeUtils::SizeMinMaxToAspectRatio(
+      aspect_ratio_.value(), &min_window_size, &max_window_size);
+  min_window_size = delegate_->DIPToScreenSize(min_window_size);
+  max_window_size = delegate_->DIPToScreenSize(max_window_size);
+  WindowResizeUtils::SizeRectToAspectRatio(
+      GetWindowResizeHitTest(param), aspect_ratio_.value(), min_window_size,
+      max_window_size, window_rect);
 }
 
 }  // namespace views

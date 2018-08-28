@@ -25,6 +25,10 @@ class HttpResponseHeaders;
 class X509Certificate;
 }
 
+namespace network {
+class ScopedThrottlingToken;
+}
+
 namespace content {
 class LoginDelegate;
 class ResourceHandler;
@@ -39,10 +43,12 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
                                       public SSLClientAuthHandler::Delegate,
                                       public ResourceHandler::Delegate {
  public:
-  ResourceLoader(std::unique_ptr<net::URLRequest> request,
-                 std::unique_ptr<ResourceHandler> handler,
-                 ResourceLoaderDelegate* delegate,
-                 ResourceContext* resource_context);
+  ResourceLoader(
+      std::unique_ptr<net::URLRequest> request,
+      std::unique_ptr<ResourceHandler> handler,
+      ResourceLoaderDelegate* delegate,
+      ResourceContext* resource_context,
+      std::unique_ptr<network::ScopedThrottlingToken> throttling_token);
   ~ResourceLoader() override;
 
   void StartRequest();
@@ -92,14 +98,17 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   // |called_from_resource_controller| is true if called directly from a
   // ResourceController, in which case |resource_handler_| must not be invoked
   // or destroyed synchronously to avoid re-entrancy issues, and false
-  // otherwise.
-  void Resume(bool called_from_resource_controller);
+  // otherwise. |modified_request_headers| is used for redirects only.
+  void Resume(
+      bool called_from_resource_controller,
+      const base::Optional<net::HttpRequestHeaders>& modified_request_headers);
   void Cancel();
   void CancelWithError(int error_code);
 
   void StartRequestInternal();
   void CancelRequestInternal(int error, bool from_renderer);
-  void FollowDeferredRedirectInternal();
+  void FollowDeferredRedirectInternal(
+      const base::Optional<net::HttpRequestHeaders>& modified_request_headers);
   void CompleteResponseStarted();
   // If |handle_result_async| is true, the result of the following read will be
   // handled asynchronously if it completes synchronously, unless it's EOF or an
@@ -112,7 +121,6 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   void CompleteRead(int bytes_read);
   void ResponseCompleted();
   void CallDidFinishLoading();
-  void RecordHistograms();
   void SetRawResponseHeaders(
       scoped_refptr<const net::HttpResponseHeaders> headers);
 
@@ -176,6 +184,8 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   scoped_refptr<const net::HttpResponseHeaders> raw_response_headers_;
 
   ResourceContext* resource_context_;
+
+  std::unique_ptr<network::ScopedThrottlingToken> throttling_token_;
 
   bool should_pause_reading_body_ = false;
   // The request is not deferred (i.e., DEFERRED_NONE) and is ready to read more

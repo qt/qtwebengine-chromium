@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">skyder</translation>
 <translation id="1211441953136645838">slutnote</translation>
 <translation id="1281252709823657822">dialogboks</translation>
+<translation id="1289247557029249093">Afslut tilstanden med integreret billede</translation>
 <translation id="1335095011850992622">anerkendelser</translation>
 <translation id="1342835525016946179">artikel</translation>
 <translation id="1359897965706325498">banner</translation>
+<translation id="1548116112524424341">afspil video i tilstanden integreret billede</translation>
 <translation id="1589122976691792535">område</translation>
 <translation id="1591562245178063882">Denne måned</translation>
 <translation id="1637811476055996098">Vælg filer</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">trægitter</translation>
 <translation id="1822429046913737220">f.m./e.m.</translation>
 <translation id="1832974991323546415">afspil på en enhed via fjernadgang</translation>
+<translation id="190587075670221089">sletning</translation>
 <translation id="1907737156431278478">eksempel</translation>
 <translation id="1921819250265091946">dd</translation>
 <translation id="1930711995431081526">status</translation>
 <translation id="1938124657309484470">Værdien må ikke være senere end <ph name="MAXIMUM_DATE_OR_TIME" />.</translation>
+<translation id="1946271899482435442">Vis datovælger</translation>
 <translation id="1993104285338243655">Ændret til spejling</translation>
 <translation id="2060505056492490888">"<ph name="DOT" />" er placeret forkert i "<ph name="INVALIDDOMAIN" />".</translation>
 <translation id="2148716181193084225">I dag</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">Indsend</translation>
 <translation id="2657045182931379222">grafikobjekt</translation>
 <translation id="2674318244760992338">sidefod</translation>
+<translation id="2706474812903655270">Denne video afspilles i tilstanden med integreret billede</translation>
 <translation id="2709516037105925701">AutoFyld</translation>
 <translation id="2723001399770238859">lyd</translation>
 <translation id="2746543609216772311">Værdien må ikke være tidligere end <ph name="MINIMUM_DATE_OR_TIME" />.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">Vis næste måned</translation>
 <translation id="512758898067543763">rækkeoverskrift</translation>
 <translation id="5143125788380636750">epilog</translation>
-<translation id="5153163864850940242">Denne video afspilles som integreret billede</translation>
 <translation id="5164977714490026579">Værdien skal være større end eller lig med <ph name="MINIMUM" />.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> PB</translation>
 <translation id="5307600278924710095">Angiv den del, der kommer før "<ph name="ATSIGN" />". "<ph name="INVALIDADDRESS" />" er ufuldstændig.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">slutskrift</translation>
 <translation id="6934078000481955284">blockquote</translation>
 <translation id="6941933287844615239">download medier</translation>
+<translation id="6981594929165378967">indsættelse</translation>
 <translation id="6989848892321993519">Forlæng denne tekst til <ph name="MIN_CHARACTERS" /> eller flere tegn (du bruger i øjeblikket ét tegn).</translation>
 <translation id="709897737746224366">Find et match til det anmodede format.</translation>
 <translation id="7139483182332611405">forord</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">resterende tid</translation>
 <translation id="7740016676195725605">stop visning af undertekster</translation>
 <translation id="7740050170769002709">HTML-indhold</translation>
+<translation id="7750228210027921155">Integreret billede</translation>
 <translation id="7789962463072032349">pause</translation>
 <translation id="7802800022689234070">Trekant til at vise eller skjule indhold</translation>
 <translation id="7888071071722539607">Mailadressen skal indeholde et "<ph name="ATSIGN" />". "<ph name="INVALIDADDRESS" />" mangler et "<ph name="ATSIGN" />".</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">indholdsfortegnelse</translation>
 <translation id="8613126697340063924">kontrollér afspilning via fjernadgang</translation>
 <translation id="862370744433916922">undertitel</translation>
-<translation id="8741316211671074806">Integreret billede</translation>
 <translation id="8750798805984357768">Vælg en af disse muligheder.</translation>
 <translation id="8785498733064193001">start afspilning</translation>
 <translation id="8808573423886751634">kapitel</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">navigation</translation>
 <translation id="9050748414552849310">vis undertekster</translation>
 <translation id="9062295712474918030">dokument</translation>
+<translation id="9093215626363556771">afslut integreret billede</translation>
 <translation id="9108370397979208512">matematik</translation>
 <translation id="9132465097189459683">Andet...</translation>
 <translation id="9138385573473225930">underretning</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, med start <ph name="WEEK_START_DATE" /></translation>
+<translation id="916607977885256133">Integreret billede</translation>
 <translation id="9168329111483466115">fodnote</translation>
-<translation id="947831847158436616">celle</translation>
+<translation id="954003015749068518">start integreret billede</translation>
 <translation id="966787709310836684">menu</translation>
 </translationbundle>

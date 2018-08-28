@@ -48,6 +48,7 @@
 #define FPDF_SEGMENT_BEZIERTO 1
 #define FPDF_SEGMENT_MOVETO 2
 
+#define FPDF_FILLMODE_NONE 0
 #define FPDF_FILLMODE_ALTERNATE 1
 #define FPDF_FILLMODE_WINDING 2
 
@@ -68,6 +69,15 @@
 #define FPDF_PRINTMODE_POSTSCRIPT3 3
 #define FPDF_PRINTMODE_POSTSCRIPT2_PASSTHROUGH 4
 #define FPDF_PRINTMODE_POSTSCRIPT3_PASSTHROUGH 5
+
+#define FPDF_TEXTRENDERMODE_FILL 0
+#define FPDF_TEXTRENDERMODE_STROKE 1
+#define FPDF_TEXTRENDERMODE_FILL_STROKE 2
+#define FPDF_TEXTRENDERMODE_INVISIBLE 3
+#define FPDF_TEXTRENDERMODE_FILL_CLIP 4
+#define FPDF_TEXTRENDERMODE_STROKE_CLIP 5
+#define FPDF_TEXTRENDERMODE_FILL_STROKE_CLIP 6
+#define FPDF_TEXTRENDERMODE_CLIP 7
 
 typedef struct FPDF_IMAGEOBJ_METADATA {
   // The image width in pixels.
@@ -307,6 +317,30 @@ FPDF_EXPORT FPDF_PAGEOBJECTMARK FPDF_CALLCONV
 FPDFPageObj_GetMark(FPDF_PAGEOBJECT page_object, unsigned long index);
 
 // Experimental API.
+// Add a new content mark to a |page_object|.
+//
+//   page_object - handle to a page object.
+//   name        - the name (tag) of the mark.
+//
+// Returns the handle to the content mark, or NULL on failure. The handle is
+// still owned by the library, and it should not be freed directly. It becomes
+// invalid if the page object is destroyed, either directly or indirectly by
+// unloading the page.
+FPDF_EXPORT FPDF_PAGEOBJECTMARK FPDF_CALLCONV
+FPDFPageObj_AddMark(FPDF_PAGEOBJECT page_object, FPDF_BYTESTRING name);
+
+// Experimental API.
+// Removes a content |mark| from a |page_object|.
+// The mark handle will be invalid after the removal.
+//
+//   page_object - handle to a page object.
+//   mark        - handle to a content mark in that object to remove.
+//
+// Returns TRUE if the operation succeeded, FALSE if it failed.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_RemoveMark(FPDF_PAGEOBJECT page_object, FPDF_PAGEOBJECTMARK mark);
+
+// Experimental API.
 // Get name of a content mark. |buffer| is only modified if |buflen| is longer
 // than the length of the name.
 //
@@ -347,43 +381,142 @@ FPDFPageObjMark_GetParamKey(FPDF_PAGEOBJECTMARK mark,
                             unsigned long buflen);
 
 // Experimental API.
-// Get the type of the value of a property in a content mark.
+// Get the type of the value of a property in a content mark by key.
 //
 //   mark   - handle to a content mark.
-//   index  - index of the property.
+//   key    - string key of the property.
 //
 // Returns the type of the value, or FPDF_OBJECT_UNKNOWN in case of failure.
 FPDF_EXPORT FPDF_OBJECT_TYPE FPDF_CALLCONV
 FPDFPageObjMark_GetParamValueType(FPDF_PAGEOBJECTMARK mark,
-                                  unsigned long index);
+                                  FPDF_BYTESTRING key);
 
 // Experimental API.
-// Get the value of an int property in a content mark.
+// Get the value of a number property in a content mark by key as int.
 // FPDFPageObjMark_GetParamValueType() should have returned FPDF_OBJECT_NUMBER
 // for this property.
 //
-//   mark   - handle to a content mark.
-//   index  - index of the property.
+//   mark      - handle to a content mark.
+//   key       - string key of the property.
+//   out_value - pointer to variable that will receive the value. Not filled if
+//               false is returned.
 //
-// Returns the int value, 0 in case of failure.
-FPDF_EXPORT int FPDF_CALLCONV
-FPDFPageObjMark_GetParamIntValue(FPDF_PAGEOBJECTMARK mark, unsigned long index);
+// Returns TRUE if the key maps to a number value, FALSE otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObjMark_GetParamIntValue(FPDF_PAGEOBJECTMARK mark,
+                                 FPDF_BYTESTRING key,
+                                 int* out_value);
 
 // Experimental API.
-// Get the value of a string property in a content mark.
-// |buffer| is only modified if |buflen| is longer than the length of the key.
+// Get the value of a string property in a content mark by key.
+// |buffer| is only modified if |buflen| is longer than the length of the value.
 //
-//   mark   - handle to a content mark.
-//   index  - index of the property.
-//   buffer - buffer for holding the returned key in UTF16-LE.
-//   buflen - length of the buffer.
+//   mark       - handle to a content mark.
+//   key        - string key of the property.
+//   buffer     - buffer for holding the returned value in UTF16-LE.
+//   buflen     - length of the buffer.
+//   out_buflen - pointer to variable that will receive the length of the value.
+//                Not filled if false is returned.
 //
-// Returns the length of the value.
-FPDF_EXPORT unsigned long FPDF_CALLCONV
+// Returns TRUE if the key maps to a string/blob value, FALSE otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFPageObjMark_GetParamStringValue(FPDF_PAGEOBJECTMARK mark,
-                                    unsigned long index,
+                                    FPDF_BYTESTRING key,
                                     void* buffer,
-                                    unsigned long buflen);
+                                    unsigned long buflen,
+                                    unsigned long* out_buflen);
+
+// Experimental API.
+// Get the value of a blob property in a content mark by key.
+// |buffer| is only modified if |buflen| is longer than or equal to the length
+// of the value.
+//
+//   mark       - handle to a content mark.
+//   key        - string key of the property.
+//   buffer     - buffer for holding the returned value.
+//   buflen     - length of the buffer.
+//   out_buflen - pointer to variable that will receive the length of the value.
+//                Not filled if false is returned.
+//
+// Returns TRUE if the key maps to a string/blob value, FALSE otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObjMark_GetParamBlobValue(FPDF_PAGEOBJECTMARK mark,
+                                  FPDF_BYTESTRING key,
+                                  void* buffer,
+                                  unsigned long buflen,
+                                  unsigned long* out_buflen);
+
+// Experimental API.
+// Set the value of an int property in a content mark by key. If a parameter
+// with key |key| exists, its value is set to |value|. Otherwise, it is added as
+// a new parameter.
+//
+//   document    - handle to the document.
+//   page_object - handle to the page object with the mark.
+//   mark        - handle to a content mark.
+//   key         - string key of the property.
+//   value       - int value to set.
+//
+// Returns TRUE if the operation succeeded, FALSE otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObjMark_SetIntParam(FPDF_DOCUMENT document,
+                            FPDF_PAGEOBJECT page_object,
+                            FPDF_PAGEOBJECTMARK mark,
+                            FPDF_BYTESTRING key,
+                            int value);
+
+// Experimental API.
+// Set the value of a string property in a content mark by key. If a parameter
+// with key |key| exists, its value is set to |value|. Otherwise, it is added as
+// a new parameter.
+//
+//   document    - handle to the document.
+//   page_object - handle to the page object with the mark.
+//   mark        - handle to a content mark.
+//   key         - string key of the property.
+//   value       - string value to set.
+//
+// Returns TRUE if the operation succeeded, FALSE otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObjMark_SetStringParam(FPDF_DOCUMENT document,
+                               FPDF_PAGEOBJECT page_object,
+                               FPDF_PAGEOBJECTMARK mark,
+                               FPDF_BYTESTRING key,
+                               FPDF_BYTESTRING value);
+
+// Experimental API.
+// Set the value of a blob property in a content mark by key. If a parameter
+// with key |key| exists, its value is set to |value|. Otherwise, it is added as
+// a new parameter.
+//
+//   document    - handle to the document.
+//   page_object - handle to the page object with the mark.
+//   mark        - handle to a content mark.
+//   key         - string key of the property.
+//   value       - pointer to blob value to set.
+//   value_len   - size in bytes of |value|.
+//
+// Returns TRUE if the operation succeeded, FALSE otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObjMark_SetBlobParam(FPDF_DOCUMENT document,
+                             FPDF_PAGEOBJECT page_object,
+                             FPDF_PAGEOBJECTMARK mark,
+                             FPDF_BYTESTRING key,
+                             void* value,
+                             unsigned long value_len);
+
+// Experimental API.
+// Removes a property from a content mark by key.
+//
+//   page_object - handle to the page object with the mark.
+//   mark        - handle to a content mark.
+//   key         - string key of the property.
+//
+// Returns TRUE if the operation succeeded, FALSE otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObjMark_RemoveParam(FPDF_PAGEOBJECT page_object,
+                            FPDF_PAGEOBJECTMARK mark,
+                            FPDF_BYTESTRING key);
 
 // Load an image from a JPEG image file and then set it into |image_object|.
 //
@@ -920,14 +1053,75 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_Close(FPDF_PAGEOBJECT path);
 // Set the drawing mode of a path.
 //
 // path     - the handle to the path object.
-// fillmode - the filling mode to be set: 0 for no fill, 1 for alternate, 2 for
-// winding.
+// fillmode - the filling mode to be set: one of the FPDF_FILLMODE_* flags.
 // stroke   - a boolean specifying if the path should be stroked or not.
 //
 // Returns TRUE on success
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_SetDrawMode(FPDF_PAGEOBJECT path,
                                                          int fillmode,
                                                          FPDF_BOOL stroke);
+
+// Experimental API.
+// Get the drawing mode of a path.
+//
+// path     - the handle to the path object.
+// fillmode - the filling mode of the path: one of the FPDF_FILLMODE_* flags.
+// stroke   - a boolean specifying if the path is stroked or not.
+//
+// Returns TRUE on success
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_GetDrawMode(FPDF_PAGEOBJECT path,
+                                                         int* fillmode,
+                                                         FPDF_BOOL* stroke);
+
+// Experimental API.
+// Get the transform matrix of a path.
+//
+//   path - handle to a path.
+//   a    - matrix value.
+//   b    - matrix value.
+//   c    - matrix value.
+//   d    - matrix value.
+//   e    - matrix value.
+//   f    - matrix value.
+//
+// The matrix is composed as:
+//   |a c e|
+//   |b d f|
+// and used to scale, rotate, shear and translate the path.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_GetMatrix(FPDF_PAGEOBJECT path,
+                                                       double* a,
+                                                       double* b,
+                                                       double* c,
+                                                       double* d,
+                                                       double* e,
+                                                       double* f);
+
+// Experimental API.
+// Set the transform matrix of a path.
+//
+//   path - handle to a path.
+//   a    - matrix value.
+//   b    - matrix value.
+//   c    - matrix value.
+//   d    - matrix value.
+//   e    - matrix value.
+//   f    - matrix value.
+//
+// The matrix is composed as:
+//   |a c e|
+//   |b d f|
+// and can be used to scale, rotate, shear and translate the path.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_SetMatrix(FPDF_PAGEOBJECT path,
+                                                       double a,
+                                                       double b,
+                                                       double c,
+                                                       double d,
+                                                       double e,
+                                                       double f);
 
 // Create a new text object using one of the standard PDF fonts.
 //
@@ -960,7 +1154,7 @@ FPDFText_SetText(FPDF_PAGEOBJECT text_object, FPDF_WIDESTRING text);
 // type.
 // cid        - a boolean specifying if the font is a CID font or not.
 //
-// The loaded font can be closed using FPDF_Font_Close.
+// The loaded font can be closed using FPDFFont_Close.
 //
 // Returns NULL on failure
 FPDF_EXPORT FPDF_FONT FPDF_CALLCONV FPDFText_LoadFont(FPDF_DOCUMENT document,
@@ -968,6 +1162,21 @@ FPDF_EXPORT FPDF_FONT FPDF_CALLCONV FPDFText_LoadFont(FPDF_DOCUMENT document,
                                                       uint32_t size,
                                                       int font_type,
                                                       FPDF_BOOL cid);
+
+// Experimental API.
+// Loads one of the standard 14 fonts per PDF spec 1.7 page 416. The preferred
+// way of using font style is using a dash to separate the name from the style,
+// for example 'Helvetica-BoldItalic'.
+//
+// document   - handle to the document.
+// font       - string containing the font name, without spaces.
+//
+// The loaded font should NOT be closed using FPDFFont_Close. It will be
+// unloaded during the document's destruction.
+//
+// Returns NULL on failure.
+FPDF_EXPORT FPDF_FONT FPDF_CALLCONV
+FPDFText_LoadStandardFont(FPDF_DOCUMENT document, FPDF_BYTESTRING font);
 
 // DEPRECATED as of May 2018. This API will be removed in the future. Please
 // use FPDFPageObj_SetFillColor instead.
@@ -988,6 +1197,40 @@ FPDFText_SetFillColor(FPDF_PAGEOBJECT text_object,
                       unsigned int B,
                       unsigned int A);
 
+// Experimental API.
+// Get the transform matrix of a text object.
+//
+//   text - handle to a text.
+//   a    - matrix value.
+//   b    - matrix value.
+//   c    - matrix value.
+//   d    - matrix value.
+//   e    - matrix value.
+//   f    - matrix value.
+//
+// The matrix is composed as:
+//   |a c e|
+//   |b d f|
+// and used to scale, rotate, shear and translate the text.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFText_GetMatrix(FPDF_PAGEOBJECT text,
+                                                       double* a,
+                                                       double* b,
+                                                       double* c,
+                                                       double* d,
+                                                       double* e,
+                                                       double* f);
+
+// Experimental API.
+// Get the font size of a text object.
+//
+//   text - handle to a text.
+//
+// Returns the font size of the text object, measured in points (about 1/72
+// inch) on success; 0 on failure.
+FPDF_EXPORT double FPDF_CALLCONV FPDFTextObj_GetFontSize(FPDF_PAGEOBJECT text);
+
 // Close a loaded PDF font.
 //
 // font   - Handle to the loaded font.
@@ -1004,6 +1247,33 @@ FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV
 FPDFPageObj_CreateTextObj(FPDF_DOCUMENT document,
                           FPDF_FONT font,
                           float font_size);
+
+// Experimental API.
+// Get the text rendering mode of a text object.
+//
+// text     - the handle to the text object.
+//
+// Returns one of the FPDF_TEXTRENDERMODE_* flags on success, -1 on error.
+FPDF_EXPORT int FPDF_CALLCONV FPDFText_GetTextRenderMode(FPDF_PAGEOBJECT text);
+
+// Experimental API.
+// Get number of page objects inside |form_object|.
+//
+//   form_object - handle to a form object.
+//
+// Returns the number of objects in |form_object| on success, -1 on error.
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFFormObj_CountObjects(FPDF_PAGEOBJECT form_object);
+
+// Experimental API.
+// Get page object in |form_object| at |index|.
+//
+//   form_object - handle to a form object.
+//   index       - the 0-based index of a page object.
+//
+// Returns the handle to the page object, or NULL on error.
+FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV
+FPDFFormObj_GetObject(FPDF_PAGEOBJECT form_object, unsigned long index);
 
 #ifdef __cplusplus
 }  // extern "C"

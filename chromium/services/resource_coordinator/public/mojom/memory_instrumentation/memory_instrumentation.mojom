@@ -5,13 +5,13 @@
 module memory_instrumentation.mojom;
 
 import "mojo/public/mojom/base/process_id.mojom";
+import "mojo/public/mojom/base/time.mojom";
 
 // Common structs:
 
 enum DumpType {
   PERIODIC_INTERVAL,
   EXPLICITLY_TRIGGERED,
-  PEAK_MEMORY_USAGE,
   SUMMARY_ONLY
 };
 
@@ -28,14 +28,6 @@ enum ProcessType {
   GPU,
   UTILITY,
   PLUGIN
-};
-
-enum HeapProfilingMode {
-  DISABLED,
-  TASK_PROFILER,
-  BACKGROUND,
-  PSEUDO_STACK,
-  NATIVE_STACK
 };
 
 enum MemoryMapOption {
@@ -198,6 +190,10 @@ struct ProcessMemoryDump {
 // This struct is returned by the public-facing API
 // Coordinator::RequestGlobalMemoryDump().
 struct GlobalMemoryDump {
+  // This time stamp precedes any of the data captured in |process_dumps|. Since
+  // dumps are queued, and since at most one dump is captured at a time, the
+  // start time of a global dump may lag the request time substantially.
+  mojo_base.mojom.TimeTicks start_time;
   array<ProcessMemoryDump> process_dumps;
 };
 
@@ -210,10 +206,6 @@ interface ClientProcess {
   // returned in case of success.
   RequestChromeMemoryDump(RequestArgs args) =>
       (bool success, uint64 dump_id, RawProcessMemoryDump? raw_process_memory_dump);
-
-  // Enable heap profiler in the client process.
-  EnableHeapProfiling(HeapProfilingMode mode) =>
-      (bool success);
 
   // Requests an OSMemDump for each pid in |pids|.
   // The Memory-infra service deals with two kinds of information:
@@ -290,6 +282,12 @@ interface Coordinator {
   // returns a summarized dump back or null if there was a failure.
   RequestGlobalMemoryDumpForPid(mojo_base.mojom.ProcessId pid,
                                 array<string> allocator_dump_names) =>
+      (bool success, GlobalMemoryDump? global_memory_dump);
+
+  // Requesting a null pid is the same as requesting all pids.
+  // The returned dump only contains OS metrics. |chrome_allocator_dumps| will
+  // be empty.
+  RequestPrivateMemoryFootprint(mojo_base.mojom.ProcessId pid) =>
       (bool success, GlobalMemoryDump? global_memory_dump);
 
   // Broadcasts a dump request to all registered client processes and injects the

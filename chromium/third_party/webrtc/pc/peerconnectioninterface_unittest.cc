@@ -14,6 +14,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/jsepsessiondescription.h"
@@ -44,7 +45,6 @@
 #include "pc/videocapturertracksource.h"
 #include "pc/videotrack.h"
 #include "rtc_base/gunit.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/stringutils.h"
 #include "rtc_base/virtualsocketserver.h"
 #include "test/gmock.h"
@@ -485,7 +485,7 @@ void SetSsrcToZero(std::string* sdp) {
   const char kSdpSsrcAtributeZero[] = "a=ssrc:0";
   size_t ssrc_pos = 0;
   while ((ssrc_pos = sdp->find(kSdpSsrcAtribute, ssrc_pos)) !=
-      std::string::npos) {
+         std::string::npos) {
     size_t end_ssrc = sdp->find(" ", ssrc_pos);
     sdp->replace(ssrc_pos, end_ssrc - ssrc_pos, kSdpSsrcAtributeZero);
     ssrc_pos = end_ssrc;
@@ -756,8 +756,8 @@ class PeerConnectionInterfaceBaseTest : public testing::Test {
     bool dtls;
     if (FindConstraint(constraints,
                        webrtc::MediaConstraintsInterface::kEnableDtlsSrtp,
-                       &dtls,
-                       nullptr) && dtls) {
+                       &dtls, nullptr) &&
+        dtls) {
       fake_certificate_generator_ = new FakeRTCCertificateGenerator();
       cert_generator.reset(fake_certificate_generator_);
     }
@@ -826,7 +826,7 @@ class PeerConnectionInterfaceBaseTest : public testing::Test {
   rtc::scoped_refptr<VideoTrackInterface> CreateVideoTrack(
       const std::string& label) {
     auto video_source = pc_factory_->CreateVideoSource(
-        rtc::MakeUnique<cricket::FakeVideoCapturer>(), nullptr);
+        absl::make_unique<cricket::FakeVideoCapturer>(), nullptr);
     return pc_factory_->CreateVideoTrack(label, video_source);
   }
 
@@ -897,9 +897,8 @@ class PeerConnectionInterfaceBaseTest : public testing::Test {
   bool DoCreateOfferAnswer(std::unique_ptr<SessionDescriptionInterface>* desc,
                            bool offer,
                            MediaConstraintsInterface* constraints) {
-    rtc::scoped_refptr<MockCreateSessionDescriptionObserver>
-        observer(new rtc::RefCountedObject<
-            MockCreateSessionDescriptionObserver>());
+    rtc::scoped_refptr<MockCreateSessionDescriptionObserver> observer(
+        new rtc::RefCountedObject<MockCreateSessionDescriptionObserver>());
     if (offer) {
       pc_->CreateOffer(observer, constraints);
     } else {
@@ -923,9 +922,8 @@ class PeerConnectionInterfaceBaseTest : public testing::Test {
   bool DoSetSessionDescription(
       std::unique_ptr<SessionDescriptionInterface> desc,
       bool local) {
-    rtc::scoped_refptr<MockSetSessionDescriptionObserver>
-        observer(new rtc::RefCountedObject<
-            MockSetSessionDescriptionObserver>());
+    rtc::scoped_refptr<MockSetSessionDescriptionObserver> observer(
+        new rtc::RefCountedObject<MockSetSessionDescriptionObserver>());
     if (local) {
       pc_->SetLocalDescription(observer, desc.release());
     } else {
@@ -953,8 +951,8 @@ class PeerConnectionInterfaceBaseTest : public testing::Test {
   bool DoGetStats(MediaStreamTrackInterface* track) {
     rtc::scoped_refptr<MockStatsObserver> observer(
         new rtc::RefCountedObject<MockStatsObserver>());
-    if (!pc_->GetStats(
-        observer, track, PeerConnectionInterface::kStatsOutputLevelStandard))
+    if (!pc_->GetStats(observer, track,
+                       PeerConnectionInterface::kStatsOutputLevelStandard))
       return false;
     EXPECT_TRUE_WAIT(observer->called(), kTimeout);
     return observer->called();
@@ -1764,7 +1762,7 @@ TEST_P(PeerConnectionInterfaceTest, IceCandidates) {
 
 // Test that CreateOffer and CreateAnswer will fail if the track labels are
 // not unique.
-TEST_P(PeerConnectionInterfaceTest, CreateOfferAnswerWithInvalidStream) {
+TEST_F(PeerConnectionInterfaceTestPlanB, CreateOfferAnswerWithInvalidStream) {
   CreatePeerConnectionWithoutDtls();
   // Create a regular offer for the CreateAnswer test later.
   std::unique_ptr<SessionDescriptionInterface> offer;
@@ -1797,10 +1795,10 @@ TEST_P(PeerConnectionInterfaceTest, SsrcInOfferAnswer) {
   ASSERT_TRUE(DoCreateOffer(&offer, nullptr));
   int audio_ssrc = 0;
   int video_ssrc = 0;
-  EXPECT_TRUE(GetFirstSsrc(GetFirstAudioContent(offer->description()),
-                           &audio_ssrc));
-  EXPECT_TRUE(GetFirstSsrc(GetFirstVideoContent(offer->description()),
-                           &video_ssrc));
+  EXPECT_TRUE(
+      GetFirstSsrc(GetFirstAudioContent(offer->description()), &audio_ssrc));
+  EXPECT_TRUE(
+      GetFirstSsrc(GetFirstVideoContent(offer->description()), &video_ssrc));
   EXPECT_NE(audio_ssrc, video_ssrc);
 
   // Test CreateAnswer
@@ -1809,10 +1807,10 @@ TEST_P(PeerConnectionInterfaceTest, SsrcInOfferAnswer) {
   ASSERT_TRUE(DoCreateAnswer(&answer, nullptr));
   audio_ssrc = 0;
   video_ssrc = 0;
-  EXPECT_TRUE(GetFirstSsrc(GetFirstAudioContent(answer->description()),
-                           &audio_ssrc));
-  EXPECT_TRUE(GetFirstSsrc(GetFirstVideoContent(answer->description()),
-                           &video_ssrc));
+  EXPECT_TRUE(
+      GetFirstSsrc(GetFirstAudioContent(answer->description()), &audio_ssrc));
+  EXPECT_TRUE(
+      GetFirstSsrc(GetFirstVideoContent(answer->description()), &video_ssrc));
   EXPECT_NE(audio_ssrc, video_ssrc);
 }
 
@@ -1861,18 +1859,6 @@ TEST_F(PeerConnectionInterfaceTestPlanB, RemoveTrackAfterAddStream) {
   const cricket::MediaContentDescription* video_desc =
       cricket::GetFirstVideoContentDescription(offer->description());
   EXPECT_TRUE(video_desc == nullptr);
-}
-
-// Verify that CreateDtmfSender only succeeds if called with a valid local
-// track. Other aspects of DtmfSenders are tested in
-// peerconnection_integrationtest.cc.
-TEST_P(PeerConnectionInterfaceTest, CreateDtmfSenderWithInvalidParams) {
-  CreatePeerConnection();
-  AddAudioTrack(kAudioTracks[0]);
-  EXPECT_EQ(nullptr, pc_->CreateDtmfSender(nullptr));
-  rtc::scoped_refptr<webrtc::AudioTrackInterface> non_localtrack(
-      pc_factory_->CreateAudioTrack("dummy_track", nullptr));
-  EXPECT_EQ(nullptr, pc_->CreateDtmfSender(non_localtrack));
 }
 
 // Test creating a sender with a stream ID, and ensure the ID is populated
@@ -2058,8 +2044,7 @@ TEST_P(PeerConnectionInterfaceTest, TestReceiveOnlyDataChannel) {
   std::string sdp;
   EXPECT_TRUE(pc_->local_description()->ToString(&sdp));
   rtc::replace_substrs(offer_label.c_str(), offer_label.length(),
-                             receive_label.c_str(), receive_label.length(),
-                             &sdp);
+                       receive_label.c_str(), receive_label.length(), &sdp);
   CreateAnswerAsRemoteDescription(sdp);
 
   // Verify that a new incoming data channel has been created and that
@@ -2490,7 +2475,7 @@ TEST_P(PeerConnectionInterfaceTest, SetConfigurationChangesPruneTurnPortsFlag) {
 // require a very complex set of mocks.
 TEST_P(PeerConnectionInterfaceTest, SetConfigurationChangesIceCheckInterval) {
   PeerConnectionInterface::RTCConfiguration config;
-  config.ice_check_min_interval = rtc::nullopt;
+  config.ice_check_min_interval = absl::nullopt;
   CreatePeerConnection(config, nullptr);
   config = pc_->GetConfiguration();
   config.ice_check_min_interval = 100;
@@ -2730,11 +2715,6 @@ TEST_F(PeerConnectionInterfaceTestPlanB, CloseAndTestMethods) {
 
   pc_->RemoveStream(local_stream);
   EXPECT_FALSE(pc_->AddStream(local_stream));
-
-  ASSERT_FALSE(local_stream->GetAudioTracks().empty());
-  rtc::scoped_refptr<webrtc::DtmfSenderInterface> dtmf_sender(
-      pc_->CreateDtmfSender(local_stream->GetAudioTracks()[0]));
-  EXPECT_TRUE(NULL == dtmf_sender);  // local stream has been removed.
 
   EXPECT_TRUE(pc_->CreateDataChannel("test", NULL) == NULL);
 
@@ -3220,8 +3200,8 @@ TEST_P(PeerConnectionInterfaceTest,
   std::unique_ptr<SessionDescriptionInterface> offer;
   ASSERT_TRUE(DoCreateOffer(&offer, nullptr));
   // Grab a copy of the offer before it gets passed into the PC.
-  auto modified_offer =
-      rtc::MakeUnique<webrtc::JsepSessionDescription>(webrtc::SdpType::kOffer);
+  auto modified_offer = absl::make_unique<webrtc::JsepSessionDescription>(
+      webrtc::SdpType::kOffer);
   modified_offer->Initialize(offer->description()->Copy(), offer->session_id(),
                              offer->session_version());
   EXPECT_TRUE(DoSetLocalDescription(std::move(offer)));
@@ -3312,15 +3292,7 @@ TEST_P(PeerConnectionInterfaceTest, OnAddTrackCallback) {
 
   // Create and set the updated remote SDP.
   CreateAndSetRemoteOffer(kSdpStringWithStream1PlanB);
-  if (sdp_semantics_ == SdpSemantics::kPlanB) {
-    EXPECT_EQ(observer_.num_added_tracks_, 2);
-  } else {
-    // With Unified Plan, OnAddTrack will fire every time SetRemoteDescription
-    // is called until the offer/answer exchange is complete. So in this case
-    // OnAddTrack is fired twice for the first audio track plus the one time
-    // for the video track.
-    EXPECT_EQ(observer_.num_added_tracks_, 3);
-  }
+  EXPECT_EQ(observer_.num_added_tracks_, 2);
   EXPECT_EQ(observer_.last_added_track_label_, kVideoTracks[0]);
 }
 
@@ -3428,13 +3400,13 @@ TEST_P(PeerConnectionInterfaceTest, SetConfigurationCausingPartialIceRestart) {
 
   // Grab the ufrags.
   std::vector<std::string> initial_ufrags = GetUfrags(pc_->local_description());
-  ASSERT_EQ(2, initial_ufrags.size());
+  ASSERT_EQ(2U, initial_ufrags.size());
 
   // Create offer and grab the new ufrags.
   CreateOfferAsLocalDescription();
   std::vector<std::string> subsequent_ufrags =
       GetUfrags(pc_->local_description());
-  ASSERT_EQ(2, subsequent_ufrags.size());
+  ASSERT_EQ(2U, subsequent_ufrags.size());
 
   // Ensure that only the ufrag for the second m= section changed.
   EXPECT_EQ(initial_ufrags[0], subsequent_ufrags[0]);
@@ -3551,7 +3523,7 @@ TEST_P(PeerConnectionInterfaceTest,
   rtc::PlatformFile file = 0;
   int64_t max_size_bytes = 1024;
   EXPECT_FALSE(pc_->StartRtcEventLog(
-      rtc::MakeUnique<webrtc::RtcEventLogOutputFile>(file, max_size_bytes),
+      absl::make_unique<webrtc::RtcEventLogOutputFile>(file, max_size_bytes),
       webrtc::RtcEventLog::kImmediateOutput));
   pc_->StopRtcEventLog();
 }

@@ -11,30 +11,26 @@
 
 namespace blink {
 
-void NGBlockFlowPainter::Paint(const PaintInfo& paint_info,
-                               const LayoutPoint& paint_offset) {
+void NGBlockFlowPainter::Paint(const PaintInfo& paint_info) {
   const NGPaintFragment* paint_fragment = block_.PaintFragment();
   DCHECK(paint_fragment);
-  PaintBoxFragment(*paint_fragment, paint_info, paint_offset);
+  PaintBoxFragment(*paint_fragment, paint_info);
 }
 
 void NGBlockFlowPainter::PaintBoxFragment(const NGPaintFragment& fragment,
-                                          const PaintInfo& paint_info,
-                                          const LayoutPoint& paint_offset) {
+                                          const PaintInfo& paint_info) {
   PaintInfo ng_paint_info(paint_info);
-  NGBoxFragmentPainter(fragment).Paint(ng_paint_info, paint_offset);
+  NGBoxFragmentPainter(fragment).Paint(ng_paint_info);
 }
 
 bool NGBlockFlowPainter::NodeAtPoint(
     HitTestResult& result,
     const HitTestLocation& location_in_container,
-    const LayoutPoint& accumulated_offset,
-    const LayoutPoint& accumulated_offset_for_legacy,
+    const LayoutPoint& physical_offset,
     HitTestAction action) {
   if (const NGPaintFragment* paint_fragment = block_.PaintFragment()) {
     return NGBoxFragmentPainter(*paint_fragment)
-        .NodeAtPoint(result, location_in_container, accumulated_offset,
-                     accumulated_offset_for_legacy, action);
+        .NodeAtPoint(result, location_in_container, physical_offset, action);
   }
   return false;
 }

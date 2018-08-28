@@ -33,14 +33,14 @@
 #define MMSG_MORE 0
 using std::string;
 
-namespace net {
+namespace quic {
 
 namespace {
 const int kEpollFlags = EPOLLIN | EPOLLOUT | EPOLLET;
 }  // namespace
 
 QuicClientEpollNetworkHelper::QuicClientEpollNetworkHelper(
-    EpollServer* epoll_server,
+    net::EpollServer* epoll_server,
     QuicClientBase* client)
     : epoll_server_(epoll_server),
       packets_dropped_(0),
@@ -57,6 +57,10 @@ QuicClientEpollNetworkHelper::~QuicClientEpollNetworkHelper() {
   }
 
   CleanUpAllUDPSockets();
+}
+
+string QuicClientEpollNetworkHelper::Name() const {
+  return "QuicClientEpollNetworkHelper";
 }
 
 bool QuicClientEpollNetworkHelper::CreateUDPSocketAndBind(
@@ -122,31 +126,33 @@ void QuicClientEpollNetworkHelper::RunEventLoop() {
   epoll_server_->WaitForEventsAndExecuteCallbacks();
 }
 
-void QuicClientEpollNetworkHelper::OnRegistration(EpollServer* eps,
+void QuicClientEpollNetworkHelper::OnRegistration(net::EpollServer* eps,
                                                   int fd,
                                                   int event_mask) {}
 void QuicClientEpollNetworkHelper::OnModification(int fd, int event_mask) {}
 void QuicClientEpollNetworkHelper::OnUnregistration(int fd, bool replaced) {}
-void QuicClientEpollNetworkHelper::OnShutdown(EpollServer* eps, int fd) {}
+void QuicClientEpollNetworkHelper::OnShutdown(net::EpollServer* eps, int fd) {}
 
-void QuicClientEpollNetworkHelper::OnEvent(int fd, EpollEvent* event) {
+void QuicClientEpollNetworkHelper::OnEvent(int fd, net::EpollEvent* event) {
   DCHECK_EQ(fd, GetLatestFD());
 
   if (event->in_events & EPOLLIN) {
     DVLOG(1) << "Read packets on EPOLLIN";
     int times_to_read = max_reads_per_epoll_loop_;
     bool more_to_read = true;
+    QuicPacketCount packets_dropped = 0;
     while (client_->connected() && more_to_read && times_to_read > 0) {
       more_to_read = packet_reader_->ReadAndDispatchPackets(
           GetLatestFD(), GetLatestClientAddress().port(),
           *client_->helper()->GetClock(), this,
-          overflow_supported_ ? &packets_dropped_ : nullptr);
+          overflow_supported_ ? &packets_dropped : nullptr);
       --times_to_read;
     }
-    if (packets_dropped_ > 100) {
-      QUIC_LOG_FIRST_N(ERROR, 50)
-          << packets_dropped_
-          << " packets droped in the socket receive buffer.";
+    if (packets_dropped_ < packets_dropped) {
+      QUIC_LOG(ERROR)
+          << packets_dropped - packets_dropped_
+          << " more packets are dropped in the socket receive buffer.";
+      packets_dropped_ = packets_dropped;
     }
     if (client_->connected() && more_to_read) {
       event->out_ready_mask |= EPOLLIN;
@@ -201,4 +207,4 @@ int QuicClientEpollNetworkHelper::CreateUDPSocket(
       /*receive_buffer_size =*/kDefaultSocketReceiveBuffer,
       /*send_buffer_size =*/kDefaultSocketReceiveBuffer, overflow_supported);
 }
-}  // namespace net
+}  // namespace quic

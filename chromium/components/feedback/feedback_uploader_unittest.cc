@@ -18,6 +18,9 @@
 #include "components/feedback/feedback_uploader_factory.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+#include "services/network/test/test_url_loader_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace feedback {
@@ -35,8 +38,11 @@ constexpr base::TimeDelta kRetryDelayForTest =
 
 class MockFeedbackUploader : public FeedbackUploader {
  public:
-  MockFeedbackUploader(content::BrowserContext* context)
-      : FeedbackUploader(context,
+  MockFeedbackUploader(
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      content::BrowserContext* context)
+      : FeedbackUploader(url_loader_factory,
+                         context,
                          FeedbackUploaderFactory::CreateUploaderTaskRunner()) {}
   ~MockFeedbackUploader() override {}
 
@@ -52,8 +58,8 @@ class MockFeedbackUploader : public FeedbackUploader {
         FROM_HERE,
         base::BindOnce(
             &FeedbackReport::LoadReportsAndQueue, feedback_reports_path(),
-            base::Bind(&MockFeedbackUploader::QueueSingleReport,
-                       base::SequencedTaskRunnerHandle::Get(), this)));
+            base::BindRepeating(&MockFeedbackUploader::QueueSingleReport,
+                                base::SequencedTaskRunnerHandle::Get(), this)));
   }
 
   const std::map<std::string, unsigned int>& dispatched_reports() const {
@@ -66,10 +72,10 @@ class MockFeedbackUploader : public FeedbackUploader {
   static void QueueSingleReport(
       scoped_refptr<base::SequencedTaskRunner> main_task_runner,
       MockFeedbackUploader* uploader,
-      const std::string& data) {
+      std::unique_ptr<std::string> data) {
     main_task_runner->PostTask(
         FROM_HERE, base::BindOnce(&MockFeedbackUploader::QueueReport,
-                                  uploader->AsWeakPtr(), data));
+                                  uploader->AsWeakPtr(), std::move(data)));
   }
 
   // FeedbackUploaderChrome:
@@ -112,22 +118,28 @@ class FeedbackUploaderTest : public testing::Test {
  public:
   FeedbackUploaderTest() {
     FeedbackUploader::SetMinimumRetryDelayForTesting(kRetryDelayForTest);
+    test_shared_loader_factory_ =
+        base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
+            &test_url_loader_factory_);
     RecreateUploader();
   }
 
   ~FeedbackUploaderTest() override = default;
 
   void RecreateUploader() {
-    uploader_ = std::make_unique<MockFeedbackUploader>(&context_);
+    uploader_ = std::make_unique<MockFeedbackUploader>(
+        test_shared_loader_factory_, &context_);
   }
 
   void QueueReport(const std::string& data) {
-    uploader_->QueueReport(data);
+    uploader_->QueueReport(std::make_unique<std::string>(data));
   }
 
   MockFeedbackUploader* uploader() const { return uploader_.get(); }
 
  private:
+  network::TestURLLoaderFactory test_url_loader_factory_;
+  scoped_refptr<network::SharedURLLoaderFactory> test_shared_loader_factory_;
   content::TestBrowserThreadBundle test_browser_thread_bundle_;
   content::TestBrowserContext context_;
   std::unique_ptr<MockFeedbackUploader> uploader_;

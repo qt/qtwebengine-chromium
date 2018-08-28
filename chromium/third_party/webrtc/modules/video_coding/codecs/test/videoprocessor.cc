@@ -19,10 +19,10 @@
 #include "common_video/h264/h264_common.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
 #include "modules/video_coding/include/video_codec_initializer.h"
 #include "modules/video_coding/include/video_error_codes.h"
 #include "modules/video_coding/utility/default_video_bitrate_allocator.h"
+#include "modules/video_coding/utility/simulcast_rate_allocator.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/timeutils.h"
 #include "test/gtest.h"
@@ -36,7 +36,7 @@ using FrameStatistics = VideoCodecTestStats::FrameStatistics;
 
 namespace {
 const int kMsToRtpTimestamp = kVideoPayloadTypeFrequency / 1000;
-const int kMaxBufferedInputFrames = 10;
+const int kMaxBufferedInputFrames = 20;
 
 size_t GetMaxNaluSizeBytes(const EncodedImage& encoded_frame,
                            const VideoCodecTestFixture::Config& config) {
@@ -219,7 +219,7 @@ VideoProcessor::VideoProcessor(webrtc::VideoEncoder* encoder,
 
   for (size_t i = 0; i < num_simulcast_or_spatial_layers_; ++i) {
     decode_callback_.push_back(
-        rtc::MakeUnique<VideoProcessorDecodeCompleteCallback>(this, i));
+        absl::make_unique<VideoProcessorDecodeCompleteCallback>(this, i));
     RTC_CHECK_EQ(
         decoders_->at(i)->InitDecode(&config_.codec_settings,
                                      static_cast<int>(config_.NumberOfCores())),
@@ -269,6 +269,9 @@ void VideoProcessor::ProcessFrame() {
                          webrtc::kVideoRotation_0);
   // Store input frame as a reference for quality calculations.
   if (config_.decode && !config_.measure_cpu) {
+    if (input_frames_.size() == kMaxBufferedInputFrames) {
+      input_frames_.erase(input_frames_.begin());
+    }
     input_frames_.emplace(frame_number, input_frame);
   }
   last_inputed_timestamp_ = timestamp;
@@ -308,6 +311,25 @@ void VideoProcessor::SetRates(size_t bitrate_kbps, size_t framerate_fps) {
       encoder_->SetRateAllocation(bitrate_allocation_, framerate_fps_);
   RTC_DCHECK_GE(set_rates_result, 0)
       << "Failed to update encoder with new rate " << bitrate_kbps << ".";
+}
+
+int32_t VideoProcessor::VideoProcessorDecodeCompleteCallback::Decoded(
+    VideoFrame& image) {
+  // Post the callback to the right task queue, if needed.
+  if (!task_queue_->IsCurrent()) {
+    // There might be a limited amount of output buffers, make a copy to make
+    // sure we don't block the decoder.
+    VideoFrame copy(I420Buffer::Copy(*image.video_frame_buffer()->ToI420()),
+                    image.rotation(), image.timestamp_us());
+    copy.set_timestamp(image.timestamp());
+
+    task_queue_->PostTask([this, copy]() {
+      video_processor_->FrameDecoded(copy, simulcast_svc_idx_);
+    });
+    return 0;
+  }
+  video_processor_->FrameDecoded(image, simulcast_svc_idx_);
+  return 0;
 }
 
 void VideoProcessor::FrameEncoded(

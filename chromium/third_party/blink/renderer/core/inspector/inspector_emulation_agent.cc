@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/platform/geometry/double_rect.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+#include "third_party/blink/renderer/platform/network/network_utils.h"
 #include "third_party/blink/renderer/platform/scheduler/util/thread_cpu_throttler.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
@@ -28,6 +29,8 @@ using protocol::Response;
 
 namespace EmulationAgentState {
 static const char kScriptExecutionDisabled[] = "scriptExecutionDisabled";
+static const char kScrollbarsHidden[] = "scrollbarsHidden";
+static const char kDocumentCookieDisabled[] = "documentCookieDisabled";
 static const char kTouchEventEmulationEnabled[] = "touchEventEmulationEnabled";
 static const char kMaxTouchPoints[] = "maxTouchPoints";
 static const char kEmulatedMedia[] = "emulatedMedia";
@@ -43,6 +46,8 @@ static const char kVirtualTimePolicy[] = "virtualTimePolicy";
 static const char kVirtualTimeTaskStarvationCount[] =
     "virtualTimeTaskStarvationCount";
 static const char kWaitForNavigation[] = "waitForNavigation";
+static const char kUserAgentOverride[] = "userAgentOverride";
+static const char kAcceptLanguageOverride[] = "acceptLanguage";
 }  // namespace EmulationAgentState
 
 InspectorEmulationAgent::InspectorEmulationAgent(
@@ -52,12 +57,33 @@ InspectorEmulationAgent::InspectorEmulationAgent(
 InspectorEmulationAgent::~InspectorEmulationAgent() = default;
 
 WebViewImpl* InspectorEmulationAgent::GetWebViewImpl() {
-  return web_local_frame_->ViewImpl();
+  return web_local_frame_ ? web_local_frame_->ViewImpl() : nullptr;
 }
 
 void InspectorEmulationAgent::Restore() {
-  setScriptExecutionDisabled(state_->booleanProperty(
-      EmulationAgentState::kScriptExecutionDisabled, false));
+  String user_agent;
+  state_->getString(EmulationAgentState::kUserAgentOverride, &user_agent);
+  String accept_language;
+  state_->getString(EmulationAgentState::kAcceptLanguageOverride,
+                    &accept_language);
+  String navigator_platform;
+  state_->getString(EmulationAgentState::kNavigatorPlatform,
+                    &navigator_platform);
+  setUserAgentOverride(user_agent, accept_language, navigator_platform);
+  if (!web_local_frame_)
+    return;
+
+  // Following code only runs for pages.
+  if (state_->booleanProperty(EmulationAgentState::kScriptExecutionDisabled,
+                              false)) {
+    GetWebViewImpl()->GetDevToolsEmulator()->SetScriptExecutionDisabled(true);
+  }
+  if (state_->booleanProperty(EmulationAgentState::kScrollbarsHidden, false))
+    GetWebViewImpl()->GetDevToolsEmulator()->SetScrollbarsHidden(true);
+  if (state_->booleanProperty(EmulationAgentState::kDocumentCookieDisabled,
+                              false)) {
+    GetWebViewImpl()->GetDevToolsEmulator()->SetDocumentCookieDisabled(true);
+  }
   setTouchEmulationEnabled(
       state_->booleanProperty(EmulationAgentState::kTouchEventEmulationEnabled,
                               false),
@@ -75,10 +101,6 @@ void InspectorEmulationAgent::Restore() {
           Maybe<protocol::DOM::RGBA>(std::move(rgba)));
     }
   }
-  String navigator_platform;
-  state_->getString(EmulationAgentState::kNavigatorPlatform,
-                    &navigator_platform);
-  setNavigatorOverrides(navigator_platform);
 
   String virtual_time_policy;
   if (state_->getString(EmulationAgentState::kVirtualTimePolicy,
@@ -137,39 +159,86 @@ void InspectorEmulationAgent::Restore() {
 }
 
 Response InspectorEmulationAgent::disable() {
+  if (enabled_)
+    instrumenting_agents_->removeInspectorEmulationAgent(this);
   setScriptExecutionDisabled(false);
+  setScrollbarsHidden(false);
+  setDocumentCookieDisabled(false);
   setTouchEmulationEnabled(false, Maybe<int>());
   setEmulatedMedia(String());
   setCPUThrottlingRate(1);
   setDefaultBackgroundColorOverride(Maybe<protocol::DOM::RGBA>());
   if (virtual_time_setup_) {
-    instrumenting_agents_->removeInspectorEmulationAgent(this);
+    DCHECK(web_local_frame_);
     web_local_frame_->View()->Scheduler()->RemoveVirtualTimeObserver(this);
     virtual_time_setup_ = false;
   }
-  setNavigatorOverrides(String());
+  setUserAgentOverride(String(), protocol::Maybe<String>(),
+                       protocol::Maybe<String>());
   return Response::OK();
 }
 
 Response InspectorEmulationAgent::resetPageScaleFactor() {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
   GetWebViewImpl()->ResetScaleStateImmediately();
-  return Response::OK();
+  return response;
 }
 
 Response InspectorEmulationAgent::setPageScaleFactor(double page_scale_factor) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
   GetWebViewImpl()->SetPageScaleFactor(static_cast<float>(page_scale_factor));
-  return Response::OK();
+  return response;
 }
 
 Response InspectorEmulationAgent::setScriptExecutionDisabled(bool value) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
+  if (state_->booleanProperty(EmulationAgentState::kScriptExecutionDisabled,
+                              false) == value) {
+    return response;
+  }
   state_->setBoolean(EmulationAgentState::kScriptExecutionDisabled, value);
   GetWebViewImpl()->GetDevToolsEmulator()->SetScriptExecutionDisabled(value);
-  return Response::OK();
+  return response;
+}
+
+Response InspectorEmulationAgent::setScrollbarsHidden(bool hidden) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
+  if (state_->booleanProperty(EmulationAgentState::kScrollbarsHidden, false) ==
+      hidden) {
+    return response;
+  }
+  state_->setBoolean(EmulationAgentState::kScrollbarsHidden, hidden);
+  GetWebViewImpl()->GetDevToolsEmulator()->SetScrollbarsHidden(hidden);
+  return response;
+}
+
+Response InspectorEmulationAgent::setDocumentCookieDisabled(bool disabled) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
+  if (state_->booleanProperty(EmulationAgentState::kDocumentCookieDisabled,
+                              false) == disabled) {
+    return response;
+  }
+  state_->setBoolean(EmulationAgentState::kDocumentCookieDisabled, disabled);
+  GetWebViewImpl()->GetDevToolsEmulator()->SetDocumentCookieDisabled(disabled);
+  return response;
 }
 
 Response InspectorEmulationAgent::setTouchEmulationEnabled(
     bool enabled,
     protocol::Maybe<int> max_touch_points) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
   int max_points = max_touch_points.fromMaybe(1);
   if (max_points < 1 || max_points > WebTouchEvent::kTouchesLengthCap) {
     return Response::InvalidParams(
@@ -180,18 +249,24 @@ Response InspectorEmulationAgent::setTouchEmulationEnabled(
   state_->setInteger(EmulationAgentState::kMaxTouchPoints, max_points);
   GetWebViewImpl()->GetDevToolsEmulator()->SetTouchEventEmulationEnabled(
       enabled, max_points);
-  return Response::OK();
+  return response;
 }
 
 Response InspectorEmulationAgent::setEmulatedMedia(const String& media) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
   state_->setString(EmulationAgentState::kEmulatedMedia, media);
   GetWebViewImpl()->GetPage()->GetSettings().SetMediaTypeOverride(media);
-  return Response::OK();
+  return response;
 }
 
 Response InspectorEmulationAgent::setCPUThrottlingRate(double rate) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
   scheduler::ThreadCPUThrottler::GetInstance()->SetThrottlingRate(rate);
-  return Response::OK();
+  return response;
 }
 
 Response InspectorEmulationAgent::setVirtualTimePolicy(
@@ -201,6 +276,9 @@ Response InspectorEmulationAgent::setVirtualTimePolicy(
     protocol::Maybe<bool> wait_for_navigation,
     protocol::Maybe<double> initial_virtual_time,
     double* virtual_time_ticks_base_ms) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
   state_->setString(EmulationAgentState::kVirtualTimePolicy, policy);
 
   PendingVirtualTimePolicy new_policy;
@@ -248,8 +326,8 @@ Response InspectorEmulationAgent::setVirtualTimePolicy(
     state_->remove(EmulationAgentState::kVirtualTimeTaskStarvationCount);
   }
 
+  InnerEnable();
   if (!virtual_time_setup_) {
-    instrumenting_agents_->addInspectorEmulationAgent(this);
     web_local_frame_->View()->Scheduler()->AddVirtualTimeObserver(this);
     virtual_time_setup_ = true;
   }
@@ -276,11 +354,12 @@ Response InspectorEmulationAgent::setVirtualTimePolicy(
         (virtual_time_base_ticks_ - WTF::TimeTicks()).InMillisecondsF();
   }
 
-  return Response::OK();
+  return response;
 }
 
 void InspectorEmulationAgent::ApplyVirtualTimePolicy(
     const PendingVirtualTimePolicy& new_policy) {
+  DCHECK(web_local_frame_);
   web_local_frame_->View()->Scheduler()->SetVirtualTimePolicy(
       new_policy.policy);
   virtual_time_base_ticks_ =
@@ -301,7 +380,7 @@ void InspectorEmulationAgent::ApplyVirtualTimePolicy(
   }
 }
 
-void InspectorEmulationAgent::FrameStartedLoading(LocalFrame*, FrameLoadType) {
+void InspectorEmulationAgent::FrameStartedLoading(LocalFrame*) {
   if (pending_virtual_time_policy_) {
     state_->setBoolean(EmulationAgentState::kWaitForNavigation, false);
     ApplyVirtualTimePolicy(*pending_virtual_time_policy_);
@@ -309,16 +388,40 @@ void InspectorEmulationAgent::FrameStartedLoading(LocalFrame*, FrameLoadType) {
   }
 }
 
+void InspectorEmulationAgent::WillSendRequest(
+    ExecutionContext* execution_context,
+    unsigned long identifier,
+    DocumentLoader* loader,
+    ResourceRequest& request,
+    const ResourceResponse& redirect_response,
+    const FetchInitiatorInfo& initiator_info,
+    Resource::Type resource_type) {
+  String accept_lang_override;
+  state_->getString(EmulationAgentState::kAcceptLanguageOverride,
+                    &accept_lang_override);
+  if (!accept_lang_override.IsEmpty() &&
+      request.HttpHeaderField("Accept-Language").IsEmpty()) {
+    request.SetHTTPHeaderField(
+        "Accept-Language",
+        AtomicString(
+            NetworkUtils::GenerateAcceptLanguageHeader(accept_lang_override)));
+  }
+}
+
 Response InspectorEmulationAgent::setNavigatorOverrides(
     const String& platform) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
   state_->setString(EmulationAgentState::kNavigatorPlatform, platform);
   GetWebViewImpl()->GetPage()->GetSettings().SetNavigatorPlatformOverride(
       platform);
-  return Response::OK();
+  return response;
 }
 
 void InspectorEmulationAgent::VirtualTimeBudgetExpired() {
   TRACE_EVENT_ASYNC_END0("renderer.scheduler", "VirtualTimeBudget", this);
+  DCHECK(web_local_frame_);
   web_local_frame_->View()->Scheduler()->SetVirtualTimePolicy(
       PageScheduler::VirtualTimePolicy::kPause);
   state_->setString(EmulationAgentState::kVirtualTimePolicy,
@@ -342,6 +445,9 @@ void InspectorEmulationAgent::OnVirtualTimePaused(
 
 Response InspectorEmulationAgent::setDefaultBackgroundColorOverride(
     Maybe<protocol::DOM::RGBA> color) {
+  Response response = AssertPage();
+  if (!response.isSuccess())
+    return response;
   if (!color.isJust()) {
     // Clear the override and state.
     GetWebViewImpl()->ClearBaseBackgroundColorOverride();
@@ -375,13 +481,63 @@ Response InspectorEmulationAgent::setDeviceMetricsOverride(
   // We don't have to do anything other than reply to the client, as the
   // emulation parameters should have already been updated by the handling of
   // ViewMsg_EnableDeviceEmulation.
-  return Response::OK();
+  return AssertPage();
 }
 
 Response InspectorEmulationAgent::clearDeviceMetricsOverride() {
   // We don't have to do anything other than reply to the client, as the
   // emulation parameters should have already been cleared by the handling of
   // ViewMsg_DisableDeviceEmulation.
+  return AssertPage();
+}
+
+Response InspectorEmulationAgent::setUserAgentOverride(
+    const String& user_agent,
+    protocol::Maybe<String> accept_language,
+    protocol::Maybe<String> platform) {
+  if (!user_agent.IsEmpty() || accept_language.isJust() || platform.isJust())
+    InnerEnable();
+  state_->setString(EmulationAgentState::kUserAgentOverride, user_agent);
+  state_->setString(EmulationAgentState::kAcceptLanguageOverride,
+                    accept_language.fromMaybe(String()));
+  state_->setString(EmulationAgentState::kNavigatorPlatform,
+                    platform.fromMaybe(String()));
+  if (web_local_frame_) {
+    GetWebViewImpl()->GetPage()->GetSettings().SetNavigatorPlatformOverride(
+        platform.fromMaybe(String()));
+  }
+  return Response::OK();
+}
+
+void InspectorEmulationAgent::ApplyAcceptLanguageOverride(String* accept_lang) {
+  String accept_lang_override;
+  state_->getString(EmulationAgentState::kAcceptLanguageOverride,
+                    &accept_lang_override);
+  if (!accept_lang_override.IsEmpty())
+    *accept_lang = accept_lang_override;
+}
+
+void InspectorEmulationAgent::ApplyUserAgentOverride(String* user_agent) {
+  String user_agent_override;
+  state_->getString(EmulationAgentState::kUserAgentOverride,
+                    &user_agent_override);
+  if (!user_agent_override.IsEmpty())
+    *user_agent = user_agent_override;
+}
+
+void InspectorEmulationAgent::InnerEnable() {
+  if (enabled_)
+    return;
+  enabled_ = true;
+  instrumenting_agents_->addInspectorEmulationAgent(this);
+}
+
+Response InspectorEmulationAgent::AssertPage() {
+  if (!web_local_frame_) {
+    LOG(ERROR) << "Can only enable virtual time for pages, not workers";
+    return Response::InvalidParams(
+        "Can only enable virtual time for pages, not workers");
+  }
   return Response::OK();
 }
 

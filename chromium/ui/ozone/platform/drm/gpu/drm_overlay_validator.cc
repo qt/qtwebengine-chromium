@@ -8,11 +8,14 @@
 
 #include "base/files/platform_file.h"
 #include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/gpu_fence.h"
+#include "ui/ozone/common/linux/drm_util_linux.h"
 #include "ui/ozone/platform/drm/common/drm_util.h"
 #include "ui/ozone/platform/drm/gpu/drm_device.h"
 #include "ui/ozone/platform/drm/gpu/drm_window.h"
 #include "ui/ozone/platform/drm/gpu/hardware_display_controller.h"
 #include "ui/ozone/platform/drm/gpu/scanout_buffer.h"
+#include "ui/ozone/platform/drm/gpu/scanout_buffer_generator.h"
 
 namespace ui {
 
@@ -53,7 +56,7 @@ DrmOverlayValidator::~DrmOverlayValidator() {}
 
 std::vector<OverlayCheckReturn_Params> DrmOverlayValidator::TestPageFlip(
     const std::vector<OverlayCheck_Params>& params,
-    const OverlayPlaneList& last_used_planes) {
+    const DrmOverlayPlaneList& last_used_planes) {
   std::vector<OverlayCheckReturn_Params> returns(params.size());
   HardwareDisplayController* controller = window_->GetController();
   if (!controller) {
@@ -64,9 +67,9 @@ std::vector<OverlayCheckReturn_Params> DrmOverlayValidator::TestPageFlip(
     return returns;
   }
 
-  OverlayPlaneList test_list;
+  DrmOverlayPlaneList test_list;
   std::vector<scoped_refptr<ScanoutBuffer>> reusable_buffers;
-  scoped_refptr<DrmDevice> drm = controller->GetAllocationDrmDevice();
+  scoped_refptr<DrmDevice> drm = controller->GetDrmDevice();
 
   for (const auto& plane : last_used_planes)
     reusable_buffers.push_back(plane.buffer);
@@ -82,10 +85,10 @@ std::vector<OverlayCheckReturn_Params> DrmOverlayValidator::TestPageFlip(
                                  GetFourCCFormatFromBufferFormat(params[i].format),
                                  buffer_generator_, &reusable_buffers);
 
-    OverlayPlane plane(buffer, params[i].plane_z_order, params[i].transform,
-                       params[i].display_rect, params[i].crop_rect,
-                       /* enable_blend */ true, /* gpu_fence */ nullptr);
-    test_list.push_back(plane);
+    DrmOverlayPlane plane(buffer, params[i].plane_z_order, params[i].transform,
+                          params[i].display_rect, params[i].crop_rect,
+                          /* enable_blend */ true, /* gpu_fence */ nullptr);
+    test_list.push_back(std::move(plane));
 
     if (buffer && controller->TestPageFlip(test_list)) {
       returns[i].status = OVERLAY_STATUS_ABLE;

@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_sender.h"
+
+#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_rtc_dtmf_sender_handler.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
@@ -10,8 +12,10 @@
 #include "third_party/blink/renderer/modules/peerconnection/rtc_dtmf_sender.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_error_util.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_capabilities.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_void_request_script_promise_resolver_impl.h"
 #include "third_party/blink/renderer/modules/peerconnection/web_rtc_stats_report_callback_resolver.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/peerconnection/rtc_void_request.h"
 
 namespace blink {
@@ -32,7 +36,12 @@ class ReplaceTrackRequest : public RTCVoidRequest {
   }
 
   void RequestFailed(const webrtc::RTCError& error) override {
-    resolver_->Reject(CreateDOMExceptionFromRTCError(error));
+    ScriptState::Scope scope(resolver_->GetScriptState());
+    ExceptionState exception_state(resolver_->GetScriptState()->GetIsolate(),
+                                   ExceptionState::kExecutionContext,
+                                   "RTCRtpSender", "replaceTrack");
+    ThrowExceptionFromRTCError(error, exception_state);
+    resolver_->Reject(exception_state);
   }
 
   void Trace(blink::Visitor* visitor) override {
@@ -51,7 +60,10 @@ class ReplaceTrackRequest : public RTCVoidRequest {
 class SetParametersRequest : public RTCVoidRequestScriptPromiseResolverImpl {
  public:
   SetParametersRequest(ScriptPromiseResolver* resolver, RTCRtpSender* sender)
-      : RTCVoidRequestScriptPromiseResolverImpl(resolver), sender_(sender) {}
+      : RTCVoidRequestScriptPromiseResolverImpl(resolver,
+                                                "RTCRtpSender",
+                                                "setParameters"),
+        sender_(sender) {}
 
   void RequestSucceeded() override {
     sender_->ClearLastReturnedParameters();
@@ -72,18 +84,58 @@ class SetParametersRequest : public RTCVoidRequestScriptPromiseResolverImpl {
   Member<RTCRtpSender> sender_;
 };
 
-bool HasInvalidModification(const RTCRtpParameters& parameters,
-                            const RTCRtpParameters& new_parameters) {
+bool HasInvalidModification(const RTCRtpSendParameters& parameters,
+                            const RTCRtpSendParameters& new_parameters) {
   if (parameters.hasTransactionId() != new_parameters.hasTransactionId() ||
       (parameters.hasTransactionId() &&
-       parameters.transactionId() != new_parameters.transactionId()))
+       parameters.transactionId() != new_parameters.transactionId())) {
     return true;
+  }
 
   if (parameters.hasEncodings() != new_parameters.hasEncodings())
     return true;
   if (parameters.hasEncodings()) {
     if (parameters.encodings().size() != new_parameters.encodings().size())
       return true;
+  }
+
+  if (parameters.hasHeaderExtensions() != new_parameters.hasHeaderExtensions())
+    return true;
+
+  if (parameters.hasHeaderExtensions()) {
+    if (parameters.headerExtensions().size() !=
+        new_parameters.headerExtensions().size())
+      return true;
+
+    for (size_t i = 0; i < parameters.headerExtensions().size(); ++i) {
+      const auto& header_extension = parameters.headerExtensions()[i];
+      const auto& new_header_extension = new_parameters.headerExtensions()[i];
+      if (header_extension.hasUri() != new_header_extension.hasUri() ||
+          (header_extension.hasUri() &&
+           header_extension.uri() != new_header_extension.uri()) ||
+          header_extension.hasId() != new_header_extension.hasId() ||
+          (header_extension.hasId() &&
+           header_extension.id() != new_header_extension.id()) ||
+          header_extension.hasEncrypted() !=
+              new_header_extension.hasEncrypted() ||
+          (header_extension.hasEncrypted() &&
+           header_extension.encrypted() != new_header_extension.encrypted())) {
+        return true;
+      }
+    }
+  }
+
+  if (parameters.hasRtcp() != new_parameters.hasRtcp() ||
+      (parameters.hasRtcp() &&
+       ((parameters.rtcp().hasCname() != new_parameters.rtcp().hasCname() ||
+         (parameters.rtcp().hasCname() &&
+          parameters.rtcp().cname() != new_parameters.rtcp().cname())) ||
+        (parameters.rtcp().hasReducedSize() !=
+             new_parameters.rtcp().hasReducedSize() ||
+         (parameters.rtcp().hasReducedSize() &&
+          parameters.rtcp().reducedSize() !=
+              new_parameters.rtcp().reducedSize()))))) {
+    return true;
   }
 
   if (parameters.hasCodecs() != new_parameters.hasCodecs())
@@ -165,20 +217,13 @@ double PriorityToDouble(const WTF::String& priority) {
 
 std::tuple<std::vector<webrtc::RtpEncodingParameters>,
            webrtc::DegradationPreference>
-ToRtpParameters(const RTCRtpParameters& parameters) {
+ToRtpParameters(const RTCRtpSendParameters& parameters) {
   std::vector<webrtc::RtpEncodingParameters> encodings;
   if (parameters.hasEncodings()) {
     encodings.reserve(parameters.encodings().size());
 
     for (const auto& encoding : parameters.encodings()) {
-      // TODO(orphis): Forward missing fields from the WebRTC library:
-      // codecPayloadType, dtx, ptime, maxFramerate, scaleResolutionDownBy,
-      // rid
-      encodings.push_back({});
-      encodings.back().active = encoding.active();
-      encodings.back().bitrate_priority = PriorityToDouble(encoding.priority());
-      if (encoding.hasMaxBitrate())
-        encodings.back().max_bitrate_bps = clampTo<int>(encoding.maxBitrate());
+      encodings.push_back(ToRtpEncodingParameters(encoding));
     }
   }
 
@@ -189,18 +234,32 @@ ToRtpParameters(const RTCRtpParameters& parameters) {
 
 }  // namespace
 
+webrtc::RtpEncodingParameters ToRtpEncodingParameters(
+    const RTCRtpEncodingParameters& encoding) {
+  // TODO(orphis): Forward missing fields from the WebRTC library:
+  // codecPayloadType, dtx, ptime, maxFramerate, scaleResolutionDownBy,
+  // rid
+  webrtc::RtpEncodingParameters webrtc_encoding;
+  webrtc_encoding.active = encoding.active();
+  webrtc_encoding.bitrate_priority = PriorityToDouble(encoding.priority());
+  if (encoding.hasMaxBitrate())
+    webrtc_encoding.max_bitrate_bps = clampTo<int>(encoding.maxBitrate());
+  return webrtc_encoding;
+}
+
 RTCRtpSender::RTCRtpSender(RTCPeerConnection* pc,
                            std::unique_ptr<WebRTCRtpSender> sender,
+                           String kind,
                            MediaStreamTrack* track,
                            MediaStreamVector streams)
     : pc_(pc),
       sender_(std::move(sender)),
+      kind_(std::move(kind)),
       track_(track),
       streams_(std::move(streams)) {
   DCHECK(pc_);
   DCHECK(sender_);
-  DCHECK(track_);
-  kind_ = track->kind();
+  DCHECK(!track || kind_ == track->kind());
 }
 
 MediaStreamTrack* RTCRtpSender::track() {
@@ -212,26 +271,33 @@ ScriptPromise RTCRtpSender::replaceTrack(ScriptState* script_state,
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
   if (pc_->IsClosed()) {
-    resolver->Reject(DOMException::Create(kInvalidStateError,
+    resolver->Reject(DOMException::Create(DOMExceptionCode::kInvalidStateError,
                                           "The peer connection is closed."));
     return promise;
   }
   WebMediaStreamTrack web_track;
-  if (with_track)
+  if (with_track) {
+    pc_->RegisterTrack(with_track);
     web_track = with_track->Component();
+  }
   ReplaceTrackRequest* request =
       new ReplaceTrackRequest(this, with_track, resolver);
   sender_->ReplaceTrack(web_track, request);
   return promise;
 }
 
-void RTCRtpSender::getParameters(RTCRtpParameters& parameters) {
+void RTCRtpSender::getParameters(RTCRtpSendParameters& parameters) {
   // TODO(orphis): Forward missing fields from the WebRTC library:
-  // rtcp, headerExtensions, degradationPreference
+  // degradationPreference
   std::unique_ptr<webrtc::RtpParameters> webrtc_parameters =
       sender_->GetParameters();
 
   parameters.setTransactionId(webrtc_parameters->transaction_id.c_str());
+
+  RTCRtcpParameters rtcp;
+  rtcp.setCname(webrtc_parameters->rtcp.cname.c_str());
+  rtcp.setReducedSize(webrtc_parameters->rtcp.reduced_size);
+  parameters.setRtcp(rtcp);
 
   HeapVector<RTCRtpEncodingParameters> encodings;
   encodings.ReserveCapacity(webrtc_parameters->encodings.size());
@@ -247,6 +313,17 @@ void RTCRtpSender::getParameters(RTCRtpParameters& parameters) {
         PriorityFromDouble(web_encoding.bitrate_priority).c_str());
   }
   parameters.setEncodings(encodings);
+
+  HeapVector<RTCRtpHeaderExtensionParameters> headers;
+  headers.ReserveCapacity(webrtc_parameters->header_extensions.size());
+  for (const auto& web_header : webrtc_parameters->header_extensions) {
+    headers.emplace_back();
+    RTCRtpHeaderExtensionParameters& header = headers.back();
+    header.setUri(web_header.uri.c_str());
+    header.setId(web_header.id);
+    header.setEncrypted(web_header.encrypt);
+  }
+  parameters.setHeaderExtensions(headers);
 
   HeapVector<RTCRtpCodecParameters> codecs;
   codecs.ReserveCapacity(webrtc_parameters->codecs.size());
@@ -274,14 +351,15 @@ void RTCRtpSender::getParameters(RTCRtpParameters& parameters) {
   last_returned_parameters_ = parameters;
 }
 
-ScriptPromise RTCRtpSender::setParameters(ScriptState* script_state,
-                                          const RTCRtpParameters& parameters) {
+ScriptPromise RTCRtpSender::setParameters(
+    ScriptState* script_state,
+    const RTCRtpSendParameters& parameters) {
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
 
   if (!last_returned_parameters_) {
     resolver->Reject(DOMException::Create(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "getParameters() needs to be called before setParameters()."));
     return promise;
   }
@@ -292,7 +370,7 @@ ScriptPromise RTCRtpSender::setParameters(ScriptState* script_state,
   // level instead.
   if (HasInvalidModification(last_returned_parameters_.value(), parameters)) {
     resolver->Reject(
-        DOMException::Create(kInvalidModificationError,
+        DOMException::Create(DOMExceptionCode::kInvalidModificationError,
                              "Read-only field modified in setParameters()."));
     return promise;
   }
@@ -342,6 +420,10 @@ MediaStreamVector RTCRtpSender::streams() const {
   return streams_;
 }
 
+void RTCRtpSender::set_streams(MediaStreamVector streams) {
+  streams_ = std::move(streams);
+}
+
 RTCDTMFSender* RTCRtpSender::dtmf() {
   // Lazy initialization of dtmf_ to avoid overhead when not used.
   if (!dtmf_ && kind_ == "audio") {
@@ -363,6 +445,51 @@ void RTCRtpSender::Trace(blink::Visitor* visitor) {
   visitor->Trace(streams_);
   visitor->Trace(last_returned_parameters_);
   ScriptWrappable::Trace(visitor);
+}
+
+void RTCRtpSender::getCapabilities(
+    const String& kind,
+    base::Optional<RTCRtpCapabilities>& capabilities) {
+  if (kind != "audio" && kind != "video")
+    return;
+
+  capabilities = RTCRtpCapabilities{};
+
+  std::unique_ptr<webrtc::RtpCapabilities> rtc_capabilities =
+      blink::Platform::Current()->GetRtpSenderCapabilities(kind);
+
+  HeapVector<RTCRtpCodecCapability> codecs;
+  codecs.ReserveInitialCapacity(rtc_capabilities->codecs.size());
+  for (const auto& rtc_codec : rtc_capabilities->codecs) {
+    codecs.emplace_back();
+    auto& codec = codecs.back();
+    codec.setMimeType(WTF::String::FromUTF8(rtc_codec.mime_type().c_str()));
+    if (rtc_codec.clock_rate)
+      codec.setClockRate(rtc_codec.clock_rate.value());
+    if (rtc_codec.num_channels)
+      codec.setChannels(rtc_codec.num_channels.value());
+    if (rtc_codec.parameters.size()) {
+      std::string sdp_fmtp_line;
+      for (const auto& parameter : rtc_codec.parameters) {
+        if (sdp_fmtp_line.size())
+          sdp_fmtp_line += ";";
+        sdp_fmtp_line += parameter.first + "=" + parameter.second;
+      }
+      codec.setSdpFmtpLine(sdp_fmtp_line.c_str());
+    }
+  }
+  capabilities->setCodecs(codecs);
+
+  HeapVector<RTCRtpHeaderExtensionCapability> header_extensions;
+  header_extensions.ReserveInitialCapacity(
+      rtc_capabilities->header_extensions.size());
+  for (const auto& rtc_header_extension : rtc_capabilities->header_extensions) {
+    header_extensions.emplace_back();
+    auto& header_extension = header_extensions.back();
+    header_extension.setUri(
+        WTF::String::FromUTF8(rtc_header_extension.uri.c_str()));
+  }
+  capabilities->setHeaderExtensions(header_extensions);
 }
 
 }  // namespace blink

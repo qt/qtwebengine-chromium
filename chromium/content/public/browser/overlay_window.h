@@ -27,6 +27,12 @@ class PictureInPictureWindowController;
 // browser windows.
 class OverlayWindow {
  public:
+  enum PlaybackState {
+    kPlaying = 0,
+    kPaused,
+    kNoVideo,
+  };
+
   OverlayWindow() = default;
   virtual ~OverlayWindow() = default;
 
@@ -45,16 +51,14 @@ class OverlayWindow {
   // Retrieves the window's current bounds, including its window.
   virtual gfx::Rect GetBounds() const = 0;
   virtual void UpdateVideoSize(const gfx::Size& natural_size) = 0;
+  virtual void SetPlaybackState(PlaybackState playback_state) = 0;
 
-  // Retrieve the ui::Layers corresponding to the video and controls.
+  // Retrieves the ui::Layers corresponding to the window and video.
+  virtual ui::Layer* GetWindowBackgroundLayer() = 0;
   virtual ui::Layer* GetVideoLayer() = 0;
-  virtual ui::Layer* GetControlsBackgroundLayer() = 0;
-  virtual ui::Layer* GetCloseControlsLayer() = 0;
-  virtual ui::Layer* GetPlayPauseControlsLayer() = 0;
 
-  // Retrieves the bounds of the media controls.
-  virtual gfx::Rect GetCloseControlsBounds() = 0;
-  virtual gfx::Rect GetPlayPauseControlsBounds() = 0;
+  // Retrieves the bounds of the video.
+  virtual gfx::Rect GetVideoBounds() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(OverlayWindow);

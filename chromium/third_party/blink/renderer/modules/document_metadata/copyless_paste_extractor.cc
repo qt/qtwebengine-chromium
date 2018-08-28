@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "third_party/blink/public/platform/modules/document_metadata/copyless_paste.mojom-blink.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
@@ -16,6 +17,7 @@
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/json/json_parser.h"
+#include "third_party/blink/renderer/platform/json/json_values.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -294,9 +296,9 @@ WebPagePtr CopylessPasteExtractor::extract(const Document& document) {
   WebPagePtr page = WebPage::New();
 
   // Traverse the DOM tree and extract the metadata.
-  double start_time = CurrentTimeTicksInSeconds();
+  TimeTicks start_time = CurrentTimeTicks();
   ExtractionStatus status = extractMetadata(*html, page->entities);
-  double elapsed_time = CurrentTimeTicksInSeconds() - start_time;
+  TimeDelta elapsed_time = CurrentTimeTicks() - start_time;
 
   DEFINE_STATIC_LOCAL(EnumerationHistogram, status_histogram,
                       ("CopylessPaste.ExtractionStatus", kCount));
@@ -306,12 +308,12 @@ WebPagePtr CopylessPasteExtractor::extract(const Document& document) {
     DEFINE_STATIC_LOCAL(
         CustomCountHistogram, extractionHistogram,
         ("CopylessPaste.ExtractionFailedUs", 1, 1000 * 1000, 50));
-    extractionHistogram.Count(1e6 * elapsed_time);
+    extractionHistogram.CountMicroseconds(elapsed_time);
     return nullptr;
   }
   DEFINE_STATIC_LOCAL(CustomCountHistogram, extractionHistogram,
                       ("CopylessPaste.ExtractionUs", 1, 1000 * 1000, 50));
-  extractionHistogram.Count(1e6 * elapsed_time);
+  extractionHistogram.CountMicroseconds(elapsed_time);
 
   page->url = document.Url();
   page->title = document.title();

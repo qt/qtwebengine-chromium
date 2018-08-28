@@ -11,16 +11,16 @@
 
 namespace mojo {
 
-using ::webauth::mojom::PublicKeyCredentialUserEntityPtr;
-using ::webauth::mojom::PublicKeyCredentialRpEntityPtr;
-using ::webauth::mojom::AuthenticatorTransport;
-using ::webauth::mojom::PublicKeyCredentialType;
-using ::webauth::mojom::PublicKeyCredentialParametersPtr;
-using ::webauth::mojom::PublicKeyCredentialDescriptorPtr;
-using ::webauth::mojom::AuthenticatorSelectionCriteriaPtr;
-using ::webauth::mojom::AuthenticatorAttachment;
-using ::webauth::mojom::UserVerificationRequirement;
-using ::webauth::mojom::CableAuthenticationPtr;
+using ::blink::mojom::PublicKeyCredentialUserEntityPtr;
+using ::blink::mojom::PublicKeyCredentialRpEntityPtr;
+using ::blink::mojom::AuthenticatorTransport;
+using ::blink::mojom::PublicKeyCredentialType;
+using ::blink::mojom::PublicKeyCredentialParametersPtr;
+using ::blink::mojom::PublicKeyCredentialDescriptorPtr;
+using ::blink::mojom::AuthenticatorSelectionCriteriaPtr;
+using ::blink::mojom::AuthenticatorAttachment;
+using ::blink::mojom::UserVerificationRequirement;
+using ::blink::mojom::CableAuthenticationPtr;
 
 // static
 ::device::FidoTransportProtocol
@@ -88,7 +88,7 @@ TypeConverter<std::vector<::device::PublicKeyCredentialDescriptor>,
 ::device::UserVerificationRequirement
 TypeConverter<::device::UserVerificationRequirement,
               UserVerificationRequirement>::
-    Convert(const ::webauth::mojom::UserVerificationRequirement& input) {
+    Convert(const UserVerificationRequirement& input) {
   switch (input) {
     case UserVerificationRequirement::PREFERRED:
       return ::device::UserVerificationRequirement::kPreferred;
@@ -180,13 +180,13 @@ TypeConverter<std::vector<::device::FidoCableDiscovery::CableDiscoveryData>,
     std::copy(data->authenticator_eid.begin(), data->authenticator_eid.end(),
               authenticator_eid.begin());
 
-    ::device::FidoCableDiscovery::SessionKeyArray session_key;
-    DCHECK_EQ(session_key.size(), data->session_pre_key.size());
+    ::device::FidoCableDiscovery::SessionPreKeyArray session_pre_key;
+    DCHECK_EQ(session_pre_key.size(), data->session_pre_key.size());
     std::copy(data->session_pre_key.begin(), data->session_pre_key.end(),
-              session_key.begin());
+              session_pre_key.begin());
 
     discovery_data.push_back(::device::FidoCableDiscovery::CableDiscoveryData{
-        data->version, client_eid, authenticator_eid, session_key});
+        data->version, client_eid, authenticator_eid, session_pre_key});
   }
 
   return discovery_data;

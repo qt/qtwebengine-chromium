@@ -714,16 +714,17 @@ gl::Error TextureD3D::initializeContents(const gl::Context *context,
     // Slow path: non-renderable texture or the texture levels aren't set up.
     const auto &formatInfo = gl::GetSizedInternalFormatInfo(image->getInternalFormat());
 
-    size_t imageBytes = 0;
-    ANGLE_TRY_RESULT(formatInfo.computeRowPitch(formatInfo.type, image->getWidth(), 1, 0),
-                     imageBytes);
+    GLuint imageBytes = 0;
+    ANGLE_TRY_CHECKED_MATH(
+        formatInfo.computeRowPitch(formatInfo.type, image->getWidth(), 1, 0, &imageBytes));
     imageBytes *= image->getHeight() * image->getDepth();
 
     gl::PixelUnpackState zeroDataUnpackState;
     zeroDataUnpackState.alignment = 1;
 
     angle::MemoryBuffer *zeroBuffer = nullptr;
-    ANGLE_TRY(context->getZeroFilledBuffer(imageBytes, &zeroBuffer));
+    ANGLE_TRY_ALLOCATION(context->getZeroFilledBuffer(imageBytes, &zeroBuffer));
+
     if (shouldUseSetData(image))
     {
         ANGLE_TRY(mTexStorage->setData(context, imageIndex, image, nullptr, formatInfo.type,
@@ -1589,7 +1590,7 @@ ImageD3D *TextureD3D_Cube::getImage(int level, int layer) const
 ImageD3D *TextureD3D_Cube::getImage(const gl::ImageIndex &index) const
 {
     ASSERT(index.getLevelIndex() < gl::IMPLEMENTATION_MAX_TEXTURE_LEVELS);
-    ASSERT(gl::TextureTargetToType(index.getTarget()) == gl::TextureType::CubeMap);
+    ASSERT(gl::IsCubeMapFaceTarget(index.getTarget()));
     return mImageArray[index.cubeMapFaceIndex()][index.getLevelIndex()].get();
 }
 
@@ -1803,7 +1804,7 @@ gl::Error TextureD3D_Cube::copyTexture(const gl::Context *context,
                                        bool unpackUnmultiplyAlpha,
                                        const gl::Texture *source)
 {
-    ASSERT(gl::TextureTargetToType(index.getTarget()) == gl::TextureType::CubeMap);
+    ASSERT(gl::IsCubeMapFaceTarget(index.getTarget()));
 
     gl::TextureTarget sourceTarget = NonCubeTextureTypeToTarget(source->getType());
 
@@ -1861,7 +1862,7 @@ gl::Error TextureD3D_Cube::copySubTexture(const gl::Context *context,
                                           bool unpackUnmultiplyAlpha,
                                           const gl::Texture *source)
 {
-    ASSERT(gl::TextureTargetToType(index.getTarget()) == gl::TextureType::CubeMap);
+    ASSERT(gl::IsCubeMapFaceTarget(index.getTarget()));
 
     GLint faceIndex = index.cubeMapFaceIndex();
 
@@ -2008,7 +2009,7 @@ gl::Error TextureD3D_Cube::getRenderTarget(const gl::Context *context,
                                            const gl::ImageIndex &index,
                                            RenderTargetD3D **outRT)
 {
-    ASSERT(gl::TextureTargetToType(index.getTarget()) == gl::TextureType::CubeMap);
+    ASSERT(gl::IsCubeMapFaceTarget(index.getTarget()));
 
     // ensure the underlying texture is created
     ANGLE_TRY(ensureRenderTarget(context));
@@ -2191,7 +2192,7 @@ gl::Error TextureD3D_Cube::updateStorageFaceLevel(const gl::Context *context,
     if (image->isDirty())
     {
         gl::TextureTarget faceTarget = gl::CubeFaceIndexToTextureTarget(faceIndex);
-        gl::ImageIndex index = gl::ImageIndex::MakeCube(faceTarget, level);
+        gl::ImageIndex index         = gl::ImageIndex::MakeCubeMapFace(faceTarget, level);
         gl::Box region(0, 0, 0, image->getWidth(), image->getHeight(), 1);
         ANGLE_TRY(commitRegion(context, index, region));
     }
@@ -2239,14 +2240,14 @@ gl::ImageIndexIterator TextureD3D_Cube::imageIterator() const
 gl::ImageIndex TextureD3D_Cube::getImageIndex(GLint mip, GLint layer) const
 {
     // The "layer" of the image index corresponds to the cube face
-    return gl::ImageIndex::MakeCube(gl::CubeFaceIndexToTextureTarget(layer), mip);
+    return gl::ImageIndex::MakeCubeMapFace(gl::CubeFaceIndexToTextureTarget(layer), mip);
 }
 
 bool TextureD3D_Cube::isValidIndex(const gl::ImageIndex &index) const
 {
     return (mTexStorage && index.getType() == gl::TextureType::CubeMap &&
-            gl::TextureTargetToType(index.getTarget()) == gl::TextureType::CubeMap &&
-            index.getLevelIndex() >= 0 && index.getLevelIndex() < mTexStorage->getLevelCount());
+            gl::IsCubeMapFaceTarget(index.getTarget()) && index.getLevelIndex() >= 0 &&
+            index.getLevelIndex() < mTexStorage->getLevelCount());
 }
 
 void TextureD3D_Cube::markAllImagesDirty()
@@ -2912,10 +2913,10 @@ gl::Error TextureD3D_2DArray::setImage(const gl::Context *context,
     ANGLE_TRY(
         redefineImage(context, index.getLevelIndex(), formatInfo.sizedInternalFormat, size, false));
 
-    GLsizei inputDepthPitch              = 0;
-    ANGLE_TRY_RESULT(formatInfo.computeDepthPitch(type, size.width, size.height, unpack.alignment,
-                                                  unpack.rowLength, unpack.imageHeight),
-                     inputDepthPitch);
+    GLuint inputDepthPitch = 0;
+    ANGLE_TRY_CHECKED_MATH(formatInfo.computeDepthPitch(type, size.width, size.height,
+                                                        unpack.alignment, unpack.rowLength,
+                                                        unpack.imageHeight, &inputDepthPitch));
 
     for (int i = 0; i < size.depth; i++)
     {
@@ -2938,10 +2939,10 @@ gl::Error TextureD3D_2DArray::setSubImage(const gl::Context *context,
     ASSERT(index.getTarget() == gl::TextureTarget::_2DArray);
     const gl::InternalFormat &formatInfo =
         gl::GetInternalFormatInfo(getInternalFormat(index.getLevelIndex()), type);
-    GLsizei inputDepthPitch              = 0;
-    ANGLE_TRY_RESULT(formatInfo.computeDepthPitch(type, area.width, area.height, unpack.alignment,
-                                                  unpack.rowLength, unpack.imageHeight),
-                     inputDepthPitch);
+    GLuint inputDepthPitch = 0;
+    ANGLE_TRY_CHECKED_MATH(formatInfo.computeDepthPitch(type, area.width, area.height,
+                                                        unpack.alignment, unpack.rowLength,
+                                                        unpack.imageHeight, &inputDepthPitch));
 
     for (int i = 0; i < area.depth; i++)
     {
@@ -2972,10 +2973,9 @@ gl::Error TextureD3D_2DArray::setCompressedImage(const gl::Context *context,
     ANGLE_TRY(redefineImage(context, index.getLevelIndex(), internalFormat, size, false));
 
     const gl::InternalFormat &formatInfo = gl::GetSizedInternalFormatInfo(internalFormat);
-    GLsizei inputDepthPitch              = 0;
-    ANGLE_TRY_RESULT(
-        formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, size.width, size.height, 1, 0, 0),
-        inputDepthPitch);
+    GLuint inputDepthPitch               = 0;
+    ANGLE_TRY_CHECKED_MATH(formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, size.width, size.height,
+                                                        1, 0, 0, &inputDepthPitch));
 
     for (int i = 0; i < size.depth; i++)
     {
@@ -2999,10 +2999,9 @@ gl::Error TextureD3D_2DArray::setCompressedSubImage(const gl::Context *context,
     ASSERT(index.getTarget() == gl::TextureTarget::_2DArray);
 
     const gl::InternalFormat &formatInfo = gl::GetSizedInternalFormatInfo(format);
-    GLsizei inputDepthPitch              = 0;
-    ANGLE_TRY_RESULT(
-        formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, area.width, area.height, 1, 0, 0),
-        inputDepthPitch);
+    GLuint inputDepthPitch               = 0;
+    ANGLE_TRY_CHECKED_MATH(formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, area.width, area.height,
+                                                        1, 0, 0, &inputDepthPitch));
 
     for (int i = 0; i < area.depth; i++)
     {

@@ -246,6 +246,7 @@ class GeneratorJob {
         "#define $guard$\n\n"
         "#include <stddef.h>\n"
         "#include <stdint.h>\n\n"
+        "#include \"perfetto/base/export.h\"\n"
         "#include \"perfetto/protozero/proto_field_descriptor.h\"\n"
         "#include \"perfetto/protozero/message.h\"\n",
         "greeting", greeting, "guard", guard);
@@ -276,16 +277,6 @@ class GeneratorJob {
                       ProtoStubName(dependency));
     }
     stub_cc_->Print("\n");
-
-    if (messages_.size() > 0) {
-      stub_cc_->Print(
-          "namespace {\n"
-          "  static const ::protozero::ProtoFieldDescriptor "
-          "kInvalidField = {\"\", "
-          "::protozero::ProtoFieldDescriptor::Type::TYPE_INVALID, "
-          "0, false};\n"
-          "}\n\n");
-    }
 
     // Print namespaces.
     for (const std::string& ns : namespaces_) {
@@ -523,11 +514,13 @@ class GeneratorJob {
       }
       stub_cc_->Print(
           "default:\n"
-          "  return &kInvalidField;\n");
+          "  return "
+          "::protozero::ProtoFieldDescriptor::GetInvalidInstance();\n");
       stub_cc_->Outdent();
       stub_cc_->Print("}\n");
     } else {
-      stub_cc_->Print("return &kInvalidField;\n");
+      stub_cc_->Print(
+          "return ::protozero::ProtoFieldDescriptor::GetInvalidInstance();\n");
     }
     stub_cc_->Outdent();
     stub_cc_->Print("}\n\n");
@@ -535,7 +528,7 @@ class GeneratorJob {
 
   void GenerateMessageDescriptor(const Descriptor* message) {
     stub_h_->Print(
-        "class $name$ : public ::protozero::Message {\n"
+        "class PERFETTO_EXPORT $name$ : public ::protozero::Message {\n"
         " public:\n",
         "name", GetCppClassName(message));
     stub_h_->Indent();

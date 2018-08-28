@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/webui/signin/inline_login_handler.h"
 
 #include <limits.h>
+#include <string>
 
 #include "base/bind.h"
 #include "base/metrics/user_metrics.h"
@@ -31,6 +32,9 @@
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/base/url_util.h"
+
+const char kSignInPromoQueryKeyShowAccountManagement[] =
+    "showAccountManagement";
 
 InlineLoginHandler::InlineLoginHandler() : weak_ptr_factory_(this) {}
 
@@ -173,7 +177,7 @@ void InlineLoginHandler::HandleSwitchToFullTabMessage(
   main_frame_url = net::AppendOrReplaceQueryParameter(
       main_frame_url, signin::kSignInPromoQueryKeyAutoClose, "1");
   main_frame_url = net::AppendOrReplaceQueryParameter(
-      main_frame_url, signin::kSignInPromoQueryKeyShowAccountManagement, "1");
+      main_frame_url, kSignInPromoQueryKeyShowAccountManagement, "1");
   main_frame_url = net::AppendOrReplaceQueryParameter(
       main_frame_url, signin::kSignInPromoQueryKeyForceKeepData, "1");
   if (base::FeatureList::IsEnabled(
@@ -206,8 +210,10 @@ void InlineLoginHandler::HandleDialogClose(const base::ListValue* args) {
   if (browser)
     browser->signin_view_controller()->CloseModalSignin();
 
+#if !defined(OS_CHROMEOS)
   // Does nothing if user manager is not showing.
   UserManagerProfileDialog::HideDialog();
+#endif  // !defined(OS_CHROMEOS)
 }
 
 void InlineLoginHandler::CloseDialogFromJavascript() {

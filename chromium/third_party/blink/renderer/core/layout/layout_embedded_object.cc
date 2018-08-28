@@ -30,6 +30,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/html/html_plugin_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
+#include "third_party/blink/renderer/core/layout/intrinsic_sizing_info.h"
 #include "third_party/blink/renderer/core/layout/layout_analyzer.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -47,17 +48,6 @@ LayoutEmbeddedObject::LayoutEmbeddedObject(Element* element)
 }
 
 LayoutEmbeddedObject::~LayoutEmbeddedObject() = default;
-
-PaintLayerType LayoutEmbeddedObject::LayerTypeRequired() const {
-  // This can't just use LayoutEmbeddedContent::layerTypeRequired, because
-  // PaintLayerCompositor doesn't loop through LayoutEmbeddedObjects the way it
-  // does frames in order to update the self painting bit on their Layer.
-  // Also, unlike iframes, embeds don't used the usesCompositing bit on
-  // LayoutView in requiresAcceleratedCompositing.
-  if (RequiresAcceleratedCompositing())
-    return kNormalPaintLayer;
-  return LayoutEmbeddedContent::LayerTypeRequired();
-}
 
 static String LocalizedUnavailablePluginReplacementText(
     Node* node,
@@ -103,14 +93,13 @@ void LayoutEmbeddedObject::PaintContents(
   LayoutEmbeddedContent::PaintContents(paint_info, paint_offset);
 }
 
-void LayoutEmbeddedObject::Paint(const PaintInfo& paint_info,
-                                 const LayoutPoint& paint_offset) const {
+void LayoutEmbeddedObject::Paint(const PaintInfo& paint_info) const {
   if (ShowsUnavailablePluginIndicator()) {
-    LayoutReplaced::Paint(paint_info, paint_offset);
+    LayoutReplaced::Paint(paint_info);
     return;
   }
 
-  LayoutEmbeddedContent::Paint(paint_info, paint_offset);
+  LayoutEmbeddedContent::Paint(paint_info);
 }
 
 void LayoutEmbeddedObject::PaintReplaced(

@@ -25,20 +25,16 @@
 
 #include "third_party/blink/renderer/core/html/track/text_track_list.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/events/media_element_event_queue.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/track/inband_text_track.h"
 #include "third_party/blink/renderer/core/html/track/loadable_text_track.h"
 #include "third_party/blink/renderer/core/html/track/text_track.h"
 #include "third_party/blink/renderer/core/html/track/track_event.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
-TextTrackList::TextTrackList(HTMLMediaElement* owner)
-    : owner_(owner),
-      async_event_queue_(
-          MediaElementEventQueue::Create(this, &owner_->GetDocument())) {}
+TextTrackList::TextTrackList(HTMLMediaElement* owner) : owner_(owner) {}
 
 TextTrackList::~TextTrackList() = default;
 
@@ -249,8 +245,8 @@ ExecutionContext* TextTrackList::GetExecutionContext() const {
 
 void TextTrackList::ScheduleTrackEvent(const AtomicString& event_name,
                                        TextTrack* track) {
-  async_event_queue_->EnqueueEvent(FROM_HERE,
-                                   TrackEvent::Create(event_name, track));
+  EnqueueEvent(TrackEvent::Create(event_name, track),
+               TaskType::kMediaElementEvent);
 }
 
 void TextTrackList::ScheduleAddTrackEvent(TextTrack* track) {
@@ -271,9 +267,8 @@ void TextTrackList::ScheduleChangeEvent() {
   // ...
   // Fire a simple event named change at the media element's textTracks
   // attribute's TextTrackList object.
-
-  async_event_queue_->EnqueueEvent(FROM_HERE,
-                                   Event::Create(EventTypeNames::change));
+  EnqueueEvent(Event::Create(EventTypeNames::change),
+               TaskType::kMediaElementEvent);
 }
 
 void TextTrackList::ScheduleRemoveTrackEvent(TextTrack* track) {
@@ -303,21 +298,10 @@ HTMLMediaElement* TextTrackList::Owner() const {
 
 void TextTrackList::Trace(blink::Visitor* visitor) {
   visitor->Trace(owner_);
-  visitor->Trace(async_event_queue_);
   visitor->Trace(add_track_tracks_);
   visitor->Trace(element_tracks_);
   visitor->Trace(inband_tracks_);
   EventTargetWithInlineData::Trace(visitor);
-}
-
-void TextTrackList::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  for (auto track : add_track_tracks_)
-    visitor->TraceWrappers(track);
-  for (auto track : element_tracks_)
-    visitor->TraceWrappers(track);
-  for (auto track : inband_tracks_)
-    visitor->TraceWrappers(track);
-  EventTargetWithInlineData::TraceWrappers(visitor);
 }
 
 }  // namespace blink

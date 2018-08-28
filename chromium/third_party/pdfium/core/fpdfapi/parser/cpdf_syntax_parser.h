@@ -11,6 +11,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fxcrt/string_pool_template.h"
 #include "core/fxcrt/weak_ptr.h"
 
@@ -35,6 +36,10 @@ class CPDF_SyntaxParser {
   void InitParserWithValidator(const RetainPtr<CPDF_ReadValidator>& pValidator,
                                uint32_t HeaderOffset);
 
+  void SetReadBufferSize(uint32_t read_buffer_size) {
+    m_ReadBufferSize = read_buffer_size;
+  }
+
   FX_FILESIZE GetPos() const { return m_Pos; }
   void SetPos(FX_FILESIZE pos) { m_Pos = std::min(pos, m_FileLen); }
 
@@ -49,7 +54,7 @@ class CPDF_SyntaxParser {
   void ToNextLine();
   void ToNextWord();
   bool BackwardsSearchToWord(const ByteStringView& word, FX_FILESIZE limit);
-  FX_FILESIZE FindTag(const ByteStringView& tag, FX_FILESIZE limit);
+  FX_FILESIZE FindTag(const ByteStringView& tag);
   bool ReadBlock(uint8_t* pBuf, uint32_t size);
   bool GetCharAt(FX_FILESIZE pos, uint8_t& ch);
   ByteString GetNextWord(bool* bIsNumber);
@@ -60,6 +65,8 @@ class CPDF_SyntaxParser {
   const RetainPtr<CPDF_ReadValidator>& GetValidator() const {
     return m_pFileAccess;
   }
+  uint32_t GetDirectNum();
+  bool GetNextChar(uint8_t& ch);
 
  private:
   friend class CPDF_Parser;
@@ -69,9 +76,7 @@ class CPDF_SyntaxParser {
   static const int kParserMaxRecursionDepth = 64;
   static int s_CurrentRecursionDepth;
 
-  uint32_t GetDirectNum();
   bool ReadBlockAt(FX_FILESIZE read_pos);
-  bool GetNextChar(uint8_t& ch);
   bool GetCharAtBackward(FX_FILESIZE pos, uint8_t* ch);
   void GetNextWordInternal(bool* bIsNumber);
   bool IsWholeWord(FX_FILESIZE startpos,
@@ -82,6 +87,8 @@ class CPDF_SyntaxParser {
   ByteString ReadString();
   ByteString ReadHexString();
   unsigned int ReadEOLMarkers(FX_FILESIZE pos);
+  FX_FILESIZE FindWordPos(const ByteStringView& word);
+  FX_FILESIZE FindStreamEndPos();
   std::unique_ptr<CPDF_Stream> ReadStream(
       std::unique_ptr<CPDF_Dictionary> pDict);
 
@@ -100,6 +107,7 @@ class CPDF_SyntaxParser {
   FX_FILESIZE m_BufOffset;
   uint32_t m_WordSize;
   uint8_t m_WordBuffer[257];
+  uint32_t m_ReadBufferSize = CPDF_ModuleMgr::kFileBufSize;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_SYNTAX_PARSER_H_

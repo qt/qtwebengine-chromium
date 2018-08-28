@@ -87,7 +87,7 @@ class CPDF_InterForm {
 
   void SetFormNotify(IPDF_FormNotify* pNotify);
   bool HasXFAForm() const;
-  void FixPageFields(const CPDF_Page* pPage);
+  void FixPageFields(CPDF_Page* pPage);
 
   IPDF_FormNotify* GetFormNotify() const { return m_pFormNotify.Get(); }
   CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
@@ -98,10 +98,6 @@ class CPDF_InterForm {
   void AddTerminalField(CPDF_Dictionary* pFieldDict);
   CPDF_FormControl* AddControl(CPDF_FormField* pField,
                                CPDF_Dictionary* pWidgetDict);
-  void FDF_ImportField(CPDF_Dictionary* pField,
-                       const WideString& parent_name,
-                       bool bNotify = false,
-                       int nLevel = 0);
 
   static bool s_bUpdateAP;
 

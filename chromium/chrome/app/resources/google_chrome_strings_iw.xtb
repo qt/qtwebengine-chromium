@@ -14,7 +14,6 @@
 <translation id="127345590676626841">‏Chrome מתעדכן באופן אוטומטי, כך שתמיד ברשותך הגרסה העדכנית ביותר. כשההורדה תסתיים, Chrome יופעל מחדש ותוכל להמשיך.</translation>
 <translation id="1302523850133262269">‏המתן בזמן ש-Chrome מתקין את עדכוני המערכת האחרונים.</translation>
 <translation id="137466361146087520">‏גרסת הביטא של Google Chrome</translation>
-<translation id="1388971155537343688">‏מפעיל את Chrome</translation>
 <translation id="1393853151966637042">‏קבלת עזרה לשימוש ב-Chrome</translation>
 <translation id="1399397803214730675">‏במחשב זה מותקנת כבר גירסה עדכנית יותר של Google Chrome. אם התוכנה אינה פועלת, הסר את ההתקנה של Google Chrome ונסה שוב.</translation>
 <translation id="1434626383986940139">‏יישומי Chrome - קאנארי</translation>
@@ -30,6 +29,7 @@
 <translation id="1682634494516646069">‏Google Chrome אינו יכול לקרוא ולכתוב בספריית הנתונים שלו: <ph name="USER_DATA_DIRECTORY" /></translation>
 <translation id="1698376642261615901">‏Google Chrome הוא דפדפן אינטרנט המפעיל דפי אינטרנט ואפליקציות במהירות הבזק. זהו דפדפן מהיר, יציב וקל לשימוש. תוכל לגלוש באינטרנט בצורה בטוחה יותר הודות להגנה מפני תוכנות זדוניות ודיוג, המובנית ב-Google Chrome.</translation>
 <translation id="1718131156967340976">‏בחר ב-<ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Google Chrome<ph name="END_BOLD" /></translation>
+<translation id="1734234790201236882">‏הסיסמה הזאת תישמר על ידי Chrome בחשבון Google. אין צורך לזכור אותה.</translation>
 <translation id="174539241580958092">‏Google Chrome לא הצליח לסנכרן את הנתונים שלך בשל שגיאת כניסה.</translation>
 <translation id="1759842336958782510">Chrome</translation>
 <translation id="1773601347087397504">‏עזרה לשימוש ב-Chrome OS</translation>
@@ -38,6 +38,7 @@
 <translation id="1873233029667955273">‏Google Chrome‏ אינו דפדפן ברירת המחדל שלך</translation>
 <translation id="1874309113135274312">‏גרסת הביטא של Google Chrome‏ (mDNS-In)</translation>
 <translation id="1877026089748256423">‏Chrome אינו מעודכן</translation>
+<translation id="1915828456209461693">‏יש עדכון בשביל Chrome והמערכת תחיל אותו ברגע שתבוצע הפעלה מחדש.</translation>
 <translation id="2007150628464581396">{0,plural, =1{‏Chrome יופעל מחדש בעוד דקה}two{‏Chrome יופעל מחדש בעוד # דקות}many{‏Chrome יופעל מחדש בעוד # דקות}other{‏Chrome יופעל מחדש בעוד # דקות}}</translation>
 <translation id="2063848847527508675">‏יש להפעיל מחדש את מערכת ההפעלה של Chrome כדי להחיל את העדכון.</translation>
 <translation id="2084710999043359739">‏הוסף ל-Chrome</translation>
@@ -59,7 +60,7 @@
 <translation id="2348335408836342058">‏Chrome זקוק להרשאת גישה אל המצלמה והמיקרופון בשביל האתר הזה</translation>
 <translation id="2397416548179033562">‏הצג את תפריט Chrome</translation>
 <translation id="2429317896000329049">‏Google Chrome לא הצליח לסנכרן את הנתונים שלך מפני שהסנכרון אינו זמין עבור הדומיין שלך.</translation>
-<translation id="2446511512801740068">‏Chrome אינו מעודכן מכיוון שהוא לא הופעל לאחרונה. יש עדכון זמין והוא יחול ברגע שתבצע הפעלה מחדש.</translation>
+<translation id="2436117022029368436">‏מתקשר עם Google כדי לשפר את הגלישה ואת Chrome</translation>
 <translation id="2467438592969358367">‏Google Chrome רוצה לייצא את הסיסמאות שלך. יש להקליד את הסיסמה שלך ל-Windows כדי לאפשר זאת.</translation>
 <translation id="2485422356828889247">הסר התקנה</translation>
 <translation id="2534507159460261402">‏Google Pay (‏הועתק ל-Chrome)</translation>
@@ -68,13 +69,13 @@
 <translation id="2586406160782125153">‏הפעולה תמחק את נתוני הגלישה מהמכשיר. כדי לאחזר את הנתונים מאוחר יותר, היכנס אל Chrome עם <ph name="USER_EMAIL" />.</translation>
 <translation id="2588322182880276190">‏הלוגו של Chrome</translation>
 <translation id="2652691236519827073">‏פתח את הקישור ב&amp;כרטיסיית Chrome חדשה</translation>
-<translation id="2664962310688259219">‏רישיונות קוד פתוח של מערכת ההפעלה של Chrome</translation>
 <translation id="2665296953892887393">‏עזור לשפר את Google Chrome על ידי שליחת דוחות קריסה ו-<ph name="UMA_LINK" /> אל Google</translation>
 <translation id="2689103672227170538">‏התוסף הזה שינה את הדף שמוצג כשאתה מפעיל את Chrome.</translation>
 <translation id="2765403129283291972">‏Chrome זקוק להרשאת גישה למיקרופון בשביל האתר הזה</translation>
 <translation id="2770231113462710648">שנה את דפדפן ברירת המחדל ל:</translation>
 <translation id="2799223571221894425">הפעל מחדש</translation>
 <translation id="2847461019998147611">‏הצג את Google Chrome בשפה זו</translation>
+<translation id="2857540653560290388">‏הפעלת Chrome...</translation>
 <translation id="2871893339301912279">‏נכנסת ל-Chrome!</translation>
 <translation id="2888126860611144412">‏מידע כללי על Chrome</translation>
 <translation id="3037838751736561277">‏Google Chrome נמצא במצב רקע.</translation>
@@ -100,7 +101,6 @@
 <translation id="3479552764303398839">לא עכשיו</translation>
 <translation id="3503306920980160878">‏Chrome זקוק לגישה למיקום שלך כדי לשתף אותו עם האתר הזה</translation>
 <translation id="3582972582564653026">‏סינכרון והתאמה אישית של Chrome בכל המכשירים שברשותך</translation>
-<translation id="3612333635265770873">‏מודול בעל אותו שם מתנגש עם Google Chrome.</translation>
 <translation id="3622797965165704966">‏קל יותר כעת להשתמש ב-Chrome באמצעות חשבון Google שלך ובמחשבים משותפים.</translation>
 <translation id="3637702109597584617">‏<ph name="TERMS_OF_SERVICE_LINK" />תנאים והגבלות<ph name="END_TERMS_OF_SERVICE_LINK" /> של Google Chrome OS</translation>
 <translation id="3716182511346448902">‏הדף הזה מנצל יותר מדי זיכרון, כך שהוא הושהה על-ידי Chrome.</translation>
@@ -120,6 +120,7 @@
 <translation id="4143243756087420366">‏שם ותמונה ב-Chrome</translation>
 <translation id="4147555960264124640">‏אתה נכנס עם חשבון מנוהל ונותן למנהל המערכת שלו שליטה על הפרופיל שלך ב-Chrome. הנתונים שלך ב-Chrome, כגון יישומים, סימניות, היסטוריה, סיסמאות והגדרות אחרות ייקשרו באופן קבוע ל-<ph name="USER_NAME" />. תוכל למחוק את הנתונים האלה באמצעות לוח הבקרה של חשבונות Google, אבל לא תוכל לשייך את הנתונים האלה לחשבון אחר. <ph name="LEARN_MORE" /></translation>
 <translation id="4149882025268051530">‏המתקין נכשל בביצוע דחיסה לארכיון. הורד שוב את Google Chrome.</translation>
+<translation id="424864128008805179">‏האם לצאת מ-Chrome?</translation>
 <translation id="4251615635259297716">‏האם לקשר את הנתונים שלך ב-Chrome לחשבון זה?</translation>
 <translation id="4251625577313994583">‏להורדת Chrome ל-iPhone</translation>
 <translation id="4293420128516039005">‏כניסה לחשבון תסנכרן ותתאים אישית את Chrome בכל המכשירים שברשותך</translation>
@@ -132,6 +133,7 @@
 <translation id="4561051373932531560">‏Google Chrome מאפשר לך ללחוץ על מספר טלפון באינטרנט ולהתקשר אליו באמצעות Skype!</translation>
 <translation id="4567424176335768812">נכנסת למערכת בתור <ph name="USER_EMAIL_ADDRESS" />. כעת אתה יכול לגשת אל הסימניות, ההיסטוריה והגדרות אחרות שלך בכל המכשירים שבהם אתה מחובר לחשבון.</translation>
 <translation id="4571503333518166079">‏מעבר אל הגדרות של הודעות ב-Chrome</translation>
+<translation id="459622048091363950">‏אחרי מתן גישה ל-Chrome, אתרים יוכלו לבקש ממך גישה.</translation>
 <translation id="4600710005438004015">‏עדכון Chrome לגירסה האחרונה לא הצליח, ולכן אין לך גישה אל תכונות חדשות ותיקוני אבטחה.</translation>
 <translation id="4631713731678262610">‏הסתר בתפריט Chrome</translation>
 <translation id="4633000520311261472">‏כדי לשפר את האבטחה של Chrome, השבתנו חלק מהתוספים שלא רשומים ב<ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> וייתכן שנוספו ללא ידיעתך.</translation>
@@ -151,6 +153,7 @@
 <translation id="495931528404527476">‏ב-Chrome</translation>
 <translation id="4990567037958725628">Google Chrome Canary</translation>
 <translation id="5028489144783860647">‏Google Chrome לא הצליח לסנכרן את הנתונים שלך. עדכן את משפט הסיסמה שלך עבור סנכרון.</translation>
+<translation id="5090044601776247154">‏פרופילים של משתמשים בפיקוח יפסיקו להיות זמינים החל מ-Google Chrome 70.</translation>
 <translation id="5131923704757666404">{0,plural, =1{‏Chrome יופעל מחדש בעוד שעה}two{‏Chrome יופעל מחדש בעוד # שעות}many{‏Chrome יופעל מחדש בעוד # שעות}other{‏Chrome יופעל מחדש בעוד # שעות}}</translation>
 <translation id="5132929315877954718">‏גלה יישומים, משחקים, תוספים ועיצובים מעולים עבור Google Chrome.</translation>
 <translation id="5166975452760862670">‏Google Chrome מוצג בשפה זו</translation>
@@ -159,10 +162,9 @@
 <translation id="5204098752394657250">‏Google Chrome‏ <ph name="TERMS_OF_SERVICE_LINK" />תנאים והגבלות<ph name="END_TERMS_OF_SERVICE_LINK" /></translation>
 <translation id="5251420635869119124">‏אורחים יכולים להשתמש ב-Chrome בלי להשאיר דבר מאחור.</translation>
 <translation id="532046782124376502">‏אזהרה: Google Chrome לא יכול למנוע מתוספים לתעד את היסטוריית הגלישה שלך. כדי להשבית את התוסף הזה במצב גלישה בסתר, יש לבטל את האפשרות הזו.</translation>
-<translation id="5334545119300433702">‏מודול זה מתנגש עם Google Chrome.</translation>
 <translation id="5386244825306882791">‏הגדרה זו גם קובעת איזה דף מוצג כשאתה מפעיל את Chrome או מבצע חיפוש  מסרגל הכתובות.</translation>
 <translation id="5430073640787465221">‏קובץ ההעדפות שלך פגום או לא חוקי. Google Chrome לא יכול לשחזר את ההגדרות שלך.</translation>
-<translation id="5495581687705680288">‏מודולים שנטענו ב-Google Chrome</translation>
+<translation id="5514308096618405748">‏הפיתוח של Chrome OS אפשרי בזכות <ph name="BEGIN_LINK_CROS_OSS" />תוכנות קוד פתוח<ph name="END_LINK_CROS_OSS" /> נוספות, כמו Linux (בטא).</translation>
 <translation id="556024056938947818">‏Google Chrome מנסה להציג סיסמאות.</translation>
 <translation id="5566025111015594046">‏Google Chrome‏ (mDNS-In)</translation>
 <translation id="565744775970812598">‏<ph name="FILE_NAME" /> עלול להיות מסוכן, ולכן Chrome חסם אותו.</translation>
@@ -171,7 +173,6 @@
 <translation id="5774845247549698882">‏Chrome OS מוצג בשפה זו</translation>
 <translation id="5795887333006832406">‏<ph name="PAGE_TITLE" /> - Google Chrome בגירסת Canary</translation>
 <translation id="5804318322022881572">‏לא ניתן היה להפעיל את Chrome. יש לנסות שוב.</translation>
-<translation id="5855036575689098185">‏תוכנה שפועלת במחשב שלך אינה תואמת ל-Google Chrome.</translation>
 <translation id="5877064549588274448">הערוץ שונה. הפעל מחדש את המכשיר להחלת השינויים.</translation>
 <translation id="5895138241574237353">הפעל מחדש</translation>
 <translation id="5906655207909574370">העדכון כמעט הושלם! הפעל מחדש את המכשיר כדי לסיים את העדכון.</translation>
@@ -189,7 +190,6 @@
 <translation id="6291549208091401781">‏Google Chrome כבר מותקן במחשב ונגיש לכל המשתמשים.</translation>
 <translation id="6338556085225130112">‏מעדכן את Google Chrome</translation>
 <translation id="6368958679917195344">‏השימוש במערכת ההפעלה של Chrome מתאפשר באמצעות <ph name="BEGIN_LINK_CROS_OSS" />תוכנת קוד פתוח<ph name="END_LINK_CROS_OSS" /> נוספת.</translation>
-<translation id="6410540444482791104">‏תוכל לעזור בשיפור האבטחה וקלות השימוש של Chrome על-ידי שליחה אוטומטית של חלק מפרטי המערכת ותוכן הדף אל Google כדי לעזור בזיהוי של יישומים ואתרים מסוכנים.</translation>
 <translation id="6515495397637126556">‏<ph name="PAGE_TITLE" /> - Google Chrome בגירסת פיתוח</translation>
 <translation id="6566149418543181476">‏מעדכן את Google Chrome‏ (<ph name="PROGRESS_PERCENT" />)</translation>
 <translation id="6598387184982954187">‏אתה משתמש ב-<ph name="PROFILE_EMAIL" /> כדי לסנכרן את הפריטים שלך ב-Chrome. עבור אל '<ph name="SETTINGS_LINK" />' כדי לעדכן את העדפות הסנכרון או להשתמש ב-Chrome ללא חשבון Google.</translation>
@@ -212,14 +212,12 @@
 <translation id="7308322188646931570">‏Chrome זקוק לגישה לאחסון כדי להוריד קבצים</translation>
 <translation id="7330164299247909639">‏אישור האימות נכשל. עליך להיכנס שוב לחשבונך ב-Google Chrome בשם המשתמש <ph name="USER_NAME" /> או לפנות למנהל המערכת שלך לקבלת מידע נוסף. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="7339898014177206373">חלון חדש</translation>
-<translation id="7369650938475876456">‏השתמש בסיסמה חזקה שנוצרה על-ידי Chrome</translation>
 <translation id="7398801000654795464">‏היית מחובר ל-Chrome כ-<ph name="USER_EMAIL_ADDRESS" />. השתמש באותו חשבון כדי להיכנס שוב.</translation>
 <translation id="7408085963519505752">‏תנאים עבור מערכת ההפעלה של Chrome</translation>
 <translation id="7419046106786626209">‏מערכת ההפעלה של Chrome לא הצליחה לסנכרן את הנתונים שלך מפני שהסנכרון אינו זמין עבור הדומיין שלך.</translation>
-<translation id="7437998757836447326">‏יציאה מ-Chrome</translation>
 <translation id="7459554271817304652">‏הגדר סנכרון כדי לשמור את תכונות הדפדפן המותאמות אישית שלך באינטרנט ולגשת אליהן מ-Google Chrome בכל מחשב.</translation>
 <translation id="7473136999113284234">‏Chrome מתעדכן באופן אוטומטי, כך שתמיד נמצאת ברשותך הגרסה העדכנית ביותר.</translation>
-<translation id="7494905215383356681">‏רישיונות קוד פתוח של Chrome</translation>
+<translation id="7486227612705979895">‏Chrome ייגש ל-Drive שלך כדי להציג הצעות בסרגל הכתובות</translation>
 <translation id="7535429826459677826">‏גרסת הפיתוח של Google Chrome</translation>
 <translation id="7552219221109926349">‏הצג את מערכת ההפעלה של Chrome בשפה זו</translation>
 <translation id="7589360514048265910">‏המחשב הזה יפסיק לקבל עדכונים של Google Chrome כי כבר אין תמיכה בגירסה 10.9 של Mac OS X.</translation>
@@ -250,9 +248,9 @@
 <translation id="8286862437124483331">‏Google Chrome מנסה להציג סיסמאות. הקלד את הסיסמה שלך ל-Windows כדי לאפשר זאת.</translation>
 <translation id="8290100596633877290">‏אופס! Google Chrome קרס. להפעיל מחדש עכשיו?</translation>
 <translation id="8342675569599923794">‏Chrome‏ חסם את הקובץ הזה כי הוא מסוכן.</translation>
+<translation id="8380166467911888159">‏Chrome שולח את הטקסט שמוקלד בשדות טקסט ל-Google כדי לתקן שגיאות כתיב</translation>
 <translation id="840084489713044809">‏Google Chrome רוצה לייצא את הסיסמאות שלך.</translation>
 <translation id="8406086379114794905">‏עזור לשפר את Chrome</translation>
-<translation id="8439301513305169426">‏הסיסמה תישמר ב-Chrome באמצעות <ph name="SAVED_PASSWORD_LINK" />. אין צורך לזכור אותה.</translation>
 <translation id="8455999171311319804">‏אופציונלי: שלח אל Google נתוני אבחון ושימוש באופן אוטומטי ועזור לשפר את מערכת ההפעלה של Chrome.</translation>
 <translation id="8478823064122749032">‏התקן את Chrome בטלפון שלך, ונשלח הודעת SMS למספר שמוגדר לשחזור החשבון: <ph name="PHONE_NUMBER" /></translation>
 <translation id="8521348052903287641">‏כלל נכנס לגרסת הפיתוח של Google Chrome כדי לאפשר תנועת mDNS.</translation>

@@ -28,25 +28,29 @@
 
 #include "third_party/blink/renderer/core/html/canvas/image_data.h"
 
+#include "base/sys_byteorder.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_uint8_clamped_array.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap_options.h"
 #include "third_party/blink/renderer/platform/graphics/color_behavior.h"
-#include "third_party/blink/renderer/platform/wtf/byte_swap.h"
 #include "third_party/skia/include/core/SkColorSpaceXform.h"
 #include "third_party/skia/include/core/SkSwizzle.h"
 #include "v8/include/v8.h"
 
 namespace blink {
 
+namespace {
+
 bool RaiseDOMExceptionAndReturnFalse(ExceptionState* exception_state,
-                                     ExceptionCode exception_code,
+                                     DOMExceptionCode exception_code,
                                      const char* message) {
   if (exception_state)
     exception_state->ThrowDOMException(exception_code, message);
   return false;
 }
+
+}  // namespace
 
 bool ImageData::ValidateConstructorArguments(
     const unsigned& param_flags,
@@ -62,18 +66,18 @@ bool ImageData::ValidateConstructorArguments(
 
   if ((param_flags & kParamWidth) && !width) {
     return RaiseDOMExceptionAndReturnFalse(
-        exception_state, kIndexSizeError,
+        exception_state, DOMExceptionCode::kIndexSizeError,
         "The source width is zero or not a number.");
   }
 
   if ((param_flags & kParamHeight) && !height) {
     return RaiseDOMExceptionAndReturnFalse(
-        exception_state, kIndexSizeError,
+        exception_state, DOMExceptionCode::kIndexSizeError,
         "The source height is zero or not a number.");
   }
 
   if (param_flags & (kParamWidth | kParamHeight)) {
-    CheckedNumeric<unsigned> data_size = 4;
+    base::CheckedNumeric<unsigned> data_size = 4;
     if (color_settings) {
       data_size *=
           ImageData::StorageFormatDataSize(color_settings->storageFormat());
@@ -82,14 +86,16 @@ bool ImageData::ValidateConstructorArguments(
     data_size *= height;
     if (!data_size.IsValid()) {
       return RaiseDOMExceptionAndReturnFalse(
-          exception_state, kIndexSizeError,
+          exception_state, DOMExceptionCode::kIndexSizeError,
           "The requested image size exceeds the supported range.");
     }
 
     if (data_size.ValueOrDie() > v8::TypedArray::kMaxLength) {
-      return RaiseDOMExceptionAndReturnFalse(
-          exception_state, kV8RangeError,
-          "Out of memory at ImageData creation.");
+      if (exception_state) {
+        exception_state->ThrowRangeError(
+            "Out of memory at ImageData creation.");
+      }
+      return false;
     }
   }
 
@@ -100,40 +106,40 @@ bool ImageData::ValidateConstructorArguments(
         data->GetType() != DOMArrayBufferView::ViewType::kTypeUint16 &&
         data->GetType() != DOMArrayBufferView::ViewType::kTypeFloat32) {
       return RaiseDOMExceptionAndReturnFalse(
-          exception_state, kNotSupportedError,
+          exception_state, DOMExceptionCode::kNotSupportedError,
           "The input data type is not supported.");
     }
 
     if (!data->byteLength()) {
       return RaiseDOMExceptionAndReturnFalse(
-          exception_state, kIndexSizeError,
+          exception_state, DOMExceptionCode::kIndexSizeError,
           "The input data has zero elements.");
     }
 
     data_length = data->byteLength() / data->TypeSize();
     if (data_length % 4) {
       return RaiseDOMExceptionAndReturnFalse(
-          exception_state, kIndexSizeError,
+          exception_state, DOMExceptionCode::kIndexSizeError,
           "The input data length is not a multiple of 4.");
     }
 
     if ((param_flags & kParamWidth) && (data_length / 4) % width) {
       return RaiseDOMExceptionAndReturnFalse(
-          exception_state, kIndexSizeError,
+          exception_state, DOMExceptionCode::kIndexSizeError,
           "The input data length is not a multiple of (4 * width).");
     }
 
     if ((param_flags & kParamWidth) && (param_flags & kParamHeight) &&
         height != data_length / (4 * width))
       return RaiseDOMExceptionAndReturnFalse(
-          exception_state, kIndexSizeError,
+          exception_state, DOMExceptionCode::kIndexSizeError,
           "The input data length is not equal to (4 * width * height).");
   }
 
   if (param_flags & kParamSize) {
     if (size->Width() <= 0 || size->Height() <= 0)
       return false;
-    CheckedNumeric<unsigned> data_size = 4;
+    base::CheckedNumeric<unsigned> data_size = 4;
     data_size *= size->Width();
     data_size *= size->Height();
     if (!data_size.IsValid() ||
@@ -173,8 +179,7 @@ DOMArrayBufferView* ImageData::AllocateAndValidateDataArray(
   if (!data_array ||
       length != data_array->byteLength() / data_array->TypeSize()) {
     if (exception_state)
-      exception_state->ThrowDOMException(kV8RangeError,
-                                         "Out of memory at ImageData creation");
+      exception_state->ThrowRangeError("Out of memory at ImageData creation");
     return nullptr;
   }
 
@@ -362,8 +367,7 @@ ImageData* ImageData::Create(scoped_refptr<StaticBitmapImage> image,
     if (!f16_array)
       return nullptr;
     if (!pixmap.readPixels(image_info, f16_array->Data(),
-                           image_info.minRowBytes(), 0, 0,
-                           SkTransferFunctionBehavior::kIgnore)) {
+                           image_info.minRowBytes())) {
       NOTREACHED();
       return nullptr;
     }
@@ -494,7 +498,7 @@ ImageData* ImageData::CreateImageData(ImageDataArray& data,
 // This function accepts size (0, 0) and always returns the ImageData in
 // "srgb" color space and "uint8" storage format.
 ImageData* ImageData::CreateForTest(const IntSize& size) {
-  CheckedNumeric<unsigned> data_size = 4;
+  base::CheckedNumeric<unsigned> data_size = 4;
   data_size *= size.Width();
   data_size *= size.Height();
   if (!data_size.IsValid() ||
@@ -571,7 +575,7 @@ ScriptPromise ImageData::CreateImageBitmap(ScriptState* script_state,
   if (BufferBase()->IsNeutered()) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
-        DOMException::Create(kInvalidStateError,
+        DOMException::Create(DOMExceptionCode::kInvalidStateError,
                              "The source data has been detached."));
   }
   return ImageBitmapSource::FulfillImageBitmap(
@@ -827,13 +831,13 @@ void ImageData::SwapU16EndiannessForSkColorSpaceXform(
     int start_index = (crop_rect->X() + crop_rect->Y() * width()) * 4;
     for (int i = 0; i < crop_rect->Height(); i++) {
       for (int j = 0; j < crop_rect->Width(); j++)
-        *(buffer + start_index + j) = WTF::Bswap16(*(buffer + start_index + j));
+        buffer[start_index + j] = base::ByteSwap(buffer[start_index + j]);
       start_index += width() * 4;
     }
     return;
   }
   for (unsigned i = 0; i < size_.Area() * 4; i++)
-    *(buffer + i) = WTF::Bswap16(*(buffer + i));
+    buffer[i] = base::ByteSwap(buffer[i]);
 };
 
 void ImageData::SwizzleIfNeeded(DataU8ColorType u8_color_type,

@@ -16,10 +16,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner.h"
 #include "base/trace_event/memory_dump_provider.h"
+#include "components/services/leveldb/public/interfaces/leveldb.mojom.h"
 #include "content/common/content_export.h"
-#include "content/common/leveldb_wrapper.mojom.h"
 #include "content/public/browser/browser_thread.h"
 #include "services/file/public/mojom/file_system.mojom.h"
+#include "third_party/blink/public/mojom/dom_storage/storage_area.mojom.h"
 #include "url/origin.h"
 
 namespace service_manager {
@@ -56,7 +57,7 @@ class CONTENT_EXPORT LocalStorageContextMojo
       scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy);
 
   void OpenLocalStorage(const url::Origin& origin,
-                        mojom::LevelDBWrapperRequest request);
+                        blink::mojom::StorageAreaRequest request);
   void GetStorageUsage(GetStorageUsageCallback callback);
   // |callback| is called when the deletion is sent to the database and
   // GetStorageUsage() will not return entries for |origin| anymore.
@@ -80,8 +81,8 @@ class CONTENT_EXPORT LocalStorageContextMojo
   // storage for a particular origin will reload the data from the database.
   void PurgeMemory();
 
-  // Clears unused leveldb wrappers, when thresholds are reached.
-  void PurgeUnusedWrappersIfNeeded();
+  // Clears unused storage areas, when thresholds are reached.
+  void PurgeUnusedAreasIfNeeded();
 
   void SetDatabaseForTesting(
       leveldb::mojom::LevelDBDatabaseAssociatedPtr database);
@@ -96,7 +97,7 @@ class CONTENT_EXPORT LocalStorageContextMojo
  private:
   friend class DOMStorageBrowserTest;
 
-  class LevelDBWrapperHolder;
+  class StorageAreaHolder;
 
   ~LocalStorageContextMojo() override;
 
@@ -119,8 +120,8 @@ class CONTENT_EXPORT LocalStorageContextMojo
   // The (possibly delayed) implementation of OpenLocalStorage(). Can be called
   // directly from that function, or through |on_database_open_callbacks_|.
   void BindLocalStorage(const url::Origin& origin,
-                        mojom::LevelDBWrapperRequest request);
-  LevelDBWrapperHolder* GetOrCreateDBWrapper(const url::Origin& origin);
+                        blink::mojom::StorageAreaRequest request);
+  StorageAreaHolder* GetOrCreateStorageArea(const url::Origin& origin);
 
   // The (possibly delayed) implementation of GetStorageUsage(). Can be called
   // directly from that function, or through |on_database_open_callbacks_|.
@@ -132,7 +133,7 @@ class CONTENT_EXPORT LocalStorageContextMojo
   void OnGotStorageUsageForShutdown(std::vector<LocalStorageUsageInfo> usage);
   void OnShutdownComplete(leveldb::mojom::DatabaseError error);
 
-  void GetStatistics(size_t* total_cache_size, size_t* unused_wrapper_count);
+  void GetStatistics(size_t* total_cache_size, size_t* unused_area_count);
   void OnCommitResult(leveldb::mojom::DatabaseError error);
 
   // These values are written to logs.  New enum values can be added, but
@@ -174,8 +175,7 @@ class CONTENT_EXPORT LocalStorageContextMojo
   std::vector<base::OnceClosure> on_database_opened_callbacks_;
 
   // Maps between an origin and its prefixed LevelDB view.
-  std::map<url::Origin, std::unique_ptr<LevelDBWrapperHolder>>
-      level_db_wrappers_;
+  std::map<url::Origin, std::unique_ptr<StorageAreaHolder>> areas_;
 
   // Used to access old data for migration.
   scoped_refptr<DOMStorageTaskRunner> task_runner_;

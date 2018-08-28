@@ -4,7 +4,9 @@
 
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 
+#include <algorithm>
 #include <set>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/stl_util.h"
@@ -281,15 +283,18 @@ void SpellcheckService::OnCustomDictionaryChanged(
     const SpellcheckCustomDictionary::Change& change) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  auto process_hosts(content::RenderProcessHost::AllHostsIterator());
-
   const std::vector<std::string> additions(change.to_add().begin(),
                                            change.to_add().end());
   const std::vector<std::string> deletions(change.to_remove().begin(),
                                            change.to_remove().end());
-  while (!process_hosts.IsAtEnd()) {
-    service_manager::Identity renderer_identity =
-        process_hosts.GetCurrentValue()->GetChildIdentity();
+  for (content::RenderProcessHost::iterator it(
+           content::RenderProcessHost::AllHostsIterator());
+       !it.IsAtEnd(); it.Advance()) {
+    content::RenderProcessHost* process = it.GetCurrentValue();
+    if (!process->IsInitializedAndNotDead())
+      continue;
+
+    service_manager::Identity renderer_identity = process->GetChildIdentity();
     spellcheck::mojom::SpellCheckerPtr spellchecker;
     ChromeService::GetInstance()->connector()->BindInterface(
         service_manager::Identity(chrome::mojom::kRendererServiceName,
@@ -297,7 +302,6 @@ void SpellcheckService::OnCustomDictionaryChanged(
                                   renderer_identity.instance()),
         &spellchecker);
     spellchecker->CustomDictionaryChanged(additions, deletions);
-    process_hosts.Advance();
   }
 }
 

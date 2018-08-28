@@ -27,8 +27,7 @@ class ThreadScheduler;
 namespace blink {
 namespace scheduler {
 
-class SingleThreadIdleTaskRunner;
-class NonMainThreadScheduler;
+class NonMainThreadSchedulerImpl;
 class WorkerSchedulerProxy;
 
 class PLATFORM_EXPORT WebThreadImplForWorkerScheduler
@@ -45,25 +44,27 @@ class PLATFORM_EXPORT WebThreadImplForWorkerScheduler
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() const override;
 
   // WebThreadBase implementation.
-  scheduler::SingleThreadIdleTaskRunner* GetIdleTaskRunner() const override;
   void Init() override;
 
   // base::MessageLoopCurrent::DestructionObserver implementation.
   void WillDestroyCurrentMessageLoop() override;
 
-  scheduler::NonMainThreadScheduler* GetNonMainThreadScheduler() {
+  scheduler::NonMainThreadSchedulerImpl* GetNonMainThreadScheduler() {
     return non_main_thread_scheduler_.get();
   }
-
- protected:
-  virtual std::unique_ptr<NonMainThreadScheduler>
-  CreateNonMainThreadScheduler();
-
-  base::Thread* GetThread() const { return thread_.get(); }
 
   scheduler::WorkerSchedulerProxy* worker_scheduler_proxy() const {
     return worker_scheduler_proxy_.get();
   }
+
+ protected:
+  virtual std::unique_ptr<NonMainThreadSchedulerImpl>
+  CreateNonMainThreadScheduler();
+
+  base::Thread* GetThread() const { return thread_.get(); }
+
+  // protected instead of private for unit tests.
+  scoped_refptr<base::SingleThreadTaskRunner> thread_task_runner_;
 
  private:
   void AddTaskObserverInternal(
@@ -77,11 +78,10 @@ class PLATFORM_EXPORT WebThreadImplForWorkerScheduler
   std::unique_ptr<base::Thread> thread_;
   const WebThreadType thread_type_;
   std::unique_ptr<scheduler::WorkerSchedulerProxy> worker_scheduler_proxy_;
-  std::unique_ptr<scheduler::NonMainThreadScheduler> non_main_thread_scheduler_;
-  scoped_refptr<base::SingleThreadTaskRunner> thread_task_runner_;
+  std::unique_ptr<scheduler::NonMainThreadSchedulerImpl>
+      non_main_thread_scheduler_;
   scoped_refptr<base::sequence_manager::TaskQueue> task_queue_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  scoped_refptr<scheduler::SingleThreadIdleTaskRunner> idle_task_runner_;
 
   base::AtomicFlag was_shutdown_on_thread_;
 };

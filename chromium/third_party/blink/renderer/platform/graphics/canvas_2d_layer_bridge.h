@@ -28,8 +28,10 @@
 
 #include <memory>
 
+#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/numerics/checked_math.h"
 #include "build/build_config.h"
 #include "cc/layers/texture_layer_client.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
@@ -40,9 +42,7 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_recorder.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
 #include "third_party/blink/renderer/platform/wtf/deque.h"
-#include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -58,7 +58,6 @@ class TextureLayer;
 namespace blink {
 
 class Canvas2DLayerBridgeTest;
-class CanvasResourceProvider;
 class SharedContextRateLimiter;
 class StaticBitmapImage;
 
@@ -74,7 +73,6 @@ class StaticBitmapImage;
 #define CANVAS2D_BACKGROUND_RENDER_SWITCH_TO_CPU 0
 
 class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
-  WTF_MAKE_NONCOPYABLE(Canvas2DLayerBridge);
 
  public:
   enum AccelerationMode {
@@ -84,7 +82,6 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   };
 
   Canvas2DLayerBridge(const IntSize&,
-                      int msaa_sample_count,
                       AccelerationMode,
                       const CanvasColorParams&);
 
@@ -104,7 +101,7 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   cc::Layer* Layer();
   bool Restore();
   void DisableDeferral(DisableDeferralReason);
-  void SetFilterQuality(SkFilterQuality);
+  void UpdateFilterQuality();
 
   // virtual for unit testing
   virtual void WillOverwriteCanvas();
@@ -112,7 +109,7 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   virtual void DidRestoreCanvasMatrixClipStack(cc::PaintCanvas*) {}
   virtual bool IsAccelerated() const;
 
-  PaintCanvas* Canvas();
+  cc::PaintCanvas* Canvas();
   bool IsValid() const;
   bool WritePixels(const SkImageInfo&,
                    const void* pixels,
@@ -127,7 +124,7 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   }
 
   void Hibernate();
-  bool IsHibernating() const { return hibernation_image_; }
+  bool IsHibernating() const { return hibernation_image_ != nullptr; }
   const CanvasColorParams& ColorParams() const { return color_params_; }
 
   bool HasRecordedDrawCommands() { return have_recorded_draw_commands_; }
@@ -164,16 +161,14 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   };
 
   void SetLoggerForTesting(std::unique_ptr<Logger>);
-  CanvasResourceProvider* GetResourceProvider() const {
-    return resource_provider_.get();
-  }
   CanvasResourceProvider* GetOrCreateResourceProvider(
       AccelerationHint = kPreferAcceleration);
-  void ResetResourceProvider();
+  CanvasResourceProvider* ResourceProvider() const;
 
  private:
   bool IsHidden() { return is_hidden_; }
   bool CheckResourceProviderValid();
+  void ResetResourceProvider();
 
   void StartRecording();
   void SkipQueuedDrawCommands();
@@ -182,7 +177,6 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
 
   bool ShouldAccelerate(AccelerationHint) const;
 
-  std::unique_ptr<CanvasResourceProvider> resource_provider_;
   std::unique_ptr<PaintRecorder> recorder_;
   sk_sp<SkImage> hibernation_image_;
   scoped_refptr<cc::TextureLayer> layer_;
@@ -192,7 +186,6 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   int frames_since_last_commit_ = 0;
   size_t bytes_allocated_;
   bool have_recorded_draw_commands_;
-  SkFilterQuality filter_quality_;
   bool is_hidden_;
   bool is_deferral_enabled_;
   bool software_rendering_while_hidden_;
@@ -208,7 +201,7 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   AccelerationMode acceleration_mode_;
   CanvasColorParams color_params_;
   IntSize size_;
-  CheckedNumeric<int> recording_pixel_count_;
+  base::CheckedNumeric<int> recording_pixel_count_;
 
   enum SnapshotState {
     kInitialSnapshotState,
@@ -220,6 +213,8 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   CanvasResourceHost* resource_host_;
 
   base::WeakPtrFactory<Canvas2DLayerBridge> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(Canvas2DLayerBridge);
 };
 
 }  // namespace blink

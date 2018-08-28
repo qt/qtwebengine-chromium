@@ -6,13 +6,16 @@
  */
 
 #include "SkWriteBuffer.h"
+
 #include "SkBitmap.h"
 #include "SkData.h"
 #include "SkDeduper.h"
+#include "SkImagePriv.h"
 #include "SkPaintPriv.h"
 #include "SkPixelRef.h"
 #include "SkPtrRecorder.h"
 #include "SkStream.h"
+#include "SkTo.h"
 #include "SkTypeface.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -24,14 +27,11 @@ SkBinaryWriteBuffer::SkBinaryWriteBuffer()
 
 SkBinaryWriteBuffer::SkBinaryWriteBuffer(void* storage, size_t storageSize)
     : fFactorySet(nullptr)
+    , fTFSet(nullptr)
     , fWriter(storage, storageSize)
-    , fTFSet(nullptr) {
-}
+{}
 
-SkBinaryWriteBuffer::~SkBinaryWriteBuffer() {
-    SkSafeUnref(fFactorySet);
-    SkSafeUnref(fTFSet);
-}
+SkBinaryWriteBuffer::~SkBinaryWriteBuffer() {}
 
 bool SkBinaryWriteBuffer::usingInitialStorage() const {
     return fWriter.usingInitialStorage();
@@ -133,14 +133,19 @@ bool SkBinaryWriteBuffer::writeToStream(SkWStream* stream) {
     return fWriter.writeToStream(stream);
 }
 
+/*  Format:
+ *  (subset) bounds
+ *  size (31bits)
+ *  data [ encoded, with raw width/height ]
+ */
 void SkBinaryWriteBuffer::writeImage(const SkImage* image) {
     if (fDeduper) {
         this->write32(fDeduper->findOrDefineImage(const_cast<SkImage*>(image)));
         return;
     }
 
-    this->writeInt(image->width());
-    this->writeInt(image->height());
+    const SkIRect bounds = SkImage_getSubset(image);
+    this->writeIRect(bounds);
 
     sk_sp<SkData> data;
     if (fProcs.fImageProc) {
@@ -196,14 +201,12 @@ void SkBinaryWriteBuffer::writePaint(const SkPaint& paint) {
     SkPaintPriv::Flatten(paint, *this);
 }
 
-SkFactorySet* SkBinaryWriteBuffer::setFactoryRecorder(SkFactorySet* rec) {
-    SkRefCnt_SafeAssign(fFactorySet, rec);
-    return rec;
+void SkBinaryWriteBuffer::setFactoryRecorder(sk_sp<SkFactorySet> rec) {
+    fFactorySet = std::move(rec);
 }
 
-SkRefCntSet* SkBinaryWriteBuffer::setTypefaceRecorder(SkRefCntSet* rec) {
-    SkRefCnt_SafeAssign(fTFSet, rec);
-    return rec;
+void SkBinaryWriteBuffer::setTypefaceRecorder(sk_sp<SkRefCntSet> rec) {
+    fTFSet = std::move(rec);
 }
 
 void SkBinaryWriteBuffer::writeFlattenable(const SkFlattenable* flattenable) {

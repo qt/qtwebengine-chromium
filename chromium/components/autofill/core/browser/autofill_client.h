@@ -15,6 +15,8 @@
 #include "base/strings/string16.h"
 #include "base/values.h"
 #include "components/autofill/core/browser/risk_data_loader.h"
+#include "components/security_state/core/security_state.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
@@ -44,6 +46,7 @@ namespace autofill {
 
 class AddressNormalizer;
 class AutofillPopupDelegate;
+class AutofillProfile;
 class AutofillWebDataService;
 class CardUnmaskDelegate;
 class CreditCard;
@@ -110,11 +113,22 @@ class AutofillClient : public RiskDataLoader {
   // Gets the UKM service associated with this client (for metrics).
   virtual ukm::UkmRecorder* GetUkmRecorder() = 0;
 
+  // Gets the UKM source id associated with this client (for metrics).
+  virtual ukm::SourceId GetUkmSourceId() = 0;
+
   // Gets an AddressNormalizer instance (can be null).
   virtual AddressNormalizer* GetAddressNormalizer() = 0;
 
+  // Gets the security level used for recording histograms for the current
+  // context if possible, SECURITY_LEVEL_COUNT otherwise.
+  virtual security_state::SecurityLevel GetSecurityLevelForUmaHistograms() = 0;
+
   // Causes the Autofill settings UI to be shown.
   virtual void ShowAutofillSettings() = 0;
+
+  // Runs |callback| if the |profile| should be imported as personal data.
+  virtual void ConfirmSaveAutofillProfile(const AutofillProfile& profile,
+                                          base::OnceClosure callback) = 0;
 
   // A user has attempted to use a masked card. Prompt them for further
   // information to proceed.
@@ -123,17 +137,22 @@ class AutofillClient : public RiskDataLoader {
                                 base::WeakPtr<CardUnmaskDelegate> delegate) = 0;
   virtual void OnUnmaskVerificationResult(PaymentsRpcResult result) = 0;
 
+  // Runs |closure| if the user accepts the migration process.
+  virtual void ShowLocalCardMigrationPrompt(base::OnceClosure closure) = 0;
+
   // Runs |callback| if the |card| should be imported as personal data.
   // |metric_logger| can be used to log user actions.
   virtual void ConfirmSaveCreditCardLocally(const CreditCard& card,
                                             const base::Closure& callback) = 0;
 
   // Runs |callback| if the |card| should be uploaded to Payments. Displays the
-  // contents of |legal_message| to the user.
+  // contents of |legal_message| to the user. Displays a cardholder name
+  // textfield in the bubble if |should_request_name_from_user| is true.
   virtual void ConfirmSaveCreditCardToCloud(
       const CreditCard& card,
       std::unique_ptr<base::DictionaryValue> legal_message,
-      const base::Closure& callback) = 0;
+      bool should_request_name_from_user,
+      base::OnceCallback<void(const base::string16&)> callback) = 0;
 
   // Will show an infobar to get user consent for Credit Card assistive filling.
   // Will run |callback| on success.
@@ -156,6 +175,7 @@ class AutofillClient : public RiskDataLoader {
       const gfx::RectF& element_bounds,
       base::i18n::TextDirection text_direction,
       const std::vector<Suggestion>& suggestions,
+      bool autoselect_first_suggestion,
       base::WeakPtr<AutofillPopupDelegate> delegate) = 0;
 
   // Update the data list values shown by the Autofill popup, if visible.

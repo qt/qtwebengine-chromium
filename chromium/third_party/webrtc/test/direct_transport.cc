@@ -9,9 +9,9 @@
  */
 #include "test/direct_transport.h"
 
+#include "absl/memory/memory.h"
 #include "call/call.h"
 #include "modules/rtp_rtcp/include/rtp_header_parser.h"
-#include "rtc_base/ptr_util.h"
 #include "system_wrappers/include/clock.h"
 #include "test/single_threaded_task_queue.h"
 
@@ -42,8 +42,7 @@ DirectTransport::DirectTransport(
     : DirectTransport(task_queue,
                       FakeNetworkPipe::Config(),
                       send_call,
-                      payload_type_map) {
-}
+                      payload_type_map) {}
 
 DirectTransport::DirectTransport(
     SingleThreadedTaskQueueForTesting* task_queue,
@@ -54,7 +53,7 @@ DirectTransport::DirectTransport(
       clock_(Clock::GetRealTimeClock()),
       task_queue_(task_queue),
       demuxer_(payload_type_map),
-      fake_network_(rtc::MakeUnique<FakeNetworkPipe>(clock_, config)) {
+      fake_network_(absl::make_unique<FakeNetworkPipe>(clock_, config)) {
   Start();
 }
 
@@ -139,9 +138,8 @@ void DirectTransport::SendPackets() {
   fake_network_->Process();
 
   int64_t delay_ms = fake_network_->TimeUntilNextProcess();
-  next_scheduled_task_ = task_queue_->PostDelayedTask([this]() {
-    SendPackets();
-  }, delay_ms);
+  next_scheduled_task_ =
+      task_queue_->PostDelayedTask([this]() { SendPackets(); }, delay_ms);
 }
 }  // namespace test
 }  // namespace webrtc

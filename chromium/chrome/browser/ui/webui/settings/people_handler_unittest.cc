@@ -106,6 +106,7 @@ std::string GetConfiguration(const base::DictionaryValue* extra_values,
   result.SetBoolean("tabsSynced", types.Has(syncer::PROXY_TABS));
   result.SetBoolean("themesSynced", types.Has(syncer::THEMES));
   result.SetBoolean("typedUrlsSynced", types.Has(syncer::TYPED_URLS));
+  result.SetBoolean("userEventsSynced", types.Has(syncer::USER_EVENTS));
   result.SetBoolean("paymentsIntegrationEnabled", false);
   std::string args;
   base::JSONWriter::Write(result, &args);
@@ -153,6 +154,7 @@ void CheckConfigDataTypeArguments(const base::DictionaryValue* dictionary,
   CheckBool(dictionary, "tabsSynced", types.Has(syncer::PROXY_TABS));
   CheckBool(dictionary, "themesSynced", types.Has(syncer::THEMES));
   CheckBool(dictionary, "typedUrlsSynced", types.Has(syncer::TYPED_URLS));
+  CheckBool(dictionary, "userEventsSynced", types.Has(syncer::USER_EVENTS));
 }
 
 }  // namespace
@@ -233,7 +235,8 @@ class PeopleHandlerTest : public ChromeRenderViewHostTestHarness {
 
   // Setup the expectations for calls made when displaying the config page.
   void SetDefaultExpectationsForConfigPage() {
-    EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*mock_pss_, GetDisableReasons())
+        .WillRepeatedly(Return(syncer::SyncService::DISABLE_REASON_NONE));
     EXPECT_CALL(*mock_pss_, GetRegisteredDataTypes())
         .WillRepeatedly(Return(GetAllTypes()));
     EXPECT_CALL(*mock_pss_, GetPreferredDataTypes())
@@ -333,7 +336,9 @@ TEST_F(PeopleHandlerFirstSigninTest, DisplayBasicLogin) {
   // Test that the HandleStartSignin call enables JavaScript.
   handler_->DisallowJavascript();
 
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(false));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(
+          Return(syncer::SyncService::DISABLE_REASON_NOT_SIGNED_IN));
   EXPECT_CALL(*mock_pss_, IsFirstSetupComplete()).WillRepeatedly(Return(false));
   // Ensure that the user is not signed in before calling |HandleStartSignin()|.
   SigninManager* manager = SigninManager::FromSigninManagerBase(mock_signin_);
@@ -356,7 +361,9 @@ TEST_F(PeopleHandlerFirstSigninTest, DisplayBasicLogin) {
 }
 
 TEST_F(PeopleHandlerTest, ShowSyncSetupWhenNotSignedIn) {
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(false));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(
+          Return(syncer::SyncService::DISABLE_REASON_NOT_SIGNED_IN));
   EXPECT_CALL(*mock_pss_, IsFirstSetupComplete()).WillRepeatedly(Return(false));
   handler_->HandleShowSetupUI(nullptr);
 
@@ -372,7 +379,9 @@ TEST_F(PeopleHandlerTest, ShowSyncSetupWhenNotSignedIn) {
 // Verifies that the sync setup is terminated correctly when the
 // sync is disabled.
 TEST_F(PeopleHandlerTest, HandleSetupUIWhenSyncDisabled) {
-  EXPECT_CALL(*mock_pss_, IsManaged()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(
+          Return(syncer::SyncService::DISABLE_REASON_ENTERPRISE_POLICY));
   handler_->HandleShowSetupUI(nullptr);
 
   // Sync setup is closed when sync is disabled.
@@ -385,7 +394,8 @@ TEST_F(PeopleHandlerTest, HandleSetupUIWhenSyncDisabled) {
 // Verifies that the handler correctly handles a cancellation when
 // it is displaying the spinner to the user.
 TEST_F(PeopleHandlerTest, DisplayConfigureWithEngineDisabledAndCancel) {
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(Return(syncer::SyncService::DISABLE_REASON_NONE));
   EXPECT_CALL(*mock_pss_, IsFirstSetupComplete()).WillRepeatedly(Return(false));
   error_ = GoogleServiceAuthError::AuthErrorNone();
   EXPECT_CALL(*mock_pss_, IsEngineInitialized()).WillRepeatedly(Return(false));
@@ -409,8 +419,9 @@ TEST_F(PeopleHandlerTest, DisplayConfigureWithEngineDisabledAndCancel) {
 // to showing a configuration page when sync setup completes successfully.
 TEST_F(PeopleHandlerTest,
        DisplayConfigureWithEngineDisabledAndSyncStartupCompleted) {
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_pss_, IsFirstSetupComplete()).WillRepeatedly(Return(false));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(Return(syncer::SyncService::DISABLE_REASON_NONE));
   error_ = GoogleServiceAuthError::AuthErrorNone();
   // Sync engine is stopped initially, and will start up.
   EXPECT_CALL(*mock_pss_, IsEngineInitialized()).WillRepeatedly(Return(false));
@@ -446,7 +457,8 @@ TEST_F(PeopleHandlerTest,
 // user has continued on.
 TEST_F(PeopleHandlerTest,
        DisplayConfigureWithEngineDisabledAndCancelAfterSigninSuccess) {
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(Return(syncer::SyncService::DISABLE_REASON_NONE));
   EXPECT_CALL(*mock_pss_, IsFirstSetupComplete()).WillRepeatedly(Return(false));
   error_ = GoogleServiceAuthError::AuthErrorNone();
   EXPECT_CALL(*mock_pss_, IsEngineInitialized())
@@ -469,7 +481,8 @@ TEST_F(PeopleHandlerTest,
 }
 
 TEST_F(PeopleHandlerTest, DisplayConfigureWithEngineDisabledAndSigninFailed) {
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(Return(syncer::SyncService::DISABLE_REASON_NONE));
   EXPECT_CALL(*mock_pss_, IsFirstSetupComplete()).WillRepeatedly(Return(false));
   error_ = GoogleServiceAuthError::AuthErrorNone();
   EXPECT_CALL(*mock_pss_, IsEngineInitialized()).WillRepeatedly(Return(false));
@@ -526,20 +539,11 @@ class PeopleHandlerNonCrosTest : public PeopleHandlerTest {
   PeopleHandlerNonCrosTest() {}
 };
 
-TEST_F(PeopleHandlerNonCrosTest, HandleGaiaAuthFailure) {
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(false));
-  EXPECT_CALL(*mock_pss_, HasUnrecoverableError())
-      .WillRepeatedly(Return(false));
-  EXPECT_CALL(*mock_pss_, IsFirstSetupComplete()).WillRepeatedly(Return(false));
-  // Open the web UI.
-  handler_->HandleShowSetupUI(nullptr);
-
-  ASSERT_FALSE(handler_->is_configuring_sync());
-}
-
 // TODO(kochi): We need equivalent tests for ChromeOS.
 TEST_F(PeopleHandlerNonCrosTest, UnrecoverableErrorInitializingSync) {
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(false));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(
+          Return(syncer::SyncService::DISABLE_REASON_UNRECOVERABLE_ERROR));
   EXPECT_CALL(*mock_pss_, IsFirstSetupComplete()).WillRepeatedly(Return(false));
   // Open the web UI.
   handler_->HandleShowSetupUI(nullptr);
@@ -548,7 +552,9 @@ TEST_F(PeopleHandlerNonCrosTest, UnrecoverableErrorInitializingSync) {
 }
 
 TEST_F(PeopleHandlerNonCrosTest, GaiaErrorInitializingSync) {
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(false));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(
+          Return(syncer::SyncService::DISABLE_REASON_NOT_SIGNED_IN));
   EXPECT_CALL(*mock_pss_, IsFirstSetupComplete()).WillRepeatedly(Return(false));
   // Open the web UI.
   handler_->HandleShowSetupUI(nullptr);
@@ -767,7 +773,8 @@ TEST_F(PeopleHandlerTest, ShowSigninOnAuthError) {
   FakeAuthStatusProvider provider(
       SigninErrorControllerFactory::GetForProfile(profile()));
   provider.SetAuthError(kTestUser, error_);
-  EXPECT_CALL(*mock_pss_, CanSyncStart()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_pss_, GetDisableReasons())
+      .WillRepeatedly(Return(syncer::SyncService::DISABLE_REASON_NONE));
   EXPECT_CALL(*mock_pss_, IsPassphraseRequired())
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_pss_, IsUsingSecondaryPassphrase())
@@ -819,6 +826,7 @@ TEST_F(PeopleHandlerTest, ShowSetupSyncEverything) {
   CheckBool(dictionary, "tabsRegistered", true);
   CheckBool(dictionary, "themesRegistered", true);
   CheckBool(dictionary, "typedUrlsRegistered", true);
+  CheckBool(dictionary, "userEventsRegistered", true);
   CheckBool(dictionary, "paymentsIntegrationEnabled", true);
   CheckBool(dictionary, "passphraseRequired", false);
   CheckBool(dictionary, "passphraseTypeIsCustom", false);

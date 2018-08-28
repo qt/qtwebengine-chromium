@@ -7,8 +7,9 @@
 
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
+#include "base/task/sequence_manager/time_domain.h"
 #include "base/time/time_override.h"
-#include "third_party/blink/renderer/platform/scheduler/base/virtual_time_domain.h"
+#include "third_party/blink/renderer/platform/platform_export.h"
 
 namespace blink {
 namespace scheduler {
@@ -24,7 +25,7 @@ class SchedulerHelper;
 // |ABCDE                       (Execution with AutoAdvancingVirtualTimeDomain)
 // |-----------------------------> time
 class PLATFORM_EXPORT AutoAdvancingVirtualTimeDomain
-    : public base::sequence_manager::VirtualTimeDomain,
+    : public base::sequence_manager::TimeDomain,
       public base::MessageLoop::TaskObserver {
  public:
   enum class BaseTimeOverridePolicy { OVERRIDE, DO_NOT_OVERRIDE };
@@ -34,13 +35,6 @@ class PLATFORM_EXPORT AutoAdvancingVirtualTimeDomain
                                  SchedulerHelper* helper,
                                  BaseTimeOverridePolicy policy);
   ~AutoAdvancingVirtualTimeDomain() override;
-
-  // TimeDomain implementation:
-  base::Optional<base::TimeDelta> DelayTillNextTask(
-      base::sequence_manager::LazyNow* lazy_now) override;
-  void RequestWakeUpAt(base::TimeTicks now, base::TimeTicks run_time) override;
-  void CancelWakeUpAt(base::TimeTicks run_time) override;
-  const char* GetName() const override;
 
   class PLATFORM_EXPORT Observer {
    public:
@@ -56,7 +50,7 @@ class PLATFORM_EXPORT AutoAdvancingVirtualTimeDomain
   void SetObserver(Observer* observer);
 
   // Controls whether or not virtual time is allowed to advance, when the
-  // TaskQueueManager runs out of immediate work to do.
+  // SequenceManager runs out of immediate work to do.
   void SetCanAdvanceVirtualTime(bool can_advance_virtual_time);
 
   // If non-null, virtual time may not advance past |virtual_time_fence|.
@@ -78,10 +72,22 @@ class PLATFORM_EXPORT AutoAdvancingVirtualTimeDomain
 
   int task_starvation_count() const { return task_starvation_count_; }
 
+  // TimeDomain implementation:
+  base::sequence_manager::LazyNow CreateLazyNow() const override;
+  base::TimeTicks Now() const override;
+  base::Optional<base::TimeDelta> DelayTillNextTask(
+      base::sequence_manager::LazyNow* lazy_now) override;
+
+ protected:
+  const char* GetName() const override;
+  void SetNextDelayedDoWork(base::sequence_manager::LazyNow* lazy_now,
+                            base::TimeTicks run_time) override;
+
  private:
   // Can be called on any thread.
   base::Time Date() const;
 
+  // For base time overriding.
   static base::TimeTicks GetVirtualTimeTicks();
   static base::Time GetVirtualTime();
   static AutoAdvancingVirtualTimeDomain* g_time_domain_;
@@ -105,6 +111,9 @@ class PLATFORM_EXPORT AutoAdvancingVirtualTimeDomain
 
   // Upper limit on how far virtual time is allowed to advance.
   base::TimeTicks virtual_time_fence_;
+
+  mutable base::Lock now_ticks_lock_;
+  base::TimeTicks now_ticks_;
 
   const base::TimeTicks initial_time_ticks_;
   const base::Time initial_time_;

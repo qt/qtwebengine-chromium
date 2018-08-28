@@ -17,6 +17,7 @@ class MockPasswordProtectionService : public PasswordProtectionService {
   MockPasswordProtectionService(
       const scoped_refptr<SafeBrowsingDatabaseManager>& database_manager,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      history::HistoryService* history_service,
       scoped_refptr<HostContentSettingsMap> content_setting_map);
   ~MockPasswordProtectionService() override;
 
@@ -27,7 +28,7 @@ class MockPasswordProtectionService : public PasswordProtectionService {
   MOCK_CONST_METHOD0(GetBrowserPolicyConnector,
                      const policy::BrowserPolicyConnector*());
   MOCK_CONST_METHOD0(GetPasswordProtectionWarningTriggerPref,
-                     safe_browsing::PasswordProtectionTrigger());
+                     PasswordProtectionTrigger());
   MOCK_CONST_METHOD2(IsURLWhitelistedForPasswordEntry,
                      bool(const GURL&, RequestOutcome*));
 
@@ -37,35 +38,39 @@ class MockPasswordProtectionService : public PasswordProtectionService {
   MOCK_METHOD0(OnPolicySpecifiedPasswordChanged, void());
   MOCK_METHOD1(MaybeLogPasswordReuseDetectedEvent, void(content::WebContents*));
   MOCK_METHOD1(UserClickedThroughSBInterstitial, bool(content::WebContents*));
-  MOCK_METHOD1(ShowInterstitial, void(content::WebContents*));
+  MOCK_METHOD2(ShowInterstitial,
+               void(content::WebContents*, ReusedPasswordType));
   MOCK_METHOD2(IsPingingEnabled,
-               bool(safe_browsing::LoginReputationClientRequest::TriggerType,
+               bool(LoginReputationClientRequest::TriggerType,
                     RequestOutcome*));
-  MOCK_METHOD2(ShowModalWarning,
-               void(content::WebContents*, const std::string&));
-  MOCK_METHOD2(UpdateSecurityState,
-               void(safe_browsing::SBThreatType, content::WebContents*));
+  MOCK_METHOD3(ShowModalWarning,
+               void(content::WebContents*,
+                    const std::string&,
+                    ReusedPasswordType));
+  MOCK_METHOD3(UpdateSecurityState,
+               void(safe_browsing::SBThreatType,
+                    ReusedPasswordType,
+                    content::WebContents*));
   MOCK_METHOD2(RemoveUnhandledSyncPasswordReuseOnURLsDeleted,
                void(bool, const history::URLRows&));
   MOCK_METHOD2(OnPolicySpecifiedPasswordReuseDetected, void(const GURL&, bool));
   MOCK_METHOD3(FillReferrerChain,
                void(const GURL&,
                     SessionID,
-                    safe_browsing::LoginReputationClientRequest::Frame*));
+                    LoginReputationClientRequest::Frame*));
   MOCK_METHOD3(MaybeLogPasswordReuseLookupEvent,
                void(content::WebContents*,
                     PasswordProtectionService::RequestOutcome,
                     const safe_browsing::LoginReputationClientResponse*));
-  MOCK_METHOD3(OnUserAction,
-               void(content::WebContents*, WarningUIType, WarningAction));
-
+  MOCK_METHOD3(CanShowInterstitial,
+               bool(RequestOutcome, ReusedPasswordType, const GURL&));
   MOCK_METHOD4(
       MaybeStartPasswordFieldOnFocusRequest,
       void(content::WebContents*, const GURL&, const GURL&, const GURL&));
   MOCK_METHOD5(MaybeStartProtectedPasswordEntryRequest,
                void(content::WebContents*,
                     const GURL&,
-                    bool,
+                    ReusedPasswordType,
                     const std::vector<std::string>&,
                     bool));
 

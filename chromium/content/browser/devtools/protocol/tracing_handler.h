@@ -11,6 +11,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
@@ -23,7 +24,7 @@
 #include "content/public/browser/tracing_controller.h"
 
 namespace base {
-class Timer;
+class RepeatingTimer;
 }
 
 namespace media {
@@ -37,6 +38,8 @@ class DevToolsVideoConsumer;
 class DevToolsIOContext;
 class FrameTreeNode;
 class NavigationHandleImpl;
+class RenderFrameHost;
+class RenderProcessHost;
 
 namespace protocol {
 
@@ -113,8 +116,12 @@ class TracingHandler : public DevToolsDomainHandler, public Tracing::Backend {
   CONTENT_EXPORT static base::trace_event::TraceConfig
       GetTraceConfigFromDevToolsConfig(
           const base::DictionaryValue& devtools_config);
+  void SetupProcessFilter(RenderFrameHost*);
+  void AppendProcessId(RenderFrameHost*,
+                       std::unordered_set<base::ProcessId>* process_set);
+  void OnProcessReady(RenderProcessHost*);
 
-  std::unique_ptr<base::Timer> buffer_usage_poll_timer_;
+  std::unique_ptr<base::RepeatingTimer> buffer_usage_poll_timer_;
 
   std::unique_ptr<Tracing::Frontend> frontend_;
   DevToolsIOContext* io_context_;
@@ -125,6 +132,7 @@ class TracingHandler : public DevToolsDomainHandler, public Tracing::Backend {
   TraceDataBufferState trace_data_buffer_state_;
   std::unique_ptr<DevToolsVideoConsumer> video_consumer_;
   int number_of_screenshots_from_video_consumer_ = 0;
+  base::trace_event::TraceConfig trace_config_;
   base::WeakPtrFactory<TracingHandler> weak_factory_;
 
   FRIEND_TEST_ALL_PREFIXES(TracingHandlerTest,

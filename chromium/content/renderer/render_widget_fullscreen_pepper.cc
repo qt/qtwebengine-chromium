@@ -10,15 +10,15 @@
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "build/build_config.h"
+#include "cc/paint/paint_canvas.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/use_zoom_for_dsf_policy.h"
-#include "content/renderer/gpu/render_widget_compositor.h"
+#include "content/renderer/gpu/layer_tree_view.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/blink/public/platform/web_canvas.h"
 #include "third_party/blink/public/platform/web_cursor_info.h"
 #include "third_party/blink/public/platform/web_gesture_event.h"
 #include "third_party/blink/public/platform/web_mouse_wheel_event.h"
@@ -28,7 +28,6 @@
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gl/gpu_preference.h"
 
-using blink::WebCanvas;
 using blink::WebCoalescedInputEvent;
 using blink::WebImeTextSpan;
 using blink::WebCursorInfo;
@@ -254,19 +253,19 @@ class PepperWidget : public WebWidget {
 // static
 RenderWidgetFullscreenPepper* RenderWidgetFullscreenPepper::Create(
     int32_t routing_id,
-    const RenderWidget::ShowCallback& show_callback,
+    RenderWidget::ShowCallback show_callback,
     CompositorDependencies* compositor_deps,
     PepperPluginInstanceImpl* plugin,
     const GURL& active_url,
     const ScreenInfo& screen_info,
     mojom::WidgetRequest widget_request) {
   DCHECK_NE(MSG_ROUTING_NONE, routing_id);
-  DCHECK(!show_callback.is_null());
+  DCHECK(show_callback);
   scoped_refptr<RenderWidgetFullscreenPepper> widget(
       new RenderWidgetFullscreenPepper(routing_id, compositor_deps, plugin,
                                        active_url, screen_info,
                                        std::move(widget_request)));
-  widget->Init(show_callback, new PepperWidget(widget.get()));
+  widget->Init(std::move(show_callback), new PepperWidget(widget.get()));
   widget->AddRef();
   return widget.get();
 }
@@ -335,15 +334,15 @@ void RenderWidgetFullscreenPepper::PepperDidChangeCursor(
 void RenderWidgetFullscreenPepper::SetLayer(cc::Layer* layer) {
   layer_ = layer;
   if (!layer_) {
-    if (compositor_)
-      compositor_->ClearRootLayer();
+    if (layer_tree_view())
+      layer_tree_view()->ClearRootLayer();
     return;
   }
-  if (!compositor())
+  if (!layer_tree_view())
     InitializeLayerTreeView();
   UpdateLayerBounds();
   layer_->SetIsDrawable(true);
-  compositor_->SetRootLayer(layer_);
+  layer_tree_view()->SetRootLayer(layer_);
 }
 
 bool RenderWidgetFullscreenPepper::OnMessageReceived(const IPC::Message& msg) {
@@ -392,7 +391,7 @@ void RenderWidgetFullscreenPepper::UpdateLayerBounds() {
   if (!layer_)
     return;
 
-  if (IsUseZoomForDSFEnabled()) {
+  if (compositor_deps()->IsUseZoomForDSFEnabled()) {
     // Note that root cc::Layers' bounds are specified in pixels (in contrast
     // with non-root cc::Layers' bounds, which are specified in DIPs).
     layer_->SetBounds(blink::WebSize(compositor_viewport_pixel_size()));

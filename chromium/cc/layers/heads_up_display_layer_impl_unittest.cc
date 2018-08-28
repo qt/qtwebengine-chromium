@@ -18,7 +18,7 @@ namespace {
 
 void CheckDrawLayer(HeadsUpDisplayLayerImpl* layer,
                     LayerTreeFrameSink* frame_sink,
-                    LayerTreeResourceProvider* resource_provider,
+                    viz::ClientResourceProvider* resource_provider,
                     viz::ContextProvider* context_provider,
                     DrawMode draw_mode) {
   std::unique_ptr<viz::RenderPass> render_pass = viz::RenderPass::Create();
@@ -47,10 +47,11 @@ TEST(HeadsUpDisplayLayerImplTest, ResourcelessSoftwareDrawAfterResourceLoss) {
   FakeLayerTreeHostImpl host_impl(&task_runner_provider, &task_graph_runner);
   host_impl.CreatePendingTree();
   host_impl.SetVisible(true);
-  host_impl.InitializeRenderer(layer_tree_frame_sink.get());
+  host_impl.InitializeFrameSink(layer_tree_frame_sink.get());
   std::unique_ptr<HeadsUpDisplayLayerImpl> layer_ptr =
       HeadsUpDisplayLayerImpl::Create(host_impl.pending_tree(), 1);
   layer_ptr->SetBounds(gfx::Size(100, 100));
+  layer_ptr->set_visible_layer_rect(gfx::Rect(100, 100));
 
   HeadsUpDisplayLayerImpl* layer = layer_ptr.get();
 
@@ -80,10 +81,11 @@ TEST(HeadsUpDisplayLayerImplTest, CPUAndGPURasterCanvas) {
   FakeLayerTreeHostImpl host_impl(&task_runner_provider, &task_graph_runner);
   host_impl.CreatePendingTree();
   host_impl.SetVisible(true);
-  host_impl.InitializeRenderer(layer_tree_frame_sink.get());
+  host_impl.InitializeFrameSink(layer_tree_frame_sink.get());
   std::unique_ptr<HeadsUpDisplayLayerImpl> layer_ptr =
       HeadsUpDisplayLayerImpl::Create(host_impl.pending_tree(), 1);
   layer_ptr->SetBounds(gfx::Size(100, 100));
+  layer_ptr->set_visible_layer_rect(gfx::Rect(100, 100));
 
   HeadsUpDisplayLayerImpl* layer = layer_ptr.get();
 
@@ -97,7 +99,7 @@ TEST(HeadsUpDisplayLayerImplTest, CPUAndGPURasterCanvas) {
 
   host_impl.ReleaseLayerTreeFrameSink();
   layer_tree_frame_sink = FakeLayerTreeFrameSink::CreateSoftware();
-  host_impl.InitializeRenderer(layer_tree_frame_sink.get());
+  host_impl.InitializeFrameSink(layer_tree_frame_sink.get());
 
   // Check SW canvas drawing is ok.
   CheckDrawLayer(layer, host_impl.layer_tree_frame_sink(),

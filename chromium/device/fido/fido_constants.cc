@@ -19,8 +19,14 @@ const std::array<uint8_t, 32> kBogusChallenge = {
 const char kResidentKeyMapKey[] = "rk";
 const char kUserVerificationMapKey[] = "uv";
 const char kUserPresenceMapKey[] = "up";
-const char kClientPinMapKey[] = "client_pin";
+const char kClientPinMapKey[] = "clientPin";
 const char kPlatformDeviceMapKey[] = "plat";
+const char kEntityIdMapKey[] = "id";
+const char kEntityNameMapKey[] = "name";
+const char kDisplayNameMapKey[] = "displayName";
+const char kIconUrlMapKey[] = "icon";
+const char kCredentialTypeMapKey[] = "type";
+const char kCredentialAlgorithmMapKey[] = "alg";
 
 const size_t kHidPacketSize = 64;
 const uint32_t kHidBroadcastChannel = 0xffffffff;
@@ -41,9 +47,9 @@ const uint8_t kP1TupRequiredConsumed = kP1TupRequired | kP1TupConsumed;
 const uint8_t kP1CheckOnly = 0x07;
 const uint8_t kP1IndividualAttestation = 0x80;
 const size_t kMaxKeyHandleLength = 255;
-const size_t kU2fParameterLength = 32;
 
 const base::TimeDelta kDeviceTimeout = base::TimeDelta::FromSeconds(3);
+const base::TimeDelta kU2fRetryDelay = base::TimeDelta::FromMilliseconds(200);
 const base::TimeDelta kHidKeepAliveDelay =
     base::TimeDelta::FromMilliseconds(100);
 
@@ -62,5 +68,13 @@ const char* CredentialTypeToString(CredentialType type) {
   NOTREACHED();
   return kPublicKey;
 }
+
+const char kCableHandshakeKeyInfo[] = "FIDO caBLE v1 handshakeKey";
+const char kCableDeviceEncryptionKeyInfo[] = "FIDO caBLE v1 sessionKey";
+const char kCableAuthenticatorHelloMessage[] = "caBLE v1 authenticator hello";
+const char kCableClientHelloMessage[] = "caBLE v1 client hello";
+
+const char kCtap2Version[] = "FIDO_2_0";
+const char kU2fVersion[] = "U2F_V2";
 
 }  // namespace device

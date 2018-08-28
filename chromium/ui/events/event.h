@@ -83,7 +83,9 @@ class EVENTS_EXPORT Event {
   const base::TimeTicks time_stamp() const { return time_stamp_; }
   int flags() const { return flags_; }
 
-  // Returns a name for the event, typically used in logging/debugging.
+  // Returns a name for the event, typically used in logging/debugging. This is
+  // a convenience for EventTypeName(type()) (EventTypeName() is in
+  // event_utils).
   const char* GetName() const;
 
   // This is only intended to be used externally by classes that are modifying
@@ -164,6 +166,7 @@ class EVENTS_EXPORT Event {
       case ET_GESTURE_SCROLL_END:
       case ET_GESTURE_SCROLL_UPDATE:
       case ET_GESTURE_TAP:
+      case ET_GESTURE_DOUBLE_TAP:
       case ET_GESTURE_TAP_CANCEL:
       case ET_GESTURE_TAP_DOWN:
       case ET_GESTURE_BEGIN:
@@ -693,6 +696,7 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
         unique_event_id_(model.unique_event_id_),
         may_cause_scrolling_(model.may_cause_scrolling_),
         should_remove_native_touch_id_mapping_(false),
+        hovering_(false),
         pointer_details_(model.pointer_details_) {}
 
   TouchEvent(EventType type,

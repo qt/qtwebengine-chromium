@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/macros.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,16 +27,12 @@ namespace blink {
 
 namespace {
 
-class MockCredentialManager
-    : public ::password_manager::mojom::blink::CredentialManager {
-  WTF_MAKE_NONCOPYABLE(MockCredentialManager);
-
+class MockCredentialManager : public mojom::blink::CredentialManager {
  public:
   MockCredentialManager() : binding_(this) {}
   ~MockCredentialManager() override {}
 
-  void Bind(
-      ::password_manager::mojom::blink::CredentialManagerRequest request) {
+  void Bind(::blink::mojom::blink::CredentialManagerRequest request) {
     binding_.Bind(std::move(request));
   }
 
@@ -57,31 +54,32 @@ class MockCredentialManager
   void InvokeGetCallback() {
     EXPECT_TRUE(binding_.is_bound());
 
-    auto info = password_manager::mojom::blink::CredentialInfo::New();
-    info->type = password_manager::mojom::blink::CredentialType::EMPTY;
-    info->federation = SecurityOrigin::CreateUnique();
+    auto info = blink::mojom::blink::CredentialInfo::New();
+    info->type = blink::mojom::blink::CredentialType::EMPTY;
+    info->federation = SecurityOrigin::CreateUniqueOpaque();
     std::move(get_callback_)
-        .Run(password_manager::mojom::blink::CredentialManagerError::SUCCESS,
+        .Run(blink::mojom::blink::CredentialManagerError::SUCCESS,
              std::move(info));
   }
 
  protected:
-  void Store(password_manager::mojom::blink::CredentialInfoPtr credential,
+  void Store(blink::mojom::blink::CredentialInfoPtr credential,
              StoreCallback callback) override {}
   void PreventSilentAccess(PreventSilentAccessCallback callback) override {}
-  void Get(
-      password_manager::mojom::blink::CredentialMediationRequirement mediation,
-      bool include_passwords,
-      const WTF::Vector<::blink::KURL>& federations,
-      GetCallback callback) override {
+  void Get(blink::mojom::blink::CredentialMediationRequirement mediation,
+           bool include_passwords,
+           const WTF::Vector<::blink::KURL>& federations,
+           GetCallback callback) override {
     get_callback_ = std::move(callback);
     test::ExitRunLoop();
   }
 
  private:
-  mojo::Binding<::password_manager::mojom::blink::CredentialManager> binding_;
+  mojo::Binding<::blink::mojom::blink::CredentialManager> binding_;
 
   GetCallback get_callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockCredentialManager);
 };
 
 class CredentialManagerTestingContext {
@@ -97,12 +95,12 @@ class CredentialManagerTestingContext {
     service_manager::InterfaceProvider::TestApi test_api(
         &dummy_context_.GetFrame().GetInterfaceProvider());
     test_api.SetBinderForName(
-        ::password_manager::mojom::blink::CredentialManager::Name_,
+        ::blink::mojom::blink::CredentialManager::Name_,
         WTF::BindRepeating(
             [](MockCredentialManager* mock_credential_manager,
                mojo::ScopedMessagePipeHandle handle) {
               mock_credential_manager->Bind(
-                  ::password_manager::mojom::blink::CredentialManagerRequest(
+                  ::blink::mojom::blink::CredentialManagerRequest(
                       std::move(handle)));
             },
             WTF::Unretained(mock_credential_manager)));

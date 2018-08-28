@@ -48,69 +48,23 @@
 #include <sys/types.h>
 #endif
 
-const double piDouble = M_PI;
-const float piFloat = static_cast<float>(M_PI);
+const double kPiDouble = M_PI;
+const float kPiFloat = static_cast<float>(M_PI);
 
-const double piOverTwoDouble = M_PI_2;
-const float piOverTwoFloat = static_cast<float>(M_PI_2);
+const double kPiOverTwoDouble = M_PI_2;
+const float kPiOverTwoFloat = static_cast<float>(M_PI_2);
 
-const double piOverFourDouble = M_PI_4;
-const float piOverFourFloat = static_cast<float>(M_PI_4);
+const double kPiOverFourDouble = M_PI_4;
+const float kPiOverFourFloat = static_cast<float>(M_PI_4);
 
-const double twoPiDouble = piDouble * 2.0;
-const float twoPiFloat = piFloat * 2.0f;
-
-#if defined(COMPILER_MSVC)
-
-// VS2013 has most of the math functions now, but we still need to work
-// around various differences in behavior of Inf.
-
-// Work around a bug in Win, where atan2(+-infinity, +-infinity) yields NaN
-// instead of specific values.
-inline double wtf_atan2(double x, double y) {
-  double posInf = std::numeric_limits<double>::infinity();
-  double negInf = -std::numeric_limits<double>::infinity();
-  double nan = std::numeric_limits<double>::quiet_NaN();
-
-  double result = nan;
-
-  if (x == posInf && y == posInf)
-    result = piOverFourDouble;
-  else if (x == posInf && y == negInf)
-    result = 3 * piOverFourDouble;
-  else if (x == negInf && y == posInf)
-    result = -piOverFourDouble;
-  else if (x == negInf && y == negInf)
-    result = -3 * piOverFourDouble;
-  else
-    result = ::atan2(x, y);
-
-  return result;
-}
-
-// Work around a bug in the Microsoft CRT, where fmod(x, +-infinity) yields NaN
-// instead of x.
-inline double wtf_fmod(double x, double y) {
-  return (!std::isinf(x) && std::isinf(y)) ? x : fmod(x, y);
-}
-
-// Work around a bug in the Microsoft CRT, where pow(NaN, 0) yields NaN instead
-// of 1.
-inline double wtf_pow(double x, double y) {
-  return y == 0 ? 1 : pow(x, y);
-}
-
-#define atan2(x, y) wtf_atan2(x, y)
-#define fmod(x, y) wtf_fmod(x, y)
-#define pow(x, y) wtf_pow(x, y)
-
-#endif  // defined(COMPILER_MSVC)
+const double kTwoPiDouble = kPiDouble * 2.0;
+const float kTwoPiFloat = kPiFloat * 2.0f;
 
 inline double deg2rad(double d) {
-  return d * piDouble / 180.0;
+  return d * kPiDouble / 180.0;
 }
 inline double rad2deg(double r) {
-  return r * 180.0 / piDouble;
+  return r * 180.0 / kPiDouble;
 }
 inline double deg2grad(double d) {
   return d * 400.0 / 360.0;
@@ -125,10 +79,10 @@ inline double deg2turn(double d) {
   return d / 360.0;
 }
 inline double rad2grad(double r) {
-  return r * 200.0 / piDouble;
+  return r * 200.0 / kPiDouble;
 }
 inline double grad2rad(double g) {
-  return g * piDouble / 200.0;
+  return g * kPiDouble / 200.0;
 }
 inline double turn2grad(double t) {
   return t * 400;
@@ -137,17 +91,17 @@ inline double grad2turn(double g) {
   return g / 400;
 }
 inline double rad2turn(double r) {
-  return r / twoPiDouble;
+  return r / kTwoPiDouble;
 }
 inline double turn2rad(double t) {
-  return t * twoPiDouble;
+  return t * kTwoPiDouble;
 }
 
 inline float deg2rad(float d) {
-  return d * piFloat / 180.0f;
+  return d * kPiFloat / 180.0f;
 }
 inline float rad2deg(float r) {
-  return r * 180.0f / piFloat;
+  return r * 180.0f / kPiFloat;
 }
 inline float deg2grad(float d) {
   return d * 400.0f / 360.0f;
@@ -162,10 +116,10 @@ inline float deg2turn(float d) {
   return d / 360.0f;
 }
 inline float rad2grad(float r) {
-  return r * 200.0f / piFloat;
+  return r * 200.0f / kPiFloat;
 }
 inline float grad2rad(float g) {
-  return g * piFloat / 200.0f;
+  return g * kPiFloat / 200.0f;
 }
 inline float turn2grad(float t) {
   return t * 400;
@@ -382,61 +336,5 @@ static size_t greatestCommonDivisor(size_t a, size_t b) {
 inline size_t lowestCommonMultiple(size_t a, size_t b) {
   return a && b ? a / greatestCommonDivisor(a, b) * b : 0;
 }
-
-#ifndef UINT64_C
-#if defined(COMPILER_MSVC)
-#define UINT64_C(c) c##ui64
-#else
-#define UINT64_C(c) c##ull
-#endif
-#endif
-
-// Calculate d % 2^{64}.
-inline void doubleToInteger(double d, unsigned long long& value) {
-  if (std::isnan(d) || std::isinf(d)) {
-    value = 0;
-  } else {
-    // -2^{64} < fmodValue < 2^{64}.
-    double fmodValue =
-        fmod(trunc(d), std::numeric_limits<unsigned long long>::max() + 1.0);
-    if (fmodValue >= 0) {
-      // 0 <= fmodValue < 2^{64}.
-      // 0 <= value < 2^{64}. This cast causes no loss.
-      value = static_cast<unsigned long long>(fmodValue);
-    } else {
-      // -2^{64} < fmodValue < 0.
-      // 0 < fmodValueInUnsignedLongLong < 2^{64}. This cast causes no loss.
-      unsigned long long fmodValueInUnsignedLongLong =
-          static_cast<unsigned long long>(-fmodValue);
-      // -1 < (std::numeric_limits<unsigned long long>::max() -
-      //       fmodValueInUnsignedLongLong)
-      //    < 2^{64} - 1.
-      // 0 < value < 2^{64}.
-      value = std::numeric_limits<unsigned long long>::max() -
-              fmodValueInUnsignedLongLong + 1;
-    }
-  }
-}
-
-namespace WTF {
-
-inline unsigned FastLog2(unsigned i) {
-  unsigned log2 = 0;
-  if (i & (i - 1))
-    log2 += 1;
-  if (i >> 16)
-    log2 += 16, i >>= 16;
-  if (i >> 8)
-    log2 += 8, i >>= 8;
-  if (i >> 4)
-    log2 += 4, i >>= 4;
-  if (i >> 2)
-    log2 += 2, i >>= 2;
-  if (i >> 1)
-    log2 += 1;
-  return log2;
-}
-
-}  // namespace WTF
 
 #endif  // #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_MATH_EXTRAS_H_

@@ -22,6 +22,7 @@
     childrenChanged,
     clicked,
     documentSelectionChanged,
+    documentTitleChanged,
     expandedChanged,
     focus,
     focusContext,
@@ -90,6 +91,8 @@
     comboBoxGrouping,
     comboBoxMenuButton,
     complementary,
+    contentDeletion,
+    contentInsertion,
     contentInfo,
     date,
     dateTime,
@@ -185,7 +188,6 @@
     listBoxOption,
     listItem,
     listMarker,
-    locationBar,
     log,
     main,
     mark,
@@ -259,7 +261,6 @@
     expanded,
     focusable,
     focused,
-    hasPopup,
     horizontal,
     hovered,
     ignored,
@@ -570,6 +571,9 @@
     // applicable
     AutomationNode? activeDescendant;
 
+    // Reverse relationship for active descendant.
+    AutomationNode[]? activeDescendantFor;
+
     // The target of an in-page link.
     AutomationNode? inPageLinkTarget;
 
@@ -596,6 +600,12 @@
 
     // Reverse relationship for labelledBy.
     AutomationNode[]? labelFor;
+
+    // The column header nodes for a table cell.
+    AutomationNode[]? tableCellColumnHeaders;
+
+    // The row header nodes for a table cell.
+    AutomationNode[]? tableCellRowHeaders;
 
     // An array of standard actions available on this node.
     ActionType[]? standardActions;
@@ -1015,6 +1025,9 @@
 
     // Returns whether this node matches the given $(ref:automation.FindParams).
     static boolean matches(FindParams params);
+
+    static AutomationNode getNextTextMatch(
+        DOMString searchStr, boolean backward);
   };
 
   // Called when the <code>AutomationNode</code> for the page is available.

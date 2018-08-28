@@ -11,6 +11,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,7 +31,7 @@
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
 #include "build/build_config.h"
-#include "components/viz/common/quads/shared_bitmap.h"
+#include "components/viz/common/resources/shared_bitmap.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/browser/renderer_host/frame_token_message_queue.h"
@@ -96,10 +97,14 @@ namespace ui {
 enum class DomCode;
 }
 
+namespace viz {
+class ServerSharedBitmapManager;
+}
+
 namespace content {
 
 class BrowserAccessibilityManager;
-class FlingScheduler;
+class FlingSchedulerBase;
 class InputRouter;
 class MockRenderWidgetHost;
 class RenderWidgetHostOwnerDelegate;
@@ -193,7 +198,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   int GetRoutingID() const override;
   RenderWidgetHostViewBase* GetView() const override;
   bool IsLoading() const override;
-  void RestartHangMonitorTimeoutIfNecessary() override;
   bool IsCurrentlyUnresponsive() const override;
   void SetIgnoreInputEvents(bool ignore_input_events) override;
   bool SynchronizeVisualProperties() override;
@@ -301,7 +305,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Called to notify the RenderWidget that it has been hidden or restored from
   // having been hidden.
   void WasHidden();
-  void WasShown(const ui::LatencyInfo& latency_info);
+  void WasShown(bool record_presentation_time);
 
 #if defined(OS_ANDROID)
   // Set the importance of widget. The importance is passed onto
@@ -526,13 +530,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   void DidReceiveRendererFrame();
 
-  // Returns the ID that uniquely describes this component to the latency
-  // subsystem.
-  int64_t GetLatencyComponentId() const;
-
-  static void OnGpuSwapBuffersCompleted(
-      const std::vector<ui::LatencyInfo>& latency_info);
-
   // Don't check whether we expected a resize ack during layout tests.
   static void DisableResizeAckCheckForTesting();
 
@@ -728,10 +725,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // from a newly loaded page. Used for testing.
   virtual void NotifyNewContentRenderingTimeoutForTesting() {}
 
-  // Can be overriden for subclass based testing.
-  virtual void OnGpuSwapBuffersCompletedInternal(
-      const ui::LatencyInfo& latency_info);
-
   // InputAckHandler
   void OnKeyboardEventAck(const NativeWebKeyboardEventWithLatencyInfo& event,
                           InputEventAckSource ack_source,
@@ -763,13 +756,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostTest,
-                           DontPostponeHangMonitorTimeout);
+                           DontPostponeInputEventAckTimeout);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostTest, HiddenPaint);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostTest, RendererExitedNoDrag);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostTest,
-                           StopAndStartHangMonitorTimeout);
+                           StopAndStartInputEventAckTimeout);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostTest,
-                           ShorterDelayHangMonitorTimeout);
+                           ShorterDelayInputEventAckTimeout);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostTest, SynchronizeVisualProperties);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, AutoResizeWithScale);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
@@ -796,17 +789,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                                          RenderProcessHost*,
                                          RenderWidgetHost*);
 
-  // Helper for notifying corresponding RenderWidgetHosts
-  static void NotifyCorrespondingRenderWidgetHost(
-      int64_t frame_id,
-      std::set<RenderWidgetHostImpl*>&,
-      const ui::LatencyInfo&);
-
   // Tell this object to destroy itself. If |also_delete| is specified, the
   // destructor is called as well.
   void Destroy(bool also_delete);
 
-  // Called by |hang_monitor_timeout_| on delayed response from the renderer.
+  // Called by |input_event_ack_timeout_| on delayed response from the renderer.
   void RendererIsUnresponsive();
 
   // Called by |new_content_rendering_timeout_| if a renderer has loaded new
@@ -822,7 +809,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnRenderProcessGone(int status, int error_code);
   void OnClose();
   void OnUpdateScreenRectsAck();
-  void OnRequestMove(const gfx::Rect& pos);
+  void OnRequestSetBounds(const gfx::Rect& bounds);
   void OnSetTooltipText(const base::string16& tooltip_text,
                         blink::WebTextDirection text_direction_hint);
   void OnSetCursor(const WebCursor& cursor);
@@ -850,6 +837,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnUpdateDragCursor(blink::WebDragOperation current_op);
   void OnFrameSwapMessagesReceived(uint32_t frame_token,
                                    std::vector<IPC::Message> messages);
+  void OnForceRedrawComplete(int snapshot_id);
 
   // Called when visual properties have changed in the renderer.
   void DidUpdateVisualProperties(const cc::RenderFrameMetadata& metadata);
@@ -891,17 +879,18 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Starts a hang monitor timeout. If there's already a hang monitor timeout
   // the new one will only fire if it has a shorter delay than the time
   // left on the existing timeouts.
-  void StartHangMonitorTimeout(base::TimeDelta delay);
+  void StartInputEventAckTimeout(base::TimeDelta delay);
 
   // Stops all existing hang monitor timeouts and assumes the renderer is
   // responsive.
-  void StopHangMonitorTimeout();
+  void StopInputEventAckTimeout();
+
+  // Implementation of |hang_monitor_restarter| callback passed to
+  // RenderWidgetHostDelegate::RendererUnresponsive if the unresponsiveness
+  // was noticed because of input event ack timeout.
+  void RestartInputEventAckTimeoutIfNecessary();
 
   void SetupInputRouter();
-
-  bool SurfacePropertiesMismatch(
-      const RenderWidgetSurfaceProperties& first,
-      const RenderWidgetSurfaceProperties& second) const;
 
   // Start intercepting system keyboard events.
   bool LockKeyboard();
@@ -914,7 +903,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 #endif
 
   // RenderFrameMetadataProvider::Observer implementation.
-  void OnRenderFrameMetadataChanged() override;
+  void OnRenderFrameMetadataChangedBeforeActivation(
+      const cc::RenderFrameMetadata& metadata) override;
+  void OnRenderFrameMetadataChangedAfterActivation() override;
   void OnRenderFrameSubmission() override {}
   void OnLocalSurfaceIdChanged(
       const cc::RenderFrameMetadata& metadata) override;
@@ -1072,8 +1063,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Receives and handles all input events.
   std::unique_ptr<InputRouter> input_router_;
 
-  std::unique_ptr<TimeoutMonitor> hang_monitor_timeout_;
-  base::TimeTicks hang_monitor_start_time_;
+  std::unique_ptr<TimeoutMonitor> input_event_ack_timeout_;
+  base::TimeTicks input_event_ack_start_time_;
 
   std::unique_ptr<TimeoutMonitor> new_content_rendering_timeout_;
 
@@ -1174,9 +1165,15 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   base::Optional<uint16_t> screen_orientation_angle_for_testing_;
   base::Optional<ScreenOrientationValues> screen_orientation_type_for_testing_;
 
+  // When the viz display compositor is in the browser process, this is used to
+  // register and unregister the bitmaps (stored in |owned_bitmaps_| reported to
+  // this class from the renderer.
+  viz::ServerSharedBitmapManager* shared_bitmap_manager_ = nullptr;
   // The set of SharedBitmapIds that have been reported as allocated to this
   // interface. On closing this interface, the display compositor should drop
-  // ownership of the bitmaps with these ids to avoid leaking them.
+  // ownership of the bitmaps with these ids to avoid leaking them. This is only
+  // used when SharedBitmaps are reported to this class because the display
+  // compositor is in the browser process.
   std::set<viz::SharedBitmapId> owned_bitmaps_;
 
   bool force_enable_zoom_ = false;
@@ -1185,7 +1182,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   const viz::FrameSinkId frame_sink_id_;
 
-  std::unique_ptr<FlingScheduler> fling_scheduler_;
+  std::unique_ptr<FlingSchedulerBase> fling_scheduler_;
 
   bool did_receive_first_frame_after_navigation_ = true;
 

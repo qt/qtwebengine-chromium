@@ -36,12 +36,14 @@
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
+#include "third_party/blink/renderer/core/layout/intrinsic_sizing_info.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
 #include "third_party/blink/renderer/core/paint/image_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
 #include "third_party/blink/renderer/platform/feature_policy/feature_policy.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -53,8 +55,7 @@ bool CheckForOptimizedImagePolicy(const LocalFrame& frame,
                                   ImageResourceContent* new_image) {
   // Invert the image if the document does not have the 'legacy-image-formats'
   // feature enabled, and the image is not one of the allowed formats.
-  if (IsSupportedInFeaturePolicy(
-          mojom::FeaturePolicyFeature::kLegacyImageFormats) &&
+  if (RuntimeEnabledFeatures::ExperimentalProductivityFeaturesEnabled() &&
       !frame.IsFeatureEnabled(
           mojom::FeaturePolicyFeature::kLegacyImageFormats)) {
     if (!new_image->IsAcceptableContentType()) {
@@ -63,8 +64,7 @@ bool CheckForOptimizedImagePolicy(const LocalFrame& frame,
   }
   // Invert the image if the document does not have the image-compression'
   // feature enabled and the image is not sufficiently-well-compressed.
-  if (IsSupportedInFeaturePolicy(
-          mojom::FeaturePolicyFeature::kImageCompression) &&
+  if (RuntimeEnabledFeatures::ExperimentalProductivityFeaturesEnabled() &&
       !frame.IsFeatureEnabled(mojom::FeaturePolicyFeature::kImageCompression)) {
     if (!new_image->IsAcceptableCompressionRatio())
       return true;
@@ -75,8 +75,7 @@ bool CheckForOptimizedImagePolicy(const LocalFrame& frame,
 bool CheckForMaxDownscalingImagePolicy(const LocalFrame& frame,
                                        HTMLImageElement* element,
                                        LayoutImage* layout_image) {
-  if (!IsSupportedInFeaturePolicy(
-          mojom::FeaturePolicyFeature::kMaxDownscalingImage) ||
+  if (!RuntimeEnabledFeatures::ExperimentalProductivityFeaturesEnabled() ||
       frame.IsFeatureEnabled(mojom::FeaturePolicyFeature::kMaxDownscalingImage))
     return false;
   // Invert the image if the image's size is more than 2 times bigger than the
@@ -258,8 +257,13 @@ void LayoutImage::ImageNotifyFinished(ImageResourceContent* new_image) {
   // Check for optimized image policies.
   if (View() && View()->GetFrameView()) {
     bool old_flag = ShouldInvertColor();
-    is_legacy_format_or_compressed_image_ = CheckForOptimizedImagePolicy(
-        View()->GetFrameView()->GetFrame(), this, new_image);
+    const LocalFrame& frame = View()->GetFrameView()->GetFrame();
+    is_legacy_format_or_compressed_image_ =
+        CheckForOptimizedImagePolicy(frame, this, new_image);
+    if (auto* image_element = ToHTMLImageElementOrNull(GetNode())) {
+      is_downscaled_image_ =
+          CheckForMaxDownscalingImagePolicy(frame, image_element, this);
+    }
     if (old_flag != ShouldInvertColor())
       UpdateShouldInvertColor();
   }
@@ -276,9 +280,8 @@ void LayoutImage::PaintReplaced(const PaintInfo& paint_info,
   ImagePainter(*this).PaintReplaced(paint_info, paint_offset);
 }
 
-void LayoutImage::Paint(const PaintInfo& paint_info,
-                        const LayoutPoint& paint_offset) const {
-  ImagePainter(*this).Paint(paint_info, paint_offset);
+void LayoutImage::Paint(const PaintInfo& paint_info) const {
+  ImagePainter(*this).Paint(paint_info);
 }
 
 void LayoutImage::AreaElementFocusChanged(HTMLAreaElement* area_element) {
@@ -350,8 +353,7 @@ bool LayoutImage::NodeAtPoint(HitTestResult& result,
                               const HitTestLocation& location_in_container,
                               const LayoutPoint& accumulated_offset,
                               HitTestAction hit_test_action) {
-  HitTestResult temp_result(result.GetHitTestRequest(),
-                            result.GetHitTestLocation());
+  HitTestResult temp_result(result);
   bool inside = LayoutReplaced::NodeAtPoint(
       temp_result, location_in_container, accumulated_offset, hit_test_action);
 
@@ -383,7 +385,7 @@ void LayoutImage::ComputeIntrinsicSizingInfo(
   // Our intrinsicSize is empty if we're laying out generated images with
   // relative width/height. Figure out the right intrinsic size to use.
   if (intrinsic_sizing_info.size.IsEmpty() &&
-      image_resource_->ImageHasRelativeSize()) {
+      image_resource_->ImageHasRelativeSize() && !IsLayoutNGListMarkerImage()) {
     LayoutObject* containing_block =
         IsOutOfFlowPositioned() ? Container() : ContainingBlock();
     if (containing_block->IsBox()) {

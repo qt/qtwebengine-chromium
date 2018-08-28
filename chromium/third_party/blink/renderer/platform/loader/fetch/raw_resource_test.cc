@@ -66,7 +66,7 @@ TEST_F(RawResourceTest, DontIgnoreAcceptForCacheReuse) {
   jpeg_request.SetHTTPAccept("image/jpeg");
 
   scoped_refptr<const SecurityOrigin> source_origin =
-      SecurityOrigin::CreateUnique();
+      SecurityOrigin::CreateUniqueOpaque();
 
   RawResource* jpeg_resource(
       RawResource::CreateForTest(jpeg_request, Resource::kRaw));
@@ -212,19 +212,6 @@ TEST_F(RawResourceTest, RemoveClientDuringCallback) {
                  Platform::Current()->CurrentThread()->GetTaskRunner().get());
   platform_->RunUntilIdle();
   EXPECT_FALSE(raw->IsAlive());
-}
-
-TEST_F(RawResourceTest,
-       CanReuseDevToolsEmulateNetworkConditionsClientIdHeader) {
-  scoped_refptr<const SecurityOrigin> source_origin =
-      SecurityOrigin::CreateUnique();
-  ResourceRequest request("data:text/html,");
-  request.SetHTTPHeaderField(
-      HTTPNames::X_DevTools_Emulate_Network_Conditions_Client_Id, "Foo");
-  Resource* raw = RawResource::CreateForTest(request, Resource::kRaw);
-  raw->SetSourceOrigin(source_origin);
-  EXPECT_TRUE(raw->CanReuse(FetchParameters(ResourceRequest("data:text/html,")),
-                            source_origin));
 }
 
 }  // namespace blink

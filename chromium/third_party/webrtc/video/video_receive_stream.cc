@@ -16,13 +16,14 @@
 #include <string>
 #include <utility>
 
-#include "api/optional.h"
+#include "absl/memory/memory.h"
+#include "absl/types/optional.h"
 #include "call/rtp_stream_receiver_controller_interface.h"
 #include "call/rtx_receive_stream.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/h264/profile_level_id.h"
-#include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "common_video/include/incoming_video_stream.h"
+#include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/rtp_rtcp/include/rtp_receiver.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/utility/include/process_thread.h"
@@ -34,7 +35,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/field_trial.h"
@@ -141,7 +141,7 @@ VideoReceiveStream::VideoReceiveStream(
   media_receiver_ = receiver_controller->CreateReceiver(
       config_.rtp.remote_ssrc, &rtp_video_stream_receiver_);
   if (config_.rtp.rtx_ssrc) {
-    rtx_receive_stream_ = rtc::MakeUnique<RtxReceiveStream>(
+    rtx_receive_stream_ = absl::make_unique<RtxReceiveStream>(
         &rtp_video_stream_receiver_, config.rtp.rtx_associated_payload_types,
         config_.rtp.remote_ssrc, rtp_receive_statistics_.get());
     rtx_receiver_ = receiver_controller->CreateReceiver(
@@ -300,10 +300,9 @@ void VideoReceiveStream::OnFrame(const VideoFrame& video_frame) {
   // function itself, another in GetChannel() and a third in
   // GetPlayoutTimestamp.  Seems excessive.  Anyhow, I'm assuming the function
   // succeeds most of the time, which leads to grabbing a fourth lock.
-  if (rtp_stream_sync_.GetStreamSyncOffsetInMs(video_frame.timestamp(),
-                                               video_frame.render_time_ms(),
-                                               &sync_offset_ms,
-                                               &estimated_freq_khz)) {
+  if (rtp_stream_sync_.GetStreamSyncOffsetInMs(
+          video_frame.timestamp(), video_frame.render_time_ms(),
+          &sync_offset_ms, &estimated_freq_khz)) {
     // TODO(tommi): OnSyncOffsetUpdated grabs a lock.
     stats_proxy_.OnSyncOffsetUpdated(sync_offset_ms, estimated_freq_khz);
   }
@@ -324,11 +323,6 @@ EncodedImageCallback::Result VideoReceiveStream::OnEncodedImage(
   size_t simulcast_idx = 0;
   if (codec_specific_info->codecType == kVideoCodecVP8) {
     simulcast_idx = codec_specific_info->codecSpecific.VP8.simulcastIdx;
-  }
-  if (config_.pre_decode_callback) {
-    config_.pre_decode_callback->EncodedFrameCallback(EncodedFrame(
-        encoded_image._buffer, encoded_image._length, encoded_image._frameType,
-        simulcast_idx, encoded_image._timeStamp));
   }
   {
     rtc::CritScope lock(&ivf_writer_lock_);
@@ -375,7 +369,7 @@ int VideoReceiveStream::id() const {
   return config_.rtp.remote_ssrc;
 }
 
-rtc::Optional<Syncable::Info> VideoReceiveStream::GetInfo() const {
+absl::optional<Syncable::Info> VideoReceiveStream::GetInfo() const {
   RTC_DCHECK_CALLED_SEQUENTIALLY(&module_process_sequence_checker_);
   Syncable::Info info;
 
@@ -384,16 +378,14 @@ rtc::Optional<Syncable::Info> VideoReceiveStream::GetInfo() const {
   if (!rtp_receiver->GetLatestTimestamps(
           &info.latest_received_capture_timestamp,
           &info.latest_receive_time_ms))
-    return rtc::nullopt;
+    return absl::nullopt;
 
   RtpRtcp* rtp_rtcp = rtp_video_stream_receiver_.rtp_rtcp();
   RTC_DCHECK(rtp_rtcp);
   if (rtp_rtcp->RemoteNTP(&info.capture_time_ntp_secs,
-                          &info.capture_time_ntp_frac,
-                          nullptr,
-                          nullptr,
+                          &info.capture_time_ntp_frac, nullptr, nullptr,
                           &info.capture_time_source_clock) != 0) {
-    return rtc::nullopt;
+    return absl::nullopt;
   }
 
   info.current_delay_ms = video_receiver_.Delay();
@@ -454,9 +446,9 @@ bool VideoReceiveStream::Decode() {
   } else {
     RTC_DCHECK_EQ(res, video_coding::FrameBuffer::ReturnReason::kTimeout);
     int64_t now_ms = clock_->TimeInMilliseconds();
-    rtc::Optional<int64_t> last_packet_ms =
+    absl::optional<int64_t> last_packet_ms =
         rtp_video_stream_receiver_.LastReceivedPacketMs();
-    rtc::Optional<int64_t> last_keyframe_packet_ms =
+    absl::optional<int64_t> last_keyframe_packet_ms =
         rtp_video_stream_receiver_.LastReceivedKeyframePacketMs();
 
     // To avoid spamming keyframe requests for a stream that is not active we

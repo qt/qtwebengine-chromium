@@ -80,6 +80,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   gfx::Rect GetBoundsInRootWindow() override;
   gfx::Size GetCompositorViewportPixelSize() const override;
   base::string16 GetSelectedText() override;
+  base::string16 GetSurroundingText() override;
+  gfx::Range GetSelectedRange() override;
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
   TouchSelectionControllerClientManager*
   GetTouchSelectionControllerClientManager() override;
@@ -126,7 +128,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   bool LockMouse() override;
   void UnlockMouse() override;
   viz::FrameSinkId GetRootFrameSinkId() override;
-  viz::LocalSurfaceId GetLocalSurfaceId() const override;
+  const viz::LocalSurfaceId& GetLocalSurfaceId() const override;
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
       override;
@@ -162,8 +164,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
  private:
   friend class RenderWidgetHostView;
 
-  void SendSurfaceInfoToEmbedderImpl(
-      const viz::SurfaceInfo& surface_info) override;
+  void FirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
 
   void OnDidUpdateVisualPropertiesComplete(
       const cc::RenderFrameMetadata& metadata);
@@ -187,7 +188,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
                           int browser_plugin_instance_id,
                           const blink::WebInputEvent* event);
 
-  bool HasEmbedderChanged() override;
+  void ProcessTouchpadPinchAckInRoot(const blink::WebGestureEvent& event,
+                                     InputEventAckState ack_result);
 
 #if defined(USE_AURA)
   void OnGotEmbedToken(const base::UnguessableToken& token);

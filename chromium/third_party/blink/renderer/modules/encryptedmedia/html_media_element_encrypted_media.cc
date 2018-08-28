@@ -5,12 +5,10 @@
 #include "third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.h"
 
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_typed_array.h"
@@ -18,6 +16,7 @@
 #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
 #include "third_party/blink/renderer/modules/encryptedmedia/media_encrypted_event.h"
 #include "third_party/blink/renderer/modules/encryptedmedia/media_keys.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/content_decryption_module_result.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -80,21 +79,24 @@ class SetContentDecryptionModuleResult final
       WebContentDecryptionModule*) override {
     NOTREACHED();
     std::move(failure_callback_)
-        .Run(kInvalidStateError, "Unexpected completion.");
+        .Run(ToExceptionCode(DOMExceptionCode::kInvalidStateError),
+             "Unexpected completion.");
   }
 
   void CompleteWithSession(
       WebContentDecryptionModuleResult::SessionStatus status) override {
     NOTREACHED();
     std::move(failure_callback_)
-        .Run(kInvalidStateError, "Unexpected completion.");
+        .Run(ToExceptionCode(DOMExceptionCode::kInvalidStateError),
+             "Unexpected completion.");
   }
 
   void CompleteWithKeyStatus(
       WebEncryptedMediaKeyInformation::KeyStatus key_status) override {
     NOTREACHED();
     std::move(failure_callback_)
-        .Run(kInvalidStateError, "Unexpected completion.");
+        .Run(ToExceptionCode(DOMExceptionCode::kInvalidStateError),
+             "Unexpected completion.");
   }
 
   void CompleteWithError(WebContentDecryptionModuleException code,
@@ -170,7 +172,7 @@ void SetMediaKeysHandler::ClearExistingMediaKeys() {
   if (new_media_keys_) {
     if (!new_media_keys_->ReserveForMediaElement(element_.Get())) {
       this_element.is_attaching_media_keys_ = false;
-      Fail(kQuotaExceededError,
+      Fail(ToExceptionCode(DOMExceptionCode::kQuotaExceededError),
            "The MediaKeys object is already in use by another media element.");
       return;
     }
@@ -274,8 +276,11 @@ void SetMediaKeysHandler::Fail(ExceptionCode code,
 
   // Reject promise with an appropriate error.
   ScriptState::Scope scope(GetScriptState());
-  v8::Isolate* isolate = GetScriptState()->GetIsolate();
-  Reject(V8ThrowDOMException::CreateDOMException(isolate, code, error_message));
+  ExceptionState exception_state(GetScriptState()->GetIsolate(),
+                                 ExceptionState::kExecutionContext,
+                                 "HTMLMediaElement", "setMediaKeys");
+  exception_state.ThrowException(code, error_message);
+  Reject(exception_state);
 }
 
 void SetMediaKeysHandler::ClearFailed(ExceptionCode code,
@@ -367,7 +372,7 @@ ScriptPromise HTMLMediaElementEncryptedMedia::setMediaKeys(
   //    promise rejected with an InvalidStateError.
   if (this_element.is_attaching_media_keys_) {
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kInvalidStateError,
+        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
                                            "Another request is in progress."));
   }
 

@@ -31,34 +31,27 @@
 #endif  // PDF_ENABLE_XFA
 
 CPDFSDK_PageView::CPDFSDK_PageView(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                                   UnderlyingPageType* page)
-    : m_page(page),
-      m_pFormFillEnv(pFormFillEnv),
-#ifndef PDF_ENABLE_XFA
-      m_bOwnsPage(false),
-#endif  // PDF_ENABLE_XFA
-      m_bOnWidget(false),
-      m_bValid(false),
-      m_bLocked(false),
-      m_bBeingDestroyed(false) {
-  CPDFSDK_InterForm* pInterForm = pFormFillEnv->GetInterForm();
-  CPDF_InterForm* pPDFInterForm = pInterForm->GetInterForm();
-#ifdef PDF_ENABLE_XFA
-  if (page->GetPDFPage())
-    pPDFInterForm->FixPageFields(page->GetPDFPage());
-#else   // PDF_ENABLE_XFA
-  pPDFInterForm->FixPageFields(page);
-  m_page->SetView(this);
-#endif  // PDF_ENABLE_XFA
+                                   IPDF_Page* page)
+    : m_page(page), m_pFormFillEnv(pFormFillEnv) {
+  ASSERT(m_page);
+  CPDF_Page* pPDFPage = ToPDFPage(page);
+  if (pPDFPage) {
+    CPDFSDK_InterForm* pInterForm = pFormFillEnv->GetInterForm();
+    CPDF_InterForm* pPDFInterForm = pInterForm->GetInterForm();
+    pPDFInterForm->FixPageFields(pPDFPage);
+    if (!page->AsXFAPage())
+      pPDFPage->SetView(this);
+  }
 }
 
 CPDFSDK_PageView::~CPDFSDK_PageView() {
-#ifndef PDF_ENABLE_XFA
-  // The call to |ReleaseAnnot| can cause the page pointed to by |m_page| to
-  // be freed, which will cause issues if we try to cleanup the pageview pointer
-  // in |m_page|. So, reset the pageview pointer before doing anything else.
-  m_page->SetView(nullptr);
-#endif  // PDF_ENABLE_XFA
+  if (!m_page->AsXFAPage()) {
+    // The call to |ReleaseAnnot| can cause the page pointed to by |m_page| to
+    // be freed, which will cause issues if we try to cleanup the pageview
+    // pointer in |m_page|. So, reset the pageview pointer before doing anything
+    // else.
+    m_page->AsPDFPage()->SetView(nullptr);
+  }
 
   CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
       m_pFormFillEnv->GetAnnotHandlerMgr();
@@ -67,21 +60,12 @@ CPDFSDK_PageView::~CPDFSDK_PageView() {
 
   m_SDKAnnotArray.clear();
   m_pAnnotList.reset();
-
-#ifndef PDF_ENABLE_XFA
-  if (m_bOwnsPage)
-    delete m_page;
-#endif  // PDF_ENABLE_XFA
 }
 
 void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
                                        CFX_Matrix* pUser2Device,
-#ifdef PDF_ENABLE_XFA
                                        CPDF_RenderOptions* pOptions,
                                        const FX_RECT& pClip) {
-#else
-                                       CPDF_RenderOptions* pOptions) {
-#endif  // PDF_ENABLE_XFA
   m_curMatrix = *pUser2Device;
 
 #ifdef PDF_ENABLE_XFA
@@ -207,22 +191,11 @@ bool CPDFSDK_PageView::DeleteAnnot(CPDFSDK_Annot* pAnnot) {
 #endif  // PDF_ENABLE_XFA
 
 CPDF_Document* CPDFSDK_PageView::GetPDFDocument() {
-  if (m_page) {
-#ifdef PDF_ENABLE_XFA
-    return m_page->GetDocumentExtension()->GetPDFDoc();
-#else   // PDF_ENABLE_XFA
-    return m_page->GetDocument();
-#endif  // PDF_ENABLE_XFA
-  }
-  return nullptr;
+  return m_page ? m_page->GetDocument() : nullptr;
 }
 
 CPDF_Page* CPDFSDK_PageView::GetPDFPage() const {
-#ifdef PDF_ENABLE_XFA
-  return m_page ? m_page->GetPDFPage() : nullptr;
-#else   // PDF_ENABLE_XFA
-  return m_page;
-#endif  // PDF_ENABLE_XFA
+  return ToPDFPage(m_page);
 }
 
 CPDFSDK_Annot* CPDFSDK_PageView::GetAnnotByDict(CPDF_Dictionary* pDict) {
@@ -477,9 +450,9 @@ void CPDFSDK_PageView::LoadFXAnnots() {
   m_bLocked = true;
 
 #ifdef PDF_ENABLE_XFA
-  RetainPtr<CPDFXFA_Page> protector(m_page);
+  RetainPtr<CPDFXFA_Page> protector(ToXFAPage(m_page));
   if (m_pFormFillEnv->GetXFAContext()->GetFormType() == FormType::kXFAFull) {
-    CXFA_FFPageView* pageView = m_page->GetXFAPageView();
+    CXFA_FFPageView* pageView = protector->GetXFAPageView();
     std::unique_ptr<IXFA_WidgetIterator> pWidgetHandler(
         pageView->CreateWidgetIterator(
             XFA_TRAVERSEWAY_Form,
@@ -535,11 +508,11 @@ int CPDFSDK_PageView::GetPageIndex() const {
     return -1;
 
 #ifdef PDF_ENABLE_XFA
-  auto* pContext =
-      static_cast<CPDFXFA_Context*>(m_page->GetDocumentExtension());
+  auto* pContext = static_cast<CPDFXFA_Context*>(
+      m_page->AsXFAPage()->GetDocumentExtension());
   switch (pContext->GetFormType()) {
     case FormType::kXFAFull: {
-      CXFA_FFPageView* pPageView = m_page->GetXFAPageView();
+      CXFA_FFPageView* pPageView = m_page->AsXFAPage()->GetXFAPageView();
       return pPageView ? pPageView->GetPageIndex() : -1;
     }
     case FormType::kNone:
@@ -575,7 +548,7 @@ CPDFSDK_Annot* CPDFSDK_PageView::GetFocusAnnot() {
 }
 
 int CPDFSDK_PageView::GetPageIndexForStaticPDF() const {
-  const CPDF_Dictionary* pDict = GetPDFPage()->GetFormDict();
+  const CPDF_Dictionary* pDict = GetPDFPage()->GetDict();
   CPDF_Document* pDoc = m_pFormFillEnv->GetPDFDocument();
   return (pDoc && pDict) ? pDoc->GetPageIndex(pDict->GetObjNum()) : -1;
 }

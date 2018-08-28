@@ -60,7 +60,13 @@ WindowTreeHostMus::WindowTreeHostMus(WindowTreeHostMusInitParams init_params)
   // If window-server is hosting viz, then use the FrameSinkId from the server.
   // In other cases, let a valid FrameSinkId be selected by
   // context_factory_private().
-  CreateCompositor(window_mus->GenerateFrameSinkIdFromServerId());
+  const bool force_software_compositor = false;
+  const bool external_begin_frames_enabled = false;
+  const bool are_events_in_pixels =
+      init_params.window_tree_client->is_using_pixels();
+  CreateCompositor(window_mus->GenerateFrameSinkIdFromServerId(),
+                   force_software_compositor, external_begin_frames_enabled,
+                   are_events_in_pixels);
   gfx::AcceleratedWidget accelerated_widget;
 // We need accelerated widget numbers to be different for each window and
 // fit in the smallest sizeof(AcceleratedWidget) uint32_t has this property.
@@ -84,7 +90,7 @@ WindowTreeHostMus::WindowTreeHostMus(WindowTreeHostMusInitParams init_params)
   if (!init_params.use_classic_ime) {
     // NOTE: This creates one InputMethodMus per display, despite the
     // call to SetSharedInputMethod() below.
-    input_method_ = std::make_unique<InputMethodMus>(this, window());
+    input_method_ = std::make_unique<InputMethodMus>(this, this);
     input_method_->Init(init_params.window_tree_client->connector());
     SetSharedInputMethod(input_method_.get());
   }
@@ -249,6 +255,15 @@ gfx::Transform WindowTreeHostMus::GetRootTransformForLocalEventCoordinates()
 
 int64_t WindowTreeHostMus::GetDisplayId() {
   return display_id_;
+}
+
+void WindowTreeHostMus::SetTextInputState(ui::mojom::TextInputStatePtr state) {
+  WindowPortMus::Get(window())->SetTextInputState(std::move(state));
+}
+
+void WindowTreeHostMus::SetImeVisibility(bool visible,
+                                         ui::mojom::TextInputStatePtr state) {
+  WindowPortMus::Get(window())->SetImeVisibility(visible, std::move(state));
 }
 
 }  // namespace aura

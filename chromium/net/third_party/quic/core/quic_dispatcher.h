@@ -19,17 +19,16 @@
 #include "net/third_party/quic/core/quic_connection.h"
 #include "net/third_party/quic/core/quic_crypto_server_stream.h"
 #include "net/third_party/quic/core/quic_packets.h"
+#include "net/third_party/quic/core/quic_process_packet_interface.h"
 #include "net/third_party/quic/core/quic_session.h"
+#include "net/third_party/quic/core/quic_time_wait_list_manager.h"
 #include "net/third_party/quic/core/quic_version_manager.h"
+#include "net/third_party/quic/core/stateless_rejector.h"
 #include "net/third_party/quic/platform/api/quic_containers.h"
 #include "net/third_party/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 
-#include "net/third_party/quic/core/quic_process_packet_interface.h"
-#include "net/third_party/quic/core/quic_time_wait_list_manager.h"
-#include "net/third_party/quic/core/stateless_rejector.h"
-
-namespace net {
+namespace quic {
 namespace test {
 class QuicDispatcherPeer;
 }  // namespace test
@@ -135,7 +134,6 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
   void OnDecryptedPacket(EncryptionLevel level) override;
   bool OnPacketHeader(const QuicPacketHeader& header) override;
   bool OnStreamFrame(const QuicStreamFrame& frame) override;
-  bool OnAckFrame(const QuicAckFrame& frame) override;
   bool OnAckFrameStart(QuicPacketNumber largest_acked,
                        QuicTime::Delta ack_delay_time) override;
   bool OnAckRange(QuicPacketNumber start,
@@ -146,9 +144,16 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
   bool OnPingFrame(const QuicPingFrame& frame) override;
   bool OnRstStreamFrame(const QuicRstStreamFrame& frame) override;
   bool OnConnectionCloseFrame(const QuicConnectionCloseFrame& frame) override;
+  bool OnApplicationCloseFrame(const QuicApplicationCloseFrame& frame) override;
+  bool OnStopSendingFrame(const QuicStopSendingFrame& frame) override;
+  bool OnPathChallengeFrame(const QuicPathChallengeFrame& frame) override;
+  bool OnPathResponseFrame(const QuicPathResponseFrame& frame) override;
   bool OnGoAwayFrame(const QuicGoAwayFrame& frame) override;
+  bool OnMaxStreamIdFrame(const QuicMaxStreamIdFrame& frame) override;
+  bool OnStreamIdBlockedFrame(const QuicStreamIdBlockedFrame& frame) override;
   bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) override;
   bool OnBlockedFrame(const QuicBlockedFrame& frame) override;
+  bool OnNewConnectionIdFrame(const QuicNewConnectionIdFrame& frame) override;
   void OnPacketComplete() override;
   bool IsValidStatelessResetToken(QuicUint128 token) const override;
   void OnAuthenticatedIetfStatelessResetPacket(
@@ -318,6 +323,17 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
   // Return true if the blocked writer should be added to blocked list.
   virtual bool ShouldAddToBlockedList();
 
+  // Called to terminate a connection statelessly. Depending on |format|, either
+  // 1) send connection close with |error_code| and |error_details| and add
+  // connection to time wait list or 2) directly add connection to time wait
+  // list with |action|.
+  void StatelesslyTerminateConnection(
+      QuicConnectionId connection_id,
+      PacketHeaderFormat format,
+      QuicErrorCode error_code,
+      const QuicString& error_details,
+      QuicTimeWaitListManager::TimeWaitAction action);
+
   // Save/Restore per packet context. Used by async stateless rejector.
   virtual std::unique_ptr<PerPacketContext> GetPerPacketContext() const;
   virtual void RestorePerPacketContext(
@@ -328,8 +344,6 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
   friend class StatelessRejectorProcessDoneCallback;
 
   typedef QuicUnorderedSet<QuicConnectionId> QuicConnectionIdSet;
-
-  bool HandlePacketForTimeWait(const QuicPacketHeader& header);
 
   // Attempts to reject the connection statelessly, if stateless rejects are
   // possible and if the current packet contains a CHLO message.  Determines a
@@ -443,6 +457,6 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
   DISALLOW_COPY_AND_ASSIGN(QuicDispatcher);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_DISPATCHER_H_

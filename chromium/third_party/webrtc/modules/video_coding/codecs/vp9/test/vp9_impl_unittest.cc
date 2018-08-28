@@ -8,8 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "api/video/color_space.h"
 #include "api/video/i420_buffer.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "media/base/vp9_profile.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/video_coding/codecs/test/video_codec_unittest.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
@@ -80,10 +82,16 @@ TEST_F(TestVp9Impl, EncodeDecode) {
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
             decoder_->Decode(encoded_frame, false, nullptr, 0));
   std::unique_ptr<VideoFrame> decoded_frame;
-  rtc::Optional<uint8_t> decoded_qp;
+  absl::optional<uint8_t> decoded_qp;
   ASSERT_TRUE(WaitForDecodedFrame(&decoded_frame, &decoded_qp));
   ASSERT_TRUE(decoded_frame);
   EXPECT_GT(I420PSNR(input_frame, decoded_frame.get()), 36);
+
+  const ColorSpace color_space = decoded_frame->color_space().value();
+  EXPECT_EQ(ColorSpace::PrimaryID::kInvalid, color_space.primaries());
+  EXPECT_EQ(ColorSpace::TransferID::kInvalid, color_space.transfer());
+  EXPECT_EQ(ColorSpace::MatrixID::kInvalid, color_space.matrix());
+  EXPECT_EQ(ColorSpace::RangeID::kLimited, color_space.range());
 }
 
 // We only test the encoder here, since the decoded frame rotation is set based
@@ -118,7 +126,7 @@ TEST_F(TestVp9Impl, DecodedQpEqualsEncodedQp) {
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
             decoder_->Decode(encoded_frame, false, nullptr, 0));
   std::unique_ptr<VideoFrame> decoded_frame;
-  rtc::Optional<uint8_t> decoded_qp;
+  absl::optional<uint8_t> decoded_qp;
   ASSERT_TRUE(WaitForDecodedFrame(&decoded_frame, &decoded_qp));
   ASSERT_TRUE(decoded_frame);
   ASSERT_TRUE(decoded_qp);
@@ -218,14 +226,17 @@ TEST_F(TestVp9Impl, EncoderExplicitLayering) {
 }
 
 TEST_F(TestVp9Impl, EnableDisableSpatialLayers) {
-  // Configure encoder to produce N spatial layers. Encode few frames of layer 0
-  // then enable layer 1 and encode few more frames and so on until layer N-1.
+  // Configure encoder to produce N spatial layers. Encode frames of layer 0
+  // then enable layer 1 and encode more frames and so on until layer N-1.
   // Then disable layers one by one in the same way.
+  // Note: bit rate allocation is high to avoid frame dropping due to rate
+  // control, the encoder should always produce a frame. A dropped
+  // frame indicates a problem and the test will fail.
   const size_t num_spatial_layers = 3;
-  const size_t num_frames_to_encode = 2;
+  const size_t num_frames_to_encode = 5;
 
   ConfigureSvc(num_spatial_layers);
-  codec_settings_.VP9()->frameDroppingOn = false;
+  codec_settings_.VP9()->frameDroppingOn = true;
 
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
             encoder_->InitEncode(&codec_settings_, 1 /* number of cores */,
@@ -233,8 +244,10 @@ TEST_F(TestVp9Impl, EnableDisableSpatialLayers) {
 
   VideoBitrateAllocation bitrate_allocation;
   for (size_t sl_idx = 0; sl_idx < num_spatial_layers; ++sl_idx) {
+    // Allocate high bit rate to avoid frame dropping due to rate control.
     bitrate_allocation.SetBitrate(
-        sl_idx, 0, codec_settings_.spatialLayers[sl_idx].targetBitrate * 1000);
+        sl_idx, 0,
+        codec_settings_.spatialLayers[sl_idx].targetBitrate * 1000 * 2);
     EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
               encoder_->SetRateAllocation(bitrate_allocation,
                                           codec_settings_.maxFramerate));
@@ -310,7 +323,7 @@ TEST_F(TestVp9Impl, EndOfPicture) {
             encoder_->Encode(*NextInputFrame(), nullptr, nullptr));
 
   ASSERT_TRUE(WaitForEncodedFrames(&frames, &codec_specific));
-  EXPECT_EQ(codec_specific[0].codecSpecific.VP9.spatial_idx, 0);
+  EXPECT_EQ(codec_specific[0].codecSpecific.VP9.spatial_idx, kNoSpatialIdx);
   EXPECT_TRUE(codec_specific[0].codecSpecific.VP9.end_of_picture);
 }
 
@@ -434,7 +447,7 @@ class TestVp9ImplFrameDropping : public TestVp9Impl {
     // to reduce execution time.
     codec_settings->width = 64;
     codec_settings->height = 64;
-    codec_settings->mode = kScreensharing;
+    codec_settings->mode = VideoCodecMode::kScreensharing;
   }
 };
 
@@ -458,6 +471,64 @@ TEST_F(TestVp9ImplFrameDropping, PreEncodeFrameDropping) {
   const float encoded_framerate_fps = num_encoded_frames / video_duration_secs;
   EXPECT_NEAR(encoded_framerate_fps, expected_framerate_fps,
               max_abs_framerate_error_fps);
+}
+
+class TestVp9ImplProfile2 : public TestVp9Impl {
+ protected:
+  void SetUp() override {
+    // Profile 2 might not be available on some platforms until
+    // https://bugs.chromium.org/p/webm/issues/detail?id=1544 is solved.
+    bool profile_2_is_supported = false;
+    for (const auto& codec : SupportedVP9Codecs()) {
+      if (ParseSdpForVP9Profile(codec.parameters)
+              .value_or(VP9Profile::kProfile0) == VP9Profile::kProfile2) {
+        profile_2_is_supported = true;
+      }
+    }
+    if (!profile_2_is_supported)
+      return;
+
+    TestVp9Impl::SetUp();
+    input_frame_generator_ = test::FrameGenerator::CreateSquareGenerator(
+        codec_settings_.width, codec_settings_.height,
+        test::FrameGenerator::OutputType::I010, absl::optional<int>());
+  }
+
+  std::unique_ptr<VideoEncoder> CreateEncoder() override {
+    cricket::VideoCodec profile2_codec;
+    profile2_codec.SetParam(kVP9FmtpProfileId,
+                            VP9ProfileToString(VP9Profile::kProfile2));
+    return VP9Encoder::Create(profile2_codec);
+  }
+
+  std::unique_ptr<VideoDecoder> CreateDecoder() override {
+    return VP9Decoder::Create();
+  }
+};
+
+TEST_F(TestVp9ImplProfile2, EncodeDecode) {
+  if (!encoder_)
+    return;
+
+  VideoFrame* input_frame = NextInputFrame();
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            encoder_->Encode(*input_frame, nullptr, nullptr));
+  EncodedImage encoded_frame;
+  CodecSpecificInfo codec_specific_info;
+  ASSERT_TRUE(WaitForEncodedFrame(&encoded_frame, &codec_specific_info));
+  // First frame should be a key frame.
+  encoded_frame._frameType = kVideoFrameKey;
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            decoder_->Decode(encoded_frame, false, nullptr, 0));
+  std::unique_ptr<VideoFrame> decoded_frame;
+  absl::optional<uint8_t> decoded_qp;
+  ASSERT_TRUE(WaitForDecodedFrame(&decoded_frame, &decoded_qp));
+  ASSERT_TRUE(decoded_frame);
+
+  // TODO(emircan): Add PSNR for different color depths.
+  EXPECT_GT(I420PSNR(*input_frame->video_frame_buffer()->ToI420(),
+                     *decoded_frame->video_frame_buffer()->ToI420()),
+            31);
 }
 
 }  // namespace webrtc

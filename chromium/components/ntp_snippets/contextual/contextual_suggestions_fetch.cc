@@ -79,7 +79,7 @@ Cluster PivotToCluster(const PivotCluster& pivot) {
   return cluster_builder.Build();
 }
 
-PeekConditions PeekConditionsFromResponse(
+PeekConditions GetPeekConditionsFromResponse(
     const GetPivotsResponse& response_proto) {
   AutoPeekConditions proto_conditions =
       response_proto.pivots().auto_peek_conditions();
@@ -95,7 +95,7 @@ PeekConditions PeekConditionsFromResponse(
   return peek_conditions;
 }
 
-std::vector<Cluster> ClustersFromResponse(
+std::vector<Cluster> GetClustersFromResponse(
     const GetPivotsResponse& response_proto) {
   std::vector<Cluster> clusters;
   Pivots pivots = response_proto.pivots();
@@ -122,7 +122,7 @@ std::vector<Cluster> ClustersFromResponse(
   return clusters;
 }
 
-std::string PeekTextFromResponse(const GetPivotsResponse& response_proto) {
+std::string GetPeekTextFromResponse(const GetPivotsResponse& response_proto) {
   return response_proto.pivots().peek_text().text();
 }
 
@@ -153,12 +153,26 @@ const std::string SerializedPivotsRequest(const std::string& url,
   return pivot_request.SerializeAsString();
 }
 
+ServerExperimentInfos GetServerExperimentInfosFromResponse(
+    const GetPivotsResponse& response_proto) {
+  ServerExperimentInfos field_trials;
+  for (auto experiment_info : response_proto.pivots().experiment_info()) {
+    std::string trial_name = experiment_info.experiment_group_name();
+    std::string group_name = experiment_info.experiment_arm_name();
+    if (!trial_name.empty() && !group_name.empty())
+      field_trials.emplace_back(std::move(trial_name), std::move(group_name));
+  }
+
+  return field_trials;
+}
+
 ContextualSuggestionsResult ResultFromResponse(
     const GetPivotsResponse& response_proto) {
   return ContextualSuggestionsResult(
-      PeekTextFromResponse(response_proto),
-      ClustersFromResponse(response_proto),
-      PeekConditionsFromResponse(response_proto));
+      GetPeekTextFromResponse(response_proto),
+      GetClustersFromResponse(response_proto),
+      GetPeekConditionsFromResponse(response_proto),
+      GetServerExperimentInfosFromResponse(response_proto));
 }
 
 }  // namespace
@@ -177,6 +191,10 @@ const std::string ContextualSuggestionsFetch::GetFetchEndpoint() {
     fetch_endpoint =
         base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             kFetchEndpointUrlKey);
+  } else if (base::FeatureList::IsEnabled(
+                 contextual_suggestions::kContextualSuggestionsButton)) {
+    fetch_endpoint = base::GetFieldTrialParamValueByFeature(
+        kContextualSuggestionsButton, kFetchEndpointUrlKey);
   } else {
     fetch_endpoint = base::GetFieldTrialParamValueByFeature(
         kContextualSuggestionsBottomSheet, kFetchEndpointUrlKey);
@@ -206,8 +224,6 @@ void ContextualSuggestionsFetch::Start(
 
 std::unique_ptr<network::SimpleURLLoader>
 ContextualSuggestionsFetch::MakeURLLoader() const {
-  // TODO(pnoland, https://crbug.com/831693): Update this once there's an
-  // opt-out setting.
   net::NetworkTrafficAnnotationTag traffic_annotation =
       net::DefineNetworkTrafficAnnotation("ntp_contextual_suggestions_fetch",
                                           R"(
@@ -226,8 +242,8 @@ ContextualSuggestionsFetch::MakeURLLoader() const {
         policy {
           cookies_allowed: NO
           setting:
-            "This feature can be disabled by the flag "
-            "enable-contextual-suggestions-bottom-sheet."
+            "This feature can be disabled by turning off the "
+            "'Suggest related pages' in Chrome for Android settings"
           policy_exception_justification: "Not implemented. The feature is "
           "currently Android-only and disabled for all enterprise users. "
           "A policy will be added before enabling for enterprise users."
@@ -274,11 +290,9 @@ void ContextualSuggestionsFetch::OnURLLoaderComplete(
     std::unique_ptr<std::string> result) {
   ContextualSuggestionsResult suggestions_result;
 
-  int32_t response_code = 0;
-  int32_t error_code = url_loader_->NetError();
   if (result) {
-    response_code = url_loader_->ResponseInfo()->headers->response_code();
-
+    int32_t response_code =
+        url_loader_->ResponseInfo()->headers->response_code();
     if (response_code == net::HTTP_OK) {
       // The response comes in the format (length, bytes) where length is a
       // varint32 encoded int. Rather than hand-rolling logic to skip the
@@ -294,22 +308,38 @@ void ContextualSuggestionsFetch::OnURLLoaderComplete(
         }
       }
     }
-
-    UMA_HISTOGRAM_COUNTS_1M("ContextualSuggestions.FetchResponseSizeKB",
-                            static_cast<int>(result->length() / 1024));
   }
 
-  ReportFetchMetrics(error_code, response_code,
-                     suggestions_result.clusters.size(),
+  ReportFetchMetrics(suggestions_result.clusters.size(),
                      std::move(metrics_callback));
   std::move(request_completed_callback_).Run(std::move(suggestions_result));
 }
 
 void ContextualSuggestionsFetch::ReportFetchMetrics(
-    int32_t error_code,
-    int32_t response_code,
     size_t clusters_size,
     ReportFetchMetricsCallback metrics_callback) {
+  int32_t error_code = url_loader_->NetError();
+  int32_t response_code = 0;
+
+  base::UmaHistogramSparse("ContextualSuggestions.FetchErrorCode", error_code);
+  if (error_code == net::OK) {
+    const network::ResourceResponseHead* response_info =
+        url_loader_->ResponseInfo();
+    response_code = response_info->headers->response_code();
+    if (response_code > 0) {
+      base::UmaHistogramSparse("ContextualSuggestions.FetchResponseCode",
+                               response_code);
+
+      UMA_HISTOGRAM_COUNTS_1M("ContextualSuggestions.FetchResponseNetworkBytes",
+                              response_info->encoded_data_length);
+    }
+
+    base::TimeDelta latency_delta =
+        response_info->response_time - response_info->request_time;
+    UMA_HISTOGRAM_COUNTS_1M("ContextualSuggestions.FetchLatencyMilliseconds",
+                            latency_delta.InMilliseconds());
+  }
+
   ContextualSuggestionsEvent event;
   if (error_code != net::OK) {
     event = FETCH_ERROR;
@@ -321,12 +351,6 @@ void ContextualSuggestionsFetch::ReportFetchMetrics(
     event = FETCH_EMPTY;
   } else {
     event = FETCH_COMPLETED;
-  }
-
-  base::UmaHistogramSparse("ContextualSuggestions.FetchErrorCode", error_code);
-  if (response_code > 0) {
-    base::UmaHistogramSparse("ContextualSuggestions.FetchResponseCode",
-                             response_code);
   }
 
   std::move(metrics_callback).Run(event);

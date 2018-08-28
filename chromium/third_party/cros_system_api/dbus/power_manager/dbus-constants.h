@@ -6,15 +6,19 @@
 #define SYSTEM_API_DBUS_POWER_MANAGER_DBUS_CONSTANTS_H_
 
 namespace power_manager {
+
 // powerd
 const char kPowerManagerInterface[] = "org.chromium.PowerManager";
 const char kPowerManagerServicePath[] = "/org/chromium/PowerManager";
 const char kPowerManagerServiceName[] = "org.chromium.PowerManager";
+
 // Methods exposed by powerd.
 const char kDecreaseScreenBrightnessMethod[] = "DecreaseScreenBrightness";
 const char kIncreaseScreenBrightnessMethod[] = "IncreaseScreenBrightness";
 const char kGetScreenBrightnessPercentMethod[] = "GetScreenBrightnessPercent";
 const char kSetScreenBrightnessPercentMethod[] = "SetScreenBrightnessPercent";
+const char kGetKeyboardBrightnessPercentMethod[] =
+    "GetKeyboardBrightnessPercent";
 const char kDecreaseKeyboardBrightnessMethod[] = "DecreaseKeyboardBrightness";
 const char kIncreaseKeyboardBrightnessMethod[] = "IncreaseKeyboardBrightness";
 const char kRequestRestartMethod[] = "RequestRestart";
@@ -40,9 +44,11 @@ const char kHandlePowerButtonAcknowledgmentMethod[] =
 const char kIgnoreNextPowerButtonPressMethod[] = "IgnoreNextPowerButtonPress";
 const char kRecordDarkResumeWakeReasonMethod[] = "RecordDarkResumeWakeReason";
 const char kGetInactivityDelaysMethod[] = "GetInactivityDelays";
+const char kDeferScreenDimMethod[] = "DeferScreenDim";
 const char kCreateArcTimersMethod[] = "CreateArcTimers";
 const char kStartArcTimerMethod[] = "StartArcTimer";
 const char kDeleteArcTimersMethod[] = "DeleteArcTimers";
+
 // Signals emitted by powerd.
 const char kScreenBrightnessChangedSignal[] = "ScreenBrightnessChanged";
 const char kKeyboardBrightnessChangedSignal[] = "KeyboardBrightnessChanged";
@@ -52,10 +58,12 @@ const char kSuspendImminentSignal[] = "SuspendImminent";
 const char kDarkSuspendImminentSignal[] = "DarkSuspendImminent";
 const char kSuspendDoneSignal[] = "SuspendDone";
 const char kInputEventSignal[] = "InputEvent";
+const char kScreenDimImminentSignal[] = "ScreenDimImminent";
 const char kIdleActionImminentSignal[] = "IdleActionImminent";
 const char kIdleActionDeferredSignal[] = "IdleActionDeferred";
 const char kScreenIdleStateChangedSignal[] = "ScreenIdleStateChanged";
 const char kInactivityDelaysChangedSignal[] = "InactivityDelaysChanged";
+
 // Values
 const int kBrightnessTransitionGradual = 1;
 const int kBrightnessTransitionInstant = 2;
@@ -81,6 +89,7 @@ enum RequestShutdownReason {
   // Some other reason.
   REQUEST_SHUTDOWN_OTHER = 1,
 };
+
 }  // namespace power_manager
 
 #endif  // SYSTEM_API_DBUS_POWER_MANAGER_DBUS_CONSTANTS_H_

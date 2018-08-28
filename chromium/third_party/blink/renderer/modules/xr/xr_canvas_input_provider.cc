@@ -66,8 +66,8 @@ void XRCanvasInputProvider::Stop() {
 }
 
 bool XRCanvasInputProvider::ShouldProcessEvents() {
-  // Don't process canvas gestures if there's an active exclusive session.
-  return !(session_->device()->frameProvider()->exclusive_session());
+  // Don't process canvas gestures if there's an active immersive session.
+  return !(session_->device()->frameProvider()->immersive_session());
 }
 
 void XRCanvasInputProvider::OnClick(MouseEvent* event) {
@@ -86,7 +86,7 @@ void XRCanvasInputProvider::UpdateInputSource(MouseEvent* event) {
 
   if (!input_source_) {
     input_source_ = new XRInputSource(session_, 0);
-    input_source_->SetPointerOrigin(XRInputSource::kOriginScreen);
+    input_source_->SetTargetRayMode(XRInputSource::kScreen);
   }
 
   // Get the event location relative to the canvas element.
@@ -115,11 +115,6 @@ void XRCanvasInputProvider::Trace(blink::Visitor* visitor) {
   visitor->Trace(canvas_);
   visitor->Trace(listener_);
   visitor->Trace(input_source_);
-}
-
-void XRCanvasInputProvider::TraceWrappers(
-    blink::ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(input_source_);
 }
 
 }  // namespace blink

@@ -4,12 +4,14 @@
 
 #include "third_party/blink/renderer/modules/locks/lock.h"
 
+#include "third_party/blink/renderer/bindings/core/v8/script_function.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/locks/lock_manager.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -144,7 +146,8 @@ void Lock::ReleaseIfHeld() {
 
 void Lock::OnConnectionError() {
   resolver_->Reject(DOMException::Create(
-      kAbortError, "Lock broken by another request with the 'steal' option."));
+      DOMExceptionCode::kAbortError,
+      "Lock broken by another request with the 'steal' option."));
 }
 
 }  // namespace blink

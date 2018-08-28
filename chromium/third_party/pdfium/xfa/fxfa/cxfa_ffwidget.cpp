@@ -65,9 +65,7 @@ FXDIB_Format XFA_GetDIBFormat(FXCODEC_IMAGE_TYPE type,
 
 bool IsFXCodecErrorStatus(FXCODEC_STATUS status) {
   return (status == FXCODEC_STATUS_ERROR ||
-#ifdef PDF_ENABLE_XFA
           status == FXCODEC_STATUS_ERR_MEMORY ||
-#endif  // PDF_ENABLE_XFA
           status == FXCODEC_STATUS_ERR_READ ||
           status == FXCODEC_STATUS_ERR_FLUSH ||
           status == FXCODEC_STATUS_ERR_FORMAT ||
@@ -320,8 +318,6 @@ bool CXFA_FFWidget::LoadWidget() {
   return true;
 }
 
-void CXFA_FFWidget::UnloadWidget() {}
-
 bool CXFA_FFWidget::PerformLayout() {
   RecacheWidgetRect();
   return true;
@@ -353,7 +349,7 @@ void CXFA_FFWidget::DrawBorderWithFlag(CXFA_Graphics* pGS,
 void CXFA_FFWidget::InvalidateRect() {
   CFX_RectF rtWidget = GetBBox(XFA_WidgetStatus_Focused);
   rtWidget.Inflate(2, 2);
-  m_pDocView->InvalidateRect(m_pPageView, rtWidget);
+  m_pDocView->InvalidateRect(m_pPageView.Get(), rtWidget);
 }
 
 bool CXFA_FFWidget::OnMouseEnter() {
@@ -585,14 +581,6 @@ bool CXFA_FFWidget::IsAncestorOf(CXFA_FFWidget* pWidget) {
 
 bool CXFA_FFWidget::PtInActiveRect(const CFX_PointF& point) {
   return GetWidgetRect().Contains(point);
-}
-
-CXFA_FFDocView* CXFA_FFWidget::GetDocView() {
-  return m_pDocView;
-}
-
-void CXFA_FFWidget::SetDocView(CXFA_FFDocView* pDocView) {
-  m_pDocView = pDocView;
 }
 
 CXFA_FFDoc* CXFA_FFWidget::GetDoc() {

@@ -8,9 +8,9 @@
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_location.h"
-#include "third_party/blink/renderer/modules/serviceworkers/respond_with_observer.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_global_scope_client.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_window_client_callback.h"
+#include "third_party/blink/renderer/modules/service_worker/respond_with_observer.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_global_scope_client.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_window_client_callback.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
@@ -59,7 +59,7 @@ void CanMakePaymentEvent::respondWith(ScriptState* script_state,
                                       ExceptionState& exception_state) {
   if (!isTrusted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "Cannot respond with data when the event is not trusted");
     return;
   }
@@ -85,8 +85,12 @@ CanMakePaymentEvent::CanMakePaymentEvent(
     : ExtendableEvent(type, initializer, wait_until_observer),
       top_origin_(initializer.topOrigin()),
       payment_request_origin_(initializer.paymentRequestOrigin()),
-      method_data_(std::move(initializer.methodData())),
-      modifiers_(initializer.modifiers()),
+      method_data_(initializer.hasMethodData()
+                       ? initializer.methodData()
+                       : HeapVector<PaymentMethodData>()),
+      modifiers_(initializer.hasModifiers()
+                     ? initializer.modifiers()
+                     : HeapVector<PaymentDetailsModifier>()),
       observer_(respond_with_observer) {}
 
 }  // namespace blink

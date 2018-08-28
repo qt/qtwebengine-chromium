@@ -11,7 +11,7 @@
 #include "build/build_config.h"
 #include "content/common/dom_storage/dom_storage_map.h"
 #include "content/renderer/dom_storage/dom_storage_proxy.h"
-#include "third_party/blink/public/platform/scheduler/web_main_thread_scheduler.h"
+#include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 
 namespace content {
 
@@ -19,7 +19,7 @@ DOMStorageCachedArea::DOMStorageCachedArea(
     const std::string& namespace_id,
     const GURL& origin,
     DOMStorageProxy* proxy,
-    blink::scheduler::WebMainThreadScheduler* main_thread_scheduler)
+    blink::scheduler::WebThreadScheduler* main_thread_scheduler)
     : ignore_all_mutations_(false),
       namespace_id_(namespace_id),
       origin_(origin),
@@ -34,10 +34,12 @@ unsigned DOMStorageCachedArea::GetLength(int connection_id) {
   return map_->Length();
 }
 
-base::NullableString16 DOMStorageCachedArea::GetKey(int connection_id,
-                                                    unsigned index) {
+base::NullableString16 DOMStorageCachedArea::GetKey(
+    int connection_id,
+    unsigned index,
+    bool* did_decrease_iterator) {
   PrimeIfNeeded(connection_id);
-  return map_->Key(index);
+  return map_->Key(index, did_decrease_iterator);
 }
 
 base::NullableString16 DOMStorageCachedArea::GetItem(

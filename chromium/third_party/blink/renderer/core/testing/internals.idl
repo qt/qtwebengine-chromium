@@ -120,8 +120,6 @@ enum EffectiveConnectionType {
     void setTextMatchMarkersActive(Node node, unsigned long startOffset, unsigned long endOffset, boolean active);
     void setMarkedTextMatchesAreHighlighted(Document document, boolean highlight);
 
-    [RaisesException] void setFrameViewPosition(Document document, long x, long y);
-
     [RaisesException] DOMString viewportAsText(Document document,
                                                float devicePixelRatio,
                                                long availableWidth,
@@ -171,8 +169,8 @@ enum EffectiveConnectionType {
     sequence<DOMString> svgTags();
 
     [RaisesException] NodeList nodesFromRect(Document document, long x, long y,
-        unsigned long topPadding, unsigned long rightPadding, unsigned long bottomPadding, unsigned long leftPadding,
-        boolean ignoreClipping, boolean allowChildFrameContent);
+        unsigned long width, unsigned long height, boolean ignoreClipping,
+        boolean allowChildFrameContent);
 
     [RaisesException] boolean hasSpellingMarker(Document document, long from, long length);
     [RaisesException] boolean hasGrammarMarker(Document document, long from, long length);
@@ -349,16 +347,13 @@ enum EffectiveConnectionType {
     DOMString selectedTextForClipboard();
 
     void setVisualViewportOffset(long x, long y);
-    long visualViewportHeight();
-    long visualViewportWidth();
-    double visualViewportScrollX();
-    double visualViewportScrollY();
 
     boolean magnifyScaleAroundAnchor(float offset, float x, float y);
 
     boolean isUseCounted(Document document, unsigned long feature);
     boolean isCSSPropertyUseCounted(Document document, DOMString propertyName);
     boolean isAnimatedCSSPropertyUseCounted(Document document, DOMString propertyName);
+    void clearUseCounter(Document document, unsigned long feature);
 
     sequence<DOMString> getCSSPropertyLonghands();
     sequence<DOMString> getCSSPropertyShorthands();

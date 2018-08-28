@@ -45,7 +45,8 @@ class MEDIA_EXPORT DecryptConfig {
   // |encryption_pattern| is the pattern used ('cbcs' only). It is optional
   //   as Common encryption of MPEG-2 transport streams v1 (23009-1:2014)
   //   does not specify patterns for cbcs encryption mode. The pattern is
-  //   assumed to be 1:9 for video and 1:0 for audio.
+  //   assumed to be 1:9 for video. Tracks other than video are protected
+  //   using whole-block full-sample encryption (pattern 0:0 or unspecified).
   static std::unique_ptr<DecryptConfig> CreateCencConfig(
       const std::string& key_id,
       const std::string& iv,
@@ -71,6 +72,8 @@ class MEDIA_EXPORT DecryptConfig {
     return encryption_pattern_;
   };
 
+  std::unique_ptr<DecryptConfig> Clone() const;
+
   // Returns whether this config has EncryptionPattern set or not.
   bool HasPattern() const;
 
@@ -81,6 +84,8 @@ class MEDIA_EXPORT DecryptConfig {
   std::ostream& Print(std::ostream& os) const;
 
  private:
+  DecryptConfig(const DecryptConfig& other);
+
   const EncryptionMode encryption_mode_;
   const std::string key_id_;
 
@@ -94,7 +99,7 @@ class MEDIA_EXPORT DecryptConfig {
   // Only specified if |encryption_mode_| requires a pattern.
   base::Optional<EncryptionPattern> encryption_pattern_;
 
-  DISALLOW_COPY_AND_ASSIGN(DecryptConfig);
+  DISALLOW_ASSIGN(DecryptConfig);
 };
 
 }  // namespace media

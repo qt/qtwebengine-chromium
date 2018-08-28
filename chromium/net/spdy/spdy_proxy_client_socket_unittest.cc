@@ -138,9 +138,9 @@ class SpdyProxyClientSocketTest : public PlatformTest,
   BoundTestNetLog net_log_;
 
  private:
-  std::unique_ptr<HttpNetworkSession> session_;
   scoped_refptr<IOBuffer> read_buf_;
   SpdySessionDependencies session_deps_;
+  std::unique_ptr<HttpNetworkSession> session_;
   MockConnect connect_data_;
   base::WeakPtr<SpdySession> spdy_session_;
   std::string user_agent_;
@@ -174,7 +174,7 @@ SpdyProxyClientSocketTest::~SpdyProxyClientSocketTest() {
 }
 
 void SpdyProxyClientSocketTest::TearDown() {
-  if (session_.get() != NULL)
+  if (session_)
     session_->spdy_session_pool()->CloseAllSessions();
 
   // Empty the current queue.
@@ -193,8 +193,6 @@ void SpdyProxyClientSocketTest::Initialize(base::span<const MockRead> reads,
       ImportCertFromFile(GetTestCertsDirectory(), "spdy_pooling.pem");
   ASSERT_TRUE(ssl.ssl_info.cert);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
-
-  session_deps_.host_resolver->set_synchronous_mode(true);
 
   session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
 
@@ -1301,18 +1299,18 @@ TEST_F(SpdyProxyClientSocketTest, NetLog) {
   base::RunLoop().RunUntilIdle();
 }
 
-// CompletionCallback that causes the SpdyProxyClientSocket to be
-// deleted when Run is invoked.
+// A helper class that will delete |sock| when the callback is invoked.
 class DeleteSockCallback : public TestCompletionCallbackBase {
  public:
   explicit DeleteSockCallback(std::unique_ptr<SpdyProxyClientSocket>* sock)
-      : sock_(sock),
-        callback_(base::Bind(&DeleteSockCallback::OnComplete,
-                             base::Unretained(this))) {}
+      : sock_(sock) {}
 
   ~DeleteSockCallback() override = default;
 
-  const CompletionCallback& callback() const { return callback_; }
+  CompletionOnceCallback callback() {
+    return base::BindOnce(&DeleteSockCallback::OnComplete,
+                          base::Unretained(this));
+  }
 
  private:
   void OnComplete(int result) {
@@ -1321,7 +1319,6 @@ class DeleteSockCallback : public TestCompletionCallbackBase {
   }
 
   std::unique_ptr<SpdyProxyClientSocket>* sock_;
-  CompletionCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(DeleteSockCallback);
 };

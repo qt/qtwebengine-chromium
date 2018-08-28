@@ -26,9 +26,9 @@
 #include "content/common/content_export.h"
 #include "content/common/service_worker/controller_service_worker.mojom.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
-#include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
-#include "content/common/service_worker/service_worker_status_code.h"
+#include "content/common/service_worker/service_worker.mojom.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
+#include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
 #include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
@@ -41,6 +41,11 @@ class ServiceWorkerContentSettingsProxyImpl;
 class ServiceWorkerContextCore;
 class ServiceWorkerVersion;
 
+namespace service_worker_new_script_loader_unittest {
+class ServiceWorkerNewScriptLoaderTest;
+FORWARD_DECLARE_TEST(ServiceWorkerNewScriptLoaderTest, AccessedNetwork);
+}  // namespace service_worker_new_script_loader_unittest
+
 // This gives an interface to control one EmbeddedWorker instance, which
 // may be 'in-waiting' or running in one of the child processes added by
 // AddProcessReference().
@@ -50,7 +55,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
     : public mojom::EmbeddedWorkerInstanceHost {
  public:
   class DevToolsProxy;
-  using StatusCallback = base::OnceCallback<void(ServiceWorkerStatusCode)>;
+  using StatusCallback =
+      base::OnceCallback<void(blink::ServiceWorkerStatusCode)>;
 
   // This enum is used in UMA histograms. Append-only.
   enum StartingPhase {
@@ -60,23 +66,20 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
     SENT_START_WORKER = 3,
     SCRIPT_DOWNLOADING = 4,
     SCRIPT_LOADED = 5,
-    SCRIPT_EVALUATED = 6,
-    // THREAD_STARTED happens after SCRIPT_LOADED and before SCRIPT_EVALUATED
-    THREAD_STARTED = 7,
+    // SCRIPT_EVALUATED = 6,  // Obsolete
+    // THREAD_STARTED = 7,  // Obsolete
     // Script read happens after SENT_START_WORKER and before SCRIPT_LOADED
     // (installed scripts only)
     SCRIPT_READ_STARTED = 8,
     SCRIPT_READ_FINISHED = 9,
     SCRIPT_STREAMING = 10,
-    // Add new values here.
+    SCRIPT_EVALUATION = 11,
+    // Add new values here and update enums.xml.
     STARTING_PHASE_MAX_VALUE,
   };
 
-  using ProviderInfoGetter =
-      base::OnceCallback<mojom::ServiceWorkerProviderInfoForStartWorkerPtr(
-          int /* process_id */,
-          scoped_refptr<network::SharedURLLoaderFactory>)>;
-
+  // DEPRECATED, only for use by ServiceWorkerVersion.
+  // TODO(crbug.com/855852): Remove this interface.
   class Listener {
    public:
     virtual ~Listener() {}
@@ -85,8 +88,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
     virtual void OnProcessAllocated() {}
     virtual void OnRegisteredToDevToolsManager() {}
     virtual void OnStartWorkerMessageSent() {}
-    virtual void OnThreadStarted() {}
-    virtual void OnStarted() {}
+    virtual void OnScriptEvaluationStart() {}
+    virtual void OnStarted(blink::mojom::ServiceWorkerStartStatus status) {}
 
     // Called when status changed to STOPPING. The renderer has been sent a Stop
     // IPC message and OnStopped() will be called upon successful completion.
@@ -104,8 +107,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
     // worker died. When this is called, status is STOPPED.
     virtual void OnDetached(EmbeddedWorkerStatus old_status) {}
 
-    virtual void OnScriptLoaded() {}
-    virtual void OnScriptLoadFailed() {}
     virtual void OnReportException(const base::string16& error_message,
                                    int line_number,
                                    int column_number,
@@ -115,26 +116,21 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
                                         const base::string16& message,
                                         int line_number,
                                         const GURL& source_url) {}
-    // The instance is being deleted, so it's not safe to call any methods that
-    // may result in a virtual method call.
-    virtual void OnDestroyed() {}
   };
 
   ~EmbeddedWorkerInstance() override;
 
   // Starts the worker. It is invalid to call this when the worker is not in
-  // STOPPED status. |callback| is invoked after the worker script has been
-  // started and evaluated, or when an error occurs.
-  // |params| should be populated with service worker version info needed
-  // to start the worker. If the worker is already installed,
-  // |installed_scripts_info| holds information about its scripts; otherwise,
-  // it is null.
-  // |provider_info_getter| is called when this instance
-  // allocates a process and is ready to send a StartWorker message.
-  void Start(
-      mojom::EmbeddedWorkerStartParamsPtr params,
-      ProviderInfoGetter provider_info_getter,
-      StatusCallback callback);
+  // STOPPED status.
+  //
+  // |sent_start_callback| is invoked once the Start IPC is sent, or if an error
+  // prevented that from happening. The callback is not invoked in some cases,
+  // e.g., when Stop() is called and aborts the start procedure. Note that when
+  // the callback is invoked with kOk status, the service worker has not yet
+  // finished starting. Observe OnStarted()/OnStopped() for when start completed
+  // or failed.
+  void Start(mojom::EmbeddedWorkerStartParamsPtr params,
+             StatusCallback sent_start_callback);
 
   // Stops the worker. It is invalid to call this when the worker is not in
   // STARTING or RUNNING status.
@@ -165,6 +161,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   int thread_id() const { return thread_id_; }
   int worker_devtools_agent_route_id() const;
 
+  // DEPRECATED, only for use by ServiceWorkerVersion.
+  // TODO(crbug.com/855852): Remove the Listener interface.
   void AddObserver(Listener* listener);
   void RemoveObserver(Listener* listener);
 
@@ -195,10 +193,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // Called when the worker is doomed.
   void OnWorkerVersionDoomed();
 
-  // Called when the net::URLRequestJob to load the service worker script
-  // created. Not called for import scripts.
-  void OnURLJobCreatedForMainScript();
-
   // Add message to the devtools console.
   void AddMessageToConsole(blink::WebConsoleMessage::Level level,
                            const std::string& message);
@@ -224,6 +218,9 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StartAndStop);
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, DetachDuringStart);
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StopDuringStart);
+  FRIEND_TEST_ALL_PREFIXES(service_worker_new_script_loader_unittest::
+                               ServiceWorkerNewScriptLoaderTest,
+                           AccessedNetwork);
 
   // Constructor is called via EmbeddedWorkerRegistry::CreateWorker().
   // This instance holds a ref of |registry|.
@@ -260,15 +257,12 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   void CountFeature(blink::mojom::WebFeature feature) override;
   void OnReadyForInspection() override;
   void OnScriptLoaded() override;
-  // Notifies the corresponding provider host that the thread has started and is
-  // ready to receive messages.
-  void OnThreadStarted(int thread_id) override;
-  void OnScriptLoadFailed() override;
-  // Fires the callback passed to Start().
-  void OnScriptEvaluated(bool success) override;
+  void OnScriptEvaluationStart() override;
   // Changes the internal worker status from STARTING to RUNNING.
-  void OnStarted(mojom::EmbeddedWorkerStartTimingPtr start_timing) override;
-  // Resets the embedded worker instance to the initial state. This will change
+  void OnStarted(blink::mojom::ServiceWorkerStartStatus status,
+                 int thread_id,
+                 mojom::EmbeddedWorkerStartTimingPtr start_timing) override;
+  // Resets the embedded worker instance to the initial state. Changes
   // the internal status from STARTING or RUNNING to STOPPED.
   void OnStopped() override;
   void OnReportException(const base::string16& error_message,
@@ -287,11 +281,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
 
   // Called back from StartTask when the startup sequence failed. Calls
   // ReleaseProcess() and invokes |callback| with |status|. May destroy |this|.
-  void OnStartFailed(StatusCallback callback, ServiceWorkerStatusCode status);
-
-  // Returns the time elapsed since |step_time_| and updates |step_time_|
-  // to the current time.
-  base::TimeDelta UpdateStepTime();
+  void OnSetupFailed(StatusCallback callback,
+                     blink::ServiceWorkerStatusCode status);
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
   scoped_refptr<EmbeddedWorkerRegistry> registry_;
@@ -316,9 +307,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // Binding for EmbeddedWorkerInstanceHost, runs on IO thread.
   mojo::AssociatedBinding<EmbeddedWorkerInstanceHost> instance_host_binding_;
 
-  // This is set at Start and used on SendStartWorker.
-  ProviderInfoGetter provider_info_getter_;
-
   // Whether devtools is attached or not.
   bool devtools_attached_;
 
@@ -334,9 +322,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // This is valid only after a process is allocated for the worker.
   ServiceWorkerMetrics::StartSituation start_situation_ =
       ServiceWorkerMetrics::StartSituation::UNKNOWN;
-
-  // Used for UMA. The start time of the current start sequence step.
-  base::TimeTicks step_time_;
 
   std::unique_ptr<ServiceWorkerContentSettingsProxyImpl> content_settings_;
   base::WeakPtrFactory<EmbeddedWorkerInstance> weak_factory_;

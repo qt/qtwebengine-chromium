@@ -11,6 +11,8 @@
 #include "SkSafe_math.h"
 #include "SkScalar.h"
 #include "SkTypes.h"
+
+#include <algorithm>
 #include <limits>
 #include <type_traits>
 
@@ -103,8 +105,8 @@ struct SkNx {
         Half::Store2(ptr + 2*N/2*sizeof(T), a.fHi, b.fHi);
     }
 
-    AI T min() const { return std::min(fLo.min(), fHi.min()); }
-    AI T max() const { return std::max(fLo.max(), fHi.max()); }
+    AI T min() const { return SkTMin(fLo.min(), fHi.min()); }
+    AI T max() const { return SkTMax(fLo.max(), fHi.max()); }
     AI bool anyTrue() const { return fLo.anyTrue() || fHi.anyTrue(); }
     AI bool allTrue() const { return fLo.allTrue() && fHi.allTrue(); }
 

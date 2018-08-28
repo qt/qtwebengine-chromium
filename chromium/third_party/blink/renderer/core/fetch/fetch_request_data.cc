@@ -4,15 +4,16 @@
 
 #include "third_party/blink/renderer/core/fetch/fetch_request_data.h"
 
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_request.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_request.h"
+#include "third_party/blink/public/platform/web_http_body.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/fetch/blob_bytes_consumer.h"
-#include "third_party/blink/renderer/core/fetch/body_stream_buffer.h"
 #include "third_party/blink/renderer/core/fetch/bytes_consumer.h"
 #include "third_party/blink/renderer/core/fetch/fetch_header_list.h"
 #include "third_party/blink/renderer/core/fetch/form_data_bytes_consumer.h"
 #include "third_party/blink/renderer/core/loader/threadable_loader.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
@@ -57,6 +58,7 @@ FetchRequestData* FetchRequestData::Create(
   request->SetMIMEType(request->header_list_->ExtractMIMEType());
   request->SetIntegrity(web_request.Integrity());
   request->SetKeepalive(web_request.Keepalive());
+  request->SetIsHistoryNavigation(web_request.IsHistoryNavigation());
   return request;
 }
 
@@ -76,16 +78,21 @@ FetchRequestData* FetchRequestData::CloneExceptBody() {
   request->response_tainting_ = response_tainting_;
   request->mime_type_ = mime_type_;
   request->integrity_ = integrity_;
+  request->importance_ = importance_;
   request->keepalive_ = keepalive_;
+  request->is_history_navigation_ = is_history_navigation_;
   return request;
 }
 
-FetchRequestData* FetchRequestData::Clone(ScriptState* script_state) {
+FetchRequestData* FetchRequestData::Clone(ScriptState* script_state,
+                                          ExceptionState& exception_state) {
   FetchRequestData* request = FetchRequestData::CloneExceptBody();
   if (buffer_) {
     BodyStreamBuffer* new1 = nullptr;
     BodyStreamBuffer* new2 = nullptr;
-    buffer_->Tee(&new1, &new2);
+    buffer_->Tee(&new1, &new2, exception_state);
+    if (exception_state.HadException())
+      return nullptr;
     buffer_ = new1;
     request->buffer_ = new2;
   }
@@ -95,13 +102,16 @@ FetchRequestData* FetchRequestData::Clone(ScriptState* script_state) {
   return request;
 }
 
-FetchRequestData* FetchRequestData::Pass(ScriptState* script_state) {
+FetchRequestData* FetchRequestData::Pass(ScriptState* script_state,
+                                         ExceptionState& exception_state) {
   FetchRequestData* request = FetchRequestData::CloneExceptBody();
   if (buffer_) {
     request->buffer_ = buffer_;
     buffer_ = new BodyStreamBuffer(script_state, BytesConsumer::CreateClosed(),
                                    nullptr /* AbortSignal */);
-    buffer_->CloseAndLockAndDisturb();
+    buffer_->CloseAndLockAndDisturb(exception_state);
+    if (exception_state.HadException())
+      return nullptr;
   }
   request->url_loader_factory_ = std::move(url_loader_factory_);
   return request;
@@ -119,6 +129,7 @@ FetchRequestData::FetchRequestData()
       credentials_(network::mojom::FetchCredentialsMode::kOmit),
       cache_mode_(mojom::FetchCacheMode::kDefault),
       redirect_(network::mojom::FetchRedirectMode::kFollow),
+      importance_(mojom::FetchImportanceMode::kImportanceAuto),
       response_tainting_(kBasicTainting),
       keepalive_(false) {}
 

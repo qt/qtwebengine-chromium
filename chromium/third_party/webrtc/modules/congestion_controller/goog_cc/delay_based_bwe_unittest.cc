@@ -17,7 +17,6 @@
 #include "test/gtest.h"
 
 namespace webrtc {
-namespace webrtc_cc {
 
 namespace {
 constexpr int kNumProbesCluster0 = 5;
@@ -31,7 +30,7 @@ constexpr int64_t kDummyTimestamp = 1000;
 TEST_F(DelayBasedBweTest, NoCrashEmptyFeedback) {
   std::vector<PacketFeedback> packet_feedback_vector;
   bitrate_estimator_->IncomingPacketFeedbackVector(
-      packet_feedback_vector, rtc::nullopt, kDummyTimestamp);
+      packet_feedback_vector, absl::nullopt, kDummyTimestamp);
 }
 
 TEST_F(DelayBasedBweTest, NoCrashOnlyLostFeedback) {
@@ -43,7 +42,7 @@ TEST_F(DelayBasedBweTest, NoCrashOnlyLostFeedback) {
                                                   PacketFeedback::kNoSendTime,
                                                   1, 1500, PacedPacketInfo()));
   bitrate_estimator_->IncomingPacketFeedbackVector(
-      packet_feedback_vector, rtc::nullopt, kDummyTimestamp);
+      packet_feedback_vector, absl::nullopt, kDummyTimestamp);
 }
 
 TEST_F(DelayBasedBweTest, ProbeDetection) {
@@ -235,5 +234,4 @@ TEST_F(DelayBasedBweTest, TestInitialOveruse) {
   EXPECT_NEAR(bitrate_observer_.latest_bitrate(), kStartBitrate / 2, 15000);
 }
 
-}  // namespace webrtc_cc
 }  // namespace webrtc

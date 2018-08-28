@@ -40,13 +40,11 @@ sk_sp<SkData> SkCodecImageGenerator::onRefEncodedData() {
 }
 
 bool SkCodecImageGenerator::onGetPixels(const SkImageInfo& requestInfo, void* requestPixels,
-                                        size_t requestRowBytes, const Options& opts) {
+                                        size_t requestRowBytes, const Options&) {
     SkPixmap dst(requestInfo, requestPixels, requestRowBytes);
 
-    auto decode = [this, &opts](const SkPixmap& pm) {
-        SkCodec::Options codecOpts;
-        codecOpts.fPremulBehavior = opts.fBehavior;
-        SkCodec::Result result = fCodec->getPixels(pm, &codecOpts);
+    auto decode = [this](const SkPixmap& pm) {
+        SkCodec::Result result = fCodec->getPixels(pm);
         switch (result) {
             case SkCodec::kSuccess:
             case SkCodec::kIncompleteInput:

@@ -24,8 +24,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_HTML_META_ELEMENT_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/viewport_description.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
+#include "third_party/blink/renderer/core/page/viewport_description.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 
 namespace blink {
@@ -105,9 +105,8 @@ class CORE_EXPORT HTMLMetaElement final : public HTMLElement {
                                        const String& key,
                                        const String& value);
 
-  static ViewportDescription::ViewportFit ParseViewportFitValueAsEnum(
-      bool& unknown_value,
-      const String& value);
+  static mojom::ViewportFit ParseViewportFitValueAsEnum(bool& unknown_value,
+                                                        const String& value);
 
   static void ReportViewportWarning(Document*,
                                     ViewportErrorCode,

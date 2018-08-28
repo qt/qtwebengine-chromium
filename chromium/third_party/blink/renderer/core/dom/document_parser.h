@@ -26,7 +26,7 @@
 
 #include <memory>
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 
@@ -39,11 +39,10 @@ class TextResourceDecoder;
 
 class CORE_EXPORT DocumentParser
     : public GarbageCollectedFinalized<DocumentParser>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   virtual ~DocumentParser();
   virtual void Trace(blink::Visitor*);
-  void TraceWrappers(ScriptWrappableVisitor*) const override {}
   const char* NameInHeapSnapshot() const override { return "DocumentParser"; }
 
   virtual ScriptableDocumentParser* AsScriptableDocumentParser() {

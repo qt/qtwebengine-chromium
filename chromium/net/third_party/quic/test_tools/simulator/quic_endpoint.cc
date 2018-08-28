@@ -12,12 +12,13 @@
 #include "net/third_party/quic/platform/api/quic_str_cat.h"
 #include "net/third_party/quic/platform/api/quic_test_output.h"
 #include "net/third_party/quic/platform/api/quic_text_utils.h"
+#include "net/third_party/quic/test_tools/quic_connection_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 #include "net/third_party/quic/test_tools/simulator/simulator.h"
 
 using std::string;
 
-namespace net {
+namespace quic {
 namespace simulator {
 
 const QuicStreamId kDataStream = 3;
@@ -80,6 +81,7 @@ QuicEndpoint::QuicEndpoint(Simulator* simulator,
       bytes_transferred_(0),
       write_blocked_count_(0),
       wrong_data_received_(false),
+      drop_next_packet_(false),
       notifier_(nullptr) {
   nic_tx_queue_.set_listener_interface(this);
 
@@ -90,6 +92,10 @@ QuicEndpoint::QuicEndpoint(Simulator* simulator,
   connection_.SetDecrypter(ENCRYPTION_FORWARD_SECURE,
                            QuicMakeUnique<NullDecrypter>(perspective));
   connection_.SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
+  if (perspective == Perspective::IS_SERVER) {
+    // Skip version negotiation.
+    test::QuicConnectionPeer::SetNegotiatedVersion(&connection_);
+  }
   connection_.SetDataProducer(&producer_);
   connection_.SetSessionNotifier(this);
   if (connection_.session_decides_what_to_write()) {
@@ -165,6 +171,10 @@ void QuicEndpoint::AddBytesToTransfer(QuicByteCount bytes) {
   WriteStreamData();
 }
 
+void QuicEndpoint::DropNextIncomingPacket() {
+  drop_next_packet_ = true;
+}
+
 void QuicEndpoint::RecordTrace() {
   trace_visitor_ = QuicMakeUnique<QuicTraceVisitor>(&connection_);
   connection_.set_debug_visitor(trace_visitor_.get());
@@ -172,6 +182,10 @@ void QuicEndpoint::RecordTrace() {
 
 void QuicEndpoint::AcceptPacket(std::unique_ptr<Packet> packet) {
   if (packet->destination != name_) {
+    return;
+  }
+  if (drop_next_packet_) {
+    drop_next_packet_ = false;
     return;
   }
 
@@ -302,15 +316,34 @@ WriteResult QuicEndpoint::Writer::WritePacket(
 bool QuicEndpoint::Writer::IsWriteBlockedDataBuffered() const {
   return false;
 }
+
 bool QuicEndpoint::Writer::IsWriteBlocked() const {
   return is_blocked_;
 }
+
 void QuicEndpoint::Writer::SetWritable() {
   is_blocked_ = false;
 }
+
 QuicByteCount QuicEndpoint::Writer::GetMaxPacketSize(
     const QuicSocketAddress& /*peer_address*/) const {
   return kMaxPacketSize;
+}
+
+bool QuicEndpoint::Writer::SupportsReleaseTime() const {
+  return false;
+}
+
+bool QuicEndpoint::Writer::IsBatchMode() const {
+  return false;
+}
+
+char* QuicEndpoint::Writer::GetNextWriteLocation() const {
+  return nullptr;
+}
+
+WriteResult QuicEndpoint::Writer::Flush() {
+  return WriteResult(WRITE_STATUS_OK, 0);
 }
 
 bool QuicEndpoint::DataProducer::WriteStreamData(QuicStreamId id,
@@ -372,4 +405,4 @@ void QuicEndpointMultiplexer::SetTxPort(ConstrainedPortInterface* port) {
 }
 
 }  // namespace simulator
-}  // namespace net
+}  // namespace quic

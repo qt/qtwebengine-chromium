@@ -368,17 +368,17 @@ bool IsArrayRTV(ID3D11RenderTargetView *rtv)
     return false;
 }
 
-int GetAdjustedInstanceCount(const gl::Program *program, int instanceCount)
+GLsizei GetAdjustedInstanceCount(const ProgramD3D *program, GLsizei instanceCount)
 {
-    if (!program->usesMultiview())
+    if (!program->getState().usesMultiview())
     {
         return instanceCount;
     }
     if (instanceCount == 0)
     {
-        return program->getNumViews();
+        return program->getState().getNumViews();
     }
-    return program->getNumViews() * instanceCount;
+    return program->getState().getNumViews() * instanceCount;
 }
 
 const uint32_t ScratchMemoryBufferLifetime = 1000;
@@ -422,8 +422,8 @@ Renderer11::Renderer11(egl::Display *display)
       mScratchMemoryBuffer(ScratchMemoryBufferLifetime),
       mAnnotator(nullptr)
 {
-    mLineLoopIB       = nullptr;
-    mTriangleFanIB    = nullptr;
+    mLineLoopIB    = nullptr;
+    mTriangleFanIB = nullptr;
 
     mBlit          = nullptr;
     mPixelTransfer = nullptr;
@@ -432,13 +432,13 @@ Renderer11::Renderer11(egl::Display *display)
 
     mTrim = nullptr;
 
-    mRenderer11DeviceCaps.supportsClearView             = false;
-    mRenderer11DeviceCaps.supportsConstantBufferOffsets = false;
+    mRenderer11DeviceCaps.supportsClearView                      = false;
+    mRenderer11DeviceCaps.supportsConstantBufferOffsets          = false;
     mRenderer11DeviceCaps.supportsVpRtIndexWriteFromVertexShader = false;
-    mRenderer11DeviceCaps.supportsDXGI1_2               = false;
-    mRenderer11DeviceCaps.B5G6R5support                 = 0;
-    mRenderer11DeviceCaps.B4G4R4A4support               = 0;
-    mRenderer11DeviceCaps.B5G5R5A1support               = 0;
+    mRenderer11DeviceCaps.supportsDXGI1_2                        = false;
+    mRenderer11DeviceCaps.B5G6R5support                          = 0;
+    mRenderer11DeviceCaps.B4G4R4A4support                        = 0;
+    mRenderer11DeviceCaps.B5G5R5A1support                        = 0;
 
     mD3d11Module          = nullptr;
     mDxgiModule           = nullptr;
@@ -529,12 +529,12 @@ Renderer11::Renderer11(egl::Display *display)
 
         // Also set EGL_PLATFORM_ANGLE_ANGLE variables, in case they're used elsewhere in ANGLE
         // mAvailableFeatureLevels defaults to empty
-        mRequestedDriverType    = D3D_DRIVER_TYPE_UNKNOWN;
+        mRequestedDriverType = D3D_DRIVER_TYPE_UNKNOWN;
     }
 
     const EGLenum presentPath = static_cast<EGLenum>(attributes.get(
         EGL_EXPERIMENTAL_PRESENT_PATH_ANGLE, EGL_EXPERIMENTAL_PRESENT_PATH_COPY_ANGLE));
-    mPresentPathFastEnabled = (presentPath == EGL_EXPERIMENTAL_PRESENT_PATH_FAST_ANGLE);
+    mPresentPathFastEnabled   = (presentPath == EGL_EXPERIMENTAL_PRESENT_PATH_FAST_ANGLE);
 
 // The D3D11 renderer must choose the D3D9 debug annotator because the D3D11 interface
 // method ID3DUserDefinedAnnotation::GetStatus on desktop builds doesn't work with the Graphics
@@ -807,7 +807,7 @@ egl::Error Renderer11::initializeD3DDevice()
         void *device = nullptr;
         ANGLE_TRY(deviceD3D->getDevice(&device));
 
-        ID3D11Device *d3dDevice = reinterpret_cast<ID3D11Device *>(device);
+        ID3D11Device *d3dDevice = static_cast<ID3D11Device *>(device);
         if (FAILED(d3dDevice->GetDeviceRemovedReason()))
         {
             return egl::EglNotInitialized() << "Inputted D3D11 device has been lost.";
@@ -940,7 +940,7 @@ void Renderer11::populateRenderer11DeviceCaps()
 
     if (getWorkarounds().disableB5G6R5Support)
     {
-        mRenderer11DeviceCaps.B5G6R5support = 0;
+        mRenderer11DeviceCaps.B5G6R5support    = 0;
         mRenderer11DeviceCaps.B5G6R5maxSamples = 0;
     }
     else
@@ -1039,8 +1039,9 @@ egl::ConfigSet Renderer11::generateConfigs()
     {
         const gl::TextureCaps &colorBufferFormatCaps =
             rendererTextureCaps.get(colorBufferInternalFormat);
-        if (!colorBufferFormatCaps.renderable)
+        if (!colorBufferFormatCaps.renderbuffer)
         {
+            ASSERT(!colorBufferFormatCaps.textureAttachment);
             continue;
         }
 
@@ -1048,9 +1049,10 @@ egl::ConfigSet Renderer11::generateConfigs()
         {
             const gl::TextureCaps &depthStencilBufferFormatCaps =
                 rendererTextureCaps.get(depthStencilBufferInternalFormat);
-            if (!depthStencilBufferFormatCaps.renderable &&
+            if (!depthStencilBufferFormatCaps.renderbuffer &&
                 depthStencilBufferInternalFormat != GL_NONE)
             {
+                ASSERT(!depthStencilBufferFormatCaps.textureAttachment);
                 continue;
             }
 
@@ -1080,9 +1082,9 @@ egl::ConfigSet Renderer11::generateConfigs()
                 config.bindToTextureRGBA = (((colorBufferFormatInfo.format == GL_RGBA) ||
                                              (colorBufferFormatInfo.format == GL_BGRA_EXT)) &&
                                             (sampleCount <= 1));
-                config.colorBufferType = EGL_RGB_BUFFER;
-                config.configCaveat    = EGL_NONE;
-                config.configID        = static_cast<EGLint>(configs.size() + 1);
+                config.colorBufferType   = EGL_RGB_BUFFER;
+                config.configCaveat      = EGL_NONE;
+                config.configID          = static_cast<EGLint>(configs.size() + 1);
 
                 // PresentPathFast may not be conformant
                 config.conformant = 0;
@@ -1398,138 +1400,148 @@ SwapChainD3D *Renderer11::createSwapChain(NativeWindowD3D *nativeWindow,
 
 void *Renderer11::getD3DDevice()
 {
-    return reinterpret_cast<void *>(mDevice);
+    return mDevice;
+}
+
+gl::Error Renderer11::drawWithGeometryShaderAndTransformFeedback(const gl::Context *context,
+                                                                 gl::PrimitiveMode mode,
+                                                                 UINT instanceCount,
+                                                                 UINT vertexCount)
+{
+    const gl::State &glState = context->getGLState();
+    ProgramD3D *programD3D   = mStateManager.getProgramD3D();
+
+    // Since we use a geometry if-and-only-if we rewrite vertex streams, transform feedback
+    // won't get the correct output. To work around this, draw with *only* the stream out
+    // first (no pixel shader) to feed the stream out buffers and then draw again with the
+    // geometry shader + pixel shader to rasterize the primitives.
+    mStateManager.setPixelShader(nullptr);
+
+    if (instanceCount > 0)
+    {
+        mDeviceContext->DrawInstanced(vertexCount, instanceCount, 0, 0);
+    }
+    else
+    {
+        mDeviceContext->Draw(vertexCount, 0);
+    }
+
+    rx::ShaderExecutableD3D *pixelExe = nullptr;
+    ANGLE_TRY(programD3D->getPixelExecutableForCachedOutputLayout(&pixelExe, nullptr));
+
+    // Skip the draw call if rasterizer discard is enabled (or no fragment shader).
+    if (!pixelExe || glState.getRasterizerState().rasterizerDiscard)
+    {
+        return gl::NoError();
+    }
+
+    mStateManager.setPixelShader(&GetAs<ShaderExecutable11>(pixelExe)->getPixelShader());
+
+    // Retrieve the geometry shader.
+    rx::ShaderExecutableD3D *geometryExe = nullptr;
+    ANGLE_TRY(
+        programD3D->getGeometryExecutableForPrimitiveType(context, mode, &geometryExe, nullptr));
+
+    mStateManager.setGeometryShader(&GetAs<ShaderExecutable11>(geometryExe)->getGeometryShader());
+
+    if (instanceCount > 0)
+    {
+        mDeviceContext->DrawInstanced(vertexCount, instanceCount, 0, 0);
+    }
+    else
+    {
+        mDeviceContext->Draw(vertexCount, 0);
+    }
+
+    return gl::NoError();
 }
 
 gl::Error Renderer11::drawArrays(const gl::Context *context, const gl::DrawCallParams &params)
 {
-    if (params.vertexCount() < static_cast<size_t>(mStateManager.getCurrentMinimumDrawCount()))
+    if (mStateManager.getCullEverything())
     {
         return gl::NoError();
     }
 
-    const auto &glState = context->getGLState();
-    if (glState.isTransformFeedbackActiveUnpaused())
-    {
-        ANGLE_TRY(markTransformFeedbackUsage(context));
-    }
-
-    gl::Program *program = glState.getProgram();
-    ASSERT(program != nullptr);
-    GLsizei adjustedInstanceCount = GetAdjustedInstanceCount(program, params.instances());
-    ProgramD3D *programD3D        = GetImplAs<ProgramD3D>(program);
+    ProgramD3D *programD3D        = mStateManager.getProgramD3D();
+    GLsizei adjustedInstanceCount = GetAdjustedInstanceCount(programD3D, params.instances());
 
     // Note: vertex indexes can be arbitrarily large.
     UINT clampedVertexCount = params.getClampedVertexCount<UINT>();
 
-    if (programD3D->usesGeometryShader(params.mode()) &&
-        glState.isTransformFeedbackActiveUnpaused())
+    const auto &glState = context->getGLState();
+    if (glState.getCurrentTransformFeedback() && glState.isTransformFeedbackActiveUnpaused())
     {
-        // Since we use a geometry if-and-only-if we rewrite vertex streams, transform feedback
-        // won't get the correct output. To work around this, draw with *only* the stream out
-        // first (no pixel shader) to feed the stream out buffers and then draw again with the
-        // geometry shader + pixel shader to rasterize the primitives.
-        mStateManager.setPixelShader(nullptr);
+        ANGLE_TRY(markTransformFeedbackUsage(context));
 
-        if (adjustedInstanceCount > 0)
+        if (programD3D->usesGeometryShader(params.mode()))
         {
-            mDeviceContext->DrawInstanced(clampedVertexCount, adjustedInstanceCount, 0, 0);
+            return drawWithGeometryShaderAndTransformFeedback(
+                context, params.mode(), adjustedInstanceCount, clampedVertexCount);
         }
-        else
-        {
-            mDeviceContext->Draw(clampedVertexCount, 0);
-        }
-
-        rx::ShaderExecutableD3D *pixelExe = nullptr;
-        ANGLE_TRY(programD3D->getPixelExecutableForCachedOutputLayout(&pixelExe, nullptr));
-
-        // Skip the draw call if rasterizer discard is enabled (or no fragment shader).
-        if (!pixelExe || glState.getRasterizerState().rasterizerDiscard)
-        {
-            return gl::NoError();
-        }
-
-        mStateManager.setPixelShader(&GetAs<ShaderExecutable11>(pixelExe)->getPixelShader());
-
-        // Retrieve the geometry shader.
-        rx::ShaderExecutableD3D *geometryExe = nullptr;
-        ANGLE_TRY(programD3D->getGeometryExecutableForPrimitiveType(context, params.mode(),
-                                                                    &geometryExe, nullptr));
-
-        mStateManager.setGeometryShader(
-            &GetAs<ShaderExecutable11>(geometryExe)->getGeometryShader());
-
-        if (adjustedInstanceCount > 0)
-        {
-            mDeviceContext->DrawInstanced(clampedVertexCount, adjustedInstanceCount, 0, 0);
-        }
-        else
-        {
-            mDeviceContext->Draw(clampedVertexCount, 0);
-        }
-        return gl::NoError();
     }
 
-    if (params.mode() == GL_LINE_LOOP)
+    switch (params.mode())
     {
-        return drawLineLoop(context, clampedVertexCount, GL_NONE, nullptr, 0,
-                            adjustedInstanceCount);
+        case gl::PrimitiveMode::LineLoop:
+            return drawLineLoop(context, clampedVertexCount, GL_NONE, nullptr, 0,
+                                adjustedInstanceCount);
+        case gl::PrimitiveMode::TriangleFan:
+            return drawTriangleFan(context, clampedVertexCount, GL_NONE, nullptr, 0,
+                                   adjustedInstanceCount);
+        case gl::PrimitiveMode::Points:
+            if (getWorkarounds().useInstancedPointSpriteEmulation)
+            {
+                // This code should not be reachable by multi-view programs.
+                ASSERT(programD3D->getState().usesMultiview() == false);
+
+                // If the shader is writing to gl_PointSize, then pointsprites are being rendered.
+                // Emulating instanced point sprites for FL9_3 requires the topology to be
+                // D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST and DrawIndexedInstanced is called instead.
+                if (adjustedInstanceCount == 0)
+                {
+                    mDeviceContext->DrawIndexedInstanced(6, clampedVertexCount, 0, 0, 0);
+                    return gl::NoError();
+                }
+
+                // If pointsprite emulation is used with glDrawArraysInstanced then we need to take
+                // a less efficent code path. Instanced rendering of emulated pointsprites requires
+                // a loop to draw each batch of points. An offset into the instanced data buffer is
+                // calculated and applied on each iteration to ensure all instances are rendered
+                // correctly. Each instance being rendered requires the inputlayout cache to reapply
+                // buffers and offsets.
+                for (GLsizei i = 0; i < params.instances(); i++)
+                {
+                    ANGLE_TRY(mStateManager.updateVertexOffsetsForPointSpritesEmulation(
+                        params.baseVertex(), i));
+                    mDeviceContext->DrawIndexedInstanced(6, clampedVertexCount, 0, 0, 0);
+                }
+
+                // This required by updateVertexOffsets... above but is outside of the loop for
+                // speed.
+                mStateManager.invalidateVertexBuffer();
+                return gl::NoError();
+            }
+            break;
+        default:
+            break;
     }
 
-    if (params.mode() == GL_TRIANGLE_FAN)
-    {
-        return drawTriangleFan(context, clampedVertexCount, GL_NONE, nullptr, 0,
-                               adjustedInstanceCount);
-    }
-
-    bool useInstancedPointSpriteEmulation =
-        programD3D->usesPointSize() && getWorkarounds().useInstancedPointSpriteEmulation;
-
-    if (params.mode() != GL_POINTS || !useInstancedPointSpriteEmulation)
-    {
-        if (adjustedInstanceCount == 0)
-        {
-            mDeviceContext->Draw(clampedVertexCount, 0);
-        }
-        else
-        {
-            mDeviceContext->DrawInstanced(clampedVertexCount, adjustedInstanceCount, 0, 0);
-        }
-        return gl::NoError();
-    }
-
-    // This code should not be reachable by multi-view programs.
-    ASSERT(program->usesMultiview() == false);
-
-    // If the shader is writing to gl_PointSize, then pointsprites are being rendered.
-    // Emulating instanced point sprites for FL9_3 requires the topology to be
-    // D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST and DrawIndexedInstanced is called instead.
+    // "Normal" draw case.
     if (adjustedInstanceCount == 0)
     {
-        mDeviceContext->DrawIndexedInstanced(6, clampedVertexCount, 0, 0, 0);
-        return gl::NoError();
+        mDeviceContext->Draw(clampedVertexCount, 0);
     }
-
-    // If pointsprite emulation is used with glDrawArraysInstanced then we need to take a less
-    // efficent code path. Instanced rendering of emulated pointsprites requires a loop to draw each
-    // batch of points. An offset into the instanced data buffer is calculated and applied on each
-    // iteration to ensure all instances are rendered correctly. Each instance being rendered
-    // requires the inputlayout cache to reapply buffers and offsets.
-    for (GLsizei i = 0; i < params.instances(); i++)
+    else
     {
-        ANGLE_TRY(
-            mStateManager.updateVertexOffsetsForPointSpritesEmulation(params.baseVertex(), i));
-        mDeviceContext->DrawIndexedInstanced(6, clampedVertexCount, 0, 0, 0);
+        mDeviceContext->DrawInstanced(clampedVertexCount, adjustedInstanceCount, 0, 0);
     }
-
-    // This required by updateVertexOffsets... above but is outside of the loop for speed.
-    mStateManager.invalidateVertexBuffer();
     return gl::NoError();
 }
 
 gl::Error Renderer11::drawElements(const gl::Context *context, const gl::DrawCallParams &params)
 {
-    if (params.indexCount() < mStateManager.getCurrentMinimumDrawCount())
+    if (mStateManager.getCullEverything())
     {
         return gl::NoError();
     }
@@ -1544,24 +1556,23 @@ gl::Error Renderer11::drawElements(const gl::Context *context, const gl::DrawCal
     int startVertex = static_cast<int>(params.firstVertex() - params.baseVertex());
     int baseVertex  = -startVertex;
 
-    const gl::Program *program    = glState.getProgram();
-    GLsizei adjustedInstanceCount = GetAdjustedInstanceCount(program, params.instances());
+    const ProgramD3D *programD3D  = mStateManager.getProgramD3D();
+    GLsizei adjustedInstanceCount = GetAdjustedInstanceCount(programD3D, params.instances());
 
-    if (params.mode() == GL_LINE_LOOP)
+    if (params.mode() == gl::PrimitiveMode::LineLoop)
     {
         return drawLineLoop(context, params.indexCount(), params.type(), params.indices(),
                             baseVertex, adjustedInstanceCount);
     }
 
-    if (params.mode() == GL_TRIANGLE_FAN)
+    if (params.mode() == gl::PrimitiveMode::TriangleFan)
     {
         return drawTriangleFan(context, params.indexCount(), params.type(), params.indices(),
                                baseVertex, adjustedInstanceCount);
     }
 
-    const ProgramD3D *programD3D = GetImplAs<ProgramD3D>(glState.getProgram());
-
-    if (params.mode() != GL_POINTS || !programD3D->usesInstancedPointSpriteEmulation())
+    if (params.mode() != gl::PrimitiveMode::Points ||
+        !programD3D->usesInstancedPointSpriteEmulation())
     {
         if (adjustedInstanceCount == 0)
         {
@@ -1576,7 +1587,7 @@ gl::Error Renderer11::drawElements(const gl::Context *context, const gl::DrawCal
     }
 
     // This code should not be reachable by multi-view programs.
-    ASSERT(program->usesMultiview() == false);
+    ASSERT(programD3D->getState().usesMultiview() == false);
 
     // If the shader is writing to gl_PointSize, then pointsprites are being rendered.
     // Emulating instanced point sprites for FL9_3 requires the topology to be
@@ -1613,7 +1624,7 @@ gl::Error Renderer11::drawElements(const gl::Context *context, const gl::DrawCal
 gl::Error Renderer11::drawArraysIndirect(const gl::Context *context,
                                          const gl::DrawCallParams &params)
 {
-    if (std::numeric_limits<GLsizei>::max() == mStateManager.getCurrentMinimumDrawCount())
+    if (mStateManager.getCullEverything())
     {
         return gl::NoError();
     }
@@ -1636,7 +1647,7 @@ gl::Error Renderer11::drawArraysIndirect(const gl::Context *context,
 gl::Error Renderer11::drawElementsIndirect(const gl::Context *context,
                                            const gl::DrawCallParams &params)
 {
-    if (std::numeric_limits<GLsizei>::max() == mStateManager.getCurrentMinimumDrawCount())
+    if (mStateManager.getCullEverything())
     {
         return gl::NoError();
     }
@@ -1717,9 +1728,9 @@ gl::Error Renderer11::drawLineLoop(const gl::Context *context,
 
     ANGLE_TRY(mLineLoopIB->unmapBuffer());
 
-    IndexBuffer11 *indexBuffer   = GetAs<IndexBuffer11>(mLineLoopIB->getIndexBuffer());
+    IndexBuffer11 *indexBuffer          = GetAs<IndexBuffer11>(mLineLoopIB->getIndexBuffer());
     const d3d11::Buffer &d3dIndexBuffer = indexBuffer->getBuffer();
-    DXGI_FORMAT indexFormat      = indexBuffer->getIndexFormat();
+    DXGI_FORMAT indexFormat             = indexBuffer->getIndexFormat();
 
     mStateManager.setIndexBuffer(d3dIndexBuffer.get(), indexFormat, offset);
 
@@ -1800,9 +1811,9 @@ gl::Error Renderer11::drawTriangleFan(const gl::Context *context,
 
     ANGLE_TRY(mTriangleFanIB->unmapBuffer());
 
-    IndexBuffer11 *indexBuffer   = GetAs<IndexBuffer11>(mTriangleFanIB->getIndexBuffer());
+    IndexBuffer11 *indexBuffer          = GetAs<IndexBuffer11>(mTriangleFanIB->getIndexBuffer());
     const d3d11::Buffer &d3dIndexBuffer = indexBuffer->getBuffer();
-    DXGI_FORMAT indexFormat      = indexBuffer->getIndexFormat();
+    DXGI_FORMAT indexFormat             = indexBuffer->getIndexFormat();
 
     mStateManager.setIndexBuffer(d3dIndexBuffer.get(), indexFormat, offset);
 
@@ -1894,8 +1905,6 @@ bool Renderer11::testDeviceResettable()
 
 void Renderer11::release()
 {
-    RendererD3D::cleanup();
-
     mScratchMemoryBuffer.clear();
 
     if (mAnnotator != nullptr)
@@ -2278,7 +2287,7 @@ gl::Error Renderer11::copyImageCube(const gl::Context *context,
     TextureStorage11_Cube *storage11 = GetAs<TextureStorage11_Cube>(storage);
     ASSERT(storage11);
 
-    gl::ImageIndex index              = gl::ImageIndex::MakeCube(target, level);
+    gl::ImageIndex index              = gl::ImageIndex::MakeCubeMapFace(target, level);
     RenderTargetD3D *destRenderTarget = nullptr;
     ANGLE_TRY(storage11->getRenderTarget(context, index, &destRenderTarget));
     ASSERT(destRenderTarget);
@@ -2781,7 +2790,7 @@ gl::Error Renderer11::compileToExecutable(gl::InfoLog &infoLog,
         return gl::NoError();
     }
 
-    gl::Error error = loadExecutable(reinterpret_cast<const uint8_t *>(binary->GetBufferPointer()),
+    gl::Error error = loadExecutable(static_cast<const uint8_t *>(binary->GetBufferPointer()),
                                      binary->GetBufferSize(), type, streamOutVaryings,
                                      separatedOutputBuffers, outExectuable);
 
@@ -3023,7 +3032,7 @@ gl::Error Renderer11::readFromAttachment(const gl::Context *context,
     ASSERT(rt11->getTexture().valid());
 
     const TextureHelper11 &textureHelper = rt11->getTexture();
-    unsigned int sourceSubResource = rt11->getSubresourceIndex();
+    unsigned int sourceSubResource       = rt11->getSubresourceIndex();
 
     const gl::Extents &texSize = textureHelper.getExtents();
 
@@ -3122,7 +3131,7 @@ gl::Error Renderer11::readFromAttachment(const gl::Context *context,
     // tracking in the 'pixelBuffer' members, causing leaks. Instead we must use
     // pixelBuffer.set() twice, which performs the addRef/release correctly
     gl::PixelPackState invertTexturePack;
-    invertTexturePack.alignment = pack.alignment;
+    invertTexturePack.alignment       = pack.alignment;
     invertTexturePack.reverseRowOrder = !pack.reverseRowOrder;
 
     PackPixelsParams packParams(safeArea, format, type, outputPitch, invertTexturePack, packBuffer,
@@ -3178,7 +3187,7 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Context *context,
     }
 
     const TextureHelper11 &drawTexture = drawRenderTarget11->getTexture();
-    unsigned int drawSubresource    = drawRenderTarget11->getSubresourceIndex();
+    unsigned int drawSubresource       = drawRenderTarget11->getSubresourceIndex();
 
     RenderTarget11 *readRenderTarget11 = GetAs<RenderTarget11>(readRenderTarget);
     if (!readRenderTarget11)
@@ -3188,7 +3197,7 @@ gl::Error Renderer11::blitRenderbufferRect(const gl::Context *context,
     }
 
     TextureHelper11 readTexture;
-    unsigned int readSubresource      = 0;
+    unsigned int readSubresource = 0;
     d3d11::SharedSRV readSRV;
 
     if (readRenderTarget->isMultisampled())
@@ -3640,10 +3649,7 @@ FramebufferImpl *Renderer11::createDefaultFramebuffer(const gl::FramebufferState
 
 gl::Error Renderer11::getScratchMemoryBuffer(size_t requestedSize, angle::MemoryBuffer **bufferOut)
 {
-    if (!mScratchMemoryBuffer.get(requestedSize, bufferOut))
-    {
-        return gl::OutOfMemory() << "Failed to allocate internal buffer.";
-    }
+    ANGLE_TRY_ALLOCATION(mScratchMemoryBuffer.get(requestedSize, bufferOut));
     return gl::NoError();
 }
 
@@ -3875,4 +3881,10 @@ void Renderer11::onDirtyUniformBlockBinding(GLuint /*uniformBlockIndex*/)
     mStateManager.invalidateProgramUniformBuffers();
 }
 
+gl::Error Renderer11::getIncompleteTexture(const gl::Context *context,
+                                           gl::TextureType type,
+                                           gl::Texture **textureOut)
+{
+    return GetImplAs<Context11>(context)->getIncompleteTexture(context, type, textureOut);
+}
 }  // namespace rx

@@ -23,7 +23,10 @@ class CC_PAINT_EXPORT PaintOpBufferSerializer {
                           TransferCacheSerializeHelper* transfer_cache,
                           SkStrikeServer* strike_server,
                           SkColorSpace* color_space,
-                          bool can_use_lcd_text);
+                          bool can_use_lcd_text,
+                          bool context_supports_distance_field_text,
+                          int max_texture_size,
+                          size_t max_texture_bytes);
   virtual ~PaintOpBufferSerializer();
 
   struct Preamble {
@@ -91,6 +94,10 @@ class CC_PAINT_EXPORT PaintOpBufferSerializer {
   void RestoreToCount(int count,
                       const PaintOp::SerializeOptions& options,
                       const PlaybackParams& params);
+  PaintOp::SerializeOptions MakeSerializeOptions();
+  void ClearForOpaqueRaster(const Preamble& preamble,
+                            const PaintOp::SerializeOptions& options,
+                            const PlaybackParams& params);
 
   SerializeCallback serialize_cb_;
   ImageProvider* image_provider_;
@@ -98,6 +105,9 @@ class CC_PAINT_EXPORT PaintOpBufferSerializer {
   SkStrikeServer* strike_server_;
   SkColorSpace* color_space_;
   bool can_use_lcd_text_;
+  bool context_supports_distance_field_text_;
+  int max_texture_size_;
+  size_t max_texture_bytes_;
 
   SkTextBlobCacheDiffCanvas text_blob_canvas_;
   std::unique_ptr<SkCanvas> canvas_;
@@ -113,7 +123,10 @@ class CC_PAINT_EXPORT SimpleBufferSerializer : public PaintOpBufferSerializer {
                          TransferCacheSerializeHelper* transfer_cache,
                          SkStrikeServer* strike_server,
                          SkColorSpace* color_space,
-                         bool can_use_lcd_text);
+                         bool can_use_lcd_text,
+                         bool context_supports_distance_field_text,
+                         int max_texture_size,
+                         size_t max_texture_bytes);
   ~SimpleBufferSerializer() override;
 
   size_t written() const { return written_; }

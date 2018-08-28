@@ -16,6 +16,7 @@ source_set("history_popup") {
     "//base",
     "//ios/chrome/browser/ui",
     "//ios/chrome/browser/ui/commands",
+    "//ios/chrome/browser/ui/favicon/resources:default_favicon",
     "//ios/chrome/browser/ui/popup_menu:constants",
     "//ios/chrome/browser/ui/popup_menu:popup_menu_ui",
     "//ios/chrome/browser/ui/util",
@@ -44,7 +45,7 @@ source_set("coordinator") {
     "//ios/chrome/browser/ui/fullscreen",
     "//ios/chrome/browser/ui/fullscreen:coordinators",
     "//ios/chrome/browser/ui/history_popup/requirements",
-    "//ios/chrome/browser/ui/toolbar/public:toolbar_base_feature",
+    "//ios/chrome/browser/ui/toolbar/public:feature_flags",
     "//ios/chrome/browser/ui/util",
   ]
 }

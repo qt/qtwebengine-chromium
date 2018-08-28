@@ -20,7 +20,7 @@ const CJX_MethodSpec CJX_Model::MethodSpecs[] = {
     {"isCompatibleNS", isCompatibleNS_static}};
 
 CJX_Model::CJX_Model(CXFA_Node* node) : CJX_Node(node) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_Model::~CJX_Model() {}
@@ -28,7 +28,7 @@ CJX_Model::~CJX_Model() {}
 CJS_Return CJX_Model::clearErrorList(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_Model::createNode(

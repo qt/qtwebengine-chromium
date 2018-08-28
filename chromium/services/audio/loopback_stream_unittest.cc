@@ -87,8 +87,7 @@ class MockClientAndObserver : public media::mojom::AudioInputStreamClient,
 
 // Subclass of FakeConsumer that adapts the SyncWriter interface to allow the
 // tests to record and analyze the audio data from the LoopbackStream.
-class FakeSyncWriter : public FakeConsumer,
-                       public media::AudioInputController::SyncWriter {
+class FakeSyncWriter : public FakeConsumer, public InputController::SyncWriter {
  public:
   FakeSyncWriter(int channels, int sample_rate)
       : FakeConsumer(channels, sample_rate) {}
@@ -179,8 +178,8 @@ class LoopbackStreamTest : public testing::Test {
                  mojo::MakeRequest(&observer_ptr));
 
     stream_ = std::make_unique<LoopbackStream>(
-        base::BindOnce([](media::mojom::AudioDataPipePtr pipe) {
-          EXPECT_TRUE(pipe->shared_memory.is_valid());
+        base::BindOnce([](media::mojom::ReadOnlyAudioDataPipePtr pipe) {
+          EXPECT_TRUE(pipe->shared_memory.IsValid());
           EXPECT_TRUE(pipe->socket.is_valid());
         }),
         base::BindOnce([](LoopbackStreamTest* self,

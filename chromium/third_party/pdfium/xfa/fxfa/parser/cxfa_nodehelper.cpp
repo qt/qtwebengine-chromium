@@ -6,6 +6,8 @@
 
 #include "xfa/fxfa/parser/cxfa_nodehelper.h"
 
+#include <utility>
+
 #include "core/fxcrt/fx_extension.h"
 #include "fxjs/cfxjse_engine.h"
 #include "fxjs/xfa/cjx_object.h"
@@ -15,15 +17,9 @@
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
-CXFA_NodeHelper::CXFA_NodeHelper()
-    : m_eLastCreateType(XFA_Element::DataValue),
-      m_pCreateParent(nullptr),
-      m_iCreateCount(0),
-      m_iCreateFlag(XFA_ResolveNode_RSType_CreateNodeOne),
-      m_iCurAllStart(-1),
-      m_pAllStartParent(nullptr) {}
+CXFA_NodeHelper::CXFA_NodeHelper() = default;
 
-CXFA_NodeHelper::~CXFA_NodeHelper() {}
+CXFA_NodeHelper::~CXFA_NodeHelper() = default;
 
 CXFA_Node* CXFA_NodeHelper::ResolveNodes_GetOneChild(CXFA_Node* parent,
                                                      const wchar_t* pwsName,
@@ -237,14 +233,13 @@ WideString CXFA_NodeHelper::GetNameExpression(CXFA_Node* refNode,
   WideString wsName;
   if (bIsAllPath) {
     wsName = GetNameExpression(refNode, false, eLogicType);
-    WideString wsParent;
     CXFA_Node* parent =
         ResolveNodes_GetParent(refNode, XFA_LOGIC_NoTransparent);
     while (parent) {
-      wsParent = GetNameExpression(parent, false, eLogicType);
+      WideString wsParent = GetNameExpression(parent, false, eLogicType);
       wsParent += L".";
       wsParent += wsName;
-      wsName = wsParent;
+      wsName = std::move(wsParent);
       parent = ResolveNodes_GetParent(parent, XFA_LOGIC_NoTransparent);
     }
     return wsName;

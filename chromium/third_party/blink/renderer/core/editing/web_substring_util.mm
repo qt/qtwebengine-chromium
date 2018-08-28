@@ -37,7 +37,6 @@
 #include "third_party/blink/public/web/web_frame_widget.h"
 #include "third_party/blink/public/web/web_hit_test_result.h"
 #include "third_party/blink/public/web/web_local_frame.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/node.h"
@@ -143,7 +142,7 @@ NSAttributedString* AttributedSubstringFromRange(const EphemeralRange& range,
 WebPoint GetBaselinePoint(LocalFrameView* frame_view,
                           const EphemeralRange& range,
                           NSAttributedString* string) {
-  IntRect string_rect = frame_view->ContentsToViewport(ComputeTextRect(range));
+  IntRect string_rect = frame_view->FrameToViewport(ComputeTextRect(range));
   IntPoint string_point = string_rect.MinXMaxYCorner();
 
   // Adjust for the font's descender. AppKit wants the baseline point.

@@ -17,12 +17,17 @@
 #include "SkScalerContext.h"
 #include "SkTypeface.h"
 
+class SkTypefaceProxy;
+class SkStrikeCache;
+
 class SkScalerContextProxy : public SkScalerContext {
 public:
     SkScalerContextProxy(sk_sp<SkTypeface> tf,
                          const SkScalerContextEffects& effects,
                          const SkDescriptor* desc,
                          sk_sp<SkStrikeClient::DiscardableHandleManager> manager);
+
+    void initCache(SkGlyphCache*, SkStrikeCache*);
 
 protected:
     unsigned generateGlyphCount() override;
@@ -32,16 +37,12 @@ protected:
     void generateImage(const SkGlyph& glyph) override;
     bool generatePath(SkGlyphID glyphID, SkPath* path) override;
     void generateFontMetrics(SkPaint::FontMetrics* metrics) override;
+    SkTypefaceProxy* getProxyTypeface() const;
 
 private:
-    // Copied from SkGlyphCache
-    // so we don't grow our arrays a lot
-    static constexpr size_t kMinGlyphCount = 8;
-    static constexpr size_t kMinGlyphImageSize = 16 /* height */ * 8 /* width */;
-    static constexpr size_t kMinAllocAmount = kMinGlyphImageSize * kMinGlyphCount;
-
-    SkArenaAlloc          fAlloc{kMinAllocAmount};
     sk_sp<SkStrikeClient::DiscardableHandleManager> fDiscardableManager;
+    SkGlyphCache* fCache = nullptr;
+    SkStrikeCache* fStrikeCache = nullptr;
     typedef SkScalerContext INHERITED;
 };
 
@@ -51,13 +52,16 @@ public:
                     int glyphCount,
                     const SkFontStyle& style,
                     bool isFixed,
-                    sk_sp<SkStrikeClient::DiscardableHandleManager> manager)
+                    sk_sp<SkStrikeClient::DiscardableHandleManager> manager,
+                    bool isLogging = true)
             : INHERITED{style, false}
             , fFontId{fontId}
             , fGlyphCount{glyphCount}
+            , fIsLogging{isLogging}
             , fDiscardableManager{std::move(manager)} {}
     SkFontID remoteTypefaceID() const {return fFontId;}
     int glyphCount() const {return fGlyphCount;}
+    bool isLogging() const {return fIsLogging;}
 
 protected:
     int onGetUPEM() const override { SK_ABORT("Should never be called."); return 0; }
@@ -69,13 +73,23 @@ protected:
         SK_ABORT("Should never be called.");
         return nullptr;
     }
+    sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override {
+        SK_ABORT("Should never be called.");
+        return nullptr;
+    }
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
                                      int coordinateCount) const override {
         SK_ABORT("Should never be called.");
         return 0;
     }
-    void onGetFamilyName(SkString* familyName) const override {
+    int onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
+                                       int parameterCount) const override {
         SK_ABORT("Should never be called.");
+        return 0;
+    }
+    void onGetFamilyName(SkString* familyName) const override {
+        // Used by SkStrikeCache::DumpMemoryStatistics.
+        *familyName = "";
     }
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override {
         SK_ABORT("Should never be called.");
@@ -115,8 +129,7 @@ protected:
         return 0;
     }
     int onCountGlyphs() const override {
-        SK_ABORT("Should never be called.");
-        return 0;
+        return this->glyphCount();
     }
 
     void* onGetCTFontRef() const override {
@@ -125,10 +138,11 @@ protected:
     }
 
 private:
-    const SkFontID        fFontId;
-    const int             fGlyphCount;
-
+    const SkFontID                                  fFontId;
+    const int                                       fGlyphCount;
+    const bool                                      fIsLogging;
     sk_sp<SkStrikeClient::DiscardableHandleManager> fDiscardableManager;
+
 
     typedef SkTypeface INHERITED;
 };

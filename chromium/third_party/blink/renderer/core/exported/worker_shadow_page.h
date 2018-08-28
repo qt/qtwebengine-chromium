@@ -5,11 +5,17 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_EXPORTED_WORKER_SHADOW_PAGE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_EXPORTED_WORKER_SHADOW_PAGE_H_
 
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "third_party/blink/public/common/privacy_preferences.h"
 #include "third_party/blink/public/web/web_document_loader.h"
-#include "third_party/blink/public/web/web_frame_client.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_view.h"
 #include "third_party/blink/renderer/core/exported/web_dev_tools_agent_impl.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+
+namespace network {
+class SharedURLLoaderFactory;
+}
 
 namespace blink {
 
@@ -31,7 +37,7 @@ class WebSettings;
 // core/exported are gone (now depending on core/exported/WebViewImpl.h in
 // *.cpp).
 // TODO(kinuko): Make this go away (https://crbug.com/538751).
-class CORE_EXPORT WorkerShadowPage : public WebFrameClient {
+class CORE_EXPORT WorkerShadowPage : public WebLocalFrameClient {
  public:
   class CORE_EXPORT Client : public WebDevToolsAgentImpl::WorkerClient {
    public:
@@ -48,26 +54,33 @@ class CORE_EXPORT WorkerShadowPage : public WebFrameClient {
     virtual const base::UnguessableToken& GetDevToolsWorkerToken() = 0;
   };
 
-  explicit WorkerShadowPage(Client*);
+  // If |loader_factory| is non-null, the shadow page will use it when making
+  // requests.
+  WorkerShadowPage(
+      Client* client,
+      scoped_refptr<network::SharedURLLoaderFactory> loader_factory,
+      PrivacyPreferences preferences);
   ~WorkerShadowPage() override;
 
-  // Calls Client::OnShadowPageInitialized() when complete.
+  // Initializes this instance and calls Client::OnShadowPageInitialized() when
+  // complete.
   void Initialize(const KURL& script_url);
 
   void SetContentSecurityPolicyAndReferrerPolicy(ContentSecurityPolicy*,
                                                  String referrer_policy);
 
-  // WebFrameClient overrides.
+  // WebLocalFrameClient overrides.
   std::unique_ptr<WebApplicationCacheHost> CreateApplicationCacheHost(
       WebApplicationCacheHostClient*) override;
-  // Note: usually WebFrameClient implementations override WebFrameClient to
-  // call Close() on the corresponding WebLocalFrame. Shadow pages are set up a
-  // bit differently and clear the WebFrameClient pointer before shutting down,
-  // so the shadow page must also manually call Close() on the corresponding
-  // frame and its widget.
+  // Note: usually WebLocalFrameClient implementations override
+  // WebLocalFrameClient to call Close() on the corresponding WebLocalFrame.
+  // Shadow pages are set up a bit differently and clear the WebLocalFrameClient
+  // pointer before shutting down, so the shadow page must also manually call
+  // Close() on the corresponding frame and its widget.
   void DidFinishDocumentLoad() override;
   std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory() override;
   base::UnguessableToken GetDevToolsFrameToken() override;
+  void WillSendRequest(WebURLRequest&) override;
 
   // TODO(nhiroki): Remove this once the off-main-thread WebSocket is enabled by
   // default (https://crbug.com/825740).
@@ -90,6 +103,11 @@ class CORE_EXPORT WorkerShadowPage : public WebFrameClient {
   Client* client_;
   WebView* web_view_;
   Persistent<WebLocalFrameImpl> main_frame_;
+  scoped_refptr<network::SharedURLLoaderFactory> loader_factory_;
+
+  // TODO(crbug.com/862854): Update the values when the browser process changes
+  // the preferences.
+  const PrivacyPreferences preferences_;
 
   State state_ = State::kUninitialized;
 };

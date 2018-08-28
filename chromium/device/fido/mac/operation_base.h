@@ -13,6 +13,7 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/macros.h"
 #include "base/strings/sys_string_conversions.h"
+#include "device/fido/mac/credential_metadata.h"
 #include "device/fido/mac/operation.h"
 #include "device/fido/mac/touch_id_context.h"
 
@@ -29,17 +30,29 @@ class API_AVAILABLE(macosx(10.12.2)) OperationBase : public Operation {
                                            base::Optional<Response>)>;
 
   OperationBase(Request request,
-                std::string profile_id,
+                std::string metadata_secret,
                 std::string keychain_access_group,
                 Callback callback)
       : request_(std::move(request)),
-        profile_id_(std::move(profile_id)),
+        metadata_secret_(std::move(metadata_secret)),
         keychain_access_group_(std::move(keychain_access_group)),
         callback_(std::move(callback)),
         touch_id_context_(std::make_unique<TouchIdContext>()) {}
+
   ~OperationBase() override = default;
 
  protected:
+  // Subclasses must call Init() at the beginning of Run().
+  bool Init() {
+    base::Optional<std::string> encoded_rp_id =
+        CredentialMetadata::EncodeRpId(metadata_secret(), RpId());
+    if (!encoded_rp_id)
+      return false;
+
+    encoded_rp_id_ = std::move(*encoded_rp_id);
+    return true;
+  }
+
   // PromptTouchId triggers a Touch ID consent dialog with the given reason
   // string. Subclasses implement the PromptTouchIdDone callback to receive the
   // result.
@@ -52,8 +65,8 @@ class API_AVAILABLE(macosx(10.12.2)) OperationBase : public Operation {
                                           base::Unretained(this)));
   }
 
-  // Callback for |PromptTouchId|. Any NSError that gets passed is autoreleased.
-  virtual void PromptTouchIdDone(bool success, NSError* err) = 0;
+  // Callback for |PromptTouchId|.
+  virtual void PromptTouchIdDone(bool success) = 0;
 
   // Subclasses override RpId to return the RP ID from the type-specific
   // request.
@@ -67,28 +80,33 @@ class API_AVAILABLE(macosx(10.12.2)) OperationBase : public Operation {
   }
 
   // DefaultKeychainQuery returns a default keychain query dictionary that has
-  // the keychain item class, profile ID and RP ID filled out (but not the
-  // credential ID). More fields can be set on the return value to refine the
-  // query.
+  // the keychain item class, keychain access group and RP ID filled out (but
+  // not the credential ID). More fields can be set on the return value to
+  // refine the query.
   base::ScopedCFTypeRef<CFMutableDictionaryRef> DefaultKeychainQuery() const {
     base::ScopedCFTypeRef<CFMutableDictionaryRef> query(
         CFDictionaryCreateMutable(kCFAllocatorDefault, 0, nullptr, nullptr));
     CFDictionarySetValue(query, kSecClass, kSecClassKey);
     CFDictionarySetValue(query, kSecAttrAccessGroup,
                          base::SysUTF8ToNSString(keychain_access_group_));
-    CFDictionarySetValue(query, kSecAttrLabel, base::SysUTF8ToNSString(RpId()));
-    CFDictionarySetValue(query, kSecAttrApplicationTag,
-                         base::SysUTF8ToNSString(profile_id_));
+    DCHECK(!encoded_rp_id_.empty());
+    CFDictionarySetValue(query, kSecAttrLabel,
+                         base::SysUTF8ToNSString(encoded_rp_id_));
     return query;
   }
+
+  const std::string& metadata_secret() const { return metadata_secret_; }
 
   const Request& request() const { return request_; }
   Callback& callback() { return callback_; }
 
  private:
   Request request_;
-  std::string profile_id_;
+  // The secret parameter passed to |CredentialMetadata| operations to encrypt
+  // or encode credential metadata for storage in the macOS keychain.
+  std::string metadata_secret_;
   std::string keychain_access_group_;
+  std::string encoded_rp_id_ = "";
   Callback callback_;
 
   std::unique_ptr<TouchIdContext> touch_id_context_;

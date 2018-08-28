@@ -23,17 +23,58 @@ class IdentityTestEnvironment : public IdentityManager::DiagnosticsObserver {
   // The IdentityManager instance created and owned by this instance.
   IdentityManager* identity_manager();
 
+  // Sets the primary account for the given email address, generating a GAIA ID
+  // that corresponds uniquely to that email address. On non-ChromeOS, results
+  // in the firing of the IdentityManager and SigninManager callbacks for signin
+  // success. Blocks until the primary account is set. Returns the AccountInfo
+  // of the newly-set account.
+  AccountInfo SetPrimaryAccount(const std::string& email);
+
+  // Sets a refresh token for the primary account (which must already be set).
+  // Blocks until the refresh token is set.
+  void SetRefreshTokenForPrimaryAccount();
+
+  // Sets a special invalid refresh token for the primary account (which must
+  // already be set). Blocks until the refresh token is set.
+  void SetInvalidRefreshTokenForPrimaryAccount();
+
+  // Removes any refresh token for the primary account (which must already be
+  // set). Blocks until the refresh token is removed.
+  void RemoveRefreshTokenForPrimaryAccount();
+
   // Makes the primary account available for the given email address, generating
   // a GAIA ID and refresh token that correspond uniquely to that email address.
   // On non-ChromeOS platforms, this will also result in the firing of the
   // IdentityManager and SigninManager callbacks for signin success. On all
   // platforms, this method blocks until the primary account is available.
-  void MakePrimaryAccountAvailable(std::string email);
+  // Returns the AccountInfo of the newly-available account.
+  AccountInfo MakePrimaryAccountAvailable(const std::string& email);
 
   // Clears the primary account. On non-ChromeOS, results in the firing of the
   // IdentityManager and SigninManager callbacks for signout. Blocks until the
   // primary account is cleared.
   void ClearPrimaryAccount();
+
+  // Makes an account available for the given email address, generating a GAIA
+  // ID and refresh token that correspond uniquely to that email address. Blocks
+  // until the account is available. Returns the AccountInfo of the
+  // newly-available account.
+  AccountInfo MakeAccountAvailable(const std::string& email);
+
+  // Sets a refresh token for the given account (which must already be
+  // available). Blocks until the refresh token is set. NOTE: See disclaimer at
+  // top of file re: direct usage.
+  void SetRefreshTokenForAccount(const std::string& account_id);
+
+  // Sets a special invalid refresh token for the given account (which must
+  // already be available). Blocks until the refresh token is set. NOTE: See
+  // disclaimer at top of file re: direct usage.
+  void SetInvalidRefreshTokenForAccount(const std::string& account_id);
+
+  // Removes any refresh token for the given account (which must already be
+  // available). Blocks until the refresh token is removed. NOTE: See disclaimer
+  // at top of file re: direct usage.
+  void RemoveRefreshTokenForAccount(const std::string& account_id);
 
   // When this is set, access token requests will be automatically granted with
   // an access token value of "access_token".
@@ -65,6 +106,13 @@ class IdentityTestEnvironment : public IdentityManager::DiagnosticsObserver {
   // blundell@chromium.org
   void WaitForAccessTokenRequestIfNecessaryAndRespondWithError(
       const GoogleServiceAuthError& error);
+
+  // Sets a callback that will be invoked on the next incoming access token
+  // request. Note that this can not be combined with the
+  // WaitForAccessTokenRequestIfNecessaryAndRespondWith* methods - you must
+  // either wait for the callback to get called, or explicitly reset it by
+  // passing in a null callback, before the Wait* methods can be used again.
+  void SetCallbackForNextAccessTokenRequest(base::OnceClosure callback);
 
  private:
   // IdentityManager::DiagnosticsObserver:

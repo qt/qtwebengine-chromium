@@ -39,7 +39,6 @@ CPPLINT_BLACKLIST = [
   'test',
   'tools_webrtc',
   'voice_engine',
-  'third_party',
 ]
 
 # These filters will always be removed, even if the caller specifies a filter
@@ -416,14 +415,37 @@ def CheckNoPackageBoundaryViolations(input_api, gn_files, output_api):
   return []
 
 
-def _ReportErrorFileAndLineNumber(filename, line_num):
+def _ReportFileAndLine(filename, line_num):
   """Default error formatter for _FindNewViolationsOfRule."""
   return '%s (line %s)' % (filename, line_num)
 
 
+def CheckNoWarningSuppressionFlagsAreAdded(gn_files, input_api, output_api,
+                                           error_formatter=_ReportFileAndLine):
+  """Make sure that warning suppression flags are not added wihtout a reason."""
+  msg = ('Usage of //build/config/clang:extra_warnings is discouraged '
+         'in WebRTC.\n'
+         'If you are not adding this code (e.g. you are just moving '
+         'existing code) or you want to add an exception,\n'
+         'you can add a comment on the line that causes the problem:\n\n'
+         '"-Wno-odr"  # no-presubmit-check TODO(bugs.webrtc.org/BUG_ID)\n'
+         '\n'
+         'Affected files:\n')
+  errors = []  # 2-element tuples with (file, line number)
+  clang_warn_re = input_api.re.compile(r'//build/config/clang:extra_warnings')
+  no_presubmit_re = input_api.re.compile(
+      r'# no-presubmit-check TODO\(bugs\.webrtc\.org/\d+\)')
+  for f in gn_files:
+    for line_num, line in f.ChangedContents():
+      if clang_warn_re.search(line) and not no_presubmit_re.search(line):
+        errors.append(error_formatter(f.LocalPath(), line_num))
+  if errors:
+    return [output_api.PresubmitError(msg, errors)]
+  return []
+
 def CheckNoStreamUsageIsAdded(input_api, output_api,
                               source_file_filter,
-                              error_formatter=_ReportErrorFileAndLineNumber):
+                              error_formatter=_ReportFileAndLine):
   """Make sure that no more dependencies on stringstream are added."""
   error_msg = ('Usage of <sstream>, <istream> and <ostream> in WebRTC is '
                'deprecated.\n'
@@ -502,11 +524,10 @@ def CheckCheckIncludesIsNotUsed(gn_files, output_api):
   return result
 
 
-def CheckGnChanges(input_api, output_api, source_file_filter):
+def CheckGnChanges(input_api, output_api):
   file_filter = lambda x: (input_api.FilterSourceFile(
       x, white_list=(r'.+\.(gn|gni)$',),
-      black_list=(r'.*/presubmit_checks_lib/testdata/.*',))
-      and source_file_filter(x))
+      black_list=(r'.*/presubmit_checks_lib/testdata/.*',)))
 
   gn_files = []
   for f in input_api.AffectedSourceFiles(file_filter):
@@ -520,6 +541,8 @@ def CheckGnChanges(input_api, output_api, source_file_filter):
                                                    output_api))
     result.extend(CheckPublicDepsIsNotUsed(gn_files, input_api, output_api))
     result.extend(CheckCheckIncludesIsNotUsed(gn_files, output_api))
+    result.extend(CheckNoWarningSuppressionFlagsAreAdded(gn_files, input_api,
+                                                          output_api))
   return result
 
 
@@ -766,7 +789,6 @@ def CommonChecks(input_api, output_api):
                   r'^out.*[\\\/].*\.py$',
                   r'^testing[\\\/].*\.py$',
                   r'^third_party[\\\/].*\.py$',
-                  r'^third_party_chromium[\\\/].*\.py$',
                   r'^tools[\\\/].*\.py$',
                   # TODO(phoglund): should arguably be checked.
                   r'^tools_webrtc[\\\/]mb[\\\/].*\.py$',
@@ -785,8 +807,7 @@ def CommonChecks(input_api, output_api):
   # Skip long-lines check for DEPS and GN files.
   build_file_filter_list = (r'.+\.gn$', r'.+\.gni$', 'DEPS')
   # Also we will skip most checks for third_party directory.
-  third_party_filter_list = (r'^third_party[\\\/].+',
-                             r'^third_party_chromium[\\\/].+')
+  third_party_filter_list = (r'^third_party[\\\/].+',)
   eighty_char_sources = lambda x: input_api.FilterSourceFile(x,
       black_list=build_file_filter_list + objc_filter_list +
                  third_party_filter_list)
@@ -795,7 +816,6 @@ def CommonChecks(input_api, output_api):
   non_third_party_sources = lambda x: input_api.FilterSourceFile(x,
       black_list=third_party_filter_list)
 
-  results.extend(CheckNoGitRepoInThirdParty(input_api, output_api))
   results.extend(input_api.canned_checks.CheckLongLines(
       input_api, output_api, maxlen=80, source_file_filter=eighty_char_sources))
   results.extend(input_api.canned_checks.CheckLongLines(
@@ -809,6 +829,8 @@ def CommonChecks(input_api, output_api):
       input_api, output_api))
   results.extend(input_api.canned_checks.CheckChangeTodoHasOwner(
       input_api, output_api, source_file_filter=non_third_party_sources))
+  results.extend(input_api.canned_checks.CheckPatchFormatted(
+      input_api, output_api))
   results.extend(CheckNativeApiHeaderChanges(input_api, output_api))
   results.extend(CheckNoIOStreamInHeaders(
       input_api, output_api, source_file_filter=non_third_party_sources))
@@ -816,8 +838,7 @@ def CommonChecks(input_api, output_api):
       input_api, output_api, source_file_filter=non_third_party_sources))
   results.extend(CheckNoFRIEND_TEST(
       input_api, output_api, source_file_filter=non_third_party_sources))
-  results.extend(CheckGnChanges(
-      input_api, output_api, source_file_filter=non_third_party_sources))
+  results.extend(CheckGnChanges(input_api, output_api))
   results.extend(CheckUnwantedDependencies(
       input_api, output_api, source_file_filter=non_third_party_sources))
   results.extend(CheckJSONParseErrors(
@@ -831,26 +852,7 @@ def CommonChecks(input_api, output_api):
       input_api, output_api, source_file_filter=non_third_party_sources))
   results.extend(CheckNoStreamUsageIsAdded(
       input_api, output_api, non_third_party_sources))
-  results.extend(CheckThirdPartyChanges(input_api, output_api))
   return results
-
-
-def CheckNoGitRepoInThirdParty(input_api, output_api):
-  if os.path.isdir(input_api.os_path.join(
-      input_api.PresubmitLocalPath(), 'third_party', '.git')):
-    return [output_api.PresubmitError("Please remove third_party/.git "
-                                      "directory. This error means that "
-                                      "possibly you also have to apply other "
-                                      "instructions from the May 11th PSA from "
-                                      "titovartem@.")]
-  return []
-
-
-def CheckThirdPartyChanges(input_api, output_api):
-  with _AddToPath(input_api.os_path.join(
-      input_api.PresubmitLocalPath(), 'tools_webrtc', 'presubmit_checks_lib')):
-    from check_3pp import CheckThirdPartyDirectory
-  return CheckThirdPartyDirectory(input_api, output_api)
 
 
 def CheckChangeOnUpload(input_api, output_api):
@@ -864,23 +866,9 @@ def CheckChangeOnUpload(input_api, output_api):
 
 def CheckChangeOnCommit(input_api, output_api):
   results = []
-
-  # We have to skip OWNERS check for chromium-specific third_party deps.
-  chromium_deps_file = input_api.os_path.join(
-      input_api.PresubmitLocalPath(),
-      'THIRD_PARTY_CHROMIUM_DEPS.json')
-  with open(chromium_deps_file, 'rb') as f:
-    chromium_deps = json.load(f).get('dependencies', [])
-  deps_blacklist = []
-  for dep in chromium_deps:
-    deps_blacklist.append(r'^third_party[\\\/]%s[\\\/].+' % dep)
-  deps_filter = lambda x: input_api.FilterSourceFile(
-      x, black_list=deps_blacklist)
-
   results.extend(CommonChecks(input_api, output_api))
   results.extend(VerifyNativeApiHeadersListIsValid(input_api, output_api))
-  results.extend(input_api.canned_checks.CheckOwners(input_api, output_api,
-      source_file_filter=deps_filter))
+  results.extend(input_api.canned_checks.CheckOwners(input_api, output_api))
   results.extend(input_api.canned_checks.CheckChangeWasUploaded(
       input_api, output_api))
   results.extend(input_api.canned_checks.CheckChangeHasDescription(

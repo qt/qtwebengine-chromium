@@ -153,8 +153,7 @@ sk_sp<GrSurface> GrSurfaceProxy::createSurfaceImpl(
             texels[i].fRowBytes = 0;
         }
 
-        surface = resourceProvider->createTexture(desc, fBudgeted, texels.get(), mipCount,
-                                                  SkDestinationSurfaceColorMode::kLegacy);
+        surface = resourceProvider->createTexture(desc, fBudgeted, texels.get(), mipCount);
         if (surface) {
             SkASSERT(surface->asTexture());
             SkASSERT(GrMipMapped::kYes == surface->asTexture()->texturePriv().mipMapped());
@@ -324,18 +323,8 @@ sk_sp<GrTextureProxy> GrSurfaceProxy::Copy(GrContext* context,
     dstDesc.fHeight = srcRect.height();
     dstDesc.fConfig = src->config();
 
-    // We use an ephemeral surface context to make the copy. Here it isn't clear what color space
-    // to tag it with. That's ok because GrSurfaceContext::copy doesn't do any color space
-    // conversions. However, if the pixel config is sRGB then the passed color space here must
-    // have sRGB gamma or GrSurfaceContext creation fails. See skbug.com/7611 about making this
-    // with the correct color space information and returning the context to the caller.
-    sk_sp<SkColorSpace> colorSpace;
-    if (GrPixelConfigIsSRGB(dstDesc.fConfig)) {
-        colorSpace = SkColorSpace::MakeSRGB();
-    }
     sk_sp<GrSurfaceContext> dstContext(context->contextPriv().makeDeferredSurfaceContext(
-            dstDesc, src->origin(), mipMapped, SkBackingFit::kExact, budgeted,
-            std::move(colorSpace)));
+            dstDesc, src->origin(), mipMapped, SkBackingFit::kExact, budgeted));
     if (!dstContext) {
         return nullptr;
     }
@@ -411,8 +400,14 @@ bool GrSurfaceProxyPriv::doLazyInstantiation(GrResourceProvider* resourceProvide
         return false;
     }
 
-    fProxy->fWidth = surface->width();
-    fProxy->fHeight = surface->height();
+    if (fProxy->fWidth <= 0 || fProxy->fHeight <= 0) {
+        // This was a fully lazy proxy. We need to fill in the width & height. For partially
+        // lazy proxies we must preserve the original width & height since that indicates
+        // the content area.
+        SkASSERT(fProxy->fWidth <= 0 && fProxy->fHeight <= 0);
+        fProxy->fWidth = surface->width();
+        fProxy->fHeight = surface->height();
+    }
 
     bool needsStencil = fProxy->asRenderTargetProxy()
                                         ? fProxy->asRenderTargetProxy()->needsStencil()

@@ -36,9 +36,19 @@
 
 namespace blink {
 
-struct ContentAlignmentData;
 struct GridArea;
 struct GridSpan;
+
+struct ContentAlignmentData {
+ public:
+  ContentAlignmentData() = default;
+  bool IsValid() { return position_offset >= 0 && distribution_offset >= 0; }
+
+  LayoutUnit position_offset = LayoutUnit(-1);
+  LayoutUnit distribution_offset = LayoutUnit(-1);
+
+  DISALLOW_COPY_AND_ASSIGN(ContentAlignmentData);
+};
 
 enum GridAxisPosition { kGridAxisStart, kGridAxisEnd, kGridAxisCenter };
 
@@ -57,32 +67,32 @@ class LayoutGrid final : public LayoutBlock {
   Vector<LayoutUnit> TrackSizesForComputedStyle(GridTrackSizingDirection) const;
 
   const Vector<LayoutUnit>& ColumnPositions() const {
-    DCHECK(!grid_.NeedsItemsPlacement());
+    DCHECK(!grid_->NeedsItemsPlacement());
     return column_positions_;
   }
 
   const Vector<LayoutUnit>& RowPositions() const {
-    DCHECK(!grid_.NeedsItemsPlacement());
+    DCHECK(!grid_->NeedsItemsPlacement());
     return row_positions_;
   }
 
   const GridCell& GetGridCell(int row, int column) const {
-    SECURITY_DCHECK(!grid_.NeedsItemsPlacement());
-    return grid_.Cell(row, column);
+    SECURITY_DCHECK(!grid_->NeedsItemsPlacement());
+    return grid_->Cell(row, column);
   }
 
   const Vector<LayoutBox*>& ItemsOverflowingGridArea() const {
-    SECURITY_DCHECK(!grid_.NeedsItemsPlacement());
+    SECURITY_DCHECK(!grid_->NeedsItemsPlacement());
     return grid_items_overflowing_grid_area_;
   }
 
   int PaintIndexForGridItem(const LayoutBox* layout_box) const {
-    SECURITY_DCHECK(!grid_.NeedsItemsPlacement());
-    return grid_.GridItemPaintOrder(*layout_box);
+    SECURITY_DCHECK(!grid_->NeedsItemsPlacement());
+    return grid_->GridItemPaintOrder(*layout_box);
   }
 
   size_t AutoRepeatCountForDirection(GridTrackSizingDirection direction) const {
-    return grid_.AutoRepeatTracks(direction);
+    return grid_->AutoRepeatTracks(direction);
   }
 
   LayoutUnit TranslateOutOfFlowRTLCoordinate(const LayoutBox&,
@@ -97,8 +107,8 @@ class LayoutGrid final : public LayoutBlock {
                          size_t span,
                          base::Optional<LayoutUnit> available_size) const;
   bool CachedHasDefiniteLogicalHeight() const;
-  bool IsBaselineAlignmentForChild(const LayoutBox& child,
-                                   GridAxis = kGridColumnAxis) const;
+  bool IsBaselineAlignmentForChild(const LayoutBox& child) const;
+  bool IsBaselineAlignmentForChild(const LayoutBox& child, GridAxis) const;
 
   StyleSelfAlignmentData SelfAlignmentForChild(
       GridAxis,
@@ -108,9 +118,7 @@ class LayoutGrid final : public LayoutBlock {
   LayoutUnit GridGap(GridTrackSizingDirection) const;
   LayoutUnit GridItemOffset(GridTrackSizingDirection) const;
 
-  LayoutUnit EstimatedGridAreaBreadthForChild(const Grid&,
-                                              const LayoutBox&,
-                                              GridTrackSizingDirection) const;
+  void UpdateGridAreaLogicalSize(LayoutBox&, LayoutSize) const;
 
   StyleContentAlignmentData ContentAlignment(GridTrackSizingDirection) const;
 
@@ -164,11 +172,10 @@ class LayoutGrid final : public LayoutBlock {
       Grid&,
       GridTrackSizingDirection) const;
 
-  void LayoutOrthogonalWritingModeRoots(const Grid&,
-                                        const Vector<LayoutBox*>&) const;
+  void PerformGridItemsPreLayout(const GridTrackSizingAlgorithm&) const;
 
   void PlaceItemsOnGrid(
-      Grid&,
+      GridTrackSizingAlgorithm&,
       base::Optional<LayoutUnit> available_logical_width) const;
   void PopulateExplicitGridAndOrderIterator(Grid&) const;
   std::unique_ptr<GridArea> CreateEmptyGridAreaAtSpecifiedPositionsOutsideGrid(
@@ -188,7 +195,6 @@ class LayoutGrid final : public LayoutBlock {
 
   void ComputeTrackSizesForIndefiniteSize(GridTrackSizingAlgorithm&,
                                           GridTrackSizingDirection,
-                                          Grid&,
                                           LayoutUnit& min_intrinsic_size,
                                           LayoutUnit& max_intrinsic_size) const;
   LayoutUnit ComputeTrackBasedLogicalHeight() const;
@@ -198,7 +204,6 @@ class LayoutGrid final : public LayoutBlock {
   void RepeatTracksSizingIfNeeded(LayoutUnit available_space_for_columns,
                                   LayoutUnit available_space_for_rows);
 
-  void UpdateGridAreaLogicalSize(LayoutBox&, LayoutSize) const;
   void LayoutGridItems();
   void PrepareChildForPositionedLayout(LayoutBox&);
   bool HasStaticPositionForChild(const LayoutBox&,
@@ -234,10 +239,10 @@ class LayoutGrid final : public LayoutBlock {
   GridAxisPosition RowAxisPositionForChild(const LayoutBox&) const;
   LayoutUnit RowAxisOffsetForChild(const LayoutBox&) const;
   LayoutUnit ColumnAxisOffsetForChild(const LayoutBox&) const;
-  ContentAlignmentData ComputeContentPositionAndDistributionOffset(
+  void ComputeContentPositionAndDistributionOffset(
       GridTrackSizingDirection,
       const LayoutUnit& available_free_space,
-      unsigned number_of_grid_tracks) const;
+      unsigned number_of_grid_tracks);
   LayoutPoint GridAreaLogicalPosition(const GridArea&) const;
   LayoutPoint FindChildLogicalPosition(const LayoutBox&) const;
 
@@ -245,7 +250,8 @@ class LayoutGrid final : public LayoutBlock {
       const LayoutBox&,
       GridTrackSizingDirection) const;
 
-  void PaintChildren(const PaintInfo&, const LayoutPoint&) const override;
+  void PaintChildren(const PaintInfo&,
+                     const LayoutPoint& paint_offset) const override;
 
   LayoutUnit AvailableAlignmentSpaceForChildBeforeStretching(
       LayoutUnit grid_area_breadth_for_child,
@@ -298,6 +304,7 @@ class LayoutGrid final : public LayoutBlock {
 
   size_t GridItemSpan(const LayoutBox&, GridTrackSizingDirection);
 
+  size_t NonCollapsedTracks(GridTrackSizingDirection) const;
   size_t NumTracks(GridTrackSizingDirection, const Grid&) const;
 
   static LayoutUnit OverrideContainingBlockContentSizeForChild(
@@ -309,13 +316,13 @@ class LayoutGrid final : public LayoutBlock {
                                                      LineDirectionMode);
   static const StyleContentAlignmentData& ContentAlignmentNormalBehavior();
 
-  Grid grid_;
+  std::unique_ptr<Grid> grid_;
   GridTrackSizingAlgorithm track_sizing_algorithm_;
 
   Vector<LayoutUnit> row_positions_;
   Vector<LayoutUnit> column_positions_;
-  LayoutUnit offset_between_columns_;
-  LayoutUnit offset_between_rows_;
+  ContentAlignmentData offset_between_columns_;
+  ContentAlignmentData offset_between_rows_;
   Vector<LayoutBox*> grid_items_overflowing_grid_area_;
 
   typedef HashMap<const LayoutBox*, base::Optional<size_t>>
@@ -326,6 +333,7 @@ class LayoutGrid final : public LayoutBlock {
   LayoutUnit min_content_height_{-1};
   LayoutUnit max_content_height_{-1};
 
+  bool has_any_orthogonal_item_{false};
   base::Optional<bool> has_definite_logical_height_;
 };
 

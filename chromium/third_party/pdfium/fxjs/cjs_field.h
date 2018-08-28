@@ -10,11 +10,11 @@
 #include <string>
 #include <vector>
 
-#include "fxjs/JS_Define.h"
+#include "fxjs/cjs_document.h"
+#include "fxjs/js_define.h"
 
 class CPDF_FormControl;
 class CPDFSDK_Widget;
-class CJS_Document;
 struct CJS_DelayData;
 
 enum FIELD_PROP {
@@ -34,11 +34,8 @@ class CJS_Field : public CJS_Object {
   static void DoDelay(CPDFSDK_FormFillEnvironment* pFormFillEnv,
                       CJS_DelayData* pData);
 
-  explicit CJS_Field(v8::Local<v8::Object> pObject);
+  CJS_Field(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
   ~CJS_Field() override;
-
-  // CJS_Object
-  void InitInstance(IJS_Runtime* pIRuntime) override;
 
   bool AttachField(CJS_Document* pDocument, const WideString& csFieldName);
 
@@ -130,56 +127,6 @@ class CJS_Field : public CJS_Object {
   static const char kName[];
   static const JSPropertySpec PropertySpecs[];
   static const JSMethodSpec MethodSpecs[];
-
-  static void SetBorderStyle(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                             const WideString& swFieldName,
-                             int nControlIndex,
-                             const ByteString& string);
-  static void SetCurrentValueIndices(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                                     const WideString& swFieldName,
-                                     int nControlIndex,
-                                     const std::vector<uint32_t>& array);
-  static void SetDisplay(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                         const WideString& swFieldName,
-                         int nControlIndex,
-                         int number);
-  static void SetHidden(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                        const WideString& swFieldName,
-                        int nControlIndex,
-                        bool b);
-  static void SetLineWidth(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                           const WideString& swFieldName,
-                           int nControlIndex,
-                           int number);
-  static void SetMultiline(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                           const WideString& swFieldName,
-                           int nControlIndex,
-                           bool b);
-  static void SetRect(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                      const WideString& swFieldName,
-                      int nControlIndex,
-                      const CFX_FloatRect& rect);
-  static void SetValue(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                       const WideString& swFieldName,
-                       int nControlIndex,
-                       const std::vector<WideString>& strArray);
-
-  static void UpdateFormField(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                              CPDF_FormField* pFormField,
-                              bool bChangeMark,
-                              bool bResetAP,
-                              bool bRefresh);
-  static void UpdateFormControl(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                                CPDF_FormControl* pFormControl,
-                                bool bChangeMark,
-                                bool bResetAP,
-                                bool bRefresh);
-
-  static CPDFSDK_Widget* GetWidget(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                                   CPDF_FormControl* pFormControl);
-  static std::vector<CPDF_FormField*> GetFormFields(
-      CPDFSDK_FormFillEnvironment* pFormFillEnv,
-      const WideString& csFieldName);
 
   CJS_Return get_alignment(CJS_Runtime* pRuntime);
   CJS_Return set_alignment(CJS_Runtime* pRuntime, v8::Local<v8::Value> vp);
@@ -406,10 +353,10 @@ class CJS_Field : public CJS_Object {
   void ParseFieldName(const std::wstring& strFieldNameParsed,
                       std::wstring& strFieldName,
                       int& iControlNo);
-  std::vector<CPDF_FormField*> GetFormFields(
-      const WideString& csFieldName) const;
+  std::vector<CPDF_FormField*> GetFormFields() const;
+  CPDF_FormField* GetFirstFormField() const;
   CPDF_FormControl* GetSmartFieldControl(CPDF_FormField* pFormField);
-  bool ValueIsOccur(CPDF_FormField* pFormField, WideString csOptLabel);
+  bool ValueIsOccur(CPDF_FormField* pFormField, WideString csOptLabel) const;
 
   void AddDelay_Int(FIELD_PROP prop, int32_t n);
   void AddDelay_Bool(FIELD_PROP prop, bool b);
@@ -421,12 +368,12 @@ class CJS_Field : public CJS_Object {
 
   void DoDelay();
 
-  CJS_Document* m_pJSDoc;
+  CJS_Document::ObservedPtr m_pJSDoc;
   CPDFSDK_FormFillEnvironment::ObservedPtr m_pFormFillEnv;
   WideString m_FieldName;
-  int m_nFormControlIndex;
-  bool m_bCanSet;
-  bool m_bDelay;
+  int m_nFormControlIndex = -1;
+  bool m_bCanSet = false;
+  bool m_bDelay = false;
 };
 
 #endif  // FXJS_CJS_FIELD_H_

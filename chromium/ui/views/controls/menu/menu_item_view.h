@@ -40,6 +40,7 @@ class MenuRunnerImpl;
 
 namespace test {
 class TestMenuItemViewShown;
+class TestMenuItemViewNotShown;
 }
 
 class MenuController;
@@ -200,6 +201,9 @@ class VIEWS_EXPORT MenuItemView : public View {
 
   // Adds a separator to this menu
   void AppendSeparator();
+
+  // Adds a separator to this menu at the specified position.
+  void AddSeparatorAt(int index);
 
   // Appends a menu item with an icon. This is for the menu item which
   // needs an icon. Calling this function forces the Menu class to draw
@@ -377,6 +381,7 @@ class VIEWS_EXPORT MenuItemView : public View {
  private:
   friend class internal::MenuRunnerImpl;  // For access to ~MenuItemView.
   friend class test::TestMenuItemViewShown;  // for access to |submenu_|;
+  friend class test::TestMenuItemViewNotShown;  // for access to |submenu_|;
   friend class TestMenuItemView;             // For access to AddEmptyMenus();
 
   enum PaintButtonMode { PB_NORMAL, PB_FOR_DRAG };

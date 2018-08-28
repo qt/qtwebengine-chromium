@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "base/compiler_specific.h"
+#include "base/observer_list.h"
 #include "base/synchronization/lock.h"
 #include "components/viz/common/gpu/context_cache_controller.h"
 #include "components/viz/common/gpu/context_provider.h"
@@ -33,6 +34,7 @@ class GrContextForGLES2Interface;
 }
 
 namespace viz {
+class ContextLostObserver;
 
 // A ContextProvider used in the viz process to setup an InProcessCommandBuffer
 // for the display compositor.
@@ -41,7 +43,7 @@ class VIZ_SERVICE_EXPORT VizProcessContextProvider
       public ContextProvider {
  public:
   VizProcessContextProvider(
-      scoped_refptr<gpu::InProcessCommandBuffer::Service> service,
+      scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor,
       gpu::SurfaceHandle surface_handle,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       gpu::ImageFactory* image_factory,
@@ -62,8 +64,6 @@ class VIZ_SERVICE_EXPORT VizProcessContextProvider
   void AddObserver(ContextLostObserver* obs) override;
   void RemoveObserver(ContextLostObserver* obs) override;
 
-  uint32_t GetCopyTextureInternalFormat();
-
   void SetUpdateVSyncParametersCallback(
       const gpu::InProcessCommandBuffer::UpdateVSyncParametersCallback&
           callback);
@@ -73,6 +73,8 @@ class VIZ_SERVICE_EXPORT VizProcessContextProvider
   ~VizProcessContextProvider() override;
 
  private:
+  void OnContextLost();
+
   const gpu::ContextCreationAttribs attributes_;
 
   base::Lock context_lock_;
@@ -80,6 +82,8 @@ class VIZ_SERVICE_EXPORT VizProcessContextProvider
   gpu::ContextResult context_result_;
   std::unique_ptr<skia_bindings::GrContextForGLES2Interface> gr_context_;
   std::unique_ptr<ContextCacheController> cache_controller_;
+
+  base::ObserverList<ContextLostObserver> observers_;
 };
 
 }  // namespace viz

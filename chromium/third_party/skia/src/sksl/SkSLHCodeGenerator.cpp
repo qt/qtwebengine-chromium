@@ -33,7 +33,9 @@ String HCodeGenerator::ParameterType(const Context& context, const Type& type,
         return "float";
     } else if (type == *context.fFloat2_Type || type == *context.fHalf2_Type) {
         return "SkPoint";
-    } else if (type == *context.fInt4_Type || type == *context.fShort4_Type) {
+    } else if (type == *context.fInt4_Type ||
+               type == *context.fShort4_Type ||
+               type == *context.fByte4_Type) {
         return "SkIRect";
     } else if (type == *context.fFloat4_Type || type == *context.fHalf4_Type) {
         return "SkRect";
@@ -54,7 +56,7 @@ String HCodeGenerator::FieldType(const Context& context, const Type& type,
     } else if (type == *context.fFragmentProcessor_Type) {
         // we don't store fragment processors in fields, they get registered via
         // registerChildProcessor instead
-        ASSERT(false);
+        SkASSERT(false);
         return "<error>";
     }
     return ParameterType(context, type, layout);
@@ -111,13 +113,13 @@ void HCodeGenerator::writeExtraConstructorParams(const char* separator) {
                     lastIdentifierLength = 0;
                     foundBreak = false;
                 }
-                ASSERT(lastIdentifierLength < BUFFER_SIZE);
+                SkASSERT(lastIdentifierLength < BUFFER_SIZE);
                 lastIdentifier[lastIdentifierLength] = c;
                 ++lastIdentifierLength;
             } else {
                 foundBreak = true;
                 if (c == ',') {
-                    ASSERT(lastIdentifierLength < BUFFER_SIZE);
+                    SkASSERT(lastIdentifierLength < BUFFER_SIZE);
                     lastIdentifier[lastIdentifierLength] = 0;
                     this->writef("%s%s", separator, lastIdentifier);
                     separator = ", ";
@@ -127,7 +129,7 @@ void HCodeGenerator::writeExtraConstructorParams(const char* separator) {
             }
         }
         if (lastIdentifierLength) {
-            ASSERT(lastIdentifierLength < BUFFER_SIZE);
+            SkASSERT(lastIdentifierLength < BUFFER_SIZE);
             lastIdentifier[lastIdentifierLength] = 0;
             this->writef("%s%s", separator, lastIdentifier);
         }

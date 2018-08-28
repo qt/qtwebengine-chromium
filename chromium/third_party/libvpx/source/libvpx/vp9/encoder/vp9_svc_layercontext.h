@@ -24,13 +24,18 @@ typedef enum {
   INTER_LAYER_PRED_ON,
   // Inter-layer prediction is off on all frames.
   INTER_LAYER_PRED_OFF,
-  // Inter-layer prediction is off on non-key frames.
+  // Inter-layer prediction is off on non-key frames and non-sync frames.
   INTER_LAYER_PRED_OFF_NONKEY,
   // Inter-layer prediction is on on all frames, but constrained such
   // that any layer S (> 0) can only predict from previous spatial
   // layer S-1, from the same superframe.
   INTER_LAYER_PRED_ON_CONSTRAINED
 } INTER_LAYER_PRED;
+
+typedef struct BUFFER_LONGTERM_REF {
+  int idx;
+  int is_used;
+} BUFFER_LONGTERM_REF;
 
 typedef struct {
   RATE_CONTROL rc;
@@ -69,7 +74,6 @@ typedef struct SVC {
   int number_temporal_layers;
 
   int spatial_layer_to_encode;
-  int first_spatial_layer_to_encode;
 
   // Workaround for multiple frame contexts
   enum { ENCODED = 0, ENCODING, NEED_TO_ENCODE } encode_empty_frame_state;
@@ -97,6 +101,12 @@ typedef struct SVC {
   int gld_fb_idx[VPX_MAX_LAYERS];
   int alt_fb_idx[VPX_MAX_LAYERS];
   int force_zero_mode_spatial_ref;
+  // Sequence level flag to enable second (long term) temporal reference.
+  int use_gf_temporal_ref;
+  // Frame level flag to enable second (long term) temporal reference.
+  int use_gf_temporal_ref_current_layer;
+  // Allow second reference for at most 2 top highest resolution layers.
+  BUFFER_LONGTERM_REF buffer_gf_temporal_ref[2];
   int current_superframe;
   int non_reference_frame;
   int use_base_mv;
@@ -121,6 +131,8 @@ typedef struct SVC {
   int last_layer_dropped[VPX_MAX_LAYERS];
   int drop_spatial_layer[VPX_MAX_LAYERS];
   int framedrop_thresh[VPX_MAX_LAYERS];
+  int drop_count[VPX_MAX_LAYERS];
+  int max_consec_drop;
   SVC_LAYER_DROP_MODE framedrop_mode;
 
   INTER_LAYER_PRED disable_inter_layer_pred;
@@ -146,6 +158,13 @@ typedef struct SVC {
   // updated the frame buffer index.
   uint8_t fb_idx_spatial_layer_id[REF_FRAMES];
   uint8_t fb_idx_temporal_layer_id[REF_FRAMES];
+
+  int spatial_layer_sync[VPX_SS_MAX_LAYERS];
+  uint8_t set_intra_only_frame;
+  uint8_t previous_frame_is_intra_only;
+  uint8_t superframe_has_layer_sync;
+
+  uint8_t fb_idx_base[REF_FRAMES];
 } SVC;
 
 struct VP9_COMP;
@@ -206,6 +225,10 @@ void vp9_svc_check_reset_layer_rc_flag(struct VP9_COMP *const cpi);
 void vp9_svc_constrain_inter_layer_pred(struct VP9_COMP *const cpi);
 
 void vp9_svc_assert_constraints_pattern(struct VP9_COMP *const cpi);
+
+void vp9_svc_check_spatial_layer_sync(struct VP9_COMP *const cpi);
+
+void vp9_svc_update_ref_frame_buffer_idx(struct VP9_COMP *const cpi);
 
 #ifdef __cplusplus
 }  // extern "C"

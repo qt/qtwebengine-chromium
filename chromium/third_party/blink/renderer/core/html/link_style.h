@@ -9,13 +9,14 @@
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/html/link_resource.h"
 #include "third_party/blink/renderer/core/loader/resource/css_style_sheet_resource.h"
+#include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_client.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 
 namespace blink {
 
 class HTMLLinkElement;
-class KURL;
+struct LinkLoadParameters;
 
 // LinkStyle handles dynamically change-able link resources, which is
 // typically @rel="stylesheet".
@@ -62,9 +63,8 @@ class LinkStyle final : public LinkResource, ResourceClient {
   void NotifyFinished(Resource*) override;
   String DebugName() const override { return "LinkStyle"; }
   enum LoadReturnValue { kLoaded, kNotNeeded, kBail };
-  LoadReturnValue LoadStylesheetIfNeeded(const KURL&,
-                                         const WTF::TextEncoding&,
-                                         const String& type);
+  LoadReturnValue LoadStylesheetIfNeeded(const LinkLoadParameters&,
+                                         const WTF::TextEncoding&);
 
   enum DisabledState { kUnset, kEnabledViaScript, kDisabled };
 

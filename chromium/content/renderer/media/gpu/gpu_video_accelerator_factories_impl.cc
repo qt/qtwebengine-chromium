@@ -223,7 +223,6 @@ bool GpuVideoAcceleratorFactoriesImpl::CreateTextures(
       gles2->TexImage2D(texture_target, 0, GL_RGBA, size.width(), size.height(),
                         0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     }
-    gles2->GenMailboxCHROMIUM(texture_mailboxes->at(i).name);
     gles2->ProduceTextureDirectCHROMIUM(texture_id,
                                         texture_mailboxes->at(i).name);
   }
@@ -312,9 +311,8 @@ GpuVideoAcceleratorFactoriesImpl::VideoFrameOutputFormat(size_t bit_depth) {
     if (rendering_color_space_.IsHDR())
       return media::GpuVideoAcceleratorFactories::OutputFormat::UNDEFINED;
 
-#if defined(OS_MACOSX) || defined(OS_LINUX)
-    // TODO(mcasas): enable other platforms https://crbug.com/776093
-    // https://crbug.com/803451.
+#if !defined(OS_WIN)
+    // TODO(mcasas): enable Win https://crbug.com/803451.
     // TODO(mcasas): remove the |bit_depth| check when libyuv supports more than
     // just x010ToAR30 conversions, https://crbug.com/libyuv/751.
     if (bit_depth == 10) {

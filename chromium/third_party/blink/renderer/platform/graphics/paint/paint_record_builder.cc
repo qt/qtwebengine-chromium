@@ -22,14 +22,13 @@ PaintRecordBuilder::PaintRecordBuilder(SkMetaData* meta_data,
   if (paint_controller) {
     paint_controller_ = paint_controller;
   } else {
-    own_paint_controller_ = PaintController::Create();
+    own_paint_controller_ =
+        PaintController::Create(PaintController::kTransient);
     paint_controller_ = own_paint_controller_.get();
   }
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    paint_controller_->UpdateCurrentPaintChunkProperties(
-        base::nullopt, PropertyTreeState::Root());
-  }
+  paint_controller_->UpdateCurrentPaintChunkProperties(
+      base::nullopt, PropertyTreeState::Root());
 
   const HighContrastSettings* high_contrast_settings =
       containing_context ? &containing_context->high_contrast_settings()
@@ -43,27 +42,24 @@ PaintRecordBuilder::PaintRecordBuilder(SkMetaData* meta_data,
     context_->SetDeviceScaleFactor(containing_context->DeviceScaleFactor());
     context_->SetPrinting(containing_context->Printing());
   }
-
-  if (!paint_controller)
-    cache_skipper_.emplace(*context_);
 }
+
+PaintRecordBuilder::~PaintRecordBuilder() = default;
 
 sk_sp<PaintRecord> PaintRecordBuilder::EndRecording(
     const PropertyTreeState& replay_state) {
   context_->BeginRecording(FloatRect());
   paint_controller_->CommitNewDisplayItems();
+  paint_controller_->FinishCycle();
   paint_controller_->GetPaintArtifact().Replay(*context_, replay_state);
   return context_->EndRecording();
 }
 
-void PaintRecordBuilder::EndRecording(PaintCanvas& canvas,
+void PaintRecordBuilder::EndRecording(cc::PaintCanvas& canvas,
                                       const PropertyTreeState& replay_state) {
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    canvas.drawPicture(EndRecording());
-  } else {
-    paint_controller_->CommitNewDisplayItems();
-    paint_controller_->GetPaintArtifact().Replay(canvas, replay_state);
-  }
+  paint_controller_->CommitNewDisplayItems();
+  paint_controller_->FinishCycle();
+  paint_controller_->GetPaintArtifact().Replay(canvas, replay_state);
 }
 
 }  // namespace blink

@@ -7,6 +7,8 @@
 
 #include "SlideDir.h"
 
+#ifdef SK_HAS_SKSG
+
 #include "SkAnimTimer.h"
 #include "SkCanvas.h"
 #include "SkCubicMap.h"
@@ -23,6 +25,7 @@
 #include "SkTypeface.h"
 
 #include <cmath>
+#include <utility>
 
 namespace {
 
@@ -145,8 +148,9 @@ public:
     void startUnfocus() {
         SkASSERT(fTarget);
 
-        SkTSwap(fM0, fM1);
-        SkTSwap(fOpacity0, fOpacity1);
+        using std::swap;
+        swap(fM0, fM1);
+        swap(fOpacity0, fOpacity1);
 
         fTimeBase = 0;
         fState = State::kUnfocusing;
@@ -418,3 +422,5 @@ const SlideDir::Rec* SlideDir::findCell(float x, float y) const {
 
     return idx < fRecs.count() ? &fRecs[idx] : nullptr;
 }
+
+#endif // SK_HAS_SKSG

@@ -25,6 +25,7 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/webui/content_web_ui_controller_factory.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
+#include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_features.h"
@@ -42,6 +43,13 @@
 #include "url/url_util.h"
 
 namespace content {
+namespace {
+
+GURL GetWebUIURL(std::string host) {
+  return GURL(std::string(kChromeUIScheme) + "://" + host);
+}
+
+}  // namespace
 
 const char kPrivilegedScheme[] = "privileged";
 
@@ -212,41 +220,6 @@ TEST_F(SiteInstanceTest, SiteInstanceDestructor) {
   // contents is now deleted, along with instance and browsing_instance
 }
 
-// Test that NavigationEntries with SiteInstances can be cloned, but that their
-// SiteInstances can be changed afterwards.  Also tests that the ref counts are
-// updated properly after the change.
-TEST_F(SiteInstanceTest, CloneNavigationEntry) {
-  const GURL url("test:foo");
-
-  std::unique_ptr<NavigationEntryImpl> e1 =
-      base::WrapUnique(new NavigationEntryImpl(
-          SiteInstanceImpl::Create(nullptr), url, Referrer(), base::string16(),
-          ui::PAGE_TRANSITION_LINK, false,
-          nullptr /* blob_url_loader_factory */));
-
-  // Clone the entry.
-  std::unique_ptr<NavigationEntryImpl> e2 = e1->Clone();
-
-  // Should be able to change the SiteInstance of the cloned entry.
-  e2->set_site_instance(SiteInstanceImpl::Create(nullptr));
-
-  EXPECT_EQ(0, browser_client()->GetAndClearSiteInstanceDeleteCount());
-  EXPECT_EQ(0, browser_client()->GetAndClearBrowsingInstanceDeleteCount());
-
-  // The first SiteInstance and BrowsingInstance should go away after resetting
-  // e1, since e2 should no longer be referencing it.
-  e1.reset();
-  EXPECT_EQ(1, browser_client()->GetAndClearSiteInstanceDeleteCount());
-  EXPECT_EQ(1, browser_client()->GetAndClearBrowsingInstanceDeleteCount());
-
-  // The second SiteInstance should go away after resetting e2.
-  e2.reset();
-  EXPECT_EQ(1, browser_client()->GetAndClearSiteInstanceDeleteCount());
-  EXPECT_EQ(1, browser_client()->GetAndClearBrowsingInstanceDeleteCount());
-
-  DrainMessageLoop();
-}
-
 // Test to ensure GetProcess returns and creates processes correctly.
 TEST_F(SiteInstanceTest, GetProcess) {
   // Ensure that GetProcess returns a process.
@@ -343,12 +316,25 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
   EXPECT_EQ("file", site_url.scheme());
   EXPECT_FALSE(site_url.has_host());
 
-  // Data URLs should include the scheme.
+  // Data URLs should include the whole URL, except for the hash, when Site
+  // Isolation is enabled.  Otherwise they just include the scheme.
   test_url = GURL("data:text/html,foo");
   site_url = SiteInstanceImpl::GetSiteForURL(nullptr, test_url);
-  EXPECT_EQ(GURL("data:"), site_url);
+  if (AreAllSitesIsolatedForTesting())
+    EXPECT_EQ(test_url, site_url);
+  else
+    EXPECT_EQ(GURL("data:"), site_url);
   EXPECT_EQ("data", site_url.scheme());
   EXPECT_FALSE(site_url.has_host());
+  test_url = GURL("data:text/html,foo#bar");
+  site_url = SiteInstanceImpl::GetSiteForURL(nullptr, test_url);
+  EXPECT_FALSE(site_url.has_ref());
+  if (AreAllSitesIsolatedForTesting()) {
+    EXPECT_NE(test_url, site_url);
+    EXPECT_TRUE(site_url.EqualsIgnoringRef(test_url));
+  } else {
+    EXPECT_EQ(GURL("data:"), site_url);
+  }
 
   // Javascript URLs should include the scheme.
   test_url = GURL("javascript:foo();");
@@ -370,6 +356,25 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
   EXPECT_EQ(GURL("file:"), site_url);
   EXPECT_EQ("file", site_url.scheme());
   EXPECT_FALSE(site_url.has_host());
+
+  // Blob URLs created from a unique origin use the full URL as the site URL
+  // when Site Isolation is enabled, except for the hash.  Otherwise they just
+  // include the scheme.
+  test_url = GURL("blob:null/1029e5a4-2983-4b90-a585-ed217563acfeb");
+  site_url = SiteInstanceImpl::GetSiteForURL(nullptr, test_url);
+  if (AreAllSitesIsolatedForTesting())
+    EXPECT_EQ(test_url, site_url);
+  else
+    EXPECT_EQ(GURL("blob:"), site_url);
+  test_url = GURL("blob:null/1029e5a4-2983-4b90-a585-ed217563acfeb#foo");
+  site_url = SiteInstanceImpl::GetSiteForURL(nullptr, test_url);
+  EXPECT_FALSE(site_url.has_ref());
+  if (AreAllSitesIsolatedForTesting()) {
+    EXPECT_NE(test_url, site_url);
+    EXPECT_TRUE(site_url.EqualsIgnoringRef(test_url));
+  } else {
+    EXPECT_EQ(GURL("blob:"), site_url);
+  }
 
   // Private domains are preserved, appspot being such a site.
   test_url = GURL(
@@ -621,6 +626,7 @@ static scoped_refptr<SiteInstanceImpl> CreateSiteInstance(
 
 // Test to ensure that pages that require certain privileges are grouped
 // in processes with similar pages.
+// TODO(nasko): Remove. See https://crbug.com/847127.
 TEST_F(SiteInstanceTest, ProcessSharingByType) {
   // This test shouldn't run with --site-per-process mode, which prohibits
   // the renderer process reuse this test explicitly exercises.
@@ -660,13 +666,13 @@ TEST_F(SiteInstanceTest, ProcessSharingByType) {
             extension2_instance->GetProcess());
 
   // Create some WebUI instances and make sure they share a process.
-  scoped_refptr<SiteInstanceImpl> webui1_instance(CreateSiteInstance(
-      browser_context.get(), GURL(kChromeUIScheme + std::string("://gpu"))));
-  policy->GrantWebUIBindings(webui1_instance->GetProcess()->GetID());
+  scoped_refptr<SiteInstanceImpl> webui1_instance(
+      CreateSiteInstance(browser_context.get(), GetWebUIURL(kChromeUIGpuHost)));
+  policy->GrantWebUIBindings(webui1_instance->GetProcess()->GetID(),
+                             BINDINGS_POLICY_WEB_UI);
 
   scoped_refptr<SiteInstanceImpl> webui2_instance(CreateSiteInstance(
-      browser_context.get(),
-      GURL(kChromeUIScheme + std::string("://media-internals"))));
+      browser_context.get(), GetWebUIURL(kChromeUIMediaInternalsHost)));
 
   std::unique_ptr<RenderProcessHost> dom_host(webui1_instance->GetProcess());
   EXPECT_EQ(webui1_instance->GetProcess(), webui2_instance->GetProcess());
@@ -724,7 +730,7 @@ TEST_F(SiteInstanceTest, HasWrongProcessForURL) {
 
   // Simulate granting WebUI bindings for the process.
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantWebUIBindings(
-      webui_host->GetID());
+      webui_host->GetID(), BINDINGS_POLICY_WEB_UI);
 
   EXPECT_TRUE(webui_instance->HasProcess());
   EXPECT_FALSE(webui_instance->HasWrongProcessForURL(webui_url));
@@ -1024,7 +1030,7 @@ TEST_F(SiteInstanceTest, IsValidIsolatedOrigin) {
 
   // Scheme must be HTTP or HTTPS.
   EXPECT_FALSE(IsolatedOriginUtil::IsValidIsolatedOrigin(
-      url::Origin::Create(GURL(kChromeUIScheme + std::string("://gpu")))));
+      url::Origin::Create(GetWebUIURL(kChromeUIGpuHost))));
   EXPECT_TRUE(IsolatedOriginUtil::IsValidIsolatedOrigin(
       url::Origin::Create(GURL("http://a.com"))));
   EXPECT_TRUE(IsolatedOriginUtil::IsValidIsolatedOrigin(
@@ -1231,6 +1237,19 @@ TEST_F(SiteInstanceTest, OriginalURL) {
   }
 
   SetBrowserClientForTesting(regular_client);
+}
+
+TEST_F(SiteInstanceTest, IsOriginLockASite) {
+  EXPECT_FALSE(SiteInstanceImpl::IsOriginLockASite(GURL("http://")));
+  EXPECT_FALSE(SiteInstanceImpl::IsOriginLockASite(GURL("")));
+  EXPECT_FALSE(SiteInstanceImpl::IsOriginLockASite(GURL("google.com")));
+  EXPECT_FALSE(SiteInstanceImpl::IsOriginLockASite(GURL("http:")));
+  EXPECT_FALSE(SiteInstanceImpl::IsOriginLockASite(GURL("chrome:")));
+
+  EXPECT_TRUE(SiteInstanceImpl::IsOriginLockASite(GURL("http://foo.com")));
+  EXPECT_TRUE(SiteInstanceImpl::IsOriginLockASite(GURL("http://bar.foo.com")));
+  EXPECT_TRUE(SiteInstanceImpl::IsOriginLockASite(
+      GURL("http://user:pass@google.com:99/foo;bar?q=a#ref")));
 }
 
 }  // namespace content

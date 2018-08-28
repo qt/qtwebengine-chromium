@@ -14,11 +14,11 @@
 #include "net/third_party/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 
+using testing::_;
 using testing::Return;
 using testing::StrictMock;
-using testing::_;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -27,12 +27,11 @@ class MockQuicSpdyClientSession : public QuicSpdyClientSession {
   explicit MockQuicSpdyClientSession(
       QuicConnection* connection,
       QuicClientPushPromiseIndex* push_promise_index)
-      : QuicSpdyClientSession(
-            DefaultQuicConfig(),
-            connection,
-            QuicServerId("example.com", 443, PRIVACY_MODE_DISABLED),
-            &crypto_config_,
-            push_promise_index),
+      : QuicSpdyClientSession(DefaultQuicConfig(),
+                              connection,
+                              QuicServerId("example.com", 443, false),
+                              &crypto_config_,
+                              push_promise_index),
         crypto_config_(crypto_test_utils::ProofVerifierForTesting(),
                        TlsClientHandshaker::CreateSslCtx()) {}
   ~MockQuicSpdyClientSession() override {}
@@ -111,4 +110,4 @@ TEST_F(QuicClientPushPromiseIndexTest, GetPromise) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

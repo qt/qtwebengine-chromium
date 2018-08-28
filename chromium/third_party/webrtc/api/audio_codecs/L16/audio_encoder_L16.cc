@@ -10,25 +10,25 @@
 
 #include "api/audio_codecs/L16/audio_encoder_L16.h"
 
+#include "absl/memory/memory.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/audio_coding/codecs/pcm16b/audio_encoder_pcm16b.h"
 #include "modules/audio_coding/codecs/pcm16b/pcm16b_common.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
-rtc::Optional<AudioEncoderL16::Config> AudioEncoderL16::SdpToConfig(
+absl::optional<AudioEncoderL16::Config> AudioEncoderL16::SdpToConfig(
     const SdpAudioFormat& format) {
   if (!rtc::IsValueInRangeForNumericType<int>(format.num_channels)) {
-    return rtc::nullopt;
+    return absl::nullopt;
   }
   Config config;
   config.sample_rate_hz = format.clockrate_hz;
   config.num_channels = rtc::dchecked_cast<int>(format.num_channels);
   return STR_CASE_CMP(format.name.c_str(), "L16") == 0 && config.IsOk()
-             ? rtc::Optional<Config>(config)
-             : rtc::nullopt;
+             ? absl::optional<Config>(config)
+             : absl::nullopt;
 }
 
 void AudioEncoderL16::AppendSupportedEncoders(
@@ -47,14 +47,14 @@ AudioCodecInfo AudioEncoderL16::QueryAudioEncoder(
 std::unique_ptr<AudioEncoder> AudioEncoderL16::MakeAudioEncoder(
     const AudioEncoderL16::Config& config,
     int payload_type,
-    rtc::Optional<AudioCodecPairId> /*codec_pair_id*/) {
+    absl::optional<AudioCodecPairId> /*codec_pair_id*/) {
   RTC_DCHECK(config.IsOk());
   AudioEncoderPcm16B::Config c;
   c.sample_rate_hz = config.sample_rate_hz;
   c.num_channels = config.num_channels;
   c.frame_size_ms = config.frame_size_ms;
   c.payload_type = payload_type;
-  return rtc::MakeUnique<AudioEncoderPcm16B>(c);
+  return absl::make_unique<AudioEncoderPcm16B>(c);
 }
 
 }  // namespace webrtc

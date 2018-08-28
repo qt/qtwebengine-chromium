@@ -27,11 +27,11 @@
 
 #include <memory>
 
+#include "base/thread_annotations.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_database_observer.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -55,7 +55,6 @@
 #include "third_party/blink/renderer/platform/waitable_event.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/atomics.h"
-#include "third_party/blink/renderer/platform/wtf/time.h"
 
 // Registering "opened" databases with the DatabaseTracker
 // =======================================================
@@ -88,17 +87,77 @@
 
 namespace blink {
 
-// Defines static local variable after making sure that guid lock is held.
-// (We can't use DEFINE_STATIC_LOCAL for this because it asserts thread
-// safety, which is externally guaranteed by the guideMutex lock)
+namespace {
+
+// Stores a cached version of each database, keyed by a unique integer obtained
+// by providing an origin-name pair.
+class DatabaseVersionCache {
+ public:
+  Mutex& GetMutex() const LOCK_RETURNED(mutex_) { return mutex_; }
+
+  // Registers a globally-unique integer using the string key (reusing it if it
+  // already exists), and returns the integer. Currently, these IDs live for the
+  // lifetime of the process.
+  DatabaseGuid RegisterOriginAndName(const String& origin, const String& name)
+      EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    CheckLocked();
+    String string_id = origin + "/" + name;
+    DCHECK(string_id.IsSafeToSendToAnotherThread());
+    DatabaseGuid guid = origin_name_to_guid_.at(string_id);
+    if (!guid) {
+      guid = next_guid_++;
+      origin_name_to_guid_.Set(string_id, guid);
+    }
+    count_.insert(guid);
+    return guid;
+  }
+
+  // Releases one use of this identifier (corresponding to a call to
+  // RegisterOriginAndName). If all uses are released, the cached version will
+  // be erased from memory.
+  void ReleaseGuid(DatabaseGuid guid) EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    CheckLocked();
+    DCHECK(count_.Contains(guid));
+    if (count_.erase(guid))
+      guid_to_version_.erase(guid);
+  }
+
+  // The null string is returned only if the cached version has not been set.
+  String GetVersion(DatabaseGuid guid) const EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    CheckLocked();
+    return guid_to_version_.at(guid).IsolatedCopy();
+  }
+
+  // Updates the cached version of a database.
+  // The null string is treated as the empty string.
+  void SetVersion(DatabaseGuid guid, const String& new_version)
+      EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    CheckLocked();
+    guid_to_version_.Set(guid, new_version.IsNull()
+                                   ? g_empty_string
+                                   : new_version.IsolatedCopy());
+  }
+
+ private:
+  void CheckLocked() const ASSERT_EXCLUSIVE_LOCK(mutex_) {
 #if DCHECK_IS_ON()
-#define DEFINE_STATIC_LOCAL_WITH_LOCK(type, name, arguments) \
-  DCHECK(GuidMutex().Locked());                              \
-  static type& name = *new type arguments
-#else
-#define DEFINE_STATIC_LOCAL_WITH_LOCK(type, name, arguments) \
-  static type& name = *new type arguments
+    DCHECK(mutex_.Locked());
 #endif
+  }
+
+  mutable Mutex mutex_;
+  HashMap<String, DatabaseGuid> origin_name_to_guid_ GUARDED_BY(mutex_);
+  HashCountedSet<DatabaseGuid> count_ GUARDED_BY(mutex_);
+  HashMap<DatabaseGuid, String> guid_to_version_ GUARDED_BY(mutex_);
+  DatabaseGuid next_guid_ GUARDED_BY(mutex_) = 1;
+};
+
+DatabaseVersionCache& GetDatabaseVersionCache() {
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(DatabaseVersionCache, cache, ());
+  return cache;
+}
+
+}  // namespace
 
 static const char kVersionKey[] = "WebKitDatabaseVersionKey";
 static const char kInfoTableName[] = "__WebKitDatabaseInfoTable__";
@@ -162,63 +221,6 @@ static bool SetTextValueInDatabase(SQLiteDatabase& db,
   return true;
 }
 
-// FIXME: move all guid-related functions to a DatabaseVersionTracker class.
-static RecursiveMutex& GuidMutex() {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(RecursiveMutex, mutex, ());
-  return mutex;
-}
-
-typedef HashMap<DatabaseGuid, String> GuidVersionMap;
-static GuidVersionMap& GuidToVersionMap() {
-  DEFINE_STATIC_LOCAL_WITH_LOCK(GuidVersionMap, map, ());
-  return map;
-}
-
-// NOTE: Caller must lock guidMutex().
-static inline void UpdateGuidVersionMap(DatabaseGuid guid, String new_version) {
-  // Ensure the the mutex is locked.
-#if DCHECK_IS_ON()
-  DCHECK(GuidMutex().Locked());
-#endif
-
-  // Note: It is not safe to put an empty string into the guidToVersionMap()
-  // map. That's because the map is cross-thread, but empty strings are
-  // per-thread. The copy() function makes a version of the string you can
-  // use on the current thread, but we need a string we can keep in a
-  // cross-thread data structure.
-  // FIXME: This is a quite-awkward restriction to have to program with.
-
-  // Map null string to empty string (see comment above).
-  GuidToVersionMap().Set(
-      guid, new_version.IsEmpty() ? String() : new_version.IsolatedCopy());
-}
-
-static HashCountedSet<DatabaseGuid>& GuidCount() {
-  DEFINE_STATIC_LOCAL_WITH_LOCK(HashCountedSet<DatabaseGuid>, guid_count, ());
-  return guid_count;
-}
-
-static DatabaseGuid GuidForOriginAndName(const String& origin,
-                                         const String& name) {
-  // Ensure the the mutex is locked.
-#if DCHECK_IS_ON()
-  DCHECK(GuidMutex().Locked());
-#endif
-
-  String string_id = origin + "/" + name;
-
-  typedef HashMap<String, int> IDGuidMap;
-  DEFINE_STATIC_LOCAL_WITH_LOCK(IDGuidMap, string_identifier_to_guid_map, ());
-  DatabaseGuid guid = string_identifier_to_guid_map.at(string_id);
-  if (!guid) {
-    static int current_new_guid = 1;
-    guid = current_new_guid++;
-    string_identifier_to_guid_map.Set(string_id, guid);
-  }
-
-  return guid;
-}
-
 Database::Database(DatabaseContext* database_context,
                    const String& name,
                    const String& expected_version,
@@ -245,9 +247,9 @@ Database::Database(DatabaseContext* database_context,
     name_ = "";
 
   {
-    RecursiveMutexLocker locker(GuidMutex());
-    guid_ = GuidForOriginAndName(GetSecurityOrigin()->ToString(), name);
-    GuidCount().insert(guid_);
+    auto& cache = GetDatabaseVersionCache();
+    MutexLocker locker(cache.GetMutex());
+    guid_ = cache.RegisterOriginAndName(GetSecurityOrigin()->ToString(), name);
   }
 
   filename_ = DatabaseManager::Manager().FullPathForDatabase(
@@ -426,12 +428,9 @@ void Database::CloseDatabase() {
   // See comment at the top this file regarding calling removeOpenDatabase().
   DatabaseTracker::Tracker().RemoveOpenDatabase(this);
   {
-    RecursiveMutexLocker locker(GuidMutex());
-
-    DCHECK(GuidCount().Contains(guid_));
-    if (GuidCount().erase(guid_)) {
-      GuidToVersionMap().erase(guid_);
-    }
+    auto& cache = GetDatabaseVersionCache();
+    MutexLocker locker(cache.GetMutex());
+    cache.ReleaseGuid(guid_);
   }
 }
 
@@ -464,7 +463,7 @@ class DoneCreatingDatabaseOnExitCaller {
 bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
                                     DatabaseError& error,
                                     String& error_message) {
-  double call_start_time = WTF::CurrentTimeTicksInSeconds();
+  TimeTicks call_start_time = WTF::CurrentTimeTicks();
   DoneCreatingDatabaseOnExitCaller on_exit_caller(this);
   DCHECK(error_message.IsEmpty());
   DCHECK_EQ(error,
@@ -476,8 +475,9 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
 
   if (!sqlite_database_.Open(filename_)) {
     ReportOpenDatabaseResult(
-        1, kInvalidStateError, sqlite_database_.LastError(),
-        WTF::CurrentTimeTicksInSeconds() - call_start_time);
+        1, static_cast<int>(DOMExceptionCode::kInvalidStateError),
+        sqlite_database_.LastError(),
+        WTF::CurrentTimeTicks() - call_start_time);
     error_message = FormatErrorMessage("unable to open database",
                                        sqlite_database_.LastError(),
                                        sqlite_database_.LastErrorMsg());
@@ -492,13 +492,11 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
 
   String current_version;
   {
-    RecursiveMutexLocker locker(GuidMutex());
+    auto& cache = GetDatabaseVersionCache();
+    MutexLocker locker(cache.GetMutex());
 
-    GuidVersionMap::iterator entry = GuidToVersionMap().find(guid_);
-    if (entry != GuidToVersionMap().end()) {
-      // Map null string to empty string (see updateGuidVersionMap()).
-      current_version =
-          entry->value.IsNull() ? g_empty_string : entry->value.IsolatedCopy();
+    current_version = cache.GetVersion(guid_);
+    if (!current_version.IsNull()) {
       STORAGE_DVLOG(1) << "Current cached version for guid " << guid_ << " is "
                        << current_version;
 
@@ -514,7 +512,7 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
       String version_from_database;
       if (GetVersionFromDatabase(version_from_database, false)) {
         current_version = version_from_database;
-        UpdateGuidVersionMap(guid_, current_version);
+        cache.SetVersion(guid_, current_version);
       }
       sqlite_database_.SetBusyTimeout(kMaxSqliteBusyWaitTime);
     } else {
@@ -524,8 +522,9 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
       transaction.begin();
       if (!transaction.InProgress()) {
         ReportOpenDatabaseResult(
-            2, kInvalidStateError, sqlite_database_.LastError(),
-            WTF::CurrentTimeTicksInSeconds() - call_start_time);
+            2, static_cast<int>(DOMExceptionCode::kInvalidStateError),
+            sqlite_database_.LastError(),
+            WTF::CurrentTimeTicks() - call_start_time);
         error_message = FormatErrorMessage(
             "unable to open database, failed to start transaction",
             sqlite_database_.LastError(), sqlite_database_.LastErrorMsg());
@@ -542,8 +541,9 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
                 " (key TEXT NOT NULL ON CONFLICT FAIL UNIQUE ON CONFLICT "
                 "REPLACE,value TEXT NOT NULL ON CONFLICT FAIL);")) {
           ReportOpenDatabaseResult(
-              3, kInvalidStateError, sqlite_database_.LastError(),
-              WTF::CurrentTimeTicksInSeconds() - call_start_time);
+              3, static_cast<int>(DOMExceptionCode::kInvalidStateError),
+              sqlite_database_.LastError(),
+              WTF::CurrentTimeTicks() - call_start_time);
           error_message = FormatErrorMessage(
               "unable to open database, failed to create 'info' table",
               sqlite_database_.LastError(), sqlite_database_.LastErrorMsg());
@@ -553,8 +553,9 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
         }
       } else if (!GetVersionFromDatabase(current_version, false)) {
         ReportOpenDatabaseResult(
-            4, kInvalidStateError, sqlite_database_.LastError(),
-            WTF::CurrentTimeTicksInSeconds() - call_start_time);
+            4, static_cast<int>(DOMExceptionCode::kInvalidStateError),
+            sqlite_database_.LastError(),
+            WTF::CurrentTimeTicks() - call_start_time);
         error_message = FormatErrorMessage(
             "unable to open database, failed to read current version",
             sqlite_database_.LastError(), sqlite_database_.LastErrorMsg());
@@ -572,8 +573,9 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
                          << " that was just created";
         if (!SetVersionInDatabase(expected_version_, false)) {
           ReportOpenDatabaseResult(
-              5, kInvalidStateError, sqlite_database_.LastError(),
-              WTF::CurrentTimeTicksInSeconds() - call_start_time);
+              5, static_cast<int>(DOMExceptionCode::kInvalidStateError),
+              sqlite_database_.LastError(),
+              WTF::CurrentTimeTicks() - call_start_time);
           error_message = FormatErrorMessage(
               "unable to open database, failed to write current version",
               sqlite_database_.LastError(), sqlite_database_.LastErrorMsg());
@@ -583,7 +585,7 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
         }
         current_version = expected_version_;
       }
-      UpdateGuidVersionMap(guid_, current_version);
+      cache.SetVersion(guid_, current_version);
       transaction.Commit();
     }
   }
@@ -602,8 +604,8 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
   if ((!new_ || should_set_version_in_new_database) &&
       expected_version_.length() && expected_version_ != current_version) {
     ReportOpenDatabaseResult(
-        6, kInvalidStateError, 0,
-        WTF::CurrentTimeTicksInSeconds() - call_start_time);
+        6, static_cast<int>(DOMExceptionCode::kInvalidStateError), 0,
+        WTF::CurrentTimeTicks() - call_start_time);
     error_message =
         "unable to open database, version mismatch, '" + expected_version_ +
         "' does not match the currentVersion of '" + current_version + "'";
@@ -628,8 +630,8 @@ bool Database::PerformOpenAndVerify(bool should_set_version_in_new_database,
     expected_version_ = "";
   }
 
-  ReportOpenDatabaseResult(
-      0, -1, 0, WTF::CurrentTimeTicksInSeconds() - call_start_time);  // OK
+  ReportOpenDatabaseResult(0, -1, 0,
+                           WTF::CurrentTimeTicks() - call_start_time);  // OK
 
   if (GetDatabaseContext()->GetDatabaseThread())
     GetDatabaseContext()->GetDatabaseThread()->RecordDatabaseOpen(this);
@@ -706,14 +708,15 @@ void Database::SetExpectedVersion(const String& version) {
 }
 
 String Database::GetCachedVersion() const {
-  RecursiveMutexLocker locker(GuidMutex());
-  return GuidToVersionMap().at(guid_).IsolatedCopy();
+  auto& cache = GetDatabaseVersionCache();
+  MutexLocker locker(cache.GetMutex());
+  return cache.GetVersion(guid_);
 }
 
 void Database::SetCachedVersion(const String& actual_version) {
-  // Update the in memory database version map.
-  RecursiveMutexLocker locker(GuidMutex());
-  UpdateGuidVersionMap(guid_, actual_version);
+  auto& cache = GetDatabaseVersionCache();
+  MutexLocker locker(cache.GetMutex());
+  cache.SetVersion(guid_, actual_version);
 }
 
 bool Database::GetActualVersionForTransaction(String& actual_version) {
@@ -784,7 +787,7 @@ void Database::IncrementalVacuumIfNeeded() {
 void Database::ReportOpenDatabaseResult(int error_site,
                                         int web_sql_error_code,
                                         int sqlite_error_code,
-                                        double duration) {
+                                        TimeDelta duration) {
   if (Platform::Current()->DatabaseObserver()) {
     Platform::Current()->DatabaseObserver()->ReportOpenDatabaseResult(
         WebSecurityOrigin(GetSecurityOrigin()), StringIdentifier(), error_site,

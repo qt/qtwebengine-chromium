@@ -38,7 +38,6 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
 
     // If set to true, we should use LCD text.
     bool use_lcd_text = true;
-    bool clear_canvas_before_raster = true;
 
     // The ImageProvider used to replace images during playback.
     ImageProvider* image_provider = nullptr;
@@ -133,10 +132,10 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
   explicit RasterSource(const RecordingSource* other);
   virtual ~RasterSource();
 
-  void ClearForFullRaster(SkCanvas* raster_canvas,
-                          const gfx::Size& content_size,
-                          const gfx::Rect& canvas_bitmap_rect,
-                          const gfx::Rect& canvas_playback_rect) const;
+  void ClearForOpaqueRaster(SkCanvas* raster_canvas,
+                            const gfx::Size& content_size,
+                            const gfx::Rect& canvas_bitmap_rect,
+                            const gfx::Rect& canvas_playback_rect) const;
 
   // These members are const as this raster source may be in use on another
   // thread and so should not be touched after construction.

@@ -1,19 +1,19 @@
-/***************************************************************************/
-/*                                                                         */
-/*  sfdriver.c                                                             */
-/*                                                                         */
-/*    High-level SFNT driver interface (body).                             */
-/*                                                                         */
-/*  Copyright 1996-2018 by                                                 */
-/*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
-/*                                                                         */
-/*  This file is part of the FreeType project, and may only be used,       */
-/*  modified, and distributed under the terms of the FreeType project      */
-/*  license, LICENSE.TXT.  By continuing to use, modify, or distribute     */
-/*  this file you indicate that you have read the license and              */
-/*  understand and accept it fully.                                        */
-/*                                                                         */
-/***************************************************************************/
+/****************************************************************************
+ *
+ * sfdriver.c
+ *
+ *   High-level SFNT driver interface (body).
+ *
+ * Copyright 1996-2018 by
+ * David Turner, Robert Wilhelm, and Werner Lemberg.
+ *
+ * This file is part of the FreeType project, and may only be used,
+ * modified, and distributed under the terms of the FreeType project
+ * license, LICENSE.TXT.  By continuing to use, modify, or distribute
+ * this file you indicate that you have read the license and
+ * understand and accept it fully.
+ *
+ */
 
 
 #include <ft2build.h>
@@ -30,6 +30,11 @@
 
 #ifdef TT_CONFIG_OPTION_EMBEDDED_BITMAPS
 #include "ttsbit.h"
+#endif
+
+#ifdef TT_CONFIG_OPTION_COLOR_LAYERS
+#include "ttcolr.h"
+#include "ttcpal.h"
 #endif
 
 #ifdef TT_CONFIG_OPTION_POSTSCRIPT_NAMES
@@ -56,18 +61,18 @@
 #endif
 
 
-  /*************************************************************************/
-  /*                                                                       */
-  /* The macro FT_COMPONENT is used in trace mode.  It is an implicit      */
-  /* parameter of the FT_TRACE() and FT_ERROR() macros, used to print/log  */
-  /* messages during execution.                                            */
-  /*                                                                       */
+  /**************************************************************************
+   *
+   * The macro FT_COMPONENT is used in trace mode.  It is an implicit
+   * parameter of the FT_TRACE() and FT_ERROR() macros, used to print/log
+   * messages during execution.
+   */
 #undef  FT_COMPONENT
 #define FT_COMPONENT  trace_sfdriver
 
 
   /*
-   *  SFNT TABLE SERVICE
+   * SFNT TABLE SERVICE
    *
    */
 
@@ -154,7 +159,7 @@
 #ifdef TT_CONFIG_OPTION_POSTSCRIPT_NAMES
 
   /*
-   *  GLYPH DICT SERVICE
+   * GLYPH DICT SERVICE
    *
    */
 
@@ -221,7 +226,7 @@
 
 
   /*
-   *  POSTSCRIPT NAME SERVICE
+   * POSTSCRIPT NAME SERVICE
    *
    */
 
@@ -642,9 +647,9 @@
 
 
   /*
-   *  Find the shortest decimal representation of a 16.16 fixed point
-   *  number.  The function fills `buf' with the result, returning a pointer
-   *  to the position after the representation's last byte.
+   * Find the shortest decimal representation of a 16.16 fixed point
+   * number.  The function fills `buf' with the result, returning a pointer
+   * to the position after the representation's last byte.
    */
 
   static char*
@@ -1072,7 +1077,7 @@
 
 
   /*
-   *  TT CMAP INFO
+   * TT CMAP INFO
    */
   FT_DEFINE_SERVICE_TTCMAPSREC(
     tt_service_get_cmap_info,
@@ -1131,7 +1136,7 @@
 
 
   /*
-   *  SERVICE LIST
+   * SERVICE LIST
    */
 
 #if defined TT_CONFIG_OPTION_POSTSCRIPT_NAMES && defined TT_CONFIG_OPTION_BDF
@@ -1183,6 +1188,12 @@
 #define PUT_EMBEDDED_BITMAPS( a )  a
 #else
 #define PUT_EMBEDDED_BITMAPS( a )  NULL
+#endif
+
+#ifdef TT_CONFIG_OPTION_COLOR_LAYERS
+#define PUT_COLOR_LAYERS( a )  a
+#else
+#define PUT_COLOR_LAYERS( a )  NULL
 #endif
 
 #ifdef TT_CONFIG_OPTION_POSTSCRIPT_NAMES
@@ -1243,9 +1254,24 @@
                             /* TT_Free_Table_Func      free_eblc       */
 
     PUT_EMBEDDED_BITMAPS( tt_face_set_sbit_strike     ),
-                            /* TT_Set_SBit_Strike_Func set_sbit_strike */
+                   /* TT_Set_SBit_Strike_Func      set_sbit_strike     */
     PUT_EMBEDDED_BITMAPS( tt_face_load_strike_metrics ),
-                    /* TT_Load_Strike_Metrics_Func load_strike_metrics */
+                   /* TT_Load_Strike_Metrics_Func  load_strike_metrics */
+
+    PUT_COLOR_LAYERS( tt_face_load_cpal ),
+                            /* TT_Load_Table_Func      load_cpal       */
+    PUT_COLOR_LAYERS( tt_face_load_colr ),
+                            /* TT_Load_Table_Func      load_colr       */
+    PUT_COLOR_LAYERS( tt_face_free_cpal ),
+                            /* TT_Free_Table_Func      free_cpal       */
+    PUT_COLOR_LAYERS( tt_face_free_colr ),
+                            /* TT_Free_Table_Func      free_colr       */
+    PUT_COLOR_LAYERS( tt_face_palette_set ),
+                            /* TT_Set_Palette_Func     set_palette     */
+    PUT_COLOR_LAYERS( tt_face_get_colr_layer ),
+                            /* TT_Get_Colr_Layer_Func  get_colr_layer  */
+    PUT_COLOR_LAYERS( tt_face_colr_blend_layer ),
+                            /* TT_Blend_Colr_Func      colr_blend      */
 
     tt_face_get_metrics,    /* TT_Get_Metrics_Func     get_metrics     */
 

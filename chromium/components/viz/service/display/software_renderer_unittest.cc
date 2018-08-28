@@ -12,20 +12,21 @@
 #include "base/run_loop.h"
 #include "cc/test/animation_test_common.h"
 #include "cc/test/fake_output_surface_client.h"
-#include "cc/test/fake_resource_provider.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/pixel_test_utils.h"
 #include "cc/test/render_pass_test_utils.h"
 #include "cc/test/resource_provider_test_utils.h"
+#include "components/viz/client/client_resource_provider.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/quads/compositor_frame_metadata.h"
 #include "components/viz/common/quads/render_pass.h"
 #include "components/viz/common/quads/render_pass_draw_quad.h"
-#include "components/viz/common/quads/shared_bitmap.h"
 #include "components/viz/common/quads/solid_color_draw_quad.h"
 #include "components/viz/common/quads/tile_draw_quad.h"
 #include "components/viz/common/resources/bitmap_allocation.h"
+#include "components/viz/common/resources/shared_bitmap.h"
+#include "components/viz/service/display/display_resource_provider.h"
 #include "components/viz/service/display/software_output_device.h"
 #include "components/viz/test/fake_output_surface.h"
 #include "components/viz/test/test_shared_bitmap_manager.h"
@@ -47,23 +48,28 @@ class SoftwareRendererTest : public testing::Test {
     output_surface_->BindToClient(&output_surface_client_);
 
     shared_bitmap_manager_ = std::make_unique<TestSharedBitmapManager>();
-    resource_provider_ =
-        cc::FakeResourceProvider::CreateDisplayResourceProvider(
-            nullptr, shared_bitmap_manager_.get());
+    resource_provider_ = std::make_unique<DisplayResourceProvider>(
+        DisplayResourceProvider::kSoftware, nullptr,
+        shared_bitmap_manager_.get());
     renderer_ = std::make_unique<SoftwareRenderer>(
         &settings_, output_surface_.get(), resource_provider());
     renderer_->Initialize();
     renderer_->SetVisible(true);
 
-    child_resource_provider_ =
-        cc::FakeResourceProvider::CreateLayerTreeResourceProvider(nullptr);
+    child_resource_provider_ = std::make_unique<ClientResourceProvider>(true);
+  }
+
+  void TearDown() override {
+    if (child_resource_provider_)
+      child_resource_provider_->ShutdownAndReleaseAllResources();
+    child_resource_provider_ = nullptr;
   }
 
   DisplayResourceProvider* resource_provider() const {
     return resource_provider_.get();
   }
 
-  cc::LayerTreeResourceProvider* child_resource_provider() const {
+  ClientResourceProvider* child_resource_provider() const {
     return child_resource_provider_.get();
   }
 
@@ -121,7 +127,7 @@ class SoftwareRendererTest : public testing::Test {
   std::unique_ptr<FakeOutputSurface> output_surface_;
   std::unique_ptr<SharedBitmapManager> shared_bitmap_manager_;
   std::unique_ptr<DisplayResourceProvider> resource_provider_;
-  std::unique_ptr<cc::LayerTreeResourceProvider> child_resource_provider_;
+  std::unique_ptr<ClientResourceProvider> child_resource_provider_;
   std::unique_ptr<SoftwareRenderer> renderer_;
 };
 
@@ -194,9 +200,9 @@ TEST_F(SoftwareRendererTest, TileQuad) {
 
   // Transfer resources to the parent, and get the resource map.
   std::unordered_map<ResourceId, ResourceId> resource_map =
-      SendResourceAndGetChildToParentMap({resource_yellow, resource_cyan},
-                                         resource_provider(),
-                                         child_resource_provider(), nullptr);
+      cc::SendResourceAndGetChildToParentMap(
+          {resource_yellow, resource_cyan}, resource_provider(),
+          child_resource_provider(), nullptr);
   ResourceId mapped_resource_yellow = resource_map[resource_yellow];
   ResourceId mapped_resource_cyan = resource_map[resource_cyan];
 
@@ -257,8 +263,9 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
 
   // Transfer resources to the parent, and get the resource map.
   std::unordered_map<ResourceId, ResourceId> resource_map =
-      SendResourceAndGetChildToParentMap({resource_cyan}, resource_provider(),
-                                         child_resource_provider(), nullptr);
+      cc::SendResourceAndGetChildToParentMap(
+          {resource_cyan}, resource_provider(), child_resource_provider(),
+          nullptr);
   ResourceId mapped_resource_cyan = resource_map[resource_cyan];
 
   gfx::Rect root_rect(tile_size);

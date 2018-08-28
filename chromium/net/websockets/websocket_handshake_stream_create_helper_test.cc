@@ -97,14 +97,25 @@ class TestConnectDelegate : public WebSocketStream::ConnectDelegate {
           ssl_error_callbacks,
       const SSLInfo& ssl_info,
       bool fatal) override {}
+  int OnAuthRequired(scoped_refptr<AuthChallengeInfo> auth_info,
+
+                     scoped_refptr<HttpResponseHeaders> response_headers,
+                     const HostPortPair& host_port_pair,
+                     base::OnceCallback<void(const AuthCredentials*)> callback,
+                     base::Optional<AuthCredentials>* credentials) override {
+    *credentials = base::nullopt;
+    return OK;
+  }
 };
 
-class MockWebSocketStreamRequest : public WebSocketStreamRequest {
+class MockWebSocketStreamRequestAPI : public WebSocketStreamRequestAPI {
  public:
-  ~MockWebSocketStreamRequest() override = default;
+  ~MockWebSocketStreamRequestAPI() override = default;
 
-  MOCK_METHOD1(OnHandshakeStreamCreated,
-               void(WebSocketHandshakeStreamBase* handshake_stream));
+  MOCK_METHOD1(OnBasicHandshakeStreamCreated,
+               void(WebSocketBasicHandshakeStream* handshake_stream));
+  MOCK_METHOD1(OnHttp2HandshakeStreamCreated,
+               void(WebSocketHttp2HandshakeStream* handshake_stream));
   MOCK_METHOD1(OnFailure, void(const std::string& message));
 };
 
@@ -125,7 +136,19 @@ class WebSocketHandshakeStreamCreateHelperTest
                                                        sub_protocols);
     create_helper.set_stream_request(&stream_request_);
 
-    EXPECT_CALL(stream_request_, OnHandshakeStreamCreated(_)).Times(1);
+    switch (GetParam()) {
+      case BASIC_HANDSHAKE_STREAM:
+        EXPECT_CALL(stream_request_, OnBasicHandshakeStreamCreated(_)).Times(1);
+        break;
+
+      case HTTP2_HANDSHAKE_STREAM:
+        EXPECT_CALL(stream_request_, OnHttp2HandshakeStreamCreated(_)).Times(1);
+        break;
+
+      default:
+        NOTREACHED();
+    }
+
     EXPECT_CALL(stream_request_, OnFailure(_)).Times(0);
 
     HttpRequestInfo request_info;
@@ -135,17 +158,7 @@ class WebSocketHandshakeStreamCreateHelperTest
     request_info.traffic_annotation =
         MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
 
-    HttpRequestHeaders headers;
-    headers.SetHeader("Host", "www.example.org");
-    headers.SetHeader("Connection", "Upgrade");
-    headers.SetHeader("Pragma", "no-cache");
-    headers.SetHeader("Cache-Control", "no-cache");
-    headers.SetHeader("Upgrade", "websocket");
-    headers.SetHeader("Origin", kOrigin);
-    headers.SetHeader("Sec-WebSocket-Version", "13");
-    headers.SetHeader("User-Agent", "");
-    headers.SetHeader("Accept-Encoding", "gzip, deflate");
-    headers.SetHeader("Accept-Language", "en-us,fr");
+    auto headers = WebSocketCommonTestHeaders();
 
     switch (GetParam()) {
       case BASIC_HANDSHAKE_STREAM: {
@@ -255,7 +268,7 @@ class WebSocketHandshakeStreamCreateHelperTest
  private:
   MockClientSocketHandleFactory socket_handle_factory_;
   TestConnectDelegate connect_delegate_;
-  StrictMock<MockWebSocketStreamRequest> stream_request_;
+  StrictMock<MockWebSocketStreamRequestAPI> stream_request_;
   WebSocketEndpointLockManager websocket_endpoint_lock_manager_;
 };
 

@@ -33,7 +33,7 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
@@ -46,7 +46,7 @@ class QualifiedName;
 
 class CORE_EXPORT MutationObserverRegistration final
     : public GarbageCollectedFinalized<MutationObserverRegistration>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   static MutationObserverRegistration* Create(
       MutationObserver&,
@@ -66,7 +66,7 @@ class CORE_EXPORT MutationObserverRegistration final
   void Unregister();
 
   bool ShouldReceiveMutationFrom(Node&,
-                                 MutationObserver::MutationType,
+                                 MutationType,
                                  const QualifiedName* attribute_name) const;
   bool IsSubtree() const { return options_ & MutationObserver::kSubtree; }
 
@@ -75,8 +75,8 @@ class CORE_EXPORT MutationObserverRegistration final
     return options_ & (MutationObserver::kAttributeOldValue |
                        MutationObserver::kCharacterDataOldValue);
   }
-  MutationObserverOptions MutationTypes() const {
-    return options_ & MutationObserver::kAllMutationTypes;
+  MutationType MutationTypes() const {
+    return static_cast<MutationType>(options_ & kMutationTypeAll);
   }
 
   void AddRegistrationNodesToSet(HeapHashSet<Member<Node>>&) const;
@@ -84,7 +84,6 @@ class CORE_EXPORT MutationObserverRegistration final
   void Dispose();
 
   void Trace(blink::Visitor*);
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "MutationObserverRegistration";
   }

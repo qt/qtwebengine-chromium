@@ -22,7 +22,7 @@
 
 namespace tracing {
 
-class MockService : public perfetto::Service {
+class MockService : public perfetto::TracingService {
  public:
   explicit MockService(base::MessageLoop* message_loop);
 
@@ -36,7 +36,7 @@ class MockService : public perfetto::Service {
     return tracing_enabled_with_config_;
   }
 
-  // perfetto::Service implementation.
+  // perfetto::TracingService implementation.
   std::unique_ptr<ProducerEndpoint> ConnectProducer(
       perfetto::Producer*,
       uid_t uid,
@@ -54,7 +54,7 @@ class MockService : public perfetto::Service {
   std::string tracing_enabled_with_config_;
 };
 
-class MockConsumerEndpoint : public perfetto::Service::ConsumerEndpoint {
+class MockConsumerEndpoint : public perfetto::TracingService::ConsumerEndpoint {
  public:
   explicit MockConsumerEndpoint(MockService* mock_service)
       : mock_service_(mock_service) {
@@ -100,8 +100,8 @@ void MockService::WaitForTracingDisabled() {
   wait_for_tracing_disabled_.Run();
 }
 
-// perfetto::Service implementation.
-std::unique_ptr<perfetto::Service::ProducerEndpoint>
+// perfetto::TracingService implementation.
+std::unique_ptr<perfetto::TracingService::ProducerEndpoint>
 MockService::ConnectProducer(perfetto::Producer*,
                              uid_t uid,
                              const std::string& name,
@@ -110,7 +110,7 @@ MockService::ConnectProducer(perfetto::Producer*,
   return nullptr;
 }
 
-std::unique_ptr<perfetto::Service::ConsumerEndpoint>
+std::unique_ptr<perfetto::TracingService::ConsumerEndpoint>
 MockService::ConnectConsumer(perfetto::Consumer* consumer) {
   message_loop_->task_runner()->PostTask(
       FROM_HERE, base::BindOnce(&perfetto::Consumer::OnConnect,
@@ -429,6 +429,37 @@ TEST_F(JSONTraceExporterTest, TestEventWithPointerArgs) {
 
   EXPECT_EQ("0x1", trace_event->GetKnownArgAsString("foo1"));
   EXPECT_EQ("0x2", trace_event->GetKnownArgAsString("foo2"));
+}
+
+TEST_F(JSONTraceExporterTest, TestEventWithConvertableArgs) {
+  CreateJSONTraceExporter("foo");
+  service()->WaitForTracingEnabled();
+  StopAndFlush();
+
+  perfetto::protos::TracePacket trace_packet_proto;
+  auto* new_trace_event =
+      trace_packet_proto.mutable_chrome_events()->add_trace_events();
+  SetTestPacketBasicData(new_trace_event);
+
+  {
+    auto* new_arg = new_trace_event->add_args();
+    new_arg->set_name("foo1");
+    new_arg->set_json_value("\"conv_value1\"");
+  }
+
+  {
+    auto* new_arg = new_trace_event->add_args();
+    new_arg->set_name("foo2");
+    new_arg->set_json_value("\"conv_value2\"");
+  }
+
+  FinalizePacket(trace_packet_proto);
+
+  service()->WaitForTracingDisabled();
+  auto* trace_event = ValidateAndGetBasicTestPacket();
+
+  EXPECT_EQ("conv_value1", trace_event->GetKnownArgAsString("foo1"));
+  EXPECT_EQ("conv_value2", trace_event->GetKnownArgAsString("foo2"));
 }
 
 }  // namespace tracing

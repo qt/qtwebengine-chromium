@@ -81,6 +81,9 @@ class CORE_EXPORT ObjectPaintProperties {
   // |   backdrop-dependent children are present.
   // +-[ filter ]
   // |     Isolated group for CSS filter.
+  // +-[ vertical/horizontal scrollbar effect ]
+  // |     Overlay Scrollbars on Aura and Android need effect node for fade
+  // |     animation.
   // +-[ mask ]
   // |     Isolated group for painting the CSS mask. This node will have
   // |     SkBlendMode::kDstIn and shall paint last, i.e. after masked contents.
@@ -90,20 +93,25 @@ class CORE_EXPORT ObjectPaintProperties {
   //       contents.
   const EffectPaintPropertyNode* Effect() const { return effect_.get(); }
   const EffectPaintPropertyNode* Filter() const { return filter_.get(); }
+  const EffectPaintPropertyNode* VerticalScrollbarEffect() const {
+    return vertical_scrollbar_effect_.get();
+  }
+  const EffectPaintPropertyNode* HorizontalScrollbarEffect() const {
+    return horizontal_scrollbar_effect_.get();
+  }
   const EffectPaintPropertyNode* Mask() const { return mask_.get(); }
   const EffectPaintPropertyNode* ClipPath() const { return clip_path_.get(); }
 
   // The hierarchy of the clip subtree created by a LayoutObject is as follows:
   // [ fragment clip ]
   // |    Clips to a fragment's bounds.
-  // |    This is only present for content under a fragmentation
-  // |    container.
-  // | NOTE: for composited SPv1/SPv175 clip path clips, we move clip path clip
-  // |       below mask.
+  // |    This is only present for content under a fragmentation container.
   // +-[ clip path clip ]
   //   |  Clip created by path-based CSS clip-path. Only exists if the
   //  /   clip-path is "simple" that can be applied geometrically. This and
   // /    the clip path effect node are mutually exclusive.
+  // | NOTE: for composited SPv1 clip path clips, we move clip path clip
+  // |       below mask.
   // +-[ mask clip ]
   //   |   Clip created by CSS mask or CSS clip-path. It serves two purposes:
   //   |   1. Cull painting of the masked subtree. Because anything outside of
@@ -158,6 +166,12 @@ class CORE_EXPORT ObjectPaintProperties {
   bool ClearTransform() { return Clear(transform_); }
   bool ClearEffect() { return Clear(effect_); }
   bool ClearFilter() { return Clear(filter_); }
+  bool ClearVerticalScrollbarEffect() {
+    return Clear(vertical_scrollbar_effect_);
+  }
+  bool ClearHorizontalScrollbarEffect() {
+    return Clear(horizontal_scrollbar_effect_);
+  }
   bool ClearMask() { return Clear(mask_); }
   bool ClearClipPath() { return Clear(clip_path_); }
   bool ClearFragmentClip() { return Clear(fragment_clip_); }
@@ -188,98 +202,98 @@ class CORE_EXPORT ObjectPaintProperties {
   };
 
   UpdateResult UpdatePaintOffsetTranslation(
-      scoped_refptr<const TransformPaintPropertyNode> parent,
+      const TransformPaintPropertyNode& parent,
       TransformPaintPropertyNode::State&& state) {
-    return Update(paint_offset_translation_, std::move(parent),
-                  std::move(state));
+    return Update(paint_offset_translation_, parent, std::move(state));
   }
-  UpdateResult UpdateTransform(
-      scoped_refptr<const TransformPaintPropertyNode> parent,
-      TransformPaintPropertyNode::State&& state) {
-    return Update(transform_, std::move(parent), std::move(state));
+  UpdateResult UpdateTransform(const TransformPaintPropertyNode& parent,
+                               TransformPaintPropertyNode::State&& state) {
+    return Update(transform_, parent, std::move(state));
   }
-  UpdateResult UpdatePerspective(
-      scoped_refptr<const TransformPaintPropertyNode> parent,
-      TransformPaintPropertyNode::State&& state) {
-    return Update(perspective_, std::move(parent), std::move(state));
+  UpdateResult UpdatePerspective(const TransformPaintPropertyNode& parent,
+                                 TransformPaintPropertyNode::State&& state) {
+    return Update(perspective_, parent, std::move(state));
   }
   UpdateResult UpdateSvgLocalToBorderBoxTransform(
-      scoped_refptr<const TransformPaintPropertyNode> parent,
+      const TransformPaintPropertyNode& parent,
       TransformPaintPropertyNode::State&& state) {
     DCHECK(!ScrollTranslation()) << "SVG elements cannot scroll so there "
                                     "should never be both a scroll translation "
                                     "and an SVG local to border box transform.";
-    return Update(svg_local_to_border_box_transform_, std::move(parent),
-                  std::move(state));
+    return Update(svg_local_to_border_box_transform_, parent, std::move(state));
   }
-  UpdateResult UpdateScroll(scoped_refptr<const ScrollPaintPropertyNode> parent,
+  UpdateResult UpdateScroll(const ScrollPaintPropertyNode& parent,
                             ScrollPaintPropertyNode::State&& state) {
-    return Update(scroll_, std::move(parent), std::move(state));
+    return Update(scroll_, parent, std::move(state));
   }
   UpdateResult UpdateScrollTranslation(
-      scoped_refptr<const TransformPaintPropertyNode> parent,
+      const TransformPaintPropertyNode& parent,
       TransformPaintPropertyNode::State&& state) {
     DCHECK(!SvgLocalToBorderBoxTransform())
         << "SVG elements cannot scroll so there should never be both a scroll "
            "translation and an SVG local to border box transform.";
-    return Update(scroll_translation_, std::move(parent), std::move(state));
+    return Update(scroll_translation_, parent, std::move(state));
   }
-  UpdateResult UpdateEffect(scoped_refptr<const EffectPaintPropertyNode> parent,
+  UpdateResult UpdateEffect(const EffectPaintPropertyNode& parent,
                             EffectPaintPropertyNode::State&& state) {
-    return Update(effect_, std::move(parent), std::move(state));
+    return Update(effect_, parent, std::move(state));
   }
-  UpdateResult UpdateFilter(scoped_refptr<const EffectPaintPropertyNode> parent,
+  UpdateResult UpdateFilter(const EffectPaintPropertyNode& parent,
                             EffectPaintPropertyNode::State&& state) {
-    return Update(filter_, std::move(parent), std::move(state));
+    return Update(filter_, parent, std::move(state));
   }
-  UpdateResult UpdateMask(scoped_refptr<const EffectPaintPropertyNode> parent,
-                          EffectPaintPropertyNode::State&& state) {
-    return Update(mask_, std::move(parent), std::move(state));
-  }
-  UpdateResult UpdateClipPath(
-      scoped_refptr<const EffectPaintPropertyNode> parent,
+  UpdateResult UpdateVerticalScrollbarEffect(
+      const EffectPaintPropertyNode& parent,
       EffectPaintPropertyNode::State&& state) {
-    return Update(clip_path_, std::move(parent), std::move(state));
+    return Update(vertical_scrollbar_effect_, parent, std::move(state));
   }
-  UpdateResult UpdateFragmentClip(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
-      ClipPaintPropertyNode::State&& state) {
-    return Update(fragment_clip_, std::move(parent), std::move(state));
+  UpdateResult UpdateHorizontalScrollbarEffect(
+      const EffectPaintPropertyNode& parent,
+      EffectPaintPropertyNode::State&& state) {
+    return Update(horizontal_scrollbar_effect_, parent, std::move(state));
   }
-  UpdateResult UpdateClipPathClip(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
-      ClipPaintPropertyNode::State&& state) {
-    return Update(clip_path_clip_, std::move(parent), std::move(state));
+  UpdateResult UpdateMask(const EffectPaintPropertyNode& parent,
+                          EffectPaintPropertyNode::State&& state) {
+    return Update(mask_, parent, std::move(state));
   }
-  UpdateResult UpdateMaskClip(scoped_refptr<const ClipPaintPropertyNode> parent,
+  UpdateResult UpdateClipPath(const EffectPaintPropertyNode& parent,
+                              EffectPaintPropertyNode::State&& state) {
+    return Update(clip_path_, parent, std::move(state));
+  }
+  UpdateResult UpdateFragmentClip(const ClipPaintPropertyNode& parent,
+                                  ClipPaintPropertyNode::State&& state) {
+    return Update(fragment_clip_, parent, std::move(state));
+  }
+  UpdateResult UpdateClipPathClip(const ClipPaintPropertyNode& parent,
+                                  ClipPaintPropertyNode::State&& state) {
+    return Update(clip_path_clip_, parent, std::move(state));
+  }
+  UpdateResult UpdateMaskClip(const ClipPaintPropertyNode& parent,
                               ClipPaintPropertyNode::State&& state) {
-    return Update(mask_clip_, std::move(parent), std::move(state));
+    return Update(mask_clip_, parent, std::move(state));
   }
-  UpdateResult UpdateCssClip(scoped_refptr<const ClipPaintPropertyNode> parent,
+  UpdateResult UpdateCssClip(const ClipPaintPropertyNode& parent,
                              ClipPaintPropertyNode::State&& state) {
-    return Update(css_clip_, std::move(parent), std::move(state));
+    return Update(css_clip_, parent, std::move(state));
   }
   UpdateResult UpdateCssClipFixedPosition(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
+      const ClipPaintPropertyNode& parent,
       ClipPaintPropertyNode::State&& state) {
-    return Update(css_clip_fixed_position_, std::move(parent),
-                  std::move(state));
+    return Update(css_clip_fixed_position_, parent, std::move(state));
   }
   UpdateResult UpdateOverflowControlsClip(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
+      const ClipPaintPropertyNode& parent,
       ClipPaintPropertyNode::State&& state) {
-    return Update(overflow_controls_clip_, std::move(parent), std::move(state));
+    return Update(overflow_controls_clip_, parent, std::move(state));
   }
   UpdateResult UpdateInnerBorderRadiusClip(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
+      const ClipPaintPropertyNode& parent,
       ClipPaintPropertyNode::State&& state) {
-    return Update(inner_border_radius_clip_, std::move(parent),
-                  std::move(state));
+    return Update(inner_border_radius_clip_, parent, std::move(state));
   }
-  UpdateResult UpdateOverflowClip(
-      scoped_refptr<const ClipPaintPropertyNode> parent,
-      ClipPaintPropertyNode::State&& state) {
-    return Update(overflow_clip_, std::move(parent), std::move(state));
+  UpdateResult UpdateOverflowClip(const ClipPaintPropertyNode& parent,
+                                  ClipPaintPropertyNode::State&& state) {
+    return Update(overflow_clip_, parent, std::move(state));
   }
 
 #if DCHECK_IS_ON()
@@ -294,6 +308,12 @@ class CORE_EXPORT ObjectPaintProperties {
       cloned->effect_ = effect_->Clone();
     if (filter_)
       cloned->filter_ = filter_->Clone();
+    if (vertical_scrollbar_effect_)
+      cloned->vertical_scrollbar_effect_ = vertical_scrollbar_effect_->Clone();
+    if (horizontal_scrollbar_effect_) {
+      cloned->horizontal_scrollbar_effect_ =
+          horizontal_scrollbar_effect_->Clone();
+    }
     if (mask_)
       cloned->mask_ = mask_->Clone();
     if (clip_path_)
@@ -348,14 +368,14 @@ class CORE_EXPORT ObjectPaintProperties {
   // implementation note") for details about why this is needed for efficiency.
   template <typename PaintPropertyNode>
   UpdateResult Update(scoped_refptr<PaintPropertyNode>& field,
-                      scoped_refptr<const PaintPropertyNode> parent,
+                      const PaintPropertyNode& parent,
                       typename PaintPropertyNode::State&& state) {
     if (field) {
-      return field->Update(std::move(parent), std::move(state))
+      return field->Update(parent, std::move(state))
                  ? UpdateResult::kValueChanged
                  : UpdateResult::kUnchanged;
     }
-    field = PaintPropertyNode::Create(std::move(parent), std::move(state));
+    field = PaintPropertyNode::Create(parent, std::move(state));
     return UpdateResult::kNewNodeCreated;
   }
 
@@ -365,6 +385,8 @@ class CORE_EXPORT ObjectPaintProperties {
   scoped_refptr<TransformPaintPropertyNode> transform_;
   scoped_refptr<EffectPaintPropertyNode> effect_;
   scoped_refptr<EffectPaintPropertyNode> filter_;
+  scoped_refptr<EffectPaintPropertyNode> vertical_scrollbar_effect_;
+  scoped_refptr<EffectPaintPropertyNode> horizontal_scrollbar_effect_;
   scoped_refptr<EffectPaintPropertyNode> mask_;
   scoped_refptr<EffectPaintPropertyNode> clip_path_;
   scoped_refptr<ClipPaintPropertyNode> fragment_clip_;

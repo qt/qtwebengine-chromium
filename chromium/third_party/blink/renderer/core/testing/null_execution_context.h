@@ -8,7 +8,6 @@
 #include <memory>
 #include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
-#include "third_party/blink/renderer/core/dom/events/event_queue.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
@@ -36,7 +35,6 @@ class NullExecutionContext
   String UserAgent() const override { return String(); }
 
   EventTarget* ErrorEventTarget() override { return nullptr; }
-  EventQueue* GetEventQueue() const override { return queue_.Get(); }
 
   bool TasksNeedPause() override { return tasks_need_pause_; }
   void SetTasksNeedPause(bool flag) { tasks_need_pause_ = flag; }
@@ -62,7 +60,6 @@ class NullExecutionContext
   using SecurityContext::GetContentSecurityPolicy;
 
   void Trace(blink::Visitor* visitor) override {
-    visitor->Trace(queue_);
     SecurityContext::Trace(visitor);
     ExecutionContext::Trace(visitor);
   }
@@ -70,7 +67,6 @@ class NullExecutionContext
  private:
   bool tasks_need_pause_;
   bool is_secure_context_;
-  Member<EventQueue> queue_;
 
   KURL url_;
 };

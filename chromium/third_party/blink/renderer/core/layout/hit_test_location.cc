@@ -28,6 +28,9 @@ namespace blink {
 HitTestLocation::HitTestLocation()
     : is_rect_based_(false), is_rectilinear_(true) {}
 
+HitTestLocation::HitTestLocation(const IntPoint& point)
+    : HitTestLocation(LayoutPoint(point)) {}
+
 HitTestLocation::HitTestLocation(const LayoutPoint& point)
     : point_(point),
       bounding_box_(RectForPoint(point)),
@@ -44,6 +47,9 @@ HitTestLocation::HitTestLocation(const FloatPoint& point)
       is_rect_based_(false),
       is_rectilinear_(true) {}
 
+HitTestLocation::HitTestLocation(const DoublePoint& point)
+    : HitTestLocation(FloatPoint(point)) {}
+
 HitTestLocation::HitTestLocation(const FloatPoint& point, const FloatQuad& quad)
     : transformed_point_(point), transformed_rect_(quad), is_rect_based_(true) {
   point_ = FlooredLayoutPoint(point);
@@ -51,12 +57,11 @@ HitTestLocation::HitTestLocation(const FloatPoint& point, const FloatQuad& quad)
   is_rectilinear_ = quad.IsRectilinear();
 }
 
-HitTestLocation::HitTestLocation(const LayoutPoint& center_point,
-                                 const LayoutRectOutsets& padding)
-    : point_(center_point),
-      bounding_box_(RectForPoint(center_point, padding)),
-      transformed_point_(center_point),
-      is_rect_based_(!padding.IsZero()),
+HitTestLocation::HitTestLocation(const LayoutRect& rect)
+    : point_(rect.Center()),
+      bounding_box_(rect),
+      transformed_point_(point_),
+      is_rect_based_(true),
       is_rectilinear_(true) {
   transformed_rect_ = FloatQuad(FloatRect(bounding_box_));
 }

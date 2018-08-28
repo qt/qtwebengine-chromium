@@ -10,14 +10,6 @@ MainDelegate::MainDelegate() = default;
 
 MainDelegate::~MainDelegate() = default;
 
-scoped_refptr<base::SingleThreadTaskRunner>
-MainDelegate::GetServiceManagerTaskRunnerForEmbedderProcess() {
-  // The default implementation is provided for compiling purpose on Windows and
-  // should never be called.
-  NOTREACHED();
-  return nullptr;
-}
-
 bool MainDelegate::IsEmbedderSubprocess() {
   return false;
 }
@@ -32,8 +24,8 @@ ProcessType MainDelegate::OverrideProcessType() {
   return ProcessType::kDefault;
 }
 
-void MainDelegate::OverrideMojoConfiguration(mojo::edk::Configuration* config) {
-}
+void MainDelegate::OverrideMojoConfiguration(
+    mojo::core::Configuration* config) {}
 
 std::unique_ptr<base::Value> MainDelegate::CreateServiceCatalog() {
   return nullptr;

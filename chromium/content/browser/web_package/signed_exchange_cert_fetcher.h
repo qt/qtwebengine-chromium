@@ -54,7 +54,8 @@ class CONTENT_EXPORT SignedExchangeCertFetcher
       bool force_fetch,
       SignedExchangeVersion version,
       CertificateCallback callback,
-      SignedExchangeDevToolsProxy* devtools_proxy);
+      SignedExchangeDevToolsProxy* devtools_proxy,
+      const base::Optional<base::UnguessableToken>& throttling_profile_id);
 
   ~SignedExchangeCertFetcher() override;
 
@@ -76,19 +77,17 @@ class CONTENT_EXPORT SignedExchangeCertFetcher
       bool force_fetch,
       SignedExchangeVersion version,
       CertificateCallback callback,
-      SignedExchangeDevToolsProxy* devtools_proxy);
+      SignedExchangeDevToolsProxy* devtools_proxy,
+      const base::Optional<base::UnguessableToken>& throttling_profile_id);
   void Start();
   void Abort();
   void OnHandleReady(MojoResult result);
   void OnDataComplete();
 
   // network::mojom::URLLoaderClient
-  void OnReceiveResponse(
-      const network::ResourceResponseHead& head,
-      network::mojom::DownloadedTempFilePtr downloaded_file) override;
+  void OnReceiveResponse(const network::ResourceResponseHead& head) override;
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          const network::ResourceResponseHead& head) override;
-  void OnDataDownloaded(int64_t data_length, int64_t encoded_length) override;
   void OnUploadProgress(int64_t current_position,
                         int64_t total_size,
                         OnUploadProgressCallback callback) override;

@@ -34,7 +34,9 @@ namespace internal {
 
 namespace {
 
-constexpr size_t kNumWorkersInWorkerPool = 4;
+constexpr size_t kMaxTasks = 4;
+// By default, tests allow half of the pool to be used by background tasks.
+constexpr size_t kMaxBackgroundTasks = kMaxTasks / 2;
 constexpr size_t kNumThreadsPostingTasks = 4;
 constexpr size_t kNumTasksPostedPerThread = 150;
 
@@ -131,9 +133,8 @@ class TaskSchedulerWorkerPoolTest
         SchedulerWorkerPoolImpl* scheduler_worker_pool_impl =
             static_cast<SchedulerWorkerPoolImpl*>(worker_pool_.get());
         scheduler_worker_pool_impl->Start(
-            SchedulerWorkerPoolParams(kNumWorkersInWorkerPool,
-                                      TimeDelta::Max()),
-            service_thread_.task_runner(), nullptr,
+            SchedulerWorkerPoolParams(kMaxTasks, TimeDelta::Max()),
+            kMaxBackgroundTasks, service_thread_.task_runner(), nullptr,
             SchedulerWorkerPoolImpl::WorkerEnvironment::NONE);
         break;
       }
@@ -275,8 +276,7 @@ TEST_P(TaskSchedulerWorkerPoolTest, SequencedRunsTasksInCurrentSequence) {
   auto sequenced_task_runner =
       worker_pool_->CreateSequencedTaskRunnerWithTraits(TaskTraits());
 
-  WaitableEvent task_ran(WaitableEvent::ResetPolicy::MANUAL,
-                         WaitableEvent::InitialState::NOT_SIGNALED);
+  WaitableEvent task_ran;
   task_runner->PostTask(
       FROM_HERE,
       BindOnce(
@@ -291,10 +291,8 @@ TEST_P(TaskSchedulerWorkerPoolTest, SequencedRunsTasksInCurrentSequence) {
 
 // Verify that tasks posted before Start run after Start.
 TEST_P(TaskSchedulerWorkerPoolTest, PostBeforeStart) {
-  WaitableEvent task_1_running(WaitableEvent::ResetPolicy::MANUAL,
-                               WaitableEvent::InitialState::NOT_SIGNALED);
-  WaitableEvent task_2_running(WaitableEvent::ResetPolicy::MANUAL,
-                               WaitableEvent::InitialState::NOT_SIGNALED);
+  WaitableEvent task_1_running;
+  WaitableEvent task_2_running;
 
   scoped_refptr<TaskRunner> task_runner =
       worker_pool_->CreateTaskRunnerWithTraits({WithBaseSyncPrimitives()});

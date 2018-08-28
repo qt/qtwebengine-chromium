@@ -13,6 +13,7 @@
 <translation id="1413622004203049571">Вимкнути сповіщення від <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 хвилина та }one{# хвилина та }few{# хвилини та }many{# хвилин і }other{# хвилини та }}</translation>
 <translation id="1643823602425662293">Сповіщення</translation>
+<translation id="169515659049020177">Shift</translation>
 <translation id="1710340000377843106">зараз</translation>
 <translation id="1752946267035950200">{MINUTES,plural, =1{1 хвилина}one{# хвилина}few{# хвилини}many{# хвилин}other{# хвилини}}</translation>
 <translation id="1761785978543082658"><ph name="QUANTITY" /> б</translation>
@@ -37,6 +38,7 @@
 <translation id="2295140143284145483">Опитування</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> ТБ/сек.</translation>
 <translation id="24452542372838207">Розгорнути сповіщення</translation>
+<translation id="2482878487686419369">Сповіщення</translation>
 <translation id="2497284189126895209">Усі файли</translation>
 <translation id="2522350507219695259">Калібрування завершено</translation>
 <translation id="252373100621549798">Невідомий дисплей</translation>
@@ -49,6 +51,7 @@
 <translation id="3036649622769666520">Відкрити файли</translation>
 <translation id="3049748772180311791"><ph name="QUANTITY" /> МБ</translation>
 <translation id="3087734570205094154">Низ</translation>
+<translation id="3126026824346185272">Ctrl</translation>
 <translation id="3157931365184549694">Відновити</translation>
 <translation id="3183922693828471536">Прокрутка до цього місця</translation>
 <translation id="3234408098842461169">Курсор униз</translation>
@@ -76,6 +79,7 @@
 <translation id="4730374152663651037">ЧАСТО ВИКОРИСТОВУЮТЬСЯ</translation>
 <translation id="4788285488841504513">{MONTHS,plural, =1{Залишився 1 місяць}one{Залишився # місяць}few{Залишилося # місяці}many{Залишилося # місяців}other{Залишилося # місяця}}</translation>
 <translation id="4820616160060340806">Command+<ph name="KEY_COMBO_NAME" /></translation>
+<translation id="4841881773802181781">Вставлення</translation>
 <translation id="4968171027979920686">{SECONDS,plural, =1{1 секунда}one{# секунда}few{# секунди}many{# секунд}other{# секунди}}</translation>
 <translation id="4971687151119236543">Попередня композиція</translation>
 <translation id="4999762576397546063">Ctrl+<ph name="KEY_COMBO_NAME" /></translation>
@@ -118,6 +122,7 @@
 <translation id="6612467943526193239">Натисніть клавішу Esc, щоб вийти з режиму калібрування.</translation>
 <translation id="6620110761915583480">Зберегти файл</translation>
 <translation id="6699343763173986273">Наступна композиція</translation>
+<translation id="673773751041746814">Видалення</translation>
 <translation id="6786750046913594791">Закрити папку</translation>
 <translation id="6808150112686056157">Зупинити</translation>
 <translation id="6845383723252244143">Вибір папки</translation>

@@ -35,11 +35,8 @@
 
 #include "third_party/blink/public/mojom/feature_policy/feature_policy.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/space_split_string.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/frame/hosts_using_features.h"
@@ -50,6 +47,7 @@
 #include "third_party/blink/renderer/modules/mediastream/media_track_constraints.h"
 #include "third_party/blink/renderer/modules/mediastream/overconstrained_error.h"
 #include "third_party/blink/renderer/modules/mediastream/user_media_controller.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_center.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_descriptor.h"
 
@@ -108,7 +106,7 @@ class FeatureCounter {
   WTF_MAKE_NONCOPYABLE(FeatureCounter);
 
  public:
-  FeatureCounter(ExecutionContext* context)
+  explicit FeatureCounter(ExecutionContext* context)
       : context_(context), is_unconstrained_(true) {}
   void Count(WebFeature feature) {
     UseCounter::Count(context_, feature);
@@ -207,14 +205,6 @@ void CountAudioConstraintUses(ExecutionContext* context,
           &WebMediaTrackConstraintSet::goog_experimental_noise_suppression)) {
     counter.Count(
         WebFeature::kMediaStreamConstraintsGoogExperimentalNoiseSuppression);
-  }
-  if (RequestUsesDiscreteConstraint(
-          constraints, &WebMediaTrackConstraintSet::goog_beamforming)) {
-    counter.Count(WebFeature::kMediaStreamConstraintsGoogBeamforming);
-  }
-  if (RequestUsesDiscreteConstraint(
-          constraints, &WebMediaTrackConstraintSet::goog_array_geometry)) {
-    counter.Count(WebFeature::kMediaStreamConstraintsGoogArrayGeometry);
   }
   if (RequestUsesDiscreteConstraint(
           constraints, &WebMediaTrackConstraintSet::goog_audio_mirroring)) {
@@ -426,14 +416,14 @@ UserMediaRequest::UserMediaRequest(ExecutionContext* context,
       audio_(audio),
       video_(video),
       should_disable_hardware_noise_suppression_(
-          OriginTrials::disableHardwareNoiseSuppressionEnabled(context)),
+          OriginTrials::DisableHardwareNoiseSuppressionEnabled(context)),
       controller_(controller),
       callbacks_(callbacks) {
   if (should_disable_hardware_noise_suppression_) {
     UseCounter::Count(context,
                       WebFeature::kUserMediaDisableHardwareNoiseSuppression);
   }
-  if (OriginTrials::experimentalHardwareEchoCancellationEnabled(context)) {
+  if (OriginTrials::ExperimentalHardwareEchoCancellationEnabled(context)) {
     UseCounter::Count(
         context,
         WebFeature::kUserMediaEnableExperimentalHardwareEchoCancellation);
@@ -565,38 +555,38 @@ void UserMediaRequest::Fail(WebUserMediaRequest::Error name,
   if (!GetExecutionContext())
     return;
 
-  ExceptionCode ec = kNotSupportedError;
+  DOMExceptionCode exception_code = DOMExceptionCode::kNotSupportedError;
   switch (name) {
     case WebUserMediaRequest::Error::kPermissionDenied:
     case WebUserMediaRequest::Error::kPermissionDismissed:
     case WebUserMediaRequest::Error::kInvalidState:
     case WebUserMediaRequest::Error::kFailedDueToShutdown:
     case WebUserMediaRequest::Error::kKillSwitchOn:
-      ec = kNotAllowedError;
+      exception_code = DOMExceptionCode::kNotAllowedError;
       break;
     case WebUserMediaRequest::Error::kDevicesNotFound:
-      ec = kNotFoundError;
+      exception_code = DOMExceptionCode::kNotFoundError;
       break;
     case WebUserMediaRequest::Error::kTabCapture:
     case WebUserMediaRequest::Error::kScreenCapture:
     case WebUserMediaRequest::Error::kCapture:
-      ec = kAbortError;
+      exception_code = DOMExceptionCode::kAbortError;
       break;
     case WebUserMediaRequest::Error::kTrackStart:
-      ec = kNotReadableError;
+      exception_code = DOMExceptionCode::kNotReadableError;
       break;
     case WebUserMediaRequest::Error::kNotSupported:
-      ec = kNotSupportedError;
+      exception_code = DOMExceptionCode::kNotSupportedError;
       break;
     case WebUserMediaRequest::Error::kSecurityError:
-      ec = kSecurityError;
+      exception_code = DOMExceptionCode::kSecurityError;
       break;
     default:
       NOTREACHED();
   }
   callbacks_->OnError(nullptr,
                       DOMExceptionOrOverconstrainedError::FromDOMException(
-                          DOMException::Create(ec, message)));
+                          DOMException::Create(exception_code, message)));
 }
 
 void UserMediaRequest::ContextDestroyed(ExecutionContext*) {

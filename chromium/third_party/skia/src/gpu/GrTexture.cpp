@@ -25,14 +25,8 @@ void GrTexture::markMipMapsDirty() {
 }
 
 void GrTexture::markMipMapsClean() {
-    const bool sizeChanged = GrMipMapsStatus::kNotAllocated == fMipMapsStatus;
+    SkASSERT(GrMipMapsStatus::kNotAllocated != fMipMapsStatus);
     fMipMapsStatus = GrMipMapsStatus::kValid;
-    if (sizeChanged) {
-        // This must not be called until after changing fMipMapsStatus.
-        this->didChangeGpuMemorySize();
-        // TODO(http://skbug.com/4548) - The desc and scratch key should be
-        // updated to reflect the newly-allocated mipmaps.
-    }
 }
 
 size_t GrTexture::onGpuMemorySize() const {
@@ -47,9 +41,7 @@ GrTexture::GrTexture(GrGpu* gpu, const GrSurfaceDesc& desc, GrSLType samplerType
         : INHERITED(gpu, desc)
         , fSamplerType(samplerType)
         , fHighestFilterMode(highestFilterMode)
-        , fMipMapsStatus(mipMapsStatus)
-        // Mip color mode is explicitly set after creation via GrTexturePriv
-        , fMipColorMode(SkDestinationSurfaceColorMode::kLegacy) {
+        , fMipMapsStatus(mipMapsStatus) {
     if (GrMipMapsStatus::kNotAllocated == fMipMapsStatus) {
         fMaxMipMapLevel = 0;
     } else {

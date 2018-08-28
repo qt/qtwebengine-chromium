@@ -24,12 +24,12 @@
 
 #include "third_party/blink/renderer/core/svg/svg_animation_element.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/svg/svg_animate_element.h"
 #include "third_party/blink/renderer/core/svg/svg_parser_utilities.h"
 #include "third_party/blink/renderer/core/svg_names.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 namespace blink {
@@ -237,7 +237,7 @@ void SVGAnimationElement::AnimationAttributeChanged() {
 float SVGAnimationElement::getStartTime(ExceptionState& exception_state) const {
   SMILTime start_time = IntervalBegin();
   if (!start_time.IsFinite()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "No current interval.");
     return 0;
   }
@@ -252,7 +252,7 @@ float SVGAnimationElement::getSimpleDuration(
     ExceptionState& exception_state) const {
   SMILTime duration = SimpleDuration();
   if (!duration.IsFinite()) {
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "No simple duration defined.");
     return 0;
   }

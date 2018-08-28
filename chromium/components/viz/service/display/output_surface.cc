@@ -21,6 +21,8 @@
 
 namespace viz {
 
+OutputSurface::OutputSurface() = default;
+
 OutputSurface::OutputSurface(scoped_refptr<ContextProvider> context_provider)
     : context_provider_(std::move(context_provider)) {
   DCHECK(context_provider_);
@@ -47,20 +49,15 @@ void OutputSurface::UpdateLatencyInfoOnSwap(
     std::vector<ui::LatencyInfo>* latency_info) {
   for (auto& latency : *latency_info) {
     latency.AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, response.swap_start, 1);
+        ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, response.swap_start, 1);
     latency.AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0,
-        response.swap_end, 1);
+        ui::INPUT_EVENT_LATENCY_FRAME_SWAP_COMPONENT, response.swap_end, 1);
   }
 }
 
-bool OutputSurface::LatencyInfoHasSnapshotRequest(
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  for (const auto& latency : latency_info) {
-    if (latency.Snapshots().size())
-      return true;
-  }
-  return false;
+void OutputSurface::SetNeedsSwapSizeNotifications(
+    bool needs_swap_size_notifications) {
+  DCHECK(!needs_swap_size_notifications);
 }
 
 }  // namespace viz

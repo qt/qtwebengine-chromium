@@ -373,9 +373,7 @@ class SSLServerSocketTest : public PlatformTest,
     std::unique_ptr<crypto::RSAPrivateKey> key =
         ReadTestKey("unittest.key.bin");
     ASSERT_TRUE(key);
-    EVP_PKEY_up_ref(key->key());
-    server_ssl_private_key_ =
-        WrapOpenSSLPrivateKey(bssl::UniquePtr<EVP_PKEY>(key->key()));
+    server_ssl_private_key_ = WrapOpenSSLPrivateKey(bssl::UpRef(key->key()));
 
     client_ssl_config_.false_start_enabled = false;
     client_ssl_config_.channel_id_enabled = false;
@@ -448,9 +446,8 @@ class SSLServerSocketTest : public PlatformTest,
         ReadTestKey(private_key_file_name);
     ASSERT_TRUE(key);
 
-    EVP_PKEY_up_ref(key->key());
     client_ssl_config_.client_private_key =
-        WrapOpenSSLPrivateKey(bssl::UniquePtr<EVP_PKEY>(key->key()));
+        WrapOpenSSLPrivateKey(bssl::UpRef(key->key()));
   }
 
   void ConfigureClientCertsForServer() {
@@ -1030,10 +1027,10 @@ TEST_F(SSLServerSocketTest, ClientWriteAfterServerClose) {
   client_ret = write_callback.GetResult(client_ret);
   EXPECT_GT(client_ret, 0);
 
+  base::RunLoop run_loop;
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::RunLoop::QuitCurrentWhenIdleClosureDeprecated(),
-      base::TimeDelta::FromMilliseconds(10));
-  base::RunLoop().Run();
+      FROM_HERE, run_loop.QuitClosure(), base::TimeDelta::FromMilliseconds(10));
+  run_loop.Run();
 }
 
 // This test executes ExportKeyingMaterial() on the client and server sockets,

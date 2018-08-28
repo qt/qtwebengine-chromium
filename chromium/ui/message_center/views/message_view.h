@@ -24,7 +24,7 @@
 namespace views {
 class Painter;
 class ScrollView;
-}
+}  // namespace views
 
 namespace message_center {
 
@@ -42,12 +42,23 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::InkDropHostView,
  public:
   static const char kViewClassName[];
 
-  // Notify this notification view is in the sidebar. This is necessary until
-  // removing the experimental flag for Sidebar, since the flag exists in Ash,
-  // so we don't refer the flag directly. Some layout and behavior may change by
-  // this flag.
-  // TODO(yoshiki, tetsui): Remove this after removing the flag for Sidebar.
-  static void SetSidebarEnabled();
+  enum class Mode {
+    // Normal mode.
+    NORMAL = 0,
+    // "Pinned" mode flag. This mode is for pinned notification.
+    // When this mode is enabled:
+    //  - Swipe: partially possible, but limited to the half position
+    //  - Close button: hidden
+    //  - Settings and snooze button: visible
+    PINNED = 1,
+    // "Setting" mode flag. This mode is for showing inline setting panel in
+    // the notification view.
+    // When this mode is enabled:
+    //  - Swipe: prohibited
+    //  - Close button: hidden
+    //  - Settings and snooze button: hidden
+    SETTING = 2,
+  };
 
   explicit MessageView(const Notification& notification);
   ~MessageView() override;
@@ -70,6 +81,11 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::InkDropHostView,
   virtual bool IsManuallyExpandedOrCollapsed() const;
   virtual void SetManuallyExpandedOrCollapsed(bool value);
 
+  // Update corner radii of the notification. Subclasses will override this to
+  // implement rounded corners if they don't use MessageView's default
+  // background.
+  virtual void UpdateCornerRadius(int top_radius, int bottom_radius);
+
   // Invoked when the container view of MessageView (e.g. MessageCenterView in
   // ash) is starting the animation that possibly hides some part of
   // the MessageView.
@@ -79,6 +95,7 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::InkDropHostView,
 
   void OnCloseButtonPressed();
   virtual void OnSettingsButtonPressed(const ui::Event& event);
+  virtual void OnSnoozeButtonPressed(const ui::Event& event);
 
   // views::View
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
@@ -99,7 +116,11 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::InkDropHostView,
   void OnSlideChanged() override;
   void OnSlideOut() override;
 
-  bool GetPinned() const;
+  Mode GetMode() const;
+
+  // Set "setting" mode. This overrides "pinned" mode. See the comment of
+  // MessageView::Mode enum for detail.
+  void SetSettingMode(bool setting_mode);
 
   void set_scroller(views::ScrollView* scroller) { scroller_ = scroller; }
   std::string notification_id() const { return notification_id_; }
@@ -122,18 +143,25 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::InkDropHostView,
  private:
   friend class test::MessagePopupCollectionTest;
 
+  // Returns the ideal slide mode by calculating the current status.
+  SlideOutController::SlideMode CalculateSlideMode() const;
+
   std::string notification_id_;
   views::View* background_view_ = nullptr;  // Owned by views hierarchy.
   views::ScrollView* scroller_ = nullptr;
 
   base::string16 accessible_name_;
 
-  // Flag if the notification is set to pinned or not.
+  // Flag if the notification is set to pinned or not. See the comment in
+  // MessageView::Mode for detail.
   bool pinned_ = false;
+
+  // "fixed" mode flag. See the comment in MessageView::Mode for detail.
+  bool setting_mode_ = false;
 
   std::unique_ptr<views::Painter> focus_painter_;
 
-  message_center::SlideOutController slide_out_controller_;
+  SlideOutController slide_out_controller_;
 
   // True if |this| is embedded in another view. Equivalent to |!top_level| in
   // MessageViewFactory parlance.
@@ -144,4 +172,4 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::InkDropHostView,
 
 }  // namespace message_center
 
-#endif // UI_MESSAGE_CENTER_VIEWS_MESSAGE_VIEW_H_
+#endif  // UI_MESSAGE_CENTER_VIEWS_MESSAGE_VIEW_H_

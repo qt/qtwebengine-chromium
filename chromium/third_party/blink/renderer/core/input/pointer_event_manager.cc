@@ -328,27 +328,26 @@ void PointerEventManager::AdjustTouchPointerEvent(
   DCHECK(pointer_event.pointer_type ==
          WebPointerProperties::PointerType::kTouch);
 
-  LayoutSize padding = GetHitTestRectForAdjustment(
-      LayoutSize(pointer_event.width, pointer_event.height) * 0.5f);
+  LayoutSize hit_rect_size = GetHitTestRectForAdjustment(
+      LayoutSize(pointer_event.width, pointer_event.height));
 
-  if (padding.IsEmpty())
+  if (hit_rect_size.IsEmpty())
     return;
 
   HitTestRequest::HitTestRequestType hit_type =
       HitTestRequest::kTouchEvent | HitTestRequest::kReadOnly |
       HitTestRequest::kActive | HitTestRequest::kListBased;
-  LayoutPoint hit_test_point = frame_->View()->RootFrameToContents(
-      LayoutPoint(pointer_event.PositionInWidget()));
+  LocalFrame& root_frame = frame_->LocalFrameRoot();
+  // TODO(szager): Shouldn't this be PositionInScreen() ?
+  LayoutPoint hit_test_point((FloatPoint)pointer_event.PositionInWidget());
+  hit_test_point.Move(-hit_rect_size * 0.5f);
+  HitTestLocation location(LayoutRect(hit_test_point, hit_rect_size));
   HitTestResult hit_test_result =
-      frame_->GetEventHandler().HitTestResultAtPoint(
-          hit_test_point, hit_type,
-          LayoutRectOutsets(padding.Height(), padding.Width(), padding.Height(),
-                            padding.Width()));
-
+      root_frame.GetEventHandler().HitTestResultAtLocation(location, hit_type);
   Node* adjusted_node = nullptr;
   IntPoint adjusted_point;
   bool adjusted = frame_->GetEventHandler().BestClickableNodeForHitTestResult(
-      hit_test_result, adjusted_point, adjusted_node);
+      location, hit_test_result, adjusted_point, adjusted_node);
 
   if (adjusted)
     pointer_event.SetPositionInWidget(adjusted_point.X(), adjusted_point.Y());
@@ -373,10 +372,10 @@ PointerEventManager::ComputePointerEventTarget(
     HitTestRequest::HitTestRequestType hit_type = HitTestRequest::kTouchEvent |
                                                   HitTestRequest::kReadOnly |
                                                   HitTestRequest::kActive;
-    LayoutPoint page_point = frame_->View()->RootFrameToContents(
-        LayoutPoint(web_pointer_event.PositionInWidget()));
+    HitTestLocation location(frame_->View()->ConvertFromRootFrame(
+        LayoutPoint(web_pointer_event.PositionInWidget())));
     HitTestResult hit_test_tesult =
-        frame_->GetEventHandler().HitTestResultAtPoint(page_point, hit_type);
+        frame_->GetEventHandler().HitTestResultAtLocation(location, hit_type);
     Node* node = hit_test_tesult.InnerNode();
     if (node) {
       pointer_event_target.target_frame = node->GetDocument().GetFrame();

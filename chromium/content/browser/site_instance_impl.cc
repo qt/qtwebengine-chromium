@@ -85,6 +85,11 @@ bool SiteInstanceImpl::ShouldAssignSiteForURL(const GURL& url) {
   return GetContentClient()->browser()->ShouldAssignSiteForURL(url);
 }
 
+// static
+bool SiteInstanceImpl::IsOriginLockASite(const GURL& lock_url) {
+  return lock_url.has_scheme() && lock_url.has_host();
+}
+
 int32_t SiteInstanceImpl::GetId() {
   return id_;
 }
@@ -444,10 +449,41 @@ GURL SiteInstance::GetSiteForURL(BrowserContext* browser_context,
   // This is useful for cases like file URLs.
   if (!origin.unique()) {
     // Prefer to use the scheme of |origin| rather than |url|, to correctly
-    // cover blob: and filesystem: URIs (see also https://crbug.com/697111).
+    // cover blob:file: and filesystem:file: URIs (see also
+    // https://crbug.com/697111).
     DCHECK(!origin.scheme().empty());
     return GURL(origin.scheme() + ":");
   } else if (url.has_scheme()) {
+    // In some cases, it is not safe to use just the scheme as a site URL, as
+    // that might allow two URLs created by different sites to share a process.
+    // See https://crbug.com/863623 and https://crbug.com/863069.
+    //
+    // TODO(alexmos,creis): This should eventually be expanded to certain other
+    // schemes, such as file:.
+    // TODO(creis): This currently causes problems with tests on Android and
+    // Android WebView.  For now, skip it when Site Isolation is not enabled,
+    // since there's no need to isolate data and blob URLs from each other in
+    // that case.
+    bool is_site_isolation_enabled =
+        SiteIsolationPolicy::UseDedicatedProcessesForAllSites() ||
+        SiteIsolationPolicy::AreIsolatedOriginsEnabled();
+    if (is_site_isolation_enabled &&
+        (url.SchemeIsBlob() || url.scheme() == url::kDataScheme)) {
+      // We get here for blob URLs of form blob:null/guid.  Use the full URL
+      // with the guid in that case, which isolates all blob URLs with unique
+      // origins from each other.  We also get here for browser-initiated
+      // navigations to data URLs, which have a unique origin and should only
+      // share a process when they are identical.  Remove hash from the URL in
+      // either case, since same-document navigations shouldn't use a different
+      // site URL.
+      if (url.has_ref()) {
+        GURL::Replacements replacements;
+        replacements.ClearRef();
+        url = url.ReplaceComponents(replacements);
+      }
+      return url;
+    }
+
     DCHECK(!url.scheme().empty());
     return GURL(url.scheme() + ":");
   }
@@ -544,13 +580,6 @@ void SiteInstanceImpl::RenderProcessHostDestroyed(RenderProcessHost* host) {
   process_ = nullptr;
 }
 
-void SiteInstanceImpl::RenderProcessWillExit(RenderProcessHost* host) {
-  // TODO(nick): http://crbug.com/575400 - RenderProcessWillExit might not serve
-  // any purpose here.
-  for (auto& observer : observers_)
-    observer.RenderProcessGone(this);
-}
-
 void SiteInstanceImpl::RenderProcessExited(
     RenderProcessHost* host,
     const ChildProcessTerminationInfo& info) {
@@ -587,7 +616,7 @@ void SiteInstanceImpl::LockToOriginIfNeeded() {
         // strong protection. If only some sites are isolated, we need
         // additional logic to prevent the non-isolated sites from requesting
         // resources for isolated sites. https://crbug.com/509125
-        policy->LockToOrigin(process_->GetID(), site_);
+        process_->LockToOrigin(site_);
         break;
       }
       case CheckOriginLockResult::HAS_WRONG_LOCK:

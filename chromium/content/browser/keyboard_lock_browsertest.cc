@@ -8,7 +8,7 @@
 
 #include "base/macros.h"
 #include "base/metrics/histogram_base.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "components/network_session_configurator/common/network_switches.h"
@@ -90,10 +90,11 @@ constexpr char kKeyboardLockMethodCallWithAllInvalidKeys[] =
     "  () => { window.domAutomationController.send(true); },"
     ");";
 
+// Calling lock() with some invalid key codes will reject the promise.
 constexpr char kKeyboardLockMethodCallWithSomeInvalidKeys[] =
     "navigator.keyboard.lock(['Tab', 'BlarghTab', 'Space', 'BlerghLeft']).then("
-    "  () => { window.domAutomationController.send(true); },"
     "  () => { window.domAutomationController.send(false); },"
+    "  () => { window.domAutomationController.send(true); },"
     ");";
 
 constexpr char kKeyboardUnlockMethodCall[] = "navigator.keyboard.unlock()";
@@ -634,7 +635,7 @@ IN_PROC_BROWSER_TEST_F(KeyboardLockBrowserTest, LockCallWithAllInvalidKeys) {
       web_contents(), kKeyboardLockMethodCallWithAllInvalidKeys, &result));
   ASSERT_TRUE(result);
 
-  // If no valid Keys are passed in, then KeyboardLock will not be requested.
+  // If no valid Keys are passed in, then keyboard lock will not be requested.
   ASSERT_FALSE(web_contents()->GetKeyboardLockWidget());
 
   EnterFullscreen(FROM_HERE, url_for_test);
@@ -649,10 +650,24 @@ IN_PROC_BROWSER_TEST_F(KeyboardLockBrowserTest, LockCallWithSomeInvalidKeys) {
       web_contents(), kKeyboardLockMethodCallWithSomeInvalidKeys, &result));
   ASSERT_TRUE(result);
 
-  // If some valid Keys are passed in, then KeyboardLock will be requested.
+  // If some valid Keys are passed in, then keyboard lock will not be requested.
+  ASSERT_FALSE(web_contents()->GetKeyboardLockWidget());
+}
+
+IN_PROC_BROWSER_TEST_F(KeyboardLockBrowserTest,
+                       ValidLockCallFollowedByInvalidLockCall) {
+  NavigateToTestURL(https_fullscreen_frame());
+
+  RequestKeyboardLock(FROM_HERE);
   ASSERT_TRUE(web_contents()->GetKeyboardLockWidget());
 
-  EnterFullscreen(FROM_HERE, url_for_test);
+  bool result;
+  ASSERT_TRUE(ExecuteScriptAndExtractBool(
+      web_contents(), kKeyboardLockMethodCallWithSomeInvalidKeys, &result));
+  ASSERT_TRUE(result);
+
+  // An invalid call will cancel any previous lock request.
+  ASSERT_FALSE(web_contents()->GetKeyboardLockWidget());
 }
 
 IN_PROC_BROWSER_TEST_F(KeyboardLockDisabledBrowserTest,
@@ -914,26 +929,6 @@ IN_PROC_BROWSER_TEST_F(KeyboardLockBrowserTest,
       inner_contents_impl->GetRenderWidgetHostView()->IsKeyboardLocked());
   ASSERT_FALSE(web_contents()->GetKeyboardLockWidget());
   ASSERT_FALSE(web_contents()->GetRenderWidgetHostView()->IsKeyboardLocked());
-}
-
-IN_PROC_BROWSER_TEST_F(KeyboardLockBrowserTest,
-                       SubsequentLockCallSupersedesPreviousCall) {
-  // TODO(joedow): Added per code review feedback.
-  // Steps: 1. Request all keys, verify keys are locked
-  //        2. Request subset of keys, verify the subset of keys are locked, but
-  //           non-requested keys are no longer locked
-  //        3. Request all keys again, verify keys are now locked
-}
-
-IN_PROC_BROWSER_TEST_F(KeyboardLockBrowserTest,
-                       BrowserShortcutsHandledCorrectly) {
-  // TODO(joedow): Added per code review feedback.
-  // Steps: 1. Request keyboard lock for all keys
-  //        2. Simulate browser shortcut (Ctrl+T)
-  //        3. Verify new tab is not created
-  //        4. Unlock keyboard
-  //        5. Simulate browser shortcut (Ctrl+T)
-  //        6. Verify new tab was created
 }
 
 IN_PROC_BROWSER_TEST_F(KeyboardLockBrowserTest,

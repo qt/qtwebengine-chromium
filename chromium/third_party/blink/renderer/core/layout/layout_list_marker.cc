@@ -114,9 +114,8 @@ bool LayoutListMarker::IsImage() const {
   return image_ && !image_->ErrorOccurred();
 }
 
-void LayoutListMarker::Paint(const PaintInfo& paint_info,
-                             const LayoutPoint& paint_offset) const {
-  ListMarkerPainter(*this).Paint(paint_info, paint_offset);
+void LayoutListMarker::Paint(const PaintInfo& paint_info) const {
+  ListMarkerPainter(*this).Paint(paint_info);
 }
 
 void LayoutListMarker::UpdateLayout() {
@@ -242,19 +241,12 @@ void LayoutListMarker::ComputePreferredLogicalWidths() {
     return;
   }
 
-  const Font& font = Style()->GetFont();
-  const SimpleFontData* font_data = font.PrimaryFont();
-  DCHECK(font_data);
-  if (!font_data)
-    return;
-
   LayoutUnit logical_width;
   switch (GetListStyleCategory()) {
     case ListStyleCategory::kNone:
       break;
     case ListStyleCategory::kSymbol:
-      logical_width = LayoutUnit(
-          (font_data->GetFontMetrics().Ascent() * 2 / 3 + 1) / 2 + 2);
+      logical_width = WidthOfSymbol(StyleRef());
       break;
     case ListStyleCategory::kLanguage:
       logical_width = GetWidthOfTextWithSuffix();
@@ -267,6 +259,15 @@ void LayoutListMarker::ComputePreferredLogicalWidths() {
   ClearPreferredLogicalWidthsDirty();
 
   UpdateMargins();
+}
+
+LayoutUnit LayoutListMarker::WidthOfSymbol(const ComputedStyle& style) {
+  const Font& font = style.GetFont();
+  const SimpleFontData* font_data = font.PrimaryFont();
+  DCHECK(font_data);
+  if (!font_data)
+    return LayoutUnit();
+  return LayoutUnit((font_data->GetFontMetrics().Ascent() * 2 / 3 + 1) / 2 + 2);
 }
 
 void LayoutListMarker::UpdateMargins() {
@@ -469,28 +470,21 @@ LayoutRect LayoutListMarker::GetRelativeMarkerRect() const {
     return LayoutRect(LayoutPoint(), ImageBulletSize());
 
   LayoutRect relative_rect;
-  const SimpleFontData* font_data = Style()->GetFont().PrimaryFont();
-  DCHECK(font_data);
-  if (!font_data)
-    return relative_rect;
-
   switch (GetListStyleCategory()) {
     case ListStyleCategory::kNone:
       return LayoutRect();
-    case ListStyleCategory::kSymbol: {
-      // TODO(wkorman): Review and clean up/document the calculations below.
-      // http://crbug.com/543193
-      const FontMetrics& font_metrics = font_data->GetFontMetrics();
-      int ascent = font_metrics.Ascent();
-      int bullet_width = (ascent * 2 / 3 + 1) / 2;
-      relative_rect = LayoutRect(1, 3 * (ascent - ascent * 2 / 3) / 2,
-                                 bullet_width, bullet_width);
-    } break;
-    case ListStyleCategory::kLanguage:
+    case ListStyleCategory::kSymbol:
+      return RelativeSymbolMarkerRect(StyleRef(), Size().Width());
+    case ListStyleCategory::kLanguage: {
+      const SimpleFontData* font_data = Style()->GetFont().PrimaryFont();
+      DCHECK(font_data);
+      if (!font_data)
+        return relative_rect;
       relative_rect =
           LayoutRect(LayoutUnit(), LayoutUnit(), GetWidthOfTextWithSuffix(),
                      LayoutUnit(font_data->GetFontMetrics().Height()));
       break;
+    }
   }
 
   if (!Style()->IsHorizontalWritingMode()) {
@@ -498,7 +492,29 @@ LayoutRect LayoutListMarker::GetRelativeMarkerRect() const {
     relative_rect.SetX(Size().Width() - relative_rect.X() -
                        relative_rect.Width());
   }
+  return relative_rect;
+}
 
+LayoutRect LayoutListMarker::RelativeSymbolMarkerRect(
+    const ComputedStyle& style,
+    LayoutUnit width) {
+  LayoutRect relative_rect;
+  const SimpleFontData* font_data = style.GetFont().PrimaryFont();
+  DCHECK(font_data);
+  if (!font_data)
+    return LayoutRect();
+
+  // TODO(wkorman): Review and clean up/document the calculations below.
+  // http://crbug.com/543193
+  const FontMetrics& font_metrics = font_data->GetFontMetrics();
+  int ascent = font_metrics.Ascent();
+  int bullet_width = (ascent * 2 / 3 + 1) / 2;
+  relative_rect = LayoutRect(1, 3 * (ascent - ascent * 2 / 3) / 2, bullet_width,
+                             bullet_width);
+  if (!style.IsHorizontalWritingMode()) {
+    relative_rect = relative_rect.TransposedRect();
+    relative_rect.SetX(width - relative_rect.X() - relative_rect.Width());
+  }
   return relative_rect;
 }
 

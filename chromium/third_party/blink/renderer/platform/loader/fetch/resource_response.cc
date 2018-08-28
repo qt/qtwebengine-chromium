@@ -115,6 +115,7 @@ ResourceResponse::ResourceResponse(CrossThreadResourceResponseData* data)
       data->was_fallback_required_by_service_worker_;
   did_service_worker_navigation_preload_ =
       data->did_service_worker_navigation_preload_;
+  async_revalidation_requested_ = data->async_revalidation_requested_;
   response_type_via_service_worker_ = data->response_type_via_service_worker_;
   security_style_ = data->security_style_;
   security_details_.protocol = data->security_details_.protocol;
@@ -141,8 +142,6 @@ ResourceResponse::ResourceResponse(CrossThreadResourceResponseData* data)
   encoded_data_length_ = data->encoded_data_length_;
   encoded_body_length_ = data->encoded_body_length_;
   decoded_body_length_ = data->decoded_body_length_;
-  downloaded_file_path_ = data->downloaded_file_path_;
-  downloaded_file_handle_ = data->downloaded_file_handle_;
 
   // Bug https://bugs.webkit.org/show_bug.cgi?id=60397 this doesn't support
   // whatever values may be present in the opaque m_extraData structure.
@@ -178,6 +177,7 @@ std::unique_ptr<CrossThreadResourceResponseData> ResourceResponse::CopyData()
       was_fallback_required_by_service_worker_;
   data->did_service_worker_navigation_preload_ =
       did_service_worker_navigation_preload_;
+  data->async_revalidation_requested_ = async_revalidation_requested_;
   data->response_type_via_service_worker_ = response_type_via_service_worker_;
   data->security_style_ = security_style_;
   data->security_details_.protocol = security_details_.protocol.IsolatedCopy();
@@ -211,8 +211,6 @@ std::unique_ptr<CrossThreadResourceResponseData> ResourceResponse::CopyData()
   data->encoded_data_length_ = encoded_data_length_;
   data->encoded_body_length_ = encoded_body_length_;
   data->decoded_body_length_ = decoded_body_length_;
-  data->downloaded_file_path_ = downloaded_file_path_.IsolatedCopy();
-  data->downloaded_file_handle_ = downloaded_file_handle_;
 
   // Bug https://bugs.webkit.org/show_bug.cgi?id=60397 this doesn't support
   // whatever values may be present in the opaque m_extraData structure.
@@ -406,6 +404,19 @@ double ResourceResponse::CacheControlMaxAge() const {
   return cache_control_header_.max_age;
 }
 
+double ResourceResponse::CacheControlStaleWhileRevalidate() const {
+  if (!cache_control_header_.parsed) {
+    cache_control_header_ = ParseCacheControlDirectives(
+        http_header_fields_.Get(kCacheControlHeader),
+        http_header_fields_.Get(kPragmaHeader));
+  }
+  if (!std::isfinite(cache_control_header_.stale_while_revalidate) ||
+      cache_control_header_.stale_while_revalidate < 0) {
+    return 0;
+  }
+  return cache_control_header_.stale_while_revalidate;
+}
+
 static double ParseDateValueInHeader(const HTTPHeaderMap& headers,
                                      const AtomicString& header_name) {
   const AtomicString& header_value = headers.Get(header_name);
@@ -561,20 +572,6 @@ void ResourceResponse::SetEncodedBodyLength(long long value) {
 
 void ResourceResponse::SetDecodedBodyLength(long long value) {
   decoded_body_length_ = value;
-}
-
-void ResourceResponse::SetDownloadedFilePath(
-    const String& downloaded_file_path) {
-  downloaded_file_path_ = downloaded_file_path;
-  if (downloaded_file_path_.IsEmpty()) {
-    downloaded_file_handle_ = nullptr;
-    return;
-  }
-  // TODO(dmurph): Investigate whether we need the mimeType on this blob.
-  std::unique_ptr<BlobData> blob_data =
-      BlobData::CreateForFileWithUnknownSize(downloaded_file_path_);
-  blob_data->DetachFromCurrentThread();
-  downloaded_file_handle_ = BlobDataHandle::Create(std::move(blob_data), -1);
 }
 
 void ResourceResponse::AppendRedirectResponse(

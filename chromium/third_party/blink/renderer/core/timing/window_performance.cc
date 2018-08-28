@@ -31,6 +31,7 @@
 
 #include "third_party/blink/renderer/core/timing/window_performance.h"
 
+#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_layer_tree_view.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
@@ -43,13 +44,16 @@
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
+#include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/timing/performance_event_timing.h"
 #include "third_party/blink/renderer/core/timing/performance_timing.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_timing_info.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 
-static const double kLongTaskObserverThreshold = 0.05;
+static constexpr base::TimeDelta kLongTaskObserverThreshold =
+    base::TimeDelta::FromMilliseconds(50);
 
 static const char kUnknownAttribution[] = "unknown";
 static const char kAmbiguousAttribution[] = "multiple-contexts";
@@ -143,7 +147,21 @@ PerformanceNavigation* WindowPerformance::navigation() const {
 }
 
 MemoryInfo* WindowPerformance::memory() const {
-  return MemoryInfo::Create();
+  // The performance.memory() API has been improved so that we report precise
+  // values when the process is locked to a site. The intent (which changed
+  // course over time about what changes would be implemented) can be found at
+  // https://groups.google.com/a/chromium.org/forum/#!topic/blink-dev/no00RdMnGio,
+  // and the relevant bug is https://crbug.com/807651.
+  return MemoryInfo::Create(Platform::Current()->IsLockedToSite()
+                                ? MemoryInfo::Precision::Precise
+                                : MemoryInfo::Precision::Bucketized);
+}
+
+bool WindowPerformance::shouldYield() const {
+  return Platform::Current()
+      ->CurrentThread()
+      ->Scheduler()
+      ->ShouldYieldForHighPriorityWork();
 }
 
 PerformanceNavigationTiming*
@@ -258,8 +276,8 @@ std::pair<String, DOMWindow*> WindowPerformance::SanitizedAttribution(
 }
 
 void WindowPerformance::ReportLongTask(
-    double start_time,
-    double end_time,
+    base::TimeTicks start_time,
+    base::TimeTicks end_time,
     ExecutionContext* task_context,
     bool has_multiple_contexts,
     const SubTaskAttribution::EntriesVector& sub_task_attributions) {
@@ -273,15 +291,14 @@ void WindowPerformance::ReportLongTask(
   if (!culprit_dom_window || !culprit_dom_window->GetFrame() ||
       !culprit_dom_window->GetFrame()->DeprecatedLocalOwner()) {
     AddLongTaskTiming(
-        TimeTicksFromSeconds(start_time), TimeTicksFromSeconds(end_time),
-        attribution.first, g_empty_string, g_empty_string, g_empty_string,
+        start_time, end_time, attribution.first, g_empty_string, g_empty_string,
+        g_empty_string,
         IsSameOrigin(attribution.first) ? sub_task_attributions : empty_vector);
   } else {
     HTMLFrameOwnerElement* frame_owner =
         culprit_dom_window->GetFrame()->DeprecatedLocalOwner();
     AddLongTaskTiming(
-        TimeTicksFromSeconds(start_time), TimeTicksFromSeconds(end_time),
-        attribution.first,
+        start_time, end_time, attribution.first,
         GetFrameAttribute(frame_owner, HTMLNames::srcAttr, false),
         GetFrameAttribute(frame_owner, HTMLNames::idAttr, false),
         GetFrameAttribute(frame_owner, HTMLNames::nameAttr, true),
@@ -304,7 +321,7 @@ void WindowPerformance::RegisterEventTiming(String event_type,
                                             TimeTicks processing_start,
                                             TimeTicks processing_end,
                                             bool cancelable) {
-  DCHECK(OriginTrials::eventTimingEnabled(GetExecutionContext()));
+  DCHECK(OriginTrials::EventTimingEnabled(GetExecutionContext()));
 
   DCHECK(!start_time.is_null());
   DCHECK(!processing_start.is_null());
@@ -334,7 +351,7 @@ void WindowPerformance::RegisterEventTiming(String event_type,
 
 void WindowPerformance::ReportEventTimings(WebLayerTreeView::SwapResult result,
                                            TimeTicks timestamp) {
-  DCHECK(OriginTrials::eventTimingEnabled(GetExecutionContext()));
+  DCHECK(OriginTrials::EventTimingEnabled(GetExecutionContext()));
 
   DOMHighResTimeStamp end_time = MonotonicTimeToDOMHighResTimeStamp(timestamp);
   for (const auto& entry : event_timings_) {
@@ -369,7 +386,7 @@ void WindowPerformance::ReportEventTimings(WebLayerTreeView::SwapResult result,
 
 void WindowPerformance::DispatchFirstInputTiming(
     PerformanceEventTiming* entry) {
-  DCHECK(OriginTrials::eventTimingEnabled(GetExecutionContext()));
+  DCHECK(OriginTrials::EventTimingEnabled(GetExecutionContext()));
   first_input_detected_ = true;
 
   if (!entry)

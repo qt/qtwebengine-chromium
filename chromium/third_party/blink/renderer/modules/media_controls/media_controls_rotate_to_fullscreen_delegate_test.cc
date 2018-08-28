@@ -12,6 +12,7 @@
 #include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/renderer/core/css/css_style_declaration.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -62,10 +63,10 @@ class MockChromeClient : public EmptyChromeClient {
             std::move(screen_orientation));
   }
   void EnterFullscreen(LocalFrame& frame, const FullscreenOptions&) override {
-    Fullscreen::From(*frame.GetDocument()).DidEnterFullscreen();
+    Fullscreen::DidEnterFullscreen(*frame.GetDocument());
   }
   void ExitFullscreen(LocalFrame& frame) override {
-    Fullscreen::From(*frame.GetDocument()).DidExitFullscreen();
+    Fullscreen::DidExitFullscreen(*frame.GetDocument());
   }
 
   MOCK_CONST_METHOD0(GetScreenInfo, WebScreenInfo());
@@ -190,8 +191,8 @@ void MediaControlsRotateToFullscreenDelegateTest::InitScreenAndVideo(
   WebScreenInfo screen_info;
   screen_info.orientation_type = initial_screen_orientation;
   EXPECT_CALL(GetChromeClient(), GetScreenInfo())
-      .Times(1)
-      .WillOnce(Return(screen_info));
+      .Times(AtLeast(1))
+      .WillRepeatedly(Return(screen_info));
 
   // Set up the WebMediaPlayer instance.
   GetDocument().body()->AppendChild(&GetVideo());

@@ -6,6 +6,7 @@
 
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/node.h"
+#include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -114,8 +115,8 @@ void SnapCoordinator::UpdateSnapContainerData(const LayoutBox& snap_container) {
   ScrollableArea* scrollable_area = ScrollableAreaForSnapping(snap_container);
   if (!scrollable_area)
     return;
-  FloatPoint max_position = ScrollOffsetToPosition(
-      scrollable_area->MaximumScrollOffset(), scrollable_area->ScrollOrigin());
+  FloatPoint max_position = scrollable_area->ScrollOffsetToPosition(
+      scrollable_area->MaximumScrollOffset());
   snap_container_data.set_max_position(
       gfx::ScrollOffset(max_position.X(), max_position.Y()));
 
@@ -151,6 +152,7 @@ void SnapCoordinator::UpdateSnapContainerData(const LayoutBox& snap_container) {
       MinimumValueForLength(container_style->ScrollPaddingLeft(),
                             container_rect.Width()));
   container_rect.Contract(container_padding);
+  snap_container_data.set_rect(FloatRect(container_rect));
 
   if (snap_container_data.scroll_snap_type().strictness ==
       SnapStrictness::kProximity) {
@@ -162,156 +164,11 @@ void SnapCoordinator::UpdateSnapContainerData(const LayoutBox& snap_container) {
 
   if (SnapAreaSet* snap_areas = snap_container.SnapAreas()) {
     for (const LayoutBox* snap_area : *snap_areas) {
-      snap_container_data.AddSnapAreaData(CalculateSnapAreaData(
-          *snap_area, snap_container, container_rect, max_position));
+      snap_container_data.AddSnapAreaData(
+          CalculateSnapAreaData(*snap_area, snap_container));
     }
   }
   snap_container_map_.Set(&snap_container, snap_container_data);
-}
-
-static float ClipInContainer(LayoutUnit unit, float max) {
-  float value = unit.ClampNegativeToZero().ToFloat();
-  return value > max ? max : value;
-}
-
-// Returns scroll offset at which the snap area and snap containers meet the
-// requested snapping alignment on the given axis.
-// If the scroll offset required for the alignment is outside the valid range
-// then it will be clamped.
-// alignment - The scroll-snap-align specified on the snap area.
-//    https://www.w3.org/TR/css-scroll-snap-1/#scroll-snap-align
-// axis - The axis for which we consider alignment on. Should be either X or Y
-// container - The snap_container rect relative to the container_element's
-//    boundary. Note that this rect is represented by the dotted box below,
-//    which is contracted by the scroll-padding from the element's original
-//    boundary.
-// max_position - The maximal scrollable offset of the container. The
-//    calculated snap_position can not be larger than this value.
-// area - The snap area rect relative to the snap container's boundary. Note
-//    that this rect is represented by the dotted box below, which is expanded
-//    by the scroll-margin from the element's original boundary.
-static float CalculateSnapPosition(SnapAlignment alignment,
-                                   SearchAxis axis,
-                                   const LayoutRect& container,
-                                   const FloatPoint& max_position,
-                                   const LayoutRect& area) {
-  if (alignment == SnapAlignment::kNone)
-    return SnapAreaData::kInvalidScrollPosition;
-  switch (alignment) {
-    /* Start alignment aligns the area's start edge with container's start edge.
-       https://www.w3.org/TR/css-scroll-snap-1/#valdef-scroll-snap-align-start
-      + + + + + + + + + + + + + + + + + + + + + + + + + + + + + +
-      +                   ^                                     +
-      +                   |                                     +
-      +                   |snap_position                          +
-      +                   |                                     +
-      +                   v                                     +
-      +  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\  +
-      +  \                 scroll-padding                    \  +
-      +  \   . . . . . . . . . . . . . . . . . . . . . . .   \  +
-      +  \   .       .     scroll-margin     .           .   \  +
-      +  \   .       .  |=================|  .           .   \  +
-      +  \   .       .  |                 |  .           .   \  +
-      +  \   .       .  |    snap_area    |  .           .   \  +
-      +  \   .       .  |                 |  .           .   \  +
-      +  \   .       .  |=================|  .           .   \  +
-      +  \   .       .                       .           .   \  +
-      +  \   .       . . . . . . . . . . . . .           .   \  +
-      +  \   .                                           .   \  +
-      +  \   .                                           .   \  +
-      +  \   .                                           .   \  +
-      +  \   . . . . . . .snap_container . . . . . . . . .   \  +
-      +  \                                                   \  +
-      +  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\  +
-      +                                                         +
-      +                scrollable_content                       +
-      + + + + + + + + + + + + + + + + + + + + + + + + + + + + + +
-
-    */
-    case SnapAlignment::kStart:
-      if (axis == SearchAxis::kX) {
-        return ClipInContainer(area.X() - container.X(), max_position.X());
-      }
-      return ClipInContainer(area.Y() - container.Y(), max_position.Y());
-
-    /* Center alignment aligns the snap_area(with margin)'s center line with
-       snap_container(without padding)'s center line.
-       https://www.w3.org/TR/css-scroll-snap-1/#valdef-scroll-snap-align-center
-      + + + + + + + + + + + + + + + + + + + + + + + + + + + + + +
-      +                    ^                                    +
-      +                    | snap_position                        +
-      +                    v                                    +
-      +  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\  +
-      +  \                 scroll-padding                    \  +
-      +  \   . . . . . . . . . . . . . . . . . . . . . . .   \  +
-      +  \   .                                           .   \  +
-      +  \   .       . . . . . . . . . . . . .           .   \  +
-      +  \   .       .      scroll-margin    .           .   \  +
-      +  \   .       .  |=================|  .           .   \  +
-      +  \   .       .  |    snap_area    |  .           .   \  +
-      +  \* *.* * * *.* * * * * * * * * * * *.* * * * * * * * * * Center line
-      +  \   .       .  |                 |  .           .   \  +
-      +  \   .       .  |=================|  .           .   \  +
-      +  \   .       .                       .           .   \  +
-      +  \   .       . . . . . . . . . . . . .           .   \  +
-      +  \   .                                           .   \  +
-      +  \   . . . . . . snap_container. . . . . . . . . .   \  +
-      +  \                                                   \  +
-      +  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\  +
-      +                                                         +
-      +                                                         +
-      +                scrollable_content                       +
-      +                                                         +
-      + + + + + + + + + + + + + + + + + + + + + + + + + + + + + +
-
-    */
-    case SnapAlignment::kCenter:
-      if (axis == SearchAxis::kX) {
-        return ClipInContainer(area.Center().X() - container.Center().X(),
-                               max_position.X());
-      }
-      return ClipInContainer(area.Center().Y() - container.Center().Y(),
-                             max_position.Y());
-
-    /* End alignment aligns the snap_area(with margin)'s end edge with
-       snap_container(without padding)'s end edge.
-       https://www.w3.org/TR/css-scroll-snap-1/#valdef-scroll-snap-align-end
-      + + + + + + + + + + + + + + + + + + + + + + + + + + + + . .
-      +                    ^                                    +
-      +                    | snap_position                        +
-      +                    v                                    +
-      +  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\  +
-      +  \                                                   \  +
-      +  \   . . . . . . . . snap_container. . . . . . . .   \  +
-      +  \   .                                           .   \  +
-      +  \   .                                           .   \  +
-      +  \   .                                           .   \  +
-      +  \   .       . . . . . . . . . . . . .           .   \  +
-      +  \   .       .      scroll-margin    .           .   \  +
-      +  \   .       .  |=================|  .           .   \  +
-      +  \   .       .  |                 |  .           .   \  +
-      +  \   .       .  |    snap_area    |  .           .   \  +
-      +  \   .       .  |                 |  .           .   \  +
-      +  \   .       .  |=================|  .           .   \  +
-      +  \   .       .                       .           .   \  +
-      +  \   . . . . . . . . . . . . . . . . . . . . . . .   \  +
-      +  \               scroll-padding                      \  +
-      +  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\  +
-      +                                                         +
-      +               scrollable_content                        +
-      +                                                         +
-      + + + + + + + + + + + + + + + + + + + + + + + + + + + + + +
-
-    */
-    case SnapAlignment::kEnd:
-      if (axis == SearchAxis::kX) {
-        return ClipInContainer(area.MaxX() - container.MaxX(),
-                               max_position.X());
-      }
-      return ClipInContainer(area.MaxY() - container.MaxY(), max_position.Y());
-    default:
-      return LayoutUnit(SnapAreaData::kInvalidScrollPosition);
-  }
 }
 
 static ScrollSnapAlign GetPhysicalAlignment(
@@ -335,32 +192,9 @@ static ScrollSnapAlign GetPhysicalAlignment(
   return align;
 }
 
-static FloatRect GetVisibleRegion(const LayoutRect& container,
-                                  const LayoutRect& area) {
-  float left = area.X() - container.MaxX();
-  float right = area.MaxX() - container.X();
-  float top = area.Y() - container.MaxY();
-  float bottom = area.MaxY() - container.Y();
-  return FloatRect(left, top, right - left, bottom - top);
-}
-
-static SnapAxis ToSnapAxis(ScrollSnapAlign align) {
-  if (align.alignment_inline != SnapAlignment::kNone &&
-      align.alignment_block != SnapAlignment::kNone)
-    return SnapAxis::kBoth;
-
-  if (align.alignment_inline != SnapAlignment::kNone &&
-      align.alignment_block == SnapAlignment::kNone)
-    return SnapAxis::kX;
-
-  return SnapAxis::kY;
-}
-
 SnapAreaData SnapCoordinator::CalculateSnapAreaData(
     const LayoutBox& snap_area,
-    const LayoutBox& snap_container,
-    const LayoutRect& container_rect,
-    const FloatPoint& max_position) {
+    const LayoutBox& snap_container) {
   const ComputedStyle* container_style = snap_container.Style();
   const ComputedStyle* area_style = snap_area.Style();
   SnapAreaData snap_area_data;
@@ -381,7 +215,7 @@ SnapAreaData SnapCoordinator::CalculateSnapAreaData(
   ScrollableArea* scrollable_area = ScrollableAreaForSnapping(snap_container);
   if (scrollable_area) {
     if (snap_container.IsLayoutView())
-      area_rect = snap_container.GetFrameView()->AbsoluteToDocument(area_rect);
+      area_rect = snap_container.GetFrameView()->FrameToDocument(area_rect);
     else
       area_rect.MoveBy(LayoutPoint(scrollable_area->ScrollPosition()));
   }
@@ -390,44 +224,37 @@ SnapAreaData SnapCoordinator::CalculateSnapAreaData(
       area_style->ScrollMarginTop(), area_style->ScrollMarginRight(),
       area_style->ScrollMarginBottom(), area_style->ScrollMarginLeft());
   area_rect.Expand(area_margin);
+  snap_area_data.rect = FloatRect(area_rect);
 
   ScrollSnapAlign align = GetPhysicalAlignment(*area_style, *container_style);
+  snap_area_data.scroll_snap_align = align;
 
-  snap_area_data.snap_position.set_x(
-      CalculateSnapPosition(align.alignment_inline, SearchAxis::kX,
-                            container_rect, max_position, area_rect));
-  snap_area_data.snap_position.set_y(
-      CalculateSnapPosition(align.alignment_block, SearchAxis::kY,
-                            container_rect, max_position, area_rect));
-
-  snap_area_data.snap_axis = ToSnapAxis(align);
-
-  snap_area_data.visible_region = GetVisibleRegion(container_rect, area_rect);
   snap_area_data.must_snap =
       (area_style->ScrollSnapStop() == EScrollSnapStop::kAlways);
 
   return snap_area_data;
 }
 
-FloatPoint SnapCoordinator::GetSnapPositionForPoint(
+base::Optional<FloatPoint> SnapCoordinator::GetSnapPositionForPoint(
     const LayoutBox& snap_container,
     const FloatPoint& point,
     bool did_scroll_x,
     bool did_scroll_y) {
   auto iter = snap_container_map_.find(&snap_container);
   if (iter == snap_container_map_.end())
-    return point;
+    return base::nullopt;
 
   const SnapContainerData& data = iter->value;
   if (!data.size())
-    return point;
+    return base::nullopt;
 
   gfx::ScrollOffset snap_position;
   if (data.FindSnapPosition(gfx::ScrollOffset(point.X(), point.Y()),
                             did_scroll_x, did_scroll_y, &snap_position)) {
-    return FloatPoint(snap_position.x(), snap_position.y());
+    FloatPoint snap_point(snap_position.x(), snap_position.y());
+    return snap_point;
   }
-  return point;
+  return base::nullopt;
 }
 
 void SnapCoordinator::PerformSnapping(const LayoutBox& snap_container,
@@ -438,12 +265,16 @@ void SnapCoordinator::PerformSnapping(const LayoutBox& snap_container,
     return;
 
   FloatPoint current_position = scrollable_area->ScrollPosition();
-  FloatPoint snap_position = GetSnapPositionForPoint(
+  base::Optional<FloatPoint> snap_point = GetSnapPositionForPoint(
       snap_container, current_position, did_scroll_x, did_scroll_y);
+  if (!snap_point.has_value())
+    return;
 
-  if (snap_position != current_position) {
+  scrollable_area->CancelScrollAnimation();
+  scrollable_area->CancelProgrammaticScrollAnimation();
+  if (snap_point.value() != current_position) {
     scrollable_area->SetScrollOffset(
-        ScrollPositionToOffset(snap_position, scrollable_area->ScrollOrigin()),
+        scrollable_area->ScrollPositionToOffset(snap_point.value()),
         kProgrammaticScroll, kScrollBehaviorSmooth);
   }
 }
@@ -474,6 +305,30 @@ base::Optional<SnapContainerData> SnapCoordinator::GetSnapContainerData(
     return iter->value;
   }
   return base::nullopt;
+}
+
+bool SnapCoordinator::GetSnapFlingInfo(
+    const LayoutBox& snap_container,
+    const gfx::Vector2dF& natural_displacement,
+    gfx::Vector2dF* out_initial_offset,
+    gfx::Vector2dF* out_target_offset) {
+  ScrollableArea* scrollable_area = ScrollableAreaForSnapping(snap_container);
+  if (!scrollable_area)
+    return false;
+
+  FloatPoint current_position = scrollable_area->ScrollPosition();
+  *out_initial_offset = gfx::Vector2dF(current_position);
+  FloatPoint original_end =
+      current_position +
+      FloatPoint(natural_displacement.x(), natural_displacement.y());
+  bool did_scroll_x = natural_displacement.x() != 0;
+  bool did_scroll_y = natural_displacement.y() != 0;
+  base::Optional<FloatPoint> snap_end = GetSnapPositionForPoint(
+      snap_container, original_end, did_scroll_x, did_scroll_y);
+  if (!snap_end.has_value())
+    return false;
+  *out_target_offset = gfx::Vector2dF(snap_end.value());
+  return true;
 }
 
 #ifndef NDEBUG

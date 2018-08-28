@@ -8,10 +8,6 @@
 #include <set>
 #include <utility>
 
-#include "base/callback.h"
-#include "base/rand_util.h"
-#include "build/build_config.h"
-#include "net/test/gtest_util.h"
 #include "net/third_party/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quic/core/crypto/null_encrypter.h"
 #include "net/third_party/quic/core/quic_crypto_stream.h"
@@ -33,7 +29,6 @@
 #include "net/third_party/quic/test_tools/quic_stream_peer.h"
 #include "net/third_party/quic/test_tools/quic_stream_send_buffer_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
-#include "testing/gmock_mutant.h"
 
 using spdy::kV3HighestPriority;
 using spdy::SpdyPriority;
@@ -44,7 +39,7 @@ using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -386,6 +381,11 @@ TEST_P(QuicSessionTestServer, ManyAvailableStreams) {
 }
 
 TEST_P(QuicSessionTestServer, DebugDFatalIfMarkingClosedStreamWriteBlocked) {
+  // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
+  if (GetParam() != AllSupportedVersions()[0]) {
+    return;
+  }
+
   TestStream* stream2 = session_.CreateOutgoingDynamicStream();
   QuicStreamId closed_stream_id = stream2->id();
   // Close the stream.
@@ -466,7 +466,7 @@ TEST_P(QuicSessionTestServer, TestBatchedWrites) {
   // Now let stream 4 do the 2nd of its 3 writes, but add a block for a high
   // priority stream 6.  4 should be preempted.  6 will write but *not* block so
   // will cede back to 4.
-  stream6->SetPriority(spdy::kV3HighestPriority);
+  stream6->SetPriority(kV3HighestPriority);
   EXPECT_CALL(*stream4, OnCanWrite())
       .WillOnce(Invoke([this, stream4, stream6]() {
         session_.SendLargeFakeData(stream4, 6000);
@@ -716,6 +716,10 @@ TEST_P(QuicSessionTestServer, OnCanWriteLimitsNumWritesIfFlowControlBlocked) {
 }
 
 TEST_P(QuicSessionTestServer, SendGoAway) {
+  if (transport_version() == QUIC_VERSION_99) {
+    // GoAway frames are not in version 99
+    return;
+  }
   MockPacketWriter* writer = static_cast<MockPacketWriter*>(
       QuicConnectionPeer::GetWriter(session_.connection()));
   EXPECT_CALL(*writer, WritePacket(_, _, _, _, _))
@@ -1400,6 +1404,29 @@ TEST_P(QuicSessionTestServer, RetransmitFrames) {
   session_.RetransmitFrames(frames, TLP_RETRANSMISSION);
 }
 
+// Regression test of b/110082001.
+TEST_P(QuicSessionTestServer, RetransmitLostDataCausesConnectionClose) {
+  // This test mimics the scenario when a dynamic stream retransmits lost data
+  // and causes connection close.
+  QuicConnectionPeer::SetSessionDecidesWhatToWrite(connection_);
+  TestStream* stream = session_.CreateOutgoingDynamicStream();
+  QuicStreamFrame frame(stream->id(), false, 0, 9);
+
+  EXPECT_CALL(*stream, HasPendingRetransmission())
+      .Times(2)
+      .WillOnce(Return(true))
+      .WillOnce(Return(false));
+  session_.OnFrameLost(QuicFrame(&frame));
+  // Retransmit stream data causes connection close. Stream has not sent fin
+  // yet, so an RST is sent.
+  EXPECT_CALL(*stream, OnCanWrite())
+      .WillOnce(Invoke(stream, &QuicStream::OnClose));
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .WillOnce(Invoke(&session_, &TestSession::ClearControlFrame));
+  EXPECT_CALL(*connection_, OnStreamReset(stream->id(), _));
+  session_.OnCanWrite();
+}
+
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

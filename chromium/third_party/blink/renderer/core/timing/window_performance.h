@@ -32,6 +32,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_TIMING_WINDOW_PERFORMANCE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_TIMING_WINDOW_PERFORMANCE_H_
 
+#include "third_party/blink/public/platform/web_layer_tree_view.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/frame/performance_monitor.h"
@@ -62,6 +63,8 @@ class CORE_EXPORT WindowPerformance final : public Performance,
 
   MemoryInfo* memory() const override;
 
+  bool shouldYield() const override;
+
   void UpdateLongTaskInstrumentation() override;
 
   bool ObservingEventTimingEntries();
@@ -77,7 +80,6 @@ class CORE_EXPORT WindowPerformance final : public Performance,
                            bool cancelable);
 
   void Trace(blink::Visitor*) override;
-  using Performance::TraceWrappers;
 
  private:
   explicit WindowPerformance(LocalDOMWindow*);
@@ -91,8 +93,8 @@ class CORE_EXPORT WindowPerformance final : public Performance,
 
   // PerformanceMonitor::Client implementation.
   void ReportLongTask(
-      double start_time,
-      double end_time,
+      base::TimeTicks start_time,
+      base::TimeTicks end_time,
       ExecutionContext* task_context,
       bool has_multiple_contexts,
       const SubTaskAttribution::EntriesVector& sub_task_attributions) override;

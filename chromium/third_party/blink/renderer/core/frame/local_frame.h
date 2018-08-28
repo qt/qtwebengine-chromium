@@ -32,24 +32,28 @@
 #include <memory>
 
 #include "base/macros.h"
-#include "base/single_thread_task_runner.h"
-#include "third_party/blink/public/mojom/loader/prefetch_url_loader_service.mojom-blink.h"
+#include "mojo/public/cpp/bindings/strong_binding_set.h"
+#include "third_party/blink/public/mojom/loader/pause_subresource_loading_handle.mojom-blink.h"
+#include "third_party/blink/public/mojom/loader/previews_resource_loading_hints.mojom-blink.h"
+#include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/renderer/core/accessibility/axid.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
-#include "third_party/blink/renderer/core/dom/computed_accessible_node.h"
 #include "third_party/blink/renderer/core/dom/user_gesture_indicator.h"
 #include "third_party/blink/renderer/core/dom/weak_identifier_map.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
 #include "third_party/blink/renderer/core/frame/frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
-#include "third_party/blink/renderer/core/loader/interactive_detector.h"
-#include "third_party/blink/renderer/core/page/frame_tree.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/instance_counters.h"
-#include "third_party/blink/renderer/platform/scroll/scroll_types.h"
+#include "third_party/blink/renderer/platform/loader/fetch/client_hints_preferences.h"
+#include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace service_manager {
 class InterfaceProvider;
@@ -71,7 +75,7 @@ class FetchParameters;
 class FloatSize;
 class FrameConsole;
 class FrameResourceCoordinator;
-class FrameScheduler;
+// class FrameScheduler;
 class FrameSelection;
 class InputMethodController;
 class InspectorTraceEvents;
@@ -90,6 +94,7 @@ class NodeTraversal;
 class PerformanceMonitor;
 class PluginData;
 class ScriptController;
+class SharedBuffer;
 class SpellChecker;
 class TextSuggestionController;
 class WebComputedAXTree;
@@ -115,12 +120,12 @@ class CORE_EXPORT LocalFrame final : public Frame,
   // Frame overrides:
   ~LocalFrame() override;
   void Trace(blink::Visitor*) override;
-  void Navigate(Document& origin_document,
-                const KURL&,
-                bool replace_current_item,
-                UserGestureStatus) override;
+  void ScheduleNavigation(Document& origin_document,
+                          const KURL&,
+                          bool replace_current_item,
+                          UserGestureStatus) override;
   void Navigate(const FrameLoadRequest&) override;
-  void Reload(FrameLoadType, ClientRedirectPolicy) override;
+  void Reload(WebFrameLoadType, ClientRedirectPolicy) override;
   void Detach(FrameDetachType) override;
   bool ShouldClose() override;
   SecurityContext* GetSecurityContext() const override;
@@ -231,7 +236,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
   PositionForPoint(const LayoutPoint& frame_point);
   Document* DocumentAtPoint(const LayoutPoint&);
 
-  bool ShouldReuseDefaultView(const KURL&) const;
+  bool ShouldReuseDefaultView(const KURL&, const ContentSecurityPolicy*) const;
   void RemoveSpellingMarkersUnderWords(const Vector<String>& words);
 
   bool ShouldThrottleRendering() const;
@@ -279,6 +284,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
   PerformanceMonitor* GetPerformanceMonitor() { return performance_monitor_; }
   IdlenessDetector* GetIdlenessDetector() { return idleness_detector_; }
   AdTracker* GetAdTracker() { return ad_tracker_; }
+  void SetAdTrackerForTesting(AdTracker* ad_tracker);
 
   // Convenience function to allow loading image placeholders for the request if
   // either the flag in Settings() for using image placeholders is set, or if
@@ -325,29 +331,43 @@ class CORE_EXPORT LocalFrame final : public Frame,
   // preview.
   bool IsUsingDataSavingPreview() const;
 
-  // Prefetch URLLoader service. May return nullptr.
-  blink::mojom::blink::PrefetchURLLoaderService* PrefetchURLLoaderService();
-
   ComputedAccessibleNode* GetOrCreateComputedAccessibleNode(AXID,
                                                             WebComputedAXTree*);
 
   // True if AdTracker heuristics have determined that this frame is an ad.
+  // Calculated in the constructor but LocalFrames created on behalf of OOPIF
+  // aren't set until just before commit (ReadyToCommitNavigation time) by the
+  // embedder.
   bool IsAdSubframe() const { return is_ad_subframe_; }
   void SetIsAdSubframe() {
     DCHECK(!IsMainFrame());
     if (is_ad_subframe_)
       return;
     is_ad_subframe_ = true;
+    frame_scheduler_->SetIsAdFrame();
     InstanceCounters::IncrementCounter(InstanceCounters::kAdSubframeCounter);
   }
+
+  // Binds |request| and prevents resource loading until either the frame is
+  // navigated or the request pipe is closed.
+  void PauseSubresourceLoading(
+      blink::mojom::blink::PauseSubresourceLoadingHandleRequest request);
+
+  void ResumeSubresourceLoading();
+
+  void AnimateSnapFling(base::TimeTicks monotonic_time);
+
+  ClientHintsPreferences& GetClientHintsPreferences() {
+    return client_hints_preferences_;
+  }
+
+  void BindPreviewsResourceLoadingHintsRequest(
+      blink::mojom::blink::PreviewsResourceLoadingHintsReceiverRequest request);
 
  private:
   friend class FrameNavigationDisabler;
 
-  LocalFrame(LocalFrameClient*,
-             Page&,
-             FrameOwner*,
-             InterfaceRegistry*);
+  LocalFrame(LocalFrameClient*, Page&, FrameOwner*, InterfaceRegistry*);
 
   // Intentionally private to prevent redundant checks when the type is
   // already LocalFrame.
@@ -359,7 +379,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
 
   bool CanNavigateWithoutFramebusting(const Frame&, String& error_reason);
 
-  bool ComputeIsAdSubFrame() const;
+  void SetIsAdSubframeIfNecessary();
 
   void PropagateInertToChildFrames();
 
@@ -375,6 +395,11 @@ class CORE_EXPORT LocalFrame final : public Frame,
                    float maximum_shrink_ratio);
 
   std::unique_ptr<FrameScheduler> frame_scheduler_;
+
+  // Holds all PauseSubresourceLoadingHandles allowing either |this| to delete
+  // them explicitly or the pipe closing to delete them.
+  mojo::StrongBindingSet<blink::mojom::blink::PauseSubresourceLoadingHandle>
+      pause_handle_bindings_;
 
   mutable FrameLoader loader_;
   Member<NavigationScheduler> navigation_scheduler_;
@@ -431,7 +456,10 @@ class CORE_EXPORT LocalFrame final : public Frame,
   // Per-frame URLLoader factory.
   std::unique_ptr<WebURLLoaderFactory> url_loader_factory_;
 
-  blink::mojom::blink::PrefetchURLLoaderServicePtr prefetch_loader_service_;
+  std::unique_ptr<mojom::blink::PreviewsResourceLoadingHintsReceiver>
+      previews_resource_loading_hints_receiver_;
+
+  ClientHintsPreferences client_hints_preferences_;
 };
 
 inline FrameLoader& LocalFrame::Loader() const {

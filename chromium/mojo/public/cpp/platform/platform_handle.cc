@@ -9,19 +9,25 @@
 
 #if defined(OS_WIN)
 #include <windows.h>
+
+#include "base/win/scoped_handle.h"
 #elif defined(OS_FUCHSIA)
-#include <fdio/limits.h>
+#include <lib/fdio/limits.h>
 #include <unistd.h>
 #include <zircon/status.h>
-#include <zircon/syscalls.h>
+
+#include "base/fuchsia/fuchsia_logging.h"
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
 #include <mach/mach_vm.h>
 
 #include "base/mac/mach_logging.h"
+#include "base/mac/scoped_mach_port.h"
 #endif
 
 #if defined(OS_POSIX)
 #include <unistd.h>
+
+#include "base/files/scoped_file.h"
 #endif
 
 namespace mojo {
@@ -42,14 +48,14 @@ base::win::ScopedHandle CloneHandle(const base::win::ScopedHandle& handle) {
   return base::win::ScopedHandle(dupe);
 }
 #elif defined(OS_FUCHSIA)
-base::ScopedZxHandle CloneHandle(const base::ScopedZxHandle& handle) {
+zx::handle CloneHandle(const zx::handle& handle) {
   DCHECK(handle.is_valid());
 
-  zx_handle_t dupe;
-  zx_status_t result =
-      zx_handle_duplicate(handle.get(), ZX_RIGHT_SAME_RIGHTS, &dupe);
-  DLOG_IF(ERROR, result != ZX_OK) << "zx_duplicate_handle failed: " << result;
-  return base::ScopedZxHandle(dupe);
+  zx::handle dupe;
+  zx_status_t result = handle.duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe);
+  if (result != ZX_OK)
+    ZX_DLOG(ERROR, result) << "zx_duplicate_handle";
+  return std::move(dupe);
 }
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
 base::mac::ScopedMachSendRight CloneMachPort(
@@ -77,21 +83,24 @@ base::ScopedFD CloneFD(const base::ScopedFD& fd) {
 
 PlatformHandle::PlatformHandle() = default;
 
-PlatformHandle::PlatformHandle(PlatformHandle&& other) = default;
+PlatformHandle::PlatformHandle(PlatformHandle&& other) {
+  *this = std::move(other);
+}
 
 #if defined(OS_WIN)
 PlatformHandle::PlatformHandle(base::win::ScopedHandle handle)
-    : handle_(std::move(handle)) {}
+    : type_(Type::kHandle), handle_(std::move(handle)) {}
 #elif defined(OS_FUCHSIA)
-PlatformHandle::PlatformHandle(base::ScopedZxHandle handle)
-    : handle_(std::move(handle)) {}
+PlatformHandle::PlatformHandle(zx::handle handle)
+    : type_(Type::kHandle), handle_(std::move(handle)) {}
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
 PlatformHandle::PlatformHandle(base::mac::ScopedMachSendRight mach_port)
-    : mach_port_(std::move(mach_port)) {}
+    : type_(Type::kMachPort), mach_port_(std::move(mach_port)) {}
 #endif
 
 #if defined(OS_POSIX) || defined(OS_FUCHSIA)
-PlatformHandle::PlatformHandle(base::ScopedFD fd) : fd_(std::move(fd)) {
+PlatformHandle::PlatformHandle(base::ScopedFD fd)
+    : type_(Type::kFd), fd_(std::move(fd)) {
 #if defined(OS_FUCHSIA)
   DCHECK_LT(fd_.get(), FDIO_MAX_FD);
 #endif
@@ -100,9 +109,101 @@ PlatformHandle::PlatformHandle(base::ScopedFD fd) : fd_(std::move(fd)) {
 
 PlatformHandle::~PlatformHandle() = default;
 
-PlatformHandle& PlatformHandle::operator=(PlatformHandle&& other) = default;
+PlatformHandle& PlatformHandle::operator=(PlatformHandle&& other) {
+  type_ = other.type_;
+  other.type_ = Type::kNone;
+
+#if defined(OS_WIN)
+  handle_ = std::move(other.handle_);
+#elif defined(OS_FUCHSIA)
+  handle_ = std::move(other.handle_);
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+  mach_port_ = std::move(other.mach_port_);
+#endif
+
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+  fd_ = std::move(other.fd_);
+#endif
+
+  return *this;
+}
+
+// static
+void PlatformHandle::ToMojoPlatformHandle(PlatformHandle handle,
+                                          MojoPlatformHandle* out_handle) {
+  DCHECK(out_handle);
+  out_handle->struct_size = sizeof(MojoPlatformHandle);
+  if (handle.type_ == Type::kNone) {
+    out_handle->type = MOJO_PLATFORM_HANDLE_TYPE_INVALID;
+    out_handle->value = 0;
+    return;
+  }
+
+  do {
+#if defined(OS_WIN)
+    out_handle->type = MOJO_PLATFORM_HANDLE_TYPE_WINDOWS_HANDLE;
+    out_handle->value =
+        static_cast<uint64_t>(HandleToLong(handle.TakeHandle().Take()));
+    break;
+#elif defined(OS_FUCHSIA)
+    if (handle.is_handle()) {
+      out_handle->type = MOJO_PLATFORM_HANDLE_TYPE_FUCHSIA_HANDLE;
+      out_handle->value = handle.TakeHandle().release();
+      break;
+    }
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+    if (handle.is_mach_port()) {
+      out_handle->type = MOJO_PLATFORM_HANDLE_TYPE_MACH_PORT;
+      out_handle->value =
+          static_cast<uint64_t>(handle.TakeMachPort().release());
+      break;
+    }
+#endif
+
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+    DCHECK(handle.is_fd());
+    out_handle->type = MOJO_PLATFORM_HANDLE_TYPE_FILE_DESCRIPTOR;
+    out_handle->value = static_cast<uint64_t>(handle.TakeFD().release());
+#endif
+  } while (false);
+
+  // One of the above cases must take ownership of |handle|.
+  DCHECK(!handle.is_valid());
+}
+
+// static
+PlatformHandle PlatformHandle::FromMojoPlatformHandle(
+    const MojoPlatformHandle* handle) {
+  if (handle->struct_size < sizeof(*handle) ||
+      handle->type == MOJO_PLATFORM_HANDLE_TYPE_INVALID) {
+    return PlatformHandle();
+  }
+
+#if defined(OS_WIN)
+  if (handle->type != MOJO_PLATFORM_HANDLE_TYPE_WINDOWS_HANDLE)
+    return PlatformHandle();
+  return PlatformHandle(
+      base::win::ScopedHandle(LongToHandle(static_cast<long>(handle->value))));
+#elif defined(OS_FUCHSIA)
+  if (handle->type == MOJO_PLATFORM_HANDLE_TYPE_FUCHSIA_HANDLE)
+    return PlatformHandle(zx::handle(handle->value));
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+  if (handle->type == MOJO_PLATFORM_HANDLE_TYPE_MACH_PORT) {
+    return PlatformHandle(base::mac::ScopedMachSendRight(
+        static_cast<mach_port_t>(handle->value)));
+  }
+#endif
+
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+  if (handle->type != MOJO_PLATFORM_HANDLE_TYPE_FILE_DESCRIPTOR)
+    return PlatformHandle();
+  return PlatformHandle(base::ScopedFD(static_cast<int>(handle->value)));
+#endif
+}
 
 void PlatformHandle::reset() {
+  type_ = Type::kNone;
+
 #if defined(OS_WIN)
   handle_.Close();
 #elif defined(OS_FUCHSIA)
@@ -113,6 +214,22 @@ void PlatformHandle::reset() {
 
 #if defined(OS_POSIX) || defined(OS_FUCHSIA)
   fd_.reset();
+#endif
+}
+
+void PlatformHandle::release() {
+  type_ = Type::kNone;
+
+#if defined(OS_WIN)
+  ignore_result(handle_.Take());
+#elif defined(OS_FUCHSIA)
+  ignore_result(handle_.release());
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+  ignore_result(mach_port_.release());
+#endif
+
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
+  ignore_result(fd_.release());
 #endif
 }
 

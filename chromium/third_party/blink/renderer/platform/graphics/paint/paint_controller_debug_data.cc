@@ -77,10 +77,8 @@ PaintController::DisplayItemListAsJSON::SubsequenceAsJSONObjectRecursive() {
   json_object->SetString("subsequence",
                          String::Format("client: %p ", subsequence.client) +
                              ClientName(*subsequence.client));
-  json_object->SetArray(
-      RuntimeEnabledFeatures::SlimmingPaintV175Enabled() ? "chunks"
-                                                         : "displayItems",
-      SubsequenceAsJSONArrayRecursive(subsequence.start, subsequence.end));
+  json_object->SetArray("chunks", SubsequenceAsJSONArrayRecursive(
+                                      subsequence.start, subsequence.end));
 
   return json_object;
 }
@@ -115,15 +113,17 @@ void PaintController::DisplayItemListAsJSON::AppendSubsequenceAsJSON(
     size_t end_item,
     JSONArray& json_array) {
   DCHECK(end_item > start_item);
-
-  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-    list_.AppendSubsequenceAsJSON(start_item, end_item, flags_, json_array);
+  if (current_chunk_ == chunks_.end()) {
+    // We are in the middle of painting with incomplete chunks.
+    auto json_object = JSONObject::Create();
+    json_object->SetString("chunk", "incomplete");
+    json_object->SetArray(
+        "displayItems", list_.SubsequenceAsJSON(start_item, end_item, flags_));
+    json_array.PushObject(std::move(json_object));
     return;
   }
 
-  DCHECK(current_chunk_ != chunks_.end());
   DCHECK(current_chunk_->begin_index == start_item);
-
   while (current_chunk_ != chunks_.end() &&
          current_chunk_->end_index <= end_item) {
     const auto& chunk = *current_chunk_;
@@ -154,9 +154,9 @@ void PaintController::ShowDebugDataInternal(
     DisplayItemList::JsonFlags flags) const {
   LOG(ERROR) << "current display item list: "
              << DisplayItemListAsJSON(
-                    current_paint_artifact_.GetDisplayItemList(),
+                    current_paint_artifact_->GetDisplayItemList(),
                     current_cached_subsequences_,
-                    current_paint_artifact_.PaintChunks(), flags)
+                    current_paint_artifact_->PaintChunks(), flags)
                     .ToString()
                     .Utf8()
                     .data();

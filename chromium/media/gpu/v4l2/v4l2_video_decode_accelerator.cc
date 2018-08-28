@@ -23,7 +23,9 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "media/base/media_switches.h"
-#include "media/gpu/shared_memory_region.h"
+#include "media/base/scopedfd_helper.h"
+#include "media/base/unaligned_shared_memory.h"
+#include "media/gpu/v4l2/v4l2_image_processor.h"
 #include "media/video/h264_parser.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gl/gl_context.h"
@@ -71,12 +73,13 @@ struct V4L2VideoDecodeAccelerator::BitstreamBufferRef {
   BitstreamBufferRef(
       base::WeakPtr<Client>& client,
       scoped_refptr<base::SingleThreadTaskRunner>& client_task_runner,
-      std::unique_ptr<SharedMemoryRegion> shm,
+      const BitstreamBuffer* buffer,
       int32_t input_id);
   ~BitstreamBufferRef();
   const base::WeakPtr<Client> client;
   const scoped_refptr<base::SingleThreadTaskRunner> client_task_runner;
-  const std::unique_ptr<SharedMemoryRegion> shm;
+  const std::unique_ptr<UnalignedSharedMemory> shm;
+  off_t offset;
   size_t bytes_used;
   const int32_t input_id;
 };
@@ -91,11 +94,15 @@ struct V4L2VideoDecodeAccelerator::EGLSyncKHRRef {
 V4L2VideoDecodeAccelerator::BitstreamBufferRef::BitstreamBufferRef(
     base::WeakPtr<Client>& client,
     scoped_refptr<base::SingleThreadTaskRunner>& client_task_runner,
-    std::unique_ptr<SharedMemoryRegion> shm,
+    const BitstreamBuffer* buffer,
     int32_t input_id)
     : client(client),
       client_task_runner(client_task_runner),
-      shm(std::move(shm)),
+      shm(buffer ? std::make_unique<UnalignedSharedMemory>(buffer->handle(),
+                                                           buffer->size(),
+                                                           true)
+                 : nullptr),
+      offset(buffer ? buffer->offset() : 0),
       bytes_used(0),
       input_id(input_id) {}
 
@@ -768,17 +775,16 @@ void V4L2VideoDecodeAccelerator::DecodeTask(
   TRACE_EVENT1("media,gpu", "V4L2VDA::DecodeTask", "input_id",
                bitstream_buffer.id());
 
-  std::unique_ptr<BitstreamBufferRef> bitstream_record(new BitstreamBufferRef(
-      decode_client_, decode_task_runner_,
-      std::unique_ptr<SharedMemoryRegion>(
-          new SharedMemoryRegion(bitstream_buffer, true)),
-      bitstream_buffer.id()));
+  std::unique_ptr<BitstreamBufferRef> bitstream_record(
+      new BitstreamBufferRef(decode_client_, decode_task_runner_,
+                             &bitstream_buffer, bitstream_buffer.id()));
 
   // Skip empty buffer.
   if (bitstream_buffer.size() == 0)
     return;
 
-  if (!bitstream_record->shm->Map()) {
+  if (!bitstream_record->shm->MapAt(bitstream_record->offset,
+                                    bitstream_record->shm->size())) {
     VLOGF(1) << "could not map bitstream_buffer";
     NOTIFY_ERROR(UNREADABLE_INPUT);
     return;
@@ -1849,8 +1855,7 @@ void V4L2VideoDecodeAccelerator::DestroyTask() {
     decoder_input_queue_.pop();
   decoder_flushing_ = false;
 
-  if (image_processor_)
-    image_processor_.release()->Destroy();
+  image_processor_ = nullptr;
 
   // Set our state to kError.  Just in case.
   decoder_state_ = kError;
@@ -1971,8 +1976,7 @@ void V4L2VideoDecodeAccelerator::StartResolutionChange() {
     return;
   }
 
-  if (image_processor_)
-    image_processor_.release()->Destroy();
+  image_processor_ = nullptr;
 
   if (!DestroyOutputBuffers()) {
     VLOGF(1) << "Failed destroying output buffers.";
@@ -2389,17 +2393,18 @@ bool V4L2VideoDecodeAccelerator::ResetImageProcessor() {
 bool V4L2VideoDecodeAccelerator::CreateImageProcessor() {
   VLOGF(2);
   DCHECK(!image_processor_);
-  image_processor_.reset(new V4L2ImageProcessor(image_processor_device_));
   v4l2_memory output_memory_type =
       (output_mode_ == Config::OutputMode::ALLOCATE ? V4L2_MEMORY_MMAP
                                                     : V4L2_MEMORY_DMABUF);
+  image_processor_.reset(new V4L2ImageProcessor(
+      image_processor_device_, V4L2_MEMORY_DMABUF, output_memory_type));
   // Unretained is safe because |this| owns image processor and there will be
   // no callbacks after processor destroys.
   if (!image_processor_->Initialize(
           V4L2Device::V4L2PixFmtToVideoPixelFormat(output_format_fourcc_),
           V4L2Device::V4L2PixFmtToVideoPixelFormat(egl_image_format_fourcc_),
-          V4L2_MEMORY_DMABUF, output_memory_type, visible_size_, coded_size_,
-          visible_size_, egl_image_size_, output_buffer_map_.size(),
+          visible_size_, coded_size_, visible_size_, egl_image_size_,
+          output_buffer_map_.size(),
           base::Bind(&V4L2VideoDecodeAccelerator::ImageProcessorError,
                      base::Unretained(this)))) {
     VLOGF(1) << "Initialize image processor failed";
@@ -2429,31 +2434,30 @@ bool V4L2VideoDecodeAccelerator::ProcessFrame(int32_t bitstream_buffer_id,
   DCHECK_EQ(output_record.state, kAtDevice);
   output_record.state = kAtProcessor;
   image_processor_bitstream_buffer_ids_.push(bitstream_buffer_id);
-  std::vector<int> processor_input_fds;
-  for (auto& fd : output_record.processor_input_fds) {
-    processor_input_fds.push_back(fd.get());
-  }
+
   scoped_refptr<VideoFrame> input_frame = VideoFrame::WrapExternalDmabufs(
       V4L2Device::V4L2PixFmtToVideoPixelFormat(output_format_fourcc_),
-      coded_size_, gfx::Rect(visible_size_), visible_size_, processor_input_fds,
-      base::TimeDelta());
+      coded_size_, gfx::Rect(visible_size_), visible_size_,
+      DuplicateFDs(output_record.processor_input_fds), base::TimeDelta());
+
+  if (!input_frame) {
+    VLOGF(1) << "Failed wrapping input frame!";
+    return false;
+  }
 
   std::vector<base::ScopedFD> output_fds;
   if (output_mode_ == Config::OutputMode::IMPORT) {
-    for (auto& fd : output_record.output_fds) {
-      output_fds.push_back(base::ScopedFD(HANDLE_EINTR(dup(fd.get()))));
-      if (!output_fds.back().is_valid()) {
-        VPLOGF(1) << "Failed duplicating a dmabuf fd";
-        return false;
-      }
-    }
+    output_fds = DuplicateFDs(output_record.output_fds);
+    if (output_fds.empty())
+      return false;
   }
   // Unretained is safe because |this| owns image processor and there will
   // be no callbacks after processor destroys.
   image_processor_->Process(
       input_frame, output_buffer_index, std::move(output_fds),
-      base::Bind(&V4L2VideoDecodeAccelerator::FrameProcessed,
-                 base::Unretained(this), bitstream_buffer_id));
+      base::BindOnce(&V4L2VideoDecodeAccelerator::FrameProcessed,
+                     base::Unretained(this), bitstream_buffer_id,
+                     output_buffer_index));
   return true;
 }
 
@@ -2642,8 +2646,10 @@ void V4L2VideoDecodeAccelerator::PictureCleared() {
   SendPictureReady();
 }
 
-void V4L2VideoDecodeAccelerator::FrameProcessed(int32_t bitstream_buffer_id,
-                                                int output_buffer_index) {
+void V4L2VideoDecodeAccelerator::FrameProcessed(
+    int32_t bitstream_buffer_id,
+    int output_buffer_index,
+    scoped_refptr<VideoFrame> frame) {
   DVLOGF(4) << "output_buffer_index=" << output_buffer_index
             << ", bitstream_buffer_id=" << bitstream_buffer_id;
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());

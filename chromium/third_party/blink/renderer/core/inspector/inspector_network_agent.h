@@ -31,6 +31,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INSPECTOR_NETWORK_AGENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INSPECTOR_NETWORK_AGENT_H_
 
+#include "base/unguessable_token.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/inspector/inspected_frames.h"
 #include "third_party/blink/renderer/core/inspector/inspector_base_agent.h"
@@ -39,6 +40,15 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+
+namespace network {
+namespace mojom {
+namespace blink {
+class WebSocketHandshakeResponse;
+class WebSocketHandshakeRequest;
+}  // namespace blink
+}  // namespace mojom
+}  // namespace network
 
 namespace blink {
 
@@ -56,8 +66,6 @@ class ResourceResponse;
 class ThreadableLoaderClient;
 class XHRReplayData;
 class XMLHttpRequest;
-class WebSocketHandshakeRequest;
-class WebSocketHandshakeResponse;
 class WorkerGlobalScope;
 
 class CORE_EXPORT InspectorNetworkAgent final
@@ -110,7 +118,7 @@ class CORE_EXPORT InspectorNetworkAgent final
                         TimeTicks monotonic_finish_time,
                         int64_t encoded_data_length,
                         int64_t decoded_body_length,
-                        bool blocked_cross_site_document);
+                        bool should_report_corb_blocking);
   void DidReceiveCORSRedirectResponse(unsigned long identifier,
                                       DocumentLoader*,
                                       const ResourceResponse&,
@@ -125,10 +133,6 @@ class CORE_EXPORT InspectorNetworkAgent final
   void ShouldBlockRequest(const KURL&, bool* result);
   void ShouldBypassServiceWorker(bool* result);
 
-  void DocumentThreadableLoaderStartedLoadingForClient(unsigned long identifier,
-                                                       ThreadableLoaderClient*);
-  void DocumentThreadableLoaderFailedToStartLoadingForClient(
-      ThreadableLoaderClient*);
   void WillLoadXHR(XMLHttpRequest*,
                    ThreadableLoaderClient*,
                    const AtomicString& method,
@@ -136,16 +140,7 @@ class CORE_EXPORT InspectorNetworkAgent final
                    bool async,
                    const HTTPHeaderMap& headers,
                    bool include_crendentials);
-  void DidFailXHRLoading(ExecutionContext*,
-                         XMLHttpRequest*,
-                         ThreadableLoaderClient*,
-                         const AtomicString&,
-                         const String&);
-  void DidFinishXHRLoading(ExecutionContext*,
-                           XMLHttpRequest*,
-                           ThreadableLoaderClient*,
-                           const AtomicString&,
-                           const String&);
+  void DidFinishXHR(XMLHttpRequest*);
 
   void WillStartFetch(ThreadableLoaderClient*);
 
@@ -154,14 +149,9 @@ class CORE_EXPORT InspectorNetworkAgent final
                                     const AtomicString& event_name,
                                     const AtomicString& event_id,
                                     const String& data);
-  void DidFinishEventSourceRequest(ThreadableLoaderClient*);
-
-  // Detach and remove all references to the given client.
-  void DetachClientRequest(ThreadableLoaderClient*);
 
   void WillDestroyResource(Resource*);
 
-  void ApplyUserAgentOverride(String* user_agent);
   void FrameScheduledNavigation(LocalFrame*, ScheduledNavigation*);
   void FrameClearedScheduledNavigation(LocalFrame*);
   void FrameScheduledClientNavigation(LocalFrame*);
@@ -171,13 +161,15 @@ class CORE_EXPORT InspectorNetworkAgent final
                           unsigned long identifier,
                           const KURL& request_url,
                           const String&);
-  void WillSendWebSocketHandshakeRequest(ExecutionContext*,
-                                         unsigned long identifier,
-                                         const WebSocketHandshakeRequest*);
-  void DidReceiveWebSocketHandshakeResponse(ExecutionContext*,
-                                            unsigned long identifier,
-                                            const WebSocketHandshakeRequest*,
-                                            const WebSocketHandshakeResponse*);
+  void WillSendWebSocketHandshakeRequest(
+      ExecutionContext*,
+      unsigned long identifier,
+      network::mojom::blink::WebSocketHandshakeRequest*);
+  void DidReceiveWebSocketHandshakeResponse(
+      ExecutionContext*,
+      unsigned long identifier,
+      network::mojom::blink::WebSocketHandshakeRequest*,
+      network::mojom::blink::WebSocketHandshakeResponse*);
   void DidCloseWebSocket(ExecutionContext*, unsigned long identifier);
   void DidReceiveWebSocketFrame(unsigned long identifier,
                                 int op_code,
@@ -196,7 +188,6 @@ class CORE_EXPORT InspectorNetworkAgent final
                             Maybe<int> resource_buffer_size,
                             Maybe<int> max_post_data_size) override;
   protocol::Response disable() override;
-  protocol::Response setUserAgentOverride(const String&) override;
   protocol::Response setExtraHTTPHeaders(
       std::unique_ptr<protocol::Network::Headers>) override;
   void getResponseBody(const String& request_id,
@@ -253,7 +244,6 @@ class CORE_EXPORT InspectorNetworkAgent final
                                const ResourceResponse& redirect_response,
                                const FetchInitiatorInfo&,
                                InspectorPageAgent::ResourceType);
-  void DelayedRemoveReplayXHR(XMLHttpRequest*);
   void RemoveFinishedReplayXHRFired(TimerBase*);
   void DidFinishXHRInternal(ExecutionContext*,
                             XMLHttpRequest*,
@@ -265,7 +255,6 @@ class CORE_EXPORT InspectorNetworkAgent final
   bool CanGetResponseBodyBlob(const String& request_id);
   void GetResponseBodyBlob(const String& request_id,
                            std::unique_ptr<GetResponseBodyCallback>);
-  void ClearPendingRequestData();
 
   static std::unique_ptr<protocol::Network::Initiator> BuildInitiatorObject(
       Document*,
@@ -278,11 +267,11 @@ class CORE_EXPORT InspectorNetworkAgent final
   Member<WorkerGlobalScope> worker_global_scope_;
   v8_inspector::V8InspectorSession* v8_session_;
   Member<NetworkResourcesData> resources_data_;
-  String conditions_token_;
+  const base::UnguessableToken devtools_token_;
 
   // Stores the pending ThreadableLoaderClient till an identifier for
   // the load is generated by the loader and passed to the inspector
-  // via the documentThreadableLoaderStartedLoadingForClient() method.
+  // via the WillSendRequest() method.
   ThreadableLoaderClient* pending_request_;
   InspectorPageAgent::ResourceType pending_request_type_;
 

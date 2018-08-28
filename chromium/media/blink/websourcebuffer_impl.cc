@@ -86,6 +86,10 @@ void WebSourceBufferImpl::SetClient(blink::WebSourceBufferClient* client) {
   client_ = client;
 }
 
+bool WebSourceBufferImpl::GetGenerateTimestampsFlag() {
+  return demuxer_->GetGenerateTimestampsFlag(id_);
+}
+
 bool WebSourceBufferImpl::SetMode(WebSourceBuffer::AppendMode mode) {
   if (demuxer_->IsParsingMediaSegment(id_))
     return false;
@@ -157,6 +161,19 @@ void WebSourceBufferImpl::Remove(double start, double end) {
   DCHECK_GE(start, 0);
   DCHECK_GE(end, 0);
   demuxer_->Remove(id_, DoubleToTimeDelta(start), DoubleToTimeDelta(end));
+}
+
+bool WebSourceBufferImpl::CanChangeType(const blink::WebString& content_type,
+                                        const blink::WebString& codecs) {
+  return demuxer_->CanChangeType(id_, content_type.Utf8(), codecs.Utf8());
+}
+
+void WebSourceBufferImpl::ChangeType(const blink::WebString& content_type,
+                                     const blink::WebString& codecs) {
+  // Caller must first call ResetParserState() to flush any pending frames.
+  DCHECK(!demuxer_->IsParsingMediaSegment(id_));
+
+  demuxer_->ChangeType(id_, content_type.Utf8(), codecs.Utf8());
 }
 
 bool WebSourceBufferImpl::SetTimestampOffset(double offset) {

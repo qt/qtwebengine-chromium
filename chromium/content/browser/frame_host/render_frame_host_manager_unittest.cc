@@ -17,7 +17,7 @@
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -131,12 +131,13 @@ class RenderFrameHostManagerTestWebUIControllerFactory
   }
 
   // WebUIFactory implementation.
-  WebUIController* CreateWebUIControllerForURL(WebUI* web_ui,
-                                               const GURL& url) const override {
+  std::unique_ptr<WebUIController> CreateWebUIControllerForURL(
+      WebUI* web_ui,
+      const GURL& url) const override {
     // If WebUI creation is enabled for the test and this is a WebUI URL,
     // returns a new instance.
     if (should_create_webui_ && HasWebUIScheme(url))
-      return new WebUIController(web_ui);
+      return std::make_unique<WebUIController>(web_ui);
     return nullptr;
   }
 
@@ -391,11 +392,10 @@ class RenderFrameHostManagerTest : public RenderViewHostImplTestHarness {
     bool current_is_view_source_mode = current_entry ?
         current_entry->IsViewSourceMode() : new_entry->IsViewSourceMode();
     return manager->ShouldSwapBrowsingInstancesForNavigation(
-        current_effective_url,
-        current_is_view_source_mode,
+        current_effective_url, current_is_view_source_mode,
         new_entry->site_instance(),
         SiteInstanceImpl::GetEffectiveURL(browser_context, new_entry->GetURL()),
-        new_entry->IsViewSourceMode());
+        new_entry->IsViewSourceMode(), false);
   }
 
   // Creates a test RenderViewHost that's swapped out.
@@ -837,11 +837,18 @@ TEST_F(RenderFrameHostManagerTest, AlwaysSendEnableViewSourceMode) {
       kViewSourceUrl, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   int entry_id = controller().GetPendingEntry()->GetUniqueID();
 
+  NavigationRequest* request =
+      main_test_rfh()->frame_tree_node()->navigation_request();
+  CHECK(request);
+
   // Simulate response from RenderFrame for DispatchBeforeUnload.
   contents()->GetMainFrame()->PrepareForCommit();
   ASSERT_TRUE(contents()->GetPendingMainFrame())
       << "Expected new pending RenderFrameHost to be created.";
   RenderFrameHost* last_rfh = contents()->GetPendingMainFrame();
+  contents()->GetPendingMainFrame()->SimulateCommitProcessed(
+      request->navigation_handle()->GetNavigationId(),
+      true /* was_successful */);
   contents()->GetPendingMainFrame()->SendNavigate(entry_id, true, kUrl);
 
   EXPECT_EQ(1, controller().GetLastCommittedEntryIndex());
@@ -860,6 +867,8 @@ TEST_F(RenderFrameHostManagerTest, AlwaysSendEnableViewSourceMode) {
   // Navigate, again.
   controller().LoadURL(
       kViewSourceUrl, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
+  request = main_test_rfh()->frame_tree_node()->navigation_request();
+  CHECK(request);
   entry_id = controller().GetPendingEntry()->GetUniqueID();
   contents()->GetMainFrame()->PrepareForCommit();
 
@@ -868,6 +877,9 @@ TEST_F(RenderFrameHostManagerTest, AlwaysSendEnableViewSourceMode) {
   EXPECT_EQ(last_rfh, contents()->GetMainFrame());
 
   // The renderer sends a commit.
+  contents()->GetMainFrame()->SimulateCommitProcessed(
+      request->navigation_handle()->GetNavigationId(),
+      true /* was_successful */);
   contents()->GetMainFrame()->SendNavigateWithTransition(
       entry_id, false, kUrl, ui::PAGE_TRANSITION_TYPED);
   EXPECT_EQ(1, controller().GetLastCommittedEntryIndex());

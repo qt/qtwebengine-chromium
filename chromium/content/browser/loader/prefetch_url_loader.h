@@ -9,6 +9,8 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "base/optional.h"
+#include "base/unguessable_token.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/system/data_pipe_drainer.h"
@@ -28,7 +30,7 @@ namespace content {
 
 class ResourceContext;
 class URLLoaderThrottle;
-class WebPackagePrefetchHandler;
+class SignedExchangePrefetchHandler;
 
 // PrefetchURLLoader which basically just keeps draining the data.
 class CONTENT_EXPORT PrefetchURLLoader : public network::mojom::URLLoader,
@@ -60,7 +62,9 @@ class CONTENT_EXPORT PrefetchURLLoader : public network::mojom::URLLoader,
 
  private:
   // network::mojom::URLLoader overrides:
-  void FollowRedirect(const base::Optional<net::HttpRequestHeaders>&
+  void FollowRedirect(const base::Optional<std::vector<std::string>>&
+                          to_be_removed_request_headers,
+                      const base::Optional<net::HttpRequestHeaders>&
                           modified_request_headers) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
@@ -69,12 +73,9 @@ class CONTENT_EXPORT PrefetchURLLoader : public network::mojom::URLLoader,
   void ResumeReadingBodyFromNet() override;
 
   // network::mojom::URLLoaderClient overrides:
-  void OnReceiveResponse(
-      const network::ResourceResponseHead& head,
-      network::mojom::DownloadedTempFilePtr downloaded_file) override;
+  void OnReceiveResponse(const network::ResourceResponseHead& head) override;
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          const network::ResourceResponseHead& head) override;
-  void OnDataDownloaded(int64_t data_length, int64_t encoded_length) override;
   void OnUploadProgress(int64_t current_position,
                         int64_t total_size,
                         base::OnceCallback<void()> callback) override;
@@ -94,6 +95,8 @@ class CONTENT_EXPORT PrefetchURLLoader : public network::mojom::URLLoader,
   const base::RepeatingCallback<int(void)> frame_tree_node_id_getter_;
   const GURL url_;
   const bool report_raw_headers_;
+  const int load_flags_;
+  const base::Optional<base::UnguessableToken> throttling_profile_id_;
 
   scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory_;
 
@@ -114,7 +117,8 @@ class CONTENT_EXPORT PrefetchURLLoader : public network::mojom::URLLoader,
 
   std::unique_ptr<mojo::DataPipeDrainer> pipe_drainer_;
 
-  std::unique_ptr<WebPackagePrefetchHandler> web_package_prefetch_handler_;
+  std::unique_ptr<SignedExchangePrefetchHandler>
+      signed_exchange_prefetch_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(PrefetchURLLoader);
 };

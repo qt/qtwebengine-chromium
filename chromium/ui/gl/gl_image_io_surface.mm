@@ -6,8 +6,8 @@
 
 #include <map>
 
+#include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/mac/bind_objc_block.h"
 #include "base/mac/foundation_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/trace_event/memory_allocator_dump.h"
@@ -15,6 +15,7 @@
 #include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/gfx/buffer_format_util.h"
+#include "ui/gfx/mac/display_icc_profiles.h"
 #include "ui/gfx/mac/io_surface.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
@@ -346,9 +347,10 @@ bool GLImageIOSurface::CopyTexImage(unsigned target) {
       return false;
   }
   glGetIntegerv(target_getter, &rgb_texture);
-  base::ScopedClosureRunner destroy_resources_runner(base::BindBlock(^{
-    glBindTexture(target, rgb_texture);
-  }));
+  base::ScopedClosureRunner destroy_resources_runner(
+      base::BindOnce(base::RetainBlock(^{
+        glBindTexture(target, rgb_texture);
+      })));
 
   CGLContextObj cgl_context = CGLGetCurrentContext();
   {
@@ -384,13 +386,14 @@ bool GLImageIOSurface::CopyTexSubImage(unsigned target,
   return false;
 }
 
-bool GLImageIOSurface::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
-                                            int z_order,
-                                            gfx::OverlayTransform transform,
-                                            const gfx::Rect& bounds_rect,
-                                            const gfx::RectF& crop_rect,
-                                            bool enable_blend,
-                                            gfx::GpuFence* gpu_fence) {
+bool GLImageIOSurface::ScheduleOverlayPlane(
+    gfx::AcceleratedWidget widget,
+    int z_order,
+    gfx::OverlayTransform transform,
+    const gfx::Rect& bounds_rect,
+    const gfx::RectF& crop_rect,
+    bool enable_blend,
+    std::unique_ptr<gfx::GpuFence> gpu_fence) {
   NOTREACHED();
   return false;
 }
@@ -453,6 +456,20 @@ void GLImageIOSurface::SetColorSpace(const gfx::ColorSpace& color_space) {
   if (color_space_ == color_space)
     return;
   color_space_ = color_space;
+
+  // Prefer to use data from DisplayICCProfiles, which will give a byte-for-byte
+  // match for color spaces of the system displays. Note that DisplayICCProfiles
+  // is not used in IOSurfaceSetColorSpace because that call may be made in the
+  // renderer process (e.g, for video frames).
+  base::ScopedCFTypeRef<CFDataRef> cf_data =
+      gfx::DisplayICCProfiles::GetInstance()->GetDataForColorSpace(color_space);
+  if (cf_data) {
+    IOSurfaceSetValue(io_surface_, CFSTR("IOSurfaceColorSpace"), cf_data);
+    return;
+  }
+
+  // Only if that fails, fall back to IOSurfaceSetColorSpace, which will
+  // generate a profile.
   IOSurfaceSetColorSpace(io_surface_, color_space);
 }
 

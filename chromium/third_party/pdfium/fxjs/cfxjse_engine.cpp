@@ -11,10 +11,10 @@
 #include "core/fxcrt/autorestorer.h"
 #include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_extension.h"
-#include "fxjs/cfxjs_engine.h"
 #include "fxjs/cfxjse_class.h"
 #include "fxjs/cfxjse_resolveprocessor.h"
 #include "fxjs/cfxjse_value.h"
+#include "fxjs/cjs_runtime.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
@@ -94,11 +94,11 @@ CXFA_Object* CFXJSE_Engine::ToObject(CFXJSE_Value* pValue,
 }
 
 CFXJSE_Engine::CFXJSE_Engine(CXFA_Document* pDocument,
-                             CFXJS_Engine* fxjs_engine)
-    : CFX_V8(fxjs_engine->GetIsolate()),
+                             CJS_Runtime* fxjs_runtime)
+    : CFX_V8(fxjs_runtime->GetIsolate()),
+      m_pSubordinateRuntime(fxjs_runtime),
       m_pDocument(pDocument),
-      m_JsContext(CFXJSE_Context::Create(fxjs_engine->GetIsolate(),
-                                         fxjs_engine,
+      m_JsContext(CFXJSE_Context::Create(fxjs_runtime->GetIsolate(),
                                          &GlobalClassDescriptor,
                                          pDocument->GetRoot())),
       m_pJsClass(nullptr),
@@ -144,7 +144,9 @@ bool CFXJSE_Engine::RunScript(CXFA_Script::Type eScriptType,
   }
   AutoRestorer<CXFA_Object*> nodeRestorer(&m_pThisObject);
   m_pThisObject = pThisObject;
+
   CFXJSE_Value* pValue = pThisObject ? GetJSValueFromMap(pThisObject) : nullptr;
+  IJS_Runtime::ScopedEventContext ctx(m_pSubordinateRuntime.Get());
   return m_JsContext->ExecuteScript(btScript.c_str(), hRetValue, pValue);
 }
 
@@ -215,6 +217,7 @@ void CFXJSE_Engine::GlobalPropertyGetter(CFXJSE_Value* pObject,
   CXFA_Document* pDoc = pOriginalObject->GetDocument();
   CFXJSE_Engine* lpScriptContext = pDoc->GetScriptContext();
   WideString wsPropName = WideString::FromUTF8(szPropName);
+
   if (lpScriptContext->GetType() == CXFA_Script::Type::Formcalc) {
     if (szPropName == kFormCalcRuntime) {
       lpScriptContext->m_FM2JSContext->GlobalPropertyGetter(pValue);
@@ -325,7 +328,33 @@ void CFXJSE_Engine::NormalPropertyGetter(CFXJSE_Value* pOriginalValue,
   if (pScriptObject) {
     bRet = lpScriptContext->QueryVariableValue(ToNode(pScriptObject),
                                                szPropName, pReturnValue, true);
+
+    if (!bRet) {
+      WideString wsPropName = WideString::FromUTF8(szPropName);
+      const XFA_SCRIPTATTRIBUTEINFO* lpAttributeInfo =
+          XFA_GetScriptAttributeByName(pObject->GetElementType(),
+                                       wsPropName.AsStringView());
+      if (lpAttributeInfo) {
+        CJX_Object* jsObject = pObject->JSObject();
+        (jsObject->*(lpAttributeInfo->callback))(pReturnValue, false,
+                                                 lpAttributeInfo->attribute);
+        return;
+      }
+    }
+
+    CXFA_FFNotify* pNotify = pObject->GetDocument()->GetNotify();
+    if (!pNotify) {
+      pReturnValue->SetUndefined();
+      return;
+    }
+
+    CXFA_FFDoc* hDoc = pNotify->GetHDOC();
+    if (hDoc->GetDocEnvironment()->GetPropertyFromNonXFAGlobalObject(
+            hDoc, szPropName, pReturnValue)) {
+      return;
+    }
   }
+
   if (!bRet)
     pReturnValue->SetUndefined();
 }
@@ -409,7 +438,7 @@ CJS_Return CFXJSE_Engine::NormalMethodCall(
     const WideString& functionName) {
   CXFA_Object* pObject = ToObject(info);
   if (!pObject)
-    return CJS_Return(false);
+    return CJS_Return(L"no Holder() present.");
 
   CFXJSE_Engine* lpScriptContext = pObject->GetDocument()->GetScriptContext();
   pObject = lpScriptContext->GetVariablesThis(pObject);
@@ -435,7 +464,7 @@ CFXJSE_Context* CFXJSE_Engine::CreateVariablesContext(CXFA_Node* pScriptNode,
     return nullptr;
 
   auto pNewContext =
-      CFXJSE_Context::Create(GetIsolate(), nullptr, &VariablesClassDescriptor,
+      CFXJSE_Context::Create(GetIsolate(), &VariablesClassDescriptor,
                              new CXFA_ThisProxy(pSubform, pScriptNode));
   RemoveBuiltInObjs(pNewContext.get());
   pNewContext->EnableCompatibleMode();
@@ -510,6 +539,7 @@ bool CFXJSE_Engine::QueryVariableValue(CXFA_Node* pScriptNode,
     pObject->SetObjectOwnProperty(szPropName, pValue);
     return true;
   }
+
   if (pObject->HasObjectOwnProperty(szPropName, false)) {
     pObject->GetObjectProperty(szPropName, hVariableValue.get());
     if (hVariableValue->IsFunction())
@@ -594,7 +624,7 @@ bool CFXJSE_Engine::ResolveObjects(CXFA_Object* refObject,
         dwStyles |= XFA_RESOLVENODE_Bind;
         findObjects.clear();
         findObjects.push_back(
-            m_ResolveProcessor->GetNodeHelper()->m_pAllStartParent);
+            m_ResolveProcessor->GetNodeHelper()->m_pAllStartParent.Get());
         continue;
       }
       break;
@@ -694,7 +724,7 @@ bool CFXJSE_Engine::ResolveObjects(CXFA_Object* refObject,
                   XFA_RESOLVENODE_BindNew)) {
     CXFA_NodeHelper* helper = m_ResolveProcessor->GetNodeHelper();
     if (helper->m_pCreateParent)
-      resolveNodeRS->objects.push_back(helper->m_pCreateParent);
+      resolveNodeRS->objects.push_back(helper->m_pCreateParent.Get());
     else
       helper->CreateNode_ForCondition(rndFind.m_wsCondition);
 

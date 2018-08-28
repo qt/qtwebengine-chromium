@@ -147,7 +147,7 @@ std::string BufferQueueBuffersToLogString(
   for (const auto& buf : buffers) {
     result << "\tdts=" << buf->GetDecodeTimestamp().InMicroseconds() << " "
            << buf->AsHumanReadableString()
-           << ", duration_type=" << static_cast<int>(buf->duration_type())
+           << ", is_duration_estimated=" << buf->is_duration_estimated()
            << "\n";
   }
 
@@ -1250,7 +1250,7 @@ void SourceBufferStream<RangeClass>::TrimSpliceOverlap(
                 " (bad content) at time "
              << splice_timestamp.InMicroseconds();
 
-    MEDIA_LOG(ERROR, media_log_)
+    MEDIA_LOG(WARNING, media_log_)
         << "Media is badly muxed. Detected " << overlapped_buffers.size()
         << " overlapping audio buffers at time "
         << splice_timestamp.InMicroseconds();
@@ -1264,6 +1264,16 @@ void SourceBufferStream<RangeClass>::TrimSpliceOverlap(
     DVLOG(3) << __func__ << " No splice trimming at time "
              << splice_timestamp.InMicroseconds()
              << ". Overlapped buffer will be completely removed.";
+    return;
+  }
+
+  // Trimming a buffer with estimated duration is too risky. Estimates are rough
+  // and what appears to be overlap may really just be a bad estimate. Imprecise
+  // trimming may lead to loss of AV sync.
+  if (overlapped_buffer->is_duration_estimated()) {
+    DVLOG(3) << __func__ << " Skipping audio splice trimming at PTS="
+             << splice_timestamp.InMicroseconds() << ". Overlapped buffer has "
+             << "estimated duration.";
     return;
   }
 
@@ -1289,14 +1299,6 @@ void SourceBufferStream<RangeClass>::TrimSpliceOverlap(
     DVLOG(1) << __func__ << log_string.str();
     return;
   }
-
-  // At this point, trimming will go ahead. Log UMAs about the type of duration
-  // in the original overlapped buffer. The hope is that splicing on
-  // rough-estimated durations is rare enough that we can disable it outright.
-  // This would allow more liberal estimates of audio durations.
-  UMA_HISTOGRAM_ENUMERATION(
-      "Media.MSE.AudioSpliceDurationType", overlapped_buffer->duration_type(),
-      static_cast<int>(DurationType::kDurationTypeMax) + 1);
 
   // Trim overlap from the existing buffer.
   DecoderBuffer::DiscardPadding discard_padding =
@@ -1974,13 +1976,21 @@ base::TimeDelta SourceBufferStream<RangeClass>::GetMaxInterbufferDistance()
 
 template <typename RangeClass>
 bool SourceBufferStream<RangeClass>::UpdateAudioConfig(
-    const AudioDecoderConfig& config) {
+    const AudioDecoderConfig& config,
+    bool allow_codec_change) {
   DCHECK(!audio_configs_.empty());
   DCHECK(video_configs_.empty());
   DVLOG(3) << "UpdateAudioConfig.";
 
-  if (audio_configs_[0].codec() != config.codec()) {
-    MEDIA_LOG(ERROR, media_log_) << "Audio codec changes not allowed.";
+  if (!allow_codec_change &&
+      audio_configs_[append_config_index_].codec() != config.codec()) {
+    // TODO(wolenetz): When we relax addSourceBuffer() and changeType() codec
+    // strictness, codec changes should be allowed even without changing the
+    // bytestream.
+    // TODO(wolenetz): Remove "experimental" from this error message when
+    // changeType() ships without needing experimental blink flag.
+    MEDIA_LOG(ERROR, media_log_) << "Audio codec changes not allowed unless "
+                                    "using experimental changeType().";
     return false;
   }
 
@@ -2002,13 +2012,21 @@ bool SourceBufferStream<RangeClass>::UpdateAudioConfig(
 
 template <typename RangeClass>
 bool SourceBufferStream<RangeClass>::UpdateVideoConfig(
-    const VideoDecoderConfig& config) {
+    const VideoDecoderConfig& config,
+    bool allow_codec_change) {
   DCHECK(!video_configs_.empty());
   DCHECK(audio_configs_.empty());
   DVLOG(3) << "UpdateVideoConfig.";
 
-  if (video_configs_[0].codec() != config.codec()) {
-    MEDIA_LOG(ERROR, media_log_) << "Video codec changes not allowed.";
+  if (!allow_codec_change &&
+      video_configs_[append_config_index_].codec() != config.codec()) {
+    // TODO(wolenetz): When we relax addSourceBuffer() and changeType() codec
+    // strictness, codec changes should be allowed even without changing the
+    // bytestream.
+    // TODO(wolenetz): Remove "experimental" from this error message when
+    // changeType() ships without needing experimental blink flag.
+    MEDIA_LOG(ERROR, media_log_) << "Video codec changes not allowed unless "
+                                    "using experimental changeType()";
     return false;
   }
 

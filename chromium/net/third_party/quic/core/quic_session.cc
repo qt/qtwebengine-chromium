@@ -19,15 +19,7 @@
 
 using spdy::SpdyPriority;
 
-namespace net {
-
-namespace {
-
-// Stateless reset token used in IETF public reset packet.
-// TODO(fayang): use a real stateless reset token instead of a hard code one.
-const QuicUint128 kStatelessResetToken = 1010101;
-
-}  // namespace
+namespace quic {
 
 #define ENDPOINT \
   (perspective() == Perspective::IS_SERVER ? "Server: " : "Client: ")
@@ -37,8 +29,7 @@ QuicSession::QuicSession(QuicConnection* connection,
                          const QuicConfig& config)
     : connection_(connection),
       visitor_(owner),
-      write_blocked_streams_(
-          GetQuicReloadableFlag(quic_register_static_streams)),
+      write_blocked_streams_(),
       config_(config),
       max_open_outgoing_streams_(kDefaultMaxStreamsPerConnection),
       max_open_incoming_streams_(config_.GetMaxIncomingDynamicStreamsToSend()),
@@ -562,11 +553,8 @@ void QuicSession::OnConfigNegotiated() {
   connection_->SetFromConfig(config_);
 
   uint32_t max_streams = 0;
-  if (config_.do_not_use_mspc() ||
-      config_.HasReceivedMaxIncomingDynamicStreams()) {
+  if (config_.HasReceivedMaxIncomingDynamicStreams()) {
     max_streams = config_.ReceivedMaxIncomingDynamicStreams();
-  } else {
-    max_streams = config_.MaxStreamsPerConnection();
   }
   set_max_open_outgoing_streams(max_streams);
   if (perspective() == Perspective::IS_SERVER) {
@@ -741,27 +729,16 @@ void QuicSession::OnCryptoHandshakeMessageReceived(
 
 void QuicSession::RegisterStreamPriority(QuicStreamId id,
                                          bool is_static,
-                                         spdy::SpdyPriority priority) {
-  // Static streams do not need to be registered with the write blocked list,
-  // since it has special handling for them.
-  if (!write_blocked_streams()->register_static_streams() && is_static) {
-    return;
-  }
-
+                                         SpdyPriority priority) {
   write_blocked_streams()->RegisterStream(id, is_static, priority);
 }
 
 void QuicSession::UnregisterStreamPriority(QuicStreamId id, bool is_static) {
-  // Static streams do not need to be registered with the write blocked list,
-  // since it has special handling for them.
-  if (!write_blocked_streams()->register_static_streams() && is_static) {
-    return;
-  }
   write_blocked_streams()->UnregisterStream(id, is_static);
 }
 
 void QuicSession::UpdateStreamPriority(QuicStreamId id,
-                                       spdy::SpdyPriority new_priority) {
+                                       SpdyPriority new_priority) {
   write_blocked_streams()->UpdateStreamPriority(id, new_priority);
 }
 
@@ -942,6 +919,10 @@ size_t QuicSession::GetNumOpenOutgoingStreams() const {
 
 size_t QuicSession::GetNumActiveStreams() const {
   return dynamic_stream_map_.size() - draining_streams_.size();
+}
+
+size_t QuicSession::GetNumDrainingStreams() const {
+  return draining_streams_.size();
 }
 
 size_t QuicSession::GetNumAvailableStreams() const {
@@ -1152,7 +1133,7 @@ bool QuicSession::WriteStreamData(QuicStreamId id,
 }
 
 QuicUint128 QuicSession::GetStatelessResetToken() const {
-  return kStatelessResetToken;
+  return connection_->connection_id();
 }
 
 bool QuicSession::RetransmitLostData() {
@@ -1183,8 +1164,8 @@ bool QuicSession::RetransmitLostData() {
       break;
     }
     // Retransmit lost data on headers and data streams.
-    QuicStream* stream =
-        GetStream(streams_with_pending_retransmission_.begin()->first);
+    const QuicStreamId id = streams_with_pending_retransmission_.begin()->first;
+    QuicStream* stream = GetStream(id);
     if (stream != nullptr) {
       SetTransmissionType(LOSS_RETRANSMISSION);
       stream->OnCanWrite();
@@ -1193,7 +1174,18 @@ bool QuicSession::RetransmitLostData() {
         // Connection is write blocked.
         break;
       } else {
-        streams_with_pending_retransmission_.pop_front();
+        if (GetQuicReloadableFlag(quic_fix_retransmit_lost_data)) {
+          QUIC_FLAG_COUNT(quic_reloadable_flag_quic_fix_retransmit_lost_data);
+          if (!streams_with_pending_retransmission_.empty() &&
+              streams_with_pending_retransmission_.begin()->first == id) {
+            // Retransmit lost data may cause connection close. If this stream
+            // has not yet sent fin, a RST_STREAM will be sent and it will be
+            // removed from streams_with_pending_retransmission_.
+            streams_with_pending_retransmission_.pop_front();
+          }
+        } else {
+          streams_with_pending_retransmission_.pop_front();
+        }
       }
     } else {
       QUIC_BUG << "Try to retransmit data of a closed stream";
@@ -1223,4 +1215,5 @@ bool QuicSession::session_decides_what_to_write() const {
   return connection_->session_decides_what_to_write();
 }
 
-}  // namespace net
+#undef ENDPOINT  // undef for jumbo builds
+}  // namespace quic

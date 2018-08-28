@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/modules/webaudio/cross_thread_audio_worklet_processor_info.h"
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 
@@ -262,18 +263,18 @@ AudioWorkletNode* AudioWorkletNode::Create(
 
   if (options.numberOfInputs() == 0 && options.numberOfOutputs() == 0) {
     exception_state.ThrowDOMException(
-        kNotSupportedError,
+        DOMExceptionCode::kNotSupportedError,
         "AudioWorkletNode cannot be created: Number of inputs and number of "
-            "outputs cannot be both zero.");
+        "outputs cannot be both zero.");
     return nullptr;
   }
 
   if (options.hasOutputChannelCount()) {
     if (options.numberOfOutputs() != options.outputChannelCount().size()) {
       exception_state.ThrowDOMException(
-          kIndexSizeError,
+          DOMExceptionCode::kIndexSizeError,
           "AudioWorkletNode cannot be created: Length of specified "
-              "'outputChannelCount' (" +
+          "'outputChannelCount' (" +
               String::Number(options.outputChannelCount().size()) +
               ") does not match the given number of outputs (" +
               String::Number(options.numberOfOutputs()) + ").");
@@ -284,10 +285,9 @@ AudioWorkletNode* AudioWorkletNode::Create(
       if (channel_count < 1 ||
           channel_count > BaseAudioContext::MaxNumberOfChannels()) {
         exception_state.ThrowDOMException(
-            kNotSupportedError,
+            DOMExceptionCode::kNotSupportedError,
             ExceptionMessages::IndexOutsideRange<unsigned long>(
-                "channel count", channel_count,
-                1,
+                "channel count", channel_count, 1,
                 ExceptionMessages::kInclusiveBound,
                 BaseAudioContext::MaxNumberOfChannels(),
                 ExceptionMessages::kInclusiveBound));
@@ -298,16 +298,16 @@ AudioWorkletNode* AudioWorkletNode::Create(
 
   if (!context->audioWorklet()->IsReady()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "AudioWorkletNode cannot be created: AudioWorklet does not have a "
-            "valid AudioWorkletGlobalScope. Load a script via "
-            "audioWorklet.addModule() first.");
+        "valid AudioWorkletGlobalScope. Load a script via "
+        "audioWorklet.addModule() first.");
     return nullptr;
   }
 
   if (!context->audioWorklet()->IsProcessorRegistered(name)) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "AudioWorkletNode cannot be created: The node name '" + name +
             "' is not defined in AudioWorkletGlobalScope.");
     return nullptr;
@@ -323,9 +323,8 @@ AudioWorkletNode* AudioWorkletNode::Create(
           channel->port1());
 
   if (!node) {
-    exception_state.ThrowDOMException(
-        kInvalidStateError,
-        "AudioWorkletNode cannot be created.");
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "AudioWorkletNode cannot be created.");
     return nullptr;
   }
 
@@ -360,7 +359,7 @@ AudioWorkletNode* AudioWorkletNode::Create(
 
   // This is non-blocking async call. |node| still can be returned to user
   // before the scheduled async task is completed.
-  context->audioWorklet()->CreateProcessor(&node->GetWorkletHandler(),
+  context->audioWorklet()->CreateProcessor(node->GetWorkletHandler(),
                                            std::move(processor_port_channel),
                                            std::move(serialized_node_options));
 
@@ -383,8 +382,8 @@ void AudioWorkletNode::FireProcessorError() {
   DispatchEvent(Event::Create(EventTypeNames::processorerror));
 }
 
-AudioWorkletHandler& AudioWorkletNode::GetWorkletHandler() const {
-  return static_cast<AudioWorkletHandler&>(Handler());
+scoped_refptr<AudioWorkletHandler> AudioWorkletNode::GetWorkletHandler() const {
+  return WrapRefCounted(&static_cast<AudioWorkletHandler&>(Handler()));
 }
 
 void AudioWorkletNode::Trace(blink::Visitor* visitor) {

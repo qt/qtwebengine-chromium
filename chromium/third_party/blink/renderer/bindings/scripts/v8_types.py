@@ -1032,11 +1032,8 @@ CPP_VALUE_TO_V8_VALUE = {
     'StringOrNull': '{cpp_value}.IsNull() ? v8::Local<v8::Value>(v8::Null({isolate})) : V8String({isolate}, {cpp_value})',
     # Special cases
     'Dictionary': '{cpp_value}.V8Value()',
-    'EventHandler': (
-        '{cpp_value} ? ' +
-        'V8AbstractEventListener::Cast({cpp_value})->GetListenerOrNull(' +
-        '{isolate}, impl->GetExecutionContext()) : ' +
-        'v8::Null({isolate}).As<v8::Value>()'),
+    'EventHandler':
+        'V8AbstractEventListener::GetListenerOrNull({isolate}, impl, {cpp_value})',
     'NodeFilter': 'ToV8({cpp_value}, {creation_context}, {isolate})',
     'Record': 'ToV8({cpp_value}, {creation_context}, {isolate})',
     'ScriptValue': '{cpp_value}.V8Value()',
@@ -1121,8 +1118,7 @@ def cpp_type_has_null_value(idl_type):
     # - String types (String/AtomicString) represent null as a null string,
     #   i.e. one for which String::IsNull() returns true.
     # - Enum types, as they are implemented as Strings.
-    # - Interface types (raw pointer or RefPtr) represent null as
-    #   a null pointer.
+    # - Interface types (raw pointer) represent null as a null pointer.
     # - Union types, as thier container classes can represent null value.
     # - 'Object' and 'any' type. We use ScriptValue for object type.
     return (idl_type.is_string_type

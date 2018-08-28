@@ -282,14 +282,28 @@ uint32_t SkReadBuffer::getArrayCount() {
     return fError ? 0 : *(uint32_t*)fReader.peek();
 }
 
+/*  Format:
+ *  (subset) width, height
+ *  (subset) origin x, y
+ *  size (31bits)
+ *  data [ encoded, with raw width/height ]
+ */
 sk_sp<SkImage> SkReadBuffer::readImage() {
     if (fInflator) {
         SkImage* img = fInflator->getImage(this->read32());
         return img ? sk_ref_sp(img) : nullptr;
     }
 
-    int width = this->read32();
-    int height = this->read32();
+    SkIRect bounds;
+    if (this->isVersionLT(kStoreImageBounds_Version)) {
+        bounds.fLeft = bounds.fTop = 0;
+        bounds.fRight = this->read32();
+        bounds.fBottom = this->read32();
+    } else {
+        this->readIRect(&bounds);
+    }
+    const int width = bounds.width();
+    const int height = bounds.height();
     if (width <= 0 || height <= 0) {    // SkImage never has a zero dimension
         this->validate(false);
         return nullptr;
@@ -338,6 +352,11 @@ sk_sp<SkImage> SkReadBuffer::readImage() {
     if (!image) {
         image = SkImage::MakeFromEncoded(std::move(data));
     }
+    if (image) {
+        if (bounds.x() || bounds.y() || width < image->width() || height < image->height()) {
+            image = image->makeSubset(bounds);
+        }
+    }
     // Question: are we correct to return an "empty" image instead of nullptr, if the decoder
     //           failed for some reason?
     return image ? image : MakeEmptyImage(width, height);
@@ -360,7 +379,7 @@ sk_sp<SkTypeface> SkReadBuffer::readTypeface() {
         if (!this->validate(index <= fTFCount)) {
             return nullptr;
         }
-        return sk_ref_sp(fTFArray[index - 1]);
+        return fTFArray[index - 1];
     } else {    // custom
         size_t size = sk_negate_to_size_t(index);
         const void* data = this->skip(size);
@@ -441,6 +460,9 @@ SkFlattenable* SkReadBuffer::readFlattenable(SkFlattenable::Type ft) {
     } else {
         // we must skip the remaining data
         fReader.skip(sizeRecorded);
+    }
+    if (!this->isValid()) {
+        return nullptr;
     }
     return obj.release();
 }

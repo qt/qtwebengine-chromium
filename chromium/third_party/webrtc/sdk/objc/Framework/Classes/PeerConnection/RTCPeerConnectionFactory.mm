@@ -47,8 +47,8 @@
 // C++ target.
 // TODO(zhihuang): Remove nogncheck once MediaEngineInterface is moved to C++
 // API layer.
+#include "absl/memory/memory.h"
 #include "media/engine/webrtcmediaengine.h"  // nogncheck
-#include "rtc_base/ptr_util.h"
 
 @implementation RTCPeerConnectionFactory {
   std::unique_ptr<rtc::Thread> _networkThread;
@@ -175,9 +175,12 @@
   if (constraints) {
     nativeConstraints = constraints.nativeConstraints;
   }
+  cricket::AudioOptions options;
+  CopyConstraintsIntoAudioOptions(nativeConstraints.get(), &options);
+
   rtc::scoped_refptr<webrtc::AudioSourceInterface> source =
-      _nativeFactory->CreateAudioSource(nativeConstraints.get());
-  return [[RTCAudioSource alloc] initWithNativeAudioSource:source];
+      _nativeFactory->CreateAudioSource(options);
+  return [[RTCAudioSource alloc] initWithFactory:self nativeAudioSource:source];
 }
 
 - (RTCAudioTrack *)audioTrackWithTrackId:(NSString *)trackId {
@@ -193,8 +196,9 @@
 }
 
 - (RTCVideoSource *)videoSource {
-  return [[RTCVideoSource alloc] initWithSignalingThread:_signalingThread.get()
-                                            workerThread:_workerThread.get()];
+  return [[RTCVideoSource alloc] initWithFactory:self
+                                 signalingThread:_signalingThread.get()
+                                    workerThread:_workerThread.get()];
 }
 
 - (RTCVideoTrack *)videoTrackWithSource:(RTCVideoSource *)source

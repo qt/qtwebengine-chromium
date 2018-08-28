@@ -37,10 +37,16 @@ bool GetUintFromSwitch(const base::CommandLine* command_line,
 gl::GLContextAttribs GenerateGLContextAttribs(
     const ContextCreationAttribs& attribs_helper,
     const ContextGroup* context_group) {
-  DCHECK(context_group != nullptr);
+  return GenerateGLContextAttribs(attribs_helper,
+                                  context_group->use_passthrough_cmd_decoder());
+}
+
+gl::GLContextAttribs GenerateGLContextAttribs(
+    const ContextCreationAttribs& attribs_helper,
+    bool use_passthrough_cmd_decoder) {
   gl::GLContextAttribs attribs;
   attribs.gpu_preference = attribs_helper.gpu_preference;
-  if (context_group->use_passthrough_cmd_decoder()) {
+  if (use_passthrough_cmd_decoder) {
     attribs.bind_generates_resource = attribs_helper.bind_generates_resource;
     attribs.webgl_compatibility_context =
         IsWebGLContextType(attribs_helper.context_type);
@@ -53,7 +59,10 @@ gl::GLContextAttribs GenerateGLContextAttribs(
     attribs.robust_buffer_access = true;
 
     // Request a specific context version instead of always 3.0
-    if (IsWebGL2OrES3ContextType(attribs_helper.context_type)) {
+    if (IsWebGL2ComputeContextType(attribs_helper.context_type)) {
+      attribs.client_major_es_version = 3;
+      attribs.client_minor_es_version = 1;
+    } else if (IsWebGL2OrES3ContextType(attribs_helper.context_type)) {
       attribs.client_major_es_version = 3;
       attribs.client_minor_es_version = 0;
     } else {
@@ -156,8 +165,6 @@ GpuPreferences ParseGpuPreferences(const base::CommandLine* command_line) {
       command_line->HasSwitch(switches::kDisableGpuDriverBugWorkarounds);
   gpu_preferences.ignore_gpu_blacklist =
       command_line->HasSwitch(switches::kIgnoreGpuBlacklist);
-  gpu_preferences.enable_oop_rasterization =
-      command_line->HasSwitch(switches::kEnableOOPRasterization);
   gpu_preferences.use_gpu_fences_for_overlay_planes =
       command_line->HasSwitch(switches::kUseGpuFencesForOverlayPlanes);
   return gpu_preferences;

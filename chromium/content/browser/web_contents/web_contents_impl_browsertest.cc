@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/files/file_util.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/optional.h"
@@ -33,9 +34,11 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/resource_dispatcher_host.h"
+#include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -118,6 +121,13 @@ class WebContentsImplBrowserTest : public ContentBrowserTest {
     // Setup the server to allow serving separate sites, so we can perform
     // cross-process navigation.
     host_resolver()->AddRule("*", "127.0.0.1");
+  }
+
+  bool CurrentFullscreenFrameTreeNodeIsEmpty() {
+    WebContentsImpl* web_contents =
+        static_cast<WebContentsImpl*>(shell()->web_contents());
+    return web_contents->current_fullscreen_frame_tree_node_id_ ==
+           RenderFrameHost::kNoFrameTreeNodeId;
   }
 
  private:
@@ -1735,7 +1745,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   RenderProcessHost* process = web_contents->GetMainFrame()->GetProcess();
   int renderer_id = process->GetID();
   ASSERT_TRUE(process);
-  EXPECT_TRUE(process->HasConnection());
+  EXPECT_TRUE(process->IsInitializedAndNotDead());
 
   // Navigate the WebContents.
   GURL url(embedded_test_server()->GetURL("c.com", "/title3.html"));
@@ -1788,7 +1798,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
     RenderProcessHost* process = web_contents->GetMainFrame()->GetProcess();
     int renderer_id = process->GetID();
     ASSERT_TRUE(process);
-    EXPECT_FALSE(process->HasConnection());
+    EXPECT_FALSE(process->IsInitializedAndNotDead());
     EXPECT_EQ(base::kNullProcessHandle, process->GetProcess().Handle());
 
     // Navigate the WebContents.
@@ -1802,7 +1812,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
     EXPECT_TRUE(same_tab_observer.last_navigation_succeeded());
 
     // The process should be launched now.
-    EXPECT_TRUE(process->HasConnection());
+    EXPECT_TRUE(process->IsInitializedAndNotDead());
     EXPECT_NE(base::kNullProcessHandle, process->GetProcess().Handle());
 
     // Check that the RenderProcessHost and its ID didn't change.
@@ -2479,6 +2489,261 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, PausePageScheduledTasks) {
       "value.length)",
       &next_text_length));
   EXPECT_GT(next_text_length, text_length);
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       PopupWindowBrowserNavResumeLoad) {
+  // This test verifies a pop up that requires navigation from browser side
+  // works with a delegate that delays navigations of pop ups.
+  // Create a file: scheme pop up from a file: scheme page, which requires
+  // requires an OpenURL IPC to the browser process.
+  base::FilePath test_data_dir;
+  CHECK(base::PathService::Get(base::DIR_SOURCE_ROOT, &test_data_dir));
+  base::FilePath simple_links_path =
+      test_data_dir.Append(GetTestDataFilePath())
+          .Append(FILE_PATH_LITERAL("simple_links.html"));
+  GURL url(base::FilePath::StringType(FILE_PATH_LITERAL("file://")) +
+           simple_links_path.value());
+
+  shell()->set_delay_popup_contents_delegate_for_testing(true);
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+
+  Shell* new_shell = nullptr;
+  WebContents* new_contents = nullptr;
+  {
+    ShellAddedObserver new_shell_observer;
+    bool success = false;
+    EXPECT_TRUE(ExecuteScriptAndExtractBool(
+        shell(),
+        "window.domAutomationController.send(clickDeadFileNewWindowLink());",
+        &success));
+    new_shell = new_shell_observer.GetShell();
+    new_contents = new_shell->web_contents();
+    // Delaying popup holds the initial load.
+    EXPECT_FALSE(WaitForLoadStop(new_contents));
+  }
+
+  EXPECT_FALSE(new_contents->GetDelegate());
+  new_contents->SetDelegate(new_shell);
+  new_contents->ResumeLoadingCreatedWebContents();
+  // Dead file link may or may not load depending on OS. The result is not
+  // relevant for this test, so not checking the the result.
+  WaitForLoadStop(new_contents);
+  EXPECT_TRUE(new_contents->GetLastCommittedURL().SchemeIs("file"));
+}
+
+namespace {
+
+class FullscreenWebContentsObserver : public WebContentsObserver {
+ public:
+  FullscreenWebContentsObserver(WebContents* web_contents,
+                                RenderFrameHost* wanted_rfh)
+      : WebContentsObserver(web_contents), wanted_rfh_(wanted_rfh) {}
+
+  // WebContentsObserver override.
+  void DidAcquireFullscreen(RenderFrameHost* rfh) override {
+    EXPECT_EQ(wanted_rfh_, rfh);
+    EXPECT_FALSE(found_value_);
+
+    if (rfh == wanted_rfh_) {
+      found_value_ = true;
+      run_loop_.Quit();
+    }
+  }
+
+  void Wait() {
+    if (!found_value_)
+      run_loop_.Run();
+  }
+
+ private:
+  base::RunLoop run_loop_;
+  bool found_value_ = false;
+  RenderFrameHost* wanted_rfh_;
+
+  DISALLOW_COPY_AND_ASSIGN(FullscreenWebContentsObserver);
+};
+
+}  // namespace
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, NotifyFullscreenAcquired) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  TestWCDelegateForDialogsAndFullscreen test_delegate;
+  web_contents->SetDelegate(&test_delegate);
+
+  GURL url = embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b{allowfullscreen})");
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+  RenderFrameHost* main_frame = web_contents->GetMainFrame();
+  int main_frame_id = main_frame->GetFrameTreeNodeId();
+
+  RenderFrameHost* child_frame = ChildFrameAt(main_frame, 0);
+  int child_frame_id = child_frame->GetFrameTreeNodeId();
+
+  WebContentsImpl::FullscreenFrameNodes nodes;
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_TRUE(CurrentFullscreenFrameTreeNodeIsEmpty());
+
+  // Make the top page fullscreen.
+  {
+    FullscreenWebContentsObserver observer(web_contents, main_frame);
+    EXPECT_TRUE(
+        ExecuteScript(main_frame, "document.body.webkitRequestFullscreen();"));
+    observer.Wait();
+  }
+
+  nodes.insert(main_frame_id);
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_EQ(main_frame_id,
+            web_contents->current_fullscreen_frame_tree_node_id_);
+
+  // Make the child frame fullscreen.
+  {
+    FullscreenWebContentsObserver observer(web_contents, child_frame);
+    EXPECT_TRUE(
+        ExecuteScript(child_frame, "document.body.webkitRequestFullscreen();"));
+    observer.Wait();
+  }
+
+  nodes.insert(child_frame_id);
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_EQ(child_frame_id,
+            web_contents->current_fullscreen_frame_tree_node_id_);
+
+  // Exit fullscreen on the child frame.
+  // This will not work with --site-per-process until crbug.com/617369
+  // is fixed.
+  if (!SiteIsolationPolicy::UseDedicatedProcessesForAllSites()) {
+    {
+      FullscreenWebContentsObserver observer(web_contents, main_frame);
+      EXPECT_TRUE(
+          ExecuteScript(child_frame, "document.webkitExitFullscreen();"));
+      observer.Wait();
+    }
+
+    nodes.erase(child_frame_id);
+    EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+    EXPECT_EQ(main_frame_id,
+              web_contents->current_fullscreen_frame_tree_node_id_);
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       NotifyFullscreenAcquired_Navigate) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  TestWCDelegateForDialogsAndFullscreen test_delegate;
+  test_delegate.WillWaitForFullscreenExit();
+  web_contents->SetDelegate(&test_delegate);
+
+  GURL url = embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b{allowfullscreen})");
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+  RenderFrameHost* main_frame = web_contents->GetMainFrame();
+  int main_frame_id = main_frame->GetFrameTreeNodeId();
+
+  RenderFrameHost* child_frame = ChildFrameAt(main_frame, 0);
+  int child_frame_id = child_frame->GetFrameTreeNodeId();
+
+  WebContentsImpl::FullscreenFrameNodes nodes;
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_TRUE(CurrentFullscreenFrameTreeNodeIsEmpty());
+
+  // Make the top page fullscreen.
+  {
+    FullscreenWebContentsObserver observer(web_contents, main_frame);
+    EXPECT_TRUE(
+        ExecuteScript(main_frame, "document.body.webkitRequestFullscreen();"));
+    observer.Wait();
+  }
+
+  nodes.insert(main_frame_id);
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_EQ(main_frame_id,
+            web_contents->current_fullscreen_frame_tree_node_id_);
+
+  // Make the child frame fullscreen.
+  {
+    FullscreenWebContentsObserver observer(web_contents, child_frame);
+    EXPECT_TRUE(
+        ExecuteScript(child_frame, "document.body.webkitRequestFullscreen();"));
+    observer.Wait();
+  }
+
+  nodes.insert(child_frame_id);
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_EQ(child_frame_id,
+            web_contents->current_fullscreen_frame_tree_node_id_);
+
+  // Perform a cross origin navigation on the main frame.
+  EXPECT_TRUE(
+      NavigateToURL(shell(), embedded_test_server()->GetURL(
+                                 "c.com", "/cross_site_iframe_factory.html")));
+  EXPECT_EQ(0u, web_contents->fullscreen_frame_tree_nodes_.size());
+  EXPECT_TRUE(CurrentFullscreenFrameTreeNodeIsEmpty());
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       NotifyFullscreenAcquired_SameOrigin) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  TestWCDelegateForDialogsAndFullscreen test_delegate;
+  web_contents->SetDelegate(&test_delegate);
+
+  GURL url = embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(a{allowfullscreen})");
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+  RenderFrameHost* main_frame = web_contents->GetMainFrame();
+  int main_frame_id = main_frame->GetFrameTreeNodeId();
+
+  RenderFrameHost* child_frame = ChildFrameAt(main_frame, 0);
+  int child_frame_id = child_frame->GetFrameTreeNodeId();
+
+  WebContentsImpl::FullscreenFrameNodes nodes;
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_TRUE(CurrentFullscreenFrameTreeNodeIsEmpty());
+
+  // Make the top page fullscreen.
+  {
+    FullscreenWebContentsObserver observer(web_contents, main_frame);
+    EXPECT_TRUE(
+        ExecuteScript(main_frame, "document.body.webkitRequestFullscreen();"));
+    observer.Wait();
+  }
+
+  nodes.insert(main_frame_id);
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_EQ(main_frame_id,
+            web_contents->current_fullscreen_frame_tree_node_id_);
+
+  // Make the child frame fullscreen.
+  {
+    FullscreenWebContentsObserver observer(web_contents, child_frame);
+    EXPECT_TRUE(
+        ExecuteScript(child_frame, "document.body.webkitRequestFullscreen();"));
+    observer.Wait();
+  }
+
+  nodes.insert(child_frame_id);
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_EQ(child_frame_id,
+            web_contents->current_fullscreen_frame_tree_node_id_);
+
+  // Exit fullscreen on the child frame.
+  {
+    FullscreenWebContentsObserver observer(web_contents, main_frame);
+    EXPECT_TRUE(ExecuteScript(child_frame, "document.webkitExitFullscreen();"));
+    observer.Wait();
+  }
+
+  nodes.erase(child_frame_id);
+  EXPECT_EQ(nodes, web_contents->fullscreen_frame_tree_nodes_);
+  EXPECT_EQ(main_frame_id,
+            web_contents->current_fullscreen_frame_tree_node_id_);
 }
 
 }  // namespace content

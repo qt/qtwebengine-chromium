@@ -102,8 +102,7 @@ AudioReceiveStream::AudioReceiveStream(
     const rtc::scoped_refptr<webrtc::AudioState>& audio_state,
     webrtc::RtcEventLog* event_log,
     std::unique_ptr<voe::ChannelProxy> channel_proxy)
-    : audio_state_(audio_state),
-      channel_proxy_(std::move(channel_proxy)) {
+    : audio_state_(audio_state), channel_proxy_(std::move(channel_proxy)) {
   RTC_LOG(LS_INFO) << "AudioReceiveStream: " << config.rtp.remote_ssrc;
   RTC_DCHECK(receiver_controller);
   RTC_DCHECK(packet_router);
@@ -120,9 +119,8 @@ AudioReceiveStream::AudioReceiveStream(
   channel_proxy_->RegisterReceiverCongestionControlObjects(packet_router);
 
   // Register with transport.
-  rtp_stream_receiver_ =
-      receiver_controller->CreateReceiver(config.rtp.remote_ssrc,
-                                          channel_proxy_.get());
+  rtp_stream_receiver_ = receiver_controller->CreateReceiver(
+      config.rtp.remote_ssrc, channel_proxy_.get());
 
   ConfigureStream(this, config, true);
 }
@@ -257,7 +255,7 @@ int AudioReceiveStream::id() const {
   return config_.rtp.remote_ssrc;
 }
 
-rtc::Optional<Syncable::Info> AudioReceiveStream::GetInfo() const {
+absl::optional<Syncable::Info> AudioReceiveStream::GetInfo() const {
   RTC_DCHECK_RUN_ON(&module_process_thread_checker_);
   Syncable::Info info;
 
@@ -270,14 +268,12 @@ rtc::Optional<Syncable::Info> AudioReceiveStream::GetInfo() const {
   if (!rtp_receiver->GetLatestTimestamps(
           &info.latest_received_capture_timestamp,
           &info.latest_receive_time_ms)) {
-    return rtc::nullopt;
+    return absl::nullopt;
   }
   if (rtp_rtcp->RemoteNTP(&info.capture_time_ntp_secs,
-                          &info.capture_time_ntp_frac,
-                          nullptr,
-                          nullptr,
+                          &info.capture_time_ntp_frac, nullptr, nullptr,
                           &info.capture_time_source_clock) != 0) {
-    return rtc::nullopt;
+    return absl::nullopt;
   }
 
   info.current_delay_ms = channel_proxy_->GetDelayEstimate();
@@ -329,8 +325,8 @@ const webrtc::AudioReceiveStream::Config& AudioReceiveStream::config() const {
   return config_;
 }
 
-const AudioSendStream*
-    AudioReceiveStream::GetAssociatedSendStreamForTesting() const {
+const AudioSendStream* AudioReceiveStream::GetAssociatedSendStreamForTesting()
+    const {
   RTC_DCHECK_RUN_ON(&worker_thread_checker_);
   return associated_send_stream_;
 }
@@ -363,6 +359,14 @@ void AudioReceiveStream::ConfigureStream(AudioReceiveStream* stream,
   if (first_time || old_config.rtp.local_ssrc != new_config.rtp.local_ssrc) {
     channel_proxy->SetLocalSSRC(new_config.rtp.local_ssrc);
   }
+
+  if (first_time) {
+    channel_proxy->SetRemoteSSRC(new_config.rtp.remote_ssrc);
+  } else {
+    // Remote ssrc can't be changed mid-stream.
+    RTC_DCHECK_EQ(old_config.rtp.remote_ssrc, new_config.rtp.remote_ssrc);
+  }
+
   // TODO(solenberg): Config NACK history window (which is a packet count),
   // using the actual packet size for the configured codec.
   if (first_time || old_config.rtp.nack.rtp_history_ms !=

@@ -86,6 +86,19 @@ static const arg_def_t aqmode_arg =
     ARG_DEF("aq", "aqmode", 1, "aq-mode off/on");
 static const arg_def_t bitrates_arg =
     ARG_DEF("bl", "bitrates", 1, "bitrates[sl * num_tl + tl]");
+static const arg_def_t dropframe_thresh_arg =
+    ARG_DEF(NULL, "drop-frame", 1, "Temporal resampling threshold (buf %)");
+static const struct arg_enum_list tune_content_enum[] = {
+  { "default", VP9E_CONTENT_DEFAULT },
+  { "screen", VP9E_CONTENT_SCREEN },
+  { "film", VP9E_CONTENT_FILM },
+  { NULL, 0 }
+};
+
+static const arg_def_t tune_content_arg = ARG_DEF_ENUM(
+    NULL, "tune-content", 1, "Tune content type", tune_content_enum);
+static const arg_def_t inter_layer_pred_arg = ARG_DEF(
+    NULL, "inter-layer-pred", 1, "0 - 3: On, Off, Key-frames, Constrained");
 
 #if CONFIG_VP9_HIGHBITDEPTH
 static const struct arg_enum_list bitdepth_enum[] = {
@@ -127,6 +140,9 @@ static const arg_def_t *svc_args[] = { &frames_arg,
                                        &speed_arg,
                                        &rc_end_usage_arg,
                                        &bitrates_arg,
+                                       &dropframe_thresh_arg,
+                                       &tune_content_arg,
+                                       &inter_layer_pred_arg,
                                        NULL };
 
 static const uint32_t default_frames_to_skip = 0;
@@ -153,6 +169,8 @@ typedef struct {
   stats_io_t rc_stats;
   int passes;
   int pass;
+  int tune_content;
+  int inter_layer_pred;
 } AppInput;
 
 static const char *exec_name;
@@ -251,11 +269,15 @@ static void parse_command_line(int argc, const char **argv_,
       enc_cfg->kf_min_dist = arg_parse_uint(&arg);
       enc_cfg->kf_max_dist = enc_cfg->kf_min_dist;
     } else if (arg_match(&arg, &scale_factors_arg, argi)) {
-      snprintf(string_options, sizeof(string_options), "%s scale-factors=%s",
-               string_options, arg.val);
+      strncat(string_options, " scale-factors=",
+              sizeof(string_options) - strlen(string_options) - 1);
+      strncat(string_options, arg.val,
+              sizeof(string_options) - strlen(string_options) - 1);
     } else if (arg_match(&arg, &bitrates_arg, argi)) {
-      snprintf(string_options, sizeof(string_options), "%s bitrates=%s",
-               string_options, arg.val);
+      strncat(string_options, " bitrates=",
+              sizeof(string_options) - strlen(string_options) - 1);
+      strncat(string_options, arg.val,
+              sizeof(string_options) - strlen(string_options) - 1);
     } else if (arg_match(&arg, &passes_arg, argi)) {
       passes = arg_parse_uint(&arg);
       if (passes < 1 || passes > 2) {
@@ -269,11 +291,15 @@ static void parse_command_line(int argc, const char **argv_,
     } else if (arg_match(&arg, &fpf_name_arg, argi)) {
       fpf_file_name = arg.val;
     } else if (arg_match(&arg, &min_q_arg, argi)) {
-      snprintf(string_options, sizeof(string_options), "%s min-quantizers=%s",
-               string_options, arg.val);
+      strncat(string_options, " min-quantizers=",
+              sizeof(string_options) - strlen(string_options) - 1);
+      strncat(string_options, arg.val,
+              sizeof(string_options) - strlen(string_options) - 1);
     } else if (arg_match(&arg, &max_q_arg, argi)) {
-      snprintf(string_options, sizeof(string_options), "%s max-quantizers=%s",
-               string_options, arg.val);
+      strncat(string_options, " max-quantizers=",
+              sizeof(string_options) - strlen(string_options) - 1);
+      strncat(string_options, arg.val,
+              sizeof(string_options) - strlen(string_options) - 1);
     } else if (arg_match(&arg, &min_bitrate_arg, argi)) {
       min_bitrate = arg_parse_uint(&arg);
     } else if (arg_match(&arg, &max_bitrate_arg, argi)) {
@@ -303,6 +329,12 @@ static void parse_command_line(int argc, const char **argv_,
           break;
       }
 #endif  // CONFIG_VP9_HIGHBITDEPTH
+    } else if (arg_match(&arg, &dropframe_thresh_arg, argi)) {
+      enc_cfg->rc_dropframe_thresh = arg_parse_uint(&arg);
+    } else if (arg_match(&arg, &tune_content_arg, argi)) {
+      app_input->tune_content = arg_parse_uint(&arg);
+    } else if (arg_match(&arg, &inter_layer_pred_arg, argi)) {
+      app_input->inter_layer_pred = arg_parse_uint(&arg);
     } else {
       ++argj;
     }
@@ -622,6 +654,7 @@ int main(int argc, const char **argv) {
   vpx_codec_ctx_t codec;
   vpx_codec_enc_cfg_t enc_cfg;
   SvcContext svc_ctx;
+  vpx_svc_frame_drop_t svc_drop_frame;
   uint32_t i;
   uint32_t frame_cnt = 0;
   vpx_image_t raw;
@@ -726,11 +759,18 @@ int main(int argc, const char **argv) {
     vpx_codec_control(&codec, VP8E_SET_STATIC_THRESHOLD, 1);
   vpx_codec_control(&codec, VP8E_SET_MAX_INTRA_BITRATE_PCT, 900);
 
-  vpx_codec_control(&codec, VP9E_SET_SVC_INTER_LAYER_PRED, 0);
+  vpx_codec_control(&codec, VP9E_SET_SVC_INTER_LAYER_PRED,
+                    app_input.inter_layer_pred);
 
   vpx_codec_control(&codec, VP9E_SET_NOISE_SENSITIVITY, 0);
 
-  vpx_codec_control(&codec, VP9E_SET_TUNE_CONTENT, 0);
+  vpx_codec_control(&codec, VP9E_SET_TUNE_CONTENT, app_input.tune_content);
+
+  svc_drop_frame.framedrop_mode = FULL_SUPERFRAME_DROP;
+  for (sl = 0; sl < (unsigned int)svc_ctx.spatial_layers; ++sl)
+    svc_drop_frame.framedrop_thresh[sl] = enc_cfg.rc_dropframe_thresh;
+  svc_drop_frame.max_consec_drop = INT_MAX;
+  vpx_codec_control(&codec, VP9E_SET_SVC_FRAME_DROP_LAYER, &svc_drop_frame);
 
   // Encode frames
   while (!end_of_stream) {

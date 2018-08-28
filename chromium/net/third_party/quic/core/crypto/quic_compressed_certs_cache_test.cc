@@ -11,9 +11,7 @@
 #include "net/third_party/quic/platform/api/quic_text_utils.h"
 #include "net/third_party/quic/test_tools/crypto_test_utils.h"
 
-using base::IntToString;
-
-namespace net {
+namespace quic {
 
 namespace test {
 
@@ -98,4 +96,4 @@ TEST_F(QuicCompressedCertsCacheTest, CacheMissDueToEviction) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

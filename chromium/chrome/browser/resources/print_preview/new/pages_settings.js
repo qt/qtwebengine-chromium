@@ -76,7 +76,7 @@ Polymer({
   },
 
   observers: [
-    'onRangeChange_(errorState_, rangesToPrint_)',
+    'onRangeChange_(errorState_, rangesToPrint_, settings.pages)',
     'onRadioChange_(allSelected_, customSelected_)'
   ],
 
@@ -99,10 +99,14 @@ Polymer({
 
   /**
    * @return {boolean} Whether the controls should be disabled.
+   * Does not need to depend on |errorState_|, since |errorState_| is always
+   * defined and any change to or from NO_ERROR will also trigger a change in
+   * |disabled|.
    * @private
    */
   getDisabled_: function() {
-    return this.getSetting('pages').valid && this.disabled;
+    // Disable the input if other settings are responsible for the error state.
+    return this.errorState_ == PagesInputErrorState.NO_ERROR && this.disabled;
   },
 
   /**
@@ -231,6 +235,9 @@ Polymer({
    * @private
    */
   onRangeChange_: function() {
+    if (this.settings === undefined || this.pagesToPrint_ === undefined)
+      return;
+
     if (this.errorState_ != PagesInputErrorState.NO_ERROR) {
       this.setSettingValid('pages', false);
       this.$.pageSettingsCustomInput.classList.add('invalid');
@@ -287,10 +294,11 @@ Polymer({
       return loadTimeData.getStringF(
           'pageRangeSyntaxInstruction',
           loadTimeData.getString('examplePageRangeText'));
-    } else {
-      return loadTimeData.getStringF(
-          'pageRangeLimitInstructionWithValue', this.documentInfo.pageCount);
     }
+    return (this.documentInfo === undefined) ?
+        '' :
+        loadTimeData.getStringF(
+            'pageRangeLimitInstructionWithValue', this.documentInfo.pageCount);
   },
 
   /**

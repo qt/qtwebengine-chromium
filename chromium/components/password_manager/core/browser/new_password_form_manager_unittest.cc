@@ -5,7 +5,10 @@
 #include "components/password_manager/core/browser/new_password_form_manager.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/test_mock_time_task_runner.h"
+#include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/common/form_data.h"
+#include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/password_manager/core/browser/fake_form_fetcher.h"
@@ -15,11 +18,14 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using autofill::FormData;
+using autofill::FormStructure;
 using autofill::FormFieldData;
 using autofill::PasswordForm;
 using autofill::PasswordFormFillData;
 using base::ASCIIToUTF16;
+using base::TestMockTimeTaskRunner;
 using testing::_;
+using testing::Mock;
 using testing::SaveArg;
 
 namespace password_manager {
@@ -39,7 +45,7 @@ class MockPasswordManagerDriver : public StubPasswordManagerDriver {
 
 class NewPasswordFormManagerTest : public testing::Test {
  public:
-  NewPasswordFormManagerTest() {
+  NewPasswordFormManagerTest() : task_runner_(new TestMockTimeTaskRunner) {
     GURL origin = GURL("http://accounts.google.com/a/ServiceLoginAuth");
     GURL action = GURL("http://accounts.google.com/a/ServiceLogin");
 
@@ -52,14 +58,19 @@ class NewPasswordFormManagerTest : public testing::Test {
     FormFieldData field;
     field.name = ASCIIToUTF16("firstname");
     field.form_control_type = "text";
+    field.unique_renderer_id = 1;
     observed_form_.fields.push_back(field);
 
     field.name = ASCIIToUTF16("username");
+    field.id = field.name;
     field.form_control_type = "text";
+    field.unique_renderer_id = 2;
     observed_form_.fields.push_back(field);
 
     field.name = ASCIIToUTF16("password");
+    field.id = field.name;
     field.form_control_type = "password";
+    field.unique_renderer_id = 3;
     observed_form_.fields.push_back(field);
 
     saved_match_.origin = origin;
@@ -67,13 +78,20 @@ class NewPasswordFormManagerTest : public testing::Test {
     saved_match_.preferred = true;
     saved_match_.username_value = ASCIIToUTF16("test@gmail.com");
     saved_match_.password_value = ASCIIToUTF16("test1");
+    saved_match_.is_public_suffix_match = false;
+    saved_match_.scheme = PasswordForm::SCHEME_HTML;
+
+    blacklisted_match_ = saved_match_;
+    blacklisted_match_.blacklisted_by_user = true;
   }
 
  protected:
   FormData observed_form_;
   PasswordForm saved_match_;
+  PasswordForm blacklisted_match_;
   StubPasswordManagerClient client_;
   MockPasswordManagerDriver driver_;
+  scoped_refptr<TestMockTimeTaskRunner> task_runner_;
 };
 
 TEST_F(NewPasswordFormManagerTest, DoesManage) {
@@ -108,6 +126,7 @@ TEST_F(NewPasswordFormManagerTest, DoesManageNoFormTag) {
 }
 
 TEST_F(NewPasswordFormManagerTest, Autofill) {
+  TestMockTimeTaskRunner::ScopedContext scoped_context(task_runner_.get());
   FakeFormFetcher fetcher;
   fetcher.Fetch();
   EXPECT_CALL(driver_, AllowPasswordGenerationForForm(_));
@@ -117,11 +136,79 @@ TEST_F(NewPasswordFormManagerTest, Autofill) {
                                       observed_form_, &fetcher);
   fetcher.SetNonFederated({&saved_match_}, 0u);
 
+  task_runner_->FastForwardUntilNoTasksRemain();
+
   EXPECT_EQ(observed_form_.origin, fill_data.origin);
   EXPECT_FALSE(fill_data.wait_for_username);
   EXPECT_EQ(observed_form_.fields[1].name, fill_data.username_field.name);
   EXPECT_EQ(saved_match_.username_value, fill_data.username_field.value);
   EXPECT_EQ(observed_form_.fields[2].name, fill_data.password_field.name);
+  EXPECT_EQ(saved_match_.password_value, fill_data.password_field.value);
+}
+
+TEST_F(NewPasswordFormManagerTest, AutofillNotMoreThan5Times) {
+  TestMockTimeTaskRunner::ScopedContext scoped_context(task_runner_.get());
+  FakeFormFetcher fetcher;
+  fetcher.Fetch();
+  PasswordFormFillData fill_data;
+  EXPECT_CALL(driver_, FillPasswordForm(_));
+  NewPasswordFormManager form_manager(&client_, driver_.AsWeakPtr(),
+                                      observed_form_, &fetcher);
+  fetcher.SetNonFederated({&saved_match_}, 0u);
+
+  task_runner_->FastForwardUntilNoTasksRemain();
+  Mock::VerifyAndClearExpectations(&driver_);
+
+  for (size_t i = 0; i < NewPasswordFormManager::kMaxTimesAutofill - 1; ++i) {
+    EXPECT_CALL(driver_, FillPasswordForm(_));
+    form_manager.Fill();
+    Mock::VerifyAndClearExpectations(&driver_);
+  }
+
+  EXPECT_CALL(driver_, FillPasswordForm(_)).Times(0);
+  form_manager.Fill();
+}
+
+// NewPasswordFormManager should always send fill data to renderer, even for
+// sign-up forms (no "current-password" field, i.e., no password field to fill
+// into). However, for sign-up forms, no particular password field should be
+// identified for filling. That way, Chrome won't disturb the user by filling
+// the sign-up form, but will be able to offer a manual fallback for filling if
+// the form was misclassified.
+TEST_F(NewPasswordFormManagerTest, AutofillSignUpForm) {
+  TestMockTimeTaskRunner::ScopedContext scoped_context(task_runner_.get());
+  FakeFormFetcher fetcher;
+  fetcher.Fetch();
+  // Make |observed_form_| to be sign-up form.
+  observed_form_.fields.back().autocomplete_attribute = "new-password";
+
+  PasswordFormFillData fill_data;
+  EXPECT_CALL(driver_, FillPasswordForm(_)).WillOnce(SaveArg<0>(&fill_data));
+  NewPasswordFormManager form_manager(&client_, driver_.AsWeakPtr(),
+                                      observed_form_, &fetcher);
+  fetcher.SetNonFederated({&saved_match_}, 0u);
+
+  task_runner_->FastForwardUntilNoTasksRemain();
+  constexpr uint32_t kNoID = FormFieldData::kNotSetFormControlRendererId;
+  EXPECT_EQ(kNoID, fill_data.password_field.unique_renderer_id);
+  EXPECT_EQ(saved_match_.password_value, fill_data.password_field.value);
+}
+
+TEST_F(NewPasswordFormManagerTest, AutofillWithBlacklistedMatch) {
+  TestMockTimeTaskRunner::ScopedContext scoped_context(task_runner_.get());
+  FakeFormFetcher fetcher;
+  fetcher.Fetch();
+  PasswordFormFillData fill_data;
+  EXPECT_CALL(driver_, FillPasswordForm(_)).WillOnce(SaveArg<0>(&fill_data));
+  NewPasswordFormManager form_manager(&client_, driver_.AsWeakPtr(),
+                                      observed_form_, &fetcher);
+
+  fetcher.SetNonFederated({&saved_match_, &blacklisted_match_}, 0u);
+
+  task_runner_->FastForwardUntilNoTasksRemain();
+
+  EXPECT_EQ(observed_form_.origin, fill_data.origin);
+  EXPECT_EQ(saved_match_.username_value, fill_data.username_field.value);
   EXPECT_EQ(saved_match_.password_value, fill_data.password_field.value);
 }
 
@@ -155,6 +242,77 @@ TEST_F(NewPasswordFormManagerTest, SetSubmitted) {
   EXPECT_FALSE(
       form_manager.SetSubmittedFormIfIsManaged(observed_form_, nullptr));
   EXPECT_FALSE(form_manager.is_submitted());
+}
+
+// Tests that when NewPasswordFormManager receives saved matches it waits for
+// server predictions and fills on receving them.
+TEST_F(NewPasswordFormManagerTest, ServerPredictionsWithinDelay) {
+  TestMockTimeTaskRunner::ScopedContext scoped_context(task_runner_.get());
+  FakeFormFetcher fetcher;
+  fetcher.Fetch();
+
+  // Expects no filling on save matches receiving.
+  EXPECT_CALL(driver_, FillPasswordForm(_)).Times(0);
+  NewPasswordFormManager form_manager(&client_, driver_.AsWeakPtr(),
+                                      observed_form_, &fetcher);
+  fetcher.SetNonFederated({&saved_match_}, 0u);
+  Mock::VerifyAndClearExpectations(&driver_);
+
+  FormStructure form_structure(observed_form_);
+  form_structure.field(2)->set_server_type(autofill::PASSWORD);
+  std::vector<FormStructure*> predictions{&form_structure};
+
+  // Expect filling without delay on receiving server predictions.
+  EXPECT_CALL(driver_, FillPasswordForm(_)).Times(1);
+  form_manager.ProcessServerPredictions(predictions);
+}
+
+// Tests that NewPasswordFormManager fills after some delay even without
+// server predictions.
+TEST_F(NewPasswordFormManagerTest, ServerPredictionsAfterDelay) {
+  TestMockTimeTaskRunner::ScopedContext scoped_context(task_runner_.get());
+  FakeFormFetcher fetcher;
+  fetcher.Fetch();
+
+  NewPasswordFormManager form_manager(&client_, driver_.AsWeakPtr(),
+                                      observed_form_, &fetcher);
+  fetcher.SetNonFederated({&saved_match_}, 0u);
+  // Expect filling after passing filling delay.
+  EXPECT_CALL(driver_, FillPasswordForm(_)).Times(1);
+  // Simulate passing filling delay.
+  task_runner_->FastForwardUntilNoTasksRemain();
+  Mock::VerifyAndClearExpectations(&driver_);
+
+  FormStructure form_structure(observed_form_);
+  form_structure.field(2)->set_server_type(autofill::PASSWORD);
+  std::vector<FormStructure*> predictions{&form_structure};
+
+  // Expect filling on receiving server predictions because it was less than
+  // kMaxTimesAutofill attempts to fill.
+  EXPECT_CALL(driver_, FillPasswordForm(_)).Times(1);
+  form_manager.ProcessServerPredictions(predictions);
+  task_runner_->FastForwardUntilNoTasksRemain();
+}
+
+// Tests that filling happens immediately if server predictions are received
+// before saved matches.
+TEST_F(NewPasswordFormManagerTest, ServerPredictionsBeforeFetcher) {
+  FakeFormFetcher fetcher;
+  fetcher.Fetch();
+  // Expect no filling after receiving saved matches from |fetcher|, since
+  // |form_manager| is waiting for server-side predictions.
+  EXPECT_CALL(driver_, FillPasswordForm(_)).Times(0);
+  NewPasswordFormManager form_manager(&client_, driver_.AsWeakPtr(),
+                                      observed_form_, &fetcher);
+  FormStructure form_structure(observed_form_);
+  form_structure.field(2)->set_server_type(autofill::PASSWORD);
+  std::vector<FormStructure*> predictions{&form_structure};
+  form_manager.ProcessServerPredictions(predictions);
+  Mock::VerifyAndClearExpectations(&driver_);
+
+  // Expect filling without delay on receiving server predictions.
+  EXPECT_CALL(driver_, FillPasswordForm(_)).Times(1);
+  fetcher.SetNonFederated({&saved_match_}, 0u);
 }
 
 }  // namespace  password_manager

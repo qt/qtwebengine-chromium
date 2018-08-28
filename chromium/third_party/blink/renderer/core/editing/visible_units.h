@@ -31,7 +31,7 @@
 #include "third_party/blink/renderer/core/editing/forward.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
-#include "third_party/blink/renderer/platform/wtf/text/icu/unicode_icu.h"
+#include "third_party/blink/renderer/platform/wtf/text/unicode.h"
 
 namespace blink {
 
@@ -126,10 +126,6 @@ StartOfWordPosition(const VisiblePositionInFlatTree&,
 CORE_EXPORT VisiblePositionInFlatTree
 StartOfWord(const VisiblePositionInFlatTree&,
             EWordSide = kNextWordIfOnBoundary);
-// TODO(yoichio): Replace |endOfWord| to |endOfWordPosition| because returned
-// Position should be canonicalized with |nextBoundary()| by TextItetator.
-CORE_EXPORT Position EndOfWordPosition(const VisiblePosition&,
-                                       EWordSide = kNextWordIfOnBoundary);
 CORE_EXPORT VisiblePosition EndOfWord(const VisiblePosition&,
                                       EWordSide = kNextWordIfOnBoundary);
 CORE_EXPORT PositionInFlatTree
@@ -275,10 +271,6 @@ typedef unsigned (*BoundarySearchFunction)(const UChar*,
                                            BoundarySearchContextAvailability,
                                            bool& need_more_context);
 
-CORE_EXPORT Position NextBoundary(const VisiblePosition&,
-                                  BoundarySearchFunction);
-PositionInFlatTree NextBoundary(const VisiblePositionInFlatTree&,
-                                BoundarySearchFunction);
 Position PreviousBoundary(const VisiblePosition&, BoundarySearchFunction);
 PositionInFlatTree PreviousBoundary(const VisiblePositionInFlatTree&,
                                     BoundarySearchFunction);

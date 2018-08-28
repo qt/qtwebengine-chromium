@@ -11,7 +11,7 @@
 #include "base/feature_list.h"
 #include "base/macros.h"
 #include "base/strings/stringprintf.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/version.h"
 #include "build/build_config.h"
 #include "components/prefs/testing_pref_service.h"
@@ -21,6 +21,7 @@
 #include "components/variations/service/safe_seed_manager.h"
 #include "components/variations/service/variations_service.h"
 #include "components/variations/service/variations_service_client.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -159,7 +160,8 @@ class TestVariationsServiceClient : public VariationsServiceClient {
       override {
     return base::Callback<base::Version(void)>();
   }
-  net::URLRequestContextGetter* GetURLRequestContext() override {
+  scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory()
+      override {
     return nullptr;
   }
   network_time::NetworkTimeTracker* GetNetworkTimeTracker() override {

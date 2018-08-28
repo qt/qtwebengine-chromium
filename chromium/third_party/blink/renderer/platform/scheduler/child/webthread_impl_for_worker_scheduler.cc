@@ -9,11 +9,11 @@
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/sequence_manager/task_queue.h"
 #include "base/time/default_tick_clock.h"
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/platform/scheduler/base/task_queue.h"
 #include "third_party/blink/renderer/platform/scheduler/child/task_queue_with_task_type.h"
-#include "third_party/blink/renderer/platform/scheduler/child/worker_scheduler_proxy.h"
+#include "third_party/blink/renderer/platform/scheduler/worker/worker_scheduler_proxy.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.h"
 
 namespace blink {
@@ -23,10 +23,10 @@ WebThreadImplForWorkerScheduler::WebThreadImplForWorkerScheduler(
     const WebThreadCreationParams& params)
     : thread_(new base::Thread(params.name ? params.name : std::string())),
       thread_type_(params.thread_type),
-      worker_scheduler_proxy_(
-          params.frame_scheduler
-              ? std::make_unique<WorkerSchedulerProxy>(params.frame_scheduler)
-              : nullptr) {
+      worker_scheduler_proxy_(params.frame_or_worker_scheduler
+                                  ? std::make_unique<WorkerSchedulerProxy>(
+                                        params.frame_or_worker_scheduler)
+                                  : nullptr) {
   bool started = thread_->StartWithOptions(params.thread_options);
   CHECK(started);
   thread_task_runner_ = thread_->task_runner();
@@ -67,7 +67,6 @@ void WebThreadImplForWorkerScheduler::InitOnThread(
   task_queue_ = non_main_thread_scheduler_->DefaultTaskQueue();
   task_runner_ = TaskQueueWithTaskType::Create(
       task_queue_, TaskType::kWorkerThreadTaskQueueDefault);
-  idle_task_runner_ = non_main_thread_scheduler_->IdleTaskRunner();
   base::MessageLoopCurrent::Get()->AddDestructionObserver(this);
   completion->Signal();
 }
@@ -78,17 +77,16 @@ void WebThreadImplForWorkerScheduler::ShutdownOnThread(
 
   task_queue_ = nullptr;
   task_runner_ = nullptr;
-  idle_task_runner_ = nullptr;
   non_main_thread_scheduler_ = nullptr;
 
   if (completion)
     completion->Signal();
 }
 
-std::unique_ptr<NonMainThreadScheduler>
+std::unique_ptr<NonMainThreadSchedulerImpl>
 WebThreadImplForWorkerScheduler::CreateNonMainThreadScheduler() {
-  return NonMainThreadScheduler::Create(thread_type_,
-                                        worker_scheduler_proxy_.get());
+  return NonMainThreadSchedulerImpl::Create(thread_type_,
+                                            worker_scheduler_proxy_.get());
 }
 
 void WebThreadImplForWorkerScheduler::WillDestroyCurrentMessageLoop() {
@@ -101,11 +99,6 @@ blink::PlatformThreadId WebThreadImplForWorkerScheduler::ThreadId() const {
 
 blink::ThreadScheduler* WebThreadImplForWorkerScheduler::Scheduler() const {
   return non_main_thread_scheduler_.get();
-}
-
-SingleThreadIdleTaskRunner* WebThreadImplForWorkerScheduler::GetIdleTaskRunner()
-    const {
-  return idle_task_runner_.get();
 }
 
 scoped_refptr<base::SingleThreadTaskRunner>

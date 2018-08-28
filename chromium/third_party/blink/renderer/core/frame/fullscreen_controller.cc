@@ -32,8 +32,8 @@
 
 #include "base/memory/ptr_util.h"
 #include "third_party/blink/public/platform/web_layer_tree_view.h"
-#include "third_party/blink/public/web/web_frame_client.h"
 #include "third_party/blink/public/web/web_fullscreen_options.h"
+#include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -43,14 +43,13 @@
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
 #include "third_party/blink/renderer/core/fullscreen/fullscreen_options.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
-#include "third_party/blink/renderer/core/layout/layout_full_screen.h"
 #include "third_party/blink/renderer/core/page/page.h"
 
 namespace blink {
 
 namespace {
 
-WebFrameClient& GetWebFrameClient(LocalFrame& frame) {
+WebLocalFrameClient& GetWebFrameClient(LocalFrame& frame) {
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
   DCHECK(web_frame);
   DCHECK(web_frame->Client());
@@ -87,10 +86,8 @@ void FullscreenController::DidEnterFullscreen() {
        frame = frame->Tree().TraverseNext()) {
     if (!frame->IsLocalFrame())
       continue;
-    if (Document* document = ToLocalFrame(frame)->GetDocument()) {
-      if (Fullscreen* fullscreen = Fullscreen::FromIfExists(*document))
-        fullscreen->DidEnterFullscreen();
-    }
+    if (Document* document = ToLocalFrame(frame)->GetDocument())
+      Fullscreen::DidEnterFullscreen(*document);
   }
 
   // TODO(foolip): If the top level browsing context (main frame) ends up with
@@ -123,10 +120,8 @@ void FullscreenController::DidExitFullscreen() {
     }
 
     DCHECK(frame->IsLocalFrame() && ToLocalFrame(frame)->IsLocalRoot());
-    if (Document* document = ToLocalFrame(frame)->GetDocument()) {
-      if (Fullscreen* fullscreen = Fullscreen::FromIfExists(*document))
-        fullscreen->DidExitFullscreen();
-    }
+    if (Document* document = ToLocalFrame(frame)->GetDocument())
+      Fullscreen::DidExitFullscreen(*document);
 
     // Skip over all descendant frames.
     while (next_frame && next_frame->Tree().IsDescendantOf(frame))
@@ -224,6 +219,12 @@ void FullscreenController::FullscreenElementChanged(Element* old_element,
     if (auto* video_element = ToHTMLVideoElementOrNull(*old_element))
       video_element->DidExitFullscreen();
   }
+
+  // Tell the browser the fullscreen state has changed.
+  if (Element* owner = new_element ? new_element : old_element) {
+    if (LocalFrame* frame = owner->GetDocument().GetFrame())
+      GetWebFrameClient(*frame).FullscreenStateChanged(!!new_element);
+  }
 }
 
 void FullscreenController::RestoreBackgroundColorOverride() {
@@ -247,20 +248,6 @@ void FullscreenController::UpdateSize() {
     return;
 
   UpdatePageScaleConstraints(false);
-
-  // Traverse all local frames and notify the LayoutFullScreen object, if any.
-  for (Frame* frame = web_view_base_->GetPage()->MainFrame(); frame;
-       frame = frame->Tree().TraverseNext()) {
-    if (!frame->IsLocalFrame())
-      continue;
-    if (Document* document = ToLocalFrame(frame)->GetDocument()) {
-      if (Fullscreen* fullscreen = Fullscreen::FromIfExists(*document)) {
-        if (LayoutFullScreen* layout_object =
-                fullscreen->FullScreenLayoutObject())
-          layout_object->UpdateStyle();
-      }
-    }
-  }
 }
 
 void FullscreenController::DidUpdateLayout() {

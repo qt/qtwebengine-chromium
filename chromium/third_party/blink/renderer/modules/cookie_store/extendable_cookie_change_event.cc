@@ -8,7 +8,7 @@
 #include "third_party/blink/renderer/modules/cookie_store/cookie_list_item.h"
 #include "third_party/blink/renderer/modules/cookie_store/extendable_cookie_change_event_init.h"
 #include "third_party/blink/renderer/modules/event_modules.h"
-#include "third_party/blink/renderer/modules/serviceworkers/extendable_event_init.h"
+#include "third_party/blink/renderer/modules/service_worker/extendable_event_init.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
@@ -43,23 +43,6 @@ ExtendableCookieChangeEvent::ExtendableCookieChangeEvent(
     changed_ = initializer.changed();
   if (initializer.hasDeleted())
     deleted_ = initializer.deleted();
-}
-
-// static
-void ExtendableCookieChangeEvent::ToCookieChangeListItem(
-    const WebString& cookie_name,
-    const WebString& cookie_value,
-    bool is_cookie_delete,
-    HeapVector<CookieListItem>& changed,
-    HeapVector<CookieListItem>& deleted) {
-  if (is_cookie_delete) {
-    CookieListItem& cookie = deleted.emplace_back();
-    cookie.setName(cookie_name);
-  } else {
-    CookieListItem& cookie = changed.emplace_back();
-    cookie.setName(cookie_name);
-    cookie.setValue(cookie_value);
-  }
 }
 
 }  // namespace blink

@@ -60,7 +60,7 @@ class CORE_EXPORT NGLayoutInputNode {
   bool ShouldBeConsideredAsReplaced() const;
   bool IsListItem() const;
   bool IsListMarker() const;
-  bool IsAnonymous() const;
+  bool IsAnonymousBlock() const;
 
   // If the node is a quirky container for margin collapsing, see:
   // https://html.spec.whatwg.org/#margin-collapsing-quirks
@@ -72,6 +72,7 @@ class CORE_EXPORT NGLayoutInputNode {
   // Performs layout on this input node, will return the layout result.
   scoped_refptr<NGLayoutResult> Layout(const NGConstraintSpace&, NGBreakToken*);
 
+  // Returns border box.
   MinMaxSize ComputeMinMaxSize(WritingMode,
                                const MinMaxSizeInput&,
                                const NGConstraintSpace* = nullptr);
@@ -94,9 +95,11 @@ class CORE_EXPORT NGLayoutInputNode {
   NGPhysicalSize InitialContainingBlockSize() const;
 
   // Returns the LayoutObject which is associated with this node.
-  LayoutObject* GetLayoutObject() const;
+  LayoutBox* GetLayoutBox() const { return box_; };
 
   const ComputedStyle& Style() const;
+
+  bool ShouldApplySizeContainment() const;
 
   String ToString() const;
 

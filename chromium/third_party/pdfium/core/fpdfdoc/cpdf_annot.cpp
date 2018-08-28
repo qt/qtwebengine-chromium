@@ -53,15 +53,15 @@ CPDF_Form* AnnotGetMatrix(const CPDF_Page* pPage,
   if (!pForm)
     return nullptr;
 
-  CFX_Matrix form_matrix = pForm->GetFormDict()->GetMatrixFor("Matrix");
+  CFX_Matrix form_matrix = pForm->GetDict()->GetMatrixFor("Matrix");
   CFX_FloatRect form_bbox =
-      form_matrix.TransformRect(pForm->GetFormDict()->GetRectFor("BBox"));
+      form_matrix.TransformRect(pForm->GetDict()->GetRectFor("BBox"));
   matrix->MatchRect(pAnnot->GetRect(), form_bbox);
   matrix->Concat(*pUser2Device);
   return pForm;
 }
 
-CPDF_Stream* FPDFDOC_GetAnnotAPInternal(const CPDF_Dictionary* pAnnotDict,
+CPDF_Stream* FPDFDOC_GetAnnotAPInternal(CPDF_Dictionary* pAnnotDict,
                                         CPDF_Annot::AppearanceMode eMode,
                                         bool bFallbackToNormal) {
   CPDF_Dictionary* pAP = pAnnotDict->GetDictFor("AP");
@@ -90,7 +90,7 @@ CPDF_Stream* FPDFDOC_GetAnnotAPInternal(const CPDF_Dictionary* pAnnotDict,
   if (as.IsEmpty()) {
     ByteString value = pAnnotDict->GetStringFor("V");
     if (value.IsEmpty()) {
-      CPDF_Dictionary* pParentDict = pAnnotDict->GetDictFor("Parent");
+      const CPDF_Dictionary* pParentDict = pAnnotDict->GetDictFor("Parent");
       value = pParentDict ? pParentDict->GetStringFor("V") : ByteString();
     }
     as = (!value.IsEmpty() && pDict->KeyExist(value)) ? value : "Off";
@@ -177,12 +177,12 @@ uint32_t CPDF_Annot::GetFlags() const {
   return m_pAnnotDict->GetIntegerFor("F");
 }
 
-CPDF_Stream* FPDFDOC_GetAnnotAP(const CPDF_Dictionary* pAnnotDict,
+CPDF_Stream* FPDFDOC_GetAnnotAP(CPDF_Dictionary* pAnnotDict,
                                 CPDF_Annot::AppearanceMode eMode) {
   return FPDFDOC_GetAnnotAPInternal(pAnnotDict, eMode, true);
 }
 
-CPDF_Stream* FPDFDOC_GetAnnotAPNoFallback(const CPDF_Dictionary* pAnnotDict,
+CPDF_Stream* FPDFDOC_GetAnnotAPNoFallback(CPDF_Dictionary* pAnnotDict,
                                           CPDF_Annot::AppearanceMode eMode) {
   return FPDFDOC_GetAnnotAPInternal(pAnnotDict, eMode, false);
 }
@@ -230,11 +230,12 @@ CFX_FloatRect CPDF_Annot::RectFromQuadPointsArray(const CPDF_Array* pArray,
 // static
 CFX_FloatRect CPDF_Annot::BoundingRectFromQuadPoints(
     const CPDF_Dictionary* pAnnotDict) {
-  CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
+  CFX_FloatRect ret;
+  const CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
   if (!pArray)
-    return CFX_FloatRect();
+    return ret;
 
-  CFX_FloatRect ret = RectFromQuadPointsArray(pArray, 0);
+  ret = RectFromQuadPointsArray(pArray, 0);
   size_t nQuadPointCount = QuadPointCount(pArray);
   for (size_t i = 1; i < nQuadPointCount; ++i) {
     CFX_FloatRect rect = RectFromQuadPointsArray(pArray, i);

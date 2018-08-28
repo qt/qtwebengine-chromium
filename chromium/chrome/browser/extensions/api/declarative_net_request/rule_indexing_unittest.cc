@@ -11,7 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/extensions/api/declarative_net_request/dnr_test_base.h"
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -268,7 +268,8 @@ TEST_P(RuleIndexingTest, InvalidRedirectURL) {
 
 TEST_P(RuleIndexingTest, ListNotPassed) {
   SetRules(std::make_unique<base::DictionaryValue>());
-  LoadAndExpectError(manifest_errors::kDeclarativeNetRequestListNotPassed);
+  LoadAndExpectError(ParseInfo(ParseResult::ERROR_LIST_NOT_PASSED)
+                         .GetErrorDescription(kJSONRulesFilename));
 }
 
 TEST_P(RuleIndexingTest, DuplicateIDS) {

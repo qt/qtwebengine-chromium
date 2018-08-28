@@ -37,8 +37,8 @@ std::unique_ptr<VideoCodecTestFixture> CreateTestFixtureWithConfig(
     VideoCodecTestFixture::Config config) {
   auto decoder_factory = CreateObjCDecoderFactory();
   auto encoder_factory = CreateObjCEncoderFactory();
-  return CreateVideoCodecTestFixture(
-      config, std::move(decoder_factory), std::move(encoder_factory));
+  return CreateVideoCodecTestFixture(config, std::move(decoder_factory),
+                                     std::move(encoder_factory));
 }
 }  // namespace
 
@@ -53,8 +53,8 @@ std::unique_ptr<VideoCodecTestFixture> CreateTestFixtureWithConfig(
 // TODO(kthelgason): Use RC Thresholds when the internal bitrateAdjuster is no
 // longer in use.
 MAYBE_TEST(VideoCodecTestVideoToolbox, ForemanCif500kbpsH264CBP) {
-  const auto frame_checker = rtc::MakeUnique<
-      VideoCodecTestFixtureImpl::H264KeyframeChecker>();
+  const auto frame_checker =
+      absl::make_unique<VideoCodecTestFixtureImpl::H264KeyframeChecker>();
   auto config = CreateConfig();
   config.SetCodecSettings(cricket::kH264CodecName, 1, 1, 1, false, false, false,
                           352, 288);
@@ -65,13 +65,12 @@ MAYBE_TEST(VideoCodecTestVideoToolbox, ForemanCif500kbpsH264CBP) {
 
   std::vector<QualityThresholds> quality_thresholds = {{33, 29, 0.9, 0.82}};
 
-  fixture->RunTest(rate_profiles, nullptr, &quality_thresholds, nullptr,
-                   nullptr);
+  fixture->RunTest(rate_profiles, nullptr, &quality_thresholds, nullptr);
 }
 
 MAYBE_TEST(VideoCodecTestVideoToolbox, ForemanCif500kbpsH264CHP) {
-  const auto frame_checker = rtc::MakeUnique<
-      VideoCodecTestFixtureImpl::H264KeyframeChecker>();
+  const auto frame_checker =
+      absl::make_unique<VideoCodecTestFixtureImpl::H264KeyframeChecker>();
   auto config = CreateConfig();
   config.h264_codec_settings.profile = H264::kProfileConstrainedHigh;
   config.SetCodecSettings(cricket::kH264CodecName, 1, 1, 1, false, false, false,
@@ -83,8 +82,7 @@ MAYBE_TEST(VideoCodecTestVideoToolbox, ForemanCif500kbpsH264CHP) {
 
   std::vector<QualityThresholds> quality_thresholds = {{33, 30, 0.91, 0.83}};
 
-  fixture->RunTest(rate_profiles, nullptr, &quality_thresholds, nullptr,
-                   nullptr);
+  fixture->RunTest(rate_profiles, nullptr, &quality_thresholds, nullptr);
 }
 
 }  // namespace test

@@ -28,14 +28,14 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
 namespace blink {
 
 class WebGLContextGroup final : public GarbageCollected<WebGLContextGroup>,
-                                public TraceWrapperBase {
+                                public NameClient {
   WTF_MAKE_NONCOPYABLE(WebGLContextGroup);
 
  public:
@@ -62,7 +62,6 @@ class WebGLContextGroup final : public GarbageCollected<WebGLContextGroup>,
   uint32_t NumberOfContextLosses() const;
 
   void Trace(blink::Visitor* visitor) { visitor->Trace(contexts_); }
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "WebGLContextGroup";
   }

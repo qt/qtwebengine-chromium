@@ -59,6 +59,7 @@ static_library("browser") {
     "form_saver.h",
     "form_saver_impl.cc",
     "form_saver_impl.h",
+    "form_submission_observer.h",
     "http_password_store_migrator.cc",
     "http_password_store_migrator.h",
     "import/csv_reader.cc",
@@ -115,6 +116,8 @@ static_library("browser") {
     "password_manager_metrics_util.h",
     "password_manager_util.cc",
     "password_manager_util.h",
+    "password_requirements_service.cc",
+    "password_requirements_service.h",
     "password_reuse_defines.h",
     "password_store.cc",
     "password_store.h",
@@ -136,8 +139,6 @@ static_library("browser") {
     "psl_matching_helper.h",
     "site_affiliation/asset_link_data.cc",
     "site_affiliation/asset_link_data.h",
-    "site_affiliation/asset_link_retriever.cc",
-    "site_affiliation/asset_link_retriever.h",
     "sql_table_builder.cc",
     "sql_table_builder.h",
     "statistics_table.cc",
@@ -148,6 +149,8 @@ static_library("browser") {
     "ui/export_flow.h",
     "ui/export_progress_status.h",
     "ui/import_flow.h",
+    "votes_uploader.cc",
+    "votes_uploader.h",
     "webdata/logins_table.cc",
     "webdata/logins_table.h",
     "webdata/logins_table_win.cc",
@@ -178,11 +181,13 @@ static_library("browser") {
   ]
   deps = [
     ":hash_password_manager",
+    ":password_hash_data",
     ":proto",
     "//base:i18n",
     "//components/autofill/core/browser",
     "//components/autofill/core/browser/proto",
     "//components/autofill/core/common",
+    "//components/favicon/core",
     "//components/keyed_service/core",
     "//components/os_crypt",
     "//components/password_manager/core/browser/form_parsing",
@@ -199,6 +204,7 @@ static_library("browser") {
     "//net",
     "//services/metrics/public/cpp:metrics_cpp",
     "//services/metrics/public/cpp:ukm_builders",
+    "//services/network/public/cpp",
     "//sql",
     "//third_party/protobuf:protobuf_lite",
     "//third_party/re2",
@@ -207,18 +213,12 @@ static_library("browser") {
     "//url",
   ]
 
-  if (password_reuse_detection_support) {
-    deps += [
-      "//components/safe_browsing:features",
-      "//components/safe_browsing/common:safe_browsing_prefs",
-    ]
-  }
-
   if (!is_ios) {
     sources += [
       "hsts_query.cc",
       "hsts_query.h",
     ]
+    deps += [ "//components/safe_browsing/common:safe_browsing_prefs" ]
   }
 
   if (is_posix && !is_mac && !is_ios) {
@@ -235,17 +235,29 @@ proto_library("proto") {
   ]
 }
 
+static_library("password_hash_data") {
+  sources = [
+    "password_hash_data.cc",
+    "password_hash_data.h",
+  ]
+  deps = [
+    "//base",
+    "//crypto",
+    "//google_apis",
+  ]
+}
+
 static_library("hash_password_manager") {
   sources = [
     "hash_password_manager.cc",
     "hash_password_manager.h",
   ]
   deps = [
+    ":password_hash_data",
     "//base:base",
     "//components/os_crypt",
     "//components/password_manager/core/common",
     "//components/prefs",
-    "//crypto",
   ]
 }
 
@@ -284,6 +296,7 @@ static_library("test_support") {
     ":browser",
     ":hash_password_manager",
     "//components/ukm",
+    "//services/network/public/cpp",
     "//testing/gmock",
     "//url:url",
   ]
@@ -366,10 +379,12 @@ source_set("unit_tests") {
     "password_form_manager_unittest.cc",
     "password_form_metrics_recorder_unittest.cc",
     "password_generation_manager_unittest.cc",
+    "password_hash_data_unittest.cc",
     "password_list_sorter_unittest.cc",
     "password_manager_metrics_recorder_unittest.cc",
     "password_manager_unittest.cc",
     "password_manager_util_unittest.cc",
+    "password_requirements_service_unittest.cc",
     "password_store_default_unittest.cc",
     "password_store_origin_unittest.h",
     "password_store_unittest.cc",
@@ -377,10 +392,11 @@ source_set("unit_tests") {
     "password_ui_utils_unittest.cc",
     "psl_matching_helper_unittest.cc",
     "site_affiliation/asset_link_data_unittest.cc",
-    "site_affiliation/asset_link_retriever_unittest.cc",
     "sql_table_builder_unittest.cc",
     "statistics_table_unittest.cc",
     "suppressed_form_fetcher_unittest.cc",
+    "vote_uploads_test_matchers.h",
+    "votes_uploader_unittest.cc",
   ]
   if (is_mac) {
     sources -= [ "password_store_default_unittest.cc" ]
@@ -403,12 +419,14 @@ source_set("unit_tests") {
 
   deps = [
     ":hash_password_manager",
+    ":password_hash_data",
     ":test_support",
     ":unit_tests_bundle_data",
     "//base/test:test_support",
     "//components/autofill/core/browser:test_support",
     "//components/autofill/core/browser/proto",
     "//components/autofill/core/common",
+    "//components/favicon/core/test:test_support",
     "//components/os_crypt",
     "//components/os_crypt:test_support",
     "//components/password_manager/core/browser:proto",
@@ -422,12 +440,16 @@ source_set("unit_tests") {
     "//components/sync:test_support_model",
     "//components/ukm:test_support",
     "//components/variations",
+    "//google_apis:google_apis",
     "//net:test_support",
     "//services/metrics/public/cpp:ukm_builders",
+    "//services/network:test_support",
+    "//services/network/public/cpp",
     "//sql:test_support",
     "//testing/gmock",
     "//testing/gtest",
     "//ui/base",
+    "//ui/gfx:test_support",
     "//url",
   ]
 

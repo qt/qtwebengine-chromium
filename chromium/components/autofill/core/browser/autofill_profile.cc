@@ -255,13 +255,13 @@ AutofillProfile::~AutofillProfile() {
 }
 
 AutofillProfile& AutofillProfile::operator=(const AutofillProfile& profile) {
+  if (this == &profile)
+    return *this;
+
   set_use_count(profile.use_count());
   set_use_date(profile.use_date());
   set_previous_use_date(profile.previous_use_date());
   set_modification_date(profile.modification_date());
-
-  if (this == &profile)
-    return *this;
 
   set_guid(profile.guid());
   set_origin(profile.origin());
@@ -404,6 +404,12 @@ bool AutofillProfile::EqualsForSyncPurposes(const AutofillProfile& profile)
          EqualsSansGuid(profile);
 }
 
+bool AutofillProfile::EqualsIncludingUsageStatsForTesting(
+    const AutofillProfile& profile) const {
+  return use_count() == profile.use_count() &&
+         use_date() == profile.use_date() && *this == profile;
+}
+
 bool AutofillProfile::operator==(const AutofillProfile& profile) const {
   return guid() == profile.guid() && EqualsSansGuid(profile);
 }
@@ -458,6 +464,30 @@ bool AutofillProfile::IsSubsetOfForFieldSet(
   }
 
   return true;
+}
+
+void AutofillProfile::OverwriteDataFrom(const AutofillProfile& profile) {
+  // Verified profiles should never be overwritten with unverified data.
+  DCHECK(!IsVerified() || profile.IsVerified());
+  DCHECK_EQ(guid(), profile.guid());
+
+  // Some fields should not got overwritten by empty values; back-up the
+  // values.
+  std::string language_code_value = language_code();
+  std::string origin_value = origin();
+  int validity_bitfield_value = GetValidityBitfieldValue();
+  base::string16 name_full_value = GetRawInfo(NAME_FULL);
+
+  *this = profile;
+
+  if (origin().empty())
+    set_origin(origin_value);
+  if (language_code().empty())
+    set_language_code(language_code_value);
+  if (GetValidityBitfieldValue() == 0)
+    SetValidityFromBitfieldValue(validity_bitfield_value);
+  if (!HasRawInfo(NAME_FULL))
+    SetRawInfo(NAME_FULL, name_full_value);
 }
 
 bool AutofillProfile::MergeDataFrom(const AutofillProfile& profile,
@@ -960,9 +990,9 @@ bool AutofillProfile::EqualsSansGuid(const AutofillProfile& profile) const {
          Compare(profile) == 0;
 }
 
-// So we can compare AutofillProfiles with EXPECT_EQ().
 std::ostream& operator<<(std::ostream& os, const AutofillProfile& profile) {
   return os << profile.guid() << " " << profile.origin() << " "
+            << UTF16ToUTF8(profile.GetRawInfo(NAME_FULL)) << " "
             << UTF16ToUTF8(profile.GetRawInfo(NAME_FIRST)) << " "
             << UTF16ToUTF8(profile.GetRawInfo(NAME_MIDDLE)) << " "
             << UTF16ToUTF8(profile.GetRawInfo(NAME_LAST)) << " "
@@ -970,6 +1000,7 @@ std::ostream& operator<<(std::ostream& os, const AutofillProfile& profile) {
             << UTF16ToUTF8(profile.GetRawInfo(COMPANY_NAME)) << " "
             << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_LINE1)) << " "
             << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_LINE2)) << " "
+            << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_LINE3)) << " "
             << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_DEPENDENT_LOCALITY))
             << " " << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_CITY)) << " "
             << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_STATE)) << " "
@@ -978,7 +1009,8 @@ std::ostream& operator<<(std::ostream& os, const AutofillProfile& profile) {
             << UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_COUNTRY)) << " "
             << profile.language_code() << " "
             << UTF16ToUTF8(profile.GetRawInfo(PHONE_HOME_WHOLE_NUMBER)) << " "
-            << profile.GetValidityBitfieldValue();
+            << profile.GetValidityBitfieldValue() << " " << profile.use_count()
+            << " " << profile.use_date();
 }
 
 }  // namespace autofill

@@ -13,12 +13,12 @@ source_set("test") {
   deps = [
     "//base",
     "//base/test:test_support",
-    "//ios/testing:ios_test_support",
     "//ios/web:web",
     "//ios/web/interstitials",
     "//ios/web/navigation:core",
     "//ios/web/public/test/http_server",
     "//ios/web/test:test_support",
+    "//ios/web/web_state:error_translation_util",
     "//testing/gtest",
     "//ui/base",
     "//url",
@@ -27,6 +27,8 @@ source_set("test") {
   allow_circular_includes_from = [ "//ios/web/test:test_support" ]
 
   sources = [
+    "element_selector.h",
+    "element_selector.mm",
     "error_test_util.h",
     "error_test_util.mm",
     "js_test_util.h",

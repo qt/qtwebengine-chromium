@@ -31,12 +31,10 @@
 #include "third_party/blink/public/platform/web_media_stream_track.h"
 #include "third_party/blink/public/platform/web_rtc_dtmf_sender_handler.h"
 #include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_track.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_dtmf_tone_change_event.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -59,9 +57,6 @@ RTCDTMFSender* RTCDTMFSender::Create(
 RTCDTMFSender::RTCDTMFSender(ExecutionContext* context,
                              std::unique_ptr<WebRTCDTMFSenderHandler> handler)
     : ContextLifecycleObserver(context),
-      track_(nullptr),
-      duration_(kDefaultToneDurationMs),
-      inter_tone_gap_(kDefaultInterToneGapMs),
       handler_(std::move(handler)),
       stopped_(false),
       scheduled_event_timer_(context->GetTaskRunner(TaskType::kNetworking),
@@ -81,14 +76,6 @@ void RTCDTMFSender::Dispose() {
 
 bool RTCDTMFSender::canInsertDTMF() const {
   return handler_->CanInsertDTMF();
-}
-
-MediaStreamTrack* RTCDTMFSender::track() const {
-  return track_.Get();
-}
-
-void RTCDTMFSender::SetTrack(MediaStreamTrack* track) {
-  track_ = track;
 }
 
 String RTCDTMFSender::toneBuffer() const {
@@ -115,7 +102,7 @@ void RTCDTMFSender::insertDTMF(const String& tones,
   // TODO(hta): Add check on transceiver's "stopped" and "currentDirection"
   // attributes
   if (!canInsertDTMF()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The 'canInsertDTMF' attribute is false: "
                                       "this sender cannot send DTMF.");
     return;
@@ -123,7 +110,7 @@ void RTCDTMFSender::insertDTMF(const String& tones,
   // Spec: Throw on illegal characters
   if (strspn(tones.Ascii().data(), "0123456789abcdABCD#*,") != tones.length()) {
     exception_state.ThrowDOMException(
-        kInvalidCharacterError,
+        DOMExceptionCode::kInvalidCharacterError,
         "Illegal characters in InsertDTMF tone argument");
     return;
   }
@@ -135,12 +122,13 @@ void RTCDTMFSender::insertDTMF(const String& tones,
   inter_tone_gap = std::max(inter_tone_gap, kMinInterToneGapMs);
   inter_tone_gap = std::min(inter_tone_gap, kMaxInterToneGapMs);
 
-  duration_ = duration;
-  inter_tone_gap_ = inter_tone_gap;
   // Spec: a-d should be represented in the tone buffer as A-D
-  if (!handler_->InsertDTMF(tones.UpperASCII(), duration_, inter_tone_gap_))
+  if (!handler_->InsertDTMF(tones.UpperASCII(), duration, inter_tone_gap)) {
     exception_state.ThrowDOMException(
-        kSyntaxError, "Could not send provided tones, '" + tones + "'.");
+        DOMExceptionCode::kSyntaxError,
+        "Could not send provided tones, '" + tones + "'.");
+    return;
+  }
 }
 
 void RTCDTMFSender::DidPlayTone(const WebString& tone) {
@@ -180,7 +168,6 @@ void RTCDTMFSender::ScheduledEventTimerFired(TimerBase*) {
 }
 
 void RTCDTMFSender::Trace(blink::Visitor* visitor) {
-  visitor->Trace(track_);
   visitor->Trace(scheduled_events_);
   EventTargetWithInlineData::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);

@@ -7,14 +7,14 @@
 #ifndef FXJS_CJS_PRINTPARAMSOBJ_H_
 #define FXJS_CJS_PRINTPARAMSOBJ_H_
 
-#include "fxjs/JS_Define.h"
+#include "fxjs/js_define.h"
 
 class CJS_PrintParamsObj : public CJS_Object {
  public:
   static int GetObjDefnID();
   static void DefineJSObjects(CFXJS_Engine* pEngine);
 
-  explicit CJS_PrintParamsObj(v8::Local<v8::Object> pObject);
+  CJS_PrintParamsObj(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
   ~CJS_PrintParamsObj() override;
 
   bool GetUI() const { return bUI; }

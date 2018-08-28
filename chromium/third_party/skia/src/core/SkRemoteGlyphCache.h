@@ -20,7 +20,6 @@
 #include "SkMakeUnique.h"
 #include "SkNoDrawCanvas.h"
 #include "SkRefCnt.h"
-#include "SkRemoteGlyphCache.h"
 #include "SkSerialProcs.h"
 #include "SkTypeface.h"
 
@@ -30,6 +29,7 @@ class SkGlyphCache;
 struct SkPackedGlyphID;
 enum SkScalerContextFlags : uint32_t;
 class SkScalerContextRecDescriptor;
+class SkStrikeCache;
 class SkTextBlobRunIterator;
 class SkTypefaceProxy;
 struct WireTypeface;
@@ -59,7 +59,13 @@ public:
         bool fContextSupportsDistanceFieldText = true;
         SkScalar fMinDistanceFieldFontSize = -1.f;
         SkScalar fMaxDistanceFieldFontSize = -1.f;
+        int fMaxTextureSize = 0;
+        size_t fMaxTextureBytes = 0u;
     };
+    SkTextBlobCacheDiffCanvas(int width, int height, const SkSurfaceProps& props,
+                              SkStrikeServer* strikeserver, Settings settings = Settings());
+
+    // TODO(khushalsagar): Remove once removed from chromium.
     SkTextBlobCacheDiffCanvas(int width, int height, const SkMatrix& deviceMatrix,
                               const SkSurfaceProps& props, SkStrikeServer* strikeserver,
                               Settings settings = Settings());
@@ -67,26 +73,11 @@ public:
 
 protected:
     SkCanvas::SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec& rec) override;
-
     void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                         const SkPaint& paint) override;
 
 private:
-    void processLooper(const SkPoint& position,
-                       const SkTextBlobRunIterator& it,
-                       const SkPaint& origPaint,
-                       SkDrawLooper* looper);
-    void processGlyphRun(const SkPoint& position,
-                         const SkTextBlobRunIterator& it,
-                         const SkPaint& runPaint);
-    void processGlyphRunForPaths(const SkTextBlobRunIterator& it, const SkPaint& runPaint);
-    void processGlyphRunForDFT(const SkTextBlobRunIterator& it, const SkPaint& runPaint,
-                               SkScalerContextFlags flags);
-
-    const SkMatrix fDeviceMatrix;
-    const SkSurfaceProps fSurfaceProps;
-    SkStrikeServer* const fStrikeServer;
-    const Settings fSettings;
+    class TrackLayerDevice;
 };
 
 using SkDiscardableHandleId = uint32_t;
@@ -138,10 +129,7 @@ public:
 
         void addGlyph(SkTypeface*, const SkScalerContextEffects&, SkPackedGlyphID, bool pathOnly);
         void writePendingGlyphs(Serializer* serializer);
-        bool has_pending_glyphs() const {
-            return !fPendingGlyphImages.empty() || !fPendingGlyphPaths.empty();
-        }
-        SkDiscardableHandleId discardable_handle_id() const { return fDiscardableHandleId; }
+        SkDiscardableHandleId discardableHandleId() const { return fDiscardableHandleId; }
         const SkDescriptor& getDeviceDescriptor() {
             return *fDeviceDescriptor;
         }
@@ -149,8 +137,12 @@ public:
         const SkDescriptor& getKeyDescriptor() {
             return *fKeyDescriptor;
         }
+        const SkGlyph& findGlyph(SkTypeface*, const SkScalerContextEffects&, SkPackedGlyphID);
 
     private:
+        bool hasPendingGlyphs() const {
+            return !fPendingGlyphImages.empty() || !fPendingGlyphPaths.empty();
+        }
         void writeGlyphPath(const SkPackedGlyphID& glyphID, Serializer* serializer) const;
 
         // The set of glyphs cached on the remote client.
@@ -171,6 +163,9 @@ public:
 
         // The context built using fDeviceDescriptor
         std::unique_ptr<SkScalerContext> fContext;
+        // FallbackTextHelper cases require glyph metrics when analyzing a glyph run, in which case
+        // we cache them here.
+        SkTHashMap<SkPackedGlyphID, SkGlyph> fGlyphMap;
     };
 
     SkGlyphCacheState* getOrCreateCache(const SkPaint&, const SkSurfaceProps*, const SkMatrix*,
@@ -189,12 +184,20 @@ private:
 
 class SK_API SkStrikeClient {
 public:
+    // This enum is used in histogram reporting in chromium. Please don't re-order the list of
+    // entries, and consider it to be append-only.
     enum CacheMissType : uint32_t {
-        kFontMetrics,
-        kGlyphMetrics,
-        kGlyphImage,
-        kGlyphPath,
-        kLast = kGlyphPath
+        // Hard failures where no fallback could be found.
+        kFontMetrics = 0,
+        kGlyphMetrics = 1,
+        kGlyphImage = 2,
+        kGlyphPath = 3,
+
+        // The original glyph could not be found and a fallback was used.
+        kGlyphMetricsFallback = 4,
+        kGlyphPathFallback = 5,
+
+        kLast = kGlyphPathFallback
     };
 
     // An interface to delete handles that may be pinned by the remote server.
@@ -206,10 +209,12 @@ public:
         // successful, subsequent attempts to delete the same handle are invalid.
         virtual bool deleteHandle(SkDiscardableHandleId) = 0;
 
-        virtual void NotifyCacheMiss(CacheMissType) {}
+        virtual void notifyCacheMiss(CacheMissType) {}
     };
 
-    SkStrikeClient(sk_sp<DiscardableHandleManager>);
+    SkStrikeClient(sk_sp<DiscardableHandleManager>,
+                   bool isLogging = true,
+                   SkStrikeCache* strikeCache = nullptr);
     ~SkStrikeClient();
 
     // Deserializes the typeface previously serialized using the SkStrikeServer. Returns null if the
@@ -229,6 +234,8 @@ private:
 
     SkTHashMap<SkFontID, sk_sp<SkTypeface>> fRemoteFontIdToTypeface;
     sk_sp<DiscardableHandleManager> fDiscardableHandleManager;
+    SkStrikeCache* const fStrikeCache;
+    const bool fIsLogging;
 };
 
 #endif  // SkRemoteGlyphCache_DEFINED

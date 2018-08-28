@@ -41,6 +41,7 @@ namespace blink {
 class DOMWrapperWorld;
 class EventTarget;
 class ScriptState;
+class ScriptValue;
 
 class CORE_EXPORT Event : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
@@ -176,7 +177,6 @@ class CORE_EXPORT Event : public ScriptWrappable {
   virtual bool IsTouchEvent() const;
   virtual bool IsGestureEvent() const;
   virtual bool IsWheelEvent() const;
-  virtual bool IsRelatedEvent() const;
   virtual bool IsPointerEvent() const;
   virtual bool IsInputEvent() const;
   virtual bool IsCompositionEvent() const;

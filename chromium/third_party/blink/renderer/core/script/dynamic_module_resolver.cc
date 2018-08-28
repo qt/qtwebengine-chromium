@@ -5,12 +5,13 @@
 #include "third_party/blink/renderer/core/script/dynamic_module_resolver.h"
 
 #include "third_party/blink/public/platform/web_url_request.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/referrer_script_info.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_fetch_request.h"
+#include "third_party/blink/renderer/core/script/fetch_client_settings_object_snapshot.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/script/module_script.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
 #include "v8/include/v8.h"
 
@@ -174,7 +175,7 @@ void DynamicModuleResolver::ResolveDynamically(
   }
   DCHECK(!base_url.IsNull());
 
-  KURL url = Modulator::ResolveModuleSpecifier(specifier, base_url);
+  KURL url = modulator_->ResolveModuleSpecifier(specifier, base_url);
   if (!url.IsValid()) {
     // Step 2.2.1. "If the result is failure, then:" [spec text]
     // Step 2.2.2.1. "Let completion be Completion { [[Type]]: throw, [[Value]]:
@@ -206,15 +207,22 @@ void DynamicModuleResolver::ResolveDynamically(
   // string.</spec>
   ScriptFetchOptions options(referrer_info.Nonce(), IntegrityMetadataSet(),
                              String(), referrer_info.ParserState(),
-                             referrer_info.CredentialsMode());
+                             referrer_info.CredentialsMode(),
+                             referrer_info.GetReferrerPolicy());
 
   // Step 2.4. "Fetch a module script graph given url, settings object,
   // "script", and options. Wait until the algorithm asynchronously completes
   // with result."
   auto* tree_client =
       DynamicImportTreeClient::Create(url, modulator_.Get(), promise_resolver);
-  modulator_->FetchTree(url, WebURLRequest::kRequestContextScript, options,
-                        tree_client);
+  // TODO(kouhei): ExecutionContext::From(modulator_->GetScriptState()) is
+  // highly discouraged since it breaks layering. Rewrite this.
+  auto* execution_context =
+      ExecutionContext::From(modulator_->GetScriptState());
+  modulator_->FetchTree(
+      url, new FetchClientSettingsObjectSnapshot(*execution_context),
+      WebURLRequest::kRequestContextScript, options,
+      ModuleScriptCustomFetchType::kNone, tree_client);
 
   // Steps 2.[5-8] are implemented at
   // DynamicImportTreeClient::NotifyModuleLoadFinished.

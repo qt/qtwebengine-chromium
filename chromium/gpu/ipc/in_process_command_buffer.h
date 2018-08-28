@@ -17,25 +17,23 @@
 #include "base/compiler_specific.h"
 #include "base/containers/queue.h"
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/threading/thread.h"
 #include "gpu/command_buffer/client/gpu_control.h"
-#include "gpu/command_buffer/common/activity_flags.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/context_result.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/decoder_client.h"
 #include "gpu/command_buffer/service/decoder_context.h"
-#include "gpu/command_buffer/service/gpu_preferences.h"
-#include "gpu/command_buffer/service/image_manager.h"
+#include "gpu/command_buffer/service/gr_cache_controller.h"
 #include "gpu/command_buffer/service/service_discardable_manager.h"
 #include "gpu/command_buffer/service/service_transfer_cache.h"
 #include "gpu/config/gpu_feature_info.h"
+#include "gpu/config/gpu_preferences.h"
 #include "gpu/ipc/gl_in_process_context_export.h"
 #include "gpu/ipc/service/image_transport_surface_delegate.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -50,7 +48,6 @@ class SequenceChecker;
 namespace gl {
 class GLContext;
 class GLShareGroup;
-class GLSurface;
 }
 
 namespace gfx {
@@ -59,26 +56,15 @@ class Size;
 }
 
 namespace gpu {
-
-struct ContextCreationAttribs;
-class MailboxManager;
-class ServiceDiscardableManager;
-class SyncPointClientState;
-class SyncPointOrderData;
-class SyncPointManager;
-struct SwapBuffersCompleteParams;
-
-namespace gles2 {
-class FramebufferCompletenessCache;
-class Outputter;
-class ProgramCache;
-class ShaderTranslatorCache;
-}
-
 class GpuChannelManagerDelegate;
+class CommandBufferTaskExecutor;
 class GpuMemoryBufferManager;
 class ImageFactory;
+class SyncPointClientState;
+class SyncPointOrderData;
 class TransferBufferManager;
+struct ContextCreationAttribs;
+struct SwapBuffersCompleteParams;
 
 // This class provides a thread-safe interface to the global GPU service (for
 // example GPU thread) when being run in single process mode.
@@ -91,9 +77,8 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
       public DecoderClient,
       public ImageTransportSurfaceDelegate {
  public:
-  class Service;
-
-  explicit InProcessCommandBuffer(const scoped_refptr<Service>& service);
+  explicit InProcessCommandBuffer(
+      scoped_refptr<CommandBufferTaskExecutor> task_executer);
   ~InProcessCommandBuffer() override;
 
   // If |surface| is not null, use it directly; in this case, the command
@@ -149,7 +134,6 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
                        base::OnceClosure callback) override;
   void WaitSyncTokenHint(const SyncToken& sync_token) override;
   bool CanWaitUnverifiedSyncToken(const SyncToken& sync_token) override;
-  void SetSnapshotRequested() override;
 
   // CommandBufferServiceClient implementation:
   CommandBatchProcessedResult OnCommandBatchProcessed() override;
@@ -163,6 +147,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   void OnDescheduleUntilFinished() override;
   void OnRescheduleAfterFinished() override;
   void OnSwapBuffers(uint64_t swap_id, uint32_t flags) override;
+  void ScheduleGrContextCleanup() override;
 
 // ImageTransportSurfaceDelegate implementation:
 #if defined(OS_WIN)
@@ -174,7 +159,6 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   const gles2::FeatureInfo* GetFeatureInfo() const override;
   const GpuPreferences& GetGpuPreferences() const override;
 
-  void SetSnapshotRequestedCallback(const base::Closure& callback) override;
   void BufferPresented(const gfx::PresentationFeedback& feedback) override;
 
   void AddFilter(IPC::MessageFilter* message_filter) override;
@@ -201,65 +185,13 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
       const GpuFeatureInfo& gpu_feature_info);
 
   gpu::ServiceTransferCache* GetTransferCacheForTest() const;
+  int GetRasterDecoderIdForTest() const;
 
-  static const int kGpuMemoryBufferClientId;
+  static const int kGpuClientId;
 
-  // The serializer interface to the GPU service (i.e. thread).
-  class Service {
-   public:
-    Service(const GpuPreferences& gpu_preferences,
-            MailboxManager* mailbox_manager,
-            scoped_refptr<gl::GLShareGroup> share_group,
-            const GpuFeatureInfo& gpu_feature_info);
-
-    virtual ~Service();
-
-    virtual void AddRef() const = 0;
-    virtual void Release() const = 0;
-
-    // Queues a task to run as soon as possible.
-    virtual void ScheduleTask(base::OnceClosure task) = 0;
-
-    // Schedules |callback| to run at an appropriate time for performing delayed
-    // work.
-    virtual void ScheduleDelayedWork(base::OnceClosure task) = 0;
-
-    virtual bool ForceVirtualizedGLContexts() = 0;
-    virtual SyncPointManager* sync_point_manager() = 0;
-    virtual bool BlockThreadOnWaitSyncToken() const = 0;
-
-    const GpuPreferences& gpu_preferences();
-    const GpuFeatureInfo& gpu_feature_info() { return gpu_feature_info_; }
-    scoped_refptr<gl::GLShareGroup> share_group();
-    MailboxManager* mailbox_manager() { return mailbox_manager_; }
-    gles2::Outputter* outputter();
-    gles2::ProgramCache* program_cache();
-    gles2::ImageManager* image_manager() { return &image_manager_; }
-    ServiceDiscardableManager* discardable_manager() {
-      return &discardable_manager_;
-    }
-    gles2::ShaderTranslatorCache* shader_translator_cache() {
-      return &shader_translator_cache_;
-    }
-    gles2::FramebufferCompletenessCache* framebuffer_completeness_cache() {
-      return &framebuffer_completeness_cache_;
-    }
-
-   protected:
-    const GpuPreferences gpu_preferences_;
-    const GpuFeatureInfo gpu_feature_info_;
-    std::unique_ptr<MailboxManager> owned_mailbox_manager_;
-    MailboxManager* mailbox_manager_ = nullptr;
-    std::unique_ptr<gles2::Outputter> outputter_;
-    scoped_refptr<gl::GLShareGroup> share_group_;
-    std::unique_ptr<gles2::ProgramCache> program_cache_;
-    // No-op default initialization is used in in-process mode.
-    GpuProcessActivityFlags activity_flags_;
-    gles2::ImageManager image_manager_;
-    ServiceDiscardableManager discardable_manager_;
-    gles2::ShaderTranslatorCache shader_translator_cache_;
-    gles2::FramebufferCompletenessCache framebuffer_completeness_cache_;
-  };
+  CommandBufferTaskExecutor* service_for_testing() const {
+    return task_executor_.get();
+  }
 
  private:
   struct InitializeOnGpuThreadParams {
@@ -288,7 +220,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
       const InitializeOnGpuThreadParams& params);
   void Destroy();
   bool DestroyOnGpuThread();
-  void FlushOnGpuThread(int32_t put_offset, bool snapshot_requested);
+  void FlushOnGpuThread(int32_t put_offset);
   void UpdateLastStateOnGpuThread();
   void ScheduleDelayedWorkOnGpuThread();
   bool MakeCurrent();
@@ -305,7 +237,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   void SignalQueryOnGpuThread(unsigned query_id, base::OnceClosure callback);
   void DestroyTransferBufferOnGpuThread(int32_t id);
   void CreateImageOnGpuThread(int32_t id,
-                              const gfx::GpuMemoryBufferHandle& handle,
+                              gfx::GpuMemoryBufferHandle handle,
                               const gfx::Size& size,
                               gfx::BufferFormat format,
                               uint32_t internalformat,
@@ -335,18 +267,15 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   scoped_refptr<base::SingleThreadTaskRunner> origin_task_runner_;
   std::unique_ptr<TransferBufferManager> transfer_buffer_manager_;
   std::unique_ptr<DecoderContext> decoder_;
+  base::Optional<raster::GrCacheController> gr_cache_controller_;
   scoped_refptr<gl::GLContext> context_;
   scoped_refptr<gl::GLSurface> surface_;
   scoped_refptr<SyncPointOrderData> sync_point_order_data_;
   scoped_refptr<SyncPointClientState> sync_point_client_state_;
-  base::Closure context_lost_callback_;
   // Used to throttle PerformDelayedWorkOnGpuThread.
   bool delayed_work_pending_ = false;
   ImageFactory* image_factory_ = nullptr;
   GpuChannelManagerDelegate* gpu_channel_manager_delegate_ = nullptr;
-
-  base::Closure snapshot_requested_callback_;
-  bool snapshot_requested_ = false;
 
   // Members accessed on the client thread:
   GpuControlClient* gpu_control_client_ = nullptr;
@@ -365,7 +294,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   std::unique_ptr<CommandBufferService> command_buffer_;
   base::Lock command_buffer_lock_;
   base::WaitableEvent flush_event_;
-  scoped_refptr<Service> service_;
+  scoped_refptr<CommandBufferTaskExecutor> task_executor_;
 
   // The group of contexts that share namespaces with this context.
   scoped_refptr<gles2::ContextGroup> context_group_;

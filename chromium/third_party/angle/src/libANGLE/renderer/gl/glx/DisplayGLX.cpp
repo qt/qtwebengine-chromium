@@ -18,6 +18,7 @@
 #include "libANGLE/Context.h"
 #include "libANGLE/Display.h"
 #include "libANGLE/Surface.h"
+#include "libANGLE/renderer/gl/ContextGL.h"
 #include "libANGLE/renderer/gl/RendererGL.h"
 #include "libANGLE/renderer/gl/glx/PbufferSurfaceGLX.h"
 #include "libANGLE/renderer/gl/glx/WindowSurfaceGLX.h"
@@ -59,7 +60,6 @@ class FunctionsGLGLX : public FunctionsGL
 
 DisplayGLX::DisplayGLX(const egl::DisplayState &state)
     : DisplayGL(state),
-      mFunctionsGL(nullptr),
       mRequestedVisual(-1),
       mContextConfig(nullptr),
       mContext(nullptr),
@@ -291,13 +291,13 @@ egl::Error DisplayGLX::initialize(egl::Display *display)
         return egl::EglNotInitialized() << "Could not make the dummy pbuffer current.";
     }
 
-    mFunctionsGL = new FunctionsGLGLX(mGLX.getProc);
-    mFunctionsGL->initialize(eglAttributes);
+    std::unique_ptr<FunctionsGL> functionsGL(new FunctionsGLGLX(mGLX.getProc));
+    functionsGL->initialize(eglAttributes);
 
     // TODO(cwallez, angleproject:1303) Disable the OpenGL ES backend on Linux NVIDIA and Intel as
     // it has problems on our automated testing. An OpenGL ES backend might not trigger this test if
     // there is no Desktop OpenGL support, but that's not the case in our automated testing.
-    VendorID vendor = GetVendorID(mFunctionsGL);
+    VendorID vendor = GetVendorID(functionsGL.get());
     bool isOpenGLES =
         eglAttributes.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE) ==
         EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE;
@@ -307,6 +307,13 @@ egl::Error DisplayGLX::initialize(egl::Display *display)
     }
 
     syncXCommands();
+
+    mRenderer.reset(new RendererGL(std::move(functionsGL), eglAttributes));
+    const gl::Version &maxVersion = mRenderer->getMaxSupportedESVersion();
+    if (maxVersion < gl::Version(2, 0))
+    {
+        return egl::EglNotInitialized() << "OpenGL ES 2.0 is not supportable.";
+    }
 
     return DisplayGL::initialize(display);
 }
@@ -329,7 +336,7 @@ void DisplayGLX::terminate()
 
     mGLX.terminate();
 
-    SafeDelete(mFunctionsGL);
+    mRenderer.reset();
 
     if (mUsesNewXDisplay)
     {
@@ -395,6 +402,14 @@ SurfaceImpl *DisplayGLX::createPixmapSurface(const egl::SurfaceState &state,
 {
     UNIMPLEMENTED();
     return nullptr;
+}
+
+ContextImpl *DisplayGLX::createContext(const gl::ContextState &state,
+                                       const egl::Config *configuration,
+                                       const gl::Context *shareContext,
+                                       const egl::AttributeMap &attribs)
+{
+    return new ContextGL(state, mRenderer);
 }
 
 DeviceImpl *DisplayGLX::createDevice()
@@ -654,7 +669,7 @@ bool DisplayGLX::testDeviceLost()
 {
     if (mHasARBCreateContextRobustness)
     {
-        return getRenderer()->getResetStatus() != GL_NO_ERROR;
+        return mRenderer->getResetStatus() != GL_NO_ERROR;
     }
 
     return false;
@@ -693,13 +708,13 @@ std::string DisplayGLX::getVendorString() const
     return "";
 }
 
-egl::Error DisplayGLX::waitClient(const gl::Context *context) const
+egl::Error DisplayGLX::waitClient(const gl::Context *context)
 {
     mGLX.waitGL();
     return egl::NoError();
 }
 
-egl::Error DisplayGLX::waitNative(const gl::Context *context, EGLint engine) const
+egl::Error DisplayGLX::waitNative(const gl::Context *context, EGLint engine)
 {
     // eglWaitNative is used to notice the driver of changes in X11 for the current surface, such as
     // changes of the window size. We use this event to update the child window of WindowSurfaceGLX
@@ -724,6 +739,11 @@ egl::Error DisplayGLX::waitNative(const gl::Context *context, EGLint engine) con
     // We still need to forward the resizing of the child window to the driver.
     mGLX.waitX();
     return egl::NoError();
+}
+
+gl::Version DisplayGLX::getMaxSupportedESVersion() const
+{
+    return mRenderer->getMaxSupportedESVersion();
 }
 
 void DisplayGLX::syncXCommands() const
@@ -780,11 +800,6 @@ void DisplayGLX::setSwapInterval(glx::Drawable drawable, SwapControlData *data)
 bool DisplayGLX::isValidWindowVisualId(unsigned long visualId) const
 {
     return mRequestedVisual == -1 || static_cast<unsigned long>(mRequestedVisual) == visualId;
-}
-
-const FunctionsGL *DisplayGLX::getFunctionsGL() const
-{
-    return mFunctionsGL;
 }
 
 void DisplayGLX::generateExtensions(egl::DisplayExtensions *outExtensions) const

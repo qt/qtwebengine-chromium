@@ -556,9 +556,14 @@ class CrossOriginReadBlocking::ResponseAnalyzer::FetchOnlyResourceSniffer
 
 CrossOriginReadBlocking::ResponseAnalyzer::ResponseAnalyzer(
     const net::URLRequest& request,
-    const ResourceResponse& response) {
+    const ResourceResponse& response,
+    base::StringPiece excluded_initiator_scheme) {
   content_length_ = response.head.content_length;
-  should_block_based_on_headers_ = ShouldBlockBasedOnHeaders(request, response);
+  http_response_code_ =
+      response.head.headers ? response.head.headers->response_code() : 0;
+
+  should_block_based_on_headers_ =
+      ShouldBlockBasedOnHeaders(request, response, excluded_initiator_scheme);
   if (should_block_based_on_headers_ == kNeedToSniffMore)
     CreateSniffers();
 }
@@ -568,7 +573,8 @@ CrossOriginReadBlocking::ResponseAnalyzer::~ResponseAnalyzer() = default;
 CrossOriginReadBlocking::ResponseAnalyzer::BlockingDecision
 CrossOriginReadBlocking::ResponseAnalyzer::ShouldBlockBasedOnHeaders(
     const net::URLRequest& request,
-    const ResourceResponse& response) {
+    const ResourceResponse& response,
+    base::StringPiece excluded_initiator_scheme) {
   // The checks in this method are ordered to rule out blocking in most cases as
   // quickly as possible.  Checks that are likely to lead to returning false or
   // that are inexpensive should be near the top.
@@ -595,6 +601,14 @@ CrossOriginReadBlocking::ResponseAnalyzer::ShouldBlockBasedOnHeaders(
   // preference is set.  See https://crbug.com/789781.
   if (initiator.scheme() == url::kFileScheme)
     return kAllow;
+
+  // Give embedder a chance to skip document blocking of some initiator schemes
+  // (e.g. chrome-extension to avoid blocking requests initiated by content
+  // scripts).
+  if (!excluded_initiator_scheme.empty() &&
+      initiator.scheme() == excluded_initiator_scheme) {
+    return kAllow;
+  }
 
   // Allow the response through if it has valid CORS headers.
   std::string cors_header;
@@ -778,7 +792,7 @@ void CrossOriginReadBlocking::ResponseAnalyzer::SniffResponseBody(
   }
 }
 
-bool CrossOriginReadBlocking::ResponseAnalyzer::should_allow() const {
+bool CrossOriginReadBlocking::ResponseAnalyzer::ShouldAllow() const {
   switch (should_block_based_on_headers_) {
     case kAllow:
       return true;
@@ -789,7 +803,7 @@ bool CrossOriginReadBlocking::ResponseAnalyzer::should_allow() const {
   }
 }
 
-bool CrossOriginReadBlocking::ResponseAnalyzer::should_block() const {
+bool CrossOriginReadBlocking::ResponseAnalyzer::ShouldBlock() const {
   switch (should_block_based_on_headers_) {
     case kAllow:
       return false;
@@ -798,6 +812,27 @@ bool CrossOriginReadBlocking::ResponseAnalyzer::should_block() const {
     case kBlock:
       return true;
   }
+}
+
+bool CrossOriginReadBlocking::ResponseAnalyzer::ShouldReportBlockedResponse()
+    const {
+  if (!ShouldBlock())
+    return false;
+
+  // Don't bother showing a warning message when blocking responses that are
+  // already empty.
+  if (content_length() == 0)
+    return false;
+  if (http_response_code() == 204)
+    return false;
+
+  // Don't bother showing a warning message when blocking responses that are
+  // associated with error responses (e.g. it is quite common to serve a
+  // text/html 404 error page for an <img> tag pointing to a wrong URL).
+  if (400 <= http_response_code() && http_response_code() <= 599)
+    return false;
+
+  return true;
 }
 
 void CrossOriginReadBlocking::ResponseAnalyzer::LogBytesReadForSniffing() {
@@ -810,15 +845,15 @@ void CrossOriginReadBlocking::ResponseAnalyzer::LogBytesReadForSniffing() {
 void CrossOriginReadBlocking::ResponseAnalyzer::LogAllowedResponse() {
   // Note that if a response is allowed because of hitting EOF or
   // kMaxBytesToSniff, then |sniffers_| are not emptied and consequently
-  // should_allow doesn't start returning true.  This means that we can't
-  // DCHECK(should_allow()) or DCHECK(sniffers_.empty()) here - the decision to
+  // ShouldAllow doesn't start returning true.  This means that we can't
+  // DCHECK(ShouldAllow()) or DCHECK(sniffers_.empty()) here - the decision to
   // allow the response could have been made in the
   // CrossSiteDocumentResourceHandler layer without CrossOriginReadBlocking
   // realizing that it has hit EOF or kMaxBytesToSniff.
 
-  // Note that the response might be allowed even if should_block() returns true
+  // Note that the response might be allowed even if ShouldBlock() returns true
   // - for example to allow responses to requests initiated by content scripts.
-  // This means that we cannot DCHECK(!should_block()) here.
+  // This means that we cannot DCHECK(!ShouldBlock()) here.
 
   CrossOriginReadBlocking::LogAction(
       needs_sniffing()
@@ -829,8 +864,8 @@ void CrossOriginReadBlocking::ResponseAnalyzer::LogAllowedResponse() {
 }
 
 void CrossOriginReadBlocking::ResponseAnalyzer::LogBlockedResponse() {
-  DCHECK(!should_allow());
-  DCHECK(should_block());
+  DCHECK(!ShouldAllow());
+  DCHECK(ShouldBlock());
   DCHECK(sniffers_.empty());
 
   CrossOriginReadBlocking::LogAction(

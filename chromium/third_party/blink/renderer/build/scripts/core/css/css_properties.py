@@ -3,15 +3,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import json5_generator
-from name_utilities import (
-    upper_camel_case,
-    lower_camel_case,
-    enum_value_name,
-    enum_for_css_property,
-    enum_for_css_property_alias
-)
+from blinkbuild.name_style_converter import NameStyleConverter
 from core.css.field_alias_expander import FieldAliasExpander
+import json5_generator
+from name_utilities import enum_for_css_property, enum_for_css_property_alias
 
 
 # These values are converted using CSSPrimitiveValue in the setter function,
@@ -122,9 +117,9 @@ class CSSProperties(object):
             # This order must match the order in CSSPropertyPriority.h.
             priority_numbers = {'Animation': 0, 'High': 1, 'Low': 2}
             priority = priority_numbers[property_['priority']]
-            name_without_leading_dash = property_['name']
-            if property_['name'].startswith('-'):
-                name_without_leading_dash = property_['name'][1:]
+            name_without_leading_dash = property_['name'].original
+            if name_without_leading_dash.startswith('-'):
+                name_without_leading_dash = name_without_leading_dash[1:]
             property_['sorting_key'] = (priority, name_without_leading_dash)
 
         sorting_keys = {}
@@ -134,8 +129,8 @@ class CSSProperties(object):
                 ('Collision detected - two properties have the same name and '
                  'priority, a potentially non-deterministic ordering can '
                  'occur: {}, {} and {}'.format(
-                     key, property_['name'], sorting_keys[key]))
-            sorting_keys[key] = property_['name']
+                     key, property_['name'].original, sorting_keys[key]))
+            sorting_keys[key] = property_['name'].original
         self._longhands.sort(key=lambda p: p['sorting_key'])
         self._shorthands.sort(key=lambda p: p['sorting_key'])
 
@@ -164,13 +159,11 @@ class CSSProperties(object):
             updated_alias = aliased_property.copy()
             updated_alias['name'] = alias['name']
             updated_alias['alias_for'] = alias['alias_for']
-            updated_alias['aliased_property'] = aliased_property['upper_camel_name']
+            updated_alias['aliased_property'] = aliased_property['name'].to_upper_camel_case()
             updated_alias['property_id'] = enum_for_css_property_alias(
                 alias['name'])
             updated_alias['enum_value'] = aliased_property['enum_value'] + \
                 self._alias_offset
-            updated_alias['upper_camel_name'] = upper_camel_case(alias['name'])
-            updated_alias['lower_camel_name'] = lower_camel_case(alias['name'])
             self._aliases[i] = updated_alias
 
     def expand_parameters(self, property_):
@@ -179,27 +172,26 @@ class CSSProperties(object):
                 property_[key] = value
 
         # Basic info.
-        property_['property_id'] = enum_for_css_property(property_['name'])
-        property_['upper_camel_name'] = upper_camel_case(property_['name'])
-        property_['lower_camel_name'] = lower_camel_case(property_['name'])
-        property_['is_internal'] = property_['name'].startswith('-internal-')
-        name = property_['name_for_methods']
-        if not name:
-            name = upper_camel_case(property_['name']).replace('Webkit', '')
+        name = property_['name']
+        property_['property_id'] = enum_for_css_property(name)
+        property_['is_internal'] = name.original.startswith('-internal-')
+        method_name = property_['name_for_methods']
+        if not method_name:
+            method_name = name.to_upper_camel_case().replace('Webkit', '')
         set_if_none(property_, 'inherited', False)
 
         # Initial function, Getters and Setters for ComputedStyle.
-        property_['initial'] = 'Initial' + name
+        property_['initial'] = 'Initial' + method_name
         simple_type_name = str(property_['type_name']).split('::')[-1]
-        set_if_none(property_, 'name_for_methods', name)
-        set_if_none(property_, 'type_name', 'E' + name)
+        set_if_none(property_, 'name_for_methods', method_name)
+        set_if_none(property_, 'type_name', 'E' + method_name)
         set_if_none(
             property_,
             'getter',
-            name if simple_type_name != name else 'Get' + name)
-        set_if_none(property_, 'setter', 'Set' + name)
+            method_name if simple_type_name != method_name else 'Get' + method_name)
+        set_if_none(property_, 'setter', 'Set' + method_name)
         if property_['inherited']:
-            property_['is_inherited_setter'] = 'Set' + name + 'IsInherited'
+            property_['is_inherited_setter'] = 'Set' + method_name + 'IsInherited'
 
         # Figure out whether we should generate style builder implementations.
         for x in ['initial', 'inherit', 'value']:
@@ -219,8 +211,8 @@ class CSSProperties(object):
             type_name = property_['type_name']
             if (property_['field_template'] == 'keyword' or
                     property_['field_template'] == 'multi_keyword'):
-                default_value = type_name + '::' + \
-                    enum_value_name(property_['default_value'])
+                default_value = (type_name + '::' + NameStyleConverter(
+                    property_['default_value']).to_enum_value())
             elif (property_['field_template'] == 'external' or
                   property_['field_template'] == 'primitive' or
                   property_['field_template'] == 'pointer'):
@@ -244,6 +236,9 @@ class CSSProperties(object):
         set_if_none(property_, 'custom_copy', False)
         set_if_none(property_, 'custom_compare', False)
         set_if_none(property_, 'mutable', False)
+
+        if property_['direction_aware_options'] and not property_['style_builder_template']:
+            property_['style_builder_template'] = 'direction_aware'
 
     @property
     def default_parameters(self):

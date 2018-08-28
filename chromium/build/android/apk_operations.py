@@ -17,6 +17,8 @@ import random
 import re
 import shlex
 import sys
+import tempfile
+import textwrap
 
 import devil_chromium
 from devil import devil_env
@@ -36,6 +38,7 @@ with devil_env.SysPath(os.path.join(os.path.dirname(__file__), '..', '..',
 from incremental_install import installer
 from pylib import constants
 from pylib.symbols import deobfuscator
+from pylib.utils import simpleperf
 
 
 # Matches messages only on pre-L (Dalvik) that are spammy and unimportant.
@@ -164,7 +167,7 @@ def _TargetCpuToTargetArch(target_cpu):
 
 
 def _RunGdb(device, package_name, debug_process_name, pid, output_directory,
-            target_cpu, extra_args, verbose):
+            target_cpu, port, ide, verbose):
   if not pid:
     debug_process_name = _NormalizeProcessName(debug_process_name, package_name)
     pid = device.GetApplicationPids(debug_process_name, at_most_one=True)
@@ -183,16 +186,15 @@ def _RunGdb(device, package_name, debug_process_name, pid, output_directory,
       '--adb=%s' % adb_wrapper.AdbWrapper.GetAdbPath(),
       '--device=%s' % device.serial,
       '--pid=%s' % pid,
-      # Use one lib dir per device so that changing between devices does require
-      # refetching the device libs.
-      '--pull-libs-dir=/tmp/adb-gdb-libs-%s' % device.serial,
+      '--port=%d' % port,
   ]
+  if ide:
+    cmd.append('--ide')
   # Enable verbose output of adb_gdb if it's set for this script.
   if verbose:
     cmd.append('--verbose')
   if target_cpu:
     cmd.append('--target-arch=%s' % _TargetCpuToTargetArch(target_cpu))
-  cmd.extend(extra_args)
   logging.warning('Running: %s', ' '.join(pipes.quote(x) for x in cmd))
   print _Colorize(
       'All subsequent output is from adb_gdb script.', colorama.Fore.YELLOW)
@@ -627,10 +629,40 @@ def _RunCompileDex(devices, package_name, compilation_filter):
   cmd = ['cmd', 'package', 'compile', '-f', '-m', compilation_filter,
          package_name]
   parallel_devices = device_utils.DeviceUtils.parallel(devices)
-  outputs = parallel_devices.RunShellCommand(cmd).pGet(None)
+  outputs = parallel_devices.RunShellCommand(cmd, timeout=120).pGet(None)
   for output in _PrintPerDeviceOutput(devices, outputs):
     for line in output:
       print line
+
+
+def _RunProfile(device, package_name, host_build_directory, pprof_out_path,
+                process_specifier, thread_specifier, extra_args):
+  simpleperf.PrepareDevice(device)
+  device_simpleperf_path = simpleperf.InstallSimpleperf(device, package_name)
+  with tempfile.NamedTemporaryFile() as fh:
+    host_simpleperf_out_path = fh.name
+
+    with simpleperf.RunSimpleperf(device, device_simpleperf_path, package_name,
+                                  process_specifier, thread_specifier,
+                                  extra_args, host_simpleperf_out_path):
+      sys.stdout.write('Profiler is running; press Enter to stop...')
+      sys.stdin.read(1)
+      sys.stdout.write('Post-processing data...')
+      sys.stdout.flush()
+
+    simpleperf.ConvertSimpleperfToPprof(host_simpleperf_out_path,
+                                        host_build_directory, pprof_out_path)
+    print textwrap.dedent("""
+        Profile data written to %(s)s.
+
+        To view profile as a call graph in browser:
+          pprof -web %(s)s
+
+        To print the hottest methods:
+          pprof -top %(s)s
+
+        pprof has many useful customization options; `pprof --help` for details.
+        """ % {'s': pprof_out_path})
 
 
 def _GenerateAvailableDevicesMessage(devices):
@@ -811,7 +843,16 @@ class _Command(object):
         if not args.all and not args.devices:
           self._parser.error(_GenerateMissingAllFlagMessage(devices))
 
+      incremental_apk_exists = False
+
       if self.supports_incremental:
+        if args.incremental_json:
+          with open(args.incremental_json) as f:
+            install_dict = json.load(f)
+            apk_path = os.path.join(args.output_directory,
+                                    install_dict['apk_path'])
+            incremental_apk_exists = os.path.exists(apk_path)
+
         if args.incremental and args.non_incremental:
           self._parser.error('Must use only one of --incremental and '
                              '--non-incremental')
@@ -820,21 +861,17 @@ class _Command(object):
             self._parser.error('Apk has not been built.')
           args.incremental_json = None
         elif args.incremental:
-          if not args.incremental_json:
+          if not (args.incremental_json and incremental_apk_exists):
             self._parser.error('Incremental apk has not been built.')
           args.apk_path = None
 
-        if args.apk_path and args.incremental_json:
+        if args.apk_path and args.incremental_json and incremental_apk_exists:
           self._parser.error('Both incremental and non-incremental apks exist. '
                              'Select using --incremental or --non-incremental')
 
       if self.needs_apk_path or args.apk_path or args.incremental_json:
         if args.incremental_json:
-          with open(args.incremental_json) as f:
-            install_dict = json.load(f)
-          apk_path = os.path.join(args.output_directory,
-                                  install_dict['apk_path'])
-          if os.path.exists(apk_path):
+          if incremental_apk_exists:
             self.install_dict = install_dict
             self.apk_helper = apk_helper.ToHelper(
                 os.path.join(args.output_directory,
@@ -967,16 +1004,14 @@ If no apk process is currently running, sends a launch intent.
 """
   needs_package_name = True
   needs_output_directory = True
-  accepts_args = True
   calls_exec = True
   supports_multiple_devices = False
 
   def Run(self):
-    extra_args = shlex.split(self.args.args or '')
     _RunGdb(self.devices[0], self.args.package_name,
             self.args.debug_process_name, self.args.pid,
-            self.args.output_directory, self.args.target_cpu, extra_args,
-            bool(self.args.verbose_count))
+            self.args.output_directory, self.args.target_cpu, self.args.port,
+            self.args.ide, bool(self.args.verbose_count))
 
   def _RegisterExtraArgs(self, group):
     pid_group = group.add_mutually_exclusive_group()
@@ -986,6 +1021,13 @@ If no apk process is currently running, sends a launch intent.
     pid_group.add_argument('--pid',
                            help='The process ID to attach to. Defaults to '
                                 'the main process for the package.')
+    group.add_argument('--ide', action='store_true',
+                       help='Rather than enter a gdb prompt, set up the '
+                            'gdb connection and wait for an IDE to '
+                            'connect.')
+    # Same default port that ndk-gdb.py uses.
+    group.add_argument('--port', type=int, default=5039,
+                       help='Use the given port for the GDB connection')
 
 
 class _LogcatCommand(_Command):
@@ -1111,6 +1153,44 @@ class _CompileDexCommand(_Command):
                    self.args.compilation_filter)
 
 
+class _ProfileCommand(_Command):
+  name = 'profile'
+  description = ('Run the simpleperf sampling CPU profiler on the currently-'
+                 'running APK. If --args is used, the extra arguments will be '
+                 'passed on to simpleperf; otherwise, the following default '
+                 'arguments are used: -g -f 1000 -o /data/local/tmp/perf.data')
+  needs_package_name = True
+  needs_output_directory = True
+  supports_multiple_devices = False
+  accepts_args = True
+
+  def _RegisterExtraArgs(self, group):
+    group.add_argument(
+        '--profile-process', default='browser',
+        help=('Which process to profile. This may be a process name or pid '
+              'such as you would get from running `%s ps`; or '
+              'it can be one of (browser, renderer, gpu).' % sys.argv[0]))
+    group.add_argument(
+        '--profile-thread', default=None,
+        help=('(Optional) Profile only a single thread. This may be either a '
+              'thread ID such as you would get by running `adb shell ps -t` '
+              '(pre-Oreo) or `adb shell ps -e -T` (Oreo and later); or it may '
+              'be one of (io, compositor, main, render), in which case '
+              '--profile-process is also required. (Note that "render" thread '
+              'refers to a thread in the browser process that manages a '
+              'renderer; to profile the main thread of the renderer process, '
+              'use --profile-thread=main).'))
+    group.add_argument('--profile-output', default='profile.pb',
+                       help='Output file for profiling data')
+
+  def Run(self):
+    extra_args = shlex.split(self.args.args or '')
+    _RunProfile(self.devices[0], self.args.package_name,
+                self.args.output_directory, self.args.profile_output,
+                self.args.profile_process, self.args.profile_thread,
+                extra_args)
+
+
 class _RunCommand(_InstallCommand, _LaunchCommand, _LogcatCommand):
   name = 'run'
   description = 'Install, launch, and show logcat (when targeting one device).'
@@ -1149,6 +1229,7 @@ _COMMANDS = [
     _MemUsageCommand,
     _ShellCommand,
     _CompileDexCommand,
+    _ProfileCommand,
     _RunCommand,
 ]
 

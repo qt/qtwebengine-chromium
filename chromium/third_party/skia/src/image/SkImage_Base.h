@@ -38,6 +38,10 @@ public:
     virtual SkColorType onColorType() const = 0;
     virtual SkAlphaType onAlphaType() const = 0;
 
+    virtual SkIRect onGetSubset() const {
+        return { 0, 0, this->width(), this->height() };
+    }
+
     virtual bool onPeekPixels(SkPixmap*) const { return false; }
 
     virtual const SkBitmap* onPeekBitmap() const { return nullptr; }
@@ -91,8 +95,7 @@ public:
     virtual bool onPinAsTexture(GrContext*) const { return false; }
     virtual void onUnpinAsTexture(GrContext*) const {}
 
-    virtual sk_sp<SkImage> onMakeColorSpace(sk_sp<SkColorSpace>, SkColorType,
-                                            SkTransferFunctionBehavior) const = 0;
+    virtual sk_sp<SkImage> onMakeColorSpace(sk_sp<SkColorSpace>, SkColorType) const = 0;
 protected:
     SkImage_Base(int width, int height, uint32_t uniqueID);
 

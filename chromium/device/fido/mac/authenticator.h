@@ -5,6 +5,7 @@
 #ifndef DEVICE_FIDO_MAC_AUTHENTICATOR_H_
 #define DEVICE_FIDO_MAC_AUTHENTICATOR_H_
 
+#include "base/component_export.h"
 #include "base/mac/availability.h"
 #include "base/macros.h"
 #include "base/strings/string_piece_forward.h"
@@ -15,45 +16,48 @@ namespace device {
 namespace fido {
 namespace mac {
 
-class API_AVAILABLE(macosx(10.12.2)) TouchIdAuthenticator
+class COMPONENT_EXPORT(DEVICE_FIDO) TouchIdAuthenticator
     : public FidoAuthenticator {
  public:
-  // IsAvailable returns true iff Touch ID is enabled and enrolled on the
+  // IsAvailable returns whether Touch ID is available and enrolled on the
   // current device.
   static bool IsAvailable();
 
   // CreateIfAvailable returns a TouchIdAuthenticator if IsAvailable() returns
   // true and nullptr otherwise.
-  static std::unique_ptr<TouchIdAuthenticator> CreateIfAvailable();
+  static std::unique_ptr<TouchIdAuthenticator> CreateIfAvailable(
+      std::string keychain_access_group,
+      std::string metadata_secret);
+
+  static std::unique_ptr<TouchIdAuthenticator> CreateForTesting(
+      std::string keychain_access_group,
+      std::string metadata_secret);
 
   ~TouchIdAuthenticator() override;
 
-  // TouchIdAuthenticator
+  // FidoAuthenticator
   void MakeCredential(
-      AuthenticatorSelectionCriteria authenticator_selection_criteria,
       CtapMakeCredentialRequest request,
       MakeCredentialCallback callback) override;
   void GetAssertion(CtapGetAssertionRequest request,
                     GetAssertionCallback callback) override;
   void Cancel() override;
-
   std::string GetId() const override;
+  const AuthenticatorSupportedOptions& Options() const override;
 
  private:
-  TouchIdAuthenticator();
+  TouchIdAuthenticator(std::string keychain_access_group,
+                       std::string metadata_secret);
 
-  // The profile ID identifies the user profile from which the request
-  // originates. It is used to scope credentials to the profile under which they
-  // were created.
-  base::StringPiece GetOrInitializeProfileId();
-
-  // The keychain access group is a string value related to the Apple developer
-  // ID under which the binary gets signed that the Keychain Services API use
-  // for access control. See
+  // The keychain access group under which credentials are stored in the macOS
+  // keychain for access control. The set of all access groups that the
+  // application belongs to is stored in the entitlements file that gets
+  // embedded into the application during code signing. For more information
+  // see
   // https://developer.apple.com/documentation/security/ksecattraccessgroup?language=objc.
-  base::StringPiece keychain_access_group() {
-    return "EQHXZ8M8AV.com.google.chrome.webauthn";
-  }
+  std::string keychain_access_group_;
+
+  std::string metadata_secret_;
 
   std::unique_ptr<Operation> operation_;
 

@@ -25,7 +25,6 @@ class NativePixmap : public base::RefCountedThreadSafe<NativePixmap> {
  public:
   NativePixmap() {}
 
-  virtual void* /* EGLClientBuffer */ GetEGLClientBuffer() const = 0;
   virtual bool AreDmaBufFdsValid() const = 0;
   virtual size_t GetDmaBufFdCount() const = 0;
   virtual int GetDmaBufFd(size_t plane) const = 0;
@@ -57,13 +56,14 @@ class NativePixmap : public base::RefCountedThreadSafe<NativePixmap> {
   // apha, when scanned out.
   // |gpu_fence| specifies a gpu fence to wait on before the pixmap is ready
   // to be displayed.
-  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
-                                    int plane_z_order,
-                                    gfx::OverlayTransform plane_transform,
-                                    const gfx::Rect& display_bounds,
-                                    const gfx::RectF& crop_rect,
-                                    bool enable_blend,
-                                    gfx::GpuFence* gpu_fence) = 0;
+  virtual bool ScheduleOverlayPlane(
+      gfx::AcceleratedWidget widget,
+      int plane_z_order,
+      gfx::OverlayTransform plane_transform,
+      const gfx::Rect& display_bounds,
+      const gfx::RectF& crop_rect,
+      bool enable_blend,
+      std::unique_ptr<gfx::GpuFence> gpu_fence) = 0;
 
   // Export the buffer for sharing across processes.
   // Any file descriptors in the exported handle are owned by the caller.

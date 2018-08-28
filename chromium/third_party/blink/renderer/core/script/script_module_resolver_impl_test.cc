@@ -7,7 +7,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/script/module_script.h"
 #include "third_party/blink/renderer/core/testing/dummy_modulator.h"
@@ -42,17 +41,24 @@ class ScriptModuleResolverImplTestModulator final : public DummyModulator {
 
  private:
   // Implements Modulator:
-  ScriptState* GetScriptState() override { return script_state_.get(); }
+  ScriptState* GetScriptState() override { return script_state_; }
+
+  KURL ResolveModuleSpecifier(const String& module_request,
+                              const KURL& base_url,
+                              String* failure_reason) final {
+    return KURL(base_url, module_request);
+  }
 
   ModuleScript* GetFetchedModuleScript(const KURL&) override;
 
-  scoped_refptr<ScriptState> script_state_;
+  Member<ScriptState> script_state_;
   int get_fetched_module_script_called_ = 0;
   KURL fetched_url_;
   Member<ModuleScript> module_script_;
 };
 
 void ScriptModuleResolverImplTestModulator::Trace(blink::Visitor* visitor) {
+  visitor->Trace(script_state_);
   visitor->Trace(module_script_);
   DummyModulator::Trace(visitor);
 }

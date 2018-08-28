@@ -31,8 +31,8 @@
 
 #include "third_party/blink/renderer/core/html/forms/text_field_input_type.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
 #include "third_party/blink/renderer/core/events/before_text_inserted_event.h"
@@ -50,7 +50,8 @@
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -129,7 +130,7 @@ SpinButtonElement* TextFieldInputType::GetSpinButtonElement() const {
           ShadowElementNames::SpinButton()));
 }
 
-bool TextFieldInputType::ShouldShowFocusRingOnMouseFocus() const {
+bool TextFieldInputType::MayTriggerVirtualKeyboard() const {
   return true;
 }
 
@@ -494,8 +495,10 @@ void TextFieldInputType::AppendToFormData(FormData& form_data) const {
   InputType::AppendToFormData(form_data);
   const AtomicString& dirname_attr_value =
       GetElement().FastGetAttribute(dirnameAttr);
-  if (!dirname_attr_value.IsNull())
-    form_data.append(dirname_attr_value, GetElement().DirectionForFormData());
+  if (!dirname_attr_value.IsNull()) {
+    form_data.AppendFromElement(dirname_attr_value,
+                                GetElement().DirectionForFormData());
+  }
 }
 
 String TextFieldInputType::ConvertFromVisibleValue(

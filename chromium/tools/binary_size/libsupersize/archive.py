@@ -30,11 +30,15 @@ import linker_map_parser
 import models
 import ninja_parser
 import nm
+import obj_analyzer
 import path_util
 
 sys.path.insert(1, os.path.join(path_util.SRC_ROOT, 'tools', 'grit'))
 from grit.format import data_pack
 
+_OWNERS_FILENAME = 'OWNERS'
+_COMPONENT_REGEX = re.compile(r'\s*#\s*COMPONENT\s*:\s*(\S+)')
+_FILE_PATH_REGEX = re.compile(r'\s*file://(\S+)')
 
 # Holds computation state that is live only when an output directory exists.
 _OutputDirectoryContext = collections.namedtuple('_OutputDirectoryContext', [
@@ -91,6 +95,8 @@ class SectionSizeKnobs(object):
       'META-INF/CHROMIUM.RSA',
       'META-INF/MANIFEST.MF',
     ])
+
+    self.src_root = path_util.SRC_ROOT
 
 
 def _OpenMaybeGz(path):
@@ -215,6 +221,11 @@ def _NormalizeNames(raw_symbols):
 
 
 def _NormalizeObjectPath(path):
+  """Normalizes object paths.
+
+  Prefixes are removed: obj/, ../../
+  Archive names made more pathy: foo/bar.a(baz.o) -> foo/bar.a/baz.o
+  """
   if path.startswith('obj/'):
     # Convert obj/third_party/... -> third_party/...
     path = path[4:]
@@ -538,6 +549,86 @@ def _CalculatePadding(raw_symbols):
         '%r\nprev symbol: %r' % (symbol, prev_symbol))
 
 
+def _ParseComponentFromOwners(filename):
+  """Searches an OWNERS file for lines that start with `# COMPONENT:`.
+
+  If an OWNERS file has no COMPONENT but references another OWNERS file, follow
+  the reference and check that file instead.
+
+  Args:
+    filename: Path to the file to parse.
+  Returns:
+    The text that follows the `# COMPONENT:` prefix, such as 'component>name'.
+    Empty string if no component found or the file didn't exist.
+  """
+  reference_paths = []
+  try:
+    with open(filename) as f:
+      for line in f:
+        component_matches = _COMPONENT_REGEX.match(line)
+        path_matches = _FILE_PATH_REGEX.match(line)
+        if component_matches:
+          return component_matches.group(1)
+        elif path_matches:
+          reference_paths.append(path_matches.group(1))
+  except IOError:
+    return ''
+
+  if len(reference_paths) == 1:
+    newpath = os.path.join(path_util.SRC_ROOT, reference_paths[0])
+    return _ParseComponentFromOwners(newpath)
+  else:
+    return ''
+
+
+def _FindComponentRoot(start_path, cache, knobs):
+  """Searches all parent directories for COMPONENT in OWNERS files.
+
+  Args:
+    start_path: Path of directory to start searching from. Must be relative to
+      SRC_ROOT.
+    cache: Dict of OWNERS paths. Used instead of filesystem if paths are present
+      in the dict.
+    knobs: Instance of SectionSizeKnobs. Tunable knobs and options.
+
+  Returns:
+    COMPONENT belonging to |start_path|, or empty string if not found.
+  """
+  prev_dir = None
+  test_dir = start_path
+  # This loop will traverse the directory structure upwards until reaching
+  # SRC_ROOT, where test_dir and prev_dir will both equal an empty string.
+  while test_dir != prev_dir:
+    cached_component = cache.get(test_dir)
+    if cached_component:
+      return cached_component
+    elif cached_component is None:
+      owners_path = os.path.join(knobs.src_root, test_dir, _OWNERS_FILENAME)
+      component = _ParseComponentFromOwners(owners_path)
+      cache[test_dir] = component
+      if component:
+        return component
+    prev_dir = test_dir
+    test_dir = os.path.dirname(test_dir)
+  return ''
+
+
+def _PopulateComponents(raw_symbols, knobs):
+  """Populates the |component| field based on |source_path|.
+
+  Symbols without a |source_path| are skipped.
+
+  Args:
+    raw_symbols: list of Symbol objects.
+    knobs: Instance of SectionSizeKnobs. Tunable knobs and options.
+  """
+  seen_paths = {}
+  for symbol in raw_symbols:
+    if symbol.source_path:
+      folder_path = os.path.dirname(symbol.source_path)
+      symbol.component = _FindComponentRoot(folder_path, seen_paths, knobs)
+
+
 def _AddNmAliases(raw_symbols, names_by_address):
   """Adds symbols that were removed by identical code folding."""
   # Step 1: Create list of (index_of_symbol, name_list).
@@ -606,7 +697,25 @@ def LoadAndPostProcessSizeInfo(path):
   return size_info
 
 
-def CreateMetadata(map_path, elf_path, apk_path, tool_prefix, output_directory):
+def CreateMetadata(map_path, elf_path, apk_path, tool_prefix, output_directory,
+                   linker_name):
+  """Creates metadata dict.
+
+  Args:
+    map_path: Path to the linker .map(.gz) file to parse.
+    elf_path: Path to the corresponding unstripped ELF file. Used to find symbol
+        aliases and inlined functions. Can be None.
+    apk_path: Path to the .apk file to measure.
+    tool_prefix: Prefix for c++filt & nm.
+    output_directory: Build output directory.
+    linker_name: 'gold', 'lld_v#' (# is a number), 'lld-lto_v#', or None.
+
+  Returns:
+    None if |elf_path| is not supplied. Otherwise returns dict mapping string
+    constants to values.
+    If |elf_path| is supplied, git revision and elf info are included.
+    If |output_directory| is also supplied, then filenames will be included.
+  """
   metadata = None
   if elf_path:
     logging.debug('Constructing metadata')
@@ -623,6 +732,7 @@ def CreateMetadata(map_path, elf_path, apk_path, tool_prefix, output_directory):
         models.METADATA_ELF_ARCHITECTURE: architecture,
         models.METADATA_ELF_MTIME: timestamp,
         models.METADATA_ELF_BUILD_ID: build_id,
+        models.METADATA_LINKER_NAME: linker_name,
         models.METADATA_TOOL_PREFIX: relative_tool_prefix,
     }
 
@@ -652,7 +762,7 @@ def _ResolveThinArchivePaths(raw_symbols, thin_archives):
 
 
 def _ParseElfInfo(map_path, elf_path, tool_prefix, track_string_literals,
-                  outdir_context=None):
+                  outdir_context=None, linker_name=None):
   """Adds ELF section sizes and symbols."""
   if elf_path:
     # Run nm on the elf file to retrieve the list of symbol names per-address.
@@ -671,14 +781,14 @@ def _ParseElfInfo(map_path, elf_path, tool_prefix, track_string_literals,
     # Rather than record all paths for each symbol, set the paths to be the
     # common ancestor of all paths.
     if outdir_context:
-      bulk_analyzer = nm.BulkObjectFileAnalyzer(
+      bulk_analyzer = obj_analyzer.BulkObjectFileAnalyzer(
           tool_prefix, outdir_context.output_directory)
       bulk_analyzer.AnalyzePaths(outdir_context.elf_object_paths)
 
   logging.info('Parsing Linker Map')
   with _OpenMaybeGz(map_path) as map_file:
     section_sizes, raw_symbols = (
-        linker_map_parser.MapFileParser().Parse(map_file))
+        linker_map_parser.MapFileParser().Parse(linker_name, map_file))
 
     if outdir_context and outdir_context.thin_archives:
       _ResolveThinArchivePaths(raw_symbols, outdir_context.thin_archives)
@@ -770,7 +880,7 @@ def _ComputePakFileSymbols(
     section_name = models.SECTION_PAK_NONTRANSLATED
   overhead = (12 + 6) * compression_ratio  # Header size plus extra offset
   symbols_by_id[file_name] = models.Symbol(
-      section_name, overhead, full_name='{}: overhead'.format(file_name))
+      section_name, overhead, full_name='Overhead: {}'.format(file_name))
   for resource_id in sorted(contents.resources):
     if resource_id in alias_map:
       # 4 extra bytes of metadata (2 16-bit ints)
@@ -811,7 +921,7 @@ class _ResourceSourceMapper(object):
       for dest, renamed_dest in renames.iteritems():
         # Allow one more level of indirection due to renaming renamed files
         renamed_dest = renames.get(renamed_dest, renamed_dest)
-        actual_source = res_info.get(renamed_dest);
+        actual_source = res_info.get(renamed_dest)
         if actual_source:
           res_info[dest] = actual_source
     return res_info
@@ -858,6 +968,7 @@ def _ParsePakInfoFile(pak_info_path):
 
 def _ParsePakSymbols(
     section_sizes, object_paths, output_directory, symbols_by_id):
+  object_paths_by_id = collections.defaultdict(list)
   for path in object_paths:
     whitelist_path = os.path.join(output_directory, path + '.whitelist')
     if (not os.path.exists(whitelist_path)
@@ -872,10 +983,24 @@ def _ParsePakSymbols(
         # resulting in resource_ids that don't end up being in the final apk.
         if resource_id not in symbols_by_id:
           continue
-        symbols_by_id[resource_id].object_path = path
+        object_paths_by_id[resource_id].append(path)
 
-  raw_symbols = sorted(symbols_by_id.values(),
-                       key=lambda s: (s.section_name, s.address))
+  raw_symbols = []
+  for resource_id, symbol in symbols_by_id.iteritems():
+    raw_symbols.append(symbol)
+    paths = set(object_paths_by_id[resource_id])
+    if paths:
+      symbol.object_path = paths.pop()
+      if paths:
+        aliases = symbol.aliases or [symbol]
+        symbol.aliases = aliases
+        for path in paths:
+          new_sym = models.Symbol(
+              symbol.section_name, symbol.size, address=symbol.address,
+              full_name=symbol.full_name, object_path=path, aliases=aliases)
+          aliases.append(new_sym)
+          raw_symbols.append(new_sym)
+  raw_symbols.sort(key=lambda s: (s.section_name, s.address))
   raw_total = 0.0
   int_total = 0
   for symbol in raw_symbols:
@@ -1015,7 +1140,7 @@ def _CalculateElfOverhead(section_sizes, elf_path):
 def CreateSectionSizesAndSymbols(
       map_path=None, tool_prefix=None, output_directory=None, elf_path=None,
       apk_path=None, track_string_literals=True, metadata=None,
-      apk_so_path=None, pak_files=None, pak_info_file=None,
+      apk_so_path=None, pak_files=None, pak_info_file=None, linker_name=None,
       knobs=SectionSizeKnobs()):
   """Creates sections sizes and symbols for a SizeInfo.
 
@@ -1028,6 +1153,11 @@ def CreateSectionSizesAndSymbols(
         alias information will not be recorded.
     track_string_literals: Whether to break down "** merge string" sections into
         smaller symbols (requires output_directory).
+
+  Returns:
+    A tuple of (section_sizes, raw_symbols).
+    section_sizes is a dict mapping section names to their size
+    raw_symbols is a list of Symbol objects
   """
   if apk_path and elf_path:
     # Extraction takes around 1 second, so do it in parallel.
@@ -1069,7 +1199,8 @@ def CreateSectionSizesAndSymbols(
         thin_archives=thin_archives)
 
   section_sizes, raw_symbols = _ParseElfInfo(
-      map_path, elf_path, tool_prefix, track_string_literals, outdir_context)
+      map_path, elf_path, tool_prefix, track_string_literals,
+      outdir_context=outdir_context, linker_name=linker_name)
   elf_overhead_size = _CalculateElfOverhead(section_sizes, elf_path)
 
   pak_symbols_by_id = None
@@ -1102,6 +1233,7 @@ def CreateSectionSizesAndSymbols(
     raw_symbols.extend(pak_raw_symbols)
 
   _ExtractSourcePathsAndNormalizeObjectPaths(raw_symbols, source_mapper)
+  _PopulateComponents(raw_symbols, knobs)
   logging.info('Converting excessive aliases into shared-path symbols')
   _CompactLargeAliasesIntoSharedSymbols(raw_symbols, knobs)
   logging.debug('Connecting nm aliases')
@@ -1136,6 +1268,14 @@ def CreateSizeInfo(
 
 
 def _DetectGitRevision(directory):
+  """Runs git rev-parse to get the SHA1 hash of the current revision.
+
+  Args:
+    directory: Path to directory where rev-parse command will be run.
+
+  Returns:
+    A string with the SHA1 hash, or None if an error occured.
+  """
   try:
     git_rev = subprocess.check_output(
         ['git', '-C', directory, 'rev-parse', 'HEAD'])
@@ -1194,7 +1334,7 @@ def _ParseGnArgs(args_path):
 
 def _DetectLinkerName(map_path):
   with _OpenMaybeGz(map_path) as map_file:
-    return linker_map_parser.DetectLinkerNameFromMapFileHeader(next(map_file))
+    return linker_map_parser.DetectLinkerNameFromMapFile(map_file)
 
 
 def _ElfInfoFromApk(apk_path, apk_so_path, tool_prefix):
@@ -1265,6 +1405,8 @@ def AddArguments(parser):
                       default=True, action='store_false',
                       help='Disable breaking down "** merge strings" into more '
                            'granular symbols.')
+  parser.add_argument('--source-directory',
+                      help='Custom path to the root source directory.')
   AddMainPathsArguments(parser)
 
 
@@ -1313,6 +1455,7 @@ def DeduceMainPaths(args, parser):
                    'linker map file.')
 
   linker_name = _DetectLinkerName(map_path)
+  logging.info('Linker name: %s' % linker_name)
   tool_prefix_finder = path_util.ToolPrefixFinder(
       value=args.tool_prefix,
       output_directory_finder=output_directory_finder,
@@ -1322,25 +1465,30 @@ def DeduceMainPaths(args, parser):
   if not args.no_source_paths:
     output_directory = output_directory_finder.Finalized()
   return (output_directory, tool_prefix, apk_path, apk_so_path, elf_path,
-          map_path)
+          map_path, linker_name)
 
 
 def Run(args, parser):
   if not args.size_file.endswith('.size'):
     parser.error('size_file must end with .size')
 
-  (output_directory, tool_prefix, apk_path, apk_so_path, elf_path, map_path) = (
-      DeduceMainPaths(args, parser))
+  (output_directory, tool_prefix, apk_path, apk_so_path, elf_path, map_path,
+       linker_name) = (DeduceMainPaths(args, parser))
 
   metadata = CreateMetadata(map_path, elf_path, apk_path, tool_prefix,
-                            output_directory)
+                            output_directory, linker_name)
+
+  knobs = SectionSizeKnobs()
+  if args.source_directory:
+    knobs.src_root = args.source_directory
 
   section_sizes, raw_symbols = CreateSectionSizesAndSymbols(
       map_path=map_path, tool_prefix=tool_prefix, elf_path=elf_path,
       apk_path=apk_path, output_directory=output_directory,
       track_string_literals=args.track_string_literals,
       metadata=metadata, apk_so_path=apk_so_path,
-      pak_files=args.pak_file, pak_info_file=args.pak_info_file)
+      pak_files=args.pak_file, pak_info_file=args.pak_info_file,
+      linker_name=linker_name, knobs=knobs)
   size_info = CreateSizeInfo(
       section_sizes, raw_symbols, metadata=metadata, normalize_names=False)
 

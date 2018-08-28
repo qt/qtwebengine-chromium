@@ -41,14 +41,6 @@ class RootInlineBox;
 
 enum MarkLineBoxes { kMarkLineBoxesDirty, kDontMarkLineBoxes };
 
-// Returns whether the position type is CSS "line-over"; i.e., ascender side
-// or "top" side of a line box.
-// https://drafts.csswg.org/css-writing-modes-3/#line-over
-static inline bool IsLineOverSide(FontVerticalPositionType type) {
-  return type == FontVerticalPositionType::TextTop ||
-         type == FontVerticalPositionType::TopOfEmHeight;
-}
-
 // InlineBox represents a rectangle that occurs on a line.  It corresponds to
 // some LayoutObject (i.e., it represents a portion of that LayoutObject).
 class CORE_EXPORT InlineBox : public DisplayItemClient {
@@ -139,7 +131,7 @@ class CORE_EXPORT InlineBox : public DisplayItemClient {
   // DisplayItemClient methods
   String DebugName() const override;
   LayoutRect VisualRect() const override;
-  LayoutRect PartialInvalidationRect() const override;
+  LayoutRect PartialInvalidationVisualRect() const override;
 
   bool IsText() const { return bitfields_.IsText(); }
   void SetIsText(bool is_text) { bitfields_.SetIsText(is_text); }

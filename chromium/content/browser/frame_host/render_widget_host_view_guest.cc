@@ -11,6 +11,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "build/build_config.h"
+#include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_hittest.h"
@@ -153,10 +154,9 @@ void RenderWidgetHostViewGuest::Show() {
     // Since we were last shown, our renderer may have had a different surface
     // set (e.g. showing an interstitial), so we resend our current surface to
     // the renderer.
-    if (last_received_local_surface_id_.is_valid())
-      SendSurfaceInfoToEmbedder();
+    SendSurfaceInfoToEmbedder();
   }
-  host()->WasShown(ui::LatencyInfo());
+  host()->WasShown(false /* record_presentation_time */);
 }
 
 void RenderWidgetHostViewGuest::Hide() {
@@ -251,7 +251,7 @@ gfx::PointF RenderWidgetHostViewGuest::TransformPointToRootCoordSpaceF(
     const gfx::PointF& point) {
   // LocalSurfaceId is not needed in Viz hit-test.
   if (!guest_ ||
-      (!use_viz_hit_test_ && !last_received_local_surface_id_.is_valid())) {
+      (!use_viz_hit_test_ && !last_activated_surface_info_.is_valid())) {
     return point;
   }
 
@@ -264,9 +264,7 @@ gfx::PointF RenderWidgetHostViewGuest::TransformPointToRootCoordSpaceF(
   // guarantee not to change transformed_point on failure, then we could skip
   // checking the function return value and directly return transformed_point.
   if (!root_rwhv->TransformPointToLocalCoordSpace(
-          point,
-          viz::SurfaceId(frame_sink_id_, last_received_local_surface_id_),
-          &transformed_point)) {
+          point, last_activated_surface_info_.id(), &transformed_point)) {
     return point;
   }
   return transformed_point;
@@ -277,19 +275,18 @@ bool RenderWidgetHostViewGuest::TransformPointToLocalCoordSpaceLegacy(
     const viz::SurfaceId& original_surface,
     gfx::PointF* transformed_point) {
   *transformed_point = point;
-  if (!guest_ || !last_received_local_surface_id_.is_valid())
+  if (!guest_ || !last_activated_surface_info_.is_valid())
     return false;
 
-  auto local_surface_id =
-      viz::SurfaceId(frame_sink_id_, last_received_local_surface_id_);
-  if (original_surface == local_surface_id)
+  if (original_surface == last_activated_surface_info_.id())
     return true;
 
   *transformed_point =
       gfx::ConvertPointToPixel(current_surface_scale_factor(), point);
   viz::SurfaceHittest hittest(nullptr,
                               GetFrameSinkManager()->surface_manager());
-  if (!hittest.TransformPointToTargetSurface(original_surface, local_surface_id,
+  if (!hittest.TransformPointToTargetSurface(original_surface,
+                                             last_activated_surface_info_.id(),
                                              transformed_point)) {
     return false;
   }
@@ -349,6 +346,14 @@ base::string16 RenderWidgetHostViewGuest::GetSelectedText() {
   return platform_view_->GetSelectedText();
 }
 
+base::string16 RenderWidgetHostViewGuest::GetSurroundingText() {
+  return platform_view_->GetSurroundingText();
+}
+
+gfx::Range RenderWidgetHostViewGuest::GetSelectedRange() {
+  return platform_view_->GetSelectedRange();
+}
+
 void RenderWidgetHostViewGuest::SetNeedsBeginFrames(bool needs_begin_frames) {
   if (platform_view_)
     platform_view_->SetNeedsBeginFrames(needs_begin_frames);
@@ -371,10 +376,10 @@ void RenderWidgetHostViewGuest::SetTooltipText(
     root_view->GetCursorManager()->SetTooltipTextForView(this, tooltip_text);
 }
 
-void RenderWidgetHostViewGuest::SendSurfaceInfoToEmbedderImpl(
+void RenderWidgetHostViewGuest::FirstSurfaceActivation(
     const viz::SurfaceInfo& surface_info) {
   if (guest_ && !guest_->is_in_destruction())
-    guest_->SetChildFrameSurface(surface_info);
+    guest_->FirstSurfaceActivation(surface_info);
 }
 
 void RenderWidgetHostViewGuest::OnDidUpdateVisualPropertiesComplete(
@@ -387,13 +392,14 @@ void RenderWidgetHostViewGuest::OnDidUpdateVisualPropertiesComplete(
 void RenderWidgetHostViewGuest::OnAttached() {
   RegisterFrameSinkId();
 #if defined(USE_AURA)
-  if (base::FeatureList::IsEnabled(::features::kMash)) {
+  if (!features::IsAshInBrowserProcess()) {
     aura::Env::GetInstance()->ScheduleEmbed(
         GetWindowTreeClientFromRenderer(),
         base::BindOnce(&RenderWidgetHostViewGuest::OnGotEmbedToken,
                        weak_ptr_factory_.GetWeakPtr()));
   }
 #endif
+  SendSurfaceInfoToEmbedder();
 }
 
 bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
@@ -568,10 +574,11 @@ viz::FrameSinkId RenderWidgetHostViewGuest::GetRootFrameSinkId() {
   return viz::FrameSinkId();
 }
 
-viz::LocalSurfaceId RenderWidgetHostViewGuest::GetLocalSurfaceId() const {
+const viz::LocalSurfaceId& RenderWidgetHostViewGuest::GetLocalSurfaceId()
+    const {
   if (guest_)
     return guest_->local_surface_id();
-  return viz::LocalSurfaceId();
+  return viz::ParentLocalSurfaceIdAllocator::InvalidLocalSurfaceId();
 }
 
 void RenderWidgetHostViewGuest::DidCreateNewRendererCompositorFrameSink(
@@ -664,6 +671,25 @@ void RenderWidgetHostViewGuest::GestureEventAck(
              event.GetType() == blink::WebInputEvent::kGestureScrollBegin) {
     GetOwnerRenderWidgetHostView()->GestureEventAck(event, ack_result);
   }
+
+  if (blink::WebInputEvent::IsPinchGestureEventType(event.GetType()))
+    ProcessTouchpadPinchAckInRoot(event, ack_result);
+}
+
+void RenderWidgetHostViewGuest::ProcessTouchpadPinchAckInRoot(
+    const blink::WebGestureEvent& event,
+    InputEventAckState ack_result) {
+  DCHECK(blink::WebInputEvent::IsPinchGestureEventType(event.GetType()));
+
+  RenderWidgetHostViewBase* root_rwhv = GetRootView(this);
+  if (!root_rwhv)
+    return;
+
+  blink::WebGestureEvent pinch_event(event);
+  const gfx::PointF root_point =
+      TransformPointToRootCoordSpaceF(event.PositionInWidget());
+  pinch_event.SetPositionInWidget(root_point);
+  root_rwhv->GestureEventAck(pinch_event, ack_result);
 }
 
 InputEventAckState RenderWidgetHostViewGuest::FilterInputEvent(
@@ -796,10 +822,6 @@ void RenderWidgetHostViewGuest::OnHandleInputEvent(
     host()->ForwardGestureEvent(gesture_event);
     return;
   }
-}
-
-bool RenderWidgetHostViewGuest::HasEmbedderChanged() {
-  return guest_ && guest_->has_attached_since_surface_set();
 }
 
 #if defined(USE_AURA)

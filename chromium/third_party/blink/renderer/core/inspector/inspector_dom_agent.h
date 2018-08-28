@@ -190,6 +190,12 @@ class CORE_EXPORT InspectorDOMAgent final
       protocol::Maybe<int> backend_node_id,
       protocol::Maybe<String> object_id,
       std::unique_ptr<protocol::DOM::BoxModel>*) override;
+  protocol::Response getContentQuads(
+      protocol::Maybe<int> node_id,
+      protocol::Maybe<int> backend_node_id,
+      protocol::Maybe<String> object_id,
+      std::unique_ptr<protocol::Array<protocol::Array<double>>>* quads)
+      override;
   protocol::Response getNodeForLocation(
       int x,
       int y,
@@ -212,7 +218,7 @@ class CORE_EXPORT InspectorDOMAgent final
   void ReleaseDanglingNodes();
 
   // Methods called from the InspectorInstrumentation.
-  void DomContentLoadedEventFired(LocalFrame*);
+  void DOMContentLoadedEventFired(LocalFrame*);
   void DidCommitLoad(LocalFrame*, DocumentLoader*);
   void DidInsertDOMNode(Node*);
   void WillRemoveDOMNode(Node*);

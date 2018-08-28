@@ -26,9 +26,8 @@ ChildProcessLauncher::ChildProcessLauncher(
     std::unique_ptr<base::CommandLine> command_line,
     int child_process_id,
     Client* client,
-    std::unique_ptr<mojo::edk::OutgoingBrokerClientInvitation>
-        broker_client_invitation,
-    const mojo::edk::ProcessErrorCallback& process_error_callback,
+    mojo::OutgoingInvitation mojo_invitation,
+    const mojo::ProcessErrorCallback& process_error_callback,
     bool terminate_on_shutdown)
     : client_(client),
       starting_(true),
@@ -47,7 +46,7 @@ ChildProcessLauncher::ChildProcessLauncher(
   helper_ = new ChildProcessLauncherHelper(
       child_process_id, client_thread_id_, std::move(command_line),
       std::move(delegate), weak_factory_.GetWeakPtr(), terminate_on_shutdown,
-      std::move(broker_client_invitation), process_error_callback);
+      std::move(mojo_invitation), process_error_callback);
   helper_->StartLaunchOnClientThread();
 }
 
@@ -169,7 +168,13 @@ ChildProcessLauncher::Client* ChildProcessLauncher::ReplaceClientForTest(
 
 bool ChildProcessLauncherPriority::operator==(
     const ChildProcessLauncherPriority& other) const {
-  return background == other.background && frame_depth == other.frame_depth &&
+  // |should_boost_for_pending_views| is temporary and constant for all
+  // ChildProcessLauncherPriority throughout a session (experiment driven).
+  DCHECK_EQ(should_boost_for_pending_views,
+            other.should_boost_for_pending_views);
+  return visible == other.visible &&
+         has_media_stream == other.has_media_stream &&
+         frame_depth == other.frame_depth &&
          boost_for_pending_views == other.boost_for_pending_views
 #if defined(OS_ANDROID)
          && importance == other.importance

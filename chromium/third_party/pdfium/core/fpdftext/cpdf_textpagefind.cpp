@@ -161,7 +161,7 @@ bool CPDF_TextPageFind::FindNext() {
       }
       continue;
     }
-    nResultPos = m_strText.Find(csWord.c_str(), nStartPos);
+    nResultPos = m_strText.Find(csWord.AsStringView(), nStartPos);
     if (!nResultPos.has_value()) {
       m_IsFind = false;
       return m_IsFind;
@@ -292,7 +292,7 @@ void CPDF_TextPageFind::ExtractFindWhat(const WideString& findwhat) {
     size_t pos = 0;
     while (pos < word->GetLength()) {
       WideString curStr = word->Mid(pos, 1);
-      wchar_t curChar = word->operator[](pos);
+      wchar_t curChar = (*word)[pos];
       if (IsIgnoreSpaceCharacter(curChar)) {
         if (pos > 0 && curChar == 0x2019) {
           pos++;

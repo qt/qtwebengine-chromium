@@ -36,27 +36,14 @@ public:
         return GrMipMapped::kNo;
     }
 
-    void setMaxMipMapLevel(int maxMipMapLevel) const {
-        fTexture->fMaxMipMapLevel = maxMipMapLevel;
-    }
-
     int maxMipMapLevel() const {
         return fTexture->fMaxMipMapLevel;
-    }
-
-    void setDoesNotSupportMipMaps() {
-        fTexture->setDoesNotSupportMipMaps();
     }
 
     GrSLType samplerType() const { return fTexture->fSamplerType; }
 
     /** The filter used is clamped to this value in GrProcessor::TextureSampler. */
     GrSamplerState::Filter highestFilterMode() const { return fTexture->fHighestFilterMode; }
-
-    void setMipColorMode(SkDestinationSurfaceColorMode colorMode) const {
-        fTexture->fMipColorMode = colorMode;
-    }
-    SkDestinationSurfaceColorMode mipColorMode() const { return fTexture->fMipColorMode; }
 
     static void ComputeScratchKey(const GrSurfaceDesc&, GrScratchKey*);
     static void ComputeScratchKey(GrPixelConfig config, int width, int height,

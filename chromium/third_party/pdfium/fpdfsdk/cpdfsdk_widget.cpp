@@ -236,13 +236,6 @@ bool CPDFSDK_Widget::OnXFAAAction(PDFSDK_XFAAActionType eXFAAAT,
   param.m_wsFullText = data->sValue;
   param.m_bKeyDown = data->bKeyDown;
   param.m_bModifier = data->bModifier;
-  param.m_wsNewText = data->sValue;
-  if (data->nSelEnd > data->nSelStart)
-    param.m_wsNewText.Delete(data->nSelStart, data->nSelEnd - data->nSelStart);
-
-  for (const auto& c : data->sChange)
-    param.m_wsNewText.Insert(data->nSelStart, c);
-
   param.m_wsPrevText = data->sValue;
   if ((eEventType == XFA_EVENT_Click || eEventType == XFA_EVENT_Change) &&
       GetFieldType() == FormFieldType::kRadioButton) {
@@ -463,17 +456,13 @@ int CPDFSDK_Widget::GetSelectedIndex(int nIndex) const {
   return pFormField->GetSelectedIndex(nIndex);
 }
 
+WideString CPDFSDK_Widget::GetValue() const {
 #ifdef PDF_ENABLE_XFA
-WideString CPDFSDK_Widget::GetValue(bool bDisplay) const {
   if (CXFA_FFWidget* hWidget = GetMixXFAWidget()) {
     CXFA_Node* node = hWidget->GetNode();
-    if (node->IsWidgetReady()) {
-      return node->GetValue(bDisplay ? XFA_VALUEPICTURE_Display
-                                     : XFA_VALUEPICTURE_Edit);
-    }
+    if (node->IsWidgetReady())
+      return node->GetValue(XFA_VALUEPICTURE_Display);
   }
-#else
-WideString CPDFSDK_Widget::GetValue() const {
 #endif  // PDF_ENABLE_XFA
   CPDF_FormField* pFormField = GetFormField();
   return pFormField->GetValue();
@@ -834,12 +823,6 @@ bool CPDFSDK_Widget::OnAAction(CPDF_AAction::AActionType type,
         param.m_wsFullText = data->sValue;
         param.m_bKeyDown = data->bKeyDown;
         param.m_bModifier = data->bModifier;
-        param.m_wsNewText = data->sValue;
-        if (data->nSelEnd > data->nSelStart)
-          param.m_wsNewText.Delete(data->nSelStart,
-                                   data->nSelEnd - data->nSelStart);
-        for (int i = data->sChange.GetLength() - 1; i >= 0; i--)
-          param.m_wsNewText.Insert(data->nSelStart, data->sChange[i]);
         param.m_wsPrevText = data->sValue;
 
         int32_t nRet = XFA_EVENTERROR_NotExist;

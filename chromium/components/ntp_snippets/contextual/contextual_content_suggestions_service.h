@@ -16,6 +16,8 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/ntp_snippets/callbacks.h"
 #include "components/ntp_snippets/content_suggestion.h"
+#include "components/ntp_snippets/contextual/contextual_suggestions_cache.h"
+#include "components/ntp_snippets/contextual/contextual_suggestions_debugging_reporter.h"
 #include "components/ntp_snippets/contextual/contextual_suggestions_fetcher.h"
 #include "components/ntp_snippets/contextual/contextual_suggestions_reporter.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
@@ -26,6 +28,8 @@ class RemoteSuggestionsDatabase;
 }  // namespace ntp_snippets
 
 namespace contextual_suggestions {
+
+static constexpr int kFetchCacheCapacity = 10;
 
 class ContextualContentSuggestionsServiceProxy;
 
@@ -57,16 +61,33 @@ class ContextualContentSuggestionsService : public KeyedService {
       const GURL& url,
       ntp_snippets::ImageFetchedCallback callback);
 
-  void FetchDone(FetchClustersCallback callback,
+  void FetchDone(const GURL& url,
+                 FetchClustersCallback callback,
                  ReportFetchMetricsCallback metrics_callback,
                  ContextualSuggestionsResult result);
+
+  // Used to surface metrics events via chrome://eoc-internals.
+  ContextualSuggestionsDebuggingReporter* GetDebuggingReporter();
+
+  // Expose cached results for debugging.
+  base::flat_map<GURL, ContextualSuggestionsResult>
+  GetAllCachedResultsForDebugging();
+
+  // Clear the cached results for debugging.
+  void ClearCachedResultsForDebugging();
 
   std::unique_ptr<ContextualContentSuggestionsServiceProxy> CreateProxy();
 
  private:
+  void BelowConfidenceThresholdFetchDone(
+      FetchClustersCallback callback,
+      ReportFetchMetricsCallback metrics_callback);
   // Cache for images of contextual suggestions, needed by CachedImageFetcher.
   std::unique_ptr<ntp_snippets::RemoteSuggestionsDatabase>
       contextual_suggestions_database_;
+
+  // Cache of contextual suggestions fetch results, keyed by the context url.
+  ContextualSuggestionsCache fetch_cache_;
 
   // Performs actual network request to fetch contextual suggestions.
   std::unique_ptr<ContextualSuggestionsFetcher> contextual_suggestions_fetcher_;

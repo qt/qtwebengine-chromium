@@ -11,6 +11,8 @@
 
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
@@ -23,6 +25,7 @@
 #include "components/viz/service/surfaces/surface_hittest.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/gpu/compositor_util.h"
+#include "content/common/tab_switching_time_callback.h"
 #include "content/public/common/content_switches.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/dip_util.h"
@@ -68,17 +71,17 @@ DelegatedFrameHost::~DelegatedFrameHost() {
 void DelegatedFrameHost::WasShown(
     const viz::LocalSurfaceId& new_pending_local_surface_id,
     const gfx::Size& new_pending_dip_size,
-    const ui::LatencyInfo& latency_info) {
+    bool record_presentation_time) {
   frame_evictor_->SetVisible(true);
-
-  if (compositor_)
-    compositor_->SetLatencyInfo(latency_info);
+  if (record_presentation_time && compositor_) {
+    compositor_->RequestPresentationTimeForNextFrame(
+        CreateTabSwitchingTimeRecorder(base::TimeTicks::Now()));
+  }
 
   // Use the default deadline to synchronize web content with browser UI.
   // TODO(fsamuel): Investigate if there is a better deadline to use here.
-  SynchronizeVisualProperties(new_pending_local_surface_id,
-                              new_pending_dip_size,
-                              cc::DeadlinePolicy::UseDefaultDeadline());
+  EmbedSurface(new_pending_local_surface_id, new_pending_dip_size,
+               cc::DeadlinePolicy::UseDefaultDeadline());
 }
 
 bool DelegatedFrameHost::HasSavedFrame() const {
@@ -111,7 +114,8 @@ void DelegatedFrameHost::CopyFromCompositingSurface(
   // If there is enough information to populate the copy output request fields,
   // then process it now. Otherwise, wait until the information becomes
   // available.
-  if (CanCopyFromCompositingSurface())
+  if (CanCopyFromCompositingSurface() &&
+      active_local_surface_id_ == pending_local_surface_id_)
     ProcessCopyOutputRequest(std::move(request));
   else
     pending_first_frame_requests_.push_back(std::move(request));
@@ -122,14 +126,18 @@ void DelegatedFrameHost::ProcessCopyOutputRequest(
   if (!request->has_area())
     request->set_area(gfx::Rect(pending_surface_dip_size_));
 
-  // TODO(vmpstr): Should use pending device scale factor. We need to plumb
-  // it here.
   request->set_area(
       gfx::ScaleToRoundedRect(request->area(), active_device_scale_factor_));
 
   if (request->has_result_selection()) {
     const gfx::Rect& area = request->area();
     const gfx::Rect& result_selection = request->result_selection();
+    if (area.IsEmpty() || result_selection.IsEmpty()) {
+      // Viz would normally return an empty result for an empty selection.
+      // However, this guard here is still necessary to protect against setting
+      // an illegal scaling ratio.
+      return;
+    }
     request->SetScaleRatio(
         gfx::Vector2d(area.width(), area.height()),
         gfx::Vector2d(result_selection.width(), result_selection.height()));
@@ -216,7 +224,7 @@ bool DelegatedFrameHost::HasFallbackSurface() const {
   return fallback_surface_id && fallback_surface_id->is_valid();
 }
 
-void DelegatedFrameHost::SynchronizeVisualProperties(
+void DelegatedFrameHost::EmbedSurface(
     const viz::LocalSurfaceId& new_pending_local_surface_id,
     const gfx::Size& new_pending_dip_size,
     cc::DeadlinePolicy deadline_policy) {
@@ -238,8 +246,7 @@ void DelegatedFrameHost::SynchronizeVisualProperties(
     }
     // Don't update the SurfaceLayer when invisible to avoid blocking on
     // renderers that do not submit CompositorFrames. Next time the renderer
-    // is visible, SynchronizeVisualProperties will be called again. See
-    // WasShown.
+    // is visible, EmbedSurface will be called again. See WasShown.
     return;
   }
 
@@ -278,10 +285,6 @@ SkColor DelegatedFrameHost::GetGutterColor() const {
   return client_->DelegatedFrameHostGetGutterColor();
 }
 
-gfx::Size DelegatedFrameHost::GetRequestedRendererSize() const {
-  return pending_surface_dip_size_;
-}
-
 void DelegatedFrameHost::DidCreateNewRendererCompositorFrameSink(
     viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink) {
   ResetCompositorFrameSinkSupport();
@@ -312,18 +315,11 @@ void DelegatedFrameHost::DidReceiveCompositorFrameAck(
   renderer_compositor_frame_sink_->DidReceiveCompositorFrameAck(resources);
 }
 
-void DelegatedFrameHost::DidPresentCompositorFrame(uint32_t presentation_token,
-                                                   base::TimeTicks time,
-                                                   base::TimeDelta refresh,
-                                                   uint32_t flags) {
-  renderer_compositor_frame_sink_->DidPresentCompositorFrame(
-      presentation_token, time, refresh, flags);
-}
-
-void DelegatedFrameHost::DidDiscardCompositorFrame(
-    uint32_t presentation_token) {
-  renderer_compositor_frame_sink_->DidDiscardCompositorFrame(
-      presentation_token);
+void DelegatedFrameHost::DidPresentCompositorFrame(
+    uint32_t presentation_token,
+    const gfx::PresentationFeedback& feedback) {
+  renderer_compositor_frame_sink_->DidPresentCompositorFrame(presentation_token,
+                                                             feedback);
 }
 
 void DelegatedFrameHost::ReclaimResources(
@@ -406,13 +402,8 @@ void DelegatedFrameHost::OnBeginFrame(const viz::BeginFrameArgs& args) {
 }
 
 void DelegatedFrameHost::EvictDelegatedFrame() {
-  // It is possible that we are embedding the contents of previous
-  // DelegatedFrameHost. In this case, HasSavedFrame() will return false but we
-  // still need to clear the layer.
-  if (HasFallbackSurface()) {
-    client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(
-        viz::SurfaceId());
-  }
+  // Replaces the SurfaceLayer with a SolidColorLayer.
+  client_->DelegatedFrameHostGetLayer()->SetShowSolidColorContent();
 
   if (!HasSavedFrame())
     return;
@@ -446,10 +437,21 @@ void DelegatedFrameHost::OnCompositingShuttingDown(ui::Compositor* compositor) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DelegatedFrameHost, ImageTransportFactoryObserver implementation:
+// DelegatedFrameHost, ContextFactoryObserver implementation:
 
-void DelegatedFrameHost::OnLostResources() {
-  EvictDelegatedFrame();
+void DelegatedFrameHost::OnLostSharedContext() {}
+
+void DelegatedFrameHost::OnLostVizProcess() {
+  // With OOP-D renderer surface was destroyed if the GPU process crashed. Reset
+  // the fallback Surface but leave the primary so we embed the renderer surface
+  // again.
+  if (HasFallbackSurface()) {
+    client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(
+        viz::SurfaceId());
+  }
+
+  if (HasSavedFrame())
+    frame_evictor_->DiscardedFrame();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -529,10 +531,9 @@ void DelegatedFrameHost::WindowTitleChanged(const std::string& title) {
 }
 
 void DelegatedFrameHost::TakeFallbackContentFrom(DelegatedFrameHost* other) {
-  if (!other->HasFallbackSurface())
+  if (!other->HasFallbackSurface() || HasFallbackSurface())
     return;
-  if (HasFallbackSurface())
-    return;
+
   if (!HasPrimarySurface()) {
     client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
         *other->client_->DelegatedFrameHostGetLayer()->GetFallbackSurfaceId(),
@@ -541,6 +542,7 @@ void DelegatedFrameHost::TakeFallbackContentFrom(DelegatedFrameHost* other) {
         cc::DeadlinePolicy::UseDefaultDeadline(),
         false /* stretch_content_to_fill_bounds */);
   }
+
   client_->DelegatedFrameHostGetLayer()->SetFallbackSurfaceId(
       *other->client_->DelegatedFrameHostGetLayer()->GetFallbackSurfaceId());
 }

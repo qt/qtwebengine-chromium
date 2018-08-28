@@ -39,13 +39,16 @@ class GPU_GLES2_EXPORT GLContextVirtual : public gl::GLContext {
   scoped_refptr<gl::GPUTimingClient> CreateGPUTimingClient() override;
   std::string GetGLVersion() override;
   std::string GetGLRenderer() override;
-  const gl::ExtensionSet& GetExtensions() override;
+  const gfx::ExtensionSet& GetExtensions() override;
   void SetSafeToForceGpuSwitch() override;
   bool WasAllocatedUsingRobustnessExtension() override;
   void SetUnbindFboOnMakeCurrent() override;
   gl::YUVToRGBConverter* GetYUVToRGBConverter(
       const gfx::ColorSpace& color_space) override;
   void ForceReleaseVirtuallyCurrent() override;
+#if defined(OS_MACOSX)
+  void FlushForDriverCrashWorkaround() override;
+#endif
 
  protected:
   ~GLContextVirtual() override;

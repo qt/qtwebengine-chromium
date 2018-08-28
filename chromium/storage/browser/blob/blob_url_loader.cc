@@ -93,10 +93,9 @@ void BlobURLLoader::Start(const network::ResourceRequest& request) {
 }
 
 void BlobURLLoader::FollowRedirect(
+    const base::Optional<std::vector<std::string>>&
+        to_be_removed_request_headers,
     const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
-  NOTREACHED();
-}
-void BlobURLLoader::ProceedWithResponse() {
   NOTREACHED();
 }
 
@@ -165,7 +164,7 @@ void BlobURLLoader::HeadersCompleted(net::HttpStatusCode status_code,
 
   // TODO(jam): some of this code can be shared with
   // services/network/url_loader.h
-  client_->OnReceiveResponse(response, nullptr);
+  client_->OnReceiveResponse(response);
   sent_headers_ = true;
 
   if (metadata) {

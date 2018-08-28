@@ -12,9 +12,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
-#include "content/browser/loader/downloaded_temp_file_impl.h"
 #include "content/browser/loader/resource_controller.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
@@ -40,24 +38,19 @@ constexpr size_t kMinAllocationSize = 2 * net::kMaxBytesToSniff;
 
 constexpr size_t kMaxChunkSize = 32 * 1024;
 
-// Records histograms for the time spent between several events in the
-// MojoAsyncResourceHandler for a navigation.
-// - |response_started| is when the response's headers and metadata are
-//   available. Loading is paused at this time.
-// - |proceed_with_response| is when loading is resumed.
-// - |first_read_completed| is when the first part of the body has been read.
-void RecordNavigationResourceHandlerMetrics(
-    base::TimeTicks response_started,
-    base::TimeTicks proceed_with_response,
-    base::TimeTicks first_read_completed) {
-  UMA_HISTOGRAM_TIMES(
-      "Navigation.ResourceHandler."
-      "ResponseStartedUntilProceedWithResponse",
-      proceed_with_response - response_started);
-  UMA_HISTOGRAM_TIMES(
-      "Navigation.ResourceHandler."
-      "ProceedWithResponseUntilFirstReadCompleted",
-      first_read_completed - proceed_with_response);
+// Time between sending the transfer size updates to renderer. This threshold is
+// chosen as a compromise between sending too frequent updates and the limit its
+// consumers (DevTools and page load metrics) expect.
+constexpr base::TimeDelta kTransferSizeReportInterval =
+    base::TimeDelta::FromMilliseconds(500);
+
+bool ShouldReportTransferSize(
+    const ResourceRequestInfoImpl* resource_request_info) {
+  // Transfer size is reported only when report_raw_headers is set or the
+  // renderer is allowed to receive the resource response metadata (e.g. by
+  // Cross-Origin Read Blocking).
+  return resource_request_info->ShouldReportRawHeaders() ||
+         !resource_request_info->blocked_response_from_reaching_renderer();
 }
 
 }  // namespace
@@ -124,6 +117,7 @@ MojoAsyncResourceHandler::MojoAsyncResourceHandler(
       url_loader_client_(std::move(url_loader_client)),
       weak_factory_(this) {
   DCHECK(IsResourceTypeFrame(resource_type) ||
+         resource_type == RESOURCE_TYPE_SERVICE_WORKER ||
          !(url_loader_options_ &
            network::mojom::kURLLoadOptionSendSSLInfoWithResponse));
   DCHECK(resource_type == RESOURCE_TYPE_MAIN_FRAME ||
@@ -178,28 +172,18 @@ void MojoAsyncResourceHandler::OnResponseStarted(
     network::ResourceResponse* response,
     std::unique_ptr<ResourceController> controller) {
   DCHECK(!has_controller());
-  time_response_started_ = base::TimeTicks::Now();
 
   if (upload_progress_tracker_) {
     upload_progress_tracker_->OnUploadCompleted();
     upload_progress_tracker_ = nullptr;
   }
 
-  const ResourceRequestInfoImpl* info = GetRequestInfo();
   response->head.encoded_data_length = request()->raw_header_size();
   reported_total_received_bytes_ = response->head.encoded_data_length;
 
   response->head.request_start = request()->creation_time();
-  response->head.response_start = time_response_started_;
+  response->head.response_start = base::TimeTicks::Now();
   sent_received_response_message_ = true;
-
-  network::mojom::DownloadedTempFilePtr downloaded_file_ptr;
-  if (!response->head.download_file_path.empty()) {
-    downloaded_file_ptr = DownloadedTempFileImpl::Create(info->GetChildID(),
-                                                         info->GetRequestID());
-    rdh_->RegisterDownloadedTempFile(info->GetChildID(), info->GetRequestID(),
-                                     response->head.download_file_path);
-  }
 
   if ((url_loader_options_ &
        network::mojom::kURLLoadOptionSendSSLInfoWithResponse) &&
@@ -207,8 +191,7 @@ void MojoAsyncResourceHandler::OnResponseStarted(
     response->head.ssl_info = request()->ssl_info();
   }
 
-  url_loader_client_->OnReceiveResponse(response->head,
-                                        std::move(downloaded_file_ptr));
+  url_loader_client_->OnReceiveResponse(response->head);
 
   net::IOBufferWithSize* metadata = GetResponseMetadata(request());
   if (metadata) {
@@ -335,21 +318,18 @@ void MojoAsyncResourceHandler::OnReadCompleted(
     return;
   }
 
-  const ResourceRequestInfoImpl* info = GetRequestInfo();
-  if (info->ShouldReportRawHeaders()) {
+  if (ShouldReportTransferSize(GetRequestInfo()) &&
+      (time_transfer_size_next_report_.is_null() ||
+       time_transfer_size_next_report_ <= base::TimeTicks::Now())) {
     auto transfer_size_diff = CalculateRecentlyReceivedBytes();
-    if (transfer_size_diff > 0)
+    if (transfer_size_diff > 0) {
       url_loader_client_->OnTransferSizeUpdated(transfer_size_diff);
+      time_transfer_size_next_report_ =
+          base::TimeTicks::Now() + kTransferSizeReportInterval;
+    }
   }
 
   if (response_body_consumer_handle_.is_valid()) {
-    if (url_loader_options_ &
-        network::mojom::kURLLoadOptionPauseOnResponseStarted) {
-      base::TimeTicks time_first_read_completed = base::TimeTicks::Now();
-      RecordNavigationResourceHandlerMetrics(time_response_started_,
-                                             time_proceed_with_response_,
-                                             time_first_read_completed);
-    }
     // Send the data pipe on the first OnReadCompleted call.
     url_loader_client_->OnStartLoadingResponseBody(
         std::move(response_body_consumer_handle_));
@@ -384,16 +364,10 @@ void MojoAsyncResourceHandler::OnReadCompleted(
   controller->Resume();
 }
 
-void MojoAsyncResourceHandler::OnDataDownloaded(int bytes_downloaded) {
-  url_loader_client_->OnDataDownloaded(bytes_downloaded,
-                                       CalculateRecentlyReceivedBytes());
-}
-
 void MojoAsyncResourceHandler::FollowRedirect(
+    const base::Optional<std::vector<std::string>>&
+        to_be_removed_request_headers,
     const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
-  DCHECK(!modified_request_headers.has_value()) << "Redirect with modified "
-                                                   "headers was not supported "
-                                                   "yet. crbug.com/845683";
   if (!request()->status().is_success()) {
     DVLOG(1) << "FollowRedirect for invalid request";
     return;
@@ -408,13 +382,11 @@ void MojoAsyncResourceHandler::FollowRedirect(
   DCHECK(!did_defer_on_writing_);
   did_defer_on_redirect_ = false;
   request()->LogUnblocked();
-  Resume();
+  ResumeForRedirect(modified_request_headers);
 }
 
 void MojoAsyncResourceHandler::ProceedWithResponse() {
   DCHECK(did_defer_on_response_started_);
-
-  time_proceed_with_response_ = base::TimeTicks::Now();
 
   request()->LogUnblocked();
   Resume();
@@ -524,14 +496,20 @@ void MojoAsyncResourceHandler::OnResponseCompleted(
   loader_status.encoded_data_length = request()->GetTotalReceivedBytes();
   loader_status.encoded_body_length = request()->GetRawBodyBytes();
   loader_status.decoded_body_length = total_written_bytes_;
-  loader_status.blocked_cross_site_document =
-      GetRequestInfo()->blocked_cross_site_document();
+  loader_status.should_report_corb_blocking =
+      GetRequestInfo()->should_report_corb_blocking();
 
   if ((url_loader_options_ &
        network::mojom::kURLLoadOptionSendSSLInfoForCertificateError) &&
       net::IsCertStatusError(request()->ssl_info().cert_status) &&
       !net::IsCertStatusMinorError(request()->ssl_info().cert_status)) {
     loader_status.ssl_info = request()->ssl_info();
+  }
+
+  if (ShouldReportTransferSize(GetRequestInfo())) {
+    auto transfer_size_diff = CalculateRecentlyReceivedBytes();
+    if (transfer_size_diff > 0)
+      url_loader_client_->OnTransferSizeUpdated(transfer_size_diff);
   }
 
   url_loader_client_->OnComplete(loader_status);

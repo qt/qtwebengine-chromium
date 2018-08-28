@@ -9,13 +9,12 @@
 #include "net/third_party/quic/platform/api/quic_logging.h"
 #include "net/third_party/quic/platform/api/quic_test.h"
 
-typedef net::QuicStreamSequencerBuffer::BufferBlock BufferBlock;
-typedef net::QuicStreamSequencerBuffer::Gap Gap;
+typedef quic::QuicStreamSequencerBuffer::BufferBlock BufferBlock;
 
 static const size_t kBlockSizeBytes =
-    net::QuicStreamSequencerBuffer::kBlockSizeBytes;
+    quic::QuicStreamSequencerBuffer::kBlockSizeBytes;
 
-namespace net {
+namespace quic {
 namespace test {
 
 QuicStreamSequencerBufferPeer::QuicStreamSequencerBufferPeer(
@@ -154,4 +153,4 @@ QuicStreamSequencerBufferPeer::bytes_received() {
 }
 
 }  // namespace test
-}  // namespace net
+}  // namespace quic

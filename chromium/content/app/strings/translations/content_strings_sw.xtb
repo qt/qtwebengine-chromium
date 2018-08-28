@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">kitelezi</translation>
 <translation id="1211441953136645838">maelezo ya mwisho wa kitabu</translation>
 <translation id="1281252709823657822">kidirisha</translation>
+<translation id="1289247557029249093">Funga hali ya picha ndani ya picha</translation>
 <translation id="1335095011850992622">walioshiriki</translation>
 <translation id="1342835525016946179">makala</translation>
 <translation id="1359897965706325498">bango</translation>
+<translation id="1548116112524424341">cheza video katika hali ya picha ndani ya picha</translation>
 <translation id="1589122976691792535">eneo</translation>
 <translation id="1591562245178063882">Mwezi huu</translation>
 <translation id="1637811476055996098">Chagua Faili</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">gridi ya mti</translation>
 <translation id="1822429046913737220">AM / PM</translation>
 <translation id="1832974991323546415">cheza kwenye kifaa cha mbali</translation>
+<translation id="190587075670221089">ufutaji</translation>
 <translation id="1907737156431278478">mfano</translation>
 <translation id="1921819250265091946">dd</translation>
 <translation id="1930711995431081526">hali</translation>
 <translation id="1938124657309484470">Thamani lazima iwe <ph name="MAXIMUM_DATE_OR_TIME" /> au mapema.</translation>
+<translation id="1946271899482435442">Onyesha kiteua tarehe</translation>
 <translation id="1993104285338243655">Inatumia hali ya kuakisi</translation>
 <translation id="2060505056492490888">' <ph name="DOT" /> 'imetumika kwenye nafasi isiyostahili katika '<ph name="INVALIDDOMAIN" />'.</translation>
 <translation id="2148716181193084225">Leo</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">Wasilisha</translation>
 <translation id="2657045182931379222">kipengee cha michoro</translation>
 <translation id="2674318244760992338">kijachini</translation>
+<translation id="2706474812903655270">Video hii inacheza katika hali ya picha ndani ya picha</translation>
 <translation id="2709516037105925701">Kujaza Kiotomatiki</translation>
 <translation id="2723001399770238859">sauti</translation>
 <translation id="2746543609216772311">Thamani lazima iwe <ph name="MINIMUM_DATE_OR_TIME" /> au baadaye.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">Onyesha mwezi unaofuata</translation>
 <translation id="512758898067543763">kichwa cha safu mlalo</translation>
 <translation id="5143125788380636750">hitimisho</translation>
-<translation id="5153163864850940242">Video hii inacheza katika hali ya Picha Ndani ya Picha</translation>
 <translation id="5164977714490026579">Lazima thamani iwe kubwa kuliko au sawa na <ph name="MINIMUM" />.</translation>
 <translation id="520299402983819650">PB <ph name="QUANTITY" /></translation>
 <translation id="5307600278924710095">Tafadhali ingiza sehemu ikifuatiwa na '<ph name="ATSIGN" />'. '<ph name="INVALIDADDRESS" />' haijakamilika.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">kolofoni</translation>
 <translation id="6934078000481955284">nukuu la msingi</translation>
 <translation id="6941933287844615239">pakua maudhui</translation>
+<translation id="6981594929165378967">uwekaji</translation>
 <translation id="6989848892321993519">Tafadhali refusha maandishi haya hadi herufi <ph name="MIN_CHARACTERS" /> au zaidi (kwa sasa unatumia herufi 1).</translation>
 <translation id="709897737746224366">Tafadhali linganisha umbizo lililoombwa.</translation>
 <translation id="7139483182332611405">dibaji</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">muda unaosalia</translation>
 <translation id="7740016676195725605">koma kuonyesha manukuu yanaweza kufichwa</translation>
 <translation id="7740050170769002709">Maudhui ya HTML</translation>
+<translation id="7750228210027921155">Picha ndani ya picha</translation>
 <translation id="7789962463072032349">Sitisha</translation>
 <translation id="7802800022689234070">pembe tatu ya ufafanuzi</translation>
 <translation id="7888071071722539607">Tafadhali jumuisha '<ph name="ATSIGN" />' katika anwani ya barua pepe. '<ph name="INVALIDADDRESS" />' inakosa '<ph name="ATSIGN" />'.</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">jedwali la yaliyomo</translation>
 <translation id="8613126697340063924">dhibiti kucheza kwa mbali</translation>
 <translation id="862370744433916922">kichwa kidogo</translation>
-<translation id="8741316211671074806">Picha ndani ya picha</translation>
 <translation id="8750798805984357768">Tafadhali chagua moja wapo ya chaguo hizi.</translation>
 <translation id="8785498733064193001">anza kucheza</translation>
 <translation id="8808573423886751634">sura</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">kuvinjari</translation>
 <translation id="9050748414552849310">onyesha manakuu yaliyofichwa</translation>
 <translation id="9062295712474918030">hati</translation>
+<translation id="9093215626363556771">funga hali ya picha ndani ya picha</translation>
 <translation id="9108370397979208512">hisabati</translation>
 <translation id="9132465097189459683">Nyingine...</translation>
 <translation id="9138385573473225930">arifa</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, itaanza tarehe <ph name="WEEK_START_DATE" /></translation>
+<translation id="916607977885256133">Picha ndani ya Picha</translation>
 <translation id="9168329111483466115">tanbihi</translation>
-<translation id="947831847158436616">kisanduku</translation>
+<translation id="954003015749068518">washa hali ya picha ndani ya picha</translation>
 <translation id="966787709310836684">menyu</translation>
 </translationbundle>

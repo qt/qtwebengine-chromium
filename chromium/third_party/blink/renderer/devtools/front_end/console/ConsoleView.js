@@ -49,7 +49,7 @@ Console.ConsoleView = class extends UI.VBox {
     this._filter = new Console.ConsoleViewFilter(this._onFilterChanged.bind(this));
     this._isBelowPromptEnabled = Runtime.experiments.isEnabled('consoleBelowPrompt');
 
-    const toolbar = new UI.Toolbar('', this.element);
+    const consoleToolbarContainer = this.element.createChild('div', 'console-toolbar-container');
     this._splitWidget =
         new UI.SplitWidget(true /* isVertical */, false /* secondIsSidebar */, 'console.sidebar.width', 100);
     this._splitWidget.setMainWidget(this._searchableView);
@@ -60,7 +60,6 @@ Console.ConsoleView = class extends UI.VBox {
     this._isSidebarOpen = this._splitWidget.showMode() === UI.SplitWidget.ShowMode.Both;
     if (this._isSidebarOpen)
       this._filter._levelMenuButton.setEnabled(false);
-    toolbar.appendToolbarItem(this._splitWidget.createShowHideSidebarButton('console sidebar'));
     this._splitWidget.addEventListener(UI.SplitWidget.Events.ShowModeChanged, event => {
       this._isSidebarOpen = event.data === UI.SplitWidget.ShowMode.Both;
       this._filter._levelMenuButton.setEnabled(!this._isSidebarOpen);
@@ -71,7 +70,6 @@ Console.ConsoleView = class extends UI.VBox {
 
     /** @type {!Array.<!Console.ConsoleViewMessage>} */
     this._visibleViewMessages = [];
-    this._urlToMessageCount = {};
     this._hiddenByFilterCount = 0;
     /** @type {!Set<!Console.ConsoleViewMessage>} */
     this._shouldBeHiddenCache = new Set();
@@ -99,6 +97,9 @@ Console.ConsoleView = class extends UI.VBox {
     const groupSimilarToggle =
         new UI.ToolbarSettingCheckbox(this._groupSimilarSetting, Common.UIString('Group similar'));
 
+    const toolbar = new UI.Toolbar('console-main-toolbar', consoleToolbarContainer);
+    const rightToolbar = new UI.Toolbar('', consoleToolbarContainer);
+    toolbar.appendToolbarItem(this._splitWidget.createShowHideSidebarButton('console sidebar'));
     toolbar.appendToolbarItem(UI.Toolbar.createActionButton(
         /** @type {!UI.Action }*/ (UI.actionRegistry.action('console.clear'))));
     toolbar.appendSeparator();
@@ -108,10 +109,9 @@ Console.ConsoleView = class extends UI.VBox {
     toolbar.appendToolbarItem(this._filter._levelMenuButton);
     toolbar.appendToolbarItem(groupSimilarToggle);
     toolbar.appendToolbarItem(this._progressToolbarItem);
-    toolbar.appendSpacer();
-    toolbar.appendToolbarItem(this._filterStatusText);
-    toolbar.appendSeparator();
-    toolbar.appendToolbarItem(this._showSettingsPaneButton);
+    rightToolbar.appendSeparator();
+    rightToolbar.appendToolbarItem(this._filterStatusText);
+    rightToolbar.appendToolbarItem(this._showSettingsPaneButton);
 
     this._preserveLogCheckbox = new UI.ToolbarSettingCheckbox(
         Common.moduleSetting('preserveConsoleLog'), Common.UIString('Do not clear log on page reload / navigation'),
@@ -153,6 +153,12 @@ Console.ConsoleView = class extends UI.VBox {
     this._showSettingsPaneSetting.addChangeListener(
         () => settingsPane.element.classList.toggle('hidden', !this._showSettingsPaneSetting.get()));
 
+    if (Runtime.experiments.isEnabled('pinnedExpressions')) {
+      this._pinPane = new Console.ConsolePinPane();
+      this._pinPane.element.classList.add('console-view-pinpane');
+      this._pinPane.show(this._contentsElement);
+    }
+
     this._viewport = new Console.ConsoleViewport(this);
     this._viewport.setStickToBottom(true);
     this._viewport.contentElement().classList.add('console-group', 'console-group-messages');
@@ -192,6 +198,7 @@ Console.ConsoleView = class extends UI.VBox {
     this._prompt = new Console.ConsolePrompt();
     this._prompt.show(this._promptElement);
     this._prompt.element.addEventListener('keydown', this._promptKeyDown.bind(this), true);
+    this._prompt.addEventListener(Console.ConsolePrompt.Events.ExpressionPinned, this._promptExpressionPinned, this);
     this._prompt.addEventListener(Console.ConsolePrompt.Events.TextChanged, this._promptTextChanged, this);
 
     this._consoleHistoryAutocompleteSetting.addChangeListener(this._consoleHistoryAutocompleteChanged, this);
@@ -207,7 +214,8 @@ Console.ConsoleView = class extends UI.VBox {
 
     UI.context.addFlavorChangeListener(SDK.ExecutionContext, this._executionContextChanged, this);
 
-    this._messagesElement.addEventListener('mousedown', this._updateStickToBottomOnMouseDown.bind(this), false);
+    this._messagesElement.addEventListener(
+        'mousedown', event => this._updateStickToBottomOnMouseDown(event.button === 2), false);
     this._messagesElement.addEventListener('mouseup', this._updateStickToBottomOnMouseUp.bind(this), false);
     this._messagesElement.addEventListener('mouseleave', this._updateStickToBottomOnMouseUp.bind(this), false);
     this._messagesElement.addEventListener('wheel', this._updateStickToBottomOnWheel.bind(this), false);
@@ -477,11 +485,6 @@ Console.ConsoleView = class extends UI.VBox {
     const insertedInMiddle = insertAt < this._consoleMessages.length;
     this._consoleMessages.splice(insertAt, 0, viewMessage);
 
-    if (this._urlToMessageCount[message.url])
-      ++this._urlToMessageCount[message.url];
-    else
-      this._urlToMessageCount[message.url] = 1;
-
     this._filter.onMessageAdded(message);
     this._sidebar.onMessageAdded(viewMessage);
 
@@ -640,28 +643,11 @@ Console.ConsoleView = class extends UI.VBox {
     const sourceElement = event.target.enclosingNodeOrSelfWithClass('console-message-wrapper');
     const consoleMessage = sourceElement ? sourceElement.message.consoleMessage() : null;
 
-    const filterSubMenu = contextMenu.headerSection().appendSubMenuItem(Common.UIString('Filter'));
-
     if (consoleMessage && consoleMessage.url) {
-      const menuTitle = Common.UIString('Hide messages from %s', new Common.ParsedURL(consoleMessage.url).displayName);
-      filterSubMenu.headerSection().appendItem(
+      const menuTitle = ls`Hide messages from ${new Common.ParsedURL(consoleMessage.url).displayName}`;
+      contextMenu.headerSection().appendItem(
           menuTitle, this._filter.addMessageURLFilter.bind(this._filter, consoleMessage.url));
     }
-
-    const unhideAll = filterSubMenu.footerSection().appendItem(
-        Common.UIString('Unhide all'), this._filter.removeMessageURLFilter.bind(this._filter));
-
-    let hasFilters = false;
-
-    for (const url in this._filter.messageURLFilters()) {
-      filterSubMenu.defaultSection().appendCheckboxItem(
-          String.sprintf('%s (%d)', new Common.ParsedURL(url).displayName, this._urlToMessageCount[url]),
-          this._filter.removeMessageURLFilter.bind(this._filter, url), true);
-      hasFilters = true;
-    }
-
-    filterSubMenu.setEnabled(hasFilters || (consoleMessage && consoleMessage.url));
-    unhideAll.setEnabled(hasFilters);
 
     contextMenu.defaultSection().appendAction('console.clear');
     contextMenu.defaultSection().appendAction('console.clear.history');
@@ -784,6 +770,8 @@ Console.ConsoleView = class extends UI.VBox {
   _addGroupableMessagesToEnd() {
     /** @type {!Set<!SDK.ConsoleMessage>} */
     const alreadyAdded = new Set();
+    /** @type {!Set<string>} */
+    const processedGroupKeys = new Set();
     for (let i = 0; i < this._consoleMessages.length; ++i) {
       const viewMessage = this._consoleMessages[i];
       const message = viewMessage.consoleMessage();
@@ -805,9 +793,13 @@ Console.ConsoleView = class extends UI.VBox {
         continue;
       }
 
+      if (processedGroupKeys.has(key))
+        continue;
+
       if (!viewMessagesInGroup.find(x => this._shouldMessageBeVisible(x))) {
         // Optimize for speed.
         alreadyAdded.addAll(viewMessagesInGroup);
+        processedGroupKeys.add(key);
         continue;
       }
 
@@ -1117,8 +1109,11 @@ Console.ConsoleView = class extends UI.VBox {
     highlightNode.scrollIntoViewIfNeeded();
   }
 
-  _updateStickToBottomOnMouseDown() {
-    this._muteViewportUpdates = true;
+  /**
+   * @param {boolean=} isRightClick
+   */
+  _updateStickToBottomOnMouseDown(isRightClick) {
+    this._muteViewportUpdates = !isRightClick;
     this._viewport.setStickToBottom(false);
     if (this._waitForScrollTimeout) {
       clearTimeout(this._waitForScrollTimeout);
@@ -1160,6 +1155,14 @@ Console.ConsoleView = class extends UI.VBox {
     this._updateStickToBottomOnMouseUp();
   }
 
+  /**
+   * @param {!Common.Event} event
+   */
+  _promptExpressionPinned(event) {
+    const text = /** @type {string} */ (event.data);
+    this._pinPane.addPin(text);
+  }
+
   _promptTextChanged() {
     this._viewport.setStickToBottom(this._isScrolledToBottom());
     this._promptTextChangedForTest();
@@ -1190,12 +1193,10 @@ Console.ConsoleViewFilter = class {
   constructor(filterChangedCallback) {
     this._filterChanged = filterChangedCallback;
 
-    this._messageURLFiltersSetting = Common.settings.createSetting('messageURLFilters', {});
     this._messageLevelFiltersSetting = Console.ConsoleViewFilter.levelFilterSetting();
     this._hideNetworkMessagesSetting = Common.moduleSetting('hideNetworkMessages');
     this._filterByExecutionContextSetting = Common.moduleSetting('selectedContextFilterEnabled');
 
-    this._messageURLFiltersSetting.addChangeListener(this._onFilterChanged.bind(this));
     this._messageLevelFiltersSetting.addChangeListener(this._onFilterChanged.bind(this));
     this._hideNetworkMessagesSetting.addChangeListener(this._onFilterChanged.bind(this));
     this._filterByExecutionContextSetting.addChangeListener(this._onFilterChanged.bind(this));
@@ -1223,7 +1224,7 @@ Console.ConsoleViewFilter = class {
     this._levelLabels[SDK.ConsoleMessage.MessageLevel.Warning] = Common.UIString('Warnings');
     this._levelLabels[SDK.ConsoleMessage.MessageLevel.Error] = Common.UIString('Errors');
 
-    this._levelMenuButton = new UI.ToolbarButton('');
+    this._levelMenuButton = new UI.ToolbarButton(ls`Log levels`);
     this._levelMenuButton.turnIntoSelect();
     this._levelMenuButton.addEventListener(UI.ToolbarButton.Events.Click, this._showLevelContextMenu.bind(this));
 
@@ -1254,8 +1255,7 @@ Console.ConsoleViewFilter = class {
   }
 
   _updateCurrentFilter() {
-    let parsedFilters = this._filterParser.parse(this._textFilterUI.value());
-
+    const parsedFilters = this._filterParser.parse(this._textFilterUI.value());
     if (this._hideNetworkMessagesSetting.get()) {
       parsedFilters.push({
         key: Console.ConsoleFilter.FilterType.Source,
@@ -1263,10 +1263,6 @@ Console.ConsoleViewFilter = class {
         negative: true
       });
     }
-
-    const blockedURLs = Object.keys(this._messageURLFiltersSetting.get());
-    const urlFilters = blockedURLs.map(url => ({key: Console.ConsoleFilter.FilterType.Url, text: url, negative: true}));
-    parsedFilters = parsedFilters.concat(urlFilters);
 
     this._currentFilter.executionContext =
         this._filterByExecutionContextSetting.get() ? UI.context.flavor(SDK.ExecutionContext) : null;
@@ -1335,30 +1331,12 @@ Console.ConsoleViewFilter = class {
    * @param {string} url
    */
   addMessageURLFilter(url) {
-    const value = this._messageURLFiltersSetting.get();
-    value[url] = true;
-    this._messageURLFiltersSetting.set(value);
-  }
-
-  /**
-   * @param {string} url
-   */
-  removeMessageURLFilter(url) {
-    let value;
-    if (url) {
-      value = this._messageURLFiltersSetting.get();
-      delete value[url];
-    } else {
-      value = {};
-    }
-    this._messageURLFiltersSetting.set(value);
-  }
-
-  /**
-   * @returns {!Object}
-   */
-  messageURLFilters() {
-    return this._messageURLFiltersSetting.get();
+    if (!url)
+      return;
+    const suffix = this._textFilterUI.value() ? ` ${this._textFilterUI.value()}` : '';
+    this._textFilterUI.setValue(`-url:${url}${suffix}`);
+    this._textFilterSetting.set(this._textFilterUI.value());
+    this._onFilterChanged();
   }
 
   /**
@@ -1374,7 +1352,6 @@ Console.ConsoleViewFilter = class {
   }
 
   reset() {
-    this._messageURLFiltersSetting.set({});
     this._messageLevelFiltersSetting.set(Console.ConsoleFilter.defaultLevelsFilterValue());
     this._filterByExecutionContextSetting.set(false);
     this._hideNetworkMessagesSetting.set(false);

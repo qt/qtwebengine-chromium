@@ -27,27 +27,9 @@ from xml.etree import ElementTree
 from util import build_utils
 from util import resource_utils
 
-_SOURCE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    __file__))))
 # Import jinja2 from third_party/jinja2
-sys.path.insert(1, os.path.join(_SOURCE_ROOT, 'third_party'))
+sys.path.insert(1, os.path.join(build_utils.DIR_SOURCE_ROOT, 'third_party'))
 from jinja2 import Template # pylint: disable=F0401
-
-# A variation of this lists also exists in:
-# //base/android/java/src/org/chromium/base/LocaleUtils.java
-_CHROME_TO_ANDROID_LOCALE_MAP = {
-    'en-GB': 'en-rGB',
-    'en-US': 'en-rUS',
-    'es-419': 'es-rUS',
-    'fil': 'tl',
-    'he': 'iw',
-    'id': 'in',
-    'pt-PT': 'pt-rPT',
-    'pt-BR': 'pt-rBR',
-    'yi': 'ji',
-    'zh-CN': 'zh-rCN',
-    'zh-TW': 'zh-rTW',
-}
 
 # Pngs that we shouldn't convert to webp. Please add rationale when updating.
 _PNG_WEBP_BLACKLIST_PATTERN = re.compile('|'.join([
@@ -228,12 +210,18 @@ def _SortZip(original_path, sorted_path):
       sorted_zip.writestr(info, original_zip.read(info))
 
 
+def _IterFiles(root_dir):
+  for root, _, files in os.walk(root_dir):
+    for f in files:
+      yield os.path.join(root, f)
+
+
 def _DuplicateZhResources(resource_dirs):
   """Duplicate Taiwanese resources into Hong-Kong specific directory."""
   renamed_paths = dict()
   for resource_dir in resource_dirs:
     # We use zh-TW resources for zh-HK (if we have zh-TW resources).
-    for path in build_utils.IterFiles(resource_dir):
+    for path in _IterFiles(resource_dir):
       if 'zh-rTW' in path:
         hk_path = path.replace('zh-rTW', 'zh-rHK')
         build_utils.MakeDirectory(os.path.dirname(hk_path))
@@ -247,9 +235,9 @@ def _ToAaptLocales(locale_whitelist, support_zh_hk):
   """Converts the list of Chrome locales to aapt config locales."""
   ret = set()
   for locale in locale_whitelist:
-    locale = _CHROME_TO_ANDROID_LOCALE_MAP.get(locale, locale)
+    locale = resource_utils.CHROME_TO_ANDROID_LOCALE_MAP.get(locale, locale)
     if locale is None or ('-' in locale and '-r' not in locale):
-      raise Exception('_CHROME_TO_ANDROID_LOCALE_MAP needs updating.'
+      raise Exception('CHROME_TO_ANDROID_LOCALE_MAP needs updating.'
                       ' Found: %s' % locale)
     ret.add(locale)
     # Always keep non-regional fall-backs.
@@ -306,7 +294,7 @@ def _CreateLinkApkArgs(options):
     the command, matching the arguments from |options|.
   """
   link_command = [
-    options.aapt_path + '2',
+    options.aapt2_path,
     'link',
     '--version-code', options.version_code,
     '--version-name', options.version_name,
@@ -439,7 +427,7 @@ def _CreateKeepPredicate(resource_dirs, exclude_xxxhdpi, xxxhdpi_whitelist):
   # xxxhdpi drawable that does not exist in other densities.
   non_xxxhdpi_drawables = set()
   for resource_dir in resource_dirs:
-    for path in build_utils.IterFiles(resource_dir):
+    for path in _IterFiles(resource_dir):
       if re.search(r'[/-]drawable[/-]', path) and naive_predicate(path):
         non_xxxhdpi_drawables.add(_ResourceNameFromPath(path))
 
@@ -468,11 +456,11 @@ def _ConvertToWebP(webp_binary, png_files):
   return renamed_paths
 
 
-def _CompileDeps(aapt_path, dep_subdirs, temp_dir):
+def _CompileDeps(aapt2_path, dep_subdirs, temp_dir):
   partials_dir = os.path.join(temp_dir, 'partials')
   build_utils.MakeDirectory(partials_dir)
   partial_compile_command = [
-      aapt_path + '2',
+      aapt2_path,
       'compile',
       # TODO(wnwen): Turn this on once aapt2 forces 9-patch to be crunched.
       # '--no-crunch',
@@ -532,7 +520,7 @@ def _PackageApk(options, dep_subdirs, temp_dir, gen_dir, r_txt_path):
       dep_subdirs, options.exclude_xxxhdpi, options.xxxhdpi_whitelist)
   png_paths = []
   for directory in dep_subdirs:
-    for f in build_utils.IterFiles(directory):
+    for f in _IterFiles(directory):
       if not keep_predicate(f):
         os.remove(f)
       elif f.endswith('.png'):
@@ -550,7 +538,7 @@ def _PackageApk(options, dep_subdirs, temp_dir, gen_dir, r_txt_path):
   fixed_manifest = _FixManifest(options, temp_dir)
   link_command += ['--manifest', fixed_manifest]
 
-  partials = _CompileDeps(options.aapt_path, dep_subdirs, temp_dir)
+  partials = _CompileDeps(options.aapt2_path, dep_subdirs, temp_dir)
   for partial in partials:
     link_command += ['-R', partial]
 
@@ -597,9 +585,6 @@ def _OnStaleMd5(options):
 
     r_txt_path = _WriteFinalRTxtFile(options, build.r_txt_path)
 
-    package = resource_utils.ExtractPackageFromManifest(
-        options.android_manifest)
-
     # If --shared-resources-whitelist is used, the all resources listed in
     # the corresponding R.txt file will be non-final, and an onResourcesLoaded()
     # will be generated to adjust them at runtime.
@@ -619,7 +604,7 @@ def _OnStaleMd5(options):
       rjava_build_options.GenerateOnResourcesLoaded()
 
     resource_utils.CreateRJavaFiles(
-        build.srcjar_dir, package, r_txt_path,
+        build.srcjar_dir, None, r_txt_path,
         options.extra_res_packages,
         options.extra_r_text_files,
         rjava_build_options)
@@ -668,6 +653,7 @@ def main(args):
 
   possible_input_paths = [
     options.aapt_path,
+    options.aapt2_path,
     options.android_manifest,
     options.shared_resources_whitelist,
   ]
@@ -684,7 +670,8 @@ def main(args):
       options,
       input_paths=input_paths,
       input_strings=input_strings,
-      output_paths=output_paths)
+      output_paths=output_paths,
+      depfile_deps=options.dependencies_res_zips + options.extra_r_text_files)
 
 
 if __name__ == '__main__':

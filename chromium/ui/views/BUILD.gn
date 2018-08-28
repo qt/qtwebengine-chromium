@@ -95,6 +95,7 @@ jumbo_component("views") {
     "cocoa/views_nswindow_delegate.h",
     "cocoa/views_scrollbar_bridge.h",
     "cocoa/widget_owner_nswindow_adapter.h",
+    "cocoa/window_touch_bar_delegate.h",
     "color_chooser/color_chooser_listener.h",
     "color_chooser/color_chooser_view.h",
     "context_menu_controller.h",
@@ -257,6 +258,7 @@ jumbo_component("views") {
     "window/window_button_order_provider.h",
     "window/window_resources.h",
     "window/window_shape.h",
+    "window/window_resize_utils.h",
     "word_lookup_client.h",
   ]
 
@@ -436,6 +438,7 @@ jumbo_component("views") {
     "window/native_frame_view.cc",
     "window/non_client_view.cc",
     "window/window_button_order_provider.cc",
+    "window/window_resize_utils.cc",
     "window/window_shape.cc",
   ]
 
@@ -575,6 +578,7 @@ jumbo_component("views") {
     public += [
       "accessibility/ax_aura_obj_cache.h",
       "accessibility/ax_aura_obj_wrapper.h",
+      "accessibility/ax_tree_source_views.h",
       "accessibility/ax_view_obj_wrapper.h",
       "accessibility/ax_widget_obj_wrapper.h",
       "accessibility/ax_window_obj_wrapper.h",
@@ -607,6 +611,7 @@ jumbo_component("views") {
     sources += [
       "accessibility/ax_aura_obj_cache.cc",
       "accessibility/ax_aura_obj_wrapper.cc",
+      "accessibility/ax_tree_source_views.cc",
       "accessibility/ax_view_obj_wrapper.cc",
       "accessibility/ax_widget_obj_wrapper.cc",
       "accessibility/ax_window_obj_wrapper.cc",
@@ -675,20 +680,21 @@ jumbo_component("views") {
         ]
         if (use_atk) {
           sources += [
-            "accessibility/native_view_accessibility_auralinux.cc",
-            "accessibility/native_view_accessibility_auralinux.h",
+            "accessibility/view_ax_platform_node_delegate_auralinux.cc",
+            "accessibility/view_ax_platform_node_delegate_auralinux.h",
           ]
           configs += [ "//build/config/linux/atk" ]
         }
       } else if (is_win) {
+        public += [ "widget/desktop_aura/desktop_window_tree_host_win.h" ]
         sources += [
           "widget/desktop_aura/desktop_drag_drop_client_win.cc",
           "widget/desktop_aura/desktop_drag_drop_client_win.h",
           "widget/desktop_aura/desktop_screen_win.cc",
           "widget/desktop_aura/desktop_screen_win.h",
           "widget/desktop_aura/desktop_window_tree_host_win.cc",
-          "widget/desktop_aura/desktop_window_tree_host_win.h",
         ]
+        deps += [ "//ui/events:dom_keyboard_layout" ]
       } else if (use_ozone) {
         public += [ "widget/desktop_aura/desktop_screen_ozone.h" ]
         sources += [ "widget/desktop_aura/desktop_screen_ozone.cc" ]
@@ -726,12 +732,12 @@ jumbo_component("views") {
 
   if (has_native_accessibility) {
     sources += [
-      "accessibility/native_view_accessibility_base.cc",
-      "accessibility/native_view_accessibility_base.h",
-      "accessibility/native_view_accessibility_mac.h",
-      "accessibility/native_view_accessibility_mac.mm",
-      "accessibility/native_view_accessibility_win.cc",
-      "accessibility/native_view_accessibility_win.h",
+      "accessibility/view_ax_platform_node_delegate.cc",
+      "accessibility/view_ax_platform_node_delegate.h",
+      "accessibility/view_ax_platform_node_delegate_mac.h",
+      "accessibility/view_ax_platform_node_delegate_mac.mm",
+      "accessibility/view_ax_platform_node_delegate_win.cc",
+      "accessibility/view_ax_platform_node_delegate_win.h",
     ]
   }
 
@@ -829,7 +835,7 @@ jumbo_source_set("test_support_internal") {
     "//base/test:test_support",
     "//gpu/ipc/service",
     "//ipc:test_support",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//skia",
     "//testing/gtest",
     "//ui/base",
@@ -918,11 +924,10 @@ source_set("views_unittests_sources") {
     "controls/button/label_button_label.h",
   ]
   if (has_native_accessibility) {
-    public += [ "accessibility/native_view_accessibility_base.h" ]
+    public += [ "accessibility/view_ax_platform_node_delegate.h" ]
   }
 
   sources = [
-    "accessibility/native_view_accessibility_win_unittest.cc",
     "accessible_pane_view_unittest.cc",
     "animation/bounds_animator_unittest.cc",
     "animation/flood_fill_ink_drop_ripple_unittest.cc",
@@ -991,7 +996,7 @@ source_set("views_unittests_sources") {
     "view_tracker_unittest.cc",
     "view_unittest.cc",
     "view_unittest_mac.mm",
-    "widget/native_widget_mac_accessibility_unittest.mm",
+    "widget/ax_native_widget_mac_unittest.mm",
     "widget/native_widget_mac_unittest.mm",
     "widget/native_widget_unittest.cc",
     "widget/root_view_unittest.cc",
@@ -999,6 +1004,8 @@ source_set("views_unittests_sources") {
     "window/custom_frame_view_unittest.cc",
     "window/dialog_client_view_unittest.cc",
     "window/dialog_delegate_unittest.cc",
+    "window/non_client_view_unittest.cc",
+    "window/window_resize_utils_unittest.cc",
   ]
 
   configs += [ "//build/config:precompiled_headers" ]
@@ -1042,21 +1049,28 @@ source_set("views_unittests_sources") {
   ]
 
   if (is_win) {
+    public += [ "accessibility/view_ax_platform_node_delegate_win.h" ]
+
     public_deps += [
       "//build/win:default_exe_manifest",
       "//third_party/iaccessible2",
       "//third_party/wtl",
     ]
+
     libs = [
       "imm32.lib",
       "oleacc.lib",
       "comctl32.lib",
     ]
-    sources += [ "win/pen_event_processor_unittest.cc" ]
+
+    sources += [
+      "accessibility/view_ax_platform_node_delegate_win_unittest.cc",
+      "win/pen_event_processor_unittest.cc",
+    ]
   }
 
   if (has_native_accessibility) {
-    sources += [ "accessibility/native_view_accessibility_unittest.cc" ]
+    sources += [ "accessibility/view_ax_platform_node_delegate_unittest.cc" ]
   }
 
   if (use_x11) {
@@ -1074,6 +1088,7 @@ source_set("views_unittests_sources") {
   if (use_aura) {
     sources += [
       "accessibility/ax_aura_obj_cache_unittest.cc",
+      "accessibility/ax_tree_source_views_unittest.cc",
       "controls/native/native_view_host_aura_unittest.cc",
       "touchui/touch_selection_menu_runner_views_unittest.cc",
       "view_unittest_aura.cc",
@@ -1144,7 +1159,7 @@ test("views_unittests") {
 
   deps = [
     ":views_unittests_sources",
-    "//mojo/edk",
+    "//mojo/core/embedder",
   ]
 }
 
@@ -1162,7 +1177,7 @@ source_set("views_interactive_ui_tests") {
     ":views",
     "//base",
     "//base/test:test_support",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//skia",
     "//testing/gtest",
     "//ui/base:test_support",
@@ -1221,7 +1236,7 @@ test("views_perftests") {
     ":test_support",
     "//base/test:test_support",
     "//cc/base:base",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//testing/perf",
     "//ui/resources:ui_test_pak",
   ]

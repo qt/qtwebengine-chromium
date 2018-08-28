@@ -25,11 +25,13 @@ class SurfaceEGL : public SurfaceGL
 
     egl::Error makeCurrent() override;
     egl::Error swap(const gl::Context *context) override;
+    egl::Error swapWithDamage(const gl::Context *context, EGLint *rects, EGLint n_rects) override;
     egl::Error postSubBuffer(const gl::Context *context,
                              EGLint x,
                              EGLint y,
                              EGLint width,
                              EGLint height) override;
+    egl::Error setPresentationTime(EGLnsecsANDROID time) override;
     egl::Error querySurfacePointerANGLE(EGLint attribute, void **value) override;
     egl::Error bindTexImage(const gl::Context *context,
                             gl::Texture *texture,
@@ -47,6 +49,9 @@ class SurfaceEGL : public SurfaceGL
     const FunctionsEGL *mEGL;
     EGLConfig mConfig;
     EGLSurface mSurface;
+
+  private:
+    bool mHasSwapBuffersWithDamage;
 };
 
 }  // namespace rx

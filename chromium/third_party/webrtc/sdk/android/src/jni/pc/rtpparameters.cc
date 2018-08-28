@@ -25,6 +25,7 @@ ScopedJavaLocalRef<jobject> NativeToJavaRtpEncodingParameter(
     const RtpEncodingParameters& encoding) {
   return Java_Encoding_Constructor(
       env, encoding.active, NativeToJavaInteger(env, encoding.max_bitrate_bps),
+      NativeToJavaInteger(env, encoding.min_bitrate_bps),
       encoding.ssrc ? NativeToJavaLong(env, *encoding.ssrc) : nullptr);
 }
 
@@ -39,6 +40,21 @@ ScopedJavaLocalRef<jobject> NativeToJavaRtpCodecParameter(
                                 NativeToJavaStringMap(env, codec.parameters));
 }
 
+ScopedJavaLocalRef<jobject> NativeToJavaRtpRtcpParameters(
+    JNIEnv* env,
+    const RtcpParameters& rtcp) {
+  return Java_Rtcp_Constructor(env, NativeToJavaString(env, rtcp.cname),
+                               rtcp.reduced_size);
+}
+
+ScopedJavaLocalRef<jobject> NativeToJavaRtpHeaderExtensionParameter(
+    JNIEnv* env,
+    const RtpExtension& extension) {
+  return Java_HeaderExtension_Constructor(
+      env, NativeToJavaString(env, extension.uri), extension.id,
+      extension.encrypt);
+}
+
 }  // namespace
 
 RtpEncodingParameters JavaToNativeRtpEncodingParameters(
@@ -46,9 +62,12 @@ RtpEncodingParameters JavaToNativeRtpEncodingParameters(
     const JavaRef<jobject>& j_encoding_parameters) {
   RtpEncodingParameters encoding;
   encoding.active = Java_Encoding_getActive(jni, j_encoding_parameters);
-  ScopedJavaLocalRef<jobject> j_bitrate =
+  ScopedJavaLocalRef<jobject> j_max_bitrate =
       Java_Encoding_getMaxBitrateBps(jni, j_encoding_parameters);
-  encoding.max_bitrate_bps = JavaToNativeOptionalInt(jni, j_bitrate);
+  encoding.max_bitrate_bps = JavaToNativeOptionalInt(jni, j_max_bitrate);
+  ScopedJavaLocalRef<jobject> j_min_bitrate =
+      Java_Encoding_getMinBitrateBps(jni, j_encoding_parameters);
+  encoding.min_bitrate_bps = JavaToNativeOptionalInt(jni, j_min_bitrate);
   ScopedJavaLocalRef<jobject> j_ssrc =
       Java_Encoding_getSsrc(jni, j_encoding_parameters);
   if (!IsNull(jni, j_ssrc))
@@ -63,6 +82,26 @@ RtpParameters JavaToNativeRtpParameters(JNIEnv* jni,
   ScopedJavaLocalRef<jstring> j_transaction_id =
       Java_RtpParameters_getTransactionId(jni, j_parameters);
   parameters.transaction_id = JavaToNativeString(jni, j_transaction_id);
+
+  ScopedJavaLocalRef<jobject> j_rtcp =
+      Java_RtpParameters_getRtcp(jni, j_parameters);
+  ScopedJavaLocalRef<jstring> j_rtcp_cname = Java_Rtcp_getCname(jni, j_rtcp);
+  jboolean j_rtcp_reduced_size = Java_Rtcp_getReducedSize(jni, j_rtcp);
+  parameters.rtcp.cname = JavaToNativeString(jni, j_rtcp_cname);
+  parameters.rtcp.reduced_size = j_rtcp_reduced_size;
+
+  ScopedJavaLocalRef<jobject> j_header_extensions =
+      Java_RtpParameters_getHeaderExtensions(jni, j_parameters);
+  for (const JavaRef<jobject>& j_header_extension :
+       Iterable(jni, j_header_extensions)) {
+    RtpExtension header_extension;
+    header_extension.uri = JavaToStdString(
+        jni, Java_HeaderExtension_getUri(jni, j_header_extension));
+    header_extension.id = Java_HeaderExtension_getId(jni, j_header_extension);
+    header_extension.encrypt =
+        Java_HeaderExtension_getEncrypted(jni, j_header_extension);
+    parameters.header_extensions.push_back(header_extension);
+  }
 
   // Convert encodings.
   ScopedJavaLocalRef<jobject> j_encodings =
@@ -99,6 +138,9 @@ ScopedJavaLocalRef<jobject> NativeToJavaRtpParameters(
     const RtpParameters& parameters) {
   return Java_RtpParameters_Constructor(
       env, NativeToJavaString(env, parameters.transaction_id),
+      NativeToJavaRtpRtcpParameters(env, parameters.rtcp),
+      NativeToJavaList(env, parameters.header_extensions,
+                       &NativeToJavaRtpHeaderExtensionParameter),
       NativeToJavaList(env, parameters.encodings,
                        &NativeToJavaRtpEncodingParameter),
       NativeToJavaList(env, parameters.codecs, &NativeToJavaRtpCodecParameter));

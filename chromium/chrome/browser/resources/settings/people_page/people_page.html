@@ -19,9 +19,12 @@
 <link rel="import" href="sync_page.html">
 <link rel="import" href="profile_info_browser_proxy.html">
 <link rel="import" href="sync_browser_proxy.html">
+<link rel="import" href="../icons.html">
 <link rel="import" href="../route.html">
 <link rel="import" href="../settings_page/settings_animated_pages.html">
 <link rel="import" href="../settings_page/settings_subpage.html">
+<link rel="import" href="../passwords_and_forms_page/autofill_section.html">
+<link rel="import" href="../passwords_and_forms_page/passwords_section.html">
 <link rel="import" href="../settings_shared_css.html">
 
 <if expr="chromeos">
@@ -60,7 +63,7 @@
         font-weight: bold;
       }
 
-      iron-icon[icon='settings:sync'] {
+      iron-icon[icon='cr:sync'] {
        --iron-icon-fill-color: var(--google-green-700);
       }
 
@@ -75,6 +78,11 @@
 
       #sync-status:not([actionable]) .subpage-arrow {
         display: none;
+      }
+
+      cr-link-row {
+        --cr-link-row-icon-width: 40px;
+        border-top: var(--settings-separator-line);
       }
 
       .settings-box[actionable].sync-error #syncSecondary {
@@ -118,6 +126,12 @@
       }
 
       settings-sync-account-control[showing-promo] {
+        --promo-banner: {
+          /* Make the banner image stay within setting-section's card border
+             radius. */
+          border-top-left-radius: var(--cr-card-border-radius);
+          border-top-right-radius: var(--cr-card-border-radius);
+        }
         /* When showing promo in this page, text should be larger. */
         --promo-description: {
           font-size: 0.9rem;
@@ -259,13 +273,26 @@
         </template>
 
         <template is="dom-if" if="[[unifiedConsentEnabled_]]">
-          <div class="settings-box" id="sync-setup" on-click="onSyncTap_"
-              actionable>
-            <div class="start">$i18n{syncAndPersonalization}</div>
-            <paper-icon-button-light class="subpage-arrow">
-              <button aria-label="$i18n{sync}"></button>
-            </paper-icon-button-light>
-          </div>
+          <cr-link-row id="sync-setup"
+              start-icon="settings20:googleg"
+              label="$i18n{syncAndNonPersonalizedServices}"
+              icon-class="subpage-arrow" on-click="onSyncTap_">
+          </cr-link-row>
+        </template>
+
+        <template is="dom-if" if="[[autofillHomeEnabled]]">
+          <cr-link-row id="passwordManagerButton"
+               start-icon="settings20:vpn-key"
+               label="$i18n{passwords}" icon-class="subpage-arrow"
+               on-click="onPasswordsTap_"></cr-link-row>
+          <cr-link-row id="paymentManagerButton"
+               start-icon="settings20:credit-card"
+               label="$i18n{creditCards}" icon-class="subpage-arrow"
+               on-click="onAutofillTap_"></cr-link-row>
+          <cr-link-row id="addressesManagerButton"
+               start-icon="settings20:location-on"
+               label="$i18n{addresses}" icon-class="subpage-arrow"
+               on-click="onAutofillTap_"></cr-link-row>
         </template>
 
 <if expr="not chromeos">
@@ -320,11 +347,12 @@
 
       </neon-animatable>
       <template is="dom-if" route-path="/syncSetup"
-          no-search$="[[!isAdvancedSyncSettingsVisible_(syncStatus,
-              unifiedConsentEnabled_)]]">
+          no-search="[[!isAdvancedSyncSettingsVisible_(
+              syncStatus, unifiedConsentEnabled_)]]">
         <settings-subpage
             associated-control="[[$$('#sync-status')]]"
             page-title="$i18n{syncPageTitle}"
+            learn-more-url="$i18n{syncAndGoogleServicesLearnMoreURL}"
             no-search$="[[!isAdvancedSyncSettingsVisible_(syncStatus,
                 unifiedConsentEnabled_)]]">
           <settings-sync-page
@@ -337,6 +365,30 @@
           </settings-sync-page>
         </settings-subpage>
       </template>
+
+      <template is="dom-if" if="[[autofillHomeEnabled]]">
+        <template is="dom-if" route-path="/passwords">
+          <settings-subpage
+              associated-control="[[$$('#passwordManagerButton')]]"
+              page-title="$i18n{passwords}"
+              learn-more-url="$i18n{passwordManagerLearnMoreURL}"
+              search-label="$i18n{searchPasswords}"
+              search-term="{{passwordFilter_}}">
+            <passwords-section id="passwordSection" filter="[[passwordFilter_]]"
+                prefs="{{prefs}}">
+            </passwords-section>
+          </settings-subpage>
+        </template>
+        <template is="dom-if" route-path="/autofill">
+          <settings-subpage
+              associated-control="[[$$('#addressesManagerButton')]]"
+              page-title="$i18n{autofill}">
+            <settings-autofill-section id="autofillSection" prefs="{{prefs}}">
+            </settings-autofill-section>
+          </settings-subpage>
+        </template>
+      </template>
+
 <if expr="chromeos">
       <template is="dom-if" route-path="/lockScreen">
         <settings-subpage

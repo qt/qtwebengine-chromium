@@ -51,6 +51,7 @@
 #include "printing/page_size_margins.h"
 #include "printing/print_job_constants.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
@@ -419,6 +420,11 @@ void AddPrintPreviewFlags(content::WebUIDataSource* source, Profile* profile) {
   bool nup_printing_enabled =
       base::FeatureList::IsEnabled(features::kNupPrinting);
   source->AddBoolean("pagesPerSheetEnabled", nup_printing_enabled);
+
+  bool cloud_printer_handler_enabled =
+      base::FeatureList::IsEnabled(features::kCloudPrinterHandler);
+  source->AddBoolean("cloudPrinterHandlerEnabled",
+                     cloud_printer_handler_enabled);
 }
 
 void SetupPrintPreviewPlugin(content::WebUIDataSource* source) {
@@ -578,7 +584,8 @@ PrintPreviewUI::PrintPreviewUI(content::WebUI* web_ui)
   Profile* profile = Profile::FromWebUI(web_ui);
 
   bool new_print_preview_enabled =
-      base::FeatureList::IsEnabled(features::kNewPrintPreview);
+      base::FeatureList::IsEnabled(features::kNewPrintPreview) ||
+      base::FeatureList::IsEnabled(features::kExperimentalUi);
   if (new_print_preview_enabled) {
     content::WebUIDataSource::Add(profile,
                                   CreateNewPrintPreviewUISource(profile));
@@ -639,15 +646,15 @@ void PrintPreviewUI::SetInitialParams(
 }
 
 // static
-void PrintPreviewUI::GetCurrentPrintPreviewStatus(int32_t preview_ui_id,
-                                                  int request_id,
-                                                  bool* cancel) {
+void PrintPreviewUI::GetCurrentPrintPreviewStatus(
+    const PrintHostMsg_PreviewIds& ids,
+    bool* cancel) {
   int current_id = -1;
-  if (!g_print_preview_request_id_map.Get().Get(preview_ui_id, &current_id)) {
+  if (!g_print_preview_request_id_map.Get().Get(ids.ui_id, &current_id)) {
     *cancel = true;
     return;
   }
-  *cancel = (request_id != current_id);
+  *cancel = (ids.request_id != current_id);
 }
 
 int32_t PrintPreviewUI::GetIDForPrintPreviewUI() const {
@@ -680,8 +687,8 @@ void PrintPreviewUI::OnInitiatorClosed() {
   }
 }
 
-void PrintPreviewUI::OnPrintPreviewCancelled() {
-  handler_->OnPrintPreviewCancelled();
+void PrintPreviewUI::OnPrintPreviewCancelled(int request_id) {
+  handler_->OnPrintPreviewCancelled(request_id);
 }
 
 void PrintPreviewUI::OnPrintPreviewRequest(int request_id) {
@@ -693,17 +700,20 @@ void PrintPreviewUI::OnPrintPreviewRequest(int request_id) {
 }
 
 void PrintPreviewUI::OnDidGetPreviewPageCount(
-    const PrintHostMsg_DidGetPreviewPageCount_Params& params) {
+    const PrintHostMsg_DidGetPreviewPageCount_Params& params,
+    int request_id) {
   DCHECK_GT(params.page_count, 0);
   if (g_testing_delegate)
     g_testing_delegate->DidGetPreviewPageCount(params.page_count);
-  handler_->SendPageCountReady(params.page_count, params.preview_request_id,
+  handler_->SendPageCountReady(params.page_count, request_id,
                                params.fit_to_page_scaling);
 }
 
 void PrintPreviewUI::OnDidGetDefaultPageLayout(
-    const PageSizeMargins& page_layout, const gfx::Rect& printable_area,
-    bool has_custom_page_size_style) {
+    const PageSizeMargins& page_layout,
+    const gfx::Rect& printable_area,
+    bool has_custom_page_size_style,
+    int request_id) {
   if (page_layout.margin_top < 0 || page_layout.margin_left < 0 ||
       page_layout.margin_bottom < 0 || page_layout.margin_right < 0 ||
       page_layout.content_width < 0 || page_layout.content_height < 0 ||
@@ -725,7 +735,7 @@ void PrintPreviewUI::OnDidGetDefaultPageLayout(
                     printable_area.width());
   layout.SetInteger(printing::kSettingPrintableAreaHeight,
                     printable_area.height());
-  handler_->SendPageLayoutReady(layout, has_custom_page_size_style);
+  handler_->SendPageLayoutReady(layout, has_custom_page_size_style, request_id);
 }
 
 void PrintPreviewUI::OnDidPreviewPage(int page_number,
@@ -758,12 +768,12 @@ void PrintPreviewUI::OnCancelPendingPreviewRequest() {
   g_print_preview_request_id_map.Get().Set(id_, -1);
 }
 
-void PrintPreviewUI::OnPrintPreviewFailed() {
-  handler_->OnPrintPreviewFailed();
+void PrintPreviewUI::OnPrintPreviewFailed(int request_id) {
+  handler_->OnPrintPreviewFailed(request_id);
 }
 
-void PrintPreviewUI::OnInvalidPrinterSettings() {
-  handler_->OnInvalidPrinterSettings();
+void PrintPreviewUI::OnInvalidPrinterSettings(int request_id) {
+  handler_->OnInvalidPrinterSettings(request_id);
 }
 
 void PrintPreviewUI::OnHidePreviewDialog() {
@@ -796,9 +806,10 @@ void PrintPreviewUI::OnClosePrintPreviewDialog() {
 }
 
 void PrintPreviewUI::OnSetOptionsFromDocument(
-    const PrintHostMsg_SetOptionsFromDocument_Params& params) {
+    const PrintHostMsg_SetOptionsFromDocument_Params& params,
+    int request_id) {
   handler_->SendPrintPresetOptions(params.is_scaling_disabled, params.copies,
-                                   params.duplex);
+                                   params.duplex, request_id);
 }
 
 // static

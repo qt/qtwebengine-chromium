@@ -67,23 +67,27 @@ AudioProcessingProperties::AudioProcessingProperties(
     const AudioProcessingProperties& other) = default;
 AudioProcessingProperties& AudioProcessingProperties::operator=(
     const AudioProcessingProperties& other) = default;
-AudioProcessingProperties::AudioProcessingProperties(
-    AudioProcessingProperties&& other) = default;
-AudioProcessingProperties& AudioProcessingProperties::operator=(
-    AudioProcessingProperties&& other) = default;
-AudioProcessingProperties::~AudioProcessingProperties() = default;
 
 void AudioProcessingProperties::DisableDefaultProperties() {
-  enable_sw_echo_cancellation = false;
-  disable_hw_echo_cancellation = false;
+  echo_cancellation_type = EchoCancellationType::kEchoCancellationDisabled;
   goog_auto_gain_control = false;
   goog_experimental_echo_cancellation = false;
   goog_typing_noise_detection = false;
   goog_noise_suppression = false;
   goog_experimental_noise_suppression = false;
-  goog_beamforming = false;
   goog_highpass_filter = false;
   goog_experimental_auto_gain_control = false;
+}
+
+bool AudioProcessingProperties::EchoCancellationEnabled() const {
+  return echo_cancellation_type !=
+         EchoCancellationType::kEchoCancellationDisabled;
+}
+
+bool AudioProcessingProperties::EchoCancellationIsWebRtcProvided() const {
+  return echo_cancellation_type ==
+             EchoCancellationType::kEchoCancellationAec2 ||
+         echo_cancellation_type == EchoCancellationType::kEchoCancellationAec3;
 }
 
 EchoInformation::EchoInformation()
@@ -271,8 +275,7 @@ void EnableAutomaticGainControl(AudioProcessing* audio_processing) {
 void GetAudioProcessingStats(
     AudioProcessing* audio_processing,
     webrtc::AudioProcessorInterface::AudioProcessorStats* stats) {
-  // TODO(ivoc): Change the APM stats to use rtc::Optional instead of default
-  //             values.
+  // TODO(ivoc): Change the APM stats to use optional instead of default values.
   auto apm_stats = audio_processing->GetStatistics();
   stats->echo_return_loss = apm_stats.echo_return_loss.instant();
   stats->echo_return_loss_enhancement =

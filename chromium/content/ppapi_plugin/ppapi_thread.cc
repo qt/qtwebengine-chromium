@@ -63,6 +63,10 @@
 #include "sandbox/win/src/sandbox.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "sandbox/mac/seatbelt_exec.h"
+#endif
+
 #if defined(OS_WIN)
 extern sandbox::TargetServices* g_target_services;
 
@@ -115,7 +119,7 @@ PpapiThread::PpapiThread(const base::CommandLine& command_line, bool is_broker)
   // allocator.
   if (!command_line.HasSwitch(switches::kSingleProcess)) {
     discardable_memory::mojom::DiscardableSharedMemoryManagerPtr manager_ptr;
-    if (features::IsMashEnabled()) {
+    if (!features::IsAshInBrowserProcess()) {
 #if defined(USE_AURA)
       GetServiceManagerConnection()->GetConnector()->BindInterface(
           ui::mojom::kServiceName, &manager_ptr);
@@ -198,6 +202,22 @@ base::SharedMemoryHandle PpapiThread::ShareSharedMemoryHandleWithRemote(
     base::ProcessId remote_pid) {
   DCHECK(remote_pid != base::kNullProcessId);
   return base::SharedMemory::DuplicateHandle(handle);
+}
+
+base::UnsafeSharedMemoryRegion
+PpapiThread::ShareUnsafeSharedMemoryRegionWithRemote(
+    const base::UnsafeSharedMemoryRegion& region,
+    base::ProcessId remote_pid) {
+  DCHECK(remote_pid != base::kNullProcessId);
+  return region.Duplicate();
+}
+
+base::ReadOnlySharedMemoryRegion
+PpapiThread::ShareReadOnlySharedMemoryRegionWithRemote(
+    const base::ReadOnlySharedMemoryRegion& region,
+    base::ProcessId remote_pid) {
+  DCHECK(remote_pid != base::kNullProcessId);
+  return region.Duplicate();
 }
 
 std::set<PP_Instance>* PpapiThread::GetGloballySeenInstanceIDSet() {
@@ -410,7 +430,7 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
 #if defined(OS_MACOSX)
     // TODO(kerrnel): Delete this once the V2 sandbox is default.
     const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
-    if (!cmdline->HasSwitch(switches::kEnableV2Sandbox)) {
+    if (!cmdline->HasSwitch(sandbox::switches::kSeatbeltClientName)) {
       // We need to do this after getting |PPP_GetInterface()| (or presumably
       // doing something nontrivial with the library), else the sandbox
       // intercedes.

@@ -12,7 +12,6 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_feature.mojom-blink.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_regexp.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_string_resource.h"
@@ -23,7 +22,6 @@
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/events/event_queue.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/event_type_names.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
 #include "third_party/blink/renderer/core/frame/frame_owner.h"
@@ -47,6 +45,7 @@
 #include "third_party/blink/renderer/modules/payments/payment_response.h"
 #include "third_party/blink/renderer/modules/payments/payment_shipping_option.h"
 #include "third_party/blink/renderer/modules/payments/payments_validators.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/feature_policy/feature_policy.h"
 #include "third_party/blink/renderer/platform/mojo/mojo_helper.h"
@@ -140,7 +139,7 @@ namespace {
 
 // If the website does not call complete() 60 seconds after show() has been
 // resolved, then behave as if the website called complete("fail").
-static const int kCompleteTimeoutSeconds = 60;
+constexpr TimeDelta kCompleteTimeout = TimeDelta::FromSeconds(60);
 
 // Validates ShippingOption or PaymentItem, which happen to have identical
 // fields, except for "id", which is present only in ShippingOption.
@@ -418,11 +417,10 @@ void SetBasicCardMethodData(const ScriptValue& input,
                                       output->supported_types, exception_state);
 }
 
-void StringifyAndParseMethodSpecificData(
-    const Vector<String>& supported_methods,
-    const ScriptValue& input,
-    PaymentMethodDataPtr& output,
-    ExceptionState& exception_state) {
+void StringifyAndParseMethodSpecificData(const String& supported_method,
+                                         const ScriptValue& input,
+                                         PaymentMethodDataPtr& output,
+                                         ExceptionState& exception_state) {
   DCHECK(!input.IsEmpty());
   v8::Local<v8::String> value;
   if (!input.V8Value()->IsObject() ||
@@ -433,8 +431,7 @@ void StringifyAndParseMethodSpecificData(
     return;
   }
 
-  output->stringified_data =
-      V8StringToWebCoreString<String>(value, kDoNotExternalize);
+  output->stringified_data = ToBlinkString<String>(value, kDoNotExternalize);
 
   if (output->stringified_data.length() >
       PaymentRequest::kMaxJSONStringLength) {
@@ -447,24 +444,24 @@ void StringifyAndParseMethodSpecificData(
   // Serialize payment method specific data to be sent to the payment apps. The
   // payment apps are responsible for validating and processing their method
   // data asynchronously. Do not throw exceptions here.
-  if (supported_methods.Contains("https://android.com/pay") ||
-      supported_methods.Contains("https://google.com/pay")) {
+  if (supported_method == "https://android.com/pay" ||
+      supported_method == "https://google.com/pay") {
     SetAndroidPayMethodData(input, output, exception_state);
     if (exception_state.HadException())
       exception_state.ClearException();
   }
   if (RuntimeEnabledFeatures::PaymentRequestBasicCardEnabled() &&
-      supported_methods.Contains("basic-card")) {
+      supported_method == "basic-card") {
     SetBasicCardMethodData(input, output, exception_state);
     if (exception_state.HadException())
       exception_state.ClearException();
   }
 }
 
-void CountPaymentRequestNetworkNameInSupportedMethods(
-    const Vector<String>& supported_methods,
+void CountPaymentRequestNetworkNameInSupportedMethod(
+    const String& supported_method,
     ExecutionContext& execution_context) {
-  if (BasicCardHelper::ContainsNetworkNames(supported_methods)) {
+  if (BasicCardHelper::IsNetworkName(supported_method)) {
     Deprecation::CountDeprecation(
         &execution_context,
         WebFeature::kPaymentRequestNetworkNameInSupportedMethods);
@@ -518,54 +515,23 @@ void ValidateAndConvertPaymentDetailsModifiers(
         return;
     }
 
-    Vector<String> supported_methods;
-    if (modifier.supportedMethods().IsString()) {
-      supported_methods.push_back(modifier.supportedMethods().GetAsString());
-    }
-    if (modifier.supportedMethods().IsStringSequence()) {
-      supported_methods = modifier.supportedMethods().GetAsStringSequence();
-      if (supported_methods.size() > 1) {
-        Deprecation::CountDeprecation(
-            &execution_context,
-            WebFeature::kPaymentRequestSupportedMethodsArray);
-      }
-    }
-    if (supported_methods.IsEmpty()) {
-      exception_state.ThrowTypeError(
-          "Must specify at least one payment method identifier");
+    if (!IsValidMethodFormat(modifier.supportedMethod())) {
+      exception_state.ThrowRangeError(
+          "Invalid payment method identifier format");
       return;
     }
 
-    if (supported_methods.size() > PaymentRequest::kMaxListSize) {
-      exception_state.ThrowTypeError(
-          "At most 1024 supportedMethods allowed for modifier");
-      return;
-    }
-
-    for (const String& method : supported_methods) {
-      if (method.length() > PaymentRequest::kMaxStringLength) {
-        exception_state.ThrowTypeError(
-            "Supported method name for identifier cannot be longer than 1024 "
-            "characters");
-        return;
-      }
-      if (!IsValidMethodFormat(method)) {
-        exception_state.ThrowRangeError(
-            "Invalid payment method identifier format");
-        return;
-      }
-    }
-    CountPaymentRequestNetworkNameInSupportedMethods(supported_methods,
-                                                     execution_context);
+    CountPaymentRequestNetworkNameInSupportedMethod(modifier.supportedMethod(),
+                                                    execution_context);
 
     output.back()->method_data =
         payments::mojom::blink::PaymentMethodData::New();
-    output.back()->method_data->supported_methods = supported_methods;
+    output.back()->method_data->supported_method = modifier.supportedMethod();
 
     if (modifier.hasData() && !modifier.data().IsEmpty()) {
-      StringifyAndParseMethodSpecificData(supported_methods, modifier.data(),
-                                          output.back()->method_data,
-                                          exception_state);
+      StringifyAndParseMethodSpecificData(
+          modifier.supportedMethod(), modifier.data(),
+          output.back()->method_data, exception_state);
     } else {
       output.back()->method_data->stringified_data = "";
     }
@@ -672,57 +638,23 @@ void ValidateAndConvertPaymentMethodData(
   }
 
   for (const PaymentMethodData payment_method_data : input) {
-    Vector<String> supported_methods;
-    if (payment_method_data.supportedMethods().IsString()) {
-      supported_methods.push_back(
-          payment_method_data.supportedMethods().GetAsString());
-    }
-    if (payment_method_data.supportedMethods().IsStringSequence()) {
-      supported_methods =
-          payment_method_data.supportedMethods().GetAsStringSequence();
-      if (supported_methods.size() > 1) {
-        Deprecation::CountDeprecation(
-            &execution_context,
-            WebFeature::kPaymentRequestSupportedMethodsArray);
-      }
-    }
-    if (supported_methods.IsEmpty()) {
-      exception_state.ThrowTypeError(
-          "Each payment method needs to include at least one payment method "
-          "identifier");
+    if (!IsValidMethodFormat(payment_method_data.supportedMethod())) {
+      exception_state.ThrowRangeError(
+          "Invalid payment method identifier format");
       return;
     }
+    method_names.insert(payment_method_data.supportedMethod());
 
-    if (supported_methods.size() > PaymentRequest::kMaxListSize) {
-      exception_state.ThrowTypeError(
-          "At most 1024 payment method identifiers are supported");
-      return;
-    }
-
-    for (const String identifier : supported_methods) {
-      if (identifier.length() > PaymentRequest::kMaxStringLength) {
-        exception_state.ThrowTypeError(
-            "A payment method identifier cannot be longer than 1024 "
-            "characters");
-        return;
-      }
-      if (!IsValidMethodFormat(identifier)) {
-        exception_state.ThrowRangeError(
-            "Invalid payment method identifier format");
-        return;
-      }
-      method_names.insert(identifier);
-    }
-
-    CountPaymentRequestNetworkNameInSupportedMethods(supported_methods,
-                                                     execution_context);
+    CountPaymentRequestNetworkNameInSupportedMethod(
+        payment_method_data.supportedMethod(), execution_context);
 
     output.push_back(payments::mojom::blink::PaymentMethodData::New());
-    output.back()->supported_methods = supported_methods;
+
+    output.back()->supported_method = payment_method_data.supportedMethod();
 
     if (payment_method_data.hasData() &&
         !payment_method_data.data().IsEmpty()) {
-      StringifyAndParseMethodSpecificData(supported_methods,
+      StringifyAndParseMethodSpecificData(payment_method_data.supportedMethod(),
                                           payment_method_data.data(),
                                           output.back(), exception_state);
     } else {
@@ -738,23 +670,6 @@ bool AllowedToUsePaymentRequest(const Frame* frame) {
   // 1. If |document| has no browsing context, then return false.
   if (!frame)
     return false;
-
-  if (!IsSupportedInFeaturePolicy(mojom::FeaturePolicyFeature::kPayment)) {
-    // 2. If |document|'s browsing context is a top-level browsing context, then
-    // return true.
-    if (frame->IsMainFrame())
-      return true;
-
-    // 3. If |document|'s browsing context has a browsing context container that
-    // is an iframe element with an |allowpaymentrequest| attribute specified,
-    // and whose node document is allowed to use the feature indicated by
-    // |allowpaymentrequest|, then return true.
-    if (frame->Owner() && frame->Owner()->AllowPaymentRequest())
-      return AllowedToUsePaymentRequest(frame->Tree().Parent());
-
-    // 4. Return false.
-    return false;
-  }
 
   // 2. If Feature Policy is enabled, return the policy for "payment" feature.
   return frame->IsFeatureEnabled(mojom::FeaturePolicyFeature::kPayment);
@@ -795,14 +710,14 @@ PaymentRequest::~PaymentRequest() = default;
 ScriptPromise PaymentRequest::show(ScriptState* script_state) {
   if (!payment_provider_.is_bound() || show_resolver_) {
     return ScriptPromise::RejectWithDOMException(
-        script_state,
-        DOMException::Create(kInvalidStateError, "Already called show() once"));
+        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                                           "Already called show() once"));
   }
 
   if (!script_state->ContextIsValid() || !LocalDOMWindow::From(script_state) ||
       !LocalDOMWindow::From(script_state)->GetFrame()) {
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kInvalidStateError,
+        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
                                            "Cannot show the payment request"));
   }
 
@@ -818,8 +733,8 @@ ScriptPromise PaymentRequest::show(ScriptState* script_state) {
   // immersive mode.
   if (GetFrame()->GetDocument()->GetSettings()->GetImmersiveModeEnabled()) {
     return ScriptPromise::RejectWithDOMException(
-        script_state,
-        DOMException::Create(kInvalidStateError, "Page popups are suppressed"));
+        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                                           "Page popups are suppressed"));
   }
 
   payment_provider_->Show(is_user_gesture);
@@ -831,14 +746,14 @@ ScriptPromise PaymentRequest::show(ScriptState* script_state) {
 ScriptPromise PaymentRequest::abort(ScriptState* script_state) {
   if (!script_state->ContextIsValid()) {
     return ScriptPromise::RejectWithDOMException(
-        script_state,
-        DOMException::Create(kInvalidStateError, "Cannot abort payment"));
+        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                                           "Cannot abort payment"));
   }
 
   if (abort_resolver_) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
-        DOMException::Create(kInvalidStateError,
+        DOMException::Create(DOMExceptionCode::kInvalidStateError,
                              "Cannot abort() again until the previous abort() "
                              "has resolved or rejected"));
   }
@@ -846,7 +761,7 @@ ScriptPromise PaymentRequest::abort(ScriptState* script_state) {
   if (!show_resolver_) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
-        DOMException::Create(kInvalidStateError,
+        DOMException::Create(DOMExceptionCode::kInvalidStateError,
                              "Never called show(), so nothing to abort"));
   }
 
@@ -859,7 +774,7 @@ ScriptPromise PaymentRequest::canMakePayment(ScriptState* script_state) {
   if (!payment_provider_.is_bound() || show_resolver_ ||
       can_make_payment_resolver_ || !script_state->ContextIsValid()) {
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kInvalidStateError,
+        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
                                            "Cannot query payment request"));
   }
 
@@ -881,17 +796,25 @@ ExecutionContext* PaymentRequest::GetExecutionContext() const {
   return ContextLifecycleObserver::GetExecutionContext();
 }
 
+ScriptPromise PaymentRequest::Retry(ScriptState*,
+                                    const PaymentValidationErrors&) {
+  // TODO(zino): Should implement this method. Please see
+  // https://crbug.com/861704
+  NOTIMPLEMENTED();
+  return ScriptPromise();
+}
+
 ScriptPromise PaymentRequest::Complete(ScriptState* script_state,
                                        PaymentComplete result) {
   if (!script_state->ContextIsValid()) {
     return ScriptPromise::RejectWithDOMException(
-        script_state,
-        DOMException::Create(kInvalidStateError, "Cannot complete payment"));
+        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                                           "Cannot complete payment"));
   }
 
   if (complete_resolver_) {
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kInvalidStateError,
+        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
                                            "Already called complete() once"));
   }
 
@@ -899,14 +822,15 @@ ScriptPromise PaymentRequest::Complete(ScriptState* script_state,
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
-            kInvalidStateError,
+            DOMExceptionCode::kInvalidStateError,
             "Timed out after 60 seconds, complete() called too late"));
   }
 
   // User has cancelled the transaction while the website was processing it.
   if (!payment_provider_) {
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kAbortError, "Request cancelled"));
+        script_state, DOMException::Create(DOMExceptionCode::kAbortError,
+                                           "Request cancelled"));
   }
 
   complete_timer_.Stop();
@@ -938,7 +862,7 @@ void PaymentRequest::OnUpdatePaymentDetails(
 
   if (!details.hasTotal()) {
     show_resolver_->Reject(
-        DOMException::Create(kSyntaxError, "Total required"));
+        DOMException::Create(DOMExceptionCode::kSyntaxError, "Total required"));
     ClearResolversAndCloseMojoConnection();
     return;
   }
@@ -961,10 +885,14 @@ void PaymentRequest::OnUpdatePaymentDetails(
 }
 
 void PaymentRequest::OnUpdatePaymentDetailsFailure(const String& error) {
-  if (show_resolver_)
-    show_resolver_->Reject(DOMException::Create(kAbortError, error));
-  if (complete_resolver_)
-    complete_resolver_->Reject(DOMException::Create(kAbortError, error));
+  if (show_resolver_) {
+    show_resolver_->Reject(
+        DOMException::Create(DOMExceptionCode::kAbortError, error));
+  }
+  if (complete_resolver_) {
+    complete_resolver_->Reject(
+        DOMException::Create(DOMExceptionCode::kAbortError, error));
+  }
   ClearResolversAndCloseMojoConnection();
 }
 
@@ -1061,7 +989,8 @@ void PaymentRequest::OnShippingAddressChange(PaymentAddressPtr address) {
 
   String error_message;
   if (!PaymentsValidators::IsValidShippingAddress(address, &error_message)) {
-    show_resolver_->Reject(DOMException::Create(kSyntaxError, error_message));
+    show_resolver_->Reject(
+        DOMException::Create(DOMExceptionCode::kSyntaxError, error_message));
     ClearResolversAndCloseMojoConnection();
     return;
   }
@@ -1108,7 +1037,8 @@ void PaymentRequest::OnPaymentResponse(PaymentResponsePtr response) {
 
   if (options_.requestShipping()) {
     if (!response->shipping_address || response->shipping_option.IsEmpty()) {
-      show_resolver_->Reject(DOMException::Create(kSyntaxError));
+      show_resolver_->Reject(
+          DOMException::Create(DOMExceptionCode::kSyntaxError));
       ClearResolversAndCloseMojoConnection();
       return;
     }
@@ -1116,7 +1046,8 @@ void PaymentRequest::OnPaymentResponse(PaymentResponsePtr response) {
     String error_message;
     if (!PaymentsValidators::IsValidShippingAddress(response->shipping_address,
                                                     &error_message)) {
-      show_resolver_->Reject(DOMException::Create(kSyntaxError, error_message));
+      show_resolver_->Reject(
+          DOMException::Create(DOMExceptionCode::kSyntaxError, error_message));
       ClearResolversAndCloseMojoConnection();
       return;
     }
@@ -1126,7 +1057,8 @@ void PaymentRequest::OnPaymentResponse(PaymentResponsePtr response) {
     shipping_option_ = response->shipping_option;
   } else {
     if (response->shipping_address || !response->shipping_option.IsNull()) {
-      show_resolver_->Reject(DOMException::Create(kSyntaxError));
+      show_resolver_->Reject(
+          DOMException::Create(DOMExceptionCode::kSyntaxError));
       ClearResolversAndCloseMojoConnection();
       return;
     }
@@ -1138,12 +1070,13 @@ void PaymentRequest::OnPaymentResponse(PaymentResponsePtr response) {
       (!options_.requestPayerName() && !response->payer_name.IsNull()) ||
       (!options_.requestPayerEmail() && !response->payer_email.IsNull()) ||
       (!options_.requestPayerPhone() && !response->payer_phone.IsNull())) {
-    show_resolver_->Reject(DOMException::Create(kSyntaxError));
+    show_resolver_->Reject(
+        DOMException::Create(DOMExceptionCode::kSyntaxError));
     ClearResolversAndCloseMojoConnection();
     return;
   }
 
-  complete_timer_.StartOneShot(kCompleteTimeoutSeconds, FROM_HERE);
+  complete_timer_.StartOneShot(kCompleteTimeout, FROM_HERE);
 
   show_resolver_->Resolve(new PaymentResponse(
       std::move(response), shipping_address_.Get(), this, id_));
@@ -1155,18 +1088,18 @@ void PaymentRequest::OnPaymentResponse(PaymentResponsePtr response) {
 }
 
 void PaymentRequest::OnError(PaymentErrorReason error) {
-  ExceptionCode ec = kUnknownError;
+  DOMExceptionCode exception_code = DOMExceptionCode::kUnknownError;
   String message;
 
   switch (error) {
     case PaymentErrorReason::USER_CANCEL: {
-      ec = kAbortError;
+      exception_code = DOMExceptionCode::kAbortError;
       message = "Request cancelled";
       break;
     }
 
     case PaymentErrorReason::NOT_SUPPORTED: {
-      ec = kNotSupportedError;
+      exception_code = DOMExceptionCode::kNotSupportedError;
       DCHECK_LE(1U, method_names_.size());
       auto it = method_names_.begin();
       if (method_names_.size() == 1U) {
@@ -1188,7 +1121,7 @@ void PaymentRequest::OnError(PaymentErrorReason error) {
     }
 
     case PaymentErrorReason::UNKNOWN: {
-      ec = kUnknownError;
+      exception_code = DOMExceptionCode::kUnknownError;
       message = "Request failed";
       break;
     }
@@ -1206,13 +1139,15 @@ void PaymentRequest::OnError(PaymentErrorReason error) {
   }
 
   if (show_resolver_)
-    show_resolver_->Reject(DOMException::Create(ec, message));
+    show_resolver_->Reject(DOMException::Create(exception_code, message));
 
   if (abort_resolver_)
-    abort_resolver_->Reject(DOMException::Create(ec, message));
+    abort_resolver_->Reject(DOMException::Create(exception_code, message));
 
-  if (can_make_payment_resolver_)
-    can_make_payment_resolver_->Reject(DOMException::Create(ec, message));
+  if (can_make_payment_resolver_) {
+    can_make_payment_resolver_->Reject(
+        DOMException::Create(exception_code, message));
+  }
 
   ClearResolversAndCloseMojoConnection();
 }
@@ -1229,13 +1164,13 @@ void PaymentRequest::OnAbort(bool aborted_successfully) {
 
   if (!aborted_successfully) {
     abort_resolver_->Reject(DOMException::Create(
-        kInvalidStateError, "Unable to abort the payment"));
+        DOMExceptionCode::kInvalidStateError, "Unable to abort the payment"));
     abort_resolver_.Clear();
     return;
   }
 
-  show_resolver_->Reject(
-      DOMException::Create(kAbortError, "The website has aborted the payment"));
+  show_resolver_->Reject(DOMException::Create(
+      DOMExceptionCode::kAbortError, "The website has aborted the payment"));
   abort_resolver_->Resolve();
   ClearResolversAndCloseMojoConnection();
 }
@@ -1258,7 +1193,8 @@ void PaymentRequest::OnCanMakePayment(CanMakePaymentQueryResult result) {
       break;
     case CanMakePaymentQueryResult::QUERY_QUOTA_EXCEEDED:
       can_make_payment_resolver_->Reject(DOMException::Create(
-          kNotAllowedError, "Not allowed to check whether can make payment"));
+          DOMExceptionCode::kNotAllowedError,
+          "Not allowed to check whether can make payment"));
       break;
   }
 

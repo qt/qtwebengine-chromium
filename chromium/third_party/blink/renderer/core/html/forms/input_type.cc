@@ -32,11 +32,8 @@
 #include <memory>
 #include <utility>
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/events/keyboard_event.h"
 #include "third_party/blink/renderer/core/fileapi/file_list.h"
@@ -71,6 +68,7 @@
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/json/json_values.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 #include "third_party/blink/renderer/platform/text/text_break_iterator.h"
@@ -159,7 +157,7 @@ bool InputType::IsFormDataAppendable() const {
 }
 
 void InputType::AppendToFormData(FormData& form_data) const {
-  form_data.append(GetElement().GetName(), GetElement().value());
+  form_data.AppendFromElement(GetElement().GetName(), GetElement().value());
 }
 
 String InputType::ResultForDialogSubmit() const {
@@ -172,7 +170,8 @@ double InputType::ValueAsDate() const {
 
 void InputType::SetValueAsDate(double, ExceptionState& exception_state) const {
   exception_state.ThrowDOMException(
-      kInvalidStateError, "This input element does not support Date values.");
+      DOMExceptionCode::kInvalidStateError,
+      "This input element does not support Date values.");
 }
 
 double InputType::ValueAsDouble() const {
@@ -183,7 +182,8 @@ void InputType::SetValueAsDouble(double double_value,
                                  TextFieldEventBehavior event_behavior,
                                  ExceptionState& exception_state) const {
   exception_state.ThrowDOMException(
-      kInvalidStateError, "This input element does not support Number values.");
+      DOMExceptionCode::kInvalidStateError,
+      "This input element does not support Number values.");
 }
 
 void InputType::SetValueAsDecimal(const Decimal& new_value,
@@ -457,7 +457,7 @@ bool InputType::IsKeyboardFocusable() const {
   return GetElement().IsFocusable();
 }
 
-bool InputType::ShouldShowFocusRingOnMouseFocus() const {
+bool InputType::MayTriggerVirtualKeyboard() const {
   return false;
 }
 
@@ -680,7 +680,7 @@ void InputType::ApplyStep(const Decimal& current,
   // InvalidStateError exception, and abort these steps.
   if (!step_range.HasStep()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "This form element does not have an allowed value step.");
     return;
   }
@@ -768,7 +768,7 @@ StepRange InputType::CreateStepRange(AnyStepHandling) const {
 
 void InputType::StepUp(double n, ExceptionState& exception_state) {
   if (!IsSteppable()) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "This form element is not steppable.");
     return;
   }

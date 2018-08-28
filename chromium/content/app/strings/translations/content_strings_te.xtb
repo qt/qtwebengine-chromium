@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">స్లయిడర్</translation>
 <translation id="1211441953136645838">ఎండ్‌నోట్</translation>
 <translation id="1281252709823657822">డైలాగ్</translation>
+<translation id="1289247557029249093">చిత్రంలో చిత్రం మోడ్ నుంచి నిష్క్రమించు</translation>
 <translation id="1335095011850992622">సహకారులు</translation>
 <translation id="1342835525016946179">కథనం</translation>
 <translation id="1359897965706325498">బ్యానర్</translation>
+<translation id="1548116112524424341">వీడియోను చిత్రంలో చిత్రం మోడ్‌లో ప్లే చేయండి</translation>
 <translation id="1589122976691792535">ప్రాంతం</translation>
 <translation id="1591562245178063882">ఈ నెల</translation>
 <translation id="1637811476055996098">ఫైల్‌లను ఎంచుకోండి</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">వృక్షాంశ గ్రిడ్</translation>
 <translation id="1822429046913737220">AM/PM</translation>
 <translation id="1832974991323546415">రిమోట్ పరికరంలో ప్లే చేస్తుంది</translation>
+<translation id="190587075670221089">తొలగింపు</translation>
 <translation id="1907737156431278478">ఉదాహరణ</translation>
 <translation id="1921819250265091946">dd</translation>
 <translation id="1930711995431081526">స్థితి</translation>
 <translation id="1938124657309484470">విలువ తప్పనిసరిగా <ph name="MAXIMUM_DATE_OR_TIME" /> లేదా అంతకంటే మునుపటిది అయి ఉండాలి.</translation>
+<translation id="1946271899482435442">తేదీ ఎంపికను చూపుతుంది</translation>
 <translation id="1993104285338243655">మిర్రరింగ్‌కు మార్చబడింది</translation>
 <translation id="2060505056492490888">'<ph name="INVALIDDOMAIN" />'లో '<ph name="DOT" />' తప్పు స్థానంలో ఉపయోగించబడింది.</translation>
 <translation id="2148716181193084225">ఈ రోజు</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">సమర్పించు</translation>
 <translation id="2657045182931379222">గ్రాఫిక్స్ ఆబ్జెక్ట్</translation>
 <translation id="2674318244760992338">ఫుటర్</translation>
+<translation id="2706474812903655270">ఈ వీడియో చిత్రంలో చిత్రం మోడ్‌లో ప్లే అవుతోంది</translation>
 <translation id="2709516037105925701">స్వయంపూర్తి</translation>
 <translation id="2723001399770238859">ఆడియో</translation>
 <translation id="2746543609216772311">విలువ తప్పనిసరిగా <ph name="MINIMUM_DATE_OR_TIME" /> లేదా అంతకంటే తదుపరిది అయి ఉండాలి.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">తదుపరి నెలను చూపుతుంది</translation>
 <translation id="512758898067543763">అడ్డు వరుస శీర్షిక</translation>
 <translation id="5143125788380636750">ఉపసంహారం</translation>
-<translation id="5153163864850940242">ఈ వీడియో చిత్రంలో-చిత్రంలో ప్లే అవుతోంది</translation>
 <translation id="5164977714490026579">విలువ ఖచ్చితంగా <ph name="MINIMUM" /> కంటే ఎక్కువగా లేదా సమానంగా ఉండాలి.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> PB</translation>
 <translation id="5307600278924710095">దయచేసి '<ph name="ATSIGN" />'కి ముందు ఉన్న భాగాన్ని నమోదు చేయండి. '<ph name="INVALIDADDRESS" />' అసంపూర్ణంగా ఉంది.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">ఆఖరిమాట</translation>
 <translation id="6934078000481955284">బ్లాక్‌కోట్</translation>
 <translation id="6941933287844615239">మీడియా అంశం డౌన్‌లోడ్ చేయి</translation>
+<translation id="6981594929165378967">చొప్పించడం</translation>
 <translation id="6989848892321993519">దయచేసి ఈ వచనాన్ని <ph name="MIN_CHARACTERS" /> లేదా అంతకంటే ఎక్కువ అక్షరాలకు పొడిగించండి (ప్రస్తుతం మీరు 1 అక్షరాన్ని ఉపయోగిస్తున్నారు).</translation>
 <translation id="709897737746224366">దయచేసి అభ్యర్థించిన ఆకృతీకరణను సరిపోల్చండి.</translation>
 <translation id="7139483182332611405">ముందుమాట</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">మిగిలి ఉన్న సమయం</translation>
 <translation id="7740016676195725605">సంవృత శీర్షికలను ప్రదర్శించడం ఆపివేయి</translation>
 <translation id="7740050170769002709">HTML కంటెంట్</translation>
+<translation id="7750228210027921155">చిత్రంలో చిత్రం</translation>
 <translation id="7789962463072032349">నిలిపివేయి</translation>
 <translation id="7802800022689234070">కంటెంట్‌ను విస్తరింపజేసే లేదా కుదించే త్రిభుజం</translation>
 <translation id="7888071071722539607">దయచేసి ఇమెయిల్ చిరునామాలో '<ph name="ATSIGN" />'ని చేర్చండి. '<ph name="INVALIDADDRESS" />'లో '<ph name="ATSIGN" />' లేదు.</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">విషయ పట్టిక</translation>
 <translation id="8613126697340063924">రిమోట్ ప్లేబ్యాక్‌ను నియంత్రిస్తుంది</translation>
 <translation id="862370744433916922">ఉపశీర్షిక</translation>
-<translation id="8741316211671074806">చిత్రంలో చిత్రం</translation>
 <translation id="8750798805984357768">దయచేసి ఈ ఎంపికలలో ఒకదాన్ని ఎంచుకోండి.</translation>
 <translation id="8785498733064193001">ప్లేబ్యాక్‌ను ప్రారంభించు</translation>
 <translation id="8808573423886751634">అధ్యాయం</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">నావిగేషన్</translation>
 <translation id="9050748414552849310">సంవృత శీర్షికలను చూపు</translation>
 <translation id="9062295712474918030">పత్రం</translation>
+<translation id="9093215626363556771">చిత్రంలో చిత్రం మోడ్ నుండి నిష్క్రమింపజేస్తుంది</translation>
 <translation id="9108370397979208512">math</translation>
 <translation id="9132465097189459683">ఇతర...</translation>
 <translation id="9138385573473225930">హెచ్చరిక</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, <ph name="WEEK_START_DATE" /> నుండి ప్రారంభమవుతుంది</translation>
+<translation id="916607977885256133">చిత్రంలో చిత్రం</translation>
 <translation id="9168329111483466115">ఫుట్‌నోట్</translation>
-<translation id="947831847158436616">గడి</translation>
+<translation id="954003015749068518">చిత్రంలో చిత్రం మోడ్‌లోకి ప్రవేశిస్తుంది</translation>
 <translation id="966787709310836684">మెను</translation>
 </translationbundle>

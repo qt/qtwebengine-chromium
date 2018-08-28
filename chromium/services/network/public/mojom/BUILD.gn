@@ -51,6 +51,7 @@ mojom("udp_socket_interface") {
 # cause problems. See https://crbug.com/822732.
 mojom("websocket_mojom") {
   sources = [
+    "network_param.mojom",
     "websocket.mojom",
   ]
 
@@ -81,12 +82,13 @@ mojom("mojom") {
     "http_request_headers.mojom",
     "network_change_manager.mojom",
     "network_context.mojom",
-    "network_param.mojom",
+    "network_quality_estimator_manager.mojom",
     "network_service.mojom",
     "network_service_test.mojom",
     "network_types.mojom",
     "proxy_config.mojom",
     "proxy_config_with_annotation.mojom",
+    "proxy_resolving_socket.mojom",
     "request_context_frame_type.mojom",
     "restricted_cookie_manager.mojom",
     "signed_tree_head.mojom",
@@ -102,6 +104,7 @@ mojom("mojom") {
     ":mutable_network_traffic_annotation_interface",
     ":udp_socket_interface",
     ":websocket_mojom",
+    "//components/content_settings/core/common:mojo_bindings",
     "//mojo/public/mojom/base",
     "//net/interfaces",
     "//services/proxy_resolver/public/mojom",
@@ -117,5 +120,11 @@ mojom("mojom") {
     export_class_attribute_blink = "BLINK_PLATFORM_EXPORT"
     export_define_blink = "BLINK_PLATFORM_IMPLEMENTATION=1"
     export_header_blink = "third_party/blink/public/platform/web_common.h"
+  }
+
+  # This is only needed on desktop linux, but the defines make this difficult
+  # because IS_CHROMECAST is not available in build/build_config.h.
+  if (is_linux && !is_chromeos) {
+    enabled_features = [ "needs_crypt_config" ]
   }
 }

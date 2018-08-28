@@ -39,7 +39,7 @@
 #include "base/logging.h"
 #include "base/threading/thread_local.h"
 #include "build/build_config.h"
-#include "ui/gl/extension_set.h"
+#include "ui/gfx/extension_set.h"
 #include "ui/gl/gl_export.h"
 
 // The standard OpenGL native extension headers are also included.
@@ -405,6 +405,11 @@
 #define GL_NUM_WINDOW_RECTANGLES_EXT 0x8F15
 #endif /* GL_EXT_window_rectangles */
 
+#ifndef GL_CHROMIUM_nonblocking_readback
+#define GL_CHROMIUM_nonblocking_readback 1
+#define GL_READBACK_SHADOW_COPIES_UPDATED_CHROMIUM 0x84F8
+#endif /* GL_CHROMIUM_nonblocking_readback */
+
 #define GL_GLEXT_PROTOTYPES 1
 
 #if defined(OS_WIN)
@@ -449,7 +454,7 @@ struct GLVersionInfo;
 struct GL_EXPORT DriverGL {
   void InitializeStaticBindings();
   void InitializeDynamicBindings(const GLVersionInfo* ver,
-                                 const ExtensionSet& extensions);
+                                 const gfx::ExtensionSet& extensions);
   void ClearBindings();
 
   ProcsGL fn;

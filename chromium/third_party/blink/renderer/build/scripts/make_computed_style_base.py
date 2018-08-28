@@ -7,14 +7,10 @@ import math
 
 import json5_generator
 import template_expander
-import make_style_builder
 import keyword_utils
 import bisect
 
-from name_utilities import (
-    enum_value_name, class_member_name, method_name, class_name, join_names
-)
-
+from blinkbuild.name_style_converter import NameStyleConverter
 from core.css import css_properties
 from core.style.computed_style_fields import DiffGroup, Enum, Group, Field
 
@@ -160,7 +156,7 @@ def _create_diff_groups_map(diff_function_inputs, root_group):
                 "Please check that there's an entry for '{}' in" \
                 "CSSProperties.json5 or " \
                 "ComputedStyleExtraFields.json5".format(name, name)
-        diff_functions_map[entry['name']] = _create_diff_groups(
+        diff_functions_map[entry['name'].original] = _create_diff_groups(
             entry['fields_to_diff'], entry['methods_to_diff'],
             entry['predicates_to_test'], root_group)
     return diff_functions_map
@@ -268,7 +264,7 @@ def _create_property_field(property_):
     return Field(
         'property',
         name_for_methods,
-        property_name=property_['name'],
+        property_name=property_['name'].original,
         inherited=property_['inherited'],
         independent=property_['independent'],
         type_name=property_['type_name'],
@@ -292,12 +288,12 @@ def _create_inherited_flag_field(property_):
     Create the field used for an inheritance fast path from an independent CSS
     property, and return the Field object.
     """
-    name_for_methods = join_names(
-        property_['name_for_methods'], 'is', 'inherited')
+    name_for_methods = NameStyleConverter(property_['name_for_methods']).to_function_name(suffix=['is', 'inherited'])
+    name_source = NameStyleConverter(name_for_methods)
     return Field(
         'inherited_flag',
         name_for_methods,
-        property_name=property_['name'],
+        property_name=property_['name'].original,
         type_name='bool',
         wrapper_pointer_name=None,
         field_template='primitive',
@@ -306,9 +302,9 @@ def _create_inherited_flag_field(property_):
         custom_copy=False,
         custom_compare=False,
         mutable=False,
-        getter_method_name=method_name(name_for_methods),
-        setter_method_name=method_name(['set', name_for_methods]),
-        initial_method_name=method_name(['initial', name_for_methods]),
+        getter_method_name=name_source.to_function_name(),
+        setter_method_name=name_source.to_function_name(prefix='set'),
+        initial_method_name=name_source.to_function_name(prefix='initial'),
         computed_style_custom_functions=property_[
             "computed_style_custom_functions"],
     )
@@ -436,18 +432,18 @@ def _evaluate_rare_non_inherited_group(properties, properties_ranking,
         if (property_["field_group"] is not None and
                 "*" in property_["field_group"]
                 and not property_["inherited"] and
-                property_["name"] in properties_ranking):
+                property_["name"].original in properties_ranking):
 
             assert property_["field_group"] == "*", \
                 "The property {}  will be automatically assigned a group, " \
                 "please put '*' as the field_group".format(property_['name'])
 
             property_["field_group"] = "->".join(
-                layers_name[0:properties_ranking[property_["name"]]])
+                layers_name[0:properties_ranking[property_["name"].original]])
         elif property_["field_group"] is not None and \
                 "*" in property_["field_group"] and \
                 not property_["inherited"] and \
-                property_["name"] not in properties_ranking:
+                property_["name"].original not in properties_ranking:
             group_tree = property_["field_group"].split("->")[1:]
             group_tree = [layers_name[0], layers_name[0] + "-sub"] + group_tree
             property_["field_group"] = "->".join(group_tree)
@@ -486,13 +482,13 @@ def _evaluate_rare_inherit_group(properties, properties_ranking,
         if property_["field_group"] is not None and \
                 "*" in property_["field_group"] \
                 and property_["inherited"] and \
-                property_["name"] in properties_ranking:
+                property_["name"].original in properties_ranking:
             property_["field_group"] = "->".join(
-                layers_name[0:properties_ranking[property_["name"]]])
+                layers_name[0:properties_ranking[property_["name"].original]])
         elif property_["field_group"] is not None and \
                 "*" in property_["field_group"] \
                 and property_["inherited"] and \
-                property_["name"] not in properties_ranking:
+                property_["name"].original not in properties_ranking:
             group_tree = property_["field_group"].split("->")[1:]
             group_tree = [layers_name[0], layers_name[0] + "-sub"] + group_tree
             property_["field_group"] = "->".join(group_tree)
@@ -532,7 +528,7 @@ class ComputedStyleBaseWriter(json5_generator.Writer):
                 [json5_file_paths[6]]).name_dictionaries])
 
         properties_ranking = [
-            x["name"] for x in json5_generator.Json5File.load_from_files(
+            x["name"].original for x in json5_generator.Json5File.load_from_files(
                 [json5_file_paths[5]]).name_dictionaries
         ]
         _evaluate_rare_non_inherited_group(

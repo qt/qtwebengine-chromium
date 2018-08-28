@@ -14,16 +14,15 @@
 
 #include <algorithm>
 
-#include "api/optional.h"
+#include "absl/types/optional.h"
 #include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_minmax.h"
 
 namespace webrtc {
-namespace webrtc_cc {
 
 namespace {
-rtc::Optional<double> LinearFitSlope(
+absl::optional<double> LinearFitSlope(
     const std::deque<std::pair<double, double>>& points) {
   RTC_DCHECK(points.size() >= 2);
   // Compute the "center of mass".
@@ -43,7 +42,7 @@ rtc::Optional<double> LinearFitSlope(
     denominator += (point.first - x_avg) * (point.first - x_avg);
   }
   if (denominator == 0)
-    return rtc::nullopt;
+    return absl::nullopt;
   return numerator / denominator;
 }
 
@@ -181,5 +180,4 @@ void TrendlineEstimator::UpdateThreshold(double modified_offset,
   last_update_ms_ = now_ms;
 }
 
-}  // namespace webrtc_cc
 }  // namespace webrtc

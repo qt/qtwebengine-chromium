@@ -25,12 +25,12 @@
 
 #include "third_party/blink/renderer/core/dom/range.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/bindings/core/v8/string_or_trusted_html.h"
 #include "third_party/blink/renderer/core/dom/character_data.h"
 #include "third_party/blink/renderer/core/dom/container_node.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
+#include "third_party/blink/renderer/core/dom/events/event_dispatch_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/node_with_index.h"
@@ -54,8 +54,10 @@
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_text_fragment.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
-#include "third_party/blink/renderer/platform/event_dispatch_forbidden_scope.h"
+#include "third_party/blink/renderer/core/trustedtypes/trusted_html.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/geometry/float_quad.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/text/cstring.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #ifndef NDEBUG
@@ -327,7 +329,7 @@ short Range::comparePoint(Node* ref_node,
 
   if (!HasSameRoot(*ref_node)) {
     exception_state.ThrowDOMException(
-        kWrongDocumentError,
+        DOMExceptionCode::kWrongDocumentError,
         "The node provided and the Range are not in the same tree.");
     return 0;
   }
@@ -360,7 +362,7 @@ short Range::compareBoundaryPoints(unsigned how,
   if (!(how == kStartToStart || how == kStartToEnd || how == kEndToEnd ||
         how == kEndToStart)) {
     exception_state.ThrowDOMException(
-        kNotSupportedError,
+        DOMExceptionCode::kNotSupportedError,
         "The comparison method provided must be "
         "one of 'START_TO_START', 'START_TO_END', "
         "'END_TO_END', or 'END_TO_START'.");
@@ -371,7 +373,7 @@ short Range::compareBoundaryPoints(unsigned how,
   Node* source_cont = source_range->commonAncestorContainer();
   if (this_cont->GetDocument() != source_cont->GetDocument()) {
     exception_state.ThrowDOMException(
-        kWrongDocumentError,
+        DOMExceptionCode::kWrongDocumentError,
         "The source range is in a different document than this range.");
     return 0;
   }
@@ -384,7 +386,7 @@ short Range::compareBoundaryPoints(unsigned how,
     source_top = source_top->parentNode();
   if (this_top != source_top) {  // in different DocumentFragments
     exception_state.ThrowDOMException(
-        kWrongDocumentError,
+        DOMExceptionCode::kWrongDocumentError,
         "The source range is in a different document than this range.");
     return 0;
   }
@@ -415,7 +417,8 @@ short Range::compareBoundaryPoints(Node* container_a,
                                            offset_b, &disconnected);
   if (disconnected) {
     exception_state.ThrowDOMException(
-        kWrongDocumentError, "The two ranges are in separate documents.");
+        DOMExceptionCode::kWrongDocumentError,
+        "The two ranges are in separate documents.");
     return 0;
   }
   return result;
@@ -843,7 +846,7 @@ void Range::insertNode(Node* new_node, ExceptionState& exception_state) {
   if (start_node.getNodeType() == Node::kProcessingInstructionNode ||
       start_node.getNodeType() == Node::kCommentNode) {
     exception_state.ThrowDOMException(
-        kHierarchyRequestError,
+        DOMExceptionCode::kHierarchyRequestError,
         "Nodes of type '" + new_node->nodeName() +
             "' may not be inserted inside nodes of type '" +
             start_node.nodeName() + "'.");
@@ -851,7 +854,7 @@ void Range::insertNode(Node* new_node, ExceptionState& exception_state) {
   }
   const bool start_is_text = start_node.IsTextNode();
   if (start_is_text && !start_node.parentNode()) {
-    exception_state.ThrowDOMException(kHierarchyRequestError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kHierarchyRequestError,
                                       "This operation would split a text node, "
                                       "but there's no parent into which to "
                                       "insert.");
@@ -859,7 +862,7 @@ void Range::insertNode(Node* new_node, ExceptionState& exception_state) {
   }
   if (start_node == new_node) {
     exception_state.ThrowDOMException(
-        kHierarchyRequestError,
+        DOMExceptionCode::kHierarchyRequestError,
         "Unable to insert a node into a Range starting from the node itself.");
     return;
   }
@@ -869,7 +872,7 @@ void Range::insertNode(Node* new_node, ExceptionState& exception_state) {
   // ContainerNode parent.
   if (start_node.IsAttributeNode()) {
     exception_state.ThrowDOMException(
-        kHierarchyRequestError,
+        DOMExceptionCode::kHierarchyRequestError,
         "Nodes of type '" + new_node->nodeName() +
             "' may not be inserted inside nodes of type 'Attr'.");
     return;
@@ -967,6 +970,31 @@ String Range::GetText() const {
 }
 
 DocumentFragment* Range::createContextualFragment(
+    const StringOrTrustedHTML& string_or_html,
+    ExceptionState& exception_state) {
+  // Algorithm:
+  // http://domparsing.spec.whatwg.org/#extensions-to-the-range-interface
+
+  DCHECK(string_or_html.IsString() ||
+         RuntimeEnabledFeatures::TrustedDOMTypesEnabled());
+  DCHECK(!string_or_html.IsNull());
+
+  Document& document = start_.Container().GetDocument();
+
+  if (string_or_html.IsString() && document.RequireTrustedTypes()) {
+    exception_state.ThrowTypeError(
+        "This document requires `TrustedHTML` assignment.");
+    return nullptr;
+  }
+
+  String markup = string_or_html.IsString()
+                      ? string_or_html.GetAsString()
+                      : string_or_html.GetAsTrustedHTML()->toString();
+
+  return createContextualFragmentFromString(markup, exception_state);
+}
+
+DocumentFragment* Range::createContextualFragmentFromString(
     const String& markup,
     ExceptionState& exception_state) {
   // Algorithm:
@@ -1017,7 +1045,7 @@ Node* Range::CheckNodeWOffset(Node* n,
   switch (n->getNodeType()) {
     case Node::kDocumentTypeNode:
       exception_state.ThrowDOMException(
-          kInvalidNodeTypeError,
+          DOMExceptionCode::kInvalidNodeTypeError,
           "The node provided is of type '" + n->nodeName() + "'.");
       return nullptr;
     case Node::kCdataSectionNode:
@@ -1025,21 +1053,21 @@ Node* Range::CheckNodeWOffset(Node* n,
     case Node::kTextNode:
       if (offset > ToCharacterData(n)->length()) {
         exception_state.ThrowDOMException(
-            kIndexSizeError, "The offset " + String::Number(offset) +
-                                 " is larger than the node's length (" +
-                                 String::Number(ToCharacterData(n)->length()) +
-                                 ").");
+            DOMExceptionCode::kIndexSizeError,
+            "The offset " + String::Number(offset) +
+                " is larger than the node's length (" +
+                String::Number(ToCharacterData(n)->length()) + ").");
       } else if (offset >
                  static_cast<unsigned>(std::numeric_limits<int>::max())) {
         exception_state.ThrowDOMException(
-            kIndexSizeError,
+            DOMExceptionCode::kIndexSizeError,
             "The offset " + String::Number(offset) + " is invalid.");
       }
       return nullptr;
     case Node::kProcessingInstructionNode:
       if (offset > ToProcessingInstruction(n)->data().length()) {
         exception_state.ThrowDOMException(
-            kIndexSizeError,
+            DOMExceptionCode::kIndexSizeError,
             "The offset " + String::Number(offset) +
                 " is larger than the node's length (" +
                 String::Number(ToProcessingInstruction(n)->data().length()) +
@@ -1047,7 +1075,7 @@ Node* Range::CheckNodeWOffset(Node* n,
       } else if (offset >
                  static_cast<unsigned>(std::numeric_limits<int>::max())) {
         exception_state.ThrowDOMException(
-            kIndexSizeError,
+            DOMExceptionCode::kIndexSizeError,
             "The offset " + String::Number(offset) + " is invalid.");
       }
       return nullptr;
@@ -1059,14 +1087,14 @@ Node* Range::CheckNodeWOffset(Node* n,
         return nullptr;
       if (offset > static_cast<unsigned>(std::numeric_limits<int>::max())) {
         exception_state.ThrowDOMException(
-            kIndexSizeError,
+            DOMExceptionCode::kIndexSizeError,
             "The offset " + String::Number(offset) + " is invalid.");
         return nullptr;
       }
       Node* child_before = NodeTraversal::ChildAt(*n, offset - 1);
       if (!child_before) {
         exception_state.ThrowDOMException(
-            kIndexSizeError,
+            DOMExceptionCode::kIndexSizeError,
             "There is no child at offset " + String::Number(offset) + ".");
       }
       return child_before;
@@ -1090,7 +1118,7 @@ void Range::CheckNodeBA(Node* n, ExceptionState& exception_state) const {
   // Attr, Entity, or Notation node.
 
   if (!n->parentNode()) {
-    exception_state.ThrowDOMException(kInvalidNodeTypeError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidNodeTypeError,
                                       "the given Node has no parent.");
     return;
   }
@@ -1100,7 +1128,7 @@ void Range::CheckNodeBA(Node* n, ExceptionState& exception_state) const {
     case Node::kDocumentFragmentNode:
     case Node::kDocumentNode:
       exception_state.ThrowDOMException(
-          kInvalidNodeTypeError,
+          DOMExceptionCode::kInvalidNodeTypeError,
           "The node provided is of type '" + n->nodeName() + "'.");
       return;
     case Node::kCdataSectionNode:
@@ -1128,7 +1156,7 @@ void Range::CheckNodeBA(Node* n, ExceptionState& exception_state) const {
     case Node::kProcessingInstructionNode:
     case Node::kTextNode:
       exception_state.ThrowDOMException(
-          kInvalidNodeTypeError,
+          DOMExceptionCode::kInvalidNodeTypeError,
           "The node provided is of type '" + n->nodeName() + "'.");
       return;
   }
@@ -1172,7 +1200,7 @@ void Range::selectNode(Node* ref_node, ExceptionState& exception_state) {
   }
 
   if (!ref_node->parentNode()) {
-    exception_state.ThrowDOMException(kInvalidNodeTypeError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidNodeTypeError,
                                       "the given Node has no parent.");
     return;
   }
@@ -1189,7 +1217,7 @@ void Range::selectNode(Node* ref_node, ExceptionState& exception_state) {
     case Node::kDocumentFragmentNode:
     case Node::kDocumentNode:
       exception_state.ThrowDOMException(
-          kInvalidNodeTypeError,
+          DOMExceptionCode::kInvalidNodeTypeError,
           "The node provided is of type '" + ref_node->nodeName() + "'.");
       return;
   }
@@ -1224,7 +1252,7 @@ void Range::selectNodeContents(Node* ref_node,
         break;
       case Node::kDocumentTypeNode:
         exception_state.ThrowDOMException(
-            kInvalidNodeTypeError,
+            DOMExceptionCode::kInvalidNodeTypeError,
             "The node provided is of type '" + ref_node->nodeName() + "'.");
         return;
     }
@@ -1288,7 +1316,7 @@ void Range::surroundContents(Node* new_parent,
     end_non_text_container = end_non_text_container->parentNode();
   if (start_non_text_container != end_non_text_container) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "The Range has partially selected a non-Text node.");
     return;
   }
@@ -1301,7 +1329,7 @@ void Range::surroundContents(Node* new_parent,
     case Node::kDocumentNode:
     case Node::kDocumentTypeNode:
       exception_state.ThrowDOMException(
-          kInvalidNodeTypeError,
+          DOMExceptionCode::kInvalidNodeTypeError,
           "The node provided is of type '" + new_parent->nodeName() + "'.");
       return;
     case Node::kCdataSectionNode:
@@ -1357,8 +1385,9 @@ void Range::CheckExtractPrecondition(ExceptionState& exception_state) {
   Node* past_last = PastLastNode();
   for (Node* n = FirstNode(); n != past_last; n = NodeTraversal::Next(*n)) {
     if (n->IsDocumentTypeNode()) {
-      exception_state.ThrowDOMException(kHierarchyRequestError,
-                                        "The Range contains a doctype node.");
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kHierarchyRequestError,
+          "The Range contains a doctype node.");
       return;
     }
   }

@@ -10,7 +10,7 @@
 
 using std::string;
 
-namespace net {
+namespace quic {
 namespace test {
 
 // static
@@ -61,16 +61,20 @@ bool QuicFramerPeer::AppendIetfStreamFrame(QuicFramer* framer,
 // static
 bool QuicFramerPeer::ProcessIetfAckFrame(QuicFramer* framer,
                                          QuicDataReader* reader,
-                                         uint8_t frame_type,
                                          QuicAckFrame* ack_frame) {
-  return framer->ProcessIetfAckFrame(reader, frame_type, ack_frame);
+  return framer->ProcessIetfAckFrame(reader, ack_frame);
 }
 
 // static
-bool QuicFramerPeer::AppendIetfAckFrame(QuicFramer* framer,
-                                        const QuicAckFrame& frame,
-                                        QuicDataWriter* writer) {
-  return framer->AppendIetfAckFrame(frame, writer);
+bool QuicFramerPeer::AppendIetfAckFrameAndTypeByte(QuicFramer* framer,
+                                                   const QuicAckFrame& frame,
+                                                   QuicDataWriter* writer) {
+  return framer->AppendIetfAckFrameAndTypeByte(frame, writer);
+}
+// static
+size_t QuicFramerPeer::GetIetfAckFrameSize(QuicFramer* framer,
+                                           const QuicAckFrame& frame) {
+  return framer->GetIetfAckFrameSize(frame);
 }
 
 // static
@@ -101,9 +105,8 @@ bool QuicFramerPeer::ProcessIetfConnectionCloseFrame(
 bool QuicFramerPeer::ProcessApplicationCloseFrame(
     QuicFramer* framer,
     QuicDataReader* reader,
-    const uint8_t frame_type,
     QuicApplicationCloseFrame* frame) {
-  return framer->ProcessApplicationCloseFrame(reader, frame_type, frame);
+  return framer->ProcessApplicationCloseFrame(reader, frame);
 }
 
 // static
@@ -300,5 +303,15 @@ void QuicFramerPeer::SetLastPacketIsIetfQuic(QuicFramer* framer,
   framer->last_packet_is_ietf_quic_ = last_packet_is_ietf_quic;
 }
 
+// static
+size_t QuicFramerPeer::ComputeFrameLength(
+    QuicFramer* framer,
+    const QuicFrame& frame,
+    bool last_frame_in_packet,
+    QuicPacketNumberLength packet_number_length) {
+  return framer->ComputeFrameLength(frame, last_frame_in_packet,
+                                    packet_number_length);
+}
+
 }  // namespace test
-}  // namespace net
+}  // namespace quic

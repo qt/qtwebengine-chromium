@@ -60,7 +60,7 @@ if (!rtc_build_ssl) {
   }
 }
 
-source_set("protobuf_utils") {
+rtc_source_set("protobuf_utils") {
   visibility = [ "*" ]
   sources = [
     "protobuf_utils.h",
@@ -72,7 +72,7 @@ source_set("protobuf_utils") {
   }
 }
 
-source_set("compile_assert_c") {
+rtc_source_set("compile_assert_c") {
   sources = [
     "compile_assert_c.h",
   ]
@@ -104,7 +104,6 @@ rtc_source_set("rtc_base_approved") {
 rtc_source_set("macromagic") {
   sources = [
     "arraysize.h",
-    "basictypes.h",
     "constructormagic.h",
     "format_macros.h",
     "stringize_macros.h",
@@ -123,6 +122,9 @@ rtc_source_set("ptr_util") {
   sources = [
     "ptr_util.h",
     "scoped_ref_ptr.h",
+  ]
+  deps = [
+    "//third_party/abseil-cpp/absl/memory",
   ]
 }
 
@@ -218,7 +220,7 @@ rtc_source_set("logging") {
       "logging.cc",
       "logging.h",
     ]
-    deps += [ "system:no_inline" ]
+    deps += [ "system:inline" ]
 
     # logging.h needs the deprecation header while downstream projects are
     # removing code that depends on logging implementation details.
@@ -255,6 +257,7 @@ rtc_source_set("checks") {
   deps = [
     ":safe_compare",
     "..:typedefs",
+    "system:inline",
   ]
 }
 
@@ -368,6 +371,7 @@ rtc_source_set("rtc_base_approved_generic") {
   data_deps = []
   deps = [
     ":atomicops",
+    ":base64",
     ":checks",
     ":criticalsection",
     ":logging",
@@ -385,11 +389,10 @@ rtc_source_set("rtc_base_approved_generic") {
     ":timeutils",
     ":type_traits",
     "../:typedefs",
+    "system:arch",
   ]
 
   sources = [
-    "base64.cc",
-    "base64.h",
     "bind.h",
     "bitbuffer.cc",
     "bitbuffer.h",
@@ -446,7 +449,7 @@ rtc_source_set("rtc_base_approved_generic") {
   deps += [
     "..:webrtc_common",
     "../api:array_view",
-    "../api:optional",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 
   if (is_android) {
@@ -489,6 +492,14 @@ if (is_mac && !build_with_chromium) {
   }
 }
 
+rtc_source_set("base64") {
+  visibility = [ "*" ]
+  sources = [
+    "base64.cc",
+    "base64.h",
+  ]
+}
+
 rtc_source_set("rtc_task_queue") {
   visibility = [ "*" ]
   deps = []
@@ -522,6 +533,7 @@ rtc_source_set("rtc_task_queue_api") {
   deps = [
     ":macromagic",
     ":ptr_util",
+    "//third_party/abseil-cpp/absl/memory",
   ]
 }
 
@@ -649,11 +661,12 @@ rtc_static_library("rtc_numerics") {
     ":checks",
     ":rtc_base_approved",
     ":safe_compare",
-    "../api:optional",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
 rtc_source_set("rtc_json") {
+  testonly = true
   defines = []
   sources = [
     "json.cc",
@@ -710,11 +723,13 @@ rtc_static_library("rtc_base_generic") {
   libs = []
   defines = []
   deps = [
+    ":base64",
     ":checks",
     ":stringutils",
     "..:webrtc_common",
     "../api:array_view",
-    "../api:optional",
+    "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
   public_deps = [
     ":rtc_base_approved",
@@ -852,8 +867,6 @@ rtc_static_library("rtc_base_generic") {
       "optionsfile.h",
       "rollingaccumulator.h",
       "sslroots.h",
-      "transformadapter.cc",
-      "transformadapter.h",
     ]
 
     if (is_win) {
@@ -873,7 +886,7 @@ rtc_static_library("rtc_base_generic") {
   }
 
   if (rtc_builtin_ssl_root_certificates) {
-    defines += [ "WEBRTC_ENABLE_BUILT_IN_SSL_ROOT_CERTIFICATES" ]
+    defines += [ "WEBRTC_BUILT_IN_SSL_ROOT_CERTIFICATES" ]
   }
 
   if (is_android) {
@@ -935,12 +948,6 @@ rtc_static_library("rtc_base_generic") {
       "crypt32.lib",
       "iphlpapi.lib",
       "secur32.lib",
-    ]
-
-    cflags += [
-      # Suppress warnings about WIN32_LEAN_AND_MEAN.
-      "/wd4005",
-      "/wd4703",
     ]
 
     defines += [ "_CRT_NONSTDC_NO_DEPRECATE" ]
@@ -1025,6 +1032,7 @@ rtc_source_set("rtc_base_tests_utils") {
     "../test:field_trial",
     "../test:test_support",
     "system:fallthrough",
+    "//third_party/abseil-cpp/absl/memory",
   ]
   public_deps = [
     "//testing/gtest",
@@ -1058,6 +1066,7 @@ if (rtc_include_tests) {
       ":rtc_base_approved",
       ":rtc_base_tests_utils",
       "../system_wrappers:field_trial_default",
+      "../system_wrappers:metrics_default",
       "../test:field_trial",
       "../test:fileutils",
       "../test:test_support",
@@ -1089,6 +1098,7 @@ if (rtc_include_tests) {
       "../test:fileutils",
       "../test:test_support",
       "//testing/gtest",
+      "//third_party/abseil-cpp/absl/memory",
     ]
     if (is_win) {
       sources += [ "win32socketserver_unittest.cc" ]
@@ -1103,7 +1113,6 @@ if (rtc_include_tests) {
     sources = [
       "atomicops_unittest.cc",
       "base64_unittest.cc",
-      "basictypes_unittest.cc",
       "bind_unittest.cc",
       "bitbuffer_unittest.cc",
       "bitrateallocationstrategy_unittest.cc",
@@ -1151,6 +1160,7 @@ if (rtc_include_tests) {
       sources += [ "win/windows_version_unittest.cc" ]
     }
     deps = [
+      ":base64",
       ":checks",
       ":rate_limiter",
       ":rtc_base",
@@ -1167,6 +1177,7 @@ if (rtc_include_tests) {
       "../test:fileutils",
       "../test:test_support",
       "memory:unittests",
+      "//third_party/abseil-cpp/absl/memory",
     ]
   }
 
@@ -1290,9 +1301,10 @@ if (rtc_include_tests) {
       ":rtc_base_tests_utils",
       ":stringutils",
       "../api:array_view",
-      "../api:optional",
       "../test:fileutils",
       "../test:test_support",
+      "//third_party/abseil-cpp/absl/memory",
+      "//third_party/abseil-cpp/absl/types:optional",
     ]
     public_deps = [
       ":rtc_base",
@@ -1305,9 +1317,8 @@ if (rtc_include_tests) {
     } else {
       configs += [ ":external_ssl_library" ]
     }
-
-    if (!rtc_builtin_ssl_root_certificates) {
-      defines += [ "WEBRTC_DISABLE_BUILT_IN_SSL_ROOT_CERTIFICATES" ]
+    if (rtc_builtin_ssl_root_certificates) {
+      defines += [ "WEBRTC_BUILT_IN_SSL_ROOT_CERTIFICATES" ]
     }
   }
 }

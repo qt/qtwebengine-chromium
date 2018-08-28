@@ -11,9 +11,9 @@
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_location.h"
-#include "third_party/blink/renderer/modules/serviceworkers/respond_with_observer.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_global_scope_client.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_window_client_callback.h"
+#include "third_party/blink/renderer/modules/service_worker/respond_with_observer.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_global_scope_client.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_window_client_callback.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
@@ -77,7 +77,7 @@ ScriptPromise PaymentRequestEvent::openWindow(ScriptState* script_state,
 
   if (!isTrusted()) {
     resolver->Reject(DOMException::Create(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "Cannot open a window when the event is not trusted"));
     return promise;
   }
@@ -97,7 +97,7 @@ ScriptPromise PaymentRequestEvent::openWindow(ScriptState* script_state,
 
   if (!context->IsWindowInteractionAllowed()) {
     resolver->Reject(DOMException::Create(
-        kNotAllowedError,
+        DOMExceptionCode::kNotAllowedError,
         "Not allowed to open a window without user activation"));
     return promise;
   }
@@ -113,7 +113,7 @@ void PaymentRequestEvent::respondWith(ScriptState* script_state,
                                       ExceptionState& exception_state) {
   if (!isTrusted()) {
     exception_state.ThrowDOMException(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "Cannot respond with data when the event is not trusted");
     return;
   }
@@ -140,9 +140,14 @@ PaymentRequestEvent::PaymentRequestEvent(
       top_origin_(initializer.topOrigin()),
       payment_request_origin_(initializer.paymentRequestOrigin()),
       payment_request_id_(initializer.paymentRequestId()),
-      method_data_(std::move(initializer.methodData())),
-      total_(initializer.total()),
-      modifiers_(initializer.modifiers()),
+      method_data_(initializer.hasMethodData()
+                       ? initializer.methodData()
+                       : HeapVector<PaymentMethodData>()),
+      total_(initializer.hasTotal() ? initializer.total()
+                                    : PaymentCurrencyAmount()),
+      modifiers_(initializer.hasModifiers()
+                     ? initializer.modifiers()
+                     : HeapVector<PaymentDetailsModifier>()),
       instrument_key_(initializer.instrumentKey()),
       observer_(respond_with_observer) {}
 

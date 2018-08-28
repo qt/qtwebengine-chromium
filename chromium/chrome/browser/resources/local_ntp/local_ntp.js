@@ -75,6 +75,9 @@ var CLASSES = {
   DELAYED_HIDE_NOTIFICATION: 'mv-notice-delayed-hide',
   FADE: 'fade',  // Enables opacity transition on logo and doodle.
   FAKEBOX_FOCUS: 'fakebox-focused',  // Applies focus styles to the fakebox
+  SHOW_EDIT_DIALOG: 'show',          // Displays the edit custom link dialog.
+  HIDE_BODY_OVERFLOW: 'hidden',      // Prevents scrolling while the edit custom
+                                     // link dialog is open.
   // Applies float animations to the Most Visited notification
   FLOAT_UP: 'float-up',
   // Applies ripple animation to the element on click
@@ -83,7 +86,7 @@ var CLASSES = {
   RIPPLE_EFFECT: 'ripple-effect',
   // Applies drag focus style to the fakebox
   FAKEBOX_DRAG_FOCUS: 'fakebox-drag-focused',
-  HIDE_FAKEBOX_AND_LOGO: 'hide-fakebox-logo',
+  HIDE_FAKEBOX: 'hide-fakebox',
   HIDE_NOTIFICATION: 'mv-notice-hide',
   INITED: 'inited',  // Reveals the <body> once init() is done.
   LEFT_ALIGN_ATTRIBUTION: 'left-align-attribution',
@@ -106,6 +109,8 @@ var CLASSES = {
 var IDS = {
   ATTRIBUTION: 'attribution',
   ATTRIBUTION_TEXT: 'attribution-text',
+  CUSTOM_LINKS_EDIT_IFRAME: 'custom-links-edit',
+  CUSTOM_LINKS_EDIT_IFRAME_DIALOG: 'custom-links-edit-dialog',
   FAKEBOX: 'fakebox',
   FAKEBOX_INPUT: 'fakebox-input',
   FAKEBOX_TEXT: 'fakebox-text',
@@ -169,7 +174,29 @@ var LOG_TYPE = {
 
   // The One Google Bar was shown.
   NTP_ONE_GOOGLE_BAR_SHOWN: 37,
+
+  // 'Cancel' was clicked in the 'Edit shortcut' dialog.
+  NTP_CUSTOMIZE_SHORTCUT_CANCEL: 54,
+  // 'Done' was clicked in the 'Edit shortcut' dialog.
+  NTP_CUSTOMIZE_SHORTCUT_DONE: 55,
 };
+
+
+/**
+ * The maximum number of tiles to show in the Most Visited section.
+ * @type {number}
+ * @const
+ */
+const MAX_NUM_TILES_MOST_VISITED = 8;
+
+
+/**
+ * The maximum number of tiles to show in the Most Visited section if custom
+ * links is enabled.
+ * @type {number}
+ * @const
+ */
+const MAX_NUM_TILES_CUSTOM_LINKS = 10;
 
 
 /**
@@ -179,9 +206,6 @@ var LOG_TYPE = {
  * @const
  */
 var WHITE_BACKGROUND_COLORS = ['rgba(255,255,255,1)', 'rgba(0,0,0,0)'];
-
-const CUSTOM_BACKGROUND_OVERLAY =
-    'linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2))';
 
 /**
  * Enum for keycodes.
@@ -233,10 +257,6 @@ let delayedHideNotification = -1;
  * @type {Object}
  */
 var ntpApiHandle;
-
-
-/** @type {number} @const */
-var MAX_NUM_TILES_TO_SHOW = 8;
 
 
 /**
@@ -295,7 +315,11 @@ function renderTheme() {
                     info.imageHorizontalAlignment,
                     info.imageVerticalAlignment].join(' ').trim();
 
-  document.body.style.background = background;
+  // If a custom background has been selected the image will be applied to the
+  // custom-background element instead of the body.
+  if (!info.customBackgroundConfigured) {
+    document.body.style.background = background;
+  }
   document.body.classList.toggle(CLASSES.ALTERNATE_LOGO, info.alternateLogo);
   var isNonWhiteBackground = !WHITE_BACKGROUND_COLORS.includes(background);
   document.body.classList.toggle(CLASSES.NON_WHITE_BG, isNonWhiteBackground);
@@ -303,16 +327,45 @@ function renderTheme() {
   setCustomThemeStyle(info);
 
   if (info.customBackgroundConfigured) {
-    var imageWithOverlay =
-        [CUSTOM_BACKGROUND_OVERLAY, info.imageUrl].join(',').trim();
-    document.body.style.setProperty('background-image', imageWithOverlay);
+    var imageWithOverlay = [
+      customBackgrounds.CUSTOM_BACKGROUND_OVERLAY, 'url(' + info.imageUrl + ')'
+    ].join(',').trim();
+
+    if (imageWithOverlay != document.body.style.backgroundImage) {
+      customBackgrounds.closeCustomizationDialog();
+      customBackgrounds.clearAttribution();
+    }
+
+    // |image| and |imageWithOverlay| use the same url as their source. Waiting
+    // to display the custom background until |image| is fully loaded ensures
+    // that |imageWithOverlay| is also loaded.
+    $('custom-bg').style.backgroundImage = imageWithOverlay;
+    var image = new Image();
+    image.onload = function() {
+      $('custom-bg').style.opacity = '1';
+    };
+    image.src = info.imageUrl;
+
+    customBackgrounds.setAttribution(
+        info.attribution1, info.attribution2, info.attributionActionUrl);
+  } else {
+    $('custom-bg').style.opacity = '0';
+    window.setTimeout(function() {
+      $('custom-bg').style.backgroundImage = '';
+    }, 1000);
   }
-  $(customBackgrounds.IDS.RESTORE_DEFAULT).hidden =
-      !info.customBackgroundConfigured;
+
+  $(customBackgrounds.IDS.RESTORE_DEFAULT)
+      .classList.toggle(
+          customBackgrounds.CLASSES.OPTION_DISABLED,
+          !info.customBackgroundConfigured);
+  $(customBackgrounds.IDS.RESTORE_DEFAULT).tabIndex =
+      (info.customBackgroundConfigured ? 0 : -1);
 
   if (configData.isGooglePage) {
-    $('edit-bg').hidden =
-        !configData.isCustomBackgroundsEnabled || !info.usingDefaultTheme;
+    // Hide the settings menu or individual options if the related features are
+    // disabled and/or a theme is installed.
+    customBackgrounds.setMenuVisibility(!info.usingDefaultTheme);
   }
 }
 
@@ -329,6 +382,7 @@ function sendThemeInfoToMostVisitedIframe() {
 
   var message = {cmd: 'updateTheme'};
   message.isThemeDark = isThemeDark;
+  message.isUsingTheme = !info.usingDefaultTheme;
 
   var titleColor = NTP_DESIGN.titleColor;
   if (!info.usingDefaultTheme && info.textColorRgba) {
@@ -478,7 +532,10 @@ function reloadTiles() {
 
   var pages = ntpApiHandle.mostVisited;
   var cmds = [];
-  for (var i = 0; i < Math.min(MAX_NUM_TILES_TO_SHOW, pages.length); ++i) {
+  let maxNumTiles = configData.isCustomLinksEnabled ?
+      MAX_NUM_TILES_CUSTOM_LINKS :
+      MAX_NUM_TILES_MOST_VISITED;
+  for (var i = 0; i < Math.min(maxNumTiles, pages.length); ++i) {
     cmds.push({cmd: 'tile', rid: pages[i].rid});
   }
   cmds.push({cmd: 'show'});
@@ -488,9 +545,46 @@ function reloadTiles() {
 
 
 /**
- * Shows the blacklist notification and triggers a delay to hide it.
+ * Callback for embeddedSearch.newTabPage.onaddcustomlinkdone. Called when the
+ * custom link was successfully added. Shows the "Shortcut added" notification.
+ * @param {string} success True if the link was successfully added.
  */
-function showNotification() {
+function onAddCustomLinkDone(success) {
+  showNotification(configData.translatedStrings.linkAddedMsg);
+  ntpApiHandle.logEvent(LOG_TYPE.NTP_CUSTOMIZE_SHORTCUT_DONE);
+}
+
+
+/**
+ * Callback for embeddedSearch.newTabPage.onupdatecustomlinkdone. Called when
+ * the custom link was successfully updated. Shows the "Shortcut edited"
+ * notification.
+ * @param {string} success True if the link was successfully updated.
+ */
+function onUpdateCustomLinkDone(success) {
+  showNotification(configData.translatedStrings.linkEditedMsg);
+}
+
+
+/**
+ * Callback for embeddedSearch.newTabPage.ondeletecustomlinkdone. Called when
+ * the custom link was successfully deleted. Shows the "Shortcut deleted"
+ * notification.
+ * @param {string} success True if the link was successfully deleted.
+ */
+function onDeleteCustomLinkDone(success) {
+  showNotification(configData.translatedStrings.linkRemovedMsg);
+}
+
+
+/**
+ * Shows the pop-up notification and triggers a delay to hide it. The message
+ * will be set to |msg|.
+ * @param {string} msg The notification message.
+ */
+function showNotification(msg) {
+  $(IDS.NOTIFICATION_MESSAGE).textContent = msg;
+
   if (configData.isMDIconsEnabled || configData.isMDUIEnabled) {
     $(IDS.NOTIFICATION).classList.remove(CLASSES.HIDE_NOTIFICATION);
     // Timeout is required for the "float up" transition to work. Modifying the
@@ -514,7 +608,7 @@ function showNotification() {
 
 
 /**
- * Hides the blacklist notification.
+ * Hides the pop-up notification.
  */
 function hideNotification() {
   if (configData.isMDIconsEnabled || configData.isMDUIEnabled) {
@@ -546,7 +640,9 @@ function hideNotification() {
  */
 function onUndo() {
   hideNotification();
-  if (lastBlacklistedTile != null) {
+  if (configData.isCustomLinksEnabled) {
+    ntpApiHandle.undoCustomLinkAction();
+  } else if (lastBlacklistedTile != null) {
     ntpApiHandle.undoMostVisitedDeletion(lastBlacklistedTile);
   }
 }
@@ -558,7 +654,11 @@ function onUndo() {
  */
 function onRestoreAll() {
   hideNotification();
-  ntpApiHandle.undoAllMostVisitedDeletions();
+  if (configData.isCustomLinksEnabled) {
+    ntpApiHandle.resetCustomLinks();
+  } else {
+    ntpApiHandle.undoAllMostVisitedDeletions();
+  }
 }
 
 
@@ -570,7 +670,7 @@ function onInputStart() {
   if (isFakeboxFocused()) {
     setFakeboxFocus(false);
     setFakeboxDragFocus(false);
-    setFakeboxAndLogoVisibility(false);
+    setFakeboxVisibility(false);
   }
 }
 
@@ -580,7 +680,7 @@ function onInputStart() {
  * (re-enables the fakebox and unhides the logo.)
  */
 function onInputCancel() {
-  setFakeboxAndLogoVisibility(true);
+  setFakeboxVisibility(true);
 }
 
 
@@ -620,8 +720,8 @@ function isFakeboxClick(event) {
 /**
  * @param {boolean} show True to show the fakebox and logo.
  */
-function setFakeboxAndLogoVisibility(show) {
-  document.body.classList.toggle(CLASSES.HIDE_FAKEBOX_AND_LOGO, !show);
+function setFakeboxVisibility(show) {
+  document.body.classList.toggle(CLASSES.HIDE_FAKEBOX, !show);
 }
 
 
@@ -639,7 +739,7 @@ function registerKeyHandler(element, keycode, handler) {
 
 
 /**
- * Event handler for messages from the most visited iframe.
+ * Event handler for messages from the most visited and edit custom link iframe.
  * @param {Event} event Event received.
  */
 function handlePostMessage(event) {
@@ -660,8 +760,16 @@ function handlePostMessage(event) {
         injectOneGoogleBar(og);
       };
     }
+    if (configData.isCustomLinksEnabled) {
+      $(customBackgrounds.IDS.CUSTOM_LINKS_RESTORE_DEFAULT)
+          .classList.toggle(
+              customBackgrounds.CLASSES.OPTION_DISABLED,
+              !args.showRestoreDefault);
+      $(customBackgrounds.IDS.CUSTOM_LINKS_RESTORE_DEFAULT).tabIndex =
+          (args.showRestoreDefault ? 0 : -1);
+    }
   } else if (cmd === 'tileBlacklisted') {
-    showNotification();
+    showNotification(configData.translatedStrings.linkRemovedMsg);
     lastBlacklistedTile = args.tid;
 
     ntpApiHandle.deleteMostVisitedItem(args.tid);
@@ -673,6 +781,15 @@ function handlePostMessage(event) {
     document.body.style.setProperty('--logo-iframe-height', height);
     document.body.style.setProperty('--logo-iframe-width', width);
     document.body.style.setProperty('--logo-iframe-resize-duration', duration);
+  } else if (cmd === 'startEditLink') {
+    $(IDS.CUSTOM_LINKS_EDIT_IFRAME)
+        .contentWindow.postMessage({cmd: 'linkData', tid: args.tid}, '*');
+    // Small delay to allow the dialog to finish setting up before displaying.
+    window.setTimeout(function() {
+      $(IDS.CUSTOM_LINKS_EDIT_IFRAME_DIALOG).showModal();
+    }, 10);
+  } else if (cmd === 'closeDialog') {
+    $(IDS.CUSTOM_LINKS_EDIT_IFRAME_DIALOG).close();
   }
 }
 
@@ -736,10 +853,12 @@ function addRippleAnimations() {
     ripple.style.marginTop = y + 'px';
 
     rippleContainer.style.left = rect.left + 'px';
+    rippleContainer.style.top = rect.top + 'px';
     rippleContainer.style.width = target.offsetWidth + 'px';
     rippleContainer.style.height = target.offsetHeight + 'px';
     rippleContainer.style.borderRadius =
         window.getComputedStyle(target).borderRadius;
+    rippleContainer.style.position = 'fixed';
 
     // Start transition/ripple
     ripple.style.width = radius * 2 + 'px';
@@ -759,6 +878,23 @@ function addRippleAnimations() {
     rippleElements[i].addEventListener('mousedown', ripple);
   }
 }
+
+
+/**
+ * Disables the focus outline for |element| on mousedown.
+ * @param {Element} element The element to remove the focus outline from.
+ */
+function disableOutlineOnMouseClick(element) {
+  element.addEventListener('mousedown', (event) => {
+    element.classList.add('mouse-navigation');
+    let resetOutline = (event) => {
+      element.classList.remove('mouse-navigation');
+      element.removeEventListener('blur', resetOutline);
+    };
+    element.addEventListener('blur', resetOutline);
+  });
+}
+
 
 /**
  * Prepares the New Tab Page by adding listeners, the most visited pages
@@ -792,7 +928,9 @@ function init() {
   registerKeyHandler(restoreAllLink, KEYCODE.ENTER, onRestoreAll);
   registerKeyHandler(restoreAllLink, KEYCODE.SPACE, onRestoreAll);
   restoreAllLink.textContent =
-      configData.translatedStrings.restoreThumbnailsShort;
+      (configData.isCustomLinksEnabled ?
+           configData.translatedStrings.restoreDefaultLinks :
+           configData.translatedStrings.restoreThumbnailsShort);
 
   $(IDS.ATTRIBUTION_TEXT).textContent =
       configData.translatedStrings.attributionIntro;
@@ -816,8 +954,17 @@ function init() {
       enableMDIcons();
     }
 
-    if (configData.isCustomBackgroundsEnabled)
-      customBackgrounds.initCustomBackgrounds();
+    if (configData.isCustomLinksEnabled) {
+      ntpApiHandle.onaddcustomlinkdone = onAddCustomLinkDone;
+      ntpApiHandle.onupdatecustomlinkdone = onUpdateCustomLinkDone;
+      ntpApiHandle.ondeletecustomlinkdone = onDeleteCustomLinkDone;
+    }
+
+    if (configData.isCustomBackgroundsEnabled ||
+        configData.isCustomLinksEnabled) {
+      customBackgrounds.init();
+    }
+
 
     // Set up the fakebox (which only exists on the Google NTP).
     ntpApiHandle.oninputstart = onInputStart;
@@ -868,6 +1015,7 @@ function init() {
     inputbox.ondragleave = function() {
       setFakeboxDragFocus(false);
     };
+    disableOutlineOnMouseClick($(IDS.FAKEBOX_MICROPHONE));
 
     // Update the fakebox style to match the current key capturing state.
     setFakeboxFocus(searchboxApiHandle.isKeyCaptureEnabled);
@@ -940,11 +1088,26 @@ function init() {
   if (NTP_DESIGN.numTitleLines > 1)
     args.push('ntl=' + NTP_DESIGN.numTitleLines);
 
+  args.push(
+      'title=' +
+      encodeURIComponent(configData.translatedStrings.mostVisitedTitle));
   args.push('removeTooltip=' +
       encodeURIComponent(configData.translatedStrings.removeThumbnailTooltip));
 
-  if (configData.isMDIconsEnabled || configData.isMDUIEnabled) {
+  if (configData.isMDIconsEnabled) {
     args.push('enableMD=1');
+  }
+
+  if (configData.isCustomLinksEnabled) {
+    args.push('enableCustomLinks=1');
+    args.push(
+        'addLink=' + encodeURIComponent(configData.translatedStrings.addLink));
+    args.push(
+        'addLinkTooltip=' +
+        encodeURIComponent(configData.translatedStrings.addLinkTooltip));
+    args.push(
+        'editLinkTooltip=' +
+        encodeURIComponent(configData.translatedStrings.editLinkTooltip));
   }
 
   // Create the most visited iframe.
@@ -959,6 +1122,50 @@ function init() {
     reloadTiles();
     sendThemeInfoToMostVisitedIframe();
   };
+
+  if (configData.isCustomLinksEnabled) {
+    // Collect arguments for the edit custom link iframe.
+    let clArgs = [];
+
+    if (searchboxApiHandle.rtl)
+      clArgs.push('rtl=1');
+
+    clArgs.push(
+        'addTitle=' +
+        encodeURIComponent(configData.translatedStrings.addLinkTitle));
+    clArgs.push(
+        'editTitle=' +
+        encodeURIComponent(configData.translatedStrings.editLinkTitle));
+    clArgs.push(
+        'nameField=' +
+        encodeURIComponent(configData.translatedStrings.nameField));
+    clArgs.push(
+        'urlField=' +
+        encodeURIComponent(configData.translatedStrings.urlField));
+    clArgs.push(
+        'linkRemove=' +
+        encodeURIComponent(configData.translatedStrings.linkRemove));
+    clArgs.push(
+        'linkCancel=' +
+        encodeURIComponent(configData.translatedStrings.linkCancel));
+    clArgs.push(
+        'linkDone=' +
+        encodeURIComponent(configData.translatedStrings.linkDone));
+    clArgs.push(
+        'invalidUrl=' +
+        encodeURIComponent(configData.translatedStrings.invalidUrl));
+
+    // Create the edit custom link iframe.
+    let clIframe = document.createElement('iframe');
+    clIframe.id = IDS.CUSTOM_LINKS_EDIT_IFRAME;
+    clIframe.name = IDS.CUSTOM_LINKS_EDIT_IFRAME;
+    clIframe.title = configData.translatedStrings.editLinkTitle;
+    clIframe.src = 'chrome-search://most-visited/edit.html?' + clArgs.join('&');
+    let clIframeDialog = document.createElement('dialog');
+    clIframeDialog.id = IDS.CUSTOM_LINKS_EDIT_IFRAME_DIALOG;
+    clIframeDialog.appendChild(clIframe);
+    document.body.appendChild(clIframeDialog);
+  }
 
   window.addEventListener('message', handlePostMessage);
 

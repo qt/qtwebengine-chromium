@@ -8,13 +8,14 @@
 #include <memory>
 #include <string>
 
+#include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "components/signin/core/browser/account_info.h"
 #include "components/sync/driver/sync_token_status.h"
+#include "components/sync/engine/connection_status.h"
 #include "google_apis/gaia/google_service_auth_error.h"
-#include "google_apis/gaia/oauth2_token_service.h"
 #include "net/base/backoff_entry.h"
 #include "services/identity/public/cpp/identity_manager.h"
 
@@ -29,22 +30,24 @@ class SyncPrefs;
 
 namespace browser_sync {
 
-class ProfileSyncService;
-
 // SyncAuthManager tracks the primary (i.e. blessed-for-sync) account and its
 // authentication state.
-class SyncAuthManager : public identity::IdentityManager::Observer,
-                        public OAuth2TokenService::Observer {
+class SyncAuthManager : public identity::IdentityManager::Observer {
  public:
-  // |sync_service| and |sync_prefs| must not be null and must outlive this.
-  // |identity_manager| and |token_service| may be null (this is the case if
-  // local Sync is enabled), but if non-null, must outlive this object.
-  // TODO(crbug.com/842697): Don't pass the ProfileSyncService in here. Instead,
-  // pass a callback ("AccountStateChanged(new_state)").
-  SyncAuthManager(ProfileSyncService* sync_service,
-                  syncer::SyncPrefs* sync_prefs,
+  // Called when the existence of an authenticated account changes. Call
+  // GetAuthenticatedAccountInfo to get the new state.
+  using AccountStateChangedCallback = base::RepeatingClosure;
+  // Called when the credential state changes, i.e. an access token was
+  // added/changed/removed. Call GetCredentials to get the new state.
+  using CredentialsChangedCallback = base::RepeatingClosure;
+
+  // |sync_prefs| must not be null and must outlive this.
+  // |identity_manager| may be null (this is the case if local Sync is enabled),
+  // but if non-null, must outlive this object.
+  SyncAuthManager(syncer::SyncPrefs* sync_prefs,
                   identity::IdentityManager* identity_manager,
-                  OAuth2TokenService* token_service);
+                  const AccountStateChangedCallback& account_state_changed,
+                  const CredentialsChangedCallback& credentials_changed);
   ~SyncAuthManager() override;
 
   // Tells the tracker to start listening for changes to the account/sign-in
@@ -56,15 +59,9 @@ class SyncAuthManager : public identity::IdentityManager::Observer,
   // an empty AccountInfo if there isn't one.
   AccountInfo GetAuthenticatedAccountInfo() const;
 
-  // Returns whether a refresh token is available for the primary account.
-  // TODO(crbug.com/842697, crbug.com/825190): ProfileSyncService shouldn't have
-  // to care about the refresh token state.
-  bool RefreshTokenIsAvailable() const;
-
   const GoogleServiceAuthError& GetLastAuthError() const {
     return last_auth_error_;
   }
-  bool IsAuthInProgress() const { return is_auth_in_progress_; }
 
   // Returns the credentials to be passed to the SyncEngine.
   syncer::SyncCredentials GetCredentials() const;
@@ -79,10 +76,6 @@ class SyncAuthManager : public identity::IdentityManager::Observer,
   // server changed. Updates auth error state accordingly.
   void ConnectionStatusChanged(syncer::ConnectionStatus status);
 
-  // TODO(crbug.com/842697, crbug.com/825190): Make this private once
-  // ProfileSyncService doesn't care about the refresh token state anymore.
-  void RequestAccessToken();
-
   // Clears all auth-related state (error, cached access token etc). Called
   // when Sync is turned off.
   void Clear();
@@ -91,39 +84,42 @@ class SyncAuthManager : public identity::IdentityManager::Observer,
   void OnPrimaryAccountSet(const AccountInfo& primary_account_info) override;
   void OnPrimaryAccountCleared(
       const AccountInfo& previous_primary_account_info) override;
+  void OnRefreshTokenUpdatedForAccount(const AccountInfo& account_info,
+                                       bool is_valid) override;
+  void OnRefreshTokenRemovedForAccount(
+      const AccountInfo& account_info) override;
 
-  // OAuth2TokenService::Observer implementation.
-  void OnRefreshTokenAvailable(const std::string& account_id) override;
-  void OnRefreshTokenRevoked(const std::string& account_id) override;
-  void OnRefreshTokensLoaded() override;
-
-  // Test-only method for inspecting internal state.
+  // Test-only methods for inspecting/modifying internal state.
   bool IsRetryingAccessTokenFetchForTest() const;
+  void ResetRequestAccessTokenBackoffForTest();
 
  private:
-  void UpdateAuthErrorState(const GoogleServiceAuthError& error);
-  void ClearAuthError();
-
   void ClearAccessTokenAndRequest();
 
-  void AccessTokenFetched(const GoogleServiceAuthError& error,
-                          const std::string& access_token);
+  void RequestAccessToken();
 
-  ProfileSyncService* const sync_service_;
+  void AccessTokenFetched(GoogleServiceAuthError error,
+                          identity::AccessTokenInfo access_token_info);
+
   syncer::SyncPrefs* const sync_prefs_;
   identity::IdentityManager* const identity_manager_;
-  OAuth2TokenService* const token_service_;
+
+  const AccountStateChangedCallback account_state_changed_callback_;
+  const CredentialsChangedCallback credentials_changed_callback_;
 
   bool registered_for_auth_notifications_;
 
   // This is a cache of the last authentication response we received either
   // from the sync server or from Chrome's identity/token management system.
+  // TODO(crbug.com/839834): Differentiate between these types of auth errors,
+  // since their semantics and lifetimes are quite different: e.g. the former
+  // can only exist while the Sync engine is initialized; the latter exists
+  // independent of Sync state, and probably shouldn't get reset in Clear().
   GoogleServiceAuthError last_auth_error_;
 
-  // Set to true if a signin has completed but we're still waiting for the
-  // engine to refresh its credentials.
-  bool is_auth_in_progress_;
-
+  // The current access token. This is mutually exclusive with
+  // |ongoing_access_token_fetch_| and |request_access_token_retry_timer_|:
+  // We either have an access token OR a pending request OR a pending retry.
   std::string access_token_;
 
   // Pending request for an access token. Non-null iff there is a request

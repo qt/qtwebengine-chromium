@@ -43,7 +43,6 @@
 #include "third_party/blink/public/platform/web_media_player_source.h"
 #include "third_party/blink/public/platform/web_media_stream.h"
 #include "third_party/blink/public/platform/web_screen_info.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_event_listener.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
@@ -53,6 +52,7 @@
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/events/event_queue.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -89,6 +89,8 @@
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/audio_source_provider_client.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/microtask.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/histogram.h"
@@ -463,7 +465,8 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
           this,
           &HTMLMediaElement::CheckViewportIntersectionTimerFired),
       played_time_ranges_(),
-      async_event_queue_(MediaElementEventQueue::Create(this, &document)),
+      async_event_queue_(EventQueue::Create(GetExecutionContext(),
+                                            TaskType::kMediaElementEvent)),
       playback_rate_(1.0f),
       default_playback_rate_(1.0f),
       network_state_(kNetworkEmpty),
@@ -503,6 +506,7 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
       playing_remotely_(false),
       in_overlay_fullscreen_video_(false),
       mostly_filling_viewport_(false),
+      was_always_muted_(true),
       audio_tracks_(AudioTrackList::Create(*this)),
       video_tracks_(VideoTrackList::Create(*this)),
       audio_source_node_(nullptr),
@@ -750,7 +754,9 @@ void HTMLMediaElement::ScheduleNextSourceChild() {
 }
 
 void HTMLMediaElement::ScheduleEvent(const AtomicString& event_name) {
-  ScheduleEvent(Event::CreateCancelable(event_name));
+  Event* event = Event::CreateCancelable(event_name);
+  event->SetTarget(this);
+  ScheduleEvent(event);
 }
 
 void HTMLMediaElement::ScheduleEvent(Event* event) {
@@ -781,6 +787,11 @@ MediaError* HTMLMediaElement::error() const {
 
 void HTMLMediaElement::SetSrc(const AtomicString& url) {
   setAttribute(srcAttr, url);
+}
+
+void HTMLMediaElement::SetSrc(const USVStringOrTrustedURL& stringOrURL,
+                              ExceptionState& exception_state) {
+  setAttribute(srcAttr, stringOrURL, exception_state);
 }
 
 void HTMLMediaElement::SetSrcObject(MediaStreamDescriptor* src_object) {
@@ -916,7 +927,7 @@ void HTMLMediaElement::InvokeLoadAlgorithm() {
       // 4.6.2 - Take pending play promises and reject pending play promises
       // with the result and an "AbortError" DOMException.
       RecordPlayPromiseRejected(PlayPromiseRejectReason::kInterruptedByLoad);
-      RejectPlayPromises(kAbortError,
+      RejectPlayPromises(DOMExceptionCode::kAbortError,
                          "The play() request was interrupted by a new load "
                          "request. https://goo.gl/LdLk22");
     }
@@ -1289,7 +1300,13 @@ void HTMLMediaElement::StartPlayerLoad() {
   web_media_player_->RequestRemotePlaybackDisabled(
       FastHasAttribute(disableremoteplaybackAttr));
 
-  web_media_player_->Load(GetLoadType(), source, CorsMode());
+  auto load_timing = web_media_player_->Load(GetLoadType(), source, CorsMode());
+  if (load_timing == WebMediaPlayer::LoadTiming::kDeferred) {
+    // Deferred media loading is not part of the spec, but intuition is that
+    // this should not hold up the Window's "load" event (similar to user
+    // gesture requirements).
+    SetShouldDelayLoadEvent(false);
+  }
 
   if (IsFullscreen())
     web_media_player_->EnteredFullscreen();
@@ -1565,7 +1582,7 @@ void HTMLMediaElement::NoneSupported(const String& input_message) {
   ScheduleEvent(EventTypeNames::error);
 
   // 6 - Reject pending play promises with NotSupportedError.
-  ScheduleRejectPlayPromises(kNotSupportedError);
+  ScheduleRejectPlayPromises(DOMExceptionCode::kNotSupportedError);
 
   CloseMediaSource();
 
@@ -1814,8 +1831,6 @@ void HTMLMediaElement::SetReadyState(ReadyState state) {
   if (ready_state_ >= kHaveMetadata && old_state < kHaveMetadata) {
     CreatePlaceholderTracksIfNecessary();
 
-    SelectInitialTracksIfNecessary();
-
     MediaFragmentURIParser fragment_parser(current_src_);
     fragment_end_time_ = fragment_parser.EndTime();
 
@@ -1923,7 +1938,13 @@ void HTMLMediaElement::ProgressEventTimerFired(TimerBase*) {
     sent_stalled_event_ = false;
     if (GetLayoutObject())
       GetLayoutObject()->UpdateFromElement();
-  } else if (timedelta > 3.0 && !sent_stalled_event_) {
+  } else if (!media_source_ && timedelta > 3.0 && !sent_stalled_event_) {
+    // Note the !media_source_ condition above. The 'stalled' event is not
+    // fired when using MSE. MSE's resource is considered 'local' (we don't
+    // manage the donwload - the app does), so the HTML5 spec text around
+    // 'stalled' does not apply. See discussion in https://crbug.com/517240
+    // We also don't need to take any action wrt delaying-the-load-event.
+    // MediaSource disables the delayed load when first attached.
     ScheduleEvent(EventTypeNames::stalled);
     sent_stalled_event_ = true;
     SetShouldDelayLoadEvent(false);
@@ -2246,9 +2267,9 @@ void HTMLMediaElement::setPlaybackRate(double rate,
     // When the proposed playbackRate is unsupported, throw a NotSupportedError
     // DOMException and don't update the value.
     exception_state.ThrowDOMException(
-        kNotSupportedError, "The provided playback rate (" +
-                                String::Number(rate) + ") is not in the " +
-                                "supported playback range.");
+        DOMExceptionCode::kNotSupportedError,
+        "The provided playback rate (" + String::Number(rate) +
+            ") is not in the " + "supported playback range.");
 
     // Do not update |playback_rate_|.
     return;
@@ -2373,19 +2394,19 @@ ScriptPromise HTMLMediaElement::playForBindings(ScriptState* script_state) {
   ScriptPromise promise = resolver->Promise();
   play_promise_resolvers_.push_back(resolver);
 
-  base::Optional<ExceptionCode> code = Play();
+  base::Optional<DOMExceptionCode> code = Play();
   if (code) {
     DCHECK(!play_promise_resolvers_.IsEmpty());
     play_promise_resolvers_.pop_back();
 
     String message;
     switch (code.value()) {
-      case kNotAllowedError:
+      case DOMExceptionCode::kNotAllowedError:
         message = autoplay_policy_->GetPlayErrorMessage();
         RecordPlayPromiseRejected(
             PlayPromiseRejectReason::kFailedAutoplayPolicy);
         break;
-      case kNotSupportedError:
+      case DOMExceptionCode::kNotSupportedError:
         message = "The element has no supported sources.";
         RecordPlayPromiseRejected(PlayPromiseRejectReason::kNoSupportedSources);
         break;
@@ -2399,13 +2420,13 @@ ScriptPromise HTMLMediaElement::playForBindings(ScriptState* script_state) {
   return promise;
 }
 
-base::Optional<ExceptionCode> HTMLMediaElement::Play() {
+base::Optional<DOMExceptionCode> HTMLMediaElement::Play() {
   BLINK_MEDIA_LOG << "play(" << (void*)this << ")";
 
-  base::Optional<ExceptionCode> exception_code =
+  base::Optional<DOMExceptionCode> exception_code =
       autoplay_policy_->RequestPlay();
 
-  if (exception_code == kNotAllowedError) {
+  if (exception_code == DOMExceptionCode::kNotAllowedError) {
     // If we're already playing, then this play would do nothing anyway.
     // Call playInternal to handle scheduling the promise resolution.
     if (!paused_) {
@@ -2418,7 +2439,7 @@ base::Optional<ExceptionCode> HTMLMediaElement::Play() {
   autoplay_policy_->StopAutoplayMutedWhenVisible();
 
   if (error_ && error_->code() == MediaError::kMediaErrSrcNotSupported)
-    return kNotSupportedError;
+    return DOMExceptionCode::kNotSupportedError;
 
   DCHECK(!exception_code.has_value());
 
@@ -2484,7 +2505,7 @@ void HTMLMediaElement::PauseInternal() {
     // time to accurately reflect movie time at the moment we paused.
     SetOfficialPlaybackPosition(CurrentPlaybackPosition());
 
-    ScheduleRejectPlayPromises(kAbortError);
+    ScheduleRejectPlayPromises(DOMExceptionCode::kAbortError);
   }
 
   UpdatePlayState();
@@ -2585,7 +2606,7 @@ void HTMLMediaElement::setVolume(double vol, ExceptionState& exception_state) {
 
   if (vol < 0.0f || vol > 1.0f) {
     exception_state.ThrowDOMException(
-        kIndexSizeError,
+        DOMExceptionCode::kIndexSizeError,
         ExceptionMessages::IndexOutsideRange(
             "volume", vol, 0.0, ExceptionMessages::kInclusiveBound, 1.0,
             ExceptionMessages::kInclusiveBound));
@@ -2619,8 +2640,13 @@ void HTMLMediaElement::setMuted(bool muted) {
   if (!muted_ && !autoplay_policy_->RequestAutoplayUnmute())
     pause();
 
-  // This is called after the volumechange event to make sure isAutoplayingMuted
-  // returns the right value when webMediaPlayer receives the volume update.
+  // If playback was not paused by the autoplay policy and got unmuted, the
+  // element is marked as being allowed to play unmuted.
+  if (!muted_ && PotentiallyPlaying())
+    was_always_muted_ = false;
+
+  // This is called at the end to make sure the WebMediaPlayer has the right
+  // information.
   if (GetWebMediaPlayer())
     GetWebMediaPlayer()->SetVolume(EffectiveMediaVolume());
 
@@ -2629,6 +2655,9 @@ void HTMLMediaElement::setMuted(bool muted) {
 
 void HTMLMediaElement::enterPictureInPicture(
     WebMediaPlayer::PipWindowOpenedCallback callback) {
+  if (DisplayType() == WebMediaPlayer::DisplayType::kFullscreen)
+    Fullscreen::ExitFullscreen(GetDocument());
+
   if (GetWebMediaPlayer())
     GetWebMediaPlayer()->EnterPictureInPicture(std::move(callback));
 }
@@ -3234,7 +3263,7 @@ void HTMLMediaElement::TimeChanged() {
         // media element.
         paused_ = true;
         ScheduleEvent(EventTypeNames::pause);
-        ScheduleRejectPlayPromises(kAbortError);
+        ScheduleRejectPlayPromises(DOMExceptionCode::kAbortError);
       }
       // Queue a task to fire a simple event named ended at the media element.
       ScheduleEvent(EventTypeNames::ended);
@@ -3274,18 +3303,6 @@ void HTMLMediaElement::DurationChanged(double duration, bool request_seek) {
 
   if (request_seek)
     Seek(duration);
-}
-
-void HTMLMediaElement::PlaybackStateChanged() {
-  BLINK_MEDIA_LOG << "playbackStateChanged(" << (void*)this << ")";
-
-  if (!GetWebMediaPlayer())
-    return;
-
-  if (GetWebMediaPlayer()->Paused())
-    PauseInternal();
-  else
-    PlayInternal();
 }
 
 void HTMLMediaElement::RequestSeek(double time) {
@@ -3355,8 +3372,8 @@ WebMediaPlayer::TrackId HTMLMediaElement::GetSelectedVideoTrackId() {
   return track->id();
 }
 
-bool HTMLMediaElement::IsAutoplayingMuted() {
-  return autoplay_policy_->IsAutoplayingMuted();
+bool HTMLMediaElement::WasAlwaysMuted() {
+  return was_always_muted_;
 }
 
 // MediaPlayerPresentation methods
@@ -3443,6 +3460,17 @@ bool HTMLMediaElement::EndedPlayback(LoopCondition loop_condition) const {
   // direction of playback is forwards, Either the media element does not have a
   // loop attribute specified,
   double now = CurrentPlaybackPosition();
+
+  // Log whether we get a playback position of infinity().
+  // TODO(ossu): Once this stat expires, the duration check, below, can be moved
+  //             up to the top of the function.
+  UMA_HISTOGRAM_BOOLEAN("Media.MediaElement.PlaybackPositionIsInfinity",
+                        now == std::numeric_limits<double>::infinity());
+  // If we have infinite duration, we'll never have played for long enough to
+  // have ended playback.
+  if (dur == std::numeric_limits<double>::infinity())
+    return false;
+
   if (GetDirectionOfPlayback() == kForward) {
     return dur > 0 && now >= dur &&
            (loop_condition == LoopCondition::kIgnored || !Loop());
@@ -3471,6 +3499,9 @@ void HTMLMediaElement::UpdatePlayState() {
   BLINK_MEDIA_LOG << "updatePlayState(" << (void*)this
                   << ") - shouldBePlaying = " << BoolString(should_be_playing)
                   << ", isPlaying = " << BoolString(is_playing);
+
+  if (should_be_playing && !muted_)
+    was_always_muted_ = false;
 
   if (should_be_playing) {
     SetDisplayMode(kVideo);
@@ -3548,7 +3579,6 @@ void HTMLMediaElement::ContextDestroyed(ExecutionContext*) {
 
   // Close the async event queue so that no events are enqueued.
   CancelPendingEventsAndCallbacks();
-  async_event_queue_->Close();
 
   // Clear everything in the Media Element
   ClearMediaPlayer();
@@ -3568,10 +3598,6 @@ void HTMLMediaElement::ContextDestroyed(ExecutionContext*) {
     GetLayoutObject()->UpdateFromElement();
 
   StopPeriodicTimers();
-
-  // Ensure that hasPendingActivity() is not preventing garbage collection,
-  // since otherwise this media element will simply leak.
-  DCHECK(!HasPendingActivity());
 }
 
 bool HTMLMediaElement::HasPendingActivity() const {
@@ -3620,6 +3646,9 @@ bool HTMLMediaElement::IsFullscreen() const {
 
 void HTMLMediaElement::DidEnterFullscreen() {
   UpdateControlsVisibility();
+
+  if (DisplayType() == WebMediaPlayer::DisplayType::kPictureInPicture)
+    exitPictureInPicture(base::DoNothing());
 
   if (web_media_player_) {
     // FIXME: There is no embedder-side handling in layout test mode.
@@ -3714,7 +3743,8 @@ TextTrackContainer& HTMLMediaElement::EnsureTextTrackContainer() {
     return ToTextTrackContainer(*first_child);
   Node* to_be_inserted = first_child;
 
-  if (first_child && first_child->IsMediaRemotingInterstitial()) {
+  if (first_child && (first_child->IsMediaRemotingInterstitial() ||
+                      first_child->IsPictureInPictureInterstitial())) {
     Node* second_child = first_child->nextSibling();
     if (second_child && second_child->IsTextTrackContainer())
       return ToTextTrackContainer(*second_child);
@@ -3995,14 +4025,6 @@ void HTMLMediaElement::Trace(blink::Visitor* visitor) {
   PausableObject::Trace(visitor);
 }
 
-void HTMLMediaElement::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(video_tracks_);
-  visitor->TraceWrappers(audio_tracks_);
-  visitor->TraceWrappers(text_tracks_);
-  HTMLElement::TraceWrappers(visitor);
-  Supplementable<HTMLMediaElement>::TraceWrappers(visitor);
-}
-
 void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
   if (!MediaTracksEnabledInternally())
     return;
@@ -4011,28 +4033,15 @@ void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
   // didn't explicitly announce the tracks.
   if (HasAudio() && !audioTracks().length()) {
     AddAudioTrack("audio", WebMediaPlayerClient::kAudioTrackKindMain,
-                  "Audio Track", "", false);
+                  "Audio Track", "", true);
   }
 
   // Create a placeholder video track if the player says it has video but it
   // didn't explicitly announce the tracks.
   if (HasVideo() && !videoTracks().length()) {
     AddVideoTrack("video", WebMediaPlayerClient::kVideoTrackKindMain,
-                  "Video Track", "", false);
+                  "Video Track", "", true);
   }
-}
-
-void HTMLMediaElement::SelectInitialTracksIfNecessary() {
-  if (!MediaTracksEnabledInternally())
-    return;
-
-  // Enable the first audio track if an audio track hasn't been enabled yet.
-  if (audioTracks().length() > 0 && !audioTracks().HasEnabledTrack())
-    audioTracks().AnonymousIndexedGetter(0)->setEnabled(true);
-
-  // Select the first video track if a video track hasn't been selected yet.
-  if (videoTracks().length() > 0 && videoTracks().selectedIndex() == -1)
-    videoTracks().AnonymousIndexedGetter(0)->setSelected(true);
 }
 
 void HTMLMediaElement::SetNetworkState(NetworkState state) {
@@ -4074,7 +4083,7 @@ void HTMLMediaElement::ScheduleResolvePlayPromises() {
                 WrapWeakPersistent(this)));
 }
 
-void HTMLMediaElement::ScheduleRejectPlayPromises(ExceptionCode code) {
+void HTMLMediaElement::ScheduleRejectPlayPromises(DOMExceptionCode code) {
   // TODO(mlamouri): per spec, we should create a new task but we can't create
   // a new cancellable task without cancelling the previous one. There are two
   // approaches then: cancel the previous task and create a new one with the
@@ -4117,31 +4126,32 @@ void HTMLMediaElement::RejectScheduledPlayPromises() {
   // TODO(mlamouri): the message is generated based on the code because
   // arguments can't be passed to a cancellable task. In order to save space
   // used by the object, the string isn't saved.
-  DCHECK(play_promise_error_code_ == kAbortError ||
-         play_promise_error_code_ == kNotSupportedError);
-  if (play_promise_error_code_ == kAbortError) {
+  DCHECK(play_promise_error_code_ == DOMExceptionCode::kAbortError ||
+         play_promise_error_code_ == DOMExceptionCode::kNotSupportedError);
+  if (play_promise_error_code_ == DOMExceptionCode::kAbortError) {
     RecordPlayPromiseRejected(PlayPromiseRejectReason::kInterruptedByPause);
-    RejectPlayPromisesInternal(kAbortError,
+    RejectPlayPromisesInternal(DOMExceptionCode::kAbortError,
                                "The play() request was interrupted by a call "
                                "to pause(). https://goo.gl/LdLk22");
   } else {
     RecordPlayPromiseRejected(PlayPromiseRejectReason::kNoSupportedSources);
     RejectPlayPromisesInternal(
-        kNotSupportedError,
+        DOMExceptionCode::kNotSupportedError,
         "Failed to load because no supported source was found.");
   }
 }
 
-void HTMLMediaElement::RejectPlayPromises(ExceptionCode code,
+void HTMLMediaElement::RejectPlayPromises(DOMExceptionCode code,
                                           const String& message) {
   play_promise_reject_list_.AppendVector(play_promise_resolvers_);
   play_promise_resolvers_.clear();
   RejectPlayPromisesInternal(code, message);
 }
 
-void HTMLMediaElement::RejectPlayPromisesInternal(ExceptionCode code,
+void HTMLMediaElement::RejectPlayPromisesInternal(DOMExceptionCode code,
                                                   const String& message) {
-  DCHECK(code == kAbortError || code == kNotSupportedError);
+  DCHECK(code == DOMExceptionCode::kAbortError ||
+         code == DOMExceptionCode::kNotSupportedError);
 
   for (auto& resolver : play_promise_reject_list_)
     resolver->Reject(DOMException::Create(code, message));
@@ -4258,6 +4268,15 @@ gfx::ColorSpace HTMLMediaElement::TargetColorSpace() {
 
 bool HTMLMediaElement::WasAutoplayInitiated() {
   return autoplay_policy_->WasAutoplayInitiated();
+}
+
+void HTMLMediaElement::RequestPlay() {
+  autoplay_policy_->EnsureAutoplayInitiatedSet();
+  PlayInternal();
+}
+
+void HTMLMediaElement::RequestPause() {
+  PauseInternal();
 }
 
 bool HTMLMediaElement::MediaShouldBeOpaque() const {

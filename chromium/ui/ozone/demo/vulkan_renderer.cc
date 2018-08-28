@@ -28,6 +28,7 @@ VulkanRenderer::VulkanRenderer(gpu::VulkanImplementation* vulkan_implementation,
 
 VulkanRenderer::~VulkanRenderer() {
   surface_->Finish();
+  render_pass_->Destroy();
   surface_->Destroy();
   surface_.reset();
   device_queue_->Destroy();
@@ -42,6 +43,8 @@ bool VulkanRenderer::Initialize() {
   CHECK(device_queue_);
 
   surface_ = vulkan_implementation_->CreateViewSurface(widget_);
+  if (!surface_)
+    LOG(FATAL) << "Vulkan surface not supported by platform";
   CHECK(surface_->Initialize(device_queue_.get(),
                              gpu::VulkanSurface::DEFAULT_SURFACE_FORMAT));
 
@@ -99,9 +102,6 @@ void VulkanRenderer::RenderFrame() {
   }
 
   CHECK_EQ(surface_->SwapBuffers(), gfx::SwapResult::SWAP_ACK);
-
-  // TODO(spang): Use a better synchronization strategy.
-  command_buffer->Wait(UINT64_MAX);
 
   PostRenderFrameTask();
 }

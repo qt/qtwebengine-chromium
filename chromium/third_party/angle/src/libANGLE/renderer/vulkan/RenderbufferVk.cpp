@@ -23,11 +23,9 @@ constexpr VkClearColorValue kBlackClearColorValue                 = {{0}};
 
 }  // anonymous namespace
 
-RenderbufferVk::RenderbufferVk(const gl::RenderbufferState &state) : RenderbufferImpl(state)
+RenderbufferVk::RenderbufferVk(const gl::RenderbufferState &state)
+    : RenderbufferImpl(state), mRenderTarget(&mImage, &mImageView, this)
 {
-    mRenderTarget.image     = &mImage;
-    mRenderTarget.imageView = &mImageView;
-    mRenderTarget.resource  = this;
 }
 
 RenderbufferVk::~RenderbufferVk()
@@ -40,7 +38,7 @@ gl::Error RenderbufferVk::onDestroy(const gl::Context *context)
     RendererVk *renderer = contextVk->getRenderer();
 
     mImage.release(renderer->getCurrentQueueSerial(), renderer);
-    renderer->releaseResource(*this, &mImageView);
+    renderer->releaseObject(getStoredQueueSerial(), &mImageView);
 
     onStateChange(context, angle::SubjectMessage::DEPENDENT_DIRTY_BITS);
 
@@ -55,7 +53,6 @@ gl::Error RenderbufferVk::setStorage(const gl::Context *context,
     ContextVk *contextVk       = vk::GetImpl(context);
     RendererVk *renderer       = contextVk->getRenderer();
     const vk::Format &vkFormat = renderer->getFormat(internalformat);
-    VkDevice device            = renderer->getDevice();
 
     if (mImage.valid())
     {
@@ -65,7 +62,7 @@ gl::Error RenderbufferVk::setStorage(const gl::Context *context,
             static_cast<GLsizei>(height) != mState.getHeight())
         {
             mImage.release(renderer->getCurrentQueueSerial(), renderer);
-            renderer->releaseResource(*this, &mImageView);
+            renderer->releaseObject(getStoredQueueSerial(), &mImageView);
             onStateChange(context, angle::SubjectMessage::DEPENDENT_DIRTY_BITS);
         }
     }
@@ -81,22 +78,19 @@ gl::Error RenderbufferVk::setStorage(const gl::Context *context,
             (isDepthOrStencilFormat ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : 0);
 
         gl::Extents extents(static_cast<int>(width), static_cast<int>(height), 1);
-        ANGLE_TRY(mImage.init(device, gl::TextureType::_2D, extents, vkFormat, 1, usage, 1));
+        ANGLE_TRY(mImage.init(contextVk, gl::TextureType::_2D, extents, vkFormat, 1, usage, 1));
 
         VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        ANGLE_TRY(mImage.initMemory(device, renderer->getMemoryProperties(), flags));
+        ANGLE_TRY(mImage.initMemory(contextVk, renderer->getMemoryProperties(), flags));
 
-        VkImageAspectFlags aspect =
-            (textureFormat.depthBits > 0 ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
-            (textureFormat.stencilBits > 0 ? VK_IMAGE_ASPECT_STENCIL_BIT : 0) |
-            (textureFormat.redBits > 0 ? VK_IMAGE_ASPECT_COLOR_BIT : 0);
+        VkImageAspectFlags aspect = vk::GetFormatAspectFlags(textureFormat);
 
-        ANGLE_TRY(mImage.initImageView(device, gl::TextureType::_2D, aspect, gl::SwizzleState(),
+        ANGLE_TRY(mImage.initImageView(contextVk, gl::TextureType::_2D, aspect, gl::SwizzleState(),
                                        &mImageView, 1));
 
         // TODO(jmadill): Fold this into the RenderPass load/store ops. http://anglebug.com/2361
         vk::CommandBuffer *commandBuffer = nullptr;
-        ANGLE_TRY(beginWriteResource(renderer, &commandBuffer));
+        ANGLE_TRY(beginWriteResource(contextVk, &commandBuffer));
 
         if (isDepthOrStencilFormat)
         {
@@ -104,7 +98,7 @@ gl::Error RenderbufferVk::setStorage(const gl::Context *context,
         }
         else
         {
-            mImage.clearColor(kBlackClearColorValue, commandBuffer);
+            mImage.clearColor(kBlackClearColorValue, 0, 1, commandBuffer);
         }
     }
 

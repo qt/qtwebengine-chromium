@@ -4,7 +4,7 @@
 
 #include "services/ui/ws2/pointer_watcher.h"
 
-#include "services/ui/ws2/window_service_client.h"
+#include "services/ui/ws2/window_tree.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
@@ -25,7 +25,7 @@ std::unique_ptr<Event> PointerWatcher::CreateEventForClient(
   return Event::Clone(event);
 }
 
-PointerWatcher::PointerWatcher(WindowServiceClient* client) : client_(client) {
+PointerWatcher::PointerWatcher(WindowTree* tree) : tree_(tree) {
   aura::Env::GetInstance()->AddWindowEventDispatcherObserver(this);
 }
 
@@ -33,7 +33,7 @@ PointerWatcher::~PointerWatcher() {
   aura::Env::GetInstance()->RemoveWindowEventDispatcherObserver(this);
 }
 
-bool PointerWatcher::ShouldSendEventToClient(const ui::Event& event) const {
+bool PointerWatcher::DoesEventMatch(const ui::Event& event) const {
   switch (event.type()) {
     case ui::ET_MOUSE_PRESSED:
     case ui::ET_MOUSE_RELEASED:
@@ -52,18 +52,28 @@ bool PointerWatcher::ShouldSendEventToClient(const ui::Event& event) const {
   return false;
 }
 
+void PointerWatcher::ClearPendingEvent() {
+  pending_event_.reset();
+}
+
 void PointerWatcher::OnWindowEventDispatcherStartedProcessing(
     aura::WindowEventDispatcher* dispatcher,
     const ui::Event& event) {
-  if (!ShouldSendEventToClient(event))
+  if (!DoesEventMatch(event))
     return;
 
-  // TODO(sky): this needs to interact with actual event sending so that we
-  // only send pointer events if an event wasn't also sent to the client.
-  // Part of https://crbug.com/837692
-  std::unique_ptr<ui::Event> event_to_send;
-  client_->SendPointerWatcherEventToClient(dispatcher->host()->GetDisplayId(),
-                                           CreateEventForClient(event));
+  // See comment above |pending_event_| for details on why the event isn't sent
+  // immediately.
+  pending_event_ = CreateEventForClient(event);
+}
+
+void PointerWatcher::OnWindowEventDispatcherFinishedProcessingEvent(
+    aura::WindowEventDispatcher* dispatcher) {
+  if (!pending_event_)
+    return;
+
+  tree_->SendPointerWatcherEventToClient(dispatcher->host()->GetDisplayId(),
+                                         std::move(pending_event_));
 }
 
 }  // namespace ws2

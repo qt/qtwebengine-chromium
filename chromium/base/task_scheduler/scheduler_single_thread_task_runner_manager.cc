@@ -249,7 +249,7 @@ class SchedulerWorkerCOMDelegate : public SchedulerWorkerDelegate {
                                  },
                                  std::move(msg)),
                              TaskTraits(MayBlock()), TimeDelta());
-      if (task_tracker_->WillPostTask(pump_message_task)) {
+      if (task_tracker_->WillPostTask(&pump_message_task)) {
         bool was_empty =
             message_pump_sequence_->PushTask(std::move(pump_message_task));
         DCHECK(was_empty) << "GetWorkFromWindowsMessageQueue() does not expect "
@@ -300,7 +300,7 @@ class SchedulerSingleThreadTaskRunnerManager::SchedulerSingleThreadTaskRunner
     Task task(from_here, std::move(closure), traits_, delay);
     task.single_thread_task_runner_ref = this;
 
-    if (!outer_->task_tracker_->WillPostTask(task))
+    if (!outer_->task_tracker_->WillPostTask(&task))
       return false;
 
     if (task.delayed_run_time.is_null()) {
@@ -422,12 +422,13 @@ void SchedulerSingleThreadTaskRunnerManager::Start(
     workers_to_start = workers_;
   }
 
-  // Start workers that were created before this method was called. Other
-  // workers are started as they are created.
-  for (scoped_refptr<SchedulerWorker> worker : workers_to_start) {
+  // Start workers that were created before this method was called.
+  // Workers that already need to wake up are already signaled as part of
+  // SchedulerSingleThreadTaskRunner::PostTaskNow(). As a result, it's
+  // unnecessary to call WakeUp() for each worker (in fact, an extraneous
+  // WakeUp() would be racy and wrong - see https://crbug.com/862582).
+  for (scoped_refptr<SchedulerWorker> worker : workers_to_start)
     worker->Start(scheduler_worker_observer_);
-    worker->WakeUp();
-  }
 }
 
 scoped_refptr<SingleThreadTaskRunner>
@@ -491,7 +492,10 @@ SchedulerSingleThreadTaskRunnerManager::CreateTaskRunnerWithTraitsImpl(
         worker_name += "Shared";
       worker_name += environment_params.name_suffix;
       worker = CreateAndRegisterSchedulerWorker<DelegateType>(
-          worker_name, thread_mode, environment_params.priority_hint);
+          worker_name, thread_mode,
+          CanUseBackgroundPriorityForSchedulerWorker()
+              ? environment_params.priority_hint
+              : ThreadPriority::NORMAL);
       new_worker = true;
     }
     started = started_;

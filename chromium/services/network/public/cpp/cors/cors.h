@@ -9,6 +9,7 @@
 
 #include "base/component_export.h"
 #include "base/optional.h"
+#include "services/network/public/cpp/cors/cors_error_status.h"
 #include "services/network/public/mojom/cors.mojom-shared.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
 
@@ -47,12 +48,12 @@ extern const char kAccessControlRequestMethod[];
 // Performs a CORS access check on the response parameters.
 // This implements https://fetch.spec.whatwg.org/#concept-cors-check
 COMPONENT_EXPORT(NETWORK_CPP)
-base::Optional<mojom::CORSError> CheckAccess(
+base::Optional<CORSErrorStatus> CheckAccess(
     const GURL& response_url,
     const int response_status_code,
     const base::Optional<std::string>& allow_origin_header,
     const base::Optional<std::string>& allow_credentials_header,
-    network::mojom::FetchCredentialsMode credentials_mode,
+    mojom::FetchCredentialsMode credentials_mode,
     const url::Origin& origin,
     bool allow_file_origin = false);
 
@@ -61,12 +62,12 @@ base::Optional<mojom::CORSError> CheckAccess(
 // step 6, even for a preflight check, |credentials_mode| should be checked on
 // the actual request rather than preflight one.
 COMPONENT_EXPORT(NETWORK_CPP)
-base::Optional<mojom::CORSError> CheckPreflightAccess(
+base::Optional<CORSErrorStatus> CheckPreflightAccess(
     const GURL& response_url,
     const int response_status_code,
     const base::Optional<std::string>& allow_origin_header,
     const base::Optional<std::string>& allow_credentials_header,
-    network::mojom::FetchCredentialsMode actual_credentials_mode,
+    mojom::FetchCredentialsMode actual_credentials_mode,
     const url::Origin& origin,
     bool allow_file_origin = false);
 
@@ -91,7 +92,7 @@ base::Optional<mojom::CORSError> CheckPreflight(const int status_code);
 // header. Shares error conditions with standard preflight checking.
 // See https://crbug.com/590714.
 COMPONENT_EXPORT(NETWORK_CPP)
-base::Optional<mojom::CORSError> CheckExternalPreflight(
+base::Optional<CORSErrorStatus> CheckExternalPreflight(
     const base::Optional<std::string>& allow_external);
 
 COMPONENT_EXPORT(NETWORK_CPP)

@@ -179,6 +179,7 @@ class WebSettings {
                                     UScriptCode = USCRIPT_COMMON) = 0;
   virtual void SetFixedFontFamily(const WebString&,
                                   UScriptCode = USCRIPT_COMMON) = 0;
+  virtual void SetFMPNetworkQuietTimeout(double timeout) = 0;
   virtual void SetForceMainWorldInitialization(bool) = 0;
   virtual void SetForcePreloadNoneForMediaElements(bool) = 0;
   virtual void SetForceZeroLayoutHeight(bool) = 0;
@@ -299,6 +300,12 @@ class WebSettings {
   virtual void SetDoNotUpdateSelectionOnMutatingSelectionRange(bool) = 0;
   virtual void SetMediaDownloadInProductHelpEnabled(bool) = 0;
   virtual void SetLowPriorityIframesThreshold(WebEffectiveConnectionType) = 0;
+  virtual void SetLazyFrameLoadingDistanceThresholdPxUnknown(int) = 0;
+  virtual void SetLazyFrameLoadingDistanceThresholdPxOffline(int) = 0;
+  virtual void SetLazyFrameLoadingDistanceThresholdPxSlow2G(int) = 0;
+  virtual void SetLazyFrameLoadingDistanceThresholdPx2G(int) = 0;
+  virtual void SetLazyFrameLoadingDistanceThresholdPx3G(int) = 0;
+  virtual void SetLazyFrameLoadingDistanceThresholdPx4G(int) = 0;
 
  protected:
   ~WebSettings() = default;

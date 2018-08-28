@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/core/css/cssom/style_property_map_read_only.h"
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/css/css_custom_property_declaration.h"
 #include "third_party/blink/renderer/core/css/css_value_list.h"
 #include "third_party/blink/renderer/core/css/css_variable_reference_value.h"
@@ -15,6 +14,7 @@
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/style_property_shorthand.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -72,7 +72,9 @@ CSSStyleValue* StylePropertyMapReadOnly::get(const String& property_name,
   if (!value)
     return nullptr;
 
-  if (property.IsRepeated()) {
+  // Custom properties count as repeated whenever we have a CSSValueList.
+  if (property.IsRepeated() ||
+      (property_id == CSSPropertyVariable && value->IsValueList())) {
     CSSStyleValueVector values =
         StyleValueFactory::CssValueToStyleValueVector(property_id, *value);
     return values.IsEmpty() ? nullptr : values[0];

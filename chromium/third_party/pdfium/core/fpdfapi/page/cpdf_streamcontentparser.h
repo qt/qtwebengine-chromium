@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <stack>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_contentmark.h"
@@ -43,7 +44,10 @@ class CPDF_StreamContentParser {
                            std::set<const uint8_t*>* parsedSet);
   ~CPDF_StreamContentParser();
 
-  uint32_t Parse(const uint8_t* pData, uint32_t dwSize, uint32_t max_cost);
+  uint32_t Parse(const uint8_t* pData,
+                 uint32_t dwSize,
+                 uint32_t max_cost,
+                 const std::vector<uint32_t>& stream_start_offsets);
   CPDF_PageObjectHolder* GetPageObjectHolder() const {
     return m_pObjectHolder.Get();
   }
@@ -99,10 +103,12 @@ class CPDF_StreamContentParser {
     return static_cast<int>(GetNumber(index));
   }
   void OnOperator(const ByteStringView& op);
-  void AddTextObject(ByteString* pText,
+  void AddTextObject(const ByteString* pStrs,
                      float fInitKerning,
-                     float* pKerning,
-                     int count);
+                     const std::vector<float>& kernings,
+                     size_t nSegs);
+  float GetHorizontalTextSize(float fKerning) const;
+  float GetVerticalTextSize(float fKerning) const;
 
   void OnChangeTextMatrix();
   void ParsePathObject();
@@ -127,6 +133,7 @@ class CPDF_StreamContentParser {
 
   std::vector<float> GetColors() const;
   std::vector<float> GetNamedColors() const;
+  int32_t GetCurrentStreamIndex();
 
   void Handle_CloseFillStrokePath();
   void Handle_FillStrokePath();
@@ -204,16 +211,16 @@ class CPDF_StreamContentParser {
   UnownedPtr<CPDF_Document> const m_pDocument;
   UnownedPtr<CPDF_Dictionary> const m_pPageResources;
   UnownedPtr<CPDF_Dictionary> const m_pParentResources;
-  UnownedPtr<CPDF_Dictionary> m_pResources;
+  UnownedPtr<CPDF_Dictionary> const m_pResources;
   UnownedPtr<CPDF_PageObjectHolder> const m_pObjectHolder;
   UnownedPtr<std::set<const uint8_t*>> const m_ParsedSet;
   CFX_Matrix m_mtContentToUser;
   const CFX_FloatRect m_BBox;
   uint32_t m_ParamStartPos;
   uint32_t m_ParamCount;
-  CPDF_StreamParser* m_pSyntax;
+  UnownedPtr<CPDF_StreamParser> m_pSyntax;
   std::unique_ptr<CPDF_AllStates> m_pCurStates;
-  CPDF_ContentMark m_CurContentMark;
+  std::stack<std::unique_ptr<CPDF_ContentMark>> m_ContentMarksStack;
   std::vector<std::unique_ptr<CPDF_TextObject>> m_ClipTextList;
   UnownedPtr<CPDF_TextObject> m_pLastTextObject;
   float m_DefFontSize;
@@ -230,6 +237,7 @@ class CPDF_StreamContentParser {
   std::vector<std::unique_ptr<CPDF_AllStates>> m_StateStack;
   float m_Type3Data[6];
   ContentParam m_ParamBuf[kParamBufSize];
+  std::vector<uint32_t> m_StreamStartOffsets;
 };
 
 #endif  // CORE_FPDFAPI_PAGE_CPDF_STREAMCONTENTPARSER_H_

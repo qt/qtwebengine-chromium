@@ -61,6 +61,8 @@ jumbo_component("gfx") {
     "decorated_text.h",
     "decorated_text_mac.h",
     "decorated_text_mac.mm",
+    "extension_set.cc",
+    "extension_set.h",
     "favicon_size.cc",
     "favicon_size.h",
     "font.cc",
@@ -300,10 +302,8 @@ jumbo_component("gfx") {
     sources += [ "scoped_cg_context_save_gstate_mac.h" ]
     set_sources_assignment_filter(sources_assignment_filter)
   } else {
-    deps += [
-      "//cc/paint",
-      "//third_party:freetype_harfbuzz",
-    ]
+    public_deps += [ "//cc/paint" ]
+    deps += [ "//third_party:freetype_harfbuzz" ]
   }
 
   # Android.
@@ -416,6 +416,10 @@ jumbo_component("color_space") {
     "//skia",
   ]
   if (is_mac) {
+    sources += [
+      "mac/display_icc_profiles.cc",
+      "mac/display_icc_profiles.h",
+    ]
     libs = [
       "CoreFoundation.framework",
       "CoreGraphics.framework",
@@ -799,7 +803,7 @@ test("gfx_unittests") {
   if (!is_ios) {
     deps += [
       "//cc/paint",
-      "//mojo/edk",
+      "//mojo/core/embedder",
       "//mojo/public/cpp/bindings",
       "//ui/gfx/geometry/mojo:unit_test",
       "//ui/gfx/image/mojo:unit_test",

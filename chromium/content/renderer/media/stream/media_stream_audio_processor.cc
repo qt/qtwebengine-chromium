@@ -36,6 +36,8 @@
 
 namespace content {
 
+using EchoCancellationType = AudioProcessingProperties::EchoCancellationType;
+
 namespace {
 
 using webrtc::AudioProcessing;
@@ -102,19 +104,6 @@ base::Optional<int> GetStartupMinVolumeForAgc() {
 bool UseAecRefinedAdaptiveFilter() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kAecRefinedAdaptiveFilter);
-}
-
-webrtc::Point WebrtcPointFromMediaPoint(const media::Point& point) {
-  return webrtc::Point(point.x(), point.y(), point.z());
-}
-
-std::vector<webrtc::Point> WebrtcPointsFromMediaPoints(
-    const std::vector<media::Point>& points) {
-  std::vector<webrtc::Point> webrtc_points;
-  webrtc_points.reserve(webrtc_points.size());
-  for (const auto& point : points)
-    webrtc_points.push_back(WebrtcPointFromMediaPoint(point));
-  return webrtc_points;
 }
 
 }  // namespace
@@ -425,8 +414,9 @@ void MediaStreamAudioProcessor::OnAecDumpFile(
     // webrtc::AudioProcessing instance is destroyed.
     StartEchoCancellationDump(audio_processing_.get(), std::move(file),
                               worker_queue_.get());
-  } else
+  } else {
     file.Close();
+  }
 }
 
 void MediaStreamAudioProcessor::OnDisableAecDump() {
@@ -454,7 +444,7 @@ bool MediaStreamAudioProcessor::WouldModifyAudio(
     return true;
 
 #if !defined(OS_IOS)
-  if (properties.enable_sw_echo_cancellation ||
+  if (properties.EchoCancellationIsWebRtcProvided() ||
       properties.goog_auto_gain_control) {
     return true;
   }
@@ -469,7 +459,7 @@ bool MediaStreamAudioProcessor::WouldModifyAudio(
 
   if (properties.goog_noise_suppression ||
       properties.goog_experimental_noise_suppression ||
-      properties.goog_beamforming || properties.goog_highpass_filter) {
+      properties.goog_highpass_filter) {
     return true;
   }
 
@@ -568,11 +558,11 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
 
   // Return immediately if none of the goog constraints requiring
   // webrtc::AudioProcessing are enabled.
-  if (!properties.enable_sw_echo_cancellation && !goog_experimental_aec &&
-      !properties.goog_noise_suppression && !properties.goog_highpass_filter &&
-      !goog_typing_detection && !properties.goog_auto_gain_control &&
-      !properties.goog_experimental_noise_suppression &&
-      !properties.goog_beamforming) {
+  if (!properties.EchoCancellationIsWebRtcProvided() &&
+      !goog_experimental_aec && !properties.goog_noise_suppression &&
+      !properties.goog_highpass_filter && !goog_typing_detection &&
+      !properties.goog_auto_gain_control &&
+      !properties.goog_experimental_noise_suppression) {
     // Sanity-check: WouldModifyAudio() should return true iff
     // |audio_mirroring_| is true.
     DCHECK_EQ(audio_mirroring_, WouldModifyAudio(properties));
@@ -595,12 +585,6 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
     config.Set<webrtc::RefinedAdaptiveFilter>(
         new webrtc::RefinedAdaptiveFilter(true));
   }
-  if (properties.goog_beamforming) {
-    // Only enable beamforming if we have at least two mics.
-    config.Set<webrtc::Beamforming>(new webrtc::Beamforming(
-        properties.goog_array_geometry.size() > 1,
-        WebrtcPointsFromMediaPoints(properties.goog_array_geometry)));
-  }
 
   // If the experimental AGC is enabled, check for overridden config params.
   if (properties.goog_experimental_auto_gain_control) {
@@ -609,21 +593,10 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
         new webrtc::ExperimentalAgc(true, startup_min_volume.value_or(0)));
   }
 
-  // Check if experimental echo canceller should be used.
-  if (properties.enable_sw_echo_cancellation) {
-    base::Optional<bool> override_aec3;
-    // In unit tests not creating a message filter, |aec_dump_message_filter_|
-    // will be null. We can just ignore that. Other unit tests and browser tests
-    // ensure that we do get the filter when we should.
-    if (aec_dump_message_filter_)
-      override_aec3 = aec_dump_message_filter_->GetOverrideAec3();
-    using_aec3_ = override_aec3.value_or(
-        base::FeatureList::IsEnabled(features::kWebRtcUseEchoCanceller3));
-  }
-
   // Create and configure the webrtc::AudioProcessing.
   webrtc::AudioProcessingBuilder ap_builder;
-  if (using_aec3_) {
+  if (properties.echo_cancellation_type ==
+      EchoCancellationType::kEchoCancellationAec3) {
     webrtc::EchoCanceller3Config aec3_config;
     aec3_config.ep_strength.bounded_erl =
         base::FeatureList::IsEnabled(features::kWebRtcAecBoundedErlSetup);
@@ -645,25 +618,20 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
     playout_data_source_->AddPlayoutSink(this);
   }
 
-  if (properties.enable_sw_echo_cancellation) {
+  if (properties.EchoCancellationIsWebRtcProvided()) {
     EnableEchoCancellation(audio_processing_.get());
 
     // Prepare for logging echo information. Do not log any echo information
     // when AEC3 is active, as the echo information then will not be properly
     // updated.
-    if (!using_aec3_)
+    if (properties.echo_cancellation_type !=
+        EchoCancellationType::kEchoCancellationAec3) {
       echo_information_ = std::make_unique<EchoInformation>();
+    }
   }
 
-  if (properties.goog_noise_suppression) {
-    // The beamforming postfilter is effective at suppressing stationary noise,
-    // so reduce the single-channel NS aggressiveness when enabled.
-    const NoiseSuppression::Level ns_level =
-        config.Get<webrtc::Beamforming>().enabled ? NoiseSuppression::kLow
-                                                  : NoiseSuppression::kHigh;
-
-    EnableNoiseSuppression(audio_processing_.get(), ns_level);
-  }
+  if (properties.goog_noise_suppression)
+    EnableNoiseSuppression(audio_processing_.get(), NoiseSuppression::kHigh);
 
   apm_config.high_pass_filter.enabled = properties.goog_highpass_filter;
 

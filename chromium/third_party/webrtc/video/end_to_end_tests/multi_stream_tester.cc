@@ -53,11 +53,11 @@ void MultiStreamTester::RunTest() {
       []() { return VP8Encoder::Create(); });
 
   task_queue_->SendTask([&]() {
-    sender_call = rtc::WrapUnique(Call::Create(config));
-    receiver_call = rtc::WrapUnique(Call::Create(config));
+    sender_call = absl::WrapUnique(Call::Create(config));
+    receiver_call = absl::WrapUnique(Call::Create(config));
     sender_transport =
-        rtc::WrapUnique(CreateSendTransport(task_queue_, sender_call.get()));
-    receiver_transport = rtc::WrapUnique(
+        absl::WrapUnique(CreateSendTransport(task_queue_, sender_call.get()));
+    receiver_transport = absl::WrapUnique(
         CreateReceiveTransport(task_queue_, receiver_call.get()));
 
     sender_transport->SetReceiver(receiver_call->Receiver());
@@ -99,7 +99,7 @@ void MultiStreamTester::RunTest() {
       receive_streams[i]->Start();
 
       frame_generators[i] = test::FrameGeneratorCapturer::Create(
-          width, height, rtc::nullopt, rtc::nullopt, 30,
+          width, height, absl::nullopt, absl::nullopt, 30,
           Clock::GetRealTimeClock());
       send_streams[i]->SetSource(frame_generators[i],
                                  DegradationPreference::MAINTAIN_FRAMERATE);

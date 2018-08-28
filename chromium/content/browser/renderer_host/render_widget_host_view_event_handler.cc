@@ -368,14 +368,12 @@ void RenderWidgetHostViewEventHandler::OnMouseEvent(ui::MouseEvent* event) {
 
     if (mouse_wheel_event.delta_x != 0 || mouse_wheel_event.delta_y != 0) {
       bool should_route_event = ShouldRouteEvent(event);
-      if (host_view_->wheel_scroll_latching_enabled()) {
-        // End the touchpad scrolling sequence (if such exists) before handling
-        // a ui::ET_MOUSEWHEEL event.
-        mouse_wheel_phase_handler_.SendWheelEndForTouchpadScrollingIfNeeded();
+      // End the touchpad scrolling sequence (if such exists) before handling
+      // a ui::ET_MOUSEWHEEL event.
+      mouse_wheel_phase_handler_.SendWheelEndForTouchpadScrollingIfNeeded();
 
-        mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
-            mouse_wheel_event, should_route_event);
-      }
+      mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
+          mouse_wheel_event, should_route_event);
       if (should_route_event) {
         host_->delegate()->GetInputEventRouter()->RouteMouseWheelEvent(
             host_view_, &mouse_wheel_event, *event->latency());
@@ -435,25 +433,29 @@ void RenderWidgetHostViewEventHandler::OnScrollEvent(ui::ScrollEvent* event) {
     if (event->finger_count() != 2)
       return;
 #endif
-    blink::WebGestureEvent gesture_event = ui::MakeWebGestureEventFlingCancel();
-    // Coordinates need to be transferred to the fling cancel gesture only
-    // for Surface-targeting to ensure that it is targeted to the correct
-    // RenderWidgetHost.
-    gesture_event.SetPositionInWidget(event->location_f());
     blink::WebMouseWheelEvent mouse_wheel_event = ui::MakeWebMouseWheelEvent(
         *event, base::Bind(&GetScreenLocationFromEvent));
-    if (host_view_->wheel_scroll_latching_enabled()) {
-      mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
-          mouse_wheel_event, should_route_event);
+    mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
+        mouse_wheel_event, should_route_event);
+
+    base::Optional<blink::WebGestureEvent> maybe_synthetic_fling_cancel;
+    if (mouse_wheel_event.phase == blink::WebMouseWheelEvent::kPhaseBegan) {
+      maybe_synthetic_fling_cancel =
+          ui::MakeWebGestureEventFlingCancel(mouse_wheel_event);
     }
+
     if (should_route_event) {
-      host_->delegate()->GetInputEventRouter()->RouteGestureEvent(
-          host_view_, &gesture_event,
-          ui::LatencyInfo(ui::SourceEventType::WHEEL));
+      if (maybe_synthetic_fling_cancel) {
+        host_->delegate()->GetInputEventRouter()->RouteGestureEvent(
+            host_view_, &*maybe_synthetic_fling_cancel,
+            ui::LatencyInfo(ui::SourceEventType::WHEEL));
+      }
       host_->delegate()->GetInputEventRouter()->RouteMouseWheelEvent(
           host_view_, &mouse_wheel_event, *event->latency());
     } else {
-      host_->ForwardGestureEvent(gesture_event);
+      if (maybe_synthetic_fling_cancel) {
+        host_->ForwardGestureEvent(*maybe_synthetic_fling_cancel);
+      }
       host_->ForwardWheelEventWithLatencyInfo(mouse_wheel_event,
                                               *event->latency());
     }
@@ -749,73 +751,75 @@ void RenderWidgetHostViewEventHandler::HandleMouseEventWhileLocked(
         ProcessMouseWheelEvent(mouse_wheel_event, *event->latency());
       }
     }
-    return;
-  }
-
-  gfx::Point center(gfx::Rect(window_->bounds().size()).CenterPoint());
-
-  // If we receive non client mouse messages while we are in the locked state
-  // it probably means that the mouse left the borders of our window and
-  // needs to be moved back to the center.
-  if (event->flags() & ui::EF_IS_NON_CLIENT) {
-    // TODO(jonross): ideally this would not be done for mus (crbug.com/621412)
-    MoveCursorToCenter();
-    return;
-  }
-
-  blink::WebMouseEvent mouse_event =
-      ui::MakeWebMouseEvent(*event, base::Bind(&GetScreenLocationFromEvent));
-
-  bool is_move_to_center_event =
-      (event->type() == ui::ET_MOUSE_MOVED ||
-       event->type() == ui::ET_MOUSE_DRAGGED) &&
-      mouse_event.PositionInWidget().x == center.x() &&
-      mouse_event.PositionInWidget().y == center.y();
-
-  // For fractional scale factors, the conversion from pixels to dip and
-  // vice versa could result in off by 1 or 2 errors which hurts us because
-  // we want to avoid sending the artificial move to center event to the
-  // renderer. Sending the move to center to the renderer cause the cursor
-  // to bounce around the center of the screen leading to the lock operation
-  // not working correctly.
-  // Workaround is to treat a mouse move or drag event off by at most 2 px
-  // from the center as a move to center event.
-  if (synthetic_move_sent_ &&
-      IsFractionalScaleFactor(host_view_->current_device_scale_factor())) {
-    if (event->type() == ui::ET_MOUSE_MOVED ||
-        event->type() == ui::ET_MOUSE_DRAGGED) {
-      if ((std::abs(mouse_event.PositionInWidget().x - center.x()) <= 2) &&
-          (std::abs(mouse_event.PositionInWidget().y - center.y()) <= 2)) {
-        is_move_to_center_event = true;
-      }
-    }
-  }
-
-  ModifyEventMovementAndCoords(*event, &mouse_event);
-
-  bool should_not_forward = is_move_to_center_event && synthetic_move_sent_;
-  if (should_not_forward) {
-    synthetic_move_sent_ = false;
   } else {
-    // Check if the mouse has reached the border and needs to be centered.
-    if (ShouldMoveToCenter())
+    gfx::Point center(gfx::Rect(window_->bounds().size()).CenterPoint());
+
+    // If we receive non client mouse messages while we are in the locked state
+    // it probably means that the mouse left the borders of our window and
+    // needs to be moved back to the center.
+    if (event->flags() & ui::EF_IS_NON_CLIENT) {
+      // TODO(jonross): ideally this would not be done for mus
+      // (crbug.com/621412)
       MoveCursorToCenter();
-    bool is_selection_popup = NeedsInputGrab(popup_child_host_view_);
-    // Forward event to renderer.
-    if (CanRendererHandleEvent(event, mouse_locked_, is_selection_popup) &&
-        !(event->flags() & ui::EF_FROM_TOUCH)) {
-      if (ShouldRouteEvent(event)) {
-        host_->delegate()->GetInputEventRouter()->RouteMouseEvent(
-            host_view_, &mouse_event, *event->latency());
-      } else {
-        ProcessMouseEvent(mouse_event, *event->latency());
+      return;
+    }
+
+    blink::WebMouseEvent mouse_event =
+        ui::MakeWebMouseEvent(*event, base::Bind(&GetScreenLocationFromEvent));
+
+    bool is_move_to_center_event =
+        (event->type() == ui::ET_MOUSE_MOVED ||
+         event->type() == ui::ET_MOUSE_DRAGGED) &&
+        mouse_event.PositionInWidget().x == center.x() &&
+        mouse_event.PositionInWidget().y == center.y();
+
+    // For fractional scale factors, the conversion from pixels to dip and
+    // vice versa could result in off by 1 or 2 errors which hurts us because
+    // we want to avoid sending the artificial move to center event to the
+    // renderer. Sending the move to center to the renderer cause the cursor
+    // to bounce around the center of the screen leading to the lock operation
+    // not working correctly.
+    // Workaround is to treat a mouse move or drag event off by at most 2 px
+    // from the center as a move to center event.
+    if (synthetic_move_sent_ &&
+        IsFractionalScaleFactor(host_view_->current_device_scale_factor())) {
+      if (event->type() == ui::ET_MOUSE_MOVED ||
+          event->type() == ui::ET_MOUSE_DRAGGED) {
+        if ((std::abs(mouse_event.PositionInWidget().x - center.x()) <= 2) &&
+            (std::abs(mouse_event.PositionInWidget().y - center.y()) <= 2)) {
+          is_move_to_center_event = true;
+        }
       }
-      // Ensure that we get keyboard focus on mouse down as a plugin window
-      // may have grabbed keyboard focus.
-      if (event->type() == ui::ET_MOUSE_PRESSED)
-        SetKeyboardFocus();
+    }
+
+    ModifyEventMovementAndCoords(*event, &mouse_event);
+
+    bool should_not_forward = is_move_to_center_event && synthetic_move_sent_;
+    if (should_not_forward) {
+      synthetic_move_sent_ = false;
+    } else {
+      // Check if the mouse has reached the border and needs to be centered.
+      if (ShouldMoveToCenter())
+        MoveCursorToCenter();
+      bool is_selection_popup = NeedsInputGrab(popup_child_host_view_);
+      // Forward event to renderer.
+      if (CanRendererHandleEvent(event, mouse_locked_, is_selection_popup) &&
+          !(event->flags() & ui::EF_FROM_TOUCH)) {
+        if (ShouldRouteEvent(event)) {
+          host_->delegate()->GetInputEventRouter()->RouteMouseEvent(
+              host_view_, &mouse_event, *event->latency());
+        } else {
+          ProcessMouseEvent(mouse_event, *event->latency());
+        }
+        // Ensure that we get keyboard focus on mouse down as a plugin window
+        // may have grabbed keyboard focus.
+        if (event->type() == ui::ET_MOUSE_PRESSED)
+          SetKeyboardFocus();
+      }
     }
   }
+  if (!ShouldGenerateAppCommand(event))
+    event->SetHandled();
 }
 
 void RenderWidgetHostViewEventHandler::ModifyEventMovementAndCoords(

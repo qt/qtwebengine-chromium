@@ -37,6 +37,7 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
 #include "services/identity/public/cpp/identity_manager.h"
+#include "services/identity/public/cpp/primary_account_access_token_fetcher.h"
 
 using base::TimeDelta;
 
@@ -377,8 +378,8 @@ void SuggestionsServiceImpl::IssueRequestIfNoneOngoing(const GURL& url) {
     return;
 
   OAuth2TokenService::ScopeSet scopes{GaiaConstants::kChromeSyncOAuth2Scope};
-  token_fetcher_ = identity_manager_->CreateAccessTokenFetcherForPrimaryAccount(
-      "suggestions_service", scopes,
+  token_fetcher_ = std::make_unique<identity::PrimaryAccountAccessTokenFetcher>(
+      "suggestions_service", identity_manager_, scopes,
       base::BindOnce(&SuggestionsServiceImpl::AccessTokenAvailable,
                      base::Unretained(this), url),
       identity::PrimaryAccountAccessTokenFetcher::Mode::kWaitUntilAvailable);
@@ -386,11 +387,10 @@ void SuggestionsServiceImpl::IssueRequestIfNoneOngoing(const GURL& url) {
 
 void SuggestionsServiceImpl::AccessTokenAvailable(
     const GURL& url,
-    const GoogleServiceAuthError& error,
-    const std::string& access_token) {
+    GoogleServiceAuthError error,
+    identity::AccessTokenInfo access_token_info) {
   DCHECK(token_fetcher_);
-  std::unique_ptr<identity::PrimaryAccountAccessTokenFetcher>
-      token_fetcher_deleter(std::move(token_fetcher_));
+  token_fetcher_.reset();
 
   if (error.state() != GoogleServiceAuthError::NONE) {
     blacklist_upload_backoff_.InformOfRequest(/*succeeded=*/false);
@@ -398,9 +398,9 @@ void SuggestionsServiceImpl::AccessTokenAvailable(
     return;
   }
 
-  DCHECK(!access_token.empty());
+  DCHECK(!access_token_info.token.empty());
 
-  IssueSuggestionsRequest(url, access_token);
+  IssueSuggestionsRequest(url, access_token_info.token);
 }
 
 void SuggestionsServiceImpl::IssueSuggestionsRequest(
@@ -458,11 +458,10 @@ SuggestionsServiceImpl::CreateSuggestionsRequest(
   request->SetRequestContext(url_request_context_);
   // Add Chrome experiment state to the request headers.
   net::HttpRequestHeaders headers;
-  // Note: It's OK to pass SignedIn::kNo if it's unknown, as it does not affect
-  // transmission of experiments coming from the variations server.
-  variations::AppendVariationHeaders(request->GetOriginalURL(),
-                                     variations::InIncognito::kNo,
-                                     variations::SignedIn::kNo, &headers);
+  // TODO: We should call AppendVariationHeaders with explicit
+  // variations::SignedIn::kNo If the access_token is empty
+  variations::AppendVariationHeadersUnknownSignedIn(
+      request->GetOriginalURL(), variations::InIncognito::kNo, &headers);
   request->SetExtraRequestHeaders(headers.ToString());
   if (!access_token.empty()) {
     request->AddExtraRequestHeader(

@@ -20,7 +20,7 @@
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock_mutant.h"
 
-namespace net {
+namespace quic {
 
 namespace test {
 
@@ -50,7 +50,6 @@ const size_t kMaxNumGapsAllowed = 2 * kMaxPacketGap;
 static const size_t kBlockSizeBytes =
     QuicStreamSequencerBuffer::kBlockSizeBytes;
 typedef QuicStreamSequencerBuffer::BufferBlock BufferBlock;
-typedef QuicStreamSequencerBuffer::Gap Gap;
 
 namespace {
 
@@ -941,4 +940,4 @@ TEST_F(QuicStreamSequencerBufferRandomIOTest, RandomWriteAndConsumeInPlace) {
 
 }  // namespace test
 
-}  // namespace net
+}  // namespace quic

@@ -14,7 +14,6 @@
 #include "base/macros.h"
 #include "services/service_manager/public/cpp/identity.h"
 #include "services/ui/public/interfaces/event_injector.mojom.h"
-#include "services/ui/public/interfaces/window_server_test.mojom.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/mus/window_tree_client.h"
 #include "ui/aura/mus/window_tree_client_delegate.h"
@@ -48,6 +47,7 @@ class WMState;
 
 namespace views {
 
+class AXRemoteHost;
 class DesktopNativeWidgetAura;
 class MusClientObserver;
 class MusPropertyMirror;
@@ -76,7 +76,7 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
     service_manager::Identity identity;
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner = nullptr;
     aura::WindowTreeClient::Config wtc_config =
-        aura::WindowTreeClient::Config::kMash;
+        aura::WindowTreeClient::Config::kMashDeprecated;
 
     // Create a wm::WMState. Some processes (e.g. the browser) may already
     // have one.
@@ -89,6 +89,10 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
     // If provided, MusClient will not create the WindowTreeClient. Not owned.
     // Must outlive MusClient.
     aura::WindowTreeClient* window_tree_client = nullptr;
+
+    // Connect to the accessibility host service in the browser (e.g. to support
+    // ChromeVox).
+    bool use_accessibility_host = false;
   };
 
   // Most clients should use AuraInit, which creates a MusClient.
@@ -104,6 +108,10 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
   static bool ShouldCreateDesktopNativeWidgetAura(
       const Widget::InitParams& init_params);
 
+  // Returns true if the windows backing the Widget should be made translucent.
+  static bool ShouldMakeWidgetWindowsTranslucent(
+      const Widget::InitParams& params);
+
   // Returns the properties to supply to mus when creating a window.
   static std::map<std::string, std::vector<uint8_t>>
   ConfigurePropertiesFromParams(const Widget::InitParams& init_params);
@@ -114,6 +122,8 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
     return pointer_watcher_event_router_.get();
   }
 
+  AXRemoteHost* ax_remote_host() { return ax_remote_host_.get(); }
+
   // Getter for type safety. Most code can use display::Screen::GetScreen().
   ScreenMus* screen() { return screen_.get(); }
 
@@ -122,6 +132,8 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
   //  NativeWidget has not been explicitly set.
   NativeWidget* CreateNativeWidget(const Widget::InitParams& init_params,
                                    internal::NativeWidgetDelegate* delegate);
+  void OnWidgetInitDone(Widget* widget);
+
   // Called when the capture client has been set for a window to notify
   // PointerWatcherEventRouter and CaptureSynchronizer.
   void OnCaptureClientSet(aura::client::CaptureClient* capture_client);
@@ -141,16 +153,13 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
   // Close all widgets this client knows.
   void CloseAllWidgets();
 
-  // Returns an interface to test drawing in mus. Only available when created
-  // with MusClientTestingState::CREATE_TESTING_STATE.
-  ui::mojom::WindowServerTest* GetTestingInterface() const;
-
   // Returns an interface to inject events into the Window Service. Only
   // available when created with MusClientTestingState::CREATE_TESTING_STATE.
   ui::mojom::EventInjector* GetTestingEventInjector() const;
 
  private:
   friend class AuraInit;
+  friend class MusClientTestApi;
 
   // Creates a DesktopWindowTreeHostMus. This is set as the factory function
   // ViewsDelegate such that if DesktopNativeWidgetAura is created without a
@@ -169,6 +178,9 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
                               int64_t display_id,
                               aura::Window* target) override;
   aura::PropertyConverter* GetPropertyConverter() override;
+  void OnDisplaysChanged(std::vector<ui::mojom::WsDisplayPtr> ws_displays,
+                         int64_t primary_display_id,
+                         int64_t internal_display_id) override;
 
   // ScreenMusDelegate:
   void OnWindowManagerFrameValuesChanged() override;
@@ -206,7 +218,11 @@ class VIEWS_MUS_EXPORT MusClient : public aura::WindowTreeClientDelegate,
   // Gives services transparent remote access the InputDeviceManager.
   std::unique_ptr<ui::InputDeviceClient> input_device_client_;
 
-  ui::mojom::WindowServerTestPtr server_test_ptr_;
+  // Forwards accessibility events to extensions in the browser. Can be null for
+  // apps that do not need accessibility support and for the browser itself
+  // under OopAsh.
+  std::unique_ptr<AXRemoteHost> ax_remote_host_;
+
   ui::mojom::EventInjectorPtr event_injector_;
 
   DISALLOW_COPY_AND_ASSIGN(MusClient);

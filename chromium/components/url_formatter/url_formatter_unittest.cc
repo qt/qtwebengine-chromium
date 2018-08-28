@@ -618,7 +618,10 @@ const IDNTestCase idn_cases[] = {
     // ຟຮບ.com
     {"xn--f7cj9b.com", L"\x0e9f\x0eae\x0e9a.com", false},
     // ຟຮ໐ບ.com
-    {"xn--f7cj9b5h.com", L"\x0e9f\x0eae" L"\x0ed0\x0e9a.com", false},
+    {"xn--f7cj9b5h.com",
+     L"\x0e9f\x0eae"
+     L"\x0ed0\x0e9a.com",
+     false},
 
     // At one point the skeleton of 'w' was 'vv', ensure that
     // that it's treated as 'w'.
@@ -990,14 +993,18 @@ void CheckAdjustedOffsets(const std::string& url_string,
 }
 
 namespace test {
-#include "components/url_formatter/top_domains/test_skeletons-inc.cc"
+#include "components/url_formatter/top_domains/test_domains-trie-inc.cc"
 }
 
 }  // namespace
 
 TEST(UrlFormatterTest, IDNToUnicode) {
-  IDNSpoofChecker::SetTopDomainGraph(base::StringPiece(
-      reinterpret_cast<const char*>(test::kDafsa), sizeof(test::kDafsa)));
+  IDNSpoofChecker::HuffmanTrieParams trie_params{
+      test::kTopDomainsHuffmanTree, sizeof(test::kTopDomainsHuffmanTree),
+      test::kTopDomainsTrie, test::kTopDomainsTrieBits,
+      test::kTopDomainsRootPosition};
+  IDNSpoofChecker::SetTrieParamsForTesting(trie_params);
+
   for (size_t i = 0; i < arraysize(idn_cases); i++) {
     base::string16 output(IDNToUnicode(idn_cases[i].input));
     base::string16 expected(idn_cases[i].unicode_allowed
@@ -1006,7 +1013,7 @@ TEST(UrlFormatterTest, IDNToUnicode) {
     EXPECT_EQ(expected, output) << "input # " << i << ": \""
                                 << idn_cases[i].input << "\"";
   }
-  IDNSpoofChecker::RestoreTopDomainGraphToDefault();
+  IDNSpoofChecker::RestoreTrieParamsForTesting();
 }
 
 TEST(UrlFormatterTest, FormatUrl) {

@@ -13,17 +13,46 @@
 
 namespace content {
 
-class GpuClientImpl : public ui::mojom::Gpu, public GpuClient {
+class GpuClientImpl : public ui::mojom::GpuMemoryBufferFactory,
+                      public ui::mojom::Gpu,
+                      public GpuClient {
  public:
-  explicit GpuClientImpl(int render_process_id);
+  // GpuClientImpl must be destroyed on the thread associated with
+  // |task_runner|.
+  GpuClientImpl(int client_id,
+                uint64_t client_tracing_id,
+                scoped_refptr<base::SingleThreadTaskRunner> io_task_runner);
+
   ~GpuClientImpl() override;
 
+  // This needs to be run on the thread associated with |task_runner_|.
   void Add(ui::mojom::GpuRequest request);
 
   void PreEstablishGpuChannel();
 
   void SetConnectionErrorHandler(
       ConnectionErrorHandlerClosure connection_error_handler);
+
+  // ui::mojom::GpuMemoryBufferFactory overrides:
+  void CreateGpuMemoryBuffer(
+      gfx::GpuMemoryBufferId id,
+      const gfx::Size& size,
+      gfx::BufferFormat format,
+      gfx::BufferUsage usage,
+      ui::mojom::GpuMemoryBufferFactory::CreateGpuMemoryBufferCallback callback)
+      override;
+  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                              const gpu::SyncToken& sync_token) override;
+
+  // ui::mojom::Gpu overrides:
+  void CreateGpuMemoryBufferFactory(
+      ui::mojom::GpuMemoryBufferFactoryRequest request) override;
+  void EstablishGpuChannel(EstablishGpuChannelCallback callback) override;
+  void CreateJpegDecodeAccelerator(
+      media::mojom::JpegDecodeAcceleratorRequest jda_request) override;
+  void CreateVideoEncodeAcceleratorProvider(
+      media::mojom::VideoEncodeAcceleratorProviderRequest vea_provider_request)
+      override;
 
  private:
   enum class ErrorReason {
@@ -38,33 +67,24 @@ class GpuClientImpl : public ui::mojom::Gpu, public GpuClient {
                              const gpu::GpuFeatureInfo& gpu_feature_info,
                              GpuProcessHost::EstablishChannelStatus status);
   void OnCreateGpuMemoryBuffer(CreateGpuMemoryBufferCallback callback,
-                               const gfx::GpuMemoryBufferHandle& handle);
+                               gfx::GpuMemoryBufferHandle handle);
   void ClearCallback();
 
-  // ui::mojom::Gpu overrides:
-  void EstablishGpuChannel(EstablishGpuChannelCallback callback) override;
-  void CreateJpegDecodeAccelerator(
-      media::mojom::JpegDecodeAcceleratorRequest jda_request) override;
-  void CreateVideoEncodeAcceleratorProvider(
-      media::mojom::VideoEncodeAcceleratorProviderRequest vea_provider_request)
-      override;
-  void CreateGpuMemoryBuffer(
-      gfx::GpuMemoryBufferId id,
-      const gfx::Size& size,
-      gfx::BufferFormat format,
-      gfx::BufferUsage usage,
-      ui::mojom::Gpu::CreateGpuMemoryBufferCallback callback) override;
-  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
-                              const gpu::SyncToken& sync_token) override;
-
-  const int render_process_id_;
-  mojo::BindingSet<ui::mojom::Gpu> bindings_;
+  const int client_id_;
+  const uint64_t client_tracing_id_;
+  mojo::BindingSet<ui::mojom::GpuMemoryBufferFactory>
+      gpu_memory_buffer_factory_bindings_;
+  mojo::BindingSet<ui::mojom::Gpu> gpu_bindings_;
   bool gpu_channel_requested_ = false;
   EstablishGpuChannelCallback callback_;
   mojo::ScopedMessagePipeHandle channel_handle_;
   gpu::GPUInfo gpu_info_;
   gpu::GpuFeatureInfo gpu_feature_info_;
   ConnectionErrorHandlerClosure connection_error_handler_;
+  // |task_runner_| is associated with the thread |gpu_bindings_| is bound on.
+  // GpuClientImpl instance is bound to this thread, and must be destroyed on
+  // this thread.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   base::WeakPtrFactory<GpuClientImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuClientImpl);

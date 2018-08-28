@@ -102,11 +102,12 @@ static gl::TextureCaps GenerateTextureFormatCaps(const FunctionsGL *functions,
     const nativegl::InternalFormat &formatInfo = nativegl::GetInternalFormatInfo(internalFormat, functions->standard);
     textureCaps.texturable = MeetsRequirements(functions, formatInfo.texture);
     textureCaps.filterable = textureCaps.texturable && MeetsRequirements(functions, formatInfo.filter);
-    textureCaps.renderable = MeetsRequirements(functions, formatInfo.framebufferAttachment);
+    textureCaps.textureAttachment = MeetsRequirements(functions, formatInfo.textureAttachment);
+    textureCaps.renderbuffer      = MeetsRequirements(functions, formatInfo.renderbuffer);
 
     // glGetInternalformativ is not available until version 4.2 but may be available through the 3.0
     // extension GL_ARB_internalformat_query
-    if (textureCaps.renderable && functions->getInternalformativ)
+    if (textureCaps.renderbuffer && functions->getInternalformativ)
     {
         GLenum queryInternalFormat = internalFormat;
 
@@ -351,12 +352,14 @@ void GenerateCaps(const FunctionsGL *functions,
     {
         // Desktop GL core profile deprecated the GL_ALIASED_POINT_SIZE_RANGE query.  Use
         // GL_POINT_SIZE_RANGE instead.
-        caps->minAliasedPointSize = QueryGLFloatRange(functions, GL_POINT_SIZE_RANGE, 0);
+        caps->minAliasedPointSize =
+            std::max(1.0f, QueryGLFloatRange(functions, GL_POINT_SIZE_RANGE, 0));
         caps->maxAliasedPointSize = QueryGLFloatRange(functions, GL_POINT_SIZE_RANGE, 1);
     }
     else
     {
-        caps->minAliasedPointSize = QueryGLFloatRange(functions, GL_ALIASED_POINT_SIZE_RANGE, 0);
+        caps->minAliasedPointSize =
+            std::max(1.0f, QueryGLFloatRange(functions, GL_ALIASED_POINT_SIZE_RANGE, 0));
         caps->maxAliasedPointSize = QueryGLFloatRange(functions, GL_ALIASED_POINT_SIZE_RANGE, 1);
     }
 
@@ -442,7 +445,8 @@ void GenerateCaps(const FunctionsGL *functions,
         functions->isAtLeastGLES(gl::Version(2, 0)))
     {
         caps->maxVertexAttributes = QuerySingleGLInt(functions, GL_MAX_VERTEX_ATTRIBS);
-        caps->maxVertexUniformComponents = QuerySingleGLInt(functions, GL_MAX_VERTEX_UNIFORM_COMPONENTS);
+        caps->maxShaderUniformComponents[gl::ShaderType::Vertex] =
+            QuerySingleGLInt(functions, GL_MAX_VERTEX_UNIFORM_COMPONENTS);
         caps->maxShaderTextureImageUnits[gl::ShaderType::Vertex] =
             QuerySingleGLInt(functions, GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS);
     }
@@ -462,9 +466,11 @@ void GenerateCaps(const FunctionsGL *functions,
     else
     {
         // Doesn't limit ES version, GL_MAX_VERTEX_UNIFORM_COMPONENTS / 4 is acceptable.
-        caps->maxVertexUniformVectors = caps->maxVertexUniformComponents / 4;
+        caps->maxVertexUniformVectors =
+            caps->maxShaderUniformComponents[gl::ShaderType::Vertex] / 4;
         // Doesn't limit ES version, GL_MAX_FRAGMENT_UNIFORM_COMPONENTS / 4 is acceptable.
-        caps->maxFragmentUniformVectors = caps->maxFragmentUniformComponents / 4;
+        caps->maxFragmentUniformVectors =
+            caps->maxShaderUniformComponents[gl::ShaderType::Fragment] / 4;
     }
 
     if (functions->isAtLeastGL(gl::Version(3, 2)) ||
@@ -483,7 +489,8 @@ void GenerateCaps(const FunctionsGL *functions,
     if (functions->isAtLeastGL(gl::Version(2, 0)) ||
         functions->isAtLeastGLES(gl::Version(2, 0)))
     {
-        caps->maxFragmentUniformComponents = QuerySingleGLInt(functions, GL_MAX_FRAGMENT_UNIFORM_COMPONENTS);
+        caps->maxShaderUniformComponents[gl::ShaderType::Fragment] =
+            QuerySingleGLInt(functions, GL_MAX_FRAGMENT_UNIFORM_COMPONENTS);
         caps->maxShaderTextureImageUnits[gl::ShaderType::Fragment] =
             QuerySingleGLInt(functions, GL_MAX_TEXTURE_IMAGE_UNITS);
     }
@@ -537,8 +544,10 @@ void GenerateCaps(const FunctionsGL *functions,
             maxCombinedUniformBlocks, caps->maxShaderUniformBlocks[gl::ShaderType::Vertex] +
                                           caps->maxShaderUniformBlocks[gl::ShaderType::Fragment]);
 
-        caps->maxCombinedVertexUniformComponents = QuerySingleGLInt64(functions, GL_MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS);
-        caps->maxCombinedFragmentUniformComponents = QuerySingleGLInt64(functions, GL_MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS);
+        caps->maxCombinedShaderUniformComponents[gl::ShaderType::Vertex] =
+            QuerySingleGLInt64(functions, GL_MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS);
+        caps->maxCombinedShaderUniformComponents[gl::ShaderType::Fragment] =
+            QuerySingleGLInt64(functions, GL_MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS);
     }
     else
     {
@@ -756,14 +765,15 @@ void GenerateCaps(const FunctionsGL *functions,
             QuerySingleGLInt(functions, GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS);
         caps->maxComputeSharedMemorySize =
             QuerySingleGLInt(functions, GL_MAX_COMPUTE_SHARED_MEMORY_SIZE);
-        caps->maxComputeUniformComponents =
+        caps->maxShaderUniformComponents[gl::ShaderType::Compute] =
             QuerySingleGLInt(functions, GL_MAX_COMPUTE_UNIFORM_COMPONENTS);
-        caps->maxComputeAtomicCounterBuffers =
+        caps->maxShaderAtomicCounterBuffers[gl::ShaderType::Compute] =
             QuerySingleGLInt(functions, GL_MAX_COMPUTE_ATOMIC_COUNTER_BUFFERS);
-        caps->maxComputeAtomicCounters =
+        caps->maxShaderAtomicCounters[gl::ShaderType::Compute] =
             QuerySingleGLInt(functions, GL_MAX_COMPUTE_ATOMIC_COUNTERS);
-        caps->maxComputeImageUniforms = QuerySingleGLInt(functions, GL_MAX_COMPUTE_IMAGE_UNIFORMS);
-        caps->maxCombinedComputeUniformComponents =
+        caps->maxShaderImageUniforms[gl::ShaderType::Compute] =
+            QuerySingleGLInt(functions, GL_MAX_COMPUTE_IMAGE_UNIFORMS);
+        caps->maxCombinedShaderUniformComponents[gl::ShaderType::Compute] =
             QuerySingleGLInt(functions, GL_MAX_COMBINED_COMPUTE_UNIFORM_COMPONENTS);
         caps->maxShaderStorageBlocks[gl::ShaderType::Compute] =
             QuerySingleGLInt(functions, GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS);
@@ -799,8 +809,9 @@ void GenerateCaps(const FunctionsGL *functions,
     if (functions->isAtLeastGL(gl::Version(4, 2)) || functions->isAtLeastGLES(gl::Version(3, 1)) ||
         functions->hasGLExtension("GL_ARB_shader_image_load_store"))
     {
-        caps->maxVertexImageUniforms = QuerySingleGLInt(functions, GL_MAX_VERTEX_IMAGE_UNIFORMS);
-        caps->maxFragmentImageUniforms =
+        caps->maxShaderImageUniforms[gl::ShaderType::Vertex] =
+            QuerySingleGLInt(functions, GL_MAX_VERTEX_IMAGE_UNIFORMS);
+        caps->maxShaderImageUniforms[gl::ShaderType::Fragment] =
             QuerySingleGLInt(functions, GL_MAX_FRAGMENT_IMAGE_UNIFORMS);
         caps->maxImageUnits = QuerySingleGLInt(functions, GL_MAX_IMAGE_UNITS);
         caps->maxCombinedImageUniforms =
@@ -814,12 +825,13 @@ void GenerateCaps(const FunctionsGL *functions,
     if (functions->isAtLeastGL(gl::Version(4, 2)) || functions->isAtLeastGLES(gl::Version(3, 1)) ||
         functions->hasGLExtension("GL_ARB_shader_atomic_counters"))
     {
-        caps->maxVertexAtomicCounterBuffers =
+        caps->maxShaderAtomicCounterBuffers[gl::ShaderType::Vertex] =
             QuerySingleGLInt(functions, GL_MAX_VERTEX_ATOMIC_COUNTER_BUFFERS);
-        caps->maxVertexAtomicCounters = QuerySingleGLInt(functions, GL_MAX_VERTEX_ATOMIC_COUNTERS);
-        caps->maxFragmentAtomicCounterBuffers =
+        caps->maxShaderAtomicCounters[gl::ShaderType::Vertex] =
+            QuerySingleGLInt(functions, GL_MAX_VERTEX_ATOMIC_COUNTERS);
+        caps->maxShaderAtomicCounterBuffers[gl::ShaderType::Fragment] =
             QuerySingleGLInt(functions, GL_MAX_FRAGMENT_ATOMIC_COUNTER_BUFFERS);
-        caps->maxFragmentAtomicCounters =
+        caps->maxShaderAtomicCounters[gl::ShaderType::Fragment] =
             QuerySingleGLInt(functions, GL_MAX_FRAGMENT_ATOMIC_COUNTERS);
         caps->maxAtomicCounterBufferBindings =
             QuerySingleGLInt(functions, GL_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS);
@@ -839,11 +851,13 @@ void GenerateCaps(const FunctionsGL *functions,
     // if the max uniform vectors is too large.  Artificially limit the maximum until the test is
     // updated.
     caps->maxVertexUniformVectors = std::min(1024u, caps->maxVertexUniformVectors);
-    caps->maxVertexUniformComponents =
-        std::min(caps->maxVertexUniformVectors * 4, caps->maxVertexUniformComponents);
+    caps->maxShaderUniformComponents[gl::ShaderType::Vertex] =
+        std::min(caps->maxVertexUniformVectors * 4,
+                 caps->maxShaderUniformComponents[gl::ShaderType::Vertex]);
     caps->maxFragmentUniformVectors = std::min(1024u, caps->maxFragmentUniformVectors);
-    caps->maxFragmentUniformComponents =
-        std::min(caps->maxFragmentUniformVectors * 4, caps->maxFragmentUniformComponents);
+    caps->maxShaderUniformComponents[gl::ShaderType::Fragment] =
+        std::min(caps->maxFragmentUniformVectors * 4,
+                 caps->maxShaderUniformComponents[gl::ShaderType::Fragment]);
 
     // If it is not possible to support reading buffer data back, a shadow copy of the buffers must
     // be held. This disallows writing to buffers indirectly through transform feedback, thus
@@ -1061,11 +1075,11 @@ void GenerateCaps(const FunctionsGL *functions,
             caps->layerProvokingVertex = GL_LAST_VERTEX_CONVENTION_EXT;
         }
 
-        caps->maxGeometryUniformComponents =
+        caps->maxShaderUniformComponents[gl::ShaderType::Geometry] =
             QuerySingleGLInt(functions, GL_MAX_GEOMETRY_UNIFORM_COMPONENTS_EXT);
         caps->maxShaderUniformBlocks[gl::ShaderType::Geometry] =
             QuerySingleGLInt(functions, GL_MAX_GEOMETRY_UNIFORM_BLOCKS_EXT);
-        caps->maxCombinedGeometryUniformComponents =
+        caps->maxCombinedShaderUniformComponents[gl::ShaderType::Geometry] =
             QuerySingleGLInt(functions, GL_MAX_COMBINED_GEOMETRY_UNIFORM_COMPONENTS_EXT);
         caps->maxGeometryInputComponents =
             QuerySingleGLInt(functions, GL_MAX_GEOMETRY_INPUT_COMPONENTS_EXT);
@@ -1079,11 +1093,11 @@ void GenerateCaps(const FunctionsGL *functions,
             QuerySingleGLInt(functions, GL_MAX_GEOMETRY_SHADER_INVOCATIONS_EXT);
         caps->maxShaderTextureImageUnits[gl::ShaderType::Geometry] =
             QuerySingleGLInt(functions, GL_MAX_GEOMETRY_TEXTURE_IMAGE_UNITS_EXT);
-        caps->maxGeometryAtomicCounterBuffers =
+        caps->maxShaderAtomicCounterBuffers[gl::ShaderType::Geometry] =
             QuerySingleGLInt(functions, GL_MAX_GEOMETRY_ATOMIC_COUNTER_BUFFERS_EXT);
-        caps->maxGeometryAtomicCounters =
+        caps->maxShaderAtomicCounters[gl::ShaderType::Geometry] =
             QuerySingleGLInt(functions, GL_MAX_GEOMETRY_ATOMIC_COUNTERS_EXT);
-        caps->maxGeometryImageUniforms =
+        caps->maxShaderImageUniforms[gl::ShaderType::Geometry] =
             QuerySingleGLInt(functions, GL_MAX_GEOMETRY_IMAGE_UNIFORMS_EXT);
         caps->maxShaderStorageBlocks[gl::ShaderType::Geometry] =
             QuerySingleGLInt(functions, GL_MAX_GEOMETRY_SHADER_STORAGE_BLOCKS_EXT);
@@ -1237,7 +1251,7 @@ bool SupportsNativeRendering(const FunctionsGL *functions,
     {
         const nativegl::InternalFormat &nativeInfo =
             nativegl::GetInternalFormatInfo(internalFormat, functions->standard);
-        return nativegl_gl::MeetsRequirements(functions, nativeInfo.framebufferAttachment);
+        return nativegl_gl::MeetsRequirements(functions, nativeInfo.textureAttachment);
     }
 }
 
@@ -1292,8 +1306,7 @@ uint8_t *MapBufferRangeWithFallback(const FunctionsGL *functions,
 {
     if (functions->mapBufferRange != nullptr)
     {
-        return reinterpret_cast<uint8_t *>(
-            functions->mapBufferRange(target, offset, length, access));
+        return static_cast<uint8_t *>(functions->mapBufferRange(target, offset, length, access));
     }
     else if (functions->mapBuffer != nullptr &&
              (functions->standard == STANDARD_GL_DESKTOP || access == GL_MAP_WRITE_BIT))
@@ -1320,7 +1333,7 @@ uint8_t *MapBufferRangeWithFallback(const FunctionsGL *functions,
             return nullptr;
         }
 
-        return reinterpret_cast<uint8_t *>(functions->mapBuffer(target, accessEnum)) + offset;
+        return static_cast<uint8_t *>(functions->mapBuffer(target, accessEnum)) + offset;
     }
     else
     {
@@ -1346,27 +1359,27 @@ gl::ErrorOrResult<bool> ShouldApplyLastRowPaddingWorkaround(const gl::Extents &s
     // We are using an pack or unpack buffer, compute what the driver thinks is going to be the
     // last byte read or written. If it is past the end of the buffer, we will need to use the
     // workaround otherwise the driver will generate INVALID_OPERATION and not do the operation.
-    CheckedNumeric<size_t> checkedEndByte;
-    CheckedNumeric<size_t> pixelBytes;
-    size_t rowPitch;
 
     const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(format, type);
-    ANGLE_TRY_RESULT(glFormat.computePackUnpackEndByte(type, size, state, is3D), checkedEndByte);
-    ANGLE_TRY_RESULT(glFormat.computeRowPitch(type, size.width, state.alignment, state.rowLength),
-                     rowPitch);
-    pixelBytes = glFormat.computePixelBytes(type);
+    GLuint endByte                     = 0;
+    ANGLE_TRY_CHECKED_MATH(glFormat.computePackUnpackEndByte(type, size, state, is3D, &endByte));
+    GLuint rowPitch = 0;
+    ANGLE_TRY_CHECKED_MATH(
+        glFormat.computeRowPitch(type, size.width, state.alignment, state.rowLength, &rowPitch));
 
-    checkedEndByte += reinterpret_cast<intptr_t>(pixels);
+    CheckedNumeric<size_t> checkedPixelBytes = glFormat.computePixelBytes(type);
+    CheckedNumeric<size_t> checkedEndByte =
+        angle::CheckedNumeric<size_t>(endByte) + reinterpret_cast<intptr_t>(pixels);
 
     // At this point checkedEndByte is the actual last byte read.
     // The driver adds an extra row padding (if any), mimic it.
-    ANGLE_TRY_CHECKED_MATH(pixelBytes);
-    if (pixelBytes.ValueOrDie() * size.width < rowPitch)
+    ANGLE_TRY_CHECKED_MATH(checkedPixelBytes.IsValid());
+    if (checkedPixelBytes.ValueOrDie() * size.width < rowPitch)
     {
-        checkedEndByte += rowPitch - pixelBytes * size.width;
+        checkedEndByte += rowPitch - checkedPixelBytes * size.width;
     }
 
-    ANGLE_TRY_CHECKED_MATH(checkedEndByte);
+    ANGLE_TRY_CHECKED_MATH(checkedEndByte.IsValid());
 
     return checkedEndByte.ValueOrDie() > static_cast<size_t>(pixelBuffer->getSize());
 }

@@ -69,7 +69,7 @@
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
-namespace net {
+namespace quic {
 
 namespace test {
 class QuicStreamSequencerBufferPeer;
@@ -77,14 +77,6 @@ class QuicStreamSequencerBufferPeer;
 
 class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
  public:
-  // A Gap indicates a missing chunk of bytes between
-  // [begin_offset, end_offset) in the stream
-  struct QUIC_EXPORT_PRIVATE Gap {
-    Gap(QuicStreamOffset begin_offset, QuicStreamOffset end_offset);
-    QuicStreamOffset begin_offset;
-    QuicStreamOffset end_offset;
-  };
-
   // Size of blocks used by this buffer.
   // Choose 8K to make block large enough to hold multiple frames, each of
   // which could be up to 1.5 KB.
@@ -231,16 +223,11 @@ class QUIC_EXPORT_PRIVATE QuicStreamSequencerBuffer {
   // Number of bytes in buffer.
   size_t num_bytes_buffered_;
 
-  // For debugging use after free, assigned to 123456 in constructor and 654321
-  // in destructor. As long as it's not 123456, this means either use after free
-  // or memory corruption.
-  int32_t destruction_indicator_;
-
   // Currently received data.
   QuicIntervalSet<QuicStreamOffset> bytes_received_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicStreamSequencerBuffer);
 };
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_STREAM_SEQUENCER_BUFFER_H_

@@ -60,6 +60,9 @@ AURA_EXPORT extern const WindowProperty<gfx::ImageSkia*>* const kAppIconKey;
 // pointer metrics. See AppType in ash/public/cpp/app_types.h for more details.
 AURA_EXPORT extern const WindowProperty<int>* const kAppType;
 
+// A property key to store the aspect ratio of the window.
+AURA_EXPORT extern const WindowProperty<gfx::SizeF*>* const kAspectRatio;
+
 // A property key to store the avatar icon that will be displayed on the window
 // frame to indicate the owner of the window when needed.
 AURA_EXPORT extern const WindowProperty<gfx::ImageSkia*>* const kAvatarIconKey;
@@ -76,10 +79,6 @@ AURA_EXPORT extern const WindowProperty<bool>* const kDrawAttentionKey;
 
 // A property key to store the focus client on the window.
 AURA_EXPORT extern const WindowProperty<FocusClient*>* const kFocusClientKey;
-
-// A bool property key to specify if the window has a icon set for displaying in
-// overivew mode.
-AURA_EXPORT extern const WindowProperty<bool>* const kHasOverviewIcon;
 
 // A property key to store the host window of a window. This lets
 // WebContentsViews find the windows that should constrain NPAPI plugins.
@@ -138,14 +137,15 @@ AURA_EXPORT extern const WindowProperty<ui::WindowShowState>* const
 // A property key to store the title of the window; sometimes shown to users.
 AURA_EXPORT extern const WindowProperty<base::string16*>* const kTitleKey;
 
+// Indicates if the title of the window should be shown. This is only used for
+// top-levels that show a title. Default is false.
+AURA_EXPORT extern const WindowProperty<bool>* const kTitleShownKey;
+
 // The inset of the topmost view in the client view from the top of the
 // non-client view. The topmost view depends on the window type. The topmost
 // view is the tab strip for tabbed browser windows, the toolbar for popups,
 // the web contents for app windows and varies for fullscreen windows.
 AURA_EXPORT extern const WindowProperty<int>* const kTopViewInset;
-
-// The color of the window header.
-AURA_EXPORT extern const WindowProperty<SkColor>* const kTopViewColor;
 
 // A property key to store the window icon, typically 16x16 for title bars.
 AURA_EXPORT extern const WindowProperty<gfx::ImageSkia*>* const kWindowIconKey;

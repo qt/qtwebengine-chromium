@@ -6,6 +6,7 @@
 #include <string>
 
 #include "base/message_loop/message_loop.h"
+#include "build/build_config.h"
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/ipc/common/gpu_feature_info.mojom.h"
 #include "gpu/ipc/common/gpu_feature_info_struct_traits.h"
@@ -152,9 +153,11 @@ TEST_F(StructTraitsTest, GpuInfo) {
   const bool sandboxed = true;
   const bool in_process_gpu = true;
   const bool passthrough_cmd_decoder = true;
+#if defined(OS_WIN)
   const bool direct_composition = true;
   const bool supports_overlays = true;
-#if defined(OS_WIN)
+  const gpu::OverlayCapabilities overlay_capabilities = {
+      {OverlayFormat::BGRA, false}, {OverlayFormat::NV12, true}};
   const DxDiagNode dx_diagnostics;
 #endif
   const gpu::VideoDecodeAcceleratorCapabilities
@@ -173,9 +176,9 @@ TEST_F(StructTraitsTest, GpuInfo) {
   input.amd_switchable = amd_switchable;
   input.gpu = gpu;
   input.secondary_gpus = secondary_gpus;
-  input.driver_vendor = driver_vendor;
-  input.driver_version = driver_version;
-  input.driver_date = driver_date;
+  input.gpu.driver_vendor = driver_vendor;
+  input.gpu.driver_version = driver_version;
+  input.gpu.driver_date = driver_date;
   input.pixel_shader_version = pixel_shader_version;
   input.vertex_shader_version = vertex_shader_version;
   input.max_msaa_samples = max_msaa_samples;
@@ -194,9 +197,10 @@ TEST_F(StructTraitsTest, GpuInfo) {
   input.sandboxed = sandboxed;
   input.in_process_gpu = in_process_gpu;
   input.passthrough_cmd_decoder = passthrough_cmd_decoder;
+#if defined(OS_WIN)
   input.direct_composition = direct_composition;
   input.supports_overlays = supports_overlays;
-#if defined(OS_WIN)
+  input.overlay_capabilities = overlay_capabilities;
   input.dx_diagnostics = dx_diagnostics;
 #endif
   input.video_decode_accelerator_capabilities =
@@ -230,9 +234,9 @@ TEST_F(StructTraitsTest, GpuInfo) {
     EXPECT_EQ(expected_gpu.vendor_string, actual_gpu.vendor_string);
     EXPECT_EQ(expected_gpu.device_string, actual_gpu.device_string);
   }
-  EXPECT_EQ(driver_vendor, output.driver_vendor);
-  EXPECT_EQ(driver_version, output.driver_version);
-  EXPECT_EQ(driver_date, output.driver_date);
+  EXPECT_EQ(driver_vendor, output.gpu.driver_vendor);
+  EXPECT_EQ(driver_version, output.gpu.driver_version);
+  EXPECT_EQ(driver_date, output.gpu.driver_date);
   EXPECT_EQ(pixel_shader_version, output.pixel_shader_version);
   EXPECT_EQ(vertex_shader_version, output.vertex_shader_version);
   EXPECT_EQ(max_msaa_samples, output.max_msaa_samples);
@@ -252,9 +256,10 @@ TEST_F(StructTraitsTest, GpuInfo) {
   EXPECT_EQ(sandboxed, output.sandboxed);
   EXPECT_EQ(in_process_gpu, output.in_process_gpu);
   EXPECT_EQ(passthrough_cmd_decoder, output.passthrough_cmd_decoder);
+#if defined(OS_WIN)
   EXPECT_EQ(direct_composition, output.direct_composition);
   EXPECT_EQ(supports_overlays, output.supports_overlays);
-#if defined(OS_WIN)
+  EXPECT_EQ(overlay_capabilities, output.overlay_capabilities);
   EXPECT_EQ(dx_diagnostics.values, output.dx_diagnostics.values);
 #endif
   EXPECT_EQ(output.video_decode_accelerator_capabilities.flags,
@@ -440,6 +445,8 @@ TEST_F(StructTraitsTest, GpuFeatureInfo) {
   input.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGL] =
       gpu::kGpuFeatureStatusUndefined;
   input.status_values[GPU_FEATURE_TYPE_GPU_RASTERIZATION] =
+      gpu::kGpuFeatureStatusDisabled;
+  input.status_values[GPU_FEATURE_TYPE_OOP_RASTERIZATION] =
       gpu::kGpuFeatureStatusDisabled;
 
   GpuFeatureInfo output;

@@ -5,13 +5,17 @@
  * found in the LICENSE file.
  */
 
+#include "SkRecorder.h"
+
 #include "SkBigPicture.h"
 #include "SkCanvasPriv.h"
 #include "SkImage.h"
 #include "SkPatchUtils.h"
 #include "SkPicture.h"
-#include "SkRecorder.h"
 #include "SkSurface.h"
+#include "SkTo.h"
+
+#include <new>
 
 SkDrawableList::~SkDrawableList() {
     fArray.unrefAll();
@@ -313,9 +317,13 @@ void SkRecorder::onDrawPicture(const SkPicture* pic, const SkMatrix* matrix, con
     }
 }
 
-void SkRecorder::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode bmode,
-                                      const SkPaint& paint) {
-    this->append<SkRecords::DrawVertices>(paint, sk_ref_sp(const_cast<SkVertices*>(vertices)), bmode);
+void SkRecorder::onDrawVerticesObject(const SkVertices* vertices, const SkMatrix* bones,
+                                      int boneCount, SkBlendMode bmode, const SkPaint& paint) {
+    this->append<SkRecords::DrawVertices>(paint,
+                                          sk_ref_sp(const_cast<SkVertices*>(vertices)),
+                                          this->copy(bones, boneCount),
+                                          boneCount,
+                                          bmode);
 }
 
 void SkRecorder::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],

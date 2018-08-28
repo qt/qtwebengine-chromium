@@ -155,10 +155,26 @@ void IntersectionGeometry::ClipToRoot() {
   LayoutBox* local_ancestor = nullptr;
   if (!RootIsImplicit() || root_->GetDocument().IsInMainFrame())
     local_ancestor = ToLayoutBox(root_);
-  VisualRectFlags flags = static_cast<VisualRectFlags>(
-      RuntimeEnabledFeatures::IntersectionObserverGeometryMapperEnabled()
-          ? (kUseGeometryMapper | kEdgeInclusive)
-          : kEdgeInclusive);
+  // If we're throttled, then we can't guarantee that geometry mapper is up to
+  // date, so we fall back to the slow path. If we're unthrottled, then ensure
+  // that prepaint has run and the frame view doesn't need a paint property
+  // update.
+#if DCHECK_IS_ON()
+  {
+    auto* frame_view = target_->GetFrameView();
+    auto* layout_view = frame_view->GetLayoutView();
+    DCHECK(frame_view->ShouldThrottleRendering() || !layout_view ||
+           !(layout_view->NeedsPaintPropertyUpdate() ||
+             layout_view->DescendantNeedsPaintPropertyUpdate()));
+  }
+#endif
+
+  VisualRectFlags use_geometry_mapper =
+      target_->GetFrameView()->ShouldThrottleRendering()
+          ? kDefaultVisualRectFlags
+          : kUseGeometryMapper;
+  VisualRectFlags flags =
+      static_cast<VisualRectFlags>(use_geometry_mapper | kEdgeInclusive);
   does_intersect_ = target_->MapToVisualRectInAncestorSpace(
       local_ancestor, intersection_rect_, flags);
   if (!does_intersect_ || !local_ancestor)
@@ -172,17 +188,17 @@ void IntersectionGeometry::ClipToRoot() {
 
 void IntersectionGeometry::MapTargetRectToTargetFrameCoordinates() {
   Document& target_document = target_->GetDocument();
-  LayoutSize scroll_position =
-      LayoutSize(target_document.View()->GetScrollOffset());
   MapRectUpToDocument(target_rect_, *target_, target_document);
-  target_rect_.Move(-scroll_position);
 }
 
 void IntersectionGeometry::MapRootRectToRootFrameCoordinates() {
-  root_->GetFrameView()->MapQuadToAncestorFrameIncludingScrollOffset(
-      root_rect_, root_,
-      RootIsImplicit() ? nullptr : root_->GetDocument().GetLayoutView(),
-      kUseTransforms | kApplyContainerFlip);
+  root_rect_ = LayoutRect(
+      root_
+          ->LocalToAncestorQuad(
+              FloatQuad(FloatRect(root_rect_)),
+              RootIsImplicit() ? nullptr : root_->GetDocument().GetLayoutView(),
+              kUseTransforms | kApplyContainerFlip)
+          .BoundingBox());
 }
 
 void IntersectionGeometry::MapIntersectionRectToTargetFrameCoordinates() {
@@ -190,16 +206,10 @@ void IntersectionGeometry::MapIntersectionRectToTargetFrameCoordinates() {
   if (RootIsImplicit()) {
     LocalFrame* target_frame = target_document.GetFrame();
     Frame& root_frame = target_frame->Tree().Top();
-    LayoutSize scroll_position =
-        LayoutSize(target_document.View()->GetScrollOffset());
     if (target_frame != &root_frame)
       MapRectDownToDocument(intersection_rect_, nullptr, target_document);
-    intersection_rect_.Move(-scroll_position);
   } else {
-    LayoutSize scroll_position =
-        LayoutSize(target_document.View()->GetScrollOffset());
     MapRectUpToDocument(intersection_rect_, *root_, root_->GetDocument());
-    intersection_rect_.Move(-scroll_position);
   }
 }
 

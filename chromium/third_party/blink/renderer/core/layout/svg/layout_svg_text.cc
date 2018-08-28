@@ -328,8 +328,9 @@ bool LayoutSVGText::NodeAtFloatPoint(HitTestResult& result,
         ObjectBoundingBox().Contains(local_point)) {
       const LayoutPoint& local_layout_point = LayoutPoint(local_point);
       UpdateHitTestResult(result, local_layout_point);
-      if (result.AddNodeToListBasedTestResult(
-              GetElement(), local_layout_point) == kStopHitTesting)
+      HitTestLocation location(local_layout_point);
+      if (result.AddNodeToListBasedTestResult(GetElement(), location) ==
+          kStopHitTesting)
         return true;
     }
   }
@@ -365,8 +366,7 @@ void LayoutSVGText::AbsoluteQuads(Vector<FloatQuad>& quads,
   quads.push_back(LocalToAbsoluteQuad(StrokeBoundingBox(), mode));
 }
 
-void LayoutSVGText::Paint(const PaintInfo& paint_info,
-                          const LayoutPoint&) const {
+void LayoutSVGText::Paint(const PaintInfo& paint_info) const {
   SVGTextPainter(*this).Paint(paint_info);
 }
 

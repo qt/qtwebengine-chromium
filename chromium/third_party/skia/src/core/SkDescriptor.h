@@ -5,13 +5,17 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef SkDescriptor_DEFINED
 #define SkDescriptor_DEFINED
 
+#include "SkMacros.h"
+#include "SkNoncopyable.h"
 #include "SkOpts.h"
+#include "SkTo.h"
 #include "SkTypes.h"
+
 #include <memory>
+#include <new>
 
 class SkDescriptor : SkNoncopyable {
 public:

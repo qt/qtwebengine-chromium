@@ -49,6 +49,7 @@ import json
 import os
 import shutil
 import sys
+import time
 import tempfile
 import traceback
 
@@ -57,82 +58,11 @@ import common
 import run_telemetry_benchmark_as_googletest
 import run_gtest_perf_test
 
-# Current whitelist of benchmarks outputting histograms
-BENCHMARKS_TO_OUTPUT_HISTOGRAMS = [
-    'dummy_benchmark.histogram_benchmark_1',
-    'blink_perf.bindings',
-    'blink_perf.canvas',
-    'blink_perf.css',
-    'blink_perf.dom',
-    'blink_perf.events',
-    'blink_perf.image_decoder',
-    'blink_perf.layout',
-    'blink_perf.owp_storage',
-    'blink_perf.paint',
-    'blink_perf.parser',
-    'blink_perf.shadow_dom',
-    'blink_perf.svg',
-    'memory.top_10_mobile',
-    'system_health.common_desktop',
-    'system_health.common_mobile',
-    'system_health.memory_desktop',
-    'system_health.memory_mobile',
-    'system_health.webview_startup',
-    'smoothness.gpu_rasterization.tough_filters_cases',
-    'smoothness.gpu_rasterization.tough_path_rendering_cases',
-    'smoothness.gpu_rasterization.tough_scrolling_cases',
-    'smoothness.gpu_rasterization_and_decoding.image_decoding_cases',
-    'smoothness.image_decoding_cases',
-    'smoothness.key_desktop_move_cases',
-    'smoothness.maps',
-    'smoothness.oop_rasterization.top_25_smooth',
-    'smoothness.top_25_smooth',
-    'smoothness.tough_ad_cases',
-    'smoothness.tough_animation_cases',
-    'smoothness.tough_canvas_cases',
-    'smoothness.tough_filters_cases',
-    'smoothness.tough_image_decode_cases',
-    'smoothness.tough_path_rendering_cases',
-    'smoothness.tough_scrolling_cases',
-    'smoothness.tough_texture_upload_cases',
-    'smoothness.tough_webgl_ad_cases',
-    'smoothness.tough_webgl_cases',
-    'dromaeo',
-    'jetstream',
-    'kraken',
-    'octane',
-    'speedometer',
-    'speedometer-future',
-    'speedometer2',
-    'speedometer2-future',
-    'wasm',
-    'battor.steady_state',
-    'battor.trivial_pages',
-    'rasterize_and_record_micro.partial_invalidation',
-    'rasterize_and_record_micro.top_25',
-    'scheduler.tough_scheduling_cases',
-    'tab_switching.typical_25',
-    'thread_times.key_hit_test_cases',
-    'thread_times.key_idle_power_cases',
-    'thread_times.key_mobile_sites_smooth',
-    'thread_times.key_noop_cases',
-    'thread_times.key_silk_cases',
-    'thread_times.simple_mobile_sites',
-    'thread_times.oop_rasterization.key_mobile',
-    'thread_times.tough_compositor_cases',
-    'thread_times.tough_scrolling_cases',
-    'tracing.tracing_with_background_memory_infra',
-    'tracing.tracing_with_debug_overhead',
-    'v8.browsing_desktop',
-    'v8.browsing_mobile',
-    'v8.browsing_desktop-future',
-    'v8.browsing_mobile-future',
-]
 
 def get_sharding_map_path(args):
   return os.path.join(
       os.path.dirname(__file__), '..', '..', 'tools', 'perf', 'core',
-      args.test_shard_map_filename)
+      'shard_maps', args.test_shard_map_filename)
 
 def write_results(
     perf_test_name, perf_results, json_test_results, benchmark_log,
@@ -153,13 +83,18 @@ def write_results(
     f.write(benchmark_log)
 
 
+def print_duration(step, start):
+  print 'Duration of %s: %d seconds' % (step, time.time() - start)
+
+
 def execute_benchmark(benchmark, isolated_out_dir,
-                      args, rest_args, is_reference):
+                      args, rest_args, is_reference, stories=None):
+  start = time.time()
   # While we are between chartjson and histogram set we need
   # to determine which output format to look for or see if it was
   # already passed in in which case that format applies to all benchmarks
   # in this run.
-  is_histograms = append_output_format(benchmark, args, rest_args)
+  is_histograms = append_output_format(args, rest_args)
   # Insert benchmark name as first argument to run_benchmark call
   # which is the first argument in the rest_args.  Also need to append
   # output format and smoke test mode.
@@ -179,6 +114,16 @@ def execute_benchmark(benchmark, isolated_out_dir,
     per_benchmark_args.append('--output-trace-tag=_ref')
     benchmark_name = benchmark + '.reference'
 
+  # If we are only running a subset of stories, add in the begin and end
+  # index.
+  if stories:
+    if 'begin' in stories.keys():
+      per_benchmark_args.append(
+          ('--experimental-story-shard-begin-index=%d' % stories['begin']))
+    if 'end' in stories.keys():
+      per_benchmark_args.append(
+          ('--experimental-story-shard-end-index=%d' % stories['end']))
+
   # We don't care exactly what these are. In particular, the perf results
   # could be any format (chartjson, legacy, histogram). We just pass these
   # through, and expose these as results for this task.
@@ -189,10 +134,12 @@ def execute_benchmark(benchmark, isolated_out_dir,
   write_results(
       benchmark_name, perf_results, json_test_results, benchmark_log,
       isolated_out_dir, False)
+
+  print_duration('executing benchmark %s' % benchmark_name, start)
   return rc
 
 
-def append_output_format(benchmark, args, rest_args):
+def append_output_format(args, rest_args):
   # We need to determine if the output format is already passed in
   # or if we need to define it for this benchmark
   perf_output_specified = False
@@ -209,11 +156,8 @@ def append_output_format(benchmark, args, rest_args):
   # the type of format per benchmark and can rely on it being passed
   # in as an arg as all benchmarks will output the same format.
   if not perf_output_specified:
-    if benchmark in BENCHMARKS_TO_OUTPUT_HISTOGRAMS:
-      rest_args.append('--output-format=histograms')
-      is_histograms = True
-    else:
-      rest_args.append('--output-format=chartjson')
+    rest_args.append('--output-format=histograms')
+    is_histograms = True
   return is_histograms
 
 def main():
@@ -239,7 +183,7 @@ def main():
                       ' to run in lieu of indexing into our benchmark bot maps',
                       required=False)
   # Some executions may have a different sharding scheme and/or set of tests.
-  # These files must live in src/tools/perf/core/
+  # These files must live in src/tools/perf/core/shard_maps
   parser.add_argument('--test-shard-map-filename', type=str, required=False)
   parser.add_argument('--output-format', action='append')
   parser.add_argument('--run-ref-build',
@@ -282,19 +226,27 @@ def main():
         raise Exception('Shard indicators must be present for perf tests')
 
       sharding_map_path = get_sharding_map_path(args)
+
+      # Copy sharding map file to isolated_out_dir so that the collect script
+      # can collect it later.
+      shutil.copyfile(
+          sharding_map_path,
+          os.path.join(isolated_out_dir, 'benchmarks_shard_map.json'))
+
       with open(sharding_map_path) as f:
         sharding_map = json.load(f)
-      sharding = None
       sharding = sharding_map[shard_index]['benchmarks']
 
-      for benchmark in sharding:
+      for benchmark, stories in sharding.iteritems():
         # Need to run the benchmark twice on browser and reference build
         return_code = (execute_benchmark(
-            benchmark, isolated_out_dir, args, rest_args, False) or return_code)
+            benchmark, isolated_out_dir, args, rest_args,
+            False, stories=stories) or return_code)
         # We ignore the return code of the reference build since we do not
         # monitor it.
         if args.run_ref_build:
-          execute_benchmark(benchmark, isolated_out_dir, args, rest_args, True)
+          execute_benchmark(benchmark, isolated_out_dir, args, rest_args, True,
+                            stories=stories)
 
   return return_code
 

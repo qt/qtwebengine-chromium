@@ -24,7 +24,6 @@
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/loader/stream_resource_handler.h"
 #include "content/browser/web_package/signed_exchange_utils.h"
-#include "content/browser/web_package/web_package_request_handler.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/resource_context.h"
@@ -73,6 +72,14 @@ class MimeSniffingResourceHandler::Controller : public ResourceController {
   void Resume() override {
     MarkAsUsed();
     mime_handler_->ResumeInternal();
+  }
+
+  void ResumeForRedirect(const base::Optional<net::HttpRequestHeaders>&
+                             modified_request_headers) override {
+    DCHECK(!modified_request_headers.has_value())
+        << "Redirect with modified headers was not supported yet. "
+           "crbug.com/845683";
+    Resume();
   }
 
   void Cancel() override {

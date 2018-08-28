@@ -24,42 +24,33 @@ fuchsia_sdk_pkg("async") {
 }
 
 # async-default keep a per-thread dispatcher for async.
-fuchsia_sdk_lib_pkg("async_default") {
+fuchsia_sdk_pkg("async_default") {
   package_name = "async-default"
   sources = [
     "include/lib/async/default.h",
   ]
+
+  libs = [ "async-default" ]
 }
 
-fuchsia_sdk_pkg("component") {
-  fidl_files = [
-    "application_controller.fidl",
-    "application_environment.fidl",
-    "application_environment_controller.fidl",
-    "application_launcher.fidl",
-    "application_runner.fidl",
-    "flat_namespace.fidl",
-    "loader.fidl",
-    "service_provider.fidl",
-  ]
-  fidl_deps = [ ":mem" ]
-}
-
-fuchsia_sdk_lib_pkg("fdio") {
+fuchsia_sdk_pkg("fdio") {
   sources = [
-    "include/fdio/debug.h",
-    "include/fdio/io.fidl.h",
-    "include/fdio/io.h",
-    "include/fdio/limits.h",
-    "include/fdio/module.modulemap",
-    "include/fdio/namespace.h",
-    "include/fdio/private.h",
-    "include/fdio/remoteio.h",
-    "include/fdio/socket.h",
-    "include/fdio/util.h",
-    "include/fdio/vfs.h",
-    "include/fdio/watcher.h",
+    "include/lib/fdio/debug.h",
+    "include/lib/fdio/io.fidl.h",
+    "include/lib/fdio/io.h",
+    "include/lib/fdio/limits.h",
+    "include/lib/fdio/module.modulemap",
+    "include/lib/fdio/namespace.h",
+    "include/lib/fdio/private.h",
+    "include/lib/fdio/remoteio.h",
+    "include/lib/fdio/socket.h",
+    "include/lib/fdio/spawn.h",
+    "include/lib/fdio/util.h",
+    "include/lib/fdio/vfs.h",
+    "include/lib/fdio/watcher.h",
   ]
+
+  libs = [ "fdio" ]
 }
 
 fuchsia_sdk_pkg("fidl") {
@@ -94,6 +85,7 @@ fuchsia_sdk_pkg("fidl") {
 fuchsia_sdk_pkg("fidl_cpp") {
   public_deps = [
     ":fidl",
+    ":fit",
     ":zx",
   ]
   sources = [
@@ -147,12 +139,27 @@ fuchsia_sdk_pkg("fidl_cpp") {
   ]
 }
 
-fuchsia_sdk_pkg("geometry") {
-  fidl_files = [ "geometry.fidl" ]
+fuchsia_sdk_pkg("fit") {
+  sources = [
+    "include/lib/fit/function.h",
+  ]
 }
 
-fuchsia_sdk_pkg("gfx") {
-  fidl_files = [
+fuchsia_sdk_fidl_pkg("fonts") {
+  namespace = "fuchsia"
+  namespace_path = "fuchsia"
+  sources = [
+    "font_provider.fidl",
+  ]
+  deps = [
+    ":mem",
+  ]
+}
+
+fuchsia_sdk_fidl_pkg("gfx") {
+  namespace = "fuchsia.ui"
+  namespace_path = "fuchsia/ui"
+  sources = [
     "commands.fidl",
     "display_info.fidl",
     "events.fidl",
@@ -163,11 +170,16 @@ fuchsia_sdk_pkg("gfx") {
     "shapes.fidl",
     "types.fidl",
   ]
-  fidl_deps = [ ":images" ]
+  deps = [
+    ":images",
+    ":vectorial",
+  ]
 }
 
-fuchsia_sdk_pkg("images") {
-  fidl_files = [
+fuchsia_sdk_fidl_pkg("images") {
+  namespace = "fuchsia"
+  namespace_path = "fuchsia"
+  sources = [
     "encoded_image.fidl",
     "image_info.fidl",
     "image_pipe.fidl",
@@ -176,8 +188,10 @@ fuchsia_sdk_pkg("images") {
   ]
 }
 
-fuchsia_sdk_pkg("input") {
-  fidl_files = [
+fuchsia_sdk_fidl_pkg("input") {
+  namespace = "fuchsia.ui"
+  namespace_path = "fuchsia/ui"
+  sources = [
     "ime_service.fidl",
     "input_connection.fidl",
     "input_device_registry.fidl",
@@ -191,104 +205,155 @@ fuchsia_sdk_pkg("input") {
   ]
 }
 
-fuchsia_sdk_lib_pkg("launchpad") {
+fuchsia_sdk_fidl_pkg("math") {
+  namespace = "fuchsia"
+  namespace_path = "fuchsia"
   sources = [
-    "include/launchpad/launchpad.h",
-    "include/launchpad/vmo.h",
+    "geometry.fidl",
   ]
 }
 
-fuchsia_sdk_pkg("media") {
-  fidl_files = [
+fuchsia_sdk_fidl_pkg("media") {
+  namespace = "fuchsia"
+  namespace_path = "fuchsia"
+
+  sources = [
+    "audio.fidl",
     "audio_capturer.fidl",
     "audio_renderer.fidl",
-    "audio_server.fidl",
-    "media_capturer.fidl",
-    "media_renderer.fidl",
-    "media_result.fidl",
     "media_transport.fidl",
     "media_types.fidl",
-    "timeline_controller.fidl",
-    "timelines.fidl",
   ]
 }
 
-fuchsia_sdk_pkg("mem") {
-  fidl_namespace = "fuchsia"
-  fidl_namespace_path = "fuchsia"
+fuchsia_sdk_fidl_pkg("mem") {
+  namespace = "fuchsia"
+  namespace_path = "fuchsia"
 
-  fidl_files = [ "buffer.fidl" ]
+  sources = [
+    "buffer.fidl",
+  ]
 }
 
-fuchsia_sdk_pkg("netstack") {
-  fidl_files = [
+fuchsia_sdk_fidl_pkg("netstack") {
+  namespace = "fuchsia"
+  namespace_path = "fuchsia"
+
+  sources = [
     "net_address.fidl",
     "netstack.fidl",
   ]
 }
 
-fuchsia_sdk_pkg("presentation") {
-  fidl_files = [
+fuchsia_sdk_fidl_pkg("policy") {
+  namespace = "fuchsia.ui"
+  namespace_path = "fuchsia/ui"
+  sources = [
     "display_usage.fidl",
     "presentation.fidl",
     "presenter.fidl",
   ]
-  fidl_deps = [ ":views_v1" ]
-}
-
-fuchsia_sdk_lib_pkg("svc") {
-  sources = [
-    "include/lib/svc/dir.h",
+  deps = [
+    ":views_v1",
   ]
 }
 
-fuchsia_sdk_pkg("ui") {
-  fidl_files = [
+fuchsia_sdk_fidl_pkg("scenic") {
+  namespace = "fuchsia.ui"
+  namespace_path = "fuchsia/ui"
+  sources = [
     "commands.fidl",
     "events.fidl",
     "scenic.fidl",
     "session.fidl",
   ]
-  fidl_deps = [
-    ":component",
+  deps = [
     ":gfx",
     ":input",
+    ":sys",
     ":views",
   ]
 }
 
-fuchsia_sdk_pkg("views") {
-  fidl_files = [
+fuchsia_sdk_pkg("svc") {
+  sources = [
+    "include/lib/svc/dir.h",
+  ]
+
+  libs = [ "svc" ]
+}
+
+fuchsia_sdk_fidl_pkg("sys") {
+  namespace = "fuchsia"
+  namespace_path = "fuchsia"
+
+  sources = [
+    "component_controller.fidl",
+    "environment.fidl",
+    "environment_controller.fidl",
+    "flat_namespace.fidl",
+    "launcher.fidl",
+    "loader.fidl",
+    "runner.fidl",
+    "service_provider.fidl",
+  ]
+  deps = [
+    ":mem",
+  ]
+}
+
+fuchsia_sdk_fidl_pkg("vectorial") {
+  namespace = "fuchsia.ui"
+  namespace_path = "fuchsia/ui"
+  sources = [
     "commands.fidl",
     "events.fidl",
   ]
-  fidl_deps = [
+}
+
+fuchsia_sdk_fidl_pkg("views") {
+  namespace = "fuchsia.ui"
+  namespace_path = "fuchsia/ui"
+
+  sources = [
+    "commands.fidl",
+    "events.fidl",
+  ]
+  deps = [
     ":gfx",
     ":images",
   ]
 }
 
-fuchsia_sdk_pkg("views_v1") {
-  fidl_files = [
+fuchsia_sdk_fidl_pkg("views_v1") {
+  namespace = "fuchsia.ui"
+  namespace_path = "fuchsia/ui"
+
+  sources = [
     "view_containers.fidl",
-    "view_properties.fidl",
-    "views.fidl",
-    "view_tree_token.fidl",
     "view_manager.fidl",
+    "view_properties.fidl",
     "view_provider.fidl",
+    "view_tree_token.fidl",
     "view_trees.fidl",
+    "views.fidl",
   ]
-  fidl_deps = [
-    ":geometry",
+  deps = [
     ":gfx",
-    ":ui",
     ":images",
+    ":math",
+    ":scenic",
     ":views_v1_token",
   ]
 }
 
-fuchsia_sdk_pkg("views_v1_token") {
-  fidl_files = [ "view_token.fidl" ]
+fuchsia_sdk_fidl_pkg("views_v1_token") {
+  namespace = "fuchsia.ui"
+  namespace_path = "fuchsia/ui"
+
+  sources = [
+    "view_token.fidl",
+  ]
 }
 
 fuchsia_sdk_pkg("zx") {

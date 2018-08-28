@@ -75,13 +75,13 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
 
  private:
   int OnBeforeURLRequest(URLRequest* request,
-                         const CompletionCallback& callback,
+                         CompletionOnceCallback callback,
                          GURL* new_url) override {
     return OK;
   }
 
   int OnBeforeStartTransaction(URLRequest* request,
-                               const CompletionCallback& callback,
+                               CompletionOnceCallback callback,
                                HttpRequestHeaders* headers) override {
     return OK;
   }
@@ -91,7 +91,7 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
 
   int OnHeadersReceived(
       URLRequest* request,
-      const CompletionCallback& callback,
+      CompletionOnceCallback callback,
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
       GURL* allowed_unsafe_redirect_url) override {
@@ -113,20 +113,22 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
   NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
       const AuthChallengeInfo& auth_info,
-      const AuthCallback& callback,
+      AuthCallback callback,
       AuthCredentials* credentials) override {
     return NetworkDelegate::AUTH_REQUIRED_RESPONSE_NO_ACTION;
   }
 
   bool OnCanGetCookies(const URLRequest& request,
-                       const CookieList& cookie_list) override {
-    return true;
+                       const CookieList& cookie_list,
+                       bool allowed_from_caller) override {
+    return allowed_from_caller;
   }
 
   bool OnCanSetCookie(const URLRequest& request,
                       const CanonicalCookie& cookie,
-                      CookieOptions* options) override {
-    return true;
+                      CookieOptions* options,
+                      bool allowed_from_caller) override {
+    return allowed_from_caller;
   }
 
   bool OnCanAccessFile(const URLRequest& request,
@@ -346,6 +348,12 @@ void URLRequestContextBuilder::set_shared_host_resolver(
   shared_host_resolver_ = shared_host_resolver;
 }
 
+void URLRequestContextBuilder::SetCreateLayeredNetworkDelegateCallback(
+    CreateLayeredNetworkDelegate create_layered_network_delegate_callback) {
+  create_layered_network_delegate_callback_ =
+      std::move(create_layered_network_delegate_callback);
+}
+
 void URLRequestContextBuilder::set_proxy_delegate(
     std::unique_ptr<ProxyDelegate> proxy_delegate) {
   DCHECK(!shared_proxy_delegate_);
@@ -402,6 +410,10 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
 
   if (!network_delegate_)
     network_delegate_.reset(new BasicNetworkDelegate);
+  if (create_layered_network_delegate_callback_) {
+    network_delegate_ = std::move(create_layered_network_delegate_callback_)
+                            .Run(std::move(network_delegate_));
+  }
   storage->set_network_delegate(std::move(network_delegate_));
 
   if (net_log_) {
@@ -423,11 +435,10 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   }
 
   if (ssl_config_service_) {
-    // This takes a raw pointer, but |storage| will hold onto a reference to the
-    // service.
-    storage->set_ssl_config_service(ssl_config_service_);
+    storage->set_ssl_config_service(std::move(ssl_config_service_));
   } else {
-    storage->set_ssl_config_service(new SSLConfigServiceDefaults);
+    storage->set_ssl_config_service(
+        std::make_unique<SSLConfigServiceDefaults>());
   }
 
   if (http_auth_handler_factory_) {

@@ -23,7 +23,7 @@ const CJX_MethodSpec CJX_Subform::MethodSpecs[] = {
     {"execValidate", execValidate_static}};
 
 CJX_Subform::CJX_Subform(CXFA_Node* node) : CJX_Container(node) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_Subform::~CJX_Subform() {}
@@ -36,7 +36,7 @@ CJS_Return CJX_Subform::execEvent(
 
   execSingleEventByName(runtime->ToWideString(params[0]).AsStringView(),
                         XFA_Element::Subform);
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_Subform::execInitialize(
@@ -49,7 +49,7 @@ CJS_Return CJX_Subform::execInitialize(
   if (pNotify)
     pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Initialize, false,
                                   true);
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_Subform::execCalculate(
@@ -62,7 +62,7 @@ CJS_Return CJX_Subform::execCalculate(
   if (pNotify)
     pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Calculate, false,
                                   true);
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_Subform::execValidate(

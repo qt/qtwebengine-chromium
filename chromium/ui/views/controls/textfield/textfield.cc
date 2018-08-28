@@ -325,7 +325,7 @@ void Textfield::SetAssociatedLabel(View* labelling_view) {
   ui::AXNodeData node_data;
   labelling_view->GetAccessibleNodeData(&node_data);
   // TODO(aleventhal) automatically handle setting the name from the related
-  // label in view_accessibility and have it update the name if the text of the
+  // label in ViewAccessibility and have it update the name if the text of the
   // associated label changes.
   SetAccessibleName(
       node_data.GetString16Attribute(ax::mojom::StringAttribute::kName));
@@ -531,10 +531,10 @@ void Textfield::SetHorizontalAlignment(gfx::HorizontalAlignment alignment) {
   GetRenderText()->SetHorizontalAlignment(alignment);
 }
 
-void Textfield::ShowImeIfNeeded() {
+void Textfield::ShowVirtualKeyboardIfEnabled() {
   // GetInputMethod() may return nullptr in tests.
   if (enabled() && !read_only() && GetInputMethod())
-    GetInputMethod()->ShowImeIfNeeded();
+    GetInputMethod()->ShowVirtualKeyboardIfEnabled();
 }
 
 bool Textfield::IsIMEComposing() const {
@@ -666,7 +666,7 @@ bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
       (event.IsOnlyLeftMouseButton() || event.IsOnlyRightMouseButton())) {
     if (!had_focus)
       RequestFocusWithPointer(ui::EventPointerType::POINTER_TYPE_MOUSE);
-    ShowImeIfNeeded();
+    ShowVirtualKeyboardIfEnabled();
   }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
@@ -746,7 +746,7 @@ void Textfield::OnGestureEvent(ui::GestureEvent* event) {
   switch (event->type()) {
     case ui::ET_GESTURE_TAP_DOWN:
       RequestFocusWithPointer(event->details().primary_pointer_type());
-      ShowImeIfNeeded();
+      ShowVirtualKeyboardIfEnabled();
       event->SetHandled();
       break;
     case ui::ET_GESTURE_TAP:
@@ -1035,11 +1035,11 @@ bool Textfield::HandleAccessibleAction(const ui::AXActionData& action_data) {
     return View::HandleAccessibleAction(action_data);
 
   if (action_data.action == ax::mojom::Action::kSetValue) {
-    SetText(action_data.value);
+    SetText(base::UTF8ToUTF16(action_data.value));
     ClearSelection();
     return true;
   } else if (action_data.action == ax::mojom::Action::kReplaceSelectedText) {
-    InsertOrReplaceText(action_data.value);
+    InsertOrReplaceText(base::UTF8ToUTF16(action_data.value));
     ClearSelection();
     return true;
   }
@@ -1168,6 +1168,15 @@ void Textfield::OnCompositionTextConfirmedOrCleared() {
 void Textfield::ShowContextMenuForView(View* source,
                                        const gfx::Point& point,
                                        ui::MenuSourceType source_type) {
+#if defined(OS_MACOSX)
+  // On Mac, the context menu contains a look up item which displays the
+  // selected text. As such, the menu needs to be updated if the selection has
+  // changed. Be careful to reset the MenuRunner first so it doesn't reference
+  // the old model.
+  context_menu_runner_.reset();
+  context_menu_contents_.reset();
+#endif
+
   UpdateContextMenu();
   context_menu_runner_->RunMenuAt(GetWidget(), NULL,
                                   gfx::Rect(point, gfx::Size()),
@@ -1743,10 +1752,10 @@ void Textfield::SetTextEditCommandForNextKeyEvent(ui::TextEditCommand command) {
   scheduled_text_edit_command_ = command;
 }
 
-const std::string& Textfield::GetClientSourceInfo() const {
-  // TODO(yhanada): Implement this method.
+ukm::SourceId Textfield::GetClientSourceForMetrics() const {
+  // TODO(shend): Implement this method.
   NOTIMPLEMENTED_LOG_ONCE();
-  return base::EmptyString();
+  return ukm::SourceId();
 }
 
 bool Textfield::ShouldDoLearning() {
@@ -1984,6 +1993,14 @@ void Textfield::OffsetDoubleClickWord(int offset) {
   selection_controller_.OffsetDoubleClickWord(offset);
 }
 
+bool Textfield::IsDropCursorForInsertion() const {
+  return true;
+}
+
+bool Textfield::ShouldShowPlaceholderText() const {
+  return text().empty() && !GetPlaceholderText().empty();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Textfield, private:
 
@@ -2136,7 +2153,7 @@ void Textfield::PaintTextAndCursor(gfx::Canvas* canvas) {
 
   // Draw placeholder text if needed.
   gfx::RenderText* render_text = GetRenderText();
-  if (text().empty() && !GetPlaceholderText().empty()) {
+  if (ShouldShowPlaceholderText()) {
     // Disable subpixel rendering when the background color is not opaque
     // because it draws incorrect colors around the glyphs in that case.
     // See crbug.com/786343
@@ -2155,10 +2172,26 @@ void Textfield::PaintTextAndCursor(gfx::Canvas* canvas) {
         render_text->display_rect(), placeholder_text_draw_flags);
   }
 
-  render_text->Draw(canvas);
+  if (drop_cursor_visible_ && !IsDropCursorForInsertion()) {
+    // Draw as selected to mark the entire text that will be replaced by drop.
+    // TODO(http://crbug.com/853678): Replace this state push/pop with a clean
+    // call to a finer grained rendering API when one becomes available.  These
+    // changes are only applied because RenderText is so stateful and subtle
+    // (e.g. focus is required for the selection to be rendered as selected).
+    const gfx::SelectionModel sm = render_text->selection_model();
+    const bool focused = render_text->focused();
+    render_text->SelectAll(true);
+    render_text->set_focused(true);
+    render_text->Draw(canvas);
+    render_text->set_focused(focused);
+    render_text->SetSelection(sm);
+  } else {
+    // Draw text as normal
+    render_text->Draw(canvas);
+  }
 
-  // Draw the detached drop cursor that marks where the text will be dropped.
-  if (drop_cursor_visible_) {
+  if (drop_cursor_visible_ && IsDropCursorForInsertion()) {
+    // Draw a drop cursor that marks where the text will be dropped/inserted.
     canvas->FillRect(render_text->GetCursorBounds(drop_cursor_position_, true),
                      GetTextColor());
   }
@@ -2176,15 +2209,6 @@ void Textfield::OnCaretBoundsChanged() {
     GetInputMethod()->OnCaretBoundsChanged(this);
   if (touch_selection_controller_)
     touch_selection_controller_->SelectionChanged();
-
-#if defined(OS_MACOSX)
-  // On Mac, the context menu contains a look up item which displays the
-  // selected text. As such, the menu needs to be updated if the selection has
-  // changed. Be careful to reset the MenuRunner first so it doesn't reference
-  // the old model.
-  context_menu_runner_.reset();
-  context_menu_contents_.reset();
-#endif
 
   // Screen reader users don't expect notifications about unfocused textfields.
   if (HasFocus())

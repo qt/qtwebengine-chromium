@@ -92,7 +92,7 @@ GL_APICALL void         GL_APIENTRY glGetBufferParameteriv (GLenumBufferTarget t
 GL_APICALL GLenum       GL_APIENTRY glGetError (void);
 GL_APICALL void         GL_APIENTRY glGetFloatv (GLenumGLState pname, GLfloat* params);
 GL_APICALL GLint        GL_APIENTRY glGetFragDataLocation (GLidProgram program, const char* name);
-GL_APICALL void         GL_APIENTRY glGetFramebufferAttachmentParameteriv (GLenumFramebufferTarget target, GLenumAttachmentQuery attachment, GLenumFramebufferParameter pname, GLint* params);
+GL_APICALL void         GL_APIENTRY glGetFramebufferAttachmentParameteriv (GLenumFramebufferTarget target, GLenumAttachmentQuery attachment, GLenumFramebufferAttachmentParameter pname, GLint* params);
 GL_APICALL void         GL_APIENTRY glGetInteger64v (GLenumGLState pname, GLint64* params);
 GL_APICALL void         GL_APIENTRY glGetIntegeri_v (GLenumIndexedGLState pname, GLuint index, GLint* data);
 GL_APICALL void         GL_APIENTRY glGetInteger64i_v (GLenumIndexedGLState pname, GLuint index, GLint64* data);
@@ -285,8 +285,7 @@ GL_APICALL void         GL_APIENTRY glCompressedCopyTextureCHROMIUM (GLuint sour
 GL_APICALL void         GL_APIENTRY glDrawArraysInstancedANGLE (GLenumDrawMode mode, GLint first, GLsizei count, GLsizei primcount);
 GL_APICALL void         GL_APIENTRY glDrawElementsInstancedANGLE (GLenumDrawMode mode, GLsizei count, GLenumIndexType type, const void* indices, GLsizei primcount);
 GL_APICALL void         GL_APIENTRY glVertexAttribDivisorANGLE (GLuint index, GLuint divisor);
-GL_APICALL void         GL_APIENTRY glGenMailboxCHROMIUM (GLbyte* mailbox);
-GL_APICALL void         GL_APIENTRY glProduceTextureDirectCHROMIUM (GLidBindTexture texture, const GLbyte* mailbox);
+GL_APICALL void         GL_APIENTRY glProduceTextureDirectCHROMIUM (GLidBindTexture texture, GLbyte* mailbox);
 GL_APICALL GLuint       GL_APIENTRY glCreateAndConsumeTextureCHROMIUM (const GLbyte* mailbox);
 GL_APICALL void         GL_APIENTRY glCreateAndConsumeTextureINTERNAL (GLuint texture, const GLbyte* mailbox);
 GL_APICALL void         GL_APIENTRY glBindUniformLocationCHROMIUM (GLidProgram program, GLint location, const char* name);
@@ -345,7 +344,7 @@ GL_APICALL void         GL_APIENTRY glProgramPathFragmentInputGenCHROMIUM (GLidP
 GL_APICALL void         GL_APIENTRY glCoverageModulationCHROMIUM (GLenumCoverageModulationComponents components);
 
 // Extension KHR_robustness
-GL_APICALL GLenum	GL_APIENTRY glGetGraphicsResetStatusKHR (void);
+GL_APICALL GLenum       GL_APIENTRY glGetGraphicsResetStatusKHR (void);
 
 // Extension KHR_blend_equation_advanced
 GL_APICALL void GL_APIENTRY glBlendBarrierKHR (void);
@@ -390,3 +389,8 @@ GL_APICALL void         GL_APIENTRY glCreateGpuFenceINTERNAL (GLuint gpu_fence_i
 GL_APICALL GLuint       GL_APIENTRY glCreateClientGpuFenceCHROMIUM (ClientGpuFence source);
 GL_APICALL void         GL_APIENTRY glWaitGpuFenceCHROMIUM (GLuint gpu_fence_id);
 GL_APICALL void         GL_APIENTRY glDestroyGpuFenceCHROMIUM (GLuint gpu_fence_id);
+
+// Extension CHROMIUM_nonblocking_readback
+GL_APICALL void         GL_APIENTRY glInvalidateReadbackBufferShadowDataCHROMIUM (GLidBuffer buffer_id);
+// (used for CHROMIUM_nonblocking_readback implementation)
+GL_APICALL void         GL_APIENTRY glSetReadbackBufferShadowAllocationINTERNAL (GLidBuffer buffer_id, GLint shm_id, GLuint shm_offset, GLuint size);

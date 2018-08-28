@@ -86,8 +86,6 @@ void FetchContext::DispatchDidReceiveData(unsigned long, const char*, int) {}
 
 void FetchContext::DispatchDidReceiveEncodedData(unsigned long, int) {}
 
-void FetchContext::DispatchDidDownloadData(unsigned long, int, int) {}
-
 void FetchContext::DispatchDidDownloadToBlob(unsigned long identifier,
                                              BlobDataHandle*) {}
 
@@ -112,7 +110,7 @@ void FetchContext::DidLoadResource(Resource*) {}
 
 void FetchContext::AddResourceTiming(const ResourceTimingInfo&) {}
 
-void FetchContext::AddWarningConsoleMessage(const String&, LogSource) const {}
+void FetchContext::AddInfoConsoleMessage(const String&, LogSource) const {}
 
 void FetchContext::AddErrorConsoleMessage(const String&, LogSource) const {}
 

@@ -31,7 +31,7 @@
 namespace rx
 {
 
-ContextGL::ContextGL(const gl::ContextState &state, RendererGL *renderer)
+ContextGL::ContextGL(const gl::ContextState &state, const std::shared_ptr<RendererGL> &renderer)
     : ContextImpl(state), mRenderer(renderer)
 {
 }
@@ -169,13 +169,16 @@ gl::Error ContextGL::finish(const gl::Context *context)
     return mRenderer->finish();
 }
 
-gl::Error ContextGL::drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count)
+gl::Error ContextGL::drawArrays(const gl::Context *context,
+                                gl::PrimitiveMode mode,
+                                GLint first,
+                                GLsizei count)
 {
     return mRenderer->drawArrays(context, mode, first, count);
 }
 
 gl::Error ContextGL::drawArraysInstanced(const gl::Context *context,
-                                         GLenum mode,
+                                         gl::PrimitiveMode mode,
                                          GLint first,
                                          GLsizei count,
                                          GLsizei instanceCount)
@@ -184,7 +187,7 @@ gl::Error ContextGL::drawArraysInstanced(const gl::Context *context,
 }
 
 gl::Error ContextGL::drawElements(const gl::Context *context,
-                                  GLenum mode,
+                                  gl::PrimitiveMode mode,
                                   GLsizei count,
                                   GLenum type,
                                   const void *indices)
@@ -193,7 +196,7 @@ gl::Error ContextGL::drawElements(const gl::Context *context,
 }
 
 gl::Error ContextGL::drawElementsInstanced(const gl::Context *context,
-                                           GLenum mode,
+                                           gl::PrimitiveMode mode,
                                            GLsizei count,
                                            GLenum type,
                                            const void *indices,
@@ -203,7 +206,7 @@ gl::Error ContextGL::drawElementsInstanced(const gl::Context *context,
 }
 
 gl::Error ContextGL::drawRangeElements(const gl::Context *context,
-                                       GLenum mode,
+                                       gl::PrimitiveMode mode,
                                        GLuint start,
                                        GLuint end,
                                        GLsizei count,
@@ -214,14 +217,14 @@ gl::Error ContextGL::drawRangeElements(const gl::Context *context,
 }
 
 gl::Error ContextGL::drawArraysIndirect(const gl::Context *context,
-                                        GLenum mode,
+                                        gl::PrimitiveMode mode,
                                         const void *indirect)
 {
     return mRenderer->drawArraysIndirect(context, mode, indirect);
 }
 
 gl::Error ContextGL::drawElementsIndirect(const gl::Context *context,
-                                          GLenum mode,
+                                          gl::PrimitiveMode mode,
                                           GLenum type,
                                           const void *indirect)
 {
@@ -362,9 +365,10 @@ void ContextGL::popDebugGroup()
     mRenderer->popDebugGroup();
 }
 
-void ContextGL::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
+gl::Error ContextGL::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
 {
     mRenderer->getStateManager()->syncState(context, dirtyBits);
+    return gl::NoError();
 }
 
 GLint ContextGL::getGPUDisjoint()
@@ -377,13 +381,14 @@ GLint64 ContextGL::getTimestamp()
     return mRenderer->getTimestamp();
 }
 
-void ContextGL::onMakeCurrent(const gl::Context *context)
+gl::Error ContextGL::onMakeCurrent(const gl::Context *context)
 {
     // Queries need to be paused/resumed on context switches
-    ANGLE_SWALLOW_ERR(mRenderer->getStateManager()->onMakeCurrent(context));
+    ANGLE_TRY(mRenderer->getStateManager()->onMakeCurrent(context));
+    return gl::NoError();
 }
 
-const gl::Caps &ContextGL::getNativeCaps() const
+gl::Caps ContextGL::getNativeCaps() const
 {
     return mRenderer->getNativeCaps();
 }

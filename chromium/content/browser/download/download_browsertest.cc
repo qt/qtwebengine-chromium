@@ -43,6 +43,7 @@
 #include "content/public/browser/download_request_utils.h"
 #include "content/public/browser/resource_throttle.h"
 #include "content/public/common/content_paths.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/webplugininfo.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
@@ -67,6 +68,8 @@
 #include "ppapi/buildflags/buildflags.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/platform/web_mouse_event.h"
 #include "url/gurl.h"
 
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -231,7 +234,7 @@ class DownloadFileWithDelayFactory : public download::DownloadFileFactory {
 
  private:
   std::vector<base::Closure> rename_callbacks_;
-  bool waiting_;
+  base::OnceClosure stop_waiting_;
   base::WeakPtrFactory<DownloadFileWithDelayFactory> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadFileWithDelayFactory);
@@ -288,8 +291,7 @@ void DownloadFileWithDelay::RenameCallbackWrapper(
 }
 
 DownloadFileWithDelayFactory::DownloadFileWithDelayFactory()
-    : waiting_(false),
-      weak_ptr_factory_(this) {}
+    : weak_ptr_factory_(this) {}
 
 DownloadFileWithDelayFactory::~DownloadFileWithDelayFactory() {}
 
@@ -307,8 +309,8 @@ download::DownloadFile* DownloadFileWithDelayFactory::CreateFile(
 void DownloadFileWithDelayFactory::AddRenameCallback(base::Closure callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   rename_callbacks_.push_back(std::move(callback));
-  if (waiting_)
-    base::RunLoop::QuitCurrentWhenIdleDeprecated();
+  if (stop_waiting_)
+    std::move(stop_waiting_).Run();
 }
 
 void DownloadFileWithDelayFactory::GetAllRenameCallbacks(
@@ -321,9 +323,9 @@ void DownloadFileWithDelayFactory::WaitForSomeCallback() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (rename_callbacks_.empty()) {
-    waiting_ = true;
-    RunMessageLoop();
-    waiting_ = false;
+    base::RunLoop run_loop;
+    stop_waiting_ = run_loop.QuitClosure();
+    run_loop.Run();
   }
 }
 
@@ -366,11 +368,12 @@ class CountingDownloadFile : public download::DownloadFileImpl {
   // until data is returned.
   static int GetNumberActiveFilesFromFileThread() {
     int result = -1;
+    base::RunLoop run_loop;
     download::GetDownloadTaskRunner()->PostTaskAndReply(
         FROM_HERE,
         base::BindOnce(&CountingDownloadFile::GetNumberActiveFiles, &result),
-        base::RunLoop::QuitCurrentWhenIdleClosureDeprecated());
-    base::RunLoop().Run();
+        run_loop.QuitClosure());
+    run_loop.Run();
     DCHECK_NE(-1, result);
     return result;
   }
@@ -2893,10 +2896,9 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   ASSERT_TRUE(origin_two.ShutdownAndWaitUntilComplete());
 }
 
-// A filename suggestion specified via a @download attribute should be effective
-// if the final download URL is in the same origin as the initial download URL.
-// Test that this holds even if there are cross origin redirects in the middle
-// of the redirect chain.
+// A filename suggestion specified via a @download attribute should not be
+// effective if there are cross origin redirects in the middle of the redirect
+// chain.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest,
                        DownloadAttributeSameOriginRedirect) {
   net::EmbeddedTestServer origin_one;
@@ -2939,11 +2941,134 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   DownloadManagerForShell(shell())->GetAllDownloads(&downloads);
   ASSERT_EQ(1u, downloads.size());
 
-  EXPECT_EQ(FILE_PATH_LITERAL("suggested-filename"),
+  EXPECT_EQ(FILE_PATH_LITERAL("download"),
             downloads[0]->GetTargetFilePath().BaseName().value());
   ASSERT_TRUE(origin_one.ShutdownAndWaitUntilComplete());
   ASSERT_TRUE(origin_two.ShutdownAndWaitUntilComplete());
 }
+
+// A file type that Blink can handle should not be downloaded if there are cross
+// origin redirects in the middle of the redirect chain.
+IN_PROC_BROWSER_TEST_F(DownloadContentTest,
+                       DownloadAttributeSameOriginRedirectNavigation) {
+  net::EmbeddedTestServer origin_one;
+  net::EmbeddedTestServer origin_two;
+  ASSERT_TRUE(origin_one.InitializeAndListen());
+  ASSERT_TRUE(origin_two.InitializeAndListen());
+
+  // The download-attribute.html page contains an anchor element whose href is
+  // set to the value of the query parameter (specified as |target| in the URL
+  // below). The suggested filename for the anchor is 'suggested-filename'. When
+  // the page is loaded, a script simulates a click on the anchor, triggering a
+  // download of the target URL.
+  //
+  // We construct two test servers; origin_one and origin_two. Once started, the
+  // server URLs will differ by the port number. Therefore they will be in
+  // different origins.
+  GURL download_url = origin_one.GetURL("/ping");
+  GURL referrer_url = origin_one.GetURL(
+      std::string("/download-attribute.html?target=") + download_url.spec());
+  origin_one.ServeFilesFromDirectory(GetTestFilePath("download", ""));
+
+  // <origin_one>/download-attribute.html initiates a download of
+  // <origin_one>/ping, which redirects to <origin_two>/download. The latter
+  // serves an HTML document.
+  origin_one.RegisterRequestHandler(
+      CreateRedirectHandler("/ping", origin_two.GetURL("/download")));
+  origin_two.RegisterRequestHandler(
+      CreateBasicResponseHandler("/download", net::HTTP_OK, base::StringPairs(),
+                                 "text/html", "<title>hello</title>"));
+
+  origin_one.StartAcceptingConnections();
+  origin_two.StartAcceptingConnections();
+
+  base::string16 expected_title(base::UTF8ToUTF16("hello"));
+  TitleWatcher observer(shell()->web_contents(), expected_title);
+  NavigateToURL(shell(), referrer_url);
+  ASSERT_EQ(expected_title, observer.WaitAndGetTitle());
+
+  std::vector<download::DownloadItem*> downloads;
+  DownloadManagerForShell(shell())->GetAllDownloads(&downloads);
+  ASSERT_EQ(0u, downloads.size());
+
+  ASSERT_TRUE(origin_one.ShutdownAndWaitUntilComplete());
+  ASSERT_TRUE(origin_two.ShutdownAndWaitUntilComplete());
+}
+
+// A download initiated by the user via alt-click on a link should download,
+// even when redirected cross origin.
+//
+// Alt-click doesn't make sense on Android, and download a HTML file results
+// in an intent, so just skip.
+#if !defined(OS_ANDROID)
+IN_PROC_BROWSER_TEST_F(DownloadContentTest,
+                       DownloadAttributeSameOriginRedirectAltClick) {
+  net::EmbeddedTestServer origin_one;
+  net::EmbeddedTestServer origin_two;
+  ASSERT_TRUE(origin_one.InitializeAndListen());
+  ASSERT_TRUE(origin_two.InitializeAndListen());
+
+  // The download-attribute.html page contains an anchor element whose href is
+  // set to the value of the query parameter (specified as |target| in the URL
+  // below). The suggested filename for the anchor is 'suggested-filename'. We
+  // will later send a "real" click to the anchor, triggering a download of the
+  // target URL.
+  //
+  // We construct two test servers; origin_one and origin_two. Once started, the
+  // server URLs will differ by the port number. Therefore they will be in
+  // different origins.
+  GURL download_url = origin_one.GetURL("/ping");
+  GURL referrer_url = origin_one.GetURL(
+      std::string("/download-attribute.html?noclick=") + download_url.spec());
+  origin_one.ServeFilesFromDirectory(GetTestFilePath("download", ""));
+
+  // <origin_one>/download-attribute.html initiates a download of
+  // <origin_one>/ping, which redirects to <origin_two>/download. The latter
+  // serves an HTML document.
+  origin_one.RegisterRequestHandler(
+      CreateRedirectHandler("/ping", origin_two.GetURL("/download")));
+  origin_two.RegisterRequestHandler(
+      CreateBasicResponseHandler("/download", net::HTTP_OK, base::StringPairs(),
+                                 "text/html", "<title>hello</title>"));
+
+  origin_one.StartAcceptingConnections();
+  origin_two.StartAcceptingConnections();
+
+  std::unique_ptr<DownloadTestObserver> observer(CreateWaiter(shell(), 1));
+  NavigateToURL(shell(), referrer_url);
+
+  // Alt-click the link.
+  blink::WebMouseEvent mouse_event(
+      blink::WebInputEvent::kMouseDown, blink::WebInputEvent::kAltKey,
+      blink::WebInputEvent::GetStaticTimeStampForTests());
+  mouse_event.button = blink::WebMouseEvent::Button::kLeft;
+  mouse_event.SetPositionInWidget(15, 15);
+  mouse_event.click_count = 1;
+  shell()->web_contents()->GetRenderViewHost()->GetWidget()->ForwardMouseEvent(
+      mouse_event);
+  mouse_event.SetType(blink::WebInputEvent::kMouseUp);
+  shell()->web_contents()->GetRenderViewHost()->GetWidget()->ForwardMouseEvent(
+      mouse_event);
+
+  observer->WaitForFinished();
+  EXPECT_EQ(
+      1u, observer->NumDownloadsSeenInState(download::DownloadItem::COMPLETE));
+
+  std::vector<download::DownloadItem*> downloads;
+  DownloadManagerForShell(shell())->GetAllDownloads(&downloads);
+  ASSERT_EQ(1u, downloads.size());
+#if defined(OS_WIN)
+  EXPECT_EQ(FILE_PATH_LITERAL("download.htm"),
+            downloads[0]->GetTargetFilePath().BaseName().value());
+#else
+  EXPECT_EQ(FILE_PATH_LITERAL("download.html"),
+            downloads[0]->GetTargetFilePath().BaseName().value());
+#endif
+
+  ASSERT_TRUE(origin_one.ShutdownAndWaitUntilComplete());
+  ASSERT_TRUE(origin_two.ShutdownAndWaitUntilComplete());
+}
+#endif  // !defined(OS_ANDROID)
 
 // Test that the suggested filename for data: URLs works.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeDataUrl) {
@@ -2988,23 +3113,33 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeServerError) {
 // should result in a network error page.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeNetworkError) {
   SetupErrorInjectionDownloads();
+  WebContents* content = shell()->web_contents();
   GURL url = TestDownloadHttpResponse::GetNextURLForDownload();
   GURL server_url = embedded_test_server()->GetURL(url.host(), url.path());
-  TestDownloadHttpResponse::Parameters parameters;
+  GURL document_url = embedded_test_server()->GetURL(
+      std::string("/download/download-attribute.html?target=") +
+      server_url.spec());
+
   // Simulate a network failure by injecting an error before the response
   // header.
+  TestDownloadHttpResponse::Parameters parameters;
   parameters.injected_errors.push(-1);
   parameters.inject_error_cb = inject_error_callback();
   TestDownloadHttpResponse::StartServing(parameters, server_url);
 
-  GURL document_url = embedded_test_server()->GetURL(
-      std::string("/download/download-attribute.html?target=") +
-      server_url.spec());
-  auto observer = std::make_unique<content::TestNavigationObserver>(
-      shell()->web_contents(), 2);
-  NavigateToURL(shell(), document_url);
-  observer->Wait();
-  EXPECT_FALSE(observer->last_navigation_succeeded());
+  content::TestNavigationManager navigation_document(content, document_url);
+  content::TestNavigationManager navigation_download(content, server_url);
+  shell()->LoadURL(document_url);
+  navigation_document.WaitForNavigationFinished();
+  navigation_download.WaitForNavigationFinished();
+
+  EXPECT_TRUE(navigation_document.was_successful());
+  EXPECT_FALSE(navigation_download.was_successful());
+
+  NavigationEntry* navigation_entry =
+      shell()->web_contents()->GetController().GetLastCommittedEntry();
+  EXPECT_EQ(PAGE_TYPE_ERROR, navigation_entry->GetPageType());
+  EXPECT_EQ(server_url, navigation_entry->GetURL());
 }
 
 // A request that fails due to it being rejected by policy should result in a
@@ -3021,6 +3156,28 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeInvalidURL) {
 }
 
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeBlobURL) {
+  GURL document_url =
+      embedded_test_server()->GetURL("/download/download-attribute-blob.html");
+  download::DownloadItem* download =
+      StartDownloadAndReturnItem(shell(), document_url);
+  WaitForCompletion(download);
+
+  EXPECT_STREQ(FILE_PATH_LITERAL("suggested-filename.txt"),
+               download->GetTargetFilePath().BaseName().value().c_str());
+}
+
+class DownloadContentTestWithMojoBlobURLs : public DownloadContentTest {
+ public:
+  DownloadContentTestWithMojoBlobURLs() {
+    scoped_feature_list_.InitAndEnableFeature(blink::features::kMojoBlobURLs);
+  }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_F(DownloadContentTestWithMojoBlobURLs,
+                       DownloadAttributeBlobURL) {
   GURL document_url =
       embedded_test_server()->GetURL("/download/download-attribute-blob.html");
   download::DownloadItem* download =
@@ -3470,41 +3627,92 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, FetchErrorResponseBodyResumption) {
             std::string("header_value"));
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadContentTest,
-                       DISABLED_ForceDownloadMultipartRelatedPage) {
-  // Force downloading the MHTML.
-  DownloadTestContentBrowserClient new_client;
-  new_client.set_allowed_rendering_mhtml_over_http(false);
-  ContentBrowserClient* old_client = SetBrowserClientForTesting(&new_client);
+IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadFromWebUI) {
+  GURL webui_url("chrome://resources/images/apps/blue_button.png");
+  NavigateToURL(shell(), webui_url);
+  SetupEnsureNoPendingDownloads();
+  std::unique_ptr<download::DownloadUrlParameters> download_parameters(
+      DownloadRequestUtils::CreateDownloadForWebContentsMainFrame(
+          shell()->web_contents(), webui_url, TRAFFIC_ANNOTATION_FOR_TESTS));
+  std::unique_ptr<DownloadTestObserver> observer(CreateWaiter(shell(), 1));
+  DownloadManagerForShell(shell())->DownloadUrl(std::move(download_parameters));
+  observer->WaitForFinished();
 
+  EXPECT_TRUE(EnsureNoPendingDownloads());
+
+  std::vector<download::DownloadItem*> downloads;
+  DownloadManagerForShell(shell())->GetAllDownloads(&downloads);
+  ASSERT_EQ(1u, downloads.size());
+  ASSERT_EQ(download::DownloadItem::COMPLETE, downloads[0]->GetState());
+}
+
+// Test fixture for forcing MHTML download.
+class MhtmlDownloadTest : public DownloadContentTest {
+ protected:
+  void SetUpOnMainThread() override {
+    DownloadContentTest::SetUpOnMainThread();
+
+    // Force downloading the MHTML.
+    new_client_.set_allowed_rendering_mhtml_over_http(false);
+    old_client_ = SetBrowserClientForTesting(&new_client_);
+  }
+
+  void TearDownOnMainThread() override {
+    SetBrowserClientForTesting(old_client_);
+    DownloadContentTest::TearDownOnMainThread();
+  }
+
+ private:
+  DownloadTestContentBrowserClient new_client_;
+  ContentBrowserClient* old_client_;
+};
+
+IN_PROC_BROWSER_TEST_F(MhtmlDownloadTest, ForceDownloadMultipartRelatedPage) {
   NavigateToURLAndWaitForDownload(
       shell(),
       // .mhtml file is mapped to "multipart/related" by the test server.
       embedded_test_server()->GetURL("/download/hello.mhtml"),
       download::DownloadItem::COMPLETE);
-  SetBrowserClientForTesting(old_client);
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadContentTest, ForceDownloadMessageRfc822Page) {
-  // Force downloading the MHTML.
-  DownloadTestContentBrowserClient new_client;
-  new_client.set_allowed_rendering_mhtml_over_http(false);
-  ContentBrowserClient* old_client = SetBrowserClientForTesting(&new_client);
-
+#if defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(ADDRESS_SANITIZER)
+// Flaky https://crbug.com/852073
+#define MAYBE_ForceDownloadMessageRfc822Page \
+  DISABLED_ForceDownloadMessageRfc822Page
+#else
+#define MAYBE_ForceDownloadMessageRfc822Page ForceDownloadMessageRfc822Page
+#endif
+IN_PROC_BROWSER_TEST_F(MhtmlDownloadTest,
+                       MAYBE_ForceDownloadMessageRfc822Page) {
   NavigateToURLAndWaitForDownload(
       shell(),
       // .mht file is mapped to "message/rfc822" by the test server.
       embedded_test_server()->GetURL("/download/test.mht"),
       download::DownloadItem::COMPLETE);
-  SetBrowserClientForTesting(old_client);
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadContentTest, AllowRenderMultipartRelatedPage) {
-  // Allows loading the MHTML, instead of downloading it.
-  DownloadTestContentBrowserClient new_client;
-  new_client.set_allowed_rendering_mhtml_over_http(true);
-  ContentBrowserClient* old_client = SetBrowserClientForTesting(&new_client);
+// Test fixture for loading MHTML.
+class MhtmlLoadingTest : public DownloadContentTest {
+ protected:
+  void SetUpOnMainThread() override {
+    DownloadContentTest::SetUpOnMainThread();
 
+    // Allows loading the MHTML, instead of downloading it.
+    new_client_.set_allowed_rendering_mhtml_over_http(true);
+    old_client_ = SetBrowserClientForTesting(&new_client_);
+  }
+
+  void TearDownOnMainThread() override {
+    SetBrowserClientForTesting(old_client_);
+    DownloadContentTest::TearDownOnMainThread();
+  }
+
+ private:
+  DownloadTestContentBrowserClient new_client_;
+  ContentBrowserClient* old_client_;
+};
+
+IN_PROC_BROWSER_TEST_F(MhtmlLoadingTest, AllowRenderMultipartRelatedPage) {
   // .mhtml file is mapped to "multipart/related" by the test server.
   GURL url = embedded_test_server()->GetURL("/download/hello.mhtml");
   auto observer = std::make_unique<content::TestNavigationObserver>(url);
@@ -3514,15 +3722,9 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, AllowRenderMultipartRelatedPage) {
   NavigateToURL(shell(), url);
 
   observer->WaitForNavigationFinished();
-  SetBrowserClientForTesting(old_client);
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadContentTest, AllowRenderMessageRfc822Page) {
-  // Allows loading the MHTML, instead of downloading it.
-  DownloadTestContentBrowserClient new_client;
-  new_client.set_allowed_rendering_mhtml_over_http(true);
-  ContentBrowserClient* old_client = SetBrowserClientForTesting(&new_client);
-
+IN_PROC_BROWSER_TEST_F(MhtmlLoadingTest, AllowRenderMessageRfc822Page) {
   // .mht file is mapped to "message/rfc822" by the test server.
   GURL url = embedded_test_server()->GetURL("/download/test.mht");
   auto observer = std::make_unique<content::TestNavigationObserver>(url);
@@ -3532,7 +3734,6 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, AllowRenderMessageRfc822Page) {
   NavigateToURL(shell(), url);
 
   observer->WaitForNavigationFinished();
-  SetBrowserClientForTesting(old_client);
 }
 
 }  // namespace content

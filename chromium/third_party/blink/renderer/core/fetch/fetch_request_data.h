@@ -10,18 +10,20 @@
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-blink.h"
 #include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_request.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_request.h"
 #include "third_party/blink/public/platform/web_url_request.h"
+#include "third_party/blink/renderer/core/fetch/body_stream_buffer.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer_policy.h"
+#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
-class BodyStreamBuffer;
+class ExceptionState;
 class FetchHeaderList;
 class SecurityOrigin;
 class ScriptState;
@@ -35,8 +37,8 @@ class FetchRequestData final
   static FetchRequestData* Create();
   static FetchRequestData* Create(ScriptState*, const WebServiceWorkerRequest&);
   // Call Request::refreshBody() after calling clone() or pass().
-  FetchRequestData* Clone(ScriptState*);
-  FetchRequestData* Pass(ScriptState*);
+  FetchRequestData* Clone(ScriptState*, ExceptionState&);
+  FetchRequestData* Pass(ScriptState*, ExceptionState&);
   ~FetchRequestData();
 
   void SetMethod(AtomicString method) { method_ = method; }
@@ -75,6 +77,10 @@ class FetchRequestData final
     redirect_ = redirect;
   }
   network::mojom::FetchRedirectMode Redirect() const { return redirect_; }
+  void SetImportance(mojom::FetchImportanceMode importance) {
+    importance_ = importance;
+  }
+  mojom::FetchImportanceMode Importance() const { return importance_; }
   void SetResponseTainting(Tainting tainting) { response_tainting_ = tainting; }
   Tainting ResponseTainting() const { return response_tainting_; }
   FetchHeaderList* HeaderList() const { return header_list_.Get(); }
@@ -90,6 +96,8 @@ class FetchRequestData final
   void SetIntegrity(const String& integrity) { integrity_ = integrity; }
   bool Keepalive() const { return keepalive_; }
   void SetKeepalive(bool b) { keepalive_ = b; }
+  bool IsHistoryNavigation() const { return is_history_navigation_; }
+  void SetIsHistoryNavigation(bool b) { is_history_navigation_ = b; }
 
   network::mojom::blink::URLLoaderFactory* URLLoaderFactory() const {
     return url_loader_factory_.get();
@@ -132,13 +140,15 @@ class FetchRequestData final
   // worker.
   mojom::FetchCacheMode cache_mode_;
   network::mojom::FetchRedirectMode redirect_;
+  mojom::FetchImportanceMode importance_;
   // FIXME: Support m_useURLCredentialsFlag;
   // FIXME: Support m_redirectCount;
   Tainting response_tainting_;
-  Member<BodyStreamBuffer> buffer_;
+  TraceWrapperMember<BodyStreamBuffer> buffer_;
   String mime_type_;
   String integrity_;
   bool keepalive_;
+  bool is_history_navigation_ = false;
   // A specific factory that should be used for this request instead of whatever
   // the system would otherwise decide to use to load this request.
   // Currently used for blob: URLs, to ensure they can still be loaded even if

@@ -57,6 +57,8 @@ RoleMap BuildRoleMap() {
       {ax::mojom::Role::kComboBoxGrouping, NSAccessibilityGroupRole},
       {ax::mojom::Role::kComboBoxMenuButton, NSAccessibilityButtonRole},
       {ax::mojom::Role::kComplementary, NSAccessibilityGroupRole},
+      {ax::mojom::Role::kContentDeletion, NSAccessibilityGroupRole},
+      {ax::mojom::Role::kContentInsertion, NSAccessibilityGroupRole},
       {ax::mojom::Role::kContentInfo, NSAccessibilityGroupRole},
       {ax::mojom::Role::kDate, @"AXDateField"},
       {ax::mojom::Role::kDateTime, @"AXDateField"},
@@ -218,6 +220,8 @@ RoleMap BuildSubroleMap() {
       {ax::mojom::Role::kArticle, @"AXDocumentArticle"},
       {ax::mojom::Role::kBanner, @"AXLandmarkBanner"},
       {ax::mojom::Role::kComplementary, @"AXLandmarkComplementary"},
+      {ax::mojom::Role::kContentDeletion, @"AXDeleteStyleGroup"},
+      {ax::mojom::Role::kContentInsertion, @"AXInsertStyleGroup"},
       {ax::mojom::Role::kContentInfo, @"AXLandmarkContentInfo"},
       {ax::mojom::Role::kDefinition, @"AXDefinition"},
       {ax::mojom::Role::kDescriptionListDetail, @"AXDefinition"},
@@ -283,16 +287,20 @@ const ActionList& GetActionList() {
   return action_map;
 }
 
+void PostAnnouncementNotification(NSString* announcement) {
+  NSDictionary* notification_info = @{
+    NSAccessibilityAnnouncementKey : announcement,
+    NSAccessibilityPriorityKey : @(NSAccessibilityPriorityHigh)
+  };
+  NSAccessibilityPostNotificationWithUserInfo(
+      [NSApp mainWindow], NSAccessibilityAnnouncementRequestedNotification,
+      notification_info);
+}
+
 void NotifyMacEvent(AXPlatformNodeCocoa* target, ax::mojom::Event event_type) {
   NSString* announcement_text = [target announcementTextForEvent:event_type];
   if (announcement_text) {
-    NSDictionary* notification_info = @{
-      NSAccessibilityAnnouncementKey : announcement_text,
-      NSAccessibilityPriorityKey : @(NSAccessibilityPriorityHigh)
-    };
-    NSAccessibilityPostNotificationWithUserInfo(
-        [NSApp mainWindow], NSAccessibilityAnnouncementRequestedNotification,
-        notification_info);
+    PostAnnouncementNotification(announcement_text);
     return;
   }
   NSAccessibilityPostNotification(
@@ -404,12 +412,15 @@ bool AlsoUseShowMenuActionForDefaultAction(const ui::AXNodeData& data) {
 }
 
 - (id)accessibilityHitTest:(NSPoint)point {
-  for (AXPlatformNodeCocoa* child in [self AXChildren]) {
-    if (![child accessibilityIsIgnored] &&
-        NSPointInRect(point, child.boundsInScreen)) {
-      return [child accessibilityHitTest:point];
-    }
+  if (!NSPointInRect(point, [self boundsInScreen]))
+    return nil;
+
+  for (id child in [[self AXChildren] reverseObjectEnumerator]) {
+    if (id foundChild = [child accessibilityHitTest:point])
+      return foundChild;
   }
+
+  // Hit self, but not any child.
   return NSAccessibilityUnignoredAncestor(self);
 }
 
@@ -541,6 +552,11 @@ bool AlsoUseShowMenuActionForDefaultAction(const ui::AXNodeData& data) {
     default:
       break;
   }
+
+  if (node_->GetData().HasBoolAttribute(ax::mojom::BoolAttribute::kSelected)) {
+    [axAttributes addObjectsFromArray:@[ NSAccessibilitySelectedAttribute ]];
+  }
+
   return axAttributes.autorelease();
 }
 
@@ -642,7 +658,7 @@ bool AlsoUseShowMenuActionForDefaultAction(const ui::AXNodeData& data) {
 
   // Set type-specific information as necessary for actions set above.
   if ([value isKindOfClass:[NSString class]]) {
-    data.value = base::SysNSStringToUTF16(value);
+    data.value = base::SysNSStringToUTF8(value);
   } else if (data.action == ax::mojom::Action::kSetSelection &&
              [value isKindOfClass:[NSValue class]]) {
     NSRange range = [value rangeValue];
@@ -900,6 +916,11 @@ bool AlsoUseShowMenuActionForDefaultAction(const ui::AXNodeData& data) {
   return attributedString.autorelease();
 }
 
+- (NSString*)description {
+  return [NSString stringWithFormat:@"%@ - %@ (%@)", [super description],
+                                    [self AXTitle], [self AXRole]];
+}
+
 @end
 
 namespace ui {
@@ -950,10 +971,21 @@ void AXPlatformNodeMac::NotifyAccessibilityEvent(ax::mojom::Event event_type) {
         return;
       }
       break;
+    case ax::mojom::Event::kSelection:
+      // On Mac, map menu item selection to a focus event.
+      if (GetData().role == ax::mojom::Role::kMenuItem) {
+        NotifyMacEvent(native_node_, ax::mojom::Event::kFocus);
+        return;
+      }
+      break;
     default:
       break;
   }
   NotifyMacEvent(native_node_, event_type);
+}
+
+void AXPlatformNodeMac::AnnounceText(base::string16& text) {
+  PostAnnouncementNotification(base::SysUTF16ToNSString(text));
 }
 
 int AXPlatformNodeMac::GetIndexInParent() {

@@ -22,8 +22,8 @@ namespace webrtc {
 namespace voe {
 ChannelProxy::ChannelProxy() {}
 
-ChannelProxy::ChannelProxy(std::unique_ptr<Channel> channel) :
-    channel_(std::move(channel)) {
+ChannelProxy::ChannelProxy(std::unique_ptr<Channel> channel)
+    : channel_(std::move(channel)) {
   RTC_DCHECK(channel_);
   module_process_thread_checker_.DetachFromThread();
 }
@@ -51,6 +51,11 @@ void ChannelProxy::SetLocalSSRC(uint32_t ssrc) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   int error = channel_->SetLocalSSRC(ssrc);
   RTC_DCHECK_EQ(0, error);
+}
+
+void ChannelProxy::SetRemoteSSRC(uint32_t ssrc) {
+  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+  channel_->SetRemoteSSRC(ssrc);
 }
 
 void ChannelProxy::SetMid(const std::string& mid, int extension_id) {
@@ -87,7 +92,7 @@ void ChannelProxy::RegisterSenderCongestionControlObjects(
     RtcpBandwidthObserver* bandwidth_observer) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   channel_->RegisterSenderCongestionControlObjects(transport,
-                                                    bandwidth_observer);
+                                                   bandwidth_observer);
 }
 
 void ChannelProxy::RegisterReceiverCongestionControlObjects(
@@ -167,7 +172,7 @@ bool ChannelProxy::SetSendTelephoneEventPayloadType(int payload_type,
                                                     int payload_frequency) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   return channel_->SetSendTelephoneEventPayloadType(payload_type,
-                                                     payload_frequency) == 0;
+                                                    payload_frequency) == 0;
 }
 
 bool ChannelProxy::SendTelephoneEventOutband(int event, int duration_ms) {

@@ -17,12 +17,6 @@ namespace safe_browsing {
 // them to the ExperimentalFeaturesList below to start displaying their status
 // on the chrome://safe-browsing page.
 
-// Allows an ad sample report to be created but not sent. Used to measure
-// performance impact of report generation.
-const base::Feature kAdSamplerCollectButDontSendFeature{
-    "SafeBrowsingAdSamplerCollectButDontSend",
-    base::FEATURE_DISABLED_BY_DEFAULT};
-
 // Controls various parameters related to occasionally collecting ad samples,
 // for example to control how often collection should occur.
 const base::Feature kAdSamplerTriggerFeature{"SafeBrowsingAdSamplerTrigger",
@@ -42,8 +36,7 @@ const base::Feature kThreatDomDetailsTagAndAttributeFeature{
     "ThreatDomDetailsTagAttributes", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kSuspiciousSiteTriggerQuotaFeature{
-    "SafeBrowsingSuspiciousSiteTriggerQuota",
-    base::FEATURE_DISABLED_BY_DEFAULT};
+    "SafeBrowsingSuspiciousSiteTriggerQuota", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kTriggerThrottlerDailyQuotaFeature{
     "SafeBrowsingTriggerThrottlerDailyQuota",
@@ -53,7 +46,7 @@ const base::Feature kInspectDownloadedRarFiles{
     "InspectDownloadedRarFiles", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kEnterprisePasswordProtectionV1{
-    "EnterprisePasswordProtectionV1", base::FEATURE_DISABLED_BY_DEFAULT};
+    "EnterprisePasswordProtectionV1", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kForceEnableResetPasswordWebUI{
     "ForceEnableResetPasswordWebUI", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -67,12 +60,11 @@ constexpr struct {
   // True if the feature is running at a probability other than 1 or 0.
   bool probabilistically_enabled;
 } kExperimentalFeatures[]{
-    {&kAdSamplerCollectButDontSendFeature, false},
     {&kAdSamplerTriggerFeature, false},
     {&kCheckByURLLoaderThrottle, true},
-    {&kEnterprisePasswordProtectionV1, true},
-    {&kForceEnableResetPasswordWebUI, false},
+    {&kForceEnableResetPasswordWebUI, true},
     {&kInspectDownloadedRarFiles, true},
+    {&kSuspiciousSiteTriggerQuotaFeature, true},
     {&kThreatDomDetailsTagAndAttributeFeature, false},
     {&kTriggerThrottlerDailyQuotaFeature, false},
 };

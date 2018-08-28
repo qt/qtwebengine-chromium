@@ -784,6 +784,7 @@ MediaRouter.prototype.start = function() {
                 'enable_cast_discovery': response.config.enableCastDiscovery,
                 'enable_dial_sink_query': response.config.enableDialSinkQuery,
                 'enable_cast_sink_query': response.config.enableCastSinkQuery,
+                'use_views_dialog': response.config.useViewsDialog,
               }
             };
           });
@@ -896,7 +897,8 @@ MediaRouter.prototype.onIssue = function(issue) {
     'defaultAction': issueActionToMojo_(issue.defaultAction),
     'secondaryActions': secondaryActions,
     'helpPageId': issue.helpPageId,
-    'isBlocking': issue.isBlocking
+    'isBlocking': issue.isBlocking,
+    'sinkId': issue.sinkId || ''
   }));
 };
 

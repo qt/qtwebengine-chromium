@@ -172,7 +172,7 @@ void compressionOutputCallback(void *encoder,
 // returned. The user must initialize the encoder with a resolution and
 // framerate conforming to the selected H264 level regardless.
 CFStringRef ExtractProfile(webrtc::SdpVideoFormat videoFormat) {
-  const rtc::Optional<webrtc::H264::ProfileLevelId> profile_level_id =
+  const absl::optional<webrtc::H264::ProfileLevelId> profile_level_id =
       webrtc::H264::ParseSdpProfileLevelId(videoFormat.parameters);
   RTC_DCHECK(profile_level_id);
   switch (profile_level_id->profile) {
@@ -307,7 +307,7 @@ CFStringRef ExtractProfile(webrtc::SdpVideoFormat videoFormat) {
     RTC_LOG(LS_INFO) << "Using profile " << CFStringToString(_profile);
     RTC_CHECK([codecInfo.name isEqualToString:kRTCVideoCodecH264Name]);
 
-#if defined(WEBRTC_IOS)
+#if defined(WEBRTC_IOS) && !defined(RTC_APPRTCMOBILE_BROADCAST_EXTENSION)
     [RTCUIApplicationStatusObserver prepareForUse];
 #endif
   }
@@ -345,7 +345,7 @@ CFStringRef ExtractProfile(webrtc::SdpVideoFormat videoFormat) {
   if (!_callback || !_compressionSession) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
-#if defined(WEBRTC_IOS)
+#if defined(WEBRTC_IOS) && !defined(RTC_APPRTCMOBILE_BROADCAST_EXTENSION)
   if (![[RTCUIApplicationStatusObserver sharedInstance] isApplicationActive]) {
     // Ignore all encode requests when app isn't active. In this state, the
     // hardware encoder has been invalidated by the OS.
@@ -390,6 +390,7 @@ CFStringRef ExtractProfile(webrtc::SdpVideoFormat videoFormat) {
       }
       _frameScaleBuffer.shrink_to_fit();
       if (![rtcPixelBuffer cropAndScaleTo:pixelBuffer withTempBuffer:_frameScaleBuffer.data()]) {
+        CVBufferRelease(pixelBuffer);
         return WEBRTC_VIDEO_CODEC_ERROR;
       }
     }
@@ -738,7 +739,7 @@ CFStringRef ExtractProfile(webrtc::SdpVideoFormat videoFormat) {
   frame.rotation = rotation;
   frame.contentType = (_mode == RTCVideoCodecModeScreensharing) ? RTCVideoContentTypeScreenshare :
                                                                   RTCVideoContentTypeUnspecified;
-  frame.flags = webrtc::TimingFrameFlags::kInvalid;
+  frame.flags = webrtc::VideoSendTiming::kInvalid;
 
   int qp;
   _h264BitstreamParser.ParseBitstream(buffer->data(), buffer->size());

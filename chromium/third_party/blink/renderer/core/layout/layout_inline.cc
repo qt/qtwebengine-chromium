@@ -29,7 +29,6 @@
 #include "third_party/blink/renderer/core/layout/api/line_layout_box_model.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
-#include "third_party/blink/renderer/core/layout/layout_full_screen.h"
 #include "third_party/blink/renderer/core/layout/layout_geometry_map.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -79,6 +78,12 @@ LayoutInline* LayoutInline::CreateAnonymous(Document* document) {
   LayoutInline* layout_inline = new LayoutInline(nullptr);
   layout_inline->SetDocumentForAnonymous(document);
   return layout_inline;
+}
+
+bool LayoutInline::IsFirstLineAnonymous() const {
+  // TODO(kojii): We can add a flag, but this seems enough for now.
+  return IsAnonymous() && Parent() && Parent()->IsLayoutBlockFlow() &&
+         !PreviousSibling() && !NextSibling();
 }
 
 void LayoutInline::WillBeDestroyed() {
@@ -397,8 +402,8 @@ void LayoutInline::AddChildIgnoringContinuation(LayoutObject* new_child,
             InFlowPositionedInlineAncestor(this))
       new_style->SetPosition(positioned_ancestor->Style()->GetPosition());
 
-    LayoutBlockFlow* new_box = LayoutBlockFlow::CreateAnonymous(&GetDocument());
-    new_box->SetStyle(std::move(new_style));
+    LayoutBlockFlow* new_box =
+        LayoutBlockFlow::CreateAnonymous(&GetDocument(), std::move(new_style));
     LayoutBoxModelObject* old_continuation = Continuation();
     SetContinuation(new_box);
 
@@ -441,18 +446,6 @@ void LayoutInline::SplitInlines(LayoutBlockFlow* from_block,
                                 LayoutBoxModelObject* old_cont) {
   DCHECK(IsDescendantOf(from_block));
   DCHECK(!IsAnonymous());
-
-  // If we're splitting the inline containing the fullscreened element,
-  // |beforeChild| may be the layoutObject for the fullscreened element.
-  // However, that layoutObject is wrapped in a LayoutFullScreen, so |this| is
-  // not its parent. Since the splitting logic expects |this| to be the parent,
-  // set |beforeChild| to be the LayoutFullScreen.
-  if (Fullscreen* fullscreen = Fullscreen::FromIfExists(GetDocument())) {
-    const Element* fullscreen_element = fullscreen->FullscreenElement();
-    if (fullscreen_element && before_child &&
-        before_child->GetNode() == fullscreen_element)
-      before_child = fullscreen->FullScreenLayoutObject();
-  }
 
   // FIXME: Because splitting is O(n^2) as tags nest pathologically, we cap the
   // depth at which we're willing to clone.
@@ -644,20 +637,8 @@ void LayoutInline::AddChildToContinuation(LayoutObject* new_child,
                                                            before_child);
 }
 
-void LayoutInline::Paint(const PaintInfo& paint_info,
-                         const LayoutPoint& paint_offset) const {
-  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
-    // Inline box with self painting layer is painted in this code path.
-    if (LayoutBlockFlow* block_flow = EnclosingNGBlockFlow()) {
-      if (NGPaintFragment* block_flow_fragment = block_flow->PaintFragment()) {
-        block_flow_fragment->PaintInlineBoxForDescendants(paint_info,
-                                                          paint_offset, this);
-        return;
-      }
-    }
-  }
-
-  InlinePainter(*this).Paint(paint_info, paint_offset);
+void LayoutInline::Paint(const PaintInfo& paint_info) const {
+  InlinePainter(*this).Paint(paint_info);
 }
 
 template <typename GeneratorContext>
@@ -915,13 +896,13 @@ bool LayoutInline::NodeAtPoint(HitTestResult& result,
     for (const NGPaintFragment* fragment :
          NGPaintFragment::InlineFragmentsFor(this)) {
       // NGBoxFragmentPainter::NodeAtPoint() takes an offset that is accumulated
-      // up to its parent fragment. Compute this offset.
+      // up to the fragment itself. Compute this offset.
       LayoutPoint adjusted_location =
           accumulated_offset +
-          fragment->Parent()->InlineOffsetToContainerBox().ToLayoutPoint();
+          fragment->InlineOffsetToContainerBox().ToLayoutPoint();
       if (NGBoxFragmentPainter(*fragment).NodeAtPoint(
               result, location_in_container, adjusted_location,
-              accumulated_offset, hit_test_action))
+              hit_test_action))
         return true;
     }
     return false;
@@ -964,8 +945,9 @@ class HitTestCulledInlinesGeneratorContext {
 bool LayoutInline::HitTestCulledInline(
     HitTestResult& result,
     const HitTestLocation& location_in_container,
-    const LayoutPoint& accumulated_offset) {
-  DCHECK(!AlwaysCreateLineBoxes());
+    const LayoutPoint& accumulated_offset,
+    const NGPaintFragment* container_fragment) {
+  DCHECK(container_fragment || !AlwaysCreateLineBoxes());
   if (!VisibleToHitTestRequest(result.GetHitTestRequest()))
     return false;
 
@@ -975,7 +957,26 @@ bool LayoutInline::HitTestCulledInline(
   Region region_result;
   HitTestCulledInlinesGeneratorContext context(region_result,
                                                adjusted_location);
-  GenerateCulledLineBoxRects(context, this);
+  if (container_fragment) {
+    DCHECK(EnclosingNGBlockFlow());
+    DCHECK(container_fragment->IsDescendantOfNotSelf(
+        *EnclosingNGBlockFlow()->PaintFragment()));
+    const NGPhysicalContainerFragment& traversal_root =
+        ToNGPhysicalContainerFragment(container_fragment->PhysicalFragment());
+    DCHECK(traversal_root.IsInline() || traversal_root.IsLineBox());
+    const LayoutPoint root_offset =
+        container_fragment->InlineOffsetToContainerBox().ToLayoutPoint();
+    const auto& descendants =
+        NGInlineFragmentTraversal::SelfFragmentsOf(traversal_root, this);
+    for (const auto& descendant : descendants) {
+      LayoutRect rect = descendant.RectInContainerBox().ToLayoutRect();
+      rect.MoveBy(root_offset);
+      context(rect);
+    }
+  } else {
+    DCHECK(!EnclosingNGBlockFlow());
+    GenerateCulledLineBoxRects(context, this);
+  }
 
   if (context.Intersected()) {
     UpdateHitTestResult(result, adjusted_location.Point());
@@ -988,21 +989,23 @@ bool LayoutInline::HitTestCulledInline(
 
 PositionWithAffinity LayoutInline::PositionForPoint(
     const LayoutPoint& point) const {
-  if (const LayoutBlockFlow* ng_block_flow = EnclosingNGBlockFlow())
-    return ng_block_flow->PositionForPoint(point);
-
-  DCHECK(CanUseInlineBox(*this));
-
   // FIXME: Does not deal with relative positioned inlines (should it?)
 
   // If there are continuations, test them first because our containing block
   // will not check them.
+  // TODO(layout-dev): Handle continuation with NG structures when NG has its
+  // own tree building.
   LayoutBoxModelObject* continuation = Continuation();
   while (continuation) {
     if (continuation->IsInline() || continuation->SlowFirstChild())
       return continuation->PositionForPoint(point);
     continuation = ToLayoutBlockFlow(continuation)->InlineElementContinuation();
   }
+
+  if (const LayoutBlockFlow* ng_block_flow = EnclosingNGBlockFlow())
+    return ng_block_flow->PositionForPoint(point);
+
+  DCHECK(CanUseInlineBox(*this));
 
   if (FirstLineBoxIncludingCulling()) {
     // This inline actually has a line box.  We must have clicked in the
@@ -1177,8 +1180,7 @@ LayoutRect LayoutInline::LinesVisualOverflowBoundingBox() const {
     auto children =
         NGInlineFragmentTraversal::SelfFragmentsOf(*box_fragment, this);
     for (const auto& child : children) {
-      NGPhysicalOffsetRect child_rect =
-          child.fragment->VisualRectWithContents();
+      NGPhysicalOffsetRect child_rect = child.fragment->InkOverflow();
       child_rect.offset += child.offset_to_container_box;
       result.Unite(child_rect);
     }
@@ -1361,7 +1363,7 @@ LayoutSize LayoutInline::OffsetFromContainerInternal(
 PaintLayerType LayoutInline::LayerTypeRequired() const {
   return IsInFlowPositioned() || CreatesGroup() ||
                  Style()->ShouldCompositeForCurrentAnimations() ||
-                 Style()->ContainsPaint()
+                 ShouldApplyPaintContainment()
              ? kNormalPaintLayer
              : kNoPaintLayer;
 }
@@ -1378,7 +1380,7 @@ void LayoutInline::ChildBecameNonInline(LayoutObject* child) {
 }
 
 void LayoutInline::UpdateHitTestResult(HitTestResult& result,
-                                       const LayoutPoint& point) {
+                                       const LayoutPoint& point) const {
   if (result.InnerNode())
     return;
 
@@ -1649,6 +1651,10 @@ void LayoutInline::InvalidateDisplayItemClients(
   if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
     auto fragments = NGPaintFragment::InlineFragmentsFor(this);
     if (fragments.IsInLayoutNGInlineFormattingContext()) {
+      if (Container()->IsLayoutNGMixin() && StyleRef().HasOutline()) {
+        Container()->InvalidateDisplayItemClients(
+            PaintInvalidationReason::kOutline);
+      }
       for (NGPaintFragment* fragment : fragments) {
         paint_invalidator.InvalidateDisplayItemClient(*fragment,
                                                       invalidation_reason);

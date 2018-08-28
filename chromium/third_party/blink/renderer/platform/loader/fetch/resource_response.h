@@ -61,8 +61,6 @@ struct CrossThreadResourceResponseData;
 // member variable to this class, do not forget to add the corresponding
 // one in CrossThreadResourceResponseData and write copying logic.
 class PLATFORM_EXPORT ResourceResponse final {
-  DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
-
  public:
   enum HTTPVersion : uint8_t {
     kHTTPVersionUnknown,
@@ -222,6 +220,8 @@ class PLATFORM_EXPORT ResourceResponse final {
   double Age() const;
   double Expires() const;
   double LastModified() const;
+  // Will always return values >= 0.
+  double CacheControlStaleWhileRevalidate() const;
 
   unsigned ConnectionID() const;
   void SetConnectionID(unsigned);
@@ -390,9 +390,6 @@ class PLATFORM_EXPORT ResourceResponse final {
   long long DecodedBodyLength() const { return decoded_body_length_; }
   void SetDecodedBodyLength(long long value);
 
-  const String& DownloadedFilePath() const { return downloaded_file_path_; }
-  void SetDownloadedFilePath(const String&);
-
   // Extra data associated with this response.
   ExtraData* GetExtraData() const { return extra_data_.get(); }
   void SetExtraData(scoped_refptr<ExtraData> extra_data) {
@@ -411,6 +408,14 @@ class PLATFORM_EXPORT ResourceResponse final {
     return redirect_responses_;
   }
   void AppendRedirectResponse(const ResourceResponse&);
+
+  bool AsyncRevalidationRequested() const {
+    return async_revalidation_requested_;
+  }
+
+  void SetAsyncRevalidationRequested(bool requested) {
+    async_revalidation_requested_ = requested;
+  }
 
   // This method doesn't compare the all members.
   static bool Compare(const ResourceResponse&, const ResourceResponse&);
@@ -473,6 +478,10 @@ class PLATFORM_EXPORT ResourceResponse final {
   // True if service worker navigation preload was performed due to
   // the request for this resource.
   bool did_service_worker_navigation_preload_ = false;
+
+  // True if this resource is stale and needs async revalidation. Will only
+  // possibly be set if the load_flags indicated SUPPORT_ASYNC_REVALIDATION.
+  bool async_revalidation_requested_ = false;
 
   // The type of the response which was returned by the ServiceWorker.
   network::mojom::FetchResponseType response_type_via_service_worker_ =
@@ -545,13 +554,6 @@ class PLATFORM_EXPORT ResourceResponse final {
   // removed.
   long long decoded_body_length_ = 0;
 
-  // The downloaded file path if the load streamed to a file.
-  String downloaded_file_path_;
-
-  // The handle to the downloaded file to ensure the underlying file will not
-  // be deleted.
-  scoped_refptr<BlobDataHandle> downloaded_file_handle_;
-
   // ExtraData associated with the response.
   scoped_refptr<ExtraData> extra_data_;
 
@@ -610,14 +612,13 @@ struct CrossThreadResourceResponseData {
   Vector<KURL> url_list_via_service_worker_;
   String cache_storage_cache_name_;
   bool did_service_worker_navigation_preload_;
+  bool async_revalidation_requested_;
   Time response_time_;
   String remote_ip_address_;
   unsigned short remote_port_;
   long long encoded_data_length_;
   long long encoded_body_length_;
   long long decoded_body_length_;
-  String downloaded_file_path_;
-  scoped_refptr<BlobDataHandle> downloaded_file_handle_;
 };
 
 }  // namespace blink

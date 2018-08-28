@@ -71,8 +71,8 @@
 #include "third_party/blink/renderer/modules/remoteplayback/html_media_element_remote_playback.h"
 #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
 #include "third_party/blink/renderer/modules/screen_orientation/screen_orientation_controller_impl.h"
-#include "third_party/blink/renderer/modules/serviceworkers/navigator_service_worker.h"
-#include "third_party/blink/renderer/modules/speech/speech_recognition_client_proxy.h"
+#include "third_party/blink/renderer/modules/service_worker/navigator_service_worker.h"
+#include "third_party/blink/renderer/modules/speech/speech_recognition_controller.h"
 #include "third_party/blink/renderer/modules/storage/dom_window_storage_controller.h"
 #include "third_party/blink/renderer/modules/storage/inspector_dom_storage_agent.h"
 #include "third_party/blink/renderer/modules/storage/storage_namespace_controller.h"
@@ -83,6 +83,9 @@
 #include "third_party/blink/renderer/modules/webdatabase/database_manager.h"
 #include "third_party/blink/renderer/modules/webdatabase/inspector_database_agent.h"
 #include "third_party/blink/renderer/modules/webdatabase/web_database_impl.h"
+#if defined(SUPPORT_WEBGL2_COMPUTE_CONTEXT)
+#include "third_party/blink/renderer/modules/webgl/webgl2_compute_rendering_context.h"
+#endif
 #include "third_party/blink/renderer/modules/webgl/webgl2_rendering_context.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context.h"
 #include "third_party/blink/renderer/modules/xr/xr_presentation_context.h"
@@ -125,6 +128,10 @@ void ModulesInitializer::Initialize() {
       std::make_unique<WebGLRenderingContext::Factory>());
   HTMLCanvasElement::RegisterRenderingContextFactory(
       std::make_unique<WebGL2RenderingContext::Factory>());
+#if defined(SUPPORT_WEBGL2_COMPUTE_CONTEXT)
+  HTMLCanvasElement::RegisterRenderingContextFactory(
+      std::make_unique<WebGL2ComputeRenderingContext::Factory>());
+#endif
   HTMLCanvasElement::RegisterRenderingContextFactory(
       std::make_unique<ImageBitmapRenderingContext::Factory>());
   HTMLCanvasElement::RegisterRenderingContextFactory(
@@ -137,6 +144,10 @@ void ModulesInitializer::Initialize() {
       std::make_unique<WebGLRenderingContext::Factory>());
   OffscreenCanvas::RegisterRenderingContextFactory(
       std::make_unique<WebGL2RenderingContext::Factory>());
+#if defined(SUPPORT_WEBGL2_COMPUTE_CONTEXT)
+  OffscreenCanvas::RegisterRenderingContextFactory(
+      std::make_unique<WebGL2ComputeRenderingContext::Factory>());
+#endif
 }
 
 void ModulesInitializer::InitLocalFrame(LocalFrame& frame) const {
@@ -158,7 +169,7 @@ void ModulesInitializer::InitLocalFrame(LocalFrame& frame) const {
 
 void ModulesInitializer::InstallSupplements(LocalFrame& frame) const {
   WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(&frame);
-  WebFrameClient* client = web_frame->Client();
+  WebLocalFrameClient* client = web_frame->Client();
   DCHECK(client);
   ProvidePushControllerTo(frame, client->PushClient());
   ProvideUserMediaTo(frame, UserMediaClient::Create(client->UserMediaClient()));
@@ -176,8 +187,7 @@ void ModulesInitializer::InstallSupplements(LocalFrame& frame) const {
                                      new AudioOutputDeviceClientImpl(frame));
   }
   InstalledAppController::ProvideTo(frame, client->GetRelatedAppsFetcher());
-  ::blink::ProvideSpeechRecognitionTo(
-      frame, SpeechRecognitionClientProxy::Create(client->SpeechRecognizer()));
+  ::blink::ProvideSpeechRecognitionTo(frame);
 }
 
 void ModulesInitializer::ProvideLocalFileSystemToWorker(
@@ -229,7 +239,7 @@ void ModulesInitializer::OnClearWindowObjectInMainWorld(
   NavigatorGamepad::From(document);
   NavigatorServiceWorker::From(document);
   DOMWindowStorageController::From(document);
-  if (OriginTrials::webVREnabled(document.GetExecutionContext()))
+  if (RuntimeEnabledFeatures::WebVREnabled())
     NavigatorVR::From(document);
   if (RuntimeEnabledFeatures::PresentationEnabled() &&
       settings.GetPresentationReceiver()) {
@@ -240,7 +250,7 @@ void ModulesInitializer::OnClearWindowObjectInMainWorld(
 }
 
 std::unique_ptr<WebMediaPlayer> ModulesInitializer::CreateWebMediaPlayer(
-    WebFrameClient* web_frame_client,
+    WebLocalFrameClient* web_frame_client,
     HTMLMediaElement& html_media_element,
     const WebMediaPlayerSource& source,
     WebMediaPlayerClient* media_player_client,

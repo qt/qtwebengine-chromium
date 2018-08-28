@@ -44,7 +44,7 @@ Optional<FormFieldType> IntToFormFieldType(int value);
 // If values are added to FormFieldType, these will need to be updated.
 #ifdef PDF_ENABLE_XFA
 constexpr size_t kFormFieldTypeCount = 16;
-#else
+#else   // PDF_ENABLE_XFA
 constexpr size_t kFormFieldTypeCount = 8;
 #endif  // PDF_ENABLE_XFA
 
@@ -79,9 +79,13 @@ class CPDF_FormControl;
 class CPDF_InterForm;
 class CPDF_String;
 
-CPDF_Object* FPDF_GetFieldAttr(const CPDF_Dictionary* pFieldDict,
+const CPDF_Object* FPDF_GetFieldAttr(const CPDF_Dictionary* pFieldDict,
+                                     const char* name,
+                                     int nLevel = 0);
+CPDF_Object* FPDF_GetFieldAttr(CPDF_Dictionary* pFieldDict,
                                const char* name,
                                int nLevel = 0);
+
 WideString FPDF_GetFullName(CPDF_Dictionary* pFieldDict);
 
 class CPDF_FormField {
@@ -160,22 +164,14 @@ class CPDF_FormField {
 
   int GetSelectedOptionIndex(int index) const;
   bool IsOptionSelected(int iOptIndex) const;
-
   bool SelectOption(int iOptIndex, bool bSelected, bool bNotify = false);
-
   bool ClearSelectedOptions(bool bNotify = false);
-
-#ifdef PDF_ENABLE_XFA
-  bool ClearOptions(bool bNotify = false);
-
-  int InsertOption(WideString csOptLabel, int index = -1, bool bNotify = false);
-#endif  // PDF_ENABLE_XFA
 
   float GetFontSize() const { return m_FontSize; }
   CPDF_Font* GetFont() const { return m_pFont.Get(); }
 
-  const CPDF_Dictionary* GetDict() const { return m_pDict.Get(); }
-  const CPDF_InterForm* GetForm() const { return m_pForm.Get(); }
+  CPDF_Dictionary* GetDict() const { return m_pDict.Get(); }
+  CPDF_InterForm* GetForm() const { return m_pForm.Get(); }
 
   WideString GetCheckValue(bool bDefault) const;
 

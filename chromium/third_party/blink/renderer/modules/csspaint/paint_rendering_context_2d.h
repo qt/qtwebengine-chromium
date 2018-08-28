@@ -52,12 +52,19 @@ class MODULES_EXPORT PaintRenderingContext2D : public ScriptWrappable,
 
   bool ParseColorOrCurrentColor(Color&, const String& color_string) const final;
 
-  PaintCanvas* DrawingCanvas() const final;
-  PaintCanvas* ExistingDrawingCanvas() const final;
+  cc::PaintCanvas* DrawingCanvas() const final;
+  cc::PaintCanvas* ExistingDrawingCanvas() const final;
   void DisableDeferral(DisableDeferralReason) final {}
 
   void DidDraw(const SkIRect&) final;
 
+  double shadowOffsetX() const final;
+  void setShadowOffsetX(double) final;
+
+  double shadowOffsetY() const final;
+  void setShadowOffsetY(double) final;
+
+  double shadowBlur() const final;
   void setShadowBlur(double) final;
 
   bool StateHasFilter() final;
@@ -89,7 +96,7 @@ class MODULES_EXPORT PaintRenderingContext2D : public ScriptWrappable,
                           float zoom);
 
   void InitializePaintRecorder();
-  PaintCanvas* Canvas() const;
+  cc::PaintCanvas* Canvas() const;
 
   std::unique_ptr<PaintRecorder> paint_recorder_;
   sk_sp<PaintRecord> previous_frame_;

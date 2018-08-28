@@ -67,17 +67,17 @@ class VRDisplayFrameRequestCallback
   void Invoke(double high_res_time_ms) override {
     if (Id() != vr_display_->PendingMagicWindowVSyncId())
       return;
-    double monotonic_time;
+    TimeTicks monotonic_time;
     if (!vr_display_->GetDocument() || !vr_display_->GetDocument()->Loader()) {
-      monotonic_time = WTF::CurrentTimeTicksInSeconds();
+      monotonic_time = WTF::CurrentTimeTicks();
     } else {
       // Convert document-zero time back to monotonic time.
-      double reference_monotonic_time =
-          TimeTicksInSeconds(vr_display_->GetDocument()
-                                 ->Loader()
-                                 ->GetTiming()
-                                 .ReferenceMonotonicTime());
-      monotonic_time = (high_res_time_ms / 1000.0) + reference_monotonic_time;
+      TimeTicks reference_monotonic_time = vr_display_->GetDocument()
+                                               ->Loader()
+                                               ->GetTiming()
+                                               .ReferenceMonotonicTime();
+      monotonic_time = reference_monotonic_time +
+                       TimeDelta::FromMillisecondsD(high_res_time_ms);
     }
     vr_display_->OnMagicWindowVSync(monotonic_time);
   }
@@ -95,16 +95,25 @@ class VRDisplayFrameRequestCallback
 
 VRDisplay::VRDisplay(
     NavigatorVR* navigator_vr,
-    device::mojom::blink::VRMagicWindowProviderPtr magic_window_provider,
     device::mojom::blink::VRDisplayHostPtr display,
     device::mojom::blink::VRDisplayClientRequest request)
     : PausableObject(navigator_vr->GetDocument()),
       navigator_vr_(navigator_vr),
       capabilities_(new VRDisplayCapabilities()),
-      magic_window_provider_(std::move(magic_window_provider)),
       display_(std::move(display)),
       display_client_binding_(this, std::move(request)) {
   PauseIfNeeded();  // Initialize SuspendabaleObject.
+
+  // Request a non-exclusive session to provide magic window.
+  device::mojom::blink::XRSessionOptionsPtr options =
+      device::mojom::blink::XRSessionOptions::New();
+  options->immersive = false;
+  // Set in_on_display_activate to true, this will prevent the request present
+  // from being logged.
+  // TODO(offenwanger): clean up the logging when refactors are complete.
+  display_->RequestSession(std::move(options), true,
+                           WTF::Bind(&VRDisplay::OnMagicWindowRequestReturned,
+                                     WrapPersistent(this)));
 }
 
 VRDisplay::~VRDisplay() = default;
@@ -227,32 +236,38 @@ void VRDisplay::RequestVSync() {
   if (display_blurred_)
     return;
 
-  if (!is_presenting_) {
+  if (is_presenting_) {
+    DCHECK(vr_presentation_provider_.is_bound());
+
+    if (pending_presenting_vsync_)
+      return;
+
+    pending_magic_window_vsync_ = false;
+    pending_presenting_vsync_ = true;
+    vr_presentation_provider_->GetFrameData(
+        WTF::Bind(&VRDisplay::OnPresentingVSync, WrapWeakPersistent(this)));
+
+    DVLOG(2) << __FUNCTION__ << " done: pending_presenting_vsync_="
+             << pending_presenting_vsync_;
+  } else {
+    // Check if magic_window_provider_, if not then we are not fully
+    // initialized, or we do not support magic window, so don't request the
+    // vsync. If and when magic_window_provider_ is set it will run this code
+    // again.
+    if (!magic_window_provider_)
+      return;
     if (pending_magic_window_vsync_)
       return;
     magic_window_vsync_waiting_for_pose_.Reset();
     magic_window_pose_request_time_ = WTF::CurrentTimeTicks();
-    magic_window_provider_->GetPose(
-        WTF::Bind(&VRDisplay::OnMagicWindowPose, WrapWeakPersistent(this)));
+    magic_window_provider_->GetFrameData(WTF::Bind(
+        &VRDisplay::OnMagicWindowFrameData, WrapWeakPersistent(this)));
     pending_magic_window_vsync_ = true;
     pending_magic_window_vsync_id_ =
         doc->RequestAnimationFrame(new VRDisplayFrameRequestCallback(this));
     DVLOG(2) << __FUNCTION__ << " done: pending_magic_window_vsync_="
              << pending_magic_window_vsync_;
-    return;
   }
-  DCHECK(vr_presentation_provider_.is_bound());
-
-  if (pending_presenting_vsync_)
-    return;
-
-  pending_magic_window_vsync_ = false;
-  pending_presenting_vsync_ = true;
-  vr_presentation_provider_->GetVSync(
-      WTF::Bind(&VRDisplay::OnPresentingVSync, WrapWeakPersistent(this)));
-
-  DVLOG(2) << __FUNCTION__
-           << " done: pending_presenting_vsync_=" << pending_presenting_vsync_;
 }
 
 int VRDisplay::requestAnimationFrame(V8FrameRequestCallback* callback) {
@@ -331,8 +346,8 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
   // If the VRDisplay does not advertise the ability to present reject the
   // request.
   if (!capabilities_->canPresent()) {
-    DOMException* exception =
-        DOMException::Create(kInvalidStateError, "VRDisplay cannot present.");
+    DOMException* exception = DOMException::Create(
+        DOMExceptionCode::kInvalidStateError, "VRDisplay cannot present.");
     resolver->Reject(exception);
     ReportPresentationResult(PresentationResult::kVRDisplayCannotPresent);
     return promise;
@@ -347,8 +362,9 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
   // updated.
   if (first_present) {
     if (!Frame::HasTransientUserActivation(doc ? doc->GetFrame() : nullptr)) {
-      DOMException* exception = DOMException::Create(
-          kInvalidStateError, "API can only be initiated by a user gesture.");
+      DOMException* exception =
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               "API can only be initiated by a user gesture.");
       resolver->Reject(exception);
       ReportPresentationResult(PresentationResult::kNotInitiatedByUserGesture);
       return promise;
@@ -363,8 +379,8 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
   // A valid number of layers must be provided in order to present.
   if (layers.size() == 0 || layers.size() > capabilities_->maxLayers()) {
     ForceExitPresent();
-    DOMException* exception =
-        DOMException::Create(kInvalidStateError, "Invalid number of layers.");
+    DOMException* exception = DOMException::Create(
+        DOMExceptionCode::kInvalidStateError, "Invalid number of layers.");
     resolver->Reject(exception);
     ReportPresentationResult(PresentationResult::kInvalidNumberOfLayers);
     return promise;
@@ -374,8 +390,8 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
   // previous, valid source, so delay m_layer reassignment
   if (layers[0].source().IsNull()) {
     ForceExitPresent();
-    DOMException* exception =
-        DOMException::Create(kInvalidStateError, "Invalid layer source.");
+    DOMException* exception = DOMException::Create(
+        DOMExceptionCode::kInvalidStateError, "Invalid layer source.");
     resolver->Reject(exception);
     ReportPresentationResult(PresentationResult::kInvalidLayerSource);
     return promise;
@@ -394,8 +410,9 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
 
   if (!rendering_context || !rendering_context->Is3d()) {
     ForceExitPresent();
-    DOMException* exception = DOMException::Create(
-        kInvalidStateError, "Layer source must have a WebGLRenderingContext");
+    DOMException* exception =
+        DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                             "Layer source must have a WebGLRenderingContext");
     resolver->Reject(exception);
     ReportPresentationResult(
         PresentationResult::kLayerSourceMissingWebGLContext);
@@ -410,7 +427,7 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
       (layer_.rightBounds().size() != 0 && layer_.rightBounds().size() != 4)) {
     ForceExitPresent();
     DOMException* exception = DOMException::Create(
-        kInvalidStateError,
+        DOMExceptionCode::kInvalidStateError,
         "Layer bounds must either be an empty array or have 4 values");
     resolver->Reject(exception);
     ReportPresentationResult(PresentationResult::kInvalidLayerBounds);
@@ -420,8 +437,9 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
   for (float value : layer_.leftBounds()) {
     if (std::isnan(value)) {
       ForceExitPresent();
-      DOMException* exception = DOMException::Create(
-          kInvalidStateError, "Layer bounds must not contain NAN values");
+      DOMException* exception =
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               "Layer bounds must not contain NAN values");
       resolver->Reject(exception);
       ReportPresentationResult(PresentationResult::kInvalidLayerBounds);
       return promise;
@@ -431,8 +449,9 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
   for (float value : layer_.rightBounds()) {
     if (std::isnan(value)) {
       ForceExitPresent();
-      DOMException* exception = DOMException::Create(
-          kInvalidStateError, "Layer bounds must not contain NAN values");
+      DOMException* exception =
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               "Layer bounds must not contain NAN values");
       resolver->Reject(exception);
       ReportPresentationResult(PresentationResult::kInvalidLayerBounds);
       return promise;
@@ -447,29 +466,25 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
   } else if (first_present) {
     if (!display_) {
       ForceExitPresent();
-      DOMException* exception = DOMException::Create(
-          kInvalidStateError, "The service is no longer active.");
+      DOMException* exception =
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                               "The service is no longer active.");
       resolver->Reject(exception);
       return promise;
     }
 
     pending_present_resolvers_.push_back(resolver);
 
-    frame_transport_ = new XRFrameTransport();
-    // Set up RequestPresentOptions based on canvas properties.
-    device::mojom::blink::VRRequestPresentOptionsPtr options =
-        device::mojom::blink::VRRequestPresentOptions::New();
-    options->preserve_drawing_buffer =
-        rendering_context_->CreationAttributes().preserve_drawing_buffer;
+    // Set up the VR backwards compatible XRSessionOptions based on canvas
+    // properties.
+    device::mojom::blink::XRSessionOptionsPtr options =
+        device::mojom::blink::XRSessionOptions::New();
+    options->immersive = true;
+    options->use_legacy_webvr_render_path = true;
 
-    display_->RequestPresent(
-        frame_transport_->GetSubmitFrameClient(),
-        mojo::MakeRequest(&vr_presentation_provider_), std::move(options),
-        in_display_activate_,
-        WTF::Bind(&VRDisplay::OnPresentComplete, WrapPersistent(this)));
-    vr_presentation_provider_.set_connection_error_handler(
-        WTF::Bind(&VRDisplay::OnPresentationProviderConnectionError,
-                  WrapWeakPersistent(this)));
+    display_->RequestSession(
+        std::move(options), in_display_activate_,
+        WTF::Bind(&VRDisplay::OnRequestSessionReturned, WrapPersistent(this)));
     pending_present_request_ = true;
 
     // The old vr_presentation_provider_ won't be delivering any vsyncs anymore,
@@ -484,23 +499,42 @@ ScriptPromise VRDisplay::requestPresent(ScriptState* script_state,
   return promise;
 }
 
-void VRDisplay::OnPresentComplete(
-    bool success,
-    device::mojom::blink::VRDisplayFrameTransportOptionsPtr transport_options) {
-  frame_transport_->SetTransportOptions(std::move(transport_options));
+void VRDisplay::OnRequestSessionReturned(
+    device::mojom::blink::XRSessionPtr session) {
   pending_present_request_ = false;
-  if (success) {
+  if (session && session->connection) {
+    vr_presentation_provider_.Bind(std::move(session->connection->provider));
+    vr_presentation_provider_.set_connection_error_handler(
+        WTF::Bind(&VRDisplay::OnPresentationProviderConnectionError,
+                  WrapWeakPersistent(this)));
+
+    frame_transport_ = new XRFrameTransport();
+    frame_transport_->BindSubmitFrameClient(
+        std::move(session->connection->client_request));
+    frame_transport_->SetTransportOptions(
+        std::move(session->connection->transport_options));
+
     this->BeginPresent();
   } else {
     this->ForceExitPresent();
     DOMException* exception = DOMException::Create(
-        kNotAllowedError, "Presentation request was denied.");
+        DOMExceptionCode::kNotAllowedError, "Presentation request was denied.");
 
     while (!pending_present_resolvers_.IsEmpty()) {
       ScriptPromiseResolver* resolver = pending_present_resolvers_.TakeFirst();
       resolver->Reject(exception);
     }
   }
+}
+
+void VRDisplay::OnMagicWindowRequestReturned(
+    device::mojom::blink::XRSessionPtr session) {
+  if (!session || !session->magic_window_provider) {
+    // System does not support any kind of magic window.
+    return;
+  }
+  magic_window_provider_.Bind(std::move(session->magic_window_provider));
+  RequestVSync();
 }
 
 ScriptPromise VRDisplay::exitPresent(ScriptState* script_state) {
@@ -511,14 +545,14 @@ ScriptPromise VRDisplay::exitPresent(ScriptState* script_state) {
   if (!is_presenting_) {
     // Can't stop presenting if we're not presenting.
     DOMException* exception = DOMException::Create(
-        kInvalidStateError, "VRDisplay is not presenting.");
+        DOMExceptionCode::kInvalidStateError, "VRDisplay is not presenting.");
     resolver->Reject(exception);
     return promise;
   }
 
   if (!display_) {
-    DOMException* exception =
-        DOMException::Create(kInvalidStateError, "VRService is not available.");
+    DOMException* exception = DOMException::Create(
+        DOMExceptionCode::kInvalidStateError, "VRService is not available.");
     resolver->Reject(exception);
     return promise;
   }
@@ -536,14 +570,16 @@ void VRDisplay::BeginPresent() {
 
   DOMException* exception = nullptr;
   if (!frame_transport_) {
-    exception = DOMException::Create(
-        kInvalidStateError, "VRDisplay presentation path not configured.");
+    exception =
+        DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                             "VRDisplay presentation path not configured.");
   }
 
   if (layer_.source().IsOffscreenCanvas()) {
     // TODO(junov, crbug.com/695497): Implement OffscreenCanvas presentation
-    exception = DOMException::Create(
-        kInvalidStateError, "OffscreenCanvas presentation not implemented.");
+    exception =
+        DOMException::Create(DOMExceptionCode::kInvalidStateError,
+                             "OffscreenCanvas presentation not implemented.");
   } else {
     // A canvas must be either Offscreen or plain HTMLCanvas.
     DCHECK(layer_.source().IsHTMLCanvasElement());
@@ -575,7 +611,7 @@ void VRDisplay::BeginPresent() {
   }
   is_presenting_ = true;
   // Call RequestVSync to switch from the (internal) document rAF to the
-  // VrPresentationProvider VSync.
+  // VrPresentationProvider GetFrameData rate.
   RequestVSync();
   ReportPresentationResult(PresentationResult::kSuccess);
 
@@ -591,7 +627,7 @@ void VRDisplay::BeginPresent() {
   // Run window.rAF once manually so that applications get a chance to
   // schedule a VRDisplay.rAF in case they do so only while presenting.
   if (!pending_vrdisplay_raf_ && !capabilities_->hasExternalDisplay()) {
-    double timestamp = WTF::CurrentTimeTicksInSeconds();
+    TimeTicks timestamp = WTF::CurrentTimeTicks();
     Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
         FROM_HERE, WTF::Bind(&VRDisplay::ProcessScheduledWindowAnimations,
                              WrapWeakPersistent(this), timestamp));
@@ -838,7 +874,7 @@ void VRDisplay::OnDeactivate(
       EventTypeNames::vrdisplaydeactivate, this, reason));
 }
 
-void VRDisplay::ProcessScheduledWindowAnimations(double timestamp) {
+void VRDisplay::ProcessScheduledWindowAnimations(TimeTicks timestamp) {
   TRACE_EVENT1("gpu", "VRDisplay::window.rAF", "frame", vr_frame_id_);
   auto* doc = navigator_vr_->GetDocument();
   if (!doc)
@@ -849,8 +885,7 @@ void VRDisplay::ProcessScheduledWindowAnimations(double timestamp) {
 
   bool had_pending_vrdisplay_raf = pending_vrdisplay_raf_;
   // TODO(klausw): update timestamp based on scheduling delay?
-  page->Animator().ServiceScriptedAnimations(
-      base::TimeTicks() + base::TimeDelta::FromSecondsD(timestamp));
+  page->Animator().ServiceScriptedAnimations(timestamp);
 
   if (had_pending_vrdisplay_raf != pending_vrdisplay_raf_) {
     DVLOG(1) << __FUNCTION__
@@ -868,7 +903,7 @@ void VRDisplay::ProcessScheduledWindowAnimations(double timestamp) {
   }
 }
 
-void VRDisplay::ProcessScheduledAnimations(double timestamp) {
+void VRDisplay::ProcessScheduledAnimations(TimeTicks timestamp) {
   DVLOG(2) << __FUNCTION__;
   // Check if we still have a valid context, the animation controller
   // or document may have disappeared since we scheduled this.
@@ -894,8 +929,7 @@ void VRDisplay::ProcessScheduledAnimations(double timestamp) {
     base::AutoReset<bool> animating(&in_animation_frame_, true);
     pending_vrdisplay_raf_ = false;
     did_submit_this_frame_ = false;
-    scripted_animation_controller_->ServiceScriptedAnimations(
-        base::TimeTicks() + base::TimeDelta::FromSecondsD(timestamp));
+    scripted_animation_controller_->ServiceScriptedAnimations(timestamp);
     // If presenting and the script didn't call SubmitFrame, let the device
     // side know so that it can cleanly reuse resources and make appropriate
     // timing decisions. Note that is_presenting_ could become false during
@@ -920,17 +954,10 @@ void VRDisplay::ProcessScheduledAnimations(double timestamp) {
 }
 
 void VRDisplay::OnPresentingVSync(
-    device::mojom::blink::VRPosePtr pose,
-    WTF::TimeDelta time_delta,
-    int16_t frame_id,
-    device::mojom::blink::VRPresentationProvider::VSyncStatus status,
-    const base::Optional<gpu::MailboxHolder>& buffer_holder) {
+    device::mojom::blink::XRFrameDataPtr frame_data) {
   TRACE_EVENT0("gpu", __FUNCTION__);
-  switch (status) {
-    case device::mojom::blink::VRPresentationProvider::VSyncStatus::SUCCESS:
-      break;
-    case device::mojom::blink::VRPresentationProvider::VSyncStatus::CLOSING:
-      return;
+  if (!frame_data) {
+    return;
   }
 
   if (!context_gl_) {
@@ -943,8 +970,8 @@ void VRDisplay::OnPresentingVSync(
   // an early exit woud break animation.
   pending_presenting_vsync_ = false;
 
-  frame_pose_ = std::move(pose);
-  vr_frame_id_ = frame_id;
+  frame_pose_ = std::move(frame_data->pose);
+  vr_frame_id_ = frame_data->frame_id;
 
   if (frame_transport_ && frame_transport_->DrawingIntoSharedBuffer()) {
     NOTIMPLEMENTED();
@@ -960,10 +987,11 @@ void VRDisplay::OnPresentingVSync(
   // the interface being waited on.
   Platform::Current()->CurrentThread()->GetTaskRunner()->PostTask(
       FROM_HERE, WTF::Bind(&VRDisplay::ProcessScheduledAnimations,
-                           WrapWeakPersistent(this), time_delta.InSecondsF()));
+                           WrapWeakPersistent(this),
+                           TimeTicks() + frame_data->time_delta));
 }
 
-void VRDisplay::OnMagicWindowVSync(double timestamp) {
+void VRDisplay::OnMagicWindowVSync(TimeTicks timestamp) {
   DVLOG(2) << __FUNCTION__;
   pending_magic_window_vsync_ = false;
   pending_magic_window_vsync_id_ = -1;
@@ -988,12 +1016,15 @@ void VRDisplay::OnMagicWindowVSync(double timestamp) {
   }
 }
 
-void VRDisplay::OnMagicWindowPose(device::mojom::blink::VRPosePtr pose) {
+void VRDisplay::OnMagicWindowFrameData(
+    device::mojom::blink::XRFrameDataPtr data) {
   magic_window_pose_received_time_ = WTF::CurrentTimeTicks();
-  if (!in_animation_frame_) {
-    frame_pose_ = std::move(pose);
-  } else {
-    pending_pose_ = std::move(pose);
+  if (data) {
+    if (!in_animation_frame_) {
+      frame_pose_ = std::move(data->pose);
+    } else {
+      pending_pose_ = std::move(data->pose);
+    }
   }
   if (magic_window_vsync_waiting_for_pose_) {
     // We have a vsync waiting for a pose, run it now.
@@ -1079,11 +1110,6 @@ void VRDisplay::Trace(blink::Visitor* visitor) {
   visitor->Trace(pending_present_resolvers_);
   EventTargetWithInlineData::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);
-}
-
-void VRDisplay::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(scripted_animation_controller_);
-  EventTargetWithInlineData::TraceWrappers(visitor);
 }
 
 }  // namespace blink

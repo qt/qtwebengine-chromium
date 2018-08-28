@@ -55,10 +55,10 @@ void RemoteFrame::Trace(blink::Visitor* visitor) {
   Frame::Trace(visitor);
 }
 
-void RemoteFrame::Navigate(Document& origin_document,
-                           const KURL& url,
-                           bool replace_current_item,
-                           UserGestureStatus user_gesture_status) {
+void RemoteFrame::ScheduleNavigation(Document& origin_document,
+                                     const KURL& url,
+                                     bool replace_current_item,
+                                     UserGestureStatus user_gesture_status) {
   FrameLoadRequest frame_request(&origin_document, ResourceRequest(url));
   frame_request.SetReplacesCurrentItem(replace_current_item);
   frame_request.GetResourceRequest().SetHasUserGesture(
@@ -84,7 +84,7 @@ void RemoteFrame::Navigate(const FrameLoadRequest& passed_request) {
                      frame_request.GetBlobURLToken());
 }
 
-void RemoteFrame::Reload(FrameLoadType frame_load_type,
+void RemoteFrame::Reload(WebFrameLoadType frame_load_type,
                          ClientRedirectPolicy client_redirect_policy) {
   Client()->Reload(frame_load_type, client_redirect_policy);
 }

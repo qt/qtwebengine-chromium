@@ -149,7 +149,11 @@ test_common_source_files = [
 copy("copy_test_files") {
   visibility = [ ":*" ]
   sources = [
-    # Keep "test_case.html.mock-http-headers" with "test_case.html".
+    # Keep "test_case.html.mock-http-headers" with "test_case.html"
+    # and "corb_eligible_resource.json.mock-http-headers" with
+    # "corb_eligible_resource.json".
+    "tests/corb_eligible_resource.json",
+    "tests/corb_eligible_resource.json.mock-http-headers",
     "tests/test_case.html",
     "tests/test_case.html.mock-http-headers",
     "tests/test_page.css",
@@ -231,7 +235,6 @@ source_set("ppapi_tests_sources") {
   deps = [
     ":copy_test_files",
     ":copy_test_files2",
-    "//build/config:exe_and_shlib_deps",
     "//ppapi/cpp",
     "//ppapi/shared_impl",
   ]
@@ -255,7 +258,6 @@ source_set("power_saver_test_plugin_sources") {
   ]
 
   deps = [
-    "//build/config:exe_and_shlib_deps",
     "//ppapi/cpp",
     "//ppapi/shared_impl",
   ]
@@ -282,7 +284,6 @@ source_set("blink_deprecated_test_plugin_sources") {
 
   deps = [
     "//base",
-    "//build/config:exe_and_shlib_deps",
     "//ppapi/cpp",
     "//ppapi/shared_impl",
   ]
@@ -309,7 +310,6 @@ source_set("blink_test_plugin_sources") {
 
   deps = [
     "//base",
-    "//build/config:exe_and_shlib_deps",
     "//ppapi/cpp",
     "//ppapi/shared_impl",
   ]
@@ -393,7 +393,7 @@ test("ppapi_perftests") {
 
   deps = [
     "//base/test:test_support",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//ppapi/proxy",
     "//ppapi/proxy:test_support",
     "//ppapi/shared_impl",
@@ -409,7 +409,6 @@ executable("pepper_hash_for_uma") {
 
   deps = [
     "//base",
-    "//build/config:exe_and_shlib_deps",
     "//build/win:default_exe_manifest",
   ]
 }

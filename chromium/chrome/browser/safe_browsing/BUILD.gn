@@ -16,6 +16,7 @@ static_library("safe_browsing") {
     "chrome_cleaner/chrome_cleaner_controller_impl_win.cc",
     "chrome_cleaner/chrome_cleaner_controller_impl_win.h",
     "chrome_cleaner/chrome_cleaner_controller_win.h",
+    "chrome_cleaner/chrome_cleaner_extensions_util_win.h",
     "chrome_cleaner/chrome_cleaner_fetcher_win.cc",
     "chrome_cleaner/chrome_cleaner_fetcher_win.h",
     "chrome_cleaner/chrome_cleaner_navigation_util_win.cc",
@@ -49,6 +50,8 @@ static_library("safe_browsing") {
     "//chrome/app:generated_resources",
     "//components/chrome_cleaner/public/interfaces",
     "//components/safe_browsing/common:interfaces",
+    "//mojo/public/cpp/platform",
+    "//mojo/public/cpp/system",
   ]
 
   if (enable_extensions) {
@@ -72,6 +75,12 @@ static_library("safe_browsing") {
     deps += [ "//components/keep_alive_registry" ]
   }
 
+  if (is_chrome_branded && is_win) {
+    sources += [ "chrome_cleaner/chrome_cleaner_extension_util_win.cc" ]
+  } else {
+    sources += [ "chrome_cleaner/chrome_cleaner_extension_util_win_noop.cc" ]
+  }
+
   if (safe_browsing_mode != 0) {
     # "Safe Browsing Basic" files used for safe browsing in full mode
     # (safe_browsing=1) and mobile (=2)
@@ -84,10 +93,6 @@ static_library("safe_browsing") {
       "certificate_reporting_service.h",
       "certificate_reporting_service_factory.cc",
       "certificate_reporting_service_factory.h",
-      "notification_image_reporter.cc",
-      "notification_image_reporter.h",
-      "ping_manager.cc",
-      "ping_manager.h",
       "safe_browsing_blocking_page.cc",
       "safe_browsing_blocking_page.h",
       "safe_browsing_navigation_observer.cc",

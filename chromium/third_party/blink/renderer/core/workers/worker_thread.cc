@@ -39,6 +39,7 @@
 #include "third_party/blink/renderer/core/inspector/worker_inspector_controller.h"
 #include "third_party/blink/renderer/core/inspector/worker_thread_debugger.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/core/script/fetch_client_settings_object_snapshot.h"
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
 #include "third_party/blink/renderer/core/workers/threaded_worklet_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_backing_thread.h"
@@ -52,8 +53,8 @@
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/child/webthread_impl_for_worker_scheduler.h"
-#include "third_party/blink/renderer/platform/scheduler/child/worker_scheduler.h"
-#include "third_party/blink/renderer/platform/scheduler/public/non_main_thread_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/worker_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/worker/worker_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/waitable_event.h"
 #include "third_party/blink/renderer/platform/web_thread_supporting_gc.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
@@ -145,20 +146,15 @@ void WorkerThread::EvaluateClassicScript(
 
 void WorkerThread::ImportModuleScript(
     const KURL& script_url,
+    FetchClientSettingsObjectSnapshot* outside_settings_object,
     network::mojom::FetchCredentialsMode credentials_mode) {
   DCHECK_CALLED_ON_VALID_THREAD(parent_thread_checker_);
   PostCrossThreadTask(
       *GetTaskRunner(TaskType::kInternalWorker), FROM_HERE,
       CrossThreadBind(&WorkerThread::ImportModuleScriptOnWorkerThread,
                       CrossThreadUnretained(this), script_url,
+                      WTF::Passed(outside_settings_object->CopyData()),
                       credentials_mode));
-}
-
-void WorkerThread::TerminateChildThreadsOnWorkerThread() {
-  DCHECK(IsCurrentThread());
-  PrepareForShutdownOnWorkerThread();
-  for (WorkerThread* child : child_threads_)
-    child->Terminate();
 }
 
 void WorkerThread::Terminate() {
@@ -177,18 +173,6 @@ void WorkerThread::Terminate() {
 
   worker_thread_lifecycle_context_->NotifyContextDestroyed();
   inspector_task_runner_->Dispose();
-
-  if (!child_threads_.IsEmpty()) {
-    // When child workers are present, wait for them to shutdown before shutting
-    // down this thread. ChildThreadTerminatedOnWorkerThread() is responsible
-    // for completing shutdown on the worker thread after the last child shuts
-    // down.
-    GetWorkerBackingThread().BackingThread().PostTask(
-        FROM_HERE,
-        CrossThreadBind(&WorkerThread::TerminateChildThreadsOnWorkerThread,
-                        CrossThreadUnretained(this)));
-    return;
-  }
 
   GetWorkerBackingThread().BackingThread().PostTask(
       FROM_HERE,
@@ -339,6 +323,12 @@ scheduler::WorkerScheduler* WorkerThread::GetScheduler() {
 
 void WorkerThread::ChildThreadStartedOnWorkerThread(WorkerThread* child) {
   DCHECK(IsCurrentThread());
+#if DCHECK_IS_ON()
+  {
+    MutexLocker lock(mutex_);
+    DCHECK_EQ(ThreadState::kRunning, thread_state_);
+  }
+#endif
   child_threads_.insert(child);
 }
 
@@ -351,7 +341,7 @@ void WorkerThread::ChildThreadTerminatedOnWorkerThread(WorkerThread* child) {
 
 WorkerThread::WorkerThread(ThreadableLoadingContext* loading_context,
                            WorkerReportingProxy& worker_reporting_proxy)
-    : time_origin_(CurrentTimeTicksInSeconds()),
+    : time_origin_(CurrentTimeTicks()),
       worker_thread_id_(GetNextWorkerThreadId()),
       forcible_termination_delay_(kForcibleTerminationDelay),
       devtools_worker_token_(base::UnguessableToken::Create()),
@@ -418,7 +408,9 @@ void WorkerThread::InitializeSchedulerOnWorkerThread(
       static_cast<scheduler::WebThreadImplForWorkerScheduler&>(
           GetWorkerBackingThread().BackingThread().PlatformThread());
   worker_scheduler_ = std::make_unique<scheduler::WorkerScheduler>(
-      web_thread_for_worker.GetNonMainThreadScheduler());
+      static_cast<scheduler::WorkerThreadScheduler*>(
+          web_thread_for_worker.GetNonMainThreadScheduler()),
+      web_thread_for_worker.worker_scheduler_proxy());
   waitable_event->Signal();
 }
 
@@ -498,12 +490,17 @@ void WorkerThread::EvaluateClassicScriptOnWorkerThread(
 
 void WorkerThread::ImportModuleScriptOnWorkerThread(
     const KURL& script_url,
+    std::unique_ptr<CrossThreadFetchClientSettingsObjectData>
+        outside_settings_object,
     network::mojom::FetchCredentialsMode credentials_mode) {
   // Worklets have a different code path to import module scripts.
   // TODO(nhiroki): Consider excluding this code path from WorkerThread like
   // Worklets.
   ToWorkerGlobalScope(GlobalScope())
-      ->ImportModuleScript(script_url, credentials_mode);
+      ->ImportModuleScript(script_url,
+                           new FetchClientSettingsObjectSnapshot(
+                               std::move(outside_settings_object)),
+                           credentials_mode);
 }
 
 void WorkerThread::PrepareForShutdownOnWorkerThread() {
@@ -517,25 +514,17 @@ void WorkerThread::PrepareForShutdownOnWorkerThread() {
       SetExitCode(ExitCode::kGracefullyTerminated);
   }
 
-  inspector_task_runner_->Dispose();
   GetWorkerReportingProxy().WillDestroyWorkerGlobalScope();
+
   probe::AllAsyncTasksCanceled(GlobalScope());
-
   GlobalScope()->NotifyContextDestroyed();
-  if (worker_inspector_controller_) {
-    worker_inspector_controller_->Dispose();
-    worker_inspector_controller_.Clear();
-  }
   worker_scheduler_->Dispose();
-  GlobalScope()->Dispose();
-  global_scope_ = nullptr;
 
-  if (WorkerThreadDebugger* debugger = WorkerThreadDebugger::From(GetIsolate()))
-    debugger->WorkerThreadDestroyed(this);
-
-  console_message_storage_.Clear();
-  loading_context_.Clear();
+  // No V8 microtasks should get executed after shutdown is requested.
   GetWorkerBackingThread().BackingThread().RemoveTaskObserver(this);
+
+  for (WorkerThread* child : child_threads_)
+    child->Terminate();
 }
 
 void WorkerThread::PerformShutdownOnWorkerThread() {
@@ -547,6 +536,28 @@ void WorkerThread::PerformShutdownOnWorkerThread() {
     DCHECK_EQ(ThreadState::kReadyToShutdown, thread_state_);
   }
 #endif
+
+  // When child workers are present, wait for them to shutdown before shutting
+  // down this thread. ChildThreadTerminatedOnWorkerThread() is responsible
+  // for completing shutdown on the worker thread after the last child shuts
+  // down.
+  if (!child_threads_.IsEmpty())
+    return;
+
+  inspector_task_runner_->Dispose();
+  if (worker_inspector_controller_) {
+    worker_inspector_controller_->Dispose();
+    worker_inspector_controller_.Clear();
+  }
+
+  GlobalScope()->Dispose();
+  global_scope_ = nullptr;
+
+  if (WorkerThreadDebugger* debugger = WorkerThreadDebugger::From(GetIsolate()))
+    debugger->WorkerThreadDestroyed(this);
+
+  console_message_storage_.Clear();
+  loading_context_.Clear();
 
   if (IsOwningBackingThread())
     GetWorkerBackingThread().ShutdownOnBackingThread();

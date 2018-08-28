@@ -164,7 +164,7 @@
             "title": "Eager evaluation",
             "settingName": "consoleEagerEval",
             "settingType": "boolean",
-            "defaultValue": false,
+            "defaultValue": true,
             "options": [
                 {
                     "value": true,
@@ -188,6 +188,7 @@
     "scripts": [
         "ConsoleContextSelector.js",
         "ConsoleFilter.js",
+        "ConsolePinPane.js",
         "ConsoleSidebar.js",
         "ConsoleViewport.js",
         "ConsoleViewMessage.js",
@@ -197,6 +198,7 @@
     ],
     "resources": [
         "consoleContextSelector.css",
+        "consolePinPane.css",
         "consoleSidebar.css",
         "consoleView.css"
     ]

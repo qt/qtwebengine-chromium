@@ -15,7 +15,7 @@
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
-namespace net {
+namespace quic {
 
 #define ENDPOINT                                                   \
   (session()->perspective() == Perspective::IS_SERVER ? "Server: " \
@@ -34,11 +34,11 @@ QuicCryptoStream::~QuicCryptoStream() {}
 QuicByteCount QuicCryptoStream::CryptoMessageFramingOverhead(
     QuicTransportVersion version) {
   return QuicPacketCreator::StreamFramePacketOverhead(
-      version, PACKET_8BYTE_CONNECTION_ID,
+      version, PACKET_8BYTE_CONNECTION_ID, PACKET_0BYTE_CONNECTION_ID,
       /*include_version=*/true,
       /*include_diversification_nonce=*/true,
-      version == QUIC_VERSION_99 ? PACKET_4BYTE_PACKET_NUMBER
-                                 : PACKET_1BYTE_PACKET_NUMBER,
+      version > QUIC_VERSION_43 ? PACKET_4BYTE_PACKET_NUMBER
+                                : PACKET_1BYTE_PACKET_NUMBER,
       /*offset=*/0);
 }
 
@@ -202,4 +202,5 @@ bool QuicCryptoStream::RetransmitStreamData(QuicStreamOffset offset,
   return true;
 }
 
-}  // namespace net
+#undef ENDPOINT  // undef for jumbo builds
+}  // namespace quic

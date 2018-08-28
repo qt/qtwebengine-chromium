@@ -63,13 +63,24 @@ cc_test(
 )
 
 cc_test(
+    name = "fixed_array_exception_safety_test",
+    srcs = ["fixed_array_exception_safety_test.cc"],
+    copts = ABSL_TEST_COPTS + ABSL_EXCEPTIONS_FLAG,
+    deps = [
+        ":fixed_array",
+        "//absl/base:exception_safety_testing",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "fixed_array_benchmark",
     srcs = ["fixed_array_benchmark.cc"],
     copts = ABSL_TEST_COPTS + ["$(STACK_FRAME_UNLIMITED)"],
     tags = ["benchmark"],
     deps = [
         ":fixed_array",
-        "@com_github_google_benchmark//:benchmark",
+        "@com_github_google_benchmark//:benchmark_main",
     ],
 )
 
@@ -126,7 +137,7 @@ cc_test(
         ":inlined_vector",
         "//absl/base",
         "//absl/strings",
-        "@com_github_google_benchmark//:benchmark",
+        "@com_github_google_benchmark//:benchmark_main",
     ],
 )
 

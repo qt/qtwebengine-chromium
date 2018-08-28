@@ -4,6 +4,7 @@
 
 #include "content/browser/shared_worker/mock_shared_worker.h"
 
+#include "content/common/url_loader_factory_bundle.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -97,11 +98,13 @@ void MockSharedWorkerFactory::CreateSharedWorker(
     mojom::SharedWorkerInfoPtr info,
     bool pause_on_start,
     const base::UnguessableToken& devtools_worker_token,
+    const RendererPreferences& renderer_preferences,
     blink::mojom::WorkerContentSettingsProxyPtr content_settings,
     mojom::ServiceWorkerProviderInfoForSharedWorkerPtr
         service_worker_provider_info,
     network::mojom::URLLoaderFactoryAssociatedPtrInfo
         script_loader_factory_ptr_info,
+    std::unique_ptr<URLLoaderFactoryBundleInfo> subresource_loaders,
     mojom::SharedWorkerHostPtr host,
     mojom::SharedWorkerRequest request,
     service_manager::mojom::InterfaceProviderPtr interface_provider) {

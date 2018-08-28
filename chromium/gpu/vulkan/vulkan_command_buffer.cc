@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "gpu/vulkan/vulkan_command_pool.h"
 #include "gpu/vulkan/vulkan_device_queue.h"
+#include "gpu/vulkan/vulkan_function_pointers.h"
 
 namespace gpu {
 
@@ -80,6 +81,7 @@ bool VulkanCommandBuffer::Submit(uint32_t num_wait_semaphores,
   VkPipelineStageFlags wait_dst_stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 
   DCHECK(primary_);
+
   VkSubmitInfo submit_info = {};
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submit_info.commandBufferCount = 1;
@@ -113,6 +115,7 @@ bool VulkanCommandBuffer::Submit(uint32_t num_wait_semaphores,
 
 void VulkanCommandBuffer::Enqueue(VkCommandBuffer primary_command_buffer) {
   DCHECK(!primary_);
+
   vkCmdExecuteCommands(primary_command_buffer, 1, &command_buffer_);
   PostExecution();
 }

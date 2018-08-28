@@ -411,8 +411,10 @@ void DynamicHLSL::generateVaryingLinkHLSL(const VaryingPacking &varyingPacking,
     std::string varyingSemantic =
         GetVaryingSemantic(mRenderer->getMajorShaderModel(), programUsesPointSize);
 
-    for (const PackedVaryingRegister &registerInfo : varyingPacking.getRegisterList())
+    const auto &registerInfos = varyingPacking.getRegisterList();
+    for (GLuint registerIndex = 0u; registerIndex < registerInfos.size(); ++registerIndex)
     {
+        const PackedVaryingRegister &registerInfo = registerInfos[registerIndex];
         const auto &varying = *registerInfo.packedVarying->varying;
         ASSERT(!varying.isStruct());
 
@@ -442,8 +444,7 @@ void DynamicHLSL::generateVaryingLinkHLSL(const VaryingPacking &varyingPacking,
         GLenum componentType  = gl::VariableComponentType(transposedType);
         int columnCount       = gl::VariableColumnCount(transposedType);
         HLSLComponentTypeString(hlslStream, componentType, columnCount);
-        unsigned int semanticIndex = registerInfo.semanticIndex;
-        hlslStream << " v" << semanticIndex << " : " << varyingSemantic << semanticIndex << ";\n";
+        hlslStream << " v" << registerIndex << " : " << varyingSemantic << registerIndex << ";\n";
     }
 
     hlslStream << "};\n";
@@ -515,17 +516,17 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Context *context,
 
     if (vertexBuiltins.glViewIDOVR.enabled)
     {
-        vertexStream << "    output.gl_ViewID_OVR = _ViewID_OVR;\n";
+        vertexStream << "    output.gl_ViewID_OVR = ViewID_OVR;\n";
     }
     if (programMetadata.hasANGLEMultiviewEnabled() && programMetadata.canSelectViewInVertexShader())
     {
         ASSERT(vertexBuiltins.glViewportIndex.enabled && vertexBuiltins.glLayer.enabled);
         vertexStream << "    if (multiviewSelectViewportIndex)\n"
                      << "    {\n"
-                     << "         output.gl_ViewportIndex = _ViewID_OVR;\n"
+                     << "         output.gl_ViewportIndex = ViewID_OVR;\n"
                      << "    } else {\n"
                      << "         output.gl_ViewportIndex = 0;\n"
-                     << "         output.gl_Layer = _ViewID_OVR;\n"
+                     << "         output.gl_Layer = ViewID_OVR;\n"
                      << "    }\n";
     }
 
@@ -583,13 +584,15 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Context *context,
         vertexStream << "    output.gl_FragCoord = gl_Position;\n";
     }
 
-    for (const PackedVaryingRegister &registerInfo : varyingPacking.getRegisterList())
+    const auto &registerInfos = varyingPacking.getRegisterList();
+    for (GLuint registerIndex = 0u; registerIndex < registerInfos.size(); ++registerIndex)
     {
+        const PackedVaryingRegister &registerInfo = registerInfos[registerIndex];
         const auto &packedVarying = *registerInfo.packedVarying;
         const auto &varying = *packedVarying.varying;
         ASSERT(!varying.isStruct());
 
-        vertexStream << "    output.v" << registerInfo.semanticIndex << " = ";
+        vertexStream << "    output.v" << registerIndex << " = ";
 
         if (packedVarying.isStructField())
         {
@@ -691,7 +694,7 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Context *context,
     if (fragmentShader->usesViewID())
     {
         ASSERT(pixelBuiltins.glViewIDOVR.enabled);
-        pixelStream << "    _ViewID_OVR = input.gl_ViewID_OVR;\n";
+        pixelStream << "    ViewID_OVR = input.gl_ViewID_OVR;\n";
     }
 
     if (pixelBuiltins.glFragCoord.enabled)
@@ -787,8 +790,9 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Context *context,
         }
     }
 
-    for (const PackedVaryingRegister &registerInfo : varyingPacking.getRegisterList())
+    for (GLuint registerIndex = 0u; registerIndex < registerInfos.size(); ++registerIndex)
     {
+        const PackedVaryingRegister &registerInfo = registerInfos[registerIndex];
         const auto &packedVarying = *registerInfo.packedVarying;
         const auto &varying = *packedVarying.varying;
         ASSERT(!varying.isBuiltIn() && !varying.isStruct());
@@ -818,7 +822,7 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Context *context,
             WriteArrayString(pixelStream, registerInfo.varyingRowIndex);
         }
 
-        pixelStream << " = input.v" << registerInfo.semanticIndex;
+        pixelStream << " = input.v" << registerIndex;
 
         switch (VariableColumnCount(transposedType))
         {
@@ -967,14 +971,16 @@ std::string DynamicHLSL::generateGeometryShaderPreamble(const VaryingPacking &va
         }
     }
 
-    for (const PackedVaryingRegister &varyingRegister : varyingPacking.getRegisterList())
+    const auto &registerInfos = varyingPacking.getRegisterList();
+    for (GLuint registerIndex = 0u; registerIndex < registerInfos.size(); ++registerIndex)
     {
-        preambleStream << "    output.v" << varyingRegister.semanticIndex << " = ";
+        const PackedVaryingRegister &varyingRegister = registerInfos[registerIndex];
+        preambleStream << "    output.v" << registerIndex << " = ";
         if (varyingRegister.packedVarying->interpolation == sh::INTERPOLATION_FLAT)
         {
             preambleStream << "flat";
         }
-        preambleStream << "input.v" << varyingRegister.semanticIndex << "; \n";
+        preambleStream << "input.v" << registerIndex << "; \n";
     }
 
     if (vertexBuiltins.glFragCoord.enabled)
@@ -1015,7 +1021,7 @@ std::string DynamicHLSL::generateGeometryShaderPreamble(const VaryingPacking &va
 }
 
 std::string DynamicHLSL::generateGeometryShaderHLSL(const gl::Context *context,
-                                                    gl::PrimitiveType primitiveType,
+                                                    gl::PrimitiveMode primitiveType,
                                                     const gl::ProgramState &programData,
                                                     const bool useViewScale,
                                                     const bool hasANGLEMultiviewEnabled,
@@ -1027,7 +1033,7 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(const gl::Context *context,
 
     std::stringstream shaderStream;
 
-    const bool pointSprites   = (primitiveType == PRIMITIVE_POINTS) && pointSpriteEmulation;
+    const bool pointSprites = (primitiveType == gl::PrimitiveMode::Points) && pointSpriteEmulation;
     const bool usesPointCoord = preambleString.find("gl_PointCoord") != std::string::npos;
 
     const char *inputPT  = nullptr;
@@ -1037,7 +1043,7 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(const gl::Context *context,
 
     switch (primitiveType)
     {
-        case PRIMITIVE_POINTS:
+        case gl::PrimitiveMode::Points:
             inputPT         = "point";
             inputSize       = 1;
 
@@ -1054,18 +1060,18 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(const gl::Context *context,
 
             break;
 
-        case PRIMITIVE_LINES:
-        case PRIMITIVE_LINE_STRIP:
-        case PRIMITIVE_LINE_LOOP:
+        case gl::PrimitiveMode::Lines:
+        case gl::PrimitiveMode::LineStrip:
+        case gl::PrimitiveMode::LineLoop:
             inputPT         = "line";
             outputPT        = "Line";
             inputSize       = 2;
             maxVertexOutput = 2;
             break;
 
-        case PRIMITIVE_TRIANGLES:
-        case PRIMITIVE_TRIANGLE_STRIP:
-        case PRIMITIVE_TRIANGLE_FAN:
+        case gl::PrimitiveMode::Triangles:
+        case gl::PrimitiveMode::TriangleStrip:
+        case gl::PrimitiveMode::TriangleFan:
             inputPT         = "triangle";
             outputPT        = "Triangle";
             inputSize       = 3;
@@ -1133,7 +1139,7 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(const gl::Context *context,
                  << "[maxvertexcount(" << maxVertexOutput << ")]\n"
                  << "void main(" << inputPT << " GS_INPUT input[" << inputSize << "], ";
 
-    if (primitiveType == PRIMITIVE_TRIANGLE_STRIP)
+    if (primitiveType == gl::PrimitiveMode::TriangleStrip)
     {
         shaderStream << "uint primitiveID : SV_PrimitiveID, ";
     }
@@ -1142,7 +1148,7 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(const gl::Context *context,
                  << "{\n"
                  << "    GS_OUTPUT output = (GS_OUTPUT)0;\n";
 
-    if (primitiveType == PRIMITIVE_TRIANGLE_STRIP)
+    if (primitiveType == gl::PrimitiveMode::TriangleStrip)
     {
         shaderStream << "    uint lastVertexIndex = (primitiveID % 2 == 0 ? 2 : 1);\n";
     }
@@ -1349,7 +1355,7 @@ void BuiltinVaryingsD3D::updateBuiltins(gl::ShaderType shaderType,
 
     unsigned int reservedSemanticIndex = packing.getMaxSemanticIndex();
 
-    BuiltinInfo *builtins = &mBuiltinInfo[static_cast<size_t>(shaderType)];
+    BuiltinInfo *builtins = &mBuiltinInfo[shaderType];
 
     if (metadata.getRendererMajorShaderModel() >= 4)
     {

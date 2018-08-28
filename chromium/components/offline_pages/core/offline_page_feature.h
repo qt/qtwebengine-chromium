@@ -28,6 +28,7 @@ extern const base::Feature kOfflinePagesInDownloadHomeOpenInCctFeature;
 extern const base::Feature kOfflinePagesDescriptiveFailStatusFeature;
 extern const base::Feature kOfflinePagesCTSuppressNotificationsFeature;
 extern const base::Feature kOfflinePagesShowAlternateDinoPageFeature;
+extern const base::Feature kOfflineIndicatorFeature;
 
 // The parameter name used to find the experiment tag for prefetching offline
 // pages.
@@ -61,6 +62,9 @@ bool IsOfflinePagesPrefetchingUIEnabled();
 // Returns true if prefetching offline pages should ignore its normal resource
 // usage limits.
 bool IsLimitlessPrefetchingEnabled();
+
+// Enables or disabled limitless prefetching. Provided for testing only.
+void SetLimitlessPrefetchingEnabledForTesting(bool enabled);
 
 // Returns true if we enable load timing signals to be collected.
 bool IsOfflinePagesLoadSignalCollectingEnabled();
@@ -105,6 +109,9 @@ bool ShouldShowAlternateDinoPage();
 // Server. The server will use this this optional tag to decide how to process
 // the request.
 std::string GetPrefetchingOfflinePagesExperimentTag();
+
+// Returns true if offline indicator UI is shown when the user is offline.
+bool IsOfflineIndicatorFeatureEnabled();
 
 }  // namespace offline_pages
 

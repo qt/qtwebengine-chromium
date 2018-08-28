@@ -20,8 +20,8 @@ namespace {
 
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
 struct GlyphNameMap {
-  const char* m_pStrAdobe;
-  const char* m_pStrUnicode;
+  const char* m_pStrAdobe;    // Raw, POD struct.
+  const char* m_pStrUnicode;  // Raw, POD struct.
 };
 
 const GlyphNameMap g_GlyphNameSubsts[] = {{"ff", "uniFB00"},
@@ -77,7 +77,8 @@ CPDF_Type1Font* CPDF_Type1Font::AsType1Font() {
 bool CPDF_Type1Font::Load() {
   m_Base14Font = PDF_GetStandardFontName(&m_BaseFont);
   if (m_Base14Font >= 0) {
-    CPDF_Dictionary* pFontDesc = m_pFontDict->GetDictFor("FontDescriptor");
+    const CPDF_Dictionary* pFontDesc =
+        m_pFontDict->GetDictFor("FontDescriptor");
     if (pFontDesc && pFontDesc->KeyExist("Flags"))
       m_Flags = pFontDesc->GetIntegerFor("Flags");
     else

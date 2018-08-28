@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/containers/queue.h"
+#include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
@@ -27,6 +28,10 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
 #include "ui/gfx/text_elider.h"
+
+#if defined(OS_ANDROID)
+#include "base/android/content_uri_utils.h"
+#endif
 
 using base::UTF16ToUTF8;
 
@@ -457,6 +462,16 @@ const base::string16& NavigationEntryImpl::GetTitleForDisplay() const {
     base::i18n::WrapStringWithLTRFormatting(&title);
   }
 
+#if defined(OS_ANDROID)
+  if (GetURL().SchemeIs(url::kContentScheme)) {
+    base::string16 file_display_name;
+    if (base::MaybeGetFileDisplayName(base::FilePath(GetURL().spec()),
+                                      &file_display_name)) {
+      title = file_display_name;
+    }
+  }
+#endif
+
   gfx::ElideString(title, kMaxTitleChars, &cached_display_title_);
   return cached_display_title_;
 }
@@ -653,11 +668,9 @@ std::unique_ptr<NavigationEntryImpl> NavigationEntryImpl::CloneAndReplace(
 #endif
   // ResetForCommit: is_renderer_initiated_
   copy->cached_display_title_ = cached_display_title_;
-  // ResetForCommit: transferred_global_request_id_
   // ResetForCommit: should_replace_entry_
   // ResetForCommit: should_clear_history_list_
   // ResetForCommit: frame_tree_node_id_
-  // ResetForCommit: intent_received_timestamp_
   copy->has_user_gesture_ = has_user_gesture_;
   // ResetForCommit: reload_type_
   copy->extra_data_ = extra_data_;
@@ -674,30 +687,11 @@ CommonNavigationParams NavigationEntryImpl::ConstructCommonNavigationParams(
     FrameMsg_Navigate_Type::Value navigation_type,
     PreviewsState previews_state,
     const base::TimeTicks& navigation_start) const {
-  FrameMsg_UILoadMetricsReportType::Value report_type =
-      FrameMsg_UILoadMetricsReportType::NO_REPORT;
-  base::TimeTicks ui_timestamp = base::TimeTicks();
-
-#if defined(OS_ANDROID)
-  if (!intent_received_timestamp().is_null())
-    report_type = FrameMsg_UILoadMetricsReportType::REPORT_INTENT;
-  ui_timestamp = intent_received_timestamp();
-#endif
-
-  std::string method;
-
-  // TODO(clamy): Consult the FrameNavigationEntry in all modes that use
-  // subframe navigation entries.
-  if (IsBrowserSideNavigationEnabled())
-    method = frame_entry.method();
-  else
-    method = (post_body.get() || GetHasPostData()) ? "POST" : "GET";
-
   return CommonNavigationParams(
       dest_url, dest_referrer, GetTransitionType(), navigation_type,
-      !IsViewSourceMode(), should_replace_entry(), ui_timestamp, report_type,
-      GetBaseURLForDataURL(), GetHistoryURLForDataURL(), previews_state,
-      navigation_start, method, post_body ? post_body : post_data_,
+      !IsViewSourceMode(), should_replace_entry(), GetBaseURLForDataURL(),
+      GetHistoryURLForDataURL(), previews_state, navigation_start,
+      frame_entry.method(), post_body ? post_body : post_data_,
       base::Optional<SourceLocation>(),
       CSPDisposition::CHECK /* should_check_main_world_csp */,
       has_started_from_context_menu(), has_user_gesture(),
@@ -765,7 +759,6 @@ void NavigationEntryImpl::ResetForCommit(FrameNavigationEntry* frame_entry) {
   // PlzNavigate is enabled.
   SetPostData(nullptr);
   set_is_renderer_initiated(false);
-  set_transferred_global_request_id(GlobalRequestID());
   set_should_replace_entry(false);
 
   set_should_clear_history_list(false);
@@ -776,12 +769,6 @@ void NavigationEntryImpl::ResetForCommit(FrameNavigationEntry* frame_entry) {
     frame_entry->set_source_site_instance(nullptr);
     frame_entry->set_blob_url_loader_factory(nullptr);
   }
-
-#if defined(OS_ANDROID)
-  // Reset the time stamp so that the metrics are not reported if this entry is
-  // loaded again in the future.
-  set_intent_received_timestamp(base::TimeTicks());
-#endif
 }
 
 NavigationEntryImpl::TreeNode* NavigationEntryImpl::GetTreeNode(

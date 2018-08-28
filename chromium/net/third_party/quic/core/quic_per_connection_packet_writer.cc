@@ -4,7 +4,7 @@
 
 #include "net/third_party/quic/core/quic_per_connection_packet_writer.h"
 
-namespace net {
+namespace quic {
 
 QuicPerConnectionPacketWriter::QuicPerConnectionPacketWriter(
     QuicPacketWriter* shared_writer)
@@ -39,4 +39,20 @@ QuicByteCount QuicPerConnectionPacketWriter::GetMaxPacketSize(
   return shared_writer_->GetMaxPacketSize(peer_address);
 }
 
-}  // namespace net
+bool QuicPerConnectionPacketWriter::SupportsReleaseTime() const {
+  return shared_writer_->SupportsReleaseTime();
+}
+
+bool QuicPerConnectionPacketWriter::IsBatchMode() const {
+  return shared_writer_->IsBatchMode();
+}
+
+char* QuicPerConnectionPacketWriter::GetNextWriteLocation() const {
+  return shared_writer_->GetNextWriteLocation();
+}
+
+WriteResult QuicPerConnectionPacketWriter::Flush() {
+  return shared_writer_->Flush();
+}
+
+}  // namespace quic

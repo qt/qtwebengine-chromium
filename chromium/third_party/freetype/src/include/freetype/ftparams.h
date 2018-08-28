@@ -1,19 +1,19 @@
-/***************************************************************************/
-/*                                                                         */
-/*  ftparams.h                                                             */
-/*                                                                         */
-/*    FreeType API for possible FT_Parameter tags (specification only).    */
-/*                                                                         */
-/*  Copyright 2017-2018 by                                                 */
-/*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
-/*                                                                         */
-/*  This file is part of the FreeType project, and may only be used,       */
-/*  modified, and distributed under the terms of the FreeType project      */
-/*  license, LICENSE.TXT.  By continuing to use, modify, or distribute     */
-/*  this file you indicate that you have read the license and              */
-/*  understand and accept it fully.                                        */
-/*                                                                         */
-/***************************************************************************/
+/****************************************************************************
+ *
+ * ftparams.h
+ *
+ *   FreeType API for possible FT_Parameter tags (specification only).
+ *
+ * Copyright 2017-2018 by
+ * David Turner, Robert Wilhelm, and Werner Lemberg.
+ *
+ * This file is part of the FreeType project, and may only be used,
+ * modified, and distributed under the terms of the FreeType project
+ * license, LICENSE.TXT.  By continuing to use, modify, or distribute
+ * this file you indicate that you have read the license and
+ * understand and accept it fully.
+ *
+ */
 
 
 #ifndef FTPARAMS_H_
@@ -53,7 +53,7 @@ FT_BEGIN_HEADER
 
   /***************************************************************************
    *
-   * @constant:
+   * @enum:
    *   FT_PARAM_TAG_IGNORE_TYPOGRAPHIC_FAMILY
    *
    * @description:
@@ -77,7 +77,7 @@ FT_BEGIN_HEADER
 
   /***************************************************************************
    *
-   * @constant:
+   * @enum:
    *   FT_PARAM_TAG_IGNORE_TYPOGRAPHIC_SUBFAMILY
    *
    * @description:
@@ -101,7 +101,7 @@ FT_BEGIN_HEADER
 
   /***************************************************************************
    *
-   * @constant:
+   * @enum:
    *   FT_PARAM_TAG_INCREMENTAL
    *
    * @description:
@@ -115,7 +115,7 @@ FT_BEGIN_HEADER
 
   /**************************************************************************
    *
-   * @constant:
+   * @enum:
    *   FT_PARAM_TAG_LCD_FILTER_WEIGHTS
    *
    * @description:
@@ -135,7 +135,7 @@ FT_BEGIN_HEADER
 
   /**************************************************************************
    *
-   * @constant:
+   * @enum:
    *   FT_PARAM_TAG_RANDOM_SEED
    *
    * @description:
@@ -154,7 +154,7 @@ FT_BEGIN_HEADER
 
   /**************************************************************************
    *
-   * @constant:
+   * @enum:
    *   FT_PARAM_TAG_STEM_DARKENING
    *
    * @description:
@@ -176,19 +176,19 @@ FT_BEGIN_HEADER
           FT_MAKE_TAG( 'd', 'a', 'r', 'k' )
 
 
- /***************************************************************************
-  *
-  * @constant:
-  *   FT_PARAM_TAG_UNPATENTED_HINTING
-  *
-  * @description:
-  *   Deprecated, no effect.
-  *
-  *   Previously: A constant used as the tag of an @FT_Parameter structure to
-  *   indicate that unpatented methods only should be used by the TrueType
-  *   bytecode interpreter for a typeface opened by @FT_Open_Face.
-  *
-  */
+  /***************************************************************************
+   *
+   * @enum:
+   *   FT_PARAM_TAG_UNPATENTED_HINTING
+   *
+   * @description:
+   *   Deprecated, no effect.
+   *
+   *   Previously: A constant used as the tag of an @FT_Parameter structure to
+   *   indicate that unpatented methods only should be used by the TrueType
+   *   bytecode interpreter for a typeface opened by @FT_Open_Face.
+   *
+   */
 #define FT_PARAM_TAG_UNPATENTED_HINTING \
           FT_MAKE_TAG( 'u', 'n', 'p', 'a' )
 

@@ -3479,6 +3479,15 @@ void GL_APIENTRY glDrawBuffersEXT(GLsizei n, const GLenum *bufs)
     return gl::DrawBuffersEXT(n, bufs);
 }
 
+// GL_EXT_geometry_shader
+void GL_APIENTRY glFramebufferTextureEXT(GLenum target,
+                                         GLenum attachment,
+                                         GLuint texture,
+                                         GLint level)
+{
+    return gl::FramebufferTextureEXT(target, attachment, texture, level);
+}
+
 // GL_EXT_map_buffer_range
 void GL_APIENTRY glFlushMappedBufferRangeEXT(GLenum target, GLintptr offset, GLsizeiptr length)
 {
@@ -3636,6 +3645,12 @@ void GL_APIENTRY glPushDebugGroupKHR(GLenum source,
                                      const GLchar *message)
 {
     return gl::PushDebugGroupKHR(source, id, length, message);
+}
+
+// GL_KHR_parallel_shader_compile
+void GL_APIENTRY glMaxShaderCompilerThreadsKHR(GLuint count)
+{
+    return gl::MaxShaderCompilerThreadsKHR(count);
 }
 
 // GL_NV_fence
@@ -4953,6 +4968,15 @@ void GL_APIENTRY glFramebufferTexture2DOESContextANGLE(GLeglContext ctx,
                                                    level);
 }
 
+void GL_APIENTRY glFramebufferTextureEXTContextANGLE(GLeglContext ctx,
+                                                     GLenum target,
+                                                     GLenum attachment,
+                                                     GLuint texture,
+                                                     GLint level)
+{
+    return gl::FramebufferTextureEXTContextANGLE(ctx, target, attachment, texture, level);
+}
+
 void GL_APIENTRY glFramebufferTextureLayerContextANGLE(GLeglContext ctx,
                                                        GLenum target,
                                                        GLenum attachment,
@@ -6117,6 +6141,11 @@ void GL_APIENTRY glMatrixIndexPointerOESContextANGLE(GLeglContext ctx,
 void GL_APIENTRY glMatrixModeContextANGLE(GLeglContext ctx, GLenum mode)
 {
     return gl::MatrixModeContextANGLE(ctx, mode);
+}
+
+void GL_APIENTRY glMaxShaderCompilerThreadsKHRContextANGLE(GLeglContext ctx, GLuint count)
+{
+    return gl::MaxShaderCompilerThreadsKHRContextANGLE(ctx, count);
 }
 
 void GL_APIENTRY glMemoryBarrierContextANGLE(GLeglContext ctx, GLbitfield barriers)

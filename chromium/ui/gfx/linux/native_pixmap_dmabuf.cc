@@ -19,10 +19,6 @@ NativePixmapDmaBuf::NativePixmapDmaBuf(const gfx::Size& size,
 
 NativePixmapDmaBuf::~NativePixmapDmaBuf() {}
 
-void* NativePixmapDmaBuf::GetEGLClientBuffer() const {
-  return nullptr;
-}
-
 bool NativePixmapDmaBuf::AreDmaBufFdsValid() const {
   if (fds_.empty())
     return false;
@@ -77,7 +73,7 @@ bool NativePixmapDmaBuf::ScheduleOverlayPlane(
     const gfx::Rect& display_bounds,
     const gfx::RectF& crop_rect,
     bool enable_blend,
-    gfx::GpuFence* gpu_fence) {
+    std::unique_ptr<gfx::GpuFence> gpu_fence) {
   return false;
 }
 

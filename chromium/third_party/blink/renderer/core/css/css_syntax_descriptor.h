@@ -26,22 +26,28 @@ enum class CSSSyntaxType {
   kAngle,
   kTime,
   kResolution,
+  kTransformFunction,
   kTransformList,
   kCustomIdent,
 };
 
+enum class CSSSyntaxRepeat { kNone, kSpaceSeparated, kCommaSeparated };
+
 struct CSSSyntaxComponent {
-  CSSSyntaxComponent(CSSSyntaxType type, const String& string, bool repeatable)
-      : type_(type), string_(string), repeatable_(repeatable) {}
+  CSSSyntaxComponent(CSSSyntaxType type,
+                     const String& string,
+                     CSSSyntaxRepeat repeat)
+      : type_(type), string_(string), repeat_(repeat) {}
 
   bool operator==(const CSSSyntaxComponent& a) const {
-    return type_ == a.type_ && string_ == a.string_ &&
-           repeatable_ == a.repeatable_;
+    return type_ == a.type_ && string_ == a.string_ && repeat_ == a.repeat_;
   }
+
+  bool IsRepeatable() const { return repeat_ != CSSSyntaxRepeat::kNone; }
 
   CSSSyntaxType type_;
   String string_;  // Only used when type_ is CSSSyntaxType::kIdent
-  bool repeatable_;
+  CSSSyntaxRepeat repeat_;
 };
 
 class CORE_EXPORT CSSSyntaxDescriptor {
@@ -55,6 +61,13 @@ class CORE_EXPORT CSSSyntaxDescriptor {
   bool IsTokenStream() const {
     return syntax_components_.size() == 1 &&
            syntax_components_[0].type_ == CSSSyntaxType::kTokenStream;
+  }
+  bool HasUrlSyntax() const {
+    for (const CSSSyntaxComponent& component : syntax_components_) {
+      if (component.type_ == CSSSyntaxType::kUrl)
+        return true;
+    }
+    return false;
   }
   const Vector<CSSSyntaxComponent>& Components() const {
     return syntax_components_;

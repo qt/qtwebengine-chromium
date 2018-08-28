@@ -44,11 +44,12 @@ DecodingImageGenerator::CreateAsSkImageGenerator(sk_sp<SkData> data) {
   scoped_refptr<SegmentReader> segment_reader =
       SegmentReader::CreateFromSkData(std::move(data));
   // We just need the size of the image, so we have to temporarily create an
-  // ImageDecoder. Since we only need the size, the premul and gamma settings
-  // don't really matter.
+  // ImageDecoder. Since we only need the size, the premul, high bit depth and
+  // gamma settings don't really matter.
+  const bool data_complete = true;
   std::unique_ptr<ImageDecoder> decoder = ImageDecoder::Create(
-      segment_reader, true, ImageDecoder::kAlphaPremultiplied,
-      ColorBehavior::TransformToSRGB());
+      segment_reader, data_complete, ImageDecoder::kAlphaPremultiplied,
+      ImageDecoder::kDefaultBitDepth, ColorBehavior::Ignore());
   if (!decoder || !decoder->IsSizeAvailable())
     return nullptr;
 
@@ -159,10 +160,7 @@ bool DecodingImageGenerator::GetPixels(const SkImageInfo& dst_info,
     TRACE_EVENT0("blink", "DecodingImageGenerator::getPixels - apply xform");
     SkPixmap src(decode_info, pixels, row_bytes);
 
-    // kIgnore ensures that we perform the premultiply (if necessary) in the dst
-    // space.
-    const bool converted = src.readPixels(dst_info, pixels, row_bytes, 0, 0,
-                                          SkTransferFunctionBehavior::kIgnore);
+    const bool converted = src.readPixels(dst_info, pixels, row_bytes);
     DCHECK(converted);
   }
 

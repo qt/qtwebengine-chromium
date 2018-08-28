@@ -22,7 +22,10 @@ class InputDeviceCapabilitiesConstants;
 class LocalDOMWindow;
 class Location;
 class MessageEvent;
+class ScriptValue;
+class SecurityOrigin;
 class SerializedScriptValue;
+class WindowPostMessageOptions;
 class WindowProxyManager;
 
 class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
@@ -33,14 +36,14 @@ class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
   ~DOMWindow() override;
 
   Frame* GetFrame() const {
-    // A Frame is typically reused for navigations. If |m_frame| is not null,
+    // A Frame is typically reused for navigations. If |frame_| is not null,
     // two conditions must always be true:
-    // - |m_frame->domWindow()| must point back to this DOMWindow. If it does
+    // - |frame_->domWindow()| must point back to this DOMWindow. If it does
     //   not, it is easy to introduce a bug where script execution uses the
     //   wrong DOMWindow (which may be cross-origin).
-    // - |m_frame| must be attached, i.e. |m_frame->page()| must not be null.
-    //   If |m_frame->page()| is null, this indicates a bug where the frame was
-    //   detached but |m_frame| was not set to null. This bug can lead to
+    // - |frame_| must be attached, i.e. |frame_->page()| must not be null.
+    //   If |frame_->page()| is null, this indicates a bug where the frame was
+    //   detached but |frame_| was not set to null. This bug can lead to
     //   issues where executing script incorrectly schedules work on a detached
     //   frame.
     SECURITY_DCHECK(!frame_ ||
@@ -50,8 +53,6 @@ class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
 
   // GarbageCollectedFinalized overrides:
   void Trace(blink::Visitor*) override;
-
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   virtual bool IsLocalDOMWindow() const = 0;
   virtual bool IsRemoteDOMWindow() const = 0;
@@ -86,14 +87,20 @@ class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
   virtual void blur() = 0;
   void close(LocalDOMWindow* incumbent_window);
 
+  void postMessage(LocalDOMWindow* incumbent_window,
+                   const ScriptValue& message,
+                   const String& target_origin,
+                   Vector<ScriptValue>& transfer,
+                   ExceptionState&);
+
+  void postMessage(LocalDOMWindow* incumbent_window,
+                   const ScriptValue& message,
+                   Vector<ScriptValue>& transfer,
+                   const WindowPostMessageOptions& options,
+                   ExceptionState&);
+
   // Indexed properties
   DOMWindow* AnonymousIndexedGetter(uint32_t index) const;
-
-  void postMessage(scoped_refptr<SerializedScriptValue> message,
-                   const MessagePortArray&,
-                   const String& target_origin,
-                   LocalDOMWindow* source,
-                   ExceptionState&);
 
   String SanitizedCrossDomainAccessErrorMessage(
       const LocalDOMWindow* calling_window) const;
@@ -103,14 +110,20 @@ class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
 
   // FIXME: When this DOMWindow is no longer the active DOMWindow (i.e.,
   // when its document is no longer the document that is displayed in its
-  // frame), we would like to zero out m_frame to avoid being confused
-  // by the document that is currently active in m_frame.
+  // frame), we would like to zero out |frame_| to avoid being confused
+  // by the document that is currently active in |frame_|.
   // See https://bugs.webkit.org/show_bug.cgi?id=62054
   bool IsCurrentlyDisplayedInFrame() const;
 
   bool isSecureContext() const;
 
   InputDeviceCapabilitiesConstants* GetInputDeviceCapabilities();
+
+  void PostMessageForTesting(scoped_refptr<SerializedScriptValue> message,
+                             const MessagePortArray&,
+                             const String& target_origin,
+                             LocalDOMWindow* source,
+                             ExceptionState&);
 
  protected:
   explicit DOMWindow(Frame&);
@@ -122,6 +135,12 @@ class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
   void DisconnectFromFrame() { frame_ = nullptr; }
 
  private:
+  void DoPostMessage(scoped_refptr<SerializedScriptValue> message,
+                     const MessagePortArray&,
+                     const String& target_origin,
+                     LocalDOMWindow* source,
+                     ExceptionState&);
+
   Member<Frame> frame_;
   // Unlike |frame_|, |window_proxy_manager_| is available even after the
   // window's frame gets detached from the DOM, until the end of the lifetime

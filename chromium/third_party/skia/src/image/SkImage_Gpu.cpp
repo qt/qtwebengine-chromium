@@ -15,6 +15,7 @@
 #include "GrAHardwareBufferImageGenerator.h"
 #include "GrBitmapTextureMaker.h"
 #include "GrCaps.h"
+#include "GrColorSpaceXform.h"
 #include "GrContext.h"
 #include "GrContextPriv.h"
 #include "GrGpu.h"
@@ -30,7 +31,6 @@
 #include "GrTextureProxy.h"
 #include "GrTextureProxyPriv.h"
 #include "gl/GrGLDefines.h"
-#include "effects/GrNonlinearColorSpaceXformEffect.h"
 #include "effects/GrYUVtoRGBEffect.h"
 #include "SkCanvas.h"
 #include "SkBitmapCache.h"
@@ -43,17 +43,16 @@
 #include "SkReadPixelsRec.h"
 #include "SkTraceEvent.h"
 
-SkImage_Gpu::SkImage_Gpu(GrContext* context, uint32_t uniqueID, SkAlphaType at,
-                         sk_sp<GrTextureProxy> proxy,
-                         sk_sp<SkColorSpace> colorSpace, SkBudgeted budgeted)
-    : INHERITED(proxy->worstCaseWidth(), proxy->worstCaseHeight(), uniqueID)
-    , fContext(context)
-    , fProxy(std::move(proxy))
-    , fAlphaType(at)
-    , fBudgeted(budgeted)
-    , fColorSpace(std::move(colorSpace))
-    , fAddedRasterVersionToCache(false) {
-}
+SkImage_Gpu::SkImage_Gpu(sk_sp<GrContext> context, uint32_t uniqueID, SkAlphaType at,
+                         sk_sp<GrTextureProxy> proxy, sk_sp<SkColorSpace> colorSpace,
+                         SkBudgeted budgeted)
+        : INHERITED(proxy->worstCaseWidth(), proxy->worstCaseHeight(), uniqueID)
+        , fContext(std::move(context))
+        , fProxy(std::move(proxy))
+        , fAlphaType(at)
+        , fBudgeted(budgeted)
+        , fColorSpace(std::move(colorSpace))
+        , fAddedRasterVersionToCache(false) {}
 
 SkImage_Gpu::~SkImage_Gpu() {
     if (fAddedRasterVersionToCache.load()) {
@@ -130,12 +129,12 @@ sk_sp<GrTextureProxy> SkImage_Gpu::asTextureProxyRef(GrContext* context,
                                                      SkColorSpace* dstColorSpace,
                                                      sk_sp<SkColorSpace>* texColorSpace,
                                                      SkScalar scaleAdjust[2]) const {
-    if (context != fContext) {
+    if (context != fContext.get()) {
         SkASSERT(0);
         return nullptr;
     }
 
-    GrTextureAdjuster adjuster(fContext, fProxy, this->alphaType(), this->uniqueID(),
+    GrTextureAdjuster adjuster(fContext.get(), fProxy, this->alphaType(), this->uniqueID(),
                                this->fColorSpace.get());
     return adjuster.refTextureProxyForParams(params, dstColorSpace, texColorSpace, scaleAdjust);
 }
@@ -231,29 +230,8 @@ bool SkImage_Gpu::onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, size
         flags = GrContextPriv::kUnpremul_PixelOpsFlag;
     }
 
-    // This hack allows us to call makeNonTextureImage on images with arbitrary color spaces.
-    // Otherwise, we'll be unable to create a render target context.
-    // TODO: This shouldn't be necessary - we need more robust support for images (and surfaces)
-    // with arbitrary color spaces. Unfortunately, this is one spot where we go from image to
-    // surface (rather than the opposite), and our lenient image rules break our (currently) more
-    // strict surface rules.
-    // GrSurfaceContext::readPixels does not make use of the context's color space. However, we
-    // don't allow creating a surface context for a sRGB GrPixelConfig unless the color space has
-    // sRGB gamma. So we choose null for non-SRGB GrPixelConfigs and sRGB for sRGB GrPixelConfigs.
-    sk_sp<SkColorSpace> surfaceColorSpace = fColorSpace;
-    if (!flags) {
-        if (!dstInfo.colorSpace() ||
-            SkColorSpace::Equals(fColorSpace.get(), dstInfo.colorSpace())) {
-            if (GrPixelConfigIsSRGB(fProxy->config())) {
-                surfaceColorSpace = SkColorSpace::MakeSRGB();
-            } else {
-                surfaceColorSpace = nullptr;
-            }
-        }
-    }
-
     sk_sp<GrSurfaceContext> sContext = fContext->contextPriv().makeWrappedSurfaceContext(
-            fProxy, surfaceColorSpace);
+            fProxy, fColorSpace);
     if (!sContext) {
         return false;
     }
@@ -328,8 +306,8 @@ static sk_sp<SkImage> new_wrapped_texture_common(GrContext* ctx,
         }
     }
 #endif
-    return sk_make_sp<SkImage_Gpu>(ctx, kNeedNewImageUniqueID,
-                                   at, std::move(proxy), std::move(colorSpace), SkBudgeted::kNo);
+    return sk_make_sp<SkImage_Gpu>(sk_ref_sp(ctx), kNeedNewImageUniqueID, at, std::move(proxy),
+                                   std::move(colorSpace), SkBudgeted::kNo);
 }
 
 bool validate_backend_texture(GrContext* ctx, const GrBackendTexture& tex, GrPixelConfig* config,
@@ -340,7 +318,7 @@ bool validate_backend_texture(GrContext* ctx, const GrBackendTexture& tex, GrPix
     // TODO: Create a SkImageColorInfo struct for color, alpha, and color space so we don't need to
     // create a fake image info here.
     SkImageInfo info = SkImageInfo::Make(1, 1, ct, at, cs);
-    if (!SkImageInfoIsValidAllowNumericalCS(info)) {
+    if (!SkImageInfoIsValid(info)) {
         return false;
     }
 
@@ -392,6 +370,10 @@ sk_sp<SkImage> SkImage_Gpu::MakeFromYUVATexturesCopyImpl(GrContext* ctx,
     bool nv12 = (yuvaIndices[1].fIndex == yuvaIndices[2].fIndex);
     auto ct = nv12 ? kRGBA_8888_SkColorType : kAlpha_8_SkColorType;
 
+    // We need to make a copy of the input backend textures because we need to preserve the result
+    // of validate_backend_texture.
+    GrBackendTexture yuvaTexturesCopy[4];
+
     for (int i = 0; i < 4; ++i) {
         // Validate that the yuvaIndices refer to valid backend textures.
         SkYUVAIndex& yuvaIndex = yuvaIndices[i];
@@ -404,12 +386,14 @@ sk_sp<SkImage> SkImage_Gpu::MakeFromYUVATexturesCopyImpl(GrContext* ctx,
             // at most 4 images sources being passed in, could not have a index more than 3.
             return nullptr;
         }
-        auto texture = yuvaTextures[yuvaIndex.fIndex];
-        // TODO: Instead of using assumption about whether it is NV12 format to guess colorType,
-        // actually use channel information here.
-        if (!validate_backend_texture(ctx, texture, &texture.fConfig, ct, kPremul_SkAlphaType,
-                                      nullptr)) {
-            return nullptr;
+        if (!yuvaTexturesCopy[yuvaIndex.fIndex].isValid()) {
+            yuvaTexturesCopy[yuvaIndex.fIndex] = yuvaTextures[yuvaIndex.fIndex];
+            // TODO: Instead of using assumption about whether it is NV12 format to guess colorType,
+            // actually use channel information here.
+            if (!validate_backend_texture(ctx, yuvaTexturesCopy[i], &yuvaTexturesCopy[i].fConfig,
+                                          ct, kPremul_SkAlphaType, nullptr)) {
+                return nullptr;
+            }
         }
 
         // TODO: Check that for each plane, the channel actually exist in the image source we are
@@ -428,8 +412,9 @@ sk_sp<SkImage> SkImage_Gpu::MakeFromYUVATexturesCopyImpl(GrContext* ctx,
         }
 
         if (!tempTextureProxies[textureIndex]) {
+            SkASSERT(yuvaTexturesCopy[textureIndex].isValid());
             tempTextureProxies[textureIndex] =
-                    proxyProvider->wrapBackendTexture(yuvaTextures[textureIndex], origin);
+                    proxyProvider->wrapBackendTexture(yuvaTexturesCopy[textureIndex], origin);
         }
     }
     sk_sp<GrTextureProxy> yProxy = tempTextureProxies[yuvaIndices[0].fIndex];
@@ -454,14 +439,10 @@ sk_sp<SkImage> SkImage_Gpu::MakeFromYUVATexturesCopyImpl(GrContext* ctx,
 
     GrPaint paint;
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
-    // TODO: Move the sizes into GrYUVtoRGBEffect since this can just be done there.
-    SkISize sizes[] = {{yProxy->width(), yProxy->height()},
-                       {uProxy->width(), uProxy->height()},
-                       {vProxy->width(), vProxy->height()}};
     // TODO: Modify the fragment processor to sample from different channel instead of taking nv12
     // bool.
     paint.addColorFragmentProcessor(
-            GrYUVtoRGBEffect::Make(yProxy, uProxy, vProxy, sizes, colorSpace, nv12));
+            GrYUVtoRGBEffect::Make(yProxy, uProxy, vProxy, colorSpace, nv12));
 
     const SkRect rect = SkRect::MakeIWH(width, height);
 
@@ -473,7 +454,7 @@ sk_sp<SkImage> SkImage_Gpu::MakeFromYUVATexturesCopyImpl(GrContext* ctx,
     ctx->contextPriv().flushSurfaceWrites(renderTargetContext->asSurfaceProxy());
 
     // MDB: this call is okay bc we know 'renderTargetContext' was exact
-    return sk_make_sp<SkImage_Gpu>(ctx, kNeedNewImageUniqueID, kOpaque_SkAlphaType,
+    return sk_make_sp<SkImage_Gpu>(sk_ref_sp(ctx), kNeedNewImageUniqueID, kOpaque_SkAlphaType,
                                    renderTargetContext->asTextureProxyRef(),
                                    renderTargetContext->colorSpaceInfo().refColorSpace(),
                                    SkBudgeted::kYes);
@@ -509,37 +490,50 @@ sk_sp<SkImage> SkImage::MakeFromNV12TexturesCopy(GrContext* ctx, SkYUVColorSpace
                                                      size, origin, std::move(imageColorSpace));
 }
 
-static sk_sp<SkImage> create_image_from_maker(GrContext* context, GrTextureMaker* maker,
-                                              SkAlphaType at, uint32_t id,
-                                              SkColorSpace* dstColorSpace) {
+static sk_sp<SkImage> create_image_from_producer(GrContext* context, GrTextureProducer* producer,
+                                                 SkAlphaType at, uint32_t id,
+                                                 SkColorSpace* dstColorSpace,
+                                                 GrMipMapped mipMapped) {
     sk_sp<SkColorSpace> texColorSpace;
-    sk_sp<GrTextureProxy> proxy(maker->refTextureProxyForParams(
-            GrSamplerState::ClampNearest(), dstColorSpace, &texColorSpace, nullptr));
+    sk_sp<GrTextureProxy> proxy(producer->refTextureProxy(mipMapped, dstColorSpace,
+                                                          &texColorSpace));
     if (!proxy) {
         return nullptr;
     }
-    return sk_make_sp<SkImage_Gpu>(context, id, at,
-                                   std::move(proxy), std::move(texColorSpace), SkBudgeted::kNo);
+    return sk_make_sp<SkImage_Gpu>(sk_ref_sp(context), id, at, std::move(proxy),
+                                   std::move(texColorSpace), SkBudgeted::kNo);
 }
 
-sk_sp<SkImage> SkImage::makeTextureImage(GrContext* context, SkColorSpace* dstColorSpace) const {
+sk_sp<SkImage> SkImage::makeTextureImage(GrContext* context, SkColorSpace* dstColorSpace,
+                                         GrMipMapped mipMapped) const {
     if (!context) {
         return nullptr;
     }
     if (GrContext* incumbent = as_IB(this)->context()) {
-        return incumbent == context ? sk_ref_sp(const_cast<SkImage*>(this)) : nullptr;
+        if (incumbent != context) {
+            return nullptr;
+        }
+        sk_sp<GrTextureProxy> proxy = as_IB(this)->asTextureProxyRef();
+        SkASSERT(proxy);
+        if (GrMipMapped::kNo == mipMapped || proxy->mipMapped() == mipMapped) {
+            return sk_ref_sp(const_cast<SkImage*>(this));
+        }
+        GrTextureAdjuster adjuster(context, std::move(proxy), this->alphaType(),
+                                   this->uniqueID(), this->colorSpace());
+        return create_image_from_producer(context, &adjuster, this->alphaType(),
+                                          this->uniqueID(), dstColorSpace, mipMapped);
     }
 
     if (this->isLazyGenerated()) {
         GrImageTextureMaker maker(context, this, kDisallow_CachingHint);
-        return create_image_from_maker(context, &maker, this->alphaType(),
-                                       this->uniqueID(), dstColorSpace);
+        return create_image_from_producer(context, &maker, this->alphaType(),
+                                          this->uniqueID(), dstColorSpace, mipMapped);
     }
 
     if (const SkBitmap* bmp = as_IB(this)->onPeekBitmap()) {
         GrBitmapTextureMaker maker(context, *bmp);
-        return create_image_from_maker(context, &maker, this->alphaType(),
-                                       this->uniqueID(), dstColorSpace);
+        return create_image_from_producer(context, &maker, this->alphaType(),
+                                          this->uniqueID(), dstColorSpace, mipMapped);
     }
     return nullptr;
 }
@@ -674,8 +668,7 @@ private:
 static GrInternalSurfaceFlags get_flags_from_format(const GrBackendFormat& backendFormat) {
     if (const GrGLenum* target = backendFormat.getGLTarget()) {
         if (GR_GL_TEXTURE_RECTANGLE == *target || GR_GL_TEXTURE_EXTERNAL == *target) {
-            return GrInternalSurfaceFlags::kDoesNotSupportMipMaps |
-                   GrInternalSurfaceFlags::kIsGLTextureRectangleOrExternal;
+            return GrInternalSurfaceFlags::kIsGLTextureRectangleOrExternal;
         }
     }
 
@@ -708,12 +701,21 @@ sk_sp<SkImage> SkImage_Gpu::MakePromiseTexture(GrContext* context,
     }
 
     SkImageInfo info = SkImageInfo::Make(width, height, colorType, alphaType, colorSpace);
-    if (!SkImageInfoIsValidAllowNumericalCS(info)) {
+    if (!SkImageInfoIsValid(info)) {
         return nullptr;
     }
     GrPixelConfig config = kUnknown_GrPixelConfig;
     if (!context->contextPriv().caps()->getConfigFromBackendFormat(backendFormat, colorType,
                                                                    &config)) {
+        return nullptr;
+    }
+
+    GrInternalSurfaceFlags formatFlags = get_flags_from_format(backendFormat);
+
+    if (mipMapped == GrMipMapped::kYes &&
+        SkToBool(formatFlags & GrInternalSurfaceFlags::kIsGLTextureRectangleOrExternal)) {
+        // It is invalid to have a GL_TEXTURE_EXTERNAL or GL_TEXTURE_RECTANGLE and have mips as
+        // well.
         return nullptr;
     }
 
@@ -726,16 +728,6 @@ sk_sp<SkImage> SkImage_Gpu::MakePromiseTexture(GrContext* context,
 
     PromiseImageHelper promiseHelper(textureFulfillProc, textureReleaseProc, promiseDoneProc,
                                      textureContext);
-
-    GrInternalSurfaceFlags formatFlags = get_flags_from_format(backendFormat);
-
-    // Promise images always wrap resources. So if the promise image doesn't have mip maps, we
-    // cannot allocate mips for them and thus will need a copy to use a mipped image. We can't pass
-    // the fact that this creates a wrapped texture into createLazyProxy so we need to manually set
-    // in in the passed in flags.
-    if (GrMipMapped::kNo == mipMapped) {
-        formatFlags |= GrInternalSurfaceFlags::kDoesNotSupportMipMaps;
-    }
 
     sk_sp<GrTextureProxy> proxy = proxyProvider->createLazyProxy(
             [promiseHelper, config] (GrResourceProvider* resourceProvider) mutable {
@@ -752,8 +744,8 @@ sk_sp<SkImage> SkImage_Gpu::MakePromiseTexture(GrContext* context,
         return nullptr;
     }
 
-    return sk_make_sp<SkImage_Gpu>(context, kNeedNewImageUniqueID, alphaType, std::move(proxy),
-                                   std::move(colorSpace), SkBudgeted::kNo);
+    return sk_make_sp<SkImage_Gpu>(sk_ref_sp(context), kNeedNewImageUniqueID, alphaType,
+                                   std::move(proxy), std::move(colorSpace), SkBudgeted::kNo);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -852,13 +844,9 @@ sk_sp<SkImage> SkImage::MakeCrossContextFromPixmap(GrContext* context,
     if (buildMips) {
         SkBitmap bmp;
         bmp.installPixels(*pixmap);
-        proxy = proxyProvider->createMipMapProxyFromBitmap(bmp, dstColorSpace);
+        proxy = proxyProvider->createMipMapProxyFromBitmap(bmp);
     } else {
-        SkDestinationSurfaceColorMode colorMode = dstColorSpace
-                ? SkDestinationSurfaceColorMode::kGammaAndColorSpaceAware
-                : SkDestinationSurfaceColorMode::kLegacy;
-
-        if (SkImageInfoIsValid(pixmap->info(), colorMode)) {
+        if (SkImageInfoIsValid(pixmap->info())) {
             ATRACE_ANDROID_FRAMEWORK("Upload Texture [%ux%u]", pixmap->width(), pixmap->height());
             // We don't need a release proc on the data in pixmap since we know we are in a
             // GrContext that has a resource provider. Thus the createTextureProxy call will
@@ -962,13 +950,7 @@ bool SkImage::MakeBackendTextureFromSkImage(GrContext* ctx,
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-sk_sp<SkImage> SkImage_Gpu::onMakeColorSpace(sk_sp<SkColorSpace> target, SkColorType,
-                                             SkTransferFunctionBehavior premulBehavior) const {
-    if (SkTransferFunctionBehavior::kRespect == premulBehavior) {
-        // TODO: Implement this.
-        return nullptr;
-    }
-
+sk_sp<SkImage> SkImage_Gpu::onMakeColorSpace(sk_sp<SkColorSpace> target, SkColorType) const {
     sk_sp<SkColorSpace> srcSpace = fColorSpace;
     if (!fColorSpace) {
         if (target->isSRGB()) {
@@ -978,7 +960,7 @@ sk_sp<SkImage> SkImage_Gpu::onMakeColorSpace(sk_sp<SkColorSpace> target, SkColor
         srcSpace = SkColorSpace::MakeSRGB();
     }
 
-    auto xform = GrNonlinearColorSpaceXformEffect::Make(srcSpace.get(), target.get());
+    auto xform = GrColorSpaceXformEffect::Make(srcSpace.get(), target.get());
     if (!xform) {
         return sk_ref_sp(const_cast<SkImage_Gpu*>(this));
     }
@@ -1013,11 +995,11 @@ sk_sp<SkImage> SkImage_Gpu::onMakeColorSpace(sk_sp<SkColorSpace> target, SkColor
 
 bool SkImage_Gpu::onIsValid(GrContext* context) const {
     // The base class has already checked that context isn't abandoned (if it's not nullptr)
-    if (fContext->contextPriv().abandoned()) {
+    if (fContext->abandoned()) {
         return false;
     }
 
-    if (context && context != fContext) {
+    if (context && context != fContext.get()) {
         return false;
     }
 

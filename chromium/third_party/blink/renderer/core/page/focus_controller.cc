@@ -26,7 +26,7 @@
 
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 
-#include "third_party/blink/renderer/core/dom/ax_object_cache.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/container_node.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -1292,15 +1292,15 @@ static void UpdateFocusCandidateIfNeeded(WebFocusType direction,
              ->MainFrame()
              ->IsLocalFrame())
       return;
+    HitTestLocation location(IntPoint(x.ToInt(), y.ToInt()));
     HitTestResult result =
         candidate.visible_node->GetDocument()
             .GetPage()
             ->DeprecatedLocalMainFrame()
             ->GetEventHandler()
-            .HitTestResultAtPoint(IntPoint(x.ToInt(), y.ToInt()),
-                                  HitTestRequest::kReadOnly |
-                                      HitTestRequest::kActive |
-                                      HitTestRequest::kIgnoreClipping);
+            .HitTestResultAtLocation(
+                location, HitTestRequest::kReadOnly | HitTestRequest::kActive |
+                              HitTestRequest::kIgnoreClipping);
     if (candidate.visible_node->contains(result.InnerNode())) {
       closest = candidate;
       return;

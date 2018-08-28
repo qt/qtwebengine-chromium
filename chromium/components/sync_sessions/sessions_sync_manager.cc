@@ -12,7 +12,9 @@
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/sequenced_task_runner.h"
 #include "base/strings/stringprintf.h"
+#include "base/threading/sequenced_task_runner_handle.h"
 #include "build/build_config.h"
 #include "components/sync/base/hash_util.h"
 #include "components/sync/device_info/local_device_info_provider.h"
@@ -62,7 +64,7 @@ sync_pb::SessionSpecifics SessionTabToSpecifics(
     const std::string& local_tag,
     int tab_node_id) {
   sync_pb::SessionSpecifics specifics;
-  session_tab.ToSyncData().Swap(specifics.mutable_tab());
+  SessionTabToSyncData(session_tab).Swap(specifics.mutable_tab());
   specifics.set_session_tag(local_tag);
   specifics.set_tab_node_id(tab_node_id);
   return specifics;
@@ -94,11 +96,6 @@ class SyncChangeListWriteBatch
         commit_cb_(std::move(commit_cb)) {}
 
   syncer::SyncChangeList* sync_change_list() { return &changes_; }
-
-  void AddKnownTabNodeIds(const std::set<int>& known_tab_node_ids) {
-    known_tab_node_ids_.insert(known_tab_node_ids.begin(),
-                               known_tab_node_ids.end());
-  }
 
   void PutWithType(std::unique_ptr<sync_pb::SessionSpecifics> specifics,
                    SyncChange::SyncChangeType change_type) {
@@ -174,14 +171,9 @@ static std::string BuildMachineTag(const std::string& cache_guid) {
 }
 
 void SessionsSyncManager::ScheduleGarbageCollection() {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::BindOnce(&SessionsSyncManager::DoGarbageCollection,
                                 base::AsWeakPtr(this)));
-}
-
-void SessionsSyncManager::OnSessionRestoreComplete() {
-  // Do nothing. The very same event is plumbed manually to
-  // SessionDataTypeController by ProfileSyncComponentsFactoryImpl.
 }
 
 syncer::SyncableService* SessionsSyncManager::GetSyncableService() {
@@ -253,9 +245,6 @@ syncer::SyncMergeResult SessionsSyncManager::MergeDataAndStartSyncing(
     batch.PutWithType(std::move(specifics), SyncChange::ACTION_ADD);
   }
 
-  batch.AddKnownTabNodeIds(
-      session_tracker_.LookupTabNodeIds(current_machine_tag()));
-
 #if defined(OS_ANDROID)
   std::string sync_machine_tag(
       BuildMachineTag(local_device_->GetLocalSyncCacheGUID()));
@@ -263,13 +252,14 @@ syncer::SyncMergeResult SessionsSyncManager::MergeDataAndStartSyncing(
     DeleteForeignSessionInternal(sync_machine_tag, batch.sync_change_list());
 #endif
 
-  // Check if anything has changed on the local client side.
-  local_session_event_handler_ = std::make_unique<LocalSessionEventHandlerImpl>(
-      /*delegate=*/this, sessions_client_, &session_tracker_, &batch);
-  local_tab_pool_out_of_sync_ = false;
-
   merge_result.set_error(sync_processor_->ProcessSyncChanges(
       FROM_HERE, *batch.sync_change_list()));
+
+  local_tab_pool_out_of_sync_ = false;
+
+  // Check if anything has changed on the local client side.
+  local_session_event_handler_ = std::make_unique<LocalSessionEventHandlerImpl>(
+      /*delegate=*/this, sessions_client_, &session_tracker_);
 
   sessions_client_->GetLocalSessionEventRouter()->StartRoutingTo(
       local_session_event_handler_.get());
@@ -429,12 +419,6 @@ syncer::SyncChange SessionsSyncManager::TombstoneTab(
 bool SessionsSyncManager::InitFromSyncModel(
     const syncer::SyncDataList& sync_data,
     syncer::SyncChangeList* new_changes) {
-  // Map of all rewritten local ids. Because ids are reset on each restart,
-  // and id generation happens outside of Sync, all ids from a previous local
-  // session must be rewritten in order to be valid.
-  // Key: previous session id. Value: new session id.
-  std::map<int32_t, SessionID> session_id_map;
-
   bool found_current_header = false;
   int bad_foreign_hash_count = 0;
   for (syncer::SyncDataList::const_iterator it = sync_data.begin();
@@ -476,37 +460,9 @@ bool SessionsSyncManager::InitFromSyncModel(
         // This is our previous header node, reuse it.
         found_current_header = true;
 
-        // The specifics from the SyncData are immutable. Create a mutable copy
-        // to hold the rewritten ids.
-        sync_pb::SessionSpecifics rewritten_specifics(specifics);
-
-        // Go through and generate new tab and window ids as necessary, updating
-        // the specifics in place.
-        for (auto& window :
-             *rewritten_specifics.mutable_header()->mutable_window()) {
-          session_id_map.emplace(window.window_id(), SessionID::NewUnique());
-          window.set_window_id(session_id_map.at(window.window_id()).id());
-
-          google::protobuf::RepeatedField<int>* tab_ids = window.mutable_tab();
-          for (int i = 0; i < tab_ids->size(); i++) {
-            auto tab_iter = session_id_map.find(tab_ids->Get(i));
-            if (tab_iter == session_id_map.end()) {
-              // SessionID::SessionID() automatically increments a static
-              // variable, forcing a new id to be generated each time.
-              session_id_map.emplace(tab_ids->Get(i), SessionID::NewUnique());
-            }
-            *(tab_ids->Mutable(i)) = session_id_map.at(tab_ids->Get(i)).id();
-            // Note: the tab id of the SessionTab will be updated when the tab
-            // node itself is processed.
-          }
-        }
-
-        UpdateTrackerWithSpecifics(rewritten_specifics,
-                                   remote.GetModifiedTime(), &session_tracker_);
-
-        DVLOG(1) << "Loaded local header and rewrote " << session_id_map.size()
-                 << " ids.";
-
+        UpdateTrackerWithSpecifics(specifics, remote.GetModifiedTime(),
+                                   &session_tracker_);
+        DVLOG(1) << "Loaded local header.";
       } else {
         if (specifics.has_header() || !specifics.has_tab()) {
           LOG(WARNING) << "Found more than one session header node with local "
@@ -525,26 +481,11 @@ bool SessionsSyncManager::InitFromSyncModel(
           DVLOG(1) << "Associating local tab " << specifics.tab().tab_id()
                    << " with node " << specifics.tab_node_id();
 
-          // Now file the tab under the new tab id.
-          SessionID new_tab_id = SessionID::InvalidValue();
-          auto iter = session_id_map.find(specifics.tab().tab_id());
-          if (iter != session_id_map.end()) {
-            new_tab_id = iter->second;
-          } else {
-            new_tab_id = SessionID::NewUnique();
-            session_id_map.emplace(specifics.tab().tab_id(), new_tab_id);
-          }
-          DVLOG(1) << "Remapping tab " << specifics.tab().tab_id() << " to "
-                   << new_tab_id;
-
-          // The specifics from the SyncData are immutable. Create a mutable
-          // copy to hold the rewritten ids.
-          sync_pb::SessionSpecifics rewritten_specifics(specifics);
-          rewritten_specifics.mutable_tab()->set_tab_id(new_tab_id.id());
           session_tracker_.ReassociateLocalTab(
-              rewritten_specifics.tab_node_id(), new_tab_id);
-          UpdateTrackerWithSpecifics(
-              rewritten_specifics, remote.GetModifiedTime(), &session_tracker_);
+              specifics.tab_node_id(),
+              SessionID::FromSerializedValue(specifics.tab().tab_id()));
+          UpdateTrackerWithSpecifics(specifics, remote.GetModifiedTime(),
+                                     &session_tracker_);
         }
       }
     }

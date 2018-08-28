@@ -65,7 +65,7 @@ void InputIPC::CreateStream(media::AudioInputIPCDelegate* delegate,
 }
 
 void InputIPC::StreamCreated(
-    media::mojom::AudioDataPipePtr data_pipe,
+    media::mojom::ReadOnlyAudioDataPipePtr data_pipe,
     bool initially_muted,
     const base::Optional<base::UnguessableToken>& stream_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -84,14 +84,12 @@ void InputIPC::StreamCreated(
   auto result =
       mojo::UnwrapPlatformFile(std::move(data_pipe->socket), &socket_handle);
   DCHECK_EQ(result, MOJO_RESULT_OK);
-  base::SharedMemoryHandle memory_handle;
-  mojo::UnwrappedSharedMemoryHandleProtection protection;
-  result = mojo::UnwrapSharedMemoryHandle(std::move(data_pipe->shared_memory),
-                                          &memory_handle, nullptr, &protection);
-  DCHECK_EQ(result, MOJO_RESULT_OK);
-  DCHECK_EQ(protection, mojo::UnwrappedSharedMemoryHandleProtection::kReadOnly);
+  base::ReadOnlySharedMemoryRegion& shared_memory_region =
+      data_pipe->shared_memory;
+  DCHECK(shared_memory_region.IsValid());
 
-  delegate_->OnStreamCreated(memory_handle, socket_handle, initially_muted);
+  delegate_->OnStreamCreated(std::move(shared_memory_region), socket_handle,
+                             initially_muted);
 }
 
 void InputIPC::RecordStream() {

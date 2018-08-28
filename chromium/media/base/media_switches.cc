@@ -117,8 +117,10 @@ const char kUseFileForFakeAudioCapture[] = "use-file-for-fake-audio-capture";
 // accelerator hardware to be present.
 const char kUseFakeJpegDecodeAccelerator[] = "use-fake-jpeg-decode-accelerator";
 
-// Enables support for inband text tracks in media content.
-const char kEnableInbandTextTracks[] = "enable-inband-text-tracks";
+// Disable hardware acceleration of mjpeg decode for captured frame, where
+// available.
+const char kDisableAcceleratedMjpegDecode[] =
+    "disable-accelerated-mjpeg-decode";
 
 // When running tests on a system without the required hardware or libraries,
 // this flag will cause the tests to fail. Otherwise, they silently succeed.
@@ -142,10 +144,10 @@ const char kDisableRTCSmoothnessAlgorithm[] =
 // Force media player using SurfaceView instead of SurfaceTexture on Android.
 const char kForceVideoOverlays[] = "force-video-overlays";
 
-// Allows explicitly specifying MSE audio/video buffer sizes.
+// Allows explicitly specifying MSE audio/video buffer sizes as megabytes.
 // Default values are 150M for video and 12M for audio.
-const char kMSEAudioBufferSizeLimit[] = "mse-audio-buffer-size-limit";
-const char kMSEVideoBufferSizeLimit[] = "mse-video-buffer-size-limit";
+const char kMSEAudioBufferSizeLimitMb[] = "mse-audio-buffer-size-limit-mb";
+const char kMSEVideoBufferSizeLimitMb[] = "mse-video-buffer-size-limit-mb";
 
 // Specifies the path to the Clear Key CDM for testing, which is necessary to
 // support External Clear Key key system when library CDM is enabled. Note that
@@ -166,6 +168,18 @@ const char kClearKeyCdmPathForTesting[] = "clear-key-cdm-path-for-testing";
 // for testing while it's still in development.
 const char kOverrideEnabledCdmInterfaceVersion[] =
     "override-enabled-cdm-interface-version";
+
+// Overrides hardware secure codecs support for testing. If specified, real
+// platform hardware secure codecs check will be skipped. Codecs are separated
+// by comma. Valid codecs are "vp8", "vp9" and "avc1". For example:
+//  --override-hardware-secure-codecs-for-testing=vp8,vp9
+//  --override-hardware-secure-codecs-for-testing=avc1
+// CENC encryption scheme is assumed to be supported for the specified codecs.
+// If no valid codecs specified, no hardware secure codecs are supported. This
+// can be used to disable hardware secure codecs support:
+//  --override-hardware-secure-codecs-for-testing
+const char kOverrideHardwareSecureCodecsForTesting[] =
+    "override-hardware-secure-codecs-for-testing";
 
 #if !defined(OS_ANDROID)
 // Turns on the internal media session backend. This should be used by embedders
@@ -205,8 +219,14 @@ const base::Feature kOverlayFullscreenVideo{"overlay-fullscreen-video",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enable Picture-in-Picture.
-const base::Feature kPictureInPicture{"PictureInPicture",
-                                      base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kPictureInPicture {
+  "PictureInPicture",
+#if defined(OS_ANDROID)
+      base::FEATURE_DISABLED_BY_DEFAULT
+#else
+      base::FEATURE_ENABLED_BY_DEFAULT
+#endif
+};
 
 const base::Feature kPreloadMetadataSuspend{"PreloadMetadataSuspend",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
@@ -237,7 +257,7 @@ const base::Feature kUseAndroidOverlayAggressively{
 
 // Enables playback of AV1 video files.
 const base::Feature kAv1Decoder{"Av1Decoder",
-                                base::FEATURE_DISABLED_BY_DEFAULT};
+                                base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Let video track be unselected when video is playing in the background.
 const base::Feature kBackgroundVideoTrackOptimization{
@@ -253,9 +273,16 @@ const base::Feature kBackgroundVideoPauseOptimization{
 const base::Feature kMemoryPressureBasedSourceBufferGC{
     "MemoryPressureBasedSourceBufferGC", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Enable MojoVideoDecoder.  Experimental.
-const base::Feature kMojoVideoDecoder{"MojoVideoDecoder",
-                                      base::FEATURE_DISABLED_BY_DEFAULT};
+// Enable MojoVideoDecoder.  On Android, we use this by default.  Elsewhere,
+// it's experimental.
+const base::Feature kMojoVideoDecoder {
+  "MojoVideoDecoder",
+#if defined(OS_ANDROID)
+      base::FEATURE_ENABLED_BY_DEFAULT
+#else
+      base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
 
 // Enable The D3D11 Video decoder. Must also enable MojoVideoDecoder for
 // this to have any effect.
@@ -312,6 +339,13 @@ const base::Feature kVideoBlitColorAccuracy{"video-blit-color-accuracy",
 const base::Feature kExternalClearKeyForTesting{
     "ExternalClearKeyForTesting", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enables hardware secure decryption if supported by hardware and CDM.
+// TODO(xhwang): Currently this is only used for development of new features.
+// Apply this to Android and ChromeOS as well where hardware secure decryption
+// is already available.
+const base::Feature kHardwareSecureDecryption{
+    "HardwareSecureDecryption", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables low-delay video rendering in media pipeline on "live" stream.
 const base::Feature kLowDelayVideoRenderingOnLiveStream{
     "low-delay-video-rendering-on-live-stream",
@@ -324,6 +358,10 @@ const base::Feature kAutoplayIgnoreWebAudio{"AutoplayIgnoreWebAudio",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
 
 #if defined(OS_ANDROID)
+// Enable a gesture to make the media controls expaned into the display cutout.
+const base::Feature kMediaControlsExpandGesture{
+    "MediaControlsExpandGesture", base::FEATURE_ENABLED_BY_DEFAULT};
+
 // Lock the screen orientation when a video goes fullscreen.
 const base::Feature kVideoFullscreenOrientationLock{
     "VideoFullscreenOrientationLock", base::FEATURE_ENABLED_BY_DEFAULT};
@@ -422,5 +460,20 @@ const base::Feature kMediaEngagementBypassAutoplayPolicies{
 const base::Feature kPreloadMediaEngagementData{
     "PreloadMediaEngagementData", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif
+
+bool IsVideoCaptureAcceleratedJpegDecodingEnabled() {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableAcceleratedMjpegDecode)) {
+    return false;
+  }
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kUseFakeJpegDecodeAccelerator)) {
+    return true;
+  }
+#if defined(OS_CHROMEOS)
+  return true;
+#endif
+  return false;
+}
 
 }  // namespace media

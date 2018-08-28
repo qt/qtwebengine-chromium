@@ -122,6 +122,10 @@ bool Character::IsBidiControl(UChar32 character) {
   RETURN_HAS_PROPERTY(character, kIsBidiControl);
 }
 
+bool Character::IsHangulSlow(UChar32 character) {
+  RETURN_HAS_PROPERTY(character, kIsHangul);
+}
+
 unsigned Character::ExpansionOpportunityCount(const LChar* characters,
                                               size_t length,
                                               TextDirection direction,
@@ -291,9 +295,12 @@ bool Character::IsCommonOrInheritedScript(UChar32 character) {
          (script == USCRIPT_COMMON || script == USCRIPT_INHERITED);
 }
 
-bool Character::IsUnassignedOrPrivateUse(UChar32 character) {
-  return WTF::Unicode::Category(character) &
-         (WTF::Unicode::kOther_NotAssigned | WTF::Unicode::kOther_PrivateUse);
+bool Character::IsPrivateUse(UChar32 character) {
+  return WTF::Unicode::Category(character) & WTF::Unicode::kOther_PrivateUse;
+}
+
+bool Character::IsNonCharacter(UChar32 character) {
+  return U_IS_UNICODE_NONCHAR(character);
 }
 
 }  // namespace blink

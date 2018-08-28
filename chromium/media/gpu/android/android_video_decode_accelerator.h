@@ -17,7 +17,7 @@
 #include "base/threading/thread_checker.h"
 #include "base/timer/timer.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
-#include "gpu/command_buffer/service/gpu_preferences.h"
+#include "gpu/config/gpu_preferences.h"
 #include "media/base/android/media_codec_bridge_impl.h"
 #include "media/base/android/media_crypto_context.h"
 #include "media/base/android_overlay_mojo_factory.h"
@@ -35,7 +35,6 @@
 
 namespace media {
 class AndroidVideoSurfaceChooser;
-class SharedMemoryRegion;
 class PromotionHintAggregator;
 
 // A VideoDecodeAccelerator implementation for Android. This class decodes the
@@ -305,8 +304,8 @@ class MEDIA_GPU_EXPORT AndroidVideoDecodeAccelerator
 
     BitstreamBuffer buffer;
 
-    // |memory| is not mapped, and may be null if buffer has no data.
-    std::unique_ptr<SharedMemoryRegion> memory;
+    // |memory| may be null if buffer has no data.
+    std::unique_ptr<WritableUnalignedMapping> memory;
   };
 
   // Encoded bitstream buffers to be passed to media codec, queued until an
@@ -369,11 +368,6 @@ class MEDIA_GPU_EXPORT AndroidVideoDecodeAccelerator
   // True if surface creation and |picture_buffer_manager_| initialization has
   // been defered until the first Decode() call.
   bool defer_surface_creation_;
-
-  // Has a value if a SetSurface() call has occurred and a new surface should be
-  // switched to when possible. Cleared during OnSurfaceDestroyed() and if all
-  // pictures have been rendered in DequeueOutput().
-  base::Optional<int32_t> pending_surface_id_;
 
   // Copy of the VDA::Config we were given.
   Config config_;

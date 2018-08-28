@@ -31,6 +31,7 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_SOURCE_H_
 #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_SOURCE_H_
 
+#include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_time_range.h"
 #include "third_party/blink/public/platform/web_url.h"
 
@@ -53,9 +54,24 @@ class WebMediaSource {
   };
 
   virtual ~WebMediaSource() = default;
-  virtual AddStatus AddSourceBuffer(const WebString& type,
+
+  // Attempts to create a new WebSourceBuffer for use with this WebMediaSource.
+  // |content_type| is the ContentType string of the new WebSourceBuffer
+  // bytestream's MIME type, and |codecs| contains the "codecs" parameter
+  // string, if any, of the bytestream's MIME type.
+  // If this WebMediaSource supports the format indicated by |content_type| and
+  // |codecs| and has enough resources to support a new WebSourceBuffer, returns
+  // kAddStatusOk and creates a new WebSourceBuffer and changes the
+  // WebSourceBuffer parameter to point to it.
+  // If this WebMediaSource cannot handle another WebSourceBuffer right now,
+  // returns kAddStatusReachedIdLimit without modifying the WebSourceBuffer
+  // parameter.
+  // If |content_type| and |codecs| are not supported, returns
+  // kAddStatusNotSupported without modifying the WebSourceBuffer parameter.
+  virtual AddStatus AddSourceBuffer(const WebString& content_type,
                                     const WebString& codecs,
                                     WebSourceBuffer**) = 0;
+
   virtual double Duration() = 0;
   virtual void SetDuration(double) = 0;
   virtual void MarkEndOfStream(EndOfStreamStatus) = 0;

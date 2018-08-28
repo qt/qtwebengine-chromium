@@ -44,7 +44,7 @@ class CC_ANIMATION_EXPORT SingleKeyframeEffectAnimation : public Animation {
   KeyframeEffect* keyframe_effect() const;
   void AddKeyframeModel(std::unique_ptr<KeyframeModel> keyframe_model);
   void PauseKeyframeModel(int keyframe_model_id, double time_offset);
-  void RemoveKeyframeModel(int keyframe_model_id);
+  virtual void RemoveKeyframeModel(int keyframe_model_id);
   void AbortKeyframeModel(int keyframe_model_id);
 
   bool NotifyKeyframeModelFinishedForTesting(
@@ -60,6 +60,9 @@ class CC_ANIMATION_EXPORT SingleKeyframeEffectAnimation : public Animation {
  protected:
   explicit SingleKeyframeEffectAnimation(int id);
   explicit SingleKeyframeEffectAnimation(int id, size_t keyframe_effect_id);
+  explicit SingleKeyframeEffectAnimation(int id,
+                                         std::unique_ptr<KeyframeEffect>);
+
   ~SingleKeyframeEffectAnimation() override;
 
   DISALLOW_COPY_AND_ASSIGN(SingleKeyframeEffectAnimation);

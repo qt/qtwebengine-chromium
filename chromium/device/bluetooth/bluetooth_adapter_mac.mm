@@ -25,11 +25,13 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "device/bluetooth/bluetooth_adapter_mac_metrics.h"
+#include "device/bluetooth/bluetooth_advertisement_mac.h"
 #include "device/bluetooth/bluetooth_classic_device_mac.h"
 #include "device/bluetooth/bluetooth_common.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
 #include "device/bluetooth/bluetooth_discovery_session_outcome.h"
 #include "device/bluetooth/bluetooth_low_energy_central_manager_delegate.h"
+#include "device/bluetooth/bluetooth_low_energy_peripheral_manager_delegate.h"
 #include "device/bluetooth/bluetooth_socket_mac.h"
 
 extern "C" {
@@ -136,6 +138,16 @@ BluetoothAdapterMac::BluetoothAdapterMac()
                    queue:dispatch_get_main_queue()]);
     low_energy_discovery_manager_->SetCentralManager(
         low_energy_central_manager_);
+
+    low_energy_advertisement_manager_.reset(
+        new BluetoothLowEnergyAdvertisementManagerMac());
+    low_energy_peripheral_manager_delegate_.reset(
+        [[BluetoothLowEnergyPeripheralManagerDelegate alloc]
+            initWithAdvertisementManager:low_energy_advertisement_manager_.get()
+                              andAdapter:this]);
+    low_energy_peripheral_manager_.reset([[CBPeripheralManager alloc]
+        initWithDelegate:low_energy_peripheral_manager_delegate_
+                   queue:dispatch_get_main_queue()]);
   }
   DCHECK(classic_discovery_manager_);
 }
@@ -265,8 +277,8 @@ void BluetoothAdapterMac::RegisterAdvertisement(
     std::unique_ptr<BluetoothAdvertisement::Data> advertisement_data,
     const CreateAdvertisementCallback& callback,
     const AdvertisementErrorCallback& error_callback) {
-  NOTIMPLEMENTED();
-  error_callback.Run(BluetoothAdvertisement::ERROR_UNSUPPORTED_PLATFORM);
+  low_energy_advertisement_manager_->RegisterAdvertisement(
+      std::move(advertisement_data), callback, error_callback);
 }
 
 BluetoothLocalGattService* BluetoothAdapterMac::GetGattService(
@@ -335,6 +347,10 @@ void BluetoothAdapterMac::SetCentralManagerForTesting(
 
 CBCentralManager* BluetoothAdapterMac::GetCentralManager() {
   return low_energy_central_manager_;
+}
+
+CBPeripheralManager* BluetoothAdapterMac::GetPeripheralManager() {
+  return low_energy_peripheral_manager_;
 }
 
 void BluetoothAdapterMac::SetHostControllerStateFunctionForTesting(
@@ -474,6 +490,8 @@ bool BluetoothAdapterMac::StartDiscovery(
 
 void BluetoothAdapterMac::Init() {
   ui_task_runner_ = base::ThreadTaskRunnerHandle::Get();
+  low_energy_advertisement_manager_->Init(ui_task_runner_,
+                                          low_energy_peripheral_manager_);
   PollAdapter();
 }
 
@@ -621,9 +639,10 @@ void BluetoothAdapterMac::LowEnergyDeviceUpdated(
   int8_t clamped_tx_power = BluetoothDevice::ClampPower([tx_power intValue]);
 
   device_mac->UpdateAdvertisementData(
-      BluetoothDevice::ClampPower(rssi), std::move(advertised_uuids),
-      std::move(service_data_map), std::move(manufacturer_data_map),
-      tx_power == nil ? nullptr : &clamped_tx_power);
+      BluetoothDevice::ClampPower(rssi), base::nullopt /* flags */,
+      std::move(advertised_uuids),
+      tx_power == nil ? base::nullopt : base::make_optional(clamped_tx_power),
+      std::move(service_data_map), std::move(manufacturer_data_map));
 
   if (is_new_device) {
     std::string device_address =

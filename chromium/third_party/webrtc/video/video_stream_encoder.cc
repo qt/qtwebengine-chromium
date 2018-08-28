@@ -183,7 +183,7 @@ class VideoStreamEncoder::VideoSourceProxy {
     RTC_LOG(LS_INFO) << "Scaling down resolution, max pixels: "
                      << pixels_wanted;
     sink_wants_.max_pixel_count = pixels_wanted;
-    sink_wants_.target_pixel_count = rtc::nullopt;
+    sink_wants_.target_pixel_count = absl::nullopt;
     source_->AddOrUpdateSink(video_stream_encoder_,
                              GetActiveSinkWantsInternal());
     return true;
@@ -440,15 +440,15 @@ void VideoStreamEncoder::ConfigureEncoder(VideoEncoderConfig config,
   // when C++14 lambda is allowed.
   struct ConfigureEncoderTask {
     void operator()() {
-      encoder->ConfigureEncoderOnTaskQueue(
-          std::move(config), max_data_payload_length);
+      encoder->ConfigureEncoderOnTaskQueue(std::move(config),
+                                           max_data_payload_length);
     }
     VideoStreamEncoder* encoder;
     VideoEncoderConfig config;
     size_t max_data_payload_length;
   };
-  encoder_queue_.PostTask(ConfigureEncoderTask{
-      this, std::move(config), max_data_payload_length});
+  encoder_queue_.PostTask(
+      ConfigureEncoderTask{this, std::move(config), max_data_payload_length});
 }
 
 void VideoStreamEncoder::ConfigureEncoderOnTaskQueue(
@@ -470,8 +470,9 @@ void VideoStreamEncoder::ConfigureEncoderOnTaskQueue(
   // The codec configuration depends on incoming video frame size.
   if (last_frame_info_) {
     ReconfigureEncoder();
-  } else if (settings_.encoder_factory->QueryVideoEncoder(
-      encoder_config_.video_format).has_internal_source) {
+  } else if (settings_.encoder_factory
+                 ->QueryVideoEncoder(encoder_config_.video_format)
+                 .has_internal_source) {
     last_frame_info_ = VideoFrameInfo(176, 144, false);
     ReconfigureEncoder();
   }
@@ -502,8 +503,8 @@ void VideoStreamEncoder::ReconfigureEncoder() {
   crop_height_ = last_frame_info_->height - highest_stream_height;
 
   VideoCodec codec;
-  if (!VideoCodecInitializer::SetupCodec(
-          encoder_config_, streams, &codec, &rate_allocator_)) {
+  if (!VideoCodecInitializer::SetupCodec(encoder_config_, streams, &codec,
+                                         &rate_allocator_)) {
     RTC_LOG(LS_ERROR) << "Failed to create encoder configuration.";
   }
 
@@ -573,16 +574,7 @@ void VideoStreamEncoder::ReconfigureEncoder() {
   video_sender_.UpdateChannelParameters(rate_allocator_.get(),
                                         bitrate_observer_);
 
-  // Get the current actual framerate, as measured by the stats proxy. This is
-  // used to get the correct bitrate layer allocation.
-  int current_framerate = stats_proxy_->GetSendFrameRate();
-  if (current_framerate == 0)
-    current_framerate = codec.maxFramerate;
-  stats_proxy_->OnEncoderReconfigured(
-      encoder_config_, streams,
-      rate_allocator_.get()
-          ? rate_allocator_->GetPreferredBitrateBps(current_framerate)
-          : codec.maxBitrate);
+  stats_proxy_->OnEncoderReconfigured(encoder_config_, streams);
 
   pending_encoder_reconfiguration_ = false;
 
@@ -614,14 +606,15 @@ void VideoStreamEncoder::ConfigureQualityScaler() {
       // Drop frames and scale down until desired quality is achieved.
 
       // Use experimental thresholds if available.
-      rtc::Optional<VideoEncoder::QpThresholds> experimental_thresholds;
+      absl::optional<VideoEncoder::QpThresholds> experimental_thresholds;
       if (quality_scaling_experiment_enabled_) {
         experimental_thresholds = QualityScalingExperiment::GetQpThresholds(
             encoder_config_.codec_type);
       }
-      // Since the interface is non-public, MakeUnique can't do this upcast.
+      // Since the interface is non-public, absl::make_unique can't do this
+      // upcast.
       AdaptationObserverInterface* observer = this;
-      quality_scaler_ = rtc::MakeUnique<QualityScaler>(
+      quality_scaler_ = absl::make_unique<QualityScaler>(
           observer, experimental_thresholds ? *experimental_thresholds
                                             : *(scaling_settings.thresholds));
     }
@@ -803,7 +796,6 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   }
   initial_rampup_ = kMaxInitialFramedrop;
 
-
   if (EncoderPaused()) {
     // Storing references to a native buffer risks blocking frame capture.
     if (video_frame.video_frame_buffer()->type() !=
@@ -888,8 +880,8 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
   int64_t capture_time_us =
       encoded_image.capture_time_ms_ * rtc::kNumMicrosecsPerMillisec;
 
-  rtc::Optional<int> encode_duration_us;
-  if (encoded_image.timing_.flags != TimingFrameFlags::kInvalid) {
+  absl::optional<int> encode_duration_us;
+  if (encoded_image.timing_.flags != VideoSendTiming::kInvalid) {
     encode_duration_us.emplace(
         // TODO(nisse): Maybe use capture_time_ms_ rather than encode_start_ms_?
         rtc::kNumMicrosecsPerMillisec *

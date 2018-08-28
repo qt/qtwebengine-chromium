@@ -11,7 +11,7 @@
 #ifndef COMMON_VIDEO_INCLUDE_VIDEO_BITRATE_ALLOCATOR_H_
 #define COMMON_VIDEO_INCLUDE_VIDEO_BITRATE_ALLOCATOR_H_
 
-#include "common_types.h"  // NOLINT(build/include)
+#include "api/video/video_bitrate_allocation.h"
 
 namespace webrtc {
 
@@ -22,7 +22,6 @@ class VideoBitrateAllocator {
 
   virtual VideoBitrateAllocation GetAllocation(uint32_t total_bitrate,
                                                uint32_t framerate) = 0;
-  virtual uint32_t GetPreferredBitrateBps(uint32_t framerate) = 0;
 };
 
 class VideoBitrateAllocationObserver {

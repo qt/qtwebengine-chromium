@@ -5,7 +5,7 @@
 #ifndef MEDIA_GPU_D3D11_VIDEO_DECODER_IMPL_H_
 #define MEDIA_GPU_D3D11_VIDEO_DECODER_IMPL_H_
 
-#include <d3d11.h>
+#include <d3d11_1.h>
 #include <wrl/client.h>
 
 #include <list>
@@ -19,6 +19,7 @@
 #include "gpu/ipc/service/command_buffer_stub.h"
 #include "media/base/callback_registry.h"
 #include "media/base/video_decoder.h"
+#include "media/base/video_decoder_config.h"
 #include "media/gpu/gles2_decoder_helper.h"
 #include "media/gpu/media_gpu_export.h"
 #include "media/gpu/windows/d3d11_h264_accelerator.h"
@@ -51,7 +52,8 @@ class MEDIA_GPU_EXPORT D3D11VideoDecoderImpl : public VideoDecoder,
 
   // D3D11VideoDecoderClient implementation.
   D3D11PictureBuffer* GetPicture() override;
-  void OutputResult(D3D11PictureBuffer* buffer) override;
+  void OutputResult(D3D11PictureBuffer* buffer,
+                    const VideoColorSpace& buffer_colorspace) override;
 
   // Return a weak ptr, since D3D11VideoDecoder constructs callbacks for us.
   base::WeakPtr<D3D11VideoDecoderImpl> GetWeakPtr();
@@ -93,7 +95,7 @@ class MEDIA_GPU_EXPORT D3D11VideoDecoderImpl : public VideoDecoder,
   Microsoft::WRL::ComPtr<ID3D11Device> device_;
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> device_context_;
   Microsoft::WRL::ComPtr<ID3D11VideoDevice> video_device_;
-  Microsoft::WRL::ComPtr<ID3D11VideoContext> video_context_;
+  Microsoft::WRL::ComPtr<ID3D11VideoContext1> video_context_;
 
   std::unique_ptr<AcceleratedVideoDecoder> accelerated_video_decoder_;
 

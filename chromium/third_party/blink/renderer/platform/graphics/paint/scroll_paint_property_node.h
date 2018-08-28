@@ -39,6 +39,9 @@ class PLATFORM_EXPORT ScrollPaintPropertyNode
     IntRect contents_rect;
     bool user_scrollable_horizontal = false;
     bool user_scrollable_vertical = false;
+    bool scrolls_inner_viewport = false;
+    bool scrolls_outer_viewport = false;
+    bool max_scroll_offset_affected_by_page_scale = false;
     MainThreadScrollingReasons main_thread_scrolling_reasons =
         MainThreadScrollingReason::kNotScrollingOnMain;
     // The scrolling element id is stored directly on the scroll node and not on
@@ -50,24 +53,27 @@ class PLATFORM_EXPORT ScrollPaintPropertyNode
              contents_rect == o.contents_rect &&
              user_scrollable_horizontal == o.user_scrollable_horizontal &&
              user_scrollable_vertical == o.user_scrollable_vertical &&
+             scrolls_inner_viewport == o.scrolls_inner_viewport &&
+             scrolls_outer_viewport == o.scrolls_outer_viewport &&
+             max_scroll_offset_affected_by_page_scale ==
+                 o.max_scroll_offset_affected_by_page_scale &&
              main_thread_scrolling_reasons == o.main_thread_scrolling_reasons &&
              compositor_element_id == o.compositor_element_id;
     }
   };
 
   // This node is really a sentinel, and does not represent a real scroll.
-  static ScrollPaintPropertyNode* Root();
+  static const ScrollPaintPropertyNode& Root();
 
   static scoped_refptr<ScrollPaintPropertyNode> Create(
-      scoped_refptr<const ScrollPaintPropertyNode> parent,
+      const ScrollPaintPropertyNode& parent,
       State&& state) {
     return base::AdoptRef(
-        new ScrollPaintPropertyNode(std::move(parent), std::move(state)));
+        new ScrollPaintPropertyNode(&parent, std::move(state)));
   }
 
-  bool Update(scoped_refptr<const ScrollPaintPropertyNode> parent,
-              State&& state) {
-    bool parent_changed = SetParent(parent);
+  bool Update(const ScrollPaintPropertyNode& parent, State&& state) {
+    bool parent_changed = SetParent(&parent);
     if (state == state_)
       return parent_changed;
 
@@ -92,6 +98,11 @@ class PLATFORM_EXPORT ScrollPaintPropertyNode
   }
   bool UserScrollableVertical() const {
     return state_.user_scrollable_vertical;
+  }
+  bool ScrollsInnerViewport() const { return state_.scrolls_inner_viewport; }
+  bool ScrollsOuterViewport() const { return state_.scrolls_outer_viewport; }
+  bool MaxScrollOffsetAffectedByPageScale() const {
+    return state_.max_scroll_offset_affected_by_page_scale;
   }
 
   // Return reason bitfield with values from cc::MainThreadScrollingReason.
@@ -132,9 +143,8 @@ class PLATFORM_EXPORT ScrollPaintPropertyNode
   std::unique_ptr<JSONObject> ToJSON() const;
 
  private:
-  ScrollPaintPropertyNode(scoped_refptr<const ScrollPaintPropertyNode> parent,
-                          State&& state)
-      : PaintPropertyNode(std::move(parent)), state_(std::move(state)) {
+  ScrollPaintPropertyNode(const ScrollPaintPropertyNode* parent, State&& state)
+      : PaintPropertyNode(parent), state_(std::move(state)) {
     Validate();
   }
 

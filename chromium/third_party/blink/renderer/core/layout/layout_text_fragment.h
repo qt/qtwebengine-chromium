@@ -94,6 +94,7 @@ class CORE_EXPORT LayoutTextFragment final : public LayoutText {
   }
 
   Text* AssociatedTextNode() const;
+  LayoutText* GetFirstLetterPart() const override;
 
  protected:
   void WillBeDestroyed() override;
@@ -102,7 +103,7 @@ class CORE_EXPORT LayoutTextFragment final : public LayoutText {
   LayoutBlock* BlockForAccompanyingFirstLetter() const;
   UChar PreviousCharacter() const override;
 
-  void UpdateHitTestResult(HitTestResult&, const LayoutPoint&) override;
+  void UpdateHitTestResult(HitTestResult&, const LayoutPoint&) const override;
 
   unsigned start_;
   unsigned fragment_length_;
@@ -116,8 +117,8 @@ class CORE_EXPORT LayoutTextFragment final : public LayoutText {
 DEFINE_TYPE_CASTS(LayoutTextFragment,
                   LayoutObject,
                   object,
-                  ToLayoutText(object)->IsTextFragment(),
-                  ToLayoutText(object).IsTextFragment());
+                  (object->IsText() && ToLayoutText(object)->IsTextFragment()),
+                  (object.IsText() && ToLayoutText(object).IsTextFragment()));
 
 }  // namespace blink
 

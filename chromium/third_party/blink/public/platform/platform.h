@@ -44,6 +44,7 @@
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "mojo/public/cpp/system/message_pipe.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "third_party/blink/public/common/feature_policy/feature_policy.h"
 #include "third_party/blink/public/platform/blame_context.h"
 #include "third_party/blink/public/platform/user_metrics_action.h"
@@ -86,6 +87,10 @@ template <class T>
 class Local;
 }
 
+namespace webrtc {
+struct RtpCapabilities;
+}
+
 namespace blink {
 
 class InterfaceProvider;
@@ -98,7 +103,6 @@ class WebCrypto;
 class WebDatabaseObserver;
 class WebPlatformEventListener;
 class WebFileSystem;
-class WebGestureCurve;
 class WebGraphicsContext3DProvider;
 class WebIDBFactory;
 class WebImageCaptureFrameGrabber;
@@ -109,9 +113,7 @@ class WebMediaPlayer;
 class WebMediaRecorderHandler;
 class WebMediaStream;
 class WebMediaStreamCenter;
-class WebMediaStreamCenterClient;
 class WebMediaStreamTrack;
-class WebPluginListBuilder;
 class WebPrescientNetworking;
 class WebPublicSuffixList;
 class WebPushProvider;
@@ -119,14 +121,11 @@ class WebRTCCertificateGenerator;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
-class WebScrollbarBehavior;
 class WebSecurityOrigin;
 class WebSocketHandshakeThrottle;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebStorageNamespace;
-class WebSyncProvider;
-struct WebFloatPoint;
 class WebThemeEngine;
 class WebThread;
 struct WebThreadCreationParams;
@@ -302,11 +301,25 @@ class BLINK_PLATFORM_EXPORT Platform {
   // Returns a unique FrameSinkID for the current renderer process
   virtual viz::FrameSinkId GenerateFrameSinkId() { return viz::FrameSinkId(); }
 
+  // Returns whether this process is locked to a single site (i.e. a scheme
+  // plus eTLD+1, such as https://google.com), or to a more specific origin.
+  // This means the process will not be used to load documents or workers from
+  // URLs outside that site.
+  virtual bool IsLockedToSite() const { return false; }
+
   // Network -------------------------------------------------------------
 
   // Returns the platform's default URLLoaderFactory. It is expected that the
   // returned value is stored and to be used for all the CreateURLLoader
   // requests for the same loading context.
+  //
+  // WARNING: This factory understands http(s) and blob URLs, but it does not
+  // understand URLs like chrome-extension:// and file:// as those are provided
+  // by the browser process on a per-frame or per-worker basis. If you require
+  // support for such URLs, you must add that support manually. Typically you
+  // get a factory bundle from the browser process, and compose a new factory
+  // using both the bundle and this default.
+  //
   // TODO(kinuko): See if we can deprecate this too.
   virtual std::unique_ptr<WebURLLoaderFactory> CreateDefaultURLLoaderFactory() {
     return nullptr;
@@ -316,6 +329,14 @@ class BLINK_PLATFORM_EXPORT Platform {
   // network::mojom::URLLoaderFactory.
   virtual std::unique_ptr<WebURLLoaderFactory> WrapURLLoaderFactory(
       mojo::ScopedMessagePipeHandle url_loader_factory_handle) {
+    return nullptr;
+  }
+
+  // Returns a new WebURLLoaderFactory that wraps the given
+  // network::SharedURLLoaderFactory.
+  virtual std::unique_ptr<blink::WebURLLoaderFactory>
+  WrapSharedURLLoaderFactory(
+      scoped_refptr<network::SharedURLLoaderFactory> factory) {
     return nullptr;
   }
 
@@ -347,15 +368,6 @@ class BLINK_PLATFORM_EXPORT Platform {
       const blink::WebSecurityOrigin& cache_storage_origin,
       const WebString& cache_storage_cache_name) {}
 
-  // Plugins -------------------------------------------------------------
-
-  // If refresh is true, then cached information should not be used to
-  // satisfy this call. mainFrameOrigin is used by the browser process to
-  // filter plugins from the plugin list based on content settings.
-  virtual void GetPluginList(bool refresh,
-                             const WebSecurityOrigin& main_frame_origin,
-                             WebPluginListBuilder*) {}
-
   // Public Suffix List --------------------------------------------------
 
   // May return null on some platforms.
@@ -376,8 +388,6 @@ class BLINK_PLATFORM_EXPORT Platform {
                                          const WebString& parameter2) {
     return WebString();
   }
-
-  virtual bool IsRendererSideResourceSchedulerEnabled() const { return false; }
 
   // Threads -------------------------------------------------------
 
@@ -411,16 +421,11 @@ class BLINK_PLATFORM_EXPORT Platform {
     return false;
   }
 
-  // Scrollbar ----------------------------------------------------------
-
-  // Must return non-null.
-  virtual WebScrollbarBehavior* ScrollbarBehavior() { return nullptr; }
-
   // Process lifetime management -----------------------------------------
 
   // Disable/Enable sudden termination on a process level. When possible, it
   // is preferable to disable sudden termination on a per-frame level via
-  // WebFrameClient::SuddenTerminationDisablerChanged.
+  // WebLocalFrameClient::SuddenTerminationDisablerChanged.
   // This method should only be called on the main thread.
   virtual void SuddenTerminationChanged(bool enabled) {}
 
@@ -489,8 +494,10 @@ class BLINK_PLATFORM_EXPORT Platform {
   enum ContextType {
     kWebGL1ContextType,  // WebGL 1.0 context, use only for WebGL canvases
     kWebGL2ContextType,  // WebGL 2.0 context, use only for WebGL canvases
-    kGLES2ContextType,   // GLES 2.0 context, default, good for using skia
-    kGLES3ContextType,   // GLES 3.0 context
+    kWebGL2ComputeContextType,  // WebGL 2.0 Compute context, use only for WebGL
+                                // canvases
+    kGLES2ContextType,  // GLES 2.0 context, default, good for using skia
+    kGLES3ContextType,  // GLES 3.0 context
   };
   struct ContextAttributes {
     bool fail_if_major_performance_caveat = false;
@@ -541,15 +548,12 @@ class BLINK_PLATFORM_EXPORT Platform {
     return nullptr;
   }
 
-  virtual bool IsThreadedCompositingEnabled() { return false; }
-  virtual bool IsThreadedAnimationEnabled() { return true; }
-
-  // Creates a new fling animation curve instance for device |device_source|
-  // with |velocity| and already scrolled |cumulative_scroll| pixels.
-  virtual std::unique_ptr<WebGestureCurve> CreateFlingAnimationCurve(
-      WebGestureDevice device_source,
-      const WebFloatPoint& velocity,
-      const WebSize& cumulative_scroll);
+  // When true, animations will run on a compositor thread independently from
+  // the blink main thread.
+  // This is true when there exists a renderer compositor in this process. But
+  // for unit tests, a single-threaded compositor may be used so it may remain
+  // false.
+  virtual bool IsThreadedAnimationEnabled() { return false; }
 
   // Whether the compositor is using gpu and expects gpu resources as inputs,
   // or software based resources.
@@ -578,8 +582,7 @@ class BLINK_PLATFORM_EXPORT Platform {
 
   // May return null if WebRTC functionality is not available or out of
   // resources.
-  virtual std::unique_ptr<WebMediaStreamCenter> CreateMediaStreamCenter(
-      WebMediaStreamCenterClient*);
+  virtual std::unique_ptr<WebMediaStreamCenter> CreateMediaStreamCenter();
 
   // Creates a WebCanvasCaptureHandler to capture Canvas output.
   virtual std::unique_ptr<WebCanvasCaptureHandler>
@@ -598,6 +601,13 @@ class BLINK_PLATFORM_EXPORT Platform {
   // May return null if the functionality is not available.
   virtual std::unique_ptr<WebImageCaptureFrameGrabber>
   CreateImageCaptureFrameGrabber();
+
+  // Returns the most optimistic view of the capabilities of the system for
+  // sending or receiving media of the given kind ("audio" or "video").
+  virtual std::unique_ptr<webrtc::RtpCapabilities> GetRtpSenderCapabilities(
+      const WebString& kind);
+  virtual std::unique_ptr<webrtc::RtpCapabilities> GetRtpReceiverCapabilities(
+      const WebString& kind);
 
   virtual void UpdateWebRTCAPICount(WebRTCAPIName api_name) {}
 
@@ -680,10 +690,6 @@ class BLINK_PLATFORM_EXPORT Platform {
   // Push API------------------------------------------------------------
 
   virtual WebPushProvider* PushProvider() { return nullptr; }
-
-  // Background Sync API-------------------------------------------------
-
-  virtual WebSyncProvider* BackgroundSyncProvider() { return nullptr; }
 
   // Media Capabilities --------------------------------------------------
 

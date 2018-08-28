@@ -235,6 +235,7 @@ js_library("preview_area") {
   deps = [
     ":margin_control_container",
     ":model",
+    ":plugin_proxy",
     ":settings_behavior",
     ":state",
     "..:native_layer",
@@ -275,6 +276,12 @@ js_library("margin_control") {
   ]
 }
 
+js_library("plugin_proxy") {
+  deps = [
+    "//ui/webui/resources/js:cr",
+  ]
+}
+
 js_library("destination_dialog") {
   deps = [
     ":destination_list",
@@ -289,6 +296,7 @@ js_library("destination_dialog") {
     "//ui/webui/resources/cr_elements/cr_dialog:cr_dialog",
     "//ui/webui/resources/js:event_tracker",
     "//ui/webui/resources/js:i18n_behavior",
+    "//ui/webui/resources/js:list_property_update_behavior",
   ]
 }
 

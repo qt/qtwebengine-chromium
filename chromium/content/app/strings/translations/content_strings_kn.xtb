@@ -12,9 +12,11 @@
 <translation id="1206693055195146388">ಸ್ಲೈಡರ್</translation>
 <translation id="1211441953136645838">ಮುಕ್ತಾಯ ಟಿಪ್ಪಣಿ</translation>
 <translation id="1281252709823657822">ಸಂವಾದ</translation>
+<translation id="1289247557029249093">ಚಿತ್ರದಲ್ಲಿ ಚಿತ್ರ ಮೋಡ್ ಅನ್ನು ನಿರ್ಗಮಿಸಿ</translation>
 <translation id="1335095011850992622">ಕ್ರೆಡಿಟ್‌ಗಳು</translation>
 <translation id="1342835525016946179">ಲೇಖನ</translation>
 <translation id="1359897965706325498">ಬ್ಯಾನರ್</translation>
+<translation id="1548116112524424341">ಚಿತ್ರದಲ್ಲಿನ ಚಿತ್ರದ ಮೋಡ್‌ನಲ್ಲಿ ವೀಡಿಯೊ ಪ್ಲೇ ಮಾಡಿ</translation>
 <translation id="1589122976691792535">ಪ್ರದೇಶ</translation>
 <translation id="1591562245178063882">ಈ ತಿಂಗಳು</translation>
 <translation id="1637811476055996098">ಫೈಲ್‌ಗಳನ್ನು ಆರಿಸಿ</translation>
@@ -25,10 +27,12 @@
 <translation id="1821985195704844674">ಟ್ರೀ ಗ್ರಿಡ್</translation>
 <translation id="1822429046913737220">AM/PM</translation>
 <translation id="1832974991323546415">ರಿಮೋಟ್ ಸಾಧನದಲ್ಲಿ ಪ್ಲೇ ಮಾಡಿ</translation>
+<translation id="190587075670221089">ಅಳಿಸುವಿಕೆ</translation>
 <translation id="1907737156431278478">ಉದಾಹರಣೆ</translation>
 <translation id="1921819250265091946">ದಿದಿ</translation>
 <translation id="1930711995431081526">ಸ್ಥಿತಿ</translation>
 <translation id="1938124657309484470">ಮೌಲ್ಯವು <ph name="MAXIMUM_DATE_OR_TIME" /> ಅಥವಾ ಹಿಂದಿನದ್ದಾಗಿರಬೇಕು.</translation>
+<translation id="1946271899482435442">ದಿನಾಂಕದ ಆಯ್ಕೆಯನ್ನು ತೋರಿಸಿ</translation>
 <translation id="1993104285338243655">ಪ್ರತಿಬಿಂಬಿಸುವಿಕೆಗೆ ಬದಲಾಯಿಸಲಾಗಿದೆ</translation>
 <translation id="2060505056492490888">'<ph name="DOT" />' ಅನ್ನು '<ph name="INVALIDDOMAIN" />' ನಲ್ಲಿ ತಪ್ಪಾದ ಸ್ಥಾನದಲ್ಲಿ ಬಳಸಲಾಗಿದೆ.</translation>
 <translation id="2148716181193084225">ಇಂದು</translation>
@@ -48,6 +52,7 @@
 <translation id="2653659639078652383">ಸಲ್ಲಿಸು</translation>
 <translation id="2657045182931379222">ಗ್ರಾಫಿಕ್ಸ್ ವಸ್ತು</translation>
 <translation id="2674318244760992338">ಅಡಿಟಿಪ್ಪಣಿ</translation>
+<translation id="2706474812903655270">ಚಿತ್ರದಲ್ಲಿ ಚಿತ್ರ ಮೋಡ್‌ನಲ್ಲಿ ಈ ವೀಡಿಯೊ ಪ್ಲೇ ಆಗುತ್ತಿದೆ</translation>
 <translation id="2709516037105925701">ಸ್ವಯಂತುಂಬುವಿಕೆ</translation>
 <translation id="2723001399770238859">ಆಡಿಯೋ</translation>
 <translation id="2746543609216772311">ಮೌಲ್ಯವು <ph name="MINIMUM_DATE_OR_TIME" /> ಅಥವಾ ನಂತರದ್ದಾಗಿರಬೇಕು.</translation>
@@ -111,7 +116,6 @@
 <translation id="5117590920725113268">ಮುಂದಿನ ತಿಂಗಳು ತೋರಿಸಿ</translation>
 <translation id="512758898067543763">ಸಾಲಿನ ಶಿರೋನಾಮೆ</translation>
 <translation id="5143125788380636750">ಹಿನ್ನುಡಿ</translation>
-<translation id="5153163864850940242">ಚಿತ್ರದಲ್ಲಿನ ಚಿತ್ರದಲ್ಲಿ ಈ ವೀಡಿಯೊ ಪ್ಲೇ ಆಗುತ್ತಿದೆ</translation>
 <translation id="5164977714490026579">ಮೌಲ್ಯವು <ph name="MINIMUM" /> ಕ್ಕಿಂತಲೂ ಹೆಚ್ಚಾಗಿರಬೇಕು ಅಥವಾ ಸಮನಾಗಿರಬೇಕು.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> PB</translation>
 <translation id="5307600278924710095">'<ph name="ATSIGN" />' ನಂತರದ ಭಾಗವನ್ನು ನಮೂದಿಸಿ. '<ph name="INVALIDADDRESS" />' ಅಪೂರ್ಣವಾಗಿದೆ.</translation>
@@ -165,6 +169,7 @@
 <translation id="689129560213475294">ಕೊಲೊಫೋನ್</translation>
 <translation id="6934078000481955284">ಬ್ಲಾಕ್‌ಕೋಟ್</translation>
 <translation id="6941933287844615239">ಮಾಧ್ಯಮ ಡೌನ್‌ಲೋಡ್</translation>
+<translation id="6981594929165378967">ಅಳವಡಿಕೆ</translation>
 <translation id="6989848892321993519">ಈ ಪಠ್ಯವನ್ನು <ph name="MIN_CHARACTERS" /> ಅಥವಾ ಇದಕ್ಕಿಂತಲೂ ಹೆಚ್ಚಿನ ಅಕ್ಷರಗಳಿಗೆ ಉದ್ದಗೊಳಿಸಿ (ನೀವು ಪ್ರಸ್ತುತ 1 ಅಕ್ಷರಗಳನ್ನು ಬಳಸುತ್ತಿರುವಿರಿ).</translation>
 <translation id="709897737746224366">ದಯವಿಟ್ಟು ವಿನಂತಿಸಿದ ಸ್ವರೂಪವನ್ನು ಹೊಂದಿಸಿ.</translation>
 <translation id="7139483182332611405">ಮುನ್ನುಡಿ</translation>
@@ -186,6 +191,7 @@
 <translation id="7720026100085573005">ಉಳಿದಿರುವ ಸಮಯ</translation>
 <translation id="7740016676195725605">ಮುಚ್ಚಲಾಗಿರುವ ಶೀರ್ಷಿಕೆಗಳ ಪ್ರದರ್ಶಿಸುವಿಕೆಯನ್ನು ನಿಲ್ಲಿಸಿ</translation>
 <translation id="7740050170769002709">HTML ವಿಷಯ</translation>
+<translation id="7750228210027921155">ಚಿತ್ರದಲ್ಲಿ ಚಿತ್ರ</translation>
 <translation id="7789962463072032349">ವಿರಾಮ</translation>
 <translation id="7802800022689234070">ತ್ರಿಕೋನ ಪ್ರಕಟಣೆ</translation>
 <translation id="7888071071722539607">ಇಮೇಲ್ ವಿಳಾಸದಲ್ಲಿ ಒಂದು '<ph name="ATSIGN" />' ಅನ್ನು ಸೇರಿಸಿ. '<ph name="ATSIGN" />' ನಲ್ಲಿ '<ph name="INVALIDADDRESS" />' ಕಾಣೆಯಾಗಿದೆ.</translation>
@@ -215,7 +221,6 @@
 <translation id="860475260694818407">ಪರಿವಿಡಿ</translation>
 <translation id="8613126697340063924">ರಿಮೋಟ್ ಪ್ಲೇಬ್ಯಾಕ್ ನಿಯಂತ್ರಿಸಿ</translation>
 <translation id="862370744433916922">ಉಪಶೀರ್ಷಿಕೆ</translation>
-<translation id="8741316211671074806">ಚಿತ್ರದಲ್ಲಿ ಚಿತ್ರ</translation>
 <translation id="8750798805984357768">ದಯವಿಟ್ಟು ಈ ಕೆಳಗಿನ ಆಯ್ಕೆಗಳಲ್ಲಿ ಒಂದನ್ನು ಆರಿಸಿ.</translation>
 <translation id="8785498733064193001">ಪ್ಲೇಬ್ಯಾಕ್ ಪ್ರಾರಂಭಿಸಿ</translation>
 <translation id="8808573423886751634">ಅಧ್ಯಾಯ</translation>
@@ -228,11 +233,13 @@
 <translation id="9048119486235211610">ನ್ಯಾವಿಗೇಷನ್</translation>
 <translation id="9050748414552849310">ಮುಚ್ಚಿರುವ ಶೀರ್ಷಿಕೆಗಳನ್ನು ತೋರಿಸಿ</translation>
 <translation id="9062295712474918030">ಡಾಕ್ಯುಮೆಂಟ್</translation>
+<translation id="9093215626363556771">ಚಿತ್ರದಲ್ಲಿನ ಚಿತ್ರದಿಂದ ನಿರ್ಗಮಿಸಿ</translation>
 <translation id="9108370397979208512">ಮ್ಯಾಥ್</translation>
 <translation id="9132465097189459683">ಇತರೆ...</translation>
 <translation id="9138385573473225930">ಎಚ್ಚರಿಕೆ</translation>
 <translation id="9155987714137265666"><ph name="WEEK" />, <ph name="WEEK_START_DATE" /> ರಂದು ಪ್ರಾರಂಭವಾಗುತ್ತದೆ</translation>
+<translation id="916607977885256133">ಚಿತ್ರದಲ್ಲಿ ಚಿತ್ರ</translation>
 <translation id="9168329111483466115">ಅಡಿಟಿಪ್ಪಣಿ</translation>
-<translation id="947831847158436616">ಸೆಲ್</translation>
+<translation id="954003015749068518">ಚಿತ್ರದಲ್ಲಿನ ಚಿತ್ರವನ್ನು ಪ್ರವೇಶಿಸಿ</translation>
 <translation id="966787709310836684">ಮೆನು</translation>
 </translationbundle>

@@ -10,9 +10,8 @@
 namespace blink {
 
 /**
- * TraceWrapperV8Reference is used to trace from Blink to V8. If wrapper
- * tracing is disabled, the reference is a weak v8::Persistent. Otherwise,
- * the reference is (strongly) traced by wrapper tracing.
+ * TraceWrapperV8Reference is used to trace from Blink to V8. The reference is
+ * (strongly) traced by wrapper tracing.
  *
  * TODO(mlippautz): Use a better handle type than v8::Persistent.
  */
@@ -58,8 +57,7 @@ class TraceWrapperV8Reference {
     return reinterpret_cast<const TraceWrapperV8Reference<S>&>(
         const_cast<const TraceWrapperV8Reference<T>&>(*this));
   }
-  // TODO(mlippautz): Support TraceWrappers(const
-  // TraceWrapperV8Reference<v8::Module>&) and remove UnsafeCast.
+
   template <typename S>
   const TraceWrapperV8Reference<S>& UnsafeCast() const {
     return reinterpret_cast<const TraceWrapperV8Reference<S>&>(

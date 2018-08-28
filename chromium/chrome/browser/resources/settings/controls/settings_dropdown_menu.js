@@ -38,6 +38,9 @@ Polymer({
      */
     menuOptions: {
       type: Array,
+      // TODO(dpapad): This seems unnecessary in Polymer 2, since any
+      // bindings/observers will execute anyway, even if this is undefined.
+      // Consider removing once migration is done.
       value: null,
     },
 
@@ -92,6 +95,10 @@ Polymer({
       if (prefValue !== undefined)
         this.set('pref.value', prefValue);
     }
+
+    // settings-control-change only fires when the selection is changed to
+    // a valid property.
+    this.fire('settings-control-change');
   },
 
   /**
@@ -99,6 +106,11 @@ Polymer({
    * @private
    */
   updateSelected_: function() {
+    if (this.menuOptions === undefined || this.pref === undefined ||
+        this.prefKey === undefined) {
+      return;
+    }
+
     if (this.menuOptions === null || !this.menuOptions.length)
       return;
 
@@ -136,8 +148,11 @@ Polymer({
    * @private
    */
   showNotFoundValue_: function(menuOptions, prefValue) {
+    if (menuOptions === undefined || prefValue === undefined)
+      return false;
+
     // Don't show "Custom" before the options load.
-    if (!menuOptions || !menuOptions.length)
+    if (menuOptions === null || menuOptions.length == 0)
       return false;
 
     const option = menuOptions.find((menuItem) => {

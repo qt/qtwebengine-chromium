@@ -14,13 +14,18 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "net/base/completion_once_callback.h"
 #include "net/base/network_change_notifier.h"
 #include "net/dns/dns_config_service.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/host_resolver_proc.h"
-#include "net/url_request/url_request_context_getter.h"
+#include "net/url_request/url_request_context.h"
 #include "url/gurl.h"
+
+namespace base {
+class TickClock;
+}  // namespace base
 
 namespace net {
 
@@ -134,7 +139,7 @@ class NET_EXPORT HostResolverImpl
   int Resolve(const RequestInfo& info,
               RequestPriority priority,
               AddressList* addresses,
-              const CompletionCallback& callback,
+              CompletionOnceCallback callback,
               std::unique_ptr<Request>* out_req,
               const NetLogWithSource& source_net_log) override;
   int ResolveFromCache(const RequestInfo& info,
@@ -165,10 +170,14 @@ class NET_EXPORT HostResolverImpl
   void SetRequestContext(URLRequestContext* request_context) override;
   void AddDnsOverHttpsServer(std::string server, bool use_post) override;
   void ClearDnsOverHttpsServers() override;
+  const std::vector<DnsConfig::DnsOverHttpsServerConfig>*
+  GetDnsOverHttpsServersForTesting() const override;
 
   void set_proc_params_for_test(const ProcTaskParams& proc_params) {
     proc_params_ = proc_params;
   }
+
+  void SetTickClockForTesting(const base::TickClock* tick_clock);
 
  protected:
   // Callback from HaveOnlyLoopbackAddresses probe.
@@ -276,8 +285,8 @@ class NET_EXPORT HostResolverImpl
                    const HostCache::Entry& entry,
                    base::TimeDelta ttl);
 
-  // Removes |job| from |jobs_|, only if it exists, but does not delete it.
-  void RemoveJob(Job* job);
+  // Removes |job| from |jobs_| and return, only if it exists.
+  std::unique_ptr<Job> RemoveJob(Job* job);
 
   // Aborts all in progress jobs with ERR_NETWORK_CHANGED and notifies their
   // requests. Might start new jobs.
@@ -369,6 +378,9 @@ class NET_EXPORT HostResolverImpl
 
   URLRequestContext* url_request_context_;
   std::vector<DnsConfig::DnsOverHttpsServerConfig> dns_over_https_servers_;
+
+  // Shared tick clock, overridden for testing.
+  const base::TickClock* tick_clock_;
 
   THREAD_CHECKER(thread_checker_);
 

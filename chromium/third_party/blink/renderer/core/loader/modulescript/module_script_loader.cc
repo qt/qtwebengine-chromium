@@ -6,10 +6,10 @@
 
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
-#include "third_party/blink/renderer/core/loader/modulescript/document_module_script_fetcher.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_fetcher.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_loader_client.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_loader_registry.h"
+#include "third_party/blink/renderer/core/script/fetch_client_settings_object_snapshot.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/script/module_script.h"
 #include "third_party/blink/renderer/core/workers/main_thread_worklet_global_scope.h"
@@ -77,10 +77,27 @@ void ModuleScriptLoader::AdvanceState(ModuleScriptLoader::State new_state) {
   }
 }
 
-void ModuleScriptLoader::Fetch(const ModuleScriptFetchRequest& module_request,
-                               ModuleGraphLevel level) {
-  // https://html.spec.whatwg.org/#fetch-a-single-module-script
+void ModuleScriptLoader::Fetch(
+    const ModuleScriptFetchRequest& module_request,
+    FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
+    ModuleGraphLevel level,
+    Modulator* module_map_settings_object,
+    ModuleScriptCustomFetchType custom_fetch_type,
+    ModuleScriptLoaderRegistry* registry,
+    ModuleScriptLoaderClient* client) {
+  ModuleScriptLoader* loader = new ModuleScriptLoader(
+      module_map_settings_object, module_request.Options(), registry, client);
+  registry->AddLoader(loader);
+  loader->FetchInternal(module_request, fetch_client_settings_object, level,
+                        custom_fetch_type);
+}
 
+// https://html.spec.whatwg.org/#fetch-a-single-module-script
+void ModuleScriptLoader::FetchInternal(
+    const ModuleScriptFetchRequest& module_request,
+    FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
+    ModuleGraphLevel level,
+    ModuleScriptCustomFetchType custom_fetch_type) {
   // Step 4. "Set moduleMap[url] to "fetching"." [spec text]
   AdvanceState(State::kFetching);
 
@@ -111,7 +128,7 @@ void ModuleScriptLoader::Fetch(const ModuleScriptFetchRequest& module_request,
 
   if (level == ModuleGraphLevel::kDependentModuleFetch) {
     options.initiator_info.imported_module_referrer =
-        module_request.GetReferrer();
+        module_request.GetReferrer().referrer;
     options.initiator_info.position = module_request.GetReferrerPosition();
   }
 
@@ -132,15 +149,12 @@ void ModuleScriptLoader::Fetch(const ModuleScriptFetchRequest& module_request,
   // [SMSR] "... and its credentials mode to options's credentials mode."
   // [spec text]
   fetch_params.SetCrossOriginAccessControl(
-      modulator_->GetSecurityOriginForFetch(), options_.CredentialsMode());
+      fetch_client_settings_object->GetSecurityOrigin(),
+      options_.CredentialsMode());
 
   // Step 5. "... referrer is referrer, ..." [spec text]
-  if (!module_request.GetReferrer().IsNull()) {
-    fetch_params.MutableResourceRequest().SetHTTPReferrer(
-        SecurityPolicy::GenerateReferrer(module_request.GetReferrerPolicy(),
-                                         module_request.Url(),
-                                         module_request.GetReferrer()));
-  }
+  fetch_params.MutableResourceRequest().SetHTTPReferrer(
+      module_request.GetReferrer());
 
   // Step 5. "... and client is fetch client settings object." [spec text]
   // -> set by ResourceFetcher
@@ -171,8 +185,8 @@ void ModuleScriptLoader::Fetch(const ModuleScriptFetchRequest& module_request,
   // Otherwise, fetch request. Return from this algorithm, and run the remaining
   // steps as part of the fetch's process response for the response response."
   // [spec text]
-  module_fetcher_ = modulator_->CreateModuleScriptFetcher();
-  module_fetcher_->Fetch(fetch_params, this);
+  module_fetcher_ = modulator_->CreateModuleScriptFetcher(custom_fetch_type);
+  module_fetcher_->Fetch(fetch_params, level, this);
 }
 
 void ModuleScriptLoader::NotifyFetchFinished(
@@ -185,7 +199,7 @@ void ModuleScriptLoader::NotifyFetchFinished(
   }
 
   // Note: "conditions" referred in Step 8 is implemented in
-  // WasModuleLoadSuccessful() in DocumentModuleScriptFetcher.cpp.
+  // WasModuleLoadSuccessful() in module_script_fetcher.cc.
   // Step 8. "If any of the following conditions are met, set moduleMap[url] to
   // null, asynchronously complete this algorithm with null, and abort these
   // steps." [spec text]

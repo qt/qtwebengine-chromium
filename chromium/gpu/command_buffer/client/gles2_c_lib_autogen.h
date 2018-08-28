@@ -1391,11 +1391,8 @@ void GL_APIENTRY GLES2DrawElementsInstancedANGLE(GLenum mode,
 void GL_APIENTRY GLES2VertexAttribDivisorANGLE(GLuint index, GLuint divisor) {
   gles2::GetGLContext()->VertexAttribDivisorANGLE(index, divisor);
 }
-void GL_APIENTRY GLES2GenMailboxCHROMIUM(GLbyte* mailbox) {
-  gles2::GetGLContext()->GenMailboxCHROMIUM(mailbox);
-}
 void GL_APIENTRY GLES2ProduceTextureDirectCHROMIUM(GLuint texture,
-                                                   const GLbyte* mailbox) {
+                                                   GLbyte* mailbox) {
   gles2::GetGLContext()->ProduceTextureDirectCHROMIUM(texture, mailbox);
 }
 GLuint GL_APIENTRY GLES2CreateAndConsumeTextureCHROMIUM(const GLbyte* mailbox) {
@@ -1794,6 +1791,10 @@ void GL_APIENTRY GLES2WaitGpuFenceCHROMIUM(GLuint gpu_fence_id) {
 }
 void GL_APIENTRY GLES2DestroyGpuFenceCHROMIUM(GLuint gpu_fence_id) {
   gles2::GetGLContext()->DestroyGpuFenceCHROMIUM(gpu_fence_id);
+}
+void GL_APIENTRY
+GLES2InvalidateReadbackBufferShadowDataCHROMIUM(GLuint buffer_id) {
+  gles2::GetGLContext()->InvalidateReadbackBufferShadowDataCHROMIUM(buffer_id);
 }
 
 namespace gles2 {
@@ -2837,10 +2838,6 @@ extern const NameToFunc g_gles2_function_table[] = {
         reinterpret_cast<GLES2FunctionPointer>(glVertexAttribDivisorANGLE),
     },
     {
-        "glGenMailboxCHROMIUM",
-        reinterpret_cast<GLES2FunctionPointer>(glGenMailboxCHROMIUM),
-    },
-    {
         "glProduceTextureDirectCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glProduceTextureDirectCHROMIUM),
     },
@@ -3146,6 +3143,11 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
         "glDestroyGpuFenceCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glDestroyGpuFenceCHROMIUM),
+    },
+    {
+        "glInvalidateReadbackBufferShadowDataCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glInvalidateReadbackBufferShadowDataCHROMIUM),
     },
     {
         NULL, NULL,

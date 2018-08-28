@@ -23,6 +23,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
+#include "net/base/auth.h"
 #include "net/base/io_buffer.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
@@ -204,6 +205,16 @@ class WebSocketChannel::ConnectDelegate
                                     fatal);
   }
 
+  int OnAuthRequired(scoped_refptr<AuthChallengeInfo> auth_info,
+                     scoped_refptr<HttpResponseHeaders> headers,
+                     const HostPortPair& host_port_pair,
+                     base::OnceCallback<void(const AuthCredentials*)> callback,
+                     base::Optional<AuthCredentials>* credentials) override {
+    return creator_->OnAuthRequired(std::move(auth_info), std::move(headers),
+                                    host_port_pair, std::move(callback),
+                                    credentials);
+  }
+
  private:
   // A pointer to the WebSocketChannel that created this object. There is no
   // danger of this pointer being stale, because deleting the WebSocketChannel
@@ -227,7 +238,13 @@ class WebSocketChannel::PendingReceivedFrame {
         offset_(offset),
         size_(size) {}
   PendingReceivedFrame(const PendingReceivedFrame& other) = default;
+  PendingReceivedFrame(PendingReceivedFrame&& other) = default;
   ~PendingReceivedFrame() = default;
+
+  // PendingReceivedFrame is placed in a base::queue and so needs to be copyable
+  // and movable.
+  PendingReceivedFrame& operator=(const PendingReceivedFrame& other) = default;
+  PendingReceivedFrame& operator=(PendingReceivedFrame&& other) = default;
 
   bool final() const { return final_; }
   WebSocketFrameHeader::OpCode opcode() const { return opcode_; }
@@ -247,10 +264,6 @@ class WebSocketChannel::PendingReceivedFrame {
     DCHECK_LE(bytes, size_ - offset_);
     offset_ += bytes;
   }
-
-  // This object needs to be copyable and assignable, since it will be placed
-  // in a base::queue. The compiler-generated copy constructor and assignment
-  // operator will do the right thing.
 
  private:
   bool final_;
@@ -330,37 +343,29 @@ WebSocketChannel::ChannelState WebSocketChannel::SendFrame(
     WebSocketFrameHeader::OpCode op_code,
     scoped_refptr<IOBuffer> buffer,
     size_t buffer_size) {
-  if (buffer_size > INT_MAX) {
-    NOTREACHED() << "Frame size sanity check failed";
-    return CHANNEL_ALIVE;
-  }
-  if (stream_ == NULL) {
-    LOG(DFATAL) << "Got SendFrame without a connection established; "
-                << "misbehaving renderer? fin=" << fin << " op_code=" << op_code
-                << " buffer_size=" << buffer_size;
-    return CHANNEL_ALIVE;
-  }
+  DCHECK_LE(buffer_size, static_cast<size_t>(INT_MAX));
+  DCHECK(stream_) << "Got SendFrame without a connection established; fin="
+                  << fin << " op_code=" << op_code
+                  << " buffer_size=" << buffer_size;
+
   if (InClosingState()) {
     DVLOG(1) << "SendFrame called in state " << state_
              << ". This may be a bug, or a harmless race.";
     return CHANNEL_ALIVE;
   }
-  if (state_ != CONNECTED) {
-    NOTREACHED() << "SendFrame() called in state " << state_;
-    return CHANNEL_ALIVE;
-  }
+
+  DCHECK_EQ(state_, CONNECTED);
   if (buffer_size > base::checked_cast<size_t>(current_send_quota_)) {
     // TODO(ricea): Kill renderer.
     FailChannel("Send quota exceeded", kWebSocketErrorGoingAway, "");
     return CHANNEL_DELETED;
     // |this| has been deleted.
   }
-  if (!WebSocketFrameHeader::IsKnownDataOpCode(op_code)) {
-    LOG(DFATAL) << "Got SendFrame with bogus op_code " << op_code
-                << "; misbehaving renderer? fin=" << fin
-                << " buffer_size=" << buffer_size;
-    return CHANNEL_ALIVE;
-  }
+
+  DCHECK(WebSocketFrameHeader::IsKnownDataOpCode(op_code))
+      << "Got SendFrame with bogus op_code " << op_code << " fin=" << fin
+      << " buffer_size=" << buffer_size;
+
   if (op_code == WebSocketFrameHeader::kOpCodeText ||
       (op_code == WebSocketFrameHeader::kOpCodeContinuation &&
        sending_text_message_)) {
@@ -466,10 +471,7 @@ ChannelState WebSocketChannel::StartClosingHandshake(
     DoDropChannel(false, kWebSocketErrorAbnormalClosure, "");
     return CHANNEL_DELETED;
   }
-  if (state_ != CONNECTED) {
-    NOTREACHED() << "StartClosingHandshake() called in state " << state_;
-    return CHANNEL_ALIVE;
-  }
+  DCHECK_EQ(state_, CONNECTED);
 
   DCHECK(!close_timer_.IsRunning());
   // This use of base::Unretained() is safe because we stop the timer in the
@@ -599,6 +601,17 @@ void WebSocketChannel::OnSSLCertificateError(
     bool fatal) {
   event_interface_->OnSSLCertificateError(std::move(ssl_error_callbacks),
                                           socket_url_, ssl_info, fatal);
+}
+
+int WebSocketChannel::OnAuthRequired(
+    scoped_refptr<AuthChallengeInfo> auth_info,
+    scoped_refptr<HttpResponseHeaders> response_headers,
+    const HostPortPair& host_port_pair,
+    base::OnceCallback<void(const AuthCredentials*)> callback,
+    base::Optional<AuthCredentials>* credentials) {
+  return event_interface_->OnAuthRequired(
+      std::move(auth_info), std::move(response_headers), host_port_pair,
+      std::move(callback), credentials);
 }
 
 void WebSocketChannel::OnStartOpeningHandshake(

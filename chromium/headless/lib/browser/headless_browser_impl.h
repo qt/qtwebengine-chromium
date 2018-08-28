@@ -18,11 +18,6 @@
 #include "headless/lib/browser/headless_devtools_manager_delegate.h"
 #include "headless/lib/browser/headless_web_contents_impl.h"
 #include "headless/public/headless_export.h"
-#include "headless/public/util/moveable_auto_lock.h"
-
-namespace net {
-class NetLog;
-}  // namespace net
 
 namespace ui {
 class Compositor;
@@ -46,7 +41,6 @@ class HEADLESS_EXPORT HeadlessBrowserImpl : public HeadlessBrowser,
 
   // HeadlessBrowser implementation:
   HeadlessBrowserContext::Builder CreateBrowserContextBuilder() override;
-  scoped_refptr<base::SingleThreadTaskRunner> BrowserIOThread() const override;
   scoped_refptr<base::SingleThreadTaskRunner> BrowserMainThread()
       const override;
 
@@ -61,6 +55,7 @@ class HEADLESS_EXPORT HeadlessBrowserImpl : public HeadlessBrowser,
       HeadlessBrowserContext* browser_context) override;
   HeadlessBrowserContext* GetDefaultBrowserContext() override;
   HeadlessDevToolsTarget* GetDevToolsTarget() override;
+  std::unique_ptr<HeadlessDevToolsChannel> CreateDevToolsChannel() override;
 
   // HeadlessDevToolsTarget implementation:
   void AttachClient(HeadlessDevToolsClient* client) override;
@@ -70,11 +65,9 @@ class HEADLESS_EXPORT HeadlessBrowserImpl : public HeadlessBrowser,
   void set_browser_main_parts(HeadlessBrowserMainParts* browser_main_parts);
   HeadlessBrowserMainParts* browser_main_parts() const;
 
-  void PreMainMessageLoopRun();
   void RunOnStartCallback();
 
   HeadlessBrowser::Options* options() { return &options_; }
-  net::NetLog* net_log() const { return net_log_.get(); }
 
   HeadlessBrowserContext* CreateBrowserContext(
       HeadlessBrowserContext::Builder* builder);
@@ -85,12 +78,6 @@ class HEADLESS_EXPORT HeadlessBrowserImpl : public HeadlessBrowser,
   HeadlessWebContentsImpl* GetWebContentsForWindowId(const int window_id);
 
   base::WeakPtr<HeadlessBrowserImpl> GetWeakPtr();
-
-  // Returns the corresponding HeadlessBrowserContextImpl or null if one can't
-  // be found. Can be called on any thread.
-  LockedPtr<HeadlessBrowserContextImpl> GetBrowserContextForRenderFrame(
-      int render_process_id,
-      int render_frame_id) const;
 
   // All the methods that begin with Platform need to be implemented by the
   // platform specific headless implementation.
@@ -105,10 +92,8 @@ class HEADLESS_EXPORT HeadlessBrowserImpl : public HeadlessBrowser,
  protected:
   base::OnceCallback<void(HeadlessBrowser*)> on_start_callback_;
   HeadlessBrowser::Options options_;
-  std::unique_ptr<net::NetLog> net_log_;
   HeadlessBrowserMainParts* browser_main_parts_;  // Not owned.
 
-  mutable base::Lock browser_contexts_lock_;  // Protects |browser_contexts_|
   base::flat_map<std::string, std::unique_ptr<HeadlessBrowserContextImpl>>
       browser_contexts_;
   HeadlessBrowserContext* default_browser_context_;  // Not owned.

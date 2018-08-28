@@ -13,6 +13,7 @@ SkPoint  <code>typedef</code> define a data type.
   <tr><th style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>Topic</th>
 <th style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>Description</th></tr>
 </table>
+
 <a href='#SkPoint'>SkPoint</a> holds two 32-bit floating point coordinates.
 
 ## Overview
@@ -67,7 +68,6 @@ SkPoint global, <code>struct</code>, and <code>class</code> related member funct
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>alias for <a href='#Point'>Point</a></td>
   </tr>
 </table>
-
 
 ## <a name='Member_Function'>Member Function</a>
 
@@ -178,7 +178,6 @@ SkPoint member functions read and modify the structure properties.
   </tr>
 </table>
 
-
 ## <a name='Member'>Member</a>
 
 
@@ -216,7 +215,6 @@ SkPoint members may be read and written directly without using a member function
   </tr>
 </table>
 
-
 ### Members
 
 <table style='border-collapse: collapse; width: 62.5em'>
@@ -253,7 +251,6 @@ SkPoint can be constructed or initialized by these functions, including C++ clas
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>constructs from <a href='undocumented#SkScalar'>SkScalar</a> inputs</td>
   </tr>
 </table>
-
 
 <a name='SkPoint_Make'></a>
 ## Make
@@ -335,7 +332,6 @@ all equal
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>returns <a href='#SkPoint_fY'>fY</a></td>
   </tr>
 </table>
-
 
 <a name='SkPoint_x'></a>
 ## x
@@ -478,7 +474,6 @@ pt.isZero() == true
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>sets length to one, in direction of (x, y)</td>
   </tr>
 </table>
-
 
 <a name='SkPoint_set'></a>
 ## set
@@ -665,7 +660,6 @@ pt: nan, -nan  abs: nan, nan
   </tr>
 </table>
 
-
 <a name='SkPoint_Offset'></a>
 ## Offset
 
@@ -768,7 +762,7 @@ Adds offset (<a href='#SkPoint_offset_dx'>dx</a>, <a href='#SkPoint_offset_dy'>d
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkPoint_length'>length</a>() const
 </pre>
 
-Returns the Euclidean_Distance from origin, computed as:
+Returns the <a href='undocumented#Euclidean_Distance'>Euclidean Distance</a> from origin, computed as:
 
 <pre style="padding: 1em 1em 1em 1em;width: 62.5em; background-color: #f0f0f0">
 sqrt(fX * fX + fY * fY)
@@ -797,7 +791,7 @@ straight-line distance to origin
 <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkPoint_distanceToOrigin'>distanceToOrigin</a>() const
 </pre>
 
-Returns the Euclidean_Distance from origin, computed as:
+Returns the <a href='undocumented#Euclidean_Distance'>Euclidean Distance</a> from origin, computed as:
 
 <pre style="padding: 1em 1em 1em 1em;width: 62.5em; background-color: #f0f0f0">
 sqrt(fX * fX + fY * fY)
@@ -1017,7 +1011,6 @@ SkPoint operators inline class member functions with arithmetic equivalents.
   </tr>
 </table>
 
-
 <a name='SkPoint_scale'></a>
 ## scale
 
@@ -1231,6 +1224,7 @@ Returns <a href='#Point'>Point</a> multiplied by scale.
 
 Multiplies <a href='#Point'>Point</a> by scale. Sets <a href='#Point'>Point</a> to:
 (<a href='#SkPoint_fX'>fX</a> * scale, <a href='#SkPoint_fY'>fY</a> * scale)
+.
 
 ### Parameters
 
@@ -1501,7 +1495,7 @@ Can also be used to add <a href='#Vector'>Vector</a> to <a href='#Vector'>Vector
 static <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkPoint_Length'>Length</a>(<a href='undocumented#SkScalar'>SkScalar</a> x, <a href='undocumented#SkScalar'>SkScalar</a> y)
 </pre>
 
-Returns the Euclidean_Distance from origin, computed as:
+Returns the <a href='undocumented#Euclidean_Distance'>Euclidean Distance</a> from origin, computed as:
 
 <pre style="padding: 1em 1em 1em 1em;width: 62.5em; background-color: #f0f0f0">
 sqrt(x * x + y * y)
@@ -1576,7 +1570,7 @@ original <a href='#SkPoint_Normalize_vec'>vec</a> length
 static <a href='undocumented#SkScalar'>SkScalar</a> <a href='#SkPoint_Distance'>Distance</a>(const <a href='#SkPoint'>SkPoint</a>& a, const <a href='#SkPoint'>SkPoint</a>& b)
 </pre>
 
-Returns the Euclidean_Distance between <a href='#SkPoint_Distance_a'>a</a> and <a href='#SkPoint_Distance_b'>b</a>.
+Returns the <a href='undocumented#Euclidean_Distance'>Euclidean Distance</a> between <a href='#SkPoint_Distance_a'>a</a> and <a href='#SkPoint_Distance_b'>b</a>.
 
 ### Parameters
 
@@ -1745,4 +1739,4 @@ product of input magnitudes and cosine of the angle between them
 </pre>
 
 <a href='#SkVector'>SkVector</a> provides an alternative name for <a href='#SkPoint'>SkPoint</a>. <a href='#SkVector'>SkVector</a> and <a href='#SkPoint'>SkPoint</a> can
-be used interchangably for all purposes.
+be used interchangeably for all purposes.

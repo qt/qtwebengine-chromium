@@ -101,14 +101,14 @@ Polymer({
         if (settings.routes.EDIT_DICTIONARY) {
           map.set(
               settings.routes.EDIT_DICTIONARY.path,
-              '#spellCheckCollapse .subpage-arrow');
+              '#spellCheckCollapse .subpage-arrow button');
         }
         // </if>
         // <if expr="chromeos">
         if (settings.routes.INPUT_METHODS) {
           map.set(
               settings.routes.INPUT_METHODS.path,
-              '#inputMethodsCollapse .subpage-arrow');
+              '#inputMethodsCollapse .subpage-arrow button');
         }
         // </if>
         return map;
@@ -146,50 +146,49 @@ Polymer({
   onAddLanguagesTap_: function(e) {
     e.preventDefault();
     this.showAddLanguagesDialog_ = true;
-    this.async(function() {
-      const dialog = this.$$('settings-add-languages-dialog');
-      dialog.addEventListener('close', () => {
-        this.showAddLanguagesDialog_ = false;
-        cr.ui.focusWithoutInk(assert(this.$.addLanguages));
-      });
-    });
+  },
+
+  /** @private */
+  onAddLanguagesDialogClose_: function() {
+    this.showAddLanguagesDialog_ = false;
+    cr.ui.focusWithoutInk(assert(this.$.addLanguages));
   },
 
   /**
    * Used to determine which "Move" buttons to show for ordering enabled
    * languages.
    * @param {number} n
-   * @param {!LanguageState} language
    * @return {boolean} True if |language| is at the |n|th index in the list of
    *     enabled languages.
    * @private
    */
-  isNthLanguage_: function(n, language) {
+  isNthLanguage_: function(n) {
+    if (this.languages == undefined || this.detailLanguage_ == undefined)
+      return false;
+
     const compareLanguage = assert(this.languages.enabled[n]);
-    return language.language == compareLanguage.language;
+    return this.detailLanguage_.language == compareLanguage.language;
   },
 
   /**
-   * @param {!LanguageState} language
    * @return {boolean} True if the "Move to top" option for |language| should be
    *     visible.
    * @private
    */
-  showMoveUp_: function(language) {
+  showMoveUp_: function() {
     // "Move up" is a no-op for the top language, and redundant with
     // "Move to top" for the 2nd language.
-    return !this.isNthLanguage_(0, language) &&
-        !this.isNthLanguage_(1, language);
+    return !this.isNthLanguage_(0) && !this.isNthLanguage_(1);
   },
 
   /**
-   * @param {!LanguageState} language
    * @return {boolean} True if the "Move down" option for |language| should be
    *     visible.
    * @private
    */
-  showMoveDown_: function(language) {
-    return !this.isNthLanguage_(this.languages.enabled.length - 1, language);
+  showMoveDown_: function() {
+    return this.languages != undefined &&
+        !this.isNthLanguage_(this.languages.enabled.length - 1);
   },
 
   /**
@@ -197,7 +196,7 @@ Polymer({
    * @return {boolean} True if there are less than 2 languages.
    */
   isHelpTextHidden_: function(change) {
-    return this.languages.enabled.length <= 1;
+    return this.languages != undefined && this.languages.enabled.length <= 1;
   },
 
   // <if expr="chromeos">
@@ -302,23 +301,13 @@ Polymer({
     if (languageState.language.code == prospectiveUILanguage)
       return true;
 
-    // Check if the language is allowed by the current PolicyEnforcedLocales
+    // Check if the language is prohibited by the current "AllowedUILocales"
     // policy.
-    if (!languageState.language.isAllowedLocale)
+    if (languageState.language.isProhibitedUILocale)
       return true;
 
     // Otherwise, the prospective language can be changed to this language.
     return false;
-  },
-
-  /**
-   * @param {!chrome.languageSettingsPrivate.Language} language
-   * @return {string} 'userPolicy' if the language is not allowed by the
-   *     AllowedLocales policy, 'none' otherwise.
-   * @private
-   */
-  getPolicyIndicatorStatus_: function(language) {
-    return (language.isAllowedLocale ? 'none' : 'userPolicy');
   },
 
   /**
@@ -344,7 +333,7 @@ Polymer({
    * @private
    */
   disableTranslateCheckbox_: function(language, targetLanguageCode) {
-    if (!language.supportsTranslate)
+    if (language == undefined || !language.supportsTranslate)
       return true;
 
     return this.languageHelper.convertLanguageCodeForTranslate(language.code) ==
@@ -458,7 +447,10 @@ Polymer({
    * @private
    */
   getSpellCheckSecondaryText_: function() {
-    if (this.getSpellCheckDisabled_())
+    if (this.languages == undefined || this.prefs == undefined)
+      return '';
+
+    if (this.getSpellCheckDisabledByPolicy_())
       return loadTimeData.getString('spellCheckDisabled');
     const enabledSpellCheckLanguages =
         this.getSpellCheckLanguages_().filter(function(languageState) {
@@ -496,10 +488,11 @@ Polymer({
    * @return {boolean}
    * @private
    */
-  getSpellCheckDisabled_: function() {
+  getSpellCheckDisabledByPolicy_: function() {
     const pref = /** @type {!chrome.settingsPrivate.PrefObject} */ (
         this.get('browser.enable_spellchecking', this.prefs));
-    return pref.value === false;
+    return pref.enforcement == chrome.settingsPrivate.Enforcement.ENFORCED &&
+        pref.value === false;
   },
 
   /**
@@ -515,6 +508,9 @@ Polymer({
 
   /** @private */
   updateSpellcheckLanguages_: function() {
+    if (this.languages == undefined)
+      return;
+
     this.set('spellCheckLanguages_', this.getSpellCheckLanguages_());
 
     // Notify Polymer of subproperties that might have changed on the items in
@@ -534,7 +530,10 @@ Polymer({
 
   /** @private */
   updateSpellcheckEnabled_: function() {
-    this.set('spellCheckDisabled_', this.getSpellCheckDisabled_());
+    if (this.prefs == undefined)
+      return;
+
+    this.set('spellCheckDisabled_', this.getSpellCheckDisabledByPolicy_());
 
     // If the spellcheck section was expanded, close it.
     if (this.spellCheckDisabled_)

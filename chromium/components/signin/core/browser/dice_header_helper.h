@@ -41,7 +41,13 @@ class DiceHeaderHelper : public SigninHeaderHelper {
   // account.
   // |show_signout_confirmation| is true if Gaia must display the signout
   // confirmation dialog.
-  std::string BuildRequestHeader(const std::string& sync_account_id);
+  std::string BuildRequestHeader(const std::string& sync_account_id,
+                                 const std::string& device_id);
+
+  // SigninHeaderHelper implementation:
+  bool ShouldBuildRequestHeader(
+      const GURL& url,
+      const content_settings::CookieSettings* cookie_settings) override;
 
  private:
   // SigninHeaderHelper implementation:

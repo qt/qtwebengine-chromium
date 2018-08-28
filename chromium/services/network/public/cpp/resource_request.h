@@ -11,6 +11,7 @@
 #include "base/component_export.h"
 #include "base/memory/ref_counted.h"
 #include "base/optional.h"
+#include "base/unguessable_token.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_request_headers.h"
 #include "net/url_request/url_request.h"
@@ -123,15 +124,23 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   // about this.
   bool skip_service_worker = false;
 
-  // The request mode passed to the ServiceWorker.
-  mojom::FetchRequestMode fetch_request_mode =
-      mojom::FetchRequestMode::kSameOrigin;
+  // https://fetch.spec.whatwg.org/#concept-request-mode
+  // Used mainly by CORS handling (out-of-blink CORS), CORB, Service Worker.
+  // CORS handling needs a proper origin (including a unique opaque origin).
+  // Hence a request with kSameOrigin, kCORS, or kCORSWithForcedPreflight should
+  // have a non-null request_initiator.
+  mojom::FetchRequestMode fetch_request_mode = mojom::FetchRequestMode::kNoCORS;
 
-  // The credentials mode passed to the ServiceWorker.
+  // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
+  // Used mainly by CORS handling (out-of-blink CORS), Service Worker.
+  // If this member is kOmit, then DO_NOT_SAVE_COOKIES, DO_NOT_SEND_COOKIES,
+  // and DO_NOT_SEND_AUTH_DATA must be set on load_flags.
   mojom::FetchCredentialsMode fetch_credentials_mode =
-      mojom::FetchCredentialsMode::kOmit;
+      mojom::FetchCredentialsMode::kInclude;
 
-  // The redirect mode used in Fetch API.
+  // https://fetch.spec.whatwg.org/#concept-request-redirect-mode
+  // Used mainly by CORS handling (out-of-blink CORS), Service Worker.
+  // This member must be kFollow as long as |fetch_request_mode| is kNoCORS.
   mojom::FetchRedirectMode fetch_redirect_mode =
       mojom::FetchRedirectMode::kFollow;
 
@@ -150,12 +159,6 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
 
   // Optional resource request body (may be null).
   scoped_refptr<ResourceRequestBody> request_body;
-
-  // If true, then the response body will be downloaded to a file and the path
-  // to that file will be provided in ResponseInfo::download_file_path.
-  // Deprecated and not supported by the network service code.
-  // TODO(mek): Remove this flag once all usage of it is gone (XHR and PPAPI).
-  bool download_to_file = false;
 
   // True if the request can work after the fetch group is terminated.
   // https://fetch.spec.whatwg.org/#request-keepalive-flag
@@ -203,8 +206,15 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   // about this.
   int previews_state = 0;
 
-  // Wether or not the initiator of this request is a secure context.
+  // Whether or not the initiator of this request is a secure context.
   bool initiated_in_secure_context = false;
+
+  // Whether or not this request (including redirects) should be upgraded to
+  // HTTPS due to an Upgrade-Insecure-Requests requirement.
+  bool upgrade_if_insecure = false;
+
+  // The profile ID of network conditions to throttle the network request.
+  base::Optional<base::UnguessableToken> throttling_profile_id;
 };
 
 }  // namespace network

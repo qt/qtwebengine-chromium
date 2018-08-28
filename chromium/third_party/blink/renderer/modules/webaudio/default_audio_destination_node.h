@@ -30,6 +30,7 @@
 #include "third_party/blink/public/platform/web_audio_latency_hint.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_destination_node.h"
 #include "third_party/blink/renderer/platform/audio/audio_destination.h"
+#include "third_party/blink/renderer/platform/audio/audio_io_callback.h"
 
 namespace blink {
 
@@ -37,59 +38,61 @@ class BaseAudioContext;
 class ExceptionState;
 class WebAudioLatencyHint;
 
-class DefaultAudioDestinationHandler final : public AudioDestinationHandler {
+class DefaultAudioDestinationHandler final : public AudioDestinationHandler,
+                                             public AudioIOCallback {
  public:
   static scoped_refptr<DefaultAudioDestinationHandler> Create(
       AudioNode&,
       const WebAudioLatencyHint&);
   ~DefaultAudioDestinationHandler() override;
 
-  // AudioHandler
+  // For AudioHandler.
   void Dispose() override;
   void Initialize() override;
   void Uninitialize() override;
   void SetChannelCount(unsigned long, ExceptionState&) override;
+  double LatencyTime() const override { return 0; }
+  double TailTime() const override { return 0; }
+  bool RequiresTailProcessing() const final { return false; }
 
-  // AudioDestinationHandler
+  // For AudioDestinationHandler.
   void StartRendering() override;
   void StopRendering() override;
   void RestartRendering() override;
   unsigned long MaxChannelCount() const override;
-  // Returns the rendering callback buffer size.
-  size_t CallbackBufferSize() const override;
   double SampleRate() const override;
-  int FramesPerBuffer() const override;
 
-  double TailTime() const override { return 0; }
-  double LatencyTime() const override { return 0; }
-  bool RequiresTailProcessing() const final { return false; }
+  // For AudioIOCallback. This is invoked by the platform audio destination to
+  // get the next render quantum into |destination_bus| and update
+  // |output_position|.
+  void Render(AudioBus* destination_bus,
+              size_t number_of_frames,
+              const AudioIOPosition& output_position) final;
+
+  // Returns a hadrware callback buffer size from audio infra.
+  size_t GetCallbackBufferSize() const;
+
+  // Returns a given frames-per-buffer size from audio infra.
+  int GetFramesPerBuffer() const;
 
  private:
   explicit DefaultAudioDestinationHandler(AudioNode&,
                                           const WebAudioLatencyHint&);
+
   void CreateDestination();
-
-  // Starts platform/AudioDestination. If the runtime flag for AudioWorklet is
-  // set, uses the AudioWorkletThread's backing thread for the rendering.
   void StartDestination();
-
   void StopDestination();
 
-  // Uses |RefPtr| to keep the AudioDestination alive until all the cross-thread
-  // tasks are completed.
-  scoped_refptr<AudioDestination> destination_;
-
-  String input_device_id_;
-  unsigned number_of_input_channels_;
   const WebAudioLatencyHint latency_hint_;
+  scoped_refptr<AudioDestination> destination_;
 };
+
+// -----------------------------------------------------------------------------
 
 class DefaultAudioDestinationNode final : public AudioDestinationNode {
  public:
   static DefaultAudioDestinationNode* Create(BaseAudioContext*,
                                              const WebAudioLatencyHint&);
-
-  size_t CallbackBufferSize() const { return Handler().CallbackBufferSize(); };
 
  private:
   explicit DefaultAudioDestinationNode(BaseAudioContext&,

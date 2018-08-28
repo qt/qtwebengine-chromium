@@ -10,7 +10,6 @@ namespace update_client {
 // Errors generated as a result of calling UpdateClient member functions.
 // These errors are not sent in pings.
 enum class Error {
-  INVALID_ARGUMENT = -1,
   NONE = 0,
   UPDATE_IN_PROGRESS = 1,
   UPDATE_CANCELED = 2,
@@ -18,6 +17,8 @@ enum class Error {
   SERVICE_ERROR = 4,
   UPDATE_CHECK_ERROR = 5,
   CRX_NOT_FOUND = 6,
+  INVALID_ARGUMENT = 7,
+  MAX_VALUE,
 };
 
 // These errors are sent in pings. Add new values only to the bottom of
@@ -85,12 +86,31 @@ enum class InstallError {
   CUSTOM_ERROR_BASE = 100,  // Specific installer errors go above this value.
 };
 
-// These errors are returned with the |kInstall| error category and
+// These errors are returned with the |kService| error category and
 // indicate critical or configuration errors in the update service.
 enum class ServiceError {
   NONE = 0,
   SERVICE_WAIT_FAILED = 1,
   UPDATE_DISABLED = 2,
+};
+
+// These errors are related to serialization, deserialization, and parsing of
+// protocol requests.
+// The begin value for this enum is chosen not to conflict with network errors
+// defined by net/base/net_error_list.h. The callers don't have to handle this
+// error in any meaningful way, but this value may be reported in UMA stats,
+// therefore avoiding collisions with known network errors is desirable.
+enum class ProtocolError : int {
+  NONE = 0,
+  RESPONSE_NOT_TRUSTED = -10000,
+  MISSING_PUBLIC_KEY = -10001,
+  MISSING_URLS = -10002,
+  PARSE_FAILED = -10003,
+  UPDATE_RESPONSE_NOT_FOUND = -10004,
+  URL_FETCHER_FAILED = -10005,
+  UNKNOWN_APPLICATION = -10006,
+  RESTRICTED_APPLICATION = -10007,
+  INVALID_APPID = -10008,
 };
 
 }  // namespace update_client

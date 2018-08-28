@@ -19,10 +19,10 @@
 #include "services/service_manager/public/c/main.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/service_context.h"
-#include "services/ui/clipboard/clipboard_impl.h"
 #include "services/ui/common/image_cursors_set.h"
 #include "services/ui/common/switches.h"
 #include "services/ui/display/screen_manager.h"
+#include "services/ui/gpu_host/gpu_host.h"
 #include "services/ui/ime/ime_driver_bridge.h"
 #include "services/ui/ime/ime_registrar_impl.h"
 #include "services/ui/ws/accessibility_manager.h"
@@ -30,7 +30,6 @@
 #include "services/ui/ws/display_creation_config.h"
 #include "services/ui/ws/display_manager.h"
 #include "services/ui/ws/event_injector.h"
-#include "services/ui/ws/gpu_host.h"
 #include "services/ui/ws/threaded_image_cursors.h"
 #include "services/ui/ws/threaded_image_cursors_factory.h"
 #include "services/ui/ws/user_activity_monitor.h"
@@ -42,6 +41,7 @@
 #include "services/ui/ws/window_tree_factory.h"
 #include "services/ui/ws/window_tree_host_factory.h"
 #include "ui/base/cursor/image_cursors.h"
+#include "ui/base/mojo/clipboard_host.h"
 #include "ui/base/platform_window_defaults.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
@@ -259,8 +259,8 @@ void Service::OnStart() {
 
   window_server_ = std::make_unique<ws::WindowServer>(this, should_host_viz_);
   if (should_host_viz_) {
-    std::unique_ptr<ws::GpuHost> gpu_host =
-        std::make_unique<ws::DefaultGpuHost>(
+    std::unique_ptr<gpu_host::GpuHost> gpu_host =
+        std::make_unique<gpu_host::DefaultGpuHost>(
             window_server_.get(), context()->connector(),
             discardable_shared_memory_manager_);
     window_server_->SetGpuHost(std::move(gpu_host));
@@ -280,8 +280,9 @@ void Service::OnStart() {
   registry_with_source_info_.AddInterface<mojom::AccessibilityManager>(
       base::BindRepeating(&Service::BindAccessibilityManagerRequest,
                           base::Unretained(this)));
-  registry_with_source_info_.AddInterface<mojom::Clipboard>(base::BindRepeating(
-      &Service::BindClipboardRequest, base::Unretained(this)));
+  registry_with_source_info_.AddInterface<mojom::ClipboardHost>(
+      base::BindRepeating(&Service::BindClipboardHostRequest,
+                          base::Unretained(this)));
   registry_with_source_info_.AddInterface<mojom::ScreenProvider>(
       base::BindRepeating(&Service::BindScreenProviderRequest,
                           base::Unretained(this)));
@@ -327,7 +328,7 @@ void Service::OnStart() {
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(USE_OZONE)
-  ui::OzonePlatform::GetInstance()->AddInterfaces(&registry_with_source_info_);
+  ui::OzonePlatform::GetInstance()->AddInterfaces(&registry_);
 #endif
 }
 
@@ -422,12 +423,12 @@ void Service::BindAccessibilityManagerRequest(
   accessibility_->Bind(std::move(request));
 }
 
-void Service::BindClipboardRequest(
-    mojom::ClipboardRequest request,
+void Service::BindClipboardHostRequest(
+    mojom::ClipboardHostRequest request,
     const service_manager::BindSourceInfo& source_info) {
-  if (!clipboard_)
-    clipboard_ = std::make_unique<clipboard::ClipboardImpl>();
-  clipboard_->AddBinding(std::move(request));
+  if (!clipboard_host_)
+    clipboard_host_ = std::make_unique<ClipboardHost>();
+  clipboard_host_->AddBinding(std::move(request));
 }
 
 void Service::BindScreenProviderRequest(

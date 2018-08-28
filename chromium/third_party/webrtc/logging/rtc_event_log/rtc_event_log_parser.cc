@@ -98,20 +98,20 @@ BandwidthUsage GetRuntimeDetectorState(
   return BandwidthUsage::kBwNormal;
 }
 
-IceCandidatePairEventType GetRuntimeIceCandidatePairConfigType(
+IceCandidatePairConfigType GetRuntimeIceCandidatePairConfigType(
     rtclog::IceCandidatePairConfig::IceCandidatePairConfigType type) {
   switch (type) {
     case rtclog::IceCandidatePairConfig::ADDED:
-      return IceCandidatePairEventType::kAdded;
+      return IceCandidatePairConfigType::kAdded;
     case rtclog::IceCandidatePairConfig::UPDATED:
-      return IceCandidatePairEventType::kUpdated;
+      return IceCandidatePairConfigType::kUpdated;
     case rtclog::IceCandidatePairConfig::DESTROYED:
-      return IceCandidatePairEventType::kDestroyed;
+      return IceCandidatePairConfigType::kDestroyed;
     case rtclog::IceCandidatePairConfig::SELECTED:
-      return IceCandidatePairEventType::kSelected;
+      return IceCandidatePairConfigType::kSelected;
   }
   RTC_NOTREACHED();
-  return IceCandidatePairEventType::kAdded;
+  return IceCandidatePairConfigType::kAdded;
 }
 
 IceCandidateType GetRuntimeIceCandidateType(
@@ -221,10 +221,9 @@ std::pair<uint64_t, bool> ParseVarInt(std::istream& stream) {
   return std::make_pair(varint, false);
 }
 
-void GetHeaderExtensions(
-    std::vector<RtpExtension>* header_extensions,
-    const RepeatedPtrField<rtclog::RtpHeaderExtension>&
-    proto_header_extensions) {
+void GetHeaderExtensions(std::vector<RtpExtension>* header_extensions,
+                         const RepeatedPtrField<rtclog::RtpHeaderExtension>&
+                             proto_header_extensions) {
   header_extensions->clear();
   for (auto& p : proto_header_extensions) {
     RTC_CHECK(p.has_name());

@@ -36,6 +36,11 @@ const void* const kResourceRequestInfoImplKey = &kResourceRequestInfoImplKey;
 // ResourceRequestInfo
 
 // static
+ResourceRequestInfo* ResourceRequestInfo::ForRequest(net::URLRequest* request) {
+  return ResourceRequestInfoImpl::ForRequest(request);
+}
+
+// static
 const ResourceRequestInfo* ResourceRequestInfo::ForRequest(
     const net::URLRequest* request) {
   return ResourceRequestInfoImpl::ForRequest(request);
@@ -184,7 +189,8 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       previews_state_(previews_state),
       body_(body),
       initiated_in_secure_context_(initiated_in_secure_context),
-      blocked_cross_site_document_(false),
+      blocked_response_from_reaching_renderer_(false),
+      should_report_corb_blocking_(false),
       first_auth_attempt_(true) {}
 
 ResourceRequestInfoImpl::~ResourceRequestInfoImpl() {
@@ -308,14 +314,6 @@ PreviewsState ResourceRequestInfoImpl::GetPreviewsState() const {
   return previews_state_;
 }
 
-bool ResourceRequestInfoImpl::ShouldReportRawHeaders() const {
-  return report_raw_headers_;
-}
-
-bool ResourceRequestInfoImpl::ShouldReportSecurityInfo() const {
-  return report_security_info_;
-}
-
 NavigationUIData* ResourceRequestInfoImpl::GetNavigationUIData() const {
   return navigation_ui_data_.get();
 }
@@ -323,6 +321,11 @@ NavigationUIData* ResourceRequestInfoImpl::GetNavigationUIData() const {
 ResourceRequestInfo::DevToolsStatus ResourceRequestInfoImpl::GetDevToolsStatus()
     const {
   return devtools_status_;
+}
+
+void ResourceRequestInfoImpl::SetResourceRequestBlockedReason(
+    blink::ResourceRequestBlockedReason reason) {
+  resource_request_blocked_reason_ = reason;
 }
 
 base::Optional<blink::ResourceRequestBlockedReason>
@@ -351,6 +354,14 @@ int ResourceRequestInfoImpl::GetRequestID() const {
 
 GlobalRoutingID ResourceRequestInfoImpl::GetGlobalRoutingID() const {
   return GlobalRoutingID(GetChildID(), route_id_);
+}
+
+bool ResourceRequestInfoImpl::ShouldReportRawHeaders() const {
+  return report_raw_headers_;
+}
+
+bool ResourceRequestInfoImpl::ShouldReportSecurityInfo() const {
+  return report_security_info_;
 }
 
 void ResourceRequestInfoImpl::ResetBody() {

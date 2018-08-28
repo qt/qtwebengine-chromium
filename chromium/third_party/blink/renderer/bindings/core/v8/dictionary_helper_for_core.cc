@@ -24,8 +24,6 @@
  */
 
 #include "third_party/blink/renderer/bindings/core/v8/array_value.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_array_buffer_view.h"
@@ -36,6 +34,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_uint8_array.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_window.h"
 #include "third_party/blink/renderer/core/html/track/track_base.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 namespace blink {
@@ -174,7 +173,7 @@ bool DictionaryHelper::Get(const Dictionary& dictionary,
   double double_value;
   if (!v8_value->NumberValue(dictionary.V8Context()).To(&double_value))
     return false;
-  doubleToInteger(double_value, value);
+  value = DoubleToInteger(double_value);
   return true;
 }
 

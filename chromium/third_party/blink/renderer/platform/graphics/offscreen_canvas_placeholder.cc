@@ -6,8 +6,8 @@
 
 #include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
-#include "third_party/blink/renderer/platform/graphics/offscreen_canvas_frame_dispatcher.h"
-#include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_resource_dispatcher.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 
@@ -22,8 +22,8 @@ PlaceholderIdMap& placeholderRegistry() {
 }
 
 void releaseFrameToDispatcher(
-    base::WeakPtr<blink::OffscreenCanvasFrameDispatcher> dispatcher,
-    scoped_refptr<blink::Image> oldImage,
+    base::WeakPtr<blink::CanvasResourceDispatcher> dispatcher,
+    scoped_refptr<blink::CanvasResource> oldImage,
     viz::ResourceId resourceId) {
   oldImage = nullptr;  // Needed to unref'ed on the right thread
   if (dispatcher) {
@@ -32,7 +32,7 @@ void releaseFrameToDispatcher(
 }
 
 void SetSuspendAnimation(
-    base::WeakPtr<blink::OffscreenCanvasFrameDispatcher> dispatcher,
+    base::WeakPtr<blink::CanvasResourceDispatcher> dispatcher,
     bool suspend) {
   if (dispatcher) {
     dispatcher->SetSuspendAnimation(suspend);
@@ -71,8 +71,8 @@ void OffscreenCanvasPlaceholder::UnregisterPlaceholder() {
 }
 
 void OffscreenCanvasPlaceholder::SetPlaceholderFrame(
-    scoped_refptr<StaticBitmapImage> new_frame,
-    base::WeakPtr<OffscreenCanvasFrameDispatcher> dispatcher,
+    scoped_refptr<CanvasResource> new_frame,
+    base::WeakPtr<CanvasResourceDispatcher> dispatcher,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     viz::ResourceId resource_id) {
   DCHECK(IsPlaceholderRegistered());
@@ -97,6 +97,7 @@ void OffscreenCanvasPlaceholder::SetPlaceholderFrame(
 void OffscreenCanvasPlaceholder::ReleasePlaceholderFrame() {
   DCHECK(IsPlaceholderRegistered());
   if (placeholder_frame_) {
+    DCHECK(frame_dispatcher_task_runner_);
     placeholder_frame_->Transfer();
     PostCrossThreadTask(
         *frame_dispatcher_task_runner_, FROM_HERE,

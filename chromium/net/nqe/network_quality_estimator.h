@@ -21,6 +21,7 @@
 #include "base/optional.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "net/base/net_export.h"
 #include "net/base/network_change_notifier.h"
 #include "net/log/net_log_with_source.h"
@@ -41,7 +42,6 @@
 
 namespace base {
 class TickClock;
-class TaskRunner;
 }  // namespace base
 
 namespace net {
@@ -131,10 +131,19 @@ class NET_EXPORT NetworkQualityEstimator
   base::Optional<base::TimeDelta> GetTransportRTT() const override;
   base::Optional<int32_t> GetDownstreamThroughputKbps() const override;
   base::Optional<int32_t> GetBandwidthDelayProductKbits() const override;
+
+  // Adds |observer| to the list of RTT and throughput estimate observers.
+  // The observer must register and unregister itself on the same thread.
+  // |observer| would be notified on the thread on which it registered.
+  // |observer| would be notified of the current values in the next message
+  // pump.
   void AddRTTAndThroughputEstimatesObserver(
-      RTTAndThroughputEstimatesObserver* observer) override;
+      RTTAndThroughputEstimatesObserver* observer);
+
+  // Removes |observer| from the list of RTT and throughput estimate
+  // observers.
   void RemoveRTTAndThroughputEstimatesObserver(
-      RTTAndThroughputEstimatesObserver* observer) override;
+      RTTAndThroughputEstimatesObserver* observer);
 
   // Notifies NetworkQualityEstimator that the response header of |request| has
   // been received.
@@ -214,13 +223,24 @@ class NET_EXPORT NetworkQualityEstimator
 
   const NetworkQualityEstimatorParams* params() { return params_.get(); }
 
+#if defined(OS_CHROMEOS)
+  // Enables getting the network id asynchronously when
+  // GatherEstimatesForNextConnectionType(). This should always be called in
+  // production, because getting the network id involves a blocking call to
+  // recv() in AddressTrackerLinux, and the IO thread should never be blocked.
+  // TODO(https://crbug.com/821607): Remove after the bug is resolved.
+  void EnableGetNetworkIdAsynchronously();
+#endif  // defined(OS_CHROMEOS)
+
+  // Forces the effective connection type to be recomputed as |type|. Once
+  // called, effective connection type would always be computed as |type|.
+  // Calling this also notifies all the observers of the effective connection
+  // type as |type|.
+  void SimulateNetworkQualityChangeForTesting(
+      net::EffectiveConnectionType type);
+
   typedef nqe::internal::Observation Observation;
   typedef nqe::internal::ObservationBuffer ObservationBuffer;
-
-  void set_get_network_id_task_runner(
-      scoped_refptr<base::TaskRunner> task_runner) {
-    get_network_id_task_runner_ = task_runner;
-  }
 
  protected:
   // NetworkChangeNotifier::ConnectionTypeObserver implementation:
@@ -271,7 +291,8 @@ class NET_EXPORT NetworkQualityEstimator
       base::TimeDelta* transport_rtt,
       base::TimeDelta* end_to_end_rtt,
       int32_t* downstream_throughput_kbps,
-      size_t* transport_rtt_observation_count) const;
+      size_t* transport_rtt_observation_count,
+      size_t* end_to_end_rtt_observation_count) const;
 
   // Notifies |this| of a new transport layer RTT. Called by socket watchers.
   // Protected for testing.
@@ -377,6 +398,8 @@ class NET_EXPORT NetworkQualityEstimator
       TestComputeIncreaseInTransportRTTPartialHostsOverlap);
   FRIEND_TEST_ALL_PREFIXES(NetworkQualityEstimatorTest,
                            ObservationDiscardedIfCachedEstimateAvailable);
+  FRIEND_TEST_ALL_PREFIXES(NetworkQualityEstimatorTest,
+                           TestRttThroughputObservers);
 
   // Defines how a metric (e.g, transport RTT) should be used when computing
   // the effective connection type.
@@ -464,7 +487,8 @@ class NET_EXPORT NetworkQualityEstimator
       base::TimeDelta* transport_rtt,
       base::TimeDelta* end_to_end_rtt,
       int32_t* downstream_throughput_kbps,
-      size_t* transport_rtt_observation_count) const;
+      size_t* transport_rtt_observation_count,
+      size_t* end_to_end_rtt_observation_count) const;
 
   // Returns true if the cached network quality estimate was successfully read.
   bool ReadCachedNetworkQualityEstimate();
@@ -490,7 +514,7 @@ class NET_EXPORT NetworkQualityEstimator
   void GatherEstimatesForNextConnectionType();
 
   // Invoked to continue GatherEstimatesForNextConnectionType work after getting
-  // network id. If |get_network_id_task_runner_| is set, the network id is
+  // network id. If |get_network_id_asynchronously_| is set, the network id is
   // fetched on a worker thread. Otherwise, GatherEstimatesForNextConnectionType
   // calls this directly. This is a workaround for https://crbug.com/821607
   // where net::GetWifiSSID() call gets stuck.
@@ -578,6 +602,7 @@ class NET_EXPORT NetworkQualityEstimator
 
   // Number of transport RTT samples available when the ECT was last computed.
   size_t transport_rtt_observation_count_last_ect_computation_;
+  size_t end_to_end_rtt_observation_count_at_last_ect_computation_;
 
   // Number of RTT observations received since the effective connection type was
   // last computed.
@@ -589,6 +614,7 @@ class NET_EXPORT NetworkQualityEstimator
 
   // Current estimate of the network quality.
   nqe::internal::NetworkQuality network_quality_;
+  base::Optional<base::TimeDelta> end_to_end_rtt_;
 
   // Current estimate of the bandwidth delay product (BDP) in kilobits.
   base::Optional<int32_t> bandwidth_delay_product_kbits_;
@@ -627,8 +653,10 @@ class NET_EXPORT NetworkQualityEstimator
   // Time when the last RTT observation from a socket watcher was received.
   base::TimeTicks last_socket_watcher_rtt_notification_;
 
-  // Optional task runner to get network id.
-  scoped_refptr<base::TaskRunner> get_network_id_task_runner_;
+#if defined(OS_CHROMEOS)
+  // Whether the network id should be obtained on a worker thread.
+  bool get_network_id_asynchronously_ = false;
+#endif
 
   base::WeakPtrFactory<NetworkQualityEstimator> weak_ptr_factory_;
 

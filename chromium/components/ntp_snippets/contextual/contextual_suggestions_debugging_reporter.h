@@ -35,6 +35,9 @@ struct ContextualSuggestionsDebuggingEvent {
 
   // Whether the sheet ever peeked.
   bool sheet_peeked = false;
+
+  // Whether the button has even been shown.
+  bool button_shown = false;
 };
 
 // Reporter specialized for caching information for debugging purposes.
@@ -46,6 +49,9 @@ class ContextualSuggestionsDebuggingReporter
 
   // Get all events currently in the buffer.
   const std::vector<ContextualSuggestionsDebuggingEvent>& GetEvents() const;
+
+  // Clear the debugging cache of events.
+  void ClearEvents();
 
   // ContextualSuggestionsReporter
   void SetupForPage(const std::string& url, ukm::SourceId source_id) override;

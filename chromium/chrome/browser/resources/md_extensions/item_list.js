@@ -52,7 +52,7 @@ cr.define('extensions', function() {
      * @return {?Element}
      */
     getDetailsButton: function(id) {
-      return this.$$(`#${id} /deep/ #details-button`);
+      return this.$$(`#${id}`).getDetailsButton();
     },
 
     /**
@@ -60,7 +60,7 @@ cr.define('extensions', function() {
      * @return {?Element}
      */
     getErrorsButton: function(id) {
-      return this.$$(`#${id} /deep/ #errors-button`);
+      return this.$$(`#${id}`).getErrorsButton();
     },
 
     /**
@@ -79,6 +79,9 @@ cr.define('extensions', function() {
 
     /** @private */
     shouldShowEmptyItemsMessage_: function() {
+      if (!this.apps || !this.extensions)
+        return;
+
       return this.apps.length === 0 && this.extensions.length === 0;
     },
 

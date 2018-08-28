@@ -477,6 +477,11 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
             this, std::move(internal));
     tree_->GetWindowManagerClient(MakeRequest(&window_manager_client_));
   }
+  void GetScreenProviderObserver(
+      mojom::ScreenProviderObserverAssociatedRequest observer) override {
+    // GetScreenProviderObserver() is only called in ws2.
+    NOTREACHED();
+  }
 
   // mojom::WindowManager:
   void OnConnect() override {}
@@ -520,7 +525,7 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
     NOTIMPLEMENTED();
   }
   void WmBuildDragImage(const gfx::Point& screen_location,
-                        const SkBitmap& drag_image,
+                        const gfx::ImageSkia& drag_image,
                         const gfx::Vector2d& drag_image_offset,
                         ui::mojom::PointerKind source) override {}
   void WmMoveDragImage(const gfx::Point& screen_location,
@@ -1937,7 +1942,7 @@ TEST_F(WindowTreeClientTest, SetWindowVisibilityNotifications3) {
 
 // Tests that when opacity is set on a window, that the calling client is not
 // notified, however children are. Also that setting the same opacity is
-// rejected and no on eis notifiyed.
+// rejected and no one is notified.
 TEST_F(WindowTreeClientTest, SetOpacityNotifications) {
   Id window_1_1 = wt_client1()->NewWindow(1);
   ASSERT_TRUE(window_1_1);

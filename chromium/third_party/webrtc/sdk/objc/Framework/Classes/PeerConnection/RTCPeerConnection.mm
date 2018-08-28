@@ -61,9 +61,10 @@ class CreateSessionDescriptionObserverAdapter
     completion_handler_ = nil;
   }
 
-  void OnFailure(const std::string& error) override {
+  void OnFailure(RTCError error) override {
     RTC_DCHECK(completion_handler_);
-    NSString* str = [NSString stringForStdString:error];
+    // TODO(hta): Add handling of error.type()
+    NSString *str = [NSString stringForStdString:error.message()];
     NSError* err =
         [NSError errorWithDomain:kRTCPeerConnectionErrorDomain
                             code:kRTCPeerConnnectionSessionDescriptionError
@@ -95,9 +96,10 @@ class SetSessionDescriptionObserverAdapter :
     completion_handler_ = nil;
   }
 
-  void OnFailure(const std::string& error) override {
+  void OnFailure(RTCError error) override {
     RTC_DCHECK(completion_handler_);
-    NSString* str = [NSString stringForStdString:error];
+    // TODO(hta): Add handling of error.type()
+    NSString *str = [NSString stringForStdString:error.message()];
     NSError* err =
         [NSError errorWithDomain:kRTCPeerConnectionErrorDomain
                             code:kRTCPeerConnnectionSessionDescriptionError
@@ -130,27 +132,29 @@ void PeerConnectionDelegateAdapter::OnSignalingChange(
 
 void PeerConnectionDelegateAdapter::OnAddStream(
     rtc::scoped_refptr<MediaStreamInterface> stream) {
-  RTCMediaStream *mediaStream =
-      [[RTCMediaStream alloc] initWithNativeMediaStream:stream];
   RTCPeerConnection *peer_connection = peer_connection_;
+  RTCMediaStream *mediaStream =
+      [[RTCMediaStream alloc] initWithFactory:peer_connection.factory nativeMediaStream:stream];
   [peer_connection.delegate peerConnection:peer_connection
                               didAddStream:mediaStream];
 }
 
 void PeerConnectionDelegateAdapter::OnRemoveStream(
     rtc::scoped_refptr<MediaStreamInterface> stream) {
-  RTCMediaStream *mediaStream =
-      [[RTCMediaStream alloc] initWithNativeMediaStream:stream];
   RTCPeerConnection *peer_connection = peer_connection_;
+  RTCMediaStream *mediaStream =
+      [[RTCMediaStream alloc] initWithFactory:peer_connection.factory nativeMediaStream:stream];
+
   [peer_connection.delegate peerConnection:peer_connection
                            didRemoveStream:mediaStream];
 }
 
 void PeerConnectionDelegateAdapter::OnTrack(
     rtc::scoped_refptr<RtpTransceiverInterface> nativeTransceiver) {
-  RTCRtpTransceiver *transceiver =
-      [[RTCRtpTransceiver alloc] initWithNativeRtpTransceiver:nativeTransceiver];
   RTCPeerConnection *peer_connection = peer_connection_;
+  RTCRtpTransceiver *transceiver =
+      [[RTCRtpTransceiver alloc] initWithFactory:peer_connection.factory
+                            nativeRtpTransceiver:nativeTransceiver];
   if ([peer_connection.delegate
           respondsToSelector:@selector(peerConnection:didStartReceivingOnTransceiver:)]) {
     [peer_connection.delegate peerConnection:peer_connection
@@ -160,9 +164,9 @@ void PeerConnectionDelegateAdapter::OnTrack(
 
 void PeerConnectionDelegateAdapter::OnDataChannel(
     rtc::scoped_refptr<DataChannelInterface> data_channel) {
-  RTCDataChannel *dataChannel =
-      [[RTCDataChannel alloc] initWithNativeDataChannel:data_channel];
   RTCPeerConnection *peer_connection = peer_connection_;
+  RTCDataChannel *dataChannel = [[RTCDataChannel alloc] initWithFactory:peer_connection.factory
+                                                      nativeDataChannel:data_channel];
   [peer_connection.delegate peerConnection:peer_connection
                         didOpenDataChannel:dataChannel];
 }
@@ -223,10 +227,12 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
           respondsToSelector:@selector(peerConnection:didAddReceiver:streams:)]) {
     NSMutableArray *mediaStreams = [NSMutableArray arrayWithCapacity:streams.size()];
     for (const auto& nativeStream : streams) {
-      RTCMediaStream *mediaStream = [[RTCMediaStream alloc] initWithNativeMediaStream:nativeStream];
+      RTCMediaStream *mediaStream = [[RTCMediaStream alloc] initWithFactory:peer_connection.factory
+                                                          nativeMediaStream:nativeStream];
       [mediaStreams addObject:mediaStream];
     }
-    RTCRtpReceiver *rtpReceiver = [[RTCRtpReceiver alloc] initWithNativeRtpReceiver:receiver];
+    RTCRtpReceiver *rtpReceiver =
+        [[RTCRtpReceiver alloc] initWithFactory:peer_connection.factory nativeRtpReceiver:receiver];
 
     [peer_connection.delegate peerConnection:peer_connection
                               didAddReceiver:rtpReceiver
@@ -238,6 +244,7 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
 
 
 @implementation RTCPeerConnection {
+  RTCPeerConnectionFactory *_factory;
   NSMutableArray<RTCMediaStream *> *_localStreams;
   std::unique_ptr<webrtc::PeerConnectionDelegateAdapter> _observer;
   rtc::scoped_refptr<webrtc::PeerConnectionInterface> _peerConnection;
@@ -246,6 +253,7 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
 }
 
 @synthesize delegate = _delegate;
+@synthesize factory = _factory;
 
 - (instancetype)initWithFactory:(RTCPeerConnectionFactory *)factory
                   configuration:(RTCConfiguration *)configuration
@@ -270,6 +278,7 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
     if (!_peerConnection) {
       return nil;
     }
+    _factory = factory;
     _localStreams = [[NSMutableArray alloc] init];
     _delegate = delegate;
   }
@@ -378,7 +387,8 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
     RTCLogError(@"Failed to add track %@: %s", track, nativeSenderOrError.error().message());
     return nil;
   }
-  return [[RTCRtpSender alloc] initWithNativeRtpSender:nativeSenderOrError.MoveValue()];
+  return [[RTCRtpSender alloc] initWithFactory:self.factory
+                               nativeRtpSender:nativeSenderOrError.MoveValue()];
 }
 
 - (BOOL)removeTrack:(RTCRtpSender *)sender {
@@ -402,8 +412,8 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
         @"Failed to add transceiver %@: %s", track, nativeTransceiverOrError.error().message());
     return nil;
   }
-  return
-      [[RTCRtpTransceiver alloc] initWithNativeRtpTransceiver:nativeTransceiverOrError.MoveValue()];
+  return [[RTCRtpTransceiver alloc] initWithFactory:self.factory
+                               nativeRtpTransceiver:nativeTransceiverOrError.MoveValue()];
 }
 
 - (RTCRtpTransceiver *)addTransceiverOfType:(RTCRtpMediaType)mediaType {
@@ -421,8 +431,8 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
                 nativeTransceiverOrError.error().message());
     return nil;
   }
-  return
-      [[RTCRtpTransceiver alloc] initWithNativeRtpTransceiver:nativeTransceiverOrError.MoveValue()];
+  return [[RTCRtpTransceiver alloc] initWithFactory:self.factory
+                               nativeRtpTransceiver:nativeTransceiverOrError.MoveValue()];
 }
 
 - (void)offerForConstraints:(RTCMediaConstraints *)constraints
@@ -466,13 +476,13 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
               maxBitrateBps:(nullable NSNumber *)maxBitrateBps {
   webrtc::PeerConnectionInterface::BitrateParameters params;
   if (minBitrateBps != nil) {
-    params.min_bitrate_bps = rtc::Optional<int>(minBitrateBps.intValue);
+    params.min_bitrate_bps = absl::optional<int>(minBitrateBps.intValue);
   }
   if (currentBitrateBps != nil) {
-    params.current_bitrate_bps = rtc::Optional<int>(currentBitrateBps.intValue);
+    params.current_bitrate_bps = absl::optional<int>(currentBitrateBps.intValue);
   }
   if (maxBitrateBps != nil) {
-    params.max_bitrate_bps = rtc::Optional<int>(maxBitrateBps.intValue);
+    params.max_bitrate_bps = absl::optional<int>(maxBitrateBps.intValue);
   }
   return _peerConnection->SetBitrate(params).ok();
 }
@@ -514,8 +524,8 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
   rtc::scoped_refptr<webrtc::RtpSenderInterface> nativeSender(
       _peerConnection->CreateSender(nativeKind, nativeStreamId));
   return nativeSender ?
-      [[RTCRtpSender alloc] initWithNativeRtpSender:nativeSender]
-      : nil;
+      [[RTCRtpSender alloc] initWithFactory:self.factory nativeRtpSender:nativeSender] :
+      nil;
 }
 
 - (NSArray<RTCRtpSender *> *)senders {
@@ -524,7 +534,7 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
   NSMutableArray *senders = [[NSMutableArray alloc] init];
   for (const auto &nativeSender : nativeSenders) {
     RTCRtpSender *sender =
-        [[RTCRtpSender alloc] initWithNativeRtpSender:nativeSender];
+        [[RTCRtpSender alloc] initWithFactory:self.factory nativeRtpSender:nativeSender];
     [senders addObject:sender];
   }
   return senders;
@@ -536,7 +546,7 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
   NSMutableArray *receivers = [[NSMutableArray alloc] init];
   for (const auto &nativeReceiver : nativeReceivers) {
     RTCRtpReceiver *receiver =
-        [[RTCRtpReceiver alloc] initWithNativeRtpReceiver:nativeReceiver];
+        [[RTCRtpReceiver alloc] initWithFactory:self.factory nativeRtpReceiver:nativeReceiver];
     [receivers addObject:receiver];
   }
   return receivers;
@@ -547,8 +557,8 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
       _peerConnection->GetTransceivers());
   NSMutableArray *transceivers = [[NSMutableArray alloc] init];
   for (auto nativeTransceiver : nativeTransceivers) {
-    RTCRtpTransceiver *transceiver =
-        [[RTCRtpTransceiver alloc] initWithNativeRtpTransceiver:nativeTransceiver];
+    RTCRtpTransceiver *transceiver = [[RTCRtpTransceiver alloc] initWithFactory:self.factory
+                                                           nativeRtpTransceiver:nativeTransceiver];
     [transceivers addObject:transceiver];
   }
   return transceivers;

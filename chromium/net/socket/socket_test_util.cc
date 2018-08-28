@@ -307,7 +307,9 @@ SSLSocketDataProvider::SSLSocketDataProvider(IoMode mode, int result)
     : connect(mode, result),
       next_proto(kProtoUnknown),
       cert_request_info(NULL),
-      channel_id_service(NULL) {
+      channel_id_service(NULL),
+      expected_ssl_version_min(kDefaultSSLVersionMin),
+      expected_ssl_version_max(kDefaultSSLVersionMax) {
   SSLConnectionStatusSetVersion(SSL_CONNECTION_VERSION_TLS1_2,
                                 &ssl_info.connection_status);
   // Set to TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
@@ -778,6 +780,8 @@ std::unique_ptr<SSLClientSocket> MockClientSocketFactory::CreateSSLClientSocket(
         next_ssl_data->next_protos_expected_in_ssl_config.value().end(),
         ssl_config.alpn_protos.begin()));
   }
+  EXPECT_EQ(next_ssl_data->expected_ssl_version_min, ssl_config.version_min);
+  EXPECT_EQ(next_ssl_data->expected_ssl_version_max, ssl_config.version_max);
   return std::unique_ptr<SSLClientSocket>(new MockSSLClientSocket(
       std::move(transport_socket), host_and_port, ssl_config, next_ssl_data));
 }
@@ -825,6 +829,14 @@ int MockClientSocket::SetSendBufferSize(int32_t size) {
 int MockClientSocket::Bind(const net::IPEndPoint& local_addr) {
   local_addr_ = local_addr;
   return net::OK;
+}
+
+bool MockClientSocket::SetNoDelay(bool no_delay) {
+  return true;
+}
+
+bool MockClientSocket::SetKeepAlive(bool enable, int delay) {
+  return true;
 }
 
 void MockClientSocket::Disconnect() {
@@ -1394,6 +1406,10 @@ int MockSSLClientSocket::Write(
                                      traffic_annotation);
 }
 
+int MockSSLClientSocket::CancelReadIfReady() {
+  return transport_->socket()->CancelReadIfReady();
+}
+
 int MockSSLClientSocket::Connect(CompletionOnceCallback callback) {
   DCHECK(transport_->socket()->IsConnected());
   data_->is_connect_data_consumed = true;
@@ -1874,11 +1890,9 @@ void MockUDPClientSocket::RunCallback(CompletionOnceCallback callback,
 }
 
 TestSocketRequest::TestSocketRequest(
-    std::vector<TestSocketRequest*>* request_order, size_t* completion_count)
-    : request_order_(request_order),
-      completion_count_(completion_count),
-      callback_(base::Bind(&TestSocketRequest::OnComplete,
-                           base::Unretained(this))) {
+    std::vector<TestSocketRequest*>* request_order,
+    size_t* completion_count)
+    : request_order_(request_order), completion_count_(completion_count) {
   DCHECK(request_order);
   DCHECK(completion_count);
 }
@@ -2020,14 +2034,14 @@ int MockTransportClientSocketPool::RequestSocket(
     const SocketTag& socket_tag,
     RespectLimits respect_limits,
     ClientSocketHandle* handle,
-    const CompletionCallback& callback,
+    CompletionOnceCallback callback,
     const NetLogWithSource& net_log) {
   last_request_priority_ = priority;
   std::unique_ptr<StreamSocket> socket =
       client_socket_factory_->CreateTransportClientSocket(
           AddressList(), NULL, net_log.net_log(), NetLogSource());
-  MockConnectJob* job =
-      new MockConnectJob(std::move(socket), handle, socket_tag, callback);
+  MockConnectJob* job = new MockConnectJob(std::move(socket), handle,
+                                           socket_tag, std::move(callback));
   job_list_.push_back(base::WrapUnique(job));
   handle->set_pool_id(1);
   return job->Connect();
@@ -2077,11 +2091,11 @@ int MockSOCKSClientSocketPool::RequestSocket(const std::string& group_name,
                                              const SocketTag& socket_tag,
                                              RespectLimits respect_limits,
                                              ClientSocketHandle* handle,
-                                             const CompletionCallback& callback,
+                                             CompletionOnceCallback callback,
                                              const NetLogWithSource& net_log) {
   return transport_pool_->RequestSocket(group_name, socket_params, priority,
                                         socket_tag, respect_limits, handle,
-                                        callback, net_log);
+                                        std::move(callback), net_log);
 }
 
 void MockSOCKSClientSocketPool::SetPriority(const std::string& group_name,

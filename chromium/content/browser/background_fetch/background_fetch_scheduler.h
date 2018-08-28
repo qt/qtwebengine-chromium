@@ -88,6 +88,13 @@ class CONTENT_EXPORT BackgroundFetchScheduler
   // schedule jobs for |controller|.
   void AddJobController(Controller* controller);
 
+  // Removes a job controller from the scheduler. Abort ongoing fetches on the
+  // controller before calling this.
+  // TODO(crbug.com/850075): Move management of active fetches to
+  // BackgroundFetchScheduler.
+  void RemoveJobController(
+      const BackgroundFetchRegistrationId& registration_id);
+
   void set_max_concurrent_downloads(size_t new_max) {
     max_concurrent_downloads_ = new_max;
   }
@@ -115,6 +122,7 @@ class CONTENT_EXPORT BackgroundFetchScheduler
   base::circular_deque<Controller*> controller_queue_;
   std::map<std::string, Controller*> download_controller_map_;
 
+  bool lock_scheduler_ = false;
   size_t max_concurrent_downloads_ = 1;
 
   DISALLOW_COPY_AND_ASSIGN(BackgroundFetchScheduler);

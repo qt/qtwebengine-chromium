@@ -6,10 +6,10 @@
 
 #include "content/browser/loader/navigation_loader_interceptor.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
-#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/resource_context.h"
 #include "net/url_request/redirect_util.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 
 namespace content {
 
@@ -34,7 +34,7 @@ SharedWorkerScriptLoader::SharedWorkerScriptLoader(
       traffic_annotation_(traffic_annotation),
       url_loader_client_binding_(this),
       weak_factory_(this) {
-  DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
+  DCHECK(blink::ServiceWorkerUtils::IsServicificationEnabled());
 
   if (service_worker_provider_host_) {
     service_worker_interceptor_ =
@@ -76,8 +76,6 @@ void SharedWorkerScriptLoader::MaybeStartLoader(
     return;
   }
 
-  // TODO(falken): Support blob urls.
-
   LoadFromNetwork();
 }
 
@@ -96,6 +94,8 @@ void SharedWorkerScriptLoader::LoadFromNetwork() {
 // the new URL.
 
 void SharedWorkerScriptLoader::FollowRedirect(
+    const base::Optional<std::vector<std::string>>&
+        to_be_removed_request_headers,
     const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
   DCHECK(!modified_request_headers.has_value()) << "Redirect with modified "
                                                    "headers was not supported "
@@ -107,7 +107,8 @@ void SharedWorkerScriptLoader::FollowRedirect(
   bool should_clear_upload = false;
   net::RedirectUtil::UpdateHttpRequest(
       resource_request_.url, resource_request_.method, *redirect_info_,
-      &resource_request_.headers, &should_clear_upload);
+      modified_request_headers, &resource_request_.headers,
+      &should_clear_upload);
 
   resource_request_.url = redirect_info_->new_url;
   resource_request_.method = redirect_info_->new_method;
@@ -151,9 +152,8 @@ void SharedWorkerScriptLoader::ResumeReadingBodyFromNet() {
 // calls FollowRedirect(), it can do so.
 
 void SharedWorkerScriptLoader::OnReceiveResponse(
-    const network::ResourceResponseHead& response_head,
-    network::mojom::DownloadedTempFilePtr downloaded_file) {
-  client_->OnReceiveResponse(response_head, std::move(downloaded_file));
+    const network::ResourceResponseHead& response_head) {
+  client_->OnReceiveResponse(response_head);
 }
 
 void SharedWorkerScriptLoader::OnReceiveRedirect(
@@ -167,11 +167,6 @@ void SharedWorkerScriptLoader::OnReceiveRedirect(
 
   redirect_info_ = redirect_info;
   client_->OnReceiveRedirect(redirect_info, response_head);
-}
-
-void SharedWorkerScriptLoader::OnDataDownloaded(int64_t data_len,
-                                                int64_t encoded_data_len) {
-  client_->OnDataDownloaded(data_len, encoded_data_len);
 }
 
 void SharedWorkerScriptLoader::OnUploadProgress(

@@ -21,6 +21,7 @@
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/signin/chrome_signin_helper.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_error_controller_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
@@ -42,6 +43,7 @@
 #include "components/browser_sync/profile_sync_service.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/profile_management_switches.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_error_controller.h"
 #include "components/signin/core/browser/signin_header_helper.h"
 #include "components/signin/core/browser/signin_metrics.h"
@@ -251,9 +253,8 @@ void PeopleHandler::RegisterMessages() {
                           base::Unretained(this)));
 #else
   web_ui()->RegisterMessageCallback(
-      "SyncSetupStopSyncing",
-      base::BindRepeating(&PeopleHandler::HandleStopSyncing,
-                          base::Unretained(this)));
+      "SyncSetupSignout", base::BindRepeating(&PeopleHandler::HandleSignout,
+                                              base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "SyncSetupStartSignIn",
       base::BindRepeating(&PeopleHandler::HandleStartSignin,
@@ -614,10 +615,12 @@ void PeopleHandler::HandleShowSetupUI(const base::ListValue* args) {
 
   ProfileSyncService* service = GetSyncService();
 
-  // Just let the page open for now, even when the user's not signed in.
+  // Just let the page open for now, even when the user's not signed in or sync
+  // is disabled.
   // TODO(scottchen): finish the UI for signed-out users
   //    (https://crbug.com/800972).
-  if (IsUnifiedConsentEnabled(profile_) && IsProfileAuthNeededOrHasErrors()) {
+  if (IsUnifiedConsentEnabled(profile_) &&
+      (IsProfileAuthNeededOrHasErrors() || !service)) {
     if (service && !sync_blocker_)
       sync_blocker_ = service->GetSetupInProgressHandle();
 
@@ -708,19 +711,30 @@ void PeopleHandler::HandleStartSignin(const base::ListValue* args) {
   DisplayGaiaLogin(signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS);
 }
 
-void PeopleHandler::HandleStopSyncing(const base::ListValue* args) {
+void PeopleHandler::HandleSignout(const base::ListValue* args) {
   bool delete_profile = false;
   args->GetBoolean(0, &delete_profile);
 
-  if (!SigninManagerFactory::GetForProfile(profile_)->IsSignoutProhibited()) {
-    if (GetSyncService())
-      ProfileSyncService::SyncEvent(ProfileSyncService::STOP_FROM_OPTIONS);
+  SigninManager* signin_manager = SigninManagerFactory::GetForProfile(profile_);
+  if (signin_manager->IsSignoutProhibited()) {
+    // If the user cannot signout, the profile must be destroyed.
+    DCHECK(delete_profile);
+  } else {
+    if (signin_manager->IsAuthenticated()) {
+      if (GetSyncService())
+        ProfileSyncService::SyncEvent(ProfileSyncService::STOP_FROM_OPTIONS);
 
-    signin_metrics::SignoutDelete delete_metric =
-        delete_profile ? signin_metrics::SignoutDelete::DELETED
-                       : signin_metrics::SignoutDelete::KEEPING;
-    SigninManagerFactory::GetForProfile(profile_)
-        ->SignOut(signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS, delete_metric);
+      signin_metrics::SignoutDelete delete_metric =
+          delete_profile ? signin_metrics::SignoutDelete::DELETED
+                         : signin_metrics::SignoutDelete::KEEPING;
+      signin_manager->SignOutAndRemoveAllAccounts(
+          signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS, delete_metric);
+    } else {
+      DCHECK(!delete_profile)
+          << "Deleting the profile should only be offered the user is syncing.";
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)
+          ->RevokeAllCredentials();
+    }
   }
 
   if (delete_profile) {
@@ -877,10 +891,13 @@ PeopleHandler::GetSyncStatusDictionary() {
   // makes Profile::IsSyncAllowed() false.
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile_);
+  bool disallowed_by_policy =
+      service && service->HasDisableReason(
+                     syncer::SyncService::DISABLE_REASON_ENTERPRISE_POLICY);
   sync_status->SetBoolean("signinAllowed", signin->IsSigninAllowed());
   sync_status->SetBoolean("syncSystemEnabled", (service != nullptr));
   sync_status->SetBoolean("setupInProgress",
-                          service && !service->IsManaged() &&
+                          service && !disallowed_by_policy &&
                               service->IsFirstSetupInProgress() &&
                               signin->IsAuthenticated());
 
@@ -896,7 +913,12 @@ PeopleHandler::GetSyncStatusDictionary() {
   sync_status->SetBoolean("hasError", status_has_error);
   sync_status->SetString("statusAction", GetSyncErrorAction(action_type));
 
-  sync_status->SetBoolean("managed", service && service->IsManaged());
+  sync_status->SetBoolean("managed", disallowed_by_policy);
+  sync_status->SetBoolean(
+      "disabled",
+      !service || disallowed_by_policy ||
+          service->HasDisableReason(
+              syncer::SyncService::DISABLE_REASON_PLATFORM_OVERRIDE));
   sync_status->SetBoolean("signedIn", signin->IsAuthenticated());
   sync_status->SetString("signedInUsername",
                          signin_ui_util::GetAuthenticatedUsername(signin));

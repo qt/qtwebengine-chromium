@@ -39,8 +39,8 @@ VideoCodecTestFixture::Config CreateConfig() {
 }  // namespace
 
 TEST(VideoCodecTestOpenH264, ConstantHighBitrate) {
-  auto frame_checker = rtc::MakeUnique<
-      VideoCodecTestFixtureImpl::H264KeyframeChecker>();
+  auto frame_checker =
+      absl::make_unique<VideoCodecTestFixtureImpl::H264KeyframeChecker>();
   auto config = CreateConfig();
   config.SetCodecSettings(cricket::kH264CodecName, 1, 1, 1, false, true, false,
                           kCifWidth, kCifHeight);
@@ -54,15 +54,14 @@ TEST(VideoCodecTestOpenH264, ConstantHighBitrate) {
 
   std::vector<QualityThresholds> quality_thresholds = {{37, 35, 0.93, 0.91}};
 
-  fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds, nullptr,
-                   nullptr);
+  fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds, nullptr);
 }
 
 // H264: Enable SingleNalUnit packetization mode. Encoder should split
 // large frames into multiple slices and limit length of NAL units.
 TEST(VideoCodecTestOpenH264, SingleNalUnit) {
-  auto frame_checker = rtc::MakeUnique<
-      VideoCodecTestFixtureImpl::H264KeyframeChecker>();
+  auto frame_checker =
+      absl::make_unique<VideoCodecTestFixtureImpl::H264KeyframeChecker>();
   auto config = CreateConfig();
   config.h264_codec_settings.packetization_mode =
       H264PacketizationMode::SingleNalUnit;
@@ -82,7 +81,7 @@ TEST(VideoCodecTestOpenH264, SingleNalUnit) {
   BitstreamThresholds bs_thresholds = {config.max_payload_size_bytes};
 
   fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds,
-                   &bs_thresholds, nullptr);
+                   &bs_thresholds);
 }
 
 }  // namespace test

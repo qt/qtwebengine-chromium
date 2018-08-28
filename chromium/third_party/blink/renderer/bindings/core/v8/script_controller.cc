@@ -33,8 +33,10 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 
 #include "third_party/blink/public/web/web_settings.h"
+#include "third_party/blink/renderer/bindings/core/v8/referrer_script_info.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_code_cache.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_gc_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
 #include "third_party/blink/renderer/bindings/core/v8/window_proxy.h"
@@ -82,25 +84,6 @@ void ScriptController::UpdateSecurityOrigin(
   window_proxy_manager_->UpdateSecurityOrigin(security_origin);
 }
 
-namespace {
-
-V8CacheOptions CacheOptions(const CachedMetadataHandler* cache_handler,
-                            const Settings* settings) {
-  V8CacheOptions v8_cache_options(kV8CacheOptionsDefault);
-  if (settings) {
-    v8_cache_options = settings->GetV8CacheOptions();
-    if (v8_cache_options == kV8CacheOptionsNone)
-      return kV8CacheOptionsNone;
-  }
-  // If the resource is served from CacheStorage, generate the V8 code cache in
-  // the first load.
-  if (cache_handler && cache_handler->IsServedFromCacheStorage())
-    return kV8CacheOptionsCodeWithoutHeatCheck;
-  return v8_cache_options;
-}
-
-}  // namespace
-
 v8::Local<v8::Value> ScriptController::ExecuteScriptAndReturnValue(
     v8::Local<v8::Context> context,
     const ScriptSourceCode& source,
@@ -113,10 +96,9 @@ v8::Local<v8::Value> ScriptController::ExecuteScriptAndReturnValue(
                                          source.StartPosition()));
   v8::Local<v8::Value> result;
   {
-    CachedMetadataHandler* cache_handler = source.CacheHandler();
-
-    V8CacheOptions v8_cache_options =
-        CacheOptions(cache_handler, GetFrame()->GetSettings());
+    V8CacheOptions v8_cache_options = kV8CacheOptionsDefault;
+    if (const Settings* settings = GetFrame()->GetSettings())
+      v8_cache_options = settings->GetV8CacheOptions();
 
     // Isolate exceptions that occur when compiling and executing
     // the code. These exceptions should not interfere with
@@ -134,10 +116,10 @@ v8::Local<v8::Value> ScriptController::ExecuteScriptAndReturnValue(
     v8::Local<v8::Script> script;
 
     v8::ScriptCompiler::CompileOptions compile_options;
-    V8ScriptRunner::ProduceCacheOptions produce_cache_options;
+    V8CodeCache::ProduceCacheOptions produce_cache_options;
     v8::ScriptCompiler::NoCacheReason no_cache_reason;
     std::tie(compile_options, produce_cache_options, no_cache_reason) =
-        V8ScriptRunner::GetCompileOptions(v8_cache_options, source);
+        V8CodeCache::GetCompileOptions(v8_cache_options, source);
     if (!V8ScriptRunner::CompileScript(ScriptState::From(context), source,
                                        access_control_status, compile_options,
                                        no_cache_reason, referrer_info)
@@ -147,8 +129,9 @@ v8::Local<v8::Value> ScriptController::ExecuteScriptAndReturnValue(
     v8::MaybeLocal<v8::Value> maybe_result;
     maybe_result = V8ScriptRunner::RunCompiledScript(GetIsolate(), script,
                                                      GetFrame()->GetDocument());
-    V8ScriptRunner::ProduceCache(GetIsolate(), script, source,
-                                 produce_cache_options, compile_options);
+    probe::produceCompilationCache(frame_, source, script);
+    V8CodeCache::ProduceCache(GetIsolate(), script, source,
+                              produce_cache_options, compile_options);
 
     if (!maybe_result.ToLocal(&result)) {
       return result;
@@ -231,8 +214,7 @@ bool ScriptController::ExecuteScriptIfJavaScriptURL(const KURL& url,
     return false;
 
   const int kJavascriptSchemeLength = sizeof("javascript:") - 1;
-  String script_source = DecodeURLEscapeSequences(url.GetString())
-                             .Substring(kJavascriptSchemeLength);
+  String script_source = DecodeURLEscapeSequences(url.GetString());
 
   bool should_bypass_main_world_content_security_policy =
       ContentSecurityPolicy::ShouldBypassMainWorld(GetFrame()->GetDocument());
@@ -247,11 +229,13 @@ bool ScriptController::ExecuteScriptIfJavaScriptURL(const KURL& url,
     return true;
   }
 
+  script_source = script_source.Substring(kJavascriptSchemeLength);
+
   bool progress_notifications_needed =
       GetFrame()->Loader().StateMachine()->IsDisplayingInitialEmptyDocument() &&
       !GetFrame()->IsLoading();
   if (progress_notifications_needed)
-    GetFrame()->Loader().Progress().ProgressStarted(kFrameLoadTypeStandard);
+    GetFrame()->Loader().Progress().ProgressStarted();
 
   Document* owner_document = GetFrame()->GetDocument();
 
@@ -356,10 +340,9 @@ v8::Local<v8::Value> ScriptController::EvaluateScriptInMainWorld(
   return handle_scope.Escape(object);
 }
 
-void ScriptController::ExecuteScriptInIsolatedWorld(
+v8::Local<v8::Value> ScriptController::ExecuteScriptInIsolatedWorld(
     int world_id,
-    const HeapVector<ScriptSourceCode>& sources,
-    Vector<v8::Local<v8::Value>>* results) {
+    const ScriptSourceCode& source) {
   DCHECK_GT(world_id, 0);
 
   scoped_refptr<DOMWrapperWorld> world =
@@ -370,30 +353,12 @@ void ScriptController::ExecuteScriptInIsolatedWorld(
   v8::Local<v8::Context> context =
       isolated_world_window_proxy->ContextIfInitialized();
   v8::Context::Scope scope(context);
-  v8::Local<v8::Array> result_array =
-      v8::Array::New(GetIsolate(), sources.size());
 
-  for (size_t i = 0; i < sources.size(); ++i) {
-    v8::Local<v8::Value> evaluation_result =
-        ExecuteScriptAndReturnValue(context, sources[i]);
-    if (evaluation_result.IsEmpty())
-      evaluation_result =
-          v8::Local<v8::Value>::New(GetIsolate(), v8::Undefined(GetIsolate()));
-    bool did_create;
-    if (!result_array->CreateDataProperty(context, i, evaluation_result)
-             .To(&did_create) ||
-        !did_create)
-      return;
-  }
-
-  if (results) {
-    for (size_t i = 0; i < result_array->Length(); ++i) {
-      v8::Local<v8::Value> value;
-      if (!result_array->Get(context, i).ToLocal(&value))
-        return;
-      results->push_back(value);
-    }
-  }
+  v8::Local<v8::Value> evaluation_result =
+      ExecuteScriptAndReturnValue(context, source);
+  if (!evaluation_result.IsEmpty())
+    return evaluation_result;
+  return v8::Local<v8::Value>::New(GetIsolate(), v8::Undefined(GetIsolate()));
 }
 
 scoped_refptr<DOMWrapperWorld>

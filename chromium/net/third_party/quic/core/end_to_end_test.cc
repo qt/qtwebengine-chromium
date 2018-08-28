@@ -70,10 +70,16 @@
 #include "net/tools/epoll_server/epoll_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using base::IntToString;
-using base::WaitableEvent;
+using net::EpollEvent;
+using net::EpollServer;
+using spdy::kV3LowestPriority;
+using spdy::SETTINGS_MAX_HEADER_LIST_SIZE;
+using spdy::SpdyFramer;
+using spdy::SpdyHeaderBlock;
+using spdy::SpdySerializedFrame;
+using spdy::SpdySettingsIR;
 
-namespace net {
+namespace quic {
 namespace test {
 namespace {
 
@@ -89,7 +95,6 @@ struct TestParams {
              bool client_supports_stateless_rejects,
              bool server_uses_stateless_rejects_if_peer_supported,
              QuicTag congestion_control_tag,
-             bool disable_hpack_dynamic_table,
              bool use_cheap_stateless_reject)
       : client_supported_versions(client_supported_versions),
         server_supported_versions(server_supported_versions),
@@ -98,7 +103,6 @@ struct TestParams {
         server_uses_stateless_rejects_if_peer_supported(
             server_uses_stateless_rejects_if_peer_supported),
         congestion_control_tag(congestion_control_tag),
-        disable_hpack_dynamic_table(disable_hpack_dynamic_table),
         use_cheap_stateless_reject(use_cheap_stateless_reject) {}
 
   friend std::ostream& operator<<(std::ostream& os, const TestParams& p) {
@@ -114,7 +118,6 @@ struct TestParams {
        << p.server_uses_stateless_rejects_if_peer_supported;
     os << " congestion_control_tag: "
        << QuicTagToString(p.congestion_control_tag);
-    os << " disable_hpack_dynamic_table: " << p.disable_hpack_dynamic_table;
     os << " use_cheap_stateless_reject: " << p.use_cheap_stateless_reject
        << " }";
     return os;
@@ -126,12 +129,12 @@ struct TestParams {
   bool client_supports_stateless_rejects;
   bool server_uses_stateless_rejects_if_peer_supported;
   QuicTag congestion_control_tag;
-  bool disable_hpack_dynamic_table;
   bool use_cheap_stateless_reject;
 };
 
 // Constructs various test permutations.
-std::vector<TestParams> GetTestParams(bool use_tls_handshake) {
+std::vector<TestParams> GetTestParams(bool use_tls_handshake,
+                                      bool test_stateless_rejects) {
   // Divide the versions into buckets in which the intra-frame format
   // is compatible. When clients encounter QUIC version negotiation
   // they simply retransmit all packets using the new version's
@@ -162,87 +165,87 @@ std::vector<TestParams> GetTestParams(bool use_tls_handshake) {
   const int kMaxEnabledOptions = 4;
   int max_enabled_options = 0;
   std::vector<TestParams> params;
-  for (bool server_uses_stateless_rejects_if_peer_supported : {true, false}) {
-    for (bool client_supports_stateless_rejects : {true, false}) {
-      for (const QuicTag congestion_control_tag :
-           {kRENO, kTBBR, kQBIC, kTPCC}) {
-        for (bool disable_hpack_dynamic_table : {false}) {
-          for (bool use_cheap_stateless_reject : {true, false}) {
-            int enabled_options = 0;
-            if (congestion_control_tag != kQBIC) {
-              ++enabled_options;
-            }
-            if (disable_hpack_dynamic_table) {
-              ++enabled_options;
-            }
-            if (client_supports_stateless_rejects) {
-              ++enabled_options;
-            }
-            if (server_uses_stateless_rejects_if_peer_supported) {
-              ++enabled_options;
-            }
-            if (use_cheap_stateless_reject) {
-              ++enabled_options;
-            }
-            CHECK_GE(kMaxEnabledOptions, enabled_options);
-            if (enabled_options > max_enabled_options) {
-              max_enabled_options = enabled_options;
-            }
+  for (const QuicTag congestion_control_tag : {kRENO, kTBBR, kQBIC, kTPCC}) {
+    for (bool server_uses_stateless_rejects_if_peer_supported : {true, false}) {
+      for (bool client_supports_stateless_rejects : {true, false}) {
+        for (bool use_cheap_stateless_reject : {true, false}) {
+          int enabled_options = 0;
+          if (congestion_control_tag != kQBIC) {
+            ++enabled_options;
+          }
+          if (client_supports_stateless_rejects) {
+            ++enabled_options;
+          }
+          if (server_uses_stateless_rejects_if_peer_supported) {
+            ++enabled_options;
+          }
+          if (use_cheap_stateless_reject) {
+            ++enabled_options;
+          }
+          CHECK_GE(kMaxEnabledOptions, enabled_options);
+          if (enabled_options > max_enabled_options) {
+            max_enabled_options = enabled_options;
+          }
 
-            // Run tests with no options, a single option, or all the
-            // options enabled to avoid a combinatorial explosion.
+          // Run tests with no options, a single option, or all the
+          // options enabled to avoid a combinatorial explosion.
+          if (enabled_options > 1 && enabled_options < kMaxEnabledOptions) {
+            continue;
+          }
+
+          // There are many stateless reject combinations, so don't test them
+          // unless requested.
+          if ((server_uses_stateless_rejects_if_peer_supported ||
+               client_supports_stateless_rejects ||
+               use_cheap_stateless_reject) &&
+              !test_stateless_rejects) {
+            continue;
+          }
+
+          for (const ParsedQuicVersionVector& client_versions :
+               version_buckets) {
+            if (FilterSupportedVersions(client_versions).empty()) {
+              continue;
+            }
+            // Add an entry for server and client supporting all
+            // versions.
+            params.push_back(TestParams(
+                client_versions, all_supported_versions,
+                client_versions.front(), client_supports_stateless_rejects,
+                server_uses_stateless_rejects_if_peer_supported,
+                congestion_control_tag, use_cheap_stateless_reject));
+
+            // Run version negotiation tests tests with no options, or
+            // all the options enabled to avoid a combinatorial
+            // explosion.
             if (enabled_options > 1 && enabled_options < kMaxEnabledOptions) {
               continue;
             }
 
-            for (const ParsedQuicVersionVector& client_versions :
-                 version_buckets) {
-              if (FilterSupportedVersions(client_versions).empty()) {
+            // Test client supporting all versions and server supporting
+            // 1 version. Simulate an old server and exercise version
+            // downgrade in the client. Protocol negotiation should
+            // occur.  Skip the i = 0 case because it is essentially the
+            // same as the default case.
+            for (size_t i = 1; i < client_versions.size(); ++i) {
+              ParsedQuicVersionVector server_supported_versions;
+              server_supported_versions.push_back(client_versions[i]);
+              if (FilterSupportedVersions(server_supported_versions).empty()) {
                 continue;
               }
-              // Add an entry for server and client supporting all
-              // versions.
               params.push_back(TestParams(
-                  client_versions, all_supported_versions,
-                  client_versions.front(), client_supports_stateless_rejects,
+                  client_versions, server_supported_versions,
+                  server_supported_versions.front(),
+                  client_supports_stateless_rejects,
                   server_uses_stateless_rejects_if_peer_supported,
-                  congestion_control_tag, disable_hpack_dynamic_table,
-                  use_cheap_stateless_reject));
-
-              // Run version negotiation tests tests with no options, or
-              // all the options enabled to avoid a combinatorial
-              // explosion.
-              if (enabled_options > 1 && enabled_options < kMaxEnabledOptions) {
-                continue;
-              }
-
-              // Test client supporting all versions and server supporting
-              // 1 version. Simulate an old server and exercise version
-              // downgrade in the client. Protocol negotiation should
-              // occur.  Skip the i = 0 case because it is essentially the
-              // same as the default case.
-              for (size_t i = 1; i < client_versions.size(); ++i) {
-                ParsedQuicVersionVector server_supported_versions;
-                server_supported_versions.push_back(client_versions[i]);
-                if (FilterSupportedVersions(server_supported_versions)
-                        .empty()) {
-                  continue;
-                }
-                params.push_back(TestParams(
-                    client_versions, server_supported_versions,
-                    server_supported_versions.front(),
-                    client_supports_stateless_rejects,
-                    server_uses_stateless_rejects_if_peer_supported,
-                    congestion_control_tag, disable_hpack_dynamic_table,
-                    use_cheap_stateless_reject));
-              }  // End of version for loop.
-            }    // End of 2nd version for loop.
-          }      // End of use_cheap_stateless_reject for loop.
-        }        // End of disable_hpack_dynamic_table for loop.
-      }          // End of congestion_control_tag for loop.
-    }            // End of client_supports_stateless_rejects for loop.
-    CHECK_EQ(kMaxEnabledOptions, max_enabled_options);
-  }  // End of server_uses_stateless_rejects_if_peer_supported for loop.
+                  congestion_control_tag, use_cheap_stateless_reject));
+            }  // End of inner version loop.
+          }    // End of outer version loop.
+        }      // End of use_cheap_stateless_reject loop.
+      }        // End of client_supports_stateless_rejects loop.
+    }          // End of server_uses_stateless_rejects_if_peer_supported loop.
+  }            // End of congestion_control_tag loop.
+  CHECK_EQ(kMaxEnabledOptions, max_enabled_options);
   return params;
 }
 
@@ -271,7 +274,7 @@ class ClientDelegate : public PacketDroppingTestWriter::Delegate {
 };
 
 class EndToEndTest : public QuicTestWithParam<TestParams>,
-                     public WithScopedTaskEnvironment {
+                     public net::WithScopedTaskEnvironment {
  protected:
   EndToEndTest()
       : initialized_(false),
@@ -397,7 +400,7 @@ class EndToEndTest : public QuicTestWithParam<TestParams>,
     // client as well according to the test parameter.
     copt.push_back(GetParam().congestion_control_tag);
     if (GetParam().congestion_control_tag == kTPCC &&
-        GetQuicReloadableFlag(quic_enable_pcc)) {
+        GetQuicReloadableFlag(quic_enable_pcc3)) {
       copt.push_back(kTPCC);
     }
 
@@ -406,9 +409,6 @@ class EndToEndTest : public QuicTestWithParam<TestParams>,
     }
     if (GetParam().client_supports_stateless_rejects) {
       copt.push_back(kSREJ);
-    }
-    if (GetParam().disable_hpack_dynamic_table) {
-      copt.push_back(kDHDT);
     }
     client_config_.SetConnectionOptionsToSend(copt);
 
@@ -446,7 +446,6 @@ class EndToEndTest : public QuicTestWithParam<TestParams>,
   void StartServer() {
     SetQuicReloadableFlag(quic_use_cheap_stateless_rejects,
                           GetParam().use_cheap_stateless_reject);
-    SetQuicReloadableFlag(quic_respect_ietf_header, true);
 
     auto* test_server = new QuicTestServer(
         crypto_test_utils::ProofSourceForTesting(), server_config_,
@@ -571,10 +570,15 @@ class EndToEndTest : public QuicTestWithParam<TestParams>,
 
   // Client supports IETF QUIC, while it is not supported by server.
   bool ClientSupportsIetfQuicNotSupportedByServer() {
-    return GetParam().client_supported_versions[0].transport_version ==
-               QUIC_VERSION_99 &&
+    return GetParam().client_supported_versions[0].transport_version >
+               QUIC_VERSION_43 &&
            FilterSupportedVersions(GetParam().server_supported_versions)[0]
-                   .transport_version != QUIC_VERSION_99;
+                   .transport_version <= QUIC_VERSION_43;
+  }
+
+  bool SupportsIetfQuicWithTls(ParsedQuicVersion version) {
+    return version.transport_version > QUIC_VERSION_43 &&
+           version.handshake_protocol == PROTOCOL_TLS1_3;
   }
 
   void ExpectFlowControlsSynced(QuicFlowController* client,
@@ -621,16 +625,22 @@ class EndToEndTest : public QuicTestWithParam<TestParams>,
   QuicString pre_shared_key_server_;
 };
 
-class EndToEndTestWithTls : public EndToEndTest {};
-
 // Run all end to end tests with all supported versions.
 INSTANTIATE_TEST_CASE_P(EndToEndTests,
                         EndToEndTest,
-                        ::testing::ValuesIn(GetTestParams(false)));
+                        ::testing::ValuesIn(GetTestParams(false, false)));
+
+class EndToEndTestWithTls : public EndToEndTest {};
 
 INSTANTIATE_TEST_CASE_P(EndToEndTestsWithTls,
                         EndToEndTestWithTls,
-                        ::testing::ValuesIn(GetTestParams(true)));
+                        ::testing::ValuesIn(GetTestParams(true, false)));
+
+class EndToEndTestWithStatelessReject : public EndToEndTest {};
+
+INSTANTIATE_TEST_CASE_P(WithStatelessReject,
+                        EndToEndTestWithStatelessReject,
+                        ::testing::ValuesIn(GetTestParams(false, true)));
 
 TEST_P(EndToEndTestWithTls, HandshakeSuccessful) {
   ASSERT_TRUE(Initialize());
@@ -644,6 +654,14 @@ TEST_P(EndToEndTestWithTls, HandshakeSuccessful) {
   crypto_stream = QuicSessionPeer::GetMutableCryptoStream(GetServerSession());
   sequencer = QuicStreamPeer::sequencer(crypto_stream);
   EXPECT_FALSE(QuicStreamSequencerPeer::IsUnderlyingBufferAllocated(sequencer));
+}
+
+TEST_P(EndToEndTestWithStatelessReject, SimpleRequestResponseStatless) {
+  ASSERT_TRUE(Initialize());
+
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ("200", client_->response_headers()->find(":status")->second);
+  EXPECT_EQ(2, client_->client()->GetNumSentClientHellos());
 }
 
 TEST_P(EndToEndTest, SimpleRequestResponse) {
@@ -676,7 +694,7 @@ TEST_P(EndToEndTestWithTls, SeparateFinPacket) {
   ASSERT_TRUE(Initialize());
 
   // Send a request in two parts: the request and then an empty packet with FIN.
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -711,7 +729,7 @@ TEST_P(EndToEndTestWithTls, MultipleStreams) {
 
   const int kNumRequests = 10;
 
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -734,7 +752,7 @@ TEST_P(EndToEndTestWithTls, MultipleClients) {
   ASSERT_TRUE(Initialize());
   std::unique_ptr<QuicTestClient> client2(CreateQuicClient(nullptr));
 
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -785,7 +803,7 @@ TEST_P(EndToEndTestWithTls, PostMissingBytes) {
   ASSERT_TRUE(Initialize());
 
   // Add a content length header with no body.
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -807,7 +825,7 @@ TEST_P(EndToEndTest, LargePostNoPacketLoss) {
 
   // 1 MB body.
   QuicString body(1024 * 1024, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -828,7 +846,7 @@ TEST_P(EndToEndTest, LargePostNoPacketLoss1sRTT) {
 
   // 100 KB body.
   QuicString body(100 * 1024, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -856,7 +874,7 @@ TEST_P(EndToEndTest, LargePostWithPacketLoss) {
 
   // 10 KB body.
   QuicString body(1024 * 10, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -884,7 +902,7 @@ TEST_P(EndToEndTest, LargePostWithPacketLossAndBlockedSocket) {
 
   // 10 KB body.
   QuicString body(1024 * 10, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -904,7 +922,7 @@ TEST_P(EndToEndTest, LargePostNoPacketLossWithDelayAndReordering) {
 
   // 1 MB body.
   QuicString body(1024 * 1024, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -920,7 +938,7 @@ TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
   ASSERT_TRUE(Initialize());
 
   QuicString body(20480, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -1030,7 +1048,7 @@ TEST_P(EndToEndTest, LargePostSynchronousRequest) {
   ASSERT_TRUE(Initialize());
 
   QuicString body(20480, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -1130,7 +1148,7 @@ TEST_P(EndToEndTest, LargePostSmallBandwidthLargeBuffer) {
 
   // 1 MB body.
   QuicString body(1024 * 1024, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -1143,13 +1161,12 @@ TEST_P(EndToEndTest, LargePostSmallBandwidthLargeBuffer) {
   VerifyCleanConnection(true);
 }
 
-TEST_P(EndToEndTestWithTls,
-       DoNotSetResumeWriteAlarmIfConnectionFlowControlBlocked) {
+TEST_P(EndToEndTestWithTls, DoNotSetSendAlarmIfConnectionFlowControlBlocked) {
   // Regression test for b/14677858.
   // Test that the resume write alarm is not set in QuicConnection::OnCanWrite
   // if currently connection level flow control blocked. If set, this results in
-  // an infinite loop in the EpollServer, as the alarm fires and is immediately
-  // rescheduled.
+  // an infinite loop in the EpollServer, as the alarm fires and is
+  // immediately rescheduled.
   ASSERT_TRUE(Initialize());
   EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
 
@@ -1176,13 +1193,13 @@ TEST_P(EndToEndTestWithTls,
 
   // Prior to fixing b/14677858 this call would result in an infinite loop in
   // Chromium. As a proxy for detecting this, we now check whether the
-  // resume_writes_alarm is set after OnCanWrite. It should not be, as the
+  // send alarm is set after OnCanWrite. It should not be, as the
   // connection is still flow control blocked.
   session->connection()->OnCanWrite();
 
-  QuicAlarm* resume_writes_alarm =
-      QuicConnectionPeer::GetResumeWritesAlarm(session->connection());
-  EXPECT_FALSE(resume_writes_alarm->IsSet());
+  QuicAlarm* send_alarm =
+      QuicConnectionPeer::GetSendAlarm(session->connection());
+  EXPECT_FALSE(send_alarm->IsSet());
 }
 
 // TODO(nharper): Needs to get turned back to EndToEndTestWithTls
@@ -1192,7 +1209,7 @@ TEST_P(EndToEndTest, InvalidStream) {
   EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
 
   QuicString body(kMaxPacketSize, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -1215,7 +1232,7 @@ TEST_P(EndToEndTest, LargeHeaders) {
   EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
 
   QuicString body(kMaxPacketSize, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -1234,7 +1251,7 @@ TEST_P(EndToEndTest, EarlyResponseWithQuicStreamNoError) {
   EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
 
   QuicString large_body(1024 * 1024, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -1298,7 +1315,7 @@ TEST_P(EndToEndTestWithTls, MaxIncomingDynamicStreamsLimitRespected) {
   QuicSessionPeer::SetMaxOpenOutgoingStreams(
       client_->client()->client_session(), kServerMaxStreams + 1);
 
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -1489,10 +1506,12 @@ TEST_P(EndToEndTest, 0ByteConnectionId) {
 
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
   EXPECT_EQ("200", client_->response_headers()->find(":status")->second);
-
-  QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
-      client_->client()->client_session()->connection());
-  EXPECT_EQ(PACKET_0BYTE_CONNECTION_ID, header->connection_id_length);
+  QuicConnection* client_connection =
+      client_->client()->client_session()->connection();
+  QuicPacketHeader* header =
+      QuicConnectionPeer::GetLastHeader(client_connection);
+  EXPECT_EQ(PACKET_0BYTE_CONNECTION_ID,
+            header->destination_connection_id_length);
 }
 
 TEST_P(EndToEndTestWithTls, 8ByteConnectionId) {
@@ -1501,9 +1520,17 @@ TEST_P(EndToEndTestWithTls, 8ByteConnectionId) {
 
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
   EXPECT_EQ("200", client_->response_headers()->find(":status")->second);
-  QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
-      client_->client()->client_session()->connection());
-  EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID, header->connection_id_length);
+  QuicConnection* client_connection =
+      client_->client()->client_session()->connection();
+  QuicPacketHeader* header =
+      QuicConnectionPeer::GetLastHeader(client_connection);
+  if (client_connection->transport_version() > QUIC_VERSION_43) {
+    EXPECT_EQ(PACKET_0BYTE_CONNECTION_ID,
+              header->destination_connection_id_length);
+  } else {
+    EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID,
+              header->destination_connection_id_length);
+  }
 }
 
 TEST_P(EndToEndTestWithTls, 15ByteConnectionId) {
@@ -1513,9 +1540,17 @@ TEST_P(EndToEndTestWithTls, 15ByteConnectionId) {
   // Our server is permissive and allows for out of bounds values.
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
   EXPECT_EQ("200", client_->response_headers()->find(":status")->second);
-  QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
-      client_->client()->client_session()->connection());
-  EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID, header->connection_id_length);
+  QuicConnection* client_connection =
+      client_->client()->client_session()->connection();
+  QuicPacketHeader* header =
+      QuicConnectionPeer::GetLastHeader(client_connection);
+  if (client_connection->transport_version() > QUIC_VERSION_43) {
+    EXPECT_EQ(PACKET_0BYTE_CONNECTION_ID,
+              header->destination_connection_id_length);
+  } else {
+    EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID,
+              header->destination_connection_id_length);
+  }
 }
 
 TEST_P(EndToEndTestWithTls, ResetConnection) {
@@ -1844,56 +1879,46 @@ TEST_P(EndToEndTest, FlowControlsSynced) {
           ->flow_controller(),
       QuicSessionPeer::GetMutableCryptoStream(server_session)
           ->flow_controller());
-  spdy::SpdyFramer spdy_framer(spdy::SpdyFramer::ENABLE_COMPRESSION);
-  spdy::SpdySettingsIR settings_frame;
-  settings_frame.AddSetting(spdy::SETTINGS_MAX_HEADER_LIST_SIZE,
+  SpdyFramer spdy_framer(SpdyFramer::ENABLE_COMPRESSION);
+  SpdySettingsIR settings_frame;
+  settings_frame.AddSetting(SETTINGS_MAX_HEADER_LIST_SIZE,
                             kDefaultMaxUncompressedHeaderSize);
-  spdy::SpdySerializedFrame frame(spdy_framer.SerializeFrame(settings_frame));
+  SpdySerializedFrame frame(spdy_framer.SerializeFrame(settings_frame));
   QuicFlowController* client_header_stream_flow_controller =
       QuicSpdySessionPeer::GetHeadersStream(client_session)->flow_controller();
   QuicFlowController* server_header_stream_flow_controller =
       QuicSpdySessionPeer::GetHeadersStream(server_session)->flow_controller();
-  if (GetQuicReloadableFlag(quic_send_max_header_list_size)) {
-    // Both client and server are sending this SETTINGS frame, and the send
-    // window is consumed. But because of timing issue, the server may send or
-    // not send the frame, and the client may send/ not send / receive / not
-    // receive the frame.
-    // TODO(fayang): Rewrite this part because it is hacky.
-    QuicByteCount win_difference1 = QuicFlowControllerPeer::ReceiveWindowSize(
-                                        server_header_stream_flow_controller) -
-                                    QuicFlowControllerPeer::SendWindowSize(
-                                        client_header_stream_flow_controller);
-    QuicByteCount win_difference2 = QuicFlowControllerPeer::ReceiveWindowSize(
-                                        client_header_stream_flow_controller) -
-                                    QuicFlowControllerPeer::SendWindowSize(
-                                        server_header_stream_flow_controller);
-    EXPECT_TRUE(win_difference1 == 0 || win_difference1 == frame.size());
-    EXPECT_TRUE(win_difference2 == 0 || win_difference2 == frame.size());
-  } else {
-    ExpectFlowControlsSynced(
-        QuicSpdySessionPeer::GetHeadersStream(client_session)
-            ->flow_controller(),
-        QuicSpdySessionPeer::GetHeadersStream(server_session)
-            ->flow_controller());
-  }
+  // Both client and server are sending this SETTINGS frame, and the send
+  // window is consumed. But because of timing issue, the server may send or
+  // not send the frame, and the client may send/ not send / receive / not
+  // receive the frame.
+  // TODO(fayang): Rewrite this part because it is hacky.
+  QuicByteCount win_difference1 = QuicFlowControllerPeer::ReceiveWindowSize(
+                                      server_header_stream_flow_controller) -
+                                  QuicFlowControllerPeer::SendWindowSize(
+                                      client_header_stream_flow_controller);
+  QuicByteCount win_difference2 = QuicFlowControllerPeer::ReceiveWindowSize(
+                                      client_header_stream_flow_controller) -
+                                  QuicFlowControllerPeer::SendWindowSize(
+                                      server_header_stream_flow_controller);
+  EXPECT_TRUE(win_difference1 == 0 || win_difference1 == frame.size());
+  EXPECT_TRUE(win_difference2 == 0 || win_difference2 == frame.size());
 
-  if (GetQuicReloadableFlag(quic_send_max_header_list_size)) {
-    // Client *may* have received the SETTINGs frame.
-    // TODO(fayang): Rewrite this part because it is hacky.
-    float ratio1 = static_cast<float>(QuicFlowControllerPeer::ReceiveWindowSize(
-                       client_session->flow_controller())) /
-                   QuicFlowControllerPeer::ReceiveWindowSize(
-                       QuicSpdySessionPeer::GetHeadersStream(client_session)
-                           ->flow_controller());
-    float ratio2 = static_cast<float>(QuicFlowControllerPeer::ReceiveWindowSize(
-                       client_session->flow_controller())) /
-                   (QuicFlowControllerPeer::ReceiveWindowSize(
-                        QuicSpdySessionPeer::GetHeadersStream(client_session)
-                            ->flow_controller()) +
-                    frame.size());
-    EXPECT_TRUE(ratio1 == kSessionToStreamRatio ||
-                ratio2 == kSessionToStreamRatio);
-  }
+  // Client *may* have received the SETTINGs frame.
+  // TODO(fayang): Rewrite this part because it is hacky.
+  float ratio1 = static_cast<float>(QuicFlowControllerPeer::ReceiveWindowSize(
+                     client_session->flow_controller())) /
+                 QuicFlowControllerPeer::ReceiveWindowSize(
+                     QuicSpdySessionPeer::GetHeadersStream(client_session)
+                         ->flow_controller());
+  float ratio2 = static_cast<float>(QuicFlowControllerPeer::ReceiveWindowSize(
+                     client_session->flow_controller())) /
+                 (QuicFlowControllerPeer::ReceiveWindowSize(
+                      QuicSpdySessionPeer::GetHeadersStream(client_session)
+                          ->flow_controller()) +
+                  frame.size());
+  EXPECT_TRUE(ratio1 == kSessionToStreamRatio ||
+              ratio2 == kSessionToStreamRatio);
 
   server_thread_->Resume();
 }
@@ -1944,7 +1969,7 @@ class TestAckListener : public QuicAckListenerInterface {
 class TestResponseListener : public QuicSpdyClientBase::ResponseListener {
  public:
   void OnCompleteResponse(QuicStreamId id,
-                          const spdy::SpdyHeaderBlock& response_headers,
+                          const SpdyHeaderBlock& response_headers,
                           const QuicString& response_body) override {
     QUIC_DVLOG(1) << "response for stream " << id << " "
                   << response_headers.DebugString() << "\n"
@@ -1970,7 +1995,7 @@ TEST_P(EndToEndTest, AckNotifierWithPacketLossAndBlockedSocket) {
   client_writer_->set_fake_blocked_socket_percentage(10);
 
   // Create a POST request and send the headers only.
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -2007,15 +2032,33 @@ TEST_P(EndToEndTest, AckNotifierWithPacketLossAndBlockedSocket) {
 TEST_P(EndToEndTestWithTls, ServerSendPublicReset) {
   ASSERT_TRUE(Initialize());
 
+  EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
+  QuicConnection* client_connection =
+      client_->client()->client_session()->connection();
+  if (SupportsIetfQuicWithTls(client_connection->version())) {
+    // TLS handshake does not support stateless reset token yet.
+    return;
+  }
+  QuicUint128 stateless_reset_token = 0;
+  if (client_connection->version().handshake_protocol == PROTOCOL_QUIC_CRYPTO) {
+    QuicConfig* config = client_->client()->session()->config();
+    EXPECT_TRUE(config->HasReceivedStatelessResetToken());
+    stateless_reset_token = config->ReceivedStatelessResetToken();
+  }
+
   // Send the public reset.
-  QuicConnectionId connection_id =
-      client_->client()->client_session()->connection()->connection_id();
+  QuicConnectionId connection_id = client_connection->connection_id();
   QuicPublicResetPacket header;
   header.connection_id = connection_id;
   QuicFramer framer(server_supported_versions_, QuicTime::Zero(),
                     Perspective::IS_SERVER);
-  std::unique_ptr<QuicEncryptedPacket> packet(
-      framer.BuildPublicResetPacket(header));
+  std::unique_ptr<QuicEncryptedPacket> packet;
+  if (client_connection->transport_version() > QUIC_VERSION_43) {
+    packet = framer.BuildIetfStatelessResetPacket(connection_id,
+                                                  stateless_reset_token);
+  } else {
+    packet = framer.BuildPublicResetPacket(header);
+  }
   // We must pause the server's thread in order to call WritePacket without
   // race conditions.
   server_thread_->Pause();
@@ -2036,21 +2079,39 @@ TEST_P(EndToEndTestWithTls, ServerSendPublicResetWithDifferentConnectionId) {
   ASSERT_TRUE(Initialize());
 
   EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
-
+  QuicConnection* client_connection =
+      client_->client()->client_session()->connection();
+  if (SupportsIetfQuicWithTls(client_connection->version())) {
+    // TLS handshake does not support stateless reset token yet.
+    return;
+  }
+  QuicUint128 stateless_reset_token = 0;
+  if (client_connection->version().handshake_protocol == PROTOCOL_QUIC_CRYPTO) {
+    QuicConfig* config = client_->client()->session()->config();
+    EXPECT_TRUE(config->HasReceivedStatelessResetToken());
+    stateless_reset_token = config->ReceivedStatelessResetToken();
+  }
   // Send the public reset.
   QuicConnectionId incorrect_connection_id =
-      client_->client()->client_session()->connection()->connection_id() + 1;
+      client_connection->connection_id() + 1;
   QuicPublicResetPacket header;
   header.connection_id = incorrect_connection_id;
   QuicFramer framer(server_supported_versions_, QuicTime::Zero(),
                     Perspective::IS_SERVER);
-  std::unique_ptr<QuicEncryptedPacket> packet(
-      framer.BuildPublicResetPacket(header));
+  std::unique_ptr<QuicEncryptedPacket> packet;
   testing::NiceMock<MockQuicConnectionDebugVisitor> visitor;
   client_->client()->client_session()->connection()->set_debug_visitor(
       &visitor);
-  EXPECT_CALL(visitor, OnIncorrectConnectionId(incorrect_connection_id))
-      .Times(1);
+  if (client_connection->transport_version() > QUIC_VERSION_43) {
+    packet = framer.BuildIetfStatelessResetPacket(incorrect_connection_id,
+                                                  stateless_reset_token);
+    EXPECT_CALL(visitor, OnIncorrectConnectionId(incorrect_connection_id))
+        .Times(0);
+  } else {
+    packet = framer.BuildPublicResetPacket(header);
+    EXPECT_CALL(visitor, OnIncorrectConnectionId(incorrect_connection_id))
+        .Times(1);
+  }
   // We must pause the server's thread in order to call WritePacket without
   // race conditions.
   server_thread_->Pause();
@@ -2059,6 +2120,14 @@ TEST_P(EndToEndTestWithTls, ServerSendPublicResetWithDifferentConnectionId) {
       client_->client()->network_helper()->GetLatestClientAddress(), nullptr);
   server_thread_->Resume();
 
+  if (client_connection->transport_version() > QUIC_VERSION_43) {
+    // The request should fail. IETF stateless reset does not include connection
+    // ID.
+    EXPECT_EQ("", client_->SendSynchronousRequest("/foo"));
+    EXPECT_TRUE(client_->response_headers()->empty());
+    EXPECT_EQ(QUIC_PUBLIC_RESET, client_->connection_error());
+    return;
+  }
   // The connection should be unaffected.
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
   EXPECT_EQ("200", client_->response_headers()->find(":status")->second);
@@ -2106,7 +2175,7 @@ TEST_P(EndToEndTestWithTls,
   std::unique_ptr<QuicEncryptedPacket> packet(
       QuicFramer::BuildVersionNegotiationPacket(
           incorrect_connection_id,
-          client_connection->transport_version() == QUIC_VERSION_99,
+          client_connection->transport_version() > QUIC_VERSION_43,
           server_supported_versions_));
   testing::NiceMock<MockQuicConnectionDebugVisitor> visitor;
   client_connection->set_debug_visitor(&visitor);
@@ -2209,9 +2278,9 @@ TEST_P(EndToEndTestWithTls, BadEncryptedData) {
   EXPECT_EQ("200", client_->response_headers()->find(":status")->second);
 
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructEncryptedPacket(
-      client_->client()->client_session()->connection()->connection_id(), false,
-      false, 1, "At least 20 characters.", PACKET_8BYTE_CONNECTION_ID,
-      PACKET_4BYTE_PACKET_NUMBER));
+      client_->client()->client_session()->connection()->connection_id(), 0,
+      false, false, 1, "At least 20 characters.", PACKET_8BYTE_CONNECTION_ID,
+      PACKET_0BYTE_CONNECTION_ID, PACKET_4BYTE_PACKET_NUMBER));
   // Damage the encrypted data.
   QuicString damaged_packet(packet->data(), packet->length());
   damaged_packet[30] ^= 0x01;
@@ -2242,7 +2311,7 @@ TEST_P(EndToEndTestWithTls, CanceledStreamDoesNotBecomeZombie) {
   EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
   // Lose the request.
   SetPacketLossPercentage(100);
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -2274,7 +2343,7 @@ class ServerStreamWithErrorResponseBody : public QuicSimpleServerStream {
  protected:
   void SendErrorResponse() override {
     QUIC_DLOG(INFO) << "Sending error response for stream " << id();
-    spdy::SpdyHeaderBlock headers;
+    SpdyHeaderBlock headers;
     headers[":status"] = "500";
     headers["content-length"] =
         QuicTextUtils::Uint64ToString(response_body_.size());
@@ -2437,7 +2506,7 @@ TEST_P(EndToEndTest, EarlyResponseFinRecording) {
   // and before the body is received, due to invalid content-length.
   // Set an invalid content-length, so the request will receive an early 500
   // response.
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/garbage";
   headers[":scheme"] = "https";
@@ -2488,12 +2557,12 @@ TEST_P(EndToEndTestWithTls, Trailers) {
   // Add a response with headers, body, and trailers.
   const QuicString kBody = "body content";
 
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":status"] = "200";
   headers[":version"] = "HTTP/1.1";
   headers["content-length"] = QuicTextUtils::Uint64ToString(kBody.size());
 
-  spdy::SpdyHeaderBlock trailers;
+  SpdyHeaderBlock trailers;
   trailers["some-trailing-header"] = "trailing-header-value";
 
   memory_cache_backend_.AddResponse(server_hostname_, "/trailer_url",
@@ -2510,9 +2579,7 @@ class EndToEndTestServerPush : public EndToEndTest {
   const size_t kNumMaxStreams = 10;
 
   EndToEndTestServerPush() : EndToEndTest() {
-    client_config_.SetMaxStreamsPerConnection(kNumMaxStreams, kNumMaxStreams);
     client_config_.SetMaxIncomingDynamicStreamsToSend(kNumMaxStreams);
-    server_config_.SetMaxStreamsPerConnection(kNumMaxStreams, kNumMaxStreams);
     server_config_.SetMaxIncomingDynamicStreamsToSend(kNumMaxStreams);
     support_server_push_ = true;
   }
@@ -2543,14 +2610,13 @@ class EndToEndTestServerPush : public EndToEndTest {
           use_large_response
               ? large_resource
               : QuicStrCat("This is server push response body for ", url);
-      spdy::SpdyHeaderBlock response_headers;
+      SpdyHeaderBlock response_headers;
       response_headers[":version"] = "HTTP/1.1";
       response_headers[":status"] = "200";
       response_headers["content-length"] =
           QuicTextUtils::Uint64ToString(body.size());
       push_resources.push_back(QuicBackendResponse::ServerPushInfo(
-          resource_url, std::move(response_headers), spdy::kV3LowestPriority,
-          body));
+          resource_url, std::move(response_headers), kV3LowestPriority, body));
     }
 
     memory_cache_backend_.AddSimpleResponseWithServerPushResources(
@@ -2561,7 +2627,7 @@ class EndToEndTestServerPush : public EndToEndTest {
 // Run all server push end to end tests with all supported versions.
 INSTANTIATE_TEST_CASE_P(EndToEndTestsServerPush,
                         EndToEndTestServerPush,
-                        ::testing::ValuesIn(GetTestParams(false)));
+                        ::testing::ValuesIn(GetTestParams(false, false)));
 
 TEST_P(EndToEndTestServerPush, ServerPush) {
   ASSERT_TRUE(Initialize());
@@ -2801,7 +2867,7 @@ TEST_P(EndToEndTest, DISABLED_TestHugePostWithPacketLoss) {
   ASSERT_LT(INT64_C(4294967296), request_body_size_bytes);
   QuicString body(kSizeBytes, 'a');
 
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -2874,7 +2940,7 @@ TEST_P(EndToEndTest, ReleaseHeadersStreamBufferWhenIdle) {
 
 TEST_P(EndToEndTest, WayTooLongRequestHeaders) {
   ASSERT_TRUE(Initialize());
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "GET";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -2917,7 +2983,7 @@ TEST_P(EndToEndTest, WindowUpdateInAck) {
   QuicTransportVersion version = client_connection->transport_version();
   // 100KB body.
   QuicString body(100 * 1024, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -2926,7 +2992,7 @@ TEST_P(EndToEndTest, WindowUpdateInAck) {
   EXPECT_EQ(kFooResponseBody,
             client_->SendCustomSynchronousRequest(headers, body));
   client_->Disconnect();
-  if (version > QUIC_VERSION_38) {
+  if (version != QUIC_VERSION_35) {
     EXPECT_LT(0u, observer.num_window_update_frames());
     EXPECT_EQ(0u, observer.num_ping_frames());
   } else {
@@ -2939,7 +3005,8 @@ TEST_P(EndToEndTest, SendStatelessResetTokenInShlo) {
   EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
   QuicConfig* config = client_->client()->session()->config();
   EXPECT_TRUE(config->HasReceivedStatelessResetToken());
-  EXPECT_EQ(1010101u, config->ReceivedStatelessResetToken());
+  EXPECT_EQ(client_->client()->session()->connection()->connection_id(),
+            config->ReceivedStatelessResetToken());
   client_->Disconnect();
 }
 
@@ -2953,7 +3020,7 @@ TEST_P(EndToEndTest, DoNotCrashOnPacketWriteError) {
 
   // 1 MB body.
   QuicString body(1024 * 1024, 'a');
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
@@ -2998,9 +3065,9 @@ TEST_P(EndToEndTest, PreSharedKey) {
 
 TEST_P(EndToEndTest, PreSharedKeyMismatch) {
   client_config_.set_max_time_before_crypto_handshake(
-      QuicTime::Delta::FromSeconds(1));
+      QuicTime::Delta::FromMilliseconds(100));
   client_config_.set_max_idle_time_before_crypto_handshake(
-      QuicTime::Delta::FromSeconds(1));
+      QuicTime::Delta::FromMilliseconds(100));
   pre_shared_key_client_ = "foo";
   pre_shared_key_server_ = "bar";
   ASSERT_TRUE(Initialize());
@@ -3011,9 +3078,9 @@ TEST_P(EndToEndTest, PreSharedKeyMismatch) {
 
 TEST_P(EndToEndTest, PreSharedKeyNoClient) {
   client_config_.set_max_time_before_crypto_handshake(
-      QuicTime::Delta::FromSeconds(1));
+      QuicTime::Delta::FromMilliseconds(100));
   client_config_.set_max_idle_time_before_crypto_handshake(
-      QuicTime::Delta::FromSeconds(1));
+      QuicTime::Delta::FromMilliseconds(100));
   pre_shared_key_server_ = "foobar";
   ASSERT_TRUE(Initialize());
 
@@ -3023,9 +3090,9 @@ TEST_P(EndToEndTest, PreSharedKeyNoClient) {
 
 TEST_P(EndToEndTest, PreSharedKeyNoServer) {
   client_config_.set_max_time_before_crypto_handshake(
-      QuicTime::Delta::FromSeconds(1));
+      QuicTime::Delta::FromMilliseconds(100));
   client_config_.set_max_idle_time_before_crypto_handshake(
-      QuicTime::Delta::FromSeconds(1));
+      QuicTime::Delta::FromMilliseconds(100));
   pre_shared_key_client_ = "foobar";
   ASSERT_TRUE(Initialize());
 
@@ -3033,10 +3100,45 @@ TEST_P(EndToEndTest, PreSharedKeyNoServer) {
   EXPECT_EQ(QUIC_HANDSHAKE_TIMEOUT, client_->connection_error());
 }
 
+TEST_P(EndToEndTest, RequestAndStreamRstInOnePacket) {
+  // Regression test for b/80234898.
+  ASSERT_TRUE(Initialize());
+
+  // INCOMPLETE_RESPONSE will cause the server to not to send the trailer
+  // (and the FIN) after the response body.
+  QuicString response_body(1305, 'a');
+  SpdyHeaderBlock response_headers;
+  response_headers[":status"] = QuicTextUtils::Uint64ToString(200);
+  response_headers["content-length"] =
+      QuicTextUtils::Uint64ToString(response_body.length());
+  memory_cache_backend_.AddSpecialResponse(
+      server_hostname_, "/test_url", std::move(response_headers), response_body,
+      QuicBackendResponse::INCOMPLETE_RESPONSE);
+
+  EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
+  client_->WaitForDelayedAcks();
+
+  QuicSession* session = client_->client()->client_session();
+  const QuicPacketCount packets_sent_before =
+      session->connection()->GetStats().packets_sent;
+
+  client_->SendRequestAndRstTogether("/test_url");
+
+  // Expect exactly one packet is sent from the block above.
+  ASSERT_EQ(packets_sent_before + 1,
+            session->connection()->GetStats().packets_sent);
+
+  // Wait for the connection to become idle.
+  client_->WaitForDelayedAcks();
+
+  // The real expectation is the test does not crash or timeout.
+  EXPECT_EQ(QUIC_NO_ERROR, client_->connection_error());
+}
+
 class EndToEndPacketReorderingTest : public EndToEndTest {
  public:
   void CreateClientWithWriter() override {
-    QUIC_LOG(ERROR) << "create client with reorder_writer_ ";
+    QUIC_LOG(ERROR) << "create client with reorder_writer_";
     reorder_writer_ = new PacketReorderingWriter();
     client_.reset(EndToEndTest::CreateQuicClient(reorder_writer_));
   }
@@ -3052,7 +3154,7 @@ class EndToEndPacketReorderingTest : public EndToEndTest {
 
 INSTANTIATE_TEST_CASE_P(EndToEndPacketReorderingTests,
                         EndToEndPacketReorderingTest,
-                        testing::ValuesIn(GetTestParams(false)));
+                        testing::ValuesIn(GetTestParams(false, false)));
 
 TEST_P(EndToEndPacketReorderingTest, ReorderedConnectivityProbing) {
   ASSERT_TRUE(Initialize());
@@ -3116,7 +3218,7 @@ TEST_P(EndToEndPacketReorderingTest, Buffer0RttRequest) {
   ASSERT_TRUE(client_->client()->connected());
 
   // Send a request before handshake finishes.
-  spdy::SpdyHeaderBlock headers;
+  SpdyHeaderBlock headers;
   headers[":method"] = "POST";
   headers[":path"] = "/bar";
   headers[":scheme"] = "https";
@@ -3133,4 +3235,4 @@ TEST_P(EndToEndPacketReorderingTest, Buffer0RttRequest) {
 
 }  // namespace
 }  // namespace test
-}  // namespace net
+}  // namespace quic

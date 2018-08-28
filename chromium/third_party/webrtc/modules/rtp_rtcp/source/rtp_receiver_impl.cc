@@ -29,7 +29,7 @@
 namespace webrtc {
 
 namespace {
-bool InOrderPacket(rtc::Optional<uint16_t> latest_sequence_number,
+bool InOrderPacket(absl::optional<uint16_t> latest_sequence_number,
                    uint16_t current_sequence_number) {
   if (!latest_sequence_number)
     return true;
@@ -56,26 +56,20 @@ const int64_t kGetSourcesTimeoutMs = 10000;
 RtpReceiver* RtpReceiver::CreateVideoReceiver(
     Clock* clock,
     RtpData* incoming_payload_callback,
-    RtpFeedback* incoming_messages_callback,
     RTPPayloadRegistry* rtp_payload_registry) {
   RTC_DCHECK(incoming_payload_callback != nullptr);
-  if (!incoming_messages_callback)
-    incoming_messages_callback = NullObjectRtpFeedback();
   return new RtpReceiverImpl(
-      clock, incoming_messages_callback, rtp_payload_registry,
+      clock, rtp_payload_registry,
       RTPReceiverStrategy::CreateVideoStrategy(incoming_payload_callback));
 }
 
 RtpReceiver* RtpReceiver::CreateAudioReceiver(
     Clock* clock,
     RtpData* incoming_payload_callback,
-    RtpFeedback* incoming_messages_callback,
     RTPPayloadRegistry* rtp_payload_registry) {
   RTC_DCHECK(incoming_payload_callback != nullptr);
-  if (!incoming_messages_callback)
-    incoming_messages_callback = NullObjectRtpFeedback();
   return new RtpReceiverImpl(
-      clock, incoming_messages_callback, rtp_payload_registry,
+      clock, rtp_payload_registry,
       RTPReceiverStrategy::CreateAudioStrategy(incoming_payload_callback));
 }
 
@@ -85,20 +79,16 @@ int32_t RtpReceiver::RegisterReceivePayload(const CodecInst& audio_codec) {
 }
 
 RtpReceiverImpl::RtpReceiverImpl(Clock* clock,
-                                 RtpFeedback* incoming_messages_callback,
                                  RTPPayloadRegistry* rtp_payload_registry,
                                  RTPReceiverStrategy* rtp_media_receiver)
     : clock_(clock),
       rtp_payload_registry_(rtp_payload_registry),
       rtp_media_receiver_(rtp_media_receiver),
-      cb_rtp_feedback_(incoming_messages_callback),
       ssrc_(0),
       num_csrcs_(0),
       current_remote_csrc_(),
       last_received_timestamp_(0),
       last_received_frame_time_ms_(-1) {
-  assert(incoming_messages_callback);
-
   memset(current_remote_csrc_, 0, sizeof(current_remote_csrc_));
 }
 
@@ -131,8 +121,7 @@ int32_t RtpReceiverImpl::RegisterReceivePayload(const VideoCodec& video_codec) {
   return rtp_payload_registry_->RegisterReceivePayload(video_codec);
 }
 
-int32_t RtpReceiverImpl::DeRegisterReceivePayload(
-    const int8_t payload_type) {
+int32_t RtpReceiverImpl::DeRegisterReceivePayload(const int8_t payload_type) {
   rtc::CritScope lock(&critical_section_rtp_receiver_);
   return rtp_payload_registry_->DeRegisterReceivePayload(payload_type);
 }
@@ -149,14 +138,9 @@ int32_t RtpReceiverImpl::CSRCs(uint32_t array_of_csrcs[kRtpCsrcSize]) const {
   assert(num_csrcs_ <= kRtpCsrcSize);
 
   if (num_csrcs_ > 0) {
-    memcpy(array_of_csrcs, current_remote_csrc_, sizeof(uint32_t)*num_csrcs_);
+    memcpy(array_of_csrcs, current_remote_csrc_, sizeof(uint32_t) * num_csrcs_);
   }
   return num_csrcs_;
-}
-
-int32_t RtpReceiverImpl::Energy(
-    uint8_t array_of_energy[kRtpCsrcSize]) const {
-  return rtp_media_receiver_->Energy(array_of_energy);
 }
 
 bool RtpReceiverImpl::IncomingRtpPacket(const RTPHeader& rtp_header,
@@ -166,10 +150,7 @@ bool RtpReceiverImpl::IncomingRtpPacket(const RTPHeader& rtp_header,
   // Trigger our callbacks.
   CheckSSRCChanged(rtp_header);
 
-  int8_t first_payload_byte = payload_length > 0 ? payload[0] : 0;
-
-  if (CheckPayloadChanged(rtp_header, first_payload_byte,
-                          &payload_specific) == -1) {
+  if (CheckPayloadChanged(rtp_header, &payload_specific) == -1) {
     if (payload_length == 0) {
       // OK, keep-alive packet.
       return true;
@@ -178,15 +159,14 @@ bool RtpReceiverImpl::IncomingRtpPacket(const RTPHeader& rtp_header,
     return false;
   }
 
-  WebRtcRTPHeader webrtc_rtp_header;
-  memset(&webrtc_rtp_header, 0, sizeof(webrtc_rtp_header));
+  WebRtcRTPHeader webrtc_rtp_header{};
   webrtc_rtp_header.header = rtp_header;
   CheckCSRC(webrtc_rtp_header);
 
   auto audio_level =
       rtp_header.extension.hasAudioLevel
-          ? rtc::Optional<uint8_t>(rtp_header.extension.audioLevel)
-          : rtc::nullopt;
+          ? absl::optional<uint8_t>(rtp_header.extension.audioLevel)
+          : absl::nullopt;
   UpdateSources(audio_level);
 
   int32_t ret_val = rtp_media_receiver_->ParseRtpPacket(
@@ -265,32 +245,11 @@ bool RtpReceiverImpl::GetLatestTimestamps(uint32_t* timestamp,
   return true;
 }
 
+// TODO(nisse): Delete.
 // Implementation note: must not hold critsect when called.
 void RtpReceiverImpl::CheckSSRCChanged(const RTPHeader& rtp_header) {
-  bool new_ssrc = false;
-
-  {
-    rtc::CritScope lock(&critical_section_rtp_receiver_);
-
-    int8_t last_received_payload_type =
-        rtp_payload_registry_->last_received_payload_type();
-    if (ssrc_ != rtp_header.ssrc ||
-        (last_received_payload_type == -1 && ssrc_ == 0)) {
-      // We need the payload_type_ to make the call if the remote SSRC is 0.
-      new_ssrc = true;
-
-      last_received_timestamp_ = 0;
-      last_received_frame_time_ms_ = -1;
-
-      ssrc_ = rtp_header.ssrc;
-    }
-  }
-
-  if (new_ssrc) {
-    // We need to get this to our RTCP sender and receiver.
-    // We need to do this outside critical section.
-    cb_rtp_feedback_->OnIncomingSSRCChanged(rtp_header.ssrc);
-  }
+  rtc::CritScope lock(&critical_section_rtp_receiver_);
+  ssrc_ = rtp_header.ssrc;
 }
 
 // Implementation note: must not hold critsect when called.
@@ -301,7 +260,6 @@ void RtpReceiverImpl::CheckSSRCChanged(const RTPHeader& rtp_header) {
 // media_specific interface (such as CheckPayloadChange, possibly get/set
 // last known payload).
 int32_t RtpReceiverImpl::CheckPayloadChanged(const RTPHeader& rtp_header,
-                                             const int8_t first_payload_byte,
                                              PayloadUnion* specific_payload) {
   int8_t payload_type = rtp_header.payloadType;
 
@@ -315,9 +273,8 @@ int32_t RtpReceiverImpl::CheckPayloadChanged(const RTPHeader& rtp_header,
     if (payload_type != last_received_payload_type) {
       bool should_discard_changes = false;
 
-      rtp_media_receiver_->CheckPayloadChanged(
-        payload_type, specific_payload,
-        &should_discard_changes);
+      rtp_media_receiver_->CheckPayloadChanged(payload_type, specific_payload,
+                                               &should_discard_changes);
 
       if (should_discard_changes) {
         return 0;
@@ -347,8 +304,7 @@ void RtpReceiverImpl::CheckCSRC(const WebRtcRTPHeader& rtp_header) {
     rtc::CritScope lock(&critical_section_rtp_receiver_);
 
     // Copy new.
-    memcpy(current_remote_csrc_,
-           rtp_header.header.arrOfCSRCs,
+    memcpy(current_remote_csrc_, rtp_header.header.arrOfCSRCs,
            num_csrcs * sizeof(uint32_t));
 
     num_csrcs_ = num_csrcs;
@@ -356,7 +312,7 @@ void RtpReceiverImpl::CheckCSRC(const WebRtcRTPHeader& rtp_header) {
 }
 
 void RtpReceiverImpl::UpdateSources(
-    const rtc::Optional<uint8_t>& ssrc_audio_level) {
+    const absl::optional<uint8_t>& ssrc_audio_level) {
   rtc::CritScope lock(&critical_section_rtp_receiver_);
   int64_t now_ms = clock_->TimeInMilliseconds();
 

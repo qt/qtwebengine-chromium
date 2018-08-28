@@ -288,8 +288,7 @@ CPDF_DIBSource::LoadState CPDF_DIBSource::ContinueLoadDIBSource(
   if (m_Status == LoadState::kFail)
     return LoadState::kFail;
 
-  const ByteString& decoder = m_pStreamAcc->GetImageDecoder();
-  if (decoder == "JPXDecode")
+  if (m_pStreamAcc->GetImageDecoder() == "JPXDecode")
     return LoadState::kFail;
 
   FXCODEC_STATUS iDecodeStatus;
@@ -297,7 +296,7 @@ CPDF_DIBSource::LoadState CPDF_DIBSource::ContinueLoadDIBSource(
   if (!m_pJbig2Context) {
     m_pJbig2Context = pdfium::MakeUnique<CCodec_Jbig2Context>();
     if (m_pStreamAcc->GetImageParam()) {
-      CPDF_Stream* pGlobals =
+      const CPDF_Stream* pGlobals =
           m_pStreamAcc->GetImageParam()->GetStreamFor("JBIG2Globals");
       if (pGlobals) {
         m_pGlobalStream = pdfium::MakeRetain<CPDF_StreamAcc>(pGlobals);
@@ -323,8 +322,10 @@ CPDF_DIBSource::LoadState CPDF_DIBSource::ContinueLoadDIBSource(
 
   LoadState iContinueStatus = LoadState::kSuccess;
   if (m_bHasMask) {
-    iContinueStatus = ContinueLoadMaskDIB(pPause);
-    m_Status = LoadState::kContinue;
+    if (ContinueLoadMaskDIB(pPause) == LoadState::kContinue) {
+      iContinueStatus = LoadState::kContinue;
+      m_Status = LoadState::kContinue;
+    }
   }
   if (iContinueStatus == LoadState::kContinue)
     return LoadState::kContinue;
@@ -342,12 +343,12 @@ bool CPDF_DIBSource::LoadColorInfo(const CPDF_Dictionary* pFormResources,
 
   if (m_bImageMask || !m_pDict->KeyExist("ColorSpace")) {
     if (!m_bImageMask) {
-      CPDF_Object* pFilter = m_pDict->GetDirectObjectFor("Filter");
+      const CPDF_Object* pFilter = m_pDict->GetDirectObjectFor("Filter");
       if (pFilter) {
         ByteString filter;
         if (pFilter->IsName()) {
           filter = pFilter->GetString();
-        } else if (CPDF_Array* pArray = pFilter->AsArray()) {
+        } else if (const CPDF_Array* pArray = pFilter->AsArray()) {
           filter = pArray->GetStringAt(pArray->GetCount() - 1);
         }
 
@@ -359,7 +360,7 @@ bool CPDF_DIBSource::LoadColorInfo(const CPDF_Dictionary* pFormResources,
     }
     m_bImageMask = true;
     m_bpc = m_nComponents = 1;
-    CPDF_Array* pDecode = m_pDict->GetArrayFor("Decode");
+    const CPDF_Array* pDecode = m_pDict->GetArrayFor("Decode");
     m_bDefaultDecode = !pDecode || !pDecode->GetIntegerAt(0);
     return true;
   }
@@ -398,7 +399,7 @@ bool CPDF_DIBSource::GetDecodeAndMaskArray(bool* bDefaultDecode,
 
   m_CompData.resize(m_nComponents);
   int max_data = (1 << m_bpc) - 1;
-  CPDF_Array* pDecode = m_pDict->GetArrayFor("Decode");
+  const CPDF_Array* pDecode = m_pDict->GetArrayFor("Decode");
   if (pDecode) {
     for (uint32_t i = 0; i < m_nComponents; i++) {
       m_CompData[i].m_DecodeMin = pDecode->GetNumberAt(i * 2);
@@ -427,11 +428,11 @@ bool CPDF_DIBSource::GetDecodeAndMaskArray(bool* bDefaultDecode,
   if (m_pDict->KeyExist("SMask"))
     return true;
 
-  CPDF_Object* pMask = m_pDict->GetDirectObjectFor("Mask");
+  const CPDF_Object* pMask = m_pDict->GetDirectObjectFor("Mask");
   if (!pMask)
     return true;
 
-  if (CPDF_Array* pArray = pMask->AsArray()) {
+  if (const CPDF_Array* pArray = pMask->AsArray()) {
     if (pArray->GetCount() >= m_nComponents * 2) {
       for (uint32_t i = 0; i < m_nComponents; i++) {
         int min_num = pArray->GetIntegerAt(i * 2);
@@ -446,7 +447,7 @@ bool CPDF_DIBSource::GetDecodeAndMaskArray(bool* bDefaultDecode,
 }
 
 CPDF_DIBSource::LoadState CPDF_DIBSource::CreateDecoder() {
-  const ByteString& decoder = m_pStreamAcc->GetImageDecoder();
+  ByteString decoder = m_pStreamAcc->GetImageDecoder();
   if (decoder.IsEmpty())
     return LoadState::kSuccess;
 
@@ -653,24 +654,26 @@ RetainPtr<CFX_DIBitmap> CPDF_DIBSource::LoadJpxBitmap() {
 CPDF_DIBSource::LoadState CPDF_DIBSource::StartLoadMask() {
   m_MatteColor = 0XFFFFFFFF;
   m_pMaskStream = m_pDict->GetStreamFor("SMask");
-  if (m_pMaskStream) {
-    CPDF_Array* pMatte = m_pMaskStream->GetDict()->GetArrayFor("Matte");
-    if (pMatte && m_pColorSpace && m_Family != PDFCS_PATTERN &&
-        m_pColorSpace->CountComponents() <= m_nComponents) {
-      float R, G, B;
-      std::vector<float> colors(m_nComponents);
-      for (uint32_t i = 0; i < m_nComponents; i++)
-        colors[i] = pMatte->GetFloatAt(i);
-
-      m_pColorSpace->GetRGB(colors.data(), &R, &G, &B);
-      m_MatteColor = FXARGB_MAKE(0, FXSYS_round(R * 255), FXSYS_round(G * 255),
-                                 FXSYS_round(B * 255));
-    }
-    return StartLoadMaskDIB();
+  if (!m_pMaskStream) {
+    m_pMaskStream = ToStream(m_pDict->GetDirectObjectFor("Mask"));
+    return m_pMaskStream ? StartLoadMaskDIB() : LoadState::kSuccess;
   }
 
-  m_pMaskStream = ToStream(m_pDict->GetDirectObjectFor("Mask"));
-  return m_pMaskStream ? StartLoadMaskDIB() : LoadState::kSuccess;
+  const CPDF_Array* pMatte = m_pMaskStream->GetDict()->GetArrayFor("Matte");
+  if (pMatte && m_pColorSpace && m_Family != PDFCS_PATTERN &&
+      m_pColorSpace->CountComponents() <= m_nComponents) {
+    std::vector<float> colors(m_nComponents);
+    for (uint32_t i = 0; i < m_nComponents; i++)
+      colors[i] = pMatte->GetFloatAt(i);
+
+    float R;
+    float G;
+    float B;
+    m_pColorSpace->GetRGB(colors.data(), &R, &G, &B);
+    m_MatteColor = ArgbEncode(0, FXSYS_round(R * 255), FXSYS_round(G * 255),
+                              FXSYS_round(B * 255));
+  }
+  return StartLoadMaskDIB();
 }
 
 CPDF_DIBSource::LoadState CPDF_DIBSource::ContinueLoadMaskDIB(
@@ -759,15 +762,15 @@ void CPDF_DIBSource::LoadPalette() {
   }
 
   int palette_count = 1 << (m_bpc * m_nComponents);
-  CFX_FixedBufGrow<float, 16> color_values(m_nComponents);
-  float* color_value = color_values;
+  // Using at least 16 elements due to the call m_pColorSpace->GetRGB().
+  std::vector<float> color_values(std::max(m_nComponents, 16u));
   for (int i = 0; i < palette_count; i++) {
     int color_data = i;
     for (uint32_t j = 0; j < m_nComponents; j++) {
       int encoded_component = color_data % (1 << m_bpc);
       color_data /= 1 << m_bpc;
-      color_value[j] = m_CompData[j].m_DecodeMin +
-                       m_CompData[j].m_DecodeStep * encoded_component;
+      color_values[j] = m_CompData[j].m_DecodeMin +
+                        m_CompData[j].m_DecodeStep * encoded_component;
     }
     float R = 0;
     float G = 0;
@@ -776,12 +779,11 @@ void CPDF_DIBSource::LoadPalette() {
         m_pColorSpace->CountComponents() > 1) {
       int nComponents = m_pColorSpace->CountComponents();
       std::vector<float> temp_buf(nComponents);
-      for (int k = 0; k < nComponents; k++) {
-        temp_buf[k] = *color_value;
-      }
+      for (int k = 0; k < nComponents; ++k)
+        temp_buf[k] = color_values[0];
       m_pColorSpace->GetRGB(temp_buf.data(), &R, &G, &B);
     } else {
-      m_pColorSpace->GetRGB(color_value, &R, &G, &B);
+      m_pColorSpace->GetRGB(color_values.data(), &R, &G, &B);
     }
     SetPaletteArgb(i, ArgbEncode(255, FXSYS_round(R * 255),
                                  FXSYS_round(G * 255), FXSYS_round(B * 255)));
@@ -790,7 +792,7 @@ void CPDF_DIBSource::LoadPalette() {
 
 void CPDF_DIBSource::ValidateDictParam() {
   m_bpc = m_bpc_orig;
-  CPDF_Object* pFilter = m_pDict->GetDirectObjectFor("Filter");
+  const CPDF_Object* pFilter = m_pDict->GetDirectObjectFor("Filter");
   if (pFilter) {
     if (pFilter->IsName()) {
       ByteString filter = pFilter->GetString();
@@ -804,7 +806,7 @@ void CPDF_DIBSource::ValidateDictParam() {
       } else if (filter == "DCTDecode") {
         m_bpc = 8;
       }
-    } else if (CPDF_Array* pArray = pFilter->AsArray()) {
+    } else if (const CPDF_Array* pArray = pFilter->AsArray()) {
       ByteString filter = pArray->GetStringAt(pArray->GetCount() - 1);
       if (filter == "CCITTFaxDecode" || filter == "JBIG2Decode") {
         m_bpc = 1;
@@ -829,8 +831,8 @@ void CPDF_DIBSource::TranslateScanline24bpp(uint8_t* dest_scan,
   if (TranslateScanline24bppDefaultDecode(dest_scan, src_scan))
     return;
 
-  CFX_FixedBufGrow<float, 16> color_values1(m_nComponents);
-  float* color_values = color_values1;
+  // Using at least 16 elements due to the call m_pColorSpace->GetRGB().
+  std::vector<float> color_values(std::max(m_nComponents, 16u));
   float R = 0.0f;
   float G = 0.0f;
   float B = 0.0f;
@@ -858,7 +860,7 @@ void CPDF_DIBSource::TranslateScanline24bpp(uint8_t* dest_scan,
       G = (1.0f - color_values[1]) * k;
       B = (1.0f - color_values[2]) * k;
     } else if (m_Family != PDFCS_PATTERN) {
-      m_pColorSpace->GetRGB(color_values, &R, &G, &B);
+      m_pColorSpace->GetRGB(color_values.data(), &R, &G, &B);
     }
     R = pdfium::clamp(R, 0.0f, 1.0f);
     G = pdfium::clamp(G, 0.0f, 1.0f);
@@ -1255,7 +1257,7 @@ void CPDF_DIBSource::DownSampleScanline32Bit(int orig_Bpp,
   // last_src_x used to store the last seen src_x position which should be
   // in [0, src_width). Set the initial value to be an invalid src_x value.
   uint32_t last_src_x = src_width;
-  FX_ARGB last_argb = FXARGB_MAKE(0xFF, 0xFF, 0xFF, 0xFF);
+  FX_ARGB last_argb = ArgbEncode(0xFF, 0xFF, 0xFF, 0xFF);
   float unit_To8Bpc = 255.0f / ((1 << m_bpc) - 1);
   for (int i = 0; i < clip_width; i++) {
     int dest_x = clip_left + i;
@@ -1309,9 +1311,9 @@ void CPDF_DIBSource::DownSampleScanline32Bit(int orig_Bpp,
         const uint8_t* pSrc =
             m_bDefaultDecode ? pSrcPixel : extracted_components;
         m_pColorSpace->TranslateImageLine(color, pSrc, 1, 0, 0, bTransMask);
-        argb = FXARGB_MAKE(0xFF, color[2], color[1], color[0]);
+        argb = ArgbEncode(0xFF, color[2], color[1], color[0]);
       } else {
-        argb = FXARGB_MAKE(0xFF, pSrcPixel[2], pSrcPixel[1], pSrcPixel[0]);
+        argb = ArgbEncode(0xFF, pSrcPixel[2], pSrcPixel[1], pSrcPixel[0]);
       }
       if (m_bColorKey) {
         int alpha = 0xFF;

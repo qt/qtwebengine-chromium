@@ -37,7 +37,7 @@ public:
         kSkShaderBase_Type,
         kSkUnused_Type,     // used to be SkUnitMapper
         kSkUnused_Type2,
-        kSkUnused_Type3,    // used to be SkNormalSource
+        kSkNormalSource_Type,
     };
 
     typedef sk_sp<SkFlattenable> (*Factory)(SkReadBuffer&);
@@ -90,6 +90,7 @@ protected:
     public:
         static void InitCore();
         static void InitEffects();
+        static void InitImageFilters();
     };
 
 private:

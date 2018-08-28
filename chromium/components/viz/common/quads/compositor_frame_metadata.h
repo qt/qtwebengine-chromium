@@ -14,6 +14,7 @@
 #include "components/viz/common/quads/frame_deadline.h"
 #include "components/viz/common/quads/selection.h"
 #include "components/viz/common/surfaces/surface_id.h"
+#include "components/viz/common/surfaces/surface_range.h"
 #include "components/viz/common/viz_common_export.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/size_f.h"
@@ -22,6 +23,14 @@
 #include "ui/latency/latency_info.h"
 
 namespace viz {
+
+// Compares two frame tokens, handling cases where the token wraps around the
+// 32-bit max value.
+inline bool FrameTokenGT(uint32_t token1, uint32_t token2) {
+  // There will be underflow in the subtraction if token1 was created
+  // after token2.
+  return (token2 - token1) > 0x80000000u;
+}
 
 class VIZ_COMMON_EXPORT CompositorFrameMetadata {
  public:
@@ -84,7 +93,7 @@ class VIZ_COMMON_EXPORT CompositorFrameMetadata {
   // determine which surfaces to retain and which to evict. It will likely
   // be unnecessary for the embedder to explicitly specify which surfaces to
   // retain. Thus, this field will likely go away.
-  std::vector<SurfaceId> referenced_surfaces;
+  std::vector<SurfaceRange> referenced_surfaces;
 
   // This is the set of dependent SurfaceIds that should be active in the
   // display compositor before this CompositorFrame can be activated. Note
@@ -114,15 +123,25 @@ class VIZ_COMMON_EXPORT CompositorFrameMetadata {
   // BeginFrameAck for the BeginFrame that this CompositorFrame answers.
   BeginFrameAck begin_frame_ack;
 
-  // Once the display compositor processes a frame containing a non-zero frame
-  // token, the token is sent to embedder of the frame. This is helpful when
-  // the embedder wants to do something after a particular frame is processed.
+  // An identifier for the frame. This is used to identify the frame for
+  // presentation-feedback, or when the frame-token is sent to the embedder.
+  // For comparing |frame_token| from different frames, use |FrameTokenGT()|
+  // instead of directly comparing them, since the tokens wrap around back to 1
+  // after the 32-bit max value.
+  // TODO(crbug.com/850386): A custom type would be better to avoid incorrect
+  // comparisons.
   uint32_t frame_token = 0;
 
-  // Once the display compositor presents a frame containing a non-zero
-  // presentation token, a presentation feedback will be provided to
-  // CompositorFrameSinkClient.
-  uint32_t presentation_token = 0;
+  // Once the display compositor processes a frame with
+  // |send_frame_token_to_embedder| flag turned on, the |frame_token| for the
+  // frame is sent to embedder of the frame. This is helpful when the embedder
+  // wants to do something after a particular frame is processed.
+  bool send_frame_token_to_embedder = false;
+
+  // Once the display compositor presents a frame with
+  // |request_presentation_feedback| flag turned on, a presentation feedback
+  // will be provided to CompositorFrameSinkClient.
+  bool request_presentation_feedback = false;
 
  private:
   CompositorFrameMetadata(const CompositorFrameMetadata& other);

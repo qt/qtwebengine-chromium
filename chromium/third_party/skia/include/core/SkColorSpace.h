@@ -71,7 +71,7 @@ struct SK_API SkColorSpaceTransferFn {
      * Transform a single float by this transfer function.
      * For negative inputs, returns sign(x) * f(abs(x)).
      */
-    float operator()(float x) {
+    float operator()(float x) const {
         SkScalar s = SkScalarSignAsScalar(x);
         x = sk_float_abs(x);
         if (x >= fD) {
@@ -256,9 +256,6 @@ public:
      */
     static bool Equals(const SkColorSpace* src, const SkColorSpace* dst);
 
-    virtual bool nonlinearBlending() const { return false; }
-    virtual sk_sp<SkColorSpace> makeNonlinearBlending() const { return nullptr; }
-
 private:
     virtual const SkMatrix44* onToXYZD50() const = 0;
     virtual uint32_t onToXYZD50Hash() const = 0;
@@ -273,19 +270,6 @@ private:
     virtual const SkData* onProfileData() const { return nullptr; }
 
     using INHERITED = SkRefCnt;
-};
-
-enum class SkTransferFunctionBehavior {
-    /**
-     *  Converts to a linear space before premultiplying, unpremultiplying, or blending.
-     */
-    kRespect,
-
-    /**
-     *  Premultiplies, unpremultiplies, and blends ignoring the transfer function.  Pixels are
-     *  treated as if they are linear, regardless of their transfer function encoding.
-     */
-    kIgnore,
 };
 
 #endif

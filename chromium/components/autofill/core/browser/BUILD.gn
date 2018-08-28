@@ -62,6 +62,8 @@ static_library("browser") {
     "autofill_profile.h",
     "autofill_profile_comparator.cc",
     "autofill_profile_comparator.h",
+    "autofill_profile_sync_util.cc",
+    "autofill_profile_sync_util.h",
     "autofill_profile_validation_util.cc",
     "autofill_profile_validation_util.h",
     "autofill_profile_validator.cc",
@@ -109,10 +111,17 @@ static_library("browser") {
     "form_types.h",
     "legal_message_line.cc",
     "legal_message_line.h",
+    "local_card_migration_manager.cc",
+    "local_card_migration_manager.h",
     "name_field.cc",
     "name_field.h",
     "password_generator.cc",
     "password_generator.h",
+    "password_requirements_spec_fetcher.h",
+    "password_requirements_spec_fetcher_impl.cc",
+    "password_requirements_spec_fetcher_impl.h",
+    "password_requirements_spec_printer.cc",
+    "password_requirements_spec_printer.h",
     "payments/full_card_request.cc",
     "payments/full_card_request.h",
     "payments/payments_client.cc",
@@ -139,6 +148,8 @@ static_library("browser") {
     "region_data_loader_impl.cc",
     "region_data_loader_impl.h",
     "risk_data_loader.h",
+    "search_field.cc",
+    "search_field.h",
     "state_names.cc",
     "state_names.h",
     "subkey_requester.cc",
@@ -159,6 +170,10 @@ static_library("browser") {
     "webdata/autofill_entry.h",
     "webdata/autofill_profile_data_type_controller.cc",
     "webdata/autofill_profile_data_type_controller.h",
+    "webdata/autofill_profile_sync_bridge.cc",
+    "webdata/autofill_profile_sync_bridge.h",
+    "webdata/autofill_profile_sync_difference_tracker.cc",
+    "webdata/autofill_profile_sync_difference_tracker.h",
     "webdata/autofill_profile_syncable_service.cc",
     "webdata/autofill_profile_syncable_service.h",
     "webdata/autofill_table.cc",
@@ -203,11 +218,16 @@ static_library("browser") {
   }
 
   if (!is_android) {
-    sources += [ "ui/save_card_bubble_controller.h" ]
+    sources += [
+      "ui/local_card_migration_bubble_controller.h",
+      "ui/save_card_bubble_controller.h",
+    ]
   }
 
   if (!is_ios) {
     sources += [
+      "autofill_address_policy_handler.cc",
+      "autofill_address_policy_handler.h",
       "autofill_credit_card_policy_handler.cc",
       "autofill_credit_card_policy_handler.h",
       "autofill_policy_handler.cc",
@@ -221,10 +241,12 @@ static_library("browser") {
     "//components/autofill/core/browser/proto",
     "//components/autofill/core/common",
     "//components/resources",
+    "//components/security_state/core",
     "//skia",
     "//third_party/libaddressinput",
   ]
   deps = [
+    ":password_generator_fips181",
     "//base",
     "//base:i18n",
     "//components/data_use_measurement/core",
@@ -233,7 +255,6 @@ static_library("browser") {
     "//components/os_crypt",
     "//components/pref_registry",
     "//components/prefs",
-    "//components/security_state/core",
     "//components/signin/core/browser:signin_metrics",
     "//components/strings",
     "//components/sync",
@@ -245,11 +266,13 @@ static_library("browser") {
     "//services/identity/public/cpp",
     "//services/metrics/public/cpp:metrics_cpp",
     "//services/metrics/public/cpp:ukm_builders",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
     "//sql",
-    "//third_party/fips181",
     "//third_party/icu",
     "//third_party/libphonenumber",
     "//third_party/re2",
+    "//ui/accessibility:accessibility",
     "//ui/base",
     "//ui/gfx",
     "//ui/gfx/geometry",
@@ -295,10 +318,13 @@ static_library("test_support") {
     "test_autofill_provider.h",
     "test_credit_card_save_manager.cc",
     "test_credit_card_save_manager.h",
+    "test_event_waiter.h",
     "test_form_data_importer.cc",
     "test_form_data_importer.h",
     "test_form_structure.cc",
     "test_form_structure.h",
+    "test_local_card_migration_manager.cc",
+    "test_local_card_migration_manager.h",
     "test_personal_data_manager.cc",
     "test_personal_data_manager.h",
     "test_region_data_loader.cc",
@@ -326,11 +352,24 @@ static_library("test_support") {
     "//components/ukm:test_support",
     "//google_apis:test_support",
     "//services/identity/public/cpp:test_support",
+    "//services/network:test_support",
+    "//services/network/public/cpp",
     "//skia",
     "//testing/gtest",
     "//third_party/libaddressinput:util",
     "//ui/gfx:test_support",
     "//ui/gfx/geometry",
+  ]
+}
+
+static_library("password_generator_fips181") {
+  sources = [
+    "password_generator_fips181.cc",
+    "password_generator_fips181.h",
+  ]
+  deps = [
+    "//base",
+    "//third_party/fips181",
   ]
 }
 
@@ -380,6 +419,7 @@ source_set("unit_tests") {
     "autofill_merge_unittest.cc",
     "autofill_metrics_unittest.cc",
     "autofill_profile_comparator_unittest.cc",
+    "autofill_profile_sync_util_unittest.cc",
     "autofill_profile_unittest.cc",
     "autofill_profile_validation_util_unittest.cc",
     "autofill_profile_validator_unittest.cc",
@@ -397,8 +437,11 @@ source_set("unit_tests") {
     "form_field_unittest.cc",
     "form_structure_unittest.cc",
     "legal_message_line_unittest.cc",
+    "local_card_migration_manager_unittest.cc",
     "name_field_unittest.cc",
+    "password_generator_fips181_unittest.cc",
     "password_generator_unittest.cc",
+    "password_requirements_spec_fetcher_unittest.cc",
     "payments/full_card_request_unittest.cc",
     "payments/payments_client_unittest.cc",
     "payments/payments_service_url_unittest.cc",
@@ -408,10 +451,13 @@ source_set("unit_tests") {
     "phone_number_unittest.cc",
     "rationalization_util_unittest.cc",
     "region_combobox_model_unittest.cc",
+    "search_field_unittest.cc",
     "subkey_requester_unittest.cc",
     "ui/card_unmask_prompt_controller_impl_unittest.cc",
     "validation_unittest.cc",
     "webdata/autocomplete_sync_bridge_unittest.cc",
+    "webdata/autofill_profile_sync_bridge_unittest.cc",
+    "webdata/autofill_profile_sync_difference_tracker_unittest.cc",
     "webdata/autofill_profile_syncable_service_unittest.cc",
     "webdata/autofill_table_unittest.cc",
     "webdata/autofill_wallet_metadata_syncable_service_unittest.cc",
@@ -425,6 +471,7 @@ source_set("unit_tests") {
 
   if (!is_ios) {
     sources += [
+      "autofill_address_policy_handler_unittest.cc",
       "autofill_credit_card_policy_handler_unittest.cc",
       "autofill_policy_handler_unittest.cc",
     ]
@@ -432,6 +479,7 @@ source_set("unit_tests") {
 
   deps = [
     ":browser",
+    ":password_generator_fips181",
     ":test_support",
     ":unit_tests_bundle_data",
     "//base",
@@ -457,6 +505,8 @@ source_set("unit_tests") {
     "//net:test_support",
     "//services/identity/public/cpp:test_support",
     "//services/metrics/public/cpp:ukm_builders",
+    "//services/network:test_support",
+    "//services/network/public/cpp",
     "//sql",
     "//testing/gmock",
     "//testing/gtest",
@@ -483,4 +533,13 @@ fuzzer_test("form_structure_fuzzer") {
   ]
   seed_corpus = "form_structure_fuzzer_corpus"
   dict = "form_structure_fuzzer.dict"
+}
+
+fuzzer_test("password_generator_fips181_fuzzer") {
+  sources = [
+    "password_generator_fips181_fuzzer.cc",
+  ]
+  deps = [
+    ":password_generator_fips181",
+  ]
 }

@@ -11,10 +11,11 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
-#include "content/renderer/media/audio_device_factory.h"
+#include "content/renderer/media/audio/audio_device_factory.h"
 #include "content/renderer/media/stream/media_stream_audio_track.h"
 #include "content/renderer/media/webrtc/peer_connection_remote_audio_source.h"
 #include "content/renderer/media/webrtc_logging.h"
@@ -93,8 +94,7 @@ class SharedAudioRenderer : public MediaStreamAudioRenderer {
 
   void Play() override {
     DCHECK(thread_checker_.CalledOnValidThread());
-    DCHECK(started_);
-    if (playing_state_.playing())
+    if (!started_ || playing_state_.playing())
       return;
     playing_state_.set_playing(true);
     on_play_state_changed_.Run(media_stream_, &playing_state_);
@@ -102,8 +102,7 @@ class SharedAudioRenderer : public MediaStreamAudioRenderer {
 
   void Pause() override {
     DCHECK(thread_checker_.CalledOnValidThread());
-    DCHECK(started_);
-    if (!playing_state_.playing())
+    if (!started_ || !playing_state_.playing())
       return;
     playing_state_.set_playing(false);
     on_play_state_changed_.Run(media_stream_, &playing_state_);
@@ -549,7 +548,7 @@ bool WebRtcAudioRenderer::AddPlayingState(
   DCHECK(state->playing());
   // Look up or add the |source| to the map.
   PlayingStates& array = source_playing_states_[source];
-  if (std::find(array.begin(), array.end(), state) != array.end())
+  if (base::ContainsValue(array, state))
     return false;
 
   array.push_back(state);
@@ -584,8 +583,8 @@ void WebRtcAudioRenderer::OnPlayStateChanged(
     const blink::WebMediaStream& media_stream,
     PlayingState* state) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  blink::WebVector<blink::WebMediaStreamTrack> web_tracks;
-  media_stream.AudioTracks(web_tracks);
+  blink::WebVector<blink::WebMediaStreamTrack> web_tracks =
+      media_stream.AudioTracks();
 
   for (const blink::WebMediaStreamTrack& web_track : web_tracks) {
     // WebRtcAudioRenderer can only render audio tracks received from a remote

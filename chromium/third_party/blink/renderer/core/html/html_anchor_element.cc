@@ -32,10 +32,12 @@
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
+#include "third_party/blink/renderer/core/html/anchor_element_metrics.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
+#include "third_party/blink/renderer/core/loader/navigation_policy.h"
 #include "third_party/blink/renderer/core/loader/ping_loader.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -73,7 +75,8 @@ bool HTMLAnchorElement::MatchesEnabledPseudoClass() const {
 }
 
 bool HTMLAnchorElement::ShouldHaveFocusAppearance() const {
-  return !WasFocusedByMouse() || HTMLElement::SupportsFocus();
+  return (GetDocument().LastFocusType() != kWebFocusTypeMouse) ||
+         HTMLElement::SupportsFocus();
 }
 
 bool HTMLAnchorElement::IsMouseFocusable() const {
@@ -330,6 +333,8 @@ void HTMLAnchorElement::HandleClick(Event* event) {
                       WebFeature::kAnchorClickDispatchForNonConnectedNode);
   }
 
+  AnchorElementMetrics::MaybeExtractMetricsClicked(this);
+
   StringBuilder url;
   url.Append(StripLeadingAndTrailingHTMLSpaces(FastGetAttribute(hrefAttr)));
   AppendServerMapMousePosition(url, event);
@@ -340,10 +345,6 @@ void HTMLAnchorElement::HandleClick(Event* event) {
   SendPings(completed_url);
 
   ResourceRequest request(completed_url);
-  request.SetUIStartTime(
-      (event->PlatformTimeStamp() - TimeTicks()).InSecondsF());
-  request.SetInputPerfMetricReportPolicy(
-      InputToLoadPerfMetricReportPolicy::kReportLink);
 
   ReferrerPolicy policy;
   if (hasAttribute(referrerpolicyAttr) &&
@@ -367,30 +368,35 @@ void HTMLAnchorElement::HandleClick(Event* event) {
               : WebFeature::
                     kHTMLAnchorElementDownloadInSandboxWithoutUserGesture);
     }
-    // TODO(jochen): Only set the suggested filename for URLs we can request.
-    request.SetSuggestedFilename(
-        static_cast<String>(FastGetAttribute(downloadAttr)));
-    if (GetDocument().GetSecurityOrigin()->CanReadContent(completed_url)) {
-      // TODO(jochen): Handle cross origin server redirects.
+    // Ignore the download attribute if we either can't read the content, or
+    // the event is an alt-click or similar.
+    if (NavigationPolicyFromEvent(event) != kNavigationPolicyDownload &&
+        GetDocument().GetSecurityOrigin()->CanReadContent(completed_url)) {
+      request.SetSuggestedFilename(
+          static_cast<String>(FastGetAttribute(downloadAttr)));
       request.SetRequestContext(WebURLRequest::kRequestContextDownload);
       request.SetRequestorOrigin(SecurityOrigin::Create(GetDocument().Url()));
-      frame->Client()->DownloadURL(request);
+      frame->Client()->DownloadURL(request,
+                                   DownloadCrossOriginRedirects::kNavigate);
       return;
     }
   }
   request.SetRequestContext(WebURLRequest::kRequestContextHyperlink);
   FrameLoadRequest frame_request(&GetDocument(), request,
                                  getAttribute(targetAttr));
-  frame_request.SetTriggeringEvent(event);
   if (HasRel(kRelationNoReferrer)) {
     frame_request.SetShouldSendReferrer(kNeverSendReferrer);
     frame_request.SetShouldSetOpener(kNeverSetOpener);
   }
   if (HasRel(kRelationNoOpener))
     frame_request.SetShouldSetOpener(kNeverSetOpener);
+  frame_request.SetTriggeringEventInfo(
+      event->isTrusted() ? WebTriggeringEventInfo::kFromTrustedEvent
+                         : WebTriggeringEventInfo::kFromUntrustedEvent);
   // TODO(japhet): Link clicks can be emulated via JS without a user gesture.
   // Why doesn't this go through NavigationScheduler?
-  frame->Loader().StartNavigation(frame_request);
+  frame->Loader().StartNavigation(frame_request, WebFrameLoadType::kStandard,
+                                  NavigationPolicyFromEvent(event));
 }
 
 bool IsEnterKeyKeydownEvent(Event* event) {
@@ -430,11 +436,6 @@ Node::InsertionNotificationRequest HTMLAnchorElement::InsertedInto(
 void HTMLAnchorElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(rel_list_);
   HTMLElement::Trace(visitor);
-}
-
-void HTMLAnchorElement::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(rel_list_);
-  HTMLElement::TraceWrappers(visitor);
 }
 
 }  // namespace blink

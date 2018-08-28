@@ -9,8 +9,9 @@
 #include "net/third_party/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
+#include "net/third_party/quic/platform/api/quic_logging.h"
 
-namespace net {
+namespace quic {
 BandwidthSampler::BandwidthSampler()
     : total_bytes_sent_(0),
       total_bytes_acked_(0),
@@ -119,10 +120,11 @@ BandwidthSample BandwidthSampler::OnPacketAcknowledgedInner(
   // always larger than the time of the previous packet, otherwise division by
   // zero or integer underflow can occur.
   if (ack_time <= sent_packet.last_acked_packet_ack_time) {
-    QUIC_BUG << "Time of the previously acked packet:"
-             << sent_packet.last_acked_packet_ack_time.ToDebuggingValue()
-             << " is larger than the ack time of the current packet:"
-             << ack_time.ToDebuggingValue();
+    QUIC_LOG(DFATAL)
+        << "Time of the previously acked packet:"
+        << sent_packet.last_acked_packet_ack_time.ToDebuggingValue()
+        << " is larger than the ack time of the current packet:"
+        << ack_time.ToDebuggingValue();
     return BandwidthSample();
   }
   QuicBandwidth ack_rate = QuicBandwidth::FromBytesAndTimeDelta(
@@ -173,4 +175,4 @@ QuicPacketNumber BandwidthSampler::end_of_app_limited_phase() const {
   return end_of_app_limited_phase_;
 }
 
-}  // namespace net
+}  // namespace quic

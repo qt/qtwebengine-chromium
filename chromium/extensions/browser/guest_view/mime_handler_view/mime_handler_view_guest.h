@@ -12,6 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "components/guest_view/browser/guest_view.h"
 #include "content/public/common/transferrable_url_loader.mojom.h"
+#include "extensions/common/api/mime_handler.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 
 namespace content {
@@ -74,8 +75,8 @@ class StreamContainer {
   DISALLOW_COPY_AND_ASSIGN(StreamContainer);
 };
 
-class MimeHandlerViewGuest :
-    public guest_view::GuestView<MimeHandlerViewGuest> {
+class MimeHandlerViewGuest
+    : public guest_view::GuestView<MimeHandlerViewGuest> {
  public:
   static guest_view::GuestViewBase* Create(
       content::WebContents* owner_web_contents);
@@ -90,6 +91,9 @@ class MimeHandlerViewGuest :
 
   void SetEmbedderFrame(int process_id, int routing_id);
 
+  void SetBeforeUnloadController(
+      mime_handler::BeforeUnloadControlPtrInfo pending_before_unload_control);
+
  protected:
   explicit MimeHandlerViewGuest(content::WebContents* owner_web_contents);
   ~MimeHandlerViewGuest() override;
@@ -101,7 +105,7 @@ class MimeHandlerViewGuest :
   const char* GetAPINamespace() const final;
   int GetTaskPrefix() const final;
   void CreateWebContents(const base::DictionaryValue& create_params,
-                         const WebContentsCreatedCallback& callback) override;
+                         WebContentsCreatedCallback callback) override;
   void DidAttachToEmbedder() override;
   void DidInitialize(const base::DictionaryValue& create_params) final;
   void EmbedderFullscreenToggled(bool entered_fullscreen) final;
@@ -128,6 +132,19 @@ class MimeHandlerViewGuest :
   void ExitFullscreenModeForTab(content::WebContents*) override;
   bool IsFullscreenForTabOrPending(
       const content::WebContents* web_contents) const override;
+  bool ShouldCreateWebContents(
+      content::WebContents* web_contents,
+      content::RenderFrameHost* opener,
+      content::SiteInstance* source_site_instance,
+      int32_t route_id,
+      int32_t main_frame_route_id,
+      int32_t main_frame_widget_route_id,
+      content::mojom::WindowContainerType window_container_type,
+      const GURL& opener_url,
+      const std::string& frame_name,
+      const GURL& target_url,
+      const std::string& partition_id,
+      content::SessionStorageNamespace* session_storage_namespace) override;
 
   // Updates the fullscreen state for the guest. Returns whether the change
   // needs to be propagated to the embedder.
@@ -142,6 +159,9 @@ class MimeHandlerViewGuest :
   void ReadyToCommitNavigation(
       content::NavigationHandle* navigation_handle) final;
 
+  void FuseBeforeUnloadControl(
+      mime_handler::BeforeUnloadControlRequest request);
+
   std::unique_ptr<MimeHandlerViewGuestDelegate> delegate_;
   std::unique_ptr<StreamContainer> stream_;
 
@@ -153,6 +173,8 @@ class MimeHandlerViewGuest :
 
   bool is_guest_fullscreen_ = false;
   bool is_embedder_fullscreen_ = false;
+
+  mime_handler::BeforeUnloadControlPtrInfo pending_before_unload_control_;
 
   DISALLOW_COPY_AND_ASSIGN(MimeHandlerViewGuest);
 };

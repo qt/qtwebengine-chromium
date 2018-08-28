@@ -123,11 +123,14 @@ void FrameList::Reset(UnorderedFrameList* free_frames) {
   }
 }
 
+Vp9SsMap::Vp9SsMap() {}
+Vp9SsMap::~Vp9SsMap() {}
+
 bool Vp9SsMap::Insert(const VCMPacket& packet) {
-  if (!packet.video_header.codecHeader.VP9.ss_data_available)
+  if (!packet.video_header.vp9().ss_data_available)
     return false;
 
-  ss_map_[packet.timestamp] = packet.video_header.codecHeader.VP9.gof;
+  ss_map_[packet.timestamp] = packet.video_header.vp9().gof;
   return true;
 }
 
@@ -175,7 +178,7 @@ void Vp9SsMap::AdvanceFront(uint32_t timestamp) {
 
 // TODO(asapersson): Update according to updates in RTP payload profile.
 bool Vp9SsMap::UpdatePacket(VCMPacket* packet) {
-  uint8_t gof_idx = packet->video_header.codecHeader.VP9.gof_idx;
+  uint8_t gof_idx = packet->video_header.vp9().gof_idx;
   if (gof_idx == kNoGofIdx)
     return false;  // No update needed.
 
@@ -186,7 +189,7 @@ bool Vp9SsMap::UpdatePacket(VCMPacket* packet) {
   if (gof_idx >= it->second.num_frames_in_gof)
     return false;  // Assume corresponding SS not yet received.
 
-  RTPVideoHeaderVP9* vp9 = &packet->video_header.codecHeader.VP9;
+  RTPVideoHeaderVP9* vp9 = &packet->video_header.vp9();
   vp9->temporal_idx = it->second.temporal_idx[gof_idx];
   vp9->temporal_up_switch = it->second.temporal_up_switch[gof_idx];
 
@@ -761,9 +764,8 @@ VCMFrameBufferEnum VCMJitterBuffer::InsertPacket(const VCMPacket& packet,
       } else {
         incomplete_frames_.InsertFrame(frame);
         // If NACKs are enabled, keyframes are triggered by |GetNackList|.
-        if (nack_mode_ == kNoNack &&
-            NonContinuousOrIncompleteDuration() >
-                90 * kMaxDiscontinuousFramesTime) {
+        if (nack_mode_ == kNoNack && NonContinuousOrIncompleteDuration() >
+                                         90 * kMaxDiscontinuousFramesTime) {
           return kFlushIndicator;
         }
       }
@@ -777,9 +779,8 @@ VCMFrameBufferEnum VCMJitterBuffer::InsertPacket(const VCMPacket& packet,
       } else {
         incomplete_frames_.InsertFrame(frame);
         // If NACKs are enabled, keyframes are triggered by |GetNackList|.
-        if (nack_mode_ == kNoNack &&
-            NonContinuousOrIncompleteDuration() >
-                90 * kMaxDiscontinuousFramesTime) {
+        if (nack_mode_ == kNoNack && NonContinuousOrIncompleteDuration() >
+                                         90 * kMaxDiscontinuousFramesTime) {
           return kFlushIndicator;
         }
       }
@@ -1049,8 +1050,6 @@ bool VCMJitterBuffer::UpdateNackList(uint16_t sequence_number) {
     for (uint16_t i = latest_received_sequence_number_ + 1;
          IsNewerSequenceNumber(sequence_number, i); ++i) {
       missing_sequence_numbers_.insert(missing_sequence_numbers_.end(), i);
-      TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"), "AddNack",
-                           "seqnum", i);
     }
     if (TooLargeNackList() && !HandleTooLargeNackList()) {
       RTC_LOG(LS_WARNING) << "Requesting key frame due to too large NACK list.";
@@ -1064,8 +1063,6 @@ bool VCMJitterBuffer::UpdateNackList(uint16_t sequence_number) {
     }
   } else {
     missing_sequence_numbers_.erase(sequence_number);
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"), "RemoveNack",
-                         "seqnum", sequence_number);
   }
   return true;
 }

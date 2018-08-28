@@ -312,7 +312,7 @@ config("common_config") {
     ]
   }
 
-  if (use_libfuzzer || use_drfuzz || use_afl) {
+  if (use_fuzzing_engine && optimize_for_fuzzing) {
     # Used in Chromium's overrides to disable logging
     defines += [ "WEBRTC_UNSAFE_FUZZER_MODE" ]
   }
@@ -377,17 +377,19 @@ rtc_source_set("typedefs") {
   sources = [
     "typedefs.h",
   ]
+  deps = [
+    "rtc_base/system:arch",
+    "rtc_base/system:unused",
+  ]
 }
 
-rtc_static_library("webrtc_common") {
+rtc_source_set("webrtc_common") {
   sources = [
-    "common_types.cc",
     "common_types.h",
   ]
   deps = [
     ":typedefs",
     "api:array_view",
-    "api:optional",
     "api/video:video_bitrate_allocation",
     "rtc_base:checks",
     "rtc_base:deprecation",
@@ -412,18 +414,6 @@ if (use_libfuzzer || use_drfuzz || use_afl) {
 }
 
 if (rtc_include_tests) {
-  config("rtc_unittests_config") {
-    # GN orders flags on a target before flags from configs. The default config
-    # adds -Wall, and this flag have to be after -Wall -- so they need to
-    # come from a config and can"t be on the target directly.
-    if (is_clang) {
-      cflags = [
-        "-Wno-sign-compare",
-        "-Wno-unused-const-variable",
-      ]
-    }
-  }
-
   rtc_test("rtc_unittests") {
     testonly = true
 
@@ -432,7 +422,8 @@ if (rtc_include_tests) {
       "api:rtc_api_unittests",
       "api/audio/test:audio_api_unittests",
       "api/audio_codecs/test:audio_codecs_api_unittests",
-      "api/video_codecs/test:builtin_video_codec_factory_unittests",
+      "api/video/test:rtc_api_video_unittests",
+      "api/video_codecs/test:video_codecs_api_unittests",
       "p2p:libstunprober_unittests",
       "p2p:rtc_p2p_unittests",
       "rtc_base:rtc_base_approved_unittests",
@@ -542,14 +533,13 @@ if (rtc_include_tests) {
 
   rtc_test("webrtc_perf_tests") {
     testonly = true
-    configs += [ ":rtc_unittests_config" ]
-
     deps = [
       "audio:audio_perf_tests",
       "call:call_perf_tests",
       "modules/audio_coding:audio_coding_perf_tests",
       "modules/audio_processing:audio_processing_perf_tests",
       "modules/remote_bitrate_estimator:remote_bitrate_estimator_perf_tests",
+      "pc:peerconnection_perf_tests",
       "test:test_main",
       "video:video_full_stack_tests",
     ]
@@ -581,6 +571,7 @@ if (rtc_include_tests) {
         "examples/androidjunit/src/org/appspot/apprtc/BluetoothManagerTest.java",
         "examples/androidjunit/src/org/appspot/apprtc/DirectRTCClientTest.java",
         "examples/androidjunit/src/org/appspot/apprtc/TCPChannelClientTest.java",
+        "sdk/android/tests/src/org/webrtc/GlGenericDrawerTest.java",
         "sdk/android/tests/src/org/webrtc/CameraEnumerationTest.java",
         "sdk/android/tests/src/org/webrtc/ScalingSettingsTest.java",
       ]

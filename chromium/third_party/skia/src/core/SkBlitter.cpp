@@ -5,21 +5,23 @@
  * found in the LICENSE file.
  */
 
-#include "SkArenaAlloc.h"
 #include "SkBlitter.h"
+
 #include "SkAntiRun.h"
+#include "SkArenaAlloc.h"
 #include "SkColor.h"
 #include "SkColorFilter.h"
-#include "SkReadBuffer.h"
-#include "SkWriteBuffer.h"
 #include "SkMask.h"
 #include "SkMaskFilterBase.h"
 #include "SkPaintPriv.h"
+#include "SkReadBuffer.h"
 #include "SkRegionPriv.h"
 #include "SkShaderBase.h"
 #include "SkString.h"
 #include "SkTLazy.h"
+#include "SkTo.h"
 #include "SkUtils.h"
+#include "SkWriteBuffer.h"
 #include "SkXfermodeInterpretation.h"
 
 SkBlitter::~SkBlitter() {}
@@ -861,19 +863,6 @@ public:
         typedef Context INHERITED;
     };
 
-    void toString(SkString* str) const override {
-        str->append("Sk3DShader: (");
-
-        if (fProxy) {
-            str->append("Proxy: ");
-            as_SB(fProxy)->toString(str);
-        }
-
-        this->INHERITED::toString(str);
-
-        str->append(")");
-    }
-
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Sk3DShader)
 
 protected:
@@ -1205,8 +1194,10 @@ void SkRectClipCheckBlitter::blitAntiRect(int x, int y, int width, int height,
                                      SkAlpha leftAlpha, SkAlpha rightAlpha) {
     bool skipLeft = !leftAlpha;
     bool skipRight = !rightAlpha;
-    SkASSERT(fClipRect.contains(SkIRect::MakeXYWH(x + skipLeft, y,
-            width + 2 - skipRight - skipLeft, height)));
+#ifdef SK_DEBUG
+    SkIRect r = SkIRect::MakeXYWH(x + skipLeft, y, width + 2 - skipRight - skipLeft, height);
+    SkASSERT(r.isEmpty() || fClipRect.contains(r));
+#endif
     fBlitter->blitAntiRect(x, y, width, height, leftAlpha, rightAlpha);
 }
 

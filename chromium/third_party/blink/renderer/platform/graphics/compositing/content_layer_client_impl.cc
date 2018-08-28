@@ -7,6 +7,7 @@
 #include <memory>
 #include "base/optional.h"
 #include "base/trace_event/trace_event_argument.h"
+#include "cc/paint/paint_flags.h"
 #include "cc/paint/paint_op_buffer.h"
 #include "third_party/blink/renderer/platform/geometry/geometry_as_json.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_chunks_to_cc_layer.h"
@@ -179,13 +180,18 @@ static SkColor DisplayItemBackgroundColor(const DisplayItem& item) {
 }
 
 scoped_refptr<cc::PictureLayer> ContentLayerClientImpl::UpdateCcPictureLayer(
-    const PaintArtifact& paint_artifact,
+    scoped_refptr<const PaintArtifact> paint_artifact,
     const PaintChunkSubset& paint_chunks,
     const gfx::Rect& layer_bounds,
     const PropertyTreeState& layer_state) {
+  if (paint_chunks[0].is_cacheable)
+    id_.emplace(paint_chunks[0].id);
+  else
+    id_ = base::nullopt;
+
   // TODO(wangxianzhu): Avoid calling DebugName() in official release build.
   debug_name_ = paint_chunks[0].id.client.DebugName();
-  const auto& display_item_list = paint_artifact.GetDisplayItemList();
+  const auto& display_item_list = paint_artifact->GetDisplayItemList();
 
 #if DCHECK_IS_ON()
   paint_chunk_debug_data_ = JSONArray::Create();
@@ -193,7 +199,7 @@ scoped_refptr<cc::PictureLayer> ContentLayerClientImpl::UpdateCcPictureLayer(
     auto json = JSONObject::Create();
     json->SetString("data", chunk.ToString());
     json->SetArray("displayItems",
-                   paint_artifact.GetDisplayItemList().SubsequenceAsJSON(
+                   paint_artifact->GetDisplayItemList().SubsequenceAsJSON(
                        chunk.begin_index, chunk.end_index,
                        DisplayItemList::kSkipNonDrawings |
                            DisplayItemList::kShownOnlyDisplayItemTypes));

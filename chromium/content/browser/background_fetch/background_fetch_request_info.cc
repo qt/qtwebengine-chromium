@@ -91,6 +91,13 @@ const std::vector<GURL>& BackgroundFetchRequestInfo::GetURLChain() const {
   return url_chain_;
 }
 
+const base::Optional<storage::BlobDataHandle>&
+BackgroundFetchRequestInfo::GetBlobDataHandle() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(result_);
+  return result_->blob_handle;
+}
+
 const base::FilePath& BackgroundFetchRequestInfo::GetFilePath() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(result_);
@@ -107,6 +114,12 @@ const base::Time& BackgroundFetchRequestInfo::GetResponseTime() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(result_);
   return result_->response_time;
+}
+
+bool BackgroundFetchRequestInfo::IsResultSuccess() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(result_);
+  return result_->failure_reason == BackgroundFetchResult::FailureReason::NONE;
 }
 
 }  // namespace content

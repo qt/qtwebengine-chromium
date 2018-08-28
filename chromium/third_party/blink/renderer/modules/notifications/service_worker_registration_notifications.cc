@@ -9,14 +9,14 @@
 #include "third_party/blink/public/platform/modules/notifications/web_notification_data.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/notifications/get_notification_options.h"
 #include "third_party/blink/renderer/modules/notifications/notification_data.h"
 #include "third_party/blink/renderer/modules/notifications/notification_manager.h"
 #include "third_party/blink/renderer/modules/notifications/notification_options.h"
 #include "third_party/blink/renderer/modules/notifications/notification_resources_loader.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_registration.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_registration.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -39,28 +39,27 @@ ScriptPromise ServiceWorkerRegistrationNotifications::showNotification(
 
   // If context object's active worker is null, reject the promise with a
   // TypeError exception.
-  if (!registration.active())
-    return ScriptPromise::Reject(
-        script_state,
-        V8ThrowException::CreateTypeError(script_state->GetIsolate(),
-                                          "No active registration available on "
-                                          "the ServiceWorkerRegistration."));
+  if (!registration.active()) {
+    exception_state.ThrowTypeError(
+        "No active registration available on "
+        "the ServiceWorkerRegistration.");
+    return ScriptPromise();
+  }
 
   // If permission for notification's origin is not "granted", reject the
   // promise with a TypeError exception, and terminate these substeps.
   if (NotificationManager::From(execution_context)->GetPermissionStatus() !=
-      mojom::blink::PermissionStatus::GRANTED)
-    return ScriptPromise::Reject(
-        script_state,
-        V8ThrowException::CreateTypeError(
-            script_state->GetIsolate(),
-            "No notification permission has been granted for this origin."));
+      mojom::blink::PermissionStatus::GRANTED) {
+    exception_state.ThrowTypeError(
+        "No notification permission has been granted for this origin.");
+    return ScriptPromise();
+  }
 
   // Validate the developer-provided options to get the WebNotificationData.
   WebNotificationData data = CreateWebNotificationData(
       execution_context, title, options, exception_state);
   if (exception_state.HadException())
-    return exception_state.Reject(script_state);
+    return ScriptPromise();
 
   // Log number of actions developer provided in linear histogram:
   //     0    -> underflow bucket,

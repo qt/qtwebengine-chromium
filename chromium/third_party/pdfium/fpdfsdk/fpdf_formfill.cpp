@@ -33,6 +33,51 @@
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 
+static_assert(static_cast<int>(AlertButton::kDefault) ==
+                  JSPLATFORM_ALERT_BUTTON_DEFAULT,
+              "Default alert button types must match");
+static_assert(static_cast<int>(AlertButton::kOK) == JSPLATFORM_ALERT_BUTTON_OK,
+              "OK alert button types must match");
+static_assert(static_cast<int>(AlertButton::kOKCancel) ==
+                  JSPLATFORM_ALERT_BUTTON_OKCANCEL,
+              "OKCancel alert button types must match");
+static_assert(static_cast<int>(AlertButton::kYesNo) ==
+                  JSPLATFORM_ALERT_BUTTON_YESNO,
+              "YesNo alert button types must match");
+static_assert(static_cast<int>(AlertButton::kYesNoCancel) ==
+                  JSPLATFORM_ALERT_BUTTON_YESNOCANCEL,
+              "YesNoCancel alert button types must match");
+
+static_assert(static_cast<int>(AlertIcon::kDefault) ==
+                  JSPLATFORM_ALERT_ICON_DEFAULT,
+              "Default alert icon types must match");
+static_assert(static_cast<int>(AlertIcon::kError) ==
+                  JSPLATFORM_ALERT_ICON_ERROR,
+              "Error alert icon types must match");
+static_assert(static_cast<int>(AlertIcon::kWarning) ==
+                  JSPLATFORM_ALERT_ICON_WARNING,
+              "Warning alert icon types must match");
+static_assert(static_cast<int>(AlertIcon::kQuestion) ==
+                  JSPLATFORM_ALERT_ICON_QUESTION,
+              "Question alert icon types must match");
+static_assert(static_cast<int>(AlertIcon::kStatus) ==
+                  JSPLATFORM_ALERT_ICON_STATUS,
+              "Status alert icon types must match");
+static_assert(static_cast<int>(AlertIcon::kAsterisk) ==
+                  JSPLATFORM_ALERT_ICON_ASTERISK,
+              "Asterisk alert icon types must match");
+
+static_assert(static_cast<int>(AlertReturn::kOK) == JSPLATFORM_ALERT_RETURN_OK,
+              "OK alert return types must match");
+static_assert(static_cast<int>(AlertReturn::kCancel) ==
+                  JSPLATFORM_ALERT_RETURN_CANCEL,
+              "Cancel alert return types must match");
+static_assert(static_cast<int>(AlertReturn::kNo) == JSPLATFORM_ALERT_RETURN_NO,
+              "No alert return types must match");
+static_assert(static_cast<int>(AlertReturn::kYes) ==
+                  JSPLATFORM_ALERT_RETURN_YES,
+              "Yes alert return types must match");
+
 static_assert(static_cast<int>(FormType::kNone) == FORMTYPE_NONE,
               "None form types must match");
 static_assert(static_cast<int>(FormType::kAcroForm) == FORMTYPE_ACRO_FORM,
@@ -110,8 +155,8 @@ CPDFSDK_InterForm* FormHandleToInterForm(FPDF_FORMHANDLE hHandle) {
 }
 
 CPDFSDK_PageView* FormHandleToPageView(FPDF_FORMHANDLE hHandle,
-                                       FPDF_PAGE page) {
-  UnderlyingPageType* pPage = UnderlyingFromFPDFPage(page);
+                                       FPDF_PAGE fpdf_page) {
+  IPDF_Page* pPage = IPDFPageFromFPDFPage(fpdf_page);
   if (!pPage)
     return nullptr;
 
@@ -123,7 +168,7 @@ CPDFSDK_PageView* FormHandleToPageView(FPDF_FORMHANDLE hHandle,
 void FFLCommon(FPDF_FORMHANDLE hHandle,
                FPDF_BITMAP bitmap,
                FPDF_RECORDER recorder,
-               FPDF_PAGE page,
+               FPDF_PAGE fpdf_page,
                int start_x,
                int start_y,
                int size_x,
@@ -133,22 +178,12 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
   if (!hHandle)
     return;
 
-  UnderlyingPageType* pPage = UnderlyingFromFPDFPage(page);
+  IPDF_Page* pPage = IPDFPageFromFPDFPage(fpdf_page);
   if (!pPage)
     return;
 
-#ifdef PDF_ENABLE_XFA
-  CPDF_Document::Extension* pExtension = pPage->GetDocumentExtension();
-  if (!pExtension)
-    return;
-  CPDF_Document* pPDFDoc = pExtension->GetPDFDoc();
-  if (!pPDFDoc)
-    return;
-  CPDFSDK_FormFillEnvironment* pFormFillEnv =
-      HandleToCPDFSDKEnvironment(hHandle);
-  if (!pFormFillEnv)
-    return;
-#endif  // PDF_ENABLE_XFA
+  CPDF_Document* pPDFDoc = pPage->GetDocument();
+  CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, fpdf_page);
 
   const FX_RECT rect(start_x, start_y, start_x + size_x, start_y + size_y);
   CFX_Matrix matrix = pPage->GetDisplayMatrix(rect, rotate);
@@ -157,6 +192,7 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
 #ifdef _SKIA_SUPPORT_
   pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
 #endif
+
   RetainPtr<CFX_DIBitmap> holder(CFXDIBitmapFromFPDFBitmap(bitmap));
   pDevice->Attach(holder, false, nullptr, false);
   {
@@ -176,20 +212,13 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
       options.SetColorMode(CPDF_RenderOptions::kGray);
 
     options.SetDrawAnnots(flags & FPDF_ANNOT);
-
-#ifdef PDF_ENABLE_XFA
     options.SetOCContext(
         pdfium::MakeRetain<CPDF_OCContext>(pPDFDoc, CPDF_OCContext::View));
-    if (CPDFSDK_PageView* pPageView = pFormFillEnv->GetPageView(pPage, true))
+
+    if (pPageView)
       pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options, rect);
-#else   // PDF_ENABLE_XFA
-    options.SetOCContext(pdfium::MakeRetain<CPDF_OCContext>(
-        pPage->GetDocument(), CPDF_OCContext::View));
-    if (CPDFSDK_PageView* pPageView =
-            FormHandleToPageView(hHandle, FPDFPageFromUnderlying(pPage)))
-      pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options);
-#endif  // PDF_ENABLE_XFA
   }
+
 #ifdef _SKIA_SUPPORT_PATHS_
   pDevice->Flush(true);
   holder->UnPreMultiply();
@@ -219,7 +248,7 @@ FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
   }
 
 #ifdef PDF_ENABLE_XFA
-  CPDFXFA_Page* pXFAPage = UnderlyingFromFPDFPage(page);
+  CPDFXFA_Page* pXFAPage = ToXFAPage(IPDFPageFromFPDFPage(page));
   if (!pXFAPage)
     return -1;
 
@@ -331,6 +360,16 @@ FPDFDOC_ExitFormFillEnvironment(FPDF_FORMHANDLE hHandle) {
   delete pFormFillEnv;
 }
 
+FPDF_EXPORT void FPDF_CALLCONV FORM_SetSaveCallback(FPDF_FORMHANDLE hHandle,
+                                                    FORM_SAVECALLED callback) {
+  CPDFSDK_FormFillEnvironment* pFormFillEnv =
+      HandleToCPDFSDKEnvironment(hHandle);
+  if (!pFormFillEnv)
+    return;
+
+  pFormFillEnv->SetSaveCalled(callback);
+}
+
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnMouseMove(FPDF_FORMHANDLE hHandle,
                                                      FPDF_PAGE page,
                                                      int modifier,
@@ -361,6 +400,10 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnLButtonDown(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
+#ifdef PDF_ENABLE_CLICK_LOGGING
+  fprintf(stderr, "mousedown,left,%d,%d\n", static_cast<int>(round(page_x)),
+          static_cast<int>(round(page_y)));
+#endif  // PDF_ENABLE_CLICK_LOGGING
   return pPageView->OnLButtonDown(CFX_PointF(page_x, page_y), modifier);
 }
 
@@ -372,6 +415,10 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnLButtonUp(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
+#ifdef PDF_ENABLE_CLICK_LOGGING
+  fprintf(stderr, "mouseup,left,%d,%d\n", static_cast<int>(round(page_x)),
+          static_cast<int>(round(page_y)));
+#endif  // PDF_ENABLE_CLICK_LOGGING
   return pPageView->OnLButtonUp(CFX_PointF(page_x, page_y), modifier);
 }
 
@@ -384,6 +431,10 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnRButtonDown(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
+#ifdef PDF_ENABLE_CLICK_LOGGING
+  fprintf(stderr, "mousedown,right,%d,%d\n", static_cast<int>(round(page_x)),
+          static_cast<int>(round(page_y)));
+#endif  // PDF_ENABLE_CLICK_LOGGING
   return pPageView->OnRButtonDown(CFX_PointF(page_x, page_y), modifier);
 }
 
@@ -395,6 +446,10 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
+#ifdef PDF_ENABLE_CLICK_LOGGING
+  fprintf(stderr, "mouseup,right,%d,%d\n", static_cast<int>(round(page_x)),
+          static_cast<int>(round(page_y)));
+#endif  // PDF_ENABLE_CLICK_LOGGING
   return pPageView->OnRButtonUp(CFX_PointF(page_x, page_y), modifier);
 }
 #endif  // PDF_ENABLE_XFA
@@ -581,7 +636,7 @@ FPDF_EXPORT void FPDF_CALLCONV FORM_OnBeforeClosePage(FPDF_PAGE page,
   if (!pFormFillEnv)
     return;
 
-  UnderlyingPageType* pPage = UnderlyingFromFPDFPage(page);
+  IPDF_Page* pPage = IPDFPageFromFPDFPage(page);
   if (!pPage)
     return;
 
@@ -639,7 +694,7 @@ FPDF_EXPORT void FPDF_CALLCONV FORM_DoPageAAction(FPDF_PAGE page,
   if (!pFormFillEnv)
     return;
 
-  UnderlyingPageType* pPage = UnderlyingFromFPDFPage(page);
+  IPDF_Page* pPage = IPDFPageFromFPDFPage(page);
   CPDF_Page* pPDFPage = CPDFPageFromFPDFPage(page);
   if (!pPDFPage)
     return;
@@ -648,7 +703,7 @@ FPDF_EXPORT void FPDF_CALLCONV FORM_DoPageAAction(FPDF_PAGE page,
     return;
 
   CPDFSDK_ActionHandler* pActionHandler = pFormFillEnv->GetActionHandler();
-  CPDF_Dictionary* pPageDict = pPDFPage->GetFormDict();
+  CPDF_Dictionary* pPageDict = pPDFPage->GetDict();
   CPDF_AAction aa(pPageDict->GetDictFor("AA"));
   CPDF_AAction::AActionType type = aaType == FPDFPAGE_AACTION_OPEN
                                        ? CPDF_AAction::OpenPage

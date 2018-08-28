@@ -8,15 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-
 #include <algorithm>
 #include <string>
 
+#include "absl/memory/memory.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/video_coding/codecs/vp8/libvpx_vp8_decoder.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/exp_filter.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/timeutils.h"
 #include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
@@ -57,7 +56,7 @@ void GetPostProcParamsFromFieldTrialGroup(
 }  // namespace
 
 std::unique_ptr<VP8Decoder> VP8Decoder::Create() {
-  return rtc::MakeUnique<LibvpxVp8Decoder>();
+  return absl::make_unique<LibvpxVp8Decoder>();
 }
 
 class LibvpxVp8Decoder::QpSmoother {
@@ -308,7 +307,7 @@ int LibvpxVp8Decoder::ReturnFrame(const vpx_image_t* img,
 
   VideoFrame decoded_image(buffer, timestamp, 0, kVideoRotation_0);
   decoded_image.set_ntp_time_ms(ntp_time_ms);
-  decode_complete_callback_->Decoded(decoded_image, rtc::nullopt, qp);
+  decode_complete_callback_->Decoded(decoded_image, absl::nullopt, qp);
 
   return WEBRTC_VIDEO_CODEC_OK;
 }

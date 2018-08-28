@@ -31,10 +31,22 @@
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "rtc_base/atomicops.h"
 #include "rtc_base/constructormagic.h"
+#include "rtc_base/logging.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 
 namespace {
+
+bool UseShadowFilterOutput() {
+  return !field_trial::IsEnabled(
+      "WebRTC-Aec3UtilizeShadowFilterOutputKillSwitch");
+}
+
+bool UseSmoothSignalTransitions() {
+  return !field_trial::IsEnabled(
+      "WebRTC-Aec3SmoothSignalTransitionsKillSwitch");
+}
 
 void LinearEchoPower(const FftData& E,
                      const FftData& Y,
@@ -43,6 +55,26 @@ void LinearEchoPower(const FftData& E,
     (*S2)[k] = (Y.re[k] - E.re[k]) * (Y.re[k] - E.re[k]) +
                (Y.im[k] - E.im[k]) * (Y.im[k] - E.im[k]);
   }
+}
+
+// Fades between two input signals using a fix-sized transition.
+void SignalTransition(rtc::ArrayView<const float> from,
+                      rtc::ArrayView<const float> to,
+                      rtc::ArrayView<float> out) {
+  constexpr size_t kTransitionSize = 30;
+  constexpr float kOneByTransitionSize = 1.f / kTransitionSize;
+
+  RTC_DCHECK_EQ(from.size(), to.size());
+  RTC_DCHECK_EQ(from.size(), out.size());
+  RTC_DCHECK_LE(kTransitionSize, out.size());
+
+  for (size_t k = 0; k < kTransitionSize; ++k) {
+    out[k] = k * kOneByTransitionSize * to[k];
+    out[k] += (kTransitionSize - k) * kOneByTransitionSize * to[k];
+  }
+
+  std::copy(to.begin() + kTransitionSize, to.end(),
+            out.begin() + kTransitionSize);
 }
 
 // Computes a windowed (square root Hanning) padded FFT and updates the related
@@ -66,16 +98,16 @@ class EchoRemoverImpl final : public EchoRemover {
   // Removes the echo from a block of samples from the capture signal. The
   // supplied render signal is assumed to be pre-aligned with the capture
   // signal.
-  void ProcessCapture(const EchoPathVariability& echo_path_variability,
+  void ProcessCapture(EchoPathVariability echo_path_variability,
                       bool capture_signal_saturation,
-                      const rtc::Optional<DelayEstimate>& external_delay,
+                      const absl::optional<DelayEstimate>& external_delay,
                       RenderBuffer* render_buffer,
                       std::vector<std::vector<float>>* capture) override;
 
   // Returns the internal delay estimate in blocks.
-  rtc::Optional<int> Delay() const override {
+  absl::optional<int> Delay() const override {
     // TODO(peah): Remove or reactivate this functionality.
-    return rtc::nullopt;
+    return absl::nullopt;
   }
 
   // Updates the status on whether echo leakage is detected in the output of the
@@ -85,12 +117,21 @@ class EchoRemoverImpl final : public EchoRemover {
   }
 
  private:
+  // Selects which of the shadow and main linear filter outputs that is most
+  // appropriate to pass to the suppressor and forms the linear filter output by
+  // smoothly transition between those.
+  void FormLinearFilterOutput(bool smooth_transition,
+                              const SubtractorOutput& subtractor_output,
+                              rtc::ArrayView<float> output);
+
   static int instance_count_;
   const EchoCanceller3Config config_;
   const Aec3Fft fft_;
   std::unique_ptr<ApmDataDumper> data_dumper_;
   const Aec3Optimization optimization_;
   const int sample_rate_hz_;
+  const bool use_shadow_filter_output_;
+  const bool use_smooth_signal_transitions_;
   Subtractor subtractor_;
   SuppressionGain suppression_gain_;
   ComfortNoiseGenerator cng_;
@@ -104,6 +145,10 @@ class EchoRemoverImpl final : public EchoRemover {
   std::array<float, kFftLengthBy2> e_old_;
   std::array<float, kFftLengthBy2> x_old_;
   std::array<float, kFftLengthBy2> y_old_;
+  size_t block_counter_ = 0;
+  int gain_change_hangover_ = 0;
+  bool main_filter_output_last_selected_ = true;
+  bool linear_filter_output_last_selected_ = true;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(EchoRemoverImpl);
 };
@@ -118,6 +163,8 @@ EchoRemoverImpl::EchoRemoverImpl(const EchoCanceller3Config& config,
           new ApmDataDumper(rtc::AtomicOps::Increment(&instance_count_))),
       optimization_(DetectOptimization()),
       sample_rate_hz_(sample_rate_hz),
+      use_shadow_filter_output_(UseShadowFilterOutput()),
+      use_smooth_signal_transitions_(UseSmoothSignalTransitions()),
       subtractor_(config, data_dumper_.get(), optimization_),
       suppression_gain_(config_, optimization_, sample_rate_hz),
       cng_(optimization_),
@@ -137,15 +184,16 @@ void EchoRemoverImpl::GetMetrics(EchoControl::Metrics* metrics) const {
   // Echo return loss (ERL) is inverted to go from gain to attenuation.
   metrics->echo_return_loss = -10.0 * log10(aec_state_.ErlTimeDomain());
   metrics->echo_return_loss_enhancement =
-      10.0 * log10(aec_state_.ErleTimeDomain());
+      Log2TodB(aec_state_.ErleTimeDomainLog2());
 }
 
 void EchoRemoverImpl::ProcessCapture(
-    const EchoPathVariability& echo_path_variability,
+    EchoPathVariability echo_path_variability,
     bool capture_signal_saturation,
-    const rtc::Optional<DelayEstimate>& external_delay,
+    const absl::optional<DelayEstimate>& external_delay,
     RenderBuffer* render_buffer,
     std::vector<std::vector<float>>* capture) {
+  ++block_counter_;
   const std::vector<std::vector<float>>& x = render_buffer->Block(0);
   std::vector<std::vector<float>>* y = capture;
   RTC_DCHECK(render_buffer);
@@ -167,10 +215,29 @@ void EchoRemoverImpl::ProcessCapture(
   aec_state_.UpdateCaptureSaturation(capture_signal_saturation);
 
   if (echo_path_variability.AudioPathChanged()) {
+    // Ensure that the gain change is only acted on once per frame.
+    if (echo_path_variability.gain_change) {
+      if (gain_change_hangover_ == 0) {
+        constexpr int kMaxBlocksPerFrame = 3;
+        gain_change_hangover_ = kMaxBlocksPerFrame;
+        RTC_LOG(LS_WARNING)
+            << "Gain change detected at block " << block_counter_;
+      } else {
+        echo_path_variability.gain_change = false;
+      }
+    }
+
     subtractor_.HandleEchoPathChange(echo_path_variability);
     aec_state_.HandleEchoPathChange(echo_path_variability);
-    suppression_gain_.SetInitialState(true);
-    initial_state_ = true;
+
+    if (echo_path_variability.delay_change !=
+        EchoPathVariability::DelayAdjustment::kNone) {
+      suppression_gain_.SetInitialState(true);
+      initial_state_ = true;
+    }
+  }
+  if (gain_change_hangover_ > 0) {
+    --gain_change_hangover_;
   }
 
   std::array<float, kFftLengthBy2Plus1> Y2;
@@ -199,7 +266,8 @@ void EchoRemoverImpl::ProcessCapture(
   // If the delay is known, use the echo subtractor.
   subtractor_.Process(*render_buffer, y0, render_signal_analyzer_, aec_state_,
                       &subtractor_output);
-  const auto& e = subtractor_output.e_main;
+  std::array<float, kBlockSize> e;
+  FormLinearFilterOutput(use_smooth_signal_transitions_, subtractor_output, e);
 
   // Compute spectra.
   WindowedPaddedFft(fft_, y0, y_old_, &Y);
@@ -210,9 +278,8 @@ void EchoRemoverImpl::ProcessCapture(
 
   // Update the AEC state information.
   aec_state_.Update(external_delay, subtractor_.FilterFrequencyResponse(),
-                    subtractor_.FilterImpulseResponse(),
-                    subtractor_.ConvergedFilter(), subtractor_.DivergedFilter(),
-                    *render_buffer, E2, Y2, subtractor_output.s_main);
+                    subtractor_.FilterImpulseResponse(), *render_buffer, E2, Y2,
+                    subtractor_output, y0);
 
   // Compute spectra.
   const bool suppression_gain_uses_ffts =
@@ -229,8 +296,18 @@ void EchoRemoverImpl::ProcessCapture(
   data_dumper_->DumpWav("aec3_output_linear2", kBlockSize, &e[0],
                         LowestBandRate(sample_rate_hz_), 1);
   if (aec_state_.UseLinearFilterOutput()) {
-    std::copy(e.begin(), e.end(), y0.begin());
+    if (!linear_filter_output_last_selected_ &&
+        use_smooth_signal_transitions_) {
+      SignalTransition(y0, e, y0);
+    } else {
+      std::copy(e.begin(), e.end(), y0.begin());
+    }
+  } else {
+    if (linear_filter_output_last_selected_ && use_smooth_signal_transitions_) {
+      SignalTransition(e, y0, y0);
+    }
   }
+  linear_filter_output_last_selected_ = aec_state_.UseLinearFilterOutput();
   const auto& Y_fft = aec_state_.UseLinearFilterOutput() ? E : Y;
 
   data_dumper_->DumpWav("aec3_output_linear", kBlockSize, &y0[0],
@@ -242,8 +319,6 @@ void EchoRemoverImpl::ProcessCapture(
 
   // Estimate the comfort noise.
   cng_.Compute(aec_state_, Y2, &comfort_noise, &high_band_comfort_noise);
-
-
 
   // Compute and apply the suppression gain.
   suppression_gain_.GetGain(E2, R2, cng_.NoiseSpectrum(), E, X, Y,
@@ -281,6 +356,52 @@ void EchoRemoverImpl::ProcessCapture(
   data_dumper_->DumpRaw("aec3_filter_delay", aec_state_.FilterDelayBlocks());
   data_dumper_->DumpRaw("aec3_capture_saturation",
                         aec_state_.SaturatedCapture() ? 1 : 0);
+}
+
+void EchoRemoverImpl::FormLinearFilterOutput(
+    bool smooth_transition,
+    const SubtractorOutput& subtractor_output,
+    rtc::ArrayView<float> output) {
+  RTC_DCHECK_EQ(subtractor_output.e_main.size(), output.size());
+  RTC_DCHECK_EQ(subtractor_output.e_shadow.size(), output.size());
+  bool use_main_output = true;
+  if (use_shadow_filter_output_) {
+    // As the output of the main adaptive filter generally should be better than
+    // the shadow filter output, add a margin and threshold for when choosing
+    // the shadow filter output.
+    if (subtractor_output.e2_shadow < 0.9f * subtractor_output.e2_main &&
+        subtractor_output.y2 > 30.f * 30.f * kBlockSize &&
+        (subtractor_output.s2_main > 60.f * 60.f * kBlockSize ||
+         subtractor_output.s2_shadow > 60.f * 60.f * kBlockSize)) {
+      use_main_output = false;
+    } else {
+      // If the main filter is diverged, choose the filter output that has the
+      // lowest power.
+      if (subtractor_output.e2_shadow < subtractor_output.e2_main &&
+          subtractor_output.y2 < subtractor_output.e2_main) {
+        use_main_output = false;
+      }
+    }
+  }
+
+  if (use_main_output) {
+    if (!main_filter_output_last_selected_ && smooth_transition) {
+      SignalTransition(subtractor_output.e_shadow, subtractor_output.e_main,
+                       output);
+    } else {
+      std::copy(subtractor_output.e_main.begin(),
+                subtractor_output.e_main.end(), output.begin());
+    }
+  } else {
+    if (main_filter_output_last_selected_ && smooth_transition) {
+      SignalTransition(subtractor_output.e_main, subtractor_output.e_shadow,
+                       output);
+    } else {
+      std::copy(subtractor_output.e_shadow.begin(),
+                subtractor_output.e_shadow.end(), output.begin());
+    }
+  }
+  main_filter_output_last_selected_ = use_main_output;
 }
 
 }  // namespace

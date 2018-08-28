@@ -177,7 +177,9 @@ void CPPCodeGenerator::writeRuntimeValue(const Type& type, const Layout& layout,
     } else if (type.kind() == Type::kEnum_Kind) {
         this->write("%d");
         fFormatArgs.push_back("(int) " + cppCode);
-    } else if (type == *fContext.fInt4_Type || type == *fContext.fShort4_Type) {
+    } else if (type == *fContext.fInt4_Type ||
+               type == *fContext.fShort4_Type ||
+               type == *fContext.fByte4_Type) {
         this->write(type.name() + "(%d, %d, %d, %d)");
         fFormatArgs.push_back(cppCode + ".left()");
         fFormatArgs.push_back(cppCode + ".top()");
@@ -185,7 +187,7 @@ void CPPCodeGenerator::writeRuntimeValue(const Type& type, const Layout& layout,
         fFormatArgs.push_back(cppCode + ".bottom()");
     } else {
         printf("unsupported runtime value type '%s'\n", String(type.fName).c_str());
-        ASSERT(false);
+        SkASSERT(false);
     }
 }
 
@@ -216,7 +218,7 @@ void CPPCodeGenerator::writeIntLiteral(const IntLiteral& i) {
 
 void CPPCodeGenerator::writeSwizzle(const Swizzle& swizzle) {
     if (fCPPMode) {
-        ASSERT(swizzle.fComponents.size() == 1); // no support for multiple swizzle components yet
+        SkASSERT(swizzle.fComponents.size() == 1); // no support for multiple swizzle components yet
         this->writeExpression(*swizzle.fBase, kPostfix_Precedence);
         switch (swizzle.fComponents[0]) {
             case 0: this->write(".left()");   break;
@@ -291,8 +293,8 @@ void CPPCodeGenerator::writeSwitchStatement(const SwitchStatement& s) {
 
 void CPPCodeGenerator::writeFunctionCall(const FunctionCall& c) {
     if (c.fFunction.fBuiltin && c.fFunction.fName == "process") {
-        ASSERT(c.fArguments.size() == 1);
-        ASSERT(Expression::kVariableReference_Kind == c.fArguments[0]->fKind);
+        SkASSERT(c.fArguments.size() == 1);
+        SkASSERT(Expression::kVariableReference_Kind == c.fArguments[0]->fKind);
         int index = 0;
         bool found = false;
         for (const auto& p : fProgram) {
@@ -311,7 +313,7 @@ void CPPCodeGenerator::writeFunctionCall(const FunctionCall& c) {
                 break;
             }
         }
-        ASSERT(found);
+        SkASSERT(found);
         String childName = "_child" + to_string(index);
         fExtraEmitCodeCode += "        SkString " + childName + "(\"" + childName + "\");\n" +
                               "        this->emitChild(" + to_string(index) + ", &" + childName +
@@ -323,8 +325,8 @@ void CPPCodeGenerator::writeFunctionCall(const FunctionCall& c) {
     INHERITED::writeFunctionCall(c);
     if (c.fFunction.fBuiltin && c.fFunction.fName == "texture") {
         this->write(".%s");
-        ASSERT(c.fArguments.size() >= 1);
-        ASSERT(c.fArguments[0]->fKind == Expression::kVariableReference_Kind);
+        SkASSERT(c.fArguments.size() >= 1);
+        SkASSERT(c.fArguments[0]->fKind == Expression::kVariableReference_Kind);
         String sampler = this->getSamplerHandle(((VariableReference&) *c.fArguments[0]).fVariable);
         fFormatArgs.push_back("fragBuilder->getProgramBuilder()->samplerSwizzle(" + sampler +
                               ").c_str()");

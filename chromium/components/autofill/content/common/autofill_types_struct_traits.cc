@@ -6,8 +6,8 @@
 
 #include "base/i18n/rtl.h"
 #include "mojo/public/cpp/base/string16_mojom_traits.h"
-#include "mojo/public/cpp/base/text_direction_mojom_traits.h"
 #include "mojo/public/cpp/base/time_mojom_traits.h"
+#include "ui/gfx/geometry/mojo/geometry_struct_traits.h"
 #include "url/mojom/origin_mojom_traits.h"
 #include "url/mojom/url_gurl_mojom_traits.h"
 
@@ -533,6 +533,41 @@ bool EnumTraits<autofill::mojom::LabelSource,
 }
 
 // static
+autofill::mojom::FillingStatus
+EnumTraits<autofill::mojom::FillingStatus, autofill::FillingStatus>::ToMojom(
+    autofill::FillingStatus input) {
+  switch (input) {
+    case autofill::FillingStatus::SUCCESS:
+      return autofill::mojom::FillingStatus::SUCCESS;
+    case autofill::FillingStatus::ERROR_NO_VALID_FIELD:
+      return autofill::mojom::FillingStatus::ERROR_NO_VALID_FIELD;
+    case autofill::FillingStatus::ERROR_NOT_ALLOWED:
+      return autofill::mojom::FillingStatus::ERROR_NOT_ALLOWED;
+  }
+  NOTREACHED();
+  return autofill::mojom::FillingStatus::SUCCESS;
+}
+
+// static
+bool EnumTraits<autofill::mojom::FillingStatus, autofill::FillingStatus>::
+    FromMojom(autofill::mojom::FillingStatus input,
+              autofill::FillingStatus* output) {
+  switch (input) {
+    case autofill::mojom::FillingStatus::SUCCESS:
+      *output = autofill::FillingStatus::SUCCESS;
+      return true;
+    case autofill::mojom::FillingStatus::ERROR_NO_VALID_FIELD:
+      *output = autofill::FillingStatus::ERROR_NO_VALID_FIELD;
+      return true;
+    case autofill::mojom::FillingStatus::ERROR_NOT_ALLOWED:
+      *output = autofill::FillingStatus::ERROR_NOT_ALLOWED;
+      return true;
+  }
+  NOTREACHED();
+  return false;
+}
+
+// static
 bool StructTraits<
     autofill::mojom::FormFieldDataDataView,
     autofill::FormFieldData>::Read(autofill::mojom::FormFieldDataDataView data,
@@ -614,6 +649,9 @@ bool StructTraits<autofill::mojom::FormDataDataView, autofill::FormData>::Read(
   if (!data.ReadFields(&out->fields))
     return false;
 
+  if (!data.ReadUsernamePredictions(&out->username_predictions))
+    return false;
+
   return true;
 }
 
@@ -681,9 +719,13 @@ bool StructTraits<autofill::mojom::PasswordFormFillDataDataView,
       !data.ReadAdditionalLogins(&out->additional_logins))
     return false;
 
+  out->form_renderer_id = data.form_renderer_id();
   out->wait_for_username = data.wait_for_username();
   out->is_possible_change_password_form =
       data.is_possible_change_password_form();
+  out->has_renderer_ids = data.has_renderer_ids();
+  out->username_may_use_prefilled_placeholder =
+      data.username_may_use_prefilled_placeholder();
 
   return true;
 }
@@ -701,6 +743,24 @@ bool StructTraits<autofill::mojom::PasswordFormGenerationDataDataView,
   } else {
     DCHECK(!out->confirmation_field_signature);
   }
+  return true;
+}
+
+// static
+bool StructTraits<autofill::mojom::PasswordGenerationUIDataDataView,
+                  autofill::password_generation::PasswordGenerationUIData>::
+    Read(autofill::mojom::PasswordGenerationUIDataDataView data,
+         autofill::password_generation::PasswordGenerationUIData* out) {
+  if (!data.ReadBounds(&out->bounds))
+    return false;
+
+  out->max_length = data.max_length();
+
+  if (!data.ReadGenerationElement(&out->generation_element) ||
+      !data.ReadTextDirection(&out->text_direction) ||
+      !data.ReadPasswordForm(&out->password_form))
+    return false;
+
   return true;
 }
 

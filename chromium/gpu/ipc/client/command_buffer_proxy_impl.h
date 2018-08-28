@@ -19,6 +19,8 @@
 #include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/shared_memory_mapping.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/single_thread_task_runner.h"
@@ -38,10 +40,6 @@
 
 struct GPUCommandBufferConsoleMessage;
 class GURL;
-
-namespace base {
-class SharedMemory;
-}
 
 namespace gfx {
 struct GpuFenceHandle;
@@ -133,7 +131,6 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
                        base::OnceClosure callback) override;
   void WaitSyncTokenHint(const gpu::SyncToken& sync_token) override;
   bool CanWaitUnverifiedSyncToken(const gpu::SyncToken& sync_token) override;
-  void SetSnapshotRequested() override;
   void TakeFrontBuffer(const gpu::Mailbox& mailbox);
   void ReturnFrontBuffer(const gpu::Mailbox& mailbox,
                          const gpu::SyncToken& sync_token,
@@ -149,14 +146,12 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
   void SetUpdateVSyncParametersCallback(
       const UpdateVSyncParametersCallback& callback);
 
-  void SetNeedsVSync(bool needs_vsync);
-
   int32_t route_id() const { return route_id_; }
 
   const scoped_refptr<GpuChannelHost>& channel() const { return channel_; }
 
-  base::SharedMemoryHandle GetSharedStateHandle() const {
-    return shared_state_shm_->handle();
+  const base::UnsafeSharedMemoryRegion& GetSharedStateRegion() const {
+    return shared_state_shm_;
   }
   uint32_t CreateStreamTexture(uint32_t texture_id);
 
@@ -179,7 +174,8 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
   // verify that the context has not been lost.
   bool Send(IPC::Message* msg);
 
-  std::unique_ptr<base::SharedMemory> AllocateAndMapSharedMemory(size_t size);
+  std::pair<base::UnsafeSharedMemoryRegion, base::WritableSharedMemoryMapping>
+  AllocateAndMapSharedMemory(size_t size);
 
   // Message handlers:
   void OnDestroyed(gpu::error::ContextLostReason reason,
@@ -227,8 +223,9 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
   // The shared memory area used to update state.
   gpu::CommandBufferSharedState* shared_state() const;
 
-  // The shared memory area used to update state.
-  std::unique_ptr<base::SharedMemory> shared_state_shm_;
+  // The shared memory region used to update state.
+  base::UnsafeSharedMemoryRegion shared_state_shm_;
+  base::WritableSharedMemoryMapping shared_state_mapping_;
 
   // The last cached state received from the service.
   State last_state_;
@@ -279,8 +276,6 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
   SignalTaskMap signal_tasks_;
 
   gpu::Capabilities capabilities_;
-
-  bool snapshot_requested_ = false;
 
   UpdateVSyncParametersCallback update_vsync_parameters_completion_callback_;
 

@@ -12,6 +12,7 @@
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_io_data.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_metrics.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_util.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/core/common/lofi_decider.h"
 #include "components/data_use_measurement/core/data_use.h"
 #include "components/data_use_measurement/core/data_use_ascriber.h"
@@ -43,10 +44,6 @@ class DataUseUserDataBytes : public base::SupportsUserData::Data {
   int64_t original_bytes_;
 };
 
-// Hostname used for the other bucket which consists of chrome-services traffic.
-// This should be in sync with the same in DataReductionSiteBreakdownView.java
-const char kOtherHostName[] = "Other";
-
 // static
 const void* const DataUseUserDataBytes::kUserDataKey =
     &DataUseUserDataBytes::kUserDataKey;
@@ -63,7 +60,8 @@ DataReductionProxyDataUseObserver::DataReductionProxyDataUseObserver(
     : data_reduction_proxy_io_data_(data_reduction_proxy_io_data),
       data_use_ascriber_(data_use_ascriber) {
   DCHECK(data_reduction_proxy_io_data_);
-  data_use_ascriber_->AddObserver(this);
+  if (!data_reduction_proxy::params::IsDataSaverSiteBreakdownUsingPLMEnabled())
+    data_use_ascriber_->AddObserver(this);
 }
 
 DataReductionProxyDataUseObserver::~DataReductionProxyDataUseObserver() {
@@ -131,12 +129,14 @@ void DataReductionProxyDataUseObserver::OnPageResourceLoad(
                                 network_bytes, original_bytes));
     }
   } else {
+    // Report the datause that cannot be scoped to a page load to the other
+    // host. These include chrome services, service-worker, Downloads, etc.
     data_reduction_proxy_io_data_->UpdateDataUseForHost(
         network_bytes, original_bytes,
         data_use->traffic_type() ==
                 data_use_measurement::DataUse::TrafficType::USER_TRAFFIC
             ? data_use->url().HostNoBrackets()
-            : kOtherHostName);
+            : util::GetSiteBreakdownOtherHostName());
   }
 }
 
@@ -170,7 +170,8 @@ void DataReductionProxyDataUseObserver::OnPageDidFinishLoad(
       DCHECK(data_use->url().SchemeIs(url::kHttpsScheme));
       data_reduction_proxy_io_data_->UpdateContentLengths(
           0, total_inflated_bytes, data_reduction_proxy_io_data_->IsEnabled(),
-          HTTPS, std::string());
+          HTTPS, std::string(), true,
+          data_use_measurement::DataUseUserData::OTHER, 0);
       // Report for host usage.
       data_reduction_proxy_io_data_->UpdateDataUseForHost(
           0, total_inflated_bytes, data_use->url().HostNoBrackets());

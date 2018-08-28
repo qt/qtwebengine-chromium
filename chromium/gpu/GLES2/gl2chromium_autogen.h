@@ -301,7 +301,6 @@
 #define glDrawArraysInstancedANGLE GLES2_GET_FUN(DrawArraysInstancedANGLE)
 #define glDrawElementsInstancedANGLE GLES2_GET_FUN(DrawElementsInstancedANGLE)
 #define glVertexAttribDivisorANGLE GLES2_GET_FUN(VertexAttribDivisorANGLE)
-#define glGenMailboxCHROMIUM GLES2_GET_FUN(GenMailboxCHROMIUM)
 #define glProduceTextureDirectCHROMIUM \
   GLES2_GET_FUN(ProduceTextureDirectCHROMIUM)
 #define glCreateAndConsumeTextureCHROMIUM \
@@ -402,5 +401,7 @@
   GLES2_GET_FUN(CreateClientGpuFenceCHROMIUM)
 #define glWaitGpuFenceCHROMIUM GLES2_GET_FUN(WaitGpuFenceCHROMIUM)
 #define glDestroyGpuFenceCHROMIUM GLES2_GET_FUN(DestroyGpuFenceCHROMIUM)
+#define glInvalidateReadbackBufferShadowDataCHROMIUM \
+  GLES2_GET_FUN(InvalidateReadbackBufferShadowDataCHROMIUM)
 
 #endif  // GPU_GLES2_GL2CHROMIUM_AUTOGEN_H_

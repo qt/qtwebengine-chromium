@@ -31,10 +31,8 @@
 #include "mojo/public/cpp/base/big_buffer_mojom_traits.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_string.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value_factory.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/events/message_event.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
@@ -42,9 +40,9 @@
 #include "third_party/blink/renderer/core/inspector/thread_debugger.h"
 #include "third_party/blink/renderer/core/messaging/blink_transferable_message_struct_traits.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
-#include "third_party/blink/renderer/platform/wtf/atomics.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
 namespace blink {
@@ -80,7 +78,7 @@ void MessagePort::postMessage(ScriptState* script_state,
   for (unsigned i = 0; i < ports.size(); ++i) {
     if (ports[i] == this) {
       exception_state.ThrowDOMException(
-          kDataCloneError,
+          DOMExceptionCode::kDataCloneError,
           "Port at index " + String::Number(i) + " contains the source port.");
       return;
     }
@@ -184,7 +182,7 @@ Vector<MessagePortChannel> MessagePort::DisentanglePorts(
       else
         type = "a duplicate";
       exception_state.ThrowDOMException(
-          kDataCloneError,
+          DOMExceptionCode::kDataCloneError,
           "Port at index " + String::Number(i) + " is " + type + ".");
       return Vector<MessagePortChannel>();
     }

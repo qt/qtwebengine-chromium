@@ -3,11 +3,13 @@ include_rules = [
   # See comment in content/DEPS for which components are allowed.
   "+components/discardable_memory/common",
   "+components/discardable_memory/service",
-  "+components/download/downloader/in_progress",
+  "+components/download/database",
   "+components/download/public/common",
   "+components/download/quarantine/quarantine.h",
   "+components/filename_generation",
+  "+components/services/font",
   "+components/services/filesystem",
+  "+components/services/font/ppapi_fontconfig_matching.h",
   "+components/services/leveldb",
   "+components/link_header_util",
   "+components/metrics",
@@ -28,7 +30,6 @@ include_rules = [
   "+content/public/browser",
   "+device/base/synchronization",
   "+device/gamepad", # For gamepad API
-  "+device/geolocation/public/cpp",
   "+device/nfc",
   "+device/vr",  # For WebVR API
   # This can only be used on POSIX, in particular it mustn't be used on Windows
@@ -60,6 +61,13 @@ include_rules = [
   # Allow non-browser Chrome OS code to be used.
   "+chromeos",
   "+third_party/cros_system_api",
+
+  # Limit visibility into Content Service internals.
+  "-services/content",
+  "+services/content/public",
+  "+services/content/navigable_contents_delegate.h",
+  "+services/content/service.h",
+  "+services/content/service_delegate.h",
 
   # No inclusion of WebKit from the browser, other than the ones in
   # WebKit/public/{mojom,common}, or the ones that are strictly enum/POD,
@@ -97,7 +105,7 @@ include_rules = [
   "+third_party/blink/public/platform/modules/indexeddb/web_idb_database_exception.h",
   "+third_party/blink/public/platform/modules/indexeddb/web_idb_types.h",
   "+third_party/blink/public/platform/modules/notifications/web_notification_constants.h",
-  "+third_party/blink/public/platform/modules/serviceworker/web_service_worker_error.h",
+  "+third_party/blink/public/platform/modules/service_worker/web_service_worker_error.h",
   "+third_party/blink/public/public_buildflags.h",
   "+third_party/blink/public/web/web_ax_enums.h",
   "+third_party/blink/public/web/web_console_message.h",

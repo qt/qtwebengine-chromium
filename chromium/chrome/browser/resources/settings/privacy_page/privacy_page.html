@@ -230,7 +230,8 @@
               label="$i18n{thirdPartyCookie}"
               sub-label="$i18n{thirdPartyCookieSublabel}">
           </settings-toggle-button>
-          <div class="settings-box" actionable on-click="onSiteDataTap_">
+          <div id="site-data-trigger" class="settings-box" actionable
+              on-click="onSiteDataTap_">
              <div class="start" id="cookiesLink">
                $i18n{siteSettingsCookieLink}
              </div>
@@ -370,6 +371,12 @@
       </template>
       <template is="dom-if" route-path="/content/flash" no-search>
         <settings-subpage page-title="$i18n{siteSettingsFlash}">
+          <template is="dom-if" if="[[enableEphemeralFlashPermission_]]">
+            <a class="settings-box inherit-color no-outline" tabindex="-1"
+                target="_blank">
+              $i18n{siteSettingsFlashPermissionsEphemeral}
+            </a>
+          </template>
           <category-default-setting category="{{ContentSettingsTypes.PLUGINS}}"
               toggle-off-label="$i18n{siteSettingsFlashBlock}"
               toggle-on-label="$i18n{siteSettingsFlashAskFirstRecommended}">
@@ -386,7 +393,8 @@
 </if>
           <category-setting-exceptions
               category="{{ContentSettingsTypes.PLUGINS}}"
-              block-header="$i18n{siteSettingsBlock}">
+              block-header="$i18n{siteSettingsBlock}"
+              read-only-list="[[enableEphemeralFlashPermission_]]">
           </category-setting-exceptions>
         </settings-subpage>
       </template>

@@ -77,7 +77,7 @@ class CONTENT_EXPORT CrossProcessFrameConnector
   RenderWidgetHostViewBase* GetParentRenderWidgetHostView() override;
   RenderWidgetHostViewBase* GetRootRenderWidgetHostView() override;
   void RenderProcessGone() override;
-  void SetChildFrameSurface(const viz::SurfaceInfo& surface_info) override;
+  void FirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
   void SendIntrinsicSizingInfoToParent(
       const blink::WebIntrinsicSizingInfo&) override;
 
@@ -98,6 +98,9 @@ class CONTENT_EXPORT CrossProcessFrameConnector
       viz::EventSource source = viz::EventSource::ANY) override;
   void ForwardProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                      InputEventAckState ack_result) override;
+  void ForwardAckedTouchpadPinchGestureEvent(
+      const blink::WebGestureEvent& event,
+      InputEventAckState ack_result) override;
   void BubbleScrollEvent(const blink::WebGestureEvent& event) override;
   bool HasFocus() override;
   void FocusRootView() override;
@@ -197,6 +200,10 @@ class CONTENT_EXPORT CrossProcessFrameConnector
   // |last_received_local_frame_size_| may be in DIP if use zoom for DSF is
   // off.
   gfx::Size last_received_local_frame_size_;
+
+  // The last zoom level received from parent renderer, which is used to check
+  // if a new surface is created in case of zoom level change.
+  double last_received_zoom_level_ = 0.0;
 
   DISALLOW_COPY_AND_ASSIGN(CrossProcessFrameConnector);
 };

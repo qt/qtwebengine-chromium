@@ -21,6 +21,10 @@ namespace autofill {
 class AutofillManager;
 }
 
+namespace favicon {
+class FaviconService;
+}
+
 class GURL;
 
 #if defined(SAFE_BROWSING_DB_LOCAL)
@@ -35,10 +39,11 @@ class LogManager;
 class PasswordFormManagerForUI;
 class PasswordManager;
 class PasswordManagerMetricsRecorder;
+class PasswordRequirementsService;
 class PasswordStore;
 
-enum PasswordSyncState {
-  NOT_SYNCING_PASSWORDS,
+enum SyncState {
+  NOT_SYNCING,
   SYNCING_NORMAL_ENCRYPTION,
   SYNCING_WITH_CUSTOM_PASSPHRASE
 };
@@ -120,10 +125,6 @@ class PasswordManagerClient {
       const GURL& origin,
       const CredentialsCallback& callback) = 0;
 
-  // Informs the embedder that the user has manually requested to save the
-  // password in the focused password field.
-  virtual void ForceSavePassword();
-
   // Informs the embedder that the user has manually requested to generate a
   // password in the focused password field.
   virtual void GeneratePassword();
@@ -176,9 +177,14 @@ class PasswordManagerClient {
   virtual PasswordStore* GetPasswordStore() const = 0;
 
   // Reports whether and how passwords are synced in the embedder. The default
-  // implementation always returns NOT_SYNCING_PASSWORDS.
-  // TODO(vabr): Factor this out of the client to the sync layer.
-  virtual PasswordSyncState GetPasswordSyncState() const;
+  // implementation always returns NOT_SYNCING.
+  // TODO(crbug.com/515108): Factor this out of the client to the sync layer.
+  virtual SyncState GetPasswordSyncState() const;
+
+  // Reports whether and how browsing history is synced in the embedder. The
+  // default implementation always returns NOT_SYNCING.
+  // TODO(crbug.com/515108): Factor this out of the client to the sync layer.
+  virtual SyncState GetHistorySyncState() const;
 
   // Returns true if last navigation page had HTTP error i.e 5XX or 4XX
   virtual bool WasLastNavigationHTTPError() const;
@@ -226,11 +232,11 @@ class PasswordManagerClient {
                                            const GURL& frame_url) = 0;
 
   // Checks the safe browsing reputation of the webpage where password reuse
-  // happens. This is called by the PasswordReuseDetectionManager when either
-  // the sync password or a saved password is typed on the wrong domain.
-  // This may trigger a warning dialog if it looks like the page is phishy.
+  // happens. This is called by the PasswordReuseDetectionManager when a
+  // protected password is typed on the wrong domain. This may trigger a
+  // warning dialog if it looks like the page is phishy.
   virtual void CheckProtectedPasswordEntry(
-      bool matches_sync_password,
+      metrics_util::PasswordType reused_password_type,
       const std::vector<std::string>& matching_domains,
       bool password_field_exists) = 0;
 
@@ -247,6 +253,19 @@ class PasswordManagerClient {
   // instance will be returned for each committed navigation. A caller must not
   // hold on to the pointer.
   virtual PasswordManagerMetricsRecorder& GetMetricsRecorder() = 0;
+
+  // Gets the PasswordRequirementsService associated with the client. It is
+  // valid that this method returns a nullptr if the PasswordRequirementsService
+  // has not been implemented for a specific platform or the context is an
+  // incognito context. Callers should guard against this.
+  virtual PasswordRequirementsService* GetPasswordRequirementsService();
+
+  // Returns the favicon service used to retrieve icons for an origin.
+  virtual favicon::FaviconService* GetFaviconService();
+
+  // Causes all live PasswordFormManager objects to query the password store
+  // again. Results in updating the fill information on the page.
+  virtual void UpdateFormManagers() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerClient);

@@ -4,12 +4,11 @@
 
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_manager.h"
 
-#include "third_party/blink/public/platform/modules/serviceworker/web_service_worker_request.h"
+#include "third_party/blink/public/platform/modules/service_worker/web_service_worker_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/request_or_usv_string.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/modules/v8/request_or_usv_string_or_request_or_usv_string_sequence.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/fetch/request.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/deprecation.h"
@@ -20,7 +19,7 @@
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_options.h"
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_registration.h"
 #include "third_party/blink/renderer/modules/background_fetch/background_fetch_type_converters.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_registration.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_registration.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors.h"
@@ -296,13 +295,19 @@ void BackgroundFetchManager::DidFetch(
     case mojom::blink::BackgroundFetchError::DUPLICATED_DEVELOPER_ID:
       DCHECK(!registration);
       resolver->Reject(DOMException::Create(
-          kInvalidStateError,
+          DOMExceptionCode::kInvalidStateError,
           "There already is a registration for the given id."));
       return;
     case mojom::blink::BackgroundFetchError::STORAGE_ERROR:
       DCHECK(!registration);
       resolver->Reject(DOMException::Create(
-          kAbortError, "Failed to store registration due to I/O error."));
+          DOMExceptionCode::kAbortError,
+          "Failed to store registration due to I/O error."));
+      return;
+    case mojom::blink::BackgroundFetchError::SERVICE_WORKER_UNAVAILABLE:
+      resolver->Reject(DOMException::Create(
+          DOMExceptionCode::kInvalidStateError,
+          "There is no service worker available to service the fetch."));
       return;
     case mojom::blink::BackgroundFetchError::INVALID_ARGUMENT:
     case mojom::blink::BackgroundFetchError::INVALID_ID:
@@ -403,8 +408,14 @@ void BackgroundFetchManager::DidGetRegistration(
       return;
     case mojom::blink::BackgroundFetchError::STORAGE_ERROR:
       DCHECK(!registration);
+      resolver->Reject(
+          DOMException::Create(DOMExceptionCode::kAbortError,
+                               "Failed to get registration due to I/O error."));
+      return;
+    case mojom::blink::BackgroundFetchError::SERVICE_WORKER_UNAVAILABLE:
       resolver->Reject(DOMException::Create(
-          kAbortError, "Failed to get registration due to I/O error."));
+          DOMExceptionCode::kInvalidStateError,
+          "There's no service worker available to service the fetch."));
       return;
     case mojom::blink::BackgroundFetchError::DUPLICATED_DEVELOPER_ID:
     case mojom::blink::BackgroundFetchError::INVALID_ARGUMENT:
@@ -445,11 +456,13 @@ void BackgroundFetchManager::DidGetDeveloperIds(
     case mojom::blink::BackgroundFetchError::STORAGE_ERROR:
       DCHECK(developer_ids.IsEmpty());
       resolver->Reject(DOMException::Create(
-          kAbortError, "Failed to get registration IDs due to I/O error."));
+          DOMExceptionCode::kAbortError,
+          "Failed to get registration IDs due to I/O error."));
       return;
     case mojom::blink::BackgroundFetchError::DUPLICATED_DEVELOPER_ID:
     case mojom::blink::BackgroundFetchError::INVALID_ARGUMENT:
     case mojom::blink::BackgroundFetchError::INVALID_ID:
+    case mojom::blink::BackgroundFetchError::SERVICE_WORKER_UNAVAILABLE:
       // Not applicable for this callback.
       break;
   }

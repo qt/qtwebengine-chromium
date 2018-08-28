@@ -13,6 +13,7 @@
 <translation id="1413622004203049571">Išjungti pranešimus nuo <ph name="NOTIFIER_NAME" /></translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 minutė ir }one{# minutė ir }few{# minutės ir }many{# minutės ir }other{# minučių ir }}</translation>
 <translation id="1643823602425662293">Pranešimas</translation>
+<translation id="169515659049020177">Antrojo lygio klavišas</translation>
 <translation id="1710340000377843106">dabar</translation>
 <translation id="1752946267035950200">{MINUTES,plural, =1{1 minutė}one{# minutė}few{# minutės}many{# minutės}other{# minučių}}</translation>
 <translation id="1761785978543082658"><ph name="QUANTITY" /> B</translation>
@@ -37,6 +38,7 @@
 <translation id="2295140143284145483">Apklausa</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY" /> TB/s</translation>
 <translation id="24452542372838207">Išskleisti pranešimą</translation>
+<translation id="2482878487686419369">Pranešimai</translation>
 <translation id="2497284189126895209">Visi failai</translation>
 <translation id="2522350507219695259">Kalibravimas baigtas</translation>
 <translation id="252373100621549798">Nežinoma pateiktis</translation>
@@ -49,6 +51,7 @@
 <translation id="3036649622769666520">Atidaryti failus</translation>
 <translation id="3049748772180311791"><ph name="QUANTITY" /> MB</translation>
 <translation id="3087734570205094154">Apačia</translation>
+<translation id="3126026824346185272">Ctrl</translation>
 <translation id="3157931365184549694">Atkurti</translation>
 <translation id="3183922693828471536">Slinkti iki čia</translation>
 <translation id="3234408098842461169">Rodyklė „Žemyn“</translation>
@@ -76,6 +79,7 @@
 <translation id="4730374152663651037">DAŽNAI NAUDOJAMOS PROGRAMOS</translation>
 <translation id="4788285488841504513">{MONTHS,plural, =1{Liko 1 mėnuo}one{Liko # mėnuo}few{Liko # mėnesiai}many{Liko # mėnesio}other{Liko # mėnesių}}</translation>
 <translation id="4820616160060340806">„Command“ + „<ph name="KEY_COMBO_NAME" />“</translation>
+<translation id="4841881773802181781">Įterpimas</translation>
 <translation id="4968171027979920686">{SECONDS,plural, =1{1 sekundė}one{# sekundė}few{# sekundės}many{# sekundės}other{# sekundžių}}</translation>
 <translation id="4971687151119236543">Ankstesnis medijos takelis</translation>
 <translation id="4999762576397546063">Ctrl+<ph name="KEY_COMBO_NAME" /></translation>
@@ -118,6 +122,7 @@
 <translation id="6612467943526193239">Jei norite išeiti iš kalibravimo, paspauskite „Esc“.</translation>
 <translation id="6620110761915583480">Išsaugoti failą</translation>
 <translation id="6699343763173986273">Kitas medijos takelis</translation>
+<translation id="673773751041746814">Trynimas</translation>
 <translation id="6786750046913594791">Uždaryti aplanką</translation>
 <translation id="6808150112686056157">Sustabdyti mediją</translation>
 <translation id="6845383723252244143">Pasirinkti aplanką</translation>

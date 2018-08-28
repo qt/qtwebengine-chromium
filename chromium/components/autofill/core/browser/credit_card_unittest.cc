@@ -8,7 +8,6 @@
 #include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_experiments.h"
@@ -193,24 +192,7 @@ TEST(CreditCardTest, BankNameAndLastFourDigitsStrings) {
 
 // Tests function NetworkOrBankNameAndLastFourDigits.
 TEST(CreditCardTest, NetworkOrBankNameAndLastFourDigitsStrings) {
-  // Case 1: Experiment off -> show network name.
-  CreditCard credit_card1(base::GenerateGUID(), "https://www.example.com/");
-  test::SetCreditCardInfo(&credit_card1, "John Dillinger",
-                          "5105 1051 0510 5100" /* Mastercard */, "01", "2010",
-                          "1");
-  credit_card1.set_bank_name("Chase");
-  base::string16 obfuscated1 =
-      credit_card1.NetworkOrBankNameAndLastFourDigits();
-  EXPECT_FALSE(credit_card1.bank_name().empty());
-  EXPECT_EQ(UTF8ToUTF16(std::string("Mastercard  ") +
-                        test::ObfuscatedCardDigitsAsUTF8("5100")),
-            obfuscated1);
-
-  // Turn on feature flag.
-  base::test::ScopedFeatureList scoped_feature_list_;
-  scoped_feature_list_.InitAndEnableFeature(kAutofillCreditCardBankNameDisplay);
-
-  // Case 2: Bank name is empty -> show network name.
+  // Case 1: Bank name is empty -> show network name.
   CreditCard credit_card2(base::GenerateGUID(), "https://www.example.com/");
   test::SetCreditCardInfo(&credit_card2, "John Dillinger",
                           "5105 1051 0510 5100" /* Mastercard */, "01", "2010",
@@ -222,7 +204,7 @@ TEST(CreditCardTest, NetworkOrBankNameAndLastFourDigitsStrings) {
                         test::ObfuscatedCardDigitsAsUTF8("5100")),
             obfuscated2);
 
-  // Case 3: Experiment on && bank name not empty -> show bank name.
+  // Case 2: Bank name is not empty -> show bank name.
   CreditCard credit_card3(base::GenerateGUID(), "https://www.example.com/");
   test::SetCreditCardInfo(&credit_card3, "John Dillinger",
                           "5105 1051 0510 5100" /* Mastercard */, "01", "2010",
@@ -902,25 +884,7 @@ INSTANTIATE_TEST_CASE_P(
         GetCardNetworkTestCase{"622384452162063648", kUnionPay, true},
         GetCardNetworkTestCase{"2204883716636153", kMirCard, true},
         GetCardNetworkTestCase{"2200111234567898", kMirCard, true},
-        GetCardNetworkTestCase{"2200481349288130", kMirCard, true},
-
-        // The relevant sample numbers from
-        // https://www.bincodes.com/bank-creditcard-generator/ and
-        // https://www.ebanx.com/business/en/developers/integrations/testing/credit-card-test-numbers
-        GetCardNetworkTestCase{"5067001446391275", kEloCard, true},
-        GetCardNetworkTestCase{"6362970000457013", kEloCard, true},
-
-        // Empty string
-        GetCardNetworkTestCase{"", kGenericCard, false},
-
-        // Non-numeric
-        GetCardNetworkTestCase{"garbage", kGenericCard, false},
-        GetCardNetworkTestCase{"4garbage", kVisaCard, false},
-
-        // Fails Luhn check.
-        GetCardNetworkTestCase{"4111111111111112", kVisaCard, false},
-        GetCardNetworkTestCase{"6247130048162413", kUnionPay, false},
-        GetCardNetworkTestCase{"2204883716636154", kMirCard, false}));
+        GetCardNetworkTestCase{"2200481349288130", kMirCard, true}));
 
 class GetCardNetworkTestBatch2
     : public testing::TestWithParam<GetCardNetworkTestCase> {};
@@ -937,61 +901,43 @@ INSTANTIATE_TEST_CASE_P(
     CreditCardTest,
     GetCardNetworkTestBatch2,
     testing::Values(
+        // The relevant sample numbers from
+        // https://www.bincodes.com/bank-creditcard-generator/ and
+        // https://www.ebanx.com/business/en/developers/integrations/testing/credit-card-test-numbers
+        GetCardNetworkTestCase{"5067001446391275", kEloCard, true},
+        GetCardNetworkTestCase{"6362970000457013", kEloCard, true},
+
+        // These sample numbers were created by taking the expected card prefix,
+        // filling out the required number of digits, and editing the last digit
+        // so that the full number passes a Luhn check.
+        GetCardNetworkTestCase{"4312741111111112", kEloCard, true},
+        GetCardNetworkTestCase{"4514161111111119", kEloCard, true},
+        GetCardNetworkTestCase{"5090111111111113", kEloCard, true},
+        GetCardNetworkTestCase{"6277801111111112", kEloCard, true},
+
+        // Existence of separators should not change the result, especially for
+        // prefixes that go past the first separator.
+        GetCardNetworkTestCase{"4111 1111 1111 1111", kVisaCard, true},
+        GetCardNetworkTestCase{"4111-1111-1111-1111", kVisaCard, true},
+        GetCardNetworkTestCase{"4312 7411 1111 1112", kEloCard, true},
+        GetCardNetworkTestCase{"4312-7411-1111-1112", kEloCard, true},
+
+        // Empty string
+        GetCardNetworkTestCase{"", kGenericCard, false},
+
+        // Non-numeric
+        GetCardNetworkTestCase{"garbage", kGenericCard, false},
+        GetCardNetworkTestCase{"4garbage", kGenericCard, false},
+
+        // Fails Luhn check.
+        GetCardNetworkTestCase{"4111111111111112", kVisaCard, false},
+        GetCardNetworkTestCase{"6247130048162413", kUnionPay, false},
+        GetCardNetworkTestCase{"2204883716636154", kMirCard, false},
+
         // Invalid length.
         GetCardNetworkTestCase{"3434343434343434", kAmericanExpressCard, false},
         GetCardNetworkTestCase{"411111111111116", kVisaCard, false},
-        GetCardNetworkTestCase{"220011123456783", kMirCard, false},
-
-        // Issuer Identification Numbers (IINs) that Chrome recognizes.
-        GetCardNetworkTestCase{"4", kVisaCard, false},
-        GetCardNetworkTestCase{"2200", kMirCard, false},
-        GetCardNetworkTestCase{"2202", kMirCard, false},
-        GetCardNetworkTestCase{"2204", kMirCard, false},
-        GetCardNetworkTestCase{"2221", kMasterCard, false},
-        GetCardNetworkTestCase{"2720", kMasterCard, false},
-        GetCardNetworkTestCase{"34", kAmericanExpressCard, false},
-        GetCardNetworkTestCase{"37", kAmericanExpressCard, false},
-        GetCardNetworkTestCase{"300", kDinersCard, false},
-        GetCardNetworkTestCase{"301", kDinersCard, false},
-        GetCardNetworkTestCase{"302", kDinersCard, false},
-        GetCardNetworkTestCase{"303", kDinersCard, false},
-        GetCardNetworkTestCase{"304", kDinersCard, false},
-        GetCardNetworkTestCase{"305", kDinersCard, false},
-        GetCardNetworkTestCase{"309", kDinersCard, false},
-        GetCardNetworkTestCase{"36", kDinersCard, false},
-        GetCardNetworkTestCase{"38", kDinersCard, false},
-        GetCardNetworkTestCase{"39", kDinersCard, false},
-        GetCardNetworkTestCase{"6011", kDiscoverCard, false},
-        GetCardNetworkTestCase{"644", kDiscoverCard, false},
-        GetCardNetworkTestCase{"645", kDiscoverCard, false},
-        GetCardNetworkTestCase{"646", kDiscoverCard, false},
-        GetCardNetworkTestCase{"647", kDiscoverCard, false},
-        GetCardNetworkTestCase{"648", kDiscoverCard, false},
-        GetCardNetworkTestCase{"649", kDiscoverCard, false},
-        GetCardNetworkTestCase{"65", kDiscoverCard, false},
-        GetCardNetworkTestCase{"5067", kEloCard, false},
-        GetCardNetworkTestCase{"5090", kEloCard, false},
-        GetCardNetworkTestCase{"636297", kEloCard, false},
-        GetCardNetworkTestCase{"3528", kJCBCard, false},
-        GetCardNetworkTestCase{"3531", kJCBCard, false},
-        GetCardNetworkTestCase{"3589", kJCBCard, false},
-        GetCardNetworkTestCase{"51", kMasterCard, false},
-        GetCardNetworkTestCase{"52", kMasterCard, false},
-        GetCardNetworkTestCase{"53", kMasterCard, false},
-        GetCardNetworkTestCase{"54", kMasterCard, false},
-        GetCardNetworkTestCase{"55", kMasterCard, false},
-        GetCardNetworkTestCase{"62", kUnionPay, false},
-
-        // Not enough data to determine an IIN uniquely.
-        GetCardNetworkTestCase{"2", kGenericCard, false},
-        GetCardNetworkTestCase{"3", kGenericCard, false},
-        GetCardNetworkTestCase{"30", kGenericCard, false},
-        GetCardNetworkTestCase{"35", kGenericCard, false},
-        GetCardNetworkTestCase{"5", kGenericCard, false},
-        GetCardNetworkTestCase{"6", kGenericCard, false},
-        GetCardNetworkTestCase{"60", kGenericCard, false},
-        GetCardNetworkTestCase{"601", kGenericCard, false},
-        GetCardNetworkTestCase{"64", kGenericCard, false}));
+        GetCardNetworkTestCase{"220011123456783", kMirCard, false}));
 
 class GetCardNetworkTestBatch3
     : public testing::TestWithParam<GetCardNetworkTestCase> {};
@@ -1008,6 +954,77 @@ INSTANTIATE_TEST_CASE_P(
     CreditCardTest,
     GetCardNetworkTestBatch3,
     testing::Values(
+        // Issuer Identification Numbers (IINs) that Chrome recognizes.
+        GetCardNetworkTestCase{"2200", kMirCard, false},
+        GetCardNetworkTestCase{"2201", kMirCard, false},
+        GetCardNetworkTestCase{"2202", kMirCard, false},
+        GetCardNetworkTestCase{"2203", kMirCard, false},
+        GetCardNetworkTestCase{"2204", kMirCard, false},
+        GetCardNetworkTestCase{"2221", kMasterCard, false},
+        GetCardNetworkTestCase{"2720", kMasterCard, false},
+        GetCardNetworkTestCase{"300", kDinersCard, false},
+        GetCardNetworkTestCase{"301", kDinersCard, false},
+        GetCardNetworkTestCase{"302", kDinersCard, false},
+        GetCardNetworkTestCase{"303", kDinersCard, false},
+        GetCardNetworkTestCase{"304", kDinersCard, false},
+        GetCardNetworkTestCase{"305", kDinersCard, false},
+        GetCardNetworkTestCase{"309", kDinersCard, false},
+        GetCardNetworkTestCase{"34", kAmericanExpressCard, false},
+        GetCardNetworkTestCase{"3528", kJCBCard, false},
+        GetCardNetworkTestCase{"3531", kJCBCard, false},
+        GetCardNetworkTestCase{"3589", kJCBCard, false},
+        GetCardNetworkTestCase{"36", kDinersCard, false},
+        GetCardNetworkTestCase{"37", kAmericanExpressCard, false},
+        GetCardNetworkTestCase{"38", kDinersCard, false},
+        GetCardNetworkTestCase{"39", kDinersCard, false},
+        GetCardNetworkTestCase{"4", kVisaCard, false},
+        GetCardNetworkTestCase{"431274", kEloCard, false},
+        GetCardNetworkTestCase{"451416", kEloCard, false},
+        GetCardNetworkTestCase{"5067", kEloCard, false},
+        GetCardNetworkTestCase{"5090", kEloCard, false},
+        GetCardNetworkTestCase{"51", kMasterCard, false},
+        GetCardNetworkTestCase{"52", kMasterCard, false},
+        GetCardNetworkTestCase{"53", kMasterCard, false},
+        GetCardNetworkTestCase{"54", kMasterCard, false},
+        GetCardNetworkTestCase{"55", kMasterCard, false},
+        GetCardNetworkTestCase{"6011", kDiscoverCard, false},
+        GetCardNetworkTestCase{"62", kUnionPay, false},
+        GetCardNetworkTestCase{"627780", kEloCard, false},
+        GetCardNetworkTestCase{"636297", kEloCard, false},
+        GetCardNetworkTestCase{"644", kDiscoverCard, false},
+        GetCardNetworkTestCase{"645", kDiscoverCard, false},
+        GetCardNetworkTestCase{"646", kDiscoverCard, false},
+        GetCardNetworkTestCase{"647", kDiscoverCard, false},
+        GetCardNetworkTestCase{"648", kDiscoverCard, false},
+        GetCardNetworkTestCase{"649", kDiscoverCard, false},
+        GetCardNetworkTestCase{"65", kDiscoverCard, false}));
+
+class GetCardNetworkTestBatch4
+    : public testing::TestWithParam<GetCardNetworkTestCase> {};
+
+TEST_P(GetCardNetworkTestBatch4, GetCardNetwork) {
+  auto test_case = GetParam();
+  base::string16 card_number = ASCIIToUTF16(test_case.card_number);
+  SCOPED_TRACE(card_number);
+  EXPECT_EQ(test_case.issuer_network, CreditCard::GetCardNetwork(card_number));
+  EXPECT_EQ(test_case.is_valid, IsValidCreditCardNumber(card_number));
+}
+
+INSTANTIATE_TEST_CASE_P(
+    CreditCardTest,
+    GetCardNetworkTestBatch4,
+    testing::Values(
+        // Not enough data to determine an IIN uniquely.
+        GetCardNetworkTestCase{"2", kGenericCard, false},
+        GetCardNetworkTestCase{"3", kGenericCard, false},
+        GetCardNetworkTestCase{"30", kGenericCard, false},
+        GetCardNetworkTestCase{"35", kGenericCard, false},
+        GetCardNetworkTestCase{"5", kGenericCard, false},
+        GetCardNetworkTestCase{"6", kGenericCard, false},
+        GetCardNetworkTestCase{"60", kGenericCard, false},
+        GetCardNetworkTestCase{"601", kGenericCard, false},
+        GetCardNetworkTestCase{"64", kGenericCard, false},
+
         // Unknown IINs.
         GetCardNetworkTestCase{"0", kGenericCard, false},
         GetCardNetworkTestCase{"1", kGenericCard, false},
@@ -1217,83 +1234,5 @@ INSTANTIATE_TEST_CASE_P(
         ShouldUpdateExpirationTestCase{
             true, testingTimes.next_year_.month, testingTimes.next_year_.year,
             CreditCard::FULL_SERVER_CARD, CreditCard::EXPIRED}));
-
-// TODO(wuandy): rewriting below test with INSTANTIATE_TEST_CASE_P seems to
-// trigger a complaint on windows compilers. Removing it and revert to
-// original test for now.
-
-// Test that credit card last used date suggestion can be generated correctly
-// in different variations.
-
-
-// TODO(scottmg): Disabling as sheriff. On Android, LastUsedDateForDisplay is
-// returning "Last used over a year ago", rather than "last used Nov 30" as of
-// today, Dec 1. https://crbug.com/791067.
-TEST(CreditCardTest, DISABLED_GetLastUsedDateForDisplay) {
-  const base::Time::Exploded kTestDateTimeExploded = {
-      2016, 12, 6, 10,  // Sat, Dec 10, 2016
-      15,   42, 7, 0    // 15:42:07.000
-  };
-  base::Time kArbitraryTime;
-  EXPECT_TRUE(
-      base::Time::FromLocalExploded(kTestDateTimeExploded, &kArbitraryTime));
-
-  // Test for added to chrome/chromium.
-  CreditCard credit_card0(base::GenerateGUID(), "https://www.example.com");
-  credit_card0.set_use_count(1);
-  credit_card0.set_use_date(kArbitraryTime - base::TimeDelta::FromDays(1));
-  test::SetCreditCardInfo(&credit_card0, "John Dillinger",
-                          "423456789012" /* Visa */, "01", "2021", "1");
-
-  // Test for last used date.
-  CreditCard credit_card1(base::GenerateGUID(), "https://www.example.com");
-  test::SetCreditCardInfo(&credit_card1, "Clyde Barrow",
-                          "347666888555" /* American Express */, "04", "2021",
-                          "1");
-  credit_card1.set_use_count(10);
-  credit_card1.set_use_date(kArbitraryTime - base::TimeDelta::FromDays(10));
-
-  // Test for last used more than one year ago.
-  CreditCard credit_card2(base::GenerateGUID(), "https://www.example.com");
-  credit_card2.set_use_count(5);
-  credit_card2.set_use_date(kArbitraryTime - base::TimeDelta::FromDays(366));
-  test::SetCreditCardInfo(&credit_card2, "Bonnie Parker",
-                          "518765432109" /* Mastercard */, "12", "2021", "1");
-
-  static const struct {
-    const char* show_expiration_date;
-    const std::string& app_locale;
-    base::string16 added_to_autofill_date;
-    base::string16 last_used_date;
-    base::string16 last_used_year_ago;
-  } kTestCases[] = {
-      // only show last used date.
-      {"false", "en_US", ASCIIToUTF16("Added Dec 09"),
-       ASCIIToUTF16("Last used Nov 30"),
-       ASCIIToUTF16("Last used over a year ago")},
-      // show expiration date and last used date.
-      {"true", "en_US", ASCIIToUTF16("Exp: 01/21, added Dec 09"),
-       ASCIIToUTF16("Exp: 04/21, last used Nov 30"),
-       ASCIIToUTF16("Exp: 12/21, last used over a year ago")},
-  };
-
-  variations::testing::VariationParamsManager variation_params_;
-
-  for (const auto& test_case : kTestCases) {
-    variation_params_.SetVariationParamsWithFeatureAssociations(
-        kAutofillCreditCardLastUsedDateDisplay.name,
-        {{kAutofillCreditCardLastUsedDateShowExpirationDateKey,
-          test_case.show_expiration_date}},
-        {kAutofillCreditCardLastUsedDateDisplay.name});
-
-    EXPECT_EQ(test_case.added_to_autofill_date,
-              credit_card0.GetLastUsedDateForDisplay(test_case.app_locale));
-    EXPECT_EQ(test_case.last_used_date,
-              credit_card1.GetLastUsedDateForDisplay(test_case.app_locale));
-    EXPECT_EQ(test_case.last_used_year_ago,
-              credit_card2.GetLastUsedDateForDisplay(test_case.app_locale));
-    variation_params_.ClearAllVariationParams();
-  }
-}
 
 }  // namespace autofill

@@ -28,7 +28,6 @@
 #include "third_party/blink/public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/platform/web_client_hints_type.h"
 #include "third_party/blink/public/platform/web_url_request.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -44,8 +43,10 @@
 #include "third_party/blink/renderer/core/layout/layout_image.h"
 #include "third_party/blink/renderer/core/layout/layout_video.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_image.h"
+#include "third_party/blink/renderer/core/loader/importance_attribute.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/microtask.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
@@ -87,7 +88,6 @@ class ImageLoader::Task {
         should_bypass_main_world_csp_(ShouldBypassMainWorldCSP(loader)),
         update_behavior_(update_behavior),
         referrer_policy_(referrer_policy),
-
         weak_factory_(this) {
     ExecutionContext& context = loader_->GetElement()->GetDocument();
     probe::AsyncTaskScheduled(&context, "Image", this);
@@ -111,12 +111,13 @@ class ImageLoader::Task {
       return;
     ExecutionContext& context = loader_->GetElement()->GetDocument();
     probe::AsyncTask async_task(&context, this);
-    if (script_state_->ContextIsValid()) {
-      ScriptState::Scope scope(script_state_.get());
+    if (script_state_ && script_state_->ContextIsValid()) {
+      ScriptState::Scope scope(script_state_);
       loader_->DoUpdateFromElement(should_bypass_main_world_csp_,
                                    update_behavior_, request_url_,
                                    referrer_policy_);
     } else {
+      // This call does not access v8::Context internally.
       loader_->DoUpdateFromElement(should_bypass_main_world_csp_,
                                    update_behavior_, request_url_,
                                    referrer_policy_);
@@ -134,7 +135,7 @@ class ImageLoader::Task {
   WeakPersistent<ImageLoader> loader_;
   BypassMainWorldBehavior should_bypass_main_world_csp_;
   UpdateFromElementBehavior update_behavior_;
-  scoped_refptr<ScriptState> script_state_;
+  WeakPersistent<ScriptState> script_state_;
   ReferrerPolicy referrer_policy_;
   KURL request_url_;
   base::WeakPtrFactory<Task> weak_factory_;
@@ -301,6 +302,13 @@ static void ConfigureRequest(
         element.GetDocument().GetSecurityOrigin(), cross_origin);
   }
 
+  if (RuntimeEnabledFeatures::PriorityHintsEnabled()) {
+    mojom::FetchImportanceMode importance_mode =
+        GetFetchImportanceAttributeValue(
+            element.FastGetAttribute(HTMLNames::importanceAttr));
+    params.SetFetchImportanceMode(importance_mode);
+  }
+
   if (client_hints_preferences.ShouldSend(
           mojom::WebClientHintsType::kResourceWidth) &&
       IsHTMLImageElement(element))
@@ -422,9 +430,10 @@ void ImageLoader::DoUpdateFromElement(BypassMainWorldBehavior bypass_behavior,
       resource_request.SetSkipServiceWorker(true);
     }
 
+    DCHECK(document.GetFrame());
     FetchParameters params(resource_request, resource_loader_options);
     ConfigureRequest(params, bypass_behavior, *element_,
-                     document.GetClientHintsPreferences());
+                     document.GetFrame()->GetClientHintsPreferences());
 
     if (update_behavior != kUpdateForcedReload && document.GetFrame())
       document.GetFrame()->MaybeAllowImagePlaceholder(params);
@@ -514,7 +523,6 @@ void ImageLoader::UpdateFromElement(UpdateFromElementBehavior update_behavior,
     request.SetFetchCredentialsMode(
         network::mojom::FetchCredentialsMode::kOmit);
     ImageResource* image_resource = ImageResource::Create(request);
-    image_resource->SetStatus(ResourceStatus::kPending);
     image_resource->NotifyStartLoad();
     SetImageForImageDocument(image_resource);
     return;
@@ -763,7 +771,7 @@ ScriptPromise ImageLoader::Decode(ScriptState* script_state,
   // that comes from iframe.contentDocument.createElement("img") and the iframe
   // is destroyed).
   if (!script_state->ContextIsValid()) {
-    exception_state.ThrowDOMException(kEncodingError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kEncodingError,
                                       "The source image cannot be decoded.");
     return ScriptPromise();
   }
@@ -806,7 +814,7 @@ void ImageLoader::DecodeRequest::Resolve() {
 
 void ImageLoader::DecodeRequest::Reject() {
   resolver_->Reject(DOMException::Create(
-      kEncodingError, "The source image cannot be decoded."));
+      DOMExceptionCode::kEncodingError, "The source image cannot be decoded."));
   loader_ = nullptr;
 }
 

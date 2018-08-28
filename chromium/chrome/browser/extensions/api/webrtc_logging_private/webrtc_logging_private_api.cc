@@ -42,7 +42,7 @@ bool CanEnableAudioDebugRecordingsFromExtension(
   }
 #endif
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kEnableAudioDebugRecordingsFromExtension) ||
+             ::switches::kEnableAudioDebugRecordingsFromExtension) ||
          enabled_by_permissions;
 }
 
@@ -51,7 +51,6 @@ bool CanEnableAudioDebugRecordingsFromExtension(
 namespace extensions {
 
 using api::webrtc_logging_private::MetaDataEntry;
-using api::webrtc_logging_private::RequestInfo;
 using content::BrowserThread;
 
 namespace Discard = api::webrtc_logging_private::Discard;
@@ -82,7 +81,8 @@ std::string HashIdWithOrigin(const std::string& security_origin,
 // TODO(hlundin): Consolidate with WebrtcAudioPrivateFunction and improve.
 // http://crbug.com/710371
 content::RenderProcessHost* WebrtcLoggingPrivateFunction::RphFromRequest(
-    const RequestInfo& request, const std::string& security_origin) {
+    const api::webrtc_logging_private::RequestInfo& request,
+    const std::string& security_origin) {
   // There are 2 ways these API functions can get called.
   //
   //  1. From a whitelisted component extension on behalf of a page with the
@@ -188,7 +188,8 @@ WebrtcLoggingPrivateFunction::LoggingHandlerFromRequest(
 
 scoped_refptr<WebRtcLoggingHandlerHost>
 WebrtcLoggingPrivateFunctionWithGenericCallback::PrepareTask(
-    const RequestInfo& request, const std::string& security_origin,
+    const api::webrtc_logging_private::RequestInfo& request,
+    const std::string& security_origin,
     WebRtcLoggingHandlerHost::GenericDoneCallback* callback) {
   *callback = base::Bind(
       &WebrtcLoggingPrivateFunctionWithGenericCallback::FireCallback, this);
@@ -569,26 +570,32 @@ bool WebrtcLoggingPrivateStartEventLoggingFunction::RunAsync() {
     return false;
   }
 
-  WebRtcLoggingHandlerHost::GenericDoneCallback callback = base::Bind(
-      &WebrtcLoggingPrivateStartEventLoggingFunction::FireCallback, this);
+  WebRtcLoggingHandlerHost::StartEventLoggingCallback callback =
+      base::BindRepeating(
+          &WebrtcLoggingPrivateStartEventLoggingFunction::FireCallback, this);
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(&WebRtcLoggingHandlerHost::StartEventLogging,
                      webrtc_logging_handler_host, params->peer_connection_id,
-                     params->max_log_size_bytes, params->metadata, callback));
+                     params->max_log_size_bytes, callback));
 
   return true;
 }
 
-// TODO(crbug.com/829748): Merge with super-class's FireCallback().
 void WebrtcLoggingPrivateStartEventLoggingFunction::FireCallback(
     bool success,
+    const std::string& log_id,
     const std::string& error_message) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (success) {
+    DCHECK(!log_id.empty());
     DCHECK(error_message.empty());
+    api::webrtc_logging_private::StartEventLoggingResult result;
+    result.log_id = log_id;
+    SetResult(result.ToValue());
   } else {
+    DCHECK(log_id.empty());
     DCHECK(!error_message.empty());
     SetError(error_message);
   }

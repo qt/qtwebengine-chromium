@@ -26,9 +26,9 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_DOM_RANGE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_RANGE_H_
 
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/range_boundary_point.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
@@ -46,6 +46,7 @@ class ExceptionState;
 class FloatQuad;
 class Node;
 class NodeWithIndex;
+class StringOrTrustedHTML;
 class Text;
 
 class CORE_EXPORT Range final : public ScriptWrappable {
@@ -114,7 +115,7 @@ class CORE_EXPORT Range final : public ScriptWrappable {
 
   String GetText() const;
 
-  DocumentFragment* createContextualFragment(const String& html,
+  DocumentFragment* createContextualFragment(const StringOrTrustedHTML& html,
                                              ExceptionState&);
 
   void detach();
@@ -204,6 +205,9 @@ class CORE_EXPORT Range final : public ScriptWrappable {
                                                 ExceptionState&);
   void UpdateSelectionIfAddedToSelection();
   void RemoveFromSelectionIfInDifferentRoot(Document& old_document);
+
+  DocumentFragment* createContextualFragmentFromString(const String& html,
+                                                       ExceptionState&);
 
   Member<Document> owner_document_;  // Cannot be null.
   RangeBoundaryPoint start_;

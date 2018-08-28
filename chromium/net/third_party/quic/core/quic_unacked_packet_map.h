@@ -14,7 +14,7 @@
 #include "net/third_party/quic/core/session_notifier_interface.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 
-namespace net {
+namespace quic {
 
 // Class which tracks unacked packets for three purposes:
 // 1) Track retransmittable data, including multiple transmissions of frames.
@@ -38,6 +38,15 @@ class QUIC_EXPORT_PRIVATE QuicUnackedPacketMap {
                      TransmissionType transmission_type,
                      QuicTime sent_time,
                      bool set_in_flight);
+
+  // Returns true iff |packet_number| is in the map.
+  bool Contains(QuicPacketNumber packet_number) const {
+    return packet_number >= least_unacked_ &&
+           packet_number < least_unacked_ + unacked_packets_.size();
+  }
+
+  // Returns the number of packets in the map.
+  size_t Size() const { return unacked_packets_.size(); }
 
   // Returns true if the packet |packet_number| is unacked.
   bool IsUnacked(QuicPacketNumber packet_number) const;
@@ -90,8 +99,12 @@ class QUIC_EXPORT_PRIVATE QuicUnackedPacketMap {
     return largest_sent_retransmittable_packet_;
   }
 
+  QuicPacketNumber largest_sent_largest_acked() const {
+    return largest_sent_largest_acked_;
+  }
+
   // Returns the largest packet number that has been acked.
-  QuicPacketNumber largest_observed() const { return largest_observed_; }
+  QuicPacketNumber largest_acked() const { return largest_acked_; }
 
   // Returns the sum of bytes from all packets in flight.
   QuicByteCount bytes_in_flight() const { return bytes_in_flight_; }
@@ -151,9 +164,9 @@ class QUIC_EXPORT_PRIVATE QuicUnackedPacketMap {
   // RemoveRetransmittability.
   void RemoveRetransmittability(QuicPacketNumber packet_number);
 
-  // Increases the largest observed.  Any packets less or equal to
-  // |largest_acked_packet| are discarded if they are only for the RTT purposes.
-  void IncreaseLargestObserved(QuicPacketNumber largest_observed);
+  // Increases the largest acked.  Any packets less or equal to
+  // |largest_acked| are discarded if they are only for the RTT purposes.
+  void IncreaseLargestAcked(QuicPacketNumber largest_acked);
 
   // Remove any packets no longer needed for retransmission, congestion, or
   // RTT measurement purposes.
@@ -198,7 +211,10 @@ class QUIC_EXPORT_PRIVATE QuicUnackedPacketMap {
   QuicPacketNumber largest_sent_packet_;
   // The largest sent packet we expect to receive an ack for.
   QuicPacketNumber largest_sent_retransmittable_packet_;
-  QuicPacketNumber largest_observed_;
+  // The largest sent largest_acked in an ACK frame.
+  QuicPacketNumber largest_sent_largest_acked_;
+  // The largest received largest_acked from an ACK frame.
+  QuicPacketNumber largest_acked_;
 
   // Newly serialized retransmittable packets are added to this map, which
   // contains owning pointers to any contained frames.  If a packet is
@@ -228,6 +244,6 @@ class QUIC_EXPORT_PRIVATE QuicUnackedPacketMap {
   DISALLOW_COPY_AND_ASSIGN(QuicUnackedPacketMap);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_UNACKED_PACKET_MAP_H_

@@ -85,7 +85,7 @@ bool IsBetterMatch(const PasswordForm* lhs, const PasswordForm* rhs) {
 
 }  // namespace
 
-password_manager::PasswordSyncState GetPasswordSyncState(
+password_manager::SyncState GetPasswordSyncState(
     const syncer::SyncService* sync_service) {
   if (sync_service && sync_service->IsFirstSetupComplete() &&
       sync_service->IsSyncActive() &&
@@ -94,7 +94,21 @@ password_manager::PasswordSyncState GetPasswordSyncState(
                ? password_manager::SYNCING_WITH_CUSTOM_PASSPHRASE
                : password_manager::SYNCING_NORMAL_ENCRYPTION;
   }
-  return password_manager::NOT_SYNCING_PASSWORDS;
+  return password_manager::NOT_SYNCING;
+}
+
+password_manager::SyncState GetHistorySyncState(
+    const syncer::SyncService* sync_service) {
+  if (sync_service && sync_service->IsFirstSetupComplete() &&
+      sync_service->IsSyncActive() &&
+      (sync_service->GetActiveDataTypes().Has(
+           syncer::HISTORY_DELETE_DIRECTIVES) ||
+       sync_service->GetActiveDataTypes().Has(syncer::PROXY_TABS))) {
+    return sync_service->IsUsingSecondaryPassphrase()
+               ? password_manager::SYNCING_WITH_CUSTOM_PASSPHRASE
+               : password_manager::SYNCING_NORMAL_ENCRYPTION;
+  }
+  return password_manager::NOT_SYNCING;
 }
 
 void FindDuplicates(
@@ -155,10 +169,8 @@ bool IsLoggingActive(const password_manager::PasswordManagerClient* client) {
 }
 
 bool ManualPasswordGenerationEnabled(syncer::SyncService* sync_service) {
-  if (!(base::FeatureList::IsEnabled(
-            password_manager::features::kEnableManualPasswordGeneration) &&
-        (password_manager_util::GetPasswordSyncState(sync_service) ==
-         password_manager::SYNCING_NORMAL_ENCRYPTION))) {
+  if (password_manager_util::GetPasswordSyncState(sync_service) !=
+      password_manager::SYNCING_NORMAL_ENCRYPTION) {
     return false;
   }
   LogPasswordGenerationEvent(
@@ -168,8 +180,7 @@ bool ManualPasswordGenerationEnabled(syncer::SyncService* sync_service) {
 
 bool ShowAllSavedPasswordsContextMenuEnabled() {
   if (!base::FeatureList::IsEnabled(
-          password_manager::features::
-              kEnableShowAllSavedPasswordsContextMenu)) {
+          password_manager::features::kShowAllSavedPasswordsContextMenu)) {
     return false;
   }
   LogContextOfShowAllSavedPasswordsShown(

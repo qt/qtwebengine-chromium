@@ -7,7 +7,6 @@
 #include <memory>
 #include "base/memory/scoped_refptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/text.h"
@@ -24,7 +23,9 @@
 #include "third_party/blink/renderer/core/layout/layout_block.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
 #include "third_party/blink/renderer/platform/testing/fake_display_item_client.h"
@@ -144,12 +145,8 @@ TEST_F(FrameSelectionTest, PaintCaretShouldNotLayout) {
   std::unique_ptr<PaintController> paint_controller = PaintController::Create();
   {
     GraphicsContext context(*paint_controller);
-
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      paint_controller->UpdateCurrentPaintChunkProperties(
-          root_paint_chunk_id_, PropertyTreeState::Root());
-    }
-
+    paint_controller->UpdateCurrentPaintChunkProperties(
+        root_paint_chunk_id_, PropertyTreeState::Root());
     Selection().PaintCaret(context, LayoutPoint());
   }
   paint_controller->CommitNewDisplayItems();
@@ -1065,19 +1062,17 @@ TEST_F(FrameSelectionTest, SelectionBounds) {
   // bottom is visible. The unclipped selection bounds should not be clipped.
   const int scroll_offset = 500;
   LocalFrameView* frame_view = GetDocument().View();
-  frame_view->LayoutViewportScrollableArea()->SetScrollOffset(
-      ScrollOffset(0, scroll_offset), kProgrammaticScroll);
-  EXPECT_EQ(
-      LayoutRect(0, node_margin_top, node_width, node_height),
-      frame_view->AbsoluteToDocument(Selection().AbsoluteUnclippedBounds()));
+  frame_view->LayoutViewport()->SetScrollOffset(ScrollOffset(0, scroll_offset),
+                                                kProgrammaticScroll);
+  EXPECT_EQ(LayoutRect(0, node_margin_top, node_width, node_height),
+            frame_view->FrameToDocument(Selection().AbsoluteUnclippedBounds()));
 
   // Adjust the page scale factor which changes the selection bounds as seen
   // through the viewport. The unclipped selection bounds should not be clipped.
   const int page_scale_factor = 2;
   GetPage().SetPageScaleFactor(page_scale_factor);
-  EXPECT_EQ(
-      LayoutRect(0, node_margin_top, node_width, node_height),
-      frame_view->AbsoluteToDocument(Selection().AbsoluteUnclippedBounds()));
+  EXPECT_EQ(LayoutRect(0, node_margin_top, node_width, node_height),
+            frame_view->FrameToDocument(Selection().AbsoluteUnclippedBounds()));
 }
 
 }  // namespace blink

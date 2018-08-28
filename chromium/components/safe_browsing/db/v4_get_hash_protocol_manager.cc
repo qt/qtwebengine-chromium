@@ -531,8 +531,7 @@ void V4GetHashProtocolManager::OnFullHashForApi(
   ThreatMetadata md;
   for (const FullHashInfo& full_hash_info : full_hash_infos) {
     DCHECK_EQ(GetChromeUrlApiId(), full_hash_info.list_id);
-    DCHECK(std::find(full_hashes.begin(), full_hashes.end(),
-                     full_hash_info.full_hash) != full_hashes.end());
+    DCHECK(base::ContainsValue(full_hashes, full_hash_info.full_hash));
     md.api_permissions.insert(full_hash_info.metadata.api_permissions.begin(),
                               full_hash_info.metadata.api_permissions.end());
   }
@@ -703,6 +702,7 @@ void V4GetHashProtocolManager::ParseMetadata(const ThreatMatch& match,
 void V4GetHashProtocolManager::ResetGetHashErrors() {
   gethash_error_count_ = 0;
   gethash_back_off_mult_ = 1;
+  next_gethash_time_ = base::Time();
 }
 
 void V4GetHashProtocolManager::SetClockForTests(base::Clock* clock) {

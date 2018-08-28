@@ -28,6 +28,10 @@ constexpr uint32_t kInvalidParentSequenceNumber = 0;
 constexpr uint32_t kInvalidChildSequenceNumber = 0;
 constexpr uint32_t kInitialParentSequenceNumber = 1;
 constexpr uint32_t kInitialChildSequenceNumber = 1;
+constexpr uint32_t kMaxParentSequenceNumber =
+    std::numeric_limits<uint32_t>::max();
+constexpr uint32_t kMaxChildSequenceNumber =
+    std::numeric_limits<uint32_t>::max();
 
 // This struct is the part of SurfaceId that can be modified by the client.
 // LocalSurfaceId uniquely identifies a surface among the surfaces created by a
@@ -82,6 +86,11 @@ class VIZ_COMMON_EXPORT LocalSurfaceId {
         child_sequence_number_(child_sequence_number),
         embed_token_(embed_token) {}
 
+  static constexpr LocalSurfaceId MaxSequenceId() {
+    return LocalSurfaceId(kMaxParentSequenceNumber, kMaxChildSequenceNumber,
+                          base::UnguessableToken());
+  }
+
   constexpr bool is_valid() const {
     return parent_sequence_number_ != kInvalidParentSequenceNumber &&
            child_sequence_number_ != kInvalidChildSequenceNumber &&
@@ -99,6 +108,14 @@ class VIZ_COMMON_EXPORT LocalSurfaceId {
   constexpr const base::UnguessableToken& embed_token() const {
     return embed_token_;
   }
+
+  // The |embed_trace_id| is used as the id for trace events associated with
+  // embedding this LocalSurfaceId.
+  uint64_t embed_trace_id() const { return hash() << 1; }
+
+  // The |submission_trace_id| is used as the id for trace events associated
+  // with submission of a CompositorFrame to a surface with this LocalSurfaceId.
+  uint64_t submission_trace_id() const { return (hash() << 1) | 1; }
 
   bool operator==(const LocalSurfaceId& other) const {
     return parent_sequence_number_ == other.parent_sequence_number_ &&
@@ -119,6 +136,13 @@ class VIZ_COMMON_EXPORT LocalSurfaceId {
   }
 
   std::string ToString() const;
+
+  // Returns whether this LocalSurfaceId was generated after |other|.
+  bool IsNewerThan(const LocalSurfaceId& other) const;
+
+  // Returns whether this LocalSurfaceId was generated after |other| or equal to
+  // it.
+  bool IsSameOrNewerThan(const LocalSurfaceId& other) const;
 
  private:
   friend struct mojo::StructTraits<mojom::LocalSurfaceIdDataView,

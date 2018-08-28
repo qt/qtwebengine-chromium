@@ -451,6 +451,10 @@ class Renderer11 : public RendererD3D
                           UINT mapFlags,
                           D3D11_MAPPED_SUBRESOURCE *mappedResource);
 
+    gl::Error getIncompleteTexture(const gl::Context *context,
+                                   gl::TextureType type,
+                                   gl::Texture **textureOut) override;
+
   private:
     void generateCaps(gl::Caps *outCaps,
                       gl::TextureCapsMap *outTextureCaps,
@@ -501,6 +505,10 @@ class Renderer11 : public RendererD3D
     d3d11::ANGLED3D11DeviceType getDeviceType() const;
 
     gl::Error markTransformFeedbackUsage(const gl::Context *context);
+    gl::Error drawWithGeometryShaderAndTransformFeedback(const gl::Context *context,
+                                                         gl::PrimitiveMode mode,
+                                                         UINT instanceCount,
+                                                         UINT vertexCount);
 
     HMODULE mD3d11Module;
     HMODULE mDxgiModule;

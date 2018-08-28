@@ -11,7 +11,7 @@
 #include "base/test/scoped_task_environment.h"
 #include "services/ui/ws2/test_window_service_delegate.h"
 #include "services/ui/ws2/test_window_tree_client.h"
-#include "services/ui/ws2/window_service_client_test_helper.h"
+#include "services/ui/ws2/window_tree_test_helper.h"
 #include "ui/aura/test/aura_test_helper.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/wm/core/focus_controller.h"
@@ -24,17 +24,15 @@ namespace ui {
 namespace ws2 {
 
 class WindowService;
-class WindowServiceClient;
-class WindowServiceClientTestHelper;
+class WindowTree;
+class WindowTreeTestHelper;
 
 struct EmbeddingHelper;
 
 // Helper to setup state needed for WindowService tests.
 class WindowServiceTestSetup {
  public:
-  // See |WindowServiceClient::intercepts_events| for details on
-  // |intercepts_events|.
-  explicit WindowServiceTestSetup(bool intercepts_events = false);
+  WindowServiceTestSetup();
   ~WindowServiceTestSetup();
 
   // |flags| mirrors that from mojom::WindowTree::Embed(), see it for details.
@@ -44,14 +42,20 @@ class WindowServiceTestSetup {
   aura::Window* root() { return aura_test_helper_.root_window(); }
   TestWindowServiceDelegate* delegate() { return &delegate_; }
   TestWindowTreeClient* window_tree_client() { return &window_tree_client_; }
-  WindowServiceClientTestHelper* client_test_helper() {
-    return client_test_helper_.get();
+  WindowTreeTestHelper* window_tree_test_helper() {
+    return window_tree_test_helper_.get();
   }
   wm::FocusController* focus_controller() { return &focus_controller_; }
 
   std::vector<Change>* changes() {
     return window_tree_client_.tracker()->changes();
   }
+
+  WindowTree* window_tree() { return window_tree_.get(); }
+
+  WindowService* service() { return service_.get(); }
+
+  aura::test::AuraTestHelper* aura_test_helper() { return &aura_test_helper_; }
 
  private:
   base::test::ScopedTaskEnvironment task_environment_{
@@ -62,8 +66,8 @@ class WindowServiceTestSetup {
   TestWindowServiceDelegate delegate_;
   std::unique_ptr<WindowService> service_;
   TestWindowTreeClient window_tree_client_;
-  std::unique_ptr<WindowServiceClient> window_service_client_;
-  std::unique_ptr<WindowServiceClientTestHelper> client_test_helper_;
+  std::unique_ptr<WindowTree> window_tree_;
+  std::unique_ptr<WindowTreeTestHelper> window_tree_test_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowServiceTestSetup);
 };
@@ -84,12 +88,12 @@ struct EmbeddingHelper {
   TestWindowTreeClient window_tree_client;
 
   // The client Embed() was called on.
-  WindowServiceClient* parent_window_service_client = nullptr;
+  WindowTree* parent_window_tree = nullptr;
 
-  // NOTE: this is owned by |parent_window_service_client|.
-  WindowServiceClient* window_service_client = nullptr;
+  // NOTE: this is owned by |parent_window_tree|.
+  WindowTree* window_tree = nullptr;
 
-  std::unique_ptr<WindowServiceClientTestHelper> client_test_helper;
+  std::unique_ptr<WindowTreeTestHelper> window_tree_test_helper;
 };
 
 }  // namespace ws2

@@ -28,6 +28,7 @@
  */
 
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
+#include "build/build_config.h"
 
 #include "third_party/blink/public/platform/web_font_description.h"
 #include "third_party/blink/renderer/platform/language.h"
@@ -36,6 +37,10 @@
 #include "third_party/blink/renderer/platform/wtf/string_hasher.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
+
+#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#include "third_party/blink/renderer/platform/fonts/font_cache.h"
+#endif
 
 namespace blink {
 
@@ -217,9 +222,14 @@ FontCacheKey FontDescription::CacheKey(
       static_cast<unsigned>(fields_.orientation_) << 1 |       // bit 2-3
       static_cast<unsigned>(fields_.subpixel_text_position_);  // bit 1
 
+#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+  float device_scale_factor_for_key = FontCache::DeviceScaleFactor();
+#else
+  float device_scale_factor_for_key = 1.0f;
+#endif
   FontCacheKey cache_key(creation_params, EffectiveFontSize(),
                          options | font_selection_request_.GetHash() << 8,
-                         variation_settings_);
+                         device_scale_factor_for_key, variation_settings_);
   return cache_key;
 }
 
@@ -357,6 +367,17 @@ SkFontStyle FontDescription::SkiaFontStyle() const {
     skia_weight = static_cast<int>(roundf(Weight() / 100) * 100);
 
   return SkFontStyle(skia_weight, skia_width, slant);
+}
+
+int FontDescription::MinimumPrefixWidthToHyphenate() const {
+  // If the maximum width available for the prefix before the hyphen is small,
+  // then it is very unlikely that an hyphenation opportunity exists, so do not
+  // bother to look for it.  These are heuristic numbers for performance added
+  // in http://wkb.ug/45606
+  const int kMinimumPrefixWidthNumerator = 5;
+  const int kMinimumPrefixWidthDenominator = 4;
+  return ComputedPixelSize() * kMinimumPrefixWidthNumerator /
+         kMinimumPrefixWidthDenominator;
 }
 
 String FontDescription::ToString(GenericFamilyType familyType) {

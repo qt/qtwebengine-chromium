@@ -10,20 +10,21 @@
 
 #include <errno.h>
 #include <inttypes.h>
-#include <iostream>
 #include <limits.h>  // For ULONG_MAX returned by strtoul.
-#include <memory>
 #include <stdio.h>
 #include <stdlib.h>  // For strtoul.
+#include <iostream>
+#include <memory>
 #include <string>
 
 #include "modules/audio_coding/neteq/include/neteq.h"
 #include "modules/audio_coding/neteq/tools/fake_decode_from_file.h"
 #include "modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "modules/audio_coding/neteq/tools/neteq_delay_analyzer.h"
-#include "modules/audio_coding/neteq/tools/neteq_stats_getter.h"
+#include "modules/audio_coding/neteq/tools/neteq_event_log_input.h"
 #include "modules/audio_coding/neteq/tools/neteq_packet_source_input.h"
 #include "modules/audio_coding/neteq/tools/neteq_replacement_input.h"
+#include "modules/audio_coding/neteq/tools/neteq_stats_getter.h"
 #include "modules/audio_coding/neteq/tools/neteq_test.h"
 #include "modules/audio_coding/neteq/tools/output_audio_file.h"
 #include "modules/audio_coding/neteq/tools/output_wav_file.h"
@@ -71,7 +72,7 @@ bool ValidatePayloadType(int value) {
 
 bool ValidateSsrcValue(const std::string& str) {
   uint32_t dummy_ssrc;
-  if (ParseSsrc(str, &dummy_ssrc)) // Value is ok.
+  if (ParseSsrc(str, &dummy_ssrc))  // Value is ok.
     return true;
   printf("Invalid SSRC: %s\n", str.c_str());
   return false;
@@ -106,10 +107,15 @@ DEFINE_int(cn_nb, 13, "RTP payload type for comfort noise (8 kHz)");
 DEFINE_int(cn_wb, 98, "RTP payload type for comfort noise (16 kHz)");
 DEFINE_int(cn_swb32, 99, "RTP payload type for comfort noise (32 kHz)");
 DEFINE_int(cn_swb48, 100, "RTP payload type for comfort noise (48 kHz)");
-DEFINE_bool(codec_map, false, "Prints the mapping between RTP payload type and "
-    "codec");
-DEFINE_string(replacement_audio_file, "",
-              "A PCM file that will be used to populate ""dummy"" RTP packets");
+DEFINE_bool(codec_map,
+            false,
+            "Prints the mapping between RTP payload type and "
+            "codec");
+DEFINE_string(replacement_audio_file,
+              "",
+              "A PCM file that will be used to populate "
+              "dummy"
+              " RTP packets");
 DEFINE_string(ssrc,
               "",
               "Only use packets with this SSRC (decimal or hex, the latter "
@@ -206,7 +212,7 @@ void PrintCodecMapping() {
   PrintCodecMappingEntry(NetEqDecoder::kDecoderCNGswb48kHz, FLAG_cn_swb48);
 }
 
-rtc::Optional<int> CodecSampleRate(uint8_t payload_type) {
+absl::optional<int> CodecSampleRate(uint8_t payload_type) {
   if (payload_type == FLAG_pcmu || payload_type == FLAG_pcma ||
       payload_type == FLAG_ilbc || payload_type == FLAG_pcm16b ||
       payload_type == FLAG_cn_nb || payload_type == FLAG_avt)
@@ -223,58 +229,8 @@ rtc::Optional<int> CodecSampleRate(uint8_t payload_type) {
     return 48000;
   if (payload_type == FLAG_red)
     return 0;
-  return rtc::nullopt;
+  return absl::nullopt;
 }
-
-// Class to let through only the packets with a given SSRC. Should be used as an
-// outer layer on another NetEqInput object.
-class FilterSsrcInput : public NetEqInput {
- public:
-  FilterSsrcInput(std::unique_ptr<NetEqInput> source, uint32_t ssrc)
-      : source_(std::move(source)), ssrc_(ssrc) {
-    FindNextWithCorrectSsrc();
-    RTC_CHECK(source_->NextHeader()) << "Found no packet with SSRC = 0x"
-                                     << std::hex << ssrc_;
-  }
-
-  // All methods but PopPacket() simply relay to the |source_| object.
-  rtc::Optional<int64_t> NextPacketTime() const override {
-    return source_->NextPacketTime();
-  }
-  rtc::Optional<int64_t> NextOutputEventTime() const override {
-    return source_->NextOutputEventTime();
-  }
-
-  // Returns the next packet, and throws away upcoming packets that do not match
-  // the desired SSRC.
-  std::unique_ptr<PacketData> PopPacket() override {
-    std::unique_ptr<PacketData> packet_to_return = source_->PopPacket();
-    RTC_DCHECK(!packet_to_return || packet_to_return->header.ssrc == ssrc_);
-    // Pre-fetch the next packet with correct SSRC. Hence, |source_| will always
-    // be have a valid packet (or empty if no more packets are available) when
-    // this method returns.
-    FindNextWithCorrectSsrc();
-    return packet_to_return;
-  }
-
-  void AdvanceOutputEvent() override { source_->AdvanceOutputEvent(); }
-
-  bool ended() const override { return source_->ended(); }
-
-  rtc::Optional<RTPHeader> NextHeader() const override {
-    return source_->NextHeader();
-  }
-
- private:
-  void FindNextWithCorrectSsrc() {
-    while (source_->NextHeader() && source_->NextHeader()->ssrc != ssrc_) {
-      source_->PopPacket();
-    }
-  }
-
-  std::unique_ptr<NetEqInput> source_;
-  uint32_t ssrc_;
-};
 
 // A callback class which prints whenver the inserted packet stream changes
 // the SSRC.
@@ -290,8 +246,8 @@ class SsrcSwitchDetector : public NetEqPostInsertPacket {
                          NetEq* neteq) override {
     if (last_ssrc_ && packet.header.ssrc != *last_ssrc_) {
       std::cout << "Changing streams from 0x" << std::hex << *last_ssrc_
-                << " to 0x" << std::hex << packet.header.ssrc
-                << std::dec << " (payload type "
+                << " to 0x" << std::hex << packet.header.ssrc << std::dec
+                << " (payload type "
                 << static_cast<int>(packet.header.payloadType) << ")"
                 << std::endl;
     }
@@ -303,15 +259,18 @@ class SsrcSwitchDetector : public NetEqPostInsertPacket {
 
  private:
   NetEqPostInsertPacket* other_callback_;
-  rtc::Optional<uint32_t> last_ssrc_;
+  absl::optional<uint32_t> last_ssrc_;
 };
 
 int RunTest(int argc, char* argv[]) {
   std::string program_name = argv[0];
-  std::string usage = "Tool for decoding an RTP dump file using NetEq.\n"
-      "Run " + program_name + " --help for usage.\n"
-      "Example usage:\n" + program_name +
-      " input.rtp output.{pcm, wav}\n";
+  std::string usage =
+      "Tool for decoding an RTP dump file using NetEq.\n"
+      "Run " +
+      program_name +
+      " --help for usage.\n"
+      "Example usage:\n" +
+      program_name + " input.rtp output.{pcm, wav}\n";
   if (rtc::FlagList::SetFlagsFromCommandLine(&argc, argv, true)) {
     return 1;
   }
@@ -386,14 +345,13 @@ int RunTest(int argc, char* argv[]) {
   if (strlen(FLAG_ssrc) > 0) {
     uint32_t ssrc;
     RTC_CHECK(ParseSsrc(FLAG_ssrc, &ssrc)) << "Flag verification has failed.";
-    input.reset(new FilterSsrcInput(std::move(input), ssrc));
+    static_cast<NetEqPacketSourceInput*>(input.get())->SelectSsrc(ssrc);
   }
 
   // Check the sample rate.
-  rtc::Optional<int> sample_rate_hz;
+  absl::optional<int> sample_rate_hz;
   std::set<std::pair<int, uint32_t>> discarded_pt_and_ssrc;
-  while (input->NextHeader()) {
-    rtc::Optional<RTPHeader> first_rtp_header = input->NextHeader();
+  while (absl::optional<RTPHeader> first_rtp_header = input->NextHeader()) {
     RTC_DCHECK(first_rtp_header);
     sample_rate_hz = CodecSampleRate(first_rtp_header->payloadType);
     if (sample_rate_hz) {
@@ -457,10 +415,8 @@ int RunTest(int argc, char* argv[]) {
       {FLAG_g722, std::make_pair(NetEqDecoder::kDecoderG722, "g722")},
       {FLAG_avt, std::make_pair(NetEqDecoder::kDecoderAVT, "avt")},
       {FLAG_avt_16, std::make_pair(NetEqDecoder::kDecoderAVT16kHz, "avt-16")},
-      {FLAG_avt_32,
-       std::make_pair(NetEqDecoder::kDecoderAVT32kHz, "avt-32")},
-      {FLAG_avt_48,
-       std::make_pair(NetEqDecoder::kDecoderAVT48kHz, "avt-48")},
+      {FLAG_avt_32, std::make_pair(NetEqDecoder::kDecoderAVT32kHz, "avt-32")},
+      {FLAG_avt_48, std::make_pair(NetEqDecoder::kDecoderAVT48kHz, "avt-48")},
       {FLAG_red, std::make_pair(NetEqDecoder::kDecoderRED, "red")},
       {FLAG_cn_nb, std::make_pair(NetEqDecoder::kDecoderCNGnb, "cng-nb")},
       {FLAG_cn_wb, std::make_pair(NetEqDecoder::kDecoderCNGwb, "cng-wb")},
@@ -491,9 +447,8 @@ int RunTest(int argc, char* argv[]) {
 
     std::set<uint8_t> cn_types = std_set_int32_to_uint8(
         {FLAG_cn_nb, FLAG_cn_wb, FLAG_cn_swb32, FLAG_cn_swb48});
-    std::set<uint8_t> forbidden_types =
-        std_set_int32_to_uint8({FLAG_g722, FLAG_red, FLAG_avt,
-                                FLAG_avt_16, FLAG_avt_32, FLAG_avt_48});
+    std::set<uint8_t> forbidden_types = std_set_int32_to_uint8(
+        {FLAG_g722, FLAG_red, FLAG_avt, FLAG_avt_16, FLAG_avt_32, FLAG_avt_48});
     input.reset(new NetEqReplacementInput(std::move(input), replacement_pt,
                                           cn_types, forbidden_types));
 

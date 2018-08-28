@@ -20,7 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 @class RTCEAGLVideoView;
 
 RTC_EXPORT
-@protocol RTCEAGLVideoViewDelegate<RTCVideoViewDelegate>
+@protocol RTCEAGLVideoViewDelegate <RTCVideoViewDelegate>
 @end
 
 /**
@@ -28,6 +28,7 @@ RTC_EXPORT
  * bounds using OpenGLES 2.0 or OpenGLES 3.0.
  */
 RTC_EXPORT
+NS_EXTENSION_UNAVAILABLE_IOS("Rendering not available in app extensions.")
 @interface RTCEAGLVideoView : UIView <RTCVideoRenderer>
 
 @property(nonatomic, weak) id<RTCVideoViewDelegate> delegate;

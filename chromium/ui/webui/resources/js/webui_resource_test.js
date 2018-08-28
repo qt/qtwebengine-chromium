@@ -4,8 +4,8 @@
 
 /**
  * Tests that an observation matches the expected value.
- * @param {Object} expected The expected value.
- * @param {Object} observed The actual value.
+ * @param {*} expected The expected value.
+ * @param {*} observed The actual value.
  * @param {string=} opt_message Optional message to include with a test
  *     failure.
  */
@@ -41,8 +41,8 @@ function assertFalse(observed, opt_message) {
 
 /**
  * Verifies that the observed and reference values differ.
- * @param {Object} reference The target value for comparison.
- * @param {Object} observed The test result.
+ * @param {*} reference The target value for comparison.
+ * @param {*} observed The test result.
  * @param {string=} opt_message Optional message to include with a test
  *     failure.
  */
@@ -120,6 +120,12 @@ function assertDeepEquals(expected, observed, opt_message) {
  */
 (function(exports) {
 /**
+ * Scope containing testXXX functions.
+ * @type {!Object}
+ */
+var testScope = {};
+
+/**
  * List of test cases.
  * @type {Array<string>} List of function names for tests to run.
  */
@@ -139,7 +145,7 @@ var pendingTearDown = null;
 
 /**
  * Name of current test.
- * @type {String?}
+ * @type {?string}
  */
 var testName = null;
 
@@ -158,12 +164,15 @@ var runnerStartTime = 0;
 /**
  * Runs all functions starting with test and reports success or
  * failure of the test suite.
+ * @param {Object=} opt_testScope optional scope containing testXXX functions.
+ *   Uses global 'window' by default.
  */
-function runTests() {
+function runTests(opt_testScope) {
   runnerStartTime = performance.now();
-  for (var name in window) {
+  testScope = opt_testScope || window;
+  for (var name in testScope) {
     // To avoid unnecessary getting properties, test name first.
-    if (/^test/.test(name) && typeof window[name] == 'function')
+    if (/^test/.test(name) && typeof testScope[name] == 'function')
       testCases.push(name);
   }
   if (!testCases.length) {
@@ -171,8 +180,8 @@ function runTests() {
     cleanTestRun = false;
   }
   try {
-    if (window.setUpPage)
-      window.setUpPage();
+    if (testScope.setUpPage)
+      testScope.setUpPage();
   } catch (err) {
     cleanTestRun = false;
   }
@@ -204,26 +213,29 @@ function continueTesting(opt_asyncTestFailure) {
     testStartTime = now;
     testName = testCases.pop();
     console.log('TEST ' + testName + ' starting...');
-    var isAsyncTest = window[testName].length;
+    var isAsyncTest = testScope[testName].length;
+    var testError = false;
     try {
-      if (window.setUp)
-        window.setUp();
-      pendingTearDown = window.tearDown;
-      window[testName](continueTesting);
+      if (testScope.setUp)
+        testScope.setUp();
+      pendingTearDown = testScope.tearDown || null;
+      testScope[testName](continueTesting);
     } catch (err) {
       console.error('Failure in test ' + testName + '\n' + err);
       console.log(err.stack);
       cleanTestRun = false;
+      testError = true;
     }
-    // Asynchronous tests must manually call continueTesting when complete.
-    if (!isAsyncTest)
+    // Asynchronous tests must manually call continueTesting when complete
+    // unless they throw an exception.
+    if (!isAsyncTest || testError)
       continueTesting();
   } else {
     done = true;
     endTests(cleanTestRun);
   }
   if (!done) {
-    domAutomationController.send('PENDING');
+    window.domAutomationController.send('PENDING');
   }
 }
 
@@ -238,13 +250,13 @@ function endTests(success) {
       ', duration=' + Math.round(duration) + 'ms');
   testName = null;
   runnerStartTime = 0;
-  domAutomationController.send(success ? 'SUCCESS' : 'FAILURE');
+  window.domAutomationController.send(success ? 'SUCCESS' : 'FAILURE');
 }
 
 exports.runTests = runTests;
 exports.endTests = endTests;
-})(this);
+})(window);
 
 window.onerror = function() {
-  endTests(false);
+  window.endTests(false);
 };

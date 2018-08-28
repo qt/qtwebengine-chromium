@@ -243,7 +243,7 @@ public:
 	void (*glGenerateMipmapOES)(GLenum target);
 	void (*glDrawBuffersEXT)(GLsizei n, const GLenum *bufs);
 
-	egl::Context *(*es2CreateContext)(egl::Display *display, const egl::Context *shareContext, int clientVersion, const egl::Config *config);
+	egl::Context *(*es2CreateContext)(egl::Display *display, const egl::Context *shareContext, const egl::Config *config);
 	__eglMustCastToProperFunctionPointerType (*es2GetProcAddress)(const char *procname);
 	egl::Image *(*createBackBuffer)(int width, int height, sw::Format format, int multiSampleDepth);
 	egl::Image *(*createBackBufferFromClientBuffer)(const egl::ClientBuffer& clientBuffer);
@@ -254,7 +254,7 @@ public:
 class LibGLESv2
 {
 public:
-	LibGLESv2(const std::string libraryDirectory) : libraryDirectory(libraryDirectory)
+	LibGLESv2()
 	{
 	}
 
@@ -285,11 +285,7 @@ private:
 					const char *libGLESv2_lib[] = {"libGLESv2.dll", "libGLES_V2_translator.dll"};
 				#endif
 			#elif defined(__ANDROID__)
-				#if defined(__LP64__)
-					const char *libGLESv2_lib[] = {"/vendor/lib64/egl/libGLESv2_swiftshader.so", "/system/lib64/egl/libGLESv2_swiftshader.so"};
-				#else
-					const char *libGLESv2_lib[] = {"/vendor/lib/egl/libGLESv2_swiftshader.so", "/system/lib/egl/libGLESv2_swiftshader.so"};
-				#endif
+				const char *libGLESv2_lib[] = {"libGLESv2_swiftshader.so", "libGLESv2_swiftshader.so"};
 			#elif defined(__linux__)
 				#if defined(__LP64__)
 					const char *libGLESv2_lib[] = {"lib64GLES_V2_translator.so", "libGLESv2.so.2", "libGLESv2.so"};
@@ -308,7 +304,8 @@ private:
 				#error "libGLESv2::loadExports unimplemented for this platform"
 			#endif
 
-			libGLESv2 = loadLibrary(libraryDirectory, libGLESv2_lib, "libGLESv2_swiftshader");
+			std::string directory = getModuleDirectory();
+			libGLESv2 = loadLibrary(directory, libGLESv2_lib, "libGLESv2_swiftshader");
 
 			if(libGLESv2)
 			{
@@ -322,7 +319,6 @@ private:
 
 	void *libGLESv2 = nullptr;
 	LibGLESv2exports *libGLESv2exports = nullptr;
-	const std::string libraryDirectory;
 };
 
 #endif   // libGLESv2_hpp

@@ -61,9 +61,13 @@ Display::Display(
 }
 
 Display::~Display() {
+  for (auto& observer : observers_)
+    observer.OnDisplayDestroyed();
+  observers_.Clear();
+
   for (auto& callback_list : pending_presented_callbacks_) {
     for (auto& callback : callback_list)
-      std::move(callback).Run(base::TimeTicks(), base::TimeDelta(), 0);
+      std::move(callback).Run(gfx::PresentationFeedback::Failure());
   }
 
   // Only do this if Initialize() happened.
@@ -205,24 +209,28 @@ void Display::SetOutputIsSecure(bool secure) {
 }
 
 void Display::InitializeRenderer() {
+  auto mode = output_surface_->context_provider() || skia_output_surface_
+                  ? DisplayResourceProvider::kGpu
+                  : DisplayResourceProvider::kSoftware;
   resource_provider_ = std::make_unique<DisplayResourceProvider>(
-      output_surface_->context_provider(), bitmap_manager_);
+      mode, output_surface_->context_provider(), bitmap_manager_);
 
-  if (output_surface_->context_provider()) {
-    if (!settings_.use_skia_renderer) {
-      renderer_ = std::make_unique<GLRenderer>(
-          &settings_, output_surface_.get(), resource_provider_.get(),
-          current_task_runner_);
-    } else {
-      DCHECK(output_surface_);
-      renderer_ = std::make_unique<SkiaRenderer>(
-          &settings_, output_surface_.get(), resource_provider_.get(),
-          skia_output_surface_);
-    }
+  if (settings_.use_skia_renderer && mode == DisplayResourceProvider::kGpu) {
+    // Check the compositing mode, because SkiaRenderer only works with GPU
+    // compositing.
+    DCHECK(output_surface_);
+    renderer_ = std::make_unique<SkiaRenderer>(
+        &settings_, output_surface_.get(), resource_provider_.get(),
+        skia_output_surface_);
+  } else if (output_surface_->context_provider()) {
+    renderer_ = std::make_unique<GLRenderer>(&settings_, output_surface_.get(),
+                                             resource_provider_.get(),
+                                             current_task_runner_);
 #if BUILDFLAG(ENABLE_VULKAN)
   } else if (output_surface_->vulkan_context_provider()) {
     renderer_ = std::make_unique<SkiaRenderer>(
-        &settings_, output_surface_.get(), resource_provider_.get());
+        &settings_, output_surface_.get(), resource_provider_.get(),
+        nullptr /* skia_output_surface */);
 #endif
   } else {
     auto renderer = std::make_unique<SoftwareRenderer>(
@@ -286,11 +294,12 @@ bool Display::DrawAndSwap() {
   }
 
   // Run callbacks early to allow pipelining and collect presented callbacks.
-  for (const auto& id_entry : aggregator_->previous_contained_surfaces()) {
-    Surface* surface = surface_manager_->GetSurfaceForId(id_entry.first);
+  for (const auto& surface_id : surfaces_to_ack_on_next_draw_) {
+    Surface* surface = surface_manager_->GetSurfaceForId(surface_id);
     if (surface)
       surface->RunDrawCallback();
   }
+  surfaces_to_ack_on_next_draw_.clear();
 
   frame.metadata.latency_info.insert(frame.metadata.latency_info.end(),
                                      stored_latency_info_.begin(),
@@ -367,7 +376,7 @@ bool Display::DrawAndSwap() {
     if (scheduler_) {
       frame.metadata.latency_info.emplace_back(ui::SourceEventType::FRAME);
       frame.metadata.latency_info.back().AddLatencyNumberWithTimestamp(
-          ui::LATENCY_BEGIN_FRAME_DISPLAY_COMPOSITOR_COMPONENT, 0,
+          ui::LATENCY_BEGIN_FRAME_DISPLAY_COMPOSITOR_COMPONENT,
           scheduler_->current_frame_time(), 1);
     }
 
@@ -404,17 +413,10 @@ bool Display::DrawAndSwap() {
         stored_latency_info_.swap(frame.metadata.latency_info);
       }
     } else {
-      // There was no damage, so tracking latency info at this point isn't
-      // useful unless there's a snapshot request.
-      base::TimeTicks now = base::TimeTicks::Now();
+      // There was no damage. Terminate the latency info objects.
       while (!frame.metadata.latency_info.empty()) {
         auto& latency = frame.metadata.latency_info.back();
-        if (latency.Snapshots().size()) {
-          stored_latency_info_.push_back(std::move(latency));
-        } else {
-          latency.AddLatencyNumberWithTimestamp(
-              ui::INPUT_EVENT_LATENCY_TERMINATED_NO_SWAP_COMPONENT, 0, now, 1);
-        }
+        latency.Terminate();
         frame.metadata.latency_info.pop_back();
       }
     }
@@ -454,29 +456,23 @@ void Display::DidReceiveCALayerParams(
     client_->DisplayDidReceiveCALayerParams(ca_layer_params);
 }
 
+void Display::DidSwapWithSize(const gfx::Size& pixel_size) {
+  if (client_)
+    client_->DisplayDidCompleteSwapWithSize(pixel_size);
+}
+
 void Display::DidReceivePresentationFeedback(
     const gfx::PresentationFeedback& feedback) {
   DCHECK(!pending_presented_callbacks_.empty());
   auto& callbacks = pending_presented_callbacks_.front();
   for (auto& callback : callbacks) {
-    std::move(callback).Run(feedback.timestamp, feedback.interval,
-                            feedback.flags);
+    std::move(callback).Run(feedback);
   }
   pending_presented_callbacks_.pop_front();
 }
 
 void Display::DidFinishLatencyInfo(
     const std::vector<ui::LatencyInfo>& latency_info) {
-  std::vector<ui::LatencyInfo> latency_info_with_snapshot_component;
-  for (const auto& latency : latency_info) {
-    if (latency.Snapshots().size())
-      latency_info_with_snapshot_component.push_back(latency);
-  }
-
-  if (!latency_info_with_snapshot_component.empty()) {
-    client_->DidSwapAfterSnapshotRequestReceived(
-        latency_info_with_snapshot_component);
-  }
 }
 
 void Display::SetNeedsRedrawRect(const gfx::Rect& damage_rect) {
@@ -490,25 +486,19 @@ void Display::SetNeedsRedrawRect(const gfx::Rect& damage_rect) {
 
 bool Display::SurfaceDamaged(const SurfaceId& surface_id,
                              const BeginFrameAck& ack) {
+  if (!ack.has_damage)
+    return false;
   bool display_damaged = false;
-  if (ack.has_damage) {
-    if (aggregator_ &&
-        aggregator_->previous_contained_surfaces().count(surface_id)) {
-      Surface* surface = surface_manager_->GetSurfaceForId(surface_id);
-      if (surface) {
-        DCHECK(surface->HasActiveFrame());
-        if (surface->GetActiveFrame().resource_list.empty())
-          aggregator_->ReleaseResources(surface_id);
-      }
-      display_damaged = true;
-      if (surface_id == current_surface_id_)
-        UpdateRootSurfaceResourcesLocked();
-    } else if (surface_id == current_surface_id_) {
-      display_damaged = true;
-      UpdateRootSurfaceResourcesLocked();
-    }
+  if (aggregator_) {
+    display_damaged |=
+        aggregator_->NotifySurfaceDamageAndCheckForDisplayDamage(surface_id);
   }
-
+  if (surface_id == current_surface_id_) {
+    display_damaged = true;
+    UpdateRootSurfaceResourcesLocked();
+  }
+  if (display_damaged)
+    surfaces_to_ack_on_next_draw_.push_back(surface_id);
   return display_damaged;
 }
 

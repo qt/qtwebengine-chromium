@@ -735,11 +735,6 @@ Sources.DebuggerPlugin = class extends Sources.UISourceCodeFrame.Plugin {
       Sources.SourceMapNamesResolver.resolveScopeInObject(localScope)
           .getAllProperties(false, false, this._prepareScopeVariables.bind(this, callFrame));
     }
-
-    if (this._clearValueWidgetsTimer) {
-      clearTimeout(this._clearValueWidgetsTimer);
-      this._clearValueWidgetsTimer = null;
-    }
   }
 
   _showContinueToLocations() {
@@ -923,19 +918,16 @@ Sources.DebuggerPlugin = class extends Sources.UISourceCodeFrame.Plugin {
    * @param {?Array.<!SDK.RemoteObjectProperty>} internalProperties
    */
   _prepareScopeVariables(callFrame, properties, internalProperties) {
-    if (!properties || !properties.length || properties.length > 500 || !this._textEditor.isShowing()) {
-      this._clearValueWidgets();
+    this._clearValueWidgets();
+    if (!properties || !properties.length || properties.length > 500 || !this._textEditor.isShowing())
       return;
-    }
 
     const functionUILocation = Bindings.debuggerWorkspaceBinding.rawLocationToUILocation(
         /** @type {!SDK.DebuggerModel.Location} */ (callFrame.functionLocation()));
     const executionUILocation = Bindings.debuggerWorkspaceBinding.rawLocationToUILocation(callFrame.location());
     if (!functionUILocation || !executionUILocation || functionUILocation.uiSourceCode !== this._uiSourceCode ||
-        executionUILocation.uiSourceCode !== this._uiSourceCode) {
-      this._clearValueWidgets();
+        executionUILocation.uiSourceCode !== this._uiSourceCode)
       return;
-    }
 
     const functionEditorLocation =
         this._transformer.rawToEditorLocation(functionUILocation.lineNumber, functionUILocation.columnNumber);
@@ -943,17 +935,9 @@ Sources.DebuggerPlugin = class extends Sources.UISourceCodeFrame.Plugin {
         this._transformer.rawToEditorLocation(executionUILocation.lineNumber, executionUILocation.columnNumber);
     const fromLine = functionEditorLocation[0];
     const fromColumn = functionEditorLocation[1];
-    let toLine = executionEditorLocation[0];
-
-    // Make sure we have a chance to update all existing widgets.
-    if (this._valueWidgets) {
-      for (const line of this._valueWidgets.keys())
-        toLine = Math.max(toLine, line + 1);
-    }
-    if (fromLine >= toLine || toLine - fromLine > 500 || fromLine < 0 || toLine >= this._textEditor.linesCount) {
-      this._clearValueWidgets();
+    const toLine = executionEditorLocation[0];
+    if (fromLine >= toLine || toLine - fromLine > 500 || fromLine < 0 || toLine >= this._textEditor.linesCount)
       return;
-    }
 
     const valuesMap = new Map();
     for (const property of properties)
@@ -1069,6 +1053,10 @@ Sources.DebuggerPlugin = class extends Sources.UISourceCodeFrame.Plugin {
       if (this._executionLocation)
         this._textEditor.clearExecutionLine();
       this._executionLocation = null;
+      if (this._clearValueWidgetsTimer) {
+        clearTimeout(this._clearValueWidgetsTimer);
+        this._clearValueWidgetsTimer = null;
+      }
       this._clearValueWidgetsTimer = setTimeout(this._clearValueWidgets.bind(this), 1000);
       this._clearContinueToLocationsNoRestore();
     });
@@ -1535,18 +1523,8 @@ Sources.DebuggerPlugin = class extends Sources.UISourceCodeFrame.Plugin {
    */
   async _createNewBreakpoint(editorLineNumber, condition, enabled) {
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.ScriptsBreakpointSet);
-
-    const origin = this._transformer.editorToRawLocation(editorLineNumber, 0);
-    const maxLengthToCheck = 1024;
-    let linesToCheck = 5;
-    for (; editorLineNumber < this._textEditor.linesCount && linesToCheck > 0; ++editorLineNumber) {
-      const lineLength = this._textEditor.line(editorLineNumber).length;
-      if (lineLength > maxLengthToCheck)
-        break;
-      if (lineLength === 0)
-        continue;
-      --linesToCheck;
-
+    if (editorLineNumber < this._textEditor.linesCount) {
+      const lineLength = Math.min(this._textEditor.line(editorLineNumber).length, 1024);
       const start = this._transformer.editorToRawLocation(editorLineNumber, 0);
       const end = this._transformer.editorToRawLocation(editorLineNumber, lineLength);
       const locations = await this._breakpointManager.possibleBreakpoints(
@@ -1556,7 +1534,8 @@ Sources.DebuggerPlugin = class extends Sources.UISourceCodeFrame.Plugin {
         return;
       }
     }
-    this._setBreakpoint(origin[0], origin[1], condition, enabled);
+    const origin = this._transformer.editorToRawLocation(editorLineNumber, 0);
+    await this._setBreakpoint(origin[0], origin[1], condition, enabled);
   }
 
   /**

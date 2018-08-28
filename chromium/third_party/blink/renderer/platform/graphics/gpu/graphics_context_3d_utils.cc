@@ -5,7 +5,10 @@
 #include "third_party/blink/renderer/platform/graphics/gpu/graphics_context_3d_utils.h"
 
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "gpu/config/gpu_feature_info.h"
+#include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_provider_wrapper.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/gpu/GrContext.h"
 
@@ -48,19 +51,6 @@ void GraphicsContext3DUtils::GetMailboxForSkImage(gpu::Mailbox& out_mailbox,
   DCHECK(gl);
   GrTexture* gr_texture = image->getTexture();
   DCHECK(gr == gr_texture->getContext());
-  auto it = cached_mailboxes_.find(gr_texture);
-  if (it != cached_mailboxes_.end()) {
-    out_mailbox = it->value;
-  } else {
-    gl->GenMailboxCHROMIUM(out_mailbox.name);
-
-    GrTextureMailboxReleaseProcData* release_proc_data =
-        new GrTextureMailboxReleaseProcData();
-    release_proc_data->gr_texture_ = gr_texture;
-    release_proc_data->context_provider_wrapper_ = context_provider_wrapper_;
-    gr_texture->setRelease(GrTextureMailboxReleaseProc, release_proc_data);
-    cached_mailboxes_.insert(gr_texture, out_mailbox);
-  }
 
   GrBackendTexture backend_texture = image->getBackendTexture(true);
   DCHECK(backend_texture.isValid());
@@ -70,18 +60,47 @@ void GraphicsContext3DUtils::GetMailboxForSkImage(gpu::Mailbox& out_mailbox,
   DCHECK(result);
 
   GLuint texture_id = info.fID;
+
+  auto it = cached_mailboxes_.find(gr_texture);
+  if (it != cached_mailboxes_.end()) {
+    out_mailbox = it->value;
+  } else {
+    gl->ProduceTextureDirectCHROMIUM(texture_id, out_mailbox.name);
+
+    GrTextureMailboxReleaseProcData* release_proc_data =
+        new GrTextureMailboxReleaseProcData();
+    release_proc_data->gr_texture_ = gr_texture;
+    release_proc_data->context_provider_wrapper_ = context_provider_wrapper_;
+    gr_texture->setRelease(GrTextureMailboxReleaseProc, release_proc_data);
+    cached_mailboxes_.insert(gr_texture, out_mailbox);
+  }
   gl->BindTexture(GL_TEXTURE_2D, texture_id);
   gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
   gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
   gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   gl->BindTexture(GL_TEXTURE_2D, 0);
-  gl->ProduceTextureDirectCHROMIUM(texture_id, out_mailbox.name);
-  image->getTexture()->textureParamsModified();
+  gr_texture->textureParamsModified();
 }
 
 void GraphicsContext3DUtils::RemoveCachedMailbox(GrTexture* gr_texture) {
   cached_mailboxes_.erase(gr_texture);
+}
+
+bool GraphicsContext3DUtils::Accelerated2DCanvasFeatureEnabled() {
+  // Don't use accelerated canvas if compositor is in software mode.
+  if (!SharedGpuContext::IsGpuCompositingEnabled())
+    return false;
+
+  if (!RuntimeEnabledFeatures::Accelerated2dCanvasEnabled())
+    return false;
+
+  DCHECK(context_provider_wrapper_);
+  const gpu::GpuFeatureInfo& gpu_feature_info =
+      context_provider_wrapper_->ContextProvider()->GetGpuFeatureInfo();
+  return gpu::kGpuFeatureStatusEnabled ==
+         gpu_feature_info
+             .status_values[gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS];
 }
 
 }  // namespace blink

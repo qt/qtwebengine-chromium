@@ -11,9 +11,9 @@
 #include "third_party/blink/renderer/core/layout/svg/svg_marker_data.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_resources_cache.h"
-#include "third_party/blink/renderer/core/paint/object_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/svg_container_painter.h"
+#include "third_party/blink/renderer/core/paint/svg_model_object_painter.h"
 #include "third_party/blink/renderer/core/paint/svg_paint_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context_state_saver.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
@@ -46,13 +46,14 @@ void SVGShapePainter::Paint(const PaintInfo& paint_info) {
       layout_svg_shape_.IsShapeEmpty())
     return;
 
-  FloatRect bounding_box = layout_svg_shape_.VisualRectInLocalSVGCoordinates();
-  if (!paint_info.GetCullRect().IntersectsCullRect(
-          layout_svg_shape_.LocalSVGTransform(), bounding_box))
-    return;
-
   PaintInfo paint_info_before_filtering(paint_info);
-  // Shapes cannot have children so do not call updateCullRect.
+
+  if (SVGModelObjectPainter(layout_svg_shape_)
+          .CullRectSkipsPainting(paint_info_before_filtering)) {
+    return;
+  }
+  // Shapes cannot have children so do not call UpdateCullRect.
+
   SVGTransformContext transform_context(paint_info_before_filtering,
                                         layout_svg_shape_,
                                         layout_svg_shape_.LocalSVGTransform());
@@ -124,7 +125,8 @@ void SVGShapePainter::Paint(const PaintInfo& paint_info) {
             }
             break;
           case PT_MARKERS:
-            PaintMarkers(paint_context.GetPaintInfo(), bounding_box);
+            PaintMarkers(paint_context.GetPaintInfo(),
+                         layout_svg_shape_.VisualRectInLocalSVGCoordinates());
             break;
           default:
             NOTREACHED();
@@ -134,12 +136,8 @@ void SVGShapePainter::Paint(const PaintInfo& paint_info) {
     }
   }
 
-  if (layout_svg_shape_.Style()->OutlineWidth()) {
-    PaintInfo outline_paint_info(paint_info_before_filtering);
-    outline_paint_info.phase = PaintPhase::kSelfOutlineOnly;
-    ObjectPainter(layout_svg_shape_)
-        .PaintOutline(outline_paint_info, LayoutPoint(bounding_box.Location()));
-  }
+  SVGModelObjectPainter(layout_svg_shape_)
+      .PaintOutline(paint_info_before_filtering);
 }
 
 class PathWithTemporaryWindingRule {
@@ -235,7 +233,7 @@ void SVGShapePainter::PaintMarker(const PaintInfo& paint_info,
   AffineTransform transform = marker.MarkerTransformation(
       position.origin, position.angle, stroke_width);
 
-  PaintCanvas* canvas = paint_info.context.Canvas();
+  cc::PaintCanvas* canvas = paint_info.context.Canvas();
 
   canvas->save();
   canvas->concat(AffineTransformToSkMatrix(transform));
@@ -247,7 +245,7 @@ void SVGShapePainter::PaintMarker(const PaintInfo& paint_info,
   // It's expensive to track the transformed paint cull rect for each
   // marker so just disable culling. The shape paint call will already
   // be culled if it is outside the paint info cull rect.
-  marker_paint_info.cull_rect_.rect_ = LayoutRect::InfiniteIntRect();
+  marker_paint_info.cull_rect_ = CullRect(LayoutRect::InfiniteIntRect());
 
   SVGContainerPainter(marker).Paint(marker_paint_info);
   builder.EndRecording(*canvas);

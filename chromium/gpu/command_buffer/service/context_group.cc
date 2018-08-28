@@ -15,7 +15,6 @@
 #include "gpu/command_buffer/service/decoder_context.h"
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_passthrough.h"
-#include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/command_buffer/service/path_manager.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/progress_reporter.h"
@@ -25,6 +24,7 @@
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
+#include "gpu/config/gpu_preferences.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_version_info.h"
 
@@ -63,7 +63,7 @@ ContextGroup::ContextGroup(
     const GpuPreferences& gpu_preferences,
     bool supports_passthrough_command_decoders,
     MailboxManager* mailbox_manager,
-    const scoped_refptr<MemoryTracker>& memory_tracker,
+    std::unique_ptr<MemoryTracker> memory_tracker,
     ShaderTranslatorCache* shader_translator_cache,
     FramebufferCompletenessCache* framebuffer_completeness_cache,
     const scoped_refptr<FeatureInfo>& feature_info,
@@ -75,7 +75,7 @@ ContextGroup::ContextGroup(
     ServiceDiscardableManager* discardable_manager)
     : gpu_preferences_(gpu_preferences),
       mailbox_manager_(mailbox_manager),
-      memory_tracker_(memory_tracker),
+      memory_tracker_(std::move(memory_tracker)),
       shader_translator_cache_(shader_translator_cache),
 #if defined(OS_MACOSX)
       // Framebuffer completeness is not cacheable on OS X because of dynamic

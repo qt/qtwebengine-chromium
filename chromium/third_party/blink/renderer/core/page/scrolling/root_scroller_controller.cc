@@ -85,8 +85,7 @@ PaintLayerScrollableArea* GetScrollableArea(const Element& element) {
     if (!frame_view)
       return nullptr;
 
-    return ToPaintLayerScrollableArea(
-        frame_view->LayoutViewportScrollableArea());
+    return frame_view->LayoutViewport();
   }
 
   DCHECK(element.GetLayoutObject()->IsBox());
@@ -196,6 +195,27 @@ void RootScrollerController::RecomputeEffectiveRootScroller() {
 
   Node* old_effective_root_scroller = effective_root_scroller_;
   effective_root_scroller_ = new_effective_root_scroller;
+
+  if (new_effective_root_scroller != old_effective_root_scroller) {
+    if (LayoutBoxModelObject* new_obj =
+            new_effective_root_scroller->GetLayoutBoxModelObject()) {
+      if (new_obj->Layer()) {
+        new_effective_root_scroller->GetLayoutBoxModelObject()
+            ->Layer()
+            ->SetNeedsCompositingInputsUpdate();
+      }
+    }
+    if (old_effective_root_scroller) {
+      if (LayoutBoxModelObject* old_obj =
+              old_effective_root_scroller->GetLayoutBoxModelObject()) {
+        if (old_obj->Layer()) {
+          old_effective_root_scroller->GetLayoutBoxModelObject()
+              ->Layer()
+              ->SetNeedsCompositingInputsUpdate();
+        }
+      }
+    }
+  }
 
   ApplyRootScrollerProperties(*old_effective_root_scroller);
   ApplyRootScrollerProperties(*effective_root_scroller_);

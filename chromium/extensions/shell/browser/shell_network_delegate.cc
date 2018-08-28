@@ -53,21 +53,30 @@ void ShellNetworkDelegate::SetAcceptAllCookies(bool accept) {
 
 int ShellNetworkDelegate::OnBeforeURLRequest(
     net::URLRequest* request,
-    const net::CompletionCallback& callback,
+    net::CompletionOnceCallback callback,
     GURL* new_url) {
   WebRequestInfo* web_request_info = GetWebRequestInfo(request);
-  return ExtensionWebRequestEventRouter::GetInstance()->OnBeforeRequest(
-      browser_context_, extension_info_map_.get(), web_request_info, callback,
-      new_url);
+  bool should_collapse_initiator = false;
+  int result = ExtensionWebRequestEventRouter::GetInstance()->OnBeforeRequest(
+      browser_context_, extension_info_map_.get(), web_request_info,
+      std::move(callback), new_url, &should_collapse_initiator);
+  if (should_collapse_initiator) {
+    auto* info = content::ResourceRequestInfo::ForRequest(request);
+    DCHECK(info);
+    info->SetResourceRequestBlockedReason(
+        blink::ResourceRequestBlockedReason::kCollapsedByClient);
+  }
+
+  return result;
 }
 
 int ShellNetworkDelegate::OnBeforeStartTransaction(
     net::URLRequest* request,
-    const net::CompletionCallback& callback,
+    net::CompletionOnceCallback callback,
     net::HttpRequestHeaders* headers) {
   return ExtensionWebRequestEventRouter::GetInstance()->OnBeforeSendHeaders(
       browser_context_, extension_info_map_.get(), GetWebRequestInfo(request),
-      callback, headers);
+      std::move(callback), headers);
 }
 
 void ShellNetworkDelegate::OnStartTransaction(
@@ -80,13 +89,13 @@ void ShellNetworkDelegate::OnStartTransaction(
 
 int ShellNetworkDelegate::OnHeadersReceived(
     net::URLRequest* request,
-    const net::CompletionCallback& callback,
+    net::CompletionOnceCallback callback,
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
     GURL* allowed_unsafe_redirect_url) {
   return ExtensionWebRequestEventRouter::GetInstance()->OnHeadersReceived(
       browser_context_, extension_info_map_.get(), GetWebRequestInfo(request),
-      callback, original_response_headers, override_response_headers,
+      std::move(callback), original_response_headers, override_response_headers,
       allowed_unsafe_redirect_url);
 }
 
@@ -142,17 +151,16 @@ void ShellNetworkDelegate::OnPACScriptError(
     const base::string16& error) {
 }
 
-net::NetworkDelegate::AuthRequiredResponse
-ShellNetworkDelegate::OnAuthRequired(
+net::NetworkDelegate::AuthRequiredResponse ShellNetworkDelegate::OnAuthRequired(
     net::URLRequest* request,
     const net::AuthChallengeInfo& auth_info,
-    const AuthCallback& callback,
+    AuthCallback callback,
     net::AuthCredentials* credentials) {
   auto* info = GetWebRequestInfo(request);
   info->AddResponseInfoFromURLRequest(request);
   return ExtensionWebRequestEventRouter::GetInstance()->OnAuthRequired(
-      browser_context_, extension_info_map_.get(), info, auth_info, callback,
-      credentials);
+      browser_context_, extension_info_map_.get(), info, auth_info,
+      std::move(callback), credentials);
 }
 
 }  // namespace extensions

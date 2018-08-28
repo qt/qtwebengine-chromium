@@ -32,7 +32,7 @@ template("implement_content_app") {
     "//services/service_manager/embedder",
     "//services/service_manager/public/mojom",
     "//services/service_manager/runner/common",
-    "//mojo/edk",
+    "//mojo/core/embedder",
     "//ppapi/buildflags",
     "//ui/base",
     "//ui/gfx",
@@ -52,7 +52,6 @@ template("implement_content_app") {
       "//content/public/android:jni",
       "//device/bluetooth",
       "//device/gamepad",
-      "//device/geolocation",
       "//device/usb",
       "//gpu",
       "//media",
@@ -126,7 +125,7 @@ template("implement_content_app") {
         "android/library_loader_hooks.h",
       ]
       deps += [
-        "//mojo/android:libsystem_java",
+        "//mojo/public/java/system:native_support",
         "//ui/gl",
       ]
     } else {

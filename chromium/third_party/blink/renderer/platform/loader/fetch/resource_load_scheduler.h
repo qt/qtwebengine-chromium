@@ -5,7 +5,9 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESOURCE_LOAD_SCHEDULER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESOURCE_LOAD_SCHEDULER_H_
 
+#include <map>
 #include <set>
+
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
@@ -41,22 +43,28 @@ class PLATFORM_EXPORT ResourceLoadSchedulerClient
 // - When Release() is called with kReleaseAndSchedule
 // - When OnThrottlingStateChanged() is called
 //
-// A ResourceLoadScheduler determines if a request can be throttable or not, and
-// keeps track of pending throttable requests with priority information (i.e.,
-// ResourceLoadPriority accompanied with an integer called "intra-priority").
-// Here are the general principles:
+// A ResourceLoadScheduler determines if a request can be throttleable or not,
+// and keeps track of pending throttleable requests with priority information
+// (i.e., ResourceLoadPriority accompanied with an integer called
+// "intra-priority"). Here are the general principles:
 //  - A ResourceLoadScheduler does not throttle requests that cannot be
-//    throttable. It will call client's Run() method as soon as possible.
-//  - A ResourceLoadScheduler determines whether a request can be throttable by
-//    seeing Request()'s ThrottleOption argument and requests' priority
+//    throttleable. It will call client's Run() method as soon as possible.
+//  - A ResourceLoadScheduler determines whether a request can be throttleable
+//    by seeing Request()'s ThrottleOption argument and requests' priority
 //    information. Requests' priority information can be modified via
 //    SetPriority().
 //  - A ResourceLoadScheulder won't initiate a new resource loading which can
-//    be throttable when there are active resource loading activities more than
-//    its internal threshold (i.e., what GetOutstandingLimit() returns)".
+//    be throttleable when there are more active throttleable requests loading
+//    activities more than its internal threshold (i.e., what
+//    GetOutstandingLimit() returns)".
 //
-// By default, ResourceLoadScheduler is disabled, which means it doesn't
-// throttle any resource loading requests.
+//  ResourceLoadScheduler has two modes each of which has its own threshold.
+//   - Tight mode (used until the frame sees a <body> element):
+//     ResourceLoadScheduler considers a request throttleable if its priority
+//     is less than |kHigh|.
+//   - Normal mode:
+//     ResourceLoadScheduler considers a request throttleable if its priority
+//     is less than |kMedium|.
 //
 // Here are running experiments (as of M65):
 //  - "ResourceLoadScheduler"
@@ -65,27 +73,24 @@ class PLATFORM_EXPORT ResourceLoadSchedulerClient
 //   - Resource loading requests are throttled when the frame is in a
 //     background tab. It has different thresholds for the main frame
 //     and sub frames. When the frame has been background for more than five
-//     minutes, all throttable resource loading requests are throttled
+//     minutes, all throttleable resource loading requests are throttled
 //     indefinitely (i.e., threshold is zero in such a circumstance).
-//  - RendererSideResourceScheduler
-//    ResourceLoadScheduler has two modes each of which has its own threshold.
-//    - Tight mode (used until the frame sees a <body> element):
-//      ResourceLoadScheduler considers a request throttable if its priority
-//      is less than |kHigh|.
-//    - Normal mode:
-//      ResourceLoadScheduler considers a request throttable if its priority
-//      is less than |kMedium|.
 class PLATFORM_EXPORT ResourceLoadScheduler final
     : public GarbageCollectedFinalized<ResourceLoadScheduler>,
       public FrameScheduler::Observer {
   WTF_MAKE_NONCOPYABLE(ResourceLoadScheduler);
 
  public:
-  // An option to use in calling Request(). If kCanNotBeThrottled is specified,
-  // the request should be granted and Run() should be called synchronously.
-  // Otherwise, OnRequestGranted() could be called later when other outstanding
-  // requests are finished.
-  enum class ThrottleOption { kCanBeThrottled, kCanNotBeThrottled };
+  // An option to use in calling Request(). If kCanNotBeStoppedOrThrottled is
+  // specified, the request should be granted and Run() should be called
+  // synchronously. If kStoppable is specified, Run() will be called immediately
+  // unless resource loading is stopped. Otherwise, OnRequestGranted() could be
+  // called later when other outstanding requests are finished.
+  enum class ThrottleOption {
+    kThrottleable = 0,
+    kStoppable = 1,
+    kCanNotBeStoppedOrThrottled = 2,
+  };
 
   // An option to use in calling Release(). If kReleaseOnly is specified,
   // the specified request should be released, but no other requests should
@@ -190,12 +195,8 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
 
   void OnNetworkQuiet();
 
-  // Returns whether we can throttle a request with the given priority.
-  // This function returns false when RendererSideResourceScheduler is disabled.
-  bool IsThrottablePriority(ResourceLoadPriority) const;
-
   // FrameScheduler::Observer overrides:
-  void OnThrottlingStateChanged(FrameScheduler::ThrottlingState) override;
+  void OnLifecycleStateChanged(scheduler::SchedulingLifecycleState) override;
 
  private:
   class TrafficMonitor;
@@ -225,18 +226,31 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
     const int intra_priority;
   };
 
-  struct ClientWithPriority : public GarbageCollected<ClientWithPriority> {
-    ClientWithPriority(ResourceLoadSchedulerClient* client,
-                       ResourceLoadPriority priority,
-                       int intra_priority)
-        : client(client), priority(priority), intra_priority(intra_priority) {}
+  struct ClientInfo : public GarbageCollected<ClientInfo> {
+    ClientInfo(ResourceLoadSchedulerClient* client,
+               ThrottleOption option,
+               ResourceLoadPriority priority,
+               int intra_priority)
+        : client(client),
+          option(option),
+          priority(priority),
+          intra_priority(intra_priority) {}
 
     void Trace(blink::Visitor* visitor) { visitor->Trace(client); }
 
     Member<ResourceLoadSchedulerClient> client;
+    ThrottleOption option;
     ResourceLoadPriority priority;
     int intra_priority;
   };
+
+  // Gets the highest priority pending request that is allowed to be run.
+  bool GetNextPendingRequest(ClientId* id);
+
+  // Returns whether we can throttle a request with the given client info based
+  // on life cycle state.
+  bool IsClientDelayable(const ClientIdWithPriority& info,
+                         ThrottleOption option) const;
 
   ResourceLoadScheduler(FetchContext*);
 
@@ -247,17 +261,15 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   void MaybeRun();
 
   // Grants a client to run,
-  void Run(ClientId, ResourceLoadSchedulerClient*, bool throttlable);
+  void Run(ClientId, ResourceLoadSchedulerClient*, bool throttleable);
 
   size_t GetOutstandingLimit() const;
+
+  bool IsThrottledState() const;
 
   // A flag to indicate an internal running state.
   // TODO(toyoshim): We may want to use enum once we start to have more states.
   bool is_shutdown_ = false;
-
-  // A mutable flag to indicate if the throttling and scheduling are enabled.
-  // Can be modified by field trial flags or for testing.
-  bool is_enabled_ = false;
 
   ThrottlingPolicy policy_ = ThrottlingPolicy::kNormal;
 
@@ -280,7 +292,7 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   // Holds clients that were granted and are running.
   HashSet<ClientId> running_requests_;
 
-  HashSet<ClientId> running_throttlable_requests_;
+  HashSet<ClientId> running_throttleable_requests_;
 
   // Largest number of running requests seen so far.
   unsigned maximum_running_requests_seen_ = 0;
@@ -293,13 +305,15 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
     kStopped,
   };
   ThrottlingHistory throttling_history_ = ThrottlingHistory::kInitial;
-  FrameScheduler::ThrottlingState frame_scheduler_throttling_state_ =
-      FrameScheduler::ThrottlingState::kNotThrottled;
+  scheduler::SchedulingLifecycleState frame_scheduler_lifecycle_state_ =
+      scheduler::SchedulingLifecycleState::kNotThrottled;
 
   // Holds clients that haven't been granted, and are waiting for a grant.
-  HeapHashMap<ClientId, Member<ClientWithPriority>> pending_request_map_;
+  HeapHashMap<ClientId, Member<ClientInfo>> pending_request_map_;
   // We use std::set here because WTF doesn't have its counterpart.
-  std::set<ClientIdWithPriority, ClientIdWithPriority::Compare>
+  // This tracks two sets of requests, throttleable and stoppable.
+  std::map<ThrottleOption,
+           std::set<ClientIdWithPriority, ClientIdWithPriority::Compare>>
       pending_requests_;
 
   // Holds an internal class instance to monitor and report traffic.
@@ -309,7 +323,7 @@ class PLATFORM_EXPORT ResourceLoadScheduler final
   Member<FetchContext> context_;
 
   // Handle to throttling observer.
-  std::unique_ptr<FrameScheduler::ThrottlingObserverHandle>
+  std::unique_ptr<FrameScheduler::LifecycleObserverHandle>
       scheduler_observer_handle_;
 };
 

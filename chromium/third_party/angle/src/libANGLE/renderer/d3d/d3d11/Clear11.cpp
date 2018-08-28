@@ -526,11 +526,11 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
               formatInfo.componentType == GL_UNSIGNED_NORMALIZED ||
               formatInfo.componentType == GL_SIGNED_NORMALIZED))
         {
-            ERR() << "It is undefined behaviour to clear a render buffer which is not "
-                     "normalized fixed point or floating-point to floating point values (color "
-                     "attachment "
-                  << colorAttachmentIndex << " has internal format " << attachment.getFormat()
-                  << ").";
+            WARN() << "It is undefined behaviour to clear a render buffer which is not "
+                      "normalized fixed point or floating-point to floating point values (color "
+                      "attachment "
+                   << colorAttachmentIndex << " has internal format " << attachment.getFormat()
+                   << ").";
         }
 
         if ((formatInfo.redBits == 0 || !clearParams.colorMaskRed) &&
@@ -718,8 +718,7 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
     switch (clearParams.colorType)
     {
         case GL_FLOAT:
-            dirtyCb = UpdateDataCache(reinterpret_cast<RtvDsvClearInfo<float> *>(&mShaderData),
-                                      clearParams.colorF, zValue, numRtvs, colorMask);
+            dirtyCb = UpdateDataCache(&mShaderData, clearParams.colorF, zValue, numRtvs, colorMask);
             break;
         case GL_UNSIGNED_INT:
             dirtyCb = UpdateDataCache(reinterpret_cast<RtvDsvClearInfo<uint32_t> *>(&mShaderData),

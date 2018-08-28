@@ -31,14 +31,18 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
 #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_WEB_MEDIA_PLAYER_H_
 
+#include "base/time/time.h"
 #include "third_party/blink/public/platform/web_callbacks.h"
-#include "third_party/blink/public/platform/web_canvas.h"
 #include "third_party/blink/public/platform/web_content_decryption_module.h"
 #include "third_party/blink/public/platform/web_media_source.h"
 #include "third_party/blink/public/platform/web_set_sink_id_callbacks.h"
 #include "third_party/blink/public/platform/web_string.h"
+#include "ui/gfx/geometry/rect.h"
 
-#include "cc/paint/paint_flags.h"
+namespace cc {
+class PaintCanvas;
+class PaintFlags;
+}  // namespace cc
 
 namespace gpu {
 namespace gles2 {
@@ -108,6 +112,10 @@ class WebMediaPlayer {
     kTexSubImage3D
   };
 
+  // Returned by Load() to signal when a players choose to defer (e.g. as part
+  // of pre-rendering)
+  enum LoadTiming { kImmediate, kDeferred };
+
   // For last-uploaded-frame-metadata API. https://crbug.com/639174
   struct VideoFrameUploadMetadata {
     int frame_id = -1;
@@ -126,7 +134,7 @@ class WebMediaPlayer {
 
   virtual ~WebMediaPlayer() = default;
 
-  virtual void Load(LoadType, const WebMediaPlayerSource&, CORSMode) = 0;
+  virtual LoadTiming Load(LoadType, const WebMediaPlayerSource&, CORSMode) = 0;
 
   // Playback controls.
   virtual void Play() = 0;
@@ -215,7 +223,7 @@ class WebMediaPlayer {
   //   - If |out_metadata| is not null, |already_uploaded_id| is compared with
   //     the unique_id of the frame being uploaded. If it's the same, the
   //     upload may be skipped and considered to be successful.
-  virtual void Paint(WebCanvas*,
+  virtual void Paint(cc::PaintCanvas*,
                      const WebRect&,
                      cc::PaintFlags&,
                      int already_uploaded_id = -1,

@@ -11,7 +11,8 @@
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/blink/public/platform/web_crypto_algorithm_params.h"
 #include "third_party/blink/public/platform/web_rtc_certificate_generator.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_function.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_array_buffer.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
@@ -24,6 +25,7 @@
 #include "third_party/blink/renderer/modules/crypto/crypto_result_impl.h"
 #include "third_party/blink/renderer/modules/filesystem/dom_file_system.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_certificate.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 
 using testing::ElementsAre;
@@ -35,7 +37,7 @@ namespace {
 
 v8::Local<v8::Value> RoundTripForModules(v8::Local<v8::Value> value,
                                          V8TestingScope& scope) {
-  scoped_refptr<ScriptState> script_state = scope.GetScriptState();
+  ScriptState* script_state = scope.GetScriptState();
   ExceptionState& exception_state = scope.GetExceptionState();
   scoped_refptr<SerializedScriptValue> serialized_script_value =
       V8ScriptValueSerializerForModules(
@@ -862,6 +864,14 @@ TEST(V8ScriptValueSerializerForModulesTest, DecodeCryptoKeyInvalid) {
       V8ScriptValueDeserializerForModules(
           script_state, SerializedValue({0xff, 0x09, 0x3f, 0x00, 0x4b, 0x04,
                                          0x0d, 0x01, 0x80, 0x08, 0x03, 0x01}))
+          .Deserialize()
+          ->IsNull());
+
+  // ECDH key with invalid key data.
+  EXPECT_TRUE(
+      V8ScriptValueDeserializerForModules(
+          script_state, SerializedValue({0xff, 0x09, 0x3f, 0x00, 0x4b, 0x05,
+                                         0x0e, 0x01, 0x01, 0x4b, 0x00, 0x00}))
           .Deserialize()
           ->IsNull());
 }

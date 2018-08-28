@@ -19,11 +19,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "content/browser/service_worker/service_worker_handle.h"
+#include "content/browser/service_worker/service_worker_object_host.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_container.mojom.h"
-#include "content/common/service_worker/service_worker_provider_host_info.h"
+#include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/request_context_type.h"
 #include "content/public/common/resource_type.h"
@@ -40,8 +40,8 @@ namespace network {
 class ResourceRequestBody;
 }
 
-namespace service_worker_handle_unittest {
-class ServiceWorkerHandleTest;
+namespace service_worker_object_host_unittest {
+class ServiceWorkerObjectHostTest;
 }
 
 namespace storage {
@@ -51,7 +51,6 @@ class BlobStorageContext;
 namespace content {
 
 class ServiceWorkerContextCore;
-class ServiceWorkerDispatcherHost;
 class ServiceWorkerRegistrationObjectHost;
 class ServiceWorkerRequestHandler;
 class ServiceWorkerVersion;
@@ -147,11 +146,16 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       bool are_ancestors_secure,
       const WebContentsGetter& web_contents_getter);
 
-  // Creates a ServiceWorkerProviderHost for a service worker execution context.
-  // Information about this provider host is passed down to the service worker
-  // via StartWorker message.
-  static std::unique_ptr<ServiceWorkerProviderHost> PreCreateForController(
-      base::WeakPtr<ServiceWorkerContextCore> context);
+  // Used for starting a service worker. Returns a provider host for the service
+  // worker and partially fills |out_provider_info|.  The host stays alive as
+  // long as this info stays alive (namely, as long as
+  // |out_provider_info->host_ptr_info| stays alive).
+  // CompleteStartWorkerPreparation() must be called later to get a full info to
+  // send to the renderer.
+  static base::WeakPtr<ServiceWorkerProviderHost> PreCreateForController(
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      scoped_refptr<ServiceWorkerVersion> version,
+      mojom::ServiceWorkerProviderInfoForStartWorkerPtr* out_provider_info);
 
   // S13nServiceWorker:
   // Used for starting a shared worker. Returns a provider host for the shared
@@ -168,23 +172,22 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // |process_id|.
   static std::unique_ptr<ServiceWorkerProviderHost> Create(
       int process_id,
-      ServiceWorkerProviderHostInfo info,
-      base::WeakPtr<ServiceWorkerContextCore> context,
-      base::WeakPtr<ServiceWorkerDispatcherHost> dispatcher_host);
+      mojom::ServiceWorkerProviderHostInfoPtr info,
+      base::WeakPtr<ServiceWorkerContextCore> context);
 
   ~ServiceWorkerProviderHost() override;
 
   const std::string& client_uuid() const { return client_uuid_; }
   base::TimeTicks create_time() const { return create_time_; }
   int process_id() const { return render_process_id_; }
-  int provider_id() const { return info_.provider_id; }
+  int provider_id() const { return info_->provider_id; }
   int frame_id() const;
-  int route_id() const { return info_.route_id; }
+  int route_id() const { return info_->route_id; }
   const WebContentsGetter& web_contents_getter() const {
     return web_contents_getter_;
   }
 
-  bool is_parent_frame_secure() const { return info_.is_parent_frame_secure; }
+  bool is_parent_frame_secure() const { return info_->is_parent_frame_secure; }
 
   // Returns whether this provider host is secure enough to have a service
   // worker controller.
@@ -195,6 +198,10 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // |document_url_| and |is_parent_frame_secure_| to determine context
   // security, so they must be set properly before calling this function.
   bool IsContextSecureForServiceWorker() const;
+
+  // For service worker clients. Describes whether the client has a controller
+  // and if it has a fetch event handler.
+  blink::mojom::ControllerServiceWorkerMode GetControllerMode() const;
 
   // Returns this provider's controller. The controller is typically the same as
   // active_version() but can differ in the following cases:
@@ -244,7 +251,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // CompleteStartWorkerPreparation() is called).
   ServiceWorkerVersion* running_hosted_version() const {
     DCHECK(!running_hosted_version_ ||
-           info_.type ==
+           info_->type ==
                blink::mojom::ServiceWorkerProviderType::kForServiceWorker);
     return running_hosted_version_.get();
   }
@@ -291,7 +298,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // is in scope of all |matching_registrations_|.
   // |document_url_| is the service worker script URL if this is for a
   // service worker execution context. It will be used when creating
-  // ServiceWorkerHandle or handling ServiceWorkerRegistration#{*} calls etc.
+  // ServiceWorkerObjectHost or handling ServiceWorkerRegistration#{*} calls
+  // etc.
   // TODO(leonhsl): We should rename |document_url_| to something more
   // appropriate and/or split this class into one for clients vs one for service
   // workers.
@@ -305,7 +313,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   const GURL& topmost_frame_url() const;
 
   blink::mojom::ServiceWorkerProviderType provider_type() const {
-    return info_.type;
+    return info_->type;
   }
   bool IsProviderForServiceWorker() const;
   bool IsProviderForClient() const;
@@ -352,12 +360,11 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   CreateServiceWorkerRegistrationObjectInfo(
       scoped_refptr<ServiceWorkerRegistration> registration);
 
-  // Returns a ServiceWorkerHandle instance for |version| for this provider
+  // Returns a ServiceWorkerObjectHost instance for |version| for this provider
   // host. A new instance is created if one does not already exist.
-  // TODO(leonhsl): Make |version| be a scoped_refptr because we'll take its
-  // ownership.
-  base::WeakPtr<ServiceWorkerHandle> GetOrCreateServiceWorkerHandle(
-      ServiceWorkerVersion* version);
+  // ServiceWorkerObjectHost will have an ownership of the |version|.
+  base::WeakPtr<ServiceWorkerObjectHost> GetOrCreateServiceWorkerObjectHost(
+      scoped_refptr<ServiceWorkerVersion> version);
 
   // Returns true if |registration| can be associated with this provider.
   bool CanAssociateRegistration(ServiceWorkerRegistration* registration);
@@ -386,15 +393,16 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // provider hosts used for navigation requests.
   void CompleteNavigationInitialized(
       int process_id,
-      ServiceWorkerProviderHostInfo info,
-      base::WeakPtr<ServiceWorkerDispatcherHost> dispatcher_host);
+      mojom::ServiceWorkerProviderHostInfoPtr info);
 
   // For service worker execution contexts. Completes initialization of this
   // provider host. It is called once a renderer process has been found to host
   // the worker. Returns the info needed for creating a provider on the renderer
-  // which will be connected to this provider host. This instance will take the
-  // reference to |hosted_version|, so be careful not to create a reference
-  // cycle.
+  // which will be connected to this provider host.
+  //
+  // |provider_info| should be the info returned by PreCreateForController(),
+  // which is partially filled out. This function returns it after
+  // filling it out completely.
   //
   // S13nServiceWorker:
   // |loader_factory| is the factory to use for "network" requests for the
@@ -404,8 +412,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   mojom::ServiceWorkerProviderInfoForStartWorkerPtr
   CompleteStartWorkerPreparation(
       int process_id,
-      scoped_refptr<ServiceWorkerVersion> hosted_version,
-      scoped_refptr<network::SharedURLLoaderFactory> loader_factory);
+      scoped_refptr<network::SharedURLLoaderFactory> loader_factory,
+      mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info);
 
   // Called when the shared worker main script resource has finished loading.
   // After this is called, is_execution_ready() returns true.
@@ -422,8 +430,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // |registration_id|.
   void RemoveServiceWorkerRegistrationObjectHost(int64_t registration_id);
 
-  // Removes the ServiceWorkerHandle corresponding to |version_id|.
-  void RemoveServiceWorkerHandle(int64_t version_id);
+  // Removes the ServiceWorkerObjectHost corresponding to |version_id|.
+  void RemoveServiceWorkerObjectHost(int64_t version_id);
 
   // Calls ContentBrowserClient::AllowServiceWorker(). Returns true if content
   // settings allows service workers to run at |scope|. If this provider is for
@@ -436,6 +444,26 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // cache.
   void NotifyControllerLost();
 
+  // S13nServiceWorker:
+  // For service worker clients. Called when |version| is the active worker upon
+  // the main resource request for this client. Remembers |version| as needing
+  // a Soft Update. To avoid affecting page load performance, the update occurs
+  // when we get a HintToUpdateServiceWorker message from the renderer, or when
+  // |this| is destroyed before receiving that message.
+  //
+  // Corresponds to the Handle Fetch algorithm:
+  // "If request is a non-subresource request...invoke Soft Update algorithm
+  // with registration."
+  // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
+  //
+  // This can be called multiple times due to redirects during a main resource
+  // load. All service workers are updated.
+  //
+  // For non-S13nServiceWorker: The update logic is controlled entirely by
+  // ServiceWorkerControlleeRequestHandler, which sees all resource request
+  // activity and schedules an update at a convenient time.
+  void AddServiceWorkerToUpdate(scoped_refptr<ServiceWorkerVersion> version);
+
   bool is_execution_ready() const { return is_execution_ready_; }
 
  private:
@@ -443,7 +471,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   friend class ServiceWorkerProviderHostTest;
   friend class ServiceWorkerWriteToCacheJobTest;
   friend class ServiceWorkerContextRequestHandlerTest;
-  friend class service_worker_handle_unittest::ServiceWorkerHandleTest;
+  friend class service_worker_object_host_unittest::ServiceWorkerObjectHostTest;
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWriteToCacheJobTest, Update_SameScript);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWriteToCacheJobTest,
                            Update_SameSizeScript);
@@ -467,11 +495,9 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   FRIEND_TEST_ALL_PREFIXES(BackgroundSyncManagerTest,
                            RegisterWithoutLiveSWRegistration);
 
-  ServiceWorkerProviderHost(
-      int process_id,
-      ServiceWorkerProviderHostInfo info,
-      base::WeakPtr<ServiceWorkerContextCore> context,
-      base::WeakPtr<ServiceWorkerDispatcherHost> dispatcher_host);
+  ServiceWorkerProviderHost(int process_id,
+                            mojom::ServiceWorkerProviderHostInfoPtr info,
+                            base::WeakPtr<ServiceWorkerContextCore> context);
 
   // ServiceWorkerRegistration::Listener overrides.
   void OnVersionAttributesChanged(
@@ -519,31 +545,32 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void CloneForWorker(
       mojom::ServiceWorkerContainerHostRequest container_host_request) override;
   void Ping(PingCallback callback) override;
+  void HintToUpdateServiceWorker() override;
 
   // Callback for ServiceWorkerContextCore::RegisterServiceWorker().
   void RegistrationComplete(RegisterCallback callback,
                             int64_t trace_id,
-                            ServiceWorkerStatusCode status,
+                            blink::ServiceWorkerStatusCode status,
                             const std::string& status_message,
                             int64_t registration_id);
   // Callback for ServiceWorkerStorage::FindRegistrationForDocument().
   void GetRegistrationComplete(
       GetRegistrationCallback callback,
       int64_t trace_id,
-      ServiceWorkerStatusCode status,
+      blink::ServiceWorkerStatusCode status,
       scoped_refptr<ServiceWorkerRegistration> registration);
   // Callback for ServiceWorkerStorage::GetRegistrationsForOrigin().
   void GetRegistrationsComplete(
       GetRegistrationsCallback callback,
       int64_t trace_id,
-      ServiceWorkerStatusCode status,
+      blink::ServiceWorkerStatusCode status,
       const std::vector<scoped_refptr<ServiceWorkerRegistration>>&
           registrations);
 
   // Callback for ServiceWorkerVersion::RunAfterStartWorker()
   void StartControllerComplete(
       mojom::ControllerServiceWorkerRequest controller_request,
-      ServiceWorkerStatusCode status);
+      blink::ServiceWorkerStatusCode status);
 
   bool IsValidRegisterMessage(
       const GURL& script_url,
@@ -580,7 +607,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // Otherwise, |kDocumentMainThreadId|.
   int render_thread_id_;
 
-  ServiceWorkerProviderHostInfo info_;
+  mojom::ServiceWorkerProviderHostInfoPtr info_;
 
   // Only set when this object is pre-created for a navigation. It indicates the
   // tab where the navigation occurs.
@@ -607,12 +634,12 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
            std::unique_ptr<ServiceWorkerRegistrationObjectHost>>
       registration_object_hosts_;
 
-  // Contains all ServiceWorkerHandle instances corresponding to
+  // Contains all ServiceWorkerObjectHost instances corresponding to
   // the service worker JavaScript objects for the hosted execution
   // context (service worker global scope or service worker client) in the
   // renderer process.
-  std::map<int64_t /* version_id */, std::unique_ptr<ServiceWorkerHandle>>
-      handles_;
+  std::map<int64_t /* version_id */, std::unique_ptr<ServiceWorkerObjectHost>>
+      service_worker_object_hosts_;
 
   // The ready() promise is only allowed to be created once.
   // |get_ready_callback_| has three states:
@@ -627,21 +654,10 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // ServiceWorkerContainer#controller).
   scoped_refptr<ServiceWorkerVersion> controller_;
   // For service worker execution contexts. The ServiceWorkerVersion of the
-  // service worker this is a provider for. This is nullptr if the service
-  // worker is still being started up (until CompleteStartWorkerPreparation() is
-  // called).
+  // service worker this is a provider for.
   scoped_refptr<ServiceWorkerVersion> running_hosted_version_;
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
-
-  // |dispatcher_host_| is expected to outlive |this| because it destroys
-  // |this| upon destruction. However, it may be null in some cases:
-  // 1) In some tests.
-  // 2) Navigations and service worker startup pre-create a
-  // ServiceWorkerProviderHost instance before there is a renderer assigned to
-  // it. The dispatcher host is set once the instance starts hosting a
-  // renderer.
-  base::WeakPtr<ServiceWorkerDispatcherHost> dispatcher_host_;
 
   bool allow_association_;
 
@@ -677,8 +693,11 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // redirects.
   bool is_execution_ready_ = false;
 
-  // TODO(crbug.com/838410): Temporary debugging for the linked bug.
-  bool in_dtor_ = false;
+  // For service worker clients. The service workers in the chain of redirects
+  // during the main resource request for this client. These workers should be
+  // updated "soon". See AddServiceWorkerToUpdate() documentation.
+  class PendingUpdateVersion;
+  base::flat_set<PendingUpdateVersion> versions_to_update_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerProviderHost);
 };

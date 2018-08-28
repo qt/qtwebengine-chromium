@@ -14,13 +14,14 @@
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/web_feature_forward.h"
+#include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
-#include "third_party/blink/renderer/core/workers/worker_event_queue.h"
-#include "third_party/blink/renderer/platform/scheduler/child/worker_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/worker_scheduler.h"
 #include "third_party/blink/renderer/platform/wtf/bit_vector.h"
 
 namespace blink {
 
+class FetchClientSettingsObjectSnapshot;
 class Modulator;
 class ModuleTreeClient;
 class ResourceFetcher;
@@ -58,7 +59,6 @@ class CORE_EXPORT WorkerOrWorkletGlobalScope : public EventTargetWithInlineData,
   bool IsJSExecutionForbidden() const final;
   void DisableEval(const String& error_message) final;
   bool CanExecuteScripts(ReasonForCallingCanExecuteScripts) final;
-  EventQueue* GetEventQueue() const final;
 
   // SecurityContext
   void DidUpdateSecurityOrigin() final {}
@@ -101,28 +101,27 @@ class CORE_EXPORT WorkerOrWorkletGlobalScope : public EventTargetWithInlineData,
   WorkerReportingProxy& ReportingProxy() { return reporting_proxy_; }
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   scheduler::WorkerScheduler* GetScheduler() override;
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(TaskType) override;
 
  protected:
-  void ApplyContentSecurityPolicyFromVector(
+  void InitContentSecurityPolicyFromVector(
       const Vector<CSPHeaderAndType>& headers);
+  virtual void BindContentSecurityPolicyToExecutionContext();
 
-  // Implementation of the "fetch a module worker script graph" algorithm in the
-  // HTML spec:
-  // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-worker-script-tree
-  void FetchModuleScript(const KURL& module_url_record,
-                         WebURLRequest::RequestContext destination,
-                         network::mojom::FetchCredentialsMode,
-                         ModuleTreeClient*);
+  void FetchModuleScript(
+      const KURL& module_url_record,
+      FetchClientSettingsObjectSnapshot* fetch_client_settings_object,
+      WebURLRequest::RequestContext destination,
+      network::mojom::FetchCredentialsMode,
+      ModuleScriptCustomFetchType,
+      ModuleTreeClient*);
 
  private:
   CrossThreadPersistent<WorkerClients> worker_clients_;
   Member<ResourceFetcher> resource_fetcher_;
   Member<WorkerOrWorkletScriptController> script_controller_;
-  Member<WorkerEventQueue> event_queue_;
 
   WorkerReportingProxy& reporting_proxy_;
 

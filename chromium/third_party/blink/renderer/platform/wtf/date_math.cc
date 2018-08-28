@@ -77,6 +77,7 @@
 #include <time.h>
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include "build/build_config.h"
 #include "third_party/blink/renderer/platform/wtf/ascii_ctype.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
@@ -85,6 +86,8 @@
 #include "third_party/blink/renderer/platform/wtf/string_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
+
+#include <unicode/timezone.h>
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -493,7 +496,7 @@ static bool ParseLong(const char* string,
   return true;
 }
 
-// Odd case where 'exec' is allowed to be 0, to accomodate a caller in WebCore.
+// Odd case where 'exec' is allowed to be 0, to accommodate a caller in WebCore.
 static double ParseDateFromNullTerminatedCharacters(const char* date_string,
                                                     bool& have_tz,
                                                     int& offset) {
@@ -646,7 +649,7 @@ static double ParseDateFromNullTerminatedCharacters(const char* date_string,
 
     ParseLong(date_string, &new_pos_str, 10, &hour);
     // Do not check for errno here since we want to continue
-    // even if errno was set becasue we are still looking
+    // even if errno was set because we are still looking
     // for the timezone!
 
     // Read a number? If not, this might be a timezone name.
@@ -835,9 +838,11 @@ String MakeRFC2822DateString(const Time date, int utc_offset) {
 }
 
 double ConvertToLocalTime(double ms) {
-  double utc_offset = CalculateUTCOffset();
-  double dst_offset = CalculateDSTOffset(ms, utc_offset);
-  return (ms + utc_offset + dst_offset);
+  std::unique_ptr<icu::TimeZone> timezone(icu::TimeZone::createDefault());
+  int32_t raw_offset, dst_offset;
+  UErrorCode status = U_ZERO_ERROR;
+  timezone->getOffset(ms, false, raw_offset, dst_offset, status);
+  return (ms + static_cast<double>(raw_offset + dst_offset));
 }
 
 }  // namespace WTF

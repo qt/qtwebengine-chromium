@@ -6,6 +6,7 @@
 
 #include <memory>
 #include "base/memory/scoped_refptr.h"
+#include "base/numerics/checked_math.h"
 #include "base/single_thread_task_runner.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/canvas/image_data.h"
@@ -16,8 +17,7 @@
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
-#include "third_party/blink/renderer/platform/threading/background_task_runner.h"
-#include "third_party/blink/renderer/platform/wtf/checked_numeric.h"
+#include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColorSpaceXformCanvas.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
@@ -138,7 +138,7 @@ ImageBitmap::ParsedOptions ParseOptions(const ImageBitmapOptions& options,
 // each ImageBitmap() constructor, which makes sure that doing
 // width * height * bytesPerPixel will never overflow unsigned.
 bool DstBufferSizeHasOverflow(const ImageBitmap::ParsedOptions& options) {
-  CheckedNumeric<unsigned> total_bytes = options.crop_rect.Width();
+  base::CheckedNumeric<unsigned> total_bytes = options.crop_rect.Width();
   total_bytes *= options.crop_rect.Height();
   total_bytes *=
       SkColorTypeBytesPerPixel(options.color_params.GetSkColorType());
@@ -159,13 +159,26 @@ bool DstBufferSizeHasOverflow(const ImageBitmap::ParsedOptions& options) {
 
 SkImageInfo GetSkImageInfo(sk_sp<SkImage> skia_image) {
   SkColorType color_type = kN32_SkColorType;
+  sk_sp<SkColorSpace> color_space = skia_image->refColorSpace();
+
   if (skia_image->colorType() == kRGBA_F16_SkColorType ||
       (skia_image->colorSpace() && skia_image->colorSpace()->gammaIsLinear())) {
     color_type = kRGBA_F16_SkColorType;
   }
+
+  if (color_type == kN32_SkColorType && skia_image->colorSpace() &&
+      skia_image->colorSpace()->isSRGB()) {
+    // Skia is in the middle of transitioning this scenario from meaning
+    // linearly blended sRGB 8888 to non-linearly blended sRGB 8888.  While the
+    // transition is happening, we'll strip the color space to force
+    // non-linearly blended sRGB 8888.  (This nullptr will continue to mean
+    // non-linearly blended sRGB 8888 after the transition too,  so there's
+    // really no harm leaving this indefinitely.)
+    color_space.reset(nullptr);
+  }
   return SkImageInfo::Make(skia_image->width(), skia_image->height(),
                            color_type, skia_image->alphaType(),
-                           skia_image->refColorSpace());
+                           std::move(color_space));
 }
 
 SkImageInfo GetSkImageInfo(const scoped_refptr<StaticBitmapImage>& image) {
@@ -434,20 +447,8 @@ scoped_refptr<StaticBitmapImage> ScaleImage(
 scoped_refptr<StaticBitmapImage> ApplyColorSpaceConversion(
     scoped_refptr<StaticBitmapImage>&& image,
     ImageBitmap::ParsedOptions& options) {
-  SkTransferFunctionBehavior transfer_function_behavior =
-      SkTransferFunctionBehavior::kRespect;
-  // We normally expect to respect transfer function. However, in two scenarios
-  // we have to ignore the transfer function. First, when the source image is
-  // unpremul. Second, when the source image is drawn using a
-  // SkColorSpaceXformCanvas.
-  sk_sp<SkImage> skia_image = image->PaintImageForCurrentFrame().GetSkImage();
-  if (!skia_image->colorSpace() ||
-      skia_image->alphaType() == kUnpremul_SkAlphaType)
-    transfer_function_behavior = SkTransferFunctionBehavior::kIgnore;
-
   return image->ConvertToColorSpace(
-      options.color_params.GetSkColorSpaceForSkSurfaces(),
-      transfer_function_behavior);
+      options.color_params.GetSkColorSpaceForSkSurfaces());
 }
 
 scoped_refptr<StaticBitmapImage> MakeBlankImage(
@@ -496,10 +497,12 @@ static scoped_refptr<StaticBitmapImage> CropImageAndApplyColorSpaceConversion(
   // skia_image is premultiplied.
   if (!skia_image->isOpaque() && image->Data() &&
       skia_image->alphaType() == kPremul_SkAlphaType) {
+    const bool data_complete = true;
     std::unique_ptr<ImageDecoder> decoder(ImageDecoder::Create(
-        image->Data(), true,
+        image->Data(), data_complete,
         parsed_options.premultiply_alpha ? ImageDecoder::kAlphaPremultiplied
                                          : ImageDecoder::kAlphaNotPremultiplied,
+        ImageDecoder::kDefaultBitDepth,
         parsed_options.has_color_space_conversion ? ColorBehavior::Tag()
                                                   : ColorBehavior::Ignore()));
     if (!decoder)
@@ -605,7 +608,12 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video,
   std::unique_ptr<CanvasResourceProvider> resource_provider =
       CanvasResourceProvider::Create(
           IntSize(video->videoWidth(), video->videoHeight()),
-          CanvasResourceProvider::kSoftwareResourceUsage);
+          CanvasResourceProvider::kSoftwareResourceUsage,
+          nullptr,              // context_provider_wrapper
+          0,                    // msaa_sample_count
+          CanvasColorParams(),  // TODO: set color space here to avoid clamping
+          CanvasResourceProvider::kDefaultPresentationMode,
+          nullptr);  // canvas_resource_dispatcher
   if (!resource_provider)
     return;
 
@@ -925,13 +933,8 @@ void ImageBitmap::RasterizeImageOnBackgroundThread(
     bool origin_clean,
     std::unique_ptr<ParsedOptions> parsed_options) {
   DCHECK(!IsMainThread());
-  // TODO (zakerinasab): crbug.com/768844
-  // For now only SVG is decoded async so it is fine to assume the color space
-  // is SRGB. When other sources are decoded async (crbug.com/580202), make sure
-  // that proper color space is used in SkImageInfo to avoid clipping the gamut
-  // of the image bitmap source.
-  SkImageInfo info = SkImageInfo::MakeS32(dst_rect.Width(), dst_rect.Height(),
-                                          kPremul_SkAlphaType);
+  SkImageInfo info =
+      SkImageInfo::MakeN32Premul(dst_rect.Width(), dst_rect.Height());
   sk_sp<SkSurface> surface = SkSurface::MakeRaster(info);
   sk_sp<SkImage> skia_image;
   if (surface) {
@@ -993,7 +996,7 @@ ScriptPromise ImageBitmap::CreateAsync(ImageElementBase* image,
                                      draw_dst_rect, parsed_options.flip_y);
   std::unique_ptr<ParsedOptions> passed_parsed_options =
       std::make_unique<ParsedOptions>(parsed_options);
-  BackgroundTaskRunner::PostOnBackgroundThread(
+  BackgroundScheduler::PostOnBackgroundThread(
       FROM_HERE,
       CrossThreadBind(&RasterizeImageOnBackgroundThread,
                       WrapCrossThreadPersistent(resolver),

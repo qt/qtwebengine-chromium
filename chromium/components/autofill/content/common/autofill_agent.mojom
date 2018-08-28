@@ -84,6 +84,10 @@ interface PasswordAutofillAgent {
   // ShowPasswordSuggestions messages to the browser.
   FillPasswordForm(int32 key, PasswordFormFillData form_data);
 
+  // Fills the given |credential| into the last focused text input.
+  FillIntoFocusedField(bool is_password, mojo_base.mojom.String16 credential)
+      => (FillingStatus status);
+
   // Notification to start (|active| == true) or stop (|active| == false)
   // logging the decisions made about saving the password.
   SetLoggingState(bool active);
@@ -97,10 +101,6 @@ interface PasswordAutofillAgent {
   // Renderer is expected to return the found password form. If no password form
   // is focused, the response will contain an empty |autofill::PasswordForm|.
   FindFocusedPasswordForm() => (PasswordForm form);
-
-  // Notifies PasswordAutofillAgent that the matching blacklisted form was
-  // found.
-  BlacklistedFormFound();
 };
 
 // There is one instance of this interface per render frame in the render
@@ -114,10 +114,6 @@ interface PasswordGenerationAgent {
   // eligible for generation then to trigger generation by responding to the
   // browser with the message |ShowPasswordGenerationPopup|.
   UserTriggeredGeneratePassword();
-
-  // Tells the renderer to populate the correct password fields with this
-  // generated password.
-  UserSelectedManualGenerationOption();
 
   // Tells the renderer that this password form is not blacklisted.  A form can
   // be blacklisted if a user chooses "never save passwords for this site".

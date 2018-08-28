@@ -32,6 +32,13 @@ extern const char kAutomaticSettingsResetLearnMoreURL[];
 // The URL for providing help when the Bluetooth adapter is off.
 extern const char kBluetoothAdapterOffHelpURL[];
 
+// "Learn more" URL shown in the dialog to enable cloud services for Cast.
+extern const char kCastCloudServicesHelpURL[];
+
+// The URL for the help center article to show when no Cast destination has been
+// found.
+extern const char kCastNoDestinationFoundURL[];
+
 // The URL for the Bluetooth Overview help center article in the Web Bluetooth
 // Chooser.
 extern const char kChooserBluetoothOverviewURL[];
@@ -58,6 +65,11 @@ extern const char kChromeSearchLocalNtpUrl[];
 // Host and URL for most visited iframes used on the Instant Extended NTP.
 extern const char kChromeSearchMostVisitedHost[];
 extern const char kChromeSearchMostVisitedUrl[];
+
+// URL for NTP custom background image selected from the user's machine and
+// filename for the version of the file in the Profile directory
+extern const char kChromeSearchLocalNtpBackgroundUrl[];
+extern const char kChromeSearchLocalNtpBackgroundFilename[];
 
 // Page under chrome-search.
 extern const char kChromeSearchRemoteNtpHost[];
@@ -159,6 +171,9 @@ extern const char kSettingsSearchHelpURL[];
 
 extern const char kSmartLockHelpPage[];
 
+// The URL for the Learn More page about Sync and Google services.
+extern const char kSyncAndGoogleServicesLearnMoreURL[];
+
 // The URL for the "Learn more" page on sync encryption.
 extern const char kSyncEncryptionHelpURL[];
 
@@ -214,11 +229,17 @@ extern const char kGoogleNameserversLearnMoreURL[];
 // The URL for the "learn more" link for Instant Tethering.
 extern const char kInstantTetheringLearnMoreURL[];
 
+// The URL for the "Learn more" link in the connected devices.
+extern const char kMultiDeviceLearnMoreURL[];
+
 // The URL for the "Learn more" link in the language settings.
 extern const char kLanguageSettingsLearnMoreUrl[];
 
 // The URL for the Learn More page about enterprise enrolled devices.
 extern const char kLearnMoreEnterpriseURL[];
+
+// The URL for the Learn More page about Linux for Chromebooks.
+extern const char kLinuxAppsLearnMoreURL[];
 
 // The URL for the "Learn more" link for natural scrolling on ChromeOS.
 extern const char kNaturalScrollHelpURL[];

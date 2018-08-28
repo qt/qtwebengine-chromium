@@ -17,16 +17,14 @@
 #include <algorithm>
 #include <limits>
 
-#include "api/optional.h"
+#include "absl/types/optional.h"
 #include "api/rtp_headers.h"
 #include "api/transport/network_types.h"
 #include "api/video/video_rotation.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/include/module_common_types_public.h"
 #include "modules/include/module_fec_types.h"
-#include "modules/video_coding/codecs/h264/include/h264_globals.h"
-#include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
-#include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "rtc_base/constructormagic.h"
 #include "rtc_base/deprecation.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -35,55 +33,16 @@
 
 namespace webrtc {
 
-struct RTPAudioHeader {
-  uint8_t numEnergy;                  // number of valid entries in arrOfEnergy
-  uint8_t arrOfEnergy[kRtpCsrcSize];  // one energy byte (0-9) per channel
-  bool isCNG;                         // is this CNG
-  size_t channel;                     // number of channels 2 = stereo
-};
-
-enum RtpVideoCodecTypes {
-  kRtpVideoNone = 0,
-  kRtpVideoGeneric = 1,
-  kRtpVideoVp8 = 2,
-  kRtpVideoVp9 = 3,
-  kRtpVideoH264 = 4
-};
-
-union RTPVideoTypeHeader {
-  RTPVideoHeaderVP8 VP8;
-  RTPVideoHeaderVP9 VP9;
-  RTPVideoHeaderH264 H264;
-};
-
-// Since RTPVideoHeader is used as a member of a union, it can't have a
-// non-trivial default constructor.
-struct RTPVideoHeader {
-  uint16_t width;  // size
-  uint16_t height;
-  VideoRotation rotation;
-
-  PlayoutDelay playout_delay;
-
-  VideoContentType content_type;
-
-  VideoSendTiming video_timing;
-
-  bool is_first_packet_in_frame;
-  uint8_t simulcastIdx;  // Index if the simulcast encoder creating
-                         // this frame, 0 if not using simulcast.
-  RtpVideoCodecTypes codec;
-  RTPVideoTypeHeader codecHeader;
-};
-union RTPTypeHeader {
-  RTPAudioHeader Audio;
-  RTPVideoHeader Video;
-};
+// TODO(nisse): Deprecated, use webrtc::VideoCodecType instead.
+using RtpVideoCodecTypes = VideoCodecType;
 
 struct WebRtcRTPHeader {
+  RTPVideoHeader& video_header() { return video; }
+  const RTPVideoHeader& video_header() const { return video; }
+  RTPVideoHeader video;
+
   RTPHeader header;
   FrameType frameType;
-  RTPTypeHeader type;
   // NTP time of the capture time in local timebase in milliseconds.
   int64_t ntp_time_ms;
 };
@@ -190,8 +149,7 @@ class RTPFragmentationHeader {
         memset(fragmentationOffset + oldVectorSize, 0,
                sizeof(size_t) * (size16 - oldVectorSize));
         // copy old values
-        memcpy(fragmentationOffset, oldOffsets,
-               sizeof(size_t) * oldVectorSize);
+        memcpy(fragmentationOffset, oldOffsets, sizeof(size_t) * oldVectorSize);
         delete[] oldOffsets;
       }
       // length
@@ -200,8 +158,7 @@ class RTPFragmentationHeader {
         fragmentationLength = new size_t[size16];
         memset(fragmentationLength + oldVectorSize, 0,
                sizeof(size_t) * (size16 - oldVectorSize));
-        memcpy(fragmentationLength, oldLengths,
-               sizeof(size_t) * oldVectorSize);
+        memcpy(fragmentationLength, oldLengths, sizeof(size_t) * oldVectorSize);
         delete[] oldLengths;
       }
       // time diff
@@ -272,6 +229,33 @@ class CallStatsObserver {
   virtual void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) = 0;
 
   virtual ~CallStatsObserver() {}
+};
+
+// Interface used by NackModule and JitterBuffer.
+class NackSender {
+ public:
+  virtual void SendNack(const std::vector<uint16_t>& sequence_numbers) = 0;
+
+ protected:
+  virtual ~NackSender() {}
+};
+
+// Interface used by NackModule and JitterBuffer.
+class KeyFrameRequestSender {
+ public:
+  virtual void RequestKeyFrame() = 0;
+
+ protected:
+  virtual ~KeyFrameRequestSender() {}
+};
+
+// Used to indicate if a received packet contain a complete NALU (or equivalent)
+enum VCMNaluCompleteness {
+  kNaluUnset = 0,     // Packet has not been filled.
+  kNaluComplete = 1,  // Packet can be decoded as is.
+  kNaluStart,         // Packet contain beginning of NALU
+  kNaluIncomplete,    // Packet is not beginning or end of NALU
+  kNaluEnd,           // Packet is the end of a NALU
 };
 }  // namespace webrtc
 

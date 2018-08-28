@@ -28,15 +28,14 @@
 
 #include <algorithm>
 #include <memory>
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
+
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
 #include "third_party/blink/renderer/modules/webaudio/oscillator_node.h"
 #include "third_party/blink/renderer/modules/webaudio/periodic_wave.h"
 #include "third_party/blink/renderer/modules/webaudio/periodic_wave_options.h"
 #include "third_party/blink/renderer/platform/audio/fft_frame.h"
 #include "third_party/blink/renderer/platform/audio/vector_math.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 
 namespace blink {
 
@@ -66,10 +65,10 @@ PeriodicWave* PeriodicWave::Create(BaseAudioContext& context,
 
   if (real.size() != imag.size()) {
     exception_state.ThrowDOMException(
-        kIndexSizeError, "length of real array (" +
-                             String::Number(real.size()) +
-                             ") and length of imaginary array (" +
-                             String::Number(imag.size()) + ") must match.");
+        DOMExceptionCode::kIndexSizeError,
+        "length of real array (" + String::Number(real.size()) +
+            ") and length of imaginary array (" + String::Number(imag.size()) +
+            ") must match.");
     return nullptr;
   }
 
@@ -319,7 +318,7 @@ void PeriodicWave::GenerateBasicWaveform(int shape) {
   imag_p[0] = 0;
 
   for (unsigned n = 1; n < half_size; ++n) {
-    float pi_factor = 2 / (n * piFloat);
+    float pi_factor = 2 / (n * kPiFloat);
 
     // All waveforms are odd functions with a positive slope at time 0. Hence
     // the coefficients for cos() are always 0.

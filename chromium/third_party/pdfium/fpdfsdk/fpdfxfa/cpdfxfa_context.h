@@ -14,13 +14,13 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/observable.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_docenvironment.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 
 class CJS_Runtime;
-class CPDFSDK_FormFillEnvironment;
 class CXFA_FFDocHandler;
 class IJS_EventContext;
 class IJS_Runtime;
@@ -36,12 +36,12 @@ enum LoadStatus {
 class CPDFXFA_Context : public CPDF_Document::Extension,
                         public IXFA_AppProvider {
  public:
-  explicit CPDFXFA_Context(std::unique_ptr<CPDF_Document> pPDFDoc);
+  explicit CPDFXFA_Context(CPDF_Document* pPDFDoc);
   ~CPDFXFA_Context() override;
 
   bool LoadXFADoc();
   CXFA_FFDoc* GetXFADoc() { return m_pXFADoc.get(); }
-  CXFA_FFDocView* GetXFADocView() { return m_pXFADocView.Get(); }
+  CXFA_FFDocView* GetXFADocView() const { return m_pXFADocView.Get(); }
   FormType GetFormType() const { return m_FormType; }
   bool ContainsXFAForm() const {
     return m_FormType == FormType::kXFAFull ||
@@ -62,6 +62,7 @@ class CPDFXFA_Context : public CPDF_Document::Extension,
   CPDF_Document* GetPDFDoc() const override;
   int GetPageCount() const override;
   void DeletePage(int page_index) override;
+  uint32_t GetUserPermissions() const override;
 
   // IFXA_AppProvider:
   WideString GetLanguage() override;
@@ -90,7 +91,7 @@ class CPDFXFA_Context : public CPDF_Document::Extension,
                      const WideString& wsData,
                      const WideString& wsEncode) override;
 
-  IFWL_AdapterTimerMgr* GetTimerMgr() override;
+  std::unique_ptr<IFWL_AdapterTimerMgr> NewTimerMgr() override;
 
  protected:
   friend class CPDFXFA_DocEnvironment;
@@ -111,7 +112,7 @@ class CPDFXFA_Context : public CPDF_Document::Extension,
   void CloseXFADoc();
 
   FormType m_FormType = FormType::kNone;
-  std::unique_ptr<CPDF_Document> m_pPDFDoc;
+  UnownedPtr<CPDF_Document> m_pPDFDoc;
   std::unique_ptr<CXFA_FFDoc> m_pXFADoc;
   Observable<CPDFSDK_FormFillEnvironment>::ObservedPtr m_pFormFillEnv;
   UnownedPtr<CXFA_FFDocView> m_pXFADocView;

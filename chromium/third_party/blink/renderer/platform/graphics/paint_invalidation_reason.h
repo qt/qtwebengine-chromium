@@ -7,23 +7,29 @@
 
 #include <iosfwd>
 #include "third_party/blink/renderer/platform/platform_export.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
-enum class PaintInvalidationReason : unsigned {
+enum class PaintInvalidationReason : uint8_t {
   kNone,
   kIncremental,
   kRectangle,
+  kSelection,
+  // Hit test changes do not require raster invalidation.
+  kHitTest,
   // The following reasons will all cause full paint invalidation.
-  kFull,  // Any unspecified reason of full invalidation.
+  // Any unspecified reason of full invalidation.
+  kFull,
   kStyle,
-  kGeometry,  // Layout or visual geometry change.
+  // Layout or visual geometry change.
+  kGeometry,
   kCompositing,
   kAppeared,
   kDisappeared,
   kScroll,
-  kScrollControl,  // scroll bars, scroll corner, etc.
-  kSelection,
+  // Scroll bars, scroll corner, etc.
+  kScrollControl,
   kOutline,
   kSubtree,
   kSVGResource,
@@ -32,11 +38,18 @@ enum class PaintInvalidationReason : unsigned {
   kCaret,
   kDocumentMarker,
   kImage,
+  kUncacheable,
+  // The initial PaintInvalidationReason of a DisplayItemClient.
+  kJustCreated,
+  kReordered,
   kChunkAppeared,
   kChunkDisappeared,
   kChunkUncacheable,
   kChunkReordered,
   kPaintProperty,
+  // For tracking of direct raster invalidation of full composited layers. The
+  // invalidation may be implicit, e.g. when a layer is created.
+  kFullLayer,
   kForTesting,
   // kDelayedFull means that kFull is needed in order to fully paint the
   // content, but that painting of the object can be delayed until a future
@@ -51,6 +64,10 @@ PLATFORM_EXPORT const char* PaintInvalidationReasonToString(
     PaintInvalidationReason);
 
 inline bool IsFullPaintInvalidationReason(PaintInvalidationReason reason) {
+  // LayoutNG fully invalidates selections on NGPaintFragments.
+  // TODO(wangxianzhu): Move kSelection after kFull for LayoutNG.
+  if (RuntimeEnabledFeatures::LayoutNGEnabled())
+    return reason >= PaintInvalidationReason::kSelection;
   return reason >= PaintInvalidationReason::kFull;
 }
 

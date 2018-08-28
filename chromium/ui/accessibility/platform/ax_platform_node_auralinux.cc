@@ -1010,6 +1010,10 @@ AtkRole AXPlatformNodeAuraLinux::GetAtkRole() {
       return ATK_ROLE_COMBO_BOX;
     case ax::mojom::Role::kComplementary:
       return ATK_ROLE_LANDMARK;
+    case ax::mojom::Role::kContentDeletion:
+      return ATK_ROLE_PANEL;  // TODO(accessibility) text attribute diff:del.
+    case ax::mojom::Role::kContentInsertion:
+      return ATK_ROLE_PANEL;  // TODO(accessibility) text attribute diff:ins.
     case ax::mojom::Role::kContentInfo:
       return ATK_ROLE_LANDMARK;
     case ax::mojom::Role::kDate:
@@ -1242,12 +1246,11 @@ AtkRole AXPlatformNodeAuraLinux::GetAtkRole() {
     case ax::mojom::Role::kTitleBar:
       return ATK_ROLE_TITLE_BAR;
     case ax::mojom::Role::kInlineTextBox:
-    case ax::mojom::Role::kLocationBar:
     case ax::mojom::Role::kTextField:
     case ax::mojom::Role::kSearchBox:
       if (!GetStringAttribute(ax::mojom::StringAttribute::kAutoComplete)
                .empty() ||
-          IsAutofillField()) {
+          IsFocusedInputWithSuggestions()) {
         return ATK_ROLE_AUTOCOMPLETE;
         ;
       }

@@ -11753,6 +11753,17 @@ struct SwapBuffers {
     GLES2Util::MapUint64ToTwoUint32(static_cast<uint64_t>(_swap_id), &swap_id_0,
                                     &swap_id_1);
     flags = _flags;
+    bool is_tracing = false;
+    TRACE_EVENT_CATEGORY_GROUP_ENABLED(
+        TRACE_DISABLED_BY_DEFAULT("gpu_cmd_queue"), &is_tracing);
+    if (is_tracing) {
+      trace_id = base::RandUint64();
+      TRACE_EVENT_WITH_FLOW1(
+          TRACE_DISABLED_BY_DEFAULT("gpu_cmd_queue"), "CommandBufferQueue",
+          trace_id, TRACE_EVENT_FLAG_FLOW_OUT, "command", "SwapBuffers");
+    } else {
+      trace_id = 0;
+    }
   }
 
   void* Set(void* cmd, GLuint64 _swap_id, GLbitfield _flags) {
@@ -11769,9 +11780,10 @@ struct SwapBuffers {
   uint32_t swap_id_0;
   uint32_t swap_id_1;
   uint32_t flags;
+  uint32_t trace_id;
 };
 
-static_assert(sizeof(SwapBuffers) == 16, "size of SwapBuffers should be 16");
+static_assert(sizeof(SwapBuffers) == 20, "size of SwapBuffers should be 20");
 static_assert(offsetof(SwapBuffers, header) == 0,
               "offset of SwapBuffers header should be 0");
 static_assert(offsetof(SwapBuffers, swap_id_0) == 4,
@@ -12896,13 +12908,13 @@ struct ProduceTextureDirectCHROMIUMImmediate {
 
   void SetHeader() { header.SetCmdByTotalSize<ValueType>(ComputeSize()); }
 
-  void Init(GLuint _texture, const GLbyte* _mailbox) {
+  void Init(GLuint _texture, GLbyte* _mailbox) {
     SetHeader();
     texture = _texture;
     memcpy(ImmediateDataAddress(this), _mailbox, ComputeDataSize());
   }
 
-  void* Set(void* cmd, GLuint _texture, const GLbyte* _mailbox) {
+  void* Set(void* cmd, GLuint _texture, GLbyte* _mailbox) {
     static_cast<ValueType*>(cmd)->Init(_texture, _mailbox);
     const uint32_t size = ComputeSize();
     return NextImmediateCmdAddressTotalSize<ValueType>(cmd, size);
@@ -16334,5 +16346,64 @@ static_assert(offsetof(DestroyGpuFenceCHROMIUM, header) == 0,
               "offset of DestroyGpuFenceCHROMIUM header should be 0");
 static_assert(offsetof(DestroyGpuFenceCHROMIUM, gpu_fence_id) == 4,
               "offset of DestroyGpuFenceCHROMIUM gpu_fence_id should be 4");
+
+struct SetReadbackBufferShadowAllocationINTERNAL {
+  typedef SetReadbackBufferShadowAllocationINTERNAL ValueType;
+  static const CommandId kCmdId = kSetReadbackBufferShadowAllocationINTERNAL;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLuint _buffer_id,
+            GLint _shm_id,
+            GLuint _shm_offset,
+            GLuint _size) {
+    SetHeader();
+    buffer_id = _buffer_id;
+    shm_id = _shm_id;
+    shm_offset = _shm_offset;
+    size = _size;
+  }
+
+  void* Set(void* cmd,
+            GLuint _buffer_id,
+            GLint _shm_id,
+            GLuint _shm_offset,
+            GLuint _size) {
+    static_cast<ValueType*>(cmd)->Init(_buffer_id, _shm_id, _shm_offset, _size);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t buffer_id;
+  int32_t shm_id;
+  uint32_t shm_offset;
+  uint32_t size;
+};
+
+static_assert(sizeof(SetReadbackBufferShadowAllocationINTERNAL) == 20,
+              "size of SetReadbackBufferShadowAllocationINTERNAL should be 20");
+static_assert(
+    offsetof(SetReadbackBufferShadowAllocationINTERNAL, header) == 0,
+    "offset of SetReadbackBufferShadowAllocationINTERNAL header should be 0");
+static_assert(offsetof(SetReadbackBufferShadowAllocationINTERNAL, buffer_id) ==
+                  4,
+              "offset of SetReadbackBufferShadowAllocationINTERNAL buffer_id "
+              "should be 4");
+static_assert(
+    offsetof(SetReadbackBufferShadowAllocationINTERNAL, shm_id) == 8,
+    "offset of SetReadbackBufferShadowAllocationINTERNAL shm_id should be 8");
+static_assert(offsetof(SetReadbackBufferShadowAllocationINTERNAL, shm_offset) ==
+                  12,
+              "offset of SetReadbackBufferShadowAllocationINTERNAL shm_offset "
+              "should be 12");
+static_assert(
+    offsetof(SetReadbackBufferShadowAllocationINTERNAL, size) == 16,
+    "offset of SetReadbackBufferShadowAllocationINTERNAL size should be 16");
 
 #endif  // GPU_COMMAND_BUFFER_COMMON_GLES2_CMD_FORMAT_AUTOGEN_H_

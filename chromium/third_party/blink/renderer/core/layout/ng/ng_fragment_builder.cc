@@ -44,7 +44,7 @@ NGFragmentBuilder::NGFragmentBuilder(NGLayoutInputNode node,
                                      TextDirection direction)
     : NGContainerFragmentBuilder(style, writing_mode, direction),
       node_(node),
-      layout_object_(node.GetLayoutObject()),
+      layout_object_(node.GetLayoutBox()),
       box_type_(NGPhysicalFragment::NGBoxType::kNormalBox),
       is_old_layout_root_(false),
       did_break_(false) {}
@@ -69,7 +69,17 @@ NGFragmentBuilder& NGFragmentBuilder::SetIntrinsicBlockSize(
 }
 
 NGFragmentBuilder& NGFragmentBuilder::SetPadding(const NGBoxStrut& padding) {
+  DCHECK_NE(BoxType(), NGPhysicalFragment::kInlineBox);
   padding_ = padding;
+  return *this;
+}
+
+NGFragmentBuilder& NGFragmentBuilder::SetPadding(
+    const NGLineBoxStrut& padding) {
+  DCHECK_EQ(BoxType(), NGPhysicalFragment::kInlineBox);
+  // Convert to flow-relative, because ToInlineBoxFragment() will convert
+  // the padding to physical coordinates using flow-relative writing-mode.
+  padding_ = NGBoxStrut(padding, IsFlippedLinesWritingMode(GetWritingMode()));
   return *this;
 }
 
@@ -253,16 +263,29 @@ EBreakBetween NGFragmentBuilder::JoinedBreakBetweenValue(
 }
 
 scoped_refptr<NGLayoutResult> NGFragmentBuilder::ToBoxFragment() {
+  DCHECK_NE(BoxType(), NGPhysicalFragment::kInlineBox);
+  return ToBoxFragment(GetWritingMode());
+}
+
+scoped_refptr<NGLayoutResult> NGFragmentBuilder::ToInlineBoxFragment() {
+  // The logical coordinate for inline box uses line-relative writing-mode, not
+  // flow-relative.
+  DCHECK_EQ(BoxType(), NGPhysicalFragment::kInlineBox);
+  return ToBoxFragment(ToLineWritingMode(GetWritingMode()));
+}
+
+scoped_refptr<NGLayoutResult> NGFragmentBuilder::ToBoxFragment(
+    WritingMode block_or_line_writing_mode) {
   DCHECK_EQ(offsets_.size(), children_.size());
 
   NGPhysicalSize physical_size = Size().ConvertToPhysical(GetWritingMode());
 
-  NGPhysicalOffsetRect contents_visual_rect({}, physical_size);
+  NGPhysicalOffsetRect contents_ink_overflow({}, physical_size);
   for (size_t i = 0; i < children_.size(); ++i) {
     NGPhysicalFragment* child = children_[i].get();
     child->SetOffset(offsets_[i].ConvertToPhysical(
-        GetWritingMode(), Direction(), physical_size, child->Size()));
-    child->PropagateContentsVisualRect(&contents_visual_rect);
+        block_or_line_writing_mode, Direction(), physical_size, child->Size()));
+    child->PropagateContentsInkOverflow(&contents_ink_overflow);
   }
 
   scoped_refptr<NGBreakToken> break_token;
@@ -287,7 +310,7 @@ scoped_refptr<NGLayoutResult> NGFragmentBuilder::ToBoxFragment() {
           layout_object_, Style(), style_variant_, physical_size, children_,
           padding_.ConvertToPhysical(GetWritingMode(), Direction())
               .SnapToDevicePixels(),
-          contents_visual_rect, baselines_, BoxType(), is_old_layout_root_,
+          contents_ink_overflow, baselines_, BoxType(), is_old_layout_root_,
           border_edges_.ToPhysical(GetWritingMode()), std::move(break_token)));
 
   Vector<NGPositionedFloat> positioned_floats;

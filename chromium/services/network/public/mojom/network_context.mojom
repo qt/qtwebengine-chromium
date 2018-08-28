@@ -6,8 +6,9 @@ module network.mojom;
 
 import "mojo/public/mojom/base/file.mojom";
 import "mojo/public/mojom/base/file_path.mojom";
-import "mojo/public/mojom/base/values.mojom";
 import "mojo/public/mojom/base/time.mojom";
+import "mojo/public/mojom/base/unguessable_token.mojom";
+import "mojo/public/mojom/base/values.mojom";
 import "net/interfaces/address_list.mojom";
 import "net/interfaces/ip_endpoint.mojom";
 import "services/network/public/mojom/cookie_manager.mojom";
@@ -15,6 +16,8 @@ import "services/network/public/mojom/ct_log_info.mojom";
 import "services/network/public/mojom/mutable_network_traffic_annotation_tag.mojom";
 import "services/network/public/mojom/proxy_config.mojom";
 import "services/network/public/mojom/proxy_config_with_annotation.mojom";
+import "services/network/public/mojom/proxy_resolving_socket.mojom";
+import "services/network/public/mojom/restricted_cookie_manager.mojom";
 import "services/network/public/mojom/ssl_config.mojom";
 import "services/network/public/mojom/tcp_socket.mojom";
 import "services/network/public/mojom/udp_socket.mojom";
@@ -22,7 +25,6 @@ import "services/network/public/mojom/url_loader.mojom";
 import "services/network/public/mojom/url_loader_factory.mojom";
 import "services/network/public/mojom/websocket.mojom";
 import "services/proxy_resolver/public/mojom/proxy_resolver.mojom";
-import "services/network/public/mojom/restricted_cookie_manager.mojom";
 import "url/mojom/origin.mojom";
 import "url/mojom/url.mojom";
 
@@ -45,6 +47,13 @@ struct NetworkContextParams {
   // QUIC user agent.
   string quic_user_agent_id;
 
+  // If false, the referrer of requests is never populated.
+  bool enable_referrers = true;
+
+  // If true, requests initiated with referrers that don't match their referrer
+  // policy will fail.
+  bool validate_referrer_policy_on_initial_request = true;
+
   // Handles PAC script execution. If not populated, will attempt to use
   // platform implementation to execute PAC scripts, if available (Only
   // available on Windows and Mac).
@@ -52,6 +61,9 @@ struct NetworkContextParams {
 
   // Points to the cookie file. An in-memory cookie store is used if it's empty.
   mojo_base.mojom.FilePath? cookie_path;
+
+  // If true, cookies will be stored encrypted.
+  bool enable_encrypted_cookies = true;
 
   // If the cookie file is given, this controls whether previously written
   // session cookies are restored. Otherwise it should be false.
@@ -143,21 +155,39 @@ struct NetworkContextParams {
   // See https://crbug.com/619087
   bool dangerously_allow_pac_access_to_secure_urls = false;
 
-  // Only used on OS_CHROMEOS platform.
-  bool allow_gssapi_library_load = false;
-
-  // The GSSAPI library name.
-  // Only used on (OS_POSIX && !OS_ANDROID) platform.
-  string gssapi_library_name;
-
   // Enables reporting certain SSL errors, such as HTTP Public Key Pinning, to
   // servers, so they can discover misconfigurations.
   bool enable_certificate_reporting = false;
+
+  // Enables Expect CT reporting, which sends reports for opted-in sites that
+  // don't serve sufficient Certificate Transparency information.
+  bool enable_expect_ct_reporting = false;
 
   // The Certificate Transparency logs that are known to the client. SCTs from
   // these logs will be extracted and verified; other SCTs will be treated as
   // unrecognized.
   array<CTLogInfo> ct_logs;
+
+  // Parameters for constructing the cookie manager.
+  CookieManagerParams? cookie_manager_params;
+
+  // Sets whether the NetworkContext should be used for globally scoped tasks
+  // that need to make network requests. Currently this includes DNS over HTTPS
+  // requests and certain cert validation requests (OCSP, AIA, etc) on some
+  // platforms. May only be set to true the first NetworkContext created using
+  // the NetworkService.  Destroying a NetworkContext created with this set to
+  // true will destroy all other NetworkContexts.
+  //
+  // A failure to mark a NetworkContext as being used by certificate
+  // verification may result in incorrect certificate validation behaviors,
+  // such as the inability to verify EV certificates, to build paths when
+  // intermediates are missing, and to enforce revocation checking when it was
+  // requested via policy.
+  //
+  // TODO(mmenke): Once NSS is not used on any platform for certificate
+  // verification, we should consider using each URLRequestContext to do its own
+  // validation.
+  bool primary_network_context = false;
 };
 
 struct NetworkConditions {
@@ -265,9 +295,30 @@ struct URLLoaderFactoryParams {
   uint32 process_id = kInvalidProcessId;
 
   // Cross-origin read blocking (CORB) configuration.
-  // TODO(lukasza): https://crbug.com/792546: Actually use the settings below.
   bool is_corb_enabled = true;
+  // TODO(lukasza): The field below in practice is always set to
+  // RESOURCE_TYPE_PREFETCH by the //content layer, but in the long-term we want
+  // to avoid using resource types (even as an opaque int) in
+  // //services/network.  See also the TODO comment for
+  // network::ResourceRequest::resource_type.
+  int32 corb_detachable_resource_type = -1;
+  // TODO(lukasza): https://crbug.com/846339: Remove the field below and instead
+  // make plugins use a separate URLoaderFactory. Note requests of this type are
+  // only excluded if ResourceRequest::fetch_request_mode is kNoCORS. The field
+  // below in practice is always set to RESOURCE_TYPE_PLUGIN_RESOURCE by the
+  //  content layer, but in the long-term we want to avoid using resource types
+  // (even as an opaque int) in //services/network.  See also the TODO comment
+  // for network::ResourceRequest::resource_type.
+  int32 corb_excluded_resource_type = -1;
+  // TODO(lukasza): https://crbug.com/846346: Replace the field below with a
+  // granular list of origins that content scripts can XHR into (based on
+  // extension manifest V3 / assumming that content scripts have a
+  // URLLoaderFactory separate from the rest of the renderer).
   string corb_excluded_initiator_scheme;
+
+  // True if web related security (e.g., CORS) should be disabled. This is
+  // mainly used by people testing their sites, via a command line switch.
+  bool disable_web_security = false;
 };
 
 // Represents a distinct context for making network requests, with its own
@@ -278,13 +329,17 @@ interface NetworkContext {
                          URLLoaderFactoryParams params);
 
   // Gets the CookieManager associated with this network context.
+  //
+  // The CookieManager must only be passed to trusted processes. Whenever
+  // possible, a RestrictedCookieManager should be handed out instead.
   GetCookieManager(CookieManager& cookie_manager);
 
-  // TODO(crbug.com/729800): Switch from {process,frame}_id to the network
-  //                         service's representation of security principals.
-  GetRestrictedCookieManager(
-      RestrictedCookieManager& restricted_cookie_manager,
-      int32 render_process_id, int32 render_frame_id);
+  // Gets a RestrictedCookieManager scoped to a given origin.
+  //
+  // This interface can be safely handed out to a process that is known to
+  // represent the given origin, such as a renderer process.
+  GetRestrictedCookieManager(RestrictedCookieManager& restricted_cookie_manager,
+                             url.mojom.Origin origin);
 
   // Clears network objects with implicit URL history information. Data related
   // to events that happened prior to |start_time| may be retained. Only applies
@@ -302,6 +357,22 @@ interface NetworkContext {
                  mojo_base.mojom.Time end_time,
                  ClearDataFilter? filter) => ();
 
+  // Computes the size of cache objects last accessed between |start_time| and
+  // |end_time|.
+  //
+  // If you don't want a lower bound, pass base::Time() for |start_time|.
+  // If you don't want an upper bound, pass base::Time::Max()
+  //
+  // |upper_bound| will be returned as true if the implementation had to
+  // overestimate; this may be as bad as giving the size of the entire cache.
+  //
+  // |size_or_error|, if non-negative, is the result in bytes; and a net error
+  // code if negative.
+  ComputeHttpCacheSize(mojo_base.mojom.Time start_time,
+                       mojo_base.mojom.Time end_time)
+      => (bool is_upper_bound, int64 size_or_error);
+
+
   // Clears channel IDs. A specific range of time can be specified with
   // |start_time| and |end_time|. This supports unbounded deletes in either
   // direction by using null Time values for either argument.
@@ -312,6 +383,14 @@ interface NetworkContext {
   ClearChannelIds(mojo_base.mojom.Time start_time,
                   mojo_base.mojom.Time end_time,
                   ClearDataFilter? filter) => ();
+
+  // Clears the host cache. This will affect all NetworkContexts that share the
+  // same HostResolved as the NetworkContext this is called on.
+  //
+  // If a non-null |filter| is specified, will clear only entries for domains
+  // matching the filter. Filtering by origins is not supported. If |filter| is
+  // non-null, |filter.origins| must be empty.
+  ClearHostCache(ClearDataFilter? filter) => ();
 
   // Clears all entries from the HTTP Auth cache that were added since
   // |start_time|. Supports unbounded delete using null Time value.
@@ -339,15 +418,17 @@ interface NetworkContext {
   ClearNetworkErrorLogging(ClearDataFilter? filter) => ();
 
   // Configures network conditions for the specified throttling profile.
-  // The throttling will be applied only to requests that have
-  // X-DevTools-Emulate-Network-Conditions-Client-Id: <profile_id>
-  // header with matching <profile_id>.
+  // The throttling will be applied only to requests that have maching
+  // throttling_profile_id.
   // Passing null NetworkConditions disables the throttling.
-  // TODO(caseq): get rid of header, make profile_id part of ResourceRequest.
-  SetNetworkConditions(string profile_id, NetworkConditions? conditions);
+  SetNetworkConditions(mojo_base.mojom.UnguessableToken throttling_profile_id,
+                       NetworkConditions? conditions);
 
   // Updates the Accept-Language header to be used for requests.
   SetAcceptLanguage(string new_accept_language);
+
+  // If false, the referrer of requests is never populated.
+  SetEnableReferrers(bool enable_referrers);
 
   // Updates the CT policy to be used for requests. Only applies if the
   // NetworkContextParams set enforce_chrome_ct_policy to true.
@@ -402,14 +483,24 @@ interface NetworkContext {
       TCPConnectedSocket& socket,
       SocketObserver? observer)
      => (int32 result,
+         net.interfaces.IPEndPoint? local_addr,
+         net.interfaces.IPEndPoint? peer_addr,
          handle<data_pipe_consumer>? receive_stream,
          handle<data_pipe_producer>? send_stream);
+
+  // Creates a ProxyResolvingSocketFactory that shares some configuration params
+  // with this NetworkContext, but uses separate socket pools.
+  //
+  // Any sockets that are created but are yet to be destroyed will be destroyed
+  // when NetworkContext goes away.
+  CreateProxyResolvingSocketFactory(ProxyResolvingSocketFactory& factory);
 
   // Creates a WebSocket connection.
   CreateWebSocket(WebSocket& request,
                   int32 process_id,
                   int32 render_frame_id,
-                  url.mojom.Origin origin);
+                  url.mojom.Origin origin,
+                  AuthenticationHandler? auth_handler);
 
   // Create a NetLogExporter, which helps export NetLog to an existing file.
   // Note that the log is generally global, including all NetworkContexts
@@ -418,8 +509,17 @@ interface NetworkContext {
   // configuration summary written out at the end of the log.
   CreateNetLogExporter(NetLogExporter& exporter);
 
-  // Enables/Disables blocking of third-party cookies.
-  BlockThirdPartyCookies(bool block);
+  // Tries to preconnect to |url|. |num_streams| may be used to request more
+  // than one connection be established in parallel.
+  // |load_flags| is passed into the HttpRequestInfo used to make the request.
+  // See |load_flags.h| for possible values.
+  // |privacy_mode_enabled| is also passed into the HttpRequestInfo class: if
+  // it is true, then the request must be sent over a connection that cannot be
+  // tracked by the server (e.g. without channel id).
+  PreconnectSockets(uint32 num_streams,
+                    url.mojom.Url url,
+                    int32 load_flags,
+                    bool privacy_mode_enabled);
 
   [Sync]
   // Adds explicitly-specified data as if it was processed from an

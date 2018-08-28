@@ -26,7 +26,7 @@
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 
 #include <memory>
-#include "third_party/blink/public/platform/web_canvas.h"
+#include "cc/paint/paint_canvas.h"
 #include "third_party/blink/renderer/core/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -325,7 +325,7 @@ void HTMLVideoElement::UpdateDisplayState() {
 }
 
 void HTMLVideoElement::PaintCurrentFrame(
-    PaintCanvas* canvas,
+    cc::PaintCanvas* canvas,
     const IntRect& dest_rect,
     const PaintFlags* flags,
     int already_uploaded_id,
@@ -465,7 +465,11 @@ scoped_refptr<Image> HTMLVideoElement::GetSourceImageForCanvas(
   // argument here? Currently we use unacceleration mode.
   std::unique_ptr<CanvasResourceProvider> resource_provider =
       CanvasResourceProvider::Create(
-          intrinsic_size, CanvasResourceProvider::kSoftwareResourceUsage);
+          intrinsic_size, CanvasResourceProvider::kSoftwareResourceUsage,
+          nullptr,  // context_provider_wrapper
+          0,        // msaa_sample_count
+          CanvasColorParams(), CanvasResourceProvider::kDefaultPresentationMode,
+          nullptr);  // canvas_resource_dispatcher
   if (!resource_provider) {
     *status = kInvalidSourceImageStatus;
     return nullptr;
@@ -505,14 +509,14 @@ ScriptPromise HTMLVideoElement::CreateImageBitmap(
   if (getNetworkState() == HTMLMediaElement::kNetworkEmpty) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
-        DOMException::Create(kInvalidStateError,
+        DOMException::Create(DOMExceptionCode::kInvalidStateError,
                              "The provided element has not retrieved data."));
   }
   if (getReadyState() <= HTMLMediaElement::kHaveMetadata) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(
-            kInvalidStateError,
+            DOMExceptionCode::kInvalidStateError,
             "The provided element's player has no current data."));
   }
 
@@ -548,6 +552,12 @@ bool HTMLVideoElement::SupportsPictureInPicture() const {
 void HTMLVideoElement::PictureInPictureStopped() {
   PictureInPictureController::From(GetDocument())
       .OnExitedPictureInPicture(nullptr);
+}
+
+void HTMLVideoElement::PictureInPictureControlClicked(
+    const WebString& control_id) {
+  PictureInPictureController::From(GetDocument())
+      .OnPictureInPictureControlClicked(control_id);
 }
 
 WebMediaPlayer::DisplayType HTMLVideoElement::DisplayType() const {

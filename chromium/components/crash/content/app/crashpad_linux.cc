@@ -16,21 +16,42 @@
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/global_descriptors.h"
+#include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "components/crash/content/app/crash_reporter_client.h"
 #include "content/public/common/content_descriptors.h"
 #include "sandbox/linux/services/syscall_wrappers.h"
+#include "third_party/crashpad/crashpad/client/annotation.h"
 #include "third_party/crashpad/crashpad/client/crashpad_client.h"
+#include "third_party/crashpad/crashpad/snapshot/sanitized/sanitization_information.h"
 #include "third_party/crashpad/crashpad/util/linux/exception_handler_client.h"
 #include "third_party/crashpad/crashpad/util/linux/exception_information.h"
 #include "third_party/crashpad/crashpad/util/misc/from_pointer_cast.h"
 #include "third_party/crashpad/crashpad/util/posix/signals.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/build_info.h"
+#include "base/android/java_exception_reporter.h"
+#endif  // OS_ANDROID
+
 namespace crashpad {
 namespace {
+
+bool SetSanitizationInfo(SanitizationInformation* info) {
+  const char* const* whitelist = nullptr;
+  void* target_module = nullptr;
+  bool sanitize_stacks = false;
+  crash_reporter::GetCrashReporterClient()->GetSanitizationInformation(
+      &whitelist, &target_module, &sanitize_stacks);
+  info->annotations_whitelist_address = FromPointerCast<VMAddress>(whitelist);
+  info->target_module_address = FromPointerCast<VMAddress>(target_module);
+  info->sanitize_stacks = sanitize_stacks;
+  return whitelist != nullptr || target_module != nullptr || sanitize_stacks;
+}
 
 // A signal handler for non-browser processes in the sandbox.
 // Sends a message to a crashpad::CrashHandlerHost to handle the crash.
@@ -42,6 +63,7 @@ class SandboxedHandler {
   }
 
   bool Initialize() {
+    SetSanitizationInfo(&sanitization_);
     server_fd_ = base::GlobalDescriptors::GetInstance()->Get(
         service_manager::kCrashDumpSignal);
 
@@ -107,6 +129,10 @@ class SandboxedHandler {
           FromPointerCast<decltype(info.exception_information_address)>(
               &exception_information);
 
+      info.sanitization_information_address =
+          FromPointerCast<decltype(info.sanitization_information_address)>(
+              &state->sanitization_);
+
       ExceptionHandlerClient handler_client(connection.get());
       handler_client.SetCanSetPtracer(false);
       handler_client.RequestCrashDump(info);
@@ -115,6 +141,7 @@ class SandboxedHandler {
     Signals::RestoreHandlerAndReraiseSignalOnReturn(siginfo, nullptr);
   }
 
+  SanitizationInformation sanitization_;
   int server_fd_;
 
   DISALLOW_COPY_AND_ASSIGN(SandboxedHandler);
@@ -122,6 +149,45 @@ class SandboxedHandler {
 
 }  // namespace
 }  // namespace crashpad
+
+#if defined(OS_ANDROID)
+
+namespace {
+
+void SetJavaExceptionInfo(const char* info_string) {
+  static crashpad::StringAnnotation<5 * 4096> exception_info("exception_info");
+  if (info_string) {
+    exception_info.Set(info_string);
+  } else {
+    exception_info.Clear();
+  }
+}
+
+void SetBuildInfoAnnotations(std::map<std::string, std::string>* annotations) {
+  base::android::BuildInfo* info = base::android::BuildInfo::GetInstance();
+
+  (*annotations)["android_build_id"] = info->android_build_id();
+  (*annotations)["android_build_fp"] = info->android_build_fp();
+  (*annotations)["device"] = info->device();
+  (*annotations)["model"] = info->model();
+  (*annotations)["brand"] = info->brand();
+  (*annotations)["board"] = info->board();
+  (*annotations)["installer_package_name"] = info->installer_package_name();
+  (*annotations)["abi_name"] = info->abi_name();
+  (*annotations)["custom_themes"] = info->custom_themes();
+  (*annotations)["resources_verison"] = info->resources_version();
+  (*annotations)["gms_core_version"] = info->gms_version_code();
+
+  if (info->firebase_app_id()[0] != '\0') {
+    (*annotations)["package"] = std::string(info->firebase_app_id()) + " v" +
+                                info->package_version_code() + " (" +
+                                info->package_version_name() + ")";
+  }
+}
+
+}  // namespace
+
+#endif  // OS_ANDROID
 
 namespace crash_reporter {
 namespace internal {
@@ -196,6 +262,10 @@ bool BuildHandlerArgs(base::FilePath* handler_path,
   (*process_annotations)["prod"] = product_name;
   (*process_annotations)["ver"] = product_version;
 
+#if defined(OS_ANDROID)
+  SetBuildInfoAnnotations(process_annotations);
+#endif  // OS_ANDROID
+
 #if defined(GOOGLE_CHROME_BUILD)
   // Empty means stable.
   const bool allow_empty_channel = true;
@@ -234,6 +304,10 @@ base::FilePath PlatformCrashpadInitialization(bool initial_client,
   DCHECK(!embedded_handler);
   DCHECK(exe_path.empty());
 
+#if defined(OS_ANDROID)
+  base::android::SetJavaExceptionCallback(SetJavaExceptionInfo);
+#endif  // OS_ANDROID
+
   if (browser_process) {
     base::FilePath handler_path;
     base::FilePath database_path;
@@ -244,6 +318,13 @@ base::FilePath PlatformCrashpadInitialization(bool initial_client,
     if (!BuildHandlerArgs(&handler_path, &database_path, &metrics_path, &url,
                           &process_annotations, &arguments)) {
       return base::FilePath();
+    }
+
+    static base::NoDestructor<crashpad::SanitizationInformation>
+        sanitization_info;
+    if (crashpad::SetSanitizationInfo(sanitization_info.get())) {
+      arguments.push_back(base::StringPrintf("--sanitization-information=%p",
+                                             sanitization_info.get()));
     }
 
     bool result = GetCrashpadClient().StartHandlerAtCrash(

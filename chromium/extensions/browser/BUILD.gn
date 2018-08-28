@@ -474,20 +474,18 @@ source_set("browser_tests") {
     "//ui/display:test_support",
   ]
 
-  if (is_mac) {
-    # Needed for App Shell.app's Helper.
-    deps += [ "//extensions/shell:app_shell" ]
-  }
   if (is_chromeos) {
     sources += [
       "api/cec_private/cec_private_apitest.cc",
       "api/media_perception_private/media_perception_private_apitest.cc",
+      "api/system_power_source/system_power_source_apitest.cc",
       "api/virtual_keyboard/virtual_keyboard_apitest.cc",
     ]
 
     deps += [
       "//chromeos",
       "//chromeos:media_perception_proto",
+      "//chromeos:power_manager_proto",
     ]
   }
 }
@@ -566,6 +564,7 @@ source_set("unit_tests") {
     "event_router_unittest.cc",
     "extension_api_frame_id_map_unittest.cc",
     "extension_creator_filter_unittest.cc",
+    "extension_function_histogram_value_unittest.cc",
     "extension_icon_image_unittest.cc",
     "extension_pref_value_map_unittest.cc",
     "extension_registrar_unittest.cc",
@@ -642,6 +641,7 @@ source_set("unit_tests") {
     "//services/data_decoder:lib",
     "//services/data_decoder/public/cpp:test_support",
     "//services/device/public/mojom",
+    "//services/network:test_support",
     "//services/service_manager/public/cpp/test:test_support",
     "//storage/browser:test_support",
     "//third_party/leveldatabase",
@@ -661,6 +661,8 @@ source_set("unit_tests") {
       "api/lock_screen_data/lock_screen_value_store_migrator_impl_unittest.cc",
       "api/media_perception_private/conversion_utils_unittest.cc",
       "api/media_perception_private/media_perception_api_manager_unittest.cc",
+      "api/system_power_source/system_power_source_api_unittest.cc",
+      "api/virtual_keyboard_private/virtual_keyboard_private_api_unittest.cc",
       "api/webcam_private/visca_webcam_unittest.cc",
     ]
 
@@ -671,4 +673,9 @@ source_set("unit_tests") {
       "//extensions/shell:app_shell_lib",
     ]
   }
+
+  data = [
+    "//extensions/browser/extension_function_histogram_value.h",
+    "//tools/metrics/histograms/enums.xml",
+  ]
 }

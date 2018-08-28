@@ -17,6 +17,7 @@
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "media/base/limits.h"
+#include "media/base/scopedfd_helper.h"
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_util.h"
 #include "ui/gfx/geometry/point.h"
@@ -240,7 +241,40 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalData(
     base::TimeDelta timestamp) {
   return WrapExternalStorage(format, STORAGE_UNOWNED_MEMORY, coded_size,
                              visible_rect, natural_size, data, data_size,
-                             timestamp, base::SharedMemoryHandle(), 0);
+                             timestamp, nullptr, nullptr,
+                             base::SharedMemoryHandle(), 0);
+}
+
+// static
+scoped_refptr<VideoFrame> VideoFrame::WrapExternalReadOnlySharedMemory(
+    VideoPixelFormat format,
+    const gfx::Size& coded_size,
+    const gfx::Rect& visible_rect,
+    const gfx::Size& natural_size,
+    uint8_t* data,
+    size_t data_size,
+    base::ReadOnlySharedMemoryRegion* region,
+    size_t data_offset,
+    base::TimeDelta timestamp) {
+  return WrapExternalStorage(format, STORAGE_SHMEM, coded_size, visible_rect,
+                             natural_size, data, data_size, timestamp, region,
+                             nullptr, base::SharedMemoryHandle(), data_offset);
+}
+
+// static
+scoped_refptr<VideoFrame> VideoFrame::WrapExternalUnsafeSharedMemory(
+    VideoPixelFormat format,
+    const gfx::Size& coded_size,
+    const gfx::Rect& visible_rect,
+    const gfx::Size& natural_size,
+    uint8_t* data,
+    size_t data_size,
+    base::UnsafeSharedMemoryRegion* region,
+    size_t data_offset,
+    base::TimeDelta timestamp) {
+  return WrapExternalStorage(format, STORAGE_SHMEM, coded_size, visible_rect,
+                             natural_size, data, data_size, timestamp, nullptr,
+                             region, base::SharedMemoryHandle(), data_offset);
 }
 
 // static
@@ -255,8 +289,8 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalSharedMemory(
     size_t data_offset,
     base::TimeDelta timestamp) {
   return WrapExternalStorage(format, STORAGE_SHMEM, coded_size, visible_rect,
-                             natural_size, data, data_size, timestamp, handle,
-                             data_offset);
+                             natural_size, data, data_size, timestamp, nullptr,
+                             nullptr, handle, data_offset);
 }
 
 // static
@@ -340,7 +374,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalDmabufs(
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
-    const std::vector<int>& dmabuf_fds,
+    std::vector<base::ScopedFD> dmabuf_fds,
     base::TimeDelta timestamp) {
   const StorageType storage = STORAGE_DMABUFS;
   if (!IsValidConfig(format, storage, coded_size, visible_rect, natural_size)) {
@@ -350,14 +384,23 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalDmabufs(
     return nullptr;
   }
 
+  if (dmabuf_fds.empty() || dmabuf_fds.size() > NumPlanes(format)) {
+    LOG(DFATAL) << __func__ << " Incorrect number of dmabuf fds provided, got: "
+                << dmabuf_fds.size() << ", expected 1 to " << NumPlanes(format);
+    return nullptr;
+  }
+
   gpu::MailboxHolder mailbox_holders[kMaxPlanes];
   scoped_refptr<VideoFrame> frame =
       new VideoFrame(format, storage, coded_size, visible_rect, natural_size,
                      mailbox_holders, ReleaseMailboxCB(), timestamp);
-  if (!frame || !frame->DuplicateFileDescriptors(dmabuf_fds)) {
-    LOG(DFATAL) << __func__ << " Couldn't duplicate fds.";
+  if (!frame) {
+    LOG(DFATAL) << __func__ << " Couldn't create VideoFrame instance.";
     return nullptr;
   }
+
+  frame->dmabuf_fds_ = std::move(dmabuf_fds);
+
   return frame;
 }
 #endif
@@ -448,18 +491,28 @@ scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
 #if defined(OS_LINUX)
   // If there are any |dmabuf_fds_| plugged in, we should duplicate them.
   if (frame->storage_type() == STORAGE_DMABUFS) {
-    std::vector<int> original_fds;
-    for (size_t i = 0; i < kMaxPlanes; ++i)
-      original_fds.push_back(frame->DmabufFd(i));
-    if (!wrapping_frame->DuplicateFileDescriptors(original_fds)) {
+    wrapping_frame->dmabuf_fds_ = DuplicateFDs(frame->dmabuf_fds_);
+    if (wrapping_frame->dmabuf_fds_.empty()) {
       LOG(DFATAL) << __func__ << " Couldn't duplicate fds.";
       return nullptr;
     }
   }
 #endif
 
-  if (frame->storage_type() == STORAGE_SHMEM)
-    wrapping_frame->AddSharedMemoryHandle(frame->shared_memory_handle_);
+  if (frame->storage_type() == STORAGE_SHMEM) {
+    if (frame->read_only_shared_memory_region_) {
+      DCHECK(frame->read_only_shared_memory_region_->IsValid());
+      wrapping_frame->AddReadOnlySharedMemoryRegion(
+          frame->read_only_shared_memory_region_);
+    } else if (frame->unsafe_shared_memory_region_) {
+      DCHECK(frame->unsafe_shared_memory_region_->IsValid());
+      wrapping_frame->AddUnsafeSharedMemoryRegion(
+          frame->unsafe_shared_memory_region_);
+    } else {
+      DCHECK(frame->shared_memory_handle_.IsValid());
+      wrapping_frame->AddSharedMemoryHandle(frame->shared_memory_handle_);
+    }
+  }
 
   return wrapping_frame;
 }
@@ -775,6 +828,22 @@ VideoFrame::mailbox_holder(size_t texture_index) const {
   return mailbox_holders_[texture_index];
 }
 
+base::ReadOnlySharedMemoryRegion* VideoFrame::read_only_shared_memory_region()
+    const {
+  DCHECK_EQ(storage_type_, STORAGE_SHMEM);
+  DCHECK(read_only_shared_memory_region_ &&
+         read_only_shared_memory_region_->IsValid());
+  return read_only_shared_memory_region_;
+}
+
+base::UnsafeSharedMemoryRegion* VideoFrame::unsafe_shared_memory_region()
+    const {
+  DCHECK_EQ(storage_type_, STORAGE_SHMEM);
+  DCHECK(unsafe_shared_memory_region_ &&
+         unsafe_shared_memory_region_->IsValid());
+  return unsafe_shared_memory_region_;
+}
+
 base::SharedMemoryHandle VideoFrame::shared_memory_handle() const {
   DCHECK_EQ(storage_type_, STORAGE_SHMEM);
   DCHECK(shared_memory_handle_.IsValid());
@@ -783,47 +852,45 @@ base::SharedMemoryHandle VideoFrame::shared_memory_handle() const {
 
 size_t VideoFrame::shared_memory_offset() const {
   DCHECK_EQ(storage_type_, STORAGE_SHMEM);
-  DCHECK(shared_memory_handle_.IsValid());
+  DCHECK((read_only_shared_memory_region_ &&
+          read_only_shared_memory_region_->IsValid()) ||
+         (unsafe_shared_memory_region_ &&
+          unsafe_shared_memory_region_->IsValid()) ||
+         shared_memory_handle_.IsValid());
   return shared_memory_offset_;
 }
 
 #if defined(OS_LINUX)
-int VideoFrame::DmabufFd(size_t plane) const {
+std::vector<int> VideoFrame::DmabufFds() const {
   DCHECK_EQ(storage_type_, STORAGE_DMABUFS);
-  DCHECK(IsValidPlane(plane, format_));
-  return dmabuf_fds_[plane].get();
-}
+  std::vector<int> ret;
 
-bool VideoFrame::DuplicateFileDescriptors(const std::vector<int>& in_fds) {
-  // TODO(mcasas): Support offsets for e.g. multiplanar inside a single |in_fd|.
+  for (auto& fd : dmabuf_fds_)
+    ret.emplace_back(fd.get());
 
-  storage_type_ = STORAGE_DMABUFS;
-  // TODO(posciak): This is not exactly correct, it's possible for one
-  // buffer to contain more than one plane.
-  if (in_fds.size() != NumPlanes(format_)) {
-    LOG(FATAL) << "Not enough dmabuf fds provided, got: " <<  in_fds.size()
-               << ", expected: " << NumPlanes(format_);
-    return false;
-  }
-
-  // Make sure that all fds are closed if any dup() fails,
-  base::ScopedFD temp_dmabuf_fds[kMaxPlanes];
-  for (size_t i = 0; i < in_fds.size(); ++i) {
-    temp_dmabuf_fds[i] = base::ScopedFD(HANDLE_EINTR(dup(in_fds[i])));
-    if (!temp_dmabuf_fds[i].is_valid()) {
-      DPLOG(ERROR) << "Failed duplicating a dmabuf fd";
-      return false;
-    }
-  }
-  for (size_t i = 0; i < kMaxPlanes; ++i)
-    dmabuf_fds_[i] = std::move(temp_dmabuf_fds[i]);
-
-  return true;
+  return ret;
 }
 #endif
 
+void VideoFrame::AddReadOnlySharedMemoryRegion(
+    base::ReadOnlySharedMemoryRegion* region) {
+  storage_type_ = STORAGE_SHMEM;
+  DCHECK(SharedMemoryUninitialized());
+  DCHECK(region && region->IsValid());
+  read_only_shared_memory_region_ = region;
+}
+
+void VideoFrame::AddUnsafeSharedMemoryRegion(
+    base::UnsafeSharedMemoryRegion* region) {
+  storage_type_ = STORAGE_SHMEM;
+  DCHECK(SharedMemoryUninitialized());
+  DCHECK(region && region->IsValid());
+  unsafe_shared_memory_region_ = region;
+}
+
 void VideoFrame::AddSharedMemoryHandle(base::SharedMemoryHandle handle) {
   storage_type_ = STORAGE_SHMEM;
+  DCHECK(SharedMemoryUninitialized());
   shared_memory_handle_ = handle;
 }
 
@@ -921,6 +988,8 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalStorage(
     uint8_t* data,
     size_t data_size,
     base::TimeDelta timestamp,
+    base::ReadOnlySharedMemoryRegion* read_only_region,
+    base::UnsafeSharedMemoryRegion* unsafe_region,
     base::SharedMemoryHandle handle,
     size_t data_offset) {
   DCHECK(IsStorageTypeMappable(storage_type));
@@ -945,8 +1014,15 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalStorage(
 
   scoped_refptr<VideoFrame> frame;
   if (storage_type == STORAGE_SHMEM) {
-    frame = new VideoFrame(format, storage_type, coded_size, visible_rect,
-                           natural_size, timestamp, handle, data_offset);
+    if (read_only_region || unsafe_region) {
+      DCHECK(!handle.IsValid());
+      frame = new VideoFrame(format, storage_type, coded_size, visible_rect,
+                             natural_size, timestamp, read_only_region,
+                             unsafe_region, data_offset);
+    } else {
+      frame = new VideoFrame(format, storage_type, coded_size, visible_rect,
+                             natural_size, timestamp, handle, data_offset);
+    }
   } else {
     frame = new VideoFrame(format, storage_type, coded_size, visible_rect,
                            natural_size, timestamp);
@@ -1066,6 +1142,35 @@ VideoFrame::VideoFrame(VideoPixelFormat format,
                        const gfx::Rect& visible_rect,
                        const gfx::Size& natural_size,
                        base::TimeDelta timestamp,
+                       base::ReadOnlySharedMemoryRegion* read_only_region,
+                       base::UnsafeSharedMemoryRegion* unsafe_region,
+                       size_t shared_memory_offset)
+    : VideoFrame(format,
+                 storage_type,
+                 coded_size,
+                 visible_rect,
+                 natural_size,
+                 timestamp) {
+  DCHECK_EQ(storage_type, STORAGE_SHMEM);
+  DCHECK_EQ(bool(read_only_region) ^ bool(unsafe_region), 1)
+      << "Expected exactly one read-only or unsafe region for STORAGE_SHMEM "
+         "VideoFrame";
+  if (read_only_region) {
+    read_only_shared_memory_region_ = read_only_region;
+    DCHECK(read_only_shared_memory_region_->IsValid());
+  } else if (unsafe_region) {
+    unsafe_shared_memory_region_ = unsafe_region;
+    DCHECK(unsafe_shared_memory_region_->IsValid());
+  }
+  shared_memory_offset_ = shared_memory_offset;
+}
+
+VideoFrame::VideoFrame(VideoPixelFormat format,
+                       StorageType storage_type,
+                       const gfx::Size& coded_size,
+                       const gfx::Rect& visible_rect,
+                       const gfx::Size& natural_size,
+                       base::TimeDelta timestamp,
                        base::SharedMemoryHandle handle,
                        size_t shared_memory_offset)
     : VideoFrame(format,
@@ -1122,6 +1227,11 @@ scoped_refptr<VideoFrame> VideoFrame::CreateFrameInternal(
       format, storage, new_coded_size, visible_rect, natural_size, timestamp));
   frame->AllocateMemory(zero_initialize_memory);
   return frame;
+}
+
+bool VideoFrame::SharedMemoryUninitialized() {
+  return !read_only_shared_memory_region_ && !unsafe_shared_memory_region_ &&
+         !shared_memory_handle_.IsValid();
 }
 
 // static

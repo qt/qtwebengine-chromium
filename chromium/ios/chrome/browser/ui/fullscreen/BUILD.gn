@@ -29,7 +29,7 @@ source_set("fullscreen") {
   ]
 }
 
-source_set("features") {
+source_set("feature_flags") {
   sources = [
     "fullscreen_features.h",
     "fullscreen_features.mm",
@@ -84,7 +84,7 @@ source_set("internal") {
   configs += [ "//build/config/compiler:enable_arc" ]
 
   deps = [
-    ":features",
+    ":feature_flags",
     ":ui",
     "//base",
     "//components/keyed_service/ios",
@@ -159,11 +159,11 @@ source_set("eg_tests") {
   deps = [
     ":fullscreen",
     "//base",
+    "//base/test:test_support",
     "//ios/chrome/browser/ui:ui_util",
     "//ios/chrome/browser/ui/side_swipe",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
-    "//ios/testing:ios_test_support",
     "//ios/web:earl_grey_test_support",
     "//ios/web/public",
     "//ios/web/public/test",

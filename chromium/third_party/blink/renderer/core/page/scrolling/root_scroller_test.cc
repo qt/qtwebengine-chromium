@@ -276,7 +276,8 @@ TEST_F(RootScrollerTest, TestSetRootScroller) {
     GetWebView()->HandleInputEvent(GenerateTouchGestureEvent(
         WebInputEvent::kGestureScrollUpdate, 0, -100));
     EXPECT_FLOAT_EQ(100, container->scrollTop());
-    EXPECT_FLOAT_EQ(0, MainFrameView()->GetScrollOffset().Height());
+    EXPECT_FLOAT_EQ(
+        0, MainFrameView()->LayoutViewport()->GetScrollOffset().Height());
   }
 
   {
@@ -288,7 +289,8 @@ TEST_F(RootScrollerTest, TestSetRootScroller) {
     GetWebView()->HandleInputEvent(GenerateTouchGestureEvent(
         WebInputEvent::kGestureScrollUpdate, 0, -500));
     EXPECT_FLOAT_EQ(maximum_scroll, container->scrollTop());
-    EXPECT_FLOAT_EQ(0, MainFrameView()->GetScrollOffset().Height());
+    EXPECT_FLOAT_EQ(
+        0, MainFrameView()->LayoutViewport()->GetScrollOffset().Height());
     Mock::VerifyAndClearExpectations(&client);
   }
 
@@ -300,7 +302,8 @@ TEST_F(RootScrollerTest, TestSetRootScroller) {
     GetWebView()->HandleInputEvent(
         GenerateTouchGestureEvent(WebInputEvent::kGestureScrollUpdate, 0, -20));
     EXPECT_FLOAT_EQ(maximum_scroll, container->scrollTop());
-    EXPECT_FLOAT_EQ(0, MainFrameView()->GetScrollOffset().Height());
+    EXPECT_FLOAT_EQ(
+        0, MainFrameView()->LayoutViewport()->GetScrollOffset().Height());
     Mock::VerifyAndClearExpectations(&client);
   }
 
@@ -319,7 +322,8 @@ TEST_F(RootScrollerTest, TestSetRootScroller) {
     GetWebView()->HandleInputEvent(
         GenerateTouchGestureEvent(WebInputEvent::kGestureScrollUpdate, 0, -30));
     EXPECT_FLOAT_EQ(maximum_scroll, container->scrollTop());
-    EXPECT_FLOAT_EQ(0, MainFrameView()->GetScrollOffset().Height());
+    EXPECT_FLOAT_EQ(
+        0, MainFrameView()->LayoutViewport()->GetScrollOffset().Height());
     Mock::VerifyAndClearExpectations(&client);
 
     GetWebView()->HandleInputEvent(
@@ -538,9 +542,8 @@ TEST_F(RootScrollerTest, SetRootScrollerIframeUsesCorrectLayerAndCallback) {
   // No root scroller set, the documentElement should be the effective root
   // and the main LocalFrameView's scroll layer should be the layer to use.
   {
-    EXPECT_EQ(
-        main_controller.RootScrollerLayer(),
-        MainFrameView()->LayoutViewportScrollableArea()->LayerForScrolling());
+    EXPECT_EQ(main_controller.RootScrollerLayer(),
+              MainFrameView()->LayoutViewport()->LayerForScrolling());
     EXPECT_TRUE(main_controller.IsViewportScrollCallback(
         MainFrame()->GetDocument()->documentElement()->GetApplyScroll()));
   }
@@ -550,9 +553,8 @@ TEST_F(RootScrollerTest, SetRootScrollerIframeUsesCorrectLayerAndCallback) {
   {
     SetAndSelectRootScroller(*iframe->contentDocument(), container);
 
-    EXPECT_EQ(
-        main_controller.RootScrollerLayer(),
-        MainFrameView()->LayoutViewportScrollableArea()->LayerForScrolling());
+    EXPECT_EQ(main_controller.RootScrollerLayer(),
+              MainFrameView()->LayoutViewport()->LayerForScrolling());
     EXPECT_TRUE(main_controller.IsViewportScrollCallback(
         MainFrame()->GetDocument()->documentElement()->GetApplyScroll()));
   }
@@ -564,9 +566,7 @@ TEST_F(RootScrollerTest, SetRootScrollerIframeUsesCorrectLayerAndCallback) {
     SetAndSelectRootScroller(*MainFrame()->GetDocument(), iframe);
 
     ScrollableArea* container_scroller =
-        static_cast<PaintInvalidationCapableScrollableArea*>(
-            ToLayoutBox(container->GetLayoutObject())->GetScrollableArea());
-
+        ToLayoutBox(container->GetLayoutObject())->GetScrollableArea();
     EXPECT_EQ(main_controller.RootScrollerLayer(),
               container_scroller->LayerForScrolling());
     EXPECT_FALSE(main_controller.IsViewportScrollCallback(
@@ -580,11 +580,10 @@ TEST_F(RootScrollerTest, SetRootScrollerIframeUsesCorrectLayerAndCallback) {
   // documentElement becomes the global root scroller.
   {
     SetAndSelectRootScroller(*iframe->contentDocument(), nullptr);
-    EXPECT_EQ(main_controller.RootScrollerLayer(),
-              iframe->contentDocument()
-                  ->View()
-                  ->LayoutViewportScrollableArea()
-                  ->LayerForScrolling());
+    EXPECT_EQ(main_controller.RootScrollerLayer(), iframe->contentDocument()
+                                                       ->View()
+                                                       ->LayoutViewport()
+                                                       ->LayerForScrolling());
     EXPECT_FALSE(
         main_controller.IsViewportScrollCallback(container->GetApplyScroll()));
     EXPECT_FALSE(main_controller.IsViewportScrollCallback(
@@ -597,9 +596,8 @@ TEST_F(RootScrollerTest, SetRootScrollerIframeUsesCorrectLayerAndCallback) {
   // documentElement and corresponding layer.
   {
     SetAndSelectRootScroller(*MainFrame()->GetDocument(), nullptr);
-    EXPECT_EQ(
-        main_controller.RootScrollerLayer(),
-        MainFrameView()->LayoutViewportScrollableArea()->LayerForScrolling());
+    EXPECT_EQ(main_controller.RootScrollerLayer(),
+              MainFrameView()->LayoutViewport()->LayerForScrolling());
     EXPECT_TRUE(main_controller.IsViewportScrollCallback(
         MainFrame()->GetDocument()->documentElement()->GetApplyScroll()));
     EXPECT_FALSE(
@@ -800,7 +798,7 @@ TEST_F(RootScrollerTest, RemoteMainFrame) {
     WebRemoteFrameImpl* remote_main_frame = FrameTestHelpers::CreateRemote();
     helper_.LocalMainFrame()->Swap(remote_main_frame);
     remote_main_frame->SetReplicatedOrigin(
-        WebSecurityOrigin(SecurityOrigin::CreateUnique()), false);
+        WebSecurityOrigin(SecurityOrigin::CreateUniqueOpaque()), false);
     local_frame = FrameTestHelpers::CreateLocalChild(*remote_main_frame);
 
     FrameTestHelpers::LoadFrame(local_frame,
@@ -872,7 +870,7 @@ TEST_F(RootScrollerTest, NonMainLocalRootLifecycle) {
         ToWebLocalFrameImpl(helper_.LocalMainFrame()->FirstChild());
     child->Swap(remote_frame);
     remote_frame->SetReplicatedOrigin(
-        WebSecurityOrigin(SecurityOrigin::CreateUnique()), false);
+        WebSecurityOrigin(SecurityOrigin::CreateUniqueOpaque()), false);
 
     non_main_local_root = FrameTestHelpers::CreateLocalChild(*remote_frame);
     ASSERT_EQ(non_main_local_root->LocalRoot(), non_main_local_root);
@@ -948,9 +946,8 @@ TEST_F(RootScrollerTest, DocumentElementHasNoLayoutObject) {
 
   EXPECT_EQ(MainFrame()->GetDocument()->documentElement(),
             global_controller.GlobalRootScroller());
-  EXPECT_EQ(
-      MainFrameView()->LayoutViewportScrollableArea()->LayerForScrolling(),
-      global_controller.RootScrollerLayer());
+  EXPECT_EQ(MainFrameView()->LayoutViewport()->LayerForScrolling(),
+            global_controller.RootScrollerLayer());
 }
 
 // On Android, the main scrollbars are owned by the visual viewport and the
@@ -963,9 +960,7 @@ TEST_F(RootScrollerTest, UseVisualViewportScrollbars) {
   SetAndSelectRootScroller(*MainFrame()->GetDocument(), container);
 
   ScrollableArea* container_scroller =
-      static_cast<PaintInvalidationCapableScrollableArea*>(
-          ToLayoutBox(container->GetLayoutObject())->GetScrollableArea());
-
+      ToLayoutBox(container->GetLayoutObject())->GetScrollableArea();
   EXPECT_FALSE(container_scroller->HorizontalScrollbar());
   EXPECT_FALSE(container_scroller->VerticalScrollbar());
   EXPECT_GT(container_scroller->MaximumScrollOffset().Width(), 0);
@@ -993,8 +988,7 @@ TEST_F(RootScrollerTest, UseVisualViewportScrollbarsIframe) {
 
   MainFrameView()->UpdateAllLifecyclePhases();
 
-  ScrollableArea* container_scroller =
-      child_frame->View()->LayoutViewportScrollableArea();
+  ScrollableArea* container_scroller = child_frame->View()->LayoutViewport();
 
   EXPECT_FALSE(container_scroller->HorizontalScrollbar());
   EXPECT_FALSE(container_scroller->VerticalScrollbar());
@@ -1032,8 +1026,7 @@ TEST_F(RootScrollerTest, TopControlsAdjustmentAppliedToRootScroller) {
   SetAndSelectRootScroller(*MainFrame()->GetDocument(), container);
 
   ScrollableArea* container_scroller =
-      static_cast<PaintInvalidationCapableScrollableArea*>(
-          ToLayoutBox(container->GetLayoutObject())->GetScrollableArea());
+      ToLayoutBox(container->GetLayoutObject())->GetScrollableArea();
 
   // Hide the top controls and scroll down maximally. We should account for the
   // change in maximum scroll offset due to the top controls hiding. That is,
@@ -1073,8 +1066,8 @@ TEST_F(RootScrollerTest, RotationAnchoring) {
         MainFrame()->GetDocument()->getElementById("container");
     SetAndSelectRootScroller(*MainFrame()->GetDocument(), container);
 
-    container_scroller = static_cast<PaintInvalidationCapableScrollableArea*>(
-        ToLayoutBox(container->GetLayoutObject())->GetScrollableArea());
+    container_scroller =
+        ToLayoutBox(container->GetLayoutObject())->GetScrollableArea();
   }
 
   Element* target = MainFrame()->GetDocument()->getElementById("target");
@@ -1220,14 +1213,14 @@ TEST_F(RootScrollerTest, ImmediateUpdateOfLayoutViewport) {
 
   LocalFrame* iframe_local_frame = ToLocalFrame(iframe->ContentFrame());
   EXPECT_EQ(iframe, &main_controller.EffectiveRootScroller());
-  EXPECT_EQ(iframe_local_frame->View()->LayoutViewportScrollableArea(),
+  EXPECT_EQ(iframe_local_frame->View()->LayoutViewport(),
             &MainFrameView()->GetRootFrameViewport()->LayoutViewport());
 
   // Remove the <iframe> and make sure the layout viewport reverts to the
   // LocalFrameView without a layout.
   iframe->remove();
 
-  EXPECT_EQ(MainFrameView()->LayoutViewportScrollableArea(),
+  EXPECT_EQ(MainFrameView()->LayoutViewport(),
             &MainFrameView()->GetRootFrameViewport()->LayoutViewport());
 }
 
@@ -2039,7 +2032,7 @@ TEST_F(ImplicitRootScrollerSimTest, NavigateToValidRemainsRootScroller) {
   // the parent.
   SimRequest child_request2("https://example.com/child-next.html", "text/html");
   WebURLRequest request(KURL("https://example.com/child-next.html"));
-  WebView().MainFrameImpl()->FirstChild()->ToWebLocalFrame()->LoadRequest(
+  WebView().MainFrameImpl()->FirstChild()->ToWebLocalFrame()->StartNavigation(
       request);
 
   child_request2.Start();

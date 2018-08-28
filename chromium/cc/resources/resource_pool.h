@@ -14,15 +14,16 @@
 #include "base/containers/circular_deque.h"
 #include "base/macros.h"
 #include "base/memory/memory_coordinator_client.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "base/trace_event/memory_allocator_dump_guid.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "base/unguessable_token.h"
 #include "cc/cc_export.h"
-#include "components/viz/common/quads/shared_bitmap.h"
 #include "components/viz/common/resources/resource_format.h"
 #include "components/viz/common/resources/resource_id.h"
+#include "components/viz/common/resources/shared_bitmap.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/color_space.h"
@@ -34,11 +35,11 @@ class SingleThreadTaskRunner;
 }
 
 namespace viz {
+class ClientResourceProvider;
 class ContextProvider;
 }
 
 namespace cc {
-class LayerTreeResourceProvider;
 
 class CC_EXPORT ResourcePool : public base::trace_event::MemoryDumpProvider,
                                public base::MemoryCoordinatorClient {
@@ -169,7 +170,7 @@ class CC_EXPORT ResourcePool : public base::trace_event::MemoryDumpProvider,
   // When holding gpu resources, the |context_provider| should be non-null,
   // and when holding software resources, it should be null. It is used for
   // consistency checking as well as for correctness.
-  ResourcePool(LayerTreeResourceProvider* resource_provider,
+  ResourcePool(viz::ClientResourceProvider* resource_provider,
                viz::ContextProvider* context_provider,
                scoped_refptr<base::SingleThreadTaskRunner> task_runner,
                const base::TimeDelta& expiration_delay,
@@ -225,6 +226,11 @@ class CC_EXPORT ResourcePool : public base::trace_event::MemoryDumpProvider,
   // Overriden from base::MemoryCoordinatorClient.
   void OnPurgeMemory() override;
   void OnMemoryStateChange(base::MemoryState state) override;
+
+  // TODO(gyuyoung): OnMemoryPressure is deprecated. So this should be removed
+  // when the memory coordinator is enabled by default.
+  void OnMemoryPressure(
+      base::MemoryPressureListener::MemoryPressureLevel level);
 
   size_t GetTotalMemoryUsageForTesting() const {
     return total_memory_usage_bytes_;
@@ -286,7 +292,7 @@ class CC_EXPORT ResourcePool : public base::trace_event::MemoryDumpProvider,
 
     void OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
                       int tracing_id,
-                      const LayerTreeResourceProvider* resource_provider,
+                      const viz::ClientResourceProvider* resource_provider,
                       bool is_free) const;
 
    private:
@@ -347,7 +353,7 @@ class CC_EXPORT ResourcePool : public base::trace_event::MemoryDumpProvider,
   bool HasEvictableResources() const;
   base::TimeTicks GetUsageTimeForLRUResource() const;
 
-  LayerTreeResourceProvider* const resource_provider_;
+  viz::ClientResourceProvider* const resource_provider_;
   viz::ContextProvider* const context_provider_;
   const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   const base::TimeDelta resource_expiration_delay_;
@@ -369,6 +375,8 @@ class CC_EXPORT ResourcePool : public base::trace_event::MemoryDumpProvider,
 
   // Map from the PoolResource |unique_id| to the PoolResource.
   std::map<size_t, std::unique_ptr<PoolResource>> in_use_resources_;
+
+  std::unique_ptr<base::MemoryPressureListener> memory_pressure_listener_;
 
   base::WeakPtrFactory<ResourcePool> weak_ptr_factory_;
 

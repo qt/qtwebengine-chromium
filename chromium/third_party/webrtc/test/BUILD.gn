@@ -63,8 +63,8 @@ rtc_source_set("video_test_common") {
     "..:webrtc_common",
     "../:typedefs",
     "../api:libjingle_peerconnection_api",
-    "../api:optional",
     "../api/video:video_frame",
+    "../api/video:video_frame_i010",
     "../api/video:video_frame_i420",
     "../api/video_codecs:video_codecs_api",
     "../call:video_stream_api",
@@ -75,6 +75,7 @@ rtc_source_set("video_test_common") {
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_task_queue",
     "../system_wrappers",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
@@ -323,6 +324,7 @@ if (rtc_include_tests) {
       "../rtc_base:rtc_base_approved",
       "../test:single_threaded_task_queue",
       "//testing/gtest",
+      "//third_party/abseil-cpp/absl/memory",
     ]
     sources = [
       "direct_transport_unittest.cc",
@@ -337,9 +339,6 @@ if (rtc_include_tests) {
       "testsupport/yuv_frame_reader_unittest.cc",
       "testsupport/yuv_frame_writer_unittest.cc",
     ]
-
-    # TODO(jschuh): Bug 1348: fix this warning.
-    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
@@ -389,9 +388,9 @@ rtc_source_set("fileutils") {
   deps = [
     "..:webrtc_common",
     "../:typedefs",
-    "../api:optional",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
   if (is_ios) {
     deps += [ ":fileutils_objc" ]
@@ -453,10 +452,10 @@ rtc_source_set("fileutils_unittests") {
   deps = [
     ":fileutils",
     ":test_support",
-    "../api:optional",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
     "//testing/gtest",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
@@ -480,6 +479,7 @@ rtc_source_set("direct_transport") {
     "../rtc_base:rtc_base_approved",
     "../rtc_base:sequenced_task_checker",
     "../system_wrappers",
+    "//third_party/abseil-cpp/absl/memory",
   ]
   public_deps = [
     ":single_threaded_task_queue",
@@ -496,6 +496,7 @@ rtc_source_set("single_threaded_task_queue") {
   deps = [
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
+    "//third_party/abseil-cpp/absl/memory",
   ]
 }
 
@@ -518,6 +519,7 @@ rtc_source_set("test_common") {
     "fake_encoder.cc",
     "fake_encoder.h",
     "fake_videorenderer.h",
+    "function_video_decoder_factory.h",
     "function_video_encoder_factory.h",
     "layer_filtering_transport.cc",
     "layer_filtering_transport.h",
@@ -579,7 +581,7 @@ rtc_source_set("test_common") {
     "../modules/video_coding:video_coding_utility",
     "../modules/video_coding:webrtc_h264",
     "../modules/video_coding:webrtc_multiplex",
-    "../modules/video_coding:webrtc_vp8_helpers",
+    "../modules/video_coding:webrtc_vp8",
     "../modules/video_coding:webrtc_vp9",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
@@ -590,21 +592,10 @@ rtc_source_set("test_common") {
     "../system_wrappers:runtime_enabled_features_api",
     "../video",
     "//testing/gtest",
+    "//third_party/abseil-cpp/absl/memory",
   ]
   if (!is_android && !build_with_chromium) {
     deps += [ "../modules/video_capture:video_capture_internal_impl" ]
-  }
-}
-
-config("test_renderer_exported_config") {
-  if (is_win && is_clang) {
-    # GN orders flags on a target before flags from configs. The default config
-    # adds -Wall, and this flag have to be after -Wall -- so they need to
-    # come from a config and cannot be on the target directly.
-    cflags = [
-      "-Wno-bool-conversion",
-      "-Wno-delete-non-virtual-dtor",
-    ]
   }
 }
 
@@ -694,8 +685,6 @@ rtc_source_set("test_renderer_generic") {
       "log",
     ]
   }
-
-  public_configs = [ ":test_renderer_exported_config" ]
 
   if (!build_with_chromium && is_clang) {
     # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).

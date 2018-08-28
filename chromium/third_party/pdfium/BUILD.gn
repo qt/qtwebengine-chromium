@@ -30,6 +30,10 @@ config("pdfium_common_config") {
     defines += [ "PDF_ENABLE_V8" ]
   }
 
+  if (pdf_enable_click_logging) {
+    defines += [ "PDF_ENABLE_CLICK_LOGGING" ]
+  }
+
   if (pdf_enable_xfa) {
     defines += [ "PDF_ENABLE_XFA" ]
     if (pdf_enable_xfa_bmp) {
@@ -56,15 +60,6 @@ config("pdfium_common_config") {
 
   if (pdf_use_win32_gdi) {
     defines += [ "PDFIUM_PRINT_TEXT_WITH_GDI" ]
-  }
-
-  if (use_coverage && is_clang) {
-    cflags += [
-      "--coverage",
-      "-g",
-      "-O0",
-    ]
-    ldflags += [ "--coverage" ]
   }
 
   if (is_win) {
@@ -298,6 +293,7 @@ visibility = [
 
 source_set("constants") {
   sources = [
+    "constants/page_object.h",
     "constants/stream_dict_common.h",
     "constants/transparency.h",
   ]
@@ -476,6 +472,10 @@ jumbo_static_library("fpdfapi") {
     "core/fpdfapi/edit/cpdf_flateencoder.h",
     "core/fpdfapi/edit/cpdf_pagecontentgenerator.cpp",
     "core/fpdfapi/edit/cpdf_pagecontentgenerator.h",
+    "core/fpdfapi/edit/cpdf_pagecontentmanager.cpp",
+    "core/fpdfapi/edit/cpdf_pagecontentmanager.h",
+    "core/fpdfapi/edit/cpdf_stringarchivestream.cpp",
+    "core/fpdfapi/edit/cpdf_stringarchivestream.h",
     "core/fpdfapi/font/cfx_cttgsubtable.cpp",
     "core/fpdfapi/font/cfx_cttgsubtable.h",
     "core/fpdfapi/font/cfx_stockfontarray.cpp",
@@ -589,6 +589,7 @@ jumbo_static_library("fpdfapi") {
     "core/fpdfapi/page/cpdf_textstate.h",
     "core/fpdfapi/page/cpdf_tilingpattern.cpp",
     "core/fpdfapi/page/cpdf_tilingpattern.h",
+    "core/fpdfapi/page/ipdf_page.h",
     "core/fpdfapi/parser/cfdf_document.cpp",
     "core/fpdfapi/parser/cfdf_document.h",
     "core/fpdfapi/parser/cpdf_array.cpp",
@@ -597,6 +598,8 @@ jumbo_static_library("fpdfapi") {
     "core/fpdfapi/parser/cpdf_boolean.h",
     "core/fpdfapi/parser/cpdf_cross_ref_avail.cpp",
     "core/fpdfapi/parser/cpdf_cross_ref_avail.h",
+    "core/fpdfapi/parser/cpdf_cross_ref_table.cpp",
+    "core/fpdfapi/parser/cpdf_cross_ref_table.h",
     "core/fpdfapi/parser/cpdf_crypto_handler.cpp",
     "core/fpdfapi/parser/cpdf_crypto_handler.h",
     "core/fpdfapi/parser/cpdf_data_avail.cpp",
@@ -621,6 +624,8 @@ jumbo_static_library("fpdfapi") {
     "core/fpdfapi/parser/cpdf_object.h",
     "core/fpdfapi/parser/cpdf_object_avail.cpp",
     "core/fpdfapi/parser/cpdf_object_avail.h",
+    "core/fpdfapi/parser/cpdf_object_stream.cpp",
+    "core/fpdfapi/parser/cpdf_object_stream.h",
     "core/fpdfapi/parser/cpdf_object_walker.cpp",
     "core/fpdfapi/parser/cpdf_object_walker.h",
     "core/fpdfapi/parser/cpdf_page_object_avail.cpp",
@@ -849,8 +854,6 @@ jumbo_static_library("fxcrt") {
     "core/fxcrt/cfx_bitstream.h",
     "core/fxcrt/cfx_datetime.cpp",
     "core/fxcrt/cfx_datetime.h",
-    "core/fxcrt/cfx_fileaccess_posix.cpp",
-    "core/fxcrt/cfx_fileaccess_posix.h",
     "core/fxcrt/cfx_fileaccess_windows.cpp",
     "core/fxcrt/cfx_fileaccess_windows.h",
     "core/fxcrt/cfx_fixedbufgrow.h",
@@ -925,7 +928,12 @@ jumbo_static_library("fxcrt") {
     "third_party:pdfium_base",
     "//third_party/icu:icuuc",
   ]
-
+  if (is_posix || is_fuchsia) {
+    sources += [
+      "core/fxcrt/cfx_fileaccess_posix.cpp",
+      "core/fxcrt/cfx_fileaccess_posix.h",
+    ]
+  }
   if (pdf_enable_xfa) {
     sources += [
       "core/fxcrt/cfx_char.cpp",
@@ -1205,9 +1213,6 @@ jumbo_static_library("fxjs") {
 
   if (pdf_enable_v8) {
     sources += [
-      "fxjs/CJX_Define.h",
-      "fxjs/JS_Define.cpp",
-      "fxjs/JS_Define.h",
       "fxjs/cfx_v8.cpp",
       "fxjs/cfx_v8.h",
       "fxjs/cfxjs_engine.cpp",
@@ -1280,8 +1285,11 @@ jumbo_static_library("fxjs") {
       "fxjs/cjs_util.h",
       "fxjs/cjs_zoomtype.cpp",
       "fxjs/cjs_zoomtype.h",
+      "fxjs/cjx_define.h",
       "fxjs/global_timer.cpp",
       "fxjs/global_timer.h",
+      "fxjs/js_define.cpp",
+      "fxjs/js_define.h",
       "fxjs/js_resources.cpp",
       "fxjs/js_resources.h",
     ]
@@ -1908,8 +1916,8 @@ if (pdf_enable_xfa) {
       "xfa/fwl/cfwl_eventselectchanged.h",
       "xfa/fwl/cfwl_eventtarget.cpp",
       "xfa/fwl/cfwl_eventtarget.h",
-      "xfa/fwl/cfwl_eventtextchanged.cpp",
-      "xfa/fwl/cfwl_eventtextchanged.h",
+      "xfa/fwl/cfwl_eventtextwillchange.cpp",
+      "xfa/fwl/cfwl_eventtextwillchange.h",
       "xfa/fwl/cfwl_eventvalidate.cpp",
       "xfa/fwl/cfwl_eventvalidate.h",
       "xfa/fwl/cfwl_form.cpp",
@@ -2445,6 +2453,7 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_labelprinter.h",
       "xfa/fxfa/parser/cxfa_layout.cpp",
       "xfa/fxfa/parser/cxfa_layout.h",
+      "xfa/fxfa/parser/cxfa_layoutcontext.cpp",
       "xfa/fxfa/parser/cxfa_layoutcontext.h",
       "xfa/fxfa/parser/cxfa_layoutitem.cpp",
       "xfa/fxfa/parser/cxfa_layoutitem.h",
@@ -2856,6 +2865,7 @@ test("pdfium_unittests") {
     "core/fpdfapi/font/cpdf_cmapparser_unittest.cpp",
     "core/fpdfapi/font/cpdf_tounicodemap_unittest.cpp",
     "core/fpdfapi/page/cpdf_devicecs_unittest.cpp",
+    "core/fpdfapi/page/cpdf_pageobjectholder_unittest.cpp",
     "core/fpdfapi/page/cpdf_psengine_unittest.cpp",
     "core/fpdfapi/page/cpdf_streamcontentparser_unittest.cpp",
     "core/fpdfapi/page/cpdf_streamparser_unittest.cpp",
@@ -2871,6 +2881,7 @@ test("pdfium_unittests") {
     "core/fpdfapi/parser/cpdf_parser_unittest.cpp",
     "core/fpdfapi/parser/cpdf_read_validator_unittest.cpp",
     "core/fpdfapi/parser/cpdf_simple_parser_unittest.cpp",
+    "core/fpdfapi/parser/cpdf_stream_acc_unittest.cpp",
     "core/fpdfapi/parser/cpdf_syntax_parser_unittest.cpp",
     "core/fpdfapi/parser/fpdf_parser_decode_unittest.cpp",
     "core/fpdfapi/parser/fpdf_parser_utility_unittest.cpp",
@@ -2886,6 +2897,7 @@ test("pdfium_unittests") {
     "core/fxcodec/codec/fx_codec_rle_unittest.cpp",
     "core/fxcodec/jbig2/JBig2_BitStream_unittest.cpp",
     "core/fxcodec/jbig2/JBig2_Image_unittest.cpp",
+    "core/fxcrt/autorestorer_unittest.cpp",
     "core/fxcrt/bytestring_unittest.cpp",
     "core/fxcrt/cfx_bitstream_unittest.cpp",
     "core/fxcrt/cfx_seekablemultistream_unittest.cpp",
@@ -2945,6 +2957,7 @@ test("pdfium_unittests") {
       "xfa/fwl/cfx_barcode_unittest.cpp",
       "xfa/fxfa/cxfa_ffbarcode_unittest.cpp",
       "xfa/fxfa/cxfa_textparser_unittest.cpp",
+      "xfa/fxfa/fm2js/cxfa_fmexpression_unittest.cpp",
       "xfa/fxfa/fm2js/cxfa_fmlexer_unittest.cpp",
       "xfa/fxfa/fm2js/cxfa_fmparser_unittest.cpp",
       "xfa/fxfa/fm2js/cxfa_fmsimpleexpression_unittest.cpp",
@@ -2981,6 +2994,10 @@ test("pdfium_unittests") {
   if (is_android) {
     use_raw_android_executable = true
   }
+  if (is_clang) {
+    # Suppress no override warning for overridden functions.
+    cflags = [ "-Wno-inconsistent-missing-override" ]
+  }
 }
 
 test("pdfium_embeddertests") {
@@ -3010,6 +3027,7 @@ test("pdfium_embeddertests") {
     "fpdfsdk/fpdf_save_embeddertest.cpp",
     "fpdfsdk/fpdf_structtree_embeddertest.cpp",
     "fpdfsdk/fpdf_text_embeddertest.cpp",
+    "fpdfsdk/fpdf_transformpage_embeddertest.cpp",
     "fpdfsdk/fpdf_view_c_api_test.c",
     "fpdfsdk/fpdf_view_c_api_test.h",
     "fpdfsdk/fpdf_view_embeddertest.cpp",
@@ -3076,7 +3094,6 @@ if (pdf_is_standalone) {
     deps = [
       ":image_diff",
       ":pdfium",
-      "//build/config:exe_and_shlib_deps",
       "//build/win:default_exe_manifest",
     ]
     configs -= [ "//build/config/compiler:chromium_code" ]
@@ -3087,7 +3104,7 @@ if (pdf_is_standalone) {
   group("fuzzers") {
     testonly = true
     deps = [
-      "//testing/libfuzzer",
+      "//testing/fuzzers",
     ]
   }
 }

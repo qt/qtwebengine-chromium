@@ -94,6 +94,11 @@
 #define EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE 0x33AE
 #endif /* EGL_ANGLE_platform_angle_null */
 
+#ifndef EGL_ANGLE_platform_angle_vulkan
+#define EGL_ANGLE_platform_angle_vulkan 1
+#define EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE 0x3450
+#endif /* EGL_ANGLE_platform_angle_vulkan */
+
 #ifndef EGL_ANGLE_x11_visual
 #define EGL_ANGLE_x11_visual 1
 #define EGL_X11_VISUAL_ID_ANGLE 0x33A3
@@ -275,6 +280,12 @@ EGLDisplay GetDisplayFromType(DisplayType display_type,
     case ANGLE_NULL:
       return GetPlatformANGLEDisplay(
           native_display, EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE, false, false);
+    case ANGLE_VULKAN:
+      return GetPlatformANGLEDisplay(
+          native_display, EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE, false, false);
+    case ANGLE_VULKAN_NULL:
+      return GetPlatformANGLEDisplay(
+          native_display, EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE, false, true);
     default:
       NOTREACHED();
       return EGL_NO_DISPLAY;
@@ -303,6 +314,10 @@ const char* DisplayTypeString(DisplayType display_type) {
       return "OpenGLESNull";
     case ANGLE_NULL:
       return "Null";
+    case ANGLE_VULKAN:
+      return "Vulkan";
+    case ANGLE_VULKAN_NULL:
+      return "VulkanNull";
     default:
       NOTREACHED();
       return "Err";
@@ -483,11 +498,55 @@ void AddInitDisplay(std::vector<DisplayType>* init_displays,
   }
 }
 
+const char* GetDebugMessageTypeString(EGLint source) {
+  switch (source) {
+    case EGL_DEBUG_MSG_CRITICAL_KHR:
+      return "Critical";
+    case EGL_DEBUG_MSG_ERROR_KHR:
+      return "Error";
+    case EGL_DEBUG_MSG_WARN_KHR:
+      return "Warning";
+    case EGL_DEBUG_MSG_INFO_KHR:
+      return "Info";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+static void EGLAPIENTRY LogEGLDebugMessage(EGLenum error,
+                                           const char* command,
+                                           EGLint message_type,
+                                           EGLLabelKHR thread_label,
+                                           EGLLabelKHR object_label,
+                                           const char* message) {
+  std::string formatted_message = std::string("EGL Driver message (") +
+                                  GetDebugMessageTypeString(message_type) +
+                                  ") " + command + ": " + message;
+
+  // Assume that all labels that have been set are strings
+  if (thread_label) {
+    formatted_message += " thread: ";
+    formatted_message += static_cast<const char*>(thread_label);
+  }
+  if (object_label) {
+    formatted_message += " object: ";
+    formatted_message += static_cast<const char*>(object_label);
+  }
+
+  if (message_type == EGL_DEBUG_MSG_CRITICAL_KHR ||
+      message_type == EGL_DEBUG_MSG_ERROR_KHR) {
+    LOG(ERROR) << formatted_message;
+  } else {
+    DVLOG(1) << formatted_message;
+  }
+}
+
 }  // namespace
 
 void GetEGLInitDisplays(bool supports_angle_d3d,
                         bool supports_angle_opengl,
                         bool supports_angle_null,
+                        bool supports_angle_vulkan,
                         const base::CommandLine* command_line,
                         std::vector<DisplayType>* init_displays) {
   // SwiftShader does not use the platform extensions
@@ -552,6 +611,14 @@ void GetEGLInitDisplays(bool supports_angle_d3d,
       } else if (requested_renderer == kANGLEImplementationOpenGLESNULLName) {
         AddInitDisplay(init_displays, ANGLE_OPENGLES_NULL);
       }
+    }
+  }
+
+  if (supports_angle_vulkan) {
+    if (requested_renderer == kANGLEImplementationVulkanName) {
+      AddInitDisplay(init_displays, ANGLE_VULKAN);
+    } else if (requested_renderer == kANGLEImplementationVulkanNULLName) {
+      AddInitDisplay(init_displays, ANGLE_VULKAN_NULL);
     }
   }
 
@@ -823,9 +890,30 @@ EGLDisplay GLSurfaceEGL::InitializeDisplay(
   const char* client_extensions =
       eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
 
+  bool supports_egl_debug =
+      client_extensions &&
+      ExtensionsContain(client_extensions, "EGL_KHR_debug");
+  if (supports_egl_debug) {
+    EGLAttrib controls[] = {
+        EGL_DEBUG_MSG_CRITICAL_KHR,
+        EGL_TRUE,
+        EGL_DEBUG_MSG_ERROR_KHR,
+        EGL_TRUE,
+        EGL_DEBUG_MSG_WARN_KHR,
+        EGL_TRUE,
+        EGL_DEBUG_MSG_INFO_KHR,
+        EGL_TRUE,
+        EGL_NONE,
+        EGL_NONE,
+    };
+
+    eglDebugMessageControlKHR(&LogEGLDebugMessage, controls);
+  }
+
   bool supports_angle_d3d = false;
   bool supports_angle_opengl = false;
   bool supports_angle_null = false;
+  bool supports_angle_vulkan = false;
   // Check for availability of ANGLE extensions.
   if (client_extensions &&
       ExtensionsContain(client_extensions, "EGL_ANGLE_platform_angle")) {
@@ -835,11 +923,13 @@ EGLDisplay GLSurfaceEGL::InitializeDisplay(
         ExtensionsContain(client_extensions, "EGL_ANGLE_platform_angle_opengl");
     supports_angle_null =
         ExtensionsContain(client_extensions, "EGL_ANGLE_platform_angle_null");
+    supports_angle_vulkan =
+        ExtensionsContain(client_extensions, "EGL_ANGLE_platform_angle_vulkan");
   }
 
   std::vector<DisplayType> init_displays;
   GetEGLInitDisplays(supports_angle_d3d, supports_angle_opengl,
-                     supports_angle_null,
+                     supports_angle_null, supports_angle_vulkan,
                      base::CommandLine::ForCurrentProcess(), &init_displays);
 
   for (size_t disp_index = 0; disp_index < init_displays.size(); ++disp_index) {
@@ -1251,45 +1341,29 @@ bool NativeViewGLSurfaceEGL::Resize(const gfx::Size& size,
                                     bool has_alpha) {
   if (size == GetSize())
     return true;
-
   size_ = size;
-
-  ui::ScopedReleaseCurrent release_current;
-
-  Destroy();
-
-  if (!Initialize(format_)) {
-    LOG(ERROR) << "Failed to resize window.";
-    return false;
+  {
+    ui::ScopedReleaseCurrent release_current;
+    Destroy();
+    if (!Initialize(format_)) {
+      LOG(ERROR) << "Failed to resize window.";
+      return false;
+    }
   }
-
-  if (!release_current.Restore()) {
-    LOG(ERROR) << "Could not MakeCurrent after Resize";
-    return false;
-  }
-
   SetVSyncEnabled(vsync_enabled_);
-
   return true;
 }
 
 bool NativeViewGLSurfaceEGL::Recreate() {
-  ui::ScopedReleaseCurrent release_current;
-
-  Destroy();
-
-  if (!Initialize(format_)) {
-    LOG(ERROR) << "Failed to create surface.";
-    return false;
+  {
+    ui::ScopedReleaseCurrent release_current;
+    Destroy();
+    if (!Initialize(format_)) {
+      LOG(ERROR) << "Failed to create surface.";
+      return false;
+    }
   }
-
-  if (!release_current.Restore()) {
-    LOG(ERROR) << "Failed to MakeCurrent after Recreate";
-    return false;
-  }
-
   SetVSyncEnabled(vsync_enabled_);
-
   return true;
 }
 
@@ -1432,7 +1506,7 @@ bool NativeViewGLSurfaceEGL::CommitAndClearPendingOverlays() {
 
   bool success = true;
 #if defined(OS_ANDROID)
-  for (const auto& overlay : pending_overlays_)
+  for (auto& overlay : pending_overlays_)
     success &= overlay.ScheduleOverlayPlane(window_);
   pending_overlays_.clear();
 #else
@@ -1540,11 +1614,6 @@ bool PbufferGLSurfaceEGL::Resize(const gfx::Size& size,
 
   if (!Initialize(format_)) {
     LOG(ERROR) << "Failed to resize pbuffer.";
-    return false;
-  }
-
-  if (!release_current.Restore()) {
-    LOG(ERROR) << "Failed to MakeCurrent after Resize";
     return false;
   }
 

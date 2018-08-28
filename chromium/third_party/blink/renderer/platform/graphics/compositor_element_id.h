@@ -13,7 +13,7 @@
 
 namespace blink {
 
-const int kCompositorNamespaceBitCount = 3;
+const int kCompositorNamespaceBitCount = 4;
 
 enum class CompositorElementIdNamespace {
   kPrimary,
@@ -23,6 +23,8 @@ enum class CompositorElementIdNamespace {
   kEffectFilter,
   kEffectMask,
   kEffectClipPath,
+  kVerticalScrollbar,
+  kHorizontalScrollbar,
   // A sentinel to indicate the maximum representable namespace id
   // (the maximum is one less than this value).
   kMaxRepresentableNamespaceId = 1 << kCompositorNamespaceBitCount
@@ -55,7 +57,7 @@ CompositorElementId PLATFORM_EXPORT CompositorElementIdFromDOMNodeId(DOMNodeId);
 // Blink's hash functions with Blink specific data structures.
 struct CompositorElementIdHash {
   static unsigned GetHash(const CompositorElementId& key) {
-    return WTF::HashInt(static_cast<cc::ElementIdType>(key.ToInternalValue()));
+    return WTF::HashInt(static_cast<cc::ElementIdType>(key.GetInternalValue()));
   }
   static bool Equal(const CompositorElementId& a,
                     const CompositorElementId& b) {

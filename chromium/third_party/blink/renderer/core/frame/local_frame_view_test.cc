@@ -10,8 +10,11 @@
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/paint/paint_property_tree_printer.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
+#include "third_party/blink/renderer/core/testing/sim/sim_request.h"
+#include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_artifact.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -105,16 +108,16 @@ TEST_F(LocalFrameViewTest, HideTooltipWhenScrollPositionChanges) {
 
   EXPECT_CALL(GetAnimationMockChromeClient(),
               MockSetToolTip(GetDocument().GetFrame(), String(), _));
-  GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
-      ScrollOffset(1, 1), kUserScroll);
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(ScrollOffset(1, 1),
+                                                          kUserScroll);
 
   // Programmatic scrolling should not dismiss the tooltip, so setToolTip
   // should not be called for this invocation.
   EXPECT_CALL(GetAnimationMockChromeClient(),
               MockSetToolTip(GetDocument().GetFrame(), String(), _))
       .Times(0);
-  GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
-      ScrollOffset(2, 2), kProgrammaticScroll);
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(ScrollOffset(2, 2),
+                                                          kProgrammaticScroll);
 }
 
 // NoOverflowInIncrementVisuallyNonEmptyPixelCount tests fail if the number of
@@ -148,8 +151,8 @@ TEST_F(LocalFrameViewTest,
   sticky->Layer()->UpdateAncestorOverflowLayer(nullptr);
 
   // This call should not crash.
-  GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
-      ScrollOffset(0, 100), kProgrammaticScroll);
+  GetDocument().View()->LayoutViewport()->SetScrollOffset(ScrollOffset(0, 100),
+                                                          kProgrammaticScroll);
 }
 
 TEST_F(LocalFrameViewTest, UpdateLifecyclePhasesForPrintingDetachedFrame) {
@@ -166,6 +169,100 @@ TEST_F(LocalFrameViewTest, UpdateLifecyclePhasesForPrintingDetachedFrame) {
             ChildDocument().Lifecycle().GetState());
   auto* child_layout_view = ChildDocument().GetLayoutView();
   EXPECT_TRUE(child_layout_view->FirstFragment().PaintProperties());
+}
+
+class LocalFrameViewSimTest : public SimTest {
+  void SetUp() override {
+    SimTest::SetUp();
+    RuntimeEnabledFeatures::SetCSSFragmentIdentifiersEnabled(true);
+  }
+};
+
+TEST_F(LocalFrameViewSimTest, CSSFragmentIdentifierIsParsed) {
+  SimRequest main_resource("https://example.com/#targetElement=.foobar",
+                           "text/html");
+  LoadURL("https://example.com/#targetElement=.foobar");
+  main_resource.Complete("<div class='foobar' id='target'></div>");
+
+  Element* target = GetDocument().getElementById("target");
+  EXPECT_EQ(target, GetDocument().CssTarget());
+}
+
+TEST_F(LocalFrameViewSimTest, CSSFragmentIdentifierComplexSelector) {
+  SimRequest main_resource(
+      "https://example.com/#targetElement=.outer%3Ediv%3Ep%3Anth-child%282%29",
+      "text/html");
+  LoadURL(
+      "https://example.com/#targetElement=.outer%3Ediv%3Ep%3Anth-child%282%29");
+  main_resource.Complete(R"HTML(
+    <!DOCTYPE html>
+    <html>
+      <head></head>
+      <body>
+        <div class='outer'>
+          <div>
+            <p></p>
+            <p id='target'></p>
+          </div>
+        </div>
+      </body>
+    </html>
+    )HTML");
+
+  Element* target = GetDocument().getElementById("target");
+  EXPECT_EQ(target, GetDocument().CssTarget());
+}
+
+TEST_F(LocalFrameViewSimTest, CSSFragmentIdentifierUsesFirstElementFound) {
+  SimRequest main_resource("https://example.com/#targetElement=.foobar",
+                           "text/html");
+  LoadURL("https://example.com/#targetElement=.foobar");
+  main_resource.Complete(
+      "<div class='foobar' id='target'></div><div class='foobar'></div>");
+
+  Element* target = GetDocument().getElementById("target");
+  EXPECT_EQ(target, GetDocument().CssTarget());
+}
+
+TEST_F(LocalFrameViewSimTest, CSSFragmentIdentifierIneligibleFragments) {
+  SimRequest main_resource("https://example.com/#targetEl=.foobar",
+                           "text/html");
+  LoadURL("https://example.com/#targetEl=.foobar");
+  main_resource.Complete("<div class='foobar' id='target'></div>");
+
+  EXPECT_EQ(nullptr, GetDocument().CssTarget());
+
+  SimRequest main_resource2("https://example.com/#path/fragment", "text/html");
+  LoadURL("https://example.com/#path/fragment");
+  main_resource2.Complete("<div class='foobar' id='target'></div>");
+
+  EXPECT_EQ(nullptr, GetDocument().CssTarget());
+}
+
+TEST_F(LocalFrameViewSimTest, CSSFragmentIdentifierNoMatches) {
+  SimRequest main_resource("https://example.com/#targetElement=.foobar",
+                           "text/html");
+  LoadURL("https://example.com/#targetElement=.foobar");
+  main_resource.Complete("<div class='barbaz' id='target'></div>");
+
+  EXPECT_EQ(nullptr, GetDocument().CssTarget());
+}
+
+TEST_F(LocalFrameViewSimTest, CSSFragmentIdentifierInvalidSelector) {
+  SimRequest main_resource("https://example.com/#targetElement=..foobar",
+                           "text/html");
+  LoadURL("https://example.com/#targetElement=..foobar");
+  main_resource.Complete("<div class='foobar' id='target'></div>");
+
+  EXPECT_EQ(nullptr, GetDocument().CssTarget());
+}
+
+TEST_F(LocalFrameViewSimTest, CSSFragmentIdentifierEmptySelector) {
+  SimRequest main_resource("https://example.com/#targetElement=", "text/html");
+  LoadURL("https://example.com/#targetElement=");
+  main_resource.Complete("<div class='foobar' id='target'></div>");
+
+  EXPECT_EQ(nullptr, GetDocument().CssTarget());
 }
 
 }  // namespace

@@ -140,22 +140,6 @@ class VirtualKeyboardPrivateOpenSettingsFunction
   ResponseAction Run() override;
 };
 
-class VirtualKeyboardPrivateSetModeFunction
-    : public VirtualKeyboardPrivateFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("virtualKeyboardPrivate.setMode",
-                             VIRTUALKEYBOARDPRIVATE_SETMODE);
-
- protected:
-  ~VirtualKeyboardPrivateSetModeFunction() override {}
-
-  // ExtensionFunction:
-  ResponseAction Run() override;
-
- private:
-  void OnSetMode(bool success);
-};
-
 class VirtualKeyboardPrivateSetContainerBehaviorFunction
     : public VirtualKeyboardPrivateFunction {
  public:
@@ -193,6 +177,32 @@ class VirtualKeyboardPrivateSetKeyboardStateFunction
 
  protected:
   ~VirtualKeyboardPrivateSetKeyboardStateFunction() override {}
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+};
+
+class VirtualKeyboardPrivateSetOccludedBoundsFunction
+    : public VirtualKeyboardPrivateFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("virtualKeyboardPrivate.setOccludedBounds",
+                             VIRTUALKEYBOARDPRIVATE_SETOCCLUDEDBOUNDS);
+
+ protected:
+  ~VirtualKeyboardPrivateSetOccludedBoundsFunction() override {}
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
+};
+
+class VirtualKeyboardPrivateSetHitTestBoundsFunction
+    : public VirtualKeyboardPrivateFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("virtualKeyboardPrivate.setHitTestBounds",
+                             VIRTUALKEYBOARDPRIVATE_SETHITTESTBOUNDS);
+
+ protected:
+  ~VirtualKeyboardPrivateSetHitTestBoundsFunction() override {}
 
   // ExtensionFunction:
   ResponseAction Run() override;

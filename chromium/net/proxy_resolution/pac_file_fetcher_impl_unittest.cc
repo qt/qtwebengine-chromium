@@ -19,6 +19,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "net/base/completion_callback.h"
 #include "net/base/filename_util.h"
 #include "net/base/load_flags.h"
 #include "net/base/network_delegate_impl.h"
@@ -81,8 +82,7 @@ class RequestContext : public URLRequestContext {
  public:
   RequestContext() : storage_(this) {
     ProxyConfig no_proxy;
-    storage_.set_host_resolver(
-        std::unique_ptr<HostResolver>(new MockHostResolver));
+    storage_.set_host_resolver(std::make_unique<MockHostResolver>());
     storage_.set_cert_verifier(std::make_unique<MockCertVerifier>());
     storage_.set_transport_security_state(
         std::make_unique<TransportSecurityState>());
@@ -92,9 +92,10 @@ class RequestContext : public URLRequestContext {
         std::make_unique<DefaultCTPolicyEnforcer>());
     storage_.set_proxy_resolution_service(ProxyResolutionService::CreateFixed(
         ProxyConfigWithAnnotation(no_proxy, TRAFFIC_ANNOTATION_FOR_TESTS)));
-    storage_.set_ssl_config_service(new SSLConfigServiceDefaults);
+    storage_.set_ssl_config_service(
+        std::make_unique<SSLConfigServiceDefaults>());
     storage_.set_http_server_properties(
-        std::unique_ptr<HttpServerProperties>(new HttpServerPropertiesImpl()));
+        std::make_unique<HttpServerPropertiesImpl>());
 
     HttpNetworkSession::Context session_context;
     session_context.host_resolver = host_resolver();
@@ -152,14 +153,14 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
 
  private:
   int OnBeforeURLRequest(URLRequest* request,
-                         const CompletionCallback& callback,
+                         CompletionOnceCallback callback,
                          GURL* new_url) override {
     EXPECT_TRUE(request->load_flags() & LOAD_DISABLE_CERT_REVOCATION_CHECKING);
     return OK;
   }
 
   int OnBeforeStartTransaction(URLRequest* request,
-                               const CompletionCallback& callback,
+                               CompletionOnceCallback callback,
                                HttpRequestHeaders* headers) override {
     return OK;
   }
@@ -169,7 +170,7 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
 
   int OnHeadersReceived(
       URLRequest* request,
-      const CompletionCallback& callback,
+      CompletionOnceCallback callback,
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
       GURL* allowed_unsafe_redirect_url) override {
@@ -191,20 +192,22 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
   NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
       const AuthChallengeInfo& auth_info,
-      const AuthCallback& callback,
+      AuthCallback callback,
       AuthCredentials* credentials) override {
     return NetworkDelegate::AUTH_REQUIRED_RESPONSE_NO_ACTION;
   }
 
   bool OnCanGetCookies(const URLRequest& request,
-                       const CookieList& cookie_list) override {
-    return true;
+                       const CookieList& cookie_list,
+                       bool allowed_from_caller) override {
+    return allowed_from_caller;
   }
 
   bool OnCanSetCookie(const URLRequest& request,
                       const net::CanonicalCookie& cookie,
-                      CookieOptions* options) override {
-    return true;
+                      CookieOptions* options,
+                      bool allowed_from_caller) override {
+    return allowed_from_caller;
   }
 
   bool OnCanAccessFile(const URLRequest& request,

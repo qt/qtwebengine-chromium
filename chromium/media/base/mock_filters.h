@@ -134,8 +134,7 @@ class MockDemuxer : public Demuxer {
 
   // Demuxer implementation.
   std::string GetDisplayName() const override;
-  MOCK_METHOD3(Initialize,
-               void(DemuxerHost* host, const PipelineStatusCB& cb, bool));
+  MOCK_METHOD2(Initialize, void(DemuxerHost* host, const PipelineStatusCB& cb));
   MOCK_METHOD1(StartWaitingForSeek, void(base::TimeDelta));
   MOCK_METHOD1(CancelPendingSeek, void(base::TimeDelta));
   MOCK_METHOD2(Seek, void(base::TimeDelta time, const PipelineStatusCB& cb));
@@ -579,7 +578,7 @@ class MockStreamParser : public StreamParser {
   // StreamParser interface
   MOCK_METHOD8(
       Init,
-      void(const InitCB& init_cb,
+      void(InitCB init_cb,
            const NewConfigCB& config_cb,
            const NewBuffersCB& new_buffers_cb,
            bool ignore_text_track,
@@ -588,6 +587,7 @@ class MockStreamParser : public StreamParser {
            const EndMediaSegmentCB& end_of_segment_cb,
            MediaLog* media_log));
   MOCK_METHOD0(Flush, void());
+  MOCK_CONST_METHOD0(GetGenerateTimestampsFlag, bool());
   MOCK_METHOD2(Parse, bool(const uint8_t*, int));
 
  private:

@@ -13,6 +13,7 @@
 
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
@@ -21,10 +22,9 @@
 #include "content/browser/dom_storage/session_storage_metadata.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl_mojo.h"
 #include "content/common/content_export.h"
-#include "content/common/leveldb_wrapper.mojom.h"
-#include "content/common/storage_partition_service.mojom.h"
 #include "content/public/browser/session_storage_usage_info.h"
 #include "services/file/public/mojom/file_system.mojom.h"
+#include "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom.h"
 #include "url/origin.h"
 
 namespace base {
@@ -50,19 +50,44 @@ class CONTENT_EXPORT SessionStorageContextMojo
   using GetStorageUsageCallback =
       base::OnceCallback<void(std::vector<SessionStorageUsageInfo>)>;
 
+  enum class CloneType {
+    // Expect a clone to come from the SessionStorageNamespace mojo object. This
+    // guarantees ordering with any writes from that namespace.
+    kWaitForCloneOnNamespace,
+    // There will not be a clone coming from the SessionStorageNamespace mojo
+    // object, so clone immediately.
+    kImmediate
+  };
+
+  enum class BackingMode {
+    // Use an in-memory leveldb database to store our state.
+    kNoDisk,
+    // Use disk for the leveldb database, but clear its contents before we open
+    // it. This is used for platforms like Android where the session restore
+    // code is never used, ScavengeUnusedNamespace is never called, and old
+    // session storage data will never be reused.
+    kClearDiskStateOnOpen,
+    // Use disk for the leveldb database, restore all saved namespaces from
+    // disk. This assumes that ScavengeUnusedNamespace will eventually be called
+    // to clean up unused namespaces on disk.
+    kRestoreDiskState
+  };
+
   SessionStorageContextMojo(
       scoped_refptr<base::SequencedTaskRunner> task_runner,
       service_manager::Connector* connector,
-      base::Optional<base::FilePath> local_partition_directory,
+      BackingMode backing_option,
+      base::FilePath local_partition_directory,
       std::string leveldb_name);
 
   void OpenSessionStorage(int process_id,
                           const std::string& namespace_id,
-                          mojom::SessionStorageNamespaceRequest request);
+                          blink::mojom::SessionStorageNamespaceRequest request);
 
   void CreateSessionNamespace(const std::string& namespace_id);
   void CloneSessionNamespace(const std::string& namespace_id_to_clone,
-                             const std::string& clone_namespace_id);
+                             const std::string& clone_namespace_id,
+                             CloneType clone_type);
 
   void DeleteSessionNamespace(const std::string& namespace_id,
                               bool should_persist);
@@ -84,8 +109,8 @@ class CONTENT_EXPORT SessionStorageContextMojo
   // storage for a particular origin will reload the data from the database.
   void PurgeMemory();
 
-  // Clears unused leveldb wrappers, when thresholds are reached.
-  void PurgeUnusedWrappersIfNeeded();
+  // Clears unused storage areas, when thresholds are reached.
+  void PurgeUnusedAreasIfNeeded();
 
   // Any namespaces that have been loaded from disk and have not had a
   // corresponding CreateSessionNamespace() call will be deleted. Called after
@@ -98,7 +123,7 @@ class CONTENT_EXPORT SessionStorageContextMojo
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
                     base::trace_event::ProcessMemoryDump* pmd) override;
 
-  // SessionStorageLevelDBWrapper::Listener implementation:
+  // SessionStorageAreaImpl::Listener implementation:
   void OnDataMapCreation(const std::vector<uint8_t>& map_prefix,
                          SessionStorageDataMap* map) override;
   void OnDataMapDestruction(const std::vector<uint8_t>& map_prefix) override;
@@ -116,6 +141,10 @@ class CONTENT_EXPORT SessionStorageContextMojo
                            const url::Origin& origin);
 
  private:
+  friend class DOMStorageBrowserTest;
+  FRIEND_TEST_ALL_PREFIXES(SessionStorageContextMojoTest,
+                           PurgeMemoryDoesNotCrashOrHang);
+
   // Object deletion is done through |ShutdownAndDelete()|.
   ~SessionStorageContextMojo() override;
 
@@ -163,7 +192,7 @@ class CONTENT_EXPORT SessionStorageContextMojo
 
   void OnShutdownComplete(leveldb::mojom::DatabaseError error);
 
-  void GetStatistics(size_t* total_cache_size, size_t* unused_wrapper_count);
+  void GetStatistics(size_t* total_cache_size, size_t* unused_areas_count);
 
   // These values are written to logs.  New enum values can be added, but
   // existing enums must never be renumbered or deleted and reused.
@@ -184,12 +213,12 @@ class CONTENT_EXPORT SessionStorageContextMojo
   SessionStorageMetadata metadata_;
 
   std::unique_ptr<service_manager::Connector> connector_;
-  const base::Optional<base::FilePath> partition_directory_path_;
+  BackingMode backing_mode_;
+  base::FilePath partition_directory_path_;
   std::string leveldb_name_;
 
   enum ConnectionState {
     NO_CONNECTION,
-    FETCHING_METADATA,
     CONNECTION_IN_PROGRESS,
     CONNECTION_FINISHED,
     CONNECTION_SHUTDOWN

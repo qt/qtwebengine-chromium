@@ -36,12 +36,14 @@
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "v8/include/v8.h"
 
 namespace blink {
 
 class LocalFrame;
 class ExecutionContext;
+class ScriptValue;
 class WorkerGlobalScope;
 
 class ScheduledAction final
@@ -60,7 +62,7 @@ class ScheduledAction final
   ~ScheduledAction();
   void Dispose();
 
-  void Trace(blink::Visitor* visitor) {}
+  void Trace(blink::Visitor*);
 
   void Execute(ExecutionContext*);
 
@@ -77,7 +79,7 @@ class ScheduledAction final
   void Execute(WorkerGlobalScope*);
   void CreateLocalHandlesForArgs(Vector<v8::Local<v8::Value>>* handles);
 
-  ScriptStateProtectingContext script_state_;
+  Member<ScriptStateProtectingContext> script_state_;
   ScopedPersistent<v8::Function> function_;
   V8PersistentValueVector<v8::Value> info_;
   String code_;

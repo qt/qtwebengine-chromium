@@ -14,7 +14,6 @@
     #include "gl/angle/GLTestContext_angle.h"
 #endif
 #include "gl/command_buffer/GLTestContext_command_buffer.h"
-#include "gl/debug/DebugGLTestContext.h"
 #ifdef SK_VULKAN
 #include "vk/VkTestContext.h"
 #endif
@@ -193,9 +192,6 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
                     glCtx = CreateNullGLTestContext(
                             ContextOverrides::kRequireNVPRSupport & overrides, glShareContext);
                     break;
-                case kDebugGL_ContextType:
-                    glCtx = CreateDebugGLTestContext(glShareContext);
-                    break;
                 default:
                     return ContextInfo();
             }
@@ -261,9 +257,6 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
     if (ContextOverrides::kDisableNVPR & overrides) {
         grOptions.fSuppressPathRendering = true;
     }
-    if (ContextOverrides::kAllowSRGBWithoutDecodeControl & overrides) {
-        grOptions.fRequireDecodeDisableForSRGB = false;
-    }
     if (ContextOverrides::kAvoidStencilBuffers & overrides) {
         grOptions.fAvoidStencilBuffers = true;
     }
@@ -277,11 +270,6 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
     }
     if (ContextOverrides::kRequireNVPRSupport & overrides) {
         if (!grCtx->contextPriv().caps()->shaderCaps()->pathRenderingSupport()) {
-            return ContextInfo();
-        }
-    }
-    if (ContextOverrides::kRequireSRGBSupport & overrides) {
-        if (!grCtx->contextPriv().caps()->srgbSupport()) {
             return ContextInfo();
         }
     }

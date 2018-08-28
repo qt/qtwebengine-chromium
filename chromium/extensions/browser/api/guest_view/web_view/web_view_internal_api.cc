@@ -20,7 +20,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/stop_find_action.h"
-#include "content/public/common/url_fetcher.h"
 #include "extensions/browser/guest_view/web_view/web_view_constants.h"
 #include "extensions/browser/guest_view/web_view/web_view_content_script_manager.h"
 #include "extensions/common/api/web_view_internal.h"
@@ -462,7 +461,7 @@ bool WebViewInternalExecuteCodeFunction::LoadFileForWebUI(
   GURL file_url(owner_base_url.Resolve(file_src));
 
   url_fetcher_ = std::make_unique<WebUIURLFetcher>(
-      this->browser_context(), render_frame_host()->GetProcess()->GetID(),
+      render_frame_host()->GetProcess()->GetID(),
       render_frame_host()->GetRoutingID(), file_url, std::move(callback));
   url_fetcher_->Start();
   return true;

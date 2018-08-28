@@ -82,8 +82,8 @@ void ParseAndCheckPacket(const uint8_t* packet,
   std::unique_ptr<RtpDepacketizer> depacketizer(new RtpDepacketizerVp9());
   RtpDepacketizer::ParsedPayload parsed;
   ASSERT_TRUE(depacketizer->Parse(&parsed, packet, expected_length));
-  EXPECT_EQ(kRtpVideoVp9, parsed.type.Video.codec);
-  VerifyHeader(expected, parsed.type.Video.codecHeader.VP9);
+  EXPECT_EQ(kVideoCodecVP9, parsed.video_header().codec);
+  VerifyHeader(expected, parsed.video_header().vp9());
   const size_t kExpectedPayloadLength = expected_length - expected_hdr_length;
   VerifyPayload(parsed, packet + expected_hdr_length, kExpectedPayloadLength);
 }
@@ -225,7 +225,7 @@ TEST_F(RtpPacketizerVp9Test, TestOneBytePictureId) {
   const size_t kFrameSize = 30;
   const size_t kPacketSize = 12;
 
-  expected_.picture_id = kMaxOneBytePictureId;   // 2 byte payload descriptor
+  expected_.picture_id = kMaxOneBytePictureId;  // 2 byte payload descriptor
   expected_.max_picture_id = kMaxOneBytePictureId;
   Init(kFrameSize, kPacketSize);
 
@@ -584,8 +584,7 @@ TEST_F(RtpPacketizerVp9Test, TestNonRefForInterLayerPred) {
 
 class RtpDepacketizerVp9Test : public ::testing::Test {
  protected:
-  RtpDepacketizerVp9Test()
-      : depacketizer_(new RtpDepacketizerVp9()) {}
+  RtpDepacketizerVp9Test() : depacketizer_(new RtpDepacketizerVp9()) {}
 
   void SetUp() override { expected_.InitRTPVideoHeaderVP9(); }
 
@@ -705,8 +704,8 @@ TEST_F(RtpDepacketizerVp9Test, ParseRefIdx) {
 TEST_F(RtpDepacketizerVp9Test, ParseRefIdxFailsWithNoPictureId) {
   const uint8_t kPdiff = 3;
   uint8_t packet[13] = {0};
-  packet[0] = 0x58;            // I:0 P:1 L:0 F:1 B:1 E:0 V:0 Z:0
-  packet[1] = (kPdiff << 1);   // P,F:  P_DIFF:3 N:0
+  packet[0] = 0x58;           // I:0 P:1 L:0 F:1 B:1 E:0 V:0 Z:0
+  packet[1] = (kPdiff << 1);  // P,F:  P_DIFF:3 N:0
 
   RtpDepacketizer::ParsedPayload parsed;
   EXPECT_FALSE(depacketizer_->Parse(&parsed, packet, sizeof(packet)));
@@ -761,7 +760,7 @@ TEST_F(RtpDepacketizerVp9Test, ParseFirstPacketInKeyFrame) {
   RtpDepacketizer::ParsedPayload parsed;
   ASSERT_TRUE(depacketizer_->Parse(&parsed, packet, sizeof(packet)));
   EXPECT_EQ(kVideoFrameKey, parsed.frame_type);
-  EXPECT_TRUE(parsed.type.Video.is_first_packet_in_frame);
+  EXPECT_TRUE(parsed.video_header().is_first_packet_in_frame);
 }
 
 TEST_F(RtpDepacketizerVp9Test, ParseLastPacketInDeltaFrame) {
@@ -771,7 +770,7 @@ TEST_F(RtpDepacketizerVp9Test, ParseLastPacketInDeltaFrame) {
   RtpDepacketizer::ParsedPayload parsed;
   ASSERT_TRUE(depacketizer_->Parse(&parsed, packet, sizeof(packet)));
   EXPECT_EQ(kVideoFrameDelta, parsed.frame_type);
-  EXPECT_FALSE(parsed.type.Video.is_first_packet_in_frame);
+  EXPECT_FALSE(parsed.video_header().is_first_packet_in_frame);
 }
 
 TEST_F(RtpDepacketizerVp9Test, ParseResolution) {
@@ -791,8 +790,8 @@ TEST_F(RtpDepacketizerVp9Test, ParseResolution) {
 
   RtpDepacketizer::ParsedPayload parsed;
   ASSERT_TRUE(depacketizer_->Parse(&parsed, packet, sizeof(packet)));
-  EXPECT_EQ(kWidth[0], parsed.type.Video.width);
-  EXPECT_EQ(kHeight[0], parsed.type.Video.height);
+  EXPECT_EQ(kWidth[0], parsed.video_header().width);
+  EXPECT_EQ(kHeight[0], parsed.video_header().height);
 }
 
 TEST_F(RtpDepacketizerVp9Test, ParseFailsForNoPayloadLength) {

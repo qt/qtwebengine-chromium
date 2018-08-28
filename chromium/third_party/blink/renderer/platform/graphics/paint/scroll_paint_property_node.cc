@@ -6,10 +6,11 @@
 
 namespace blink {
 
-ScrollPaintPropertyNode* ScrollPaintPropertyNode::Root() {
-  DEFINE_STATIC_REF(ScrollPaintPropertyNode, root,
-                    (ScrollPaintPropertyNode::Create(nullptr, State{})));
-  return root;
+const ScrollPaintPropertyNode& ScrollPaintPropertyNode::Root() {
+  DEFINE_STATIC_REF(
+      ScrollPaintPropertyNode, root,
+      base::AdoptRef(new ScrollPaintPropertyNode(nullptr, State{})));
+  return *root;
 }
 
 std::unique_ptr<JSONObject> ScrollPaintPropertyNode::ToJSON() const {
@@ -33,6 +34,12 @@ std::unique_ptr<JSONObject> ScrollPaintPropertyNode::ToJSON() const {
         MainThreadScrollingReason::AsText(state_.main_thread_scrolling_reasons)
             .c_str());
   }
+  if (state_.scrolls_inner_viewport)
+    json->SetString("scrollsInnerViewport", "true");
+  if (state_.scrolls_outer_viewport)
+    json->SetString("scrollsOuterViewport", "true");
+  if (state_.max_scroll_offset_affected_by_page_scale)
+    json->SetString("maxScrollOffsetAffectedByPageScale", "true");
   if (state_.compositor_element_id) {
     json->SetString("compositorElementId",
                     state_.compositor_element_id.ToString().c_str());

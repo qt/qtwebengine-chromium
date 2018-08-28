@@ -97,9 +97,10 @@ Node* HoveredNodeForPoint(LocalFrame* frame,
   if (ignore_pointer_events_none)
     hit_type |= HitTestRequest::kIgnorePointerEventsNone;
   HitTestRequest request(hit_type);
-  HitTestResult result(request,
-                       frame->View()->RootFrameToContents(point_in_root_frame));
-  frame->ContentLayoutObject()->HitTest(result);
+  HitTestLocation location(
+      frame->View()->ConvertFromRootFrame(point_in_root_frame));
+  HitTestResult result(request, location);
+  frame->ContentLayoutObject()->HitTest(location, result);
   Node* node = result.InnerPossiblyPseudoNode();
   while (node && node->getNodeType() == Node::kTextNode)
     node = node->parentNode();
@@ -667,14 +668,12 @@ void InspectorOverlayAgent::RebuildOverlayPage() {
   if (!view || !frame)
     return;
 
-  IntRect visible_rect_in_document =
-      view->GetScrollableArea()->VisibleContentRect();
   IntSize viewport_size = frame->GetPage()->GetVisualViewport().Size();
   OverlayMainFrame()->View()->Resize(viewport_size);
   OverlayPage()->GetVisualViewport().SetSize(viewport_size);
   OverlayMainFrame()->SetPageZoomFactor(WindowToViewportScale());
 
-  Reset(viewport_size, visible_rect_in_document.Location());
+  Reset(viewport_size);
 
   DrawNodeHighlight();
   DrawQuadHighlight();
@@ -859,8 +858,7 @@ LocalFrame* InspectorOverlayAgent::OverlayMainFrame() {
   return ToLocalFrame(OverlayPage()->MainFrame());
 }
 
-void InspectorOverlayAgent::Reset(const IntSize& viewport_size,
-                                  const IntPoint& document_scroll_offset) {
+void InspectorOverlayAgent::Reset(const IntSize& viewport_size) {
   std::unique_ptr<protocol::DictionaryValue> reset_data =
       protocol::DictionaryValue::create();
   reset_data->setDouble(
@@ -882,8 +880,12 @@ void InspectorOverlayAgent::Reset(const IntSize& viewport_size,
       "pageZoomFactor",
       frame_impl_->GetFrame()->PageZoomFactor() / WindowToViewportScale());
 
-  reset_data->setInteger("scrollX", document_scroll_offset.X());
-  reset_data->setInteger("scrollY", document_scroll_offset.Y());
+  // TODO(szager): These values have been zero since root layer scrolling
+  // landed. Probably they should be derived from
+  // LocalFrameView::LayoutViewport(); but I have no idea who the consumers
+  // of these values are, so I'm leaving them zero pending investigation.
+  reset_data->setInteger("scrollX", 0);
+  reset_data->setInteger("scrollY", 0);
   EvaluateInOverlay("reset", std::move(reset_data));
 }
 
@@ -1070,8 +1072,8 @@ bool InspectorOverlayAgent::HandleMouseUp(const WebMouseEvent& event) {
     IntPoint p2 = screenshot_position_;
     if (LocalFrame* frame = frame_impl_->GetFrame()) {
       scale = frame->GetPage()->PageScaleFactor();
-      p1 = frame->View()->RootFrameToContents(p1);
-      p2 = frame->View()->RootFrameToContents(p2);
+      p1 = frame->View()->ConvertFromRootFrame(p1);
+      p2 = frame->View()->ConvertFromRootFrame(p2);
     }
     int min_x = std::min(p1.X(), p2.X());
     int max_x = std::max(p1.X(), p2.X());

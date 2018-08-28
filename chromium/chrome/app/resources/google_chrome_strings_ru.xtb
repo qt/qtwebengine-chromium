@@ -14,7 +14,6 @@
 <translation id="127345590676626841">Chrome обновляется автоматически, поэтому у вас всегда будет установлена последняя версия. После завершения скачивания и перезагрузки вы сможете продолжить работу.</translation>
 <translation id="1302523850133262269">Подождите, пока Chrome устанавливает последние обновления системы</translation>
 <translation id="137466361146087520">Google Chrome (бета)</translation>
-<translation id="1388971155537343688">Запуск Chrome…</translation>
 <translation id="1393853151966637042">Справочный центр</translation>
 <translation id="1399397803214730675">На компьютере уже установлена последняя версия браузера Google Chrome. Если он не работает, удалите его и установите снова.</translation>
 <translation id="1434626383986940139">Приложения Chrome Canary</translation>
@@ -30,6 +29,7 @@
 <translation id="1682634494516646069">Браузеру Google Chrome не может выполнять операции чтения и записи в каталоге данных <ph name="USER_DATA_DIRECTORY" /></translation>
 <translation id="1698376642261615901">Google Chrome – это быстрый и удобный браузер для работы с веб-страницами и приложениями. Он надежен и прост в использовании. Вы можете просматривать страницы в Интернете, положившись на систему защиту от вредоносного ПО и фишинга, которая уже встроена в Google Chrome.</translation>
 <translation id="1718131156967340976">Выберите <ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Google Chrome<ph name="END_BOLD" /></translation>
+<translation id="1734234790201236882">Этот пароль будет сохранен в аккаунте Google. Вам не нужно его запоминать.</translation>
 <translation id="174539241580958092">Google Chrome не удалось синхронизировать данные из-за ошибки входа в аккаунт.</translation>
 <translation id="1759842336958782510">Chrome</translation>
 <translation id="1773601347087397504">Помощь по использованию Chrome OS</translation>
@@ -38,6 +38,7 @@
 <translation id="1873233029667955273">Google Chrome не является браузером по умолчанию.</translation>
 <translation id="1874309113135274312">Google Chrome (бета, mDNS-In)</translation>
 <translation id="1877026089748256423">Версия Chrome устарела</translation>
+<translation id="1915828456209461693">Для Chrome доступно обновление. Оно будет установлено при перезапуске браузера.</translation>
 <translation id="2007150628464581396">{0,plural, =1{Chrome перезапустится через 1 минуту}one{Chrome перезапустится через # минуту}few{Chrome перезапустится через # минуты}many{Chrome перезапустится через # минут}other{Chrome перезапустится через # минуты}}</translation>
 <translation id="2063848847527508675">Перезагрузите Chrome OS, чтобы установить обновление.</translation>
 <translation id="2084710999043359739">Установить</translation>
@@ -59,7 +60,7 @@
 <translation id="2348335408836342058">Для этого сайта Chrome запрашивает доступ к камере и микрофону.</translation>
 <translation id="2397416548179033562">Отображение меню Chrome</translation>
 <translation id="2429317896000329049">Google Chrome не удалось синхронизировать данные, поскольку служба Sync недоступна для вашего домена.</translation>
-<translation id="2446511512801740068">Для текущей версии Chrome доступно обновление. Оно будет установлено при перезапуске приложения.</translation>
+<translation id="2436117022029368436">Отправка данных в Google для улучшения работы Chrome</translation>
 <translation id="2467438592969358367">Чтобы экспортировать пароли из Google Chrome, введите пароль своего аккаунта Windows.</translation>
 <translation id="2485422356828889247">Удалить</translation>
 <translation id="2534507159460261402">Google Pay (скопирована в Chrome)</translation>
@@ -68,13 +69,13 @@
 <translation id="2586406160782125153">Данные о работе в браузере будут удалены с устройства. Чтобы восстановить данные позже, войдите в Chrome как <ph name="USER_EMAIL" />.</translation>
 <translation id="2588322182880276190">Логотип Chrome</translation>
 <translation id="2652691236519827073">Открыть ссылку в новой вкладке браузера Chrome</translation>
-<translation id="2664962310688259219">Лицензии Chrome OS на ПО с открытым исходным кодом</translation>
 <translation id="2665296953892887393">Отправлять в Google такие данные, как отчеты о сбоях и <ph name="UMA_LINK" />, чтобы помочь улучшить Google Chrome</translation>
 <translation id="2689103672227170538">Расширение изменило стартовую страницу Chrome.</translation>
 <translation id="2765403129283291972">Для этого сайта Chrome запрашивает доступ к микрофону.</translation>
 <translation id="2770231113462710648">Назначить браузером по умолчанию:</translation>
 <translation id="2799223571221894425">Перезапустить</translation>
 <translation id="2847461019998147611">Отображать Google Chrome на этом языке</translation>
+<translation id="2857540653560290388">Запуск Chrome...</translation>
 <translation id="2871893339301912279">Добро пожаловать в Chrome!</translation>
 <translation id="2888126860611144412">О браузере Chrome</translation>
 <translation id="3037838751736561277">Google Chrome работает в фоновом режиме</translation>
@@ -100,7 +101,6 @@
 <translation id="3479552764303398839">Не сейчас</translation>
 <translation id="3503306920980160878">Для этого сайта Chrome запрашивает доступ к данным о вашем местоположении.</translation>
 <translation id="3582972582564653026">Синхронизируйте данные Chrome на всех устройствах</translation>
-<translation id="3612333635265770873">Известно, что модуль с таким названием конфликтует с Google Chrome.</translation>
 <translation id="3622797965165704966">Теперь с Chrome ещё удобнее работать в аккаунте Google, в том числе на общих компьютерах.</translation>
 <translation id="3637702109597584617"><ph name="TERMS_OF_SERVICE_LINK" />Условия использования<ph name="END_TERMS_OF_SERVICE_LINK" /> Google Chrome OS</translation>
 <translation id="3716182511346448902">Эта страница расходовала слишком много памяти, поэтому работа ее скриптов была приостановлена.</translation>
@@ -117,9 +117,10 @@
 <translation id="4028693306634653894">Открывайте Chrome ещё быстрее</translation>
 <translation id="4050175100176540509">В последней версии улучшена защита и добавлены новые функции.</translation>
 <translation id="4053720452172726777">Настройка и управление Google Chrome</translation>
-<translation id="4143243756087420366">Имя и изображение профиля Chrome</translation>
+<translation id="4143243756087420366">Имя и фото профиля Chrome</translation>
 <translation id="4147555960264124640">Выполнив вход в управляемый аккаунт, вы предоставляете администратору право контролировать настройки вашего профиля Google Chrome. Ваши данные Chrome (приложения, закладки, история, пароли и другие настройки) будут временно связаны с аккаунтом <ph name="USER_NAME" />. Эти данные можно удалить в Личном кабинете Google, но их нельзя связать с другим аккаунтом. <ph name="LEARN_MORE" /></translation>
 <translation id="4149882025268051530">Не удалось извлечь файлы из архива. Скачайте Google Chrome заново.</translation>
+<translation id="424864128008805179">Выйти из Chrome?</translation>
 <translation id="4251615635259297716">Связать данные Chrome с этим аккаунтом?</translation>
 <translation id="4251625577313994583">скачайте Chrome для iOS</translation>
 <translation id="4293420128516039005">Войдите, чтобы синхронизировать данные Chrome на всех устройствах</translation>
@@ -132,6 +133,7 @@
 <translation id="4561051373932531560">В Google Chrome вы можете нажать на любой номер телефона и позвонить на него через Skype!</translation>
 <translation id="4567424176335768812">Вы вошли с помощью аккаунта <ph name="USER_EMAIL_ADDRESS" />. Ваши закладки, история и другие настройки теперь доступны на всех устройствах, где вы используете этот аккаунт.</translation>
 <translation id="4571503333518166079">Открыть настройки уведомлений Chrome</translation>
+<translation id="459622048091363950">Когда вы предоставите доступ Chrome, веб-сайты также смогут запрашивать у вас доступ.</translation>
 <translation id="4600710005438004015">Не удалось установить последнюю версию Chrome, в которой добавлены новые функции и обновления системы безопасности.</translation>
 <translation id="4631713731678262610">Не показывать в меню Google Chrome</translation>
 <translation id="4633000520311261472">Чтобы обеспечить безопасность ваших данных, некоторые расширения Chrome были отключены, так как <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> не содержит сведений о них, то есть эти компоненты могли быть установлены без вашего ведома.</translation>
@@ -151,6 +153,7 @@
 <translation id="495931528404527476">В Chrome</translation>
 <translation id="4990567037958725628">Google Chrome Canary</translation>
 <translation id="5028489144783860647">Google Chrome не удалось синхронизировать данные. Обновите кодовую фразу в Sync.</translation>
+<translation id="5090044601776247154">Начиная с версии Chrome 70 контролируемые профили станут недоступны.</translation>
 <translation id="5131923704757666404">{0,plural, =1{Chrome перезапустится через 1 час}one{Chrome перезапустится через # час}few{Chrome перезапустится через # часа}many{Chrome перезапустится через # часов}other{Chrome перезапустится через # часа}}</translation>
 <translation id="5132929315877954718">Широкий выбор приложений, игр, расширений и тем для Google Chrome.</translation>
 <translation id="5166975452760862670">Этот язык сейчас используется в Google Chrome</translation>
@@ -159,10 +162,9 @@
 <translation id="5204098752394657250"> <ph name="TERMS_OF_SERVICE_LINK" />Условия использования<ph name="END_TERMS_OF_SERVICE_LINK" /> Google Chrome</translation>
 <translation id="5251420635869119124">Используйте Chrome в гостевом режиме, если не хотите сохранять данные о посещенных сайтах.</translation>
 <translation id="532046782124376502">Внимание! Google Chrome не может предотвратить запись расширений в историю просмотренных страниц. Чтобы отключить это расширение в режиме инкогнито, отмените этот параметр.</translation>
-<translation id="5334545119300433702">Этот модуль конфликтует с Google Chrome.</translation>
 <translation id="5386244825306882791">Кроме того, расширение изменило стартовую страницу Chrome и поисковую систему, используемую по умолчанию при вводе запроса в омнибокс.</translation>
 <translation id="5430073640787465221">Файл настроек поврежден или недействителен. Google Chrome не может восстановить ваши параметры.</translation>
-<translation id="5495581687705680288">Модули, загруженные в Google Chrome</translation>
+<translation id="5514308096618405748">Chrome OS, как и Linux (бета-версия), работает благодаря дополнительному <ph name="BEGIN_LINK_CROS_OSS" />программному обеспечению с открытым исходным кодом<ph name="END_LINK_CROS_OSS" />.</translation>
 <translation id="556024056938947818">Вводимые пароли будут отображаться в Google Chrome.</translation>
 <translation id="5566025111015594046">Google Chrome (mDNS-In)</translation>
 <translation id="565744775970812598">Chrome заблокировал файл <ph name="FILE_NAME" /> как потенциально опасный.</translation>
@@ -171,7 +173,6 @@
 <translation id="5774845247549698882">Этот язык сейчас используется в Chrome OS</translation>
 <translation id="5795887333006832406"><ph name="PAGE_TITLE" /> – Google Chrome Canary</translation>
 <translation id="5804318322022881572">Не удалось запустить Chrome. Повторите попытку.</translation>
-<translation id="5855036575689098185">Используемое программное обеспечение несовместимо с Google Chrome.</translation>
 <translation id="5877064549588274448">Канал изменен. Чтобы изменения вступили в силу, перезапустите устройство.</translation>
 <translation id="5895138241574237353">Перезапустить</translation>
 <translation id="5906655207909574370">Чтобы завершить обновление, перезапустите устройство.</translation>
@@ -189,7 +190,6 @@
 <translation id="6291549208091401781">Google Chrome уже установлен для всех пользователей вашего компьютера</translation>
 <translation id="6338556085225130112">Обновление Google Chrome…</translation>
 <translation id="6368958679917195344">Своим появлением Chrome OS обязана дополнительному <ph name="BEGIN_LINK_CROS_OSS" />программному обеспечению с открытым исходным кодом<ph name="END_LINK_CROS_OSS" />.</translation>
-<translation id="6410540444482791104">Вы можете автоматически отправлять системную информацию и контент страниц в Google, чтобы помочь улучшить распознавание опасных приложений и сайтов. Давайте вместе сделаем Chrome ещё удобнее и безопаснее!</translation>
 <translation id="6515495397637126556"><ph name="PAGE_TITLE" /> – Google Chrome для разработчиков</translation>
 <translation id="6566149418543181476">Обновление Google Chrome (<ph name="PROGRESS_PERCENT" />)…</translation>
 <translation id="6598387184982954187">Для синхронизации данных Chrome используется аккаунт <ph name="PROFILE_EMAIL" />. Изменить параметры синхронизации или отключить аккаунт можно в <ph name="SETTINGS_LINK" />.</translation>
@@ -212,14 +212,12 @@
 <translation id="7308322188646931570">Для скачивания файлов браузеру Chrome требуется доступ к хранилищу.</translation>
 <translation id="7330164299247909639">Ошибка сертификата аутентификации. Войдите в Google Chrome как <ph name="USER_NAME" /> ещё раз или обратитесь за информацией к администратору. <ph name="ADDITIONAL_EXPLANATION" /></translation>
 <translation id="7339898014177206373">Новое окно</translation>
-<translation id="7369650938475876456">Используйте надежный пароль, сгенерированный Chrome.</translation>
 <translation id="7398801000654795464">Ранее вы входили в Chrome как <ph name="USER_EMAIL_ADDRESS" />. Войдите снова, используя тот же аккаунт.</translation>
 <translation id="7408085963519505752">Условия использования Chrome OS</translation>
 <translation id="7419046106786626209">Не удалось синхронизировать данные, поскольку сервис Sync недоступен в вашем домене.</translation>
-<translation id="7437998757836447326">Выход из Chrome</translation>
 <translation id="7459554271817304652">Чтобы сохранить персонализированные функции для работы в Интернете и получить доступ к ним из Google Chrome на любом компьютере, необходимо настроить синхронизацию.</translation>
 <translation id="7473136999113284234">Chrome обновляется автоматически, поэтому у вас всегда будет установлена последняя версия.</translation>
-<translation id="7494905215383356681">Лицензии Chrome на ПО с открытым исходным кодом</translation>
+<translation id="7486227612705979895">Chrome получит доступ к Google Диску, чтобы вы могли просматривать рекомендации в адресной строке</translation>
 <translation id="7535429826459677826">Google Chrome для разработчиков</translation>
 <translation id="7552219221109926349">Отображать Chrome OS на этом языке</translation>
 <translation id="7589360514048265910">Google Chrome больше не будет обновляться на этом компьютере, так как поддержка Mac OS X 10.9 прекращена.</translation>
@@ -250,9 +248,9 @@
 <translation id="8286862437124483331">Чтобы просмотреть пароли, введите пароль своего аккаунта Windows.</translation>
 <translation id="8290100596633877290">Произошел сбой Google Chrome. Перезапустить?</translation>
 <translation id="8342675569599923794">Chrome заблокировал этот файл как опасный.</translation>
+<translation id="8380166467911888159">Отправлять введенный вами текст в Google для проверки правописания</translation>
 <translation id="840084489713044809">Вы собираетесь экспортировать пароли из Google Chrome.</translation>
 <translation id="8406086379114794905">Помогите сделать Chrome безопаснее</translation>
-<translation id="8439301513305169426">Chrome сохранит этот пароль в <ph name="SAVED_PASSWORD_LINK" />. Вам не нужно его запоминать.</translation>
 <translation id="8455999171311319804">Автоматически отправлять статистику использования и данные диагностики в Google, чтобы помочь улучшить Chrome OS (необязательно)</translation>
 <translation id="8478823064122749032">Установите Chrome на телефон. Мы отправим SMS на номер, указанный в вашем аккаунте: <ph name="PHONE_NUMBER" />.</translation>
 <translation id="8521348052903287641">Разрешить в Google Chrome для разработчиков передачу входящего трафика по протоколу mDNS</translation>

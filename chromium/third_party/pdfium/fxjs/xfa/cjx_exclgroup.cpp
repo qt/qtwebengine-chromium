@@ -25,7 +25,7 @@ const CJX_MethodSpec CJX_ExclGroup::MethodSpecs[] = {
     {"selectedMember", selectedMember_static}};
 
 CJX_ExclGroup::CJX_ExclGroup(CXFA_ExclGroup* group) : CJX_Node(group) {
-  DefineMethods(MethodSpecs, FX_ArraySize(MethodSpecs));
+  DefineMethods(MethodSpecs);
 }
 
 CJX_ExclGroup::~CJX_ExclGroup() {}
@@ -38,7 +38,7 @@ CJS_Return CJX_ExclGroup::execEvent(
 
   execSingleEventByName(runtime->ToWideString(params[0]).AsStringView(),
                         XFA_Element::ExclGroup);
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_ExclGroup::execInitialize(
@@ -51,7 +51,7 @@ CJS_Return CJX_ExclGroup::execInitialize(
   if (pNotify)
     pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Initialize, false,
                                   true);
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_ExclGroup::execCalculate(
@@ -64,7 +64,7 @@ CJS_Return CJX_ExclGroup::execCalculate(
   if (pNotify)
     pNotify->ExecEventByDeepFirst(GetXFANode(), XFA_EVENT_Calculate, false,
                                   true);
-  return CJS_Return(true);
+  return CJS_Return();
 }
 
 CJS_Return CJX_ExclGroup::execValidate(

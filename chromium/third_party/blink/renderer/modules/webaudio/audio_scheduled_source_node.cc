@@ -26,14 +26,15 @@
 #include "third_party/blink/renderer/modules/webaudio/audio_scheduled_source_node.h"
 
 #include <algorithm>
+
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_messages.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/modules/event_modules.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+#include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
+#include "third_party/blink/renderer/platform/web_task_runner.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 namespace blink {
@@ -164,10 +165,10 @@ void AudioScheduledSourceHandler::Start(double when,
                                         ExceptionState& exception_state) {
   DCHECK(IsMainThread());
 
-  Context()->MaybeRecordStartAttempt();
+  Context()->NotifySourceNodeStart();
 
   if (GetPlaybackState() != UNSCHEDULED_STATE) {
-    exception_state.ThrowDOMException(kInvalidStateError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "cannot call start more than once.");
     return;
   }
@@ -200,7 +201,8 @@ void AudioScheduledSourceHandler::Stop(double when,
 
   if (GetPlaybackState() == UNSCHEDULED_STATE) {
     exception_state.ThrowDOMException(
-        kInvalidStateError, "cannot call stop without calling start first.");
+        DOMExceptionCode::kInvalidStateError,
+        "cannot call stop without calling start first.");
     return;
   }
 

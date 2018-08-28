@@ -22,9 +22,9 @@
 #include "build/build_config.h"
 #include "components/services/leveldb/public/cpp/util.h"
 #include "components/services/leveldb/public/interfaces/leveldb.mojom.h"
-#include "content/browser/dom_storage/session_storage_leveldb_wrapper.h"
+#include "content/browser/dom_storage/session_storage_area_impl.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl_mojo.h"
-#include "content/browser/leveldb_wrapper_impl.h"
+#include "content/browser/dom_storage/storage_area_impl.h"
 #include "content/common/dom_storage/dom_storage_types.h"
 #include "content/public/browser/session_storage_usage_info.h"
 #include "content/public/common/content_features.h"
@@ -94,9 +94,11 @@ void RecordSessionStorageCachePurgedHistogram(
 SessionStorageContextMojo::SessionStorageContextMojo(
     scoped_refptr<base::SequencedTaskRunner> memory_dump_task_runner,
     service_manager::Connector* connector,
-    base::Optional<base::FilePath> local_partition_directory,
+    BackingMode backing_mode,
+    base::FilePath local_partition_directory,
     std::string leveldb_name)
     : connector_(connector ? connector->Clone() : nullptr),
+      backing_mode_(backing_mode),
       partition_directory_path_(std::move(local_partition_directory)),
       leveldb_name_(std::move(leveldb_name)),
       memory_dump_id_(base::StringPrintf("SessionStorage/0x%" PRIXPTR,
@@ -119,7 +121,7 @@ SessionStorageContextMojo::~SessionStorageContextMojo() {
 void SessionStorageContextMojo::OpenSessionStorage(
     int process_id,
     const std::string& namespace_id,
-    mojom::SessionStorageNamespaceRequest request) {
+    blink::mojom::SessionStorageNamespaceRequest request) {
   if (connection_state_ != CONNECTION_FINISHED) {
     RunWhenConnected(
         base::BindOnce(&SessionStorageContextMojo::OpenSessionStorage,
@@ -128,7 +130,10 @@ void SessionStorageContextMojo::OpenSessionStorage(
     return;
   }
   auto found = namespaces_.find(namespace_id);
-  DCHECK(found != namespaces_.end()) << namespace_id;
+  if (found == namespaces_.end()) {
+    mojo::ReportBadMessage("Namespace not found: " + namespace_id);
+    return;
+  }
 
   if (!found->second->IsPopulated() &&
       !found->second->waiting_on_clone_population()) {
@@ -137,11 +142,11 @@ void SessionStorageContextMojo::OpenSessionStorage(
         data_maps_);
   }
 
-  PurgeUnusedWrappersIfNeeded();
+  PurgeUnusedAreasIfNeeded();
   found->second->Bind(std::move(request), process_id);
 
-  size_t total_cache_size, unused_wrapper_count;
-  GetStatistics(&total_cache_size, &unused_wrapper_count);
+  size_t total_cache_size, unused_area_count;
+  GetStatistics(&total_cache_size, &unused_area_count);
   // Track the total sessionStorage cache size.
   UMA_HISTOGRAM_COUNTS_100000("SessionStorageContext.CacheSizeInKB",
                               total_cache_size / 1024);
@@ -158,15 +163,42 @@ void SessionStorageContextMojo::CreateSessionNamespace(
 
 void SessionStorageContextMojo::CloneSessionNamespace(
     const std::string& namespace_id_to_clone,
-    const std::string& clone_namespace_id) {
-  if (namespaces_.find(clone_namespace_id) != namespaces_.end())
+    const std::string& clone_namespace_id,
+    CloneType clone_type) {
+  if (namespaces_.find(clone_namespace_id) != namespaces_.end()) {
+    // Non-immediate commits expect to be paired with a |Clone| from the mojo
+    // namespace object. If that clone has already happened, then we don't need
+    // to do anything here.
+    // However, immediate commits happen without a |Clone| from the mojo
+    // namespace object, so there should never be a namespace already populated
+    // for an immediate clone.
+    DCHECK_NE(clone_type, CloneType::kImmediate);
     return;
+  }
 
   std::unique_ptr<SessionStorageNamespaceImplMojo> namespace_impl =
       CreateSessionStorageNamespaceImplMojo(clone_namespace_id);
-  namespace_impl->SetWaitingForClonePopulation();
-  namespaces_.emplace(
-      std::make_pair(clone_namespace_id, std::move(namespace_impl)));
+  switch (clone_type) {
+    case CloneType::kImmediate: {
+      auto clone_from_ns = namespaces_.find(namespace_id_to_clone);
+      // If the namespace doesn't exist or it's not populated yet, just create
+      // an empty session storage.
+      if (clone_from_ns == namespaces_.end() ||
+          !clone_from_ns->second->IsPopulated()) {
+        break;
+      }
+      clone_from_ns->second->Clone(clone_namespace_id);
+      return;
+    }
+    case CloneType::kWaitForCloneOnNamespace:
+      namespace_impl->SetWaitingForClonePopulation();
+      break;
+    default:
+      NOTREACHED();
+  }
+  namespaces_.emplace(std::piecewise_construct,
+                      std::forward_as_tuple(clone_namespace_id),
+                      std::forward_as_tuple(std::move(namespace_impl)));
 }
 
 void SessionStorageContextMojo::DeleteSessionNamespace(
@@ -193,7 +225,7 @@ void SessionStorageContextMojo::Flush() {
     return;
   }
   for (const auto& it : data_maps_)
-    it.second->level_db_wrapper()->ScheduleImmediateCommit();
+    it.second->storage_area()->ScheduleImmediateCommit();
 }
 
 void SessionStorageContextMojo::GetStorageUsage(
@@ -229,7 +261,9 @@ void SessionStorageContextMojo::DeleteStorage(const url::Origin& origin,
     return;
   }
   auto found = namespaces_.find(namespace_id);
-  if (found != namespaces_.end()) {
+  if (found != namespaces_.end() &&
+      (found->second->IsPopulated() ||
+       found->second->waiting_on_clone_population())) {
     found->second->RemoveOriginData(origin);
   } else {
     // If we don't have the namespace loaded, then we can delete it all
@@ -255,47 +289,47 @@ void SessionStorageContextMojo::ShutdownAndDelete() {
 
   // Flush any uncommitted data.
   for (const auto& it : data_maps_) {
-    auto* wrapper = it.second->level_db_wrapper();
+    auto* area = it.second->storage_area();
     LOCAL_HISTOGRAM_BOOLEAN(
         "SessionStorageContext.ShutdownAndDelete.MaybeDroppedChanges",
-        wrapper->has_pending_load_tasks());
-    wrapper->ScheduleImmediateCommit();
+        area->has_pending_load_tasks());
+    area->ScheduleImmediateCommit();
     // TODO(dmurph): Monitor the above histogram, and if dropping changes is
     // common then handle that here.
-    wrapper->CancelAllPendingRequests();
+    area->CancelAllPendingRequests();
   }
 
   OnShutdownComplete(leveldb::mojom::DatabaseError::OK);
 }
 
 void SessionStorageContextMojo::PurgeMemory() {
-  size_t total_cache_size, unused_wrapper_count;
-  GetStatistics(&total_cache_size, &unused_wrapper_count);
+  size_t total_cache_size, unused_area_count;
+  GetStatistics(&total_cache_size, &unused_area_count);
 
-  // Purge all wrappers that don't have bindings.
-  for (auto it = namespaces_.begin(); it != namespaces_.end();) {
-    if (!it->second->IsBound()) {
-      it = namespaces_.erase(it);
-      continue;
-    }
-    it->second->PurgeUnboundWrappers();
+  // Purge all areas that don't have bindings.
+  for (const auto& namespace_pair : namespaces_) {
+    namespace_pair.second->PurgeUnboundAreas();
+  }
+  // Purge memory from bound maps.
+  for (const auto& data_map_pair : data_maps_) {
+    data_map_pair.second->storage_area()->PurgeMemory();
   }
 
   // Track the size of cache purged.
   size_t final_total_cache_size;
-  GetStatistics(&final_total_cache_size, &unused_wrapper_count);
+  GetStatistics(&final_total_cache_size, &unused_area_count);
   size_t purged_size_kib = (total_cache_size - final_total_cache_size) / 1024;
   RecordSessionStorageCachePurgedHistogram(
       SessionStorageCachePurgeReason::kAggressivePurgeTriggered,
       purged_size_kib);
 }
 
-void SessionStorageContextMojo::PurgeUnusedWrappersIfNeeded() {
-  size_t total_cache_size, unused_wrapper_count;
-  GetStatistics(&total_cache_size, &unused_wrapper_count);
+void SessionStorageContextMojo::PurgeUnusedAreasIfNeeded() {
+  size_t total_cache_size, unused_area_count;
+  GetStatistics(&total_cache_size, &unused_area_count);
 
   // Nothing to purge.
-  if (!unused_wrapper_count)
+  if (!unused_area_count)
     return;
 
   SessionStorageCachePurgeReason purge_reason =
@@ -311,18 +345,15 @@ void SessionStorageContextMojo::PurgeUnusedWrappersIfNeeded() {
   if (purge_reason == SessionStorageCachePurgeReason::kNotNeeded)
     return;
 
-  // Purge all wrappers that don't have bindings.
-  for (auto it = namespaces_.begin(); it != namespaces_.end();) {
-    if (!it->second->IsBound())
-      it = namespaces_.erase(it);
+  // Purge all areas that don't have bindings.
+  for (const auto& namespace_pair : namespaces_) {
+    namespace_pair.second->PurgeUnboundAreas();
   }
 
   size_t final_total_cache_size;
-  GetStatistics(&final_total_cache_size, &unused_wrapper_count);
+  GetStatistics(&final_total_cache_size, &unused_area_count);
   size_t purged_size_kib = (total_cache_size - final_total_cache_size) / 1024;
-  RecordSessionStorageCachePurgedHistogram(
-      SessionStorageCachePurgeReason::kAggressivePurgeTriggered,
-      purged_size_kib);
+  RecordSessionStorageCachePurgedHistogram(purge_reason, purged_size_kib);
 }
 
 void SessionStorageContextMojo::ScavengeUnusedNamespaces(
@@ -381,8 +412,8 @@ bool SessionStorageContextMojo::OnMemoryDump(
 
   if (args.level_of_detail ==
       base::trace_event::MemoryDumpLevelOfDetail::BACKGROUND) {
-    size_t total_cache_size, unused_wrapper_count;
-    GetStatistics(&total_cache_size, &unused_wrapper_count);
+    size_t total_cache_size, unused_area_count;
+    GetStatistics(&total_cache_size, &unused_area_count);
     auto* mad = pmd->CreateAllocatorDump(context_name + "/cache_size");
     mad->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
                    base::trace_event::MemoryAllocatorDump::kUnitsBytes,
@@ -400,10 +431,10 @@ bool SessionStorageContextMojo::OnMemoryDump(
       if (!std::isalnum(url[index]))
         url[index] = '_';
     }
-    std::string wrapper_dump_name = base::StringPrintf(
+    std::string area_dump_name = base::StringPrintf(
         "%s/%s/0x%" PRIXPTR, context_name.c_str(), url.c_str(),
-        reinterpret_cast<uintptr_t>(it.second->level_db_wrapper()));
-    it.second->level_db_wrapper()->OnMemoryDump(wrapper_dump_name, pmd);
+        reinterpret_cast<uintptr_t>(it.second->storage_area()));
+    it.second->storage_area()->OnMemoryDump(area_dump_name, pmd);
   }
   return true;
 }
@@ -442,8 +473,8 @@ void SessionStorageContextMojo::OnCommitResult(
     }
     tried_to_recover_from_commit_errors_ = true;
 
-    // Deleting LevelDBWrappers in here could cause more commits (and commit
-    // errors), but those commits won't reach OnCommitResult because the wrapper
+    // Deleting StorageAreas in here could cause more commits (and commit
+    // errors), but those commits won't reach OnCommitResult because the area
     // will have been deleted before the commit finishes.
     DeleteAndRecreateDatabase(
         "SessionStorageContext.OpenResultAfterCommitErrors");
@@ -488,6 +519,17 @@ void SessionStorageContextMojo::RegisterShallowClonedNamespace(
     const std::string& new_namespace_id,
     const SessionStorageNamespaceImplMojo::OriginAreas& clone_from_areas) {
   std::vector<leveldb::mojom::BatchedOperationPtr> save_operations;
+
+  bool found = false;
+  auto it = namespaces_.find(new_namespace_id);
+  if (it != namespaces_.end()) {
+    found = true;
+    if (it->second->IsPopulated()) {
+      mojo::ReportBadMessage("Cannot clone to already populated namespace");
+      return;
+    }
+  }
+
   SessionStorageMetadata::NamespaceEntry namespace_entry =
       metadata_.GetOrCreateNamespaceEntry(new_namespace_id);
   metadata_.RegisterShallowClonedNamespace(source_namespace_entry,
@@ -496,8 +538,7 @@ void SessionStorageContextMojo::RegisterShallowClonedNamespace(
                    base::BindOnce(&SessionStorageContextMojo::OnCommitResult,
                                   base::Unretained(this)));
 
-  auto it = namespaces_.find(new_namespace_id);
-  if (it != namespaces_.end()) {
+  if (found) {
     it->second->PopulateAsClone(database_.get(), namespace_entry,
                                 clone_from_areas);
     return;
@@ -506,8 +547,9 @@ void SessionStorageContextMojo::RegisterShallowClonedNamespace(
   auto namespace_impl = CreateSessionStorageNamespaceImplMojo(new_namespace_id);
   namespace_impl->PopulateAsClone(database_.get(), namespace_entry,
                                   clone_from_areas);
-  namespaces_.emplace(
-      std::make_pair(new_namespace_id, std::move(namespace_impl)));
+  namespaces_.emplace(std::piecewise_construct,
+                      std::forward_as_tuple(new_namespace_id),
+                      std::forward_as_tuple(std::move(namespace_impl)));
 }
 
 std::unique_ptr<SessionStorageNamespaceImplMojo>
@@ -517,7 +559,7 @@ SessionStorageContextMojo::CreateSessionStorageNamespaceImplMojo(
       add_namespace_callback = base::BindRepeating(
           &SessionStorageContextMojo::RegisterShallowClonedNamespace,
           base::Unretained(this));
-  SessionStorageLevelDBWrapper::RegisterNewAreaMap map_id_callback =
+  SessionStorageAreaImpl::RegisterNewAreaMap map_id_callback =
       base::BindRepeating(&SessionStorageContextMojo::RegisterNewAreaMap,
                           base::Unretained(this));
 
@@ -537,21 +579,25 @@ void SessionStorageContextMojo::DoDatabaseDelete(
 }
 
 void SessionStorageContextMojo::RunWhenConnected(base::OnceClosure callback) {
-  DCHECK_NE(connection_state_, CONNECTION_SHUTDOWN);
-
-  // If we don't have a filesystem_connection_, we'll need to establish one.
-  if (connection_state_ == NO_CONNECTION) {
-    connection_state_ = CONNECTION_IN_PROGRESS;
-    InitiateConnection();
+  switch (connection_state_) {
+    case NO_CONNECTION:
+      // If we don't have a filesystem_connection_, we'll need to establish one.
+      connection_state_ = CONNECTION_IN_PROGRESS;
+      on_database_opened_callbacks_.push_back(std::move(callback));
+      InitiateConnection();
+      return;
+    case CONNECTION_IN_PROGRESS:
+      // Queue this OpenSessionStorage call for when we have a level db pointer.
+      on_database_opened_callbacks_.push_back(std::move(callback));
+      return;
+    case CONNECTION_SHUTDOWN:
+      NOTREACHED();
+      return;
+    case CONNECTION_FINISHED:
+      std::move(callback).Run();
+      return;
   }
-
-  if (connection_state_ == CONNECTION_IN_PROGRESS) {
-    // Queue this OpenSessionStorage call for when we have a level db pointer.
-    on_database_opened_callbacks_.push_back(std::move(callback));
-    return;
-  }
-
-  std::move(callback).Run();
+  NOTREACHED();
 }
 
 void SessionStorageContextMojo::InitiateConnection(bool in_memory_only) {
@@ -563,12 +609,12 @@ void SessionStorageContextMojo::InitiateConnection(bool in_memory_only) {
     return;
   }
 
-  if (partition_directory_path_ && !in_memory_only) {
+  if (backing_mode_ != BackingMode::kNoDisk && !in_memory_only) {
     // We were given a subdirectory to write to. Get it and use a disk backed
     // database.
     connector_->BindInterface(file::mojom::kServiceName, &file_system_);
     file_system_->GetSubDirectory(
-        partition_directory_path_.value().AsUTF8Unsafe(),
+        partition_directory_path_.AsUTF8Unsafe(),
         MakeRequest(&partition_directory_),
         base::BindOnce(&SessionStorageContextMojo::OnDirectoryOpened,
                        weak_ptr_factory_.GetWeakPtr()));
@@ -585,7 +631,7 @@ void SessionStorageContextMojo::InitiateConnection(bool in_memory_only) {
 void SessionStorageContextMojo::OnDirectoryOpened(base::File::Error err) {
   if (err != base::File::FILE_OK) {
     // We failed to open the directory; continue with startup so that we create
-    // the |level_db_wrappers_|.
+    // the data maps.
     UMA_HISTOGRAM_ENUMERATION("SessionStorageContext.DirectoryOpenError", -err,
                               -base::File::FILE_ERROR_MAX);
     LogDatabaseOpenResult(OpenResult::kDirectoryOpenFailed);
@@ -600,6 +646,14 @@ void SessionStorageContextMojo::OnDirectoryOpened(base::File::Error err) {
   // We might still need to use the directory, so create a clone.
   filesystem::mojom::DirectoryPtr partition_directory_clone;
   partition_directory_->Clone(MakeRequest(&partition_directory_clone));
+
+  if (backing_mode_ == BackingMode::kClearDiskStateOnOpen) {
+    filesystem::mojom::DirectoryPtr partition_directory_clone_for_deletion;
+    partition_directory_->Clone(
+        MakeRequest(&partition_directory_clone_for_deletion));
+    leveldb_service_->Destroy(std::move(partition_directory_clone_for_deletion),
+                              leveldb_name_, base::DoNothing());
+  }
 
   leveldb_env::Options options;
   options.create_if_missing = true;
@@ -679,7 +733,6 @@ void SessionStorageContextMojo::OnGotDatabaseVersion(
         "SessionStorageContext.OpenResultAfterReadVersionError");
     return;
   }
-  connection_state_ = FETCHING_METADATA;
 
   base::RepeatingClosure barrier = base::BarrierClosure(
       2, base::BindOnce(&SessionStorageContextMojo::OnConnectionFinished,
@@ -706,7 +759,7 @@ void SessionStorageContextMojo::OnGotNamespaces(
     std::vector<leveldb::mojom::BatchedOperationPtr> migration_operations,
     leveldb::mojom::DatabaseError status,
     std::vector<leveldb::mojom::KeyValuePtr> values) {
-  DCHECK(connection_state_ == FETCHING_METADATA);
+  DCHECK_EQ(connection_state_, CONNECTION_IN_PROGRESS);
   bool parsing_failure =
       status == leveldb::mojom::DatabaseError::OK &&
       !metadata_.ParseNamespaces(std::move(values), &migration_operations);
@@ -733,7 +786,7 @@ void SessionStorageContextMojo::OnGotNextMapId(
     base::OnceClosure done,
     leveldb::mojom::DatabaseError status,
     const std::vector<uint8_t>& map_id) {
-  DCHECK(connection_state_ == FETCHING_METADATA);
+  DCHECK_EQ(connection_state_, CONNECTION_IN_PROGRESS);
   if (status == leveldb::mojom::DatabaseError::NOT_FOUND) {
     std::move(done).Run();
     return;
@@ -754,7 +807,7 @@ void SessionStorageContextMojo::OnGotNextMapId(
 }
 
 void SessionStorageContextMojo::OnConnectionFinished() {
-  DCHECK(!database_ || connection_state_ == FETCHING_METADATA);
+  DCHECK(!database_ || connection_state_ == CONNECTION_IN_PROGRESS);
   if (!database_) {
     partition_directory_.reset();
     file_system_.reset();
@@ -779,10 +832,10 @@ void SessionStorageContextMojo::OnConnectionFinished() {
 
 void SessionStorageContextMojo::DeleteAndRecreateDatabase(
     const char* histogram_name) {
-  // We're about to set database_ to null, so delete the LevelDBWrappers
+  // We're about to set database_ to null, so delete the StorageAreas
   // that might still be using the old database.
   for (const auto& it : data_maps_)
-    it.second->level_db_wrapper()->CancelAllPendingRequests();
+    it.second->storage_area()->CancelAllPendingRequests();
 
   for (const auto& namespace_pair : namespaces_) {
     namespace_pair.second->Reset();
@@ -790,7 +843,7 @@ void SessionStorageContextMojo::DeleteAndRecreateDatabase(
   DCHECK(data_maps_.empty());
 
   // Reset state to be in process of connecting. This will cause requests for
-  // LevelDBWrappers to be queued until the connection is complete.
+  // StorageAreas to be queued until the connection is complete.
   connection_state_ = CONNECTION_IN_PROGRESS;
   commit_error_count_ = 0;
   database_ = nullptr;
@@ -800,7 +853,7 @@ void SessionStorageContextMojo::DeleteAndRecreateDatabase(
 
   // If tried to recreate database on disk already, try again but this time
   // in memory.
-  if (tried_to_recreate_during_open_ && !!partition_directory_path_) {
+  if (tried_to_recreate_during_open_ && backing_mode_ != BackingMode::kNoDisk) {
     recreate_in_memory = true;
   } else if (tried_to_recreate_during_open_) {
     // Give up completely, run without any database.
@@ -849,13 +902,13 @@ void SessionStorageContextMojo::OnShutdownComplete(
 }
 
 void SessionStorageContextMojo::GetStatistics(size_t* total_cache_size,
-                                              size_t* unused_wrapper_count) {
+                                              size_t* unused_area_count) {
   *total_cache_size = 0;
-  *unused_wrapper_count = 0;
+  *unused_area_count = 0;
   for (const auto& it : data_maps_) {
-    *total_cache_size += it.second->level_db_wrapper()->memory_used();
+    *total_cache_size += it.second->storage_area()->memory_used();
     if (it.second->binding_count() == 0)
-      (*unused_wrapper_count)++;
+      (*unused_area_count)++;
   }
 }
 

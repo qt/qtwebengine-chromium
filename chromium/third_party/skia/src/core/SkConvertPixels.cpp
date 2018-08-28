@@ -7,7 +7,6 @@
 
 #include "SkColorSpaceXformPriv.h"
 #include "SkColorSpacePriv.h"
-#include "SkColorTable.h"
 #include "SkConvertPixels.h"
 #include "SkHalf.h"
 #include "SkImageInfoPriv.h"
@@ -88,13 +87,10 @@ void swizzle_and_multiply(const SkImageInfo& dstInfo, void* dstPixels, size_t ds
 }
 
 // Fast Path 3: Color space xform.
-static inline bool optimized_color_xform(const SkImageInfo& dstInfo, const SkImageInfo& srcInfo,
-                                         SkTransferFunctionBehavior behavior) {
+static inline bool optimized_color_xform(const SkImageInfo& dstInfo, const SkImageInfo& srcInfo) {
     // Unpremultiplication is unsupported by SkColorSpaceXform.  Note that if |src| is non-linearly
     // premultiplied, we're always going to have to unpremultiply before doing anything.
-    if (kPremul_SkAlphaType == srcInfo.alphaType() &&
-            (kUnpremul_SkAlphaType == dstInfo.alphaType() ||
-             SkTransferFunctionBehavior::kIgnore == behavior)) {
+    if (kPremul_SkAlphaType == srcInfo.alphaType()) {
         return false;
     }
 
@@ -120,7 +116,7 @@ static inline bool optimized_color_xform(const SkImageInfo& dstInfo, const SkIma
 
 static inline bool apply_color_xform(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRB,
                                      const SkImageInfo& srcInfo, const void* srcPixels,
-                                     size_t srcRB, SkTransferFunctionBehavior behavior) {
+                                     size_t srcRB) {
     SkColorSpaceXform::ColorFormat dstFormat = select_xform_format(dstInfo.colorType());
     SkColorSpaceXform::ColorFormat srcFormat = select_xform_format(srcInfo.colorType());
     SkAlphaType xformAlpha;
@@ -147,8 +143,8 @@ static inline bool apply_color_xform(const SkImageInfo& dstInfo, void* dstPixels
             break;
     }
 
-    std::unique_ptr<SkColorSpaceXform> xform =
-            SkMakeColorSpaceXform(srcInfo.colorSpace(), dstInfo.colorSpace(), behavior);
+    std::unique_ptr<SkColorSpaceXform> xform = SkMakeColorSpaceXform(srcInfo.colorSpace(),
+                                                                     dstInfo.colorSpace());
     if (!xform) {
         return false;
     }
@@ -164,7 +160,7 @@ static inline bool apply_color_xform(const SkImageInfo& dstInfo, void* dstPixels
 
 // Fast Path 4: Alpha 8 dsts.
 static void convert_to_alpha8(uint8_t* dst, size_t dstRB, const SkImageInfo& srcInfo,
-                              const void* src, size_t srcRB, SkColorTable* ctable) {
+                              const void* src, size_t srcRB) {
     if (srcInfo.isOpaque()) {
         for (int y = 0; y < srcInfo.height(); ++y) {
            memset(dst, 0xFF, srcInfo.width());
@@ -232,6 +228,16 @@ static void convert_to_alpha8(uint8_t* dst, size_t dstRB, const SkImageInfo& src
             }
             break;
         }
+        case kRGBA_F32_SkColorType: {
+            auto rgba = (const float*)src;
+            for (int y = 0; y < srcInfo.height(); y++) {
+                for (int x = 0; x < srcInfo.width(); x++) {
+                    dst[x] = (uint8_t)(255.0f * rgba[4*x+3]);
+                }
+                dst  = SkTAddOffset<uint8_t>(dst, dstRB);
+                rgba = SkTAddOffset<const float>(rgba, srcRB);
+            }
+        } break;
         default:
             SkASSERT(false);
             break;
@@ -241,7 +247,7 @@ static void convert_to_alpha8(uint8_t* dst, size_t dstRB, const SkImageInfo& src
 // Default: Use the pipeline.
 static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size_t dstRB,
                                   const SkImageInfo& srcInfo, const void* srcRow, size_t srcRB,
-                                  bool isColorAware, SkTransferFunctionBehavior behavior) {
+                                  bool isColorAware) {
 
     SkJumper_MemoryCtx src = { (void*)srcRow, (int)(srcRB / srcInfo.bytesPerPixel()) },
                        dst = { (void*)dstRow, (int)(dstRB / dstInfo.bytesPerPixel()) };
@@ -271,6 +277,9 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
         case kRGBA_F16_SkColorType:
             pipeline.append(SkRasterPipeline::load_f16, &src);
             break;
+        case kRGBA_F32_SkColorType:
+            pipeline.append(SkRasterPipeline::load_f32, &src);
+            break;
         case kGray_8_SkColorType:
             pipeline.append(SkRasterPipeline::load_g8, &src);
             break;
@@ -283,7 +292,7 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
     }
 
     SkAlphaType premulState = srcInfo.alphaType();
-    if (kPremul_SkAlphaType == premulState && SkTransferFunctionBehavior::kIgnore == behavior) {
+    if (kPremul_SkAlphaType == premulState) {
         pipeline.append(SkRasterPipeline::unpremul);
         premulState = kUnpremul_SkAlphaType;
     }
@@ -296,27 +305,14 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
         if (is_just_gamma(srcFn)) {
             pipeline.append(SkRasterPipeline::gamma, &srcFn.fG);
         } else {
-            pipeline.append(SkRasterPipeline::parametric_r, &srcFn);
-            pipeline.append(SkRasterPipeline::parametric_g, &srcFn);
-            pipeline.append(SkRasterPipeline::parametric_b, &srcFn);
+            pipeline.append(SkRasterPipeline::parametric, &srcFn);
         }
     }
 
-    float matrix[12];
+    SkSTArenaAlloc<12*sizeof(float)> alloc;
     if (isColorAware) {
-        append_gamut_transform(&pipeline, matrix, srcInfo.colorSpace(), dstInfo.colorSpace(),
-                               premulState);
-    }
-
-    SkAlphaType dat = dstInfo.alphaType();
-    if (SkTransferFunctionBehavior::kRespect == behavior) {
-        if (kPremul_SkAlphaType == premulState && kUnpremul_SkAlphaType == dat) {
-            pipeline.append(SkRasterPipeline::unpremul);
-            premulState = kUnpremul_SkAlphaType;
-        } else if (kUnpremul_SkAlphaType == premulState && kPremul_SkAlphaType == dat) {
-            pipeline.append(SkRasterPipeline::premul);
-            premulState = kPremul_SkAlphaType;
-        }
+        append_gamut_transform(&pipeline, &alloc,
+                               srcInfo.colorSpace(), dstInfo.colorSpace(), premulState);
     }
 
     SkColorSpaceTransferFn dstFn;
@@ -328,14 +324,12 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
         if (is_just_gamma(dstFn)) {
             pipeline.append(SkRasterPipeline::gamma, &dstFn.fG);
         } else {
-            pipeline.append(SkRasterPipeline::parametric_r, &dstFn);
-            pipeline.append(SkRasterPipeline::parametric_g, &dstFn);
-            pipeline.append(SkRasterPipeline::parametric_b, &dstFn);
+            pipeline.append(SkRasterPipeline::parametric, &dstFn);
         }
     }
 
-    if (kUnpremul_SkAlphaType == premulState && kPremul_SkAlphaType == dat &&
-        SkTransferFunctionBehavior::kIgnore == behavior)
+    SkAlphaType dat = dstInfo.alphaType();
+    if (kUnpremul_SkAlphaType == premulState && kPremul_SkAlphaType == dat)
     {
         pipeline.append(SkRasterPipeline::premul);
         premulState = kPremul_SkAlphaType;
@@ -382,6 +376,9 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
         case kRGBA_F16_SkColorType:
             pipeline.append(SkRasterPipeline::store_f16, &dst);
             break;
+        case kRGBA_F32_SkColorType:
+            pipeline.append(SkRasterPipeline::store_f32, &dst);
+            break;
         case kARGB_4444_SkColorType:
             pipeline.append(SkRasterPipeline::store_4444, &dst);
             break;
@@ -404,8 +401,7 @@ static bool swizzle_and_multiply_color_type(SkColorType ct) {
 }
 
 void SkConvertPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRB,
-                     const SkImageInfo& srcInfo, const void* srcPixels, size_t srcRB,
-                     SkColorTable* ctable, SkTransferFunctionBehavior behavior) {
+                     const SkImageInfo& srcInfo, const void* srcPixels, size_t srcRB) {
     SkASSERT(dstInfo.dimensions() == srcInfo.dimensions());
     SkASSERT(SkImageInfoValidConversion(dstInfo, srcInfo));
 
@@ -426,19 +422,18 @@ void SkConvertPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRB,
     }
 
     // Fast Path 3: Color space xform.
-    if (isColorAware && optimized_color_xform(dstInfo, srcInfo, behavior)) {
-        if (apply_color_xform(dstInfo, dstPixels, dstRB, srcInfo, srcPixels, srcRB, behavior)) {
+    if (isColorAware && optimized_color_xform(dstInfo, srcInfo)) {
+        if (apply_color_xform(dstInfo, dstPixels, dstRB, srcInfo, srcPixels, srcRB)) {
             return;
         }
     }
 
     // Fast Path 4: Alpha 8 dsts.
     if (kAlpha_8_SkColorType == dstInfo.colorType()) {
-        convert_to_alpha8((uint8_t*) dstPixels, dstRB, srcInfo, srcPixels, srcRB, ctable);
+        convert_to_alpha8((uint8_t*) dstPixels, dstRB, srcInfo, srcPixels, srcRB);
         return;
     }
 
     // Default: Use the pipeline.
-    convert_with_pipeline(dstInfo, dstPixels, dstRB, srcInfo, srcPixels, srcRB, isColorAware,
-                          behavior);
+    convert_with_pipeline(dstInfo, dstPixels, dstRB, srcInfo, srcPixels, srcRB, isColorAware);
 }

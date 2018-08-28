@@ -45,6 +45,7 @@
 @end
 
 @implementation RTCRtpTransceiver {
+  RTCPeerConnectionFactory *_factory;
   rtc::scoped_refptr<webrtc::RtpTransceiverInterface> _nativeRtpTransceiver;
 }
 
@@ -120,13 +121,18 @@
   return _nativeRtpTransceiver;
 }
 
-- (instancetype)initWithNativeRtpTransceiver:
-        (rtc::scoped_refptr<webrtc::RtpTransceiverInterface>)nativeRtpTransceiver {
+- (instancetype)initWithFactory:(RTCPeerConnectionFactory *)factory
+           nativeRtpTransceiver:
+               (rtc::scoped_refptr<webrtc::RtpTransceiverInterface>)nativeRtpTransceiver {
+  NSParameterAssert(factory);
   NSParameterAssert(nativeRtpTransceiver);
   if (self = [super init]) {
+    _factory = factory;
     _nativeRtpTransceiver = nativeRtpTransceiver;
-    _sender = [[RTCRtpSender alloc] initWithNativeRtpSender:nativeRtpTransceiver->sender()];
-    _receiver = [[RTCRtpReceiver alloc] initWithNativeRtpReceiver:nativeRtpTransceiver->receiver()];
+    _sender = [[RTCRtpSender alloc] initWithFactory:_factory
+                                    nativeRtpSender:nativeRtpTransceiver->sender()];
+    _receiver = [[RTCRtpReceiver alloc] initWithFactory:_factory
+                                      nativeRtpReceiver:nativeRtpTransceiver->receiver()];
     RTCLogInfo(@"RTCRtpTransceiver(%p): created transceiver: %@", self, self.description);
   }
   return self;

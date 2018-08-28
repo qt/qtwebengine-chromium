@@ -35,6 +35,7 @@
 #include "build/build_config.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_regexp.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/document_timing.h"
 #include "third_party/blink/renderer/core/dom/dom_implementation.h"
@@ -62,6 +63,7 @@
 #include "third_party/blink/renderer/core/loader/resource/script_resource.h"
 #include "third_party/blink/renderer/core/loader/scheduled_navigation.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
@@ -88,6 +90,16 @@ static const char kPageAgentScriptsToEvaluateOnLoad[] =
 static const char kScreencastEnabled[] = "screencastEnabled";
 static const char kLifecycleEventsEnabled[] = "lifecycleEventsEnabled";
 static const char kBypassCSPEnabled[] = "bypassCSPEnabled";
+static const char kStandardFontFamily[] = "standardFontFamily";
+static const char kFixedFontFamily[] = "fixedFontFamily";
+static const char kSerifFontFamily[] = "serifFontFamily";
+static const char kSansSerifFontFamily[] = "sansSerifFontFamily";
+static const char kCursiveFontFamily[] = "cursiveFontFamily";
+static const char kFantasyFontFamily[] = "fantasyFontFamily";
+static const char kPictographFontFamily[] = "pictographFontFamily";
+static const char kStandardFontSize[] = "standardFontSize";
+static const char kFixedFontSize[] = "fixedFontSize";
+static const char kProduceCompilationCache[] = "generateCompilationCache";
 }  // namespace PageAgentState
 
 namespace {
@@ -348,7 +360,7 @@ bool InspectorPageAgent::CachedResourceContent(Resource* cached_resource,
       MaybeEncodeTextContent(
           cached_resource->ResourceBuffer()
               ? ToScriptResource(cached_resource)->DecodedText()
-              : ToScriptResource(cached_resource)->SourceText(),
+              : ToScriptResource(cached_resource)->SourceText().ToString(),
           cached_resource->ResourceBuffer(), result, base64_encoded);
       return true;
     default:
@@ -463,6 +475,57 @@ void InspectorPageAgent::Restore() {
     enable();
   if (state_->booleanProperty(PageAgentState::kBypassCSPEnabled, false))
     setBypassCSP(true);
+
+  // Re-apply generic fonts overrides.
+  String font;
+  bool notifyGenericFontFamilyChange = false;
+  LocalFrame* frame = inspected_frames_->Root();
+  auto* settings = frame->GetSettings();
+  if (settings) {
+    auto& family_settings = settings->GetGenericFontFamilySettings();
+    if (state_->getString(PageAgentState::kStandardFontFamily, &font)) {
+      family_settings.UpdateStandard(AtomicString(font));
+      notifyGenericFontFamilyChange = true;
+    }
+    if (state_->getString(PageAgentState::kFixedFontFamily, &font)) {
+      family_settings.UpdateFixed(AtomicString(font));
+      notifyGenericFontFamilyChange = true;
+    }
+    if (state_->getString(PageAgentState::kSerifFontFamily, &font)) {
+      family_settings.UpdateSerif(AtomicString(font));
+      notifyGenericFontFamilyChange = true;
+    }
+    if (state_->getString(PageAgentState::kSansSerifFontFamily, &font)) {
+      family_settings.UpdateSansSerif(AtomicString(font));
+      notifyGenericFontFamilyChange = true;
+    }
+    if (state_->getString(PageAgentState::kCursiveFontFamily, &font)) {
+      family_settings.UpdateCursive(AtomicString(font));
+      notifyGenericFontFamilyChange = true;
+    }
+    if (state_->getString(PageAgentState::kFantasyFontFamily, &font)) {
+      family_settings.UpdateFantasy(AtomicString(font));
+      notifyGenericFontFamilyChange = true;
+    }
+    if (state_->getString(PageAgentState::kPictographFontFamily, &font)) {
+      family_settings.UpdatePictograph(AtomicString(font));
+      notifyGenericFontFamilyChange = true;
+    }
+    if (notifyGenericFontFamilyChange) {
+      settings->NotifyGenericFontFamilyChange();
+    }
+  }
+
+  // Re-apply default font size overrides.
+  int font_size;
+  if (settings) {
+    if (state_->getInteger(PageAgentState::kStandardFontSize, &font_size)) {
+      settings->SetDefaultFontSize(font_size);
+    }
+    if (state_->getInteger(PageAgentState::kFixedFontSize, &font_size)) {
+      settings->SetDefaultFixedFontSize(font_size);
+    }
+  }
 }
 
 Response InspectorPageAgent::enable() {
@@ -588,10 +651,11 @@ Response InspectorPageAgent::reload(
       optional_script_to_evaluate_on_load.fromMaybe("");
   v8_session_->setSkipAllPauses(true);
   reloading_ = true;
-  inspected_frames_->Root()->Reload(optional_bypass_cache.fromMaybe(false)
-                                        ? kFrameLoadTypeReloadBypassingCache
-                                        : kFrameLoadTypeReload,
-                                    ClientRedirectPolicy::kNotClientRedirect);
+  inspected_frames_->Root()->Reload(
+      optional_bypass_cache.fromMaybe(false)
+          ? WebFrameLoadType::kReloadBypassingCache
+          : WebFrameLoadType::kReload,
+      ClientRedirectPolicy::kNotClientRedirect);
   return Response::OK();
 }
 
@@ -805,7 +869,7 @@ void InspectorPageAgent::DidClearDocumentOfWindowObject(LocalFrame* frame) {
   }
 }
 
-void InspectorPageAgent::DomContentLoadedEventFired(LocalFrame* frame) {
+void InspectorPageAgent::DOMContentLoadedEventFired(LocalFrame* frame) {
   double timestamp = CurrentTimeTicksInSeconds();
   if (frame == inspected_frames_->Root())
     GetFrontend()->domContentEventFired(timestamp);
@@ -853,7 +917,7 @@ bool InspectorPageAgent::ScreencastEnabled() {
          state_->booleanProperty(PageAgentState::kScreencastEnabled, false);
 }
 
-void InspectorPageAgent::FrameStartedLoading(LocalFrame* frame, FrameLoadType) {
+void InspectorPageAgent::FrameStartedLoading(LocalFrame* frame) {
   GetFrontend()->frameStartedLoading(IdentifiersFactory::FrameId(frame));
 }
 
@@ -1073,7 +1137,7 @@ Response InspectorPageAgent::getLayoutMetrics(
   main_frame->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
 
   IntRect visible_contents =
-      main_frame->View()->LayoutViewportScrollableArea()->VisibleContentRect();
+      main_frame->View()->LayoutViewport()->VisibleContentRect();
   *out_layout_viewport = protocol::Page::LayoutViewport::create()
                              .setPageX(visible_contents.X())
                              .setPageY(visible_contents.Y())
@@ -1086,12 +1150,6 @@ Response InspectorPageAgent::getLayoutMetrics(
   float page_zoom = main_frame->PageZoomFactor();
   FloatRect visible_rect = visual_viewport.VisibleRect();
   float scale = visual_viewport.Scale();
-  float scrollbar_width =
-      frame_view->LayoutViewportScrollableArea()->VerticalScrollbarWidth() /
-      scale;
-  float scrollbar_height =
-      frame_view->LayoutViewportScrollableArea()->HorizontalScrollbarHeight() /
-      scale;
 
   IntSize content_size = frame_view->GetScrollableArea()->ContentsSize();
   *out_content_size = protocol::DOM::Rect::create()
@@ -1101,20 +1159,19 @@ Response InspectorPageAgent::getLayoutMetrics(
                           .setHeight(content_size.Height())
                           .build();
 
-  *out_visual_viewport =
-      protocol::Page::VisualViewport::create()
-          .setOffsetX(
-              AdjustForAbsoluteZoom::AdjustScroll(visible_rect.X(), page_zoom))
-          .setOffsetY(
-              AdjustForAbsoluteZoom::AdjustScroll(visible_rect.Y(), page_zoom))
-          .setPageX(AdjustForAbsoluteZoom::AdjustScroll(page_offset.Width(),
-                                                        page_zoom))
-          .setPageY(AdjustForAbsoluteZoom::AdjustScroll(page_offset.Height(),
-                                                        page_zoom))
-          .setClientWidth(visible_rect.Width() - scrollbar_width)
-          .setClientHeight(visible_rect.Height() - scrollbar_height)
-          .setScale(scale)
-          .build();
+  *out_visual_viewport = protocol::Page::VisualViewport::create()
+                             .setOffsetX(AdjustForAbsoluteZoom::AdjustScroll(
+                                 visible_rect.X(), page_zoom))
+                             .setOffsetY(AdjustForAbsoluteZoom::AdjustScroll(
+                                 visible_rect.Y(), page_zoom))
+                             .setPageX(AdjustForAbsoluteZoom::AdjustScroll(
+                                 page_offset.Width(), page_zoom))
+                             .setPageY(AdjustForAbsoluteZoom::AdjustScroll(
+                                 page_offset.Height(), page_zoom))
+                             .setClientWidth(visible_rect.Width())
+                             .setClientHeight(visible_rect.Height())
+                             .setScale(scale)
+                             .build();
   return Response::OK();
 }
 
@@ -1147,6 +1204,138 @@ protocol::Response InspectorPageAgent::createIsolatedWorld(
   v8::HandleScope handle_scope(V8PerIsolateData::MainThreadIsolate());
   *execution_context_id = v8_inspector::V8ContextInfo::executionContextId(
       isolated_world_window_proxy->ContextIfInitialized());
+  return Response::OK();
+}
+
+Response InspectorPageAgent::setFontFamilies(
+    std::unique_ptr<protocol::Page::FontFamilies> font_families) {
+  LocalFrame* frame = inspected_frames_->Root();
+  auto* settings = frame->GetSettings();
+  if (settings) {
+    auto& family_settings = settings->GetGenericFontFamilySettings();
+    if (font_families->hasStandard()) {
+      state_->setString(PageAgentState::kStandardFontFamily,
+                        font_families->getStandard(String()));
+      family_settings.UpdateStandard(
+          AtomicString(font_families->getStandard(String())));
+    }
+    if (font_families->hasFixed()) {
+      state_->setString(PageAgentState::kFixedFontFamily,
+                        font_families->getFixed(String()));
+      family_settings.UpdateFixed(
+          AtomicString(font_families->getFixed(String())));
+    }
+    if (font_families->hasSerif()) {
+      state_->setString(PageAgentState::kSerifFontFamily,
+                        font_families->getSerif(String()));
+      family_settings.UpdateSerif(
+          AtomicString(font_families->getSerif(String())));
+    }
+    if (font_families->hasSansSerif()) {
+      state_->setString(PageAgentState::kSansSerifFontFamily,
+                        font_families->getSansSerif(String()));
+      family_settings.UpdateSansSerif(
+          AtomicString(font_families->getSansSerif(String())));
+    }
+    if (font_families->hasCursive()) {
+      state_->setString(PageAgentState::kCursiveFontFamily,
+                        font_families->getCursive(String()));
+      family_settings.UpdateCursive(
+          AtomicString(font_families->getCursive(String())));
+    }
+    if (font_families->hasFantasy()) {
+      state_->setString(PageAgentState::kFantasyFontFamily,
+                        font_families->getFantasy(String()));
+      family_settings.UpdateFantasy(
+          AtomicString(font_families->getFantasy(String())));
+    }
+    if (font_families->hasPictograph()) {
+      state_->setString(PageAgentState::kPictographFontFamily,
+                        font_families->getPictograph(String()));
+      family_settings.UpdatePictograph(
+          AtomicString(font_families->getPictograph(String())));
+    }
+    settings->NotifyGenericFontFamilyChange();
+  }
+
+  return Response::OK();
+}
+
+Response InspectorPageAgent::setFontSizes(
+    std::unique_ptr<protocol::Page::FontSizes> font_sizes) {
+  LocalFrame* frame = inspected_frames_->Root();
+  auto* settings = frame->GetSettings();
+  if (settings) {
+    if (font_sizes->hasStandard()) {
+      state_->setInteger(PageAgentState::kStandardFontSize,
+                         font_sizes->getStandard(0));
+      settings->SetDefaultFontSize(font_sizes->getStandard(0));
+    }
+    if (font_sizes->hasFixed()) {
+      state_->setInteger(PageAgentState::kFixedFontSize,
+                         font_sizes->getFixed(0));
+      settings->SetDefaultFixedFontSize(font_sizes->getFixed(0));
+    }
+  }
+
+  return Response::OK();
+}
+
+void InspectorPageAgent::ConsumeCompilationCache(
+    const ScriptSourceCode& source,
+    v8::ScriptCompiler::CachedData** cached_data) {
+  if (source.SourceLocationType() != ScriptSourceLocationType::kExternalFile)
+    return;
+  if (source.Url().IsEmpty())
+    return;
+  auto it = compilation_cache_.find(source.Url().GetString());
+  if (it == compilation_cache_.end())
+    return;
+  const Vector<char>& data = it->value;
+  *cached_data = new v8::ScriptCompiler::CachedData(
+      reinterpret_cast<const uint8_t*>(data.data()), data.size(),
+      v8::ScriptCompiler::CachedData::BufferNotOwned);
+}
+
+void InspectorPageAgent::ProduceCompilationCache(const ScriptSourceCode& source,
+                                                 v8::Local<v8::Script> script) {
+  if (!state_->booleanProperty(PageAgentState::kProduceCompilationCache, false))
+    return;
+  KURL url = source.Url();
+  if (source.Streamer())
+    return;
+  if (source.SourceLocationType() != ScriptSourceLocationType::kExternalFile)
+    return;
+  if (url.IsEmpty())
+    return;
+  static const int kMinimalCodeLength = 1024;
+  if (source.Source().length() < kMinimalCodeLength)
+    return;
+  std::unique_ptr<v8::ScriptCompiler::CachedData> cached_data(
+      v8::ScriptCompiler::CreateCodeCache(script->GetUnboundScript()));
+  if (cached_data) {
+    String base64data = Base64Encode(
+        reinterpret_cast<const char*>(cached_data->data), cached_data->length);
+    GetFrontend()->compilationCacheProduced(url, base64data);
+  }
+}
+
+Response InspectorPageAgent::setProduceCompilationCache(bool enabled) {
+  state_->setBoolean(PageAgentState::kProduceCompilationCache, enabled);
+  return Response::OK();
+}
+
+Response InspectorPageAgent::addCompilationCache(const String& url,
+                                                 const String& base64data) {
+  Vector<char> data;
+  if (!Base64Decode(base64data, data))
+    return Response::Error("data should be base64-encoded");
+  compilation_cache_.Set(url, std::move(data));
+  return Response::OK();
+}
+
+Response InspectorPageAgent::clearCompilationCache() {
+  compilation_cache_.clear();
   return Response::OK();
 }
 

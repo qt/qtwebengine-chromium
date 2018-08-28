@@ -36,6 +36,7 @@ namespace blink {
 struct WebLocalizedString {
   enum Name {
     kAXAMPMFieldText,
+    kAXCalendarShowDatePicker,
     kAXCalendarShowMonthSelector,
     kAXCalendarShowNextMonth,
     kAXCalendarShowPreviousMonth,
@@ -76,6 +77,10 @@ struct WebLocalizedString {
     kAXMediaVideoElement,
     kAXMediaVideoElementHelp,
     kAXMediaVideoSliderHelp,
+    kAXMediaEnterPictureInPictureButton,
+    kAXMediaEnterPictureInPictureButtonHelp,
+    kAXMediaExitPictureInPictureButton,
+    kAXMediaExitPictureInPictureButtonHelp,
     kAXMillisecondFieldText,
     kAXMinuteFieldText,
     kAXMonthFieldText,
@@ -113,7 +118,8 @@ struct WebLocalizedString {
     kOverflowMenuPlay,
     kOverflowMenuPause,
     kOverflowMenuDownload,
-    kOverflowMenuPictureInPicture,
+    kOverflowMenuEnterPictureInPicture,
+    kOverflowMenuExitPictureInPicture,
     kPictureInPictureInterstitialText,
     // kPlaceholderForDayOfMonthField is for day placeholder text, e.g.
     // "dd", for date field used in multiple fields "date", "datetime", and

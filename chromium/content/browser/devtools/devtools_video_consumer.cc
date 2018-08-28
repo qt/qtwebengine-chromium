@@ -4,6 +4,8 @@
 
 #include "content/browser/devtools/devtools_video_consumer.h"
 
+#include <utility>
+
 #include "cc/paint/skia_paint_canvas.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_impl.h"
@@ -25,6 +27,11 @@ constexpr base::TimeDelta kDefaultMinPeriod = base::TimeDelta();
 // Allow variable aspect ratio.
 const bool kDefaultUseFixedAspectRatio = false;
 
+// Creates a ClientFrameSinkVideoCapturer via HostFrameSinkManager.
+std::unique_ptr<viz::ClientFrameSinkVideoCapturer> CreateCapturer() {
+  return GetHostFrameSinkManager()->CreateVideoCapturer();
+}
+
 }  // namespace
 
 // static
@@ -37,8 +44,7 @@ DevToolsVideoConsumer::DevToolsVideoConsumer(OnFrameCapturedCallback callback)
     : callback_(std::move(callback)),
       min_capture_period_(kDefaultMinCapturePeriod),
       min_frame_size_(kDefaultMinFrameSize),
-      max_frame_size_(kDefaultMaxFrameSize),
-      binding_(this) {}
+      max_frame_size_(kDefaultMaxFrameSize) {}
 
 DevToolsVideoConsumer::~DevToolsVideoConsumer() = default;
 
@@ -63,16 +69,18 @@ void DevToolsVideoConsumer::StartCapture() {
 void DevToolsVideoConsumer::StopCapture() {
   if (!capturer_)
     return;
-  binding_.Close();
-  capturer_->Stop();
   capturer_.reset();
 }
 
 void DevToolsVideoConsumer::SetFrameSinkId(
     const viz::FrameSinkId& frame_sink_id) {
   frame_sink_id_ = frame_sink_id;
-  if (capturer_)
-    capturer_->ChangeTarget(frame_sink_id_);
+  if (capturer_) {
+    if (frame_sink_id_.is_valid())
+      capturer_->ChangeTarget(frame_sink_id_);
+    else
+      capturer_->ChangeTarget(base::nullopt);
+  }
 }
 
 void DevToolsVideoConsumer::SetMinCapturePeriod(
@@ -93,28 +101,19 @@ void DevToolsVideoConsumer::SetMinAndMaxFrameSize(gfx::Size min_frame_size,
   }
 }
 
-viz::mojom::FrameSinkVideoCapturerPtrInfo
-DevToolsVideoConsumer::CreateCapturer() {
-  viz::HostFrameSinkManager* const manager = GetHostFrameSinkManager();
-  viz::mojom::FrameSinkVideoCapturerPtr capturer;
-  manager->CreateVideoCapturer(mojo::MakeRequest(&capturer));
-  return capturer.PassInterface();
-}
-
 void DevToolsVideoConsumer::InnerStartCapture(
-    viz::mojom::FrameSinkVideoCapturerPtrInfo capturer_info) {
-  capturer_.Bind(std::move(capturer_info));
+    std::unique_ptr<viz::ClientFrameSinkVideoCapturer> capturer) {
+  capturer_ = std::move(capturer);
 
   // Give |capturer_| the capture parameters.
   capturer_->SetMinCapturePeriod(min_capture_period_);
   capturer_->SetMinSizeChangePeriod(kDefaultMinPeriod);
   capturer_->SetResolutionConstraints(min_frame_size_, max_frame_size_,
                                       kDefaultUseFixedAspectRatio);
-  capturer_->ChangeTarget(frame_sink_id_);
+  if (frame_sink_id_.is_valid())
+    capturer_->ChangeTarget(frame_sink_id_);
 
-  viz::mojom::FrameSinkVideoConsumerPtr consumer;
-  binding_.Bind(mojo::MakeRequest(&consumer));
-  capturer_->Start(std::move(consumer));
+  capturer_->Start(this);
 }
 
 bool DevToolsVideoConsumer::IsValidMinAndMaxFrameSize(
@@ -159,9 +158,6 @@ void DevToolsVideoConsumer::OnFrameCaptured(
 
   callback_.Run(std::move(frame));
 }
-
-void DevToolsVideoConsumer::OnTargetLost(
-    const viz::FrameSinkId& frame_sink_id) {}
 
 void DevToolsVideoConsumer::OnStopped() {}
 

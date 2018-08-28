@@ -103,6 +103,10 @@ source_set("static_features") {
   ]
 
   public_configs = [ ":static_switches_defines" ]
+
+  if (is_chromeos) {
+    public_deps += [ "//media/capture/video/chromeos/public" ]
+  }
 }
 
 jumbo_source_set("common_sources") {
@@ -167,8 +171,6 @@ jumbo_source_set("common_sources") {
     "menu_item.h",
     "mhtml_generation_params.cc",
     "mhtml_generation_params.h",
-    "network_connection_tracker.cc",
-    "network_connection_tracker.h",
     "notification_resources.cc",
     "notification_resources.h",
     "origin_util.h",
@@ -210,15 +212,11 @@ jumbo_source_set("common_sources") {
     "simple_connection_filter.cc",
     "simple_connection_filter.h",
     "socket_permission_request.h",
-    "speech_recognition_error.h",
-    "speech_recognition_result.cc",
-    "speech_recognition_result.h",
     "stop_find_action.h",
     "storage_quota_params.h",
     "three_d_api_types.h",
     "url_constants.cc",
     "url_constants.h",
-    "url_fetcher.h",
     "url_loader_throttle.cc",
     "url_loader_throttle.h",
     "url_utils.cc",
@@ -248,7 +246,6 @@ jumbo_source_set("common_sources") {
     "//content/common",
     "//ipc",
     "//media/capture:capture_base",
-    "//mojo/edk",
     "//mojo/public/cpp/bindings",
     "//net",
     "//services/network:network_service",
@@ -298,6 +295,10 @@ jumbo_source_set("common_sources") {
 
   if (is_linux) {
     deps += [ "//services/service_manager/zygote" ]
+  }
+
+  if (is_chromeos) {
+    public_deps += [ "//media/capture/video/chromeos/public" ]
   }
 
   # //content/common needs to include public headers.
@@ -355,9 +356,6 @@ mojom("interfaces") {
     "push_messaging_status.mojom",
     "resource_load_info.mojom",
     "resource_usage_reporter.mojom",
-    "speech_recognition_error.mojom",
-    "speech_recognition_grammar.mojom",
-    "speech_recognition_result.mojom",
     "transferrable_url_loader.mojom",
     "webplugininfo.mojom",
     "window_container_type.mojom",

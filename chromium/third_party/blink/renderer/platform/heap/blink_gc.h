@@ -17,7 +17,6 @@ namespace blink {
 class HeapObjectHeader;
 class MarkingVisitor;
 class Visitor;
-class ScriptWrappableVisitor;
 
 using Address = uint8_t*;
 
@@ -25,7 +24,6 @@ using FinalizationCallback = void (*)(void*);
 using VisitorCallback = void (*)(Visitor*, void*);
 using MarkingVisitorCallback = void (*)(MarkingVisitor*, void*);
 using TraceCallback = VisitorCallback;
-using TraceWrappersCallback = void (*)(ScriptWrappableVisitor*, void*);
 using WeakCallback = VisitorCallback;
 using EphemeronCallback = VisitorCallback;
 using NameCallback = const char* (*)(const void* self);
@@ -95,7 +93,7 @@ class PLATFORM_EXPORT BlinkGC final {
     kEagerSweeping,
   };
 
-  enum GCReason {
+  enum class GCReason {
     kIdleGC = 0,
     kPreciseGC = 1,
     kConservativeGC = 2,
@@ -104,7 +102,9 @@ class PLATFORM_EXPORT BlinkGC final {
     kPageNavigationGC = 5,
     kThreadTerminationGC = 6,
     kTesting = 7,
-    kLastGCReason = kTesting,
+    kIncrementalIdleGC = 8,
+    kIncrementalV8FollowupGC = 9,
+    kMaxValue = kIncrementalV8FollowupGC,
   };
 
   enum ArenaIndices {

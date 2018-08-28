@@ -5,6 +5,11 @@
     include_path: "third_party/blink/renderer/core/inspector",
     includes: [
       "third_party/blink/renderer/core/CoreProbeSink.h",
+      "third_party/blink/renderer/core/animation/animation.h",
+      "third_party/blink/renderer/core/dom/character_data.h",
+      "third_party/blink/renderer/core/dom/pseudo_element.h",
+      "third_party/blink/renderer/core/html/html_slot_element.h",
+      "third_party/blink/renderer/core/page/chrome_client.h",
       "third_party/blink/renderer/core/probe/core_probes.h",
     ],
   },
@@ -77,6 +82,10 @@
         "willModifyDOMAttr",
         "willRemoveDOMNode",
         "willSendXMLHttpOrFetchNetworkRequest",
+        "didCreateAudioContext",
+        "didCloseAudioContext",
+        "didResumeAudioContext",
+        "didSuspendAudioContext",
       ]
     },
     InspectorDOMSnapshotAgent: {
@@ -87,7 +96,10 @@
     },
     InspectorEmulationAgent: {
       probes: [
+        "applyAcceptLanguageOverride",
+        "applyUserAgentOverride",
         "frameStartedLoading",
+        "willSendRequest",
       ]
     },
     InspectorLayerTreeAgent: {
@@ -103,18 +115,14 @@
     },
     InspectorNetworkAgent: {
       probes: [
-        "applyUserAgentOverride",
-        "detachClientRequest",
         "didBlockRequest",
         "didChangeResourcePriority",
         "didCloseWebSocket",
         "didCommitLoad",
         "didCreateWebSocket",
         "didFailLoading",
-        "didFailXHRLoading",
-        "didFinishEventSourceRequest",
         "didFinishLoading",
-        "didFinishXHRLoading",
+        "didFinishXHR",
         "didReceiveCORSRedirectResponse",
         "didReceiveData",
         "didReceiveBlob",
@@ -125,8 +133,6 @@
         "didReceiveWebSocketFrameError",
         "didReceiveWebSocketHandshakeResponse",
         "didSendWebSocketFrame",
-        "documentThreadableLoaderFailedToStartLoadingForClient",
-        "documentThreadableLoaderStartedLoadingForClient",
         "frameClearedScheduledClientNavigation",
         "frameClearedScheduledNavigation",
         "frameScheduledClientNavigation",
@@ -146,6 +152,7 @@
     },
     InspectorPageAgent: {
       probes: [
+        "consumeCompilationCache",
         "didChangeViewport",
         "didClearDocumentOfWindowObject",
         "didNavigateWithinDocument",
@@ -162,6 +169,7 @@
         "lifecycleEvent",
         "loadEventFired",
         "paintTiming",
+        "produceCompilationCache",
         "RecalculateStyle",
         "UpdateLayout",
         "willRunJavaScriptDialog",

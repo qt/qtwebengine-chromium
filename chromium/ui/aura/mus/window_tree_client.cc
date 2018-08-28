@@ -344,6 +344,11 @@ WindowTreeClient::~WindowTreeClient() {
   CHECK(windows_.empty());
 }
 
+bool WindowTreeClient::WaitForDisplays() {
+  // TODO(sky): move WaitForInitialDisplays() here. https://crbug.com/837713
+  return WaitForInitialDisplays();
+}
+
 void WindowTreeClient::SetCanFocus(Window* window, bool can_focus) {
   DCHECK(tree_);
   DCHECK(window);
@@ -543,13 +548,21 @@ void WindowTreeClient::ConvertPointerEventLocationToDip(
     int64_t display_id,
     WindowMus* window,
     ui::LocatedEvent* event) const {
-  // TODO(sky): this function should be removed when --mash goes away.
-  // https://crbug.com/842365.
-  if (!is_using_pixels())
-    return;
-
   // PointerEvents shouldn't have the target set.
   DCHECK(!event->target());
+
+  // TODO(sky): this function should be removed when --mash goes away.
+  // https://crbug.com/842365.
+  if (!is_using_pixels()) {
+    if (!window) {
+      // When there is no window force the root and location to be the same.
+      // They may differ if |window| was valid at the time of the event, but
+      // was since deleted.
+      event->set_location_f(event->root_location_f());
+    }
+    return;
+  }
+
   if (window_manager_delegate_) {
     ConvertPointerEventLocationToDipInWindowManager(display_id, window, event);
     return;
@@ -899,10 +912,16 @@ void WindowTreeClient::SetWindowBoundsFromServer(
     const gfx::Rect& revert_bounds,
     const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
   if (IsRoot(window)) {
+    // This uses GetScaleFactorForNativeView() as it's called at a time when the
+    // scale factor may not have been applied to the Compositor yet. In
+    // particular, when the scale-factor changes this is called in terms of the
+    // scale factor set on the display. It's the call to
+    // SetBoundsFromServerInPixels() that is responsible for updating the scale
+    // factor in the Compositor.
+    const float dsf = ui::GetScaleFactorForNativeView(window->GetWindow());
     GetWindowTreeHostMus(window)->SetBoundsFromServerInPixels(
         is_using_pixels() ? revert_bounds
-                          : gfx::ConvertRectToPixel(
-                                window->GetDeviceScaleFactor(), revert_bounds),
+                          : gfx::ConvertRectToPixel(dsf, revert_bounds),
         local_surface_id ? *local_surface_id : viz::LocalSurfaceId());
     return;
   }
@@ -1652,17 +1671,12 @@ void WindowTreeClient::OnWindowInputEvent(
 
   if (matches_pointer_watcher && has_pointer_watcher_) {
     DCHECK(event->IsPointerEvent());
-    if (is_using_pixels()) {
-      std::unique_ptr<ui::Event> event_in_dip(ui::Event::Clone(*event));
-      ConvertPointerEventLocationToDip(display_id, window,
-                                       event_in_dip->AsLocatedEvent());
-      delegate_->OnPointerEventObserved(*event_in_dip->AsPointerEvent(),
-                                        display_id,
-                                        window ? window->GetWindow() : nullptr);
-    } else {
-      delegate_->OnPointerEventObserved(*event->AsPointerEvent(), display_id,
-                                        window ? window->GetWindow() : nullptr);
-    }
+    std::unique_ptr<ui::Event> event_in_dip(ui::Event::Clone(*event));
+    ConvertPointerEventLocationToDip(display_id, window,
+                                     event_in_dip->AsLocatedEvent());
+    delegate_->OnPointerEventObserved(*event_in_dip->AsPointerEvent(),
+                                      display_id,
+                                      window ? window->GetWindow() : nullptr);
   }
 
   // If the window has already been deleted, use |event| to update event states
@@ -1705,7 +1719,7 @@ void WindowTreeClient::OnWindowInputEvent(
   // this code. Now that ash does not use it, it can be removed once --mash is
   // removed. https://crbug.com/842365.
   std::unique_ptr<ui::MouseEvent> mapped_event_with_native;
-  if (config_ == Config::kMash) {
+  if (config_ == Config::kMashDeprecated) {
     if (mapped_event->type() == ui::ET_MOUSE_MOVED ||
         mapped_event->type() == ui::ET_MOUSE_DRAGGED) {
       mapped_event_with_native = std::make_unique<ui::MouseEvent>(
@@ -1732,7 +1746,7 @@ void WindowTreeClient::OnWindowInputEvent(
   WindowMus* display_root_window = GetWindowByServerId(display_root_window_id);
   // TODO(sky): simplify conditional. See comment in USE_OZONE above for why
   // this isn't necessary with kMus2. https://crbug.com/842365.
-  if (config_ == Config::kMash && display_root_window &&
+  if (config_ == Config::kMashDeprecated && display_root_window &&
       event->IsLocatedEvent() &&
       display::Screen::GetScreen()->GetPrimaryDisplay().id() ==
           display::kUnifiedDisplayId) {
@@ -1919,6 +1933,21 @@ void WindowTreeClient::GetWindowManager(
           this, std::move(internal)));
 }
 
+void WindowTreeClient::GetScreenProviderObserver(
+    ui::mojom::ScreenProviderObserverAssociatedRequest observer) {
+  DCHECK_EQ(Config::kMus2, config_);
+  screen_provider_observer_binding_.Bind(std::move(observer));
+}
+
+void WindowTreeClient::OnDisplaysChanged(
+    std::vector<ui::mojom::WsDisplayPtr> ws_displays,
+    int64_t primary_display_id,
+    int64_t internal_display_id) {
+  got_initial_displays_ = true;
+  delegate_->OnDisplaysChanged(std::move(ws_displays), primary_display_id,
+                               internal_display_id);
+}
+
 void WindowTreeClient::RequestClose(ui::Id window_id) {
   WindowMus* window = GetWindowByServerId(window_id);
   if (!window || !IsRoot(window))
@@ -2087,7 +2116,7 @@ void WindowTreeClient::WmClientJankinessChanged(ui::ClientSpecificId client_id,
 }
 
 void WindowTreeClient::WmBuildDragImage(const gfx::Point& screen_location,
-                                        const SkBitmap& drag_image,
+                                        const gfx::ImageSkia& drag_image,
                                         const gfx::Vector2d& drag_image_offset,
                                         ui::mojom::PointerKind source) {
   if (!window_manager_delegate_)

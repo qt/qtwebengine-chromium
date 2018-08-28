@@ -10,23 +10,24 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/script/script.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_v8_reference.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl_hash.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
+#include "third_party/blink/renderer/platform/wtf/text/movable_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_position.h"
 
 namespace blink {
 
 // ModuleScript is a model object for the "module script" spec concept.
 // https://html.spec.whatwg.org/multipage/webappapis.html#module-script
-class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
+class CORE_EXPORT ModuleScript final : public Script, public NameClient {
  public:
   // https://html.spec.whatwg.org/multipage/webappapis.html#creating-a-module-script
   static ModuleScript* Create(
-      const String& source_text,
+      const MovableString& source_text,
       Modulator*,
       const KURL& source_url,
       const KURL& base_url,
@@ -62,7 +63,6 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
                               String* failure_reason = nullptr);
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "ModuleScript"; }
 
  private:
@@ -71,10 +71,10 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
                const KURL& source_url,
                const KURL& base_url,
                const ScriptFetchOptions&,
-               const String& source_text,
+               const MovableString& source_text,
                const TextPosition& start_position);
 
-  static ModuleScript* CreateInternal(const String& source_text,
+  static ModuleScript* CreateInternal(const MovableString& source_text,
                                       Modulator*,
                                       ScriptModule,
                                       const KURL& source_url,
@@ -97,7 +97,7 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
 
   // https://html.spec.whatwg.org/multipage/webappapis.html#concept-script-parse-error
   //
-  // |record_|, |parse_error_| and |error_to_rethrow_| are TraceWrappers()ed and
+  // |record_|, |parse_error_| and |error_to_rethrow_| are wrapper traced and
   // kept alive via one or more of following reference graphs:
   // * non-inline module script case
   //   DOMWindow -> Modulator/ModulatorImpl -> ModuleMap -> ModuleMap::Entry
@@ -117,7 +117,7 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
   //   Document -> ScriptRunner -> ScriptLoader -> ModulePendingScript
   //   -> ModulePendingScriptTreeClient -> ModuleScript.
   // All the classes/references on the graphs above should be
-  // TraceWrapperBase/TraceWrapperMember<>/etc.,
+  // TraceWrapperMember<>/etc.,
   //
   // A parse error and an error to rethrow belong to a script, not to a
   // |parse_error_| and |error_to_rethrow_| should belong to a script (i.e.
@@ -136,7 +136,7 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
   TraceWrapperV8Reference<v8::Value> error_to_rethrow_;
 
   // For CSP check.
-  const String source_text_;
+  const MovableString source_text_;
 
   const TextPosition start_position_;
   HashMap<String, KURL> specifier_to_url_cache_;

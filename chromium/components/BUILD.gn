@@ -7,6 +7,7 @@ import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//components/nacl/features.gni")
 import("//media/media_options.gni")
+import("//ppapi/buildflags/buildflags.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//rlz/buildflags/buildflags.gni")
 import("//testing/test.gni")
@@ -67,6 +68,8 @@ test("components_unittests") {
     "//components/autofill/core/browser:unit_tests",
     "//components/autofill/core/common:unit_tests",
     "//components/base32:unit_tests",
+    "//components/blacklist/opt_out_blacklist:unit_tests",
+    "//components/blacklist/opt_out_blacklist/sql:unit_tests",
     "//components/bookmarks/browser:unit_tests",
     "//components/bookmarks/managed:unit_tests",
     "//components/browser_sync:unit_tests",
@@ -81,7 +84,6 @@ test("components_unittests") {
     "//components/content_settings/core/browser:unit_tests",
     "//components/content_settings/core/common:unit_tests",
     "//components/crx_file:unit_tests",
-    "//components/data_usage/core:unit_tests",
     "//components/device_event_log:unit_tests",
     "//components/dom_distiller/core:unit_tests",
     "//components/download:unit_tests",
@@ -127,6 +129,7 @@ test("components_unittests") {
     "//components/query_parser:unit_tests",
     "//components/rappor:unit_tests",
     "//components/reading_list/core:unit_tests",
+    "//components/safe_search_api:unit_tests",
     "//components/search:unit_tests",
     "//components/search_engines:unit_tests",
     "//components/search_provider_logos:unit_tests",
@@ -153,6 +156,7 @@ test("components_unittests") {
     "//components/translate/core/language_detection:unit_tests",
     "//components/ukm:unit_tests",
     "//components/undo:unit_tests",
+    "//components/unified_consent:unit_tests",
     "//components/update_client:unit_tests",
     "//components/upload_list:unit_tests",
     "//components/url_formatter:unit_tests",
@@ -176,7 +180,7 @@ test("components_unittests") {
   if (is_ios) {
     deps += [
       "//components/autofill/ios/browser:unit_tests",
-      "//components/autofill/ios/fill:unit_tests",
+      "//components/autofill/ios/form_util:unit_tests",
       "//components/image_fetcher/ios:unit_tests",
       "//components/signin/ios/browser:unit_tests",
       "//components/translate/ios/browser:unit_tests",
@@ -472,11 +476,11 @@ if (!is_ios) {
       "//content/test:browsertest_support",
       "//content/test:test_support",
       "//device/bluetooth",
-      "//device/geolocation/public/cpp:test_support",
       "//google_apis",
       "//ipc:test_support",
       "//net:test_support",
       "//printing/buildflags",
+      "//services/device/public/cpp/test:test_support",
       "//services/device/public/mojom",
       "//services/service_manager/public/cpp",
       "//services/service_manager/public/mojom",
@@ -496,7 +500,7 @@ if (!is_ios) {
       data += [ "$root_out_dir/Content Shell.app/" ]
     }
 
-    if (!is_android) {
+    if (enable_plugins) {
       sources += [ "pdf/renderer/pdf_accessibility_tree_browsertest.cc" ]
       deps += [ "//components/pdf/renderer" ]
     }
@@ -566,18 +570,15 @@ if (!is_ios) {
     data_deps = [
       ":components_tests_pak",
       "//ui/resources:ui_test_pak",
+
+      # Needed for isolate script to execute.
+      "//testing:run_perf_test",
     ]
 
     data = [
       "$root_out_dir/components_tests_resources.pak",
       "$root_out_dir/ui_test.pak",
       "//components/subresource_filter/core/common/perftests/data",
-
-      # Needed for isolate script to execute.
-      "//testing/scripts/common.py",
-      "//testing/xvfb.py",
-      "//testing/scripts/run_gtest_perf_test.py",
-      "//tools/perf/generate_legacy_perf_dashboard_json.py",
     ]
 
     if (is_android) {

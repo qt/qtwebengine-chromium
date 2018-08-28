@@ -11,7 +11,7 @@
 
 #include "content/browser/background_fetch/background_fetch.pb.h"
 #include "content/browser/background_fetch/storage/database_task.h"
-#include "content/common/service_worker/service_worker_status_code.h"
+#include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 
 namespace content {
 
@@ -23,7 +23,7 @@ class UpdateRegistrationUITask : public DatabaseTask {
   using UpdateRegistrationUICallback =
       base::OnceCallback<void(blink::mojom::BackgroundFetchError)>;
 
-  UpdateRegistrationUITask(BackgroundFetchDataManager* data_manager,
+  UpdateRegistrationUITask(DatabaseTaskHost* host,
                            const BackgroundFetchRegistrationId& registration_id,
                            const std::string& updated_title,
                            UpdateRegistrationUICallback callback);
@@ -33,7 +33,9 @@ class UpdateRegistrationUITask : public DatabaseTask {
   void Start() override;
 
  private:
-  void DidUpdateTitle(ServiceWorkerStatusCode status);
+  void DidUpdateTitle(blink::ServiceWorkerStatusCode status);
+
+  void FinishWithError(blink::mojom::BackgroundFetchError error) override;
 
   BackgroundFetchRegistrationId registration_id_;
   std::string updated_title_;

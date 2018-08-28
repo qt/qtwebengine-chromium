@@ -168,18 +168,17 @@ class ClientMessageLoopAdapter : public MainThreadDebugger::ClientMessageLoop {
 
     // 3. Process messages until quitNow is called.
     message_loop_->Run();
-
-    // 4. Resume active objects
-    WebView::DidExitModalLoop();
-
-    // 5. Enable input events.
-    WebFrameWidgetBase::SetIgnoreInputEvents(false);
   }
 
   void QuitNow() override {
     if (running_for_debug_break_) {
       running_for_debug_break_ = false;
+      // Undo steps (3), (2) and (1) from above.
+      // NOTE: This code used to be above right after the |mesasge_loop_->Run()|
+      // code, but it is moved here to support browser-side navigation.
       message_loop_->QuitNow();
+      WebView::DidExitModalLoop();
+      WebFrameWidgetBase::SetIgnoreInputEvents(false);
     }
   }
 
@@ -574,7 +573,8 @@ void WebDevToolsAgentImpl::InspectElement(const WebPoint& point_in_local_root) {
   if (web_local_frame_impl_->ViewImpl() &&
       web_local_frame_impl_->ViewImpl()->Client()) {
     WebFloatRect rect(point.x, point.y, 0, 0);
-    web_local_frame_impl_->ViewImpl()->Client()->ConvertWindowToViewport(&rect);
+    web_local_frame_impl_->ViewImpl()->WidgetClient()->ConvertWindowToViewport(
+        &rect);
     point = WebPoint(rect.x, rect.y);
   }
 
@@ -589,10 +589,12 @@ void WebDevToolsAgentImpl::InspectElement(const WebPoint& point_in_local_root) {
   IntPoint transformed_point = FlooredIntPoint(
       TransformWebMouseEvent(web_local_frame_impl_->GetFrameView(), dummy_event)
           .PositionInRootFrame());
-  HitTestResult result(
-      request, web_local_frame_impl_->GetFrameView()->RootFrameToContents(
-                   transformed_point));
-  web_local_frame_impl_->GetFrame()->ContentLayoutObject()->HitTest(result);
+  HitTestLocation location(
+      web_local_frame_impl_->GetFrameView()->ConvertFromRootFrame(
+          transformed_point));
+  HitTestResult result(request, location);
+  web_local_frame_impl_->GetFrame()->ContentLayoutObject()->HitTest(location,
+                                                                    result);
   Node* node = result.InnerNode();
   if (!node && web_local_frame_impl_->GetFrame()->GetDocument())
     node = web_local_frame_impl_->GetFrame()->GetDocument()->documentElement();

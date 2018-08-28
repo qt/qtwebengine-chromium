@@ -48,7 +48,7 @@ void TlsConnectDone(std::unique_ptr<net::SSLClientSocket> ssl_socket,
   // which is promoted here to a new API-accessible socket (via a TLSSocket
   // wrapper), or deleted.
   if (result != net::OK) {
-    callback.Run(std::unique_ptr<extensions::TLSSocket>(), result);
+    callback.Run(nullptr, result);
     return;
   };
 
@@ -182,7 +182,7 @@ Socket::SocketType TLSSocket::GetSocketType() const {
 // static
 void TLSSocket::UpgradeSocketToTLS(
     Socket* socket,
-    scoped_refptr<net::SSLConfigService> ssl_config_service,
+    net::SSLConfigService* ssl_config_service,
     net::CertVerifier* cert_verifier,
     net::TransportSecurityState* transport_security_state,
     net::CTVerifier* ct_verifier,
@@ -240,7 +240,7 @@ void TLSSocket::UpgradeSocketToTLS(
   // only one active here). Then have the old socket release ownership on
   // that client stream.
   socket_handle->SetSocket(
-      std::unique_ptr<net::StreamSocket>(tcp_socket->ClientStream()));
+      base::WrapUnique<net::StreamSocket>(tcp_socket->ClientStream()));
   tcp_socket->Release();
 
   DCHECK(transport_security_state);

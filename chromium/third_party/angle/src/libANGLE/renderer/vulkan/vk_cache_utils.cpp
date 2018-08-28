@@ -13,6 +13,7 @@
 #include "common/aligned_memory.h"
 #include "libANGLE/SizedMRUCache.h"
 #include "libANGLE/VertexAttribute.h"
+#include "libANGLE/renderer/vulkan/FramebufferVk.h"
 #include "libANGLE/renderer/vulkan/ProgramVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
@@ -173,10 +174,10 @@ void UnpackBlendAttachmentState(const vk::PackedColorBlendAttachmentState &packe
     stateOut->colorWriteMask      = static_cast<VkColorComponentFlags>(packedState.colorWriteMask);
 }
 
-Error InitializeRenderPassFromDesc(VkDevice device,
-                                   const RenderPassDesc &desc,
-                                   const AttachmentOpsArray &ops,
-                                   RenderPass *renderPass)
+angle::Result InitializeRenderPassFromDesc(vk::Context *context,
+                                           const RenderPassDesc &desc,
+                                           const AttachmentOpsArray &ops,
+                                           RenderPass *renderPass)
 {
     uint32_t attachmentCount = desc.attachmentCount();
     ASSERT(attachmentCount > 0);
@@ -237,8 +238,8 @@ Error InitializeRenderPassFromDesc(VkDevice device,
     createInfo.dependencyCount = 0;
     createInfo.pDependencies   = nullptr;
 
-    ANGLE_TRY(renderPass->init(device, createInfo));
-    return vk::NoError();
+    ANGLE_TRY(renderPass->init(context, createInfo));
+    return angle::Result::Continue();
 }
 
 }  // anonymous namespace
@@ -250,9 +251,7 @@ RenderPassDesc::RenderPassDesc()
     memset(this, 0, sizeof(RenderPassDesc));
 }
 
-RenderPassDesc::~RenderPassDesc()
-{
-}
+RenderPassDesc::~RenderPassDesc() = default;
 
 RenderPassDesc::RenderPassDesc(const RenderPassDesc &other)
 {
@@ -339,9 +338,7 @@ PipelineDesc::PipelineDesc()
     memset(this, 0, sizeof(PipelineDesc));
 }
 
-PipelineDesc::~PipelineDesc()
-{
-}
+PipelineDesc::~PipelineDesc() = default;
 
 PipelineDesc::PipelineDesc(const PipelineDesc &other)
 {
@@ -383,9 +380,9 @@ void PipelineDesc::initDefaults()
     mMultisampleStateInfo.rasterizationSamples = 1;
     mMultisampleStateInfo.sampleShadingEnable  = 0;
     mMultisampleStateInfo.minSampleShading     = 0.0f;
-    for (int maskIndex = 0; maskIndex < gl::MAX_SAMPLE_MASK_WORDS; ++maskIndex)
+    for (uint32_t &sampleMask : mMultisampleStateInfo.sampleMask)
     {
-        mMultisampleStateInfo.sampleMask[maskIndex] = 0;
+        sampleMask = 0;
     }
     mMultisampleStateInfo.alphaToCoverageEnable = 0;
     mMultisampleStateInfo.alphaToOneEnable      = 0;
@@ -438,13 +435,13 @@ void PipelineDesc::initDefaults()
               blendAttachmentState);
 }
 
-Error PipelineDesc::initializePipeline(VkDevice device,
-                                       const RenderPass &compatibleRenderPass,
-                                       const PipelineLayout &pipelineLayout,
-                                       const gl::AttributesMask &activeAttribLocationsMask,
-                                       const ShaderModule &vertexModule,
-                                       const ShaderModule &fragmentModule,
-                                       Pipeline *pipelineOut) const
+angle::Result PipelineDesc::initializePipeline(vk::Context *context,
+                                               const RenderPass &compatibleRenderPass,
+                                               const PipelineLayout &pipelineLayout,
+                                               const gl::AttributesMask &activeAttribLocationsMask,
+                                               const ShaderModule &vertexModule,
+                                               const ShaderModule &fragmentModule,
+                                               Pipeline *pipelineOut) const
 {
     VkPipelineShaderStageCreateInfo shaderStages[2];
     VkPipelineVertexInputStateCreateInfo vertexInputState;
@@ -621,9 +618,9 @@ Error PipelineDesc::initializePipeline(VkDevice device,
     createInfo.basePipelineHandle  = VK_NULL_HANDLE;
     createInfo.basePipelineIndex   = 0;
 
-    ANGLE_TRY(pipelineOut->initGraphics(device, createInfo));
+    ANGLE_TRY(pipelineOut->initGraphics(context, createInfo));
 
-    return NoError();
+    return angle::Result::Continue();
 }
 
 const ShaderStageInfo &PipelineDesc::getShaderStageInfo() const
@@ -641,12 +638,24 @@ void PipelineDesc::updateShaders(Serial vertexSerial, Serial fragmentSerial)
         static_cast<uint32_t>(fragmentSerial.getValue());
 }
 
-void PipelineDesc::updateViewport(const gl::Rectangle &viewport, float nearPlane, float farPlane)
+void PipelineDesc::updateViewport(FramebufferVk *framebufferVk,
+                                  const gl::Rectangle &viewport,
+                                  float nearPlane,
+                                  float farPlane,
+                                  bool invertViewport)
 {
-    mViewport.x        = static_cast<float>(viewport.x);
-    mViewport.y        = static_cast<float>(viewport.y);
-    mViewport.width    = static_cast<float>(viewport.width);
-    mViewport.height   = static_cast<float>(viewport.height);
+    mViewport.x      = static_cast<float>(viewport.x);
+    mViewport.y      = static_cast<float>(viewport.y);
+    mViewport.width  = static_cast<float>(viewport.width);
+    mViewport.height = static_cast<float>(viewport.height);
+
+    if (invertViewport)
+    {
+        gl::Box dimensions       = framebufferVk->getState().getDimensions();
+        gl::Rectangle renderArea = gl::Rectangle(0, 0, dimensions.width, dimensions.height);
+        mViewport.y              = static_cast<float>(renderArea.height - viewport.y);
+        mViewport.height = -mViewport.height;
+    }
     updateDepthRange(nearPlane, farPlane);
 }
 
@@ -665,7 +674,7 @@ void PipelineDesc::updateVertexInputInfo(const VertexInputBindings &bindings,
     mVertexInputAttribs  = attribs;
 }
 
-void PipelineDesc::updateTopology(GLenum drawMode)
+void PipelineDesc::updateTopology(gl::PrimitiveMode drawMode)
 {
     mInputAssemblyInfo.topology = static_cast<uint32_t>(gl_vk::GetPrimitiveTopology(drawMode));
 }
@@ -675,10 +684,10 @@ void PipelineDesc::updateCullMode(const gl::RasterizerState &rasterState)
     mRasterizationStateInfo.cullMode = static_cast<uint16_t>(gl_vk::GetCullMode(rasterState));
 }
 
-void PipelineDesc::updateFrontFace(const gl::RasterizerState &rasterState)
+void PipelineDesc::updateFrontFace(const gl::RasterizerState &rasterState, bool invertFrontFace)
 {
     mRasterizationStateInfo.frontFace =
-        static_cast<uint16_t>(gl_vk::GetFrontFace(rasterState.frontFace));
+        static_cast<uint16_t>(gl_vk::GetFrontFace(rasterState.frontFace, invertFrontFace));
 }
 
 void PipelineDesc::updateLineWidth(float lineWidth)
@@ -727,19 +736,25 @@ void PipelineDesc::updateBlendFuncs(const gl::BlendState &blendState)
     }
 }
 
-void PipelineDesc::updateColorWriteMask(VkColorComponentFlags colorComponentFlags)
+void PipelineDesc::updateColorWriteMask(VkColorComponentFlags colorComponentFlags,
+                                        const gl::DrawBufferMask &alphaMask)
 {
     uint8_t colorMask = static_cast<uint8_t>(colorComponentFlags);
 
-    for (PackedColorBlendAttachmentState &blendAttachmentState : mColorBlendStateInfo.attachments)
+    for (size_t colorIndex = 0; colorIndex < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS; colorIndex++)
     {
-        blendAttachmentState.colorWriteMask = colorMask;
+        mColorBlendStateInfo.attachments[colorIndex].colorWriteMask =
+            alphaMask[colorIndex] ? (colorMask & ~VK_COLOR_COMPONENT_A_BIT) : colorMask;
     }
 }
 
-void PipelineDesc::updateDepthTestEnabled(const gl::DepthStencilState &depthStencilState)
+void PipelineDesc::updateDepthTestEnabled(const gl::DepthStencilState &depthStencilState,
+                                          const gl::Framebuffer *drawFramebuffer)
 {
-    mDepthStencilStateInfo.depthTestEnable = static_cast<uint8_t>(depthStencilState.depthTest);
+    // Only enable the depth test if the draw framebuffer has a depth buffer.  It's possible that
+    // we're emulating a stencil-only buffer with a depth-stencil buffer
+    mDepthStencilStateInfo.depthTestEnable =
+        static_cast<uint8_t>(depthStencilState.depthTest && drawFramebuffer->hasDepth());
 }
 
 void PipelineDesc::updateDepthFunc(const gl::DepthStencilState &depthStencilState)
@@ -747,14 +762,21 @@ void PipelineDesc::updateDepthFunc(const gl::DepthStencilState &depthStencilStat
     mDepthStencilStateInfo.depthCompareOp = PackGLCompareFunc(depthStencilState.depthFunc);
 }
 
-void PipelineDesc::updateDepthWriteEnabled(const gl::DepthStencilState &depthStencilState)
+void PipelineDesc::updateDepthWriteEnabled(const gl::DepthStencilState &depthStencilState,
+                                           const gl::Framebuffer *drawFramebuffer)
 {
-    mDepthStencilStateInfo.depthWriteEnable = (depthStencilState.depthMask == GL_FALSE ? 0 : 1);
+    // Don't write to depth buffers that should not exist
+    mDepthStencilStateInfo.depthWriteEnable =
+        static_cast<uint8_t>(drawFramebuffer->hasDepth() ? depthStencilState.depthMask : 0);
 }
 
-void PipelineDesc::updateStencilTestEnabled(const gl::DepthStencilState &depthStencilState)
+void PipelineDesc::updateStencilTestEnabled(const gl::DepthStencilState &depthStencilState,
+                                            const gl::Framebuffer *drawFramebuffer)
 {
-    mDepthStencilStateInfo.stencilTestEnable = static_cast<uint8_t>(depthStencilState.stencilTest);
+    // Only enable the stencil test if the draw framebuffer has a stencil buffer.  It's possible
+    // that we're emulating a depth-only buffer with a depth-stencil buffer
+    mDepthStencilStateInfo.stencilTestEnable =
+        static_cast<uint8_t>(depthStencilState.stencilTest && drawFramebuffer->hasStencil());
 }
 
 void PipelineDesc::updateStencilFrontFuncs(GLint ref,
@@ -790,16 +812,20 @@ void PipelineDesc::updateStencilBackOps(const gl::DepthStencilState &depthStenci
         PackGLStencilOp(depthStencilState.stencilBackPassDepthFail);
 }
 
-void PipelineDesc::updateStencilFrontWriteMask(const gl::DepthStencilState &depthStencilState)
+void PipelineDesc::updateStencilFrontWriteMask(const gl::DepthStencilState &depthStencilState,
+                                               const gl::Framebuffer *drawFramebuffer)
 {
-    mDepthStencilStateInfo.front.writeMask =
-        static_cast<uint32_t>(depthStencilState.stencilWritemask);
+    // Don't write to stencil buffers that should not exist
+    mDepthStencilStateInfo.front.writeMask = static_cast<uint32_t>(
+        drawFramebuffer->hasStencil() ? depthStencilState.stencilWritemask : 0);
 }
 
-void PipelineDesc::updateStencilBackWriteMask(const gl::DepthStencilState &depthStencilState)
+void PipelineDesc::updateStencilBackWriteMask(const gl::DepthStencilState &depthStencilState,
+                                              const gl::Framebuffer *drawFramebuffer)
 {
-    mDepthStencilStateInfo.back.writeMask =
-        static_cast<uint32_t>(depthStencilState.stencilBackWritemask);
+    // Don't write to stencil buffers that should not exist
+    mDepthStencilStateInfo.back.writeMask = static_cast<uint32_t>(
+        drawFramebuffer->hasStencil() ? depthStencilState.stencilBackWritemask : 0);
 }
 
 void PipelineDesc::updateRenderPassDesc(const RenderPassDesc &renderPassDesc)
@@ -807,9 +833,15 @@ void PipelineDesc::updateRenderPassDesc(const RenderPassDesc &renderPassDesc)
     mRenderPassDesc = renderPassDesc;
 }
 
-void PipelineDesc::updateScissor(const gl::Rectangle &rect)
+void PipelineDesc::updateScissor(const gl::Rectangle &rect,
+                                 bool invertScissor,
+                                 const gl::Rectangle &renderArea)
 {
     mScissor = gl_vk::GetRect(rect);
+    if (invertScissor)
+    {
+        mScissor.offset.y = renderArea.height - mScissor.offset.y - mScissor.extent.height;
+    }
 }
 
 // AttachmentOpsArray implementation.
@@ -818,9 +850,7 @@ AttachmentOpsArray::AttachmentOpsArray()
     memset(&mOps, 0, sizeof(PackedAttachmentOpsDesc) * mOps.size());
 }
 
-AttachmentOpsArray::~AttachmentOpsArray()
-{
-}
+AttachmentOpsArray::~AttachmentOpsArray() = default;
 
 AttachmentOpsArray::AttachmentOpsArray(const AttachmentOpsArray &other)
 {
@@ -866,12 +896,112 @@ bool operator==(const AttachmentOpsArray &lhs, const AttachmentOpsArray &rhs)
 {
     return (memcmp(&lhs, &rhs, sizeof(AttachmentOpsArray)) == 0);
 }
+
+// DescriptorSetLayoutDesc implementation.
+DescriptorSetLayoutDesc::DescriptorSetLayoutDesc() : mPackedDescriptorSetLayout{}
+{
+}
+
+DescriptorSetLayoutDesc::~DescriptorSetLayoutDesc() = default;
+
+DescriptorSetLayoutDesc::DescriptorSetLayoutDesc(const DescriptorSetLayoutDesc &other) = default;
+
+DescriptorSetLayoutDesc &DescriptorSetLayoutDesc::operator=(const DescriptorSetLayoutDesc &other) =
+    default;
+
+size_t DescriptorSetLayoutDesc::hash() const
+{
+    return angle::ComputeGenericHash(mPackedDescriptorSetLayout);
+}
+
+bool DescriptorSetLayoutDesc::operator==(const DescriptorSetLayoutDesc &other) const
+{
+    return (memcmp(&mPackedDescriptorSetLayout, &other.mPackedDescriptorSetLayout,
+                   sizeof(mPackedDescriptorSetLayout)) == 0);
+}
+
+void DescriptorSetLayoutDesc::update(uint32_t bindingIndex, VkDescriptorType type, uint32_t count)
+{
+    ASSERT(static_cast<size_t>(type) < std::numeric_limits<uint16_t>::max());
+    ASSERT(count < std::numeric_limits<uint16_t>::max());
+
+    PackedDescriptorSetBinding &packedBinding = mPackedDescriptorSetLayout[bindingIndex];
+
+    packedBinding.type  = static_cast<uint16_t>(type);
+    packedBinding.count = static_cast<uint16_t>(count);
+}
+
+void DescriptorSetLayoutDesc::unpackBindings(DescriptorSetLayoutBindingVector *bindings) const
+{
+    for (uint32_t bindingIndex = 0; bindingIndex < kMaxDescriptorSetLayoutBindings; ++bindingIndex)
+    {
+        const PackedDescriptorSetBinding &packedBinding = mPackedDescriptorSetLayout[bindingIndex];
+        if (packedBinding.count == 0)
+            continue;
+
+        VkDescriptorSetLayoutBinding binding;
+        binding.binding            = bindingIndex;
+        binding.descriptorCount    = packedBinding.count;
+        binding.descriptorType     = static_cast<VkDescriptorType>(packedBinding.type);
+        binding.stageFlags         = (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+        binding.pImmutableSamplers = nullptr;
+
+        bindings->push_back(binding);
+    }
+}
+
+// PipelineLayoutDesc implementation.
+PipelineLayoutDesc::PipelineLayoutDesc() : mDescriptorSetLayouts{}, mPushConstantRanges{}
+{
+}
+
+PipelineLayoutDesc::~PipelineLayoutDesc() = default;
+
+PipelineLayoutDesc::PipelineLayoutDesc(const PipelineLayoutDesc &other) = default;
+
+PipelineLayoutDesc &PipelineLayoutDesc::operator=(const PipelineLayoutDesc &rhs)
+{
+    mDescriptorSetLayouts = rhs.mDescriptorSetLayouts;
+    mPushConstantRanges   = rhs.mPushConstantRanges;
+    return *this;
+}
+
+size_t PipelineLayoutDesc::hash() const
+{
+    return angle::ComputeGenericHash(*this);
+}
+
+bool PipelineLayoutDesc::operator==(const PipelineLayoutDesc &other) const
+{
+    return memcmp(this, &other, sizeof(PipelineLayoutDesc)) == 0;
+}
+
+void PipelineLayoutDesc::updateDescriptorSetLayout(uint32_t setIndex,
+                                                   const DescriptorSetLayoutDesc &desc)
+{
+    ASSERT(setIndex < mDescriptorSetLayouts.size());
+    mDescriptorSetLayouts[setIndex] = desc;
+}
+
+void PipelineLayoutDesc::updatePushConstantRange(gl::ShaderType shaderType,
+                                                 uint32_t offset,
+                                                 uint32_t size)
+{
+    ASSERT(shaderType == gl::ShaderType::Vertex || shaderType == gl::ShaderType::Fragment);
+    PackedPushConstantRange &packed = mPushConstantRanges[static_cast<size_t>(shaderType)];
+    packed.offset                   = offset;
+    packed.size                     = size;
+}
+
+const PushConstantRangeArray<PackedPushConstantRange> &PipelineLayoutDesc::getPushConstantRanges()
+    const
+{
+    return mPushConstantRanges;
+}
 }  // namespace vk
 
 // RenderPassCache implementation.
-RenderPassCache::RenderPassCache()
-{
-}
+RenderPassCache::RenderPassCache() = default;
 
 RenderPassCache::~RenderPassCache()
 {
@@ -890,10 +1020,10 @@ void RenderPassCache::destroy(VkDevice device)
     mPayload.clear();
 }
 
-vk::Error RenderPassCache::getCompatibleRenderPass(VkDevice device,
-                                                   Serial serial,
-                                                   const vk::RenderPassDesc &desc,
-                                                   vk::RenderPass **renderPassOut)
+angle::Result RenderPassCache::getCompatibleRenderPass(vk::Context *context,
+                                                       Serial serial,
+                                                       const vk::RenderPassDesc &desc,
+                                                       vk::RenderPass **renderPassOut)
 {
     auto outerIt = mPayload.find(desc);
     if (outerIt != mPayload.end())
@@ -904,7 +1034,7 @@ vk::Error RenderPassCache::getCompatibleRenderPass(VkDevice device,
         // Find the first element and return it.
         innerCache.begin()->second.updateSerial(serial);
         *renderPassOut = &innerCache.begin()->second.get();
-        return vk::NoError();
+        return angle::Result::Continue();
     }
 
     // Insert some dummy attachment ops.
@@ -923,14 +1053,14 @@ vk::Error RenderPassCache::getCompatibleRenderPass(VkDevice device,
                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
 
-    return getRenderPassWithOps(device, serial, desc, ops, renderPassOut);
+    return getRenderPassWithOps(context, serial, desc, ops, renderPassOut);
 }
 
-vk::Error RenderPassCache::getRenderPassWithOps(VkDevice device,
-                                                Serial serial,
-                                                const vk::RenderPassDesc &desc,
-                                                const vk::AttachmentOpsArray &attachmentOps,
-                                                vk::RenderPass **renderPassOut)
+angle::Result RenderPassCache::getRenderPassWithOps(vk::Context *context,
+                                                    Serial serial,
+                                                    const vk::RenderPassDesc &desc,
+                                                    const vk::AttachmentOpsArray &attachmentOps,
+                                                    vk::RenderPass **renderPassOut)
 {
     auto outerIt = mPayload.find(desc);
     if (outerIt != mPayload.end())
@@ -944,7 +1074,7 @@ vk::Error RenderPassCache::getRenderPassWithOps(VkDevice device,
             // TODO(jmadill): Could possibly use an MRU cache here.
             innerIt->second.updateSerial(serial);
             *renderPassOut = &innerIt->second.get();
-            return vk::NoError();
+            return angle::Result::Continue();
         }
     }
     else
@@ -954,7 +1084,7 @@ vk::Error RenderPassCache::getRenderPassWithOps(VkDevice device,
     }
 
     vk::RenderPass newRenderPass;
-    ANGLE_TRY(vk::InitializeRenderPassFromDesc(device, desc, attachmentOps, &newRenderPass));
+    ANGLE_TRY(vk::InitializeRenderPassFromDesc(context, desc, attachmentOps, &newRenderPass));
 
     vk::RenderPassAndSerial withSerial(std::move(newRenderPass), serial);
 
@@ -963,13 +1093,11 @@ vk::Error RenderPassCache::getRenderPassWithOps(VkDevice device,
     *renderPassOut         = &insertPos.first->second.get();
 
     // TODO(jmadill): Trim cache, and pre-populate with the most common RPs on startup.
-    return vk::NoError();
+    return angle::Result::Continue();
 }
 
 // PipelineCache implementation.
-PipelineCache::PipelineCache()
-{
-}
+PipelineCache::PipelineCache() = default;
 
 PipelineCache::~PipelineCache()
 {
@@ -986,28 +1114,28 @@ void PipelineCache::destroy(VkDevice device)
     mPayload.clear();
 }
 
-vk::Error PipelineCache::getPipeline(VkDevice device,
-                                     const vk::RenderPass &compatibleRenderPass,
-                                     const vk::PipelineLayout &pipelineLayout,
-                                     const gl::AttributesMask &activeAttribLocationsMask,
-                                     const vk::ShaderModule &vertexModule,
-                                     const vk::ShaderModule &fragmentModule,
-                                     const vk::PipelineDesc &desc,
-                                     vk::PipelineAndSerial **pipelineOut)
+angle::Result PipelineCache::getPipeline(vk::Context *context,
+                                         const vk::RenderPass &compatibleRenderPass,
+                                         const vk::PipelineLayout &pipelineLayout,
+                                         const gl::AttributesMask &activeAttribLocationsMask,
+                                         const vk::ShaderModule &vertexModule,
+                                         const vk::ShaderModule &fragmentModule,
+                                         const vk::PipelineDesc &desc,
+                                         vk::PipelineAndSerial **pipelineOut)
 {
     auto item = mPayload.find(desc);
     if (item != mPayload.end())
     {
         *pipelineOut = &item->second;
-        return vk::NoError();
+        return angle::Result::Continue();
     }
 
     vk::Pipeline newPipeline;
 
     // This "if" is left here for the benefit of VulkanPipelineCachePerfTest.
-    if (device != VK_NULL_HANDLE)
+    if (context != nullptr)
     {
-        ANGLE_TRY(desc.initializePipeline(device, compatibleRenderPass, pipelineLayout,
+        ANGLE_TRY(desc.initializePipeline(context, compatibleRenderPass, pipelineLayout,
                                           activeAttribLocationsMask, vertexModule, fragmentModule,
                                           &newPipeline));
     }
@@ -1017,7 +1145,7 @@ vk::Error PipelineCache::getPipeline(VkDevice device,
         mPayload.emplace(desc, vk::PipelineAndSerial(std::move(newPipeline), Serial()));
     *pipelineOut = &insertedItem.first->second;
 
-    return vk::NoError();
+    return angle::Result::Continue();
 }
 
 void PipelineCache::populate(const vk::PipelineDesc &desc, vk::Pipeline &&pipeline)
@@ -1031,4 +1159,142 @@ void PipelineCache::populate(const vk::PipelineDesc &desc, vk::Pipeline &&pipeli
     mPayload.emplace(desc, vk::PipelineAndSerial(std::move(pipeline), Serial()));
 }
 
+// DescriptorSetLayoutCache implementation.
+DescriptorSetLayoutCache::DescriptorSetLayoutCache() = default;
+
+DescriptorSetLayoutCache::~DescriptorSetLayoutCache()
+{
+    ASSERT(mPayload.empty());
+}
+
+void DescriptorSetLayoutCache::destroy(VkDevice device)
+{
+    for (auto &item : mPayload)
+    {
+        vk::SharedDescriptorSetLayout &layout = item.second;
+        ASSERT(!layout.isReferenced());
+        layout.get().destroy(device);
+    }
+
+    mPayload.clear();
+}
+
+angle::Result DescriptorSetLayoutCache::getDescriptorSetLayout(
+    vk::Context *context,
+    const vk::DescriptorSetLayoutDesc &desc,
+    vk::BindingPointer<vk::DescriptorSetLayout> *descriptorSetLayoutOut)
+{
+    auto iter = mPayload.find(desc);
+    if (iter != mPayload.end())
+    {
+        vk::SharedDescriptorSetLayout &layout = iter->second;
+        descriptorSetLayoutOut->set(&layout);
+        return angle::Result::Continue();
+    }
+
+    // We must unpack the descriptor set layout description.
+    vk::DescriptorSetLayoutBindingVector bindings;
+    desc.unpackBindings(&bindings);
+
+    VkDescriptorSetLayoutCreateInfo createInfo;
+    createInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    createInfo.pNext        = nullptr;
+    createInfo.flags        = 0;
+    createInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    createInfo.pBindings    = bindings.data();
+
+    vk::DescriptorSetLayout newLayout;
+    ANGLE_TRY(newLayout.init(context, createInfo));
+
+    auto insertedItem = mPayload.emplace(desc, vk::SharedDescriptorSetLayout(std::move(newLayout)));
+    vk::SharedDescriptorSetLayout &insertedLayout = insertedItem.first->second;
+    descriptorSetLayoutOut->set(&insertedLayout);
+
+    return angle::Result::Continue();
+}
+
+// PipelineLayoutCache implementation.
+PipelineLayoutCache::PipelineLayoutCache() = default;
+
+PipelineLayoutCache::~PipelineLayoutCache()
+{
+    ASSERT(mPayload.empty());
+}
+
+void PipelineLayoutCache::destroy(VkDevice device)
+{
+    for (auto &item : mPayload)
+    {
+        vk::SharedPipelineLayout &layout = item.second;
+        layout.get().destroy(device);
+    }
+
+    mPayload.clear();
+}
+
+angle::Result PipelineLayoutCache::getPipelineLayout(
+    vk::Context *context,
+    const vk::PipelineLayoutDesc &desc,
+    const vk::DescriptorSetLayoutPointerArray &descriptorSetLayouts,
+    vk::BindingPointer<vk::PipelineLayout> *pipelineLayoutOut)
+{
+    auto iter = mPayload.find(desc);
+    if (iter != mPayload.end())
+    {
+        vk::SharedPipelineLayout &layout = iter->second;
+        pipelineLayoutOut->set(&layout);
+        return angle::Result::Continue();
+    }
+
+    // Note this does not handle gaps in descriptor set layouts gracefully.
+    angle::FixedVector<VkDescriptorSetLayout, vk::kMaxDescriptorSetLayouts> setLayoutHandles;
+    for (const vk::BindingPointer<vk::DescriptorSetLayout> &layoutPtr : descriptorSetLayouts)
+    {
+        if (layoutPtr.valid())
+        {
+            VkDescriptorSetLayout setLayout = layoutPtr.get().getHandle();
+            if (setLayout != VK_NULL_HANDLE)
+            {
+                setLayoutHandles.push_back(setLayout);
+            }
+        }
+    }
+
+    angle::FixedVector<VkPushConstantRange, vk::kMaxPushConstantRanges> pushConstantRanges;
+    const vk::PushConstantRangeArray<vk::PackedPushConstantRange> &descPushConstantRanges =
+        desc.getPushConstantRanges();
+    for (size_t shaderIndex = 0; shaderIndex < descPushConstantRanges.size(); ++shaderIndex)
+    {
+        const vk::PackedPushConstantRange &pushConstantDesc = descPushConstantRanges[shaderIndex];
+        if (pushConstantDesc.size > 0)
+        {
+            VkPushConstantRange pushConstantRange;
+            pushConstantRange.stageFlags =
+                shaderIndex == 0 ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+            pushConstantRange.offset = pushConstantDesc.offset;
+            pushConstantRange.size   = pushConstantDesc.size;
+
+            pushConstantRanges.push_back(pushConstantRange);
+        }
+    }
+
+    // No pipeline layout found. We must create a new one.
+    VkPipelineLayoutCreateInfo createInfo;
+    createInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    createInfo.pNext                  = nullptr;
+    createInfo.flags                  = 0;
+    createInfo.setLayoutCount         = static_cast<uint32_t>(setLayoutHandles.size());
+    createInfo.pSetLayouts            = setLayoutHandles.data();
+    createInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size());
+    createInfo.pPushConstantRanges    = pushConstantRanges.data();
+
+    vk::PipelineLayout newLayout;
+    ANGLE_TRY(newLayout.init(context, createInfo));
+
+    auto insertedItem = mPayload.emplace(desc, vk::SharedPipelineLayout(std::move(newLayout)));
+    vk::SharedPipelineLayout &insertedLayout = insertedItem.first->second;
+    pipelineLayoutOut->set(&insertedLayout);
+
+    return angle::Result::Continue();
+}
 }  // namespace rx

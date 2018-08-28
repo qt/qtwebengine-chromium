@@ -49,8 +49,10 @@ InputMethodChromeOS::~InputMethodChromeOS() {
   // We are dead, so we need to ask the client to stop relying on us.
   OnInputMethodChanged();
 
-  if (ui::IMEBridge::Get())
-    ui::IMEBridge::Get()->SetInputContextHandler(NULL);
+  if (ui::IMEBridge::Get() &&
+      ui::IMEBridge::Get()->GetInputContextHandler() == this) {
+    ui::IMEBridge::Get()->SetInputContextHandler(nullptr);
+  }
 }
 
 ui::EventDispatchDetails InputMethodChromeOS::DispatchKeyEvent(
@@ -510,7 +512,7 @@ void InputMethodChromeOS::ProcessInputMethodResult(ui::KeyEvent* event,
     if (handled && NeedInsertChar()) {
       for (base::string16::const_iterator i = result_text_.begin();
            i != result_text_.end(); ++i) {
-        ui::KeyEvent ch_event(*event);
+        KeyEvent ch_event(ET_KEY_PRESSED, VKEY_UNKNOWN, EF_NONE);
         ch_event.set_character(*i);
         client->InsertChar(ch_event);
       }

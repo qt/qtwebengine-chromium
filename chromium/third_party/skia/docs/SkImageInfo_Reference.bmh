@@ -1,5 +1,5 @@
 #Topic Image_Info
-#Alias Image_Info_Reference
+#Alias Image_Info_Reference ##
 
 Image_Info specifies the dimensions and encoding of the pixels in a Bitmap.
 The dimensions are integral width and height. The encoding is how pixel
@@ -22,8 +22,8 @@ but Image and Surface may not contain Image_Info.
 # ------------------------------------------------------------------------------
 #Subtopic Alpha_Type
 #Line # encoding for pixel transparency ##
-#Alias Alpha_Type
-#Alias Alpha_Types
+#Alias Alpha_Type ##
+#Alias Alpha_Types ##
 
 #PhraseDef list_of_alpha_types
 kUnknown_SkAlphaType, kOpaque_SkAlphaType, kPremul_SkAlphaType,
@@ -224,8 +224,8 @@ opaque, then the result of drawing any pixel with a Color_Alpha value less than
 # ------------------------------------------------------------------------------
 #Subtopic Color_Type
 #Line # encoding for pixel color ##
-#Alias Color_Type
-#Alias Color_Types
+#Alias Color_Type ##
+#Alias Color_Types ##
 
 #PhraseDef list_of_color_types
 kUnknown_SkColorType, kAlpha_8_SkColorType, kRGB_565_SkColorType,
@@ -250,8 +250,8 @@ kGray_8_SkColorType, kRGBA_F16_SkColorType
         kRGB_101010x_SkColorType,
         kGray_8_SkColorType,
         kRGBA_F16_SkColorType,
-
-        kLastEnum_SkColorType = kRGBA_F16_SkColorType,
+        kRGBA_F32_SkColorType,
+        kLastEnum_SkColorType = kRGBA_F32_SkColorType,
 ###$
     #if SK_PMCOLOR_BYTE_ORDER(B,G,R,A)
         kN32_SkColorType = kBGRA_8888_SkColorType,
@@ -265,7 +265,7 @@ $$$#
 #Code ##
 
 Describes how pixel bits encode color. A pixel may be an alpha mask, a
-grayscale, RGB, or ARGB.
+Grayscale, RGB, or ARGB.
 
 kN32_SkColorType selects the native 32-bit ARGB format. On Little_Endian
 processors, pixels containing 8-bit ARGB components pack into 32-bit
@@ -335,7 +335,7 @@ kRGBA_8888_SkColorType.
 ##
 
 #Const kGray_8_SkColorType 9
-#Line # pixel with grayscale level in 8-bit byte ##
+#Line # pixel with Grayscale level in 8-bit byte ##
 #Details Gray_8
     Stores 8-bit byte pixel encoding that equivalent to equal values for red,
     blue, and green, representing colors from black to white.
@@ -345,17 +345,26 @@ kRGBA_8888_SkColorType.
 #Line # pixel with half floats for red, green, blue, alpha; in 64-bit word ##
 #Details RGBA_F16
     Stores 64-bit word pixel encoding that contains 16 bits of blue,
-    16 bits of green, 16 bits of red, and 16 bits of alpha.
+    16 bits of green, 16 bits of red, and 16 bits of alpha. Each component
+    is encoded as a half float.
 ##
 
-#Const kLastEnum_SkColorType 10
+#Const kRGBA_F32_SkColorType 11
+#Line # pixel using C float for red, green, blue, alpha; in 128-bit word ##
+#Details RGBA_F32
+    Stores 128-bit word pixel encoding that contains 32 bits of blue,
+    32 bits of green, 32 bits of red, and 32 bits of alpha. Each component
+    is encoded as a single precision float.
+##
+
+#Const kLastEnum_SkColorType 11
 #NoJustify
 #Line # last valid value ##
     Used by tests to iterate through all valid values.
 ##
 
 #Const kN32_SkColorType 4 or 6
-#Alias Native_Color_Type
+#Alias Native_Color_Type ##
 #NoJustify
 #Line # native ARGB 32-bit encoding ##
     Encodes ARGB as either kRGBA_8888_SkColorType or
@@ -733,8 +742,8 @@ kRGBA_8888_SkColorType.
 ##
 
 #Subtopic Gray_8
-#Line # encodes level of grayscale in 8 bits ##
-    kGray_8_SkColorType encodes grayscale level in eight bits that is equivalent
+#Line # encodes level of Grayscale in 8 bits ##
+    kGray_8_SkColorType encodes Grayscale level in eight bits that is equivalent
     to equal values for red, blue, and green, representing colors from black to
     white.  Pixels described by kGray_8_SkColorType are fully
     opaque as if its Color_Alpha was set to one, and should always be paired with
@@ -761,8 +770,8 @@ kRGBA_8888_SkColorType.
 #Subtopic RGBA_F16
 #Line # encodes ARGB as half floats ##
     kRGBA_F16_SkColorType encodes ARGB into a 64-bit word. Each component:
-    blue, green, red, and alpha; use 16 bits, describing a floating point value.
-    from -65500	to 65000 with 3.31 decimal digits of precision.
+    blue, green, red, and alpha; use 16 bits, describing a floating point value,
+    from -65500 to 65000 with 3.31 decimal digits of precision.
 
     At present, Color in Paint does not provide enough precision or range to
     draw all colors possible to a kRGBA_F16_SkColorType Surface.
@@ -784,7 +793,7 @@ kRGBA_8888_SkColorType.
 
     If paired with kOpaque_SkAlphaType: all alpha component values are at the maximum;
     blue, green, and red components are fully opaque. If any alpha component is
-    less than 255, the drawn result is undefined.
+    less than one, the drawn result is undefined.
 
     #ToDo
     FloatToHalf should be replaced with SkFloatToHalf if/when that's made public
@@ -824,14 +833,14 @@ kRGBA_8888_SkColorType.
             return FloatToHalf(c);
         };
                                  //     R        G        B        A
-        uint16_t red_f16[][4] =  { { H(1.0f), H(0.0f), H(0.0f), H(1.0f) },
-                                   { H(.75f), H(0.0f), H(0.0f), H(1.0f) },
-                                   { H(.50f), H(0.0f), H(0.0f), H(1.0f) },
-                                   { H(.25f), H(0.0f), H(0.0f), H(1.0f) } };
-        uint16_t blue_f16[][4] = { { H(0.0f), H(0.0f), H(1.0f), H(1.0f) },
-                                   { H(0.0f), H(0.0f), H(.75f), H(1.0f) },
-                                   { H(0.0f), H(0.0f), H(.50f), H(1.0f) },
-                                   { H(0.0f), H(0.0f), H(.25f), H(1.0f) } };
+        uint16_t red_f16[][4] =  { { H(1.0), H(0.0), H(0.0), H(1.0) },
+                                   { H(.75), H(0.0), H(0.0), H(1.0) },
+                                   { H(.50), H(0.0), H(0.0), H(1.0) },
+                                   { H(.25), H(0.0), H(0.0), H(1.0) } };
+        uint16_t blue_f16[][4] = { { H(0.0), H(0.0), H(1.0), H(1.0) },
+                                   { H(0.0), H(0.0), H(.75), H(1.0) },
+                                   { H(0.0), H(0.0), H(.50), H(1.0) },
+                                   { H(0.0), H(0.0), H(.25), H(1.0) } };
         SkPixmap redPixmap(imageInfo, red_f16, imageInfo.minRowBytes());
         if (bitmap.writePixels(redPixmap, 0, 0)) {
             canvas->drawBitmap(bitmap, 2, 2);
@@ -844,6 +853,64 @@ kRGBA_8888_SkColorType.
     ##
     #SeeAlso SkColor4f
 ##
+
+#Subtopic RGBA_F32
+#Line # encodes ARGB as single precision floats ##
+    kRGBA_F32_SkColorType encodes ARGB into a 128-bit word. Each component:
+    blue, green, red, and alpha; use 32 bits, describing a floating point value,
+    from -3.402823e+38 to 3.402823e+38 with 7.225 decimal digits of precision.
+
+    At present, Color in Paint does not provide enough precision or range to
+    draw all colors possible to a kRGBA_F32_SkColorType Surface.
+
+    Each component encodes a floating point value using
+    #A single-precision floats # https://en.wikipedia.org/wiki/Single-precision_floating-point_format ##
+    . Meaningful colors are represented by the range 0.0 to 1.0, although smaller
+    and larger values may be useful when used in combination with Transfer_Mode.
+
+    #Illustration
+
+    If paired with kPremul_SkAlphaType: blue, green, and red components are
+    Premultiplied by the alpha value. If blue, green, or red is greater than alpha,
+    the drawn result is undefined.
+
+    If paired with kUnpremul_SkAlphaType: blue, green, red, and alpha components
+    may have any value. There may be a performance penalty with Unpremultiplied
+    pixels.
+
+    If paired with kOpaque_SkAlphaType: all alpha component values are at the maximum;
+    blue, green, and red components are fully opaque. If any alpha component is
+    less than one, the drawn result is undefined.
+
+    #NoExample
+        canvas->scale(16, 16);
+        SkBitmap bitmap;
+        SkImageInfo imageInfo = SkImageInfo::Make(2, 2, kRGBA_F32_SkColorType, kPremul_SkAlphaType);
+        bitmap.allocPixels(imageInfo);
+        SkCanvas offscreen(bitmap);
+        offscreen.clear(SK_ColorGREEN);
+        canvas->drawBitmap(bitmap, 0, 0);
+                             //    R    G    B    A
+        float red_f32[][4] =  { { 1.0, 0.0, 0.0, 1.0 },
+                                { .75, 0.0, 0.0, 1.0 },
+                                { .50, 0.0, 0.0, 1.0 },
+                                { .25, 0.0, 0.0, 1.0 } };
+        float blue_f32[][4] = { { 0.0, 0.0, 1.0, 1.0 },
+                                { 0.0, 0.0, .75, 1.0 },
+                                { 0.0, 0.0, .50, 1.0 },
+                                { 0.0, 0.0, .25, 1.0 } };
+        SkPixmap redPixmap(imageInfo, red_f32, imageInfo.minRowBytes());
+        if (bitmap.writePixels(redPixmap, 0, 0)) {
+            canvas->drawBitmap(bitmap, 2, 2);
+        }
+        SkPixmap bluePixmap(imageInfo, blue_f32, imageInfo.minRowBytes());
+        if (bitmap.writePixels(bluePixmap, 0, 0)) {
+            canvas->drawBitmap(bitmap, 4, 4);
+        }
+    ##
+    #SeeAlso SkColor4f
+##
+
 
 #Subtopic Color_Type ##
 
@@ -980,7 +1047,8 @@ and return true if alphaType is not kUnknown_SkAlphaType.
 # ------------------------------------------------------------------------------
 #Subtopic YUV_ColorSpace
 #Line # color range of YUV pixels ##
-#Alias YUV_ColorSpace
+#Alias YUV_ColorSpace ##
+
 #Enum SkYUVColorSpace
 #Line # color range of YUV pixels ##
 
@@ -1037,22 +1105,6 @@ with studio range of 16 to 235 range for components.
 
 # ------------------------------------------------------------------------------
 
-#Struct SkYUVAIndex
-
-Describes which image source and which channel to read for each YUVA planes.
-
-#Member int fIndex
-Describes which image source to be reading from. The Alpha plane is optional and could be set to -1.
-##
-
-#Member SkImageSourceChannel fChannel
-Describes which of the RGBA channel to read from.
-##
-
-#Struct SkYUVAIndex ##
-
-# ------------------------------------------------------------------------------
-
 #Struct SkImageInfo
 
 Describes pixel dimensions and encoding. Bitmap, Image, PixMap, and Surface
@@ -1080,7 +1132,7 @@ and green; and Color_Space, the range and linearity of colors.
 #Method SkImageInfo()
 
 #In Constructor
-#Line # creates with zero dimensions, kUnknown_SkColorType, kUnknown_SkAlphaType ##
+#Line # creates with zeroed dimensions, kUnknown_SkColorType, kUnknown_SkAlphaType ##
 Creates an empty Image_Info with kUnknown_SkColorType, kUnknown_SkAlphaType,
 a width and height of zero, and no Color_Space.
 
@@ -2209,7 +2261,7 @@ Returns storage required by pixel array, given Image_Info dimensions, Color_Type
 and rowBytes. rowBytes is assumed to be at least as large as minRowBytes().
 
 Returns zero if height is zero.
-Returns SK_MaxSizeT if answer exceeds the range of size_t.
+Returns SIZE_MAX if answer exceeds the range of size_t.
 
 #Param rowBytes  size of pixel row or larger ##
 
@@ -2243,7 +2295,7 @@ Returns storage required by pixel array, given Image_Info dimensions, and
 Color_Type. Uses minRowBytes() to compute bytes for pixel row.
 
 Returns zero if height is zero.
-Returns SK_MaxSizeT if answer exceeds the range of size_t.
+Returns SIZE_MAX if answer exceeds the range of size_t.
 
 #Return least memory required by pixel buffer ##
 
@@ -2271,8 +2323,8 @@ Returns SK_MaxSizeT if answer exceeds the range of size_t.
 #Method static bool ByteSizeOverflowed(size_t byteSize)
 #In Utility
 #Line # checks result of computeByteSize and computeMinByteSize ##
-Returns true if byteSize equals SK_MaxSizeT. computeByteSize and
-computeMinByteSize return SK_MaxSizeT if size_t can not hold buffer size.
+Returns true if byteSize equals SIZE_MAX. computeByteSize and
+computeMinByteSize return SIZE_MAX if size_t can not hold buffer size.
 
 #Param byteSize  result of computeByteSize or computeMinByteSize ##
 

@@ -23,6 +23,7 @@ namespace content {
 SynchronousCompositorProxy::SynchronousCompositorProxy(
     ui::SynchronousInputHandlerProxy* input_handler_proxy)
     : input_handler_proxy_(input_handler_proxy),
+      binding_(this),
       use_in_process_zero_copy_software_draw_(
           base::CommandLine::ForCurrentProcess()->HasSwitch(
               switches::kSingleProcess)),
@@ -31,6 +32,7 @@ SynchronousCompositorProxy::SynchronousCompositorProxy(
       max_page_scale_factor_(0.f),
       need_animate_scroll_(false),
       need_invalidate_count_(0u),
+      invalidate_needs_draw_(false),
       did_activate_pending_tree_count_(0u) {
   DCHECK(input_handler_proxy_);
 }
@@ -66,7 +68,7 @@ void SynchronousCompositorProxy::SetNeedsSynchronousAnimateInput() {
     SendSetNeedsBeginFramesIfNeeded();
   } else {
     need_animate_scroll_ = true;
-    Invalidate();
+    Invalidate(true);
   }
 }
 
@@ -94,8 +96,9 @@ void SynchronousCompositorProxy::UpdateRootLayerState(
   }
 }
 
-void SynchronousCompositorProxy::Invalidate() {
+void SynchronousCompositorProxy::Invalidate(bool needs_draw) {
   ++need_invalidate_count_;
+  invalidate_needs_draw_ |= needs_draw;
   SendAsyncRendererStateIfNeeded();
 }
 
@@ -114,6 +117,7 @@ void SynchronousCompositorProxy::PopulateCommonParams(
   params->min_page_scale_factor = min_page_scale_factor_;
   params->max_page_scale_factor = max_page_scale_factor_;
   params->need_invalidate_count = need_invalidate_count_;
+  params->invalidate_needs_draw = invalidate_needs_draw_;
   params->did_activate_pending_tree_count = did_activate_pending_tree_count_;
   if (!compute_scroll_called_via_ipc_)
     params->need_animate_scroll = need_animate_scroll_;
@@ -130,6 +134,7 @@ void SynchronousCompositorProxy::DemandDrawHwAsync(
 void SynchronousCompositorProxy::DemandDrawHw(
     const SyncCompositorDemandDrawHwParams& params,
     DemandDrawHwCallback callback) {
+  invalidate_needs_draw_ = false;
   hardware_draw_reply_ = std::move(callback);
 
   if (layer_tree_frame_sink_) {
@@ -147,6 +152,10 @@ void SynchronousCompositorProxy::DemandDrawHw(
     std::move(hardware_draw_reply_)
         .Run(common_renderer_params, 0u, 0u, base::nullopt);
   }
+}
+
+void SynchronousCompositorProxy::WillSkipDraw() {
+  layer_tree_frame_sink_->WillSkipDraw();
 }
 
 struct SynchronousCompositorProxy::SharedMemoryWithSize {
@@ -172,6 +181,7 @@ void SynchronousCompositorProxy::ZeroSharedMemory() {
 void SynchronousCompositorProxy::DemandDrawSw(
     const SyncCompositorDemandDrawSwParams& params,
     DemandDrawSwCallback callback) {
+  invalidate_needs_draw_ = false;
   software_draw_reply_ = std::move(callback);
   if (layer_tree_frame_sink_) {
     SkCanvas* sk_canvas_for_draw = SynchronousCompositorGetSkCanvas();
@@ -334,6 +344,57 @@ void SynchronousCompositorProxy::ZoomBy(float zoom_delta,
 
 uint32_t SynchronousCompositorProxy::NextMetadataVersion() {
   return ++metadata_version_;
+}
+
+void SynchronousCompositorProxy::SendDemandDrawHwAsyncReply(
+    const content::SyncCompositorCommonRendererParams&,
+    uint32_t layer_tree_frame_sink_id,
+    uint32_t metadata_version,
+    base::Optional<viz::CompositorFrame> frame) {
+  control_host_->ReturnFrame(layer_tree_frame_sink_id, metadata_version,
+                             std::move(frame));
+}
+
+void SynchronousCompositorProxy::SendBeginFrameResponse(
+    const content::SyncCompositorCommonRendererParams& param) {
+  control_host_->BeginFrameResponse(param);
+}
+
+void SynchronousCompositorProxy::SendAsyncRendererStateIfNeeded() {
+  if (hardware_draw_reply_ || software_draw_reply_ || zoom_by_reply_ || !host_)
+    return;
+
+  SyncCompositorCommonRendererParams params;
+  PopulateCommonParams(&params);
+  host_->UpdateState(params);
+}
+
+void SynchronousCompositorProxy::SendSetNeedsBeginFrames(
+    bool needs_begin_frames) {
+  needs_begin_frame_ = needs_begin_frames;
+  if (host_)
+    host_->SetNeedsBeginFrames(needs_begin_frames);
+}
+
+void SynchronousCompositorProxy::LayerTreeFrameSinkCreated() {
+  DCHECK(layer_tree_frame_sink_);
+  if (host_)
+    host_->LayerTreeFrameSinkCreated();
+}
+
+void SynchronousCompositorProxy::BindChannel(
+    mojom::SynchronousCompositorControlHostPtr control_host,
+    mojom::SynchronousCompositorHostAssociatedPtrInfo host,
+    mojom::SynchronousCompositorAssociatedRequest compositor_request) {
+  control_host_ = std::move(control_host);
+  host_.Bind(std::move(host));
+  binding_.Bind(std::move(compositor_request));
+
+  if (layer_tree_frame_sink_)
+    LayerTreeFrameSinkCreated();
+
+  if (needs_begin_frame_)
+    host_->SetNeedsBeginFrames(true);
 }
 
 }  // namespace content

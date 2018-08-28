@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Next MinVersion: 32
+// Next MinVersion: 36
 
 module arc.mojom;
 
@@ -22,6 +22,7 @@ struct AppInfo {
   string activity;
   [MinVersion=2] bool sticky;  // true if the app cannot be uninstalled
   [MinVersion=7] bool notifications_enabled;
+  [MinVersion=35] bool suspended;
 };
 
 // Describes ARC package.
@@ -156,6 +157,18 @@ enum AppDataRequestState {
   FAILED_TO_CALL_GLOBALQUERY = 8,
 };
 
+// Describes the category type of app shortcut item.
+[Extensible]
+enum AppShortcutItemType {
+  // Static shortcut, which means it was published from AndroidManifest.xml.
+  kStatic = 0,
+
+  // Dynamic shortcut, which means it was published at runtime using the
+  // ShortcutManagerAPI. Dynamic shortcuts are links to specific,
+  // context-sensitive actions within the app.
+  kDynamic = 1,
+};
+
 // Describes app shortcut that is published by Android's ShortcutManager.
 struct AppShortcutItem {
   // The ID of this shortcut. Unique within each publisher app and stable across
@@ -170,6 +183,12 @@ struct AppShortcutItem {
 
   // The package name of the publisher app.
   [MinVersion=31] string? package_name;
+
+  // The category type of this shortcut.
+  [MinVersion=32] AppShortcutItemType type;
+
+  // "Rank" of a shortcut, which is a non-negative, sequential value.
+  [MinVersion=32] int32 rank;
 };
 
 // Next method ID: 18
@@ -254,7 +273,7 @@ interface AppHost {
 };
 
 // TODO(lhchavez): Migrate all request/response messages to Mojo.
-// Next method ID: 25
+// Next method ID: 27
 interface AppInstance {
   // DEPRECATED: Please use Init@21 instead.
   InitDeprecated@0(AppHost host_ptr);
@@ -339,12 +358,20 @@ interface AppInstance {
   // Sends a request to ARC to start PAI flow.
   [MinVersion=21] StartPaiFlow@17();
 
+  // Sends a request to ARC to start FastAppReinstall flow.
+  [MinVersion=33] StartFastAppReinstallFlow@25(array<string> arc_package_names);
+
   // Sends a request to ARC to uninstall the given package.  Error (if ever
   // happens) is ignored, and uninstall option should appear in the UI.
   [MinVersion=2] UninstallPackage@5(string package_name);
 
-  // Sends a request to ARC to get app shortcuts for app with |package_name|. If
-  // |package_name| is empty, it will query for all launchable activities.
+  // Sends a request to ARC to get app shortcuts for apps in global scope that
+  // match a |query|. Limits the results to only return |max_results|.
+  [MinVersion=34] GetAppShortcutGlobalQueryItems@26(
+      string query, int32 max_results) =>
+          (array<AppShortcutItem> shortcut_items);
+
+  // Sends a request to ARC to get app shortcuts for app with |package_name|.
   [MinVersion=29] GetAppShortcutItems@23(string package_name) =>
       (array<AppShortcutItem> shortcut_items);
 

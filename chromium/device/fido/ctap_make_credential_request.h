@@ -7,10 +7,12 @@
 
 #include <stdint.h>
 
+#include <array>
 #include <string>
 #include <vector>
 
 #include "base/component_export.h"
+#include "base/containers/span.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "device/fido/public_key_credential_descriptor.h"
@@ -26,7 +28,7 @@ namespace device {
 class COMPONENT_EXPORT(DEVICE_FIDO) CtapMakeCredentialRequest {
  public:
   CtapMakeCredentialRequest(
-      std::vector<uint8_t> client_data_hash,
+      base::span<const uint8_t, kClientDataHashLength> client_data_hash,
       PublicKeyCredentialRpEntity rp,
       PublicKeyCredentialUserEntity user,
       PublicKeyCredentialParams public_key_credential_params);
@@ -48,8 +50,10 @@ class COMPONENT_EXPORT(DEVICE_FIDO) CtapMakeCredentialRequest {
       std::vector<PublicKeyCredentialDescriptor> exclude_list);
   CtapMakeCredentialRequest& SetPinAuth(std::vector<uint8_t> pin_auth);
   CtapMakeCredentialRequest& SetPinProtocol(uint8_t pin_protocol);
+  CtapMakeCredentialRequest& SetIsIndividualAttestation(
+      bool is_individual_attestation);
 
-  const std::vector<uint8_t>& client_data_hash() const {
+  const std::array<uint8_t, kClientDataHashLength>& client_data_hash() const {
     return client_data_hash_;
   }
   const PublicKeyCredentialRpEntity& rp() const { return rp_; }
@@ -61,23 +65,32 @@ class COMPONENT_EXPORT(DEVICE_FIDO) CtapMakeCredentialRequest {
     return user_verification_required_;
   }
   bool resident_key_supported() const { return resident_key_supported_; }
+  bool is_individual_attestation() const { return is_individual_attestation_; }
   const base::Optional<std::vector<PublicKeyCredentialDescriptor>>&
   exclude_list() const {
     return exclude_list_;
   }
+  const base::Optional<std::vector<uint8_t>>& pin_auth() const {
+    return pin_auth_;
+  }
 
  private:
-  std::vector<uint8_t> client_data_hash_;
+  std::array<uint8_t, kClientDataHashLength> client_data_hash_;
   PublicKeyCredentialRpEntity rp_;
   PublicKeyCredentialUserEntity user_;
   PublicKeyCredentialParams public_key_credential_params_;
   bool user_verification_required_ = false;
   bool resident_key_supported_ = false;
+  bool is_individual_attestation_ = false;
 
   base::Optional<std::vector<PublicKeyCredentialDescriptor>> exclude_list_;
   base::Optional<std::vector<uint8_t>> pin_auth_;
   base::Optional<uint8_t> pin_protocol_;
 };
+
+COMPONENT_EXPORT(DEVICE_FIDO)
+base::Optional<CtapMakeCredentialRequest> ParseCtapMakeCredentialRequest(
+    base::span<const uint8_t> request_bytes);
 
 }  // namespace device
 

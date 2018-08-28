@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <string>
 
+#include "absl/memory/memory.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
 #include "modules/congestion_controller/goog_cc/trendline_estimator.h"
@@ -24,7 +25,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/constructormagic.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/thread_annotations.h"
 #include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
@@ -70,7 +70,6 @@ size_t ReadTrendlineFilterWindowSize() {
 }  // namespace
 
 namespace webrtc {
-namespace webrtc_cc {
 
 DelayBasedBwe::Result::Result()
     : updated(false),
@@ -114,7 +113,7 @@ DelayBasedBwe::~DelayBasedBwe() {}
 
 DelayBasedBwe::Result DelayBasedBwe::IncomingPacketFeedbackVector(
     const std::vector<PacketFeedback>& packet_feedback_vector,
-    rtc::Optional<uint32_t> acked_bitrate_bps,
+    absl::optional<uint32_t> acked_bitrate_bps,
     int64_t at_time_ms) {
   RTC_DCHECK(std::is_sorted(packet_feedback_vector.begin(),
                             packet_feedback_vector.end(),
@@ -225,13 +224,13 @@ void DelayBasedBwe::IncomingPacketFeedback(
 }
 
 DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
-    rtc::Optional<uint32_t> acked_bitrate_bps,
+    absl::optional<uint32_t> acked_bitrate_bps,
     bool recovered_from_overuse,
     int64_t at_time_ms) {
   Result result;
   int64_t now_ms = at_time_ms;
 
-  rtc::Optional<int> probe_bitrate_bps =
+  absl::optional<int> probe_bitrate_bps =
       probe_bitrate_estimator_.FetchAndResetLastEstimatedBitrateBps();
   // Currently overusing the bandwidth.
   if (delay_detector_->State() == BandwidthUsage::kBwOverusing) {
@@ -273,7 +272,7 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
     BWE_TEST_LOGGING_PLOT(1, "target_bitrate_bps", now_ms, bitrate_bps);
 
     if (event_log_) {
-      event_log_->Log(rtc::MakeUnique<RtcEventBweUpdateDelayBased>(
+      event_log_->Log(absl::make_unique<RtcEventBweUpdateDelayBased>(
           bitrate_bps, detector_state));
     }
 
@@ -284,11 +283,9 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
 }
 
 bool DelayBasedBwe::UpdateEstimate(int64_t now_ms,
-                                   rtc::Optional<uint32_t> acked_bitrate_bps,
+                                   absl::optional<uint32_t> acked_bitrate_bps,
                                    uint32_t* target_bitrate_bps) {
-  // TODO(terelius): RateControlInput::noise_var is deprecated and will be
-  // removed. In the meantime, we set it to zero.
-  const RateControlInput input(delay_detector_->State(), acked_bitrate_bps, 0);
+  const RateControlInput input(delay_detector_->State(), acked_bitrate_bps);
   *target_bitrate_bps = rate_control_.Update(&input, now_ms);
   return rate_control_.ValidEstimate();
 }
@@ -314,7 +311,7 @@ bool DelayBasedBwe::LatestEstimate(std::vector<uint32_t>* ssrcs,
 }
 
 void DelayBasedBwe::SetStartBitrate(int start_bitrate_bps) {
-  RTC_LOG(LS_WARNING) << "BWE Setting start bitrate to: " << start_bitrate_bps;
+  RTC_LOG(LS_INFO) << "BWE Setting start bitrate to: " << start_bitrate_bps;
   rate_control_.SetStartBitrate(start_bitrate_bps);
 }
 
@@ -327,5 +324,4 @@ void DelayBasedBwe::SetMinBitrate(int min_bitrate_bps) {
 int64_t DelayBasedBwe::GetExpectedBwePeriodMs() const {
   return rate_control_.GetExpectedBandwidthPeriodMs();
 }
-}  // namespace webrtc_cc
 }  // namespace webrtc

@@ -62,20 +62,6 @@ def SetEnvironmentAndGetRuntimeDllDirs():
     os.environ['GYP_MSVS_OVERRIDE_PATH'] = toolchain
     os.environ['GYP_MSVS_VERSION'] = version
 
-    # Limit the scope of the gyp import to only where it is used. This
-    # potentially lets build configs that never execute this block to drop
-    # their GYP checkout.
-    import gyp
-
-    # We need to make sure windows_sdk_path is set to the automated
-    # toolchain values in GYP_DEFINES, but don't want to override any
-    # otheroptions.express
-    # values there.
-    gyp_defines_dict = gyp.NameValueListToDict(gyp.ShlexEnv('GYP_DEFINES'))
-    gyp_defines_dict['windows_sdk_path'] = win_sdk
-    os.environ['GYP_DEFINES'] = ' '.join('%s=%s' % (k, pipes.quote(str(v)))
-        for k, v in gyp_defines_dict.iteritems())
-
     os.environ['WINDOWSSDKDIR'] = win_sdk
     os.environ['WDK_DIR'] = wdk
     # Include the VS runtime in the PATH in case it's not machine-installed.
@@ -205,7 +191,8 @@ def _CopyUCRTRuntime(target_dir, source_dir, target_cpu, dll_pattern, suffix):
   # DEPOT_TOOLS_WIN_TOOLCHAIN=0 and vcvarsall.bat has not been run.
   win_sdk_dir = os.path.normpath(
       os.environ.get('WINDOWSSDKDIR',
-                     'C:\\Program Files (x86)\\Windows Kits\\10'))
+                     os.path.expandvars('%ProgramFiles(x86)%'
+                                        '\\Windows Kits\\10')))
   ucrt_dll_dirs = os.path.join(win_sdk_dir, 'Redist', 'ucrt', 'DLLs',
                                target_cpu)
   ucrt_files = glob.glob(os.path.join(ucrt_dll_dirs, 'api-ms-win-*.dll'))
@@ -346,8 +333,9 @@ def _GetDesiredVsToolchainHashes():
   to build with."""
   env_version = GetVisualStudioVersion()
   if env_version == '2017':
-    # VS 2017 Update 7.1 (15.7.1) with 10.0.17134.12 SDK.
-    toolchain_hash = '5454e45bf3764c03d3fc1024b3bf5bc41e3ab62c'
+    # VS 2017 Update 7.1 (15.7.1) with 10.0.17134.12 SDK, rebuilt with
+    # dbghelp.dll fix.
+    toolchain_hash = '3bc0ec615cf20ee342f3bc29bc991b5ad66d8d2c'
     # Third parties that do not have access to the canonical toolchain can map
     # canonical toolchain version to their own toolchain versions.
     toolchain_hash_mapping_key = 'GYP_MSVS_HASH_%s' % toolchain_hash

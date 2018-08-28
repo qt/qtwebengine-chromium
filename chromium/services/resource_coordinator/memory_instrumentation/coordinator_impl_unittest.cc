@@ -8,6 +8,9 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/test/trace_event_analyzer.h"
+#include "base/threading/platform_thread.h"
+#include "base/time/time.h"
+#include "base/time/time_override.h"
 #include "base/trace_event/memory_dump_request_args.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/bindings/binding.h"
@@ -160,8 +163,7 @@ class MockClientProcess : public mojom::ClientProcess {
             Invoke([pid](const MemoryDumpRequestArgs& args,
                          RequestChromeMemoryDumpCallback& callback) {
               MemoryDumpArgs dump_args{MemoryDumpLevelOfDetail::DETAILED};
-              auto pmd =
-                  std::make_unique<ProcessMemoryDump>(nullptr, dump_args);
+              auto pmd = std::make_unique<ProcessMemoryDump>(dump_args);
               auto* mad = pmd->CreateAllocatorDump(
                   "malloc", base::trace_event::MemoryAllocatorDumpGuid(pid));
               mad->AddScalar(MemoryAllocatorDump::kNameSize,
@@ -190,9 +192,6 @@ class MockClientProcess : public mojom::ClientProcess {
                void(mojom::MemoryMapOption option,
                     const std::vector<base::ProcessId>& args,
                     RequestOSMemoryDumpCallback& callback));
-  MOCK_METHOD2(EnableHeapProfilingMock,
-               void(base::trace_event::HeapProfilingMode mode,
-                    EnableHeapProfilingCallback& callback));
 
   void RequestChromeMemoryDump(
       const MemoryDumpRequestArgs& args,
@@ -203,10 +202,6 @@ class MockClientProcess : public mojom::ClientProcess {
                            const std::vector<base::ProcessId>& args,
                            RequestOSMemoryDumpCallback callback) override {
     RequestOSMemoryDumpMock(option, args, callback);
-  }
-  void EnableHeapProfiling(base::trace_event::HeapProfilingMode mode,
-                           EnableHeapProfilingCallback callback) override {
-    EnableHeapProfilingMock(mode, callback);
   }
 
  private:
@@ -307,6 +302,63 @@ TEST_F(CoordinatorImplTest, SeveralClients) {
   run_loop.Run();
 }
 
+// Issuing two requests will cause the second one to be queued.
+TEST_F(CoordinatorImplTest, QueuedRequest) {
+  base::RunLoop run_loop;
+
+  // Override TimeTicks::Now with a timer that has extra_time added.
+  // This variable to be static as the lambda below has to convert to a function
+  // pointer rather than a functor.
+  static base::TimeDelta extra_time;
+  base::subtle::ScopedTimeClockOverrides time_override(
+      nullptr,
+      []() {
+        return base::subtle::TimeTicksNowIgnoringOverride() + extra_time;
+      },
+      nullptr);
+
+  NiceMock<MockClientProcess> client_process_1(this, 1,
+                                               mojom::ProcessType::BROWSER);
+  NiceMock<MockClientProcess> client_process_2(this);
+
+  // Each request will invoke on both processes.
+  EXPECT_CALL(client_process_1, RequestChromeMemoryDumpMock(_, _)).Times(2);
+  EXPECT_CALL(client_process_2, RequestChromeMemoryDumpMock(_, _))
+      .Times(2)
+      .WillRepeatedly(Invoke(
+          [](const MemoryDumpRequestArgs& args,
+             MockClientProcess::RequestChromeMemoryDumpCallback& callback) {
+            // Skip the wall clock time-ticks forward to make sure start_time
+            // is strictly increasing.
+            extra_time += base::TimeDelta::FromMilliseconds(10);
+            MemoryDumpArgs dump_args{MemoryDumpLevelOfDetail::DETAILED};
+            auto pmd = std::make_unique<ProcessMemoryDump>(dump_args);
+            std::move(callback).Run(true, args.dump_guid, std::move(pmd));
+          }));
+
+  MockGlobalMemoryDumpCallback callback1;
+  MockGlobalMemoryDumpCallback callback2;
+
+  // Verify that the start time of subsequent dumps is monotonically
+  // increasing.
+  base::TimeTicks before = base::TimeTicks::Now();
+  base::TimeTicks first_dump_time;
+  EXPECT_CALL(callback1, OnCall(true, NotNull()))
+      .WillOnce(Invoke([&](bool success, GlobalMemoryDump* global_dump) {
+        EXPECT_LT(before, global_dump->start_time);
+        first_dump_time = global_dump->start_time;
+      }));
+  EXPECT_CALL(callback2, OnCall(true, NotNull()))
+      .WillOnce(Invoke([&](bool success, GlobalMemoryDump* global_dump) {
+        EXPECT_LT(before, global_dump->start_time);
+        EXPECT_LT(first_dump_time, global_dump->start_time);
+        run_loop.Quit();
+      }));
+  RequestGlobalMemoryDump(callback1.Get());
+  RequestGlobalMemoryDump(callback2.Get());
+  run_loop.Run();
+}
+
 TEST_F(CoordinatorImplTest, MissingChromeDump) {
   base::RunLoop run_loop;
 
@@ -318,7 +370,7 @@ TEST_F(CoordinatorImplTest, MissingChromeDump) {
           [](const MemoryDumpRequestArgs& args,
              MockClientProcess::RequestChromeMemoryDumpCallback& callback) {
             MemoryDumpArgs dump_args{MemoryDumpLevelOfDetail::DETAILED};
-            auto pmd = std::make_unique<ProcessMemoryDump>(nullptr, dump_args);
+            auto pmd = std::make_unique<ProcessMemoryDump>(dump_args);
             std::move(callback).Run(true, args.dump_guid, std::move(pmd));
           }));
 
@@ -533,7 +585,7 @@ TEST_F(CoordinatorImplTest, GlobalMemoryDumpStruct) {
                           MockClientProcess::RequestChromeMemoryDumpCallback&
                               callback) {
         MemoryDumpArgs dump_args{MemoryDumpLevelOfDetail::DETAILED};
-        auto pmd = std::make_unique<ProcessMemoryDump>(nullptr, dump_args);
+        auto pmd = std::make_unique<ProcessMemoryDump>(dump_args);
         auto* size = MemoryAllocatorDump::kNameSize;
         auto* bytes = MemoryAllocatorDump::kUnitsBytes;
         const uint32_t kB = 1024;
@@ -573,7 +625,7 @@ TEST_F(CoordinatorImplTest, GlobalMemoryDumpStruct) {
           [](const MemoryDumpRequestArgs& args,
              MockClientProcess::RequestChromeMemoryDumpCallback& callback) {
             MemoryDumpArgs dump_args{MemoryDumpLevelOfDetail::DETAILED};
-            auto pmd = std::make_unique<ProcessMemoryDump>(nullptr, dump_args);
+            auto pmd = std::make_unique<ProcessMemoryDump>(dump_args);
             auto* mad = pmd->CreateAllocatorDump(
                 "malloc", base::trace_event::MemoryAllocatorDumpGuid(2));
             mad->AddScalar(MemoryAllocatorDump::kNameSize,
@@ -750,7 +802,7 @@ TEST_F(CoordinatorImplTest, DumpsArentAddedToTraceUnlessRequested) {
           [](const MemoryDumpRequestArgs& args,
              MockClientProcess::RequestChromeMemoryDumpCallback& callback) {
             MemoryDumpArgs dump_args{MemoryDumpLevelOfDetail::DETAILED};
-            auto pmd = std::make_unique<ProcessMemoryDump>(nullptr, dump_args);
+            auto pmd = std::make_unique<ProcessMemoryDump>(dump_args);
             std::move(callback).Run(true, args.dump_guid, std::move(pmd));
           }));
 
@@ -788,7 +840,7 @@ TEST_F(CoordinatorImplTest, DumpsAreAddedToTraceWhenRequested) {
           [](const MemoryDumpRequestArgs& args,
              MockClientProcess::RequestChromeMemoryDumpCallback& callback) {
             MemoryDumpArgs dump_args{MemoryDumpLevelOfDetail::DETAILED};
-            auto pmd = std::make_unique<ProcessMemoryDump>(nullptr, dump_args);
+            auto pmd = std::make_unique<ProcessMemoryDump>(dump_args);
             std::move(callback).Run(true, args.dump_guid, std::move(pmd));
           }));
 

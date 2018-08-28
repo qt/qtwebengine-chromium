@@ -44,6 +44,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "third_party/blink/renderer/platform/wtf/threading.h"
+#include "third_party/blink/renderer/platform/wtf/wtf.h"
 
 namespace blink {
 
@@ -72,8 +73,8 @@ static void AddOriginAccessEntry(const SecurityOrigin& source_origin,
                                  bool allow_destination_subdomains,
                                  OriginAccessMap& access_map) {
   DCHECK(IsMainThread());
-  DCHECK(!source_origin.IsUnique());
-  if (source_origin.IsUnique())
+  DCHECK(!source_origin.IsOpaque());
+  if (source_origin.IsOpaque())
     return;
 
   String source_string = source_origin.ToString();
@@ -94,8 +95,8 @@ static void RemoveOriginAccessEntry(const SecurityOrigin& source_origin,
                                     bool allow_destination_subdomains,
                                     OriginAccessMap& access_map) {
   DCHECK(IsMainThread());
-  DCHECK(!source_origin.IsUnique());
-  if (source_origin.IsUnique())
+  DCHECK(!source_origin.IsOpaque());
+  if (source_origin.IsOpaque())
     return;
 
   String source_string = source_origin.ToString();
@@ -116,6 +117,14 @@ static void RemoveOriginAccessEntry(const SecurityOrigin& source_origin,
 
   if (list->IsEmpty())
     access_map.erase(it);
+}
+
+static void RemoveAllOriginAccessEntriesForOrigin(
+    const SecurityOrigin& source_origin,
+    OriginAccessMap& access_map) {
+  DCHECK(IsMainThread());
+  DCHECK(!source_origin.IsOpaque());
+  access_map.erase(source_origin.ToString());
 }
 
 static bool IsOriginPairInAccessMap(const SecurityOrigin* active_origin,
@@ -257,7 +266,7 @@ bool SecurityPolicy::IsOriginWhiteListedTrustworthy(
     const SecurityOrigin& origin) {
   // Early return if there are no whitelisted origins to avoid unnecessary
   // allocations, copies, and frees.
-  if (origin.IsUnique() || TrustworthyOriginSet().IsEmpty())
+  if (origin.IsOpaque() || TrustworthyOriginSet().IsEmpty())
     return false;
   if (TrustworthyOriginSet().Contains(origin.ToRawString()))
     return true;
@@ -321,6 +330,12 @@ void SecurityPolicy::RemoveOriginAccessWhitelistEntry(
   RemoveOriginAccessEntry(source_origin, destination_protocol,
                           destination_domain, allow_destination_subdomains,
                           GetOriginAccessWhitelistMap());
+}
+
+void SecurityPolicy::RemoveAllOriginAccessWhitelistEntriesForOrigin(
+    const SecurityOrigin& source_origin) {
+  RemoveAllOriginAccessEntriesForOrigin(source_origin,
+                                        GetOriginAccessWhitelistMap());
 }
 
 void SecurityPolicy::ResetOriginAccessWhitelists() {

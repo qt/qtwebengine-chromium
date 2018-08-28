@@ -27,6 +27,7 @@
 
 #include <memory>
 
+#include "cc/layers/picture_layer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/testing/fake_graphics_layer.h"
@@ -52,7 +53,7 @@ class TestImage : public Image {
     // Image pure virtual stub.
   }
 
-  void Draw(PaintCanvas*,
+  void Draw(cc::PaintCanvas*,
             const PaintFlags&,
             const FloatRect&,
             const FloatRect&,

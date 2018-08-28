@@ -50,6 +50,8 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/core/style/reference_clip_path_operation.h"
+#include "third_party/blink/renderer/core/style/shape_clip_path_operation.h"
 #include "third_party/blink/renderer/core/style/style_svg_resource.h"
 
 namespace blink {
@@ -156,8 +158,9 @@ FilterOperations StyleBuilderConverter::ConvertFilterOperations(
 }
 
 FilterOperations StyleBuilderConverter::ConvertOffscreenFilterOperations(
-    const CSSValue& value) {
-  return FilterOperationResolver::CreateOffscreenFilterOperations(value);
+    const CSSValue& value,
+    const Font& font) {
+  return FilterOperationResolver::CreateOffscreenFilterOperations(value, font);
 }
 
 static FontDescription::GenericFamilyType ConvertGenericFamily(
@@ -1475,6 +1478,26 @@ TextSizeAdjust StyleBuilderConverter::ConvertTextSizeAdjust(
   return TextSizeAdjust(primitive_value.GetFloatValue() / 100.0f);
 }
 
+TextUnderlinePosition StyleBuilderConverter::ConvertTextUnderlinePosition(
+    StyleResolverState& state,
+    const CSSValue& value) {
+  TextUnderlinePosition flags = kTextUnderlinePositionAuto;
+
+  auto process = [&flags](const CSSValue& identifier) {
+    flags |=
+        ToCSSIdentifierValue(identifier).ConvertTo<TextUnderlinePosition>();
+  };
+
+  if (value.IsValueList()) {
+    for (auto& entry : ToCSSValueList(value)) {
+      process(*entry);
+    }
+  } else {
+    process(value);
+  }
+  return flags;
+}
+
 TransformOperations StyleBuilderConverter::ConvertTransformOperations(
     StyleResolverState& state,
     const CSSValue& value) {
@@ -1525,14 +1548,14 @@ ScrollSnapAlign StyleBuilderConverter::ConvertSnapAlign(StyleResolverState&,
       ComputedStyleInitialValues::InitialScrollSnapAlign();
   if (value.IsValuePair()) {
     const CSSValuePair& pair = ToCSSValuePair(value);
-    snapAlign.alignment_inline =
-        ToCSSIdentifierValue(pair.First()).ConvertTo<SnapAlignment>();
     snapAlign.alignment_block =
+        ToCSSIdentifierValue(pair.First()).ConvertTo<SnapAlignment>();
+    snapAlign.alignment_inline =
         ToCSSIdentifierValue(pair.Second()).ConvertTo<SnapAlignment>();
   } else {
-    snapAlign.alignment_inline =
+    snapAlign.alignment_block =
         ToCSSIdentifierValue(value).ConvertTo<SnapAlignment>();
-    snapAlign.alignment_block = snapAlign.alignment_inline;
+    snapAlign.alignment_inline = snapAlign.alignment_block;
   }
   return snapAlign;
 }
@@ -1656,8 +1679,9 @@ static const CSSValue& ComputeRegisteredPropertyValue(
   }
 
   if (value.IsValueList()) {
-    CSSValueList* new_list = CSSValueList::CreateSpaceSeparated();
-    for (const CSSValue* inner_value : ToCSSValueList(value)) {
+    const CSSValueList& old_list = ToCSSValueList(value);
+    CSSValueList* new_list = CSSValueList::CreateWithSeparatorFrom(old_list);
+    for (const CSSValue* inner_value : old_list) {
       new_list->Append(ComputeRegisteredPropertyValue(
           css_to_length_conversion_data, *inner_value));
     }

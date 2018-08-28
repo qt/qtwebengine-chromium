@@ -380,7 +380,7 @@ static void free_audio_list(DASHContext *c)
 static void set_httpheader_options(DASHContext *c, AVDictionary **opts)
 {
     // broker prior HTTP options that should be consistent across requests
-    av_dict_set(opts, "user-agent", c->user_agent, 0);
+    av_dict_set(opts, "user_agent", c->user_agent, 0);
     av_dict_set(opts, "cookies", c->cookies, 0);
     av_dict_set(opts, "headers", c->headers, 0);
     if (c->is_live) {
@@ -706,6 +706,7 @@ static int resolve_content_path(AVFormatContext *s, const char *url, int *max_ur
     char *baseurl = NULL;
     char *root_url = NULL;
     char *text = NULL;
+    char *tmp = NULL;
 
     int isRootHttp = 0;
     char token ='/';
@@ -735,9 +736,11 @@ static int resolve_content_path(AVFormatContext *s, const char *url, int *max_ur
         goto end;
     }
     av_strlcpy(text, url, strlen(url)+1);
-    while (mpdName = av_strtok(text, "/", &text))  {
+    tmp = text;
+    while (mpdName = av_strtok(tmp, "/", &tmp))  {
         size = strlen(mpdName);
     }
+    av_free(text);
 
     path = av_mallocz(tmp_max_url_size);
     tmp_str = av_mallocz(tmp_max_url_size);
@@ -796,6 +799,7 @@ end:
     }
     av_free(path);
     av_free(tmp_str);
+    xmlFree(baseurl);
     return updated;
 
 }
@@ -1121,6 +1125,7 @@ static int parse_manifest(AVFormatContext *s, const char *url, AVIOContext *in)
     xmlNodePtr root_element = NULL;
     xmlNodePtr node = NULL;
     xmlNodePtr period_node = NULL;
+    xmlNodePtr tmp_node = NULL;
     xmlNodePtr mpd_baseurl_node = NULL;
     xmlNodePtr period_baseurl_node = NULL;
     xmlNodePtr period_segmenttemplate_node = NULL;
@@ -1215,8 +1220,10 @@ static int parse_manifest(AVFormatContext *s, const char *url, AVIOContext *in)
             xmlFree(val);
         }
 
-        mpd_baseurl_node = find_child_node_by_name(node, "BaseURL");
-        if (!mpd_baseurl_node) {
+        tmp_node = find_child_node_by_name(node, "BaseURL");
+        if (tmp_node) {
+            mpd_baseurl_node = xmlCopyNode(tmp_node,1);
+        } else {
             mpd_baseurl_node = xmlNewNode(NULL, "BaseURL");
         }
 
@@ -1270,6 +1277,7 @@ cleanup:
         /*free the document */
         xmlFreeDoc(doc);
         xmlCleanupParser();
+        xmlFreeNode(mpd_baseurl_node);
     }
 
     av_free(new_url);
@@ -1395,7 +1403,7 @@ static int refresh_manifest(AVFormatContext *s)
     c->videos = NULL;
     c->n_audios = 0;
     c->audios = NULL;
-    ret = parse_manifest(s, s->filename, NULL);
+    ret = parse_manifest(s, s->url, NULL);
     if (ret)
         goto finish;
 
@@ -1723,7 +1731,7 @@ end:
 static int save_avio_options(AVFormatContext *s)
 {
     DASHContext *c = s->priv_data;
-    const char *opts[] = { "headers", "user_agent", "user-agent", "cookies", NULL }, **opt = opts;
+    const char *opts[] = { "headers", "user_agent", "user_agent", "cookies", NULL }, **opt = opts;
     uint8_t *buf = NULL;
     int ret = 0;
 
@@ -1751,7 +1759,7 @@ static int nested_io_open(AVFormatContext *s, AVIOContext **pb, const char *url,
     av_log(s, AV_LOG_ERROR,
            "A DASH playlist item '%s' referred to an external file '%s'. "
            "Opening this file was forbidden for security reasons\n",
-           s->filename, url);
+           s->url, url);
     return AVERROR(EPERM);
 }
 
@@ -1867,28 +1875,22 @@ fail:
     return ret;
 }
 
-static int init_section_compare_video(DASHContext *c)
+static int is_common_init_section_exist(struct representation **pls, int n_pls)
 {
+    struct fragment *first_init_section = pls[0]->init_section;
+    char *url =NULL;
+    int64_t url_offset = -1;
+    int64_t size = -1;
     int i = 0;
-    char *url = c->videos[0]->init_section->url;
-    int64_t url_offset = c->videos[0]->init_section->url_offset;
-    int64_t size = c->videos[0]->init_section->size;
-    for (i=0;i<c->n_videos;i++) {
-        if (av_strcasecmp(c->videos[i]->init_section->url,url) || c->videos[i]->init_section->url_offset != url_offset || c->videos[i]->init_section->size != size) {
-            return 0;
-        }
-    }
-    return 1;
-}
 
-static int init_section_compare_audio(DASHContext *c)
-{
-    int i = 0;
-    char *url = c->audios[0]->init_section->url;
-    int64_t url_offset = c->audios[0]->init_section->url_offset;
-    int64_t size = c->audios[0]->init_section->size;
-    for (i=0;i<c->n_audios;i++) {
-        if (av_strcasecmp(c->audios[i]->init_section->url,url) || c->audios[i]->init_section->url_offset != url_offset || c->audios[i]->init_section->size != size) {
+    if (first_init_section == NULL || n_pls == 0)
+        return 0;
+
+    url = first_init_section->url;
+    url_offset = first_init_section->url_offset;
+    size = pls[0]->init_section->size;
+    for (i=0;i<n_pls;i++) {
+        if (av_strcasecmp(pls[i]->init_section->url,url) || pls[i]->init_section->url_offset != url_offset || pls[i]->init_section->size != size) {
             return 0;
         }
     }
@@ -1917,12 +1919,12 @@ static int dash_read_header(AVFormatContext *s)
     c->interrupt_callback = &s->interrupt_callback;
     // if the URL context is good, read important options we must broker later
     if (u) {
-        update_options(&c->user_agent, "user-agent", u);
+        update_options(&c->user_agent, "user_agent", u);
         update_options(&c->cookies, "cookies", u);
         update_options(&c->headers, "headers", u);
     }
 
-    if ((ret = parse_manifest(s, s->filename, s->pb)) < 0)
+    if ((ret = parse_manifest(s, s->url, s->pb)) < 0)
         goto fail;
 
     if ((ret = save_avio_options(s)) < 0)
@@ -1934,9 +1936,7 @@ static int dash_read_header(AVFormatContext *s)
         s->duration = (int64_t) c->media_presentation_duration * AV_TIME_BASE;
     }
 
-    if (c->n_videos) {
-        c->is_init_section_common_video = init_section_compare_video(c);
-    }
+    c->is_init_section_common_video = is_common_init_section_exist(c->videos, c->n_videos);
 
     /* Open the demuxer for video and audio components if available */
     for (i = 0; i < c->n_videos; i++) {
@@ -1952,9 +1952,7 @@ static int dash_read_header(AVFormatContext *s)
         ++stream_index;
     }
 
-    if (c->n_audios) {
-        c->is_init_section_common_audio = init_section_compare_audio(c);
-    }
+  c->is_init_section_common_audio = is_common_init_section_exist(c->audios, c->n_audios);
 
     for (i = 0; i < c->n_audios; i++) {
         struct representation *cur_audio = c->audios[i];

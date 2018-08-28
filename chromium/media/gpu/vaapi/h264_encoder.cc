@@ -11,10 +11,10 @@
 
 namespace media {
 namespace {
-// An IDR every 2048 frames, an I frame every 256 and no B frames.
+// An IDR every 2048 frames, no I frames and no B frames.
 // We choose IDR period to equal MaxFrameNum so it must be a power of 2.
 constexpr int kIDRPeriod = 2048;
-constexpr int kIPeriod = 256;
+constexpr int kIPeriod = 0;
 constexpr int kIPPeriod = 1;
 
 constexpr int kDefaultQP = 26;
@@ -88,7 +88,9 @@ bool H264Encoder::Initialize(const gfx::Size& visible_size,
   mb_height_ = coded_size_.height() / kH264MacroblockSizeInPixels;
 
   profile_ = profile;
-  if (!UpdateRates(initial_bitrate, initial_framerate))
+  VideoBitrateAllocation initial_bitrate_allocation;
+  initial_bitrate_allocation.SetBitrate(0, 0, initial_bitrate);
+  if (!UpdateRates(initial_bitrate_allocation, initial_framerate))
     return false;
 
   UpdateSPS();
@@ -140,11 +142,12 @@ bool H264Encoder::PrepareEncodeJob(EncodeJob* encode_job) {
     encode_job->ProduceKeyframe();
   }
 
-  if (pic->frame_num % curr_params_.i_period_frames == 0)
+  if (pic->idr || (curr_params_.i_period_frames != 0 &&
+                   pic->frame_num % curr_params_.i_period_frames == 0)) {
     pic->type = H264SliceHeader::kISlice;
-  else
+  } else {
     pic->type = H264SliceHeader::kPSlice;
-
+  }
   if (curr_params_.ip_period_frames != 1) {
     NOTIMPLEMENTED() << "B frames not implemented";
     return false;
@@ -191,9 +194,11 @@ bool H264Encoder::PrepareEncodeJob(EncodeJob* encode_job) {
   return true;
 }
 
-bool H264Encoder::UpdateRates(uint32_t bitrate, uint32_t framerate) {
+bool H264Encoder::UpdateRates(const VideoBitrateAllocation& bitrate_allocation,
+                              uint32_t framerate) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  uint32_t bitrate = bitrate_allocation.GetSumBps();
   if (bitrate == 0 || framerate == 0)
     return false;
 

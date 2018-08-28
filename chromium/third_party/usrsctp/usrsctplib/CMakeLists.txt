@@ -67,7 +67,7 @@ if (sctp_inet6)
 	add_definitions(-DINET6)
 endif ()
 
-option(sctp_werror "Thread warning as error" 1)
+option(sctp_werror "Treat warning as error" 1)
 
 option(sctp_link_programs_static "Link example programs static" 0)
 
@@ -209,6 +209,12 @@ if ("${CMAKE_C_COMPILER_ID}" MATCHES "Clang" OR "${CMAKE_C_COMPILER_ID}" MATCHES
 	if (has_wno_unreachable_code)
 		set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -Wno-unreachable-code")
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unreachable-code")
+	endif ()
+
+	check_c_compiler_flag(-Wstrict-prototypes has_wstrict_prototypes)
+	if (has_wstrict_prototypes)
+		set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -Wstrict-prototypes")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wstrict-prototypes")
 	endif ()
 
 	if (sctp_werror)

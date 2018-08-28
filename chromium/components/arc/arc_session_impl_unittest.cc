@@ -30,6 +30,13 @@ namespace {
 
 constexpr char kFakeGmail[] = "user@gmail.com";
 constexpr char kFakeGmailGaiaId[] = "1234567890";
+constexpr char kDefaultLocale[] = "en-US";
+
+ArcSession::UpgradeParams DefaultUpgradeParams() {
+  ArcSession::UpgradeParams params;
+  params.locale = kDefaultLocale;
+  return params;
+}
 
 class FakeDelegate : public ArcSessionImpl::Delegate {
  public:
@@ -236,7 +243,7 @@ TEST_F(ArcSessionImplTest, Upgrade_LowDisk) {
   TestArcSessionObserver observer(arc_session.get(), &run_loop);
   ASSERT_NO_FATAL_FAILURE(SetupMiniContainer(arc_session.get(), &observer));
 
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   run_loop.Run();
 
   EXPECT_EQ(ArcSessionImpl::State::STOPPED, arc_session->GetStateForTesting());
@@ -255,7 +262,7 @@ TEST_F(ArcSessionImplTest, Upgrade_Success) {
   ASSERT_NO_FATAL_FAILURE(SetupMiniContainer(arc_session.get(), &observer));
 
   // Then, upgrade to a full instance.
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(ArcSessionImpl::State::RUNNING_FULL_INSTANCE,
@@ -275,7 +282,7 @@ TEST_F(ArcSessionImplTest, Upgrade_DBusFail) {
   EmulateDBusFailure();
 
   // Then upgrade, which should fail.
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(ArcSessionImpl::State::STOPPED, arc_session->GetStateForTesting());
@@ -300,7 +307,7 @@ TEST_F(ArcSessionImplTest, Upgrade_MojoConnectionFail) {
   ASSERT_NO_FATAL_FAILURE(SetupMiniContainer(arc_session.get(), &observer));
 
   // Upgrade should fail, due to Mojo connection fail set above.
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(ArcSessionImpl::State::STOPPED, arc_session->GetStateForTesting());
@@ -321,7 +328,7 @@ TEST_F(ArcSessionImplTest, Upgrade_StartingMiniInstance) {
             arc_session->GetStateForTesting());
 
   // Before moving forward to RUNNING_MINI_INSTANCE, start upgrading it.
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
 
   // The state should not immediately switch to STARTING_FULL_INSTANCE, yet.
   EXPECT_EQ(ArcSessionImpl::State::STARTING_MINI_INSTANCE,
@@ -382,7 +389,7 @@ TEST_F(ArcSessionImplTest, Stop_StartingFullInstanceForUpgrade) {
   ASSERT_NO_FATAL_FAILURE(SetupMiniContainer(arc_session.get(), &observer));
 
   // Then upgrade.
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   ASSERT_EQ(ArcSessionImpl::State::STARTING_FULL_INSTANCE,
             arc_session->GetStateForTesting());
 
@@ -410,7 +417,7 @@ TEST_F(ArcSessionImplTest, Stop_ConnectingMojoForUpgrade) {
   ASSERT_NO_FATAL_FAILURE(SetupMiniContainer(arc_session.get(), &observer));
 
   // Then upgrade. This should suspend at Mojo connection.
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(ArcSessionImpl::State::CONNECTING_MOJO,
             arc_session->GetStateForTesting());
@@ -436,7 +443,7 @@ TEST_F(ArcSessionImplTest, Stop_RunningFullInstanceForUpgrade) {
   ASSERT_NO_FATAL_FAILURE(SetupMiniContainer(arc_session.get(), &observer));
 
   // And upgrade successfully.
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(ArcSessionImpl::State::RUNNING_FULL_INSTANCE,
             arc_session->GetStateForTesting());
@@ -463,7 +470,7 @@ TEST_F(ArcSessionImplTest,
             arc_session->GetStateForTesting());
 
   // Request to upgrade during starting mini container.
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   // Then, the state should stay at STARTING_MINI_INSTANCE.
   ASSERT_EQ(ArcSessionImpl::State::STARTING_MINI_INSTANCE,
             arc_session->GetStateForTesting());
@@ -512,7 +519,7 @@ TEST_F(ArcSessionImplTest, ArcStopInstance) {
   auto arc_session = CreateArcSession();
   TestArcSessionObserver observer(arc_session.get());
   arc_session->StartMiniInstance();
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(ArcSessionImpl::State::RUNNING_FULL_INSTANCE,
             arc_session->GetStateForTesting());
@@ -536,7 +543,7 @@ TEST_F(ArcSessionImplTest, ArcStopInstance) {
 TEST_F(ArcSessionImplTest, ArcStopInstance_WrongContainerInstanceId) {
   auto arc_session = CreateArcSession();
   arc_session->StartMiniInstance();
-  arc_session->RequestUpgrade();
+  arc_session->RequestUpgrade(DefaultUpgradeParams());
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(ArcSessionImpl::State::RUNNING_FULL_INSTANCE,
             arc_session->GetStateForTesting());
@@ -592,7 +599,7 @@ TEST_P(ArcSessionImplPackagesCacheModeTest, PackagesCacheModes) {
 
   arc_session->StartMiniInstance();
   if (state.full_container)
-    arc_session->RequestUpgrade();
+    arc_session->RequestUpgrade(DefaultUpgradeParams());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(state.expected_packages_cache_mode, GetSessionManagerClient()
                                                     ->last_upgrade_arc_request()
@@ -602,6 +609,74 @@ TEST_P(ArcSessionImplPackagesCacheModeTest, PackagesCacheModes) {
 INSTANTIATE_TEST_CASE_P(,
                         ArcSessionImplPackagesCacheModeTest,
                         ::testing::ValuesIn(kPackagesCacheModeStates));
+
+TEST_F(ArcSessionImplTest, IsChild) {
+  auto arc_session = CreateArcSession();
+  arc_session->StartMiniInstance();
+
+  ArcSession::UpgradeParams params;
+  params.is_child = true;
+  params.locale = kDefaultLocale;
+  arc_session->RequestUpgrade(std::move(params));
+
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(GetSessionManagerClient()->last_upgrade_arc_request().is_child());
+}
+
+TEST_F(ArcSessionImplTest, DemoSession) {
+  auto arc_session = CreateArcSession();
+  arc_session->StartMiniInstance();
+
+  const std::string demo_apps_path =
+      "/run/imageloader/demo_mode_resources/android_apps.squash";
+  ArcSession::UpgradeParams params;
+  params.is_demo_session = true;
+  params.demo_session_apps_path = base::FilePath(demo_apps_path);
+  params.locale = kDefaultLocale;
+  arc_session->RequestUpgrade(std::move(params));
+
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(
+      GetSessionManagerClient()->last_upgrade_arc_request().is_demo_session());
+  EXPECT_EQ(demo_apps_path, GetSessionManagerClient()
+                                ->last_upgrade_arc_request()
+                                .demo_session_apps_path());
+}
+
+TEST_F(ArcSessionImplTest, DemoSessionWithoutOfflineDemoApps) {
+  auto arc_session = CreateArcSession();
+  arc_session->StartMiniInstance();
+
+  ArcSession::UpgradeParams params;
+  params.is_demo_session = true;
+  params.locale = kDefaultLocale;
+  arc_session->RequestUpgrade(std::move(params));
+
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(
+      GetSessionManagerClient()->last_upgrade_arc_request().is_demo_session());
+  EXPECT_EQ(std::string(), GetSessionManagerClient()
+                               ->last_upgrade_arc_request()
+                               .demo_session_apps_path());
+}
+
+TEST_F(ArcSessionImplTest, SupervisionTransitionShouldGraduate) {
+  auto arc_session = CreateArcSession();
+  arc_session->StartMiniInstance();
+
+  ArcSession::UpgradeParams params;
+  params.supervision_transition = ArcSupervisionTransition::CHILD_TO_REGULAR;
+  params.locale = kDefaultLocale;
+  arc_session->RequestUpgrade(std::move(params));
+
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(
+      login_manager::
+          UpgradeArcContainerRequest_SupervisionTransition_CHILD_TO_REGULAR,
+      GetSessionManagerClient()
+          ->last_upgrade_arc_request()
+          .supervision_transition());
+}
 
 }  // namespace
 }  // namespace arc

@@ -29,6 +29,18 @@
 
 #include "hb-open-type-private.hh"
 
+/*
+ * CBLC -- Color Bitmap Location
+ * https://docs.microsoft.com/en-us/typography/opentype/spec/cblc
+ * https://docs.microsoft.com/en-us/typography/opentype/spec/eblc
+ * CBDT -- Color Bitmap Data
+ * https://docs.microsoft.com/en-us/typography/opentype/spec/cbdt
+ * https://docs.microsoft.com/en-us/typography/opentype/spec/ebdt
+ */
+#define HB_OT_TAG_CBLC HB_TAG('C','B','L','C')
+#define HB_OT_TAG_CBDT HB_TAG('C','B','D','T')
+
+
 namespace OT {
 
 struct SmallGlyphMetrics
@@ -223,6 +235,8 @@ struct IndexSubtableRecord
 
 struct IndexSubtableArray
 {
+  friend struct CBDT;
+
   inline bool sanitize (hb_sanitize_context_t *c, unsigned int count) const
   {
     TRACE_SANITIZE (this);
@@ -257,6 +271,7 @@ struct IndexSubtableArray
 struct BitmapSizeTable
 {
   friend struct CBLC;
+  friend struct CBDT;
 
   inline bool sanitize (hb_sanitize_context_t *c, const void *base) const
   {
@@ -298,18 +313,26 @@ struct BitmapSizeTable
 
 struct GlyphBitmapDataFormat17
 {
-  SmallGlyphMetrics		glyphMetrics;
-  ArrayOf<HBUINT8, HBUINT32>	data;
+  SmallGlyphMetrics	glyphMetrics;
+  LArrayOf<HBUINT8>	data;
   public:
   DEFINE_SIZE_ARRAY(9, data);
 };
 
+struct GlyphBitmapDataFormat18
+{
+  BigGlyphMetrics	glyphMetrics;
+  LArrayOf<HBUINT8>	data;
+  public:
+  DEFINE_SIZE_ARRAY(12, data);
+};
 
-/*
- * CBLC -- Color Bitmap Location Table
- */
-
-#define HB_OT_TAG_CBLC HB_TAG('C','B','L','C')
+struct GlyphBitmapDataFormat19
+{
+  LArrayOf<HBUINT8>	data;
+  public:
+  DEFINE_SIZE_ARRAY(4, data);
+};
 
 struct CBLC
 {
@@ -334,8 +357,8 @@ struct CBLC
     unsigned int count = sizeTables.len;
     for (uint32_t i = 0; i < count; ++i)
     {
-      unsigned int startGlyphIndex = sizeTables.array[i].startGlyphIndex;
-      unsigned int endGlyphIndex = sizeTables.array[i].endGlyphIndex;
+      unsigned int startGlyphIndex = sizeTables.arrayZ[i].startGlyphIndex;
+      unsigned int endGlyphIndex = sizeTables.arrayZ[i].endGlyphIndex;
       if (startGlyphIndex <= glyph && glyph <= endGlyphIndex)
       {
 	*x_ppem = sizeTables[i].ppemX;
@@ -353,11 +376,6 @@ struct CBLC
   public:
   DEFINE_SIZE_ARRAY(8, sizeTables);
 };
-
-/*
- * CBDT -- Color Bitmap Data Table
- */
-#define HB_OT_TAG_CBDT HB_TAG('C','B','D','T')
 
 struct CBDT
 {
@@ -385,8 +403,8 @@ struct CBDT
 	cbdt = nullptr;
 	return;  /* Not a bitmap font. */
       }
-      cblc = Sanitizer<CBLC>::lock_instance (cblc_blob);
-      cbdt = Sanitizer<CBDT>::lock_instance (cbdt_blob);
+      cblc = cblc_blob->as<CBLC> ();
+      cbdt = cbdt_blob->as<CBDT> ();
 
     }
 
@@ -442,6 +460,59 @@ struct CBDT
       extents->height *= upem / (float) y_ppem;
 
       return true;
+    }
+
+    inline void dump (void (*callback) (const uint8_t* data, unsigned int length,
+        unsigned int group, unsigned int gid)) const
+    {
+      if (!cblc)
+	return;  // Not a color bitmap font.
+
+      for (unsigned int i = 0; i < cblc->sizeTables.len; ++i)
+      {
+        const BitmapSizeTable &sizeTable = cblc->sizeTables[i];
+        const IndexSubtableArray &subtable_array = cblc+sizeTable.indexSubtableArrayOffset;
+        for (unsigned int j = 0; j < sizeTable.numberOfIndexSubtables; ++j)
+        {
+          const IndexSubtableRecord &subtable_record = subtable_array.indexSubtablesZ[j];
+          for (unsigned int gid = subtable_record.firstGlyphIndex;
+                gid <= subtable_record.lastGlyphIndex; ++gid)
+          {
+            unsigned int image_offset = 0, image_length = 0, image_format = 0;
+
+            if (!subtable_record.get_image_data (gid,
+                  &image_offset, &image_length, &image_format))
+              continue;
+
+            switch (image_format)
+            {
+            case 17: {
+              const GlyphBitmapDataFormat17& glyphFormat17 =
+                StructAtOffset<GlyphBitmapDataFormat17> (this->cbdt, image_offset);
+              callback ((const uint8_t *) &glyphFormat17.data.arrayZ,
+                glyphFormat17.data.len, i, gid);
+            }
+            break;
+            case 18: {
+              const GlyphBitmapDataFormat18& glyphFormat18 =
+                StructAtOffset<GlyphBitmapDataFormat18> (this->cbdt, image_offset);
+              callback ((const uint8_t *) &glyphFormat18.data.arrayZ,
+                glyphFormat18.data.len, i, gid);
+            }
+            break;
+            case 19: {
+              const GlyphBitmapDataFormat19& glyphFormat19 =
+                StructAtOffset<GlyphBitmapDataFormat19> (this->cbdt, image_offset);
+              callback ((const uint8_t *) &glyphFormat19.data.arrayZ,
+                glyphFormat19.data.len, i, gid);
+            }
+            break;
+            default:
+              continue;
+            }
+          }
+        }
+      }
     }
 
     private:

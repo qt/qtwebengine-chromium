@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/frame/platform_event_dispatcher.h"
 
 #include "base/auto_reset.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/platform_event_controller.h"
 
 namespace blink {
@@ -23,7 +24,9 @@ void PlatformEventDispatcher::AddController(
   controllers_.insert(controller);
 
   if (!is_listening_) {
-    StartListening();
+    StartListening(controller->GetDocument()
+                       ? controller->GetDocument()->GetFrame()
+                       : nullptr);
     is_listening_ = true;
   }
 }

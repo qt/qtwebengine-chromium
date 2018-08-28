@@ -115,6 +115,7 @@
 #include "ui/snapshot/snapshot.h"
 
 #if defined(OS_ANDROID)
+#include "content/browser/renderer_host/input/fling_scheduler_android.h"
 #include "ui/android/view_android.h"
 #endif
 
@@ -382,8 +383,9 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
                      base::checked_cast<uint32_t>(routing_id_)),
       weak_factory_(this) {
 #if defined(OS_MACOSX)
-  auto fling_scheduler = std::make_unique<FlingSchedulerMac>(this);
-  fling_scheduler_ = std::move(fling_scheduler);
+  fling_scheduler_ = std::make_unique<FlingSchedulerMac>(this);
+#elif defined(OS_ANDROID)
+  fling_scheduler_ = std::make_unique<FlingSchedulerAndroid>(this);
 #else
   fling_scheduler_ = std::make_unique<FlingScheduler>(this);
 #endif
@@ -399,14 +401,12 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
   process_->AddRoute(routing_id_, this);
   process_->AddWidget(this);
 
-  latency_tracker_.Initialize(routing_id_, GetProcess()->GetID());
-
   SetupInputRouter();
   SetWidget(std::move(widget));
 
   const auto* command_line = base::CommandLine::ForCurrentProcess();
   if (!command_line->HasSwitch(switches::kDisableHangMonitor)) {
-    hang_monitor_timeout_.reset(new TimeoutMonitor(
+    input_event_ack_timeout_.reset(new TimeoutMonitor(
         base::Bind(&RenderWidgetHostImpl::RendererIsUnresponsive,
                    weak_factory_.GetWeakPtr())));
   }
@@ -419,6 +419,17 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
 
   enable_surface_synchronization_ = features::IsSurfaceSynchronizationEnabled();
   enable_viz_ = base::FeatureList::IsEnabled(features::kVizDisplayCompositor);
+
+  if (!enable_viz_) {
+#if !defined(OS_ANDROID)
+    // Software compositing is not supported or used on Android.
+    //
+    // The BrowserMainLoop is null in unit tests, but they do not use
+    // compositing and report SharedBitmapIds.
+    if (BrowserMainLoop* main_loop = BrowserMainLoop::GetInstance())
+      shared_bitmap_manager_ = main_loop->GetServerSharedBitmapManager();
+#endif
+  }
 
   delegate_->RenderWidgetCreated(this);
   render_frame_metadata_provider_.AddObserver(this);
@@ -565,7 +576,7 @@ void RenderWidgetHostImpl::UpdatePriority() {
 }
 
 void RenderWidgetHostImpl::Init() {
-  DCHECK(process_->HasConnection());
+  DCHECK(process_->IsInitializedAndNotDead());
 
   renderer_initialized_ = true;
 
@@ -580,7 +591,7 @@ void RenderWidgetHostImpl::Init() {
 }
 
 void RenderWidgetHostImpl::InitForFrame() {
-  DCHECK(process_->HasConnection());
+  DCHECK(process_->IsInitializedAndNotDead());
   renderer_initialized_ = true;
 
   if (view_)
@@ -591,10 +602,42 @@ void RenderWidgetHostImpl::ShutdownAndDestroyWidget(bool also_delete) {
   CancelKeyboardLock();
   RejectMouseLockOrUnlockIfNecessary();
 
-  if (process_->HasConnection()) {
-    // Tell the renderer object to close.
-    bool rv = Send(new ViewMsg_Close(routing_id_));
-    DCHECK(rv);
+  if (process_->IsInitializedAndNotDead()) {
+    // This logic below simulates the routing behavior from when RenderWidget
+    // associated with RenderViews shared the same routing IDs.
+    //
+    // In the original code, the sharing of the routing ID yielded a bastardized
+    // version of dynamic dispatch wherein the ultimate static code path that
+    // handled a ViewMsg_Close changed based on if
+    //
+    //   (a) the RenderWidgetImpl was also a RenderViewImpl
+    //   (b) the RenderViewImpl hooked the message in OnMessageReceived
+    //
+    // In the current code, if RenderWidgetImpl IS NOT a RenderViewImpl,
+    // RenderWidgetHost WILL NOT have a |owner_delegate_| and the message can
+    // be dispatched directly. This is the simplest case.
+    //
+    // If RenderWidgetImpl IS is a RenderViewImpl, then on some platforms
+    // (seems like only Mac?) RenderViewImpl overrides ViewMsg::OnClose to do
+    // additional processing before passing it up to RenderWidgetImpl::OnClose.
+    //
+    // When it is not overridden, the message delegated up via
+    // IPC_MESSAGE_UNHANDLED to the RenderWidget's message dispatching.
+    //
+    // Basically, there are 2 overlapping hand-written implementations of
+    // dynamic dispatch occuring: one via IPC_MESSAGE_UNHANDLED, and another
+    // via calling the super-class method.
+    //
+    // TODO(ajwong): Once the routing_id split CL lands, remove one of these
+    // implementaions of hand-written dyanmic dispatch. The world does not
+    // need so many implementations of what's effectively "virtual."
+    if (owner_delegate_) {
+      owner_delegate_->RenderWidgetDidShutdown();
+    } else {
+      // Tell the non-view RendererWidget to close.
+      bool rv = Send(new ViewMsg_Close(routing_id_));
+      DCHECK(rv);
+    }
   }
 
   Destroy(also_delete);
@@ -619,7 +662,7 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateScreenRects_ACK,
                         OnUpdateScreenRectsAck)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_RequestMove, OnRequestMove)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_RequestSetBounds, OnRequestSetBounds)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetTooltipText, OnSetTooltipText)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AutoscrollStart, OnAutoscrollStart)
@@ -636,6 +679,7 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeTouched, OnFocusedNodeTouched)
     IPC_MESSAGE_HANDLER(DragHostMsg_StartDragging, OnStartDragging)
     IPC_MESSAGE_HANDLER(DragHostMsg_UpdateDragCursor, OnUpdateDragCursor)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_ForceRedrawComplete, OnForceRedrawComplete)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FrameSwapMessages,
                         OnFrameSwapMessagesReceived)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -678,7 +722,7 @@ void RenderWidgetHostImpl::WasHidden() {
   visual_properties_ack_pending_ = false;
 
   // Don't bother reporting hung state when we aren't active.
-  StopHangMonitorTimeout();
+  StopInputEventAckTimeout();
 
   // If we have a renderer, then inform it that we are being hidden so it can
   // reduce its resource utilization.
@@ -696,7 +740,7 @@ void RenderWidgetHostImpl::WasHidden() {
     observer.RenderWidgetHostVisibilityChanged(this, false);
 }
 
-void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
+void RenderWidgetHostImpl::WasShown(bool record_presentation_time) {
   if (!is_hidden_)
     return;
 
@@ -708,12 +752,14 @@ void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
   ForceFirstFrameAfterNavigationTimeout();
 
   SendScreenRects();
-  RestartHangMonitorTimeoutIfNecessary();
+  RestartInputEventAckTimeoutIfNecessary();
 
   // Always repaint on restore.
   bool needs_repainting = true;
   needs_repainting_on_restore_ = false;
-  Send(new ViewMsg_WasShown(routing_id_, needs_repainting, latency_info));
+  Send(new ViewMsg_WasShown(
+      routing_id_, needs_repainting,
+      record_presentation_time ? base::TimeTicks::Now() : base::TimeTicks()));
 
   process_->UpdateClientPriority(this);
 
@@ -767,9 +813,11 @@ bool RenderWidgetHostImpl::GetVisualProperties(
     visual_properties->is_fullscreen_granted =
         delegate_->IsFullscreenForCurrentTab();
     visual_properties->display_mode = delegate_->GetDisplayMode(this);
+    visual_properties->zoom_level = delegate_->GetPendingPageZoomLevel();
   } else {
     visual_properties->is_fullscreen_granted = false;
     visual_properties->display_mode = blink::kWebDisplayModeBrowser;
+    visual_properties->zoom_level = 0;
   }
 
   visual_properties->auto_resize_enabled = auto_resize_enabled_;
@@ -840,8 +888,12 @@ bool RenderWidgetHostImpl::GetVisualProperties(
       old_parent_local_surface_id.embed_token() !=
           new_parent_local_surface_id.embed_token();
 
+  const bool zoom_changed =
+      !old_visual_properties_ ||
+      old_visual_properties_->zoom_level != visual_properties->zoom_level;
+
   bool dirty =
-      size_changed || parent_local_surface_id_changed ||
+      zoom_changed || size_changed || parent_local_surface_id_changed ||
       old_visual_properties_->screen_info != visual_properties->screen_info ||
       old_visual_properties_->compositor_viewport_pixel_size !=
           visual_properties->compositor_viewport_pixel_size ||
@@ -893,8 +945,8 @@ bool RenderWidgetHostImpl::SynchronizeVisualProperties(
     bool scroll_focused_node_into_view) {
   // Skip if the |delegate_| has already been detached because
   // it's web contents is being deleted.
-  if (visual_properties_ack_pending_ || !process_->HasConnection() || !view_ ||
-      !view_->HasSize() || !renderer_initialized_ || !delegate_) {
+  if (visual_properties_ack_pending_ || !process_->IsInitializedAndNotDead() ||
+      !view_ || !view_->HasSize() || !renderer_initialized_ || !delegate_) {
     return false;
   }
 
@@ -1091,39 +1143,39 @@ bool RenderWidgetHostImpl::RequestRepaintForTesting() {
 void RenderWidgetHostImpl::ProcessIgnoreInputEventsChanged(
     bool ignore_input_events) {
   if (ignore_input_events)
-    StopHangMonitorTimeout();
+    StopInputEventAckTimeout();
   else
-    RestartHangMonitorTimeoutIfNecessary();
+    RestartInputEventAckTimeoutIfNecessary();
 }
 
-void RenderWidgetHostImpl::StartHangMonitorTimeout(TimeDelta delay) {
-  if (!hang_monitor_timeout_)
+void RenderWidgetHostImpl::StartInputEventAckTimeout(TimeDelta delay) {
+  if (!input_event_ack_timeout_)
     return;
-  hang_monitor_timeout_->Start(delay);
-  hang_monitor_start_time_ = clock_->NowTicks();
+  input_event_ack_timeout_->Start(delay);
+  input_event_ack_start_time_ = clock_->NowTicks();
 }
 
-void RenderWidgetHostImpl::RestartHangMonitorTimeoutIfNecessary() {
-  if (hang_monitor_timeout_ && in_flight_event_count_ > 0 && !is_hidden_)
-    hang_monitor_timeout_->Restart(hung_renderer_delay_);
+void RenderWidgetHostImpl::RestartInputEventAckTimeoutIfNecessary() {
+  if (input_event_ack_timeout_ && in_flight_event_count_ > 0 && !is_hidden_)
+    input_event_ack_timeout_->Restart(hung_renderer_delay_);
 }
 
 bool RenderWidgetHostImpl::IsCurrentlyUnresponsive() const {
   return is_unresponsive_;
 }
 
-void RenderWidgetHostImpl::StopHangMonitorTimeout() {
-  if (hang_monitor_timeout_)
-    hang_monitor_timeout_->Stop();
+void RenderWidgetHostImpl::StopInputEventAckTimeout() {
+  if (input_event_ack_timeout_)
+    input_event_ack_timeout_->Stop();
 
-  if (!hang_monitor_start_time_.is_null()) {
-    base::TimeDelta elapsed = clock_->NowTicks() - hang_monitor_start_time_;
+  if (!input_event_ack_start_time_.is_null()) {
+    base::TimeDelta elapsed = clock_->NowTicks() - input_event_ack_start_time_;
     const base::TimeDelta kMinimumHangTimeToReport =
         base::TimeDelta::FromSeconds(5);
     if (elapsed >= kMinimumHangTimeToReport)
       UMA_HISTOGRAM_LONG_TIMES("Renderer.Hung.Duration", elapsed);
 
-    hang_monitor_start_time_ = TimeTicks();
+    input_event_ack_start_time_ = TimeTicks();
   }
   RendererIsResponsive();
 }
@@ -1137,8 +1189,19 @@ void RenderWidgetHostImpl::DidNavigate(uint32_t next_source_id) {
     // |visual_properties_ack_pending_| and make sure the next resize will be
     // acked if the last resize before navigation was supposed to be acked.
     visual_properties_ack_pending_ = false;
+    viz::LocalSurfaceId old_surface_id = view_->GetLocalSurfaceId();
     if (view_)
       view_->DidNavigate();
+    viz::LocalSurfaceId new_surface_id = view_->GetLocalSurfaceId();
+    // If |view_| didn't allocate a new surface id, then don't start
+    // |new_content_rendering_timeout_|. Two reasons:
+    //  1. It's not needed (because this was the first navigation event)
+    //  2. If we don't change the surface id, then we will not get the call to
+    //     OnFirstSurfaceActivation, and not stop the timer (even if we get new
+    //     frames).
+    // https://crbug.com/853651, https://crbug.com/535375
+    if (old_surface_id == new_surface_id)
+      return;
   } else {
     // It is possible for a compositor frame to arrive before the browser is
     // notified about the page being committed, in which case no timer is
@@ -1284,9 +1347,8 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
         // the GFS are directly injected to RWHI rather than being generated
         // from wheel events in MouseWheelEventQueue.
         is_in_gesture_scroll_[gesture_event.SourceDevice()] = false;
-      } else if (GetView()->wheel_scroll_latching_enabled()) {
-        // When wheel scroll latching is enabled, no GSE is sent before GFS, so
-        // is_in_gesture_scroll must be true.
+      } else {
+        // No GSE is sent before GFS, so is_in_gesture_scroll must be true.
         // TODO(sahel): This often gets tripped on Debug builds in ChromeOS
         // indicating some kind of gesture event ordering race.
         // https://crbug.com/821237.
@@ -1300,12 +1362,6 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
         // and send a wheel event with phaseEnded. MouseWheelEventQueue will
         // process the wheel event to generate and send a GSE which shows the
         // end of a scroll sequence.
-      } else {  // !GetView()->IsInVR() &&
-                // !GetView()->wheel_scroll_latching_enabled()
-
-        // When wheel scroll latching is disabled a GSE is sent before a GFS.
-        // The GSE has already finished the scroll sequence.
-        DCHECK(!is_in_gesture_scroll_[gesture_event.SourceDevice()]);
       }
 
       is_in_touchpad_gesture_fling_ = true;
@@ -1406,7 +1462,7 @@ void RenderWidgetHostImpl::ForwardKeyboardEventWithCommands(
   if (ShouldDropInputEvents())
     return;
 
-  if (!process_->HasConnection())
+  if (!process_->IsInitializedAndNotDead())
     return;
 
   // First, let keypress listeners take a shot at handling the event.  If a
@@ -1451,9 +1507,6 @@ void RenderWidgetHostImpl::ForwardKeyboardEventWithCommands(
     // a hung/malicious renderer from interfering.
     switch (delegate_->PreHandleKeyboardEvent(key_event)) {
       case KeyboardEventProcessingResult::HANDLED:
-        return;
-      case KeyboardEventProcessingResult::HANDLED_WANTS_KEY_UP:
-        suppress_events_until_keydown_ = false;
         return;
 #if defined(USE_AURA)
       case KeyboardEventProcessingResult::HANDLED_DONT_UPDATE_EVENT:
@@ -1518,10 +1571,6 @@ void RenderWidgetHostImpl::ShowContextMenuAtPoint(
 
 void RenderWidgetHostImpl::SendCursorVisibilityState(bool is_visible) {
   GetWidgetInputHandler()->CursorVisibilityChanged(is_visible);
-}
-
-int64_t RenderWidgetHostImpl::GetLatencyComponentId() const {
-  return latency_tracker_.latency_component_id();
 }
 
 // static
@@ -1720,12 +1769,11 @@ void RenderWidgetHostImpl::NotifyScreenInfoChanged() {
 void RenderWidgetHostImpl::GetSnapshotFromBrowser(
     const GetSnapshotFromBrowserCallback& callback,
     bool from_surface) {
-  int id = next_browser_snapshot_id_++;
+  int snapshot_id = next_browser_snapshot_id_++;
   if (from_surface) {
-    pending_surface_browser_snapshots_.insert(std::make_pair(id, callback));
-    ui::LatencyInfo latency_info;
-    latency_info.AddSnapshot(GetLatencyComponentId(), id);
-    Send(new ViewMsg_ForceRedraw(GetRoutingID(), latency_info));
+    pending_surface_browser_snapshots_.insert(
+        std::make_pair(snapshot_id, callback));
+    Send(new ViewMsg_ForceRedraw(GetRoutingID(), snapshot_id));
     return;
   }
 
@@ -1737,10 +1785,8 @@ void RenderWidgetHostImpl::GetSnapshotFromBrowser(
     GetWakeLock()->RequestWakeLock();
 #endif
   // TODO(nzolghadr): Remove the duplication here and the if block just above.
-  pending_browser_snapshots_.insert(std::make_pair(id, callback));
-  ui::LatencyInfo latency_info;
-  latency_info.AddSnapshot(GetLatencyComponentId(), id);
-  Send(new ViewMsg_ForceRedraw(GetRoutingID(), latency_info));
+  pending_browser_snapshots_.insert(std::make_pair(snapshot_id, callback));
+  Send(new ViewMsg_ForceRedraw(GetRoutingID(), snapshot_id));
 }
 
 void RenderWidgetHostImpl::SelectionChanged(const base::string16& text,
@@ -1829,6 +1875,23 @@ void RenderWidgetHostImpl::OnFrameSwapMessagesReceived(
                                                           std::move(messages));
 }
 
+void RenderWidgetHostImpl::OnForceRedrawComplete(int snapshot_id) {
+#if defined(OS_MACOSX) || defined(OS_WIN)
+  // On Mac, when using CoreAnimation, or Win32 when using GDI, there is a
+  // delay between when content is drawn to the screen, and when the
+  // snapshot will actually pick up that content. Insert a manual delay of
+  // 1/6th of a second (to simulate 10 frames at 60 fps) before actually
+  // taking the snapshot.
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&RenderWidgetHostImpl::WindowSnapshotReachedScreen,
+                     weak_factory_.GetWeakPtr(), snapshot_id),
+      TimeDelta::FromSecondsD(1. / 6));
+#else
+  WindowSnapshotReachedScreen(snapshot_id);
+#endif
+}
+
 void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
                                           int exit_code) {
   if (!renderer_initialized_)
@@ -1866,7 +1929,7 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
 
   // Reset this to ensure the hung renderer mechanism is working properly.
   in_flight_event_count_ = 0;
-  StopHangMonitorTimeout();
+  StopInputEventAckTimeout();
 
   if (view_) {
     view_->RenderProcessGone(status, exit_code);
@@ -1990,8 +2053,15 @@ void RenderWidgetHostImpl::Destroy(bool also_delete) {
   // The display compositor has ownership of shared memory for each
   // SharedBitmapId that has been reported from the client. Since the client is
   // gone that memory can be freed. If we don't then it would leak.
-  for (const auto& id : owned_bitmaps_)
-    viz::ServerSharedBitmapManager::current()->ChildDeletedSharedBitmap(id);
+  if (shared_bitmap_manager_) {
+    for (const auto& id : owned_bitmaps_)
+      shared_bitmap_manager_->ChildDeletedSharedBitmap(id);
+  } else {
+    // If the display compositor is not in the browser process, then the
+    // |bitmap_manager| is not present in the process either, and no bitmaps
+    // should have been registered with this class.
+    DCHECK(owned_bitmaps_.empty());
+  }
 
   process_->RemoveWidget(this);
   process_->RemoveRoute(routing_id_);
@@ -2015,7 +2085,10 @@ void RenderWidgetHostImpl::RendererIsUnresponsive() {
   is_unresponsive_ = true;
 
   if (delegate_)
-    delegate_->RendererUnresponsive(this);
+    delegate_->RendererUnresponsive(
+        this, base::BindRepeating(
+                  &RenderWidgetHostImpl::RestartInputEventAckTimeoutIfNecessary,
+                  weak_factory_.GetWeakPtr()));
 
   // Do not add code after this since the Delegate may delete this
   // RenderWidgetHostImpl in RendererUnresponsive.
@@ -2033,31 +2106,6 @@ void RenderWidgetHostImpl::ClearDisplayedGraphics() {
   NotifyNewContentRenderingTimeoutForTesting();
   if (view_)
     view_->ClearCompositorFrame();
-}
-
-void RenderWidgetHostImpl::OnGpuSwapBuffersCompletedInternal(
-    const ui::LatencyInfo& latency_info) {
-  // Note that a compromised renderer can send LatencyInfo to a
-  // RenderWidgetHostImpl other than its own. Be mindful of security
-  // implications of the code you add here.
-  if (latency_info.Snapshots().find(GetLatencyComponentId()) !=
-      latency_info.Snapshots().end()) {
-    int snapshot_id = latency_info.Snapshots().at(GetLatencyComponentId());
-#if defined(OS_MACOSX) || defined(OS_WIN)
-    // On Mac, when using CoreAnimation, or Win32 when using GDI, there is a
-    // delay between when content is drawn to the screen, and when the
-    // snapshot will actually pick up that content. Insert a manual delay of
-    // 1/6th of a second (to simulate 10 frames at 60 fps) before actually
-    // taking the snapshot.
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&RenderWidgetHostImpl::WindowSnapshotReachedScreen,
-                   weak_factory_.GetWeakPtr(), snapshot_id),
-        TimeDelta::FromSecondsD(1. / 6));
-#else
-    WindowSnapshotReachedScreen(snapshot_id);
-#endif
-  }
 }
 
 void RenderWidgetHostImpl::OnRenderProcessGone(int status, int exit_code) {
@@ -2130,10 +2178,10 @@ void RenderWidgetHostImpl::OnUpdateScreenRectsAck() {
   SendScreenRects();
 }
 
-void RenderWidgetHostImpl::OnRequestMove(const gfx::Rect& pos) {
+void RenderWidgetHostImpl::OnRequestSetBounds(const gfx::Rect& bounds) {
   if (view_) {
-    view_->SetBounds(pos);
-    Send(new ViewMsg_Move_ACK(routing_id_));
+    view_->SetBounds(bounds);
+    Send(new ViewMsg_SetBounds_ACK(routing_id_));
   }
 }
 
@@ -2149,8 +2197,8 @@ void RenderWidgetHostImpl::DidNotProduceFrame(const viz::BeginFrameAck& ack) {
 void RenderWidgetHostImpl::DidAllocateSharedBitmap(
     mojo::ScopedSharedBufferHandle buffer,
     const viz::SharedBitmapId& id) {
-  if (!viz::ServerSharedBitmapManager::current()->ChildAllocatedSharedBitmap(
-          std::move(buffer), id)) {
+  if (!shared_bitmap_manager_->ChildAllocatedSharedBitmap(std::move(buffer),
+                                                          id)) {
     bad_message::ReceivedBadMessage(GetProcess(),
                                     bad_message::RWH_SHARED_BITMAP);
   }
@@ -2159,7 +2207,7 @@ void RenderWidgetHostImpl::DidAllocateSharedBitmap(
 
 void RenderWidgetHostImpl::DidDeleteSharedBitmap(
     const viz::SharedBitmapId& id) {
-  viz::ServerSharedBitmapManager::current()->ChildDeletedSharedBitmap(id);
+  shared_bitmap_manager_->ChildDeletedSharedBitmap(id);
   owned_bitmaps_.erase(id);
 }
 
@@ -2432,12 +2480,13 @@ InputEventAckState RenderWidgetHostImpl::FilterInputEvent(
   if (ShouldDropInputEvents() && event.GetType() != WebInputEvent::kTouchCancel)
     return INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
 
-  if (!process_->HasConnection())
+  if (!process_->IsInitializedAndNotDead())
     return INPUT_EVENT_ACK_STATE_UNKNOWN;
 
   if (delegate_) {
     if (event.GetType() == WebInputEvent::kMouseDown ||
-        event.GetType() == WebInputEvent::kTouchStart) {
+        event.GetType() == WebInputEvent::kTouchStart ||
+        event.GetType() == WebInputEvent::kGestureTap) {
       delegate_->FocusOwningWebContents(this);
     }
     delegate_->DidReceiveInputEvent(this, event.GetType());
@@ -2450,7 +2499,7 @@ InputEventAckState RenderWidgetHostImpl::FilterInputEvent(
 void RenderWidgetHostImpl::IncrementInFlightEventCount() {
   ++in_flight_event_count_;
   if (!is_hidden_)
-    StartHangMonitorTimeout(hung_renderer_delay_);
+    StartInputEventAckTimeout(hung_renderer_delay_);
 }
 
 void RenderWidgetHostImpl::DecrementInFlightEventCount(
@@ -2458,12 +2507,12 @@ void RenderWidgetHostImpl::DecrementInFlightEventCount(
   --in_flight_event_count_;
   if (in_flight_event_count_ <= 0) {
     // Cancel pending hung renderer checks since the renderer is responsive.
-    StopHangMonitorTimeout();
+    StopInputEventAckTimeout();
   } else {
     // Only restart the hang monitor timer if we got a response from the
     // main thread.
     if (ack_source == InputEventAckSource::MAIN_THREAD)
-      RestartHangMonitorTimeoutIfNecessary();
+      RestartInputEventAckTimeoutIfNecessary();
   }
 }
 
@@ -2727,39 +2776,6 @@ void RenderWidgetHostImpl::OnSnapshotReceived(int snapshot_id,
 #endif
 }
 
-// static
-void RenderWidgetHostImpl::NotifyCorrespondingRenderWidgetHost(
-    int64_t frame_id,
-    std::set<RenderWidgetHostImpl*>& notified_hosts,
-    const ui::LatencyInfo& latency_info) {
-  // Matches with GetLatencyComponentId.
-  int routing_id = frame_id & 0xffffffff;
-  int process_id = (frame_id >> 32) & 0xffffffff;
-  RenderWidgetHost* rwh = RenderWidgetHost::FromID(process_id, routing_id);
-  if (!rwh)
-    return;
-  RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(rwh);
-  if (notified_hosts.insert(rwhi).second)
-    rwhi->OnGpuSwapBuffersCompletedInternal(latency_info);
-}
-
-// static
-void RenderWidgetHostImpl::OnGpuSwapBuffersCompleted(
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  for (size_t i = 0; i < latency_info.size(); i++) {
-    std::set<RenderWidgetHostImpl*> rwhi_set;
-    for (const auto& lc : latency_info[i].latency_components()) {
-      if (lc.first.first == ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT ||
-          lc.first.first == ui::TAB_SHOW_COMPONENT)
-        NotifyCorrespondingRenderWidgetHost(lc.first.second, rwhi_set,
-                                            latency_info[i]);
-    }
-    for (const auto& snapshot : latency_info[i].Snapshots())
-      NotifyCorrespondingRenderWidgetHost(snapshot.first, rwhi_set,
-                                          latency_info[i]);
-  }
-}
-
 BrowserAccessibilityManager*
     RenderWidgetHostImpl::GetRootBrowserAccessibilityManager() {
   return delegate_ ? delegate_->GetRootBrowserAccessibilityManager() : nullptr;
@@ -2815,14 +2831,22 @@ void RenderWidgetHostImpl::RequestCompositorFrameSink(
       return;
   }
 
+  // Consider any bitmaps registered with the old CompositorFrameSink as gone,
+  // they will be re-registered on the newly requested CompositorFrameSink if
+  // they are meant to be used still. https://crbug.com/862584.
+  for (const auto& id : owned_bitmaps_)
+    shared_bitmap_manager_->ChildDeletedSharedBitmap(id);
+  owned_bitmaps_.clear();
+
   if (compositor_frame_sink_binding_.is_bound())
     compositor_frame_sink_binding_.Close();
   compositor_frame_sink_binding_.Bind(
       std::move(compositor_frame_sink_request),
       BrowserMainLoop::GetInstance()->GetResizeTaskRunner());
-  if (view_)
+  if (view_) {
     view_->DidCreateNewRendererCompositorFrameSink(
         compositor_frame_sink_client.get());
+  }
   renderer_compositor_frame_sink_ = std::move(compositor_frame_sink_client);
 }
 
@@ -2867,9 +2891,6 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
     viz::CompositorFrame frame,
     base::Optional<viz::HitTestRegionList> hit_test_region_list,
     uint64_t submit_time) {
-  TRACE_EVENT_FLOW_END0(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
-                        "SubmitCompositorFrame", local_surface_id.hash());
-
   // Ensure there are no CopyOutputRequests stowed-away in the CompositorFrame.
   // For security/privacy reasons, renderers are not allowed to make copy
   // requests because they could use this to gain access to content from another
@@ -2880,23 +2901,11 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
     return;
   }
 
-  bool tracing_enabled;
-  TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
-                                     &tracing_enabled);
-  if (tracing_enabled) {
-    TimeDelta elapsed = clock_->NowTicks().since_origin() -
-                        TimeDelta::FromMicroseconds(submit_time);
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
-                         "SubmitCompositorFrame::TimeElapsed",
-                         TRACE_EVENT_SCOPE_THREAD,
-                         "elapsed time:", elapsed.InMicroseconds());
-  }
   auto new_surface_properties =
       RenderWidgetSurfaceProperties::FromCompositorFrame(frame);
 
   if (local_surface_id == last_local_surface_id_ &&
-      SurfacePropertiesMismatch(new_surface_properties,
-                                last_surface_properties_)) {
+      new_surface_properties != last_surface_properties_) {
     std::string error = base::StringPrintf(
         "[OOPIF? %d] %s\n", view_ && view_->IsRenderWidgetHostViewChildFrame(),
         new_surface_properties.ToDiffString(last_surface_properties_).c_str());
@@ -3014,7 +3023,7 @@ device::mojom::WakeLock* RenderWidgetHostImpl::GetWakeLock() {
 
 void RenderWidgetHostImpl::SetupInputRouter() {
   in_flight_event_count_ = 0;
-  StopHangMonitorTimeout();
+  StopInputEventAckTimeout();
   associated_widget_input_handler_ = nullptr;
   widget_input_handler_ = nullptr;
 
@@ -3105,36 +3114,6 @@ void RenderWidgetHostImpl::SetScreenOrientationForTesting(
   SynchronizeVisualProperties();
 }
 
-// TODO(ericrk): On Android, with surface synchronization enabled,  we need to
-// request a new surface ID when things like top/bottom control height or
-// selection handles change. This will be enabled by child surface id
-// generation. For now ignore these mismatches.  Remove this function when this
-// issue is resolved: https://crbug.com/789259 and https://crbug.com/801350
-bool RenderWidgetHostImpl::SurfacePropertiesMismatch(
-    const RenderWidgetSurfaceProperties& first,
-    const RenderWidgetSurfaceProperties& second) const {
-#ifdef OS_ANDROID
-  if (enable_surface_synchronization_) {
-    // To make this comparison resistant to changes in
-    // RenderWidgetSurfaceProperties, create new properties which are forced to
-    // match only for those categories we want to ignore.
-    RenderWidgetSurfaceProperties second_reduced = second;
-    second_reduced.top_controls_height = first.top_controls_height;
-    second_reduced.top_controls_shown_ratio = first.top_controls_shown_ratio;
-    second_reduced.bottom_controls_height = first.bottom_controls_height;
-    second_reduced.bottom_controls_shown_ratio =
-        first.bottom_controls_shown_ratio;
-    second_reduced.selection = first.selection;
-
-    return first != second_reduced;
-  }
-#endif
-
-  // For non-Android or when surface synchronization is not enabled, just use a
-  // basic comparison.
-  return first != second;
-}
-
 bool RenderWidgetHostImpl::LockKeyboard() {
   if (!keyboard_lock_allowed_ || !is_focused_ || !view_)
     return false;
@@ -3151,7 +3130,10 @@ void RenderWidgetHostImpl::UnlockKeyboard() {
     view_->UnlockKeyboard();
 }
 
-void RenderWidgetHostImpl::OnRenderFrameMetadataChanged() {
+void RenderWidgetHostImpl::OnRenderFrameMetadataChangedBeforeActivation(
+    const cc::RenderFrameMetadata& metadata) {}
+
+void RenderWidgetHostImpl::OnRenderFrameMetadataChangedAfterActivation() {
   bool is_mobile_optimized =
       render_frame_metadata_provider_.LastRenderFrameMetadata()
           .is_mobile_optimized;

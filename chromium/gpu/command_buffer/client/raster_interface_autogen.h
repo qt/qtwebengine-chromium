@@ -50,8 +50,7 @@ virtual GLuint CreateTexture(bool use_buffer,
                              viz::ResourceFormat format) = 0;
 virtual void SetColorSpaceMetadata(GLuint texture_id,
                                    GLColorSpace color_space) = 0;
-virtual void GenMailbox(GLbyte* mailbox) = 0;
-virtual void ProduceTextureDirect(GLuint texture, const GLbyte* mailbox) = 0;
+virtual void ProduceTextureDirect(GLuint texture, GLbyte* mailbox) = 0;
 virtual GLuint CreateAndConsumeTexture(bool use_buffer,
                                        gfx::BufferUsage buffer_usage,
                                        viz::ResourceFormat format,
@@ -59,10 +58,7 @@ virtual GLuint CreateAndConsumeTexture(bool use_buffer,
 virtual void TexParameteri(GLuint texture_id, GLenum pname, GLint param) = 0;
 virtual void BindTexImage2DCHROMIUM(GLuint texture_id, GLint image_id) = 0;
 virtual void ReleaseTexImage2DCHROMIUM(GLuint texture_id, GLint image_id) = 0;
-virtual void TexStorage2D(GLuint texture_id,
-                          GLsizei levels,
-                          GLsizei width,
-                          GLsizei height) = 0;
+virtual void TexStorage2D(GLuint texture_id, GLsizei width, GLsizei height) = 0;
 virtual void CopySubTexture(GLuint source_id,
                             GLuint dest_id,
                             GLint xoffset,

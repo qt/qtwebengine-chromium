@@ -13,6 +13,9 @@
 #include "SkFDot6.h"
 #include "SkFontHost_FreeType_common.h"
 #include "SkPath.h"
+#include "SkTo.h"
+
+#include <utility>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -160,7 +163,8 @@ void copyFT2LCD16(const FT_Bitmap& bitmap, const SkMask& mask, int lcdIsBGR,
                 const uint8_t* srcG = srcR + bitmap.pitch;
                 const uint8_t* srcB = srcG + bitmap.pitch;
                 if (lcdIsBGR) {
-                    SkTSwap(srcR, srcB);
+                    using std::swap;
+                    swap(srcR, srcB);
                 }
                 for (int x = 0; x < width; x++) {
                     dst[x] = packTriple(sk_apply_lut_if<APPLY_PREBLEND>(*srcR++, tableR),
@@ -172,7 +176,7 @@ void copyFT2LCD16(const FT_Bitmap& bitmap, const SkMask& mask, int lcdIsBGR,
             }
             break;
         default:
-            SkDEBUGF(("FT_Pixel_Mode %d", bitmap.pixel_mode));
+            SkDEBUGF("FT_Pixel_Mode %d", bitmap.pixel_mode);
             SkDEBUGFAIL("unsupported FT_Pixel_Mode for LCD16");
             break;
     }
@@ -272,7 +276,7 @@ void copyFTBitmap(const FT_Bitmap& srcFTBitmap, SkMask& dstMask) {
             dst += dstRowBytes;
         }
     } else {
-        SkDEBUGF(("FT_Pixel_Mode %d, SkMask::Format %d\n", srcFormat, dstFormat));
+        SkDEBUGF("FT_Pixel_Mode %d, SkMask::Format %d\n", srcFormat, dstFormat);
         SkDEBUGFAIL("unsupported combination of FT_Pixel_Mode and SkMask::Format");
     }
 }

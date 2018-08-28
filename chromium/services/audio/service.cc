@@ -15,6 +15,7 @@
 #include "media/audio/audio_manager.h"
 #include "services/audio/debug_recording.h"
 #include "services/audio/device_notifier.h"
+#include "services/audio/log_factory_manager.h"
 #include "services/audio/service_metrics.h"
 #include "services/audio/system_info.h"
 #include "services/service_manager/public/cpp/service_context.h"
@@ -28,13 +29,22 @@ namespace audio {
 
 Service::Service(std::unique_ptr<AudioManagerAccessor> audio_manager_accessor,
                  base::TimeDelta quit_timeout,
-                 bool device_notifier_enabled)
+                 bool enable_remote_client_support,
+                 std::unique_ptr<service_manager::BinderRegistry> registry)
     : quit_timeout_(quit_timeout),
       audio_manager_accessor_(std::move(audio_manager_accessor)),
-      device_notifier_enabled_(device_notifier_enabled) {
+      enable_remote_client_support_(enable_remote_client_support),
+      registry_(std::move(registry)) {
   DCHECK(audio_manager_accessor_);
-  if (!device_notifier_enabled)
+  if (enable_remote_client_support_) {
+    log_factory_manager_ = std::make_unique<LogFactoryManager>();
+    audio_manager_accessor_->SetAudioLogFactory(
+        log_factory_manager_->GetLogFactory());
+  } else {
+    // Start device monitoring explicitly if no mojo device notifier will be
+    // created. This is required for in-process device notifications.
     InitializeDeviceMonitor();
+  }
 }
 
 Service::~Service() {
@@ -69,15 +79,17 @@ void Service::OnStart() {
   ref_factory_ = std::make_unique<service_manager::ServiceContextRefFactory>(
       base::BindRepeating(&Service::MaybeRequestQuitDelayed,
                           base::Unretained(this)));
-  registry_.AddInterface<mojom::SystemInfo>(base::BindRepeating(
+  registry_->AddInterface<mojom::SystemInfo>(base::BindRepeating(
       &Service::BindSystemInfoRequest, base::Unretained(this)));
-  registry_.AddInterface<mojom::DebugRecording>(base::BindRepeating(
+  registry_->AddInterface<mojom::DebugRecording>(base::BindRepeating(
       &Service::BindDebugRecordingRequest, base::Unretained(this)));
-  registry_.AddInterface<mojom::StreamFactory>(base::BindRepeating(
+  registry_->AddInterface<mojom::StreamFactory>(base::BindRepeating(
       &Service::BindStreamFactoryRequest, base::Unretained(this)));
-  if (device_notifier_enabled_) {
-    registry_.AddInterface<mojom::DeviceNotifier>(base::BindRepeating(
+  if (enable_remote_client_support_) {
+    registry_->AddInterface<mojom::DeviceNotifier>(base::BindRepeating(
         &Service::BindDeviceNotifierRequest, base::Unretained(this)));
+    registry_->AddInterface<mojom::LogFactoryManager>(base::BindRepeating(
+        &Service::BindLogFactoryManagerRequest, base::Unretained(this)));
   }
 }
 
@@ -93,7 +105,7 @@ void Service::OnBindInterface(
   if (ref_factory_->HasNoRefs())
     metrics_->HasConnections();
 
-  registry_.BindInterface(interface_name, std::move(interface_pipe));
+  registry_->BindInterface(interface_name, std::move(interface_pipe));
   DCHECK(!ref_factory_->HasNoRefs());
   quit_timer_.AbandonAndStop();
 }
@@ -158,7 +170,7 @@ void Service::BindStreamFactoryRequest(mojom::StreamFactoryRequest request) {
 void Service::BindDeviceNotifierRequest(mojom::DeviceNotifierRequest request) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(ref_factory_);
-  DCHECK(device_notifier_enabled_);
+  DCHECK(enable_remote_client_support_);
 
   if (!system_monitor_) {
     CHECK(!base::SystemMonitor::Get());
@@ -170,6 +182,17 @@ void Service::BindDeviceNotifierRequest(mojom::DeviceNotifierRequest request) {
   device_notifier_->Bind(std::move(request),
                          TracedServiceRef(ref_factory_->CreateRef(),
                                           "audio::DeviceNotifier Binding"));
+}
+
+void Service::BindLogFactoryManagerRequest(
+    mojom::LogFactoryManagerRequest request) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  DCHECK(ref_factory_);
+  DCHECK(log_factory_manager_);
+  DCHECK(enable_remote_client_support_);
+  log_factory_manager_->Bind(
+      std::move(request), TracedServiceRef(ref_factory_->CreateRef(),
+                                           "audio::LogFactoryManager Binding"));
 }
 
 void Service::MaybeRequestQuitDelayed() {

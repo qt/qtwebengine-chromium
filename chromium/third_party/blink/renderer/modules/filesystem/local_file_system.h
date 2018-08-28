@@ -34,6 +34,7 @@
 #include <memory>
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/file_system_type.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
@@ -52,7 +53,7 @@ class WebFileSystem;
 class LocalFileSystem final : public GarbageCollectedFinalized<LocalFileSystem>,
                               public Supplement<LocalFrame>,
                               public Supplement<WorkerClients>,
-                              public TraceWrapperBase {
+                              public NameClient {
   USING_GARBAGE_COLLECTED_MIXIN(LocalFileSystem);
   WTF_MAKE_NONCOPYABLE(LocalFileSystem);
 
@@ -76,7 +77,6 @@ class LocalFileSystem final : public GarbageCollectedFinalized<LocalFileSystem>,
   static LocalFileSystem* From(ExecutionContext&);
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override { return "LocalFileSystem"; }
 
  private:

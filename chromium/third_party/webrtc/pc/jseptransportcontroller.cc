@@ -14,10 +14,10 @@
 #include <memory>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "p2p/base/port.h"
 #include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/thread.h"
 
 using webrtc::SdpType;
@@ -192,16 +192,16 @@ bool JsepTransportController::NeedsIceRestart(
   return transport->needs_ice_restart();
 }
 
-rtc::Optional<rtc::SSLRole> JsepTransportController::GetDtlsRole(
+absl::optional<rtc::SSLRole> JsepTransportController::GetDtlsRole(
     const std::string& mid) const {
   if (!network_thread_->IsCurrent()) {
-    return network_thread_->Invoke<rtc::Optional<rtc::SSLRole>>(
+    return network_thread_->Invoke<absl::optional<rtc::SSLRole>>(
         RTC_FROM_HERE, [&] { return GetDtlsRole(mid); });
   }
 
   const cricket::JsepTransport* t = GetJsepTransportForMid(mid);
   if (!t) {
-    return rtc::Optional<rtc::SSLRole>();
+    return absl::optional<rtc::SSLRole>();
   }
   return t->GetDtlsRole();
 }
@@ -379,6 +379,24 @@ void JsepTransportController::SetMetricsObserver(
   }
 }
 
+void JsepTransportController::SetActiveResetSrtpParams(
+    bool active_reset_srtp_params) {
+  if (!network_thread_->IsCurrent()) {
+    network_thread_->Invoke<void>(RTC_FROM_HERE, [=] {
+      SetActiveResetSrtpParams(active_reset_srtp_params);
+    });
+    return;
+  }
+
+  RTC_LOG(INFO)
+      << "Updating the active_reset_srtp_params for JsepTransportController: "
+      << active_reset_srtp_params;
+  config_.active_reset_srtp_params = active_reset_srtp_params;
+  for (auto& kv : jsep_transports_by_name_) {
+    kv.second->SetActiveResetSrtpParams(active_reset_srtp_params);
+  }
+}
+
 std::unique_ptr<cricket::DtlsTransportInternal>
 JsepTransportController::CreateDtlsTransport(const std::string& transport_name,
                                              bool rtcp) {
@@ -393,10 +411,10 @@ JsepTransportController::CreateDtlsTransport(const std::string& transport_name,
     dtls = config_.external_transport_factory->CreateDtlsTransport(
         std::move(ice), config_.crypto_options);
   } else {
-    auto ice = rtc::MakeUnique<cricket::P2PTransportChannel>(
-        transport_name, component, port_allocator_);
-    dtls = rtc::MakeUnique<cricket::DtlsTransport>(std::move(ice),
-                                                   config_.crypto_options);
+    auto ice = absl::make_unique<cricket::P2PTransportChannel>(
+        transport_name, component, port_allocator_, config_.event_log);
+    dtls = absl::make_unique<cricket::DtlsTransport>(std::move(ice),
+                                                     config_.crypto_options);
   }
 
   RTC_DCHECK(dtls);
@@ -437,7 +455,7 @@ JsepTransportController::CreateUnencryptedRtpTransport(
     rtc::PacketTransportInternal* rtcp_packet_transport) {
   RTC_DCHECK(network_thread_->IsCurrent());
   auto unencrypted_rtp_transport =
-      rtc::MakeUnique<RtpTransport>(rtcp_packet_transport == nullptr);
+      absl::make_unique<RtpTransport>(rtcp_packet_transport == nullptr);
   unencrypted_rtp_transport->SetRtpPacketTransport(rtp_packet_transport);
   if (rtcp_packet_transport) {
     unencrypted_rtp_transport->SetRtcpPacketTransport(rtcp_packet_transport);
@@ -452,7 +470,7 @@ JsepTransportController::CreateSdesTransport(
     cricket::DtlsTransportInternal* rtcp_dtls_transport) {
   RTC_DCHECK(network_thread_->IsCurrent());
   auto srtp_transport =
-      rtc::MakeUnique<webrtc::SrtpTransport>(rtcp_dtls_transport == nullptr);
+      absl::make_unique<webrtc::SrtpTransport>(rtcp_dtls_transport == nullptr);
   RTC_DCHECK(rtp_dtls_transport);
   srtp_transport->SetRtpPacketTransport(rtp_dtls_transport);
   if (rtcp_dtls_transport) {
@@ -470,7 +488,7 @@ JsepTransportController::CreateDtlsSrtpTransport(
     cricket::DtlsTransportInternal* rtp_dtls_transport,
     cricket::DtlsTransportInternal* rtcp_dtls_transport) {
   RTC_DCHECK(network_thread_->IsCurrent());
-  auto dtls_srtp_transport = rtc::MakeUnique<webrtc::DtlsSrtpTransport>(
+  auto dtls_srtp_transport = absl::make_unique<webrtc::DtlsSrtpTransport>(
       rtcp_dtls_transport == nullptr);
   if (config_.enable_external_auth) {
     dtls_srtp_transport->EnableExternalAuth();
@@ -478,6 +496,8 @@ JsepTransportController::CreateDtlsSrtpTransport(
 
   dtls_srtp_transport->SetDtlsTransports(rtp_dtls_transport,
                                          rtcp_dtls_transport);
+  dtls_srtp_transport->SetActiveResetSrtpParams(
+      config_.active_reset_srtp_params);
   return dtls_srtp_transport;
 }
 
@@ -967,7 +987,7 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
   }
 
   std::unique_ptr<cricket::JsepTransport> jsep_transport =
-      rtc::MakeUnique<cricket::JsepTransport>(
+      absl::make_unique<cricket::JsepTransport>(
           content_info.name, certificate_, std::move(unencrypted_rtp_transport),
           std::move(sdes_transport), std::move(dtls_srtp_transport),
           std::move(rtp_dtls_transport), std::move(rtcp_dtls_transport));

@@ -7,7 +7,6 @@
 #include "third_party/blink/public/mojom/page/page_visibility_state.mojom-blink.h"
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
-#include "third_party/blink/renderer/platform/exported/web_active_gesture_animation.h"
 
 namespace blink {
 
@@ -71,8 +70,9 @@ void WebViewFrameWidget::UpdateAllLifecyclePhasesAndCompositeForTesting() {
   web_view_->UpdateAllLifecyclePhasesAndCompositeForTesting();
 }
 
-void WebViewFrameWidget::Paint(WebCanvas* canvas, const WebRect& view_port) {
-  return web_view_->Paint(canvas, view_port);
+void WebViewFrameWidget::PaintContent(cc::PaintCanvas* canvas,
+                                      const WebRect& view_port) {
+  return web_view_->PaintContent(canvas, view_port);
 }
 
 void WebViewFrameWidget::LayoutAndPaintAsync(base::OnceClosure callback) {
@@ -149,8 +149,8 @@ WebPagePopup* WebViewFrameWidget::GetPagePopup() const {
 }
 
 void WebViewFrameWidget::UpdateBrowserControlsState(
-    WebBrowserControlsState constraints,
-    WebBrowserControlsState current,
+    cc::BrowserControlsState constraints,
+    cc::BrowserControlsState current,
     bool animate) {
   return web_view_->UpdateBrowserControlsState(constraints, current, animate);
 }

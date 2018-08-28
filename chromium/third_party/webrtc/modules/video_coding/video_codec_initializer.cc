@@ -13,14 +13,13 @@
 #include "api/video_codecs/video_encoder.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/include/video_bitrate_allocator.h"
-#include "modules/video_coding/codecs/vp8/screenshare_layers.h"
-#include "modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
-#include "modules/video_coding/codecs/vp8/temporal_layers.h"
 #include "modules/video_coding/codecs/vp9/svc_config.h"
 #include "modules/video_coding/codecs/vp9/svc_rate_allocator.h"
 #include "modules/video_coding/include/video_coding_defines.h"
 #include "modules/video_coding/utility/default_video_bitrate_allocator.h"
+#include "modules/video_coding/utility/simulcast_rate_allocator.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/system/fallthrough.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -33,8 +32,7 @@ bool VideoCodecInitializer::SetupCodec(
   if (config.codec_type == kVideoCodecMultiplex) {
     VideoEncoderConfig associated_config = config.Copy();
     associated_config.codec_type = kVideoCodecVP9;
-    if (!SetupCodec(associated_config, streams, codec,
-                    bitrate_allocator)) {
+    if (!SetupCodec(associated_config, streams, codec, bitrate_allocator)) {
       RTC_LOG(LS_ERROR) << "Failed to create stereo encoder configuration.";
       return false;
     }
@@ -42,8 +40,7 @@ bool VideoCodecInitializer::SetupCodec(
     return true;
   }
 
-  *codec =
-      VideoEncoderConfigToVideoCodec(config, streams);
+  *codec = VideoEncoderConfigToVideoCodec(config, streams);
   *bitrate_allocator = CreateBitrateAllocator(*codec);
 
   return true;
@@ -55,7 +52,8 @@ VideoCodecInitializer::CreateBitrateAllocator(const VideoCodec& codec) {
 
   switch (codec.codecType) {
     case kVideoCodecVP8:
-      // Set up default VP8 temporal layer factory, if not provided.
+      RTC_FALLTHROUGH();
+    case kVideoCodecH264:
       rate_allocator.reset(new SimulcastRateAllocator(codec));
       break;
     case kVideoCodecVP9:
@@ -82,13 +80,10 @@ VideoCodec VideoCodecInitializer::VideoEncoderConfigToVideoCodec(
 
   switch (config.content_type) {
     case VideoEncoderConfig::ContentType::kRealtimeVideo:
-      video_codec.mode = kRealtimeVideo;
+      video_codec.mode = VideoCodecMode::kRealtimeVideo;
       break;
     case VideoEncoderConfig::ContentType::kScreen:
-      video_codec.mode = kScreensharing;
-      if (!streams.empty() && streams[0].num_temporal_layers == 2u) {
-        video_codec.targetBitrate = streams[0].target_bitrate_bps / 1000;
-      }
+      video_codec.mode = VideoCodecMode::kScreensharing;
       break;
   }
 
@@ -203,10 +198,11 @@ VideoCodec VideoCodecInitializer::VideoEncoderConfigToVideoCodec(
         // Layering is set explicitly.
         spatial_layers = config.spatial_layers;
       } else {
-        spatial_layers = GetSvcConfig(video_codec.width, video_codec.height,
-                                      video_codec.VP9()->numberOfSpatialLayers,
-                                      video_codec.VP9()->numberOfTemporalLayers,
-                                      video_codec.mode == kScreensharing);
+        spatial_layers =
+            GetSvcConfig(video_codec.width, video_codec.height,
+                         video_codec.VP9()->numberOfSpatialLayers,
+                         video_codec.VP9()->numberOfTemporalLayers,
+                         video_codec.mode == VideoCodecMode::kScreensharing);
 
         const bool no_spatial_layering = (spatial_layers.size() == 1);
         if (no_spatial_layering) {

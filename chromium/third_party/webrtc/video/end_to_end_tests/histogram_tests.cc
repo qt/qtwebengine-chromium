@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "api/optional.h"
+#include "absl/types/optional.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "system_wrappers/include/metrics.h"
 #include "system_wrappers/include/metrics_default.h"
@@ -60,10 +60,9 @@ void HistogramTest::VerifyHistogramStats(bool use_rtx,
 
     bool MinMetricRunTimePassed() {
       int64_t now_ms = Clock::GetRealTimeClock()->TimeInMilliseconds();
-      if (!start_runtime_ms_) {
+      if (!start_runtime_ms_)
         start_runtime_ms_ = now_ms;
-        return false;
-      }
+
       int64_t elapsed_sec = (now_ms - *start_runtime_ms_) / 1000;
       return elapsed_sec > metrics::kMinRunTimeInSeconds * 2;
     }
@@ -124,7 +123,7 @@ void HistogramTest::VerifyHistogramStats(bool use_rtx,
     const bool use_fec_;
     const bool screenshare_;
     test::FunctionVideoEncoderFactory encoder_factory_;
-    rtc::Optional<int64_t> start_runtime_ms_;
+    absl::optional<int64_t> start_runtime_ms_;
     int num_frames_received_ RTC_GUARDED_BY(&crit_);
   } test(use_rtx, use_fec, screenshare);
 
@@ -192,6 +191,7 @@ void HistogramTest::VerifyHistogramStats(bool use_rtx,
   EXPECT_EQ(1, metrics::NumSamples(video_prefix + "SentFramesPerSecond"));
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.DecodedFramesPerSecond"));
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.RenderFramesPerSecond"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.DelayedFramesToRenderer"));
 
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.JitterBufferDelayInMs"));
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.TargetDelayInMs"));

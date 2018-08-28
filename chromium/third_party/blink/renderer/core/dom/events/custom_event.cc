@@ -75,12 +75,8 @@ const AtomicString& CustomEvent::InterfaceName() const {
 }
 
 void CustomEvent::Trace(blink::Visitor* visitor) {
+  visitor->Trace(detail_);
   Event::Trace(visitor);
-}
-
-void CustomEvent::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(detail_);
-  Event::TraceWrappers(visitor);
 }
 
 }  // namespace blink

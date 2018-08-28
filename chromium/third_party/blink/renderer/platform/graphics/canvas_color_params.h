@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_CANVAS_COLOR_PARAMS_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_CANVAS_COLOR_PARAMS_H_
 
+#include "components/viz/common/resources/resource_format.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_types.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
@@ -41,6 +42,8 @@ class PLATFORM_EXPORT CanvasColorParams {
   // The default constructor will create an output-blended 8-bit surface.
   CanvasColorParams();
   CanvasColorParams(CanvasColorSpace, CanvasPixelFormat, OpacityMode);
+  explicit CanvasColorParams(const sk_sp<SkColorSpace> color_space,
+                             SkColorType color_type);
   explicit CanvasColorParams(const SkImageInfo&);
   CanvasColorSpace ColorSpace() const { return color_space_; }
   CanvasPixelFormat PixelFormat() const { return pixel_format_; }
@@ -85,8 +88,11 @@ class PLATFORM_EXPORT CanvasColorParams {
 
   // Gpu memory buffer parameters
   gfx::BufferFormat GetBufferFormat() const;
-  uint32_t GLInternalFormat() const;
+  uint32_t GLSizedInternalFormat() const;  // For GLES2, use Unsized
+  uint32_t GLUnsizedInternalFormat() const;
   uint32_t GLType() const;
+
+  viz::ResourceFormat TransferableResourceFormat() const;
 
  private:
   CanvasColorSpace color_space_ = kSRGBCanvasColorSpace;

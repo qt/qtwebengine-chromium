@@ -84,12 +84,12 @@ cdm::HdcpVersion ToCdmHdcpVersion(HdcpVersion hdcp_version) {
 
 cdm::SessionType ToCdmSessionType(CdmSessionType session_type) {
   switch (session_type) {
-    case CdmSessionType::TEMPORARY_SESSION:
+    case CdmSessionType::kTemporary:
       return cdm::kTemporary;
-    case CdmSessionType::PERSISTENT_LICENSE_SESSION:
+    case CdmSessionType::kPersistentLicense:
       return cdm::kPersistentLicense;
-    case CdmSessionType::PERSISTENT_RELEASE_MESSAGE_SESSION:
-      return cdm::kPersistentKeyRelease;
+    case CdmSessionType::kPersistentUsageRecord:
+      return cdm::kPersistentUsageRecord;
   }
 
   NOTREACHED() << "Unexpected session type: " << static_cast<int>(session_type);
@@ -318,11 +318,8 @@ cdm::EncryptionScheme ToCdmEncryptionScheme(const EncryptionScheme& scheme) {
     case EncryptionScheme::CIPHER_MODE_UNENCRYPTED:
       return cdm::EncryptionScheme::kUnencrypted;
     case EncryptionScheme::CIPHER_MODE_AES_CTR:
-      if (!scheme.pattern().IsInEffect())
-        return cdm::EncryptionScheme::kCenc;
-      break;
+      return cdm::EncryptionScheme::kCenc;
     case EncryptionScheme::CIPHER_MODE_AES_CBC:
-      // Pattern should be required for 'cbcs' but is currently optional.
       return cdm::EncryptionScheme::kCbcs;
   }
 
@@ -686,7 +683,10 @@ Decryptor* CdmAdapter::GetDecryptor() {
 
   // When using HW secure codecs, we cannot and should not use the CDM instance
   // to do decrypt and/or decode. Instead, we should use the CdmProxy.
-  if (cdm_config_.use_hw_secure_codecs)
+  // TODO(xhwang): Fix External Clear Key key system to be able to set
+  // |use_hw_secure_codecs| so that we don't have to check both.
+  // TODO(xhwang): Update this logic to support transcryption.
+  if (cdm_config_.use_hw_secure_codecs || cdm_proxy_created_)
     return nullptr;
 
   return this;

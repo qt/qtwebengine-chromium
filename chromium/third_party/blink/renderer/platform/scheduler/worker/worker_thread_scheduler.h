@@ -6,76 +6,96 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_WORKER_WORKER_THREAD_SCHEDULER_H_
 
 #include "base/macros.h"
-#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
+#include "base/task/sequence_manager/task_time_observer.h"
 #include "third_party/blink/public/platform/web_thread_type.h"
-#include "third_party/blink/renderer/platform/scheduler/base/task_time_observer.h"
-#include "third_party/blink/renderer/platform/scheduler/child/idle_canceled_delayed_task_sweeper.h"
-#include "third_party/blink/renderer/platform/scheduler/child/idle_helper.h"
-#include "third_party/blink/renderer/platform/scheduler/child/worker_metrics_helper.h"
+#include "third_party/blink/renderer/platform/scheduler/common/idle_canceled_delayed_task_sweeper.h"
+#include "third_party/blink/renderer/platform/scheduler/common/idle_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
-#include "third_party/blink/renderer/platform/scheduler/public/non_main_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/util/task_duration_metric_reporter.h"
 #include "third_party/blink/renderer/platform/scheduler/util/thread_load_tracker.h"
+#include "third_party/blink/renderer/platform/scheduler/worker/non_main_thread_scheduler_impl.h"
+#include "third_party/blink/renderer/platform/scheduler/worker/worker_metrics_helper.h"
 
 namespace base {
 namespace sequence_manager {
-class TaskQueueManager;
+class SequenceManager;
 }
 }  // namespace base
 
 namespace blink {
 namespace scheduler {
 
+class WorkerScheduler;
 class WorkerSchedulerProxy;
+class TaskQueueThrottler;
+class WakeUpBudgetPool;
+class CPUTimeBudgetPool;
 
 class PLATFORM_EXPORT WorkerThreadScheduler
-    : public NonMainThreadScheduler,
+    : public NonMainThreadSchedulerImpl,
       public IdleHelper::Delegate,
       public base::sequence_manager::TaskTimeObserver {
  public:
   WorkerThreadScheduler(
       WebThreadType thread_type,
-      std::unique_ptr<base::sequence_manager::TaskQueueManager>
-          task_queue_manager,
+      std::unique_ptr<base::sequence_manager::SequenceManager> sequence_manager,
       WorkerSchedulerProxy* proxy);
   ~WorkerThreadScheduler() override;
 
   // WebThreadScheduler implementation:
-  scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override;
   scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() override;
-  scoped_refptr<base::SingleThreadTaskRunner> IPCTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> V8TaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override;
   bool ShouldYieldForHighPriorityWork() override;
   bool CanExceedIdleDeadlineIfRequired() const override;
   void AddTaskObserver(base::MessageLoop::TaskObserver* task_observer) override;
   void RemoveTaskObserver(
       base::MessageLoop::TaskObserver* task_observer) override;
+  void AddRAILModeObserver(RAILModeObserver*) override {}
   void Shutdown() override;
 
-  // NonMainThreadScheduler implementation:
-  scoped_refptr<WorkerTaskQueue> DefaultTaskQueue() override;
-  void OnTaskCompleted(WorkerTaskQueue* worker_task_queue,
+  // NonMainThreadSchedulerImpl implementation:
+  scoped_refptr<NonMainThreadTaskQueue> DefaultTaskQueue() override;
+  void OnTaskCompleted(NonMainThreadTaskQueue* worker_task_queue,
                        const base::sequence_manager::TaskQueue::Task& task,
-                       base::TimeTicks start,
-                       base::TimeTicks end,
-                       base::Optional<base::TimeDelta> thread_time) override;
+                       const base::sequence_manager::TaskQueue::TaskTiming&
+                           task_timing) override;
 
   // TaskTimeObserver implementation:
-  void WillProcessTask(double start_time) override;
-  void DidProcessTask(double start_time, double end_time) override;
+  void WillProcessTask(base::TimeTicks start_time) override;
+  void DidProcessTask(base::TimeTicks start_time,
+                      base::TimeTicks end_time) override;
 
   SchedulerHelper* GetSchedulerHelperForTesting();
   base::TimeTicks CurrentIdleTaskDeadlineForTesting() const;
 
   // Virtual for test.
-  virtual void OnThrottlingStateChanged(
-      FrameScheduler::ThrottlingState throttling_state);
+  virtual void OnLifecycleStateChanged(
+      SchedulingLifecycleState lifecycle_state);
+
+  SchedulingLifecycleState lifecycle_state() const { return lifecycle_state_; }
+
+  // Each WorkerScheduler should notify NonMainThreadSchedulerImpl when it is
+  // created or destroyed.
+  void RegisterWorkerScheduler(WorkerScheduler* worker_scheduler);
+  void UnregisterWorkerScheduler(WorkerScheduler* worker_scheduler);
 
   // Returns the control task queue.  Tasks posted to this queue are executed
   // with the highest priority. Care must be taken to avoid starvation of other
   // task queues.
-  scoped_refptr<WorkerTaskQueue> ControlTaskQueue();
+  scoped_refptr<NonMainThreadTaskQueue> ControlTaskQueue();
+
+  // TaskQueueThrottler might be null if throttling is not enabled or
+  // not supported.
+  TaskQueueThrottler* task_queue_throttler() const {
+    return task_queue_throttler_.get();
+  }
+  WakeUpBudgetPool* wake_up_budget_pool() const { return wake_up_budget_pool_; }
+  CPUTimeBudgetPool* cpu_time_budget_pool() const {
+    return cpu_time_budget_pool_;
+  }
 
  protected:
   // NonMainThreadScheduler implementation:
@@ -90,32 +110,38 @@ class PLATFORM_EXPORT WorkerThreadScheduler
   void OnIdlePeriodEnded() override {}
   void OnPendingTasksChanged(bool new_state) override {}
 
-  FrameScheduler::ThrottlingState throttling_state() const {
-    return throttling_state_;
-  }
-
-  void RegisterWorkerScheduler(WorkerScheduler* worker_scheduler) override;
-
   void CreateTaskQueueThrottler();
+
+  void SetCPUTimeBudgetPoolForTesting(CPUTimeBudgetPool* cpu_time_budget_pool);
+
+  std::unordered_set<WorkerScheduler*>& GetWorkerSchedulersForTesting();
 
  private:
   void MaybeStartLongIdlePeriod();
-
-  base::WeakPtr<WorkerThreadScheduler> GetWeakPtr();
 
   IdleHelper idle_helper_;
   IdleCanceledDelayedTaskSweeper idle_canceled_delayed_task_sweeper_;
   ThreadLoadTracker load_tracker_;
   bool initialized_;
   base::TimeTicks thread_start_time_;
-  scoped_refptr<WorkerTaskQueue> control_task_queue_;
-  FrameScheduler::ThrottlingState throttling_state_;
+  scoped_refptr<NonMainThreadTaskQueue> control_task_queue_;
+  scoped_refptr<base::SingleThreadTaskRunner> v8_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
+  SchedulingLifecycleState lifecycle_state_;
 
   WorkerMetricsHelper worker_metrics_helper_;
 
-  scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
+  // This controller should be initialized before any TraceableVariables
+  // because they require one to initialize themselves.
+  TraceableVariableController traceable_variable_controller_;
 
-  base::WeakPtrFactory<WorkerThreadScheduler> weak_factory_;
+  // Worker schedulers associated with this thread.
+  std::unordered_set<WorkerScheduler*> worker_schedulers_;
+
+  std::unique_ptr<TaskQueueThrottler> task_queue_throttler_;
+  // Owned by |task_queue_throttler_|.
+  WakeUpBudgetPool* wake_up_budget_pool_ = nullptr;
+  CPUTimeBudgetPool* cpu_time_budget_pool_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(WorkerThreadScheduler);
 };

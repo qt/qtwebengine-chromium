@@ -71,7 +71,7 @@ void ScheduleEmbedCallbackImpl(base::RunLoop* run_loop,
 // -----------------------------------------------------------------------------
 
 bool EmbedUrl(service_manager::Connector* connector,
-              WindowTree* tree,
+              mojom::WindowTree* tree,
               const std::string& url,
               Id root_id) {
   bool result = false;
@@ -87,7 +87,9 @@ bool EmbedUrl(service_manager::Connector* connector,
   return result;
 }
 
-bool Embed(WindowTree* tree, Id root_id, mojom::WindowTreeClientPtr client) {
+bool Embed(mojom::WindowTree* tree,
+           Id root_id,
+           mojom::WindowTreeClientPtr client) {
   bool result = false;
   base::RunLoop run_loop;
   {
@@ -99,7 +101,7 @@ bool Embed(WindowTree* tree, Id root_id, mojom::WindowTreeClientPtr client) {
   return result;
 }
 
-bool EmbedUsingToken(WindowTree* tree,
+bool EmbedUsingToken(mojom::WindowTree* tree,
                      Id root_id,
                      const base::UnguessableToken& token) {
   bool result = false;
@@ -111,7 +113,7 @@ bool EmbedUsingToken(WindowTree* tree,
   return result;
 }
 
-void ScheduleEmbed(WindowTree* tree,
+void ScheduleEmbed(mojom::WindowTree* tree,
                    mojom::WindowTreeClientPtr client,
                    base::UnguessableToken* token) {
   base::RunLoop run_loop;
@@ -120,7 +122,7 @@ void ScheduleEmbed(WindowTree* tree,
   run_loop.Run();
 }
 
-void GetWindowTree(WindowTree* tree,
+void GetWindowTree(mojom::WindowTree* tree,
                    Id window_id,
                    std::vector<TestWindow>* windows) {
   base::RunLoop run_loop;
@@ -483,7 +485,7 @@ class TestWindowTreeClient2 : public TestWindowTreeClient,
   void WmClientJankinessChanged(ClientSpecificId client_id,
                                 bool janky) override {}
   void WmBuildDragImage(const gfx::Point& screen_location,
-                        const SkBitmap& drag_image,
+                        const gfx::ImageSkia& drag_image,
                         const gfx::Vector2d& drag_image_offset,
                         ui::mojom::PointerKind source) override {}
   void WmMoveDragImage(const gfx::Point& screen_location,
@@ -575,9 +577,9 @@ class WindowTreeClientTest2 : public WindowServerServiceTestBase {
 
   // Various clients. |wt1()|, being the first client, has special permissions
   // (it's treated as the window manager).
-  WindowTree* wt1() { return wt_client1_->tree(); }
-  WindowTree* wt2() { return wt_client2_->tree(); }
-  WindowTree* wt3() { return wt_client3_->tree(); }
+  mojom::WindowTree* wt1() { return wt_client1_->tree(); }
+  mojom::WindowTree* wt2() { return wt_client2_->tree(); }
+  mojom::WindowTree* wt3() { return wt_client3_->tree(); }
 
   TestWindowTreeClient2* wt_client1() { return wt_client1_.get(); }
   TestWindowTreeClient2* wt_client2() { return wt_client2_.get(); }
@@ -585,14 +587,14 @@ class WindowTreeClientTest2 : public WindowServerServiceTestBase {
 
   Id root_window_id() const { return root_window_id_; }
 
-  int client_id_1() const { return client_id_1_; }
-  int client_id_2() const { return client_id_2_; }
-  int client_id_3() const { return client_id_3_; }
+  ClientSpecificId client_id_1() const { return client_id_1_; }
+  ClientSpecificId client_id_2() const { return client_id_2_; }
+  ClientSpecificId client_id_3() const { return client_id_3_; }
 
   void EstablishSecondClientWithRoot(Id root_id) {
     ASSERT_TRUE(wt_client2_.get() == nullptr);
     wt_client2_ = EstablishClientViaEmbed(wt1(), root_id);
-    ASSERT_GT(client_id_2_, 0);
+    ASSERT_GT(client_id_2_, 0u);
     ASSERT_TRUE(wt_client2_.get() != nullptr);
   }
 
@@ -619,7 +621,7 @@ class WindowTreeClientTest2 : public WindowServerServiceTestBase {
     }
   }
 
-  void EstablishThirdClient(WindowTree* owner, Id root_id) {
+  void EstablishThirdClient(mojom::WindowTree* owner, Id root_id) {
     ASSERT_TRUE(wt_client3_.get() == nullptr);
     wt_client3_ = EstablishClientViaEmbed(owner, root_id);
     ASSERT_TRUE(wt_client3_.get() != nullptr);
@@ -631,13 +633,14 @@ class WindowTreeClientTest2 : public WindowServerServiceTestBase {
 
   // Establishes a new client by way of Embed() on the specified WindowTree.
   std::unique_ptr<TestWindowTreeClient2> EstablishClientViaEmbed(
-      WindowTree* owner,
+      mojom::WindowTree* owner,
       Id root_id) {
     return EstablishClientViaEmbedWithPolicyBitmask(owner, root_id);
   }
 
   std::unique_ptr<TestWindowTreeClient2>
-  EstablishClientViaEmbedWithPolicyBitmask(WindowTree* owner, Id root_id) {
+  EstablishClientViaEmbedWithPolicyBitmask(mojom::WindowTree* owner,
+                                           Id root_id) {
     if (!EmbedUrl(connector(), owner, test_name(), root_id)) {
       ADD_FAILURE() << "Embed() failed";
       return nullptr;
@@ -675,7 +678,7 @@ class WindowTreeClientTest2 : public WindowServerServiceTestBase {
 
     mojom::WindowTreeHostFactoryPtr factory;
     // TODO: figure out better way to isolate this!
-    connector()->BindInterface("test_ws", &factory);
+    connector()->BindInterface("ui", &factory);
 
     mojom::WindowTreeClientPtr tree_client_ptr;
     wt_client1_ = std::make_unique<TestWindowTreeClient2>();
@@ -713,9 +716,9 @@ class WindowTreeClientTest2 : public WindowServerServiceTestBase {
 
  private:
   std::unique_ptr<WindowTreeClientFactory> client_factory_;
-  int client_id_1_ = kWindowServerClientId + 1;
-  int client_id_2_ = client_id_1_ + 1;
-  int client_id_3_ = client_id_2_ + 1;
+  const ClientSpecificId client_id_1_ = kWindowServerClientId + 1;
+  const ClientSpecificId client_id_2_ = client_id_1_ + 1;
+  const ClientSpecificId client_id_3_ = client_id_2_ + 1;
   Id root_window_id_;
   service_manager::BinderRegistry registry_;
 
@@ -1792,7 +1795,7 @@ TEST_F(WindowTreeClientTest2, DISABLED_SetWindowVisibilityNotifications3) {
 
 // Tests that when opacity is set on a window, that the calling client is not
 // notified, however children are. Also that setting the same opacity is
-// rejected and no on eis notifiyed.
+// rejected and no one is notified.
 TEST_F(WindowTreeClientTest2, DISABLED_SetOpacityNotifications) {
   Id window_1_1 = wt_client1()->NewWindow(1);
   ASSERT_TRUE(window_1_1);

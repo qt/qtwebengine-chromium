@@ -145,9 +145,6 @@ if (!build_with_chromium) {
       "frame_editing/frame_editing_lib.h",
     ]
 
-    # TODO(jschuh): Bug 1348: fix this warning.
-    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
@@ -242,12 +239,12 @@ if (!build_with_chromium) {
         # TODO(kwiberg): Remove this dependency.
         "../api/audio_codecs:audio_codecs_api",
         "../modules/congestion_controller",
-        "../modules/congestion_controller:delay_based_bwe",
-        "../modules/congestion_controller:estimators",
+        "../modules/congestion_controller/goog_cc:delay_based_bwe",
+        "../modules/congestion_controller/goog_cc:estimators",
         "../modules/pacing",
         "../modules/rtp_rtcp",
         "../system_wrappers:system_wrappers_default",
-        "//build/config:exe_and_shlib_deps",
+        "//third_party/abseil-cpp/absl/memory",
       ]
     }
   }
@@ -293,7 +290,7 @@ if (rtc_include_tests) {
 
     deps = [
       "../api/audio:audio_frame_api",
-      "../modules/audio_processing",
+      "../modules/audio_processing/agc:level_estimation",
       "../modules/audio_processing/vad",
       "../rtc_base:rtc_base_approved",
       "../rtc_base:safe_minmax",
@@ -331,9 +328,6 @@ if (rtc_include_tests) {
       "simple_command_line_parser_unittest.cc",
     ]
 
-    # TODO(jschuh): Bug 1348: fix this warning.
-    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
@@ -350,6 +344,7 @@ if (rtc_include_tests) {
       "../test:fileutils",
       "../test:test_main",
       "//testing/gtest",
+      "//third_party/abseil-cpp/absl/memory",
     ]
 
     if (rtc_enable_protobuf) {

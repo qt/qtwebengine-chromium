@@ -261,11 +261,24 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
                             base::SingleThreadTaskRunner*);
 
   bool CanReuseRedirectChain() const;
-  bool MustRevalidateDueToCacheHeaders() const;
+  bool MustRevalidateDueToCacheHeaders(bool allow_stale) const;
+  bool ShouldRevalidateStaleResponse() const;
   virtual bool CanUseCacheValidator() const;
   bool IsCacheValidator() const { return is_revalidating_; }
   bool HasCacheControlNoStoreHeader() const;
   bool MustReloadDueToVaryHeader(const ResourceRequest& new_request) const;
+
+  // Returns true if any response returned from the upstream in the redirect
+  // chain is stale and requires triggering async stale revalidation. Once
+  // revalidation is started SetStaleRevalidationStarted() should be called.
+  bool StaleRevalidationRequested() const;
+
+  // Set that stale revalidation has been started so that subsequent
+  // requests won't trigger it again. When stale revalidation is completed
+  // this resource will be removed from the MemoryCache so there is no
+  // need to reset it back to false.
+  bool StaleRevalidationStarted() const { return stale_revalidation_started_; }
+  void SetStaleRevalidationStarted() { stale_revalidation_started_ = true; }
 
   const IntegrityMetadataSet& IntegrityMetadata() const {
     return options_.integrity_metadata;
@@ -346,7 +359,10 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   // Used to notify ImageResourceContent of the start of actual loading.
   // JavaScript calls or client/observer notifications are disallowed inside
   // NotifyStartLoad().
-  virtual void NotifyStartLoad() {}
+  virtual void NotifyStartLoad() {
+    CHECK_EQ(status_, ResourceStatus::kNotStarted);
+    status_ = ResourceStatus::kPending;
+  }
 
   static const char* ResourceTypeToString(
       Type,
@@ -513,6 +529,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   bool is_add_remove_client_prohibited_;
   bool is_revalidation_start_forbidden_ = false;
   bool is_unused_preload_ = false;
+  bool stale_revalidation_started_ = false;
 
   ResourceIntegrityDisposition integrity_disposition_;
   SubresourceIntegrity::ReportInfo integrity_report_info_;

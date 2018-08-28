@@ -1,4 +1,4 @@
-per-file autofill_scaled_resources.grdp=mathp@chromium.org
+per-file autofill*=file://components/autofill/OWNERS
 per-file content_suggestions*=file://components/ntp_snippets/OWNERS
 per-file crash_*=cpu@chromium.org
 per-file crash_*=jochen@chromium.org
@@ -15,8 +15,8 @@ per-file gcm_driver_resources.grdp=fgorski@chromium.org
 per-file gcm_driver_resources.grdp=jianli@chromium.org
 per-file gcm_driver_resources.grdp=peter@chromium.org
 per-file gcm_driver_resources.grdp=zea@chromium.org
-per-file neterror*=juliatuttle@chromium.org
 per-file neterror*=mmenke@chromium.org
+per-file neterror*=file://net/OWNERS
 per-file ntp_tiles_resources.grdp=file://components/ntp_tiles/OWNERS
 per-file offline_pages_resources.grdp=file://components/offline_pages/OWNERS
 per-file proximity_auth*=tengs@chromium.org

@@ -18,7 +18,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace net {
+namespace quic {
 
 namespace {
 
@@ -122,6 +122,14 @@ class DummyPacketWriter : public QuicPacketWriter {
       const QuicSocketAddress& peer_address) const override {
     return 0;
   }
+
+  bool SupportsReleaseTime() const override { return false; }
+
+  bool IsBatchMode() const override { return false; }
+
+  char* GetNextWriteLocation() const override { return nullptr; }
+
+  WriteResult Flush() override { return WriteResult(WRITE_STATUS_OK, 0); }
 };
 
 class MockQuartcStreamDelegate : public QuartcStreamInterface::Delegate {
@@ -351,4 +359,4 @@ TEST_F(QuartcStreamTest, CloseOnFins) {
 
 }  // namespace
 
-}  // namespace net
+}  // namespace quic

@@ -5,14 +5,12 @@
 #ifndef NET_THIRD_PARTY_QUIC_CORE_QUIC_CLIENT_PUSH_PROMISE_INDEX_H_
 #define NET_THIRD_PARTY_QUIC_CORE_QUIC_CLIENT_PUSH_PROMISE_INDEX_H_
 
-#include <string>
-
 #include "net/third_party/quic/core/quic_spdy_client_session_base.h"
 #include "net/third_party/quic/core/quic_types.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 
-namespace net {
+namespace quic {
 
 // QuicClientPushPromiseIndex is the interface to support rendezvous
 // between client requests and resources delivered via server push.
@@ -95,6 +93,6 @@ class QUIC_EXPORT_PRIVATE QuicClientPushPromiseIndex {
   DISALLOW_COPY_AND_ASSIGN(QuicClientPushPromiseIndex);
 };
 
-}  // namespace net
+}  // namespace quic
 
 #endif  // NET_THIRD_PARTY_QUIC_CORE_QUIC_CLIENT_PUSH_PROMISE_INDEX_H_

@@ -4,9 +4,10 @@
 
 #include "third_party/blink/renderer/core/animation/scroll_timeline.h"
 
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
+#include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 
 namespace blink {
@@ -41,7 +42,7 @@ ScrollTimeline* ScrollTimeline::Create(Document& document,
 
   ScrollDirection orientation;
   if (!StringToScrollDirection(options.orientation(), orientation)) {
-    exception_state.ThrowDOMException(kNotSupportedError,
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "Invalid orientation");
     return nullptr;
   }
@@ -49,7 +50,8 @@ ScrollTimeline* ScrollTimeline::Create(Document& document,
   // TODO(smcgruer): Support 'auto' value.
   if (options.timeRange().IsScrollTimelineAutoKeyword()) {
     exception_state.ThrowDOMException(
-        kNotSupportedError, "'auto' value for timeRange not yet supported");
+        DOMExceptionCode::kNotSupportedError,
+        "'auto' value for timeRange not yet supported");
     return nullptr;
   }
 
@@ -69,7 +71,7 @@ ScrollTimeline::ScrollTimeline(Element* scroll_source,
 double ScrollTimeline::currentTime(bool& is_null) {
   // 1. If scrollSource does not currently have a CSS layout box, or if its
   // layout box is not a scroll container, return an unresolved time value.
-  LayoutBox* layout_box = scroll_source_->GetLayoutBox();
+  LayoutBox* layout_box = ResolvedScrollSource()->GetLayoutBox();
   if (!layout_box || !layout_box->HasOverflowClip()) {
     is_null = false;
     return std::numeric_limits<double>::quiet_NaN();
@@ -147,20 +149,45 @@ void ScrollTimeline::timeRange(DoubleOrScrollTimelineAutoKeyword& result) {
   result.SetDouble(time_range_);
 }
 
+Node* ScrollTimeline::ResolvedScrollSource() const {
+  // When in quirks mode we need the style to be clean, so we don't use
+  // |ScrollingElementNoLayout|.
+  if (scroll_source_ == scroll_source_->GetDocument().scrollingElement())
+    return &scroll_source_->GetDocument();
+  return scroll_source_;
+}
+
 void ScrollTimeline::AttachAnimation() {
-  GetActiveScrollTimelineSet().insert(scroll_source_);
-  scroll_source_->GetDocument()
+  Node* resolved_scroll_source = ResolvedScrollSource();
+  GetActiveScrollTimelineSet().insert(resolved_scroll_source);
+  if (resolved_scroll_source->IsElementNode())
+    ToElement(resolved_scroll_source)->SetNeedsCompositingUpdate();
+  resolved_scroll_source->GetDocument()
       .GetLayoutView()
       ->Compositor()
       ->SetNeedsCompositingUpdate(kCompositingUpdateRebuildTree);
+  LayoutBoxModelObject* object = scroll_source_->GetLayoutBoxModelObject();
+  if (object && object->HasLayer())
+    object->Layer()->SetNeedsCompositingInputsUpdate();
+  if (object)
+    object->SetNeedsPaintPropertyUpdate();
 }
 
 void ScrollTimeline::DetachAnimation() {
-  GetActiveScrollTimelineSet().erase(scroll_source_);
-  auto* layout_view = scroll_source_->GetDocument().GetLayoutView();
+  Node* resolved_scroll_source = ResolvedScrollSource();
+  GetActiveScrollTimelineSet().erase(resolved_scroll_source);
+  if (resolved_scroll_source->IsElementNode())
+    ToElement(resolved_scroll_source)->SetNeedsCompositingUpdate();
+  auto* layout_view = resolved_scroll_source->GetDocument().GetLayoutView();
   if (layout_view && layout_view->Compositor()) {
     layout_view->Compositor()->SetNeedsCompositingUpdate(
         kCompositingUpdateRebuildTree);
+
+    LayoutBoxModelObject* object = scroll_source_->GetLayoutBoxModelObject();
+    if (object && object->HasLayer())
+      object->Layer()->SetNeedsCompositingInputsUpdate();
+    if (object)
+      object->SetNeedsPaintPropertyUpdate();
   }
 }
 

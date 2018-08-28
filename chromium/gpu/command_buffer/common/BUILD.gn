@@ -137,6 +137,8 @@ source_set("raster_sources") {
     "raster_cmd_format_autogen.h",
     "raster_cmd_ids.h",
     "raster_cmd_ids_autogen.h",
+    "skia_utils.cc",
+    "skia_utils.h",
   ]
 
   configs += [ "//gpu:raster_implementation" ]
@@ -144,6 +146,8 @@ source_set("raster_sources") {
   deps = [
     ":gles2_utils",
     "//base",
+    "//skia",
+    "//ui/gl:gl",
   ]
   public_deps = [
     ":common",

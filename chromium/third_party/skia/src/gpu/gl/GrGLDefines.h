@@ -559,7 +559,6 @@
 #define GR_GL_MAX_VERTEX_UNIFORM_COMPONENTS            0x8B4A
 #define GR_GL_MAX_SHADER_PIXEL_LOCAL_STORAGE_FAST_SIZE 0x8F63
 #define GR_GL_SHADER_BINARY_FORMATS                    0x8DF8
-#define GR_GL_NUM_SHADER_BINARY_FORMATS                0x8DF9
 
 /* StencilFunction */
 #define GR_GL_NEVER                          0x0200
@@ -610,17 +609,12 @@
 /* TextureUsage */
 #define GR_GL_FRAMEBUFFER_ATTACHMENT         0x93A3
 
-/* TextureSRGBDecode */
-#define GR_GL_DECODE_EXT                     0x8A49
-#define GR_GL_SKIP_DECODE_EXT                0x8A4A
-
 /* TextureParameterName */
 #define GR_GL_TEXTURE_MAG_FILTER             0x2800
 #define GR_GL_TEXTURE_MIN_FILTER             0x2801
 #define GR_GL_TEXTURE_WRAP_S                 0x2802
 #define GR_GL_TEXTURE_WRAP_T                 0x2803
 #define GR_GL_TEXTURE_USAGE                  0x93A2
-#define GR_GL_TEXTURE_SRGB_DECODE_EXT        0x8A48
 
 /* TextureTarget */
 /*      GL_TEXTURE_2D */
@@ -857,6 +851,9 @@
 #define GR_GL_SHADER_BINARY_FORMATS          0x8DF8
 #define GR_GL_NUM_SHADER_BINARY_FORMATS      0x8DF9
 
+/* Program Binary */
+#define GR_GL_NUM_PROGRAM_BINARY_FORMATS     0x87FE
+
 /* Shader Precision-Specified Types */
 #define GR_GL_LOW_FLOAT                      0x8DF0
 #define GR_GL_MEDIUM_FLOAT                   0x8DF1
@@ -1042,7 +1039,7 @@
 /* GL_OES_EGL_image_external */
 #define GR_GL_TEXTURE_EXTERNAL                              0x8D65
 
-/* GL_ARB_texture_rectangle */
+/* GL_ARB_texture_rectangle or GL_ANGLE_texture_rectangle */
 #define GR_GL_TEXTURE_RECTANGLE                             0x84F5
 
 /* GL_EXT_window_rectangles */

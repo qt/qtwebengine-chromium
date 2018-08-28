@@ -36,8 +36,12 @@ class NewCdmResultPromise : public ContentDecryptionModuleResultPromise {
  public:
   NewCdmResultPromise(
       ScriptState* script_state,
-      const WebVector<WebEncryptedMediaSessionType>& supported_session_types)
-      : ContentDecryptionModuleResultPromise(script_state),
+      const WebVector<WebEncryptedMediaSessionType>& supported_session_types,
+      const char* interface_name,
+      const char* property_name)
+      : ContentDecryptionModuleResultPromise(script_state,
+                                             interface_name,
+                                             property_name),
         supported_session_types_(supported_session_types) {}
 
   ~NewCdmResultPromise() override = default;
@@ -80,6 +84,19 @@ static HeapVector<MediaKeySystemMediaCapability> ConvertCapabilities(
     MediaKeySystemMediaCapability capability;
     capability.setContentType(capabilities[i].content_type);
     capability.setRobustness(capabilities[i].robustness);
+
+    switch (capabilities[i].encryption_scheme) {
+      case WebMediaKeySystemMediaCapability::EncryptionScheme::kNotSpecified:
+        capability.setEncryptionSchemeToNull();
+        break;
+      case WebMediaKeySystemMediaCapability::EncryptionScheme::kCenc:
+        capability.setEncryptionScheme("cenc");
+        break;
+      case WebMediaKeySystemMediaCapability::EncryptionScheme::kCbcs:
+        capability.setEncryptionScheme("cbcs");
+        break;
+    }
+
     result[i] = capability;
   }
   return result;
@@ -155,7 +172,8 @@ ScriptPromise MediaKeySystemAccess::createMediaKeys(ScriptState* script_state) {
 
   // 1. Let promise be a new promise.
   NewCdmResultPromise* helper =
-      new NewCdmResultPromise(script_state, configuration.session_types);
+      new NewCdmResultPromise(script_state, configuration.session_types,
+                              "MediaKeySystemAccess", "createMediaKeys");
   ScriptPromise promise = helper->Promise();
 
   // 2. Asynchronously create and initialize the MediaKeys object.

@@ -194,7 +194,7 @@ sk_sp<const PaintRecord> LayoutSVGResourceClipper::CreatePaintRecord() {
     // Use the LayoutObject of the direct child even if it is a <use>. In that
     // case, we will paint the targeted element indirectly.
     const LayoutObject* layout_object = child_element.GetLayoutObject();
-    layout_object->Paint(info, IntPoint());
+    layout_object->Paint(info);
   }
 
   cached_paint_record_ = builder.EndRecording();
@@ -244,8 +244,8 @@ bool LayoutSVGResourceClipper::HitTestClipContent(
        Traversal<SVGElement>::ChildrenOf(*GetElement())) {
     if (!ContributesToClip(child_element))
       continue;
-    IntPoint hit_point;
-    HitTestResult result(HitTestRequest::kSVGClipContent, hit_point);
+    HitTestLocation location((LayoutPoint()));
+    HitTestResult result(HitTestRequest::kSVGClipContent, location);
     LayoutObject* layout_object = child_element.GetLayoutObject();
 
     DCHECK(!layout_object->IsBoxModelObject() ||

@@ -50,6 +50,7 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/object_paint_properties.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
 
 namespace blink {
@@ -94,8 +95,6 @@ static void ApplyClipRects(const ClipRectsContext& context,
   DCHECK(box.ShouldClipOverflow() || box.HasClip());
   LayoutView* view = box.View();
   DCHECK(view);
-  if (clip_rects.Fixed() && &context.root_layer->GetLayoutObject() == view)
-    offset -= LayoutSize(view->GetFrameView()->GetScrollOffset());
 
   if (box.ShouldClipOverflow()) {
     ClipRect new_overflow_clip =
@@ -109,7 +108,7 @@ static void ApplyClipRects(const ClipRectsContext& context,
     if (box.CanContainFixedPositionObjects())
       clip_rects.SetFixedClipRect(
           Intersection(new_overflow_clip, clip_rects.FixedClipRect()));
-    if (box.StyleRef().ContainsPaint())
+    if (box.ShouldApplyPaintContainment())
       clip_rects.SetPosClipRect(
           Intersection(new_overflow_clip, clip_rects.PosClipRect()));
   }
@@ -221,8 +220,11 @@ LayoutRect PaintLayerClipper::LocalClipRect(
     CalculateBackgroundClipRectWithGeometryMapper(
         context, layer_.GetLayoutObject().FirstFragment(), kRespectOverflowClip,
         clip_rect);
-    LayoutRect premapped_rect = clip_rect.Rect();
 
+    if (clip_rect.IsInfinite())
+      return clip_rect.Rect();
+
+    LayoutRect premapped_rect = clip_rect.Rect();
     // The rect now needs to be transformed to the local space of this
     // PaintLayer.
     // TODO(chrishtr): not correct for fragmentation.
@@ -251,14 +253,13 @@ LayoutRect PaintLayerClipper::LocalClipRect(
 
   LayoutRect layer_bounds;
   ClipRect background_rect, foreground_rect;
-  CalculateRects(context, nullptr, LayoutRect(LayoutRect::InfiniteIntRect()),
-                 layer_bounds, background_rect, foreground_rect);
+  CalculateRects(context, nullptr, nullptr, layer_bounds, background_rect,
+                 foreground_rect);
+
+  if (background_rect.IsInfinite())
+    return background_rect.Rect();
 
   LayoutRect clip_rect = background_rect.Rect();
-  // TODO(chrishtr): avoid converting to IntRect and back.
-  if (clip_rect == LayoutRect(LayoutRect::InfiniteIntRect()))
-    return clip_rect;
-
   LayoutPoint clipping_root_offset;
   layer_.ConvertToLayerCoords(&clipping_root_layer, clipping_root_offset);
   clip_rect.MoveBy(-clipping_root_offset);
@@ -269,7 +270,7 @@ LayoutRect PaintLayerClipper::LocalClipRect(
 void PaintLayerClipper::CalculateRectsWithGeometryMapper(
     const ClipRectsContext& context,
     const FragmentData& fragment_data,
-    const LayoutRect& paint_dirty_rect,
+    const LayoutRect* paint_dirty_rect,
     LayoutRect& layer_bounds,
     ClipRect& background_rect,
     ClipRect& foreground_rect,
@@ -329,7 +330,10 @@ void PaintLayerClipper::CalculateRectsWithGeometryMapper(
 
   CalculateBackgroundClipRectWithGeometryMapper(
       context, fragment_data, kRespectOverflowClip, background_rect);
-  background_rect.Intersect(paint_dirty_rect);
+
+  foreground_rect.Reset();
+  if (paint_dirty_rect)
+    background_rect.Intersect(*paint_dirty_rect);
 
   if (ShouldClipOverflow(context)) {
     LayoutBoxModelObject& layout_object = layer_.GetLayoutObject();
@@ -348,7 +352,7 @@ void PaintLayerClipper::CalculateRectsWithGeometryMapper(
 void PaintLayerClipper::CalculateRects(
     const ClipRectsContext& context,
     const FragmentData* fragment_data,
-    const LayoutRect& paint_dirty_rect,
+    const LayoutRect* paint_dirty_rect,
     LayoutRect& layer_bounds,
     ClipRect& background_rect,
     ClipRect& foreground_rect,
@@ -374,10 +378,9 @@ void PaintLayerClipper::CalculateRects(
   if (!is_clipping_root && layer_.Parent()) {
     CalculateBackgroundClipRect(context, background_rect);
     background_rect.Move(context.sub_pixel_accumulation);
-    background_rect.Intersect(paint_dirty_rect);
-  } else {
-    background_rect = paint_dirty_rect;
   }
+  if (paint_dirty_rect)
+    background_rect.Intersect(*paint_dirty_rect);
 
   foreground_rect = background_rect;
 
@@ -480,11 +483,10 @@ void PaintLayerClipper::CalculateBackgroundClipRectWithGeometryMapper(
     ClipRect& output) const {
   DCHECK(use_geometry_mapper_);
 
+  output.Reset();
   bool is_clipping_root = &layer_ == context.root_layer;
-  if (is_clipping_root && !context.ShouldRespectRootLayerClip()) {
-    output.SetRect(FloatClipRect());
+  if (is_clipping_root && !context.ShouldRespectRootLayerClip())
     return;
-  }
 
   PropertyTreeState source_property_tree_state(nullptr, nullptr, nullptr);
   PropertyTreeState destination_property_tree_state(nullptr, nullptr, nullptr);
@@ -522,7 +524,8 @@ void PaintLayerClipper::CalculateBackgroundClipRectWithGeometryMapper(
                                               destination_property_tree_state,
                                               clip_rect, clip_behavior);
     output.SetRect(clip_rect);
-  } else {
+  } else if (source_property_tree_state.Clip() !=
+             destination_property_tree_state.Clip()) {
     const FloatClipRect& clipped_rect_in_root_layer_space =
         GeometryMapper::LocalToAncestorClipRect(
             source_property_tree_state, destination_property_tree_state,
@@ -530,10 +533,12 @@ void PaintLayerClipper::CalculateBackgroundClipRectWithGeometryMapper(
     output.SetRect(clipped_rect_in_root_layer_space);
   }
 
-  // TODO(chrishtr): generalize to multiple fragments.
-  output.MoveBy(
-      -context.root_layer->GetLayoutObject().FirstFragment().PaintOffset());
-  output.Move(context.sub_pixel_accumulation);
+  if (!output.IsInfinite()) {
+    // TODO(chrishtr): generalize to multiple fragments.
+    output.MoveBy(
+        -context.root_layer->GetLayoutObject().FirstFragment().PaintOffset());
+    output.Move(context.sub_pixel_accumulation);
+  }
 }
 
 void PaintLayerClipper::InitializeCommonClipRectState(

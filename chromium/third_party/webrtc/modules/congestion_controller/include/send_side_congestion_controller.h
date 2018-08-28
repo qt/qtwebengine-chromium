@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "common_types.h"  // NOLINT(build/include)
-#include "modules/congestion_controller/delay_based_bwe.h"
+#include "modules/congestion_controller/goog_cc/delay_based_bwe.h"
 #include "modules/congestion_controller/include/network_changed_observer.h"
 #include "modules/congestion_controller/include/send_side_congestion_controller_interface.h"
 #include "modules/congestion_controller/transport_feedback_adapter.h"
@@ -39,6 +39,7 @@ class AcknowledgedBitrateEstimator;
 class ProbeController;
 class RateLimiter;
 class RtcEventLog;
+class CongestionWindowPushbackController;
 
 class SendSideCongestionController
     : public SendSideCongestionControllerInterface {
@@ -120,6 +121,8 @@ class SendSideCongestionController
 
   void SetPacingFactor(float pacing_factor) override;
 
+  void SetAllocatedBitrateWithoutFeedback(uint32_t bitrate_bps) override;
+
  private:
   void MaybeTriggerOnNetworkChanged();
 
@@ -129,6 +132,7 @@ class SendSideCongestionController
                                            uint8_t fraction_loss,
                                            int64_t rtt);
   void LimitOutstandingBytes(size_t num_outstanding_bytes);
+  void SendPendingProbes() RTC_EXCLUSIVE_LOCKS_REQUIRED(&probe_lock_);
   const Clock* const clock_;
   rtc::CriticalSection observer_lock_;
   Observer* observer_ RTC_GUARDED_BY(observer_lock_);
@@ -136,7 +140,10 @@ class SendSideCongestionController
   PacedSender* const pacer_;
   const std::unique_ptr<BitrateController> bitrate_controller_;
   std::unique_ptr<AcknowledgedBitrateEstimator> acknowledged_bitrate_estimator_;
-  const std::unique_ptr<ProbeController> probe_controller_;
+  rtc::CriticalSection probe_lock_;
+  const std::unique_ptr<ProbeController> probe_controller_
+      RTC_GUARDED_BY(probe_lock_);
+
   const std::unique_ptr<RateLimiter> retransmission_rate_limiter_;
   TransportFeedbackAdapter transport_feedback_adapter_;
   rtc::CriticalSection network_state_lock_;
@@ -162,6 +169,9 @@ class SendSideCongestionController
 
   bool pacer_pushback_experiment_ = false;
   float encoding_rate_ = 1.0;
+
+  const std::unique_ptr<CongestionWindowPushbackController>
+      congestion_window_pushback_controller_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(SendSideCongestionController);
 };

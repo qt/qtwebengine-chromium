@@ -8,7 +8,7 @@
 #include "base/pickle.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/time/time.h"
 #include "net/base/load_flags.h"
 #include "net/base/request_priority.h"
@@ -319,30 +319,6 @@ class URLRequestThrottlerManagerTest : public TestWithScopedTaskEnvironment {
                                         TRAFFIC_ANNOTATION_FOR_TESTS)) {}
 
   void SetUp() override { request_->SetLoadFlags(0); }
-
-  void ExpectEntryAllowsAllOnErrorIfOptedOut(
-      URLRequestThrottlerEntryInterface* entry,
-      bool opted_out,
-      const URLRequest& request) {
-    EXPECT_FALSE(entry->ShouldRejectRequest(request));
-    for (int i = 0; i < 10; ++i) {
-      entry->UpdateWithResponse(503);
-    }
-    EXPECT_NE(opted_out, entry->ShouldRejectRequest(request));
-
-    if (opted_out) {
-      // We're not mocking out GetTimeNow() in this scenario
-      // so add a 100 ms buffer to avoid flakiness (that should always
-      // give enough time to get from the TimeTicks::Now() call here
-      // to the TimeTicks::Now() call in the entry class).
-      EXPECT_GT(TimeTicks::Now() + TimeDelta::FromMilliseconds(100),
-                entry->GetExponentialBackoffReleaseTime());
-    } else {
-      // As above, add 100 ms.
-      EXPECT_LT(TimeTicks::Now() + TimeDelta::FromMilliseconds(100),
-                entry->GetExponentialBackoffReleaseTime());
-    }
-  }
 
   // context_ must be declared before request_.
   TestURLRequestContext context_;

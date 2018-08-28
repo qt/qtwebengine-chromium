@@ -34,7 +34,8 @@
 
 namespace blink {
 
-ListItemOrdinal::ListItemOrdinal() : type_(kNeedsUpdate), not_in_list_(false) {}
+ListItemOrdinal::ListItemOrdinal()
+    : type_(kNeedsUpdate), not_in_list_(false), not_in_list_changed_(false) {}
 
 bool ListItemOrdinal::IsList(const Node& node) {
   return IsHTMLUListElement(node) || IsHTMLOListElement(node);
@@ -240,8 +241,19 @@ void ListItemOrdinal::ClearExplicitValue(const Node& item_node) {
   InvalidateAfter(EnclosingList(&item_node), &item_node);
 }
 
-void ListItemOrdinal::SetNotInList(bool not_in_list) {
+void ListItemOrdinal::SetNotInList(bool not_in_list, const Node& item_node) {
+  if (not_in_list_ == not_in_list)
+    return;
+
   not_in_list_ = not_in_list;
+  SetNotInListChanged(true);
+  LayoutObject* layout_object = item_node.GetLayoutObject();
+  if (layout_object->IsLayoutNGListItem())
+    layout_object->NotifyOfSubtreeChange();
+}
+
+void ListItemOrdinal::SetNotInListChanged(bool changed) {
+  not_in_list_changed_ = changed;
 }
 
 unsigned ListItemOrdinal::ItemCountForOrderedList(
@@ -274,22 +286,11 @@ void ListItemOrdinal::ItemInsertedOrRemoved(
   // If distribution recalc is needed, updateListMarkerNumber will be re-invoked
   // after distribution is calculated.
   const Node* item_node = layout_list_item->GetNode();
-  if (item_node->GetDocument().ChildNeedsDistributionRecalc())
+  if (item_node->GetDocument().IsSlotAssignmentOrLegacyDistributionDirty())
     return;
 
   Node* list_node = EnclosingList(item_node);
-  // TODO(kochi): Change this to CHECK(list_node) once crbug.com/734908
-  // is resolved.
-  if (!list_node)
-    return;
-
-  // Note: We don't need to invalidate list items in unassigned slots.
-  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled()) {
-    if (ShadowRoot* shadow_root = list_node->ContainingShadowRoot()) {
-      if (shadow_root->NeedsSlotAssignmentRecalc())
-        return;
-    }
-  }
+  CHECK(list_node);
 
   bool is_list_reversed = false;
   if (auto* o_list_element = ToHTMLOListElementOrNull(list_node)) {

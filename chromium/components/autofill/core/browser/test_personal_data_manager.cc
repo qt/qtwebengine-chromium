@@ -31,6 +31,7 @@ std::string TestPersonalDataManager::SaveImportedProfile(
 
 std::string TestPersonalDataManager::SaveImportedCreditCard(
     const CreditCard& imported_credit_card) {
+  num_times_save_imported_credit_card_called_++;
   AddCreditCard(imported_credit_card);
   return imported_credit_card.guid();
 }
@@ -175,6 +176,14 @@ bool TestPersonalDataManager::IsAutofillEnabled() const {
   return PersonalDataManager::IsAutofillEnabled();
 }
 
+bool TestPersonalDataManager::IsAutofillProfileEnabled() const {
+  // Return the value of autofill_profile_enabled_ if it has been set,
+  // otherwise fall back to the normal behavior of checking the pref_service.
+  if (autofill_profile_enabled_.has_value())
+    return autofill_profile_enabled_.value();
+  return PersonalDataManager::IsAutofillProfileEnabled();
+}
+
 bool TestPersonalDataManager::IsAutofillCreditCardEnabled() const {
   // Return the value of autofill_credit_card_enabled_ if it has been set,
   // otherwise fall back to the normal behavior of checking the pref_service.
@@ -191,9 +200,18 @@ bool TestPersonalDataManager::IsAutofillWalletImportEnabled() const {
   return PersonalDataManager::IsAutofillWalletImportEnabled();
 }
 
+bool TestPersonalDataManager::ShouldSuggestServerCards() const {
+  return IsAutofillCreditCardEnabled() && IsAutofillWalletImportEnabled();
+}
+
 std::string TestPersonalDataManager::CountryCodeForCurrentTimezone()
     const {
   return timezone_country_code_;
+}
+
+void TestPersonalDataManager::ClearAllLocalData() {
+  web_profiles_.clear();
+  local_credit_cards_.clear();
 }
 
 bool TestPersonalDataManager::IsDataLoaded() const {

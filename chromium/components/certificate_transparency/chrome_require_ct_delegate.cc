@@ -17,6 +17,7 @@
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/values.h"
@@ -110,7 +111,7 @@ bool ParseOrganizationBoundName(net::der::Input dn_without_sequence,
 bool AreCertsSameOrganization(const net::RDNSequence& leaf_rdn_sequence,
                               CRYPTO_BUFFER* org_cert) {
   scoped_refptr<net::ParsedCertificate> parsed_org =
-      net::ParsedCertificate::Create(net::x509_util::DupCryptoBuffer(org_cert),
+      net::ParsedCertificate::Create(bssl::UpRef(org_cert),
                                      net::ParseCertificateOptions(), nullptr);
   if (!parsed_org)
     return false;
@@ -295,7 +296,7 @@ bool ChromeRequireCTDelegate::MatchSPKI(const net::X509Certificate* chain,
   // the organization information to itself.
   net::HashValue hash;
   if (net::x509_util::CalculateSha256SpkiHash(leaf_cert, &hash) &&
-      std::find(matches.begin(), matches.end(), hash) != matches.end()) {
+      base::ContainsValue(matches, hash)) {
     *ct_required = false;
     return true;
   }
@@ -305,7 +306,7 @@ bool ChromeRequireCTDelegate::MatchSPKI(const net::X509Certificate* chain,
   std::vector<CRYPTO_BUFFER*> candidates;
   for (const auto& buffer : chain->intermediate_buffers()) {
     if (net::x509_util::CalculateSha256SpkiHash(buffer.get(), &hash) &&
-        std::find(matches.begin(), matches.end(), hash) != matches.end()) {
+        base::ContainsValue(matches, hash)) {
       candidates.push_back(buffer.get());
     }
   }
@@ -314,7 +315,7 @@ bool ChromeRequireCTDelegate::MatchSPKI(const net::X509Certificate* chain,
     return false;
 
   scoped_refptr<net::ParsedCertificate> parsed_leaf =
-      net::ParsedCertificate::Create(net::x509_util::DupCryptoBuffer(leaf_cert),
+      net::ParsedCertificate::Create(bssl::UpRef(leaf_cert),
                                      net::ParseCertificateOptions(), nullptr);
   if (!parsed_leaf)
     return false;

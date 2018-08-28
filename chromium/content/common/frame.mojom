@@ -4,6 +4,7 @@
 
 module content.mojom;
 
+import "content/common/navigation_client.mojom";
 import "content/common/navigation_params.mojom";
 import "content/common/service_worker/controller_service_worker.mojom";
 import "content/common/url_loader_factory_bundle.mojom";
@@ -14,6 +15,7 @@ import "content/public/common/window_container_type.mojom";
 import "mojo/public/mojom/base/string16.mojom";
 import "mojo/public/mojom/base/unguessable_token.mojom";
 import "services/network/public/mojom/url_loader.mojom";
+import "services/network/public/mojom/url_loader_factory.mojom";
 import "services/service_manager/public/mojom/interface_provider.mojom";
 import "services/viz/public/interfaces/compositing/surface_id.mojom";
 import "third_party/blink/public/mojom/blob/blob_url_store.mojom";
@@ -52,6 +54,8 @@ struct RequestNavigationParams;
 
 // Implemented by the frame provider and currently must be associated with the
 // legacy IPC channel.
+// KEEP THE COMMIT FUNCTIONS IN SYNC in content/common/navigation_client.mojom.
+// These will eventually be removed from FrameNavigationControl.
 interface FrameNavigationControl {
   // Tells the renderer that a navigation is ready to commit.
   //
@@ -60,8 +64,7 @@ interface FrameNavigationControl {
   // be the result of the committed navigation.
   //
   // Note: |url_loader_client_endpoints| will be empty iff the navigation URL
-  // wasn't handled by the network stack (i.e. JavaScript URLs, renderer debug
-  // URLs, same document navigations, about:blank, ...)
+  // wasn't handled by the network stack (i.e. about:blank, ...)
   //
   // When the Network Service is enabled, |subresource_loader_factories| may
   // also be provided by the browser as a a means for the renderer to load
@@ -70,6 +73,9 @@ interface FrameNavigationControl {
   // |controller_service_worker_info| may also be provided by the browser if the
   // frame that is being navigated is supposed to be controlled by a Service
   // Worker.
+  // |prefetch_loader_factory| is populated only when Network Service is
+  // enabled. The pointer is used to start a prefetch loading via the browser
+  // process.
   //
   // For automation driver-initiated navigations over the devtools protocol,
   // |devtools_navigation_token_| is used to tag the navigation. This navigation
@@ -89,7 +95,9 @@ interface FrameNavigationControl {
       URLLoaderFactoryBundle? subresource_loader_factories,
       array<TransferrableURLLoader>? subresource_overrides,
       ControllerServiceWorkerInfo? controller_service_worker_info,
-      mojo_base.mojom.UnguessableToken devtools_navigation_token);
+      network.mojom.URLLoaderFactory? prefetch_loader_factory,
+      mojo_base.mojom.UnguessableToken devtools_navigation_token)
+      => (blink.mojom.CommitResult commit_result);
 
   // Tells the renderer that a failed navigation is ready to commit.
   //
@@ -106,7 +114,8 @@ interface FrameNavigationControl {
       bool has_stale_copy_in_cache,
       int32 error_code,
       string? error_page_content,
-      URLLoaderFactoryBundle? subresource_loader_factories);
+      URLLoaderFactoryBundle? subresource_loader_factories)
+      => (blink.mojom.CommitResult commit_result);
 
   // Tells the renderer that a same-document navigation should be committed.
   // The renderer will return a status value indicating whether the commit
@@ -150,7 +159,10 @@ interface FrameFactory {
 
 struct CreateNewWindowParams {
   // True if this open request came in the context of a user gesture.
-  bool user_gesture;
+  //
+  // TODO(mustaq): We have cases where a user gesture is assumed to be
+  // there even when it's not the case.  See https://crbug.com/843233.
+  bool mimic_user_gesture;
 
   // Type of window requested.
   WindowContainerType window_container_type;
@@ -274,10 +286,16 @@ interface FrameHost {
   // cloneable, and thus can't contain mojo interfaces.
   // If an invalid BlobURLToken is passed in, or if the token doesn't match the
   // url in |common_params|, the navigation will result in a network error.
+  // |navigation_client| is passed to the renderer to allow for further control
+  // of the navigation. Allows for Commit and Cancels/Aborts. It is only valid
+  // when PerNavigationMojoInterface is enabled.
+  // TODO(ahemery): |navigation_client| should not be optional. Make it
+  // mandatory when removing PerNavigationMojoInterface feature flag.
   BeginNavigation(
       CommonNavigationParams common_params,
       BeginNavigationParams begin_params,
-      blink.mojom.BlobURLToken? blob_url_token);
+      blink.mojom.BlobURLToken? blob_url_token,
+      associated NavigationClient? navigation_client);
 
   // Sent when a subresource response has started.
   // |cert_status| is the bitmask of status info of the SSL certificate. (see
@@ -325,4 +343,8 @@ interface FrameHost {
   // correctly set the initial size of the frame in case of a cross-process
   // navigation.
   FrameSizeChanged(gfx.mojom.Size size);
+
+  // Notifies the browser that the current frame has either become or is no
+  // longer fullscreen.
+  FullscreenStateChanged(bool is_fullscreen);
 };

@@ -33,8 +33,6 @@
 
 namespace blink {
 
-class ScriptWrappableVisitor;
-
 class CORE_EXPORT PerformanceMark final : public PerformanceEntry {
   DEFINE_WRAPPERTYPEINFO();
 
@@ -46,11 +44,12 @@ class CORE_EXPORT PerformanceMark final : public PerformanceEntry {
     return new PerformanceMark(script_state, name, start_time, detail);
   }
 
+  AtomicString entryType() const override;
+  PerformanceEntryType EntryTypeEnum() const override;
+
   ScriptValue detail(ScriptState*) const;
 
   void Trace(blink::Visitor*) override;
-
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
  private:
   PerformanceMark(ScriptState*,

@@ -10,6 +10,8 @@
 #include "SkPathWriter.h"
 #include "SkPointPriv.h"
 
+#include <utility>
+
 /*
 After computing raw intersections, post process all segments to:
 - find small collections of points that can be collapsed to a single point
@@ -112,7 +114,8 @@ bool SkOpSegment::activeOp(SkOpSpanBase* start, SkOpSpanBase* end, int xorMiMask
     SkASSERT(abs(sumSuWinding) <= DEBUG_LIMIT_WIND_SUM);
 #endif
     if (this->operand()) {
-        SkTSwap<int>(sumMiWinding, sumSuWinding);
+        using std::swap;
+        swap(sumMiWinding, sumSuWinding);
     }
     return this->activeOp(xorMiMask, xorSuMask, start, end, op, &sumMiWinding, &sumSuWinding);
 }
@@ -324,14 +327,15 @@ void SkOpSegment::clearOne(SkOpSpan* span) {
     this->markDone(span);
 }
 
-bool SkOpSegment::collapsed(double s, double e) const {
+SkOpSpanBase::Collapsed SkOpSegment::collapsed(double s, double e) const {
     const SkOpSpanBase* span = &fHead;
     do {
-        if (span->collapsed(s, e)) {
-            return true;
+        SkOpSpanBase::Collapsed result = span->collapsed(s, e);
+        if (SkOpSpanBase::Collapsed::kNo != result) {
+            return result;
         }
     } while (span->upCastable() && (span = span->upCast()->next()));
-    return false;
+    return SkOpSpanBase::Collapsed::kNo;
 }
 
 void SkOpSegment::ComputeOneSum(const SkOpAngle* baseAngle, SkOpAngle* nextAngle,
@@ -343,7 +347,8 @@ void SkOpSegment::ComputeOneSum(const SkOpAngle* baseAngle, SkOpAngle* nextAngle
     if (binary) {
         sumSuWinding = baseSegment->updateOppWindingReverse(baseAngle);
         if (baseSegment->operand()) {
-            SkTSwap<int>(sumMiWinding, sumSuWinding);
+            using std::swap;
+            swap(sumMiWinding, sumSuWinding);
         }
     }
     SkOpSegment* nextSegment = nextAngle->segment();
@@ -372,7 +377,8 @@ void SkOpSegment::ComputeOneSumReverse(SkOpAngle* baseAngle, SkOpAngle* nextAngl
     if (binary) {
         sumSuWinding = baseSegment->updateOppWinding(baseAngle);
         if (baseSegment->operand()) {
-            SkTSwap<int>(sumMiWinding, sumSuWinding);
+            using std::swap;
+            swap(sumMiWinding, sumSuWinding);
         }
     }
     SkOpSegment* nextSegment = nextAngle->segment();
@@ -518,13 +524,14 @@ double SkOpSegment::distSq(double t, const SkOpAngle* oppAngle) const {
  Opposite values result from combining coincident spans.
  */
 SkOpSegment* SkOpSegment::findNextOp(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** nextStart,
-        SkOpSpanBase** nextEnd, bool* unsortable, SkPathOp op, int xorMiMask, int xorSuMask) {
+        SkOpSpanBase** nextEnd, bool* unsortable, bool* simple,
+        SkPathOp op, int xorMiMask, int xorSuMask) {
     SkOpSpanBase* start = *nextStart;
     SkOpSpanBase* end = *nextEnd;
     SkASSERT(start != end);
     int step = start->step(end);
     SkOpSegment* other = this->isSimple(nextStart, &step);  // advances nextStart
-    if (other) {
+    if ((*simple = other)) {
     // mark the smaller of startIndex, endIndex done, and all adjacent
     // spans with the same T value (but not 'other' spans)
 #if DEBUG_WINDING
@@ -569,7 +576,8 @@ SkOpSegment* SkOpSegment::findNextOp(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBa
     }
     int sumSuWinding = updateOppWinding(end, start);
     if (operand()) {
-        SkTSwap<int>(sumMiWinding, sumSuWinding);
+        using std::swap;
+        swap(sumMiWinding, sumSuWinding);
     }
     SkOpAngle* nextAngle = angle->next();
     const SkOpAngle* foundAngle = nullptr;
@@ -592,7 +600,7 @@ SkOpSegment* SkOpSegment::findNextOp(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBa
             continue;
         }
         if (!activeAngle) {
-            (void) nextSegment->markAndChaseDone(nextAngle->start(), nextAngle->end());
+            (void) nextSegment->markAndChaseDone(nextAngle->start(), nextAngle->end(), nullptr);
         }
         SkOpSpanBase* last = nextAngle->lastMarked();
         if (last) {
@@ -688,7 +696,7 @@ SkOpSegment* SkOpSegment::findNextWinding(SkTDArray<SkOpSpanBase*>* chase,
             continue;
         }
         if (!activeAngle) {
-            (void) nextSegment->markAndChaseDone(nextAngle->start(), nextAngle->end());
+            (void) nextSegment->markAndChaseDone(nextAngle->start(), nextAngle->end(), nullptr);
         }
         SkOpSpanBase* last = nextAngle->lastMarked();
         if (last) {
@@ -762,6 +770,9 @@ SkOpSegment* SkOpSegment::findNextXor(SkOpSpanBase** nextStart, SkOpSpanBase** n
     SkOpSegment* nextSegment;
     int activeCount = 0;
     do {
+        if (!nextAngle) {
+            return nullptr;
+        }
         nextSegment = nextAngle->segment();
         ++activeCount;
         if (!foundAngle || (foundDone && activeCount & 1)) {
@@ -833,7 +844,7 @@ void SkOpSegment::markAllDone() {
     } while ((span = span->next()->upCastable()));
 }
 
-SkOpSpanBase* SkOpSegment::markAndChaseDone(SkOpSpanBase* start, SkOpSpanBase* end) {
+ bool SkOpSegment::markAndChaseDone(SkOpSpanBase* start, SkOpSpanBase* end, SkOpSpanBase** found) {
     int step = start->step(end);
     SkOpSpan* minSpan = start->starter(end);
     markDone(minSpan);
@@ -841,19 +852,29 @@ SkOpSpanBase* SkOpSegment::markAndChaseDone(SkOpSpanBase* start, SkOpSpanBase* e
     SkOpSegment* other = this;
     SkOpSpan* priorDone = nullptr;
     SkOpSpan* lastDone = nullptr;
+    int safetyNet = 100000;
     while ((other = other->nextChase(&start, &step, &minSpan, &last))) {
+        if (!--safetyNet) {
+            return false;
+        }
         if (other->done()) {
             SkASSERT(!last);
             break;
         }
         if (lastDone == minSpan || priorDone == minSpan) {
-            return nullptr;
+            if (found) {
+                *found = nullptr;
+            }
+            return true;
         }
         other->markDone(minSpan);
         priorDone = lastDone;
         lastDone = minSpan;
     }
-    return last;
+    if (found) {
+        *found = last;
+    }
+    return true;
 }
 
 bool SkOpSegment::markAndChaseWinding(SkOpSpanBase* start, SkOpSpanBase* end, int winding,
@@ -1170,8 +1191,9 @@ bool SkOpSegment::missingCoincidence() {
             SkOpPtT* oppEnd = spanBase->ptT();
             bool swapped = priorPtT->fT > ptT->fT;
             if (swapped) {
-                SkTSwap(priorPtT, ptT);
-                SkTSwap(oppStart, oppEnd);
+                using std::swap;
+                swap(priorPtT, ptT);
+                swap(oppStart, oppEnd);
             }
             SkOpCoincidence* coincidences = this->globalState()->coincidence();
             SkOpPtT* rootPriorPtT = priorPtT->span()->ptT();
@@ -1198,7 +1220,8 @@ bool SkOpSegment::missingCoincidence() {
             }
     swapBack:
             if (swapped) {
-                SkTSwap(priorPtT, ptT);
+                using std::swap;
+                swap(priorPtT, ptT);
             }
         }
     } while ((spanBase = spanBase->final() ? nullptr : spanBase->upCast()->next()));

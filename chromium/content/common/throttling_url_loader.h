@@ -50,7 +50,8 @@ class CONTENT_EXPORT ThrottlingURLLoader
 
   ~ThrottlingURLLoader() override;
 
-  void FollowRedirect();
+  void FollowRedirect(
+      const base::Optional<net::HttpRequestHeaders>& modified_request_headers);
   void SetPriority(net::RequestPriority priority, int32_t intra_priority_value);
 
   // Disconnect the forwarding URLLoaderClient and the URLLoader. Returns the
@@ -101,12 +102,10 @@ class CONTENT_EXPORT ThrottlingURLLoader
 
   // network::mojom::URLLoaderClient implementation:
   void OnReceiveResponse(
-      const network::ResourceResponseHead& response_head,
-      network::mojom::DownloadedTempFilePtr downloaded_file) override;
+      const network::ResourceResponseHead& response_head) override;
   void OnReceiveRedirect(
       const net::RedirectInfo& redirect_info,
       const network::ResourceResponseHead& response_head) override;
-  void OnDataDownloaded(int64_t data_len, int64_t encoded_data_len) override;
   void OnUploadProgress(int64_t current_position,
                         int64_t total_size,
                         OnUploadProgressCallback ack_callback) override;
@@ -192,12 +191,11 @@ class CONTENT_EXPORT ThrottlingURLLoader
   std::unique_ptr<StartInfo> start_info_;
 
   struct ResponseInfo {
-    ResponseInfo(const network::ResourceResponseHead& in_response_head,
-                 network::mojom::DownloadedTempFilePtr in_downloaded_file);
+    explicit ResponseInfo(
+        const network::ResourceResponseHead& in_response_head);
     ~ResponseInfo();
 
     network::ResourceResponseHead response_head;
-    network::mojom::DownloadedTempFilePtr downloaded_file;
   };
   // Set if response is deferred.
   std::unique_ptr<ResponseInfo> response_info_;
@@ -232,6 +230,8 @@ class CONTENT_EXPORT ThrottlingURLLoader
   GURL response_url_;
 
   bool response_intercepted_ = false;
+
+  std::vector<std::string> to_be_removed_request_headers_;
 
   base::WeakPtrFactory<ThrottlingURLLoader> weak_factory_;
 

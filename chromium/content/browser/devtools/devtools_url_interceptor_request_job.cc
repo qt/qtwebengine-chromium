@@ -9,7 +9,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/devtools/protocol/page.h"
-#include "content/browser/loader/navigation_loader_util.h"
+#include "content/browser/loader/download_utils_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "ipc/ipc_channel.h"
 #include "net/base/completion_once_callback.h"
@@ -18,12 +18,13 @@
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_element_reader.h"
 #include "net/cert/cert_status_flags.h"
+#include "net/cookies/cookie_options.h"
+#include "net/cookies/cookie_store.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request_context.h"
 #include "third_party/blink/public/platform/resource_request_blocked_reason.h"
-
 namespace {
 static const int kInitialBufferSize = 4096;
 static const int kMaxBufferSize = IPC::Channel::kMaximumMessageSize / 4;
@@ -105,8 +106,8 @@ DevToolsURLInterceptorRequestJob::SubRequest::SubRequest(
             "This feature cannot be disabled in settings, however it happens "
             "only when user is debugging a page."
           chrome_policy {
-            DeveloperToolsDisabled {
-              DeveloperToolsDisabled: true
+            DeveloperToolsAvailability {
+              DeveloperToolsAvailability: 2
             }
           }
         })");
@@ -551,8 +552,8 @@ bool IsDownload(net::URLRequest* orig_request, net::URLRequest* subrequest) {
   std::string mime_type;
   subrequest->GetMimeType(&mime_type);
   return req_info->allow_download() &&
-         navigation_loader_util::IsDownload(
-             orig_request->url(), subrequest->response_headers(), mime_type);
+         download_utils::IsDownload(orig_request->url(),
+                                    subrequest->response_headers(), mime_type);
 }
 
 }  // namespace
@@ -604,6 +605,30 @@ void DevToolsURLInterceptorRequestJob::SetExtraRequestHeaders(
 }
 
 void DevToolsURLInterceptorRequestJob::Start() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  auto* store = request_details_.url_request_context->cookie_store();
+  if (!store || (request()->load_flags() & net::LOAD_DO_NOT_SEND_COOKIES)) {
+    StartWithCookies(net::CookieList());
+    return;
+  }
+
+  net::CookieOptions options;
+  options.set_include_httponly();
+  if (request()->attach_same_site_cookies()) {
+    options.set_same_site_cookie_mode(
+        net::CookieOptions::SameSiteCookieMode::INCLUDE_STRICT_AND_LAX);
+  }
+  store->GetCookieListWithOptionsAsync(
+      request_details_.url, options,
+      base::BindOnce(&DevToolsURLInterceptorRequestJob::StartWithCookies,
+                     weak_ptr_factory_.GetWeakPtr()));
+}
+
+void DevToolsURLInterceptorRequestJob::StartWithCookies(
+    const net::CookieList& cookie_list) {
+  request_details_.cookie_line =
+      net::CanonicalCookie::BuildCookieLine(cookie_list);
+
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (stage_to_intercept_ == InterceptionStage::DONT_INTERCEPT) {
     sub_request_.reset(new SubRequest(request_details_, this, interceptor_));
@@ -1057,7 +1082,8 @@ DevToolsURLInterceptorRequestJob::BuildRequestInfo() {
   auto result = std::make_unique<InterceptedRequestInfo>();
   result->interception_id = interception_id_;
   result->network_request =
-      protocol::NetworkHandler::CreateRequestFromURLRequest(request());
+      protocol::NetworkHandler::CreateRequestFromURLRequest(
+          request(), request_details_.cookie_line);
   result->frame_id = devtools_token_;
   result->resource_type = resource_type_;
   result->is_navigation =
@@ -1086,7 +1112,7 @@ void DevToolsURLInterceptorRequestJob::ProcessInterceptionResponse(
       // far, to minimize risk of breaking other usages.
       ResourceRequestInfoImpl* resource_request_info =
           ResourceRequestInfoImpl::ForRequest(request());
-      resource_request_info->set_resource_request_blocked_reason(
+      resource_request_info->SetResourceRequestBlockedReason(
           blink::ResourceRequestBlockedReason::kInspector);
     }
     NotifyStartError(net::URLRequestStatus(net::URLRequestStatus::FAILED,
@@ -1101,6 +1127,33 @@ void DevToolsURLInterceptorRequestJob::ProcessInterceptionResponse(
     std::string value;
     if (mock_response_details_->response_headers()->IsRedirect(&value)) {
       interceptor_->ExpectRequestAfterRedirect(request(), interception_id_);
+    }
+
+    // Set cookies in the network stack.
+    net::CookieOptions options;
+    options.set_include_httponly();
+    base::Time response_date;
+    if (!mock_response_details_->response_headers()->GetDateValue(
+            &response_date)) {
+      response_date = base::Time();
+    }
+    options.set_server_time(response_date);
+
+    const base::StringPiece name("Set-Cookie");
+    std::string cookie_line;
+    size_t iter = 0;
+    while (mock_response_details_->response_headers()->EnumerateHeader(
+        &iter, name, &cookie_line)) {
+      std::unique_ptr<net::CanonicalCookie> cookie =
+          net::CanonicalCookie::Create(request_details_.url, cookie_line,
+                                       base::Time::Now(), options);
+      if (!cookie)
+        continue;
+
+      auto* store = request_details_.url_request_context->cookie_store();
+      store->SetCanonicalCookieAsync(
+          std::move(cookie), request_details_.url.SchemeIsCryptographic(),
+          !options.exclude_httponly(), net::CookieStore::SetCookiesCallback());
     }
 
     if (sub_request_) {

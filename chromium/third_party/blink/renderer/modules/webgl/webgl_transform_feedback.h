@@ -51,10 +51,13 @@ class WebGLTransformFeedback : public WebGLContextObject {
   void UnbindBuffer(WebGLBuffer*);
 
   void Trace(blink::Visitor*) override;
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
 
   bool active() const { return active_; }
   bool paused() const { return paused_; }
+  const HeapVector<TraceWrapperMember<WebGLBuffer>>&
+  bound_indexed_transform_feedback_buffers() const {
+    return bound_indexed_transform_feedback_buffers_;
+  }
 
   void SetActive(bool active) {
     active_ = active;

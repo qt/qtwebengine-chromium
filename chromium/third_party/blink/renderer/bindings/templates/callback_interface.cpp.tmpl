@@ -63,13 +63,18 @@ v8::Local<v8::FunctionTemplate> {{v8_class}}::DomTemplate(v8::Isolate* isolate, 
 }
 {% endif %}{# is_legacy_callback_interface #}
 
+const char* {{v8_class}}::NameInHeapSnapshot() const {
+  return "{{v8_class}}";
+}
+
 {% for method in methods %}
 
 v8::Maybe<{{method.cpp_type}}> {{v8_class}}::{{method.name}}({{method.argument_declarations | join(', ')}}) {
   // This function implements "call a user object's operation".
   // https://heycam.github.io/webidl/#call-a-user-objects-operation
 
-  if (!IsCallbackFunctionRunnable(CallbackRelevantScriptState())) {
+  if (!IsCallbackFunctionRunnable(CallbackRelevantScriptState(),
+                                  IncumbentScriptState())) {
     // Wrapper-tracing for the callback function makes the function object and
     // its creation context alive. Thus it's safe to use the creation context
     // of the callback function here.
@@ -89,17 +94,6 @@ v8::Maybe<{{method.cpp_type}}> {{v8_class}}::{{method.name}}({{method.argument_d
   ScriptState::Scope callback_relevant_context_scope(
       CallbackRelevantScriptState());
   // step 8. Prepare to run a callback with stored settings.
-  {# TODO(yukishiino): Callback interface type value must make the incumbent
-     environment alive, i.e. the reference to v8::Context must be strong. #}
-  if (IncumbentScriptState()->GetContext().IsEmpty()) {
-    V8ThrowException::ThrowError(
-        GetIsolate(),
-        ExceptionMessages::FailedToExecute(
-            "{{method.name}}",
-            "{{cpp_class}}",
-            "The provided callback is no longer runnable."));
-    return v8::Nothing<{{method.cpp_type}}>();
-  }
   v8::Context::BackupIncumbentScope backup_incumbent_scope(
       IncumbentScriptState()->GetContext());
 
@@ -156,7 +150,7 @@ v8::Maybe<{{method.cpp_type}}> {{v8_class}}::{{method.name}}({{method.argument_d
                                    ExceptionState::kExecutionContext,
                                    "{{cpp_class}}",
                                    "{{method.name}}");
-    if (!IsValidEnum({{argument.name}}, {{valid_enum_variables}}, arraysize({{valid_enum_variables}}), "{{argument.enum_type}}", exception_state)) {
+    if (!IsValidEnum({{argument.name}}, {{valid_enum_variables}}, base::size({{valid_enum_variables}}), "{{argument.enum_type}}", exception_state)) { //
       NOTREACHED();
       return v8::Nothing<{{method.cpp_type}}>();
     }
@@ -236,7 +230,6 @@ void {{v8_class}}::InvokeAndReportException({{methods[0].argument_declarations |
 {% endif %}
 
 {% for method in methods %}
-{{exported|replace('_EXPORT', '_EXTERN_TEMPLATE_EXPORT')|trim}}
 v8::Maybe<{{method.cpp_type}}> V8PersistentCallbackInterface<{{v8_class}}>::{{method.name}}({{method.argument_declarations | join(', ')}}) {
   return Proxy()->{{method.name}}(
       {{
@@ -249,7 +242,6 @@ v8::Maybe<{{method.cpp_type}}> V8PersistentCallbackInterface<{{v8_class}}>::{{me
 {% endfor %}
 
 {% if methods|length == 1 and methods[0].idl_type == 'void' %}
-{{exported|replace('_EXPORT', '_EXTERN_TEMPLATE_EXPORT')|trim}}
 void V8PersistentCallbackInterface<{{v8_class}}>::InvokeAndReportException({{methods[0].argument_declarations | join(', ')}}) {
   Proxy()->InvokeAndReportException(
       {{

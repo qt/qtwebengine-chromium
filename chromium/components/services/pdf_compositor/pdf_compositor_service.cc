@@ -25,7 +25,7 @@
 #include "content/public/child/dwrite_font_proxy_init_win.h"
 #elif defined(OS_MACOSX)
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/skia/include/ports/SkFontMgr.h"
+#include "third_party/skia/include/core/SkFontMgr.h"
 #elif defined(OS_POSIX) && !defined(OS_ANDROID)
 #include "third_party/blink/public/platform/platform.h"
 #endif
@@ -66,7 +66,7 @@ std::unique_ptr<service_manager::Service> PdfCompositorService::Create(
 void PdfCompositorService::PrepareToStart() {
   // Set up discardable memory manager.
   discardable_memory::mojom::DiscardableSharedMemoryManagerPtr manager_ptr;
-  if (features::IsMashEnabled()) {
+  if (!features::IsAshInBrowserProcess()) {
 #if defined(USE_AURA)
     context()->connector()->BindInterface(ui::mojom::kServiceName,
                                           &manager_ptr);

@@ -7,7 +7,7 @@
 
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_param_descriptor.h"
-#include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_v8_reference.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -24,7 +24,7 @@ namespace blink {
 // must be called on the worker thread.
 class MODULES_EXPORT AudioWorkletProcessorDefinition final
     : public GarbageCollectedFinalized<AudioWorkletProcessorDefinition>,
-      public TraceWrapperBase {
+      public NameClient {
  public:
   static AudioWorkletProcessorDefinition* Create(
       v8::Isolate*,
@@ -47,9 +47,10 @@ class MODULES_EXPORT AudioWorkletProcessorDefinition final
   void MarkAsSynchronized() { is_synchronized_ = true; }
 
   void Trace(blink::Visitor* visitor) {
+    visitor->Trace(constructor_.Cast<v8::Value>());
+    visitor->Trace(process_.Cast<v8::Value>());
     visitor->Trace(audio_param_descriptors_);
   };
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "AudioWorkletProcessorDefinition";
   }

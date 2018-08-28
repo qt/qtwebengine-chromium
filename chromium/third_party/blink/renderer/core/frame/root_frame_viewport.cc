@@ -8,10 +8,13 @@
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/scroll_anchor.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/platform/geometry/double_rect.h"
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_alignment.h"
+#include "third_party/blink/renderer/platform/scroll/scroll_animator_base.h"
+#include "third_party/blink/renderer/platform/scroll/smooth_scroll_sequencer.h"
 
 namespace blink {
 namespace {
@@ -72,7 +75,7 @@ LayoutRect RootFrameViewport::RootContentsToLayoutViewportContents(
   // If the root LocalFrameView is the layout viewport then coordinates in the
   // root LocalFrameView's content space are already in the layout viewport's
   // content space.
-  if (root_frame_view.LayoutViewportScrollableArea() == &LayoutViewport())
+  if (root_frame_view.LayoutViewport() == &LayoutViewport())
     return ret;
 
   // Make the given rect relative to the top of the layout viewport's content
@@ -173,21 +176,21 @@ IntRect RootFrameViewport::VisibleContentRect(
       VisualViewport().VisibleContentRect(scrollbar_inclusion).Size());
 }
 
-LayoutRect RootFrameViewport::VisibleScrollSnapportRect() const {
-  // The current viewport is the one that excludes the scrollbars so
-  // we intersect the visual viewport with the scrollbar-excluded frameView
-  // content rect. However, we don't use visibleContentRect directly since it
+LayoutRect RootFrameViewport::VisibleScrollSnapportRect(
+    IncludeScrollbarsInRect scrollbar_inclusion) const {
+  // The effective viewport is the intersection of the visual viewport with the
+  // layout viewport. However, we don't use visibleContentRect directly since it
   // floors the scroll offset. Instead, we use ScrollAnimatorBase::currentOffset
   // and construct a LayoutRect from that.
   LayoutRect frame_rect_in_content = LayoutRect(
       FloatPoint(LayoutViewport().GetScrollAnimator().CurrentOffset()),
-      FloatSize(LayoutViewport().VisibleContentRect().Size()));
-  LayoutRect visual_rect_in_content =
-      LayoutRect(FloatPoint(ScrollOffsetFromScrollAnimators()),
-                 FloatSize(VisualViewport().VisibleContentRect().Size()));
+      FloatSize(
+          LayoutViewport().VisibleContentRect(scrollbar_inclusion).Size()));
+  LayoutRect visual_rect_in_content = LayoutRect(
+      FloatPoint(ScrollOffsetFromScrollAnimators()),
+      FloatSize(
+          VisualViewport().VisibleContentRect(scrollbar_inclusion).Size()));
 
-  // Intersect layout and visual rects to exclude the scrollbar from the view
-  // rect.
   LayoutRect visible_scroll_snapport =
       Intersection(visual_rect_in_content, frame_rect_in_content);
   if (!LayoutViewport().GetLayoutBox())
@@ -242,10 +245,6 @@ void RootFrameViewport::SetScrollOffset(const ScrollOffset& offset,
 
   if (scroll_behavior == kScrollBehaviorAuto)
     scroll_behavior = ScrollBehaviorStyle();
-
-  if (scroll_type == kProgrammaticScroll &&
-      !LayoutViewport().IsProgrammaticallyScrollable())
-    return;
 
   if (scroll_type == kAnchoringScroll) {
     DistributeScrollBetweenViewports(offset, scroll_type, scroll_behavior,
@@ -369,10 +368,6 @@ void RootFrameViewport::DistributeScrollBetweenViewports(
 
 IntSize RootFrameViewport::ScrollOffsetInt() const {
   return FlooredIntSize(GetScrollOffset());
-}
-
-IntPoint RootFrameViewport::ScrollOrigin() const {
-  return LayoutViewport().ScrollOrigin() + VisualViewport().ScrollOrigin();
 }
 
 ScrollOffset RootFrameViewport::GetScrollOffset() const {
@@ -528,6 +523,13 @@ bool RootFrameViewport::ScrollAnimatorEnabled() const {
 
 CompositorElementId RootFrameViewport::GetCompositorElementId() const {
   return LayoutViewport().GetCompositorElementId();
+}
+
+CompositorElementId RootFrameViewport::GetScrollbarElementId(
+    ScrollbarOrientation orientation) {
+  return VisualViewport().VisualViewportSuppliesScrollbars()
+             ? VisualViewport().GetScrollbarElementId(orientation)
+             : LayoutViewport().GetScrollbarElementId(orientation);
 }
 
 PlatformChromeClient* RootFrameViewport::GetChromeClient() const {

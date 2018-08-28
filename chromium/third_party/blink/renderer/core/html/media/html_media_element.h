@@ -33,18 +33,17 @@
 #include "third_party/blink/public/platform/web_audio_source_provider_client.h"
 #include "third_party/blink/public/platform/web_media_player_client.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
-#include "third_party/blink/renderer/bindings/core/v8/exception_state.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/events/media_element_event_queue.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/dom/pausable_object.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html/media/media_controls.h"
 #include "third_party/blink/renderer/platform/audio/audio_source_provider.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
+#include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/web_task_runner.h"
 
 namespace cc {
@@ -61,14 +60,16 @@ class ContentType;
 class CueTimeline;
 class EnumerationHistogram;
 class Event;
+class EventQueue;
 class ExceptionState;
 class HTMLMediaElementControlsList;
+class HTMLMediaSource;
 class HTMLSourceElement;
 class HTMLTrackElement;
 class KURL;
 class MediaError;
 class MediaStreamDescriptor;
-class HTMLMediaSource;
+class ScriptPromiseResolver;
 class ScriptState;
 class TextTrack;
 class TextTrackContainer;
@@ -110,8 +111,6 @@ class CORE_EXPORT HTMLMediaElement
 
   void Trace(blink::Visitor*) override;
 
-  void TraceWrappers(ScriptWrappableVisitor*) const override;
-
   void ClearWeakMembers(Visitor*);
   WebMediaPlayer* GetWebMediaPlayer() const { return web_media_player_.get(); }
 
@@ -140,6 +139,7 @@ class CORE_EXPORT HTMLMediaElement
 
   // network state
   void SetSrc(const AtomicString&);
+  void SetSrc(const USVStringOrTrustedURL&, ExceptionState&);
   const KURL& currentSrc() const { return current_src_; }
   void SetSrcObject(MediaStreamDescriptor*);
   MediaStreamDescriptor* GetSrcObject() const { return src_object_.Get(); }
@@ -191,7 +191,7 @@ class CORE_EXPORT HTMLMediaElement
   bool Loop() const;
   void SetLoop(bool);
   ScriptPromise playForBindings(ScriptState*);
-  base::Optional<ExceptionCode> Play();
+  base::Optional<DOMExceptionCode> Play();
   void pause();
   void RequestRemotePlayback();
   void RequestRemotePlaybackControl();
@@ -401,7 +401,6 @@ class CORE_EXPORT HTMLMediaElement
   void Repaint() final;
   void DurationChanged() final;
   void SizeChanged() final;
-  void PlaybackStateChanged() final;
 
   void SetCcLayer(cc::Layer*) final;
   WebMediaPlayer::TrackId AddAudioTrack(const WebString&,
@@ -430,7 +429,7 @@ class CORE_EXPORT HTMLMediaElement
   void OnBecamePersistentVideo(bool) override {}
   bool HasSelectedVideoTrack() final;
   WebMediaPlayer::TrackId GetSelectedVideoTrackId() final;
-  bool IsAutoplayingMuted() final;
+  bool WasAlwaysMuted() final;
   void ActivateViewportIntersectionMonitoring(bool) final;
   bool HasNativeControls() final;
   bool IsAudioElement() final;
@@ -441,6 +440,8 @@ class CORE_EXPORT HTMLMediaElement
   gfx::ColorSpace TargetColorSpace() override;
   bool WasAutoplayInitiated() override;
   bool IsInAutoPIP() const override { return false; }
+  void RequestPlay() final;
+  void RequestPause() final;
 
   void LoadTimerFired(TimerBase*);
   void ProgressEventTimerFired(TimerBase*);
@@ -537,27 +538,23 @@ class CORE_EXPORT HTMLMediaElement
   DirectionOfPlayback GetDirectionOfPlayback() const;
 
   // Creates placeholder AudioTrack and/or VideoTrack objects when
-  // WebMemediaPlayer objects advertise they have audio and/or video, but don't
+  // WebMediaPlayer objects advertise they have audio and/or video, but don't
   // explicitly signal them via addAudioTrack() and addVideoTrack().
   // FIXME: Remove this once all WebMediaPlayer implementations properly report
   // their track info.
   void CreatePlaceholderTracksIfNecessary();
-
-  // Sets the selected/enabled tracks if they aren't set before we initially
-  // transition to kHaveMetadata.
-  void SelectInitialTracksIfNecessary();
 
   void SetNetworkState(NetworkState);
 
   void AudioTracksTimerFired(TimerBase*);
 
   void ScheduleResolvePlayPromises();
-  void ScheduleRejectPlayPromises(ExceptionCode);
+  void ScheduleRejectPlayPromises(DOMExceptionCode);
   void ScheduleNotifyPlaying();
   void ResolveScheduledPlayPromises();
   void RejectScheduledPlayPromises();
-  void RejectPlayPromises(ExceptionCode, const String&);
-  void RejectPlayPromisesInternal(ExceptionCode, const String&);
+  void RejectPlayPromises(DOMExceptionCode, const String&);
+  void RejectPlayPromisesInternal(DOMExceptionCode, const String&);
 
   EnumerationHistogram& ShowControlsHistogram() const;
 
@@ -568,7 +565,7 @@ class CORE_EXPORT HTMLMediaElement
   TaskRunnerTimer<HTMLMediaElement> check_viewport_intersection_timer_;
 
   Member<TimeRanges> played_time_ranges_;
-  Member<MediaElementEventQueue> async_event_queue_;
+  Member<EventQueue> async_event_queue_;
 
   double playback_rate_;
   double default_playback_rate_;
@@ -664,6 +661,8 @@ class CORE_EXPORT HTMLMediaElement
 
   bool mostly_filling_viewport_ : 1;
 
+  bool was_always_muted_ : 1;
+
   TraceWrapperMember<AudioTrackList> audio_tracks_;
   TraceWrapperMember<VideoTrackList> video_tracks_;
   TraceWrapperMember<TextTrackList> text_tracks_;
@@ -676,7 +675,7 @@ class CORE_EXPORT HTMLMediaElement
   TaskHandle play_promise_reject_task_handle_;
   HeapVector<Member<ScriptPromiseResolver>> play_promise_resolve_list_;
   HeapVector<Member<ScriptPromiseResolver>> play_promise_reject_list_;
-  ExceptionCode play_promise_error_code_;
+  DOMExceptionCode play_promise_error_code_;
 
   // This is a weak reference, since audio_source_node_ holds a reference to us.
   // TODO(Oilpan): Consider making this a strongly traced pointer with oilpan
@@ -744,6 +743,7 @@ class CORE_EXPORT HTMLMediaElement
   friend class MediaControlsRotateToFullscreenDelegateTest;
   friend class MediaControlLoadingPanelElementTest;
   friend class ContextMenuControllerTest;
+  friend class HTMLVideoElementTest;
 
   Member<AutoplayPolicy> autoplay_policy_;
 

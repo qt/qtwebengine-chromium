@@ -251,6 +251,10 @@ static_library("angle_gpu_info_util") {
   libs = []
   defines = []
 
+  if (is_android) {
+    sources += [ "src/gpu_info_util/SystemInfo_android.cpp" ]
+  }
+
   if (is_win) {
     sources +=
         rebase_path(gles_gypi.libangle_gpu_info_util_win_sources, ".", "src")
@@ -433,7 +437,7 @@ if (angle_enable_vulkan) {
       "$angle_root/third_party/glslang:glslang",
     ]
     public_deps = [
-      "$angle_root/third_party/vulkan-validation-layers:vulkan_headers",
+      "$angle_root/third_party/vulkan-headers:vulkan_headers",
     ]
     public_configs = [
       "$angle_root/third_party/glslang:glslang_config",
@@ -441,12 +445,10 @@ if (angle_enable_vulkan) {
     ]
     data_deps = []
     if (!is_android) {
-      deps += [ "$angle_root/third_party/vulkan-validation-layers:libvulkan" ]
-      data_deps +=
-          [ "$angle_root/third_party/vulkan-validation-layers:VkICD_mock_icd" ]
-      public_configs += [
-        "$angle_root/third_party/vulkan-validation-layers:vulkan_loader_config",
-      ]
+      deps += [ "$angle_root/third_party/vulkan-loader:libvulkan" ]
+      data_deps += [ "$angle_root/third_party/vulkan-tools:VkICD_mock_icd" ]
+      public_configs +=
+          [ "$angle_root/third_party/vulkan-loader:vulkan_loader_config" ]
     }
 
     if (angle_enable_vulkan_validation_layers) {
@@ -561,8 +563,7 @@ static_library("libANGLE") {
           rebase_path(gles_gypi.libangle_vulkan_android_sources, ".", "src")
     }
     deps += [ ":angle_vulkan" ]
-    public_deps +=
-        [ "$angle_root/third_party/vulkan-validation-layers:vulkan_headers" ]
+    public_deps += [ "$angle_root/third_party/vulkan-headers:vulkan_headers" ]
 
     # Include generated shaders.
     import("src/libANGLE/renderer/vulkan/vk_internal_shaders_autogen.gni")
@@ -661,7 +662,6 @@ shared_library("libGLESv2${angle_libs_suffix}") {
   deps = [
     ":includes",
     ":libANGLE",
-    "//build/config:exe_and_shlib_deps",
   ]
 }
 
@@ -724,7 +724,6 @@ shared_library("libGLESv1_CM${angle_libs_suffix}") {
   deps = [
     ":includes",
     ":libGLESv2${angle_libs_suffix}",
-    "//build/config:exe_and_shlib_deps",
   ]
 }
 
@@ -784,7 +783,6 @@ shared_library("libEGL${angle_libs_suffix}") {
   deps = [
     ":includes",
     ":libGLESv2${angle_libs_suffix}",
-    "//build/config:exe_and_shlib_deps",
   ]
 }
 
@@ -871,12 +869,10 @@ foreach(is_shared_library,
       set_sources_assignment_filter([])
       sources += rebase_path(util_gypi.util_linux_sources, ".", "util")
       sources += rebase_path(util_gypi.util_android_sources, ".", "util")
-      if (ndk_supports_nativewindow) {
-        libs += [ "nativewindow" ]
-      } else {
-        libs += [ "android" ]
-      }
-      libs += [ "log" ]
+      libs += [
+        "android",
+        "log",
+      ]
     }
 
     if (use_ozone) {
@@ -902,8 +898,6 @@ foreach(is_shared_library,
     if (is_shared_library) {
       defines = [ "LIBANGLE_UTIL_IMPLEMENTATION" ]
 
-      deps += [ "//build/config:exe_and_shlib_deps" ]
-
       if (is_mac && !is_component_build) {
         ldflags = [
           "-install_name",
@@ -927,7 +921,6 @@ executable("angle_shader_translator") {
 
   deps = [
     ":translator",
-    "//build/config:exe_and_shlib_deps",
   ]
 }
 

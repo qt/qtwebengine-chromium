@@ -209,13 +209,10 @@ static int ssl_cert_set_chain(CERT *cert, STACK_OF(X509) *chain) {
       return 0;
     }
 
-    CRYPTO_BUFFER *leaf = sk_CRYPTO_BUFFER_value(cert->chain.get(), 0);
-    if (!sk_CRYPTO_BUFFER_push(new_chain.get(), leaf)) {
-      return 0;
-    }
     // |leaf| might be NULL if it's a “leafless” chain.
-    if (leaf != nullptr) {
-      CRYPTO_BUFFER_up_ref(leaf);
+    CRYPTO_BUFFER *leaf = sk_CRYPTO_BUFFER_value(cert->chain.get(), 0);
+    if (!PushToStack(new_chain.get(), UpRef(leaf))) {
+      return 0;
     }
   }
 
@@ -286,7 +283,7 @@ static void ssl_crypto_x509_cert_dup(CERT *new_cert, const CERT *cert) {
 
 static int ssl_crypto_x509_session_cache_objects(SSL_SESSION *sess) {
   bssl::UniquePtr<STACK_OF(X509)> chain;
-  if (sk_CRYPTO_BUFFER_num(sess->certs) > 0) {
+  if (sk_CRYPTO_BUFFER_num(sess->certs.get()) > 0) {
     chain.reset(sk_X509_new_null());
     if (!chain) {
       OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
@@ -295,7 +292,7 @@ static int ssl_crypto_x509_session_cache_objects(SSL_SESSION *sess) {
   }
 
   X509 *leaf = nullptr;
-  for (CRYPTO_BUFFER *cert : sess->certs) {
+  for (CRYPTO_BUFFER *cert : sess->certs.get()) {
     UniquePtr<X509> x509(X509_parse_from_buffer(cert));
     if (!x509) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
@@ -552,12 +549,11 @@ STACK_OF(X509) *SSL_get_peer_cert_chain(const SSL *ssl) {
 
     for (size_t i = 1; i < sk_X509_num(session->x509_chain); i++) {
       X509 *cert = sk_X509_value(session->x509_chain, i);
-      if (!sk_X509_push(session->x509_chain_without_leaf, cert)) {
+      if (!PushToStack(session->x509_chain_without_leaf, UpRef(cert))) {
         sk_X509_pop_free(session->x509_chain_without_leaf, X509_free);
         session->x509_chain_without_leaf = NULL;
         return NULL;
       }
-      X509_up_ref(cert);
     }
   }
 

@@ -17,14 +17,16 @@
 #include "SkImageFilter.h"
 #include "SkMaskFilter.h"
 #include "SkNullCanvas.h"
+#include "SkOSFile.h"
 #include "SkPathEffect.h"
+#include "SkPicturePriv.h"
 #include "SkPictureRecorder.h"
 #include "SkPoint3.h"
 #include "SkRSXform.h"
 #include "SkRegion.h"
 #include "SkSurface.h"
+#include "SkTo.h"
 #include "SkTypeface.h"
-#include "SkOSFile.h"
 
 // EFFECTS
 #include "Sk1DPathEffect.h"
@@ -61,15 +63,23 @@
 #include "SkXfermodeImageFilter.h"
 
 // SRC
+#include "SkCommandLineFlags.h"
 #include "SkUtils.h"
 
 #if SK_SUPPORT_GPU
 #include "GrContextFactory.h"
+#include "GrContextPriv.h"
+#include "gl/GrGLFunctions.h"
+#include "gl/GrGLGpu.h"
+#include "gl/GrGLUtil.h"
 #endif
 
 // MISC
 
 #include <iostream>
+#include <utility>
+
+DEFINE_bool2(gpuInfo, g, false, "Display GPU information on relevant targets.");
 
 // TODO:
 //   SkTextBlob with Unicode
@@ -498,13 +508,17 @@ static sk_sp<SkMaskFilter> make_fuzz_maskfilter(Fuzz* fuzz) {
             SkScalar sigma;
             fuzz->next(&sigma);
             SkRect occluder{0.0f, 0.0f, 0.0f, 0.0f};
-            if (make_fuzz_t<bool>(fuzz)) {
+            bool useOccluder;
+            fuzz->next(&useOccluder);
+            if (useOccluder) {
                 fuzz->next(&occluder);
             }
-            uint32_t flags;
-            fuzz->nextRange(&flags, 0, 1);
-            bool respectCTM = flags != 0;
-            return SkMaskFilter::MakeBlur(blurStyle, sigma, occluder, respectCTM);
+            bool respectCTM;
+            fuzz->next(&respectCTM);
+            if (useOccluder) {
+                return SkMaskFilter::MakeBlur(blurStyle, sigma, occluder, respectCTM);
+            }
+            return SkMaskFilter::MakeBlur(blurStyle, sigma, respectCTM);
         }
         default:
             SkASSERT(false);
@@ -890,7 +904,7 @@ static SkBitmap make_fuzz_bitmap(Fuzz* fuzz) {
     fuzz->nextRange(&w, 1, 1024);
     fuzz->nextRange(&h, 1, 1024);
     if (!bitmap.tryAllocN32Pixels(w, h)) {
-        SkDEBUGF(("Could not allocate pixels %d x %d", w, h));
+        SkDEBUGF("Could not allocate pixels %d x %d", w, h);
         return bitmap;
     }
     for (int y = 0; y < h; ++y) {
@@ -1077,11 +1091,20 @@ static sk_sp<SkTextBlob> make_fuzz_textblob(Fuzz* fuzz) {
     return textBlobBuilder.make();
 }
 
+extern std::atomic<bool> gSkUseDeltaAA;
+extern std::atomic<bool> gSkForceDeltaAA;
+
 static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
     if (!fuzz || !canvas || depth <= 0) {
         return;
     }
     SkAutoCanvasRestore autoCanvasRestore(canvas, false);
+    bool useDAA;
+    fuzz->next(&useDAA);
+    if (useDAA) {
+        gSkForceDeltaAA = true;
+        gSkUseDeltaAA = true;
+    }
     unsigned N;
     fuzz->nextRange(&N, 0, 2000);
     for (unsigned i = 0; i < N; ++i) {
@@ -1560,7 +1583,8 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
                 paint.getTextWidths(text.begin(), SkToSizeT(text.count()), widths.get());
                 SkScalar x = widths[0];
                 for (int i = 0; i < glyphCount; ++i) {
-                    SkTSwap(x, widths[i]);
+                    using std::swap;
+                    swap(x, widths[i]);
                     x += widths[i];
                     SkScalar offset;
                     fuzz->nextRange(&offset, -0.125f * paint.getTextSize(),
@@ -1714,7 +1738,7 @@ DEF_FUZZ(RasterN32CanvasViaSerialization, fuzz) {
     sk_sp<SkData> data = pic->serialize();
     if (!data) { fuzz->signalBug(); }
     SkReadBuffer rb(data->data(), data->size());
-    auto deserialized = SkPicture::MakeFromBuffer(rb);
+    auto deserialized = SkPicturePriv::MakeFromBuffer(rb);
     if (!deserialized) { fuzz->signalBug(); }
     auto surface = SkSurface::MakeRasterN32Premul(kCanvasSize.width(), kCanvasSize.height());
     SkASSERT(surface && surface->getCanvas());
@@ -1788,6 +1812,21 @@ DEF_FUZZ(SerializedImageFilter, fuzz) {
 }
 
 #if SK_SUPPORT_GPU
+
+static void dump_GPU_info(GrContext* context) {
+    const GrGLInterface* gl = static_cast<GrGLGpu*>(context->contextPriv().getGpu())
+                                    ->glInterface();
+    const GrGLubyte* output;
+    GR_GL_CALL_RET(gl, output, GetString(GR_GL_RENDERER));
+    SkDebugf("GL_RENDERER %s\n", (const char*) output);
+
+    GR_GL_CALL_RET(gl, output, GetString(GR_GL_VENDOR));
+    SkDebugf("GL_VENDOR %s\n", (const char*) output);
+
+    GR_GL_CALL_RET(gl, output, GetString(GR_GL_VERSION));
+    SkDebugf("GL_VERSION %s\n", (const char*) output);
+}
+
 static void fuzz_ganesh(Fuzz* fuzz, GrContext* context) {
     SkASSERT(context);
     auto surface = SkSurface::MakeRenderTarget(
@@ -1804,6 +1843,9 @@ DEF_FUZZ(NativeGLCanvas, fuzz) {
     if (!context) {
         context = f.get(sk_gpu_test::GrContextFactory::kGLES_ContextType);
     }
+    if (FLAGS_gpuInfo) {
+        dump_GPU_info(context);
+    }
     fuzz_ganesh(fuzz, context);
 }
 
@@ -1812,13 +1854,6 @@ DEF_FUZZ(NativeGLCanvas, fuzz) {
 DEF_FUZZ(NullGLCanvas, fuzz) {
     sk_gpu_test::GrContextFactory f;
     fuzz_ganesh(fuzz, f.get(sk_gpu_test::GrContextFactory::kNullGL_ContextType));
-}
-
-// This target is deprecated, DebugGLContext is not well maintained.
-// Please use MockGPUCanvas instead.
-DEF_FUZZ(DebugGLCanvas, fuzz) {
-    sk_gpu_test::GrContextFactory f;
-    fuzz_ganesh(fuzz, f.get(sk_gpu_test::GrContextFactory::kDebugGL_ContextType));
 }
 
 DEF_FUZZ(MockGPUCanvas, fuzz) {

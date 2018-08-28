@@ -10,7 +10,7 @@
 #include <memory>
 
 #include "base/macros.h"
-#include "base/test/histogram_tester.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -918,7 +918,7 @@ TEST(EventTest, MouseEventLatencyUIComponentExists) {
   const gfx::Point origin(0, 0);
   MouseEvent mouseev(ET_MOUSE_PRESSED, origin, origin, EventTimeForNow(), 0, 0);
   EXPECT_TRUE(mouseev.latency()->FindLatency(
-      ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, nullptr));
+      ui::INPUT_EVENT_LATENCY_UI_COMPONENT, nullptr));
 }
 
 TEST(EventTest, MouseWheelEventLatencyUIComponentExists) {
@@ -926,7 +926,7 @@ TEST(EventTest, MouseWheelEventLatencyUIComponentExists) {
   MouseWheelEvent mouseWheelev(gfx::Vector2d(), origin, origin,
                                EventTimeForNow(), 0, 0);
   EXPECT_TRUE(mouseWheelev.latency()->FindLatency(
-      ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, nullptr));
+      ui::INPUT_EVENT_LATENCY_UI_COMPONENT, nullptr));
 }
 
 TEST(EventTest, PointerEventToMouseEvent) {

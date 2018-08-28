@@ -13,7 +13,6 @@
 #include "third_party/blink/renderer/core/animation/keyframe_effect_model.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "v8/include/v8.h"
 
@@ -71,7 +70,8 @@ TEST(AnimationEffectInputTest, UnsortedOffsets) {
   EffectInput::Convert(element, js_keyframes, EffectModel::kCompositeReplace,
                        scope.GetScriptState(), scope.GetExceptionState());
   EXPECT_TRUE(scope.GetExceptionState().HadException());
-  EXPECT_EQ(kV8TypeError, scope.GetExceptionState().Code());
+  EXPECT_EQ(ESErrorType::kTypeError,
+            scope.GetExceptionState().CodeAs<ESErrorType>());
 }
 
 TEST(AnimationEffectInputTest, LooslySorted) {
@@ -157,7 +157,8 @@ TEST(AnimationEffectInputTest, Invalid) {
   EffectInput::Convert(element, js_keyframes, EffectModel::kCompositeReplace,
                        scope.GetScriptState(), scope.GetExceptionState());
   EXPECT_TRUE(scope.GetExceptionState().HadException());
-  EXPECT_EQ(kV8TypeError, scope.GetExceptionState().Code());
+  EXPECT_EQ(ESErrorType::kTypeError,
+            scope.GetExceptionState().CodeAs<ESErrorType>());
 }
 
 }  // namespace blink

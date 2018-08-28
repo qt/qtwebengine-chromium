@@ -37,6 +37,8 @@ extern "C" {
 #define BO_USE_CAMERA_READ		(1ull << 14)
 #define BO_USE_RENDERSCRIPT		(1ull << 16)
 #define BO_USE_TEXTURE			(1ull << 17)
+#define BO_USE_HW_VIDEO_DECODER		(1ull << 18)
+
 
 /* Map flags */
 #define BO_MAP_NONE 0
@@ -84,6 +86,7 @@ struct vma {
 	uint32_t handle;
 	uint32_t map_flags;
 	int32_t refcount;
+	uint32_t map_strides[DRV_MAX_PLANES];
 	void *priv;
 };
 
@@ -130,7 +133,7 @@ int drv_bo_unmap(struct bo *bo, struct mapping *mapping);
 
 int drv_bo_invalidate(struct bo *bo, struct mapping *mapping);
 
-int drv_bo_flush(struct bo *bo, struct mapping *mapping);
+int drv_bo_flush_or_unmap(struct bo *bo, struct mapping *mapping);
 
 uint32_t drv_bo_get_width(struct bo *bo);
 
@@ -154,7 +157,7 @@ uint64_t drv_bo_get_plane_format_modifier(struct bo *bo, size_t plane);
 
 uint32_t drv_bo_get_format(struct bo *bo);
 
-uint32_t drv_bo_get_stride_in_pixels(struct bo *bo);
+uint32_t drv_bytes_per_pixel_from_format(uint32_t format, size_t plane);
 
 uint32_t drv_stride_from_format(uint32_t format, uint32_t width, size_t plane);
 
@@ -163,6 +166,14 @@ uint32_t drv_resolve_format(struct driver *drv, uint32_t format, uint64_t use_fl
 size_t drv_num_planes_from_format(uint32_t format);
 
 uint32_t drv_num_buffers_per_bo(struct bo *bo);
+
+#define drv_log(format, ...)                                                                       \
+	do {                                                                                       \
+		drv_log_prefix("minigbm", __FILE__, __LINE__, format, ##__VA_ARGS__);              \
+	} while (0)
+
+__attribute__((format(printf, 4, 5))) void drv_log_prefix(const char *prefix, const char *file,
+							  int line, const char *format, ...);
 
 #ifdef __cplusplus
 }

@@ -18,10 +18,10 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
-#include "components/viz/client/frame_evictor.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/quads/selection.h"
+#include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "content/browser/renderer_host/input/mouse_wheel_phase_handler.h"
 #include "content/browser/renderer_host/input/stylus_text_selector.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -73,8 +73,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       public ui::TouchSelectionControllerClient,
       public ui::ViewAndroidObserver,
       public ui::WindowAndroidObserver,
-      public viz::BeginFrameObserver,
-      public viz::FrameEvictorClient {
+      public viz::BeginFrameObserver {
  public:
   RenderWidgetHostViewAndroid(RenderWidgetHostImpl* widget,
                               gfx::NativeView parent_native_view);
@@ -170,7 +169,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnDidNavigateMainFrameToNewPage() override;
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
   void SetWantsAnimateOnlyBeginFrames() override;
-  viz::FrameSinkId GetFrameSinkId() override;
+  const viz::FrameSinkId& GetFrameSinkId() const override;
   bool TransformPointToLocalCoordSpaceLegacy(
       const gfx::PointF& point,
       const viz::SurfaceId& original_surface,
@@ -184,7 +183,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       viz::EventSource source = viz::EventSource::ANY) override;
   TouchSelectionControllerClientManager*
   GetTouchSelectionControllerClientManager() override;
-  viz::LocalSurfaceId GetLocalSurfaceId() const override;
+  const viz::LocalSurfaceId& GetLocalSurfaceId() const override;
   void OnRenderWidgetInit() override;
   void TakeFallbackContentFrom(RenderWidgetHostView* view) override;
   void OnSynchronizedDisplayPropertiesChanged() override;
@@ -207,6 +206,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // ui::GestureProviderClient implementation.
   void OnGestureEvent(const ui::GestureEventData& gesture) override;
+  bool RequiresDoubleTapGestureEvents() const override;
 
   // ui::WindowAndroidObserver implementation.
   void OnCompositingDidCommit() override {}
@@ -216,9 +216,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnAnimate(base::TimeTicks begin_frame_time) override;
   void OnActivityStopped() override;
   void OnActivityStarted() override;
-
-  // viz::FrameEvictor implementation
-  void EvictDelegatedFrame() override;
 
   // StylusTextSelectorClient implementation.
   void OnStylusSelectBegin(float x0, float y0, float x1, float y1) override;
@@ -240,12 +237,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // DelegatedFrameHostAndroid::Client implementation.
   void SetBeginFrameSource(viz::BeginFrameSource* begin_frame_source) override;
-  void DidReceiveCompositorFrameAck() override;
-  void DidPresentCompositorFrame(uint32_t presentation_token,
-                                 base::TimeTicks time,
-                                 base::TimeDelta refresh,
-                                 uint32_t flags) override;
-  void DidDiscardCompositorFrame(uint32_t presentation_token) override;
+  void DidPresentCompositorFrame(
+      uint32_t presentation_token,
+      const gfx::PresentationFeedback& feedback) override;
+  void DidReceiveCompositorFrameAck(
+      const std::vector<viz::ReturnedResource>& resources) override;
   void ReclaimResources(
       const std::vector<viz::ReturnedResource>& resources) override;
   void OnFrameTokenChanged(uint32_t frame_token) override;
@@ -296,7 +292,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void SetDoubleTapSupportEnabled(bool enabled);
   void SetMultiTouchZoomSupportEnabled(bool enabled);
 
-  bool SynchronizeVisualProperties();
+  bool SynchronizeVisualProperties(const cc::DeadlinePolicy& deadline_policy,
+                                   const base::Optional<viz::LocalSurfaceId>&
+                                       child_allocated_local_surface_id);
 
   bool HasValidFrame() const;
 
@@ -343,6 +341,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void GotFocus();
   void LostFocus();
 
+  // RenderFrameMetadataProvider::Observer
+  void OnRenderFrameMetadataChangedBeforeActivation(
+      const cc::RenderFrameMetadata& metadata) override;
+
  protected:
   // RenderWidgetHostViewBase:
   void UpdateBackgroundColor() override;
@@ -350,15 +352,20 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
  private:
   MouseWheelPhaseHandler* GetMouseWheelPhaseHandler() override;
 
-  void RunAckCallbacks();
+  void EvictDelegatedFrame();
 
   bool ShouldRouteEvents() const;
-  void SendReclaimCompositorResources(bool is_swap_ack);
 
   void OnFrameMetadataUpdated(
       const viz::CompositorFrameMetadata& frame_metadata,
       bool is_transparent);
 
+  void UpdateTouchSelectionController(
+      const viz::Selection<gfx::SelectionBound>& selection,
+      float page_scale_factor,
+      float top_controls_height,
+      float top_controls_shown_ratio,
+      const gfx::SizeF& scrollable_viewport_size_dip);
   bool UpdateControls(float dip_scale,
                       float top_controls_height,
                       float top_controls_shown_ratio,
@@ -380,7 +387,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       const gfx::Size& dst_size_in_pixel,
       base::OnceCallback<void(const SkBitmap&)> callback);
 
-  void DestroyDelegatedContent();
+  void EvictDelegatedContent();
   void OnLostResources();
 
   enum BeginFrameRequestType {
@@ -389,7 +396,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   };
   void AddBeginFrameRequest(BeginFrameRequestType request);
   void ClearBeginFrameRequest(BeginFrameRequestType request);
-  void AcknowledgeBeginFrame(const viz::BeginFrameAck& ack);
   void StartObservingRootWindow();
   void StopObservingRootWindow();
   void SendBeginFramePaused();
@@ -414,6 +420,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void LostFocusInternal();
 
   void SetTextHandlesHiddenForStylus(bool hide_handles);
+  void SetTextHandlesHiddenInternal();
 
   // The begin frame source being observed.  Null if none.
   viz::BeginFrameSource* begin_frame_source_;
@@ -452,12 +459,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // Manages the Compositor Frames received from the renderer.
   std::unique_ptr<ui::DelegatedFrameHostAndroid> delegated_frame_host_;
 
-  std::vector<viz::ReturnedResource> surface_returned_resources_;
-
   // The most recent surface size that was pushed to the surface layer.
   gfx::Size current_surface_size_;
-
-  base::queue<base::Closure> ack_callbacks_;
 
   // Used to control and render overscroll-related effects.
   std::unique_ptr<OverscrollControllerAndroid> overscroll_controller_;
@@ -487,8 +490,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   SynchronousCompositorClient* synchronous_compositor_client_;
 
-  std::unique_ptr<viz::FrameEvictor> frame_evictor_;
-
   bool observing_root_window_;
 
   bool controls_initialized_ = false;
@@ -511,6 +512,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   MouseWheelPhaseHandler mouse_wheel_phase_handler_;
   uint32_t latest_capture_sequence_number_ = 0u;
+
+  viz::ParentLocalSurfaceIdAllocator local_surface_id_allocator_;
+  bool is_first_navigation_ = true;
 
   base::WeakPtrFactory<RenderWidgetHostViewAndroid> weak_ptr_factory_;
 

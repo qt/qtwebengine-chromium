@@ -4,19 +4,27 @@
 
 #include "gpu/command_buffer/service/raster_decoder.h"
 
+#include <limits>
+
 #include "base/command_line.h"
+#include "base/memory/ptr_util.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/common/raster_cmd_format.h"
 #include "gpu/command_buffer/service/context_group.h"
+#include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/query_manager.h"
+#include "gpu/command_buffer/service/raster_decoder_context_state.h"
 #include "gpu/command_buffer/service/raster_decoder_unittest_base.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_image_stub.h"
 #include "ui/gl/gl_mock.h"
+#include "ui/gl/gl_surface_stub.h"
+#include "ui/gl/init/gl_factory.h"
+#include "ui/gl/test/gl_surface_test_support.h"
 
 using ::testing::_;
 using ::testing::Return;
@@ -36,10 +44,8 @@ class MockMemoryTracker : public gles2::MemoryTracker {
  public:
   MockMemoryTracker() {}
 
-  // Ensure a certain amount of GPU memory is free. Returns true on success.
-  MOCK_METHOD1(EnsureGPUMemoryAvailable, bool(size_t size_needed));
-
-  void TrackMemoryAllocatedChange(size_t old_size, size_t new_size) override {}
+  void TrackMemoryAllocatedChange(uint64_t delta) override {}
+  uint64_t GetSize() const override { return 0; }
 
   uint64_t ClientTracingId() const override { return 0; }
   int ClientId() const override { return 0; }
@@ -225,7 +231,7 @@ TEST_P(RasterDecoderTest, BeginEndQueryEXTCommandsIssuedCHROMIUM) {
 }
 
 TEST_P(RasterDecoderTest, TexStorage2D) {
-  DoTexStorage2D(client_texture_id_, 1 /* levels */, kWidth, kHeight);
+  DoTexStorage2D(client_texture_id_, kWidth, kHeight);
 
   gles2::TextureRef* texture_ref =
       group().texture_manager()->GetTexture(client_texture_id_);
@@ -247,7 +253,7 @@ TEST_P(RasterDecoderManualInitTest, TexStorage2DWithEXTTextureStorage) {
   init.extensions.push_back("GL_EXT_texture_storage");
   InitDecoder(init);
 
-  DoTexStorage2D(client_texture_id_, 2 /* levels */, kWidth, kHeight);
+  DoTexStorage2D(client_texture_id_, kWidth, kHeight);
 
   gles2::TextureRef* texture_ref =
       group().texture_manager()->GetTexture(client_texture_id_);
@@ -262,57 +268,36 @@ TEST_P(RasterDecoderManualInitTest, TexStorage2DWithEXTTextureStorage) {
       texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height, nullptr));
   EXPECT_EQ(width, kWidth);
   EXPECT_EQ(height, kHeight);
-
-  EXPECT_TRUE(
-      texture->GetLevelSize(GL_TEXTURE_2D, 1, &width, &height, nullptr));
-  EXPECT_EQ(width, kWidth / 2);
-  EXPECT_EQ(height, kHeight / 2);
-}
-
-TEST_P(RasterDecoderManualInitTest, TexStorage2DOutOfMemory) {
-  scoped_refptr<MockMemoryTracker> memory_tracker = new MockMemoryTracker();
-  set_memory_tracker(memory_tracker.get());
-
-  InitDecoder(InitState());
-
-  EXPECT_CALL(*memory_tracker.get(), EnsureGPUMemoryAvailable(_))
-      .WillOnce(Return(false))
-      .RetiresOnSaturation();
-
-  cmds::TexStorage2D cmd;
-  cmd.Init(client_texture_id_, 1 /* levels */, kWidth, kHeight);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_OUT_OF_MEMORY, GetGLError());
 }
 
 TEST_P(RasterDecoderTest, TexStorage2DInvalid) {
   // Bad client id
   cmds::TexStorage2D cmd;
-  cmd.Init(kInvalidClientId, 1 /* levels */, kWidth, kHeight);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
-
-  // Bad levels
-  cmd.Init(client_texture_id_, 0 /* levels */, kWidth, kHeight);
+  cmd.Init(kInvalidClientId, kWidth, kHeight);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
 
   // Bad width
-  cmd.Init(client_texture_id_, 1 /* levels */, 0, kHeight);
+  cmd.Init(client_texture_id_, 0, kHeight);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
 
   // Bad height
-  cmd.Init(client_texture_id_, 1 /* levels */, kWidth, 0);
+  cmd.Init(client_texture_id_, kWidth, 0);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
+
+  // Too large: integer overflow on width * height.
+  cmd.Init(client_texture_id_, std::numeric_limits<GLsizei>::max(), 2);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_OUT_OF_MEMORY, GetGLError());
 }
 
 TEST_P(RasterDecoderTest, ProduceAndConsumeTexture) {
   Mailbox mailbox = Mailbox::Generate();
   GLuint new_texture_id = kNewClientId;
 
-  DoTexStorage2D(client_texture_id_, 1 /* levels */, kWidth, kHeight);
+  DoTexStorage2D(client_texture_id_, kWidth, kHeight);
 
   ProduceTextureDirectImmediate& produce_cmd =
       *GetImmediateAs<ProduceTextureDirectImmediate>();
@@ -397,6 +382,34 @@ TEST_P(RasterDecoderTest, ReleaseTexImage2DCHROMIUM) {
   EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 0) == nullptr);
 }
 
+TEST_P(RasterDecoderTest, CreateTextureETC1Unsupported) {
+  GLuint source_texture_id = kNewClientId;
+  cmds::CreateTexture cmd;
+  cmd.Init(false /* use_buffer */, gfx::BufferUsage::GPU_READ,
+           viz::ResourceFormat::ETC1, source_texture_id);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
+}
+
+// Need GL_EXT_texture_rg to support viz::ResourceFormat::RED_8
+TEST_P(RasterDecoderTest, RED_8DefaultUnsupported) {
+  GLuint source_texture_id = kNewClientId;
+  EXPECT_CALL(*gl_, GenTextures(1, _))
+      .WillOnce(SetArgPointee<1>(kNewServiceId))
+      .RetiresOnSaturation();
+  cmds::CreateTexture create_cmd;
+  create_cmd.Init(false /* use_buffer */, gfx::BufferUsage::GPU_READ,
+                  viz::ResourceFormat::RED_8, source_texture_id);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(create_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  SetScopedTextureBinderExpectations(GL_TEXTURE_2D);
+  cmds::TexStorage2D storage_cmd;
+  storage_cmd.Init(source_texture_id, kWidth, kHeight);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(storage_cmd));
+  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
+}
+
 TEST_P(RasterDecoderTest, CopyTexSubImage2DTwiceClearsUnclearedTexture) {
   // Create uninitialized source texture.
   GLuint source_texture_id = kNewClientId;
@@ -409,8 +422,8 @@ TEST_P(RasterDecoderTest, CopyTexSubImage2DTwiceClearsUnclearedTexture) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
 
   // Set dimensions on source and dest textures.
-  DoTexStorage2D(source_texture_id, 1 /* levels */, 2, 2);
-  DoTexStorage2D(client_texture_id_, 1 /* levels */, 2, 2);
+  DoTexStorage2D(source_texture_id, 2, 2);
+  DoTexStorage2D(client_texture_id_, 2, 2);
 
   // This will initialize the top half of destination.
   {
@@ -443,6 +456,57 @@ TEST_P(RasterDecoderTest, CopyTexSubImage2DTwiceClearsUnclearedTexture) {
   ASSERT_TRUE(texture_ref != NULL);
   gles2::Texture* texture = texture_ref->texture();
   EXPECT_TRUE(texture->SafeToRenderFrom());
+}
+
+TEST_P(RasterDecoderManualInitTest, CopyTexSubImage2DValidateColorFormat) {
+  InitState init;
+  init.gl_version = "3.0";
+  init.extensions.push_back("GL_EXT_texture_storage");
+  init.extensions.push_back("GL_EXT_texture_rg");
+  InitDecoder(init);
+
+  // Create dest texture.
+  GLuint dest_texture_id = kNewClientId;
+  EXPECT_CALL(*gl_, GenTextures(1, _))
+      .WillOnce(SetArgPointee<1>(kNewServiceId))
+      .RetiresOnSaturation();
+  cmds::CreateTexture cmd;
+  cmd.Init(false /* use_buffer */, gfx::BufferUsage::GPU_READ,
+           viz::ResourceFormat::RED_8, dest_texture_id);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+
+  // Set dimensions on source and dest textures.
+  DoTexStorage2D(client_texture_id_, 2, 2);
+  DoTexStorage2D(dest_texture_id, 2, 2);
+
+  SetScopedTextureBinderExpectations(GL_TEXTURE_2D);
+  CopySubTexture copy_cmd;
+  copy_cmd.Init(client_texture_id_, dest_texture_id, 0, 0, 0, 0, 2, 1);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(copy_cmd));
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+}
+
+TEST_P(RasterDecoderManualInitTest, TexStorage2DValidateColorFormat) {
+  // GL_EXT_texture_norm16 disabled by default, so glTexStorage2DEXT with
+  // viz::ResourceFormat::R16_EXT fails validation.
+  InitState init;
+  init.extensions.push_back("GL_EXT_texture_storage");
+  InitDecoder(init);
+
+  GLuint texture_id = kNewClientId;
+  EXPECT_CALL(*gl_, GenTextures(1, _))
+      .WillOnce(SetArgPointee<1>(kNewServiceId))
+      .RetiresOnSaturation();
+  cmds::CreateTexture create_cmd;
+  create_cmd.Init(false /* use_buffer */, gfx::BufferUsage::GPU_READ,
+                  viz::ResourceFormat::R16_EXT, texture_id);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(create_cmd));
+
+  cmds::TexStorage2D storage_cmd;
+  storage_cmd.Init(texture_id, /*width=*/2, /*height=*/2);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(storage_cmd));
+
+  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
 }
 
 TEST_P(RasterDecoderTest, GLImageAttachedAfterClearLevel) {
@@ -480,6 +544,132 @@ TEST_P(RasterDecoderTest, GLImageAttachedAfterClearLevel) {
   GetDecoder()->ClearLevel(texture, target, level, format, type, xoffset,
                            yoffset, width, height);
   EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 0) == image.get());
+}
+
+TEST_P(RasterDecoderTest, YieldAfterEndRasterCHROMIUM) {
+  GetDecoder()->SetUpForRasterCHROMIUMForTest();
+  cmds::EndRasterCHROMIUM end_raster_cmd;
+  end_raster_cmd.Init();
+  EXPECT_EQ(error::kDeferLaterCommands, ExecuteCmd(end_raster_cmd));
+}
+
+class RasterDecoderOOPTest : public testing::Test, DecoderClient {
+ public:
+  RasterDecoderOOPTest() : shader_translator_cache_(gpu_preferences_) {}
+
+  void SetUp() override {
+    gl::GLSurfaceTestSupport::InitializeOneOff();
+    gpu::GpuDriverBugWorkarounds workarounds;
+
+    scoped_refptr<gl::GLShareGroup> share_group = new gl::GLShareGroup();
+    scoped_refptr<gl::GLSurface> surface =
+        gl::init::CreateOffscreenGLSurface(gfx::Size());
+    scoped_refptr<gl::GLContext> context = gl::init::CreateGLContext(
+        share_group.get(), surface.get(), gl::GLContextAttribs());
+    ASSERT_TRUE(context->MakeCurrent(surface.get()));
+
+    context_state_ = new raster::RasterDecoderContextState(
+        std::move(share_group), std::move(surface), std::move(context),
+        false /* use_virtualized_gl_contexts */);
+    context_state_->InitializeGrContext(workarounds);
+
+    GpuFeatureInfo gpu_feature_info;
+    gpu_feature_info.status_values[GPU_FEATURE_TYPE_OOP_RASTERIZATION] =
+        kGpuFeatureStatusEnabled;
+    scoped_refptr<gles2::FeatureInfo> feature_info =
+        new gles2::FeatureInfo(workarounds, gpu_feature_info);
+    group_ = new gles2::ContextGroup(
+        gpu_preferences_, false, &mailbox_manager_,
+        nullptr /* memory_tracker */, &shader_translator_cache_,
+        &framebuffer_completeness_cache_, feature_info,
+        false /* bind_generates_resource */, &image_manager_,
+        nullptr /* image_factory */, nullptr /* progress_reporter */,
+        gpu_feature_info, &discardable_manager_);
+  }
+  void TearDown() override {
+    context_state_ = nullptr;
+    gl::init::ShutdownGL(false);
+  }
+
+  // DecoderClient implementation.
+  void OnConsoleMessage(int32_t id, const std::string& message) override {}
+  void CacheShader(const std::string& key, const std::string& shader) override {
+  }
+  void OnFenceSyncRelease(uint64_t release) override {}
+  bool OnWaitSyncToken(const gpu::SyncToken&) override { return false; }
+  void OnDescheduleUntilFinished() override {}
+  void OnRescheduleAfterFinished() override {}
+  void OnSwapBuffers(uint64_t swap_id, uint32_t flags) override {}
+  void ScheduleGrContextCleanup() override {}
+
+  std::unique_ptr<RasterDecoder> CreateDecoder() {
+    auto decoder = base::WrapUnique(
+        RasterDecoder::Create(this, &command_buffer_service_, &outputter_,
+                              group_.get(), context_state_));
+    ContextCreationAttribs attribs;
+    attribs.enable_oop_rasterization = true;
+    attribs.enable_raster_interface = true;
+    CHECK_EQ(
+        decoder->Initialize(context_state_->surface, context_state_->context,
+                            true, gles2::DisallowedFeatures(), attribs),
+        ContextResult::kSuccess);
+    return decoder;
+  }
+
+  template <typename T>
+  error::Error ExecuteCmd(RasterDecoder* decoder, const T& cmd) {
+    static_assert(T::kArgFlags == cmd::kFixed,
+                  "T::kArgFlags should equal cmd::kFixed");
+    int entries_processed = 0;
+    return decoder->DoCommands(1, (const void*)&cmd,
+                               ComputeNumEntries(sizeof(cmd)),
+                               &entries_processed);
+  }
+
+ protected:
+  gles2::TraceOutputter outputter_;
+  FakeCommandBufferServiceBase command_buffer_service_;
+  scoped_refptr<RasterDecoderContextState> context_state_;
+
+  GpuPreferences gpu_preferences_;
+  gles2::MailboxManagerImpl mailbox_manager_;
+  gles2::ShaderTranslatorCache shader_translator_cache_;
+  gles2::FramebufferCompletenessCache framebuffer_completeness_cache_;
+  gles2::ImageManager image_manager_;
+  ServiceDiscardableManager discardable_manager_;
+  scoped_refptr<gles2::ContextGroup> group_;
+};
+
+TEST_F(RasterDecoderOOPTest, StateRestoreAcrossDecoders) {
+  // First decoder receives a skia command requiring context state reset.
+  auto decoder1 = CreateDecoder();
+  EXPECT_FALSE(context_state_->need_context_state_reset);
+  decoder1->SetUpForRasterCHROMIUMForTest();
+  cmds::EndRasterCHROMIUM end_raster_cmd;
+  end_raster_cmd.Init();
+  EXPECT_FALSE(error::IsError(ExecuteCmd(decoder1.get(), end_raster_cmd)));
+  EXPECT_TRUE(context_state_->need_context_state_reset);
+
+  // Another decoder receives a command which does not require consistent state,
+  // it should be processed without state restoration.
+  auto decoder2 = CreateDecoder();
+  decoder2->SetUpForRasterCHROMIUMForTest();
+  EXPECT_FALSE(error::IsError(ExecuteCmd(decoder2.get(), end_raster_cmd)));
+  EXPECT_TRUE(context_state_->need_context_state_reset);
+
+  // Now process a command which requires consistent state.
+  cmds::CreateTexture create_tex_cmd;
+  create_tex_cmd.Init(false, gfx::BufferUsage::GPU_READ_CPU_READ_WRITE,
+                      viz::ResourceFormat::RGBA_8888, 4);
+  EXPECT_FALSE(error::IsError(ExecuteCmd(decoder2.get(), create_tex_cmd)));
+  EXPECT_FALSE(context_state_->need_context_state_reset);
+
+  decoder1->Destroy(true);
+  context_state_->context->MakeCurrent(context_state_->surface.get());
+  decoder2->Destroy(true);
+
+  // Make sure the context is preserved across decoders.
+  EXPECT_FALSE(context_state_->gr_context->abandoned());
 }
 
 }  // namespace raster

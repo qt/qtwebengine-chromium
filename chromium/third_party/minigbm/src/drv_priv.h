@@ -92,7 +92,11 @@ struct backend {
 
 #define BO_USE_SW_RARELY BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY
 
-#define LINEAR_METADATA (struct format_metadata) { 0, 1, DRM_FORMAT_MOD_LINEAR }
+#ifndef DRM_FORMAT_MOD_LINEAR
+#define DRM_FORMAT_MOD_LINEAR DRM_FORMAT_MOD_NONE
+#endif
+
+#define LINEAR_METADATA (struct format_metadata) { 1, 0, DRM_FORMAT_MOD_LINEAR }
 // clang-format on
 
 #endif

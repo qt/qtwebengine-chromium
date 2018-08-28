@@ -15,7 +15,6 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
-#include "third_party/blink/renderer/core/dom/exception_code.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -26,7 +25,7 @@
 #include "third_party/blink/renderer/modules/push_messaging/push_subscription_callbacks.h"
 #include "third_party/blink/renderer/modules/push_messaging/push_subscription_options.h"
 #include "third_party/blink/renderer/modules/push_messaging/push_subscription_options_init.h"
-#include "third_party/blink/renderer/modules/serviceworkers/service_worker_registration.h"
+#include "third_party/blink/renderer/modules/service_worker/service_worker_registration.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 
@@ -57,7 +56,7 @@ ScriptPromise PushManager::subscribe(ScriptState* script_state,
   if (!registration_->active())
     return ScriptPromise::RejectWithDOMException(
         script_state,
-        DOMException::Create(kAbortError,
+        DOMException::Create(DOMExceptionCode::kAbortError,
                              "Subscription failed - no active Service Worker"));
 
   const WebPushSubscriptionOptions& web_options =
@@ -77,7 +76,7 @@ ScriptPromise PushManager::subscribe(ScriptState* script_state,
     if (!document->domWindow() || !frame)
       return ScriptPromise::RejectWithDOMException(
           script_state,
-          DOMException::Create(kInvalidStateError,
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
                                "Document is detached from window."));
     PushController::ClientFrom(frame).Subscribe(
         registration_->WebRegistration(), web_options,
@@ -113,7 +112,7 @@ ScriptPromise PushManager::permissionState(
     if (!document->domWindow() || !document->GetFrame())
       return ScriptPromise::RejectWithDOMException(
           script_state,
-          DOMException::Create(kInvalidStateError,
+          DOMException::Create(DOMExceptionCode::kInvalidStateError,
                                "Document is detached from window."));
   }
 

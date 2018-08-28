@@ -18,6 +18,7 @@
 #include "modules/audio_processing/aec3/aec3_common.h"
 #include "modules/audio_processing/aec3/aec_state.h"
 #include "modules/audio_processing/aec3/coherence_gain.h"
+#include "modules/audio_processing/aec3/moving_average.h"
 #include "modules/audio_processing/aec3/render_signal_analyzer.h"
 #include "rtc_base/constructormagic.h"
 
@@ -46,6 +47,14 @@ class SuppressionGain {
   void SetInitialState(bool state);
 
  private:
+  void GainToNoAudibleEcho(
+      const std::array<float, kFftLengthBy2Plus1>& nearend,
+      const std::array<float, kFftLengthBy2Plus1>& echo,
+      const std::array<float, kFftLengthBy2Plus1>& masker,
+      const std::array<float, kFftLengthBy2Plus1>& min_gain,
+      const std::array<float, kFftLengthBy2Plus1>& max_gain,
+      std::array<float, kFftLengthBy2Plus1>* gain) const;
+
   void LowerBandGain(bool stationary_with_low_power,
                      const AecState& aec_state,
                      const std::array<float, kFftLengthBy2Plus1>& nearend,
@@ -80,11 +89,16 @@ class SuppressionGain {
   std::array<float, kFftLengthBy2Plus1> gain_increase_;
   std::array<float, kFftLengthBy2Plus1> last_nearend_;
   std::array<float, kFftLengthBy2Plus1> last_echo_;
+  std::array<float, kFftLengthBy2Plus1> enr_transparent_;
+  std::array<float, kFftLengthBy2Plus1> enr_suppress_;
+  std::array<float, kFftLengthBy2Plus1> emr_transparent_;
   LowNoiseRenderDetector low_render_detector_;
   bool initial_state_ = true;
   int initial_state_change_counter_ = 0;
   CoherenceGain coherence_gain_;
   const bool enable_transparency_improvements_;
+  const bool enable_new_suppression_;
+  aec3::MovingAverage moving_average_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(SuppressionGain);
 };

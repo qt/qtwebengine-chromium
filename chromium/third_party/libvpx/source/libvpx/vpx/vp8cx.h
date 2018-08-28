@@ -627,6 +627,31 @@ enum vp8e_enc_control_id {
    * Supported in codecs: VP9
    */
   VP9E_GET_SVC_REF_FRAME_CONFIG,
+
+  /*!\brief Codec control function to enable/disable use of golden reference as
+   * a second temporal reference for SVC. Only used when inter-layer prediction
+   * is disabled on INTER frames.
+   *
+   * 0: Off, 1: Enabled (default)
+   *
+   * Supported in codecs: VP9
+   */
+  VP9E_SET_SVC_GF_TEMPORAL_REF,
+
+  /*!\brief Codec control function to enable spatial layer sync frame, for any
+   * spatial layer. Enabling it for layer k means spatial layer k will disable
+   * all temporal prediction, but keep the inter-layer prediction. It will
+   * refresh any temporal reference buffer for that layer, and reset the
+   * temporal layer for the superframe to 0. Setting the layer sync for base
+   * spatial layer forces a key frame. Default is off (0) for all spatial
+   * layers. Spatial layer sync flag is reset to 0 after each encoded layer,
+   * so when control is invoked it is only used for the current superframe.
+   *
+   * 0: Off (default), 1: Enabled
+   *
+   * Supported in codecs: VP9
+   */
+  VP9E_SET_SVC_SPATIAL_LAYER_SYNC,
 };
 
 /*!\brief vpx 1-D scaling mode
@@ -786,7 +811,8 @@ typedef struct vpx_svc_ref_frame_config {
 typedef enum {
   CONSTRAINED_LAYER_DROP,
   /**< Upper layers are constrained to drop if current layer drops. */
-  LAYER_DROP, /**< Any spatial layer can drop. */
+  LAYER_DROP,           /**< Any spatial layer can drop. */
+  FULL_SUPERFRAME_DROP, /**< Only full superframe can drop. */
 } SVC_LAYER_DROP_MODE;
 
 /*!\brief vp9 svc frame dropping parameters.
@@ -799,8 +825,19 @@ typedef enum {
 typedef struct vpx_svc_frame_drop {
   int framedrop_thresh[VPX_SS_MAX_LAYERS]; /**< Frame drop thresholds */
   SVC_LAYER_DROP_MODE
-  framedrop_mode; /**< Layer-based or constrained dropping. */
+  framedrop_mode;      /**< Layer-based or constrained dropping. */
+  int max_consec_drop; /**< Maximum consecutive drops, for any layer. */
 } vpx_svc_frame_drop_t;
+
+/*!\brief vp9 svc spatial layer sync parameters.
+ *
+ * This defines the spatial layer sync flag, defined per spatial layer.
+ *
+ */
+typedef struct vpx_svc_spatial_layer_sync {
+  int spatial_layer_sync[VPX_SS_MAX_LAYERS]; /**< Sync layer flags */
+  int base_layer_intra_only; /**< Flag for setting Intra-only frame on base */
+} vpx_svc_spatial_layer_sync_t;
 
 /*!\cond */
 /*!\brief VP8 encoder control function parameter type
@@ -944,6 +981,13 @@ VPX_CTRL_USE_TYPE(VP9E_SET_SVC_FRAME_DROP_LAYER, vpx_svc_frame_drop_t *)
 
 VPX_CTRL_USE_TYPE(VP9E_GET_SVC_REF_FRAME_CONFIG, vpx_svc_ref_frame_config_t *)
 #define VPX_CTRL_VP9E_GET_SVC_REF_FRAME_CONFIG
+
+VPX_CTRL_USE_TYPE(VP9E_SET_SVC_GF_TEMPORAL_REF, unsigned int)
+#define VPX_CTRL_VP9E_SET_SVC_GF_TEMPORAL_REF
+
+VPX_CTRL_USE_TYPE(VP9E_SET_SVC_SPATIAL_LAYER_SYNC,
+                  vpx_svc_spatial_layer_sync_t *)
+#define VPX_CTRL_VP9E_SET_SVC_SPATIAL_LAYER_SYNC
 
 /*!\endcond */
 /*! @} - end defgroup vp8_encoder */

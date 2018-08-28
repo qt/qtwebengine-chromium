@@ -8,12 +8,13 @@
 #include <cmath>
 #include <cstdint>
 
+#include "net/third_party/quic/core/quic_constants.h"
 #include "net/third_party/quic/core/quic_packets.h"
 #include "net/third_party/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_logging.h"
 
-namespace net {
+namespace quic {
 
 namespace {
 
@@ -28,8 +29,7 @@ const int kCubeCongestionWindowScale = 410;
 const uint64_t kCubeFactor =
     (UINT64_C(1) << kCubeScale) / kCubeCongestionWindowScale / kDefaultTCPMSS;
 
-const uint32_t kDefaultNumConnections = 2;
-const float kBeta = 0.7f;  // Default Cubic backoff factor.
+const float kDefaultCubicBackoffFactor = 0.7f;  // Default Cubic backoff factor.
 // Additional backoff factor when loss occurs in the concave part of the Cubic
 // curve. This additional backoff factor is expected to give up bandwidth to
 // new concurrent flows and speed up convergence.
@@ -61,7 +61,7 @@ float CubicBytes::Beta() const {
   // emulation, which emulates the effective backoff of an ensemble of N
   // TCP-Reno connections on a single loss event. The effective multiplier is
   // computed as:
-  return (num_connections_ - 1 + kBeta) / num_connections_;
+  return (num_connections_ - 1 + kDefaultCubicBackoffFactor) / num_connections_;
 }
 
 float CubicBytes::BetaLastMax() const {
@@ -188,4 +188,4 @@ QuicByteCount CubicBytes::CongestionWindowAfterAck(
   return target_congestion_window;
 }
 
-}  // namespace net
+}  // namespace quic

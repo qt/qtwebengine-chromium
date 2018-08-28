@@ -22,6 +22,7 @@ namespace blink {
 
 class AbortSignal;
 class BodyStreamBuffer;
+class ExceptionState;
 class RequestInit;
 class WebServiceWorkerRequest;
 
@@ -36,18 +37,18 @@ class CORE_EXPORT Request final : public Body {
   // From Request.idl:
   static Request* Create(ScriptState*,
                          const RequestInfo&,
-                         const Dictionary&,
+                         const RequestInit&,
                          ExceptionState&);
 
   static Request* Create(ScriptState*, const String&, ExceptionState&);
   static Request* Create(ScriptState*,
                          const String&,
-                         const Dictionary&,
+                         const RequestInit&,
                          ExceptionState&);
   static Request* Create(ScriptState*, Request*, ExceptionState&);
   static Request* Create(ScriptState*,
                          Request*,
-                         const Dictionary&,
+                         const RequestInit&,
                          ExceptionState&);
   static Request* Create(ScriptState*, FetchRequestData*);
   static Request* Create(ScriptState*, const WebServiceWorkerRequest&);
@@ -70,13 +71,14 @@ class CORE_EXPORT Request final : public Body {
   String redirect() const;
   String integrity() const;
   bool keepalive() const;
+  bool isHistoryNavigation() const;
   AbortSignal* signal() const { return signal_; }
 
   // From Request.idl:
   // This function must be called with entering an appropriate V8 context.
   Request* clone(ScriptState*, ExceptionState&);
 
-  FetchRequestData* PassRequestData(ScriptState*);
+  FetchRequestData* PassRequestData(ScriptState*, ExceptionState&);
   void PopulateWebServiceWorkerRequest(WebServiceWorkerRequest&) const;
   bool HasBody() const;
   BodyStreamBuffer* BodyBuffer() override { return request_->Buffer(); }
@@ -94,14 +96,13 @@ class CORE_EXPORT Request final : public Body {
   static Request* CreateRequestWithRequestOrString(ScriptState*,
                                                    Request*,
                                                    const String&,
-                                                   RequestInit&,
+                                                   const RequestInit&,
                                                    ExceptionState&);
 
   String ContentType() const override;
   String MimeType() const override;
-  void RefreshBody(ScriptState*);
 
-  const Member<FetchRequestData> request_;
+  const TraceWrapperMember<FetchRequestData> request_;
   const Member<Headers> headers_;
   const Member<AbortSignal> signal_;
   DISALLOW_COPY_AND_ASSIGN(Request);

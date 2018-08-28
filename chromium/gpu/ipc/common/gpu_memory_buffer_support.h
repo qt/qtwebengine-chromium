@@ -12,7 +12,6 @@
 #include "build/build_config.h"
 #include "gpu/gpu_export.h"
 #include "gpu/ipc/common/gpu_memory_buffer_impl.h"
-#include "gpu/ipc/common/gpu_memory_buffer_support.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -59,7 +58,7 @@ class GPU_EXPORT GpuMemoryBufferSupport {
   // non-null, is called when instance is deleted, which is not necessarily on
   // the same thread as this function was called on and instance was created on.
   std::unique_ptr<GpuMemoryBufferImpl> CreateGpuMemoryBufferImplFromHandle(
-      const gfx::GpuMemoryBufferHandle& handle,
+      gfx::GpuMemoryBufferHandle handle,
       const gfx::Size& size,
       gfx::BufferFormat format,
       gfx::BufferUsage usage,

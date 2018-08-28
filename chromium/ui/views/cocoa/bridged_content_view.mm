@@ -80,6 +80,13 @@ bool IsTextRTL(const ui::TextInputClient* client) {
   return client && client->GetTextDirection() == base::i18n::RIGHT_TO_LEFT;
 }
 
+// Returns true if |event| may have triggered dismissal of an IME and would
+// otherwise be ignored by a ui::TextInputClient when inserted.
+bool IsImeTriggerEvent(NSEvent* event) {
+  ui::KeyboardCode key = ui::KeyboardCodeFromNSEvent(event);
+  return key == ui::VKEY_RETURN || key == ui::VKEY_TAB;
+}
+
 // Returns the boundary rectangle for composition characters in the
 // |requested_range|. Sets |actual_range| corresponding to the returned
 // rectangle. For cases, where there is no composition text or the
@@ -240,6 +247,11 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
              domCode:(ui::DomCode)domCode
           eventFlags:(int)eventFlags;
 
+// ui::EventLocationFromNative() assumes the event hit the contentView.
+// Adjust |event| if that's not the case (e.g. for reparented views).
+- (void)adjustUiEventLocation:(ui::LocatedEvent*)event
+              fromNativeEvent:(NSEvent*)nativeEvent;
+
 // Notification handler invoked when the Full Keyboard Access mode is changed.
 - (void)onFullKeyboardAccessModeChanged:(NSNotification*)notification;
 
@@ -302,12 +314,81 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
   return self;
 }
 
+- (void)dealloc {
+  // By the time |self| is dealloc'd, it should never be in an NSWindow, and it
+  // should never be the current input context.
+  DCHECK_EQ(nil, [self window]);
+  // Sanity check: NSView always provides an -inputContext.
+  DCHECK_NE(nil, [super inputContext]);
+  DCHECK_NE([NSTextInputContext currentInputContext], [super inputContext]);
+  [super dealloc];
+}
+
 - (void)clearView {
-  textInputClient_ = nullptr;
+  [self setTextInputClient:nullptr];
   hostedView_ = nullptr;
   [[NSDistributedNotificationCenter defaultCenter] removeObserver:self];
   [cursorTrackingArea_.get() clearOwner];
   [self removeTrackingArea:cursorTrackingArea_.get()];
+}
+
+- (void)setTextInputClient:(ui::TextInputClient*)newTextInputClient {
+  if (pendingTextInputClient_ == newTextInputClient)
+    return;
+
+  // This method may cause the IME window to dismiss, which may cause it to
+  // insert text (e.g. to replace marked text with "real" text). That should
+  // happen in the old -inputContext (which AppKit stores a reference to).
+  // Unfortunately, the only way to invalidate the the old -inputContext is to
+  // invoke -[NSApp updateWindows], which also wants a reference to the _new_
+  // -inputContext. So put the new inputContext in |pendingTextInputClient_| and
+  // only use it for -inputContext.
+  ui::TextInputClient* oldInputClient = textInputClient_;
+
+  // Since dismissing an IME may insert text, a misbehaving IME or a
+  // ui::TextInputClient that acts on InsertChar() to change focus a second time
+  // may invoke -setTextInputClient: recursively; with [NSApp updateWindows]
+  // still on the stack. Calling [NSApp updateWindows] recursively may upset
+  // an IME. Since the rest of this method is only to decide whether to call
+  // updateWindows, and we're already calling it, just bail out.
+  if (textInputClient_ != pendingTextInputClient_) {
+    pendingTextInputClient_ = newTextInputClient;
+    return;
+  }
+
+  // Start by assuming no need to invoke -updateWindows.
+  textInputClient_ = newTextInputClient;
+  pendingTextInputClient_ = newTextInputClient;
+
+  // If |self| was being used for the input context, and would now report a
+  // different input context, manually invoke [NSApp updateWindows]. This is
+  // necessary because AppKit holds on to a raw pointer to a NSTextInputContext
+  // (which may have been the one returned by [self inputContext]) that is only
+  // updated by -updateWindows. And although AppKit invokes that on each
+  // iteration through most runloop modes, it does not call it when running
+  // NSEventTrackingRunLoopMode, and not _within_ a run loop iteration, where
+  // the inputContext may change before further event processing.
+  NSTextInputContext* current = [NSTextInputContext currentInputContext];
+  if (!current)
+    return;
+
+  NSTextInputContext* newContext = [self inputContext];
+  // If the newContext is non-nil, then it can only be [super inputContext]. So
+  // the input context is either not changing, or it was not from |self|. In
+  // both cases, there's no need to call -updateWindows.
+  if (newContext) {
+    DCHECK_EQ(newContext, [super inputContext]);
+    return;
+  }
+
+  if (current == [super inputContext]) {
+    DCHECK_NE(oldInputClient, textInputClient_);
+    textInputClient_ = oldInputClient;
+    [NSApp updateWindows];
+    // Note: |pendingTextInputClient_| (and therefore +[NSTextInputContext
+    // currentInputContext] may have changed if called recursively.
+    textInputClient_ = pendingTextInputClient_;
+  }
 }
 
 // If the point is classified as HTCAPTION (background, draggable), return nil
@@ -328,16 +409,31 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
   NSWindow* target = [self window];
   DCHECK(target);
 
+  BOOL isScrollEvent = [theEvent type] == NSScrollWheel;
+
   // If it's the view's window, process normally.
   if ([target isEqual:source]) {
-    [self mouseEvent:theEvent];
+    if (isScrollEvent)
+      [self scrollWheel:theEvent];
+    else
+      [self mouseEvent:theEvent];
+
     return;
   }
 
-  ui::MouseEvent event(theEvent);
-  event.set_location(
-      MovePointToWindow([theEvent locationInWindow], source, target));
-  hostedView_->GetWidget()->OnMouseEvent(&event);
+  gfx::Point event_location =
+      MovePointToWindow([theEvent locationInWindow], source, target);
+  [self updateTooltipIfRequiredAt:event_location];
+
+  if (isScrollEvent) {
+    ui::ScrollEvent event(theEvent);
+    event.set_location(event_location);
+    hostedView_->GetWidget()->OnScrollEvent(&event);
+  } else {
+    ui::MouseEvent event(theEvent);
+    event.set_location(event_location);
+    hostedView_->GetWidget()->OnMouseEvent(&event);
+  }
 }
 
 - (void)updateTooltipIfRequiredAt:(const gfx::Point&)locationInContent {
@@ -427,6 +523,14 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
       hostedView_->GetWidget()->GetInputMethod()->DispatchKeyEvent(&event));
 }
 
+- (void)adjustUiEventLocation:(ui::LocatedEvent*)event
+              fromNativeEvent:(NSEvent*)nativeEvent {
+  if ([nativeEvent window] && [[self window] contentView] != self) {
+    NSPoint p = [self convertPoint:[nativeEvent locationInWindow] fromView:nil];
+    event->set_location(gfx::Point(p.x, NSHeight([self frame]) - p.y));
+  }
+}
+
 - (void)onFullKeyboardAccessModeChanged:(NSNotification*)notification {
   DCHECK([[notification name]
       isEqualToString:kFullKeyboardAccessChangedNotification]);
@@ -441,7 +545,7 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
     text = [text string];
 
   bool isCharacterEvent = keyDownEvent_ && [text length] == 1;
-  // Pass the character event to the View hierarchy. Cases this handles (non-
+  // Pass "character" events to the View hierarchy. Cases this handles (non-
   // exhaustive)-
   //    - Space key press on controls. Unlike Tab and newline which have
   //      corresponding action messages, an insertText: message is generated for
@@ -453,14 +557,26 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
   // key code to get the actual characters from the ui::KeyEvent. This for
   // example is necessary for menu mnemonic selection of non-latin text.
 
-  // Don't generate a key event when there is active composition text. These key
+  // Don't generate a key event when there is marked composition text. These key
   // down events should be consumed by the IME and not reach the Views layer.
   // For example, on pressing Return to commit composition text, if we passed a
   // synthetic key event to the View hierarchy, it will have the effect of
-  // performing the default action on the current dialog. We do not want this.
+  // performing the default action on the current dialog. We do not want this
+  // when there is marked text (Return should only confirm the IME).
 
-  // Also note that a single key down event can cause multiple
-  // insertText:replacementRange: action messages. Example, on pressing Alt+e,
+  // However, IME for phonetic languages such as Korean do not always _mark_
+  // text when a composition is active. For these, correct behaviour is to
+  // handle the final -keyDown: that caused the composition to be committed, but
+  // only _after_ the sequence of insertText: messages coming from IME have been
+  // sent to the TextInputClient. Detect this by comparing to -[NSEvent
+  // characters]. Note we do not use -charactersIgnoringModifiers: so that,
+  // e.g., ß (Alt+s) will match mnemonics with ß rather than s.
+  bool isFinalInsertForKeyEvent =
+      isCharacterEvent && [text isEqualToString:[keyDownEvent_ characters]];
+
+  // Also note that a single, non-IME key down event can also cause multiple
+  // insertText:replacementRange: action messages being generated from within
+  // -keyDown:'s call to -interpretKeyEvents:. One example, on pressing Alt+e,
   // the accent (´) character is composed via setMarkedText:. Now on pressing
   // the character 'r', two insertText:replacementRange: action messages are
   // generated with the text value of accent (´) and 'r' respectively. The key
@@ -470,7 +586,7 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
 
   // Currently there seems to be no use case to pass non-character events routed
   // from insertText: handlers to the View hierarchy.
-  if (isCharacterEvent && ![self hasMarkedText]) {
+  if (isFinalInsertForKeyEvent && ![self hasMarkedText]) {
     ui::KeyEvent charEvent([text characterAtIndex:0],
                            ui::KeyboardCodeFromNSEvent(keyDownEvent_),
                            ui::EF_NONE);
@@ -490,18 +606,26 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
     // the key modifier since |text| already accounts for the pressed key
     // modifiers.
 
-    // Also, note we don't use |keyDownEvent_| to generate the synthetic
-    // ui::KeyEvent since for composed text, [keyDownEvent_ characters] might
-    // not be the same as |text|. This is because |keyDownEvent_| will
-    // correspond to the event that caused the composition text to be confirmed,
-    // say, Return key press.
+    // Also, note we don't check isFinalInsertForKeyEvent, nor use
+    // |keyDownEvent_| to generate the synthetic ui::KeyEvent since:  For
+    //  composed text, [keyDownEvent_ characters] might not be the same as
+    // |text|. This is because |keyDownEvent_| will correspond to the event that
+    // caused the composition text to be confirmed, say, Return key press.
     if (isCharacterEvent) {
       textInputClient_->InsertChar(ui::KeyEvent([text characterAtIndex:0],
                                                 ui::VKEY_UNKNOWN, ui::EF_NONE));
+      // Leave character events that may have triggered IME confirmation for
+      // inline IME (e.g. Korean) as "unhandled". There will be no more
+      // -insertText: messages, but we are unable to handle these via
+      // -handleKeyEvent: earlier in this method since toolkit-views client code
+      // assumes it can ignore characters associated with, e.g., VKEY_TAB.
+      DCHECK(keyDownEvent_);  // Otherwise it is not a character event.
+      if ([self hasMarkedText] || !IsImeTriggerEvent(keyDownEvent_))
+        hasUnhandledKeyDownEvent_ = NO;
     } else {
       textInputClient_->InsertText(base::SysNSStringToUTF16(text));
+      hasUnhandledKeyDownEvent_ = NO;
     }
-    hasUnhandledKeyDownEvent_ = NO;
   }
 }
 
@@ -566,14 +690,9 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
   if (!hostedView_)
     return;
 
+  DCHECK([theEvent type] != NSScrollWheel);
   ui::MouseEvent event(theEvent);
-
-  // ui::EventLocationFromNative() assumes the event hit the contentView.
-  // Adjust if that's not the case (e.g. for reparented views).
-  if ([theEvent window] && [[self window] contentView] != self) {
-    NSPoint p = [self convertPoint:[theEvent locationInWindow] fromView:nil];
-    event.set_location(gfx::Point(p.x, NSHeight([self frame]) - p.y));
-  }
+  [self adjustUiEventLocation:&event fromNativeEvent:theEvent];
 
   // Aura updates tooltips with the help of aura::Window::AddPreTargetHandler().
   // Mac hooks in here.
@@ -680,7 +799,7 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
 - (NSTextInputContext*)inputContext {
   // If the textInputClient_ does not exist, return nil since this view does not
   // conform to NSTextInputClient protocol.
-  if (!textInputClient_)
+  if (!pendingTextInputClient_)
     return nil;
 
   // If a menu is active, and -[NSView interpretKeyEvents:] asks for the
@@ -693,7 +812,7 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
   // (http://crbug.com/23219), we don't want to show IME candidate windows.
   // Returning nil prevents this view from getting messages defined as part of
   // the NSTextInputClient protocol.
-  switch (textInputClient_->GetTextInputType()) {
+  switch (pendingTextInputClient_->GetTextInputType()) {
     case ui::TEXT_INPUT_TYPE_NONE:
     case ui::TEXT_INPUT_TYPE_PASSWORD:
       return nil;
@@ -744,6 +863,12 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
     return;
 
   ui::ScrollEvent event(theEvent);
+  [self adjustUiEventLocation:&event fromNativeEvent:theEvent];
+
+  // Aura updates tooltips with the help of aura::Window::AddPreTargetHandler().
+  // Mac hooks in here.
+  [self updateTooltipIfRequiredAt:event.location()];
+
   hostedView_->GetWidget()->OnScrollEvent(&event);
 }
 
@@ -1253,6 +1378,14 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
 
 // NSTextInputClient protocol implementation.
 
+// IMPORTANT: Always null-check |textInputClient_|. It can change (or be
+// cleared) in -setTextInputClient:, which requires informing AppKit that the
+// -inputContext has changed and to update its raw pointer. However, the AppKit
+// method which does that may also spin a nested run loop communicating with an
+// IME window and cause it to *use* the exact same NSTextInputClient (i.e.,
+// |self|) that we're trying to invalidate in -setTextInputClient:.
+// See https://crbug.com/817097#c12 for further details on this atrocity.
+
 - (NSAttributedString*)
     attributedSubstringForProposedRange:(NSRange)range
                             actualRange:(NSRangePointer)actualRange {
@@ -1311,12 +1444,8 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
 }
 
 - (void)insertText:(id)text replacementRange:(NSRange)replacementRange {
-  if (!hostedView_)
+  if (!hostedView_ || !textInputClient_)
     return;
-
-  // Verify inputContext is not nil, i.e. |textInputClient_| is valid and no
-  // menu is active.
-  DCHECK([self inputContext]);
 
   textInputClient_->DeleteRange(gfx::Range(replacementRange));
   [self insertTextInternal:text];

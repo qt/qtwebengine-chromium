@@ -2591,8 +2591,7 @@ void VertexAttribDivisorANGLE(GLuint index, GLuint divisor) {
   }
 }
 
-void ProduceTextureDirectCHROMIUMImmediate(GLuint texture,
-                                           const GLbyte* mailbox) {
+void ProduceTextureDirectCHROMIUMImmediate(GLuint texture, GLbyte* mailbox) {
   const uint32_t size =
       gles2::cmds::ProduceTextureDirectCHROMIUMImmediate::ComputeSize();
   gles2::cmds::ProduceTextureDirectCHROMIUMImmediate* c =
@@ -3315,6 +3314,17 @@ void DestroyGpuFenceCHROMIUM(GLuint gpu_fence_id) {
       GetCmdSpace<gles2::cmds::DestroyGpuFenceCHROMIUM>();
   if (c) {
     c->Init(gpu_fence_id);
+  }
+}
+
+void SetReadbackBufferShadowAllocationINTERNAL(GLuint buffer_id,
+                                               GLint shm_id,
+                                               GLuint shm_offset,
+                                               GLuint size) {
+  gles2::cmds::SetReadbackBufferShadowAllocationINTERNAL* c =
+      GetCmdSpace<gles2::cmds::SetReadbackBufferShadowAllocationINTERNAL>();
+  if (c) {
+    c->Init(buffer_id, shm_id, shm_offset, size);
   }
 }
 

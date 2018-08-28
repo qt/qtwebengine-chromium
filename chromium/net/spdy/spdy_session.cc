@@ -177,6 +177,16 @@ bool IsSpdySettingAtDefaultInitialValue(spdy::SpdySettingsId setting_id,
   }
 }
 
+bool IsPushEnabled(const spdy::SettingsMap& initial_settings) {
+  const auto it = initial_settings.find(spdy::SETTINGS_ENABLE_PUSH);
+
+  // Push is enabled by default.
+  if (it == initial_settings.end())
+    return true;
+
+  return it->second == 1;
+}
+
 std::unique_ptr<base::Value> NetLogSpdyHeadersSentCallback(
     const spdy::SpdyHeaderBlock* headers,
     bool fin,
@@ -762,7 +772,7 @@ SpdySession::SpdySession(
     const SpdySessionKey& spdy_session_key,
     HttpServerProperties* http_server_properties,
     TransportSecurityState* transport_security_state,
-    const QuicTransportVersionVector& quic_supported_versions,
+    const quic::QuicTransportVersionVector& quic_supported_versions,
     bool enable_sending_initial_data,
     bool enable_ping_based_connection_checking,
     bool support_ietf_format_quic_altsvc,
@@ -798,7 +808,7 @@ SpdySession::SpdySession(
       streams_pushed_count_(0),
       streams_pushed_and_claimed_count_(0),
       streams_abandoned_count_(0),
-      pings_in_flight_(0),
+      ping_in_flight_(false),
       next_ping_id_(1),
       last_read_time_(time_func()),
       last_compressed_frame_len_(0),
@@ -820,6 +830,7 @@ SpdySession::SpdySession(
           enable_ping_based_connection_checking),
       support_ietf_format_quic_altsvc_(support_ietf_format_quic_altsvc),
       is_trusted_proxy_(is_trusted_proxy),
+      enable_push_(IsPushEnabled(initial_settings)),
       support_websocket_(false),
       connection_at_risk_of_loss_time_(
           base::TimeDelta::FromSeconds(kDefaultConnectionAtRiskOfLossSeconds)),
@@ -889,16 +900,8 @@ int SpdySession::GetPushedStream(const GURL& url,
   streams_pushed_and_claimed_count_++;
 
   // If the stream is still open, update its priority to that of the request.
-  if (!(*stream)->IsClosed() && (*stream)->priority() != priority) {
+  if (!(*stream)->IsClosed()) {
     (*stream)->SetPriority(priority);
-
-    auto updates = priority_dependency_state_.OnStreamUpdate(
-        (*stream)->stream_id(), ConvertRequestPriorityToSpdyPriority(priority));
-    for (auto u : updates) {
-      ActiveStreamMap::iterator it = active_streams_.find(u.id);
-      DCHECK(it != active_streams_.end());
-      EnqueuePriorityFrame(u.id, u.parent_stream_id, u.weight, u.exclusive);
-    }
   }
 
   return OK;
@@ -910,7 +913,8 @@ void SpdySession::CancelPush(const GURL& url) {
   if (stream_id == kNoPushedStreamFound)
     return;
 
-  DCHECK(active_streams_.find(stream_id) != active_streams_.end());
+  DCHECK(IsStreamActive(stream_id));
+  RecordSpdyPushedStreamFateHistogram(SpdyPushedStreamFate::kAlreadyInCache);
   ResetStream(stream_id, ERR_ABORTED, "Cancelled push stream.");
 }
 
@@ -1137,6 +1141,30 @@ std::unique_ptr<SpdyBuffer> SpdySession::CreateDataBuffer(
   }
 
   return data_buffer;
+}
+
+void SpdySession::UpdateStreamPriority(SpdyStream* stream,
+                                       RequestPriority old_priority,
+                                       RequestPriority new_priority) {
+  // There might be write frames enqueued for |stream| regardless of whether it
+  // is active (stream_id != 0) or inactive (no HEADERS frame has been sent out
+  // yet and stream_id == 0).
+  write_queue_.ChangePriorityOfWritesForStream(stream, old_priority,
+                                               new_priority);
+
+  // PRIORITY frames only need to be sent if |stream| is active.
+  const spdy::SpdyStreamId stream_id = stream->stream_id();
+  if (stream_id == 0)
+    return;
+
+  DCHECK(IsStreamActive(stream_id));
+
+  auto updates = priority_dependency_state_.OnStreamUpdate(
+      stream_id, ConvertRequestPriorityToSpdyPriority(new_priority));
+  for (auto u : updates) {
+    DCHECK(IsStreamActive(u.id));
+    EnqueuePriorityFrame(u.id, u.parent_stream_id, u.weight, u.exclusive);
+  }
 }
 
 void SpdySession::CloseActiveStream(spdy::SpdyStreamId stream_id, int status) {
@@ -1402,7 +1430,7 @@ bool SpdySession::ValidatePushedStream(spdy::SpdyStreamId stream_id,
     return false;
   }
   // Certificate must match for encrypted schemes only.
-  if (url.SchemeIsCryptographic() &&
+  if (key != spdy_session_key_ && url.SchemeIsCryptographic() &&
       !VerifyDomainAuthentication(key.host_port_pair().host())) {
     return false;
   }
@@ -1621,6 +1649,19 @@ void SpdySession::ProcessPendingStreamRequests() {
 void SpdySession::TryCreatePushStream(spdy::SpdyStreamId stream_id,
                                       spdy::SpdyStreamId associated_stream_id,
                                       spdy::SpdyHeaderBlock headers) {
+  // Pushed streams are speculative, so they start at an IDLE priority.
+  // TODO(bnc): Send pushed stream cancellation with higher priority to avoid
+  // wasting bandwidth.
+  const RequestPriority request_priority = IDLE;
+
+  if (!enable_push_) {
+    RecordSpdyPushedStreamFateHistogram(SpdyPushedStreamFate::kPushDisabled);
+    EnqueueResetStreamFrame(stream_id, request_priority,
+                            spdy::ERROR_CODE_REFUSED_STREAM,
+                            "Push is disabled.");
+    return;
+  }
+
   if ((stream_id & 0x1) != 0) {
     std::string description = base::StringPrintf(
         "Received invalid pushed stream id %d (must be even) on stream id %d.",
@@ -1660,9 +1701,6 @@ void SpdySession::TryCreatePushStream(spdy::SpdyStreamId stream_id,
 
   last_accepted_push_stream_id_ = stream_id;
 
-  // Pushed streams are speculative, so they start at an IDLE priority.
-  const RequestPriority request_priority = IDLE;
-
   if (availability_state_ == STATE_GOING_AWAY) {
     RecordSpdyPushedStreamFateHistogram(SpdyPushedStreamFate::kGoingAway);
     EnqueueResetStreamFrame(stream_id, request_priority,
@@ -1674,7 +1712,7 @@ void SpdySession::TryCreatePushStream(spdy::SpdyStreamId stream_id,
   streams_pushed_count_++;
 
   // Verify that the response had a URL for us.
-  GURL gurl(SpdyUtils::GetPromisedUrlFromHeaders(headers));
+  GURL gurl(quic::SpdyUtils::GetPromisedUrlFromHeaders(headers));
   if (!gurl.is_valid()) {
     RecordSpdyPushedStreamFateHistogram(SpdyPushedStreamFate::kInvalidUrl);
     EnqueueResetStreamFrame(stream_id, request_priority,
@@ -2389,7 +2427,7 @@ void SpdySession::UpdateStreamsSendWindowSize(int32_t delta_window_size) {
 }
 
 void SpdySession::MaybeSendPrefacePing() {
-  if (pings_in_flight_ > 0 || check_ping_status_pending_ ||
+  if (ping_in_flight_ || check_ping_status_pending_ ||
       !enable_ping_based_connection_checking_) {
     return;
   }
@@ -2434,8 +2472,10 @@ void SpdySession::WritePingFrame(spdy::SpdyPingId unique_id, bool is_ack) {
         base::Bind(&NetLogSpdyPingCallback, unique_id, is_ack, "sent"));
   }
   if (!is_ack) {
+    DCHECK(!ping_in_flight_);
+
+    ping_in_flight_ = true;
     ++next_ping_id_;
-    ++pings_in_flight_;
     PlanToCheckPingStatus();
     last_ping_sent_time_ = time_func_();
   }
@@ -2456,8 +2496,8 @@ void SpdySession::CheckPingStatus(base::TimeTicks last_check_time) {
   CHECK(!in_io_loop_);
   DCHECK(check_ping_status_pending_);
 
-  // Check if we got a response back for all PINGs we had sent.
-  if (pings_in_flight_ == 0) {
+  if (!ping_in_flight_) {
+    // A response has been received for the ping we had sent.
     check_ping_status_pending_ = false;
     return;
   }
@@ -2517,17 +2557,19 @@ void SpdySession::EnqueueWrite(
 
 void SpdySession::InsertCreatedStream(std::unique_ptr<SpdyStream> stream) {
   CHECK_EQ(stream->stream_id(), 0u);
-  CHECK(created_streams_.find(stream.get()) == created_streams_.end());
-  created_streams_.insert(stream.release());
+  auto it = created_streams_.lower_bound(stream.get());
+  CHECK(it == created_streams_.end() || *it != stream.get());
+  created_streams_.insert(it, stream.release());
 }
 
 std::unique_ptr<SpdyStream> SpdySession::ActivateCreatedStream(
     SpdyStream* stream) {
   CHECK_EQ(stream->stream_id(), 0u);
-  CHECK(created_streams_.find(stream) != created_streams_.end());
+  auto it = created_streams_.find(stream);
+  CHECK(it != created_streams_.end());
   stream->set_stream_id(GetNewStreamId());
   std::unique_ptr<SpdyStream> owned_stream(stream);
-  created_streams_.erase(stream);
+  created_streams_.erase(it);
   return owned_stream;
 }
 
@@ -2549,7 +2591,7 @@ void SpdySession::DeleteStream(std::unique_ptr<SpdyStream> stream, int status) {
     in_flight_write_stream_.reset();
   }
 
-  write_queue_.RemovePendingWritesForStream(stream->GetWeakPtr());
+  write_queue_.RemovePendingWritesForStream(stream.get());
   stream->OnClose(status);
 
   if (availability_state_ == STATE_AVAILABLE) {
@@ -2761,16 +2803,13 @@ void SpdySession::OnPing(spdy::SpdyPingId unique_id, bool is_ack) {
     return;
   }
 
-  --pings_in_flight_;
-  if (pings_in_flight_ < 0) {
+  if (!ping_in_flight_) {
     RecordProtocolErrorHistogram(PROTOCOL_ERROR_UNEXPECTED_PING);
-    DoDrainSession(ERR_SPDY_PROTOCOL_ERROR, "pings_in_flight_ is < 0.");
-    pings_in_flight_ = 0;
+    DoDrainSession(ERR_SPDY_PROTOCOL_ERROR, "Unexpected PING ACK.");
     return;
   }
 
-  if (pings_in_flight_ > 0)
-    return;
+  ping_in_flight_ = false;
 
   // Record RTT in histogram when there are no more pings in flight.
   RecordPingRTTHistogram(time_func_() - last_ping_sent_time_);
@@ -3133,7 +3172,7 @@ void SpdySession::OnAltSvc(
       continue;
 
     // Check if QUIC version is supported. Filter supported QUIC versions.
-    QuicTransportVersionVector advertised_versions;
+    quic::QuicTransportVersionVector advertised_versions;
     if (protocol == kProtoQUIC && !altsvc.version.empty()) {
       advertised_versions = FilterSupportedAltSvcVersions(
           altsvc, quic_supported_versions_, support_ietf_format_quic_altsvc_);

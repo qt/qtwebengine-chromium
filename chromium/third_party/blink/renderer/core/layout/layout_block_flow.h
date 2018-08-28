@@ -102,7 +102,8 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   explicit LayoutBlockFlow(ContainerNode*);
   ~LayoutBlockFlow() override;
 
-  static LayoutBlockFlow* CreateAnonymous(Document*);
+  static LayoutBlockFlow* CreateAnonymous(Document*,
+                                          scoped_refptr<ComputedStyle>);
   bool BeingDestroyed() const { return being_destroyed_; }
 
   bool IsLayoutBlockFlow() const final { return true; }
@@ -194,11 +195,6 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   RootInlineBox* LastRootBox() const {
     return static_cast<RootInlineBox*>(LastLineBox());
   }
-
-  LayoutUnit LogicalLeftSelectionOffset(const LayoutBlock* root_block,
-                                        LayoutUnit position) const override;
-  LayoutUnit LogicalRightSelectionOffset(const LayoutBlock* root_block,
-                                         LayoutUnit position) const override;
 
   RootInlineBox* CreateAndAppendRootInlineBox();
   RootInlineBox* ConstructLine(BidiRunList<BidiRun>&, const LineInfo&);
@@ -664,6 +660,7 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   void ReparentSubsequentFloatingOrOutOfFlowSiblings();
   void ReparentPrecedingFloatingOrOutOfFlowSiblings();
 
+  bool NeedsAnonymousInlineWrapper() const;
   void MakeChildrenInlineIfPossible();
 
   void MakeChildrenNonInline(LayoutObject* insertion_point = nullptr);

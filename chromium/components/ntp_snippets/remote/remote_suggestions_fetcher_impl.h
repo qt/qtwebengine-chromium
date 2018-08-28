@@ -18,8 +18,8 @@
 #include "components/ntp_snippets/remote/json_to_categories.h"
 #include "components/ntp_snippets/remote/remote_suggestions_fetcher.h"
 #include "components/ntp_snippets/remote/request_params.h"
-#include "net/url_request/url_request_context_getter.h"
-#include "services/identity/public/cpp/primary_account_access_token_fetcher.h"
+#include "google_apis/gaia/google_service_auth_error.h"
+#include "services/identity/public/cpp/access_token_info.h"
 
 class PrefService;
 
@@ -30,11 +30,15 @@ class Value;
 namespace identity {
 class IdentityManager;
 class PrimaryAccountAccessTokenFetcher;
-}
+}  // namespace identity
 
 namespace language {
 class UrlLanguageHistogram;
 }  // namespace language
+
+namespace network {
+class SharedURLLoaderFactory;
+}  // namespace network
 
 namespace ntp_snippets {
 
@@ -44,7 +48,7 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
  public:
   RemoteSuggestionsFetcherImpl(
       identity::IdentityManager* identity_manager,
-      scoped_refptr<net::URLRequestContextGetter> url_request_context_getter,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       PrefService* pref_service,
       language::UrlLanguageHistogram* language_histogram,
       const ParseJSONCallback& parse_json_callback,
@@ -64,6 +68,8 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
   // Overrides internal clock for testing purposes.
   void SetClockForTesting(base::Clock* clock) { clock_ = clock; }
 
+  static void set_skip_api_key_check_for_testing();
+
  private:
   void FetchSnippetsNonAuthenticated(internal::JsonRequest::Builder builder,
                                      SnippetsAvailableCallback callback);
@@ -72,17 +78,19 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
                                   const std::string& oauth_access_token);
   void StartRequest(internal::JsonRequest::Builder builder,
                     SnippetsAvailableCallback callback,
-                    bool is_authenticated);
+                    bool is_authenticated,
+                    std::string access_token);
 
   void StartTokenRequest();
 
-  void AccessTokenFetchFinished(const GoogleServiceAuthError& error,
-                                const std::string& access_token);
+  void AccessTokenFetchFinished(GoogleServiceAuthError error,
+                                identity::AccessTokenInfo access_token_info);
   void AccessTokenError(const GoogleServiceAuthError& error);
 
   void JsonRequestDone(std::unique_ptr<internal::JsonRequest> request,
                        SnippetsAvailableCallback callback,
                        bool is_authenticated,
+                       std::string access_token,
                        std::unique_ptr<base::Value> result,
                        internal::FetchResult status_code,
                        const std::string& error_details);
@@ -90,15 +98,16 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
                      SnippetsAvailableCallback callback,
                      internal::FetchResult status_code,
                      const std::string& error_details,
-                     bool is_authenticated);
+                     bool is_authenticated,
+                     std::string access_token);
 
   // Authentication for signed-in users.
   identity::IdentityManager* identity_manager_;
 
   std::unique_ptr<identity::PrimaryAccountAccessTokenFetcher> token_fetcher_;
 
-  // Holds the URL request context.
-  scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
+  // Holds the URL loader factory
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
 
   // Stores requests that wait for an access token.
   base::queue<
@@ -126,6 +135,8 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
   std::string last_status_;
   std::string last_fetch_json_;
   bool last_fetch_authenticated_;
+
+  static bool skip_api_key_check_for_testing_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteSuggestionsFetcherImpl);
 };

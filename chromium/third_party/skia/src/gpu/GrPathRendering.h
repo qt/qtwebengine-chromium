@@ -109,17 +109,19 @@ public:
 
     void stencilPath(const StencilPathArgs& args, const GrPath* path);
 
-    void drawPath(const GrPipeline& pipeline,
-                  const GrPrimitiveProcessor& primProc,
-                  const GrStencilSettings& stencilPassSettings, // Cover pass settings in pipeline.
+    void drawPath(const GrPrimitiveProcessor& primProc,
+                  const GrPipeline& pipeline,
+                  const GrPipeline::FixedDynamicState&,
+                  const GrStencilSettings& stencilPassSettings,  // Cover pass settings in pipeline.
                   const GrPath* path);
 
 protected:
     GrPathRendering(GrGpu* gpu) : fGpu(gpu) { }
 
     virtual void onStencilPath(const StencilPathArgs&, const GrPath*) = 0;
-    virtual void onDrawPath(const GrPipeline&,
-                            const GrPrimitiveProcessor&,
+    virtual void onDrawPath(const GrPrimitiveProcessor&,
+                            const GrPipeline&,
+                            const GrPipeline::FixedDynamicState&,
                             const GrStencilSettings&,
                             const GrPath*) = 0;
 

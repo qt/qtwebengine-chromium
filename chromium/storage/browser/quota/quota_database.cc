@@ -198,6 +198,8 @@ bool QuotaDatabase::SetHostQuota(const std::string& host,
   DCHECK_GE(quota, 0);
   if (!LazyOpen(true))
     return false;
+  if (quota == 0)
+    return DeleteHostQuota(host, type);
   if (!InsertOrReplaceHostQuota(host, type, quota))
     return false;
   ScheduleCommit();
@@ -224,9 +226,10 @@ bool QuotaDatabase::SetOriginLastAccessTime(
     entry.used_count = 1;
     const char* kSql =
         "INSERT INTO OriginInfoTable"
-        " (used_count, last_access_time, origin, type)"
-        " VALUES (?, ?, ?, ?)";
+        " (used_count, last_access_time, origin, type, last_modified_time)"
+        " VALUES (?, ?, ?, ?, ?)";
     statement.Assign(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
+    statement.BindInt64(4, last_access_time.ToInternalValue());
   }
   statement.BindInt(0, entry.used_count);
   statement.BindInt64(1, last_access_time.ToInternalValue());
@@ -258,8 +261,9 @@ bool QuotaDatabase::SetOriginLastModifiedTime(
   } else {
     const char* kSql =
         "INSERT INTO OriginInfoTable"
-        " (last_modified_time, origin, type)  VALUES (?, ?, ?)";
+        " (last_modified_time, origin, type, last_access_time)  VALUES (?, ?, ?, ?)";
     statement.Assign(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
+    statement.BindInt64(3, last_modified_time.ToInternalValue());
   }
   statement.BindInt64(0, last_modified_time.ToInternalValue());
   statement.BindString(1, origin.spec());
@@ -279,7 +283,7 @@ bool QuotaDatabase::GetOriginLastEvictionTime(const GURL& origin,
   if (!LazyOpen(false))
     return false;
 
-  const char kSql[] =
+  static const char kSql[] =
       "SELECT last_eviction_time"
       " FROM EvictionInfoTable"
       " WHERE origin = ? AND type = ?";
@@ -301,7 +305,7 @@ bool QuotaDatabase::SetOriginLastEvictionTime(const GURL& origin,
   if (!LazyOpen(true))
     return false;
 
-  const char kSql[] =
+  static const char kSql[] =
       "INSERT OR REPLACE INTO EvictionInfoTable"
       " (last_eviction_time, origin, type)"
       " VALUES (?, ?, ?)";
@@ -322,7 +326,7 @@ bool QuotaDatabase::DeleteOriginLastEvictionTime(const GURL& origin,
   if (!LazyOpen(false))
     return false;
 
-  const char kSql[] =
+  static const char kSql[] =
       "DELETE FROM EvictionInfoTable"
       " WHERE origin = ? AND type = ?";
 

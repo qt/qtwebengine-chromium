@@ -32,7 +32,7 @@ class CallStats : public Module, public RtcpRttStats {
   static constexpr int64_t kUpdateIntervalMs = 1000;
 
   CallStats(Clock* clock, ProcessThread* process_thread);
-  ~CallStats();
+  ~CallStats() override;
 
   // Registers/deregisters a new observer to receive statistics updates.
   // Must be called from the construction thread.
@@ -53,8 +53,7 @@ class CallStats : public Module, public RtcpRttStats {
 
   // Helper struct keeping track of the time a rtt value is reported.
   struct RttTime {
-    RttTime(int64_t new_rtt, int64_t rtt_time)
-        : rtt(new_rtt), time(rtt_time) {}
+    RttTime(int64_t new_rtt, int64_t rtt_time) : rtt(new_rtt), time(rtt_time) {}
     const int64_t rtt;
     const int64_t time;
   };

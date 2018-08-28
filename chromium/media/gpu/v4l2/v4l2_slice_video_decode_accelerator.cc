@@ -28,7 +28,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/media_switches.h"
-#include "media/gpu/shared_memory_region.h"
+#include "media/base/unaligned_shared_memory.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_image.h"
 #include "ui/gl/scoped_binders.h"
@@ -196,12 +196,13 @@ struct V4L2SliceVideoDecodeAccelerator::BitstreamBufferRef {
   BitstreamBufferRef(
       base::WeakPtr<VideoDecodeAccelerator::Client>& client,
       const scoped_refptr<base::SingleThreadTaskRunner>& client_task_runner,
-      SharedMemoryRegion* shm,
+      const BitstreamBuffer* buffer,
       int32_t input_id);
   ~BitstreamBufferRef();
   const base::WeakPtr<VideoDecodeAccelerator::Client> client;
   const scoped_refptr<base::SingleThreadTaskRunner> client_task_runner;
-  const std::unique_ptr<SharedMemoryRegion> shm;
+  const std::unique_ptr<UnalignedSharedMemory> shm;
+  off_t offset;
   off_t bytes_used;
   const int32_t input_id;
 };
@@ -209,11 +210,15 @@ struct V4L2SliceVideoDecodeAccelerator::BitstreamBufferRef {
 V4L2SliceVideoDecodeAccelerator::BitstreamBufferRef::BitstreamBufferRef(
     base::WeakPtr<VideoDecodeAccelerator::Client>& client,
     const scoped_refptr<base::SingleThreadTaskRunner>& client_task_runner,
-    SharedMemoryRegion* shm,
+    const BitstreamBuffer* buffer,
     int32_t input_id)
     : client(client),
       client_task_runner(client_task_runner),
-      shm(shm),
+      shm(buffer ? std::make_unique<UnalignedSharedMemory>(buffer->handle(),
+                                                           buffer->size(),
+                                                           true)
+                 : nullptr),
+      offset(buffer ? buffer->offset() : 0),
       bytes_used(0),
       input_id(input_id) {}
 
@@ -257,29 +262,32 @@ V4L2SliceVideoDecodeAccelerator::PictureRecord::~PictureRecord() {}
 class V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator
     : public H264Decoder::H264Accelerator {
  public:
+  using Status = H264Decoder::H264Accelerator::Status;
+
   explicit V4L2H264Accelerator(V4L2SliceVideoDecodeAccelerator* v4l2_dec);
   ~V4L2H264Accelerator() override;
 
   // H264Decoder::H264Accelerator implementation.
   scoped_refptr<H264Picture> CreateH264Picture() override;
 
-  bool SubmitFrameMetadata(const H264SPS* sps,
-                           const H264PPS* pps,
-                           const H264DPB& dpb,
-                           const H264Picture::Vector& ref_pic_listp0,
-                           const H264Picture::Vector& ref_pic_listb0,
-                           const H264Picture::Vector& ref_pic_listb1,
-                           const scoped_refptr<H264Picture>& pic) override;
+  Status SubmitFrameMetadata(const H264SPS* sps,
+                             const H264PPS* pps,
+                             const H264DPB& dpb,
+                             const H264Picture::Vector& ref_pic_listp0,
+                             const H264Picture::Vector& ref_pic_listb0,
+                             const H264Picture::Vector& ref_pic_listb1,
+                             const scoped_refptr<H264Picture>& pic) override;
 
-  bool SubmitSlice(const H264PPS* pps,
-                   const H264SliceHeader* slice_hdr,
-                   const H264Picture::Vector& ref_pic_list0,
-                   const H264Picture::Vector& ref_pic_list1,
-                   const scoped_refptr<H264Picture>& pic,
-                   const uint8_t* data,
-                   size_t size) override;
+  Status SubmitSlice(const H264PPS* pps,
+                     const H264SliceHeader* slice_hdr,
+                     const H264Picture::Vector& ref_pic_list0,
+                     const H264Picture::Vector& ref_pic_list1,
+                     const scoped_refptr<H264Picture>& pic,
+                     const uint8_t* data,
+                     size_t size,
+                     const std::vector<SubsampleEntry>& subsamples) override;
 
-  bool SubmitDecode(const scoped_refptr<H264Picture>& pic) override;
+  Status SubmitDecode(const scoped_refptr<H264Picture>& pic) override;
   bool OutputPicture(const scoped_refptr<H264Picture>& pic) override;
 
   void Reset() override;
@@ -1337,15 +1345,16 @@ void V4L2SliceVideoDecodeAccelerator::DecodeTask(
             << " size=" << bitstream_buffer.size();
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
 
-  std::unique_ptr<BitstreamBufferRef> bitstream_record(new BitstreamBufferRef(
-      decode_client_, decode_task_runner_,
-      new SharedMemoryRegion(bitstream_buffer, true), bitstream_buffer.id()));
+  std::unique_ptr<BitstreamBufferRef> bitstream_record(
+      new BitstreamBufferRef(decode_client_, decode_task_runner_,
+                             &bitstream_buffer, bitstream_buffer.id()));
 
   // Skip empty buffer.
   if (bitstream_buffer.size() == 0)
     return;
 
-  if (!bitstream_record->shm->Map()) {
+  if (!bitstream_record->shm->MapAt(bitstream_record->offset,
+                                    bitstream_record->shm->size())) {
     VLOGF(1) << "Could not map bitstream_buffer";
     NOTIFY_ERROR(UNREADABLE_INPUT);
     return;
@@ -1431,7 +1440,7 @@ void V4L2SliceVideoDecodeAccelerator::DecodeBufferTask() {
         NOTIFY_ERROR(PLATFORM_FAILURE);
         return;
 
-      case AcceleratedVideoDecoder::kNoKey:
+      case AcceleratedVideoDecoder::kTryAgain:
         NOTREACHED() << "Should not reach here unless this class accepts "
                         "encrypted streams.";
         DVLOGF(4) << "No key for decoding stream.";
@@ -2135,7 +2144,8 @@ void V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::H264DPBToV4L2DPB(
   }
 }
 
-bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitFrameMetadata(
+H264Decoder::H264Accelerator::Status
+V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitFrameMetadata(
     const H264SPS* sps,
     const H264PPS* pps,
     const H264DPB& dpb,
@@ -2310,20 +2320,22 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitFrameMetadata(
   H264DPBToV4L2DPB(dpb, &ref_surfaces);
   dec_surface->SetReferenceSurfaces(ref_surfaces);
 
-  return true;
+  return Status::kOk;
 }
 
-bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitSlice(
+H264Decoder::H264Accelerator::Status
+V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitSlice(
     const H264PPS* pps,
     const H264SliceHeader* slice_hdr,
     const H264Picture::Vector& ref_pic_list0,
     const H264Picture::Vector& ref_pic_list1,
     const scoped_refptr<H264Picture>& pic,
     const uint8_t* data,
-    size_t size) {
+    size_t size,
+    const std::vector<SubsampleEntry>& subsamples) {
   if (num_slices_ == kMaxSlices) {
     VLOGF(1) << "Over limit of supported slices per frame";
-    return false;
+    return Status::kFail;
   }
 
   struct v4l2_ctrl_h264_slice_param& v4l2_slice_param =
@@ -2431,7 +2443,9 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitSlice(
   data_copy[2] = 0x01;
   memcpy(data_copy.get() + 3, data, size);
   return v4l2_dec_->SubmitSlice(dec_surface->input_record(), data_copy.get(),
-                                data_copy_size);
+                                data_copy_size)
+             ? Status::kOk
+             : Status::kFail;
 }
 
 bool V4L2SliceVideoDecodeAccelerator::SubmitSlice(int index,
@@ -2477,7 +2491,8 @@ bool V4L2SliceVideoDecodeAccelerator::IsCtrlExposed(uint32_t ctrl_id) {
   return (device_->Ioctl(VIDIOC_QUERYCTRL, &query_ctrl) == 0);
 }
 
-bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitDecode(
+H264Decoder::H264Accelerator::Status
+V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitDecode(
     const scoped_refptr<H264Picture>& pic) {
   scoped_refptr<V4L2DecodeSurface> dec_surface =
       H264PictureToV4L2DecodeSurface(pic);
@@ -2508,12 +2523,12 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitDecode(
   ext_ctrls.controls = &ctrls[0];
   ext_ctrls.config_store = dec_surface->config_store();
   if (!v4l2_dec_->SubmitExtControls(&ext_ctrls))
-    return false;
+    return Status::kFail;
 
   Reset();
 
   v4l2_dec_->DecodeSurface(dec_surface);
-  return true;
+  return Status::kOk;
 }
 
 bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::OutputPicture(

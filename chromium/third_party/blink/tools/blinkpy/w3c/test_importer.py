@@ -19,10 +19,11 @@ import re
 
 from blinkpy.common.net.buildbot import current_build_link
 from blinkpy.common.net.git_cl import GitCL
+from blinkpy.common.net.network_transaction import NetworkTimeout
 from blinkpy.common.path_finder import PathFinder
 from blinkpy.common.system.log_utils import configure_logging
 from blinkpy.w3c.chromium_exportable_commits import exportable_commits_over_last_n_commits
-from blinkpy.w3c.common import read_credentials, is_testharness_baseline, is_file_exportable
+from blinkpy.w3c.common import read_credentials, is_testharness_baseline, is_file_exportable, WPT_GH_URL
 from blinkpy.w3c.directory_owners_extractor import DirectoryOwnersExtractor
 from blinkpy.w3c.import_notifier import ImportNotifier
 from blinkpy.w3c.local_wpt import LocalWPT
@@ -39,7 +40,7 @@ TIMEOUT_SECONDS = 210 * 60
 
 # Sheriff calendar URL, used for getting the ecosystem infra sheriff to TBR.
 ROTATIONS_URL = 'https://build.chromium.org/deprecated/chromium/all_rotations.js'
-TBR_FALLBACK = 'qyearsley'
+TBR_FALLBACK = 'robertma'
 
 _log = logging.getLogger(__file__)
 
@@ -244,16 +245,21 @@ class TestImporter(object):
             self.git_cl.run(['set-close'])
             return False
 
-        if self.git_cl.all_success(cq_try_results):
-            _log.info('CQ appears to have passed; trying to commit.')
-            self.git_cl.run(['upload', '-f', '--send-mail'])  # Turn off WIP mode.
-            self.git_cl.run(['set-commit'])
-            self.git_cl.wait_for_closed_status()
+        if not self.git_cl.all_success(cq_try_results):
+            _log.error('CQ appears to have failed; aborting.')
+            self.git_cl.run(['set-close'])
+            return False
+
+        _log.info('CQ appears to have passed; trying to commit.')
+        self.git_cl.run(['upload', '-f', '--send-mail'])  # Turn off WIP mode.
+        self.git_cl.run(['set-commit'])
+
+        if self.git_cl.wait_for_closed_status():
             _log.info('Update completed.')
             return True
 
+        _log.error('Cannot submit CL; aborting.')
         self.git_cl.run(['set-close'])
-        _log.error('CQ appears to have failed; aborting.')
         return False
 
     def blink_try_bots(self):
@@ -328,7 +334,7 @@ class TestImporter(object):
             # could still be useful for reference.
             pull_request = self.wpt_github.pr_for_chromium_commit(commit)
             if pull_request:
-                _log.info('PR: https://github.com/w3c/web-platform-tests/pull/%d', pull_request.number)
+                _log.info('PR: %spull/%d', WPT_GH_URL, pull_request.number)
             else:
                 _log.warning('No pull request found.')
             error = local_wpt.apply_patch(commit.format_patch())
@@ -528,7 +534,11 @@ class TestImporter(object):
         return username or TBR_FALLBACK
 
     def _fetch_ecosystem_infra_sheriff_username(self):
-        content = self.host.web.get_binary(ROTATIONS_URL)
+        try:
+            content = self.host.web.get_binary(ROTATIONS_URL)
+        except NetworkTimeout:
+            _log.error('Cannot fetch %s', ROTATIONS_URL)
+            return ''
         data = json.loads(content)
         today = datetime.date.fromtimestamp(self.host.time()).isoformat()
         index = data['rotations'].index('ecosystem_infra')

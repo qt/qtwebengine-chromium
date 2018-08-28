@@ -22,8 +22,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_termination_info.h"
 #include "content/public/common/result_codes.h"
-#include "mojo/edk/embedder/outgoing_broker_client_invitation.h"
-#include "mojo/edk/embedder/scoped_platform_handle.h"
+#include "mojo/public/cpp/system/invitation.h"
 
 #if defined(OS_ANDROID)
 #include "content/public/browser/android/child_process_importance.h"
@@ -57,17 +56,75 @@ static_assert(static_cast<int>(LAUNCH_RESULT_START) >
 #endif
 
 struct ChildProcessLauncherPriority {
-  bool background;
-  unsigned int frame_depth;
-  bool boost_for_pending_views;
+  ChildProcessLauncherPriority(bool visible,
+                               bool has_media_stream,
+                               unsigned int frame_depth,
+                               bool boost_for_pending_views,
+                               bool should_boost_for_pending_views
 #if defined(OS_ANDROID)
-  ChildProcessImportance importance;
+                               ,
+                               ChildProcessImportance importance
 #endif
+                               )
+      : visible(visible),
+        has_media_stream(has_media_stream),
+        frame_depth(frame_depth),
+        boost_for_pending_views(boost_for_pending_views),
+        should_boost_for_pending_views(should_boost_for_pending_views)
+#if defined(OS_ANDROID)
+        ,
+        importance(importance)
+#endif
+  {
+  }
+
+  // Returns true if the child process is backgrounded.
+  bool is_background() const {
+    return !visible && !has_media_stream &&
+           !(should_boost_for_pending_views && boost_for_pending_views);
+  }
 
   bool operator==(const ChildProcessLauncherPriority& other) const;
   bool operator!=(const ChildProcessLauncherPriority& other) const {
     return !(*this == other);
   }
+
+  // Prefer |is_background()| to inspecting these fields individually (to ensure
+  // all logic uses the same notion of "backgrounded").
+
+  // |visible| is true if the process is responsible for one or more widget(s)
+  // in foreground tabs. The notion of "visible" is determined by the embedder
+  // but is ideally a widget in a non-minimized, non-background, non-occluded
+  // tab (i.e. with pixels visible on the screen).
+  bool visible;
+
+  // |has_media_stream| is true when the process is responsible for "hearable"
+  // content.
+  bool has_media_stream;
+
+  // |frame_depth| is the depth of the shallowest frame this process is
+  // responsible for which has |visible| visibility. It only makes sense to
+  // compare this property for two ChildProcessLauncherPriority instances with
+  // matching |visible| properties.
+  unsigned int frame_depth;
+
+  // |boost_for_pending_views| is true if this process is responsible for a
+  // pending view (this is used to boost priority of a process responsible for
+  // foreground content which hasn't yet been added as a visible widget -- i.e.
+  // during navigation).
+  bool boost_for_pending_views;
+
+  // True iff |boost_for_pending_views| should be considered in
+  // |is_background()|. This needs to be a separate parameter as opposed to
+  // having the experiment set |boost_for_pending_views == false| when
+  // |!should_boost_for_pending_views| as that would result in different
+  // |is_background()| logic than before and defeat the purpose of the
+  // experiment. TODO(gab): Remove this field when the
+  // BoostRendererPriorityForPendingViews desktop experiment is over.
+  bool should_boost_for_pending_views;
+#if defined(OS_ANDROID)
+  ChildProcessImportance importance;
+#endif
 };
 
 // Launches a process asynchronously and notifies the client of the process
@@ -101,9 +158,8 @@ class CONTENT_EXPORT ChildProcessLauncher {
       std::unique_ptr<base::CommandLine> cmd_line,
       int child_process_id,
       Client* client,
-      std::unique_ptr<mojo::edk::OutgoingBrokerClientInvitation>
-          broker_client_invitation,
-      const mojo::edk::ProcessErrorCallback& process_error_callback,
+      mojo::OutgoingInvitation mojo_invitation,
+      const mojo::ProcessErrorCallback& process_error_callback,
       bool terminate_on_shutdown = true);
   ~ChildProcessLauncher();
 

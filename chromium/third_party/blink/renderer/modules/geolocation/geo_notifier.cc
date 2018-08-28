@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/geolocation/geo_notifier.h"
 
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/modules/geolocation/geolocation.h"
 #include "third_party/blink/renderer/modules/geolocation/position_error.h"
 #include "third_party/blink/renderer/modules/geolocation/position_options.h"
@@ -43,11 +44,6 @@ void GeoNotifier::Trace(blink::Visitor* visitor) {
   visitor->Trace(fatal_error_);
 }
 
-void GeoNotifier::TraceWrappers(ScriptWrappableVisitor* visitor) const {
-  visitor->TraceWrappers(success_callback_);
-  visitor->TraceWrappers(error_callback_);
-}
-
 void GeoNotifier::SetFatalError(PositionError* error) {
   // If a fatal error has already been set, stick with it. This makes sure that
   // when permission is denied, this is the error reported, as required by the
@@ -76,7 +72,8 @@ void GeoNotifier::RunErrorCallback(PositionError* error) {
 }
 
 void GeoNotifier::StartTimer() {
-  timer_->StartOneShot(options_.timeout() / 1000.0, FROM_HERE);
+  timer_->StartOneShot(TimeDelta::FromMilliseconds(options_.timeout()),
+                       FROM_HERE);
 }
 
 void GeoNotifier::StopTimer() {
@@ -92,12 +89,6 @@ void GeoNotifier::Timer::Trace(blink::Visitor* visitor) {
 }
 
 void GeoNotifier::Timer::StartOneShot(TimeDelta interval,
-                                      const base::Location& caller) {
-  DCHECK(notifier_->geolocation_->DoesOwnNotifier(notifier_));
-  timer_.StartOneShot(interval, caller);
-}
-
-void GeoNotifier::Timer::StartOneShot(double interval,
                                       const base::Location& caller) {
   DCHECK(notifier_->geolocation_->DoesOwnNotifier(notifier_));
   timer_.StartOneShot(interval, caller);

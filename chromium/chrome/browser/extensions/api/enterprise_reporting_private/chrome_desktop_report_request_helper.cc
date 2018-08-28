@@ -13,6 +13,7 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/policy/chrome_browser_policy_connector.h"
+#include "chrome/browser/policy/machine_level_user_cloud_policy_controller.h"
 #include "chrome/browser/policy/policy_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/channel_info.h"
@@ -68,7 +69,7 @@ std::string GetProfileId(const Profile* profile) {
 int64_t GetMachineLevelUserCloudPolicyFetchTimestamp() {
   policy::MachineLevelUserCloudPolicyManager* manager =
       g_browser_process->browser_policy_connector()
-          ->GetMachineLevelUserCloudPolicyManager();
+          ->machine_level_user_cloud_policy_manager();
   if (!manager || !manager->IsClientRegistered())
     return 0;
   return manager->core()->client()->last_policy_timestamp().ToJavaTime();
@@ -99,7 +100,7 @@ void AppendAdditionalBrowserInformation(em::ChromeDesktopReportRequest* request,
   // the future.
   request->mutable_browser_report()
       ->mutable_chrome_user_profile_reports(0)
-      ->set_policy_data(policy::GetAllPolicyValuesAsJSON(profile, true));
+      ->set_policy_data(policy::GetAllPolicyValuesAsJSON(profile, true, false));
 
   int64_t timestamp = GetMachineLevelUserCloudPolicyFetchTimestamp();
   if (timestamp > 0) {

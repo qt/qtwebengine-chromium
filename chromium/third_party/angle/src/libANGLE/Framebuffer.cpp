@@ -72,16 +72,39 @@ bool CheckAttachmentCompleteness(const Context *context, const FramebufferAttach
     }
 
     const InternalFormat &format = *attachment.getFormat().info;
-    if (!format.renderSupport(context->getClientVersion(), context->getExtensions()))
+    if (attachment.type() == GL_RENDERBUFFER &&
+        !format.renderbufferSupport(context->getClientVersion(), context->getExtensions()))
+    {
+        return false;
+    }
+    if (attachment.type() == GL_TEXTURE &&
+        !format.textureAttachmentSupport(context->getClientVersion(), context->getExtensions()))
     {
         return false;
     }
 
     if (attachment.type() == GL_TEXTURE)
     {
-        if (attachment.layer() >= size.depth)
+        // [EXT_geometry_shader] Section 9.4.1, "Framebuffer Completeness"
+        // If <image> is a three-dimensional texture or a two-dimensional array texture and the
+        // attachment is not layered, the selected layer is less than the depth or layer count,
+        // respectively, of the texture.
+        if (!attachment.isLayered())
         {
-            return false;
+            if (attachment.layer() >= size.depth)
+            {
+                return false;
+            }
+        }
+        // If <image> is a three-dimensional texture or a two-dimensional array texture and the
+        // attachment is layered, the depth or layer count, respectively, of the texture is less
+        // than or equal to the value of MAX_FRAMEBUFFER_LAYERS_EXT.
+        else
+        {
+            if (static_cast<GLuint>(size.depth) >= context->getCaps().maxFramebufferLayers)
+            {
+                return false;
+            }
         }
 
         // ES3 specifies that cube map texture attachments must be cube complete.
@@ -143,11 +166,7 @@ bool CheckAttachmentSampleCompleteness(const Context *context,
         ASSERT(texture);
 
         const ImageIndex &attachmentImageIndex = attachment.getTextureImageIndex();
-
-        // ES3.1 (section 9.4) requires that the value of TEXTURE_FIXED_SAMPLE_LOCATIONS should be
-        // the same for all attached textures.
-        bool fixedSampleloc = texture->getFixedSampleLocations(
-            attachmentImageIndex.getTarget(), attachmentImageIndex.getLevelIndex());
+        bool fixedSampleloc = texture->getAttachmentFixedSampleLocations(attachmentImageIndex);
         if (fixedSampleLocations->valid() && fixedSampleloc != fixedSampleLocations->value())
         {
             return false;
@@ -252,7 +271,8 @@ bool IsClearBufferMaskedOut(const Context *context, GLenum buffer)
 
 // This constructor is only used for default framebuffers.
 FramebufferState::FramebufferState()
-    : mLabel(),
+    : mId(0),
+      mLabel(),
       mColorAttachments(1),
       mDrawBufferStates(1, GL_BACK),
       mReadBufferState(GL_BACK),
@@ -268,8 +288,9 @@ FramebufferState::FramebufferState()
     mEnabledDrawBuffers.set(0);
 }
 
-FramebufferState::FramebufferState(const Caps &caps)
-    : mLabel(),
+FramebufferState::FramebufferState(const Caps &caps, GLuint id)
+    : mId(id),
+      mLabel(),
       mColorAttachments(caps.maxColorAttachments),
       mDrawBufferStates(caps.maxDrawBuffers, GL_NONE),
       mReadBufferState(GL_COLOR_ATTACHMENT0_EXT),
@@ -281,6 +302,7 @@ FramebufferState::FramebufferState(const Caps &caps)
       mDefaultLayers(0),
       mWebGLDepthStencilConsistent(true)
 {
+    ASSERT(mId != 0);
     ASSERT(mDrawBufferStates.size() > 0);
     mDrawBufferStates[0] = GL_COLOR_ATTACHMENT0_EXT;
 }
@@ -494,6 +516,14 @@ bool FramebufferState::attachmentsHaveSameDimensions() const
     return !hasMismatchedSize(mStencilAttachment);
 }
 
+bool FramebufferState::hasSeparateDepthAndStencilAttachments() const
+{
+    // if we have both a depth and stencil buffer, they must refer to the same object
+    // since we only support packed_depth_stencil and not separate depth and stencil
+    return (getDepthAttachment() != nullptr && getStencilAttachment() != nullptr &&
+            getDepthStencilAttachment() == nullptr);
+}
+
 const FramebufferAttachment *FramebufferState::getDrawBuffer(size_t drawBufferIdx) const
 {
     ASSERT(drawBufferIdx < mDrawBufferStates.size());
@@ -613,14 +643,12 @@ Box FramebufferState::getDimensions() const
 }
 
 Framebuffer::Framebuffer(const Caps &caps, rx::GLImplFactory *factory, GLuint id)
-    : mState(caps),
+    : mState(caps, id),
       mImpl(factory->createFramebuffer(mState)),
-      mId(id),
       mCachedStatus(),
       mDirtyDepthAttachmentBinding(this, DIRTY_BIT_DEPTH_ATTACHMENT),
       mDirtyStencilAttachmentBinding(this, DIRTY_BIT_STENCIL_ATTACHMENT)
 {
-    ASSERT(mId != 0);
     ASSERT(mImpl != nullptr);
     ASSERT(mState.mColorAttachments.size() == static_cast<size_t>(caps.maxColorAttachments));
 
@@ -631,10 +659,9 @@ Framebuffer::Framebuffer(const Caps &caps, rx::GLImplFactory *factory, GLuint id
     }
 }
 
-Framebuffer::Framebuffer(const egl::Display *display, egl::Surface *surface)
+Framebuffer::Framebuffer(const Context *context, egl::Surface *surface)
     : mState(),
-      mImpl(surface->getImplementation()->createDefaultFramebuffer(mState)),
-      mId(0),
+      mImpl(surface->getImplementation()->createDefaultFramebuffer(context, mState)),
       mCachedStatus(GL_FRAMEBUFFER_COMPLETE),
       mDirtyDepthAttachmentBinding(this, DIRTY_BIT_DEPTH_ATTACHMENT),
       mDirtyStencilAttachmentBinding(this, DIRTY_BIT_STENCIL_ATTACHMENT)
@@ -642,9 +669,7 @@ Framebuffer::Framebuffer(const egl::Display *display, egl::Surface *surface)
     ASSERT(mImpl != nullptr);
     mDirtyColorAttachmentBindings.emplace_back(this, DIRTY_BIT_COLOR_ATTACHMENT_0);
 
-    const Context *proxyContext = display->getProxyContext();
-
-    setAttachmentImpl(proxyContext, GL_FRAMEBUFFER_DEFAULT, GL_BACK, ImageIndex(), surface,
+    setAttachmentImpl(context, GL_FRAMEBUFFER_DEFAULT, GL_BACK, ImageIndex(), surface,
                       FramebufferAttachment::kDefaultNumViews,
                       FramebufferAttachment::kDefaultBaseViewIndex,
                       FramebufferAttachment::kDefaultMultiviewLayout,
@@ -652,7 +677,7 @@ Framebuffer::Framebuffer(const egl::Display *display, egl::Surface *surface)
 
     if (surface->getConfig()->depthSize > 0)
     {
-        setAttachmentImpl(proxyContext, GL_FRAMEBUFFER_DEFAULT, GL_DEPTH, ImageIndex(), surface,
+        setAttachmentImpl(context, GL_FRAMEBUFFER_DEFAULT, GL_DEPTH, ImageIndex(), surface,
                           FramebufferAttachment::kDefaultNumViews,
                           FramebufferAttachment::kDefaultBaseViewIndex,
                           FramebufferAttachment::kDefaultMultiviewLayout,
@@ -661,7 +686,7 @@ Framebuffer::Framebuffer(const egl::Display *display, egl::Surface *surface)
 
     if (surface->getConfig()->stencilSize > 0)
     {
-        setAttachmentImpl(proxyContext, GL_FRAMEBUFFER_DEFAULT, GL_STENCIL, ImageIndex(), surface,
+        setAttachmentImpl(context, GL_FRAMEBUFFER_DEFAULT, GL_STENCIL, ImageIndex(), surface,
                           FramebufferAttachment::kDefaultNumViews,
                           FramebufferAttachment::kDefaultBaseViewIndex,
                           FramebufferAttachment::kDefaultMultiviewLayout,
@@ -673,7 +698,6 @@ Framebuffer::Framebuffer(const egl::Display *display, egl::Surface *surface)
 Framebuffer::Framebuffer(rx::GLImplFactory *factory)
     : mState(),
       mImpl(factory->createFramebuffer(mState)),
-      mId(0),
       mCachedStatus(GL_FRAMEBUFFER_UNDEFINED_OES),
       mDirtyDepthAttachmentBinding(this, DIRTY_BIT_DEPTH_ATTACHMENT),
       mDirtyStencilAttachmentBinding(this, DIRTY_BIT_STENCIL_ATTACHMENT)
@@ -972,7 +996,7 @@ bool Framebuffer::usingExtendedDrawBuffers() const
 
 void Framebuffer::invalidateCompletenessCache()
 {
-    if (mId != 0)
+    if (mState.mId != 0)
     {
         mCachedStatus.reset();
     }
@@ -983,7 +1007,7 @@ GLenum Framebuffer::checkStatus(const Context *context)
     // The default framebuffer is always complete except when it is surfaceless in which
     // case it is always unsupported. We return early because the default framebuffer may
     // not be subject to the same rules as application FBOs. ie, it could have 0x0 size.
-    if (mId == 0)
+    if (mState.mId == 0)
     {
         ASSERT(mCachedStatus.valid());
         ASSERT(mCachedStatus.value() == GL_FRAMEBUFFER_COMPLETE ||
@@ -1000,7 +1024,8 @@ GLenum Framebuffer::checkStatus(const Context *context)
             Error err = syncState(context);
             if (err.isError())
             {
-                context->handleError(err);
+                // TODO(jmadill): Remove when refactor complete. http://anglebug.com/2491
+                const_cast<Context *>(context)->handleError(err);
                 return GetDefaultReturnValue<EntryPoint::CheckFramebufferStatus, GLenum>();
             }
             if (!mImpl->checkStatus(context))
@@ -1017,7 +1042,7 @@ GLenum Framebuffer::checkStatusWithGLFrontEnd(const Context *context)
 {
     const ContextState &state = context->getContextState();
 
-    ASSERT(mId != 0);
+    ASSERT(mState.mId != 0);
 
     bool hasAttachments = false;
     Optional<unsigned int> colorbufferSize;
@@ -1026,6 +1051,9 @@ GLenum Framebuffer::checkStatusWithGLFrontEnd(const Context *context)
     bool hasRenderbuffer = false;
 
     const FramebufferAttachment *firstAttachment = getFirstNonNullAttachment();
+
+    Optional<bool> isLayered;
+    Optional<TextureType> colorAttachmentsTextureType;
 
     for (const FramebufferAttachment &colorAttachment : mState.mColorAttachments)
     {
@@ -1071,7 +1099,37 @@ GLenum Framebuffer::checkStatusWithGLFrontEnd(const Context *context)
             }
 
             hasRenderbuffer = hasRenderbuffer || (colorAttachment.type() == GL_RENDERBUFFER);
-            hasAttachments  = true;
+
+            if (!hasAttachments)
+            {
+                isLayered = colorAttachment.isLayered();
+                if (isLayered.value())
+                {
+                    colorAttachmentsTextureType = colorAttachment.getTextureImageIndex().getType();
+                }
+                hasAttachments = true;
+            }
+            else
+            {
+                // [EXT_geometry_shader] section 9.4.1, "Framebuffer Completeness"
+                // If any framebuffer attachment is layered, all populated attachments
+                // must be layered. Additionally, all populated color attachments must
+                // be from textures of the same target. {FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS_EXT }
+                ASSERT(isLayered.valid());
+                if (isLayered.value() != colorAttachment.isLayered())
+                {
+                    return GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS_EXT;
+                }
+                else if (isLayered.value())
+                {
+                    ASSERT(colorAttachmentsTextureType.valid());
+                    if (colorAttachmentsTextureType.value() !=
+                        colorAttachment.getTextureImageIndex().getType())
+                    {
+                        return GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS_EXT;
+                    }
+                }
+            }
         }
     }
 
@@ -1101,7 +1159,23 @@ GLenum Framebuffer::checkStatusWithGLFrontEnd(const Context *context)
         }
 
         hasRenderbuffer = hasRenderbuffer || (depthAttachment.type() == GL_RENDERBUFFER);
-        hasAttachments  = true;
+
+        if (!hasAttachments)
+        {
+            isLayered      = depthAttachment.isLayered();
+            hasAttachments = true;
+        }
+        else
+        {
+            // [EXT_geometry_shader] section 9.4.1, "Framebuffer Completeness"
+            // If any framebuffer attachment is layered, all populated attachments
+            // must be layered. {FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS_EXT }
+            ASSERT(isLayered.valid());
+            if (isLayered.value() != depthAttachment.isLayered())
+            {
+                return GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS_EXT;
+            }
+        }
     }
 
     const FramebufferAttachment &stencilAttachment = mState.mStencilAttachment;
@@ -1130,7 +1204,23 @@ GLenum Framebuffer::checkStatusWithGLFrontEnd(const Context *context)
         }
 
         hasRenderbuffer = hasRenderbuffer || (stencilAttachment.type() == GL_RENDERBUFFER);
-        hasAttachments  = true;
+
+        if (!hasAttachments)
+        {
+            hasAttachments = true;
+        }
+        else
+        {
+            // [EXT_geometry_shader] section 9.4.1, "Framebuffer Completeness"
+            // If any framebuffer attachment is layered, all populated attachments
+            // must be layered.
+            // {FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS_EXT }
+            ASSERT(isLayered.valid());
+            if (isLayered.value() != stencilAttachment.isLayered())
+            {
+                return GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS_EXT;
+            }
+        }
     }
 
     // Starting from ES 3.0 stencil and depth, if present, should be the same image
@@ -1431,6 +1521,11 @@ Error Framebuffer::blit(const Context *context,
     ANGLE_TRY(ensureDrawAttachmentsInitialized(context));
 
     return mImpl->blit(context, sourceArea, destArea, blitMask, filter);
+}
+
+bool Framebuffer::isDefault() const
+{
+    return id() == 0;
 }
 
 int Framebuffer::getSamples(const Context *context)
@@ -1762,7 +1857,7 @@ void Framebuffer::onSubjectStateChange(const Context *context,
 
     // Only reset the cached status if this is not the default framebuffer.  The default framebuffer
     // will still use this channel to mark itself dirty.
-    if (mId != 0)
+    if (mState.mId != 0)
     {
         // TOOD(jmadill): Make this only update individual attachments to do less work.
         mCachedStatus.reset();
@@ -1799,7 +1894,7 @@ bool Framebuffer::formsRenderingFeedbackLoopWith(const State &state) const
     const Program *program = state.getProgram();
 
     // TODO(jmadill): Default framebuffer feedback loops.
-    if (mId == 0)
+    if (mState.mId == 0)
     {
         return false;
     }
@@ -1861,7 +1956,7 @@ bool Framebuffer::formsCopyingFeedbackLoopWith(GLuint copyTextureID,
                                                GLint copyTextureLevel,
                                                GLint copyTextureLayer) const
 {
-    if (mId == 0)
+    if (mState.mId == 0)
     {
         // It seems impossible to form a texture copying feedback loop with the default FBO.
         return false;

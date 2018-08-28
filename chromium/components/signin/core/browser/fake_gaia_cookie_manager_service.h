@@ -8,8 +8,13 @@
 #include <string>
 
 #include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "components/signin/core/browser/gaia_cookie_manager_service.h"
-#include "net/url_request/test_url_fetcher_factory.h"
+
+namespace network {
+class TestURLLoaderFactory;
+class WeakWrapperSharedURLLoaderFactory;
+}
 
 class FakeGaiaCookieManagerService : public GaiaCookieManagerService {
  public:
@@ -24,9 +29,9 @@ class FakeGaiaCookieManagerService : public GaiaCookieManagerService {
 
   FakeGaiaCookieManagerService(OAuth2TokenService* token_service,
                                const std::string& source,
-                               SigninClient* client);
-
-  void Init(net::FakeURLFetcherFactory* url_fetcher_factory);
+                               SigninClient* client,
+                               bool use_fake_url_fetcher = true);
+  ~FakeGaiaCookieManagerService() override;
 
   void SetListAccountsResponseHttpNotFound();
   void SetListAccountsResponseWebLoginRequired();
@@ -47,9 +52,12 @@ class FakeGaiaCookieManagerService : public GaiaCookieManagerService {
   std::string GetSourceForRequest(
       const GaiaCookieManagerService::GaiaCookieRequest& request) override;
   std::string GetDefaultSourceForRequest() override;
+  scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory() override;
 
   // Provide a fake response for calls to /ListAccounts.
-  net::FakeURLFetcherFactory* url_fetcher_factory_;
+  std::unique_ptr<network::TestURLLoaderFactory> test_url_loader_factory_;
+  scoped_refptr<network::WeakWrapperSharedURLLoaderFactory>
+      shared_loader_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeGaiaCookieManagerService);
 };
