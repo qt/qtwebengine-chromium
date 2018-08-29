@@ -30,6 +30,13 @@ source_set("common") {
     "//ui/ozone:ozone_base",
   ]
 
+  if (use_qt) {
+    sources -= [
+      "gl_surface_egl_readback.cc",
+      "gl_surface_egl_readback.h",
+    ]
+  }
+
   deps = [
     "//ui/gfx/ipc/color",
     "//ui/gl",
@@ -40,5 +47,7 @@ source_set("common") {
     "//third_party/mesa:osmesa",
   ]
 
-  visibility = [ "//ui/ozone/platform/*" ]
+  if (!ozone_platform_external) {
+    visibility = [ "//ui/ozone/platform/*" ]
+  }
 }
