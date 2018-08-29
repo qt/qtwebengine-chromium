@@ -12,7 +12,11 @@
 #include "gn/value.h"
 #include "gn/variables.h"
 
+#ifndef NO_LAST_COMMIT_POSITION
 #include "last_commit_position.h"
+#else
+#define LAST_COMMIT_POSITION_NUM 0
+#endif
 
 ScopePerFileProvider::ScopePerFileProvider(Scope* scope,
                                            bool allow_target_vars,
@@ -75,10 +79,10 @@ const Value* ScopePerFileProvider::GetDefaultToolchain() {
 }
 
 const Value* ScopePerFileProvider::GetGnVersion() {
-  if (!gn_version_) {
-    gn_version_ = std::make_unique<Value>(
-        nullptr, static_cast<int64_t>(LAST_COMMIT_POSITION_NUM));
-  }
+   if (!gn_version_) {
+     gn_version_ = std::make_unique<Value>(
+         nullptr, static_cast<int64_t>(LAST_COMMIT_POSITION_NUM));
+   }
   return gn_version_.get();
 }
 
