@@ -291,9 +291,11 @@ class CONTENT_EXPORT RenderThreadImpl
     return browser_plugin_manager_.get();
   }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   PeerConnectionTracker* peer_connection_tracker() {
     return peer_connection_tracker_.get();
   }
+#endif
 
   blink::WebVideoCaptureImplManager* video_capture_impl_manager() const {
     return vc_manager_.get();
@@ -552,16 +554,20 @@ class CONTENT_EXPORT RenderThreadImpl
 
   std::unique_ptr<BrowserPluginManager> browser_plugin_manager_;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // This is used to communicate to the browser process the status
   // of all the peer connections created in the renderer.
   std::unique_ptr<PeerConnectionTracker> peer_connection_tracker_;
+#endif
 
   // Filter out unfreezable messages and pass it to unfreezable task runners.
   scoped_refptr<UnfreezableMessageFilter> unfreezable_message_filter_;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Provides AudioInputIPC objects for audio input devices. Initialized in
   // Init.
   base::Optional<AudioInputIPCFactory> audio_input_ipc_factory_;
+#endif
   // Provides AudioOutputIPC objects for audio output devices. Initialized in
   // Init.
   base::Optional<AudioOutputIPCFactory> audio_output_ipc_factory_;

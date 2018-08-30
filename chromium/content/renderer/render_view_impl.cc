@@ -72,7 +72,6 @@
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "content/renderer/media/audio/audio_device_factory.h"
-#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
@@ -183,7 +182,12 @@
 #include "content/renderer/pepper/pepper_plugin_registry.h"
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
+#endif
+
 using blink::PluginAction;
+
 using blink::WebAXObject;
 using blink::WebConsoleMessage;
 using blink::WebData;
@@ -2115,6 +2119,7 @@ void RenderViewImpl::DidFocus(blink::WebLocalFrame* calling_frame) {
 
 #if defined(OS_ANDROID)
 void RenderViewImpl::SuspendVideoCaptureDevices(bool suspend) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (!main_render_frame_)
     return;
 
@@ -2127,6 +2132,7 @@ void RenderViewImpl::SuspendVideoCaptureDevices(bool suspend) {
       media_stream_device_observer->GetNonScreenCaptureDevices();
   RenderThreadImpl::current()->video_capture_impl_manager()->SuspendDevices(
       video_devices, suspend);
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 #endif  // defined(OS_ANDROID)
 

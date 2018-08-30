@@ -48,8 +48,6 @@
 #include "content/renderer/media/audio/audio_device_factory.h"
 #include "content/renderer/media/audio_decoder.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
-#include "content/renderer/media/webrtc/peer_connection_tracker.h"
-#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/storage_util.h"
@@ -87,14 +85,12 @@
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/public/platform/url_conversion.h"
 #include "third_party/blink/public/platform/web_audio_latency_hint.h"
-#include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
 #include "third_party/blink/public/platform/web_security_origin.h"
 #include "third_party/blink/public/platform/web_theme_engine.h"
 #include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/public/platform/web_url_loader_factory.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/platform/web_vector.h"
-#include "third_party/blink/public/web/modules/peerconnection/peer_connection_dependency_factory.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/public/web/web_user_media_request.h"
 #include "third_party/sqlite/sqlite3.h"
@@ -116,7 +112,13 @@
 #include "base/win/windows_version.h"
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/renderer/media/webrtc/peer_connection_tracker.h"
+#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #include "third_party/blink/public/platform/modules/mediastream/webrtc_uma_histograms.h"
+#include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
+#include "third_party/blink/public/web/modules/peerconnection/peer_connection_dependency_factory.h"
+#endif
 
 using blink::Platform;
 using blink::WebAudioDevice;
@@ -514,8 +516,12 @@ scoped_refptr<media::AudioCapturerSource>
 RendererBlinkPlatformImpl::NewAudioCapturerSource(
     blink::WebLocalFrame* web_frame,
     const media::AudioSourceParameters& params) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   return AudioDeviceFactory::NewAudioCapturerSource(
       RenderFrame::GetRoutingIdForWebFrame(web_frame), params);
+#else
+  return nullptr;
+#endif
 }
 
 viz::ContextProvider*
@@ -538,6 +544,7 @@ RendererBlinkPlatformImpl::CreateRTCPeerConnectionHandler(
   // PeerConnectionDependencyFactory::CreateRTCPeerConnectionHandler
   // when it the file gets Onion soup'ed.
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Save histogram data so we can see how much PeerConnection is used.
   // The histogram counts the number of calls to the JS API
   // RTCPeerConnection.
@@ -547,39 +554,55 @@ RendererBlinkPlatformImpl::CreateRTCPeerConnectionHandler(
       blink::PeerConnectionDependencyFactory::GetInstance();
   return std::make_unique<RTCPeerConnectionHandler>(
       client, rtc_dependency_factory, task_runner);
+#else
+  return nullptr;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 //------------------------------------------------------------------------------
 
 scoped_refptr<base::SingleThreadTaskRunner>
 RendererBlinkPlatformImpl::GetWebRtcWorkerThread() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   auto* rtc_dependency_factory =
       blink::PeerConnectionDependencyFactory::GetInstance();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->GetWebRtcWorkerThread();
+#else
+  return nullptr;
+#endif
 }
 
 std::unique_ptr<cricket::PortAllocator>
 RendererBlinkPlatformImpl::CreateWebRtcPortAllocator(
     blink::WebLocalFrame* frame) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   auto* rtc_dependency_factory =
       blink::PeerConnectionDependencyFactory::GetInstance();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->CreatePortAllocator(frame);
+#else
+  return nullptr;
+#endif
 }
 
 std::unique_ptr<webrtc::AsyncResolverFactory>
 RendererBlinkPlatformImpl::CreateWebRtcAsyncResolverFactory() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   auto* rtc_dependency_factory =
       blink::PeerConnectionDependencyFactory::GetInstance();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->CreateAsyncResolverFactory();
+#else
+  return nullptr;
+#endif
 }
 
 //------------------------------------------------------------------------------
 
 base::Optional<double>
 RendererBlinkPlatformImpl::GetWebRtcMaxCaptureFrameRate() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   const std::string max_fps_str =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kWebRtcMaxCaptureFramerate);
@@ -588,6 +611,7 @@ RendererBlinkPlatformImpl::GetWebRtcMaxCaptureFrameRate() {
     if (base::StringToDouble(max_fps_str, &value) && value >= 0.0)
       return value;
   }
+#endif
   return base::nullopt;
 }
 
@@ -712,8 +736,10 @@ base::Optional<int> RendererBlinkPlatformImpl::GetAgcStartupMinimumVolume() {
 
 void RendererBlinkPlatformImpl::TrackGetUserMedia(
     const blink::WebUserMediaRequest& web_request) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl::current()->peer_connection_tracker()->TrackGetUserMedia(
       web_request);
+#endif
 }
 
 bool RendererBlinkPlatformImpl::IsWebRtcHWH264DecodingEnabled(

@@ -29,6 +29,7 @@ String TransceiverDirectionToString(
     case webrtc::RtpTransceiverDirection::kInactive:
       return "inactive";
   }
+  NOTREACHED();
 }
 
 String OptionalTransceiverDirectionToString(

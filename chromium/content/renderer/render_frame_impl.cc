@@ -123,7 +123,6 @@
 #include "content/renderer/media/audio/audio_output_ipc_factory.h"
 #include "content/renderer/media/audio/audio_renderer_sink_cache.h"
 #include "content/renderer/media/media_permission_dispatcher.h"
-#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #include "content/renderer/mhtml_handle_writer.h"
 #include "content/renderer/mojo/blink_interface_registry_impl.h"
 #include "content/renderer/navigation_client.h"
@@ -246,6 +245,10 @@
 #include "base/process/kill.h"
 #elif defined(OS_POSIX)
 #include <signal.h>
+#endif
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -5487,7 +5490,9 @@ void RenderFrameImpl::DidChangeScrollOffset() {
 
 void RenderFrameImpl::WillStartUsingPeerConnectionHandler(
     blink::WebRTCPeerConnectionHandler* handler) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   static_cast<RTCPeerConnectionHandler*>(handler)->associateWithFrame(frame_);
+#endif
 }
 
 blink::WebMediaStreamDeviceObserver*
@@ -6882,9 +6887,11 @@ void RenderFrameImpl::InitializeMediaStreamDeviceObserver() {
   if (!render_thread)  // Will be NULL during unit tests.
     return;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(!web_media_stream_device_observer_);
   web_media_stream_device_observer_ =
       std::make_unique<blink::WebMediaStreamDeviceObserver>(GetWebFrame());
+#endif
 }
 
 void RenderFrameImpl::PrepareRenderViewForNavigation(

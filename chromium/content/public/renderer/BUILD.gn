@@ -91,7 +91,6 @@ target(link_target_type, "renderer_sources") {
     "//skia",
     "//third_party/blink/public:blink_headers",
     "//third_party/blink/public/common",
-    "//third_party/webrtc_overrides",
     "//third_party/widevine/cdm:headers",
     "//ui/base",
     "//ui/base/ime",
@@ -108,6 +107,20 @@ target(link_target_type, "renderer_sources") {
   if (is_android) {
     # For seccomp_sandbox_status_android.h.
     deps += [ "//sandbox" ]
+  }
+
+  if (enable_webrtc) {
+    sources += [
+      "media_stream_audio_renderer.h",
+      "media_stream_renderer_factory.h",
+      "media_stream_sink.h",
+      "media_stream_video_renderer.h",
+      "webrtc_log_message_delegate.h",
+    ]
+    deps += [
+      "//content/common:buildflags",
+      "//third_party/webrtc_overrides",
+    ]
   }
 
   if (enable_library_cdms) {

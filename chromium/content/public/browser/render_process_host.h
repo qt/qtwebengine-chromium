@@ -307,6 +307,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // |empty_allowed| must be set to false for navigations for security reasons.
   virtual void FilterURL(bool empty_allowed, GURL* url) = 0;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   virtual void EnableAudioDebugRecordings(const base::FilePath& file) = 0;
   virtual void DisableAudioDebugRecordings() = 0;
 
@@ -330,6 +331,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // identified locally within the RPH using the ID |lid|.
   virtual void EnableWebRtcEventLogOutput(int lid, int output_period_ms) = 0;
   virtual void DisableWebRtcEventLogOutput(int lid) = 0;
+#endif
 
   // Binds interfaces exposed to the browser process from the renderer.
   //
