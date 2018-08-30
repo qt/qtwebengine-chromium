@@ -57,7 +57,7 @@ class OnceCallback<R(Args...)> : public internal::CallbackBase {
  public:
   using RunType = R(Args...);
   using PolymorphicInvoke = R (*)(internal::BindStateBase*,
-                                  internal::PassingType<Args>...);
+                                  internal::PassingTraitsType<Args>...);
 
   constexpr OnceCallback() = default;
   OnceCallback(std::nullptr_t) = delete;
@@ -103,7 +103,7 @@ class RepeatingCallback<R(Args...)> : public internal::CallbackBaseCopyable {
  public:
   using RunType = R(Args...);
   using PolymorphicInvoke = R (*)(internal::BindStateBase*,
-                                  internal::PassingType<Args>...);
+                                  internal::PassingTraitsType<Args>...);
 
   constexpr RepeatingCallback() = default;
   RepeatingCallback(std::nullptr_t) = delete;
