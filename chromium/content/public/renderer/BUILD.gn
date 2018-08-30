@@ -40,7 +40,6 @@ target(link_target_type, "renderer_sources") {
     "context_menu_client.h",
     "document_state.cc",
     "document_state.h",
-    "media_stream_utils.h",
     "pepper_plugin_instance.h",
     "plugin_instance_throttler.h",
     "render_accessibility.h",
@@ -68,7 +67,6 @@ target(link_target_type, "renderer_sources") {
     "v8_value_converter.h",
     "video_encode_accelerator.cc",
     "video_encode_accelerator.h",
-    "webrtc_log_message_delegate.h",
     "websocket_handshake_throttle_provider.h",
     "window_features_converter.cc",
     "window_features_converter.h",
@@ -83,9 +81,7 @@ target(link_target_type, "renderer_sources") {
 
   deps = [
     "//content/public/child:child_sources",
-    "//content/public/common:buildflags",
     "//content/public/common:common_sources",
-    "//content/public/common:feature_h264_with_openh264_ffmpeg",
     "//content/renderer",
     "//gin",
     "//media/capture",
@@ -95,7 +91,6 @@ target(link_target_type, "renderer_sources") {
     "//ppapi/c",
     "//skia",
     "//third_party/blink/public:blink_headers",
-    "//third_party/webrtc_overrides",
     "//third_party/widevine/cdm:headers",
     "//ui/base",
     "//ui/base/ime",
@@ -112,6 +107,21 @@ target(link_target_type, "renderer_sources") {
   if (is_android) {
     # For seccomp_sandbox_status_android.h.
     deps += [ "//sandbox" ]
+  }
+
+  if (enable_webrtc) {
+    sources += [
+      "media_stream_audio_renderer.h",
+      "media_stream_renderer_factory.h",
+      "media_stream_sink.h",
+      "media_stream_video_renderer.h",
+      "webrtc_log_message_delegate.h",
+    ]
+    deps += [
+      "//content/public/common:buildflags",
+      "//content/public/common:feature_h264_with_openh264_ffmpeg",
+      "//third_party/webrtc_overrides",
+    ]
   }
 
   if (enable_library_cdms) {

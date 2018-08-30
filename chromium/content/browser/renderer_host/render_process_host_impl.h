@@ -52,6 +52,7 @@
 #include "mojo/public/cpp/bindings/associated_binding_set.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "mojo/public/cpp/system/invitation.h"
+#include "net/net_buildflags.h"
 #include "services/network/public/mojom/mdns_responder.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
@@ -87,8 +88,6 @@ class FileSystemManagerImpl;
 class IndexedDBDispatcherHost;
 class InProcessChildThreadParams;
 class IsolationContext;
-class MediaStreamTrackMetricsHost;
-class P2PSocketDispatcherHost;
 class PermissionServiceContext;
 class PeerConnectionTrackerHost;
 class PluginRegistryImpl;
@@ -102,6 +101,11 @@ class SiteInstanceImpl;
 class StoragePartition;
 class StoragePartitionImpl;
 struct ChildProcessTerminationInfo;
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+class MediaStreamTrackMetricsHost;
+class P2PSocketDispatcherHost;
+#endif
 
 typedef base::Thread* (*RendererMainThreadFactoryFunction)(
     const InProcessChildThreadParams& params);
@@ -193,6 +197,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   bool FastShutdownStarted() override;
   base::TimeDelta GetChildProcessIdleTime() override;
   void FilterURL(bool empty_allowed, GURL* url) override;
+#if BUILDFLAG(ENABLE_WEBRTC)
   void EnableAudioDebugRecordings(const base::FilePath& file) override;
   void DisableAudioDebugRecordings() override;
   WebRtcStopRtpDumpCallback StartRtpDump(
@@ -201,6 +206,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
       const WebRtcRtpPacketCallback& packet_callback) override;
   void EnableWebRtcEventLogOutput(int lid, int output_period_ms) override;
   void DisableWebRtcEventLogOutput(int lid) override;
+#endif
   void BindInterface(const std::string& interface_name,
                      mojo::ScopedMessagePipeHandle interface_pipe) override;
   const service_manager::Identity& GetChildIdentity() override;
@@ -628,12 +634,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
   static RenderProcessHost* FindReusableProcessHostForSiteInstance(
       SiteInstanceImpl* site_instance);
 
-  void CreateMediaStreamTrackMetricsHost(
-      blink::mojom::MediaStreamTrackMetricsHostRequest request);
-
 #if BUILDFLAG(ENABLE_MDNS)
   void CreateMdnsResponder(network::mojom::MdnsResponderRequest request);
 #endif  // BUILDFLAG(ENABLE_MDNS)
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+  void CreateMediaStreamTrackMetricsHost(
+      blink::mojom::MediaStreamTrackMetricsHostRequest request);
 
   void OnRegisterAecDumpConsumer(int id);
   void OnUnregisterAecDumpConsumer(int id);
@@ -646,6 +653,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SendDisableAecDumpToRenderer();
   base::FilePath GetAecDumpFilePathWithExtensions(const base::FilePath& file);
   base::SequencedTaskRunner& GetAecDumpFileTaskRunner();
+#endif
   void NotifyRendererIfLockedToSite();
 
   static void OnMojoError(int render_process_id, const std::string& error);
@@ -834,6 +842,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
                   BrowserThread::DeleteOnIOThread>
       audio_output_stream_factory_context_;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   std::unique_ptr<P2PSocketDispatcherHost> p2p_socket_dispatcher_host_;
 
   // Must be accessed on UI thread.
@@ -846,6 +855,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   std::unique_ptr<MediaStreamTrackMetricsHost, BrowserThread::DeleteOnIOThread>
       media_stream_track_metrics_host_;
+#endif
 
   std::unique_ptr<VideoDecoderProxy> video_decoder_proxy_;
 

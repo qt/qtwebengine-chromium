@@ -493,6 +493,9 @@ static_library("common") {
       "pepper_permission_util.h",
     ]
   }
+  if (!enable_webrtc) {
+    sources -= [ "media/webrtc_logging_messages.h" ]
+  }
 
   if (enable_widevine && enable_library_cdms) {
     deps += [ "//third_party/widevine/cdm:headers" ]

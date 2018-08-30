@@ -161,7 +161,9 @@ struct CommitNavigationParams;
 struct ResourceTimingInfo;
 struct SubresourceLoaderParams;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 class MediaStreamDispatcherHost;
+#endif
 
 // To be called when a RenderFrameHostImpl receives an event.
 // Provides the host, the event fired, and which node id the event was for.
@@ -1878,8 +1880,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
       audio_service_audio_input_stream_factory_;
   UniqueAudioInputStreamFactoryPtr in_content_audio_input_stream_factory_;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   std::unique_ptr<MediaStreamDispatcherHost, BrowserThread::DeleteOnIOThread>
       media_stream_dispatcher_host_;
+#endif
 
   // Hosts media::mojom::InterfaceFactory for the RenderFrame and forwards
   // media::mojom::InterfaceFactory calls to the remote "media" service.
