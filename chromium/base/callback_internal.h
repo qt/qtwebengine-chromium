@@ -36,8 +36,21 @@ struct BindStateBaseRefCountTraits {
   static void Destruct(const BindStateBase*);
 };
 
+template <typename T, bool IsScalar = std::is_scalar<T>::value>
+struct PassingTraits;
+
 template <typename T>
-using PassingType = std::conditional_t<std::is_scalar<T>::value, T, T&&>;
+struct PassingTraits<T, false> {
+  using Type = T&&;
+};
+
+template <typename T>
+struct PassingTraits<T, true> {
+  using Type = T;
+};
+
+template <typename T>
+using PassingTraitsType = typename PassingTraits<T>::Type;
 
 // BindStateBase is used to provide an opaque handle that the Callback
 // class can use to represent a function object with bound arguments.  It
