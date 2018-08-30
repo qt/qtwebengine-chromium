@@ -630,7 +630,7 @@ struct Invoker;
 template <typename StorageType, typename R, typename... UnboundArgs>
 struct Invoker<StorageType, R(UnboundArgs...)> {
   static R RunOnce(BindStateBase* base,
-                   PassingType<UnboundArgs>... unbound_args) {
+                   PassingTraitsType<UnboundArgs>... unbound_args) {
     // Local references to make debugger stepping easier. If in a debugger,
     // you really want to warp ahead and step through the
     // InvokeHelper<>::MakeItSo() call below.
@@ -643,7 +643,8 @@ struct Invoker<StorageType, R(UnboundArgs...)> {
                    std::forward<UnboundArgs>(unbound_args)...);
   }
 
-  static R Run(BindStateBase* base, PassingType<UnboundArgs>... unbound_args) {
+  static R Run(BindStateBase* base,
+               PassingTraitsType<UnboundArgs>... unbound_args) {
     // Local references to make debugger stepping easier. If in a debugger,
     // you really want to warp ahead and step through the
     // InvokeHelper<>::MakeItSo() call below.
