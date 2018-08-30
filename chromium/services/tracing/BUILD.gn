@@ -5,6 +5,7 @@
 # There should be only one tracing service. It is currently
 # in the browser process. So, only //content/browser should link to this target.
 # Others modules should only need the public targets.
+import("//build/config/features.gni")
 import("//services/catalog/public/tools/catalog.gni")
 import("//services/service_manager/public/cpp/service.gni")
 import("//services/service_manager/public/service_manifest.gni")
@@ -28,7 +29,7 @@ source_set("lib") {
     "//services/tracing/public/cpp",
   ]
 
-  if (is_mac || is_linux || is_android || is_win) {
+  if ((is_mac || is_linux || is_android || is_win) && !use_qt) {
     sources += [
       "perfetto/json_trace_exporter.cc",
       "perfetto/json_trace_exporter.h",
@@ -76,7 +77,7 @@ source_set("tests") {
     "test_util.h",
   ]
 
-  if (is_mac || is_linux || is_android) {
+  if ((is_mac || is_linux || is_android) && !use_qt) {
     sources += [ "public/cpp/perfetto/trace_event_data_source_unittest.cc" ]
   }
 
@@ -97,7 +98,7 @@ source_set("tests") {
     "//testing/gtest",
   ]
 
-  if (is_mac || is_linux || is_android) {
+  if ((is_mac || is_linux || is_android) && !use_qt) {
     sources += [
       "perfetto/json_trace_exporter_unittest.cc",
       "perfetto/perfetto_integration_unittest.cc",

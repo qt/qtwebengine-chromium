@@ -17,8 +17,8 @@
 #include "services/tracing/agent_registry.h"
 #include "services/tracing/coordinator.h"
 
-#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_MACOSX) || \
-    defined(OS_WIN)
+#if (defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_MACOSX) || \
+    defined(OS_WIN)) && !defined(TOOLKIT_QT)
 #define PERFETTO_SERVICE_AVAILABLE
 #endif
 
