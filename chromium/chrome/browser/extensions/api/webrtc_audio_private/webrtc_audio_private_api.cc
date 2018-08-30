@@ -284,6 +284,7 @@ WebrtcAudioPrivateSetAudioExperimentsFunction::
     ~WebrtcAudioPrivateSetAudioExperimentsFunction() {}
 
 bool WebrtcAudioPrivateSetAudioExperimentsFunction::RunAsync() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   std::unique_ptr<wap::SetAudioExperiments::Params> params(
       wap::SetAudioExperiments::Params::Create(*args_));
@@ -311,6 +312,11 @@ bool WebrtcAudioPrivateSetAudioExperimentsFunction::RunAsync() {
           &WebrtcAudioPrivateSetAudioExperimentsFunction::FireCallback, this));
 
   return true;
+#else
+  SetError("Not supported");
+  SendResponse(false);
+  return false;
+#endif
 }
 
 void WebrtcAudioPrivateSetAudioExperimentsFunction::FireCallback(

@@ -98,7 +98,6 @@ jumbo_source_set("browser") {
     "//gpu/ipc:gl_in_process_context",
     "//gpu/ipc/host",
     "//gpu/vulkan:buildflags",
-    "//jingle:jingle_glue",
     "//media",
     "//media:media_buildflags",
     "//media/capture",
@@ -178,9 +177,6 @@ jumbo_source_set("browser") {
     "//third_party/icu",
     "//third_party/libyuv",
     "//third_party/re2",
-    "//third_party/webrtc/media:rtc_media_base",
-    "//third_party/webrtc/modules/desktop_capture:primitives",
-    "//third_party/webrtc/rtc_base:rtc_base",
     "//third_party/zlib",
     "//third_party/zlib/google:compression_utils",
     "//third_party/zlib/google:zip",
@@ -1394,8 +1390,6 @@ jumbo_source_set("browser") {
     "renderer_host/media/old_render_frame_audio_input_stream_factory.h",
     "renderer_host/media/old_render_frame_audio_output_stream_factory.cc",
     "renderer_host/media/old_render_frame_audio_output_stream_factory.h",
-    "renderer_host/media/peer_connection_tracker_host.cc",
-    "renderer_host/media/peer_connection_tracker_host.h",
     "renderer_host/media/render_frame_audio_input_stream_factory.cc",
     "renderer_host/media/render_frame_audio_input_stream_factory.h",
     "renderer_host/media/render_frame_audio_output_stream_factory.cc",
@@ -1430,18 +1424,6 @@ jumbo_source_set("browser") {
     "renderer_host/overscroll_controller.cc",
     "renderer_host/overscroll_controller.h",
     "renderer_host/overscroll_controller_delegate.h",
-    "renderer_host/p2p/socket_dispatcher_host.cc",
-    "renderer_host/p2p/socket_dispatcher_host.h",
-    "renderer_host/p2p/socket_host.cc",
-    "renderer_host/p2p/socket_host.h",
-    "renderer_host/p2p/socket_host_tcp.cc",
-    "renderer_host/p2p/socket_host_tcp.h",
-    "renderer_host/p2p/socket_host_tcp_server.cc",
-    "renderer_host/p2p/socket_host_tcp_server.h",
-    "renderer_host/p2p/socket_host_throttler.cc",
-    "renderer_host/p2p/socket_host_throttler.h",
-    "renderer_host/p2p/socket_host_udp.cc",
-    "renderer_host/p2p/socket_host_udp.h",
     "renderer_host/render_frame_metadata_provider_impl.cc",
     "renderer_host/render_frame_metadata_provider_impl.h",
     "renderer_host/render_message_filter.cc",
@@ -1757,13 +1739,6 @@ jumbo_source_set("browser") {
     "web_package/signed_exchange_utils.h",
     "web_package/web_package_context_impl.cc",
     "web_package/web_package_context_impl.h",
-    "webrtc/webrtc_internals.cc",
-    "webrtc/webrtc_internals.h",
-    "webrtc/webrtc_internals_message_handler.cc",
-    "webrtc/webrtc_internals_message_handler.h",
-    "webrtc/webrtc_internals_ui.cc",
-    "webrtc/webrtc_internals_ui.h",
-    "webrtc/webrtc_internals_ui_observer.h",
     "websockets/websocket_handshake_request_info_impl.cc",
     "websockets/websocket_handshake_request_info_impl.h",
     "websockets/websocket_manager.cc",
@@ -1880,6 +1855,39 @@ jumbo_source_set("browser") {
     ]
   }
 
+  if (enable_webrtc) {
+    sources += [
+      "renderer_host/media/peer_connection_tracker_host.cc",
+      "renderer_host/media/peer_connection_tracker_host.h",
+      "renderer_host/p2p/socket_dispatcher_host.cc",
+      "renderer_host/p2p/socket_dispatcher_host.h",
+      "renderer_host/p2p/socket_host.cc",
+      "renderer_host/p2p/socket_host.h",
+      "renderer_host/p2p/socket_host_tcp.cc",
+      "renderer_host/p2p/socket_host_tcp.h",
+      "renderer_host/p2p/socket_host_tcp_server.cc",
+      "renderer_host/p2p/socket_host_tcp_server.h",
+      "renderer_host/p2p/socket_host_throttler.cc",
+      "renderer_host/p2p/socket_host_throttler.h",
+      "renderer_host/p2p/socket_host_udp.cc",
+      "renderer_host/p2p/socket_host_udp.h",
+      "webrtc/webrtc_internals.cc",
+      "webrtc/webrtc_internals.h",
+      "webrtc/webrtc_internals_message_handler.cc",
+      "webrtc/webrtc_internals_message_handler.h",
+      "webrtc/webrtc_internals_ui.cc",
+      "webrtc/webrtc_internals_ui.h",
+      "webrtc/webrtc_internals_ui_observer.h",
+    ]
+
+    deps += [
+      "//jingle:jingle_glue",
+      "//third_party/webrtc/media:rtc_media_base",
+      "//third_party/webrtc/modules/desktop_capture:primitives",
+      "//third_party/webrtc/rtc_base:rtc_base",
+    ]
+  }
+
   # Desktop/Window/WebContents screen capture implementations, conditionally
   # built depending on the available implementations for each platform.
   if (is_linux || is_mac || is_win) {
@@ -1887,15 +1895,11 @@ jumbo_source_set("browser") {
     sources += [
       "media/capture/cursor_renderer.cc",
       "media/capture/cursor_renderer.h",
-      "media/capture/desktop_capture_device.cc",
-      "media/capture/desktop_capture_device.h",
       "media/capture/frame_sink_video_capture_device.cc",
       "media/capture/frame_sink_video_capture_device.h",
       "media/capture/web_contents_video_capture_device.cc",
       "media/capture/web_contents_video_capture_device.h",
     ]
-    public_deps += [ "//third_party/webrtc_overrides:init_webrtc" ]
-    deps += [ "//third_party/webrtc/modules/desktop_capture" ]
     if (use_aura) {
       sources += [
         "media/capture/aura_window_video_capture_device.cc",
@@ -1919,6 +1923,14 @@ jumbo_source_set("browser") {
         "//sandbox/mac:seatbelt",
         "//sandbox/mac:seatbelt_extension",
       ]
+    }
+    if (enable_webrtc) {
+      sources += [
+        "media/capture/desktop_capture_device.cc",
+        "media/capture/desktop_capture_device.h",
+      ]
+      deps += [ "//third_party/webrtc/modules/desktop_capture" ]
+      public_deps += [ "//third_party/webrtc_overrides:init_webrtc" ]
     }
   }
 

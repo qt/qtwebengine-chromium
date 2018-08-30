@@ -112,10 +112,8 @@
 #include "content/browser/renderer_host/embedded_frame_sink_provider_impl.h"
 #include "content/browser/renderer_host/file_utilities_host_impl.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
-#include "content/browser/renderer_host/media/media_stream_track_metrics_host.h"
 #include "content/browser/renderer_host/media/peer_connection_tracker_host.h"
 #include "content/browser/renderer_host/media/video_capture_host.h"
-#include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
 #include "content/browser/renderer_host/pepper/pepper_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_renderer_connection.h"
 #include "content/browser/renderer_host/plugin_registry_impl.h"
@@ -133,14 +131,12 @@
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/streams/stream_context.h"
 #include "content/browser/tracing/trace_message_filter.h"
-#include "content/browser/webrtc/webrtc_internals.h"
 #include "content/browser/websockets/websocket_manager.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/frame_messages.h"
 #include "content/common/in_process_child_thread_params.h"
-#include "content/common/media/aec_dump_messages.h"
 #include "content/common/media/peer_connection_tracker_messages.h"
 #include "content/common/navigation_subresource_loader_params.h"
 #include "content/common/resource_messages.h"
@@ -158,7 +154,6 @@
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/site_isolation_policy.h"
-#include "content/public/browser/webrtc_log.h"
 #include "content/public/common/bind_interface_helpers.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/connection_filter.h"
@@ -250,6 +245,14 @@
 #include "content/browser/net/reporting_service_proxy.h"
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/browser/renderer_host/media/media_stream_track_metrics_host.h"
+#include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
+#include "content/browser/webrtc/webrtc_internals.h"
+#include "content/common/media/aec_dump_messages.h"
+#include "content/public/browser/webrtc_log.h"
+#endif
+
 #if BUILDFLAG(USE_MINIKIN_HYPHENATION)
 #include "content/browser/hyphenation/hyphenation_impl.h"
 #endif
@@ -293,8 +296,10 @@ const char kSiteProcessMapKeyName[] = "content_site_process_map";
 RenderProcessHost::AnalyzeHungRendererFunction g_analyze_hung_renderer =
     nullptr;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 const base::FilePath::CharType kAecDumpFileNameAddition[] =
     FILE_PATH_LITERAL("aec_dump");
+#endif
 
 void CacheShaderInfo(int32_t id, base::FilePath path) {
   if (GetShaderCacheFactorySingleton())
@@ -330,6 +335,8 @@ void GetContexts(
       GetRequestContext(request_context, media_request_context, resource_type);
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
+
 // Creates a file used for handing over to the renderer.
 IPC::PlatformFileForTransit CreateFileForProcess(base::FilePath file_path) {
   base::File dump_file(file_path,
@@ -344,6 +351,8 @@ IPC::PlatformFileForTransit CreateFileForProcess(base::FilePath file_path) {
 
 // Allow us to only run the trial in the first renderer.
 bool has_done_stun_trials = false;
+
+#endif
 
 // Globally tracks all existing RenderProcessHostImpl instances.
 //
@@ -1908,8 +1917,10 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new DOMStorageMessageFilter(
       storage_partition_impl_->GetDOMStorageContext()));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   peer_connection_tracker_host_ = new PeerConnectionTrackerHost(GetID());
   AddFilter(peer_connection_tracker_host_.get());
+#endif
 #if BUILDFLAG(ENABLE_PLUGINS)
   AddFilter(new PepperRendererConnection(GetID()));
 #endif
@@ -1922,9 +1933,11 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new TextInputClientMessageFilter());
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   p2p_socket_dispatcher_host_ =
       new P2PSocketDispatcherHost(request_context.get());
   AddFilter(p2p_socket_dispatcher_host_.get());
+#endif
 
   AddFilter(new TraceMessageFilter(GetID()));
   AddFilter(new ResolveProxyMsgHelper(request_context.get()));
@@ -2079,9 +2092,11 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       base::CreateSequencedTaskRunnerWithTraits(
           {base::MayBlock(), base::TaskPriority::USER_VISIBLE}));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   registry->AddInterface(base::BindRepeating(
       &RenderProcessHostImpl::CreateMediaStreamTrackMetricsHost,
       base::Unretained(this)));
+#endif
 
   registry->AddInterface(
       base::Bind(&metrics::CreateSingleSampleMetricsProvider));
@@ -2933,6 +2948,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #if BUILDFLAG(ENABLE_RUNTIME_MEDIA_RENDERER_SELECTION)
     switches::kDisableMojoRenderer,
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
     switches::kDisableWebRtcHWDecoding,
     switches::kDisableWebRtcHWEncoding,
     switches::kEnableWebRtcSrtpAesGcm,
@@ -2940,6 +2956,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableWebRtcStunOrigin,
     switches::kEnforceWebRtcIPPermissionCheck,
     switches::kWebRtcMaxCaptureFramerate,
+#endif
     switches::kEnableLowEndDeviceMode,
     switches::kDisableLowEndDeviceMode,
     switches::kDisallowNonExactResourceReuse,
@@ -2968,6 +2985,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
   BrowserChildProcessHostImpl::CopyFeatureAndFieldTrialFlags(renderer_cmd);
   BrowserChildProcessHostImpl::CopyTraceStartupFlags(renderer_cmd);
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Only run the Stun trials in the first renderer.
   if (!has_done_stun_trials &&
       browser_cmd.HasSwitch(switches::kWebRtcStunProbeTrialParameter)) {
@@ -2977,6 +2995,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
         browser_cmd.GetSwitchValueASCII(
             switches::kWebRtcStunProbeTrialParameter));
   }
+#endif
 
   // Disable databases in incognito mode.
   if (GetBrowserContext()->IsOffTheRecord() &&
@@ -3142,11 +3161,13 @@ bool RenderProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
       IPC_MESSAGE_HANDLER(ViewHostMsg_UserMetricsRecordAction,
                           OnUserMetricsRecordAction)
       IPC_MESSAGE_HANDLER(ViewHostMsg_Close_ACK, OnCloseACK)
+#if BUILDFLAG(ENABLE_WEBRTC)
       IPC_MESSAGE_HANDLER(AecDumpMsg_RegisterAecDumpConsumer,
                           OnRegisterAecDumpConsumer)
       IPC_MESSAGE_HANDLER(AecDumpMsg_UnregisterAecDumpConsumer,
                           OnUnregisterAecDumpConsumer)
       IPC_MESSAGE_HANDLER(AudioProcessingMsg_Aec3Enabled, OnAec3Enabled)
+#endif
     // Adding single handlers for your service here is fine, but once your
     // service needs more than one handler, please extract them into a new
     // message filter and add that filter to CreateMessageFilters().
@@ -3276,11 +3297,13 @@ void RenderProcessHostImpl::Cleanup() {
   if (!listeners_.IsEmpty() || keep_alive_ref_count_ != 0)
     return;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (is_initialized_) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::BindOnce(&WebRtcLog::ClearLogMessageCallback, GetID()));
   }
+#endif
 
   if (!keep_alive_start_time_.is_null()) {
     UMA_HISTOGRAM_LONG_TIMES("BrowserRenderProcessHost.KeepAliveDuration",
@@ -3397,6 +3420,7 @@ void RenderProcessHostImpl::FilterURL(bool empty_allowed, GURL* url) {
   FilterURL(this, empty_allowed, url);
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 void RenderProcessHostImpl::EnableAudioDebugRecordings(
     const base::FilePath& file) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -3467,6 +3491,7 @@ void RenderProcessHostImpl::SetWebRtcEventLogOutput(int lid, bool enabled) {
     Send(new PeerConnectionTracker_StopEventLog(lid));
   }
 }
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 
 IPC::ChannelProxy* RenderProcessHostImpl::GetChannel() {
   return channel_.get();
@@ -4307,11 +4332,13 @@ void RenderProcessHostImpl::OnProcessLaunched() {
   GetProcessResourceCoordinator()->SetLaunchTime(base::Time::Now());
   GetProcessResourceCoordinator()->SetPID(GetProcess().Pid());
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   WebRTCInternals* webrtc_internals = WebRTCInternals::GetInstance();
   if (webrtc_internals->IsAudioDebugRecordingsEnabled()) {
     EnableAudioDebugRecordings(
         webrtc_internals->GetAudioDebugRecordingsFilePath());
   }
+#endif
 }
 
 void RenderProcessHostImpl::OnProcessLaunchFailed(int error_code) {
@@ -4412,6 +4439,7 @@ RenderProcessHost* RenderProcessHostImpl::FindReusableProcessHostForSite(
   return nullptr;
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 void RenderProcessHostImpl::CreateMediaStreamTrackMetricsHost(
     mojom::MediaStreamTrackMetricsHostRequest request) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -4501,6 +4529,7 @@ void RenderProcessHostImpl::OnAec3Enabled() {
   if (!aec3_set_callback_.is_null())
     std::move(aec3_set_callback_).Run(true, std::string());
 }
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 
 void RenderProcessHostImpl::RecomputeAndUpdateWebKitPreferences() {
   // We are updating all widgets including swapped out ones.

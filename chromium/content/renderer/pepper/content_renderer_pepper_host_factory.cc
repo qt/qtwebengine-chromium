@@ -55,6 +55,7 @@ namespace content {
 
 namespace {
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 bool CanUseMediaStreamAPI(const RendererPpapiHost* host, PP_Instance instance) {
   blink::WebPluginContainer* container =
       host->GetContainerForInstance(instance);
@@ -66,6 +67,7 @@ bool CanUseMediaStreamAPI(const RendererPpapiHost* host, PP_Instance instance) {
       GetContentClient()->renderer();
   return content_renderer_client->AllowPepperMediaStreamAPI(document_url);
 }
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 
 static bool CanUseCameraDeviceAPI(const RendererPpapiHost* host,
                                   PP_Instance instance) {
@@ -184,6 +186,7 @@ ContentRendererPepperHostFactory::CreateResourceHost(
                                                       resource);
     case PpapiHostMsg_WebSocket_Create::ID:
       return std::make_unique<PepperWebSocketHost>(host_, instance, resource);
+#if BUILDFLAG(ENABLE_WEBRTC)
     case PpapiHostMsg_MediaStreamVideoTrack_Create::ID:
       return std::make_unique<PepperMediaStreamVideoTrackHost>(host_, instance,
                                                                resource);
@@ -200,6 +203,7 @@ ContentRendererPepperHostFactory::CreateResourceHost(
         return std::make_unique<PepperVideoSourceHost>(host_, instance,
                                                        resource);
       return nullptr;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
   }
 
   // Dev interfaces.

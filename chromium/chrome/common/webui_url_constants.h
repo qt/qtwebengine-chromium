@@ -251,7 +251,9 @@ extern const char kChromeUITabModalConfirmDialogHost[];
 extern const char kChromeUIPrintHost[];
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 extern const char kChromeUIWebRtcLogsHost[];
+#endif
 
 // Settings sub-pages.
 extern const char kAutofillSubPage[];
