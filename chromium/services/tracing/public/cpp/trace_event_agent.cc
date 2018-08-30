@@ -22,8 +22,8 @@
 #include "services/tracing/public/cpp/tracing_features.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
 
-#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_MACOSX) || \
-    defined(OS_WIN)
+#if (defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_MACOSX) || \
+    defined(OS_WIN)) && !defined(TOOLKIT_QT)
 #define PERFETTO_AVAILABLE
 #include "services/tracing/public/cpp/perfetto/producer_client.h"
 #include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
