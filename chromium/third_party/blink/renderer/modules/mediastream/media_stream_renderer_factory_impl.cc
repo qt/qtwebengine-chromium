@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/platform/modules/mediastream/media_stream_audio_track.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -32,11 +33,15 @@ namespace {
 // Note that if there are more than one open capture devices the function
 // will not be able to pick an appropriate device and return 0.
 base::UnguessableToken GetSessionIdForWebRtcAudioRenderer() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   WebRtcAudioDeviceImpl* audio_device =
       PeerConnectionDependencyFactory::GetInstance()->GetWebRtcAudioDevice();
   return audio_device
              ? audio_device->GetAuthorizedDeviceSessionIdForAudioRenderer()
              : base::UnguessableToken();
+#else
+  return base::UnguessableToken();
+#endif
 }
 
 }  // namespace
@@ -56,6 +61,7 @@ MediaStreamRendererFactoryImpl::GetVideoRenderer(
     const WebMediaStreamVideoRenderer::RepaintCB& repaint_cb,
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> main_render_task_runner) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(!web_stream.IsNull());
 
   DVLOG(1) << "MediaStreamRendererFactoryImpl::GetVideoRenderer stream:"
@@ -70,6 +76,10 @@ MediaStreamRendererFactoryImpl::GetVideoRenderer(
   return new MediaStreamVideoRendererSink(video_tracks[0], repaint_cb,
                                           std::move(io_task_runner),
                                           std::move(main_render_task_runner));
+#else
+  WebRtcLogMessage("Error: No WebRTC support.");
+  return nullptr;
+#endif
 }
 
 scoped_refptr<WebMediaStreamAudioRenderer>
@@ -77,6 +87,7 @@ MediaStreamRendererFactoryImpl::GetAudioRenderer(
     const WebMediaStream& web_stream,
     WebLocalFrame* web_frame,
     const WebString& device_id) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(!web_stream.IsNull());
   WebVector<WebMediaStreamTrack> audio_tracks = web_stream.AudioTracks();
   if (audio_tracks.empty()) {
@@ -144,6 +155,10 @@ MediaStreamRendererFactoryImpl::GetAudioRenderer(
   if (!ret)
     WebRtcLogMessage("Error: CreateSharedAudioRendererProxy failed.");
   return ret;
+#else
+  WebRtcLogMessage("Error: No WebRTC support.");
+  return nullptr;
+#endif
 }
 
 }  // namespace blink

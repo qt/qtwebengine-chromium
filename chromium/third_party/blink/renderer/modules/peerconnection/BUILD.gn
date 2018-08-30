@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//media/media_options.gni")
 import("//third_party/blink/renderer/modules/modules.gni")
 
 blink_modules_sources("peerconnection") {
@@ -157,6 +158,14 @@ blink_modules_sources("peerconnection") {
   deps = [
     "//third_party/abseil-cpp/absl/types:optional",
   ]
+
+  if (!enable_webrtc) {
+    sources -= [
+      "peer_connection_dependency_factory.cc",
+      "webrtc_media_stream_track_adapter.cc",
+      "webrtc_media_stream_track_adapter_map.cc",
+    ]
+  }
 }
 
 jumbo_source_set("test_support") {

@@ -11,6 +11,7 @@
 #include "media/base/mime_util.h"
 #include "media/base/supported_types.h"
 #include "media/filters/stream_parser_factory.h"
+#include "media/media_buildflags.h"
 #include "media/mojo/mojom/media_types.mojom-blink.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/mojom/feature_policy/feature_policy.mojom-blink.h"
@@ -50,9 +51,12 @@
 #include "third_party/blink/renderer/platform/media_capabilities/web_media_capabilities_info.h"
 #include "third_party/blink/renderer/platform/media_capabilities/web_media_configuration.h"
 #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
-#include "third_party/blink/renderer/platform/peerconnection/transmission_encoding_info_handler.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/blink/renderer/platform/peerconnection/transmission_encoding_info_handler.h"
+#endif
 
 namespace blink {
 
@@ -634,12 +638,14 @@ ScriptPromise MediaCapabilities::encodingInfo(
   }
 
   if (configuration->type() == "transmission") {
+#if BUILDFLAG(ENABLE_WEBRTC)
     if (auto* handler = TransmissionEncodingInfoHandler::Instance()) {
       handler->EncodingInfo(ToWebMediaConfiguration(configuration),
                             WTF::Bind(&OnMediaCapabilitiesEncodingInfo,
                                       WrapPersistent(resolver)));
       return promise;
     }
+#endif
     resolver->Reject(MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kInvalidStateError,
         "Platform error: could not get EncodingInfoHandler."));

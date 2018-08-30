@@ -25,6 +25,7 @@ import("//components/paint_preview/buildflags/buildflags.gni")
 import("//components/signin/features.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//net/features.gni")
 import("//ppapi/buildflags/buildflags.gni")
@@ -2514,7 +2515,35 @@ if (!is_android) {
     if (enable_captive_portal_detection) {
       sources += [ "../browser/captive_portal/captive_portal_browsertest.cc" ]
     }
-
+    if (!enable_webrtc) {
+      sources -= [
+        "../browser/media/webrtc/webrtc_apprtc_browsertest.cc",
+        "../browser/media/webrtc/webrtc_browsertest.cc",
+        "../browser/media/webrtc/webrtc_browsertest_base.cc",
+        "../browser/media/webrtc/webrtc_browsertest_base.h",
+        "../browser/media/webrtc/webrtc_browsertest_common.cc",
+        "../browser/media/webrtc/webrtc_browsertest_common.h",
+        "../browser/media/webrtc/webrtc_browsertest_perf.cc",
+        "../browser/media/webrtc/webrtc_browsertest_perf.h",
+        "../browser/media/webrtc/webrtc_desktop_capture_browsertest.cc",
+        "../browser/media/webrtc/webrtc_disable_encryption_flag_browsertest.cc",
+        "../browser/media/webrtc/webrtc_getdisplaymedia_browsertest.cc",
+        "../browser/media/webrtc/webrtc_getmediadevices_browsertest.cc",
+        "../browser/media/webrtc/webrtc_internals_integration_browsertest.cc",
+        "../browser/media/webrtc/webrtc_internals_perf_browsertest.cc",
+        "../browser/media/webrtc/webrtc_simulcast_browsertest.cc",
+        "../browser/media/webrtc/webrtc_stats_perf_browsertest.cc",
+        "../browser/media/webrtc/webrtc_video_display_perf_browsertest.cc",
+        "../browser/media/webrtc/webrtc_video_quality_browsertest.cc",
+        "../browser/media/webrtc/webrtc_webcam_browsertest.cc",
+      ]
+      if (enable_extensions) {
+        sources -= [
+          "../browser/extensions/api/webrtc_audio_private/webrtc_audio_private_browsertest.cc",
+          "../browser/extensions/api/webrtc_logging_private/webrtc_logging_private_apitest.cc",
+        ]
+      }
+    }
     if (is_mac) {
       deps += [ "//third_party/ocmock" ]
       data_deps += [
@@ -4086,9 +4115,6 @@ test("unit_tests") {
       "../browser/devtools/protocol/cast_handler_unittest.cc",
       "../browser/devtools/serialize_host_descriptions_unittest.cc",
       "../browser/download/download_dir_policy_handler_unittest.cc",
-      "../browser/media/webrtc/webrtc_log_uploader_unittest.cc",
-      "../browser/media/webrtc/webrtc_rtp_dump_handler_unittest.cc",
-      "../browser/media/webrtc/webrtc_rtp_dump_writer_unittest.cc",
       "../browser/policy/homepage_location_policy_handler_unittest.cc",
       "../browser/policy/local_sync_policy_handler_unittest.cc",
       "../browser/renderer_context_menu/mock_render_view_context_menu.cc",
@@ -4126,7 +4152,6 @@ test("unit_tests") {
       "../common/media_router/discovery/media_sink_service_base_unittest.cc",
       "../common/media_router/mojom/media_router_mojom_traits_unittest.cc",
       "../common/media_router/providers/cast/cast_media_source_unittest.cc",
-      "../renderer/media/webrtc_logging_agent_impl_unittest.cc",
     ]
 
     deps += [
@@ -4939,6 +4964,14 @@ test("unit_tests") {
       "../browser/sessions/session_restore_stats_collector_unittest.cc",
       "../browser/sessions/session_service_unittest.cc",
       "../browser/sessions/tab_loader_unittest.cc",
+    ]
+  }
+  if (enable_webrtc) {
+    sources += [
+      "../browser/media/webrtc/webrtc_log_uploader_unittest.cc",
+      "../browser/media/webrtc/webrtc_rtp_dump_handler_unittest.cc",
+      "../browser/media/webrtc/webrtc_rtp_dump_writer_unittest.cc",
+      "../renderer/media/chrome_webrtc_log_message_delegate_unittest.cc",
     ]
   }
   if (is_chromeos) {

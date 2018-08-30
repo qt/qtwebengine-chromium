@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/peerconnection/rtc_ice_transport.h"
 
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -68,9 +69,13 @@ class DtlsIceTransportAdapterCrossThreadFactory
 
   std::unique_ptr<IceTransportAdapter> ConstructOnWorkerThread(
       IceTransportAdapter::Delegate* delegate) override {
+#if BUILDFLAG(ENABLE_WEBRTC)
     DCHECK(ice_transport_);
     return std::make_unique<IceTransportAdapterImpl>(delegate,
                                                      std::move(ice_transport_));
+#else
+    return nullptr;
+#endif
   }
 
  private:
@@ -81,6 +86,7 @@ class DefaultIceTransportAdapterCrossThreadFactory
     : public IceTransportAdapterCrossThreadFactory {
  public:
   void InitializeOnMainThread(LocalFrame& frame) override {
+#if BUILDFLAG(ENABLE_WEBRTC)
     DCHECK(!port_allocator_);
     DCHECK(!async_resolver_factory_);
 
@@ -90,15 +96,20 @@ class DefaultIceTransportAdapterCrossThreadFactory
         frame.Client()->GetWebFrame());
     async_resolver_factory_ =
         rtc_dependency_factory->CreateAsyncResolverFactory();
+#endif
   }
 
   std::unique_ptr<IceTransportAdapter> ConstructOnWorkerThread(
       IceTransportAdapter::Delegate* delegate) override {
+#if BUILDFLAG(ENABLE_WEBRTC)
     DCHECK(port_allocator_);
     DCHECK(async_resolver_factory_);
     return std::make_unique<IceTransportAdapterImpl>(
         delegate, std::move(port_allocator_),
         std::move(async_resolver_factory_));
+#else
+    return nullptr;
+#endif
   }
 
  private:
@@ -109,6 +120,7 @@ class DefaultIceTransportAdapterCrossThreadFactory
 }  // namespace
 
 RTCIceTransport* RTCIceTransport::Create(ExecutionContext* context) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   LocalFrame* frame = To<Document>(context)->GetFrame();
   scoped_refptr<base::SingleThreadTaskRunner> proxy_thread =
       frame->GetTaskRunner(TaskType::kNetworking);
@@ -120,12 +132,16 @@ RTCIceTransport* RTCIceTransport::Create(ExecutionContext* context) {
   return MakeGarbageCollected<RTCIceTransport>(
       context, std::move(proxy_thread), std::move(host_thread),
       std::make_unique<DefaultIceTransportAdapterCrossThreadFactory>());
+#else
+  return nullptr;
+#endif
 }
 
 RTCIceTransport* RTCIceTransport::Create(
     ExecutionContext* context,
     rtc::scoped_refptr<webrtc::IceTransportInterface> ice_transport,
     RTCPeerConnection* peer_connection) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   LocalFrame* frame = To<Document>(context)->GetFrame();
   scoped_refptr<base::SingleThreadTaskRunner> proxy_thread =
       frame->GetTaskRunner(TaskType::kNetworking);
@@ -139,6 +155,9 @@ RTCIceTransport* RTCIceTransport::Create(
       std::make_unique<DtlsIceTransportAdapterCrossThreadFactory>(
           std::move(ice_transport)),
       peer_connection);
+#else
+  return nullptr;
+#endif
 }
 
 RTCIceTransport* RTCIceTransport::Create(

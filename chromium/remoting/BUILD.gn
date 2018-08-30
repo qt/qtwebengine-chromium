@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//media/media_options.gni")
 import("//remoting/build/config/remoting_build.gni")
 
 group("remoting_all") {
@@ -162,7 +163,9 @@ test("remoting_unittests") {
     ]
   }
 
-  deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
+  if (enable_webrtc) {
+    deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
+  }
 
   if (is_android) {
     deps += [ "//net/android:net_java" ]
@@ -205,8 +208,13 @@ if (enable_remoting_host) {
       "//net:test_support",
       "//remoting/base",
       "//testing/gtest",
-      "//third_party/webrtc_overrides:webrtc_component",
     ]
+
+    if (enable_webrtc) {
+      deps += [
+        "//third_party/webrtc_overrides:webrtc_component",
+      ]
+    }
 
     if (is_win) {
       defines += [ "_ALT_NO_EXCEPTIONS" ]

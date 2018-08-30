@@ -10,13 +10,14 @@
 #include "base/bind.h"
 #include "base/macros.h"
 #include "base/single_thread_task_runner.h"
+#include "media/media_buildflags.h"
 #include "third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.h"
 #include "third_party/blink/renderer/platform/wtf/thread_safe_ref_counted.h"
 #include "third_party/webrtc/api/scoped_refptr.h"
 #include "third_party/webrtc/rtc_base/rtc_certificate.h"
 #include "third_party/webrtc/rtc_base/rtc_certificate_generator.h"
 
-namespace blink {
+    namespace blink {
 namespace {
 
 // A certificate generation request spawned by
@@ -88,6 +89,7 @@ void GenerateCertificateWithOptionalExpiration(
     blink::RTCCertificateCallback completion_callback,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   DCHECK(key_params.IsValid());
+#if BUILDFLAG(ENABLE_WEBRTC)
   auto* pc_dependency_factory =
       blink::PeerConnectionDependencyFactory::GetInstance();
   pc_dependency_factory->EnsureInitialized();
@@ -97,6 +99,9 @@ void GenerateCertificateWithOptionalExpiration(
           task_runner, pc_dependency_factory->GetWebRtcWorkerTaskRunner());
   request->GenerateCertificateAsync(key_params, expires_ms,
                                     std::move(completion_callback));
+#else
+  std::move(completion_callback).Run(nullptr);
+#endif
 }
 
 }  // namespace

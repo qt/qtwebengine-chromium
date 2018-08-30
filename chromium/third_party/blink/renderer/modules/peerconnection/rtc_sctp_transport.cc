@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
@@ -70,8 +71,13 @@ RTCSctpTransport::RTCSctpTransport(
                        native_transport,
                        To<Document>(context)->GetFrame()->GetTaskRunner(
                            TaskType::kNetworking),
+#if BUILDFLAG(ENABLE_WEBRTC)
                        PeerConnectionDependencyFactory::GetInstance()
-                           ->GetWebRtcWorkerTaskRunner()) {}
+                           ->GetWebRtcWorkerTaskRunner()
+#else
+                       nullptr
+#endif
+                       ) {}
 
 RTCSctpTransport::RTCSctpTransport(
     ExecutionContext* context,
