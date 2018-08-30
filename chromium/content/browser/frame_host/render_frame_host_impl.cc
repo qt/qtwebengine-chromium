@@ -4190,6 +4190,7 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
       base::BindRepeating(&RenderFrameHostImpl::CreateAudioOutputStreamFactory,
                           base::Unretained(this)));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // BrowserMainLoop::GetInstance() may be null on unit tests.
   if (BrowserMainLoop::GetInstance()) {
     // BrowserMainLoop, which owns MediaStreamManager, is alive for the lifetime
@@ -4209,6 +4210,7 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
                             base::Unretained(media_stream_manager)),
         base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO}));
   }
+#endif
 
 #if BUILDFLAG(ENABLE_MEDIA_REMOTING)
   registry_->AddInterface(base::Bind(&RemoterFactoryImpl::Bind,
@@ -6144,6 +6146,7 @@ void RenderFrameHostImpl::BindSerialServiceRequest(
 
   serial_service_->Bind(std::move(request));
 }
+#endif
 
 #if BUILDFLAG(ENABLE_WEB_AUTH)
 void RenderFrameHostImpl::BindAuthenticatorRequest(

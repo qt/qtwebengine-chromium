@@ -14,12 +14,15 @@
 #include "content/browser/process_internals/process_internals_ui.h"
 #include "content/browser/service_worker/service_worker_internals_ui.h"
 #include "content/browser/tracing/tracing_ui.h"
-#include "content/browser/webrtc/webrtc_internals_ui.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/url_constants.h"
 #include "media/media_buildflags.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/browser/webrtc/webrtc_internals_ui.h"
+#endif
 
 namespace content {
 
@@ -82,8 +85,10 @@ ContentWebUIControllerFactory::CreateWebUIControllerForURL(WebUI* web_ui,
   if (url.host_piece() == kChromeUITracingHost)
     return std::make_unique<TracingUI>(web_ui);
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (url.host_piece() == kChromeUIWebRTCInternalsHost)
     return std::make_unique<WebRTCInternalsUI>(web_ui);
+#endif
   if (url.host_piece() == kChromeUIProcessInternalsHost)
     return std::make_unique<ProcessInternalsUI>(web_ui);
 

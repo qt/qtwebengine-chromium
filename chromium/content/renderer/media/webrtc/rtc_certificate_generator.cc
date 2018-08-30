@@ -108,6 +108,7 @@ void GenerateCertificateWithOptionalExpiration(
     blink::WebRTCCertificateCallback completion_callback,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   DCHECK(WebRTCKeyParamsToKeyParams(key_params).IsValid());
+#if BUILDFLAG(ENABLE_WEBRTC)
   PeerConnectionDependencyFactory* pc_dependency_factory =
       RenderThreadImpl::current()->GetPeerConnectionDependencyFactory();
   pc_dependency_factory->EnsureInitialized();
@@ -117,6 +118,9 @@ void GenerateCertificateWithOptionalExpiration(
           task_runner, pc_dependency_factory->GetWebRtcWorkerThread());
   request->GenerateCertificateAsync(key_params, expires_ms,
                                     std::move(completion_callback));
+#else
+  observer->onError();
+#endif
 }
 
 }  // namespace

@@ -56,12 +56,14 @@ static bool check_msgtable() {
   exemptions.push_back(WorkerMsgStart);    // Now only used by tests.
   exemptions.push_back(ResourceMsgStart);  // Cleanup underway.
   exemptions.push_back(ChromeUtilityPrintingMsgStart);  // BUILDFLAGS, sigh.
-  exemptions.push_back(WebRtcLoggingMsgStart);
 
 #if !BUILDFLAG(ENABLE_NACL)
   exemptions.push_back(NaClMsgStart);
 #endif  // !BUILDFLAG(ENABLE_NACL)
 
+#if !BUILDFLAG(ENABLE_WEBRTC)
+  exemptions.push_back(WebRtcLoggingMsgStart);
+#endif
 
 #if !defined(OS_ANDROID)
   exemptions.push_back(MediaPlayerMsgStart);

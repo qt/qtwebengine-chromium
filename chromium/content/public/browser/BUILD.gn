@@ -120,8 +120,6 @@ jumbo_source_set("browser_sources") {
     "cors_exempt_headers.h",
     "cors_origin_pattern_setter.cc",
     "cors_origin_pattern_setter.h",
-    "desktop_capture.cc",
-    "desktop_capture.h",
     "desktop_media_id.cc",
     "desktop_media_id.h",
     "desktop_streams_registry.h",
@@ -359,8 +357,6 @@ jumbo_source_set("browser_sources") {
     "web_ui_url_loader_factory.h",
     "webrtc_event_logger.cc",
     "webrtc_event_logger.h",
-    "webrtc_log.cc",
-    "webrtc_log.h",
     "websocket_handshake_request_info.h",
     "webvr_service_provider.cc",
     "webvr_service_provider.h",
@@ -398,9 +394,7 @@ jumbo_source_set("browser_sources") {
     "//services/resource_coordinator/public/cpp:resource_coordinator_cpp",
     "//services/service_manager/public/cpp",
     "//services/tracing/public/cpp",
-    "//services/video_capture/public/mojom",
     "//services/viz/public/interfaces",
-    "//third_party/webrtc/modules/desktop_capture",
 
     # We expose skia headers in the public API.
     "//skia",
@@ -470,5 +464,18 @@ jumbo_source_set("browser_sources") {
       "authenticator_request_client_delegate.h",
     ]
     deps += [ "//device/fido" ]
+  }
+
+  if (enable_webrtc) {
+    sources += [
+      "desktop_capture.cc",
+      "desktop_capture.h",
+      "webrtc_log.cc",
+      "webrtc_log.h",
+    ]
+    public_deps += [
+      "//services/video_capture/public/mojom",
+      "//third_party/webrtc/modules/desktop_capture"
+    ]
   }
 }
