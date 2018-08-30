@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/util/process_version.gni")
+import("//media/media_options.gni")
 import("//remoting/build/config/remoting_build.gni")
 
 group("all_tests") {
@@ -300,7 +301,6 @@ static_library("host") {
     "//remoting/host/security_key",
     "//remoting/protocol",
     "//remoting/resources",
-    "//third_party/webrtc/modules/desktop_capture",
 
     # //remoting uses the power_save_blocker directly. See crbug.com/689423
     "//services/device/wake_lock/power_save_blocker",
@@ -405,6 +405,10 @@ static_library("host") {
 
     public_deps += [ "//remoting/host/win" ]
   }
+
+  if (enable_webrtc) {
+    deps += [ "//third_party/webrtc/modules/desktop_capture" ]
+  }
 }
 
 static_library("test_support") {
@@ -431,11 +435,16 @@ static_library("test_support") {
   public_deps = [
     ":host",
     "//remoting/base:test_support",
-    "//third_party/libjingle_xmpp",
     "//third_party/protobuf:protobuf_lite",
-    "//third_party/webrtc/modules/desktop_capture",
-    "//third_party/webrtc_overrides:init_webrtc",
   ]
+
+  if (enable_webrtc) {
+    public_deps += [
+      "//third_party/libjingle_xmpp",
+      "//third_party/webrtc/modules/desktop_capture",
+      "//third_party/webrtc_overrides:init_webrtc",
+    ]
+  }
 }
 
 # The host portions of the remoting unit tests.
@@ -566,10 +575,7 @@ if (enable_remoting_host) {
       "setup/start_host_entry_point.cc",
     ]
 
-    deps = [
-      "//third_party/libjingle_xmpp",
-      "//third_party/webrtc_overrides:init_webrtc",
-    ]
+    deps = []
 
     configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
@@ -595,6 +601,13 @@ if (enable_remoting_host) {
         "//mojo/core/embedder",
         "//net",
         "//remoting/host/setup",
+      ]
+    }
+
+    if (enable_webrtc) {
+      deps += [
+        "//third_party/libjingle_xmpp",
+        "//third_party/webrtc_overrides:init_webrtc",
       ]
     }
   }
@@ -701,9 +714,7 @@ if (enable_me2me_host) {
       "//remoting/base",
       "//remoting/host",
       "//remoting/proto",
-      "//third_party/libjingle_xmpp",
       "//third_party/webrtc/modules/desktop_capture",
-      "//third_party/webrtc_overrides:init_webrtc",
     ]
 
     if (is_posix) {
@@ -715,6 +726,13 @@ if (enable_me2me_host) {
 
     if (!is_ios) {
       deps += [ "//components/policy:generated" ]
+    }
+
+    if (enable_webrtc) {
+      deps += [
+        "//third_party/libjingle_xmpp",
+        "//third_party/webrtc_overrides:init_webrtc",
+      ]
     }
 
     if (is_desktop_linux) {

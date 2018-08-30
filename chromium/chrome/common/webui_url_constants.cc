@@ -268,7 +268,9 @@ const char kChromeUITabModalConfirmDialogHost[] = "tab-modal-confirm-dialog";
 const char kChromeUIPrintHost[] = "print";
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 const char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
+#endif
 
 // Settings sub pages.
 
@@ -438,7 +440,9 @@ const char* const kChromeHostURLs[] = {
 #if BUILDFLAG(ENABLE_SERVICE_DISCOVERY)
     kChromeUIDevicesHost,
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
     kChromeUIWebRtcLogsHost,
+#endif
 };
 const size_t kNumberOfChromeHostURLs = arraysize(kChromeHostURLs);
 

@@ -12,12 +12,15 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/public/common/console_message_level.h"
 #include "content/public/common/content_features.h"
-#include "content/renderer/media/stream/media_stream_device_observer.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
 #include "content/renderer/render_frame_impl.h"
 #include "media/media_buildflags.h"
 #include "ppapi/shared_impl/ppb_device_ref_shared.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/renderer/media/stream/media_stream_device_observer.h"
+#endif
 
 namespace content {
 
@@ -102,6 +105,7 @@ PepperMediaDeviceManager::~PepperMediaDeviceManager() {
 void PepperMediaDeviceManager::EnumerateDevices(
     PP_DeviceType_Dev type,
     const DevicesCallback& callback) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   bool request_audio_input = type == PP_DEVICETYPE_DEV_AUDIOCAPTURE;
   bool request_video_input = type == PP_DEVICETYPE_DEV_VIDEOCAPTURE;
   bool request_audio_output = type == PP_DEVICETYPE_DEV_AUDIOOUTPUT;
@@ -111,11 +115,19 @@ void PepperMediaDeviceManager::EnumerateDevices(
       false /* request_video_input_capabilities */,
       base::BindOnce(&PepperMediaDeviceManager::DevicesEnumerated, AsWeakPtr(),
                      callback, ToMediaDeviceType(type)));
+#else
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(&PepperMediaDeviceManager::DevicesEnumerated,
+                                AsWeakPtr(), callback, ToMediaDeviceType(type),
+                                std::vector<MediaDeviceInfoArray>(),
+                                std::vector<blink::mojom::VideoInputDeviceCapabilitiesPtr>()));
+#endif
 }
 
 size_t PepperMediaDeviceManager::StartMonitoringDevices(
     PP_DeviceType_Dev type,
     const DevicesCallback& callback) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   bool subscribe_audio_input = type == PP_DEVICETYPE_DEV_AUDIOCAPTURE;
   bool subscribe_video_input = type == PP_DEVICETYPE_DEV_VIDEOCAPTURE;
   bool subscribe_audio_output = type == PP_DEVICETYPE_DEV_AUDIOOUTPUT;
@@ -132,10 +144,14 @@ size_t PepperMediaDeviceManager::StartMonitoringDevices(
   subscriptions.push_back(Subscription{subscription_id, callback});
 
   return subscription_id;
+#else
+  return 0u;
+#endif
 }
 
 void PepperMediaDeviceManager::StopMonitoringDevices(PP_DeviceType_Dev type,
                                                      size_t subscription_id) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   SubscriptionList& subscriptions =
       device_change_subscriptions_[ToMediaDeviceType(type)];
   base::EraseIf(subscriptions,
@@ -143,6 +159,7 @@ void PepperMediaDeviceManager::StopMonitoringDevices(PP_DeviceType_Dev type,
                   return subscription.first == subscription_id;
                 });
   bindings_.RemoveBinding(subscription_id);
+#endif
 }
 
 int PepperMediaDeviceManager::OpenDevice(PP_DeviceType_Dev type,
@@ -167,11 +184,18 @@ int PepperMediaDeviceManager::OpenDevice(PP_DeviceType_Dev type,
     return request_id;
   }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   GetMediaStreamDispatcherHost()->OpenDevice(
       request_id, device_id,
       PepperMediaDeviceManager::FromPepperDeviceType(type),
       base::BindOnce(&PepperMediaDeviceManager::OnDeviceOpened, AsWeakPtr(),
                      request_id));
+#else
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE,
+      base::Bind(&PepperMediaDeviceManager::OnDeviceOpened, AsWeakPtr(),
+                 request_id, false, std::string(), MediaStreamDevice()));
+#endif
 
   return request_id;
 }
@@ -179,18 +203,23 @@ int PepperMediaDeviceManager::OpenDevice(PP_DeviceType_Dev type,
 void PepperMediaDeviceManager::CancelOpenDevice(int request_id) {
   open_callbacks_.erase(request_id);
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   GetMediaStreamDispatcherHost()->CancelRequest(request_id);
+#endif
 }
 
 void PepperMediaDeviceManager::CloseDevice(const std::string& label) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (!GetMediaStreamDeviceObserver()->RemoveStream(label))
     return;
 
   GetMediaStreamDispatcherHost()->CloseDevice(label);
+#endif
 }
 
 int PepperMediaDeviceManager::GetSessionID(PP_DeviceType_Dev type,
                                            const std::string& label) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   switch (type) {
     case PP_DEVICETYPE_DEV_AUDIOCAPTURE:
       return GetMediaStreamDeviceObserver()->audio_session_id(label);
@@ -200,6 +229,9 @@ int PepperMediaDeviceManager::GetSessionID(PP_DeviceType_Dev type,
       NOTREACHED();
       return 0;
   }
+#else
+  return 0;
+#endif
 }
 
 // static
@@ -238,8 +270,10 @@ void PepperMediaDeviceManager::OnDeviceOpened(int request_id,
     return;
   }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (success)
     GetMediaStreamDeviceObserver()->AddStream(label, device);
+#endif
 
   OpenDeviceCallback callback = iter->second;
   open_callbacks_.erase(iter);

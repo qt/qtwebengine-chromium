@@ -128,6 +128,7 @@ const PrefMappingEntry kPrefMapping[] = {
      APIPermission::kPrivacy, APIPermission::kPrivacy},
     {"translationServiceEnabled", prefs::kOfferTranslateEnabled,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
+#if BUILDFLAG(ENABLE_WEBRTC)
     // webRTCMultipleRoutesEnabled and webRTCNonProxiedUdpEnabled have been
     // replaced by webRTCIPHandlingPolicy. Leaving it for backward
     // compatibility. TODO(guoweis): Remove this in M50.
@@ -139,6 +140,7 @@ const PrefMappingEntry kPrefMapping[] = {
      APIPermission::kPrivacy, APIPermission::kPrivacy},
     {"webRTCUDPPortRange", prefs::kWebRTCUDPPortRange, APIPermission::kPrivacy,
      APIPermission::kPrivacy},
+#endif
     // accessibilityFeatures.animationPolicy is available for
     // all platforms but the others from accessibilityFeatures
     // is only available for OS_CHROMEOS.

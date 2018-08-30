@@ -125,7 +125,6 @@
 #include "content/renderer/media/media_permission_dispatcher.h"
 #include "content/renderer/media/stream/media_stream_device_observer.h"
 #include "content/renderer/media/stream/user_media_client_impl.h"
-#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #include "content/renderer/mojo/blink_interface_registry_impl.h"
 #include "content/renderer/navigation_client.h"
 #include "content/renderer/navigation_state.h"
@@ -241,6 +240,10 @@
 #include "base/process/kill.h"
 #elif defined(OS_POSIX)
 #include <signal.h>
+#endif
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -5286,7 +5289,9 @@ blink::WebRelatedAppsFetcher* RenderFrameImpl::GetRelatedAppsFetcher() {
 
 void RenderFrameImpl::WillStartUsingPeerConnectionHandler(
     blink::WebRTCPeerConnectionHandler* handler) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   static_cast<RTCPeerConnectionHandler*>(handler)->associateWithFrame(frame_);
+#endif
 }
 
 blink::WebUserMediaClient* RenderFrameImpl::UserMediaClient() {
@@ -6731,11 +6736,13 @@ void RenderFrameImpl::InitializeUserMediaClient() {
   if (!render_thread)  // Will be NULL during unit tests.
     return;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(!web_user_media_client_);
   web_user_media_client_ = new UserMediaClientImpl(
       this, RenderThreadImpl::current()->GetPeerConnectionDependencyFactory(),
       std::make_unique<MediaStreamDeviceObserver>(this),
       GetTaskRunner(blink::TaskType::kInternalMedia));
+#endif
 }
 
 void RenderFrameImpl::PrepareRenderViewForNavigation(

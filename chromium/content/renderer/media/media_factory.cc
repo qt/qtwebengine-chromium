@@ -527,6 +527,7 @@ blink::WebMediaPlayer* MediaFactory::CreateWebMediaPlayerForMediaStream(
     blink::WebLocalFrame* frame,
     blink::WebLayerTreeView* layer_tree_view,
     const cc::LayerTreeSettings& settings) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl* const render_thread = RenderThreadImpl::current();
 
   scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner =
@@ -553,6 +554,9 @@ blink::WebMediaPlayer* MediaFactory::CreateWebMediaPlayerForMediaStream(
       sink_id,
       base::BindOnce(&blink::WebSurfaceLayerBridge::Create, layer_tree_view),
       std::move(submitter), GetVideoSurfaceLayerMode());
+#else
+  return NULL;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 media::RendererWebMediaPlayerDelegate*
@@ -570,8 +574,13 @@ MediaFactory::CreateMediaStreamRendererFactory() {
       GetContentClient()->renderer()->CreateMediaStreamRendererFactory();
   if (factory.get())
     return factory;
+#if BUILDFLAG(ENABLE_WEBRTC)
   return std::unique_ptr<MediaStreamRendererFactory>(
       new MediaStreamRendererFactoryImpl());
+#else
+  return std::unique_ptr<MediaStreamRendererFactory>(
+      static_cast<MediaStreamRendererFactory*>(NULL));
+#endif
 }
 
 media::DecoderFactory* MediaFactory::GetDecoderFactory() {

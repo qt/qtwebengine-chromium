@@ -152,8 +152,6 @@ component("gpu") {
     sources += [
       "android/android_video_decode_accelerator.cc",
       "android/android_video_decode_accelerator.h",
-      "android/android_video_encode_accelerator.cc",
-      "android/android_video_encode_accelerator.h",
       "android/android_video_surface_chooser.cc",
       "android/android_video_surface_chooser.h",
       "android/android_video_surface_chooser_impl.cc",
@@ -202,9 +200,16 @@ component("gpu") {
       "//gpu/ipc/common:ipc_common_sources",
       "//media/mojo:buildflags",
       "//services/service_manager/public/cpp:cpp",
-      "//third_party/libyuv",
       "//ui/gl:gl_jni_headers",
     ]
+
+    if (enable_webrtc) {
+      deps += [ "//third_party/libyuv" ]
+      sources += [
+        "android/android_video_encode_accelerator.cc",
+        "android/android_video_encode_accelerator.h",
+      ]
+    }
 
     # TODO(crbug.com/789435): This is needed for AVDA to access the CDM
     # directly.  Remove this dependency after VDAs are also running as part of
