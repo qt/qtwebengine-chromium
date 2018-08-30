@@ -10,8 +10,11 @@
 #include "components/tracing/common/trace_startup_config.h"
 #include "components/tracing/common/trace_to_console.h"
 #include "components/tracing/common/tracing_switches.h"
-#include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
 #include "services/tracing/public/cpp/tracing_features.h"
+
+#if defined(PERFETTO_SERVICE_AVAILABLE)
+#include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
+#endif
 
 namespace tracing {
 
@@ -35,8 +38,10 @@ void EnableStartupTracingIfNeeded() {
     uint8_t modes = base::trace_event::TraceLog::RECORDING_MODE;
     if (!trace_config.event_filters().empty())
       modes |= base::trace_event::TraceLog::FILTERING_MODE;
+#if defined(PERFETTO_SERVICE_AVAILABLE)
     if (TracingUsesPerfettoBackend())
       TraceEventDataSource::GetInstance()->SetupStartupTracing();
+#endif
     base::trace_event::TraceLog::GetInstance()->SetEnabled(
         TraceStartupConfig::GetInstance()->GetTraceConfig(), modes);
   } else if (command_line.HasSwitch(switches::kTraceToConsole)) {
@@ -46,8 +51,10 @@ void EnableStartupTracingIfNeeded() {
     LOG(ERROR) << "Start " << switches::kTraceToConsole
                << " with CategoryFilter '"
                << trace_config.ToCategoryFilterString() << "'.";
+#if defined(PERFETTO_SERVICE_AVAILABLE)
     if (TracingUsesPerfettoBackend())
       TraceEventDataSource::GetInstance()->SetupStartupTracing();
+#endif
     base::trace_event::TraceLog::GetInstance()->SetEnabled(
         trace_config, base::trace_event::TraceLog::RECORDING_MODE);
   }

@@ -21,7 +21,7 @@
 #include "services/tracing/public/cpp/tracing_features.h"
 
 #if (defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_MACOSX) || \
-     defined(OS_WIN) || defined(OS_FUCHSIA))
+     defined(OS_WIN) || defined(OS_FUCHSIA)) && !defined(TOOLKIT_QT)
 #define PERFETTO_AVAILABLE
 #include "services/tracing/public/cpp/perfetto/producer_client.h"
 #include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
@@ -51,6 +51,7 @@ TraceEventAgent::TraceEventAgent()
       weak_ptr_factory_(this) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
+#if defined(PERFETTO_AVAILABLE)
   // These filters are used by TraceLog in the legacy tracing system and JSON
   // exporter (only in tracing service) in perfetto bcakend.
   if (base::trace_event::TraceLog::GetInstance()
@@ -62,7 +63,6 @@ TraceEventAgent::TraceEventAgent()
         base::BindRepeating(&IsMetadataWhitelisted));
   }
 
-#if defined(PERFETTO_AVAILABLE)
   ProducerClient::Get()->AddDataSource(TraceEventDataSource::GetInstance());
 #endif
 }

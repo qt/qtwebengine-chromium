@@ -282,6 +282,7 @@ class TracingHandler::LegacyTracingSession
   }
 };
 
+#if defined(PERFETTO_SERVICE_AVAILABLE)
 class TracingHandler::PerfettoTracingSession
     : public TracingHandler::TracingSession,
       public tracing::mojom::TracingSession,
@@ -475,6 +476,7 @@ class TracingHandler::PerfettoTracingSession
   base::trace_event::TraceConfig last_config_for_perfetto_;
 #endif
 };
+#endif
 
 TracingHandler::TracingHandler(FrameTreeNode* frame_tree_node_,
                                DevToolsIOContext* io_context,
@@ -509,8 +511,16 @@ TracingHandler::TracingHandler(FrameTreeNode* frame_tree_node_,
     return;
   }
 
+#if defined(PERFETTO_SERVICE_AVAILABLE)
   DCHECK(tracing::TracingUsesPerfettoBackend());
-  session_ = std::make_unique<PerfettoTracingSession>();
+  if (tracing::TracingUsesPerfettoBackend())
+    session_ = std::make_unique<PerfettoTracingSession>();
+  } else
+#endif
+  {
+    session_ = std::make_unique<LegacyTracingSession>();
+  }
+
   session_->AdoptStartupTracingSession();
   g_any_agent_tracing = true;
 }
@@ -741,9 +751,12 @@ void TracingHandler::StartTracingWithGpuPid(
 
   SetupProcessFilter(gpu_pid, nullptr);
 
-  if (tracing::TracingUsesPerfettoBackend()) {
+#if defined(PERFETTO_SERVICE_AVAILABLE)
+  if (tracing::TracingUsesPerfettoBackend())
     session_ = std::make_unique<PerfettoTracingSession>();
-  } else {
+  } else
+#endif
+  {
     session_ = std::make_unique<LegacyTracingSession>();
   }
   session_->EnableTracing(

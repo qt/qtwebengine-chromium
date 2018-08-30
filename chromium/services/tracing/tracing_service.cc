@@ -59,7 +59,9 @@ class ServiceListener : public service_manager::mojom::ServiceManagerListener {
     // Let the Coordinator and the perfetto service know it should be expecting
     // a connection from this process.
     coordinator_->AddExpectedPID(pid);
+#if defined(PERFETTO_SERVICE_AVAILABLE)
     PerfettoService::GetInstance()->AddActiveServicePid(pid);
+#endif
 
     mojom::TracedProcessPtr traced_process;
     connector_->BindInterface(
@@ -89,7 +91,9 @@ class ServiceListener : public service_manager::mojom::ServiceManagerListener {
       // to connect to the tracing service.
       if (CountServicesWithPID(pid) == 0) {
         coordinator_->RemoveExpectedPID(pid);
+#if defined(PERFETTO_SERVICE_AVAILABLE)
         PerfettoService::GetInstance()->RemoveActiveServicePid(pid);
+#endif
       }
     }
   }
@@ -104,7 +108,9 @@ class ServiceListener : public service_manager::mojom::ServiceManagerListener {
     }
 
     coordinator_->FinishedReceivingRunningPIDs();
+#if defined(PERFETTO_SERVICE_AVAILABLE)
     PerfettoService::GetInstance()->SetActiveServicePidsInitialized();
+#endif
   }
 
   void OnServicePIDReceived(const service_manager::Identity& identity,
@@ -148,8 +154,6 @@ void TracingService::OnDisconnected() {
 void TracingService::OnStart() {
   tracing_agent_registry_ = std::make_unique<AgentRegistry>();
 
-  bool enable_legacy_tracing = true;
-
 #if defined(PERFETTO_SERVICE_AVAILABLE)
   if (TracingUsesPerfettoBackend()) {
     auto perfetto_coordinator = std::make_unique<PerfettoTracingCoordinator>(
@@ -174,9 +178,11 @@ void TracingService::OnStart() {
   }
 
 
+#if defined(PERFETTO_SERVICE_AVAILABLE)
   registry_.AddInterface(
       base::BindRepeating(&ConsumerHost::BindConsumerRequest,
                           base::Unretained(PerfettoService::GetInstance())));
+#endif
 
   service_listener_ = std::make_unique<ServiceListener>(
       service_binding_.GetConnector(), tracing_agent_registry_.get(),

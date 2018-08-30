@@ -16,8 +16,11 @@
 #include "content/browser/tracing/background_tracing_manager_impl.h"
 #include "content/browser/tracing/background_tracing_rule.h"
 #include "content/browser/tracing/tracing_controller_impl.h"
-#include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
 #include "services/tracing/public/cpp/tracing_features.h"
+
+#if defined(PERFETTO_SERVICE_AVAILABLE)
+#include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
+#endif
 
 using base::trace_event::TraceConfig;
 using Metrics = content::BackgroundTracingManagerImpl::Metrics;
@@ -144,10 +147,12 @@ void BackgroundTracingActiveScenario::StartTracing(
   }
 #endif
 
+#if defined(PERFETTO_SERVICE_AVAILABLE)
   if (!TracingControllerImpl::GetInstance()->IsTracing() &&
       tracing::TracingUsesPerfettoBackend()) {
     tracing::TraceEventDataSource::GetInstance()->SetupStartupTracing();
   }
+#endif
 
   if (!TracingControllerImpl::GetInstance()->StartTracing(
           config,

@@ -2,9 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
+
 # There should be only one tracing service. It is currently
 # in the browser process. So, only //content/browser should link to this target.
 # Others modules should only need the public targets.
+
 source_set("lib") {
   sources = [
     "agent_registry.cc",
@@ -26,7 +29,7 @@ source_set("lib") {
     "//services/tracing/public/cpp",
   ]
 
-  if (is_mac || is_linux || is_android || is_win || is_fuchsia) {
+  if ((is_mac || is_linux || is_android || is_win || is_fuchsia) && !use_qt) {
     sources += [
       "perfetto/consumer_host.cc",
       "perfetto/consumer_host.h",
@@ -80,7 +83,7 @@ source_set("tests") {
     "test_util.h",
   ]
 
-  if (is_mac || is_linux || is_android || is_win || is_fuchsia) {
+  if ((is_mac || is_linux || is_android || is_win || is_fuchsia) && !use_qt) {
     sources += [
       "public/cpp/perfetto/task_runner_unittest.cc",
       "public/cpp/perfetto/trace_event_data_source_unittest.cc",
@@ -105,7 +108,7 @@ source_set("tests") {
     "//testing/gtest",
   ]
 
-  if (is_mac || is_linux || is_android || is_win || is_fuchsia) {
+  if ((is_mac || is_linux || is_android || is_win || is_fuchsia) && !use_qt) {
     sources += [
       "perfetto/consumer_host_unittest.cc",
       "perfetto/json_trace_exporter_unittest.cc",

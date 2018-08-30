@@ -17,12 +17,17 @@ namespace features {
 // Enables the perfetto tracing backend. For startup tracing, pass the
 // --enable-perfetto flag instead.
 const base::Feature kTracingPerfettoBackend{"TracingPerfettoBackend",
-                                            base::FEATURE_ENABLED_BY_DEFAULT};
+#if defined(TOOLKIT_QT)
+                                            base::FEATURE_DISABLED_BY_DEFAULT
+#else
+                                            base::FEATURE_ENABLED_BY_DEFAULT
+#endif
+                                           };
 
 // Runs the tracing service as an in-process browser service.
 const base::Feature kTracingServiceInProcess {
   "TracingServiceInProcess",
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
       base::FEATURE_ENABLED_BY_DEFAULT
 #else
       base::FEATURE_DISABLED_BY_DEFAULT
