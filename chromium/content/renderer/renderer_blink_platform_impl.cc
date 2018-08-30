@@ -117,9 +117,11 @@
 #include "base/file_descriptor_posix.h"
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc/rtc_certificate_generator.h"
 #include "content/renderer/media/webrtc/webrtc_uma_histograms.h"
+#endif
 
 using blink::Platform;
 using blink::WebAudioDevice;
@@ -654,8 +656,12 @@ WebBlobRegistry* RendererBlinkPlatformImpl::GetBlobRegistry() {
 std::unique_ptr<WebMediaRecorderHandler>
 RendererBlinkPlatformImpl::CreateMediaRecorderHandler(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   return std::make_unique<content::MediaRecorderHandler>(
       std::move(task_runner));
+#else
+  return nullptr;
+#endif
 }
 
 //------------------------------------------------------------------------------
@@ -669,17 +675,25 @@ RendererBlinkPlatformImpl::CreateRTCPeerConnectionHandler(
   if (!render_thread)
     return nullptr;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   PeerConnectionDependencyFactory* rtc_dependency_factory =
       render_thread->GetPeerConnectionDependencyFactory();
   return rtc_dependency_factory->CreateRTCPeerConnectionHandler(client,
                                                                 task_runner);
+#else
+  return nullptr;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 //------------------------------------------------------------------------------
 
 std::unique_ptr<blink::WebRTCCertificateGenerator>
 RendererBlinkPlatformImpl::CreateRTCCertificateGenerator() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   return std::make_unique<RTCCertificateGenerator>();
+#else
+  return nullptr;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 //------------------------------------------------------------------------------
@@ -704,42 +718,58 @@ bool RendererBlinkPlatformImpl::SetSandboxEnabledForTesting(bool enable) {
 
 scoped_refptr<base::SingleThreadTaskRunner>
 RendererBlinkPlatformImpl::GetWebRtcWorkerThread() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   DCHECK(render_thread);
   PeerConnectionDependencyFactory* rtc_dependency_factory =
       render_thread->GetPeerConnectionDependencyFactory();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->GetWebRtcWorkerThread();
+#else
+  return nullptr;
+#endif
 }
 
 rtc::Thread* RendererBlinkPlatformImpl::GetWebRtcWorkerThreadRtcThread() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   DCHECK(render_thread);
   PeerConnectionDependencyFactory* rtc_dependency_factory =
       render_thread->GetPeerConnectionDependencyFactory();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->GetWebRtcWorkerThreadRtcThread();
+#else
+  return nullptr;
+#endif
 }
 
 std::unique_ptr<cricket::PortAllocator>
 RendererBlinkPlatformImpl::CreateWebRtcPortAllocator(
     blink::WebLocalFrame* frame) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   DCHECK(render_thread);
   PeerConnectionDependencyFactory* rtc_dependency_factory =
       render_thread->GetPeerConnectionDependencyFactory();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->CreatePortAllocator(frame);
+#else
+  return nullptr;
+#endif
 }
 
 std::unique_ptr<webrtc::AsyncResolverFactory>
 RendererBlinkPlatformImpl::CreateWebRtcAsyncResolverFactory() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   DCHECK(render_thread);
   PeerConnectionDependencyFactory* rtc_dependency_factory =
       render_thread->GetPeerConnectionDependencyFactory();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->CreateAsyncResolverFactory();
+#else
+  return nullptr;
+#endif
 }
 
 //------------------------------------------------------------------------------
@@ -749,8 +779,12 @@ RendererBlinkPlatformImpl::CreateCanvasCaptureHandler(
     const WebSize& size,
     double frame_rate,
     WebMediaStreamTrack* track) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   return CanvasCaptureHandler::CreateCanvasCaptureHandler(
       size, frame_rate, RenderThread::Get()->GetIOTaskRunner(), track);
+#else
+  return nullptr;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 //------------------------------------------------------------------------------
@@ -759,6 +793,7 @@ void RendererBlinkPlatformImpl::CreateHTMLVideoElementCapturer(
     WebMediaStream* web_media_stream,
     WebMediaPlayer* web_media_player,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(web_media_stream);
   DCHECK(web_media_player);
   AddVideoTrackToMediaStream(
@@ -767,11 +802,13 @@ void RendererBlinkPlatformImpl::CreateHTMLVideoElementCapturer(
           task_runner),
       false,  // is_remote
       web_media_stream);
+#endif
 }
 
 void RendererBlinkPlatformImpl::CreateHTMLAudioElementCapturer(
     WebMediaStream* web_media_stream,
     WebMediaPlayer* web_media_player) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(web_media_stream);
   DCHECK(web_media_player);
 
@@ -805,13 +842,18 @@ void RendererBlinkPlatformImpl::CreateHTMLAudioElementCapturer(
 
   media_stream_source->ConnectToTrack(web_media_stream_track);
   web_media_stream->AddTrack(web_media_stream_track);
+#endif
 }
 
 //------------------------------------------------------------------------------
 
 std::unique_ptr<WebImageCaptureFrameGrabber>
 RendererBlinkPlatformImpl::CreateImageCaptureFrameGrabber() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   return std::make_unique<ImageCaptureFrameGrabber>();
+#else
+  return nullptr;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 //------------------------------------------------------------------------------
@@ -819,26 +861,36 @@ RendererBlinkPlatformImpl::CreateImageCaptureFrameGrabber() {
 std::unique_ptr<webrtc::RtpCapabilities>
 RendererBlinkPlatformImpl::GetRtpSenderCapabilities(
     const blink::WebString& kind) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   PeerConnectionDependencyFactory* pc_dependency_factory =
       RenderThreadImpl::current()->GetPeerConnectionDependencyFactory();
   pc_dependency_factory->EnsureInitialized();
   return pc_dependency_factory->GetSenderCapabilities(kind.Utf8());
+#else
+  return nullptr;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 std::unique_ptr<webrtc::RtpCapabilities>
 RendererBlinkPlatformImpl::GetRtpReceiverCapabilities(
     const blink::WebString& kind) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   PeerConnectionDependencyFactory* pc_dependency_factory =
       RenderThreadImpl::current()->GetPeerConnectionDependencyFactory();
   pc_dependency_factory->EnsureInitialized();
   return pc_dependency_factory->GetReceiverCapabilities(kind.Utf8());
+#else
+  return nullptr;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 //------------------------------------------------------------------------------
 
 void RendererBlinkPlatformImpl::UpdateWebRTCAPICount(
     blink::WebRTCAPIName api_name) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   UpdateWebRTCMethodCount(api_name);
+#endif
 }
 
 //------------------------------------------------------------------------------
