@@ -743,16 +743,15 @@ def _make_blink_api_call(code_node,
     expr = _format("{_1}({_2})", _1=func_designator, _2=", ".join(arguments))
     if cg_context.no_alloc_direct_call_for_testing:
         expr = "\n".join([
-            # GCC extension: a compound statement enclosed in parentheses
-            "({",
+            "[&](){",
             "v8::Isolate::DisallowJavascriptExecutionScope "
             "nadc_disallow_js_exec_scope"
             "(${isolate}, "
             "v8::Isolate::DisallowJavascriptExecutionScope::CRASH_ON_FAILURE);",
             "blink::NoAllocDirectCallScope nadc_nadc_scope"
             "(${blink_receiver}, &${v8_fast_api_callback_options});",
-            _format("{};", expr),
-            "})",
+            _format("return {};", expr),
+            "}()",
         ])
     return expr
 
@@ -3000,7 +2999,7 @@ ${class_name}::NamedPropertyDeleterCallback(property_name, ${info});
 // step 1.3. Return false.
 const bool is_supported = ${index} < ${blink_receiver}->length();
 bindings::V8SetReturnValue(${info}, !is_supported);
-if (is_supported and ${info}.ShouldThrowOnError()) {
+if (is_supported && ${info}.ShouldThrowOnError()) {
   ExceptionState exception_state(
       ${info}.GetIsolate(),
       ExceptionContext::Context::kIndexedPropertyDelete,
