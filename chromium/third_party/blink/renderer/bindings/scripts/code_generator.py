@@ -207,7 +207,7 @@ class CodeGeneratorBase(object):
 
     def normalize_this_header_path(self, header_path):
         header_path = normalize_path(header_path)
-        match = re.search('(third_party/blink/.*)$', header_path)
+        match = re.search('(third_party[\\\\/]blink[\\\\/].*)$', header_path)
         assert match, 'Unkown style of path to output: ' + header_path
         return match.group(1)
 
