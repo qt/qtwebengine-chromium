@@ -254,7 +254,7 @@ CustomElementDefinition* CustomElementRegistry::DefinitionFor(
   if (!definition)
     definition = DefinitionForName(desc.GetName());
   // 4&5. ...and local name equal to localName, return that definition
-  if (definition and definition->Descriptor().LocalName() == desc.LocalName()) {
+  if (definition && definition->Descriptor().LocalName() == desc.LocalName()) {
     return definition;
   }
   // 6. Return null
