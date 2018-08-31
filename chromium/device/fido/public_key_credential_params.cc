@@ -35,7 +35,8 @@ PublicKeyCredentialParams::CreateFromCBORValue(
     }
 
     credential_params.push_back(PublicKeyCredentialParams::CredentialInfo{
-        CredentialType::kPublicKey, algorithm_type_it->second.GetInteger()});
+        CredentialType::kPublicKey,
+        static_cast<int>(algorithm_type_it->second.GetInteger())});
   }
 
   return PublicKeyCredentialParams(std::move(credential_params));

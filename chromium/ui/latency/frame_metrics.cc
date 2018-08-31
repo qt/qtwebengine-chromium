@@ -71,7 +71,7 @@ constexpr uint32_t LatencyThreshold(double Hz) {
 
 // The skip thresholds are selected to track each time more than 0, 1, 2, or 4
 // frames were skipped at once.
-constexpr std::initializer_list<uint32_t> kSkipThresholds = {
+std::initializer_list<uint32_t> kSkipThresholds = {
     RatioThreshold(0), RatioThreshold(1), RatioThreshold(2), RatioThreshold(4),
 };
 
@@ -79,7 +79,7 @@ constexpr std::initializer_list<uint32_t> kSkipThresholds = {
 // We often begin a frames on a vsync which would result in whole vsync periods
 // of latency. However, in case begin frames are offset slightly from the vsync,
 // which is common on Android, the frequency goes all the way to 240Hz.
-constexpr std::initializer_list<uint32_t> kLatencyThresholds = {
+std::initializer_list<uint32_t> kLatencyThresholds = {
     LatencyThreshold(240),  //  4.17 ms * 110% =  4.58 ms
     LatencyThreshold(120),  //  8.33 ms * 110% =  9.17 ms
     LatencyThreshold(60),   // 16.67 ms * 110% = 18.33 ms
@@ -89,13 +89,13 @@ constexpr std::initializer_list<uint32_t> kLatencyThresholds = {
 // The latency speed thresholds are chosen to track each frame where the
 // latency was constant (0) or when there was a jump of 1, 2, or 4 frame
 // periods.
-constexpr std::initializer_list<uint32_t> kLatencySpeedThresholds = {
+std::initializer_list<uint32_t> kLatencySpeedThresholds = {
     RatioThreshold(0), RatioThreshold(1), RatioThreshold(2), RatioThreshold(4),
 };
 
 // The latency acceleration thresholds here are tentative.
 // TODO(brianderson): Fine tune these values. http://crbug.com/837434
-constexpr std::initializer_list<uint32_t> kLatencyAccelerationThresholds = {
+std::initializer_list<uint32_t> kLatencyAccelerationThresholds = {
     RatioThreshold(0), RatioThreshold(1), RatioThreshold(2), RatioThreshold(4),
 };
 
