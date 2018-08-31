@@ -21,6 +21,9 @@ if (is_component_build) {
 }
 
 target(link_target_type, "renderer") {
+  # These files a big and can quickly triggers OOO conditions with jumbo
+  jumbo_file_merge_limit = 4
+
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
   visibility = [

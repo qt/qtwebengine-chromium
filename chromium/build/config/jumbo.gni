@@ -88,6 +88,10 @@ template("internal_jumbo_target") {
 
   assert(gen_target_dir != "")  # Prevent "unused variable".
 
+  if (invoker.jumbo_file_merge_limit != -1) {
+    assert(invoker.jumbo_file_merge_limit > 0)  # Prevent "unused variable"
+  }
+
   if (use_jumbo_build_for_target) {
     jumbo_files = []
 
@@ -102,6 +106,11 @@ template("internal_jumbo_target") {
       } else {
         merge_limit = jumbo_file_merge_default
       }
+    }
+    if (invoker.jumbo_file_merge_limit != -1) {
+       if (invoker.jumbo_file_merge_limit < merge_limit) {
+         merge_limit = invoker.jumbo_file_merge_limit
+       }
     }
     has_c_file = false
     has_objective_c_file = false

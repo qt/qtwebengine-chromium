@@ -16,6 +16,9 @@ import("//third_party/blink/public/public_features.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 
 jumbo_source_set("browser") {
+  # These files a big and can quickly triggers OOO conditions with jumbo
+  jumbo_file_merge_limit = 3
+
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
   visibility = [
@@ -1780,6 +1783,12 @@ jumbo_source_set("browser") {
     ]
   }
 
+  jumbo_excluded_sources = [
+    # The two biggest files that just blows up jumbo files:
+    "frame_host/render_frame_host_impl.cc",
+    "renderer_host/render_process_host_impl.cc",
+  ]
+
   # ChromeOS also defines linux but their memory-monitors conflict.
   if (is_chromeos) {
     sources += [
@@ -2193,7 +2202,7 @@ jumbo_source_set("browser") {
       "web_contents/web_contents_view_android.h",
     ]
 
-    jumbo_excluded_sources = [
+    jumbo_excluded_sources += [
       # Files with kJavaLangClass and similar constants:
       # Bug https://crbug.com/787557.
       "android/java/java_method.cc",  # and in gin_java_bound_object.cc.
@@ -2365,7 +2374,7 @@ jumbo_source_set("browser") {
       "renderer_host/delegated_frame_host.h",
     ]
     if (is_mac) {
-      jumbo_excluded_sources = [
+      jumbo_excluded_sources += [
         # Both Mac SDK headers and third_party/khronos/GLES2/gl2ext.h
         # declare macros GL_LINES_ADJACENCY_EXT, GL_LINE_STRIP_ADJACENCY_EXT,
         # GL_TRIANGLES_ADJACENCY_EXT and GL_TRIANGLE_STRIP_ADJACENCY_EXT. They
