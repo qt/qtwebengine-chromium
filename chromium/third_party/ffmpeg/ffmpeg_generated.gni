@@ -293,6 +293,12 @@ if ((current_cpu == "arm64" && ffmpeg_branding == "Chrome") || (current_cpu == "
   ]
 }
 
+if (is_win && current_cpu == "x64") {
+  ffmpeg_asm_sources += [
+    "libavutil/x86/emms.asm",
+  ]
+}
+
 if ((is_apple && current_cpu == "x64") || (is_win && current_cpu == "x64") || (is_win && current_cpu == "x86") || (use_linux_config && current_cpu == "x64") || (use_linux_config && current_cpu == "x86")) {
   ffmpeg_c_sources += [
     "libavcodec/x86/autorename_libavcodec_x86_videodsp_init.c",
