@@ -12,7 +12,7 @@ using device::mojom::blink::SensorType;
 namespace blink {
 
 namespace {
-constexpr int SinScreenAngle(uint16_t angle) {
+int SinScreenAngle(uint16_t angle) {
   switch (angle) {
     case 0:
       return 0;
@@ -28,7 +28,7 @@ constexpr int SinScreenAngle(uint16_t angle) {
   }
 }
 
-constexpr int CosScreenAngle(uint16_t angle) {
+int CosScreenAngle(uint16_t angle) {
   switch (angle) {
     case 0:
       return 1;
@@ -57,7 +57,7 @@ void RemapSensorReadingXYZ(uint16_t angle, SensorReadingXYZ& reading) {
 constexpr double kInverseSqrt2 = 0.70710678118;
 
 // Returns sin(-angle/2) for the given orientation angle.
-constexpr double SinNegativeHalfScreenAngle(uint16_t angle) {
+double SinNegativeHalfScreenAngle(uint16_t angle) {
   switch (angle) {
     case 0:
       return 0;  // sin 0
@@ -74,7 +74,7 @@ constexpr double SinNegativeHalfScreenAngle(uint16_t angle) {
 }
 
 // Returns cos(-angle/2) for the given orientation angle.
-constexpr double CosNegativeHalfScreenAngle(uint16_t angle) {
+double CosNegativeHalfScreenAngle(uint16_t angle) {
   switch (angle) {
     case 0:
       return 1;  // cos 0
