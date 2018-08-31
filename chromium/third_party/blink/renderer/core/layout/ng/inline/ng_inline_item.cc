@@ -155,7 +155,7 @@ UScriptCode NGInlineItem::Script() const {
 }
 
 FontFallbackPriority NGInlineItem::GetFontFallbackPriority() const {
-  return static_cast<enum FontFallbackPriority>(font_fallback_priority_);
+  return static_cast<FontFallbackPriority>(font_fallback_priority_);
 }
 
 OrientationIterator::RenderOrientation NGInlineItem::RenderOrientation() const {
