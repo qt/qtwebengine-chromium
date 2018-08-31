@@ -718,7 +718,7 @@ class CORE_EXPORT Node : public EventTarget {
   ComputedStyle* MutableComputedStyleForEditingDeprecated() const;
   const ComputedStyle* GetComputedStyle() const;
   const ComputedStyle* ParentComputedStyle() const;
-  const ComputedStyle& ComputedStyleRef() const;
+  inline const ComputedStyle& ComputedStyleRef() const;
 
   const ComputedStyle* EnsureComputedStyle(
       PseudoId pseudo_element_specifier = kPseudoIdNone) {
