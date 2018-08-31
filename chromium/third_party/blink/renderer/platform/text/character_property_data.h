@@ -247,7 +247,9 @@ static const UChar32 kIsHangulRanges[] = {
     0xFFA0, 0xFFDC,
 };
 
-static const UChar32 kIsHangulArray[] = {};
+// Include one Hangul unicode character as an empty const-sized C-array is
+// not legal C++
+static const UChar32 kIsHangulArray[1] = { 0x1100 };
 
 #if !defined(USING_SYSTEM_ICU)
 // Freezed trie tree, see character_property_data_generator.cc.

@@ -51,11 +51,10 @@ SnapFlingController::GestureScrollType ToGestureScrollType(
 
 SnapFlingController::GestureScrollUpdateInfo GetGestureScrollUpdateInfo(
     const WebGestureEvent& event) {
-  return {.delta = gfx::Vector2dF(-event.data.scroll_update.delta_x,
-                                  -event.data.scroll_update.delta_y),
-          .is_in_inertial_phase = event.data.scroll_update.inertial_phase ==
-                                  WebGestureEvent::kMomentumPhase,
-          .event_time = event.TimeStamp()};
+  return {gfx::Vector2dF(-event.data.scroll_update.delta_x,
+                         -event.data.scroll_update.delta_y),
+          event.data.scroll_update.inertial_phase == WebGestureEvent::kMomentumPhase,
+          event.TimeStamp()};
 }
 
 ScrollableArea* ScrollableAreaForSnapping(LayoutBox* layout_box) {
