@@ -419,13 +419,13 @@ bool VulkanSwapChain::AcquireNextImage() {
     return false;
 
   uint32_t next_image;
-  auto result = ({
+  auto result = [&]{
     base::ScopedBlockingCall scoped_blocking_call(
         FROM_HERE, base::BlockingType::MAY_BLOCK);
-    vkAcquireNextImageKHR(device, swap_chain_, acquire_next_image_timeout_ns_,
+    return vkAcquireNextImageKHR(device, swap_chain_, acquire_next_image_timeout_ns_,
                           acquire_semaphore, /*fence=*/VK_NULL_HANDLE,
                           &next_image);
-  });
+  }();
 
   if (UNLIKELY(result == VK_TIMEOUT)) {
     LOG(ERROR) << "vkAcquireNextImageKHR() hangs.";
