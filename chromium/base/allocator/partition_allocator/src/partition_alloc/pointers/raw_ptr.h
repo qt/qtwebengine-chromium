@@ -1275,7 +1275,7 @@ template <typename T,
           base::RawPtrTraits Traits,
           template <typename> typename TQ,
           template <typename> typename UQ>
-struct basic_common_reference<raw_ptr<T, Traits>, T*, TQ, UQ> {
+struct basic_common_reference<base::raw_ptr<T, Traits>, T*, TQ, UQ> {
   using type = T*;
 };
 
@@ -1283,7 +1283,7 @@ template <typename T,
           base::RawPtrTraits Traits,
           template <typename> typename TQ,
           template <typename> typename UQ>
-struct basic_common_reference<T*, raw_ptr<T, Traits>, TQ, UQ> {
+struct basic_common_reference<T*, base::raw_ptr<T, Traits>, TQ, UQ> {
   using type = T*;
 };
 #endif  // PA_BUILDFLAG(ASSERT_CPP_20)
