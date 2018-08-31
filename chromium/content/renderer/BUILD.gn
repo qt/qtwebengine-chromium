@@ -21,6 +21,9 @@ if (is_component_build) {
 }
 
 target(link_target_type, "renderer") {
+  # These files a big and can quickly triggers OOO conditions with jumbo
+  jumbo_file_merge_limit = 4
+
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
   visibility = [
@@ -393,6 +396,11 @@ target(link_target_type, "renderer") {
       split_count = 1
     }
   }
+
+  jumbo_excluded_sources = [
+    # The biggest file that tends to blow up jumbo files:
+    "render_frame_impl.cc",
+  ]
 
   configs += [
     "//content:content_implementation",
