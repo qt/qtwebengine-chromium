@@ -513,7 +513,8 @@ class GSL_POINTER span {
   // Range.
   template <typename R, size_t N = internal::kComputedExtent<R>>
     requires(internal::CompatibleRange<element_type, R> &&
-             internal::FixedExtentConstructibleFromExtent<extent, N>)
+             internal::FixedExtentConstructibleFromExtent<extent, N> &&
+             !std::ranges::borrowed_range<R>)
   // NOLINTNEXTLINE(google-explicit-constructor)
   constexpr explicit(N != extent) span(R&& range LIFETIME_BOUND)
       // SAFETY: `std::ranges::size()` returns the number of elements
@@ -526,7 +527,7 @@ class GSL_POINTER span {
              internal::FixedExtentConstructibleFromExtent<extent, N> &&
              std::ranges::borrowed_range<R>)
   // NOLINTNEXTLINE(google-explicit-constructor)
-  constexpr explicit span(R&& range)
+  constexpr explicit(N != extent) span(R&& range)
       // SAFETY: `std::ranges::size()` returns the number of elements
       // `std::ranges::data()` will point to, so accessing those elements will
       // be safe.

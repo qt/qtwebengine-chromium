@@ -8,11 +8,11 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/buildflags.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 
 namespace blink {
 
-class Document;
 class Element;
 class HTMLVideoElement;
 class LocalDOMWindow;
