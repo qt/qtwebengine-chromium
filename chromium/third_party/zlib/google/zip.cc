@@ -123,7 +123,7 @@ std::ostream& operator<<(std::ostream& out, const Progress& progress) {
 
 bool Zip(const ZipParams& params) {
   DirectFileAccessor default_accessor(params.src_dir);
-  FileAccessor* const file_accessor = params.file_accessor ?: &default_accessor;
+  FileAccessor* const file_accessor = params.file_accessor ? params.file_accessor : &default_accessor;
 
   std::unique_ptr<internal::ZipWriter> zip_writer;
 
