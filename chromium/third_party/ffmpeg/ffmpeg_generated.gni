@@ -376,6 +376,12 @@ if ((current_cpu == "arm64" && ffmpeg_branding == "Chrome") ||
   ]
 }
 
+if (is_win && current_cpu == "x64") {
+  ffmpeg_asm_sources += [
+    "libavutil/x86/emms.asm",
+  ]
+}
+
 if ((use_linux_config && current_cpu == "x64" &&
      ffmpeg_branding == "ChromeOS") ||
     (use_linux_config && current_cpu == "x86" &&
