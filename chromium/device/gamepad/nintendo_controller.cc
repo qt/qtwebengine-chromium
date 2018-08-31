@@ -1479,7 +1479,7 @@ void NintendoController::SubCommand(uint8_t sub_command,
   // Serial subcommands also carry vibration data. Configure the vibration
   // portion of the report for a neutral vibration effect (zero amplitude).
   // https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/bluetooth_hid_notes.md#output-0x12
-  report_bytes[0] = uint8_t{output_report_counter_++ & 0xff};
+  report_bytes[0] = uint8_t(output_report_counter_++ & 0xff);
   report_bytes[1] = 0x00;
   report_bytes[2] = 0x01;
   report_bytes[3] = 0x40;
@@ -1533,7 +1533,7 @@ void NintendoController::RequestVibration(double left_frequency,
   FrequencyToHex(left_frequency, left_magnitude, &lhf, &llf, &lhfa, &llfa);
   FrequencyToHex(right_frequency, right_magnitude, &rhf, &rlf, &rhfa, &rlfa);
   std::vector<uint8_t> report_bytes(output_report_size_bytes_ - 1);
-  uint8_t counter = uint8_t{output_report_counter_++ & 0x0f};
+  uint8_t counter = uint8_t(output_report_counter_++ & 0x0f);
   report_bytes[0] = counter;
   report_bytes[1] = lhf & 0xff;
   report_bytes[2] = lhfa + ((lhf >> 8) & 0xff);
@@ -1560,15 +1560,15 @@ void NintendoController::RequestEnableUsbTimeout(bool enable) {
 }
 
 void NintendoController::RequestEnableImu(bool enable) {
-  SubCommand(kSubCommandEnableImu, {enable ? 0x01 : 0x00});
+  SubCommand(kSubCommandEnableImu, enable ? 0x01 : 0x00);
 }
 
 void NintendoController::RequestEnableVibration(bool enable) {
-  SubCommand(kSubCommandEnableVibration, {enable ? 0x01 : 0x00});
+  SubCommand(kSubCommandEnableVibration, enable ? 0x01 : 0x00);
 }
 
 void NintendoController::RequestSetPlayerLights(uint8_t light_pattern) {
-  SubCommand(kSubCommandSetPlayerLights, {light_pattern});
+  SubCommand(kSubCommandSetPlayerLights, light_pattern);
 }
 
 void NintendoController::RequestSetHomeLight(

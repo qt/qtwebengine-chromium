@@ -273,8 +273,8 @@ void FallbackCursorEventManager::HandleMouseMoveEvent(const WebMouseEvent& e) {
 
   DCHECK(scrollable);
 
-  IntPoint location_in_root_frame{e.PositionInRootFrame().x,
-                                  e.PositionInRootFrame().y};
+  IntPoint location_in_root_frame(e.PositionInRootFrame().x,
+                                  e.PositionInRootFrame().y);
 
   IntSize scrollable_clip_size_in_root_frame =
       ScrollableAreaClipSizeInRootFrame(*scrollable);
@@ -296,7 +296,7 @@ void FallbackCursorEventManager::HandleMousePressEvent(const WebMouseEvent& e) {
   ResetCurrentScrollable();
 
   // Re hit test since we need a hit test with child frame.
-  IntPoint location{e.PositionInRootFrame().x, e.PositionInRootFrame().y};
+  IntPoint location(e.PositionInRootFrame().x, e.PositionInRootFrame().y);
   HitTestResult hit_test_result =
       HitTest(root_frame_->GetDocument()->GetLayoutView(), location);
   Node* node = hit_test_result.InnerNode();

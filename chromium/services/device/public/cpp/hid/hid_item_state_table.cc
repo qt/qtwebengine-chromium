@@ -58,16 +58,16 @@ void HidItemStateTable::SetItemValue(HidReportDescriptorItem::Tag tag,
         global.usage_page = value;
         break;
       case HidReportDescriptorItem::kTagLogicalMinimum:
-        global.logical_minimum = int32_t{value};
+        global.logical_minimum = int32_t(value);
         break;
       case HidReportDescriptorItem::kTagLogicalMaximum:
-        global.logical_maximum = int32_t{value};
+        global.logical_maximum = int32_t(value);
         break;
       case HidReportDescriptorItem::kTagPhysicalMinimum:
-        global.physical_minimum = int32_t{value};
+        global.physical_minimum = int32_t(value);
         break;
       case HidReportDescriptorItem::kTagPhysicalMaximum:
-        global.physical_maximum = int32_t{value};
+        global.physical_maximum = int32_t(value);
         break;
       case HidReportDescriptorItem::kTagUnitExponent:
         global.unit_exponent = value;
