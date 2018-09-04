@@ -39,6 +39,14 @@
 #include "media/base/media.h"
 #include "media/cdm/library_cdm/clear_key_cdm/ffmpeg_cdm_audio_decoder.h"
 
+// Include FFmpeg avformat.h for av_register_all().
+extern "C" {
+// Temporarily disable possible loss of data warning.
+MSVC_PUSH_DISABLE_WARNING(4244);
+#include <libavformat/avformat.h>
+MSVC_POP_WARNING();
+}  // extern "C"
+
 #if !defined COMPONENT_BUILD
 static base::AtExitManager g_at_exit_manager;
 #endif
