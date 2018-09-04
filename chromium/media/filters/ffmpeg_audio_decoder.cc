@@ -80,6 +80,8 @@ void FFmpegAudioDecoder::Initialize(
     return;
   }
 
+  FFmpegGlue::InitializeFFmpeg();
+
   if (!ConfigureDecoder(config)) {
     av_sample_format_ = 0;
     bound_init_cb.Run(false);
