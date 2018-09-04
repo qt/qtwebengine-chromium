@@ -20,6 +20,7 @@
 #include "crypto/openssl_util.h"
 #include "jingle/glue/thread_wrapper.h"
 #include "media/base/media_permission.h"
+#include "media/filters/ffmpeg_glue.h"
 #include "media/media_buildflags.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "third_party/blink/public/common/features.h"
@@ -172,9 +173,12 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
 
 #if BUILDFLAG(RTC_USE_H264) && BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
   // Building /w |rtc_use_h264|, is the corresponding run-time feature enabled?
-  if (!base::FeatureList::IsEnabled(
-          blink::features::kWebRtcH264WithOpenH264FFmpeg)) {
-    // Feature is to be disabled.
+  if (base::FeatureList::IsEnabled(kWebRtcH264WithOpenH264FFmpeg)) {
+    // |H264DecoderImpl| may be used which depends on FFmpeg, therefore we need
+    // to initialize FFmpeg before going further.
+    media::FFmpegGlue::InitializeFFmpeg();
+  } else {
+    // Feature is to be disabled, no need to make sure FFmpeg is initialized.
     webrtc::DisableRtcUseH264();
   }
 #else
