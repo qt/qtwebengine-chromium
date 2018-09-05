@@ -51,7 +51,7 @@ source_set("common") {
     "//remoting/signaling",
   ]
 
-  if (is_desktop_linux) {
+  if (use_gtk) {
     deps += [
       "//build/config/linux/gtk",
 
@@ -230,7 +230,7 @@ if (!is_chromeos && enable_remoting_host) {
         deps += [ "//third_party/webrtc_overrides:init_webrtc" ]
       }
 
-      if (is_desktop_linux) {
+      if (use_gtk) {
         deps += [ "//build/config/linux/gtk" ]
       }
     }
