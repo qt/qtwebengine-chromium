@@ -56,7 +56,6 @@ class CORE_EXPORT HTMLStyleElement final : public HTMLElement,
                       const AtomicString&,
                       const AtomicString&) override;
   InsertionNotificationRequest insertedInto(ContainerNode*) override;
-  void didNotifySubtreeInsertionsToDocument() override;
   void removedFrom(ContainerNode*) override;
   void childrenChanged(const ChildrenChange&) override;
 

@@ -76,19 +76,19 @@ void HTMLStyleElement::finishParsingChildren() {
 Node::InsertionNotificationRequest HTMLStyleElement::insertedInto(
     ContainerNode* insertionPoint) {
   HTMLElement::insertedInto(insertionPoint);
-  return InsertionShouldCallDidNotifySubtreeInsertions;
+  if (isConnected()) {
+    if (StyleElement::processStyleSheet(document(), *this) ==
+        StyleElement::ProcessingFatalError) {
+      notifyLoadedSheetAndAllCriticalSubresources(
+          ErrorOccurredLoadingSubresource);
+    }
+  }
+  return InsertionDone;
 }
 
 void HTMLStyleElement::removedFrom(ContainerNode* insertionPoint) {
   HTMLElement::removedFrom(insertionPoint);
   StyleElement::removedFrom(*this, insertionPoint);
-}
-
-void HTMLStyleElement::didNotifySubtreeInsertionsToDocument() {
-  if (StyleElement::processStyleSheet(document(), *this) ==
-      StyleElement::ProcessingFatalError)
-    notifyLoadedSheetAndAllCriticalSubresources(
-        ErrorOccurredLoadingSubresource);
 }
 
 void HTMLStyleElement::childrenChanged(const ChildrenChange& change) {
