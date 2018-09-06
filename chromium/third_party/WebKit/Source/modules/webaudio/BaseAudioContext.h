@@ -128,26 +128,12 @@ class MODULES_EXPORT BaseAudioContext
   AudioDestinationNode* destination() const;
 
   size_t CurrentSampleFrame() const {
-    // TODO: What is the correct value for the current frame if the destination
-    // node has gone away?  0 is a valid frame.
-    return destination_node_ ? destination_node_->GetAudioDestinationHandler()
-                                   .CurrentSampleFrame()
-                             : 0;
+    return destination_handler_->CurrentSampleFrame();
   }
 
-  double currentTime() const {
-    // TODO: What is the correct value for the current time if the destination
-    // node has gone away? 0 is a valid time.
-    return destination_node_
-               ? destination_node_->GetAudioDestinationHandler().CurrentTime()
-               : 0;
-  }
+  double currentTime() const { return destination_handler_->CurrentTime(); }
 
-  float sampleRate() const {
-    return destination_node_
-               ? destination_node_->GetAudioDestinationHandler().SampleRate()
-               : ClosedContextSampleRate();
-  }
+  float sampleRate() const { return destination_handler_->SampleRate(); }
 
   float FramesPerBuffer() const {
     return destination_node_ ? destination_node_->GetAudioDestinationHandler()
@@ -537,6 +523,9 @@ class MODULES_EXPORT BaseAudioContext
 
   Optional<AutoplayStatus> autoplay_status_;
   AudioIOPosition output_position_;
+
+  // The handler associated with the above |destination_node_|.
+  scoped_refptr<AudioDestinationHandler> destination_handler_;
 
   Member<AudioWorklet> audio_worklet_;
 };
