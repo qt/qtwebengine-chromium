@@ -370,7 +370,9 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
 
   const SerializedState* state = static_cast<const SerializedState*>(data);
   if (!state->options.capacity_num_bytes || !state->options.element_num_bytes ||
-      state->options.capacity_num_bytes < state->options.element_num_bytes) {
+      state->options.capacity_num_bytes < state->options.element_num_bytes ||
+      state->read_offset >= state->options.capacity_num_bytes ||
+      state->bytes_available > state->options.capacity_num_bytes) {
     return nullptr;
   }
 
@@ -404,6 +406,10 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
     dispatcher->peer_closed_ = state->flags & kFlagPeerClosed;
     if (!dispatcher->InitializeNoLock())
       return nullptr;
+    if (state->options.capacity_num_bytes >
+        dispatcher->ring_buffer_mapping_->GetLength()) {
+      return nullptr;
+    }
     dispatcher->UpdateSignalsStateNoLock();
   }
 
