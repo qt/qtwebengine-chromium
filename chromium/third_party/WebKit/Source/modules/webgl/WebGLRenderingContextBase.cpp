@@ -3782,7 +3782,7 @@ void WebGLRenderingContextBase::hint(GLenum target, GLenum mode) {
 }
 
 GLboolean WebGLRenderingContextBase::isBuffer(WebGLBuffer* buffer) {
-  if (!buffer || isContextLost())
+  if (!buffer || isContextLost() || !buffer->validate(contextGroup(), this))
     return 0;
 
   if (!buffer->hasEverBeenBound())
@@ -3807,7 +3807,8 @@ GLboolean WebGLRenderingContextBase::isEnabled(GLenum cap) {
 
 GLboolean WebGLRenderingContextBase::isFramebuffer(
     WebGLFramebuffer* framebuffer) {
-  if (!framebuffer || isContextLost())
+  if (!framebuffer || isContextLost() ||
+      !framebuffer->validate(contextGroup(), this))
     return 0;
 
   if (!framebuffer->hasEverBeenBound())
@@ -3819,7 +3820,7 @@ GLboolean WebGLRenderingContextBase::isFramebuffer(
 }
 
 GLboolean WebGLRenderingContextBase::isProgram(WebGLProgram* program) {
-  if (!program || isContextLost())
+  if (!program || isContextLost() || !program->validate(contextGroup(), this))
     return 0;
 
   return contextGL()->IsProgram(program->object());
@@ -3827,7 +3828,8 @@ GLboolean WebGLRenderingContextBase::isProgram(WebGLProgram* program) {
 
 GLboolean WebGLRenderingContextBase::isRenderbuffer(
     WebGLRenderbuffer* renderbuffer) {
-  if (!renderbuffer || isContextLost())
+  if (!renderbuffer || isContextLost() ||
+      !renderbuffer->validate(contextGroup(), this))
     return 0;
 
   if (!renderbuffer->hasEverBeenBound())
@@ -3839,14 +3841,14 @@ GLboolean WebGLRenderingContextBase::isRenderbuffer(
 }
 
 GLboolean WebGLRenderingContextBase::isShader(WebGLShader* shader) {
-  if (!shader || isContextLost())
+  if (!shader || isContextLost() || !shader->validate(contextGroup(), this))
     return 0;
 
   return contextGL()->IsShader(shader->object());
 }
 
 GLboolean WebGLRenderingContextBase::isTexture(WebGLTexture* texture) {
-  if (!texture || isContextLost())
+  if (!texture || isContextLost() || !texture->validate(contextGroup(), this))
     return 0;
 
   if (!texture->hasEverBeenBound())
