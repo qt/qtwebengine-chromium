@@ -120,25 +120,12 @@ class MODULES_EXPORT BaseAudioContext : public EventTargetWithInlineData,
   AudioDestinationNode* destination() const;
 
   size_t currentSampleFrame() const {
-    // TODO: What is the correct value for the current frame if the destination
-    // node has gone away?  0 is a valid frame.
-    return m_destinationNode
-               ? m_destinationNode->audioDestinationHandler()
-                     .currentSampleFrame()
-               : 0;
+    return m_destinationHandler->currentSampleFrame();
   }
 
-  double currentTime() const {
-    // TODO: What is the correct value for the current time if the destination
-    // node has gone away? 0 is a valid time.
-    return m_destinationNode
-               ? m_destinationNode->audioDestinationHandler().currentTime()
-               : 0;
-  }
+  double currentTime() const { return m_destinationHandler->currentTime(); }
 
-  float sampleRate() const {
-    return m_destinationNode ? m_destinationNode->handler().sampleRate() : 0;
-  }
+  float sampleRate() const { return m_destinationHandler->sampleRate(); }
 
   String state() const;
   AudioContextState contextState() const { return m_contextState; }
@@ -456,6 +443,9 @@ class MODULES_EXPORT BaseAudioContext : public EventTargetWithInlineData,
   enum { MaxNumberOfChannels = 32 };
 
   Optional<AutoplayStatus> m_autoplayStatus;
+
+  // The handler associated with the above |destination_node_|.
+  RefPtr<AudioDestinationHandler> m_destinationHandler;
 };
 
 }  // namespace blink
