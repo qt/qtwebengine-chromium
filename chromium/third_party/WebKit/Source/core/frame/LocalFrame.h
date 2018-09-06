@@ -214,7 +214,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
   EphemeralRangeTemplate<EditingAlgorithm<NodeTraversal>> RangeForPoint(
       const IntPoint& frame_point);
 
-  bool ShouldReuseDefaultView(const KURL&) const;
+  bool ShouldReuseDefaultView(const KURL&, const ContentSecurityPolicy*) const;
   void RemoveSpellingMarkersUnderWords(const Vector<String>& words);
 
   bool ShouldThrottleRendering() const;

@@ -691,12 +691,13 @@ void DocumentLoader::CommitNavigation(const AtomicString& mime_type,
   if (!Document::ThreadedParsingEnabledForTesting())
     parsing_policy = kForceSynchronousParsing;
 
-  InstallNewDocument(Url(), owner_document,
-                     frame_->ShouldReuseDefaultView(Url())
-                         ? WebGlobalObjectReusePolicy::kUseExisting
-                         : WebGlobalObjectReusePolicy::kCreateNew,
-                     mime_type, encoding, InstallNewDocumentReason::kNavigation,
-                     parsing_policy, overriding_url);
+  InstallNewDocument(
+      Url(), owner_document,
+      frame_->ShouldReuseDefaultView(Url(), GetContentSecurityPolicy())
+          ? WebGlobalObjectReusePolicy::kUseExisting
+          : WebGlobalObjectReusePolicy::kCreateNew,
+      mime_type, encoding, InstallNewDocumentReason::kNavigation,
+      parsing_policy, overriding_url);
   parser_->SetDocumentWasLoadedAsPartOfNavigation();
   frame_->GetDocument()->MaybeHandleHttpRefresh(
       response_.HttpHeaderField(HTTPNames::Refresh),
