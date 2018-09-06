@@ -70,12 +70,12 @@ DOMStorageArea* DOMStorageNamespace::GetOpenStorageArea(const GURL& origin) {
   return NULL;
 }
 
-DOMStorageNamespace* DOMStorageNamespace::Clone(
+scoped_refptr<DOMStorageNamespace> DOMStorageNamespace::Clone(
     int64_t clone_namespace_id,
     const std::string& clone_persistent_namespace_id) {
   DCHECK_NE(kLocalStorageNamespaceId, namespace_id_);
   DCHECK_NE(kLocalStorageNamespaceId, clone_namespace_id);
-  DOMStorageNamespace* clone = new DOMStorageNamespace(
+  scoped_refptr<DOMStorageNamespace> clone = new DOMStorageNamespace(
       clone_namespace_id, clone_persistent_namespace_id,
       session_storage_database_.get(), task_runner_.get());
   AreaMap::const_iterator it = areas_.begin();
