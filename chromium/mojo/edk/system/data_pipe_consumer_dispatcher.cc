@@ -392,6 +392,12 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
   }
 
   const SerializedState* state = static_cast<const SerializedState*>(data);
+  if (!state->options.capacity_num_bytes || !state->options.element_num_bytes ||
+      state->options.capacity_num_bytes < state->options.element_num_bytes ||
+      state->read_offset >= state->options.capacity_num_bytes ||
+      state->bytes_available > state->options.capacity_num_bytes) {
+    return nullptr;
+  }
 
   NodeController* node_controller = internal::g_core->GetNodeController();
   ports::PortRef port;
@@ -421,6 +427,10 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
     dispatcher->bytes_available_ = state->bytes_available;
     dispatcher->peer_closed_ = state->flags & kFlagPeerClosed;
     dispatcher->InitializeNoLock();
+    if (state->options.capacity_num_bytes >
+        dispatcher->ring_buffer_mapping_->GetLength()) {
+      return nullptr;
+    }
     dispatcher->UpdateSignalsStateNoLock();
   }
 

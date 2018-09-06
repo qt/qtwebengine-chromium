@@ -373,6 +373,12 @@ DataPipeProducerDispatcher::Deserialize(const void* data,
   }
 
   const SerializedState* state = static_cast<const SerializedState*>(data);
+  if (!state->options.capacity_num_bytes || !state->options.element_num_bytes ||
+      state->options.capacity_num_bytes < state->options.element_num_bytes ||
+      state->write_offset >= state->options.capacity_num_bytes ||
+      state->available_capacity > state->options.capacity_num_bytes) {
+    return nullptr;
+  }
 
   NodeController* node_controller = internal::g_core->GetNodeController();
   ports::PortRef port;
@@ -402,6 +408,10 @@ DataPipeProducerDispatcher::Deserialize(const void* data,
     dispatcher->available_capacity_ = state->available_capacity;
     dispatcher->peer_closed_ = state->flags & kFlagPeerClosed;
     dispatcher->InitializeNoLock();
+    if (state->options.capacity_num_bytes >
+        dispatcher->ring_buffer_mapping_->GetLength()) {
+      return nullptr;
+    }
     dispatcher->UpdateSignalsStateNoLock();
   }
 
