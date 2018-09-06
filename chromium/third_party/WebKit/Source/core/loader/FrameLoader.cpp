@@ -363,7 +363,9 @@ void FrameLoader::replaceDocumentWhileExecutingJavaScriptURL(
 
   // Prepare a DocumentInit before clearing the frame, because it may need to
   // inherit an aliased security context.
-  DocumentInit init(ownerDocument, m_frame->document()->url(), m_frame);
+  DocumentInit init(ownerDocument, m_frame->document()->url(), m_frame,
+                    nullptr, nullptr,
+                    m_frame->document()->contentSecurityPolicy());
   init.withNewRegistrationContext();
 
   stopAllLoaders();

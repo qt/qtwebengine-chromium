@@ -207,7 +207,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
       const IntPoint& framePoint);
 
   bool isURLAllowed(const KURL&) const;
-  bool shouldReuseDefaultView(const KURL&) const;
+  bool shouldReuseDefaultView(const KURL&, const ContentSecurityPolicy*) const;
   void removeSpellingMarkersUnderWords(const Vector<String>& words);
 
   bool shouldThrottleRendering() const;

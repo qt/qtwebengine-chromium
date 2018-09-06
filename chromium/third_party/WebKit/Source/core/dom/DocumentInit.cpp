@@ -53,14 +53,16 @@ static Document* parentDocument(LocalFrame* frame) {
 DocumentInit::DocumentInit(const KURL& url,
                            LocalFrame* frame,
                            Document* contextDocument,
-                           HTMLImportsController* importsController)
-    : DocumentInit(nullptr, url, frame, contextDocument, importsController) {}
+                           HTMLImportsController* importsController,
+                           const ContentSecurityPolicy* csp)
+    : DocumentInit(nullptr, url, frame, contextDocument, importsController, csp) {}
 
 DocumentInit::DocumentInit(Document* ownerDocument,
                            const KURL& url,
                            LocalFrame* frame,
                            Document* contextDocument,
-                           HTMLImportsController* importsController)
+                           HTMLImportsController* importsController,
+                           const ContentSecurityPolicy* csp)
     : m_url(url),
       m_frame(frame),
       m_parent(parentDocument(frame)),
@@ -68,7 +70,7 @@ DocumentInit::DocumentInit(Document* ownerDocument,
       m_contextDocument(contextDocument),
       m_importsController(importsController),
       m_createNewRegistrationContext(false),
-      m_shouldReuseDefaultView(frame && frame->shouldReuseDefaultView(url)) {}
+      m_shouldReuseDefaultView(frame && frame->shouldReuseDefaultView(url, csp)) {}
 
 DocumentInit::DocumentInit(const DocumentInit&) = default;
 

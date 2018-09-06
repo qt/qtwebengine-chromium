@@ -524,7 +524,7 @@ void DocumentLoader::ensureWriter(const AtomicString& mimeType,
     if (ownerFrame && ownerFrame->isLocalFrame())
       owner = toLocalFrame(ownerFrame)->document();
   }
-  DocumentInit init(owner, url(), m_frame);
+  DocumentInit init(owner, url(), m_frame, nullptr, nullptr, contentSecurityPolicy());
   init.withNewRegistrationContext();
   m_frame->loader().clear();
   DCHECK(m_frame->page());

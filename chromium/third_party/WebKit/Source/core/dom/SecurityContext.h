@@ -69,7 +69,12 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
   virtual void didUpdateSecurityOrigin() = 0;
 
   SandboxFlags getSandboxFlags() const { return m_sandboxFlags; }
-  bool isSandboxed(SandboxFlags mask) const { return m_sandboxFlags & mask; }
+  bool isSandboxed(SandboxFlags mask) const {
+    return isSandboxed(mask, m_sandboxFlags);
+  }
+  static bool isSandboxed(SandboxFlags mask, SandboxFlags sandboxFlags) {
+    return sandboxFlags & mask;
+  }
   virtual void enforceSandboxFlags(SandboxFlags mask);
 
   void setAddressSpace(WebAddressSpace space) { m_addressSpace = space; }

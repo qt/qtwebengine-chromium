@@ -2969,7 +2969,8 @@ void Document::dispatchUnloadEvents() {
   bool keepEventListeners =
       m_frame->loader().provisionalDocumentLoader() &&
       m_frame->shouldReuseDefaultView(
-          m_frame->loader().provisionalDocumentLoader()->url());
+          m_frame->loader().provisionalDocumentLoader()->url(),
+          m_frame->loader().provisionalDocumentLoader()->contentSecurityPolicy());
   if (!keepEventListeners)
     removeAllEventListenersRecursively();
 }

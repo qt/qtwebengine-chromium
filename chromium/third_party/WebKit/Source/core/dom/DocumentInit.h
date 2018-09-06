@@ -52,12 +52,14 @@ class CORE_EXPORT DocumentInit final {
   DocumentInit(const KURL& = KURL(),
                LocalFrame* = nullptr,
                Document* contextDocument = nullptr,
-               HTMLImportsController* = nullptr);
+               HTMLImportsController* = nullptr,
+               const ContentSecurityPolicy* = nullptr);
   DocumentInit(Document* ownerDocument,
                const KURL&,
                LocalFrame*,
                Document* contextDocument = nullptr,
-               HTMLImportsController* = nullptr);
+               HTMLImportsController* = nullptr,
+               const ContentSecurityPolicy* = nullptr);
   DocumentInit(const DocumentInit&);
   ~DocumentInit();
 

@@ -43,6 +43,7 @@
 #include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/Event.h"
 #include "core/fetch/ResourceFetcher.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
@@ -820,11 +821,21 @@ bool LocalFrame::isURLAllowed(const KURL& url) const {
   return true;
 }
 
-bool LocalFrame::shouldReuseDefaultView(const KURL& url) const {
+bool LocalFrame::shouldReuseDefaultView(const KURL& url, const ContentSecurityPolicy* csp) const {
   // Secure transitions can only happen when navigating from the initial empty
   // document.
   if (!loader().stateMachine()->isDisplayingInitialEmptyDocument())
     return false;
+
+  // The Window object should only be re-used if it is same-origin.
+  // Since sandboxing turns the origin into an opaque origin it needs to also
+  // be considered when deciding whether to reuse it.
+  // Spec:
+  // https://html.spec.whatwg.org/multipage/browsing-the-web.html#initialise-the-document-object
+  if (csp &&
+      SecurityContext::isSandboxed(SandboxOrigin, csp->sandboxMask())) {
+    return false;
+  }
 
   return document()->isSecureTransitionTo(url);
 }

@@ -184,6 +184,13 @@ class CORE_EXPORT DocumentLoader
 
   DECLARE_VIRTUAL_TRACE();
 
+  // Returns the currently stored content security policy, if this is called
+  // after the document has been installed it will return nullptr as the
+  // CSP belongs to the document at that point.
+  const ContentSecurityPolicy* contentSecurityPolicy() const {
+    return m_contentSecurityPolicy.get();
+  }
+
  protected:
   DocumentLoader(LocalFrame*,
                  const ResourceRequest&,
