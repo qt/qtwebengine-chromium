@@ -71,6 +71,12 @@ int32_t UlpfecReceiverImpl::AddReceivedRedPacket(
     const uint8_t* incoming_rtp_packet,
     size_t packet_length,
     uint8_t ulpfec_payload_type) {
+
+  if (packet_length > IP_PACKET_SIZE) {
+    LOG(LS_WARNING) << "Received RED packet with length exceeds maximum IP "
+                           "packet size; dropping.";
+    return -1;
+  }
   rtc::CritScope cs(&crit_sect_);
 
   uint8_t red_header_length = 1;
@@ -164,6 +170,7 @@ int32_t UlpfecReceiverImpl::AddReceivedRedPacket(
 
   } else if (received_packet->is_fec) {
     ++packet_counter_.num_fec_packets;
+
     // everything behind the RED header
     memcpy(received_packet->pkt->data,
            incoming_rtp_packet + header.headerLength + red_header_length,
