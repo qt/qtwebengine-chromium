@@ -51,7 +51,8 @@ CoordinatorImpl* CoordinatorImpl::GetInstance() {
 
 CoordinatorImpl::CoordinatorImpl(service_manager::Connector* connector)
     : next_dump_id_(0),
-      client_process_timeout_(base::TimeDelta::FromSeconds(15)) {
+      client_process_timeout_(base::TimeDelta::FromSeconds(15)),
+      weak_ptr_factory_(this) {
   process_map_ = std::make_unique<ProcessMap>(connector);
   DCHECK(!g_coordinator_impl);
   g_coordinator_impl = this;
@@ -194,7 +195,7 @@ void CoordinatorImpl::RegisterClientProcess(
   mojom::ClientProcess* client_process = client_process_ptr.get();
   client_process_ptr.set_connection_error_handler(
       base::Bind(&CoordinatorImpl::UnregisterClientProcess,
-                 base::Unretained(this), client_process));
+                 weak_ptr_factory_.GetWeakPtr(), client_process));
   auto identity = GetClientIdentityForCurrentRequest();
   auto client_info = std::make_unique<ClientInfo>(
       std::move(identity), std::move(client_process_ptr), process_type);
@@ -303,17 +304,19 @@ void CoordinatorImpl::PerformNextQueuedGlobalMemoryDump() {
     clients.emplace_back(kv.second->client.get(), pid, kv.second->process_type);
   }
 
-  auto chrome_callback = base::Bind(
-      &CoordinatorImpl::OnChromeMemoryDumpResponse, base::Unretained(this));
-  auto os_callback = base::Bind(&CoordinatorImpl::OnOSMemoryDumpResponse,
-                                base::Unretained(this), request->dump_guid);
+  auto chrome_callback =
+      base::Bind(&CoordinatorImpl::OnChromeMemoryDumpResponse,
+                 weak_ptr_factory_.GetWeakPtr());
+  auto os_callback =
+      base::Bind(&CoordinatorImpl::OnOSMemoryDumpResponse,
+                 weak_ptr_factory_.GetWeakPtr(), request->dump_guid);
   QueuedRequestDispatcher::SetUpAndDispatch(request, clients, chrome_callback,
                                             os_callback);
 
   base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&CoordinatorImpl::OnQueuedRequestTimedOut,
-                     base::Unretained(this), request->dump_guid),
+                     weak_ptr_factory_.GetWeakPtr(), request->dump_guid),
       client_process_timeout_);
 
   // Run the callback in case there are no client processes registered.
@@ -419,7 +422,7 @@ void CoordinatorImpl::FinalizeGlobalMemoryDumpIfAllManagersReplied() {
     base::SequencedTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&CoordinatorImpl::PerformNextQueuedGlobalMemoryDump,
-                   base::Unretained(this)));
+                   weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
