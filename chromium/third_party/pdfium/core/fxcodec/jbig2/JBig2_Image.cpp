@@ -713,8 +713,9 @@ bool CJBig2_Image::composeTo_opt2(CJBig2_Image* pDst,
   int32_t maskL = 0xffffffff >> d1;
   int32_t maskR = 0xffffffff << ((32 - (xd1 & 31)) % 32);
   int32_t maskM = maskL & maskR;
-  uint8_t* lineSrc = data() + (pSrcRect->top + ys0) * m_nStride +
+  const uint8_t* lineSrc = data() + (pSrcRect->top + ys0) * m_nStride +
                      (((xs0 + pSrcRect->left) >> 5) << 2);
+  const uint8_t* lineSrcEnd = data() + m_nHeight * m_nStride;
   int32_t lineLeft = m_nStride - ((xs0 >> 5) << 2);
   uint8_t* lineDst = pDst->data() + yd0 * pDst->m_nStride + ((xd0 >> 5) << 2);
   if ((xd0 & ~31) == ((xd1 - 1) & ~31)) {
@@ -722,6 +723,8 @@ bool CJBig2_Image::composeTo_opt2(CJBig2_Image* pDst,
       if (s1 > d1) {
         uint32_t shift = s1 - d1;
         for (int32_t yy = yd0; yy < yd1; yy++) {
+          if (lineSrc >= lineSrcEnd)
+            return false;
           uint32_t tmp1 = JBIG2_GETDWORD(lineSrc) << shift;
           uint32_t tmp2 = JBIG2_GETDWORD(lineDst);
           uint32_t tmp = 0;
@@ -752,6 +755,8 @@ bool CJBig2_Image::composeTo_opt2(CJBig2_Image* pDst,
       } else {
         uint32_t shift = d1 - s1;
         for (int32_t yy = yd0; yy < yd1; yy++) {
+          if (lineSrc >= lineSrcEnd)
+            return false;
           uint32_t tmp1 = JBIG2_GETDWORD(lineSrc) >> shift;
           uint32_t tmp2 = JBIG2_GETDWORD(lineDst);
           uint32_t tmp = 0;
@@ -784,6 +789,8 @@ bool CJBig2_Image::composeTo_opt2(CJBig2_Image* pDst,
       uint32_t shift1 = s1 - d1;
       uint32_t shift2 = 32 - shift1;
       for (int32_t yy = yd0; yy < yd1; yy++) {
+        if (lineSrc >= lineSrcEnd)
+          return false;
         uint32_t tmp1 = (JBIG2_GETDWORD(lineSrc) << shift1) |
                         (JBIG2_GETDWORD(lineSrc + 4) >> shift2);
         uint32_t tmp2 = JBIG2_GETDWORD(lineDst);
@@ -819,7 +826,9 @@ bool CJBig2_Image::composeTo_opt2(CJBig2_Image* pDst,
       uint32_t shift2 = 32 - shift1;
       int32_t middleDwords = (xd1 >> 5) - ((xd0 + 31) >> 5);
       for (int32_t yy = yd0; yy < yd1; yy++) {
-        uint8_t* sp = lineSrc;
+        if (lineSrc >= lineSrcEnd)
+          return false;
+        const uint8_t* sp = lineSrc;
         uint8_t* dp = lineDst;
         if (d1 != 0) {
           uint32_t tmp1 = (JBIG2_GETDWORD(sp) << shift1) |
@@ -914,7 +923,9 @@ bool CJBig2_Image::composeTo_opt2(CJBig2_Image* pDst,
     } else if (s1 == d1) {
       int32_t middleDwords = (xd1 >> 5) - ((xd0 + 31) >> 5);
       for (int32_t yy = yd0; yy < yd1; yy++) {
-        uint8_t* sp = lineSrc;
+        if (lineSrc >= lineSrcEnd)
+          return false;
+        const uint8_t* sp = lineSrc;
         uint8_t* dp = lineDst;
         if (d1 != 0) {
           uint32_t tmp1 = JBIG2_GETDWORD(sp);
@@ -1006,7 +1017,9 @@ bool CJBig2_Image::composeTo_opt2(CJBig2_Image* pDst,
       uint32_t shift2 = 32 - shift1;
       int32_t middleDwords = (xd1 >> 5) - ((xd0 + 31) >> 5);
       for (int32_t yy = yd0; yy < yd1; yy++) {
-        uint8_t* sp = lineSrc;
+        if (lineSrc >= lineSrcEnd)
+          return false;
+        const uint8_t* sp = lineSrc;
         uint8_t* dp = lineDst;
         if (d1 != 0) {
           uint32_t tmp1 = JBIG2_GETDWORD(sp) >> shift1;
