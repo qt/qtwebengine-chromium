@@ -123,7 +123,6 @@ CPDF_DIBSource::CPDF_DIBSource()
 CPDF_DIBSource::~CPDF_DIBSource() {
   FX_Free(m_pMaskedLine);
   FX_Free(m_pLineBuf);
-  m_pCachedBitmap.reset();
   FX_Free(m_pCompData);
   CPDF_ColorSpace* pCS = m_pColorSpace;
   if (pCS && m_pDocument) {
