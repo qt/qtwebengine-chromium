@@ -40,7 +40,7 @@ void FidoHidDevice::Cancel() {
     return;
 
   // Delete any remaining pending requests on this Channel ID.
-  pending_transactions_ = {};
+  pending_transactions_ = base::queue<std::pair<std::vector<uint8_t>, DeviceCallback>>();
   WriteMessage(
       FidoHidMessage::Create(channel_id_, FidoHidDeviceCommand::kCancel,
                              std::vector<uint8_t>()),

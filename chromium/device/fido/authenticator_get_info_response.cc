@@ -71,21 +71,20 @@ std::vector<uint8_t> EncodeToCBOR(
                                                                  : kU2fVersion);
   }
   cbor::CBORValue::MapValue device_info_map;
-  device_info_map.emplace(1, std::move(version_array));
+  device_info_map.emplace(cbor::CBORValue(1), cbor::CBORValue(std::move(version_array)));
 
   if (response.extensions())
-    device_info_map.emplace(2, ToArrayValue(*response.extensions()));
+    device_info_map.emplace(cbor::CBORValue(2), cbor::CBORValue(ToArrayValue(*response.extensions())));
 
-  device_info_map.emplace(3, response.aaguid());
-  device_info_map.emplace(4, ConvertToCBOR(response.options()));
+  device_info_map.emplace(cbor::CBORValue(3), cbor::CBORValue(response.aaguid()));
+  device_info_map.emplace(cbor::CBORValue(4), cbor::CBORValue(ConvertToCBOR(response.options())));
 
   if (response.max_msg_size()) {
-    device_info_map.emplace(
-        5, base::strict_cast<int64_t>(*response.max_msg_size()));
+    device_info_map.emplace(cbor::CBORValue(5), cbor::CBORValue(base::strict_cast<int64_t>(*response.max_msg_size())));
   }
 
   if (response.pin_protocol()) {
-    device_info_map.emplace(6, ToArrayValue(*response.pin_protocol()));
+    device_info_map.emplace(cbor::CBORValue(6), cbor::CBORValue(ToArrayValue(*response.pin_protocol())));
   }
 
   auto encoded_bytes =

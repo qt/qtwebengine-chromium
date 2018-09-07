@@ -88,12 +88,15 @@ SI ATTR I32 NS(to_fixed_)(F f) {  return CAST(I32, f + 0.5f); }
 
 // Comparisons result in bool when N == 1, in an I32 mask when N > 1.
 // We've made this a macro so it can be type-generic...
-// always (T) cast the result to the type you expect the result to be.
+template <typename T>
+SI ATTR T if_then_else(I32 c, T t, T e)
+{
 #if N == 1
-    #define if_then_else(c,t,e) ( (c) ? (t) : (e) )
+    return c ? t : e;
 #else
-    #define if_then_else(c,t,e) ( ((c) & (I32)(t)) | (~(c) & (I32)(e)) )
+    return (T)( ((c) & (I32)(t)) | (~(c) & (I32)(e)) );
 #endif
+}
 
 #if defined(USING_NEON_F16C)
     SI ATTR F   NS(F_from_Half_(U16 half)) { return      vcvt_f32_f16((float16x4_t)half); }
@@ -492,7 +495,11 @@ SI ATTR F NS(table_16_)(const skcms_Curve* curve, F v) {
 }
 
 // Color lookup tables, by input dimension and bit depth.
-SI ATTR void NS(clut_0_8_)(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
+template<int I, int B>
+inline ATTR void clut(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a);
+
+template<>
+void clut<0, 8>(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
     U32 rgb = gather_24(a2b->grid_8, ix);
 
     *r = CAST(F, (rgb >>  0) & 0xff) * (1/255.0f);
@@ -502,7 +509,9 @@ SI ATTR void NS(clut_0_8_)(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g,
     (void)a;
     (void)stride;
 }
-SI ATTR void NS(clut_0_16_)(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
+
+template<>
+void clut<0, 16>(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
     #if defined(__arm__)
         // This is up to 2x faster on 32-bit ARM than the #else-case fast path.
         *r = F_from_U16_BE(gather_16(a2b->grid_16, 3*ix+0));
@@ -522,19 +531,10 @@ SI ATTR void NS(clut_0_16_)(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g
     (void)stride;
 }
 
-// __attribute__((always_inline)) hits some pathological case in GCC that makes
-// compilation way too slow for my patience.
-#if defined(__clang__)
-    #define MAYBE_SI SI
-#else
-    #define MAYBE_SI static inline
-#endif
-
 // These are all the same basic approach: handle one dimension, then the rest recursively.
 // We let "I" be the current dimension, and "J" the previous dimension, I-1.  "B" is the bit depth.
-#define DEF_CLUT(I,J,B)                                                                           \
-    MAYBE_SI ATTR                                                                                 \
-    void NS(clut_##I##_##B##_)(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) { \
+template<int I, int B>
+void clut(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
         I32 limit = CAST(I32, F0);                                                                \
         limit += a2b->grid_points[I-1];                                                           \
                                                                                                   \
@@ -547,24 +547,14 @@ SI ATTR void NS(clut_0_16_)(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g
             hi = CAST(I32, minus_1_ulp(x+1.0f));                                                  \
         F lr = *r, lg = *g, lb = *b,                                                              \
           hr = *r, hg = *g, hb = *b;                                                              \
-        NS(clut_##J##_##B##_)(a2b, stride*lo + ix, stride*limit, &lr,&lg,&lb,a);                  \
-        NS(clut_##J##_##B##_)(a2b, stride*hi + ix, stride*limit, &hr,&hg,&hb,a);                  \
+        clut<I-1, B>(a2b, stride*lo + ix, stride*limit, &lr,&lg,&lb,a);                  \
+        clut<I-1, B>(a2b, stride*hi + ix, stride*limit, &hr,&hg,&hb,a);                  \
                                                                                                   \
         F t = x - CAST(F, lo);                                                                    \
         *r = lr + (hr-lr)*t;                                                                      \
         *g = lg + (hg-lg)*t;                                                                      \
         *b = lb + (hb-lb)*t;                                                                      \
     }
-
-DEF_CLUT(1,0,8)
-DEF_CLUT(2,1,8)
-DEF_CLUT(3,2,8)
-DEF_CLUT(4,3,8)
-
-DEF_CLUT(1,0,16)
-DEF_CLUT(2,1,16)
-DEF_CLUT(3,2,16)
-DEF_CLUT(4,3,16)
 
 ATTR
 static void NS(exec_ops)(const Op* ops, const void** args,
@@ -875,24 +865,24 @@ static void NS(exec_ops)(const Op* ops, const void** args,
 
             case Op_clut_3D_8:{
                 const skcms_A2B* a2b = (const skcms_A2B*) *args++;
-                NS(clut_3_8_)(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
+                clut<3,8>(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
             } break;
 
             case Op_clut_3D_16:{
                 const skcms_A2B* a2b = (const skcms_A2B*) *args++;
-                NS(clut_3_16_)(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
+                clut<3,16>(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
             } break;
 
             case Op_clut_4D_8:{
                 const skcms_A2B* a2b = (const skcms_A2B*) *args++;
-                NS(clut_4_8_)(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
+                clut<4,8>(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
                 // 'a' was really a CMYK K, so our output is actually opaque.
                 a = F1;
             } break;
 
             case Op_clut_4D_16:{
                 const skcms_A2B* a2b = (const skcms_A2B*) *args++;
-                NS(clut_4_16_)(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
+                clut<4,16>(a2b, CAST(I32,F0),CAST(I32,F1), &r,&g,&b,a);
                 // 'a' was really a CMYK K, so our output is actually opaque.
                 a = F1;
             } break;

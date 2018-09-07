@@ -66,10 +66,10 @@ cbor::CBORValue PublicKeyCredentialParams::ConvertToCBOR() const {
 
   for (const auto& credential : public_key_credential_params_) {
     cbor::CBORValue::MapValue cbor_credential_map;
-    cbor_credential_map.emplace(kCredentialTypeMapKey,
-                                CredentialTypeToString(credential.type));
-    cbor_credential_map.emplace(kCredentialAlgorithmMapKey,
-                                credential.algorithm);
+    cbor_credential_map.emplace(cbor::CBORValue(kCredentialTypeMapKey),
+                                cbor::CBORValue(CredentialTypeToString(credential.type)));
+    cbor_credential_map.emplace(cbor::CBORValue(kCredentialAlgorithmMapKey),
+                                cbor::CBORValue(credential.algorithm));
     credential_param_array.emplace_back(std::move(cbor_credential_map));
   }
   return cbor::CBORValue(std::move(credential_param_array));
