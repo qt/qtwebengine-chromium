@@ -614,6 +614,16 @@ void FetchManager::Loader::start() {
 
   // "- |request|'s mode is |no CORS|"
   if (m_request->mode() == WebURLRequest::FetchRequestModeNoCORS) {
+    // "If |request|'s redirect mode is not |follow|, then return a network
+    // error.
+    if (m_request->redirect() != WebURLRequest::FetchRedirectModeFollow) {
+      performNetworkError("Fetch API cannot load " +
+                          m_request->url().getString() +
+                          ". Request mode is \"no-cors\" but the redirect mode "
+                          " is not \"follow\".");
+      return;
+    }
+
     // "Set |request|'s response tainting to |opaque|."
     m_request->setResponseTainting(FetchRequestData::OpaqueTainting);
     // "The result of performing a basic fetch using |request|."
