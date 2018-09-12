@@ -52,6 +52,7 @@ class HitTestRequest {
     // testing after a hit has been found.
     kPenetratingList = 1 << 12,
     kAvoidCache = 1 << 13,
+    kHitTestVisualOverflow = 1 << 15,
   };
 
   typedef unsigned HitTestRequestType;
