@@ -418,6 +418,7 @@ def WriteGNNinja(path, platform, host, options, linux_sysroot):
         '/wd4127',
         '/wd4244',
         '/wd4267',
+        '/wd4577',
         '/wd4838',
         '/wd4996',
     ])
