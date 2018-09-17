@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/shape_detection/barcode_detection_impl_mac.h"
 #include "services/shape_detection/barcode_detection_impl_mac_vision.h"
