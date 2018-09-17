@@ -573,7 +573,7 @@ void BrowserContext::Initialize(
             auto* delegate = holder->delegate();
             auto service = std::make_unique<content::Service>(delegate);
             delegate->AddService(service.get());
-            return service;
+            return std::unique_ptr<service_manager::Service>(service.release());
           },
           browser_context);
       connection->AddEmbeddedService(content::mojom::kServiceName, info);

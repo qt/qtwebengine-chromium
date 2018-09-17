@@ -8,6 +8,7 @@
 
 #include "base/feature_list.h"
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/memory/ptr_util.h"
 #include "base/optional.h"
 #include "base/strings/string_piece.h"
@@ -27,7 +28,7 @@ namespace mac {
 // static
 bool TouchIdAuthenticator::IsAvailable() {
   if (base::FeatureList::IsEnabled(device::kWebAuthTouchId)) {
-    if (__builtin_available(macOS 10.12.2, *)) {
+    if (base::mac::IsAtLeastOS10_13()) {
       base::scoped_nsobject<LAContext> context([[LAContext alloc] init]);
       return [context
           canEvaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics
@@ -60,7 +61,7 @@ TouchIdAuthenticator::~TouchIdAuthenticator() = default;
 
 void TouchIdAuthenticator::MakeCredential(CtapMakeCredentialRequest request,
                                           MakeCredentialCallback callback) {
-  if (__builtin_available(macOS 10.12.2, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     DCHECK(!operation_);
     operation_ = std::make_unique<MakeCredentialOperation>(
         std::move(request), metadata_secret_, keychain_access_group_,
@@ -73,7 +74,7 @@ void TouchIdAuthenticator::MakeCredential(CtapMakeCredentialRequest request,
 
 void TouchIdAuthenticator::GetAssertion(CtapGetAssertionRequest request,
                                         GetAssertionCallback callback) {
-  if (__builtin_available(macOS 10.12.2, *)) {
+  if (base::mac::IsAtLeastOS10_13()) {
     DCHECK(!operation_);
     operation_ = std::make_unique<GetAssertionOperation>(
         std::move(request), metadata_secret_, keychain_access_group_,

@@ -26,7 +26,7 @@ std::unique_ptr<GpuClient, base::OnTaskRunnerDeleter> GpuClient::Create(
       base::OnTaskRunnerDeleter(task_runner));
   gpu_client->SetConnectionErrorHandler(std::move(connection_error_handler));
   gpu_client->Add(std::move(request));
-  return gpu_client;
+  return std::unique_ptr<GpuClient, base::OnTaskRunnerDeleter>(gpu_client.release(), base::OnTaskRunnerDeleter(task_runner));
 }
 
 GpuClientImpl::GpuClientImpl(

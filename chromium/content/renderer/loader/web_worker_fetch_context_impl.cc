@@ -216,7 +216,7 @@ WebWorkerFetchContextImpl::CloneForNestedWorker() {
   new_context->is_on_sub_frame_ = is_on_sub_frame_;
   new_context->ancestor_frame_id_ = ancestor_frame_id_;
   new_context->appcache_host_id_ = appcache_host_id_;
-  return new_context;
+  return std::unique_ptr<blink::WebWorkerFetchContext>(new_context.release());
 }
 
 void WebWorkerFetchContextImpl::InitializeOnWorkerThread() {
@@ -260,7 +260,7 @@ WebWorkerFetchContextImpl::CreateURLLoaderFactory() {
   if (blink::ServiceWorkerUtils::IsServicificationEnabled())
     ResetServiceWorkerURLLoaderFactory();
 
-  return factory;
+  return std::unique_ptr<blink::WebURLLoaderFactory>(factory.release());
 }
 
 std::unique_ptr<blink::WebURLLoaderFactory>
