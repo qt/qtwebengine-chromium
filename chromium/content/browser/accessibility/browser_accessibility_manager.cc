@@ -103,11 +103,7 @@ ui::AXTreeUpdate MakeAXTreeUpdate(
 }
 
 BrowserAccessibility* BrowserAccessibilityFactory::Create() {
-#if defined(TOOLKIT_QT)
-  return nullptr;
-#else
   return BrowserAccessibility::Create();
-#endif
 }
 
 BrowserAccessibilityFindInPageInfo::BrowserAccessibilityFindInPageInfo()

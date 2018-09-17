@@ -110,15 +110,9 @@ component("accessibility") {
     "//ui/strings",
   ]
 
-  if (is_win && !use_qt) {
+  if (is_win && has_native_accessibility) {
     public_deps += [ "//third_party/iaccessible2" ]
     libs = [ "oleacc.lib" ]
-    sources += [
-      "platform/ax_platform_node_win.cc",
-      "platform/ax_platform_node_win.h",
-      "platform/ax_system_caret_win.cc",
-      "platform/ax_system_caret_win.h",
-    ]
   }
 
   if (is_mac) {

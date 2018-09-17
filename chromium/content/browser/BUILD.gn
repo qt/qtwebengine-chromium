@@ -2446,8 +2446,6 @@ jumbo_source_set("browser") {
 
   if (use_qt) {
     sources -= [
-      "accessibility/accessibility_ui.cc",
-      "accessibility/accessibility_ui.h",
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
     ]
