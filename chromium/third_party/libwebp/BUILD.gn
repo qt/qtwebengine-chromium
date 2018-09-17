@@ -5,6 +5,7 @@
 import("//build/config/arm.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/config/linux/pkg_config.gni")
+import("//build/shim_headers.gni")
 
 declare_args() {
   use_system_libwebp = false
@@ -403,10 +404,25 @@ if (!use_system_libwebp) {
 }
 
 if (use_system_libwebp) {
+  shim_headers("libwebp_shim") {
+    root_path = "src/webp"
+    prefix = "webp/"
+    headers = [
+      "decode.h",
+      "demux.h",
+      "encode.h",
+      "format_constants.h",
+      "mux.h",
+      "mux_types.h",
+      "types.h",
+    ]
+  }
+
   pkg_config("system_libwebp") {
     packages = [ "libwebp", "libwebpmux", "libwebpdemux" ]
   }
   group("libwebp") {
+    deps = [ ":libwebp_shim" ]
     public_configs = [ ":system_libwebp" ]
   }
 }
