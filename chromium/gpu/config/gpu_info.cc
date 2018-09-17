@@ -204,7 +204,17 @@ GPUInfo::GPUDevice& GPUInfo::GPUDevice::operator=(
     const GPUInfo::GPUDevice& other) = default;
 
 GPUInfo::GPUDevice& GPUInfo::GPUDevice::operator=(
-    GPUInfo::GPUDevice&& other) noexcept = default;
+    GPUInfo::GPUDevice&& other) noexcept {
+  vendor_id = other.vendor_id;
+  device_id = other.device_id;
+  active = other.active;
+  vendor_string = std::move(other.vendor_string);
+  device_string = std::move(other.device_string);
+  driver_vendor = std::move(other.driver_vendor);
+  driver_version = std::move(other.driver_version);
+  cuda_compute_capability_major = std::move(other.cuda_compute_capability_major);
+  return *this;
+}
 
 GPUInfo::GPUInfo()
     : optimus(false),
