@@ -615,7 +615,7 @@ void NetworkService::OnCertDBChanged() {
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 void NetworkService::SetCryptConfig(mojom::CryptConfigPtr crypt_config) {
-#if !defined(IS_CHROMECAST)
+#if !defined(IS_CHROMECAST) && !defined(TOOLKIT_QT)
   DCHECK(!os_crypt_config_set_);
   auto config = std::make_unique<os_crypt::Config>();
   config->store = crypt_config->store;
