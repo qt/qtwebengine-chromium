@@ -468,7 +468,7 @@ SI F F_from_U8(U8 v) {
 SI F F_from_U16_BE(U16 v) {
     // All 16-bit ICC values are big-endian, so we byte swap before converting to float.
     // MSVC catches the "loss" of data here in the portable path, so we also make sure to mask.
-    v = (U16)( ((v<<8)|(v>>8)) & 0xffff );
+    v = U16( 0 | ((v & 0x00ff) << 8) | ((v & 0xff00) >> 8) );
     return cast<F>(v) * (1/65535.0f);
 }
 
