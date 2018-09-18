@@ -369,7 +369,7 @@ void NetworkService::UpdateSignedTreeHead(const net::ct::SignedTreeHead& sth) {
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 void NetworkService::SetCryptConfig(mojom::CryptConfigPtr crypt_config) {
-#if !defined(IS_CHROMECAST)
+#if !defined(IS_CHROMECAST) && !defined(TOOLKIT_QT)
   auto config = std::make_unique<os_crypt::Config>();
   config->store = crypt_config->store;
   config->product_name = crypt_config->product_name;
