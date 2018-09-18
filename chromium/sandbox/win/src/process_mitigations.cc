@@ -487,8 +487,8 @@ void ConvertProcessMitigationsToPolicy(MitigationFlags flags,
     //       the underlying hardware does not support the implementation.
     //       Windows just does its best under the hood for the given hardware.
     if (flags & MITIGATION_RESTRICT_INDIRECT_BRANCH_PREDICTION) {
-      *policy_value_2 |=
-          PROCESS_CREATION_MITIGATION_POLICY2_RESTRICT_INDIRECT_BRANCH_PREDICTION_ALWAYS_ON;
+      *policy_value_2 |= (0x00000001ui64 << 16);
+          /* PROCESS_CREATION_MITIGATION_POLICY2_RESTRICT_INDIRECT_BRANCH_PREDICTION_ALWAYS_ON */
     }
   }
 
