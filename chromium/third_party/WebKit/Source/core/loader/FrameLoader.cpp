@@ -37,8 +37,10 @@
 #include "core/loader/FrameLoader.h"
 
 #include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/Microtask.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/V8PerIsolateData.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
@@ -1312,6 +1314,14 @@ bool FrameLoader::prepareForCommit() {
   if (!m_frame->client())
     return false;
   DCHECK_EQ(m_provisionalDocumentLoader, pdl);
+
+  // Flush microtask queue so that they all run on pre-navigation context.
+  Microtask::performCheckpoint(V8PerIsolateData::mainThreadIsolate());
+
+  // Ensure that the frame_ hasn't detached from running the microtasks.
+  if (!m_frame->client())
+    return false;
+
   // No more events will be dispatched so detach the Document.
   // TODO(yoav): Should we also be nullifying domWindow's document (or
   // domWindow) since the doc is now detached?

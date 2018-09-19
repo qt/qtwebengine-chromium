@@ -17,9 +17,27 @@ NavigatorServiceWorker::NavigatorServiceWorker(Navigator& navigator)
                                                  : nullptr) {}
 
 NavigatorServiceWorker* NavigatorServiceWorker::from(Document& document) {
-  if (!document.frame() || !document.frame()->domWindow())
+  LocalFrame* frame = document.frame();
+  if (!frame)
     return nullptr;
-  Navigator& navigator = *document.frame()->domWindow()->navigator();
+
+  // TODO(kouhei): Remove below after M72, since the check is now done in
+  // RenderFrameImpl::CreateServiceWorkerProvider instead.
+  //
+  // Bail-out if we are about to be navigated away.
+  // We check that DocumentLoader is attached since:
+  // - This serves as the signal since the DocumentLoader is detached in
+  //   FrameLoader::PrepareForCommit().
+  // - Creating ServiceWorkerProvider in
+  //   RenderFrameImpl::CreateServiceWorkerProvider() assumes that there is a
+  //   DocumentLoader attached to the frame.
+  if (!frame->loader().documentLoader())
+    return nullptr;
+
+  DOMWindow* dom_window = frame->domWindow();
+  if (!dom_window)
+    return nullptr;
+  Navigator& navigator = *dom_window->navigator();
   return &from(navigator);
 }
 

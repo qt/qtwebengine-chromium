@@ -74,13 +74,15 @@ SerializedScriptValue* History::state() {
 }
 
 SerializedScriptValue* History::stateInternal() const {
-  if (!frame())
-    return 0;
+  LocalFrame* frame = this->frame();
+  if (!frame)
+    return nullptr;
 
-  if (HistoryItem* historyItem = frame()->loader().currentItem())
-    return historyItem->stateObject();
+  HistoryItem* history_item = frame->loader().currentItem();
+  if (!history_item)
+    return nullptr;
 
-  return 0;
+  return history_item->stateObject();
 }
 
 void History::setScrollRestoration(const String& value) {
@@ -105,12 +107,17 @@ String History::scrollRestoration() {
 }
 
 HistoryScrollRestorationType History::scrollRestorationInternal() const {
-  if (frame()) {
-    if (HistoryItem* historyItem = frame()->loader().currentItem())
-      return historyItem->scrollRestorationType();
-  }
+  const HistoryScrollRestorationType default_type = ScrollRestorationAuto;
 
-  return ScrollRestorationAuto;
+  LocalFrame* frame = this->frame();
+  if (!frame)
+    return default_type;
+
+  HistoryItem* history_item = frame->loader().currentItem();
+  if (!history_item)
+    return default_type;
+
+  return history_item->scrollRestorationType();
 }
 
 bool History::stateChanged() const {

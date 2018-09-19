@@ -2959,8 +2959,17 @@ blink::BlameContext* RenderFrameImpl::frameBlameContext() {
 
 blink::WebServiceWorkerProvider*
 RenderFrameImpl::createServiceWorkerProvider() {
+  // Bail-out if we are about to be navigated away.
+  // We check that DocumentLoader is attached since:
+  // - This serves as the signal since the DocumentLoader is detached in
+  //   FrameLoader::PrepareForCommit().
+  // - Creating ServiceWorkerProvider in
+  //   RenderFrameImpl::CreateServiceWorkerProvider() assumes that there is a
+  //   DocumentLoader attached to the frame.
+  if (!frame_->dataSource())
+    return nullptr;
+
   // At this point we should have non-null data source.
-  DCHECK(frame_->dataSource());
   if (!ChildThreadImpl::current())
     return nullptr;  // May be null in some tests.
   ServiceWorkerNetworkProvider* provider =
