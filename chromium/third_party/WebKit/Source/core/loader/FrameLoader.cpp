@@ -80,7 +80,9 @@
 #include "platform/InstanceCounters.h"
 #include "platform/WebFrameScheduler.h"
 #include "platform/bindings/DOMWrapperWorld.h"
+#include "platform/bindings/Microtask.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
+#include "platform/bindings/V8PerIsolateData.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceRequest.h"
@@ -1079,6 +1081,14 @@ bool FrameLoader::PrepareForCommit() {
   if (!frame_->Client())
     return false;
   DCHECK_EQ(provisional_document_loader_, pdl);
+
+  // Flush microtask queue so that they all run on pre-navigation context.
+  Microtask::PerformCheckpoint(V8PerIsolateData::MainThreadIsolate());
+
+  // Ensure that the frame_ hasn't detached from running the microtasks.
+  if (!frame_->Client())
+    return false;
+
   // No more events will be dispatched so detach the Document.
   // TODO(yoav): Should we also be nullifying domWindow's document (or
   // domWindow) since the doc is now detached?
