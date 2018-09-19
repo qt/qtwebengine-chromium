@@ -111,6 +111,8 @@ bool GetPathInfo(HMONITOR monitor, DISPLAYCONFIG_PATH_INFO* path_info) {
 
 float GetMonitorSDRWhiteLevel(HMONITOR monitor) {
   float ret = 200.0;  // default value
+#ifndef TOOLKIT_QT
+  // This depends on currently undocumented API of some very recent Win10 SDK (2018/09/19)
   DISPLAYCONFIG_PATH_INFO path_info = {};
   if (!GetPathInfo(monitor, &path_info))
     return ret;
@@ -123,6 +125,7 @@ float GetMonitorSDRWhiteLevel(HMONITOR monitor) {
   if (DisplayConfigGetDeviceInfo(&white_level.header) != ERROR_SUCCESS)
     return ret;
   ret = white_level.SDRWhiteLevel * 80.0 / 1000.0;
+#endif
   return ret;
 }
 
