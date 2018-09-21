@@ -863,7 +863,7 @@ bool GpuProcessHost::Init() {
   process_->GetHost()->CreateChannelMojo();
 
   mode_ = GpuDataManagerImpl::GetInstance()->GetGpuMode();
-  DCHECK_NE(mode_, gpu::GpuMode::DISABLED);
+  DCHECK(mode_ != gpu::GpuMode::DISABLED || in_process_);
 
   if (in_process_) {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
