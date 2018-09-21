@@ -1780,6 +1780,7 @@ struct ExtensionsGL {
   bool b_GL_ANGLE_translated_shader_source;
   bool b_GL_APPLE_fence;
   bool b_GL_APPLE_vertex_array_object;
+  bool b_GL_ARB_ES2_compatibility;
   bool b_GL_ARB_blend_func_extended;
   bool b_GL_ARB_draw_buffers;
   bool b_GL_ARB_draw_instanced;
