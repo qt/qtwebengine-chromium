@@ -296,6 +296,8 @@ void DriverGL::InitializeDynamicBindings(const GLVersionInfo* ver,
   ext.b_GL_APPLE_fence = gfx::HasExtension(extensions, "GL_APPLE_fence");
   ext.b_GL_APPLE_vertex_array_object =
       gfx::HasExtension(extensions, "GL_APPLE_vertex_array_object");
+  ext.b_GL_ARB_ES2_compatibility =
+      gfx::HasExtension(extensions, "GL_ARB_ES2_compatibility");
   ext.b_GL_ARB_blend_func_extended =
       gfx::HasExtension(extensions, "GL_ARB_blend_func_extended");
   ext.b_GL_ARB_draw_buffers =
@@ -1404,7 +1406,8 @@ void DriverGL::InitializeDynamicBindings(const GLVersionInfo* ver,
         GetGLProcAddress("glGetProgramResourceiv"));
   }
 
-  if (ver->IsAtLeastGL(4u, 3u) || ver->IsAtLeastGLES(3u, 1u)) {
+  if (ver->IsAtLeastGL(4u, 3u) || ver->IsAtLeastGLES(3u, 1u) ||
+      ext.b_GL_ARB_program_interface_query) {
     fn.glGetProgramResourceLocationFn =
         reinterpret_cast<glGetProgramResourceLocationProc>(
             GetGLProcAddress("glGetProgramResourceLocation"));
@@ -1558,7 +1561,8 @@ void DriverGL::InitializeDynamicBindings(const GLVersionInfo* ver,
             GetGLProcAddress("glGetShaderivRobustANGLE"));
   }
 
-  if (ver->IsAtLeastGL(4u, 1u) || ver->is_es) {
+  if (ver->IsAtLeastGL(4u, 1u) || ver->is_es ||
+      ext.b_GL_ARB_ES2_compatibility) {
     fn.glGetShaderPrecisionFormatFn =
         reinterpret_cast<glGetShaderPrecisionFormatProc>(
             GetGLProcAddress("glGetShaderPrecisionFormat"));

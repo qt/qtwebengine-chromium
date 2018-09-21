@@ -937,7 +937,8 @@ GL_FUNCTIONS = [
   'GLsizei propCount, const GLenum* props, GLsizei bufSize, '
   'GLsizei* length, GLint* params'},
 { 'return_type': 'GLint',
-  'names': ['glGetProgramResourceLocation'],
+  'versions': [{'name': 'glGetProgramResourceLocation',
+                'extensions': ['GL_ARB_program_interface_query']}],
   'arguments': 'GLuint program, GLenum programInterface, const char* name', },
 { 'return_type': 'void',
   'versions': [{'name': 'glGetProgramResourceName',
@@ -1056,7 +1057,8 @@ GL_FUNCTIONS = [
       'GLuint shader, GLenum pname, GLsizei bufSize, GLsizei* length, '
       'GLint* params', },
 { 'return_type': 'void',
-  'names': ['glGetShaderPrecisionFormat'],
+  'versions': [{'name': 'glGetShaderPrecisionFormat',
+                'extensions': ['GL_ARB_ES2_compatibility']}],
   'arguments': 'GLenum shadertype, GLenum precisiontype, '
                'GLint* range, GLint* precision', },
 { 'return_type': 'void',
