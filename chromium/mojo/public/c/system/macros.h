@@ -27,10 +27,10 @@
   (sizeof(void*) == 4 ? 32 : 0)
 
 // Like the C++11 |alignof| operator.
-#if __cplusplus >= 201103L
-#define MOJO_ALIGNOF(type) alignof(type)
-#elif defined(__GNUC__)
+#if defined(__GNUC__)
 #define MOJO_ALIGNOF(type) __alignof__(type)
+#elif __cplusplus >= 201103L
+#define MOJO_ALIGNOF(type) alignof(type)
 #elif defined(_MSC_VER)
 // The use of |sizeof| is to work around a bug in MSVC 2010 (see
 // http://goo.gl/isH0C; supposedly fixed since then).
