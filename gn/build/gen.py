@@ -307,7 +307,7 @@ def WriteGNNinja(path, platform, host, options):
     ld = os.environ.get('LD', 'g++')
     ar = os.environ.get('AR', 'ar')
   else:
-    cxx = os.environ.get('CXX', 'clang++')
+    cxx = os.environ.get('CXX', 'c++')
     ld = cxx
     ar = os.environ.get('AR', 'ar')
 
@@ -387,21 +387,17 @@ def WriteGNNinja(path, platform, host, options):
       if not options.no_static_libstdcpp:
         ldflags.append('-static-libstdc++')
 
-      if platform.is_mingw() or platform.is_msys():
-        cflags.remove('-std=c++17')
-        cflags.extend([
-          '-Wno-deprecated-copy',
-          '-Wno-implicit-fallthrough',
-          '-Wno-redundant-move',
-          '-Wno-unused-variable',
-          '-Wno-format',             # Use of %llx, which is supported by _UCRT, false positive
-          '-Wno-strict-aliasing',    # Dereferencing punned pointer
-          '-Wno-cast-function-type', # Casting FARPROC to RegDeleteKeyExPtr
-          '-std=gnu++17',
-        ])
-      else:
-        # This is needed by libc++.
-        libs.append('-ldl')
+      cflags.remove('-std=c++17')
+      cflags.extend([
+        '-Wno-deprecated-copy',
+        '-Wno-implicit-fallthrough',
+        '-Wno-redundant-move',
+        '-Wno-unused-variable',
+        '-Wno-format',             # Use of %llx, which is supported by _UCRT, false positive
+        '-Wno-strict-aliasing',    # Dereferencing punned pointer
+        '-Wno-cast-function-type', # Casting FARPROC to RegDeleteKeyExPtr
+        '-std=gnu++17',
+      ])
     elif platform.is_darwin():
       min_mac_version_flag = '-mmacosx-version-min=10.9'
       cflags.append(min_mac_version_flag)
@@ -465,7 +461,11 @@ def WriteGNNinja(path, platform, host, options):
         '/D_HAS_EXCEPTIONS=0',
     ])
 
-    ldflags.extend(['/DEBUG', '/MACHINE:x64'])
+    target_arch = windows_target_build_arch()
+    if target_arch == 'x64':
+        ldflags.extend(['/MACHINE:x64'])
+    else:
+        ldflags.extend(['/MACHINE:x86'])
 
   static_libraries = {
       'base': {'sources': [
@@ -811,6 +811,12 @@ def WriteGNNinja(path, platform, host, options):
                     platform, host, options, cflags, ldflags,
                     libflags, include_dirs, libs)
 
+def windows_target_build_arch():
+    target_arch = os.environ.get('Platform')
+    if target_arch in ['x64', 'x86']: return target_arch
+
+    if platform.machine().lower() in ['x86_64', 'amd64']: return 'x64'
+    return 'x86'
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv[1:]))
