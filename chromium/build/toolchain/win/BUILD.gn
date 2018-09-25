@@ -370,10 +370,10 @@ if (win_build_host_cpu != "x64") {
 
   msvc_toolchain(win_build_host_cpu) {
     environment = "environment." + win_build_host_cpu
-    cl = "${goma_prefix}\"${build_cpu_toolchain_data.vc_bin_dir}/cl.exe\""
+    cl = "${goma_prefix}\"${target_cpu_toolchain_data.vc_bin_dir}/cl.exe\""
     if (host_os != "win") {
       # For win cross build.
-      sys_lib_flags = "${build_cpu_toolchain_data.libpath_flags}"
+      sys_lib_flags = "${target_cpu_toolchain_data.libpath_flags}"
     }
     toolchain_args = {
       current_os = "win"
@@ -386,10 +386,10 @@ if (win_build_host_cpu != "x64") {
     environment = "environment." + win_build_host_cpu
     prefix = rebase_path("$clang_base_path/bin", root_build_dir)
     cl = "${clang_prefix}$prefix/${clang_cl}"
-    sys_include_flags = "${build_cpu_toolchain_data.include_flags_imsvc}"
+    sys_include_flags = "${target_cpu_toolchain_data.include_flags_imsvc}"
     if (host_os != "win") {
       # For win cross build.
-      sys_lib_flags = "${build_cpu_toolchain_data.libpath_flags}"
+      sys_lib_flags = "${target_cpu_toolchain_data.libpath_flags}"
     }
 
     toolchain_args = {
