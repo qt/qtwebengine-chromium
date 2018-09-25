@@ -270,8 +270,8 @@ def WriteGNNinja(path, platform, host, options):
     ld = os.environ.get('LD', 'g++')
     ar = os.environ.get('AR', 'ar -X64')
   else:
-    cc = os.environ.get('CC', 'clang')
-    cxx = os.environ.get('CXX', 'clang++')
+    cc = os.environ.get('CC', 'cc')
+    cxx = os.environ.get('CXX', 'c++')
     ld = cxx
     ar = os.environ.get('AR', 'ar')
 
@@ -389,7 +389,11 @@ def WriteGNNinja(path, platform, host, options):
         '/D_HAS_EXCEPTIONS=0',
     ])
 
-    ldflags.extend(['/DEBUG', '/MACHINE:x64'])
+    target_arch = windows_target_build_arch()
+    if target_arch == 'x64':
+        ldflags.extend(['/MACHINE:x64'])
+    else:
+        ldflags.extend(['/MACHINE:x86'])
 
   static_libraries = {
       'base': {'sources': [
@@ -698,6 +702,12 @@ def WriteGNNinja(path, platform, host, options):
                     platform, host, options, cflags, cflags_cc, ldflags,
                     libflags, include_dirs, libs)
 
+def windows_target_build_arch():
+    target_arch = os.environ.get('Platform')
+    if target_arch in ['x64', 'x86']: return target_arch
+
+    if platform.machine().lower() in ['x86_64', 'amd64']: return 'x64'
+    return 'x86'
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv[1:]))
