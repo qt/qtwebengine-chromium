@@ -53,7 +53,7 @@ typedef int		FcBool;
 
 #define FC_MAJOR	2
 #define FC_MINOR	13
-#define FC_REVISION	0
+#define FC_REVISION	1
 
 #define FC_VERSION	((FC_MAJOR * 10000) + (FC_MINOR * 100) + (FC_REVISION))
 
@@ -1075,6 +1075,10 @@ FcUtf16Len (const FcChar8   *string,
 	    int		    len,	    /* in bytes */
 	    int		    *nchar,
 	    int		    *wchar);
+
+FcPublic FcChar8 *
+FcStrBuildFilename (const FcChar8 *path,
+		    ...);
 
 FcPublic FcChar8 *
 FcStrDirname (const FcChar8 *file);

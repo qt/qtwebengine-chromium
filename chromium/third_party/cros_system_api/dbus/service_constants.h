@@ -22,6 +22,7 @@
 #include "lorgnette/dbus-constants.h"
 #include "permission_broker/dbus-constants.h"
 #include "power_manager/dbus-constants.h"
+#include "seneschal/dbus-constants.h"
 #include "shill/dbus-constants.h"
 #include "smbprovider/dbus-constants.h"
 #include "update_engine/dbus-constants.h"
@@ -78,6 +79,15 @@ const char kUnmountComponent[] = "UnmountComponent";
 const char kBadResult[] = "";
 const char kTerminaComponentName[] = "cros-termina";
 }  // namespace imageloader
+
+namespace dlcservice {
+const char kDlcServiceInterface[] = "org.chromium.DlcServiceInterface";
+const char kDlcServiceName[] = "org.chromium.DlcService";
+const char kDlcServicePath[] = "/org/chromium/DlcService";
+// Methods
+const char kInstallMethod[] = "Install";
+const char kUninstallMethod[] = "Uninstall";
+}  // namespace dlcservice
 
 namespace speech_synthesis {
 const char kSpeechSynthesizerInterface[] =

@@ -25,7 +25,7 @@ const base::Feature kEnableEmojiContextMenu {
 
 // Enables the floating virtual keyboard behavior.
 const base::Feature kEnableFloatingVirtualKeyboard = {
-    "enable-floating-virtual-keyboard", base::FEATURE_ENABLED_BY_DEFAULT};
+    "enable-floating-virtual-keyboard", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables the full screen handwriting virtual keyboard behavior.
 const base::Feature kEnableFullscreenHandwritingVirtualKeyboard = {
@@ -37,7 +37,7 @@ const base::Feature kEnableStylusVirtualKeyboard = {
 
 // If enabled, uses the Material Design UI for virtual keyboard.
 const base::Feature kEnableVirtualKeyboardMdUi = {
-    "EnableVirtualKeyboardMdUi", base::FEATURE_ENABLED_BY_DEFAULT};
+    "EnableVirtualKeyboardMdUi", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kEnableVirtualKeyboardUkm = {
     "EnableVirtualKeyboardUkm", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -97,7 +97,7 @@ const base::Feature kUiCompositorScrollWithLayers = {
 #if defined(OS_WIN)
 // Enables InputPane API for controlling on screen keyboard.
 const base::Feature kInputPaneOnScreenKeyboard = {
-    "InputPaneOnScreenKeyboard", base::FEATURE_ENABLED_BY_DEFAULT};
+    "InputPaneOnScreenKeyboard", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables using WM_POINTER instead of WM_TOUCH for touch events.
 const base::Feature kPointerEventsForTouch = {"PointerEventsForTouch",

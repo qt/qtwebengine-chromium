@@ -22,9 +22,6 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifdef _GNU_SOURCE
-#undef _GNU_SOURCE /* To use the POSIX version of strerror_r */
-#endif
 #include <string.h>
 #include "fcint.h"
 #include <fcntl.h>
@@ -649,7 +646,6 @@ FcTypecheckValue (FcConfigParse *parse, FcType value, FcType type)
     {
 	if ((value == FcTypeLangSet && type == FcTypeString) ||
 	    (value == FcTypeString && type == FcTypeLangSet) ||
-	    (value == FcTypeInteger && type == FcTypeRange) ||
 	    (value == FcTypeDouble && type == FcTypeRange))
 	    return;
 	if (type ==  FcTypeUnknown)
@@ -1838,6 +1834,8 @@ FcParseAlias (FcConfigParse *parse)
 	!def)
     {
 	FcExprDestroy (family);
+	if (rule)
+	    FcRuleDestroy (rule);
 	return;
     }
     else
@@ -2190,6 +2188,7 @@ FcParseCacheDir (FcConfigParse *parse)
     if (!data)
     {
 	FcConfigMessage (parse, FcSevereError, "out of memory");
+	data = prefix;
 	goto bail;
     }
     if (prefix)
@@ -2201,7 +2200,7 @@ FcParseCacheDir (FcConfigParse *parse)
 	if (!p)
 	{
 	    FcConfigMessage (parse, FcSevereError, "out of memory");
-	    data = prefix;
+	    FcStrFree (prefix);
 	    goto bail;
 	}
 	prefix = p;
@@ -2233,6 +2232,7 @@ FcParseCacheDir (FcConfigParse *parse)
     else if (strcmp ((const char *) data, "WINDOWSTEMPDIR_FONTCONFIG_CACHE") == 0)
     {
 	int rc;
+
 	FcStrFree (data);
 	data = malloc (1000);
 	if (!data)
@@ -3471,8 +3471,7 @@ _FcConfigParse (FcConfig	*config,
 	    char ebuf[BUFSIZ+1];
 
 #if HAVE_STRERROR_R
-	    int x FC_UNUSED;
-	    x = strerror_r (errno_, ebuf, BUFSIZ); /* make sure we use the POSIX version of strerror_r */
+	    strerror_r (errno_, ebuf, BUFSIZ);
 #elif HAVE_STRERROR
 	    char *tmp = strerror (errno_);
 	    size_t len = strlen (tmp);
