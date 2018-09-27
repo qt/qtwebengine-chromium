@@ -987,7 +987,7 @@
 <translation id="2493021387995458222">Velg «ord om gangen»</translation>
 <translation id="249303669840926644">Kunne ikke fullføre registreringen</translation>
 <translation id="2495777824269688114">Oppdag flere funksjoner eller få svar. Velg «?» for å få hjelp.</translation>
-<translation id="2496180316473517155">Nettlesingslogg</translation>
+<translation id="2496180316473517155">Nettleserlogg</translation>
 <translation id="2497229222757901769">Musehastighet</translation>
 <translation id="2497852260688568942">Administratoren din har slått av synkronisering</translation>
 <translation id="249819058197909513">Ikke advar om denne appen igjen</translation>
@@ -1765,6 +1765,7 @@
 <translation id="3664511988987167893">Utvidelsesikon</translation>
 <translation id="3665589677786828986">Chrome har oppdaget at noen av innstillingene ble ødelagt av et annet program og tilbakestille dem til originalinnstillingene.</translation>
 <translation id="3668570675727296296">Språkinnstillinger</translation>
+<translation id="3668801437375206837">For å diagnostisere Bluetooth-problemer kan Googlere inkludere flere Bluetooth-logger i tilbakemeldingsrapportene sine. Når dette alternativet er avmerket, inkluderer rapporten din btsnoop- and HCI-logger fra den gjeldende økten din. Disse er anonymisert for å fjerne så mye personlig identifiserende informasjon (PII) som mulig. Tilgang til disse loggene blir begrenset til administratorer av Chrome OS-produktgruppen i Listnr. Logger slettes permanent etter 90 dager.</translation>
 <translation id="3668823961463113931">Behandlere</translation>
 <translation id="3670229581627177274">Slå på Bluetooth</translation>
 <translation id="3672681487849735243">En fabrikkfeil har blitt oppdaget</translation>
@@ -2453,6 +2454,7 @@
 <translation id="4790972063719531840">Send diagnostikk og bruksdata til Google automatisk</translation>
 <translation id="4792711294155034829">&amp;Rapporter et problem</translation>
 <translation id="479536056609751218">Nettside, bare HTML</translation>
+<translation id="4798236378408895261">Legg ved <ph name="BEGIN_LINK" />Bluetooth-logger<ph name="END_LINK" /> (Google-internt)</translation>
 <translation id="479989351350248267">søk</translation>
 <translation id="4801448226354548035">Skjul kontoer</translation>
 <translation id="4801512016965057443">Tillat mobildatabruk på andre nettverk</translation>
@@ -4601,7 +4603,7 @@ Oppbevar nøkkelfilen på et trygt sted. Du får bruk for den når du skal oppre
       Det kan hende innhold du har kjøpt (for eksempel filmer, TV-serier, musikk, bøker eller andre kjøp i apper) også slettes.
       <ph name="LINE_BREAKS2" />
       Dette har ikke innvirkning på apper eller innhold på andre enheter.</translation>
-<translation id="8026334261755873520">Slett nettlesingsdata</translation>
+<translation id="8026334261755873520">Slett nettleserdata</translation>
 <translation id="8028060951694135607">Microsoft nøkkelgjenoppretting</translation>
 <translation id="8028134359912645720">Hold nede Control, Alt og Shift eller Appoversikt for å se hurtigtaster for disse modifikatorene.</translation>
 <translation id="8028803902702117856">Laster ned <ph name="SIZE" />, <ph name="FILE_NAME" /></translation>

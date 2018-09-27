@@ -14,6 +14,7 @@
 <translation id="1502360822835740515">Postavljanje Chromiuma kao zadanog preglednika</translation>
 <translation id="151962892725702025">OS Chromium nije mogao sinkronizirati vaše podatke jer sinkronizacija nije dostupna za vašu domenu.</translation>
 <translation id="1585657529869845941">Kliknite <ph name="BEGIN_BOLD" />Svejedno promijeni<ph name="END_BOLD" />, ako ste ta opcija pojavi</translation>
+<translation id="1662639173275167396">OS Chrome omogućen je dodatnim <ph name="BEGIN_LINK_CROS_OSS" />softverom otvorenog izvornog koda<ph name="END_LINK_CROS_OSS" />, isto kao i <ph name="BEGIN_LINK_LINUX_OSS" />Linux (Beta)<ph name="END_LINK_LINUX_OSS" />.</translation>
 <translation id="1668054258064581266">Nakon uklanjanja računa s Chromiuma možda ćete morati ponovo učitati otvorene kartice kako bi nastupile promjene.</translation>
 <translation id="1688750314291223739">Postavite sinkronizaciju da biste spremili svoje prilagođene značajke preglednika na web i pristupali im s preglednika Chromium na bilo kojem računalu.</translation>
 <translation id="1708666629004767631">Dostupna je nova, sigurnija verzija preglednika Chromium.</translation>
@@ -122,7 +123,6 @@
 <translation id="5479196819031988440">OS Chromium ne može otvoriti ovu stranicu.</translation>
 <translation id="5480860683791598150">Chromium treba dopuštenje za pristup vašoj lokaciji da bi je podijelio s ovom web-lokacijom</translation>
 <translation id="549669000822060376">Pričekajte da Chromium instalira najnovija ažuriranja sustava.</translation>
-<translation id="5514308096618405748">OS Chrome omogućen je dodatnim <ph name="BEGIN_LINK_CROS_OSS" />softverom otvorenog izvornog koda<ph name="END_LINK_CROS_OSS" />, isto kao i Linux (Beta).</translation>
 <translation id="5631814766731275228">Ime i slika Chromium profila</translation>
 <translation id="5634636535844844681">Chromium zahtijeva Windows 7 ili noviju verziju.</translation>
 <translation id="5680901439334282664">prijavite se na Chromium</translation>

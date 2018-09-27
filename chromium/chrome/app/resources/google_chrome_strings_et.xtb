@@ -25,6 +25,7 @@
 <translation id="1587325591171447154"><ph name="FILE_NAME" /> on ohtlik, mistõttu Chrome blokeeris selle.</translation>
 <translation id="1619887657840448962">Chrome'i turvalisemaks muutmiseks keelasime järgmise laienduse, mida ei leidu veebipoes <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> ja mis võidi lisada teie teadmata.</translation>
 <translation id="1628000112320670027">Chrome'i puhul abi hankimine</translation>
+<translation id="1662639173275167396">Chrome OS töötab täiendava <ph name="BEGIN_LINK_CROS_OSS" />avatud lähtekoodiga tarkvara<ph name="END_LINK_CROS_OSS" /> toel, nagu ka näiteks <ph name="BEGIN_LINK_LINUX_OSS" />Linux (beetaversioon)<ph name="END_LINK_LINUX_OSS" />.</translation>
 <translation id="1674870198290878346">Ava link Chrome'i inko&amp;gnito aknas</translation>
 <translation id="1682634494516646069">Google Chrome ei saa andmekataloogi lugeda ega sellesse kirjutada:
 
@@ -168,7 +169,6 @@ Mõned funktsioonid ei pruugi saadaval olla. Määrake muu profiilikataloog või
 <translation id="532046782124376502">Hoiatus: Google Chrome ei saa laiendustel teie sirvimisajaloo salvestamist takistada. Selle laienduse keelamiseks inkognito režiimis tühistage see valik.</translation>
 <translation id="5386244825306882791">Lisaks juhib Chrome'i käivitamisel kuvatavat lehte või omnikastikese otsingut.</translation>
 <translation id="5430073640787465221">Teie eelistuste fail on rikutud või kehtetu. Google Chrome ei saa teie seadeid taastada.</translation>
-<translation id="5514308096618405748">Chrome OS-i ja ka Linuxi (beetaversioon) aluseks on <ph name="BEGIN_LINK_CROS_OSS" />avatud lähtekoodiga lisatarkvara<ph name="END_LINK_CROS_OSS" />.</translation>
 <translation id="556024056938947818">Google Chrome püüab näidata paroole.</translation>
 <translation id="5566025111015594046">Google Chrome (mDNS-In)</translation>
 <translation id="565744775970812598"><ph name="FILE_NAME" /> võib olla ohtlik, mistõttu Chrome blokeeris selle.</translation>

@@ -55,6 +55,11 @@ static base::LazyInstance<BrowserContextKeyedAPIFactory<FeedbackPrivateAPI>>::
 
 namespace {
 
+constexpr base::FilePath::CharType kBluetoothLogsFilePath[] =
+    FILE_PATH_LITERAL("/var/log/bluetooth/log.gz");
+
+constexpr char kBluetoothLogsAttachmentName[] = "bluetooth_logs.gz";
+
 // Getting the filename of a blob prepends a "C:\fakepath" to the filename.
 // This is undesirable, strip it if it exists.
 std::string StripFakepath(const std::string& path) {
@@ -313,10 +318,12 @@ ExtensionFunction::ResponseAction FeedbackPrivateSendFeedbackFunction::Run() {
   delegate->FetchAndMergeIwlwifiDumpLogsIfPresent(
       std::move(sys_logs), browser_context(),
       base::Bind(&FeedbackPrivateSendFeedbackFunction::OnAllLogsFetched, this,
-                 feedback_data, feedback_info.send_histograms));
+                 feedback_data, feedback_info.send_histograms,
+                 feedback_info.send_bluetooth_logs &&
+                     *feedback_info.send_bluetooth_logs));
 #else
   OnAllLogsFetched(feedback_data, feedback_info.send_histograms,
-                   std::move(sys_logs));
+                   false /* send_bluetooth_logs */, std::move(sys_logs));
 #endif  // defined(OS_CHROMEOS)
 
   return RespondLater();
@@ -325,6 +332,7 @@ ExtensionFunction::ResponseAction FeedbackPrivateSendFeedbackFunction::Run() {
 void FeedbackPrivateSendFeedbackFunction::OnAllLogsFetched(
     scoped_refptr<FeedbackData> feedback_data,
     bool send_histograms,
+    bool send_bluetooth_logs,
     std::unique_ptr<system_logs::SystemLogsResponse> sys_logs) {
   feedback_data->SetAndCompressSystemInfo(std::move(sys_logs));
 
@@ -339,6 +347,16 @@ void FeedbackPrivateSendFeedbackFunction::OnAllLogsFetched(
         base::StatisticsRecorder::ToJSON(base::JSON_VERBOSITY_LEVEL_FULL);
     if (!histograms->empty())
       feedback_data->SetAndCompressHistograms(std::move(histograms));
+  }
+
+  if (send_bluetooth_logs) {
+    std::unique_ptr<std::string> bluetooth_logs =
+        std::make_unique<std::string>();
+    if (base::ReadFileToString(base::FilePath(kBluetoothLogsFilePath),
+                               bluetooth_logs.get())) {
+      feedback_data->AddFile(kBluetoothLogsAttachmentName,
+                             std::move(bluetooth_logs));
+    }
   }
 
   service->SendFeedback(

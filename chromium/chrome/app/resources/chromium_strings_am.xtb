@@ -16,6 +16,7 @@
 <translation id="1502360822835740515">Chromiumን የእርስዎ ነባሪ አሳሽ ያድርጉ</translation>
 <translation id="151962892725702025">ማመሳሰል ለጎራዎ ስለማይገኝ Chromium OS ውሂብዎን ማመሳሰል አይችልም።</translation>
 <translation id="1585657529869845941"><ph name="BEGIN_BOLD" />ለማንኛውም ቀይር<ph name="END_BOLD" /> ከመጣ ጠቅ ያድርጉት</translation>
+<translation id="1662639173275167396">Chrome OS እና እንዲሁም <ph name="BEGIN_LINK_LINUX_OSS" />Linux (ቅድመ-ይሁንታ)<ph name="END_LINK_LINUX_OSS" /> ሊሠሩ የቻሉት በተጨማሪ <ph name="BEGIN_LINK_CROS_OSS" />የክፍት ምንጭ ሶፍትዌር<ph name="END_LINK_CROS_OSS" /> ነው።</translation>
 <translation id="1668054258064581266">መለያዎን ከChromium ካስወገዱ በኋላ፣ ክፍት ትሮችዎ እንዲሰሩ መልሰው መጫን ሊኖርብዎ ይችላል።</translation>
 <translation id="1688750314291223739">ግላዊነት የተላበሰው የአሳሽ ባህሪዎችዎ ድር ላይ ለማስቀመጥና ከዚያ Chromium ካለው ማንኛውም ኮምፒውተር ለመድረስ አመሳስልን ያዋቅሩ።</translation>
 <translation id="1708666629004767631">አዲስና ደህንነቱ ይበልጥ የተጠበቀ የChromium ስሪት አለ።</translation>
@@ -124,7 +125,6 @@
 <translation id="5479196819031988440">Chromium OS ይህን ገጽ መክፈት አይችልም።</translation>
 <translation id="5480860683791598150">Chromium አካባቢዎን ለዚህ ጣቢያ ለማጋራት የአካባቢዎ መዳረሻ ያስፈልገዋል</translation>
 <translation id="549669000822060376">Chromium የቅርብ ጊዜዎቹ የስርዓቱ ዝማኔዎችን እስኪጭን ድረስ እባክዎ ይጠብቁ።</translation>
-<translation id="5514308096618405748">Chrome OS በተጨማሪ <ph name="BEGIN_LINK_CROS_OSS" />ክፍት ምንጭ ሶፍትዌር<ph name="END_LINK_CROS_OSS" /> እንደ Linux (ቅድመ ይሁንታ) እንደሆነው ሊሆን የሚችል ሆኗል።</translation>
 <translation id="5631814766731275228">Chromium ስም እና ሥዕል</translation>
 <translation id="5634636535844844681">Chromium Windows 7 ወይም ከዚያ በላይ ያስፈልገዋል።</translation>
 <translation id="5680901439334282664">ወደ Chromium ይግቡ</translation>
