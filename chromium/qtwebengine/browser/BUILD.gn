@@ -30,10 +30,15 @@ service_manifest("qtwebengine_content_packaged_services_manifest_overlay") {
   ]
 }
 
+service_manifest("qtwebengine_content_browser_manifest_overlay") {
+  source = "//qtwebengine/browser/qtwebengine_content_browser_manifest_overlay.json"
+}
+
 group("qtwebengine_content_manifest_overlays") {
   deps = [
     ":qtwebengine_content_packaged_services_manifest_overlay",
     ":qtwebengine_content_renderer_manifest_overlay",
+    ":qtwebengine_content_browser_manifest_overlay"
   ]
 }
 
@@ -47,14 +52,21 @@ service_manifest("qtwebengine_content_renderer_manifest") {
   overlays = [ ":qtwebengine_content_renderer_manifest_overlay" ]
 }
 
+service_manifest("qtwebengine_content_browser_manifest") {
+   source_manifest = "//content/public/app:browser_manifest"
+   overlays = [ ":qtwebengine_content_browser_manifest_overlay" ]
+}
+
 group("service_manifests") {
   deps = [
     ":qtwebengine_content_renderer_manifest",
+    ":qtwebengine_content_browser_manifest"
   ]
 }
 
 qtwebengine_embedded_services = [
   ":qtwebengine_content_renderer_manifest",
+  ":qtwebengine_content_browser_manifest"
 ]
 
 catalog("catalog") {
