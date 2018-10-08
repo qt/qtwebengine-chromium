@@ -668,6 +668,9 @@ void Target::FillOutputFiles() {
       link_output_file_ = dependency_output_file_ =
           SubstitutionWriter::ApplyPatternToLinkerAsOutputFile(
               this, tool, tool->outputs().list()[0]);
+      if (create_pri_file()) {
+          dependency_output_file_ = OutputFile(label().name() + ".stamp");
+      }
       break;
     case SHARED_LIBRARY:
       CHECK(tool->outputs().list().size() >= 1);
