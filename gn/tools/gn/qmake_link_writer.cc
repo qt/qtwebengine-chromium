@@ -87,8 +87,8 @@ void PrintSourceFile(std::ostream& out, PathOutput& path_output, const SourceFil
 
 void QMakeLinkWriter::Run() {
 
-  CHECK(target_->output_type() == Target::SHARED_LIBRARY)
-         << "QMakeLinkWriter only supports SHARED_LIBRARY";
+  CHECK(target_->output_type() == Target::SHARED_LIBRARY || target_->output_type() == Target::STATIC_LIBRARY)
+         << "QMakeLinkWriter only supports libraries";
 
   std::vector<SourceFile> object_files;
   std::vector<SourceFile> other_files;
