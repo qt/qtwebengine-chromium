@@ -53,6 +53,7 @@
 @interface BlinkScrollbarObserver : NSObject {
   blink::Scrollbar* _scrollbar;
   RetainPtr<ScrollbarPainter> _scrollbarPainter;
+  BOOL _suppressSetScrollbarsHidden;
 }
 - (id)initWithScrollbar:(blink::Scrollbar*)scrollbar
                 painter:(const RetainPtr<ScrollbarPainter>&)painter;
@@ -77,6 +78,10 @@
   return _scrollbarPainter.Get();
 }
 
+- (void)setSuppressSetScrollbarsHidden:(BOOL)value {
+  _suppressSetScrollbarsHidden = value;
+}
+
 - (void)dealloc {
   [_scrollbarPainter.Get() removeObserver:self forKeyPath:@"knobAlpha"];
   [super dealloc];
@@ -87,8 +92,10 @@
                         change:(NSDictionary*)change
                        context:(void*)context {
   if ([keyPath isEqualToString:@"knobAlpha"]) {
-    BOOL visible = [_scrollbarPainter.Get() knobAlpha] > 0;
-    _scrollbar->SetScrollbarsHiddenIfOverlay(!visible);
+    if (!_suppressSetScrollbarsHidden) {
+      BOOL visible = [_scrollbarPainter.Get() knobAlpha] > 0;
+      _scrollbar->SetScrollbarsHiddenIfOverlay(!visible);
+    }
   }
 }
 
@@ -301,7 +308,10 @@ void ScrollbarThemeMac::PaintThumbInternal(GraphicsContext& context,
 
   {
     LocalCurrentGraphicsContext local_context(context, local_rect);
-    ScrollbarPainter scrollbar_painter = PainterForScrollbar(scrollbar);
+    RetainPtr<BlinkScrollbarObserver> observer =
+        GetScrollbarPainterMap().at(const_cast<Scrollbar*>(&scrollbar));
+    ScrollbarPainter scrollbar_painter = [observer.Get() painter];
+
     [scrollbar_painter setEnabled:scrollbar.Enabled()];
     // drawKnob aligns the thumb to right side of the draw rect.
     // If the vertical overlay scrollbar is on the left, use trackWidth instead
@@ -317,6 +327,7 @@ void ScrollbarThemeMac::PaintThumbInternal(GraphicsContext& context,
     [scrollbar_painter setDoubleValue:0];
     [scrollbar_painter setKnobProportion:1];
 
+    [observer.Get() setSuppressSetScrollbarsHidden:YES];
     CGFloat old_knob_alpha = [scrollbar_painter knobAlpha];
     [scrollbar_painter setKnobAlpha:1];
 
@@ -329,6 +340,7 @@ void ScrollbarThemeMac::PaintThumbInternal(GraphicsContext& context,
     [scrollbar_painter
         setBoundsSize:NSSizeFromCGSize(CGSize(scrollbar.FrameRect().Size()))];
     [scrollbar_painter setKnobAlpha:old_knob_alpha];
+    [observer.Get() setSuppressSetScrollbarsHidden:NO];
   }
 
   if (opacity != 1.0f)
