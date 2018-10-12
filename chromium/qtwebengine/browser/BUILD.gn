@@ -37,7 +37,8 @@ service_manifest("qtwebengine_content_packaged_services_manifest_overlay") {
   source = "//qtwebengine/browser/qtwebengine_content_packaged_services_manifest_overlay.json"
   packaged_services = [
     ":qtwebengine_manifest",
-    "//components/services/pdf_compositor:pdf_compositor_manifest"
+    "//components/services/pdf_compositor:pdf_compositor_manifest",
+    "//services/proxy_resolver:proxy_resolver_manifest",
   ]
 }
 
