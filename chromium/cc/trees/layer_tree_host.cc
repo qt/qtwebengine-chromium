@@ -1178,7 +1178,7 @@ void LayerTreeHost::SetViewportRectAndScale(
       device_scale_factor_changed) {
     SetPropertyTreesNeedRebuild();
     SetNeedsCommit();
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
     // TODO(jonross): This check is not valid on Aura or Mus yet, but should be.
     CHECK(!has_pushed_local_surface_id_from_parent_ ||
           new_local_surface_id_request_ ||
