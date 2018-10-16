@@ -1165,7 +1165,7 @@ void LayerTreeHost::SetViewportSizeAndScale(
   if (changed) {
     SetPropertyTreesNeedRebuild();
     SetNeedsCommit();
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
     // TODO(ccameron): This check is not valid on Aura or Mus yet, but should
     // be.
     CHECK(!has_pushed_local_surface_id_from_parent_ ||
