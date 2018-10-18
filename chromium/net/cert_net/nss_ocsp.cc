@@ -581,7 +581,7 @@ SECStatus OCSPCreateSession(const char* host, PRUint16 portnum,
   URLRequestContext* request_context = g_request_context;
   pthread_mutex_unlock(&g_request_context_lock);
   if (request_context == NULL) {
-    LOG(ERROR) << "No URLRequestContext for NSS HTTP handler. host: " << host;
+    LOG(INFO) << "No URLRequestContext for NSS HTTP handler. host: " << host;
     // The application failed to call SetURLRequestContextForNSSHttpIO or
     // has already called ShutdownNSSHttpIO, so we can't create and use
     // URLRequest.  PR_NOT_IMPLEMENTED_ERROR is not an accurate error
