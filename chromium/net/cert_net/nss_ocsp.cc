@@ -300,7 +300,7 @@ SECStatus OCSPCreateSession(const char* host, PRUint16 portnum,
   bool factory_configured = GetRequestSessionDelegateFactoryPtr() != nullptr;
   pthread_mutex_unlock(&g_request_session_delegate_factory_lock);
   if (!factory_configured) {
-    LOG(ERROR)
+    LOG(INFO)
         << "No OCSPRequestSessionDelegateFactory for NSS HTTP handler. host: "
         << host;
     // The application failed to call SetOCSPRequestSessionDelegateFactory or
