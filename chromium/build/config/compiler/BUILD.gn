@@ -340,11 +340,17 @@ config("compiler") {
 
   if (use_qt && is_clang) {
     cflags += [
+      "-Wno-unknown-attributes",
+      "-Wno-unknown-pragmas",
       "-Wno-unknown-warning-option"
+    ]
+    cflags_cc += [
+      "-Wno-parentheses-equality",
+      "-Wno-tautological-compare"
     ]
   }
 
-  if (is_clang && is_debug) {
+  if (is_clang && (is_debug || use_qt)) {
     # Allow comparing the address of references and 'this' against 0
     # in debug builds. Technically, these can never be null in
     # well-defined C/C++ and Clang can optimize such checks away in
@@ -1484,6 +1490,7 @@ config("default_warnings") {
 
       "/wd4715",  # 'function' : not all control paths return a value'
                   # MSVC does not analyze switch (enum) for completeness.
+      "/wd4003",  # not enough arguments for function macro
     ]
 
     cflags_cc += [
@@ -1550,6 +1557,16 @@ config("default_warnings") {
       # -Wpacked-not-aligned complains all generated mojom-shared-internal.h
       # files.
       cflags += [ "-Wno-packed-not-aligned" ]
+
+      # Disable a number of GCC warnings caused by a mix
+      # of Chromium and GCC bugs.
+      cflags += [ "-Wno-dangling-else" ]
+      cflags_cc += [ "-Wno-attributes" ]
+      cflags_cc += [ "-Wno-class-memaccess" ]
+      cflags_cc += [ "-Wno-subobject-linkage" ]
+      cflags_cc += [ "-Wno-invalid-offsetof" ]
+      cflags_cc += [ "-Wno-return-type" ]
+      cflags_cc += [ "-Wno-deprecated-copy" ]
     }
   }
 
