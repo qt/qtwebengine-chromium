@@ -43,7 +43,7 @@ struct FeatureParamTraits<std::string> {
   static CacheStorageType ToCacheStorageType(const std::string& value) {
     return CacheStorageType(value);
   }
-  static constexpr std::string FromCacheStorageType(
+  static std::string FromCacheStorageType(
       const CacheStorageType& storage) {
     return *storage;
   }

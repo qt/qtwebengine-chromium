@@ -2047,8 +2047,9 @@ Reduction JSTypedLowering::ReduceJSCall(Node* node) {
     function = target_type.AsHeapConstant()->Ref().AsJSFunction();
     shared = function->shared(broker());
   } else if (target->opcode() == IrOpcode::kJSCreateClosure) {
+    auto aux = JSCreateClosureNode{target};
     CreateClosureParameters const& ccp =
-        JSCreateClosureNode{target}.Parameters();
+        aux.Parameters();
     shared = ccp.shared_info();
   } else if (target->opcode() == IrOpcode::kCheckClosure) {
     FeedbackCellRef cell = MakeRef(broker(), FeedbackCellOf(target->op()));

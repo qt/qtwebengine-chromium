@@ -967,7 +967,8 @@ Element& Element::CloneWithoutAttributesAndChildren(Document& factory) const {
 
 Attr* Element::DetachAttribute(wtf_size_t index) {
   DCHECK(HasElementData());
-  const Attribute& attribute = GetElementData()->Attributes().at(index);
+  const auto attibutes = GetElementData()->Attributes();
+  const Attribute& attribute = attibutes.at(index);
   Attr* attr_node = AttrIfExists(attribute.GetName());
   if (attr_node) {
     DetachAttrNodeAtIndex(attr_node, index);
@@ -983,7 +984,8 @@ void Element::DetachAttrNodeAtIndex(Attr* attr, wtf_size_t index) {
   DCHECK(attr);
   DCHECK(HasElementData());
 
-  const Attribute& attribute = GetElementData()->Attributes().at(index);
+  const auto attibutes = GetElementData()->Attributes();
+  const Attribute& attribute = attibutes.at(index);
   DCHECK(attribute.GetName() == attr->GetQualifiedName());
   DetachAttrNodeFromElementWithValue(attr, attribute.Value());
   RemoveAttributeInternal(index, AttributeModificationReason::kDirectly);
@@ -12057,8 +12059,9 @@ ALWAYS_INLINE void Element::SetAttributeInternal(
     return;
   }
 
+  const auto attributes = GetElementData()->Attributes();
   const Attribute& existing_attribute =
-      GetElementData()->Attributes().at(index);
+      attributes.at(index);
   QualifiedName existing_attribute_name = existing_attribute.GetName();
 
   if (new_value == existing_attribute.Value()) {
