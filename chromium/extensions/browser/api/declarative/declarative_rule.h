@@ -456,7 +456,7 @@ DeclarativeRule<ConditionT, ActionT>::Create(
   std::unique_ptr<ConditionSet> conditions = ConditionSet::Create(
       extension, url_matcher_condition_factory, rule.conditions, error);
   if (!error->empty())
-    return std::move(error_result);
+    return error_result;
   CHECK(conditions.get());
 
   bool bad_message = false;
@@ -467,17 +467,17 @@ DeclarativeRule<ConditionT, ActionT>::Create(
     // should be killed in case it is true.
     *error = "An action of a rule set had an invalid "
         "structure that should have been caught by the JSON validator.";
-    return std::move(error_result);
+    return error_result;
   }
   if (!error->empty() || bad_message)
-    return std::move(error_result);
+    return error_result;
   CHECK(actions.get());
 
   if (!check_consistency.is_null() &&
       !std::move(check_consistency)
            .Run(conditions.get(), actions.get(), error)) {
     DCHECK(!error->empty());
-    return std::move(error_result);
+    return error_result;
   }
 
   CHECK(rule.priority.get());
