@@ -174,12 +174,22 @@ void ConversionContext::SwitchToClip(const ClipPaintPropertyNode* target_clip) {
   const ClipPaintPropertyNode* lca_clip =
       &LowestCommonAncestor(*target_clip, *current_clip_);
   while (current_clip_ != lca_clip) {
-    DCHECK(state_stack_.size() &&
-           state_stack_.back().type == StateEntry::PairedType::kClip)
-        << "Error: Chunk has a clip that escaped its effect's clip.";
-    if (!state_stack_.size() ||
-        state_stack_.back().type != StateEntry::PairedType::kClip)
+    if (!state_stack_.size() || state_stack_.back().type != StateEntry::PairedType::kClip) {
+#if DCHECK_IS_ON()
+      DLOG(ERROR) << "Error: Chunk has a clip that escaped its layer's or "
+                     "effect's clip."
+                  << "\ntarget_clip:\n"
+                  << target_clip->ToTreeString().Utf8().data()
+                  << "current_clip_:\n"
+                  << current_clip_->ToTreeString().Utf8().data();
+#endif
+      // This bug is known to happen in SPv1 due to some clip-escaping corner
+      // cases that are very difficult to fix in legacy architecture.
+      // In SPv2 this should never happen.
+      if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+        NOTREACHED();
       break;
+    }
     StateEntry& previous_state = state_stack_.back();
     current_transform_ = previous_state.transform;
     current_clip_ = previous_state.clip;
