@@ -95,7 +95,7 @@ SystemPageSize() {
   // separated out for 64-bit OS_APPLE to avoid << on a non-constexpr.
   return PageAllocationGranularity();
 #else
-  return 1 << SystemPageShift();
+  return size_t(1) << SystemPageShift();
 #endif
 }
 

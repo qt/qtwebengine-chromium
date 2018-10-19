@@ -6,7 +6,7 @@
 // any C++ headers must go in the __cplusplus block below.
 
 #if defined(THIRD_PARTY_BLINK_RENDERER_BUILD_LINUX_PREFIX_H_)
-#error You shouldn't include the precompiled header file more than once.
+#error "You shouldn't include the precompiled header file more than once."
 #endif
 
 #define THIRD_PARTY_BLINK_RENDERER_BUILD_LINUX_PREFIX_H_
