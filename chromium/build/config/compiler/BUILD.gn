@@ -368,13 +368,41 @@ config("compiler") {
     }
   }
 
-  if (use_qt && is_clang) {
-    cflags += [
-      "-Wno-unknown-warning-option"
-    ]
+  # Compiler warning setup for Qt build.
+  if (use_qt) {
+    if (is_clang) {
+      cflags += [
+        "-Wno-unknown-argument",
+        "-Wno-unknown-attributes",
+        "-Wno-unknown-warning-option",
+      ]
+      cflags_cc += [
+        "-Wno-parentheses-equality",
+        "-Wno-tautological-compare",
+        "-Wno-thread-safety-attributes",
+      ]
+    }
+
+    # NOT MSVC
+    if (!is_win || is_clang) {
+      cflags += [ "-Wno-unknown-pragmas" ]
+    }
+
+    # GCC
+    if (!is_win && !is_clang) {
+      cflags += [
+        "-Wno-parentheses",
+        "-Wno-sign-compare", # fido
+        "-Wno-stringop-overflow", # skia, libaom, protobuf, icu
+        "-Wno-stringop-overread", # libaom
+        "-Wno-psabi", # skia
+        "-Wno-multichar", # crashpad
+        "-Wno-format-zero-length", # user_agent.cc
+      ]
+    }
   }
 
-  if (is_clang && is_debug) {
+  if (is_clang && (is_debug || use_qt)) {
     # Allow comparing the address of references and 'this' against 0
     # in debug builds. Technically, these can never be null in
     # well-defined C/C++ and Clang can optimize such checks away in
@@ -1522,6 +1550,10 @@ config("default_warnings") {
 
       "/wd4715",  # 'function' : not all control paths return a value'
                   # MSVC does not analyze switch (enum) for completeness.
+      "/wd4003",  # not enough arguments for function macro
+
+      "/wd4068",  # unknown pragma
+      "/wd5051",  # attribute requires newer c++
     ]
 
     cflags_cc += [
@@ -1588,6 +1620,16 @@ config("default_warnings") {
       # -Wpacked-not-aligned complains all generated mojom-shared-internal.h
       # files.
       cflags += [ "-Wno-packed-not-aligned" ]
+
+      # Disable a number of GCC warnings caused by a mix
+      # of Chromium and GCC bugs.
+      cflags += [ "-Wno-dangling-else" ]
+      cflags_cc += [ "-Wno-attributes" ]
+      cflags_cc += [ "-Wno-class-memaccess" ]
+      cflags_cc += [ "-Wno-subobject-linkage" ]
+      cflags_cc += [ "-Wno-invalid-offsetof" ]
+      cflags_cc += [ "-Wno-return-type" ]
+      cflags_cc += [ "-Wno-deprecated-copy" ]
     }
   }
 
@@ -1724,7 +1766,7 @@ config("chromium_code") {
 
     # TODO(thakis): Enable this more often, https://crbug.com/346399
     # use_libfuzzer: https://crbug.com/1063180
-    if (!is_nacl && !use_libfuzzer) {
+    if (!is_nacl && !use_libfuzzer && false) {
       cflags += [ "-Wunreachable-code" ]
     }
 

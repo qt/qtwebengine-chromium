@@ -58,6 +58,7 @@ config("inside_blink") {
       "-Wno-sign-conversion",
       "-Wno-implicit-float-conversion",
       "-Wno-implicit-int-conversion",
+      "-Wno-unused-variable",
     ]
 
     if (!is_chromeos_ash ||
