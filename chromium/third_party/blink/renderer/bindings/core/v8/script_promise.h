@@ -135,7 +135,7 @@ class CORE_EXPORT ThenCallable : public ScriptFunction {
       }
     } else {
       // Resolve type is not undefined - convert it to the expected type.
-      auto&& blink_value = NativeValueTraits<IDLType>::NativeValue(
+      auto blink_value = NativeValueTraits<IDLType>::NativeValue(
           isolate, value.V8Value(), PassThroughException(isolate));
 
       if (try_catch.HasCaught()) [[unlikely]] {

@@ -18,7 +18,7 @@ struct StructTraits<content::mojom::MemoryConsumerTraitsDataView,
                     base::MemoryConsumerTraits> {
   template <class EnumType>
   static bool ConvertToEnum(uint8_t input, EnumType* out) {
-    if (input < 0 || input > std::to_underlying(EnumType::kMaxValue)) {
+    if (input > std::to_underlying(EnumType::kMaxValue)) {
       return false;
     }
 

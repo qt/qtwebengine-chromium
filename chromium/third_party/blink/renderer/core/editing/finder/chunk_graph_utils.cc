@@ -64,7 +64,7 @@ String CreateLevel(
     const Vector<std::pair<wtf_size_t, wtf_size_t>>& depth_context) {
   StringBuilder builder;
   String delimiter;
-  for (const auto [max, current] : depth_context) {
+  for (const auto& [max, current] : depth_context) {
     builder.Append(delimiter);
     delimiter = String(base::span_from_ref(kLevelDelimiter));
     builder.AppendNumber(max - current + 1);

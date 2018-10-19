@@ -192,7 +192,7 @@ bool Hyphenator::alphabetLookup(base::span<uint16_t> alpha_codes,
     alpha_codes[0] = 0;
     for (wtf_size_t i = 0; i < len; i++) {
       uint16_t c = word[i];
-      auto it = std::ranges::lower_bound(alphabet_data, c << 11);
+      auto it = std::ranges::lower_bound(alphabet_data, uint32_t(c) << 11);
       if (it == alphabet_data.end()) {
         return false;
       }

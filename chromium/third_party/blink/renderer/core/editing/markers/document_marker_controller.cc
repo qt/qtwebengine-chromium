@@ -643,7 +643,8 @@ DocumentMarker* DocumentMarkerController::FirstMarkerAroundPosition(
   const Node* const end_node = end.ComputeContainerNode();
   const wtf_size_t end_offset = end.ComputeOffsetInContainerNode();
 
-  for (const Node& node : EphemeralRangeInFlatTree(start, end).Nodes()) {
+  auto range = EphemeralRangeInFlatTree(start, end);
+  for (const Node& node : range.Nodes()) {
     auto* text_node = DynamicTo<Text>(node);
     if (!text_node) {
       continue;

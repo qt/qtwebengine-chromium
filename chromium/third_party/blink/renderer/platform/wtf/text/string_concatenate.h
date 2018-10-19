@@ -45,7 +45,7 @@ class StringTypeAdapter<char> {
   DISALLOW_NEW();
 
  public:
-  explicit StringTypeAdapter<char>(char buffer) : buffer_(buffer) {}
+  explicit StringTypeAdapter(char buffer) : buffer_(buffer) {}
 
   size_t length() const { return 1; }
   bool Is8Bit() const { return true; }
@@ -64,7 +64,7 @@ class StringTypeAdapter<char> {
 template <>
 class StringTypeAdapter<LChar> : public StringTypeAdapter<char> {
  public:
-  explicit StringTypeAdapter<LChar>(LChar buffer)
+  explicit StringTypeAdapter(LChar buffer)
       : StringTypeAdapter<char>(buffer) {}
 };
 
@@ -73,7 +73,7 @@ class StringTypeAdapter<UChar> {
   DISALLOW_NEW();
 
  public:
-  explicit StringTypeAdapter<UChar>(UChar buffer) : buffer_(buffer) {}
+  explicit StringTypeAdapter(UChar buffer) : buffer_(buffer) {}
 
   size_t length() const { return 1; }
   bool Is8Bit() const { return buffer_ <= 0xff; }
@@ -96,7 +96,7 @@ class WTF_EXPORT StringTypeAdapter<const char*> {
   DISALLOW_NEW();
 
  public:
-  explicit StringTypeAdapter<const char*>(const char* buffer)
+  explicit StringTypeAdapter(const char* buffer)
       : buffer_(base::as_byte_span(std::string_view(buffer))) {}
 
   size_t length() const { return buffer_.size(); }
@@ -113,7 +113,7 @@ template <>
 class WTF_EXPORT StringTypeAdapter<const LChar*>
     : StringTypeAdapter<const char*> {
  public:
-  explicit StringTypeAdapter<const LChar*>(const LChar* buffer)
+  explicit StringTypeAdapter(const LChar* buffer)
       : StringTypeAdapter<const char*>(reinterpret_cast<const char*>(buffer)) {}
 };
 
@@ -121,7 +121,7 @@ template <>
 class WTF_EXPORT StringTypeAdapter<char*>
     : public StringTypeAdapter<const char*> {
  public:
-  explicit StringTypeAdapter<char*>(char* buffer)
+  explicit StringTypeAdapter(char* buffer)
       : StringTypeAdapter<const char*>(buffer) {}
 };
 
@@ -129,7 +129,7 @@ template <>
 class WTF_EXPORT StringTypeAdapter<LChar*>
     : public StringTypeAdapter<const LChar*> {
  public:
-  explicit StringTypeAdapter<LChar*>(LChar* buffer)
+  explicit StringTypeAdapter(LChar* buffer)
       : StringTypeAdapter<const LChar*>(buffer) {}
 };
 

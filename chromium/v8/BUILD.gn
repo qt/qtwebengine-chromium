@@ -1847,7 +1847,7 @@ config("toolchain") {
   }
 
   if (is_clang) {
-    cflags += [ "-Wunreachable-code" ]
+#    cflags += [ "-Wunreachable-code" ]
 
     # Lifetime safety warnings are still under active development upstream
     # and become stricter fairly frequently. Enable these warnings only when
