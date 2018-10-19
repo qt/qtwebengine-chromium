@@ -1427,6 +1427,14 @@ config("default_warnings") {
       # comments
       # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61638
       cflags += [ "-Wno-comments" ]
+
+      # Disable a number of GCC warnings caused by a mix
+      # of Chromium and GCC bugs.
+      cflags += [ "-Wno-dangling-else" ]
+      cflags += [ "-Wno-packed-not-aligned" ]
+      cflags_cc += [ "-Wno-attributes" ]
+      cflags_cc += [ "-Wno-class-memaccess" ]
+      cflags_cc += [ "-Wno-subobject-linkage" ]
     }
   }
 
