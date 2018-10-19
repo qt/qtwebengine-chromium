@@ -29,7 +29,7 @@ def make_constructors(cg_context):
     assert isinstance(cg_context, CodeGenContext)
 
     decls = ListNode([
-        CxxFuncDefNode(name=cg_context.class_name,
+        CxxFuncDefNode(name="AsyncIterator",
                        arg_decls=["IterationSourceBase* source"],
                        return_type="",
                        explicit=True,

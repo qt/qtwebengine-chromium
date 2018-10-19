@@ -6,7 +6,7 @@
 // no-std-usage-because-pch-file
 
 #ifdef THIRD_PARTY_BLINK_RENDERER_BUILD_WIN_PRECOMPILE_H_
-#error You shouldn't include the precompiled header file more than once.
+#error "You shouldn't include the precompiled header file more than once."
 #endif
 
 #define THIRD_PARTY_BLINK_RENDERER_BUILD_WIN_PRECOMPILE_H_

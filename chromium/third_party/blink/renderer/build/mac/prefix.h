@@ -27,7 +27,7 @@
  */
 
 #ifdef THIRD_PARTY_BLINK_RENDERER_BUILD_MAC_PREFIX_H_
-#error You shouldn't include the precompiled header file more than once.
+#error "You shouldn't include the precompiled header file more than once."
 #endif
 
 #define THIRD_PARTY_BLINK_RENDERER_BUILD_MAC_PREFIX_H_
