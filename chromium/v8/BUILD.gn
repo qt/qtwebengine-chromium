@@ -1501,7 +1501,7 @@ config("toolchain") {
 
   if (is_clang) {
     cflags += [
-      "-Wunreachable-code",
+#      "-Wunreachable-code",
 
       # TODO(v8:12245): Fix shadowing instances and remove.
       "-Wno-shadow",

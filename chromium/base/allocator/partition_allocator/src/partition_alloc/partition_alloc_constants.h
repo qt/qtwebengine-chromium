@@ -124,7 +124,7 @@ PartitionPageShift() {
 #endif
 PA_ALWAYS_INLINE PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR size_t
 PartitionPageSize() {
-  return 1 << PartitionPageShift();
+  return size_t(1) << PartitionPageShift();
 }
 PA_ALWAYS_INLINE PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR size_t
 PartitionPageOffsetMask() {

@@ -127,7 +127,7 @@ PageAllocationGranularity() {
   }
   return size;
 #else
-  return 1 << PageAllocationGranularityShift();
+  return size_t(1) << PageAllocationGranularityShift();
 #endif
 }
 
@@ -162,7 +162,7 @@ SystemPageSize() {
   // on a non-constexpr.
   return PageAllocationGranularity();
 #else
-  return 1 << SystemPageShift();
+  return size_t(1) << SystemPageShift();
 #endif
 }
 

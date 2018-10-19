@@ -155,15 +155,15 @@ struct BLINK_COMMON_EXPORT WebPreferences {
 
   bool supports_multiple_windows = true;
   bool viewport_enabled = false;
-  bool viewport_meta_enabled = BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS);
+  bool viewport_meta_enabled = BUILDFLAG(IS_ANDROID) | BUILDFLAG(IS_IOS);
   bool auto_zoom_focused_editable_to_legible_scale =
-      BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS);
+      BUILDFLAG(IS_ANDROID) | BUILDFLAG(IS_IOS);
 
   // If true - Blink will clamp the minimum scale factor to the content width,
   // preventing zoom beyond the visible content. This is really only needed if
   // `viewport_enabled` is on.
   bool shrinks_viewport_contents_to_fit =
-      BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS);
+      BUILDFLAG(IS_ANDROID) | BUILDFLAG(IS_IOS);
 
   blink::mojom::ViewportStyle viewport_style =
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
@@ -172,11 +172,11 @@ struct BLINK_COMMON_EXPORT WebPreferences {
       mojom::ViewportStyle::kDefault;
 #endif
   bool always_show_context_menu_on_touch =
-      !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS));
+      !(BUILDFLAG(IS_ANDROID) | BUILDFLAG(IS_IOS));
   bool smooth_scroll_for_find_enabled =
-      BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS);
+      BUILDFLAG(IS_ANDROID) | BUILDFLAG(IS_IOS);
   bool main_frame_resizes_are_orientation_changes =
-      BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS);
+      BUILDFLAG(IS_ANDROID) | BUILDFLAG(IS_IOS);
   bool initialize_at_minimum_page_scale = true;
   bool smart_insert_delete_enabled = BUILDFLAG(IS_MAC);
   bool spatial_navigation_enabled = false;
@@ -236,7 +236,7 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   bool immersive_mode_enabled = false;
 
   bool double_tap_to_zoom_enabled =
-      BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_APPLE);
+      BUILDFLAG(IS_ANDROID) | BUILDFLAG(IS_APPLE);
 
   bool fullscreen_supported = true;
 

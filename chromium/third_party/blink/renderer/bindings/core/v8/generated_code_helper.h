@@ -128,7 +128,7 @@ typename IDLSequence<T>::ImplType VariadicArgumentsToNativeValues(
     if (UNLIKELY(exception_state.HadException()))
       return VectorType();
   }
-  return std::move(result);
+  return result;
 }
 
 CORE_EXPORT std::optional<size_t> FindIndexInEnumStringTable(

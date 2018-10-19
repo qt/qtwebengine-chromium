@@ -255,7 +255,7 @@ std::string GuessVideoGroupID(const blink::WebMediaDeviceInfoArray& audio_infos,
       usb_model_matches = base::BindRepeating(
           [](bool video_has_usb_model, const std::string& video_usb_model,
              const blink::WebMediaDeviceInfo& audio_info) {
-            return video_has_usb_model && LabelHasUSBModel(audio_info.label)
+            return (video_has_usb_model && LabelHasUSBModel(audio_info.label))
                        ? video_usb_model ==
                              GetUSBModelFromLabel(audio_info.label)
                        : false;
@@ -518,13 +518,13 @@ void MediaDevicesManager::EnumerateAndRankDevices(
     bool request_audio_input_capabilities,
     EnumerateDevicesCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(request_video_input_capabilities &&
+  DCHECK((request_video_input_capabilities &&
              requested_types[static_cast<size_t>(
-                 MediaDeviceType::kMediaVideoInput)] ||
+                 MediaDeviceType::kMediaVideoInput)])||
          !request_video_input_capabilities);
-  DCHECK(request_audio_input_capabilities &&
+  DCHECK((request_audio_input_capabilities &&
              requested_types[static_cast<size_t>(
-                 MediaDeviceType::kMediaAudioInput)] ||
+                 MediaDeviceType::kMediaAudioInput)]) ||
          !request_audio_input_capabilities);
   SendLogMessage(base::StringPrintf(
       "EnumerateDevices({render_process_id=%d}, {render_frame_id=%d}, "

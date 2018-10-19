@@ -72,7 +72,6 @@ class BASE_EXPORT Token {
   // Note: Two uint64_t are used instead of uint8_t[16] in order to have a
   // simpler implementation, paricularly for |ToString()|, |is_zero()|, and
   // constexpr value construction.
-
   uint64_t words_[2] = {0, 0};
 };
 
