@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #ifdef THIRD_PARTY_BLINK_RENDERER_CORE_PRECOMPILE_CORE_H_
-#error You shouldn't include the precompiled header file more than once.
+#error "You shouldn't include the precompiled header file more than once."
 #endif
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_PRECOMPILE_CORE_H_
