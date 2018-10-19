@@ -1347,7 +1347,7 @@ bool AXNodeObject::IsSelectedFromFocus() const {
   // A tab item can also be selected if it is associated to a focused tabpanel
   // via the aria-labelledby attribute.
   if (IsTabItem() && IsTabItemSelected())
-    return kSelectedStateTrue;
+    return true;
 
   // If not a single selection container, selection does not follow focus.
   AXObject* container = ContainerWidget();

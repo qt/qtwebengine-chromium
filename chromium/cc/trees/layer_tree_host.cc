@@ -1237,8 +1237,6 @@ void LayerTreeHost::SetViewportRectAndScale(
     const gfx::Rect& device_viewport_rect,
     float device_scale_factor,
     const viz::LocalSurfaceId& local_surface_id_from_parent) {
-  const viz::LocalSurfaceId previous_local_surface_id =
-      local_surface_id_from_parent_;
   SetLocalSurfaceIdFromParent(local_surface_id_from_parent);
 
   TRACE_EVENT_NESTABLE_ASYNC_END0("cc", "LayerTreeHostSize",
