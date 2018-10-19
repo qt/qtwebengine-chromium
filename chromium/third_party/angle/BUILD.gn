@@ -303,7 +303,7 @@ config("extra_warnings") {
     cflags += [
       "-Wbad-function-cast",
       "-Wconditional-uninitialized",
-      "-Wextra-semi-stmt",
+#      "-Wextra-semi-stmt",
       "-Wfloat-conversion",
       "-Winconsistent-missing-destructor-override",
       "-Wmissing-field-initializers",
@@ -325,7 +325,7 @@ config("extra_warnings") {
       "-Wparentheses",
       "-Wrange-loop-analysis",
       "-Wstrict-prototypes",
-      "-Wunreachable-code-aggressive",
+#      "-Wunreachable-code-aggressive",
       "-Wshorten-64-to-32",
     ]
   }

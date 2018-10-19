@@ -723,7 +723,7 @@ constexpr BitSetArray<N>::BitSetArray(uint64_t value)
             value_type elemValue =
                 value & priv::BaseBitSetType::Mask(priv::kDefaultBitSetSize).bits();
             mBaseBitSetArray[i] = priv::BaseBitSetType(elemValue);
-            value >>= priv::kDefaultBitSetSize;
+            value >>= std::min(priv::kDefaultBitSetSize, (size_t)63);
         }
         value_type elemValue = value & kLastElementMask;
         mBaseBitSetArray[i]  = priv::BaseBitSetType(elemValue);

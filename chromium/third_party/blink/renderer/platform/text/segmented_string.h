@@ -140,12 +140,12 @@ class PLATFORM_EXPORT SegmentedSubstring {
 
   ALWAYS_INLINE int offset() const {
     DCHECK_LE(data_start_, data_.string8_ptr);
-    return static_cast<int>(data_.string8_ptr - data_start_) >> !is_8bit_;
+    return static_cast<int>(data_.string8_ptr - data_start_) >> (!is_8bit_ ? 1 : 0);
   }
 
   ALWAYS_INLINE int length() const {
     DCHECK_LE(data_.string8_ptr, data_last_char_);
-    return static_cast<int>(data_end() - data_.string8_ptr) >> !is_8bit_;
+    return static_cast<int>(data_end() - data_.string8_ptr) >> (!is_8bit_ ? 1 : 0);
   }
 
  private:
