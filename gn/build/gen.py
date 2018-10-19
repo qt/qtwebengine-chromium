@@ -401,7 +401,6 @@ def WriteGNNinja(path, platform, host, options):
         '/D_WIN32_WINNT=0x0A00',
         '/FS',
         '/W4',
-        '/WX',
         '/Zi',
         '/wd4099',
         '/wd4100',
@@ -409,6 +408,7 @@ def WriteGNNinja(path, platform, host, options):
         '/wd4244',
         '/wd4267',
         '/wd4505',
+        '/wd4577',
         '/wd4838',
         '/wd4996',
     ])
