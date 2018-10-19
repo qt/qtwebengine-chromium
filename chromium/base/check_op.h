@@ -173,7 +173,7 @@ class CheckOpResult {
                              int> = 0>                                         \
   constexpr ::logging::CheckOpResult Check##name##Impl(                        \
       const T& v1, const U& v2, const char* expr_str) {                        \
-    if (ANALYZER_ASSUME_TRUE(v1 op v2))                                        \
+    if (!!ANALYZER_ASSUME_TRUE(v1 op v2))                                        \
       return ::logging::CheckOpResult();                                       \
     return ::logging::CheckOpResult(expr_str, CheckOpValueStr(v1),             \
                                     CheckOpValueStr(v2));                      \
@@ -184,7 +184,7 @@ class CheckOpResult {
                              int> = 0>                                         \
   constexpr ::logging::CheckOpResult Check##name##Impl(T v1, U v2,             \
                                                        const char* expr_str) { \
-    if (ANALYZER_ASSUME_TRUE(v1 op v2))                                        \
+    if (!!ANALYZER_ASSUME_TRUE(v1 op v2))                                        \
       return ::logging::CheckOpResult();                                       \
     return ::logging::CheckOpResult(expr_str, CheckOpValueStr(v1),             \
                                     CheckOpValueStr(v2));                      \

@@ -144,7 +144,7 @@ SystemPageSize() {
   // non-constexpr.
   return PageAllocationGranularity();
 #else
-  return 1 << SystemPageShift();
+  return size_t(1) << SystemPageShift();
 #endif
 }
 
