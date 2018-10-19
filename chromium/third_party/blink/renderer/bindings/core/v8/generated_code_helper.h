@@ -133,7 +133,7 @@ typename IDLSequence<T>::ImplType VariadicArgumentsToNativeValues(
       return VectorType();
     }
   }
-  return std::move(result);
+  return result;
 }
 
 CORE_EXPORT std::optional<size_t> FindIndexInEnumStringTable(

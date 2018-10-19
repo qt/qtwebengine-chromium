@@ -167,9 +167,9 @@ struct SlotSpanMetadata<MetadataKind::kReadOnly>
   // (2) we use ToWritable() to obtain its writable address.
   // (3) we invoke writable SlotSpanMetadata's constructor.
   // (4) we see that the read-only one has been initialized.
-  explicit SlotSpanMetadata<MetadataKind::kReadOnly>(PartitionBucket*) = delete;
+  explicit SlotSpanMetadata(PartitionBucket*) = delete;
 #else
-  explicit SlotSpanMetadata<MetadataKind::kReadOnly>(PartitionBucket* b)
+  explicit SlotSpanMetadata(PartitionBucket* b)
       : SlotSpanMetadataBase<MetadataKind::kReadOnly>(b) {}
 #endif  // PA_CONFIG(ENABLE_SHADOW_METADATA)
   // pa_tcache_inspect needs the copy constructor.
@@ -279,7 +279,7 @@ struct SlotSpanMetadata<MetadataKind::kReadOnly>
   // namespace so the getter can be fully inlined.
   static const SlotSpanMetadata<MetadataKind::kReadOnly> sentinel_slot_span_;
   // For the sentinel.
-  inline constexpr SlotSpanMetadata<MetadataKind::kReadOnly>() noexcept =
+  inline constexpr SlotSpanMetadata() noexcept =
       default;
 };
 
@@ -287,7 +287,7 @@ template <>
 struct SlotSpanMetadata<MetadataKind::kWritable>
     : public SlotSpanMetadataBase<MetadataKind::kWritable> {
   PA_COMPONENT_EXPORT(PARTITION_ALLOC)
-  explicit SlotSpanMetadata<MetadataKind::kWritable>(PartitionBucket* b)
+  explicit SlotSpanMetadata(PartitionBucket* b)
       : SlotSpanMetadataBase<MetadataKind::kWritable>(b) {}
 
   PA_ALWAYS_INLINE PartitionSuperPageExtentEntry<MetadataKind::kWritable>*

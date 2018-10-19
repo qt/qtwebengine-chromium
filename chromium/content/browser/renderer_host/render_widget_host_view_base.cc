@@ -279,9 +279,7 @@ void RenderWidgetHostViewBase::SetBackgroundColor(SkColor color) {
   if (default_background_color_ == color)
     return;
 
-  bool opaque = default_background_color_
-                    ? SkColorGetA(*default_background_color_)
-                    : SK_AlphaOPAQUE;
+  bool opaque = !default_background_color_ || (SkColorGetA(*default_background_color_) == SK_AlphaOPAQUE);
   default_background_color_ = color;
   UpdateBackgroundColor();
   if (opaque != (SkColorGetA(color) == SK_AlphaOPAQUE)) {
