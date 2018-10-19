@@ -77,6 +77,9 @@ inline void abort_noreturn() { abort(); }
 #else
 #define DOUBLE_CONVERSION_STACK_UNINITIALIZED
 #endif
+#else
+#define DOUBLE_CONVERSION_STACK_UNINITIALIZED
+#endif
 
 // Double operations detection based on target architecture.
 // Linux uses a 80bit wide floating point stack on x86. This induces double
