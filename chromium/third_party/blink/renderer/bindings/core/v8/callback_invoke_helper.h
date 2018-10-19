@@ -79,7 +79,7 @@ class CallbackInvokeHelper final {
     DCHECK(!aborted_);
     v8::Isolate* isolate = callback_->GetIsolate();
     v8::TryCatch try_catch(isolate);
-    auto&& result = NativeValueTraits<IDLReturnType>::NativeValue(
+    auto result = NativeValueTraits<IDLReturnType>::NativeValue(
         isolate, result_, PassThroughException(isolate));
     if (try_catch.HasCaught()) [[unlikely]] {
       ApplyContextToException(

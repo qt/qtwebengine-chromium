@@ -4838,8 +4838,9 @@ Reduction JSCallReducer::ReduceJSCall(Node* node) {
   // the {target} must have the same native context as the call site.
   // Same if the {target} is the result of a CheckClosure operation.
   if (target->opcode() == IrOpcode::kJSCreateClosure) {
-    CreateClosureParameters const& params =
-        JSCreateClosureNode{target}.Parameters();
+    auto aux = JSCreateClosureNode{target};
+    const CreateClosureParameters& params =
+        aux.Parameters();
     Reduction res = ReduceJSCall(node, params.shared_info());
     if (!res.Changed()) return NoChangeOrSoftDeopt();
     return res;
@@ -5453,8 +5454,9 @@ bool TargetIsClassConstructor(Node* node, JSHeapBroker* broker) {
       shared = function.shared(broker);
     }
   } else if (target->opcode() == IrOpcode::kJSCreateClosure) {
+    auto aux = JSCreateClosureNode{target};
     CreateClosureParameters const& ccp =
-        JSCreateClosureNode{target}.Parameters();
+        aux.Parameters();
     shared = ccp.shared_info();
   } else if (target->opcode() == IrOpcode::kCheckClosure) {
     FeedbackCellRef cell = MakeRef(broker, FeedbackCellOf(target->op()));
