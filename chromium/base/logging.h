@@ -688,6 +688,11 @@ class CheckOpResult {
 
 #endif  // !(OFFICIAL_BUILD && NDEBUG)
 
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress"
+#endif // __GNUC__
+
 // This formats a value for a failing CHECK_XX statement.  Ordinarily,
 // it uses the definition for operator<<, with a few special cases below.
 template <typename T>
@@ -722,6 +727,10 @@ inline typename std::enable_if<
 MakeCheckOpValueString(std::ostream* os, const T& v) {
   (*os) << static_cast<typename std::underlying_type<T>::type>(v);
 }
+
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 // We need an explicit overload for std::nullptr_t.
 BASE_EXPORT void MakeCheckOpValueString(std::ostream* os, std::nullptr_t p);
@@ -771,13 +780,13 @@ std::string* MakeCheckOpString<std::string, std::string>(
   template <class t1, class t2>                                              \
   inline std::string* Check##name##Impl(const t1& v1, const t2& v2,          \
                                         const char* names) {                 \
-    if (ANALYZER_ASSUME_TRUE(v1 op v2))                                      \
+    if (!!ANALYZER_ASSUME_TRUE(v1 op v2))                                      \
       return NULL;                                                           \
     else                                                                     \
       return ::logging::MakeCheckOpString(v1, v2, names);                    \
   }                                                                          \
   inline std::string* Check##name##Impl(int v1, int v2, const char* names) { \
-    if (ANALYZER_ASSUME_TRUE(v1 op v2))                                      \
+    if (!!ANALYZER_ASSUME_TRUE(v1 op v2))                                      \
       return NULL;                                                           \
     else                                                                     \
       return ::logging::MakeCheckOpString(v1, v2, names);                    \
