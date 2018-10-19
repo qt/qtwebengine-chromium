@@ -539,6 +539,7 @@ def WriteGNNinja(path, platform, host, options, args_list):
         '/wd4244',
         '/wd4267',
         '/wd4505',
+        '/wd4577',
         '/wd4838',
         '/wd4996',
         '/std:c++17',
