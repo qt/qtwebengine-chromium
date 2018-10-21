@@ -161,7 +161,8 @@ SSLManager::SSLManager(NavigationControllerImpl* controller)
 SSLManager::~SSLManager() {
   SSLManagerSet* managers = static_cast<SSLManagerSet*>(
       controller_->GetBrowserContext()->GetUserData(kSSLManagerKeyName));
-  managers->get().erase(this);
+  if (managers)
+    managers->get().erase(this);
 }
 
 void SSLManager::DidCommitProvisionalLoad(const LoadCommittedDetails& details) {
