@@ -3464,7 +3464,8 @@ void RenderProcessHostImpl::Cleanup() {
     ServiceManagerConnection* service_manager_connection =
         BrowserContext::GetServiceManagerConnectionFor(browser_context_);
     connection_filter_controller_->DisableFilter();
-    service_manager_connection->RemoveConnectionFilter(connection_filter_id_);
+    if (service_manager_connection)
+      service_manager_connection->RemoveConnectionFilter(connection_filter_id_);
     connection_filter_id_ =
         ServiceManagerConnection::kInvalidConnectionFilterId;
   }
