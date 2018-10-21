@@ -67,7 +67,7 @@ ScopedBlockingCallWithBaseSyncPrimitives::
   const AutoReset<bool> resetter(&construction_in_progress, true, false);
 #endif
 
-  internal::AssertBaseSyncPrimitivesAllowed();
+//   internal::AssertBaseSyncPrimitivesAllowed();
   TRACE_EVENT_BEGIN(
       "base", "ScopedBlockingCallWithBaseSyncPrimitives",
       [&](perfetto::EventContext ctx) {
