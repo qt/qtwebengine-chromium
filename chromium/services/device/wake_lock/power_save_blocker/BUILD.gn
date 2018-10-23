@@ -38,18 +38,18 @@ source_set("power_save_blocker") {
     "//base",
   ]
 
-  if (use_dbus) {
-    deps += [ "//dbus" ]
-  }
-
-  if (use_x11) {
-    configs += [ "//build/config/linux:x11" ]
+  if (use_dbus && !is_chromeos) {
+    defines = [ "USE_FREEDESKTOP_SUSPEND" ]
     if (use_xscrnsaver) {
-      defines = [ "USE_XSCRNSAVER" ]
-      configs += [ "//build/config/linux:xscrnsaver" ]
+      defines += [ "USE_XSCRNSAVER" ]
+      configs += [
+        "//build/config/linux:xscrnsaver",
+        "//build/config/linux:x11",
+      ]
+      deps += [ "//ui/gfx/x" ]
     }
     deps += [
-      "//ui/gfx",
+      "//dbus",
       "//ui/gfx/x",
     ]
   }
@@ -57,10 +57,10 @@ source_set("power_save_blocker") {
   # Dealing with power_save_blocker_{x11,ozone}.cc is a little complicated
   # given the interaction between os_chromeos and the feature flags for X11 and
   # ozone, so do it all in one spot.
-  if (is_chromeos || !use_ozone) {
+  if (is_chromeos || !use_ozone || use_dbus) {
     sources -= [ "power_save_blocker_ozone.cc" ]
   }
-  if (is_chromeos || !use_x11 || !use_dbus) {
+  if (is_chromeos || !use_dbus) {
     sources -= [ "power_save_blocker_x11.cc" ]
   }
 
