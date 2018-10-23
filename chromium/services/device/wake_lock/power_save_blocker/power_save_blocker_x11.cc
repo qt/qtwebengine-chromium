@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <X11/Xlib.h>
 #if defined(USE_XSCRNSAVER)
+#include <X11/Xlib.h>
 #include <X11/extensions/scrnsaver.h>
 #endif
 #include <stdint.h>
@@ -35,7 +35,10 @@
 #include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
 #include "ui/gfx/switches.h"
+
+#if defined(USE_XSCRNSAVER)
 #include "ui/gfx/x/x11_types.h"
+#endif
 
 namespace {
 
