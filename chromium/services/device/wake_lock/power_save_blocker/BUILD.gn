@@ -9,6 +9,12 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
+config("maybe_desktop_suspend") {
+  if (use_dbus && !is_chromeos) {
+    defines = [ "USE_FREEDESKTOP_SUSPEND", ]
+  }
+}
+
 source_set("power_save_blocker") {
   visibility = [
     # //remoting runs in a separate process which is outside of the context of
@@ -32,9 +38,7 @@ source_set("power_save_blocker") {
     "//base",
   ]
 
-  if (use_dbus) {
-    deps += [ "//dbus" ]
-  }
+  configs += [ ":maybe_desktop_suspend" ]
 
   if (is_android) {
     sources += [ "power_save_blocker_android.cc" ]
@@ -52,14 +56,12 @@ source_set("power_save_blocker") {
       "//dbus",
       "//ui/gfx",
     ]
-    if (use_x11) {
+    if (use_xscrnsaver) {
+      defines = [ "USE_XSCRNSAVER" ]
       configs += [
         "//build/config/linux:x11",
+        "//build/config/linux:xscrnsaver",
       ]
-      if (use_xscrnsaver) {
-        defines = [ "USE_XSCRNSAVER" ]
-        configs += [ "//build/config/linux:xscrnsaver" ]
-      }
       deps += [ "//ui/gfx/x" ]
     }
   } else if (is_mac) {

@@ -25,10 +25,8 @@
 #include "dbus/object_proxy.h"
 #include "ui/gfx/switches.h"
 
-#if defined(USE_X11)
 #if defined(USE_XSCRNSAVER)
 #include <X11/extensions/scrnsaver.h>
-#endif
 
 #include "ui/gfx/x/x11_types.h"  // nogncheck
 #endif
