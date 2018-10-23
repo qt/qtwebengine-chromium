@@ -22,4 +22,6 @@ source_set("wake_lock") {
   ]
 
   deps = [ "//services/device/wake_lock/power_save_blocker" ]
+
+  configs += [ "//services/device/wake_lock/power_save_blocker:maybe_desktop_suspend" ]
 }
