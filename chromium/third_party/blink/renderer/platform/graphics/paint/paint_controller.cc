@@ -833,7 +833,7 @@ void PaintController::CheckDuplicatePaintChunkId(const PaintChunk::Id& id) {
       const auto& chunk = new_paint_chunks_.PaintChunks()[index];
       if (chunk.id == id) {
         ShowDebugData();
-        NOTREACHED() << "New paint chunk id " << id
+        DLOG(ERROR)  << "New paint chunk id " << id
                      << " has duplicated id with previous chuck " << chunk;
       }
     }
