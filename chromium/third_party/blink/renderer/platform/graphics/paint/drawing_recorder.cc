@@ -60,7 +60,7 @@ DrawingRecorder::~DrawingRecorder() {
 
   sk_sp<const PaintRecord> picture = context_.EndRecording();
 
-#if DCHECK_IS_ON()
+#if DCHECK_IS_ON() && !defined(TOOLKIT_QT)
   // When skipping cache (e.g. in PaintRecordBuilder with a temporary
   // PaintController), the client's painting might be different from its normal
   // painting.
